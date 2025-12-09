@@ -1,3 +1,4 @@
+```typescript
 // src/spaces/promoteur/PromoteurLayout.tsx
 import React from "react";
 import {
@@ -38,7 +39,7 @@ const headerStyle: React.CSSProperties = {
   display: "flex",
   justifyContent: "center",
   alignItems: "center",
-  paddingBottom: "16px",
+  padding: "24px 0",
   gap: "32px",
   borderBottom: "2px solid #e5e7eb",
 };
@@ -576,5 +577,4 @@ export function PromoteurLayout({ onGoHome }: PromoteurLayoutProps) {
             >
               <div style={panelTitleRow}>
                 <div
-                  style={{
-                    width
+                 
