@@ -40,6 +40,7 @@ const headerStyle: React.CSSProperties = {
   alignItems: "center",
   paddingBottom: "16px",
   gap: "32px",
+  borderBottom: "2px solid #e5e7eb",
 };
 
 const headerLogo: React.CSSProperties = {
@@ -576,6 +577,4 @@ export function PromoteurLayout({ onGoHome }: PromoteurLayoutProps) {
               <div style={panelTitleRow}>
                 <div
                   style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 
+                    width
