@@ -1,4 +1,4 @@
-```typescript
+typescript
 // src/spaces/promoteur/PromoteurLayout.tsx
 import React from "react";
 import {
@@ -41,7 +41,7 @@ const headerStyle: React.CSSProperties = {
   alignItems: "center",
   padding: "24px 0",
   gap: "32px",
-  borderBottom: "2px solid #e5e7eb",
+  borderBottom: "1px solid #e5e7eb",
 };
 
 const headerLogo: React.CSSProperties = {
