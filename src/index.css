@@ -1,0 +1,14 @@
+﻿@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Fond global propre */
+body {
+  background-color: #f9fafb; /* gris très clair */
+  color: #0f172a;            /* texte gris-bleu foncé */
+  margin: 0;
+}
+
+#root {
+  min-height: 100vh;
+}
