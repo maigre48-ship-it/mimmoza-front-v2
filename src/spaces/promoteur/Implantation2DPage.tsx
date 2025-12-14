@@ -368,58 +368,72 @@ function toNumberLooseNullable(v: any): number | null {
 }
 
 function extractReculTripletFromPluRules(pluRules: PluRules | null) {
-  const anyRules: any = pluRules ?? {};
+  const r: any = pluRules ?? {};
 
-  const impl = anyRules.implantation ?? anyRules?.rules?.implantation ?? null;
+  const impl =
+    r.implantation ??
+    r.rules?.implantation ??
+    r.rules?.reculs ??
+    r.reculs ??
+    null;
+
   const ra =
-    anyRules.reculs_alignements ??
-    anyRules?.rules?.reculs_alignements ??
+    r.reculs_alignements ??
+    r.rules?.reculs_alignements ??
+    r.rules?.alignement ??
+    r.alignement ??
+    null;
+
+  const rs =
+    r.reculs_separatifs ??
+    r.rules?.reculs_separatifs ??
+    r.separatifs ??
+    r.rules?.separatifs ??
     null;
 
   const reculAvant =
     toNumberLooseNullable(
-      (impl &&
-        (impl.recul_avant_m ??
-          impl.recul_voie_m ??
-          impl.recul_alignement_m ??
-          impl.reculAvantM)) ??
-        ra?.recul_avant_m,
+      impl?.recul_avant_m ??
+        impl?.recul_voie_m ??
+        impl?.recul_alignement_m ??
+        impl?.recul_min_voie_m ??
+        ra?.recul_avant_m ??
+        ra?.recul_voie_m ??
+        ra?.recul_min_m ??
+        ra?.recul_min_voie_m,
     ) ?? null;
 
   const reculLateral =
     toNumberLooseNullable(
-      (impl &&
-        (impl.recul_lateral_m ??
-          impl.recul_lateraux_m ??
-          impl.reculLateralM ??
-          impl.reculLatM)) ??
-        ra?.recul_lateral_m,
+      impl?.recul_lateral_m ??
+        impl?.recul_lateraux_m ??
+        impl?.recul_separatif_m ??
+        impl?.recul_min_lateral_m ??
+        rs?.recul_lateral_m ??
+        rs?.recul_separatif_m ??
+        rs?.recul_min_m ??
+        rs?.recul_min_lateral_m,
     ) ?? null;
 
   const reculFond =
     toNumberLooseNullable(
-      (impl &&
-        (impl.recul_fond_m ??
-          impl.recul_arriere_m ??
-          impl.reculFondM ??
-          impl.reculArriereM)) ??
-        ra?.recul_arriere_m,
+      impl?.recul_fond_m ??
+        impl?.recul_arriere_m ??
+        impl?.recul_min_fond_m ??
+        rs?.recul_fond_m ??
+        rs?.recul_arriere_m,
     ) ?? null;
 
-  const alignementObligatoire = !!ra?.alignement_obligatoire;
+  const alignementObligatoire = !!(
+    ra?.alignement_obligatoire ?? impl?.alignement_obligatoire
+  );
 
   const hasAny =
     (typeof reculAvant === "number" && reculAvant > 0) ||
     (typeof reculLateral === "number" && reculLateral > 0) ||
     (typeof reculFond === "number" && reculFond > 0);
 
-  return {
-    hasAny,
-    reculAvant,
-    reculLateral,
-    reculFond,
-    alignementObligatoire,
-  };
+  return { hasAny, reculAvant, reculLateral, reculFond, alignementObligatoire };
 }
 
 function computeImplantationWithoutGeom(
@@ -657,6 +671,108 @@ function distanceFromPivotM(pivot: Feature<Point>, latlng: L.LatLng): number {
     return km * 1000;
   } catch {
     return 0;
+  }
+}
+
+
+
+// -----------------------------------------------------------------------------
+// Fallback building (si computeImplantationV1 ne renvoie pas de footprint)
+// -----------------------------------------------------------------------------
+function degToBearing(from: [number, number], to: [number, number]) {
+  try {
+    return turf.bearing(turf.point(from), turf.point(to));
+  } catch {
+    return 0;
+  }
+}
+
+function offsetPoint(
+  center: Feature<Point>,
+  distM: number,
+  bearingDeg: number,
+): Feature<Point> {
+  const km = distM / 1000;
+  const p = turf.destination(center as any, km, bearingDeg, {
+    units: "kilometers",
+  }) as any;
+  return p as Feature<Point>;
+}
+
+function buildRectangleAroundCenter(
+  center: Feature<Point>,
+  lengthM: number,
+  widthM: number,
+  bearingDeg: number,
+): Feature<Polygon> {
+  const halfL = Math.max(0.5, lengthM / 2);
+  const halfW = Math.max(0.5, widthM / 2);
+
+  const b = bearingDeg;
+  const p = b + 90;
+
+  const c1 = offsetPoint(offsetPoint(center, +halfL, b), +halfW, p);
+  const c2 = offsetPoint(offsetPoint(center, +halfL, b), -halfW, p);
+  const c3 = offsetPoint(offsetPoint(center, -halfL, b), -halfW, p);
+  const c4 = offsetPoint(offsetPoint(center, -halfL, b), +halfW, p);
+
+  const coords = [
+    c1.geometry.coordinates,
+    c2.geometry.coordinates,
+    c3.geometry.coordinates,
+    c4.geometry.coordinates,
+    c1.geometry.coordinates,
+  ];
+
+  return {
+    type: "Feature",
+    geometry: { type: "Polygon", coordinates: [coords as any] },
+    properties: { kind: "fallback_building" },
+  };
+}
+
+function computeFallbackBuilding(
+  envelope: Feature<Polygon | MultiPolygon>,
+  footprintM2: number,
+  shape: "rectangle" | "square",
+  facadeSeg: Feature<LineString> | null,
+): Feature<Polygon | MultiPolygon> | null {
+  try {
+    const envPoly = envelope as any;
+    const c = turf.centroid(envPoly) as Feature<Point>;
+
+    const bearing =
+      facadeSeg?.geometry?.coordinates?.length === 2
+        ? degToBearing(
+            facadeSeg.geometry.coordinates[0] as any,
+            facadeSeg.geometry.coordinates[1] as any,
+          )
+        : 0;
+
+    const area = Math.max(10, Number(footprintM2) || 300);
+    const ratio = shape === "square" ? 1 : 3;
+    const width = Math.sqrt(area / ratio);
+    const length = width * ratio;
+
+    let scale = 1.0;
+    for (let i = 0; i < 12; i++) {
+      const rect = buildRectangleAroundCenter(c, length * scale, width * scale, bearing);
+
+      const ok =
+        turf.booleanWithin(rect as any, envPoly) ||
+        (turf.booleanIntersects(rect as any, envPoly) && turf.area(rect as any) > 5);
+
+      if (ok) return rect as any;
+      scale *= 0.85;
+    }
+
+    const buf = turf.buffer(c as any, 6, { units: "meters" }) as any;
+    if (buf?.geometry?.type === "Polygon" || buf?.geometry?.type === "MultiPolygon") {
+      return buf as any;
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 
@@ -988,15 +1104,28 @@ export const Implantation2DPage: React.FC = () => {
 
 const normBuildable = normalizeToFeature(candidate);
 
-// ✅ DEBUG TEMPORAIRE
-console.log("result keys", Object.keys(result as any));
-console.log("candidate", candidate);
-console.log("normBuildable", normBuildable);
+// ✅ fallback front si le moteur ne renvoie rien
+if (!normBuildable && afterReculsFeature) {
+  const shape =
+    (((appliedParams as any)?.project?.buildings?.[0]?.shape ?? "rectangle") as
+      "rectangle" | "square");
 
-setBuildableFeature(normBuildable);
+  const footprintM2 = Number(
+    (appliedParams as any)?.project?.buildings?.[0]?.footprintM2 ?? 300,
+  );
 
+  const fb = computeFallbackBuilding(
+    afterReculsFeature,
+    footprintM2,
+    shape,
+    facadeSegment ?? null,
+  );
 
-        // reset édition si le moteur régénère
+  setBuildableFeature(fb as any);
+} else {
+  setBuildableFeature(normBuildable);
+}
+// reset édition si le moteur régénère
         setManualBuilding(null);
         setEditMode(false);
 
