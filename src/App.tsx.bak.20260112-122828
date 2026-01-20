@@ -1,0 +1,127 @@
+﻿import React from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
+
+import HomePage from "./pages/HomePage";
+
+import ParticulierLayout from "./spaces/particulier/ParticulierLayout";
+import MarchandLayout from "./spaces/marchand/MarchandLayout";
+import PromoteurLayout from "./spaces/promoteur/PromoteurLayout";
+import BanqueLayout from "./spaces/banque/BanqueLayout";
+import AssuranceLayout from "./spaces/assurance/AssuranceLayout";
+
+// Particulier
+import ParticulierDashboard from "./spaces/particulier/pages/Dashboard";
+import ParticulierRecherche from "./spaces/particulier/pages/Recherche";
+import ParticulierAlertes from "./spaces/particulier/pages/Alertes";
+import ParticulierEvaluation from "./spaces/particulier/pages/Evaluation";
+import ParticulierFinancement from "./spaces/particulier/pages/Financement";
+import ParticulierTravaux from "./spaces/particulier/pages/Travaux";
+import ParticulierDocuments from "./spaces/particulier/pages/Documents";
+
+// Marchand
+import MarchandPipeline from "./spaces/marchand/pages/Pipeline";
+import MarchandSourcing from "./spaces/marchand/pages/Sourcing";
+import MarchandQualification from "./spaces/marchand/pages/Qualification";
+import MarchandRentabilite from "./spaces/marchand/pages/Rentabilite";
+import MarchandExecution from "./spaces/marchand/pages/Execution";
+import MarchandSortie from "./spaces/marchand/pages/Sortie";
+import MarchandExports from "./spaces/marchand/pages/Exports";
+
+// Promoteur
+import PromoteurDashboard from "./spaces/promoteur/pages/Dashboard";
+import PromoteurFoncier from "./spaces/promoteur/pages/Foncier";
+import PromoteurPluFaisabilite from "./spaces/promoteur/pages/PluFaisabilite";
+import PromoteurMarche from "./spaces/promoteur/pages/Marche";
+import PromoteurRisques from "./spaces/promoteur/pages/Risques";
+import PromoteurImplantation2D from "./spaces/promoteur/pages/Implantation2D";
+import PromoteurMassing3D from "./spaces/promoteur/pages/Massing3D";
+import PromoteurBilan from "./spaces/promoteur/pages/Bilan";
+import PromoteurSynthese from "./spaces/promoteur/pages/Synthese";
+import PromoteurExports from "./spaces/promoteur/pages/Exports";
+
+// Banque
+import BanqueDashboard from "./spaces/banque/pages/Dashboard";
+import BanqueOrigination from "./spaces/banque/pages/Origination";
+import BanqueAnalyse from "./spaces/banque/pages/Analyse";
+import BanqueGaranties from "./spaces/banque/pages/Garanties";
+import BanqueDecision from "./spaces/banque/pages/Decision";
+import BanqueMonitoring from "./spaces/banque/pages/Monitoring";
+import BanqueDocuments from "./spaces/banque/pages/Documents";
+
+// Assurance
+import AssuranceDashboard from "./spaces/assurance/pages/Dashboard";
+import AssuranceSouscription from "./spaces/assurance/pages/Souscription";
+import AssuranceExposition from "./spaces/assurance/pages/Exposition";
+import AssuranceTarification from "./spaces/assurance/pages/Tarification";
+import AssuranceOffre from "./spaces/assurance/pages/Offre";
+import AssuranceMonitoring from "./spaces/assurance/pages/Monitoring";
+import AssuranceDocuments from "./spaces/assurance/pages/Documents";
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+
+      <Route path="/particulier" element={<ParticulierLayout />}>
+        <Route index element={<ParticulierDashboard />} />
+        <Route path="recherche" element={<ParticulierRecherche />} />
+        <Route path="alertes" element={<ParticulierAlertes />} />
+        <Route path="evaluation" element={<ParticulierEvaluation />} />
+        <Route path="financement" element={<ParticulierFinancement />} />
+        <Route path="travaux" element={<ParticulierTravaux />} />
+        <Route path="documents" element={<ParticulierDocuments />} />
+        {/* placeholders (sidebar expanded later) */}
+        <Route path="*" element={<Navigate to="/particulier" replace />} />
+      </Route>
+
+      <Route path="/marchand-de-bien" element={<MarchandLayout />}>
+        <Route index element={<MarchandPipeline />} />
+        <Route path="sourcing" element={<MarchandSourcing />} />
+        <Route path="qualification" element={<MarchandQualification />} />
+        <Route path="rentabilite" element={<MarchandRentabilite />} />
+        <Route path="execution" element={<MarchandExecution />} />
+        <Route path="sortie" element={<MarchandSortie />} />
+        <Route path="exports" element={<MarchandExports />} />
+        <Route path="*" element={<Navigate to="/marchand-de-bien" replace />} />
+      </Route>
+
+      <Route path="/promoteur" element={<PromoteurLayout />}>
+        <Route index element={<PromoteurDashboard />} />
+        <Route path="foncier" element={<PromoteurFoncier />} />
+        <Route path="plu-faisabilite" element={<PromoteurPluFaisabilite />} />
+        <Route path="marche" element={<PromoteurMarche />} />
+        <Route path="risques" element={<PromoteurRisques />} />
+        <Route path="implantation-2d" element={<PromoteurImplantation2D />} />
+        <Route path="massing-3d" element={<PromoteurMassing3D />} />
+        <Route path="bilan" element={<PromoteurBilan />} />
+        <Route path="synthese" element={<PromoteurSynthese />} />
+        <Route path="exports" element={<PromoteurExports />} />
+        <Route path="*" element={<Navigate to="/promoteur" replace />} />
+      </Route>
+
+      <Route path="/banque" element={<BanqueLayout />}>
+        <Route index element={<BanqueDashboard />} />
+        <Route path="origination" element={<BanqueOrigination />} />
+        <Route path="analyse" element={<BanqueAnalyse />} />
+        <Route path="garanties" element={<BanqueGaranties />} />
+        <Route path="decision" element={<BanqueDecision />} />
+        <Route path="monitoring" element={<BanqueMonitoring />} />
+        <Route path="documents" element={<BanqueDocuments />} />
+        <Route path="*" element={<Navigate to="/banque" replace />} />
+      </Route>
+
+      <Route path="/assurance" element={<AssuranceLayout />}>
+        <Route index element={<AssuranceDashboard />} />
+        <Route path="souscription" element={<AssuranceSouscription />} />
+        <Route path="exposition" element={<AssuranceExposition />} />
+        <Route path="tarification" element={<AssuranceTarification />} />
+        <Route path="offre" element={<AssuranceOffre />} />
+        <Route path="monitoring" element={<AssuranceMonitoring />} />
+        <Route path="documents" element={<AssuranceDocuments />} />
+        <Route path="*" element={<Navigate to="/assurance" replace />} />
+      </Route>
+
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}

@@ -1,0 +1,56 @@
+﻿import React from "react";
+import { NavLink } from "react-router-dom";
+import type { NavSection } from "../layout/BaseShellLayout";
+
+type Props = {
+  sections: NavSection[];
+};
+
+const linkBase: React.CSSProperties = {
+  display: "block",
+  padding: "10px 10px",
+  borderRadius: 10,
+  textDecoration: "none",
+  color: "#0f172a",
+  fontWeight: 600,
+};
+
+export default function Sidebar({ sections }: Props) {
+  return (
+    <div>
+      {sections.map((sec) => (
+        <div key={sec.title} style={{ marginBottom: 14 }}>
+          <div
+            style={{
+              fontSize: 12,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              color: "#64748b",
+              fontWeight: 800,
+              margin: "10px 8px",
+            }}
+          >
+            {sec.title}
+          </div>
+
+          <div style={{ display: "grid", gap: 6 }}>
+            {sec.items.map((it) => (
+              <NavLink
+                key={it.to}
+                to={it.to}
+                style={({ isActive }) => ({
+                  ...linkBase,
+                  background: isActive ? "rgba(99, 102, 241, 0.10)" : "transparent",
+                  border: isActive ? "1px solid rgba(99, 102, 241, 0.25)" : "1px solid transparent",
+                })}
+                end
+              >
+                {it.label}
+              </NavLink>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

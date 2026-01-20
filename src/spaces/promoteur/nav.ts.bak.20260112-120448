@@ -1,0 +1,59 @@
+﻿import type { NavSection } from "../../components/layout/BaseShellLayout";
+
+export const PROMOTEUR_SIDEBAR: NavSection[] = [
+  {
+    title: "Démarrer",
+    items: [
+      { label: "Tableau de bord", to: "/promoteur" },
+      { label: "Nouveau projet", to: "/promoteur/nouveau" },
+      { label: "Mes projets", to: "/promoteur/projets" },
+    ],
+  },
+  {
+    title: "Foncier",
+    items: [
+      { label: "Parcelles & cadastre", to: "/promoteur/foncier" },
+      { label: "Recherche foncière", to: "/promoteur/recherche-foncier" },
+      { label: "Contacts", to: "/promoteur/contacts" },
+    ],
+  },
+  {
+    title: "Faisabilité",
+    items: [
+      { label: "PLU & zonage", to: "/promoteur/plu-faisabilite" },
+      { label: "Règles", to: "/promoteur/regles" },
+      { label: "Servitudes", to: "/promoteur/servitudes" },
+    ],
+  },
+  {
+    title: "Études",
+    items: [
+      { label: "Marché", to: "/promoteur/marche" },
+      { label: "Risques", to: "/promoteur/risques" },
+    ],
+  },
+  {
+    title: "Conception",
+    items: [
+      { label: "Implantation 2D", to: "/promoteur/implantation-2d" },
+      { label: "Massing 3D", to: "/promoteur/massing-3d" },
+      { label: "Terrassement", to: "/promoteur/terrassement" },
+    ],
+  },
+  {
+    title: "Bilan",
+    items: [
+      { label: "Bilan promoteur", to: "/promoteur/bilan" },
+      { label: "Scénarios", to: "/promoteur/scenarios" },
+      { label: "Sensibilités", to: "/promoteur/sensibilites" },
+    ],
+  },
+  {
+    title: "Synthèse",
+    items: [
+      { label: "Rapport", to: "/promoteur/synthese" },
+      { label: "Exports", to: "/promoteur/exports" },
+      { label: "Historique", to: "/promoteur/historique" },
+    ],
+  },
+];

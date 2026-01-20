@@ -1,13 +1,182 @@
-﻿import React from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { MainLayout } from "../components/layouts/MainLayout";
 import { PageContainer } from "../components/layouts/PageContainer";
 import { ContentSection } from "../components/layouts/ContentSection";
 import { Grid } from "../components/layouts/Grid";
 import { StatCard } from "../components/layouts/StatCard";
-import { Card, CardHeader, CardTitle, CardBody, CardFooter } from "../components/layouts/Card";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardBody,
+  CardFooter,
+} from "../components/layouts/Card";
 import { EmptyState } from "../components/layouts/EmptyState";
 
+// IMPORTANT: adapte ce chemin si ton client Supabase est ailleurs
+import { supabase } from "../lib/supabaseClient";
+
+type PluLookupResult = {
+  success?: boolean;
+  error?: string;
+  message?: string;
+
+  commune_insee?: string;
+  commune_nom?: string;
+
+  parcel_id?: string;
+  parcel?: any;
+
+  zone_code?: string;
+  zone_libelle?: string;
+
+  rules?: any;
+  ruleset?: any;
+  plu?: any;
+};
+
+const LS_KEY = "mimmoza_plu_lookup_v1";
+
+const safeJsonParse = (raw: string | null) => {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
+
+const pretty = (v: any) => {
+  try {
+    return JSON.stringify(v, null, 2);
+  } catch {
+    return String(v);
+  }
+};
+
+const extractKpis = (payload: any) => {
+  // Tolérant : selon les versions, la structure varie (plu.rules/ruleset, ruleset, rules, etc.)
+  const ruleset =
+    payload?.plu?.ruleset ??
+    payload?.ruleset ??
+    payload?.plu?.rules ??
+    payload?.rules ??
+    null;
+
+  const zone_code = payload?.plu?.zone_code ?? payload?.zone_code ?? null;
+  const zone_libelle =
+    payload?.plu?.zone_libelle ?? payload?.zone_libelle ?? null;
+
+  // Reculs: tentative
+  const reculs =
+    ruleset?.reculs ??
+    ruleset?.implantation?.reculs ??
+    ruleset?.implantation ??
+    null;
+
+  // Hauteur: tentative
+  const hauteur =
+    ruleset?.hauteur ??
+    ruleset?.gabarit?.hauteur ??
+    ruleset?.gabarit ??
+    null;
+
+  // Parking: tentative
+  const parking =
+    ruleset?.parking ??
+    ruleset?.stationnement ??
+    ruleset?.stationnement_min ??
+    null;
+
+  return { zone_code, zone_libelle, reculs, hauteur, parking, ruleset };
+};
+
 const MimmozaDashboard: React.FC = () => {
+  // UX: Adresse / Parcelle (pour ne pas être bloqué par l’ingestion)
+  const [address, setAddress] = useState<string>("");
+  const [parcelId, setParcelId] = useState<string>("");
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [lookupResult, setLookupResult] = useState<PluLookupResult | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+
+  useEffect(() => {
+    const saved = safeJsonParse(localStorage.getItem(LS_KEY));
+    if (saved) {
+      setAddress(String(saved.address ?? ""));
+      setParcelId(String(saved.parcelId ?? ""));
+      setShowDetails(Boolean(saved.showDetails ?? false));
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        LS_KEY,
+        JSON.stringify({ address, parcelId, showDetails })
+      );
+    } catch {
+      // ignore
+    }
+  }, [address, parcelId, showDetails]);
+
+  const kpis = useMemo(() => {
+    if (!lookupResult) return null;
+    return extractKpis(lookupResult);
+  }, [lookupResult]);
+
+  const runLookup = async () => {
+    setLookupError(null);
+    setLookupResult(null);
+    setLookupLoading(true);
+
+    try {
+      const pid = parcelId.trim();
+      const addr = address.trim();
+
+      if (!pid && !addr) {
+        setLookupError("Renseigne une adresse ou un identifiant de parcelle.");
+        return;
+      }
+
+      // Priorité : parcelle si fournie
+      if (pid) {
+        const { data, error } = await supabase.functions.invoke(
+          "plu-from-parcelle",
+          {
+            body: { parcel_id: pid },
+          }
+        );
+        if (error) throw error;
+        setLookupResult(data ?? null);
+        return;
+      }
+
+      // Sinon : adresse
+      const { data, error } = await supabase.functions.invoke(
+        "plu-from-address",
+        {
+          body: { address: addr },
+        }
+      );
+      if (error) throw error;
+      setLookupResult(data ?? null);
+    } catch (e: any) {
+      setLookupError(
+        e?.message ??
+          "Erreur lors de la récupération PLU (plu-from-address / plu-from-parcelle)."
+      );
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
+  const resetLookup = () => {
+    setLookupError(null);
+    setLookupResult(null);
+    setShowDetails(false);
+  };
+
   return (
     <MainLayout
       title="Mimmoza Promoteur"
@@ -40,15 +209,18 @@ const MimmozaDashboard: React.FC = () => {
                   <div className="inline-flex items-center gap-2 bg-white/10 border border-white/20 rounded-full px-3 py-1 text-xs font-medium tracking-wide uppercase">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                     <span className="text-emerald-200">Beta privée</span>
-                    <span className="text-white/80">PLU Engine · Promoteur v1</span>
+                    <span className="text-white/80">
+                      PLU Engine · Promoteur v1
+                    </span>
                   </div>
                   <h1 className="text-2xl md:text-3xl lg:text-4xl font-semibold tracking-tight">
                     De la parcelle au bilan promoteur,
                     <span className="text-[#facc15]"> en suivant le PLU.</span>
                   </h1>
                   <p className="text-sm md:text-base text-slate-200 max-w-xl">
-                    Mimmoza assemble cadastre, PLU, DVF et règles promoteur dans un seul studio.
-                    Localisez, simulez, arbitrez — avec une traçabilité complète pour les banques et les investisseurs.
+                    Mimmoza assemble cadastre, PLU, DVF et règles promoteur dans
+                    un seul studio. Localisez, simulez, arbitrez — avec une
+                    traçabilité complète pour les banques et les investisseurs.
                   </p>
                   <div className="flex flex-wrap items-center gap-3 pt-1">
                     <div className="inline-flex items-center gap-2 text-xs text-slate-200">
@@ -88,7 +260,9 @@ const MimmozaDashboard: React.FC = () => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-300">Niveaux possibles</span>
-                        <span className="font-semibold">R+4 (sous réserve PLU)</span>
+                        <span className="font-semibold">
+                          R+4 (sous réserve PLU)
+                        </span>
                       </div>
                     </div>
                     <div className="mt-4">
@@ -97,7 +271,8 @@ const MimmozaDashboard: React.FC = () => {
                         <span className="text-slate-400 text-[11px]">Mock</span>
                       </button>
                       <p className="mt-2 text-[11px] text-slate-200">
-                        Ce bloc est purement visuel pour l&apos;instant. On branchera ensuite les Edge Functions Supabase.
+                        Ce bloc est purement visuel pour l&apos;instant. On
+                        branchera ensuite les Edge Functions Supabase.
                       </p>
                     </div>
                   </div>
@@ -155,7 +330,9 @@ const MimmozaDashboard: React.FC = () => {
                     <div className="text-[11px] font-semibold text-slate-400 mb-1 uppercase tracking-wide">
                       Étape 1
                     </div>
-                    <CardTitle className="text-sm">Adresse & localisation</CardTitle>
+                    <CardTitle className="text-sm">
+                      Adresse & localisation
+                    </CardTitle>
                     <CardBody className="mt-2 text-xs text-slate-600 space-y-1.5">
                       <p>Saisie d&apos;adresse, géocodage précis et détection de la commune.</p>
                       <p className="text-[11px] text-slate-400">
@@ -168,7 +345,9 @@ const MimmozaDashboard: React.FC = () => {
                     <div className="text-[11px] font-semibold text-slate-400 mb-1 uppercase tracking-wide">
                       Étape 2
                     </div>
-                    <CardTitle className="text-sm">Parcelle(s) cadastrale(s)</CardTitle>
+                    <CardTitle className="text-sm">
+                      Parcelle(s) cadastrale(s)
+                    </CardTitle>
                     <CardBody className="mt-2 text-xs text-slate-600 space-y-1.5">
                       <p>Récupération automatique et ajout manuel des parcelles du terrain réel.</p>
                       <p className="text-[11px] text-slate-400">
@@ -181,7 +360,9 @@ const MimmozaDashboard: React.FC = () => {
                     <div className="text-[11px] font-semibold text-slate-400 mb-1 uppercase tracking-wide">
                       Étape 3
                     </div>
-                    <CardTitle className="text-sm">PLU & règles d&apos;urbanisme</CardTitle>
+                    <CardTitle className="text-sm">
+                      PLU & règles d&apos;urbanisme
+                    </CardTitle>
                     <CardBody className="mt-2 text-xs text-slate-600 space-y-1.5">
                       <p>Chargement automatique ou upload du PLU, puis extraction des articles clés.</p>
                       <p className="text-[11px] text-slate-400">
@@ -205,24 +386,123 @@ const MimmozaDashboard: React.FC = () => {
                 </div>
               </ContentSection>
 
-              {/* PLACEHOLDER FORMULAIRE */}
+              {/* FORMULAIRE MINIMAL : Adresse / Parcelle -> PLU (immédiat) */}
               <ContentSection
                 title="Nouvelle étude foncière"
-                subtitle="Cette zone accueillera le futur flux complet (adresse, parcelles, PLU, bilan)."
+                subtitle="Point d'entrée opérationnel : adresse/parcelle → zone PLU + règles clés (sans dépendre de l'upload)."
                 card
               >
-                <div className="border border-dashed border-slate-300 rounded-2xl p-6 bg-white/60">
-                  <p className="text-sm text-slate-700 mb-3">
-                    Ici, on intégrera progressivement :
-                  </p>
-                  <ul className="list-disc list-inside text-sm text-slate-600 space-y-1.5">
-                    <li>Saisie de l&apos;adresse avec appel à <code className="text-[11px] bg-slate-100 px-1 rounded">plu-from-address</code></li>
-                    <li>Sélection et ajout de parcelles via la carte cadastrale Mimmoza</li>
-                    <li>Upload / sélection du PLU structuré pour la commune</li>
-                    <li>Lancement du calcul automatique du bilan promoteur</li>
-                  </ul>
-                  <p className="mt-4 text-[11px] text-slate-400">
-                    Le but : garder une UX propre dès aujourd&apos;hui, puis brancher les Edge Functions une par une.
+                <div className="bg-white/70 border border-slate-200/70 rounded-2xl p-6 shadow-sm">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Adresse (option 1)
+                      </label>
+                      <input
+                        value={address}
+                        onChange={(e) => setAddress(e.target.value)}
+                        placeholder="ex: 12 rue X, 64310 Ascain"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-slate-200"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Appelle <code className="bg-slate-100 px-1 rounded">plu-from-address</code>.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        ID Parcelle (option 2 prioritaire)
+                      </label>
+                      <input
+                        value={parcelId}
+                        onChange={(e) => setParcelId(e.target.value)}
+                        placeholder="ex: 64065000AI0002"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-slate-200"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Appelle <code className="bg-slate-100 px-1 rounded">plu-from-parcelle</code> si renseigné.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={runLookup}
+                      disabled={lookupLoading}
+                      className="inline-flex items-center justify-center px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                    >
+                      {lookupLoading ? "Lecture PLU..." : "Lire règles PLU"}
+                    </button>
+
+                    <button
+                      onClick={resetLookup}
+                      className="inline-flex items-center justify-center px-4 py-2 rounded-xl bg-white text-slate-800 text-sm font-semibold border border-slate-200 hover:bg-slate-50 transition"
+                    >
+                      Réinitialiser
+                    </button>
+
+                    <button
+                      onClick={() => setShowDetails((v) => !v)}
+                      className="inline-flex items-center justify-center px-4 py-2 rounded-xl bg-white text-slate-700 text-sm font-semibold border border-slate-200 hover:bg-slate-50 transition"
+                    >
+                      {showDetails ? "Masquer détails" : "Afficher détails"}
+                    </button>
+                  </div>
+
+                  {lookupError && (
+                    <div className="mt-4 p-3 rounded-xl border border-red-200 bg-red-50 text-red-800 text-sm">
+                      {lookupError}
+                    </div>
+                  )}
+
+                  {lookupResult && (
+                    <div className="mt-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="p-4 rounded-2xl bg-white border border-slate-200/70">
+                          <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                            Zone PLU
+                          </p>
+                          <p className="mt-1 text-base font-semibold text-slate-900">
+                            {kpis?.zone_code ?? "—"}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-600">
+                            {kpis?.zone_libelle ?? "—"}
+                          </p>
+                        </div>
+
+                        <div className="p-4 rounded-2xl bg-white border border-slate-200/70">
+                          <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                            Reculs (extrait)
+                          </p>
+                          <p className="mt-2 text-xs text-slate-700 whitespace-pre-wrap">
+                            {kpis?.reculs ? pretty(kpis.reculs) : "—"}
+                          </p>
+                        </div>
+
+                        <div className="p-4 rounded-2xl bg-white border border-slate-200/70">
+                          <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                            Hauteur / Parking (extrait)
+                          </p>
+                          <p className="mt-2 text-xs text-slate-700 whitespace-pre-wrap">
+                            {kpis?.hauteur ? `Hauteur:\n${pretty(kpis.hauteur)}\n\n` : "Hauteur:\n—\n\n"}
+                            {kpis?.parking ? `Parking:\n${pretty(kpis.parking)}` : "Parking:\n—"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {showDetails && (
+                        <div className="mt-4 p-4 rounded-2xl bg-slate-950 text-slate-100 border border-slate-800 overflow-auto">
+                          <pre className="text-xs leading-relaxed">
+                            {pretty(lookupResult)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <p className="mt-4 text-[11px] text-slate-500">
+                    But : disposer d’un chemin “adresse/parcelle → zone/règles” immédiatement, même si l’ingestion PLU échoue.
+                    Ensuite, on normalisera les champs (reculs/hauteur/parking) en un format strict.
                   </p>
                 </div>
               </ContentSection>
@@ -296,12 +576,12 @@ const MimmozaDashboard: React.FC = () => {
 
               <Card className="border border-slate-200/80 shadow-sm">
                 <CardHeader>
-                  <CardTitle className="text-sm">Support & documentation interne</CardTitle>
+                  <CardTitle className="text-sm">
+                    Support & documentation interne
+                  </CardTitle>
                 </CardHeader>
                 <CardBody className="text-sm text-slate-600 space-y-2">
-                  <p>
-                    Tu pourras ajouter ici des liens vers :
-                  </p>
+                  <p>Tu pourras ajouter ici des liens vers :</p>
                   <ul className="list-disc list-inside space-y-1.5">
                     <li>La documentation interne Mimmoza</li>
                     <li>La liste des Edge Functions disponibles</li>

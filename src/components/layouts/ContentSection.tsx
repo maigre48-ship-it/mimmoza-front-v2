@@ -1,5 +1,4 @@
-﻿import React from "react";
-
+﻿
 interface ContentSectionProps {
   children: React.ReactNode;
   title?: string;
@@ -66,4 +65,5 @@ export const ContentSection: React.FC<ContentSectionProps> = ({
     </div>
   );
 };
+
 

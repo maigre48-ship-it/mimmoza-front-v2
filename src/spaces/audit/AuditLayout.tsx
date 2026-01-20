@@ -1,5 +1,6 @@
-// src/spaces/audit/AuditLayout.tsx
-import React from "react";
+﻿// src/spaces/audit/AuditLayout.tsx
+
+import { useLocation, useNavigate } from "react-router-dom";
 
 type AuditSection = {
   id: string;
@@ -12,63 +13,66 @@ type AuditSection = {
 const auditSections: AuditSection[] = [
   {
     id: "analyse",
-    icon: "🔍",
+    icon: "ðŸ”",
     title: "Analyse d'adresse",
     description:
-      "Saisie et analyse de l'adresse, géocodage, identification de la commune et du contexte urbain.",
+      "Saisie et analyse de l'adresse, gÃ©ocodage, identification de la commune et du contexte urbain.",
     anchor: "analyse-adresse",
   },
   {
     id: "carte-parcelles",
-    icon: "🗺️",
+    icon: "ðŸ—ºï¸",
     title: "Carte + Parcelles",
     description:
-      "Visualisation cartographique, sélection des parcelles voisines, contexte foncier et morphologie urbaine.",
+      "Visualisation cartographique, sÃ©lection des parcelles voisines, contexte foncier et morphologie urbaine.",
     anchor: "carte-parcelles",
   },
   {
     id: "cadastre",
-    icon: "📐",
-    title: "Données cadastrales",
+    icon: "ðŸ“",
+    title: "DonnÃ©es cadastrales",
     description:
-      "Surface de terrain, emprise bâtie, formes des parcelles, bâtiments existants, références cadastrales.",
+      "Surface de terrain, emprise bÃ¢tie, formes des parcelles, bÃ¢timents existants, rÃ©fÃ©rences cadastrales.",
     anchor: "donnees-cadastrales",
   },
   {
     id: "smartscore",
-    icon: "📊",
+    icon: "ðŸ“Š",
     title: "SmartScore complet (5 piliers)",
     description:
-      "Notation complète du bien sur les 5 piliers : emplacement, marché & liquidité, qualité du bien, rentabilité & prix, risques & complexité.",
+      "Notation complÃ¨te du bien sur les 5 piliers : emplacement, marchÃ© & liquiditÃ©, qualitÃ© du bien, rentabilitÃ© & prix, risques & complexitÃ©.",
     anchor: "smartscore-complet",
   },
   {
     id: "risques",
-    icon: "⚠️",
+    icon: "âš ï¸",
     title: "Risques naturels / climat / nuisances",
     description:
-      "Synthèse des risques : inondation, mouvements de terrain, recul du trait de côte, bruit, pollution, nuisances diverses.",
+      "SynthÃ¨se des risques : inondation, mouvements de terrain, recul du trait de cÃ´te, bruit, pollution, nuisances diverses.",
     anchor: "risques-naturels",
   },
   {
     id: "valeur",
-    icon: "💶",
+    icon: "ðŸ’¶",
     title: "Valeur estimative",
     description:
-      "Estimation de la valeur du bien et du terrain, fourchette de prix, cohérence par rapport au marché local.",
+      "Estimation de la valeur du bien et du terrain, fourchette de prix, cohÃ©rence par rapport au marchÃ© local.",
     anchor: "valeur-estimative",
   },
   {
     id: "dvf",
-    icon: "📈",
-    title: "Données DVF",
+    icon: "ðŸ“ˆ",
+    title: "DonnÃ©es DVF",
     description:
-      "Transactions comparables issues de DVF : prix au m², typologie des ventes, dynamique du secteur.",
+      "Transactions comparables issues de DVF : prix au mÂ², typologie des ventes, dynamique du secteur.",
     anchor: "donnees-dvf",
   },
 ];
 
 export const AuditLayout: React.FC = () => {
+  const nav = useNavigate();
+  const { search } = useLocation();
+
   return (
     <div className="min-h-screen flex flex-col lg:flex-row gap-6 px-4 py-4 lg:px-8 lg:py-6 bg-slate-950/40">
       {/* Sidebar de navigation des sections */}
@@ -82,9 +86,18 @@ export const AuditLayout: React.FC = () => {
               Audit immobilier
             </p>
             <p className="mt-2 text-xs text-slate-400">
-              Synthèse complète pour achats, refinancement, arbitrage ou
+              SynthÃ¨se complÃ¨te pour achats, refinancement, arbitrage ou
               assurance.
             </p>
+
+            {/* âœ… Bouton vers Promoteur (safe) */}
+            <button
+              type="button"
+              onClick={() => nav(`/promoteur${search}`)}
+              className="mt-4 w-full rounded-xl bg-emerald-500/15 border border-emerald-400/25 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/20 transition-colors"
+            >
+              Ouvrir Promoteur
+            </button>
           </div>
 
           <nav className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3 space-y-1">
@@ -107,10 +120,10 @@ export const AuditLayout: React.FC = () => {
 
       {/* Contenu principal */}
       <main className="flex-1 flex flex-col gap-6 pb-10">
-        {/* En-tête de page */}
+        {/* En-tÃªte de page */}
         <header className="bg-gradient-to-r from-slate-900/90 to-slate-800/80 border border-slate-800 rounded-2xl px-5 py-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-emerald-400">
-            Mimmoza · Espace Audit
+            Mimmoza Â· Espace Audit
           </p>
           <div className="mt-2 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
             <div>
@@ -118,16 +131,28 @@ export const AuditLayout: React.FC = () => {
                 Audit complet d&apos;un bien immobilier
               </h1>
               <p className="mt-1 text-sm text-slate-400">
-                Structure de page inspirée de Base44, adaptée à l&apos;écosystème
-                Mimmoza. Les blocs seront ensuite branchés sur les fonctions
-                Supabase (PLU, DVF, SmartScore, risques…).
+                Structure de page inspirÃ©e de Base44, adaptÃ©e Ã  l&apos;Ã©cosystÃ¨me
+                Mimmoza. Les blocs seront ensuite branchÃ©s sur les fonctions
+                Supabase (PLU, DVF, SmartScore, risquesâ€¦).
               </p>
             </div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-slate-900/80 border border-slate-700 px-3 py-1">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-xs font-medium text-slate-200">
-                Version layout · Audit v1
-              </span>
+
+            {/* Badge version + CTA promoteur (desktop) */}
+            <div className="flex items-center gap-2">
+              <div className="inline-flex items-center gap-2 rounded-full bg-slate-900/80 border border-slate-700 px-3 py-1">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-xs font-medium text-slate-200">
+                  Version layout Â· Audit v1
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => nav(`/promoteur${search}`)}
+                className="hidden md:inline-flex items-center rounded-full bg-emerald-500/15 border border-emerald-400/25 px-3 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/20 transition-colors"
+              >
+                Ouvrir Promoteur
+              </button>
             </div>
           </div>
         </header>
@@ -155,28 +180,29 @@ export const AuditLayout: React.FC = () => {
                   </div>
                 </div>
                 <span className="text-[10px] font-medium px-2 py-1 rounded-full bg-slate-800 text-slate-300 uppercase tracking-wide">
-                  À brancher
+                  Ã€ brancher
                 </span>
               </div>
 
-              {/* Contenu placeholder pour la V1 (à remplacer par les vrais composants) */}
+              {/* Contenu placeholder pour la V1 (Ã  remplacer par les vrais composants) */}
               <div className="mt-2 rounded-xl border border-dashed border-slate-700 bg-slate-900/70 px-4 py-3">
                 <p className="text-xs text-slate-400">
-                  Zone de contenu pour <span className="font-semibold">{section.title}</span>.
+                  Zone de contenu pour{" "}
+                  <span className="font-semibold">{section.title}</span>.
                   <br />
                   <span className="text-slate-500">
-                    Prochaine étape : remplacer ce bloc par les composants
-                    connectés (Supabase, Edge Functions, cartes, graphiques…).
+                    Prochaine Ã©tape : remplacer ce bloc par les composants
+                    connectÃ©s (Supabase, Edge Functions, cartes, graphiquesâ€¦).
                   </span>
                 </p>
               </div>
 
               <div className="mt-1 flex flex-wrap gap-2">
                 <span className="inline-flex items-center rounded-full bg-slate-800/80 px-2.5 py-1 text-[11px] text-slate-300">
-                  ● Layout prêt
+                  â— Layout prÃªt
                 </span>
                 <span className="inline-flex items-center rounded-full bg-slate-800/60 px-2.5 py-1 text-[11px] text-slate-400">
-                  ● Données à connecter
+                  â— DonnÃ©es Ã  connecter
                 </span>
               </div>
             </section>
@@ -186,3 +212,4 @@ export const AuditLayout: React.FC = () => {
     </div>
   );
 };
+

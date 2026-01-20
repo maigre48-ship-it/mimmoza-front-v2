@@ -1,0 +1,1088 @@
+﻿// src/spaces/particulier/pages/Estimation.tsx
+import React, { useMemo, useState } from "react";
+import { supabase } from "../../../supabaseClient";
+import { fetchBestDvfEstimate, fetchDvfComps } from "../../../lib/dvfEstimateApi";
+import type { DvfCompRow } from "../../../lib/dvfEstimateApi";
+
+type EstimationInputs = {
+  adresse: string;
+  ville: string;
+  codePostal: string;
+  surfaceM2: number;
+  pieces: number;
+  annee: number;
+  typeBien: "Appartement" | "Maison";
+  etat: "excellent" | "bon" | "a_rafraichir" | "a_renover";
+  exterieur: boolean;
+  parking: boolean;
+};
+
+type EstimationResult = {
+  prixBas: number;
+  prixCible: number;
+  prixHaut: number;
+  prixM2: number;
+  confiance: "Faible" | "Moyenne" | "Élevée";
+  notes: string[];
+};
+
+type DvfUi = {
+  scope: "cp" | "commune";
+  prixBas: number;
+  prixCible: number;
+  prixHaut: number;
+  prixM2: number | null;
+  transactions: number;
+  confiance: "Faible" | "Moyenne" | "Élevée";
+  meta?: any;
+};
+
+const DEFAULT_INPUTS: EstimationInputs = {
+  adresse: "",
+  ville: "",
+  codePostal: "",
+  surfaceM2: 60,
+  pieces: 3,
+  annee: 1990,
+  typeBien: "Appartement",
+  etat: "bon",
+  exterieur: false,
+  parking: false,
+};
+
+const LOCALSTORAGE_KEY = "particulier:lastAddress";
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function formatEUR(n: number) {
+  return new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
+function formatInt(n: number) {
+  return new Intl.NumberFormat("fr-FR", {
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
+function mapDvfConfidence(
+  c: "HIGH" | "MEDIUM" | "LOW" | null | undefined
+): EstimationResult["confiance"] {
+  if (c === "HIGH") return "Élevée";
+  if (c === "MEDIUM") return "Moyenne";
+  return "Faible";
+}
+
+/**
+ * Résout le code INSEE de la commune à partir de l'adresse.
+ * Méthode 1 (prioritaire) : API Adresse BAN
+ * Méthode 2 (fallback) : geo.api.gouv.fr
+ * Ne throw jamais, retourne null en cas d'échec.
+ */
+async function resolveCommuneInseeFromAddress({
+  address,
+  cp,
+  ville,
+}: {
+  address: string;
+  cp: string;
+  ville: string;
+}): Promise<string | null> {
+  // Méthode 1 : API Adresse BAN
+  try {
+    const query = [address, cp, ville].filter(Boolean).join(" ").trim();
+    if (query) {
+      const banUrl = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=1`;
+      const banRes = await fetch(banUrl);
+      if (banRes.ok) {
+        const banData = await banRes.json();
+        const citycode = banData?.features?.[0]?.properties?.citycode;
+        if (typeof citycode === "string" && citycode.length === 5) {
+          return citycode;
+        }
+      }
+    }
+  } catch {
+    // Silently continue to fallback
+  }
+
+  // Méthode 2 (fallback) : geo.api.gouv.fr
+  try {
+    if (cp || ville) {
+      const params = new URLSearchParams();
+      if (cp) params.set("codePostal", cp);
+      if (ville) params.set("nom", ville);
+      params.set("fields", "code,nom");
+      params.set("format", "json");
+
+      const geoUrl = `https://geo.api.gouv.fr/communes?${params.toString()}`;
+      const geoRes = await fetch(geoUrl);
+      if (geoRes.ok) {
+        const geoData = await geoRes.json();
+        const code = geoData?.[0]?.code;
+        if (typeof code === "string" && code.length === 5) {
+          return code;
+        }
+      }
+    }
+  } catch {
+    // Silently ignore
+  }
+
+  return null;
+}
+
+/**
+ * Estimation "offline" volontairement simple :
+ * - objectif : fournir une base UI stable
+ * - la vraie estimation pourra être branchée (DVF, comparables, etc.)
+ */
+function computeEstimation(i: EstimationInputs): EstimationResult {
+  const surface = clamp(Number(i.surfaceM2 || 0), 10, 1000);
+  const pieces = clamp(Number(i.pieces || 0), 1, 20);
+  const annee = clamp(Number(i.annee || 0), 1800, new Date().getFullYear());
+
+  // Base €/m² fictive (à remplacer par DVF / modèles)
+  let basePm2 = 3600;
+
+  // Ajustements simples
+  if (pieces <= 2) basePm2 += 150;
+  if (pieces >= 5) basePm2 -= 120;
+
+  const age = new Date().getFullYear() - annee;
+  if (age <= 10) basePm2 += 220;
+  else if (age <= 25) basePm2 += 80;
+  else if (age <= 45) basePm2 -= 80;
+  else basePm2 -= 180;
+
+  switch (i.etat) {
+    case "excellent":
+      basePm2 += 250;
+      break;
+    case "bon":
+      basePm2 += 0;
+      break;
+    case "a_rafraichir":
+      basePm2 -= 220;
+      break;
+    case "a_renover":
+      basePm2 -= 520;
+      break;
+  }
+
+  if (i.exterieur) basePm2 += 140;
+  if (i.parking) basePm2 += 90;
+
+  // Prix cible
+  const prixCible = Math.round(basePm2 * surface);
+
+  // Fourchette
+  const spread = 0.08 + (i.etat === "a_renover" ? 0.05 : 0);
+  const prixBas = Math.round(prixCible * (1 - spread));
+  const prixHaut = Math.round(prixCible * (1 + spread));
+
+  // Confiance
+  let score = 100;
+  if (!i.ville.trim() || !i.codePostal.trim()) score -= 20;
+  if (!i.adresse.trim()) score -= 10;
+  if (surface < 20) score -= 5;
+  if (i.etat === "a_renover") score -= 10;
+  score = clamp(score, 0, 100);
+
+  const confiance: EstimationResult["confiance"] =
+    score >= 80 ? "Élevée" : score >= 60 ? "Moyenne" : "Faible";
+
+  const notes: string[] = [];
+  notes.push("Cette estimation est indicative et sert de base UI (mode hors-ligne).");
+  notes.push("Branchements recommandés : DVF (transactions), comparables, et scoring quartier.");
+  if (i.etat === "a_renover") notes.push("Travaux importants : la dispersion de prix est plus élevée.");
+  if (!i.ville.trim() || !i.codePostal.trim()) notes.push("Ville / code postal manquants : confiance réduite.");
+
+  return {
+    prixBas,
+    prixCible,
+    prixHaut,
+    prixM2: Math.round(prixCible / surface),
+    confiance,
+    notes,
+  };
+}
+
+/**
+ * Sauvegarde l'adresse courante dans localStorage pour partage inter-onglets.
+ */
+function persistAddressToLocalStorage(
+  inputs: EstimationInputs,
+  communeInsee?: string | null
+) {
+  try {
+    const payload = {
+      address: inputs.adresse.trim(),
+      cp: inputs.codePostal.trim(),
+      ville: inputs.ville.trim(),
+      commune_insee: communeInsee ?? null,
+    };
+    localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify(payload));
+  } catch (e) {
+    // Silently ignore localStorage errors (e.g., quota exceeded, private mode)
+    console.warn("[Estimation] Unable to persist address to localStorage:", e);
+  }
+}
+
+const Estimation: React.FC = () => {
+  const [inputs, setInputs] = useState<EstimationInputs>(DEFAULT_INPUTS);
+
+  // DVF state
+  const [dvfLoading, setDvfLoading] = useState(false);
+  const [dvfError, setDvfError] = useState<string | null>(null);
+  const [dvfBest, setDvfBest] = useState<DvfUi | null>(null);
+  const [dvfDetails, setDvfDetails] = useState<{ cp: DvfUi | null; commune: DvfUi | null }>({
+    cp: null,
+    commune: null,
+  });
+
+  // DVF Comps state
+  const [dvfComps, setDvfComps] = useState<DvfCompRow[]>([]);
+  const [dvfCompsError, setDvfCompsError] = useState<string | null>(null);
+
+  const offlineResult = useMemo(() => computeEstimation(inputs), [inputs]);
+
+  // Résultat affiché : DVF si dispo, sinon offline
+  const displayedResult: EstimationResult = useMemo(() => {
+    if (!dvfBest) return offlineResult;
+
+    const notes: string[] = [];
+    notes.push(
+      `Estimation DVF basée sur ${dvfBest.transactions} transaction(s) (périmètre ${
+        dvfBest.scope === "cp" ? "code postal" : "commune"
+      }).`
+    );
+    if (dvfBest.prixM2 != null) {
+      notes.push(`Référence : ~${formatInt(dvfBest.prixM2)} €/m² (médiane).`);
+    }
+    notes.push("Couverture actuelle DVF : 2025 S1 (01/01 → 30/06).");
+    notes.push("Astuce : ajuste le type de bien et/ou enlève le filtre pièces si tu manques de transactions.");
+    if (!inputs.codePostal.trim()) notes.push("Code postal manquant : DVF nécessite un code postal.");
+    if (!inputs.surfaceM2 || inputs.surfaceM2 <= 0) notes.push("Surface invalide : DVF nécessite une surface > 0.");
+
+    return {
+      prixBas: dvfBest.prixBas,
+      prixCible: dvfBest.prixCible,
+      prixHaut: dvfBest.prixHaut,
+      prixM2: dvfBest.prixM2 ?? offlineResult.prixM2,
+      confiance: dvfBest.confiance,
+      notes,
+    };
+  }, [dvfBest, offlineResult, inputs.codePostal, inputs.surfaceM2]);
+
+  const handleComputeDvf = async () => {
+    setDvfLoading(true);
+    setDvfError(null);
+    setDvfBest(null);
+    setDvfDetails({ cp: null, commune: null });
+    setDvfComps([]);
+    setDvfCompsError(null);
+
+    // --- RESOLVE INSEE BEFORE PERSISTING ---
+    let resolvedInsee: string | null = null;
+    try {
+      resolvedInsee = await resolveCommuneInseeFromAddress({
+        address: inputs.adresse.trim(),
+        cp: inputs.codePostal.trim(),
+        ville: inputs.ville.trim(),
+      });
+    } catch {
+      // Silently ignore
+    }
+
+    // --- PERSIST ADDRESS TO LOCALSTORAGE ---
+    // On sauvegarde l'adresse dès le lancement du calcul DVF
+    // pour que l'onglet Quartier puisse la récupérer.
+    persistAddressToLocalStorage(inputs, resolvedInsee);
+
+    try {
+      const cp = (inputs.codePostal ?? "").toString().trim();
+      const surface = Number(inputs.surfaceM2 || 0);
+
+      if (!cp) {
+        setDvfError("Code postal manquant : renseigne le code postal pour calculer une estimation DVF.");
+        return;
+      }
+      if (!Number.isFinite(surface) || surface <= 0) {
+        setDvfError("Surface invalide : renseigne une surface habitable > 0 pour calculer une estimation DVF.");
+        return;
+      }
+
+      // Particulier : on privilégie CP. Utilise l'INSEE résolu si disponible.
+      const baseParams = {
+        commune_insee: resolvedInsee || "00000",
+        code_postal: cp,
+        surface_m2: surface,
+        pieces: Number.isFinite(inputs.pieces) && inputs.pieces > 0 ? inputs.pieces : null,
+        months: 24,
+      };
+
+      // 1) Tentative avec type (Maison/Appartement)
+      let res = await fetchBestDvfEstimate(supabase, {
+        ...baseParams,
+        type_local: inputs.typeBien,
+      });
+
+      // 2) Fallback si pas de résultat: réessayer sans type_local
+      if (!res.best) {
+        res = await fetchBestDvfEstimate(supabase, {
+          ...baseParams,
+          type_local: null,
+        });
+      }
+
+      const toUi = (scope: "cp" | "commune", r: any): DvfUi | null => {
+        if (!r?.success) return null;
+        const n = r?.stats?.transactions_count ?? 0;
+
+        const low = r?.estimate?.low ?? null;
+        const target = r?.estimate?.target ?? null;
+        const high = r?.estimate?.high ?? null;
+
+        if (low == null || target == null || high == null) return null;
+
+        return {
+          scope,
+          prixBas: Number(low),
+          prixCible: Number(target),
+          prixHaut: Number(high),
+          prixM2: r?.stats?.price_m2_median ?? null,
+          transactions: n,
+          confiance: mapDvfConfidence(r?.confidence),
+          meta: r?.meta,
+        };
+      };
+
+      const cpUi = res.cp ? toUi("cp", res.cp) : null;
+      const communeUi = res.commune ? toUi("commune", res.commune) : null;
+
+      setDvfDetails({ cp: cpUi, commune: communeUi });
+
+      // --- UPDATE LOCALSTORAGE WITH COMMUNE INSEE IF AVAILABLE FROM DVF ---
+      // Si on a récupéré un INSEE via DVF et qu'on n'avait pas déjà un resolvedInsee, on met à jour localStorage
+      const retrievedInsee = res.best?.result?.meta?.commune_insee ?? null;
+      if (retrievedInsee && retrievedInsee !== "00000" && !resolvedInsee) {
+        persistAddressToLocalStorage(inputs, retrievedInsee);
+      }
+
+      if (res.best) {
+        const bestUi = toUi(res.best.scope, res.best.result);
+        if (bestUi) {
+          setDvfBest(bestUi);
+
+          // Fetch comps after successful estimation
+          try {
+            const compsParams = {
+              commune_insee: resolvedInsee || retrievedInsee || "00000",
+              code_postal: cp,
+              scope: (res.best.scope === "commune" ? "commune" : "cp") as "commune" | "cp",
+              type_local: inputs.typeBien,
+              pieces: Number.isFinite(inputs.pieces) && inputs.pieces > 0 ? inputs.pieces : null,
+              months: 24,
+              limit: 30,
+            };
+
+            // Si on a un INSEE réel côté meta, on le réutilise (uniquement si scope commune)
+            if (res.best.scope === "commune" && res.best.result?.meta?.commune_insee) {
+              compsParams.commune_insee = res.best.result.meta.commune_insee;
+            }
+
+            const compsResult = await fetchDvfComps(supabase, compsParams);
+
+            if (!compsResult.success) {
+              setDvfComps([]);
+              setDvfCompsError(compsResult.message ?? "Erreur RPC DVF comps.");
+            } else {
+              setDvfComps(compsResult.data);
+            }
+          } catch (compsErr: any) {
+            setDvfComps([]);
+            setDvfCompsError(compsErr?.message ?? "Erreur lors du chargement des comparables.");
+          }
+        } else {
+          setDvfError("Réponse DVF invalide (pas de fourchette calculable).");
+        }
+      } else {
+        setDvfError("Données DVF insuffisantes pour estimer. Élargis le périmètre (CP) ou enlève le filtre pièces.");
+      }
+    } catch (e: any) {
+      setDvfError(e?.message ?? String(e));
+    } finally {
+      setDvfLoading(false);
+    }
+  };
+
+  return (
+    <div style={pageStyle}>
+      <div style={headerStyle}>
+        <div>
+          <div style={kickerStyle}>ÉVALUATION</div>
+          <h1 style={titleStyle}>Estimation</h1>
+          <p style={subtitleStyle}>
+            Saisis les caractéristiques du bien pour obtenir une fourchette de valeur. (Estimation DVF disponible via le
+            bouton Calculer.)
+          </p>
+        </div>
+      </div>
+
+      <div style={gridStyle}>
+        {/* Form */}
+        <div style={cardStyle}>
+          <h2 style={cardTitleStyle}>Caractéristiques du bien</h2>
+
+          <div style={formGridStyle}>
+            <Field label="Adresse">
+              <input
+                style={inputStyle}
+                value={inputs.adresse}
+                onChange={(e) => setInputs((p) => ({ ...p, adresse: e.target.value }))}
+                placeholder="12 rue Exemple"
+              />
+            </Field>
+
+            <Field label="Ville">
+              <input
+                style={inputStyle}
+                value={inputs.ville}
+                onChange={(e) => setInputs((p) => ({ ...p, ville: e.target.value }))}
+                placeholder="Biarritz"
+              />
+            </Field>
+
+            <Field label="Code postal">
+              <input
+                style={inputStyle}
+                value={inputs.codePostal}
+                onChange={(e) => setInputs((p) => ({ ...p, codePostal: e.target.value }))}
+                placeholder="64200"
+              />
+            </Field>
+
+            <Field label="Surface (m²)">
+              <input
+                style={inputStyle}
+                type="number"
+                min={10}
+                max={1000}
+                value={inputs.surfaceM2}
+                onChange={(e) => setInputs((p) => ({ ...p, surfaceM2: Number(e.target.value || 0) }))}
+              />
+            </Field>
+
+            <Field label="Pièces">
+              <input
+                style={inputStyle}
+                type="number"
+                min={1}
+                max={20}
+                value={inputs.pieces}
+                onChange={(e) => setInputs((p) => ({ ...p, pieces: Number(e.target.value || 0) }))}
+              />
+            </Field>
+
+            <Field label="Année de construction">
+              <input
+                style={inputStyle}
+                type="number"
+                min={1800}
+                max={new Date().getFullYear()}
+                value={inputs.annee}
+                onChange={(e) => setInputs((p) => ({ ...p, annee: Number(e.target.value || 0) }))}
+              />
+            </Field>
+
+            <Field label="Type de bien (DVF)">
+              <select
+                style={inputStyle}
+                value={inputs.typeBien}
+                onChange={(e) => setInputs((p) => ({ ...p, typeBien: e.target.value as EstimationInputs["typeBien"] }))}
+              >
+                <option value="Appartement">Appartement</option>
+                <option value="Maison">Maison</option>
+              </select>
+            </Field>
+
+            <Field label="État">
+              <select
+                style={inputStyle}
+                value={inputs.etat}
+                onChange={(e) => setInputs((p) => ({ ...p, etat: e.target.value as EstimationInputs["etat"] }))}
+              >
+                <option value="excellent">Excellent</option>
+                <option value="bon">Bon</option>
+                <option value="a_rafraichir">À rafraîchir</option>
+                <option value="a_renover">À rénover</option>
+              </select>
+            </Field>
+
+            <Field label="Extérieur">
+              <Toggle checked={inputs.exterieur} onChange={(v) => setInputs((p) => ({ ...p, exterieur: v }))} />
+            </Field>
+
+            <Field label="Parking">
+              <Toggle checked={inputs.parking} onChange={(v) => setInputs((p) => ({ ...p, parking: v }))} />
+            </Field>
+          </div>
+
+          <div style={actionsStyle}>
+            <button
+              type="button"
+              style={btnSecondaryStyle}
+              onClick={() => {
+                setInputs(DEFAULT_INPUTS);
+                setDvfError(null);
+                setDvfBest(null);
+                setDvfDetails({ cp: null, commune: null });
+                setDvfComps([]);
+                setDvfCompsError(null);
+              }}
+            >
+              Réinitialiser
+            </button>
+            <button type="button" style={btnPrimaryStyle} onClick={handleComputeDvf} disabled={dvfLoading}>
+              {dvfLoading ? "Calcul DVF..." : "Calculer (DVF)"}
+            </button>
+          </div>
+
+          {/* DVF details (optional) */}
+          {(dvfDetails.cp || dvfDetails.commune || dvfError || dvfComps.length > 0 || dvfCompsError) && (
+            <div style={dvfBoxStyle}>
+              <div style={dvfTitleRowStyle}>
+                <div style={dvfTitleStyle}>Détails DVF</div>
+                {dvfBest && (
+                  <div style={dvfBadgeStyle}>
+                    Source retenue : {dvfBest.scope === "cp" ? "Code postal" : "Commune"}
+                  </div>
+                )}
+              </div>
+
+              {dvfError && <div style={dvfErrorStyle}>{dvfError}</div>}
+
+              {!dvfError && (dvfDetails.cp || dvfDetails.commune) && (
+                <div style={dvfDetailsGridStyle}>
+                  {dvfDetails.cp && (
+                    <div style={dvfDetailCardStyle}>
+                      <div style={dvfDetailLabelStyle}>Code postal</div>
+                      <div style={dvfDetailLineStyle}>
+                        <strong>{dvfDetails.cp.transactions}</strong> ventes •{" "}
+                        <strong>{dvfDetails.cp.prixM2 == null ? "—" : `${formatInt(dvfDetails.cp.prixM2)} €/m²`}</strong>{" "}
+                        • {dvfDetails.cp.confiance}
+                      </div>
+                    </div>
+                  )}
+                  {dvfDetails.commune && (
+                    <div style={dvfDetailCardStyle}>
+                      <div style={dvfDetailLabelStyle}>Commune</div>
+                      <div style={dvfDetailLineStyle}>
+                        <strong>{dvfDetails.commune.transactions}</strong> ventes •{" "}
+                        <strong>
+                          {dvfDetails.commune.prixM2 == null ? "—" : `${formatInt(dvfDetails.commune.prixM2)} €/m²`}
+                        </strong>{" "}
+                        • {dvfDetails.commune.confiance}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* DVF Comps Table */}
+              {dvfCompsError && <div style={dvfCompsErrorStyle}>{dvfCompsError}</div>}
+
+              {dvfComps.length > 0 && (
+                <div style={compsContainerStyle}>
+                  <div style={compsSummaryStyle}>
+                    {dvfComps.length} transaction{dvfComps.length > 1 ? "s" : ""} listée
+                    {dvfComps.length > 1 ? "s" : ""}
+                    {dvfBest && ` (sur ${dvfBest.transactions} ventes)`}
+                  </div>
+                  <div style={tableWrapperStyle}>
+                    <table style={tableStyle}>
+                      <thead>
+                        <tr>
+                          <th style={thStyle}>Date</th>
+                          <th style={thStyle}>Commune</th>
+                          <th style={thStyle}>CP</th>
+                          <th style={thStyle}>Type</th>
+                          <th style={thStyle}>Pièces</th>
+                          <th style={thStyleRight}>Surface (m²)</th>
+                          <th style={thStyleRight}>Valeur (€)</th>
+                          <th style={thStyleRight}>Prix €/m²</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dvfComps.map((comp, idx) => {
+                          const surface = Number(comp.surface_reelle_bati) || 0;
+                          const valeur = Number(comp.valeur_fonciere) || 0;
+                          const pm2 = Number(comp.price_m2) || 0;
+                          const pieces = comp.nombre_pieces_principales;
+
+                          return (
+                            <tr key={idx} style={idx % 2 === 0 ? trEvenStyle : trOddStyle}>
+                              <td style={tdStyle}>{comp.date_mutation ?? "—"}</td>
+                              <td style={tdStyle}>{comp.commune ?? "—"}</td>
+                              <td style={tdStyle}>{comp.code_postal ?? "—"}</td>
+                              <td style={tdStyle}>{comp.type_local ?? "—"}</td>
+                              <td style={tdStyle}>{pieces != null ? pieces : "—"}</td>
+                              <td style={tdStyleRight}>{surface > 0 ? formatInt(Math.round(surface)) : "—"}</td>
+                              <td style={tdStyleRight}>{valeur > 0 ? formatEUR(valeur) : "—"}</td>
+                              <td style={tdStyleRight}>{pm2 > 0 ? `${formatInt(Math.round(pm2))} €/m²` : "—"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {dvfBest && dvfComps.length === 0 && !dvfCompsError && (
+                <div style={noCompsStyle}>Aucune transaction comparable à afficher.</div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Result */}
+        <div style={cardStyle}>
+          <h2 style={cardTitleStyle}>Résultat</h2>
+
+          <div style={kpiRowStyle}>
+            <Kpi label="Fourchette basse" value={formatEUR(displayedResult.prixBas)} />
+            <Kpi label="Prix cible" value={formatEUR(displayedResult.prixCible)} />
+            <Kpi label="Fourchette haute" value={formatEUR(displayedResult.prixHaut)} />
+            <Kpi label="Prix / m²" value={`${formatInt(displayedResult.prixM2)} €/m²`} />
+          </div>
+
+          <div style={confidenceBoxStyle}>
+            <div style={confidenceLabelStyle}>Niveau de confiance</div>
+            <div style={confidenceValueStyle}>{displayedResult.confiance}</div>
+          </div>
+
+          <div style={notesStyle}>
+            <div style={notesTitleStyle}>Notes</div>
+            <ul style={notesListStyle}>
+              {displayedResult.notes.map((n, idx) => (
+                <li key={idx} style={notesItemStyle}>
+                  {n}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Small hint */}
+          <div style={hintStyle}>
+            Astuce : renseigne le code postal, la surface et le type de bien, puis clique <strong>Calculer (DVF)</strong>.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Estimation;
+
+// -----------------------------------------------------------------------------
+// Small UI components
+// -----------------------------------------------------------------------------
+
+const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => {
+  return (
+    <label style={fieldStyle}>
+      <div style={labelStyle}>{label}</div>
+      {children}
+    </label>
+  );
+};
+
+const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void }> = ({ checked, onChange }) => {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      style={{
+        ...toggleStyle,
+        background: checked ? "#0ea5e9" : "#e2e8f0",
+      }}
+      aria-pressed={checked}
+    >
+      <span
+        style={{
+          ...toggleKnobStyle,
+          transform: checked ? "translateX(18px)" : "translateX(0px)",
+        }}
+      />
+    </button>
+  );
+};
+
+const Kpi: React.FC<{ label: string; value: string }> = ({ label, value }) => {
+  return (
+    <div style={kpiStyle}>
+      <div style={kpiLabelStyle}>{label}</div>
+      <div style={kpiValueStyle}>{value}</div>
+    </div>
+  );
+};
+
+// -----------------------------------------------------------------------------
+// Styles
+// -----------------------------------------------------------------------------
+
+const pageStyle: React.CSSProperties = {
+  minHeight: "100vh",
+  padding: "28px 18px",
+  background: "linear-gradient(135deg, #f8fafc 0%, #ffffff 45%, #eef2ff 100%)",
+  color: "#0f172a",
+  fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
+};
+
+const headerStyle: React.CSSProperties = {
+  maxWidth: 1200,
+  margin: "0 auto 18px auto",
+  display: "flex",
+  alignItems: "flex-end",
+  justifyContent: "space-between",
+  gap: 12,
+};
+
+const kickerStyle: React.CSSProperties = {
+  fontSize: 12,
+  letterSpacing: 1.2,
+  fontWeight: 800,
+  color: "#64748b",
+};
+
+const titleStyle: React.CSSProperties = {
+  fontSize: 30,
+  lineHeight: 1.1,
+  margin: "6px 0 6px 0",
+};
+
+const subtitleStyle: React.CSSProperties = {
+  margin: 0,
+  color: "#475569",
+  maxWidth: 760,
+};
+
+const gridStyle: React.CSSProperties = {
+  maxWidth: 1200,
+  margin: "0 auto",
+  display: "grid",
+  gridTemplateColumns: "1.05fr 0.95fr",
+  gap: 16,
+};
+
+const cardStyle: React.CSSProperties = {
+  background: "#ffffff",
+  borderRadius: 14,
+  border: "1px solid rgba(15, 23, 42, 0.08)",
+  boxShadow: "0 12px 35px rgba(2, 6, 23, 0.06)",
+  padding: 18,
+};
+
+const cardTitleStyle: React.CSSProperties = {
+  fontSize: 16,
+  fontWeight: 800,
+  margin: "0 0 12px 0",
+};
+
+const formGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 12,
+};
+
+const fieldStyle: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+};
+
+const labelStyle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: "#334155",
+};
+
+const inputStyle: React.CSSProperties = {
+  height: 40,
+  borderRadius: 10,
+  border: "1px solid rgba(15, 23, 42, 0.12)",
+  padding: "0 12px",
+  outline: "none",
+  background: "#ffffff",
+};
+
+const actionsStyle: React.CSSProperties = {
+  marginTop: 14,
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: 10,
+};
+
+const btnPrimaryStyle: React.CSSProperties = {
+  height: 40,
+  padding: "0 14px",
+  borderRadius: 10,
+  border: "1px solid rgba(2, 132, 199, 0.35)",
+  background: "#0ea5e9",
+  color: "#ffffff",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const btnSecondaryStyle: React.CSSProperties = {
+  height: 40,
+  padding: "0 14px",
+  borderRadius: 10,
+  border: "1px solid rgba(15, 23, 42, 0.12)",
+  background: "#ffffff",
+  color: "#0f172a",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const kpiRowStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 10,
+};
+
+const kpiStyle: React.CSSProperties = {
+  padding: 12,
+  borderRadius: 12,
+  background: "#f8fafc",
+  border: "1px solid rgba(15, 23, 42, 0.06)",
+};
+
+const kpiLabelStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: "#64748b",
+  fontWeight: 700,
+};
+
+const kpiValueStyle: React.CSSProperties = {
+  marginTop: 6,
+  fontSize: 18,
+  fontWeight: 900,
+};
+
+const confidenceBoxStyle: React.CSSProperties = {
+  marginTop: 12,
+  padding: 12,
+  borderRadius: 12,
+  border: "1px solid rgba(15, 23, 42, 0.08)",
+  background: "linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+};
+
+const confidenceLabelStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: "#64748b",
+  fontWeight: 800,
+};
+
+const confidenceValueStyle: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 900,
+};
+
+const notesStyle: React.CSSProperties = {
+  marginTop: 12,
+  paddingTop: 10,
+  borderTop: "1px solid rgba(15, 23, 42, 0.08)",
+};
+
+const notesTitleStyle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 900,
+  color: "#334155",
+  marginBottom: 8,
+};
+
+const notesListStyle: React.CSSProperties = {
+  margin: 0,
+  paddingLeft: 18,
+  color: "#475569",
+};
+
+const notesItemStyle: React.CSSProperties = {
+  marginBottom: 6,
+};
+
+const toggleStyle: React.CSSProperties = {
+  width: 44,
+  height: 26,
+  borderRadius: 999,
+  border: "1px solid rgba(15, 23, 42, 0.10)",
+  position: "relative",
+  cursor: "pointer",
+  padding: 3,
+};
+
+const toggleKnobStyle: React.CSSProperties = {
+  width: 20,
+  height: 20,
+  borderRadius: 999,
+  background: "#ffffff",
+  boxShadow: "0 6px 16px rgba(2, 6, 23, 0.18)",
+  display: "block",
+  transition: "transform 140ms ease",
+};
+
+// DVF styles
+const dvfBoxStyle: React.CSSProperties = {
+  marginTop: 12,
+  padding: 12,
+  borderRadius: 12,
+  border: "1px solid rgba(15, 23, 42, 0.08)",
+  background: "linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)",
+};
+
+const dvfTitleRowStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 10,
+};
+
+const dvfTitleStyle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 900,
+  color: "#334155",
+};
+
+const dvfBadgeStyle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 800,
+  color: "#0f172a",
+  background: "rgba(14,165,233,0.12)",
+  border: "1px solid rgba(14,165,233,0.22)",
+  padding: "6px 10px",
+  borderRadius: 999,
+};
+
+const dvfErrorStyle: React.CSSProperties = {
+  marginTop: 10,
+  fontSize: 13,
+  color: "#b91c1c",
+};
+
+const dvfDetailsGridStyle: React.CSSProperties = {
+  marginTop: 10,
+  display: "grid",
+  gridTemplateColumns: "1fr",
+  gap: 10,
+};
+
+const dvfDetailCardStyle: React.CSSProperties = {
+  padding: 10,
+  borderRadius: 12,
+  background: "#ffffff",
+  border: "1px solid rgba(15, 23, 42, 0.06)",
+};
+
+const dvfDetailLabelStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: "#64748b",
+  fontWeight: 800,
+};
+
+const dvfDetailLineStyle: React.CSSProperties = {
+  marginTop: 6,
+  fontSize: 13,
+  color: "#334155",
+};
+
+const hintStyle: React.CSSProperties = {
+  marginTop: 12,
+  fontSize: 12,
+  color: "#64748b",
+};
+
+// Comps table styles
+const dvfCompsErrorStyle: React.CSSProperties = {
+  marginTop: 10,
+  fontSize: 12,
+  color: "#b45309",
+  fontStyle: "italic",
+};
+
+const compsContainerStyle: React.CSSProperties = {
+  marginTop: 14,
+  paddingTop: 12,
+  borderTop: "1px solid rgba(15, 23, 42, 0.08)",
+};
+
+const compsSummaryStyle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: "#475569",
+  marginBottom: 10,
+};
+
+const tableWrapperStyle: React.CSSProperties = {
+  overflowX: "auto",
+  WebkitOverflowScrolling: "touch",
+};
+
+const tableStyle: React.CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
+  fontSize: 12,
+  minWidth: 650,
+};
+
+const thStyle: React.CSSProperties = {
+  textAlign: "left",
+  padding: "8px 6px",
+  fontWeight: 800,
+  color: "#334155",
+  borderBottom: "2px solid rgba(15, 23, 42, 0.12)",
+  whiteSpace: "nowrap",
+};
+
+const thStyleRight: React.CSSProperties = {
+  ...thStyle,
+  textAlign: "right",
+};
+
+const tdStyle: React.CSSProperties = {
+  padding: "7px 6px",
+  color: "#475569",
+  borderBottom: "1px solid rgba(15, 23, 42, 0.06)",
+  whiteSpace: "nowrap",
+};
+
+const tdStyleRight: React.CSSProperties = {
+  ...tdStyle,
+  textAlign: "right",
+};
+
+const trEvenStyle: React.CSSProperties = {
+  background: "#ffffff",
+};
+
+const trOddStyle: React.CSSProperties = {
+  background: "#f8fafc",
+};
+
+const noCompsStyle: React.CSSProperties = {
+  marginTop: 12,
+  fontSize: 12,
+  color: "#64748b",
+  fontStyle: "italic",
+};

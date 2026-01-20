@@ -1,5 +1,4 @@
-﻿import React from "react";
-
+﻿
 interface LoadingStateProps {
   text?: string;
   fullScreen?: boolean;
@@ -19,4 +18,5 @@ export const LoadingState: React.FC<LoadingStateProps> = ({ text = "Chargement..
 
   return <div className="py-12">{content}</div>;
 };
+
 

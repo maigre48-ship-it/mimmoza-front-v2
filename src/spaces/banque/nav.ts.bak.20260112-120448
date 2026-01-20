@@ -1,0 +1,61 @@
+﻿import type { NavSection } from "../../components/layout/BaseShellLayout";
+
+export const BANQUE_SIDEBAR: NavSection[] = [
+  {
+    title: "Portefeuille",
+    items: [
+      { label: "Tableau de bord", to: "/banque" },
+      { label: "Dossiers", to: "/banque/dossiers" },
+      { label: "Engagements", to: "/banque/engagements" },
+    ],
+  },
+  {
+    title: "Origination",
+    items: [
+      { label: "Nouvelle demande", to: "/banque/origination" },
+      { label: "Import dossier", to: "/banque/import" },
+      { label: "Conformité", to: "/banque/conformite" },
+    ],
+  },
+  {
+    title: "Analyse",
+    items: [
+      { label: "Scoring", to: "/banque/analyse" },
+      { label: "Marché", to: "/banque/marche" },
+      { label: "Risques", to: "/banque/risques" },
+      { label: "Cash-flows", to: "/banque/cashflows" },
+    ],
+  },
+  {
+    title: "Garanties",
+    items: [
+      { label: "Sûretés", to: "/banque/garanties" },
+      { label: "Collatéral", to: "/banque/collateral" },
+      { label: "Stress tests", to: "/banque/stress" },
+    ],
+  },
+  {
+    title: "Décision",
+    items: [
+      { label: "Note de crédit", to: "/banque/decision" },
+      { label: "Conditions", to: "/banque/conditions" },
+      { label: "Comité", to: "/banque/comite" },
+    ],
+  },
+  {
+    title: "Monitoring",
+    items: [
+      { label: "Alertes", to: "/banque/monitoring" },
+      { label: "Revues", to: "/banque/revues" },
+      { label: "Reporting", to: "/banque/reporting" },
+    ],
+  },
+  {
+    title: "Documents",
+    items: [
+      { label: "Documents", to: "/banque/documents" },
+      { label: "Exports", to: "/banque/exports" },
+      { label: "Historique", to: "/banque/historique" },
+    ],
+  },
+];

@@ -1,0 +1,58 @@
+﻿export type HistoryType =
+  | "system"
+  | "projet_update"
+  | "favori_add"
+  | "favori_remove"
+  | "scenario_add"
+  | "scenario_remove"
+  | "dossier_check"
+  | "dossier_doc_add"
+  | "dossier_doc_remove"
+  | "export_copy"
+  | "document_add"
+  | "document_remove"
+  | "note";
+
+export type HistoryEvent = {
+  id: string;
+  type: HistoryType;
+  title: string;
+  details: string;
+  createdAt: string; // ISO
+};
+
+const HISTORY_KEY = "mimmoza.particulier.historique.v1";
+
+function safeId() {
+  return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function loadHistory(): HistoryEvent[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as HistoryEvent[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(items: HistoryEvent[]) {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(items));
+  } catch {
+    // ignore
+  }
+}
+
+export function logParticulierEvent(evt: Omit<HistoryEvent, "id" | "createdAt">) {
+  const current = loadHistory();
+  const next: HistoryEvent = {
+    id: safeId(),
+    createdAt: new Date().toISOString(),
+    ...evt,
+  };
+  const merged = [next, ...current].slice(0, 500);
+  saveHistory(merged);
+}

@@ -1,5 +1,4 @@
-﻿import React from "react";
-
+﻿
 interface EmptyStateProps {
   icon?: React.ReactNode;
   title: string;
@@ -21,4 +20,5 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ icon, title, description
     </div>
   );
 };
+
 

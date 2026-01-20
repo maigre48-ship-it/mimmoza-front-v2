@@ -1,0 +1,145 @@
+﻿import React, { useEffect, useMemo, useState } from "react";
+import { fetchQuartierSmartscore, type QuartierResponse } from "./quartierApi";
+
+// ⚠️ Adapte cet import à TON projet (là où tu initialises ton client Supabase)
+// Exemples possibles selon ton codebase :
+// - import { supabase } from "../../../supabaseClient";
+// - import { useSupabase } from "../../../lib/supabase/useSupabase";
+import { supabase } from "../../../supabaseClient";
+
+const cardStyle: React.CSSProperties = {
+  background: "rgba(255,255,255,0.9)",
+  border: "1px solid rgba(15,23,42,0.08)",
+  borderRadius: 16,
+  padding: 16,
+  boxShadow: "0 10px 30px rgba(2,6,23,0.06)",
+};
+
+const gridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+  gap: 12,
+  marginTop: 16,
+};
+
+export default function QuartierPage() {
+  const [loading, setLoading] = useState(false);
+  const [res, setRes] = useState<QuartierResponse | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  // TODO: remplace ces valeurs par le contexte réel (adresse/parcelle sélectionnée dans Particulier)
+  const input = useMemo(
+    () => ({
+      parcel_id: null as string | null,
+      address: "10 rue de Rivoli",
+      cp: "75004",
+      ville: "Paris",
+      radius_km: 2,
+      horizon_months: 24,
+      debug: false,
+    }),
+    []
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      setLoading(true);
+      setErr(null);
+
+      try {
+        const out = await fetchQuartierSmartscore(supabase, input);
+        if (cancelled) return;
+
+        if (!out?.success) {
+          setErr(out?.error || "SmartScore indisponible");
+        }
+        setRes(out);
+      } catch (e: any) {
+        if (!cancelled) setErr(String(e?.message || e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [input]);
+
+  const score = res?.smartscore?.globalScore ?? null;
+
+  const transport = res?.enrichedModules?.transports ?? null;
+  const ecolesScore = null;
+  const commoditesScore = res?.smartscore?.pillarScores?.emplacement_env ?? null;
+
+  const servicesRuraux = null;
+  const health = null;
+
+  const zoneType = null;
+
+  return (
+    <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
+        <div>
+          <h1 style={{ margin: 0 }}>Quartier</h1>
+          <div style={{ opacity: 0.75, marginTop: 4 }}>
+            Score calculé automatiquement à partir des données disponibles (BPE, santé, écoles, transports, risques).
+          </div>
+        </div>
+
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 14, opacity: 0.7 }}>Zone</div>
+          <div style={{ fontWeight: 700 }}>{zoneType ? zoneType.toUpperCase() : "N/A"}</div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 16, ...cardStyle }}>
+        <div style={{ fontSize: 14, opacity: 0.7 }}>Score Quartier</div>
+        <div style={{ fontSize: 40, fontWeight: 800, lineHeight: 1.05 }}>
+          {loading ? "Calcul..." : score != null ? `${score}/100` : "N/A"}
+        </div>
+        {err && <div style={{ marginTop: 10, color: "crimson" }}>{err}</div>}
+      </div>
+
+      <div style={gridStyle}>
+        <div style={cardStyle}>
+          <h3 style={{ marginTop: 0 }}>Équipements & services</h3>
+          <div>Commodités : <b>{commoditesScore != null ? `${commoditesScore}/100` : "N/A"}</b></div>
+          <div>Écoles : <b>{ecolesScore != null ? `${ecolesScore}/100` : "N/A"}</b></div>
+          <div style={{ marginTop: 10, opacity: 0.9 }}>
+            <div>Pharmacie : <b>{servicesRuraux?.pharmacie_proche?.distance_km != null ? `${servicesRuraux.pharmacie_proche.distance_km} km` : "N/A"}</b></div>
+            <div>Médecin : <b>{servicesRuraux?.medecin_proche?.distance_km != null ? `${servicesRuraux.medecin_proche.distance_km} km` : "N/A"}</b></div>
+            <div>Commerce alim. : <b>{
+              (servicesRuraux?.supermarche_proche || servicesRuraux?.hypermarche_proche || servicesRuraux?.superette_proche)?.distance_km != null
+                ? `${(servicesRuraux.supermarche_proche || servicesRuraux.hypermarche_proche || servicesRuraux.superette_proche).distance_km} km`
+                : "N/A"
+            }</b></div>
+          </div>
+        </div>
+
+        <div style={cardStyle}>
+          <h3 style={{ marginTop: 0 }}>Transports & accessibilité</h3>
+          {transport ? (
+            <>
+              <div>Statut : <b>{transport.status ?? "N/A"}</b></div>
+              {Array.isArray(transport.notes) && transport.notes.length > 0 && (
+                <div style={{ marginTop: 8, opacity: 0.9 }}>
+                  {transport.notes[0]}
+                </div>
+              )}
+            </>
+          ) : (
+            <div>N/A</div>
+          )}
+        </div>
+    </div>
+  );
+}
+
+
+
+
+
+

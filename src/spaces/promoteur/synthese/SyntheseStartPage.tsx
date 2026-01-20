@@ -1,5 +1,5 @@
 ﻿// src/spaces/promoteur/synthese/SyntheseStartPage.tsx
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { scanStorages, type ModuleFound } from "./storageDiscovery";
 import { generateSynthese } from "./syntheseApi";
@@ -193,3 +193,4 @@ export const SyntheseStartPage: React.FC<Props> = ({ supabase, parcelId, commune
     </div>
   );
 };
+

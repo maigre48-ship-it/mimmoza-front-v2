@@ -1,5 +1,4 @@
-﻿import React from 'react';
-
+﻿
 export function Sidebar({ title, items, current, onChange }) {
   return (
     <aside className='w-64 bg-slate-900 text-slate-100 flex flex-col border-r border-slate-800'>
@@ -30,3 +29,4 @@ export function Sidebar({ title, items, current, onChange }) {
     </aside>
   );
 }
+

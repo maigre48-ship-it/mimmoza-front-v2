@@ -1,0 +1,53 @@
+﻿import type { NavSection } from "../../components/layout/BaseShellLayout";
+
+export const ASSURANCE_SIDEBAR: NavSection[] = [
+  {
+    title: "Portefeuille",
+    items: [
+      { label: "Tableau de bord", to: "/assurance" },
+      { label: "Contrats", to: "/assurance/contrats" },
+      { label: "Sinistralité", to: "/assurance/sinistralite" },
+    ],
+  },
+  {
+    title: "Souscription",
+    items: [
+      { label: "Nouvelle étude", to: "/assurance/souscription" },
+      { label: "Import dossier", to: "/assurance/import" },
+      { label: "Pré-qualification", to: "/assurance/prequalif" },
+    ],
+  },
+  {
+    title: "Exposition",
+    items: [
+      { label: "Risques naturels", to: "/assurance/exposition" },
+      { label: "Risques technologiques", to: "/assurance/techno" },
+      { label: "Vulnérabilité", to: "/assurance/vulnerabilite" },
+      { label: "Historique évènements", to: "/assurance/historique-evenements" },
+    ],
+  },
+  {
+    title: "Tarification",
+    items: [
+      { label: "Tarification", to: "/assurance/tarification" },
+      { label: "Franchises & limites", to: "/assurance/franchises" },
+      { label: "Scénarios", to: "/assurance/scenarios" },
+    ],
+  },
+  {
+    title: "Offre",
+    items: [
+      { label: "Conditions", to: "/assurance/offre" },
+      { label: "Exclusions", to: "/assurance/exclusions" },
+      { label: "Documents", to: "/assurance/documents" },
+    ],
+  },
+  {
+    title: "Monitoring",
+    items: [
+      { label: "Alertes", to: "/assurance/monitoring" },
+      { label: "Prévention", to: "/assurance/prevention" },
+      { label: "Suivi sinistres", to: "/assurance/suivi-sinistres" },
+    ],
+  },
+];

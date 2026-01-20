@@ -1,5 +1,4 @@
-﻿import React from "react";
-
+﻿
 interface PageContainerProps {
   children: React.ReactNode;
   maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl" | "full";
@@ -30,4 +29,5 @@ export const PageContainer: React.FC<PageContainerProps> = ({
     </div>
   );
 };
+
 

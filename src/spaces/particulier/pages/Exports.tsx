@@ -1,0 +1,432 @@
+﻿import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { logParticulierEvent } from "../../../lib/particulierHistory";
+
+type ProjectState = {
+  goal?: string;
+  city?: string;
+  postcode?: string;
+  radiusKm?: number | null;
+
+  budgetTotal?: number | null;
+  budgetNotaire?: number | null;
+  budgetTravaux?: number | null;
+  apport?: number | null;
+
+  loanDurationYears?: number | null;
+  loanRatePct?: number | null;
+
+  targetMoveIn?: string;
+  urgency?: string;
+  notes?: string;
+};
+
+type Favorite = {
+  id: string;
+  title: string;
+  address: string;
+  city: string;
+  postcode: string;
+
+  priceEur: number | null;
+  surfaceM2: number | null;
+  rooms: number | null;
+
+  url: string;
+  tags: string[];
+  notes: string;
+
+  createdAt: string;
+};
+
+type Scenario = {
+  id: string;
+  name: string;
+  purchaseTarget: number | null;
+  apport: number | null;
+  durationYears: number | null;
+  ratePct: number | null;
+  insurancePct: number | null;
+  notes: string;
+  createdAt: string;
+};
+
+type ChecklistItem = {
+  id: string;
+  category: string;
+  label: string;
+  required: boolean;
+  done: boolean;
+};
+
+type LocalDoc = {
+  id: string;
+  category: string;
+  name: string;
+  description: string;
+  addedAt: string;
+};
+
+const PROJECT_KEY = "mimmoza.particulier.mon_projet.v1";
+const FAVORIS_KEY = "mimmoza.particulier.favoris.v1";
+const SCENARIOS_KEY = "mimmoza.particulier.scenarios.v1";
+
+const CHECK_KEY = "mimmoza.particulier.dossier_banque.checklist.v1";
+const DOCS_KEY = "mimmoza.particulier.dossier_banque.docs.v1";
+const NOTES_KEY = "mimmoza.particulier.dossier_banque.notes.v1";
+
+const wrap: React.CSSProperties = { padding: 8 };
+
+const headerRow: React.CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "space-between",
+  gap: 16,
+  marginBottom: 14,
+};
+
+const titleStyle: React.CSSProperties = {
+  margin: "4px 0 6px",
+  fontSize: 22,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const subtitleStyle: React.CSSProperties = {
+  margin: 0,
+  color: "#475569",
+  fontSize: 14,
+  lineHeight: 1.45,
+};
+
+const card: React.CSSProperties = {
+  border: "1px solid rgba(15, 23, 42, 0.10)",
+  borderRadius: 16,
+  background: "#ffffff",
+  padding: 14,
+  boxShadow: "0 6px 18px rgba(15, 23, 42, 0.04)",
+};
+
+const sectionTitle: React.CSSProperties = {
+  margin: "6px 0 10px",
+  fontSize: 14,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const row: React.CSSProperties = {
+  display: "flex",
+  gap: 10,
+  flexWrap: "wrap",
+  alignItems: "center",
+};
+
+const btnPrimary: React.CSSProperties = {
+  padding: "10px 12px",
+  borderRadius: 12,
+  border: "1px solid rgba(99, 102, 241, 0.35)",
+  background: "rgba(99, 102, 241, 0.12)",
+  fontWeight: 900,
+  cursor: "pointer",
+  color: "#0f172a",
+};
+
+const btnGhost: React.CSSProperties = {
+  padding: "10px 12px",
+  borderRadius: 12,
+  border: "1px solid rgba(15, 23, 42, 0.12)",
+  background: "#ffffff",
+  fontWeight: 900,
+  cursor: "pointer",
+  color: "#0f172a",
+};
+
+const badge: React.CSSProperties = {
+  padding: "6px 8px",
+  borderRadius: 999,
+  border: "1px solid rgba(15, 23, 42, 0.10)",
+  background: "rgba(248, 250, 252, 0.85)",
+  fontSize: 12,
+  fontWeight: 900,
+  color: "#0f172a",
+};
+
+const preStyle: React.CSSProperties = {
+  marginTop: 10,
+  padding: 12,
+  borderRadius: 14,
+  border: "1px solid rgba(15, 23, 42, 0.10)",
+  background: "rgba(248, 250, 252, 0.85)",
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-word",
+  fontSize: 12,
+  lineHeight: 1.45,
+  color: "#0f172a",
+};
+
+function loadJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function formatMoney(n: number | null | undefined): string {
+  if (n === null || n === undefined) return "—";
+  try {
+    return new Intl.NumberFormat("fr-FR", {
+      style: "currency",
+      currency: "EUR",
+      maximumFractionDigits: 0,
+    }).format(n);
+  } catch {
+    return `${n} €`;
+  }
+}
+
+function goalLabel(goal?: string): string {
+  if (!goal) return "—";
+  if (goal === "residence_principale") return "Résidence principale";
+  if (goal === "investissement") return "Investissement";
+  if (goal === "residence_secondaire") return "Résidence secondaire";
+  return goal;
+}
+
+function catLabel(c: string): string {
+  switch (c) {
+    case "identite":
+      return "Identité";
+    case "revenus":
+      return "Revenus";
+    case "patrimoine":
+      return "Patrimoine";
+    case "projet":
+      return "Projet";
+    case "financement":
+      return "Financement";
+    case "divers":
+      return "Divers";
+    default:
+      return c;
+  }
+}
+
+async function copyText(text: string, details: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    alert("Export copié dans le presse-papiers.");
+    logParticulierEvent({ type: "export_copy", title: "Export copié", details });
+  } catch {
+    alert("Impossible de copier automatiquement. Sélectionne le texte et copie manuellement.");
+  }
+}
+
+export default function Exports() {
+  const [mode, setMode] = useState<"executif" | "banque" | "checklist">("banque");
+
+  const project = useMemo(() => loadJson<ProjectState>(PROJECT_KEY, {}), []);
+  const favoris = useMemo(() => loadJson<Favorite[]>(FAVORIS_KEY, []), []);
+  const scenarios = useMemo(() => loadJson<Scenario[]>(SCENARIOS_KEY, []), []);
+
+  const checklist = useMemo(() => loadJson<ChecklistItem[]>(CHECK_KEY, []), []);
+  const docs = useMemo(() => loadJson<LocalDoc[]>(DOCS_KEY, []), []);
+  const dossierNotes = useMemo(() => loadJson<string>(NOTES_KEY, ""), []);
+
+  const checklistStats = useMemo(() => {
+    const required = checklist.filter((x) => x.required);
+    const reqDone = required.filter((x) => x.done).length;
+    const reqTotal = required.length;
+    const pctReq = reqTotal === 0 ? 100 : Math.round((reqDone / reqTotal) * 100);
+
+    const allDone = checklist.filter((x) => x.done).length;
+    const allTotal = checklist.length;
+    const pctAll = allTotal === 0 ? 100 : Math.round((allDone / allTotal) * 100);
+
+    return { reqDone, reqTotal, pctReq, allDone, allTotal, pctAll };
+  }, [checklist]);
+
+  const exportText = useMemo(() => {
+    const lines: string[] = [];
+    const topFavoris = favoris.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 5);
+    const topScenarios = scenarios.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 5);
+
+    const header = (t: string) => {
+      lines.push(t);
+      lines.push("-".repeat(Math.min(60, t.length)));
+    };
+
+    if (mode === "executif") {
+      header("RÉSUMÉ EXÉCUTIF — PROJET IMMOBILIER");
+      lines.push(`Objectif: ${goalLabel(project.goal)}`);
+      lines.push(`Zone: ${[project.postcode, project.city].filter(Boolean).join(" ")}${project.radiusKm ? ` (rayon ${project.radiusKm} km)` : ""}`.trim() || "Zone: —");
+      lines.push(`Urgence: ${project.urgency ?? "—"}`);
+      lines.push(`Budget total: ${formatMoney(project.budgetTotal)}`);
+      lines.push(`Apport: ${formatMoney(project.apport)} · Durée: ${project.loanDurationYears ?? "—"} ans · Taux: ${project.loanRatePct ?? "—"} %`);
+      lines.push("");
+
+      header("Favoris (top 5)");
+      if (topFavoris.length === 0) lines.push("- Aucun favori");
+      topFavoris.forEach((f) => lines.push(`- ${f.title} — ${formatMoney(f.priceEur)} · ${f.surfaceM2 ?? "—"} m² · ${f.postcode} ${f.city}`.trim()));
+      lines.push("");
+
+      header("Scénarios (top 5)");
+      if (topScenarios.length === 0) lines.push("- Aucun scénario");
+      topScenarios.forEach((s) => lines.push(`- ${s.name}: achat ${formatMoney(s.purchaseTarget)} · apport ${formatMoney(s.apport)} · ${s.durationYears ?? "—"} ans · ${s.ratePct ?? "—"}%`));
+      lines.push("");
+
+      header("Dossier banque (progression)");
+      lines.push(`Requis: ${checklistStats.reqDone}/${checklistStats.reqTotal} (${checklistStats.pctReq}%) · Global: ${checklistStats.allDone}/${checklistStats.allTotal} (${checklistStats.pctAll}%)`);
+      lines.push("");
+
+      if (project.notes?.trim()) {
+        header("Notes projet");
+        lines.push(project.notes.trim());
+        lines.push("");
+      }
+
+      return lines.join("\n");
+    }
+
+    if (mode === "checklist") {
+      header("CHECKLIST — DOSSIER BANQUE");
+      lines.push(`Requis: ${checklistStats.reqDone}/${checklistStats.reqTotal} (${checklistStats.pctReq}%) · Global: ${checklistStats.allDone}/${checklistStats.allTotal} (${checklistStats.pctAll}%)`);
+      lines.push("");
+
+      const byCat = new Map<string, ChecklistItem[]>();
+      checklist.forEach((c) => {
+        const list = byCat.get(c.category) ?? [];
+        list.push(c);
+        byCat.set(c.category, list);
+      });
+
+      Array.from(byCat.keys()).forEach((cat) => {
+        header(catLabel(cat));
+        (byCat.get(cat) ?? []).forEach((it) => {
+          const mark = it.done ? "[x]" : "[ ]";
+          const req = it.required ? " (requis)" : "";
+          lines.push(`${mark} ${it.label}${req}`);
+        });
+        lines.push("");
+      });
+
+      header("Documents listés");
+      if (!docs.length) lines.push("- Aucun");
+      else docs.slice(0, 50).forEach((d) => lines.push(`- [${catLabel(d.category)}] ${d.name}${d.description ? " — " + d.description : ""}`));
+      lines.push("");
+
+      header("Notes dossier");
+      lines.push(dossierNotes?.trim() ? dossierNotes.trim() : "—");
+
+      return lines.join("\n");
+    }
+
+    header("PACK BANQUE — SYNTHÈSE STRUCTURÉE");
+
+    header("1) Projet");
+    lines.push(`Objectif: ${goalLabel(project.goal)}`);
+    lines.push(`Localisation: ${[project.postcode, project.city].filter(Boolean).join(" ")}${project.radiusKm ? ` (rayon ${project.radiusKm} km)` : ""}`.trim() || "Localisation: —");
+    lines.push(`Date cible: ${project.targetMoveIn || "—"} · Urgence: ${project.urgency ?? "—"}`);
+    lines.push("");
+
+    header("2) Budget & financement");
+    lines.push(`Budget total: ${formatMoney(project.budgetTotal)}`);
+    lines.push(`Notaire: ${formatMoney(project.budgetNotaire)} · Travaux: ${formatMoney(project.budgetTravaux)}`);
+    lines.push(`Apport: ${formatMoney(project.apport)}`);
+    lines.push(`Durée: ${project.loanDurationYears ?? "—"} ans · Taux: ${project.loanRatePct ?? "—"} %`);
+    lines.push("");
+
+    header("3) Scénarios (top 5)");
+    if (topScenarios.length === 0) lines.push("- Aucun scénario enregistré");
+    else {
+      topScenarios.forEach((s) => {
+        lines.push(`- ${s.name}: achat ${formatMoney(s.purchaseTarget)} · apport ${formatMoney(s.apport)} · ${s.durationYears ?? "—"} ans · ${s.ratePct ?? "—"}%`);
+        if (s.notes?.trim()) lines.push(`  Notes: ${s.notes.trim()}`);
+      });
+      if (scenarios.length > 5) lines.push(`- (+${scenarios.length - 5} autres)`);
+    }
+    lines.push("");
+
+    header("4) Biens suivis (favoris top 5)");
+    if (topFavoris.length === 0) lines.push("- Aucun favori enregistré");
+    else {
+      topFavoris.forEach((f) => {
+        lines.push(`- ${f.title}`);
+        lines.push(`  Prix: ${formatMoney(f.priceEur)} · Surface: ${f.surfaceM2 ?? "—"} m² · Pièces: ${f.rooms ?? "—"}`);
+        lines.push(`  Localisation: ${[f.address, `${f.postcode} ${f.city}`.trim()].filter(Boolean).join(" · ") || "—"}`);
+        if (f.url) lines.push(`  URL: ${f.url}`);
+        if (f.tags?.length) lines.push(`  Tags: ${f.tags.join(", ")}`);
+        if (f.notes?.trim()) lines.push(`  Notes: ${f.notes.trim()}`);
+      });
+      if (favoris.length > 5) lines.push(`- (+${favoris.length - 5} autres)`);
+    }
+    lines.push("");
+
+    header("5) Dossier banque — état");
+    lines.push(`Requis: ${checklistStats.reqDone}/${checklistStats.reqTotal} (${checklistStats.pctReq}%) · Global: ${checklistStats.allDone}/${checklistStats.allTotal} (${checklistStats.pctAll}%)`);
+    lines.push("");
+
+    header("6) Documents listés");
+    if (!docs.length) lines.push("- Aucun");
+    else docs.slice(0, 50).forEach((d) => lines.push(`- [${catLabel(d.category)}] ${d.name}${d.description ? " — " + d.description : ""}`));
+    lines.push("");
+
+    header("7) Notes");
+    const n = [project.notes?.trim(), dossierNotes?.trim()].filter(Boolean).join("\n\n");
+    lines.push(n ? n : "—");
+
+    return lines.join("\n");
+  }, [mode, project, favoris, scenarios, checklist, docs, dossierNotes, checklistStats]);
+
+  return (
+    <div style={wrap}>
+      <div style={headerRow}>
+        <div>
+          <h2 style={titleStyle}>Exports</h2>
+          <p style={subtitleStyle}>Génère des exports copiables (pré-PDF) à partir de tes données.</p>
+        </div>
+
+        <div style={row}>
+          <span style={badge}>Favoris: {favoris.length}</span>
+          <span style={badge}>Scénarios: {scenarios.length}</span>
+          <span style={badge}>Dossier requis: {checklistStats.pctReq}%</span>
+
+          <Link to="/particulier/dossier" style={{ ...btnGhost, textDecoration: "none", display: "inline-block" }}>
+            Dossier banque
+          </Link>
+        </div>
+      </div>
+
+      <div style={card}>
+        <div style={sectionTitle}>Choisir un format</div>
+
+        <div style={row}>
+          <button type="button" style={{ ...btnGhost, background: mode === "executif" ? "rgba(99, 102, 241, 0.10)" : "#fff" }} onClick={() => setMode("executif")}>
+            Résumé exécutif
+          </button>
+          <button type="button" style={{ ...btnGhost, background: mode === "banque" ? "rgba(99, 102, 241, 0.10)" : "#fff" }} onClick={() => setMode("banque")}>
+            Pack banque
+          </button>
+          <button type="button" style={{ ...btnGhost, background: mode === "checklist" ? "rgba(99, 102, 241, 0.10)" : "#fff" }} onClick={() => setMode("checklist")}>
+            Checklist
+          </button>
+
+          <div style={{ flex: 1 }} />
+
+          <button type="button" style={btnPrimary} onClick={() => copyText(exportText, `Exports (${mode})`)}>
+            Copier
+          </button>
+
+          <Link to="/particulier/documents" style={{ ...btnGhost, textDecoration: "none", display: "inline-block" }}>
+            Mes documents
+          </Link>
+        </div>
+
+        <pre style={preStyle}>{exportText}</pre>
+      </div>
+    </div>
+  );
+}
+

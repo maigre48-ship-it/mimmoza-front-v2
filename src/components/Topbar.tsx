@@ -1,4 +1,4 @@
-import React from "react";
+﻿
 import {
   Brain,
   Building2,
@@ -51,13 +51,13 @@ export function Topbar({
               Mimmoza
             </span>
             <span className="text-xs text-slate-600 -mt-0.5">
-              L’intelligence immobilière
+              Lâ€™intelligence immobiliÃ¨re
             </span>
           </div>
         </button>
 
         <div className="text-xs text-slate-500 hidden sm:block">
-          PLU Engine — Prototype local
+          PLU Engine â€” Prototype local
         </div>
       </div>
 
@@ -91,3 +91,4 @@ export function Topbar({
     </header>
   );
 }
+

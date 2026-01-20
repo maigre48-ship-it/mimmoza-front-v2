@@ -1,0 +1,49 @@
+﻿import React from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
+
+import HomePage from "./pages/HomePage";
+
+// Layouts
+import ParticulierLayout from "./spaces/particulier/ParticulierLayout";
+import MarchandLayout from "./spaces/marchand/MarchandLayout";
+import PromoteurLayout from "./spaces/promoteur/PromoteurLayout";
+import BanqueLayout from "./spaces/banque/BanqueLayout";
+import AssuranceLayout from "./spaces/assurance/AssuranceLayout";
+
+// Pages
+import ParticulierHomePage from "./spaces/particulier/pages/ParticulierHomePage";
+import MarchandHomePage from "./spaces/marchand/pages/MarchandHomePage";
+import PromoteurHomePage from "./spaces/promoteur/pages/PromoteurHomePage";
+import BanqueHomePage from "./spaces/banque/pages/BanqueHomePage";
+import AssuranceHomePage from "./spaces/assurance/pages/AssuranceHomePage";
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+
+      <Route path="/particulier" element={<ParticulierLayout />}>
+        <Route index element={<ParticulierHomePage />} />
+      </Route>
+
+      <Route path="/marchand-de-bien" element={<MarchandLayout />}>
+        <Route index element={<MarchandHomePage />} />
+      </Route>
+
+      <Route path="/promoteur" element={<PromoteurLayout />}>
+        <Route index element={<PromoteurHomePage />} />
+      </Route>
+
+      <Route path="/banque" element={<BanqueLayout />}>
+        <Route index element={<BanqueHomePage />} />
+      </Route>
+
+      <Route path="/assurance" element={<AssuranceLayout />}>
+        <Route index element={<AssuranceHomePage />} />
+      </Route>
+
+      {/* Fallback */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}

@@ -1,5 +1,15 @@
 ﻿// src/components/AppShell.tsx
-import React, { ReactNode, useMemo, useState } from "react";
+
+    param($m)
+    $before = $m.Groups[1].Value.Trim().TrimEnd(',')
+    $after  = $m.Groups[2].Value.Trim().TrimStart(',')
+    $others = @($before, $after) -ne '' -join ', '
+    if ($others) {
+      "import { $others } from `"react`";`r`nimport type { ReactNode } from `"react`";"
+    } else {
+      "import type { ReactNode } from `"react`";"
+    }
+  
 import {
   Menu,
   X,
@@ -300,3 +310,5 @@ export function AppShell({ currentSpace, onChangeSpace, children }: AppShellProp
     </div>
   );
 }
+
+

@@ -1,0 +1,348 @@
+﻿import { useState } from "react";
+import { Link } from "react-router-dom";
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+interface SpaceCard {
+  id: string;
+  title: string;
+  description: string;
+  route: string;
+  icon: React.ReactNode;
+}
+
+// ============================================================================
+// DONNÉES DES ESPACES
+// ============================================================================
+
+const spaces: SpaceCard[] = [
+  {
+    id: "particulier",
+    title: "Particulier",
+    description: "Recherche, estimation et suivi de votre projet immobilier personnel.",
+    route: "/particulier",
+    icon: (
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+        <polyline points="9 22 9 12 15 12 15 22" />
+      </svg>
+    ),
+  },
+  {
+    id: "marchand",
+    title: "Marchand de bien",
+    description: "Sourcing, analyse rapide et calcul de marges pour vos opérations.",
+    route: "/marchand-de-bien",
+    icon: (
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+      </svg>
+    ),
+  },
+  {
+    id: "promoteur",
+    title: "Promoteur",
+    description: "Faisabilité, PLU, analyse des risques, modélisation 3D et bilan.",
+    route: "/promoteur",
+    icon: (
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="4" y="2" width="16" height="20" rx="2" ry="2" />
+        <line x1="8" y1="6" x2="16" y2="6" />
+        <line x1="8" y1="10" x2="16" y2="10" />
+        <line x1="8" y1="14" x2="12" y2="14" />
+      </svg>
+    ),
+  },
+  {
+    id: "banque",
+    title: "Banque",
+    description: "Scoring, montage de financement et gestion des sûretés.",
+    route: "/banque",
+    icon: (
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="12" y1="1" x2="12" y2="23" />
+        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+      </svg>
+    ),
+  },
+  {
+    id: "assurance",
+    title: "Assurance",
+    description: "Évaluation de l’exposition aux risques et couverture adaptée.",
+    route: "/assurance",
+    icon: (
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+      </svg>
+    ),
+  },
+];
+
+// ============================================================================
+// STYLES
+// ============================================================================
+
+const styles: Record<string, React.CSSProperties> = {
+  container: {
+    minHeight: "100vh",
+    backgroundColor: "#f0f9ff",
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  },
+  header: {
+    background: "linear-gradient(135deg, #0ea5e9 0%, #38bdf8 50%, #7dd3fc 100%)",
+    padding: "48px 24px 64px",
+    position: "relative" as const,
+    overflow: "hidden",
+  },
+  headerPattern: {
+    position: "absolute" as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    opacity: 0.1,
+    backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+    pointerEvents: "none" as const,
+  },
+  headerContent: {
+    maxWidth: "1200px",
+    margin: "0 auto",
+    position: "relative" as const,
+    zIndex: 1,
+  },
+  badge: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    backdropFilter: "blur(8px)",
+    padding: "6px 14px",
+    borderRadius: "20px",
+    fontSize: "0.8125rem",
+    fontWeight: 500,
+    color: "#ffffff",
+    marginBottom: "16px",
+    border: "1px solid rgba(255, 255, 255, 0.3)",
+  },
+  title: {
+    fontSize: "clamp(2rem, 5vw, 3rem)",
+    fontWeight: 700,
+    color: "#ffffff",
+    margin: 0,
+    marginBottom: "12px",
+    letterSpacing: "-0.025em",
+    textShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
+  },
+  subtitle: {
+    fontSize: "clamp(1rem, 2vw, 1.25rem)",
+    fontWeight: 400,
+    color: "rgba(255, 255, 255, 0.9)",
+    margin: 0,
+  },
+  main: {
+    maxWidth: "1200px",
+    margin: "0 auto",
+    padding: "0 24px",
+    marginTop: "-32px",
+    position: "relative" as const,
+    zIndex: 2,
+    paddingBottom: "48px",
+  },
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+    gap: "20px",
+  },
+  card: {
+    display: "flex",
+    flexDirection: "column" as const,
+    textDecoration: "none",
+    backgroundColor: "#ffffff",
+    borderRadius: "16px",
+    padding: "28px",
+    boxShadow: "0 4px 20px rgba(14, 165, 233, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04)",
+    border: "1px solid rgba(14, 165, 233, 0.1)",
+    cursor: "pointer",
+    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+    boxSizing: "border-box" as const,
+    position: "relative" as const,
+    overflow: "hidden",
+  },
+  cardHovered: {
+    transform: "translateY(-6px)",
+    boxShadow: "0 20px 40px rgba(14, 165, 233, 0.15), 0 8px 16px rgba(14, 165, 233, 0.1)",
+    border: "1px solid #0ea5e9",
+  },
+  cardIconWrapper: {
+    width: "56px",
+    height: "56px",
+    borderRadius: "14px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: "20px",
+    background: "linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%)",
+    color: "#0ea5e9",
+    transition: "all 0.3s ease",
+  },
+  cardIconWrapperHovered: {
+    background: "linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%)",
+    color: "#ffffff",
+    transform: "scale(1.05)",
+  },
+  cardTitle: {
+    fontSize: "1.25rem",
+    fontWeight: 600,
+    color: "#0f172a",
+    margin: 0,
+    marginBottom: "10px",
+    transition: "color 0.3s ease",
+  },
+  cardTitleHovered: {
+    color: "#0ea5e9",
+  },
+  cardDescription: {
+    fontSize: "0.9375rem",
+    fontWeight: 400,
+    color: "#64748b",
+    margin: 0,
+    lineHeight: 1.6,
+    flex: 1,
+  },
+  cardArrow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    marginTop: "20px",
+    opacity: 0,
+    transform: "translateX(-10px)",
+    transition: "all 0.3s ease",
+  },
+  cardArrowVisible: {
+    opacity: 1,
+    transform: "translateX(0)",
+  },
+  arrowIcon: {
+    width: "20px",
+    height: "20px",
+    color: "#0ea5e9",
+  },
+  footer: {
+    maxWidth: "1200px",
+    margin: "0 auto",
+    padding: "24px",
+    textAlign: "center" as const,
+  },
+  footerText: {
+    fontSize: "0.875rem",
+    color: "#94a3b8",
+    margin: 0,
+  },
+};
+
+// ============================================================================
+// COMPOSANT PRINCIPAL
+// ============================================================================
+
+const HomePage: React.FC = () => {
+  const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+
+  const getCardStyle = (cardId: string): React.CSSProperties => {
+    const isHovered = hoveredCard === cardId;
+    return {
+      ...styles.card,
+      ...(isHovered ? styles.cardHovered : {}),
+    };
+  };
+
+  const getIconWrapperStyle = (cardId: string): React.CSSProperties => {
+    const isHovered = hoveredCard === cardId;
+    return {
+      ...styles.cardIconWrapper,
+      ...(isHovered ? styles.cardIconWrapperHovered : {}),
+    };
+  };
+
+  const getTitleStyle = (cardId: string): React.CSSProperties => {
+    const isHovered = hoveredCard === cardId;
+    return {
+      ...styles.cardTitle,
+      ...(isHovered ? styles.cardTitleHovered : {}),
+    };
+  };
+
+  const getArrowStyle = (cardId: string): React.CSSProperties => {
+    const isHovered = hoveredCard === cardId;
+    return {
+      ...styles.cardArrow,
+      ...(isHovered ? styles.cardArrowVisible : {}),
+    };
+  };
+
+  return (
+    <div style={styles.container}>
+      {/* Header avec gradient bleu ciel */}
+      <header style={styles.header}>
+        <div style={styles.headerPattern} />
+        <div style={styles.headerContent}>
+          <div style={styles.badge}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 6v6l4 2" />
+            </svg>
+            Plateforme immobilière
+          </div>
+          <h1 style={styles.title}>Accueil</h1>
+          <p style={styles.subtitle}>Choisissez votre espace pour commencer.</p>
+        </div>
+      </header>
+
+      {/* Grille des espaces */}
+      <main style={styles.main}>
+        <div style={styles.grid}>
+          {spaces.map((space) => (
+            <Link
+              key={space.id}
+              to={space.route}
+              style={getCardStyle(space.id)}
+              onMouseEnter={() => setHoveredCard(space.id)}
+              onMouseLeave={() => setHoveredCard(null)}
+            >
+              <div style={getIconWrapperStyle(space.id)}>{space.icon}</div>
+              <h2 style={getTitleStyle(space.id)}>{space.title}</h2>
+              <p style={styles.cardDescription}>{space.description}</p>
+              <div style={getArrowStyle(space.id)}>
+                <svg
+                  style={styles.arrowIcon}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M17 8l4 4m0 0l-4 4m4-4H3"
+                  />
+                </svg>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </main>
+
+      {/* Footer discret */}
+      <footer style={styles.footer}>
+        <p style={styles.footerText}>
+          Sélectionnez un espace pour accéder aux outils dédiés
+        </p>
+      </footer>
+    </div>
+  );
+};
+
+export default HomePage;
+

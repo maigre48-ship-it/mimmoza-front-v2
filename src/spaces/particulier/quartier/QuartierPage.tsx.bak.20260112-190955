@@ -1,0 +1,365 @@
+﻿// src/spaces/particulier/quartier/QuartierPage.tsx
+import React, { useEffect, useMemo, useState, useRef } from "react";
+import { supabase } from "../../../supabaseClient";
+import { fetchQuartierSmartscore, type QuartierResponse } from "./quartierApi";
+
+const LOCALSTORAGE_KEY = "particulier:lastAddress";
+
+type StoredAddress = {
+  address: string;
+  cp: string;
+  ville: string;
+  commune_insee: string | null;
+  parcel_id?: string | null;
+};
+
+/**
+ * Lit l'adresse depuis localStorage.
+ * Retourne null si absente ou invalide.
+ */
+function readAddressFromLocalStorage(): StoredAddress | null {
+  try {
+    const raw = localStorage.getItem(LOCALSTORAGE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+
+    // Validation minimale
+    if (typeof parsed !== "object" || parsed === null) return null;
+
+    return {
+      address: typeof parsed.address === "string" ? parsed.address.trim() : "",
+      cp: typeof parsed.cp === "string" ? parsed.cp.trim() : "",
+      ville: typeof parsed.ville === "string" ? parsed.ville.trim() : "",
+      commune_insee:
+        typeof parsed.commune_insee === "string" && parsed.commune_insee.trim()
+          ? parsed.commune_insee.trim()
+          : null,
+      parcel_id:
+        typeof parsed.parcel_id === "string" && parsed.parcel_id.trim()
+          ? parsed.parcel_id.trim()
+          : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Écrit l'adresse dans localStorage.
+ */
+function writeAddressToLocalStorage(addr: StoredAddress): void {
+  try {
+    localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify(addr));
+  } catch {
+    // Silently ignore
+  }
+}
+
+/**
+ * Vérifie si l'adresse est suffisante pour appeler l'API SmartScore.
+ * On exige au moins l'un des critères suivants :
+ *   - address non vide
+ *   - commune_insee non vide (et différent de "00000")
+ *   - parcel_id non vide
+ *   - cp non vide
+ */
+function hasValidAddress(addr: StoredAddress | null): boolean {
+  if (!addr) return false;
+  const hasInsee = addr.commune_insee && addr.commune_insee !== "00000";
+  return Boolean(addr.address || hasInsee || addr.parcel_id || addr.cp);
+}
+
+/**
+ * Résout le code INSEE de la commune à partir de l'adresse.
+ * Méthode 1 (prioritaire) : API Adresse BAN
+ * Méthode 2 (fallback) : geo.api.gouv.fr
+ * Ne throw jamais, retourne null en cas d'échec.
+ */
+async function resolveCommuneInseeFromAddress({
+  address,
+  cp,
+  ville,
+}: {
+  address: string;
+  cp: string;
+  ville: string;
+}): Promise<string | null> {
+  // Méthode 1 : API Adresse BAN
+  try {
+    const query = [address, cp, ville].filter(Boolean).join(" ").trim();
+    if (query) {
+      const banUrl = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=1`;
+      const banRes = await fetch(banUrl);
+      if (banRes.ok) {
+        const banData = await banRes.json();
+        const citycode = banData?.features?.[0]?.properties?.citycode;
+        if (typeof citycode === "string" && citycode.length === 5) {
+          return citycode;
+        }
+      }
+    }
+  } catch {
+    // Silently continue to fallback
+  }
+
+  // Méthode 2 (fallback) : geo.api.gouv.fr
+  try {
+    if (cp || ville) {
+      const params = new URLSearchParams();
+      if (cp) params.set("codePostal", cp);
+      if (ville) params.set("nom", ville);
+      params.set("fields", "code,nom");
+      params.set("format", "json");
+
+      const geoUrl = `https://geo.api.gouv.fr/communes?${params.toString()}`;
+      const geoRes = await fetch(geoUrl);
+      if (geoRes.ok) {
+        const geoData = await geoRes.json();
+        const code = geoData?.[0]?.code;
+        if (typeof code === "string" && code.length === 5) {
+          return code;
+        }
+      }
+    }
+  } catch {
+    // Silently ignore
+  }
+
+  return null;
+}
+
+const cardStyle: React.CSSProperties = {
+  background: "rgba(255,255,255,0.95)",
+  border: "1px solid rgba(15,23,42,0.08)",
+  borderRadius: 16,
+  padding: 16,
+  boxShadow: "0 10px 30px rgba(2,6,23,0.06)",
+};
+
+const gridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+  gap: 16,
+  marginTop: 16,
+};
+
+const noAddressCardStyle: React.CSSProperties = {
+  ...cardStyle,
+  background: "linear-gradient(135deg, #fef3c7 0%, #fef9c3 100%)",
+  border: "1px solid rgba(217,119,6,0.2)",
+};
+
+const noAddressTextStyle: React.CSSProperties = {
+  fontSize: 14,
+  color: "#92400e",
+  lineHeight: 1.5,
+};
+
+export default function QuartierPage() {
+  const [loading, setLoading] = useState(false);
+  const [res, setRes] = useState<QuartierResponse | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  // État de l'adresse (peut être mis à jour après résolution INSEE)
+  const [storedAddress, setStoredAddress] = useState<StoredAddress | null>(() =>
+    readAddressFromLocalStorage()
+  );
+
+  // Flag pour éviter les appels multiples
+  const hasFetchedRef = useRef(false);
+  const hasResolvedInseeRef = useRef(false);
+
+  // Vérifie si on a une adresse valide pour appeler l'API
+  const canFetch = hasValidAddress(storedAddress);
+
+  // Effet pour résoudre l'INSEE si manquant ou "00000"
+  useEffect(() => {
+    if (!storedAddress) return;
+    if (hasResolvedInseeRef.current) return;
+
+    const needsResolution =
+      !storedAddress.commune_insee || storedAddress.commune_insee === "00000";
+
+    if (!needsResolution) return;
+
+    // On a besoin d'au moins une info pour résoudre
+    if (!storedAddress.address && !storedAddress.cp && !storedAddress.ville) {
+      return;
+    }
+
+    hasResolvedInseeRef.current = true;
+
+    (async () => {
+      const resolvedInsee = await resolveCommuneInseeFromAddress({
+        address: storedAddress.address,
+        cp: storedAddress.cp,
+        ville: storedAddress.ville,
+      });
+
+      if (resolvedInsee && resolvedInsee !== "00000") {
+        const updated: StoredAddress = {
+          ...storedAddress,
+          commune_insee: resolvedInsee,
+        };
+        writeAddressToLocalStorage(updated);
+        setStoredAddress(updated);
+      }
+    })();
+  }, [storedAddress]);
+
+  // Construction des paramètres d'entrée pour l'API
+  const input = useMemo(() => {
+    if (!storedAddress) return null;
+
+    return {
+      commune_insee: storedAddress.commune_insee || "00000",
+      address: storedAddress.address || "",
+      cp: storedAddress.cp || "",
+      ville: storedAddress.ville || "",
+      parcel_id: storedAddress.parcel_id || undefined,
+      radius_km: 2,
+      horizon_months: 24,
+      debug: false,
+    };
+  }, [storedAddress]);
+
+  // Effet pour appeler l'API SmartScore (StrictMode-safe)
+const requestIdRef = useRef(0);
+
+useEffect(() => {
+  if (!canFetch || !input) return;
+
+  const requestId = ++requestIdRef.current;
+
+  setLoading(true);
+  setErr(null);
+
+  (async () => {
+    try {
+      // Important: ne pas envoyer "00000" si on n'a pas d'INSEE
+      const out = await fetchQuartierSmartscore(supabase, {
+        ...input,
+        commune_insee:
+          input.commune_insee && input.commune_insee !== "00000"
+            ? input.commune_insee
+            : undefined,
+      } as any);
+
+      // Ignorer si une requête plus récente est partie
+      if (requestId !== requestIdRef.current) return;
+
+      if (!out?.success) {
+        setErr(out?.error || "SmartScore indisponible");
+      }
+      setRes(out);
+    } catch (e: any) {
+      if (requestId !== requestIdRef.current) return;
+      setErr(String(e?.message || e));
+    } finally {
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
+    }
+  })();
+}, [canFetch, input]);
+
+  // Extraction des scores depuis la réponse
+  const score = res?.smartscore?.globalScore ?? null;
+  const emplacementScore = res?.smartscore?.pillarScores?.emplacement_env ?? null;
+  const risquesScore = res?.smartscore?.pillarScores?.risques_complexite ?? null;
+
+  const transportModule = res?.enrichedModules?.transports;
+  const risquesModule = res?.enrichedModules?.risques;
+
+  // Si aucune adresse n'a été saisie dans Estimation
+  if (!canFetch) {
+    return (
+      <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
+        <h1>Quartier</h1>
+        <p style={{ opacity: 0.7 }}>
+          Score calculé automatiquement à partir des données disponibles.
+        </p>
+
+        <div style={noAddressCardStyle}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#b45309", marginBottom: 8 }}>
+            Aucune adresse disponible
+          </div>
+          <div style={noAddressTextStyle}>
+            Pour afficher le score quartier, commence par saisir une adresse dans l'onglet{" "}
+            <strong>Estimation</strong> et clique sur <strong>Calculer (DVF)</strong>.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
+      <h1>Quartier</h1>
+      <p style={{ opacity: 0.7 }}>
+        Score calculé automatiquement à partir des données disponibles.
+      </p>
+
+      {/* Affichage de l'adresse utilisée */}
+      {storedAddress && (
+        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 12 }}>
+          Adresse analysée :{" "}
+          <strong>
+            {[storedAddress.address, storedAddress.cp, storedAddress.ville]
+              .filter(Boolean)
+              .join(", ") || "—"}
+          </strong>
+          {storedAddress.commune_insee && storedAddress.commune_insee !== "00000" && (
+            <span style={{ marginLeft: 8, opacity: 0.7 }}>
+              (INSEE : {storedAddress.commune_insee})
+            </span>
+          )}
+        </div>
+      )}
+
+      <div style={cardStyle}>
+        <div style={{ fontSize: 14, opacity: 0.7 }}>Score Quartier</div>
+        <div style={{ fontSize: 40, fontWeight: 800 }}>
+          {loading ? "Calcul…" : score !== null ? `${score}/100` : "N/A"}
+        </div>
+        {err && <div style={{ color: "crimson", marginTop: 8 }}>{err}</div>}
+      </div>
+
+      <div style={gridStyle}>
+        <div style={cardStyle}>
+          <h3>Équipements &amp; emplacement</h3>
+          <div>
+            Score emplacement : <b>{emplacementScore ?? "N/A"}</b>
+          </div>
+        </div>
+
+        <div style={cardStyle}>
+          <h3>Transports &amp; accessibilité</h3>
+          {transportModule ? (
+            <>
+              <div>
+                Statut : <b>{transportModule.status}</b>
+              </div>
+              {transportModule.notes?.length > 0 && (
+                <div style={{ marginTop: 8, opacity: 0.8 }}>{transportModule.notes[0]}</div>
+              )}
+            </>
+          ) : (
+            <div>N/A</div>
+          )}
+        </div>
+
+        <div style={cardStyle}>
+          <h3>Risques &amp; contraintes</h3>
+          <div>
+            Score risques : <b>{risquesScore ?? "N/A"}</b>
+          </div>
+          {risquesModule ? (
+            <div style={{ marginTop: 8, opacity: 0.8 }}>{risquesModule.notes?.[0]}</div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}

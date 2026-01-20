@@ -1,3 +1,4 @@
+typescript
 // src/spaces/promoteur/PromoteurLayout.tsx
 import React from "react";
 import {
@@ -23,22 +24,28 @@ const pageStyle: React.CSSProperties = {
   fontFamily:
     "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
   color: "#0f172a",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
 };
 
 const containerStyle: React.CSSProperties = {
   maxWidth: "1120px",
+  width: "100%",
   margin: "0 auto",
 };
 
 const headerStyle: React.CSSProperties = {
   display: "flex",
-  justifyContent: "space-between",
+  justifyContent: "center",
   alignItems: "center",
-  paddingBottom: "16px",
+  padding: "24px 0",
+  gap: "32px",
+  borderBottom: "1px solid #e5e7eb",
 };
 
 const headerLogo: React.CSSProperties = {
-  fontSize: "24px",
+  fontSize: "26px",
   fontWeight: 700,
   color: "#1d4ed8",
 };
@@ -229,7 +236,7 @@ const cardIconCircle = (bg: string): React.CSSProperties => ({
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  background: bg, // ✅ CORRECTION ICI
+  background: bg,
   boxShadow: "0 12px 20px rgba(15,23,42,0.15)",
 });
 
@@ -368,7 +375,7 @@ export function PromoteurLayout({ onGoHome }: PromoteurLayoutProps) {
             Accueil
           </button>
         </header>
-        
+
         {/* HERO */}
         <section style={heroStyle}>
           <div style={heroDecor1} />
@@ -570,10 +577,4 @@ export function PromoteurLayout({ onGoHome }: PromoteurLayoutProps) {
             >
               <div style={panelTitleRow}>
                 <div
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 12,
-                    background: "#fef9c3",
-                    display: "flex",
-                    alignItems: "
+                 

@@ -1,5 +1,6 @@
+﻿// PARTIE 1/3
 // src/spaces/promoteur/Implantation2DPage.tsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import {
   MapContainer,
@@ -20,30 +21,219 @@ import type {
   Position,
 } from "geojson";
 import * as turf from "@turf/turf";
-
 import type {
   ImplantationUserParams,
   ImplantationResult,
   PluRules,
 } from "./types";
-import { computeImplantationV1 } from "./implantation";
+import computeImplantationV1 from "./implantation";
+
+// Geoman imports
+import "@geoman-io/leaflet-geoman-free";
+import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const RESOLVED_RULESET_LOCALSTORAGE_KEY = "mimmoza.plu.resolved_ruleset_v1";
+
+// -----------------------------------------------------------------------------
+// LocalStorage keys pour fallback
+// -----------------------------------------------------------------------------
+const LS_KEYS = {
+  COMMUNE_INSEE_SELECTED: "mimmoza.plu.selected_commune_insee",
+  COMMUNE_INSEE_LAST: "mimmoza.plu.last_commune_insee",
+  PARCEL_ID_SELECTED: "mimmoza.foncier.selected_parcel_id",
+  PARCEL_ID_LAST: "mimmoza.foncier.last_parcel_id",
+} as const;
+
+// -----------------------------------------------------------------------------
+// Type pour le ruleset PLU resolu
+// -----------------------------------------------------------------------------
+interface ResolvedPluRuleset {
+  version: string;
+  reculs: {
+    facades?: {
+      avant?: { min_m?: number | null };
+      laterales?: { min_m?: number | null };
+      fond?: { min_m?: number | null };
+    };
+    voirie?: { min_m?: number | null };
+    limites_separatives?: { min_m?: number | null };
+    fond_parcelle?: { min_m?: number | null };
+  };
+  completeness: {
+    ok: boolean;
+    missing?: string[];
+  };
+  [key: string]: any;
+}
 
 type LocationState = {
   parcelGeometry?: any;
   surfaceTerrainM2?: number | null;
   pluRules?: PluRules | null;
   massing?: any | null;
+  pluRuleset?: ResolvedPluRuleset | null;
+  // Support des deux conventions de nommage
+  parcelId?: string | null;
+  parcel_id?: string | null;
+  communeInsee?: string | null;
+  commune_insee?: string | null;
 };
+
+// -----------------------------------------------------------------------------
+// Helpers : lecture localStorage (safe)
+// -----------------------------------------------------------------------------
+function safeGetLocalStorage(key: string): string | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const value = localStorage.getItem(key);
+    return value && value.trim() ? value.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Helpers : resolution des parametres avec fallback
+// -----------------------------------------------------------------------------
+function resolveParcelId(
+  queryParam: string | null,
+  locationState: LocationState | null
+): string | null {
+  // Priorité 1 : query param
+  if (queryParam && queryParam.trim()) {
+    return queryParam.trim();
+  }
+  // Priorité 2 : location.state (deux conventions)
+  if (locationState) {
+    const fromState =
+      locationState.parcelId ??
+      locationState.parcel_id ??
+      null;
+    if (fromState && String(fromState).trim()) {
+      return String(fromState).trim();
+    }
+  }
+  // Priorité 3 : localStorage (selected puis last)
+  const selected = safeGetLocalStorage(LS_KEYS.PARCEL_ID_SELECTED);
+  if (selected) return selected;
+  const last = safeGetLocalStorage(LS_KEYS.PARCEL_ID_LAST);
+  if (last) return last;
+  // Aucun fallback trouvé
+  return null;
+}
+
+function resolveCommuneInsee(
+  queryParam: string | null,
+  locationState: LocationState | null
+): string | null {
+  // Priorité 1 : query param
+  if (queryParam && queryParam.trim()) {
+    return queryParam.trim();
+  }
+  // Priorité 2 : location.state (deux conventions)
+  if (locationState) {
+    const fromState =
+      locationState.communeInsee ??
+      locationState.commune_insee ??
+      null;
+    if (fromState && String(fromState).trim()) {
+      return String(fromState).trim();
+    }
+  }
+  // Priorité 3 : localStorage (selected puis last)
+  const selected = safeGetLocalStorage(LS_KEYS.COMMUNE_INSEE_SELECTED);
+  if (selected) return selected;
+  const last = safeGetLocalStorage(LS_KEYS.COMMUNE_INSEE_LAST);
+  if (last) return last;
+  // Aucun fallback trouvé
+  return null;
+}
+
+// -----------------------------------------------------------------------------
+// Helpers : lecture et validation du ruleset resolu
+// -----------------------------------------------------------------------------
+function loadResolvedRulesetFromLocalStorage(): ResolvedPluRuleset | null {
+  try {
+    // 1) Verifier que window existe (SSR safety)
+    if (typeof window === "undefined") return null;
+    const raw = localStorage.getItem(RESOLVED_RULESET_LOCALSTORAGE_KEY);
+    if (!raw) return null;
+    // 2) JSON.parse safe
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+    // 3) Verifier typeof object
+    if (!parsed || typeof parsed !== "object") return null;
+    // 4) Verifier version === "plu_ruleset_v1"
+    if ((parsed as any).version !== "plu_ruleset_v1") return null;
+    return parsed as ResolvedPluRuleset;
+  } catch {
+    return null;
+  }
+}
+
+function isValidResolvedRuleset(
+  ruleset: ResolvedPluRuleset | null | undefined
+): ruleset is ResolvedPluRuleset {
+  if (!ruleset || typeof ruleset !== "object") return false;
+  if (ruleset.version !== "plu_ruleset_v1") return false;
+  if (!ruleset.completeness || ruleset.completeness.ok !== true) return false;
+  return true;
+}
+
+function extractReculsFromRuleset(ruleset: ResolvedPluRuleset): {
+  avant: number | null;
+  lateral: number | null;
+  fond: number | null;
+  mode: "DIRECTIONAL_BY_FACADE" | "UNIFORM";
+} {
+  const facades = ruleset.reculs?.facades;
+  // FIX: hasFacades doit etre true uniquement si au moins un min_m est un number (pas null)
+  const avantMinM = facades?.avant?.min_m;
+  const lateralesMinM = facades?.laterales?.min_m;
+  const fondMinM = facades?.fond?.min_m;
+  const hasFacades =
+    (typeof avantMinM === "number" && Number.isFinite(avantMinM)) ||
+    (typeof lateralesMinM === "number" && Number.isFinite(lateralesMinM)) ||
+    (typeof fondMinM === "number" && Number.isFinite(fondMinM));
+
+  let avant: number | null = null;
+  let lateral: number | null = null;
+  let fond: number | null = null;
+
+  if (hasFacades) {
+    // Priorite aux valeurs facades.*
+    avant = toNumberLooseNullable(facades?.avant?.min_m);
+    if (avant === null) {
+      avant = toNumberLooseNullable(ruleset.reculs?.voirie?.min_m);
+    }
+    lateral = toNumberLooseNullable(facades?.laterales?.min_m);
+    if (lateral === null) {
+      lateral = toNumberLooseNullable(ruleset.reculs?.limites_separatives?.min_m);
+    }
+    fond = toNumberLooseNullable(facades?.fond?.min_m);
+    if (fond === null) {
+      fond = toNumberLooseNullable(ruleset.reculs?.fond_parcelle?.min_m);
+    }
+    return { avant, lateral, fond, mode: "DIRECTIONAL_BY_FACADE" };
+  }
+  // Fallback vers les valeurs uniformes du PLU
+  avant = toNumberLooseNullable(ruleset.reculs?.voirie?.min_m);
+  lateral = toNumberLooseNullable(ruleset.reculs?.limites_separatives?.min_m);
+  fond = toNumberLooseNullable(ruleset.reculs?.fond_parcelle?.min_m);
+  return { avant, lateral, fond, mode: "UNIFORM" };
+}
 
 // -----------------------------------------------------------------------------
 // Helpers Leaflet : fit bounds
 // -----------------------------------------------------------------------------
 function FitToFeature({ feature }: { feature: any }) {
   const map = useMap();
-
   useEffect(() => {
     if (!feature) return;
     try {
@@ -57,6 +247,114 @@ function FitToFeature({ feature }: { feature: any }) {
       // ignore
     }
   }, [feature, map]);
+  return null;
+}
+
+// -----------------------------------------------------------------------------
+// Geoman Toolbar Component
+// -----------------------------------------------------------------------------
+function GeomanToolbar({
+  enabled,
+  onCreated,
+}: {
+  enabled: boolean;
+  onCreated: (feature: Feature<Polygon | MultiPolygon>) => void;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map) return;
+
+    // Handler for pm:create event
+    const handleCreate = (e: any) => {
+      const layer = e.layer;
+      if (!layer) return;
+
+      try {
+        // Convert layer to GeoJSON
+        const geojson = layer.toGeoJSON();
+        
+        // Normalize to Feature<Polygon | MultiPolygon>
+        const normalized = normalizeToFeature(geojson);
+        
+        if (normalized) {
+          onCreated(normalized);
+        }
+
+        // Remove the drawn layer from map (we manage it via React state)
+        map.removeLayer(layer);
+      } catch (err) {
+        console.warn("[GeomanToolbar] Error processing created shape:", err);
+        // Still remove the layer to avoid duplicates
+        try {
+          map.removeLayer(layer);
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    if (enabled) {
+      // Add Geoman controls with only rectangle and polygon
+      map.pm.addControls({
+        position: "topleft",
+        drawMarker: false,
+        drawCircle: false,
+        drawCircleMarker: false,
+        drawPolyline: false,
+        drawRectangle: true,
+        drawPolygon: true,
+        drawText: false,
+        editMode: false,
+        dragMode: false,
+        cutPolygon: false,
+        removalMode: false,
+        rotateMode: false,
+      });
+
+      // Set global options for drawing
+      map.pm.setGlobalOptions({
+        snappable: true,
+        snapDistance: 10,
+        allowSelfIntersection: false,
+        finishOn: "dblclick",
+        templineStyle: {
+          color: "#0ea5e9",
+          weight: 2,
+          dashArray: "5,5",
+        },
+        hintlineStyle: {
+          color: "#0ea5e9",
+          weight: 2,
+          dashArray: "5,5",
+        },
+        pathOptions: {
+          color: "#0ea5e9",
+          fillColor: "#bae6fd",
+          fillOpacity: 0.4,
+          weight: 2,
+        },
+      });
+
+      // Listen for shape creation
+      map.on("pm:create", handleCreate);
+    } else {
+      // Remove controls and disable drawing
+      map.pm.removeControls();
+      map.pm.disableDraw();
+    }
+
+    // Cleanup
+    return () => {
+      map.off("pm:create", handleCreate);
+      if (!enabled) {
+        // Already cleaned up above
+      } else {
+        map.pm.removeControls();
+        map.pm.disableDraw();
+      }
+    };
+  }, [map, enabled, onCreated]);
 
   return null;
 }
@@ -72,20 +370,16 @@ function MapReculsControl({
     recul_lateral_m: number | null;
     recul_fond_m: number | null;
     reculMax: number;
-    source: "plu" | "auto" | "fallback";
+    source: "plu";
     mode?: "DIRECTIONAL_BY_FACADE" | "UNIFORM";
   } | null;
 }) {
   const map = useMap();
-
   useEffect(() => {
     if (!map) return;
-
     const control = L.control({ position: "topright" });
-
     control.onAdd = () => {
       const div = L.DomUtil.create("div");
-
       div.style.background = "rgba(2, 6, 23, 0.92)";
       div.style.border = "1px solid rgba(148,163,184,0.35)";
       div.style.borderRadius = "12px";
@@ -100,20 +394,18 @@ function MapReculsControl({
       L.DomEvent.disableClickPropagation(div);
       L.DomEvent.disableScrollPropagation(div);
 
-      const srcLabel =
-        reculs?.source === "plu"
-          ? "PLU"
-          : reculs?.source === "auto"
-          ? "Auto"
-          : "Fallback";
-
-      const a = reculs?.recul_avant_m ?? "—";
-      const l = reculs?.recul_lateral_m ?? "—";
-      const f = reculs?.recul_fond_m ?? "—";
+      const srcLabel = "PLU";
+      const formatValue = (v: number | null): string => {
+        if (v === null || v === undefined || !Number.isFinite(v))
+          return "Non disponible";
+        return String(v);
+      };
+      const a = formatValue(reculs?.recul_avant_m ?? null);
+      const l = formatValue(reculs?.recul_lateral_m ?? null);
+      const f = formatValue(reculs?.recul_fond_m ?? null);
       const max = Number.isFinite(Number(reculs?.reculMax))
         ? Number(reculs?.reculMax)
         : 0;
-
       const mode =
         reculs?.mode === "DIRECTIONAL_BY_FACADE"
           ? "directionnel (façade)"
@@ -121,9 +413,9 @@ function MapReculsControl({
 
       div.innerHTML = `
         <div style="font-weight:700; margin-bottom:6px;">Reculs (${srcLabel})</div>
-        <div>Avant : <b>${a}</b> m</div>
-        <div>Latéral : <b>${l}</b> m</div>
-        <div>Fond : <b>${f}</b> m</div>
+        <div>Avant : <b>${a}</b>${a !== "Non disponible" ? " m" : ""}</div>
+        <div>Latéral : <b>${l}</b>${l !== "Non disponible" ? " m" : ""}</div>
+        <div>Fond : <b>${f}</b>${f !== "Non disponible" ? " m" : ""}</div>
         <div style="margin-top:6px; padding-top:6px; border-top:1px solid rgba(148,163,184,0.25);">
           Appliqué : <b>${mode}</b> — max <b>${max.toFixed(1)}</b> m
         </div>
@@ -131,27 +423,22 @@ function MapReculsControl({
           Astuce : clique directement sur un bord pour définir la façade.
         </div>
       `;
-
       return div;
     };
-
     control.addTo(map);
-
     return () => {
       control.remove();
     };
   }, [map, reculs]);
-
   return null;
 }
 
 // -----------------------------------------------------------------------------
-// Helpers géométrie (parcelle / réponses)
+// Helpers geometrie (parcelle / reponses)
 // -----------------------------------------------------------------------------
-// ✅ VERSION ROBUSTE (FeatureCollection + objets imbriqués)
+// VERSION ROBUSTE (FeatureCollection + objets imbriques)
 function normalizeToFeature(raw: any): Feature<Polygon | MultiPolygon> | null {
   if (!raw) return null;
-
   // FeatureCollection GeoJSON standard
   if (raw.type === "FeatureCollection" && Array.isArray(raw.features)) {
     const f = raw.features.find(
@@ -161,7 +448,6 @@ function normalizeToFeature(raw: any): Feature<Polygon | MultiPolygon> | null {
     );
     return f ? (f as Feature<Polygon | MultiPolygon>) : null;
   }
-
   // Certains retours: { features:[...] } sans type
   if (Array.isArray(raw.features)) {
     const f = raw.features.find(
@@ -171,7 +457,6 @@ function normalizeToFeature(raw: any): Feature<Polygon | MultiPolygon> | null {
     );
     return f ? (f as Feature<Polygon | MultiPolygon>) : null;
   }
-
   // Feature<Polygon|MultiPolygon>
   if (raw.type === "Feature" && raw.geometry) {
     const g = raw.geometry;
@@ -179,7 +464,6 @@ function normalizeToFeature(raw: any): Feature<Polygon | MultiPolygon> | null {
       return raw as Feature<Polygon | MultiPolygon>;
     }
   }
-
   // Geometry Polygon|MultiPolygon
   if (raw.type === "Polygon" || raw.type === "MultiPolygon") {
     return {
@@ -188,7 +472,6 @@ function normalizeToFeature(raw: any): Feature<Polygon | MultiPolygon> | null {
       properties: {},
     } as Feature<Polygon | MultiPolygon>;
   }
-
   // Objet contenant geometry Polygon|MultiPolygon
   if (
     raw.geometry &&
@@ -200,7 +483,6 @@ function normalizeToFeature(raw: any): Feature<Polygon | MultiPolygon> | null {
       properties: raw.properties ?? {},
     } as Feature<Polygon | MultiPolygon>;
   }
-
   return null;
 }
 
@@ -210,13 +492,11 @@ function findFeatureForParcel(
 ): any | null {
   const target = String(parcelId).trim();
   if (!target) return null;
-
   for (const f of fc.features) {
     const p = (f.properties || {}) as any;
     const candidates = [f.id, p.id, p.parcel_id, p.parcelle_id, p.idu, p.IDU]
       .filter((v) => v !== undefined && v !== null)
       .map((v) => String(v).trim());
-
     if (candidates.includes(target)) return f;
   }
   return null;
@@ -227,13 +507,10 @@ function extractFeatureCollectionFromAnyResponse(
   depth: number = 0,
 ): FeatureCollection<Geometry, any> | null {
   if (!data || typeof data !== "object") return null;
-
   if (data.type === "FeatureCollection" && Array.isArray(data.features)) {
     return data as FeatureCollection<Geometry, any>;
   }
-
   if (depth > 4) return null;
-
   const preferredKeys = ["geojson", "data", "cadastre", "parcelles"];
   for (const key of preferredKeys) {
     const v = (data as any)[key];
@@ -242,29 +519,25 @@ function extractFeatureCollectionFromAnyResponse(
       if (fc) return fc;
     }
   }
-
   for (const v of Object.values(data)) {
     if (v && typeof v === "object") {
       const fc = extractFeatureCollectionFromAnyResponse(v, depth + 1);
       if (fc) return fc;
     }
   }
-
   return null;
 }
 
 // -----------------------------------------------------------------------------
-// Façade : segments + sélection au clic
+// Facade : segments + selection au clic
 // -----------------------------------------------------------------------------
 function getRingsFromParcel(
   parcel: Feature<Polygon | MultiPolygon>,
 ): number[][][] {
   const g = parcel.geometry;
-
   if (g.type === "Polygon") {
     return (g.coordinates as any) as number[][][];
   }
-
   const out: number[][][] = [];
   for (const poly of g.coordinates as any) {
     for (const ring of poly) out.push(ring);
@@ -278,33 +551,25 @@ function findClosestEdgeSegment(
 ): Feature<LineString> | null {
   const rings = getRingsFromParcel(parcel);
   const p = turf.point(clickLngLat);
-
   let bestSeg: [number[], number[]] | null = null;
   let bestDist = Infinity;
-
   for (const ring of rings) {
     if (!Array.isArray(ring) || ring.length < 2) continue;
-
     for (let i = 0; i < ring.length - 1; i++) {
       const a = ring[i];
       const b = ring[i + 1];
       if (!a || !b) continue;
-
       const line = turf.lineString([a, b]);
       const d = turf.pointToLineDistance(p, line, { units: "meters" });
-
       if (Number.isFinite(d) && d < bestDist) {
         bestDist = d;
         bestSeg = [a, b];
       }
     }
   }
-
   if (!bestSeg) return null;
-
   const MAX_CLICK_DIST_M = 0.8;
   if (!Number.isFinite(bestDist) || bestDist > MAX_CLICK_DIST_M) return null;
-
   return {
     type: "Feature",
     geometry: {
@@ -333,17 +598,14 @@ function FacadeClickHandler({
     click: (e) => {
       if (!enabled) return;
       if (!parcelFeature) return;
-
       const seg = findClosestEdgeSegment(parcelFeature, [
         e.latlng.lng,
         e.latlng.lat,
       ]);
-
       if (seg) onSelect(seg);
       else onMiss?.();
     },
   });
-
   return null;
 }
 
@@ -367,75 +629,6 @@ function toNumberLooseNullable(v: any): number | null {
   return null;
 }
 
-function extractReculTripletFromPluRules(pluRules: PluRules | null) {
-  const r: any = pluRules ?? {};
-
-  const impl =
-    r.implantation ??
-    r.rules?.implantation ??
-    r.rules?.reculs ??
-    r.reculs ??
-    null;
-
-  const ra =
-    r.reculs_alignements ??
-    r.rules?.reculs_alignements ??
-    r.rules?.alignement ??
-    r.alignement ??
-    null;
-
-  const rs =
-    r.reculs_separatifs ??
-    r.rules?.reculs_separatifs ??
-    r.separatifs ??
-    r.rules?.separatifs ??
-    null;
-
-  const reculAvant =
-    toNumberLooseNullable(
-      impl?.recul_avant_m ??
-        impl?.recul_voie_m ??
-        impl?.recul_alignement_m ??
-        impl?.recul_min_voie_m ??
-        ra?.recul_avant_m ??
-        ra?.recul_voie_m ??
-        ra?.recul_min_m ??
-        ra?.recul_min_voie_m,
-    ) ?? null;
-
-  const reculLateral =
-    toNumberLooseNullable(
-      impl?.recul_lateral_m ??
-        impl?.recul_lateraux_m ??
-        impl?.recul_separatif_m ??
-        impl?.recul_min_lateral_m ??
-        rs?.recul_lateral_m ??
-        rs?.recul_separatif_m ??
-        rs?.recul_min_m ??
-        rs?.recul_min_lateral_m,
-    ) ?? null;
-
-  const reculFond =
-    toNumberLooseNullable(
-      impl?.recul_fond_m ??
-        impl?.recul_arriere_m ??
-        impl?.recul_min_fond_m ??
-        rs?.recul_fond_m ??
-        rs?.recul_arriere_m,
-    ) ?? null;
-
-  const alignementObligatoire = !!(
-    ra?.alignement_obligatoire ?? impl?.alignement_obligatoire
-  );
-
-  const hasAny =
-    (typeof reculAvant === "number" && reculAvant > 0) ||
-    (typeof reculLateral === "number" && reculLateral > 0) ||
-    (typeof reculFond === "number" && reculFond > 0);
-
-  return { hasAny, reculAvant, reculLateral, reculFond, alignementObligatoire };
-}
-
 function computeImplantationWithoutGeom(
   surfaceTerrainM2: number,
   pluRules: PluRules | null,
@@ -443,33 +636,25 @@ function computeImplantationWithoutGeom(
 ): ImplantationResult {
   const safeRules: any = pluRules ?? {};
   const surfaceTerrainApresReculsM2 = surfaceTerrainM2;
-
   const empriseRaw =
     safeRules.emprise?.emprise_max_ratio ??
     safeRules.emprise_sol?.emprise_sol_max ??
     null;
-
   let empriseRatio = empriseRaw ?? 0.4;
   if (empriseRatio > 1 && empriseRatio <= 100) empriseRatio = empriseRatio / 100;
   if (empriseRatio <= 0 || !Number.isFinite(empriseRatio)) empriseRatio = 0.4;
-
   const surfaceEmpriseMaxM2 = surfaceTerrainApresReculsM2 * empriseRatio;
-
   const stationnement = safeRules.stationnement ?? null;
   const placesParLogement = stationnement?.places_par_logement ?? 1;
   const surfaceParPlaceM2 = stationnement?.surface_par_place_m2 ?? 25;
-
   const placesParking = Math.ceil(userParams.nbLogements * placesParLogement);
   const surfaceParkingM2 = placesParking * surfaceParPlaceM2;
-
   const surfaceMaxDisponiblePourBatimentsM2 =
     surfaceTerrainApresReculsM2 - surfaceParkingM2;
-
   const surfaceEmpriseUtilisableM2 = Math.max(
     0,
     Math.min(surfaceEmpriseMaxM2, surfaceMaxDisponiblePourBatimentsM2),
   );
-
   return {
     surfaceTerrainM2,
     surfaceTerrainApresReculsM2,
@@ -481,6 +666,7 @@ function computeImplantationWithoutGeom(
     placesParking,
   };
 }
+
 // -----------------------------------------------------------------------------
 // Projet (UI) : defaults + helpers
 // -----------------------------------------------------------------------------
@@ -513,18 +699,13 @@ function projectComparable(p: any) {
       facadeOffset: Number(b?.facadeMode?.distanceM) || 0,
     })),
   };
-}
-
+}// PARTIE 2/3
 // -----------------------------------------------------------------------------
-// Helpers édition bâtiment (V1)
+// Helpers edition batiment (V1)
 // -----------------------------------------------------------------------------
 type EditAction =
   | { type: "none" }
-  | {
-      type: "move";
-      startLatLng: L.LatLng;
-      original: Feature<Polygon | MultiPolygon>;
-    }
+  | { type: "move"; startLatLng: L.LatLng; original: Feature<Polygon | MultiPolygon> }
   | {
       type: "rotate";
       startBearing: number;
@@ -537,15 +718,6 @@ type EditAction =
       pivot: Feature<Point>;
       original: Feature<Polygon | MultiPolygon>;
     };
-
-function ensurePolygonLike(
-  f: Feature<Polygon | MultiPolygon> | null,
-): Feature<Polygon | MultiPolygon> | null {
-  if (!f || !f.geometry) return null;
-  if (f.geometry.type === "Polygon" || f.geometry.type === "MultiPolygon")
-    return f;
-  return null;
-}
 
 function getFirstPolygonCoords(f: Feature<Polygon | MultiPolygon>): Position[] {
   if (f.geometry.type === "Polygon") {
@@ -674,8 +846,6 @@ function distanceFromPivotM(pivot: Feature<Point>, latlng: L.LatLng): number {
   }
 }
 
-
-
 // -----------------------------------------------------------------------------
 // Fallback building (si computeImplantationV1 ne renvoie pas de footprint)
 // -----------------------------------------------------------------------------
@@ -707,15 +877,12 @@ function buildRectangleAroundCenter(
 ): Feature<Polygon> {
   const halfL = Math.max(0.5, lengthM / 2);
   const halfW = Math.max(0.5, widthM / 2);
-
   const b = bearingDeg;
   const p = b + 90;
-
   const c1 = offsetPoint(offsetPoint(center, +halfL, b), +halfW, p);
   const c2 = offsetPoint(offsetPoint(center, +halfL, b), -halfW, p);
   const c3 = offsetPoint(offsetPoint(center, -halfL, b), -halfW, p);
   const c4 = offsetPoint(offsetPoint(center, -halfL, b), +halfW, p);
-
   const coords = [
     c1.geometry.coordinates,
     c2.geometry.coordinates,
@@ -723,7 +890,6 @@ function buildRectangleAroundCenter(
     c4.geometry.coordinates,
     c1.geometry.coordinates,
   ];
-
   return {
     type: "Feature",
     geometry: { type: "Polygon", coordinates: [coords as any] },
@@ -740,7 +906,6 @@ function computeFallbackBuilding(
   try {
     const envPoly = envelope as any;
     const c = turf.centroid(envPoly) as Feature<Point>;
-
     const bearing =
       facadeSeg?.geometry?.coordinates?.length === 2
         ? degToBearing(
@@ -748,32 +913,169 @@ function computeFallbackBuilding(
             facadeSeg.geometry.coordinates[1] as any,
           )
         : 0;
-
     const area = Math.max(10, Number(footprintM2) || 300);
     const ratio = shape === "square" ? 1 : 3;
     const width = Math.sqrt(area / ratio);
     const length = width * ratio;
-
     let scale = 1.0;
     for (let i = 0; i < 12; i++) {
       const rect = buildRectangleAroundCenter(c, length * scale, width * scale, bearing);
-
       const ok =
         turf.booleanWithin(rect as any, envPoly) ||
-        (turf.booleanIntersects(rect as any, envPoly) && turf.area(rect as any) > 5);
-
+        (turf.booleanIntersects(rect as any, envPoly) &&
+          turf.area(rect as any) > 5);
       if (ok) return rect as any;
       scale *= 0.85;
     }
-
     const buf = turf.buffer(c as any, 6, { units: "meters" }) as any;
-    if (buf?.geometry?.type === "Polygon" || buf?.geometry?.type === "MultiPolygon") {
+    if (
+      buf?.geometry?.type === "Polygon" ||
+      buf?.geometry?.type === "MultiPolygon"
+    ) {
       return buf as any;
     }
     return null;
   } catch {
     return null;
   }
+}
+
+// -----------------------------------------------------------------------------
+// Panneau bloquant : regles PLU absentes ou incompletes
+// -----------------------------------------------------------------------------
+function PluRulesetBlockingPanel({
+  missingFields,
+  onReturnClick,
+}: {
+  missingFields: string[];
+  onReturnClick: () => void;
+}) {
+  const panelStyle: React.CSSProperties = {
+    background:
+      "linear-gradient(135deg, rgba(239,68,68,0.15), rgba(249,115,22,0.1))",
+    border: "1px solid rgba(239,68,68,0.5)",
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 16,
+  };
+  const titleStyle: React.CSSProperties = {
+    fontSize: 18,
+    fontWeight: 700,
+    color: "#f87171",
+    marginBottom: 12,
+  };
+  const buttonStyle: React.CSSProperties = {
+    padding: "12px 20px",
+    borderRadius: 999,
+    border: "none",
+    background:
+      "linear-gradient(135deg, rgba(239,68,68,1), rgba(249,115,22,1))",
+    color: "white",
+    fontWeight: 600,
+    cursor: "pointer",
+    marginTop: 16,
+  };
+
+  return (
+    <div style={panelStyle}>
+      <div style={titleStyle}>{"⚠️ Règles PLU absentes ou incomplètes"}</div>
+      <p style={{ fontSize: 14, opacity: 0.9, margin: 0 }}>
+        {"Le calcul d'implantation nécessite un ruleset PLU résolu et complet. Veuillez d'abord compléter l'étape PLU & Faisabilité."}
+      </p>
+      {missingFields.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+            {"Champs manquants :"}
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, opacity: 0.85 }}>
+            {missingFields.slice(0, 10).map((field, idx) => (
+              <li key={idx}>{field}</li>
+            ))}
+            {missingFields.length > 10 && (
+              <li style={{ opacity: 0.7 }}>{`+ ${missingFields.length - 10} autres…`}</li>
+            )}
+          </ul>
+        </div>
+      )}
+      <button style={buttonStyle} onClick={onReturnClick}>
+        {"← Retour PLU & Faisabilité"}
+      </button>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Panneau bloquant : parametres parcelle manquants
+// -----------------------------------------------------------------------------
+function MissingParcelParamsPanel({
+  missingParcelId,
+  missingCommuneInsee,
+  onReturnClick,
+}: {
+  missingParcelId: boolean;
+  missingCommuneInsee: boolean;
+  onReturnClick: () => void;
+}) {
+  const panelStyle: React.CSSProperties = {
+    background:
+      "linear-gradient(135deg, rgba(251,146,60,0.15), rgba(234,179,8,0.1))",
+    border: "1px solid rgba(251,146,60,0.5)",
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 16,
+    maxWidth: 600,
+  };
+  const titleStyle: React.CSSProperties = {
+    fontSize: 18,
+    fontWeight: 700,
+    color: "#fb923c",
+    marginBottom: 12,
+  };
+  const buttonStyle: React.CSSProperties = {
+    padding: "12px 20px",
+    borderRadius: 999,
+    border: "none",
+    background:
+      "linear-gradient(135deg, rgba(251,146,60,1), rgba(234,179,8,1))",
+    color: "white",
+    fontWeight: 600,
+    cursor: "pointer",
+    marginTop: 16,
+  };
+
+  const missingItems: string[] = [];
+  if (missingParcelId) missingItems.push("Identifiant de parcelle (parcel_id)");
+  if (missingCommuneInsee) missingItems.push("Code INSEE de la commune (commune_insee)");
+
+  return (
+    <div style={panelStyle}>
+      <div style={titleStyle}>{"⚠️ Paramètres de parcelle manquants"}</div>
+      <p style={{ fontSize: 14, opacity: 0.9, margin: 0 }}>
+        {"Cette page nécessite une parcelle sélectionnée. Aucune donnée n'a été trouvée dans l'URL, le state de navigation, ou le localStorage."}
+      </p>
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+          {"Paramètres manquants :"}
+        </div>
+        <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, opacity: 0.85 }}>
+          {missingItems.map((item, idx) => (
+            <li key={idx}>{item}</li>
+          ))}
+        </ul>
+      </div>
+      <div style={{ marginTop: 12, fontSize: 13, opacity: 0.8 }}>
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>{"Sources vérifiées :"}</div>
+        <ul style={{ margin: 0, paddingLeft: 20 }}>
+          <li>{"Query params URL (?parcel_id=...&commune_insee=...)"}</li>
+          <li>{"State de navigation (location.state)"}</li>
+          <li>{"localStorage (mimmoza.foncier.* / mimmoza.plu.*)"}</li>
+        </ul>
+      </div>
+      <button style={buttonStyle} onClick={onReturnClick}>
+        {"← Sélectionner une parcelle"}
+      </button>
+    </div>
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -785,11 +1087,63 @@ export const Implantation2DPage: React.FC = () => {
   const location = useLocation();
   const state = (location.state || {}) as LocationState;
 
-  const parcelId = searchParams.get("parcel_id");
-  const communeInsee = searchParams.get("commune_insee");
+  // --------------------------------------------------
+  // Resolution des parametres avec fallback
+  // --------------------------------------------------
+  const parcelIdFromQuery = searchParams.get("parcel_id");
+  const communeInseeFromQuery = searchParams.get("commune_insee");
+
+  const parcelId = useMemo(
+    () => resolveParcelId(parcelIdFromQuery, state),
+    [parcelIdFromQuery, state]
+  );
+
+  const communeInsee = useMemo(
+    () => resolveCommuneInsee(communeInseeFromQuery, state),
+    [communeInseeFromQuery, state]
+  );
+
+  // Verification des parametres manquants
+  const missingParcelId = !parcelId;
+  const missingCommuneInsee = !communeInsee;
+  const hasMissingParams = missingParcelId || missingCommuneInsee;
 
   const [error, setError] = useState<string | null>(null);
 
+  // --------------------------------------------------
+  // Lecture et validation du ruleset PLU resolu
+  // --------------------------------------------------
+  const resolvedRuleset = useMemo<ResolvedPluRuleset | null>(() => {
+    // Priorite 1 : location.state.pluRuleset
+    if (state.pluRuleset && typeof state.pluRuleset === "object") {
+      return state.pluRuleset;
+    }
+    // Priorite 2 : localStorage
+    return loadResolvedRulesetFromLocalStorage();
+  }, [state.pluRuleset]);
+
+  const rulesetValid = useMemo(
+    () => isValidResolvedRuleset(resolvedRuleset),
+    [resolvedRuleset]
+  );
+
+  const rulesetMissingFields = useMemo<string[]>(() => {
+    if (!resolvedRuleset) return ["Ruleset PLU non trouvé"];
+    if (resolvedRuleset.version !== "plu_ruleset_v1") {
+      return [`Version invalide: ${resolvedRuleset.version ?? "undefined"} (attendu: plu_ruleset_v1)`];
+    }
+    if (!resolvedRuleset.completeness) {
+      return ["Champ completeness absent"];
+    }
+    if (resolvedRuleset.completeness.ok !== true) {
+      return resolvedRuleset.completeness.missing ?? ["Complétude non validée (completeness.ok !== true)"];
+    }
+    return [];
+  }, [resolvedRuleset]);
+
+  // --------------------------------------------------
+  // Etats principaux
+  // --------------------------------------------------
   const [draftParams, setDraftParams] = useState<ImplantationUserParams>(() => {
     const base: ImplantationUserParams = {
       nbBatiments: 1,
@@ -826,76 +1180,70 @@ export const Implantation2DPage: React.FC = () => {
   const isDirty = useMemo(() => {
     const a: any = appliedParams;
     const d: any = draftParams;
-
     const coreDirty =
       d.nbBatiments !== a.nbBatiments ||
       d.nbLogements !== a.nbLogements ||
       d.surfaceMoyLogementM2 !== a.surfaceMoyLogementM2;
-
     const projDirty =
       JSON.stringify(projectComparable(d.project)) !==
       JSON.stringify(projectComparable(a.project));
-
     return coreDirty || projDirty;
   }, [draftParams, appliedParams]);
 
-  const [showOSM, setShowOSM] = useState(false);
+  // showOSM avec défaut true pour afficher le fond de carte par défaut
+  const [showOSM, setShowOSM] = useState(true);
 
   const [result, setResult] = useState<ImplantationResult | null>(null);
-  const [parcelFeature, setParcelFeature] =
-    useState<Feature<Polygon | MultiPolygon> | null>(null);
-
-  const [afterReculsFeature, setAfterReculsFeature] =
-    useState<Feature<Polygon | MultiPolygon> | null>(null);
-
-  const [buildableFeature, setBuildableFeature] =
-    useState<Feature<Polygon | MultiPolygon> | null>(null);
-
+  const [parcelFeature, setParcelFeature] = useState<Feature<Polygon | MultiPolygon> | null>(null);
+  const [afterReculsFeature, setAfterReculsFeature] = useState<Feature<Polygon | MultiPolygon> | null>(null);
+  const [buildableFeature, setBuildableFeature] = useState<Feature<Polygon | MultiPolygon> | null>(null);
   const [reculsUsed, setReculsUsed] = useState<{
     recul_avant_m: number | null;
     recul_lateral_m: number | null;
     recul_fond_m: number | null;
     reculMax: number;
-    source: "plu" | "auto" | "fallback";
+    source: "plu";
     mode?: "DIRECTIONAL_BY_FACADE" | "UNIFORM";
   } | null>(null);
-
-  const [facadeSegment, setFacadeSegment] =
-    useState<Feature<LineString> | null>(null);
+  const [facadeSegment, setFacadeSegment] = useState<Feature<LineString> | null>(null);
 
   // Micro-animations
   const [pulseEnvelope, setPulseEnvelope] = useState(false);
   const [pulseBuilding, setPulseBuilding] = useState(false);
 
-  // Édition bâtiment
+  // Edition batiment
   const [editMode, setEditMode] = useState(false);
-  const [manualBuilding, setManualBuilding] =
-    useState<Feature<Polygon | MultiPolygon> | null>(null);
-
+  const [manualBuilding, setManualBuilding] = useState<Feature<Polygon | MultiPolygon> | null>(null);
   const actionRef = useRef<EditAction>({ type: "none" });
-
   const displayedBuilding = manualBuilding ?? buildableFeature;
   const envelopeForConstraints = afterReculsFeature ?? null;
 
   // --------------------------------------------------
-  // 1) Charger cadastre
+  // Geoman callback for shape creation
+  // --------------------------------------------------
+  const handleGeomanCreated = (feature: Feature<Polygon | MultiPolygon>) => {
+    setManualBuilding(feature);
+    setPulseBuilding(true);
+    setTimeout(() => setPulseBuilding(false), 200);
+  };
+
+  // --------------------------------------------------
+  // 1) Charger cadastre (seulement si parametres disponibles)
   // --------------------------------------------------
   useEffect(() => {
     async function loadCadastreGeometry() {
+      // Ne pas charger si parametres manquants
       if (!parcelId || !communeInsee) {
-        setError("Données INSEE ou ID parcelle manquantes.");
+        setParcelFeature(null);
         return;
       }
-
       const insee = communeInsee.trim();
       if (!insee || insee.length < 5) {
         setError("Code INSEE invalide.");
         return;
       }
-
       try {
         const url = `${SUPABASE_URL}/functions/v1/cadastre-from-commune`;
-
         const res = await fetch(url, {
           method: "POST",
           headers: {
@@ -905,7 +1253,6 @@ export const Implantation2DPage: React.FC = () => {
           },
           body: JSON.stringify({ commune_insee: insee }),
         });
-
         if (!res.ok) {
           setError(
             "Impossible de charger le cadastre (Edge Function cadastre-from-commune).",
@@ -913,16 +1260,13 @@ export const Implantation2DPage: React.FC = () => {
           setParcelFeature(null);
           return;
         }
-
         const data = await res.json();
         const fc = extractFeatureCollectionFromAnyResponse(data);
-
         if (!fc || !Array.isArray(fc.features)) {
           setError("Le format du cadastre renvoyé est invalide.");
           setParcelFeature(null);
           return;
         }
-
         const found = findFeatureForParcel(fc, parcelId);
         if (!found) {
           setError(
@@ -931,14 +1275,12 @@ export const Implantation2DPage: React.FC = () => {
           setParcelFeature(null);
           return;
         }
-
         const norm = normalizeToFeature(found);
         if (!norm) {
           setError("Géométrie de la parcelle invalide dans le cadastre.");
           setParcelFeature(null);
           return;
         }
-
         setParcelFeature(norm);
         setError(null);
       } catch (err) {
@@ -947,15 +1289,49 @@ export const Implantation2DPage: React.FC = () => {
         setParcelFeature(null);
       }
     }
-
     loadCadastreGeometry();
   }, [parcelId, communeInsee]);
+
   // --------------------------------------------------
-  // 2) Calcul implantation
+  // 2) Calcul implantation (UNIQUEMENT si ruleset valide ET params disponibles)
   // --------------------------------------------------
   useEffect(() => {
-    const basePluRules: PluRules | null = state.pluRules ?? null;
+    // Hard-stop si parametres manquants
+    if (hasMissingParams) {
+      setResult(null);
+      setBuildableFeature(null);
+      setAfterReculsFeature(null);
+      setManualBuilding(null);
+      setEditMode(false);
+      setReculsUsed(null);
+      return;
+    }
 
+    // Hard-stop si ruleset invalide
+    if (!rulesetValid) {
+      setResult(null);
+      setBuildableFeature(null);
+      setAfterReculsFeature(null);
+      setManualBuilding(null);
+      setEditMode(false);
+      setReculsUsed(null);
+      return;
+    }
+
+    // Extraire les reculs depuis le ruleset resolu
+    const extractedReculs = extractReculsFromRuleset(resolvedRuleset!);
+    const finalReculAvant = extractedReculs.avant;
+    const finalReculLat = extractedReculs.lateral;
+    const finalReculFond = extractedReculs.fond;
+    const reculMode = extractedReculs.mode;
+
+    // Calculer reculMax en ignorant null/NaN
+    const validReculs = [finalReculAvant, finalReculLat, finalReculFond].filter(
+      (x): x is number => typeof x === "number" && Number.isFinite(x) && x >= 0
+    );
+    const reculMax = validReculs.length > 0 ? Math.max(...validReculs) : 0;
+
+    const basePluRules: PluRules | null = state.pluRules ?? null;
     const surfaceFromState = state.surfaceTerrainM2 ?? null;
     const surfaceFromGeom = parcelFeature
       ? turf.area(parcelFeature as any)
@@ -967,57 +1343,16 @@ export const Implantation2DPage: React.FC = () => {
         ? surfaceFromGeom
         : null) ?? null;
 
-    const pluTriplet = extractReculTripletFromPluRules(basePluRules);
-
-    const massingImpl = state.massing?.implantation ?? null;
-    const massingAvant = toNumberLooseNullable(
-      massingImpl?.recul_avant_m ??
-        massingImpl?.recul_voie_m ??
-        massingImpl?.recul_alignement_m,
-    );
-    const massingLat = toNumberLooseNullable(
-      massingImpl?.recul_lateral_m ?? massingImpl?.recul_lateraux_m,
-    );
-    const massingFond = toNumberLooseNullable(
-      massingImpl?.recul_fond_m ?? massingImpl?.recul_arriere_m,
-    );
-
-    const reculAvant =
-      (pluTriplet.reculAvant ?? null) ??
-      (typeof massingAvant === "number" ? massingAvant : null);
-    const reculLat =
-      (pluTriplet.reculLateral ?? null) ??
-      (typeof massingLat === "number" ? massingLat : null);
-    const reculFond =
-      (pluTriplet.reculFond ?? null) ??
-      (typeof massingFond === "number" ? massingFond : null);
-
-    const hasAnyAuto = [reculAvant, reculLat, reculFond].some(
-      (x) => typeof x === "number" && Number.isFinite(x) && x > 0,
-    );
-
-    const finalReculAvant = hasAnyAuto ? reculAvant : 5;
-    const finalReculLat = hasAnyAuto ? reculLat : 3;
-    const finalReculFond = hasAnyAuto ? reculFond : 4;
-
-    const reculMax = Math.max(
-      0,
-      ...([finalReculAvant, finalReculLat, finalReculFond].filter(
-        (x) => typeof x === "number" && Number.isFinite(x) && x > 0,
-      ) as number[]),
-    );
-
     const userParamsWithReculs: ImplantationUserParams = {
       ...appliedParams,
       reculs: {
         avant_m: typeof finalReculAvant === "number" ? finalReculAvant : 0,
         lateral_m: typeof finalReculLat === "number" ? finalReculLat : 0,
         arriere_m: typeof finalReculFond === "number" ? finalReculFond : 0,
-        alignement_obligatoire: pluTriplet.alignementObligatoire ?? false,
-        source: hasAnyAuto ? "PLU_OR_AUTO" : "FALLBACK",
+        alignement_obligatoire: false,
+        source: "PLU_RULESET",
       } as any,
     };
-
     (userParamsWithReculs as any).facade = facadeSegment ?? null;
 
     if (!surfaceTerrainM2 || surfaceTerrainM2 <= 0) {
@@ -1042,34 +1377,31 @@ export const Implantation2DPage: React.FC = () => {
       setAfterReculsFeature(null);
       setManualBuilding(null);
       setEditMode(false);
-
       setReculsUsed({
-        recul_avant_m:
-          typeof finalReculAvant === "number" ? finalReculAvant : null,
-        recul_lateral_m:
-          typeof finalReculLat === "number" ? finalReculLat : null,
-        recul_fond_m:
-          typeof finalReculFond === "number" ? finalReculFond : null,
+        recul_avant_m: finalReculAvant,
+        recul_lateral_m: finalReculLat,
+        recul_fond_m: finalReculFond,
         reculMax,
-        source: hasAnyAuto ? (pluTriplet.hasAny ? "plu" : "auto") : "fallback",
-        mode: "UNIFORM",
+        source: "plu",
+        mode: reculMode,
       });
-
       return;
     }
 
-    // fallback overlay (sera remplacé par result.envelopeAfterReculs si dispo)
+    // Calcul de l'enveloppe apres reculs
+    let computedAfterReculsFeature: Feature<Polygon | MultiPolygon> | null =
+      null;
     if (parcelFeature && reculMax > 0) {
       try {
         const buffered = turf.buffer(parcelFeature as any, -reculMax, {
           units: "meters",
         }) as any;
-
         if (
           buffered?.geometry &&
           (buffered.geometry.type === "Polygon" ||
             buffered.geometry.type === "MultiPolygon")
         ) {
+          computedAfterReculsFeature = buffered as any;
           setAfterReculsFeature(buffered as any);
         } else {
           setAfterReculsFeature(null);
@@ -1089,97 +1421,60 @@ export const Implantation2DPage: React.FC = () => {
           pluRules: basePluRules,
           userParams: userParamsWithReculs,
         });
-
         setResult(result);
 
-        // ✅ FIX ROBUSTE: le bâtiment peut être dans plusieurs champs (Feature/Geometry/FC)
+        // FIX ROBUSTE: le batiment peut etre dans plusieurs champs (Feature/Geometry/FC)
         const candidate =
-        buildableGeom ??
-        (result as any)?.buildableGeom ??
-        (result as any)?.building ??
-        (result as any)?.buildingGeom ??
-        (result as any)?.buildingFeature ??
-        (result as any)?.footprint ??
-        null;
+          buildableGeom ??
+          (result as any)?.buildableGeom ??
+          (result as any)?.building ??
+          (result as any)?.buildingGeom ??
+          (result as any)?.buildingFeature ??
+          (result as any)?.footprint ??
+          null;
+        const normBuildable = normalizeToFeature(candidate);
 
-const normBuildable = normalizeToFeature(candidate);
+        // fallback front si le moteur ne renvoie rien
+        const envelopeForFallback = computedAfterReculsFeature;
+        if (!normBuildable && envelopeForFallback) {
+          const shape = (((appliedParams as any)?.project?.buildings?.[0]
+            ?.shape ?? "rectangle") as "rectangle" | "square");
+          const footprintM2 = Number(
+            (appliedParams as any)?.project?.buildings?.[0]?.footprintM2 ?? 300,
+          );
+          const fb = computeFallbackBuilding(
+            envelopeForFallback,
+            footprintM2,
+            shape,
+            facadeSegment ?? null,
+          );
+          setBuildableFeature(fb as any);
+        } else {
+          setBuildableFeature(normBuildable);
+        }
 
-// ✅ fallback front si le moteur ne renvoie rien
-if (!normBuildable && afterReculsFeature) {
-  const shape =
-    (((appliedParams as any)?.project?.buildings?.[0]?.shape ?? "rectangle") as
-      "rectangle" | "square");
-
-  const footprintM2 = Number(
-    (appliedParams as any)?.project?.buildings?.[0]?.footprintM2 ?? 300,
-  );
-
-  const fb = computeFallbackBuilding(
-    afterReculsFeature,
-    footprintM2,
-    shape,
-    facadeSegment ?? null,
-  );
-
-  setBuildableFeature(fb as any);
-} else {
-  setBuildableFeature(normBuildable);
-}
-// reset édition si le moteur régénère
+        // reset edition si le moteur regenere
         setManualBuilding(null);
         setEditMode(false);
 
-        // ✅ FIX ROBUSTE: enveloppe peut être Geometry/Feature/FeatureCollection
+        // FIX ROBUSTE: enveloppe peut etre Geometry/Feature/FeatureCollection
         const envRaw =
-          (result as any)?.envelopeAfterReculs ?? (result as any)?.afterReculs ?? null;
+          (result as any)?.envelopeAfterReculs ??
+          (result as any)?.afterReculs ??
+          null;
         const envFeat = normalizeToFeature(envRaw);
         if (envFeat) {
           setAfterReculsFeature(envFeat);
         }
 
-        const used = (result as any)?.reculsUsed;
-        if (used && typeof used === "object") {
-          const mode = used.mode as
-            | "DIRECTIONAL_BY_FACADE"
-            | "UNIFORM"
-            | undefined;
-          const src =
-            used.source === "USERPARAMS"
-              ? hasAnyAuto
-                ? pluTriplet.hasAny
-                  ? "plu"
-                  : "auto"
-                : "fallback"
-              : hasAnyAuto
-              ? pluTriplet.hasAny
-                ? "plu"
-                : "auto"
-              : "fallback";
-
-          setReculsUsed({
-            recul_avant_m:
-              typeof finalReculAvant === "number" ? finalReculAvant : null,
-            recul_lateral_m:
-              typeof finalReculLat === "number" ? finalReculLat : null,
-            recul_fond_m:
-              typeof finalReculFond === "number" ? finalReculFond : null,
-            reculMax,
-            source: src,
-            mode: mode ?? "UNIFORM",
-          });
-        } else {
-          setReculsUsed({
-            recul_avant_m:
-              typeof finalReculAvant === "number" ? finalReculAvant : null,
-            recul_lateral_m:
-              typeof finalReculLat === "number" ? finalReculLat : null,
-            recul_fond_m:
-              typeof finalReculFond === "number" ? finalReculFond : null,
-            reculMax,
-            source: hasAnyAuto ? (pluTriplet.hasAny ? "plu" : "auto") : "fallback",
-            mode: "UNIFORM",
-          });
-        }
+        setReculsUsed({
+          recul_avant_m: finalReculAvant,
+          recul_lateral_m: finalReculLat,
+          recul_fond_m: finalReculFond,
+          reculMax,
+          source: "plu",
+          mode: reculMode,
+        });
 
         // Pulse sur recalcul
         setPulseEnvelope(true);
@@ -1191,7 +1486,7 @@ if (!normBuildable && afterReculsFeature) {
         return;
       } catch (e) {
         console.warn(
-          "[Implantation2D] computeImplantationV1 FAILED → fallback",
+          "[Implantation2D] computeImplantationV1 FAILED -> fallback",
           e,
         );
       }
@@ -1207,14 +1502,12 @@ if (!normBuildable && afterReculsFeature) {
     setManualBuilding(null);
     setEditMode(false);
     setReculsUsed({
-      recul_avant_m:
-        typeof finalReculAvant === "number" ? finalReculAvant : null,
-      recul_lateral_m:
-        typeof finalReculLat === "number" ? finalReculLat : null,
-      recul_fond_m: typeof finalReculFond === "number" ? finalReculFond : null,
+      recul_avant_m: finalReculAvant,
+      recul_lateral_m: finalReculLat,
+      recul_fond_m: finalReculFond,
       reculMax,
-      source: hasAnyAuto ? (pluTriplet.hasAny ? "plu" : "auto") : "fallback",
-      mode: "UNIFORM",
+      source: "plu",
+      mode: reculMode,
     });
   }, [
     parcelFeature,
@@ -1224,6 +1517,9 @@ if (!normBuildable && afterReculsFeature) {
     state.surfaceTerrainM2,
     state.pluRules,
     state.massing,
+    rulesetValid,
+    resolvedRuleset,
+    hasMissingParams,
   ]);
 
   // --------------------------------------------------
@@ -1233,11 +1529,9 @@ if (!normBuildable && afterReculsFeature) {
     if (!parcelFeature) return [46.5, 2.5];
     const geom: any = parcelFeature.geometry;
     let first: number[] | null = null;
-
     if (geom.type === "Polygon") first = geom.coordinates?.[0]?.[0] ?? null;
     else if (geom.type === "MultiPolygon")
       first = geom.coordinates?.[0]?.[0]?.[0] ?? null;
-
     if (!first) return [46.5, 2.5];
     return [first[1], first[0]];
   }, [parcelFeature]);
@@ -1255,21 +1549,18 @@ if (!normBuildable && afterReculsFeature) {
     gap: "24px",
     boxSizing: "border-box",
   };
-
   const leftCol: React.CSSProperties = {
     flex: 2,
     display: "flex",
     flexDirection: "column",
     gap: "12px",
   };
-
   const rightCol: React.CSSProperties = {
     flex: 1,
     display: "flex",
     flexDirection: "column",
     gap: "16px",
   };
-
   const card: React.CSSProperties = {
     background: "#020617",
     borderRadius: 16,
@@ -1277,19 +1568,16 @@ if (!normBuildable && afterReculsFeature) {
     border: "1px solid rgba(148, 163, 184, 0.4)",
     boxShadow: "0 20px 40px rgba(15, 23, 42, 0.7)",
   };
-
   const title: React.CSSProperties = {
     fontSize: 18,
     fontWeight: 600,
     marginBottom: 8,
   };
-
   const label: React.CSSProperties = {
     display: "block",
     fontSize: 13,
     marginBottom: 4,
   };
-
   const input: React.CSSProperties = {
     width: "100%",
     padding: "6px 8px",
@@ -1299,12 +1587,10 @@ if (!normBuildable && afterReculsFeature) {
     color: "white",
     fontSize: 13,
   };
-
   const select: React.CSSProperties = {
     ...input,
     padding: "7px 8px",
   };
-
   const primaryButton: React.CSSProperties = {
     padding: "10px 16px",
     borderRadius: 999,
@@ -1315,7 +1601,6 @@ if (!normBuildable && afterReculsFeature) {
     fontWeight: 600,
     cursor: "pointer",
   };
-
   const ghostButton: React.CSSProperties = {
     padding: "10px 16px",
     borderRadius: 999,
@@ -1325,7 +1610,6 @@ if (!normBuildable && afterReculsFeature) {
     fontWeight: 500,
     cursor: "pointer",
   };
-
   const tinyButton: React.CSSProperties = {
     padding: "6px 10px",
     borderRadius: 999,
@@ -1337,7 +1621,7 @@ if (!normBuildable && afterReculsFeature) {
     fontSize: 12,
   };
 
-  // ✅ Hooks d'édition (toujours appelés, même quand result est null)
+  // Hooks d'edition (toujours appeles, meme quand result est null)
   const validation = (result as any)?.validation ?? null;
   const validationErrors: any[] = Array.isArray(validation?.errors)
     ? validation.errors
@@ -1372,22 +1656,18 @@ if (!normBuildable && afterReculsFeature) {
 
   function EditBuildingMapEvents() {
     const map = useMap();
-
     useMapEvents({
       mousemove: (e) => {
         if (!editMode) return;
         const action = actionRef.current;
         if (action.type === "none") return;
-
         const env = envelopeForConstraints;
-
         if (action.type === "move") {
           const moved = translateFeatureByLatLngDelta(
             action.original,
             action.startLatLng,
             e.latlng,
           );
-
           if (!env || withinEnvelope(moved, env)) {
             setManualBuilding(moved);
             setPulseBuilding(true);
@@ -1395,7 +1675,6 @@ if (!normBuildable && afterReculsFeature) {
           }
           return;
         }
-
         if (action.type === "rotate") {
           const curBearing = bearingFromPivot(action.pivot, e.latlng);
           const delta = curBearing - action.startBearing;
@@ -1404,7 +1683,6 @@ if (!normBuildable && afterReculsFeature) {
             action.pivot,
             delta,
           );
-
           if (!env || withinEnvelope(rotated, env)) {
             setManualBuilding(rotated);
             setPulseBuilding(true);
@@ -1412,13 +1690,11 @@ if (!normBuildable && afterReculsFeature) {
           }
           return;
         }
-
         if (action.type === "scale") {
           const curDist = distanceFromPivotM(action.pivot, e.latlng);
           const scale =
             action.startDistM > 0 ? curDist / action.startDistM : 1;
           const scaled = scaleFeatureAround(action.original, action.pivot, scale);
-
           if (!env || withinEnvelope(scaled, env)) {
             setManualBuilding(scaled);
             setPulseBuilding(true);
@@ -1427,13 +1703,11 @@ if (!normBuildable && afterReculsFeature) {
           return;
         }
       },
-
       mouseup: () => {
         if (!editMode) return;
         actionRef.current = { type: "none" };
       },
     });
-
     useEffect(() => {
       if (!map) return;
       if (editMode) {
@@ -1444,21 +1718,98 @@ if (!normBuildable && afterReculsFeature) {
         map.doubleClickZoom.enable();
       }
     }, [map, editMode]);
-
     return null;
   }
 
+  // Helper pour formater les valeurs de recul dans l'UI
+  const formatReculValue = (v: number | null | undefined): string => {
+    if (v === null || v === undefined || !Number.isFinite(v))
+      return "Non disponible";
+    return `${v}`;
+  };// PARTIE 3/3
   // --------------------------------------------------
   // JSX
   // --------------------------------------------------
   return (
     <div style={pageStyle}>
-      {!result ? (
-        <div style={card}>
-          <div style={title}>Implantation 2D</div>
-          <p>Chargement des données...</p>
+      {/* Panneau bloquant si parametres parcelle manquants */}
+      {hasMissingParams && (
+        <div style={{ width: "100%", display: "flex", justifyContent: "center", alignItems: "flex-start", paddingTop: 40 }}>
+          <MissingParcelParamsPanel
+            missingParcelId={missingParcelId}
+            missingCommuneInsee={missingCommuneInsee}
+            onReturnClick={() => navigate("/promoteur/foncier")}
+          />
         </div>
-      ) : (
+      )}
+
+      {/* Panneau bloquant si ruleset invalide (mais params OK) */}
+      {!hasMissingParams && !rulesetValid && (
+        <div style={{ width: "100%" }}>
+          <PluRulesetBlockingPanel
+            missingFields={rulesetMissingFields}
+            onReturnClick={() => navigate("/promoteur/plu-faisabilite")}
+          />
+          {/* Afficher la parcelle si disponible (lecture seule) */}
+          {parcelFeature && (
+            <div style={card}>
+              <div style={title}>{"Aperçu de la parcelle (lecture seule)"}</div>
+              <p style={{ fontSize: 13, opacity: 0.8, marginTop: 0, marginBottom: 8 }}>
+                {`Parcelle : ${parcelId ?? "?"} — Commune INSEE : ${communeInsee ?? "?"}`}
+              </p>
+              <div style={{ height: 400 }}>
+                <MapContainer
+                  center={center as any}
+                  zoom={19}
+                  minZoom={16}
+                  maxZoom={22}
+                  scrollWheelZoom={true}
+                  doubleClickZoom={true}
+                  zoomSnap={0.25}
+                  zoomDelta={0.5}
+                  style={{
+                    height: "100%",
+                    width: "100%",
+                    borderRadius: 12,
+                    background: "#ffffff",
+                    backgroundImage:
+                      "linear-gradient(to right, rgba(15,23,42,0.06) 1px, transparent 1px), linear-gradient(to bottom, rgba(15,23,42,0.06) 1px, transparent 1px)",
+                    backgroundSize: "40px 40px",
+                  }}
+                >
+                  <FitToFeature feature={parcelFeature} />
+                  <TileLayer
+                    attribution="&copy; OpenStreetMap"
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    maxNativeZoom={19}
+                    maxZoom={22}
+                  />
+                  <GeoJSON
+                    key="parcel-readonly"
+                    data={parcelFeature as any}
+                    style={() => ({
+                      weight: 2,
+                      color: "#f97316",
+                      fillColor: "#fed7aa",
+                      fillOpacity: 0.14,
+                    })}
+                  />
+                </MapContainer>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Contenu principal si params OK et ruleset valide */}
+      {!hasMissingParams && rulesetValid && !result && (
+        <div style={card}>
+          <div style={title}>{"Implantation 2D"}</div>
+          <p>{"Chargement des données..."}</p>
+        </div>
+      )}
+
+      {!hasMissingParams && rulesetValid && result && (
         <>
           <div style={leftCol}>
             <div
@@ -1469,17 +1820,14 @@ if (!normBuildable && afterReculsFeature) {
               }}
             >
               <button style={ghostButton} onClick={() => navigate(-1)}>
-                ← Retour à l&apos;étape précédente
+                {"← Retour à l'étape précédente"}
               </button>
-
               <button style={primaryButton} disabled>
-                Envoyer au bilan promoteur (bientôt)
+                {"Envoyer au bilan promoteur (bientôt)"}
               </button>
             </div>
-
             <div style={{ ...card, flex: 1 }}>
-              <div style={title}>Implantation 2D — reculs & parkings</div>
-
+              <div style={title}>{"Implantation 2D — reculs & parkings"}</div>
               <p
                 style={{
                   fontSize: 13,
@@ -1488,10 +1836,8 @@ if (!normBuildable && afterReculsFeature) {
                   marginBottom: 8,
                 }}
               >
-                Parcelle : {parcelId ?? "?"} — Commune INSEE :{" "}
-                {communeInsee ?? "?"}
+                {`Parcelle : ${parcelId ?? "?"} — Commune INSEE : ${communeInsee ?? "?"}`}
               </p>
-
               <div
                 style={{
                   display: "flex",
@@ -1504,7 +1850,6 @@ if (!normBuildable && afterReculsFeature) {
                 <button style={tinyButton} onClick={() => setShowOSM((v) => !v)}>
                   {showOSM ? "Masquer fond OSM" : "Afficher fond OSM"}
                 </button>
-
                 <button
                   style={{
                     ...tinyButton,
@@ -1514,9 +1859,8 @@ if (!normBuildable && afterReculsFeature) {
                   disabled={!facadeSegment}
                   title="Réinitialiser la façade"
                 >
-                  Réinitialiser façade
+                  {"Réinitialiser façade"}
                 </button>
-
                 <button
                   style={{
                     ...tinyButton,
@@ -1527,17 +1871,16 @@ if (!normBuildable && afterReculsFeature) {
                       ? "rgba(34,197,94,0.15)"
                       : "transparent",
                   }}
-                  disabled={!displayedBuilding}
+                  disabled={!parcelFeature}
                   onClick={() => {
                     setEditMode((v) => !v);
                     setManualBuilding((m) => m ?? displayedBuilding ?? null);
                     actionRef.current = { type: "none" };
                   }}
-                  title="Activer l’édition du bâtiment (drag/resize/rotation)"
+                  title="Activer l'édition du bâtiment (drag/resize/rotation) ou dessiner un nouveau bâtiment"
                 >
-                  {editMode ? "Terminer édition" : "Éditer bâtiment"}
+                  {editMode ? "Terminer édition" : "Éditer / Dessiner bâtiment"}
                 </button>
-
                 {editMode && (
                   <button
                     style={{
@@ -1551,21 +1894,20 @@ if (!normBuildable && afterReculsFeature) {
                     }}
                     title="Revenir au bâtiment calculé automatiquement"
                   >
-                    Revenir auto
+                    {"Revenir auto"}
                   </button>
                 )}
-
                 <span style={{ fontSize: 12, opacity: 0.85 }}>
-                  Clique directement sur un bord (sinon la sélection est ignorée).
+                  {editMode
+                    ? "Mode édition actif — Utilisez les outils en haut à gauche pour dessiner un rectangle ou polygone."
+                    : "Clique directement sur un bord (sinon la sélection est ignorée)."}
                 </span>
               </div>
-
               {error && (
                 <p style={{ fontSize: 12, color: "#f97316", marginTop: 0 }}>
                   {error}
                 </p>
               )}
-
               <div style={{ height: "100%", minHeight: 420 }}>
                 {parcelFeature ? (
                   <MapContainer
@@ -1590,7 +1932,6 @@ if (!normBuildable && afterReculsFeature) {
                     <FitToFeature feature={parcelFeature} />
                     <MapReculsControl reculs={reculsUsed} />
                     <EditBuildingMapEvents />
-
                     <FacadeClickHandler
                       enabled={!editMode}
                       parcelFeature={parcelFeature}
@@ -1604,7 +1945,11 @@ if (!normBuildable && afterReculsFeature) {
                         );
                       }}
                     />
-
+                    {/* Geoman Toolbar - visible only in edit mode */}
+                    <GeomanToolbar
+                      enabled={editMode}
+                      onCreated={handleGeomanCreated}
+                    />
                     {showOSM && (
                       <TileLayer
                         attribution="&copy; OpenStreetMap"
@@ -1613,7 +1958,6 @@ if (!normBuildable && afterReculsFeature) {
                         maxZoom={22}
                       />
                     )}
-
                     <GeoJSON
                       key="parcel"
                       data={parcelFeature as any}
@@ -1624,7 +1968,6 @@ if (!normBuildable && afterReculsFeature) {
                         fillOpacity: 0.14,
                       })}
                     />
-
                     {afterReculsFeature && (
                       <GeoJSON
                         key="after-reculs"
@@ -1638,10 +1981,9 @@ if (!normBuildable && afterReculsFeature) {
                         })}
                       />
                     )}
-
                     {displayedBuilding && (
                       <GeoJSON
-                        key={`buildable-${editMode ? "edit" : "auto"}`}
+                        key={`buildable-${editMode ? "edit" : "auto"}-${manualBuilding ? "manual" : "computed"}`}
                         data={displayedBuilding as any}
                         eventHandlers={{
                           mousedown: (e: any) => {
@@ -1649,7 +1991,6 @@ if (!normBuildable && afterReculsFeature) {
                             if (!displayedBuilding) return;
                             e?.originalEvent?.stopPropagation?.();
                             e?.originalEvent?.preventDefault?.();
-
                             actionRef.current = {
                               type: "move",
                               startLatLng: e.latlng as L.LatLng,
@@ -1665,7 +2006,6 @@ if (!normBuildable && afterReculsFeature) {
                         })}
                       />
                     )}
-
                     {editMode &&
                       displayedBuilding &&
                       corners &&
@@ -1674,16 +2014,18 @@ if (!normBuildable && afterReculsFeature) {
                         <>
                           <GeoJSON
                             key="handles-corners"
-                            data={{
-                              type: "FeatureCollection",
-                              features: corners.map((c, i) =>
-                                pointFeatureFromLngLat(
-                                  c[0] as number,
-                                  c[1] as number,
-                                  { idx: i, kind: "corner" },
+                            data={
+                              {
+                                type: "FeatureCollection",
+                                features: corners.map((c, i) =>
+                                  pointFeatureFromLngLat(
+                                    c[0] as number,
+                                    c[1] as number,
+                                    { idx: i, kind: "corner" },
+                                  ),
                                 ),
-                              ),
-                            } as any}
+                              } as any
+                            }
                             pointToLayer={(_, latlng) =>
                               L.circleMarker(latlng, {
                                 radius: 6,
@@ -1699,7 +2041,6 @@ if (!normBuildable && afterReculsFeature) {
                                   return;
                                 e?.originalEvent?.stopPropagation?.();
                                 e?.originalEvent?.preventDefault?.();
-
                                 const startDistM = distanceFromPivotM(
                                   pivotPt,
                                   e.latlng,
@@ -1713,7 +2054,6 @@ if (!normBuildable && afterReculsFeature) {
                               },
                             }}
                           />
-
                           {rotateHandle && (
                             <GeoJSON
                               key="handle-rotate"
@@ -1729,11 +2069,14 @@ if (!normBuildable && afterReculsFeature) {
                               }
                               eventHandlers={{
                                 mousedown: (e: any) => {
-                                  if (!editMode || !displayedBuilding || !pivotPt)
+                                  if (
+                                    !editMode ||
+                                    !displayedBuilding ||
+                                    !pivotPt
+                                  )
                                     return;
                                   e?.originalEvent?.stopPropagation?.();
                                   e?.originalEvent?.preventDefault?.();
-
                                   const startBearing = bearingFromPivot(
                                     pivotPt,
                                     e.latlng,
@@ -1750,7 +2093,6 @@ if (!normBuildable && afterReculsFeature) {
                           )}
                         </>
                       )}
-
                     {facadeSegment && (
                       <GeoJSON
                         key="facade"
@@ -1777,22 +2119,19 @@ if (!normBuildable && afterReculsFeature) {
                       opacity: 0.8,
                     }}
                   >
-                    Carte indisponible (géométrie non trouvée dans le cadastre).
-                    Les calculs sont néanmoins réalisés.
+                    {"Carte indisponible (géométrie non trouvée dans le cadastre). Les calculs sont néanmoins réalisés."}
                   </div>
                 )}
               </div>
             </div>
           </div>
-
           <div style={rightCol}>
             {/* Contraintes PLU */}
             <div style={card}>
-              <div style={title}>Contraintes PLU (v1)</div>
+              <div style={title}>{"Contraintes PLU (v1)"}</div>
               <p style={{ fontSize: 13, margin: 0, opacity: 0.8 }}>
-                Reculs et stationnement. La hauteur viendra ensuite.
+                {"Reculs et stationnement. La hauteur viendra ensuite."}
               </p>
-
               <div
                 style={{
                   marginTop: 12,
@@ -1803,20 +2142,19 @@ if (!normBuildable && afterReculsFeature) {
                 }}
               >
                 <div>
-                  Surface terrain :{" "}
-                  <strong>{result.surfaceTerrainM2.toFixed(0)} m²</strong>
+                  {"Surface terrain : "}
+                  <strong>{`${result.surfaceTerrainM2.toFixed(0)} m²`}</strong>
                 </div>
                 <div>
-                  Après reculs :{" "}
+                  {"Après reculs : "}
                   <strong>
-                    {result.surfaceTerrainApresReculsM2.toFixed(0)} m²
+                    {`${result.surfaceTerrainApresReculsM2.toFixed(0)} m²`}
                   </strong>
                 </div>
                 <div>
-                  Emprise max (ratio PLU) :{" "}
-                  <strong>{result.surfaceEmpriseMaxM2.toFixed(0)} m²</strong>
+                  {"Emprise max (ratio PLU) : "}
+                  <strong>{`${result.surfaceEmpriseMaxM2.toFixed(0)} m²`}</strong>
                 </div>
-
                 <div
                   style={{
                     marginTop: 10,
@@ -1825,7 +2163,7 @@ if (!normBuildable && afterReculsFeature) {
                   }}
                 >
                   <div style={{ fontWeight: 600, marginBottom: 6 }}>
-                    Reculs appliqués :{" "}
+                    {"Reculs appliqués (PLU) : "}
                     <strong>
                       {reculsUsed?.mode === "DIRECTIONAL_BY_FACADE"
                         ? "directionnels (façade)"
@@ -1833,25 +2171,45 @@ if (!normBuildable && afterReculsFeature) {
                     </strong>
                   </div>
                   <div>
-                    Avant : <strong>{reculsUsed?.recul_avant_m ?? "—"} m</strong>
-                  </div>
-                  <div>
-                    Latéral :{" "}
+                    {"Avant : "}
                     <strong>
-                      {reculsUsed?.recul_lateral_m ?? "—"} m
+                      {formatReculValue(reculsUsed?.recul_avant_m)}
+                      {reculsUsed?.recul_avant_m !== null &&
+                      reculsUsed?.recul_avant_m !== undefined &&
+                      Number.isFinite(reculsUsed?.recul_avant_m)
+                        ? " m"
+                        : ""}
                     </strong>
                   </div>
                   <div>
-                    Fond : <strong>{reculsUsed?.recul_fond_m ?? "—"} m</strong>
+                    {"Latéral : "}
+                    <strong>
+                      {formatReculValue(reculsUsed?.recul_lateral_m)}
+                      {reculsUsed?.recul_lateral_m !== null &&
+                      reculsUsed?.recul_lateral_m !== undefined &&
+                      Number.isFinite(reculsUsed?.recul_lateral_m)
+                        ? " m"
+                        : ""}
+                    </strong>
                   </div>
                   <div>
-                    Max :{" "}
+                    {"Fond : "}
                     <strong>
-                      {reculsUsed?.reculMax?.toFixed(1) ?? "0"} m
+                      {formatReculValue(reculsUsed?.recul_fond_m)}
+                      {reculsUsed?.recul_fond_m !== null &&
+                      reculsUsed?.recul_fond_m !== undefined &&
+                      Number.isFinite(reculsUsed?.recul_fond_m)
+                        ? " m"
+                        : ""}
+                    </strong>
+                  </div>
+                  <div>
+                    {"Max : "}
+                    <strong>
+                      {`${reculsUsed?.reculMax?.toFixed(1) ?? "0"} m`}
                     </strong>
                   </div>
                 </div>
-
                 <div
                   style={{
                     marginTop: 10,
@@ -1860,34 +2218,31 @@ if (!normBuildable && afterReculsFeature) {
                   }}
                 >
                   <div style={{ fontWeight: 600, marginBottom: 6 }}>
-                    Façade (clic)
+                    {"Façade (clic)"}
                   </div>
                   {facadeSegment ? (
                     <div style={{ opacity: 0.9 }}>
-                      Segment sélectionné — distance clic ~{" "}
+                      {"Segment sélectionné — distance clic ~ "}
                       <strong>
-                        {Number(
+                        {`${Number(
                           (facadeSegment.properties as any)?.distance_m ?? 0,
-                        ).toFixed(2)}{" "}
-                        m
+                        ).toFixed(2)} m`}
                       </strong>
                     </div>
                   ) : (
                     <div style={{ opacity: 0.75 }}>
-                      Non définie — clique un bord de parcelle.
+                      {"Non définie — clique un bord de parcelle."}
                     </div>
                   )}
                 </div>
               </div>
             </div>
-
-            {/* Paramètres projet (enrichi) */}
+            {/* Parametres projet (enrichi) */}
             <div style={card}>
-              <div style={title}>Paramètres projet</div>
-
+              <div style={title}>{"Paramètres projet"}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <label style={label}>
-                  Nombre de bâtiments
+                  {"Nombre de bâtiments"}
                   <input
                     type="number"
                     min={1}
@@ -1917,9 +2272,8 @@ if (!normBuildable && afterReculsFeature) {
                     }}
                   />
                 </label>
-
                 <label style={label}>
-                  Nombre de logements
+                  {"Nombre de logements"}
                   <input
                     type="number"
                     min={1}
@@ -1934,9 +2288,8 @@ if (!normBuildable && afterReculsFeature) {
                     }
                   />
                 </label>
-
                 <label style={label}>
-                  Surface moyenne par logement (m²)
+                  {"Surface moyenne par logement (m²)"}
                   <input
                     type="number"
                     min={20}
@@ -1954,7 +2307,6 @@ if (!normBuildable && afterReculsFeature) {
                     }
                   />
                 </label>
-
                 <div
                   style={{
                     marginTop: 4,
@@ -1963,11 +2315,10 @@ if (!normBuildable && afterReculsFeature) {
                   }}
                 >
                   <div style={{ fontWeight: 600, marginBottom: 8 }}>
-                    Bâtiment (gabarit)
+                    {"Bâtiment (gabarit)"}
                   </div>
-
                   <label style={label}>
-                    Forme
+                    {"Forme"}
                     <select
                       style={select}
                       value={
@@ -2001,21 +2352,20 @@ if (!normBuildable && afterReculsFeature) {
                         });
                       }}
                     >
-                      <option value="rectangle">Rectangle</option>
-                      <option value="square">Carré</option>
+                      <option value="rectangle">{"Rectangle"}</option>
+                      <option value="square">{"Carré"}</option>
                     </select>
                   </label>
-
                   <label style={label}>
-                    Emprise souhaitée (m²) — par bâtiment
+                    {"Emprise souhaitée (m²) — par bâtiment"}
                     <input
                       type="number"
                       min={10}
                       max={5000}
                       style={input}
                       value={Number(
-                        (draftParams as any).project?.buildings?.[0]?.footprintM2 ??
-                          300,
+                        (draftParams as any).project?.buildings?.[0]
+                          ?.footprintM2 ?? 300,
                       )}
                       onChange={(e) => {
                         const v = Math.max(10, Number(e.target.value) || 10);
@@ -2045,16 +2395,16 @@ if (!normBuildable && afterReculsFeature) {
                       }}
                     />
                   </label>
-
                   <label style={label}>
-                    Nombre d’étages
+                    {"Nombre d'étages"}
                     <input
                       type="number"
                       min={1}
                       max={20}
                       style={input}
                       value={Number(
-                        (draftParams as any).project?.buildings?.[0]?.floors ?? 2,
+                        (draftParams as any).project?.buildings?.[0]?.floors ??
+                          2,
                       )}
                       onChange={(e) => {
                         const v = Math.max(1, Number(e.target.value) || 1);
@@ -2084,14 +2434,13 @@ if (!normBuildable && afterReculsFeature) {
                       }}
                     />
                   </label>
-
                   <label style={label}>
-                    Orientation
+                    {"Orientation"}
                     <select
                       style={select}
                       value={
-                        ((draftParams as any).project?.buildings?.[0]?.orientation ??
-                          "facade") as any
+                        ((draftParams as any).project?.buildings?.[0]
+                          ?.orientation ?? "facade") as any
                       }
                       onChange={(e) => {
                         const v = e.target.value;
@@ -2120,16 +2469,15 @@ if (!normBuildable && afterReculsFeature) {
                         });
                       }}
                     >
-                      <option value="facade">Parallèle à la façade</option>
-                      <option value="north">Nord</option>
-                      <option value="south">Sud</option>
-                      <option value="east">Est</option>
-                      <option value="west">Ouest</option>
+                      <option value="facade">{"Parallèle à la façade"}</option>
+                      <option value="north">{"Nord"}</option>
+                      <option value="south">{"Sud"}</option>
+                      <option value="east">{"Est"}</option>
+                      <option value="west">{"Ouest"}</option>
                     </select>
                   </label>
-
                   <label style={label}>
-                    Façade
+                    {"Façade"}
                     <select
                       style={select}
                       value={
@@ -2147,7 +2495,6 @@ if (!normBuildable && afterReculsFeature) {
                             p.nbBatiments,
                             proj.buildings,
                           );
-
                           let fm: any = { type: "alignement" };
                           if (v === "retrait") {
                             const cur = buildings[0]?.facadeMode?.distanceM;
@@ -2156,7 +2503,6 @@ if (!normBuildable && afterReculsFeature) {
                               distanceM: Number(cur) > 0 ? Number(cur) : 5,
                             };
                           }
-
                           buildings[0] = { ...buildings[0], facadeMode: fm };
                           const propagated = buildings.map((b: any) => ({
                             ...b,
@@ -2173,23 +2519,22 @@ if (!normBuildable && afterReculsFeature) {
                         });
                       }}
                     >
-                      <option value="alignement">Alignement</option>
-                      <option value="retrait">Retrait</option>
+                      <option value="alignement">{"Alignement"}</option>
+                      <option value="retrait">{"Retrait"}</option>
                     </select>
                   </label>
-
                   {(((draftParams as any).project?.buildings?.[0]?.facadeMode
                     ?.type ?? "alignement") as any) === "retrait" && (
                     <label style={label}>
-                      Retrait (m)
+                      {"Retrait (m)"}
                       <input
                         type="number"
                         min={0}
                         max={100}
                         style={input}
                         value={Number(
-                          (draftParams as any).project?.buildings?.[0]?.facadeMode
-                            ?.distanceM ?? 5,
+                          (draftParams as any).project?.buildings?.[0]
+                            ?.facadeMode?.distanceM ?? 5,
                         )}
                         onChange={(e) => {
                           const v = Math.max(0, Number(e.target.value) || 0);
@@ -2221,7 +2566,6 @@ if (!normBuildable && afterReculsFeature) {
                       />
                     </label>
                   )}
-
                   <div
                     style={{
                       display: "flex",
@@ -2241,15 +2585,15 @@ if (!normBuildable && afterReculsFeature) {
                       onClick={() => {
                         setAppliedParams(() => {
                           const next: any = { ...draftParams };
-                          if (next?.project) next.project.validationRequested = false;
+                          if (next?.project)
+                            next.project.validationRequested = false;
                           return next;
                         });
                         setApplyTick((t) => t + 1);
                       }}
                     >
-                      Valider et recalculer
+                      {"Valider et recalculer"}
                     </button>
-
                     <button
                       style={{
                         ...ghostButton,
@@ -2261,7 +2605,7 @@ if (!normBuildable && afterReculsFeature) {
                       disabled={isDirty}
                       title={
                         isDirty
-                          ? "Valide d’abord tes paramètres."
+                          ? "Valide d'abord tes paramètres."
                           : "Lance la validation PLU"
                       }
                       onClick={() => {
@@ -2287,19 +2631,18 @@ if (!normBuildable && afterReculsFeature) {
                         setApplyTick((t) => t + 1);
                       }}
                     >
-                      Vérifier conformité PLU
+                      {"Vérifier conformité PLU"}
                     </button>
                   </div>
-
                   <div style={{ marginTop: 10 }}>
                     {validationOk ? (
                       <div style={{ fontSize: 13, color: "#86efac" }}>
-                        ✅ Projet compatible avec les contraintes PLU (v1)
+                        {"✅ Projet compatible avec les contraintes PLU (v1)"}
                       </div>
                     ) : validationErrors.length > 0 ? (
                       <div style={{ fontSize: 13, color: "#fb7185" }}>
                         <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                          ❌ Incompatibilités détectées
+                          {"❌ Incompatibilités détectées"}
                         </div>
                         <ul style={{ margin: 0, paddingLeft: 18 }}>
                           {validationErrors
@@ -2312,24 +2655,23 @@ if (!normBuildable && afterReculsFeature) {
                         </ul>
                         {validationErrors.length > 8 && (
                           <div style={{ opacity: 0.9, marginTop: 6 }}>
-                            + {validationErrors.length - 8} autres…
+                            {`+ ${validationErrors.length - 8} autres…`}
                           </div>
                         )}
                       </div>
                     ) : (
                       <div style={{ fontSize: 13, opacity: 0.75 }}>
-                        Renseigne les paramètres puis clique{" "}
-                        <b>Vérifier conformité PLU</b>.
+                        {"Renseigne les paramètres puis clique "}
+                        <b>{"Vérifier conformité PLU"}</b>{"."}
                       </div>
                     )}
                   </div>
                 </div>
               </div>
             </div>
-
             {/* Parkings */}
             <div style={card}>
-              <div style={title}>Parkings & emprise utile</div>
+              <div style={title}>{"Parkings & emprise utile"}</div>
               <div
                 style={{
                   fontSize: 13,
@@ -2339,19 +2681,19 @@ if (!normBuildable && afterReculsFeature) {
                 }}
               >
                 <div>
-                  Places de parking requises :{" "}
+                  {"Places de parking requises : "}
                   <strong>{result.placesParking}</strong>
                 </div>
                 <div>
-                  Surface parkings (incl. manoeuvres) :{" "}
-                  <strong>{result.surfaceParkingM2.toFixed(0)} m²</strong>
+                  {"Surface parkings (incl. manoeuvres) : "}
+                  <strong>{`${result.surfaceParkingM2.toFixed(0)} m²`}</strong>
                 </div>
                 <div>
-                  Surface résiduelle pour les bâtiments :{" "}
-                  <strong>{result.surfaceEmpriseUtilisableM2.toFixed(0)} m²</strong>
+                  {"Surface résiduelle pour les bâtiments : "}
+                  <strong>{`${result.surfaceEmpriseUtilisableM2.toFixed(0)} m²`}</strong>
                 </div>
                 <div style={{ marginTop: 8, opacity: 0.8 }}>
-                  (v1 : enveloppe après reculs + parkings, puis validation PLU avant génération du bâtiment.)
+                  {"(v1 : enveloppe après reculs + parkings, puis validation PLU avant génération du bâtiment.)"}
                 </div>
               </div>
             </div>
@@ -2362,5 +2704,5 @@ if (!normBuildable && afterReculsFeature) {
   );
 };
 
-// ✅ pour compat : import { Implantation2DPage } ET import default
+// pour compat : import { Implantation2DPage } ET import default
 export default Implantation2DPage;

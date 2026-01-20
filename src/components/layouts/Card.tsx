@@ -1,5 +1,4 @@
-﻿import React from "react";
-
+﻿
 interface CardProps {
   children: React.ReactNode;
   className?: string;
@@ -72,4 +71,5 @@ export const CardFooter: React.FC<{
     {children}
   </div>
 );
+
 

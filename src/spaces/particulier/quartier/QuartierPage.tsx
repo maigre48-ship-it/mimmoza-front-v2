@@ -1,0 +1,446 @@
+﻿// src/spaces/particulier/quartier/QuartierPage.tsx
+import { useEffect, useMemo, useState, useRef } from "react";
+import type { CSSProperties } from "react";
+import { supabase } from "../../../supabaseClient";
+import { fetchQuartierSmartscore, type QuartierResponse } from "./quartierApi";
+
+const LOCALSTORAGE_KEY = "particulier:lastAddress";
+
+type StoredAddress = {
+  address: string;
+  cp: string;
+  ville: string;
+  commune_insee: string | null;
+  parcel_id?: string | null;
+
+  // Champs utiles pour smartscore-enriched-v4
+  surface_m2?: number | null;
+  prix?: number | null;
+  type_local?: string | null;
+};
+
+function readAddressFromLocalStorage(): StoredAddress | null {
+  try {
+    const raw = localStorage.getItem(LOCALSTORAGE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+
+    return {
+      address: typeof parsed.address === "string" ? parsed.address.trim() : "",
+      cp: typeof parsed.cp === "string" ? parsed.cp.trim() : "",
+      ville: typeof parsed.ville === "string" ? parsed.ville.trim() : "",
+      commune_insee:
+        typeof parsed.commune_insee === "string" &&
+        parsed.commune_insee.trim() &&
+        parsed.commune_insee.trim() !== "00000"
+          ? parsed.commune_insee.trim()
+          : null,
+      parcel_id:
+        typeof parsed.parcel_id === "string" && parsed.parcel_id.trim()
+          ? parsed.parcel_id.trim()
+          : null,
+
+      surface_m2: typeof parsed.surface_m2 === "number" ? parsed.surface_m2 : null,
+      prix: typeof parsed.prix === "number" ? parsed.prix : null,
+      type_local: typeof parsed.type_local === "string" ? parsed.type_local : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeAddressToLocalStorage(addr: StoredAddress): void {
+  try {
+    localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify(addr));
+  } catch {
+    // ignore
+  }
+}
+
+function hasValidAddress(addr: StoredAddress | null): boolean {
+  if (!addr) return false;
+  const hasInsee = addr.commune_insee && addr.commune_insee !== "00000";
+  return Boolean(addr.address || hasInsee || addr.parcel_id || addr.cp);
+}
+
+async function resolveCommuneInseeFromAddress(params: {
+  address: string;
+  cp: string;
+  ville: string;
+}): Promise<string | null> {
+  const { address, cp, ville } = params;
+
+  // 1) BAN
+  try {
+    const query = [address, cp, ville].filter(Boolean).join(" ").trim();
+    if (query) {
+      const url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=1`;
+      const resp = await fetch(url);
+      if (resp.ok) {
+        const data = await resp.json();
+        const citycode = data?.features?.[0]?.properties?.citycode;
+        if (typeof citycode === "string" && citycode.length === 5) return citycode;
+      }
+    }
+  } catch {
+    // continue
+  }
+
+  // 2) geo.api.gouv.fr fallback
+  try {
+    if (cp || ville) {
+      const qs = new URLSearchParams();
+      if (cp) qs.set("codePostal", cp);
+      if (ville) qs.set("nom", ville);
+      qs.set("fields", "code,nom");
+      qs.set("format", "json");
+
+      const url = `https://geo.api.gouv.fr/communes?${qs.toString()}`;
+      const resp = await fetch(url);
+      if (resp.ok) {
+        const data = await resp.json();
+        const code = data?.[0]?.code;
+        if (typeof code === "string" && code.length === 5) return code;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
+}
+
+function formatEUR(n: number): string {
+  return new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
+function formatInt(n: number): string {
+  return new Intl.NumberFormat("fr-FR", {
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
+const cardStyle: CSSProperties = {
+  background: "rgba(255,255,255,0.95)",
+  border: "1px solid rgba(15,23,42,0.08)",
+  borderRadius: 16,
+  padding: 16,
+  boxShadow: "0 10px 30px rgba(2,6,23,0.06)",
+};
+
+const gridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+  gap: 16,
+  marginTop: 16,
+};
+
+const noAddressCardStyle: CSSProperties = {
+  ...cardStyle,
+  background: "linear-gradient(135deg, #fef3c7 0%, #fef9c3 100%)",
+  border: "1px solid rgba(217,119,6,0.2)",
+};
+
+const noAddressTextStyle: CSSProperties = {
+  fontSize: 14,
+  color: "#92400e",
+  lineHeight: 1.5,
+};
+
+const paramsBadgeStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  fontSize: 12,
+  color: "#475569",
+  background: "rgba(14,165,233,0.08)",
+  border: "1px solid rgba(14,165,233,0.15)",
+  borderRadius: 8,
+  padding: "4px 10px",
+  marginTop: 6,
+};
+
+function prettyKey(k: string): string {
+  return k
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+export default function QuartierPage() {
+  const [loading, setLoading] = useState(false);
+  const [res, setRes] = useState<QuartierResponse | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const [storedAddress, setStoredAddress] = useState<StoredAddress | null>(() =>
+    readAddressFromLocalStorage()
+  );
+
+  const hasResolvedInseeRef = useRef(false);
+
+  const canFetch = hasValidAddress(storedAddress);
+
+  // Resolve INSEE once if missing/00000
+  useEffect(() => {
+    if (!storedAddress) return;
+    if (hasResolvedInseeRef.current) return;
+
+    const needs = !storedAddress.commune_insee || storedAddress.commune_insee === "00000";
+    if (!needs) return;
+
+    if (!storedAddress.address && !storedAddress.cp && !storedAddress.ville) return;
+
+    hasResolvedInseeRef.current = true;
+
+    (async () => {
+      const insee = await resolveCommuneInseeFromAddress({
+        address: storedAddress.address,
+        cp: storedAddress.cp,
+        ville: storedAddress.ville,
+      });
+
+      if (insee && insee !== "00000") {
+        const updated: StoredAddress = { ...storedAddress, commune_insee: insee };
+        writeAddressToLocalStorage(updated);
+        setStoredAddress(updated);
+      }
+    })();
+  }, [storedAddress]);
+
+  const input = useMemo(() => {
+    if (!storedAddress) return null;
+
+    return {
+      address: storedAddress.address || undefined,
+      cp: storedAddress.cp || undefined,
+      ville: storedAddress.ville || undefined,
+      parcel_id: storedAddress.parcel_id || undefined,
+
+      surface_m2: typeof storedAddress.surface_m2 === "number" ? storedAddress.surface_m2 : undefined,
+      prix: typeof storedAddress.prix === "number" ? storedAddress.prix : undefined,
+      type_local: storedAddress.type_local || undefined,
+      // IMPORTANT: ne pas envoyer "00000"
+      commune_insee:
+        storedAddress.commune_insee && storedAddress.commune_insee !== "00000"
+          ? storedAddress.commune_insee
+          : undefined,
+      radius_km: 2,
+      horizon_months: 24,
+      debug: false,
+    };
+  }, [storedAddress]);
+
+  // StrictMode-safe fetch
+  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    if (!canFetch || !input) return;
+
+    const requestId = ++requestIdRef.current;
+
+    setLoading(true);
+    setErr(null);
+
+    (async () => {
+      try {
+        const out = await fetchQuartierSmartscore(supabase, input as any);
+
+        if (requestId !== requestIdRef.current) return;
+
+        if (!out?.success) setErr(out?.error || "SmartScore indisponible");
+        setRes(out);
+      } catch (e: any) {
+        if (requestId !== requestIdRef.current) return;
+        setErr(String(e?.message || e));
+      } finally {
+        if (requestId === requestIdRef.current) setLoading(false);
+      }
+    })();
+  }, [canFetch, input]);
+
+  const score = res?.smartscore?.globalScore ?? null;
+  const emplacementScore = res?.smartscore?.pillarScores?.emplacement_env ?? null;
+  const risquesScore = res?.smartscore?.pillarScores?.risques_complexite ?? null;
+
+  const transportModule = res?.enrichedModules?.transports;
+  const risquesModule = res?.enrichedModules?.risques;
+
+  // Build params display string
+  const paramsDisplay = useMemo(() => {
+    if (!storedAddress) return null;
+    const parts: string[] = [];
+    if (typeof storedAddress.surface_m2 === "number" && storedAddress.surface_m2 > 0) {
+      parts.push(`${formatInt(storedAddress.surface_m2)} m²`);
+    }
+    if (typeof storedAddress.prix === "number" && storedAddress.prix > 0) {
+      parts.push(formatEUR(storedAddress.prix));
+    }
+    if (storedAddress.type_local) {
+      parts.push(storedAddress.type_local);
+    }
+    return parts.length > 0 ? parts.join(" · ") : null;
+  }, [storedAddress]);
+
+  if (!canFetch) {
+    return (
+      <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
+        <h1>Quartier</h1>
+        <p style={{ opacity: 0.7 }}>
+          Score calculé automatiquement à partir des données disponibles.
+        </p>
+
+        <div style={noAddressCardStyle}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#b45309", marginBottom: 8 }}>
+            Aucune adresse disponible
+          </div>
+          <div style={noAddressTextStyle}>
+            Pour afficher le score quartier, commence par saisir une adresse dans l'onglet{" "}
+            <strong>Estimation</strong> puis clique sur <strong>Calculer (DVF)</strong>.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
+      <h1>Quartier</h1>
+      <p style={{ opacity: 0.7 }}>
+        Score calculé automatiquement à partir des données disponibles.
+      </p>
+
+      {storedAddress && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, color: "#64748b" }}>
+            Adresse analysée :{" "}
+            <strong>
+              {[storedAddress.address, storedAddress.cp, storedAddress.ville]
+                .filter(Boolean)
+                .join(", ") || "—"}
+            </strong>
+            {storedAddress.commune_insee && storedAddress.commune_insee !== "00000" && (
+              <span style={{ marginLeft: 8, opacity: 0.7 }}>
+                (INSEE : {storedAddress.commune_insee})
+              </span>
+            )}
+          </div>
+          {paramsDisplay && (
+            <div style={paramsBadgeStyle}>
+              <span style={{ fontWeight: 700 }}>Paramètres :</span> {paramsDisplay}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={cardStyle}>
+        <div style={{ fontSize: 14, opacity: 0.7 }}>Score Quartier</div>
+        <div style={{ fontSize: 40, fontWeight: 800 }}>
+          {loading ? "Calcul…" : score !== null ? `${score}/100` : "N/A"}
+        </div>
+        {err && <div style={{ color: "crimson", marginTop: 8 }}>{err}</div>}
+      </div>
+
+      <div style={gridStyle}>
+        <div style={cardStyle}>
+          <h3>Équipements &amp; emplacement</h3>
+          <div>
+            Score emplacement : <b>{emplacementScore ?? "N/A"}</b>
+          </div>
+        </div>
+
+        <div style={cardStyle}>
+          <h3>Transports &amp; accessibilité</h3>
+          {transportModule ? (
+            <>
+              <div>
+                Statut : <b>{transportModule.status}</b>
+              </div>
+              {(transportModule.notes?.length ?? 0) > 0 && (
+                <div style={{ marginTop: 8, opacity: 0.8 }}>{transportModule.notes?.[0]}</div>
+              )}
+            </>
+          ) : (
+            <div>N/A</div>
+          )}
+        </div>
+
+        <div style={cardStyle}>
+          <h3>Risques &amp; contraintes</h3>
+          <div>
+            Score risques : <b>{risquesScore ?? "N/A"}</b>
+          </div>
+          {risquesModule?.notes?.[0] ? (
+            <div style={{ marginTop: 8, opacity: 0.8 }}>{risquesModule.notes[0]}</div>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Détails v4 */}
+      {res?.smartscore?.report && (
+        <div style={{ marginTop: 16, ...cardStyle }}>
+          <h3 style={{ marginTop: 0 }}>Détails</h3>
+
+          {Array.isArray(res.smartscore.messages) && res.smartscore.messages.length > 0 && (
+            <div style={{ opacity: 0.85, marginBottom: 10 }}>
+              <b>Moteur :</b> {res.smartscore.messages[0]}
+            </div>
+          )}
+
+          {res.smartscore.report.executiveSummary && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.7 }}>Synthèse</div>
+              <div style={{ marginTop: 6 }}>{res.smartscore.report.executiveSummary}</div>
+            </div>
+          )}
+
+          {res.smartscore.report.pillarDetails && (
+            <div style={{ display: "grid", gap: 10 }}>
+              {Object.entries(res.smartscore.report.pillarDetails).map(([k, v]) => (
+                <div
+                  key={k}
+                  style={{
+                    padding: 12,
+                    borderRadius: 12,
+                    background: "#f8fafc",
+                    border: "1px solid rgba(15,23,42,0.06)",
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 900, opacity: 0.7 }}>{prettyKey(k)}</div>
+                  <div style={{ marginTop: 6 }}>{String(v)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {res?.enrichedModules?.marketInsights && (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(15,23,42,0.08)" }}>
+              <div style={{ fontSize: 12, fontWeight: 900, opacity: 0.7, marginBottom: 8 }}>
+                Market insights
+              </div>
+              <div style={{ display: "grid", gap: 6 }}>
+                <div>Prix/m² : <b>{res.enrichedModules.marketInsights.pricePerM2 ?? "N/A"}</b></div>
+                <div>Médiane/m² : <b>{res.enrichedModules.marketInsights.medianM2 ?? "N/A"}</b></div>
+                <div>Delta vs médiane : <b>{res.enrichedModules.marketInsights.deltaVsMedian ?? "N/A"}</b></div>
+                <div>Classification : <b>{res.enrichedModules.marketInsights.classification ?? "N/A"}</b></div>
+                <div>Liquidité : <b>{res.enrichedModules.marketInsights.liquidityBand ?? "N/A"}</b></div>
+                <div style={{ opacity: 0.85 }}>{res.enrichedModules.marketInsights.note ?? ""}</div>
+              </div>
+            </div>
+          )}
+
+          {res?.smartscore?.debug && (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(15,23,42,0.08)", opacity: 0.8, fontSize: 12 }}>
+              <b>Debug :</b>{" "}
+              fallback={String(res.smartscore.debug.fallback)} · dvfUsed={String(res.smartscore.debug.dvfUsed)} · travauxUsed={String(res.smartscore.debug.travauxUsed)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

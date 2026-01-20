@@ -1,0 +1,60 @@
+﻿import type { NavSection } from "../../components/layout/BaseShellLayout";
+
+export const MARCHAND_SIDEBAR: NavSection[] = [
+  {
+    title: "Pipeline",
+    items: [
+      { label: "Tableau de bord", to: "/marchand-de-bien" },
+      { label: "Leads", to: "/marchand-de-bien/leads" },
+      { label: "Statuts", to: "/marchand-de-bien/statuts" },
+    ],
+  },
+  {
+    title: "Sourcing",
+    items: [
+      { label: "Recherche", to: "/marchand-de-bien/sourcing" },
+      { label: "Import annonces", to: "/marchand-de-bien/import" },
+      { label: "Alertes zones", to: "/marchand-de-bien/alertes" },
+    ],
+  },
+  {
+    title: "Qualification",
+    items: [
+      { label: "Estimation achat", to: "/marchand-de-bien/qualification" },
+      { label: "ARV", to: "/marchand-de-bien/arv" },
+      { label: "Travaux macro", to: "/marchand-de-bien/travaux" },
+    ],
+  },
+  {
+    title: "Rentabilité",
+    items: [
+      { label: "Marge", to: "/marchand-de-bien/rentabilite" },
+      { label: "Frais", to: "/marchand-de-bien/frais" },
+      { label: "Sensibilités", to: "/marchand-de-bien/sensibilites" },
+    ],
+  },
+  {
+    title: "Exécution",
+    items: [
+      { label: "Planning travaux", to: "/marchand-de-bien/execution" },
+      { label: "Suivi coûts", to: "/marchand-de-bien/couts" },
+      { label: "Photos", to: "/marchand-de-bien/photos" },
+    ],
+  },
+  {
+    title: "Sortie",
+    items: [
+      { label: "Stratégie revente", to: "/marchand-de-bien/sortie" },
+      { label: "Diffusion", to: "/marchand-de-bien/diffusion" },
+      { label: "Reporting", to: "/marchand-de-bien/reporting" },
+    ],
+  },
+  {
+    title: "Exports",
+    items: [
+      { label: "Mémo opération", to: "/marchand-de-bien/exports" },
+      { label: "Export PDF/Excel", to: "/marchand-de-bien/export-files" },
+      { label: "Historique", to: "/marchand-de-bien/historique" },
+    ],
+  },
+];
