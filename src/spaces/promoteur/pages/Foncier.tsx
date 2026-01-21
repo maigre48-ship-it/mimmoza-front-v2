@@ -48,10 +48,10 @@ const LS_KEY = "mimmoza_promoteur_foncier_query_v1";
 const LS_TERRAIN_KEY = "mimmoza_promoteur_terrain_selection_v1";
 const LS_SELECTED_PARCELS_V1 = "mimmoza.promoteur.selected_parcels_v1";
 
-function safeParse(raw: string | null) {
+function safeParse<T = any>(raw: string | null): T | null {
   if (!raw) return null;
   try {
-    return JSON.parse(raw);
+    return JSON.parse(raw) as T;
   } catch {
     return null;
   }
@@ -194,7 +194,8 @@ type SelectedParcel = {
 };
 
 /**
- * Persiste la sélection de parcelles dans les clés de session et handoff.
+ * Persiste la sélection de parcelles dans toutes les clés de session et handoff.
+ * Écrit vers plusieurs clés pour assurer la compatibilité cross-modules.
  * Ne fait rien si aucune parcelle ou pas de communeInsee.
  */
 function persistPromoteurSessionAndHandoff(params: {
@@ -223,14 +224,23 @@ function persistPromoteurSessionAndHandoff(params: {
     };
     localStorage.setItem(LS_SELECTED_PARCELS_V1, JSON.stringify(handoff));
 
-    // 2) Synchroniser les clés session existantes (sans écraser avec des vides)
+    // 2) Synchroniser TOUTES les clés session attendues par différents modules
     if (primaryParcelId) {
+      // Clés session standard
       localStorage.setItem("mimmoza.session.parcel_id", primaryParcelId);
+      // Clés foncier (pour Implantation2D et autres modules)
+      localStorage.setItem("mimmoza.foncier.selected_parcel_id", primaryParcelId);
+      localStorage.setItem("mimmoza.foncier.last_parcel_id", primaryParcelId);
     }
+
     if (communeInsee) {
+      // Clés session standard
       localStorage.setItem("mimmoza.session.commune_insee", communeInsee);
+      // Clés PLU (pour Implantation2D et autres modules)
+      localStorage.setItem("mimmoza.plu.selected_commune_insee", communeInsee);
       localStorage.setItem("mimmoza.plu.last_commune_insee", communeInsee);
     }
+
     const trimmedAddress = address.trim();
     if (trimmedAddress) {
       localStorage.setItem("mimmoza.session.address", trimmedAddress);
@@ -250,6 +260,44 @@ function persistPromoteurSessionAndHandoff(params: {
   }
 }
 
+/**
+ * Restaure la sélection de parcelles depuis localStorage.
+ * Retourne un tableau de SelectedParcel (id + area_m2, feature=null).
+ */
+function restoreSelectedParcelsFromStorage(): {
+  parcels: SelectedParcel[];
+  communeInsee: string | null;
+  focusParcelId: string | null;
+} | null {
+  try {
+    const raw = localStorage.getItem(LS_TERRAIN_KEY);
+    if (!raw) return null;
+
+    const terrain = safeParse<TerrainSelection>(raw);
+    if (!terrain || terrain.version !== "v1") return null;
+    if (!Array.isArray(terrain.parcels) || terrain.parcels.length === 0) return null;
+
+    const parcels: SelectedParcel[] = terrain.parcels
+      .filter((p) => p.parcel_id && typeof p.parcel_id === "string")
+      .map((p) => ({
+        id: p.parcel_id,
+        feature: null, // On ne persiste pas les features GeoJSON
+        area_m2: typeof p.area_m2 === "number" ? p.area_m2 : null,
+      }));
+
+    if (parcels.length === 0) return null;
+
+    return {
+      parcels,
+      communeInsee: terrain.commune_insee || null,
+      focusParcelId: terrain.focus_parcel_id || null,
+    };
+  } catch (e) {
+    console.warn("[Foncier] restoreSelectedParcelsFromStorage failed:", e);
+    return null;
+  }
+}
+
 export default function Foncier(): React.ReactElement {
   const [address, setAddress] = useState("");
   const [parcelId, setParcelId] = useState("");
@@ -263,6 +311,9 @@ export default function Foncier(): React.ReactElement {
   const [showMap, setShowMap] = useState(false);
   const [selectedParcels, setSelectedParcels] = useState<SelectedParcel[]>([]);
 
+  // --- Flag pour éviter double-restauration ---
+  const restoredRef = useRef(false);
+
   // --- Feedback "Sélection enregistrée" ---
   const [savedOk, setSavedOk] = useState(false);
   const savedOkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -274,8 +325,14 @@ export default function Foncier(): React.ReactElement {
     const pid = parcelId.trim();
     if (pid) return extractCommuneInsee(pid);
 
+    // Fallback: essayer de récupérer depuis la sélection restaurée
+    if (selectedParcels.length > 0) {
+      const firstId = selectedParcels[0].id;
+      if (firstId) return extractCommuneInsee(firstId);
+    }
+
     return null;
-  }, [res, parcelId]);
+  }, [res, parcelId, selectedParcels]);
 
   const mapCenter = useMemo(() => {
     const centroid = res?.parcel?.centroid;
@@ -304,17 +361,51 @@ export default function Foncier(): React.ReactElement {
   }, [selectedParcels]);
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // Restauration de la sélection depuis localStorage AU MONTAGE
+  // ─────────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+
+    const restored = restoreSelectedParcelsFromStorage();
+    if (restored && restored.parcels.length > 0) {
+      setSelectedParcels(restored.parcels);
+
+      // Si on a un focus parcel, pré-remplir le champ parcelId
+      if (restored.focusParcelId) {
+        setParcelId(restored.focusParcelId);
+      }
+
+      // Afficher la carte automatiquement si on a une sélection
+      if (restored.communeInsee) {
+        setShowMap(true);
+      }
+
+      console.log("[Foncier] Restored selection from localStorage:", {
+        parcels: restored.parcels.length,
+        communeInsee: restored.communeInsee,
+        focusParcelId: restored.focusParcelId,
+      });
+    }
+  }, []);
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // Persistance TerrainSelection dans localStorage
   // ─────────────────────────────────────────────────────────────────────────────
   const saveTerrainSelection = useCallback(() => {
-    if (!communeInsee || selectedParcels.length === 0) {
+    // Récupérer commune depuis plusieurs sources
+    const effectiveCommuneInsee =
+      communeInsee ||
+      (selectedParcels.length > 0 ? extractCommuneInsee(selectedParcels[0].id) : null);
+
+    if (!effectiveCommuneInsee || selectedParcels.length === 0) {
       return false;
     }
 
     const terrainSelection: TerrainSelection = {
       version: "v1",
       updated_at: new Date().toISOString(),
-      commune_insee: communeInsee,
+      commune_insee: effectiveCommuneInsee,
       parcel_ids: selectedParcels.map((p) => p.id),
       parcels: selectedParcels.map((p) => ({
         parcel_id: p.id,
@@ -337,14 +428,19 @@ export default function Foncier(): React.ReactElement {
   // Auto-save à chaque changement de selectedParcels (si communeInsee défini)
   // + auto-persist handoff v1
   useEffect(() => {
-    if (communeInsee && selectedParcels.length > 0) {
+    // Récupérer commune depuis plusieurs sources
+    const effectiveCommuneInsee =
+      communeInsee ||
+      (selectedParcels.length > 0 ? extractCommuneInsee(selectedParcels[0].id) : null);
+
+    if (effectiveCommuneInsee && selectedParcels.length > 0) {
       saveTerrainSelection();
 
       // Également persister le handoff v1 pour cross-pages
       persistPromoteurSessionAndHandoff({
         parcelIds: selectedParcels.map((p) => p.id),
         focusParcelId,
-        communeInsee,
+        communeInsee: effectiveCommuneInsee,
         address,
       });
     }
@@ -354,15 +450,20 @@ export default function Foncier(): React.ReactElement {
   // Bouton "Utiliser cette sélection"
   // ─────────────────────────────────────────────────────────────────────────────
   const handleUseSelection = () => {
+    // Récupérer commune depuis plusieurs sources
+    const effectiveCommuneInsee =
+      communeInsee ||
+      (selectedParcels.length > 0 ? extractCommuneInsee(selectedParcels[0].id) : null);
+
     const success = saveTerrainSelection();
-    if (success) {
+    if (success && effectiveCommuneInsee) {
       // ─────────────────────────────────────────────────────────────────────────
       // Persistance session + handoff standardisée pour PLU & Faisabilité / Implantation 2D
       // ─────────────────────────────────────────────────────────────────────────
       persistPromoteurSessionAndHandoff({
         parcelIds: selectedParcels.map((p) => p.id),
         focusParcelId,
-        communeInsee,
+        communeInsee: effectiveCommuneInsee,
         address,
       });
       // ─────────────────────────────────────────────────────────────────────────
@@ -395,8 +496,13 @@ export default function Foncier(): React.ReactElement {
   // Écrit dès que focusParcelId + communeInsee disponibles, sans UI feedback
   // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
+    // Récupérer commune depuis plusieurs sources
+    const effectiveCommuneInsee =
+      communeInsee ||
+      (selectedParcels.length > 0 ? extractCommuneInsee(selectedParcels[0].id) : null);
+
     // Guard clauses
-    if (!focusParcelId || !communeInsee) return;
+    if (!focusParcelId || !effectiveCommuneInsee) return;
 
     try {
       // Lire les valeurs actuelles pour éviter des écritures inutiles
@@ -409,12 +515,15 @@ export default function Foncier(): React.ReactElement {
 
       if (currentParcelId !== focusParcelId) {
         localStorage.setItem("mimmoza.session.parcel_id", focusParcelId);
+        localStorage.setItem("mimmoza.foncier.selected_parcel_id", focusParcelId);
+        localStorage.setItem("mimmoza.foncier.last_parcel_id", focusParcelId);
         changed = true;
       }
 
-      if (currentCommune !== communeInsee) {
-        localStorage.setItem("mimmoza.session.commune_insee", communeInsee);
-        localStorage.setItem("mimmoza.plu.last_commune_insee", communeInsee);
+      if (currentCommune !== effectiveCommuneInsee) {
+        localStorage.setItem("mimmoza.session.commune_insee", effectiveCommuneInsee);
+        localStorage.setItem("mimmoza.plu.selected_commune_insee", effectiveCommuneInsee);
+        localStorage.setItem("mimmoza.plu.last_commune_insee", effectiveCommuneInsee);
         changed = true;
       }
 
@@ -428,7 +537,7 @@ export default function Foncier(): React.ReactElement {
         persistPromoteurSessionAndHandoff({
           parcelIds: selectedParcels.map((p) => p.id),
           focusParcelId,
-          communeInsee,
+          communeInsee: effectiveCommuneInsee,
           address,
         });
       }
@@ -436,7 +545,7 @@ export default function Foncier(): React.ReactElement {
       if (changed) {
         console.log("[Foncier] Auto-persisted session:", {
           parcel_id: focusParcelId,
-          commune_insee: communeInsee,
+          commune_insee: effectiveCommuneInsee,
           address: trimmedAddress || "(empty)",
         });
       }
@@ -447,15 +556,21 @@ export default function Foncier(): React.ReactElement {
   }, [focusParcelId, communeInsee, address, selectedParcels]);
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Restauration des états depuis localStorage (formulaire)
+  // Restauration des états depuis localStorage (formulaire uniquement)
   // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const saved = safeParse(localStorage.getItem(LS_KEY));
     if (!saved) return;
     setAddress(String(saved.address ?? ""));
-    setParcelId(String(saved.parcelId ?? ""));
+    // Ne pas écraser parcelId si déjà restauré depuis terrain selection
+    if (!parcelId) {
+      setParcelId(String(saved.parcelId ?? ""));
+    }
     setShowDetails(Boolean(saved.showDetails ?? false));
-    setShowMap(Boolean(saved.showMap ?? false));
+    // Ne pas écraser showMap si déjà true (restauration terrain)
+    if (!showMap) {
+      setShowMap(Boolean(saved.showMap ?? false));
+    }
   }, []);
 
   useEffect(() => {
@@ -625,7 +740,12 @@ export default function Foncier(): React.ReactElement {
     }
   };
 
-  const canUseSelection = selectedParcels.length > 0 && communeInsee != null;
+  // Calcul commune effective pour le bouton
+  const effectiveCommuneInsee =
+    communeInsee ||
+    (selectedParcels.length > 0 ? extractCommuneInsee(selectedParcels[0].id) : null);
+
+  const canUseSelection = selectedParcels.length > 0 && effectiveCommuneInsee != null;
 
   return (
     <div style={{ padding: 24, maxWidth: 1200 }}>
@@ -713,7 +833,7 @@ export default function Foncier(): React.ReactElement {
 
           <button
             onClick={() => setShowMap((v) => !v)}
-            disabled={!communeInsee}
+            disabled={!effectiveCommuneInsee}
             style={{
               padding: "10px 14px",
               borderRadius: 10,
@@ -721,8 +841,8 @@ export default function Foncier(): React.ReactElement {
               background: showMap ? "#3b82f6" : "white",
               color: showMap ? "white" : "#3b82f6",
               fontWeight: 700,
-              cursor: communeInsee ? "pointer" : "not-allowed",
-              opacity: communeInsee ? 1 : 0.5,
+              cursor: effectiveCommuneInsee ? "pointer" : "not-allowed",
+              opacity: effectiveCommuneInsee ? 1 : 0.5,
             }}
           >
             {showMap ? "Masquer carte" : "Afficher carte"}
@@ -796,7 +916,7 @@ export default function Foncier(): React.ReactElement {
           </div>
         )}
 
-        {showMap && communeInsee && (
+        {showMap && effectiveCommuneInsee && (
           <div style={{ marginTop: 16 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 14 }}>
               <div>
@@ -805,7 +925,7 @@ export default function Foncier(): React.ReactElement {
                 </div>
 
                 <ParcelMapSelector
-                  communeInsee={communeInsee}
+                  communeInsee={effectiveCommuneInsee}
                   selectedIds={selectedParcels.map((p) => p.id)}
                   onToggleParcel={handleToggleParcel}
                   initialCenter={mapCenter}

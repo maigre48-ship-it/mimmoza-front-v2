@@ -452,21 +452,11 @@ export default function PluUploaderPanel(): React.ReactElement {
       });
       const headers = buildAuthHeaders({ "Content-Type": "application/json" });
 
-      // Try v9 endpoint first
-      let res = await fetch(`${SUPABASE_URL}/functions/v1/plu-ingest-from-storage-v9`, {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/plu-ingest-from-storage`, {
         method: "POST",
         headers,
         body: payload,
       });
-
-      // Fallback to original endpoint if 404
-      if (res.status === 404) {
-        res = await fetch(`${SUPABASE_URL}/functions/v1/plu-ingest-from-storage`, {
-          method: "POST",
-          headers,
-          body: payload,
-        });
-      }
 
       const txt = await res.text();
       if (import.meta.env.DEV) {

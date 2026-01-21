@@ -1,5 +1,4 @@
-﻿
-import { createBrowserRouter } from "react-router-dom";
+﻿import { createBrowserRouter } from "react-router-dom";
 
 import HomePage from "../pages/HomePage";
 
@@ -19,6 +18,9 @@ import AssuranceHomePage from "../spaces/assurance/pages/AssuranceHomePage";
 
 // Shared page (currently stored in Particulier space)
 import EstimationPage from "../spaces/particulier/pages/Estimation";
+
+// ✅ AJOUT : Implantation 2D Promoteur
+import Implantation2DPage from "../spaces/promoteur/Implantation2DPage";
 
 export const router = createBrowserRouter([
   { path: "/", element: <HomePage /> },
@@ -45,6 +47,9 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <PromoteurHomePage /> },
       { path: "estimation", element: <EstimationPage /> },
+
+      // ✅ NOUVELLE ROUTE
+      { path: "implantation-2d", element: <Implantation2DPage /> },
     ],
   },
   {
@@ -64,4 +69,3 @@ export const router = createBrowserRouter([
     ],
   },
 ]);
-
