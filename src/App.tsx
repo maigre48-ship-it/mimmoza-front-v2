@@ -1,6 +1,8 @@
 ﻿// src/App.tsx
 
 import { Routes, Route, Navigate } from "react-router-dom";
+import { useEffect } from "react";
+import { wgs84ToLambert93 } from "./lib/projection";
 
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage"; // ✅ AJOUT
@@ -56,7 +58,8 @@ import MarchandExports from "./spaces/marchand/pages/Exports";
 import PromoteurDashboard from "./spaces/promoteur/pages/Dashboard";
 import PromoteurFoncier from "./spaces/promoteur/pages/Foncier";
 import PromoteurPluFaisabilite from "./spaces/promoteur/pages/PluFaisabilite";
-import PromoteurMarche from "./spaces/promoteur/pages/Marche";
+// ✅ NOUVELLE PAGE: Étude de Marché (remplace l'ancienne page placeholder)
+import MarchePage from "./spaces/promoteur/etudes/marche/MarchePage";
 import PromoteurRisques from "./spaces/promoteur/pages/Risques";
 import PromoteurMassing3D from "./spaces/promoteur/pages/Massing3D";
 import PromoteurBilan from "./spaces/promoteur/pages/Bilan";
@@ -88,7 +91,45 @@ import AssuranceOffre from "./spaces/assurance/pages/Offre";
 import AssuranceMonitoring from "./spaces/assurance/pages/Monitoring";
 import AssuranceDocuments from "./spaces/assurance/pages/Documents";
 
+declare global {
+  interface Window {
+    __mimmozaProjection?: (lon: number, lat: number) => { x: number; y: number };
+    __mimmozaElevation?: (
+      deptCode: string,
+      lon: number,
+      lat: number
+    ) => Promise<any>;
+  }
+}
+
 export default function App() {
+  // DEV helpers (non intrusif, ne tourne pas en prod)
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+
+    window.__mimmozaProjection = (lon: number, lat: number) => {
+      const { x, y } = wgs84ToLambert93(lon, lat);
+      console.log("[mimmoza] projection EPSG:4326 -> EPSG:2154", { lon, lat, x, y });
+      return { x, y };
+    };
+
+    window.__mimmozaElevation = async (deptCode: string, lon: number, lat: number) => {
+      const { x, y } = wgs84ToLambert93(lon, lat);
+      const resp = await fetch("http://localhost:4010/elevation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deptCode, points: [{ x, y }] }),
+      });
+      const json = await resp.json();
+      console.log("[mimmoza] elevation", { deptCode, lon, lat, x, y, json });
+      return json;
+    };
+
+    // Petit log pour confirmer que tout est chargé
+    const { x, y } = wgs84ToLambert93(2.3522, 48.8566);
+    console.log("[mimmoza] DEV helpers ready. Paris (Lambert93) ≈", { x, y });
+  }, []);
+
   return (
     <Routes>
       {/* Accueil */}
@@ -149,6 +190,9 @@ export default function App() {
         {/* ✅ Estimation DVF (réutilise la page Particulier) */}
         <Route path="estimation" element={<ParticulierEstimation />} />
 
+        {/* ✅ Étude de Marché disponible aussi pour Marchand */}
+        <Route path="marche" element={<MarchePage />} />
+
         <Route path="*" element={<Navigate to="/marchand-de-bien" replace />} />
       </Route>
 
@@ -157,7 +201,10 @@ export default function App() {
         <Route index element={<PromoteurDashboard />} />
         <Route path="foncier" element={<PromoteurFoncier />} />
         <Route path="plu-faisabilite" element={<PromoteurPluFaisabilite />} />
-        <Route path="marche" element={<PromoteurMarche />} />
+        
+        {/* ✅ NOUVELLE PAGE: Étude de Marché complète */}
+        <Route path="marche" element={<MarchePage />} />
+        
         <Route path="risques" element={<PromoteurRisques />} />
 
         {/* ✅ VRAIE page Implantation 2D */}
@@ -187,6 +234,9 @@ export default function App() {
         {/* ✅ Estimation DVF */}
         <Route path="estimation" element={<ParticulierEstimation />} />
 
+        {/* ✅ Étude de Marché disponible aussi pour Banque */}
+        <Route path="marche" element={<MarchePage />} />
+
         <Route path="*" element={<Navigate to="/banque" replace />} />
       </Route>
 
@@ -203,6 +253,9 @@ export default function App() {
         {/* ✅ Estimation DVF */}
         <Route path="estimation" element={<ParticulierEstimation />} />
 
+        {/* ✅ Étude de Marché disponible aussi pour Assurance */}
+        <Route path="marche" element={<MarchePage />} />
+
         <Route path="*" element={<Navigate to="/assurance" replace />} />
       </Route>
 
@@ -211,4 +264,3 @@ export default function App() {
     </Routes>
   );
 }
-

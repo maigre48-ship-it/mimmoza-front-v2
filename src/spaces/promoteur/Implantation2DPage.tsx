@@ -38,6 +38,11 @@ import {
   type ParkingTemplate,
 } from "./implantation2d/drawEngine";
 
+// -----------------------------------------------------------------------------
+// Zustand store import for handoff to Massing 3D
+// -----------------------------------------------------------------------------
+import { usePromoteurProjectStore } from "./store/promoteurProject.store";
+
 // Geoman CSS still needed for draw controls styling
 import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
 
@@ -305,6 +310,78 @@ function computeImplantationWithoutGeom(
     nbBatiments: userParams.nbBatiments,
     nbLogements: userParams.nbLogements,
     placesParking,
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Helpers: DrawnObject[] to FeatureCollection<Polygon> conversion
+// -----------------------------------------------------------------------------
+function drawnObjectsToFeatureCollection(
+  objects: DrawnObject[]
+): FeatureCollection<Polygon> {
+  const features: Feature<Polygon>[] = [];
+
+  for (const obj of objects) {
+    const record = obj as unknown as Record<string, unknown>;
+    let extractedFeature: Feature<Polygon> | null = null;
+
+    // Try obj.feature (Feature<Polygon>)
+    if (record.feature && typeof record.feature === "object") {
+      const feat = record.feature as Record<string, unknown>;
+      if (feat.type === "Feature" && feat.geometry) {
+        const geom = feat.geometry as Record<string, unknown>;
+        if (geom.type === "Polygon") {
+          extractedFeature = {
+            type: "Feature",
+            geometry: geom as Polygon,
+            properties: (feat.properties as Record<string, unknown>) ?? { id: obj.id },
+          };
+        }
+      }
+    }
+
+    // Try obj.geojson (Feature<Polygon> or Geometry Polygon)
+    if (!extractedFeature && record.geojson && typeof record.geojson === "object") {
+      const gj = record.geojson as Record<string, unknown>;
+      if (gj.type === "Feature" && gj.geometry) {
+        const geom = gj.geometry as Record<string, unknown>;
+        if (geom.type === "Polygon") {
+          extractedFeature = {
+            type: "Feature",
+            geometry: geom as Polygon,
+            properties: (gj.properties as Record<string, unknown>) ?? { id: obj.id },
+          };
+        }
+      } else if (gj.type === "Polygon" && Array.isArray(gj.coordinates)) {
+        extractedFeature = {
+          type: "Feature",
+          geometry: gj as Polygon,
+          properties: { id: obj.id },
+        };
+      }
+    }
+
+    // Try obj.geometry (Geometry Polygon)
+    if (!extractedFeature && record.geometry && typeof record.geometry === "object") {
+      const geom = record.geometry as Record<string, unknown>;
+      if (geom.type === "Polygon" && Array.isArray(geom.coordinates)) {
+        extractedFeature = {
+          type: "Feature",
+          geometry: geom as Polygon,
+          properties: { id: obj.id },
+        };
+      }
+    }
+
+    // If we extracted a valid feature, add it
+    if (extractedFeature) {
+      features.push(extractedFeature);
+    }
+  }
+
+  return {
+    type: "FeatureCollection",
+    features,
   };
 }
 
@@ -805,6 +882,11 @@ export const Implantation2DPage: React.FC = () => {
   const state = (location.state || {}) as LocationState;
 
   // --------------------------------------------------
+  // Zustand store action for handoff to Massing 3D
+  // --------------------------------------------------
+  const setFromImplantation2D = usePromoteurProjectStore((s) => s.setFromImplantation2D);
+
+  // --------------------------------------------------
   // Parameter resolution
   // --------------------------------------------------
   const parcelIdFromQuery = searchParams.get("parcel_id");
@@ -940,6 +1022,27 @@ export const Implantation2DPage: React.FC = () => {
   } = drawEngine;
 
   // --------------------------------------------------
+  // Sync to Zustand store for Massing 3D handoff
+  // --------------------------------------------------
+  useEffect(() => {
+    if (!parcelFeature) {
+      return;
+    }
+
+    const buildingsFC = drawnObjectsToFeatureCollection(drawnBuildings);
+    const parkingsFC = drawnObjectsToFeatureCollection(drawnParkings);
+    const bbox = turf.bbox(parcelFeature) as [number, number, number, number];
+
+    setFromImplantation2D({
+      parcel: parcelFeature,
+      buildings: buildingsFC,
+      parkings: parkingsFC,
+      epsg: "EPSG:4326",
+      bbox,
+    });
+  }, [parcelFeature, drawnBuildings, drawnParkings, setFromImplantation2D]);
+
+  // --------------------------------------------------
   // Facade click handler (when not in edit mode)
   // --------------------------------------------------
   const handleFacadeClick = useCallback(
@@ -1013,9 +1116,7 @@ export const Implantation2DPage: React.FC = () => {
       }
     }
     loadCadastreGeometry();
-  }, [parcelId, communeInsee]);
-
-  // --------------------------------------------------
+  }, [parcelId, communeInsee]);// --------------------------------------------------
   // Compute implantation result
   // --------------------------------------------------
   useEffect(() => {
