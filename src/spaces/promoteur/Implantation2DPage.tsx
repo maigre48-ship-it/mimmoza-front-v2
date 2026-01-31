@@ -7,6 +7,7 @@
 // ✅ V1.3: Layout fix - sticky toolbar with proper offset, map height stabilization, scroll anchoring fix
 // ✅ V1.5: Layout fix - minimal gap between nav and toolbar (max 20px)
 // ✅ V1.6: Layout fix - fixed height layout, no page scroll, only right column scrolls
+// ✅ V1.7: Layout fix - scrollable page, sticky toolbar, large map as main element
 
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
@@ -1602,20 +1603,18 @@ export const Implantation2DPage: React.FC = () => {
   }, [parcelFeatures]);
 
   // --------------------------------------------------
-  // ✅ V1.6: Styles - Fixed height layout, no page scroll
-  // La page utilise toute la hauteur disponible sans scroll
-  // Seule la colonne droite peut scroller si nécessaire
+  // ✅ V1.7: Styles - Scrollable page, sticky toolbar, large map
   // --------------------------------------------------
   const pageStyle: React.CSSProperties = {
     display: "flex",
     flexDirection: "row",
-    height: "calc(100vh - 180px)", // ✅ V1.6: Hauteur fixe = viewport - header/nav/tabs
+    minHeight: "100vh",
     background: "#f8fafc",
     color: "#0f172a",
     padding: "12px 16px 16px 16px",
     gap: "16px",
     boxSizing: "border-box",
-    overflow: "hidden", // ✅ V1.6: Pas de scroll sur la page
+    alignItems: "flex-start",
   };
   const leftCol: React.CSSProperties = {
     flex: 1,
@@ -1623,17 +1622,14 @@ export const Implantation2DPage: React.FC = () => {
     flexDirection: "column",
     gap: "8px",
     minWidth: 0,
-    overflow: "hidden", // ✅ V1.6: Pas de scroll
   };
-  // ✅ V1.6: Right column - scrollable if content exceeds height
+  // ✅ V1.7: Right column - normal flow
   const rightCol: React.CSSProperties = {
     display: "flex",
     flexDirection: "column",
     gap: "14px",
     width: 280,
     flexShrink: 0,
-    height: "100%", // ✅ V1.6: Full height
-    overflowY: "auto", // ✅ V1.6: Scroll si nécessaire
   };
   const card: React.CSSProperties = {
     background: "white",
@@ -1681,8 +1677,13 @@ export const Implantation2DPage: React.FC = () => {
     cursor: "pointer",
     fontSize: 12,
   };
-  // ✅ V1.6: Toolbar - normal flow, no sticky
+  // ✅ V1.7: Toolbar - sticky below the app's fixed header
+  // L'app a un header fixe d'environ 200px (header + breadcrumb + nav + tabs)
+  // La toolbar doit coller juste en dessous
   const toolbarStyle: React.CSSProperties = {
+    position: "sticky",
+    top: 200, // Offset pour le header fixe de l'app
+    zIndex: 100,
     background: "white",
     borderRadius: 12,
     padding: "10px 14px",
@@ -1692,13 +1693,12 @@ export const Implantation2DPage: React.FC = () => {
     gap: 8,
     alignItems: "center",
     flexWrap: "wrap",
-    flexShrink: 0, // ✅ V1.6: Ne pas rétrécir
   };
 
-  // ✅ V1.6: Map container - fills remaining space
+  // ✅ V1.7: Map container - large height for main element
   const mapContainerStyle: React.CSSProperties = {
-    flex: 1, // ✅ V1.6: Prend tout l'espace restant
-    minHeight: 300,
+    height: "70vh", // 70% de la hauteur visible
+    minHeight: 500,
     overflow: "hidden",
     borderRadius: 12,
   };
@@ -1802,7 +1802,7 @@ export const Implantation2DPage: React.FC = () => {
       {!hasMissingParams && rulesetValid && !isLoadingGeometry && result && (
         <>
           <div style={leftCol}>
-            {/* ✅ V1.5: Toolbar with minimal gap from nav */}
+            {/* ✅ V1.7: Sticky toolbar */}
             <div style={toolbarStyle}>
               <button style={ghostButton} onClick={() => navigate(-1)}>
                 {"← Retour"}
@@ -1851,8 +1851,8 @@ export const Implantation2DPage: React.FC = () => {
               {/* ✅ FIX 2: REMOVED the building/parking dropdown - type is now controlled via ShapeLibraryPanel */}
             </div>
 
-            {/* ✅ V1.6: Card with map - fills remaining space */}
-            <div style={{ ...card, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            {/* ✅ V1.7: Card with map */}
+            <div style={card}>
               <div style={title}>{"Implantation 2D — Mode Édition"}</div>
               <p style={{ fontSize: 13, opacity: 0.8, marginTop: 0, marginBottom: 8, color: "#475569" }}>
                 {`${parcelIds.length} parcelle(s) — Commune : ${communeInsee ?? "?"}`}
@@ -1914,7 +1914,7 @@ export const Implantation2DPage: React.FC = () => {
                   </p>
                 )}
 
-              {/* ✅ V1.6: Map container fills remaining space */}
+              {/* ✅ V1.7: Map container - large height */}
               <div style={mapContainerStyle}>
                 {parcelFeatures.length > 0 ? (
                   <MapContainer

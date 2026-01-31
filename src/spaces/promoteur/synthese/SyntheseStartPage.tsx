@@ -1,5 +1,5 @@
 ﻿// src/spaces/promoteur/synthese/SyntheseStartPage.tsx
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { scanStorages, type ModuleFound } from "./storageDiscovery";
 import { generateSynthese } from "./syntheseApi";
@@ -143,8 +143,8 @@ export const SyntheseStartPage: React.FC<Props> = ({ supabase, parcelId, commune
 
       {!anyFound && (
         <div className="mt-5 p-4 rounded-xl border bg-amber-50 text-amber-900">
-          Aucune donnée modules trouvée. Ouvre d’abord Marché / Risques / Terrain 3D / Implantation 2D / Bilan pour qu’ils produisent leurs résultats,
-          puis reviens ici. (Cette page n’écrit rien dans les modules.)
+          Aucune donnée modules trouvée. Ouvre d’abord Marché / Risques / Terrain 3D / Implantation 2D / Bilan pour qu’ils
+          produisent leurs résultats, puis reviens ici. (Cette page n’écrit rien dans les modules.)
         </div>
       )}
 
@@ -169,7 +169,8 @@ export const SyntheseStartPage: React.FC<Props> = ({ supabase, parcelId, commune
             <div className="max-h-72 overflow-auto text-xs font-mono">
               {discovered.candidates.map((c, idx) => (
                 <div key={idx} className="py-1 border-b last:border-b-0">
-                  [{c.source}] {c.key} — {c.bytes} bytes — parsed:{String(c.parsed)} — parcel:{String(c.containsParcelId)} — hints:{c.hints.join(",")}
+                  [{c.source}] {c.key} — {c.bytes} bytes — parsed:{String(c.parsed)} — parcel:{String(c.containsParcelId)} —
+                  hints:{c.hints.join(",")}
                 </div>
               ))}
             </div>
@@ -177,11 +178,7 @@ export const SyntheseStartPage: React.FC<Props> = ({ supabase, parcelId, commune
         )}
       </div>
 
-      {error && (
-        <div className="mt-6 p-4 rounded-xl border bg-red-50 text-red-900">
-          Erreur : {error}
-        </div>
-      )}
+      {error && <div className="mt-6 p-4 rounded-xl border bg-red-50 text-red-900">Erreur : {error}</div>}
 
       {markdown && (
         <div className="mt-6 p-5 rounded-xl border bg-white">
@@ -194,3 +191,5 @@ export const SyntheseStartPage: React.FC<Props> = ({ supabase, parcelId, commune
   );
 };
 
+// ✅ Important: permet l'import default (pages/Synthese.tsx)
+export default SyntheseStartPage;

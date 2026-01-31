@@ -1,6 +1,6 @@
 ﻿// src/spaces/promoteur/pages/Synthese.tsx
-// Proxy route -> vraie page synthèse banque/comité
+// Proxy route -> vraie page synthèse
 
-import PromoteurSynthese from "../bilan/synthese/PromoteurSynthese";
+import SyntheseStartPage from "../synthese/SyntheseStartPage";
 
-export default PromoteurSynthese;
+export default SyntheseStartPage;

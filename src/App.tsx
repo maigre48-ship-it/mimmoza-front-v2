@@ -57,7 +57,7 @@ import PromoteurFoncier from "./spaces/promoteur/pages/Foncier";
 import PromoteurPluFaisabilite from "./spaces/promoteur/pages/PluFaisabilite";
 
 import MarchePage from "./spaces/promoteur/etudes/marche/MarchePage";
-import RisquesPage from "./spaces/promoteur/etudes/risques/RisquesPage";
+import RisquesPage from "./spaces/promoteur/pages/Risques";
 
 import PromoteurMassing3D from "./spaces/promoteur/pages/Massing3D";
 import PromoteurBilan from "./spaces/promoteur/pages/Bilan";
