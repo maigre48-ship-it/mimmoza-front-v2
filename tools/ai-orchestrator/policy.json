@@ -1,4 +1,4 @@
-﻿{
+{
   "mode": "front-only",
   "require_review_before_apply": true,
   "forbidden_globs": [
