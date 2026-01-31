@@ -1,10 +1,6 @@
-﻿
-export default function Synthese(): React.ReactElement {
-  return (
-    <div style={{ padding: 24 }}>
-      <h2 style={{ margin: "0 0 8px", color: "#0f172a" }}>SynthÃ¨se</h2>
-      <p style={{ margin: 0, color: "#475569" }}>Page en cours de construction.</p>
-    </div>
-  );
-}
+﻿// src/spaces/promoteur/pages/Synthese.tsx
+// Proxy route -> vraie page synthèse banque/comité
 
+import PromoteurSynthese from "../bilan/synthese/PromoteurSynthese";
+
+export default PromoteurSynthese;

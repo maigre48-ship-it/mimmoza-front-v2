@@ -1,8 +1,9 @@
-﻿// PARTIE 1/3
+﻿
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "../../../lib/supabaseClient";
 import PluUploaderPanel from "../components/PluUploaderPanel";
+import { patchPromoteurSnapshot, patchModule } from "../shared/promoteurSnapshot.store";
 
 
 // ============================================
@@ -1140,7 +1141,7 @@ function convertParserRulesetToAiExtractResult(
     },
     notes: notesArray,
   };
-}// PARTIE 2/3
+}
 
 // ============================================
 // Resolved Ruleset V1 Builder
@@ -1858,7 +1859,7 @@ function mergeRulesets(
   };
 
   return merged;
-}// PARTIE 3/3
+}
 
 /**
  * Page PLU & Faisabilité - Espace Promoteur
@@ -2756,6 +2757,114 @@ export default function PluFaisabilite(): React.ReactElement {
     currentUserOverrides,
   ]);
 
+  // ============================================
+  // SNAPSHOT PERSISTENCE HELPER
+  // ============================================
+  
+  /**
+   * Persiste l'état PLU dans le snapshot global mimmoza.promoteur.snapshot.v1
+   * Non bloquant - échoue silencieusement en cas d'erreur
+   */
+  const persistPluToSnapshot = useCallback(() => {
+    try {
+      // --- A) Persist project info (best effort) ---
+      const effectiveParcelId = sessionParcelId || readLS(LS_SESSION_PARCEL_ID, "") || undefined;
+      const effectiveCommuneInsee = sessionCommuneInsee || readLS(LS_SESSION_COMMUNE_INSEE, "") || undefined;
+      const effectiveAddress = readLS(LS_SESSION_ADDRESS, "") || undefined;
+
+      if (effectiveParcelId || effectiveCommuneInsee || effectiveAddress) {
+        patchPromoteurSnapshot({
+          project: {
+            parcelId: effectiveParcelId,
+            commune_insee: effectiveCommuneInsee,
+            address: effectiveAddress,
+          },
+        });
+      }
+
+      // --- B) Persist module plu ---
+      if (resolvedRuleset) {
+        const voirieStr = resolvedRuleset.reculs.voirie.min_m !== null 
+          ? `${resolvedRuleset.reculs.voirie.min_m}` 
+          : "?";
+        const limitesStr = resolvedRuleset.reculs.limites_separatives.min_m !== null 
+          ? `${resolvedRuleset.reculs.limites_separatives.min_m}` 
+          : "?";
+        const fondStr = resolvedRuleset.reculs.fond_parcelle.min_m !== null 
+          ? `${resolvedRuleset.reculs.fond_parcelle.min_m}` 
+          : "?";
+        
+        const summary = `Zone ${resolvedRuleset.zone_code} · Reculs voirie ${voirieStr}m / limites ${limitesStr}m / fond ${fondStr}m · Source ${resolvedRuleset.source ?? "?"}`;
+
+        patchModule("plu", {
+          ok: resolvedRuleset.completeness?.ok === true,
+          summary,
+          data: {
+            document_id: selectedDocumentId,
+            commune_insee: resolvedRuleset.commune_insee,
+            zone_code: resolvedRuleset.zone_code,
+            zone_libelle: resolvedRuleset.zone_libelle,
+            confidence_score: resolvedRuleset.confidence_score,
+            source: resolvedRuleset.source,
+            ruleset: resolvedRuleset, // IMPORTANT: stocker le ruleset complet
+            detectedZoneCode,
+            selectedZoneCode,
+            aiExtractResult,
+            sqlSummary,
+            currentUserOverrides,
+            session: {
+              parcel_id: effectiveParcelId || null,
+              commune_insee: effectiveCommuneInsee || null,
+              address: effectiveAddress || null,
+            },
+          },
+        });
+
+        if (import.meta.env.DEV) {
+          console.log("[PluFaisabilite] Snapshot persisted:", {
+            ok: resolvedRuleset.completeness?.ok,
+            zone_code: resolvedRuleset.zone_code,
+            source: resolvedRuleset.source,
+          });
+        }
+      }
+    } catch (e) {
+      // Non bloquant - log uniquement en dev
+      if (import.meta.env.DEV) {
+        console.warn("[PluFaisabilite] Snapshot persistence error:", e);
+      }
+    }
+  }, [
+    resolvedRuleset,
+    selectedDocumentId,
+    selectedZoneCode,
+    detectedZoneCode,
+    sessionParcelId,
+    sessionCommuneInsee,
+    aiExtractResult,
+    sqlSummary,
+    currentUserOverrides,
+  ]);
+
+  // ============================================
+  // SNAPSHOT PERSISTENCE EFFECT
+  // ============================================
+  
+  useEffect(() => {
+    persistPluToSnapshot();
+  }, [
+    resolvedRuleset,
+    selectedDocumentId,
+    selectedZoneCode,
+    detectedZoneCode,
+    sessionParcelId,
+    sessionCommuneInsee,
+    aiExtractResult,
+    sqlSummary,
+    currentUserOverrides,
+    persistPluToSnapshot,
+  ]);
+
   // Initialize edit form with current values when panel opens or resolved ruleset changes
   useEffect(() => {
     if (editPanelOpen && resolvedRuleset) {
@@ -2986,6 +3095,9 @@ export default function PluFaisabilite(): React.ReactElement {
       writeLS(LS_SESSION_COMMUNE_INSEE, freshCommuneInsee);
     }
 
+    // Persist snapshot before navigation
+    persistPluToSnapshot();
+
     const queryParams = new URLSearchParams();
     if (freshParcelId) {
       queryParams.set("parcel_id", freshParcelId);
@@ -3006,6 +3118,7 @@ export default function PluFaisabilite(): React.ReactElement {
     sessionParcelId,
     sessionCommuneInsee,
     navigate,
+    persistPluToSnapshot,
   ]);
 
   const handleGoToLogin = useCallback(() => {
@@ -3312,539 +3425,539 @@ export default function PluFaisabilite(): React.ReactElement {
                       />
                     </div>
 
-                    <div className="edit-form-field">
-                      <label className="edit-label">
-                        Stationnement / 100m² <span className="optional-tag">optionnel</span>
-                      </label>
-                      <input
-                        type="text"
-                        className="edit-input"
-                        value={editStat100m2}
-                        onChange={(e) => setEditStat100m2(e.target.value)}
-                        placeholder="ex: 2"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="edit-form-field edit-form-field--full">
-                    <label className="edit-label">
-                      Note utilisateur <span className="optional-tag">optionnel</span>
-                    </label>
-                    <textarea
-                      className="edit-textarea"
-                      value={editUserNote}
-                      onChange={(e) => setEditUserNote(e.target.value)}
-                      placeholder="Ajoutez une note personnelle..."
-                      rows={2}
-                    />
-                  </div>
-
-                  <div className="edit-form-actions">
-                    <button className="save-btn" onClick={handleSaveOverrides}>
-                      💾 Enregistrer
-                    </button>
-                    {currentUserOverrides && (
-                      <button className="reset-btn" onClick={handleResetOverrides}>
-                        🗑️ Réinitialiser mes corrections
-                      </button>
-                    )}
-                  </div>
+                    <div className="edit-form-field">                  <label className="edit-label">
+                    Stationnement / 100m² <span className="optional-tag">optionnel</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="edit-input"
+                    value={editStat100m2}
+                    onChange={(e) => setEditStat100m2(e.target.value)}
+                    placeholder="ex: 2"
+                  />
                 </div>
-              )}
-            </div>
-          )}
+              </div>
 
-          {(aiExtractResult || aiExtractStatus === "error") && (
-            <div
-              className={`ai-extract-result-card ${aiExtractResult?.data?.completeness_ok ? "ai-extract-result-card--complete" : "ai-extract-result-card--incomplete"}`}
-            >
-              <div className="ai-extract-result-header">
-                <span className="ai-extract-result-icon">🤖</span>
-                <span className="ai-extract-result-title">
-                  Règles IA (zone {aiExtractResult?.zone_code || selectedZoneCode})
-                </span>
-                {aiExtractResult && (
-                  <span className="ai-extract-result-time">
-                    Extrait le {new Date(aiExtractResult.extracted_at).toLocaleString("fr-FR")}
-                  </span>
+              <div className="edit-form-field edit-form-field--full">
+                <label className="edit-label">
+                  Note utilisateur <span className="optional-tag">optionnel</span>
+                </label>
+                <textarea
+                  className="edit-textarea"
+                  value={editUserNote}
+                  onChange={(e) => setEditUserNote(e.target.value)}
+                  placeholder="Ajoutez une note personnelle..."
+                  rows={2}
+                />
+              </div>
+
+              <div className="edit-form-actions">
+                <button className="save-btn" onClick={handleSaveOverrides}>
+                  💾 Enregistrer
+                </button>
+                {currentUserOverrides && (
+                  <button className="reset-btn" onClick={handleResetOverrides}>
+                    🗑️ Réinitialiser mes corrections
+                  </button>
                 )}
               </div>
-
-              {aiExtractStatus === "error" && aiExtractError && (
-                <div className="ai-extract-error">
-                  <span className="ai-extract-error-icon">❌</span>
-                  <span className="ai-extract-error-text">{aiExtractError}</span>
-                </div>
-              )}
-
-              {aiExtractResult?.data && (
-                <div className="ai-extract-result-content">
-                  <div className="ai-extract-result-row">
-                    <span className="ai-extract-result-label">Complétude :</span>
-                    <span
-                      className={`ai-extract-result-value ${aiExtractResult.data.completeness_ok && aiExtractResult.data.missing.length === 0 ? "ai-extract-value--ok" : "ai-extract-value--ko"}`}
-                    >
-                      {aiExtractResult.data.completeness_ok &&
-                      aiExtractResult.data.missing.length === 0
-                        ? "✅ Complet"
-                        : `⚠️ Incomplet (${aiExtractResult.data.missing.length} champ${aiExtractResult.data.missing.length > 1 ? "s" : ""} manquant${aiExtractResult.data.missing.length > 1 ? "s" : ""})`}
-                    </span>
-                  </div>
-
-                  {aiExtractResult.data.confidence_score !== null && (
-                    <div className="ai-extract-result-row">
-                      <span className="ai-extract-result-label">Confiance IA :</span>
-                      <span className="ai-extract-result-value">
-                        {Math.round(aiExtractResult.data.confidence_score * 100)}%
-                      </span>
-                    </div>
-                  )}
-
-                  {aiExtractResult.data.error && (
-                    <div className="ai-extract-result-row">
-                      <span className="ai-extract-result-label">Erreur IA :</span>
-                      <span className="ai-extract-result-value ai-extract-value--error">
-                        {aiExtractResult.data.error}
-                      </span>
-                    </div>
-                  )}
-
-                  {aiExtractResult.data.missing && aiExtractResult.data.missing.length > 0 && (
-                    <div className="ai-extract-missing">
-                      <span className="ai-extract-missing-title">Champs manquants :</span>
-                      <ul className="ai-extract-missing-list">
-                        {aiExtractResult.data.missing.map((m, i) => {
-                          const isNonBlocking = m.includes("(optionnel)");
-                          return (
-                            <li
-                              key={i}
-                              className={
-                                isNonBlocking ? "ai-missing-non-blocking" : "ai-missing-blocking"
-                              }
-                            >
-                              {m.replace(" (optionnel)", "")}
-                              {isNonBlocking && (
-                                <span className="ai-missing-tag">optionnel</span>
-                              )}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
-          )}
-
-          {resolvedRuleset && !resolvedRuleset.completeness.ok && !aiExtractResult && (
-            <div className="completeness-warning">
-              <span className="completeness-icon">⚠️</span>
-              <div className="completeness-content">
-                <strong>Règles incomplètes pour la zone {selectedZoneCode}</strong>
-                <ul className="completeness-list">
-                  {resolvedRuleset.completeness.missing.map((m, i) => (
-                    <li
-                      key={i}
-                      className={m.includes("(optionnel)") ? "non-blocking" : "blocking"}
-                    >
-                      {m.replace(" (optionnel)", "")}
-                      {m.includes("(optionnel)") && (
-                        <span className="non-blocking-tag">optionnel</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-                <p className="completeness-hint">
-                  💡 Utilisez le bouton « Modifier / Compléter les règles » pour saisir les données
-                  manquantes.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {detectError && <p className="detect-error-text">{detectError}</p>}
-
-          {!accessToken ? (
-            <div className="placeholder-empty">
-              <span className="placeholder-icon">🔒</span>
-              <span>Connectez-vous pour accéder aux analyses de faisabilité.</span>
-              <button className="auth-login-btn-small" onClick={handleGoToLogin}>
-                Se connecter
-              </button>
-            </div>
-          ) : !communeInsee ? (
-            <div className="placeholder-empty">
-              <span className="placeholder-icon">🔍</span>
-              <span>Sélectionnez une commune, puis un document PLU.</span>
-            </div>
-          ) : docsStatus === "loading" ? (
-            <div className="placeholder-empty">
-              <span className="placeholder-icon">⏳</span>
-              <span>Chargement des documents…</span>
-            </div>
-          ) : docsError ? (
-            <>
-              <p className="error-text">{docsError}</p>
-              <div className="placeholder-empty">
-                <span className="placeholder-icon">⚠️</span>
-                <span>Erreur lors du chargement des documents</span>
-              </div>
-            </>
-          ) : documents.length === 0 ? (
-            <div className="placeholder-empty">
-              <span className="placeholder-icon">📂</span>
-              <span>Aucun document PLU disponible pour cette commune.</span>
-            </div>
-          ) : !selectedDocumentId ? (
-            <div className="placeholder-empty">
-              <span className="placeholder-icon">📄</span>
-              <span>Sélectionnez un document PLU ci-dessus.</span>
-            </div>
-          ) : rulesStatus === "loading" ? (
-            <div className="placeholder-empty">
-              <span className="placeholder-icon">⏳</span>
-              <span>Chargement des règles…</span>
-            </div>
-          ) : rulesError ? (
-            <>
-              <p className="error-text">{rulesError}</p>
-              <div className="placeholder-empty">
-                <span className="placeholder-icon">⚠️</span>
-                <span>Erreur lors du chargement des règles</span>
-              </div>
-            </>
-          ) : rulesZones.length === 0 ? (
-            <div className="placeholder-empty">
-              <span className="placeholder-icon">📄</span>
-              <span>Aucune règle normalisée trouvée pour ce document.</span>
-            </div>
-          ) : (
-            <>
-              <div className="rules-toolbar">
-                <div className="rules-toolbar-left">
-                  <span className="rules-count">
-                    {rulesZones.length} zone{rulesZones.length > 1 ? "s" : ""} normalisée
-                    {rulesZones.length > 1 ? "s" : ""}
-                    {meaningfulZonesCount < rulesZones.length && (
-                      <span className="rules-count-detail">
-                        {" "}
-                        ({meaningfulZonesCount} avec règles exploitables)
-                      </span>
-                    )}
-                  </span>
-                </div>
-
-                <div className="rules-toolbar-right">
-                  <label className="rules-select-label">
-                    Zone :
-                    <select
-                      className="rules-select"
-                      value={selectedZoneCode ?? ""}
-                      onChange={(e) => {
-                        const newZone = e.target.value || null;
-                        setSelectedZoneCode(newZone);
-                        if (newZone) {
-                          writeLS(LS_SELECTED_PLU_ZONE_CODE, newZone);
-                        }
-                        setAiExtractResult(null);
-                        setActiveResolvedRuleset(null);
-                        setAiExtractStatus("idle");
-                        setAiExtractError(null);
-                        setEditPanelOpen(false);
-                      }}
-                    >
-                      {rulesZones.map((z) => {
-                        const isMeaningful = isZoneMeaningfulWithResolved(z);
-                        const libelle = getZoneLibelle(z);
-                        const isDetected = zonesMatch(z.zone_code, detectedZoneCode);
-                        return (
-                          <option key={`${z.document_id}:${z.zone_code}`} value={z.zone_code}>
-                            {z.zone_code} {libelle !== "Non trouvé" ? `— ${libelle}` : ""}
-                            {isDetected ? " ★" : ""}
-                            {!isMeaningful ? " (vide)" : ""}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </label>
-                </div>
-              </div>
-
-              <div className="rules-zones">
-                {rulesZones
-                  .filter((z) =>
-                    selectedZoneCode ? zonesMatch(z.zone_code, selectedZoneCode) : true
-                  )
-                  .map((z) => {
-                    const useResolved =
-                      resolvedRuleset &&
-                      selectedZoneCode &&
-                      zonesMatch(z.zone_code, selectedZoneCode) &&
-                      zonesMatch(resolvedRuleset.zone_code, z.zone_code);
-
-                    let voirieValue: number | null;
-                    let limitesValue: number | null;
-                    let fondParcelleValue: number | null;
-                    let implantationEnLimiteAutorisee: boolean | null;
-                    let facadeAvantDisplay: string;
-                    let facadeLateralesDisplay: string;
-                    let facadeFondDisplay: string;
-                    let stationnementLogementValue: number | null;
-                    let stationnement100m2Value: number | null;
-                    let hauteurMaxValue: number | null;
-                    let cesDisplay: string;
-                    let notes: string[];
-                    let confidenceScore: number | null;
-                    let source: string | null;
-
-                    if (useResolved) {
-                      voirieValue = resolvedRuleset.reculs.voirie.min_m;
-                      limitesValue = resolvedRuleset.reculs.limites_separatives.min_m;
-                      fondParcelleValue = resolvedRuleset.reculs.fond_parcelle.min_m;
-                      implantationEnLimiteAutorisee =
-                        resolvedRuleset.reculs.implantation_en_limite.autorisee;
-                      facadeAvantDisplay = formatResolvedFacade(
-                        resolvedRuleset.reculs.facades.avant
-                      );
-                      facadeLateralesDisplay = formatResolvedFacade(
-                        resolvedRuleset.reculs.facades.laterales
-                      );
-                      facadeFondDisplay = formatResolvedFacade(resolvedRuleset.reculs.facades.fond);
-                      stationnementLogementValue = resolvedRuleset.stationnement.par_logement;
-                      stationnement100m2Value = resolvedRuleset.stationnement.par_100m2;
-                      hauteurMaxValue = resolvedRuleset.hauteur.max_m;
-                      if (resolvedRuleset.ces.max_ratio !== null) {
-                        cesDisplay = `${Math.round(resolvedRuleset.ces.max_ratio * 100)} %`;
-                      } else {
-                        cesDisplay = "Non trouvé";
-                      }
-                      notes = resolvedRuleset.notes;
-                      confidenceScore = resolvedRuleset.confidence_score;
-                      source = resolvedRuleset.source;
-                    } else {
-                      const impl = z.rules.implantation;
-                      const fac = impl?.facades;
-                      const ruleset = z.ruleset;
-                      const reculs = z.rules.reculs;
-
-                      voirieValue = pickFirstNumber(
-                        z.retrait_voirie_min_m,
-                        impl?.recul_voirie_min_m,
-                        reculs?.voirie?.min_m,
-                        getRulesetValue(ruleset, "reculs", "voirie", "min_m")
-                      );
-
-                      limitesValue = pickFirstNumber(
-                        z.retrait_limites_separatives_min_m,
-                        impl?.recul_limite_separative_min_m,
-                        reculs?.limites_separatives?.min_m,
-                        getRulesetValue(ruleset, "reculs", "limites_separatives", "min_m")
-                      );
-
-                      fondParcelleValue = pickFirstNumber(
-                        z.retrait_fond_parcelle_min_m,
-                        impl?.recul_fond_parcelle_min_m,
-                        reculs?.fond_parcelle?.min_m,
-                        getRulesetValue(ruleset, "reculs", "fond_parcelle", "min_m")
-                      );
-
-                      implantationEnLimiteAutorisee = impl?.implantation_en_limite_autorisee ?? null;
-
-                      facadeAvantDisplay = formatFacade(fac?.avant);
-                      facadeLateralesDisplay = formatFacade(fac?.laterales);
-                      facadeFondDisplay = formatFacade(fac?.fond);
-
-                      stationnementLogementValue = pickFirstNumber(
-                        z.places_par_logement,
-                        z.rules?.stationnement?.places_par_logement
-                      );
-
-                      stationnement100m2Value = pickFirstNumber(
-                        z.places_par_100m2,
-                        z.rules?.stationnement?.places_par_100m2
-                      );
-
-                      hauteurMaxValue = toNumber(z.rules.hauteur?.hauteur_max_m);
-
-                      const cesPercent = toNumber(z.rules.emprise?.ces_max_percent);
-                      cesDisplay = cesPercent !== null ? `${cesPercent} %` : "Non trouvé";
-
-                      notes = collectNotes(z.rules.meta?.notes, ruleset, z.rules);
-                      confidenceScore = z.confidence_score;
-                      source = z.source;
-                    }
-
-                    const isEmptyZone = !isZoneMeaningfulWithResolved(z);
-                    const zoneLibelle =
-                      useResolved && resolvedRuleset.zone_libelle
-                        ? resolvedRuleset.zone_libelle
-                        : getZoneLibelle(z);
-                    const isDetectedZone = zonesMatch(z.zone_code, detectedZoneCode);
-                    const hasAiData =
-                      aiExtractResult &&
-                      zonesMatch(aiExtractResult.zone_code, z.zone_code) &&
-                      aiExtractResult?.data;
-                    const hasUserOverrides =
-                      currentUserOverrides && zonesMatch(z.zone_code, selectedZoneCode);
-                    const hasSqlData =
-                      sqlSummary && zonesMatch(sqlSummary.zone_code, z.zone_code);
-
-                    return (
-                      <div
-                        key={`${z.document_id}:${z.zone_code}:${z.created_at}`}
-                        className={`rule-zone-card ${isDetectedZone ? "rule-zone-card--detected" : ""} ${hasAiData ? "rule-zone-card--ai" : ""} ${hasUserOverrides ? "rule-zone-card--user" : ""} ${hasSqlData ? "rule-zone-card--sql" : ""}`}
-                      >
-                        <div className="rule-zone-header">
-                          <div className="rule-zone-title">
-                            <span className="zone-pill">{z.zone_code}</span>
-                            <span className="zone-libelle">{zoneLibelle}</span>
-                            {isDetectedZone && (
-                              <span className="zone-detected-badge" title="Zone de la parcelle">
-                                ★ Parcelle
-                              </span>
-                            )}
-                            {hasSqlData && (
-                              <span className="zone-sql-badge" title="Source SQL canonique">
-                                🗄️ SQL
-                              </span>
-                            )}
-                            {hasAiData && !hasSqlData && (
-                              <span className="zone-ai-badge" title="Enrichi par IA">
-                                🤖 IA
-                              </span>
-                            )}
-                            {hasUserOverrides && (
-                              <span className="zone-user-badge" title="Corrigé par l'utilisateur">
-                                ✏️ Corrigé
-                              </span>
-                            )}
-                            {isEmptyZone && !hasAiData && !hasUserOverrides && !hasSqlData && (
-                              <span
-                                className="zone-empty-badge"
-                                title="Aucune règle exploitable"
-                              >
-                                Zone vide
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="rule-zone-meta">
-                            <span
-                              className="confidence-pill"
-                              title="Score de confiance heuristique"
-                            >
-                              Confiance : {formatMaybeNumber(confidenceScore, "%")}
-                            </span>
-                            <span className="source-pill" title="Source de normalisation">
-                              {source || "Non trouvé"}
-                            </span>
-                          </div>
-                        </div>
-
-                        {isEmptyZone && !hasAiData && !hasUserOverrides && !hasSqlData && (
-                          <div className="zone-empty-message">
-                            Aucune règle exploitable extraite pour cette zone dans ce document.
-                            <br />
-                            <span className="zone-empty-hint">
-                              💡 Utilisez « Modifier / Compléter les règles » pour saisir les
-                              données manuellement.
-                            </span>
-                          </div>
-                        )}
-
-                        <div className="rule-grid">
-                          <div className="rule-cell">
-                            <div className="rule-label">Voirie</div>
-                            <div className="rule-value">
-                              {formatMaybeNumber(voirieValue, "m")}
-                            </div>
-                          </div>
-
-                          <div className="rule-cell">
-                            <div className="rule-label">Limites séparatives</div>
-                            <div className="rule-value">
-                              {formatMaybeNumber(limitesValue, "m")}
-                            </div>
-                          </div>
-
-                          <div className="rule-cell">
-                            <div className="rule-label">Implantation en limite</div>
-                            <div className="rule-value">
-                              {formatBool(implantationEnLimiteAutorisee)}
-                            </div>
-                          </div>
-
-                          <div className="rule-cell">
-                            <div className="rule-label">Façade avant</div>
-                            <div className="rule-value">{facadeAvantDisplay}</div>
-                          </div>
-
-                          <div className="rule-cell">
-                            <div className="rule-label">Façades latérales</div>
-                            <div className="rule-value">{facadeLateralesDisplay}</div>
-                          </div>
-
-                          <div className="rule-cell">
-                            <div className="rule-label">Façade fond</div>
-                            <div className="rule-value">{facadeFondDisplay}</div>
-                          </div>
-
-                          <div className="rule-cell">
-                            <div className="rule-label">Fond de parcelle</div>
-                            <div className="rule-value">
-                              {formatMaybeNumber(fondParcelleValue, "m")}
-                            </div>
-                          </div>
-
-                          <div className="rule-cell">
-                            <div className="rule-label">CES</div>
-                            <div className="rule-value">{cesDisplay}</div>
-                          </div>
-
-                          <div className="rule-cell">
-                            <div className="rule-label">Hauteur max</div>
-                            <div className="rule-value">
-                              {formatMaybeNumber(hauteurMaxValue, "m")}
-                            </div>
-                          </div>
-
-                          <div className="rule-cell">
-                            <div className="rule-label">Stationnement / logement</div>
-                            <div className="rule-value">
-                              {formatMaybeNumber(stationnementLogementValue, "")}
-                            </div>
-                          </div>
-
-                          <div className="rule-cell">
-                            <div className="rule-label">Stationnement / 100m²</div>
-                            <div className="rule-value">
-                              {formatMaybeNumber(stationnement100m2Value, "")}
-                            </div>
-                          </div>
-                        </div>
-
-                        {notes.length > 0 ? (
-                          <div className="rule-notes">
-                            <div className="rule-notes-title">Notes</div>
-                            <ul className="rule-notes-list">
-                              {notes.slice(0, 10).map((n, idx) => (
-                                <li key={`${z.zone_code}:${idx}`}>{n}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-              </div>
-            </>
           )}
         </div>
-      </section>
+      )}
+
+      {(aiExtractResult || aiExtractStatus === "error") && (
+        <div
+          className={`ai-extract-result-card ${aiExtractResult?.data?.completeness_ok ? "ai-extract-result-card--complete" : "ai-extract-result-card--incomplete"}`}
+        >
+          <div className="ai-extract-result-header">
+            <span className="ai-extract-result-icon">🤖</span>
+            <span className="ai-extract-result-title">
+              Règles IA (zone {aiExtractResult?.zone_code || selectedZoneCode})
+            </span>
+            {aiExtractResult && (
+              <span className="ai-extract-result-time">
+                Extrait le {new Date(aiExtractResult.extracted_at).toLocaleString("fr-FR")}
+              </span>
+            )}
+          </div>
+
+          {aiExtractStatus === "error" && aiExtractError && (
+            <div className="ai-extract-error">
+              <span className="ai-extract-error-icon">❌</span>
+              <span className="ai-extract-error-text">{aiExtractError}</span>
+            </div>
+          )}
+
+          {aiExtractResult?.data && (
+            <div className="ai-extract-result-content">
+              <div className="ai-extract-result-row">
+                <span className="ai-extract-result-label">Complétude :</span>
+                <span
+                  className={`ai-extract-result-value ${aiExtractResult.data.completeness_ok && aiExtractResult.data.missing.length === 0 ? "ai-extract-value--ok" : "ai-extract-value--ko"}`}
+                >
+                  {aiExtractResult.data.completeness_ok &&
+                  aiExtractResult.data.missing.length === 0
+                    ? "✅ Complet"
+                    : `⚠️ Incomplet (${aiExtractResult.data.missing.length} champ${aiExtractResult.data.missing.length > 1 ? "s" : ""} manquant${aiExtractResult.data.missing.length > 1 ? "s" : ""})`}
+                </span>
+              </div>
+
+              {aiExtractResult.data.confidence_score !== null && (
+                <div className="ai-extract-result-row">
+                  <span className="ai-extract-result-label">Confiance IA :</span>
+                  <span className="ai-extract-result-value">
+                    {Math.round(aiExtractResult.data.confidence_score * 100)}%
+                  </span>
+                </div>
+              )}
+
+              {aiExtractResult.data.error && (
+                <div className="ai-extract-result-row">
+                  <span className="ai-extract-result-label">Erreur IA :</span>
+                  <span className="ai-extract-result-value ai-extract-value--error">
+                    {aiExtractResult.data.error}
+                  </span>
+                </div>
+              )}
+
+              {aiExtractResult.data.missing && aiExtractResult.data.missing.length > 0 && (
+                <div className="ai-extract-missing">
+                  <span className="ai-extract-missing-title">Champs manquants :</span>
+                  <ul className="ai-extract-missing-list">
+                    {aiExtractResult.data.missing.map((m, i) => {
+                      const isNonBlocking = m.includes("(optionnel)");
+                      return (
+                        <li
+                          key={i}
+                          className={
+                            isNonBlocking ? "ai-missing-non-blocking" : "ai-missing-blocking"
+                          }
+                        >
+                          {m.replace(" (optionnel)", "")}
+                          {isNonBlocking && (
+                            <span className="ai-missing-tag">optionnel</span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {resolvedRuleset && !resolvedRuleset.completeness.ok && !aiExtractResult && (
+        <div className="completeness-warning">
+          <span className="completeness-icon">⚠️</span>
+          <div className="completeness-content">
+            <strong>Règles incomplètes pour la zone {selectedZoneCode}</strong>
+            <ul className="completeness-list">
+              {resolvedRuleset.completeness.missing.map((m, i) => (
+                <li
+                  key={i}
+                  className={m.includes("(optionnel)") ? "non-blocking" : "blocking"}
+                >
+                  {m.replace(" (optionnel)", "")}
+                  {m.includes("(optionnel)") && (
+                    <span className="non-blocking-tag">optionnel</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className="completeness-hint">
+              💡 Utilisez le bouton « Modifier / Compléter les règles » pour saisir les données
+              manquantes.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {detectError && <p className="detect-error-text">{detectError}</p>}
+
+      {!accessToken ? (
+        <div className="placeholder-empty">
+          <span className="placeholder-icon">🔒</span>
+          <span>Connectez-vous pour accéder aux analyses de faisabilité.</span>
+          <button className="auth-login-btn-small" onClick={handleGoToLogin}>
+            Se connecter
+          </button>
+        </div>
+      ) : !communeInsee ? (
+        <div className="placeholder-empty">
+          <span className="placeholder-icon">🔍</span>
+          <span>Sélectionnez une commune, puis un document PLU.</span>
+        </div>
+      ) : docsStatus === "loading" ? (
+        <div className="placeholder-empty">
+          <span className="placeholder-icon">⏳</span>
+          <span>Chargement des documents…</span>
+        </div>
+      ) : docsError ? (
+        <>
+          <p className="error-text">{docsError}</p>
+          <div className="placeholder-empty">
+            <span className="placeholder-icon">⚠️</span>
+            <span>Erreur lors du chargement des documents</span>
+          </div>
+        </>
+      ) : documents.length === 0 ? (
+        <div className="placeholder-empty">
+          <span className="placeholder-icon">📂</span>
+          <span>Aucun document PLU disponible pour cette commune.</span>
+        </div>
+      ) : !selectedDocumentId ? (
+        <div className="placeholder-empty">
+          <span className="placeholder-icon">📄</span>
+          <span>Sélectionnez un document PLU ci-dessus.</span>
+        </div>
+      ) : rulesStatus === "loading" ? (
+        <div className="placeholder-empty">
+          <span className="placeholder-icon">⏳</span>
+          <span>Chargement des règles…</span>
+        </div>
+      ) : rulesError ? (
+        <>
+          <p className="error-text">{rulesError}</p>
+          <div className="placeholder-empty">
+            <span className="placeholder-icon">⚠️</span>
+            <span>Erreur lors du chargement des règles</span>
+          </div>
+        </>
+      ) : rulesZones.length === 0 ? (
+        <div className="placeholder-empty">
+          <span className="placeholder-icon">📄</span>
+          <span>Aucune règle normalisée trouvée pour ce document.</span>
+        </div>
+      ) : (
+        <>
+          <div className="rules-toolbar">
+            <div className="rules-toolbar-left">
+              <span className="rules-count">
+                {rulesZones.length} zone{rulesZones.length > 1 ? "s" : ""} normalisée
+                {rulesZones.length > 1 ? "s" : ""}
+                {meaningfulZonesCount < rulesZones.length && (
+                  <span className="rules-count-detail">
+                    {" "}
+                    ({meaningfulZonesCount} avec règles exploitables)
+                  </span>
+                )}
+              </span>
+            </div>
+
+            <div className="rules-toolbar-right">
+              <label className="rules-select-label">
+                Zone :
+                <select
+                  className="rules-select"
+                  value={selectedZoneCode ?? ""}
+                  onChange={(e) => {
+                    const newZone = e.target.value || null;
+                    setSelectedZoneCode(newZone);
+                    if (newZone) {
+                      writeLS(LS_SELECTED_PLU_ZONE_CODE, newZone);
+                    }
+                    setAiExtractResult(null);
+                    setActiveResolvedRuleset(null);
+                    setAiExtractStatus("idle");
+                    setAiExtractError(null);
+                    setEditPanelOpen(false);
+                  }}
+                >
+                  {rulesZones.map((z) => {
+                    const isMeaningful = isZoneMeaningfulWithResolved(z);
+                    const libelle = getZoneLibelle(z);
+                    const isDetected = zonesMatch(z.zone_code, detectedZoneCode);
+                    return (
+                      <option key={`${z.document_id}:${z.zone_code}`} value={z.zone_code}>
+                        {z.zone_code} {libelle !== "Non trouvé" ? `— ${libelle}` : ""}
+                        {isDetected ? " ★" : ""}
+                        {!isMeaningful ? " (vide)" : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div className="rules-zones">
+            {rulesZones
+              .filter((z) =>
+                selectedZoneCode ? zonesMatch(z.zone_code, selectedZoneCode) : true
+              )
+              .map((z) => {
+                const useResolved =
+                  resolvedRuleset &&
+                  selectedZoneCode &&
+                  zonesMatch(z.zone_code, selectedZoneCode) &&
+                  zonesMatch(resolvedRuleset.zone_code, z.zone_code);
+
+                let voirieValue: number | null;
+                let limitesValue: number | null;
+                let fondParcelleValue: number | null;
+                let implantationEnLimiteAutorisee: boolean | null;
+                let facadeAvantDisplay: string;
+                let facadeLateralesDisplay: string;
+                let facadeFondDisplay: string;
+                let stationnementLogementValue: number | null;
+                let stationnement100m2Value: number | null;
+                let hauteurMaxValue: number | null;
+                let cesDisplay: string;
+                let notes: string[];
+                let confidenceScore: number | null;
+                let source: string | null;
+
+                if (useResolved) {
+                  voirieValue = resolvedRuleset.reculs.voirie.min_m;
+                  limitesValue = resolvedRuleset.reculs.limites_separatives.min_m;
+                  fondParcelleValue = resolvedRuleset.reculs.fond_parcelle.min_m;
+                  implantationEnLimiteAutorisee =
+                    resolvedRuleset.reculs.implantation_en_limite.autorisee;
+                  facadeAvantDisplay = formatResolvedFacade(
+                    resolvedRuleset.reculs.facades.avant
+                  );
+                  facadeLateralesDisplay = formatResolvedFacade(
+                    resolvedRuleset.reculs.facades.laterales
+                  );
+                  facadeFondDisplay = formatResolvedFacade(resolvedRuleset.reculs.facades.fond);
+                  stationnementLogementValue = resolvedRuleset.stationnement.par_logement;
+                  stationnement100m2Value = resolvedRuleset.stationnement.par_100m2;
+                  hauteurMaxValue = resolvedRuleset.hauteur.max_m;
+                  if (resolvedRuleset.ces.max_ratio !== null) {
+                    cesDisplay = `${Math.round(resolvedRuleset.ces.max_ratio * 100)} %`;
+                  } else {
+                    cesDisplay = "Non trouvé";
+                  }
+                  notes = resolvedRuleset.notes;
+                  confidenceScore = resolvedRuleset.confidence_score;
+                  source = resolvedRuleset.source;
+                } else {
+                  const impl = z.rules.implantation;
+                  const fac = impl?.facades;
+                  const ruleset = z.ruleset;
+                  const reculs = z.rules.reculs;
+
+                  voirieValue = pickFirstNumber(
+                    z.retrait_voirie_min_m,
+                    impl?.recul_voirie_min_m,
+                    reculs?.voirie?.min_m,
+                    getRulesetValue(ruleset, "reculs", "voirie", "min_m")
+                  );
+
+                  limitesValue = pickFirstNumber(
+                    z.retrait_limites_separatives_min_m,
+                    impl?.recul_limite_separative_min_m,
+                    reculs?.limites_separatives?.min_m,
+                    getRulesetValue(ruleset, "reculs", "limites_separatives", "min_m")
+                  );
+
+                  fondParcelleValue = pickFirstNumber(
+                    z.retrait_fond_parcelle_min_m,
+                    impl?.recul_fond_parcelle_min_m,
+                    reculs?.fond_parcelle?.min_m,
+                    getRulesetValue(ruleset, "reculs", "fond_parcelle", "min_m")
+                  );
+
+                  implantationEnLimiteAutorisee = impl?.implantation_en_limite_autorisee ?? null;
+
+                  facadeAvantDisplay = formatFacade(fac?.avant);
+                  facadeLateralesDisplay = formatFacade(fac?.laterales);
+                  facadeFondDisplay = formatFacade(fac?.fond);
+
+                  stationnementLogementValue = pickFirstNumber(
+                    z.places_par_logement,
+                    z.rules?.stationnement?.places_par_logement
+                  );
+
+                  stationnement100m2Value = pickFirstNumber(
+                    z.places_par_100m2,
+                    z.rules?.stationnement?.places_par_100m2
+                  );
+
+                  hauteurMaxValue = toNumber(z.rules.hauteur?.hauteur_max_m);
+
+                  const cesPercent = toNumber(z.rules.emprise?.ces_max_percent);
+                  cesDisplay = cesPercent !== null ? `${cesPercent} %` : "Non trouvé";
+
+                  notes = collectNotes(z.rules.meta?.notes, ruleset, z.rules);
+                  confidenceScore = z.confidence_score;
+                  source = z.source;
+                }
+
+                const isEmptyZone = !isZoneMeaningfulWithResolved(z);
+                const zoneLibelle =
+                  useResolved && resolvedRuleset.zone_libelle
+                    ? resolvedRuleset.zone_libelle
+                    : getZoneLibelle(z);
+                const isDetectedZone = zonesMatch(z.zone_code, detectedZoneCode);
+                const hasAiData =
+                  aiExtractResult &&
+                  zonesMatch(aiExtractResult.zone_code, z.zone_code) &&
+                  aiExtractResult?.data;
+                const hasUserOverrides =
+                  currentUserOverrides && zonesMatch(z.zone_code, selectedZoneCode);
+                const hasSqlData =
+                  sqlSummary && zonesMatch(sqlSummary.zone_code, z.zone_code);
+
+                return (
+                  <div
+                    key={`${z.document_id}:${z.zone_code}:${z.created_at}`}
+                    className={`rule-zone-card ${isDetectedZone ? "rule-zone-card--detected" : ""} ${hasAiData ? "rule-zone-card--ai" : ""} ${hasUserOverrides ? "rule-zone-card--user" : ""} ${hasSqlData ? "rule-zone-card--sql" : ""}`}
+                  >
+                    <div className="rule-zone-header">
+                      <div className="rule-zone-title">
+                        <span className="zone-pill">{z.zone_code}</span>
+                        <span className="zone-libelle">{zoneLibelle}</span>
+                        {isDetectedZone && (
+                          <span className="zone-detected-badge" title="Zone de la parcelle">
+                            ★ Parcelle
+                          </span>
+                        )}
+                        {hasSqlData && (
+                          <span className="zone-sql-badge" title="Source SQL canonique">
+                            🗄️ SQL
+                          </span>
+                        )}
+                        {hasAiData && !hasSqlData && (
+                          <span className="zone-ai-badge" title="Enrichi par IA">
+                            🤖 IA
+                          </span>
+                        )}
+                        {hasUserOverrides && (
+                          <span className="zone-user-badge" title="Corrigé par l'utilisateur">
+                            ✏️ Corrigé
+                          </span>
+                        )}
+                        {isEmptyZone && !hasAiData && !hasUserOverrides && !hasSqlData && (
+                          <span
+                            className="zone-empty-badge"
+                            title="Aucune règle exploitable"
+                          >
+                            Zone vide
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="rule-zone-meta">
+                        <span
+                          className="confidence-pill"
+                          title="Score de confiance heuristique"
+                        >
+                          Confiance : {formatMaybeNumber(confidenceScore, "%")}
+                        </span>
+                        <span className="source-pill" title="Source de normalisation">
+                          {source || "Non trouvé"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {isEmptyZone && !hasAiData && !hasUserOverrides && !hasSqlData && (
+                      <div className="zone-empty-message">
+                        Aucune règle exploitable extraite pour cette zone dans ce document.
+                        <br />
+                        <span className="zone-empty-hint">
+                          💡 Utilisez « Modifier / Compléter les règles » pour saisir les
+                          données manuellement.
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="rule-grid">
+                      <div className="rule-cell">
+                        <div className="rule-label">Voirie</div>
+                        <div className="rule-value">
+                          {formatMaybeNumber(voirieValue, "m")}
+                        </div>
+                      </div>
+
+                      <div className="rule-cell">
+                        <div className="rule-label">Limites séparatives</div>
+                        <div className="rule-value">
+                          {formatMaybeNumber(limitesValue, "m")}
+                        </div>
+                      </div>
+
+                      <div className="rule-cell">
+                        <div className="rule-label">Implantation en limite</div>
+                        <div className="rule-value">
+                          {formatBool(implantationEnLimiteAutorisee)}
+                        </div>
+                      </div>
+
+                      <div className="rule-cell">
+                        <div className="rule-label">Façade avant</div>
+                        <div className="rule-value">{facadeAvantDisplay}</div>
+                      </div>
+
+                      <div className="rule-cell">
+                        <div className="rule-label">Façades latérales</div>
+                        <div className="rule-value">{facadeLateralesDisplay}</div>
+                      </div>
+
+                      <div className="rule-cell">
+                        <div className="rule-label">Façade fond</div>
+                        <div className="rule-value">{facadeFondDisplay}</div>
+                      </div>
+
+                      <div className="rule-cell">
+                        <div className="rule-label">Fond de parcelle</div>
+                        <div className="rule-value">
+                          {formatMaybeNumber(fondParcelleValue, "m")}
+                        </div>
+                      </div>
+
+                      <div className="rule-cell">
+                        <div className="rule-label">CES</div>
+                        <div className="rule-value">{cesDisplay}</div>
+                      </div>
+
+                      <div className="rule-cell">
+                        <div className="rule-label">Hauteur max</div>
+                        <div className="rule-value">
+                          {formatMaybeNumber(hauteurMaxValue, "m")}
+                        </div>
+                      </div>
+
+                      <div className="rule-cell">
+                        <div className="rule-label">Stationnement / logement</div>
+                        <div className="rule-value">
+                          {formatMaybeNumber(stationnementLogementValue, "")}
+                        </div>
+                      </div>
+
+                      <div className="rule-cell">
+                        <div className="rule-label">Stationnement / 100m²</div>
+                        <div className="rule-value">
+                          {formatMaybeNumber(stationnement100m2Value, "")}
+                        </div>
+                      </div>
+                    </div>
+
+                    {notes.length > 0 ? (
+                      <div className="rule-notes">
+                        <div className="rule-notes-title">Notes</div>
+                        <ul className="rule-notes-list">
+                          {notes.slice(0, 10).map((n, idx) => (
+                            <li key={`${z.zone_code}:${idx}`}>{n}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+          </div>
+        </>
+      )}
     </div>
-  );
+  </section>
+</div>
+);
 }
+
 
 // ============================================
 // Styles de la page
@@ -4867,265 +4980,210 @@ const pageStyles = `
     --bg-muted: #111827;
     --code-bg: #374151;
   }
-
   .primary-btn {
     background: #4f46e5;
     border-color: #4f46e5;
   }
-
   .secondary-btn {
     background: var(--bg-muted, #111827);
     color: #f9fafb;
   }
-
   .secondary-btn:hover:not(:disabled) {
     background: #1f2937;
   }
-
   .ai-extract-btn {
     background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(167, 139, 250, 0.25) 100%);
     border-color: rgba(139, 92, 246, 0.5);
     color: #a78bfa;
   }
-
   .ai-extract-btn:hover:not(:disabled) {
     background: linear-gradient(135deg, rgba(139, 92, 246, 0.3) 0%, rgba(167, 139, 250, 0.35) 100%);
     border-color: rgba(139, 92, 246, 0.7);
   }
-
   .zone-pill {
     color: #f9fafb;
   }
-
   .zone-detected-badge {
     background: rgba(16, 185, 129, 0.2);
     border-color: rgba(16, 185, 129, 0.4);
     color: #34d399;
   }
-
   .zone-ai-badge {
     background: rgba(139, 92, 246, 0.2);
     border-color: rgba(139, 92, 246, 0.4);
     color: #a78bfa;
   }
-
   .zone-sql-badge {
     background: rgba(34, 197, 94, 0.2);
     border-color: rgba(34, 197, 94, 0.4);
     color: #4ade80;
   }
-
   .zone-user-badge {
     background: rgba(59, 130, 246, 0.2);
     border-color: rgba(59, 130, 246, 0.4);
     color: #60a5fa;
   }
-
   .zone-empty-badge {
     background: rgba(245, 158, 11, 0.2);
     border-color: rgba(245, 158, 11, 0.4);
     color: #fbbf24;
   }
-
   .zone-empty-message {
     background: rgba(245, 158, 11, 0.1);
     border-color: rgba(245, 158, 11, 0.4);
     color: #fcd34d;
   }
-
   .session-info {
     background: rgba(99, 102, 241, 0.15);
     border-color: rgba(99, 102, 241, 0.3);
   }
-
   .session-value {
     color: #f9fafb;
   }
-
   .detected-badge {
     background: rgba(16, 185, 129, 0.2);
     border-color: rgba(16, 185, 129, 0.4);
     color: #34d399;
   }
-
   .detected-warning {
     color: #fbbf24;
   }
-
   .detect-error-text {
     background: rgba(185, 28, 28, 0.15);
     border-color: rgba(185, 28, 28, 0.3);
     color: #fca5a5;
   }
-
   .rule-zone-card--detected {
     border-color: rgba(16, 185, 129, 0.5);
     background: rgba(16, 185, 129, 0.08);
   }
-
   .rule-zone-card--ai {
     border-color: rgba(139, 92, 246, 0.5);
     background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(167, 139, 250, 0.1) 100%);
   }
-
   .rule-zone-card--sql {
     border-color: rgba(34, 197, 94, 0.6);
     background: linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, rgba(74, 222, 128, 0.1) 100%);
   }
-
   .rule-zone-card--user {
     border-color: rgba(59, 130, 246, 0.5);
     background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(96, 165, 250, 0.1) 100%);
   }
-
   .auth-required-card {
     background: linear-gradient(135deg, #422006 0%, #78350f 100%);
     border-color: #f59e0b;
   }
-
   .auth-title {
     color: #fbbf24;
   }
-
   .auth-text {
     color: #fcd34d;
   }
-
   .auth-login-btn {
     background: #f59e0b;
     color: #111827;
   }
-
   .auth-login-btn:hover {
     background: #fbbf24;
   }
-
   .auth-login-btn-small {
     background: #4f46e5;
   }
-
   .completeness-warning {
     background: rgba(245, 158, 11, 0.15);
     border-color: rgba(245, 158, 11, 0.4);
   }
-
   .completeness-content strong {
     color: #fbbf24;
   }
-
   .completeness-list {
     color: #fcd34d;
   }
-
   .completeness-list li.blocking {
     color: #fca5a5;
   }
-
   .completeness-list li.non-blocking {
     color: #9ca3af;
   }
-
   .completeness-hint {
     color: #fcd34d;
     border-top-color: rgba(245, 158, 11, 0.4);
   }
-
   .non-blocking-tag {
     background: rgba(156, 163, 175, 0.2);
   }
-
   .ai-extract-result-card {
     background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(167, 139, 250, 0.15) 100%);
     border-color: rgba(139, 92, 246, 0.4);
   }
-
   .ai-extract-result-card--complete {
     background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(52, 211, 153, 0.15) 100%);
     border-color: rgba(16, 185, 129, 0.5);
   }
-
   .ai-extract-result-card--incomplete {
     background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(251, 191, 36, 0.15) 100%);
     border-color: rgba(245, 158, 11, 0.5);
   }
-
   .ai-extract-result-title {
     color: #f9fafb;
   }
-
   .ai-extract-result-value {
     color: #f9fafb;
   }
-
   .ai-extract-value--ok {
     color: #34d399;
   }
-
   .ai-extract-value--ko {
     color: #fbbf24;
   }
-
   .ai-extract-value--error {
     color: #fca5a5;
   }
-
   .ai-extract-error {
     background: rgba(185, 28, 28, 0.15);
     border-color: rgba(185, 28, 28, 0.3);
   }
-
   .ai-extract-error-text {
     color: #fca5a5;
   }
-
   .ai-missing-blocking {
     color: #fca5a5;
   }
-
   .ai-missing-non-blocking {
     color: #9ca3af;
   }
-
   .ai-missing-tag {
     background: rgba(156, 163, 175, 0.2);
   }
-
   .user-override-panel {
     background: rgba(59, 130, 246, 0.08);
     border-color: rgba(59, 130, 246, 0.3);
   }
-
   .user-override-warning {
     background: rgba(245, 158, 11, 0.12);
     border-color: rgba(245, 158, 11, 0.35);
   }
-
   .warning-text {
     color: #fcd34d;
   }
-
   .toggle-edit-btn {
     color: #60a5fa;
     background: rgba(59, 130, 246, 0.15);
     border-color: rgba(59, 130, 246, 0.4);
   }
-
   .toggle-edit-btn:hover {
     background: rgba(59, 130, 246, 0.25);
     border-color: rgba(59, 130, 246, 0.6);
   }
-
   .override-badge {
     background: rgba(16, 185, 129, 0.2);
     border-color: rgba(16, 185, 129, 0.4);
     color: #34d399;
   }
-
   .edit-form {
     background: var(--bg-muted, #111827);
     border-color: var(--border-color, #374151);
   }
-
   .edit-input,
   .edit-select,
   .edit-textarea {
@@ -5133,21 +5191,17 @@ const pageStyles = `
     border-color: var(--border-color, #374151);
     color: var(--text-primary, #f9fafb);
   }
-
   .save-btn {
     background: #059669;
   }
-
   .save-btn:hover {
     background: #047857;
   }
-
   .reset-btn {
     color: #fca5a5;
     background: rgba(185, 28, 28, 0.12);
     border-color: rgba(185, 28, 28, 0.35);
   }
-
   .reset-btn:hover {
     background: rgba(185, 28, 28, 0.2);
     border-color: rgba(185, 28, 28, 0.5);

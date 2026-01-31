@@ -1,4 +1,11 @@
-﻿import type { NavSection } from "../../components/layout/BaseShellLayout";
+﻿/**
+ * Configuration de la navigation pour l'espace Promoteur.
+ *
+ * Note: Ce fichier est statique (pas de hooks React).
+ * La logique de préservation du param ?study= est gérée dans PromoteurSidebar.tsx
+ */
+
+import type { NavSection } from "../../components/layout/BaseShellLayout";
 
 export const PROMOTEUR_SIDEBAR: NavSection[] = [
   {

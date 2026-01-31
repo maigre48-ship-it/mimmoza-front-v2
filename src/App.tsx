@@ -1,18 +1,15 @@
 ﻿// src/App.tsx
 
-import { Routes, Route, Navigate } from "react-router-dom";
-import { useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { Routes, Route, Navigate, Outlet, useNavigate } from "react-router-dom";
 import { wgs84ToLambert93 } from "./lib/projection";
 
-import HomePage from "./pages/HomePage";
-import LoginPage from "./pages/LoginPage"; // ✅ AJOUT
+// Layout global + sync
+import { AppShell } from "./components/AppShell";
+import { SpaceSync, type Space } from "./components/SpaceSync";
 
-// Layouts
-import ParticulierLayout from "./spaces/particulier/ParticulierLayout";
-import MarchandLayout from "./spaces/marchand/MarchandLayout";
-import PromoteurLayout from "./spaces/promoteur/PromoteurLayout";
-import BanqueLayout from "./spaces/banque/BanqueLayout";
-import AssuranceLayout from "./spaces/assurance/AssuranceLayout";
+import HomePage from "./pages/HomePage";
+import LoginPage from "./pages/LoginPage";
 
 // =========================
 // Particulier — pages (COMPLET)
@@ -58,16 +55,17 @@ import MarchandExports from "./spaces/marchand/pages/Exports";
 import PromoteurDashboard from "./spaces/promoteur/pages/Dashboard";
 import PromoteurFoncier from "./spaces/promoteur/pages/Foncier";
 import PromoteurPluFaisabilite from "./spaces/promoteur/pages/PluFaisabilite";
-// ✅ NOUVELLE PAGE: Étude de Marché (remplace l'ancienne page placeholder)
+
 import MarchePage from "./spaces/promoteur/etudes/marche/MarchePage";
-import PromoteurRisques from "./spaces/promoteur/pages/Risques";
+import RisquesPage from "./spaces/promoteur/etudes/risques/RisquesPage";
+
 import PromoteurMassing3D from "./spaces/promoteur/pages/Massing3D";
 import PromoteurBilan from "./spaces/promoteur/pages/Bilan";
 import PromoteurSynthese from "./spaces/promoteur/pages/Synthese";
 import PromoteurExports from "./spaces/promoteur/pages/Exports";
 
-// ✅ IMPORTANT: utiliser la vraie page Implantation 2D (pas le placeholder)
 import Implantation2DPage from "./spaces/promoteur/Implantation2DPage";
+import BilanPromoteurPage from "./spaces/promoteur/bilan-promoteur/BilanPromoteurPage";
 
 // =========================
 // Banque — pages (socle)
@@ -91,18 +89,45 @@ import AssuranceOffre from "./spaces/assurance/pages/Offre";
 import AssuranceMonitoring from "./spaces/assurance/pages/Monitoring";
 import AssuranceDocuments from "./spaces/assurance/pages/Documents";
 
+// =========================
+// Types globaux (dev helpers)
+// =========================
 declare global {
   interface Window {
     __mimmozaProjection?: (lon: number, lat: number) => { x: number; y: number };
-    __mimmozaElevation?: (
-      deptCode: string,
-      lon: number,
-      lat: number
-    ) => Promise<any>;
+    __mimmozaElevation?: (deptCode: string, lon: number, lat: number) => Promise<unknown>;
   }
 }
 
-export default function App() {
+// =========================
+// Mapping Space -> Path pour navigation
+// =========================
+const SPACE_PATHS: Record<Space, string> = {
+  none: "/",
+  audit: "/audit",
+  promoteur: "/promoteur",
+  agence: "/particulier",
+  marchand: "/marchand-de-bien",
+  banque: "/banque",
+  assurance: "/assurance",
+};
+
+// =========================
+// Composant wrapper interne (avec accès à useNavigate)
+// =========================
+function AppRoot() {
+  const [currentSpace, setCurrentSpace] = useState<Space>("none");
+  const navigate = useNavigate();
+
+  // Handler pour changer d'espace (appelé par AppShell)
+  const handleChangeSpace = useCallback(
+    (space: Space) => {
+      setCurrentSpace(space);
+      navigate(SPACE_PATHS[space]);
+    },
+    [navigate]
+  );
+
   // DEV helpers (non intrusif, ne tourne pas en prod)
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -125,142 +150,166 @@ export default function App() {
       return json;
     };
 
-    // Petit log pour confirmer que tout est chargé
     const { x, y } = wgs84ToLambert93(2.3522, 48.8566);
     console.log("[mimmoza] DEV helpers ready. Paris (Lambert93) ≈", { x, y });
   }, []);
 
   return (
-    <Routes>
-      {/* Accueil */}
-      <Route path="/" element={<HomePage />} />
+    <>
+      {/* Synchronise le pathname avec currentSpace */}
+      <SpaceSync setCurrentSpace={setCurrentSpace} />
 
-      {/* ✅ Login */}
-      <Route path="/login" element={<LoginPage />} />
+      {/* Layout global */}
+      <AppShell currentSpace={currentSpace} onChangeSpace={handleChangeSpace}>
+        <Routes>
+          {/* Accueil */}
+          <Route path="/" element={<HomePage />} />
 
-      {/* =========================
-          Particulier (COMPLET)
-         ========================= */}
-      <Route path="/particulier" element={<ParticulierLayout />}>
-        {/* Démarrer */}
-        <Route index element={<ParticulierDashboard />} />
-        <Route path="projet" element={<ParticulierMonProjet />} />
-        <Route path="favoris" element={<ParticulierFavoris />} />
+          {/* Login */}
+          <Route path="/login" element={<LoginPage />} />
 
-        {/* Recherche */}
-        <Route path="recherche" element={<ParticulierRechercheBiens />} />
-        <Route path="alertes" element={<ParticulierAlertes />} />
-        <Route path="comparateur" element={<ParticulierComparateur />} />
+          {/* =========================
+              Particulier (COMPLET)
+             ========================= */}
+          <Route path="/particulier" element={<Outlet />}>
+            {/* Démarrer */}
+            <Route index element={<ParticulierDashboard />} />
+            <Route path="projet" element={<ParticulierMonProjet />} />
+            <Route path="favoris" element={<ParticulierFavoris />} />
 
-        {/* Évaluation */}
-        <Route path="estimation" element={<ParticulierEstimation />} />
-        {/* compat ancien chemin */}
-        <Route path="evaluation" element={<Navigate to="/particulier/estimation" replace />} />
-        <Route path="quartier" element={<ParticulierQuartier />} />
-        <Route path="charges" element={<ParticulierCharges />} />
+            {/* Recherche */}
+            <Route path="recherche" element={<ParticulierRechercheBiens />} />
+            <Route path="alertes" element={<ParticulierAlertes />} />
+            <Route path="comparateur" element={<ParticulierComparateur />} />
 
-        {/* Financement */}
-        <Route path="financement" element={<ParticulierCapacite />} />
-        <Route path="scenarios" element={<ParticulierScenarios />} />
-        <Route path="dossier" element={<ParticulierDossierBanque />} />
+            {/* Évaluation */}
+            <Route path="estimation" element={<ParticulierEstimation />} />
+            <Route path="evaluation" element={<Navigate to="/particulier/estimation" replace />} />
+            <Route path="quartier" element={<ParticulierQuartier />} />
+            <Route path="charges" element={<ParticulierCharges />} />
 
-        {/* Travaux */}
-        <Route path="travaux" element={<ParticulierBudgetTravaux />} />
-        <Route path="conformite" element={<ParticulierConformite />} />
-        <Route path="planning" element={<ParticulierPlanning />} />
+            {/* Financement */}
+            <Route path="financement" element={<ParticulierCapacite />} />
+            <Route path="scenarios" element={<ParticulierScenarios />} />
+            <Route path="dossier" element={<ParticulierDossierBanque />} />
 
-        {/* Documents */}
-        <Route path="documents" element={<ParticulierMesDocuments />} />
-        <Route path="exports" element={<ParticulierExports />} />
-        <Route path="historique" element={<ParticulierHistorique />} />
+            {/* Travaux */}
+            <Route path="travaux" element={<ParticulierBudgetTravaux />} />
+            <Route path="conformite" element={<ParticulierConformite />} />
+            <Route path="planning" element={<ParticulierPlanning />} />
 
-        <Route path="*" element={<Navigate to="/particulier" replace />} />
-      </Route>
+            {/* Documents */}
+            <Route path="documents" element={<ParticulierMesDocuments />} />
+            <Route path="exports" element={<ParticulierExports />} />
+            <Route path="historique" element={<ParticulierHistorique />} />
 
-      {/* Marchand de bien */}
-      <Route path="/marchand-de-bien" element={<MarchandLayout />}>
-        <Route index element={<MarchandPipeline />} />
-        <Route path="sourcing" element={<MarchandSourcing />} />
-        <Route path="qualification" element={<MarchandQualification />} />
-        <Route path="rentabilite" element={<MarchandRentabilite />} />
-        <Route path="execution" element={<MarchandExecution />} />
-        <Route path="sortie" element={<MarchandSortie />} />
-        <Route path="exports" element={<MarchandExports />} />
+            <Route path="*" element={<Navigate to="/particulier" replace />} />
+          </Route>
 
-        {/* ✅ Estimation DVF (réutilise la page Particulier) */}
-        <Route path="estimation" element={<ParticulierEstimation />} />
+          {/* =========================
+              Marchand de bien
+             ========================= */}
+          <Route path="/marchand-de-bien" element={<Outlet />}>
+            <Route index element={<MarchandPipeline />} />
+            <Route path="sourcing" element={<MarchandSourcing />} />
+            <Route path="qualification" element={<MarchandQualification />} />
+            <Route path="rentabilite" element={<MarchandRentabilite />} />
+            <Route path="execution" element={<MarchandExecution />} />
+            <Route path="sortie" element={<MarchandSortie />} />
+            <Route path="exports" element={<MarchandExports />} />
+            <Route path="estimation" element={<ParticulierEstimation />} />
+            <Route path="marche" element={<MarchePage />} />
+            <Route path="*" element={<Navigate to="/marchand-de-bien" replace />} />
+          </Route>
 
-        {/* ✅ Étude de Marché disponible aussi pour Marchand */}
-        <Route path="marche" element={<MarchePage />} />
+          {/* =========================
+              Promoteur
+             ========================= */}
+          <Route path="/promoteur" element={<Outlet />}>
+            <Route index element={<PromoteurDashboard />} />
+            <Route path="foncier" element={<PromoteurFoncier />} />
+            <Route path="plu-faisabilite" element={<PromoteurPluFaisabilite />} />
+            <Route path="marche" element={<MarchePage />} />
+            <Route path="risques" element={<RisquesPage />} />
+            <Route path="implantation-2d" element={<Implantation2DPage />} />
+            <Route path="massing-3d" element={<PromoteurMassing3D />} />
+            <Route path="bilan" element={<PromoteurBilan />} />
+            <Route path="bilan-promoteur" element={<BilanPromoteurPage />} />
+            <Route path="synthese" element={<PromoteurSynthese />} />
+            <Route path="exports" element={<PromoteurExports />} />
+            <Route path="estimation" element={<ParticulierEstimation />} />
+            <Route path="*" element={<Navigate to="/promoteur" replace />} />
+          </Route>
 
-        <Route path="*" element={<Navigate to="/marchand-de-bien" replace />} />
-      </Route>
+          {/* =========================
+              Banque
+             ========================= */}
+          <Route path="/banque" element={<Outlet />}>
+            <Route index element={<BanqueDashboard />} />
+            <Route path="origination" element={<BanqueOrigination />} />
+            <Route path="analyse" element={<BanqueAnalyse />} />
+            <Route path="garanties" element={<BanqueGaranties />} />
+            <Route path="decision" element={<BanqueDecision />} />
+            <Route path="monitoring" element={<BanqueMonitoring />} />
+            <Route path="documents" element={<BanqueDocuments />} />
+            <Route path="estimation" element={<ParticulierEstimation />} />
+            <Route path="marche" element={<MarchePage />} />
+            <Route path="*" element={<Navigate to="/banque" replace />} />
+          </Route>
 
-      {/* Promoteur */}
-      <Route path="/promoteur" element={<PromoteurLayout />}>
-        <Route index element={<PromoteurDashboard />} />
-        <Route path="foncier" element={<PromoteurFoncier />} />
-        <Route path="plu-faisabilite" element={<PromoteurPluFaisabilite />} />
-        
-        {/* ✅ NOUVELLE PAGE: Étude de Marché complète */}
-        <Route path="marche" element={<MarchePage />} />
-        
-        <Route path="risques" element={<PromoteurRisques />} />
+          {/* =========================
+              Assurance
+             ========================= */}
+          <Route path="/assurance" element={<Outlet />}>
+            <Route index element={<AssuranceDashboard />} />
+            <Route path="souscription" element={<AssuranceSouscription />} />
+            <Route path="exposition" element={<AssuranceExposition />} />
+            <Route path="tarification" element={<AssuranceTarification />} />
+            <Route path="offre" element={<AssuranceOffre />} />
+            <Route path="monitoring" element={<AssuranceMonitoring />} />
+            <Route path="documents" element={<AssuranceDocuments />} />
+            <Route path="estimation" element={<ParticulierEstimation />} />
+            <Route path="marche" element={<MarchePage />} />
+            <Route path="*" element={<Navigate to="/assurance" replace />} />
+          </Route>
 
-        {/* ✅ VRAIE page Implantation 2D */}
-        <Route path="implantation-2d" element={<Implantation2DPage />} />
+          {/* =========================
+              Audit (placeholder pour cohérence avec AppShell)
+             ========================= */}
+          <Route path="/audit" element={<Outlet />}>
+            <Route
+              index
+              element={
+                <div className="p-8 text-center text-slate-500">
+                  <h1 className="text-2xl font-bold mb-2">Espace Audit</h1>
+                  <p>Coming soon — Analyse PLU, risques et SmartScore</p>
+                </div>
+              }
+            />
+            <Route path="*" element={<Navigate to="/audit" replace />} />
+          </Route>
 
-        <Route path="massing-3d" element={<PromoteurMassing3D />} />
-        <Route path="bilan" element={<PromoteurBilan />} />
-        <Route path="synthese" element={<PromoteurSynthese />} />
-        <Route path="exports" element={<PromoteurExports />} />
+          {/* =========================
+              Agence (placeholder pour cohérence avec AppShell)
+             ========================= */}
+          <Route path="/agence" element={<Navigate to="/particulier" replace />} />
 
-        {/* ✅ Estimation DVF */}
-        <Route path="estimation" element={<ParticulierEstimation />} />
+          {/* =========================
+              Marchand (alias court)
+             ========================= */}
+          <Route path="/marchand" element={<Navigate to="/marchand-de-bien" replace />} />
 
-        <Route path="*" element={<Navigate to="/promoteur" replace />} />
-      </Route>
-
-      {/* Banque */}
-      <Route path="/banque" element={<BanqueLayout />}>
-        <Route index element={<BanqueDashboard />} />
-        <Route path="origination" element={<BanqueOrigination />} />
-        <Route path="analyse" element={<BanqueAnalyse />} />
-        <Route path="garanties" element={<BanqueGaranties />} />
-        <Route path="decision" element={<BanqueDecision />} />
-        <Route path="monitoring" element={<BanqueMonitoring />} />
-        <Route path="documents" element={<BanqueDocuments />} />
-
-        {/* ✅ Estimation DVF */}
-        <Route path="estimation" element={<ParticulierEstimation />} />
-
-        {/* ✅ Étude de Marché disponible aussi pour Banque */}
-        <Route path="marche" element={<MarchePage />} />
-
-        <Route path="*" element={<Navigate to="/banque" replace />} />
-      </Route>
-
-      {/* Assurance */}
-      <Route path="/assurance" element={<AssuranceLayout />}>
-        <Route index element={<AssuranceDashboard />} />
-        <Route path="souscription" element={<AssuranceSouscription />} />
-        <Route path="exposition" element={<AssuranceExposition />} />
-        <Route path="tarification" element={<AssuranceTarification />} />
-        <Route path="offre" element={<AssuranceOffre />} />
-        <Route path="monitoring" element={<AssuranceMonitoring />} />
-        <Route path="documents" element={<AssuranceDocuments />} />
-
-        {/* ✅ Estimation DVF */}
-        <Route path="estimation" element={<ParticulierEstimation />} />
-
-        {/* ✅ Étude de Marché disponible aussi pour Assurance */}
-        <Route path="marche" element={<MarchePage />} />
-
-        <Route path="*" element={<Navigate to="/assurance" replace />} />
-      </Route>
-
-      {/* Fallback global */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+          {/* Fallback global */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AppShell>
+    </>
   );
+}
+
+// =========================
+// Export principal
+// =========================
+export default function App() {
+  return <AppRoot />;
 }

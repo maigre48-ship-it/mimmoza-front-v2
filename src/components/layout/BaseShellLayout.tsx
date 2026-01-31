@@ -1,5 +1,4 @@
-﻿
-import { Link } from "react-router-dom";
+﻿import { Link } from "react-router-dom";
 
 export type NavItem = {
   label: string;
@@ -100,4 +99,3 @@ export default function BaseShellLayout({
     </div>
   );
 }
-

@@ -25,6 +25,9 @@ export interface AddressSuggestion {
   lat: number;
   lon: number;
   citycode?: string; // INSEE
+  // optionnels : certains services d'adresse peuvent fournir ces infos
+  postcode?: string;
+  city?: string;
 }
 
 export interface ParcelInfo {
@@ -40,6 +43,10 @@ export interface InseeData {
   departement?: string;
 
   population?: number | null;
+
+  // ✅ utilisé par MarchePage (densité fallback) / affichage surface
+  surface_km2?: number | null;
+
   densite?: number | null;
 
   // dynamiques
@@ -85,12 +92,24 @@ export interface TransactionsData {
   count?: number | null;
 }
 
+/**
+ * ✅ BPE tel qu'utilisé dans MarchePage.tsx :
+ * - extractBpeData lit `bpe.source` (string ou objet)
+ * - ServicesCard affiche un badge OSM/OVERPASS
+ */
 export interface BpeData {
   nb_commerces?: number | null;
   nb_sante?: number | null;
   nb_services?: number | null;
   nb_enseignement?: number | null;
   nb_sport_culture?: number | null;
+
+  source?:
+    | string
+    | {
+        provider: string;
+        note?: string;
+      };
 }
 
 // correspond à ce que ServicesCard lit via services.supermarche_proche etc.
@@ -110,6 +129,47 @@ export interface ServicesRuraux {
 
   // fallback générique si backend renvoie d’autres clés
   [k: string]: ServiceProche | null | undefined;
+}
+
+/**
+ * ✅ Nouveau: market.shops (vient de market-context-v1)
+ * - Top 5 par catégorie avec name + distance_m
+ * - Sert à alimenter ServicesCard quand smartscore/services_ruraux sont absents
+ */
+export type OsmElementType = "node" | "way" | "relation";
+
+export interface ShopTopItem {
+  name: string;
+  distance_m: number;
+  osm_type: OsmElementType;
+  osm_id: number;
+  lat?: number;
+  lon?: number;
+}
+
+export interface ShopCategory {
+  count: number;
+  top: ShopTopItem[];
+}
+
+export interface MarketShops {
+  radius_m_used: number;
+  categories: {
+    supermarket?: ShopCategory;
+    fuel?: ShopCategory;
+    bank_atm?: ShopCategory;
+    post?: ShopCategory;
+    doctor?: ShopCategory;
+    pharmacy?: ShopCategory;
+    gendarmerie?: ShopCategory;
+    commissariat?: ShopCategory;
+    // si le backend ajoute d'autres catégories plus tard
+    [k: string]: ShopCategory | undefined;
+  };
+  source?: {
+    provider: string;
+    note?: string;
+  };
 }
 
 export interface EhpadFacility {
@@ -167,6 +227,9 @@ export interface MarketData {
 
   bpe?: BpeData | null;
   services_ruraux?: ServicesRuraux | null;
+
+  // ✅ Nouveau : utilisé par ServicesCard (fallback top5)
+  shops?: MarketShops | null;
 
   ehpad?: EHPADData | null;
 

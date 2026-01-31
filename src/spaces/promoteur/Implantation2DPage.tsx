@@ -1,7 +1,14 @@
 ﻿// src/spaces/promoteur/Implantation2DPage.tsx
 // Refactored: delegates reculs logic to reculsEngine, draw logic to drawEngine
+// Updated: passes meta (buildingKind, floorsSpec, nbLogements, surfaceMoyLogementM2) to store
+// Updated: persists to promoteurSnapshot.store for cross-module data sharing
+// ✅ V1.1: Uses useFoncierSelection for multi-parcel support + fitBounds on all parcels
+// ✅ V1.2: UX fixes - auto edit mode, removed dropdown, sticky layout
+// ✅ V1.3: Layout fix - sticky toolbar with proper offset, map height stabilization, scroll anchoring fix
+// ✅ V1.5: Layout fix - minimal gap between nav and toolbar (max 20px)
+// ✅ V1.6: Layout fix - fixed height layout, no page scroll, only right column scrolls
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { MapContainer, TileLayer, GeoJSON, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
@@ -39,9 +46,19 @@ import {
 } from "./implantation2d/drawEngine";
 
 // -----------------------------------------------------------------------------
-// Zustand store import for handoff to Massing 3D
+// ✅ Import useFoncierSelection for multi-parcel support
 // -----------------------------------------------------------------------------
-import { usePromoteurProjectStore } from "./store/promoteurProject.store";
+import { useFoncierSelection, extractCommuneInsee, type SelectedParcel } from "./shared/hooks/useFoncierSelection";
+
+// -----------------------------------------------------------------------------
+// Zustand store import for handoff to Massing 3D / Bilan Promoteur
+// -----------------------------------------------------------------------------
+import { usePromoteurProjectStore, type Implantation2DMeta, type FloorsSpec as StoreFloorsSpec } from "./store/promoteurProject.store";
+
+// -----------------------------------------------------------------------------
+// Snapshot store import for cross-module persistence
+// -----------------------------------------------------------------------------
+import { patchPromoteurSnapshot, patchModule } from "./shared/promoteurSnapshot.store";
 
 // Geoman CSS still needed for draw controls styling
 import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
@@ -59,6 +76,13 @@ const LS_KEYS = {
   PARCEL_ID_SELECTED: "mimmoza.foncier.selected_parcel_id",
   PARCEL_ID_LAST: "mimmoza.foncier.last_parcel_id",
 } as const;
+
+// -----------------------------------------------------------------------------
+// Coefficients for surface estimates
+// -----------------------------------------------------------------------------
+const COEF_SDP = 1.0;
+const COEF_HABITABLE_COLLECTIF = 0.82;
+const COEF_HABITABLE_INDIVIDUEL = 0.90;
 
 // -----------------------------------------------------------------------------
 // Types
@@ -107,6 +131,14 @@ interface ProjectConfig {
   validationRequested: boolean;
 }
 
+type BuildingKind = "INDIVIDUEL" | "COLLECTIF";
+
+type FloorsSpec = {
+  aboveGroundFloors: number;
+  groundFloorHeightM: number;
+  typicalFloorHeightM: number;
+};
+
 // -----------------------------------------------------------------------------
 // Helpers: LocalStorage (safe read)
 // -----------------------------------------------------------------------------
@@ -118,41 +150,6 @@ function safeGetLocalStorage(key: string): string | null {
   } catch {
     return null;
   }
-}
-
-// -----------------------------------------------------------------------------
-// Helpers: Parameter resolution with fallback
-// -----------------------------------------------------------------------------
-function resolveParcelId(
-  queryParam: string | null,
-  locationState: LocationState | null
-): string | null {
-  if (queryParam && queryParam.trim()) return queryParam.trim();
-  if (locationState) {
-    const fromState = locationState.parcelId ?? locationState.parcel_id ?? null;
-    if (fromState && String(fromState).trim()) return String(fromState).trim();
-  }
-  const selected = safeGetLocalStorage(LS_KEYS.PARCEL_ID_SELECTED);
-  if (selected) return selected;
-  const last = safeGetLocalStorage(LS_KEYS.PARCEL_ID_LAST);
-  if (last) return last;
-  return null;
-}
-
-function resolveCommuneInsee(
-  queryParam: string | null,
-  locationState: LocationState | null
-): string | null {
-  if (queryParam && queryParam.trim()) return queryParam.trim();
-  if (locationState) {
-    const fromState = locationState.communeInsee ?? locationState.commune_insee ?? null;
-    if (fromState && String(fromState).trim()) return String(fromState).trim();
-  }
-  const selected = safeGetLocalStorage(LS_KEYS.COMMUNE_INSEE_SELECTED);
-  if (selected) return selected;
-  const last = safeGetLocalStorage(LS_KEYS.COMMUNE_INSEE_LAST);
-  if (last) return last;
-  return null;
 }
 
 // -----------------------------------------------------------------------------
@@ -187,7 +184,7 @@ function isValidResolvedRuleset(
 }
 
 // -----------------------------------------------------------------------------
-// Helpers: Geometry normalization (kept for cadastre loading)
+// Helpers: Geometry normalization
 // -----------------------------------------------------------------------------
 function normalizeToFeature(raw: unknown): Feature<Polygon | MultiPolygon> | null {
   if (!raw) return null;
@@ -420,23 +417,41 @@ function projectComparable(p: ProjectConfig | undefined) {
 }
 
 // -----------------------------------------------------------------------------
-// Leaflet helpers
+// ✅ Leaflet helper: Fit to multiple features
 // -----------------------------------------------------------------------------
-function FitToFeature({ feature }: { feature: Feature<Polygon | MultiPolygon> | null }) {
+function FitToFeatures({ features }: { features: Feature<Polygon | MultiPolygon>[] }) {
   const map = useMap();
+  const fittedRef = useRef(false);
+
   useEffect(() => {
-    if (!feature) return;
+    if (features.length === 0) return;
+    if (fittedRef.current) return; // Only fit once on mount
+
     try {
-      const b = turf.bbox(feature);
-      const bounds: L.LatLngBoundsExpression = [
-        [b[1], b[0]],
-        [b[3], b[2]],
-      ];
-      map.fitBounds(bounds, { padding: [30, 30], maxZoom: 21 });
-    } catch {
-      // ignore
+      // Compute combined bbox of all features
+      let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+
+      for (const feature of features) {
+        const b = turf.bbox(feature);
+        minLng = Math.min(minLng, b[0]);
+        minLat = Math.min(minLat, b[1]);
+        maxLng = Math.max(maxLng, b[2]);
+        maxLat = Math.max(maxLat, b[3]);
+      }
+
+      if (minLng !== Infinity) {
+        const bounds: L.LatLngBoundsExpression = [
+          [minLat, minLng],
+          [maxLat, maxLng],
+        ];
+        map.fitBounds(bounds, { padding: [30, 30], maxZoom: 21 });
+        fittedRef.current = true;
+      }
+    } catch (err) {
+      console.warn("[FitToFeatures] Error computing bounds:", err);
     }
-  }, [feature, map]);
+  }, [features, map]);
+
   return null;
 }
 
@@ -471,14 +486,14 @@ function MapReculsControl({ reculs }: { reculs: AppliedReculs | null }) {
     const control = L.control({ position: "topright" });
     control.onAdd = () => {
       const div = L.DomUtil.create("div");
-      div.style.background = "rgba(2, 6, 23, 0.92)";
-      div.style.border = "1px solid rgba(148,163,184,0.35)";
+      div.style.background = "rgba(255, 255, 255, 0.96)";
+      div.style.border = "1px solid #e2e8f0";
       div.style.borderRadius = "12px";
       div.style.padding = "10px 12px";
-      div.style.color = "white";
+      div.style.color = "#0f172a";
       div.style.fontSize = "12px";
       div.style.lineHeight = "1.35";
-      div.style.boxShadow = "0 20px 40px rgba(15,23,42,0.45)";
+      div.style.boxShadow = "0 1px 3px rgba(0,0,0,0.06), 0 10px 24px rgba(0,0,0,0.06)";
       div.style.minWidth = "210px";
       div.style.pointerEvents = "auto";
 
@@ -487,9 +502,9 @@ function MapReculsControl({ reculs }: { reculs: AppliedReculs | null }) {
 
       if (!reculs) {
         div.innerHTML = `
-          <div style="font-weight:700; margin-bottom:6px;">Reculs PLU</div>
-          <div style="color:#94a3b8; font-size:11px;">En attente du ruleset PLU…</div>
-          <div style="margin-top:8px; opacity:.85; font-size:11px;">Clique sur un bord pour définir la façade</div>
+          <div style="font-weight:700; margin-bottom:6px; color:#0f172a;">Reculs PLU</div>
+          <div style="color:#64748b; font-size:11px;">En attente du ruleset PLU…</div>
+          <div style="margin-top:8px; opacity:.85; font-size:11px; color:#475569;">Clique sur un bord pour définir la façade</div>
         `;
       } else {
         const formatVal = (v: number): string => `${v} m`;
@@ -498,31 +513,31 @@ function MapReculsControl({ reculs }: { reculs: AppliedReculs | null }) {
         switch (reculs.mode) {
           case "DIRECTIONAL_BY_FACADE":
             modeLabel = "directionnel ✓";
-            modeColor = "#22c55e";
+            modeColor = "#16a34a";
             break;
           case "FALLBACK_UNIFORM":
             modeLabel = "uniforme (fallback)";
-            modeColor = "#fb923c";
+            modeColor = "#ea580c";
             break;
           default:
             modeLabel = "uniforme";
-            modeColor = "#94a3b8";
+            modeColor = "#64748b";
         }
 
         const dataNote = reculs.hasData
           ? ""
-          : `<div style="margin-top:6px; font-size:11px; color:#fb923c;">⚠️ Aucune donnée PLU, valeurs par défaut (0)</div>`;
+          : `<div style="margin-top:6px; font-size:11px; color:#ea580c;">⚠️ Aucune donnée PLU, valeurs par défaut (0)</div>`;
 
         const facadeNote = reculs.hasFacade
-          ? `<div style="margin-top:6px; font-size:11px; color:#22c55e;">✓ Façade définie</div>`
-          : `<div style="margin-top:6px; opacity:.85; font-size:11px;">Clique sur un bord pour définir la façade</div>`;
+          ? `<div style="margin-top:6px; font-size:11px; color:#16a34a;">✓ Façade définie</div>`
+          : `<div style="margin-top:6px; opacity:.85; font-size:11px; color:#475569;">Clique sur un bord pour définir la façade</div>`;
 
         div.innerHTML = `
-          <div style="font-weight:700; margin-bottom:6px;">Reculs PLU</div>
+          <div style="font-weight:700; margin-bottom:6px; color:#0f172a;">Reculs PLU</div>
           <div>Avant : <b>${formatVal(reculs.recul_avant_m)}</b></div>
           <div>Latéral : <b>${formatVal(reculs.recul_lateral_m)}</b></div>
           <div>Fond : <b>${formatVal(reculs.recul_fond_m)}</b></div>
-          <div style="margin-top:6px; padding-top:6px; border-top:1px solid rgba(148,163,184,0.25);">
+          <div style="margin-top:6px; padding-top:6px; border-top:1px solid #e2e8f0;">
             Mode : <b style="color:${modeColor}">${modeLabel}</b>
           </div>
           ${dataNote}
@@ -553,8 +568,8 @@ function PluRulesetBlockingPanel({
   onReturnClick: () => void;
 }) {
   const panelStyle: React.CSSProperties = {
-    background: "linear-gradient(135deg, rgba(239,68,68,0.15), rgba(249,115,22,0.1))",
-    border: "1px solid rgba(239,68,68,0.5)",
+    background: "linear-gradient(135deg, rgba(239,68,68,0.08), rgba(249,115,22,0.05))",
+    border: "1px solid rgba(239,68,68,0.4)",
     borderRadius: 16,
     padding: 24,
     marginBottom: 16,
@@ -562,7 +577,7 @@ function PluRulesetBlockingPanel({
   const titleStyle: React.CSSProperties = {
     fontSize: 18,
     fontWeight: 700,
-    color: "#f87171",
+    color: "#dc2626",
     marginBottom: 12,
   };
   const buttonStyle: React.CSSProperties = {
@@ -579,13 +594,13 @@ function PluRulesetBlockingPanel({
   return (
     <div style={panelStyle}>
       <div style={titleStyle}>{"⚠️ Règles PLU absentes ou incomplètes"}</div>
-      <p style={{ fontSize: 14, opacity: 0.9, margin: 0 }}>
+      <p style={{ fontSize: 14, opacity: 0.9, margin: 0, color: "#0f172a" }}>
         {"Le calcul d'implantation nécessite un ruleset PLU résolu et complet."}
       </p>
       {missingFields.length > 0 && (
         <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{"Champs manquants :"}</div>
-          <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, opacity: 0.85 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#0f172a" }}>{"Champs manquants :"}</div>
+          <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, opacity: 0.85, color: "#334155" }}>
             {missingFields.slice(0, 10).map((field, idx) => (
               <li key={idx}>{field}</li>
             ))}
@@ -603,17 +618,17 @@ function PluRulesetBlockingPanel({
 }
 
 function MissingParcelParamsPanel({
-  missingParcelId,
+  missingParcels,
   missingCommuneInsee,
   onReturnClick,
 }: {
-  missingParcelId: boolean;
+  missingParcels: boolean;
   missingCommuneInsee: boolean;
   onReturnClick: () => void;
 }) {
   const panelStyle: React.CSSProperties = {
-    background: "linear-gradient(135deg, rgba(251,146,60,0.15), rgba(234,179,8,0.1))",
-    border: "1px solid rgba(251,146,60,0.5)",
+    background: "linear-gradient(135deg, rgba(251,146,60,0.08), rgba(234,179,8,0.05))",
+    border: "1px solid rgba(251,146,60,0.4)",
     borderRadius: 16,
     padding: 24,
     marginBottom: 16,
@@ -622,7 +637,7 @@ function MissingParcelParamsPanel({
   const titleStyle: React.CSSProperties = {
     fontSize: 18,
     fontWeight: 700,
-    color: "#fb923c",
+    color: "#ea580c",
     marginBottom: 12,
   };
   const buttonStyle: React.CSSProperties = {
@@ -637,18 +652,18 @@ function MissingParcelParamsPanel({
   };
 
   const missingItems: string[] = [];
-  if (missingParcelId) missingItems.push("Identifiant de parcelle (parcel_id)");
+  if (missingParcels) missingItems.push("Sélection de parcelles");
   if (missingCommuneInsee) missingItems.push("Code INSEE de la commune (commune_insee)");
 
   return (
     <div style={panelStyle}>
       <div style={titleStyle}>{"⚠️ Paramètres de parcelle manquants"}</div>
-      <p style={{ fontSize: 14, opacity: 0.9, margin: 0 }}>
-        {"Cette page nécessite une parcelle sélectionnée."}
+      <p style={{ fontSize: 14, opacity: 0.9, margin: 0, color: "#0f172a" }}>
+        {"Cette page nécessite une sélection de parcelles."}
       </p>
       <div style={{ marginTop: 12 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{"Paramètres manquants :"}</div>
-        <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, opacity: 0.85 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#0f172a" }}>{"Paramètres manquants :"}</div>
+        <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, opacity: 0.85, color: "#334155" }}>
           {missingItems.map((item, idx) => (
             <li key={idx}>{item}</li>
           ))}
@@ -677,13 +692,13 @@ function DrawnObjectsPanel({
   onClearAll?: () => void;
 }) {
   const card: React.CSSProperties = {
-    background: "#020617",
+    background: "white",
     borderRadius: 14,
     padding: 14,
-    border: "1px solid rgba(148, 163, 184, 0.4)",
-    boxShadow: "0 20px 40px rgba(15, 23, 42, 0.7)",
+    border: "1px solid #e2e8f0",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 10px 24px rgba(0,0,0,0.06)",
   };
-  const title: React.CSSProperties = { fontSize: 14, fontWeight: 600, marginBottom: 6 };
+  const title: React.CSSProperties = { fontSize: 14, fontWeight: 600, marginBottom: 6, color: "#0f172a" };
   const totalBuildings = buildings.reduce((acc, b) => acc + b.areaM2, 0);
   const totalParkings = parkings.reduce((acc, p) => acc + p.areaM2, 0);
 
@@ -697,22 +712,22 @@ function DrawnObjectsPanel({
           justifyContent: "space-between",
           padding: "6px 8px",
           borderRadius: 8,
-          background: isActive ? "rgba(56,189,248,0.2)" : "rgba(148,163,184,0.1)",
-          border: isActive ? "1px solid rgba(56,189,248,0.5)" : "1px solid transparent",
+          background: isActive ? "rgba(56,189,248,0.12)" : "#f8fafc",
+          border: isActive ? "1px solid rgba(56,189,248,0.5)" : "1px solid #e2e8f0",
           cursor: "pointer",
           marginBottom: 4,
         }}
         onClick={() => onSelect(obj.id)}
       >
-        <span style={{ fontSize: 13 }}>
+        <span style={{ fontSize: 13, color: "#0f172a" }}>
           {obj.type === "building" ? "🏢" : "🅿️"} {obj.areaM2.toFixed(0)} m²
         </span>
         <button
           style={{
-            background: "rgba(239,68,68,0.2)",
-            border: "1px solid rgba(239,68,68,0.5)",
+            background: "rgba(239,68,68,0.1)",
+            border: "1px solid rgba(239,68,68,0.4)",
             borderRadius: 6,
-            color: "#f87171",
+            color: "#dc2626",
             padding: "2px 8px",
             fontSize: 11,
             cursor: "pointer",
@@ -735,10 +750,10 @@ function DrawnObjectsPanel({
         {(buildings.length > 0 || parkings.length > 0) && onClearAll && (
           <button
             style={{
-              background: "rgba(239,68,68,0.15)",
-              border: "1px solid rgba(239,68,68,0.4)",
+              background: "rgba(239,68,68,0.08)",
+              border: "1px solid rgba(239,68,68,0.3)",
               borderRadius: 6,
-              color: "#f87171",
+              color: "#dc2626",
               padding: "4px 8px",
               fontSize: 11,
               cursor: "pointer",
@@ -751,16 +766,16 @@ function DrawnObjectsPanel({
       </div>
 
       <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#22c55e" }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#16a34a" }}>
           {"Bâtiments"} <span style={{ opacity: 0.7 }}>({buildings.length})</span>
         </div>
         {buildings.length === 0 ? (
-          <div style={{ fontSize: 12, opacity: 0.6, paddingLeft: 8 }}>{"Aucun bâtiment"}</div>
+          <div style={{ fontSize: 12, opacity: 0.6, paddingLeft: 8, color: "#64748b" }}>{"Aucun bâtiment"}</div>
         ) : (
           buildings.map((b) => <ObjectItem key={b.id} obj={b} />)
         )}
         {buildings.length > 0 && (
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4, paddingLeft: 8 }}>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4, paddingLeft: 8, color: "#334155" }}>
             {"Total : "}
             <strong>{totalBuildings.toFixed(0)} m²</strong>
           </div>
@@ -768,16 +783,16 @@ function DrawnObjectsPanel({
       </div>
 
       <div>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#a855f7" }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#9333ea" }}>
           {"Parkings"} <span style={{ opacity: 0.7 }}>({parkings.length})</span>
         </div>
         {parkings.length === 0 ? (
-          <div style={{ fontSize: 12, opacity: 0.6, paddingLeft: 8 }}>{"Aucun parking"}</div>
+          <div style={{ fontSize: 12, opacity: 0.6, paddingLeft: 8, color: "#64748b" }}>{"Aucun parking"}</div>
         ) : (
           parkings.map((p) => <ObjectItem key={p.id} obj={p} />)
         )}
         {parkings.length > 0 && (
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4, paddingLeft: 8 }}>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4, paddingLeft: 8, color: "#334155" }}>
             {"Total : "}
             <strong>{totalParkings.toFixed(0)} m²</strong>
           </div>
@@ -795,19 +810,19 @@ function ShapeLibraryPanel({
   disabled: boolean;
 }) {
   const card: React.CSSProperties = {
-    background: "#020617",
+    background: "white",
     borderRadius: 14,
     padding: 14,
-    border: "1px solid rgba(148, 163, 184, 0.4)",
-    boxShadow: "0 20px 40px rgba(15, 23, 42, 0.7)",
+    border: "1px solid #e2e8f0",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 10px 24px rgba(0,0,0,0.06)",
   };
-  const title: React.CSSProperties = { fontSize: 14, fontWeight: 600, marginBottom: 10 };
+  const title: React.CSSProperties = { fontSize: 14, fontWeight: 600, marginBottom: 10, color: "#0f172a" };
   const buttonStyle: React.CSSProperties = {
     padding: "8px 12px",
     borderRadius: 8,
-    border: "1px solid rgba(148,163,184,0.4)",
-    background: "rgba(148,163,184,0.1)",
-    color: "white",
+    border: "1px solid #cbd5e1",
+    background: "#f8fafc",
+    color: "#0f172a",
     fontSize: 12,
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.5 : 1,
@@ -832,7 +847,7 @@ function ShapeLibraryPanel({
       <div style={title}>{"Bibliothèque de formes"}</div>
 
       <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "#22c55e" }}>{"Bâtiments"}</div>
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "#16a34a" }}>{"Bâtiments"}</div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {buildingTemplates.map(({ label, template }) => (
             <button
@@ -848,7 +863,7 @@ function ShapeLibraryPanel({
       </div>
 
       <div>
-        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "#a855f7" }}>{"Parkings"}</div>
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "#9333ea" }}>{"Parkings"}</div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {parkingTemplates.map(({ label, template }) => (
             <button
@@ -864,8 +879,111 @@ function ShapeLibraryPanel({
       </div>
 
       {disabled && (
-        <div style={{ fontSize: 11, opacity: 0.6, marginTop: 8 }}>
-          {"Activez le mode édition pour utiliser les templates."}
+        <div style={{ fontSize: 11, opacity: 0.6, marginTop: 8, color: "#64748b" }}>
+          {"Sélectionnez une façade pour activer le mode édition."}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Volumetry Summary Panel
+// -----------------------------------------------------------------------------
+function VolumetrySummaryPanel({
+  buildingKind,
+  floorsSpec,
+  drawnBuildings,
+}: {
+  buildingKind: BuildingKind;
+  floorsSpec: FloorsSpec;
+  drawnBuildings: DrawnObject[];
+}) {
+  const card: React.CSSProperties = {
+    background: "white",
+    borderRadius: 14,
+    padding: 14,
+    border: "1px solid #e2e8f0",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 10px 24px rgba(0,0,0,0.06)",
+  };
+  const title: React.CSSProperties = { fontSize: 14, fontWeight: 600, marginBottom: 10, color: "#0f172a" };
+
+  const levelsCount = 1 + floorsSpec.aboveGroundFloors;
+  const totalHeightM = floorsSpec.groundFloorHeightM + floorsSpec.aboveGroundFloors * floorsSpec.typicalFloorHeightM;
+  const footprintTotal = drawnBuildings.reduce((acc, b) => acc + b.areaM2, 0);
+  const sdpEstimee = footprintTotal * levelsCount * COEF_SDP;
+  const coefHabitable = buildingKind === "COLLECTIF" ? COEF_HABITABLE_COLLECTIF : COEF_HABITABLE_INDIVIDUEL;
+  const habitableEstimee = sdpEstimee * coefHabitable;
+
+  return (
+    <div style={card}>
+      <div style={title}>{"Volumétrie & surfaces (estimations)"}</div>
+      <div style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 6, color: "#334155" }}>
+        <div>
+          {"Type de bâtiment : "}
+          <strong style={{ color: "#0f172a" }}>{buildingKind === "COLLECTIF" ? "Collectif" : "Individuel"}</strong>
+        </div>
+        <div>
+          {"Niveaux : "}
+          <strong style={{ color: "#0f172a" }}>R+{floorsSpec.aboveGroundFloors} ({levelsCount} niveaux)</strong>
+        </div>
+        <div>
+          {"Hauteur totale estimée : "}
+          <strong style={{ color: "#0f172a" }}>{totalHeightM.toFixed(1)} m</strong>
+        </div>
+        <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #e2e8f0" }}>
+          {"Empreinte bâtiments : "}
+          <strong style={{ color: "#0f172a" }}>{footprintTotal.toFixed(0)} m²</strong>
+        </div>
+        <div>
+          {"SDP estimée : "}
+          <strong style={{ color: "#0f172a" }}>{sdpEstimee.toFixed(0)} m²</strong>
+        </div>
+        <div>
+          {"Habitable estimée : "}
+          <strong style={{ color: "#0f172a" }}>{habitableEstimee.toFixed(0)} m²</strong>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// ✅ Selected Parcels Summary Panel
+// -----------------------------------------------------------------------------
+function SelectedParcelsPanel({
+  parcels,
+  totalAreaM2,
+}: {
+  parcels: { id: string; area_m2: number | null }[];
+  totalAreaM2: number | null;
+}) {
+  const card: React.CSSProperties = {
+    background: "white",
+    borderRadius: 14,
+    padding: 14,
+    border: "1px solid #e2e8f0",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 10px 24px rgba(0,0,0,0.06)",
+  };
+  const title: React.CSSProperties = { fontSize: 14, fontWeight: 600, marginBottom: 10, color: "#0f172a" };
+
+  return (
+    <div style={card}>
+      <div style={title}>{"Parcelles sélectionnées"} <span style={{ opacity: 0.6 }}>({parcels.length})</span></div>
+      <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 4, maxHeight: 120, overflowY: "auto" }}>
+        {parcels.map((p) => (
+          <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #f1f5f9" }}>
+            <span style={{ fontFamily: "monospace", color: "#334155" }}>{p.id}</span>
+            <span style={{ color: "#64748b" }}>{p.area_m2 != null ? `${Math.round(p.area_m2).toLocaleString("fr-FR")} m²` : "—"}</span>
+          </div>
+        ))}
+      </div>
+      {totalAreaM2 != null && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between" }}>
+          <span style={{ fontWeight: 600, color: "#0f172a" }}>{"Surface totale"}</span>
+          <span style={{ fontWeight: 700, color: "#0f172a", background: "#e0f2fe", padding: "2px 8px", borderRadius: 6 }}>
+            {Math.round(totalAreaM2).toLocaleString("fr-FR")} m²
+          </span>
         </div>
       )}
     </div>
@@ -881,32 +999,38 @@ export const Implantation2DPage: React.FC = () => {
   const location = useLocation();
   const state = (location.state || {}) as LocationState;
 
+  // ✅ Extract studyId from query params
+  const studyId = searchParams.get("study");
+
   // --------------------------------------------------
-  // Zustand store action for handoff to Massing 3D
+  // ✅ Use useFoncierSelection hook for multi-parcel support
+  // --------------------------------------------------
+  const {
+    selectedParcels,
+    communeInsee: foncierCommuneInsee,
+    focusParcelId,
+    totalAreaM2: foncierTotalAreaM2,
+    isHydrated: foncierIsHydrated,
+  } = useFoncierSelection({ studyId });
+
+  // --------------------------------------------------
+  // Zustand store action for handoff to Massing 3D / Bilan Promoteur
   // --------------------------------------------------
   const setFromImplantation2D = usePromoteurProjectStore((s) => s.setFromImplantation2D);
 
   // --------------------------------------------------
-  // Parameter resolution
+  // ✅ Derived values from foncier selection
   // --------------------------------------------------
-  const parcelIdFromQuery = searchParams.get("parcel_id");
-  const communeInseeFromQuery = searchParams.get("commune_insee");
+  const parcelIds = useMemo(() => selectedParcels.map((p) => p.id), [selectedParcels]);
+  const primaryParcelId = focusParcelId || parcelIds[0] || null;
+  const communeInsee = foncierCommuneInsee || (primaryParcelId ? extractCommuneInsee(primaryParcelId) : null);
 
-  const parcelId = useMemo(
-    () => resolveParcelId(parcelIdFromQuery, state),
-    [parcelIdFromQuery, state]
-  );
-
-  const communeInsee = useMemo(
-    () => resolveCommuneInsee(communeInseeFromQuery, state),
-    [communeInseeFromQuery, state]
-  );
-
-  const missingParcelId = !parcelId;
+  const missingParcels = parcelIds.length === 0;
   const missingCommuneInsee = !communeInsee;
-  const hasMissingParams = missingParcelId || missingCommuneInsee;
+  const hasMissingParams = missingParcels || missingCommuneInsee;
 
   const [error, setError] = useState<string | null>(null);
+  const [isLoadingGeometry, setIsLoadingGeometry] = useState(false);
 
   // --------------------------------------------------
   // Ruleset validation
@@ -933,11 +1057,25 @@ export const Implantation2DPage: React.FC = () => {
   }, [resolvedRuleset]);
 
   // --------------------------------------------------
+  // Building kind state (COLLECTIF / INDIVIDUEL)
+  // --------------------------------------------------
+  const [buildingKind, setBuildingKind] = useState<BuildingKind>("COLLECTIF");
+
+  // --------------------------------------------------
+  // Floors spec state
+  // --------------------------------------------------
+  const [floorsSpec, setFloorsSpec] = useState<FloorsSpec>({
+    aboveGroundFloors: 1,
+    groundFloorHeightM: 2.8,
+    typicalFloorHeightM: 2.7,
+  });
+
+  // --------------------------------------------------
   // User params state
   // --------------------------------------------------
   const [draftParams, setDraftParams] = useState<ImplantationUserParams>(() => ({
     nbBatiments: 1,
-    nbLogements: 10,
+    nbLogements: 1,
     surfaceMoyLogementM2: 60,
     project: { buildings: [DEFAULT_BUILDING_SPEC], validationRequested: false },
   }));
@@ -975,14 +1113,56 @@ export const Implantation2DPage: React.FC = () => {
   // --------------------------------------------------
   const [showOSM, setShowOSM] = useState(true);
   const [result, setResult] = useState<ImplantationResult | null>(null);
-  const [parcelFeature, setParcelFeature] = useState<Feature<Polygon | MultiPolygon> | null>(null);
   const [autoBuildingFeature, setAutoBuildingFeature] = useState<Feature<Polygon | MultiPolygon> | null>(null);
 
   // --------------------------------------------------
-  // delegated to reculsEngine
+  // ✅ State for ALL parcel features (multi-parcel support)
+  // --------------------------------------------------
+  const [parcelFeatures, setParcelFeatures] = useState<Feature<Polygon | MultiPolygon>[]>([]);
+
+  // ✅ Primary parcel feature (for reculs calculation - use first/focus parcel)
+  const primaryParcelFeature = useMemo(() => {
+    if (parcelFeatures.length === 0) return null;
+    // Find the feature matching focusParcelId, or use first
+    if (focusParcelId) {
+      const found = parcelFeatures.find((f) => {
+        const props = f.properties || {};
+        return props.parcel_id === focusParcelId || props.id === focusParcelId;
+      });
+      if (found) return found;
+    }
+    return parcelFeatures[0];
+  }, [parcelFeatures, focusParcelId]);
+
+  // ✅ Combined parcel feature (union of all parcels) for total area calculation
+  const combinedParcelFeature = useMemo<Feature<Polygon | MultiPolygon> | null>(() => {
+    if (parcelFeatures.length === 0) return null;
+    if (parcelFeatures.length === 1) return parcelFeatures[0];
+
+    try {
+      // Union all parcel geometries
+      let combined: Feature<Polygon | MultiPolygon> = parcelFeatures[0];
+      for (let i = 1; i < parcelFeatures.length; i++) {
+        const unioned = turf.union(
+          turf.featureCollection([combined, parcelFeatures[i]])
+        );
+        if (unioned) {
+          combined = unioned as Feature<Polygon | MultiPolygon>;
+        }
+      }
+      return combined;
+    } catch (err) {
+      console.warn("[Implantation2D] Failed to union parcel features:", err);
+      // Fallback: return first feature
+      return parcelFeatures[0];
+    }
+  }, [parcelFeatures]);
+
+  // --------------------------------------------------
+  // delegated to reculsEngine (uses primary parcel for now)
   // --------------------------------------------------
   const reculsEngine = useReculsEngine({
-    parcelFeature,
+    parcelFeature: primaryParcelFeature,
     resolvedRuleset,
     rulesetValid,
   });
@@ -1022,56 +1202,44 @@ export const Implantation2DPage: React.FC = () => {
   } = drawEngine;
 
   // --------------------------------------------------
-  // Sync to Zustand store for Massing 3D handoff
+  // ✅ FIX 1: Ref to track if user explicitly toggled edit mode off
   // --------------------------------------------------
+  const userDisabledEditModeRef = useRef(false);
+
+  // ✅ FIX 1: Auto-activate edit mode when facade is defined (on hydration/restore)
   useEffect(() => {
-    if (!parcelFeature) {
-      return;
+    if (facadeSegment && !editMode && !userDisabledEditModeRef.current) {
+      setEditMode(true);
     }
+  }, [facadeSegment, editMode, setEditMode]);
 
-    const buildingsFC = drawnObjectsToFeatureCollection(drawnBuildings);
-    const parkingsFC = drawnObjectsToFeatureCollection(drawnParkings);
-    const bbox = turf.bbox(parcelFeature) as [number, number, number, number];
-
-    setFromImplantation2D({
-      parcel: parcelFeature,
-      buildings: buildingsFC,
-      parkings: parkingsFC,
-      epsg: "EPSG:4326",
-      bbox,
-    });
-  }, [parcelFeature, drawnBuildings, drawnParkings, setFromImplantation2D]);
+  // ✅ FIX 2: Set default draw type to "building" when edit mode activates
+  useEffect(() => {
+    if (editMode) {
+      setCurrentDrawType("building");
+    }
+  }, [editMode, setCurrentDrawType]);
 
   // --------------------------------------------------
-  // Facade click handler (when not in edit mode)
-  // --------------------------------------------------
-  const handleFacadeClick = useCallback(
-    (lngLat: [number, number]) => {
-      if (!parcelFeature) return;
-      const success = selectFacadeFromClick(lngLat);
-      if (success) {
-        setError(null);
-      } else {
-        setError("Clique sur un bord de la parcelle.");
-      }
-    },
-    [parcelFeature, selectFacadeFromClick]
-  );
-
-  // --------------------------------------------------
-  // Load cadastre geometry
+  // ✅ Load cadastre geometry for ALL selected parcels
   // --------------------------------------------------
   useEffect(() => {
-    async function loadCadastreGeometry() {
-      if (!parcelId || !communeInsee) {
-        setParcelFeature(null);
+    async function loadAllParcelGeometries() {
+      if (!foncierIsHydrated) return;
+      if (parcelIds.length === 0 || !communeInsee) {
+        setParcelFeatures([]);
         return;
       }
+
       const insee = communeInsee.trim();
       if (!insee || insee.length < 5) {
         setError("Code INSEE invalide.");
         return;
       }
+
+      setIsLoadingGeometry(true);
+      setError(null);
+
       try {
         const url = `${SUPABASE_URL}/functions/v1/cadastre-from-commune`;
         const res = await fetch(url, {
@@ -1083,41 +1251,221 @@ export const Implantation2DPage: React.FC = () => {
           },
           body: JSON.stringify({ commune_insee: insee }),
         });
+
         if (!res.ok) {
           setError("Impossible de charger le cadastre.");
-          setParcelFeature(null);
+          setParcelFeatures([]);
           return;
         }
+
         const data = await res.json();
         const fc = extractFeatureCollectionFromAnyResponse(data);
+
         if (!fc || !Array.isArray(fc.features)) {
           setError("Format cadastre invalide.");
-          setParcelFeature(null);
+          setParcelFeatures([]);
           return;
         }
-        const found = findFeatureForParcel(fc, parcelId);
-        if (!found) {
-          setError("Parcelle introuvable dans le cadastre.");
-          setParcelFeature(null);
+
+        // ✅ Find ALL selected parcels in the cadastre
+        const features: Feature<Polygon | MultiPolygon>[] = [];
+        const notFound: string[] = [];
+
+        for (const pid of parcelIds) {
+          const found = findFeatureForParcel(fc, pid);
+          if (found) {
+            const norm = normalizeToFeature(found);
+            if (norm) {
+              // Add parcel_id to properties for later identification
+              norm.properties = { ...norm.properties, parcel_id: pid };
+              features.push(norm);
+            } else {
+              notFound.push(pid);
+            }
+          } else {
+            notFound.push(pid);
+          }
+        }
+
+        if (features.length === 0) {
+          setError(`Aucune parcelle trouvée dans le cadastre pour: ${parcelIds.join(", ")}`);
+          setParcelFeatures([]);
           return;
         }
-        const norm = normalizeToFeature(found);
-        if (!norm) {
-          setError("Géométrie de parcelle invalide.");
-          setParcelFeature(null);
-          return;
+
+        if (notFound.length > 0) {
+          console.warn("[Implantation2D] Parcelles non trouvées:", notFound);
         }
-        setParcelFeature(norm);
+
+        setParcelFeatures(features);
         setError(null);
+        console.log(`[Implantation2D] Loaded ${features.length}/${parcelIds.length} parcel geometries`);
+
       } catch (err) {
         console.error("[Implantation2D] Erreur cadastre:", err);
         setError("Erreur lors du chargement du cadastre.");
-        setParcelFeature(null);
+        setParcelFeatures([]);
+      } finally {
+        setIsLoadingGeometry(false);
       }
     }
-    loadCadastreGeometry();
-  }, [parcelId, communeInsee]);// --------------------------------------------------
-  // Compute implantation result
+
+    loadAllParcelGeometries();
+  }, [parcelIds, communeInsee, foncierIsHydrated]);
+
+  // --------------------------------------------------
+  // Sync to Zustand store for Massing 3D / Bilan Promoteur handoff
+  // AND persist to snapshot store for cross-module data sharing
+  // --------------------------------------------------
+  useEffect(() => {
+    if (!combinedParcelFeature) {
+      return;
+    }
+
+    const buildingsFC = drawnObjectsToFeatureCollection(drawnBuildings);
+    const parkingsFC = drawnObjectsToFeatureCollection(drawnParkings);
+    const bbox = turf.bbox(combinedParcelFeature) as [number, number, number, number];
+
+    // Build meta object for business parameters handoff
+    const meta: Implantation2DMeta = {
+      buildingKind,
+      floorsSpec: {
+        aboveGroundFloors: floorsSpec.aboveGroundFloors,
+        groundFloorHeightM: floorsSpec.groundFloorHeightM,
+        typicalFloorHeightM: floorsSpec.typicalFloorHeightM,
+      },
+      nbLogements: appliedParams.nbLogements,
+      surfaceMoyLogementM2: appliedParams.surfaceMoyLogementM2,
+    };
+
+    setFromImplantation2D({
+      parcel: combinedParcelFeature,
+      buildings: buildingsFC,
+      parkings: parkingsFC,
+      epsg: "EPSG:4326",
+      bbox,
+      meta,
+    });
+
+    // -------------------------------------------------------------------------
+    // Persist to snapshot store (non-blocking)
+    // -------------------------------------------------------------------------
+    try {
+      // Compute center from parcel for project info
+      const parcelCenter = turf.center(combinedParcelFeature);
+      const centerCoords = parcelCenter.geometry.coordinates;
+
+      // Patch project info
+      patchPromoteurSnapshot({
+        project: {
+          parcelId: primaryParcelId ?? undefined,
+          commune_insee: communeInsee ?? undefined,
+          surfaceM2: result?.surfaceTerrainM2 ?? foncierTotalAreaM2 ?? state.surfaceTerrainM2 ?? undefined,
+          lat: centerCoords[1],
+          lon: centerCoords[0],
+        },
+      });
+
+      // Build summary string for module
+      const summaryParts: string[] = [];
+      summaryParts.push(`${parcelIds.length} parcelle(s)`);
+      if (result) {
+        summaryParts.push(`Terrain ${result.surfaceTerrainM2.toFixed(0)} m²`);
+        summaryParts.push(`Emprise max ${result.surfaceEmpriseMaxM2.toFixed(0)} m²`);
+        summaryParts.push(`Emprise utilisable ${result.surfaceEmpriseUtilisableM2.toFixed(0)} m²`);
+        summaryParts.push(`Parkings ${result.placesParking}`);
+      }
+      const summary = summaryParts.length > 0 ? summaryParts.join(" · ") : "Implantation en cours";
+
+      // Patch implantation2d module
+      patchModule("implantation2d", {
+        ok: !!(result && result.surfaceTerrainM2 > 0),
+        summary,
+        data: {
+          parcelIds,
+          primaryParcelId,
+          communeInsee: communeInsee ?? null,
+          result: result ?? null,
+          computedReculs: computedReculs ?? null,
+          facadeSegment: facadeSegment ?? null,
+          drawnBuildings: buildingsFC,
+          drawnParkings: parkingsFC,
+          envelopeFeature: envelopeFeature ?? null,
+          forbiddenBand: forbiddenBand ?? null,
+          meta: {
+            buildingKind,
+            floorsSpec: {
+              aboveGroundFloors: floorsSpec.aboveGroundFloors,
+              groundFloorHeightM: floorsSpec.groundFloorHeightM,
+              typicalFloorHeightM: floorsSpec.typicalFloorHeightM,
+            },
+            nbLogements: appliedParams.nbLogements,
+            surfaceMoyLogementM2: appliedParams.surfaceMoyLogementM2,
+          },
+          bbox,
+          epsg: "EPSG:4326",
+        },
+      });
+    } catch (snapshotError) {
+      // Non-blocking: log but don't break the app
+      console.warn("[Implantation2D] Snapshot persistence error:", snapshotError);
+    }
+  }, [
+    combinedParcelFeature,
+    drawnBuildings,
+    drawnParkings,
+    buildingKind,
+    floorsSpec,
+    appliedParams.nbLogements,
+    appliedParams.surfaceMoyLogementM2,
+    setFromImplantation2D,
+    parcelIds,
+    primaryParcelId,
+    communeInsee,
+    result,
+    foncierTotalAreaM2,
+    state.surfaceTerrainM2,
+    computedReculs,
+    facadeSegment,
+    envelopeFeature,
+    forbiddenBand,
+  ]);
+
+  // --------------------------------------------------
+  // ✅ FIX 1: Facade click handler - auto-activate edit mode on success
+  // --------------------------------------------------
+  const handleFacadeClick = useCallback(
+    (lngLat: [number, number]) => {
+      if (!primaryParcelFeature) return;
+      const success = selectFacadeFromClick(lngLat);
+      if (success) {
+        setError(null);
+        // ✅ Auto-activate edit mode after successful facade selection
+        userDisabledEditModeRef.current = false;
+        setEditMode(true);
+      } else {
+        setError("Clique sur un bord de la parcelle.");
+      }
+    },
+    [primaryParcelFeature, selectFacadeFromClick, setEditMode]
+  );
+
+  // --------------------------------------------------
+  // ✅ FIX 1: Handler for explicit edit mode toggle by user
+  // --------------------------------------------------
+  const handleEditModeToggle = useCallback(() => {
+    const newValue = !editMode;
+    if (!newValue) {
+      // User is explicitly disabling edit mode
+      userDisabledEditModeRef.current = true;
+    } else {
+      userDisabledEditModeRef.current = false;
+    }
+    setEditMode(newValue);
+  }, [editMode, setEditMode]);
+
+  // --------------------------------------------------
+  // Compute implantation result (uses combined parcel area)
   // --------------------------------------------------
   useEffect(() => {
     if (hasMissingParams || !rulesetValid || !computedReculs) {
@@ -1127,14 +1475,20 @@ export const Implantation2DPage: React.FC = () => {
     }
 
     const basePluRules: PluRules | null = state.pluRules ?? null;
+
+    // ✅ Use foncierTotalAreaM2 for total area (sum of all parcels)
+    const surfaceFromFoncier = foncierTotalAreaM2;
     const surfaceFromState = state.surfaceTerrainM2 ?? null;
-    const surfaceFromGeom = parcelFeature ? turf.area(parcelFeature as turf.AllGeoJSON) : null;
+    const surfaceFromGeom = combinedParcelFeature ? turf.area(combinedParcelFeature as turf.AllGeoJSON) : null;
+
     const surfaceTerrainM2 =
-      (surfaceFromState && surfaceFromState > 0
-        ? surfaceFromState
-        : surfaceFromGeom && surfaceFromGeom > 0
-          ? surfaceFromGeom
-          : null) ?? 0;
+      (surfaceFromFoncier && surfaceFromFoncier > 0
+        ? surfaceFromFoncier
+        : surfaceFromState && surfaceFromState > 0
+          ? surfaceFromState
+          : surfaceFromGeom && surfaceFromGeom > 0
+            ? surfaceFromGeom
+            : null) ?? 0;
 
     const userParamsWithReculs: ImplantationUserParams = {
       ...appliedParams,
@@ -1161,10 +1515,11 @@ export const Implantation2DPage: React.FC = () => {
       return;
     }
 
-    if (parcelFeature) {
+    // ✅ Use combinedParcelFeature for implantation calculation
+    if (combinedParcelFeature) {
       try {
         const { result: implResult, buildableGeom } = computeImplantationV1({
-          parcelGeometry: parcelFeature,
+          parcelGeometry: combinedParcelFeature,
           surfaceTerrainM2,
           pluRules: basePluRules,
           userParams: userParamsWithReculs,
@@ -1185,10 +1540,11 @@ export const Implantation2DPage: React.FC = () => {
     setResult(fallbackResult);
     setAutoBuildingFeature(null);
   }, [
-    parcelFeature,
+    combinedParcelFeature,
     appliedParams,
     applyTick,
     facadeSegment,
+    foncierTotalAreaM2,
     state.surfaceTerrainM2,
     state.pluRules,
     rulesetValid,
@@ -1197,74 +1553,104 @@ export const Implantation2DPage: React.FC = () => {
   ]);
 
   // --------------------------------------------------
-  // Map center
+  // Map center (computed from all parcel features)
   // --------------------------------------------------
   const center = useMemo(() => {
-    if (!parcelFeature) return [46.5, 2.5];
-    const geom = parcelFeature.geometry;
-    let first: number[] | null = null;
-    if (geom.type === "Polygon") first = geom.coordinates?.[0]?.[0] ?? null;
-    else if (geom.type === "MultiPolygon") first = geom.coordinates?.[0]?.[0]?.[0] ?? null;
-    if (!first) return [46.5, 2.5];
-    return [first[1], first[0]];
-  }, [parcelFeature]);
+    if (parcelFeatures.length === 0) return [46.5, 2.5];
+
+    try {
+      // Compute center of all parcels
+      const fc = turf.featureCollection(parcelFeatures);
+      const centroid = turf.center(fc);
+      return [centroid.geometry.coordinates[1], centroid.geometry.coordinates[0]];
+    } catch {
+      // Fallback to first parcel
+      const geom = parcelFeatures[0].geometry;
+      let first: number[] | null = null;
+      if (geom.type === "Polygon") first = geom.coordinates?.[0]?.[0] ?? null;
+      else if (geom.type === "MultiPolygon") first = geom.coordinates?.[0]?.[0]?.[0] ?? null;
+      if (!first) return [46.5, 2.5];
+      return [first[1], first[0]];
+    }
+  }, [parcelFeatures]);
 
   // --------------------------------------------------
-  // Map bounds (limit panning around parcel)
+  // Map bounds (limit panning around ALL parcels)
   // --------------------------------------------------
   const maxBounds = useMemo<L.LatLngBoundsExpression | undefined>(() => {
-    if (!parcelFeature) return undefined;
+    if (parcelFeatures.length === 0) return undefined;
     try {
-      const bbox = turf.bbox(parcelFeature);
-      // bbox = [minLng, minLat, maxLng, maxLat]
-      // Add padding (roughly 50m in each direction at typical latitudes)
-      const padding = 0.0005; // ~50m
+      // Compute combined bbox
+      let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+      for (const feature of parcelFeatures) {
+        const bbox = turf.bbox(feature);
+        minLng = Math.min(minLng, bbox[0]);
+        minLat = Math.min(minLat, bbox[1]);
+        maxLng = Math.max(maxLng, bbox[2]);
+        maxLat = Math.max(maxLat, bbox[3]);
+      }
+
+      // Add padding (roughly 100m in each direction)
+      const padding = 0.001;
       return [
-        [bbox[1] - padding, bbox[0] - padding], // SW corner
-        [bbox[3] + padding, bbox[2] + padding], // NE corner
+        [minLat - padding, minLng - padding], // SW corner
+        [maxLat + padding, maxLng + padding], // NE corner
       ];
     } catch {
       return undefined;
     }
-  }, [parcelFeature]);
+  }, [parcelFeatures]);
 
   // --------------------------------------------------
-  // Styles
+  // ✅ V1.6: Styles - Fixed height layout, no page scroll
+  // La page utilise toute la hauteur disponible sans scroll
+  // Seule la colonne droite peut scroller si nécessaire
   // --------------------------------------------------
   const pageStyle: React.CSSProperties = {
     display: "flex",
     flexDirection: "row",
-    minHeight: "100vh",
-    background: "#020617",
-    color: "white",
-    padding: "16px",
+    height: "calc(100vh - 180px)", // ✅ V1.6: Hauteur fixe = viewport - header/nav/tabs
+    background: "#f8fafc",
+    color: "#0f172a",
+    padding: "12px 16px 16px 16px",
     gap: "16px",
     boxSizing: "border-box",
+    overflow: "hidden", // ✅ V1.6: Pas de scroll sur la page
   };
-  const leftCol: React.CSSProperties = { flex: 1, display: "flex", flexDirection: "column", gap: "12px", minWidth: 0 };
+  const leftCol: React.CSSProperties = {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+    minWidth: 0,
+    overflow: "hidden", // ✅ V1.6: Pas de scroll
+  };
+  // ✅ V1.6: Right column - scrollable if content exceeds height
   const rightCol: React.CSSProperties = {
     display: "flex",
     flexDirection: "column",
     gap: "14px",
     width: 280,
     flexShrink: 0,
+    height: "100%", // ✅ V1.6: Full height
+    overflowY: "auto", // ✅ V1.6: Scroll si nécessaire
   };
   const card: React.CSSProperties = {
-    background: "#020617",
+    background: "white",
     borderRadius: 14,
     padding: 14,
-    border: "1px solid rgba(148, 163, 184, 0.4)",
-    boxShadow: "0 20px 40px rgba(15, 23, 42, 0.7)",
+    border: "1px solid #e2e8f0",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 10px 24px rgba(0,0,0,0.06)",
   };
-  const title: React.CSSProperties = { fontSize: 16, fontWeight: 600, marginBottom: 6 };
-  const label: React.CSSProperties = { display: "block", fontSize: 13, marginBottom: 4 };
+  const title: React.CSSProperties = { fontSize: 16, fontWeight: 600, marginBottom: 6, color: "#0f172a" };
+  const label: React.CSSProperties = { display: "block", fontSize: 13, marginBottom: 4, color: "#334155" };
   const input: React.CSSProperties = {
     width: "100%",
     padding: "6px 8px",
     borderRadius: 8,
-    border: "1px solid rgba(148,163,184,0.4)",
-    background: "#020617",
-    color: "white",
+    border: "1px solid #cbd5e1",
+    background: "white",
+    color: "#0f172a",
     fontSize: 13,
   };
   const primaryButton: React.CSSProperties = {
@@ -1279,21 +1665,42 @@ export const Implantation2DPage: React.FC = () => {
   const ghostButton: React.CSSProperties = {
     padding: "10px 16px",
     borderRadius: 999,
-    border: "1px solid rgba(148,163,184,0.5)",
-    background: "transparent",
-    color: "white",
+    border: "1px solid #cbd5e1",
+    background: "white",
+    color: "#0f172a",
     fontWeight: 500,
     cursor: "pointer",
   };
   const tinyButton: React.CSSProperties = {
     padding: "6px 10px",
     borderRadius: 999,
-    border: "1px solid rgba(148,163,184,0.5)",
-    background: "transparent",
-    color: "white",
+    border: "1px solid #cbd5e1",
+    background: "white",
+    color: "#0f172a",
     fontWeight: 500,
     cursor: "pointer",
     fontSize: 12,
+  };
+  // ✅ V1.6: Toolbar - normal flow, no sticky
+  const toolbarStyle: React.CSSProperties = {
+    background: "white",
+    borderRadius: 12,
+    padding: "10px 14px",
+    border: "1px solid #e2e8f0",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04)",
+    display: "flex",
+    gap: 8,
+    alignItems: "center",
+    flexWrap: "wrap",
+    flexShrink: 0, // ✅ V1.6: Ne pas rétrécir
+  };
+
+  // ✅ V1.6: Map container - fills remaining space
+  const mapContainerStyle: React.CSSProperties = {
+    flex: 1, // ✅ V1.6: Prend tout l'espace restant
+    minHeight: 300,
+    overflow: "hidden",
+    borderRadius: 12,
   };
 
   const formatReculDisplay = (v: number): string => `${v} m`;
@@ -1301,6 +1708,19 @@ export const Implantation2DPage: React.FC = () => {
   // --------------------------------------------------
   // Render
   // --------------------------------------------------
+
+  // ✅ Show loading state while foncier selection is hydrating
+  if (!foncierIsHydrated) {
+    return (
+      <div style={pageStyle}>
+        <div style={card}>
+          <div style={title}>{"Implantation 2D"}</div>
+          <p style={{ color: "#334155" }}>{"Chargement de la sélection foncière..."}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={pageStyle}>
       {/* Blocking panel: missing params */}
@@ -1309,9 +1729,12 @@ export const Implantation2DPage: React.FC = () => {
           style={{ width: "100%", display: "flex", justifyContent: "center", alignItems: "flex-start", paddingTop: 40 }}
         >
           <MissingParcelParamsPanel
-            missingParcelId={missingParcelId}
+            missingParcels={missingParcels}
             missingCommuneInsee={missingCommuneInsee}
-            onReturnClick={() => navigate("/promoteur/foncier")}
+            onReturnClick={() => {
+              const path = studyId ? `/promoteur/foncier?study=${encodeURIComponent(studyId)}` : "/promoteur/foncier";
+              navigate(path);
+            }}
           />
         </div>
       )}
@@ -1321,11 +1744,14 @@ export const Implantation2DPage: React.FC = () => {
         <div style={{ width: "100%" }}>
           <PluRulesetBlockingPanel
             missingFields={rulesetMissingFields}
-            onReturnClick={() => navigate("/promoteur/plu-faisabilite")}
+            onReturnClick={() => {
+              const path = studyId ? `/promoteur/plu-faisabilite?study=${encodeURIComponent(studyId)}` : "/promoteur/plu-faisabilite";
+              navigate(path);
+            }}
           />
-          {parcelFeature && (
+          {parcelFeatures.length > 0 && (
             <div style={card}>
-              <div style={title}>{"Aperçu de la parcelle (lecture seule)"}</div>
+              <div style={title}>{"Aperçu des parcelles (lecture seule)"}</div>
               <div style={{ height: 400 }}>
                 <MapContainer
                   center={center as [number, number]}
@@ -1335,18 +1761,20 @@ export const Implantation2DPage: React.FC = () => {
                   scrollWheelZoom={true}
                   style={{ height: "100%", width: "100%", borderRadius: 12, background: "#ffffff" }}
                 >
-                  <FitToFeature feature={parcelFeature} />
+                  <FitToFeatures features={parcelFeatures} />
                   <TileLayer
                     attribution="&copy; OpenStreetMap"
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     maxNativeZoom={19}
                     maxZoom={22}
                   />
-                  <GeoJSON
-                    key="parcel-readonly"
-                    data={parcelFeature}
-                    style={() => ({ weight: 2, color: "#f97316", fillColor: "#fed7aa", fillOpacity: 0.14 })}
-                  />
+                  {parcelFeatures.map((feature, idx) => (
+                    <GeoJSON
+                      key={`parcel-readonly-${idx}`}
+                      data={feature}
+                      style={() => ({ weight: 2, color: "#f97316", fillColor: "#fed7aa", fillOpacity: 0.14 })}
+                    />
+                  ))}
                 </MapContainer>
               </div>
             </div>
@@ -1354,136 +1782,141 @@ export const Implantation2DPage: React.FC = () => {
         </div>
       )}
 
-      {/* Loading state */}
-      {!hasMissingParams && rulesetValid && !result && (
+      {/* Loading geometry state */}
+      {!hasMissingParams && rulesetValid && isLoadingGeometry && (
         <div style={card}>
           <div style={title}>{"Implantation 2D"}</div>
-          <p>{"Chargement des données..."}</p>
+          <p style={{ color: "#334155" }}>{"Chargement des géométries de parcelles..."}</p>
+        </div>
+      )}
+
+      {/* Loading state */}
+      {!hasMissingParams && rulesetValid && !isLoadingGeometry && !result && (
+        <div style={card}>
+          <div style={title}>{"Implantation 2D"}</div>
+          <p style={{ color: "#334155" }}>{"Chargement des données..."}</p>
         </div>
       )}
 
       {/* Main content */}
-      {!hasMissingParams && rulesetValid && result && (
+      {!hasMissingParams && rulesetValid && !isLoadingGeometry && result && (
         <>
           <div style={leftCol}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            {/* ✅ V1.5: Toolbar with minimal gap from nav */}
+            <div style={toolbarStyle}>
               <button style={ghostButton} onClick={() => navigate(-1)}>
                 {"← Retour"}
               </button>
-              <button style={primaryButton} disabled>
-                {"Envoyer au bilan (bientôt)"}
+              <button
+                style={primaryButton}
+                onClick={() => {
+                  const path = studyId ? `/promoteur/bilan?study=${encodeURIComponent(studyId)}` : "/promoteur/bilan";
+                  navigate(path);
+                }}
+              >
+                {"Voir le bilan promoteur →"}
               </button>
+              <div style={{ flex: 1 }} />
+              <button style={tinyButton} onClick={() => setShowOSM((v) => !v)}>
+                {showOSM ? "Masquer OSM" : "Afficher OSM"}
+              </button>
+              <button
+                style={{ ...tinyButton, borderColor: "rgba(239,68,68,0.5)" }}
+                onClick={() => {
+                  if (facadeSegment) {
+                    resetFacade();
+                    setError(null);
+                    // Reset edit mode state when facade is reset
+                    userDisabledEditModeRef.current = false;
+                    setEditMode(false);
+                  } else {
+                    setError("Clique sur un bord de la parcelle pour définir la façade.");
+                  }
+                }}
+                disabled={parcelFeatures.length === 0}
+              >
+                {facadeSegment ? "Réinitialiser la façade" : "Choisir la façade"}
+              </button>
+              <button
+                style={{
+                  ...tinyButton,
+                  borderColor: editMode ? "#16a34a" : "#cbd5e1",
+                  background: editMode ? "rgba(22,163,74,0.1)" : "white",
+                }}
+                disabled={parcelFeatures.length === 0 || !facadeSegment}
+                onClick={handleEditModeToggle}
+              >
+                {editMode ? "✓ Mode édition actif" : "Mode édition"}
+              </button>
+              {/* ✅ FIX 2: REMOVED the building/parking dropdown - type is now controlled via ShapeLibraryPanel */}
             </div>
 
-            <div style={{ ...card, flex: 1 }}>
-              <div style={title}>{"Implantation 2D — Mode PowerPoint"}</div>
-              <p style={{ fontSize: 13, opacity: 0.8, marginTop: 0, marginBottom: 8 }}>
-                {`Parcelle : ${parcelId ?? "?"} — Commune : ${communeInsee ?? "?"}`}
-              </p>
-
-              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
-                <button style={tinyButton} onClick={() => setShowOSM((v) => !v)}>
-                  {showOSM ? "Masquer OSM" : "Afficher OSM"}
-                </button>
-                <button
-                  style={{ ...tinyButton, borderColor: "rgba(239,68,68,0.7)" }}
-                  onClick={() => {
-                    resetFacade();
-                  }}
-                  disabled={!facadeSegment}
-                >
-                  {"Réinitialiser façade"}
-                </button>
-                <button
-                  style={{
-                    ...tinyButton,
-                    borderColor: editMode ? "rgba(34,197,94,0.9)" : "rgba(148,163,184,0.5)",
-                    background: editMode ? "rgba(34,197,94,0.15)" : "transparent",
-                  }}
-                  disabled={!parcelFeature}
-                  onClick={() => setEditMode((v) => !v)}
-                >
-                  {editMode ? "✓ Mode édition actif" : "Mode édition"}
-                </button>
-                {editMode && (
-                  <select
-                    style={{ ...tinyButton, padding: "4px 8px", background: "#020617" }}
-                    value={currentDrawType}
-                    onChange={(e) => setCurrentDrawType(e.target.value as DrawnObjectType)}
-                  >
-                    <option value="building">🏢 Bâtiment</option>
-                    <option value="parking">🅿️ Parking</option>
-                  </select>
+            {/* ✅ V1.6: Card with map - fills remaining space */}
+            <div style={{ ...card, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={title}>{"Implantation 2D — Mode Édition"}</div>
+              <p style={{ fontSize: 13, opacity: 0.8, marginTop: 0, marginBottom: 8, color: "#475569" }}>
+                {`${parcelIds.length} parcelle(s) — Commune : ${communeInsee ?? "?"}`}
+                {studyId && (
+                  <span style={{ marginLeft: 8, fontSize: 11, color: "#64748b", background: "#f1f5f9", padding: "2px 6px", borderRadius: 4 }}>
+                    Étude: {studyId.slice(0, 12)}…
+                  </span>
                 )}
-              </div>
+              </p>
 
               {/* Edit mode instructions */}
               {editMode && (
                 <div
                   style={{
                     fontSize: 11,
-                    opacity: 0.7,
+                    opacity: 0.9,
                     marginBottom: 8,
                     padding: "8px 10px",
-                    background: "rgba(34,197,94,0.1)",
+                    background: "rgba(22,163,74,0.08)",
                     borderRadius: 8,
-                    border: "1px solid rgba(34,197,94,0.3)",
+                    border: "1px solid rgba(22,163,74,0.25)",
+                    color: "#166534",
                   }}
                 >
-                  <strong>Mode PowerPoint :</strong> Cliquez sur un objet pour le sélectionner. Déplacez en glissant
-                  l'objet. Redimensionnez via les coins blancs. Tournez via la poignée orange en haut.
+                  <strong>Mode Édition :</strong> Cliquez sur un objet pour le sélectionner. Déplacez en glissant
+                  l'objet. Redimensionnez via les coins blancs. Tournez via la poignée orange en haut. Utilisez la bibliothèque de formes pour créer bâtiments ou parkings.
                 </div>
               )}
 
-              {error && <p style={{ fontSize: 12, color: "#f97316", marginTop: 0 }}>{error}</p>}
+              {error && <p style={{ fontSize: 12, color: "#ea580c", marginTop: 0 }}>{error}</p>}
 
               {/* Message d'instruction pour définir la façade */}
-              {parcelFeature && !facadeSegment && !editMode && (
+              {parcelFeatures.length > 0 && !facadeSegment && !editMode && (
                 <div
                   style={{
                     fontSize: 13,
                     padding: "10px 14px",
                     marginBottom: 8,
-                    background: "linear-gradient(135deg, rgba(56,189,248,0.15), rgba(59,130,246,0.1))",
+                    background: "rgba(56,189,248,0.08)",
                     borderRadius: 10,
-                    border: "1px solid rgba(56,189,248,0.4)",
-                    color: "#38bdf8",
+                    border: "1px solid rgba(56,189,248,0.3)",
+                    color: "#0284c7",
                   }}
                 >
-                  {"👆 Cliquez sur un des côtés de la parcelle pour définir la façade et calculer les reculs."}
+                  {"👆 Cliquez sur un des côtés de la parcelle pour définir la façade. Le mode édition s'activera automatiquement."}
                 </div>
               )}
 
-              {/* Message d'instruction pour activer le mode édition (après façade définie) */}
-              {parcelFeature && facadeSegment && !editMode && (
-                <div
-                  style={{
-                    fontSize: 13,
-                    padding: "10px 14px",
-                    marginBottom: 8,
-                    background: "linear-gradient(135deg, rgba(34,197,94,0.15), rgba(22,163,74,0.1))",
-                    borderRadius: 10,
-                    border: "1px solid rgba(34,197,94,0.4)",
-                    color: "#22c55e",
-                  }}
-                >
-                  {"✏️ Cliquez sur \"Mode édition\" pour commencer à dessiner."}
-                </div>
-              )}
+              {/* ✅ FIX 1: REMOVED the message asking to click "Mode édition" - it's now automatic */}
 
               {/* Warning if forbidden band missing */}
               {!forbiddenBand &&
-                parcelFeature &&
+                parcelFeatures.length > 0 &&
                 envelopeFeature &&
                 computedReculs &&
                 computedReculs.reculMax > 0 && (
-                  <p style={{ fontSize: 11, color: "#fb923c", marginTop: 0 }}>
+                  <p style={{ fontSize: 11, color: "#ea580c", marginTop: 0 }}>
                     {"⚠️ Bande inconstructible indisponible (calcul échoué)"}
                   </p>
                 )}
 
-              <div style={{ height: "calc(100vh - 240px)", minHeight: 500, overflow: "hidden", borderRadius: 12 }}>
-                {parcelFeature ? (
+              {/* ✅ V1.6: Map container fills remaining space */}
+              <div style={mapContainerStyle}>
+                {parcelFeatures.length > 0 ? (
                   <MapContainer
                     center={center as [number, number]}
                     zoom={19}
@@ -1505,13 +1938,14 @@ export const Implantation2DPage: React.FC = () => {
                       backgroundSize: "40px 40px",
                     }}
                   >
-                    <FitToFeature feature={parcelFeature} />
+                    {/* ✅ Fit bounds to ALL parcel features */}
+                    <FitToFeatures features={parcelFeatures} />
 
                     {/* Reculs control overlay */}
                     <MapReculsControl reculs={computedReculs} />
 
                     {/* Facade click handler (only when NOT in edit mode) */}
-                    <FacadeClickHandler enabled={!editMode && !!parcelFeature} onClickLatLng={handleFacadeClick} />
+                    <FacadeClickHandler enabled={!editMode && parcelFeatures.length > 0} onClickLatLng={handleFacadeClick} />
 
                     {/* delegated to drawEngine - Geoman controls + transform handlers */}
                     <DrawEngineLayers
@@ -1528,12 +1962,22 @@ export const Implantation2DPage: React.FC = () => {
                       />
                     )}
 
-                    {/* Parcel - READ ONLY */}
-                    <GeoJSON
-                      key="parcel"
-                      data={parcelFeature}
-                      style={() => ({ weight: 2, color: "#f97316", fillColor: "#fed7aa", fillOpacity: 0.14 })}
-                    />
+                    {/* ✅ ALL Parcels - READ ONLY */}
+                    {parcelFeatures.map((feature, idx) => {
+                      const isPrimary = feature.properties?.parcel_id === primaryParcelId;
+                      return (
+                        <GeoJSON
+                          key={`parcel-${idx}`}
+                          data={feature}
+                          style={() => ({
+                            weight: isPrimary ? 3 : 2,
+                            color: isPrimary ? "#f97316" : "#fb923c",
+                            fillColor: isPrimary ? "#fed7aa" : "#ffedd5",
+                            fillOpacity: isPrimary ? 0.2 : 0.1,
+                          })}
+                        />
+                      );
+                    })}
 
                     {/* Forbidden band (setback zone) - delegated to reculsEngine */}
                     {forbiddenBand && (
@@ -1549,8 +1993,6 @@ export const Implantation2DPage: React.FC = () => {
                         })}
                       />
                     )}
-
-                    {/* Buildable envelope - masqué visuellement mais toujours calculé dans reculsEngine */}
 
                     {/* Auto building (when no drawn objects and not in edit mode) */}
                     {autoBuildingFeature && drawnBuildings.length === 0 && !editMode && (
@@ -1578,9 +2020,10 @@ export const Implantation2DPage: React.FC = () => {
                       alignItems: "center",
                       justifyContent: "center",
                       borderRadius: 12,
-                      border: "1px dashed rgba(148,163,184,0.4)",
+                      border: "1px dashed #cbd5e1",
                       fontSize: 13,
                       opacity: 0.8,
+                      color: "#64748b",
                     }}
                   >
                     {"Carte indisponible. Les calculs restent fonctionnels."}
@@ -1591,32 +2034,38 @@ export const Implantation2DPage: React.FC = () => {
           </div>
 
           <div style={rightCol}>
+            {/* ✅ Selected parcels summary */}
+            <SelectedParcelsPanel
+              parcels={selectedParcels.map((p) => ({ id: p.id, area_m2: p.area_m2 ?? null }))}
+              totalAreaM2={foncierTotalAreaM2}
+            />
+
             {/* PLU constraints */}
             <div style={card}>
               <div style={title}>{"Contraintes PLU"}</div>
-              <div style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 6, color: "#334155" }}>
                 <div>
                   {"Surface terrain : "}
-                  <strong>{`${result.surfaceTerrainM2.toFixed(0)} m²`}</strong>
+                  <strong style={{ color: "#0f172a" }}>{`${result.surfaceTerrainM2.toFixed(0)} m²`}</strong>
                 </div>
                 <div>
                   {"Emprise max : "}
-                  <strong>{`${result.surfaceEmpriseMaxM2.toFixed(0)} m²`}</strong>
+                  <strong style={{ color: "#0f172a" }}>{`${result.surfaceEmpriseMaxM2.toFixed(0)} m²`}</strong>
                 </div>
                 <div
-                  style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(148,163,184,0.25)" }}
+                  style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #e2e8f0" }}
                 >
-                  <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 6, color: "#0f172a" }}>
                     {"Reculs : "}
                     <span
                       style={{
                         fontWeight: 400,
                         color:
                           computedReculs?.mode === "DIRECTIONAL_BY_FACADE"
-                            ? "#22c55e"
+                            ? "#16a34a"
                             : computedReculs?.mode === "FALLBACK_UNIFORM"
-                              ? "#fb923c"
-                              : "#94a3b8",
+                              ? "#ea580c"
+                              : "#64748b",
                       }}
                     >
                       {computedReculs?.mode === "DIRECTIONAL_BY_FACADE"
@@ -1630,18 +2079,18 @@ export const Implantation2DPage: React.FC = () => {
                     <>
                       <div>
                         {"Avant : "}
-                        <strong>{formatReculDisplay(computedReculs.recul_avant_m)}</strong>
+                        <strong style={{ color: "#0f172a" }}>{formatReculDisplay(computedReculs.recul_avant_m)}</strong>
                       </div>
                       <div>
                         {"Latéral : "}
-                        <strong>{formatReculDisplay(computedReculs.recul_lateral_m)}</strong>
+                        <strong style={{ color: "#0f172a" }}>{formatReculDisplay(computedReculs.recul_lateral_m)}</strong>
                       </div>
                       <div>
                         {"Fond : "}
-                        <strong>{formatReculDisplay(computedReculs.recul_fond_m)}</strong>
+                        <strong style={{ color: "#0f172a" }}>{formatReculDisplay(computedReculs.recul_fond_m)}</strong>
                       </div>
                       {!computedReculs.hasData && (
-                        <div style={{ fontSize: 11, color: "#fb923c", marginTop: 4 }}>
+                        <div style={{ fontSize: 11, color: "#ea580c", marginTop: 4 }}>
                           {"⚠️ Aucune donnée PLU, valeurs par défaut"}
                         </div>
                       )}
@@ -1651,17 +2100,24 @@ export const Implantation2DPage: React.FC = () => {
                   )}
                 </div>
                 <div
-                  style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(148,163,184,0.25)" }}
+                  style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #e2e8f0" }}
                 >
-                  <div style={{ fontWeight: 600, marginBottom: 6 }}>{"Façade"}</div>
+                  <div style={{ fontWeight: 600, marginBottom: 6, color: "#0f172a" }}>{"Façade"}</div>
                   {facadeSegment ? (
-                    <div style={{ color: "#22c55e" }}>{"✓ Définie — reculs directionnels actifs"}</div>
+                    <div style={{ color: "#16a34a" }}>{"✓ Définie — reculs directionnels actifs"}</div>
                   ) : (
                     <div style={{ opacity: 0.75 }}>{"Non définie — clique un bord de parcelle"}</div>
                   )}
                 </div>
               </div>
             </div>
+
+            {/* Volumetry & surfaces summary */}
+            <VolumetrySummaryPanel
+              buildingKind={buildingKind}
+              floorsSpec={floorsSpec}
+              drawnBuildings={drawnBuildings}
+            />
 
             {/* Drawn objects - data from drawEngine */}
             <DrawnObjectsPanel
@@ -1682,18 +2138,18 @@ export const Implantation2DPage: React.FC = () => {
             {/* Parking & emprise */}
             <div style={card}>
               <div style={title}>{"Parkings & emprise"}</div>
-              <div style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 4 }}>
+              <div style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 4, color: "#334155" }}>
                 <div>
                   {"Places requises : "}
-                  <strong>{result.placesParking}</strong>
+                  <strong style={{ color: "#0f172a" }}>{result.placesParking}</strong>
                 </div>
                 <div>
                   {"Surface parkings (estimée) : "}
-                  <strong>{`${result.surfaceParkingM2.toFixed(0)} m²`}</strong>
+                  <strong style={{ color: "#0f172a" }}>{`${result.surfaceParkingM2.toFixed(0)} m²`}</strong>
                 </div>
                 <div>
                   {"Surface résiduelle : "}
-                  <strong>{`${result.surfaceEmpriseUtilisableM2.toFixed(0)} m²`}</strong>
+                  <strong style={{ color: "#0f172a" }}>{`${result.surfaceEmpriseUtilisableM2.toFixed(0)} m²`}</strong>
                 </div>
               </div>
             </div>
@@ -1702,6 +2158,59 @@ export const Implantation2DPage: React.FC = () => {
             <div style={card}>
               <div style={title}>{"Paramètres"}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <label style={label}>
+                  {"Type de bâtiment"}
+                  <select
+                    style={input}
+                    value={buildingKind}
+                    onChange={(e) => setBuildingKind(e.target.value as BuildingKind)}
+                  >
+                    <option value="COLLECTIF">Collectif</option>
+                    <option value="INDIVIDUEL">Individuel</option>
+                  </select>
+                </label>
+                <label style={label}>
+                  {"Étages (R+N)"}
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    style={input}
+                    value={floorsSpec.aboveGroundFloors}
+                    onChange={(e) =>
+                      setFloorsSpec((f) => ({ ...f, aboveGroundFloors: Math.max(0, Number(e.target.value) || 0) }))
+                    }
+                  />
+                </label>
+                <label style={label}>
+                  {"Hauteur RDC (m)"}
+                  <input
+                    type="number"
+                    min={2}
+                    max={10}
+                    step={0.1}
+                    style={input}
+                    value={floorsSpec.groundFloorHeightM}
+                    onChange={(e) =>
+                      setFloorsSpec((f) => ({ ...f, groundFloorHeightM: Math.max(2, Number(e.target.value) || 2.8) }))
+                    }
+                  />
+                </label>
+                <label style={label}>
+                  {"Hauteur étage (m)"}
+                  <input
+                    type="number"
+                    min={2}
+                    max={10}
+                    step={0.1}
+                    style={input}
+                    value={floorsSpec.typicalFloorHeightM}
+                    onChange={(e) =>
+                      setFloorsSpec((f) => ({ ...f, typicalFloorHeightM: Math.max(2, Number(e.target.value) || 2.7) }))
+                    }
+                  />
+                </label>
+                <div style={{ borderTop: "1px solid #e2e8f0", marginTop: 4, paddingTop: 10 }} />
                 <label style={label}>
                   {"Nombre de logements"}
                   <input
@@ -1745,6 +2254,9 @@ export const Implantation2DPage: React.FC = () => {
                 >
                   {"Recalculer"}
                 </button>
+                <div style={{ fontSize: 11, color: "#64748b", marginTop: 8, lineHeight: 1.4 }}>
+                  {"Applique les paramètres ci-dessus et recalcule les surfaces, l'emprise et les besoins en stationnement."}
+                </div>
               </div>
             </div>
           </div>

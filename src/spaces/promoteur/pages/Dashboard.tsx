@@ -1,348 +1,559 @@
 ﻿// src/spaces/promoteur/pages/Dashboard.tsx
-import { useEffect, useMemo, useState } from "react";
-import { supabase } from "../../../supabaseClient";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
-type PluLookupResult = {
-  success?: boolean;
-  error?: string;
-  message?: string;
+// ======================================================
+// Dashboard Promoteur — V1.1
+// - Pilotage d'études (Study)
+// - Stockage local (localStorage) - persistance synchrone
+// - Fil rouge : Nouvelle étude -> Foncier avec ?study=<id>
+// ======================================================
 
-  commune_insee?: string;
-  commune_nom?: string;
+type StepStatus = "empty" | "in_progress" | "done";
+type StudyStep = "foncier" | "plu" | "marche" | "risques" | "bilan" | "synthese" | "dashboard";
+type GlobalDecision = "GO" | "ARBITRAGE" | "NO_GO";
 
-  zone_code?: string;
-  zone_libelle?: string;
-
-  parcel_id?: string;
-  parcel?: any;
-
-  rules?: any;
-  ruleset?: any;
-  plu?: any;
+type StepsStatus = {
+  foncier: StepStatus;
+  plu: StepStatus;
+  marche: StepStatus;
+  risques: StepStatus;
+  bilan: StepStatus;
 };
 
-const LS_KEY = "mimmoza_promoteur_dashboard_lookup_v1";
+type StudyListItem = {
+  id: string;
+  name: string;
 
-function safeParse(raw: string | null) {
+  created_at: string;
+  updated_at: string;
+
+  commune_name?: string;
+  department_code?: string;
+  commune_insee?: string;
+
+  parcel_count: number;
+  total_surface_m2: number;
+
+  steps_status: StepsStatus;
+
+  global_decision?: GlobalDecision | null;
+  global_score?: number | null;
+
+  last_opened_step: StudyStep;
+};
+
+const LS_STUDIES = "mimmoza.promoteur.studies.v1";
+
+function safeParse<T>(raw: string | null): T | null {
   if (!raw) return null;
   try {
-    return JSON.parse(raw);
+    return JSON.parse(raw) as T;
   } catch {
     return null;
   }
 }
 
-function pretty(v: any) {
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function formatDateFR(iso: string) {
   try {
-    return JSON.stringify(v, null, 2);
+    const d = new Date(iso);
+    return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
   } catch {
-    return String(v);
+    return iso;
   }
 }
 
-// Extraction tolÃ©rante (on normalisera ensuite au format strict)
-function extractKpis(payload: any) {
-  const zone_code = payload?.plu?.zone_code ?? payload?.zone_code ?? "â€”";
-  const zone_libelle =
-    payload?.plu?.zone_libelle ?? payload?.zone_libelle ?? "â€”";
+function formatDateTimeFR(iso: string) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("fr-FR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
 
-  const ruleset =
-    payload?.plu?.ruleset ??
-    payload?.ruleset ??
-    payload?.plu?.rules ??
-    payload?.rules ??
-    null;
+/**
+ * ✅ Génère un ID d'étude unique et stable
+ * Format: study_<timestamp>_<random>
+ */
+function generateStudyId(): string {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substring(2, 8);
+  return `study_${timestamp}_${random}`;
+}
 
-  const reculs =
-    ruleset?.reculs ??
-    ruleset?.implantation?.reculs ??
-    ruleset?.implantation ??
-    null;
+function defaultSteps(): StepsStatus {
+  return { foncier: "empty", plu: "empty", marche: "empty", risques: "empty", bilan: "empty" };
+}
 
-  const hauteur =
-    ruleset?.hauteur ??
-    ruleset?.gabarit?.hauteur ??
-    ruleset?.gabarit ??
-    null;
+function countDoneSteps(s: StepsStatus) {
+  return Object.values(s).filter((v) => v === "done").length;
+}
 
-  const parking =
-    ruleset?.parking ??
-    ruleset?.stationnement ??
-    ruleset?.stationnement_min ??
-    null;
+function decisionLabel(decision?: GlobalDecision | null) {
+  if (!decision) return "—";
+  if (decision === "GO") return "🟢 GO";
+  if (decision === "ARBITRAGE") return "🟠 À arbitrer";
+  return "🔴 NO GO";
+}
 
-  return { zone_code, zone_libelle, reculs, hauteur, parking };
+function statusGlyph(status: StepStatus) {
+  if (status === "done") return "✓";
+  if (status === "in_progress") return "⏳";
+  return "—";
+}
+
+function routeForStep(step: StudyStep) {
+  switch (step) {
+    case "foncier":
+      return "/promoteur/foncier";
+    case "plu":
+      return "/promoteur/plu-faisabilite";
+    case "marche":
+      return "/promoteur/marche";
+    case "risques":
+      return "/promoteur/risques";
+    case "bilan":
+      return "/promoteur/bilan";
+    case "synthese":
+      return "/promoteur/synthese";
+    case "dashboard":
+    default:
+      return "/promoteur";
+  }
+}
+
+/**
+ * ✅ Lit les études depuis localStorage (synchrone)
+ */
+function loadStudiesFromStorage(): StudyListItem[] {
+  try {
+    const raw = localStorage.getItem(LS_STUDIES);
+    const parsed = safeParse<StudyListItem[]>(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * ✅ Écrit les études dans localStorage (synchrone)
+ */
+function saveStudiesToStorage(studies: StudyListItem[]): boolean {
+  try {
+    localStorage.setItem(LS_STUDIES, JSON.stringify(studies));
+    return true;
+  } catch (e) {
+    console.error("[Dashboard] saveStudiesToStorage failed:", e);
+    return false;
+  }
 }
 
 export default function Dashboard(): React.ReactElement {
-  const [address, setAddress] = useState("");
-  const [parcelId, setParcelId] = useState("");
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [res, setRes] = useState<PluLookupResult | null>(null);
-  const [showDetails, setShowDetails] = useState(false);
+  const [studies, setStudies] = useState<StudyListItem[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
 
+  // ---- Load on mount
   useEffect(() => {
-    const saved = safeParse(localStorage.getItem(LS_KEY));
-    if (!saved) return;
-    setAddress(String(saved.address ?? ""));
-    setParcelId(String(saved.parcelId ?? ""));
-    setShowDetails(Boolean(saved.showDetails ?? false));
+    const loaded = loadStudiesFromStorage();
+    setStudies(loaded);
+    setIsLoaded(true);
+    console.log("[Dashboard] Loaded studies:", loaded.length);
   }, []);
 
+  // ---- Persist when studies change (backup, mais pas principal)
   useEffect(() => {
+    // Ne pas sauvegarder avant le chargement initial
+    if (!isLoaded) return;
+    
     try {
-      localStorage.setItem(
-        LS_KEY,
-        JSON.stringify({ address, parcelId, showDetails })
-      );
+      localStorage.setItem(LS_STUDIES, JSON.stringify(studies));
     } catch {
       // ignore
     }
-  }, [address, parcelId, showDetails]);
+  }, [studies, isLoaded]);
 
-  const kpis = useMemo(() => {
-    if (!res) return null;
-    return extractKpis(res);
-  }, [res]);
+  const sortedStudies = useMemo(() => {
+    return [...studies].sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
+  }, [studies]);
 
-  const reset = () => {
-    setErr(null);
-    setRes(null);
-    setShowDetails(false);
-  };
+  /**
+   * ✅ Créer une nouvelle étude
+   * - Génère un ID unique
+   * - Crée l'entrée dans localStorage AVANT navigation
+   * - Navigue vers Foncier avec ?study=<id>
+   */
+  const createStudy = useCallback(() => {
+    const id = generateStudyId();
+    const created = nowIso();
 
-  const runLookup = async () => {
-    setErr(null);
-    setRes(null);
-    setLoading(true);
+    const study: StudyListItem = {
+      id,
+      name: `Nouvelle étude — ${formatDateTimeFR(created)}`,
+      created_at: created,
+      updated_at: created,
 
-    try {
-      const pid = parcelId.trim();
-      const addr = address.trim();
+      commune_name: undefined,
+      department_code: undefined,
+      commune_insee: undefined,
 
-      if (!pid && !addr) {
-        setErr("Renseigne une adresse ou un identifiant de parcelle.");
-        return;
-      }
+      parcel_count: 0,
+      total_surface_m2: 0,
 
-      // PrioritÃ© parcelle
-      if (pid) {
-        const { data, error } = await supabase.functions.invoke(
-          "plu-from-parcelle",
-          { body: { parcel_id: pid } }
-        );
-        if (error) throw error;
-        setRes(data ?? null);
-        return;
-      }
+      steps_status: defaultSteps(),
 
-      // Sinon adresse
-      const { data, error } = await supabase.functions.invoke("plu-from-address", {
-        body: { address: addr },
-      });
-      if (error) throw error;
-      setRes(data ?? null);
-    } catch (e: any) {
-      setErr(e?.message ?? "Erreur lors de la lecture PLU.");
-    } finally {
-      setLoading(false);
+      global_decision: null,
+      global_score: null,
+
+      last_opened_step: "foncier",
+    };
+
+    // ✅ IMPORTANT: Sauvegarder SYNCHRONEMENT avant navigation
+    const currentStudies = loadStudiesFromStorage();
+    const updatedStudies = [study, ...currentStudies];
+    const saveSuccess = saveStudiesToStorage(updatedStudies);
+
+    if (!saveSuccess) {
+      console.error("[Dashboard] Failed to save new study to localStorage");
+      // On continue quand même car l'étude sera créée par Foncier si nécessaire
+    } else {
+      console.log("[Dashboard] Created study:", id);
     }
-  };
+
+    // Mettre à jour le state local
+    setStudies(updatedStudies);
+
+    // Fil rouge : on démarre sur Foncier avec un studyId
+    navigate(`/promoteur/foncier?study=${encodeURIComponent(id)}`);
+  }, [navigate]);
+
+  /**
+   * ✅ Ouvrir une étude existante
+   */
+  const openStudy = useCallback(
+    (study: StudyListItem) => {
+      const step = study.last_opened_step || "foncier";
+      const base = routeForStep(step);
+      
+      // ✅ Mettre à jour updated_at et last_opened_step
+      const currentStudies = loadStudiesFromStorage();
+      const idx = currentStudies.findIndex((s) => s.id === study.id);
+      if (idx >= 0) {
+        currentStudies[idx] = {
+          ...currentStudies[idx],
+          updated_at: nowIso(),
+        };
+        saveStudiesToStorage(currentStudies);
+        setStudies(currentStudies);
+      }
+      
+      navigate(`${base}?study=${encodeURIComponent(study.id)}`);
+    },
+    [navigate]
+  );
+
+  /**
+   * ✅ Supprimer une étude
+   */
+  const deleteStudy = useCallback((studyId: string) => {
+    if (!window.confirm("Êtes-vous sûr de vouloir supprimer cette étude ?")) {
+      return;
+    }
+
+    const currentStudies = loadStudiesFromStorage();
+    const updatedStudies = currentStudies.filter((s) => s.id !== studyId);
+    saveStudiesToStorage(updatedStudies);
+    setStudies(updatedStudies);
+
+    // Nettoyer les données de sélection terrain associées
+    try {
+      localStorage.removeItem(`mimmoza.promoteur.terrain_selection.v1.${studyId}`);
+      localStorage.removeItem(`mimmoza.promoteur.selected_parcels_v1.${studyId}`);
+    } catch {
+      // ignore
+    }
+
+    console.log("[Dashboard] Deleted study:", studyId);
+  }, []);
+
+  const shareStudy = useCallback((study: StudyListItem) => {
+    // placeholder V1
+    // plus tard : création lien + gestion d'équipe
+    window.alert("Partage bientôt disponible (V1 placeholder).");
+    console.log("[dashboard] share study", study.id);
+  }, []);
+
+  const exportStudy = useCallback((study: StudyListItem) => {
+    // placeholder V1
+    // plus tard : dossier banque/IC (PDF / JSON dossier)
+    window.alert("Export bientôt disponible (V1 placeholder).");
+    console.log("[dashboard] export study", study.id);
+  }, []);
 
   return (
-    <div style={{ padding: 24, maxWidth: 980 }}>
-      <h2 style={{ margin: "0 0 8px", color: "#0f172a" }}>Tableau de bord</h2>
-      <p style={{ margin: "0 0 18px", color: "#475569" }}>
-        Point dâ€™entrÃ©e opÃ©rationnel : adresse/parcelle â†’ zone PLU + rÃ¨gles clÃ©s
-        (indÃ©pendant de lâ€™ingestion).
-      </p>
-
-      <div
-        style={{
-          border: "1px solid #e2e8f0",
-          borderRadius: 14,
-          padding: 16,
-          background: "#ffffff",
-        }}
-      >
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 6 }}>
-              Adresse (option)
-            </div>
-            <input
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="ex: 12 rue X, 64310 Ascain"
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #e2e8f0",
-                outline: "none",
-                fontSize: 14,
-              }}
-            />
-            <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
-              Appelle <code>plu-from-address</code>.
-            </div>
-          </div>
-
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 6 }}>
-              ID Parcelle (prioritaire)
-            </div>
-            <input
-              value={parcelId}
-              onChange={(e) => setParcelId(e.target.value)}
-              placeholder="ex: 64065000AI0002"
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #e2e8f0",
-                outline: "none",
-                fontSize: 14,
-              }}
-            />
-            <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
-              Appelle <code>plu-from-parcelle</code> si renseignÃ©.
-            </div>
-          </div>
+    <div style={{ padding: 24, maxWidth: 1100 }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+        <div>
+          <h2 style={{ margin: "0 0 6px", color: "#0f172a" }}>Tableau de bord</h2>
+          <p style={{ margin: 0, color: "#475569" }}>
+            Centralisez, analysez et partagez vos études immobilières.
+          </p>
         </div>
 
-        <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
-          <button
-            onClick={runLookup}
-            disabled={loading}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #0f172a",
-              background: "#0f172a",
-              color: "white",
-              fontWeight: 700,
-              cursor: loading ? "not-allowed" : "pointer",
-              opacity: loading ? 0.65 : 1,
-            }}
-          >
-            {loading ? "Lecture PLU..." : "Lire PLU"}
-          </button>
+        <button
+          onClick={createStudy}
+          style={{
+            padding: "10px 14px",
+            borderRadius: 12,
+            border: "1px solid #0f172a",
+            background: "#0f172a",
+            color: "white",
+            fontWeight: 800,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          ➕ Nouvelle étude
+        </button>
+      </div>
 
-          <button
-            onClick={reset}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #e2e8f0",
-              background: "white",
-              color: "#0f172a",
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            RÃ©initialiser
-          </button>
-
-          <button
-            onClick={() => setShowDetails((v) => !v)}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #e2e8f0",
-              background: "white",
-              color: "#334155",
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            {showDetails ? "Masquer dÃ©tails" : "Afficher dÃ©tails"}
-          </button>
+      {/* Section */}
+      <div style={{ marginTop: 18 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+          <h3 style={{ margin: 0, color: "#0f172a" }}>
+            Mes études {sortedStudies.length > 0 ? `(${sortedStudies.length})` : ""}
+          </h3>
         </div>
 
-        {err && (
+        {/* Loading state */}
+        {!isLoaded && (
           <div
             style={{
-              marginTop: 14,
-              padding: 12,
-              borderRadius: 10,
-              background: "#fef2f2",
-              border: "1px solid #fecaca",
-              color: "#991b1b",
-              fontSize: 13,
-              fontWeight: 600,
+              marginTop: 12,
+              border: "1px solid #e2e8f0",
+              borderRadius: 16,
+              padding: 18,
+              background: "#ffffff",
+              textAlign: "center",
             }}
           >
-            {err}
+            <div style={{ fontSize: 14, color: "#64748b" }}>Chargement des études...</div>
           </div>
         )}
 
-        {res && (
-          <div style={{ marginTop: 14 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-              <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
-                <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800, textTransform: "uppercase" }}>
-                  Zone PLU
-                </div>
-                <div style={{ marginTop: 6, fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
-                  {kpis?.zone_code ?? "â€”"}
-                </div>
-                <div style={{ marginTop: 4, fontSize: 12, color: "#475569" }}>
-                  {kpis?.zone_libelle ?? "â€”"}
-                </div>
-              </div>
-
-              <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
-                <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800, textTransform: "uppercase" }}>
-                  Reculs (extrait)
-                </div>
-                <pre style={{ marginTop: 8, fontSize: 12, color: "#0f172a", whiteSpace: "pre-wrap" }}>
-                  {kpis?.reculs ? pretty(kpis.reculs) : "â€”"}
-                </pre>
-              </div>
-
-              <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
-                <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800, textTransform: "uppercase" }}>
-                  Hauteur / Parking (extrait)
-                </div>
-                <pre style={{ marginTop: 8, fontSize: 12, color: "#0f172a", whiteSpace: "pre-wrap" }}>
-{`Hauteur:
-${kpis?.hauteur ? pretty(kpis.hauteur) : "â€”"}
-
-Parking:
-${kpis?.parking ? pretty(kpis.parking) : "â€”"}`}
-                </pre>
-              </div>
+        {/* Empty state */}
+        {isLoaded && sortedStudies.length === 0 && (
+          <div
+            style={{
+              marginTop: 12,
+              border: "1px solid #e2e8f0",
+              borderRadius: 16,
+              padding: 18,
+              background: "#ffffff",
+            }}
+          >
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a" }}>Aucune étude pour le moment</div>
+            <div style={{ marginTop: 6, color: "#475569" }}>
+              Lancez votre première analyse foncière et suivez l'étude de bout en bout.
             </div>
 
-            {showDetails && (
-              <div
+            <div style={{ marginTop: 14 }}>
+              <button
+                onClick={createStudy}
                 style={{
-                  marginTop: 12,
+                  padding: "10px 14px",
                   borderRadius: 12,
                   border: "1px solid #0f172a",
-                  background: "#0b1220",
-                  color: "#e2e8f0",
-                  padding: 12,
-                  overflow: "auto",
+                  background: "#0f172a",
+                  color: "white",
+                  fontWeight: 800,
+                  cursor: "pointer",
                 }}
               >
-                <pre style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap" }}>
-                  {pretty(res)}
-                </pre>
-              </div>
-            )}
+                ➕ Nouvelle étude
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Grid */}
+        {isLoaded && sortedStudies.length > 0 && (
+          <div
+            style={{
+              marginTop: 12,
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
+              gap: 14,
+            }}
+          >
+            {sortedStudies.map((s) => {
+              const doneCount = countDoneSteps(s.steps_status);
+              const showDecision = doneCount >= 2;
+
+              return (
+                <div
+                  key={s.id}
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 16,
+                    padding: 14,
+                    background: "#ffffff",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 12,
+                  }}
+                >
+                  {/* Identity */}
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a" }}>{s.name}</div>
+                    <div style={{ marginTop: 4, fontSize: 12, color: "#64748b" }}>
+                      {(s.commune_name ? `${s.commune_name}${s.department_code ? ` (${s.department_code})` : ""}` : "Localisation —")}
+                      {" · "}
+                      Créée le {formatDateFR(s.created_at)}
+                      {" · "}
+                      Maj {formatDateFR(s.updated_at)}
+                    </div>
+                  </div>
+
+                  {/* Foncier */}
+                  <div style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 12 }}>
+                    <div style={{ fontSize: 11, color: "#64748b", fontWeight: 900, textTransform: "uppercase" }}>
+                      📍 Foncier
+                    </div>
+                    <div style={{ marginTop: 8, color: "#0f172a", fontWeight: 800 }}>
+                      Parcelles : {s.parcel_count || 0}
+                    </div>
+                    <div style={{ marginTop: 4, color: "#0f172a", fontWeight: 800 }}>
+                      Surface : {Math.round(s.total_surface_m2 || 0).toLocaleString("fr-FR")} m²
+                    </div>
+                  </div>
+
+                  {/* Progress */}
+                  <div style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 12 }}>
+                    <div style={{ fontSize: 11, color: "#64748b", fontWeight: 900, textTransform: "uppercase" }}>
+                      État de l'étude
+                    </div>
+                    <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 13 }}>
+                      <div style={{ color: "#0f172a", fontWeight: 700 }}>
+                        {statusGlyph(s.steps_status.foncier)} Foncier
+                      </div>
+                      <div style={{ color: "#0f172a", fontWeight: 700 }}>
+                        {statusGlyph(s.steps_status.plu)} PLU & Faisabilité
+                      </div>
+                      <div style={{ color: "#0f172a", fontWeight: 700 }}>
+                        {statusGlyph(s.steps_status.marche)} Marché
+                      </div>
+                      <div style={{ color: "#0f172a", fontWeight: 700 }}>
+                        {statusGlyph(s.steps_status.risques)} Risques
+                      </div>
+                      <div style={{ color: "#0f172a", fontWeight: 700 }}>
+                        {statusGlyph(s.steps_status.bilan)} Bilan
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Decision */}
+                  <div style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 12 }}>
+                    <div style={{ fontSize: 11, color: "#64748b", fontWeight: 900, textTransform: "uppercase" }}>
+                      Décision
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: 14, fontWeight: 900, color: "#0f172a" }}>
+                      {showDecision ? decisionLabel(s.global_decision ?? null) : "—"}
+                    </div>
+                    <div style={{ marginTop: 4, fontSize: 12, color: "#475569", fontWeight: 700 }}>
+                      Score global : {showDecision && typeof s.global_score === "number" ? `${Math.round(s.global_score)} / 100` : "—"}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button
+                      onClick={() => openStudy(s)}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: 12,
+                        border: "1px solid #0f172a",
+                        background: "#0f172a",
+                        color: "white",
+                        fontWeight: 900,
+                        cursor: "pointer",
+                        flex: "1 1 auto",
+                      }}
+                    >
+                      Ouvrir
+                    </button>
+
+                    <button
+                      onClick={() => shareStudy(s)}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: 12,
+                        border: "1px solid #e2e8f0",
+                        background: "white",
+                        color: "#0f172a",
+                        fontWeight: 900,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Partager
+                    </button>
+
+                    <button
+                      onClick={() => exportStudy(s)}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: 12,
+                        border: "1px solid #e2e8f0",
+                        background: "white",
+                        color: "#0f172a",
+                        fontWeight: 900,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Exporter
+                    </button>
+
+                    <button
+                      onClick={() => deleteStudy(s.id)}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: 12,
+                        border: "1px solid #fecaca",
+                        background: "#fef2f2",
+                        color: "#dc2626",
+                        fontWeight: 900,
+                        cursor: "pointer",
+                      }}
+                      title="Supprimer cette étude"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+
+                  {/* Debug micro footer (optionnel) */}
+                  <div style={{ fontSize: 11, color: "#94a3b8" }}>
+                    ID: {s.id}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
-
-      <p style={{ marginTop: 12, color: "#64748b", fontSize: 12 }}>
-        Prochaine Ã©tape (quand tu me le demanderas) : normaliser la sortie en 3 champs stricts
-        (reculs/hauteur/parking) au lieu dâ€™afficher du JSON extrait.
-      </p>
     </div>
   );
 }
-

@@ -10,9 +10,17 @@ import "leaflet/dist/leaflet.css";
 
 type BBox = { minLon: number; minLat: number; maxLon: number; maxLat: number };
 
+type SelectedParcelData = {
+  id: string;
+  feature?: any;
+  area_m2?: number | null;
+};
+
 type Props = {
   communeInsee: string;
   selectedIds: string[];
+  /** Parcelles sélectionnées avec leurs features GeoJSON (pour overlay vert) */
+  selectedParcels?: SelectedParcelData[];
   onToggleParcel: (parcelId: string, feature: any, area_m2: number | null) => void;
 
   initialCenter?: { lat: number; lon: number } | null;
@@ -90,6 +98,46 @@ function computeAreaM2(feature: any): number | null {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
+
+const STYLE_DEFAULT = {
+  color: "#2563eb",
+  opacity: 0.9,
+  weight: 2,
+  fillColor: "#60a5fa",
+  fillOpacity: 0.18,
+};
+
+const STYLE_SELECTED = {
+  color: "#16a34a",
+  opacity: 1,
+  weight: 3,
+  fillColor: "#22c55e",
+  fillOpacity: 0.35,
+};
+
+const STYLE_HOVER_DEFAULT = {
+  color: "#2563eb",
+  opacity: 1,
+  weight: 3,
+  fillColor: "#60a5fa",
+  fillOpacity: 0.28,
+};
+
+const STYLE_HOVER_SELECTED = {
+  color: "#16a34a",
+  opacity: 1,
+  weight: 4,
+  fillColor: "#22c55e",
+  fillOpacity: 0.45,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ParcelLayer: affiche les parcelles du cadastre
+// ─────────────────────────────────────────────────────────────────────────────
+
 function ParcelLayer({
   data,
   selectedIds,
@@ -101,54 +149,6 @@ function ParcelLayer({
 }) {
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
-  // Style par défaut (parcelle non sélectionnée) - COMPLET avec couleurs visibles
-  const defaultStyle = useMemo(
-    () => ({
-      color: "#2563eb",        // stroke bleu
-      opacity: 0.9,            // opacité du contour
-      weight: 2,               // épaisseur du contour
-      fillColor: "#60a5fa",    // remplissage bleu clair
-      fillOpacity: 0.18,       // opacité du remplissage
-    }),
-    [],
-  );
-
-  // Style sélectionné - COMPLET avec couleurs vertes visibles
-  const selectedStyle = useMemo(
-    () => ({
-      color: "#16a34a",        // stroke vert
-      opacity: 1,              // opacité du contour
-      weight: 3,               // épaisseur du contour
-      fillColor: "#86efac",    // remplissage vert clair
-      fillOpacity: 0.35,       // opacité du remplissage
-    }),
-    [],
-  );
-
-  // Style hover pour parcelle non sélectionnée
-  const hoverDefaultStyle = useMemo(
-    () => ({
-      color: "#2563eb",
-      opacity: 1,
-      weight: 3,
-      fillColor: "#60a5fa",
-      fillOpacity: 0.28,
-    }),
-    [],
-  );
-
-  // Style hover pour parcelle sélectionnée
-  const hoverSelectedStyle = useMemo(
-    () => ({
-      color: "#16a34a",
-      opacity: 1,
-      weight: 4,
-      fillColor: "#86efac",
-      fillOpacity: 0.45,
-    }),
-    [],
-  );
-
   const onEachFeature = (feature: any, layer: L.Layer) => {
     const pid = getParcelIdFromFeature(feature);
     if (!pid) return;
@@ -156,16 +156,16 @@ function ParcelLayer({
     const isSelected = selectedSet.has(pid);
 
     // @ts-ignore
-    layer.setStyle?.(isSelected ? selectedStyle : defaultStyle);
+    layer.setStyle?.(isSelected ? STYLE_SELECTED : STYLE_DEFAULT);
 
     layer.on("mouseover", () => {
       // @ts-ignore
-      layer.setStyle?.(isSelected ? hoverSelectedStyle : hoverDefaultStyle);
+      layer.setStyle?.(isSelected ? STYLE_HOVER_SELECTED : STYLE_HOVER_DEFAULT);
     });
 
     layer.on("mouseout", () => {
       // @ts-ignore
-      layer.setStyle?.(isSelected ? selectedStyle : defaultStyle);
+      layer.setStyle?.(isSelected ? STYLE_SELECTED : STYLE_DEFAULT);
     });
 
     layer.on("click", () => {
@@ -174,8 +174,6 @@ function ParcelLayer({
     });
   };
 
-  // IMPORTANT: GeoJSON de react-leaflet ne rerend pas toujours le style par feature.
-  // On force un key qui change quand la sélection change pour rafraîchir.
   const key = useMemo(() => selectedIds.join("|"), [selectedIds]);
 
   return (
@@ -183,49 +181,150 @@ function ParcelLayer({
       key={key}
       data={data as any}
       onEachFeature={onEachFeature as any}
-      style={() => defaultStyle as any}
+      style={() => STYLE_DEFAULT as any}
     />
   );
 }
 
-function MapEvents({
-  onViewportBbox,
-}: {
-  onViewportBbox: (bbox: BBox) => void;
-}) {
-  const handler = useMemo(
-    () =>
-      debounce((map: L.Map) => {
-        const bbox = boundsToBBox(map.getBounds());
-        onViewportBbox(bbox);
-      }, 350),
-    [onViewportBbox],
-  );
+// ─────────────────────────────────────────────────────────────────────────────
+// SelectedParcelsOverlay: overlay vert pour les parcelles sélectionnées
+// ─────────────────────────────────────────────────────────────────────────────
 
-  useMapEvents({
-    moveend(e) {
-      // @ts-ignore
-      handler(e.target);
-    },
-    zoomend(e) {
-      // @ts-ignore
-      handler(e.target);
-    },
-  });
+function SelectedParcelsOverlay({
+  selectedParcels,
+  cadastreFeatures,
+}: {
+  selectedParcels: SelectedParcelData[];
+  cadastreFeatures: FeatureCollection;
+}) {
+  const map = useMap();
+  const layerRef = useRef<L.GeoJSON | null>(null);
+
+  // Construire la FeatureCollection des parcelles sélectionnées
+  const selectedFc = useMemo(() => {
+    const features: Feature[] = [];
+
+    for (const parcel of selectedParcels) {
+      // 1) Utiliser la feature stockée dans le parcel si disponible
+      if (parcel.feature && parcel.feature.geometry) {
+        features.push(parcel.feature);
+        continue;
+      }
+
+      // 2) Sinon, chercher dans les features du cadastre chargées
+      const fromCadastre = cadastreFeatures.features.find(
+        (f) => getParcelIdFromFeature(f) === parcel.id
+      );
+      if (fromCadastre) {
+        features.push(fromCadastre);
+      }
+    }
+
+    return {
+      type: "FeatureCollection" as const,
+      features,
+    };
+  }, [selectedParcels, cadastreFeatures]);
+
+  useEffect(() => {
+    // Supprimer l'ancien layer
+    if (layerRef.current) {
+      map.removeLayer(layerRef.current);
+      layerRef.current = null;
+    }
+
+    if (selectedFc.features.length === 0) return;
+
+    // Créer le nouveau layer
+    const layer = L.geoJSON(selectedFc as any, {
+      style: {
+        color: "#16a34a",
+        weight: 3,
+        opacity: 1,
+        fillColor: "#22c55e",
+        fillOpacity: 0.35,
+      },
+      interactive: false, // Pas d'interaction sur l'overlay
+    });
+
+    layer.addTo(map);
+    layer.bringToFront();
+    layerRef.current = layer;
+
+    return () => {
+      if (layerRef.current) {
+        map.removeLayer(layerRef.current);
+        layerRef.current = null;
+      }
+    };
+  }, [map, selectedFc]);
 
   return null;
 }
 
-/**
- * Composant interne pour :
- * 1) Stocker la référence map dans mapRef (via useMap)
- * 2) Déclencher le fetch initial IMMÉDIATEMENT au montage (sans délai bloquant)
- * 3) Centrer sur la parcelle focus dès qu'elle est disponible dans fc
- *
- * FIX PRINCIPAL : Le centrage ne dépend plus de lastBboxKey.
- * On utilise uniquement focusParcelId comme clé de contrôle.
- * Ainsi, dès que la feature focus apparaît dans fc, on centre dessus une seule fois.
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// MapInvalidateSizeHandler: force invalidateSize après mount et visibility changes
+// ─────────────────────────────────────────────────────────────────────────────
+
+function MapInvalidateSizeHandler() {
+  const map = useMap();
+  const invalidatedRef = useRef(false);
+
+  useEffect(() => {
+    if (!map) return;
+
+    // Immédiat
+    map.invalidateSize();
+
+    // Après un court délai (pour les animations CSS)
+    const t1 = setTimeout(() => map.invalidateSize(), 100);
+    const t2 = setTimeout(() => map.invalidateSize(), 300);
+    const t3 = setTimeout(() => map.invalidateSize(), 500);
+
+    // Observer les changements de visibilité du conteneur
+    const container = map.getContainer();
+    if (container && typeof ResizeObserver !== "undefined") {
+      const resizeObserver = new ResizeObserver(() => {
+        map.invalidateSize();
+      });
+      resizeObserver.observe(container);
+
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+        resizeObserver.disconnect();
+      };
+    }
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [map]);
+
+  // Invalider aussi quand le document redevient visible
+  useEffect(() => {
+    if (!map) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        setTimeout(() => map.invalidateSize(), 100);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [map]);
+
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MapController: gère le fetch initial et le centrage sur focusParcelId
+// ─────────────────────────────────────────────────────────────────────────────
+
 function MapController({
   onViewportBbox,
   fc,
@@ -237,45 +336,34 @@ function MapController({
 }) {
   const map = useMap();
 
-  // Ref pour éviter de refaire le fetch initial plusieurs fois
   const didInitialFetchRef = useRef(false);
-
-  // Ref pour éviter de recentrer en boucle sur la même parcelle
-  // Clé = focusParcelId pour lequel on a déjà fait un fitBounds
   const didFitForParcelRef = useRef<string | null>(null);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 1) FETCH INITIAL : déclenché une seule fois dès que la map est prête
-  // ─────────────────────────────────────────────────────────────────────────────
+  // Fetch initial
   useEffect(() => {
     if (!map || didInitialFetchRef.current) return;
 
     didInitialFetchRef.current = true;
 
-    // FIX: On utilise requestAnimationFrame pour s'assurer que la map est rendue
-    // avant de lire ses bounds. Cela évite les problèmes de timing au montage.
+    // Double RAF pour s'assurer que le layout est stable
     requestAnimationFrame(() => {
-      const bbox = boundsToBBox(map.getBounds());
-      console.log("[ParcelMapSelector] Initial fetch triggered immediately with bbox:", bbox);
-      onViewportBbox(bbox);
+      requestAnimationFrame(() => {
+        map.invalidateSize();
+        const bbox = boundsToBBox(map.getBounds());
+        console.log("[ParcelMapSelector] Initial fetch triggered with bbox:", bbox);
+        onViewportBbox(bbox);
+      });
     });
   }, [map, onViewportBbox]);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 2) CENTRAGE AUTOMATIQUE : dès que focusParcelId est trouvé dans fc
-  // ─────────────────────────────────────────────────────────────────────────────
+  // Centrage sur focusParcelId
   useEffect(() => {
     if (!map || !focusParcelId || fc.features.length === 0) return;
 
-    // FIX: On ne dépend plus de lastBboxKey. On utilise uniquement focusParcelId.
-    // Cela garantit que le centrage se fait dès que la feature est disponible,
-    // sans attendre un changement de bbox.
     if (didFitForParcelRef.current === focusParcelId) {
-      // Déjà centré sur cette parcelle, ne pas refaire
       return;
     }
 
-    // Rechercher la feature correspondant à focusParcelId
     const targetFeature = fc.features.find((f) => getParcelIdFromFeature(f) === focusParcelId);
 
     if (!targetFeature) {
@@ -289,9 +377,6 @@ function MapController({
 
       if (bounds.isValid()) {
         console.log("[ParcelMapSelector] Fitting map to focus parcel:", focusParcelId);
-
-        // Marquer comme "déjà centré" AVANT d'appeler fitBounds
-        // pour éviter tout re-déclenchement pendant l'animation
         didFitForParcelRef.current = focusParcelId;
 
         map.fitBounds(bounds, {
@@ -305,23 +390,13 @@ function MapController({
     }
   }, [map, fc, focusParcelId]);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 3) RESET de la ref de centrage si focusParcelId change
-  // ─────────────────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    // Si focusParcelId change (nouvelle recherche), on autorise un nouveau centrage
-    if (focusParcelId && didFitForParcelRef.current !== focusParcelId) {
-      // Ne pas reset à null, laisser l'effet de centrage faire son travail
-    }
-  }, [focusParcelId]);
-
   return null;
 }
 
-/**
- * Gère les événements move/zoom pour re-fetch les parcelles
- * (séparé de MapController pour clarté)
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// MapMoveHandler: re-fetch les parcelles quand on bouge/zoom
+// ─────────────────────────────────────────────────────────────────────────────
+
 function MapMoveHandler({
   onViewportBbox,
 }: {
@@ -350,9 +425,14 @@ function MapMoveHandler({
   return null;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Composant principal
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function ParcelMapSelector({
   communeInsee,
   selectedIds,
+  selectedParcels = [],
   onToggleParcel,
   initialCenter,
   initialZoom = 16,
@@ -369,21 +449,20 @@ export default function ParcelMapSelector({
     features: [],
   });
 
-  // Debug state
   const [lastBboxKey, setLastBboxKey] = useState<string>("");
   const [backendCount, setBackendCount] = useState<number | null>(null);
 
   const cacheRef = useRef<Map<string, FeatureCollection>>(new Map());
   const lastKeyRef = useRef<string>("");
-
-  // Ref pour tracker quels selectedIds ont déjà été enrichis (éviter appels en boucle)
   const enrichedIdsRef = useRef<Set<string>>(new Set());
+
+  // Clé unique pour forcer re-render du MapContainer
+  const mapKeyRef = useRef<string>(`map-${communeInsee}-${Date.now()}`);
 
   const center = useMemo(() => {
     if (initialCenter?.lat != null && initialCenter?.lon != null) {
       return [initialCenter.lat, initialCenter.lon] as [number, number];
     }
-    // fallback : centre approximatif (Ascain)
     return [43.345, -1.621] as [number, number];
   }, [initialCenter]);
 
@@ -396,14 +475,12 @@ export default function ParcelMapSelector({
     const key = `${communeInsee}::${makeBboxKey(bbox)}`;
     setLastBboxKey(key);
 
-    // éviter de re-fetch si bbox identique
     if (lastKeyRef.current === key) {
       console.log("[ParcelMapSelector] fetchBbox skipped: same key", key);
       return;
     }
     lastKeyRef.current = key;
 
-    // cache local
     const cached = cacheRef.current.get(key);
     if (cached) {
       console.log("[ParcelMapSelector] Using cached data for key:", key, "features:", cached.features.length);
@@ -436,7 +513,6 @@ export default function ParcelMapSelector({
         throw new Error(msg);
       }
 
-      // Track backend count if available
       if (typeof payload.count === "number") {
         setBackendCount(payload.count);
       } else {
@@ -456,7 +532,6 @@ export default function ParcelMapSelector({
       cacheRef.current.set(key, featureCollection);
       setFc(featureCollection);
 
-      // Si success=true mais 0 features, afficher un warning non-bloquant
       if (featureCollection.features.length === 0) {
         setEmptyWarning("0 parcelles trouvées — zoomez/déplacez ou vérifiez le code commune");
       }
@@ -469,14 +544,13 @@ export default function ParcelMapSelector({
     }
   }, [communeInsee]);
 
-  // Auto-enrichissement des parcelles sélectionnées avec leur surface
+  // Auto-enrichissement des parcelles sélectionnées
   useEffect(() => {
     if (!onAutoEnrichSelected || fc.features.length === 0 || selectedIds.length === 0) return;
 
     const updates: { id: string; area_m2: number | null }[] = [];
 
     for (const pid of selectedIds) {
-      // Éviter de ré-enrichir une parcelle déjà traitée
       if (enrichedIdsRef.current.has(pid)) continue;
 
       const feature = fc.features.find((f) => getParcelIdFromFeature(f) === pid);
@@ -493,7 +567,7 @@ export default function ParcelMapSelector({
     }
   }, [fc, selectedIds, onAutoEnrichSelected]);
 
-  // reset cache si commune change
+  // Reset cache si commune change
   useEffect(() => {
     console.log("[ParcelMapSelector] Commune changed to:", communeInsee, "- clearing cache");
     cacheRef.current.clear();
@@ -503,6 +577,8 @@ export default function ParcelMapSelector({
     setLastBboxKey("");
     setBackendCount(null);
     setEmptyWarning(null);
+    // Nouvelle clé pour forcer re-mount du MapContainer
+    mapKeyRef.current = `map-${communeInsee}-${Date.now()}`;
   }, [communeInsee]);
 
   return (
@@ -513,13 +589,15 @@ export default function ParcelMapSelector({
         overflow: "hidden",
         background: "#fff",
         height: heightPx,
+        minHeight: heightPx,
         position: "relative",
       }}
     >
       <MapContainer
+        key={mapKeyRef.current}
         center={center}
         zoom={initialZoom}
-        style={{ height: "100%", width: "100%" }}
+        style={{ height: "100%", width: "100%", minHeight: heightPx }}
         scrollWheelZoom
       >
         <TileLayer
@@ -527,21 +605,20 @@ export default function ParcelMapSelector({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {/*
-          MapController unifié :
-          - Déclenche le fetch initial via requestAnimationFrame (sans délai arbitraire)
-          - Centre automatiquement sur focusParcelId dès que la feature est disponible
-          - Utilise des refs pour éviter les re-déclenchements en boucle
-        */}
+        {/* Force invalidateSize après mount et visibility changes */}
+        <MapInvalidateSizeHandler />
+
+        {/* Gère le fetch initial et le centrage */}
         <MapController
           onViewportBbox={fetchBbox}
           fc={fc}
           focusParcelId={focusParcelId}
         />
 
-        {/* Gestion des événements move/zoom pour re-fetch */}
+        {/* Gestion des événements move/zoom */}
         <MapMoveHandler onViewportBbox={fetchBbox} />
 
+        {/* Parcelles du cadastre */}
         {fc?.features?.length > 0 && (
           <ParcelLayer
             data={fc}
@@ -549,9 +626,17 @@ export default function ParcelMapSelector({
             onToggleParcel={onToggleParcel}
           />
         )}
+
+        {/* Overlay vert pour les parcelles sélectionnées */}
+        {selectedParcels.length > 0 && (
+          <SelectedParcelsOverlay
+            selectedParcels={selectedParcels}
+            cadastreFeatures={fc}
+          />
+        )}
       </MapContainer>
 
-      {/* Debug overlay - toujours visible */}
+      {/* Debug overlay */}
       <div
         style={{
           position: "absolute",
@@ -570,7 +655,7 @@ export default function ParcelMapSelector({
         }}
       >
         <div><strong>Parcelles:</strong> {fc.features.length}{backendCount !== null && ` (backend: ${backendCount})`}</div>
-        <div><strong>Bbox key:</strong> {lastBboxKey || "(aucune)"}</div>
+        <div><strong>Sélectionnées:</strong> {selectedIds.length}</div>
         <div><strong>Commune:</strong> {communeInsee || "(non définie)"}</div>
         {focusParcelId && <div><strong>Focus:</strong> {focusParcelId}</div>}
       </div>
@@ -594,7 +679,6 @@ export default function ParcelMapSelector({
         </div>
       )}
 
-      {/* Warning non-bloquant pour 0 parcelles */}
       {emptyWarning && !error && !loading && (
         <div
           style={{

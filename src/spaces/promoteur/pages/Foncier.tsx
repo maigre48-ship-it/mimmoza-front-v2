@@ -1,52 +1,61 @@
 ﻿import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "../../../supabaseClient";
 import ParcelMapSelector from "../foncier/ParcelMapSelector";
 
+// ✅ Hook réutilisable pour la sélection foncière
+import { useFoncierSelection, extractCommuneInsee } from "../shared/hooks/useFoncierSelection";
+
+// ✅ Snapshot store (existe déjà)
+import { patchPromoteurSnapshot, patchModule } from "../shared/promoteurSnapshot.store";
+
 // TEMP: désactivé à cause du CORS (header x-client-info rejeté par foncier-lookup-v1)
-// Réactiver quand la function sera corrigée côté backend
 const ENABLE_FONCIER_LOOKUP_ENRICH = false;
+
+/** Centre par défaut (Paris) quand aucune commune n'est connue */
+const DEFAULT_MAP_CENTER = { lat: 48.8566, lon: 2.3522 };
+const DEFAULT_MAP_ZOOM = 6;
 
 type PluLookupResult = {
   success?: boolean;
   error?: string;
   message?: string;
-
   commune_insee?: string;
   commune_nom?: string;
-
   parcel_id?: string;
   parcel?: any;
-
   zone_code?: string;
   zone_libelle?: string;
-
   rules?: any;
   ruleset?: any;
   plu?: any;
 };
 
-/** Structure de la sélection terrain persistée */
-type TerrainSelection = {
-  version: "v1";
+/** Structure d'une étude dans le Dashboard */
+type PromoteurStudy = {
+  id: string;
+  name: string;
+  created_at: string;
   updated_at: string;
-  commune_insee: string;
-  parcel_ids: string[];
-  parcels: { parcel_id: string; area_m2: number | null }[];
-  surface_totale_m2: number;
-  focus_parcel_id: string | null;
-};
-
-/** Structure du handoff cross-pages v1 */
-type SelectedParcelsHandoff = {
-  parcel_ids: string[];
-  primary_parcel_id: string | null;
+  parcel_count: number;
+  total_surface_m2: number;
   commune_insee: string | null;
-  updated_at: string;
+  steps_status: {
+    foncier: "pending" | "done";
+    plu: "pending" | "done";
+    marche: "pending" | "done";
+    risques: "pending" | "done";
+    bilan: "pending" | "done";
+    implantation: "pending" | "done";
+  };
+  last_opened_step: string | null;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Clés localStorage (formulaire uniquement)
+// ─────────────────────────────────────────────────────────────────────────────
 const LS_KEY = "mimmoza_promoteur_foncier_query_v1";
-const LS_TERRAIN_KEY = "mimmoza_promoteur_terrain_selection_v1";
-const LS_SELECTED_PARCELS_V1 = "mimmoza.promoteur.selected_parcels_v1";
+const LS_STUDIES_KEY = "mimmoza.promoteur.studies.v1";
 
 function safeParse<T = any>(raw: string | null): T | null {
   if (!raw) return null;
@@ -140,13 +149,6 @@ async function extractSupabaseErrorMessage(err: any): Promise<string> {
   return pretty(err);
 }
 
-function extractCommuneInsee(parcelId: string): string | null {
-  if (!parcelId || parcelId.length < 5) return null;
-  const insee = parcelId.substring(0, 5);
-  if (!/^\d{5}$/.test(insee)) return null;
-  return insee;
-}
-
 function extractZoneCodeFromAny(payload: any): string | null {
   const z =
     payload?.plu?.zone?.zone_code ??
@@ -178,161 +180,216 @@ function extractCommuneInseeFromAny(payload: any, fallbackParcelId?: string): st
   return null;
 }
 
-/**
- * Formate une surface en m² avec séparateur de milliers.
- */
 function formatAreaM2(area: number | null | undefined): string {
   if (area == null) return "—";
   return area.toLocaleString("fr-FR") + " m²";
 }
 
-/** Type étendu pour les parcelles sélectionnées avec surface */
-type SelectedParcel = {
-  id: string;
-  feature?: any;
-  area_m2?: number | null;
-};
-
 /**
- * Persiste la sélection de parcelles dans toutes les clés de session et handoff.
- * Écrit vers plusieurs clés pour assurer la compatibilité cross-modules.
- * Ne fait rien si aucune parcelle ou pas de communeInsee.
+ * Met à jour une étude dans la liste des études du Dashboard.
  */
-function persistPromoteurSessionAndHandoff(params: {
-  parcelIds: string[];
-  focusParcelId: string | null;
+function updateStudyInDashboard(params: {
+  studyId: string;
+  parcelCount: number;
+  totalSurfaceM2: number;
   communeInsee: string | null;
-  address: string;
+  communeNom?: string | null;
 }): boolean {
-  const { parcelIds, focusParcelId, communeInsee, address } = params;
-
-  // Guard: ne jamais écrire une valeur vide
-  if (parcelIds.length === 0 || !communeInsee) {
-    return false;
-  }
-
-  // Définir la parcelle principale
-  const primaryParcelId = focusParcelId || parcelIds[0] || null;
+  const { studyId, parcelCount, totalSurfaceM2, communeInsee, communeNom } = params;
 
   try {
-    // 1) Écrire la clé handoff v1
-    const handoff: SelectedParcelsHandoff = {
-      parcel_ids: parcelIds,
-      primary_parcel_id: primaryParcelId,
-      commune_insee: communeInsee,
-      updated_at: new Date().toISOString(),
-    };
-    localStorage.setItem(LS_SELECTED_PARCELS_V1, JSON.stringify(handoff));
+    const raw = localStorage.getItem(LS_STUDIES_KEY);
+    let studies: PromoteurStudy[] = safeParse<PromoteurStudy[]>(raw) ?? [];
 
-    // 2) Synchroniser TOUTES les clés session attendues par différents modules
-    if (primaryParcelId) {
-      // Clés session standard
-      localStorage.setItem("mimmoza.session.parcel_id", primaryParcelId);
-      // Clés foncier (pour Implantation2D et autres modules)
-      localStorage.setItem("mimmoza.foncier.selected_parcel_id", primaryParcelId);
-      localStorage.setItem("mimmoza.foncier.last_parcel_id", primaryParcelId);
+    const idx = studies.findIndex((s) => s.id === studyId);
+    const now = new Date().toISOString();
+
+    if (idx >= 0) {
+      const study = studies[idx];
+      study.parcel_count = parcelCount;
+      study.total_surface_m2 = totalSurfaceM2;
+      study.commune_insee = communeInsee;
+      study.updated_at = now;
+      study.steps_status = { ...study.steps_status, foncier: "done" };
+      study.last_opened_step = "plu";
+
+      if (study.name.startsWith("Nouvelle étude —") && communeInsee) {
+        const displayName = communeNom || `Commune ${communeInsee}`;
+        study.name = `${displayName} — ${communeInsee}`;
+      }
+
+      studies[idx] = study;
+    } else {
+      const displayName = communeNom || (communeInsee ? `Commune ${communeInsee}` : "Nouvelle étude");
+      const newStudy: PromoteurStudy = {
+        id: studyId,
+        name: communeInsee ? `${displayName} — ${communeInsee}` : displayName,
+        created_at: now,
+        updated_at: now,
+        parcel_count: parcelCount,
+        total_surface_m2: totalSurfaceM2,
+        commune_insee: communeInsee,
+        steps_status: {
+          foncier: "done",
+          plu: "pending",
+          marche: "pending",
+          risques: "pending",
+          bilan: "pending",
+          implantation: "pending",
+        },
+        last_opened_step: "plu",
+      };
+      studies.push(newStudy);
     }
 
-    if (communeInsee) {
-      // Clés session standard
-      localStorage.setItem("mimmoza.session.commune_insee", communeInsee);
-      // Clés PLU (pour Implantation2D et autres modules)
-      localStorage.setItem("mimmoza.plu.selected_commune_insee", communeInsee);
-      localStorage.setItem("mimmoza.plu.last_commune_insee", communeInsee);
-    }
-
-    const trimmedAddress = address.trim();
-    if (trimmedAddress) {
-      localStorage.setItem("mimmoza.session.address", trimmedAddress);
-    }
-
-    console.log("[Foncier] persistPromoteurSessionAndHandoff:", {
-      handoff,
-      primary_parcel_id: primaryParcelId,
-      commune_insee: communeInsee,
-      address: trimmedAddress || "(empty)",
-    });
-
+    localStorage.setItem(LS_STUDIES_KEY, JSON.stringify(studies));
     return true;
   } catch (e) {
-    console.error("[Foncier] persistPromoteurSessionAndHandoff failed:", e);
+    console.error("[Foncier] updateStudyInDashboard failed:", e);
     return false;
   }
 }
 
 /**
- * Restaure la sélection de parcelles depuis localStorage.
- * Retourne un tableau de SelectedParcel (id + area_m2, feature=null).
+ * Placeholder pour la carte quand aucune commune n'est connue.
  */
-function restoreSelectedParcelsFromStorage(): {
-  parcels: SelectedParcel[];
-  communeInsee: string | null;
-  focusParcelId: string | null;
-} | null {
-  try {
-    const raw = localStorage.getItem(LS_TERRAIN_KEY);
-    if (!raw) return null;
-
-    const terrain = safeParse<TerrainSelection>(raw);
-    if (!terrain || terrain.version !== "v1") return null;
-    if (!Array.isArray(terrain.parcels) || terrain.parcels.length === 0) return null;
-
-    const parcels: SelectedParcel[] = terrain.parcels
-      .filter((p) => p.parcel_id && typeof p.parcel_id === "string")
-      .map((p) => ({
-        id: p.parcel_id,
-        feature: null, // On ne persiste pas les features GeoJSON
-        area_m2: typeof p.area_m2 === "number" ? p.area_m2 : null,
-      }));
-
-    if (parcels.length === 0) return null;
-
-    return {
-      parcels,
-      communeInsee: terrain.commune_insee || null,
-      focusParcelId: terrain.focus_parcel_id || null,
-    };
-  } catch (e) {
-    console.warn("[Foncier] restoreSelectedParcelsFromStorage failed:", e);
-    return null;
-  }
+function EmptyMapPlaceholder(): React.ReactElement {
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        height: 400,
+        borderRadius: 12,
+        overflow: "hidden",
+        border: "1px solid #e2e8f0",
+        background: "#f1f5f9",
+      }}
+    >
+      <iframe
+        title="Carte France"
+        src="https://www.openstreetmap.org/export/embed.html?bbox=-5.5,41.3,10.0,51.2&layer=mapnik"
+        style={{
+          width: "100%",
+          height: "100%",
+          border: "none",
+          filter: "grayscale(30%) opacity(0.7)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "rgba(255,255,255,0.85)",
+          backdropFilter: "blur(2px)",
+        }}
+      >
+        <div
+          style={{
+            textAlign: "center",
+            padding: "24px 32px",
+            background: "white",
+            borderRadius: 12,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+            maxWidth: 400,
+          }}
+        >
+          <div style={{ fontSize: 32, marginBottom: 12 }}>🗺️</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>
+            Aucune parcelle sélectionnée
+          </div>
+          <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
+            Renseignez une <strong>adresse</strong> ou un <strong>identifiant de parcelle</strong> ci-dessus,
+            puis cliquez sur <em>"Trouver parcelle + PLU"</em> pour afficher le cadastre.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function Foncier(): React.ReactElement {
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Query params
+  // ─────────────────────────────────────────────────────────────────────────────
+  const [searchParams] = useSearchParams();
+  const hasStudyParam = searchParams.has("study");
+  const studyId = searchParams.get("study");
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Formulaire state
+  // ─────────────────────────────────────────────────────────────────────────────
   const [address, setAddress] = useState("");
   const [parcelId, setParcelId] = useState("");
-
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [res, setRes] = useState<PluLookupResult | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [showMap, setShowMap] = useState(hasStudyParam);
 
-  // --- Carte et sélection multi-parcelles ---
-  const [showMap, setShowMap] = useState(false);
-  const [selectedParcels, setSelectedParcels] = useState<SelectedParcel[]>([]);
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ✅ Hook foncier selection (source de vérité)
+  // ─────────────────────────────────────────────────────────────────────────────
+  const {
+    selectedParcels,
+    communeInsee: hookCommuneInsee,
+    focusParcelId: hookFocusParcelId,
+    totalAreaM2,
+    toggleParcel,
+    clearSelection,
+    setSelectedParcels,
+    setFocusParcelId,
+    setCommuneInsee,
+    enrichParcels,
+    persistNow,
+    isHydrated,
+  } = useFoncierSelection({
+    studyId,
+    address,
+    autoPersist: true,
+    debounceMs: 300,
+  });
 
-  // --- Flag pour éviter double-restauration ---
-  const restoredRef = useRef(false);
-
-  // --- Feedback "Sélection enregistrée" ---
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Feedback "Sélection enregistrée"
+  // ─────────────────────────────────────────────────────────────────────────────
   const [savedOk, setSavedOk] = useState(false);
   const savedOkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ✅ Guard ref pour auto-lookup (évite les boucles infinies)
+  // ─────────────────────────────────────────────────────────────────────────────
+  const autoLookupDoneRef = useRef(false);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ✅ Guard ref pour auto-update Dashboard (évite writes redondants)
+  // ─────────────────────────────────────────────────────────────────────────────
+  const lastDashboardWriteHashRef = useRef<string | null>(null);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Computed values
+  // ─────────────────────────────────────────────────────────────────────────────
   const communeInsee = useMemo(() => {
     if (res?.commune_insee) return res.commune_insee;
     if (res?.parcel?.commune_insee) return res.parcel.commune_insee;
+    if (hookCommuneInsee) return hookCommuneInsee;
 
     const pid = parcelId.trim();
     if (pid) return extractCommuneInsee(pid);
 
-    // Fallback: essayer de récupérer depuis la sélection restaurée
     if (selectedParcels.length > 0) {
-      const firstId = selectedParcels[0].id;
-      if (firstId) return extractCommuneInsee(firstId);
+      return extractCommuneInsee(selectedParcels[0].id);
     }
 
     return null;
-  }, [res, parcelId, selectedParcels]);
+  }, [res, parcelId, hookCommuneInsee, selectedParcels]);
+
+  const communeNom = useMemo(() => {
+    return res?.commune_nom ?? res?.parcel?.nom_com ?? null;
+  }, [res]);
 
   const mapCenter = useMemo(() => {
     const centroid = res?.parcel?.centroid;
@@ -342,140 +399,166 @@ export default function Foncier(): React.ReactElement {
     return null;
   }, [res]);
 
-  // ID de la parcelle "focus" pour centrage automatique
   const focusParcelId = useMemo(() => {
-    return (res?.parcel_id ?? res?.parcel?.parcel_id ?? parcelId.trim()) || null;
-  }, [res, parcelId]);
+    return (res?.parcel_id ?? res?.parcel?.parcel_id ?? hookFocusParcelId ?? parcelId.trim()) || null;
+  }, [res, hookFocusParcelId, parcelId]);
 
-  // Total cumulé des surfaces
-  const totalAreaM2 = useMemo(() => {
-    let total = 0;
-    let hasAny = false;
-    for (const p of selectedParcels) {
-      if (p.area_m2 != null) {
-        total += p.area_m2;
-        hasAny = true;
-      }
-    }
-    return hasAny ? total : null;
-  }, [selectedParcels]);
+  const kpis = useMemo(() => {
+    if (!res) return null;
+    return extractKpis(res);
+  }, [res]);
+
+  const effectiveCommuneInsee = communeInsee;
+  const canUseSelection = selectedParcels.length > 0 && effectiveCommuneInsee != null;
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Restauration de la sélection depuis localStorage AU MONTAGE
+  // Sync hook commune avec la response du lookup
   // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (restoredRef.current) return;
-    restoredRef.current = true;
+    if (res?.commune_insee && res.commune_insee !== hookCommuneInsee) {
+      setCommuneInsee(res.commune_insee);
+    }
+  }, [res, hookCommuneInsee, setCommuneInsee]);
 
-    const restored = restoreSelectedParcelsFromStorage();
-    if (restored && restored.parcels.length > 0) {
-      setSelectedParcels(restored.parcels);
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Afficher carte automatiquement si sélection restaurée
+  // ─────────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (isHydrated && selectedParcels.length > 0 && hookCommuneInsee) {
+      setShowMap(true);
 
-      // Si on a un focus parcel, pré-remplir le champ parcelId
-      if (restored.focusParcelId) {
-        setParcelId(restored.focusParcelId);
+      // Pré-remplir parcelId si on a un focusParcelId
+      if (hookFocusParcelId && !parcelId) {
+        setParcelId(hookFocusParcelId);
       }
+    }
+  }, [isHydrated, selectedParcels.length, hookCommuneInsee, hookFocusParcelId, parcelId]);
 
-      // Afficher la carte automatiquement si on a une sélection
-      if (restored.communeInsee) {
-        setShowMap(true);
-      }
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Snapshot persistence helper
+  // ─────────────────────────────────────────────────────────────────────────────
+  const persistToSnapshot = useCallback((params: {
+    effectiveCommuneInsee: string | null;
+    parcelIds: string[];
+    focusParcelId: string | null;
+    address: string;
+    totalAreaM2: number | null;
+    res: PluLookupResult | null;
+  }) => {
+    try {
+      const { effectiveCommuneInsee, parcelIds, focusParcelId, address, totalAreaM2, res } = params;
+      if (!effectiveCommuneInsee || parcelIds.length === 0) return;
 
-      console.log("[Foncier] Restored selection from localStorage:", {
-        parcels: restored.parcels.length,
-        communeInsee: restored.communeInsee,
-        focusParcelId: restored.focusParcelId,
+      patchPromoteurSnapshot({
+        project: {
+          address: address.trim() || undefined,
+          commune_insee: effectiveCommuneInsee,
+          parcelId: focusParcelId || parcelIds[0] || undefined,
+          surfaceM2: totalAreaM2 ?? undefined,
+        } as any,
       });
+
+      patchModule("foncier" as any, {
+        ok: true,
+        summary: `Sélection foncière : ${parcelIds.length} parcelle(s) · Surface totale ${totalAreaM2 != null ? `${Math.round(totalAreaM2).toLocaleString("fr-FR")} m²` : "—"} · INSEE ${effectiveCommuneInsee}`,
+        data: {
+          commune_insee: effectiveCommuneInsee,
+          parcel_ids: parcelIds,
+          focus_parcel_id: focusParcelId,
+          total_area_m2: totalAreaM2,
+          address: address.trim() || null,
+          zone_code: extractZoneCodeFromAny(res),
+          kpis: res ? extractKpis(res) : null,
+          raw: res,
+        },
+      } as any);
+    } catch (e) {
+      console.warn("[Foncier] snapshot persist failed:", e);
     }
   }, []);
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Persistance TerrainSelection dans localStorage
+  // Auto-persist snapshot when selection changes
   // ─────────────────────────────────────────────────────────────────────────────
-  const saveTerrainSelection = useCallback(() => {
-    // Récupérer commune depuis plusieurs sources
-    const effectiveCommuneInsee =
-      communeInsee ||
-      (selectedParcels.length > 0 ? extractCommuneInsee(selectedParcels[0].id) : null);
-
-    if (!effectiveCommuneInsee || selectedParcels.length === 0) {
-      return false;
-    }
-
-    const terrainSelection: TerrainSelection = {
-      version: "v1",
-      updated_at: new Date().toISOString(),
-      commune_insee: effectiveCommuneInsee,
-      parcel_ids: selectedParcels.map((p) => p.id),
-      parcels: selectedParcels.map((p) => ({
-        parcel_id: p.id,
-        area_m2: p.area_m2 ?? null,
-      })),
-      surface_totale_m2: totalAreaM2 ?? 0,
-      focus_parcel_id: focusParcelId,
-    };
-
-    try {
-      localStorage.setItem(LS_TERRAIN_KEY, JSON.stringify(terrainSelection));
-      console.log("[Foncier] TerrainSelection saved:", terrainSelection);
-      return true;
-    } catch (e) {
-      console.error("[Foncier] Failed to save TerrainSelection:", e);
-      return false;
-    }
-  }, [communeInsee, selectedParcels, totalAreaM2, focusParcelId]);
-
-  // Auto-save à chaque changement de selectedParcels (si communeInsee défini)
-  // + auto-persist handoff v1
   useEffect(() => {
-    // Récupérer commune depuis plusieurs sources
-    const effectiveCommuneInsee =
-      communeInsee ||
-      (selectedParcels.length > 0 ? extractCommuneInsee(selectedParcels[0].id) : null);
-
+    if (!isHydrated) return;
     if (effectiveCommuneInsee && selectedParcels.length > 0) {
-      saveTerrainSelection();
-
-      // Également persister le handoff v1 pour cross-pages
-      persistPromoteurSessionAndHandoff({
+      persistToSnapshot({
+        effectiveCommuneInsee,
         parcelIds: selectedParcels.map((p) => p.id),
         focusParcelId,
-        communeInsee: effectiveCommuneInsee,
         address,
+        totalAreaM2,
+        res,
       });
     }
-  }, [selectedParcels, communeInsee, saveTerrainSelection, focusParcelId, address]);
+  }, [selectedParcels, effectiveCommuneInsee, focusParcelId, address, totalAreaM2, res, persistToSnapshot, isHydrated]);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ✅ AUTO-UPDATE DASHBOARD: Met à jour l'étude dès qu'une sélection existe
+  // Idempotent via hash pour éviter les writes redondants
+  // ─────────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    // Guards
+    if (!studyId) return;
+    if (!isHydrated) return;
+    if (selectedParcels.length === 0) return;
+    if (!effectiveCommuneInsee) return;
+
+    // Calculer un hash simple pour détecter les changements réels
+    const parcelCount = selectedParcels.length;
+    const surfaceM2 = totalAreaM2 ?? 0;
+    const hash = `${studyId}|${parcelCount}|${Math.round(surfaceM2)}|${effectiveCommuneInsee}`;
+
+    // Éviter les writes redondants (idempotence)
+    if (lastDashboardWriteHashRef.current === hash) return;
+
+    // Mettre à jour le Dashboard
+    const success = updateStudyInDashboard({
+      studyId,
+      parcelCount,
+      totalSurfaceM2: surfaceM2,
+      communeInsee: effectiveCommuneInsee,
+      communeNom,
+    });
+
+    if (success) {
+      lastDashboardWriteHashRef.current = hash;
+      console.log("[Foncier] Auto-updated dashboard study:", hash);
+    }
+  }, [studyId, isHydrated, selectedParcels.length, totalAreaM2, effectiveCommuneInsee, communeNom]);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Bouton "Utiliser cette sélection"
   // ─────────────────────────────────────────────────────────────────────────────
   const handleUseSelection = () => {
-    // Récupérer commune depuis plusieurs sources
-    const effectiveCommuneInsee =
-      communeInsee ||
-      (selectedParcels.length > 0 ? extractCommuneInsee(selectedParcels[0].id) : null);
-
-    const success = saveTerrainSelection();
+    const success = persistNow();
     if (success && effectiveCommuneInsee) {
-      // ─────────────────────────────────────────────────────────────────────────
-      // Persistance session + handoff standardisée pour PLU & Faisabilité / Implantation 2D
-      // ─────────────────────────────────────────────────────────────────────────
-      persistPromoteurSessionAndHandoff({
+      persistToSnapshot({
+        effectiveCommuneInsee,
         parcelIds: selectedParcels.map((p) => p.id),
         focusParcelId,
-        communeInsee: effectiveCommuneInsee,
         address,
+        totalAreaM2,
+        res,
       });
-      // ─────────────────────────────────────────────────────────────────────────
+
+      if (studyId) {
+        updateStudyInDashboard({
+          studyId,
+          parcelCount: selectedParcels.length,
+          totalSurfaceM2: totalAreaM2 ?? 0,
+          communeInsee: effectiveCommuneInsee,
+          communeNom,
+        });
+      }
 
       setSavedOk(true);
 
-      // Clear previous timeout if any
       if (savedOkTimeoutRef.current) {
         clearTimeout(savedOkTimeoutRef.current);
       }
 
-      // Hide message after 3 seconds
       savedOkTimeoutRef.current = setTimeout(() => {
         setSavedOk(false);
       }, 3000);
@@ -492,82 +575,16 @@ export default function Foncier(): React.ReactElement {
   }, []);
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // AUTO-PERSISTENCE session parcelle (non intrusive)
-  // Écrit dès que focusParcelId + communeInsee disponibles, sans UI feedback
-  // ─────────────────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    // Récupérer commune depuis plusieurs sources
-    const effectiveCommuneInsee =
-      communeInsee ||
-      (selectedParcels.length > 0 ? extractCommuneInsee(selectedParcels[0].id) : null);
-
-    // Guard clauses
-    if (!focusParcelId || !effectiveCommuneInsee) return;
-
-    try {
-      // Lire les valeurs actuelles pour éviter des écritures inutiles
-      const currentParcelId = localStorage.getItem("mimmoza.session.parcel_id");
-      const currentCommune = localStorage.getItem("mimmoza.session.commune_insee");
-      const currentAddress = localStorage.getItem("mimmoza.session.address");
-      const trimmedAddress = address.trim();
-
-      let changed = false;
-
-      if (currentParcelId !== focusParcelId) {
-        localStorage.setItem("mimmoza.session.parcel_id", focusParcelId);
-        localStorage.setItem("mimmoza.foncier.selected_parcel_id", focusParcelId);
-        localStorage.setItem("mimmoza.foncier.last_parcel_id", focusParcelId);
-        changed = true;
-      }
-
-      if (currentCommune !== effectiveCommuneInsee) {
-        localStorage.setItem("mimmoza.session.commune_insee", effectiveCommuneInsee);
-        localStorage.setItem("mimmoza.plu.selected_commune_insee", effectiveCommuneInsee);
-        localStorage.setItem("mimmoza.plu.last_commune_insee", effectiveCommuneInsee);
-        changed = true;
-      }
-
-      if (trimmedAddress && currentAddress !== trimmedAddress) {
-        localStorage.setItem("mimmoza.session.address", trimmedAddress);
-        changed = true;
-      }
-
-      // Également mettre à jour le handoff v1 si on a des parcelles
-      if (changed && selectedParcels.length > 0) {
-        persistPromoteurSessionAndHandoff({
-          parcelIds: selectedParcels.map((p) => p.id),
-          focusParcelId,
-          communeInsee: effectiveCommuneInsee,
-          address,
-        });
-      }
-
-      if (changed) {
-        console.log("[Foncier] Auto-persisted session:", {
-          parcel_id: focusParcelId,
-          commune_insee: effectiveCommuneInsee,
-          address: trimmedAddress || "(empty)",
-        });
-      }
-    } catch (e) {
-      // Silently ignore localStorage errors
-      console.warn("[Foncier] Auto-persistence failed:", e);
-    }
-  }, [focusParcelId, communeInsee, address, selectedParcels]);
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Restauration des états depuis localStorage (formulaire uniquement)
+  // Restauration formulaire depuis localStorage
   // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const saved = safeParse(localStorage.getItem(LS_KEY));
     if (!saved) return;
     setAddress(String(saved.address ?? ""));
-    // Ne pas écraser parcelId si déjà restauré depuis terrain selection
     if (!parcelId) {
       setParcelId(String(saved.parcelId ?? ""));
     }
     setShowDetails(Boolean(saved.showDetails ?? false));
-    // Ne pas écraser showMap si déjà true (restauration terrain)
     if (!showMap) {
       setShowMap(Boolean(saved.showMap ?? false));
     }
@@ -575,29 +592,40 @@ export default function Foncier(): React.ReactElement {
 
   useEffect(() => {
     try {
-      localStorage.setItem(
-        LS_KEY,
-        JSON.stringify({ address, parcelId, showDetails, showMap })
-      );
+      localStorage.setItem(LS_KEY, JSON.stringify({ address, parcelId, showDetails, showMap }));
     } catch {
       // ignore
     }
   }, [address, parcelId, showDetails, showMap]);
 
-  const kpis = useMemo(() => {
-    if (!res) return null;
-    return extractKpis(res);
-  }, [res]);
-
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Reset
+  // ─────────────────────────────────────────────────────────────────────────────
   const reset = () => {
     setErr(null);
     setRes(null);
     setShowDetails(false);
-    setSelectedParcels([]);
-    setShowMap(false);
+    clearSelection();
     setSavedOk(false);
+    // Reset auto-lookup guard pour permettre un nouveau lookup après reset
+    autoLookupDoneRef.current = false;
+    // Reset dashboard write hash
+    lastDashboardWriteHashRef.current = null;
+
+    try {
+      patchModule("foncier" as any, {
+        ok: false,
+        summary: "Sélection foncière réinitialisée.",
+        data: null,
+      } as any);
+    } catch {
+      // ignore
+    }
   };
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Ajouter parcelle depuis lookup response
+  // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!res) return;
     if (res.success === false) return;
@@ -606,79 +634,87 @@ export default function Foncier(): React.ReactElement {
     if (!pid) return;
 
     setSelectedParcels((prev) => {
-      if (prev.some((p) => p.id === pid)) return prev;
+      if (prev.some((p) => p.id === pid)) {
+        // ✅ Parcelle existe déjà, mais on doit mettre à jour la feature si elle manque
+        return prev.map((p) => {
+          if (p.id === pid && !p.feature) {
+            const feature = res.parcel?.geojson ?? res.parcel?.geometry ?? null;
+            if (feature) {
+              return { ...p, feature };
+            }
+          }
+          return p;
+        });
+      }
       return [{ id: pid, feature: res.parcel?.geojson ?? res.parcel?.geometry ?? null, area_m2: null }, ...prev];
     });
-  }, [res, parcelId]);
 
+    // Mettre à jour focusParcelId
+    setFocusParcelId(pid);
+  }, [res, parcelId, setSelectedParcels, setFocusParcelId]);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Handlers
+  // ─────────────────────────────────────────────────────────────────────────────
   const handleToggleParcel = useCallback((pid: string, feature: any, area_m2: number | null) => {
-    setSelectedParcels((prev) => {
-      const exists = prev.find((p) => p.id === pid);
-      if (exists) return prev.filter((p) => p.id !== pid);
-      return [...prev, { id: pid, feature, area_m2 }];
-    });
-  }, []);
+    toggleParcel(pid, feature, area_m2);
+  }, [toggleParcel]);
 
   const handleRemoveParcel = (pid: string) => {
     setSelectedParcels((prev) => prev.filter((p) => p.id !== pid));
   };
 
-  const handleClearSelection = () => setSelectedParcels([]);
+  const handleClearSelection = () => clearSelection();
 
-  // Callback pour auto-enrichir les parcelles sélectionnées avec leur surface
   const handleAutoEnrichSelected = useCallback((updates: { id: string; area_m2: number | null }[]) => {
-    if (updates.length === 0) return;
+    enrichParcels(updates);
+  }, [enrichParcels]);
 
-    setSelectedParcels((prev) => {
-      const updateMap = new Map(updates.map((u) => [u.id, u.area_m2]));
-      let changed = false;
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ✅ REFACTORISÉ: Lookup avec paramètres directs
+  // Permet d'appeler le lookup sans dépendre du state (évite race conditions)
+  // ─────────────────────────────────────────────────────────────────────────────
+  const runLookupWith = useCallback(async (pidRaw: string, addrRaw: string, options?: { silent?: boolean }) => {
+    const { silent = false } = options ?? {};
 
-      const next = prev.map((p) => {
-        // Enrichir seulement si area_m2 manquant
-        if (p.area_m2 == null && updateMap.has(p.id)) {
-          changed = true;
-          return { ...p, area_m2: updateMap.get(p.id) };
-        }
-        return p;
-      });
-
-      return changed ? next : prev;
-    });
-  }, []);
-
-  const runLookup = async () => {
-    setErr(null);
-    setRes(null);
-    setLoading(true);
-    setSavedOk(false);
+    if (!silent) {
+      setErr(null);
+      setRes(null);
+      setLoading(true);
+      setSavedOk(false);
+    } else {
+      setLoading(true);
+    }
 
     try {
-      const pid = parcelId.trim();
-      const addr = address.trim();
+      const pid = pidRaw.trim();
+      const addr = addrRaw.trim();
 
       if (!pid && !addr) {
-        setErr("Renseigne une adresse ou un identifiant de parcelle.");
+        if (!silent) {
+          setErr("Renseigne une adresse ou un identifiant de parcelle.");
+        }
         return;
       }
 
-      // 1) Réponse "base" (parcelle + zone) via les fonctions existantes
       let base: any = null;
 
       if (pid) {
         const commune_insee = extractCommuneInsee(pid);
 
         if (!commune_insee) {
-          setErr(
-            `ID parcelle invalide : "${pid}".\n` +
+          if (!silent) {
+            setErr(
+              `ID parcelle invalide : "${pid}".\n` +
               `L'identifiant doit commencer par 5 chiffres (code INSEE commune).\n` +
-              `Exemple : 64065000AI0001 → INSEE 64065`
-          );
+              `Exemple : 75102000AB0123 → INSEE 75102`
+            );
+          }
           return;
         }
 
         const payload = { parcel_id: pid, commune_insee };
 
-        // PATCH: Essayer v2 en premier, fallback sur v1
         const r1 = await supabase.functions.invoke("plu-from-parcelle-v2", { body: payload });
         if (!r1.error) {
           base = r1.data ?? null;
@@ -694,13 +730,12 @@ export default function Foncier(): React.ReactElement {
       }
 
       if (!base) {
-        setErr("Réponse vide du backend.");
+        if (!silent) {
+          setErr("Réponse vide du backend.");
+        }
         return;
       }
 
-      // 2) Enrichissement PLU: récupérer le ruleset via foncier-lookup-v1 (commune + zone)
-      // TEMP: désactivé à cause du CORS (header x-client-info rejeté)
-      // Réactiver ENABLE_FONCIER_LOOKUP_ENRICH quand la function sera corrigée côté backend
       const ci = extractCommuneInseeFromAny(base, pid || undefined);
       const zc = extractZoneCodeFromAny(base);
 
@@ -709,7 +744,6 @@ export default function Foncier(): React.ReactElement {
           body: { commune_insee: ci, zone_code: zc },
         });
 
-        // Si ça échoue: on garde "base" (zone affichable)
         if (!rPlu.error && rPlu.data?.success) {
           const pluData = rPlu.data;
 
@@ -731,27 +765,111 @@ export default function Foncier(): React.ReactElement {
 
       setRes(base as any);
       setShowMap(true);
+
+      // Snapshot
+      try {
+        const inferredCommune = extractCommuneInseeFromAny(base, pid || undefined);
+        const inferredParcelId = (base?.parcel_id ?? base?.parcel?.parcel_id ?? pid) || null;
+
+        if (inferredCommune && inferredParcelId) {
+          patchPromoteurSnapshot({
+            project: {
+              address: addr || undefined,
+              commune_insee: inferredCommune,
+              parcelId: inferredParcelId,
+            } as any,
+          });
+
+          patchModule("foncier" as any, {
+            ok: true,
+            summary: `Lookup foncier OK · Parcelle ${inferredParcelId} · INSEE ${inferredCommune} · Zone ${extractZoneCodeFromAny(base) ?? "—"}`,
+            data: {
+              address: addr || null,
+              commune_insee: inferredCommune,
+              parcel_id: inferredParcelId,
+              zone_code: extractZoneCodeFromAny(base),
+              kpis: extractKpis(base),
+              raw: base,
+            },
+          } as any);
+        }
+      } catch (e) {
+        console.warn("[Foncier] snapshot persist after lookup failed:", e);
+      }
     } catch (e: any) {
       const errorMessage = await extractSupabaseErrorMessage(e);
-      setErr(errorMessage);
+      if (!silent) {
+        setErr(errorMessage);
+      }
       console.log("[FONCIER] lookup exception:", e);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  // Calcul commune effective pour le bouton
-  const effectiveCommuneInsee =
-    communeInsee ||
-    (selectedParcels.length > 0 ? extractCommuneInsee(selectedParcels[0].id) : null);
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Lookup depuis le bouton (utilise le state du formulaire)
+  // ─────────────────────────────────────────────────────────────────────────────
+  const runLookup = useCallback(() => {
+    runLookupWith(parcelId.trim(), address.trim());
+  }, [runLookupWith, parcelId, address]);
 
-  const canUseSelection = selectedParcels.length > 0 && effectiveCommuneInsee != null;
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ✅ AUTO-LOOKUP: Récupère la géométrie au retour sur la page
+  // Si on a une sélection restaurée (selectedParcels.length > 0) mais pas de res,
+  // on lance automatiquement un lookup pour récupérer la feature/centroid.
+  // ─────────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    // Guards
+    if (!isHydrated) return;
+    if (autoLookupDoneRef.current) return;
+    if (res !== null) return; // Déjà un résultat
+    if (selectedParcels.length === 0) return; // Pas de sélection à restaurer
+    if (loading) return; // Déjà en cours
 
+    // Déterminer l'ID de parcelle à lookup
+    const pidToLookup = hookFocusParcelId || selectedParcels[0]?.id;
+    if (!pidToLookup) return;
+
+    // Vérifier que c'est un ID valide
+    const insee = extractCommuneInsee(pidToLookup);
+    if (!insee) return;
+
+    // Marquer comme fait AVANT le lookup (évite les appels multiples)
+    autoLookupDoneRef.current = true;
+
+    console.log("[Foncier] Auto-lookup triggered for restored selection:", pidToLookup);
+
+    // Pré-remplir le champ parcelId si vide
+    if (!parcelId) {
+      setParcelId(pidToLookup);
+    }
+
+    // Lancer le lookup en mode "silent" pour ne pas afficher d'erreur intrusive
+    runLookupWith(pidToLookup, address.trim(), { silent: true });
+
+  }, [isHydrated, res, selectedParcels, hookFocusParcelId, loading, parcelId, address, runLookupWith]);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Reset du guard auto-lookup quand studyId change
+  // ─────────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    autoLookupDoneRef.current = false;
+  }, [studyId]);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div style={{ padding: 24, maxWidth: 1200 }}>
       <h2 style={{ margin: "0 0 8px", color: "#0f172a" }}>Foncier</h2>
       <p style={{ margin: "0 0 18px", color: "#475569" }}>
         Recherche terrain : adresse ou parcelle → parcelle(s) + zone PLU (prévisualisation).
+        {studyId && (
+          <span style={{ marginLeft: 8, fontSize: 11, color: "#64748b", background: "#f1f5f9", padding: "2px 6px", borderRadius: 4 }}>
+            Étude: {studyId.slice(0, 8)}…
+          </span>
+        )}
       </p>
 
       <div style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 16, background: "#ffffff" }}>
@@ -761,7 +879,7 @@ export default function Foncier(): React.ReactElement {
             <input
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="ex: 12 rue X, 64310 Ascain"
+              placeholder="ex: 10 rue de la Paix, 75002 Paris"
               style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #e2e8f0", outline: "none", fontSize: 14 }}
             />
             <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
@@ -774,7 +892,7 @@ export default function Foncier(): React.ReactElement {
             <input
               value={parcelId}
               onChange={(e) => setParcelId(e.target.value)}
-              placeholder="ex: 64065000AI0002"
+              placeholder="ex: 75102000AB0123"
               style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #e2e8f0", outline: "none", fontSize: 14 }}
             />
             <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
@@ -833,7 +951,6 @@ export default function Foncier(): React.ReactElement {
 
           <button
             onClick={() => setShowMap((v) => !v)}
-            disabled={!effectiveCommuneInsee}
             style={{
               padding: "10px 14px",
               borderRadius: 10,
@@ -841,8 +958,7 @@ export default function Foncier(): React.ReactElement {
               background: showMap ? "#3b82f6" : "white",
               color: showMap ? "white" : "#3b82f6",
               fontWeight: 700,
-              cursor: effectiveCommuneInsee ? "pointer" : "not-allowed",
-              opacity: effectiveCommuneInsee ? 1 : 0.5,
+              cursor: "pointer",
             }}
           >
             {showMap ? "Masquer carte" : "Afficher carte"}
@@ -916,161 +1032,163 @@ export default function Foncier(): React.ReactElement {
           </div>
         )}
 
-        {showMap && effectiveCommuneInsee && (
+        {showMap && (
           <div style={{ marginTop: 16 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 14 }}>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 8 }}>
-                  Carte cadastrale — Cliquez pour sélectionner/désélectionner
-                </div>
-
-                <ParcelMapSelector
-                  communeInsee={effectiveCommuneInsee}
-                  selectedIds={selectedParcels.map((p) => p.id)}
-                  onToggleParcel={handleToggleParcel}
-                  initialCenter={mapCenter}
-                  initialZoom={17}
-                  focusParcelId={focusParcelId}
-                  onAutoEnrichSelected={handleAutoEnrichSelected}
-                />
-              </div>
-
-              <div
-                style={{
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 12,
-                  padding: 12,
-                  background: "#f8fafc",
-                  maxHeight: 440,
-                  overflow: "auto",
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-              >
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span>Parcelles sélectionnées ({selectedParcels.length})</span>
-                  {selectedParcels.length > 0 && (
-                    <button
-                      onClick={handleClearSelection}
-                      style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", background: "white", color: "#64748b", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
-                    >
-                      Vider
-                    </button>
-                  )}
-                </div>
-
-                {selectedParcels.length === 0 ? (
-                  <div style={{ fontSize: 12, color: "#94a3b8", fontStyle: "italic" }}>
-                    Aucune parcelle sélectionnée.
-                    <br />
-                    Cliquez sur la carte pour en ajouter.
+            {effectiveCommuneInsee ? (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 14 }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 8 }}>
+                    Carte cadastrale — Cliquez pour sélectionner/désélectionner
                   </div>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
-                    {selectedParcels.map((p) => (
-                      <div
-                        key={p.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          padding: "8px 10px",
-                          borderRadius: 8,
-                          background: "white",
-                          border: "1px solid #e2e8f0",
-                        }}
+
+                  <ParcelMapSelector
+                    communeInsee={effectiveCommuneInsee}
+                    selectedIds={selectedParcels.map((p) => p.id)}
+                    selectedParcels={selectedParcels}
+                    onToggleParcel={handleToggleParcel}
+                    initialCenter={mapCenter ?? DEFAULT_MAP_CENTER}
+                    initialZoom={mapCenter ? 17 : DEFAULT_MAP_ZOOM}
+                    focusParcelId={focusParcelId}
+                    onAutoEnrichSelected={handleAutoEnrichSelected}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 12,
+                    padding: 12,
+                    background: "#f8fafc",
+                    maxHeight: 440,
+                    overflow: "auto",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>Parcelles sélectionnées ({selectedParcels.length})</span>
+                    {selectedParcels.length > 0 && (
+                      <button
+                        onClick={handleClearSelection}
+                        style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", background: "white", color: "#64748b", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
                       >
-                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: "#0f172a", fontFamily: "monospace" }}>
-                            {p.id}
-                          </span>
-                          <span style={{ fontSize: 11, color: "#64748b" }}>
-                            {formatAreaM2(p.area_m2)}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => handleRemoveParcel(p.id)}
-                          style={{ padding: "2px 8px", borderRadius: 4, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
+                        Vider
+                      </button>
+                    )}
+                  </div>
+
+                  {selectedParcels.length === 0 ? (
+                    <div style={{ fontSize: 12, color: "#94a3b8", fontStyle: "italic" }}>
+                      Aucune parcelle sélectionnée.
+                      <br />
+                      Cliquez sur la carte pour en ajouter.
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
+                      {selectedParcels.map((p) => (
+                        <div
+                          key={p.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: "8px 10px",
+                            borderRadius: 8,
+                            background: "white",
+                            border: "1px solid #e2e8f0",
+                          }}
                         >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Total cumulé */}
-                {selectedParcels.length > 0 && (
-                  <div
-                    style={{
-                      marginTop: 12,
-                      paddingTop: 10,
-                      borderTop: "1px solid #e2e8f0",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
-                  >
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "#334155" }}>
-                      Surface totale
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 800,
-                        color: "#0f172a",
-                        background: "#e0f2fe",
-                        padding: "4px 10px",
-                        borderRadius: 6,
-                      }}
-                    >
-                      {formatAreaM2(totalAreaM2)}
-                    </span>
-                  </div>
-                )}
-
-                {/* Bouton "Utiliser cette sélection" */}
-                <div style={{ marginTop: 14 }}>
-                  <button
-                    onClick={handleUseSelection}
-                    disabled={!canUseSelection}
-                    style={{
-                      width: "100%",
-                      padding: "10px 14px",
-                      borderRadius: 8,
-                      border: "1px solid #10b981",
-                      background: canUseSelection ? "#10b981" : "#e2e8f0",
-                      color: canUseSelection ? "white" : "#94a3b8",
-                      fontWeight: 700,
-                      fontSize: 13,
-                      cursor: canUseSelection ? "pointer" : "not-allowed",
-                      transition: "background 0.15s",
-                    }}
-                  >
-                    ✓ Utiliser cette sélection
-                  </button>
-
-                  {/* Message de confirmation */}
-                  {savedOk && (
-                    <div
-                      style={{
-                        marginTop: 8,
-                        padding: "8px 10px",
-                        borderRadius: 6,
-                        background: "#ecfdf5",
-                        border: "1px solid #a7f3d0",
-                        color: "#065f46",
-                        fontSize: 11,
-                        fontWeight: 600,
-                        textAlign: "center",
-                      }}
-                    >
-                      ✓ Sélection enregistrée — vous pouvez aller à PLU & Faisabilité / Implantation 2D
+                          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: "#0f172a", fontFamily: "monospace" }}>
+                              {p.id}
+                            </span>
+                            <span style={{ fontSize: 11, color: "#64748b" }}>
+                              {formatAreaM2(p.area_m2)}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => handleRemoveParcel(p.id)}
+                            style={{ padding: "2px 8px", borderRadius: 4, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   )}
+
+                  {selectedParcels.length > 0 && (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        paddingTop: 10,
+                        borderTop: "1px solid #e2e8f0",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#334155" }}>
+                        Surface totale
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 800,
+                          color: "#0f172a",
+                          background: "#e0f2fe",
+                          padding: "4px 10px",
+                          borderRadius: 6,
+                        }}
+                      >
+                        {formatAreaM2(totalAreaM2)}
+                      </span>
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 14 }}>
+                    <button
+                      onClick={handleUseSelection}
+                      disabled={!canUseSelection}
+                      style={{
+                        width: "100%",
+                        padding: "10px 14px",
+                        borderRadius: 8,
+                        border: "1px solid #10b981",
+                        background: canUseSelection ? "#10b981" : "#e2e8f0",
+                        color: canUseSelection ? "white" : "#94a3b8",
+                        fontWeight: 700,
+                        fontSize: 13,
+                        cursor: canUseSelection ? "pointer" : "not-allowed",
+                        transition: "background 0.15s",
+                      }}
+                    >
+                      ✓ Utiliser cette sélection
+                    </button>
+
+                    {savedOk && (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          padding: "8px 10px",
+                          borderRadius: 6,
+                          background: "#ecfdf5",
+                          border: "1px solid #a7f3d0",
+                          color: "#065f46",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          textAlign: "center",
+                        }}
+                      >
+                        ✓ Sélection enregistrée — vous pouvez aller à PLU & Faisabilité / Implantation 2D
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <EmptyMapPlaceholder />
+            )}
           </div>
         )}
       </div>

@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Massing3DCanvas } from "../terrain3d/components/Massing3DCanvas";
 import { usePromoteurProjectStore } from "../store/promoteurProject.store";
@@ -8,6 +8,9 @@ import {
   elevationLambert93,
   type ElevationPoint,
 } from "../../../lib/terrainServiceClient";
+
+// ✅ Snapshot store (existe déjà dans ton projet)
+import { patchPromoteurSnapshot, patchModule } from "../shared/promoteurSnapshot.store";
 
 type ReliefDiag = {
   deptCode: string;
@@ -25,7 +28,7 @@ type ReliefDiag = {
 function buildSampleGridFromBbox(
   bbox: number[],
   nx = 9,
-  ny = 9,
+  ny = 9
 ): ElevationPoint[] {
   // bbox attendu: [minX, minY, maxX, maxY] en EPSG:2154 (mètres)
   const [minX, minY, maxX, maxY] = bbox;
@@ -91,6 +94,93 @@ export default function Massing3D(): React.ReactElement {
     return "75";
   }, [parcel]);
 
+  // ✅ Persist snapshot (project + massing3d) — non bloquant
+  useEffect(() => {
+    try {
+      // Best-effort coords (si la parcelle porte un centroid, sinon rien)
+      const props: any = (parcel as any)?.properties ?? {};
+      const latCand =
+        props.lat ??
+        props.latitude ??
+        props.y ??
+        props.centroid_lat ??
+        props.center_lat ??
+        null;
+      const lonCand =
+        props.lon ??
+        props.lng ??
+        props.longitude ??
+        props.x ??
+        props.centroid_lon ??
+        props.center_lon ??
+        null;
+
+      const lat = Number.isFinite(Number(latCand)) ? Number(latCand) : undefined;
+      const lon = Number.isFinite(Number(lonCand)) ? Number(lonCand) : undefined;
+
+      // Patch project (best effort)
+      patchPromoteurSnapshot({
+        project: {
+          // On ne connaît pas forcément parcelId ici, mais on peut stocker un identifiant si présent
+          parcelId:
+            (props.parcel_id ?? props.parcelId ?? props.idu ?? props.IDU ?? props.id) != null
+              ? String(props.parcel_id ?? props.parcelId ?? props.idu ?? props.IDU ?? props.id)
+              : undefined,
+          // dept / epsg / bbox / coords
+          departement: inferredDeptCode as any, // si ton type snapshot ne l'a pas, ce champ sera ignoré côté TS chez toi
+          lat,
+          lon,
+        } as any,
+      });
+
+      // Patch massing3d module
+      const ok = stats.hasAny;
+
+      const summary = ok
+        ? `Parcelle ${stats.hasParcel ? "OK" : "absente"} · Bâtiments ${stats.buildingsCount} · Parkings ${stats.parkingsCount} · EPSG ${String(
+            epsg ?? "—"
+          )}`
+        : "Aucune donnée 3D disponible (dessine dans Implantation 2D).";
+
+      patchModule("massing3d" as any, {
+        ok,
+        summary,
+        data: {
+          epsg,
+          bbox,
+          lastUpdatedAt,
+          deptCode: inferredDeptCode,
+          counts: {
+            hasParcel: stats.hasParcel,
+            buildings: stats.buildingsCount,
+            parkings: stats.parkingsCount,
+          },
+          // On stocke les geojson (FeatureCollection) si présents
+          parcel: parcel ?? null,
+          buildings: buildings ?? null,
+          parkings: parkings ?? null,
+          reliefDiag: reliefDiag ?? null,
+        },
+      } as any);
+    } catch (e) {
+      console.warn("[snapshot] failed to persist massing3d:", e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    parcel,
+    buildings,
+    parkings,
+    epsg,
+    bbox,
+    lastUpdatedAt,
+    inferredDeptCode,
+    stats.hasAny,
+    stats.hasParcel,
+    stats.buildingsCount,
+    stats.parkingsCount,
+    reliefDiag,
+  ]);
+
   async function handleLoadReliefTest() {
     setReliefError(null);
     setReliefDiag(null);
@@ -149,6 +239,20 @@ export default function Massing3D(): React.ReactElement {
     }
   }
 
+  // ✅ Wrap clear to also update snapshot
+  const handleClearProjectData = () => {
+    clearImplantation();
+    try {
+      patchModule("massing3d" as any, {
+        ok: false,
+        summary: "Données projet vidées (store promoteur).",
+        data: null,
+      } as any);
+    } catch (e) {
+      console.warn("[snapshot] failed to mark massing3d cleared:", e);
+    }
+  };
+
   return (
     <div style={{ padding: 16, display: "grid", gap: 12 }}>
       {/* Header */}
@@ -189,7 +293,7 @@ export default function Massing3D(): React.ReactElement {
 
           <button
             type="button"
-            onClick={() => clearImplantation()}
+            onClick={handleClearProjectData}
             style={{
               padding: "8px 10px",
               borderRadius: 10,
