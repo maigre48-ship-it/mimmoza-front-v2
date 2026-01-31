@@ -1,0 +1,30 @@
+﻿{
+  "mode": "front-only",
+  "require_review_before_apply": true,
+  "forbidden_globs": [
+    "src/main.tsx",
+    "src/index.tsx",
+    "src/router/**",
+    "src/**/routes/**"
+  ],
+  "allowed_globs": [
+    "src/**",
+    "public/**",
+    "index.html",
+    "vite.config.*",
+    "package.json",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock"
+  ],
+  "max_files_changed": 20,
+  "max_lines_added": 2500,
+  "max_lines_deleted": 800,
+  "block_mass_deletes": true,
+  "block_renames": true,
+  "block_moves": true,
+  "checks": {
+    "run_lint": true,
+    "run_build": true
+  }
+}

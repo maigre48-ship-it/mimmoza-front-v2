@@ -1,0 +1,6 @@
+﻿.env.local
+runs/
+candidates/
+*.diff
+*.patch
+*.log
