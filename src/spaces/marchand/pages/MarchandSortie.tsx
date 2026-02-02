@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { TrendingUp, Clock, Euro, Star, AlertTriangle } from "lucide-react";
 import PageShell from "../shared/ui/PageShell";
 import SectionCard from "../shared/ui/SectionCard";
@@ -19,24 +19,6 @@ type ExitScenario = {
   delaiMois: number;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Valeurs par défaut pour un nouveau deal (pas de mock persistant)
-// ─────────────────────────────────────────────────────────────────────────────
-const DEFAULT_HOLDING_MENSUEL = 1_200;
-
-const DEFAULT_SCENARIOS: ExitScenario[] = [
-  { id: "A", label: "Revente rapide", strategy: "rapide", prixRevente: 250_000, delaiMois: 1 },
-  { id: "B", label: "Revente optimisée", strategy: "optimisee", prixRevente: 265_000, delaiMois: 4 },
-  { id: "C", label: "Location + revente", strategy: "location", prixRevente: 270_000, delaiMois: 12 },
-];
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Fallback quand Rentabilité n'a pas encore de computed (affichage warning)
-// ─────────────────────────────────────────────────────────────────────────────
-const FALLBACK_COUT_TOTAL = 0;
-const FALLBACK_MARGE = 0;
-const FALLBACK_DUREE_MOIS = 0;
-
 const eur = (n: number) =>
   n.toLocaleString("fr-FR", {
     style: "currency",
@@ -51,57 +33,42 @@ export default function MarchandSortie() {
   const snapTick = useMarchandSnapshotTick();
   const snapshot = useMemo(() => readMarchandSnapshot(), [snapTick]);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Deal actif dérivé du snapshot (réactif)
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ✅ Deal actif dérivé du snapshot (réactif)
   const activeDealId = snapshot.activeDealId ?? null;
   const activeDeal = useMemo(
     () => snapshot.deals.find((d) => d.id === activeDealId) ?? null,
     [snapshot.deals, activeDealId]
   );
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Valeurs "référence" depuis Rentabilité (source de vérité)
-  // ─────────────────────────────────────────────────────────────────────────────
+  // 🔗 Valeurs "référence" depuis Rentabilité (source de vérité)
   const rent = activeDealId ? snapshot.rentabiliteByDeal?.[activeDealId] : undefined;
   const rc = (rent as any)?.computed;
 
-  const coutTotalProjet = typeof rc?.coutTotal === "number" ? rc.coutTotal : FALLBACK_COUT_TOTAL;
-  const margeReference = typeof rc?.marge === "number" ? rc.marge : FALLBACK_MARGE;
-  const dureeReferenceMois = typeof rc?.dureeMois === "number" ? rc.dureeMois : FALLBACK_DUREE_MOIS;
+  const coutTotalProjet = typeof rc?.coutTotal === "number" ? rc.coutTotal : 240_000;
+  const margeReference = typeof rc?.marge === "number" ? rc.marge : 2_600;
+  const dureeReferenceMois = typeof rc?.dureeMois === "number" ? rc.dureeMois : 8;
 
   const hasComputedFromRentabilite = typeof rc?.coutTotal === "number";
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // State local (initialisé avec valeurs par défaut)
-  // ─────────────────────────────────────────────────────────────────────────────
-  const [holdingMensuel, setHoldingMensuel] = useState(DEFAULT_HOLDING_MENSUEL);
-  const [scenarios, setScenarios] = useState<ExitScenario[]>(DEFAULT_SCENARIOS);
+  const [holdingMensuel, setHoldingMensuel] = useState(1_200);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Ref unique pour tracker le dernier deal hydraté
-  // ─────────────────────────────────────────────────────────────────────────────
-  const lastHydratedDealIdRef = useRef<string | null>(null);
+  const [scenarios, setScenarios] = useState<ExitScenario[]>([
+    { id: "A", label: "Revente rapide", strategy: "rapide", prixRevente: 250_000, delaiMois: 1 },
+    { id: "B", label: "Revente optimisée", strategy: "optimisee", prixRevente: 265_000, delaiMois: 4 },
+    { id: "C", label: "Location + revente", strategy: "location", prixRevente: 270_000, delaiMois: 12 },
+  ]);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Hydratation: 1 fois par deal actif (changement de deal => re-hydrate)
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ✅ Hydration guard (évite overwrite au 1er render quand on change de deal)
+  const hydratedRef = useRef<Record<string, boolean>>({});
+
+  // Hydrate depuis snapshot (1 fois par deal)
   useEffect(() => {
-    // Pas de deal actif => rien à faire
     if (!activeDealId) return;
-
-    // Déjà hydraté pour ce deal => skip
-    if (lastHydratedDealIdRef.current === activeDealId) return;
 
     const saved = snapshot.sortieByDeal?.[activeDealId];
 
     if (saved) {
-      // Deal existant avec données sauvegardées
-      if (typeof (saved as any).holdingMensuel === "number") {
-        setHoldingMensuel((saved as any).holdingMensuel);
-      } else {
-        setHoldingMensuel(DEFAULT_HOLDING_MENSUEL);
-      }
+      if (typeof (saved as any).holdingMensuel === "number") setHoldingMensuel((saved as any).holdingMensuel);
 
       const savedScenarios = (saved as any).scenarios;
       if (Array.isArray(savedScenarios) && savedScenarios.length > 0) {
@@ -114,28 +81,17 @@ export default function MarchandSortie() {
             delaiMois: Number(s.delaiMois ?? 0),
           }))
         );
-      } else {
-        setScenarios(DEFAULT_SCENARIOS);
       }
-    } else {
-      // Nouveau deal ou pas de données => reset vers valeurs par défaut
-      setHoldingMensuel(DEFAULT_HOLDING_MENSUEL);
-      setScenarios(DEFAULT_SCENARIOS);
     }
 
-    // Marquer comme hydraté
-    lastHydratedDealIdRef.current = activeDealId;
-  }, [activeDealId, snapshot.sortieByDeal]);
+    hydratedRef.current[activeDealId] = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDealId]);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Persistance: uniquement après hydratation complète
-  // ─────────────────────────────────────────────────────────────────────────────
+  // Persist à chaque changement (uniquement après hydration)
   useEffect(() => {
-    // Pas de deal actif => pas de persistance
     if (!activeDealId) return;
-
-    // Guard: ne persiste que si on a bien hydraté ce deal
-    if (lastHydratedDealIdRef.current !== activeDealId) return;
+    if (!hydratedRef.current[activeDealId]) return;
 
     patchSortieForDeal(activeDealId, { holdingMensuel, scenarios });
   }, [activeDealId, holdingMensuel, scenarios]);

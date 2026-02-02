@@ -1,10 +1,15 @@
-﻿
-export default function Page() {
+import React from "react";
+import PageShell from "../shared/ui/PageShell";
+import SectionCard from "../shared/ui/SectionCard";
+
+export default function Sourcing() {
   return (
-    <div>
-      <h2 style={{ margin: "6px 0 8px", color: "#0f172a" }}>Sourcing</h2>
-      <p style={{ margin: 0, color: "#475569" }}>Recherche et import annonces</p>
-    </div>
+    <PageShell title="Sourcing" subtitle="Entrée des opportunités — leads, biens, import.">
+      <SectionCard title="Opportunités" subtitle="Placeholder : table + filtres + import (Leboncoin / SeLoger / CSV).">
+        <div style={{ color: "#334155", fontSize: 13, lineHeight: 1.7 }}>
+          Ici : liste des deals, statut (nouveau, visité, offre, sous promesse), tags, source.
+        </div>
+      </SectionCard>
+    </PageShell>
   );
 }
-

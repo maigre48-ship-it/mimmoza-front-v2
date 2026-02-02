@@ -1,52 +1,62 @@
-﻿import type { NavSection } from "../../components/layout/BaseShellLayout";
+import React from "react";
+import {
+  Workflow,
+  Search,
+  ClipboardCheck,
+  Calculator,
+  Hammer,
+  TrendingUp,
+  Download,
+} from "lucide-react";
 
-export const MARCHAND_SIDEBAR: NavSection[] = [
+export type MarchandNavItem = {
+  label: string;
+  path: string;
+  icon: React.ComponentType<{ size?: number; color?: string }>;
+  desc?: string;
+};
+
+export const MARCHAND_SIDEBAR: MarchandNavItem[] = [
   {
-    title: "Pipeline",
-    items: [
-      { label: "Tableau de bord", to: "/marchand-de-bien" },
-    ],
+    label: "Pipeline",
+    path: "/marchand-de-bien",
+    icon: Workflow,
+    desc: "Deal flow et statuts",
   },
   {
-    title: "Sourcing",
-    items: [
-      { label: "Recherche", to: "/marchand-de-bien/sourcing" },
-    ],
+    label: "Sourcing",
+    path: "/marchand-de-bien/sourcing",
+    icon: Search,
+    desc: "Biens, leads, opportunités",
   },
   {
-    title: "Qualification",
-    items: [
-      { label: "Qualification", to: "/marchand-de-bien/qualification" },
-    ],
+    label: "Qualification",
+    path: "/marchand-de-bien/qualification",
+    icon: ClipboardCheck,
+    desc: "Analyse rapide + go/no-go",
   },
   {
-    title: "Évaluation",
-    items: [
-      { label: "Estimation", to: "/marchand-de-bien/estimation" },
-    ],
+    label: "Rentabilité",
+    path: "/marchand-de-bien/rentabilite",
+    icon: Calculator,
+    desc: "Marge, TRI, cash requis",
   },
   {
-    title: "Rentabilité",
-    items: [
-      { label: "Rentabilité", to: "/marchand-de-bien/rentabilite" },
-    ],
+    label: "Exécution",
+    path: "/marchand-de-bien/execution",
+    icon: Hammer,
+    desc: "Travaux, planning, suivi",
   },
   {
-    title: "Exécution",
-    items: [
-      { label: "Exécution", to: "/marchand-de-bien/execution" },
-    ],
+    label: "Sortie",
+    path: "/marchand-de-bien/sortie",
+    icon: TrendingUp,
+    desc: "Revente / location / découpe",
   },
   {
-    title: "Sortie",
-    items: [
-      { label: "Sortie", to: "/marchand-de-bien/sortie" },
-    ],
-  },
-  {
-    title: "Exports",
-    items: [
-      { label: "Exports", to: "/marchand-de-bien/exports" },
-    ],
+    label: "Exports",
+    path: "/marchand-de-bien/exports",
+    icon: Download,
+    desc: "PDF / CSV (plus tard)",
   },
 ];

@@ -1,5 +1,5 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Calculator, Euro, TrendingUp, Clock, AlertTriangle } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Calculator, Euro, TrendingUp, Clock, ShieldAlert, AlertTriangle } from "lucide-react";
 import PageShell from "../shared/ui/PageShell";
 import SectionCard from "../shared/ui/SectionCard";
 import KpiCard from "../shared/ui/KpiCard";
@@ -9,9 +9,13 @@ import {
   getDefaultTaxConfig,
   type TaxConfig,
   type TaxRegime,
+  type VatMode,
 } from "../services/taxEngine";
 
-import { readMarchandSnapshot, patchRentabiliteForDeal } from "../shared/marchandSnapshot.store";
+import {
+  readMarchandSnapshot,
+  patchRentabiliteForDeal,
+} from "../shared/marchandSnapshot.store";
 
 import useMarchandSnapshotTick from "../shared/hooks/useMarchandSnapshotTick";
 
@@ -43,43 +47,10 @@ type Computed = {
   taxBreakdown: ReturnType<typeof computeNetAfterTaxes>;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Valeurs "vierges" pour nouveau deal (pas de data implicite)
-// ─────────────────────────────────────────────────────────────────────────────
-const DEFAULT_INPUTS_NEW_DEAL: Inputs = {
-  prixAchat: 0,
-  fraisNotairePct: 8,
-  fraisAgencePct: 0,
-  travaux: 0,
-  autresFrais: 0,
-  dureeMois: 0,
-  coutDettePctAn: 5.0,
-  apportPct: 20,
-  prixRevente: 0,
-  fraisVentePct: 6,
-};
-
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 const eur = (n: number) =>
   n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const pct = (n: number) => `${n.toFixed(1).replace(".", ",")} %`;
-
-/**
- * Détermine si l'utilisateur a réellement saisi des données.
- * Objectif: éviter "calcul automatique" avec des zéros => impression de mock.
- *
- * On considère "meaningful" si au moins un des champs financiers clé > 0 :
- * - prixAchat, travaux, autresFrais, prixRevente, dureeMois
- */
-function hasMeaningfulInputs(i: Inputs): boolean {
-  return (
-    (i.prixAchat ?? 0) > 0 ||
-    (i.travaux ?? 0) > 0 ||
-    (i.autresFrais ?? 0) > 0 ||
-    (i.prixRevente ?? 0) > 0 ||
-    (i.dureeMois ?? 0) > 0
-  );
-}
 
 function compute(inputs: Inputs, taxConfig: TaxConfig): Computed {
   const prixAchat = Math.max(0, inputs.prixAchat);
@@ -100,6 +71,7 @@ function compute(inputs: Inputs, taxConfig: TaxConfig): Computed {
   const tauxDette = Math.max(0, inputs.coutDettePctAn) / 100;
 
   const interets = dette * tauxDette * dureeAn;
+
   const coutTotal = coutProjet + interets;
 
   const taxBreakdown = computeNetAfterTaxes(
@@ -123,7 +95,9 @@ function compute(inputs: Inputs, taxConfig: TaxConfig): Computed {
   const roiAnPct = dureeAn > 0 ? margePct / dureeAn : 0;
 
   const triApproxPct =
-    dureeAn > 0 && coutTotal > 0 ? (Math.pow(1 + marge / coutTotal, 1 / dureeAn) - 1) * 100 : 0;
+    dureeAn > 0 && coutTotal > 0
+      ? (Math.pow(1 + marge / coutTotal, 1 / dureeAn) - 1) * 100
+      : 0;
 
   return {
     coutAchat,
@@ -141,6 +115,90 @@ function compute(inputs: Inputs, taxConfig: TaxConfig): Computed {
   };
 }
 
+function Field({
+  label,
+  value,
+  onChange,
+  suffix,
+  min,
+  step,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  suffix?: string;
+  min?: number;
+  step?: number;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>{label}</div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input
+          type="number"
+          value={Number.isFinite(value) ? value : 0}
+          min={min ?? 0}
+          step={step ?? 1}
+          onChange={(e) => onChange(Number(e.target.value))}
+          style={{
+            width: "100%",
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(15, 23, 42, 0.10)",
+            background: "rgba(255,255,255,0.95)",
+            fontWeight: 800,
+            color: "#0f172a",
+            outline: "none",
+          }}
+        />
+        {suffix && (
+          <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900, whiteSpace: "nowrap" }}>
+            {suffix}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Select({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>{label}</div>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: "100%",
+          padding: "10px 12px",
+          borderRadius: 12,
+          border: "1px solid rgba(15, 23, 42, 0.10)",
+          background: "rgba(255,255,255,0.95)",
+          fontWeight: 800,
+          color: "#0f172a",
+          outline: "none",
+        }}
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 export default function MarchandRentabilite() {
   // 🔗 Live snapshot (deal actif change => rerender)
   const snapTick = useMarchandSnapshotTick();
@@ -152,49 +210,49 @@ export default function MarchandRentabilite() {
     [snapshot.deals, activeDealId]
   );
 
-  // State initialisé avec valeurs vierges
-  const [base, setBase] = useState<Inputs>(DEFAULT_INPUTS_NEW_DEAL);
+  const [base, setBase] = useState<Inputs>({
+    prixAchat: 180000,
+    fraisNotairePct: 8,
+    fraisAgencePct: 0,
+    travaux: 35000,
+    autresFrais: 5000,
+    dureeMois: 8,
+    coutDettePctAn: 5.2,
+    apportPct: 20,
+    prixRevente: 260000,
+    fraisVentePct: 6,
+  });
+
   const [taxRegime, setTaxRegime] = useState<TaxRegime>("marchand");
   const [taxConfig, setTaxConfig] = useState<TaxConfig>(() => getDefaultTaxConfig("marchand"));
 
-  // Track dernier deal hydraté
-  const lastHydratedDealIdRef = useRef<string | null>(null);
+  // Hydration guard par deal (évite overwrite au 1er render)
+  const hydratedRef = useRef<Record<string, boolean>>({});
 
-  // Hydratation: 1 fois par deal actif
+  // Hydrate depuis snapshot (1 fois par deal actif)
   useEffect(() => {
     if (!activeDealId) return;
-    if (lastHydratedDealIdRef.current === activeDealId) return;
 
     const saved = snapshot.rentabiliteByDeal?.[activeDealId];
 
     if (saved) {
-      setBase((saved.inputs as Inputs) ?? DEFAULT_INPUTS_NEW_DEAL);
-      setTaxRegime((saved.taxRegime as TaxRegime) ?? "marchand");
-      setTaxConfig((saved.taxConfig as TaxConfig) ?? getDefaultTaxConfig("marchand"));
-    } else {
-      setBase(DEFAULT_INPUTS_NEW_DEAL);
-      setTaxRegime("marchand");
-      setTaxConfig(getDefaultTaxConfig("marchand"));
+      setBase((saved as any).inputs as Inputs);
+      setTaxRegime((saved as any).taxRegime as TaxRegime);
+      setTaxConfig((saved as any).taxConfig as TaxConfig);
     }
 
-    lastHydratedDealIdRef.current = activeDealId;
-  }, [activeDealId, snapshot.rentabiliteByDeal]);
+    hydratedRef.current[activeDealId] = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDealId]);
 
   const handleRegime = (r: TaxRegime) => {
     setTaxRegime(r);
     setTaxConfig(getDefaultTaxConfig(r));
   };
 
-  // IMPORTANT: ne calcule "vraiment" que si on a des inputs saisis
-  const meaningful = useMemo(() => hasMeaningfulInputs(base), [base]);
+  const computedBase = useMemo(() => compute(base, taxConfig), [base, taxConfig]);
 
-  const computedBase = useMemo(() => {
-    // Si pas de data saisie, on calcule quand même un objet pour éviter undefined,
-    // mais on n'affichera pas les KPI (Empty State).
-    return compute(base, taxConfig);
-  }, [base, taxConfig]);
-
-  // Snapshot computed (source de vérité pour Sortie)
+  // ✅ Snapshot computed (source de vérité pour Sortie)
   const computedForSnapshot = useMemo(
     () => ({
       coutTotal: computedBase.coutTotal,
@@ -214,13 +272,10 @@ export default function MarchandRentabilite() {
     ]
   );
 
-  // Persistance: UNIQUEMENT si (a) deal actif hydraté (b) inputs réellement saisis
+  // Persist à chaque changement (only after hydration)
   useEffect(() => {
     if (!activeDealId) return;
-    if (lastHydratedDealIdRef.current !== activeDealId) return;
-
-    // ⚠️ clé: on n'écrit pas dans le snapshot tant que l'utilisateur n'a rien saisi
-    if (!meaningful) return;
+    if (!hydratedRef.current[activeDealId]) return;
 
     patchRentabiliteForDeal(activeDealId, {
       inputs: base,
@@ -228,7 +283,7 @@ export default function MarchandRentabilite() {
       taxConfig,
       computed: computedForSnapshot,
     });
-  }, [activeDealId, base, taxRegime, taxConfig, computedForSnapshot, meaningful]);
+  }, [activeDealId, base, taxRegime, taxConfig, computedForSnapshot]);
 
   const pessimiste = useMemo<Inputs>(() => {
     return {
@@ -251,6 +306,9 @@ export default function MarchandRentabilite() {
     return { text: "Négatif", bg: "rgba(239,68,68,0.12)", bd: "rgba(239,68,68,0.28)", c: "#991b1b" };
   };
 
+  const b = badge(computedBase.marge);
+  const tb = computedBase.taxBreakdown;
+
   const showDmtoWarning = taxConfig.dmtoEnabled && base.fraisNotairePct > 0;
 
   // Guard: aucun deal actif
@@ -259,59 +317,12 @@ export default function MarchandRentabilite() {
       <PageShell title="Rentabilité" subtitle="Sélectionne un deal dans Pipeline pour synchroniser toutes les pages.">
         <SectionCard title="Aucun deal actif" subtitle="Va dans Pipeline et sélectionne un deal.">
           <div style={{ color: "#64748b", fontSize: 13, lineHeight: 1.6 }}>
-            Aucun deal n&apos;est sélectionné. Une fois un deal actif, cette page se pré-remplira automatiquement.
+            Aucun deal n'est sélectionné. Une fois un deal actif, cette page se pré-remplira automatiquement.
           </div>
         </SectionCard>
       </PageShell>
     );
   }
-
-  // ✅ Empty state: pas d'inputs => pas de KPI => plus d'effet "mock"
-  if (!meaningful) {
-    return (
-      <PageShell
-        title="Rentabilité"
-        subtitle="Renseigne les paramètres pour lancer le calcul. (Aucune donnée enregistrée pour ce deal.)"
-        right={
-          <div
-            style={{
-              padding: "8px 10px",
-              borderRadius: 999,
-              border: "1px solid rgba(148,163,184,0.35)",
-              background: "rgba(148,163,184,0.10)",
-              color: "#334155",
-              fontWeight: 900,
-              fontSize: 12,
-            }}
-          >
-            À renseigner
-          </div>
-        }
-      >
-        <SectionCard title="Données manquantes" subtitle={`Deal actif : ${activeDeal.title}`}>
-          <div style={{ color: "#64748b", fontSize: 13, lineHeight: 1.7 }}>
-            Aucun paramètre n&apos;est encore saisi pour ce deal.
-            <br />
-            Remplis le bloc <b>Paramètres</b> (prix d&apos;achat, revente, durée, travaux…) pour déclencher le calcul et enregistrer la rentabilité.
-          </div>
-        </SectionCard>
-
-        <div style={{ height: 12 }} />
-
-        {/* ⚠️ Tu as indiqué que ton UI complète est tronquée dans le message.
-            On garde ton placeholder pour que tu recolle le bloc complet. */}
-        <SectionCard title="Paramètres" subtitle={`Deal actif : ${activeDeal.title}`}>
-          <div style={{ color: "#64748b", fontSize: 13 }}>
-            (UI tronquée dans ton message) — recolle ici ton bloc complet Paramètres + Fiscalité + Résumé comme avant.
-          </div>
-        </SectionCard>
-      </PageShell>
-    );
-  }
-
-  // Ici: inputs présents => on calcule et on affiche
-  const b = badge(computedBase.marge);
-  const tb = computedBase.taxBreakdown;
 
   return (
     <PageShell
@@ -335,30 +346,10 @@ export default function MarchandRentabilite() {
     >
       {/* KPIs */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-        <KpiCard
-          label="Marge nette"
-          value={eur(computedBase.marge)}
-          hint={pct(computedBase.margePct)}
-          icon={<TrendingUp size={18} />}
-        />
-        <KpiCard
-          label="Cash requis (apport)"
-          value={eur(computedBase.apport)}
-          hint="Approx"
-          icon={<Euro size={18} />}
-        />
-        <KpiCard
-          label="Durée"
-          value={`${base.dureeMois} mois`}
-          hint={`Intérêts: ${eur(computedBase.interets)}`}
-          icon={<Clock size={18} />}
-        />
-        <KpiCard
-          label="TRI approx"
-          value={pct(computedBase.triApproxPct)}
-          hint={`ROI/an: ${pct(computedBase.roiAnPct)}`}
-          icon={<Calculator size={18} />}
-        />
+        <KpiCard label="Marge nette" value={eur(computedBase.marge)} hint={pct(computedBase.margePct)} icon={<TrendingUp size={18} />} />
+        <KpiCard label="Cash requis (apport)" value={eur(computedBase.apport)} hint="Approx" icon={<Euro size={18} />} />
+        <KpiCard label="Durée" value={`${base.dureeMois} mois`} hint={`Intérêts: ${eur(computedBase.interets)}`} icon={<Clock size={18} />} />
+        <KpiCard label="TRI approx" value={pct(computedBase.triApproxPct)} hint={`ROI/an: ${pct(computedBase.roiAnPct)}`} icon={<Calculator size={18} />} />
       </div>
 
       <div style={{ height: 12 }} />
@@ -393,7 +384,7 @@ export default function MarchandRentabilite() {
         </div>
       )}
 
-      {/* Détail fiscal (base) mini */}
+      {/* Détail fiscal (base) mini (conserve si tu l'avais ailleurs) */}
       <div style={{ marginTop: 12, color: "#64748b", fontSize: 12, lineHeight: 1.65 }}>
         <div style={{ fontWeight: 900, color: "#0f172a", marginBottom: 6 }}>Détail (base)</div>
         <div>• Frais vente : {eur(tb.fraisVente)}</div>
@@ -404,12 +395,6 @@ export default function MarchandRentabilite() {
             (due {eur((tb as any).vatDue ?? 0)} · récup {eur((tb as any).vatRecoverable ?? 0)})
           </span>
         </div>
-      </div>
-
-      {/* (Optionnel) Comparatif pessimiste — tu l'avais calculé, on ne l'affiche pas ici car UI tronquée */}
-      <div style={{ marginTop: 12, color: "#94a3b8", fontSize: 11 }}>
-        Scénario pessimiste calculé (non affiché ici tant que l'UI complète n'est pas recollée).
-        Marge pess : {eur(computedPess.marge)}
       </div>
     </PageShell>
   );

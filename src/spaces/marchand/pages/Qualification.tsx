@@ -1,10 +1,15 @@
-﻿
-export default function Page() {
+import React from "react";
+import PageShell from "../shared/ui/PageShell";
+import SectionCard from "../shared/ui/SectionCard";
+
+export default function Qualification() {
   return (
-    <div>
-      <h2 style={{ margin: "6px 0 8px", color: "#0f172a" }}>Qualification</h2>
-      <p style={{ margin: 0, color: "#475569" }}>Qualification rapide</p>
-    </div>
+    <PageShell title="Qualification" subtitle="Go / No-Go en 3 minutes : marge, risques, contraintes, sortie.">
+      <SectionCard title="Analyse express" subtitle="Placeholder : inputs + KPIs + décision.">
+        <div style={{ color: "#334155", fontSize: 13, lineHeight: 1.7 }}>
+          KPIs : prix achat + frais, budget travaux, prix revente estimé, marge €, marge %, TRI.
+        </div>
+      </SectionCard>
+    </PageShell>
   );
 }
-

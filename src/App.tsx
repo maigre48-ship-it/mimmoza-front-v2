@@ -41,13 +41,17 @@ import ParticulierHistorique from "./spaces/particulier/pages/Historique";
 // =========================
 // Marchand — pages (socle)
 // =========================
+import MarchandLayout from "./spaces/marchand/MarchandLayout";
 import MarchandPipeline from "./spaces/marchand/pages/Pipeline";
-import MarchandSourcing from "./spaces/marchand/pages/Sourcing";
+// import MarchandSourcing from "./spaces/marchand/pages/Sourcing"; // ⛔ remplacé par SourcingHomePage
 import MarchandQualification from "./spaces/marchand/pages/Qualification";
 import MarchandRentabilite from "./spaces/marchand/pages/Rentabilite";
 import MarchandExecution from "./spaces/marchand/pages/Execution";
 import MarchandSortie from "./spaces/marchand/pages/Sortie";
 import MarchandExports from "./spaces/marchand/pages/Exports";
+
+// ✅ Nouveau module Sourcing (transversal)
+import { SourcingHomePage } from "./spaces/sourcing";
 
 // =========================
 // Promoteur — pages (socle)
@@ -209,9 +213,12 @@ function AppRoot() {
           {/* =========================
               Marchand de bien
              ========================= */}
-          <Route path="/marchand-de-bien" element={<Outlet />}>
+          <Route path="/marchand-de-bien" element={<MarchandLayout />}>
             <Route index element={<MarchandPipeline />} />
-            <Route path="sourcing" element={<MarchandSourcing />} />
+
+            {/* ✅ Sourcing: utilise le nouveau module transversal */}
+            <Route path="sourcing" element={<SourcingHomePage />} />
+
             <Route path="qualification" element={<MarchandQualification />} />
             <Route path="rentabilite" element={<MarchandRentabilite />} />
             <Route path="execution" element={<MarchandExecution />} />
