@@ -8,6 +8,12 @@ import { useFoncierSelection, extractCommuneInsee } from "../shared/hooks/useFon
 
 // ✅ Snapshot store (existe déjà)
 import { patchPromoteurSnapshot, patchModule } from "../shared/promoteurSnapshot.store";
+// ✅ NOUVEAU: Import des helpers de synchronisation
+import { 
+  invalidatePluCache, 
+  checkAndInvalidatePluIfNeeded,
+  updateSessionKeys,
+} from "../shared/dataSyncHelpers";
 
 // TEMP: désactivé à cause du CORS (header x-client-info rejeté par foncier-lookup-v1)
 const ENABLE_FONCIER_LOOKUP_ENRICH = false;

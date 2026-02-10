@@ -1,52 +1,22 @@
-﻿import type { NavSection } from "../../components/layout/BaseShellLayout";
+﻿import { LayoutDashboard, Kanban, FileText, BarChart3, Gavel, Bell, ShieldAlert } from "lucide-react";
+import type { ComponentType } from "react";
 
-export const BANQUE_SIDEBAR: NavSection[] = [
-  {
-    title: "Portefeuille",
-    items: [
-      { label: "Tableau de bord", to: "/banque" },
-    ],
-  },
-  {
-    title: "Origination",
-    items: [
-      { label: "Origination", to: "/banque/origination" },
-    ],
-  },
-  {
-    title: "Analyse",
-    items: [
-      { label: "Analyse", to: "/banque/analyse" },
-    ],
-  },
-  {
-    title: "Évaluation",
-    items: [
-      { label: "Estimation", to: "/banque/estimation" },
-    ],
-  },
-  {
-    title: "Garanties",
-    items: [
-      { label: "Garanties", to: "/banque/garanties" },
-    ],
-  },
-  {
-    title: "Décision",
-    items: [
-      { label: "Décision", to: "/banque/decision" },
-    ],
-  },
-  {
-    title: "Monitoring",
-    items: [
-      { label: "Monitoring", to: "/banque/monitoring" },
-    ],
-  },
-  {
-    title: "Documents",
-    items: [
-      { label: "Documents", to: "/banque/documents" },
-    ],
-  },
+export interface BanqueNavItem {
+  label: string;
+  path: string;
+  icon: ComponentType<{ size?: number; className?: string }>;
+}
+
+export const banqueNav: BanqueNavItem[] = [
+  { label: "Dashboard", path: "/banque", icon: LayoutDashboard },
+  { label: "Dossiers", path: "/banque/dossiers", icon: FileText },      // ✅ manquait
+  { label: "Pipeline", path: "/banque/pipeline", icon: Kanban },
+  { label: "Monitoring", path: "/banque/monitoring", icon: Bell },
 ];
+
+// ⚠️ Ces liens doivent être construits AVEC l’ID du dossier (donc pas constants)
+export const banqueProjectNavBase = [
+  { label: "Risque",   slug: "risque",   icon: ShieldAlert },           // ✅ manquait
+  { label: "Analyse",  slug: "analyse",  icon: BarChart3 },
+  { label: "Décision", slug: "decision", icon: Gavel },
+] as const;

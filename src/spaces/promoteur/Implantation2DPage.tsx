@@ -8,6 +8,7 @@
 // ✅ V1.5: Layout fix - minimal gap between nav and toolbar (max 20px)
 // ✅ V1.6: Layout fix - fixed height layout, no page scroll, only right column scrolls
 // ✅ V1.7: Layout fix - scrollable page, sticky toolbar, large map as main element
+// ✅ V1.8: Data sync fix - PLU cache invalidation when parcels change
 
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
@@ -60,6 +61,8 @@ import { usePromoteurProjectStore, type Implantation2DMeta, type FloorsSpec as S
 // Snapshot store import for cross-module persistence
 // -----------------------------------------------------------------------------
 import { patchPromoteurSnapshot, patchModule } from "./shared/promoteurSnapshot.store";
+
+// ✅ FIX: dataSyncHelpers supprimé (causait des reloads en boucle)
 
 // Geoman CSS still needed for draw controls styling
 import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
@@ -182,9 +185,7 @@ function isValidResolvedRuleset(
   if (ruleset.version !== "plu_ruleset_v1") return false;
   if (!ruleset.completeness || ruleset.completeness.ok !== true) return false;
   return true;
-}
-
-// -----------------------------------------------------------------------------
+}// -----------------------------------------------------------------------------
 // Helpers: Geometry normalization
 // -----------------------------------------------------------------------------
 function normalizeToFeature(raw: unknown): Feature<Polygon | MultiPolygon> | null {
@@ -323,7 +324,6 @@ function drawnObjectsToFeatureCollection(
     const record = obj as unknown as Record<string, unknown>;
     let extractedFeature: Feature<Polygon> | null = null;
 
-    // Try obj.feature (Feature<Polygon>)
     if (record.feature && typeof record.feature === "object") {
       const feat = record.feature as Record<string, unknown>;
       if (feat.type === "Feature" && feat.geometry) {
@@ -338,7 +338,6 @@ function drawnObjectsToFeatureCollection(
       }
     }
 
-    // Try obj.geojson (Feature<Polygon> or Geometry Polygon)
     if (!extractedFeature && record.geojson && typeof record.geojson === "object") {
       const gj = record.geojson as Record<string, unknown>;
       if (gj.type === "Feature" && gj.geometry) {
@@ -359,7 +358,6 @@ function drawnObjectsToFeatureCollection(
       }
     }
 
-    // Try obj.geometry (Geometry Polygon)
     if (!extractedFeature && record.geometry && typeof record.geometry === "object") {
       const geom = record.geometry as Record<string, unknown>;
       if (geom.type === "Polygon" && Array.isArray(geom.coordinates)) {
@@ -371,7 +369,6 @@ function drawnObjectsToFeatureCollection(
       }
     }
 
-    // If we extracted a valid feature, add it
     if (extractedFeature) {
       features.push(extractedFeature);
     }
@@ -426,10 +423,9 @@ function FitToFeatures({ features }: { features: Feature<Polygon | MultiPolygon>
 
   useEffect(() => {
     if (features.length === 0) return;
-    if (fittedRef.current) return; // Only fit once on mount
+    if (fittedRef.current) return;
 
     try {
-      // Compute combined bbox of all features
       let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
 
       for (const feature of features) {
@@ -473,9 +469,7 @@ function FacadeClickHandler({
     },
   });
   return null;
-}
-
-// -----------------------------------------------------------------------------
+}// -----------------------------------------------------------------------------
 // Map Reculs Control (UI overlay)
 // -----------------------------------------------------------------------------
 function MapReculsControl({ reculs }: { reculs: AppliedReculs | null }) {
@@ -989,9 +983,7 @@ function SelectedParcelsPanel({
       )}
     </div>
   );
-}
-
-// -----------------------------------------------------------------------------
+}// -----------------------------------------------------------------------------
 // Main Component
 // -----------------------------------------------------------------------------
 export const Implantation2DPage: React.FC = () => {
@@ -1000,12 +992,8 @@ export const Implantation2DPage: React.FC = () => {
   const location = useLocation();
   const state = (location.state || {}) as LocationState;
 
-  // ✅ Extract studyId from query params
   const studyId = searchParams.get("study");
 
-  // --------------------------------------------------
-  // ✅ Use useFoncierSelection hook for multi-parcel support
-  // --------------------------------------------------
   const {
     selectedParcels,
     communeInsee: foncierCommuneInsee,
@@ -1014,14 +1002,8 @@ export const Implantation2DPage: React.FC = () => {
     isHydrated: foncierIsHydrated,
   } = useFoncierSelection({ studyId });
 
-  // --------------------------------------------------
-  // Zustand store action for handoff to Massing 3D / Bilan Promoteur
-  // --------------------------------------------------
   const setFromImplantation2D = usePromoteurProjectStore((s) => s.setFromImplantation2D);
 
-  // --------------------------------------------------
-  // ✅ Derived values from foncier selection
-  // --------------------------------------------------
   const parcelIds = useMemo(() => selectedParcels.map((p) => p.id), [selectedParcels]);
   const primaryParcelId = focusParcelId || parcelIds[0] || null;
   const communeInsee = foncierCommuneInsee || (primaryParcelId ? extractCommuneInsee(primaryParcelId) : null);
@@ -1033,9 +1015,6 @@ export const Implantation2DPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isLoadingGeometry, setIsLoadingGeometry] = useState(false);
 
-  // --------------------------------------------------
-  // Ruleset validation
-  // --------------------------------------------------
   const resolvedRuleset = useMemo<ResolvedPluRuleset | null>(() => {
     if (state.pluRuleset && typeof state.pluRuleset === "object") {
       return state.pluRuleset;
@@ -1057,23 +1036,16 @@ export const Implantation2DPage: React.FC = () => {
     return [];
   }, [resolvedRuleset]);
 
-  // --------------------------------------------------
-  // Building kind state (COLLECTIF / INDIVIDUEL)
-  // --------------------------------------------------
+  // ✅ FIX: PLU cache invalidation supprimée (causait reload en boucle)
+
   const [buildingKind, setBuildingKind] = useState<BuildingKind>("COLLECTIF");
 
-  // --------------------------------------------------
-  // Floors spec state
-  // --------------------------------------------------
   const [floorsSpec, setFloorsSpec] = useState<FloorsSpec>({
     aboveGroundFloors: 1,
     groundFloorHeightM: 2.8,
     typicalFloorHeightM: 2.7,
   });
 
-  // --------------------------------------------------
-  // User params state
-  // --------------------------------------------------
   const [draftParams, setDraftParams] = useState<ImplantationUserParams>(() => ({
     nbBatiments: 1,
     nbLogements: 1,
@@ -1109,22 +1081,14 @@ export const Implantation2DPage: React.FC = () => {
     return coreDirty || projDirty;
   }, [draftParams, appliedParams]);
 
-  // --------------------------------------------------
-  // UI state
-  // --------------------------------------------------
   const [showOSM, setShowOSM] = useState(true);
   const [result, setResult] = useState<ImplantationResult | null>(null);
   const [autoBuildingFeature, setAutoBuildingFeature] = useState<Feature<Polygon | MultiPolygon> | null>(null);
 
-  // --------------------------------------------------
-  // ✅ State for ALL parcel features (multi-parcel support)
-  // --------------------------------------------------
   const [parcelFeatures, setParcelFeatures] = useState<Feature<Polygon | MultiPolygon>[]>([]);
 
-  // ✅ Primary parcel feature (for reculs calculation - use first/focus parcel)
   const primaryParcelFeature = useMemo(() => {
     if (parcelFeatures.length === 0) return null;
-    // Find the feature matching focusParcelId, or use first
     if (focusParcelId) {
       const found = parcelFeatures.find((f) => {
         const props = f.properties || {};
@@ -1135,13 +1099,11 @@ export const Implantation2DPage: React.FC = () => {
     return parcelFeatures[0];
   }, [parcelFeatures, focusParcelId]);
 
-  // ✅ Combined parcel feature (union of all parcels) for total area calculation
   const combinedParcelFeature = useMemo<Feature<Polygon | MultiPolygon> | null>(() => {
     if (parcelFeatures.length === 0) return null;
     if (parcelFeatures.length === 1) return parcelFeatures[0];
 
     try {
-      // Union all parcel geometries
       let combined: Feature<Polygon | MultiPolygon> = parcelFeatures[0];
       for (let i = 1; i < parcelFeatures.length; i++) {
         const unioned = turf.union(
@@ -1154,21 +1116,16 @@ export const Implantation2DPage: React.FC = () => {
       return combined;
     } catch (err) {
       console.warn("[Implantation2D] Failed to union parcel features:", err);
-      // Fallback: return first feature
       return parcelFeatures[0];
     }
   }, [parcelFeatures]);
 
-  // --------------------------------------------------
-  // delegated to reculsEngine (uses primary parcel for now)
-  // --------------------------------------------------
   const reculsEngine = useReculsEngine({
     parcelFeature: primaryParcelFeature,
     resolvedRuleset,
     rulesetValid,
   });
 
-  // Destructure what we need from reculsEngine
   const {
     facadeSegment,
     selectFacadeFromClick,
@@ -1178,15 +1135,11 @@ export const Implantation2DPage: React.FC = () => {
     forbiddenBand,
   } = reculsEngine;
 
-  // --------------------------------------------------
-  // delegated to drawEngine
-  // --------------------------------------------------
   const drawEngine = useDrawEngine({
     envelopeFeature,
     onError: setError,
   });
 
-  // Destructure what we need from drawEngine
   const {
     editMode,
     setEditMode,
@@ -1202,28 +1155,20 @@ export const Implantation2DPage: React.FC = () => {
     clearAll,
   } = drawEngine;
 
-  // --------------------------------------------------
-  // ✅ FIX 1: Ref to track if user explicitly toggled edit mode off
-  // --------------------------------------------------
   const userDisabledEditModeRef = useRef(false);
 
-  // ✅ FIX 1: Auto-activate edit mode when facade is defined (on hydration/restore)
   useEffect(() => {
     if (facadeSegment && !editMode && !userDisabledEditModeRef.current) {
       setEditMode(true);
     }
   }, [facadeSegment, editMode, setEditMode]);
 
-  // ✅ FIX 2: Set default draw type to "building" when edit mode activates
   useEffect(() => {
     if (editMode) {
       setCurrentDrawType("building");
     }
   }, [editMode, setCurrentDrawType]);
 
-  // --------------------------------------------------
-  // ✅ Load cadastre geometry for ALL selected parcels
-  // --------------------------------------------------
   useEffect(() => {
     async function loadAllParcelGeometries() {
       if (!foncierIsHydrated) return;
@@ -1268,7 +1213,6 @@ export const Implantation2DPage: React.FC = () => {
           return;
         }
 
-        // ✅ Find ALL selected parcels in the cadastre
         const features: Feature<Polygon | MultiPolygon>[] = [];
         const notFound: string[] = [];
 
@@ -1277,7 +1221,6 @@ export const Implantation2DPage: React.FC = () => {
           if (found) {
             const norm = normalizeToFeature(found);
             if (norm) {
-              // Add parcel_id to properties for later identification
               norm.properties = { ...norm.properties, parcel_id: pid };
               features.push(norm);
             } else {
@@ -1314,10 +1257,6 @@ export const Implantation2DPage: React.FC = () => {
     loadAllParcelGeometries();
   }, [parcelIds, communeInsee, foncierIsHydrated]);
 
-  // --------------------------------------------------
-  // Sync to Zustand store for Massing 3D / Bilan Promoteur handoff
-  // AND persist to snapshot store for cross-module data sharing
-  // --------------------------------------------------
   useEffect(() => {
     if (!combinedParcelFeature) {
       return;
@@ -1327,7 +1266,6 @@ export const Implantation2DPage: React.FC = () => {
     const parkingsFC = drawnObjectsToFeatureCollection(drawnParkings);
     const bbox = turf.bbox(combinedParcelFeature) as [number, number, number, number];
 
-    // Build meta object for business parameters handoff
     const meta: Implantation2DMeta = {
       buildingKind,
       floorsSpec: {
@@ -1348,15 +1286,10 @@ export const Implantation2DPage: React.FC = () => {
       meta,
     });
 
-    // -------------------------------------------------------------------------
-    // Persist to snapshot store (non-blocking)
-    // -------------------------------------------------------------------------
     try {
-      // Compute center from parcel for project info
       const parcelCenter = turf.center(combinedParcelFeature);
       const centerCoords = parcelCenter.geometry.coordinates;
 
-      // Patch project info
       patchPromoteurSnapshot({
         project: {
           parcelId: primaryParcelId ?? undefined,
@@ -1367,7 +1300,6 @@ export const Implantation2DPage: React.FC = () => {
         },
       });
 
-      // Build summary string for module
       const summaryParts: string[] = [];
       summaryParts.push(`${parcelIds.length} parcelle(s)`);
       if (result) {
@@ -1378,7 +1310,6 @@ export const Implantation2DPage: React.FC = () => {
       }
       const summary = summaryParts.length > 0 ? summaryParts.join(" · ") : "Implantation en cours";
 
-      // Patch implantation2d module
       patchModule("implantation2d", {
         ok: !!(result && result.surfaceTerrainM2 > 0),
         summary,
@@ -1408,7 +1339,6 @@ export const Implantation2DPage: React.FC = () => {
         },
       });
     } catch (snapshotError) {
-      // Non-blocking: log but don't break the app
       console.warn("[Implantation2D] Snapshot persistence error:", snapshotError);
     }
   }, [
@@ -1432,16 +1362,12 @@ export const Implantation2DPage: React.FC = () => {
     forbiddenBand,
   ]);
 
-  // --------------------------------------------------
-  // ✅ FIX 1: Facade click handler - auto-activate edit mode on success
-  // --------------------------------------------------
   const handleFacadeClick = useCallback(
     (lngLat: [number, number]) => {
       if (!primaryParcelFeature) return;
       const success = selectFacadeFromClick(lngLat);
       if (success) {
         setError(null);
-        // ✅ Auto-activate edit mode after successful facade selection
         userDisabledEditModeRef.current = false;
         setEditMode(true);
       } else {
@@ -1451,13 +1377,9 @@ export const Implantation2DPage: React.FC = () => {
     [primaryParcelFeature, selectFacadeFromClick, setEditMode]
   );
 
-  // --------------------------------------------------
-  // ✅ FIX 1: Handler for explicit edit mode toggle by user
-  // --------------------------------------------------
   const handleEditModeToggle = useCallback(() => {
     const newValue = !editMode;
     if (!newValue) {
-      // User is explicitly disabling edit mode
       userDisabledEditModeRef.current = true;
     } else {
       userDisabledEditModeRef.current = false;
@@ -1465,19 +1387,27 @@ export const Implantation2DPage: React.FC = () => {
     setEditMode(newValue);
   }, [editMode, setEditMode]);
 
-  // --------------------------------------------------
-  // Compute implantation result (uses combined parcel area)
-  // --------------------------------------------------
   useEffect(() => {
-    if (hasMissingParams || !rulesetValid || !computedReculs) {
+    if (hasMissingParams) {
       setResult(null);
       setAutoBuildingFeature(null);
       return;
     }
+    
+    // ✅ FIX: PLU optionnel — utilise reculs 0m si pas de données PLU
+    const safeReculs = computedReculs ?? {
+      recul_avant_m: 0,
+      recul_lateral_m: 0,
+      recul_fond_m: 0,
+      reculMax: 0,
+      source: "plu" as const,
+      mode: "UNIFORM" as const,
+      hasData: false,
+      hasFacade: false,
+    };
 
     const basePluRules: PluRules | null = state.pluRules ?? null;
 
-    // ✅ Use foncierTotalAreaM2 for total area (sum of all parcels)
     const surfaceFromFoncier = foncierTotalAreaM2;
     const surfaceFromState = state.surfaceTerrainM2 ?? null;
     const surfaceFromGeom = combinedParcelFeature ? turf.area(combinedParcelFeature as turf.AllGeoJSON) : null;
@@ -1494,9 +1424,9 @@ export const Implantation2DPage: React.FC = () => {
     const userParamsWithReculs: ImplantationUserParams = {
       ...appliedParams,
       reculs: {
-        avant_m: computedReculs.recul_avant_m,
-        lateral_m: computedReculs.recul_lateral_m,
-        arriere_m: computedReculs.recul_fond_m,
+        avant_m: safeReculs.recul_avant_m,
+        lateral_m: safeReculs.recul_lateral_m,
+        arriere_m: safeReculs.recul_fond_m,
         alignement_obligatoire: false,
         source: "PLU_RULESET",
       } as Record<string, unknown>,
@@ -1516,7 +1446,6 @@ export const Implantation2DPage: React.FC = () => {
       return;
     }
 
-    // ✅ Use combinedParcelFeature for implantation calculation
     if (combinedParcelFeature) {
       try {
         const { result: implResult, buildableGeom } = computeImplantationV1({
@@ -1553,19 +1482,14 @@ export const Implantation2DPage: React.FC = () => {
     hasMissingParams,
   ]);
 
-  // --------------------------------------------------
-  // Map center (computed from all parcel features)
-  // --------------------------------------------------
   const center = useMemo(() => {
     if (parcelFeatures.length === 0) return [46.5, 2.5];
 
     try {
-      // Compute center of all parcels
       const fc = turf.featureCollection(parcelFeatures);
       const centroid = turf.center(fc);
       return [centroid.geometry.coordinates[1], centroid.geometry.coordinates[0]];
     } catch {
-      // Fallback to first parcel
       const geom = parcelFeatures[0].geometry;
       let first: number[] | null = null;
       if (geom.type === "Polygon") first = geom.coordinates?.[0]?.[0] ?? null;
@@ -1575,13 +1499,9 @@ export const Implantation2DPage: React.FC = () => {
     }
   }, [parcelFeatures]);
 
-  // --------------------------------------------------
-  // Map bounds (limit panning around ALL parcels)
-  // --------------------------------------------------
   const maxBounds = useMemo<L.LatLngBoundsExpression | undefined>(() => {
     if (parcelFeatures.length === 0) return undefined;
     try {
-      // Compute combined bbox
       let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
       for (const feature of parcelFeatures) {
         const bbox = turf.bbox(feature);
@@ -1591,24 +1511,21 @@ export const Implantation2DPage: React.FC = () => {
         maxLat = Math.max(maxLat, bbox[3]);
       }
 
-      // Add padding (roughly 100m in each direction)
       const padding = 0.001;
       return [
-        [minLat - padding, minLng - padding], // SW corner
-        [maxLat + padding, maxLng + padding], // NE corner
+        [minLat - padding, minLng - padding],
+        [maxLat + padding, maxLng + padding],
       ];
     } catch {
       return undefined;
     }
-  }, [parcelFeatures]);
-
-  // --------------------------------------------------
-  // ✅ V1.7: Styles - Scrollable page, sticky toolbar, large map
+  }, [parcelFeatures]);// --------------------------------------------------
+  // ✅ V1.8: Styles - Fixed layout issues
   // --------------------------------------------------
   const pageStyle: React.CSSProperties = {
     display: "flex",
     flexDirection: "row",
-    minHeight: "100vh",
+    minHeight: "calc(100vh - 180px)", // Soustraire la hauteur du header
     background: "#f8fafc",
     color: "#0f172a",
     padding: "12px 16px 16px 16px",
@@ -1623,7 +1540,6 @@ export const Implantation2DPage: React.FC = () => {
     gap: "8px",
     minWidth: 0,
   };
-  // ✅ V1.7: Right column - normal flow
   const rightCol: React.CSSProperties = {
     display: "flex",
     flexDirection: "column",
@@ -1677,13 +1593,10 @@ export const Implantation2DPage: React.FC = () => {
     cursor: "pointer",
     fontSize: 12,
   };
-  // ✅ V1.7: Toolbar - sticky below the app's fixed header
-  // L'app a un header fixe d'environ 200px (header + breadcrumb + nav + tabs)
-  // La toolbar doit coller juste en dessous
+  // ✅ V1.8: Toolbar - position relative, pas sticky
   const toolbarStyle: React.CSSProperties = {
-    position: "sticky",
-    top: 200, // Offset pour le header fixe de l'app
-    zIndex: 100,
+    position: "relative",
+    zIndex: 10,
     background: "white",
     borderRadius: 12,
     padding: "10px 14px",
@@ -1695,10 +1608,10 @@ export const Implantation2DPage: React.FC = () => {
     flexWrap: "wrap",
   };
 
-  // ✅ V1.7: Map container - large height for main element
   const mapContainerStyle: React.CSSProperties = {
-    height: "70vh", // 70% de la hauteur visible
-    minHeight: 500,
+    height: "60vh",
+    minHeight: 400,
+    maxHeight: 600,
     overflow: "hidden",
     borderRadius: 12,
   };
@@ -1709,7 +1622,6 @@ export const Implantation2DPage: React.FC = () => {
   // Render
   // --------------------------------------------------
 
-  // ✅ Show loading state while foncier selection is hydrating
   if (!foncierIsHydrated) {
     return (
       <div style={pageStyle}>
@@ -1723,7 +1635,6 @@ export const Implantation2DPage: React.FC = () => {
 
   return (
     <div style={pageStyle}>
-      {/* Blocking panel: missing params */}
       {hasMissingParams && (
         <div
           style={{ width: "100%", display: "flex", justifyContent: "center", alignItems: "flex-start", paddingTop: 40 }}
@@ -1739,70 +1650,25 @@ export const Implantation2DPage: React.FC = () => {
         </div>
       )}
 
-      {/* Blocking panel: invalid ruleset */}
-      {!hasMissingParams && !rulesetValid && (
-        <div style={{ width: "100%" }}>
-          <PluRulesetBlockingPanel
-            missingFields={rulesetMissingFields}
-            onReturnClick={() => {
-              const path = studyId ? `/promoteur/plu-faisabilite?study=${encodeURIComponent(studyId)}` : "/promoteur/plu-faisabilite";
-              navigate(path);
-            }}
-          />
-          {parcelFeatures.length > 0 && (
-            <div style={card}>
-              <div style={title}>{"Aperçu des parcelles (lecture seule)"}</div>
-              <div style={{ height: 400 }}>
-                <MapContainer
-                  center={center as [number, number]}
-                  zoom={19}
-                  minZoom={16}
-                  maxZoom={22}
-                  scrollWheelZoom={true}
-                  style={{ height: "100%", width: "100%", borderRadius: 12, background: "#ffffff" }}
-                >
-                  <FitToFeatures features={parcelFeatures} />
-                  <TileLayer
-                    attribution="&copy; OpenStreetMap"
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    maxNativeZoom={19}
-                    maxZoom={22}
-                  />
-                  {parcelFeatures.map((feature, idx) => (
-                    <GeoJSON
-                      key={`parcel-readonly-${idx}`}
-                      data={feature}
-                      style={() => ({ weight: 2, color: "#f97316", fillColor: "#fed7aa", fillOpacity: 0.14 })}
-                    />
-                  ))}
-                </MapContainer>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      {/* ✅ FIX: PLU blocking panel supprimé — warning non-bloquant ajouté dans l'UI interactive */}
 
-      {/* Loading geometry state */}
-      {!hasMissingParams && rulesetValid && isLoadingGeometry && (
+      {!hasMissingParams && isLoadingGeometry && (
         <div style={card}>
           <div style={title}>{"Implantation 2D"}</div>
           <p style={{ color: "#334155" }}>{"Chargement des géométries de parcelles..."}</p>
         </div>
       )}
 
-      {/* Loading state */}
-      {!hasMissingParams && rulesetValid && !isLoadingGeometry && !result && (
+      {!hasMissingParams && !isLoadingGeometry && !result && (
         <div style={card}>
           <div style={title}>{"Implantation 2D"}</div>
           <p style={{ color: "#334155" }}>{"Chargement des données..."}</p>
         </div>
       )}
 
-      {/* Main content */}
-      {!hasMissingParams && rulesetValid && !isLoadingGeometry && result && (
+      {!hasMissingParams && !isLoadingGeometry && result && (
         <>
           <div style={leftCol}>
-            {/* ✅ V1.7: Sticky toolbar */}
             <div style={toolbarStyle}>
               <button style={ghostButton} onClick={() => navigate(-1)}>
                 {"← Retour"}
@@ -1826,7 +1692,6 @@ export const Implantation2DPage: React.FC = () => {
                   if (facadeSegment) {
                     resetFacade();
                     setError(null);
-                    // Reset edit mode state when facade is reset
                     userDisabledEditModeRef.current = false;
                     setEditMode(false);
                   } else {
@@ -1848,10 +1713,8 @@ export const Implantation2DPage: React.FC = () => {
               >
                 {editMode ? "✓ Mode édition actif" : "Mode édition"}
               </button>
-              {/* ✅ FIX 2: REMOVED the building/parking dropdown - type is now controlled via ShapeLibraryPanel */}
             </div>
 
-            {/* ✅ V1.7: Card with map */}
             <div style={card}>
               <div style={title}>{"Implantation 2D — Mode Édition"}</div>
               <p style={{ fontSize: 13, opacity: 0.8, marginTop: 0, marginBottom: 8, color: "#475569" }}>
@@ -1863,7 +1726,45 @@ export const Implantation2DPage: React.FC = () => {
                 )}
               </p>
 
-              {/* Edit mode instructions */}
+              {!rulesetValid && (
+                <div
+                  style={{
+                    fontSize: 12,
+                    marginBottom: 8,
+                    padding: "10px 14px",
+                    background: "rgba(251,146,60,0.08)",
+                    borderRadius: 10,
+                    border: "1px solid rgba(251,146,60,0.3)",
+                    color: "#ea580c",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span>{"⚠️ Règles PLU non chargées — reculs à 0m. Complétez l'étape PLU pour des valeurs précises."}</span>
+                  <button
+                    style={{
+                      padding: "4px 12px",
+                      borderRadius: 999,
+                      border: "1px solid rgba(251,146,60,0.5)",
+                      background: "rgba(251,146,60,0.15)",
+                      color: "#ea580c",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontSize: 12,
+                      whiteSpace: "nowrap",
+                      marginLeft: 12,
+                    }}
+                    onClick={() => {
+                      const path = studyId ? `/promoteur/plu-faisabilite?study=${encodeURIComponent(studyId)}` : "/promoteur/plu-faisabilite";
+                      navigate(path);
+                    }}
+                  >
+                    {"Configurer PLU →"}
+                  </button>
+                </div>
+              )}
+
               {editMode && (
                 <div
                   style={{
@@ -1884,7 +1785,6 @@ export const Implantation2DPage: React.FC = () => {
 
               {error && <p style={{ fontSize: 12, color: "#ea580c", marginTop: 0 }}>{error}</p>}
 
-              {/* Message d'instruction pour définir la façade */}
               {parcelFeatures.length > 0 && !facadeSegment && !editMode && (
                 <div
                   style={{
@@ -1901,9 +1801,6 @@ export const Implantation2DPage: React.FC = () => {
                 </div>
               )}
 
-              {/* ✅ FIX 1: REMOVED the message asking to click "Mode édition" - it's now automatic */}
-
-              {/* Warning if forbidden band missing */}
               {!forbiddenBand &&
                 parcelFeatures.length > 0 &&
                 envelopeFeature &&
@@ -1914,7 +1811,6 @@ export const Implantation2DPage: React.FC = () => {
                   </p>
                 )}
 
-              {/* ✅ V1.7: Map container - large height */}
               <div style={mapContainerStyle}>
                 {parcelFeatures.length > 0 ? (
                   <MapContainer
@@ -1938,16 +1834,9 @@ export const Implantation2DPage: React.FC = () => {
                       backgroundSize: "40px 40px",
                     }}
                   >
-                    {/* ✅ Fit bounds to ALL parcel features */}
                     <FitToFeatures features={parcelFeatures} />
-
-                    {/* Reculs control overlay */}
                     <MapReculsControl reculs={computedReculs} />
-
-                    {/* Facade click handler (only when NOT in edit mode) */}
                     <FacadeClickHandler enabled={!editMode && parcelFeatures.length > 0} onClickLatLng={handleFacadeClick} />
-
-                    {/* delegated to drawEngine - Geoman controls + transform handlers */}
                     <DrawEngineLayers
                       drawEngine={drawEngine}
                       onCreated={handleObjectCreated}
@@ -1962,7 +1851,6 @@ export const Implantation2DPage: React.FC = () => {
                       />
                     )}
 
-                    {/* ✅ ALL Parcels - READ ONLY */}
                     {parcelFeatures.map((feature, idx) => {
                       const isPrimary = feature.properties?.parcel_id === primaryParcelId;
                       return (
@@ -1979,7 +1867,6 @@ export const Implantation2DPage: React.FC = () => {
                       );
                     })}
 
-                    {/* Forbidden band (setback zone) - delegated to reculsEngine */}
                     {forbiddenBand && (
                       <GeoJSON
                         key={`forbidden-band-${Date.now()}`}
@@ -1994,7 +1881,6 @@ export const Implantation2DPage: React.FC = () => {
                       />
                     )}
 
-                    {/* Auto building (when no drawn objects and not in edit mode) */}
                     {autoBuildingFeature && drawnBuildings.length === 0 && !editMode && (
                       <GeoJSON
                         key="auto-building"
@@ -2003,7 +1889,6 @@ export const Implantation2DPage: React.FC = () => {
                       />
                     )}
 
-                    {/* Facade segment - delegated to reculsEngine */}
                     {facadeSegment && (
                       <GeoJSON
                         key={`facade-${Date.now()}`}
@@ -2034,13 +1919,11 @@ export const Implantation2DPage: React.FC = () => {
           </div>
 
           <div style={rightCol}>
-            {/* ✅ Selected parcels summary */}
             <SelectedParcelsPanel
               parcels={selectedParcels.map((p) => ({ id: p.id, area_m2: p.area_m2 ?? null }))}
               totalAreaM2={foncierTotalAreaM2}
             />
 
-            {/* PLU constraints */}
             <div style={card}>
               <div style={title}>{"Contraintes PLU"}</div>
               <div style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 6, color: "#334155" }}>
@@ -2052,9 +1935,7 @@ export const Implantation2DPage: React.FC = () => {
                   {"Emprise max : "}
                   <strong style={{ color: "#0f172a" }}>{`${result.surfaceEmpriseMaxM2.toFixed(0)} m²`}</strong>
                 </div>
-                <div
-                  style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #e2e8f0" }}
-                >
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #e2e8f0" }}>
                   <div style={{ fontWeight: 600, marginBottom: 6, color: "#0f172a" }}>
                     {"Reculs : "}
                     <span
@@ -2099,9 +1980,7 @@ export const Implantation2DPage: React.FC = () => {
                     <div style={{ opacity: 0.75 }}>{"En attente du ruleset PLU…"}</div>
                   )}
                 </div>
-                <div
-                  style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #e2e8f0" }}
-                >
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #e2e8f0" }}>
                   <div style={{ fontWeight: 600, marginBottom: 6, color: "#0f172a" }}>{"Façade"}</div>
                   {facadeSegment ? (
                     <div style={{ color: "#16a34a" }}>{"✓ Définie — reculs directionnels actifs"}</div>
@@ -2112,14 +1991,12 @@ export const Implantation2DPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Volumetry & surfaces summary */}
             <VolumetrySummaryPanel
               buildingKind={buildingKind}
               floorsSpec={floorsSpec}
               drawnBuildings={drawnBuildings}
             />
 
-            {/* Drawn objects - data from drawEngine */}
             <DrawnObjectsPanel
               buildings={drawnBuildings}
               parkings={drawnParkings}
@@ -2129,13 +2006,11 @@ export const Implantation2DPage: React.FC = () => {
               onClearAll={clearAll}
             />
 
-            {/* Shape library - delegates creation to drawEngine */}
             <ShapeLibraryPanel
               onCreateShape={createFromTemplate}
               disabled={!editMode || !envelopeFeature}
             />
 
-            {/* Parking & emprise */}
             <div style={card}>
               <div style={title}>{"Parkings & emprise"}</div>
               <div style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 4, color: "#334155" }}>
@@ -2154,7 +2029,6 @@ export const Implantation2DPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Project parameters */}
             <div style={card}>
               <div style={title}>{"Paramètres"}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

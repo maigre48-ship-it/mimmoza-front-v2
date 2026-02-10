@@ -1,27 +1,27 @@
 ﻿// ============================================
-// MarchePage.tsx - VERSION CORRIGÉE DÉFINITIVE
+// MarchePage.tsx - VERSION 2.4
 // ============================================
-// CHANGELOG:
-// - FIX #1: Icônes dynamiques sécurisées avec fallbacks
-// - FIX #2: Error Boundary global ajouté
-// - FIX #3: Guards explicites dans tous les composants
-// - FIX #4: Accès aux données sécurisés avec optional chaining
-// - FIX #5: Logs de debug structurés et durables
-// - FIX #6: Validation du retour de getProjectConfig
-// - FIX #7: Snapshot localStorage pour synchronisation Promoteur
-// - FIX #8: Correction import chemin relatif + nom fonction patchProjectInfo
+// AMÉLIORATIONS v2.4:
+// - Carte correctement centrée sur la parcelle
+// - Labels BPE complets (plus de troncature)
+// - Fusion EHPAD + Résidence senior
+// - Scoring différencié par type de projet
+// - PDF fonctionnel
 // ============================================
 
 import React, { useState, useCallback, useEffect, useRef, useMemo, Component, ErrorInfo, ReactNode } from "react";
 import { 
   Search, MapPin, Grid3X3, Loader2, X, Building2, 
   Users, Euro, ShoppingCart, Stethoscope, GraduationCap, 
-  TrendingUp, TrendingDown, Shield, Fuel, Mail, Banknote, CheckCircle,
+  TrendingUp, TrendingDown, Banknote, CheckCircle,
   AlertTriangle, Home, Activity, Download,
-  ChevronDown, ChevronUp, Heart, Pill,
-  Target, Building, Hotel, Briefcase,
+  ChevronDown, ChevronUp, Heart,
+  Target, Building,
   Eye, Minus, MapPinned,
-  Compass, FileText, Phone, Store
+  Compass, FileText, Train, Bus,
+  Bed, BadgeEuro, Baby, UserCheck, Briefcase,
+  PiggyBank, School,
+  Theater, Dumbbell
 } from "lucide-react";
 
 import type { LucideIcon } from "lucide-react";
@@ -33,88 +33,245 @@ import type {
   ProjectType,
   AddressSuggestion,
   ParcelInfo,
-  InseeData as BaseInseeData,
-  ServiceProche,
-  MarketStudyResult,
-  EHPADData,
   DataSourceType,
 } from "./types/market.types";
 
 import { PROJECT_CONFIGS, getProjectConfig } from "./config/project.config";
 import { searchAddress } from "./services/address.service";
 import { searchParcel } from "./services/parcel.service";
-import { fetchAllEHPAD, convertToEhpadData } from "./services/finess.service";
-import { normalizeInseeData } from "./services/insee.normalize";
 
 // ============================================
-// IMPORT SNAPSHOT STORE - Chemin relatif corrigé
+// IMPORT SNAPSHOT STORE
 // ============================================
 import { patchProjectInfo, patchModule } from "../../shared/promoteurSnapshot.store";
 
 // ============================================
-// DEBUG FLAGS - Mettre à false en production
+// DEBUG FLAGS
 // ============================================
-const DEBUG_SERVICES = true;
-const DEBUG_INSEE = true;
-const DEBUG_BPE = true;
-const DEBUG_SHOPS = true;
-const DEBUG_RENDER = true;
+const DEBUG_MODE = true;
 
-// ============================================
-// LOG HELPERS - Logs structurés et durables
-// ============================================
-const LOG_PREFIX = {
-  SUBMIT: '🚀 [SUBMIT]',
-  API: '📡 [API]',
-  RENDER: '🎨 [RENDER]',
-  ERROR: '❌ [ERROR]',
-  DATA: '📊 [DATA]',
-  FINESS: '🏥 [FINESS]',
-  SHOPS: '🛒 [SHOPS]',
-  INSEE: '👥 [INSEE]',
-};
-
-const logSubmit = (message: string, data?: unknown) => {
-  console.log(`${LOG_PREFIX.SUBMIT} ${message}`, data ?? '');
-};
-
-const logApi = (message: string, data?: unknown) => {
-  console.log(`${LOG_PREFIX.API} ${message}`, data ?? '');
-};
-
-const logRender = (component: string, data?: unknown) => {
-  if (DEBUG_RENDER) {
-    console.log(`${LOG_PREFIX.RENDER} ${component}`, data ?? '');
-  }
-};
-
-const logError = (message: string, error?: unknown) => {
-  console.error(`${LOG_PREFIX.ERROR} ${message}`, error ?? '');
-};
-
-const logData = (source: string, data?: unknown) => {
-  console.log(`${LOG_PREFIX.DATA} ${source}`, data ?? '');
+const log = (prefix: string, message: string, data?: unknown) => {
+  if (DEBUG_MODE) console.log(`${prefix} ${message}`, data ?? '');
 };
 
 // ============================================
-// ERROR BOUNDARY - Capture les crashes React
+// TYPES pour market-study-promoteur-v1.0.8
+// ============================================
+interface DvfTransaction {
+  date_mutation: string;
+  valeur_fonciere: number;
+  surface_reelle_bati: number;
+  type_local: string;
+  commune: string;
+  prix_m2: number;
+}
+
+interface DvfData {
+  nb_transactions: number;
+  prix_m2_median: number;
+  prix_m2_moyen: number;
+  prix_m2_min: number;
+  prix_m2_max: number;
+  evolution_prix_pct: number | null;
+  transactions: DvfTransaction[];
+  coverage: string;
+}
+
+interface InseeData {
+  code_commune: string;
+  commune_nom: string;
+  departement: string;
+  region: string;
+  population: number;
+  densite: number;
+  revenu_median: number;
+  taux_chomage: number;
+  pct_proprietaires: number;
+  pct_moins_15?: number;
+  pct_15_29?: number;
+  pct_30_44?: number;
+  pct_45_59?: number;
+  pct_60_74?: number;
+  pct_plus_60?: number;
+  pct_plus_65?: number;
+  pct_plus_75?: number;
+  menages_total?: number;
+  taille_moyenne_menage?: number;
+  pct_familles_monoparentales?: number;
+  pct_personnes_seules?: number;
+  pct_retraites?: number;
+  pct_etudiants?: number;
+  pct_actifs?: number;
+  pct_logements_vacants?: number;
+  pct_locataires?: number;
+  coverage: string;
+}
+
+interface TransportStop {
+  name: string;
+  type: string;
+  distance_m: number;
+}
+
+interface TransportData {
+  score: number;
+  stops: TransportStop[];
+  nearest_stop_m: number;
+  has_metro_train: boolean;
+  has_tram: boolean;
+  coverage: string;
+}
+
+interface BpeDetail {
+  label: string;
+  distance_m: number;
+}
+
+interface BpeCategory {
+  count: number;
+  details: BpeDetail[];
+}
+
+interface BpeData {
+  total_equipements: number;
+  score: number;
+  commerces: BpeCategory;
+  sante: BpeCategory;
+  services: BpeCategory;
+  education: BpeCategory;
+  loisirs?: BpeCategory;
+  sport?: BpeCategory;
+  coverage: string;
+}
+
+// ============================================
+// TYPES EHPAD v1.0.8
+// ============================================
+interface EhpadEtablissement {
+  nom: string;
+  distance_m: number;
+  capacite: number;
+  capacite_estimee?: boolean;
+  finess?: string;
+  commune?: string;
+  tarifs?: {
+    hebergement_jour: number | null;
+    dependance_gir_1_2: number | null;
+    dependance_gir_3_4: number | null;
+    dependance_gir_5_6: number | null;
+    cout_mensuel_gir_1_2: number | null;
+  };
+  statut_juridique?: string;
+  habilite_aide_sociale?: boolean;
+}
+
+interface PrixStats {
+  prix_hebergement_min: number;
+  prix_hebergement_max: number;
+  prix_hebergement_median: number | null;
+  prix_hebergement_moyen: number;
+  nb_etablissements_avec_prix: number;
+}
+
+interface TarifsGir {
+  tarif_gir_1_2_moyen: number | null;
+  tarif_gir_3_4_moyen: number | null;
+  tarif_gir_5_6_moyen: number | null;
+}
+
+interface EhpadConcurrence {
+  etablissements: EhpadEtablissement[];
+  count: number;
+  total_lits: number;
+  prix_stats: PrixStats | null;
+  tarifs_gir: TarifsGir | null;
+  nb_ehpad_departement: number;
+  sources: {
+    cnsa_tarifs: number;
+    overpass: number;
+  };
+  coverage: string;
+}
+
+interface AnalysePrix extends PrixStats, TarifsGir {
+  cout_mensuel_moyen_gir_1_2: number | null;
+  interpretation: string | null;
+}
+
+interface EhpadSpecific {
+  concurrence: EhpadConcurrence;
+  demographie_senior: {
+    population_75_plus: number;
+    pct_75_plus: number;
+  };
+  offre_sante: {
+    pharmacies: number;
+  };
+  indicateurs_marche: {
+    densite_lits_1000_seniors: number | null;
+    taux_equipement_zone: "sous_equipe" | "equilibre" | "sur_equipe";
+    potentiel_marche: "fort" | "moyen" | "faible";
+  };
+  analyse_prix: AnalysePrix | null;
+}
+
+interface MarketStudyApiResponse {
+  success: boolean;
+  version: string;
+  meta: {
+    lat: number;
+    lon: number;
+    location_source?: string;
+    location_label?: string;
+    commune_insee: string;
+    commune_nom: string;
+    departement: string;
+    project_type: string;
+    project_type_label: string;
+    radius_km: number;
+    generated_at: string;
+  };
+  core: {
+    dvf: DvfData;
+    insee: InseeData;
+    transport: TransportData;
+    bpe: BpeData;
+  };
+  specific: EhpadSpecific | Record<string, unknown>;
+  scores: {
+    demande: number;
+    offre: number;
+    accessibilite: number;
+    environnement: number;
+    global: number;
+  };
+  insights: Array<{
+    type: string;
+    category: string;
+    message: string;
+  }>;
+  debug?: {
+    timings: Record<string, number>;
+  };
+}
+
+// ============================================
+// ERROR BOUNDARY
 // ============================================
 interface ErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
-  errorInfo: ErrorInfo | null;
 }
 
 interface ErrorBoundaryProps {
   children: ReactNode;
-  fallback?: ReactNode;
   componentName?: string;
 }
 
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: null, errorInfo: null };
+    this.state = { hasError: false, error: null };
   }
 
   static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
@@ -122,62 +279,29 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    logError(`ErrorBoundary caught error in ${this.props.componentName || 'unknown component'}`, {
-      error: error.message,
-      stack: error.stack,
-      componentStack: errorInfo.componentStack,
-    });
-    this.setState({ errorInfo });
+    console.error(`ErrorBoundary caught error in ${this.props.componentName}:`, error, errorInfo);
   }
 
   render() {
     if (this.state.hasError) {
-      if (this.props.fallback) {
-        return this.props.fallback;
-      }
       return (
         <div style={{
-          padding: "40px",
-          textAlign: "center",
-          background: "#fef2f2",
-          borderRadius: "12px",
-          border: "1px solid #fecaca",
-          margin: "20px"
+          padding: "40px", textAlign: "center", background: "#fef2f2",
+          borderRadius: "12px", border: "1px solid #fecaca", margin: "20px"
         }}>
           <AlertTriangle size={48} color="#dc2626" style={{ marginBottom: "16px" }} />
           <h3 style={{ color: "#991b1b", marginBottom: "8px" }}>
-            Erreur de rendu dans {this.props.componentName || 'un composant'}
+            Erreur dans {this.props.componentName || 'un composant'}
           </h3>
-          <p style={{ color: "#b91c1c", fontSize: "14px", marginBottom: "16px" }}>
-            {this.state.error?.message || 'Une erreur inattendue est survenue'}
-          </p>
           <button
-            onClick={() => this.setState({ hasError: false, error: null, errorInfo: null })}
+            onClick={() => this.setState({ hasError: false, error: null })}
             style={{
-              padding: "10px 20px",
-              background: "#dc2626",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-              cursor: "pointer"
+              padding: "10px 20px", background: "#dc2626", color: "white",
+              border: "none", borderRadius: "8px", cursor: "pointer"
             }}
           >
             Réessayer
           </button>
-          {DEBUG_RENDER && this.state.error?.stack && (
-            <pre style={{
-              marginTop: "16px",
-              padding: "12px",
-              background: "#fee2e2",
-              borderRadius: "8px",
-              fontSize: "11px",
-              textAlign: "left",
-              overflow: "auto",
-              maxHeight: "200px"
-            }}>
-              {this.state.error.stack}
-            </pre>
-          )}
         </div>
       );
     }
@@ -186,124 +310,35 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 // ============================================
-// SAFE ICON COMPONENT - Rendu sécurisé des icônes
+// SAFE ICON COMPONENT
 // ============================================
-interface SafeIconProps {
+const SafeIcon: React.FC<{
   icon?: LucideIcon | null;
   fallback?: LucideIcon;
   size?: number;
   color?: string;
   style?: React.CSSProperties;
-  className?: string;
-}
-
-const SafeIcon: React.FC<SafeIconProps> = ({ 
-  icon, 
-  fallback = Building2, 
-  size = 20, 
-  color,
-  style,
-  className 
-}) => {
+}> = ({ icon, fallback = Building2, size = 20, color, style }) => {
   const IconComponent = icon && typeof icon === 'function' ? icon : fallback;
-  
   try {
-    return <IconComponent size={size} color={color} style={style} className={className} />;
-  } catch (err) {
-    logError('SafeIcon render failed, using fallback', err);
+    return <IconComponent size={size} color={color} style={style} />;
+  } catch {
     const FallbackIcon = fallback;
-    return <FallbackIcon size={size} color={color} style={style} className={className} />;
+    return <FallbackIcon size={size} color={color} style={style} />;
   }
 };
 
 // ============================================
-// FIX: Extension de InseeData pour inclure surface_km2
-// ============================================
-interface InseeData extends BaseInseeData {
-  surface_km2?: number;
-}
-
-// ============================================
-// FIX: Interfaces pour les données
-// ============================================
-interface ShopItem {
-  name: string;
-  distance_m: number;
-  lat?: number;
-  lon?: number;
-  address?: string;
-}
-
-interface ShopCategory {
-  count: number;
-  top: ShopItem[];
-}
-
-interface ShopsData {
-  radius_m_used?: number;
-  categories: Record<string, ShopCategory>;
-}
-
-interface MarketContextFallbackResult {
-  insee: Record<string, unknown> | null;
-  shops: ShopsData | null;
-}
-
-interface NormalizedBpeData {
-  nb_commerces?: number;
-  nb_sante?: number;
-  nb_services?: number;
-  nb_enseignement?: number;
-  nb_sport_culture?: number;
-  nb_total?: number;
-  source?: string | { provider: string; note?: string };
-}
-
-interface FacilityEnriched {
-  nom: string;
-  commune: string;
-  distance_km: number;
-  capacite?: number;
-  finess?: string;
-  adresse?: string;
-  telephone?: string;
-  prix_journalier?: number;
-  taux_occupation?: number;
-}
-
-interface KeySample {
-  type: "null" | "undefined" | "object" | "array" | "string" | "number" | "boolean" | "other";
-  length?: number;
-  sampleKeys?: string[];
-  sampleFirstKeys?: string[];
-  valuePreview?: string;
-}
-
-interface ServicesShapeInspection {
-  rawType: "null" | "undefined" | "array" | "object" | "other";
-  topKeys: string[];
-  flattenedTopKeys: string[];
-  samples: Record<string, KeySample>;
-  isEmpty: boolean;
-}
-
-// ============================================
-// SAFE PROJECT CONFIG - Validation du config projet
+// SAFE PROJECT CONFIG
 // ============================================
 const getSafeProjectConfig = (nature: ProjectType) => {
   try {
     const config = getProjectConfig(nature);
-    if (!config) {
-      logError('getProjectConfig returned null/undefined for', nature);
+    if (!config || !config.icon) {
       return getDefaultProjectConfig();
     }
-    if (!config.icon || typeof config.icon !== 'function') {
-      logError('Invalid icon in project config, using fallback');
-      return { ...config, icon: Building2 };
-    }
     return config;
-  } catch (err) {
-    logError('getProjectConfig threw error', err);
+  } catch {
     return getDefaultProjectConfig();
   }
 };
@@ -314,138 +349,10 @@ const getDefaultProjectConfig = () => ({
   color: '#6366f1',
   description: 'Étude de marché',
   radius: { analysis: 2 },
-  requiredDataSources: ['insee'] as DataSourceType[],
+  requiredDataSources: ['insee', 'dvf'] as DataSourceType[],
   demographicSegments: [],
   competitionLabel: { singular: 'Établissement', plural: 'Établissements', unit: 'places' },
 });
-
-// ============================================
-// DIAG: Inspection robuste de la structure services_ruraux
-// ============================================
-const inspectServicesShape = (raw: unknown): ServicesShapeInspection => {
-  if (raw === null) {
-    return { rawType: "null", topKeys: [], flattenedTopKeys: [], samples: {}, isEmpty: true };
-  }
-  if (raw === undefined) {
-    return { rawType: "undefined", topKeys: [], flattenedTopKeys: [], samples: {}, isEmpty: true };
-  }
-  
-  if (Array.isArray(raw)) {
-    return { 
-      rawType: "array", 
-      topKeys: [], 
-      flattenedTopKeys: [], 
-      samples: { 
-        _array: { 
-          type: "array", 
-          length: raw.length, 
-          sampleFirstKeys: raw.length > 0 && typeof raw[0] === 'object' && raw[0] !== null 
-            ? Object.keys(raw[0]).slice(0, 5) 
-            : [] 
-        } 
-      }, 
-      isEmpty: raw.length === 0 
-    };
-  }
-  
-  if (typeof raw !== 'object') {
-    return { rawType: "other", topKeys: [], flattenedTopKeys: [], samples: {}, isEmpty: true };
-  }
-  
-  const obj = raw as Record<string, unknown>;
-  const topKeys = Object.keys(obj);
-  
-  const NESTED_KEYS = ['commerces', 'commerce', 'sante', 'health', 'securite', 'security', 'services', 'proximite', 'nearby'];
-  const flattenedInput: Record<string, unknown> = { ...obj };
-  
-  for (const nestedKey of NESTED_KEYS) {
-    const nestedValue = obj[nestedKey];
-    if (nestedValue && typeof nestedValue === 'object' && !Array.isArray(nestedValue)) {
-      const nested = nestedValue as Record<string, unknown>;
-      for (const [k, v] of Object.entries(nested)) {
-        flattenedInput[`${nestedKey}.${k}`] = v;
-        flattenedInput[k] = v;
-      }
-    }
-  }
-  
-  const flattenedTopKeys = Object.keys(flattenedInput);
-  const samples: Record<string, KeySample> = {};
-  const keysToSample = flattenedTopKeys.slice(0, 25);
-  
-  for (const key of keysToSample) {
-    const value = flattenedInput[key];
-    
-    if (value === null) {
-      samples[key] = { type: "null" };
-    } else if (value === undefined) {
-      samples[key] = { type: "undefined" };
-    } else if (Array.isArray(value)) {
-      samples[key] = { 
-        type: "array", 
-        length: value.length,
-        sampleFirstKeys: value.length > 0 && typeof value[0] === 'object' && value[0] !== null
-          ? Object.keys(value[0]).slice(0, 5)
-          : []
-      };
-    } else if (typeof value === 'object') {
-      const objVal = value as Record<string, unknown>;
-      samples[key] = { type: "object", sampleKeys: Object.keys(objVal).slice(0, 8) };
-    } else if (typeof value === 'string') {
-      samples[key] = { type: "string", valuePreview: value.slice(0, 30) };
-    } else if (typeof value === 'number') {
-      samples[key] = { type: "number", valuePreview: String(value) };
-    } else if (typeof value === 'boolean') {
-      samples[key] = { type: "boolean", valuePreview: String(value) };
-    } else {
-      samples[key] = { type: "other" };
-    }
-  }
-  
-  const isEmpty = topKeys.length === 0 || topKeys.every(k => obj[k] === null || obj[k] === undefined);
-  
-  return { rawType: "object", topKeys, flattenedTopKeys, samples, isEmpty };
-};
-
-const SERVICE_GUESS_PATTERNS: Record<string, string[]> = {
-  supermarche: ['super', 'market', 'hyper', 'shop', 'aliment', 'grocery', 'epicerie'],
-  station_service: ['fuel', 'station', 'essence', 'gas', 'petrol', 'carburant'],
-  banque: ['bank', 'banque', 'atm', 'dab', 'credit', 'caisse'],
-  poste: ['post', 'poste', 'mail', 'courrier'],
-  medecin: ['doctor', 'medecin', 'generaliste', 'physician'],
-  pharmacie: ['pharm', 'pharmacy', 'officine'],
-  gendarmerie: ['gendar', 'police', 'commissariat', 'securite', 'security'],
-};
-
-const guessServiceKeys = (flattenedKeys: string[]): Record<string, string[]> => {
-  const result: Record<string, string[]> = {};
-  
-  for (const [serviceType, patterns] of Object.entries(SERVICE_GUESS_PATTERNS)) {
-    result[serviceType] = [];
-    for (const key of flattenedKeys) {
-      const keyLower = key.toLowerCase();
-      for (const pattern of patterns) {
-        if (keyLower.includes(pattern)) {
-          result[serviceType].push(key);
-          break;
-        }
-      }
-    }
-  }
-  
-  return result;
-};
-
-const SHOPS_CATEGORY_MAPPING: Record<string, { uiKey: string; label: string; icon: LucideIcon }> = {
-  supermarket: { uiKey: 'supermarche', label: 'Supermarché', icon: ShoppingCart },
-  fuel: { uiKey: 'station_service', label: 'Station service', icon: Fuel },
-  bank_atm: { uiKey: 'banque', label: 'Banque / DAB', icon: Banknote },
-  post: { uiKey: 'poste', label: 'Bureau de poste', icon: Mail },
-  doctor: { uiKey: 'medecin', label: 'Médecin', icon: Stethoscope },
-  pharmacy: { uiKey: 'pharmacie', label: 'Pharmacie', icon: Pill },
-  gendarmerie: { uiKey: 'gendarmerie', label: 'Gendarmerie', icon: Shield },
-  commissariat: { uiKey: 'commissariat', label: 'Commissariat', icon: Shield },
-};
 
 // ============================================
 // HELPERS
@@ -490,491 +397,199 @@ const getVerdictConfig = (score: number | null | undefined) => {
   return { label: "NO GO", color: "#dc2626", bg: "#fee2e2", icon: X };
 };
 
-const getDistanceColor = (km: number | null | undefined): string => {
-  if (km == null) return "#94a3b8";
-  if (km <= 0.5) return "#10b981";
-  if (km <= 1) return "#22c55e";
-  if (km <= 2) return "#84cc16";
-  if (km <= 5) return "#f59e0b";
-  return "#64748b";
-};// ============================================
-// API HELPERS
 // ============================================
-async function fetchMarketContextFallback(params: {
-  supabaseUrl: string;
-  anonKey: string;
-  zipCode?: string;
-  city?: string;
-  lat?: number;
-  lon?: number;
-}): Promise<MarketContextFallbackResult> {
-  const { supabaseUrl, anonKey } = params;
-
-  const body: Record<string, unknown> = {};
-  if (params.zipCode && params.city) {
-    body.zipCode = params.zipCode;
-    body.city = params.city;
-  } else if (typeof params.lat === "number" && typeof params.lon === "number" && !Number.isNaN(params.lat) && !Number.isNaN(params.lon)) {
-    body.lat = params.lat;
-    body.lon = params.lon;
-    body.lng = params.lon;
-  } else {
-    if (DEBUG_INSEE) logData('MarketContext Fallback - No valid params', params);
-    return { insee: null, shops: null };
-  }
-
-  logApi('Calling market-context-v1', body);
-
-  try {
-    const r = await fetch(`${supabaseUrl}/functions/v1/market-context-v1`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${anonKey}`,
-        apikey: anonKey,
-      },
-      body: JSON.stringify(body),
-    });
-
-    const json = await r.json().catch(() => null);
-    if (!r.ok || !json?.success) {
-      logError('market-context-v1 failed', json);
-      return { insee: null, shops: null };
-    }
-
-    logApi('market-context-v1 success', { insee: !!json?.insee, shops: !!json?.shops });
-    
-    return {
-      insee: json?.insee ?? null,
-      shops: json?.shops ?? null,
-    };
-  } catch (err) {
-    logError('market-context-v1 error', err);
-    return { insee: null, shops: null };
-  }
+// SCORING DIFFÉRENCIÉ PAR TYPE DE PROJET - v2.4
+// ============================================
+interface ProjectScoreWeights {
+  demande: number;
+  offre: number;
+  accessibilite: number;
+  environnement: number;
 }
 
-async function fetchOverpassShopCount(lat: number, lon: number, radiusMeters: number): Promise<number | null> {
-  const query = `
-[out:json][timeout:25];
-(
-  node(around:${radiusMeters},${lat},${lon})["shop"];
-  way(around:${radiusMeters},${lat},${lon})["shop"];
-  relation(around:${radiusMeters},${lat},${lon})["shop"];
-);
-out count;
-`.trim();
-
-  const url = "https://overpass-api.de/api/interpreter";
-
-  if (DEBUG_BPE) logData('BPE Overpass query', { radius: radiusMeters });
-
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-      body: `data=${encodeURIComponent(query)}`
-    });
-
-    const json = await res.json().catch(() => null);
-    const total = json?.elements?.[0]?.tags?.total;
-    const parsed = typeof total === "string" ? parseInt(total, 10) : null;
-    
-    if (DEBUG_BPE) logData('BPE Overpass result', { total, parsed });
-    
-    return Number.isFinite(parsed as number) ? (parsed as number) : null;
-  } catch (err) {
-    logError('BPE Overpass error', err);
-    return null;
-  }
+interface ProjectScoringConfig {
+  weights: ProjectScoreWeights;
+  bonusFactors: {
+    condition: (data: MarketStudyApiResponse) => boolean;
+    bonus: number;
+    label: string;
+  }[];
+  penaltyFactors: {
+    condition: (data: MarketStudyApiResponse) => boolean;
+    penalty: number;
+    label: string;
+  }[];
 }
 
-// ============================================
-// INSEE NORMALIZATION
-// ============================================
-const safeNormalizeInseeData = (rawInsee: unknown): InseeData | null => {
-  if (!rawInsee || typeof rawInsee !== 'object') {
-    if (DEBUG_INSEE) logData('safeNormalizeInseeData - raw is null/not object');
-    return null;
-  }
+const PROJECT_SCORING_CONFIG: Record<string, ProjectScoringConfig> = {
+  logement: {
+    weights: { demande: 0.30, offre: 0.25, accessibilite: 0.25, environnement: 0.20 },
+    bonusFactors: [
+      { condition: (d) => (d.core.insee?.pct_moins_15 ?? 0) > 20, bonus: 8, label: "Zone familiale" },
+      { condition: (d) => (d.core.dvf?.evolution_prix_pct ?? 0) > 5, bonus: 5, label: "Marché dynamique" },
+      { condition: (d) => (d.core.bpe?.education?.count ?? 0) >= 3, bonus: 5, label: "Écoles à proximité" },
+      { condition: (d) => d.core.transport?.has_metro_train === true, bonus: 7, label: "Transport lourd" },
+      { condition: (d) => (d.core.insee?.pct_logements_vacants ?? 100) < 8, bonus: 5, label: "Tension locative" },
+    ],
+    penaltyFactors: [
+      { condition: (d) => (d.core.insee?.taux_chomage ?? 0) > 12, penalty: 8, label: "Chômage élevé" },
+      { condition: (d) => (d.core.dvf?.nb_transactions ?? 0) < 10, penalty: 5, label: "Marché peu liquide" },
+      { condition: (d) => (d.core.insee?.pct_logements_vacants ?? 0) > 15, penalty: 10, label: "Vacance élevée" },
+    ],
+  },
+  ehpad: {
+    weights: { demande: 0.40, offre: 0.30, accessibilite: 0.15, environnement: 0.15 },
+    bonusFactors: [
+      { condition: (d) => ((d.specific as EhpadSpecific)?.demographie_senior?.pct_75_plus ?? 0) > 12, bonus: 12, label: "Pop. senior élevée" },
+      { condition: (d) => ((d.specific as EhpadSpecific)?.indicateurs_marche?.taux_equipement_zone === "sous_equipe"), bonus: 15, label: "Zone sous-équipée" },
+      { condition: (d) => (d.core.bpe?.sante?.count ?? 0) >= 3, bonus: 8, label: "Services santé" },
+      { condition: (d) => ((d.specific as EhpadSpecific)?.indicateurs_marche?.potentiel_marche === "fort"), bonus: 10, label: "Fort potentiel" },
+      { condition: (d) => ((d.specific as EhpadSpecific)?.offre_sante?.pharmacies ?? 0) >= 2, bonus: 5, label: "Pharmacies proches" },
+    ],
+    penaltyFactors: [
+      { condition: (d) => ((d.specific as EhpadSpecific)?.indicateurs_marche?.taux_equipement_zone === "sur_equipe"), penalty: 15, label: "Zone sur-équipée" },
+      { condition: (d) => ((d.specific as EhpadSpecific)?.concurrence?.count ?? 0) > 10, penalty: 10, label: "Forte concurrence" },
+      { condition: (d) => ((d.specific as EhpadSpecific)?.demographie_senior?.pct_75_plus ?? 100) < 8, penalty: 8, label: "Pop. senior faible" },
+    ],
+  },
+  residence_etudiante: {
+    weights: { demande: 0.35, offre: 0.20, accessibilite: 0.30, environnement: 0.15 },
+    bonusFactors: [
+      { condition: (d) => (d.core.insee?.pct_15_29 ?? 0) > 20, bonus: 12, label: "Pop. jeune élevée" },
+      { condition: (d) => (d.core.insee?.pct_etudiants ?? 0) > 10, bonus: 15, label: "Zone étudiante" },
+      { condition: (d) => d.core.transport?.has_metro_train === true, bonus: 10, label: "Transport lourd" },
+      { condition: (d) => (d.core.bpe?.education?.count ?? 0) >= 2, bonus: 8, label: "Établissements scolaires" },
+      { condition: (d) => (d.core.insee?.pct_locataires ?? 0) > 50, bonus: 5, label: "Marché locatif actif" },
+    ],
+    penaltyFactors: [
+      { condition: (d) => d.core.transport?.score < 40, penalty: 12, label: "Accessibilité faible" },
+      { condition: (d) => (d.core.insee?.pct_15_29 ?? 0) < 12, penalty: 10, label: "Pop. jeune faible" },
+    ],
+  },
+  bureaux: {
+    weights: { demande: 0.25, offre: 0.20, accessibilite: 0.40, environnement: 0.15 },
+    bonusFactors: [
+      { condition: (d) => d.core.transport?.has_metro_train === true, bonus: 15, label: "Transport lourd" },
+      { condition: (d) => d.core.transport?.score >= 70, bonus: 10, label: "Excellente desserte" },
+      { condition: (d) => (d.core.insee?.pct_actifs ?? 0) > 45, bonus: 8, label: "Bassin d'actifs" },
+      { condition: (d) => (d.core.bpe?.services?.count ?? 0) >= 5, bonus: 5, label: "Services aux entreprises" },
+      { condition: (d) => (d.core.insee?.revenu_median ?? 0) > 28000, bonus: 7, label: "Zone CSP+" },
+    ],
+    penaltyFactors: [
+      { condition: (d) => d.core.transport?.score < 50, penalty: 15, label: "Accessibilité insuffisante" },
+      { condition: (d) => (d.core.insee?.taux_chomage ?? 0) > 10, penalty: 5, label: "Bassin économique fragile" },
+      { condition: (d) => !d.core.transport?.has_metro_train && !d.core.transport?.has_tram, penalty: 8, label: "Pas de transport lourd" },
+    ],
+  },
+  commerce: {
+    weights: { demande: 0.35, offre: 0.15, accessibilite: 0.25, environnement: 0.25 },
+    bonusFactors: [
+      { condition: (d) => (d.core.insee?.revenu_median ?? 0) > 25000, bonus: 10, label: "Pouvoir d'achat élevé" },
+      { condition: (d) => (d.core.insee?.densite ?? 0) > 1000, bonus: 8, label: "Zone dense" },
+      { condition: (d) => d.core.transport?.score >= 60, bonus: 7, label: "Bonne accessibilité" },
+      { condition: (d) => (d.core.bpe?.commerces?.count ?? 0) > 5 && (d.core.bpe?.commerces?.count ?? 0) < 20, bonus: 8, label: "Zone commerciale équilibrée" },
+      { condition: (d) => (d.core.insee?.pct_30_44 ?? 0) > 20, bonus: 5, label: "Pop. active consommatrice" },
+    ],
+    penaltyFactors: [
+      { condition: (d) => (d.core.bpe?.commerces?.count ?? 0) > 30, penalty: 10, label: "Forte concurrence commerciale" },
+      { condition: (d) => (d.core.insee?.revenu_median ?? 100000) < 18000, penalty: 12, label: "Pouvoir d'achat faible" },
+      { condition: (d) => (d.core.insee?.densite ?? 0) < 200, penalty: 8, label: "Zone peu dense" },
+    ],
+  },
+  hotel: {
+    weights: { demande: 0.30, offre: 0.25, accessibilite: 0.30, environnement: 0.15 },
+    bonusFactors: [
+      { condition: (d) => d.core.transport?.has_metro_train === true, bonus: 12, label: "Accès transport" },
+      { condition: (d) => (d.core.bpe?.loisirs?.count ?? 0) >= 3, bonus: 8, label: "Zone touristique" },
+      { condition: (d) => (d.core.insee?.densite ?? 0) > 500, bonus: 5, label: "Zone urbaine" },
+      { condition: (d) => (d.core.bpe?.services?.count ?? 0) >= 5, bonus: 5, label: "Services disponibles" },
+    ],
+    penaltyFactors: [
+      { condition: (d) => d.core.transport?.score < 40, penalty: 15, label: "Accessibilité insuffisante" },
+      { condition: (d) => (d.core.insee?.densite ?? 0) < 100, penalty: 10, label: "Zone isolée" },
+    ],
+  },
+};
 
-  const rawObj = rawInsee as Record<string, unknown>;
+/**
+ * Calcule les scores différenciés selon le type de projet
+ */
+const calculateDifferentiatedScores = (
+  data: MarketStudyApiResponse,
+  projectType: string
+): { 
+  scores: typeof data.scores; 
+  adjustments: { label: string; value: number }[];
+  explanation: string;
+} => {
+  const config = PROJECT_SCORING_CONFIG[projectType] || PROJECT_SCORING_CONFIG.logement;
+  const baseScores = data.scores;
   
-  if (DEBUG_INSEE) {
-    logData('INSEE normalization start', {
-      keys: Object.keys(rawObj).slice(0, 10),
-      population: rawObj.population,
-      surface_km2: rawObj.surface_km2,
-    });
-  }
-
-  let extractedSurfaceKm2: number | undefined;
-  if (typeof rawObj.surface_km2 === 'number' && rawObj.surface_km2 > 0) {
-    extractedSurfaceKm2 = rawObj.surface_km2;
-  } else if (typeof rawObj.superficie === 'number' && rawObj.superficie > 0) {
-    extractedSurfaceKm2 = rawObj.superficie;
-  } else if (typeof rawObj.area_km2 === 'number' && rawObj.area_km2 > 0) {
-    extractedSurfaceKm2 = rawObj.area_km2;
-  } else if (typeof rawObj.surface === 'number' && rawObj.surface > 0) {
-    extractedSurfaceKm2 = rawObj.surface > 10000 ? rawObj.surface / 1000000 : rawObj.surface;
-  }
-
-  let normalized: InseeData | null = null;
+  // Calculer le score pondéré de base
+  let weightedBase = 
+    baseScores.demande * config.weights.demande +
+    baseScores.offre * config.weights.offre +
+    baseScores.accessibilite * config.weights.accessibilite +
+    baseScores.environnement * config.weights.environnement;
   
-  try {
-    normalized = normalizeInseeData(rawInsee) as InseeData | null;
-  } catch (err) {
-    logError('normalizeInseeData threw error', err);
-    normalized = null;
-  }
-
-  const hasValidNormalized = normalized && (
-    normalized.population != null ||
-    normalized.commune != null ||
-    normalized.densite != null
-  );
-
-  if (!hasValidNormalized) {
-    if (DEBUG_INSEE) logData('INSEE normalization fallback mode');
-    
-    const population = typeof rawObj.population === 'number' ? rawObj.population : 
-                  typeof rawObj.pop === 'number' ? rawObj.pop :
-                  typeof rawObj.population === 'string' ? parseInt(rawObj.population, 10) : undefined;
-    
-    let computedDensite: number | undefined;
-    if (typeof rawObj.densite === 'number' && rawObj.densite > 0) {
-      computedDensite = rawObj.densite;
-    } else if (typeof rawObj.density === 'number' && rawObj.density > 0) {
-      computedDensite = rawObj.density;
-    } else if (population && extractedSurfaceKm2 && extractedSurfaceKm2 > 0) {
-      computedDensite = population / extractedSurfaceKm2;
+  const adjustments: { label: string; value: number }[] = [];
+  
+  // Appliquer les bonus
+  for (const bonus of config.bonusFactors) {
+    try {
+      if (bonus.condition(data)) {
+        weightedBase += bonus.bonus;
+        adjustments.push({ label: `✅ ${bonus.label}`, value: bonus.bonus });
+      }
+    } catch {
+      // Condition non évaluable, ignorer
     }
-    
-    const fallback: InseeData = {
-      code_commune: String(rawObj.code_commune || rawObj.code_insee || ''),
-      commune: String(rawObj.commune || rawObj.nom_commune || rawObj.city || ''),
-      departement: String(rawObj.departement || rawObj.dept || ''),
-      population,
-      densite: computedDensite,
-      surface_km2: extractedSurfaceKm2,
-      evolution_pop_5ans: typeof rawObj.evolution_pop_5ans === 'number' ? rawObj.evolution_pop_5ans : undefined,
-      revenu_median: typeof rawObj.revenu_median === 'number' ? rawObj.revenu_median : undefined,
-      taux_chomage: typeof rawObj.taux_chomage === 'number' ? rawObj.taux_chomage : undefined,
-      pct_moins_15: typeof rawObj.pct_moins_15 === 'number' ? rawObj.pct_moins_15 : undefined,
-      pct_15_29: typeof rawObj.pct_15_29 === 'number' ? rawObj.pct_15_29 : undefined,
-      pct_plus_60: typeof rawObj.pct_plus_60 === 'number' ? rawObj.pct_plus_60 : undefined,
-      pct_plus_65: typeof rawObj.pct_plus_65 === 'number' ? rawObj.pct_plus_65 : undefined,
-      pct_plus_75: typeof rawObj.pct_plus_75 === 'number' ? rawObj.pct_plus_75 : undefined,
-      pct_plus_85: typeof rawObj.pct_plus_85 === 'number' ? rawObj.pct_plus_85 : undefined,
-    };
-
-    if (DEBUG_INSEE) logData('INSEE fallback result', { population: fallback.population, commune: fallback.commune });
-    return fallback;
   }
-
-  const merged: InseeData = { ...normalized };
-  if (!merged.surface_km2 && extractedSurfaceKm2) {
-    merged.surface_km2 = extractedSurfaceKm2;
-  }
-  if (!merged.densite && merged.population && merged.surface_km2 && merged.surface_km2 > 0) {
-    merged.densite = merged.population / merged.surface_km2;
-  }
-
-  if (DEBUG_INSEE) logData('INSEE merged result', { population: merged.population, commune: merged.commune });
-  return merged;
-};
-
-// ============================================
-// SERVICES NORMALIZATION
-// ============================================
-type ServicesRecord = Record<string, ServiceProche | null | undefined>;
-
-const normalizeDistanceValue = (
-  distanceKm: unknown,
-  distanceM: unknown,
-  distanceRaw: unknown
-): number | undefined => {
-  if (typeof distanceKm === 'number' && distanceKm >= 0) return distanceKm;
-  if (typeof distanceM === 'number' && distanceM >= 0) return distanceM / 1000;
-  if (typeof distanceRaw === 'number' && distanceRaw >= 0) {
-    return distanceRaw > 100 ? distanceRaw / 1000 : distanceRaw;
-  }
-  return undefined;
-};
-
-const pickServiceObject = (value: unknown): Record<string, unknown> | null => {
-  if (!value) return null;
-  if (Array.isArray(value)) {
-    if (value.length === 0) return null;
-    const first = value[0];
-    if (first && typeof first === 'object' && !Array.isArray(first)) {
-      return first as Record<string, unknown>;
+  
+  // Appliquer les pénalités
+  for (const penalty of config.penaltyFactors) {
+    try {
+      if (penalty.condition(data)) {
+        weightedBase -= penalty.penalty;
+        adjustments.push({ label: `⚠️ ${penalty.label}`, value: -penalty.penalty });
+      }
+    } catch {
+      // Condition non évaluable, ignorer
     }
-    return null;
   }
-  if (typeof value === 'object') {
-    return value as Record<string, unknown>;
-  }
-  return null;
-};
-
-const convertToServiceProche = (svc: Record<string, unknown>): ServiceProche => {
-  const distKm = normalizeDistanceValue(svc.distance_km, svc.distance_m, svc.distance);
-  return {
-    nom: String(svc.nom || svc.name || svc.label || ''),
-    commune: String(svc.commune || svc.city || svc.ville || ''),
-    distance_km: distKm,
-    distance_m: typeof svc.distance_m === 'number' ? svc.distance_m : undefined,
+  
+  // Clamp entre 0 et 100
+  const finalScore = Math.max(0, Math.min(100, Math.round(weightedBase)));
+  
+  // Recalculer les sous-scores avec les pondérations
+  const adjustedScores = {
+    demande: Math.round(baseScores.demande * (1 + (config.weights.demande - 0.25) * 0.5)),
+    offre: Math.round(baseScores.offre * (1 + (config.weights.offre - 0.25) * 0.5)),
+    accessibilite: Math.round(baseScores.accessibilite * (1 + (config.weights.accessibilite - 0.25) * 0.5)),
+    environnement: Math.round(baseScores.environnement * (1 + (config.weights.environnement - 0.25) * 0.5)),
+    global: finalScore,
   };
-};
-
-const normalizeServicesRuraux = (raw: unknown): ServicesRecord => {
-  if (DEBUG_SERVICES) {
-    const shape = inspectServicesShape(raw);
-    logData('services inspection', {
-      rawType: shape.rawType,
-      isEmpty: shape.isEmpty,
-      topKeysCount: shape.topKeys.length,
-    });
-  }
   
-  if (Array.isArray(raw) || !raw || typeof raw !== 'object') {
-    return {};
-  }
-
-  const input = raw as Record<string, unknown>;
-  const result: ServicesRecord = {};
-
-  const KEY_MAPPINGS: Record<string, string[]> = {
-    supermarche_proche: ['supermarche_proche', 'supermarche', 'supermarket', 'grocery'],
-    station_service_proche: ['station_service_proche', 'station_service', 'fuel', 'gas_station'],
-    banque_proche: ['banque_proche', 'banque', 'bank', 'bank_atm', 'atm'],
-    poste_proche: ['poste_proche', 'poste', 'post_office', 'post'],
-    medecin_proche: ['medecin_proche', 'medecin', 'doctor', 'doctors'],
-    pharmacie_proche: ['pharmacie_proche', 'pharmacie', 'pharmacy'],
-    gendarmerie_proche: ['gendarmerie_proche', 'gendarmerie'],
-    commissariat_proche: ['commissariat_proche', 'commissariat', 'police'],
-  };
-
-  const flattenedInput: Record<string, unknown> = { ...input };
-  const NESTED_KEYS = ['commerces', 'commerce', 'sante', 'health', 'securite', 'security', 'services', 'proximite', 'nearby'];
-  
-  for (const nestedKey of NESTED_KEYS) {
-    const nestedValue = input[nestedKey];
-    if (nestedValue && typeof nestedValue === 'object' && !Array.isArray(nestedValue)) {
-      const nested = nestedValue as Record<string, unknown>;
-      for (const [k, v] of Object.entries(nested)) {
-        flattenedInput[k] = v;
-      }
-    }
-  }
-
-  for (const [normalizedKey, variants] of Object.entries(KEY_MAPPINGS)) {
-    if (result[normalizedKey]?.distance_km !== undefined) continue;
-    
-    for (const variant of variants) {
-      const rawValue = flattenedInput[variant] ?? flattenedInput[variant.toLowerCase()];
-      const svc = pickServiceObject(rawValue);
-      if (svc && (svc.distance_km !== undefined || svc.distance_m !== undefined || svc.distance !== undefined)) {
-        result[normalizedKey] = convertToServiceProche(svc);
-        break;
-      }
-    }
-  }
-
-  return result;
-};
-
-const getAllServicesFromMarket = (market: Record<string, unknown>): ServicesRecord => {
-  if (!market || typeof market !== 'object') return {};
-
-  const SERVICE_SOURCES = ['services_ruraux', 'services', 'amenities', 'services_proches', 'nearby', 'commerces', 'sante'];
-  const mergedServices: ServicesRecord = {};
-
-  for (const sourceKey of SERVICE_SOURCES) {
-    const sourceData = market[sourceKey];
-    if (sourceData && typeof sourceData === 'object') {
-      const normalized = normalizeServicesRuraux(sourceData);
-      for (const [key, value] of Object.entries(normalized)) {
-        if (value && value.distance_km !== undefined && !mergedServices[key]?.distance_km) {
-          mergedServices[key] = value;
-        }
-      }
-    }
-  }
-
-  return mergedServices;
-};
-
-const convertShopsToServicesRecord = (shops: ShopsData | null | undefined): ServicesRecord => {
-  if (!shops?.categories) return {};
-
-  const result: ServicesRecord = {};
-  const CATEGORY_TO_SERVICE: Record<string, string> = {
-    supermarket: 'supermarche_proche',
-    fuel: 'station_service_proche',
-    bank_atm: 'banque_proche',
-    post: 'poste_proche',
-    doctor: 'medecin_proche',
-    pharmacy: 'pharmacie_proche',
-    gendarmerie: 'gendarmerie_proche',
-    commissariat: 'commissariat_proche',
-  };
-
-  for (const [category, serviceKey] of Object.entries(CATEGORY_TO_SERVICE)) {
-    const catData = shops.categories[category];
-    if (catData?.top?.length > 0) {
-      const firstItem = catData.top[0];
-      if (!result[serviceKey]) {
-        result[serviceKey] = {
-          nom: firstItem.name || '',
-          commune: '',
-          distance_km: firstItem.distance_m / 1000,
-          distance_m: firstItem.distance_m,
-        };
-      }
-    }
-  }
-
-  return result;
-};
-
-// ============================================
-// BPE EXTRACTION
-// ============================================
-const extractBpeData = (market: Record<string, unknown>): NormalizedBpeData | null => {
-  if (!market || typeof market !== 'object') return null;
-
-  const result: NormalizedBpeData = {};
-  const bpe = market.bpe as Record<string, unknown> | undefined;
-  
-  if (bpe && typeof bpe === 'object') {
-    if (typeof bpe.nb_commerces === 'number') result.nb_commerces = bpe.nb_commerces;
-    if (typeof bpe.nb_sante === 'number') result.nb_sante = bpe.nb_sante;
-    if (typeof bpe.nb_services === 'number') result.nb_services = bpe.nb_services;
-    if (typeof bpe.nb_enseignement === 'number') result.nb_enseignement = bpe.nb_enseignement;
-    if (typeof bpe.nb_sport_culture === 'number') result.nb_sport_culture = bpe.nb_sport_culture;
-    if (bpe.source) result.source = bpe.source as string | { provider: string };
-  }
-
-  const hasData = Object.keys(result).filter(k => k !== 'source').some(k => result[k as keyof NormalizedBpeData] !== undefined);
-  return hasData ? result : null;
-};
-
-// ============================================
-// EHPAD HELPERS
-// ============================================
-interface RawEhpadItem {
-  name?: string;
-  nom?: string;
-  address?: string;
-  adresse?: string;
-  commune?: string;
-  city?: string;
-  distance_km?: number;
-  beds_total?: number;
-  capacite?: number;
-  finess?: string;
-  telephone?: string;
-  prix_journalier?: number;
-  taux_occupation?: number;
-}
-
-const mapRawEhpadToEnriched = (rawItems: RawEhpadItem[]): FacilityEnriched[] => {
-  return rawItems.map(item => ({
-    nom: item.name || item.nom || "Établissement sans nom",
-    commune: item.commune || item.city || "",
-    distance_km: item.distance_km || 0,
-    capacite: item.beds_total ?? item.capacite ?? undefined,
-    finess: item.finess || undefined,
-    adresse: item.address || item.adresse || undefined,
-    telephone: item.telephone || undefined,
-    prix_journalier: item.prix_journalier ?? undefined,
-    taux_occupation: item.taux_occupation ?? undefined,
-  }));
-};
-
-interface GeoJsonFeature {
-  type: "Feature";
-  properties: Record<string, unknown>;
-  geometry?: { type: string; coordinates?: number[] };
-}
-
-const mapGeoJsonFeaturesToRawItems = (features: GeoJsonFeature[]): RawEhpadItem[] => {
-  return features.map((feature) => {
-    const props = feature.properties || {};
-    return {
-      name: String(props.name || props.nom || props.rs || "Établissement"),
-      address: String(props.address || props.adresse || ""),
-      commune: String(props.commune || props.libcommune || ""),
-      beds_total: typeof props.beds_total === 'number' ? props.beds_total : undefined,
-      distance_km: typeof props.distance_km === 'number' ? props.distance_km : undefined,
-      finess: String(props.finess || props.nofinesset || ""),
-      telephone: String(props.telephone || ""),
-    };
+  // Clamp tous les scores
+  Object.keys(adjustedScores).forEach(key => {
+    const k = key as keyof typeof adjustedScores;
+    adjustedScores[k] = Math.max(0, Math.min(100, adjustedScores[k]));
   });
-};
-
-const extractEhpadItemsFromResponse = (finessResult: unknown): RawEhpadItem[] => {
-  if (!finessResult) return [];
-
-  if (Array.isArray(finessResult)) {
-    if (finessResult.length > 0 && finessResult[0]?.type === "Feature" && finessResult[0]?.properties) {
-      return mapGeoJsonFeaturesToRawItems(finessResult);
-    }
-    return finessResult as RawEhpadItem[];
-  }
-
-  if (typeof finessResult === 'object') {
-    const obj = finessResult as Record<string, unknown>;
-    if (obj.type === "FeatureCollection" && Array.isArray(obj.features)) {
-      return mapGeoJsonFeaturesToRawItems(obj.features as GeoJsonFeature[]);
-    }
-    const possibleArrayProps = ['items', 'liste', 'facilities', 'etablissements', 'data', 'results'];
-    for (const prop of possibleArrayProps) {
-      if (Array.isArray(obj[prop])) {
-        return obj[prop] as RawEhpadItem[];
-      }
-    }
-  }
-
-  return [];
-};
-
-const buildEhpadDataFromRaw = (rawItems: RawEhpadItem[], inseeData?: InseeData | null): EHPADData => {
-  const mappedFacilities = mapRawEhpadToEnriched(rawItems);
-  const totalCapacity = mappedFacilities.reduce((sum, f) => sum + (f.capacite || 0), 0);
   
-  let densiteLits: number | undefined;
-  if (inseeData?.population && inseeData?.pct_plus_75) {
-    const pop75Plus = inseeData.population * (inseeData.pct_plus_75 / 100);
-    if (pop75Plus > 0 && totalCapacity > 0) {
-      densiteLits = (totalCapacity / pop75Plus) * 1000;
-    }
-  }
-
-  let verdict: string | undefined;
-  const count = mappedFacilities.length;
-  if (count === 0) {
-    verdict = "Aucun établissement concurrent identifié. Opportunité potentielle.";
-  } else if (count <= 2) {
-    verdict = `Faible concurrence avec ${count} établissement(s).`;
-  } else if (count <= 5) {
-    verdict = `Concurrence modérée avec ${count} établissements.`;
-  } else {
-    verdict = `Marché concurrentiel avec ${count} établissements.`;
-  }
-
+  // Générer l'explication
+  const weightsExplanation = Object.entries(config.weights)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `${k}: ${Math.round(v * 100)}%`)
+    .join(', ');
+  
   return {
-    count,
-    liste: mappedFacilities,
-    analyse_concurrence: {
-      capacite_totale: totalCapacity > 0 ? totalCapacity : undefined,
-      densite_lits_1000_seniors: densiteLits,
-      verdict,
-    },
+    scores: adjustedScores,
+    adjustments,
+    explanation: `Pondération ${projectType}: ${weightsExplanation}`,
   };
-};// ============================================
+};
+
+// ============================================
 // STYLES
 // ============================================
 const styles = {
@@ -1070,25 +685,30 @@ const styles = {
     transition: "all 0.2s",
     boxShadow: "0 4px 12px rgba(79, 70, 229, 0.3)",
   } as React.CSSProperties,
+  
+  statBox: {
+    padding: "12px",
+    background: "#f8fafc",
+    borderRadius: "10px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+  } as React.CSSProperties,
 };
 
 // ============================================
-// COMPOSANTS UI DE BASE
+// SCORE GAUGE
 // ============================================
-
 const ScoreGauge: React.FC<{ score: number | null | undefined; size?: number; showVerdict?: boolean }> = ({ 
   score, 
   size = 140,
   showVerdict = true 
 }) => {
-  logRender('ScoreGauge', { score, size });
-  
   const radius = (size - 16) / 2;
   const circumference = 2 * Math.PI * radius;
   const progress = score != null ? (score / 100) * circumference : 0;
   const color = getScoreColor(score);
   const verdict = getVerdictConfig(score);
-
   const VerdictIcon = verdict.icon || Minus;
 
   return (
@@ -1129,62 +749,65 @@ const ScoreGauge: React.FC<{ score: number | null | undefined; size?: number; sh
   );
 };
 
-const DataSourcesBadges: React.FC<{ sources: DataSourceType[]; available?: Record<string, boolean> }> = ({ 
-  sources, 
-  available = {} 
-}) => {
-  const SOURCE_LABELS: Record<DataSourceType, string> = {
-    insee: "INSEE",
-    finess: "FINESS",
-    dvf: "DVF",
-    bpe: "BPE",
-    mesr: "MESR",
-    adt: "ADT",
-    sirene: "SIRENE",
-  };
+// ============================================
+// DATA SOURCES BADGES
+// ============================================
+const DataSourcesBadges: React.FC<{ 
+  dvf: boolean; 
+  insee: boolean; 
+  transport: boolean; 
+  bpe: boolean;
+  cnsa?: number;
+}> = ({ dvf, insee, transport, bpe, cnsa }) => {
+  const sources = [
+    { key: 'dvf', label: 'DVF', available: dvf },
+    { key: 'insee', label: 'INSEE', available: insee },
+    { key: 'transport', label: 'Transport', available: transport },
+    { key: 'bpe', label: 'BPE', available: bpe },
+    ...(cnsa !== undefined ? [{ key: 'cnsa', label: `CNSA (${cnsa})`, available: cnsa > 0 }] : []),
+  ];
 
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-      {sources.map((source) => {
-        const isAvailable = available[source] !== false;
-        return (
-          <div
-            key={source}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "4px",
-              padding: "4px 10px",
-              background: isAvailable ? "#dcfce7" : "#f1f5f9",
-              borderRadius: "6px",
-              fontSize: "11px",
-              fontWeight: 600,
-              color: isAvailable ? "#166534" : "#94a3b8",
-            }}
-          >
-            {isAvailable ? <CheckCircle size={12} /> : <X size={12} />}
-            {SOURCE_LABELS[source]}
-          </div>
-        );
-      })}
+      {sources.map((source) => (
+        <div
+          key={source.key}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "4px",
+            padding: "4px 10px",
+            background: source.available ? "#dcfce7" : "#f1f5f9",
+            borderRadius: "6px",
+            fontSize: "11px",
+            fontWeight: 600,
+            color: source.available ? "#166534" : "#94a3b8",
+          }}
+        >
+          {source.available ? <CheckCircle size={12} /> : <X size={12} />}
+          {source.label}
+        </div>
+      ))}
     </div>
   );
 };
 
+// ============================================
+// INSIGHT CARD
+// ============================================
 const InsightCard: React.FC<{ 
   type: string; 
-  title: string; 
-  description: string;
-  value?: string;
-}> = ({ type, title, description, value }) => {
+  category: string;
+  message: string;
+}> = ({ type, category, message }) => {
   const configs: Record<string, { bg: string; border: string; color: string; dot: string }> = {
     positive: { bg: "#ecfdf5", border: "#a7f3d0", color: "#065f46", dot: "#10b981" },
     warning: { bg: "#fef3c7", border: "#fcd34d", color: "#92400e", dot: "#f59e0b" },
     negative: { bg: "#fee2e2", border: "#fca5a5", color: "#991b1b", dot: "#ef4444" },
-    opportunity: { bg: "#dbeafe", border: "#93c5fd", color: "#1e40af", dot: "#3b82f6" },
+    neutral: { bg: "#f1f5f9", border: "#cbd5e1", color: "#475569", dot: "#64748b" },
   };
   
-  const config = configs[type] || configs.warning;
+  const config = configs[type] || configs.neutral;
   
   return (
     <div style={{ 
@@ -1200,135 +823,34 @@ const InsightCard: React.FC<{
           background: config.dot, marginTop: "6px", flexShrink: 0 
         }} />
         <div style={{ flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <p style={{ fontSize: "14px", fontWeight: 600, color: "#1e293b", margin: 0 }}>{title}</p>
-            {value && (
-              <span style={{ fontSize: "14px", fontWeight: 700, color: config.color }}>{value}</span>
-            )}
-          </div>
-          <p style={{ fontSize: "13px", color: "#475569", margin: "4px 0 0 0" }}>{description}</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const ServiceRowWithDropdown: React.FC<{
-  icon: LucideIcon;
-  label: string;
-  data?: ServiceProche | null;
-  topItems?: ShopItem[];
-  showIfNull?: boolean;
-}> = ({ icon: Icon, label, data, topItems, showIfNull = true }) => {
-  const [expanded, setExpanded] = useState(false);
-  
-  if (!data && !showIfNull) return null;
-  
-  const distance = data ? (data.distance_km ?? (data.distance_m ? data.distance_m / 1000 : null)) : null;
-  const distanceColor = getDistanceColor(distance);
-  const hasDropdown = topItems && topItems.length > 1;
-  
-  const IconComponent = Icon || Store;
-  
-  return (
-    <div style={{ borderBottom: "1px solid #f1f5f9" }}>
-      <div 
-        style={{ 
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "12px 0",
-          cursor: hasDropdown ? "pointer" : "default",
-        }}
-        onClick={() => hasDropdown && setExpanded(!expanded)}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <div style={{
-            width: "36px", height: "36px", borderRadius: "8px",
-            background: data ? "#eef2ff" : "#f8fafc",
-            display: "flex", alignItems: "center", justifyContent: "center",
+          <span style={{ 
+            fontSize: "10px", 
+            fontWeight: 600, 
+            color: config.color, 
+            textTransform: "uppercase",
+            opacity: 0.7
           }}>
-            <IconComponent size={16} color={data ? "#6366f1" : "#cbd5e1"} />
-          </div>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <span style={{ fontSize: "14px", fontWeight: 500, color: "#334155" }}>{label}</span>
-              {hasDropdown && (
-                <>
-                  <span style={{ 
-                    fontSize: "10px", 
-                    color: "#94a3b8",
-                    background: "#f1f5f9",
-                    padding: "2px 6px",
-                    borderRadius: "4px"
-                  }}>
-                    {topItems.length}
-                  </span>
-                  {expanded ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
-                </>
-              )}
-            </div>
-            {data?.nom ? (
-              <p style={{ fontSize: "12px", color: "#94a3b8", margin: 0 }}>{data.nom}</p>
-            ) : !data ? (
-              <p style={{ fontSize: "12px", color: "#cbd5e1", margin: 0, fontStyle: "italic" }}>Aucun trouvé</p>
-            ) : null}
-          </div>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          <span style={{ fontSize: "14px", fontWeight: 700, color: distanceColor }}>
-            {distance != null ? `${distance.toFixed(1)} km` : "—"}
+            {category}
           </span>
-          {data?.commune && (
-            <p style={{ fontSize: "11px", color: "#94a3b8", margin: 0 }}>{data.commune}</p>
-          )}
+          <p style={{ fontSize: "13px", color: "#1e293b", margin: "4px 0 0 0", lineHeight: 1.5 }}>
+            {message}
+          </p>
         </div>
       </div>
-      
-      {expanded && topItems && topItems.length > 1 && (
-        <div style={{ 
-          paddingLeft: "48px", 
-          paddingBottom: "12px",
-          background: "#f8fafc",
-          borderRadius: "8px",
-          marginBottom: "8px"
-        }}>
-          {topItems.slice(1, 5).map((item, idx) => (
-            <div 
-              key={idx}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "8px 12px",
-                borderBottom: idx < Math.min(topItems.length - 2, 3) ? "1px solid #e2e8f0" : "none"
-              }}
-            >
-              <span style={{ fontSize: "12px", color: "#64748b" }}>
-                {item.name || "Sans nom"}
-              </span>
-              <span style={{ 
-                fontSize: "12px", 
-                fontWeight: 600, 
-                color: getDistanceColor(item.distance_m / 1000) 
-              }}>
-                {item.distance_m >= 1000 
-                  ? `${(item.distance_m / 1000).toFixed(1)} km`
-                  : `${Math.round(item.distance_m)} m`
-                }
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 };
 
+// ============================================
+// MAP COMPONENT - v2.4 CENTRAGE CORRIGÉ
+// ============================================
 const MapWithMarkers: React.FC<{ 
-  center?: { lat: number; lon: number }; 
+  lat?: number; 
+  lon?: number; 
   radius?: number;
-  zoneName?: string;
-}> = ({ center, radius = 500, zoneName }) => {
-  if (!center) {
+  commune?: string;
+}> = ({ lat, lon, radius = 2000, commune }) => {
+  if (!lat || !lon) {
     return (
       <div style={{
         height: "100%", width: "100%",
@@ -1343,9 +865,15 @@ const MapWithMarkers: React.FC<{
     );
   }
 
-  const delta = radius / 50000;
+  // v2.4: Calcul du delta amélioré pour un meilleur centrage
+  // 1 degré ≈ 111km, donc pour un rayon de 2km, delta ≈ 0.018
+  const deltaLat = (radius / 111000) * 1.5; // Ajout de marge 50%
+  const deltaLon = (radius / (111000 * Math.cos(lat * Math.PI / 180))) * 1.5;
   
-  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${center.lon - delta},${center.lat - delta},${center.lon + delta},${center.lat + delta}&layer=mapnik&marker=${center.lat},${center.lon}`;
+  // Zoom level basé sur le rayon
+  const zoom = radius <= 1000 ? 16 : radius <= 3000 ? 15 : radius <= 5000 ? 14 : radius <= 10000 ? 13 : 12;
+
+  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${lon - deltaLon},${lat - deltaLat},${lon + deltaLon},${lat + deltaLat}&layer=mapnik&marker=${lat},${lon}`;
 
   return (
     <div style={{ position: "relative", height: "100%", width: "100%", borderRadius: "12px", overflow: "hidden" }}>
@@ -1354,7 +882,6 @@ const MapWithMarkers: React.FC<{
         style={{ border: "none", width: "100%", height: "100%" }}
         title="Carte du projet"
       />
-      
       <div style={{
         position: "absolute", top: "12px", right: "12px",
         background: "rgba(255,255,255,0.95)", borderRadius: "8px",
@@ -1362,37 +889,29 @@ const MapWithMarkers: React.FC<{
       }}>
         <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "4px" }}>Centre</div>
         <div style={{ fontSize: "12px", fontFamily: "monospace", color: "#1e293b" }}>
-          {center.lat.toFixed(5)}, {center.lon.toFixed(5)}
+          {lat.toFixed(5)}, {lon.toFixed(5)}
         </div>
       </div>
-      
       <div style={{
-        position: "absolute", bottom: "12px", right: "12px",
-        background: "rgba(255,255,255,0.95)", borderRadius: "6px",
-        padding: "6px 12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
+        position: "absolute", bottom: "12px", left: "12px",
+        background: "rgba(255,255,255,0.95)", borderRadius: "8px",
+        padding: "8px 14px", boxShadow: "0 2px 12px rgba(0,0,0,0.1)"
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-          <div style={{ width: "20px", height: "2px", background: "#1e293b", borderRadius: "1px" }} />
-          <span style={{ fontSize: "11px", color: "#1e293b", fontWeight: 500 }}>
-            {radius >= 1000 ? `${(radius/1000).toFixed(1)} km` : `${radius} m`}
-          </span>
-        </div>
+        <span style={{ fontSize: "13px", fontWeight: 600, color: "#1e293b" }}>
+          {commune || "Zone d'analyse"}
+        </span>
       </div>
     </div>
   );
 };
 
 // ============================================
-// CARDS COMPOSANTS
+// DVF CARD
 // ============================================
-
-const PrixImmobilierCard: React.FC<{ prices?: Record<string, unknown>; transactions?: Record<string, unknown> }> = ({ prices, transactions }) => {
-  logRender('PrixImmobilierCard', { hasPrice: !!prices });
+const DvfCard: React.FC<{ dvf: DvfData | null }> = ({ dvf }) => {
+  const [showTransactions, setShowTransactions] = useState(false);
   
-  const pricesTyped = prices as { median_eur_m2?: number; evolution_1an?: number; min_eur_m2?: number; q1_eur_m2?: number; q3_eur_m2?: number; max_eur_m2?: number } | undefined;
-  const transactionsTyped = transactions as { count?: number } | undefined;
-
-  if (!pricesTyped || pricesTyped.median_eur_m2 == null) {
+  if (!dvf || dvf.nb_transactions === 0) {
     return (
       <div style={styles.card}>
         <div style={styles.cardTitle}>
@@ -1404,7 +923,7 @@ const PrixImmobilierCard: React.FC<{ prices?: Record<string, unknown>; transacti
         </div>
         <div style={{ padding: "40px", textAlign: "center", color: "#94a3b8" }}>
           <Euro size={48} style={{ opacity: 0.3, marginBottom: "12px" }} />
-          <p>Données de prix non disponibles pour cette zone</p>
+          <p>Aucune transaction DVF dans cette zone</p>
         </div>
       </div>
     );
@@ -1416,7 +935,7 @@ const PrixImmobilierCard: React.FC<{ prices?: Record<string, unknown>; transacti
         <Euro size={20} color="#10b981" />
         Marché Immobilier & Prix
         <span style={{ ...styles.badge, background: "#dcfce7", color: "#166534", marginLeft: "auto" }}>
-          DVF
+          {dvf.nb_transactions} transactions DVF
         </span>
       </div>
       
@@ -1428,62 +947,85 @@ const PrixImmobilierCard: React.FC<{ prices?: Record<string, unknown>; transacti
           PRIX MÉDIAN AU M²
         </div>
         <div style={{ fontSize: "42px", fontWeight: 800, color: "#047857" }}>
-          {formatPrice(pricesTyped.median_eur_m2)}
+          {formatPrice(dvf.prix_m2_median)}
         </div>
-        {pricesTyped.evolution_1an != null && (
+        {dvf.evolution_prix_pct != null && (
           <div style={{ 
             display: "inline-flex", alignItems: "center", gap: "6px",
             marginTop: "12px", padding: "6px 12px", borderRadius: "8px",
-            background: pricesTyped.evolution_1an >= 0 ? "#d1fae5" : "#fee2e2",
-            color: pricesTyped.evolution_1an >= 0 ? "#065f46" : "#991b1b",
+            background: dvf.evolution_prix_pct >= 0 ? "#d1fae5" : "#fee2e2",
+            color: dvf.evolution_prix_pct >= 0 ? "#065f46" : "#991b1b",
             fontSize: "13px", fontWeight: 600
           }}>
-            {pricesTyped.evolution_1an >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-            {formatPercent(pricesTyped.evolution_1an, true)} sur 1 an
+            {dvf.evolution_prix_pct >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+            {formatPercent(dvf.evolution_prix_pct, true)} sur 1 an
           </div>
         )}
       </div>
       
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px", marginBottom: "20px" }}>
         {[
-          { label: "Min", value: pricesTyped.min_eur_m2, color: "#3b82f6" },
-          { label: "Q1 (25%)", value: pricesTyped.q1_eur_m2, color: "#8b5cf6" },
-          { label: "Q3 (75%)", value: pricesTyped.q3_eur_m2, color: "#ec4899" },
-          { label: "Max", value: pricesTyped.max_eur_m2, color: "#ef4444" },
+          { label: "Min", value: dvf.prix_m2_min, color: "#3b82f6" },
+          { label: "Médian", value: dvf.prix_m2_median, color: "#10b981" },
+          { label: "Moyen", value: dvf.prix_m2_moyen, color: "#8b5cf6" },
+          { label: "Max", value: dvf.prix_m2_max, color: "#ef4444" },
         ].map((item, i) => (
           <div key={i} style={{ textAlign: "center", padding: "12px", background: "#f8fafc", borderRadius: "10px" }}>
             <div style={{ fontSize: "10px", color: "#64748b", fontWeight: 500, marginBottom: "4px" }}>{item.label}</div>
             <div style={{ fontSize: "16px", fontWeight: 700, color: item.color }}>
-              {item.value ? formatPrice(item.value) : "—"}
+              {formatPrice(item.value)}
             </div>
           </div>
         ))}
       </div>
       
-      <div style={{ 
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        padding: "14px 18px", background: "#f0f9ff", borderRadius: "10px"
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <TrendingUp size={20} color="#0284c7" />
-          <div>
-            <div style={{ fontSize: "14px", fontWeight: 600, color: "#0c4a6e" }}>Transactions</div>
-            <div style={{ fontSize: "12px", color: "#0369a1" }}>Sur 24 mois</div>
-          </div>
+      {dvf.transactions && dvf.transactions.length > 0 && (
+        <div>
+          <button
+            onClick={() => setShowTransactions(!showTransactions)}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              width: "100%", padding: "12px 16px", background: "#f8fafc",
+              border: "1px solid #e2e8f0", borderRadius: "10px", cursor: "pointer"
+            }}
+          >
+            <span style={{ fontSize: "13px", fontWeight: 600, color: "#475569" }}>
+              Voir les {Math.min(dvf.transactions.length, 30)} dernières transactions
+            </span>
+            {showTransactions ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          </button>
+          
+          {showTransactions && (
+            <div style={{ marginTop: "12px", maxHeight: "300px", overflowY: "auto" }}>
+              {dvf.transactions.slice(0, 30).map((tx, i) => (
+                <div key={i} style={{
+                  display: "grid", gridTemplateColumns: "100px 1fr 100px 80px",
+                  gap: "12px", padding: "10px 12px", alignItems: "center",
+                  background: i % 2 === 0 ? "#f8fafc" : "white",
+                  borderRadius: "6px", fontSize: "12px"
+                }}>
+                  <span style={{ color: "#64748b" }}>{tx.date_mutation}</span>
+                  <span style={{ color: "#1e293b", fontWeight: 500 }}>{tx.type_local} - {tx.commune}</span>
+                  <span style={{ color: "#10b981", fontWeight: 600 }}>{formatPrice(tx.valeur_fonciere)}</span>
+                  <span style={{ color: "#6366f1", fontWeight: 700 }}>{formatNumber(tx.prix_m2)} €/m²</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-        <div style={{ fontSize: "28px", fontWeight: 800, color: "#0284c7" }}>
-          {transactionsTyped?.count ?? "—"}
-        </div>
-      </div>
+      )}
     </div>
   );
 };
 
-const DemographieCard: React.FC<{ insee?: InseeData | null; projectNature: ProjectType }> = ({ insee, projectNature }) => {
-  logRender('DemographieCard', { hasInsee: !!insee, projectNature });
-  
-  const config = getSafeProjectConfig(projectNature);
-  
+// ============================================
+// DEMOGRAPHIE CARD - ADAPTATIF PAR TYPE DE PROJET
+// ============================================
+const DemographieCard: React.FC<{ 
+  insee: InseeData | null; 
+  projectType: string;
+  ehpadSpecific?: EhpadSpecific | null;
+}> = ({ insee, projectType, ehpadSpecific }) => {
   if (!insee) {
     return (
       <div style={styles.card}>
@@ -1499,482 +1041,726 @@ const DemographieCard: React.FC<{ insee?: InseeData | null; projectNature: Proje
     );
   }
 
-  let displayDensite: number | null = null;
-  if (insee.densite != null && insee.densite > 0) {
-    displayDensite = insee.densite;
-  } else if (insee.population != null && insee.surface_km2 != null && insee.surface_km2 > 0) {
-    displayDensite = insee.population / insee.surface_km2;
-  }
+  const isEhpadOrSenior = projectType === "ehpad";
+  const isEtudiant = projectType === "residence_etudiante";
+  const isLogement = projectType === "logement";
+  const isCommerce = projectType === "commerce";
+  const isBureaux = projectType === "bureaux";
 
-  const getAgeData = () => {
-    return config.demographicSegments?.map(segment => {
-      let value: number | null = null;
-      
-      if (segment.inseeField === "pct_0_14") value = insee.pct_moins_15 ?? null;
-      else if (segment.inseeField === "pct_15_29") value = insee.pct_15_29 ?? null;
-      else if (segment.inseeField === "pct_60_plus") value = insee.pct_plus_60 ?? null;
-      else if (segment.inseeField === "pct_75_84") value = insee.pct_plus_75 ?? null;
-      else if (segment.inseeField === "pct_85_plus") value = insee.pct_plus_85 ?? null;
-      
-      return { label: segment.label, value, color: segment.color, isPrimary: segment.isPrimary };
-    }).filter(d => d.value != null) || [];
+  const mainStats = [
+    { label: "POPULATION", value: formatNumber(insee.population), color: "#4338ca", bg: "linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)" },
+    { label: "DENSITÉ", value: formatNumber(insee.densite), unit: "hab./km²", color: "#15803d", bg: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)" },
+    { label: "RÉGION", value: insee.region, color: "#86198f", bg: "linear-gradient(135deg, #fdf4ff 0%, #fae8ff 100%)", isText: true },
+  ];
+
+  type StatItem = {
+    icon: LucideIcon;
+    label: string;
+    value: string;
+    color: string;
+    highlight?: boolean;
+    bgColor?: string;
   };
 
-  const ageData = getAgeData();
+  const getSecondaryStats = (): StatItem[] => {
+    const stats: StatItem[] = [];
+    
+    stats.push({ icon: Euro, label: "Revenu médian", value: `${formatPrice(insee.revenu_median)}/an`, color: "#10b981" });
+    stats.push({ icon: Activity, label: "Taux chômage", value: formatPercent(insee.taux_chomage), color: insee.taux_chomage > 10 ? "#ef4444" : "#f59e0b" });
+    
+    if (isEhpadOrSenior) {
+      const pop75 = ehpadSpecific?.demographie_senior?.population_75_plus || Math.round(insee.population * 0.1);
+      const pct75 = ehpadSpecific?.demographie_senior?.pct_75_plus || 10;
+      stats.unshift({ icon: Heart, label: "Population 75+ ans", value: formatNumber(pop75), color: "#ec4899", highlight: true, bgColor: "#fdf2f8" });
+      stats.push({ icon: UserCheck, label: "% 75+ ans", value: formatPercent(pct75), color: "#ec4899", highlight: true, bgColor: "#fdf2f8" });
+      if (insee.pct_plus_60) stats.push({ icon: Users, label: "% 60+ ans", value: formatPercent(insee.pct_plus_60), color: "#8b5cf6" });
+      if (insee.pct_retraites) stats.push({ icon: Home, label: "% Retraités", value: formatPercent(insee.pct_retraites), color: "#6366f1" });
+      if (insee.pct_personnes_seules) stats.push({ icon: UserCheck, label: "% Personnes seules", value: formatPercent(insee.pct_personnes_seules), color: "#f59e0b" });
+    } else if (isEtudiant) {
+      if (insee.pct_15_29) stats.unshift({ icon: GraduationCap, label: "% 15-29 ans", value: formatPercent(insee.pct_15_29), color: "#8b5cf6", highlight: true, bgColor: "#f5f3ff" });
+      if (insee.pct_etudiants) stats.push({ icon: School, label: "% Étudiants", value: formatPercent(insee.pct_etudiants), color: "#6366f1", highlight: true, bgColor: "#eef2ff" });
+      stats.push({ icon: Home, label: "% Locataires", value: formatPercent(insee.pct_locataires || (100 - (insee.pct_proprietaires || 58))), color: "#3b82f6", highlight: true });
+      if (insee.pct_personnes_seules) stats.push({ icon: UserCheck, label: "% Personnes seules", value: formatPercent(insee.pct_personnes_seules), color: "#f59e0b" });
+    } else if (isLogement) {
+      stats.push({ icon: Home, label: "% Propriétaires", value: formatPercent(insee.pct_proprietaires), color: "#3b82f6" });
+      if (insee.menages_total) stats.push({ icon: Users, label: "Ménages", value: formatNumber(insee.menages_total), color: "#6366f1" });
+      if (insee.taille_moyenne_menage) stats.push({ icon: Baby, label: "Taille moyenne ménage", value: formatNumber(insee.taille_moyenne_menage, 1), color: "#8b5cf6" });
+      if (insee.pct_moins_15) stats.push({ icon: Baby, label: "% Moins de 15 ans", value: formatPercent(insee.pct_moins_15), color: "#ec4899" });
+      if (insee.pct_familles_monoparentales) stats.push({ icon: Users, label: "% Familles mono.", value: formatPercent(insee.pct_familles_monoparentales), color: "#f59e0b" });
+      if (insee.pct_logements_vacants) stats.push({ icon: Building2, label: "% Logements vacants", value: formatPercent(insee.pct_logements_vacants), color: "#64748b" });
+    } else if (isCommerce) {
+      stats.push({ icon: PiggyBank, label: "Pouvoir d'achat", value: insee.revenu_median > 25000 ? "Élevé" : insee.revenu_median > 20000 ? "Moyen" : "Faible", color: insee.revenu_median > 25000 ? "#10b981" : "#f59e0b" });
+      if (insee.pct_actifs) stats.push({ icon: Briefcase, label: "% Actifs", value: formatPercent(insee.pct_actifs), color: "#3b82f6" });
+      if (insee.pct_30_44) stats.push({ icon: Users, label: "% 30-44 ans", value: formatPercent(insee.pct_30_44), color: "#6366f1" });
+    } else if (isBureaux) {
+      if (insee.pct_actifs) stats.unshift({ icon: Briefcase, label: "% Actifs", value: formatPercent(insee.pct_actifs), color: "#3b82f6", highlight: true, bgColor: "#dbeafe" });
+      stats.push({ icon: Activity, label: "Bassin d'emploi", value: formatNumber(Math.round(insee.population * 0.45)), color: "#6366f1" });
+      if (insee.pct_30_44) stats.push({ icon: Users, label: "% 30-44 ans", value: formatPercent(insee.pct_30_44), color: "#8b5cf6" });
+    } else {
+      stats.push({ icon: Home, label: "% Propriétaires", value: formatPercent(insee.pct_proprietaires), color: "#3b82f6" });
+    }
+    
+    return stats;
+  };
+
+  const secondaryStats = getSecondaryStats();
 
   return (
     <div style={styles.card}>
       <div style={styles.cardTitle}>
-        <Users size={20} color={config.color} />
+        <Users size={20} color="#6366f1" />
         Données Démographiques
-        <span style={{ 
-          ...styles.badge, 
-          background: `${config.color}20`, 
-          color: config.color, 
-          marginLeft: "auto" 
-        }}>
-          {insee.commune || insee.code_commune || "INSEE"}
+        <span style={{ ...styles.badge, background: "#eef2ff", color: "#4f46e5", marginLeft: "auto" }}>
+          {insee.commune_nom}
         </span>
+        {isEhpadOrSenior && (
+          <span style={{ ...styles.badge, background: "#fdf2f8", color: "#be185d" }}>
+            Focus Seniors
+          </span>
+        )}
+        {isEtudiant && (
+          <span style={{ ...styles.badge, background: "#f5f3ff", color: "#7c3aed" }}>
+            Focus Étudiants
+          </span>
+        )}
       </div>
       
-      <div style={{
-        display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "24px"
-      }}>
-        <div style={{
-          background: "linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)",
-          borderRadius: "14px", padding: "16px", textAlign: "center"
-        }}>
-          <div style={{ fontSize: "11px", color: "#6366f1", fontWeight: 600, marginBottom: "4px" }}>POPULATION</div>
-          <div style={{ fontSize: "28px", fontWeight: 800, color: "#4338ca" }}>
-            {formatNumber(insee.population)}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "20px" }}>
+        {mainStats.map((stat, i) => (
+          <div key={i} style={{
+            background: stat.bg,
+            borderRadius: "14px", padding: "16px", textAlign: "center"
+          }}>
+            <div style={{ fontSize: "11px", color: stat.color, fontWeight: 600, marginBottom: "4px" }}>{stat.label}</div>
+            <div style={{ fontSize: stat.isText ? "16px" : "28px", fontWeight: stat.isText ? 700 : 800, color: stat.color }}>
+              {stat.value}
+            </div>
+            {stat.unit && <div style={{ fontSize: "11px", color: stat.color }}>{stat.unit}</div>}
           </div>
-          {insee.evolution_pop_5ans != null && (
-            <div style={{ 
-              display: "flex", alignItems: "center", justifyContent: "center", gap: "4px",
-              fontSize: "12px", marginTop: "6px",
-              color: insee.evolution_pop_5ans >= 0 ? "#059669" : "#dc2626"
+        ))}
+      </div>
+      
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "10px" }}>
+        {secondaryStats.map((stat, i) => {
+          const Icon = stat.icon;
+          return (
+            <div key={i} style={{ 
+              ...styles.statBox,
+              background: stat.bgColor || "#f8fafc",
+              border: stat.highlight ? `2px solid ${stat.color}30` : "none"
             }}>
-              {insee.evolution_pop_5ans >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-              {formatPercent(insee.evolution_pop_5ans, true)} /5 ans
-            </div>
-          )}
-        </div>
-        
-        <div style={{
-          background: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)",
-          borderRadius: "14px", padding: "16px", textAlign: "center"
-        }}>
-          <div style={{ fontSize: "11px", color: "#16a34a", fontWeight: 600, marginBottom: "4px" }}>SURFACE</div>
-          <div style={{ fontSize: "28px", fontWeight: 800, color: "#15803d" }}>
-            {insee.surface_km2 != null ? formatNumber(insee.surface_km2, 1) : "—"}
-          </div>
-          <div style={{ fontSize: "12px", color: "#22c55e", marginTop: "6px" }}>km²</div>
-        </div>
-        
-        <div style={{
-          background: "linear-gradient(135deg, #fdf4ff 0%, #fae8ff 100%)",
-          borderRadius: "14px", padding: "16px", textAlign: "center"
-        }}>
-          <div style={{ fontSize: "11px", color: "#a21caf", fontWeight: 600, marginBottom: "4px" }}>DENSITÉ</div>
-          <div style={{ fontSize: "28px", fontWeight: 800, color: "#86198f" }}>
-            {displayDensite != null ? formatNumber(Math.round(displayDensite)) : "—"}
-          </div>
-          <div style={{ fontSize: "12px", color: "#a855f7", marginTop: "6px" }}>hab./km²</div>
-        </div>
-      </div>
-      
-      {ageData.length > 0 && (
-        <div style={{ marginBottom: "24px" }}>
-          <div style={{ fontSize: "13px", fontWeight: 600, color: "#64748b", marginBottom: "12px" }}>
-            Répartition par âge
-          </div>
-          {ageData.map((tranche, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-              <span style={{ 
-                fontSize: "12px", 
-                color: tranche.isPrimary ? tranche.color : "#64748b", 
-                fontWeight: tranche.isPrimary ? 600 : 400,
-                width: "80px" 
-              }}>
-                {tranche.label}
-              </span>
-              <div style={{ flex: 1, height: "20px", background: "#f1f5f9", borderRadius: "10px", overflow: "hidden" }}>
-                <div style={{
-                  width: `${Math.min((tranche.value || 0) * 2.5, 100)}%`,
-                  height: "100%", 
-                  background: tranche.color, 
-                  borderRadius: "10px",
-                  transition: "width 0.5s ease-out"
-                }} />
-              </div>
-              <span style={{ 
-                fontSize: "13px", 
-                fontWeight: 700, 
-                color: tranche.isPrimary ? tranche.color : "#1e293b", 
-                width: "50px", 
-                textAlign: "right" 
-              }}>
-                {formatPercent(tranche.value)}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-      
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px", background: "#f8fafc", borderRadius: "10px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <Euro size={16} color="#10b981" />
-            <span style={{ fontSize: "13px", color: "#64748b" }}>Revenu médian</span>
-          </div>
-          <span style={{ fontSize: "15px", fontWeight: 700, color: "#10b981" }}>
-            {insee.revenu_median ? `${formatPrice(insee.revenu_median)}/an` : "—"}
-          </span>
-        </div>
-        
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px", background: "#f8fafc", borderRadius: "10px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <Activity size={16} color={insee.taux_chomage && insee.taux_chomage > 10 ? "#ef4444" : "#f59e0b"} />
-            <span style={{ fontSize: "13px", color: "#64748b" }}>Taux chômage</span>
-          </div>
-          <span style={{ fontSize: "15px", fontWeight: 700, color: insee.taux_chomage && insee.taux_chomage > 10 ? "#ef4444" : "#f59e0b" }}>
-            {formatPercent(insee.taux_chomage)}
-          </span>
-        </div>
-        
-        {(projectNature === "ehpad" || projectNature === "residence_senior") && (
-          <>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px", background: `${config.color}10`, borderRadius: "10px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <Heart size={16} color={config.color} />
-                <span style={{ fontSize: "13px", color: "#64748b" }}>75+ ans</span>
+                <Icon size={16} color={stat.color} />
+                <span style={{ fontSize: "13px", color: "#64748b" }}>{stat.label}</span>
               </div>
-              <span style={{ fontSize: "15px", fontWeight: 700, color: config.color }}>
-                {formatPercent(insee.pct_plus_75)}
+              <span style={{ fontSize: "15px", fontWeight: 700, color: stat.color }}>
+                {stat.value}
               </span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px", background: `${config.color}10`, borderRadius: "10px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <Heart size={16} color={config.color} />
-                <span style={{ fontSize: "13px", color: "#64748b" }}>65+ ans</span>
-              </div>
-              <span style={{ fontSize: "15px", fontWeight: 700, color: config.color }}>
-                {formatPercent(insee.pct_plus_65)}
-              </span>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-};// ============================================
-// SERVICES CARD
-// ============================================
-const ServicesCard: React.FC<{ 
-  services?: Record<string, ServiceProche>; 
-  shops?: ShopsData | null;
-  bpe?: NormalizedBpeData | null;
-  projectNature: ProjectType;
-  actualRadiusKm?: number;
-}> = ({ services = {}, shops, bpe, projectNature, actualRadiusKm }) => {
-  logRender('ServicesCard', { 
-    servicesCount: Object.keys(services).length, 
-    hasShops: !!shops, 
-    hasBpe: !!bpe 
-  });
-  
-  const config = getSafeProjectConfig(projectNature);
-  
-  const displayRadius = shops?.radius_m_used 
-    ? shops.radius_m_used / 1000 
-    : (actualRadiusKm ?? config.radius.analysis);
-  
-  const hasShops = shops && shops.categories && Object.keys(shops.categories).length > 0;
-  const dataSource = hasShops ? "OSM/shops" : (bpe ? "BPE" : null);
-  
-  const getServiceDataFromShopsOrServices = (
-    shopCategories: string[],
-    serviceKey: string
-  ): { data: ServiceProche | null; topItems: ShopItem[] } => {
-    if (shops?.categories) {
-      for (const cat of shopCategories) {
-        const catData = shops.categories[cat];
-        if (catData?.top?.length > 0) {
-          const first = catData.top[0];
-          return {
-            data: {
-              nom: first.name || '',
-              commune: '',
-              distance_km: first.distance_m / 1000,
-              distance_m: first.distance_m,
-            },
-            topItems: catData.top,
-          };
-        }
-      }
-    }
-    
-    const svc = services[serviceKey];
-    if (svc?.distance_km !== undefined) {
-      return { data: svc, topItems: [] };
-    }
-    
-    return { data: null, topItems: [] };
-  };
-
-  const supermarche = getServiceDataFromShopsOrServices(['supermarket'], 'supermarche_proche');
-  const stationService = getServiceDataFromShopsOrServices(['fuel'], 'station_service_proche');
-  const banque = getServiceDataFromShopsOrServices(['bank_atm'], 'banque_proche');
-  const poste = getServiceDataFromShopsOrServices(['post'], 'poste_proche');
-  const medecin = getServiceDataFromShopsOrServices(['doctor'], 'medecin_proche');
-  const pharmacie = getServiceDataFromShopsOrServices(['pharmacy'], 'pharmacie_proche');
-  const gendarmerie = getServiceDataFromShopsOrServices(['gendarmerie'], 'gendarmerie_proche');
-  const commissariat = getServiceDataFromShopsOrServices(['commissariat'], 'commissariat_proche');
-
-  return (
-    <div style={styles.card}>
-      <div style={styles.cardTitle}>
-        <ShoppingCart size={20} color="#f59e0b" />
-        Services & Équipements
-        <span style={{ ...styles.badge, background: "#fef3c7", color: "#92400e", marginLeft: "auto" }}>
-          Rayon {displayRadius.toFixed(1)} km
-        </span>
-        {dataSource && (
-          <span style={{ ...styles.badge, background: "#dbeafe", color: "#1d4ed8" }}>
-            {dataSource}
-          </span>
-        )}
-      </div>
-      
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 24px" }}>
-        <div>
-          <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748b", marginBottom: "8px", textTransform: "uppercase" }}>
-            Commerces
-          </div>
-          <ServiceRowWithDropdown icon={ShoppingCart} label="Supermarché" data={supermarche.data} topItems={supermarche.topItems} showIfNull />
-          <ServiceRowWithDropdown icon={Fuel} label="Station service" data={stationService.data} topItems={stationService.topItems} showIfNull />
-          <ServiceRowWithDropdown icon={Banknote} label="Banque / DAB" data={banque.data} topItems={banque.topItems} showIfNull />
-          <ServiceRowWithDropdown icon={Mail} label="Bureau de poste" data={poste.data} topItems={poste.topItems} showIfNull />
-        </div>
-        <div>
-          <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748b", marginBottom: "8px", textTransform: "uppercase" }}>
-            Santé & Sécurité
-          </div>
-          <ServiceRowWithDropdown icon={Stethoscope} label="Médecin" data={medecin.data} topItems={medecin.topItems} showIfNull />
-          <ServiceRowWithDropdown icon={Pill} label="Pharmacie" data={pharmacie.data} topItems={pharmacie.topItems} showIfNull />
-          <ServiceRowWithDropdown icon={Shield} label="Gendarmerie" data={gendarmerie.data} topItems={gendarmerie.topItems} showIfNull />
-          <ServiceRowWithDropdown icon={Shield} label="Commissariat" data={commissariat.data} topItems={commissariat.topItems} showIfNull />
-        </div>
+          );
+        })}
       </div>
     </div>
   );
 };
 
 // ============================================
-// COMPETITION CARD
+// TRANSPORT CARD
 // ============================================
-const CompetitionCard: React.FC<{ 
-  data?: EHPADData | null; 
-  insee?: InseeData | null;
-  projectNature: ProjectType;
-  isLoadingFiness?: boolean;
-}> = ({ data, insee, projectNature, isLoadingFiness = false }) => {
-  logRender('CompetitionCard', { hasData: !!data, isLoadingFiness });
-  
-  const [expanded, setExpanded] = useState(true);
-  const config = getSafeProjectConfig(projectNature);
-  const labels = config.competitionLabel;
-
-  if (isLoadingFiness) {
+const TransportCard: React.FC<{ transport: TransportData | null }> = ({ transport }) => {
+  if (!transport) {
     return (
       <div style={styles.card}>
         <div style={styles.cardTitle}>
-          <Building size={20} color={config.color} />
-          Concurrence
-          <span style={{ ...styles.badge, background: "#dbeafe", color: "#1e40af", marginLeft: "auto" }}>
-            <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
-            Chargement...
-          </span>
+          <Train size={20} color="#8b5cf6" />
+          Accessibilité Transport
         </div>
-        <div style={{ padding: "40px", textAlign: "center" }}>
-          <Loader2 size={40} color={config.color} style={{ animation: "spin 1s linear infinite", marginBottom: "16px" }} />
-          <p style={{ color: "#64748b", fontSize: "14px" }}>
-            Recherche d'établissements...
-          </p>
+        <div style={{ padding: "40px", textAlign: "center", color: "#94a3b8" }}>
+          <Train size={48} style={{ opacity: 0.3, marginBottom: "12px" }} />
+          <p>Données transport non disponibles</p>
         </div>
       </div>
     );
   }
 
-  const facilities: FacilityEnriched[] = data?.liste || [];
-  const totalCount = data?.count || 0;
-  const totalCapacity = data?.analyse_concurrence?.capacite_totale || 0;
-  const analysis = data?.analyse_concurrence;
-
-  if (totalCount === 0 && !analysis) {
-    return (
-      <div style={styles.card}>
-        <div style={styles.cardTitle}>
-          <Building size={20} color={config.color} />
-          Concurrence
-          <span style={{ ...styles.badge, background: "#dcfce7", color: "#166534", marginLeft: "auto" }}>
-            OSM + FINESS
-          </span>
-        </div>
-        <div style={{ padding: "32px", textAlign: "center", background: "#f0fdf4", borderRadius: "12px" }}>
-          <CheckCircle size={40} color="#10b981" style={{ marginBottom: "12px" }} />
-          <p style={{ color: "#065f46", fontSize: "15px", fontWeight: 600, margin: 0 }}>
-            Aucun {labels.singular.toLowerCase()} identifié dans la zone
-          </p>
-          <p style={{ color: "#059669", fontSize: "13px", margin: "8px 0 0 0" }}>
-            Opportunité de marché potentielle
-          </p>
-        </div>
-      </div>
-    );
-  }
-  
   return (
     <div style={styles.card}>
       <div style={styles.cardTitle}>
-        <Building size={20} color={config.color} />
-        Concurrence
-        <span style={{ ...styles.badge, background: `${config.color}20`, color: config.color, marginLeft: "auto" }}>
-          {totalCount} {labels.plural.toLowerCase()}
+        <Train size={20} color="#8b5cf6" />
+        Accessibilité Transport
+        <span style={{ 
+          ...styles.badge, 
+          background: transport.score >= 70 ? "#dcfce7" : transport.score >= 50 ? "#fef3c7" : "#fee2e2",
+          color: transport.score >= 70 ? "#166534" : transport.score >= 50 ? "#92400e" : "#991b1b",
+          marginLeft: "auto" 
+        }}>
+          Score: {transport.score}/100
         </span>
       </div>
       
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px", marginBottom: "20px" }}>
-        <div style={{ padding: "14px", background: `${config.color}10`, borderRadius: "10px", textAlign: "center" }}>
-          <div style={{ fontSize: "24px", fontWeight: 800, color: config.color }}>
-            {totalCount}
+      <div style={{ display: "flex", gap: "10px", marginBottom: "20px", flexWrap: "wrap" }}>
+        {transport.has_metro_train && (
+          <div style={{ 
+            display: "flex", alignItems: "center", gap: "6px",
+            padding: "8px 14px", background: "#eef2ff", borderRadius: "8px"
+          }}>
+            <Train size={16} color="#6366f1" />
+            <span style={{ fontSize: "13px", fontWeight: 600, color: "#4338ca" }}>Métro / Train</span>
           </div>
-          <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>{labels.plural}</div>
+        )}
+        {transport.has_tram && (
+          <div style={{ 
+            display: "flex", alignItems: "center", gap: "6px",
+            padding: "8px 14px", background: "#f0fdf4", borderRadius: "8px"
+          }}>
+            <Bus size={16} color="#16a34a" />
+            <span style={{ fontSize: "13px", fontWeight: 600, color: "#15803d" }}>Tramway</span>
+          </div>
+        )}
+        {!transport.has_metro_train && !transport.has_tram && (
+          <div style={{ 
+            display: "flex", alignItems: "center", gap: "6px",
+            padding: "8px 14px", background: "#f1f5f9", borderRadius: "8px"
+          }}>
+            <Bus size={16} color="#64748b" />
+            <span style={{ fontSize: "13px", fontWeight: 500, color: "#64748b" }}>Bus uniquement</span>
+          </div>
+        )}
+      </div>
+      
+      {transport.stops && transport.stops.length > 0 && (
+        <div>
+          <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748b", marginBottom: "10px" }}>
+            Arrêts les plus proches
+          </div>
+          {transport.stops.slice(0, 5).map((stop, i) => (
+            <div key={i} style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "10px 0", borderBottom: i < transport.stops.length - 1 ? "1px solid #f1f5f9" : "none"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{
+                  width: "32px", height: "32px", borderRadius: "8px",
+                  background: stop.type === "metro" || stop.type === "train" ? "#eef2ff" : "#f0fdf4",
+                  display: "flex", alignItems: "center", justifyContent: "center"
+                }}>
+                  {stop.type === "metro" || stop.type === "train" ? <Train size={14} color="#6366f1" /> : <Bus size={14} color="#16a34a" />}
+                </div>
+                <span style={{ fontSize: "13px", color: "#1e293b" }}>{stop.name}</span>
+              </div>
+              <span style={{ 
+                fontSize: "13px", fontWeight: 600,
+                color: stop.distance_m < 500 ? "#10b981" : stop.distance_m < 1000 ? "#f59e0b" : "#64748b"
+              }}>
+                {stop.distance_m < 1000 ? `${stop.distance_m} m` : `${(stop.distance_m / 1000).toFixed(1)} km`}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// BPE CARD - v2.4 LABELS COMPLETS
+// ============================================
+const BpeCard: React.FC<{ bpe: BpeData | null; projectType: string }> = ({ bpe, projectType }) => {
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
+
+  if (!bpe) {
+    return (
+      <div style={styles.card}>
+        <div style={styles.cardTitle}>
+          <ShoppingCart size={20} color="#f59e0b" />
+          Services & Équipements
+        </div>
+        <div style={{ padding: "40px", textAlign: "center", color: "#94a3b8" }}>
+          <ShoppingCart size={48} style={{ opacity: 0.3, marginBottom: "12px" }} />
+          <p>Données équipements non disponibles</p>
+        </div>
+      </div>
+    );
+  }
+
+  const allCategories = [
+    { key: "commerces", label: "Commerces", icon: ShoppingCart, color: "#f59e0b", data: bpe.commerces },
+    { key: "sante", label: "Santé", icon: Stethoscope, color: "#ef4444", data: bpe.sante },
+    { key: "services", label: "Services", icon: Banknote, color: "#3b82f6", data: bpe.services },
+    { key: "education", label: "Éducation", icon: GraduationCap, color: "#8b5cf6", data: bpe.education },
+    ...(bpe.loisirs ? [{ key: "loisirs", label: "Loisirs", icon: Theater, color: "#ec4899", data: bpe.loisirs }] : []),
+    ...(bpe.sport ? [{ key: "sport", label: "Sport", icon: Dumbbell, color: "#10b981", data: bpe.sport }] : []),
+  ];
+
+  const isEhpadOrSenior = projectType === "ehpad";
+  const isEtudiant = projectType === "residence_etudiante";
+  const isCommerce = projectType === "commerce";
+
+  let priorityCategories = [...allCategories];
+  if (isEhpadOrSenior) {
+    priorityCategories.sort((a, b) => {
+      if (a.key === "sante") return -1;
+      if (b.key === "sante") return 1;
+      if (a.key === "commerces") return -1;
+      if (b.key === "commerces") return 1;
+      return 0;
+    });
+  } else if (isEtudiant) {
+    priorityCategories.sort((a, b) => {
+      if (a.key === "education") return -1;
+      if (b.key === "education") return 1;
+      if (a.key === "loisirs") return -1;
+      if (b.key === "loisirs") return 1;
+      return 0;
+    });
+  } else if (isCommerce) {
+    priorityCategories.sort((a, b) => {
+      if (a.key === "commerces") return -1;
+      if (b.key === "commerces") return 1;
+      return 0;
+    });
+  }
+
+  return (
+    <div style={styles.card}>
+      <div style={styles.cardTitle}>
+        <ShoppingCart size={20} color="#f59e0b" />
+        Services & Équipements
+        <span style={{ 
+          ...styles.badge, 
+          background: bpe.score >= 70 ? "#dcfce7" : bpe.score >= 50 ? "#fef3c7" : "#fee2e2",
+          color: bpe.score >= 70 ? "#166534" : bpe.score >= 50 ? "#92400e" : "#991b1b",
+          marginLeft: "auto" 
+        }}>
+          Score: {bpe.score}/100
+        </span>
+        <span style={{ ...styles.badge, background: "#f1f5f9", color: "#64748b" }}>
+          {bpe.total_equipements} équipements
+        </span>
+      </div>
+      
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+        {priorityCategories.map((cat) => {
+          const Icon = cat.icon;
+          const isExpanded = expandedCategory === cat.key;
+          const hasDetails = cat.data.details && cat.data.details.length > 0;
+          
+          return (
+            <div key={cat.key} style={{ 
+              padding: "16px", 
+              background: "#f8fafc", 
+              borderRadius: "12px",
+              borderLeft: `4px solid ${cat.color}`,
+              cursor: hasDetails ? "pointer" : "default"
+            }}
+            onClick={() => hasDetails && setExpandedCategory(isExpanded ? null : cat.key)}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+                <Icon size={18} color={cat.color} />
+                <span style={{ fontSize: "14px", fontWeight: 600, color: "#1e293b" }}>{cat.label}</span>
+                <span style={{ 
+                  marginLeft: "auto",
+                  fontSize: "20px", fontWeight: 700, color: cat.color 
+                }}>
+                  {cat.data.count}
+                </span>
+                {hasDetails && (
+                  isExpanded ? <ChevronUp size={16} color="#64748b" /> : <ChevronDown size={16} color="#64748b" />
+                )}
+              </div>
+              
+              {/* v2.4: Labels complets sans troncature */}
+              {cat.data.details && cat.data.details.length > 0 && (
+                <div style={{ fontSize: "12px", color: "#64748b" }}>
+                  {cat.data.details.slice(0, isExpanded ? 10 : 2).map((d, i) => (
+                    <div key={i} style={{ 
+                      display: "flex", 
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      marginBottom: "6px", 
+                      padding: "4px 0",
+                      gap: "8px"
+                    }}>
+                      <span style={{ 
+                        flex: 1,
+                        wordBreak: "break-word",
+                        lineHeight: 1.3
+                      }}>
+                        {d.label}
+                      </span>
+                      <span style={{ 
+                        fontWeight: 600, 
+                        color: d.distance_m < 500 ? "#10b981" : "#64748b",
+                        whiteSpace: "nowrap",
+                        flexShrink: 0
+                      }}>
+                        {d.distance_m < 1000 ? `${d.distance_m}m` : `${(d.distance_m / 1000).toFixed(1)}km`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {/* Bouton voir plus si > 2 */}
+              {hasDetails && cat.data.details.length > 2 && !isExpanded && (
+                <div style={{ 
+                  fontSize: "11px", 
+                  color: cat.color, 
+                  marginTop: "8px",
+                  fontWeight: 500
+                }}>
+                  + {cat.data.details.length - 2} autres...
+                </div>
+              )}
+              
+              {(!cat.data.details || cat.data.details.length === 0) && cat.data.count === 0 && (
+                <div style={{ fontSize: "11px", color: "#94a3b8", fontStyle: "italic" }}>
+                  Aucun équipement trouvé
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// EHPAD PRICING CARD
+// ============================================
+const EhpadPricingCard: React.FC<{ 
+  analysePrix: AnalysePrix | null;
+  concurrence: EhpadConcurrence;
+}> = ({ analysePrix, concurrence }) => {
+  if (!analysePrix || !analysePrix.nb_etablissements_avec_prix) {
+    return null;
+  }
+
+  const getInterpretationColor = (interpretation: string | null) => {
+    if (!interpretation) return { bg: "#f1f5f9", color: "#64748b" };
+    if (interpretation.includes("compétitif") || interpretation.includes("bas")) {
+      return { bg: "#dcfce7", color: "#166534" };
+    }
+    if (interpretation.includes("élevé")) {
+      return { bg: "#fee2e2", color: "#991b1b" };
+    }
+    return { bg: "#fef3c7", color: "#92400e" };
+  };
+
+  const interpColor = getInterpretationColor(analysePrix.interpretation);
+
+  return (
+    <div style={styles.card}>
+      <div style={styles.cardTitle}>
+        <BadgeEuro size={20} color="#10b981" />
+        Tarifs EHPAD - Département
+        <span style={{ 
+          ...styles.badge, 
+          background: "#dcfce7", 
+          color: "#166534", 
+          marginLeft: "auto" 
+        }}>
+          {analysePrix.nb_etablissements_avec_prix} EHPAD avec tarifs
+        </span>
+        <span style={{ 
+          ...styles.badge, 
+          background: interpColor.bg, 
+          color: interpColor.color 
+        }}>
+          {analysePrix.interpretation || "—"}
+        </span>
+      </div>
+
+      <div style={{
+        background: "linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)",
+        borderRadius: "14px", padding: "24px", textAlign: "center", marginBottom: "20px"
+      }}>
+        <div style={{ fontSize: "13px", color: "#059669", fontWeight: 600, marginBottom: "8px" }}>
+          PRIX HÉBERGEMENT MÉDIAN
+        </div>
+        <div style={{ fontSize: "48px", fontWeight: 800, color: "#047857" }}>
+          {analysePrix.prix_hebergement_median?.toFixed(0) ?? "—"} €
+        </div>
+        <div style={{ fontSize: "14px", color: "#059669" }}>par jour</div>
+        
+        {analysePrix.cout_mensuel_moyen_gir_1_2 && (
+          <div style={{ 
+            marginTop: "16px", padding: "12px 20px",
+            background: "rgba(255,255,255,0.7)", borderRadius: "10px",
+            display: "inline-block"
+          }}>
+            <div style={{ fontSize: "11px", color: "#065f46", marginBottom: "4px" }}>
+              Coût mensuel moyen (GIR 1-2)
+            </div>
+            <div style={{ fontSize: "24px", fontWeight: 700, color: "#047857" }}>
+              {formatNumber(analysePrix.cout_mensuel_moyen_gir_1_2)} €/mois
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "10px", marginBottom: "24px" }}>
+        {[
+          { label: "Min", value: analysePrix.prix_hebergement_min, color: "#3b82f6" },
+          { label: "Médian", value: analysePrix.prix_hebergement_median, color: "#10b981" },
+          { label: "Moyen", value: analysePrix.prix_hebergement_moyen, color: "#8b5cf6" },
+          { label: "Max", value: analysePrix.prix_hebergement_max, color: "#ef4444" },
+        ].map((item, i) => (
+          <div key={i} style={{ textAlign: "center", padding: "14px", background: "#f8fafc", borderRadius: "10px" }}>
+            <div style={{ fontSize: "10px", color: "#64748b", fontWeight: 500, marginBottom: "4px" }}>{item.label}</div>
+            <div style={{ fontSize: "18px", fontWeight: 700, color: item.color }}>
+              {item.value?.toFixed(2) ?? "—"} €
+            </div>
+            <div style={{ fontSize: "10px", color: "#94a3b8" }}>par jour</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ 
+        background: "#fdf2f8", 
+        borderRadius: "12px", 
+        padding: "20px",
+        borderLeft: "4px solid #ec4899"
+      }}>
+        <div style={{ 
+          display: "flex", alignItems: "center", gap: "8px", 
+          marginBottom: "16px" 
+        }}>
+          <Heart size={18} color="#ec4899" />
+          <span style={{ fontSize: "14px", fontWeight: 600, color: "#9d174d" }}>
+            Tarifs dépendance moyens (GIR)
+          </span>
         </div>
         
-        <div style={{ padding: "14px", background: "#f8fafc", borderRadius: "10px", textAlign: "center" }}>
-          <div style={{ fontSize: "24px", fontWeight: 800, color: "#1e293b" }}>
-            {totalCapacity > 0 ? formatNumber(totalCapacity) : "—"}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
+          {[
+            { label: "GIR 1-2", desc: "Dépendance forte", value: analysePrix.tarif_gir_1_2_moyen },
+            { label: "GIR 3-4", desc: "Dépendance modérée", value: analysePrix.tarif_gir_3_4_moyen },
+            { label: "GIR 5-6", desc: "Autonomie relative", value: analysePrix.tarif_gir_5_6_moyen },
+          ].map((gir, i) => (
+            <div key={i} style={{ 
+              background: "white", borderRadius: "10px", padding: "14px", textAlign: "center",
+              border: "1px solid #fbcfe8"
+            }}>
+              <div style={{ fontSize: "11px", color: "#be185d", fontWeight: 600, marginBottom: "4px" }}>
+                {gir.label}
+              </div>
+              <div style={{ fontSize: "10px", color: "#9d174d", marginBottom: "8px" }}>
+                {gir.desc}
+              </div>
+              <div style={{ fontSize: "22px", fontWeight: 700, color: "#be185d" }}>
+                {gir.value?.toFixed(2) ?? "—"} €
+              </div>
+              <div style={{ fontSize: "10px", color: "#9d174d" }}>par jour</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ 
+        marginTop: "16px", padding: "10px 14px", 
+        background: "#f8fafc", borderRadius: "8px",
+        display: "flex", alignItems: "center", justifyContent: "space-between"
+      }}>
+        <span style={{ fontSize: "11px", color: "#64748b" }}>
+          Source: CNSA / data.gouv.fr
+        </span>
+        <span style={{ fontSize: "11px", color: "#94a3b8" }}>
+          Tarifs 2025
+        </span>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// EHPAD COMPETITION CARD - AVEC LISTE DÉTAILLÉE
+// ============================================
+const EhpadCompetitionCard: React.FC<{ specific: EhpadSpecific }> = ({ specific }) => {
+  const [showList, setShowList] = useState(true);
+  
+  const { concurrence, demographie_senior, indicateurs_marche } = specific;
+  const { etablissements, count, total_lits, sources } = concurrence;
+
+  const getPotentielColor = (potentiel: string) => {
+    switch (potentiel) {
+      case "fort": return { bg: "#dcfce7", color: "#166534" };
+      case "faible": return { bg: "#fee2e2", color: "#991b1b" };
+      default: return { bg: "#fef3c7", color: "#92400e" };
+    }
+  };
+
+  const getEquipementLabel = (taux: string) => {
+    switch (taux) {
+      case "sous_equipe": return "Zone sous-équipée";
+      case "sur_equipe": return "Zone sur-équipée";
+      default: return "Zone équilibrée";
+    }
+  };
+
+  const potentielColor = getPotentielColor(indicateurs_marche.potentiel_marche);
+
+  return (
+    <div style={styles.card}>
+      <div style={styles.cardTitle}>
+        <Building size={20} color="#ec4899" />
+        Concurrence EHPAD - Zone d'analyse
+        <span style={{ ...styles.badge, background: "#fdf2f8", color: "#be185d", marginLeft: "auto" }}>
+          {count} établissement{count > 1 ? 's' : ''}
+        </span>
+        <span style={{ ...styles.badge, background: potentielColor.bg, color: potentielColor.color }}>
+          Potentiel {indicateurs_marche.potentiel_marche}
+        </span>
+      </div>
+      
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "20px" }}>
+        <div style={{ padding: "16px", background: "#fdf2f8", borderRadius: "12px", textAlign: "center" }}>
+          <Building size={20} color="#be185d" style={{ marginBottom: "8px" }} />
+          <div style={{ fontSize: "28px", fontWeight: 800, color: "#be185d" }}>{count}</div>
+          <div style={{ fontSize: "11px", color: "#9d174d" }}>EHPAD zone</div>
+        </div>
+        
+        <div style={{ padding: "16px", background: "#f8fafc", borderRadius: "12px", textAlign: "center" }}>
+          <Bed size={20} color="#1e293b" style={{ marginBottom: "8px" }} />
+          <div style={{ fontSize: "28px", fontWeight: 800, color: "#1e293b" }}>
+            {formatNumber(total_lits)}
           </div>
-          <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>{labels.unit} totaux</div>
+          <div style={{ fontSize: "11px", color: "#64748b" }}>Lits totaux</div>
+        </div>
+        
+        <div style={{ padding: "16px", background: "#eef2ff", borderRadius: "12px", textAlign: "center" }}>
+          <Users size={20} color="#4338ca" style={{ marginBottom: "8px" }} />
+          <div style={{ fontSize: "28px", fontWeight: 800, color: "#4338ca" }}>
+            {formatNumber(demographie_senior.population_75_plus)}
+          </div>
+          <div style={{ fontSize: "11px", color: "#6366f1" }}>Pop. 75+ ans</div>
+        </div>
+        
+        <div style={{ padding: "16px", background: "#f0fdf4", borderRadius: "12px", textAlign: "center" }}>
+          <Activity size={20} color="#15803d" style={{ marginBottom: "8px" }} />
+          <div style={{ fontSize: "28px", fontWeight: 800, color: "#15803d" }}>
+            {indicateurs_marche.densite_lits_1000_seniors ?? "—"}
+          </div>
+          <div style={{ fontSize: "11px", color: "#16a34a" }}>Lits/1000 seniors</div>
         </div>
       </div>
       
-      {analysis?.verdict && (
+      <div style={{
+        display: "grid", gridTemplateColumns: "1fr 1fr",
+        gap: "12px", marginBottom: "20px"
+      }}>
         <div style={{
           padding: "14px 18px", background: "#f8fafc", borderRadius: "10px",
-          marginBottom: "16px", borderLeft: `4px solid ${config.color}`
+          borderLeft: `4px solid ${indicateurs_marche.taux_equipement_zone === "sous_equipe" ? "#10b981" : indicateurs_marche.taux_equipement_zone === "sur_equipe" ? "#ef4444" : "#f59e0b"}`
         }}>
-          <div style={{ fontSize: "13px", fontWeight: 600, color: "#1e293b", marginBottom: "4px" }}>
-            📊 Analyse du marché
+          <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "4px" }}>Taux d'équipement</div>
+          <div style={{ fontSize: "15px", fontWeight: 600, color: "#1e293b" }}>
+            {getEquipementLabel(indicateurs_marche.taux_equipement_zone)}
           </div>
-          <p style={{ fontSize: "13px", color: "#475569", margin: 0, lineHeight: 1.5 }}>{analysis.verdict}</p>
         </div>
-      )}
-      
-      {facilities.length > 0 && (
+        
+        <div style={{
+          padding: "14px 18px", background: potentielColor.bg, borderRadius: "10px",
+          borderLeft: `4px solid ${potentielColor.color}`
+        }}>
+          <div style={{ fontSize: "11px", color: potentielColor.color, marginBottom: "4px" }}>Potentiel marché</div>
+          <div style={{ fontSize: "15px", fontWeight: 600, color: potentielColor.color, textTransform: "capitalize" }}>
+            {indicateurs_marche.potentiel_marche}
+          </div>
+        </div>
+      </div>
+
+      {etablissements && etablissements.length > 0 && (
         <div>
           <button
-            onClick={() => setExpanded(!expanded)}
+            onClick={() => setShowList(!showList)}
             style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              width: "100%",
-              padding: "12px 0",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              borderTop: "1px solid #e2e8f0",
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              width: "100%", padding: "14px 16px", background: "#fdf2f8",
+              border: "1px solid #fbcfe8", borderRadius: "10px", cursor: "pointer",
+              marginBottom: showList ? "12px" : "0"
             }}
           >
-            <span style={{ fontSize: "13px", fontWeight: 600, color: "#64748b" }}>
-              Voir les {facilities.length} établissements
+            <span style={{ fontSize: "14px", fontWeight: 600, color: "#be185d" }}>
+              📋 Liste des {etablissements.length} établissements FINESS
             </span>
-            {expanded ? <ChevronUp size={18} color="#64748b" /> : <ChevronDown size={18} color="#64748b" />}
+            {showList ? <ChevronUp size={18} color="#be185d" /> : <ChevronDown size={18} color="#be185d" />}
           </button>
 
-          {expanded && (
-            <div style={{ maxHeight: "none", overflowY: "visible" }}>
-              {facilities.map((facility, i) => (
+          {showList && (
+            <div style={{ 
+              maxHeight: "500px", overflowY: "auto",
+              border: "1px solid #e2e8f0", borderRadius: "10px"
+            }}>
+              <div style={{
+                display: "grid", 
+                gridTemplateColumns: "2fr 80px 80px 100px",
+                gap: "12px", padding: "12px 16px",
+                background: "#f8fafc", borderBottom: "2px solid #e2e8f0",
+                position: "sticky", top: 0,
+                fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase"
+              }}>
+                <span>Établissement</span>
+                <span style={{ textAlign: "center" }}>Distance</span>
+                <span style={{ textAlign: "center" }}>Capacité</span>
+                <span style={{ textAlign: "center" }}>Prix/jour</span>
+              </div>
+              
+              {etablissements.map((etab, i) => (
                 <div key={i} style={{
-                  display: "flex", alignItems: "flex-start", justifyContent: "space-between",
-                  padding: "14px", background: i % 2 === 0 ? "#f8fafc" : "white",
-                  borderRadius: "8px", marginBottom: "4px"
+                  display: "grid", 
+                  gridTemplateColumns: "2fr 80px 80px 100px",
+                  gap: "12px", padding: "14px 16px",
+                  alignItems: "center",
+                  background: i % 2 === 0 ? "white" : "#f8fafc",
+                  borderBottom: "1px solid #f1f5f9"
                 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "14px", fontWeight: 600, color: "#1e293b" }}>
-                      {facility.nom}
+                  <div>
+                    <div style={{ fontSize: "14px", fontWeight: 600, color: "#1e293b", marginBottom: "4px" }}>
+                      {etab.nom}
                     </div>
-                    
-                    <div style={{ 
-                      fontSize: "12px", 
-                      color: facility.adresse ? "#64748b" : "#cbd5e1", 
-                      marginTop: "4px",
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: "4px"
-                    }}>
-                      <MapPin size={12} style={{ flexShrink: 0, marginTop: "2px" }} />
-                      <span style={{ lineHeight: 1.4 }}>{facility.adresse || "Adresse non disponible"}</span>
-                    </div>
-                    
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "6px", flexWrap: "wrap" }}>
+                    {etab.finess && (
                       <span style={{ 
-                        fontSize: "12px", 
-                        color: getDistanceColor(facility.distance_km),
-                        fontWeight: 600,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "4px"
+                        fontSize: "10px", color: "#94a3b8", fontFamily: "monospace",
+                        background: "#f1f5f9", padding: "2px 6px", borderRadius: "4px"
                       }}>
-                        <Compass size={12} />
-                        {facility.distance_km.toFixed(1)} km
+                        FINESS: {etab.finess}
                       </span>
-                      
-                      <span style={{ 
-                        fontSize: "12px", 
-                        color: facility.telephone ? "#64748b" : "#cbd5e1",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "4px"
-                      }}>
-                        <Phone size={12} />
-                        {facility.telephone || "—"}
-                      </span>
-                      
-                      {facility.finess && (
-                        <span style={{ 
-                          fontSize: "10px", 
-                          color: "#94a3b8", 
-                          fontFamily: "monospace",
-                          background: "#f1f5f9",
-                          padding: "2px 6px",
-                          borderRadius: "4px"
-                        }}>
-                          FINESS: {facility.finess}
-                        </span>
-                      )}
-                    </div>
+                    )}
                   </div>
                   
-                  <div style={{ 
-                    display: "flex", 
-                    gap: "12px", 
-                    alignItems: "flex-start",
-                    marginLeft: "16px",
-                    flexShrink: 0
-                  }}>
-                    <div style={{ textAlign: "center", minWidth: "50px" }}>
-                      <div style={{ 
-                        fontSize: "16px", 
-                        fontWeight: 700, 
-                        color: facility.capacite && facility.capacite > 0 ? config.color : "#cbd5e1" 
-                      }}>
-                        {facility.capacite && facility.capacite > 0 ? facility.capacite : "—"}
-                      </div>
-                      <div style={{ fontSize: "10px", color: "#94a3b8" }}>{labels.unit}</div>
-                    </div>
+                  <div style={{ textAlign: "center" }}>
+                    <span style={{ 
+                      fontSize: "14px", fontWeight: 600,
+                      color: etab.distance_m < 5000 ? "#10b981" : etab.distance_m < 10000 ? "#f59e0b" : "#64748b"
+                    }}>
+                      {(etab.distance_m / 1000).toFixed(1)} km
+                    </span>
+                  </div>
+                  
+                  <div style={{ textAlign: "center" }}>
+                    <span style={{ fontSize: "16px", fontWeight: 700, color: "#ec4899" }}>
+                      {etab.capacite}
+                    </span>
+                    <span style={{ fontSize: "10px", color: "#9d174d", display: "block" }}>
+                      {etab.capacite_estimee ? "lits (est.)" : "lits"}
+                    </span>
+                  </div>
+                  
+                  <div style={{ textAlign: "center" }}>
+                    {etab.tarifs?.hebergement_jour ? (
+                      <>
+                        <span style={{ fontSize: "16px", fontWeight: 700, color: "#10b981" }}>
+                          {etab.tarifs.hebergement_jour.toFixed(0)} €
+                        </span>
+                        <span style={{ fontSize: "10px", color: "#059669", display: "block" }}>
+                          par jour
+                        </span>
+                      </>
+                    ) : (
+                      <span style={{ fontSize: "12px", color: "#94a3b8" }}>—</span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1982,176 +1768,315 @@ const CompetitionCard: React.FC<{
           )}
         </div>
       )}
+
+      <div style={{ 
+        display: "flex", gap: "12px", marginTop: "16px", flexWrap: "wrap"
+      }}>
+        <span style={{ ...styles.badge, background: "#dcfce7", color: "#166534" }}>
+          <CheckCircle size={12} /> CNSA: {sources.cnsa_tarifs} EHPAD
+        </span>
+        <span style={{ ...styles.badge, background: "#dbeafe", color: "#1d4ed8" }}>
+          <MapPin size={12} /> OSM: {sources.overpass} établissements
+        </span>
+      </div>
     </div>
   );
 };
 
 // ============================================
-// MARKET STUDY RESULTS - COMPOSANT PRINCIPAL DES RÉSULTATS
+// SCORE ADJUSTMENTS CARD - v2.4
 // ============================================
-const MarketStudyResults: React.FC<{ 
-  data: MarketStudyResult; 
-  projectNature: ProjectType;
-  finessData?: EHPADData | null;
-  isLoadingFiness?: boolean;
-}> = ({ data, projectNature, finessData, isLoadingFiness = false }) => {
-  logRender('MarketStudyResults START', {
-    hasData: !!data,
-    hasMarket: !!data?.market,
-    projectNature,
-    hasFinessData: !!finessData,
-    isLoadingFiness,
-  });
+const ScoreAdjustmentsCard: React.FC<{
+  adjustments: { label: string; value: number }[];
+  explanation: string;
+  projectType: string;
+}> = ({ adjustments, explanation, projectType }) => {
+  if (adjustments.length === 0) return null;
 
-  const market = data?.market;
-  const config = getSafeProjectConfig(projectNature);
-  
-  if (!market) {
-    logError('MarketStudyResults - NO MARKET DATA', { data });
-    return (
-      <div style={{ padding: "60px", textAlign: "center" }}>
-        <AlertTriangle size={56} color="#f59e0b" style={{ marginBottom: "20px" }} />
-        <h3 style={{ fontSize: "18px", color: "#1e293b", marginBottom: "8px" }}>Données non disponibles</h3>
-        <p style={{ color: "#64748b" }}>Aucune donnée de marché n'a pu être récupérée pour cette localisation.</p>
-        {DEBUG_RENDER && (
-          <pre style={{ marginTop: "16px", padding: "12px", background: "#f1f5f9", borderRadius: "8px", fontSize: "11px", textAlign: "left", overflow: "auto" }}>
-            {JSON.stringify(data, null, 2)}
-          </pre>
-        )}
+  return (
+    <div style={{ ...styles.card, background: "#f8fafc", marginBottom: "24px" }}>
+      <div style={styles.cardTitle}>
+        <Activity size={20} color="#6366f1" />
+        Analyse spécifique - {projectType}
+        <span style={{ ...styles.badge, background: "#eef2ff", color: "#4f46e5", marginLeft: "auto" }}>
+          Scoring différencié
+        </span>
       </div>
-    );
-  }
+      
+      <p style={{ fontSize: "12px", color: "#64748b", marginBottom: "16px" }}>
+        {explanation}
+      </p>
+      
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+        {adjustments.map((adj, i) => (
+          <div
+            key={i}
+            style={{
+              padding: "8px 12px",
+              background: adj.value > 0 ? "#dcfce7" : "#fee2e2",
+              borderRadius: "8px",
+              fontSize: "12px",
+              fontWeight: 500,
+              color: adj.value > 0 ? "#166534" : "#991b1b",
+            }}
+          >
+            {adj.label} ({adj.value > 0 ? "+" : ""}{adj.value})
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
-  logRender('MarketStudyResults - market OK', {
-    score: market.score,
-    hasInsee: !!market.insee,
-    hasPrices: !!market.prices,
-    insightsCount: market.insights?.length || 0,
-  });
+// ============================================
+// MARKET STUDY RESULTS - v2.4
+// ============================================
+const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }) => {
+  const { meta, core, insights, specific } = data;
+  const projectConfig = getSafeProjectConfig(meta.project_type as ProjectType);
+  
+  const isEhpad = meta.project_type === "ehpad";
+  const ehpadSpecific = isEhpad ? (specific as EhpadSpecific) : null;
+  
+  // v2.4: Calculer les scores différenciés
+  const { scores, adjustments, explanation } = useMemo(
+    () => calculateDifferentiatedScores(data, meta.project_type),
+    [data, meta.project_type]
+  );
+  
+  const positiveInsights = insights.filter(i => i.type === "positive");
+  const warningInsights = insights.filter(i => i.type === "warning" || i.type === "negative");
+  const neutralInsights = insights.filter(i => i.type === "neutral");
 
-  const ehpadData =
-    finessData && Array.isArray(finessData.liste) && finessData.liste.length > 0
-      ? finessData
-      : market.ehpad;
-
-  const insights = market.insights || [];
-  const allInsights = [...insights];
-
-  if (finessData && (projectNature === "ehpad" || projectNature === "residence_senior")) {
-    if (finessData.count === 0) {
-      allInsights.push({
-        type: "opportunity",
-        title: "Aucune concurrence directe",
-        description: "Aucun EHPAD identifié dans le rayon d'analyse.",
-      });
-    } else if (finessData.count && finessData.count <= 3) {
-      allInsights.push({
-        type: "positive",
-        title: "Concurrence limitée",
-        description: `Seulement ${finessData.count} établissement(s) identifié(s).`,
-      });
+  // PDF Handler
+  const handleGeneratePdf = useCallback(() => {
+    const verdict = getVerdictConfig(scores.global);
+    const scoreColor = getScoreColor(scores.global);
+    
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Veuillez autoriser les popups pour générer le PDF');
+      return;
     }
-  }
 
-  const positiveInsights = allInsights.filter(i => i.type === "positive" || i.type === "opportunity");
-  const warningInsights = allInsights.filter(i => i.type === "warning" || i.type === "negative");
-  
-  const isEHPAD = projectNature === "ehpad";
-  const isRSS = projectNature === "residence_senior";
-  const showCompetition = isEHPAD || isRSS;
+    const htmlContent = `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Étude de Marché - ${meta.commune_nom}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1e293b; line-height: 1.6; }
+    .header { background: linear-gradient(135deg, #1e293b 0%, #4f46e5 100%); color: white; padding: 30px; border-radius: 12px; margin-bottom: 30px; }
+    .header h1 { font-size: 28px; margin-bottom: 8px; }
+    .header p { opacity: 0.8; font-size: 14px; }
+    .score-section { display: flex; align-items: center; gap: 30px; margin: 20px 0; }
+    .score-circle { width: 100px; height: 100px; border-radius: 50%; background: white; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+    .score-value { font-size: 36px; font-weight: 800; color: ${scoreColor}; }
+    .score-label { font-size: 10px; color: #64748b; }
+    .verdict { display: inline-block; padding: 8px 16px; background: ${verdict.bg}; color: ${verdict.color}; border-radius: 8px; font-weight: 600; font-size: 14px; }
+    .section { background: #f8fafc; border-radius: 12px; padding: 24px; margin-bottom: 20px; page-break-inside: avoid; }
+    .section-title { font-size: 18px; font-weight: 700; color: #1e293b; margin-bottom: 16px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .stat-box { background: white; padding: 16px; border-radius: 8px; text-align: center; border: 1px solid #e2e8f0; }
+    .stat-label { font-size: 11px; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }
+    .stat-value { font-size: 24px; font-weight: 700; }
+    .insight { padding: 12px 16px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; }
+    .insight-positive { background: #ecfdf5; border-left: 4px solid #10b981; }
+    .insight-warning { background: #fef3c7; border-left: 4px solid #f59e0b; }
+    .insight-negative { background: #fee2e2; border-left: 4px solid #ef4444; }
+    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8; text-align: center; }
+    @media print { body { padding: 20px; } .section { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>📊 Étude de Marché - ${meta.commune_nom}</h1>
+    <p>${meta.project_type_label} • ${meta.departement} • Rayon ${meta.radius_km} km • v${data.version}</p>
+    <div class="score-section">
+      <div class="score-circle">
+        <div class="score-value">${scores.global}</div>
+        <div class="score-label">/100</div>
+      </div>
+      <div>
+        <div class="verdict">${verdict.label}</div>
+        <p style="margin-top: 8px; font-size: 13px;">Score global d'opportunité (scoring ${meta.project_type})</p>
+      </div>
+    </div>
+  </div>
 
-  const normalizedServices = getAllServicesFromMarket(market as unknown as Record<string, unknown>);
-  const normalizedBpe = extractBpeData(market as unknown as Record<string, unknown>);
-  const shopsData = (market as unknown as Record<string, unknown>).shops as ShopsData | null | undefined;
-  
-  const actualRadiusKm = data.input?.radius_km;
+  <div class="section">
+    <div class="section-title">📈 Sous-scores (pondérés ${meta.project_type})</div>
+    <div class="grid-4">
+      <div class="stat-box">
+        <div class="stat-label">Demande</div>
+        <div class="stat-value" style="color: ${getScoreColor(scores.demande)}">${scores.demande}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Offre</div>
+        <div class="stat-value" style="color: ${getScoreColor(scores.offre)}">${scores.offre}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Accessibilité</div>
+        <div class="stat-value" style="color: ${getScoreColor(scores.accessibilite)}">${scores.accessibilite}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Environnement</div>
+        <div class="stat-value" style="color: ${getScoreColor(scores.environnement)}">${scores.environnement}</div>
+      </div>
+    </div>
+  </div>
 
-  logRender('MarketStudyResults - extracted data', {
-    servicesCount: Object.keys(normalizedServices).filter(k => normalizedServices[k]?.distance_km !== undefined).length,
-    hasShops: !!shopsData?.categories,
-    hasBpe: !!normalizedBpe,
-    actualRadiusKm,
-  });
+  ${adjustments.length > 0 ? `
+  <div class="section">
+    <div class="section-title">🎯 Facteurs d'ajustement</div>
+    <p style="font-size: 12px; color: #64748b; margin-bottom: 12px;">${explanation}</p>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+      ${adjustments.map(adj => `
+        <span style="padding: 6px 12px; background: ${adj.value > 0 ? '#dcfce7' : '#fee2e2'}; border-radius: 6px; font-size: 12px; color: ${adj.value > 0 ? '#166534' : '#991b1b'};">
+          ${adj.label} (${adj.value > 0 ? '+' : ''}${adj.value})
+        </span>
+      `).join('')}
+    </div>
+  </div>
+  ` : ''}
+
+  <div class="section">
+    <div class="section-title">💰 Marché Immobilier (DVF)</div>
+    <div class="grid-4">
+      <div class="stat-box"><div class="stat-label">Transactions</div><div class="stat-value" style="color: #6366f1">${core.dvf?.nb_transactions ?? '—'}</div></div>
+      <div class="stat-box"><div class="stat-label">Prix médian</div><div class="stat-value" style="color: #10b981">${core.dvf?.prix_m2_median ? formatNumber(core.dvf.prix_m2_median) + ' €' : '—'}</div></div>
+      <div class="stat-box"><div class="stat-label">Prix min</div><div class="stat-value" style="color: #3b82f6">${core.dvf?.prix_m2_min ? formatNumber(core.dvf.prix_m2_min) + ' €' : '—'}</div></div>
+      <div class="stat-box"><div class="stat-label">Prix max</div><div class="stat-value" style="color: #ef4444">${core.dvf?.prix_m2_max ? formatNumber(core.dvf.prix_m2_max) + ' €' : '—'}</div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">👥 Démographie (INSEE)</div>
+    <div class="grid">
+      <div class="stat-box"><div class="stat-label">Population</div><div class="stat-value" style="color: #4338ca">${formatNumber(core.insee?.population)}</div></div>
+      <div class="stat-box"><div class="stat-label">Densité</div><div class="stat-value" style="color: #15803d">${formatNumber(core.insee?.densite)} hab/km²</div></div>
+      <div class="stat-box"><div class="stat-label">Revenu médian</div><div class="stat-value" style="color: #10b981">${formatPrice(core.insee?.revenu_median)}</div></div>
+      <div class="stat-box"><div class="stat-label">Taux chômage</div><div class="stat-value" style="color: #f59e0b">${formatPercent(core.insee?.taux_chomage)}</div></div>
+    </div>
+  </div>
+
+  ${positiveInsights.length > 0 ? `
+  <div class="section">
+    <div class="section-title">✅ Points forts</div>
+    ${positiveInsights.map(i => `<div class="insight insight-positive">${i.message}</div>`).join('')}
+  </div>
+  ` : ''}
+
+  ${warningInsights.length > 0 ? `
+  <div class="section">
+    <div class="section-title">⚠️ Points de vigilance</div>
+    ${warningInsights.map(i => `<div class="insight ${i.type === 'negative' ? 'insight-negative' : 'insight-warning'}">${i.message}</div>`).join('')}
+  </div>
+  ` : ''}
+
+  <div class="footer">
+    <p>Rapport généré le ${new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+    <p>Mimmoza - Plateforme d'analyse immobilière intelligente</p>
+  </div>
+</body>
+</html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    printWindow.onload = () => {
+      setTimeout(() => { printWindow.print(); }, 250);
+    };
+  }, [data, meta, scores, adjustments, explanation, core, positiveInsights, warningInsights]);
 
   return (
     <ErrorBoundary componentName="MarketStudyResults">
       <div>
-        {/* Header résultats avec score */}
+        {/* Header avec score */}
         <div style={{
-          background: `linear-gradient(135deg, #1e293b 0%, ${config.color}90 50%, #1e293b 100%)`,
+          background: `linear-gradient(135deg, #1e293b 0%, ${projectConfig.color}90 50%, #1e293b 100%)`,
           borderRadius: "20px", padding: "32px", marginBottom: "24px", color: "white"
         }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 1fr", gap: "32px", alignItems: "center" }}>
-            {/* Score */}
             <div style={{ display: "flex", justifyContent: "center" }}>
-              <ScoreGauge score={market.score} size={160} />
+              <ScoreGauge score={scores.global} size={160} />
             </div>
             
-            {/* Verdict & KPIs */}
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-                <SafeIcon icon={config.icon} fallback={Building2} size={24} />
+                <SafeIcon icon={projectConfig.icon} fallback={Building2} size={24} />
                 <h2 style={{ fontSize: "24px", fontWeight: 700, margin: 0 }}>
-                  {market.insee?.commune || "Analyse de marché"}
-                  {market.insee?.departement && (
-                    <span style={{ fontSize: "16px", fontWeight: 400, opacity: 0.7, marginLeft: "8px" }}>
-                      ({market.insee.departement})
-                    </span>
-                  )}
+                  {meta.commune_nom}
+                  <span style={{ fontSize: "16px", fontWeight: 400, opacity: 0.7, marginLeft: "8px" }}>
+                    ({meta.departement})
+                  </span>
                 </h2>
               </div>
-              <p style={{ fontSize: "14px", opacity: 0.8, marginBottom: "16px", lineHeight: 1.6 }}>
-                {market.verdict || `Étude complète du potentiel de la zone.`}
+              <p style={{ fontSize: "14px", opacity: 0.8, marginBottom: "16px" }}>
+                {meta.project_type_label} • Rayon {meta.radius_km} km • v{data.version}
               </p>
               
-              {/* Sources de données */}
               <div style={{ marginBottom: "16px" }}>
                 <DataSourcesBadges 
-                  sources={config.requiredDataSources} 
-                  available={{ 
-                    insee: !!market.insee, 
-                    dvf: !!market.prices?.median_eur_m2,
-                    bpe: !!normalizedBpe || !!shopsData,
-                    finess: !!finessData || isLoadingFiness,
-                  }}
+                  dvf={core.dvf?.coverage === "ok"} 
+                  insee={core.insee?.coverage === "ok"}
+                  transport={core.transport?.coverage === "ok"}
+                  bpe={core.bpe?.coverage === "ok"}
+                  cnsa={isEhpad ? ehpadSpecific?.concurrence?.sources?.cnsa_tarifs : undefined}
                 />
               </div>
               
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px" }}>
                 <div style={{ background: "rgba(255,255,255,0.1)", borderRadius: "12px", padding: "16px" }}>
                   <div style={{ fontSize: "11px", opacity: 0.7, marginBottom: "4px" }}>Population</div>
-                  <div style={{ fontSize: "24px", fontWeight: 700 }}>{formatNumber(market.insee?.population)}</div>
+                  <div style={{ fontSize: "24px", fontWeight: 700 }}>{formatNumber(core.insee?.population)}</div>
                 </div>
-                <div style={{ background: "rgba(255,255,255,0.1)", borderRadius: "12px", padding: "16px" }}>
-                  <div style={{ fontSize: "11px", opacity: 0.7, marginBottom: "4px" }}>Prix médian</div>
-                  <div style={{ fontSize: "24px", fontWeight: 700 }}>
-                    {market.prices?.median_eur_m2 ? `${formatNumber(market.prices.median_eur_m2)}€` : "—"}
+                {isEhpad && ehpadSpecific?.analyse_prix?.prix_hebergement_median ? (
+                  <div style={{ background: "rgba(255,255,255,0.1)", borderRadius: "12px", padding: "16px" }}>
+                    <div style={{ fontSize: "11px", opacity: 0.7, marginBottom: "4px" }}>Prix médian/jour</div>
+                    <div style={{ fontSize: "24px", fontWeight: 700 }}>
+                      {ehpadSpecific.analyse_prix.prix_hebergement_median.toFixed(0)}€
+                    </div>
                   </div>
-                </div>
-                <div style={{ background: "rgba(255,255,255,0.1)", borderRadius: "12px", padding: "16px" }}>
-                  <div style={{ fontSize: "11px", opacity: 0.7, marginBottom: "4px" }}>
-                    {isEHPAD || isRSS ? "Pop. 75+ ans" : "Transactions"}
+                ) : (
+                  <div style={{ background: "rgba(255,255,255,0.1)", borderRadius: "12px", padding: "16px" }}>
+                    <div style={{ fontSize: "11px", opacity: 0.7, marginBottom: "4px" }}>Prix m² médian</div>
+                    <div style={{ fontSize: "24px", fontWeight: 700 }}>
+                      {core.dvf?.prix_m2_median ? `${formatNumber(core.dvf.prix_m2_median)}€` : "—"}
+                    </div>
                   </div>
-                  <div style={{ fontSize: "24px", fontWeight: 700 }}>
-                    {isEHPAD || isRSS
-                      ? formatPercent(market.insee?.pct_plus_75) 
-                      : (market.transactions?.count ?? "—")}
+                )}
+                {isEhpad ? (
+                  <div style={{ background: "rgba(255,255,255,0.1)", borderRadius: "12px", padding: "16px" }}>
+                    <div style={{ fontSize: "11px", opacity: 0.7, marginBottom: "4px" }}>EHPAD département</div>
+                    <div style={{ fontSize: "24px", fontWeight: 700 }}>
+                      {ehpadSpecific?.concurrence?.nb_ehpad_departement ?? "—"}
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div style={{ background: "rgba(255,255,255,0.1)", borderRadius: "12px", padding: "16px" }}>
+                    <div style={{ fontSize: "11px", opacity: 0.7, marginBottom: "4px" }}>Transactions DVF</div>
+                    <div style={{ fontSize: "24px", fontWeight: 700 }}>{core.dvf?.nb_transactions ?? "—"}</div>
+                  </div>
+                )}
               </div>
             </div>
             
-            {/* Sous-scores */}
             <div style={{ background: "rgba(255,255,255,0.1)", borderRadius: "16px", padding: "20px" }}>
-              <div style={{ fontSize: "13px", fontWeight: 600, marginBottom: "16px", opacity: 0.9 }}>Sous-scores</div>
+              <div style={{ fontSize: "13px", fontWeight: 600, marginBottom: "16px", opacity: 0.9 }}>
+                Sous-scores ({meta.project_type})
+              </div>
               {[
-                { label: "Démographie", score: market.demographieScore },
-                { label: "Services", score: market.commoditesScore },
-                { label: "Transport", score: market.transport?.score },
-                ...((isEHPAD || isRSS) ? [{ label: "Santé", score: market.healthScore }] : []),
+                { label: "Demande", score: scores.demande },
+                { label: "Offre", score: scores.offre },
+                { label: "Accessibilité", score: scores.accessibilite },
+                { label: "Environnement", score: scores.environnement },
               ].map((item, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "10px" }}>
-                  <span style={{ fontSize: "12px", opacity: 0.8, width: "80px" }}>{item.label}</span>
+                  <span style={{ fontSize: "12px", opacity: 0.8, width: "90px" }}>{item.label}</span>
                   <div style={{ flex: 1, height: "6px", background: "rgba(255,255,255,0.2)", borderRadius: "3px" }}>
                     <div style={{
                       width: `${item.score ?? 0}%`, height: "100%",
@@ -2165,128 +2090,163 @@ const MarketStudyResults: React.FC<{
           </div>
         </div>
         
+        {/* Score Adjustments Card */}
+        <ScoreAdjustmentsCard 
+          adjustments={adjustments} 
+          explanation={explanation}
+          projectType={meta.project_type_label}
+        />
+        
         {/* Carte + Insights */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", marginBottom: "24px" }}>
-          {/* Carte */}
           <div style={{ ...styles.card, padding: 0, overflow: "hidden" }}>
             <div style={{ height: "380px" }}>
               <MapWithMarkers 
-                center={data.input?.resolved_point}
-                radius={data.input?.radius_km ? data.input.radius_km * 1000 : config.radius.analysis * 1000}
-                zoneName={market.insee?.commune}
+                lat={meta.lat} 
+                lon={meta.lon} 
+                radius={meta.radius_km * 1000}
+                commune={meta.commune_nom}
               />
-            </div>
-            <div style={{ padding: "16px", borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <MapPin size={16} color="#ef4444" />
-                <span style={{ fontSize: "14px", fontWeight: 600, color: "#1e293b" }}>
-                  {market.insee?.commune || data.input?.commune_insee}
-                </span>
-              </div>
-              <span style={{ fontSize: "12px", color: "#64748b" }}>
-                Rayon: {data.input?.radius_km ? data.input.radius_km : config.radius.analysis} km
-              </span>
             </div>
           </div>
           
-          {/* Insights */}
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            <ErrorBoundary componentName="InsightsPositive">
-              <div style={styles.card}>
-                <div style={styles.cardTitle}>
-                  <CheckCircle size={20} color="#10b981" />
-                  Points forts ({positiveInsights.length})
-                </div>
-                {positiveInsights.length > 0 ? (
-                  positiveInsights.slice(0, 5).map((insight, i) => (
-                    <InsightCard 
-                      key={i} 
-                      type={insight.type} 
-                      title={insight.title} 
-                      description={insight.description}
-                      value={insight.value}
-                    />
-                  ))
-                ) : (
-                  <p style={{ fontSize: "13px", color: "#94a3b8", fontStyle: "italic" }}>Aucun point fort identifié</p>
-                )}
+            <div style={styles.card}>
+              <div style={styles.cardTitle}>
+                <CheckCircle size={20} color="#10b981" />
+                Points forts ({positiveInsights.length})
               </div>
-            </ErrorBoundary>
+              {positiveInsights.length > 0 ? (
+                positiveInsights.map((insight, i) => (
+                  <InsightCard key={i} type={insight.type} category={insight.category} message={insight.message} />
+                ))
+              ) : (
+                <p style={{ fontSize: "13px", color: "#94a3b8", fontStyle: "italic" }}>Aucun point fort identifié</p>
+              )}
+            </div>
             
-            <ErrorBoundary componentName="InsightsWarning">
-              <div style={styles.card}>
-                <div style={styles.cardTitle}>
-                  <AlertTriangle size={20} color="#f59e0b" />
-                  Points de vigilance ({warningInsights.length})
-                </div>
-                {warningInsights.length > 0 ? (
-                  warningInsights.slice(0, 5).map((insight, i) => (
-                    <InsightCard 
-                      key={i} 
-                      type={insight.type} 
-                      title={insight.title} 
-                      description={insight.description}
-                      value={insight.value}
-                    />
-                  ))
-                ) : (
-                  <p style={{ fontSize: "13px", color: "#94a3b8", fontStyle: "italic" }}>Aucune alerte</p>
-                )}
+            <div style={styles.card}>
+              <div style={styles.cardTitle}>
+                <AlertTriangle size={20} color="#f59e0b" />
+                Points de vigilance ({warningInsights.length})
               </div>
-            </ErrorBoundary>
+              {warningInsights.length > 0 ? (
+                warningInsights.map((insight, i) => (
+                  <InsightCard key={i} type={insight.type} category={insight.category} message={insight.message} />
+                ))
+              ) : (
+                <p style={{ fontSize: "13px", color: "#94a3b8", fontStyle: "italic" }}>Aucune alerte</p>
+              )}
+            </div>
           </div>
         </div>
         
-        {/* Section Concurrence */}
-        {showCompetition && (
+        {/* EHPAD Pricing */}
+        {isEhpad && ehpadSpecific?.analyse_prix && (
           <div style={{ marginBottom: "24px" }}>
-            <ErrorBoundary componentName="CompetitionCard">
-              <CompetitionCard 
-                data={ehpadData}
-                insee={market.insee as InseeData | null}
-                projectNature={projectNature}
-                isLoadingFiness={isLoadingFiness}
-              />
-            </ErrorBoundary>
+            <EhpadPricingCard 
+              analysePrix={ehpadSpecific.analyse_prix} 
+              concurrence={ehpadSpecific.concurrence}
+            />
+          </div>
+        )}
+        
+        {/* EHPAD Competition */}
+        {isEhpad && ehpadSpecific && (
+          <div style={{ marginBottom: "24px" }}>
+            <EhpadCompetitionCard specific={ehpadSpecific} />
           </div>
         )}
         
         {/* Grille principale */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", marginBottom: "24px" }}>
-          <ErrorBoundary componentName="PrixImmobilierCard">
-            <PrixImmobilierCard prices={market.prices} transactions={market.transactions} />
-          </ErrorBoundary>
-          <ErrorBoundary componentName="DemographieCard">
-            <DemographieCard insee={market.insee as InseeData | null} projectNature={projectNature} />
-          </ErrorBoundary>
+          <DvfCard dvf={core.dvf} />
+          <DemographieCard 
+            insee={core.insee} 
+            projectType={meta.project_type} 
+            ehpadSpecific={ehpadSpecific}
+          />
         </div>
         
-        {/* Services */}
-        <ErrorBoundary componentName="ServicesCard">
-          <ServicesCard 
-            services={normalizedServices} 
-            shops={shopsData}
-            bpe={normalizedBpe} 
-            projectNature={projectNature}
-            actualRadiusKm={actualRadiusKm}  
-          />
-        </ErrorBoundary>
+        {/* Transport + BPE */}
+        <div style={{ 
+          display: "grid", 
+          gridTemplateColumns: "minmax(280px, 1fr) minmax(400px, 2fr)", 
+          gap: "24px", 
+          marginBottom: "24px" 
+        }}>
+          <TransportCard transport={core.transport} />
+          <BpeCard bpe={core.bpe} projectType={meta.project_type} />
+        </div>
+        
+        {/* Infos neutres */}
+        {neutralInsights.length > 0 && (
+          <div style={{ ...styles.card, marginBottom: "24px" }}>
+            <div style={styles.cardTitle}>
+              <FileText size={20} color="#64748b" />
+              Informations complémentaires
+            </div>
+            {neutralInsights.map((insight, i) => (
+              <InsightCard key={i} type={insight.type} category={insight.category} message={insight.message} />
+            ))}
+          </div>
+        )}
+        
+        {/* Debug timing */}
+        {data.debug?.timings && DEBUG_MODE && (
+          <div style={{ ...styles.card, background: "#f8fafc" }}>
+            <div style={styles.cardTitle}>
+              <Activity size={20} color="#64748b" />
+              Debug - Timings (ms)
+            </div>
+            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+              {Object.entries(data.debug.timings).map(([key, value]) => (
+                <div key={key} style={{ 
+                  padding: "8px 14px", background: "white", borderRadius: "8px",
+                  border: "1px solid #e2e8f0"
+                }}>
+                  <span style={{ fontSize: "11px", color: "#64748b" }}>{key}: </span>
+                  <span style={{ fontSize: "13px", fontWeight: 600, color: value > 1000 ? "#ef4444" : "#10b981" }}>
+                    {value}ms
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         
         {/* Actions */}
         <div style={{ display: "flex", justifyContent: "center", gap: "16px", marginTop: "32px" }}>
-          <button style={{
-            display: "flex", alignItems: "center", gap: "8px",
-            padding: "14px 28px", background: "#1e293b", color: "white",
-            border: "none", borderRadius: "12px", fontSize: "14px", fontWeight: 600, cursor: "pointer"
-          }}>
+          <button 
+            onClick={handleGeneratePdf}
+            style={{
+              display: "flex", alignItems: "center", gap: "8px",
+              padding: "14px 28px", background: "#1e293b", color: "white",
+              border: "none", borderRadius: "12px", fontSize: "14px", fontWeight: 600, cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+          >
             <FileText size={18} />
             Générer le rapport PDF
           </button>
-          <button style={{
-            display: "flex", alignItems: "center", gap: "8px",
-            padding: "14px 28px", background: "#f1f5f9", color: "#475569",
-            border: "1px solid #e2e8f0", borderRadius: "12px", fontSize: "14px", fontWeight: 600, cursor: "pointer"
-          }}>
+          <button 
+            onClick={() => {
+              const exportData = { ...data, scores };
+              const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `etude-marche-${meta.commune_nom}-${meta.project_type}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            style={{
+              display: "flex", alignItems: "center", gap: "8px",
+              padding: "14px 28px", background: "#f1f5f9", color: "#475569",
+              border: "1px solid #e2e8f0", borderRadius: "12px", fontSize: "14px", fontWeight: 600, cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+          >
             <Download size={18} />
             Exporter JSON
           </button>
@@ -2300,43 +2260,28 @@ const MarketStudyResults: React.FC<{
 // COMPOSANT PRINCIPAL - MarchePage
 // ============================================
 export function MarchePage() {
-  // États formulaire
   const [address, setAddress] = useState("");
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [isSearchingAddress, setIsSearchingAddress] = useState(false);
   const [selectedAddress, setSelectedAddress] = useState<AddressSuggestion | null>(null);
-
   const [parcelId, setParcelId] = useState("");
   const [parcelInfo, setParcelInfo] = useState<ParcelInfo | null>(null);
   const [isSearchingParcel, setIsSearchingParcel] = useState(false);
-
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
   const [codeInsee, setCodeInsee] = useState("");
-  const [radius, setRadius] = useState(500);
-  const [projectNature, setProjectNature] = useState<ProjectType>("ehpad");
-
-  // États analyse
+  const [radius, setRadius] = useState(5);
+  const [projectNature, setProjectNature] = useState<ProjectType>("logement");
   const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingFiness, setIsLoadingFiness] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<MarketStudyResult | null>(null);
-  const [finessData, setFinessData] = useState<EHPADData | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<MarketStudyApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Refs
   const addressTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const parcelTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const resultsRef = useRef<HTMLDivElement | null>(null);
 
-  // Config du projet sélectionné avec fallback sécurisé
   const projectConfig = useMemo(() => getSafeProjectConfig(projectNature), [projectNature]);
 
-  // LOG: Changement de projectNature
-  useEffect(() => {
-    logData('Project nature changed', { projectNature, configLabel: projectConfig.label });
-  }, [projectNature, projectConfig]);
-
-  // Recherche adresse
   useEffect(() => {
     if (addressTimeoutRef.current) clearTimeout(addressTimeoutRef.current);
     if (address.length >= 3 && !selectedAddress) {
@@ -2353,7 +2298,6 @@ export function MarchePage() {
     return () => { if (addressTimeoutRef.current) clearTimeout(addressTimeoutRef.current); };
   }, [address, selectedAddress]);
 
-  // Recherche parcelle
   useEffect(() => {
     if (parcelTimeoutRef.current) clearTimeout(parcelTimeoutRef.current);
     if (parcelId.length >= 10) {
@@ -2375,9 +2319,8 @@ export function MarchePage() {
     return () => { if (parcelTimeoutRef.current) clearTimeout(parcelTimeoutRef.current); };
   }, [parcelId]);
 
-  // Mise à jour du rayon quand on change de type de projet
   useEffect(() => {
-    setRadius(projectConfig.radius.analysis * 1000);
+    setRadius(projectConfig.radius.analysis);
   }, [projectConfig]);
 
   const handleSelectAddress = useCallback((suggestion: AddressSuggestion) => {
@@ -2389,9 +2332,6 @@ export function MarchePage() {
     if (suggestion.citycode) setCodeInsee(suggestion.citycode);
   }, []);
 
-  // ============================================
-  // SUBMIT HANDLER AVEC LOGS COMPLETS
-  // ============================================
   const handleSubmit = useCallback(async () => {
     const hasLocation = (latitude && longitude) || codeInsee || parcelInfo;
     if (!hasLocation) {
@@ -2399,43 +2339,29 @@ export function MarchePage() {
       return;
     }
 
-    logSubmit('Starting analysis', {
-      latitude,
-      longitude,
-      codeInsee,
-      radius,
-      projectNature,
-      hasSelectedAddress: !!selectedAddress,
-    });
+    log('🚀', 'Starting analysis', { latitude, longitude, codeInsee, radius, projectNature });
 
     setIsLoading(true);
-    setIsLoadingFiness(true);
     setError(null);
     setAnalysisResult(null);
-    setFinessData(null);
 
     const lat = latitude ? parseFloat(latitude) : NaN;
     const lon = longitude ? parseFloat(longitude) : NaN;
-    const radiusKm = radius / 1000;
 
     try {
       const payload: Record<string, unknown> = {
-        mode: "market_study",
-        radius_km: radiusKm,
-        horizon_months: 24,
-        project_nature: projectNature,
+        project_type: projectNature,
+        radius_km: radius,
         debug: true,
       };
 
       if (!Number.isNaN(lat) && !Number.isNaN(lon)) {
         payload.lat = lat;
         payload.lon = lon;
-        payload.lng = lon;
       }
       if (codeInsee) payload.commune_insee = codeInsee;
-      if (parcelId && parcelInfo) payload.parcel_id = parcelInfo.id;
 
-      logSubmit('Payload prepared', payload);
+      log('📡', 'Payload', payload);
 
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
       const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
@@ -2444,9 +2370,7 @@ export function MarchePage() {
         throw new Error("Configuration Supabase manquante");
       }
       
-      // 1) Appel API principal
-      logApi('Calling smartscore-enriched-v3...');
-      const apiResponse = await fetch(`${SUPABASE_URL}/functions/v1/smartscore-enriched-v3`, {
+      const apiResponse = await fetch(`${SUPABASE_URL}/functions/v1/market-study-promoteur-v1`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -2458,199 +2382,38 @@ export function MarchePage() {
 
       const result = await apiResponse.json();
 
-      logApi('API Response received', {
+      log('📡', 'API Response', {
         ok: apiResponse.ok,
         success: result?.success,
-        hasMarket: !!result?.market,
-        marketKeys: result?.market ? Object.keys(result.market) : [],
-        score: result?.market?.score,
+        version: result?.version,
+        score: result?.scores?.global,
       });
 
       if (!apiResponse.ok || !result.success) {
         throw new Error(result.error || `Erreur ${apiResponse.status}`);
       }
 
-      // Vérification INSEE + Shops
-      const hasInsee =
-        !!result?.market?.insee &&
-        (result.market.insee.population != null ||
-         result.market.insee.commune != null);
+      setAnalysisResult(result as MarketStudyApiResponse);
 
-      const hasShops =
-        !!result?.market?.shops &&
-        !!result.market.shops.categories &&
-        Object.keys(result.market.shops.categories).length > 0;
-
-      logApi('Data check', { hasInsee, hasShops });
-
-      // Fallback si nécessaire
-      if (!hasInsee || !hasShops) {
-        logApi('Fallback needed, calling market-context-v1...');
-        
-        const addressAny = selectedAddress as Record<string, unknown> | null;
-        const zipGuess = addressAny?.postcode || addressAny?.zip || undefined;
-        const cityGuess = addressAny?.city || addressAny?.name || undefined;
-        const fallbackLat = !Number.isNaN(lat) ? lat : result?.input?.resolved_point?.lat;
-        const fallbackLon = !Number.isNaN(lon) ? lon : result?.input?.resolved_point?.lon;
-
-        const fallbackResult = await fetchMarketContextFallback({
-          supabaseUrl: SUPABASE_URL,
-          anonKey: SUPABASE_ANON_KEY,
-          zipCode: zipGuess as string | undefined,
-          city: cityGuess as string | undefined,
-          lat: fallbackLat,
-          lon: fallbackLon,
-        });
-
-        if (!hasInsee && fallbackResult.insee) {
-          result.market = result.market || {};
-          result.market.insee = safeNormalizeInseeData(fallbackResult.insee) ?? fallbackResult.insee;
-          logApi('INSEE merged from fallback');
-        }
-
-        if (!hasShops && fallbackResult.shops) {
-          result.market = result.market || {};
-          result.market.shops = fallbackResult.shops;
-          logApi('Shops merged from fallback');
-        }
-      }
-
-      // Fallback BPE via Overpass
-      const hasBpe = !!result?.market?.bpe && (
-        (result.market.bpe.nb_commerces ?? 0) > 0 ||
-        (result.market.bpe.nb_services ?? 0) > 0
-      );
-      
-      const hasShopsAfterFallback = !!result?.market?.shops?.categories && 
-        Object.keys(result.market.shops.categories).length > 0;
-
-      if (!hasBpe && !hasShopsAfterFallback) {
-        const overpassLat = !Number.isNaN(lat) ? lat : result?.input?.resolved_point?.lat;
-        const overpassLon = !Number.isNaN(lon) ? lon : result?.input?.resolved_point?.lon;
-        
-        if (typeof overpassLat === 'number' && typeof overpassLon === 'number') {
-          logApi('BPE fallback via Overpass...');
-          const shopCount = await fetchOverpassShopCount(overpassLat, overpassLon, Math.min(radius, 3000));
-          if (shopCount != null) {
-            result.market = result.market || {};
-            result.market.bpe = result.market.bpe || {};
-            result.market.bpe.nb_commerces = shopCount;
-            result.market.bpe.source = { provider: "overpass", note: "shop count fallback" };
-            logApi('Overpass result', { shopCount });
-          }
-        }
-      }
-
-      // Normalisation INSEE finale
-      if (result?.market?.insee) {
-        const normalizedInsee = safeNormalizeInseeData(result.market.insee);
-        if (normalizedInsee && Object.keys(normalizedInsee).length > 0) {
-          result.market.insee = normalizedInsee;
-        }
-      }
-
-      logApi('Final data ready', {
-        hasMarket: !!result?.market,
-        score: result?.market?.score,
-        hasInsee: !!result?.market?.insee,
-        inseeCommune: result?.market?.insee?.commune,
-        inseePopulation: result?.market?.insee?.population,
-        hasShops: !!result?.market?.shops?.categories,
-        hasBpe: !!result?.market?.bpe,
-        hasPrices: !!result?.market?.prices?.median_eur_m2,
-      });
-
-      setAnalysisResult(result);
-
-      // ============================================
-      // SNAPSHOT: Patch project + market
-      // ============================================
       try {
-        // 1) Patch project info - UTILISE patchProjectInfo (pas patchProject)
-        const resolvedLat = !Number.isNaN(lat) ? lat : result?.input?.resolved_point?.lat;
-        const resolvedLon = !Number.isNaN(lon) ? lon : result?.input?.resolved_point?.lon;
-
         patchProjectInfo({
           address: selectedAddress?.label || address || undefined,
-          city: (selectedAddress as Record<string, unknown>)?.city as string || result?.market?.insee?.commune || undefined,
-          zipCode: (selectedAddress as Record<string, unknown>)?.postcode as string || undefined,
-          parcelId: parcelInfo?.id || parcelId || undefined,
+          city: result?.meta?.commune_nom || undefined,
           projectType: projectNature,
-          lat: typeof resolvedLat === 'number' && !Number.isNaN(resolvedLat) ? resolvedLat : undefined,
-          lon: typeof resolvedLon === 'number' && !Number.isNaN(resolvedLon) ? resolvedLon : undefined,
+          lat: result?.meta?.lat,
+          lon: result?.meta?.lon,
         });
 
-        // 2) Patch market module
         patchModule("market", {
           ok: true,
-          verdict: result?.market?.verdict || undefined,
-          summary: result?.market?.verdict || `Étude de marché générée - Score: ${result?.market?.score ?? '—'}/100`,
+          summary: `Score: ${result?.scores?.global}/100 - ${result?.meta?.commune_nom}`,
           data: result,
         });
 
-        logApi('Snapshot patched: project + market');
+        log('💾', 'Snapshot saved');
       } catch (snapshotErr) {
-        logError('Snapshot patch failed (non-blocking)', snapshotErr);
+        log('❌', 'Snapshot error', snapshotErr);
       }
-
-      // 2) FINESS/OSM
-      let finessLat: number | null = null;
-      let finessLon: number | null = null;
-
-      if (!Number.isNaN(lat) && !Number.isNaN(lon)) {
-        finessLat = lat;
-        finessLon = lon;
-      } else if (result?.input?.resolved_point?.lat != null) {
-        finessLat = Number(result.input.resolved_point.lat);
-        finessLon = Number(result.input.resolved_point.lon ?? result.input.resolved_point.lng);
-      }
-
-      if ((projectNature === "ehpad" || projectNature === "residence_senior") && finessLat != null && finessLon != null) {
-        try {
-          logApi('Calling FINESS...', { finessLat, finessLon, radiusKm });
-          const finessResult = await fetchAllEHPAD(finessLat, finessLon, radiusKm);
-          const inseeData = result?.market?.insee as InseeData | undefined;
-          
-          const rawItems = extractEhpadItemsFromResponse(finessResult);
-          logApi('FINESS result', { itemsCount: rawItems.length });
-          
-          let ehpadData: EHPADData;
-          if (rawItems.length > 0) {
-            ehpadData = buildEhpadDataFromRaw(rawItems, inseeData);
-          } else {
-            ehpadData = convertToEhpadData([], inseeData);
-          }
-          
-          setFinessData(ehpadData);
-
-          // ============================================
-          // SNAPSHOT: Patch finess module (utilise "risques" car finess n'existe pas dans le type)
-          // ============================================
-          try {
-            const finessSummary = 
-              ehpadData?.analyse_concurrence?.verdict ||
-              (ehpadData?.count === 0 
-                ? "Aucun établissement concurrent identifié" 
-                : `${ehpadData?.count || 0} établissement(s) concurrent(s) identifié(s)`);
-
-            // Note: On utilise "risques" comme module de fallback car "finess" n'est pas dans ModuleName
-            // Vous pouvez ajouter "finess" au type ModuleName dans le store si nécessaire
-            patchModule("risques", {
-              ok: true,
-              summary: finessSummary,
-              data: ehpadData,
-            });
-
-            logApi('Snapshot patched: risques (finess data)');
-          } catch (snapshotErr) {
-            logError('Snapshot finess patch failed (non-blocking)', snapshotErr);
-          }
-        } catch (err) {
-          logError('FINESS error (non blocking)', err);
-        }
-      }
-
-      setIsLoadingFiness(false);
 
       setTimeout(() => {
         resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2658,13 +2421,12 @@ export function MarchePage() {
 
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Une erreur est survenue";
-      logError('Submit error', { message: errorMessage, error: err });
+      log('❌', 'Submit error', errorMessage);
       setError(errorMessage);
-      setIsLoadingFiness(false);
     } finally {
       setIsLoading(false);
     }
-  }, [latitude, longitude, codeInsee, parcelInfo, parcelId, radius, projectNature, selectedAddress, address]);
+  }, [latitude, longitude, codeInsee, parcelInfo, radius, projectNature, selectedAddress, address]);
 
   return (
     <ErrorBoundary componentName="MarchePage">
@@ -2686,21 +2448,19 @@ export function MarchePage() {
             }}>
               {projectConfig.label}
             </span>
-            {(DEBUG_SERVICES || DEBUG_INSEE || DEBUG_BPE || DEBUG_SHOPS || DEBUG_RENDER) && (
-              <span style={{
-                padding: "4px 8px",
-                background: "#fef3c7",
-                borderRadius: "4px",
-                fontSize: "10px",
-                fontWeight: 600,
-                color: "#92400e",
-              }}>
-                🔍 DEBUG
-              </span>
-            )}
+            <span style={{
+              padding: "4px 10px",
+              background: "#dcfce7",
+              borderRadius: "6px",
+              fontSize: "11px",
+              fontWeight: 600,
+              color: "#166534",
+            }}>
+              v2.4 • Scoring différencié
+            </span>
           </div>
           <p style={{ fontSize: "14px", color: "rgba(255,255,255,0.7)", maxWidth: "700px", margin: 0 }}>
-            {projectConfig.description}. Analyse complète des données INSEE, prix DVF, services et concurrence.
+            {projectConfig.description}. Scoring adapté au type de projet avec bonus/pénalités contextuels.
           </p>
         </div>
 
@@ -2739,7 +2499,7 @@ export function MarchePage() {
                 <div style={{ position: "relative" }}>
                   <input
                     type="text"
-                    placeholder="Ex: 12 rue de la République, Bayonne"
+                    placeholder="Ex: 12 rue de la République, Lyon"
                     value={address}
                     onChange={(e) => { setAddress(e.target.value); if (selectedAddress) setSelectedAddress(null); }}
                     style={{ ...styles.input, paddingRight: "40px" }}
@@ -2797,7 +2557,7 @@ export function MarchePage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="Ex: 64065000AI0001"
+                  placeholder="Ex: 69123000AI0001"
                   value={parcelId}
                   onChange={(e) => setParcelId(e.target.value)}
                   style={styles.input}
@@ -2807,20 +2567,20 @@ export function MarchePage() {
               {/* Coordonnées */}
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151" }}>Latitude</label>
-                <input type="text" placeholder="48.8566" value={latitude} onChange={(e) => setLatitude(e.target.value)} style={styles.input} />
+                <input type="text" placeholder="45.764" value={latitude} onChange={(e) => setLatitude(e.target.value)} style={styles.input} />
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151" }}>Longitude</label>
-                <input type="text" placeholder="2.3522" value={longitude} onChange={(e) => setLongitude(e.target.value)} style={styles.input} />
+                <input type="text" placeholder="4.8357" value={longitude} onChange={(e) => setLongitude(e.target.value)} style={styles.input} />
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151" }}>Code INSEE</label>
-                <input type="text" placeholder="75056" value={codeInsee} onChange={(e) => setCodeInsee(e.target.value)} style={styles.input} />
+                <input type="text" placeholder="69123" value={codeInsee} onChange={(e) => setCodeInsee(e.target.value)} style={styles.input} />
               </div>
 
-              {/* Nature projet */}
+              {/* Nature projet - v2.4: Fusion EHPAD/Résidence senior */}
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: "6px" }}>
                   <Building2 size={14} color={projectConfig.color} />
@@ -2832,9 +2592,8 @@ export function MarchePage() {
                   style={styles.select}
                 >
                   <option value="logement">🏠 Logement</option>
-                  <option value="residence_senior">👴 Résidence senior</option>
+                  <option value="ehpad">❤️ EHPAD / Résidence senior</option>
                   <option value="residence_etudiante">🎓 Résidence étudiante</option>
-                  <option value="ehpad">❤️ EHPAD</option>
                   <option value="bureaux">💼 Bureaux</option>
                   <option value="commerce">🛒 Commerce</option>
                   <option value="hotel">🏨 Hôtel</option>
@@ -2845,19 +2604,19 @@ export function MarchePage() {
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: "6px" }}>
                   <Compass size={14} color={projectConfig.color} />
-                  Rayon: <strong style={{ color: projectConfig.color }}>{radius >= 1000 ? `${(radius/1000).toFixed(1)} km` : `${radius} m`}</strong>
+                  Rayon: <strong style={{ color: projectConfig.color }}>{radius} km</strong>
                 </label>
                 <input
-                  type="range" min={100} max={30000} step={100} value={radius}
+                  type="range" min={1} max={30} step={1} value={radius}
                   onChange={(e) => setRadius(parseInt(e.target.value))}
                   style={{ width: "100%", marginTop: "8px", accentColor: projectConfig.color }}
                 />
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#94a3b8" }}>
-                  <span>100m</span>
+                  <span>1 km</span>
                   <span style={{ color: projectConfig.color, fontWeight: 500 }}>
                     Recommandé: {projectConfig.radius.analysis} km
                   </span>
-                  <span>30km</span>
+                  <span>30 km</span>
                 </div>
               </div>
             </div>
@@ -2911,37 +2670,13 @@ export function MarchePage() {
                 <Loader2 size={56} color={projectConfig.color} style={{ animation: "spin 1s linear infinite", marginBottom: "20px" }} />
                 <h3 style={{ fontSize: "20px", color: "#1e293b", marginBottom: "8px" }}>Analyse en cours...</h3>
                 <p style={{ fontSize: "14px", color: "#64748b" }}>
-                  Récupération des données {projectConfig.requiredDataSources.join(", ").toUpperCase()}
+                  Récupération des données DVF, INSEE, transport, équipements et tarifs CNSA
                 </p>
               </div>
             )}
 
-            {!isLoading && analysisResult && analysisResult.market && (
-              <ErrorBoundary componentName="MarketStudyResults">
-                <MarketStudyResults 
-                  data={analysisResult} 
-                  projectNature={projectNature}
-                  finessData={finessData}
-                  isLoadingFiness={isLoadingFiness}
-                />
-              </ErrorBoundary>
-            )}
-
-            {!isLoading && analysisResult && !analysisResult.market && (
-              <div style={{
-                ...styles.card,
-                display: "flex", flexDirection: "column", alignItems: "center",
-                justifyContent: "center", padding: "60px 40px", textAlign: "center"
-              }}>
-                <AlertTriangle size={56} color="#f59e0b" style={{ marginBottom: "20px" }} />
-                <h3 style={{ fontSize: "18px", color: "#1e293b", marginBottom: "8px" }}>Données incomplètes</h3>
-                <p style={{ color: "#64748b" }}>L'API a répondu mais aucune donnée de marché n'est disponible.</p>
-                {DEBUG_RENDER && (
-                  <pre style={{ marginTop: "16px", padding: "12px", background: "#f1f5f9", borderRadius: "8px", fontSize: "11px", textAlign: "left", overflow: "auto", maxWidth: "100%" }}>
-                    {JSON.stringify(analysisResult, null, 2).slice(0, 1000)}...
-                  </pre>
-                )}
-              </div>
+            {!isLoading && analysisResult && (
+              <MarketStudyResults data={analysisResult} />
             )}
 
             {!isLoading && !analysisResult && (
@@ -2962,17 +2697,21 @@ export function MarchePage() {
                 </h3>
                 <p style={{ fontSize: "15px", color: "#64748b", maxWidth: "500px", lineHeight: 1.6 }}>
                   Entrez une adresse, un numéro de parcelle, des coordonnées GPS ou un code INSEE 
-                  pour lancer une analyse complète du potentiel de votre zone.
+                  pour lancer une analyse complète avec scoring adapté à votre type de projet.
                 </p>
                 <div style={{ marginTop: "20px", display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "center" }}>
-                  <span style={{ ...styles.badge, background: "#f1f5f9", color: "#64748b" }}>
-                    Rayon recommandé: {projectConfig.radius.analysis} km
+                  <span style={{ ...styles.badge, background: "#dcfce7", color: "#166534" }}>
+                    ✅ Scoring différencié v1.1.0
                   </span>
-                  {projectConfig.requiredDataSources.map(source => (
-                    <span key={source} style={{ ...styles.badge, background: "#dcfce7", color: "#166534" }}>
-                      {source.toUpperCase()}
-                    </span>
-                  ))}
+                  <span style={{ ...styles.badge, background: "#dbeafe", color: "#1d4ed8" }}>
+                    DVF + INSEE
+                  </span>
+                  <span style={{ ...styles.badge, background: "#fef3c7", color: "#92400e" }}>
+                    Transport + BPE
+                  </span>
+                  <span style={{ ...styles.badge, background: "#fdf2f8", color: "#be185d" }}>
+                    EHPAD FINESS
+                  </span>
                 </div>
               </div>
             )}
@@ -2997,5 +2736,6 @@ export function MarchePage() {
     </ErrorBoundary>
   );
 }
+
 
 export default MarchePage;
