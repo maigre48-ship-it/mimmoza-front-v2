@@ -3,14 +3,25 @@
 // Page unifiée : Données emprunteur & projet + Garanties + Documents
 // Règle : 1 dossier → 1 analyse → 1 rapport → 1 décision
 // ⚠️ Aucune barre de navigation workflow ici (BanqueLayout s'en charge).
+// ✅ REFACTOR: Option B credit sections (Budget, Revenus, Bien/État,
+//    Calendrier, Ratios) moved here from AnalysePage — these are INPUT data.
+// ✅ REFACTOR v2: "Données du projet" fusionné dans BudgetSection
+//    pour supprimer le doublon montant/durée.
 // ============================================================================
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useBanqueDossierContext } from "../hooks/useBanqueDossierContext";
 import { upsertDossier, addEvent } from "../store/banqueSnapshot.store";
 import GarantiesSection from "../components/GarantiesSection";
 import DocumentsSection from "../components/DocumentsSection";
+import BudgetSection from "../components/analyse/BudgetSection";
+import RevenusSection from "../components/analyse/RevenusSection";
+import BienEtatSection from "../components/analyse/BienEtatSection";
+import CalendrierSection from "../components/analyse/CalendrierSection";
+import RatiosPanel from "../components/analyse/RatiosPanel";
+
+import type { ProjectFields } from "../components/analyse/BudgetSection";
 
 // ── Types emprunteur ──
 
@@ -63,16 +74,6 @@ const FORMES_JURIDIQUES = [
   "SAS", "SARL", "SCI", "SA", "EURL", "SNC", "Association", "Autre",
 ];
 
-// ✅ ACTION 1 — "Logement" ajouté juste après "Promotion immobilière"
-const PRET_TYPES = [
-  { value: "promotion",       label: "Promotion immobilière" },
-  { value: "logement",        label: "Logement" },
-  { value: "marchand",        label: "Marchand de biens" },
-  { value: "investissement",  label: "Investissement locatif" },
-  { value: "rehabilitation",  label: "Réhabilitation" },
-  { value: "autre",           label: "Autre" },
-];
-
 // ── Component ──
 
 export default function DossierPage() {
@@ -80,20 +81,31 @@ export default function DossierPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabKey>("emprunteur");
 
-  // ── Project fields ──
+  // ── Project fields (now managed here, rendered via BudgetSection) ──
   const [nom, setNom]                     = useState("");
   const [montantDemande, setMontantDemande] = useState<number | "">("");
   const [duree, setDuree]                 = useState<number | "">("");
   const [typePret, setTypePret]           = useState("promotion");
-  const [adresseProjet, setAdresseProjet] = useState("");
   const [notes, setNotes]                 = useState("");
+
+  // ── Project location fields ──
+  const [adresseProjet, setAdresseProjet] = useState("");
+  const [codePostalProjet, setCodePostalProjet]       = useState("");
+  const [communeProjet, setCommuneProjet]             = useState("");
+  const [communeInseeProjet, setCommuneInseeProjet]   = useState("");
+  const [departementProjet, setDepartementProjet]     = useState("");
+  const [parcelleCadastrale, setParcelleCadastrale]   = useState("");
+  const [sectionCadastrale, setSectionCadastrale]     = useState("");
+  const [prefixeCadastral, setPrefixeCadastral]       = useState("");
+  const [latProjet, setLatProjet]                     = useState("");
+  const [lngProjet, setLngProjet]                     = useState("");
 
   // ── Emprunteur fields ──
   const [emprunteur, setEmprunteur] = useState<Emprunteur>(emptyPhysique());
 
   const [saved, setSaved] = useState(false);
 
-  // Hydrate from dossier on load / switch
+  // ── Hydrate from dossier ──
   useEffect(() => {
     if (!dossier) return;
     setNom(dossier.nom ?? "");
@@ -102,6 +114,20 @@ export default function DossierPage() {
     setTypePret(dossier.origination?.typePret ?? "promotion");
     setAdresseProjet(dossier.origination?.adresseProjet ?? "");
     setNotes(dossier.origination?.notes ?? "");
+
+    // Project location
+    const o = dossier.origination;
+    setCodePostalProjet(o?.codePostalProjet ?? o?.codePostal ?? "");
+    setCommuneProjet(o?.communeProjet ?? o?.commune ?? "");
+    setCommuneInseeProjet(o?.communeInseeProjet ?? "");
+    setDepartementProjet(o?.departementProjet ?? "");
+    setParcelleCadastrale(o?.parcelleCadastrale ?? "");
+    setSectionCadastrale(o?.sectionCadastrale ?? "");
+    setPrefixeCadastral(o?.prefixeCadastral ?? "");
+    setLatProjet(o?.latProjet != null ? String(o.latProjet) : "");
+    setLngProjet(o?.lngProjet != null ? String(o.lngProjet) : "");
+
+    // Emprunteur
     if (dossier.emprunteur?.type) {
       setEmprunteur(dossier.emprunteur as Emprunteur);
     } else if (dossier.sponsor) {
@@ -124,6 +150,38 @@ export default function DossierPage() {
     setSaved(false);
   };
 
+  // ── Auto-derive département from CP ──
+  const handleCpChange = useCallback((value: string) => {
+    setCodePostalProjet(value);
+    setSaved(false);
+    if (value.length >= 2) {
+      if (value.startsWith("20") && value.length >= 3) {
+        const cp3 = value.substring(0, 3);
+        setDepartementProjet(Number(cp3) >= 201 && Number(cp3) <= 209 ? "2A" : "2B");
+      } else {
+        setDepartementProjet(value.substring(0, 2));
+      }
+    }
+  }, []);
+
+  // ── Project fields object for BudgetSection ──
+  const projectFields: ProjectFields = useMemo(
+    () => ({ nom, typePret, montantDemande, duree, notes }),
+    [nom, typePret, montantDemande, duree, notes]
+  );
+
+  const handleProjectChange = useCallback(
+    (next: ProjectFields) => {
+      setNom(next.nom);
+      setTypePret(next.typePret);
+      setMontantDemande(next.montantDemande);
+      setDuree(next.duree);
+      setNotes(next.notes);
+      setSaved(false);
+    },
+    []
+  );
+
   // ── Save ──
 
   const handleSave = () => {
@@ -145,7 +203,21 @@ export default function DossierPage() {
         typePret,
         adresseProjet,
         notes,
+        // Project location fields
+        codePostalProjet: codePostalProjet || undefined,
+        communeProjet: communeProjet || undefined,
+        communeInseeProjet: communeInseeProjet || undefined,
+        departementProjet: departementProjet || undefined,
+        parcelleCadastrale: parcelleCadastrale || undefined,
+        sectionCadastrale: sectionCadastrale || undefined,
+        prefixeCadastral: prefixeCadastral || undefined,
+        latProjet: latProjet ? Number(latProjet) : undefined,
+        lngProjet: lngProjet ? Number(lngProjet) : undefined,
+        // Keep legacy fields in sync for backward compat
+        codePostal: codePostalProjet || undefined,
+        commune: communeProjet || undefined,
       },
+      updatedAt: new Date().toISOString(),
     } as any);
 
     addEvent({
@@ -153,10 +225,79 @@ export default function DossierPage() {
       dossierId,
       message: `Dossier mis à jour — ${nom || dossierId}`,
     });
+
+    console.log("[DossierPage] ✅ Saved:", {
+      dossierId,
+      location: {
+        adresse: adresseProjet,
+        cp: codePostalProjet,
+        commune: communeProjet,
+        insee: communeInseeProjet,
+        dept: departementProjet,
+        parcelle: parcelleCadastrale,
+      },
+    });
+
     refresh();
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
+
+  // ── Option B: credit section handlers ──
+
+  const existingAnalyse = (dossier as any)?.analyse ?? {};
+
+  const handleBudgetChange = useCallback(
+    (next: any) => {
+      if (!dossierId) return;
+      upsertDossier({
+        id: dossierId,
+        analyse: { ...((dossier as any)?.analyse ?? {}), budget: next },
+      } as any);
+      refresh();
+    },
+    [dossierId, dossier, refresh]
+  );
+
+  const handleRevenusChange = useCallback(
+    (next: any) => {
+      if (!dossierId) return;
+      upsertDossier({
+        id: dossierId,
+        analyse: { ...((dossier as any)?.analyse ?? {}), revenus: next },
+      } as any);
+      refresh();
+    },
+    [dossierId, dossier, refresh]
+  );
+
+  const handleBienChange = useCallback(
+    (next: any) => {
+      if (!dossierId) return;
+      upsertDossier({
+        id: dossierId,
+        analyse: { ...((dossier as any)?.analyse ?? {}), bien: next },
+      } as any);
+      refresh();
+    },
+    [dossierId, dossier, refresh]
+  );
+
+  const handleCalendrierChange = useCallback(
+    (next: any) => {
+      if (!dossierId) return;
+      upsertDossier({
+        id: dossierId,
+        analyse: { ...((dossier as any)?.analyse ?? {}), calendrier: next },
+      } as any);
+      refresh();
+    },
+    [dossierId, dossier, refresh]
+  );
+
+  // ── Completeness indicator for location ──
+  const locFieldsCount = [adresseProjet, codePostalProjet, communeProjet, communeInseeProjet].filter(Boolean).length;
+  const locComplete = locFieldsCount >= 3;
 
   // ── No dossier guard ──
 
@@ -181,7 +322,7 @@ export default function DossierPage() {
 
   return (
     <div className="max-w-4xl mx-auto">
-      {/* Page header (no workflow nav — BanqueLayout handles that) */}
+      {/* Page header */}
       <div className="mb-6">
         <h1 className="text-xl font-bold text-slate-900">
           {dossier?.nom || "Dossier"}{" "}
@@ -194,7 +335,7 @@ export default function DossierPage() {
         )}
       </div>
 
-      {/* Internal section tabs (not workflow steps!) */}
+      {/* Internal section tabs */}
       <div className="flex items-center gap-1 border-b border-slate-200 mb-6">
         {TABS.map((tab) => (
           <button
@@ -230,7 +371,6 @@ export default function DossierPage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-slate-900">Données emprunteur &amp; projet</h2>
-            {saved && <span className="text-sm text-green-600 font-medium">✓ Sauvegardé</span>}
           </div>
 
           {/* ── Emprunteur type selector ── */}
@@ -344,59 +484,180 @@ export default function DossierPage() {
             </div>
           )}
 
-          {/* ── Project fields ── */}
+          {/* ── Localisation du projet ── */}
           <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
-            <h3 className="text-sm font-semibold text-slate-700">Données du projet</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Nom du projet" value={nom}
-                onChange={setNom} placeholder="Résidence Les Tilleuls" />
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                📍 Localisation du projet
+              </h3>
+              {locComplete ? (
+                <span className="rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                  {locFieldsCount}/4
+                </span>
+              ) : (
+                <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                  Incomplet
+                </span>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Ces champs alimentent l'enrichissement géographique (DVF, INSEE, Géorisques, BAN…).
+              Renseignez au minimum l'adresse, le code postal et la commune.
+            </p>
+
+            {/* Adresse projet */}
+            <Field label="Adresse du projet" value={adresseProjet}
+              onChange={(v) => { setAdresseProjet(v); setSaved(false); }}
+              placeholder="6 parc de la Bérengère, 92210 Saint-Cloud" />
+
+            {/* CP / Commune / INSEE / Département */}
+            <div className="grid grid-cols-4 gap-3">
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Type de prêt</label>
-                <select
-                  value={typePret}
-                  onChange={(e) => setTypePret(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-                >
-                  {PRET_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Code postal</label>
+                <input
+                  value={codePostalProjet}
+                  onChange={(e) => handleCpChange(e.target.value)}
+                  placeholder="92210"
+                  maxLength={5}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                />
+              </div>
+              <Field label="Commune" value={communeProjet}
+                onChange={(v) => { setCommuneProjet(v); setSaved(false); }}
+                placeholder="Saint-Cloud" />
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Code INSEE</label>
+                <input
+                  value={communeInseeProjet}
+                  onChange={(e) => { setCommuneInseeProjet(e.target.value); setSaved(false); }}
+                  placeholder="92064"
+                  maxLength={5}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Département</label>
+                <input
+                  value={departementProjet}
+                  onChange={(e) => { setDepartementProjet(e.target.value); setSaved(false); }}
+                  placeholder="92"
+                  maxLength={3}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                />
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Montant demandé (€)" type="number"
-                value={montantDemande === "" ? "" : String(montantDemande)}
-                onChange={(v) => setMontantDemande(v ? Number(v) : "")}
-                placeholder="5 000 000" />
-              <Field label="Durée (mois)" type="number"
-                value={duree === "" ? "" : String(duree)}
-                onChange={(v) => setDuree(v ? Number(v) : "")}
-                placeholder="24" />
+            {/* Parcelle / Section / Préfixe */}
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Parcelle cadastrale</label>
+                <input
+                  value={parcelleCadastrale}
+                  onChange={(e) => { setParcelleCadastrale(e.target.value.toUpperCase()); setSaved(false); }}
+                  placeholder="000 AB 0123"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Section cadastrale</label>
+                <input
+                  value={sectionCadastrale}
+                  onChange={(e) => { setSectionCadastrale(e.target.value.toUpperCase()); setSaved(false); }}
+                  placeholder="AB"
+                  maxLength={4}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Préfixe cadastral</label>
+                <input
+                  value={prefixeCadastral}
+                  onChange={(e) => { setPrefixeCadastral(e.target.value); setSaved(false); }}
+                  placeholder="000"
+                  maxLength={3}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                />
+              </div>
             </div>
 
-            <Field label="Adresse du projet" value={adresseProjet}
-              onChange={setAdresseProjet} placeholder="12 rue de la Paix, 75002 Paris" />
-
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
-              <textarea
-                value={notes}
-                onChange={(e) => { setNotes(e.target.value); setSaved(false); }}
-                rows={3}
-                placeholder="Contexte, historique, éléments clés…"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-              />
+            {/* Lat / Lng */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Latitude</label>
+                <input
+                  value={latProjet}
+                  onChange={(e) => { setLatProjet(e.target.value); setSaved(false); }}
+                  placeholder="48.8448"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Longitude</label>
+                <input
+                  value={lngProjet}
+                  onChange={(e) => { setLngProjet(e.target.value); setSaved(false); }}
+                  placeholder="2.2157"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                />
+              </div>
             </div>
           </div>
 
-          <div className="flex justify-end">
+          {/* ════════════════════════════════════════════════════════════
+              SECTIONS CRÉDIT — Projet+Budget (unifié), Revenus, Bien, Calendrier
+              Sauvegarde automatique dans dossier.analyse via upsertDossier
+             ════════════════════════════════════════════════════════════ */}
+          <div className="border-t border-slate-200 pt-6 space-y-5">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Données financières du crédit</h2>
+              <p className="text-xs text-slate-500 mt-1">
+                Ces données alimentent le calcul des ratios (LTV, DSCR, DSTI) et le SmartScore.
+                Elles sont sauvegardées automatiquement à chaque modification.
+              </p>
+            </div>
+
+            <BudgetSection
+              value={existingAnalyse?.budget ?? {}}
+              onChange={handleBudgetChange}
+              project={projectFields}
+              onProjectChange={handleProjectChange}
+            />
+
+            <RevenusSection
+              value={existingAnalyse?.revenus ?? {}}
+              onChange={handleRevenusChange}
+            />
+
+            <BienEtatSection
+              value={existingAnalyse?.bien ?? {}}
+              onChange={handleBienChange}
+            />
+
+            <CalendrierSection
+              value={existingAnalyse?.calendrier ?? {}}
+              onChange={handleCalendrierChange}
+            />
+
+            <RatiosPanel
+              montantPret={Number(montantDemande) || 0}
+              duree={Number(duree) || 240}
+              garanties={(dossier as any)?.garanties ?? {}}
+              budget={existingAnalyse?.budget ?? {}}
+              revenus={existingAnalyse?.revenus ?? {}}
+              bien={existingAnalyse?.bien ?? {}}
+            />
+          </div>
+
+          {/* ── Bouton Enregistrer (tout en bas) ── */}
+          <div className="flex flex-col items-end gap-2 pt-2">
             <button
               onClick={handleSave}
               className="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-medium text-white hover:bg-slate-800 transition-colors"
             >
               Enregistrer
             </button>
+            {saved && <span className="text-sm text-green-600 font-medium">✓ Sauvegardé</span>}
           </div>
         </div>
       )}

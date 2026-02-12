@@ -1,50 +1,78 @@
 // ============================================================================
 // ComitePage.tsx — /banque/comite/:id
-// Écran final: Rapport structuré + Décision
-// C'est le SEUL écran où la décision est prise.
+// src/spaces/banque/pages/ComitePage.tsx
 //
-// Report = objet StructuredReport (JSON) persisté dans dossier.report.
-// Badge "Généré" = vert uniquement si report.generatedAt + sections non vides.
-// UI = cards/tables React riches (pas ASCII).
-// ⚠️ Aucune barre workflow (BanqueLayout s'en charge).
+// Banque Universelle: rapport comité basé sur OperationSummary enrichi.
+// Sections: budget, marché, risques, scénarios, missing-data, SmartScore.
+// Export PDF complet via jspdf + jspdf-autotable.
+// ⚠️ Aucune barre de navigation workflow (BanqueLayout s'en charge).
 // ============================================================================
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useBanqueDossierContext } from "../hooks/useBanqueDossierContext";
+import { upsertDossier, addEvent } from "../store/banqueSnapshot.store";
+import { buildOperationSummaryFromDossier } from "../adapters/manualOperationAdapter";
 import {
-  upsertDossier,
-  patchCommittee,
-  addEvent,
-} from "../store/banqueSnapshot.store";
-import {
-  generateStructuredReport,
-  type StructuredReport,
-  type PillarResult,
-  type Niveau,
-  type Label,
-} from "../utils/banqueCalcUtils";
+  computeSmartScoreFromOperation,
+  buildVerdictExplanation,
+  type SmartScoreUniversalResult,
+  type Grade,
+} from "../scoring/banqueSmartScoreUniversal";
+import type {
+  OperationSummary,
+  MissingDataItem,
+} from "../types/operationSummary.types";
 
 // ── Types ──
 
-type Decision = "en_attente" | "approuve" | "refuse" | "ajourne" | "conditionnel";
+interface UniversalReport {
+  generatedAt: string;
+  profile: string;
+  meta: {
+    dossierRef: string;
+    dossierLabel: string;
+    profile: string;
+    generatedAt: string;
+  };
+  emprunteur: {
+    type: string;
+    identite: string;
+    details: Record<string, string>;
+  };
+  projet: Record<string, string>;
+  budget: Record<string, string>;
+  financement: Record<string, string>;
+  revenus: Record<string, string>;
+  marche: Record<string, string>;
+  risques: {
+    items: Array<{ label: string; level: string; status: string }>;
+    score: string;
+    globalLevel: string;
+  };
+  kpis: Record<string, string>;
+  scenarios: Record<string, Record<string, string>>;
+  missing: MissingDataItem[];
+  smartscore: SmartScoreUniversalResult | null;
+  verdictExplanation: string;
+}
 
-const DECISIONS: { value: Decision; label: string; color: string }[] = [
-  { value: "en_attente",   label: "En attente",     color: "bg-slate-100 text-slate-600"  },
-  { value: "approuve",     label: "Approuvé",       color: "bg-green-100 text-green-700"  },
-  { value: "conditionnel", label: "Sous conditions", color: "bg-amber-100 text-amber-700"  },
-  { value: "ajourne",      label: "Ajourné",         color: "bg-blue-100 text-blue-700"    },
-  { value: "refuse",       label: "Refusé",          color: "bg-red-100 text-red-700"      },
-];
+// ── Helpers ──
 
-const NIVEAU_COLORS: Record<Niveau, string> = {
-  Faible: "bg-green-100 text-green-700",
-  Modéré: "bg-amber-100 text-amber-700",
-  Élevé: "bg-orange-100 text-orange-700",
-  Critique: "bg-red-100 text-red-700",
+const fmt = (v: unknown, suffix = ""): string => {
+  if (v === null || v === undefined || v === "") return "Non renseigné";
+  const n = Number(v);
+  if (!isNaN(n)) return `${n.toLocaleString("fr-FR")}${suffix}`;
+  return String(v);
 };
 
-const LABEL_COLORS: Record<Label, string> = {
+const fmtK = (v: unknown): string => {
+  if (v === null || v === undefined) return "Non renseigné";
+  const n = Number(v);
+  return isNaN(n) ? String(v) : `${(n / 1000).toFixed(0)}k€`;
+};
+
+const GRADE_COLORS: Record<Grade, string> = {
   A: "bg-green-100 text-green-800",
   B: "bg-emerald-100 text-emerald-700",
   C: "bg-amber-100 text-amber-700",
@@ -52,569 +80,860 @@ const LABEL_COLORS: Record<Label, string> = {
   E: "bg-red-100 text-red-700",
 };
 
-const PILLAR_BAR: Record<string, string> = {
-  documentation: "bg-blue-500",
-  garanties: "bg-indigo-500",
-  emprunteur: "bg-violet-500",
-  projet: "bg-cyan-500",
-  financier: "bg-emerald-500",
-};
+// ════════════════════════════════════════════════════════════════════
+// REPORT GENERATOR
+// ════════════════════════════════════════════════════════════════════
 
-const DOC_STATUS_DISPLAY: Record<string, { label: string; cls: string }> = {
-  attendu: { label: "Attendu", cls: "bg-gray-100 text-gray-700" },
-  recu:    { label: "Reçu",    cls: "bg-blue-100 text-blue-700" },
-  valide:  { label: "Validé",  cls: "bg-green-100 text-green-700" },
-  refuse:  { label: "Refusé",  cls: "bg-red-100 text-red-700" },
-};
+function generateUniversalReport(
+  dossier: any,
+  operation: OperationSummary,
+  scoreResult: SmartScoreUniversalResult | null
+): UniversalReport {
+  const emp = dossier?.emprunteur;
+  const now = new Date().toISOString();
 
-function isReportValid(r: any): r is StructuredReport {
-  return r && typeof r === "object" && !!r.generatedAt && !!r.meta;
+  // Emprunteur
+  let emprunteur;
+  if (!emp?.type) {
+    emprunteur = { type: "inconnu", identite: dossier?.sponsor || "Non renseigné", details: {} };
+  } else if (emp.type === "personne_physique") {
+    emprunteur = {
+      type: "personne_physique",
+      identite: `${emp.prenom ?? ""} ${emp.nom ?? ""}`.trim() || "Non renseigné",
+      details: {
+        ...(emp.dateNaissance ? { "Date de naissance": emp.dateNaissance } : {}),
+        ...(emp.telephone ? { Téléphone: emp.telephone } : {}),
+        ...(emp.email ? { Email: emp.email } : {}),
+        ...(emp.adresse ? { Adresse: emp.adresse } : {}),
+      },
+    };
+  } else {
+    emprunteur = {
+      type: "personne_morale",
+      identite: emp.raisonSociale || emp.nom || "Non renseigné",
+      details: {
+        ...(emp.siren ? { SIREN: emp.siren } : {}),
+        ...(emp.formeJuridique ? { Forme: emp.formeJuridique } : {}),
+        ...(emp.dirigeant ? { Dirigeant: emp.dirigeant } : {}),
+        ...(emp.telephone ? { Téléphone: emp.telephone } : {}),
+      },
+    };
+  }
+
+  // Projet
+  const p = operation.project ?? {};
+  const projet: Record<string, string> = {};
+  if (p.label) projet["Nom"] = p.label;
+  if (p.operationType) projet["Type d'opération"] = p.operationType;
+  if (p.assetType) projet["Type d'actif"] = p.assetType;
+  if (p.address) projet["Adresse"] = p.address;
+  if (p.communeInsee) projet["Code INSEE"] = p.communeInsee;
+  if (p.surfaceM2) projet["Surface"] = `${p.surfaceM2} m²`;
+  if (p.lots) projet["Lots"] = String(p.lots);
+  if (p.dpe) projet["DPE"] = p.dpe;
+
+  // Budget
+  const b = operation.budget ?? {};
+  const budget: Record<string, string> = {};
+  if (b.purchasePrice) budget["Prix d'achat"] = fmtK(b.purchasePrice);
+  if (b.notaryFees) budget["Frais de notaire"] = fmtK(b.notaryFees);
+  if (b.worksBudget) budget["Budget travaux"] = fmtK(b.worksBudget);
+  if (b.softCosts) budget["Soft costs"] = fmtK(b.softCosts);
+  if (b.holdingCosts) budget["Frais de portage"] = fmtK(b.holdingCosts);
+  if (b.contingency) budget["Aléas"] = fmtK(b.contingency);
+  if (b.landCost) budget["Coût foncier"] = fmtK(b.landCost);
+  if (b.constructionCost) budget["Construction"] = fmtK(b.constructionCost);
+  if (b.totalCost) budget["TOTAL"] = fmtK(b.totalCost);
+  if (b.costPerSqm) budget["Coût/m²"] = `${b.costPerSqm}€`;
+
+  // Financement
+  const f = operation.financing ?? {};
+  const financement: Record<string, string> = {};
+  if (f.loanAmount) financement["Montant prêt"] = fmtK(f.loanAmount);
+  if (f.loanDurationMonths) financement["Durée"] = `${f.loanDurationMonths} mois`;
+  if (f.loanType) financement["Type"] = f.loanType;
+  if (f.interestRate) financement["Taux"] = `${f.interestRate}%`;
+  if (f.equity) financement["Apport personnel"] = fmtK(f.equity);
+
+  // Revenus
+  const r = operation.revenues ?? {};
+  const revenus: Record<string, string> = {};
+  if (r.strategy) revenus["Stratégie"] = r.strategy;
+  if (r.exitValue) revenus["Valeur de sortie"] = fmtK(r.exitValue);
+  if (r.rentAnnual) revenus["Loyer annuel"] = fmtK(r.rentAnnual);
+  if (r.occupancyRate) revenus["Taux d'occupation"] = `${r.occupancyRate}%`;
+  if (r.revenueTotal) revenus["CA total"] = fmtK(r.revenueTotal);
+
+  // Marché
+  const m = operation.market ?? {};
+  const marche: Record<string, string> = {};
+  if (m.pricePerSqm) marche["Prix médian /m²"] = `${m.pricePerSqm}€`;
+  if (m.compsCount) marche["Transactions DVF"] = String(m.compsCount);
+  if (m.evolutionPct != null) marche["Évolution prix"] = `${m.evolutionPct}%`;
+  if (m.demandIndex != null) marche["Indice demande"] = `${m.demandIndex}/100`;
+  if (m.absorptionMonths) marche["Absorption"] = `${m.absorptionMonths} mois`;
+  if (m.populationCommune) marche["Population"] = String(m.populationCommune);
+  if (m.revenueMedian) marche["Revenu médian"] = fmtK(m.revenueMedian);
+
+  // Risques
+  const rk = operation.risks ?? {};
+  const risques = {
+    items: (rk.geo ?? []).map((ri) => ({
+      label: ri.label,
+      level: ri.level,
+      status: ri.status,
+    })),
+    score: rk.score != null ? `${rk.score}/100` : "N/A",
+    globalLevel: rk.globalLevel ?? "inconnu",
+  };
+
+  // KPIs
+  const k = operation.kpis ?? {};
+  const kpis: Record<string, string> = {};
+  if (k.ltv != null) kpis["LTV"] = `${k.ltv}%`;
+  if (k.ltc != null) kpis["LTC"] = `${k.ltc}%`;
+  if (k.margin != null) kpis["Marge brute"] = `${k.margin}%`;
+  if (k.roi != null) kpis["ROI"] = `${k.roi}%`;
+  if (k.irr != null) kpis["TRI"] = `${k.irr}%`;
+  if (k.dscr != null) kpis["DSCR"] = String(k.dscr);
+  if (k.yieldGross != null) kpis["Rendement brut"] = `${k.yieldGross}%`;
+  if (k.cashOnCash != null) kpis["Cash-on-cash"] = `${k.cashOnCash}%`;
+
+  // Scénarios
+  const scenarios: Record<string, Record<string, string>> = {};
+  if (r.scenarios) {
+    for (const [key, sc] of Object.entries(r.scenarios)) {
+      if (sc) {
+        const s: Record<string, string> = {};
+        if (sc.exitValue) s["Sortie"] = fmtK(sc.exitValue);
+        if (sc.margin != null) s["Marge"] = `${sc.margin}%`;
+        if (sc.roi != null) s["ROI"] = `${sc.roi}%`;
+        if (sc.notes) s["Notes"] = sc.notes;
+        scenarios[key] = s;
+      }
+    }
+  }
+
+  return {
+    generatedAt: now,
+    profile: operation.meta.profile,
+    meta: {
+      dossierRef: dossier?.reference ?? "—",
+      dossierLabel: dossier?.label ?? "—",
+      profile: operation.meta.profile,
+      generatedAt: now,
+    },
+    emprunteur,
+    projet,
+    budget,
+    financement,
+    revenus,
+    marche,
+    risques,
+    kpis,
+    scenarios,
+    missing: operation.missing ?? [],
+    smartscore: scoreResult,
+    verdictExplanation: scoreResult
+      ? buildVerdictExplanation(scoreResult)
+      : "Aucune évaluation disponible",
+  };
 }
 
-// ═══════════════════════════════════════════════════════════════════
+function isReportValid(report: UniversalReport | null): boolean {
+  return !!report && !!report.generatedAt && !!report.meta;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// PDF EXPORT
+// ════════════════════════════════════════════════════════════════════
+
+async function exportReportPdf(
+  report: UniversalReport,
+  dossier: any
+): Promise<void> {
+  // Dynamic import to avoid bundle bloat
+  const { default: jsPDF } = await import("jspdf");
+  await import("jspdf-autotable");
+
+  const doc = new jsPDF("p", "mm", "a4") as any;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 15;
+  const contentWidth = pageWidth - margin * 2;
+  let y = 20;
+
+  const addPage = () => {
+    doc.addPage();
+    y = 20;
+  };
+
+  const checkPage = (need: number) => {
+    if (y + need > 270) addPage();
+  };
+
+  // ── Header ──
+  doc.setFontSize(18);
+  doc.setFont("helvetica", "bold");
+  doc.text("RAPPORT COMITÉ DE CRÉDIT", margin, y);
+  y += 8;
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Dossier: ${report.meta.dossierRef} — ${report.meta.dossierLabel}`, margin, y);
+  y += 5;
+  doc.text(`Profil: ${report.profile}`, margin, y);
+  y += 5;
+  doc.text(`Généré le: ${new Date(report.generatedAt).toLocaleString("fr-FR")}`, margin, y);
+  y += 10;
+
+  // ── SmartScore ──
+  if (report.smartscore) {
+    const ss = report.smartscore;
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("SMARTSCORE", margin, y);
+    y += 7;
+    doc.setFontSize(11);
+    doc.text(`Score: ${ss.score}/100 (${ss.grade}) — Verdict: ${ss.verdict}`, margin, y);
+    y += 6;
+
+    // Pillar table
+    const pillarRows = ss.pillars.map((p) => [
+      p.label,
+      `${p.points}/${p.maxPoints}`,
+      p.hasData ? `${p.rawScore}/100` : "N/A",
+      p.reasons.slice(0, 2).join("; "),
+    ]);
+
+    doc.autoTable({
+      startY: y,
+      head: [["Pilier", "Points", "Score brut", "Détail"]],
+      body: pillarRows,
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [79, 70, 229], textColor: 255 },
+    });
+    y = doc.lastAutoTable.finalY + 8;
+  }
+
+  // ── Emprunteur ──
+  checkPage(25);
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "bold");
+  doc.text("EMPRUNTEUR", margin, y);
+  y += 7;
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text(`${report.emprunteur.identite} (${report.emprunteur.type})`, margin, y);
+  y += 5;
+  for (const [k, v] of Object.entries(report.emprunteur.details)) {
+    doc.text(`${k}: ${v}`, margin + 5, y);
+    y += 4;
+  }
+  y += 5;
+
+  // ── Helper for key-value sections ──
+  const addSection = (title: string, data: Record<string, string>) => {
+    const entries = Object.entries(data).filter(([_, v]) => v);
+    if (entries.length === 0) return;
+    checkPage(15 + entries.length * 5);
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text(title, margin, y);
+    y += 7;
+    doc.autoTable({
+      startY: y,
+      body: entries,
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 9, cellPadding: 2 },
+      columnStyles: {
+        0: { fontStyle: "bold", cellWidth: 50 },
+        1: { cellWidth: contentWidth - 50 },
+      },
+    });
+    y = doc.lastAutoTable.finalY + 8;
+  };
+
+  addSection("PROJET", report.projet);
+  addSection("BUDGET", report.budget);
+  addSection("FINANCEMENT", report.financement);
+  addSection("REVENUS", report.revenus);
+  addSection("MARCHÉ", report.marche);
+  addSection("RATIOS FINANCIERS", report.kpis);
+
+  // ── Risques ──
+  if (report.risques.items.length > 0) {
+    checkPage(20);
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("RISQUES", margin, y);
+    y += 7;
+
+    const riskRows = report.risques.items.map((r) => [
+      r.status === "present" ? "⚠" : r.status === "absent" ? "✓" : "?",
+      r.label,
+      r.level,
+    ]);
+
+    doc.autoTable({
+      startY: y,
+      head: [["", "Risque", "Niveau"]],
+      body: riskRows,
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [234, 88, 12] },
+    });
+    y = doc.lastAutoTable.finalY + 5;
+    doc.setFontSize(9);
+    doc.text(`Score risques: ${report.risques.score} — Niveau: ${report.risques.globalLevel}`, margin, y);
+    y += 8;
+  }
+
+  // ── Scénarios ──
+  if (Object.keys(report.scenarios).length > 0) {
+    checkPage(25);
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("SCÉNARIOS", margin, y);
+    y += 7;
+
+    for (const [name, sc] of Object.entries(report.scenarios)) {
+      const entries = Object.entries(sc);
+      if (entries.length === 0) continue;
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text(name.toUpperCase(), margin + 5, y);
+      y += 5;
+      for (const [k, v] of entries) {
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.text(`${k}: ${v}`, margin + 10, y);
+        y += 4;
+      }
+      y += 3;
+    }
+    y += 5;
+  }
+
+  // ── Missing data ──
+  if (report.missing.length > 0) {
+    checkPage(15 + report.missing.length * 5);
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("DONNÉES MANQUANTES", margin, y);
+    y += 7;
+
+    const missingRows = report.missing.map((m) => [
+      m.severity === "blocker" ? "BLOQUANT" : m.severity === "warn" ? "ATTENTION" : "INFO",
+      m.label,
+      m.key,
+    ]);
+
+    doc.autoTable({
+      startY: y,
+      head: [["Sévérité", "Donnée", "Clé"]],
+      body: missingRows,
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [180, 83, 9] },
+    });
+    y = doc.lastAutoTable.finalY + 8;
+  }
+
+  // ── Recommendations ──
+  if (report.smartscore && report.smartscore.recommendations.length > 0) {
+    checkPage(20);
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("RECOMMANDATIONS", margin, y);
+    y += 7;
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    report.smartscore.recommendations.forEach((r, i) => {
+      checkPage(6);
+      doc.text(`${i + 1}. ${r}`, margin + 5, y);
+      y += 5;
+    });
+    y += 5;
+  }
+
+  // ── Verdict ──
+  checkPage(20);
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "bold");
+  doc.text("CONCLUSION", margin, y);
+  y += 7;
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  const verdictLines = doc.splitTextToSize(report.verdictExplanation, contentWidth);
+  doc.text(verdictLines, margin, y);
+
+  // Save
+  const filename = `rapport-comite-${dossier?.reference ?? "dossier"}-${new Date().toISOString().slice(0, 10)}.pdf`;
+  doc.save(filename);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// COMPONENT
+// ════════════════════════════════════════════════════════════════════
 
 export default function ComitePage() {
-  const { dossierId, dossier, snap, refresh } = useBanqueDossierContext();
+  const { dossierId, dossier, refresh } = useBanqueDossierContext();
   const navigate = useNavigate();
-  const committee = snap?.committee;
 
-  // ── Report state ──
-  const existing = dossier?.report;
-  const [report, setReport] = useState<StructuredReport | null>(
-    isReportValid(existing) ? existing : null,
-  );
-  const [generating, setGenerating] = useState(false);
+  const [report, setReport] = useState<UniversalReport | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
-  const hasRealReport = isReportValid(report);
+  // ── Build operation ──
+  const operation = useMemo<OperationSummary | null>(() => {
+    if (!dossier) return null;
+    return (dossier as any).operation ?? buildOperationSummaryFromDossier(dossier);
+  }, [dossier]);
 
-  // ── Decision state ──
-  const [decision, setDecision]       = useState<Decision>(committee?.decision ?? "en_attente");
-  const [conditions, setConditions]   = useState(committee?.conditions ?? "");
-  const [commentaire, setCommentaire] = useState(committee?.commentaire ?? "");
-  const [saved, setSaved]             = useState(false);
+  // ── Restore persisted report ──
+  const persistedReport = useMemo(() => {
+    const r = (dossier as any)?.comite?.report;
+    return r && isReportValid(r) ? (r as UniversalReport) : null;
+  }, [dossier]);
 
-  // Summary data
-  const garanties  = dossier?.garanties;
-  const documents  = dossier?.documents;
-  const analysis   = dossier?.analysis;
-  const smartScore = snap?.smartScore;
+  const activeReport = report ?? persistedReport;
 
   // ── Generate report ──
   const handleGenerate = useCallback(() => {
-    if (!dossierId || !dossier) return;
-    setGenerating(true);
-    setTimeout(() => {
-      const r = generateStructuredReport(dossier, snap);
-      setReport(r);
-      upsertDossier({ id: dossierId, report: r } as any);
-      patchCommittee(dossierId, { rapportGenere: true });
-      addEvent({ type: "rapport_generated", dossierId,
-        message: `Rapport comité généré — ${r.smartscore.score}/100 (${r.smartscore.grade})` });
-      refresh();
-      setGenerating(false);
-    }, 500);
-  }, [dossierId, dossier, snap, refresh]);
+    if (!dossier || !operation || !dossierId) return;
+    setIsGenerating(true);
 
-  // ── Save decision ──
-  const handleSaveDecision = () => {
-    if (!dossierId) return;
-    patchCommittee(dossierId, {
-      decision,
-      conditions: conditions || undefined,
-      commentaire: commentaire || undefined,
-      rapportGenere: hasRealReport,
-      decidedAt: decision !== "en_attente" ? new Date().toISOString() : undefined,
-    });
-    addEvent({ type: "committee_decision", dossierId,
-      message: `Décision comité : ${DECISIONS.find((d) => d.value === decision)?.label ?? decision}` });
-    refresh(); setSaved(true); setTimeout(() => setSaved(false), 2000);
-  };
+    try {
+      const sr = computeSmartScoreFromOperation(operation, dossier);
+      const rpt = generateUniversalReport(dossier, operation, sr);
+      setReport(rpt);
 
-  // ── Guard ──
-  if (!dossierId) {
+      // Persist
+      upsertDossier({
+        id: dossierId,
+        comite: {
+          ...(dossier as any)?.comite,
+          report: rpt,
+        },
+      } as any);
+      addEvent({
+        type: "rapport_generated",
+        dossierId,
+        message: `Rapport comité généré — Score: ${sr.score}/100 (${sr.grade})`,
+      });
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [dossier, operation, dossierId]);
+
+  // ── Export PDF ──
+  const handleExportPdf = useCallback(async () => {
+    if (!activeReport) return;
+    setIsExporting(true);
+    try {
+      await exportReportPdf(activeReport, dossier);
+    } catch (err) {
+      console.error("[ComitePage] PDF export failed:", err);
+      alert("Erreur lors de l'export PDF");
+    } finally {
+      setIsExporting(false);
+    }
+  }, [activeReport, dossier]);
+
+  // ── Guards ──
+  if (!dossierId || !dossier) {
     return (
-      <div className="max-w-5xl mx-auto">
-        <h1 className="text-xl font-bold text-slate-900 mb-4">Comité Crédit</h1>
-        <div className="rounded-xl border-2 border-dashed border-slate-200 p-12 text-center">
-          <p className="text-slate-500 mb-4">Aucun dossier sélectionné.</p>
-          <button onClick={() => navigate("/banque/dossiers")}
-            className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-slate-800">
-            Voir le pipeline
-          </button>
-        </div>
+      <div className="p-6 text-center text-gray-500">
+        Aucun dossier sélectionné.{" "}
+        <button className="text-blue-600 underline" onClick={() => navigate("/banque/dossiers")}>
+          Retour aux dossiers
+        </button>
       </div>
     );
   }
 
+  const hasReport = isReportValid(activeReport);
+
   return (
-    <div className="max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+    <div className="max-w-6xl mx-auto p-4 space-y-6">
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Comité Crédit</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{dossier?.nom || "Dossier"} — {dossierId}</p>
-        </div>
-        {saved && <span className="text-sm text-green-600 font-medium">✓ Sauvegardé</span>}
-      </div>
-
-      {/* Summary KPIs */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <p className="text-xs text-slate-500">Score</p>
-          <p className="text-2xl font-bold text-slate-900">{analysis?.score ?? smartScore?.score ?? "—"}</p>
-          {(analysis?.label || smartScore?.grade) && (
-            <span className="text-xs font-semibold text-indigo-600">{analysis?.label ?? smartScore?.grade}</span>
-          )}
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <p className="text-xs text-slate-500">Risque</p>
-          <p className="text-lg font-bold text-slate-900 capitalize">{analysis?.niveau?.toLowerCase() ?? snap?.riskAnalysis?.globalLevel ?? "—"}</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <p className="text-xs text-slate-500">Garanties</p>
-          <p className="text-lg font-bold text-slate-900">{garanties?.items?.length ?? 0} sûreté(s)</p>
-          {garanties?.couvertureTotale != null && (
-            <span className="text-xs text-slate-400">{(garanties.couvertureTotale / 1e6).toFixed(2)} M€</span>
-          )}
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <p className="text-xs text-slate-500">Documents</p>
-          <p className="text-lg font-bold text-slate-900">{documents?.completude != null ? `${documents.completude}%` : "—"}</p>
-        </div>
-      </div>
-
-      {/* Quick links */}
-      <div className="flex items-center gap-2 mb-6">
-        <button type="button" onClick={() => navigate(`/banque/dossier/${dossierId}`)}
-          className="text-xs text-slate-500 hover:text-slate-700 underline">← Dossier</button>
-        <span className="text-slate-300">·</span>
-        <button type="button" onClick={() => navigate(`/banque/analyse/${dossierId}`)}
-          className="text-xs text-slate-500 hover:text-slate-700 underline">← Analyse</button>
-      </div>
-
-      {/* ═══════════════════════════════════════
-          RAPPORT COMITÉ — header + generate button
-         ═══════════════════════════════════════ */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-slate-900">Rapport Comité</h2>
-          <div className="flex items-center gap-2">
-            {hasRealReport ? (
-              <span className="text-xs font-semibold px-2 py-1 rounded bg-green-100 text-green-700">Généré</span>
-            ) : committee?.rapportGenere ? (
-              <span className="text-xs font-semibold px-2 py-1 rounded bg-amber-100 text-amber-700">Incomplet</span>
-            ) : null}
-            <button type="button" onClick={handleGenerate} disabled={generating}
-              className={["px-4 py-2 rounded-lg text-sm font-medium transition-all",
-                generating ? "bg-slate-300 text-slate-500 cursor-not-allowed" : "bg-indigo-600 text-white hover:bg-indigo-700",
-              ].join(" ")}>
-              {generating ? <span className="flex items-center gap-2"><Spinner />{hasRealReport ? "Régénération…" : "Génération…"}</span>
-                : hasRealReport ? "Regénérer" : "Générer le rapport"}
-            </button>
-          </div>
-        </div>
-
-        {hasRealReport && (
-          <p className="text-xs text-slate-400 mb-2">
-            Généré le {new Date(report.generatedAt).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+          <h1 className="text-2xl font-bold text-gray-900">Comité de crédit</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {dossier.label ?? dossier.reference}
           </p>
-        )}
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleGenerate}
+            disabled={isGenerating}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2 text-sm font-medium"
+          >
+            {isGenerating ? (
+              <><span className="animate-spin">⟳</span> Génération…</>
+            ) : hasReport ? (
+              <>🔄 Regénérer le rapport</>
+            ) : (
+              <>📄 Générer le rapport</>
+            )}
+          </button>
+          {hasReport && (
+            <button
+              onClick={handleExportPdf}
+              disabled={isExporting}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2 text-sm font-medium"
+            >
+              {isExporting ? (
+                <><span className="animate-spin">⟳</span> Export…</>
+              ) : (
+                <>📥 Exporter PDF</>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
 
-        {/* No report yet */}
-        {!hasRealReport && !committee?.rapportGenere && (
-          <div className="text-center py-8">
-            <div className="text-3xl mb-2">📋</div>
-            <p className="text-sm text-slate-500">Générez le rapport pour le présenter au comité.</p>
-          </div>
-        )}
-        {!hasRealReport && committee?.rapportGenere && (
-          <div className="text-center py-6">
-            <div className="text-3xl mb-2">⚠️</div>
-            <p className="text-sm text-amber-700 font-medium mb-1">Rapport marqué mais contenu vide.</p>
-            <p className="text-xs text-slate-500">Cliquez "Regénérer" ci-dessus.</p>
-          </div>
+      {/* ── Report badge ── */}
+      <div className="flex items-center gap-3">
+        <span className="text-sm font-medium text-gray-600">Rapport Comité</span>
+        {hasReport ? (
+          <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+            ✅ Généré le {new Date(activeReport!.generatedAt).toLocaleDateString("fr-FR")}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-sm">
+            ⏳ Non généré
+          </span>
         )}
       </div>
 
-      {/* ═══════════════════════════════════════
-          RAPPORT BODY (rich React rendering)
-         ═══════════════════════════════════════ */}
-      {hasRealReport && (
-        <div className="space-y-5 mb-8">
-          {/* ── Meta header ── */}
-          <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Rapport de comité crédit</p>
-                <p className="text-lg font-bold text-slate-900 mt-1">{report.meta.dossierLabel}</p>
-                <p className="text-xs text-slate-500 mt-0.5">ID: {report.meta.dossierId} — Statut: {report.meta.statut}</p>
-              </div>
-              <div className="text-right">
-                <div className="flex items-center gap-2">
-                  <span className={["inline-flex items-center justify-center w-10 h-10 rounded-xl text-lg font-extrabold",
-                    LABEL_COLORS[report.risk.grade]].join(" ")}>{report.risk.grade}</span>
-                  <div>
-                    <p className="text-2xl font-bold text-slate-900">{report.risk.score}</p>
-                    <p className="text-[10px] text-slate-400">/ 100</p>
-                  </div>
+      {/* ── Report content ── */}
+      {hasReport && activeReport && (
+        <div className="space-y-6">
+          {/* SmartScore summary */}
+          {activeReport.smartscore && (
+            <ReportCard title="📊 SmartScore" icon="score">
+              <div className="flex items-center gap-6 mb-4">
+                <div
+                  className={`text-3xl font-bold px-4 py-2 rounded-lg ${
+                    GRADE_COLORS[activeReport.smartscore.grade]
+                  }`}
+                >
+                  {activeReport.smartscore.score}/100
                 </div>
-                <span className={["inline-block mt-1 px-2 py-0.5 rounded text-xs font-semibold",
-                  NIVEAU_COLORS[report.risk.niveau]].join(" ")}>{report.risk.niveau}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* ── Emprunteur ── */}
-          <ReportCard title="Emprunteur" icon="👤">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">{report.emprunteur.identite}</p>
-                <p className="text-xs text-slate-500 capitalize mt-0.5">
-                  {report.emprunteur.type === "personne_physique" ? "Personne physique"
-                    : report.emprunteur.type === "personne_morale" ? "Personne morale" : "Non renseigné"}
-                </p>
-              </div>
-            </div>
-            {Object.keys(report.emprunteur.details).length > 0 && (
-              <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 mt-3">
-                {Object.entries(report.emprunteur.details).map(([k, v]) => (
-                  <div key={k} className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500">{k}</span>
-                    <span className="text-slate-800 font-medium">{v}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </ReportCard>
-
-          {/* ── Projet ── */}
-          <ReportCard title="Données du projet" icon="🏗️">
-            <div className="grid grid-cols-2 gap-4">
-              <InfoRow label="Montant" value={report.projet.montant ? `${(report.projet.montant / 1e6).toFixed(2)} M€` : "—"} />
-              <InfoRow label="Durée" value={report.projet.duree ? `${report.projet.duree} mois` : "—"} />
-              <InfoRow label="Type de prêt" value={report.projet.typePretLabel || "—"} />
-              <InfoRow label="Adresse" value={report.projet.adresse || "—"} />
-            </div>
-            {report.projet.notes && (
-              <p className="mt-3 text-xs text-slate-500 italic">Notes : {report.projet.notes}</p>
-            )}
-          </ReportCard>
-
-          {/* ── Synthèse risque ── */}
-          <ReportCard title="Synthèse de risque" icon="⚡">
-            <div className="grid grid-cols-3 gap-4 mb-4">
-              <div className="text-center rounded-lg bg-slate-50 p-3">
-                <p className="text-xs text-slate-500">Score</p>
-                <p className="text-2xl font-bold text-slate-900">{report.risk.score}/100</p>
-              </div>
-              <div className="text-center rounded-lg bg-slate-50 p-3">
-                <p className="text-xs text-slate-500">Note</p>
-                <span className={["inline-flex items-center justify-center w-8 h-8 rounded-lg text-lg font-extrabold mt-0.5",
-                  LABEL_COLORS[report.risk.grade]].join(" ")}>{report.risk.grade}</span>
-              </div>
-              <div className="text-center rounded-lg bg-slate-50 p-3">
-                <p className="text-xs text-slate-500">Niveau</p>
-                <span className={["inline-block mt-1 px-2 py-0.5 rounded text-xs font-semibold",
-                  NIVEAU_COLORS[report.risk.niveau]].join(" ")}>{report.risk.niveau}</span>
-              </div>
-            </div>
-            {report.risk.computedAt && (
-              <p className="text-[10px] text-slate-400 mb-3">
-                Calculé le {new Date(report.risk.computedAt).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-              </p>
-            )}
-            {report.risk.alertes.length > 0 && (
-              <div className="space-y-1.5">
-                <p className="text-xs font-semibold text-slate-600">Alertes ({report.risk.alertes.length})</p>
-                {report.risk.alertes.map((a, i) => (
-                  <div key={i} className="flex items-start gap-2 text-xs text-slate-700">
-                    <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
-                    <span>{a}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </ReportCard>
-
-          {/* ── Garanties table ── */}
-          <ReportCard title={`Garanties & Sûretés (${report.garanties.total})`} icon="🛡️">
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              <div className="text-center rounded-lg bg-slate-50 p-2.5">
-                <p className="text-[10px] text-slate-500">Nombre</p>
-                <p className="text-lg font-bold text-slate-900">{report.garanties.total}</p>
-              </div>
-              <div className="text-center rounded-lg bg-slate-50 p-2.5">
-                <p className="text-[10px] text-slate-500">Couverture</p>
-                <p className="text-lg font-bold text-slate-900">{(report.garanties.couverture / 1e6).toFixed(2)} M€</p>
-              </div>
-              <div className="text-center rounded-lg bg-slate-50 p-2.5">
-                <p className="text-[10px] text-slate-500">Ratio gar./prêt</p>
-                <p className={["text-lg font-bold",
-                  report.garanties.ratio === null ? "text-slate-400"
-                    : report.garanties.ratio >= 100 ? "text-green-700" : "text-amber-700",
-                ].join(" ")}>
-                  {report.garanties.ratio !== null ? `${report.garanties.ratio}%` : "—"}
-                </p>
-              </div>
-            </div>
-            {report.garanties.items.length > 0 && (
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="text-left py-1.5 font-semibold text-slate-500">#</th>
-                    <th className="text-left py-1.5 font-semibold text-slate-500">Type</th>
-                    <th className="text-left py-1.5 font-semibold text-slate-500">Description</th>
-                    <th className="text-right py-1.5 font-semibold text-slate-500">Valeur</th>
-                    <th className="text-center py-1.5 font-semibold text-slate-500">Rang</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.garanties.items.map((g, i) => (
-                    <tr key={i} className="border-b border-slate-50">
-                      <td className="py-1.5 text-slate-400">{i + 1}</td>
-                      <td className="py-1.5 capitalize text-slate-700">{g.type}</td>
-                      <td className="py-1.5 text-slate-700">{g.description}</td>
-                      <td className="py-1.5 text-right font-medium text-slate-900">
-                        {g.valeur ? `${(g.valeur / 1e6).toFixed(2)} M€` : "—"}
-                      </td>
-                      <td className="py-1.5 text-center text-slate-500">{g.rang ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {report.garanties.commentaire && (
-              <p className="mt-2 text-xs text-slate-500 italic">Note : {report.garanties.commentaire}</p>
-            )}
-          </ReportCard>
-
-          {/* ── Documents table ── */}
-          <ReportCard title={`Documents (${report.documents.total})`} icon="📄">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="flex-1">
-                <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-                  <span>Complétude</span><span>{report.documents.completeness}%</span>
-                </div>
-                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full bg-green-500 transition-all"
-                    style={{ width: `${report.documents.completeness}%` }} />
-                </div>
-              </div>
-              <p className="text-lg font-bold text-slate-900 w-16 text-center">{report.documents.total}</p>
-            </div>
-            {report.documents.items.length > 0 && (
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="text-left py-1.5 font-semibold text-slate-500">Nom</th>
-                    <th className="text-left py-1.5 font-semibold text-slate-500">Type</th>
-                    <th className="text-left py-1.5 font-semibold text-slate-500">Statut</th>
-                    <th className="text-left py-1.5 font-semibold text-slate-500">Note</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.documents.items.map((d, i) => {
-                    const st = DOC_STATUS_DISPLAY[d.statut] ?? { label: d.statut, cls: "bg-gray-100 text-gray-700" };
-                    return (
-                      <tr key={i} className="border-b border-slate-50">
-                        <td className="py-1.5 text-slate-700">{d.nom}</td>
-                        <td className="py-1.5 text-slate-500">{d.type}</td>
-                        <td className="py-1.5">
-                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${st.cls}`}>{st.label}</span>
-                        </td>
-                        <td className="py-1.5 text-slate-400">{d.commentaire || "—"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </ReportCard>
-
-          {/* ── SmartScore détaillé ── */}
-          <ReportCard title="SmartScore — Détail par pilier" icon="🎯">
-            <div className="flex items-center gap-4 mb-5">
-              <div className="flex items-center gap-3">
-                <span className={["inline-flex items-center justify-center w-14 h-14 rounded-2xl text-2xl font-extrabold",
-                  LABEL_COLORS[report.smartscore.grade]].join(" ")}>{report.smartscore.grade}</span>
                 <div>
-                  <p className="text-3xl font-bold text-slate-900 leading-none">{report.smartscore.score}</p>
-                  <p className="text-xs text-slate-400">/ 100</p>
+                  <div className="text-lg font-semibold">
+                    Grade {activeReport.smartscore.grade} — {activeReport.smartscore.verdict}
+                  </div>
+                  <div className="text-sm text-gray-500 capitalize">
+                    Profil: {activeReport.profile}
+                  </div>
                 </div>
               </div>
-              <div className="flex-1 ml-4">
-                <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
-                  <div className={["h-full rounded-full transition-all duration-700",
-                    report.smartscore.score >= 80 ? "bg-green-500" : report.smartscore.score >= 60 ? "bg-amber-500"
-                      : report.smartscore.score >= 40 ? "bg-orange-500" : "bg-red-500",
-                  ].join(" ")} style={{ width: `${report.smartscore.score}%` }} />
-                </div>
+              {/* Pillar bars */}
+              <div className="space-y-2">
+                {activeReport.smartscore.pillars.map((p) => {
+                  const pct = p.maxPoints > 0 ? Math.round((p.points / p.maxPoints) * 100) : 0;
+                  return (
+                    <div key={p.key} className="flex items-center gap-3">
+                      <span className="w-28 text-xs font-medium text-gray-600 text-right">
+                        {p.label}
+                      </span>
+                      <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${
+                            pct >= 70 ? "bg-green-500" : pct >= 40 ? "bg-amber-500" : "bg-red-500"
+                          }`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <span className="w-16 text-xs text-gray-500 text-right">
+                        {p.points}/{p.maxPoints}
+                      </span>
+                      {!p.hasData && (
+                        <span className="text-xs bg-gray-200 text-gray-400 px-1 rounded">N/A</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            </div>
+            </ReportCard>
+          )}
 
-            {/* Pillar bars */}
-            <div className="space-y-3 mb-5">
-              {report.smartscore.pillars.map((p) => (
-                <PillarDetail key={p.key} pillar={p} />
-              ))}
-            </div>
-
-            {/* Drivers */}
-            {(report.smartscore.drivers.up.length > 0 || report.smartscore.drivers.down.length > 0) && (
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                {report.smartscore.drivers.up.length > 0 && (
-                  <div className="rounded-lg bg-green-50 border border-green-100 p-3">
-                    <p className="text-[10px] font-semibold text-green-800 uppercase tracking-wide mb-1.5">Points forts</p>
-                    {report.smartscore.drivers.up.map((d, i) => (
-                      <p key={i} className="text-xs text-green-700 flex items-start gap-1.5 mb-0.5">
-                        <span className="mt-0.5 w-1 h-1 rounded-full bg-green-500 flex-shrink-0" />{d}
-                      </p>
-                    ))}
-                  </div>
-                )}
-                {report.smartscore.drivers.down.length > 0 && (
-                  <div className="rounded-lg bg-red-50 border border-red-100 p-3">
-                    <p className="text-[10px] font-semibold text-red-800 uppercase tracking-wide mb-1.5">Points de vigilance</p>
-                    {report.smartscore.drivers.down.map((d, i) => (
-                      <p key={i} className="text-xs text-red-700 flex items-start gap-1.5 mb-0.5">
-                        <span className="mt-0.5 w-1 h-1 rounded-full bg-red-500 flex-shrink-0" />{d}
-                      </p>
-                    ))}
-                  </div>
-                )}
+          {/* Emprunteur */}
+          <ReportCard title="👤 Emprunteur">
+            <p className="font-medium">{activeReport.emprunteur.identite}</p>
+            <p className="text-sm text-gray-500 capitalize">{activeReport.emprunteur.type}</p>
+            {Object.entries(activeReport.emprunteur.details).map(([k, v]) => (
+              <div key={k} className="text-sm mt-1">
+                <span className="text-gray-500">{k}:</span> {v}
               </div>
-            )}
-
-            {/* Recommendations */}
-            {report.smartscore.recommendations.length > 0 && (
-              <div className="rounded-lg bg-indigo-50 border border-indigo-100 p-3">
-                <p className="text-[10px] font-semibold text-indigo-800 uppercase tracking-wide mb-2">Recommandations</p>
-                <ol className="space-y-1">
-                  {report.smartscore.recommendations.map((r, i) => (
-                    <li key={i} className="text-xs text-indigo-700 flex items-start gap-2">
-                      <span className="flex-shrink-0 w-4 h-4 rounded-full bg-indigo-200 text-[9px] font-bold text-indigo-700 flex items-center justify-center">{i + 1}</span>
-                      {r}
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            )}
+            ))}
           </ReportCard>
 
-          {/* ── Footer ── */}
-          <div className="text-center py-3">
-            <p className="text-[10px] text-slate-400">
-              Rapport généré automatiquement par Mimmoza — support d'aide à la décision.
-            </p>
-          </div>
+          {/* Key-value sections */}
+          <KvSection title="🏗️ Projet" data={activeReport.projet} />
+          <KvSection title="💰 Budget" data={activeReport.budget} />
+          <KvSection title="🏦 Financement" data={activeReport.financement} />
+          <KvSection title="💵 Revenus" data={activeReport.revenus} />
+          <KvSection title="📈 Marché" data={activeReport.marche} />
+          <KvSection title="📐 Ratios" data={activeReport.kpis} />
+
+          {/* Risques */}
+          {activeReport.risques.items.length > 0 && (
+            <ReportCard title="⚡ Risques">
+              <div className="space-y-1">
+                {activeReport.risques.items.map((r, i) => (
+                  <div
+                    key={i}
+                    className={`flex items-center justify-between p-2 rounded text-sm ${
+                      r.status === "present" && (r.level === "élevé" || r.level === "très élevé")
+                        ? "bg-red-50"
+                        : r.status === "present"
+                        ? "bg-amber-50"
+                        : "bg-gray-50"
+                    }`}
+                  >
+                    <span>
+                      {r.status === "absent" ? "✅" : r.status === "unknown" ? "❓" : "⚠️"}{" "}
+                      {r.label}
+                    </span>
+                    <span className="text-xs font-medium capitalize">{r.level}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 text-sm text-gray-600">
+                Score: {activeReport.risques.score} — Niveau: {activeReport.risques.globalLevel}
+              </div>
+            </ReportCard>
+          )}
+
+          {/* Scénarios */}
+          {Object.keys(activeReport.scenarios).length > 0 && (
+            <ReportCard title="🎯 Scénarios">
+              <div className="grid grid-cols-3 gap-4">
+                {Object.entries(activeReport.scenarios).map(([name, data]) => (
+                  <div
+                    key={name}
+                    className={`p-3 rounded-lg border ${
+                      name === "stress"
+                        ? "border-red-200 bg-red-50"
+                        : name === "upside"
+                        ? "border-green-200 bg-green-50"
+                        : "border-gray-200 bg-gray-50"
+                    }`}
+                  >
+                    <div className="font-medium capitalize mb-1">{name}</div>
+                    {Object.entries(data).map(([k, v]) => (
+                      <div key={k} className="text-sm">
+                        <span className="text-gray-500">{k}:</span> {v}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </ReportCard>
+          )}
+
+          {/* Missing data */}
+          {activeReport.missing.length > 0 && (
+            <ReportCard title="📋 Données manquantes">
+              <div className="space-y-1">
+                {activeReport.missing.map((m, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        m.severity === "blocker"
+                          ? "bg-red-500"
+                          : m.severity === "warn"
+                          ? "bg-amber-500"
+                          : "bg-blue-400"
+                      }`}
+                    />
+                    <span>{m.label}</span>
+                    <span
+                      className={`text-xs px-1.5 py-0.5 rounded ${
+                        m.severity === "blocker"
+                          ? "bg-red-100 text-red-600"
+                          : m.severity === "warn"
+                          ? "bg-amber-100 text-amber-600"
+                          : "bg-blue-50 text-blue-600"
+                      }`}
+                    >
+                      {m.severity === "blocker" ? "Bloquant" : m.severity === "warn" ? "Attention" : "Info"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {activeReport.smartscore && activeReport.smartscore.totalMissingPenalty > 0 && (
+                <div className="mt-2 text-sm text-red-600 font-medium">
+                  Impact score: -{activeReport.smartscore.totalMissingPenalty} pts
+                </div>
+              )}
+            </ReportCard>
+          )}
+
+          {/* Recommendations */}
+          {activeReport.smartscore && activeReport.smartscore.recommendations.length > 0 && (
+            <ReportCard title="💡 Recommandations">
+              <ol className="list-decimal list-inside space-y-1 text-sm text-gray-700">
+                {activeReport.smartscore.recommendations.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ol>
+            </ReportCard>
+          )}
+
+          {/* Verdict */}
+          <ReportCard title="📝 Conclusion">
+            <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans">
+              {activeReport.verdictExplanation}
+            </pre>
+          </ReportCard>
+
+          {/* Decision section */}
+          <DecisionSection dossierId={dossierId!} dossier={dossier} />
         </div>
       )}
 
-      {/* ═══════════════════════════════════════
-          DÉCISION DU COMITÉ
-         ═══════════════════════════════════════ */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 mb-6">
-        <h2 className="text-lg font-bold text-slate-900 mb-4">Décision du comité</h2>
-        <div className="flex flex-wrap gap-2 mb-4">
-          {DECISIONS.map((d) => (
-            <button key={d.value} type="button" onClick={() => setDecision(d.value)}
-              className={["px-4 py-2 rounded-lg text-sm font-medium border transition-all",
-                decision === d.value
-                  ? `${d.color} border-current ring-2 ring-offset-1 ring-current/20`
-                  : "border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700",
-              ].join(" ")}>
-              {d.label}
-            </button>
-          ))}
-        </div>
-        {(decision === "conditionnel" || decision === "ajourne") && (
-          <div className="mb-4">
-            <label className="block text-xs font-medium text-slate-600 mb-1">Conditions / Réserves</label>
-            <textarea value={conditions} onChange={(e) => setConditions(e.target.value)}
-              rows={3} placeholder="Précisez les conditions ou réserves…"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10" />
-          </div>
-        )}
-        <div className="mb-4">
-          <label className="block text-xs font-medium text-slate-600 mb-1">Commentaire du comité</label>
-          <textarea value={commentaire} onChange={(e) => setCommentaire(e.target.value)}
-            rows={3} placeholder="Observations, justification…"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10" />
-        </div>
-        <div className="flex justify-end">
-          <button onClick={handleSaveDecision}
-            className="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-medium text-white hover:bg-slate-800">
-            Enregistrer la décision
+      {/* ── No report placeholder ── */}
+      {!hasReport && (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
+          <div className="text-4xl mb-3">📄</div>
+          <p className="text-gray-600 mb-4">
+            Le rapport comité n'a pas encore été généré.
+          </p>
+          <button
+            onClick={handleGenerate}
+            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium"
+          >
+            Générer le rapport
           </button>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Sub-components
-// ═══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════
+// SUB-COMPONENTS
+// ════════════════════════════════════════════════════════════════════
 
-function ReportCard({ title, icon, children }: { title: string; icon?: string; children: React.ReactNode }) {
+function ReportCard({
+  title,
+  children,
+  icon,
+}: {
+  title: string;
+  children: React.ReactNode;
+  icon?: string;
+}) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5">
-      <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
-        {icon && <span className="text-base">{icon}</span>}
-        {title}
-      </h3>
+    <div className="bg-white rounded-lg border border-gray-200 p-4">
+      <h3 className="text-lg font-semibold text-gray-900 mb-3">{title}</h3>
       {children}
     </div>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function KvSection({ title, data }: { title: string; data: Record<string, string> }) {
+  const entries = Object.entries(data).filter(([_, v]) => v && v !== "Non renseigné");
+  if (entries.length === 0) return null;
+
   return (
-    <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-      <span className="text-xs text-slate-500">{label}</span>
-      <span className="text-xs font-semibold text-slate-900">{value}</span>
-    </div>
+    <ReportCard title={title}>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+        {entries.map(([k, v]) => (
+          <div key={k}>
+            <div className="text-xs text-gray-500">{k}</div>
+            <div className={`font-medium ${k === "TOTAL" ? "text-indigo-700 text-lg" : "text-gray-800"}`}>
+              {v}
+            </div>
+          </div>
+        ))}
+      </div>
+    </ReportCard>
   );
 }
 
-function PillarDetail({ pillar }: { pillar: PillarResult }) {
-  const pct = Math.round((pillar.points / pillar.max) * 100);
-  const bar = PILLAR_BAR[pillar.key] ?? "bg-slate-500";
-
-  return (
-    <div className="rounded-lg bg-slate-50 p-3">
-      <div className="flex items-center justify-between text-xs mb-1">
-        <span className="font-semibold text-slate-700">{pillar.label}</span>
-        <span className="text-slate-500">{pillar.points} / {pillar.max} pts</span>
-      </div>
-      <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden mb-2">
-        <div className={`h-full rounded-full transition-all duration-500 ${bar}`} style={{ width: `${pct}%` }} />
-      </div>
-      {pillar.reasons.length > 0 && (
-        <div className="space-y-0.5 mb-1">
-          {pillar.reasons.map((r, i) => (
-            <p key={i} className="text-[11px] text-slate-600">{r}</p>
-          ))}
-        </div>
-      )}
-      {pillar.actions.length > 0 && (
-        <div className="space-y-0.5 mt-1 pt-1 border-t border-slate-200">
-          {pillar.actions.map((a, i) => (
-            <p key={i} className="text-[11px] text-indigo-600 flex items-start gap-1.5">
-              <span className="mt-0.5">→</span>{a}
-            </p>
-          ))}
-        </div>
-      )}
-    </div>
+function DecisionSection({
+  dossierId,
+  dossier,
+}: {
+  dossierId: string;
+  dossier: any;
+}) {
+  const [verdict, setVerdict] = useState<string>(
+    dossier?.decision?.verdict ?? dossier?.comite?.verdict ?? ""
   );
-}
+  const [motivation, setMotivation] = useState<string>(
+    dossier?.decision?.motivation ?? dossier?.comite?.motivation ?? ""
+  );
+  const [saved, setSaved] = useState(false);
 
-function Spinner() {
+  const handleSave = () => {
+    upsertDossier({
+      id: dossierId,
+      decision: {
+        ...(dossier?.decision ?? {}),
+        verdict,
+        motivation,
+        decidedAt: new Date().toISOString(),
+      },
+    } as any);
+    addEvent({
+      type: "decision_updated",
+      dossierId,
+      message: `Décision comité: ${verdict}`,
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  };
+
   return (
-    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-    </svg>
+    <div className="bg-white rounded-lg border-2 border-indigo-200 p-4">
+      <h3 className="text-lg font-semibold text-gray-900 mb-3">⚖️ Décision du comité</h3>
+      <div className="space-y-4">
+        <div className="flex gap-3">
+          {["GO", "GO sous conditions", "NO GO"].map((v) => (
+            <button
+              key={v}
+              onClick={() => setVerdict(v)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                verdict === v
+                  ? v === "GO"
+                    ? "bg-green-600 text-white border-green-600"
+                    : v === "GO sous conditions"
+                    ? "bg-amber-500 text-white border-amber-500"
+                    : "bg-red-600 text-white border-red-600"
+                  : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+        <textarea
+          placeholder="Motivation / Conditions..."
+          value={motivation}
+          onChange={(e) => setMotivation(e.target.value)}
+          rows={4}
+          className="w-full border border-gray-300 rounded-lg p-3 text-sm resize-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+        />
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSave}
+            disabled={!verdict}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium"
+          >
+            Enregistrer la décision
+          </button>
+          {saved && (
+            <span className="text-green-600 text-sm">✅ Décision enregistrée</span>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

@@ -2,7 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { readBanqueSnapshot, upsertDossier } from "../store/banqueSnapshot.store";
+import {
+  readBanqueSnapshot,
+  upsertDossier,
+  removeDossier,
+} from "../store/banqueSnapshot.store";
 
 function makeId() {
   return `DOSS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}-${Date.now()
@@ -24,9 +28,10 @@ function fmtEur(n: number) {
 
 const LS_ACTIVE_DOSSIER_ID = "mimmoza.banque.active_dossier_id";
 
-function setActiveDossierId(id: string) {
+function setActiveDossierId(id: string | null) {
   try {
-    localStorage.setItem(LS_ACTIVE_DOSSIER_ID, id);
+    if (!id) localStorage.removeItem(LS_ACTIVE_DOSSIER_ID);
+    else localStorage.setItem(LS_ACTIVE_DOSSIER_ID, id);
   } catch {
     // ignore
   }
@@ -101,12 +106,34 @@ export default function Pipeline() {
     goToDocuments(id);
   };
 
+  // ✅ NEW: delete dossier (avec confirmation) + gestion dossier actif
+  const deleteDossier = (id: string) => {
+    const d = dossiers.find((x: any) => x?.id === id) ?? active;
+    const label = d?.nom ? `“${d.nom}”` : id;
+
+    const ok = window.confirm(`Supprimer le dossier ${label} ?\n\nCette action est irréversible.`);
+    if (!ok) return;
+
+    // Si le dossier supprimé est le dossier actif, on vide l'active id local + navigation pipeline
+    const isActive = active?.id === id;
+
+    removeDossier(id);
+
+    if (isActive) {
+      setActiveDossierId(null);
+      // on reste/retourne sur pipeline
+      navigate(`/banque/pipeline`);
+    }
+  };
+
   return (
     <div className="p-8">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold mb-2">Dossiers (Pipeline)</h1>
-          <p className="text-slate-500">Créez un dossier puis ouvrez Documents / Garanties / Analyse / Comité avec le même ID.</p>
+          <p className="text-slate-500">
+            Créez un dossier puis ouvrez Documents / Garanties / Analyse / Comité avec le même ID.
+          </p>
         </div>
 
         <button
@@ -152,8 +179,25 @@ export default function Pipeline() {
                   <div className="font-semibold text-slate-900">{d.nom || "(Sans nom)"}</div>
                   <div className="text-sm text-slate-500">{d.sponsor || "Sponsor non renseigné"}</div>
                 </div>
-                <div className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700">
-                  {d.projectType || "baseline"}
+
+                <div className="flex items-center gap-2">
+                  <div className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700">
+                    {d.projectType || "baseline"}
+                  </div>
+
+                  {/* ✅ NEW: delete button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      deleteDossier(d.id);
+                    }}
+                    className="text-xs px-2 py-1 rounded-lg border border-red-200 text-red-700 hover:bg-red-50"
+                    title="Supprimer le dossier"
+                  >
+                    Supprimer
+                  </button>
                 </div>
               </div>
 

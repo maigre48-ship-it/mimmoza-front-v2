@@ -4,9 +4,14 @@
 // La saisie financière reste ici ; le sous-onglet "Analyse de risque" dans AppShell
 // pointe désormais vers /banque/smartscore/:id (dashboard SmartScore).
 // Cette page reste accessible via /banque/analyse/:id pour la saisie détaillée.
+//
+// ✅ OPTION B (crédit complet):
+// - Ajout des sections: Budget, Revenus/Capacité, Bien/État, Calendrier
+// - Ajout d’un panneau Ratios (calculés automatiquement)
+// - Le recalcul SmartScore utilise en priorité les ratios calculés (LTV/DSCR/DSTI, etc.)
 // ============================================================================
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { useBanqueDossierContext } from "../hooks/useBanqueDossierContext";
@@ -18,7 +23,16 @@ import SmartScorePanel from "../components/SmartScorePanel";
 import { Flame, RefreshCw, ShieldAlert } from "lucide-react";
 
 // ✅ FIX Vite alias: use relative import instead of "@/..."
+// (tu as aussi supabase via "@/lib/supabaseClient" ailleurs, mais on garde celui-ci ici)
 import { supabase } from "../../../lib/supabaseClient";
+
+// ✅ OPTION B — New sections + ratios
+import BudgetSection from "../components/analyse/BudgetSection";
+import RevenusSection from "../components/analyse/RevenusSection";
+import BienEtatSection from "../components/analyse/BienEtatSection";
+import CalendrierSection from "../components/analyse/CalendrierSection";
+import RatiosPanel from "../components/analyse/RatiosPanel";
+import { computeRatios } from "../utils/banqueRatios";
 
 // 🆕 Banque scoring — Types locaux pour risks_data.scoring
 interface RisksScoring {
@@ -44,6 +58,11 @@ interface BanqueDossierRow {
   [key: string]: unknown;
 }
 
+function safeNum(x: any) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export default function BanqueAnalyse() {
   const navigate = useNavigate();
   const { id: routeId } = useParams<{ id: string }>();
@@ -51,6 +70,9 @@ export default function BanqueAnalyse() {
   const { dossierId, dossier, refresh } = useBanqueDossierContext();
   const { result: smartScore, recalculate, isComputing, error: ssError } = useSmartScore();
 
+  // NOTE: DossierAnalyse était initialement “flat”.
+  // Pour Option B, on stocke des sous-objets (budget/revenus/bien/calendrier)
+  // => on conserve le type mais on manipule via "any" localement pour ne rien casser.
   const [form, setForm] = useState<DossierAnalyse>({});
   const [saved, setSaved] = useState(false);
 
@@ -74,7 +96,73 @@ export default function BanqueAnalyse() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dossier?.id]);
 
-  // 🆕 Banque scoring — charger risks_data.scoring depuis Supabase
+  // ──────────────────────────────────────────────────────────────
+  // OPTION B — Source de vérité "montant prêt" / durée / garanties
+  // ──────────────────────────────────────────────────────────────
+
+  const loanAmount = useMemo(() => {
+    // priorité: origination.montantDemande (BanqueSnapshot)
+    const a = safeNum((dossier as any)?.origination?.montantDemande);
+    if (a > 0) return a;
+
+    // fallback: dossier.montant (dans ton snapshot tu as aussi "montant": 500000)
+    const b = safeNum((dossier as any)?.montant);
+    if (b > 0) return b;
+
+    return 0;
+  }, [dossier]);
+
+  const durationMonths = useMemo(() => {
+    const d = safeNum((dossier as any)?.origination?.duree);
+    if (d > 0) return d;
+
+    const d2 = safeNum((dossier as any)?.origination?.dureeEnMois);
+    if (d2 > 0) return d2;
+
+    return 240;
+  }, [dossier]);
+
+  const garanties = useMemo(() => {
+    return (dossier as any)?.garanties ?? (dossier as any)?.operation?.garanties ?? null;
+  }, [dossier]);
+
+  // ──────────────────────────────────────────────────────────────
+  // OPTION B — helpers update nested sections
+  // ──────────────────────────────────────────────────────────────
+
+  const update = (key: keyof DossierAnalyse, value: unknown) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    setSaved(false);
+  };
+
+  const updateSection = (sectionKey: string, value: any) => {
+    setForm((prev: any) => ({ ...(prev ?? {}), [sectionKey]: value }));
+    setSaved(false);
+  };
+
+  // ──────────────────────────────────────────────────────────────
+  // OPTION B — compute ratios from form
+  // ──────────────────────────────────────────────────────────────
+
+  const computedRatios = useMemo(() => {
+    const f: any = form ?? {};
+    const budget = f.budget ?? {};
+    const revenus = f.revenus ?? {};
+
+    return computeRatios({
+      loanAmount,
+      durationMonths,
+      annualRatePct: 3.5,
+      budget,
+      revenus,
+      garanties: { couvertureTotale: garanties?.couvertureTotale },
+    });
+  }, [form, loanAmount, durationMonths, garanties]);
+
+  // ──────────────────────────────────────────────────────────────
+  // Banque scoring — charger risks_data.scoring depuis Supabase
+  // ──────────────────────────────────────────────────────────────
+
   const loadRisksScoring = useCallback(async () => {
     if (!effectiveId) return;
     setRisksLoading(true);
@@ -112,17 +200,15 @@ export default function BanqueAnalyse() {
   }, [loadRisksScoring]);
 
   // ✅ STRATÉGIE 2 — recalculer/persister via Edge Function risks-refresh-v1
-  // - committee-report ne fetch plus jamais : il lit banque_dossiers.risks_data
   const handleRecalculateRisks = async () => {
     if (!effectiveId) return;
     setRisksRecalculating(true);
 
     try {
-      // 🔎 On essaie de fournir une adresse si dispo (la function saura geocoder BAN)
-      // Ajuste si ton champ d'adresse est différent.
+      // 🔎 Fournir une adresse projet si dispo (la function saura geocoder BAN)
       const adresse =
-        (dossier as any)?.origination?.adresse ??
         (dossier as any)?.origination?.adresseProjet ??
+        (dossier as any)?.origination?.adresse ??
         (dossier as any)?.origination?.adresseBien ??
         undefined;
 
@@ -154,7 +240,6 @@ export default function BanqueAnalyse() {
           dossierId: effectiveId,
           message: "Risques persistés via risks-refresh-v1 (lat/lng + risks_data)",
         });
-        // Si tu veux: refresh snapshot local aussi (sans casser le reste)
         refresh();
       }
     } catch (err) {
@@ -169,19 +254,21 @@ export default function BanqueAnalyse() {
     }
   };
 
-  const update = (key: keyof DossierAnalyse, value: unknown) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
-    setSaved(false);
-  };
+  // ──────────────────────────────────────────────────────────────
+  // Save + SmartScore
+  // ──────────────────────────────────────────────────────────────
 
   const handleSave = () => {
     if (!effectiveId) return;
-    upsertDossier({ id: effectiveId, analyse: form, status: "analyse" });
+
+    upsertDossier({ id: effectiveId, analyse: form, status: "analyse" } as any);
+
     addEvent({
       type: "analyse_updated",
       dossierId: effectiveId,
-      message: `Analyse mise à jour — Score: ${form.scoreCreditGlobal ?? "N/A"}`,
+      message: `Analyse mise à jour — prêt: ${loanAmount || 0}€`,
     });
+
     refresh();
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -190,20 +277,41 @@ export default function BanqueAnalyse() {
   /** Sauvegarde l'analyse PUIS recalcule le SmartScore */
   const handleRecalculate = () => {
     if (effectiveId) {
-      upsertDossier({ id: effectiveId, analyse: form, status: "analyse" });
+      upsertDossier({ id: effectiveId, analyse: form, status: "analyse" } as any);
       refresh();
     }
 
+    // Priorité aux ratios calculés (Option B)
+    const ltvPct = computedRatios.ltv == null ? undefined : computedRatios.ltv * 100;
+    const dscr = computedRatios.dscr == null ? undefined : computedRatios.dscr;
+    const dstiPct = computedRatios.dsti == null ? undefined : computedRatios.dsti * 100;
+
+    // On garde compatibilité avec ton payload actuel (finance.*)
     const result = recalculate({
       finance: {
-        scoreCreditGlobal: form.scoreCreditGlobal,
-        ratioLTV: form.ratioLTV,
-        ratioDSCR: form.ratioDSCR,
-        tauxEndettement: form.tauxEndettement,
-        fondsPropresPct: form.fondsPropresPct,
-        triProjet: form.triProjet,
-        chiffreAffairesPrev: form.chiffreAffairesPrev,
-        margeBrutePrev: form.margeBrutePrev,
+        // "scoreCreditGlobal" reste optionnel (si tu veux un override manuel plus tard)
+        scoreCreditGlobal: (form as any)?.scoreCreditGlobal,
+
+        // ratios
+        ratioLTV: ltvPct ?? (form as any)?.ratioLTV,
+        ratioDSCR: dscr ?? (form as any)?.ratioDSCR,
+        tauxEndettement: dstiPct ?? (form as any)?.tauxEndettement,
+
+        // fonds propres: apport / coût projet
+        fondsPropresPct:
+          (() => {
+            const f: any = form ?? {};
+            const budget = f.budget ?? {};
+            const equity = safeNum(budget.equity);
+            const cost = safeNum(computedRatios.cost);
+            if (cost > 0 && equity > 0) return (equity / cost) * 100;
+            return (form as any)?.fondsPropresPct;
+          })(),
+
+        // legacy
+        triProjet: (form as any)?.triProjet,
+        chiffreAffairesPrev: (form as any)?.chiffreAffairesPrev,
+        margeBrutePrev: (form as any)?.margeBrutePrev,
       },
     });
 
@@ -216,21 +324,22 @@ export default function BanqueAnalyse() {
     }
   };
 
-  const numField = (label: string, key: keyof DossierAnalyse, suffix?: string) => (
-    <div>
-      <label className="block text-xs font-medium text-slate-600 mb-1">
-        {label}
-        {suffix ? ` (${suffix})` : ""}
-      </label>
-      <input
-        type="number"
-        step="any"
-        value={(form[key] as number)?.toString() ?? ""}
-        onChange={(e) => update(key, e.target.value ? Number(e.target.value) : undefined)}
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-      />
-    </div>
-  );
+  // ──────────────────────────────────────────────────────────────
+  // Render
+  // ──────────────────────────────────────────────────────────────
+
+  const orig = (dossier as any)?.origination ?? {};
+  const communeLabel =
+    orig?.communeProjet ??
+    orig?.commune ??
+    (dossier as any)?.origination?.communeProjet ??
+    "—";
+
+  const typeLabel =
+    orig?.typePret ??
+    orig?.typeProjet ??
+    (dossier as any)?.projectType ??
+    "—";
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6">
@@ -273,6 +382,35 @@ export default function BanqueAnalyse() {
             error={ssError}
           />
 
+          {/* ✅ OPTION B — Sections crédit complet */}
+          <BudgetSection
+            value={(form as any)?.budget ?? {}}
+            onChange={(next) => updateSection("budget", next)}
+          />
+
+          <RevenusSection
+            value={(form as any)?.revenus ?? {}}
+            onChange={(next) => updateSection("revenus", next)}
+          />
+
+          <BienEtatSection
+            value={(form as any)?.bien ?? {}}
+            onChange={(next) => updateSection("bien", next)}
+          />
+
+          <CalendrierSection
+            value={(form as any)?.calendrier ?? {}}
+            onChange={(next) => updateSection("calendrier", next)}
+          />
+
+          <RatiosPanel
+            montantPret={loanAmount}
+            duree={durationMonths}
+            garanties={garanties}
+            budget={(form as any)?.budget ?? {}}
+            revenus={(form as any)?.revenus ?? {}}
+          />
+
           {/* 🆕 Banque scoring — Bloc scoring risques depuis risks_data */}
           <section className="rounded-lg border border-slate-200 bg-white p-5">
             <div className="flex items-center justify-between mb-4">
@@ -292,7 +430,6 @@ export default function BanqueAnalyse() {
               </button>
             </div>
 
-            {/* Petit meta (facultatif) */}
             {risksMeta?.updatedAt && (
               <div className="mb-3 text-[11px] text-slate-400">
                 Dernière mise à jour:{" "}
@@ -361,53 +498,25 @@ export default function BanqueAnalyse() {
               </div>
             ) : (
               <p className="text-sm text-slate-400 italic">
-                Risques non renseignés — cliquez sur « Rafraîchir risques » (dans Analyse) pour persister les données.
+                Risques non renseignés — cliquez sur « Rafraîchir risques » pour persister les données.
               </p>
             )}
-          </section>
-
-          {/* Scoring manuel */}
-          <section className="rounded-lg border border-slate-200 bg-white p-5">
-            <h2 className="text-sm font-semibold text-slate-700 mb-4">Scoring crédit</h2>
-            <div className="grid grid-cols-3 gap-4">
-              {numField("Score crédit global", "scoreCreditGlobal", "0-100")}
-              {numField("LTV", "ratioLTV", "%")}
-              {numField("DSCR", "ratioDSCR")}
-            </div>
-          </section>
-
-          {/* Ratios financiers */}
-          <section className="rounded-lg border border-slate-200 bg-white p-5">
-            <h2 className="text-sm font-semibold text-slate-700 mb-4">Ratios financiers</h2>
-            <div className="grid grid-cols-3 gap-4">
-              {numField("Taux d'endettement", "tauxEndettement", "%")}
-              {numField("Fonds propres", "fondsPropresPct", "%")}
-              {numField("TRI projet", "triProjet", "%")}
-            </div>
-          </section>
-
-          {/* Prévisionnel */}
-          <section className="rounded-lg border border-slate-200 bg-white p-5">
-            <h2 className="text-sm font-semibold text-slate-700 mb-4">Prévisionnel</h2>
-            <div className="grid grid-cols-2 gap-4">
-              {numField("CA prévisionnel", "chiffreAffairesPrev", "€")}
-              {numField("Marge brute prévisionnelle", "margeBrutePrev", "€")}
-            </div>
           </section>
 
           {/* Commentaire */}
           <section className="rounded-lg border border-slate-200 bg-white p-5">
             <h2 className="text-sm font-semibold text-slate-700 mb-4">Commentaire analyste</h2>
             <textarea
-              value={form.commentaireAnalyste ?? ""}
-              onChange={(e) => update("commentaireAnalyste", e.target.value)}
+              value={(form as any).commentaireAnalyste ?? ""}
+              onChange={(e) => update("commentaireAnalyste" as any, e.target.value)}
               rows={4}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
               placeholder="Avis de l'analyste crédit..."
             />
           </section>
 
-          {dossier?.origination.montantDemande && (
+          {/* Origination (lecture seule) */}
+          {loanAmount > 0 && (
             <section className="rounded-lg border border-blue-100 bg-blue-50 p-5">
               <h2 className="text-sm font-semibold text-blue-800 mb-3">
                 Données d'origination (lecture seule)
@@ -415,17 +524,30 @@ export default function BanqueAnalyse() {
               <div className="grid grid-cols-4 gap-4 text-xs">
                 <KPI
                   label="Montant demandé"
-                  value={`${(dossier.origination.montantDemande / 1e6).toFixed(2)} M€`}
+                  value={
+                    loanAmount >= 1e6
+                      ? `${(loanAmount / 1e6).toFixed(2)} M€`
+                      : `${Math.round(loanAmount).toLocaleString("fr-FR")} €`
+                  }
                 />
-                <KPI label="Durée" value={`${dossier.origination.dureeEnMois ?? "—"} mois`} />
-                <KPI label="Type" value={dossier.origination.typeProjet ?? "—"} />
-                <KPI label="Commune" value={dossier.origination.commune ?? "—"} />
+                <KPI label="Durée" value={`${durationMonths ?? "—"} mois`} />
+                <KPI label="Type" value={typeLabel ?? "—"} />
+                <KPI label="Commune" value={communeLabel ?? "—"} />
               </div>
             </section>
           )}
 
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-3">
             <button
+              type="button"
+              onClick={handleRecalculate}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-6 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Recalculer
+            </button>
+
+            <button
+              type="button"
               onClick={handleSave}
               className="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
             >

@@ -1,3 +1,5 @@
+// FILE: src/spaces/banque/hooks/useSmartScore.ts
+
 import { useState, useCallback, useEffect } from "react";
 
 import {
@@ -56,7 +58,10 @@ export function useSmartScore(): UseSmartScoreReturn {
       try {
         const snap = readBanqueSnapshot();
         const input = mapSnapshotToInput(snap, dossier);
+
+        // Merge overrides (e.g., Analyse.tsx provides finance.*)
         const merged: SmartScoreInput = overrides ? deepMerge(input, overrides) : input;
+
         const scoreResult = computeBankSmartScore(merged);
 
         patchSmartScore(dossierId, scoreResult as unknown as Record<string, unknown>);
@@ -121,7 +126,10 @@ export function useScoreMonitoring(initialThreshold = 10): UseScoreMonitoringRet
     setAlerts(newAlerts);
   }, [threshold]);
 
-  useEffect(() => { scan(); }, [scan]);
+  useEffect(() => {
+    scan();
+  }, [scan]);
+
   useEffect(() => onBanqueSnapshotChange(() => scan()), [scan]);
 
   return { alerts, threshold, setThreshold, scan };
@@ -146,7 +154,10 @@ export function useComitePayload() {
     }
   }, [dossier]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
   useEffect(() => onBanqueSnapshotChange(() => refresh()), [refresh]);
 
   return { payload, refresh };
@@ -158,19 +169,73 @@ export function useComitePayload() {
 
 function mapSnapshotToInput(
   snap: Record<string, unknown>,
-  dossier: Record<string, unknown> | null,
+  dossier: Record<string, unknown> | null
 ): SmartScoreInput {
   const d = (dossier || {}) as Record<string, unknown>;
+
   const origination = (d.origination || {}) as Record<string, unknown>;
   const analyse = (d.analyse || {}) as Record<string, unknown>;
+
+  // 🆕 OPTION B — structured analyse sub-sections
+  const budget = (analyse.budget || {}) as Record<string, unknown>;
+  const revenus = (analyse.revenus || {}) as Record<string, unknown>;
+
+  // NOTE: These were previously taken from snapshot-wide keys.
+  // Keep compatibility but prefer dossier data when available.
   const risk = (snap.riskAnalysis || {}) as Record<string, unknown>;
   const market = (snap.market || {}) as Record<string, unknown>;
   const docs = (snap.documents || {}) as Record<string, unknown>;
   const guarantees = (snap.guarantees || {}) as Record<string, unknown>;
   const existingSS = snap.smartScore as SmartScoreResult | undefined;
 
-  const obtainedOrItems = guarantees.obtained || guarantees.items;
-  const docListOrItems = docs.list || docs.items;
+  const obtainedOrItems = (guarantees as any).obtained || (guarantees as any).items;
+  const docListOrItems = (docs as any).list || (docs as any).items;
+
+  // ─────────────────────────────────────────────
+  // OPTION B — Auto compute key credit ratios
+  // ─────────────────────────────────────────────
+
+  const purchasePrice = budget.purchasePrice as number | undefined;
+  const works = budget.works as number | undefined;
+  const fees = budget.fees as number | undefined;
+  const equity = budget.equity as number | undefined; // not used directly here but useful later
+
+  const totalCost = (purchasePrice ?? 0) + (works ?? 0) + (fees ?? 0);
+
+  const montantPret = origination.montantDemande as number | undefined;
+  const duree = origination.dureeEnMois as number | undefined;
+
+  // LTV (proxy) = loan / total cost
+  const autoLTV =
+    montantPret && totalCost > 0 ? (montantPret / totalCost) * 100 : undefined;
+
+  // DSTI (proxy) = (monthly payment + existing debts) / income
+  // Here we use a minimal proxy for monthly payment if no rate model is available
+  const incomeMonthly = revenus.incomeMonthlyNet as number | undefined;
+  const otherDebtMonthly = revenus.otherDebtMonthly as number | undefined;
+
+  const estimatedMonthly =
+    montantPret && duree && duree > 0 ? montantPret / duree : undefined;
+
+  const autoDSTI =
+    incomeMonthly && estimatedMonthly
+      ? ((estimatedMonthly + (otherDebtMonthly ?? 0)) / incomeMonthly) * 100
+      : undefined;
+
+  // DSCR (proxy, locatif) = NOI / debt service
+  const mode = (revenus.mode as string | undefined) === "locatif" ? "locatif" : "residence";
+  const rentMonthly = revenus.rentMonthly as number | undefined;
+  const chargesMonthly = revenus.chargesMonthly as number | undefined;
+  const vacancyRatePct = revenus.vacancyRatePct as number | undefined;
+
+  const effectiveRent =
+    (rentMonthly ?? 0) * (1 - Math.min(50, Math.max(0, vacancyRatePct ?? 0)) / 100);
+  const noi = Math.max(0, effectiveRent - (chargesMonthly ?? 0));
+
+  const autoDSCR =
+    mode === "locatif" && estimatedMonthly && estimatedMonthly > 0
+      ? noi / estimatedMonthly
+      : undefined;
 
   return {
     origination: {
@@ -202,19 +267,25 @@ function mapSnapshotToInput(
 
     finance: {
       scoreCreditGlobal: analyse.scoreCreditGlobal as number | undefined,
-      ratioLTV: analyse.ratioLTV as number | undefined,
-      ratioDSCR: analyse.ratioDSCR as number | undefined,
-      tauxEndettement: analyse.tauxEndettement as number | undefined,
+
+      // ✅ OPTION B: auto ratios from analyse sections if legacy values missing
+      ratioLTV: (analyse.ratioLTV as number | undefined) ?? autoLTV,
+      ratioDSCR: (analyse.ratioDSCR as number | undefined) ?? autoDSCR,
+      tauxEndettement: (analyse.tauxEndettement as number | undefined) ?? autoDSTI,
+
+      // funds/equity % if user filled legacy value; else optional computed elsewhere
       fondsPropresPct: analyse.fondsPropresPct as number | undefined,
+
       triProjet: analyse.triProjet as number | undefined,
       chiffreAffairesPrev: analyse.chiffreAffairesPrev as number | undefined,
       margeBrutePrev: analyse.margeBrutePrev as number | undefined,
+
       garanties: Array.isArray(obtainedOrItems)
-        ? (obtainedOrItems as Array<Record<string, unknown>>).map(function(g) {
+        ? (obtainedOrItems as Array<Record<string, unknown>>).map(function (g) {
             return {
               type: (g.type as string) || "autre",
-              couverturePct: g.couverturePct as number | undefined,
-              montant: (g.valeurEstimee || g.montant) as number | undefined,
+              couverturePct: (g as any).couverturePct as number | undefined,
+              montant: ((g as any).valeurEstimee || (g as any).montant) as number | undefined,
             };
           })
         : undefined,
@@ -223,11 +294,17 @@ function mapSnapshotToInput(
     completeness: {
       documentsPresents: Array.isArray(docListOrItems)
         ? (docListOrItems as Array<Record<string, unknown>>)
-            .filter(function(dd) { return dd.statut === "recu" || dd.statut === "valide"; })
-            .map(function(dd) { return dd.type as string; })
+            .filter(function (dd: any) {
+              return dd.statut === "recu" || dd.statut === "valide";
+            })
+            .map(function (dd: any) {
+              return dd.type as string;
+            })
         : [],
-      documentsManquants: docs.missing as string[] | undefined,
-      totalDocumentsRequis: Array.isArray(docs.required) ? (docs.required as string[]).length : undefined,
+      documentsManquants: (docs as any).missing as string[] | undefined,
+      totalDocumentsRequis: Array.isArray((docs as any).required)
+        ? ((docs as any).required as string[]).length
+        : undefined,
     },
 
     previousScoreHistory: existingSS ? existingSS.scoreHistory : undefined,

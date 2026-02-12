@@ -30,27 +30,121 @@ export type ProjectType =
 export interface DossierOrigination {
   emprunteur?: string;
   siret?: string;
+
   montantDemande?: number;
   dureeEnMois?: number;
+
   typeProjet?: ProjectType;
+
+  // (legacy) champs parfois utilisés dans le front
   adresseProjet?: string;
   codePostal?: string;
   commune?: string;
+
   surfaceTerrain?: number;
   surfaceSDP?: number;
+
   dateReception?: string;
+  notes?: string;
+
+  // ── Champs projet explicites (priorité sur emprunteur) ──
+  codePostalProjet?: string;
+  communeProjet?: string;
+  communeInseeProjet?: string;
+  departementProjet?: string;
+
+  parcelleCadastrale?: string;        // ex: "000 AB 0123"
+  sectionCadastrale?: string;         // ex: "AB"
+  prefixeCadastral?: string;          // ex: "000"
+
+  latProjet?: number;
+  lngProjet?: number;
+
+  // Optionnel: si tu utilises "typePret" côté UI (vu dans snapshots)
+  typePret?: string;
+}
+
+// ---------------------------------------------------------------------------
+// OPTION B — Analyse crédit complète
+// ---------------------------------------------------------------------------
+
+export interface AnalyseBudget {
+  /** Prix d'achat du bien (EUR) — blocker si absent */
+  purchasePrice?: number;
+  /** Travaux (EUR) */
+  works?: number;
+  /** Frais (notaire, divers) (EUR) */
+  fees?: number;
+  /** Apport / fonds propres (EUR) */
+  equity?: number;
+
+  /** Notes libres */
+  notes?: string;
+}
+
+export interface AnalyseRevenus {
+  /** Mode de calcul de capacité */
+  mode?: "residence" | "locatif";
+
+  // ── Résidence / Particulier ──
+  /** Revenus mensuels nets (EUR) */
+  incomeMonthlyNet?: number;
+  /** Dettes mensuelles existantes (EUR) */
+  otherDebtMonthly?: number;
+
+  // ── Locatif ──
+  /** Loyer mensuel (EUR) */
+  rentMonthly?: number;
+  /** Charges mensuelles (EUR) */
+  chargesMonthly?: number;
+  /** Vacance en % (0..100) */
+  vacancyRatePct?: number;
+
+  notes?: string;
+}
+
+export interface AnalyseBienEtat {
+  /** Etat général */
+  condition?: "neuf" | "bon" | "moyen" | "mauvais";
+  /** Conformité / contraintes majeures */
+  conformity?: "ok" | "incertain" | "ko";
+  /** Notes / observations */
+  notes?: string;
+}
+
+export interface AnalyseCalendrier {
+  /** Date acquisition (prévue) ISO */
+  acquisitionDate?: string;
+  /** Durée travaux (mois) */
+  worksMonths?: number;
+  /** Date sortie (vente / mise en location) ISO */
+  exitDate?: string;
+  /** Risque d'exécution */
+  executionRisk?: "faible" | "moyen" | "fort";
   notes?: string;
 }
 
 export interface DossierAnalyse {
-  scoreCreditGlobal?: number;        // 0-100
-  ratioLTV?: number;                  // %
-  ratioDSCR?: number;
-  tauxEndettement?: number;           // %
-  fondsPropresPct?: number;           // %
-  chiffreAffairesPrev?: number;
-  margeBrutePrev?: number;
-  triProjet?: number;                 // %
+  // ✅ Option B — nouvelles sections structurées
+  budget?: AnalyseBudget;
+  revenus?: AnalyseRevenus;
+  bien?: AnalyseBienEtat;
+  calendrier?: AnalyseCalendrier;
+
+  // ─────────────────────────────────────────────
+  // Champs "legacy" / compatibilité (déjà utilisés)
+  // ─────────────────────────────────────────────
+  scoreCreditGlobal?: number;         // 0-100 (override manuel éventuel)
+
+  ratioLTV?: number;                  // % (legacy)
+  ratioDSCR?: number;                 // legacy
+  tauxEndettement?: number;           // % (legacy)
+  fondsPropresPct?: number;           // % (legacy)
+
+  chiffreAffairesPrev?: number;       // legacy (si tu fais du pro)
+  margeBrutePrev?: number;            // legacy
+  triProjet?: number;                 // % (legacy)
+
   commentaireAnalyste?: string;
   dateAnalyse?: string;
 }
@@ -83,7 +177,7 @@ export interface GarantieItem {
 export interface DossierGaranties {
   items: GarantieItem[];
   couvertureTotale?: number;          // montant €
-  ratioGarantieSurPret?: number;      // %
+  ratioGarantieSurPret?: number;      // % (attention: dans certains snapshots tu sembles stocker "4" pour 4%)
   commentaire?: string;
 }
 
@@ -141,6 +235,17 @@ export interface BanqueDossier {
   decision: DossierDecision;
   monitoring: DossierMonitoring;
   documents: DossierDocuments;
+
+  // (Optionnel) autres champs vus dans snapshots (compat)
+  montant?: number;
+  projectType?: string;
+  sponsor?: string;
+  nom?: string;
+  statut?: string;
+  emprunteur?: any;
+  analysis?: any;
+  report?: any;
+  dates?: any;
 }
 
 // ---------------------------------------------------------------------------

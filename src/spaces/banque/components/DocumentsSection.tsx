@@ -1,6 +1,9 @@
 // ============================================================================
 // DocumentsSection.tsx — Section embarquable Documents
 // Aucune navigation interne. Props: dossierId, dossier, refresh.
+//
+// ✅ FIX: useEffect recharge les items dès que dossier.documents change
+//    (et pas seulement quand dossier.id change)
 // ============================================================================
 
 import { useState, useEffect } from "react";
@@ -39,9 +42,13 @@ export default function DocumentsSection({ dossierId, dossier, refresh }: Props)
   const [items, setItems] = useState<DocumentItem[]>([]);
   const [saved, setSaved] = useState(false);
 
+  // ✅ FIX: réagit aussi quand dossier.documents change (retour de navigation, sync cross-tab)
   useEffect(() => {
-    if (dossier?.documents) setItems(dossier.documents.items ?? []);
-  }, [dossier?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    const docs = dossier?.documents?.items;
+    if (docs && Array.isArray(docs)) {
+      setItems(docs);
+    }
+  }, [dossier?.id, dossier?.documents]);
 
   const addItem = () => setItems((prev) => [...prev, emptyDoc()]);
   const removeItem = (id: string) => setItems((prev) => prev.filter((d) => d.id !== id));

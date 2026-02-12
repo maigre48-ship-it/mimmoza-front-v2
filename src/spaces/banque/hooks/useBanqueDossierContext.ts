@@ -1,4 +1,8 @@
 // FILE: src/spaces/banque/hooks/useBanqueDossierContext.ts
+//
+// ✅ FIX: L'alignement URL→store préserve toutes les données existantes
+//    du dossier (documents, analyse, garanties, etc.) au lieu d'écraser
+//    avec un objet minimal {id, nom, sponsor, statut}.
 
 import { useEffect } from "react";
 import { useParams } from "react-router-dom";
@@ -43,6 +47,9 @@ export function useBanqueDossierContext() {
    * Assure que le store est aligné avec l'URL.
    * Si on est sur /banque/.../:id et que le store est sur un autre dossier,
    * on upsert le dossier minimal + activeDossierId.
+   *
+   * ✅ FIX: On préserve TOUTES les données existantes du dossier
+   *    pour ne pas perdre documents, analyse, garanties, etc.
    */
   useEffect(() => {
     if (!dossierIdFromUrl) return;
@@ -53,12 +60,18 @@ export function useBanqueDossierContext() {
     // Si déjà aligné, rien à faire
     if (active === dossierIdFromUrl && snap.dossier?.id === dossierIdFromUrl) return;
 
-    // Sinon, on force la sélection (et création minimale si besoin)
+    // ✅ FIX: Préserver toutes les données existantes du dossier
+    // Si le dossier dans le store est celui qu'on veut activer, on le garde tel quel
+    // Sinon on crée un dossier minimal
+    const existing =
+      snap.dossier?.id === dossierIdFromUrl ? snap.dossier : {};
+
     upsertDossier({
+      ...existing,
       id: dossierIdFromUrl,
-      nom: snap.dossier?.nom ?? "Dossier",
-      sponsor: snap.dossier?.sponsor ?? "",
-      statut: snap.dossier?.statut ?? "BROUILLON",
+      nom: (existing as any).nom ?? "Dossier",
+      sponsor: (existing as any).sponsor ?? "",
+      statut: (existing as any).statut ?? "BROUILLON",
     } as any);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dossierIdFromUrl]);
