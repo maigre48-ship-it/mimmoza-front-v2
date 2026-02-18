@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { Plus, Workflow, Clock, Euro, TrendingUp, CheckCircle2, X, Pencil } from "lucide-react";
 import PageShell from "../shared/ui/PageShell";
 import SectionCard from "../shared/ui/SectionCard";
@@ -12,6 +12,12 @@ import {
   type MarchandDeal,
 } from "../shared/marchandSnapshot.store";
 import useMarchandSnapshotTick from "../shared/hooks/useMarchandSnapshotTick";
+import {
+  setActiveDealId as setBridgeActiveDealId,
+  patchDealContextMeta,
+  subscribe as subscribeDealContext,
+  type DealContextMeta,
+} from "../shared/marchandDealContext.store";
 
 type DealStatus = MarchandDealStatus;
 type Deal = MarchandDeal;
@@ -24,6 +30,48 @@ const fmtEur = (n?: number) =>
     : "—";
 
 const nowIso = () => new Date().toISOString();
+
+/* ────────────────────────────────────────────
+   City auto-lookup from zipCode
+   ──────────────────────────────────────────── */
+
+async function fetchCityFromZipCode(zipCode: string): Promise<string | null> {
+  const cleaned = zipCode.replace(/\s/g, "");
+  if (!/^\d{5}$/.test(cleaned)) return null;
+  try {
+    const url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(cleaned)}&type=municipality&limit=1`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const feature = json?.features?.[0];
+    if (!feature) return null;
+    return feature.properties?.city ?? feature.properties?.label ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/* ────────────────────────────────────────────
+   Deal → meta bridge
+   ──────────────────────────────────────────── */
+
+function buildDealMeta(deal: Deal): DealContextMeta {
+  return {
+    title: deal.title,
+    stage: deal.status,
+    address: deal.address ?? undefined,
+    zipCode: deal.zipCode ?? undefined,
+    city: deal.city ?? undefined,
+    purchasePrice: deal.prixAchat ?? undefined,
+    surface: deal.surfaceM2 ?? undefined,
+    resaleTarget: deal.prixReventeCible ?? undefined,
+    note: deal.note ?? undefined,
+  };
+}
+
+function syncDealContext(deal: Deal): void {
+  setBridgeActiveDealId(deal.id, buildDealMeta(deal));
+}
 
 function makeNewDeal(): Deal {
   const id = `D-${Math.floor(Math.random() * 900 + 100)}`;
@@ -43,6 +91,10 @@ function makeNewDeal(): Deal {
     updatedAt: nowIso(),
   } as Deal;
 }
+
+/* ────────────────────────────────────────────
+   Drawer
+   ──────────────────────────────────────────── */
 
 function Drawer({
   open,
@@ -105,18 +157,26 @@ function Drawer({
   );
 }
 
+/* ────────────────────────────────────────────
+   Field / Select
+   ──────────────────────────────────────────── */
+
 function Field({
   label,
   value,
   onChange,
+  onBlur,
   placeholder,
   type = "text",
+  hint,
 }: {
   label: string;
   value: string | number | undefined;
   onChange: (v: string) => void;
+  onBlur?: () => void;
   placeholder?: string;
   type?: "text" | "number";
+  hint?: string;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -126,6 +186,7 @@ function Field({
         value={value ?? ""}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
         style={{
           width: "100%",
           padding: "10px 12px",
@@ -137,6 +198,9 @@ function Field({
           outline: "none",
         }}
       />
+      {hint && (
+        <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700 }}>{hint}</div>
+      )}
     </div>
   );
 }
@@ -179,6 +243,10 @@ function Select({
   );
 }
 
+/* ════════════════════════════════════════════
+   MarchandPipeline
+   ════════════════════════════════════════════ */
+
 export default function MarchandPipeline() {
   const snapTick = useMarchandSnapshotTick();
   const snapshot = useMemo(() => readMarchandSnapshot(), [snapTick]);
@@ -187,21 +255,122 @@ export default function MarchandPipeline() {
 
   const [editingDealId, setEditingDealId] = useState<string | null>(null);
 
+  /* ── Ville auto-fetch state ── */
+  const [cityLookupHint, setCityLookupHint] = useState<string>("");
+  const zipFetchRef = useRef(0);
+
+  /* ══════════════════════════════════════════
+     DRAFT LOCAL STATE pour le Drawer
+     ══════════════════════════════════════════
+     On bufferise les modifications dans un state local (draftDeal).
+     onChange → met à jour draftDeal (rapide, pas de store write)
+     onBlur  → flush vers le store (upsertDeal + syncDealContext)
+     
+     Cela résout le bug des espaces : avant, chaque frappe déclenchait
+     upsertDeal → snapTick → re-render → editingDeal relu depuis le store
+     → React perdait le curseur et les espaces.
+  */
+  const [draftDeal, setDraftDeal] = useState<Deal | null>(null);
+
+  // Initialiser draftDeal quand on ouvre le drawer
+  useEffect(() => {
+    if (editingDealId) {
+      const deal = deals.find((d) => d.id === editingDealId) ?? null;
+      setDraftDeal(deal ? { ...deal } : null);
+    } else {
+      setDraftDeal(null);
+    }
+    setCityLookupHint("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingDealId]);
+  // ⚠ On ne met PAS `deals` dans les deps : sinon chaque flush → snapTick → deals change → draftDeal reset
+
+  /** Met à jour le draft local (pas de store write). */
+  const updateDraft = useCallback((patch: Partial<Deal>) => {
+    setDraftDeal((prev) => prev ? { ...prev, ...patch, updatedAt: nowIso() } : null);
+  }, []);
+
+  /** Flush le draft vers le store. Appelé sur onBlur des champs texte. */
+  const flushDraft = useCallback(() => {
+    if (!draftDeal) return;
+    upsertDeal(draftDeal);
+    if (activeDealId === draftDeal.id) {
+      syncDealContext(draftDeal);
+    }
+  }, [draftDeal, activeDealId]);
+
+  /** Flush + city auto-lookup (pour le champ code postal). */
+  const flushDraftWithCityLookup = useCallback(() => {
+    if (!draftDeal) return;
+    upsertDeal(draftDeal);
+    if (activeDealId === draftDeal.id) {
+      syncDealContext(draftDeal);
+    }
+
+    const zip = draftDeal.zipCode ?? "";
+    const cleaned = zip.replace(/\s/g, "");
+    if (/^\d{5}$/.test(cleaned)) {
+      const seq = ++zipFetchRef.current;
+      setCityLookupHint("Recherche de la commune…");
+      fetchCityFromZipCode(cleaned).then((city) => {
+        if (seq !== zipFetchRef.current) return;
+        if (city) {
+          setCityLookupHint(`→ ${city}`);
+          setDraftDeal((prev) => {
+            if (!prev) return prev;
+            const updated = { ...prev, city, updatedAt: nowIso() };
+            upsertDeal(updated);
+            if (activeDealId === prev.id) syncDealContext(updated);
+            patchDealContextMeta({ city });
+            return updated;
+          });
+        } else {
+          setCityLookupHint("Commune non trouvée pour ce code postal");
+        }
+      });
+    } else {
+      setCityLookupHint("");
+    }
+  }, [draftDeal, activeDealId]);
+
+  /** Pour les selects → flush immédiat (pas de onBlur). */
+  const updateAndFlush = useCallback((patch: Partial<Deal>) => {
+    setDraftDeal((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, ...patch, updatedAt: nowIso() };
+      upsertDeal(updated);
+      if (activeDealId === updated.id) syncDealContext(updated);
+      return updated;
+    });
+  }, [activeDealId]);
+
+  /* ── Sync bridge store quand activeDealId change ────── */
+  useEffect(() => {
+    if (!activeDealId) return;
+    const deal = deals.find((d) => d.id === activeDealId);
+    if (deal) syncDealContext(deal);
+  }, [activeDealId, deals]);
+
+  /* ── Écouter les changements cross-tab du bridge store ── */
+  useEffect(() => {
+    const unsub = subscribeDealContext((ctx) => {
+      if (ctx.activeDealId && ctx.activeDealId !== activeDealId) {
+        setActiveDeal(ctx.activeDealId);
+      }
+    });
+    return unsub;
+  }, [activeDealId]);
+
   const totalDeals = deals.length;
   const inProgress = deals.filter((d) => d.status !== "Vendu").length;
-
   const budgetAchat = undefined;
-
-  const editingDeal = useMemo(
-    () => (editingDealId ? deals.find((d) => d.id === editingDealId) ?? null : null),
-    [editingDealId, deals]
-  );
 
   const handleCreateDeal = () => {
     const d = makeNewDeal();
     upsertDeal(d);
     setActiveDeal(d.id);
-    setEditingDealId(d.id); // ✅ on ouvre directement l’édition
+    syncDealContext(d);
+    setEditingDealId(d.id);
   };
 
   const handleSelectDeal = (id: string) => {
@@ -213,17 +382,22 @@ export default function MarchandPipeline() {
     const confirmed = window.confirm(
       `Supprimer ce deal ?\n\n"${dealTitle}"\n\nToutes les données associées (Rentabilité, Exécution, Sortie) seront également supprimées.`
     );
-    if (confirmed) deleteDeal(dealId);
+    if (confirmed) {
+      deleteDeal(dealId);
+      if (activeDealId === dealId) {
+        setBridgeActiveDealId(null);
+      }
+    }
   };
 
-  const handleSaveDeal = (patch: Partial<Deal>) => {
-    if (!editingDeal) return;
-    upsertDeal({
-      ...editingDeal,
-      ...patch,
-      updatedAt: nowIso(),
-    } as Deal);
-  };
+  /** Flush le draft quand on ferme le drawer. */
+  const handleCloseDrawer = useCallback(() => {
+    if (draftDeal) {
+      upsertDeal(draftDeal);
+      if (activeDealId === draftDeal.id) syncDealContext(draftDeal);
+    }
+    setEditingDealId(null);
+  }, [draftDeal, activeDealId]);
 
   return (
     <PageShell
@@ -313,7 +487,6 @@ export default function MarchandPipeline() {
                           cursor: "pointer",
                         }}
                       >
-                        {/* Supprimer */}
                         <div
                           role="button"
                           tabIndex={0}
@@ -337,12 +510,13 @@ export default function MarchandPipeline() {
                           <X size={14} style={{ color: "#dc2626" }} />
                         </div>
 
-                        {/* Edit */}
                         <div
                           role="button"
                           tabIndex={0}
                           onClick={(e) => {
                             e.stopPropagation();
+                            setActiveDeal(d.id);
+                            syncDealContext(d);
                             setEditingDealId(d.id);
                           }}
                           style={{
@@ -407,41 +581,48 @@ export default function MarchandPipeline() {
         </div>
       </SectionCard>
 
+      {/* ═══ DRAWER ÉDITION — utilise draftDeal (state local) ═══ */}
       <Drawer
-        open={Boolean(editingDeal)}
-        title={editingDeal ? `Éditer — ${editingDeal.id}` : "Éditer"}
-        onClose={() => setEditingDealId(null)}
+        open={Boolean(draftDeal)}
+        title={draftDeal ? `Éditer — ${draftDeal.id}` : "Éditer"}
+        onClose={handleCloseDrawer}
       >
-        {!editingDeal ? (
+        {!draftDeal ? (
           <div style={{ color: "#64748b", fontSize: 13 }}>Aucun deal sélectionné.</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <Field
               label="Titre"
-              value={editingDeal.title}
-              onChange={(v) => handleSaveDeal({ title: v })}
+              value={draftDeal.title}
+              onChange={(v) => updateDraft({ title: v })}
+              onBlur={flushDraft}
               placeholder="Ex: T2 à rénover — 42 m²"
             />
 
             <Field
               label="Adresse"
-              value={editingDeal.address ?? ""}
-              onChange={(v) => handleSaveDeal({ address: v })}
+              value={draftDeal.address ?? ""}
+              onChange={(v) => updateDraft({ address: v })}
+              onBlur={flushDraft}
               placeholder="Ex: 12 rue de la Paix"
             />
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <Field
                 label="Code postal"
-                value={editingDeal.zipCode ?? ""}
-                onChange={(v) => handleSaveDeal({ zipCode: v })}
+                value={draftDeal.zipCode ?? ""}
+                onChange={(v) => updateDraft({ zipCode: v })}
+                onBlur={flushDraftWithCityLookup}
                 placeholder="Ex: 44000"
+                hint={cityLookupHint || undefined}
               />
               <Field
                 label="Ville"
-                value={editingDeal.city ?? ""}
-                onChange={(v) => handleSaveDeal({ city: v })}
+                value={draftDeal.city ?? ""}
+                onChange={(v) => updateDraft({ city: v })}
+                onBlur={flushDraft}
                 placeholder="Ex: Nantes"
+                hint="Auto-remplie via code postal"
               />
             </div>
 
@@ -449,15 +630,17 @@ export default function MarchandPipeline() {
               <Field
                 label="Prix d'achat (€)"
                 type="number"
-                value={editingDeal.prixAchat ?? ""}
-                onChange={(v) => handleSaveDeal({ prixAchat: v === "" ? undefined : Number(v) })}
+                value={draftDeal.prixAchat ?? ""}
+                onChange={(v) => updateDraft({ prixAchat: v === "" ? undefined : Number(v) })}
+                onBlur={flushDraft}
                 placeholder="Ex: 180000"
               />
               <Field
                 label="Surface (m²)"
                 type="number"
-                value={editingDeal.surfaceM2 ?? ""}
-                onChange={(v) => handleSaveDeal({ surfaceM2: v === "" ? undefined : Number(v) })}
+                value={draftDeal.surfaceM2 ?? ""}
+                onChange={(v) => updateDraft({ surfaceM2: v === "" ? undefined : Number(v) })}
+                onBlur={flushDraft}
                 placeholder="Ex: 42"
               />
             </div>
@@ -465,22 +648,24 @@ export default function MarchandPipeline() {
             <Field
               label="Prix revente cible (€)"
               type="number"
-              value={editingDeal.prixReventeCible ?? ""}
-              onChange={(v) => handleSaveDeal({ prixReventeCible: v === "" ? undefined : Number(v) })}
+              value={draftDeal.prixReventeCible ?? ""}
+              onChange={(v) => updateDraft({ prixReventeCible: v === "" ? undefined : Number(v) })}
+              onBlur={flushDraft}
               placeholder="Ex: 260000"
             />
 
             <Select
               label="Statut"
-              value={editingDeal.status}
-              onChange={(v) => handleSaveDeal({ status: v as DealStatus })}
+              value={draftDeal.status}
+              onChange={(v) => updateAndFlush({ status: v as DealStatus })}
               options={COLUMNS.map((c) => ({ value: c, label: c }))}
             />
 
             <Field
               label="Note"
-              value={editingDeal.note ?? ""}
-              onChange={(v) => handleSaveDeal({ note: v })}
+              value={draftDeal.note ?? ""}
+              onChange={(v) => updateDraft({ note: v })}
+              onBlur={flushDraft}
               placeholder="Remarques, contact, points à vérifier..."
             />
 

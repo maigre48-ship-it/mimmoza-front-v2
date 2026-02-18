@@ -79,6 +79,29 @@ function has(v: unknown): boolean {
   return v !== null && v !== undefined && v !== "" && v !== 0;
 }
 
+// ✅ POVERTY RATE — impact modéré, pilier Marché uniquement
+function scorePovertyRate(rate: unknown): { impact: number; detail: string } {
+  const v = safe(rate);
+  if (v === null) return { impact: 0, detail: "—" };
+  const fmt = Number.isInteger(v) ? `${v}%` : `${parseFloat(v.toFixed(1))}%`;
+  if (v < 8)   return { impact: 5,   detail: fmt };
+  if (v < 12)  return { impact: 2,   detail: fmt };
+  if (v < 18)  return { impact: 0,   detail: fmt };
+  if (v < 25)  return { impact: -5,  detail: fmt };
+  return { impact: -10, detail: fmt };
+}
+
+// ✅ POVERTY RATE — lecture robuste avec fallbacks multiples
+function readPovertyRate(op: OperationSummary): unknown {
+  const m = op.market as any;
+  const opAny = op as any;
+  return m?.povertyRate
+    ?? m?.socio?.povertyRate
+    ?? m?.insee?.povertyRate
+    ?? opAny?.insee?.povertyRate
+    ?? null;
+}
+
 // ── Documents ──
 function scoreDocuments(op: OperationSummary, dossier: any): { raw: number; reasons: string[]; actions: string[]; hasData: boolean } {
   const completude = safe(dossier?.documents?.completude);
@@ -283,6 +306,11 @@ function scoreMarche(op: OperationSummary): { raw: number; reasons: string[]; ac
     else if (m.evolutionPct! < -3) { raw -= 5; reasons.push(`Prix en baisse: ${m.evolutionPct}%`); }
   }
   if (m.sources && m.sources.length > 0) { raw += 5; reasons.push(`Sources: ${m.sources.join(", ")}`); }
+
+  // ✅ POVERTY RATE — taux de pauvreté INSEE, lecture robuste avec fallbacks
+  const poverty = scorePovertyRate(readPovertyRate(op));
+  raw += poverty.impact;
+  reasons.push(`Taux de pauvreté: ${poverty.detail} (impact: ${poverty.impact >= 0 ? "+" : ""}${poverty.impact})`);
 
   return { raw: Math.min(100, Math.max(0, raw)), reasons, actions, hasData: true };
 }

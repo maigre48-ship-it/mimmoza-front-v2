@@ -46,6 +46,8 @@ import MarchandRentabilite from "./spaces/marchand/pages/Rentabilite";
 import MarchandExecution from "./spaces/marchand/pages/Execution";
 import MarchandSortie from "./spaces/marchand/pages/Sortie";
 import MarchandExports from "./spaces/marchand/pages/Exports";
+import MarchandAnalyseBien from "./spaces/marchand/pages/AnalyseBien";
+import MarchandTravaux from "./spaces/marchand/pages/Travaux";
 import { SourcingHomePage } from "./spaces/sourcing";
 
 // =========================
@@ -75,7 +77,7 @@ import BanqueSmartScoreDebug from "./spaces/banque/pages/SmartScoreDebug";
 import BanqueRedirectToDossier from "./spaces/banque/pages/BanqueRedirectToDossier";
 
 // =========================
-// Assurance — pages (socle)
+// Assurance — pages (now served under /banque/assurance/*)
 // =========================
 import AssuranceDashboard from "./spaces/assurance/pages/Dashboard";
 import AssuranceSouscription from "./spaces/assurance/pages/Souscription";
@@ -84,6 +86,12 @@ import AssuranceTarification from "./spaces/assurance/pages/Tarification";
 import AssuranceOffre from "./spaces/assurance/pages/Offre";
 import AssuranceMonitoring from "./spaces/assurance/pages/Monitoring";
 import AssuranceDocuments from "./spaces/assurance/pages/Documents";
+
+// =========================
+// Due Diligence hook (Marchand page)
+// =========================
+import { useDueDiligence } from "./spaces/banque/hooks/useDueDiligence";
+import type { DueDiligenceStatus } from "./spaces/banque/types/dueDiligence.types";
 
 // =========================
 // Types globaux (dev helpers)
@@ -95,15 +103,22 @@ declare global {
   }
 }
 
-const SPACE_PATHS: Record<Space, string> = {
-  none: "/",
-  audit: "/audit",
-  promoteur: "/promoteur",
-  agence: "/particulier",
-  marchand: "/marchand-de-bien",
-  banque: "/banque",
-  assurance: "/assurance",
-};
+/**
+ * Type-safe space → path resolver.
+ * Uses a function instead of Record<Space, string> so we don't need to
+ * enumerate Space values that may still exist in SpaceSync but are no
+ * longer routed as standalone spaces (audit, assurance).
+ * Those gracefully fall back to "/".
+ */
+function getSpacePath(space: Space): string {
+  switch (space) {
+    case "promoteur": return "/promoteur";
+    case "agence":    return "/particulier";
+    case "marchand":  return "/marchand-de-bien";
+    case "banque":    return "/banque";
+    default:          return "/";
+  }
+}
 
 // ── Redirect helpers (inline) ──
 
@@ -117,6 +132,246 @@ function BanqueRedirectToAnalyse() {
   return <Navigate to={`/banque/analyse/${id ?? ""}`} replace />;
 }
 
+// ── Status helpers ──
+
+const DD_STATUSES: DueDiligenceStatus[] = ["OK", "WARNING", "CRITICAL", "MISSING", "NA"];
+
+const STATUS_COLORS: Record<DueDiligenceStatus, { bg: string; text: string; border: string }> = {
+  OK:       { bg: "#f0fdf4", text: "#15803d", border: "#bbf7d0" },
+  WARNING:  { bg: "#fffbeb", text: "#b45309", border: "#fde68a" },
+  CRITICAL: { bg: "#fef2f2", text: "#b91c1c", border: "#fecaca" },
+  MISSING:  { bg: "#f9fafb", text: "#6b7280", border: "#e5e7eb" },
+  NA:       { bg: "#f5f3ff", text: "#6d28d9", border: "#ddd6fe" },
+};
+
+// ── Marchand Due Diligence Page ──
+
+function MarchandDueDiligencePage() {
+  const dossierId = "DOSS-TEST-001";
+  const { report, setStatus, setValue } = useDueDiligence(dossierId);
+  const computed = report.computed;
+
+  const score = computed?.score ?? 0;
+  const completionPct = computed ? Math.round(computed.completionRate * 100) : 0;
+  const criticalCount = computed?.criticalCount ?? 0;
+  const warningCount = computed?.warningCount ?? 0;
+
+  // Score color
+  const scoreColor = score >= 80 ? "#15803d" : score >= 50 ? "#b45309" : "#b91c1c";
+
+  return (
+    <div style={{ maxWidth: 960, margin: "0 auto", padding: "2rem 1rem" }}>
+      {/* Header */}
+      <h1 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "0.25rem" }}>
+        Due Diligence
+      </h1>
+      <p style={{ color: "#6b7280", fontSize: "0.875rem", marginBottom: "1.5rem" }}>
+        Dossier : {dossierId}
+      </p>
+
+      {/* KPI Banner */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: "1rem",
+          marginBottom: "2rem",
+        }}
+      >
+        {/* Score */}
+        <div
+          style={{
+            background: "#fff",
+            border: "1px solid #e5e7eb",
+            borderRadius: 8,
+            padding: "1rem",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>
+            Score global
+          </div>
+          <div style={{ fontSize: "1.75rem", fontWeight: 700, color: scoreColor }}>
+            {score}
+          </div>
+          <div style={{ fontSize: "0.7rem", color: "#9ca3af" }}>/100</div>
+        </div>
+
+        {/* Completion */}
+        <div
+          style={{
+            background: "#fff",
+            border: "1px solid #e5e7eb",
+            borderRadius: 8,
+            padding: "1rem",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>
+            Complétion
+          </div>
+          <div style={{ fontSize: "1.75rem", fontWeight: 700, color: "#1d4ed8" }}>
+            {completionPct}%
+          </div>
+          <div style={{ fontSize: "0.7rem", color: "#9ca3af" }}>
+            {computed?.completedItems ?? 0}/{computed?.totalItems ?? 0}
+          </div>
+        </div>
+
+        {/* Critical */}
+        <div
+          style={{
+            background: criticalCount > 0 ? "#fef2f2" : "#fff",
+            border: `1px solid ${criticalCount > 0 ? "#fecaca" : "#e5e7eb"}`,
+            borderRadius: 8,
+            padding: "1rem",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>
+            Critiques
+          </div>
+          <div
+            style={{
+              fontSize: "1.75rem",
+              fontWeight: 700,
+              color: criticalCount > 0 ? "#b91c1c" : "#6b7280",
+            }}
+          >
+            {criticalCount}
+          </div>
+        </div>
+
+        {/* Warning */}
+        <div
+          style={{
+            background: warningCount > 0 ? "#fffbeb" : "#fff",
+            border: `1px solid ${warningCount > 0 ? "#fde68a" : "#e5e7eb"}`,
+            borderRadius: 8,
+            padding: "1rem",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>
+            Avertissements
+          </div>
+          <div
+            style={{
+              fontSize: "1.75rem",
+              fontWeight: 700,
+              color: warningCount > 0 ? "#b45309" : "#6b7280",
+            }}
+          >
+            {warningCount}
+          </div>
+        </div>
+      </div>
+
+      {/* Categories + Items */}
+      {report.categories.map((cat) => (
+        <div
+          key={cat.key}
+          style={{
+            marginBottom: "1.5rem",
+            border: "1px solid #e5e7eb",
+            borderRadius: 8,
+            overflow: "hidden",
+          }}
+        >
+          {/* Category header */}
+          <div
+            style={{
+              background: "#f9fafb",
+              padding: "0.75rem 1rem",
+              borderBottom: "1px solid #e5e7eb",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <span style={{ fontWeight: 600, fontSize: "0.95rem" }}>{cat.label}</span>
+            {cat.description && (
+              <span style={{ fontSize: "0.75rem", color: "#9ca3af" }}>{cat.description}</span>
+            )}
+          </div>
+
+          {/* Items */}
+          {cat.items.map((item) => {
+            const colors = STATUS_COLORS[item.status];
+            return (
+              <div
+                key={item.key}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto 1fr",
+                  gap: "0.75rem",
+                  alignItems: "center",
+                  padding: "0.625rem 1rem",
+                  borderBottom: "1px solid #f3f4f6",
+                  background: colors.bg,
+                }}
+              >
+                {/* Label */}
+                <div>
+                  <div style={{ fontSize: "0.875rem", fontWeight: 500 }}>{item.label}</div>
+                  {item.description && (
+                    <div style={{ fontSize: "0.7rem", color: "#9ca3af", marginTop: 2 }}>
+                      {item.description}
+                    </div>
+                  )}
+                </div>
+
+                {/* Status select */}
+                <select
+                  value={item.status}
+                  onChange={(e) => setStatus(item.key, e.target.value as DueDiligenceStatus)}
+                  style={{
+                    padding: "0.25rem 0.5rem",
+                    borderRadius: 6,
+                    border: `1px solid ${colors.border}`,
+                    background: "#fff",
+                    color: colors.text,
+                    fontWeight: 600,
+                    fontSize: "0.8rem",
+                    cursor: "pointer",
+                    minWidth: 110,
+                  }}
+                >
+                  {DD_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Comment input */}
+                <input
+                  type="text"
+                  placeholder="Commentaire…"
+                  defaultValue={item.comment ?? ""}
+                  onBlur={(e) => {
+                    const val = e.target.value.trim();
+                    if (val !== (item.comment ?? "")) {
+                      setValue(item.key, val, val);
+                    }
+                  }}
+                  style={{
+                    padding: "0.25rem 0.5rem",
+                    borderRadius: 6,
+                    border: "1px solid #e5e7eb",
+                    fontSize: "0.8rem",
+                    width: "100%",
+                  }}
+                />
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── AppRoot ──
 
 function AppRoot() {
@@ -126,7 +381,7 @@ function AppRoot() {
   const handleChangeSpace = useCallback(
     (space: Space) => {
       setCurrentSpace(space);
-      navigate(SPACE_PATHS[space]);
+      navigate(getSpacePath(space));
     },
     [navigate]
   );
@@ -186,13 +441,16 @@ function AppRoot() {
             <Route path="*" element={<Navigate to="/particulier" replace />} />
           </Route>
 
-          {/* ═══ Marchand ═══ */}
+          {/* ═══ Marchand (Investisseur) ═══ */}
           <Route path="/marchand-de-bien" element={<MarchandLayout />}>
             <Route index element={<MarchandPipeline />} />
             <Route path="sourcing" element={<SourcingHomePage />} />
             <Route path="qualification" element={<MarchandQualification />} />
+            <Route path="analyse" element={<MarchandAnalyseBien />} />
+            <Route path="due-diligence" element={<MarchandDueDiligencePage />} />
             <Route path="rentabilite" element={<MarchandRentabilite />} />
             <Route path="execution" element={<MarchandExecution />} />
+            <Route path="planning" element={<MarchandTravaux />} />
             <Route path="sortie" element={<MarchandSortie />} />
             <Route path="exports" element={<MarchandExports />} />
             <Route path="estimation" element={<ParticulierEstimation />} />
@@ -220,8 +478,9 @@ function AppRoot() {
           </Route>
 
           {/* ═══════════════════════════════════════════
-              Banque — REFACTORED
+              Banque / Assurance — UNIFIED
               Workflow: Dossiers → Dossier → Analyse → Comité
+              + Assurance pages under /banque/assurance/*
               Layout unique: BanqueLayout (nav + Changer de dossier)
              ═══════════════════════════════════════════ */}
           <Route path="/banque" element={<BanqueLayout />}>
@@ -242,6 +501,21 @@ function AppRoot() {
             <Route path="estimation" element={<ParticulierEstimation />} />
             <Route path="marche" element={<MarchePage />} />
             <Route path="outil-risques/:id" element={<RisquesPage />} />
+
+            {/* ── Assurance (now under /banque/assurance/*) ── */}
+            <Route path="assurance" element={<Outlet />}>
+              <Route index element={<AssuranceDashboard />} />
+              <Route path="souscription" element={<AssuranceSouscription />} />
+              <Route path="exposition" element={<AssuranceExposition />} />
+              <Route path="tarification" element={<AssuranceTarification />} />
+              <Route path="offre" element={<AssuranceOffre />} />
+              <Route path="monitoring" element={<AssuranceMonitoring />} />
+              <Route path="documents" element={<AssuranceDocuments />} />
+              <Route path="estimation" element={<ParticulierEstimation />} />
+              <Route path="marche" element={<MarchePage />} />
+              <Route path="risques" element={<RisquesPage />} />
+              <Route path="*" element={<Navigate to="/banque/assurance" replace />} />
+            </Route>
 
             {/* ── Redirections anciennes routes ── */}
             <Route path="garanties/:id" element={<BanqueRedirectToDossier />} />
@@ -266,31 +540,9 @@ function AppRoot() {
             <Route path="*" element={<Navigate to="/banque/dossiers" replace />} />
           </Route>
 
-          {/* ═══ Assurance ═══ */}
-          <Route path="/assurance" element={<Outlet />}>
-            <Route index element={<AssuranceDashboard />} />
-            <Route path="souscription" element={<AssuranceSouscription />} />
-            <Route path="exposition" element={<AssuranceExposition />} />
-            <Route path="tarification" element={<AssuranceTarification />} />
-            <Route path="offre" element={<AssuranceOffre />} />
-            <Route path="monitoring" element={<AssuranceMonitoring />} />
-            <Route path="documents" element={<AssuranceDocuments />} />
-            <Route path="estimation" element={<ParticulierEstimation />} />
-            <Route path="marche" element={<MarchePage />} />
-            <Route path="risques" element={<RisquesPage />} />
-            <Route path="*" element={<Navigate to="/assurance" replace />} />
-          </Route>
-
-          {/* ═══ Audit ═══ */}
-          <Route path="/audit" element={<Outlet />}>
-            <Route index element={
-              <div className="p-8 text-center text-slate-500">
-                <h1 className="text-2xl font-bold mb-2">Espace Audit</h1>
-                <p>Coming soon — Analyse PLU, risques et SmartScore</p>
-              </div>
-            } />
-            <Route path="*" element={<Navigate to="/audit" replace />} />
-          </Route>
+          {/* ═══ Compatibility redirects ═══ */}
+          <Route path="/assurance/*" element={<Navigate to="/banque/assurance" replace />} />
+          <Route path="/audit/*" element={<Navigate to="/" replace />} />
 
           {/* Aliases */}
           <Route path="/agence" element={<Navigate to="/particulier" replace />} />

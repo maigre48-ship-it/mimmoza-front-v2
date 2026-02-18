@@ -157,18 +157,46 @@ export function patchModule<K extends BanqueModuleKey>(
 // Public — Dossier
 // ============================================================================
 
-/** Créer ou mettre à jour le dossier actif */
+/**
+ * Créer ou mettre à jour le dossier actif.
+ *
+ * ⚠️ Deep-merge pour `comite` et `decision` :
+ *   upsertDossier({ id, comite: { report } })  puis
+ *   upsertDossier({ id, comite: { narrative } })
+ *   → conserve report + narrative (pas d'écrasement shallow).
+ */
 export function upsertDossier(dossier: BanqueDossier): void {
   const snap = readRaw();
-  snap.dossier = {
-    ...snap.dossier,
-    ...dossier,
-    dates: {
-      ...snap.dossier?.dates,
-      ...dossier.dates,
-      derniereMaj: now(),
-    },
+  const prev: any = snap.dossier ?? {};
+  const incoming: any = dossier;
+
+  // Shallow merge top-level
+  const next: any = { ...prev, ...incoming };
+
+  // Deep-merge comite (report + narrative + verdict, etc.)
+  if ((prev as any).comite || (incoming as any).comite) {
+    next.comite = {
+      ...(prev.comite ?? {}),
+      ...(incoming.comite ?? {}),
+    };
+  }
+
+  // Deep-merge decision
+  if ((prev as any).decision || (incoming as any).decision) {
+    next.decision = {
+      ...(prev.decision ?? {}),
+      ...(incoming.decision ?? {}),
+    };
+  }
+
+  // Deep-merge dates
+  next.dates = {
+    ...(prev.dates ?? {}),
+    ...(incoming.dates ?? {}),
+    derniereMaj: now(),
   };
+
+  snap.dossier = next;
   snap.activeDossierId = dossier.id;
   writeSnapshot(snap);
 }

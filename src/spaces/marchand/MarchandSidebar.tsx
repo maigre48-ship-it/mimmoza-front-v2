@@ -1,6 +1,10 @@
 import React from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { MARCHAND_SIDEBAR } from "./nav";
+import {
+  INVESTISSEURS_SIDEBAR,
+  INVESTISSEURS_BASE_PATH,
+  MARCHAND_LEGACY_BASE_PATH,
+} from "./nav";
 
 const linkBase: React.CSSProperties = {
   display: "flex",
@@ -12,8 +16,17 @@ const linkBase: React.CSSProperties = {
   border: "1px solid transparent",
 };
 
+function normalizePath(pathname: string) {
+  // Map legacy base to new base for consistent active detection
+  if (pathname.startsWith(MARCHAND_LEGACY_BASE_PATH)) {
+    return pathname.replace(MARCHAND_LEGACY_BASE_PATH, INVESTISSEURS_BASE_PATH);
+  }
+  return pathname;
+}
+
 export default function MarchandSidebar() {
   const location = useLocation();
+  const normalizedPath = normalizePath(location.pathname);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -30,21 +43,23 @@ export default function MarchandSidebar() {
         }}
       >
         <div style={{ fontWeight: 900, color: "#0f172a", letterSpacing: -0.2 }}>
-          Marchand de biens
+          Investisseurs
         </div>
         <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>
-          Pipeline, marges, travaux, revente — prêt à automatiser.
+          Opportunités, scoring, rentabilité, exécution, sortie — prêt à automatiser.
         </div>
       </div>
 
       {/* Links */}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {MARCHAND_SIDEBAR.map((item) => {
-          const isActive =
-  item.path === "/marchand-de-bien"
-    ? location.pathname === "/marchand-de-bien"
-    : location.pathname.startsWith(item.path);
+        {INVESTISSEURS_SIDEBAR.map((item) => {
+          const itemPath = item.path;
 
+          // Exact match for base route, prefix match for subroutes
+          const isActive =
+            itemPath === INVESTISSEURS_BASE_PATH
+              ? normalizedPath === INVESTISSEURS_BASE_PATH
+              : normalizedPath.startsWith(itemPath);
 
           const Icon = item.icon;
 

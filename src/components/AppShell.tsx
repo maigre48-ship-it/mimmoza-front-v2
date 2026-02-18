@@ -10,7 +10,7 @@ import type { ReactNode, ComponentType } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Menu, X, Home, FileText, Building2, Briefcase, ShieldCheck,
-  Banknote, PieChart, BarChart3, Map, Layers, TrendingUp,
+  PieChart, BarChart3, Map, Layers, TrendingUp,
   AlertTriangle, Grid3X3, Cuboid, Calculator, ChevronRight,
   Sparkles, Target, CheckCircle, DollarSign, Download, Search,
   Users, FileCheck, Scale, ClipboardList, Eye, Percent, Building,
@@ -26,8 +26,8 @@ import {
 import { preserveDossierInPath } from "../spaces/banque/utils/banqueDossierUrl";
 
 type Space =
-  | "none" | "audit" | "promoteur" | "agence"
-  | "marchand" | "banque" | "assurance";
+  | "none" | "promoteur" | "agence"
+  | "marchand" | "banque";
 
 type AppShellProps = {
   currentSpace: Space;
@@ -56,34 +56,19 @@ const SPACES: {
   icon: ComponentType<{ className?: string }>;
   path: string;
 }[] = [
-  { id: "audit",     label: "Espace Audit",       shortLabel: "Audit",     description: "Analyse PLU, risques et SmartScore",             icon: FileText,    path: "/audit" },
-  { id: "promoteur", label: "Espace Promoteur",    shortLabel: "Promoteur", description: "Faisabilité, SDP potentielle et bilan promoteur", icon: Building2,   path: "/promoteur" },
-  { id: "agence",    label: "Espace Agence",       shortLabel: "Agence",    description: "Dossiers vendeurs / acquéreurs enrichis",         icon: Briefcase,   path: "/particulier" },
-  { id: "marchand",  label: "Marchand de biens",   shortLabel: "Marchand",  description: "Opportunités décotées et montage rapide",         icon: PieChart,    path: "/marchand-de-bien" },
-  { id: "banque",    label: "Espace Banque",        shortLabel: "Banque",    description: "Analyse de risque, comité crédit et suivi dossiers", icon: ShieldCheck, path: "/banque" },
-  { id: "assurance", label: "Espace Assurance",     shortLabel: "Assurance", description: "Souscription et tarification immobilière",        icon: Banknote,    path: "/assurance" },
+  { id: "promoteur", label: "Espace Promoteur",        shortLabel: "Promoteur",         description: "Faisabilité, SDP potentielle et bilan promoteur",              icon: Building2,   path: "/promoteur" },
+  { id: "agence",    label: "Espace Agence",            shortLabel: "Agence",            description: "Dossiers vendeurs / acquéreurs enrichis",                      icon: Briefcase,   path: "/particulier" },
+  { id: "marchand",  label: "Espace Investisseur",      shortLabel: "Investisseur",      description: "Opportunités, scoring, rentabilité, exécution et sortie",      icon: PieChart,    path: "/marchand-de-bien" },
+  { id: "banque",    label: "Espace Banque / Assurance", shortLabel: "Banque / Assurance", description: "Analyse de risque, comité crédit, tarification et suivi dossiers", icon: ShieldCheck, path: "/banque" },
 ];
 
 // ═══════════════════════════════════════════════════════════════════
 // SPACE_NAVIGATION
-// ✅ ACTION 2: banque = [] — NO sub-nav items here.
+// ✅ banque = [] — NO sub-nav items here.
 //    BanqueLayout.tsx provides the sole workflow bar.
-//    This eliminates the duplicate "Dossiers|Dossier|Analyse|Comité".
 // ═══════════════════════════════════════════════════════════════════
 const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
   none: [],
-
-  audit: [
-    {
-      id: "analyse", label: "Analyse",
-      items: [
-        { label: "Tableau de bord", path: "/audit", icon: BarChart3, end: true },
-        { label: "PLU & Urbanisme", path: "/audit/plu", icon: Building2 },
-        { label: "Risques", path: "/audit/risques", icon: AlertTriangle },
-        { label: "SmartScore", path: "/audit/smartscore", icon: Target },
-      ],
-    },
-  ],
 
   promoteur: [
     {
@@ -167,18 +152,6 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
 
   // ✅ EMPTY — BanqueLayout handles all workflow navigation inside /banque/*
   banque: [],
-
-  assurance: [
-    {
-      id: "souscription", label: "Souscription",
-      items: [
-        { label: "Tableau de bord", path: "/assurance", icon: BarChart3, end: true },
-        { label: "Tarification", path: "/assurance/tarification", icon: Calculator },
-        { label: "Sinistres", path: "/assurance/sinistres", icon: AlertTriangle },
-        { label: "Portefeuille", path: "/assurance/portefeuille", icon: Scale },
-      ],
-    },
-  ],
 };
 
 // ── Banque path helpers ──

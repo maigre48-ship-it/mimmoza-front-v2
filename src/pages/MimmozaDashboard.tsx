@@ -33,6 +33,10 @@ type PluLookupResult = {
   rules?: any;
   ruleset?: any;
   plu?: any;
+
+  // SmartScore — supporte les 2 conventions de casse
+  smartScore?: number | null;
+  smartscore?: number | null;
 };
 
 const LS_KEY = "mimmoza_plu_lookup_v1";
@@ -52,6 +56,87 @@ const pretty = (v: any) => {
   } catch {
     return String(v);
   }
+};
+
+/* ------------------------------------------------------------------ */
+/*  SmartScore : lecture depuis localStorage investisseur snapshot     */
+/* ------------------------------------------------------------------ */
+function readInvestisseurSmartScore(): number | null {
+  try {
+    const raw = localStorage.getItem("mimmoza.investisseur.snapshot.v1");
+    if (!raw) return null;
+    const snap = JSON.parse(raw);
+
+    // Ordre de priorité :
+    // 1. snap.smartscore est un objet avec .score (SmartScoreResult)
+    // 2. snap.smartscore est un number directement
+    // 3. snap.smartScore est un objet avec .score (variante camelCase)
+    // 4. snap.smartScore est un number directement
+    // 5. snap.smart_score (snake_case, objet ou number)
+    const candidates = [
+      snap?.smartscore,
+      snap?.smartScore,
+      snap?.smart_score,
+    ];
+
+    for (const val of candidates) {
+      if (val == null) continue;
+
+      // Si c'est un objet avec .score (ex: SmartScoreResult)
+      if (typeof val === "object" && val.score != null) {
+        const n = Number(val.score);
+        if (!Number.isNaN(n)) return n;
+      }
+
+      // Si c'est directement un number
+      if (typeof val === "number" && !Number.isNaN(val)) return val;
+
+      // Si c'est une string parsable
+      if (typeof val === "string") {
+        const n = Number(val);
+        if (!Number.isNaN(n)) return n;
+      }
+    }
+
+    // Aucun score trouvé → null (pas de fallback constant)
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Lecture tolérante du SmartScore depuis n'importe quel niveau du payload deal.
+ * Ordre de priorité :
+ *   1. payload.smartScore  (camelCase — nouveau modèle)
+ *   2. payload.smartscore  (lowercase — ancien modèle)
+ *   3. payload.smart_score (snake_case)
+ *   4. Idem dans payload.plu.* puis payload.ruleset.*
+ *   5. null
+ */
+const resolveSmartScoreFromPayload = (payload: any): number | null => {
+  if (!payload) return null;
+
+  const candidates: unknown[] = [
+    payload.smartScore,
+    payload.smartscore,
+    payload.smart_score,
+    payload.plu?.smartScore,
+    payload.plu?.smartscore,
+    payload.plu?.smart_score,
+    payload.ruleset?.smartScore,
+    payload.ruleset?.smartscore,
+    payload.ruleset?.smart_score,
+  ];
+
+  for (const v of candidates) {
+    if (v != null && typeof v === "number" && !Number.isNaN(v)) return v;
+    if (v != null && typeof v === "string") {
+      const parsed = Number(v);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+  }
+  return null;
 };
 
 const extractKpis = (payload: any) => {
@@ -88,17 +173,32 @@ const extractKpis = (payload: any) => {
     ruleset?.stationnement_min ??
     null;
 
-  return { zone_code, zone_libelle, reculs, hauteur, parking, ruleset };
+  // SmartScore : d'abord depuis le payload (deal), puis fallback localStorage investisseur
+  const scoreFromDeal = resolveSmartScoreFromPayload(payload);
+  const scoreFromInvestisseur = readInvestisseurSmartScore();
+  const smartScore = scoreFromDeal ?? scoreFromInvestisseur;
+
+  return { zone_code, zone_libelle, reculs, hauteur, parking, ruleset, smartScore };
+};
+
+/** Couleur du badge SmartScore selon la valeur */
+const smartScoreColor = (score: number) => {
+  if (score >= 70) return { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", ring: "text-emerald-500" };
+  if (score >= 40) return { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700", ring: "text-amber-500" };
+  return { bg: "bg-red-50", border: "border-red-200", text: "text-red-700", ring: "text-red-500" };
 };
 
 const MimmozaDashboard: React.FC = () => {
-  // UX: Adresse / Parcelle (pour ne pas être bloqué par l’ingestion)
+  // UX: Adresse / Parcelle (pour ne pas être bloqué par l'ingestion)
   const [address, setAddress] = useState<string>("");
   const [parcelId, setParcelId] = useState<string>("");
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [lookupResult, setLookupResult] = useState<PluLookupResult | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+
+  // SmartScore autonome : lu depuis localStorage même sans lookupResult
+  const [investisseurSmartScore, setInvestisseurSmartScore] = useState<number | null>(null);
 
   useEffect(() => {
     const saved = safeJsonParse(localStorage.getItem(LS_KEY));
@@ -107,6 +207,28 @@ const MimmozaDashboard: React.FC = () => {
       setParcelId(String(saved.parcelId ?? ""));
       setShowDetails(Boolean(saved.showDetails ?? false));
     }
+    // Lecture initiale du SmartScore investisseur
+    setInvestisseurSmartScore(readInvestisseurSmartScore());
+  }, []);
+
+  // Écoute les changements de localStorage depuis d'autres onglets/pages (cross-tab)
+  useEffect(() => {
+    const handler = (e: StorageEvent) => {
+      if (e.key === "mimmoza.investisseur.snapshot.v1") {
+        setInvestisseurSmartScore(readInvestisseurSmartScore());
+      }
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, []);
+
+  // Écoute le CustomEvent dispatché par saveSnapshot() dans le même onglet (intra-tab)
+  useEffect(() => {
+    const handler = () => {
+      setInvestisseurSmartScore(readInvestisseurSmartScore());
+    };
+    window.addEventListener("mimmoza:investisseur-snapshot-updated", handler);
+    return () => window.removeEventListener("mimmoza:investisseur-snapshot-updated", handler);
   }, []);
 
   useEffect(() => {
@@ -124,6 +246,9 @@ const MimmozaDashboard: React.FC = () => {
     if (!lookupResult) return null;
     return extractKpis(lookupResult);
   }, [lookupResult]);
+
+  // Score résolu : depuis le deal (kpis) OU depuis localStorage investisseur
+  const resolvedSmartScore = kpis?.smartScore ?? investisseurSmartScore;
 
   const runLookup = async () => {
     setLookupError(null);
@@ -149,6 +274,8 @@ const MimmozaDashboard: React.FC = () => {
         );
         if (error) throw error;
         setLookupResult(data ?? null);
+        // Rafraîchir aussi le score investisseur au cas où
+        setInvestisseurSmartScore(readInvestisseurSmartScore());
         return;
       }
 
@@ -161,6 +288,7 @@ const MimmozaDashboard: React.FC = () => {
       );
       if (error) throw error;
       setLookupResult(data ?? null);
+      setInvestisseurSmartScore(readInvestisseurSmartScore());
     } catch (e: any) {
       setLookupError(
         e?.message ??
@@ -288,29 +416,45 @@ const MimmozaDashboard: React.FC = () => {
                 title="Sites analysés"
                 value="0"
                 subtitle="Historique sur ce compte"
-                icon="??"
+                icon="🔍"
                 gradient="from-sky-500 to-sky-600"
               />
               <StatCard
                 title="Études en cours"
                 value="0"
                 subtitle="Pipeline actif"
-                icon="???"
+                icon="📊"
                 gradient="from-violet-500 to-violet-600"
               />
               <StatCard
                 title="Marge cible moyenne"
                 value="20%"
                 subtitle="Objectif promoteur"
-                icon="??"
+                icon="💰"
                 gradient="from-emerald-500 to-emerald-600"
               />
               <StatCard
-                title="PLU structurés"
-                value="0"
-                subtitle="Communes prêtes à l&apos;emploi"
-                icon="??"
-                gradient="from-amber-500 to-amber-600"
+                title="SmartScore"
+                value={resolvedSmartScore != null ? `${resolvedSmartScore}/100` : "—"}
+                subtitle={
+                  resolvedSmartScore != null
+                    ? resolvedSmartScore >= 70
+                      ? "Score favorable"
+                      : resolvedSmartScore >= 40
+                        ? "Score moyen"
+                        : "Score faible"
+                    : "Aucun SmartScore calculé"
+                }
+                icon="⚡"
+                gradient={
+                  resolvedSmartScore != null
+                    ? resolvedSmartScore >= 70
+                      ? "from-emerald-500 to-emerald-600"
+                      : resolvedSmartScore >= 40
+                        ? "from-amber-500 to-amber-600"
+                        : "from-red-500 to-red-600"
+                    : "from-slate-400 to-slate-500"
+                }
               />
             </Grid>
           </ContentSection>
@@ -322,7 +466,7 @@ const MimmozaDashboard: React.FC = () => {
               {/* PIPELINE */}
               <ContentSection
                 title="Pipeline d'analyse foncière"
-                subtitle="Un flux unique : Adresse ? Parcelles ? PLU ? Bilan promoteur."
+                subtitle="Un flux unique : Adresse → Parcelles → PLU → Bilan promoteur."
                 card
               >
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -457,7 +601,8 @@ const MimmozaDashboard: React.FC = () => {
 
                   {lookupResult && (
                     <div className="mt-4">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {/* Zone PLU */}
                         <div className="p-4 rounded-2xl bg-white border border-slate-200/70">
                           <p className="text-[11px] uppercase tracking-wide text-slate-500">
                             Zone PLU
@@ -470,6 +615,52 @@ const MimmozaDashboard: React.FC = () => {
                           </p>
                         </div>
 
+                        {/* SmartScore — carte dédiée dans les résultats */}
+                        <div
+                          className={`p-4 rounded-2xl border ${
+                            resolvedSmartScore != null
+                              ? smartScoreColor(resolvedSmartScore).bg +
+                                " " +
+                                smartScoreColor(resolvedSmartScore).border
+                              : "bg-white border-slate-200/70"
+                          }`}
+                        >
+                          <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                            SmartScore
+                          </p>
+                          {resolvedSmartScore != null ? (
+                            <>
+                              <p
+                                className={`mt-1 text-2xl font-bold ${
+                                  smartScoreColor(resolvedSmartScore).text
+                                }`}
+                              >
+                                {resolvedSmartScore}
+                                <span className="text-sm font-medium text-slate-400">
+                                  /100
+                                </span>
+                              </p>
+                              <p className="mt-1 text-xs text-slate-600">
+                                {resolvedSmartScore >= 70
+                                  ? "Faisabilité favorable"
+                                  : resolvedSmartScore >= 40
+                                    ? "Faisabilité à confirmer"
+                                    : "Faisabilité contrainte"}
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="mt-1 text-base font-semibold text-slate-400">
+                                —
+                              </p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Aucun SmartScore dans la réponse
+                              </p>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Reculs */}
                         <div className="p-4 rounded-2xl bg-white border border-slate-200/70">
                           <p className="text-[11px] uppercase tracking-wide text-slate-500">
                             Reculs (extrait)
@@ -479,6 +670,7 @@ const MimmozaDashboard: React.FC = () => {
                           </p>
                         </div>
 
+                        {/* Hauteur / Parking */}
                         <div className="p-4 rounded-2xl bg-white border border-slate-200/70">
                           <p className="text-[11px] uppercase tracking-wide text-slate-500">
                             Hauteur / Parking (extrait)
@@ -501,7 +693,7 @@ const MimmozaDashboard: React.FC = () => {
                   )}
 
                   <p className="mt-4 text-[11px] text-slate-500">
-                    But : disposer d’un chemin “adresse/parcelle → zone/règles” immédiatement, même si l’ingestion PLU échoue.
+                    But : disposer d'un chemin "adresse/parcelle → zone/règles" immédiatement, même si l'ingestion PLU échoue.
                     Ensuite, on normalisera les champs (reculs/hauteur/parking) en un format strict.
                   </p>
                 </div>
@@ -514,7 +706,7 @@ const MimmozaDashboard: React.FC = () => {
                 card
               >
                 <EmptyState
-                  icon="??"
+                  icon="📋"
                   title="Aucune étude pour le moment"
                   description="Dès que vous lancerez une première analyse, elle apparaîtra ici avec ses parcelles, son PLU et le bilan promoteur associé."
                   action={{
@@ -532,10 +724,10 @@ const MimmozaDashboard: React.FC = () => {
               <ContentSection title="Actions rapides" card spacing="tight">
                 <div className="space-y-2">
                   {[
-                    { icon: "??", label: "Nouvelle étude par adresse" },
-                    { icon: "???", label: "Choisir une parcelle sur la carte" },
-                    { icon: "??", label: "Charger / uploader un PLU" },
-                    { icon: "??", label: "Générer un bilan promoteur" },
+                    { icon: "📍", label: "Nouvelle étude par adresse" },
+                    { icon: "🗺️", label: "Choisir une parcelle sur la carte" },
+                    { icon: "📄", label: "Charger / uploader un PLU" },
+                    { icon: "📊", label: "Générer un bilan promoteur" },
                   ].map((action, i) => (
                     <button
                       key={i}
@@ -560,7 +752,7 @@ const MimmozaDashboard: React.FC = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardBody className="text-sm text-slate-700 space-y-1.5">
-                  <p>?? Objectif : automatiser la faisabilité foncière à partir du PLU.</p>
+                  <p>🎯 Objectif : automatiser la faisabilité foncière à partir du PLU.</p>
                   <ul className="list-disc list-inside space-y-1.5">
                     <li>Parsing des règles PLU (zones, hauteurs, emprise, stationnement)</li>
                     <li>Calcul automatique des SDP et des gabarits 3D</li>
@@ -598,4 +790,3 @@ const MimmozaDashboard: React.FC = () => {
 };
 
 export default MimmozaDashboard;
-

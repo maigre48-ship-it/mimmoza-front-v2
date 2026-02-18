@@ -1,6 +1,5 @@
 import React from "react";
 import { Outlet } from "react-router-dom";
-import MarchandSidebar from "./MarchandSidebar";
 
 export default function MarchandLayout() {
   return (
@@ -14,40 +13,17 @@ export default function MarchandLayout() {
           "linear-gradient(180deg, rgba(248,250,252,1), rgba(255,255,255,1))",
       }}
     >
+      {/* Content only (sidebar removed) */}
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "320px 1fr",
-          gap: 12,
-          alignItems: "start",
+          borderRadius: 18,
+          border: "1px solid rgba(15, 23, 42, 0.08)",
+          background: "rgba(255,255,255,0.78)",
+          boxShadow: "0 18px 45px rgba(2,6,23,0.08)",
+          overflow: "hidden",
         }}
       >
-        {/* Sidebar */}
-        <div
-          style={{
-            position: "sticky",
-            top: 12,
-            alignSelf: "start",
-            height: "calc(100vh - 24px)",
-            overflow: "auto",
-            paddingRight: 2,
-          }}
-        >
-          <MarchandSidebar />
-        </div>
-
-        {/* Content */}
-        <div
-          style={{
-            borderRadius: 18,
-            border: "1px solid rgba(15, 23, 42, 0.08)",
-            background: "rgba(255,255,255,0.78)",
-            boxShadow: "0 18px 45px rgba(2,6,23,0.08)",
-            overflow: "hidden",
-          }}
-        >
-          <Outlet />
-        </div>
+        <Outlet />
       </div>
     </div>
   );

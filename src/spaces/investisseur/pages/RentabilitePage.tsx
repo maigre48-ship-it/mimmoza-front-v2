@@ -1,4 +1,4 @@
-﻿// src/spaces/marchand/pages/Rentabilite.tsx
+// src/spaces/investisseur/pages/RentabilitePage.tsx
 
 import React, { useState, useEffect, useMemo } from 'react';
 import type {
@@ -8,16 +8,16 @@ import type {
   RentabiliteStressTests,
   RentabiliteSnapshot,
   RentabiliteDecision,
-} from '../../investisseur/types/rentabilite.types';
-import { DEFAULT_FORM } from '../../investisseur/types/rentabilite.types';
+} from '../types/rentabilite.types';
+import { DEFAULT_FORM } from '../types/rentabilite.types';
 import {
   formToInput,
   computeAll,
   formatEUR,
   formatPct,
-} from '../../investisseur/engine/rentabilite.engine';
-import { useInvestisseurRentabiliteTick } from '../../investisseur/hooks/useInvestisseurRentabiliteTick';
-import { getDealContextSnapshot } from '../shared/marchandDealContext.store';
+} from '../engine/rentabilite.engine';
+import { useInvestisseurRentabiliteTick } from '../hooks/useInvestisseurRentabiliteTick';
+import { getDealContextSnapshot } from '../../marchand/shared/marchandDealContext.store';
 
 /* ================================================================== */
 /*  Styles                                                             */
@@ -305,21 +305,21 @@ function ScenarioTable({
   scenarios: RentabiliteScenarios;
   strategy: string;
 }) {
-  const rows =
-    strategy === 'revente'
+  const rows = [
+    { label: 'Scénario', base: 'Base', opti: 'Optimiste', pessi: 'Pessimiste' },
+    { label: 'Coût total', base: formatEUR(scenarios.base.coutTotal), opti: formatEUR(scenarios.optimiste.coutTotal), pessi: formatEUR(scenarios.pessimiste.coutTotal) },
+    ...(strategy === 'revente'
       ? [
-          { label: 'Coût total', base: formatEUR(scenarios.base.coutTotal), opti: formatEUR(scenarios.optimiste.coutTotal), pessi: formatEUR(scenarios.pessimiste.coutTotal) },
           { label: 'Marge brute', base: formatEUR(scenarios.base.margeBrute), opti: formatEUR(scenarios.optimiste.margeBrute), pessi: formatEUR(scenarios.pessimiste.margeBrute) },
           { label: 'Marge %', base: formatPct(scenarios.base.margePct), opti: formatPct(scenarios.optimiste.margePct), pessi: formatPct(scenarios.pessimiste.margePct) },
           { label: 'TRI %', base: formatPct(scenarios.base.triPct), opti: formatPct(scenarios.optimiste.triPct), pessi: formatPct(scenarios.pessimiste.triPct) },
-          { label: 'Décision', base: scenarios.base.decision, opti: scenarios.optimiste.decision, pessi: scenarios.pessimiste.decision },
         ]
       : [
-          { label: 'Coût total', base: formatEUR(scenarios.base.coutTotal), opti: formatEUR(scenarios.optimiste.coutTotal), pessi: formatEUR(scenarios.pessimiste.coutTotal) },
           { label: 'Cashflow /mois', base: formatEUR(scenarios.base.cashflowMensuel), opti: formatEUR(scenarios.optimiste.cashflowMensuel), pessi: formatEUR(scenarios.pessimiste.cashflowMensuel) },
           { label: 'Rdt brut %', base: formatPct(scenarios.base.rendementBrutPct), opti: formatPct(scenarios.optimiste.rendementBrutPct), pessi: formatPct(scenarios.pessimiste.rendementBrutPct) },
-          { label: 'Décision', base: scenarios.base.decision, opti: scenarios.optimiste.decision, pessi: scenarios.pessimiste.decision },
-        ];
+        ]),
+    { label: 'Décision', base: scenarios.base.decision, opti: scenarios.optimiste.decision, pessi: scenarios.pessimiste.decision },
+  ];
 
   return (
     <table style={S.scenarioTable}>
@@ -332,7 +332,7 @@ function ScenarioTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((r, i) => (
+        {rows.slice(1).map((r, i) => (
           <tr key={i}>
             <td style={{ ...S.td, fontWeight: 600, color: '#475569' }}>{r.label}</td>
             <td style={S.td}>{r.base}</td>
@@ -352,17 +352,16 @@ function StressTable({
   stressTests: RentabiliteStressTests;
   strategy: string;
 }) {
-  const rows =
-    strategy === 'revente'
-      ? [
-          { label: 'Marge brute', a: formatEUR(stressTests.reventeMoins5.margeBrute), b: formatEUR(stressTests.travauxPlus10.margeBrute) },
-          { label: 'Marge %', a: formatPct(stressTests.reventeMoins5.margePct), b: formatPct(stressTests.travauxPlus10.margePct) },
-          { label: 'Décision', a: stressTests.reventeMoins5.decision, b: stressTests.travauxPlus10.decision },
-        ]
-      : [
-          { label: 'Cashflow /mois', a: formatEUR(stressTests.reventeMoins5.cashflowMensuel), b: formatEUR(stressTests.travauxPlus10.cashflowMensuel) },
-          { label: 'Décision', a: stressTests.reventeMoins5.decision, b: stressTests.travauxPlus10.decision },
-        ];
+  const rows = strategy === 'revente'
+    ? [
+        { label: 'Marge brute', a: formatEUR(stressTests.reventeMoins5.margeBrute), b: formatEUR(stressTests.travauxPlus10.margeBrute) },
+        { label: 'Marge %', a: formatPct(stressTests.reventeMoins5.margePct), b: formatPct(stressTests.travauxPlus10.margePct) },
+        { label: 'Décision', a: stressTests.reventeMoins5.decision, b: stressTests.travauxPlus10.decision },
+      ]
+    : [
+        { label: 'Cashflow /mois', a: formatEUR(stressTests.reventeMoins5.cashflowMensuel), b: formatEUR(stressTests.travauxPlus10.cashflowMensuel) },
+        { label: 'Décision', a: stressTests.reventeMoins5.decision, b: stressTests.travauxPlus10.decision },
+      ];
 
   return (
     <table style={S.scenarioTable}>
@@ -390,7 +389,7 @@ function StressTable({
 /*  Main Page                                                          */
 /* ================================================================== */
 
-export default function Rentabilite() {
+export default function RentabilitePage() {
   // Deal context
   const dealCtx = useMemo(() => getDealContextSnapshot(), []);
   const dealId = dealCtx?.activeDealId ?? null;
