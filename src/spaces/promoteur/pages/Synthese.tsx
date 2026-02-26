@@ -1,9 +1,10 @@
 ﻿// ============================================
-// SynthesePage.tsx - VERSION 2.0.0
+// SynthesePage.tsx - VERSION 2.1.0
 // ============================================
 // Synthèse consolidée pour banque/comité d'investissement
 // Collecte automatique des données depuis localStorage
 // Utilise Claude API via Edge Function
+// v2.1.0 : Auth session user, AbortController timeout, logs DEV-only
 // ============================================
 
 import React, { useState, useCallback, useEffect, useMemo } from "react";
@@ -13,6 +14,13 @@ import {
   RefreshCw, Target, BarChart3, Landmark, Copy, Check,
   XCircle, AlertOctagon, Bug, ChevronDown, ChevronUp
 } from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
+
+// ============================================
+// DEV FLAG
+// ============================================
+
+const __DEV__ = import.meta.env.DEV;
 
 // ============================================
 // TYPES
@@ -82,33 +90,26 @@ interface SynthesisResponse {
 type SynthesisFormat = 'banque' | 'investisseur' | 'technique';
 
 // ============================================
-// CONSTANTS - LOCALSTORAGE KEYS
+// CONSTANTS
 // ============================================
 
+const FETCH_TIMEOUT_MS = 60_000;
+
 const LS_KEYS = {
-  // Foncier
   FONCIER_SELECTED: "mimmoza.promoteur.foncier.selected_v1",
   FONCIER_COMMUNE: "mimmoza.promoteur.foncier.commune_v1",
   FONCIER_FOCUS: "mimmoza.promoteur.foncier.focus_v1",
-  
-  // Session (fallback)
   SESSION_PARCEL: "mimmoza.session.parcel_id",
   SESSION_COMMUNE: "mimmoza.session.commune_insee",
   SESSION_PARCELS: "mimmoza.session.parcel_ids",
   SESSION_SURFACE: "mimmoza.session.surface_m2",
   SESSION_ADDRESS: "mimmoza.session.address",
-  
-  // PLU metadata
   PLU_LAST_COMMUNE_INSEE: "mimmoza.plu.last_commune_insee",
   PLU_LAST_COMMUNE_NOM: "mimmoza.plu.last_commune_nom",
   PLU_LAST_ADDRESS: "mimmoza.plu.last_address",
   PLU_LAST_PARCEL: "mimmoza.plu.last_parcel_id",
-  
-  // Project
   PROJECT_V2: "mimmoza.promoteur.project.v2",
   PROJECT_V1: "mimmoza.promoteur.project.v1",
-  
-  // Snapshot existant
   SNAPSHOT_V1: "mimmoza.promoteur.snapshot.v1",
 };
 
@@ -241,27 +242,39 @@ function findKeyByPrefix(prefix: string): string | null {
 }
 
 // ============================================
+// AUTH HELPER
+// ============================================
+
+async function getAccessToken(): Promise<string> {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw new Error(`Erreur d'authentification : ${error.message}`);
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Session expirée, reconnectez-vous.");
+  return token;
+}
+
+// ============================================
 // DATA COLLECTOR
 // ============================================
 
 function collectDataFromLocalStorage(): PromoteurSnapshot {
-  console.log("[Synthese] Collecting data from localStorage...");
-  
+  if (__DEV__) console.log("[Synthese] Collecting data from localStorage...");
+
   // ========== FONCIER ==========
   const parcelsRaw = localStorage.getItem(LS_KEYS.FONCIER_SELECTED);
   const parcels = safeJsonParse<SelectedParcel[]>(parcelsRaw, []);
-  const communeInsee = localStorage.getItem(LS_KEYS.FONCIER_COMMUNE) 
-    || localStorage.getItem(LS_KEYS.SESSION_COMMUNE) 
+  const communeInsee = localStorage.getItem(LS_KEYS.FONCIER_COMMUNE)
+    || localStorage.getItem(LS_KEYS.SESSION_COMMUNE)
     || localStorage.getItem(LS_KEYS.PLU_LAST_COMMUNE_INSEE)
     || "";
   const communeNom = localStorage.getItem(LS_KEYS.PLU_LAST_COMMUNE_NOM) || "";
-  const focusParcel = localStorage.getItem(LS_KEYS.FONCIER_FOCUS) 
-    || localStorage.getItem(LS_KEYS.SESSION_PARCEL) 
+  const focusParcel = localStorage.getItem(LS_KEYS.FONCIER_FOCUS)
+    || localStorage.getItem(LS_KEYS.SESSION_PARCEL)
     || "";
-  const address = localStorage.getItem(LS_KEYS.SESSION_ADDRESS) 
-    || localStorage.getItem(LS_KEYS.PLU_LAST_ADDRESS) 
+  const address = localStorage.getItem(LS_KEYS.SESSION_ADDRESS)
+    || localStorage.getItem(LS_KEYS.PLU_LAST_ADDRESS)
     || "";
-  
+
   let totalSurface = 0;
   if (parcels.length > 0) {
     totalSurface = parcels.reduce((sum, p) => {
@@ -275,52 +288,52 @@ function collectDataFromLocalStorage(): PromoteurSnapshot {
     const sessionSurface = localStorage.getItem(LS_KEYS.SESSION_SURFACE);
     if (sessionSurface) totalSurface = parseFloat(sessionSurface) || 0;
   }
-  
+
   const foncierOk = parcels.length > 0 || !!focusParcel;
-  console.log("[Synthese] Foncier:", { parcels: parcels.length, communeInsee, foncierOk });
-  
+  if (__DEV__) console.log("[Synthese] Foncier:", { parcels: parcels.length, communeInsee, foncierOk });
+
   // ========== EXISTING SNAPSHOT ==========
   const existingSnapshot = safeJsonParse<Record<string, unknown>>(localStorage.getItem(LS_KEYS.SNAPSHOT_V1), {});
   const existingModules = (existingSnapshot as { modules?: Record<string, ModuleData> })?.modules || {};
   const existingMassing = (existingSnapshot as { massing3d?: ModuleData })?.massing3d;
-  
+
   // ========== PLU ==========
   const existingPlu = existingModules.plu;
   const pluOk = existingPlu?.ok === true;
-  console.log("[Synthese] PLU:", { pluOk });
-  
+  if (__DEV__) console.log("[Synthese] PLU:", { pluOk });
+
   // ========== IMPLANTATION 2D ==========
   const projectV2 = safeJsonParse<{ state?: Record<string, unknown> }>(localStorage.getItem(LS_KEYS.PROJECT_V2), null);
   const projectV1 = safeJsonParse<{ state?: Record<string, unknown> }>(localStorage.getItem(LS_KEYS.PROJECT_V1), null);
   const projectState = projectV2?.state || projectV1?.state;
   const existingImplant = existingModules.implantation2d;
   const implantOk = !!projectState || existingImplant?.ok === true || existingMassing?.ok === true;
-  console.log("[Synthese] Implantation:", { implantOk });
-  
+  if (__DEV__) console.log("[Synthese] Implantation:", { implantOk });
+
   // ========== MARKET ==========
   const marketKey = findKeyByPrefix("mimmoza.promoteur.market");
   const marketData = marketKey ? safeJsonParse<Record<string, unknown>>(localStorage.getItem(marketKey), null) : null;
   const existingMarket = existingModules.market;
   const marketOk = !!marketData || existingMarket?.ok === true;
-  console.log("[Synthese] Market:", { marketOk, marketKey });
-  
+  if (__DEV__) console.log("[Synthese] Market:", { marketOk, marketKey });
+
   // ========== RISKS ==========
   const risksKey = findKeyByPrefix("mimmoza.promoteur.risks");
   const risksData = risksKey ? safeJsonParse<Record<string, unknown>>(localStorage.getItem(risksKey), null) : null;
   const existingRisks = existingModules.risks;
   const risksOk = !!risksData || existingRisks?.ok === true;
-  console.log("[Synthese] Risks:", { risksOk, risksKey });
-  
+  if (__DEV__) console.log("[Synthese] Risks:", { risksOk, risksKey });
+
   // ========== BILAN ==========
   const bilanKey = findKeyByPrefix("mimmoza.promoteur.bilan");
   const bilanData = bilanKey ? safeJsonParse<Record<string, unknown>>(localStorage.getItem(bilanKey), null) : null;
   const existingBilan = existingModules.bilan;
   const bilanOk = !!bilanData || existingBilan?.ok === true;
-  console.log("[Synthese] Bilan:", { bilanOk, bilanKey });
-  
+  if (__DEV__) console.log("[Synthese] Bilan:", { bilanOk, bilanKey });
+
   // ========== BUILD SNAPSHOT ==========
   const snapshot: PromoteurSnapshot = {
-    version: "2.0.0",
+    version: "2.1.0",
     createdAt: new Date().toISOString(),
     projectInfo: {
       parcelId: focusParcel,
@@ -347,8 +360,8 @@ function collectDataFromLocalStorage(): PromoteurSnapshot {
       bilan: existingBilan || { ok: bilanOk, summary: bilanOk ? "Bilan disponible" : undefined, data: bilanData || undefined },
     },
   };
-  
-  console.log("[Synthese] Final snapshot:", snapshot);
+
+  if (__DEV__) console.log("[Synthese] Final snapshot:", snapshot);
   return snapshot;
 }
 
@@ -359,7 +372,7 @@ function collectDataFromLocalStorage(): PromoteurSnapshot {
 const DebugPanel: React.FC<{ snapshot: PromoteurSnapshot; onRefresh: () => void }> = ({ snapshot, onRefresh }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [allKeys, setAllKeys] = useState<{ key: string; preview: string }[]>([]);
-  
+
   useEffect(() => {
     if (isOpen) {
       const keys = Object.keys(localStorage)
@@ -372,7 +385,9 @@ const DebugPanel: React.FC<{ snapshot: PromoteurSnapshot; onRefresh: () => void 
       setAllKeys(keys);
     }
   }, [isOpen]);
-  
+
+  if (!__DEV__) return null;
+
   return (
     <div style={{ ...styles.card, background: "#fefce8", border: "1px solid #fde047" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setIsOpen(!isOpen)}>
@@ -388,7 +403,7 @@ const DebugPanel: React.FC<{ snapshot: PromoteurSnapshot; onRefresh: () => void 
           {isOpen ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
         </div>
       </div>
-      
+
       {isOpen && (
         <div style={{ marginTop: "16px" }}>
           <div style={{ marginBottom: "16px" }}>
@@ -545,28 +560,63 @@ export function SynthesePage() {
     setError(null);
     setResult(null);
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
     try {
+      // ---- Auth : session user ----
+      const accessToken = await getAccessToken();
+
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
       const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      
-      const payload = { snapshot: { projectInfo: snapshot.projectInfo, modules: { market: snapshot.modules.market, risks: snapshot.modules.risks, implantation2d: snapshot.modules.implantation2d, bilan: snapshot.modules.bilan, plu: snapshot.modules.plu } }, format };
-      console.log("[Synthese] Sending payload:", payload);
 
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/synthesis-promoteur-v1`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_ANON_KEY}`, "apikey": SUPABASE_ANON_KEY },
-        body: JSON.stringify(payload),
-      });
+      const payload = {
+        snapshot: {
+          version: snapshot.version,
+          projectInfo: snapshot.projectInfo,
+          modules: {
+            market: snapshot.modules.market,
+            risks: snapshot.modules.risks,
+            implantation2d: snapshot.modules.implantation2d,
+            bilan: snapshot.modules.bilan,
+            plu: snapshot.modules.plu,
+          },
+        },
+        format,
+      };
+      if (__DEV__) console.log("[Synthese] Sending payload:", payload);
+
+      const response = await fetch(
+        `${SUPABASE_URL}/functions/v1/synthesis-promoteur-v1`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+            apikey: SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        },
+      );
 
       const data = await response.json();
-      console.log("[Synthese] Response:", data);
+      if (__DEV__) console.log("[Synthese] Response:", data);
 
-      if (!response.ok || !data.success) throw new Error(data.error || `Erreur ${response.status}`);
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || `Erreur ${response.status}`);
+      }
+
       setResult(data);
     } catch (err) {
-      console.error("[Synthese] Error:", err);
-      setError(err instanceof Error ? err.message : "Erreur lors de la génération");
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setError("La génération a pris trop de temps (> 60 s). Réessayez ou réduisez les données.");
+      } else {
+        console.error("[Synthese] Error:", err);
+        setError(err instanceof Error ? err.message : "Erreur lors de la génération");
+      }
     } finally {
+      clearTimeout(timeoutId);
       setIsGenerating(false);
     }
   }, [snapshot, format]);
@@ -586,7 +636,7 @@ export function SynthesePage() {
 
       <div style={styles.mainContent}>
         {snapshot && <DebugPanel snapshot={snapshot} onRefresh={loadSnapshot} />}
-        
+
         {project && (project.parcelId || project.address) && (
           <div style={{ ...styles.card, background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)", color: "white" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

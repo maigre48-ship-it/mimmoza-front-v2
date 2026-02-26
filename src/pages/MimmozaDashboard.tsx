@@ -16,6 +16,9 @@ import { EmptyState } from "../components/layouts/EmptyState";
 // IMPORTANT: adapte ce chemin si ton client Supabase est ailleurs
 import { supabase } from "../lib/supabaseClient";
 
+// ✅ Investisseur snapshot canonique (source de vérité)
+import { getInvestisseurSnapshot } from "../spaces/investisseur/shared/investisseurSnapshot.store";
+
 type PluLookupResult = {
   success?: boolean;
   error?: string;
@@ -59,46 +62,57 @@ const pretty = (v: any) => {
 };
 
 /* ------------------------------------------------------------------ */
-/*  SmartScore : lecture depuis localStorage investisseur snapshot     */
+/*  SmartScore : lecture depuis snapshot Investisseur CANONIQUE         */
 /* ------------------------------------------------------------------ */
 function readInvestisseurSmartScore(): number | null {
   try {
-    const raw = localStorage.getItem("mimmoza.investisseur.snapshot.v1");
-    if (!raw) return null;
-    const snap = JSON.parse(raw);
+    const snap = getInvestisseurSnapshot();
+    const activeId = snap.activeProjectId;
 
-    // Ordre de priorité :
-    // 1. snap.smartscore est un objet avec .score (SmartScoreResult)
-    // 2. snap.smartscore est un number directement
-    // 3. snap.smartScore est un objet avec .score (variante camelCase)
-    // 4. snap.smartScore est un number directement
-    // 5. snap.smart_score (snake_case, objet ou number)
-    const candidates = [
-      snap?.smartscore,
-      snap?.smartScore,
-      snap?.smart_score,
+    // Aucun projet actif → fallback: premier projet si existe
+    const project =
+      (activeId && snap.projects?.[activeId]) ||
+      (snap.projects ? snap.projects[Object.keys(snap.projects)[0] ?? ""] : null);
+
+    if (!project) return null;
+
+    // Priorité: kpis.yield/roi/etc ne nous intéressent pas ici → on prend un score s'il existe.
+    // Convention proposée: project.kpis.* (ltv/dscr/yield) + éventuellement project.smartscore si tu l’ajoutes plus tard.
+    // Pour l’instant, on tente plusieurs emplacements tolérants.
+    const candidates: unknown[] = [
+      (project as any)?.smartscore,
+      (project as any)?.smartScore,
+      (project as any)?.smart_score,
+
+      (project as any)?.kpis?.smartscore,
+      (project as any)?.kpis?.smartScore,
+      (project as any)?.kpis?.smart_score,
+
+      // si un jour tu stockes un objet { score: number }
+      (project as any)?.smartscore?.score,
+      (project as any)?.smartScore?.score,
+      (project as any)?.smart_score?.score,
+
+      // ou dans market/risk scoring
+      (project as any)?.market?.smartscore,
+      (project as any)?.market?.smartScore,
+      (project as any)?.risks?.smartscore,
+      (project as any)?.risks?.smartScore,
     ];
 
-    for (const val of candidates) {
-      if (val == null) continue;
-
-      // Si c'est un objet avec .score (ex: SmartScoreResult)
-      if (typeof val === "object" && val.score != null) {
-        const n = Number(val.score);
+    for (const v of candidates) {
+      if (v == null) continue;
+      if (typeof v === "number" && !Number.isNaN(v)) return v;
+      if (typeof v === "string") {
+        const n = Number(v);
         if (!Number.isNaN(n)) return n;
       }
-
-      // Si c'est directement un number
-      if (typeof val === "number" && !Number.isNaN(val)) return val;
-
-      // Si c'est une string parsable
-      if (typeof val === "string") {
-        const n = Number(val);
+      if (typeof v === "object" && (v as any)?.score != null) {
+        const n = Number((v as any).score);
         if (!Number.isNaN(n)) return n;
       }
     }
 
-    // Aucun score trouvé → null (pas de fallback constant)
     return null;
   } catch {
     return null;
@@ -173,7 +187,7 @@ const extractKpis = (payload: any) => {
     ruleset?.stationnement_min ??
     null;
 
-  // SmartScore : d'abord depuis le payload (deal), puis fallback localStorage investisseur
+  // SmartScore : d'abord depuis le payload (deal), puis fallback snapshot investisseur
   const scoreFromDeal = resolveSmartScoreFromPayload(payload);
   const scoreFromInvestisseur = readInvestisseurSmartScore();
   const smartScore = scoreFromDeal ?? scoreFromInvestisseur;
@@ -197,7 +211,7 @@ const MimmozaDashboard: React.FC = () => {
   const [lookupResult, setLookupResult] = useState<PluLookupResult | null>(null);
   const [showDetails, setShowDetails] = useState(false);
 
-  // SmartScore autonome : lu depuis localStorage même sans lookupResult
+  // SmartScore autonome : lu depuis snapshot investisseur même sans lookupResult
   const [investisseurSmartScore, setInvestisseurSmartScore] = useState<number | null>(null);
 
   useEffect(() => {
@@ -207,7 +221,7 @@ const MimmozaDashboard: React.FC = () => {
       setParcelId(String(saved.parcelId ?? ""));
       setShowDetails(Boolean(saved.showDetails ?? false));
     }
-    // Lecture initiale du SmartScore investisseur
+    // Lecture initiale du SmartScore investisseur (canonique)
     setInvestisseurSmartScore(readInvestisseurSmartScore());
   }, []);
 
@@ -222,7 +236,7 @@ const MimmozaDashboard: React.FC = () => {
     return () => window.removeEventListener("storage", handler);
   }, []);
 
-  // Écoute le CustomEvent dispatché par saveSnapshot() dans le même onglet (intra-tab)
+  // Écoute le CustomEvent dispatché (si tu le déclenches) dans le même onglet (intra-tab)
   useEffect(() => {
     const handler = () => {
       setInvestisseurSmartScore(readInvestisseurSmartScore());
@@ -247,7 +261,7 @@ const MimmozaDashboard: React.FC = () => {
     return extractKpis(lookupResult);
   }, [lookupResult]);
 
-  // Score résolu : depuis le deal (kpis) OU depuis localStorage investisseur
+  // Score résolu : depuis le deal (kpis) OU depuis snapshot investisseur
   const resolvedSmartScore = kpis?.smartScore ?? investisseurSmartScore;
 
   const runLookup = async () => {

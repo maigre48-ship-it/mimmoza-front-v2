@@ -1,7 +1,14 @@
 ﻿// src/App.tsx
 
 import { useState, useCallback, useEffect } from "react";
-import { Routes, Route, Navigate, Outlet, useNavigate, useParams } from "react-router-dom";
+import {
+  Routes,
+  Route,
+  Navigate,
+  Outlet,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 import { wgs84ToLambert93 } from "./lib/projection";
 
 // Layout global + sync
@@ -13,6 +20,12 @@ import LoginPage from "./pages/LoginPage";
 
 // ✅ Test Banque Risques
 import BanqueRisquesTestPage from "./pages/BanqueRisquesTestPage";
+
+// ✅ Investisseur (bootstrap snapshot canonique)
+import { bootInvestisseurSnapshot } from "./spaces/investisseur/shared/investisseurBootstrap";
+
+// ✅ Investisseur — Analyse unifiée (Rentabilité + Due Diligence)
+import InvestisseurAnalysePage from "./spaces/investisseur/pages/AnalysePage";
 
 // =========================
 // Particulier — pages (COMPLET)
@@ -41,12 +54,9 @@ import ParticulierHistorique from "./spaces/particulier/pages/Historique";
 // =========================
 import MarchandLayout from "./spaces/marchand/MarchandLayout";
 import MarchandPipeline from "./spaces/marchand/pages/Pipeline";
-import MarchandQualification from "./spaces/marchand/pages/Qualification";
-import MarchandRentabilite from "./spaces/marchand/pages/Rentabilite";
 import MarchandExecution from "./spaces/marchand/pages/Execution";
 import MarchandSortie from "./spaces/marchand/pages/Sortie";
 import MarchandExports from "./spaces/marchand/pages/Exports";
-import MarchandAnalyseBien from "./spaces/marchand/pages/AnalyseBien";
 import MarchandTravaux from "./spaces/marchand/pages/Travaux";
 import { SourcingHomePage } from "./spaces/sourcing";
 
@@ -88,12 +98,6 @@ import AssuranceMonitoring from "./spaces/assurance/pages/Monitoring";
 import AssuranceDocuments from "./spaces/assurance/pages/Documents";
 
 // =========================
-// Due Diligence hook (Marchand page)
-// =========================
-import { useDueDiligence } from "./spaces/banque/hooks/useDueDiligence";
-import type { DueDiligenceStatus } from "./spaces/banque/types/dueDiligence.types";
-
-// =========================
 // Types globaux (dev helpers)
 // =========================
 declare global {
@@ -112,11 +116,16 @@ declare global {
  */
 function getSpacePath(space: Space): string {
   switch (space) {
-    case "promoteur": return "/promoteur";
-    case "agence":    return "/particulier";
-    case "marchand":  return "/marchand-de-bien";
-    case "banque":    return "/banque";
-    default:          return "/";
+    case "promoteur":
+      return "/promoteur";
+    case "agence":
+      return "/particulier";
+    case "marchand":
+      return "/marchand-de-bien";
+    case "banque":
+      return "/banque";
+    default:
+      return "/";
   }
 }
 
@@ -132,246 +141,6 @@ function BanqueRedirectToAnalyse() {
   return <Navigate to={`/banque/analyse/${id ?? ""}`} replace />;
 }
 
-// ── Status helpers ──
-
-const DD_STATUSES: DueDiligenceStatus[] = ["OK", "WARNING", "CRITICAL", "MISSING", "NA"];
-
-const STATUS_COLORS: Record<DueDiligenceStatus, { bg: string; text: string; border: string }> = {
-  OK:       { bg: "#f0fdf4", text: "#15803d", border: "#bbf7d0" },
-  WARNING:  { bg: "#fffbeb", text: "#b45309", border: "#fde68a" },
-  CRITICAL: { bg: "#fef2f2", text: "#b91c1c", border: "#fecaca" },
-  MISSING:  { bg: "#f9fafb", text: "#6b7280", border: "#e5e7eb" },
-  NA:       { bg: "#f5f3ff", text: "#6d28d9", border: "#ddd6fe" },
-};
-
-// ── Marchand Due Diligence Page ──
-
-function MarchandDueDiligencePage() {
-  const dossierId = "DOSS-TEST-001";
-  const { report, setStatus, setValue } = useDueDiligence(dossierId);
-  const computed = report.computed;
-
-  const score = computed?.score ?? 0;
-  const completionPct = computed ? Math.round(computed.completionRate * 100) : 0;
-  const criticalCount = computed?.criticalCount ?? 0;
-  const warningCount = computed?.warningCount ?? 0;
-
-  // Score color
-  const scoreColor = score >= 80 ? "#15803d" : score >= 50 ? "#b45309" : "#b91c1c";
-
-  return (
-    <div style={{ maxWidth: 960, margin: "0 auto", padding: "2rem 1rem" }}>
-      {/* Header */}
-      <h1 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "0.25rem" }}>
-        Due Diligence
-      </h1>
-      <p style={{ color: "#6b7280", fontSize: "0.875rem", marginBottom: "1.5rem" }}>
-        Dossier : {dossierId}
-      </p>
-
-      {/* KPI Banner */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
-          gap: "1rem",
-          marginBottom: "2rem",
-        }}
-      >
-        {/* Score */}
-        <div
-          style={{
-            background: "#fff",
-            border: "1px solid #e5e7eb",
-            borderRadius: 8,
-            padding: "1rem",
-            textAlign: "center",
-          }}
-        >
-          <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>
-            Score global
-          </div>
-          <div style={{ fontSize: "1.75rem", fontWeight: 700, color: scoreColor }}>
-            {score}
-          </div>
-          <div style={{ fontSize: "0.7rem", color: "#9ca3af" }}>/100</div>
-        </div>
-
-        {/* Completion */}
-        <div
-          style={{
-            background: "#fff",
-            border: "1px solid #e5e7eb",
-            borderRadius: 8,
-            padding: "1rem",
-            textAlign: "center",
-          }}
-        >
-          <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>
-            Complétion
-          </div>
-          <div style={{ fontSize: "1.75rem", fontWeight: 700, color: "#1d4ed8" }}>
-            {completionPct}%
-          </div>
-          <div style={{ fontSize: "0.7rem", color: "#9ca3af" }}>
-            {computed?.completedItems ?? 0}/{computed?.totalItems ?? 0}
-          </div>
-        </div>
-
-        {/* Critical */}
-        <div
-          style={{
-            background: criticalCount > 0 ? "#fef2f2" : "#fff",
-            border: `1px solid ${criticalCount > 0 ? "#fecaca" : "#e5e7eb"}`,
-            borderRadius: 8,
-            padding: "1rem",
-            textAlign: "center",
-          }}
-        >
-          <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>
-            Critiques
-          </div>
-          <div
-            style={{
-              fontSize: "1.75rem",
-              fontWeight: 700,
-              color: criticalCount > 0 ? "#b91c1c" : "#6b7280",
-            }}
-          >
-            {criticalCount}
-          </div>
-        </div>
-
-        {/* Warning */}
-        <div
-          style={{
-            background: warningCount > 0 ? "#fffbeb" : "#fff",
-            border: `1px solid ${warningCount > 0 ? "#fde68a" : "#e5e7eb"}`,
-            borderRadius: 8,
-            padding: "1rem",
-            textAlign: "center",
-          }}
-        >
-          <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>
-            Avertissements
-          </div>
-          <div
-            style={{
-              fontSize: "1.75rem",
-              fontWeight: 700,
-              color: warningCount > 0 ? "#b45309" : "#6b7280",
-            }}
-          >
-            {warningCount}
-          </div>
-        </div>
-      </div>
-
-      {/* Categories + Items */}
-      {report.categories.map((cat) => (
-        <div
-          key={cat.key}
-          style={{
-            marginBottom: "1.5rem",
-            border: "1px solid #e5e7eb",
-            borderRadius: 8,
-            overflow: "hidden",
-          }}
-        >
-          {/* Category header */}
-          <div
-            style={{
-              background: "#f9fafb",
-              padding: "0.75rem 1rem",
-              borderBottom: "1px solid #e5e7eb",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <span style={{ fontWeight: 600, fontSize: "0.95rem" }}>{cat.label}</span>
-            {cat.description && (
-              <span style={{ fontSize: "0.75rem", color: "#9ca3af" }}>{cat.description}</span>
-            )}
-          </div>
-
-          {/* Items */}
-          {cat.items.map((item) => {
-            const colors = STATUS_COLORS[item.status];
-            return (
-              <div
-                key={item.key}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr auto 1fr",
-                  gap: "0.75rem",
-                  alignItems: "center",
-                  padding: "0.625rem 1rem",
-                  borderBottom: "1px solid #f3f4f6",
-                  background: colors.bg,
-                }}
-              >
-                {/* Label */}
-                <div>
-                  <div style={{ fontSize: "0.875rem", fontWeight: 500 }}>{item.label}</div>
-                  {item.description && (
-                    <div style={{ fontSize: "0.7rem", color: "#9ca3af", marginTop: 2 }}>
-                      {item.description}
-                    </div>
-                  )}
-                </div>
-
-                {/* Status select */}
-                <select
-                  value={item.status}
-                  onChange={(e) => setStatus(item.key, e.target.value as DueDiligenceStatus)}
-                  style={{
-                    padding: "0.25rem 0.5rem",
-                    borderRadius: 6,
-                    border: `1px solid ${colors.border}`,
-                    background: "#fff",
-                    color: colors.text,
-                    fontWeight: 600,
-                    fontSize: "0.8rem",
-                    cursor: "pointer",
-                    minWidth: 110,
-                  }}
-                >
-                  {DD_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-
-                {/* Comment input */}
-                <input
-                  type="text"
-                  placeholder="Commentaire…"
-                  defaultValue={item.comment ?? ""}
-                  onBlur={(e) => {
-                    const val = e.target.value.trim();
-                    if (val !== (item.comment ?? "")) {
-                      setValue(item.key, val, val);
-                    }
-                  }}
-                  style={{
-                    padding: "0.25rem 0.5rem",
-                    borderRadius: 6,
-                    border: "1px solid #e5e7eb",
-                    fontSize: "0.8rem",
-                    width: "100%",
-                  }}
-                />
-              </div>
-            );
-          })}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ── AppRoot ──
 
 function AppRoot() {
@@ -385,6 +154,16 @@ function AppRoot() {
     },
     [navigate]
   );
+
+  // ✅ DEV-only: bootstrap investisseur snapshot (migration legacy keys → snapshot canonique)
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    try {
+      bootInvestisseurSnapshot();
+    } catch (e) {
+      console.warn("[Investisseur] bootInvestisseurSnapshot failed:", e);
+    }
+  }, []);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -441,14 +220,21 @@ function AppRoot() {
             <Route path="*" element={<Navigate to="/particulier" replace />} />
           </Route>
 
-          {/* ═══ Marchand (Investisseur) ═══ */}
+          {/* ═══ Marchand-de-bien ═══ */}
           <Route path="/marchand-de-bien" element={<MarchandLayout />}>
             <Route index element={<MarchandPipeline />} />
             <Route path="sourcing" element={<SourcingHomePage />} />
-            <Route path="qualification" element={<MarchandQualification />} />
-            <Route path="analyse" element={<MarchandAnalyseBien />} />
-            <Route path="due-diligence" element={<MarchandDueDiligencePage />} />
-            <Route path="rentabilite" element={<MarchandRentabilite />} />
+
+            {/* ✅ Qualification supprimé — redirection compat vers Pipeline */}
+            <Route path="qualification" element={<Navigate to="/marchand-de-bien" replace />} />
+
+            {/* ✅ Analyse unifiée (Rentabilité + Due Diligence en sous-onglets) */}
+            <Route path="analyse" element={<InvestisseurAnalysePage />} />
+
+            {/* Compatibilité anciennes routes → redirige vers Analyse avec ?tab */}
+            <Route path="rentabilite" element={<Navigate to="/marchand-de-bien/analyse?tab=rentabilite" replace />} />
+            <Route path="due-diligence" element={<Navigate to="/marchand-de-bien/analyse?tab=due-diligence" replace />} />
+
             <Route path="execution" element={<MarchandExecution />} />
             <Route path="planning" element={<MarchandTravaux />} />
             <Route path="sortie" element={<MarchandSortie />} />

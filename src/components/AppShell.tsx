@@ -124,14 +124,13 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       items: [
         { label: "Pipeline", path: "/marchand-de-bien", icon: BarChart3, end: true },
         { label: "Sourcing", path: "/marchand-de-bien/sourcing", icon: Search },
-        { label: "Qualification", path: "/marchand-de-bien/qualification", icon: CheckCircle },
       ],
     },
     {
       id: "analyse", label: "Analyse",
       items: [
-        { label: "Rentabilité", path: "/marchand-de-bien/rentabilite", icon: Percent },
-        { label: "Due Diligence", path: "/marchand-de-bien/due-diligence", icon: Eye },
+        // ✅ Item unique — Rentabilité + Due Diligence sont des sous-onglets internes à AnalysePage
+        { label: "Analyse", path: "/marchand-de-bien/analyse", icon: PieChart },
       ],
     },
     {
@@ -347,7 +346,9 @@ function TopNavigation({
               </div>
             )}
 
-            {activeItems.length > 0 && (
+            {/* ✅ FIX BUG (1): n'afficher la sous-barre activeItems que si > 1 item
+                → évite le doublon "Analyse" seul dans sa barre quand la section n'a qu'un item */}
+            {activeItems.length > 1 && (
               <div className={spaceSections.length > 1 ? "border-t border-slate-100 py-2" : "py-2"}>
                 <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
                   {activeItems.map((item) => {

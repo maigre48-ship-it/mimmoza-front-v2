@@ -87,6 +87,83 @@ function scoreBienEtat(snap: InvestisseurSnapshot): SmartScorePillar {
     }
   }
 
+  /* ────────────────────────────────────────────────────────────────
+   * Étage / Ascenseur / Commerces / Transport
+   * Champs optionnels sur propertyDraft, injectés par le Sourcing
+   * adapter. Gardés par des checks != null pour ne pas casser
+   * les callers existants qui ne les fournissent pas.
+   * ──────────────────────────────────────────────────────────────── */
+  const floor: number | undefined = (d as any).floor;
+  const elevator: boolean | undefined = (d as any).elevator;
+  const commerces: boolean | undefined = (d as any).commerces;
+  const transport: boolean | undefined = (d as any).transport;
+
+  console.log("[SmartScore] scoreBienEtat quality:", { floor, elevator, commerces, transport });
+
+  // ── PATCH B – Nouvelle grille étage/ascenseur ─────────────────
+  if (floor != null) {
+    if (elevator === false) {
+      // Sans ascenseur → pénalités croissantes
+      if (floor >= 10) {
+        score -= 6;
+        details.push(`Étage ${floor} SANS ascenseur → pénalité très forte (-6)`);
+      } else if (floor >= 7) {
+        score -= 5;
+        details.push(`Étage ${floor} SANS ascenseur → pénalité forte (-5)`);
+      } else if (floor >= 5) {
+        score -= 4;
+        details.push(`Étage ${floor} SANS ascenseur → pénalité (-4)`);
+      } else if (floor >= 3) {
+        score -= 2;
+        details.push(`Étage ${floor} sans ascenseur → pénalité (-2)`);
+      } else if (floor === 0) {
+        score -= 1;
+        details.push("RDC → léger malus (-1, vis-à-vis/bruit)");
+      }
+      // floor 1-2 sans ascenseur → neutre (pas de malus ni bonus)
+    } else if (elevator === true) {
+      // Avec ascenseur
+      if (floor === 0) {
+        score -= 1;
+        details.push("RDC → léger malus (-1, vis-à-vis/bruit)");
+      } else if (floor >= 8) {
+        score -= 1;
+        details.push(`Étage ${floor} élevé même avec ascenseur → léger malus (-1)`);
+      } else if (floor >= 3) {
+        score += 1;
+        details.push(`Étage ${floor} avec ascenseur → bon (+1)`);
+      }
+      // floor 1-2 avec ascenseur → neutre
+    } else {
+      // elevator undefined → on ne sait pas, juste RDC malus
+      if (floor === 0) {
+        score -= 1;
+        details.push("RDC → léger malus (-1, vis-à-vis/bruit)");
+      }
+    }
+  }
+
+  // ── PATCH B – Commerces & Transport (bonus renforcé) ──────────
+  if (commerces != null) {
+    if (commerces) {
+      score += 2;
+      details.push("Commerces à proximité (+2)");
+    } else {
+      score -= 1;
+      details.push("Pas de commerces proches (-1)");
+    }
+  }
+
+  if (transport != null) {
+    if (transport) {
+      score += 2;
+      details.push("Transport à proximité (+2)");
+    } else {
+      score -= 1;
+      details.push("Pas de transport proche (-1)");
+    }
+  }
+
   return {
     key: "bien_etat",
     label: "Bien / État",
@@ -101,14 +178,17 @@ function scoreMarche(snap: InvestisseurSnapshot): SmartScorePillar {
   const details: string[] = [];
   const market = snap.enriched.market;
 
+  // ── PATCH A – market absent → score dégradé 8/20 + warning ────
   if (!market) {
-    details.push("Données marché non disponibles → neutre (10/20)");
-    return { key: "marche", label: "Marché", score: 10, max, details };
+    details.push("Données marché non disponibles → score dégradé (8/20)");
+    details.push("⚠ DVF indisponible → impossible de valider le prix");
+    return { key: "marche", label: "Marché", score: 8, max, details };
   }
 
-  let score = 10;
+  // ── PATCH A – Score initial à 0, centré sur 10 après calcul ───
+  let bonus = 0;
 
-  // If market has prixM2Median and we can compare
+  // DVF comparison
   if (
     market.prixM2Median &&
     snap.propertyDraft.priceAsked &&
@@ -116,38 +196,83 @@ function scoreMarche(snap: InvestisseurSnapshot): SmartScorePillar {
   ) {
     const prixM2 =
       snap.propertyDraft.priceAsked / snap.propertyDraft.surfaceHabitable;
-    const ratio = prixM2 / market.prixM2Median;
-    if (ratio < 0.85) {
-      score += 6;
-      details.push(`Prix/m² 15%+ sous médiane (+6)`);
-    } else if (ratio < 0.95) {
-      score += 3;
-      details.push(`Prix/m² légèrement sous médiane (+3)`);
-    } else if (ratio > 1.15) {
-      score -= 4;
-      details.push(`Prix/m² 15%+ au-dessus médiane (-4)`);
-    } else if (ratio > 1.05) {
-      score -= 2;
-      details.push(`Prix/m² au-dessus médiane (-2)`);
+    const deltaPct = (prixM2 / market.prixM2Median - 1) * 100;
+
+    const nbComp = (market as any).nbComparables as number | undefined;
+
+    // ── Details DVF obligatoires ────────────────────────────────
+    details.push(
+      `Prix/m² bien : ${Math.round(prixM2).toLocaleString("fr-FR")} €/m²`,
+    );
+    details.push(
+      `Médiane DVF : ${Math.round(market.prixM2Median).toLocaleString("fr-FR")} €/m²${
+        nbComp != null ? ` (n=${nbComp})` : ""
+      }`,
+    );
+    details.push(
+      `Décote/Surcote : ${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(1)} %`,
+    );
+
+    console.log("[SmartScore] DVF compare:", {
+      prixM2: Math.round(prixM2),
+      dvfMedian: Math.round(market.prixM2Median),
+      deltaPct: deltaPct.toFixed(1),
+      nbComp,
+    });
+
+    // ── Nouvelle grille deltaPct → bonus ────────────────────────
+    let rawBonus = 0;
+    if (deltaPct <= -20) {
+      rawBonus = 8;
+      details.push(`Décote > 20% → fort bonus (+8)`);
+    } else if (deltaPct <= -10) {
+      rawBonus = 5;
+      details.push(`Décote 10-20% → bon bonus (+5)`);
+    } else if (deltaPct <= -5) {
+      rawBonus = 3;
+      details.push(`Décote 5-10% → bonus (+3)`);
+    } else if (deltaPct <= 5) {
+      rawBonus = 0;
+      details.push(`Prix dans la médiane (±5%) → neutre`);
+    } else if (deltaPct <= 10) {
+      rawBonus = -3;
+      details.push(`Surcote 5-10% → malus (-3)`);
+    } else if (deltaPct <= 20) {
+      rawBonus = -6;
+      details.push(`Surcote 10-20% → forte pénalité (-6)`);
     } else {
-      score += 1;
-      details.push(`Prix/m² dans la médiane (+1)`);
+      rawBonus = -8;
+      details.push(`Surcote > 20% → très forte pénalité (-8)`);
     }
+
+    // ── Atténuation si peu de comparables ───────────────────────
+    if (nbComp != null && nbComp < 5) {
+      rawBonus = Math.round(rawBonus * 0.5);
+      details.push(`Peu de comparables (${nbComp}) → bonus/malus atténué ×0.5`);
+    }
+
+    bonus += rawBonus;
+  } else {
+    // market existe mais données insuffisantes pour comparer
+    details.push("Données DVF partielles → comparaison impossible, score neutre");
   }
 
   // Tendance
   if (market.tendance === "hausse") {
-    score += 3;
+    bonus += 3;
     details.push("Marché en hausse (+3)");
   } else if (market.tendance === "baisse") {
-    score -= 2;
+    bonus -= 2;
     details.push("Marché en baisse (-2)");
   }
+
+  // Score final = 10 (centre) + bonus, clampé [0, 20]
+  const score = clamp(10 + bonus, 0, max);
 
   return {
     key: "marche",
     label: "Marché",
-    score: clamp(score, 0, max),
+    score,
     max,
     details,
   };

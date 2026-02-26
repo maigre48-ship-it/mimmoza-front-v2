@@ -266,6 +266,14 @@ interface SourcingFormProps {
   onSubmit: (draft: SourcingItemDraft) => void;
   onFormChange?: (form: FormState) => void;
   initialData?: Partial<SourcingInput>;
+  /**
+   * Pré-remplissage du formulaire depuis le deal actif (Pipeline).
+   * Mergé par-dessus initialFormState au mount.
+   * Les champs non-vides de initialFormValues écrasent les valeurs par défaut.
+   * NOTE : cette prop est lue UNIQUEMENT à l'initialisation (useState).
+   *        Pour forcer un re-init, utiliser key={dealId} sur le composant.
+   */
+  initialFormValues?: Partial<FormState>;
 }
 
 // ============================================
@@ -277,8 +285,20 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
   onSubmit,
   onFormChange,
   initialData,
+  initialFormValues,
 }) => {
-  const [form, setForm] = useState<FormState>({ ...initialFormState });
+  // ── Merge initialFormValues into initialFormState (only at mount) ──
+  const [form, setForm] = useState<FormState>(() => {
+    if (!initialFormValues) return { ...initialFormState };
+    // Merge: only override keys that have a non-empty value
+    const merged = { ...initialFormState };
+    for (const [key, value] of Object.entries(initialFormValues)) {
+      if (value !== undefined && value !== null && value !== '') {
+        (merged as any)[key] = value;
+      }
+    }
+    return merged;
+  });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 

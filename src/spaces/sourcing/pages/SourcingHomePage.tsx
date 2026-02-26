@@ -7,11 +7,21 @@
  * Si aucun deal actif → affiche un placeholder "Sélectionnez un deal".
  * Nouveau deal sans données → pré-rempli depuis le dealContext meta (Pipeline).
  *
- * ── FIX v3 : initialValues synchrone + double écriture LS ──
+ * ── FIX v4 : hydratation contrôlée + resync on deal change ──
  * 1. initialValues calculé via useMemo (synchrone, même cycle de render)
  * 2. Seed écrit dans la clé LS scoppée AVANT le mount de SourcingForm
  * 3. Seed AUSSI écrit dans la clé LS legacy (non-scoppée) pour compatibilité
  *    avec SourcingForm qui peut hydrater depuis sa propre source LS interne.
+ * 4. hydrateCommonFieldsFromDeal : resync si source.dealId !== activeDeal.id
+ *
+ * ── FIX v5 : prop name alignment ──
+ * SourcingForm accepte `initialFormValues` (pas `initialValues`).
+ *
+ * ── ENGINE v2 ──
+ * - Axe Prix/m² basé sur médiane DVF (async via dvfEstimateApi)
+ * - Axe Qualité : pénalités étage/ascenseur + bonus commerces/transport
+ * - engineVersion: "sourcing-local-v2"
+ * - globalScore = round(sum(rawScore * weight)) des 3 axes
  */
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
@@ -43,6 +53,29 @@ import {
   subscribe as subscribeDealContext,
   type DealContextMeta,
 } from "../../marchand/shared/marchandDealContext.store";
+
+// ── DVF API import (fallback-safe) ──
+let fetchDvfEstimate: (params: {
+  codePostal: string;
+  rueProche?: string;
+  ville?: string;
+  propertyType?: string;
+  surface?: number;
+  lat?: number;
+  lng?: number;
+}) => Promise<{ price_m2_median: number | null; comparables_count: number }>;
+
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const dvfMod = require("../../../lib/dvfEstimateApi");
+  fetchDvfEstimate = dvfMod.fetchDvfEstimate ?? dvfMod.getDvfEstimate ?? dvfMod.default;
+} catch {
+  // Module absent → fallback défini ci-dessous
+}
+
+if (typeof fetchDvfEstimate !== "function") {
+  fetchDvfEstimate = async () => ({ price_m2_median: null, comparables_count: 0 });
+}
 
 // ============================================
 // FORM STATE
@@ -78,6 +111,7 @@ const EMPTY_FORM: FormState = {
 // ============================================
 
 const SMARTSCORE_LS_PREFIX = "mimmoza.sourcing.smartscore.v1";
+const SOURCING_KEY = "mimmoza.sourcing.smartscore.v1";
 
 /** Clé scoppée par deal  */
 function smartscoreKey(dealId: string): string {
@@ -113,6 +147,34 @@ function parseNumberFR(v: unknown): number {
 }
 
 // ============================================
+// PARSE HELPERS (floor, bool)
+// ============================================
+
+/** Parse un étage depuis string → number (0 = RDC, -1 si invalide) */
+function parseFloorNumber(v: unknown): number {
+  if (v === null || v === undefined || v === "") return -1;
+  const s = String(v).trim().toLowerCase();
+  if (s === "rdc" || s === "0") return 0;
+  const n = parseInt(s, 10);
+  return Number.isFinite(n) && n >= 0 ? n : -1;
+}
+
+/** Parse bool souple : true / "oui" / "true" / 1 → true */
+function parseBoolField(v: unknown): boolean | null {
+  if (v === true || v === "oui" || v === "true" || v === 1 || v === "1") return true;
+  if (v === false || v === "non" || v === "false" || v === 0 || v === "0") return false;
+  return null; // non renseigné
+}
+
+// ============================================
+// SAFE PARSE
+// ============================================
+
+function safeParse(raw: string | null): any {
+  try { return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+}
+
+// ============================================
 // MINIMUM VIABLE MESSAGE
 // ============================================
 
@@ -120,7 +182,263 @@ const MINIMUM_VIABLE_MSG =
   "Renseigner le prix et la surface pour calculer le SmartScore.";
 
 // ============================================
-// LOCAL SMARTSCORE COMPUTATION
+// DVF RESULT TYPE
+// ============================================
+
+interface DvfResult {
+  price_m2_median: number | null;
+  comparables_count: number;
+}
+
+const DVF_FALLBACK: DvfResult = { price_m2_median: null, comparables_count: 0 };
+
+// ============================================
+// DVF-BASED PRIX/M² SCORE
+// ============================================
+
+interface PrixM2ScoreResult {
+  rawScore: number;
+  prixM2Bien: number;
+  dvfMedian: number | null;
+  nbComparables: number;
+  deltaPct: number | null;
+  dvfAvailable: boolean;
+  explanation: string;
+}
+
+/**
+ * Interpolation linéaire entre des points d'ancrage triés par x croissant.
+ * Extrapole en plateau au-delà des bornes (clamp sur premier/dernier y).
+ */
+function lerpAnchors(anchors: [number, number][], x: number): number {
+  if (x <= anchors[0][0]) return anchors[0][1];
+  if (x >= anchors[anchors.length - 1][0]) return anchors[anchors.length - 1][1];
+  for (let i = 0; i < anchors.length - 1; i++) {
+    const [x0, y0] = anchors[i];
+    const [x1, y1] = anchors[i + 1];
+    if (x >= x0 && x <= x1) {
+      const t = (x - x0) / (x1 - x0);
+      return y0 + t * (y1 - y0);
+    }
+  }
+  return anchors[anchors.length - 1][1];
+}
+
+/**
+ * Barème Prix/m² v2 — courbe continue asymétrique
+ *
+ * Centre : 0% delta = 50 (neutre strict, un MDB doit acheter en dessous)
+ * Décote récompensée progressivement, surcote punie 2× plus vite.
+ *
+ *   delta%  →  score
+ *   ≤ −40%  →  100   (affaire exceptionnelle)
+ *     −30%  →   95
+ *     −20%  →   88
+ *     −10%  →   75
+ *      −5%  →   63
+ *       0%  →   50   (neutre)
+ *      +5%  →   35
+ *     +10%  →   18
+ *     +15%  →    8
+ *     +20%  →    3
+ *   ≥ +25%  →    0   (rédhibitoire)
+ */
+const PRIX_M2_ANCHORS: [number, number][] = [
+  [-40, 100],
+  [-30,  95],
+  [-20,  88],
+  [-10,  75],
+  [ -5,  63],
+  [  0,  50],
+  [  5,  35],
+  [ 10,  18],
+  [ 15,   8],
+  [ 20,   3],
+  [ 25,   0],
+];
+
+function computePrixM2Score(
+  price: number,
+  surface: number,
+  dvf: DvfResult | null | undefined,
+): PrixM2ScoreResult {
+  const prixM2Bien = surface > 0 ? price / surface : 0;
+  const dvfMedian = dvf?.price_m2_median ?? null;
+  const nbComparables = dvf?.comparables_count ?? 0;
+
+  // DVF indisponible
+  if (dvfMedian == null || dvfMedian <= 0) {
+    return {
+      rawScore: 50,
+      prixM2Bien,
+      dvfMedian: null,
+      nbComparables: 0,
+      deltaPct: null,
+      dvfAvailable: false,
+      explanation: `Prix/m² bien : ${Math.round(prixM2Bien).toLocaleString("fr-FR")} €/m² · DVF indisponible → score Prix/m² neutre (50/100)`,
+    };
+  }
+
+  const ratio = prixM2Bien / dvfMedian;
+  const deltaPct = (ratio - 1) * 100;
+
+  // Courbe continue via interpolation linéaire
+  let score = Math.round(lerpAnchors(PRIX_M2_ANCHORS, deltaPct));
+
+  // Atténuation si peu de comparables → ramener vers 50 (neutre)
+  if (nbComparables < 5) {
+    score = Math.round(50 + (score - 50) * 0.5);
+  }
+
+  score = clamp(score, 0, 100);
+
+  const sign = deltaPct >= 0 ? "+" : "";
+  const decoteSurcote = deltaPct < -2 ? "Décote" : deltaPct > 2 ? "Surcote" : "Aligné marché";
+  const comparablesNote = nbComparables < 5 ? ` (⚠ ${nbComparables} comparables, score atténué)` : "";
+  const explanation =
+    `Prix/m² bien : ${Math.round(prixM2Bien).toLocaleString("fr-FR")} €/m² · ` +
+    `Médiane DVF : ${Math.round(dvfMedian).toLocaleString("fr-FR")} €/m² (${nbComparables} comp.) · ` +
+    `${decoteSurcote} : ${sign}${deltaPct.toFixed(1)}%${comparablesNote}`;
+
+  return {
+    rawScore: score,
+    prixM2Bien,
+    dvfMedian,
+    nbComparables,
+    deltaPct,
+    dvfAvailable: true,
+    explanation,
+  };
+}
+
+// ============================================
+// QUALITÉ SCORE (v2 : étage/ascenseur, commerces, transport)
+// ============================================
+
+interface QualiteScoreResult {
+  rawScore: number;
+  bonusMalus: { label: string; value: number }[];
+  explanation: string;
+}
+
+function computeQualiteScore(draft: any): QualiteScoreResult {
+  const bonusMalus: { label: string; value: number }[] = [];
+  let totalBonus = 0;
+
+  // ── État général ──
+  const etat = draft.input?.etatGeneral || draft.etatGeneral;
+  if (etat) {
+    const etatMap: Record<string, number> = {
+      neuf: 10, bon: 5, moyen: 0, a_renover: -8, travaux_importants: -15,
+    };
+    const v = etatMap[etat] ?? 0;
+    if (v !== 0) { bonusMalus.push({ label: `État: ${etat}`, value: v }); totalBonus += v; }
+  }
+
+  // ── DPE ──
+  const dpe = draft.input?.dpe || draft.dpe;
+  if (dpe) {
+    const dpeMap: Record<string, number> = { A: 8, B: 5, C: 3, D: 0, E: -3, F: -7, G: -12 };
+    const v = dpeMap[dpe.toUpperCase()] ?? 0;
+    if (v !== 0) { bonusMalus.push({ label: `DPE ${dpe.toUpperCase()}`, value: v }); totalBonus += v; }
+  }
+
+  // ── Étage / Ascenseur (v2 — pénalités fortes) ──
+  const floorNum = parseFloorNumber(draft.input?.floor ?? draft.floor);
+  const hasAscenseur = parseBoolField(draft.input?.ascenseur ?? draft.ascenseur);
+
+  if (floorNum >= 0) {
+    let floorPenalty = 0;
+    let floorLabel = "";
+
+    if (floorNum === 0) {
+      // RDC : pénalité légère (vis-à-vis, bruit, sécurité)
+      floorPenalty = -4;
+      floorLabel = "RDC";
+    } else if (hasAscenseur === true) {
+      // Avec ascenseur — bonus étages bas, léger malus très haut
+      if (floorNum >= 10) {
+        floorPenalty = -3;
+        floorLabel = `Étage ${floorNum} avec ascenseur (élevé)`;
+      } else if (floorNum >= 5) {
+        floorPenalty = 0;
+        floorLabel = `Étage ${floorNum} avec ascenseur`;
+      } else {
+        floorPenalty = 3;
+        floorLabel = `Étage ${floorNum} avec ascenseur`;
+      }
+    } else if (hasAscenseur === false) {
+      // ── SANS ASCENSEUR — courbe EXPONENTIELLE ──
+      // Formule : penalty = -round(1.5 × 1.7^floor), cap -90
+      // Étage 1 → -3, 2 → -4, 3 → -7, 4 → -13, 5 → -21,
+      // 6 → -36, 7 → -62, 8+ → -90 (rédhibitoire)
+      const rawExp = 1.5 * Math.pow(1.7, floorNum);
+      floorPenalty = -Math.min(Math.round(rawExp), 90);
+      const severity = floorNum >= 7 ? "RÉDHIBITOIRE" : floorNum >= 5 ? "CRITIQUE" : "";
+      floorLabel = severity
+        ? `Étage ${floorNum} SANS ascenseur (${severity})`
+        : `Étage ${floorNum} sans ascenseur`;
+    } else {
+      // Ascenseur non renseigné → pénalité modérée exponentielle atténuée
+      if (floorNum >= 3) {
+        const rawExp = 1.5 * Math.pow(1.7, floorNum);
+        floorPenalty = -Math.min(Math.round(rawExp * 0.4), 40);
+        floorLabel = `Étage ${floorNum} (ascenseur inconnu)`;
+      }
+    }
+
+    if (floorPenalty !== 0) {
+      bonusMalus.push({ label: floorLabel, value: floorPenalty });
+      totalBonus += floorPenalty;
+    }
+  }
+
+  // ── Équipements classiques ──
+  const equipements: [string, string, number][] = [
+    ["balcon", "Balcon", 3], ["terrasse", "Terrasse", 4],
+    ["cave", "Cave", 1], ["parking", "Parking", 4], ["jardin", "Jardin", 4], ["garage", "Garage", 3],
+  ];
+  for (const [key, label, bonus] of equipements) {
+    const val = draft.input?.[key] ?? draft[key];
+    if (val === true || val === "oui" || val === "true") {
+      bonusMalus.push({ label, value: bonus }); totalBonus += bonus;
+    }
+  }
+
+  // ── Commerces / Transport (v2) ──
+  const commerces = parseBoolField(draft.input?.commerces ?? draft.commerces);
+  if (commerces === true) {
+    bonusMalus.push({ label: "Commerces proches", value: 4 }); totalBonus += 4;
+  } else if (commerces === false) {
+    bonusMalus.push({ label: "Commerces éloignés", value: -2 }); totalBonus -= 2;
+  }
+
+  const transport = parseBoolField(draft.input?.transport ?? draft.transport);
+  if (transport === true) {
+    bonusMalus.push({ label: "Transports proches", value: 4 }); totalBonus += 4;
+  } else if (transport === false) {
+    bonusMalus.push({ label: "Transports éloignés", value: -2 }); totalBonus -= 2;
+  }
+
+  // ── Nombre de pièces ──
+  const nbPieces = Number(draft.input?.nbPieces || draft.nbPieces) || 0;
+  if (nbPieces >= 4) {
+    const pb = Math.min((nbPieces - 3) * 2, 6);
+    bonusMalus.push({ label: `${nbPieces} pièces`, value: pb }); totalBonus += pb;
+  }
+
+  // Qualité rawScore sur 0..100 : base 50, ajusté par bonus/malus, clampé
+  const rawScore = clamp(Math.round(50 + totalBonus), 0, 100);
+
+  const explanation = bonusMalus.length > 0
+    ? `Qualité : ${bonusMalus.map((b) => `${b.label} (${b.value > 0 ? "+" : ""}${b.value})`).join(", ")}`
+    : "Qualité : aucun ajustement";
+
+  return { rawScore, bonusMalus, explanation };
+}
+
+// ============================================
+// LOCAL SMARTSCORE COMPUTATION (v2)
 // ============================================
 
 interface LocalSmartScoreResult {
@@ -133,6 +451,9 @@ interface LocalSmartScoreResult {
   details: {
     prixM2: number | null;
     bonusMalus: { label: string; value: number }[];
+    dvf?: DvfResult | null;
+    prixM2Score?: PrixM2ScoreResult;
+    qualiteScore?: QualiteScoreResult;
   };
   minimumMet: boolean;
 }
@@ -155,6 +476,13 @@ function verdictFromScore(s: number): "GO" | "GO_AVEC_RESERVES" | "NO_GO" {
   return "NO_GO";
 }
 
+/**
+ * computeSmartScoreFromDraft v2
+ * - Utilise DVF (draft.dvf) pour l'axe Prix/m²
+ * - Utilise computeQualiteScore pour l'axe Qualité (étage/ascenseur)
+ * - Complétude inchangée (calculée dans buildEnrichedScore)
+ * - globalScore = round(prixRaw*0.4 + qualiteRaw*0.3 + completudeEstimate*0.3)
+ */
 function computeSmartScoreFromDraft(draft: any): LocalSmartScoreResult {
   const price = Number(draft.input?.price || draft.price) || 0;
   const surface = Number(draft.input?.surface || draft.surface) || 0;
@@ -167,69 +495,66 @@ function computeSmartScoreFromDraft(draft: any): LocalSmartScoreResult {
     };
   }
 
-  const bonusMalus: { label: string; value: number }[] = [];
   const prixM2 = price / surface;
-  const baseScore = clamp(Math.round(100 - prixM2 / 200), 0, 100);
-  let totalBonus = 0;
 
-  const etat = draft.input?.etatGeneral || draft.etatGeneral;
-  if (etat) {
-    const etatMap: Record<string, number> = {
-      neuf: 8, bon: 4, moyen: 0, a_renover: -5, travaux_importants: -10,
-    };
-    const v = etatMap[etat] ?? 0;
-    if (v !== 0) { bonusMalus.push({ label: `État: ${etat}`, value: v }); totalBonus += v; }
-  }
+  // ── Axe 1 : Prix/m² via DVF ──
+  const dvf: DvfResult | null = draft.dvf ?? null;
+  const prixM2Score = computePrixM2Score(price, surface, dvf);
 
-  const dpe = draft.input?.dpe || draft.dpe;
-  if (dpe) {
-    const dpeMap: Record<string, number> = { A: 6, B: 4, C: 2, D: 0, E: -2, F: -5, G: -8 };
-    const v = dpeMap[dpe.toUpperCase()] ?? 0;
-    if (v !== 0) { bonusMalus.push({ label: `DPE ${dpe.toUpperCase()}`, value: v }); totalBonus += v; }
-  }
+  // ── Axe 2 : Qualité (étage/ascenseur + équipements) ──
+  const qualiteScore = computeQualiteScore(draft);
 
-  const equipements: [string, string, number][] = [
-    ["ascenseur", "Ascenseur", 2], ["balcon", "Balcon", 2], ["terrasse", "Terrasse", 3],
-    ["cave", "Cave", 1], ["parking", "Parking", 3], ["jardin", "Jardin", 3], ["garage", "Garage", 2],
+  // ── Axe 3 : Complétude (estimation rapide pour le score global) ──
+  const propertyType = draft.input?.propertyType || draft.propertyType || "";
+  const completudeFields = [
+    price > 0, surface > 0, !!propertyType,
+    !!(draft.input?.etatGeneral || draft.etatGeneral),
+    !!(draft.input?.dpe || draft.dpe),
+    !!(draft.input?.nbPieces || draft.nbPieces),
+    !!(draft.location?.codePostal),
+    !!(draft.location?.rueProche),
   ];
-  for (const [key, label, bonus] of equipements) {
-    const val = draft.input?.[key] ?? draft[key];
-    if (val === true || val === "oui" || val === "true") {
-      bonusMalus.push({ label, value: bonus }); totalBonus += bonus;
-    }
-  }
+  const completudeRaw = Math.round((completudeFields.filter(Boolean).length / completudeFields.length) * 100);
 
-  const nbPieces = Number(draft.input?.nbPieces || draft.nbPieces) || 0;
-  if (nbPieces >= 4) {
-    const pb = Math.min((nbPieces - 3) * 2, 6);
-    bonusMalus.push({ label: `${nbPieces} pièces`, value: pb }); totalBonus += pb;
-  }
+  // ── Score global pondéré ──
+  const globalScore = clamp(
+    Math.round(prixM2Score.rawScore * 0.4 + qualiteScore.rawScore * 0.3 + completudeRaw * 0.3),
+    0,
+    100,
+  );
+  const grade = gradeFromScore(globalScore);
+  const verdict = verdictFromScore(globalScore);
 
-  const finalScore = clamp(Math.round(baseScore + totalBonus), 0, 100);
-  const grade = gradeFromScore(finalScore);
-  const verdict = verdictFromScore(finalScore);
-
-  let rationale = `Prix/m² : ${Math.round(prixM2).toLocaleString("fr-FR")} €/m²`;
-  if (bonusMalus.length > 0) {
-    rationale += ` · Ajustements : ${bonusMalus.map((b) => `${b.label} (${b.value > 0 ? "+" : ""}${b.value})`).join(", ")}`;
-  }
-  rationale += ` · Verdict : ${verdict.replace(/_/g, " ")}`;
+  // ── Rationale ──
+  const rationaleLines: string[] = [
+    prixM2Score.explanation,
+    qualiteScore.explanation,
+    `Complétude : ${completudeRaw}%`,
+    `Verdict : ${verdict.replace(/_/g, " ")}`,
+  ];
+  const rationale = rationaleLines.join(" · ");
 
   return {
-    globalScore: finalScore, score: finalScore, grade, verdict,
+    globalScore, score: globalScore, grade, verdict,
     globalRationale: rationale, rationale,
-    details: { prixM2, bonusMalus }, minimumMet: true,
+    details: {
+      prixM2,
+      bonusMalus: qualiteScore.bonusMalus,
+      dvf,
+      prixM2Score,
+      qualiteScore,
+    },
+    minimumMet: true,
   };
 }
 
 // ============================================
-// ENRICHISSEMENT
+// ENRICHISSEMENT (v2)
 // ============================================
 
 function buildEnrichedScore(
   computed: LocalSmartScoreResult, draft: any, hookScore: any, history: number[],
 ) {
-  const { prixM2, bonusMalus } = computed.details;
   const price = Number(draft?.input?.price || draft?.price) || 0;
   const surface = Number(draft?.input?.surface || draft?.surface) || 0;
   const propertyType = draft?.input?.propertyType || draft?.propertyType || "";
@@ -245,32 +570,40 @@ function buildEnrichedScore(
         { name: "qualite", label: "Qualité", rawScore: 0, weight: 0.3, hasData: false },
         { name: "completude", label: "Complétude", rawScore: 0, weight: 0.3, hasData: false },
       ],
-      penalties: [], blockers: [], engineVersion: "sourcing-local-v1",
+      penalties: [], blockers: [], engineVersion: "sourcing-local-v2",
       computedAt: new Date().toISOString(), inputHash: "local",
       scoreHistory: history.length > 0 ? history : [0],
       details: computed.details, minimumMet: false,
     };
   }
 
+  // ── Explications détaillées ──
   const explanations: string[] = [];
-  if (prixM2 != null) explanations.push(`Prix/m² estimé : ${Math.round(prixM2).toLocaleString("fr-FR")} €/m²`);
-  if (bonusMalus.length > 0) {
-    explanations.push(`Ajustements : ${bonusMalus.map((b) => `${b.label} (${b.value > 0 ? "+" : ""}${b.value})`).join(", ")}`);
+  const prixM2Score = computed.details.prixM2Score;
+  const qualiteScore = computed.details.qualiteScore;
+
+  if (prixM2Score) {
+    explanations.push(prixM2Score.explanation);
+  } else if (computed.details.prixM2 != null) {
+    explanations.push(`Prix/m² estimé : ${Math.round(computed.details.prixM2).toLocaleString("fr-FR")} €/m²`);
   }
+
+  if (qualiteScore) {
+    explanations.push(qualiteScore.explanation);
+  } else if (computed.details.bonusMalus.length > 0) {
+    explanations.push(`Ajustements : ${computed.details.bonusMalus.map((b) => `${b.label} (${b.value > 0 ? "+" : ""}${b.value})`).join(", ")}`);
+  }
+
   explanations.push(`Verdict : ${computed.verdict.replace(/_/g, " ")}`);
 
   const missingData: string[] = [];
   if (!propertyType) missingData.push("propertyType");
+  if (!prixM2Score?.dvfAvailable) missingData.push("dvf");
 
+  // ── Subscores ──
   const hasPriceData = price > 0 && surface > 0;
-  const prixRawScore = hasPriceData ? clamp(Math.round(100 - (price / surface) / 200), 0, 100) : 0;
-
-  const qualiteBonuses = bonusMalus.filter((b) =>
-    b.label.startsWith("État") || b.label.startsWith("DPE") ||
-    ["Ascenseur", "Balcon", "Terrasse", "Cave", "Parking", "Jardin", "Garage"].includes(b.label)
-  );
-  const qualiteSum = qualiteBonuses.reduce((acc, b) => acc + b.value, 0);
-  const qualiteRawScore = clamp(Math.round(((qualiteSum + 18) / 48) * 100), 0, 100);
+  const prixRawScore = prixM2Score?.rawScore ?? (hasPriceData ? 50 : 0);
+  const qualiteRawScore = qualiteScore?.rawScore ?? 50;
 
   const completudeFields = [
     price > 0, surface > 0, !!propertyType,
@@ -293,7 +626,7 @@ function buildEnrichedScore(
       { name: "qualite", label: "Qualité", rawScore: qualiteRawScore, weight: 0.3, hasData: true },
       { name: "completude", label: "Complétude", rawScore: completudeRawScore, weight: 0.3, hasData: true },
     ],
-    penalties: [], blockers: [], engineVersion: "sourcing-local-v1",
+    penalties: [], blockers: [], engineVersion: "sourcing-local-v2",
     computedAt: new Date().toISOString(), inputHash: "local",
     scoreHistory: history.length > 0 ? history : [computed.globalScore],
     details: computed.details, minimumMet: true,
@@ -385,14 +718,12 @@ function hydrateFromScopedLS(dealId: string): HydrationBag {
  * pourrait lire au mount :
  *  - clé scoppée (mimmoza.sourcing.smartscore.v1.<dealId>)
  *  - clés legacy NON-scoppées (fallback)
- *
- * Le but est de garantir que SourcingForm, peu importe sa logique
- * interne d'hydratation, trouve les données du deal actif.
  */
 function writeSeedToAllLSKeys(dealId: string, formState: FormState): void {
   const payload = JSON.stringify({
     formState,
     savedAt: new Date().toISOString(),
+    source: { type: "investisseur.activeDeal", dealId },
   });
 
   try {
@@ -414,18 +745,11 @@ function writeSeedToAllLSKeys(dealId: string, formState: FormState): void {
 /**
  * Résout formState + bag pour un dealId donné.
  * Pure function, synchrone, pas de side-effects React.
- *
- * Priorité :
- * 1) Données scoppées en LS (l'utilisateur a déjà travaillé sur ce deal)
- * 2) Seed depuis dealContext meta (Pipeline)
- * 3) null (page blanche)
  */
 function resolveForDeal(dealId: string): { formState: FormState | null; bag: HydrationBag } {
   // 1) Tenter hydratation depuis clé LS scoppée
   const bag = hydrateFromScopedLS(dealId);
   if (bag.formState) {
-    // Données existantes → aussi les écrire dans les clés legacy
-    // pour que SourcingForm les retrouve
     writeSeedToAllLSKeys(dealId, bag.formState);
     return { formState: bag.formState, bag };
   }
@@ -443,6 +767,54 @@ function resolveForDeal(dealId: string): { formState: FormState | null; bag: Hyd
     try { localStorage.removeItem(legacyKey); } catch { /* ignore */ }
   }
   return { formState: null, bag };
+}
+
+// ============================================
+// HYDRATATION CHAMPS COMMUNS DEPUIS DEAL ACTIF
+// ============================================
+
+function hydrateCommonFieldsFromDeal(
+  deal: DealContextMeta | undefined | null,
+  activeDealId: string | null,
+): FormState | null {
+  if (!deal || !activeDealId) return null;
+
+  const cur = safeParse(localStorage.getItem(SOURCING_KEY));
+  const form: Record<string, string> = cur.formState || {};
+  const srcDealId = cur?.source?.dealId || null;
+
+  const dealId = activeDealId;
+
+  const hasUserEdits =
+    !!form.codePostal || !!form.ville || !!form.rueProche || !!form.price || !!form.surface;
+
+  const shouldHydrate = !hasUserEdits || (dealId && srcDealId && dealId !== srcDealId);
+
+  if (!shouldHydrate) return null;
+
+  const nextForm: FormState = {
+    ...(EMPTY_FORM),
+    ...(form as any),
+    codePostal: String(deal.zipCode ?? ""),
+    rueProche: String(deal.address ?? ""),
+    ville: String(deal.city ?? ""),
+    price: deal.purchasePrice != null ? String(deal.purchasePrice) : "",
+    surface: deal.surface != null ? String(deal.surface) : "",
+  };
+
+  const next = {
+    ...cur,
+    formState: nextForm,
+    savedAt: new Date().toISOString(),
+    source: { type: "investisseur.activeDeal", dealId },
+  };
+
+  try {
+    localStorage.setItem(SOURCING_KEY, JSON.stringify(next));
+    writeSeedToAllLSKeys(dealId, nextForm);
+  } catch { /* quota */ }
+
+  return nextForm;
 }
 
 // ============================================
@@ -590,23 +962,22 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
      DEAL ACTIF
      ══════════════════════════════════════════ */
   const [dealId, setDealId] = useState<string | null>(() => getActiveDealId());
+  const [dealMeta, setDealMeta] = useState<DealContextMeta | undefined>(() => {
+    const snap = getDealContextSnapshot();
+    return snap.meta;
+  });
 
   useEffect(() => {
-    const unsub = subscribeDealContext((ctx) => { setDealId(ctx.activeDealId); });
+    const unsub = subscribeDealContext((ctx) => {
+      setDealId(ctx.activeDealId);
+      setDealMeta(ctx.meta);
+    });
     return unsub;
   }, []);
 
   /* ══════════════════════════════════════════
      INITIAL VALUES — synchrone via useMemo
-     ══════════════════════════════════════════
-     Critique : recalculé DANS LE MÊME RENDER que le changement de dealId.
-     Ainsi, quand key={dealId} force le remount de SourcingForm,
-     initialValues ET les clés LS sont déjà à jour.
-
-     Side-effect volontaire dans useMemo (écriture LS) :
-     c'est nécessaire pour que SourcingForm, qui peut hydrater
-     depuis LS dans son useState initial, trouve les bonnes données.
-  */
+     ══════════════════════════════════════════ */
   const resolved = useMemo(() => {
     if (!dealId) return { formState: null as FormState | null, bag: EMPTY_BAG };
     return resolveForDeal(dealId);
@@ -639,6 +1010,20 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
     mountGuardRef.current = !!(resolved.formState);
   }, [dealId, resolved]);
 
+  /* ══════════════════════════════════════════
+     HYDRATATION DEPUIS DEAL ACTIF (Pipeline)
+     ══════════════════════════════════════════ */
+  useEffect(() => {
+    if (!dealId) return;
+    const meta = dealMeta ?? getDealContextMeta();
+    const hydrated = hydrateCommonFieldsFromDeal(meta, dealId);
+    if (hydrated) {
+      setFormState(hydrated);
+      mountGuardRef.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dealId, dealMeta]);
+
   useEffect(() => { injectStyles(); }, []);
   useEffect(() => {
     if (toast?.show) { const t = setTimeout(() => setToast(null), 5000); return () => clearTimeout(t); }
@@ -653,7 +1038,6 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
 
   const handleFormChange = useCallback((form: FormState) => {
     if (mountGuardRef.current) {
-      // Bloquer les émissions vides (SourcingForm émet souvent un form vide au mount)
       const isEmptyForm = !form.price && !form.surface && !form.codePostal;
       if (isEmptyForm) return;
       mountGuardRef.current = false;
@@ -669,6 +1053,33 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
         return;
       }
 
+      setIsComputing(true);
+
+      // ── 1) Appel DVF async ──
+      let dvfResult: DvfResult = DVF_FALLBACK;
+      try {
+        const dvfParams = {
+          codePostal: draft.location?.codePostal || "",
+          rueProche: draft.location?.rueProche || "",
+          ville: draft.location?.ville || "",
+          propertyType: draft.propertyType || "appartement",
+          surface: parseNumberFR(draft.surface),
+        };
+        console.log("[DVF] Fetching estimate:", dvfParams);
+        const res = await fetchDvfEstimate(dvfParams);
+        if (res && typeof res === "object") {
+          dvfResult = {
+            price_m2_median: res.price_m2_median ?? null,
+            comparables_count: typeof res.comparables_count === "number" ? res.comparables_count : 0,
+          };
+        }
+        console.log("[DVF] Result:", dvfResult);
+      } catch (err) {
+        console.log("[DVF] Error (fallback neutre):", err);
+        // dvfResult reste à DVF_FALLBACK
+      }
+
+      // ── 2) Build apiDraft avec DVF injecté ──
       const apiDraft: any = {
         profileTarget: draft.profileTarget,
         location: { codePostal: draft.location?.codePostal || "", rueProche: draft.location?.rueProche || "", ville: draft.location?.ville || "" },
@@ -678,11 +1089,13 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
           nbPieces: draft.nbPieces, etatGeneral: draft.etatGeneral, dpe: draft.dpe,
           ascenseur: draft.ascenseur, balcon: draft.balcon, terrasse: draft.terrasse,
           cave: draft.cave, parking: draft.parking, jardin: draft.jardin, garage: draft.garage,
+          commerces: (draft as any).commerces, transport: (draft as any).transport,
         },
         quartier: draft.quartier || {},
+        dvf: dvfResult,
       };
 
-      setIsComputing(true);
+      // ── 3) Compute SmartScore v2 ──
       const computed = computeSmartScoreFromDraft(apiDraft);
 
       const smartScoreObj = {
@@ -718,12 +1131,12 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
       const payload = {
         computed, formState: savedFormState, lastDraft: apiDraft,
         scoreHistory: newHistory, savedAt: new Date().toISOString(),
+        source: { type: "investisseur.activeDeal", dealId: currentDealId },
       };
       if (computed.minimumMet) {
         try {
           const json = JSON.stringify(payload);
           localStorage.setItem(key, json);
-          // Legacy aussi
           for (const lk of LEGACY_LS_KEYS) {
             try { localStorage.setItem(lk, json); } catch { /* quota */ }
           }
@@ -780,7 +1193,7 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
             globalRationale: resolvedSS?.globalRationale ?? resolvedSS?.rationale ?? "",
             rationale: resolvedSS?.rationale ?? resolvedSS?.globalRationale ?? "",
             explanations: [], missingData: [], subscores: [], penalties: [], blockers: [],
-            engineVersion: "sourcing-hook-fallback",
+            engineVersion: "sourcing-local-v2",
             computedAt: new Date().toISOString(), inputHash: "hook",
             scoreHistory: [resolvedScore],
           }
@@ -788,8 +1201,7 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
 
   const effectiveLoading = isComputing || isLoading;
 
-  // initialValues : calculé synchrone, LS déjà pré-rempli par resolveForDeal()
-  const sourcingInitialValues = resolved.formState ?? undefined;
+  const sourcingInitialFormValues = resolved.formState ?? undefined;
 
   return (
     <div style={styles.page}>
@@ -800,7 +1212,7 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
             profileTarget={profileTarget}
             onSubmit={handleSubmit}
             onFormChange={handleFormChange}
-            initialValues={sourcingInitialValues}
+            initialFormValues={sourcingInitialFormValues}
           />
         </div>
 
@@ -809,7 +1221,7 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
             <div style={styles.loadingContainer}>
               <div style={styles.spinner}></div>
               <div style={styles.loadingTitle}>Analyse en cours...</div>
-              <div style={styles.loadingText}>Géocodage et calcul du SmartScore</div>
+              <div style={styles.loadingText}>Géocodage, DVF et calcul du SmartScore</div>
             </div>
           ) : resolvedScore != null && effectiveScore != null ? (
             <SmartScorePanel score={effectiveScore} hints={hints} compact />

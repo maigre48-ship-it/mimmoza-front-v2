@@ -24,27 +24,23 @@ export type MarchandDeal = {
   id: string;
   title: string;
 
-  // Identité / sourcing léger
-  address?: string; // "12 rue ..."
-  zipCode?: string; // "44000"
-  city?: string; // "Nantes"
-  country?: string; // "FR"
+  address?: string;
+  zipCode?: string;
+  city?: string;
+  country?: string;
 
-  // Qualification rapide (optionnel)
-  prixAchat?: number; // €
-  surfaceM2?: number; // m²
-  prixReventeCible?: number; // €
+  prixAchat?: number;
+  surfaceM2?: number;
+  prixReventeCible?: number;
   note?: string;
 
   status: MarchandDealStatus;
-  createdAt: string; // ISO
-  updatedAt: string; // ISO
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type TaxRegime = "marchand" | "particulier" | "societe_is";
 
-// Minimal TaxConfig (doit matcher ton taxEngine)
-// Si ton taxEngine ajoute d'autres champs, ce type acceptera quand même via index signature.
 export type TaxConfig = {
   vatMode: "none" | "margin" | "total";
   vatRatePct: number;
@@ -59,7 +55,7 @@ export type TaxConfig = {
 };
 
 export type RentabiliteSaved = {
-  inputs: unknown; // ta page a un type Inputs local, on stocke tel quel
+  inputs: unknown;
   taxRegime: TaxRegime;
   taxConfig: TaxConfig;
   computed?: unknown;
@@ -67,7 +63,7 @@ export type RentabiliteSaved = {
 
 export type ExecutionSaved = {
   global?: {
-    startDate: string; // YYYY-MM-DD
+    startDate: string;
     bufferPct: number;
     dailyHoldingCost: number;
   };
@@ -82,16 +78,39 @@ export type SortieSaved = {
   scenarios: unknown[];
 };
 
+/** v1: Due Diligence persisté par deal */
+export type DueDiligenceSaved = {
+  state?: unknown;
+  missingCritical?: string[];
+  missingImportant?: string[];
+  missingOptional?: string[];
+  updatedAt?: string;
+};
+
+/** v1: Marché/Risques persisté par deal */
+export type MarcheRisquesSaved = {
+  data?: unknown;
+  scoreGlobal?: number;
+  breakdown?: {
+    demande?: number;
+    offre?: number;
+    accessibilite?: number;
+    environnement?: number;
+  };
+  updatedAt?: string;
+};
+
 export type MarchandSnapshotV1 = {
   version: 1;
-  updatedAt: string; // ISO
+  updatedAt: string;
   activeDealId: string | null;
   deals: MarchandDeal[];
 
-  // modules par deal
   rentabiliteByDeal: Record<string, RentabiliteSaved | undefined>;
   executionByDeal: Record<string, ExecutionSaved | undefined>;
   sortieByDeal: Record<string, SortieSaved | undefined>;
+  dueDiligenceByDeal: Record<string, DueDiligenceSaved | undefined>;
+  marcheRisquesByDeal: Record<string, MarcheRisquesSaved | undefined>;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,6 +130,8 @@ const defaultSnapshot = (): MarchandSnapshotV1 => ({
   rentabiliteByDeal: {},
   executionByDeal: {},
   sortieByDeal: {},
+  dueDiligenceByDeal: {},
+  marcheRisquesByDeal: {},
 });
 
 const isNonEmptyString = (v: unknown): v is string =>
@@ -151,22 +172,17 @@ function sanitizeDeals(raw: unknown): MarchandDeal[] {
     const createdAt = isNonEmptyString(d.createdAt) ? d.createdAt : nowIso();
     const updatedAt = isNonEmptyString(d.updatedAt) ? d.updatedAt : createdAt;
 
-    const city = normalizeString(d.city) ?? "—";
-
     out.push({
       id: d.id,
       title: d.title,
-
       address: normalizeString(d.address),
       zipCode: normalizeString(d.zipCode),
-      city,
+      city: normalizeString(d.city) ?? "—",
       country: normalizeString(d.country) ?? "FR",
-
       prixAchat: normalizeNumber(d.prixAchat),
       surfaceM2: normalizeNumber(d.surfaceM2),
       prixReventeCible: normalizeNumber(d.prixReventeCible),
       note: normalizeString(d.note),
-
       status: d.status,
       createdAt,
       updatedAt,
@@ -187,12 +203,6 @@ function pruneMapToDeals<T>(
   return next;
 }
 
-/**
- * Normalize snapshot:
- * - prune module maps for deleted/unknown deals
- * - ensure activeDealId is either null or exists
- * - ensure deals are sanitized
- */
 function normalizeSnapshot(s: MarchandSnapshotV1): MarchandSnapshotV1 {
   const deals = sanitizeDeals(s.deals);
   const ids = new Set(deals.map((d) => d.id));
@@ -200,18 +210,16 @@ function normalizeSnapshot(s: MarchandSnapshotV1): MarchandSnapshotV1 {
   const activeDealId =
     s.activeDealId && ids.has(s.activeDealId) ? s.activeDealId : null;
 
-  const rentabiliteByDeal = pruneMapToDeals(s.rentabiliteByDeal ?? {}, ids);
-  const executionByDeal = pruneMapToDeals(s.executionByDeal ?? {}, ids);
-  const sortieByDeal = pruneMapToDeals(s.sortieByDeal ?? {}, ids);
-
   return {
     version: 1,
     updatedAt: isNonEmptyString(s.updatedAt) ? s.updatedAt : nowIso(),
     activeDealId,
     deals,
-    rentabiliteByDeal,
-    executionByDeal,
-    sortieByDeal,
+    rentabiliteByDeal: pruneMapToDeals(s.rentabiliteByDeal ?? {}, ids),
+    executionByDeal: pruneMapToDeals(s.executionByDeal ?? {}, ids),
+    sortieByDeal: pruneMapToDeals(s.sortieByDeal ?? {}, ids),
+    dueDiligenceByDeal: pruneMapToDeals(s.dueDiligenceByDeal ?? {}, ids),
+    marcheRisquesByDeal: pruneMapToDeals(s.marcheRisquesByDeal ?? {}, ids),
   };
 }
 
@@ -221,23 +229,17 @@ function safeParse(json: string | null): MarchandSnapshotV1 | null {
     const parsed = JSON.parse(json) as Partial<MarchandSnapshotV1>;
     if (!parsed || parsed.version !== 1) return null;
 
+    // Backward compat: anciennes clés absentes → {}
     const candidate: MarchandSnapshotV1 = {
       version: 1,
       updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : nowIso(),
       activeDealId: (parsed.activeDealId ?? null) as string | null,
       deals: (parsed.deals ?? []) as MarchandDeal[],
-      rentabiliteByDeal: (parsed.rentabiliteByDeal ?? {}) as Record<
-        string,
-        RentabiliteSaved | undefined
-      >,
-      executionByDeal: (parsed.executionByDeal ?? {}) as Record<
-        string,
-        ExecutionSaved | undefined
-      >,
-      sortieByDeal: (parsed.sortieByDeal ?? {}) as Record<
-        string,
-        SortieSaved | undefined
-      >,
+      rentabiliteByDeal: (parsed.rentabiliteByDeal ?? {}) as Record<string, RentabiliteSaved | undefined>,
+      executionByDeal: (parsed.executionByDeal ?? {}) as Record<string, ExecutionSaved | undefined>,
+      sortieByDeal: (parsed.sortieByDeal ?? {}) as Record<string, SortieSaved | undefined>,
+      dueDiligenceByDeal: (parsed.dueDiligenceByDeal ?? {}) as Record<string, DueDiligenceSaved | undefined>,
+      marcheRisquesByDeal: (parsed.marcheRisquesByDeal ?? {}) as Record<string, MarcheRisquesSaved | undefined>,
     };
 
     return normalizeSnapshot(candidate);
@@ -263,8 +265,6 @@ function writeSnapshot(next: MarchandSnapshotV1) {
   };
 
   localStorage.setItem(LS_MARCHAND_SNAPSHOT_V1, JSON.stringify(toWrite));
-
-  // Same-tab refresh: storage event ne fire pas dans l'onglet courant
   window.dispatchEvent(new CustomEvent(MARCHAND_SNAPSHOT_EVENT));
 }
 
@@ -276,9 +276,6 @@ export function readMarchandSnapshot(): MarchandSnapshotV1 {
   return readRaw();
 }
 
-/**
- * Reset total (utile quand tu veux "sortir du mock" et repartir clean)
- */
 export function resetMarchandSnapshot(): void {
   writeSnapshot(defaultSnapshot());
 }
@@ -311,26 +308,25 @@ export function upsertDeal(deal: MarchandDeal) {
     nextDeals = snap.deals.map((d) => (d.id === deal.id ? { ...d, ...nextDeal } : d));
   }
 
-  const next: MarchandSnapshotV1 = normalizeSnapshot({
-    ...snap,
-    deals: nextDeals,
-    // si aucun actif, on met celui-ci
-    activeDealId: snap.activeDealId ?? nextDeal.id,
-  });
-
-  writeSnapshot(next);
+  writeSnapshot(
+    normalizeSnapshot({
+      ...snap,
+      deals: nextDeals,
+      activeDealId: snap.activeDealId ?? nextDeal.id,
+    })
+  );
 }
 
 export function setActiveDeal(dealId: string) {
   const snap = readRaw();
   const exists = snap.deals.some((d) => d.id === dealId);
 
-  const next: MarchandSnapshotV1 = normalizeSnapshot({
-    ...snap,
-    activeDealId: exists ? dealId : snap.activeDealId,
-  });
-
-  writeSnapshot(next);
+  writeSnapshot(
+    normalizeSnapshot({
+      ...snap,
+      activeDealId: exists ? dealId : snap.activeDealId,
+    })
+  );
 }
 
 export function ensureActiveDeal(): MarchandDeal | null {
@@ -343,14 +339,12 @@ export function ensureActiveDeal(): MarchandDeal | null {
     return null;
   }
 
-  // si actif absent → premier
   if (!snap.activeDealId) {
     const first = snap.deals[0];
     writeSnapshot({ ...snap, activeDealId: first.id });
     return first;
   }
 
-  // si actif invalide → premier
   const found = snap.deals.find((d) => d.id === snap.activeDealId);
   if (!found) {
     const first = snap.deals[0];
@@ -368,37 +362,36 @@ export function ensureActiveDeal(): MarchandDeal | null {
 export function deleteDeal(dealId: string): void {
   const snap = readRaw();
 
-  // Retirer le deal de la liste
   const nextDeals = snap.deals.filter((d) => d.id !== dealId);
 
-  // Copie des maps sans l'entrée du deal supprimé
   const nextRentabilite = { ...snap.rentabiliteByDeal };
   delete nextRentabilite[dealId];
-
   const nextExecution = { ...snap.executionByDeal };
   delete nextExecution[dealId];
-
   const nextSortie = { ...snap.sortieByDeal };
   delete nextSortie[dealId];
+  const nextDD = { ...snap.dueDiligenceByDeal };
+  delete nextDD[dealId];
+  const nextMR = { ...snap.marcheRisquesByDeal };
+  delete nextMR[dealId];
 
-  // Gérer activeDealId
   let nextActiveDealId: string | null = snap.activeDealId;
-
   if (snap.activeDealId === dealId) {
-    // Si le deal supprimé était actif, choisir le premier restant ou null
     nextActiveDealId = nextDeals.length > 0 ? nextDeals[0].id : null;
   }
 
-  const next: MarchandSnapshotV1 = normalizeSnapshot({
-    ...snap,
-    deals: nextDeals,
-    activeDealId: nextActiveDealId,
-    rentabiliteByDeal: nextRentabilite,
-    executionByDeal: nextExecution,
-    sortieByDeal: nextSortie,
-  });
-
-  writeSnapshot(next);
+  writeSnapshot(
+    normalizeSnapshot({
+      ...snap,
+      deals: nextDeals,
+      activeDealId: nextActiveDealId,
+      rentabiliteByDeal: nextRentabilite,
+      executionByDeal: nextExecution,
+      sortieByDeal: nextSortie,
+      dueDiligenceByDeal: nextDD,
+      marcheRisquesByDeal: nextMR,
+    })
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -409,43 +402,73 @@ export function patchRentabiliteForDeal(dealId: string, patch: Partial<Rentabili
   const snap = readRaw();
   const prev = snap.rentabiliteByDeal[dealId] ?? ({} as RentabiliteSaved);
 
-  const next: MarchandSnapshotV1 = normalizeSnapshot({
-    ...snap,
-    rentabiliteByDeal: {
-      ...snap.rentabiliteByDeal,
-      [dealId]: { ...prev, ...patch } as RentabiliteSaved,
-    },
-  });
-
-  writeSnapshot(next);
+  writeSnapshot(
+    normalizeSnapshot({
+      ...snap,
+      rentabiliteByDeal: {
+        ...snap.rentabiliteByDeal,
+        [dealId]: { ...prev, ...patch } as RentabiliteSaved,
+      },
+    })
+  );
 }
 
 export function patchExecutionForDeal(dealId: string, patch: Partial<ExecutionSaved>) {
   const snap = readRaw();
   const prev = snap.executionByDeal[dealId] ?? ({} as ExecutionSaved);
 
-  const next: MarchandSnapshotV1 = normalizeSnapshot({
-    ...snap,
-    executionByDeal: {
-      ...snap.executionByDeal,
-      [dealId]: { ...prev, ...patch } as ExecutionSaved,
-    },
-  });
-
-  writeSnapshot(next);
+  writeSnapshot(
+    normalizeSnapshot({
+      ...snap,
+      executionByDeal: {
+        ...snap.executionByDeal,
+        [dealId]: { ...prev, ...patch } as ExecutionSaved,
+      },
+    })
+  );
 }
 
 export function patchSortieForDeal(dealId: string, patch: Partial<SortieSaved>) {
   const snap = readRaw();
   const prev = snap.sortieByDeal[dealId] ?? ({} as SortieSaved);
 
-  const next: MarchandSnapshotV1 = normalizeSnapshot({
-    ...snap,
-    sortieByDeal: {
-      ...snap.sortieByDeal,
-      [dealId]: { ...prev, ...patch } as SortieSaved,
-    },
-  });
+  writeSnapshot(
+    normalizeSnapshot({
+      ...snap,
+      sortieByDeal: {
+        ...snap.sortieByDeal,
+        [dealId]: { ...prev, ...patch } as SortieSaved,
+      },
+    })
+  );
+}
 
-  writeSnapshot(next);
+export function patchDueDiligenceForDeal(dealId: string, patch: Partial<DueDiligenceSaved>) {
+  const snap = readRaw();
+  const prev = snap.dueDiligenceByDeal[dealId] ?? {};
+
+  writeSnapshot(
+    normalizeSnapshot({
+      ...snap,
+      dueDiligenceByDeal: {
+        ...snap.dueDiligenceByDeal,
+        [dealId]: { ...prev, ...patch },
+      },
+    })
+  );
+}
+
+export function patchMarcheRisquesForDeal(dealId: string, patch: Partial<MarcheRisquesSaved>) {
+  const snap = readRaw();
+  const prev = snap.marcheRisquesByDeal[dealId] ?? {};
+
+  writeSnapshot(
+    normalizeSnapshot({
+      ...snap,
+      marcheRisquesByDeal: {
+        ...snap.marcheRisquesByDeal,
+        [dealId]: { ...prev, ...patch },
+      },
+    })
+  );
 }
