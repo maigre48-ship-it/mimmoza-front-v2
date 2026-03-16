@@ -33,6 +33,10 @@ const fromWebMercator = proj4("EPSG:3857", "EPSG:4326");
 const PLU_PARSER_URL = import.meta.env.VITE_PLU_PARSER_URL || "http://localhost:3000";
 const PLU_PARSER_API_KEY = import.meta.env.VITE_PLU_PARSER_API_KEY || "";
 
+// ─── Design tokens ───────────────────────────────────────────────────────────
+const GRAD_PRO = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
+const ACCENT_PRO = "#5247b8";
+
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 interface SelectedParcel {
   id: string;
@@ -450,9 +454,9 @@ function ParcelLayer({ data, selectedIds, onToggleParcel }: {
         const pid = feature ? getParcelIdFromFeature(feature) : null;
         const sel = pid ? selectedSetRef.current.has(pid) : false;
         return {
-          color: sel ? "#16a34a" : "#2563eb",
+          color: sel ? "#16a34a" : ACCENT_PRO,
           weight: sel ? 3 : 1.5,
-          fillColor: sel ? "#86efac" : "#93c5fd",
+          fillColor: sel ? "#86efac" : "#c4bef5",
           fillOpacity: sel ? 0.5 : 0.15,
           opacity: 1,
         };
@@ -471,7 +475,7 @@ function ParcelLayer({ data, selectedIds, onToggleParcel }: {
             t.setStyle({
               weight: s ? 4 : 3,
               fillOpacity: s ? 0.6 : 0.35,
-              fillColor: s ? "#86efac" : "#60a5fa",
+              fillColor: s ? "#86efac" : "#a79ef0",
             });
             try { t.bringToFront(); } catch {}
           },
@@ -481,7 +485,7 @@ function ParcelLayer({ data, selectedIds, onToggleParcel }: {
             t.setStyle({
               weight: s ? 3 : 1.5,
               fillOpacity: s ? 0.5 : 0.15,
-              fillColor: s ? "#86efac" : "#93c5fd",
+              fillColor: s ? "#86efac" : "#c4bef5",
             });
           },
         });
@@ -517,9 +521,9 @@ function ParcelLayer({ data, selectedIds, onToggleParcel }: {
       const pid = feature ? getParcelIdFromFeature(feature) : null;
       const sel = pid ? selectedSet.has(pid) : false;
       return {
-        color: sel ? "#16a34a" : "#2563eb",
+        color: sel ? "#16a34a" : ACCENT_PRO,
         weight: sel ? 3 : 1.5,
-        fillColor: sel ? "#86efac" : "#93c5fd",
+        fillColor: sel ? "#86efac" : "#c4bef5",
         fillOpacity: sel ? 0.5 : 0.15,
         opacity: 1,
       };
@@ -733,7 +737,7 @@ function ParcelMapSelector({ communeInsee, selectedIds, onToggleParcel, focusPar
         {parcelsData?.features?.length || 0} parcelles
         {fetchTime !== null && <span style={{ color: "#94a3b8" }}>{fetchTime}ms</span>}
         {dataSource && (
-          <span style={{ background: dataSource.includes("IGN") ? "#dbeafe" : "#f0fdf4", color: dataSource.includes("IGN") ? "#1d4ed8" : "#166534", padding: "2px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700 }}>{dataSource}</span>
+          <span style={{ background: dataSource.includes("IGN") ? "#ede9fe" : "#f0fdf4", color: dataSource.includes("IGN") ? ACCENT_PRO : "#166534", padding: "2px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700 }}>{dataSource}</span>
         )}
       </div>
       {error && (
@@ -852,7 +856,7 @@ function PluUploaderPanel({ communeInsee, communeNom, targetZoneCode, onPluParse
           <input ref={fileInputRef} type="file" accept=".pdf" style={{ display: "none" }} onChange={handleFileSelect} />
           {file ? (<div><Check size={32} color="#16a34a" style={{ marginBottom: "8px" }} /><p style={{ fontSize: "14px", fontWeight: 600, color: "#16a34a", margin: "0 0 4px" }}>{file.name}</p><p style={{ fontSize: "12px", color: "#64748b", margin: 0 }}>{(file.size / 1024 / 1024).toFixed(2)} MB</p></div>) : (<div><Upload size={32} color="#94a3b8" style={{ marginBottom: "8px" }} /><p style={{ fontSize: "14px", fontWeight: 600, color: "#475569", margin: "0 0 4px" }}>Cliquez pour sélectionner</p><p style={{ fontSize: "12px", color: "#94a3b8", margin: 0 }}>PDF du règlement PLU</p></div>)}
         </div>
-        {targetZoneCode && (<div style={{ marginTop: "12px", padding: "8px 12px", background: "#f3e8ff", borderRadius: "8px", fontSize: "12px", color: "#7c3aed" }}><strong>Zone cible:</strong> {targetZoneCode}</div>)}
+        {targetZoneCode && (<div style={{ marginTop: "12px", padding: "8px 12px", background: "#ede9fe", borderRadius: "8px", fontSize: "12px", color: ACCENT_PRO }}><strong>Zone cible:</strong> {targetZoneCode}</div>)}
         <button onClick={handleUploadAndParse} disabled={!file || uploading || pluServerStatus === "down"} style={{ ...styles.button, width: "100%", marginTop: "16px", background: !file || uploading || pluServerStatus === "down" ? "#e2e8f0" : "#0f172a", color: !file || uploading || pluServerStatus === "down" ? "#94a3b8" : "white", cursor: !file || uploading || pluServerStatus === "down" ? "not-allowed" : "pointer" }}>
           {uploading ? <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />{progress}</> : <><FileText size={16} />Analyser le PLU</>}
         </button>
@@ -880,7 +884,7 @@ function PluInfoCard({ pluData, loading, onPluParsed }: { pluData: PluData | nul
   const handleFieldChange = (field: keyof EditablePluFields, newValue: string) => { setEditableFields(prev => ({ ...prev, [field]: { ...prev[field], value: newValue === '' ? null : parseFloat(newValue.replace(',', '.')) } })); };
   const formatDisplayValue = (field: PluFieldValue): string => { if (field.value === null || field.value === undefined) return '—'; if (field.note === "Pas de règle") return '—'; return `${field.value}${field.unit ? ' ' + field.unit : ''}`; };
 
-  if (loading) { return (<div style={{ ...styles.card }}><div style={styles.cardHeader}><h3 style={styles.cardTitle}><FileText size={18} color="#8b5cf6" />Règles PLU</h3></div><div style={{ ...styles.cardBody, display: "flex", alignItems: "center", justifyContent: "center", padding: "40px" }}><Loader2 size={24} color="#8b5cf6" style={{ animation: "spin 1s linear infinite" }} /><span style={{ marginLeft: "12px", color: "#64748b" }}>Chargement PLU...</span></div></div>); }
+  if (loading) { return (<div style={{ ...styles.card }}><div style={styles.cardHeader}><h3 style={styles.cardTitle}><FileText size={18} color="#8b5cf6" />Règles PLU</h3></div><div style={{ ...styles.cardBody, display: "flex", alignItems: "center", justifyContent: "center", padding: "40px" }}><Loader2 size={24} color={ACCENT_PRO} style={{ animation: "spin 1s linear infinite" }} /><span style={{ marginLeft: "12px", color: "#64748b" }}>Chargement PLU...</span></div></div>); }
 
   const hasPluData = pluData?.found && pluData?.zone_code;
   const fieldsConfig: { key: keyof EditablePluFields; label: string }[] = [
@@ -893,10 +897,10 @@ function PluInfoCard({ pluData, loading, onPluParsed }: { pluData: PluData | nul
   return (
     <div style={{ ...styles.card }}>
       <div style={styles.cardHeader}>
-        <h3 style={styles.cardTitle}><FileText size={18} color="#8b5cf6" />Règles PLU</h3>
+        <h3 style={styles.cardTitle}><FileText size={18} color={ACCENT_PRO} />Règles PLU</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {hasPluData && (<button onClick={() => setIsEditing(!isEditing)} style={{ padding: '4px 10px', background: isEditing ? '#fef3c7' : '#f1f5f9', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 600, color: isEditing ? '#92400e' : '#64748b', cursor: 'pointer' }}>{isEditing ? '✓ Terminer' : '✏️ Modifier'}</button>)}
-          {pluData?.zone_code ? (<span style={{ ...styles.badge, background: "#f3e8ff", color: "#7c3aed" }}>Zone {pluData.zone_code}</span>) : (<span style={{ ...styles.badge, background: "#fef3c7", color: "#92400e" }}>Non disponible</span>)}
+          {pluData?.zone_code ? (<span style={{ ...styles.badge, background: "#ede9fe", color: ACCENT_PRO }}>Zone {pluData.zone_code}</span>) : (<span style={{ ...styles.badge, background: "#fef3c7", color: "#92400e" }}>Non disponible</span>)}
         </div>
       </div>
       <div style={styles.cardBody}>
@@ -941,18 +945,18 @@ function ProjectSelector({ projectInfo, onProjectChange, onSearch, loading }: { 
 
   return (
     <div style={{ ...styles.card, marginBottom: "20px" }}>
-      <div style={styles.cardHeader}><h3 style={styles.cardTitle}><MapPinned size={18} color="#3b82f6" />Localisation du projet</h3></div>
+      <div style={styles.cardHeader}><h3 style={styles.cardTitle}><MapPinned size={18} color={ACCENT_PRO} />Localisation du projet</h3></div>
       <form onSubmit={handleSubmit} style={styles.cardBody}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
           <div><label style={styles.inputLabel}>Identifiant de parcelle</label><input type="text" value={parcelInput} onChange={(e) => setParcelInput(e.target.value.toUpperCase())} placeholder="ex: 64065000AI0001" style={styles.input} /><p style={{ fontSize: "11px", color: "#94a3b8", margin: "4px 0 0" }}>Format: code INSEE + section + numéro</p></div>
           <div style={{ position: "relative" }}>
             <label style={styles.inputLabel}>Adresse {selectedAddress && <span style={{ marginLeft: "8px", color: "#16a34a", fontWeight: 500, fontSize: "10px", background: "#f0fdf4", padding: "2px 6px", borderRadius: "4px" }}>✓ Sélectionnée</span>}</label>
             <div style={{ position: "relative" }}><input ref={addressInputRef} type="text" value={addressInput} onChange={(e) => handleAddressChange(e.target.value)} onFocus={() => suggestions.length > 0 && setShowSuggestions(true)} placeholder="Tapez une adresse..." style={{ ...styles.input, paddingRight: "36px", borderColor: selectedAddress ? "#86efac" : "#e2e8f0", background: selectedAddress ? "#f0fdf4" : "white" }} /><div style={{ position: "absolute", right: "10px", top: "50%", transform: "translateY(-50%)", display: "flex", alignItems: "center" }}>{isLoadingSuggestions ? <Loader2 size={16} color="#94a3b8" style={{ animation: "spin 1s linear infinite" }} /> : addressInput && <button type="button" onClick={() => { setAddressInput(""); setSelectedAddress(null); setSuggestions([]); addressInputRef.current?.focus(); }} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px", display: "flex", alignItems: "center" }}><X size={14} color="#94a3b8" /></button>}</div></div>
-            {showSuggestions && suggestions.length > 0 && (<div ref={suggestionsRef} style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "white", border: "1px solid #e2e8f0", borderRadius: "10px", boxShadow: "0 10px 25px rgba(0,0,0,0.15)", zIndex: 1000, maxHeight: "280px", overflow: "auto" }}>{suggestions.map((s, idx) => (<div key={s.id || idx} onClick={() => handleSelectSuggestion(s)} style={{ padding: "12px 14px", cursor: "pointer", borderBottom: idx < suggestions.length - 1 ? "1px solid #f1f5f9" : "none", transition: "background 0.15s" }} onMouseEnter={(e) => { e.currentTarget.style.background = "#f8fafc"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "white"; }}><div style={{ fontSize: "13px", fontWeight: 600, color: "#0f172a", display: "flex", alignItems: "center", gap: "8px" }}><MapPin size={14} color="#3b82f6" />{s.label}</div><div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px", marginLeft: "22px" }}>{s.context}{s.citycode && <span style={{ marginLeft: "8px", background: "#e0f2fe", color: "#0369a1", padding: "1px 6px", borderRadius: "4px", fontSize: "10px", fontWeight: 600 }}>INSEE {s.citycode}</span>}</div></div>))}</div>)}
+            {showSuggestions && suggestions.length > 0 && (<div ref={suggestionsRef} style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "white", border: "1px solid #e2e8f0", borderRadius: "10px", boxShadow: "0 10px 25px rgba(0,0,0,0.15)", zIndex: 1000, maxHeight: "280px", overflow: "auto" }}>{suggestions.map((s, idx) => (<div key={s.id || idx} onClick={() => handleSelectSuggestion(s)} style={{ padding: "12px 14px", cursor: "pointer", borderBottom: idx < suggestions.length - 1 ? "1px solid #f1f5f9" : "none", transition: "background 0.15s" }} onMouseEnter={(e) => { e.currentTarget.style.background = "#f8fafc"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "white"; }}><div style={{ fontSize: "13px", fontWeight: 600, color: "#0f172a", display: "flex", alignItems: "center", gap: "8px" }}><MapPin size={14} color={ACCENT_PRO} />{s.label}</div><div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px", marginLeft: "22px" }}>{s.context}{s.citycode && <span style={{ marginLeft: "8px", background: "#ede9fe", color: ACCENT_PRO, padding: "1px 6px", borderRadius: "4px", fontSize: "10px", fontWeight: 600 }}>INSEE {s.citycode}</span>}</div></div>))}</div>)}
             <p style={{ fontSize: "11px", color: "#94a3b8", margin: "4px 0 0" }}>{selectedAddress ? `Code INSEE: ${selectedAddress.citycode}` : "Sélectionnez une suggestion"}</p>
           </div>
         </div>
-        {!parcelInput && !selectedAddress && (<div style={{ marginTop: "12px", padding: "10px 14px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "8px", display: "flex", alignItems: "center", gap: "10px" }}><Info size={16} color="#3b82f6" /><p style={{ fontSize: "12px", color: "#1e40af", margin: 0 }}>Renseignez l'identifiant de parcelle <strong>ou</strong> sélectionnez une adresse.</p></div>)}
+        {!parcelInput && !selectedAddress && (<div style={{ marginTop: "12px", padding: "10px 14px", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: "8px", display: "flex", alignItems: "center", gap: "10px" }}><Info size={16} color={ACCENT_PRO} /><p style={{ fontSize: "12px", color: ACCENT_PRO, margin: 0 }}>Renseignez l'identifiant de parcelle <strong>ou</strong> sélectionnez une adresse.</p></div>)}
         <button type="submit" disabled={loading || !canSubmit} style={{ ...styles.button, marginTop: "16px", background: loading || !canSubmit ? "#e2e8f0" : "#0f172a", color: loading || !canSubmit ? "#94a3b8" : "white", cursor: loading || !canSubmit ? "not-allowed" : "pointer" }}>{loading ? <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />Recherche...</> : <><Search size={16} />Rechercher la parcelle</>}</button>
       </form>
     </div>
@@ -990,7 +994,7 @@ function ParcelsSidebar({ selectedParcels, totalAreaM2, onRemoveParcel, onClearA
   return (
     <div style={{ ...styles.card }}>
       <div style={styles.cardHeader}>
-        <h3 style={styles.cardTitle}><Layers size={18} color="#0ea5e9" />Parcelles ({selectedParcels.length})</h3>
+        <h3 style={styles.cardTitle}><Layers size={18} color={ACCENT_PRO} />Parcelles ({selectedParcels.length})</h3>
         {selectedParcels.length > 0 && <button onClick={onClearAll} style={{ padding: "4px 8px", background: "#fef2f2", border: "none", borderRadius: "6px", color: "#dc2626", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>Tout effacer</button>}
       </div>
 
@@ -1025,7 +1029,7 @@ function ParcelsSidebar({ selectedParcels, totalAreaM2, onRemoveParcel, onClearA
             style={{
               ...styles.button,
               padding: "8px 12px",
-              background: manualId.trim() ? "#0f172a" : "#e2e8f0",
+              background: manualId.trim() ? ACCENT_PRO : "#e2e8f0",
               color: manualId.trim() ? "white" : "#94a3b8",
               cursor: manualId.trim() ? "pointer" : "not-allowed",
               borderRadius: "8px",
@@ -1092,7 +1096,7 @@ function ParcelsSidebar({ selectedParcels, totalAreaM2, onRemoveParcel, onClearA
       {selectedParcels.length > 0 && (
         <div style={{ padding: "14px 18px", borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontSize: "13px", fontWeight: 600, color: "#334155" }}>Surface totale</span>
-          <span style={{ fontSize: "18px", fontWeight: 800, color: "#0f172a", background: "#e0f2fe", padding: "6px 14px", borderRadius: "8px" }}>
+          <span style={{ fontSize: "18px", fontWeight: 800, color: "#0f172a", background: "#ede9fe", padding: "6px 14px", borderRadius: "8px" }}>
             {totalAreaM2 != null ? formatAreaM2(totalAreaM2) : <span style={{ color: "#94a3b8", fontSize: "13px" }}>Renseignez les m²</span>}
           </span>
         </div>
@@ -1100,7 +1104,7 @@ function ParcelsSidebar({ selectedParcels, totalAreaM2, onRemoveParcel, onClearA
       <div style={{ padding: "0 18px 18px" }}>
         <button onClick={onValidateSelection} disabled={!isValid} style={{
           ...styles.button, width: "100%",
-          background: isValidated ? "#16a34a" : isValid ? "#10b981" : "#e2e8f0",
+          background: isValidated ? "#16a34a" : isValid ? ACCENT_PRO : "#e2e8f0",
           color: isValid ? "white" : "#94a3b8",
           cursor: isValid ? "pointer" : "not-allowed",
         }}>
@@ -1281,18 +1285,44 @@ export function FoncierPluPage() {
 
   return (
     <div style={styles.container}>
-      <div style={styles.header}>
-        <h1 style={styles.title}>
-          <Building2 size={28} color="#0f172a" />Foncier & PLU
-          {studyId && <span style={{ fontSize: "11px", fontWeight: 500, color: "#64748b", background: "#f1f5f9", padding: "4px 8px", borderRadius: "6px", marginLeft: "8px" }}>Étude: {studyId.slice(0, 8)}…</span>}
-        </h1>
-        <p style={styles.subtitle}>Sélectionnez votre terrain et consultez les règles d'urbanisme.</p>
+
+      {/* ── Bannière dégradé Promoteur › Foncier ───────────────────────── */}
+      <div style={{
+        background: GRAD_PRO,
+        borderRadius: 14,
+        padding: "20px 24px",
+        marginBottom: 20,
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        gap: 16,
+      }}>
+        <div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
+            Promoteur › Foncier
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>
+            Foncier & PLU
+          </div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+            Sélectionnez votre terrain et consultez les règles d'urbanisme.
+          </div>
+        </div>
+        {studyId && (
+          <div style={{
+            padding: "6px 12px", borderRadius: 8, background: "rgba(255,255,255,0.15)",
+            color: "white", fontSize: 11, fontWeight: 500, flexShrink: 0, marginTop: 4,
+            border: "1px solid rgba(255,255,255,0.25)",
+          }}>
+            Étude&nbsp;{studyId.slice(0, 8)}…
+          </div>
+        )}
       </div>
 
       {hasProject ? (
         <div style={{ ...styles.card, marginBottom: "20px", padding: "12px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <MapPinned size={20} color="#3b82f6" />
+            <MapPinned size={20} color={ACCENT_PRO} />
             <div>
               <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a", fontFamily: "monospace" }}>{projectInfo.parcelId || projectInfo.address || "—"}</div>
               <div style={{ fontSize: "12px", color: "#64748b" }}>INSEE {projectInfo.communeInsee} • {formatAreaM2(totalAreaM2)}</div>
@@ -1308,7 +1338,7 @@ export function FoncierPluPage() {
         <div style={styles.grid}>
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
             <div style={{ ...styles.card }}>
-              <div style={styles.cardHeader}><h3 style={styles.cardTitle}><MapPin size={18} color="#3b82f6" />Carte cadastrale</h3><span style={{ ...styles.badge, background: "#dbeafe", color: "#1d4ed8" }}>INSEE {projectInfo.communeInsee}</span></div>
+              <div style={styles.cardHeader}><h3 style={styles.cardTitle}><MapPin size={18} color={ACCENT_PRO} />Carte cadastrale</h3><span style={{ ...styles.badge, background: "#ede9fe", color: ACCENT_PRO }}>INSEE {projectInfo.communeInsee}</span></div>
               <ParcelMapSelector communeInsee={projectInfo.communeInsee!} selectedIds={selectedParcels.map(p => p.id)} onToggleParcel={handleToggleParcel} focusParcelId={projectInfo.parcelId} focusFeature={focusFeature} heightPx={380} onMapReady={(map) => { mapRef.current = map; }} mapCenter={mapCenter} />
             </div>
             <PluInfoCard pluData={pluData} loading={pluLoading} onPluParsed={handlePluParsed} />
@@ -1329,7 +1359,7 @@ export function FoncierPluPage() {
         </div>
       ) : (
         <div style={{ ...styles.card, padding: "60px 40px", textAlign: "center" }}>
-          <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "#e0f2fe", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px" }}><MapPin size={36} color="#0284c7" /></div>
+          <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "#ede9fe", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px" }}><MapPin size={36} color={ACCENT_PRO} /></div>
           <h2 style={{ fontSize: "20px", fontWeight: 700, color: "#0f172a", margin: "0 0 12px" }}>Commencez par localiser votre projet</h2>
           <p style={{ fontSize: "14px", color: "#64748b", margin: "0 0 24px", maxWidth: "400px", marginLeft: "auto", marginRight: "auto" }}>Entrez l'identifiant de la parcelle cadastrale ou recherchez par adresse.</p>
         </div>
