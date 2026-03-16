@@ -78,6 +78,13 @@ if (typeof fetchDvfEstimate !== "function") {
 }
 
 // ============================================
+// DESIGN TOKENS — Investisseur
+// ============================================
+
+const GRAD_INV = "linear-gradient(90deg, #2196f3 0%, #21cbf3 100%)";
+const ACCENT_INV = "#1a72c4";
+
+// ============================================
 // FORM STATE
 // ============================================
 
@@ -839,14 +846,14 @@ const styles = {
   summaryValue: { color: "#1e293b", fontWeight: "500" } as React.CSSProperties,
   summaryValueEmpty: { color: "#cbd5e1" } as React.CSSProperties,
   summaryHighlight: { background: "#e0f2fe", padding: "12px", borderRadius: "8px", textAlign: "center" as const, marginTop: "12px" } as React.CSSProperties,
-  summaryPricePerSqm: { fontSize: "1.25rem", fontWeight: "600", color: "#0369a1" } as React.CSSProperties,
+  summaryPricePerSqm: { fontSize: "1.25rem", fontWeight: "600", color: ACCENT_INV } as React.CSSProperties,
   summaryPriceLabel: { fontSize: "0.75rem", color: "#64748b", marginTop: "2px" } as React.CSSProperties,
   validationBox: { marginTop: "16px", padding: "12px", background: "#fffbeb", borderRadius: "8px", border: "1px solid #fbbf24" } as React.CSSProperties,
   validationBoxSuccess: { background: "#ecfdf5", border: "1px solid #10b981" } as React.CSSProperties,
   validationTitle: { fontSize: "0.75rem", fontWeight: "600", color: "#92400e", textTransform: "uppercase" as const, marginBottom: "4px" } as React.CSSProperties,
   validationText: { fontSize: "0.875rem", color: "#b45309", margin: 0 } as React.CSSProperties,
   loadingContainer: { background: "#fff", borderRadius: "16px", padding: "48px 24px", textAlign: "center" as const, boxShadow: "0 4px 12px rgba(0,0,0,0.1)" } as React.CSSProperties,
-  spinner: { width: "48px", height: "48px", border: "4px solid #e2e8f0", borderTopColor: "#3b82f6", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" } as React.CSSProperties,
+  spinner: { width: "48px", height: "48px", border: "4px solid #e2e8f0", borderTopColor: ACCENT_INV, borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" } as React.CSSProperties,
   loadingTitle: { fontSize: "1.125rem", fontWeight: "600", color: "#1e293b", marginBottom: "4px" } as React.CSSProperties,
   loadingText: { fontSize: "0.875rem", color: "#64748b" } as React.CSSProperties,
   toast: { position: "fixed" as const, bottom: "24px", right: "24px", background: "#10b981", color: "#fff", padding: "16px 24px", borderRadius: "12px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)", display: "flex", alignItems: "center", gap: "12px", zIndex: 1000, animation: "slideIn 0.3s ease-out", maxWidth: "400px" } as React.CSSProperties,
@@ -934,7 +941,7 @@ const SmartScorePlaceholder: React.FC = () => (
       <svg width="36" height="36" viewBox="0 0 32 32" fill="none">
         <rect x="6" y="14" width="6" height="12" rx="1" fill="#22c55e" />
         <rect x="13" y="8" width="6" height="18" rx="1" fill="#f59e0b" />
-        <rect x="20" y="4" width="6" height="22" rx="1" fill="#3b82f6" />
+        <rect x="20" y="4" width="6" height="22" rx="1" fill={ACCENT_INV} />
       </svg>
     </div>
     <div style={styles.smartScoreTitle}>SmartScore</div>
@@ -1165,6 +1172,31 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
   if (!dealId) {
     return (
       <div style={styles.page}>
+        {/* ── Bannière ── */}
+        <div style={{ maxWidth: "1600px", margin: "0 auto", padding: "24px 24px 0" }}>
+          <div style={{
+            background: GRAD_INV,
+            borderRadius: 14,
+            padding: "20px 24px",
+            marginBottom: 20,
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 16,
+          }}>
+            <div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
+                Investisseur › Acquisition
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>
+                Sourcing
+              </div>
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+                Qualification et scoring des opportunités
+              </div>
+            </div>
+          </div>
+        </div>
         <div style={{ ...styles.container, justifyContent: "center" }}><NoDealPlaceholder /></div>
       </div>
     );
@@ -1205,6 +1237,32 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
 
   return (
     <div style={styles.page}>
+      {/* ── Bannière Investisseur › Acquisition ── */}
+      <div style={{ maxWidth: "1600px", margin: "0 auto", padding: "24px 24px 0" }}>
+        <div style={{
+          background: GRAD_INV,
+          borderRadius: 14,
+          padding: "20px 24px",
+          marginBottom: 20,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 16,
+        }}>
+          <div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
+              Investisseur › Acquisition
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>
+              Sourcing
+            </div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+              Qualification et scoring des opportunités
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div style={styles.container}>
         <div style={styles.formSection}>
           <SourcingForm

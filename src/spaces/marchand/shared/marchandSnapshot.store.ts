@@ -4,6 +4,11 @@
  * 100% TypeScript: AUCUN JSX dans ce fichier.
  */
 
+import type {
+  TravauxSimulationV1,
+  TravauxSimulationComputed,
+} from "../modules/execution/services/travauxSimulation.types";
+
 export const LS_MARCHAND_SNAPSHOT_V1 = "mimmoza.marchand.snapshot.v1";
 export const MARCHAND_SNAPSHOT_EVENT = "mimmoza:marchand:snapshot";
 
@@ -34,6 +39,10 @@ export type MarchandDeal = {
   prixReventeCible?: number;
   note?: string;
 
+  premiumUnlocked?: boolean;
+  premiumUnlockedAt?: string | null;
+  premiumUnlockLedgerId?: string | null;
+
   status: MarchandDealStatus;
   createdAt: string;
   updatedAt: string;
@@ -54,11 +63,18 @@ export type TaxConfig = {
   [k: string]: unknown;
 };
 
+export type RentabiliteInputs = {
+  travauxEstimes?: number;
+  travauxSource?: "manual" | "simulation";
+  [k: string]: unknown;
+};
+
 export type RentabiliteSaved = {
-  inputs: unknown;
+  inputs: RentabiliteInputs;
   taxRegime: TaxRegime;
   taxConfig: TaxConfig;
   computed?: unknown;
+  travauxSource?: "manual" | "simulation";
 };
 
 export type ExecutionSaved = {
@@ -71,6 +87,12 @@ export type ExecutionSaved = {
   phases?: unknown[];
   planningMode?: "auto" | "manuel";
   stats?: unknown;
+  travaux?: {
+    input: TravauxSimulationV1;
+    computed: TravauxSimulationComputed;
+    updatedAt: string;
+    sourceMode?: "simple" | "expert";
+  };
 };
 
 export type SortieSaved = {
@@ -78,7 +100,6 @@ export type SortieSaved = {
   scenarios: unknown[];
 };
 
-/** v1: Due Diligence persisté par deal */
 export type DueDiligenceSaved = {
   state?: unknown;
   missingCritical?: string[];
@@ -87,7 +108,6 @@ export type DueDiligenceSaved = {
   updatedAt?: string;
 };
 
-/** v1: Marché/Risques persisté par deal */
 export type MarcheRisquesSaved = {
   data?: unknown;
   scoreGlobal?: number;
@@ -137,8 +157,34 @@ const defaultSnapshot = (): MarchandSnapshotV1 => ({
 const isNonEmptyString = (v: unknown): v is string =>
   typeof v === "string" && v.trim().length > 0;
 
-const normalizeString = (v: unknown): string | undefined =>
-  isNonEmptyString(v) ? v.trim() : undefined;
+/**
+ * Normalise les chaînes métier.
+ * Important :
+ * - ne jamais stocker de placeholder d'affichage ("—", "-", "ND", etc.)
+ * - ne garder que des vraies valeurs utiles au métier
+ */
+const normalizeString = (v: unknown): string | undefined => {
+  if (!isNonEmptyString(v)) return undefined;
+
+  const s = v.trim();
+
+  if (
+    s === "—" ||
+    s === "-" ||
+    s === "--" ||
+    s.toLowerCase() === "nd" ||
+    s.toLowerCase() === "n/d" ||
+    s.toLowerCase() === "non disponible" ||
+    s.toLowerCase() === "non renseigne" ||
+    s.toLowerCase() === "non renseigné" ||
+    s.toLowerCase() === "null" ||
+    s.toLowerCase() === "undefined"
+  ) {
+    return undefined;
+  }
+
+  return s;
+};
 
 const normalizeNumber = (v: unknown): number | undefined => {
   if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -173,16 +219,24 @@ function sanitizeDeals(raw: unknown): MarchandDeal[] {
     const updatedAt = isNonEmptyString(d.updatedAt) ? d.updatedAt : createdAt;
 
     out.push({
-      id: d.id,
-      title: d.title,
+      id: d.id.trim(),
+      title: d.title.trim(),
       address: normalizeString(d.address),
       zipCode: normalizeString(d.zipCode),
-      city: normalizeString(d.city) ?? "—",
+      city: normalizeString(d.city),
       country: normalizeString(d.country) ?? "FR",
       prixAchat: normalizeNumber(d.prixAchat),
       surfaceM2: normalizeNumber(d.surfaceM2),
       prixReventeCible: normalizeNumber(d.prixReventeCible),
       note: normalizeString(d.note),
+      premiumUnlocked:
+        typeof d.premiumUnlocked === "boolean" ? d.premiumUnlocked : undefined,
+      premiumUnlockedAt:
+        typeof d.premiumUnlockedAt === "string" ? d.premiumUnlockedAt : null,
+      premiumUnlockLedgerId:
+        typeof d.premiumUnlockLedgerId === "string"
+          ? d.premiumUnlockLedgerId
+          : null,
       status: d.status,
       createdAt,
       updatedAt,
@@ -229,17 +283,33 @@ function safeParse(json: string | null): MarchandSnapshotV1 | null {
     const parsed = JSON.parse(json) as Partial<MarchandSnapshotV1>;
     if (!parsed || parsed.version !== 1) return null;
 
-    // Backward compat: anciennes clés absentes → {}
     const candidate: MarchandSnapshotV1 = {
       version: 1,
       updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : nowIso(),
       activeDealId: (parsed.activeDealId ?? null) as string | null,
       deals: (parsed.deals ?? []) as MarchandDeal[],
-      rentabiliteByDeal: (parsed.rentabiliteByDeal ?? {}) as Record<string, RentabiliteSaved | undefined>,
-      executionByDeal: (parsed.executionByDeal ?? {}) as Record<string, ExecutionSaved | undefined>,
-      sortieByDeal: (parsed.sortieByDeal ?? {}) as Record<string, SortieSaved | undefined>,
-      dueDiligenceByDeal: (parsed.dueDiligenceByDeal ?? {}) as Record<string, DueDiligenceSaved | undefined>,
-      marcheRisquesByDeal: (parsed.marcheRisquesByDeal ?? {}) as Record<string, MarcheRisquesSaved | undefined>,
+      rentabiliteByDeal:
+        (parsed.rentabiliteByDeal ?? {}) as Record<
+          string,
+          RentabiliteSaved | undefined
+        >,
+      executionByDeal:
+        (parsed.executionByDeal ?? {}) as Record<
+          string,
+          ExecutionSaved | undefined
+        >,
+      sortieByDeal:
+        (parsed.sortieByDeal ?? {}) as Record<string, SortieSaved | undefined>,
+      dueDiligenceByDeal:
+        (parsed.dueDiligenceByDeal ?? {}) as Record<
+          string,
+          DueDiligenceSaved | undefined
+        >,
+      marcheRisquesByDeal:
+        (parsed.marcheRisquesByDeal ?? {}) as Record<
+          string,
+          MarcheRisquesSaved | undefined
+        >,
     };
 
     return normalizeSnapshot(candidate);
@@ -254,7 +324,7 @@ function readRaw(): MarchandSnapshotV1 {
   return fromLs ?? defaultSnapshot();
 }
 
-function writeSnapshot(next: MarchandSnapshotV1) {
+function writeSnapshot(next: MarchandSnapshotV1): void {
   if (!isBrowser()) return;
 
   const normalized = normalizeSnapshot(next);
@@ -276,11 +346,72 @@ export function readMarchandSnapshot(): MarchandSnapshotV1 {
   return readRaw();
 }
 
+export function saveMarchandSnapshot(snapshot: MarchandSnapshotV1): void {
+  writeSnapshot(snapshot);
+}
+
 export function resetMarchandSnapshot(): void {
   writeSnapshot(defaultSnapshot());
 }
 
-export function upsertDeal(deal: MarchandDeal) {
+export function getMarchandDealById(dealId: string): MarchandDeal | null {
+  const snap = readRaw();
+  return snap.deals.find((d) => d.id === dealId) ?? null;
+}
+
+export function patchDeal(
+  dealId: string,
+  patch: Partial<Omit<MarchandDeal, "id" | "createdAt">>
+): void {
+  const snap = readRaw();
+  const existing = snap.deals.find((d) => d.id === dealId);
+  if (!existing) return;
+
+  const nextDeal: MarchandDeal = {
+    ...existing,
+    ...patch,
+    id: existing.id,
+    title: normalizeString(patch.title ?? existing.title) ?? existing.title,
+    address: normalizeString(patch.address ?? existing.address),
+    zipCode: normalizeString(patch.zipCode ?? existing.zipCode),
+    city: normalizeString(patch.city ?? existing.city),
+    country: normalizeString(patch.country ?? existing.country) ?? "FR",
+    note: normalizeString(patch.note ?? existing.note),
+    prixAchat: normalizeNumber(
+      patch.prixAchat !== undefined ? patch.prixAchat : existing.prixAchat
+    ),
+    surfaceM2: normalizeNumber(
+      patch.surfaceM2 !== undefined ? patch.surfaceM2 : existing.surfaceM2
+    ),
+    prixReventeCible: normalizeNumber(
+      patch.prixReventeCible !== undefined
+        ? patch.prixReventeCible
+        : existing.prixReventeCible
+    ),
+    premiumUnlocked:
+      typeof patch.premiumUnlocked === "boolean"
+        ? patch.premiumUnlocked
+        : existing.premiumUnlocked,
+    premiumUnlockedAt:
+      patch.premiumUnlockedAt === undefined
+        ? existing.premiumUnlockedAt
+        : patch.premiumUnlockedAt,
+    premiumUnlockLedgerId:
+      patch.premiumUnlockLedgerId === undefined
+        ? existing.premiumUnlockLedgerId
+        : patch.premiumUnlockLedgerId,
+    status: isDealStatus(patch.status) ? patch.status : existing.status,
+    createdAt: existing.createdAt,
+    updatedAt: nowIso(),
+  };
+
+  writeSnapshot({
+    ...snap,
+    deals: snap.deals.map((d) => (d.id === dealId ? nextDeal : d)),
+  });
+}
+
+export function upsertDeal(deal: MarchandDeal): void {
   const snap = readRaw();
   const idx = snap.deals.findIndex((d) => d.id === deal.id);
 
@@ -289,7 +420,9 @@ export function upsertDeal(deal: MarchandDeal) {
 
   const nextDeal: MarchandDeal = {
     ...deal,
-    city: normalizeString(deal.city) ?? "—",
+    id: deal.id.trim(),
+    title: deal.title.trim(),
+    city: normalizeString(deal.city),
     country: normalizeString(deal.country) ?? "FR",
     address: normalizeString(deal.address),
     zipCode: normalizeString(deal.zipCode),
@@ -297,16 +430,22 @@ export function upsertDeal(deal: MarchandDeal) {
     prixAchat: normalizeNumber(deal.prixAchat),
     surfaceM2: normalizeNumber(deal.surfaceM2),
     prixReventeCible: normalizeNumber(deal.prixReventeCible),
+    premiumUnlocked:
+      typeof deal.premiumUnlocked === "boolean" ? deal.premiumUnlocked : undefined,
+    premiumUnlockedAt:
+      typeof deal.premiumUnlockedAt === "string" ? deal.premiumUnlockedAt : null,
+    premiumUnlockLedgerId:
+      typeof deal.premiumUnlockLedgerId === "string"
+        ? deal.premiumUnlockLedgerId
+        : null,
     createdAt,
     updatedAt,
   };
 
-  let nextDeals: MarchandDeal[];
-  if (idx === -1) {
-    nextDeals = [...snap.deals, nextDeal];
-  } else {
-    nextDeals = snap.deals.map((d) => (d.id === deal.id ? { ...d, ...nextDeal } : d));
-  }
+  const nextDeals =
+    idx === -1
+      ? [...snap.deals, nextDeal]
+      : snap.deals.map((d) => (d.id === deal.id ? { ...d, ...nextDeal } : d));
 
   writeSnapshot(
     normalizeSnapshot({
@@ -317,7 +456,7 @@ export function upsertDeal(deal: MarchandDeal) {
   );
 }
 
-export function setActiveDeal(dealId: string) {
+export function setActiveDeal(dealId: string): void {
   const snap = readRaw();
   const exists = snap.deals.some((d) => d.id === dealId);
 
@@ -398,22 +537,50 @@ export function deleteDeal(dealId: string): void {
 // Patch functions par module
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function patchRentabiliteForDeal(dealId: string, patch: Partial<RentabiliteSaved>) {
+export function patchRentabiliteForDeal(
+  dealId: string,
+  patch: Partial<RentabiliteSaved>
+): void {
   const snap = readRaw();
-  const prev = snap.rentabiliteByDeal[dealId] ?? ({} as RentabiliteSaved);
+
+  const prev = snap.rentabiliteByDeal[dealId];
+
+  const prevInputs: RentabiliteInputs =
+    prev?.inputs && typeof prev.inputs === "object" && !Array.isArray(prev.inputs)
+      ? prev.inputs
+      : {};
+
+  const patchInputs: RentabiliteInputs =
+    patch.inputs && typeof patch.inputs === "object" && !Array.isArray(patch.inputs)
+      ? patch.inputs
+      : {};
+
+  const mergedInputs: RentabiliteInputs = {
+    ...prevInputs,
+    ...patchInputs,
+  };
+
+  const next: RentabiliteSaved = {
+    ...(prev ?? ({} as RentabiliteSaved)),
+    ...patch,
+    inputs: mergedInputs,
+  };
 
   writeSnapshot(
     normalizeSnapshot({
       ...snap,
       rentabiliteByDeal: {
         ...snap.rentabiliteByDeal,
-        [dealId]: { ...prev, ...patch } as RentabiliteSaved,
+        [dealId]: next,
       },
     })
   );
 }
 
-export function patchExecutionForDeal(dealId: string, patch: Partial<ExecutionSaved>) {
+export function patchExecutionForDeal(
+  dealId: string,
+  patch: Partial<ExecutionSaved>
+): void {
   const snap = readRaw();
   const prev = snap.executionByDeal[dealId] ?? ({} as ExecutionSaved);
 
@@ -422,13 +589,16 @@ export function patchExecutionForDeal(dealId: string, patch: Partial<ExecutionSa
       ...snap,
       executionByDeal: {
         ...snap.executionByDeal,
-        [dealId]: { ...prev, ...patch } as ExecutionSaved,
+        [dealId]: { ...prev, ...patch },
       },
     })
   );
 }
 
-export function patchSortieForDeal(dealId: string, patch: Partial<SortieSaved>) {
+export function patchSortieForDeal(
+  dealId: string,
+  patch: Partial<SortieSaved>
+): void {
   const snap = readRaw();
   const prev = snap.sortieByDeal[dealId] ?? ({} as SortieSaved);
 
@@ -437,13 +607,16 @@ export function patchSortieForDeal(dealId: string, patch: Partial<SortieSaved>) 
       ...snap,
       sortieByDeal: {
         ...snap.sortieByDeal,
-        [dealId]: { ...prev, ...patch } as SortieSaved,
+        [dealId]: { ...prev, ...patch },
       },
     })
   );
 }
 
-export function patchDueDiligenceForDeal(dealId: string, patch: Partial<DueDiligenceSaved>) {
+export function patchDueDiligenceForDeal(
+  dealId: string,
+  patch: Partial<DueDiligenceSaved>
+): void {
   const snap = readRaw();
   const prev = snap.dueDiligenceByDeal[dealId] ?? {};
 
@@ -458,7 +631,10 @@ export function patchDueDiligenceForDeal(dealId: string, patch: Partial<DueDilig
   );
 }
 
-export function patchMarcheRisquesForDeal(dealId: string, patch: Partial<MarcheRisquesSaved>) {
+export function patchMarcheRisquesForDeal(
+  dealId: string,
+  patch: Partial<MarcheRisquesSaved>
+): void {
   const snap = readRaw();
   const prev = snap.marcheRisquesByDeal[dealId] ?? {};
 
@@ -468,6 +644,43 @@ export function patchMarcheRisquesForDeal(dealId: string, patch: Partial<MarcheR
       marcheRisquesByDeal: {
         ...snap.marcheRisquesByDeal,
         [dealId]: { ...prev, ...patch },
+      },
+    })
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Patch execution travaux (non destructif)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function patchExecutionTravaux(payload: {
+  input: TravauxSimulationV1;
+  computed: TravauxSimulationComputed;
+  updatedAt?: string;
+  sourceMode?: "simple" | "expert";
+}): void {
+  const snap = readRaw();
+  const activeDealId = snap.activeDealId;
+  if (!activeDealId) return;
+
+  const prev = snap.executionByDeal[activeDealId] ?? ({} as ExecutionSaved);
+
+  const nextExecution: ExecutionSaved = {
+    ...prev,
+    travaux: {
+      input: payload.input,
+      computed: payload.computed,
+      updatedAt: payload.updatedAt ?? nowIso(),
+      ...(payload.sourceMode ? { sourceMode: payload.sourceMode } : {}),
+    },
+  };
+
+  writeSnapshot(
+    normalizeSnapshot({
+      ...snap,
+      executionByDeal: {
+        ...snap.executionByDeal,
+        [activeDealId]: nextExecution,
       },
     })
   );

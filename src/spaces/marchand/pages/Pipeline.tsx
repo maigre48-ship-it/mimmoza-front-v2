@@ -1,6 +1,20 @@
-﻿import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
-import { Plus, Workflow, Clock, Euro, TrendingUp, CheckCircle2, X, Pencil } from "lucide-react";
-import PageShell from "../shared/ui/PageShell";
+﻿import React, {
+  useEffect,
+  useMemo,
+  useState,
+  useRef,
+  useCallback,
+} from "react";
+import {
+  Plus,
+  Workflow,
+  Clock,
+  Euro,
+  TrendingUp,
+  CheckCircle2,
+  X,
+  Pencil,
+} from "lucide-react";
 import SectionCard from "../shared/ui/SectionCard";
 import KpiCard from "../shared/ui/KpiCard";
 import {
@@ -22,38 +36,107 @@ import {
 type DealStatus = MarchandDealStatus;
 type Deal = MarchandDeal;
 
-const COLUMNS: DealStatus[] = ["Nouveau", "Visite", "Offre", "Sous promesse", "Travaux", "En vente", "Vendu"];
+const COLUMNS: DealStatus[] = [
+  "Nouveau",
+  "Visite",
+  "Offre",
+  "Sous promesse",
+  "Travaux",
+  "En vente",
+  "Vendu",
+];
+
+const PENDING_OPPORTUNITY_STORAGE_KEY = "mimmoza.pendingOpportunityDeal";
+
+// ── Gradient tokens ────────────────────────────────────────────────
+const GRAD_INV = "linear-gradient(90deg, #2196f3 0%, #21cbf3 100%)";
+const ACCENT_INV = "#1a72c4";
+
+type PendingOpportunityDeal = {
+  source: "veille-marche";
+  canonicalKey: string;
+  title: string;
+  city: string | null;
+  zipCode: string;
+  price: number | null;
+  surfaceM2: number | null;
+  opportunityScore: number;
+  opportunityBucket: "faible" | "moyenne" | "forte";
+  pricePosition: string;
+  priceDropInfo: string;
+  diffusionInfo: string;
+  createdAt: string;
+  sourceUrl?: string | null;
+  sourcePortal?: string | null;
+};
 
 const fmtEur = (n?: number) =>
   typeof n === "number"
-    ? n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 })
+    ? n.toLocaleString("fr-FR", {
+        style: "currency",
+        currency: "EUR",
+        maximumFractionDigits: 0,
+      })
     : "—";
 
 const nowIso = () => new Date().toISOString();
 
-/* ────────────────────────────────────────────
-   City auto-lookup from zipCode
-   ──────────────────────────────────────────── */
+const makeCanonicalTag = (key: string) => `[veille:${key}]`;
+
+function buildOpportunityNote(p: PendingOpportunityDeal): string {
+  const lines = [
+    `Source : Veille marché`,
+    p.sourcePortal ? `Portail : ${p.sourcePortal}` : null,
+    p.sourceUrl ? `Annonce source : ${p.sourceUrl}` : null,
+    `Score opportunité : ${p.opportunityScore} (${p.opportunityBucket})`,
+    `Position prix : ${p.pricePosition || "—"}`,
+    `Évolution prix : ${p.priceDropInfo || "—"}`,
+    `Diffusion : ${p.diffusionInfo || "—"}`,
+    makeCanonicalTag(p.canonicalKey),
+  ].filter(Boolean) as string[];
+
+  return lines.join("\n");
+}
+
+function mapOpportunityToDeal(p: PendingOpportunityDeal): Deal {
+  const id = `D-${Math.floor(Math.random() * 900 + 100)}`;
+  return {
+    id,
+    title: p.title,
+    address: "",
+    zipCode: p.zipCode,
+    city: p.city ?? "—",
+    country: "FR",
+    prixAchat: p.price ?? undefined,
+    surfaceM2: p.surfaceM2 ?? undefined,
+    prixReventeCible: undefined,
+    note: buildOpportunityNote(p),
+    status: "Nouveau",
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  } as Deal;
+}
 
 async function fetchCityFromZipCode(zipCode: string): Promise<string | null> {
   const cleaned = zipCode.replace(/\s/g, "");
   if (!/^\d{5}$/.test(cleaned)) return null;
+
   try {
-    const url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(cleaned)}&type=municipality&limit=1`;
+    const url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(
+      cleaned
+    )}&type=municipality&limit=1`;
     const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
     if (!res.ok) return null;
+
     const json = await res.json();
     const feature = json?.features?.[0];
     if (!feature) return null;
+
     return feature.properties?.city ?? feature.properties?.label ?? null;
   } catch {
     return null;
   }
 }
-
-/* ────────────────────────────────────────────
-   Deal → meta bridge
-   ──────────────────────────────────────────── */
 
 function buildDealMeta(deal: Deal): DealContextMeta {
   return {
@@ -133,8 +216,17 @@ function Drawer({
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-          <div style={{ fontWeight: 950, fontSize: 16, color: "#0f172a" }}>{title}</div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+          }}
+        >
+          <div style={{ fontWeight: 950, fontSize: 16, color: "#0f172a" }}>
+            {title}
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -180,7 +272,9 @@ function Field({
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>{label}</div>
+      <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>
+        {label}
+      </div>
       <input
         type={type}
         value={value ?? ""}
@@ -199,7 +293,9 @@ function Field({
         }}
       />
       {hint && (
-        <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700 }}>{hint}</div>
+        <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700 }}>
+          {hint}
+        </div>
       )}
     </div>
   );
@@ -218,7 +314,9 @@ function Select({
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>{label}</div>
+      <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>
+        {label}
+      </div>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -250,29 +348,56 @@ function Select({
 export default function MarchandPipeline() {
   const snapTick = useMarchandSnapshotTick();
   const snapshot = useMemo(() => readMarchandSnapshot(), [snapTick]);
-  const deals: Deal[] = useMemo(() => snapshot.deals.map((d) => ({ ...d })), [snapshot.deals]);
+  const deals: Deal[] = useMemo(
+    () => snapshot.deals.map((d) => ({ ...d })),
+    [snapshot.deals]
+  );
   const activeDealId = snapshot.activeDealId;
 
   const [editingDealId, setEditingDealId] = useState<string | null>(null);
 
-  /* ── Ville auto-fetch state ── */
   const [cityLookupHint, setCityLookupHint] = useState<string>("");
   const zipFetchRef = useRef(0);
 
-  /* ══════════════════════════════════════════
-     DRAFT LOCAL STATE pour le Drawer
-     ══════════════════════════════════════════
-     On bufferise les modifications dans un state local (draftDeal).
-     onChange → met à jour draftDeal (rapide, pas de store write)
-     onBlur  → flush vers le store (upsertDeal + syncDealContext)
-     
-     Cela résout le bug des espaces : avant, chaque frappe déclenchait
-     upsertDeal → snapTick → re-render → editingDeal relu depuis le store
-     → React perdait le curseur et les espaces.
-  */
+  const handoffConsumedRef = useRef(false);
+
+  useEffect(() => {
+    if (handoffConsumedRef.current) return;
+    handoffConsumedRef.current = true;
+
+    const raw = sessionStorage.getItem(PENDING_OPPORTUNITY_STORAGE_KEY);
+    if (!raw) return;
+
+    let payload: PendingOpportunityDeal;
+    try {
+      payload = JSON.parse(raw) as PendingOpportunityDeal;
+    } catch {
+      sessionStorage.removeItem(PENDING_OPPORTUNITY_STORAGE_KEY);
+      return;
+    }
+
+    sessionStorage.removeItem(PENDING_OPPORTUNITY_STORAGE_KEY);
+
+    if (!payload?.canonicalKey || payload.source !== "veille-marche") return;
+
+    const tag = makeCanonicalTag(payload.canonicalKey);
+    const freshSnapshot = readMarchandSnapshot();
+    const existingDeal = freshSnapshot.deals.find((d) => d.note?.includes(tag));
+
+    if (existingDeal) {
+      setActiveDeal(existingDeal.id);
+      syncDealContext(existingDeal);
+    } else {
+      const newDeal = mapOpportunityToDeal(payload);
+      upsertDeal(newDeal);
+      setActiveDeal(newDeal.id);
+      syncDealContext(newDeal);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [draftDeal, setDraftDeal] = useState<Deal | null>(null);
 
-  // Initialiser draftDeal quand on ouvre le drawer
   useEffect(() => {
     if (editingDealId) {
       const deal = deals.find((d) => d.id === editingDealId) ?? null;
@@ -283,14 +408,13 @@ export default function MarchandPipeline() {
     setCityLookupHint("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingDealId]);
-  // ⚠ On ne met PAS `deals` dans les deps : sinon chaque flush → snapTick → deals change → draftDeal reset
 
-  /** Met à jour le draft local (pas de store write). */
   const updateDraft = useCallback((patch: Partial<Deal>) => {
-    setDraftDeal((prev) => prev ? { ...prev, ...patch, updatedAt: nowIso() } : null);
+    setDraftDeal((prev) =>
+      prev ? { ...prev, ...patch, updatedAt: nowIso() } : null
+    );
   }, []);
 
-  /** Flush le draft vers le store. Appelé sur onBlur des champs texte. */
   const flushDraft = useCallback(() => {
     if (!draftDeal) return;
     upsertDeal(draftDeal);
@@ -299,9 +423,9 @@ export default function MarchandPipeline() {
     }
   }, [draftDeal, activeDealId]);
 
-  /** Flush + city auto-lookup (pour le champ code postal). */
   const flushDraftWithCityLookup = useCallback(() => {
     if (!draftDeal) return;
+
     upsertDeal(draftDeal);
     if (activeDealId === draftDeal.id) {
       syncDealContext(draftDeal);
@@ -309,11 +433,14 @@ export default function MarchandPipeline() {
 
     const zip = draftDeal.zipCode ?? "";
     const cleaned = zip.replace(/\s/g, "");
+
     if (/^\d{5}$/.test(cleaned)) {
       const seq = ++zipFetchRef.current;
       setCityLookupHint("Recherche de la commune…");
+
       fetchCityFromZipCode(cleaned).then((city) => {
         if (seq !== zipFetchRef.current) return;
+
         if (city) {
           setCityLookupHint(`→ ${city}`);
           setDraftDeal((prev) => {
@@ -333,25 +460,25 @@ export default function MarchandPipeline() {
     }
   }, [draftDeal, activeDealId]);
 
-  /** Pour les selects → flush immédiat (pas de onBlur). */
-  const updateAndFlush = useCallback((patch: Partial<Deal>) => {
-    setDraftDeal((prev) => {
-      if (!prev) return prev;
-      const updated = { ...prev, ...patch, updatedAt: nowIso() };
-      upsertDeal(updated);
-      if (activeDealId === updated.id) syncDealContext(updated);
-      return updated;
-    });
-  }, [activeDealId]);
+  const updateAndFlush = useCallback(
+    (patch: Partial<Deal>) => {
+      setDraftDeal((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev, ...patch, updatedAt: nowIso() };
+        upsertDeal(updated);
+        if (activeDealId === updated.id) syncDealContext(updated);
+        return updated;
+      });
+    },
+    [activeDealId]
+  );
 
-  /* ── Sync bridge store quand activeDealId change ────── */
   useEffect(() => {
     if (!activeDealId) return;
     const deal = deals.find((d) => d.id === activeDealId);
     if (deal) syncDealContext(deal);
   }, [activeDealId, deals]);
 
-  /* ── Écouter les changements cross-tab du bridge store ── */
   useEffect(() => {
     const unsub = subscribeDealContext((ctx) => {
       if (ctx.activeDealId && ctx.activeDealId !== activeDealId) {
@@ -377,7 +504,11 @@ export default function MarchandPipeline() {
     setActiveDeal(id);
   };
 
-  const handleDeleteDeal = (e: React.MouseEvent, dealId: string, dealTitle: string) => {
+  const handleDeleteDeal = (
+    e: React.MouseEvent,
+    dealId: string,
+    dealTitle: string
+  ) => {
     e.stopPropagation();
     const confirmed = window.confirm(
       `Supprimer ce deal ?\n\n"${dealTitle}"\n\nToutes les données associées (Rentabilité, Exécution, Sortie) seront également supprimées.`
@@ -390,7 +521,6 @@ export default function MarchandPipeline() {
     }
   };
 
-  /** Flush le draft quand on ferme le drawer. */
   const handleCloseDrawer = useCallback(() => {
     if (draftDeal) {
       upsertDeal(draftDeal);
@@ -400,41 +530,110 @@ export default function MarchandPipeline() {
   }, [draftDeal, activeDealId]);
 
   return (
-    <PageShell
-      title="Pipeline"
-      subtitle="Deal flow et statuts — snapshot actif partagé entre toutes les pages Marchand."
-      right={
+    <div>
+      {/* ── Bannière header dégradé ── */}
+      <div
+        style={{
+          background: GRAD_INV,
+          borderRadius: 14,
+          padding: "20px 24px",
+          marginBottom: 20,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 16,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: 11,
+              color: "rgba(255,255,255,0.65)",
+              marginBottom: 6,
+            }}
+          >
+            Investisseur › Acquisition
+          </div>
+          <div
+            style={{
+              fontSize: 22,
+              fontWeight: 600,
+              color: "white",
+              marginBottom: 4,
+              lineHeight: 1.2,
+            }}
+          >
+            Pipeline
+          </div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+            Deal flow et statuts — snapshot actif partagé entre toutes les pages Marchand.
+          </div>
+        </div>
+
         <button
           type="button"
+          onClick={handleCreateDeal}
           style={{
             display: "inline-flex",
             alignItems: "center",
             gap: 8,
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid rgba(15, 23, 42, 0.10)",
-            background: "rgba(15, 23, 42, 0.04)",
-            fontWeight: 900,
+            padding: "9px 18px",
+            borderRadius: 10,
+            border: "none",
+            background: "white",
+            color: ACCENT_INV,
+            fontWeight: 600,
+            fontSize: 13,
             cursor: "pointer",
+            flexShrink: 0,
+            marginTop: 4,
           }}
-          onClick={handleCreateDeal}
         >
-          <Plus size={18} />
+          <Plus size={16} />
           Nouveau deal
         </button>
-      }
-    >
-      {/* KPIs */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-        <KpiCard label="Deals" value={`${totalDeals}`} hint="Total" icon={<Workflow size={18} />} />
-        <KpiCard label="En cours" value={`${inProgress}`} hint="Hors vendus" icon={<Clock size={18} />} />
-        <KpiCard label="Budget achat" value={fmtEur(budgetAchat)} hint="Snapshot (à brancher)" icon={<Euro size={18} />} />
-        <KpiCard label="Marge cible" value="—" hint="À calculer (Rentabilité)" icon={<TrendingUp size={18} />} />
       </div>
 
-      <div style={{ height: 12 }} />
+      {/* ── KPI cards ── */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: 12,
+          marginBottom: 12,
+        }}
+      >
+        <KpiCard
+          label="Deals"
+          value={`${totalDeals}`}
+          hint="Total"
+          icon={<Workflow size={18} />}
+        />
+        <KpiCard
+          label="En cours"
+          value={`${inProgress}`}
+          hint="Hors vendus"
+          icon={<Clock size={18} />}
+        />
+        <KpiCard
+          label="Budget achat"
+          value={fmtEur(budgetAchat)}
+          hint="Snapshot (à brancher)"
+          icon={<Euro size={18} />}
+        />
+        <KpiCard
+          label="Marge cible"
+          value="—"
+          hint="À calculer (Rentabilité)"
+          icon={<TrendingUp size={18} />}
+        />
+      </div>
 
-      <SectionCard title="Deal flow" subtitle="Sélectionne un deal pour synchroniser toutes les pages.">
+      {/* ── Deal flow ── */}
+      <SectionCard
+        title="Deal flow"
+        subtitle="Sélectionne un deal pour synchroniser toutes les pages."
+      >
         <div
           style={{
             display: "grid",
@@ -453,19 +652,63 @@ export default function MarchandPipeline() {
                 style={{
                   borderRadius: 14,
                   border: "1px solid rgba(15, 23, 42, 0.08)",
-                  background: "rgba(248,250,252,0.6)",
-                  padding: 10,
+                  overflow: "hidden",
                   minHeight: 220,
                 }}
               >
-                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-                  <div style={{ fontWeight: 900, color: "#0f172a" }}>{col}</div>
-                  <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>{colDeals.length}</div>
+                {/* En-tête colonne — dégradé */}
+                <div
+                  style={{
+                    background: GRAD_INV,
+                    padding: "10px 12px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: "white",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                    }}
+                  >
+                    {col}
+                  </div>
+                  <div
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: "50%",
+                      background:
+                        colDeals.length > 0
+                          ? "rgba(255,255,255,0.3)"
+                          : "rgba(255,255,255,0.15)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: colDeals.length > 0 ? "white" : "rgba(255,255,255,0.6)",
+                    }}
+                  >
+                    {colDeals.length}
+                  </div>
                 </div>
 
-                <div style={{ height: 8 }} />
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {/* Corps colonne — blanc */}
+                <div
+                  style={{
+                    background: "white",
+                    padding: 10,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                    minHeight: 170,
+                  }}
+                >
                   {colDeals.map((d) => {
                     const isActive = activeDealId === d.id;
 
@@ -478,11 +721,13 @@ export default function MarchandPipeline() {
                           position: "relative",
                           textAlign: "left",
                           borderRadius: 12,
-                          background: isActive ? "rgba(59,130,246,0.10)" : "rgba(255,255,255,0.95)",
+                          background: isActive
+                            ? "rgba(33,150,243,0.07)"
+                            : "rgba(255,255,255,0.95)",
                           border: isActive
-                            ? "1px solid rgba(59,130,246,0.22)"
+                            ? "1px solid rgba(33,150,243,0.25)"
                             : "1px solid rgba(15, 23, 42, 0.08)",
-                          boxShadow: "0 10px 20px rgba(2,6,23,0.05)",
+                          boxShadow: "0 2px 8px rgba(2,6,23,0.04)",
                           padding: 10,
                           cursor: "pointer",
                         }}
@@ -538,8 +783,25 @@ export default function MarchandPipeline() {
                           <Pencil size={14} style={{ color: "#0f172a" }} />
                         </div>
 
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, paddingRight: 64 }}>
-                          <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 13 }}>{d.title}</div>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            paddingRight: 64,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontWeight: 700,
+                              color: "#0f172a",
+                              fontSize: 13,
+                            }}
+                          >
+                            {d.title}
+                          </div>
+
                           {isActive && (
                             <div
                               style={{
@@ -549,10 +811,10 @@ export default function MarchandPipeline() {
                                 padding: "4px 8px",
                                 borderRadius: 999,
                                 fontSize: 11,
-                                fontWeight: 900,
-                                background: "rgba(59,130,246,0.10)",
-                                border: "1px solid rgba(59,130,246,0.22)",
-                                color: "#1d4ed8",
+                                fontWeight: 700,
+                                background: "rgba(33,150,243,0.10)",
+                                border: "1px solid rgba(33,150,243,0.22)",
+                                color: ACCENT_INV,
                                 whiteSpace: "nowrap",
                               }}
                             >
@@ -562,18 +824,56 @@ export default function MarchandPipeline() {
                           )}
                         </div>
 
-                        <div style={{ marginTop: 4, color: "#64748b", fontSize: 12 }}>
+                        <div
+                          style={{
+                            marginTop: 4,
+                            color: "#64748b",
+                            fontSize: 12,
+                          }}
+                        >
                           {d.address ? d.address : (d.city ?? "—")}
                         </div>
 
-                        <div style={{ marginTop: 6, color: "#94a3b8", fontSize: 11 }}>
-                          {d.id} · Maj {new Date(d.updatedAt).toLocaleDateString("fr-FR")}
+                        <div
+                          style={{
+                            marginTop: 6,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 10,
+                              padding: "2px 8px",
+                              borderRadius: 4,
+                              background: "rgba(33,150,243,0.10)",
+                              color: ACCENT_INV,
+                              fontWeight: 600,
+                            }}
+                          >
+                            {d.id}
+                          </span>
+                          <span style={{ fontSize: 10, color: "#94a3b8" }}>
+                            Maj {new Date(d.updatedAt).toLocaleDateString("fr-FR")}
+                          </span>
                         </div>
                       </button>
                     );
                   })}
 
-                  {colDeals.length === 0 && <div style={{ color: "#94a3b8", fontSize: 12, padding: "8px 2px" }}>—</div>}
+                  {colDeals.length === 0 && (
+                    <div
+                      style={{
+                        color: "#cbd5e1",
+                        fontSize: 18,
+                        padding: "16px 2px",
+                        textAlign: "center",
+                      }}
+                    >
+                      —
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -581,14 +881,16 @@ export default function MarchandPipeline() {
         </div>
       </SectionCard>
 
-      {/* ═══ DRAWER ÉDITION — utilise draftDeal (state local) ═══ */}
+      {/* ── Drawer édition ── */}
       <Drawer
         open={Boolean(draftDeal)}
         title={draftDeal ? `Éditer — ${draftDeal.id}` : "Éditer"}
         onClose={handleCloseDrawer}
       >
         {!draftDeal ? (
-          <div style={{ color: "#64748b", fontSize: 13 }}>Aucun deal sélectionné.</div>
+          <div style={{ color: "#64748b", fontSize: 13 }}>
+            Aucun deal sélectionné.
+          </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <Field
@@ -607,7 +909,9 @@ export default function MarchandPipeline() {
               placeholder="Ex: 12 rue de la Paix"
             />
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div
+              style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}
+            >
               <Field
                 label="Code postal"
                 value={draftDeal.zipCode ?? ""}
@@ -626,12 +930,18 @@ export default function MarchandPipeline() {
               />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div
+              style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}
+            >
               <Field
                 label="Prix d'achat (€)"
                 type="number"
                 value={draftDeal.prixAchat ?? ""}
-                onChange={(v) => updateDraft({ prixAchat: v === "" ? undefined : Number(v) })}
+                onChange={(v) =>
+                  updateDraft({
+                    prixAchat: v === "" ? undefined : Number(v),
+                  })
+                }
                 onBlur={flushDraft}
                 placeholder="Ex: 180000"
               />
@@ -639,7 +949,11 @@ export default function MarchandPipeline() {
                 label="Surface (m²)"
                 type="number"
                 value={draftDeal.surfaceM2 ?? ""}
-                onChange={(v) => updateDraft({ surfaceM2: v === "" ? undefined : Number(v) })}
+                onChange={(v) =>
+                  updateDraft({
+                    surfaceM2: v === "" ? undefined : Number(v),
+                  })
+                }
                 onBlur={flushDraft}
                 placeholder="Ex: 42"
               />
@@ -649,7 +963,11 @@ export default function MarchandPipeline() {
               label="Prix revente cible (€)"
               type="number"
               value={draftDeal.prixReventeCible ?? ""}
-              onChange={(v) => updateDraft({ prixReventeCible: v === "" ? undefined : Number(v) })}
+              onChange={(v) =>
+                updateDraft({
+                  prixReventeCible: v === "" ? undefined : Number(v),
+                })
+              }
               onBlur={flushDraft}
               placeholder="Ex: 260000"
             />
@@ -670,11 +988,12 @@ export default function MarchandPipeline() {
             />
 
             <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
-              Astuce : ces champs alimenteront Sourcing/Qualification. Rentabilité/Exécution/Sortie restent par module.
+              Astuce : ces champs alimenteront Sourcing/Qualification.
+              Rentabilité/Exécution/Sortie restent par module.
             </div>
           </div>
         )}
       </Drawer>
-    </PageShell>
+    </div>
   );
 }

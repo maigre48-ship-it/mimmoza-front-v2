@@ -1,6 +1,4 @@
-﻿// src/App.tsx
-
-import { useState, useCallback, useEffect } from "react";
+﻿import { useState, useCallback, useEffect } from "react";
 import {
   Routes,
   Route,
@@ -11,25 +9,22 @@ import {
 } from "react-router-dom";
 import { wgs84ToLambert93 } from "./lib/projection";
 
-// Layout global + sync
 import { AppShell } from "./components/AppShell";
 import { SpaceSync, type Space } from "./components/SpaceSync";
 
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
+import JetonsPage from "./pages/JetonsPage";
 
-// ✅ Test Banque Risques
 import BanqueRisquesTestPage from "./pages/BanqueRisquesTestPage";
 
-// ✅ Investisseur (bootstrap snapshot canonique)
 import { bootInvestisseurSnapshot } from "./spaces/investisseur/shared/investisseurBootstrap";
-
-// ✅ Investisseur — Analyse unifiée (Rentabilité + Due Diligence)
 import InvestisseurAnalysePage from "./spaces/investisseur/pages/AnalysePage";
+import SimulationTravauxPage from "./spaces/investisseur/pages/execution/SimulationTravauxPage";
+import VeilleSettingsPage from "@/spaces/investisseur/pages/VeilleSettingsPage";
+import VeillePage from "@/spaces/investisseur/pages/VeillePage";
+import VeilleMarchePage from "@/spaces/investisseur/pages/VeilleMarchePage";
 
-// =========================
-// Particulier — pages (COMPLET)
-// =========================
 import ParticulierDashboard from "./spaces/particulier/pages/Dashboard";
 import ParticulierMonProjet from "./spaces/particulier/pages/MonProjet";
 import ParticulierFavoris from "./spaces/particulier/pages/Favoris";
@@ -49,9 +44,23 @@ import ParticulierMesDocuments from "./spaces/particulier/pages/MesDocuments";
 import ParticulierExports from "./spaces/particulier/pages/Exports";
 import ParticulierHistorique from "./spaces/particulier/pages/Historique";
 
-// =========================
-// Marchand — pages (socle)
-// =========================
+import ConnexionPage from "./spaces/particulier/pages/ConnexionPage";
+import InscriptionPage from "./spaces/particulier/pages/InscriptionPage";
+import ComptePage from "./spaces/particulier/pages/ComptePage";
+import AbonnementPage from "./spaces/particulier/pages/AbonnementPage";
+
+import AdminDashboardPage from "./spaces/admin/pages/Dashboard";
+import AdminUtilisateursPage from "./spaces/admin/pages/Utilisateurs";
+import AdminAbonnementsPage from "./spaces/admin/pages/Abonnements";
+import AdminJetonsPage from "./spaces/admin/pages/Jetons";
+import AdminDevisPage from "./spaces/admin/pages/Devis";
+import AdminFacturesPage from "./spaces/admin/pages/Factures";
+import AdminEntreprisesPage from "./spaces/admin/pages/Entreprises";
+import AdminParametresPage from "./spaces/admin/pages/Parametres";
+import AdminLoginPage from "./spaces/admin/pages/Login";
+import { AdminGuard } from "./spaces/admin/components/AdminGuard";
+import { AdminLayout } from "./spaces/admin/components/AdminLayout";
+
 import MarchandLayout from "./spaces/marchand/MarchandLayout";
 import MarchandPipeline from "./spaces/marchand/pages/Pipeline";
 import MarchandExecution from "./spaces/marchand/pages/Execution";
@@ -60,9 +69,6 @@ import MarchandExports from "./spaces/marchand/pages/Exports";
 import MarchandTravaux from "./spaces/marchand/pages/Travaux";
 import { SourcingHomePage } from "./spaces/sourcing";
 
-// =========================
-// Promoteur — pages (socle)
-// =========================
 import PromoteurDashboard from "./spaces/promoteur/pages/Dashboard";
 import FoncierPluPage from "./spaces/promoteur/pages/FoncierPluPage";
 import MarchePage from "./spaces/promoteur/etudes/marche/MarchePage";
@@ -74,9 +80,6 @@ import PromoteurExports from "./spaces/promoteur/pages/Exports";
 import Implantation2DPage from "./spaces/promoteur/Implantation2DPage";
 import BilanPromoteurPage from "./spaces/promoteur/bilan-promoteur/BilanPromoteurPage";
 
-// =========================
-// Banque — refactored
-// =========================
 import BanqueLayout from "./spaces/banque/components/BanqueLayout";
 import BanquePipeline from "./spaces/banque/pages/Pipeline";
 import BanqueDossierPage from "./spaces/banque/pages/DossierPage";
@@ -86,9 +89,6 @@ import BanqueAlertes from "./spaces/banque/pages/Alertes";
 import BanqueSmartScoreDebug from "./spaces/banque/pages/SmartScoreDebug";
 import BanqueRedirectToDossier from "./spaces/banque/pages/BanqueRedirectToDossier";
 
-// =========================
-// Assurance — pages (now served under /banque/assurance/*)
-// =========================
 import AssuranceDashboard from "./spaces/assurance/pages/Dashboard";
 import AssuranceSouscription from "./spaces/assurance/pages/Souscription";
 import AssuranceExposition from "./spaces/assurance/pages/Exposition";
@@ -97,23 +97,17 @@ import AssuranceOffre from "./spaces/assurance/pages/Offre";
 import AssuranceMonitoring from "./spaces/assurance/pages/Monitoring";
 import AssuranceDocuments from "./spaces/assurance/pages/Documents";
 
-// =========================
-// Types globaux (dev helpers)
-// =========================
 declare global {
   interface Window {
     __mimmozaProjection?: (lon: number, lat: number) => { x: number; y: number };
-    __mimmozaElevation?: (deptCode: string, lon: number, lat: number) => Promise<unknown>;
+    __mimmozaElevation?: (
+      deptCode: string,
+      lon: number,
+      lat: number
+    ) => Promise<unknown>;
   }
 }
 
-/**
- * Type-safe space → path resolver.
- * Uses a function instead of Record<Space, string> so we don't need to
- * enumerate Space values that may still exist in SpaceSync but are no
- * longer routed as standalone spaces (audit, assurance).
- * Those gracefully fall back to "/".
- */
 function getSpacePath(space: Space): string {
   switch (space) {
     case "promoteur":
@@ -129,8 +123,6 @@ function getSpacePath(space: Space): string {
   }
 }
 
-// ── Redirect helpers (inline) ──
-
 function BanqueRedirectToComite() {
   const { id } = useParams<{ id: string }>();
   return <Navigate to={`/banque/comite/${id ?? ""}`} replace />;
@@ -140,8 +132,6 @@ function BanqueRedirectToAnalyse() {
   const { id } = useParams<{ id: string }>();
   return <Navigate to={`/banque/analyse/${id ?? ""}`} replace />;
 }
-
-// ── AppRoot ──
 
 function AppRoot() {
   const [currentSpace, setCurrentSpace] = useState<Space>("none");
@@ -155,7 +145,6 @@ function AppRoot() {
     [navigate]
   );
 
-  // ✅ DEV-only: bootstrap investisseur snapshot (migration legacy keys → snapshot canonique)
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     try {
@@ -167,12 +156,18 @@ function AppRoot() {
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
+
     window.__mimmozaProjection = (lon: number, lat: number) => {
       const { x, y } = wgs84ToLambert93(lon, lat);
       console.log("[mimmoza] projection EPSG:4326 -> EPSG:2154", { lon, lat, x, y });
       return { x, y };
     };
-    window.__mimmozaElevation = async (deptCode: string, lon: number, lat: number) => {
+
+    window.__mimmozaElevation = async (
+      deptCode: string,
+      lon: number,
+      lat: number
+    ) => {
       const { x, y } = wgs84ToLambert93(lon, lat);
       const resp = await fetch("http://localhost:4010/elevation", {
         method: "POST",
@@ -183,6 +178,7 @@ function AppRoot() {
       console.log("[mimmoza] elevation", { deptCode, lon, lat, x, y, json });
       return json;
     };
+
     const { x, y } = wgs84ToLambert93(2.3522, 48.8566);
     console.log("[mimmoza] DEV helpers ready. Paris (Lambert93) ≈", { x, y });
   }, []);
@@ -194,7 +190,48 @@ function AppRoot() {
       <AppShell currentSpace={currentSpace} onChangeSpace={handleChangeSpace}>
         <Routes>
           <Route path="/" element={<HomePage />} />
-          <Route path="/login" element={<LoginPage />} />
+
+          {/* ═══ Compte / Auth / Abonnement ═══ */}
+          <Route path="/login" element={<ConnexionPage />} />
+          <Route path="/connexion" element={<ConnexionPage />} />
+          <Route path="/inscription" element={<InscriptionPage />} />
+          <Route path="/compte" element={<ComptePage />} />
+          <Route path="/abonnement" element={<AbonnementPage />} />
+          <Route path="/jetons" element={<JetonsPage />} />
+
+          <Route path="/signup" element={<Navigate to="/inscription" replace />} />
+          <Route path="/register" element={<Navigate to="/inscription" replace />} />
+          <Route path="/billing" element={<Navigate to="/abonnement" replace />} />
+          <Route path="/account" element={<Navigate to="/compte" replace />} />
+          <Route path="/tokens" element={<Navigate to="/jetons" replace />} />
+
+          {/* ═══ Paramètres ═══ */}
+          <Route path="/parametres/veille" element={<VeilleSettingsPage />} />
+
+          {/* ═══ Veille ═══ */}
+          <Route path="/veille" element={<VeillePage />} />
+          <Route path="/veille/marche" element={<VeilleMarchePage />} />
+
+          {/* ═══ Admin ═══ */}
+          <Route path="/admin/login" element={<AdminLoginPage />} />
+
+          <Route
+            path="/admin"
+            element={
+              <AdminGuard>
+                <AdminLayout />
+              </AdminGuard>
+            }
+          >
+            <Route index element={<AdminDashboardPage />} />
+            <Route path="utilisateurs" element={<AdminUtilisateursPage />} />
+            <Route path="abonnements" element={<AdminAbonnementsPage />} />
+            <Route path="jetons" element={<AdminJetonsPage />} />
+            <Route path="devis" element={<AdminDevisPage />} />
+            <Route path="factures" element={<AdminFacturesPage />} />
+            <Route path="entreprises" element={<AdminEntreprisesPage />} />
+            <Route path="parametres" element={<AdminParametresPage />} />
+          </Route>
 
           {/* ═══ Particulier ═══ */}
           <Route path="/particulier" element={<Outlet />}>
@@ -205,7 +242,10 @@ function AppRoot() {
             <Route path="alertes" element={<ParticulierAlertes />} />
             <Route path="comparateur" element={<ParticulierComparateur />} />
             <Route path="estimation" element={<ParticulierEstimation />} />
-            <Route path="evaluation" element={<Navigate to="/particulier/estimation" replace />} />
+            <Route
+              path="evaluation"
+              element={<Navigate to="/particulier/estimation" replace />}
+            />
             <Route path="quartier" element={<ParticulierQuartier />} />
             <Route path="charges" element={<ParticulierCharges />} />
             <Route path="financement" element={<ParticulierCapacite />} />
@@ -224,17 +264,27 @@ function AppRoot() {
           <Route path="/marchand-de-bien" element={<MarchandLayout />}>
             <Route index element={<MarchandPipeline />} />
             <Route path="sourcing" element={<SourcingHomePage />} />
-
-            {/* ✅ Qualification supprimé — redirection compat vers Pipeline */}
-            <Route path="qualification" element={<Navigate to="/marchand-de-bien" replace />} />
-
-            {/* ✅ Analyse unifiée (Rentabilité + Due Diligence en sous-onglets) */}
+            <Route
+              path="qualification"
+              element={<Navigate to="/marchand-de-bien" replace />}
+            />
             <Route path="analyse" element={<InvestisseurAnalysePage />} />
-
-            {/* Compatibilité anciennes routes → redirige vers Analyse avec ?tab */}
-            <Route path="rentabilite" element={<Navigate to="/marchand-de-bien/analyse?tab=rentabilite" replace />} />
-            <Route path="due-diligence" element={<Navigate to="/marchand-de-bien/analyse?tab=due-diligence" replace />} />
-
+            <Route
+              path="rentabilite"
+              element={
+                <Navigate to="/marchand-de-bien/analyse?tab=rentabilite" replace />
+              }
+            />
+            <Route
+              path="due-diligence"
+              element={
+                <Navigate to="/marchand-de-bien/analyse?tab=due-diligence" replace />
+              }
+            />
+            <Route
+              path="execution/simulation"
+              element={<SimulationTravauxPage />}
+            />
             <Route path="execution" element={<MarchandExecution />} />
             <Route path="planning" element={<MarchandTravaux />} />
             <Route path="sortie" element={<MarchandSortie />} />
@@ -242,15 +292,24 @@ function AppRoot() {
             <Route path="estimation" element={<ParticulierEstimation />} />
             <Route path="marche" element={<MarchePage />} />
             <Route path="risques" element={<RisquesPage />} />
-            <Route path="*" element={<Navigate to="/marchand-de-bien" replace />} />
+            <Route
+              path="*"
+              element={<Navigate to="/marchand-de-bien" replace />}
+            />
           </Route>
 
           {/* ═══ Promoteur ═══ */}
           <Route path="/promoteur" element={<Outlet />}>
             <Route index element={<PromoteurDashboard />} />
             <Route path="foncier" element={<FoncierPluPage />} />
-            <Route path="plu-faisabilite" element={<Navigate to="/promoteur/foncier" replace />} />
-            <Route path="faisabilite" element={<Navigate to="/promoteur/foncier" replace />} />
+            <Route
+              path="plu-faisabilite"
+              element={<Navigate to="/promoteur/foncier" replace />}
+            />
+            <Route
+              path="faisabilite"
+              element={<Navigate to="/promoteur/foncier" replace />}
+            />
             <Route path="marche" element={<MarchePage />} />
             <Route path="risques" element={<RisquesPage />} />
             <Route path="implantation-2d" element={<Implantation2DPage />} />
@@ -263,32 +322,20 @@ function AppRoot() {
             <Route path="*" element={<Navigate to="/promoteur" replace />} />
           </Route>
 
-          {/* ═══════════════════════════════════════════
-              Banque / Assurance — UNIFIED
-              Workflow: Dossiers → Dossier → Analyse → Comité
-              + Assurance pages under /banque/assurance/*
-              Layout unique: BanqueLayout (nav + Changer de dossier)
-             ═══════════════════════════════════════════ */}
+          {/* ═══ Banque / Assurance ═══ */}
           <Route path="/banque" element={<BanqueLayout />}>
             <Route index element={<Navigate to="/banque/dossiers" replace />} />
-
-            {/* Main workflow */}
             <Route path="dossiers" element={<BanquePipeline />} />
             <Route path="dossier/:id" element={<BanqueDossierPage />} />
             <Route path="analyse/:id" element={<BanqueAnalysePage />} />
             <Route path="comite/:id" element={<BanqueComitePage />} />
-
-            {/* Utilities */}
             <Route path="alertes" element={<BanqueAlertes />} />
             <Route path="smartscore-debug" element={<BanqueSmartScoreDebug />} />
             <Route path="risques-test" element={<BanqueRisquesTestPage />} />
-
-            {/* Shared tools */}
             <Route path="estimation" element={<ParticulierEstimation />} />
             <Route path="marche" element={<MarchePage />} />
             <Route path="outil-risques/:id" element={<RisquesPage />} />
 
-            {/* ── Assurance (now under /banque/assurance/*) ── */}
             <Route path="assurance" element={<Outlet />}>
               <Route index element={<AssuranceDashboard />} />
               <Route path="souscription" element={<AssuranceSouscription />} />
@@ -300,39 +347,79 @@ function AppRoot() {
               <Route path="estimation" element={<ParticulierEstimation />} />
               <Route path="marche" element={<MarchePage />} />
               <Route path="risques" element={<RisquesPage />} />
-              <Route path="*" element={<Navigate to="/banque/assurance" replace />} />
+              <Route
+                path="*"
+                element={<Navigate to="/banque/assurance" replace />}
+              />
             </Route>
 
-            {/* ── Redirections anciennes routes ── */}
             <Route path="garanties/:id" element={<BanqueRedirectToDossier />} />
             <Route path="documents/:id" element={<BanqueRedirectToDossier />} />
             <Route path="decision/:id" element={<BanqueRedirectToComite />} />
             <Route path="smartscore/:id" element={<BanqueRedirectToAnalyse />} />
             <Route path="risque/:id" element={<BanqueRedirectToAnalyse />} />
             <Route path="risques/:id" element={<BanqueRedirectToAnalyse />} />
-            <Route path="origination" element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="monitoring" element={<Navigate to="/banque/alertes" replace />} />
-            <Route path="pipeline" element={<Navigate to="/banque/dossiers" replace />} />
-
-            {/* Fallbacks (routes sans :id) */}
-            <Route path="garanties" element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="documents" element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="decision" element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="comite" element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="analyse" element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="risque" element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="risques" element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="dossier" element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="*" element={<Navigate to="/banque/dossiers" replace />} />
+            <Route
+              path="origination"
+              element={<Navigate to="/banque/dossiers" replace />}
+            />
+            <Route
+              path="monitoring"
+              element={<Navigate to="/banque/alertes" replace />}
+            />
+            <Route
+              path="pipeline"
+              element={<Navigate to="/banque/dossiers" replace />}
+            />
+            <Route
+              path="garanties"
+              element={<Navigate to="/banque/dossiers" replace />}
+            />
+            <Route
+              path="documents"
+              element={<Navigate to="/banque/dossiers" replace />}
+            />
+            <Route
+              path="decision"
+              element={<Navigate to="/banque/dossiers" replace />}
+            />
+            <Route
+              path="comite"
+              element={<Navigate to="/banque/dossiers" replace />}
+            />
+            <Route
+              path="analyse"
+              element={<Navigate to="/banque/dossiers" replace />}
+            />
+            <Route
+              path="risque"
+              element={<Navigate to="/banque/dossiers" replace />}
+            />
+            <Route
+              path="risques"
+              element={<Navigate to="/banque/dossiers" replace />}
+            />
+            <Route
+              path="dossier"
+              element={<Navigate to="/banque/dossiers" replace />}
+            />
+            <Route
+              path="*"
+              element={<Navigate to="/banque/dossiers" replace />}
+            />
           </Route>
 
           {/* ═══ Compatibility redirects ═══ */}
-          <Route path="/assurance/*" element={<Navigate to="/banque/assurance" replace />} />
+          <Route
+            path="/assurance/*"
+            element={<Navigate to="/banque/assurance" replace />}
+          />
           <Route path="/audit/*" element={<Navigate to="/" replace />} />
-
-          {/* Aliases */}
           <Route path="/agence" element={<Navigate to="/particulier" replace />} />
-          <Route path="/marchand" element={<Navigate to="/marchand-de-bien" replace />} />
+          <Route
+            path="/marchand"
+            element={<Navigate to="/marchand-de-bien" replace />}
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AppShell>

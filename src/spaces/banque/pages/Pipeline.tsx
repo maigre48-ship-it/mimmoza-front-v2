@@ -8,6 +8,10 @@ import {
   removeDossier,
 } from "../store/banqueSnapshot.store";
 
+// ── Gradient tokens Financeur ──────────────────────────────────────
+const GRAD_FIN = "linear-gradient(90deg, #26a69a 0%, #80cbc4 100%)";
+const ACCENT_FIN = "#1a7a50";
+
 function makeId() {
   return `DOSS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}-${Date.now()
     .toString()
@@ -41,8 +45,6 @@ export default function Pipeline() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
 
-  // ✅ IMPORTANT: ne pas figer le snapshot au montage
-  // sinon création / update dossier ne se reflète pas.
   const snap = readBanqueSnapshot();
   const active = (snap as any)?.dossier ?? null;
 
@@ -74,12 +76,16 @@ export default function Pipeline() {
 
     const sponsor = (window.prompt("Sponsor (promoteur / client) ?", "") || "").trim();
 
-    const typeRaw = (window.prompt('Type de projet ? "promotion" / "marchand" / "baseline"', "baseline") || "")
+    const typeRaw = (
+      window.prompt('Type de projet ? "promotion" / "marchand" / "baseline"', "baseline") || ""
+    )
       .trim()
       .toLowerCase();
 
     const projectType =
-      typeRaw === "promotion" || typeRaw === "marchand" || typeRaw === "baseline" ? typeRaw : "baseline";
+      typeRaw === "promotion" || typeRaw === "marchand" || typeRaw === "baseline"
+        ? typeRaw
+        : "baseline";
 
     const montantRaw = (window.prompt("Montant demandé (€) ?", "0") || "").replace(/\s/g, "");
     const montant = Number(montantRaw) || 0;
@@ -101,138 +107,347 @@ export default function Pipeline() {
     } as any);
 
     setActiveDossierId(id);
-
-    // ✅ navigation cohérente vers le dossier
     goToDocuments(id);
   };
 
-  // ✅ NEW: delete dossier (avec confirmation) + gestion dossier actif
   const deleteDossier = (id: string) => {
     const d = dossiers.find((x: any) => x?.id === id) ?? active;
-    const label = d?.nom ? `“${d.nom}”` : id;
+    const label = d?.nom ? `"${d.nom}"` : id;
 
     const ok = window.confirm(`Supprimer le dossier ${label} ?\n\nCette action est irréversible.`);
     if (!ok) return;
 
-    // Si le dossier supprimé est le dossier actif, on vide l'active id local + navigation pipeline
     const isActive = active?.id === id;
-
     removeDossier(id);
 
     if (isActive) {
       setActiveDossierId(null);
-      // on reste/retourne sur pipeline
       navigate(`/banque/pipeline`);
     }
   };
 
+  // ── Initiales avatar ──
+  function getInitials(nom: string): string {
+    return nom
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase() ?? "")
+      .join("");
+  }
+
   return (
-    <div className="p-8">
-      <div className="flex items-start justify-between gap-4">
+    <div>
+      {/* ── Bannière header dégradé ── */}
+      <div
+        style={{
+          background: GRAD_FIN,
+          borderRadius: 14,
+          padding: "20px 24px",
+          marginBottom: 20,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 16,
+        }}
+      >
         <div>
-          <h1 className="text-2xl font-bold mb-2">Dossiers (Pipeline)</h1>
-          <p className="text-slate-500">
+          <div
+            style={{
+              fontSize: 11,
+              color: "rgba(255,255,255,0.65)",
+              marginBottom: 6,
+            }}
+          >
+            Financeur › Pipeline
+          </div>
+          <div
+            style={{
+              fontSize: 22,
+              fontWeight: 600,
+              color: "white",
+              marginBottom: 4,
+              lineHeight: 1.2,
+            }}
+          >
+            Dossiers (Pipeline)
+          </div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
             Créez un dossier puis ouvrez Documents / Garanties / Analyse / Comité avec le même ID.
-          </p>
+          </div>
         </div>
 
         <button
           type="button"
           onClick={createNewDossier}
-          className="px-4 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "9px 18px",
+            borderRadius: 10,
+            border: "none",
+            background: "white",
+            color: ACCENT_FIN,
+            fontWeight: 600,
+            fontSize: 13,
+            cursor: "pointer",
+            flexShrink: 0,
+            marginTop: 4,
+          }}
         >
           + Nouveau dossier
         </button>
       </div>
 
-      <div className="mt-6 flex items-center gap-3">
+      {/* ── Barre de recherche ── */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: 20,
+        }}
+      >
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Rechercher (nom ou sponsor)…"
-          className="w-full max-w-md px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-300"
+          style={{
+            flex: 1,
+            maxWidth: 400,
+            padding: "9px 14px",
+            borderRadius: 10,
+            border: "1px solid #c0e8d4",
+            outline: "none",
+            fontSize: 13,
+            color: "#0a3d28",
+            background: "white",
+          }}
         />
-        <div className="text-sm text-slate-500 whitespace-nowrap">{dossiers.length} dossier(s)</div>
+        <div style={{ fontSize: 13, color: "#5a9a7a", whiteSpace: "nowrap" }}>
+          {dossiers.length} dossier(s)
+        </div>
       </div>
 
-      {dossiers.length === 0 ? (
-        <div className="mt-10 border border-dashed border-slate-300 rounded-xl p-10 text-center">
-          <p className="text-slate-600 mb-4">Aucun dossier. Créez votre premier dossier pour démarrer.</p>
+      {/* ── Empty state ── */}
+      {dossiers.length === 0 && (
+        <div
+          style={{
+            border: "1px dashed #9ed4bc",
+            borderRadius: 14,
+            padding: 40,
+            textAlign: "center",
+            background: "#f8fdfb",
+          }}
+        >
+          <div style={{ fontSize: 15, fontWeight: 600, color: "#0a3d28", marginBottom: 8 }}>
+            Aucun dossier
+          </div>
+          <div style={{ fontSize: 13, color: "#5a9a7a", marginBottom: 20 }}>
+            Créez votre premier dossier pour démarrer.
+          </div>
           <button
             type="button"
             onClick={createNewDossier}
-            className="px-4 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800"
+            style={{
+              padding: "9px 18px",
+              borderRadius: 10,
+              border: "none",
+              background: GRAD_FIN,
+              color: "white",
+              fontWeight: 600,
+              fontSize: 13,
+              cursor: "pointer",
+            }}
           >
             Créer mon premier dossier
           </button>
         </div>
-      ) : (
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      )}
+
+      {/* ── Liste dossiers ── */}
+      {dossiers.length > 0 && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
+            gap: 14,
+          }}
+        >
           {dossiers.map((d: any) => (
             <div
               key={d.id}
-              className="text-left p-5 rounded-xl border border-slate-200 hover:border-slate-300 hover:shadow-sm bg-white"
-              title="Ouvrir le dossier"
+              style={{
+                border: "1px solid #c0e8d4",
+                borderRadius: 14,
+                background: "white",
+                overflow: "hidden",
+              }}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="font-semibold text-slate-900">{d.nom || "(Sans nom)"}</div>
-                  <div className="text-sm text-slate-500">{d.sponsor || "Sponsor non renseigné"}</div>
-                </div>
+              {/* Barre dégradée top */}
+              <div style={{ height: 4, background: GRAD_FIN }} />
 
-                <div className="flex items-center gap-2">
-                  <div className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700">
-                    {d.projectType || "baseline"}
+              {/* Corps */}
+              <div style={{ padding: "16px 18px" }}>
+                {/* En-tête dossier */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    marginBottom: 14,
+                  }}
+                >
+                  {/* Avatar initiales */}
+                  <div
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 10,
+                      background: GRAD_FIN,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: "white",
+                      flexShrink: 0,
+                      textAlign: "center",
+                      lineHeight: 1.3,
+                    }}
+                  >
+                    {getInitials(d.nom || "DO")}
                   </div>
 
-                  {/* ✅ NEW: delete button */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 600,
+                        color: "#0a3d28",
+                        marginBottom: 3,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {d.nom || "(Sans nom)"}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#5a9a7a" }}>
+                      {d.sponsor || "Sponsor non renseigné"}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                    {/* Badge type */}
+                    <span
+                      style={{
+                        fontSize: 10,
+                        padding: "3px 8px",
+                        borderRadius: 5,
+                        background: "rgba(38,166,154,0.10)",
+                        color: ACCENT_FIN,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {d.projectType || "baseline"}
+                    </span>
+
+                    {/* Bouton supprimer */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        deleteDossier(d.id);
+                      }}
+                      style={{
+                        fontSize: 11,
+                        padding: "3px 8px",
+                        borderRadius: 6,
+                        border: "1px solid #fecaca",
+                        background: "#fef2f2",
+                        color: "#dc2626",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                      title="Supprimer le dossier"
+                    >
+                      Supprimer
+                    </button>
+                  </div>
+                </div>
+
+                {/* Stats */}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 28,
+                    marginBottom: 14,
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: ACCENT_FIN }}>
+                      {fmtEur(d.montant || 0)}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#5a9a7a", marginTop: 2 }}>
+                      Montant
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "#0a3d28" }}>
+                      {d.dates?.derniereMaj
+                        ? new Date(d.dates.derniereMaj).toLocaleDateString("fr-FR")
+                        : "—"}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#5a9a7a", marginTop: 2 }}>
+                      Dernière MAJ
+                    </div>
+                  </div>
+                </div>
+
+                {/* ID */}
+                <div style={{ fontSize: 11, color: "#9ed4bc", marginBottom: 14 }}>
+                  ID: <span style={{ fontFamily: "monospace" }}>{d.id}</span>
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: "flex", gap: 8 }}>
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      deleteDossier(d.id);
+                    onClick={() => goToDocuments(d.id)}
+                    style={{
+                      flex: "1 1 auto",
+                      padding: "8px 14px",
+                      borderRadius: 9,
+                      border: "none",
+                      background: GRAD_FIN,
+                      color: "white",
+                      fontWeight: 600,
+                      fontSize: 12,
+                      cursor: "pointer",
                     }}
-                    className="text-xs px-2 py-1 rounded-lg border border-red-200 text-red-700 hover:bg-red-50"
-                    title="Supprimer le dossier"
                   >
-                    Supprimer
+                    Ouvrir Documents
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => goToRisque(d.id)}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: 9,
+                      border: "1px solid #9ed4bc",
+                      background: "white",
+                      color: ACCENT_FIN,
+                      fontWeight: 600,
+                      fontSize: 12,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Ouvrir Risque
                   </button>
                 </div>
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <div>
-                  <div className="text-xs text-slate-500">Montant</div>
-                  <div className="font-medium">{fmtEur(d.montant || 0)}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-slate-500">Dernière MAJ</div>
-                  <div className="font-medium">
-                    {d.dates?.derniereMaj ? new Date(d.dates.derniereMaj).toLocaleDateString("fr-FR") : "—"}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4 text-xs text-slate-500">
-                ID: <span className="font-mono">{d.id}</span>
-              </div>
-
-              <div className="mt-4 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => goToDocuments(d.id)}
-                  className="px-3 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800 text-sm"
-                >
-                  Ouvrir Documents
-                </button>
-                <button
-                  type="button"
-                  onClick={() => goToRisque(d.id)}
-                  className="px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-sm"
-                >
-                  Ouvrir Risque
-                </button>
               </div>
             </div>
           ))}

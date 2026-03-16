@@ -1,2921 +1,2977 @@
-// src/spaces/marchand/services/exportPdf.ts
-
-import type { MarchandSnapshotV1 } from "../shared/marchandSnapshot.store";
+// === exportPdf.ts — COMPLET (patch scoreCard100 couleur + cardH=40) ===
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import type { MarchandSnapshotV1 } from "../shared/marchandSnapshot.store";
+import { buildSyntheseInstitutionnellePage } from "./exportPdf.investisseur";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+export { autoTable };
 
-interface ExportPdfOpts {
-  space?: "marchand" | "investisseur";
-  aiReport?: {
-    analysis?: {
-      verdict?: string;
-      confidence?: number;
-
-      // Legacy
-      executiveSummary?: string;
-      strengths?: string[];
-      vigilances?: string[];
-      sensitivities?: string[];
-      actionPlan?: string[];
-      missingData?: string[];
-
-      // v2.1 director — nouveaux champs (Edge Function)
-      marketStatus?: {
-        label?: string;
-        plainFrench?: string;
-        dvfSummary?: {
-          nbTransactions?: number | null;
-          medianPriceM2?: number | null;
-          acquisitionPriceM2?: number | null;
-          premiumVsDvfPct?: number | null;
-        };
-      };
-
-      conclusion?: {
-        decisionToday?: string;
-        decisionAdvised?: "ACHETER" | "NÉGOCIER" | "ATTENDRE" | "RENOCER" | "INCONNU";
-        whyInPlainFrench?: string[];
-        whatToDoNow?: string[];
-        conditionsToBuy?: string[];
-        maxEngagementPriceEur?: number | null;
-        neverExceedPriceEur?: number | null;
-        afterVerificationDecision?: string;
-      };
-
-      finalSummary?: {
-        decisionToday?: string;
-        decisionAfterDueDiligence?: string;
-        maxEngagementPriceEur?: number | null;
-        neverExceedPriceEur?: number | null;
-        top3ActionsNow?: string[];
-        dataToGetBeforeSigning?: string[];
-        killSwitches?: string[];
-        plan60Days?: {
-          week1?: string[];
-          weeks2to4?: string[];
-          month2?: string[];
-        };
-        investorChecklist?: string[];
-        messageToAgent?: string;
-      };
-
-      scenarios?: any[];
-    };
-    executiveSummary?: string;
-    decision?: "GO" | "GO_AVEC_RESERVES" | "NO_GO";
-    confidence?: number;
-    strengths?: string[];
-    redFlags?: string[];
-    actionPlan?: string[];
-    narrativeMarkdown?: string;
-    narrative?: string;
-    generatedAt?: string;
-  };
-  context?: {
-    dueDiligence?: {
-      report: any;
-      computed?: any;
-    };
-    generatedAt?: string;
-    [key: string]: any;
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Normalized AI data
-// ---------------------------------------------------------------------------
-
-interface NormalizedAi {
-  verdict: string;
-  confidencePct: string;
-  confidenceRaw: number | null;
-  executiveSummary: string;
-  strengths: string[];
-  vigilances: string[];
-  sensitivities: string[];
-  actionPlan: string[];
-  missingData: string[];
-  generatedAt: string;
-  narrativeMarkdown: string;
-
-  // Director blocks (v2.1)
-  marketPlain: string;
-  decisionToday: string;
-  decisionAfter: string;
-  decisionAdvised: string;
-  why: string[];
-  whatToDo: string[];
-  conditionsToBuy: string[];
-  maxEngagementPriceEur: number | null;
-  neverExceedPriceEur: number | null;
-}
-
-function normalizeAiReport(ai: NonNullable<ExportPdfOpts["aiReport"]>): NormalizedAi | null {
-  const a = ai.analysis;
-
-  const marketPlain = sanitizeForPdf(a?.marketStatus?.plainFrench ?? "");
-  const c = a?.conclusion;
-
-  const decisionToday = sanitizeForPdf(c?.decisionToday ?? "");
-  const decisionAfter = sanitizeForPdf(c?.afterVerificationDecision ?? "");
-  const decisionAdvised = sanitizeForPdf(String(c?.decisionAdvised ?? ""));
-
-  const why = [...(c?.whyInPlainFrench ?? [])].map(sanitizeForPdf);
-  const whatToDo = [...(c?.whatToDoNow ?? [])].map(sanitizeForPdf);
-  const conditionsToBuy = [...(c?.conditionsToBuy ?? [])].map(sanitizeForPdf);
-
-  const maxEngagementPriceEur =
-    c?.maxEngagementPriceEur !== undefined && c?.maxEngagementPriceEur !== null && Number.isFinite(Number(c.maxEngagementPriceEur))
-      ? Number(c.maxEngagementPriceEur)
-      : null;
-
-  const neverExceedPriceEur =
-    c?.neverExceedPriceEur !== undefined && c?.neverExceedPriceEur !== null && Number.isFinite(Number(c.neverExceedPriceEur))
-      ? Number(c.neverExceedPriceEur)
-      : null;
-
-  const rawConf = a?.confidence ?? ai.confidence;
-  const confidenceRaw =
-    rawConf !== undefined && rawConf !== null && Number.isFinite(Number(rawConf))
-      ? Number(rawConf) : null;
-  const confidencePct = confidenceRaw !== null ? Math.round(confidenceRaw * 100) + " %" : "";
-
-  const narrativeMarkdown = sanitizeForPdf(ai.narrativeMarkdown ?? ai.narrative ?? "");
-
-  // Extract verdict — try structured first, then parse from narrative
-  let verdict = a?.verdict ?? ai.decision ?? "";
-  if (!verdict && narrativeMarkdown) {
-    const vm = narrativeMarkdown.match(/Verdict\s*:\s*(\S+)/i);
-    if (vm) verdict = vm[1].replace(/[.,;:!]$/, "");
-  }
-
-  let executiveSummary = a?.executiveSummary ?? ai.executiveSummary ?? "";
-  if (!executiveSummary && narrativeMarkdown) {
-    const lines = narrativeMarkdown.split("\n").filter(l => l.trim() && !l.trim().startsWith("#") && !l.trim().startsWith("|"));
-    if (lines.length > 0) {
-      const firstBlock: string[] = [];
-      for (const line of lines) {
-        if (firstBlock.length > 0 && line.trim() === "") break;
-        firstBlock.push(line.trim());
-        if (firstBlock.join(" ").length > 350) break;
-      }
-      let raw = firstBlock.join(" ");
-      if (raw.length > 600) raw = raw.slice(0, 600);
-      const lastDot = raw.lastIndexOf(". ");
-      if (lastDot > 100) raw = raw.slice(0, lastDot + 1);
-      executiveSummary = raw;
-    }
-  }
-
-  const strengths = [...(a?.strengths ?? ai.strengths ?? [])].map(sanitizeForPdf);
-  const vigilances = [...(a?.vigilances ?? ai.redFlags ?? [])].map(sanitizeForPdf);
-  const sensitivities = [...(a?.sensitivities ?? [])].map(sanitizeForPdf);
-  const actionPlan = [...(a?.actionPlan ?? ai.actionPlan ?? [])].map(sanitizeForPdf);
-  let missingData = [...(a?.missingData ?? [])].map(sanitizeForPdf);
-  if (narrativeMarkdown && (strengths.length === 0 || vigilances.length === 0)) {
-    const extracted = extractFromNarrative(narrativeMarkdown);
-    if (strengths.length === 0) strengths.push(...extracted.strengths);
-    if (vigilances.length === 0) vigilances.push(...extracted.vigilances);
-    if (sensitivities.length === 0) sensitivities.push(...extracted.sensitivities);
-    if (actionPlan.length === 0) actionPlan.push(...extracted.actionPlan);
-    if (missingData.length === 0) missingData.push(...extracted.missingData);
-  }
-  // A3: deduplicate case-insensitive + trim
-  missingData = deduplicateCaseInsensitive(missingData);
-
-  const generatedAt = ai.generatedAt ?? "";
-  const hasContent =
-    verdict ||
-    executiveSummary ||
-    marketPlain ||
-    decisionToday ||
-    strengths.length > 0 ||
-    vigilances.length > 0 ||
-    sensitivities.length > 0 ||
-    actionPlan.length > 0 ||
-    missingData.length > 0 ||
-    narrativeMarkdown;
-  if (!hasContent) return null;
-
-  return {
-    verdict: sanitizeForPdf(verdict),
-    confidencePct,
-    confidenceRaw,
-    executiveSummary: sanitizeForPdf(executiveSummary),
-    strengths, vigilances, sensitivities, actionPlan, missingData,
-    generatedAt,
-    narrativeMarkdown,
-    marketPlain,
-    decisionToday,
-    decisionAfter,
-    decisionAdvised,
-    why,
-    whatToDo,
-    conditionsToBuy,
-    maxEngagementPriceEur,
-    neverExceedPriceEur,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Smart extraction from narrative markdown
-// ---------------------------------------------------------------------------
-
-function extractFromNarrative(md: string): {
-  strengths: string[]; vigilances: string[]; sensitivities: string[];
-  actionPlan: string[]; missingData: string[]; scores: Record<string, string>;
-} {
-  const result = { strengths: [] as string[], vigilances: [] as string[], sensitivities: [] as string[], actionPlan: [] as string[], missingData: [] as string[], scores: {} as Record<string, string> };
-
-  const scorePatterns = [
-    { key: "SmartScore", re: /SmartScore\s+(\d{1,3})\b/i },
-    { key: "OpportunityScore", re: /OpportunityScore[^(\n]{0,30}\((\d{1,3})\b/i },
-    { key: "BPE Score", re: /BPE\s+Score[:\s]+(\d{1,3})\b/i },
-    { key: "RiskPressureIndex", re: /RiskPressureIndex[^(\n]{0,30}\((\d{1,3})\b/i },
-    { key: "RiskPressureIndex", re: /[Pp]ression\s+risque[^.\n]{0,40}?(\d{1,3})\s*(?:\/\s*100|%)/i },
-    { key: "Probabilité revente", re: /[Pp]robabilit\u00e9 de revente[^.\n]{0,60}?(\d{1,3})\s*%/i },
-    { key: "Complétude", re: /(\d{1,3})\s*%\s*(?:de\s+)?compl\u00e9tude/i },
-  ];
-  for (const { key, re } of scorePatterns) {
-    if (result.scores[key]) continue; // A2: keep first match, don't overwrite
-    const m = md.match(re);
-    if (m) result.scores[key] = m[1];
-  }
-
-  const lines = md.split("\n");
-  let currentSection = "";
-
-  for (const raw of lines) {
-    const line = raw.replace(/\*\*/g, "").trim();
-    if (!line) continue;
-
-    const heading = line.replace(/^#{1,4}\s*/, "").trim().toLowerCase();
-    if (/positionnement prix|structure de marge|lecture.*march|dvf/i.test(heading)) currentSection = "market";
-    else if (/asym\u00e9trie|capital at risk|capital.*risk/i.test(heading)) currentSection = "risk";
-    else if (/risques? majeurs|angles? morts/i.test(heading)) currentSection = "risks";
-    else if (/liquidit\u00e9|sortie/i.test(heading)) currentSection = "exit";
-    else if (/strat\u00e9gie op\u00e9rationnelle|recommand/i.test(heading)) { currentSection = "action"; continue; }
-    else if (/plan b/i.test(heading)) currentSection = "planb";
-    else if (/donn\u00e9es.*manquantes|important.*manquant/i.test(heading)) currentSection = "missing";
-
-    const bullet = line.replace(/^[\u2022\-]\s*/, "").trim();
-    const isBullet = /^[\u2022\-]\s/.test(line);
-
-    if (isBullet && /CONFORME|solide|correct|r\u00e9silient|liquidit\u00e9 correcte|DVF solide|filet de s\u00e9curit\u00e9/i.test(bullet)) {
-      result.strengths.push(bullet);
-    }
-    if (isBullet && /fragile|insuffisant|critique|quasi-absent|\u00e9rod|d\u00e9favorable|tendu|faible|limite/i.test(bullet)) {
-      result.vigilances.push(bullet);
-    }
-    if (currentSection === "risks" && isBullet) result.sensitivities.push(bullet);
-    if (currentSection === "action" && line.length > 10 && !/^#{1,4}\s/.test(line)) {
-      result.actionPlan.push(isBullet ? bullet : line);
-    }
-    if (/manquantes?.*:/i.test(line) || currentSection === "missing") {
-      const items = line.match(/(?:Type de bien|\u00c9tat du bien|Dur\u00e9e travaux|Dur\u00e9e d\u00e9tention|D\u00e9lai commercialisation|Prix.*m\u00e9dian)/gi);
-      if (items) result.missingData.push(...items);
-    }
-  }
-
-  result.strengths = [...new Set(result.strengths)].slice(0, 5).map(sanitizeForPdf);
-  result.vigilances = [...new Set(result.vigilances)].slice(0, 5).map(sanitizeForPdf);
-  result.sensitivities = [...new Set(result.sensitivities)].slice(0, 5).map(sanitizeForPdf);
-  result.actionPlan = [...new Set(result.actionPlan)].slice(0, 6).map(sanitizeForPdf);
-  result.missingData = deduplicateCaseInsensitive(result.missingData).slice(0, 6).map(sanitizeForPdf);
-  return result;
-}
-
-// ---------------------------------------------------------------------------
-// Narrative parser
-// ---------------------------------------------------------------------------
-
-interface NarrativeSection {
-  title: string;
-  bullets: string[];
-  paragraphs: string[];
-  table?: { headers: string[]; rows: string[][] };
-}
-
-function parseNarrativeSections(md: string): NarrativeSection[] {
-  if (!md) return [];
-  const lines = md.replace(/\r/g, "").split("\n");
-  const sections: NarrativeSection[] = [];
-  let current: NarrativeSection | null = null;
-
-  for (const raw of lines) {
-    const line = raw.replace(/\*\*/g, "").trim();
-    if (!line) continue;
-    const headingMatch = line.match(/^#{1,4}\s+(.+)/);
-    if (headingMatch) {
-      if (current) sections.push(current);
-      current = { title: headingMatch[1].trim(), bullets: [], paragraphs: [] };
-      continue;
-    }
-    if (/^[A-Z\u00c0-\u00da\u00c9]/.test(line) && line.length > 3 && line.length < 80 &&
-        !/^[\u2022\-|]/.test(line) && !/^Prix|^Marge|^DVF|^\d|HYPOTH\u00c8SE/.test(line)) {
-      if (current && (current.bullets.length > 0 || current.paragraphs.length > 0)) sections.push(current);
-      current = { title: line, bullets: [], paragraphs: [] };
-      continue;
-    }
-    if (!current) current = { title: "", bullets: [], paragraphs: [] };
-    if (line.startsWith("|") && line.endsWith("|")) {
-      if (line.includes("---")) continue;
-      const cells = line.split("|").filter(c => c.trim()).map(c => c.trim());
-      if (!current.table) current.table = { headers: cells, rows: [] };
-      else current.table.rows.push(cells);
-      continue;
-    }
-    if (/^[\u2022\-]\s/.test(line)) { current.bullets.push(line.replace(/^[\u2022\-]\s*/, "").trim()); continue; }
-    current.paragraphs.push(line);
-  }
-  if (current) sections.push(current);
-  return sections.map(s => ({
-    title: sanitizeForPdf(s.title),
-    bullets: s.bullets.map(sanitizeForPdf),
-    paragraphs: s.paragraphs.map(sanitizeForPdf),
-    table: s.table ? {
-      headers: s.table.headers.map(sanitizeForPdf),
-      rows: s.table.rows.map(r => r.map(sanitizeForPdf)),
-    } : undefined,
-  }));
-}
-
-// ---------------------------------------------------------------------------
-// Design Tokens — Modern vivid dashboard
-// ---------------------------------------------------------------------------
-
-type RGB = [number, number, number];
-
-const C = {
-  navy: [15, 23, 42] as RGB, navyMid: [30, 41, 59] as RGB, navyLight: [51, 65, 85] as RGB,
-  accent: [99, 102, 241] as RGB, accentLight: [165, 180, 252] as RGB, accentBg: [238, 242, 255] as RGB, accentDark: [67, 56, 202] as RGB,
-  slate900: [15, 23, 42] as RGB, slate800: [30, 41, 59] as RGB, slate700: [51, 65, 85] as RGB, slate600: [71, 85, 105] as RGB,
-  slate500: [100, 116, 139] as RGB, slate400: [148, 163, 184] as RGB, slate300: [203, 213, 225] as RGB, slate200: [226, 232, 240] as RGB,
-  slate100: [241, 245, 249] as RGB, slate50: [248, 250, 252] as RGB, white: [255, 255, 255] as RGB,
-  emerald: [16, 185, 129] as RGB, emeraldDark: [6, 95, 70] as RGB, emeraldBg: [236, 253, 245] as RGB, emeraldLight: [167, 243, 208] as RGB,
-  amber: [245, 158, 11] as RGB, amberDark: [180, 83, 9] as RGB, amberBg: [255, 251, 235] as RGB, amberLight: [253, 230, 138] as RGB,
-  rose: [244, 63, 94] as RGB, roseDark: [159, 18, 57] as RGB, roseBg: [255, 241, 242] as RGB, roseLight: [253, 164, 175] as RGB,
-  sky: [14, 165, 233] as RGB, skyDark: [3, 105, 161] as RGB, skyBg: [240, 249, 255] as RGB,
-  violet: [139, 92, 246] as RGB, violetBg: [245, 243, 255] as RGB,
-  cyan: [6, 182, 212] as RGB, cyanBg: [236, 254, 255] as RGB,
+// ─── Color Tokens — Palette Mimmoza (indigo / cyan / emerald) ────
+export const C = {
+  // Identité principale — slate-950 / slate-900
+  primary:    [2, 6, 23]      as const,   // slate-950
+  // Accent principal — indigo-600
+  accent:     [79, 70, 229]   as const,   // indigo-600
+  accentDark: [55, 48, 163]   as const,   // indigo-800
+  // Cyan — second accent
+  accentCyan: [6, 182, 212]   as const,   // cyan-500
+  // Sémantique
+  success:    [16, 185, 129]  as const,   // emerald-500
+  warning:    [245, 158, 11]  as const,   // amber-500
+  danger:     [100, 116, 139] as const,   // slate-500
+  // Texte
+  black:      [2, 6, 23]      as const,
+  body:       [51, 65, 85]    as const,   // slate-700
+  muted:      [100, 116, 139] as const,   // slate-500
+  mutedDark:  [71, 85, 105]   as const,   // slate-600
+  white:      [255, 255, 255] as const,
+  // Fonds
+  bg:         [241, 245, 249] as const,   // slate-100
+  bgAlt:      [226, 232, 240] as const,   // slate-200
+  bgCard:     [255, 255, 255] as const,
+  // Bordures
+  border:     [226, 232, 240] as const,   // slate-200
+  borderDark: [203, 213, 225] as const,   // slate-300
+  // Navy — couverture
+  navy:       [2, 6, 23]      as const,   // slate-950
+  navyMid:    [15, 23, 42]    as const,   // slate-900
+  navyCard:   [15, 23, 42]    as const,
+  // Accents doux
+  accentSoft: [238, 242, 255] as const,   // indigo-50
+  accentSoft2:[240, 249, 255] as const,   // sky-50
+  shadow:     [218, 224, 232] as const,
+  // Kill / conf
+  killBg:     [241, 245, 249] as const,
+  killBorder: [203, 213, 225] as const,
+  confBg:     [248, 250, 252] as const,
+  confBorder: [203, 213, 225] as const,
+  confText:   [71, 85, 105]   as const,
+  // Scores
+  scoreGreen: [16, 185, 129]  as const,   // emerald-500
+  scoreAmber: [245, 158, 11]  as const,   // amber-500
+  scoreRed:   [100, 116, 139] as const,
+  // Chips
+  chipBg:     [241, 245, 249] as const,
+  chipText:   [71, 85, 105]   as const,
+  // Cover
+  coverBg:    [2, 6, 23]      as const,
+  coverMid:   [15, 23, 42]    as const,
+  // Décos
+  gold:       [6, 182, 212]   as const,   // cyan-500
+  teal:       [45, 212, 191]  as const,   // teal-400
 };
 
-const PW = 210; const PH = 297;
-const M = { top: 22, right: 18, bottom: 24, left: 18 };
-const CW = PW - M.left - M.right;
+export const M  = { top: 20, left: 16, right: 16, bottom: 20 };
+export const CW = 210 - M.left - M.right;
+export const PW = 210;
+export const PH = 297;
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+// ═══════════════════════════════════════════════════════════════════
+// ─── TYPES ─────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
 
-function decisionLabel(d?: string): string {
-  const s = (d ?? "").toUpperCase().trim();
-  if (s === "GO") return "GO";
-  if (/GO_AVEC_RESERVES|GO AVEC RESERVES/.test(s)) return "GO AVEC R\u00c9SERVES";
-  if (/GO_AVEC_SECURITE|GO AVEC SECURITE/.test(s)) return "GO SOUS CONDITIONS";
-  if (/NO_GO|NO GO|NOGO/.test(s)) return "NO GO";
-  if (/securite|reserve/i.test(s)) return "GO SOUS CONDITIONS";
-  return d ?? "NON D\u00c9TERMIN\u00c9";
+export interface ExportPdfOpts {
+  pdfMode?: "light" | "full";
+  space?: "marchand" | "investisseur";
+  aiReport?: AiReport;
+  context?: Record<string, unknown>;
 }
 
-function decisionColors(d?: string): { text: RGB; bg: RGB; border: RGB; glow: RGB } {
-  if (!d) return { text: C.slate500, bg: C.slate50, border: C.slate300, glow: C.slate200 };
-  const s = String(d).toUpperCase();
-  if (s === "GO") return { text: C.emeraldDark, bg: C.emeraldBg, border: C.emeraldLight, glow: C.emerald };
-  if (/RESERVE|SECURITE/i.test(s)) return { text: C.amberDark, bg: C.amberBg, border: C.amberLight, glow: C.amber };
-  if (/NO/i.test(s)) return { text: C.roseDark, bg: C.roseBg, border: C.roseLight, glow: C.rose };
-  if (/GO/i.test(s)) return { text: C.emeraldDark, bg: C.emeraldBg, border: C.emeraldLight, glow: C.emerald };
-  return { text: C.slate500, bg: C.slate50, border: C.slate300, glow: C.slate200 };
+export interface AiReport {
+  analysis?: {
+    conclusion?: {
+      decision?: string;
+      confidence?: number | string;
+      premiumVsDvfPct?: number;
+      smartScore?: number;
+      liquidityScore?: number;
+      riskPressureScore?: number;
+      opportunityScore?: number;
+      maxEngagementPriceEur?: number;
+      neverExceedPriceEur?: number;
+    };
+    finalSummary?: {
+      whyBuy?: string[];
+      whatToDo?: string[];
+      top3ActionsNow?: string[];
+      killSwitches?: string[];
+      upside?: string[];
+      downside?: string[];
+      missingData?: string[];
+      dataToGetBeforeSigning?: string[];
+      conditionsToBuy?: string[];
+      neverExceedPrice?: number;
+      maxPrice?: number;
+      maxEngagementPriceEur?: number;
+      neverExceedPriceEur?: number;
+      messageToAgent?: string;
+      stressTest?: StressRow[];
+      gainPotentiel?: number;
+      pertePotentielle?: number;
+      stressTestReadable?: string;
+      checklist?: ChecklistItem[];
+      resumeCourt?: string;
+      decisionToday?: string;
+      narrativeResume?: string;
+      narrativeValeur?: string;
+      narrativeLimites?: string;
+      narrativeFinancier?: string;
+      narrativeProfil?: string;
+      narrativeConclusion?: string;
+    };
+    marketStatus?: { dvfSummary?: { premiumVsDvfPct?: number }; [k: string]: unknown };
+    smartScore?: number;
+    liquidite?: number;
+    opportunity?: number;
+    pressionRisque?: number;
+    dueDiligence?: DueDiligenceRow[];
+    ficheOperation?: Record<string, string | number | null>[];
+    narrativeMarkdown?: string;
+  };
+  computed?: {
+    smartScore?: number;
+    scores?: {
+      smartScore?: number;
+      liquidityScore?: number;
+      riskPressureScore?: number;
+      opportunityScore?: number;
+      premiumVsDvfPct?: number;
+    };
+  };
 }
 
-function statusColors(status?: string): { text: RGB; bg: RGB } {
-  if (!status) return { text: C.slate500, bg: C.slate50 };
-  const s = String(status).toLowerCase();
-  if (/ok|valid|pass|conforme|vert|green/.test(s)) return { text: C.emeraldDark, bg: C.emeraldBg };
-  if (/warn|alerte|attention|orange|yellow/.test(s)) return { text: C.amberDark, bg: C.amberBg };
-  if (/critical|critique|fail|ko|rouge|red/.test(s)) return { text: C.roseDark, bg: C.roseBg };
-  return { text: C.slate500, bg: C.slate50 };
+interface StressRow      { scenario: string; impact: string; marge: string; statut: string }
+interface ChecklistItem  { phase: string; label: string; done?: boolean }
+interface DueDiligenceRow { item: string; statut: string; detail?: string }
+
+export interface NormalizedAi {
+  verdict: string; confidence: string;
+  smartScore: string; liquidityScore: string; riskPressureScore: string; opportunityScore: string;
+  whyBuy: string[]; whatToDo: string[]; killSwitches: string[];
+  upside: string[]; downside: string[];
+  missingData: string[]; conditionsToBuy: string[];
+  maxPrice: string; neverExceed: string;
+  maxPriceSource: "ia" | "fallback" | "none";
+  neverExceedSource: "ia" | "fallback" | "none";
+  maxPriceWhy: string; neverExceedWhy: string;
+  messageToAgent: string;
+  stressTest: StressRow[];
+  gainPotentiel: string; pertePotentielle: string; stressTestReadable: string;
+  checklist: ChecklistItem[]; dueDiligence: DueDiligenceRow[];
+  ficheOperation: Record<string, string | number | null>[];
+  narrativeSummary: string; resumeCourt: string;
+  nrResume: string; nrValeur: string; nrLimites: string;
+  nrFinancier: string; nrProfil: string; nrConclusion: string;
 }
 
-function fmtDate(d = new Date()): string { return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" }); }
-function fmtDateTime(d = new Date()): string { return d.toLocaleString("fr-FR", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }); }
-function parseIsoOrNow(iso?: string): Date { if (!iso) return new Date(); const t = Date.parse(iso); return Number.isFinite(t) ? new Date(t) : new Date(); }
-function fmtCurrency(val: unknown): string {
-  if (val === null || val === undefined || val === "") return "ND";
-  const num = Number(val);
-  if (!Number.isFinite(num)) return sanitizeForPdf(String(val));
-  return sanitizeForPdf(num.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }));
-}
-function fmtNumber(val: unknown): string {
-  if (val === null || val === undefined || val === "") return "ND";
-  const num = Number(val);
-  if (!Number.isFinite(num)) return sanitizeForPdf(String(val));
-  return sanitizeForPdf(num.toLocaleString("fr-FR"));
-}
-function fmtPercent(val: unknown, decimals = 1): string {
-  if (val === null || val === undefined || val === "") return "ND";
-  const num = Number(val);
-  if (!Number.isFinite(num)) return sanitizeForPdf(String(val));
-  return sanitizeForPdf(num.toLocaleString("fr-FR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + " %");
-}
-function ndIfZero(v: unknown, treatZeroAsMissing = false): string { if (v === null || v === undefined || v === "") return "ND"; const n = Number(v); if (!Number.isFinite(n)) return String(v); if (treatZeroAsMissing && n === 0) return "ND"; return String(v); }
+// ═══════════════════════════════════════════════════════════════════
+// ─── SANITIZE / FORMAT ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
 
-/** Shorthand: sanitize any string before passing to doc.text() */
-function S(text: string): string { return sanitizeForPdf(text); }
-
-/**
- * Sanitize text for jsPDF Helvetica (WinAnsiEncoding / Windows-1252).
- */
-function sanitizeForPdf(text: string): string {
-  return text
-    .replace(/[\u202f\u00a0\u2007\u2009\u200a\u2006]/g, " ")
-    .replace(/[\u2000-\u2005\u2008\u200b\u2060\ufeff]/g, "")
-    .replace(/\s+\n/g, "\n")
-    .replace(/\n\s+/g, "\n")
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/[\u2192\u2794\u279c\u27a1\u21d2]/g, ">")
-    .replace(/\u2190/g, "<")
-    .replace(/\u2194/g, "<>")
-    .replace(/\u2265/g, ">=")
-    .replace(/\u2264/g, "<=")
-    .replace(/\u2260/g, "!=")
-    .replace(/\u2248/g, "~")
-    .replace(/\u221e/g, "inf.")
-    .replace(/[\u2500-\u257f]/g, "-")
-    .replace(/[\u2580-\u259f]/g, "")
-    .replace(/[\u25a0-\u25ff]/g, "*")
-    .replace(/[\u2600-\u26ff]/g, "")
-    .replace(/[\u2700-\u27bf]/g, "")
-    .replace(/[\u{1f000}-\u{1ffff}]/gu, "")
-    .replace(/[\u{fe00}-\u{fe0f}]/gu, "")
-    .replace(/[\u0300-\u036f]/g, "");
+export function sanitizeForPdf(s: unknown): string {
+  if (s == null) return "";
+  const o = String(s)
+    .replace(/[\u00A0\u202F\u2007\u2002-\u200A\u205F\u3000]/g, " ")
+    .replace(/[\u200B-\u200D\uFEFF\u2060\u180E]/g, "")
+    .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-")
+    .replace(/[\u2018\u2019\u201A\u201B\u2039\u203A\uFF07]/g, "'")
+    .replace(/[\u201C-\u201F\u00AB\u00BB\uFF02]/g, '"')
+    .replace(/[\u2022\u2023\u2043\u2219\u25A0-\u25FF\u2B50]/g, "-")
+    .replace(/\u2026/g, "...")
+    .replace(/[\u2192\u279C\u27A4\u21D2]/g, "->")
+    .replace(/\u2190/g, "<-")
+    .replace(/[\u2713\u2714\u2705\u2611]/g, "[v]")
+    .replace(/[\u2717\u2718\u274C\u2715\u2716\u2612]/g, "[x]")
+    .replace(/\u26A0/g, "/!\\")
+    .replace(/[\u2606\u2605]/g, "*")
+    .replace(/\u0152/g, "OE").replace(/\u0153/g, "oe")
+    .replace(/\t/g, "  ")
+    .replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F]/g, "")
+    .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
+    .replace(/[\uD800-\uDFFF]/g, "");
+  return o.trim();
 }
 
-// ---------------------------------------------------------------------------
-// Deduplication & verdict helpers
-// ---------------------------------------------------------------------------
+export function fmtCurrency(v: unknown): string {
+  if (v == null || v === "") return "ND";
+  const n = Number(v);
+  if (isNaN(n) || n === 0) return "ND";
+  const abs = Math.abs(Math.round(n));
+  const parts: string[] = [];
+  let rem = abs;
+  while (rem >= 1000) { parts.unshift(String(rem % 1000).padStart(3, "0")); rem = Math.floor(rem / 1000); }
+  parts.unshift(String(rem));
+  return (n < 0 ? "-" : "") + parts.join(" ") + " EUR";
+}
 
-/** Deduplicate strings case-insensitive, preserving first occurrence */
-function deduplicateCaseInsensitive(items: string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const raw of items) {
-    const key = raw.trim().toLowerCase();
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    out.push(raw.trim());
+export function fmtPercent(v: unknown, d = 1): string {
+  const n = Number(v);
+  if (v == null || isNaN(n)) return "ND";
+  return `${n >= 0 ? "+" : ""}${n.toFixed(d)} %`;
+}
+
+export function fmtNumber(v: unknown, d = 0): string {
+  const n = Number(v);
+  if (v == null || isNaN(n)) return "ND";
+  const abs = Math.abs(n);
+  const rounded = d === 0 ? Math.round(abs) : parseFloat(abs.toFixed(d));
+  const intPart = Math.floor(rounded);
+  const decPart = d > 0 ? "," + abs.toFixed(d).split(".")[1] : "";
+  const parts: string[] = [];
+  let rem = intPart;
+  if (rem === 0) { parts.push("0"); } else {
+    while (rem >= 1000) { parts.unshift(String(rem % 1000).padStart(3, "0")); rem = Math.floor(rem / 1000); }
+    parts.unshift(String(rem));
+  }
+  return (n < 0 ? "-" : "") + parts.join(" ") + decPart;
+}
+
+export function decisionLabel(d: string): string {
+  const map: Record<string, string> = {
+    buy: "ACHETER", hold: "ATTENDRE", pass: "PASSER",
+    strong_buy: "ACHETER (FORT)", strong_pass: "NE PAS ACHETER",
+    negocier: "A NEGOCIER", negotiate: "A NEGOCIER",
+  };
+  return map[d?.toLowerCase()] ?? (d ? d.toUpperCase() : "ND");
+}
+
+export function decisionColors(d: string): readonly [number, number, number] {
+  const dl = d?.toLowerCase() ?? "";
+  if (dl.includes("buy") || dl === "acheter" || dl === "strong_buy") return C.primary;
+  if (dl === "hold" || dl === "attendre" || dl === "negocier" || dl === "negotiate") return C.accent;
+  return C.muted;
+}
+
+// ─── Drawing primitives ──────────────────────────────────────────
+function sc(doc: jsPDF, c: readonly [number, number, number]) { doc.setTextColor(c[0], c[1], c[2]); }
+function sf(doc: jsPDF, c: readonly [number, number, number]) { doc.setFillColor(c[0], c[1], c[2]); }
+function sd(doc: jsPDF, c: readonly [number, number, number]) { doc.setDrawColor(c[0], c[1], c[2]); }
+
+export function roundedBox(
+  doc: jsPDF, x: number, y: number, w: number, h: number,
+  o?: { fill?: readonly [number, number, number]; border?: readonly [number, number, number]; radius?: number; lw?: number; shadow?: boolean },
+): void {
+  const r = o?.radius ?? 2.5;
+  if (o?.shadow) {
+    sf(doc, C.shadow);
+    doc.roundedRect(x + 0.7, y + 0.7, w, h, r, r, "F");
+  }
+  if (o?.fill) sf(doc, o.fill);
+  if (o?.border) { sd(doc, o.border); doc.setLineWidth(o?.lw ?? 0.25); }
+  doc.roundedRect(x, y, w, h, r, r, o?.fill && o?.border ? "FD" : o?.fill ? "F" : "S");
+}
+
+function ribbon(
+  doc: jsPDF, y: number, h: number,
+  from: readonly [number, number, number], to: readonly [number, number, number],
+  n = 60, x0 = 0, w = PW,
+): void {
+  const stepW = w / n;
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    doc.setFillColor(
+      Math.round(from[0] + t * (to[0] - from[0])),
+      Math.round(from[1] + t * (to[1] - from[1])),
+      Math.round(from[2] + t * (to[2] - from[2])),
+    );
+    doc.rect(x0 + i * stepW, y, stepW + 0.5, h, "F");
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function accentBar(doc: jsPDF, x: number, y: number, w = 20, h = 1): void {
+  sf(doc, C.accent); doc.rect(x, y, w, h, "F");
+}
+
+export function sectionTitle(
+  doc: jsPDF, title: string, y: number,
+  o?: { color?: readonly [number, number, number]; fontSize?: number },
+): number {
+  const color  = o?.color ?? C.primary;
+  const fs     = o?.fontSize ?? 9;
+  const barH   = fs * 0.55;
+  y += 2;
+  const barY   = y - barH + 0.5;
+  sf(doc, color);
+  doc.rect(M.left, barY, 2.5, barH, "F");
+  sc(doc, color); doc.setFont("helvetica", "bold"); doc.setFontSize(fs);
+  doc.text(sanitizeForPdf(title).toUpperCase(), M.left + 5, y);
+  return y + 6.5;
+}
+
+export function ensureSpace(doc: jsPDF, needed: number): number {
+  const cur = getY(doc);
+  if (cur + needed > PH - M.bottom) { doc.addPage(); setY(doc, M.top + 8); return M.top + 8; }
+  return cur;
+}
+
+function setY(doc: jsPDF, y: number) { (doc as jsPDF & { __cy: number }).__cy = y; }
+function getY(doc: jsPDF): number    { return (doc as jsPDF & { __cy?: number }).__cy ?? M.top; }
+
+function bulletPrefix(
+  doc: jsPDF, x: number, y: number, text: string, pfx: string,
+  o?: { pfxColor?: readonly [number, number, number]; textColor?: readonly [number, number, number]; mw?: number; fs?: number },
+): number {
+  const fs = o?.fs ?? 8.5; const mw = o?.mw ?? CW - 8;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(fs); sc(doc, o?.pfxColor ?? C.body);
+  doc.text(pfx, x, y);
+  const pw = doc.getTextWidth(pfx + " ");
+  doc.setFont("helvetica", "normal"); sc(doc, o?.textColor ?? C.body);
+  const ls: string[] = doc.splitTextToSize(sanitizeForPdf(text), mw - pw);
+  doc.text(ls, x + pw, y);
+  return ls.length * (fs * 0.46) + 1.5;
+}
+
+export function drawCheckbox(
+  doc: jsPDF, x: number, y: number, label: string, checked: boolean, o?: { fs?: number },
+): number {
+  const fs = o?.fs ?? 8; const sz = 3;
+  roundedBox(doc, x, y - sz + 0.3, sz, sz, { fill: checked ? C.success : C.white, border: checked ? C.success : C.borderDark, radius: 0.8, lw: 0.3 });
+  if (checked) {
+    sd(doc, C.white); doc.setLineWidth(0.5);
+    doc.line(x + 0.5, y - 0.8, x + 1.3, y + 0.2); doc.line(x + 1.3, y + 0.2, x + sz - 0.2, y - sz + 1.1);
+  }
+  doc.setFont("helvetica", "normal"); doc.setFontSize(fs); sc(doc, C.body);
+  const ls: string[] = doc.splitTextToSize(sanitizeForPdf(label), CW - 12);
+  doc.text(ls, x + sz + 2.5, y);
+  return ls.length * (fs * 0.46) + 2;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── SCORE CARD /100 — palette Mimmoza ─────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+interface ScoreCardOpts { source?: string; inverted?: boolean; subtext?: string; }
+
+export function scoreCard100(
+  doc: jsPDF, x: number, y: number, w: number, h: number,
+  label: string, score: number | null, opts?: ScoreCardOpts,
+): void {
+  // ── Niveau ──────────────────────────────────────────────────────
+  const lvl: "excellent" | "solide" | "moyen" | "fragile" =
+    score == null       ? "fragile"
+    : score >= 85       ? "excellent"
+    : score >= 70       ? "solide"
+    : score >= 50       ? "moyen"
+                        : "fragile";
+
+  const lvlColor: readonly [number, number, number] =
+    lvl === "excellent" ? C.scoreGreen
+    : lvl === "solide"  ? C.accent
+    : lvl === "moyen"   ? C.scoreAmber
+    : [185, 70, 70]     as const;
+
+  const lvlLabel =
+    lvl === "excellent" ? "Excellent"
+    : lvl === "solide"  ? "Solide"
+    : lvl === "moyen"   ? "Moyen"
+                        : "Fragile";
+
+  const lvlBg: readonly [number, number, number] =
+    lvl === "excellent" ? [209, 250, 229] as const  // emerald-100
+    : lvl === "solide"  ? [238, 242, 255] as const  // indigo-50
+    : lvl === "moyen"   ? [254, 243, 199] as const  // amber-100
+    : [254, 226, 226]   as const;                   // red-100
+
+  // ── Conteneur ───────────────────────────────────────────────────
+  sf(doc, [210, 218, 230] as const);
+  doc.roundedRect(x + 0.6, y + 0.6, w, h, 3, 3, "F");
+  roundedBox(doc, x, y, w, h, { fill: C.white, border: C.border, radius: 3, lw: 0.2 });
+
+  // ── Bandeau header coloré selon niveau ──────────────────────────
+  sf(doc, lvlColor);
+  doc.roundedRect(x, y, w, 2.5, 1.5, 1.5, "F");
+  sf(doc, lvlColor);
+  doc.rect(x, y + 1, w, 1.5, "F");
+
+  // ── Label ───────────────────────────────────────────────────────
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6);
+  sc(doc, C.mutedDark);
+  doc.text(sanitizeForPdf(label).toUpperCase(), x + w / 2, y + 8, { align: "center" });
+
+  if (score != null) {
+    // ── Chiffre coloré ────────────────────────────────────────────
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    sc(doc, lvlColor);
+    const scoreStr = String(score);
+    const scoreW   = doc.getTextWidth(scoreStr);
+    const cx       = x + w / 2;
+    doc.text(scoreStr, cx - 2, y + 17, { align: "center" });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    sc(doc, C.muted);
+    doc.text("/100", cx + scoreW / 2, y + 17, { align: "left" });
+
+    // ── Barre dégradée indigo→cyan (palette Mimmoza) ──────────────
+    const barX = x + 5; const barW = w - 10;
+    const barY = y + 20.5; const barH = 2.5;
+    roundedBox(doc, barX, barY, barW, barH, { fill: C.bgAlt, radius: 1.2 });
+    const fillW = Math.max(2, (score / 100) * barW);
+    const INDIGO: readonly [number, number, number] = [79, 70, 229];   // indigo-600
+    const CYAN:   readonly [number, number, number] = [6, 182, 212];   // cyan-500
+    const steps  = Math.max(4, Math.round(fillW * 2));
+    ribbon(doc, barY, barH, INDIGO, CYAN, steps, barX, fillW);
+
+  } else {
+    // ── ND ────────────────────────────────────────────────────────
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    sc(doc, C.muted);
+    doc.text("ND", x + w / 2, y + 17, { align: "center" });
+    roundedBox(doc, x + 5, y + 20.5, w - 10, 2.5, { fill: C.bgAlt, radius: 1.2 });
+  }
+
+  // ── Badge niveau coloré ───────────────────────────────────────
+  if (score != null) {
+    const badgeLabel = sanitizeForPdf(lvlLabel);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(5.5);
+    const bW = doc.getTextWidth(badgeLabel) + 6;
+    const bX = x + (w - bW) / 2;
+    const bY = opts?.source ? y + h - 13.5 : y + h - 8;
+    roundedBox(doc, bX, bY, bW, 4, { fill: lvlBg, border: lvlColor, radius: 2, lw: 0.25 });
+    sc(doc, lvlColor);
+    doc.text(badgeLabel, bX + bW / 2, bY + 2.8, { align: "center" });
+  }
+
+  // ── Chip source (IA / calcule / estime) ──────────────────────
+  if (opts?.source) {
+    const chipLabel = sanitizeForPdf(opts.source);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(5.5);
+    const chipW = doc.getTextWidth(chipLabel) + 5;
+    const chipX = x + (w - chipW) / 2;
+    const chipY = y + h - 7;
+    roundedBox(doc, chipX, chipY, chipW, 4, { fill: C.bgAlt, radius: 2 });
+    sc(doc, C.chipText);
+    doc.text(chipLabel, chipX + chipW / 2, chipY + 2.8, { align: "center" });
+  }
+
+  // ── Subtext (ex : "plus bas = mieux") ────────────────────────
+  if (opts?.subtext) {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(5);
+    sc(doc, C.muted);
+    doc.text(sanitizeForPdf(opts.subtext), x + w / 2, y + h - 1.5, { align: "center" });
+  }
+}
+
+// ─── Header / Footer ─────────────────────────────────────────────
+function finalizeHF(doc: jsPDF, title?: string, skipCover = true): void {
+  const tot  = doc.internal.getNumberOfPages();
+  const dTot = skipCover ? tot - 1 : tot;
+  for (let i = 1; i <= tot; i++) {
+    doc.setPage(i);
+    if (skipCover && i === 1) continue;
+    const dn = skipCover ? i - 1 : i;
+    ribbon(doc, 0, 9, [238, 242, 255] as const, [240, 249, 255] as const, 90, 0, PW);
+    doc.setFontSize(6); doc.setFont("helvetica", "normal"); sc(doc, C.accent);
+    const hText = sanitizeForPdf(title ? `MIMMOZA  |  ${title}` : "MIMMOZA  |  Dossier Investisseur");
+    doc.text(hText, M.left, 6);
+    doc.text(new Date().toLocaleDateString("fr-FR"), PW - M.right, 6, { align: "right" });
+    // Fine ligne de séparation indigo sous le header
+    sd(doc, [196, 221, 253] as const); doc.setLineWidth(0.3);
+    doc.line(0, 9, PW, 9);
+    ribbon(doc, PH - 8, 8, [224, 231, 255] as const, [240, 249, 255] as const, 60, 0, PW);
+    sd(doc, C.border); doc.setLineWidth(0.2);
+    doc.line(0, PH - 8, PW, PH - 8);
+    doc.setFontSize(6); sc(doc, C.muted);
+    doc.text(sanitizeForPdf(`Confidentiel  --  ${dn} / ${dTot}`), PW / 2, PH - 3, { align: "center" });
+    doc.text("MIMMOZA Intelligence Immobiliere", M.left, PH - 3);
+    doc.text(new Date().toLocaleDateString("fr-FR"), PW - M.right, PH - 3, { align: "right" });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── DATA EXTRACTION ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+export function resolveDeal(snap: MarchandSnapshotV1): Record<string, unknown> {
+  const s   = snap as Record<string, unknown>;
+  const aid = s.activeDealId as string | undefined;
+  const raw = s.deals;
+  let deal: Record<string, unknown> = {};
+  if (Array.isArray(raw)) {
+    if (aid) deal = (raw as Record<string, unknown>[]).find(d => d.id === aid || d.dealId === aid) ?? {};
+    if (!Object.keys(deal).length && (raw as Record<string, unknown>[]).length > 0) deal = (raw as Record<string, unknown>[])[0];
+  } else if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, Record<string, unknown>>;
+    if (aid && obj[aid]) deal = obj[aid];
+    else { const ks = Object.keys(obj); if (ks.length) deal = obj[ks[0]]; }
+  }
+  return { ...s, ...deal };
+}
+
+function pick(obj: Record<string, unknown>, ...keys: string[]): unknown {
+  for (const k of keys) { const v = obj[k]; if (v !== undefined && v !== null && v !== "") return v; }
+  return undefined;
+}
+function pickNum(obj: Record<string, unknown>, ...keys: string[]): number | undefined {
+  const v = pick(obj, ...keys); if (v === undefined) return undefined;
+  const n = Number(v); return isNaN(n) || n === 0 ? undefined : n;
+}
+function pickStr(obj: Record<string, unknown>, ...keys: string[]): string {
+  const v = pick(obj, ...keys); return v ? sanitizeForPdf(v) : "";
+}
+
+// ───────────────────────────────────────────────────────────────────
+// CanonicalFinancials — SOURCE DE VÉRITÉ UNIQUE pour tout le PDF
+// ───────────────────────────────────────────────────────────────────
+
+export interface CanonicalFinancials {
+  dealId: string | undefined;
+  prixAchat: number | undefined;
+  travaux: number | undefined;
+  travauxSource: "execution_buffer" | "execution_total" | "rentabilite_inputs" | "deal_direct" | "none";
+  fraisNotaire: number | undefined;
+  fraisNotaireIsFallback: boolean;
+  capitalEngage: number | undefined;
+  prixRevente: number | undefined;
+  margeBrute: number | undefined;
+  margeBrutePct: number | undefined;
+  apport: number | undefined;
+  montantPret: number | undefined;
+  mensualite: number | undefined;
+  loyerEstim: number | undefined;
+  chargesMensuelles: number | undefined;
+  loanRatePct: number | undefined;
+  loanInsurancePct: number | undefined;
+  loanFraisInitiaux: number | undefined;
+  stressReventeMinus5: number | undefined;
+  premiumVsDvfPct: number | undefined;
+  cushion: number | undefined;
+}
+
+export function resolveCanonicalFinancials(
+  snap: MarchandSnapshotV1,
+  opts?: ExportPdfOpts,
+): CanonicalFinancials {
+  const s = snap as Record<string, unknown>;
+  const d = resolveDeal(snap);
+
+  const dealId: string | undefined =
+    (s.activeDealId as string | undefined) ||
+    pickStr(d, "id", "dealId", "reference") ||
+    undefined;
+
+  const prixAchat = pickNum(d, "prixAchat", "prix", "price", "purchasePrice");
+
+  const execByDeal = s.executionByDeal as Record<string, unknown> | undefined;
+  const rentByDeal = s.rentabiliteByDeal as Record<string, unknown> | undefined;
+
+  type TravauxSource = CanonicalFinancials["travauxSource"];
+  let travaux: number | undefined;
+  let travauxSource: TravauxSource = "none";
+
+  const getN = (obj: unknown, ...path: string[]): number | undefined => {
+    let cur: unknown = obj;
+    for (const k of path) {
+      if (cur == null || typeof cur !== "object") return undefined;
+      cur = (cur as Record<string, unknown>)[k];
+    }
+    if (cur == null) return undefined;
+    const n = Number(cur);
+    return isNaN(n) || n === 0 ? undefined : n;
+  };
+
+  if (dealId && execByDeal?.[dealId]) {
+    const exec = execByDeal[dealId];
+    const v1 = getN(exec, "travaux", "computed", "totalWithBuffer");
+    if (v1 != null) { travaux = Math.round(v1); travauxSource = "execution_buffer"; }
+    else {
+      const v2 = getN(exec, "travaux", "computed", "total");
+      if (v2 != null) { travaux = Math.round(v2); travauxSource = "execution_total"; }
+    }
+  }
+
+  if (travaux == null && dealId && rentByDeal?.[dealId]) {
+    const inputs = (rentByDeal[dealId] as Record<string, unknown>).inputs;
+    for (const k of ["travauxEstimes", "travaux", "montantTravaux", "coutTravaux"]) {
+      const v = getN(inputs, k);
+      if (v != null) { travaux = Math.round(v); travauxSource = "rentabilite_inputs"; break; }
+    }
+  }
+
+  if (travaux == null) {
+    const v = pickNum(d, "travaux", "travauxEstimes", "montantTravaux", "worksBudget");
+    if (v != null) { travaux = v; travauxSource = "deal_direct"; }
+  }
+
+  const fraisNotaireExplicit = pickNum(d, "fraisNotaire", "notaryFees");
+  const fraisNotaire = fraisNotaireExplicit ?? (prixAchat ? Math.round(prixAchat * 0.075) : undefined);
+  const fraisNotaireIsFallback = fraisNotaireExplicit == null;
+
+  const capitalEngage =
+    prixAchat != null && fraisNotaire != null
+      ? prixAchat + (travaux ?? 0) + fraisNotaire
+      : undefined;
+
+  const prixRevente = pickNum(
+    d,
+    "prixRevente", "prixReventeCible", "prixVenteEstime",
+    "prixVente", "resaleTarget", "salePriceTarget", "salePrice",
+  );
+
+  let margeBrute: number | undefined;
+  let margeBrutePct: number | undefined;
+  if (prixRevente != null && capitalEngage != null && capitalEngage > 0) {
+    margeBrute    = prixRevente - capitalEngage;
+    margeBrutePct = (margeBrute / capitalEngage) * 100;
+  }
+
+  const stressReventeMinus5 =
+    prixRevente != null && capitalEngage != null
+      ? Math.round(prixRevente * 0.95) - capitalEngage
+      : undefined;
+
+  let premiumVsDvfPct = pickNum(d, "premiumVsDvfPct");
+  if (premiumVsDvfPct == null) {
+    const v = opts?.aiReport?.analysis?.marketStatus?.dvfSummary?.premiumVsDvfPct;
+    if (v != null) { const n = Number(v); if (!isNaN(n) && n !== 0) premiumVsDvfPct = n; }
+  }
+  if (premiumVsDvfPct == null) {
+    const v = opts?.aiReport?.analysis?.conclusion?.premiumVsDvfPct;
+    if (v != null) { const n = Number(v); if (!isNaN(n) && n !== 0) premiumVsDvfPct = n; }
+  }
+  if (premiumVsDvfPct == null) {
+    const v = opts?.aiReport?.computed?.scores?.premiumVsDvfPct;
+    if (v != null) { const n = Number(v); if (!isNaN(n) && n !== 0) premiumVsDvfPct = n; }
+  }
+
+  const rentRaw = dealId && rentByDeal?.[dealId]
+    ? (rentByDeal[dealId] as Record<string, unknown>)
+    : undefined;
+  const rentInputs = (rentRaw?.inputs ?? null) as Record<string, unknown> | null;
+
+  const apport =
+    pickNum(d, "apport", "apportPersonnel", "downPayment") ??
+    pickNum(rentInputs ?? {}, "apport", "apportPersonnel", "downPayment", "apportEur");
+
+  const montantPret =
+    pickNum(d, "montantPret", "loanAmount", "emprunt") ??
+    pickNum(rentInputs ?? {}, "montantPretEur", "montantPret", "capitalEmprunte", "loanAmount", "emprunt") ??
+    (capitalEngage && apport ? capitalEngage - apport : undefined);
+
+  const mensualite =
+    pickNum(d, "mensualite") ??
+    pickNum(rentInputs ?? {}, "mensualite", "monthlyPayment");
+
+  const loyerEstim =
+    pickNum(d, "loyerEstim", "loyer", "loyerMensuel", "rentMonthly") ??
+    pickNum(rentInputs ?? {}, "loyerEstime", "loyerMensuel", "loyer");
+
+  const chargesMensuelles =
+    pickNum(d, "chargesMensuelles", "chargesMonthly", "charges") ??
+    pickNum(rentInputs ?? {}, "chargesMensuelles", "chargesEstimees", "charges");
+
+  const loanRatePct =
+    pickNum(rentInputs ?? {}, "tauxNominalAnnuelPct", "tauxAnnuel", "taux", "interestRatePct", "interestRate") ??
+    pickNum(d, "tauxNominal", "loanRatePct", "ratePct", "tauxAnnuel", "loanRate", "taux");
+
+  const loanInsurancePct =
+    pickNum(rentInputs ?? {}, "tauxAssuranceAnnuelPct", "tauxAssurance", "assurancePct") ??
+    pickNum(d, "tauxAssurance", "loanInsurancePct", "insurancePct", "assurancePct", "tauxAssuranceAnnuel");
+
+  const fraisDossier  = pickNum(rentInputs ?? {}, "fraisDossierEur",  "fraisDossier")  ?? 0;
+  const fraisGarantie = pickNum(rentInputs ?? {}, "fraisGarantieEur", "fraisGarantie") ?? 0;
+  const fraisCourtier = pickNum(rentInputs ?? {}, "fraisCourtierEur", "fraisCourtier") ?? 0;
+  const loanFraisInitiaux =
+    fraisDossier + fraisGarantie + fraisCourtier > 0
+      ? fraisDossier + fraisGarantie + fraisCourtier
+      : pickNum(d, "fraisInitiaux", "fraisDossier", "fraisGarantie", "setupFees");
+
+  return {
+    dealId,
+    prixAchat,
+    travaux,
+    travauxSource,
+    fraisNotaire,
+    fraisNotaireIsFallback,
+    capitalEngage,
+    prixRevente,
+    margeBrute,
+    margeBrutePct,
+    apport,
+    montantPret,
+    mensualite,
+    loyerEstim,
+    chargesMensuelles,
+    loanRatePct,
+    loanInsurancePct,
+    loanFraisInitiaux,
+    stressReventeMinus5,
+    premiumVsDvfPct,
+    cushion: pickNum(d, "cushion"),
+  };
+}
+
+export interface DealMetrics {
+  titre: string; id: string; adresse: string; ville: string; cp: string; adresseComplete: string;
+  prixAchat: number | undefined; surfaceM2: number | undefined; prixM2: number | undefined;
+  prixRevente: number | undefined; travaux: number | undefined; fraisNotaire: number | undefined;
+  capitalEngage: number | undefined; margeBrute: number | undefined; margeBrutePct: number | undefined;
+  cushion: number | undefined; premiumVsDvfPct: number | undefined;
+  stressReventeMinus5: number | undefined;
+  apport: number | undefined; montantPret: number | undefined;
+  mensualite: number | undefined; loyerEstim: number | undefined;
+  chargesMensuelles: number | undefined; balcon: number | undefined;
+  garage: boolean; ascenseur: boolean; cave: boolean;
+  dpe: string; etage: string; vue: string; nbPieces: number | undefined;
+  loanRatePct: number | undefined;
+  loanInsurancePct: number | undefined;
+  loanFraisInitiaux: number | undefined;
+  _travauxSource: CanonicalFinancials["travauxSource"];
+  _fraisNotaireIsFallback: boolean;
+}
+
+export function extractMetrics(snap: MarchandSnapshotV1, opts?: ExportPdfOpts): DealMetrics {
+  const d  = resolveDeal(snap);
+  const cf = resolveCanonicalFinancials(snap, opts);
+
+  const titre = pickStr(d, "titre", "title", "nom", "name") || "Deal";
+  const id    = pickStr(d, "id", "dealId", "reference");
+  const adresse = pickStr(d, "adresse", "address");
+  const ville   = pickStr(d, "ville", "city");
+  const cp      = pickStr(d, "cp", "zipCode", "codePostal", "postalCode");
+
+  let adresseComplete = adresse;
+  if (!adresseComplete && (ville || cp))
+    adresseComplete = [ville, cp].filter(Boolean).join(" ");
+
+  const surfaceM2 = pickNum(d, "surfaceM2", "surface", "area");
+  const prixM2    = cf.prixAchat && surfaceM2
+    ? Math.round(cf.prixAchat / surfaceM2)
+    : undefined;
+
+  const balcon    = pickNum(d, "balconyM2", "surfaceBalcon", "balconM2");
+  const garage    = !!pick(d, "garage", "parking", "stationnement");
+  const ascenseur = !!pick(d, "ascenseur", "elevator", "lift");
+  const cave      = !!pick(d, "cave", "cellar");
+  const dpe       = pickStr(d, "dpe", "classeDpe", "energyClass");
+  const etage     = pickStr(d, "etage", "floor", "niveau");
+  const vue       = pickStr(d, "vue", "view", "exposition");
+  const nbPieces  = pickNum(d, "nbPieces", "rooms", "pieces", "nbRooms");
+
+  return {
+    titre, id, adresse, ville, cp,
+    adresseComplete: adresseComplete || "",
+    surfaceM2, prixM2, balcon, garage, ascenseur, cave, dpe, etage, vue, nbPieces,
+    prixAchat:           cf.prixAchat,
+    prixRevente:         cf.prixRevente,
+    travaux:             cf.travaux,
+    fraisNotaire:        cf.fraisNotaire,
+    capitalEngage:       cf.capitalEngage,
+    margeBrute:          cf.margeBrute,
+    margeBrutePct:       cf.margeBrutePct,
+    stressReventeMinus5: cf.stressReventeMinus5,
+    premiumVsDvfPct:     cf.premiumVsDvfPct,
+    cushion:             cf.cushion,
+    apport:              cf.apport,
+    montantPret:         cf.montantPret,
+    mensualite:          cf.mensualite,
+    loyerEstim:          cf.loyerEstim,
+    chargesMensuelles:   cf.chargesMensuelles,
+    loanRatePct:         cf.loanRatePct,
+    loanInsurancePct:    cf.loanInsurancePct,
+    loanFraisInitiaux:   cf.loanFraisInitiaux,
+    _travauxSource:          cf.travauxSource,
+    _fraisNotaireIsFallback: cf.fraisNotaireIsFallback,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── SMARTSCORE V2 ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+type PillarSource = "calc" | "server" | "narrative" | "estim" | "none";
+
+export interface SmartScorePillar { value: number | null; source: PillarSource; }
+
+export interface SmartScoreV2 {
+  smartScore: number | null;
+  pillars: {
+    rentabilite: SmartScorePillar; robustesse: SmartScorePillar;
+    liquidite: SmartScorePillar; opportunity: SmartScorePillar; pressionRisque: SmartScorePillar;
+  };
+  dataConfidence: number;
+  dataConfidenceLabel: "Elevee" | "Moyenne" | "Faible";
+  isEstimated: boolean;
+}
+
+function extractScoresFromNarrative(md: string | undefined): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!md) return out;
+  const patterns: [string, string[]][] = [
+    ["SmartScore",          ["SmartScore", "Smart Score", "smartscore"]],
+    ["Probabilite revente", ["Probabilite revente", "Probabilite de revente", "Liquidite", "LiquidityScore", "Liquidite score"]],
+    ["RiskPressureIndex",   ["RiskPressureIndex", "Risk Pressure", "Pression risque", "PressionRisque", "Pression de risque"]],
+    ["OpportunityScore",    ["OpportunityScore", "Opportunity Score", "Opportunity", "Opportunite", "Score opportunite"]],
+    ["Rentabilite",         ["Rentabilite", "RentabiliteScore", "Rendement"]],
+    ["Robustesse",          ["Robustesse", "RobustesseScore", "Robustness"]],
+  ];
+  for (const [key, aliases] of patterns) {
+    for (const alias of aliases) {
+      const re = new RegExp(alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "[\\s:=]+([0-9]+)", "i");
+      const match = md.match(re);
+      if (match) { out[key] = parseInt(match[1], 10); break; }
+    }
   }
   return out;
 }
 
-/**
- * A1: Sanitize verdict-like tokens in free-text prose.
- * Replaces raw verdict codes with human-readable equivalents
- * so text never displays "NO_GO/SÉCURITÉ" when verdict is "GO SOUS CONDITIONS".
- */
-function sanitizeVerdictInProse(text: string): string {
-  return text
-    .replace(/\bNO_GO\b/g, "NO GO")
-    .replace(/\bGO_AVEC_RESERVES\b/gi, "GO avec r\u00e9serves")
-    .replace(/\bGO_AVEC_SECURITE\b/gi, "GO sous conditions")
-    .replace(/\bNO.?GO\s*[/\u2014]\s*S[EÉ]CURIT[EÉ]\b/gi, "zone de prudence renforc\u00e9e")
-    .replace(/\bNO.?GO\s*[/\u2014]\s*R[EÉ]SERVES?\b/gi, "GO avec s\u00e9curisation obligatoire");
-}
-
-// ---------------------------------------------------------------------------
-// Drawing primitives
-// ---------------------------------------------------------------------------
-
-function roundedBox(doc: jsPDF, x: number, y: number, w: number, h: number, r: number, fill?: RGB, stroke?: RGB, lineW = 0.3): void {
-  if (fill) doc.setFillColor(...fill);
-  if (stroke) { doc.setDrawColor(...stroke); doc.setLineWidth(lineW); }
-  doc.roundedRect(x, y, w, h, r, r, fill && stroke ? "FD" : fill ? "F" : "S");
-}
-function ensureSpace(doc: jsPDF, y: number, needed: number): number { if (y + needed > PH - M.bottom) { doc.addPage(); return M.top + 4; } return y; }
-
-function progressBar(doc: jsPDF, x: number, y: number, w: number, h: number, pct: number, color: RGB, bgColor: RGB = C.slate200): void {
-  doc.setFillColor(...bgColor); doc.roundedRect(x, y, w, h, h / 2, h / 2, "F");
-  const fw = Math.max(h, Math.min(w, w * pct));
-  doc.setFillColor(...color); doc.roundedRect(x, y, fw, h, h / 2, h / 2, "F");
-}
-
-function arcScore(doc: jsPDF, cx: number, cy: number, radius: number, score: number, maxScore: number, color: RGB, label: string): void {
-  const pct = Math.min(score / maxScore, 1);
-  const totalSteps = 40;
-  const startAngle = Math.PI * 0.75; const endAngle = Math.PI * 2.25; const arcLen = endAngle - startAngle;
-  doc.setDrawColor(...C.slate200); doc.setLineWidth(2);
-  for (let i = 0; i < totalSteps; i++) {
-    const a1 = startAngle + (i / totalSteps) * arcLen; const a2 = startAngle + ((i + 1) / totalSteps) * arcLen;
-    doc.line(cx + radius * Math.cos(a1), cy + radius * Math.sin(a1), cx + radius * Math.cos(a2), cy + radius * Math.sin(a2));
+function resolveRawScore(
+  opts: ExportPdfOpts | undefined, narrativeParsed: Record<string, number>,
+  computedScoresKey?: string, computedTopKey?: string, conclusionKey?: string,
+  analysisKey?: string, narrativeKey?: string,
+): { value: number | null; source: PillarSource } {
+  const cs      = opts?.aiReport?.computed?.scores;
+  const compTop = opts?.aiReport?.computed as Record<string, unknown> | undefined;
+  const a       = opts?.aiReport?.analysis;
+  const cc      = a?.conclusion;
+  if (computedScoresKey && cs) {
+    const v = (cs as Record<string, unknown>)[computedScoresKey];
+    if (v != null && !isNaN(Number(v))) return { value: Math.round(Number(v)), source: "server" };
   }
-  const filledSteps = Math.round(pct * totalSteps);
-  doc.setDrawColor(...color); doc.setLineWidth(2.8);
-  for (let i = 0; i < filledSteps; i++) {
-    const a1 = startAngle + (i / totalSteps) * arcLen; const a2 = startAngle + ((i + 1) / totalSteps) * arcLen;
-    doc.line(cx + radius * Math.cos(a1), cy + radius * Math.sin(a1), cx + radius * Math.cos(a2), cy + radius * Math.sin(a2));
+  if (computedTopKey && compTop) {
+    const v = compTop[computedTopKey];
+    if (v != null && !isNaN(Number(v))) return { value: Math.round(Number(v)), source: "server" };
   }
-  doc.setFontSize(13); doc.setFont("helvetica", "bold"); doc.setTextColor(...color);
-  doc.text(String(score), cx, cy + 1, { align: "center" });
-  doc.setFontSize(4.5); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate500);
-  doc.text(S(label.toUpperCase()), cx, cy + 5.5, { align: "center" });
-}
-
-function scoreColor(score: number, max = 100): RGB {
-  const pct = score / max;
-  if (pct >= 0.7) return C.emerald; if (pct >= 0.4) return C.amber; return C.rose;
-}
-
-// ---------------------------------------------------------------------------
-// KPI Card with gauge
-// ---------------------------------------------------------------------------
-
-function kpiCard(doc: jsPDF, x: number, y: number, w: number, h: number, label: string, value: string,
-  opts?: { color?: RGB; gauge?: number; gaugeMax?: number; subtext?: string; highlight?: boolean }): void {
-  const color = opts?.color ?? C.accent;
-  roundedBox(doc, x, y, w, h, 2.5, opts?.highlight ? C.accentBg : C.white, C.slate200, 0.2);
-  doc.setFillColor(...color); doc.rect(x + 4, y, w - 8, 1, "F");
-  doc.setFontSize(5.5); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate400);
-  doc.text(S(label.toUpperCase()), x + w / 2, y + 7, { align: "center" });
-  doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate900);
-  doc.text(S(value), x + w / 2, y + 14.5, { align: "center" });
-  if (opts?.gauge !== undefined && opts?.gaugeMax) {
-    progressBar(doc, x + 6, y + h - 5, w - 12, 2, Math.min(opts.gauge / opts.gaugeMax, 1), color);
+  if (conclusionKey && cc) {
+    const v = (cc as Record<string, unknown>)[conclusionKey];
+    if (v != null && !isNaN(Number(v))) return { value: Math.round(Number(v)), source: "server" };
   }
-  if (opts?.subtext) { doc.setFontSize(4.5); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate500); doc.text(S(opts.subtext), x + w / 2, y + h - 1.5, { align: "center" }); }
-}
-
-// ---------------------------------------------------------------------------
-// Section titles
-// ---------------------------------------------------------------------------
-
-function sectionTitle(doc: jsPDF, y: number, title: string, subtitle?: string): number {
-  y = ensureSpace(doc, y, 18); y += 3;
-  doc.setFillColor(...C.accent); doc.roundedRect(M.left, y, 4, 1.2, 0.6, 0.6, "F");
-  y += 7;
-  doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate900);
-  doc.text(title, M.left, y);
-  if (subtitle) { doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate400); doc.text(subtitle, PW - M.right, y, { align: "right" }); }
-  y += 3; doc.setDrawColor(...C.slate200); doc.setLineWidth(0.2); doc.line(M.left, y, PW - M.right, y);
-  return y + 5;
-}
-
-// ---------------------------------------------------------------------------
-// Header / Footer
-// ---------------------------------------------------------------------------
-
-function addHeaderFooter(doc: jsPDF, snapshot: MarchandSnapshotV1, opts?: ExportPdfOpts): void {
-  const total = doc.getNumberOfPages();
-  const deal = snapshot.deals.find((d) => d.id === snapshot.activeDealId);
-  const dealId = deal?.id ?? "\u2014"; const title = (deal?.title ?? "").trim();
-  const subtitle = title ? `${dealId} \u2014 ${title}` : dealId;
-  const generatedAt = opts?.aiReport?.generatedAt ?? opts?.context?.generatedAt ?? new Date().toISOString();
-  const ts = fmtDateTime(parseIsoOrNow(generatedAt));
-  for (let i = 2; i <= total; i++) {
-    doc.setPage(i);
-    doc.setFillColor(...C.accent); doc.rect(M.left, 11.5, CW, 0.4, "F");
-    doc.setFontSize(6); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.accent); doc.text("MIMMOZA", M.left, 9.5);
-    doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate400);
-    doc.text("Dossier Investisseur  |  " + subtitle, M.left + 18, 9.5);
-    doc.text(ts, PW - M.right, 9.5, { align: "right" });
-    doc.setFillColor(...C.slate50); doc.rect(0, PH - 12, PW, 12, "F");
-    doc.setDrawColor(...C.slate200); doc.setLineWidth(0.2); doc.line(M.left, PH - 12, PW - M.right, PH - 12);
-    doc.setFontSize(5.5); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate400);
-    doc.text("CONFIDENTIEL \u2014 Document d'aide \u00e0 la d\u00e9cision \u2014 Usage investisseur / banque", M.left, PH - 6);
-    doc.text(`${i - 1} / ${total - 1}`, PW - M.right, PH - 6, { align: "right" });
+  if (analysisKey && a) {
+    const v = (a as Record<string, unknown>)[analysisKey];
+    if (v != null && !isNaN(Number(v))) return { value: Math.round(Number(v)), source: "server" };
   }
+  if (narrativeKey && narrativeParsed[narrativeKey] != null)
+    return { value: narrativeParsed[narrativeKey], source: "narrative" };
+  return { value: null, source: "none" };
 }
 
-// ---------------------------------------------------------------------------
-// COVER
-// ---------------------------------------------------------------------------
+export function computeSmartScoreV2(metrics: DealMetrics | undefined, opts?: ExportPdfOpts, narrativeMd?: string): SmartScoreV2 {
+  const effectiveNarrative = narrativeMd ?? opts?.aiReport?.analysis?.narrativeMarkdown;
+  const narrativeParsed    = extractScoresFromNarrative(effectiveNarrative);
 
-function buildCoverPage(doc: jsPDF, snapshot: MarchandSnapshotV1): void {
-  const deal = snapshot.deals.find((d) => d.id === snapshot.activeDealId);
-  const title = deal?.title ?? "Sans titre"; const dealId = deal?.id ?? "-";
-  const city = (deal as any)?.city ?? ""; const zip = (deal as any)?.zipCode ?? (deal as any)?.codePostal ?? "";
-  const status = deal?.status ?? ""; const address = (deal as any)?.address ?? "";
-
-  doc.setFillColor(...C.navy); doc.rect(0, 0, PW, PH, "F");
-
-  doc.setDrawColor(35, 48, 75); doc.setLineWidth(0.6);
-  doc.circle(PW + 10, -15, 65, "S"); doc.circle(PW + 10, -15, 50, "S");
-  doc.circle(-25, PH + 5, 45, "S"); doc.circle(PW - 35, PH - 50, 35, "S");
-  doc.setDrawColor(40, 55, 85); doc.setLineWidth(0.3);
-  doc.line(PW - 80, 0, PW, 80); doc.line(PW - 60, 0, PW, 60);
-
-  const steps = 80; const stepH = PH / steps;
-  for (let i = 0; i < steps; i++) {
-    const t = i / steps;
-    doc.setFillColor(Math.round(99 - t * 50), Math.round(102 - t * 30), Math.round(241 - t * 20));
-    doc.rect(0, i * stepH, 4, stepH + 0.5, "F");
+  let rentabilite: SmartScorePillar;
+  if (metrics?.margeBrutePct != null && metrics?.cushion != null) {
+    let score = 50;
+    if (metrics.margeBrutePct >= 20) score += 25; else if (metrics.margeBrutePct >= 15) score += 18;
+    else if (metrics.margeBrutePct >= 10) score += 10; else if (metrics.margeBrutePct >= 5) score += 3; else score -= 10;
+    if (metrics.cushion >= 5) score += 12; else if (metrics.cushion >= 3) score += 7;
+    else if (metrics.cushion >= 0) score += 2; else score -= 8;
+    rentabilite = { value: clamp(score), source: "calc" };
+  } else if (metrics?.margeBrutePct != null) {
+    let score = 50;
+    if (metrics.margeBrutePct >= 20) score += 22; else if (metrics.margeBrutePct >= 15) score += 15;
+    else if (metrics.margeBrutePct >= 10) score += 8; else if (metrics.margeBrutePct >= 5) score += 2; else score -= 12;
+    rentabilite = { value: clamp(score), source: "calc" };
+  } else {
+    const raw = resolveRawScore(opts, narrativeParsed, undefined, undefined, undefined, undefined, "Rentabilite");
+    rentabilite = raw.value != null ? { value: raw.value, source: raw.source } : { value: null, source: "none" };
   }
 
-  const lx = 28; const ly = 48;
-  doc.setFillColor(...C.accent); doc.roundedRect(lx, ly, 7, 7, 1.5, 1.5, "F");
-  doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.accentLight); doc.text("M I M M O Z A", lx + 12, ly + 5);
+  let robustesse: SmartScorePillar;
+  const hasRobustnessInputs = metrics?.premiumVsDvfPct != null || metrics?.stressReventeMinus5 != null;
+  if (hasRobustnessInputs) {
+    let score = 55;
+    if (metrics?.premiumVsDvfPct != null) {
+      if (metrics.premiumVsDvfPct <= -10) score += 15; else if (metrics.premiumVsDvfPct <= -3) score += 8;
+      else if (metrics.premiumVsDvfPct <= 3) score += 0; else score -= 10;
+    }
+    const missingCount = countMissing(metrics);
+    if (missingCount >= 4) score -= 15; else if (missingCount >= 2) score -= 8;
+    if (metrics?.stressReventeMinus5 != null) { if (metrics.stressReventeMinus5 > 0) score += 8; else score -= 10; }
+    robustesse = { value: clamp(score), source: "calc" };
+  } else {
+    const raw = resolveRawScore(opts, narrativeParsed, undefined, undefined, undefined, undefined, "Robustesse");
+    robustesse = raw.value != null ? { value: raw.value, source: raw.source } : { value: null, source: "none" };
+  }
 
-  doc.setFontSize(6.5); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.accent); doc.text("RAPPORT CONFIDENTIEL", lx, ly + 18);
-  doc.setFillColor(...C.accent); doc.rect(lx, ly + 22, 30, 0.4, "F");
+  const rawLiq  = resolveRawScore(opts, narrativeParsed, "liquidityScore", undefined, "liquidityScore", "liquidite", "Probabilite revente");
+  const liquidite: SmartScorePillar = rawLiq.value != null ? { value: rawLiq.value, source: rawLiq.source } : { value: 50, source: "estim" };
 
-  const ty = ly + 38;
-  doc.setFontSize(38); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.white);
-  doc.text("Dossier", lx, ty); doc.text("Investisseur", lx, ty + 16);
+  const rawOpp  = resolveRawScore(opts, narrativeParsed, "opportunityScore", undefined, "opportunityScore", "opportunity", "OpportunityScore");
+  let opportunity: SmartScorePillar;
+  if (rawOpp.value != null) { opportunity = { value: rawOpp.value, source: rawOpp.source }; }
+  else {
+    let est = 50;
+    if (metrics?.premiumVsDvfPct != null && metrics.premiumVsDvfPct < 0) est += 8;
+    if (metrics?.margeBrutePct   != null && metrics.margeBrutePct   > 20) est += 8;
+    opportunity = { value: clamp(est), source: "estim" };
+  }
 
-  const divY = ty + 26;
-  doc.setFillColor(...C.accent); doc.rect(lx, divY, 28, 1.5, "F");
-  doc.setFillColor(...C.accentLight); doc.rect(lx + 28, divY, 18, 1.5, "F");
-  doc.setFillColor(80, 85, 200); doc.rect(lx + 46, divY, 10, 1.5, "F");
+  const rawRisk = resolveRawScore(opts, narrativeParsed, "riskPressureScore", undefined, "riskPressureScore", "pressionRisque", "RiskPressureIndex");
+  let pressionRisque: SmartScorePillar;
+  if (rawRisk.value != null) { pressionRisque = { value: rawRisk.value, source: rawRisk.source }; }
+  else {
+    let est = 55;
+    if (metrics?.travaux == null) est += 8;
+    if (metrics?.margeBrutePct != null && metrics.margeBrutePct < 10) est += 6;
+    if (metrics?.prixRevente   == null) est += 5;
+    pressionRisque = { value: clamp(est), source: "estim" };
+  }
 
-  doc.setFontSize(15); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.white); doc.text(S(title), lx, divY + 14);
-  let nextY = divY + 22;
-  if (address && address !== title) { doc.setFontSize(10); doc.setTextColor(...C.slate400); doc.text(S(address), lx, nextY); nextY += 7; }
-  const locLine = [zip, city].filter(Boolean).join(" ");
-  if (locLine) { doc.setFontSize(10); doc.setTextColor(...C.slate400); doc.text(S(locLine), lx, nextY); }
-
-  const metaY = PH - 85;
-  const metas: { label: string; value: string; color: RGB }[] = [
-    { label: "R\u00c9F\u00c9RENCE", value: dealId, color: C.accent },
-    { label: "STATUT", value: status || "\u2014", color: C.sky },
-    { label: "DATE", value: fmtDate(), color: C.violet },
+  const pillarWeights = [
+    { pillar: rentabilite, weight: 30 }, { pillar: robustesse, weight: 25 },
+    { pillar: liquidite,   weight: 20 }, { pillar: opportunity, weight: 25 },
   ];
-  const cardW = (CW - (metas.length - 1) * 5) / metas.length;
-  metas.forEach((meta, idx) => {
-    const cx = lx + idx * (cardW + 5);
-    doc.setFillColor(22, 30, 50); doc.roundedRect(cx, metaY, cardW, 28, 2.5, 2.5, "F");
-    doc.setFillColor(...meta.color); doc.rect(cx + 6, metaY, cardW - 12, 1, "F");
-    doc.setFontSize(5.5); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate400); doc.text(S(meta.label), cx + 8, metaY + 11);
-    doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.white); doc.text(S(meta.value), cx + 8, metaY + 20);
+  let totalWeight = 0; let weightedSum = 0; let hasEstim = false; let hasCalcOrServer = false;
+  for (const pw of pillarWeights) {
+    if (pw.pillar.value != null) {
+      totalWeight  += pw.weight; weightedSum += pw.pillar.value * pw.weight;
+      if (pw.pillar.source === "estim") hasEstim = true;
+      if (pw.pillar.source === "calc" || pw.pillar.source === "server" || pw.pillar.source === "narrative") hasCalcOrServer = true;
+    }
+  }
+  const smartScore  = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : null;
+  const isEstimated = hasEstim && !hasCalcOrServer;
+
+  let dataConfidence = 0;
+  const allPillars = [rentabilite, robustesse, liquidite, opportunity, pressionRisque];
+  for (const p of allPillars) {
+    if (p.source === "calc")           dataConfidence += 22;
+    else if (p.source === "server")    dataConfidence += 20;
+    else if (p.source === "narrative") dataConfidence += 16;
+    else if (p.source === "estim")     dataConfidence += 6;
+  }
+  if (metrics?.travaux        != null) dataConfidence += 4;
+  if (metrics?.prixRevente    != null) dataConfidence += 4;
+  if (metrics?.premiumVsDvfPct != null) dataConfidence += 3;
+  dataConfidence = Math.min(100, dataConfidence);
+
+  let dataConfidenceLabel: SmartScoreV2["dataConfidenceLabel"];
+  if (dataConfidence >= 70) dataConfidenceLabel = "Elevee";
+  else if (dataConfidence >= 40) dataConfidenceLabel = "Moyenne";
+  else dataConfidenceLabel = "Faible";
+
+  return { smartScore, pillars: { rentabilite, robustesse, liquidite, opportunity, pressionRisque }, dataConfidence, dataConfidenceLabel, isEstimated };
+}
+
+function clamp(v: number, min = 10, max = 95): number { return Math.max(min, Math.min(max, v)); }
+
+function countMissing(m: DealMetrics | undefined): number {
+  if (!m) return 6;
+  let c = 0;
+  if (m.travaux  == null) c++; if (m.chargesMensuelles == null) c++; if (!m.dpe) c++;
+  if (m.apport   == null) c++; if (m.prixRevente       == null) c++; if (!m.etage) c++;
+  return c;
+}
+
+export interface ResolvedScores {
+  smartScore: number | null; liquidite: number | null; pressionRisque: number | null;
+  opportunity: number | null; confidence: number | null; usedFallback: boolean;
+  source: "server" | "analysis" | "narrative" | "fallback" | "none";
+}
+
+export function resolveSmartScores(opts?: ExportPdfOpts, narrativeMd?: string, metrics?: DealMetrics): ResolvedScores {
+  const v2      = computeSmartScoreV2(metrics, opts, narrativeMd);
+  const sources = [v2.pillars.rentabilite.source, v2.pillars.robustesse.source, v2.pillars.liquidite.source, v2.pillars.opportunity.source];
+  let source: ResolvedScores["source"] = "fallback";
+  if (sources.includes("server"))         source = "server";
+  else if (sources.includes("narrative")) source = "narrative";
+  else if (sources.includes("calc"))      source = "analysis";
+  else if (sources.every(s => s === "estim" || s === "none")) source = "fallback";
+  let confidence: number | null = null;
+  const cc = opts?.aiReport?.analysis?.conclusion;
+  if (cc?.confidence != null) { const cv = Number(cc.confidence); if (!isNaN(cv)) confidence = Math.round(cv <= 1 ? cv * 100 : cv); }
+  return {
+    smartScore:     v2.smartScore,
+    liquidite:      v2.pillars.liquidite.value,
+    pressionRisque: v2.pillars.pressionRisque.value,
+    opportunity:    v2.pillars.opportunity.value,
+    confidence,
+    usedFallback: v2.isEstimated || sources.some(s => s === "estim"),
+    source,
+  };
+}
+
+function fmtScore(v: number | null, fb = false): string { if (v == null) return "ND"; return fb ? `${v} (estim.)` : String(v); }
+export function pillarSourceLabel(s: PillarSource): string {
+  const map: Record<PillarSource, string> = { calc: "calcule", server: "IA", narrative: "narratif", estim: "estime", none: "" };
+  return map[s] ?? "";
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── NARRATIVE AUTO-GEN ────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+function nResume(m: DealMetrics, v: string, conf: string): string {
+  const loc  = m.adresseComplete || m.ville || "localisation non precisee";
+  const surf = m.surfaceM2 ? `${fmtNumber(m.surfaceM2)} m2` : "surface non communiquee";
+  const px   = m.prixAchat ? fmtCurrency(m.prixAchat) : "prix non communique";
+  const vFr  = v !== "ND" ? decisionLabel(v).toLowerCase() : "en attente d'analyse";
+  const cBit = conf !== "ND" ? `, avec un indice de confiance de ${conf}` : "";
+  return `Ce bien situe a ${loc}, d'une superficie de ${surf}, est propose a ${px}. L'analyse conduit au verdict : ${vFr}${cBit}.`;
+}
+
+function nValeur(ai: NormalizedAi, m: DealMetrics): string {
+  const p: string[] = [];
+  const items = ai.upside.length > 0 ? ai.upside : ai.whyBuy;
+  if (items.length > 0) { p.push("Plusieurs facteurs contribuent a la creation de valeur sur cette operation."); for (const u of items) p.push(u + "."); }
+  if (m.margeBrute != null && m.margeBrutePct != null)
+    p.push(`La marge brute estimee est ${m.margeBrute >= 0 ? "positive" : "negative"}, a ${fmtCurrency(m.margeBrute)} soit ${m.margeBrutePct.toFixed(1)} % du capital engage.`);
+  if (m.premiumVsDvfPct != null)
+    p.push(`Le prix d'achat est ${m.premiumVsDvfPct <= 0 ? "inferieur" : "superieur"} de ${Math.abs(m.premiumVsDvfPct).toFixed(1)} % aux references DVF du secteur${m.premiumVsDvfPct <= 0 ? ", ce qui constitue un avantage" : ", appelant a la vigilance"}.`);
+  if (m.surfaceM2 && m.prixM2)
+    p.push(`A ${fmtCurrency(m.prixM2)} / m2 pour ${fmtNumber(m.surfaceM2)} m2, le positionnement prix est ${m.prixM2 < 4000 ? "competitif" : "intermediaire a eleve"} pour ce type de bien.`);
+  if (p.length === 0) p.push("Les elements de creation de valeur n'ont pas pu etre determines. A valider : prix du marche, potentiel travaux, demande locative.");
+  return p.join(" ");
+}
+
+function nLimites(ai: NormalizedAi): string {
+  const p: string[] = [];
+  if (ai.downside.length > 0) { p.push("Certains facteurs limitent le potentiel ou augmentent le risque."); for (const d of ai.downside) p.push(d + "."); }
+  if (ai.killSwitches.length > 0) { p.push("Points potentiellement bloquants identifies :"); for (const k of ai.killSwitches) p.push("- " + k + "."); }
+  if (ai.missingData.length > 0) p.push(`${ai.missingData.length} donnee(s) manquante(s) : ${ai.missingData.join(", ")}.`);
+  if (p.length === 0) p.push("Aucun facteur limitant majeur identifie. A confirmer : charges copro, DPE, etat structurel, devis travaux.");
+  return p.join(" ");
+}
+
+function nFinancier(m: DealMetrics, ai: NormalizedAi): string {
+  const p: string[] = [];
+  if (m.capitalEngage != null) {
+    const det: string[] = [];
+    if (m.prixAchat)    det.push(`acquisition ${fmtCurrency(m.prixAchat)}`);
+    if (m.travaux)      det.push(`travaux ${fmtCurrency(m.travaux)}`);
+    if (m.fraisNotaire) det.push(`frais notaire ${fmtCurrency(m.fraisNotaire)}`);
+    p.push(`Capital total engage : ${fmtCurrency(m.capitalEngage)}` + (det.length ? ` (${det.join(", ")})` : "") + ".");
+  }
+  if (m.prixRevente) p.push(`Objectif de revente : ${fmtCurrency(m.prixRevente)}.`);
+  if (ai.gainPotentiel    !== "ND" && !ai.gainPotentiel.startsWith("ND"))    p.push(`Gain potentiel : ${ai.gainPotentiel}.`);
+  if (ai.pertePotentielle !== "ND" && !ai.pertePotentielle.startsWith("ND")) p.push(`Perte scenario defavorable : ${ai.pertePotentielle}.`);
+  if (ai.stressTestReadable) p.push(ai.stressTestReadable);
+  if (m.prixRevente && m.capitalEngage) p.push(`Seuil de rentabilite (capital + 5 % securite) : ${fmtCurrency(Math.round(m.capitalEngage * 1.05))}.`);
+  if (p.length === 0) p.push("Donnees financieres insuffisantes. A obtenir : prix confirme, devis travaux, prix de revente cible.");
+  return p.join(" ");
+}
+
+function nProfil(ai: NormalizedAi, m: DealMetrics): string {
+  const v = ai.verdict.toLowerCase();
+  if (v.includes("buy") || v === "acheter") {
+    let s = "Profil : marchand de biens visant une plus-value a court terme (6-18 mois).";
+    if (m.travaux) s += " L'operation implique des travaux ; experience en renovation ou MOE recommandee.";
+    if (m.capitalEngage && m.capitalEngage > 500000) s += " Ticket significatif, financement bancaire solide requis.";
+    return s;
+  }
+  if (v === "hold" || v === "attendre" || v === "negocier") return "Operation sous conditions. Convient a un investisseur patient, capable d'attendre la confirmation de certains elements avant de s'engager.";
+  if (v.includes("pass")) return "Le profil risque/rendement ne justifie pas un engagement standard. Reserve aux investisseurs avec forte tolerance au risque et connaissance du marche local.";
+  return "Profil a determiner apres completion des donnees.";
+}
+
+function nConclusion(ai: NormalizedAi, _m: DealMetrics): string {
+  const p: string[] = [];
+  if (ai.verdict    !== "ND") p.push(`Verdict : "${decisionLabel(ai.verdict)}".`);
+  if (ai.maxPrice   !== "ND") p.push(`Prix max recommande : ${ai.maxPrice}.`);
+  if (ai.neverExceed !== "ND") p.push(`Ne pas depasser : ${ai.neverExceed}.`);
+  if (ai.whatToDo.length > 0) p.push("Actions : " + ai.whatToDo.join(" ; ") + ".");
+  if (ai.conditionsToBuy.length > 0) p.push(`${ai.conditionsToBuy.length} condition(s) prealable(s) a reunir.`);
+  if (p.length === 0) p.push("Conclusion impossible sans donnees suffisantes. Completer le dossier puis relancer l'analyse.");
+  const v = ai.verdict.toLowerCase();
+  if (v.includes("strong_buy")) p.push("Recommandation : GO, negocier rapidement.");
+  else if (v.includes("buy") || v === "acheter") p.push("Recommandation : GO avec negotiation ferme sur le prix.");
+  else if (v === "hold" || v === "negocier") p.push("Recommandation : attendre clarification des points identifies.");
+  return p.join(" ");
+}
+
+function autoUpside(m: DealMetrics, scores: ResolvedScores): string[] {
+  const up: string[] = [];
+  if (m.margeBrutePct   != null && m.margeBrutePct   > 10) up.push(`Marge brute attractive (${m.margeBrutePct.toFixed(1)} %)`);
+  if (m.premiumVsDvfPct != null && m.premiumVsDvfPct <= -3) up.push(`Prix inferieur aux references DVF (${Math.abs(m.premiumVsDvfPct).toFixed(1)} % sous le marche)`);
+  if (m.cushion != null && m.cushion >= 3) up.push(`Buffer confortable vs seuil (cushion ${fmtNumber(m.cushion)})`);
+  if (m.balcon)    up.push(`Balcon / terrasse (${fmtNumber(m.balcon)} m2) - valorisation a la revente`);
+  if (m.garage)    up.push("Garage / parking inclus");
+  if (m.ascenseur) up.push("Immeuble avec ascenseur");
+  if (m.cave)      up.push("Cave - espace de stockage supplementaire");
+  if (m.vue)       up.push(`Vue ${sanitizeForPdf(m.vue)}`);
+  if (m.surfaceM2 && m.surfaceM2 > 60) up.push(`Surface confortable (${fmtNumber(m.surfaceM2)} m2)`);
+  if (m.prixRevente) up.push("Objectif de revente identifie");
+  if (scores.opportunity != null && scores.opportunity >= 60) up.push(`Score opportunite favorable (${scores.opportunity}/100)`);
+  if (up.length === 0 && m.prixAchat) up.push("Bien identifie, analyse en cours");
+  return up.slice(0, 4);
+}
+
+function autoDownside(m: DealMetrics, scores: ResolvedScores): string[] {
+  const dn: string[] = [];
+  if (m.travaux    == null) dn.push("Travaux non chiffres - risque budgetaire");
+  if (m.prixRevente == null) dn.push("Revente cible absente - marge non calculable");
+  if (m.margeBrutePct != null && m.margeBrutePct < 5)   dn.push(`Marge brute faible (${m.margeBrutePct.toFixed(1)} %) - peu de marge de manoeuvre`);
+  if (m.premiumVsDvfPct != null && m.premiumVsDvfPct > 5) dn.push(`Prix superieur au marche DVF (+${m.premiumVsDvfPct.toFixed(1)} %)`);
+  if (scores.pressionRisque != null && scores.pressionRisque >= 65) dn.push(`Pression risque elevee (${scores.pressionRisque}/100)`);
+  if (scores.liquidite      != null && scores.liquidite < 40)       dn.push(`Liquidite faible (${scores.liquidite}/100) - revente potentiellement longue`);
+  if (m.chargesMensuelles == null) dn.push("Charges mensuelles non renseignees");
+  if (m.dpe && /[fgFG]/.test(m.dpe)) dn.push(`DPE defavorable (${m.dpe.toUpperCase()}) - travaux energetiques probables`);
+  if (dn.length === 0) dn.push("Donnees insuffisantes - risques a confirmer apres due diligence");
+  return dn.slice(0, 4);
+}
+
+function autoMissingData(m: DealMetrics): string[] {
+  const md: string[] = [];
+  if (m.travaux           == null) md.push("Devis travaux");
+  if (m.chargesMensuelles == null) md.push("Charges mensuelles copro");
+  if (!m.dpe)                      md.push("Diagnostic DPE");
+  if (m.apport            == null) md.push("Plan de financement (apport/pret)");
+  if (m.prixRevente       == null) md.push("Objectif de revente");
+  if (!m.etage)                    md.push("Etage / exposition");
+  return md.slice(0, 6);
+}
+
+function autoKillSwitches(m: DealMetrics): string[] {
+  const ks: string[] = [];
+  if (m.travaux == null) ks.push("Refus ou absence de devis travaux fiable");
+  if (m.dpe && /[fgFG]/.test(m.dpe)) ks.push("DPE defavorable - travaux energetiques obligatoires a venir");
+  if (m.chargesMensuelles == null) ks.push("Charges copro elevees ou non communiquees");
+  if (m.margeBrutePct != null && m.margeBrutePct < 3) ks.push("Marge insuffisante pour absorber les aleas");
+  if (ks.length === 0) {
+    ks.push("Refus de devis travaux par plusieurs artisans");
+    ks.push("DPE F/G non anticipe dans le budget");
+    ks.push("Charges copro superieures a 300 EUR/mois");
+  }
+  return ks.slice(0, 3);
+}
+
+export function normalizeAiReport(opts?: ExportPdfOpts, metrics?: DealMetrics): NormalizedAi {
+  const a = opts?.aiReport?.analysis;
+  const f = a?.finalSummary;
+  const c = a?.conclusion;
+  const scores = resolveSmartScores(opts, a?.narrativeMarkdown, metrics);
+  const fb     = scores.usedFallback;
+  const conf   = scores.confidence != null ? `${scores.confidence}%` : "ND";
+  const verdict = sanitizeForPdf(c?.decision ?? "ND");
+
+  const rawMax: number | undefined =
+    numOrUndef(c?.maxEngagementPriceEur)
+    ?? numOrUndef((f as Record<string, unknown> | undefined)?.maxEngagementPriceEur)
+    ?? numOrUndef(f?.maxPrice);
+  const rawNever: number | undefined =
+    numOrUndef(c?.neverExceedPriceEur)
+    ?? numOrUndef((f as Record<string, unknown> | undefined)?.neverExceedPriceEur)
+    ?? numOrUndef(f?.neverExceedPrice);
+
+  let maxPriceStr    = rawMax   != null ? fmtCurrency(rawMax)   : "ND";
+  let maxPriceSource: "ia" | "fallback" | "none" = rawMax   != null ? "ia" : "none";
+  let neverExceedStr = rawNever != null ? fmtCurrency(rawNever) : "ND";
+  let neverExceedSource: "ia" | "fallback" | "none" = rawNever != null ? "ia" : "none";
+  const m0 = metrics;
+  let maxPriceWhy = ""; let neverExceedWhy = "";
+
+  if (maxPriceSource === "ia") maxPriceWhy = "Base sur l'analyse IA (comparables, marge cible, risques identifies)";
+  if (maxPriceStr === "ND" && m0?.prixAchat) {
+    const prudent = (m0.cushion != null && m0.cushion < 5) || m0.travaux == null;
+    maxPriceStr   = fmtCurrency(Math.round(m0.prixAchat * (prudent ? 0.97 : 0.99)));
+    maxPriceSource = "fallback";
+    maxPriceWhy   = prudent ? "Decote appliquee (-3%) : cushion faible ou travaux non chiffres" : "Proche du prix affiche (-1%) : donnees partielles, negociation recommandee";
+  }
+  if (neverExceedSource === "ia") neverExceedWhy = "Seuil IA au-dela duquel la marge devient insuffisante";
+  if (neverExceedStr === "ND" && m0?.prixAchat) {
+    neverExceedStr = fmtCurrency(m0.prixAchat); neverExceedSource = "fallback";
+    neverExceedWhy = "Egal au prix affiche : sans donnees suffisantes, ne pas surpayer";
+  }
+
+  let gainStr: string;
+  if (f?.gainPotentiel != null && f.gainPotentiel !== 0)       gainStr = fmtCurrency(f.gainPotentiel);
+  else if (m0?.margeBrute != null && m0.margeBrute !== 0)      gainStr = fmtCurrency(m0.margeBrute) + " (calcule)";
+  else if (m0?.prixRevente   == null)                          gainStr = "ND (revente cible manquante)";
+  else if (m0?.capitalEngage == null)                          gainStr = "ND (capital engage non calculable)";
+  else                                                         gainStr = "ND";
+
+  let perteStr: string;
+  if (f?.pertePotentielle != null && f.pertePotentielle !== 0) perteStr = fmtCurrency(f.pertePotentielle);
+  else if (m0?.stressReventeMinus5 != null) {
+    const loss = m0.stressReventeMinus5 < 0 ? Math.abs(m0.stressReventeMinus5) : 0;
+    perteStr = loss > 0 ? fmtCurrency(loss) + " (stress -5%)" : "0 EUR (marge OK meme a -5%)";
+  } else if (m0?.prixRevente   == null) perteStr = "ND (revente cible manquante)";
+  else if (m0?.capitalEngage   == null) perteStr = "ND (capital engage non calculable)";
+  else                                  perteStr = "ND";
+
+  const ai: NormalizedAi = {
+    verdict, confidence: conf,
+    smartScore:        fmtScore(scores.smartScore,     fb),
+    liquidityScore:    fmtScore(scores.liquidite,      fb),
+    riskPressureScore: fmtScore(scores.pressionRisque, fb),
+    opportunityScore:  fmtScore(scores.opportunity,    fb),
+    whyBuy:        (f?.whyBuy        ?? []).slice(0, 5).map(sanitizeForPdf),
+    whatToDo:      (f?.whatToDo      ?? f?.top3ActionsNow ?? []).slice(0, 5).map(sanitizeForPdf),
+    killSwitches:  (f?.killSwitches  ?? []).slice(0, 4).map(sanitizeForPdf),
+    upside:        (f?.upside        ?? []).slice(0, 5).map(sanitizeForPdf),
+    downside:      (f?.downside      ?? []).slice(0, 5).map(sanitizeForPdf),
+    missingData:   (f?.missingData   ?? f?.dataToGetBeforeSigning ?? []).slice(0, 8).map(sanitizeForPdf),
+    conditionsToBuy: (f?.conditionsToBuy ?? []).slice(0, 5).map(sanitizeForPdf),
+    maxPrice: maxPriceStr, neverExceed: neverExceedStr,
+    maxPriceSource, neverExceedSource,
+    maxPriceWhy: sanitizeForPdf(maxPriceWhy), neverExceedWhy: sanitizeForPdf(neverExceedWhy),
+    messageToAgent: sanitizeForPdf(f?.messageToAgent ?? ""),
+    stressTest: (f?.stressTest ?? []).slice(0, 4),
+    gainPotentiel: gainStr, pertePotentielle: perteStr,
+    stressTestReadable: sanitizeForPdf(f?.stressTestReadable ?? ""),
+    checklist: (f?.checklist ?? []).slice(0, 12),
+    dueDiligence:   a?.dueDiligence   ?? [],
+    ficheOperation: a?.ficheOperation ?? [],
+    narrativeSummary: sanitizeForPdf(a?.narrativeMarkdown ?? "").slice(0, 2000),
+    resumeCourt: sanitizeForPdf(f?.resumeCourt ?? f?.decisionToday ?? ""),
+    nrResume:    sanitizeForPdf(f?.narrativeResume    ?? ""),
+    nrValeur:    sanitizeForPdf(f?.narrativeValeur    ?? ""),
+    nrLimites:   sanitizeForPdf(f?.narrativeLimites   ?? ""),
+    nrFinancier: sanitizeForPdf(f?.narrativeFinancier ?? ""),
+    nrProfil:    sanitizeForPdf(f?.narrativeProfil    ?? ""),
+    nrConclusion: sanitizeForPdf(f?.narrativeConclusion ?? ""),
+  };
+
+  const m: DealMetrics = metrics ?? {
+    titre: "", id: "", adresse: "", ville: "", cp: "", adresseComplete: "",
+    prixAchat: undefined, surfaceM2: undefined, prixM2: undefined, prixRevente: undefined,
+    travaux: undefined, fraisNotaire: undefined, capitalEngage: undefined,
+    margeBrute: undefined, margeBrutePct: undefined, cushion: undefined, premiumVsDvfPct: undefined,
+    stressReventeMinus5: undefined, apport: undefined, montantPret: undefined,
+    mensualite: undefined, loyerEstim: undefined, chargesMensuelles: undefined, balcon: undefined,
+    garage: false, ascenseur: false, cave: false, dpe: "", etage: "", vue: "", nbPieces: undefined,
+    loanRatePct: undefined, loanInsurancePct: undefined, loanFraisInitiaux: undefined,
+    _travauxSource: "none", _fraisNotaireIsFallback: false,
+  };
+
+  if (ai.upside.length      === 0) ai.upside      = autoUpside(m, scores).map(sanitizeForPdf);
+  if (ai.downside.length    === 0) ai.downside    = autoDownside(m, scores).map(sanitizeForPdf);
+  if (ai.missingData.length === 0) ai.missingData = autoMissingData(m).map(sanitizeForPdf);
+  if (ai.killSwitches.length === 0) ai.killSwitches = autoKillSwitches(m).map(sanitizeForPdf);
+  if (!ai.nrResume)    ai.nrResume    = sanitizeForPdf(nResume(m, ai.verdict, ai.confidence));
+  if (!ai.nrValeur)    ai.nrValeur    = sanitizeForPdf(nValeur(ai, m));
+  if (!ai.nrLimites)   ai.nrLimites   = sanitizeForPdf(nLimites(ai));
+  if (!ai.nrFinancier) ai.nrFinancier = sanitizeForPdf(nFinancier(m, ai));
+  if (!ai.nrProfil)    ai.nrProfil    = sanitizeForPdf(nProfil(ai, m));
+  if (!ai.nrConclusion) ai.nrConclusion = sanitizeForPdf(nConclusion(ai, m));
+  return ai;
+}
+
+function numOrUndef(v: unknown): number | undefined {
+  if (v == null) return undefined;
+  const n = Number(v);
+  return isNaN(n) || n === 0 ? undefined : n;
+}
+
+function dCur(v: number | undefined): string  { return v != null ? fmtCurrency(v) : "ND"; }
+function dSurf(v: number | undefined): string { return v != null ? `${fmtNumber(v)} m2` : "ND"; }
+
+function para(doc: jsPDF, text: string, y: number, o?: { fs?: number; style?: string; color?: readonly [number, number, number]; lh?: number }): number {
+  const fs = o?.fs ?? 9; const lh = o?.lh ?? 4.4;
+  doc.setFont("helvetica", (o?.style ?? "normal") as Parameters<typeof doc.setFont>[1]);
+  doc.setFontSize(fs); sc(doc, o?.color ?? C.body);
+  const ls: string[] = doc.splitTextToSize(sanitizeForPdf(text), CW - 4);
+  for (const l of ls) { if (y > PH - M.bottom - 4) { doc.addPage(); y = M.top + 12; } doc.text(l, M.left + 2, y); y += lh; }
+  return y;
+}
+
+function subTitle(doc: jsPDF, title: string, y: number): number {
+  if (y > PH - M.bottom - 14) { doc.addPage(); y = M.top + 12; }
+  sf(doc, C.accent); doc.roundedRect(M.left, y - 2.5, 1.8, 6, 0.9, 0.9, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); sc(doc, C.primary);
+  doc.text(sanitizeForPdf(title), M.left + 5, y + 1);
+  return y + 8;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── WIKIMEDIA HELPERS — V2 ROBUSTE ────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function deepFindKey(
+  root: unknown, key: string, maxDepth = 6,
+  seen = new Set<Record<string, unknown>>(),
+): Record<string, unknown> | null {
+  if (!isPlainObject(root) || maxDepth < 0) return null;
+  if (seen.has(root)) return null;
+  seen.add(root);
+  const direct = root[key];
+  if (isPlainObject(direct)) return direct;
+  for (const value of Object.values(root)) {
+    if (isPlainObject(value)) {
+      const found = deepFindKey(value, key, maxDepth - 1, seen);
+      if (found) return found;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = deepFindKey(item, key, maxDepth - 1, seen);
+        if (found) return found;
+      }
+    }
+  }
+  return null;
+}
+
+function getWikimediaBlock(opts?: ExportPdfOpts): Record<string, unknown> | null {
+  if (!opts) return null;
+
+  const WIKI_KEYS = new Set(["place", "wikipedia", "narrative", "wikidata", "facts", "extract"]);
+  const looksLikeWikiBlock = (o: unknown): o is Record<string, unknown> => {
+    if (!isPlainObject(o)) return false;
+    return Object.keys(o).some(k => WIKI_KEYS.has(k));
+  };
+
+  const ar       = opts.aiReport as unknown as Record<string, unknown> | undefined;
+  const computed = ar?.computed as Record<string, unknown> | undefined;
+  const ctx      = opts.context as Record<string, unknown> | undefined;
+  const analysis = ar?.analysis as Record<string, unknown> | undefined;
+
+  if (isPlainObject(computed?.wikimedia)) return computed!.wikimedia as Record<string, unknown>;
+  if (isPlainObject(ctx?.wikimedia)) return ctx!.wikimedia as Record<string, unknown>;
+  if (isPlainObject(analysis?.wikimedia)) return analysis!.wikimedia as Record<string, unknown>;
+  if (looksLikeWikiBlock(ctx)) return ctx;
+
+  const deep1 = deepFindKey(opts.aiReport, "wikimedia", 7);
+  if (deep1) return deep1;
+  const deep2 = deepFindKey(opts.context, "wikimedia", 7);
+  if (deep2) return deep2;
+
+  if (isPlainObject(ctx)) {
+    const hasWpExtract =
+      isPlainObject((ctx as Record<string, unknown>).wikipedia) &&
+      typeof ((ctx as Record<string, unknown>).wikipedia as Record<string, unknown>).extract === "string";
+    const hasNarrative =
+      typeof (ctx as Record<string, unknown>).narrative === "string" &&
+      ((ctx as Record<string, unknown>).narrative as string).trim().length > 20;
+    if (hasWpExtract || hasNarrative) return ctx;
+  }
+
+  return null;
+}
+
+function resolvePlaceBlock(wiki: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (wiki == null) return null;
+  const place = wiki.place;
+  return (isPlainObject(place) ? place : wiki) as Record<string, unknown>;
+}
+
+function extractNarrativeString(field: unknown): string {
+  if (typeof field === "string") return field.trim();
+  if (!isPlainObject(field)) return "";
+  const obj = field as Record<string, unknown>;
+  for (const k of ["text", "content", "full", "summary", "value", "description", "body", "extract"]) {
+    const v = obj[k];
+    if (typeof v === "string" && v.trim().length > 20) return v.trim();
+  }
+  for (const k of ["sentences", "paragraphs", "parts", "items", "lines"]) {
+    const arr = obj[k];
+    if (Array.isArray(arr) && arr.length > 0) {
+      const joined = (arr as unknown[])
+        .map(s => {
+          if (typeof s === "string") return s;
+          if (isPlainObject(s)) {
+            for (const sk of ["text", "content", "value", "sentence"]) {
+              if (typeof (s as Record<string, unknown>)[sk] === "string") return (s as Record<string, unknown>)[sk] as string;
+            }
+            return Object.values(s as Record<string, unknown>).filter(v => typeof v === "string").join(" ");
+          }
+          return "";
+        })
+        .filter(s => s.trim().length > 0)
+        .join(" ")
+        .trim();
+      if (joined.length > 20) return joined;
+    }
+  }
+  const candidateKeys = Object.keys(obj).filter(k => !["length", "quality", "sources", "qid", "source", "title"].includes(k));
+  const longStrings = candidateKeys
+    .map(k => obj[k])
+    .filter((v): v is string => typeof v === "string" && v.trim().length > 20);
+  if (longStrings.length > 0) return longStrings.join(" ").trim();
+  const allStrings = Object.values(obj)
+    .filter((v): v is string => typeof v === "string" && Boolean(v.trim()))
+    .join(" ").trim();
+  return allStrings;
+}
+
+function resolveWikimediaRichText(
+  place: Record<string, unknown> | null,
+  wiki: Record<string, unknown> | null,
+): string {
+  const placeContext =
+    isPlainObject(place?.context) ? (place?.context as Record<string, unknown>) : null;
+  const wikiContext =
+    wiki && place !== wiki && isPlainObject(wiki?.context)
+      ? (wiki?.context as Record<string, unknown>)
+      : null;
+
+  const candidates: unknown[] = [
+    placeContext?.long,
+    placeContext?.short,
+    place?.narrative,
+    wikiContext?.long,
+    wikiContext?.short,
+    wiki?.narrative,
+    isPlainObject(place?.wikipedia) ? (place?.wikipedia as Record<string, unknown>).extract : null,
+    wiki && place !== wiki && isPlainObject(wiki?.wikipedia)
+      ? (wiki?.wikipedia as Record<string, unknown>).extract
+      : null,
+    place?.extract,
+    wiki?.extract,
+  ];
+
+  for (const candidate of candidates) {
+    const text = extractNarrativeString(candidate);
+    if (text && text.trim().length > 30) return text.trim();
+  }
+
+  return "";
+}
+
+function extractCommuneName(
+  place: Record<string, unknown> | null,
+  fallbackCity?: string,
+  fallbackCp?: string,
+  wiki?: Record<string, unknown> | null,
+): string {
+  const isValidName = (raw: unknown): raw is string => {
+    if (typeof raw !== "string") return false;
+    const clean = sanitizeForPdf(raw).trim();
+    if (clean.length < 2) return false;
+    if (/^Q\d+$/.test(clean)) return false;
+    if (/^-+$/.test(clean)) return false;
+    if (/^\d{3,5}$/.test(clean)) return false;
+    if (/^[A-Z]{2,3}$/.test(clean)) return false;
+    return true;
+  };
+
+  const queryData = place?.query as Record<string, unknown> | undefined;
+
+  const candidates: unknown[] = [
+    queryData?.city, queryData?.commune, queryData?.name, queryData?.label,
+    place?.title, place?.label, place?.name,
+    wiki?.title, wiki?.label, wiki?.name,
+    fallbackCity,
+  ];
+
+  for (const raw of candidates) {
+    if (isValidName(raw)) return sanitizeForPdf(raw as string).trim();
+  }
+
+  if (fallbackCp) return sanitizeForPdf(fallbackCp);
+  return "";
+}
+
+function extractFactSentences(facts: unknown): string[] {
+  if (Array.isArray(facts))
+    return (facts as unknown[]).map(f => {
+      if (typeof f === "string") return sanitizeForPdf(f);
+      if (typeof f === "object" && f !== null)
+        return Object.values(f as Record<string, unknown>).map(v => sanitizeForPdf(v)).filter(Boolean).join(" ");
+      return "";
+    }).filter(Boolean);
+  if (typeof facts === "object" && facts !== null)
+    return Object.values(facts as Record<string, unknown>).map(v => sanitizeForPdf(v)).filter(Boolean);
+  if (typeof facts === "string") return [sanitizeForPdf(facts)];
+  return [];
+}
+
+function buildFactItems(facts: unknown): string[] {
+  if (facts == null) return [];
+  let items: string[] = [];
+  if (Array.isArray(facts)) {
+    items = (facts as unknown[]).slice(0, 7).map(f => {
+      if (typeof f === "string") return sanitizeForPdf(f);
+      if (typeof f === "object" && f !== null) {
+        const entries = Object.entries(f as Record<string, unknown>);
+        if (entries.length > 0) return `${sanitizeForPdf(entries[0][0])} : ${sanitizeForPdf(entries[0][1])}`;
+      }
+      return "";
+    });
+  } else if (typeof facts === "object" && facts !== null) {
+    items = Object.entries(facts as Record<string, unknown>).slice(0, 7)
+      .map(([k, v]) => `${sanitizeForPdf(k)} : ${sanitizeForPdf(v)}`);
+  } else if (typeof facts === "string") {
+    items = [sanitizeForPdf(facts)];
+  }
+  return items.filter(s => s.length > 3).slice(0, 7);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── COVER ─────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+function buildCover(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportPdfOpts): void {
+  // Fond cover — dégradé très clair sky-50 → indigo-50 (palette homepage)
+  ribbon(doc, 0, 108, [248, 251, 255] as const, [238, 242, 255] as const, 90, 0, PW);
+  // Barre accent indigo→cyan en bas du fond
+  ribbon(doc, 107, 1.5, [79, 70, 229] as const, [6, 182, 212] as const, 60, 0, PW);
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(26); sc(doc, C.primary);
+  doc.text("MIMMOZA", M.left, 26);
+  // Soulignement indigo
+  sf(doc, C.accent); doc.rect(M.left, 29, 28, 0.7, "F");
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); sc(doc, C.muted);
+  doc.text("Intelligence Immobiliere", M.left, 35.5);
+
+  const badgeTxt = "DOSSIER INVESTISSEUR";
+  const bW = doc.getTextWidth(badgeTxt) + 14;
+  roundedBox(doc, PW - M.right - bW, 18, bW, 9, { fill: C.white as const, border: C.accent, radius: 4.5, lw: 0.4 });
+  doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); sc(doc, C.accent);
+  doc.text(badgeTxt, PW - M.right - bW / 2, 23.7, { align: "center" });
+
+  const cx = M.left; const cy = 44; const cw = PW - M.left - M.right; const ch = 38;
+  roundedBox(doc, cx, cy, cw, ch, { fill: C.white as const, border: [196, 221, 253] as const, radius: 3, lw: 0.4 });
+  sf(doc, C.accent); doc.roundedRect(cx, cy, 3.5, ch, 1.5, 1.5, "F");
+
+  let iy = cy + 11;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13); sc(doc, C.primary);
+  const tl = doc.splitTextToSize(sanitizeForPdf(m.titre), cw - 18);
+  doc.text(tl, cx + 10, iy); iy += tl.length * 6;
+
+  if (m.id) {
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7); sc(doc, C.muted);
+    doc.text(sanitizeForPdf(`Ref. : ${m.id}`), cx + 10, iy); iy += 5;
+  }
+  if (m.adresseComplete) {
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); sc(doc, C.mutedDark);
+    const addrL = doc.splitTextToSize(sanitizeForPdf(m.adresseComplete), cw - 18) as string[];
+    doc.text(addrL[0] ?? "", cx + 10, iy);
+  }
+
+  const dateStr = new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7); sc(doc, C.muted);
+  doc.text(sanitizeForPdf(dateStr), M.left, 100);
+  const confStr = "CONFIDENTIEL";
+  const confW = doc.getTextWidth(confStr) + 10;
+  roundedBox(doc, PW - M.right - confW, 94, confW, 8, { fill: C.white as const, border: C.borderDark, radius: 4 });
+  doc.setFont("helvetica", "bold"); doc.setFontSize(6); sc(doc, C.muted);
+  doc.text(confStr, PW - M.right - confW / 2, 99.2, { align: "center" });
+
+  let vy = 117;
+
+  if (ai.verdict !== "ND") {
+    const bH = 20;
+    // Bloc verdict — fond indigo-50 + bordure indigo + texte sombre
+    roundedBox(doc, M.left, vy, CW, bH, { fill: C.accentSoft, border: C.accent, radius: 3, lw: 0.4 });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); sc(doc, C.muted);
+    doc.text("VERDICT STRATEGIQUE", M.left + CW / 2, vy + 6, { align: "center" });
+    doc.setFont("helvetica", "bold"); doc.setFontSize(13); sc(doc, C.accent);
+    doc.text(sanitizeForPdf(decisionLabel(ai.verdict)), M.left + CW / 2, vy + 14, { align: "center" });
+    if (ai.confidence !== "ND") {
+      doc.setFont("helvetica", "normal"); doc.setFontSize(7); sc(doc, C.muted);
+      doc.text(sanitizeForPdf(`Confiance : ${ai.confidence}`), M.left + CW - 4, vy + 17.5, { align: "right" });
+    }
+    vy += bH + 8;
+  }
+
+  const coverScores = resolveSmartScores(opts, opts?.aiReport?.analysis?.narrativeMarkdown, m);
+  if (coverScores.smartScore != null) {
+    roundedBox(doc, M.left, vy, CW, 13, { fill: C.white, border: C.border, radius: 3, lw: 0.2 });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7); sc(doc, C.muted);
+    doc.text("SmartScore", M.left + 5, vy + 5);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(12); sc(doc, C.accent);
+    doc.text(String(coverScores.smartScore), M.left + 34, vy + 9.5, { align: "right" });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7); sc(doc, C.muted);
+    doc.text("/100", M.left + 35, vy + 9.5);
+    // Barre SmartScore cover — indigo→cyan
+    const bx = M.left + 54; const bw = CW - 59;
+    roundedBox(doc, bx, vy + 5, bw, 3, { fill: C.bgAlt, radius: 1.5 });
+    const fw = Math.max(3, (coverScores.smartScore / 100) * bw);
+    const INDIGO: readonly [number, number, number] = [79, 70, 229];
+    const CYAN:   readonly [number, number, number] = [6, 182, 212];
+    ribbon(doc, vy + 5, 3, INDIGO, CYAN, Math.max(4, Math.round(fw * 2)), bx, fw);
+    vy += 19;
+  }
+
+  const kpiData = [
+    { label: "Prix d'achat", value: dCur(m.prixAchat) },
+    { label: "Surface",      value: dSurf(m.surfaceM2) },
+    { label: "Prix / m2",    value: dCur(m.prixM2) },
+  ];
+  const kw = CW / 3;
+  kpiData.forEach((k, i) => {
+    const kx = M.left + i * kw;
+    roundedBox(doc, kx + 1, vy, kw - 2, 15, { fill: C.white, border: C.border, radius: 3, lw: 0.2, shadow: true });
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); sc(doc, k.value.startsWith("ND") ? C.muted : C.accent);
+    doc.text(sanitizeForPdf(k.value), kx + kw / 2, vy + 7.5, { align: "center" });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(6); sc(doc, C.muted);
+    doc.text(k.label, kx + kw / 2, vy + 12, { align: "center" });
   });
+  vy += 21;
 
-  doc.setFillColor(8, 14, 28); doc.rect(0, PH - 16, PW, 16, "F");
-  doc.setDrawColor(35, 48, 70); doc.setLineWidth(0.3); doc.line(0, PH - 16, PW, PH - 16);
-  doc.setFontSize(6); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate500);
-  doc.text("CONFIDENTIEL \u2014 Document r\u00e9serv\u00e9 aux investisseurs et organismes financiers", lx, PH - 8);
-  doc.text("mimmoza.fr", PW - M.right, PH - 8, { align: "right" });
-}
-
-// ---------------------------------------------------------------------------
-// Helper: extract deal metrics used across multiple pages
-// ---------------------------------------------------------------------------
-
-interface DealMetrics {
-  prixAchat: number;
-  surfaceM2: number;
-  prixRevente: number;
-  travaux: number;
-  margeNette: number;
-  rentabilite: number;
-  prixM2: number | null;
-  margeBrute: number | null;
-  fraisNotaire: number;
-  cushion: number | null;
-  premiumVsDvfPct: number | null;
-  capitalEngage: number | null;
-}
-
-function extractDealMetrics(snapshot: MarchandSnapshotV1, opts?: ExportPdfOpts): DealMetrics {
-  const deal = snapshot.deals.find((d) => d.id === snapshot.activeDealId);
-  const d: any = deal ?? {};
-
-  const prixAchat = Number(d.prixAchat ?? d.price ?? 0);
-  const surfaceM2 = Number(d.surfaceM2 ?? d.surface ?? 0);
-  const prixRevente = Number(d.prixReventeCible ?? d.prixVenteEstime ?? d.prixVente ?? 0);
-  const travaux = Number(d.travauxEstimes ?? d.montantTravaux ?? d.travaux ?? 0);
-  const margeNette = Number(d.margeNette ?? 0);
-  const rentabilite = Number(d.rentabilite ?? d.rendementBrut ?? d.rendement ?? 0);
-  const fraisNotaire = Number(d.fraisNotaire ?? 0);
-
-  const prixM2 = surfaceM2 > 0 && prixAchat > 0 ? Math.round((prixAchat / surfaceM2) * 10) / 10 : null;
-  const margeBrute = prixRevente > 0 && prixAchat > 0 ? ((prixRevente - prixAchat) / prixAchat * 100) : null;
-
-  // Cushion : marge brute AU-DESSUS du seuil Mimmoza (12%)
-  // Ex: marge brute 12,9% → cushion = 0,9 pts
-  const SEUIL_MIMMOZA = 12;
-  const capitalEngage = prixAchat > 0 ? prixAchat + fraisNotaire + travaux : null;
-  const cushion = margeBrute != null ? margeBrute - SEUIL_MIMMOZA : null;
-
-  // Premium vs DVF
-  const premiumVsDvfPct = opts?.aiReport?.analysis?.marketStatus?.dvfSummary?.premiumVsDvfPct ?? null;
-
-  return { prixAchat, surfaceM2, prixRevente, travaux, margeNette, rentabilite, prixM2, margeBrute, fraisNotaire, cushion, premiumVsDvfPct, capitalEngage };
-}
-
-// ---------------------------------------------------------------------------
-// Investisseur scores: Rentabilité & Robustesse
-// ---------------------------------------------------------------------------
-
-interface InvestisseurScores {
-  rentabilite: number | null;   // 0–100 or null (ND)
-  robustesse: number | null;    // 0–100 or null (ND)
-}
-
-/**
- * Score Rentabilité (0–100)
- * Piliers : marge brute (50%), cushion vs seuil 12% (25%), résistance stress revente -5% (25%).
- * ND si < 2 piliers calculables.
- */
-function computeScoreRentabilite(metrics: DealMetrics): number | null {
-  let signals = 0;
-  let totalWeight = 0;
-  let weightedSum = 0;
-
-  // Pilier 1 : Marge brute → 50%
-  if (metrics.margeBrute != null) {
-    signals++;
-    const w = 50;
-    // 0% → 0, 6% → 25, 12% → 50, 20% → 80, >=25% → 100
-    const val = Math.min(Math.max(metrics.margeBrute / 25 * 100, 0), 100);
-    totalWeight += w;
-    weightedSum += val * w;
-  }
-
-  // Pilier 2 : Cushion vs seuil 12% → 25%
-  if (metrics.cushion != null) {
-    signals++;
-    const w = 25;
-    // cushion < -5 → 0, 0 → 40, 3 → 65, 8 → 100
-    const val = Math.min(Math.max((metrics.cushion + 5) / 13 * 100, 0), 100);
-    totalWeight += w;
-    weightedSum += val * w;
-  }
-
-  // Pilier 3 : Résistance stress revente -5% → 25%
-  if (metrics.prixRevente > 0 && metrics.prixAchat > 0) {
-    signals++;
-    const w = 25;
-    const newRevente = metrics.prixRevente * 0.95;
-    const totalCost = metrics.prixAchat + metrics.fraisNotaire + metrics.travaux;
-    const stressMarge = totalCost > 0 ? ((newRevente - totalCost) / totalCost) * 100 : 0;
-    // stressMarge < 0 → 0, 5% → 40, 12% → 80, >=18% → 100
-    const val = Math.min(Math.max(stressMarge / 18 * 100, 0), 100);
-    totalWeight += w;
-    weightedSum += val * w;
-  }
-
-  if (signals < 2) return null;
-  return Math.round(weightedSum / totalWeight);
-}
-
-/**
- * Score Robustesse (0–100)
- * Piliers : surcote vs DVF (30%), données manquantes critiques (25%),
- * durée détention vs cible 18 mois (15%), cushion (30%).
- * Pénalisation prudente si donnée absente.
- * ND si < 2 piliers avec données réelles.
- */
-function computeScoreRobustesse(metrics: DealMetrics, ai: NormalizedAi | null, snapshot: MarchandSnapshotV1): number | null {
-  let signals = 0;
-  let totalWeight = 0;
-  let weightedSum = 0;
-
-  // Pilier 1 : Surcote vs DVF → 30%
-  if (metrics.premiumVsDvfPct != null) {
-    signals++;
-    const w = 30;
-    // -10% (discount) → 100, 0% → 75, 10% → 40, 20% → 10, >=30% → 0
-    const val = Math.min(Math.max(100 - (metrics.premiumVsDvfPct + 10) * (100 / 40), 0), 100);
-    totalWeight += w;
-    weightedSum += val * w;
-  } else {
-    // Pénalisation prudente : 35/100
-    totalWeight += 30;
-    weightedSum += 35 * 30;
-  }
-
-  // Pilier 2 : Données manquantes critiques → 25%
-  {
-    const w = 25;
-    const missingCount = ai?.missingData?.length ?? 0;
-    if (ai) {
-      signals++;
-      // 0 manquantes → 100, 1 → 80, 2 → 55, 3 → 35, 4 → 20, >=5 → 5
-      const val = Math.min(Math.max(100 - missingCount * 20, 5), 100);
-      totalWeight += w;
-      weightedSum += val * w;
-    } else {
-      // Pas d'IA → pénalisation prudente 30/100
-      totalWeight += w;
-      weightedSum += 30 * w;
+  const FALLBACK_COVER = "Analyse automatisee basee sur les donnees DVF, les indicateurs de marche et les hypotheses financieres du projet.";
+  const BAD_PHRASES    = ["information non fournie", "non fourni", "non disponible", "aucune information"];
+  const rtRaw  = ai.resumeCourt || ai.nrResume || "";
+  const rtIsBad = BAD_PHRASES.some(p => rtRaw.toLowerCase().includes(p));
+  const rt = (!rtRaw || rtIsBad)
+    ? (ai.whyBuy.length > 0 ? ai.whyBuy[0] : FALLBACK_COVER)
+    : rtRaw;
+  if (rt) {
+    const rtTrunc = rt.length > 240 ? rt.slice(0, 237) + "..." : rt;
+    const rtLines = doc.splitTextToSize(sanitizeForPdf(`"${rtTrunc}"`), CW - 12) as string[];
+    const rtH = rtLines.length * 4.2 + 10;
+    if (vy + rtH < PH - 28) {
+      // Bloc résumé — fond indigo-50 + barre indigo
+      roundedBox(doc, M.left, vy, CW, rtH, { fill: C.accentSoft, border: [196, 221, 253] as const, radius: 3 });
+      sf(doc, C.accent); doc.roundedRect(M.left, vy, 3, rtH, 1.5, 1.5, "F");
+      doc.setFont("helvetica", "italic"); doc.setFontSize(8); sc(doc, C.body);
+      doc.text(rtLines, M.left + 8, vy + 6);
+      vy += rtH + 6;
     }
   }
 
-  // Pilier 3 : Durée détention vs cible 18 mois → 15%
-  {
-    const deal: any = snapshot.deals.find((d) => d.id === snapshot.activeDealId) ?? {};
-    const dureeDetention = Number(deal.dureeDetention ?? deal.holdingPeriodMonths ?? 0);
-    const w = 15;
-    if (dureeDetention > 0) {
-      signals++;
-      // <= 12 mois → 100, 18 mois → 70, 24 mois → 45, 36 mois → 15, >=48 → 0
-      const val = Math.min(Math.max(100 - (dureeDetention - 12) * (100 / 36), 0), 100);
-      totalWeight += w;
-      weightedSum += val * w;
+  const toc = [
+    "1 — Commune & contexte local",
+    "2 — Synthese strategique",
+    "3 — Decision en 30 secondes",
+    "4 — Risques & Conditions",
+    "5 — Stress test & Capital",
+    "6 — Plan d'action",
+  ];
+  if (vy + toc.length * 5 + 14 < PH - 14) {
+    roundedBox(doc, M.left, vy, CW, toc.length * 5 + 12, { fill: C.white, border: C.border, radius: 3, lw: 0.2 });
+    doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); sc(doc, C.muted);
+    doc.text("SOMMAIRE", M.left + 4, vy + 5.5);
+    toc.forEach((item, idx) => {
+      doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); sc(doc, C.mutedDark);
+      doc.text(sanitizeForPdf(item), M.left + 4, vy + 10 + idx * 5);
+    });
+  }
+
+  ribbon(doc, PH - 6, 6, [238, 242, 255] as const, [240, 249, 255] as const, 60, 0, PW);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(6); sc(doc, C.muted);
+  doc.text("Genere par MIMMOZA — Intelligence immobiliere", PW / 2, PH - 1.5, { align: "center" });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── COMMUNE PAGE ──────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+function buildCommunePage(doc: jsPDF, opts?: ExportPdfOpts, metrics?: DealMetrics): void {
+  console.log("[PDF][COMMUNE][opts.context keys]",
+    opts?.context ? Object.keys(opts.context) : "(context absent)");
+  const ctxAny = opts?.context as Record<string, unknown> | undefined;
+  if (ctxAny?.wikimedia) {
+    const wk = ctxAny.wikimedia as Record<string, unknown>;
+    console.log("[PDF][COMMUNE][context.wikimedia keys]", Object.keys(wk));
+    if (wk.place && typeof wk.place === "object") {
+      const pl = wk.place as Record<string, unknown>;
+      console.log("[PDF][COMMUNE][context.wikimedia.place keys]", Object.keys(pl));
+      if (pl.context && typeof pl.context === "object") {
+        const cx = pl.context as Record<string, unknown>;
+        console.log("[PDF][COMMUNE][place.context keys]", Object.keys(cx));
+        console.log("[PDF][COMMUNE][place.context.long]",
+          typeof cx.long === "string" ? cx.long.slice(0, 150) + "…" : `(type: ${typeof cx.long})`);
+      } else {
+        console.log("[PDF][COMMUNE][place.context]", "(absent ou non-objet)", typeof pl.context);
+      }
+      console.log("[PDF][COMMUNE][place.narrative]",
+        typeof pl.narrative === "string" ? pl.narrative.slice(0, 150) + "…" : `(type: ${typeof pl.narrative})`);
     } else {
-      // Pénalisation prudente : on suppose 24 mois → 45
-      totalWeight += w;
-      weightedSum += 45 * w;
+      console.log("[PDF][COMMUNE][context.wikimedia.place]", "(absent)", typeof wk.place);
     }
-  }
-
-  // Pilier 4 : Cushion → 30%
-  if (metrics.cushion != null) {
-    signals++;
-    const w = 30;
-    // cushion < -5 → 0, 0 → 40, 3 → 65, 8 → 100
-    const val = Math.min(Math.max((metrics.cushion + 5) / 13 * 100, 0), 100);
-    totalWeight += w;
-    weightedSum += val * w;
   } else {
-    // Pénalisation prudente : 25/100
-    totalWeight += 30;
-    weightedSum += 25 * 30;
+    console.log("[PDF][COMMUNE][context.wikimedia]", "(absent — deepFind va s'activer)");
+    console.log("[PDF][COMMUNE][aiReport.computed keys]",
+      opts?.aiReport?.computed ? Object.keys(opts.aiReport.computed as object) : "(absent)");
   }
 
-  if (signals < 2) return null;
-  return Math.round(weightedSum / totalWeight);
-}
+  const wiki  = getWikimediaBlock(opts);
+  console.log("[PDF][COMMUNE][wiki keys après getWikimediaBlock]",
+    wiki ? Object.keys(wiki) : "(null — bloc introuvable)");
+  const place    = resolvePlaceBlock(wiki);
+  const placeAny = place as Record<string, unknown> | null;
+  console.log("[PDF][COMMUNE][place keys après resolvePlaceBlock]",
+    placeAny ? Object.keys(placeAny) : "(null)");
 
-// ---------------------------------------------------------------------------
-// B3: Data Confidence (0–100)
-// ---------------------------------------------------------------------------
+  const communeName = extractCommuneName(placeAny, metrics?.ville, metrics?.cp, wiki);
 
-function computeDataConfidence(
-  metrics: DealMetrics,
-  ai: NormalizedAi | null,
-  scores: Record<string, string>,
-  snapshot: MarchandSnapshotV1,
-): number {
-  // base = complétude% if available, else 60
-  let base = scores["Compl\u00e9tude"] ? Number(scores["Compl\u00e9tude"]) : 60;
+  let narrative = resolveWikimediaRichText(placeAny, wiki);
 
-  // -10 per critical missing data (cap -30)
-  const criticalMissing = ai?.missingData?.length ?? 0;
-  base -= Math.min(criticalMissing * 10, 30);
+  const wpPlace    = placeAny?.wikipedia as Record<string, unknown> | undefined;
+  const wpWikiRoot = (wiki && placeAny !== wiki)
+    ? wiki.wikipedia as Record<string, unknown> | undefined
+    : undefined;
 
-  // -10 if travaux ND
-  if (metrics.travaux === 0) base -= 10;
+  const rawExtract =
+    typeof wpPlace?.extract === "string"    ? wpPlace.extract.trim()    :
+    typeof wpWikiRoot?.extract === "string" ? wpWikiRoot.extract.trim() :
+    "";
 
-  // -10 if durées ND
-  const deal: any = snapshot.deals.find((d) => d.id === snapshot.activeDealId) ?? {};
-  const duree = Number(deal.dureeDetention ?? deal.holdingPeriodMonths ?? 0);
-  if (duree === 0) base -= 10;
+  const wdPlace    = placeAny?.wikidata as Record<string, unknown> | undefined;
+  const wdWikiRoot = (wiki && placeAny !== wiki)
+    ? wiki.wikidata as Record<string, unknown> | undefined
+    : undefined;
+  const rawFacts =
+    wdPlace?.facts    ??
+    placeAny?.facts   ??
+    wdWikiRoot?.facts ??
+    wiki?.facts       ??
+    null;
 
-  return Math.max(0, Math.min(100, Math.round(base)));
-}
-
-function dataConfidenceLabel(dc: number): string {
-  if (dc >= 75) return "\u00c9lev\u00e9e";
-  if (dc >= 50) return "Moyenne";
-  return "Faible";
-}
-
-// ---------------------------------------------------------------------------
-// B1: Risk Class A / B / C / D
-// ---------------------------------------------------------------------------
-
-interface RiskClassResult { cls: string; label: string; subtext: string; color: RGB; bg: RGB }
-
-function computeRiskClass(
-  smartScore: number | null,
-  robustesse: number | null,
-  rentabilite: number | null,
-  dataConfidence: number | null,
-): RiskClassResult {
-  const ss = smartScore ?? 0;
-  const rob = robustesse ?? 0;
-  const rent = rentabilite ?? 0;
-  const dc = dataConfidence;
-
-  const hasMinData = smartScore != null || robustesse != null;
-  if (!hasMinData) return { cls: "ND", label: "ND", subtext: "Donn\u00e9es insuffisantes", color: C.slate500, bg: C.slate50 };
-
-  if (ss >= 70 && rob >= 65 && rent >= 60 && (dc == null || dc >= 75)) {
-    return { cls: "A", label: "A \u2014 Robuste", subtext: "Robuste", color: C.emeraldDark, bg: C.emeraldBg };
-  }
-  if (ss >= 60 && rob >= 55) {
-    return { cls: "B", label: "B \u2014 Viable", subtext: "Viable", color: C.skyDark, bg: C.skyBg };
-  }
-  if (ss >= 45 && rob >= 40) {
-    return { cls: "C", label: "C \u2014 Fragile", subtext: "Fragile (s\u00e9curisation obligatoire)", color: C.amberDark, bg: C.amberBg };
-  }
-  return { cls: "D", label: "D \u2014 Risque \u00e9lev\u00e9", subtext: "Risque \u00e9lev\u00e9 (NO GO probable)", color: C.roseDark, bg: C.roseBg };
-}
-
-// ---------------------------------------------------------------------------
-// B2: Profil investisseur cible
-// ---------------------------------------------------------------------------
-
-interface InvestorProfileResult { profil: string; horizon: string; tolerance: string; strategie: string }
-
-function computeInvestorProfile(
-  robustesse: number | null,
-  liquidite: number | null,
-  duree: number,
-  cushion: number | null,
-): InvestorProfileResult {
-  const rob = robustesse ?? 50;
-  const liq = liquidite ?? 50;
-
-  let profil = "Marchand exp\u00e9riment\u00e9";
-  let tolerance = "Moyenne";
-  if (rob >= 65 && (cushion ?? 0) >= 3) {
-    profil = "Patrimonial prudent";
-    tolerance = "Faible";
-  } else if (rob < 40) {
-    profil = "Investisseur opportuniste";
-    tolerance = "\u00c9lev\u00e9e";
+  let profileText = "";
+  const profileSrc =
+    (isPlainObject(placeAny?.profile) ? placeAny!.profile :
+     (wiki && placeAny !== wiki && isPlainObject(wiki.profile) ? wiki.profile : null)) as Record<string, unknown> | null;
+  if (profileSrc) {
+    profileText = Object.values(profileSrc)
+      .filter((v): v is string => typeof v === "string" && v.trim().length > 10)
+      .join(" ").trim();
   }
 
-  let horizon = "Court (<18 mois)";
-  if (duree > 24) horizon = "Long";
-  else if (duree > 18) horizon = "Moyen";
-
-  let strategie = "Revente";
-  if (liq < 40) strategie = "Location (plan B)";
-  else if (liq < 60 && rob < 55) strategie = "Mix";
-
-  return { profil, horizon, tolerance, strategie };
-}
-
-// ---------------------------------------------------------------------------
-// PAGE 1: DÉCISION & SYNTHÈSE
-// ---------------------------------------------------------------------------
-
-function buildDecisionSynthesePage(doc: jsPDF, snapshot: MarchandSnapshotV1, opts?: ExportPdfOpts): void {
-  const space = opts?.space ?? "marchand";
-  const deal = snapshot.deals.find((d) => d.id === snapshot.activeDealId);
-  const ai = opts?.aiReport ? normalizeAiReport(opts.aiReport) : null;
-  const narrative = sanitizeForPdf(opts?.aiReport?.narrativeMarkdown ?? opts?.aiReport?.narrative ?? "");
-  const scores = narrative ? extractFromNarrative(narrative).scores : {};
-  const metrics = extractDealMetrics(snapshot, opts);
-
-  const dealId = deal?.id ?? "\u2014"; const title = deal?.title ?? "Sans titre";
-  const city = (deal as any)?.city ?? "\u2014"; const zip = (deal as any)?.zipCode ?? (deal as any)?.codePostal ?? "\u2014";
-  const address = (deal as any)?.address ?? "\u2014";
+  const hasContent = wiki !== null || placeAny !== null;
+  const hasText    = narrative.length > 30 || profileText.length > 30;
 
   doc.addPage();
-  let y = M.top + 4;
-  y = sectionTitle(doc, y, "D\u00e9cision & Synth\u00e8se", "D\u00e9cision en 30 secondes");
+  let y = M.top + 8;
 
-  // ── Identity row ─────────────────────────────────────────────────────────
-  const identH = 18;
-  roundedBox(doc, M.left, y, CW, identH, 3, C.white, C.slate200, 0.2);
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...C.slate900);
-  doc.text(S(`${dealId}  \u2014  ${title}`), M.left + 5, y + 7);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(...C.slate500);
-  doc.text(S([address, zip, city].filter(Boolean).join(", ")), M.left + 5, y + 13);
+  const pageTitle = communeName
+    ? `Commune & contexte local — ${communeName}`
+    : "Commune & contexte local";
+  doc.setFont("helvetica", "bold"); doc.setFontSize(14); sc(doc, C.primary);
+  doc.text(sanitizeForPdf(pageTitle), M.left, y); y += 3;
+  sf(doc, C.accent); doc.rect(M.left, y, 48, 1.5, "F");
+  y += 9;
 
-  // ── Verdict badge (right-aligned) ────────────────────────────────────────
-  const verdict = ai?.verdict ?? "";
-  const dc = decisionColors(verdict);
-  const badgeW = 58; const bx = PW - M.right - badgeW - 3; const by = y + 1;
-  roundedBox(doc, bx, by, badgeW, 16, 3, dc.bg, dc.border, 0.6);
-  doc.setFillColor(...dc.glow); doc.rect(bx, by + 2, 2, 12, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(...dc.text);
-  doc.text(decisionLabel(verdict || undefined), bx + badgeW / 2 + 1, by + 8, { align: "center" });
-  if (ai?.confidencePct) { doc.setFontSize(6); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate500); doc.text(`Confiance ${ai.confidencePct}`, bx + badgeW / 2 + 1, by + 13, { align: "center" }); }
-
-  y += identH + 4;
-
-  // ── Score gauges ─────────────────────────────────────────────────────────
-  // Investisseur mode: 6 gauges (4 core + Rentabilité + Robustesse)
-  // Marchand mode: 4 gauges (unchanged)
-  const coreGauges: { key: string; label: string; max: number; invertColor?: boolean }[] = [
-    { key: "SmartScore", label: "SMARTSCORE", max: 100 },
-    { key: "Probabilit\u00e9 revente", label: "LIQUIDIT\u00c9", max: 100 },
-    { key: "RiskPressureIndex", label: "PRESSION RISQUE", max: 100, invertColor: true },
-    { key: "OpportunityScore", label: "OPPORTUNITY", max: 100 },
-  ];
-
-  let invScores: InvestisseurScores | null = null;
-  if (space === "investisseur") {
-    invScores = {
-      rentabilite: computeScoreRentabilite(metrics),
-      robustesse: computeScoreRobustesse(metrics, ai, snapshot),
-    };
-    coreGauges.push(
-      { key: "__ScoreRentabilite", label: "RENTABILIT\u00c9", max: 100 },
-      { key: "__ScoreRobustesse", label: "ROBUSTESSE", max: 100 },
-    );
+  if (!hasContent) {
+    roundedBox(doc, M.left, y, CW, 28, { fill: C.bg, border: C.borderDark, radius: 3 });
+    sf(doc, C.muted); doc.roundedRect(M.left, y, 3, 28, 1.5, 1.5, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); sc(doc, C.mutedDark);
+    doc.text("Contexte local non disponible", M.left + CW / 2, y + 12, { align: "center" });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8); sc(doc, C.muted);
+    doc.text("Le bloc Wikimedia n'a pas ete transmis dans les donnees.", M.left + CW / 2, y + 20, { align: "center" });
+    setY(doc, y + 34);
+    return;
   }
 
-  const gc = coreGauges.length;
-  const gh = 30;
-  const gw = (CW - (gc - 1) * 3) / gc;
-  roundedBox(doc, M.left, y, CW, gh, 3, C.slate50, C.slate200, 0.2);
-  coreGauges.forEach((g, i) => {
-    const gx = M.left + i * (gw + 3);
-
-    // Resolve value: special keys for investisseur scores, else from narrative
-    let val = 0;
-    let hasVal = false;
-    if (g.key === "__ScoreRentabilite" && invScores) {
-      hasVal = invScores.rentabilite != null;
-      val = invScores.rentabilite ?? 0;
-    } else if (g.key === "__ScoreRobustesse" && invScores) {
-      hasVal = invScores.robustesse != null;
-      val = invScores.robustesse ?? 0;
-    } else {
-      hasVal = !!scores[g.key];
-      val = scores[g.key] ? Number(scores[g.key]) : 0;
-    }
-
-    if (hasVal) {
-      const color = g.invertColor ? scoreColor(100 - val) : scoreColor(val);
-      arcScore(doc, gx + gw / 2, y + 16, 8, val, g.max, color, g.label);
-    } else {
-      // Show ND gauge
-      doc.setDrawColor(...C.slate200); doc.setLineWidth(2);
-      const cx = gx + gw / 2; const cy = y + 16; const radius = 8;
-      const startAngle = Math.PI * 0.75; const endAngle = Math.PI * 2.25; const arcLen = endAngle - startAngle;
-      for (let j = 0; j < 40; j++) {
-        const a1 = startAngle + (j / 40) * arcLen; const a2 = startAngle + ((j + 1) / 40) * arcLen;
-        doc.line(cx + radius * Math.cos(a1), cy + radius * Math.sin(a1), cx + radius * Math.cos(a2), cy + radius * Math.sin(a2));
-      }
-      doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate400);
-      doc.text("ND", cx, cy + 1, { align: "center" });
-      doc.setFontSize(4.5); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate500);
-      doc.text(S(g.label), cx, cy + 5.5, { align: "center" });
-    }
-  });
-  y += gh + 4;
-
-  // ── Bloc pédagogique : Comment lire ces scores ? ─────────────────────────
-  const scoreExplanations: [string, string][] = [
-    ["SmartScore", "Note globale du deal (0\u2013100). > 65 = solide, 40\u201365 = \u00e0 surveiller, < 40 = risqu\u00e9."],
-    ["Liquidit\u00e9", "Probabilit\u00e9 de revendre dans un d\u00e9lai raisonnable. > 60 = march\u00e9 fluide, < 40 = revente difficile."],
-    ["Pression risque", "Cumul des facteurs d\u00e9favorables (0\u2013100). > 60 = danger, < 35 = risque ma\u00eetris\u00e9. Plus c'est bas, mieux c'est."],
-    ["Opportunity", "Potentiel de surperformance du deal. > 65 = belle opportunit\u00e9, < 40 = peu d'upside."],
-  ];
-  if (space === "investisseur") {
-    scoreExplanations.push(
-      ["Rentabilit\u00e9", "Capacit\u00e9 du deal \u00e0 g\u00e9n\u00e9rer du profit (0\u2013100). > 65 = rentable, 40\u201365 = fragile, < 40 = non viable."],
-      ["Robustesse", "R\u00e9sistance du deal aux al\u00e9as (0\u2013100). > 65 = solide, 40\u201365 = vuln\u00e9rable, < 40 = fragile."],
-    );
+  if (!hasText && rawFacts == null && !profileText) {
+    roundedBox(doc, M.left, y, CW, 28, { fill: C.bg, border: C.borderDark, radius: 3 });
+    sf(doc, C.warning); doc.roundedRect(M.left, y, 3, 28, 1.5, 1.5, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); sc(doc, C.mutedDark);
+    const msg = communeName
+      ? `${communeName} — Contenu Wikimedia non recupere`
+      : "Commune — Contenu Wikimedia non recupere";
+    doc.text(sanitizeForPdf(msg), M.left + CW / 2, y + 11, { align: "center" });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8); sc(doc, C.muted);
+    doc.text("Verifier la commune et le code postal renseignes dans le dossier.", M.left + CW / 2, y + 19, { align: "center" });
+    setY(doc, y + 34);
+    return;
   }
 
-  // Dynamically compute pedagH based on number of explanations
-  const pedagRows = Math.ceil(scoreExplanations.length / 2);
-  const pedagH = 10 + pedagRows * 8;
-  y = ensureSpace(doc, y, pedagH + 4);
-  roundedBox(doc, M.left, y, CW, pedagH, 2.5, C.slate50, C.slate200, 0.15);
-  doc.setFillColor(...C.accent); doc.rect(M.left, y + 1, 2, pedagH - 2, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...C.accentDark);
-  doc.text("Comment lire ces scores ?", M.left + 6, y + 5);
+  y = sectionTitle(doc, "Commune & contexte local", y);
 
-  let py = y + 9;
-  const colW = (CW - 14) / 2;
-  scoreExplanations.forEach(([ name, desc ], idx) => {
-    const col = idx % 2;
-    const px = M.left + 6 + col * (colW + 4);
-    if (idx > 0 && idx % 2 === 0) py += 8; // new row
-    doc.setFont("helvetica", "bold"); doc.setFontSize(6); doc.setTextColor(...C.slate800);
-    doc.text(S(name), px, py);
-    doc.setFont("helvetica", "normal"); doc.setFontSize(5.5); doc.setTextColor(...C.slate600);
-    const dl = doc.splitTextToSize(S(desc), colW - 2);
-    doc.text(dl, px, py + 3);
+  const placeCtx = isPlainObject(placeAny?.context)
+    ? (placeAny!.context as Record<string, unknown>)
+    : null;
+
+  const contextLong  = typeof placeCtx?.long  === "string" && placeCtx.long.trim().length  > 30
+    ? placeCtx.long.trim()  : "";
+  const contextShort = typeof placeCtx?.short === "string" && placeCtx.short.trim().length > 30
+    ? placeCtx.short.trim() : "";
+  const placeNarrative = typeof placeAny?.narrative === "string" && (placeAny.narrative as string).trim().length > 30
+    ? (placeAny.narrative as string).trim() : "";
+
+  console.log("[PDF][COMMUNE][context.long]",   contextLong   ? contextLong.slice(0, 120) + "…" : "(vide)");
+  console.log("[PDF][COMMUNE][context.short]",  contextShort  ? contextShort.slice(0, 120) + "…" : "(vide)");
+  console.log("[PDF][COMMUNE][narrative]",       placeNarrative ? placeNarrative.slice(0, 120) + "…" : "(vide)");
+
+  let sourceUsed: "context.long" | "context.short" | "narrative" | "profileText" | "facts" | "none" = "none";
+  let presentationRaw: string;
+  if (contextLong) {
+    presentationRaw = contextLong;
+    sourceUsed = "context.long";
+  } else if (contextShort) {
+    presentationRaw = contextShort;
+    sourceUsed = "context.short";
+  } else if (placeNarrative) {
+    presentationRaw = placeNarrative;
+    sourceUsed = "narrative";
+  } else if (profileText) {
+    presentationRaw = profileText;
+    sourceUsed = "profileText";
+  } else {
+    presentationRaw = "";
+    sourceUsed = "facts";
+  }
+
+  if (rawFacts != null) {
+    const factsArr = extractFactSentences(rawFacts);
+    const isShort  = presentationRaw.length < 200;
+    const keep     = isShort
+      ? factsArr.filter(Boolean)
+      : factsArr.filter(s => /^(Commune|Departement|Region|Population|Superficie)\s*:/.test(s));
+    const extra = keep.slice(0, isShort ? 8 : 4);
+    if (extra.length > 0) {
+      const suffix = extra.join(". ") + ".";
+      presentationRaw = presentationRaw ? `${presentationRaw.replace(/\.*\s*$/, ".")} ${suffix}` : suffix;
+    }
+  }
+  if (presentationRaw.length > 900) presentationRaw = presentationRaw.slice(0, 897) + "...";
+
+  console.log("[PDF][COMMUNE][sourceUsed]",      sourceUsed);
+  console.log("[PDF][COMMUNE][presentationRaw]", presentationRaw ? presentationRaw.slice(0, 200) + "…" : "(vide)");
+
+  if (presentationRaw.trim()) {
+    const paragraphs = presentationRaw
+      .split(/\n{2,}|\n/)
+      .map(p => sanitizeForPdf(p))
+      .map(p => p.trim())
+      .filter(p => p.length > 0);
+
+    const lineH = 4.6;
+    const renderedParagraphs = paragraphs.map((p) => doc.splitTextToSize(p, CW - 14) as string[]);
+    const totalLines = renderedParagraphs.reduce((acc, lines) => acc + lines.length, 0);
+    const paraGap = 3.2;
+    const blockH =
+      renderedParagraphs.reduce((acc, lines) => acc + lines.length * lineH, 0) +
+      Math.max(0, renderedParagraphs.length - 1) * paraGap +
+      12;
+
+    if (y + blockH > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
+
+    roundedBox(doc, M.left, y, CW, blockH, { fill: C.bg, border: C.border, radius: 3, lw: 0.2 });
+    sf(doc, C.accent); doc.roundedRect(M.left, y, 3, blockH, 1.5, 1.5, "F");
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.8);
+    sc(doc, C.body);
+
+    let ty = y + 8;
+    for (const lines of renderedParagraphs) {
+      doc.text(lines, M.left + 8, ty);
+      ty += lines.length * lineH + paraGap;
+    }
+
+    if (totalLines > 20) {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(7);
+      sc(doc, C.muted);
+      doc.text("(texte enrichi)", M.left + CW - 4, y + blockH - 3, { align: "right" });
+    }
+
+    y += blockH + 8;
+  }
+
+  const factItems = buildFactItems(rawFacts);
+  if (factItems.length > 0) {
+    if (y + 20 > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
+    y = sectionTitle(doc, "Faits cles", y);
+    const factLineH = 4.4;
+    let factsBlockH = 10;
+    const renderedFacts: { lines: string[]; h: number }[] = factItems.map(fact => {
+      const ls = doc.splitTextToSize(sanitizeForPdf(fact), CW - 16) as string[];
+      const h  = ls.length * factLineH + 2.5;
+      factsBlockH += h;
+      return { lines: ls, h };
+    });
+    factsBlockH += 4;
+    if (y + factsBlockH > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
+    // Bloc faits — fond indigo-50
+    roundedBox(doc, M.left, y, CW, factsBlockH, { fill: C.accentSoft, border: [196, 221, 253] as const, radius: 3, lw: 0.2 });
+    let fy = y + 8;
+    for (const { lines, h } of renderedFacts) {
+      sf(doc, C.accent); doc.circle(M.left + 6, fy - 1.4, 0.8, "F");
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); sc(doc, C.body);
+      doc.text(lines, M.left + 11, fy);
+      fy += h;
+    }
+    y += factsBlockH + 8;
+  }
+
+  if (y + 20 > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
+  y = sectionTitle(doc, "Implications immobilieres", y, { color: C.accentDark });
+
+  const implications = [
+    "L'accessibilite aux transports, commerces et services publics peut soutenir l'attractivite locative et faciliter la revente.",
+    "Le dynamisme economique et demographique local influence directement la demande de logements et le niveau des loyers.",
+    "La presence d'ecoles, d'etablissements de sante et de commerces de proximite constitue un critere de valorisation durable.",
+    "Les specificites urbaines et patrimoniales de la commune peuvent impacter les regles PLU applicables au bien.",
+  ];
+  const implLineH = 4.5;
+  let implBlockH = 10;
+  const renderedImpl: { lines: string[]; h: number }[] = implications.map(impl => {
+    const ls = doc.splitTextToSize(sanitizeForPdf(impl), CW - 16) as string[];
+    const h  = ls.length * implLineH + 3;
+    implBlockH += h;
+    return { lines: ls, h };
   });
-  y += pedagH + 4;
+  implBlockH += 4;
+  if (y + implBlockH > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
+  roundedBox(doc, M.left, y, CW, implBlockH, { fill: C.white, border: C.border, radius: 3, lw: 0.2, shadow: true });
+  let iy2 = y + 8;
+  for (const { lines, h } of renderedImpl) {
+    sf(doc, C.accent); doc.circle(M.left + 6, iy2 - 1.4, 0.8, "F");
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); sc(doc, C.body);
+    doc.text(lines, M.left + 11, iy2);
+    iy2 += h;
+  }
+  y += implBlockH + 5;
 
-  // ── KPI cards — Row 1: Prix achat, Surface, Prix/m², Revente cible ──────
-  const kpiW = (CW - 9) / 4; const kpiH = 24;
-  kpiCard(doc, M.left, y, kpiW, kpiH, "Prix d'acquisition", fmtCurrency(metrics.prixAchat || null), { color: C.accent });
-  kpiCard(doc, M.left + kpiW + 3, y, kpiW, kpiH, "Surface", metrics.surfaceM2 > 0 ? `${fmtNumber(metrics.surfaceM2)} m\u00b2` : "ND", { color: C.sky });
-  kpiCard(doc, M.left + (kpiW + 3) * 2, y, kpiW, kpiH, "Prix / m\u00b2", metrics.prixM2 != null ? `${fmtNumber(metrics.prixM2)} \u20ac/m\u00b2` : "ND", { color: C.violet });
-  kpiCard(doc, M.left + (kpiW + 3) * 3, y, kpiW, kpiH, "Revente cible", fmtCurrency(metrics.prixRevente || null), { color: C.emerald });
-  y += kpiH + 3;
+  doc.setFont("helvetica", "italic"); doc.setFontSize(6); sc(doc, C.muted);
+  doc.text("Source : Wikipedia / Wikidata via Wikimedia API. Contenu a titre indicatif uniquement.", M.left, y);
+  setY(doc, y + 8);
 
-  // ── KPI cards — Row 2: Marge brute, Cushion, Surcote DVF, Travaux ───────
-  const mb = metrics.margeBrute;
-  kpiCard(doc, M.left, y, kpiW, kpiH, "Marge brute", mb != null ? fmtPercent(mb) : "ND",
-    { color: mb != null && mb >= 12 ? C.emerald : C.amber, highlight: mb != null && mb >= 12, gauge: mb ?? undefined, gaugeMax: 30, subtext: mb != null ? (mb >= 12 ? "Seuil 12% : OK" : "Sous seuil 12%") : undefined });
-  kpiCard(doc, M.left + kpiW + 3, y, kpiW, kpiH, "Cushion vs seuil", metrics.cushion != null ? fmtPercent(metrics.cushion, 1) + " pts" : "ND",
-    { color: metrics.cushion != null ? (metrics.cushion >= 3 ? C.emerald : metrics.cushion >= 0 ? C.amber : C.rose) : C.slate500,
-      subtext: metrics.cushion != null ? (metrics.cushion >= 3 ? "Buffer confortable" : metrics.cushion >= 0 ? "Buffer juste" : "Sous seuil 12%") : "Marge brute manquante" });
-  kpiCard(doc, M.left + (kpiW + 3) * 2, y, kpiW, kpiH, "Surcote vs DVF", metrics.premiumVsDvfPct != null ? fmtPercent(metrics.premiumVsDvfPct) : "ND",
-    { color: metrics.premiumVsDvfPct != null ? (metrics.premiumVsDvfPct <= 0 ? C.emerald : metrics.premiumVsDvfPct <= 10 ? C.amber : C.rose) : C.slate500,
-      subtext: metrics.premiumVsDvfPct != null ? (metrics.premiumVsDvfPct <= 0 ? "Discount" : metrics.premiumVsDvfPct <= 10 ? "L\u00e9g\u00e8re surcote" : "Surcote \u00e9lev\u00e9e") : undefined });
-  kpiCard(doc, M.left + (kpiW + 3) * 3, y, kpiW, kpiH, "Travaux estim\u00e9s", metrics.travaux > 0 ? fmtCurrency(metrics.travaux) : "ND", { color: C.slate600 });
-  y += kpiH + 5;
+  void rawExtract;
+  void narrative;
+}
 
-  // ── Résumé exécutif (UNIQUE — pas de doublon dans le PDF) ────────────────
-  // A1: sanitize raw verdict codes in AI-generated prose
-  const directorLine = ai?.decisionToday?.trim() ? `D\u00e9cision conseill\u00e9e : ${sanitizeVerdictInProse(ai.decisionToday.trim())}` : "";
-  const marketLine = ai?.marketPlain?.trim() ? `March\u00e9 : ${sanitizeVerdictInProse(ai.marketPlain.trim())}` : "";
-  const priceLine = ai && (ai.maxEngagementPriceEur != null || ai.neverExceedPriceEur != null)
-    ? `Prix max : ${ai.maxEngagementPriceEur != null ? fmtCurrency(ai.maxEngagementPriceEur) : "ND"} \u2022 \u00c0 ne jamais d\u00e9passer : ${ai.neverExceedPriceEur != null ? fmtCurrency(ai.neverExceedPriceEur) : "ND"}`
-    : "";
-  const simple = [directorLine, marketLine, priceLine].filter(Boolean).join("\n");
-  const summary = ai?.executiveSummary?.trim() ? sanitizeVerdictInProse(ai.executiveSummary.trim()) : "";
-  const fallback = verdict
-    ? `D\u00e9cision IA : ${decisionLabel(verdict)}. G\u00e9n\u00e9rer la Synth\u00e8se IA pour obtenir une conclusion et un plan d'action.`
-    : "Synth\u00e8se indisponible : g\u00e9n\u00e9rer la Synth\u00e8se IA pour enrichir le dossier.";
-  const text = simple || summary || fallback;
+// ═══════════════════════════════════════════════════════════════════
+// ─── NEGOTIATION BLOCK ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
 
-  roundedBox(doc, M.left, y, CW, 5, 1.5, C.slate50, C.slate200, 0.2);
-  doc.setFillColor(...C.accent); doc.rect(M.left, y + 0.5, 2, 4, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(...C.slate900);
-  doc.text("R\u00e9sum\u00e9 ex\u00e9cutif", M.left + 6, y + 3.5);
+function buildNegotiationBlock(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, y: number): number {
+  const isNegocier = ["negocier", "negotiate", "a negocier", "hold", "attendre"].some(
+    v => ai.verdict.toLowerCase().includes(v),
+  );
+  if (!isNegocier) return y;
+
+  if (y + 60 > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
+
+  y = sectionTitle(doc, "Arguments de negociation", y, { color: C.accent });
+
+  const args: string[] = [];
+
+  if (m.premiumVsDvfPct != null && m.premiumVsDvfPct > 0) {
+    args.push(`Prix superieur aux references DVF de +${m.premiumVsDvfPct.toFixed(1)} % — decote justifiee`);
+  } else if (m.premiumVsDvfPct != null && m.premiumVsDvfPct <= 0) {
+    args.push(`Prix dans la norme DVF (${m.premiumVsDvfPct.toFixed(1)} %) — marge de negociation limitee`);
+  }
+
+  if (ai.missingData.length > 0) {
+    const top2 = ai.missingData.slice(0, 2).join(", ");
+    args.push(`Donnees manquantes a clarifier avant offre : ${top2}`);
+  }
+
+  if (m.chargesMensuelles == null) {
+    args.push("Charges de copropriete non communiquees — risque de rendement");
+  }
+
+  const ss = ai.smartScore !== "ND" ? parseInt(ai.smartScore, 10) : null;
+  if (ss != null && ss < 60) {
+    args.push(`SmartScore intermediaire (${ss}/100) — potentiel de valorisation a confirmer`);
+  }
+
+  if (args.length === 0) {
+    args.push("Verifier les donnees manquantes avant de formaliser l'offre");
+    args.push("Demander les diagnostics et les proces-verbaux d'AG");
+  }
+
+  const argBlockH = args.length * 7.5 + 24;
+  roundedBox(doc, M.left, y, CW, argBlockH, { fill: C.bg, border: C.border, radius: 3, lw: 0.2, shadow: true });
+  sf(doc, C.accent); doc.roundedRect(M.left, y, 3.5, argBlockH, 1.5, 1.5, "F");
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(7); sc(doc, C.muted);
+  doc.text("VERDICT STRATEGIQUE", M.left + 8, y + 6);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10); sc(doc, C.primary);
+  doc.text(sanitizeForPdf(decisionLabel(ai.verdict)), M.left + 8, y + 12);
+
+  let ay = y + 19;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(7); sc(doc, C.mutedDark);
+  doc.text("Arguments principaux :", M.left + 8, ay); ay += 5;
+
+  for (const arg of args) {
+    sf(doc, C.accent); doc.rect(M.left + 8, ay - 1.5, 2, 0.7, "F");
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8); sc(doc, C.body);
+    const ls = doc.splitTextToSize(sanitizeForPdf(arg), CW - 22) as string[];
+    doc.text(ls, M.left + 13, ay);
+    ay += ls.length * 4.2 + 1.5;
+  }
+
+  y += argBlockH + 6;
+
+  if (y + 18 > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
+
+  let positionText: string;
+  if (ai.maxPrice !== "ND") {
+    positionText = `Formuler une offre autour de ${ai.maxPrice} afin de retablir un niveau de rentabilite coherent avec le marche.`;
+  } else if (m.prixAchat != null) {
+    const offerPrice = fmtCurrency(Math.round(m.prixAchat * 0.95));
+    positionText = `Formuler une offre autour de ${offerPrice} (decote -5 %) afin de retablir un niveau de rentabilite coherent avec les references DVF.`;
+  } else {
+    positionText = "Formuler une offre en dessous du prix affiche apres verification des donnees manquantes et des references DVF du secteur.";
+  }
+
+  const posLines = doc.splitTextToSize(sanitizeForPdf(positionText), CW - 22) as string[];
+  const posH = posLines.length * 4.4 + 16;
+  roundedBox(doc, M.left, y, CW, posH, { fill: C.accentSoft, border: [196, 221, 253] as const, radius: 3, lw: 0.2 });
+  sf(doc, C.accent); doc.roundedRect(M.left, y, 3.5, posH, 1.5, 1.5, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(7); sc(doc, C.mutedDark);
+  doc.text("Position recommandee :", M.left + 8, y + 6);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); sc(doc, C.accent);
+  doc.text(posLines, M.left + 8, y + 11);
+  y += posH + 6;
+
+  return y;
+}
+
+function buildNarrative(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportPdfOpts): void {
+  doc.addPage(); let y = M.top + 8;
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(14); sc(doc, C.primary);
+  doc.text("Synthese strategique du bien", M.left, y); y += 3;
+  sf(doc, C.accent); doc.rect(M.left, y, 48, 1.5, "F");
   y += 8;
-  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...C.slate700);
-  const sLines = doc.splitTextToSize(S(text), CW - 8);
-  doc.text(sLines, M.left + 4, y);
-  y += sLines.length * 3.5 + 5;
 
-  // ── Lecture simple (bloc obligatoire, vulgarisé) ─────────────────────────
-  y = ensureSpace(doc, y, 40);
-  roundedBox(doc, M.left, y, CW, 6, 1.5, C.accentBg, C.accentLight, 0.3);
-  doc.setFillColor(...C.accent); doc.rect(M.left, y + 0.5, 2, 5, "F");
-  doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.accentDark);
-  doc.text("Lecture simple", M.left + 6, y + 4);
-  y += 9;
-
-  // Build plain-language reading from available data
-  const lectureLines: string[] = [];
-  {
-    // Nature du deal
-    const typeBien = (deal as any)?.typeBien ?? (deal as any)?.propertyType ?? "";
-    const dealNature = typeBien
-      ? `Op\u00e9ration d'achat-revente sur un bien de type "${typeBien}" \u00e0 ${city !== "\u2014" ? city : "localisation non pr\u00e9cis\u00e9e"}.`
-      : `Op\u00e9ration d'investissement immobilier \u00e0 ${city !== "\u2014" ? city : "localisation non pr\u00e9cis\u00e9e"}.`;
-    lectureLines.push(dealNature);
-
-    // Prix
-    if (metrics.prixAchat > 0) {
-      lectureLines.push(`Prix d'acquisition : ${fmtCurrency(metrics.prixAchat)}${metrics.prixM2 ? ` (${fmtNumber(metrics.prixM2)} \u20ac/m\u00b2)` : ""}.`);
-    }
-
-    // Marge
-    if (mb != null) {
-      lectureLines.push(`La marge brute est de ${fmtPercent(mb)}${mb >= 12 ? ", au-dessus du seuil Mimmoza de 12%." : ", en dessous du seuil de s\u00e9curit\u00e9 de 12% — prudence."}`);
-    } else {
-      lectureLines.push("La marge brute n'est pas calculable (revente cible manquante).");
-    }
-
-    // Principal risque
-    const rpi = scores["RiskPressureIndex"] ? Number(scores["RiskPressureIndex"]) : null;
-    if (rpi != null) {
-      lectureLines.push(`Pression risque : ${rpi}/100 — ${rpi >= 60 ? "le risque est \u00e9lev\u00e9, plusieurs facteurs d\u00e9favorables." : rpi >= 35 ? "risque mod\u00e9r\u00e9, vigilance n\u00e9cessaire." : "risque ma\u00eetris\u00e9 \u00e0 ce stade."}`);
-    } else if (ai?.vigilances && ai.vigilances.length > 0) {
-      lectureLines.push(`Principal risque identifi\u00e9 : ${ai.vigilances[0]}.`);
-    }
-
-    // Condition GO
-    if (ai?.conditionsToBuy && ai.conditionsToBuy.length > 0) {
-      lectureLines.push(`Condition principale pour dire GO : ${ai.conditionsToBuy[0]}.`);
-    } else if (mb != null && mb < 12) {
-      lectureLines.push("Condition principale pour dire GO : n\u00e9gocier un prix qui ram\u00e8ne la marge brute au-dessus de 12%.");
-    }
-
-    // Quand dire NON
-    if (metrics.premiumVsDvfPct != null && metrics.premiumVsDvfPct > 15) {
-      lectureLines.push("Dire NON si le vendeur refuse toute n\u00e9gociation : la surcote vs DVF est trop \u00e9lev\u00e9e sans buffer de s\u00e9curit\u00e9.");
-    } else if (mb != null && mb < 5) {
-      lectureLines.push("Dire NON si la marge brute ne peut pas atteindre au moins 8% apr\u00e8s n\u00e9gociation.");
-    } else {
-      lectureLines.push("Dire NON si les donn\u00e9es manquantes (travaux, charges, diagnostics) r\u00e9v\u00e8lent des co\u00fbts cach\u00e9s significatifs.");
-    }
+  // En-tête deal — fond slate-950 + barre indigo
+  roundedBox(doc, M.left, y, CW, 14, { fill: C.primary, radius: 3 });
+  sf(doc, C.accent); doc.roundedRect(M.left, y, 3.5, 14, 1.5, 1.5, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); sc(doc, C.white);
+  doc.text(sanitizeForPdf(m.id ? `${m.titre}  —  Ref: ${m.id}` : m.titre), M.left + 8, y + 5.5);
+  if (m.adresseComplete) {
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8); sc(doc, [148, 163, 184] as const);
+    doc.text(sanitizeForPdf(m.adresseComplete), M.left + 8, y + 10.5);
   }
+  y += 19;
 
-  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...C.slate700);
-  const lectureText = lectureLines.join(" ");
-  const ll = doc.splitTextToSize(S(lectureText), CW - 10);
-  doc.text(ll, M.left + 5, y);
-  y += ll.length * 3.3 + 5;
+  y = subTitle(doc, "Resume en une phrase", y);
+  y = para(doc, ai.nrResume, y, { fs: 9.5, style: "italic", color: C.accent }); y += 4;
+  y = subTitle(doc, "Ce qui cree de la valeur", y);
+  y = para(doc, ai.nrValeur, y); y += 4;
+  y = subTitle(doc, "Ce qui limite le potentiel", y);
+  y = para(doc, ai.nrLimites, y); y += 4;
+  y = subTitle(doc, "Lecture financiere synthetique", y);
+  y = para(doc, ai.nrFinancier, y); y += 4;
+  y = subTitle(doc, "Profil d'investisseur adapte", y);
+  y = para(doc, ai.nrProfil, y); y += 4;
 
-  // ── B1/B2/B3: Investisseur-only institutional blocks ─────────────────────
-  if (space === "investisseur") {
-    // Resolve shared data for B1/B2/B3
-    const smartScoreVal = scores["SmartScore"] ? Number(scores["SmartScore"]) : null;
-    const robustesseVal = invScores?.robustesse ?? null;
-    const rentabiliteVal = invScores?.rentabilite ?? null;
-    const liquiditeVal = scores["Probabilit\u00e9 revente"] ? Number(scores["Probabilit\u00e9 revente"]) : null;
-    const dealAny: any = deal ?? {};
-    const dureeDetention = Number(dealAny.dureeDetention ?? dealAny.holdingPeriodMonths ?? 0);
-    const dataConf = computeDataConfidence(metrics, ai, scores, snapshot);
-    const riskClass = computeRiskClass(smartScoreVal, robustesseVal, rentabiliteVal, dataConf);
-    const investorProfile = computeInvestorProfile(robustesseVal, liquiditeVal, dureeDetention, metrics.cushion);
-    const completudePct = scores["Compl\u00e9tude"] ? scores["Compl\u00e9tude"] + "%" : "ND";
-    const criticalMissingCount = ai?.missingData?.length ?? 0;
+  y = subTitle(doc, "Conclusion", y);
+  if (y + 22 > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
+  const cls = doc.splitTextToSize(sanitizeForPdf(ai.nrConclusion), CW - 16) as string[];
+  const bH  = Math.max(18, cls.length * 4.4 + 12);
+  roundedBox(doc, M.left, y, CW, bH, { fill: C.bg, border: C.border, radius: 3, lw: 0.2, shadow: true });
+  sf(doc, C.accent); doc.roundedRect(M.left, y, 3.5, bH, 1.5, 1.5, "F");
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); sc(doc, C.body);
+  doc.text(cls, M.left + 8, y + 7); y += bH + 8;
 
-    // ── Row: Risk Class + Data Confidence ──────────────────────────────────
-    y = ensureSpace(doc, y, 30);
-    const halfW = (CW - 4) / 2;
+  y = buildNegotiationBlock(doc, m, ai, y);
 
-    // B1: Risk Class badge
-    roundedBox(doc, M.left, y, halfW, 22, 2.5, riskClass.bg, C.slate200, 0.2);
-    doc.setFillColor(...riskClass.color); doc.rect(M.left + 4, y, halfW - 8, 1, "F");
-    doc.setFontSize(5.5); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate400);
-    doc.text("CLASSE DE RISQUE", M.left + halfW / 2, y + 6, { align: "center" });
-    doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.setTextColor(...riskClass.color);
-    doc.text(S(riskClass.cls), M.left + halfW / 2, y + 13.5, { align: "center" });
-    doc.setFontSize(5); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate500);
-    doc.text(S(riskClass.subtext), M.left + halfW / 2, y + 18, { align: "center" });
-
-    // B3: Data Confidence
-    const dcColor = dataConf >= 75 ? C.emerald : dataConf >= 50 ? C.amber : C.rose;
-    const dcX = M.left + halfW + 4;
-    roundedBox(doc, dcX, y, halfW, 22, 2.5, C.white, C.slate200, 0.2);
-    doc.setFillColor(...dcColor); doc.rect(dcX + 4, y, halfW - 8, 1, "F");
-    doc.setFontSize(5.5); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate400);
-    doc.text("CONFIANCE DONN\u00c9ES", dcX + halfW / 2, y + 6, { align: "center" });
-    doc.setFontSize(12); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate900);
-    doc.text(S(`${dataConf}/100`), dcX + halfW / 2, y + 12.5, { align: "center" });
-    doc.setFontSize(5); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate500);
-    doc.text(S(`${dataConfidenceLabel(dataConf)} | Compl\u00e9tude ${completudePct} | Critiques manquantes : ${criticalMissingCount}`), dcX + halfW / 2, y + 17.5, { align: "center" });
-    progressBar(doc, dcX + 6, y + 19.5, halfW - 12, 1.5, dataConf / 100, dcColor);
-    y += 26;
-
-    // B2: Profil investisseur cible
-    y = ensureSpace(doc, y, 22);
-    roundedBox(doc, M.left, y, CW, 20, 2.5, C.slate50, C.slate200, 0.15);
-    doc.setFillColor(...C.accent); doc.rect(M.left, y + 1, 2, 18, "F");
-    doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...C.accentDark);
-    doc.text("Profil cible", M.left + 6, y + 5);
-
-    const profFields: [string, string][] = [
-      ["Profil", investorProfile.profil],
-      ["Horizon", investorProfile.horizon],
-      ["Tol\u00e9rance risque", investorProfile.tolerance],
-      ["Strat\u00e9gie", investorProfile.strategie],
-    ];
-    const profColW = (CW - 14) / 4;
-    profFields.forEach(([label, val], idx) => {
-      const px = M.left + 6 + idx * (profColW + 2);
-      doc.setFont("helvetica", "bold"); doc.setFontSize(5.5); doc.setTextColor(...C.slate400);
-      doc.text(S(label.toUpperCase()), px, y + 10);
-      doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(...C.slate800);
-      doc.text(S(val), px, y + 15);
-    });
-    y += 24;
-  }
-
-  // ── Quick strengths / vigilances columns ─────────────────────────────────
-  if (ai && (ai.strengths.length > 0 || ai.vigilances.length > 0)) {
-    y = ensureSpace(doc, y, 28);
-    doc.setDrawColor(...C.slate200); doc.setLineWidth(0.2); doc.line(M.left, y, PW - M.right, y);
-    y += 4;
-    const colW2 = (CW - 6) / 2;
-    if (ai.strengths.length > 0) {
-      roundedBox(doc, M.left, y - 2, colW2, 5, 1, C.emeraldBg);
-      doc.setFillColor(...C.emerald); doc.rect(M.left, y - 2, 1.5, 5, "F");
-      doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...C.emeraldDark); doc.text("POINTS FORTS", M.left + 5, y + 1);
-      let sy = y + 6;
-      doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(...C.slate700);
-      ai.strengths.slice(0, 4).forEach((s) => {
-        doc.setFillColor(...C.emerald); doc.circle(M.left + 3, sy - 0.8, 0.5, "F");
-        const sl = doc.splitTextToSize(s, colW2 - 10); doc.text(sl, M.left + 7, sy); sy += sl.length * 3 + 1.5;
-      });
-    }
-    if (ai.vigilances.length > 0) {
-      const rx = M.left + colW2 + 6;
-      roundedBox(doc, rx, y - 2, colW2, 5, 1, C.amberBg);
-      doc.setFillColor(...C.amber); doc.rect(rx, y - 2, 1.5, 5, "F");
-      doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...C.amberDark); doc.text("POINTS DE VIGILANCE", rx + 5, y + 1);
-      let vy = y + 6;
-      doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(...C.slate700);
-      ai.vigilances.slice(0, 4).forEach((v) => {
-        doc.setFillColor(...C.amber); doc.circle(rx + 3, vy - 0.8, 0.5, "F");
-        const vl = doc.splitTextToSize(v, colW2 - 10); doc.text(vl, rx + 7, vy); vy += vl.length * 3 + 1.5;
-      });
-    }
-  }
+  void opts;
+  setY(doc, y);
 }
 
-// ---------------------------------------------------------------------------
-// RADAR Risk vs Upside
-// ---------------------------------------------------------------------------
+function vc(v: string): readonly [number, number, number] {
+  return decisionColors(v);
+}
+void vc;
 
-function drawRadarChart(
+// ═══════════════════════════════════════════════════════════════════
+// ─── SMARTSCORE PEDAGOGY ───────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+interface SmartScoreDisplay {
+  smartScore:          number | null;
+  liquidite:           number | null;
+  pressionRisque:      number | null;
+  dataConfidence:      number;
+  dataConfidenceLabel: "Elevee" | "Moyenne" | "Faible";
+}
+
+function buildSmartScorePedagogy(
   doc: jsPDF,
-  cx: number, cy: number, radius: number,
-  axes: { label: string; value: number; max: number }[],
-  color: RGB, fillColor: RGB, fillOpacity: number,
-): void {
-  const n = axes.length;
-  if (n < 3) return;
-  const angleStep = (2 * Math.PI) / n;
-  const startAngle = -Math.PI / 2; // top
+  y: number,
+  display: SmartScoreDisplay,
+): number {
+  const innerW = CW - 10;
+  const lineH  = 4.3;
+  const fs     = 7.8;
+  const fsBold = 7.8;
 
-  // Draw concentric rings (25%, 50%, 75%, 100%)
-  [0.25, 0.5, 0.75, 1.0].forEach((ring) => {
-    doc.setDrawColor(...C.slate200); doc.setLineWidth(0.15);
-    const r = radius * ring;
-    for (let i = 0; i < n; i++) {
-      const a1 = startAngle + i * angleStep;
-      const a2 = startAngle + ((i + 1) % n) * angleStep;
-      doc.line(cx + r * Math.cos(a1), cy + r * Math.sin(a1), cx + r * Math.cos(a2), cy + r * Math.sin(a2));
-    }
-  });
+  const textA =
+    "Le SmartScore est une synthese rapide de la solidite du dossier, sur 100 points. " +
+    "Il ne remplace pas la due diligence ni une analyse experte, mais permet d'identifier " +
+    "en un coup d'oeil si l'operation semble solide, intermediaire ou fragile.";
 
-  // Draw axis lines
-  doc.setDrawColor(...C.slate300); doc.setLineWidth(0.2);
-  for (let i = 0; i < n; i++) {
-    const a = startAngle + i * angleStep;
-    doc.line(cx, cy, cx + radius * Math.cos(a), cy + radius * Math.sin(a));
-  }
-
-  // Draw axis labels
-  doc.setFontSize(4.8); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate600);
-  for (let i = 0; i < n; i++) {
-    const a = startAngle + i * angleStep;
-    const lx = cx + (radius + 8) * Math.cos(a);
-    const ly = cy + (radius + 8) * Math.sin(a);
-    const align = Math.abs(Math.cos(a)) < 0.1 ? "center" as const : Math.cos(a) > 0 ? "left" as const : "right" as const;
-    doc.text(S(axes[i].label), lx, ly + 1.5, { align });
-  }
-
-  // Draw data polygon (filled)
-  const points: [number, number][] = [];
-  for (let i = 0; i < n; i++) {
-    const a = startAngle + i * angleStep;
-    const pct = Math.min(axes[i].value / axes[i].max, 1);
-    const r = radius * Math.max(pct, 0.05);
-    points.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
-  }
-
-  // Fill polygon
-  doc.setFillColor(fillColor[0], fillColor[1], fillColor[2]);
-  doc.setDrawColor(...color); doc.setLineWidth(0.6);
-  // We draw the filled polygon as a series of triangles from center
-  // jsPDF doesn't have native polygon fill, so we use triangles
-  for (let i = 0; i < n; i++) {
-    const p1 = points[i];
-    const p2 = points[(i + 1) % n];
-    doc.triangle(cx, cy, p1[0], p1[1], p2[0], p2[1], "F");
-  }
-  // Draw outline
-  for (let i = 0; i < n; i++) {
-    const p1 = points[i];
-    const p2 = points[(i + 1) % n];
-    doc.line(p1[0], p1[1], p2[0], p2[1]);
-  }
-
-  // Draw data points
-  doc.setFillColor(...color);
-  for (const p of points) {
-    doc.circle(p[0], p[1], 1, "F");
-  }
-}
-
-function buildRadarPage(doc: jsPDF, snapshot: MarchandSnapshotV1, opts?: ExportPdfOpts): void {
-  const narrative = sanitizeForPdf(opts?.aiReport?.narrativeMarkdown ?? opts?.aiReport?.narrative ?? "");
-  const scores = narrative ? extractFromNarrative(narrative).scores : {};
-  const metrics = extractDealMetrics(snapshot, opts);
-  const ai = opts?.aiReport ? normalizeAiReport(opts.aiReport) : null;
-
-  doc.addPage();
-  let y = M.top + 4;
-  y = sectionTitle(doc, y, "Radar Risk vs Upside", "Vue d'\u00e9quilibre investisseur");
-
-  // ── UPSIDE Radar ─────────────────────────────────────────────────────────
-  const radarRadius = 24; // 85% of 28 — more room for labels
-  const radarCxLeft = M.left + 46;
-  const radarCyLeft = y + radarRadius + 12;
-
-  // Calculate upside values
-  const margeBruteVal = metrics.margeBrute != null ? Math.min(metrics.margeBrute / 30 * 100, 100) : 0;
-  const discountVal = metrics.premiumVsDvfPct != null
-    ? Math.min(Math.max(50 - metrics.premiumVsDvfPct * 2.5, 0), 100)
-    : 50;
-  const liquiditeVal = scores["Probabilit\u00e9 revente"] ? Number(scores["Probabilit\u00e9 revente"]) : 50;
-  const opportunityVal = scores["OpportunityScore"] ? Number(scores["OpportunityScore"]) : 50;
-  const creationValeur = metrics.travaux > 0 && metrics.prixRevente > 0
-    ? Math.min(((metrics.prixRevente - metrics.prixAchat - metrics.travaux) / Math.max(metrics.travaux, 1)) * 25, 100)
-    : 50;
-
-  // Title
-  roundedBox(doc, M.left, y - 2, CW / 2 - 2, 6, 1.5, C.emeraldBg, C.emeraldLight, 0.2);
-  doc.setFillColor(...C.emerald); doc.rect(M.left, y - 2, 1.5, 6, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...C.emeraldDark);
-  doc.text("UPSIDE", M.left + 5, y + 2);
-
-  drawRadarChart(doc, radarCxLeft, radarCyLeft, radarRadius, [
-    { label: "Marge", value: margeBruteVal, max: 100 },
-    { label: "Prix vs DVF", value: discountVal, max: 100 },
-    { label: "Liquidit\u00e9", value: liquiditeVal, max: 100 },
-    { label: "Momentum", value: opportunityVal, max: 100 },
-    { label: "Cr\u00e9ation", value: creationValeur, max: 100 },
-  ], C.emerald, C.emeraldBg, 0.3);
-
-  // ── RISK Radar ───────────────────────────────────────────────────────────
-  const radarCxRight = M.left + CW / 2 + 46;
-
-  roundedBox(doc, M.left + CW / 2 + 2, y - 2, CW / 2 - 2, 6, 1.5, C.roseBg, C.roseLight, 0.2);
-  doc.setFillColor(...C.rose); doc.rect(M.left + CW / 2 + 2, y - 2, 1.5, 6, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...C.roseDark);
-  doc.text("RISK", M.left + CW / 2 + 7, y + 2);
-
-  const riskPressureVal = scores["RiskPressureIndex"] ? Number(scores["RiskPressureIndex"]) : 50;
-  // Cushion risk: cushion < 0 → full risk; cushion 0 → 60; cushion >= 5 → low risk
-  const cushionRisk = metrics.cushion != null ? Math.min(Math.max(60 - metrics.cushion * 12, 0), 100) : 75;
-  const sensibiliteTravaux = metrics.travaux > 0 ? Math.min(metrics.travaux / metrics.prixAchat * 200, 100) : 80; // ND > p\u00e9naliser
-  const sensibiliteDelais = 65; // Prudence par d\u00e9faut (pas de donn\u00e9e dur\u00e9e d\u00e9tention)
-  const completude = scores["Compl\u00e9tude"] ? 100 - Number(scores["Compl\u00e9tude"]) : 60;
-
-  drawRadarChart(doc, radarCxRight, radarCyLeft, radarRadius, [
-    { label: "Pression", value: riskPressureVal, max: 100 },
-    { label: "Buffer", value: cushionRisk, max: 100 },
-    { label: "Travaux", value: sensibiliteTravaux, max: 100 },
-    { label: "D\u00e9lais", value: sensibiliteDelais, max: 100 },
-    { label: "Donn\u00e9es", value: completude, max: 100 },
-  ], C.rose, C.roseBg, 0.3);
-
-  y = radarCyLeft + radarRadius + 12;
-
-  // ── Interprétation (4–6 bullets) ─────────────────────────────────────────
-  y = ensureSpace(doc, y, 50);
-  roundedBox(doc, M.left, y, CW, 6, 1.5, C.slate50, C.slate200, 0.2);
-  doc.setFillColor(...C.accent); doc.rect(M.left, y + 0.5, 2, 5, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(...C.accentDark);
-  doc.text("Ce que \u00e7a veut dire pour l'investisseur", M.left + 6, y + 4);
-  y += 9;
-
-  const interpretations: string[] = [];
-
-  // Marge brute
-  if (metrics.margeBrute != null) {
-    interpretations.push(metrics.margeBrute >= 12
-      ? `La marge brute (${fmtPercent(metrics.margeBrute)}) offre un buffer de s\u00e9curit\u00e9 correct. L'op\u00e9ration r\u00e9siste \u00e0 des al\u00e9as mod\u00e9r\u00e9s.`
-      : `La marge brute (${fmtPercent(metrics.margeBrute)}) est sous le seuil de 12%. Un seul al\u00e9a (travaux, d\u00e9lai, n\u00e9go revente) peut effacer la rentabilit\u00e9.`);
-  }
-  // Surcote
-  if (metrics.premiumVsDvfPct != null) {
-    interpretations.push(metrics.premiumVsDvfPct <= 0
-      ? `Vous achetez en dessous du march\u00e9 DVF (${fmtPercent(metrics.premiumVsDvfPct)} de d\u00e9cote). C'est un signal positif.`
-      : `Vous payez ${fmtPercent(metrics.premiumVsDvfPct)} au-dessus du march\u00e9 DVF. ${metrics.premiumVsDvfPct > 10 ? "Cette surcote est risqu\u00e9e sans justification forte." : "Acceptable si le bien a des atouts sp\u00e9cifiques."}`);
-  }
-  // Risk pressure
-  if (scores["RiskPressureIndex"]) {
-    const rpi = Number(scores["RiskPressureIndex"]);
-    interpretations.push(rpi >= 60
-      ? `L'indice de pression risque (${rpi}/100) est \u00e9lev\u00e9 : plusieurs facteurs cumulatifs augmentent le risque de perte.`
-      : `L'indice de pression risque (${rpi}/100) est ${rpi >= 35 ? "mod\u00e9r\u00e9" : "faible"} : le profil de risque est ${rpi >= 35 ? "acceptable avec vigilance" : "bien ma\u00eetris\u00e9"}.`);
-  }
-  // Travaux
-  if (metrics.travaux > 0) {
-    const travauxPct = (metrics.travaux / metrics.prixAchat) * 100;
-    interpretations.push(`Les travaux repr\u00e9sentent ${fmtPercent(travauxPct)} du prix d'achat. ${travauxPct > 20 ? "C'est significatif : un d\u00e9rapage de 15% change le verdict." : "Proportion raisonnable, mais \u00e0 valider par devis."}`);
-  } else {
-    interpretations.push("Aucun montant travaux renseign\u00e9 : Mimmoza p\u00e9nalise par prudence. Obtenir des devis avant toute offre.");
-  }
-  // Complétude
-  if (scores["Compl\u00e9tude"]) {
-    const comp = Number(scores["Compl\u00e9tude"]);
-    interpretations.push(comp >= 70
-      ? `Le dossier est compl\u00e9t\u00e9 \u00e0 ${comp}%. La d\u00e9cision est relativement fiable.`
-      : `Le dossier n'est compl\u00e9t\u00e9 qu'\u00e0 ${comp}%. La d\u00e9cision pourrait changer avec les donn\u00e9es manquantes.`);
-  }
-  // Liquidité
-  if (scores["Probabilit\u00e9 revente"]) {
-    const liq = Number(scores["Probabilit\u00e9 revente"]);
-    interpretations.push(liq >= 60
-      ? `Liquidit\u00e9 correcte (${liq}%) : revente possible dans des d\u00e9lais raisonnables.`
-      : `Liquidit\u00e9 limit\u00e9e (${liq}%) : la revente peut prendre du temps, pr\u00e9voir un plan B (location).`);
-  }
-
-  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...C.slate700);
-  interpretations.slice(0, 6).forEach((interp) => {
-    y = ensureSpace(doc, y, 10);
-    doc.setFillColor(...C.accent); doc.circle(M.left + 4, y - 0.5, 0.6, "F");
-    const il = doc.splitTextToSize(S(interp), CW - 14);
-    doc.text(il, M.left + 8, y);
-    y += il.length * 3.3 + 2.5;
-  });
-}
-
-// ---------------------------------------------------------------------------
-// CAPITAL AT RISK
-// ---------------------------------------------------------------------------
-
-function buildCapitalAtRiskPage(doc: jsPDF, snapshot: MarchandSnapshotV1, opts?: ExportPdfOpts): void {
-  const metrics = extractDealMetrics(snapshot, opts);
-  const ai = opts?.aiReport ? normalizeAiReport(opts.aiReport) : null;
-
-  doc.addPage();
-  let y = M.top + 4;
-  y = sectionTitle(doc, y, "Capital at Risk", "Qu'est-ce que vous risquez concr\u00e8tement ?");
-
-  // ── Capital engagé ───────────────────────────────────────────────────────
-  const kpiW = (CW - 9) / 4; const kpiH = 28;
-
-  const capitalDisplay = metrics.capitalEngage != null && metrics.capitalEngage > 0 ? fmtCurrency(metrics.capitalEngage) : "ND";
-  const capitalSub: string[] = [];
-  if (metrics.prixAchat > 0) capitalSub.push(`Achat: ${fmtCurrency(metrics.prixAchat)}`);
-  if (metrics.fraisNotaire > 0) capitalSub.push(`Notaire: ${fmtCurrency(metrics.fraisNotaire)}`);
-  if (metrics.travaux > 0) capitalSub.push(`Travaux: ${fmtCurrency(metrics.travaux)}`);
-
-  kpiCard(doc, M.left, y, kpiW, kpiH, "Capital engag\u00e9", capitalDisplay,
-    { color: C.accent, subtext: metrics.capitalEngage == null ? "Donn\u00e9es insuffisantes" : undefined });
-  kpiCard(doc, M.left + kpiW + 3, y, kpiW, kpiH, "Cushion vs seuil", metrics.cushion != null ? fmtPercent(metrics.cushion, 1) + " pts" : "ND",
-    { color: metrics.cushion != null ? (metrics.cushion >= 3 ? C.emerald : metrics.cushion >= 0 ? C.amber : C.rose) : C.slate500,
-      gauge: metrics.cushion != null ? Math.max(metrics.cushion + 12, 0) : undefined, gaugeMax: 30,
-      subtext: metrics.cushion != null ? (metrics.cushion >= 3 ? "Buffer confortable" : metrics.cushion >= 0 ? "Buffer juste" : "Sous seuil 12%") : "Marge brute manquante" });
-  kpiCard(doc, M.left + (kpiW + 3) * 2, y, kpiW, kpiH, "Marge brute", metrics.margeBrute != null ? fmtPercent(metrics.margeBrute) : "ND",
-    { color: metrics.margeBrute != null && metrics.margeBrute >= 12 ? C.emerald : C.amber,
-      gauge: metrics.margeBrute != null ? Math.max(metrics.margeBrute, 0) : undefined, gaugeMax: 30 });
-  kpiCard(doc, M.left + (kpiW + 3) * 3, y, kpiW, kpiH, "Marge nette", metrics.margeNette > 0 ? fmtCurrency(metrics.margeNette) : "ND",
-    { color: metrics.margeNette > 0 ? C.emerald : C.slate500 });
-  y += kpiH + 3;
-
-  // Détail capital engagé
-  if (capitalSub.length > 0) {
-    doc.setFontSize(6.5); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate500);
-    doc.text(S("D\u00e9composition : " + capitalSub.join(" + ")), M.left + 4, y);
-    y += 5;
-  }
-  if (metrics.capitalEngage == null || metrics.capitalEngage === 0) {
-    roundedBox(doc, M.left, y, CW, 8, 2, C.amberBg, C.amberLight, 0.2);
-    doc.setFontSize(7); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.amberDark);
-    doc.text(S("Capital engag\u00e9 non calculable (donn\u00e9es manquantes). Cela augmente le risque : impossible d'\u00e9valuer l'exposition r\u00e9elle."), M.left + 5, y + 5);
-    y += 12;
-  }
-
-  y += 4;
-
-  // ── Stress Test ──────────────────────────────────────────────────────────
-  y = ensureSpace(doc, y, 80);
-  roundedBox(doc, M.left, y, CW, 6, 1.5, C.roseBg, C.roseLight, 0.2);
-  doc.setFillColor(...C.rose); doc.rect(M.left, y + 0.5, 2, 5, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...C.roseDark);
-  doc.text("Stress test : et si \u00e7a tourne mal ?", M.left + 6, y + 4);
-  y += 10;
-
-  interface StressScenario { label: string; newMarge: number | null; description: string; canCalc: boolean }
-  const scenarios: StressScenario[] = [];
-
-  // Scenario 1: +10% travaux
-  if (metrics.travaux > 0 && metrics.prixRevente > 0 && metrics.prixAchat > 0) {
-    const newTravaux = metrics.travaux * 1.10;
-    const totalCost = metrics.prixAchat + metrics.fraisNotaire + newTravaux;
-    const newMarge = ((metrics.prixRevente - totalCost) / totalCost) * 100;
-    scenarios.push({ label: "+10% travaux", newMarge, description: `Si les travaux d\u00e9rapent de 10% (${fmtCurrency(newTravaux)} au lieu de ${fmtCurrency(metrics.travaux)})`, canCalc: true });
-  } else {
-    scenarios.push({ label: "+10% travaux", newMarge: null, description: "Montant travaux manquant : impossible de simuler.", canCalc: false });
-  }
-
-  // Scenario 2: -5% sur revente cible
-  if (metrics.prixRevente > 0 && metrics.prixAchat > 0) {
-    const newRevente = metrics.prixRevente * 0.95;
-    const totalCost = metrics.prixAchat + metrics.fraisNotaire + metrics.travaux;
-    const newMarge = ((newRevente - totalCost) / totalCost) * 100;
-    scenarios.push({ label: "-5% sur revente", newMarge, description: `Si le prix de revente baisse de 5% (${fmtCurrency(newRevente)} au lieu de ${fmtCurrency(metrics.prixRevente)})`, canCalc: true });
-  } else {
-    scenarios.push({ label: "-5% sur revente", newMarge: null, description: "Prix de revente manquant : impossible de simuler.", canCalc: false });
-  }
-
-  // Scenario 3: Cumul -5% revente + 10% travaux
-  if (metrics.prixRevente > 0 && metrics.prixAchat > 0 && metrics.travaux > 0) {
-    const newRevente = metrics.prixRevente * 0.95;
-    const newTravaux = metrics.travaux * 1.10;
-    const totalCost = metrics.prixAchat + metrics.fraisNotaire + newTravaux;
-    const newMarge = ((newRevente - totalCost) / totalCost) * 100;
-    scenarios.push({ label: "Cumul\u00e9 d\u00e9favorable", newMarge, description: "Travaux +10% ET revente -5% cumul\u00e9s", canCalc: true });
-  }
-
-  // Stress test table
-  const stressHead = [["Sc\u00e9nario", "Description", "Marge apr\u00e8s stress", "Seuil 12%"]];
-  const stressBody = scenarios.map((s) => {
-    const margeStr = s.canCalc && s.newMarge != null ? fmtPercent(s.newMarge) : "ND";
-    const seuil = s.canCalc && s.newMarge != null
-      ? (s.newMarge >= 12 ? "OK" : s.newMarge >= 0 ? "SOUS-SEUIL" : "PERTE")
-      : "ND";
-    return [S(s.label), S(s.description), S(margeStr), S(seuil)];
-  });
-
-  autoTable(doc, {
-    startY: y, head: stressHead, body: stressBody, theme: "grid",
-    margin: { left: M.left, right: M.right }, tableWidth: CW,
-    headStyles: { fillColor: C.navy, textColor: C.white, fontStyle: "bold", fontSize: 7 },
-    bodyStyles: { fontSize: 7.5, textColor: C.slate900, cellPadding: { top: 3, bottom: 3, left: 5, right: 5 } },
-    columnStyles: { 0: { cellWidth: 32, fontStyle: "bold" }, 1: {}, 2: { cellWidth: 28, halign: "center" }, 3: { cellWidth: 22, halign: "center" } },
-    alternateRowStyles: { fillColor: C.slate50 }, styles: { lineColor: C.slate200, lineWidth: 0.15 },
-    didParseCell(data) {
-      if (data.section === "body" && data.column.index === 3) {
-        const raw = String(data.cell.raw ?? "");
-        if (raw === "OK") { data.cell.styles.textColor = C.emeraldDark; data.cell.styles.fillColor = C.emeraldBg; data.cell.styles.fontStyle = "bold"; }
-        else if (raw === "SOUS-SEUIL") { data.cell.styles.textColor = C.amberDark; data.cell.styles.fillColor = C.amberBg; data.cell.styles.fontStyle = "bold"; }
-        else if (raw === "PERTE") { data.cell.styles.textColor = C.roseDark; data.cell.styles.fillColor = C.roseBg; data.cell.styles.fontStyle = "bold"; }
-        else { data.cell.styles.textColor = C.slate400; data.cell.styles.fontStyle = "italic"; }
-      }
-    },
-  });
-  y = (doc as any).lastAutoTable.finalY + 8;
-
-  // ── Lecture asymétrie ────────────────────────────────────────────────────
-  y = ensureSpace(doc, y, 30);
-  roundedBox(doc, M.left, y, CW, 6, 1.5, C.accentBg, C.accentLight, 0.2);
-  doc.setFillColor(...C.accent); doc.rect(M.left, y + 0.5, 2, 5, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(...C.accentDark);
-  doc.text("Lecture asym\u00e9trie risque / gain", M.left + 6, y + 4);
-  y += 10;
-
-  // Build asymmetry text
-  const asymLines: string[] = [];
-  if (metrics.margeBrute != null && metrics.capitalEngage != null && metrics.capitalEngage > 0) {
-    const gainAbsolu = metrics.prixRevente - metrics.capitalEngage;
-    asymLines.push(`Gain potentiel : ${fmtCurrency(gainAbsolu)} (marge brute ${fmtPercent(metrics.margeBrute)}).`);
-
-    // Worst stress test loss
-    const worstScenario = scenarios.filter(s => s.canCalc && s.newMarge != null).sort((a, b) => (a.newMarge ?? 0) - (b.newMarge ?? 0));
-    if (worstScenario.length > 0 && worstScenario[0].newMarge != null) {
-      const worst = worstScenario[0];
-      if (worst.newMarge < 0) {
-        asymLines.push(`Dans le sc\u00e9nario d\u00e9favorable "${worst.label}", vous perdez de l'argent (marge ${fmtPercent(worst.newMarge)}).`);
-        asymLines.push("L'asym\u00e9trie est d\u00e9favorable : le downside est rapide tandis que le gain est incertain.");
-      } else {
-        asymLines.push(`M\u00eame dans le sc\u00e9nario d\u00e9favorable "${worst.label}", la marge reste \u00e0 ${fmtPercent(worst.newMarge)}.`);
-        asymLines.push(worst.newMarge >= 12
-          ? "L'asym\u00e9trie est favorable : le deal r\u00e9siste au stress."
-          : "L'asym\u00e9trie est neutre : le deal tient mais sans marge de confort.");
-      }
-    }
-  } else {
-    asymLines.push("Donn\u00e9es insuffisantes pour \u00e9valuer l'asym\u00e9trie risque/gain compl\u00e8te.");
-    asymLines.push("Upside limit\u00e9 vs downside rapide est le sch\u00e9ma le plus fr\u00e9quent quand les donn\u00e9es manquent. Chaque inconnue (travaux, d\u00e9lai, charges) joue contre l'investisseur.");
-  }
-
-  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...C.slate700);
-  asymLines.forEach((line) => {
-    y = ensureSpace(doc, y, 9);
-    const ll2 = doc.splitTextToSize(S(line), CW - 10);
-    doc.text(ll2, M.left + 5, y);
-    y += ll2.length * 3.4 + 2;
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Deal section
-// ---------------------------------------------------------------------------
-
-function buildDealSection(doc: jsPDF, y: number, snapshot: MarchandSnapshotV1): number {
-  const deal = snapshot.deals.find((d) => d.id === snapshot.activeDealId);
-  if (!deal) return y;
-  y = sectionTitle(doc, y, "Fiche Op\u00e9ration", "Donn\u00e9es du deal actif");
-  const d: any = deal;
-  const pick = (...cands: any[]) => { for (const c of cands) { if (c === null || c === undefined) continue; if (typeof c === "string" && c.trim() === "") continue; return c; } return undefined; };
-
-  const fields: [string, unknown, { treatZeroAsMissing?: boolean; kind?: "currency" | "percent" }?][] = [
-    ["R\u00e9f\u00e9rence", pick(d.id)], ["Titre de l'op\u00e9ration", pick(d.title)], ["Statut", pick(d.status)],
-    ["Adresse", pick(d.address)], ["Ville", pick(d.city)], ["Code postal", pick(d.zipCode, d.codePostal)],
-    ["Prix d'acquisition", pick(d.prixAchat), { treatZeroAsMissing: true, kind: "currency" }],
-    ["Prix de revente cible", pick(d.prixReventeCible, d.prixVenteEstime, d.prixVente), { treatZeroAsMissing: true, kind: "currency" }],
-    ["Surface (m\u00b2)", pick(d.surfaceM2, d.surface), { treatZeroAsMissing: true }],
-    ["Type de bien", pick(d.typeBien, d.propertyType)], ["\u00c9tat du bien", pick(d.etatBien, d.condition)],
-    ["Travaux estim\u00e9s", pick(d.travauxEstimes, d.montantTravaux, d.travaux), { treatZeroAsMissing: true, kind: "currency" }],
-    ["Frais de notaire", pick(d.fraisNotaire), { treatZeroAsMissing: true, kind: "currency" }],
-    ["Marge nette", pick(d.margeNette), { treatZeroAsMissing: true, kind: "currency" }],
-    ["Rentabilit\u00e9 (%)", pick(d.rentabilite, d.rendementBrut, d.rendement), { kind: "percent" }],
-    ["Notes", pick(d.notes)],
+  const scaleLines: { label: string; desc: string; color: readonly [number, number, number] }[] = [
+    { label: "70 - 100", desc: "dossier globalement solide",            color: C.success },
+    { label: "50 - 69",  desc: "dossier intermediaire, a securiser",    color: C.warning },
+    { label: "0 - 49",   desc: "dossier fragile, prudence requise",     color: C.danger  },
   ];
 
-  const rows = fields.map(([label, v, meta]) => {
-    const treatZero = !!meta?.treatZeroAsMissing; const kind = meta?.kind;
-    let out = "ND";
-    if (kind === "currency") out = v == null ? "ND" : fmtCurrency(treatZero && Number(v) === 0 ? null : v);
-    else if (kind === "percent") out = v == null ? "ND" : fmtPercent(treatZero && Number(v) === 0 ? null : v, 1);
-    else { const base = ndIfZero(v, treatZero); out = base === "undefined" ? "ND" : base; }
-    return [S(label as string), S(out)];
-  });
+  const noteLines: { label: string; desc: string }[] = [
+    { label: "Pression risque :",    desc: "plus le score est bas, plus le dossier est sain." },
+    { label: "Confiance donnees :",  desc: "plus elle est elevee, plus les scores sont exploitables." },
+  ];
 
-  autoTable(doc, {
-    startY: y, body: rows, theme: "plain", margin: { left: M.left, right: M.right }, tableWidth: CW,
-    columnStyles: { 0: { cellWidth: 52, fontStyle: "bold", fillColor: C.slate50, textColor: C.slate600, fontSize: 7.5 }, 1: { textColor: C.slate900, fontSize: 8.5 } },
-    styles: { cellPadding: { top: 2.5, bottom: 2.5, left: 6, right: 6 }, lineColor: C.slate200, lineWidth: 0.15 },
-    didParseCell(data) { if (data.section === "body" && data.column.index === 1 && String(data.cell.raw) === "ND") { data.cell.styles.textColor = C.slate400; data.cell.styles.fontStyle = "italic"; } },
-  });
-  return (doc as any).lastAutoTable.finalY + 6;
-}
+  const ss  = display.smartScore;
+  const liq = display.liquidite;
+  const pr  = display.pressionRisque;
+  const dc  = display.dataConfidence;
+  const dcL = display.dataConfidenceLabel;
 
-// ---------------------------------------------------------------------------
-// Other deals
-// ---------------------------------------------------------------------------
+  let dossierQual: string;
+  if (ss == null)    dossierQual = "ne peut pas etre evalue (donnees insuffisantes)";
+  else if (ss >= 70) dossierQual = `parait globalement solide (${ss}/100)`;
+  else if (ss >= 50) dossierQual = `ressort comme intermediaire (${ss}/100)`;
+  else               dossierQual = `ressort comme fragile en l'etat (${ss}/100)`;
 
-function buildAllDealsSection(doc: jsPDF, y: number, snapshot: MarchandSnapshotV1): number {
-  if (!snapshot.deals || snapshot.deals.length <= 1) return y;
-  const others = snapshot.deals.filter((d) => d.id !== snapshot.activeDealId);
-  if (others.length === 0) return y;
-  y = sectionTitle(doc, y, "Portefeuille \u2014 Autres op\u00e9rations");
-  autoTable(doc, {
-    startY: y, head: [["R\u00e9f.", "Op\u00e9ration", "Statut", "Ville", "Prix d'achat"]],
-    body: others.map((d: any) => [S(String(d.id ?? "")), S(String(d.title ?? "")), S(String(d.status ?? "")), S(String(d.city ?? "")), fmtCurrency(d.prixAchat ?? null)]),
-    theme: "grid", margin: { left: M.left, right: M.right }, tableWidth: CW,
-    headStyles: { fillColor: C.navy, textColor: C.white, fontStyle: "bold", fontSize: 7 },
-    bodyStyles: { fontSize: 7.5, textColor: C.slate900 }, alternateRowStyles: { fillColor: C.slate50 },
-    styles: { lineColor: C.slate200, lineWidth: 0.15, cellPadding: { top: 2.5, bottom: 2.5, left: 5, right: 5 } },
-  });
-  return (doc as any).lastAutoTable.finalY + 6;
-}
+  let fiabiliteQual: string;
+  if (dc >= 80)      fiabiliteQual = "la lecture est plutot fiable";
+  else if (dc >= 60) fiabiliteQual = "la lecture est exploitable mais a confirmer";
+  else               fiabiliteQual = "la lecture est indicative uniquement (donnees partielles)";
 
-// ---------------------------------------------------------------------------
-// Due Diligence
-// ---------------------------------------------------------------------------
+  let risqueQual: string;
+  if (pr == null)    risqueQual = "la pression risque n'est pas calculable";
+  else if (pr >= 65) risqueQual = `la pression risque est elevee (${pr}/100) — vigilance recommandee`;
+  else if (pr >= 50) risqueQual = `la pression risque est moderee (${pr}/100)`;
+  else               risqueQual = `la pression risque est contenue (${pr}/100)`;
 
-function buildDueDiligenceSection(doc: jsPDF, y: number, dd?: { report: any; computed?: any }): number {
-  if (!dd?.report) return y;
-  doc.addPage(); y = M.top + 4;
-  y = sectionTitle(doc, y, "Due Diligence", "Audit de conformit\u00e9");
-  const rpt = dd.report;
-  const score = rpt.score ?? rpt.globalScore ?? dd.computed?.score;
-  const completion = rpt.completion ?? rpt.completionRate;
-  const criticalCount = rpt.criticalCount ?? rpt.critical;
-  const warningCount = rpt.warningCount ?? rpt.warning;
-  const categories: any[] = rpt.categories ?? rpt.items ?? rpt.sections ?? [];
-  let totalItems = 0; categories.forEach((c: any) => { totalItems += (c.items?.length ?? 1); });
+  let liqQual: string;
+  if (liq == null)   liqQual = "";
+  else if (liq >= 65) liqQual = ` La liquidite est favorable (${liq}/100).`;
+  else if (liq >= 45) liqQual = ` La liquidite est correcte (${liq}/100).`;
+  else                liqQual = ` La liquidite est faible (${liq}/100), la revente pourrait prendre du temps.`;
 
-  const kpis: { label: string; value: string; color: RGB }[] = [];
-  if (score !== undefined) { const n = Number(score); kpis.push({ label: "SCORE", value: String(score), color: n >= 70 ? C.emerald : n >= 40 ? C.amber : C.rose }); }
-  if (completion !== undefined) kpis.push({ label: "COMPL\u00c9TION", value: String(completion), color: C.accent });
-  if (criticalCount !== undefined) kpis.push({ label: "CRITIQUES", value: String(criticalCount), color: C.rose });
-  if (warningCount !== undefined) kpis.push({ label: "ALERTES", value: String(warningCount), color: C.amber });
-  if (totalItems > 0) kpis.push({ label: "\u00c9L\u00c9MENTS", value: String(totalItems), color: C.slate700 });
-
-  if (kpis.length > 0) {
-    const cw = Math.min((CW - (kpis.length - 1) * 3) / kpis.length, 40); let cx = M.left;
-    kpis.forEach((k) => {
-      roundedBox(doc, cx, y, cw, 22, 2.5, C.white, C.slate200, 0.2);
-      doc.setFillColor(...k.color); doc.rect(cx + 4, y, cw - 8, 0.8, "F");
-      doc.setFontSize(16); doc.setFont("helvetica", "bold"); doc.setTextColor(...k.color); doc.text(S(k.value), cx + cw / 2, y + 11, { align: "center" });
-      doc.setFontSize(5); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate400); doc.text(S(k.label), cx + cw / 2, y + 17, { align: "center" });
-      cx += cw + 3;
-    }); y += 28;
+  let conclusion: string;
+  if (ss == null) {
+    conclusion = "Completer le dossier (prix de revente, travaux, financement) pour obtenir une lecture fiable.";
+  } else if (ss >= 70 && dc >= 60) {
+    conclusion = "Le dossier semble globalement solide et les scores sont exploitables. Verifier les points de vigilance avant engagement.";
+  } else if (ss >= 70 && dc < 60) {
+    conclusion = "Le dossier parait solide mais les donnees sont partielles — la lecture reste indicative. Enrichir le dossier avant de conclure.";
+  } else if (ss >= 50) {
+    conclusion = "Le dossier parait intermediaire mais ameliorable. Identifier les leviers (negociation prix, securisation travaux) avant de s'engager.";
+  } else {
+    conclusion = "Le dossier ressort comme fragile en l'etat. Des points bloquants sont a lever avant toute offre serieuse.";
   }
 
-  if (categories.length > 0) {
-    const body: any[][] = [];
-    categories.forEach((cat: any) => {
-      if (cat.items && Array.isArray(cat.items)) {
-        body.push([{ content: (cat.name ?? cat.label ?? cat.category ?? "").toUpperCase(), colSpan: 3, styles: { fillColor: C.navy, textColor: C.white, fontStyle: "bold" as const, fontSize: 7 } }]);
-        cat.items.forEach((item: any) => { body.push([item.label ?? item.name ?? item.item ?? "", item.status ?? item.result ?? "-", item.comment ?? ""]); });
-      } else { body.push([cat.label ?? cat.name ?? cat.item ?? cat.category ?? "", cat.status ?? cat.result ?? "-", cat.comment ?? ""]); }
-    });
-    autoTable(doc, {
-      startY: y, head: [["\u00c9l\u00e9ment", "Statut", "Commentaire"]], body, theme: "grid",
-      margin: { left: M.left, right: M.right }, tableWidth: CW,
-      headStyles: { fillColor: C.navy, textColor: C.white, fontStyle: "bold", fontSize: 7 },
-      bodyStyles: { fontSize: 7.5, textColor: C.slate900, cellPadding: { top: 2.5, bottom: 2.5, left: 5, right: 5 } },
-      columnStyles: { 0: { cellWidth: 58 }, 1: { cellWidth: 28, halign: "center" }, 2: {} },
-      alternateRowStyles: { fillColor: C.slate50 }, styles: { lineColor: C.slate200, lineWidth: 0.15 },
-      didParseCell(data) { if (data.section === "body" && data.column.index === 1) { const sc = statusColors(String(data.cell.raw ?? "")); data.cell.styles.textColor = sc.text; data.cell.styles.fillColor = sc.bg; data.cell.styles.fontStyle = "bold"; data.cell.styles.fontSize = 6.5; } },
-    });
-    y = (doc as any).lastAutoTable.finalY + 4;
+  const textC =
+    `Ce dossier ${dossierQual}. Avec une confiance donnees de ${dc}/100 (${dcL}), ${fiabiliteQual}. ` +
+    `Par ailleurs, ${risqueQual}.${liqQual} ${conclusion}`;
+
+  doc.setFont("helvetica", "normal"); doc.setFontSize(fs);
+  const linesA   = doc.splitTextToSize(sanitizeForPdf(textA), innerW) as string[];
+  const linesC   = doc.splitTextToSize(sanitizeForPdf(textC), innerW) as string[];
+
+  const hdrH     = 6.5;
+  const gapSec   = 3;
+
+  const heightA  = linesA.length * lineH;
+  const heightB  = scaleLines.length * (lineH + 0.5) + noteLines.length * lineH + 2;
+  const heightC  = linesC.length * lineH;
+
+  const totalInner =
+    hdrH + heightA +
+    gapSec + hdrH + heightB +
+    gapSec + hdrH + heightC +
+    4;
+
+  const blockH = totalInner + 10;
+
+  if (y + blockH > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
+
+  roundedBox(doc, M.left, y, CW, blockH, { fill: C.bg, border: C.border, radius: 3, lw: 0.2 });
+  sf(doc, C.accent); doc.roundedRect(M.left, y, 3, blockH, 1.5, 1.5, "F");
+
+  let ty = y + 8;
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(fsBold); sc(doc, C.primary);
+  doc.text("A quoi servent ces scores ?", M.left + 7, ty);
+  ty += hdrH;
+
+  doc.setFont("helvetica", "normal"); doc.setFontSize(fs); sc(doc, C.body);
+  doc.text(linesA, M.left + 7, ty);
+  ty += heightA + gapSec;
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(fsBold); sc(doc, C.primary);
+  doc.text("Comment les lire ?", M.left + 7, ty);
+  ty += hdrH;
+
+  for (const row of scaleLines) {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(fs); sc(doc, row.color);
+    doc.text(sanitizeForPdf(row.label), M.left + 7, ty);
+    const lw = doc.getTextWidth(row.label + "  ");
+    doc.setFont("helvetica", "normal"); sc(doc, C.body);
+    doc.text(sanitizeForPdf("— " + row.desc), M.left + 7 + lw, ty);
+    ty += lineH + 0.5;
   }
-  return y;
+  ty += 1;
+  for (const row of noteLines) {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(fs - 0.3); sc(doc, C.mutedDark);
+    doc.text(sanitizeForPdf(row.label), M.left + 7, ty);
+    const lw2 = doc.getTextWidth(row.label + " ");
+    doc.setFont("helvetica", "italic"); sc(doc, C.muted);
+    doc.text(sanitizeForPdf(row.desc), M.left + 7 + lw2, ty);
+    ty += lineH;
+  }
+  ty += gapSec;
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(fsBold); sc(doc, C.primary);
+  doc.text("Lecture de ce dossier", M.left + 7, ty);
+  ty += hdrH;
+
+  doc.setFont("helvetica", "normal"); doc.setFontSize(fs); sc(doc, C.body);
+  doc.text(linesC, M.left + 7, ty);
+
+  return y + blockH + 6;
 }
 
-// ---------------------------------------------------------------------------
-// AI SECTION — cleaned: no duplicate résumé/verdict
-// ---------------------------------------------------------------------------
+// ═══════════════════════════════════════════════════════════════════
+// ─── PAGE 1 — Decision en 30 secondes ──────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
 
-function buildAiSection(doc: jsPDF, y: number, ai?: ExportPdfOpts["aiReport"]): number {
-  if (!ai) return y;
-  const data = normalizeAiReport(ai);
-  if (!data) return y;
+function buildPage1(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportPdfOpts): void {
+  doc.addPage(); let y = M.top + 8;
 
-  doc.addPage(); y = M.top + 4;
-  y = sectionTitle(doc, y, "Analyse IA \u2014 D\u00e9tail", "Moteur d'analyse Mimmoza");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(14); sc(doc, C.primary);
+  doc.text("Decision en 30 secondes", M.left, y); y += 3;
+  sf(doc, C.accent); doc.rect(M.left, y, 48, 1.5, "F");
+  y += 8;
 
-  if (data.generatedAt) { doc.setFontSize(6); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate400); doc.text("Analyse g\u00e9n\u00e9r\u00e9e le " + fmtDateTime(parseIsoOrNow(data.generatedAt)), M.left, y); y += 5; }
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); sc(doc, C.body);
+  doc.text(sanitizeForPdf(m.id ? `${m.titre}  |  ${m.id}` : m.titre), M.left, y); y += 4.5;
+  if (m.adresseComplete) { doc.setFontSize(7.5); sc(doc, C.muted); doc.text(sanitizeForPdf(m.adresseComplete), M.left, y); y += 5; }
+  y += 2;
 
-  // ── NO duplicate verdict banner — already on page 1 ──
-  // ── NO duplicate résumé exécutif — already on page 1 ──
-
-  function renderBlock(title: string, items: string[], titleColor: RGB, bulletColor: RGB, bgColor: RGB, borderColor: RGB): void {
-    if (items.length === 0) return;
-    y = ensureSpace(doc, y, 18);
-    roundedBox(doc, M.left, y, CW, 6, 1.5, bgColor, borderColor, 0.2);
-    doc.setFillColor(...bulletColor); doc.rect(M.left, y + 0.5, 2, 5, "F");
-    doc.setFontSize(8.5); doc.setFont("helvetica", "bold"); doc.setTextColor(...titleColor);
-    doc.text(title, M.left + 6, y + 4);
-    y += 9;
-    const LINE_H = 3.5; const ITEM_GAP = 2.2;
-    doc.setFontSize(7.5); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate700);
-    items.forEach((item) => {
-      y = ensureSpace(doc, y, 9);
-      doc.setFillColor(...bulletColor); doc.circle(M.left + 4.2, y - 0.5, 0.7, "F");
-      const lines = doc.splitTextToSize(S(item), CW - 15);
-      doc.text(lines, M.left + 9, y);
-      y += lines.length * LINE_H + ITEM_GAP;
-    });
-    y += 2;
+  if (ai.verdict !== "ND") {
+    // Bloc verdict — fond slate-950 + bordure indigo
+    roundedBox(doc, M.left, y, CW, 20, { fill: C.primary, border: C.accent, radius: 3, lw: 0.4 });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); sc(doc, [148, 163, 184] as const);
+    doc.text("VERDICT STRATEGIQUE", PW / 2, y + 6.5, { align: "center" });
+    doc.setFont("helvetica", "bold"); doc.setFontSize(14); sc(doc, C.white);
+    doc.text(sanitizeForPdf(decisionLabel(ai.verdict)), PW / 2, y + 14, { align: "center" });
+    if (ai.confidence !== "ND") {
+      doc.setFont("helvetica", "normal"); doc.setFontSize(7); sc(doc, [148, 163, 184] as const);
+      doc.text(sanitizeForPdf(`Confiance : ${ai.confidence}`), M.left + CW - 3, y + 17.5, { align: "right" });
+    }
+    y += 26;
+  } else {
+    roundedBox(doc, M.left, y, CW, 14, { fill: C.bgAlt, border: C.border, radius: 3 });
+    doc.setFont("helvetica", "italic"); doc.setFontSize(9); sc(doc, C.muted);
+    doc.text("Verdict IA non disponible", PW / 2, y + 9, { align: "center" }); y += 18;
   }
 
-  function renderNumberedBlock(title: string, items: string[], titleColor: RGB, numColor: RGB): void {
-    if (items.length === 0) return;
-    y = ensureSpace(doc, y, 20);
-    roundedBox(doc, M.left, y, CW, 6, 1.5, C.accentBg, C.accentLight, 0.2);
-    doc.setFillColor(...C.accent); doc.rect(M.left, y + 0.5, 2, 5, "F");
-    doc.setFontSize(8.5); doc.setFont("helvetica", "bold"); doc.setTextColor(...titleColor);
-    doc.text(title, M.left + 6, y + 4);
-    y += 10;
-    const LINE_H = 3.7; const ITEM_GAP = 3.0; const TEXT_X = M.left + 12; const TEXT_W = CW - (TEXT_X - M.left) - 4;
-    items.forEach((action, i) => {
-      y = ensureSpace(doc, y, 14);
-      const circleY = y + 0.5;
-      doc.setFillColor(...numColor); doc.circle(M.left + 4.2, circleY, 2.8, "F");
-      doc.setFontSize(6); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.white);
-      doc.text(String(i + 1), M.left + 4.2, circleY + 1, { align: "center" });
-      const colonIdx = action.indexOf(" : ");
-      if (colonIdx > 0 && colonIdx < 50) {
-        const heading = action.slice(0, colonIdx);
-        const detail = action.slice(colonIdx + 3);
-        doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate800);
-        doc.text(S(heading), TEXT_X, y + 1); y += 4.5;
-        if (detail.trim()) {
-          doc.setFontSize(7.5); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate600);
-          const detailLines = doc.splitTextToSize(S(detail), TEXT_W - 2);
-          doc.text(detailLines, TEXT_X + 2, y); y += detailLines.length * LINE_H;
-        }
+  const narrativeMd = opts?.aiReport?.analysis?.narrativeMarkdown;
+  const scores      = resolveSmartScores(opts, narrativeMd, m);
+  const v2meta      = computeSmartScoreV2(m, opts, narrativeMd);
+
+  const toPillarSource = (src: ResolvedScores["source"], fallback: boolean): PillarSource => {
+    if (fallback) return "estim";
+    if (src === "server")    return "server";
+    if (src === "analysis")  return "calc";
+    if (src === "narrative") return "narrative";
+    return "estim";
+  };
+  const globalSrc = toPillarSource(scores.source, scores.usedFallback);
+
+  y = sectionTitle(doc, "SmartScore", y);
+  // cardH = 40 — place pour badge niveau + chip source
+  const cardW = (CW - 9) / 4; const cardH = 40;
+  const cards = [
+    { label: "SmartScore",      score: scores.smartScore,     source: globalSrc },
+    { label: "Liquidite",       score: scores.liquidite,      source: globalSrc },
+    { label: "Opportunity",     score: scores.opportunity,    source: globalSrc },
+    { label: "Pression risque", score: scores.pressionRisque, source: globalSrc, inverted: true, subtext: "plus bas = mieux" },
+  ] as const;
+  cards.forEach((c, i) => {
+    scoreCard100(doc, M.left + i * (cardW + 3), y, cardW, cardH, c.label, c.score, {
+      source: pillarSourceLabel(c.source), inverted: "inverted" in c ? c.inverted : false, subtext: "subtext" in c ? c.subtext : undefined,
+    });
+  });
+  y += cardH + 5;
+
+  // Confiance données — couleur sémantique
+  const confColor: readonly [number, number, number] =
+    v2meta.dataConfidenceLabel === "Elevee" ? C.success
+    : v2meta.dataConfidenceLabel === "Moyenne" ? C.warning
+    : C.danger;
+  roundedBox(doc, M.left, y, CW, 8, { fill: C.bgAlt, border: C.border, radius: 2, lw: 0.2 });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7); sc(doc, C.muted);
+  const confTxt = `Confiance donnees : `;
+  doc.text(confTxt, M.left + 3, y + 5.5);
+  const cTxtW = doc.getTextWidth(confTxt);
+  doc.setFont("helvetica", "bold"); sc(doc, confColor);
+  doc.text(sanitizeForPdf(`${v2meta.dataConfidence}/100 (${v2meta.dataConfidenceLabel})`), M.left + 3 + cTxtW, y + 5.5);
+  const rentStr = v2meta.pillars.rentabilite.value != null ? `Rentabilite ${v2meta.pillars.rentabilite.value}/100` : "";
+  const robStr  = v2meta.pillars.robustesse.value  != null ? `Robustesse ${v2meta.pillars.robustesse.value}/100` : "";
+  if (rentStr || robStr) {
+    doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); sc(doc, C.mutedDark);
+    doc.text(sanitizeForPdf([rentStr, robStr].filter(Boolean).join("  |  ")), PW - M.right, y + 5.5, { align: "right" });
+  }
+  y += 13;
+
+  y = buildSmartScorePedagogy(doc, y, {
+    smartScore:          scores.smartScore,
+    liquidite:           scores.liquidite,
+    pressionRisque:      scores.pressionRisque,
+    dataConfidence:      v2meta.dataConfidence,
+    dataConfidenceLabel: v2meta.dataConfidenceLabel,
+  });
+
+  y = sectionTitle(doc, "Chiffres cles", y);
+  const kpis = [
+    { l: "Prix d'achat",   v: dCur(m.prixAchat) },
+    { l: "Surface",        v: dSurf(m.surfaceM2) },
+    { l: "Prix / m2",      v: dCur(m.prixM2) },
+    { l: "Capital engage", v: m.capitalEngage != null ? dCur(m.capitalEngage) : "ND" },
+  ];
+  const kw = CW / 4;
+  kpis.forEach((k, i) => {
+    const kx = M.left + i * kw;
+    const isNd = k.v.startsWith("ND");
+    roundedBox(doc, kx + 1, y, kw - 2, 16, { fill: isNd ? C.bgAlt : C.bg, border: C.border, radius: 3, lw: 0.2, shadow: !isNd });
+    doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); sc(doc, isNd ? C.muted : C.accent);
+    doc.text(sanitizeForPdf(k.v), kx + kw / 2, y + 7.5, { align: "center" });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(6); sc(doc, C.muted);
+    doc.text(k.l, kx + kw / 2, y + 12.5, { align: "center" });
+  });
+  y += 20;
+
+  for (const bs of [
+    { t: "Pourquoi acheter",   its: ai.whyBuy,       c: C.success as const,   p: "+" },
+    { t: "A faire maintenant", its: ai.whatToDo,     c: C.accent  as const,   p: "->" },
+    { t: "Points de vigilance — Kill switches", its: ai.killSwitches, c: C.mutedDark as const, p: "-" },
+  ]) {
+    if (bs.its.length === 0) continue;
+    y = sectionTitle(doc, bs.t, y, { color: bs.c, fontSize: 8.5 });
+    for (const it of bs.its) {
+      if (bs.t.includes("Kill")) {
+        sf(doc, bs.c); doc.rect(M.left + 3, y - 1.8, 1.8, 1.8, "F");
       } else {
-        doc.setFontSize(7.8); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate700);
-        const lines = doc.splitTextToSize(S(action), TEXT_W);
-        doc.text(lines, TEXT_X, y + 0.8); y += lines.length * LINE_H;
+        sf(doc, bs.c); doc.circle(M.left + 3.5, y - 1, 0.9, "F");
       }
-      y += ITEM_GAP;
-    });
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); sc(doc, C.body);
+      const ls = doc.splitTextToSize(sanitizeForPdf(it), CW - 10) as string[];
+      doc.text(ls, M.left + 7, y);
+      y += ls.length * 4.2 + 2;
+    }
     y += 2;
   }
 
-  // ── Conclusion vulgarisée (Director) — keep but no re-repeat of verdict/résumé ──
-  const hasDirector = !!data.marketPlain || !!data.decisionToday || data.whatToDo.length > 0 || data.why.length > 0;
-  if (hasDirector) {
-    y = ensureSpace(doc, y, 36);
-    roundedBox(doc, M.left, y, CW, 6, 1.5, C.accentBg, C.accentLight, 0.2);
-    doc.setFillColor(...C.accent); doc.rect(M.left, y + 0.5, 2, 5, "F");
-    doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.accentDark);
-    doc.text("Conclusion \u2014 quoi faire maintenant", M.left + 6, y + 4);
-    y += 10;
-
-    if (data.decisionToday) {
-      roundedBox(doc, M.left, y, CW, 8, 2, C.white, C.slate200, 0.2);
-      doc.setFontSize(8.5); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate900);
-      doc.text(S(sanitizeVerdictInProse(data.decisionToday)), M.left + 5, y + 5.5);
-      y += 12;
-    }
-    if (data.marketPlain) {
-      doc.setFontSize(7.5); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate700);
-      const ml = doc.splitTextToSize(S("March\u00e9 : " + sanitizeVerdictInProse(data.marketPlain)), CW - 6);
-      doc.text(ml, M.left + 3, y); y += ml.length * 3.4 + 3;
-    }
-    if (data.why.length > 0) {
-      doc.setFontSize(7.5); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate800);
-      doc.text("Pourquoi :", M.left + 3, y); y += 4.5;
-      doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate700);
-      data.why.slice(0, 3).forEach((w) => {
-        y = ensureSpace(doc, y, 7);
-        doc.setFillColor(...C.slate600); doc.circle(M.left + 5, y - 0.6, 0.5, "F");
-        const wl = doc.splitTextToSize(S(w), CW - 14);
-        doc.text(wl, M.left + 9, y); y += wl.length * 3.2 + 1.5;
-      }); y += 2;
-    }
-    if (data.whatToDo.length > 0) {
-      doc.setFontSize(7.5); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate800);
-      doc.text("\u00c0 faire maintenant :", M.left + 3, y); y += 4.5;
-      doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate700);
-      data.whatToDo.slice(0, 5).forEach((a, idx) => {
-        y = ensureSpace(doc, y, 7);
-        doc.setFillColor(...C.accent); doc.circle(M.left + 5, y - 0.3, 2.2, "F");
-        doc.setFontSize(5.8); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.white);
-        doc.text(String(idx + 1), M.left + 5, y + 0.9, { align: "center" });
-        doc.setFontSize(7.5); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate700);
-        const al = doc.splitTextToSize(S(a), CW - 16);
-        doc.text(al, M.left + 10, y); y += al.length * 3.2 + 2;
-      }); y += 2;
-    }
-    if (data.maxEngagementPriceEur != null || data.neverExceedPriceEur != null) {
-      y = ensureSpace(doc, y, 10);
-      roundedBox(doc, M.left, y, CW, 10, 2, C.slate50, C.slate200, 0.2);
-      doc.setFontSize(7.5); doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate800);
-      const line = `Prix max : ${data.maxEngagementPriceEur != null ? fmtCurrency(data.maxEngagementPriceEur) : "ND"}  \u2022  \u00c0 ne jamais d\u00e9passer : ${data.neverExceedPriceEur != null ? fmtCurrency(data.neverExceedPriceEur) : "ND"}`;
-      doc.text(S(line), M.left + 5, y + 6.5); y += 14;
-    }
-    if (data.conditionsToBuy.length > 0) {
-      renderBlock("Conditions pour acheter", data.conditionsToBuy.slice(0, 5), C.slate700, C.slate600, C.slate50, C.slate200);
-    }
-  }
-
-  renderBlock("Points forts", data.strengths, C.emeraldDark, C.emerald, C.emeraldBg, C.emeraldLight);
-  renderBlock("Points de vigilance", data.vigilances, C.amberDark, C.amber, C.amberBg, C.amberLight);
-  renderBlock("Sensibilit\u00e9s \u2014 Risques identifi\u00e9s", data.sensitivities, C.roseDark, C.rose, C.roseBg, C.roseLight);
-  renderNumberedBlock("Plan d'action recommand\u00e9", data.actionPlan, C.accentDark, C.accent);
-  renderBlock("Donn\u00e9es manquantes", data.missingData, C.slate600, C.slate400, C.slate50, C.slate200);
-
-  // Detailed narrative — skip sections that duplicate the synthesis
-  if (data.narrativeMarkdown) {
-    doc.addPage(); y = M.top + 4;
-    y = sectionTitle(doc, y, "Analyse d\u00e9taill\u00e9e", "Rapport narratif IA");
-    const sections = parseNarrativeSections(data.narrativeMarkdown);
-
-    // Filter out redundant verdict/résumé sections
-    const skipPatterns = /^(verdict|r\u00e9sum\u00e9 ex\u00e9cutif|executive summary|synth\u00e8se|conclusion g\u00e9n\u00e9rale)$/i;
-
-    for (const section of sections) {
-      if (skipPatterns.test(section.title.trim())) continue;
-
-      y = ensureSpace(doc, y, 16);
-      if (section.title) {
-        const isRisk = /risque|angle|capital.*risk/i.test(section.title);
-        const isStrategy = /strat\u00e9gie|plan b|recommand/i.test(section.title);
-        const isMarket = /march\u00e9|liquidit\u00e9|sortie|cycle|bpe/i.test(section.title);
-        const isFinancial = /financ|marge|prix|valeur|asym\u00e9trie/i.test(section.title);
-        const isDecision = /d\u00e9cision|conformit\u00e9/i.test(section.title);
-        const sColor = isRisk ? C.rose : isDecision ? C.accent : isStrategy ? C.emerald : isMarket ? C.sky : isFinancial ? C.violet : C.slate600;
-        const sBg = isRisk ? C.roseBg : isDecision ? C.accentBg : isStrategy ? C.emeraldBg : isMarket ? C.skyBg : isFinancial ? C.violetBg : C.slate50;
-        roundedBox(doc, M.left, y - 1, CW, 5.5, 1, sBg);
-        doc.setFillColor(...sColor); doc.rect(M.left, y - 1, 1.5, 5.5, "F");
-        doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.setTextColor(...sColor); doc.text(section.title, M.left + 5, y + 2.5);
-        y += 7;
-      }
-      if (section.paragraphs.length > 0) {
-        doc.setFontSize(7.5); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate700);
-        for (const para of section.paragraphs) {
-          y = ensureSpace(doc, y, 9);
-          const lines = doc.splitTextToSize(para, CW - 6);
-          doc.text(lines, M.left + 3, y); y += lines.length * 3.4 + 2.5;
-        }
-      }
-      if (section.bullets.length > 0) {
-        doc.setFontSize(7.2); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate700);
-        for (const bullet of section.bullets) {
-          y = ensureSpace(doc, y, 8);
-          doc.setFillColor(...C.accent); doc.circle(M.left + 5, y - 0.4, 0.5, "F");
-          const lines = doc.splitTextToSize(bullet, CW - 15);
-          doc.text(lines, M.left + 9, y); y += lines.length * 3.2 + 2;
-        }
-        y += 2;
-      }
-      if (section.table && section.table.rows.length > 0) {
-        y = ensureSpace(doc, y, 20);
-        autoTable(doc, {
-          startY: y, head: [section.table.headers], body: section.table.rows, theme: "grid",
-          margin: { left: M.left + 2, right: M.right + 2 }, tableWidth: CW - 4,
-          headStyles: { fillColor: C.navy, textColor: C.white, fontStyle: "bold", fontSize: 6.5 },
-          bodyStyles: { fontSize: 7, textColor: C.slate900 }, alternateRowStyles: { fillColor: C.slate50 },
-          styles: { lineColor: C.slate200, lineWidth: 0.15, cellPadding: { top: 2, bottom: 2, left: 4, right: 4 } },
-          didParseCell(tableData) { const raw = String(tableData.cell.raw ?? "").toUpperCase(); if (raw === "CONFORME") { tableData.cell.styles.textColor = C.emeraldDark; tableData.cell.styles.fontStyle = "bold"; } else if (/NON CALCULABLE/.test(raw)) { tableData.cell.styles.textColor = C.slate400; tableData.cell.styles.fontStyle = "italic"; } else if (/NON CONFORME|ALERTE/.test(raw)) { tableData.cell.styles.textColor = C.roseDark; tableData.cell.styles.fontStyle = "bold"; } },
-        });
-        y = (doc as any).lastAutoTable.finalY + 4;
-      }
-      y += 1;
-    }
-  }
-  return y;
+  void bulletPrefix;
+  setY(doc, y);
 }
 
-// ---------------------------------------------------------------------------
-// PLAN D'ACTION — Dernière page obligatoire
-// ---------------------------------------------------------------------------
+// ═══════════════════════════════════════════════════════════════════
+// ─── PAGE 2 — Risques & Conditions ─────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
 
-function buildActionPlanPage(doc: jsPDF, snapshot: MarchandSnapshotV1, opts?: ExportPdfOpts): void {
-  const metrics = extractDealMetrics(snapshot, opts);
-  const ai = opts?.aiReport ? normalizeAiReport(opts.aiReport) : null;
+function buildPage2(doc: jsPDF, m: DealMetrics, ai: NormalizedAi): void {
+  doc.addPage(); let y = M.top + 8;
 
-  doc.addPage();
-  let y = M.top + 4;
-  y = sectionTitle(doc, y, "Plan d'action", "Exactement quoi faire, dans quel ordre");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(14); sc(doc, C.primary);
+  doc.text("Risques & Conditions", M.left, y); y += 3;
+  sf(doc, C.accent); doc.rect(M.left, y, 48, 1.5, "F");
+  y += 10;
 
-  // ── Helper: draw checkbox ────────────────────────────────────────────────
-  function checkbox(cx: number, cy: number): void {
-    doc.setDrawColor(...C.slate400); doc.setLineWidth(0.3);
-    doc.roundedRect(cx, cy - 2.5, 3.5, 3.5, 0.5, 0.5, "S");
+  const cardGap = 3; const cardW = (CW - cardGap * 2) / 3;
+  const upsideItems   = ai.upside.slice(0, 4);
+  const downsideItems = ai.downside.slice(0, 4);
+  const maxBullets    = Math.max(upsideItems.length, downsideItems.length, 2);
+  const cardH         = Math.max(36, 16 + maxBullets * 7.5);
+
+  // Carte "Points favorables" — accent indigo
+  const c1x = M.left;
+  roundedBox(doc, c1x, y, cardW, cardH, { fill: C.white, border: C.border, radius: 3, lw: 0.3, shadow: true });
+  sf(doc, C.accent); doc.roundedRect(c1x, y, cardW, 3, 1.5, 1.5, "F");
+  sf(doc, C.accent); doc.rect(c1x, y + 1.5, cardW, 1.5, "F");
+  let cy1 = y + 9;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); sc(doc, C.accent);
+  doc.text("POINTS FAVORABLES", c1x + cardW / 2, cy1, { align: "center" }); cy1 += 5.5;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); sc(doc, C.body);
+  for (const it of upsideItems) {
+    sf(doc, C.accent); doc.circle(c1x + 5, cy1 - 1, 0.7, "F");
+    const ls = doc.splitTextToSize(sanitizeForPdf(it), cardW - 13) as string[];
+    doc.text(ls, c1x + 8.5, cy1); cy1 += ls.length * 3.8 + 2;
   }
 
-  function checklistBlock(title: string, items: string[], titleColor: RGB, bgColor: RGB, borderColor: RGB): void {
-    y = ensureSpace(doc, y, 14 + items.length * 7);
-    roundedBox(doc, M.left, y, CW, 6, 1.5, bgColor, borderColor, 0.2);
-    doc.setFillColor(...titleColor); doc.rect(M.left, y + 0.5, 2, 5, "F");
-    doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.setTextColor(...titleColor);
-    doc.text(S(title), M.left + 6, y + 4);
-    y += 10;
+  // Carte "Points de vigilance" — slate
+  const c2x = M.left + cardW + cardGap;
+  roundedBox(doc, c2x, y, cardW, cardH, { fill: C.white, border: C.border, radius: 3, lw: 0.3, shadow: true });
+  sf(doc, C.muted); doc.roundedRect(c2x, y, cardW, 3, 1.5, 1.5, "F");
+  sf(doc, C.muted); doc.rect(c2x, y + 1.5, cardW, 1.5, "F");
+  let cy2 = y + 9;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); sc(doc, C.mutedDark);
+  doc.text("POINTS DE VIGILANCE", c2x + cardW / 2, cy2, { align: "center" }); cy2 += 5.5;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); sc(doc, C.body);
+  for (const it of downsideItems) {
+    sf(doc, C.mutedDark); doc.circle(c2x + 5, cy2 - 1, 0.7, "F");
+    const ls = doc.splitTextToSize(sanitizeForPdf(it), cardW - 13) as string[];
+    doc.text(ls, c2x + 8.5, cy2); cy2 += ls.length * 3.8 + 2;
+  }
 
-    doc.setFontSize(7.5); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.slate700);
-    items.forEach((item) => {
-      y = ensureSpace(doc, y, 8);
-      checkbox(M.left + 3, y);
-      const lines = doc.splitTextToSize(S(item), CW - 16);
-      doc.text(lines, M.left + 10, y);
-      y += lines.length * 3.5 + 2.5;
-    });
+  // Carte "Limites de prix" — slate-900
+  const c3x = M.left + (cardW + cardGap) * 2;
+  roundedBox(doc, c3x, y, cardW, cardH, { fill: C.white, border: C.border, radius: 3, lw: 0.3, shadow: true });
+  sf(doc, C.navyMid); doc.roundedRect(c3x, y, cardW, 3, 1.5, 1.5, "F");
+  sf(doc, C.navyMid); doc.rect(c3x, y + 1.5, cardW, 1.5, "F");
+  let cy3 = y + 9;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); sc(doc, C.primary);
+  doc.text("LIMITES DE PRIX", c3x + cardW / 2, cy3, { align: "center" }); cy3 += 6;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(6); sc(doc, C.muted);
+  doc.text("PRIX MAX CONSEILLE", c3x + 4, cy3); cy3 += 3.5;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9); sc(doc, ai.maxPrice === "ND" ? C.muted : C.accent);
+  doc.text(sanitizeForPdf(ai.maxPrice), c3x + 4, cy3); cy3 += 3;
+  if (ai.maxPriceSource !== "none") {
+    doc.setFont("helvetica", "italic"); doc.setFontSize(5); sc(doc, C.muted);
+    doc.text(`source: ${ai.maxPriceSource}`, c3x + 4, cy3);
+  }
+  cy3 += 5;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(6); sc(doc, C.muted);
+  doc.text("NEVER EXCEED", c3x + 4, cy3); cy3 += 3.5;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9); sc(doc, ai.neverExceed === "ND" ? C.muted : C.mutedDark);
+  doc.text(sanitizeForPdf(ai.neverExceed), c3x + 4, cy3);
+  y += cardH + 10;
+
+  if (ai.killSwitches.length > 0) {
+    y = sectionTitle(doc, "Kill switches — points bloquants", y, { color: C.mutedDark });
+    for (const it of ai.killSwitches.slice(0, 3)) {
+      roundedBox(doc, M.left, y - 3, CW, 10, { fill: C.killBg, border: C.killBorder, radius: 2, lw: 0.2 });
+      sf(doc, C.mutedDark); doc.rect(M.left + 4.5, y, 2.2, 0.7, "F");
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8); sc(doc, C.body);
+      const ls = doc.splitTextToSize(sanitizeForPdf(it), CW - 14) as string[];
+      doc.text(ls, M.left + 10, y + 2);
+      y += Math.max(10, ls.length * 4) + 2;
+    }
     y += 3;
   }
 
-  // ── 1. Avant de faire une offre (48–72h) ────────────────────────────────
-  checklistBlock("Avant de faire une offre (48\u201372h)", [
-    "V\u00e9rifier DVF par typologie (type de bien, \u00e9tat, surface similaire) sur la commune et les communes voisines",
-    "Obtenir 2\u20133 devis travaux chiffr\u00e9s par des artisans (pas d'estimation au doigt mouill\u00e9)",
-    "Estimer la dur\u00e9e r\u00e9aliste des travaux + dur\u00e9e de d\u00e9tention compl\u00e8te (achat > revente effective)",
-    "V\u00e9rifier les charges de copropri\u00e9t\u00e9 (PV d'AG des 3 derni\u00e8res ann\u00e9es, budget pr\u00e9visionnel, impay\u00e9s)",
-    "Confirmer la strat\u00e9gie de sortie : revente, location, division, ou mix",
-  ], C.accent, C.accentBg, C.accentLight);
-
-  // ── 2. Avant compromis ───────────────────────────────────────────────────
-  const negoTarget = metrics.prixAchat > 0
-    ? `N\u00e9gociation : objectif ${fmtCurrency(metrics.prixAchat * 0.92)} \u00e0 ${fmtCurrency(metrics.prixAchat * 0.95)} (-5 \u00e0 -8% du prix affich\u00e9)`
-    : "N\u00e9gociation : viser une r\u00e9duction de 5\u20138% minimum du prix affich\u00e9";
-
-  checklistBlock("Avant compromis", [
-    negoTarget,
-    "Diagnostics complets re\u00e7us et analys\u00e9s (DPE, amiante, plomb, termites, \u00e9lectricit\u00e9, assainissement)",
-    "Audit copropri\u00e9t\u00e9 : \u00e9tat du syndic, proc\u00e9dures en cours, gros travaux vot\u00e9s",
-    "Validation financement (accord de principe bancaire, capacit\u00e9 d'emprunt confirm\u00e9e)",
-    "V\u00e9rifier urbanisme : PLU, zone de pr\u00e9emption, servitudes",
-  ], C.sky, C.skyBg, [186, 230, 253] as RGB);
-
-  // ── 3. Conditions suspensives recommandées ───────────────────────────────
-  checklistBlock("Conditions suspensives recommand\u00e9es", [
-    "Devis travaux valid\u00e9s et coh\u00e9rents avec le budget pr\u00e9vu (marge de 15% incluse)",
-    "Absence de risque copropri\u00e9t\u00e9 majeur (proc\u00e9dure judiciaire, gros travaux non budg\u00e9t\u00e9s > 10k\u20ac)",
-    "Obtention du financement aux conditions pr\u00e9vues",
-    "R\u00e9sultats diagnostics conformes (pas de surco\u00fbt amiante, plomb, assainissement)",
-    "Absence de vice cach\u00e9 constat\u00e9 lors de la visite technique",
-  ], C.violet, C.violetBg, [196, 181, 253] as RGB);
-
-  // ── 4. Seuils de décision Mimmoza (GO / NO GO) ──────────────────────────
-  y = ensureSpace(doc, y, 50);
-  roundedBox(doc, M.left, y, CW, 6, 1.5, C.emeraldBg, C.emeraldLight, 0.2);
-  doc.setFillColor(...C.emerald); doc.rect(M.left, y + 0.5, 2, 5, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...C.emeraldDark);
-  doc.text("Seuils de d\u00e9cision Mimmoza", M.left + 6, y + 4);
-  y += 10;
-
-  // GO conditions
-  const goConditions = [
-    "Marge brute >= 12% apr\u00e8s int\u00e9gration de TOUS les co\u00fbts (notaire, travaux, portage)",
-  ];
-  if (metrics.cushion != null) {
-    goConditions.push(`Cushion >= 3 pts au-dessus du seuil 12% (actuellement ${fmtPercent(metrics.cushion, 1)} pts)`);
-  }
-  goConditions.push(
-    "Stress test (travaux +10% OU revente -5%) ne fait pas passer la marge sous 5%",
-    "Donn\u00e9es critiques obtenues : devis travaux, diagnostics, \u00e9tat copro",
-  );
-  if (ai?.conditionsToBuy && ai.conditionsToBuy.length > 0) {
-    goConditions.push(...ai.conditionsToBuy.slice(0, 2));
+  if (ai.missingData.length > 0) {
+    y = sectionTitle(doc, "Donnees a obtenir", y, { color: C.warning });
+    const mdBlockH = ai.missingData.length * 6 + 8;
+    roundedBox(doc, M.left, y, CW, mdBlockH, { fill: C.confBg, border: C.confBorder, radius: 3, lw: 0.2 });
+    let my = y + 6;
+    for (const it of ai.missingData) {
+      sf(doc, C.warning); doc.rect(M.left + 4, my - 2, 1.5, 1.5, "F");
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8); sc(doc, C.body);
+      doc.text(sanitizeForPdf(it), M.left + 9, my);
+      my += 6;
+    }
+    y += mdBlockH + 6;
   }
 
-  roundedBox(doc, M.left + 2, y, CW / 2 - 4, 5, 1.5, C.emeraldBg);
-  doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(...C.emeraldDark);
-  doc.text("GO", M.left + 6, y + 3.5);
-  y += 7;
-  doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(...C.slate700);
-  goConditions.forEach((cond) => {
-    y = ensureSpace(doc, y, 8);
-    doc.setFillColor(...C.emerald); doc.circle(M.left + 5, y - 0.5, 0.6, "F");
-    const cl = doc.splitTextToSize(S(cond), CW - 14);
-    doc.text(cl, M.left + 9, y);
-    y += cl.length * 3.2 + 2;
-  });
-  y += 3;
+  if (ai.conditionsToBuy.length > 0) {
+    y = sectionTitle(doc, "Conditions pour acheter", y, { color: C.accent });
+    ai.conditionsToBuy.forEach((it, i) => {
+      const ls = doc.splitTextToSize(sanitizeForPdf(`${i + 1}. ${it}`), CW - 6) as string[];
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8); sc(doc, C.body);
+      doc.text(ls, M.left + 2, y); y += ls.length * 4.2 + 2;
+    });
+    y += 4;
+  }
 
-  // NO GO conditions
-  const noGoConditions = [
-    "Surcote DVF > 15% sans justification (localisation exceptionnelle, raret\u00e9 du bien)",
-    "Marge brute < 5% m\u00eame apr\u00e8s n\u00e9gociation",
-    "Donn\u00e9es critiques refus\u00e9es ou introuvables (pas de devis, pas de PV AG, diagnostics manquants)",
-    "Copropri\u00e9t\u00e9 en difficult\u00e9 (proc\u00e9dure, impay\u00e9s > 20%, gros travaux non provisionn\u00e9s)",
-    "Stress test cumul\u00e9 (travaux +10% ET revente -5%) am\u00e8ne la marge sous 0%",
-  ];
+  if (y < PH - M.bottom - 44) {
+    y = sectionTitle(doc, "Detail limites de prix", y, { color: C.primary });
+    const pcw = (CW - 4) / 2;
 
-  y = ensureSpace(doc, y, 30);
-  roundedBox(doc, M.left + 2, y, CW / 2 - 4, 5, 1.5, C.roseBg);
-  doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(...C.roseDark);
-  doc.text("NO GO", M.left + 6, y + 3.5);
-  y += 7;
-  doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(...C.slate700);
-  noGoConditions.forEach((cond) => {
-    y = ensureSpace(doc, y, 8);
-    doc.setFillColor(...C.rose); doc.circle(M.left + 5, y - 0.5, 0.6, "F");
-    const cl = doc.splitTextToSize(S(cond), CW - 14);
-    doc.text(cl, M.left + 9, y);
-    y += cl.length * 3.2 + 2;
-  });
-  y += 5;
+    // Carte prix max — fond slate-100 + barre indigo
+    roundedBox(doc, M.left, y, pcw, 24, { fill: C.bg, border: C.border, radius: 3, lw: 0.2, shadow: true });
+    sf(doc, C.accent); doc.roundedRect(M.left, y, 3.5, 24, 1.5, 1.5, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7); sc(doc, C.accentDark);
+    doc.text("PRIX MAX CONSEILLE", M.left + 7, y + 6);
+    const lbl1 = ai.maxPriceSource === "ia" ? "(IA)" : ai.maxPriceSource === "fallback" ? "(fallback)" : "";
+    doc.setFont("helvetica", "normal"); doc.setFontSize(6); sc(doc, C.muted);
+    doc.text(lbl1, M.left + pcw - 4, y + 6, { align: "right" });
+    doc.setFont("helvetica", "bold"); doc.setFontSize(13); sc(doc, ai.maxPrice === "ND" ? C.muted : C.accent);
+    doc.text(sanitizeForPdf(ai.maxPrice), M.left + 7, y + 14);
+    if (ai.maxPriceWhy) {
+      doc.setFont("helvetica", "italic"); doc.setFontSize(6); sc(doc, C.muted);
+      const mxls = doc.splitTextToSize(sanitizeForPdf(ai.maxPriceWhy), pcw - 12) as string[];
+      doc.text(mxls[0] ?? "", M.left + 7, y + 20);
+    }
 
-  // ── 5. Plan B ────────────────────────────────────────────────────────────
-  y = ensureSpace(doc, y, 30);
-  roundedBox(doc, M.left, y, CW, 6, 1.5, C.amberBg, C.amberLight, 0.2);
-  doc.setFillColor(...C.amber); doc.rect(M.left, y + 0.5, 2, 5, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...C.amberDark);
-  doc.text("Plan B \u2014 Si l'op\u00e9ration ne se passe pas comme pr\u00e9vu", M.left + 6, y + 4);
+    // Carte never exceed — fond slate-200
+    const neX = M.left + pcw + 4;
+    roundedBox(doc, neX, y, pcw, 24, { fill: C.bgAlt, border: C.borderDark, radius: 3, lw: 0.2, shadow: true });
+    sf(doc, C.muted); doc.roundedRect(neX, y, 3.5, 24, 1.5, 1.5, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7); sc(doc, C.mutedDark);
+    doc.text("NEVER EXCEED", neX + 7, y + 6);
+    const lbl2 = ai.neverExceedSource === "ia" ? "(IA)" : ai.neverExceedSource === "fallback" ? "(fallback)" : "";
+    doc.setFont("helvetica", "normal"); doc.setFontSize(6); sc(doc, C.muted);
+    doc.text(lbl2, neX + pcw - 4, y + 6, { align: "right" });
+    doc.setFont("helvetica", "bold"); doc.setFontSize(13); sc(doc, ai.neverExceed === "ND" ? C.muted : C.primary);
+    doc.text(sanitizeForPdf(ai.neverExceed), neX + 7, y + 14);
+    if (ai.neverExceedWhy) {
+      doc.setFont("helvetica", "italic"); doc.setFontSize(6); sc(doc, C.muted);
+      const nels = doc.splitTextToSize(sanitizeForPdf(ai.neverExceedWhy), pcw - 12) as string[];
+      doc.text(nels[0] ?? "", neX + 7, y + 20);
+    }
+    y += 30;
+  }
+  setY(doc, y);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── PAGE 3 — Stress test & Capital ────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+function buildPage3(doc: jsPDF, m: DealMetrics, ai: NormalizedAi): void {
+  type DocWithTable = jsPDF & { lastAutoTable: { finalY: number } };
+  doc.addPage(); let y = M.top + 8;
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(14); sc(doc, C.primary);
+  doc.text("Stress test & Capital", M.left, y); y += 3;
+  sf(doc, C.accent); doc.rect(M.left, y, 48, 1.5, "F");
   y += 10;
 
-  const planBItems = [
-    "Location temporaire si revente retard\u00e9e : calculer le loyer minimum pour couvrir les mensualit\u00e9s + charges",
-    "Revente en l'\u00e9tat (sans travaux) si les devis d\u00e9rapent au-del\u00e0 du budget : estimer la perte maximale accept\u00e9e",
-    "Location meubl\u00e9e courte dur\u00e9e (si r\u00e8glementation locale le permet) pour maximiser les revenus en attente de revente",
-    "N\u00e9gociation avec cr\u00e9ancier en cas de difficult\u00e9 de portage : anticiper les conditions de sortie anticip\u00e9e du cr\u00e9dit",
-  ];
+  const tableStyles = {
+    styles: {
+      font: "helvetica", fontSize: 8, cellPadding: 3,
+      textColor: [C.body[0], C.body[1], C.body[2]] as [number,number,number],
+      lineColor: [C.border[0], C.border[1], C.border[2]] as [number,number,number],
+      lineWidth: 0.15,
+    },
+    headStyles: {
+      fillColor: [C.primary[0], C.primary[1], C.primary[2]] as [number,number,number],
+      textColor: [255, 255, 255] as [number,number,number],
+      fontStyle: "bold" as const,
+      fontSize: 8,
+    },
+    alternateRowStyles: { fillColor: [C.bg[0], C.bg[1], C.bg[2]] as [number,number,number] },
+    margin: { left: M.left, right: M.right },
+    tableLineColor: [C.border[0], C.border[1], C.border[2]] as [number,number,number],
+    tableLineWidth: 0.15,
+  };
 
-  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...C.slate700);
-  planBItems.forEach((item) => {
-    y = ensureSpace(doc, y, 9);
-    doc.setFillColor(...C.amber); doc.circle(M.left + 4, y - 0.5, 0.6, "F");
-    const il = doc.splitTextToSize(S(item), CW - 14);
-    doc.text(il, M.left + 8, y);
-    y += il.length * 3.3 + 2.5;
+  const buildAndRenderStressTable = (rows: string[][], ndNotes: string[]) => {
+    if (rows.length > 0) {
+      autoTable(doc, { startY: y, head: [["Scenario", "Impact", "Marge", "Statut"]], body: rows, ...tableStyles });
+      y = (doc as DocWithTable).lastAutoTable.finalY + 12;
+    }
+    if (ndNotes.length > 0) {
+      doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); sc(doc, C.warning);
+      for (const note of ndNotes) { doc.text(sanitizeForPdf(note), M.left + 2, y, { maxWidth: CW - 4 }); y += 4.5; }
+      y += 3;
+    }
+  };
+
+  if (ai.stressTest.length > 0) {
+    const validRows = ai.stressTest.filter(r => r.statut !== "ND" && r.marge !== "ND");
+    const ndRows    = ai.stressTest.filter(r => r.statut === "ND" || r.marge === "ND");
+    buildAndRenderStressTable(
+      validRows.map(r => [sanitizeForPdf(r.scenario), sanitizeForPdf(r.impact), sanitizeForPdf(r.marge), sanitizeForPdf(r.statut)]),
+      ndRows.map(r => `${r.scenario} : ND - donnee(s) manquante(s) pour ce scenario`),
+    );
+  } else if (m.prixAchat != null && m.prixRevente != null && m.capitalEngage != null) {
+    const stressRows: string[][] = [];
+    const ndNotes: string[] = [];
+    if (m.travaux != null) {
+      for (const pct of [10, 20, 30] as const) {
+        const tUp = m.travaux * (1 + pct / 100);
+        const ceUp = m.prixAchat! + tUp + (m.fraisNotaire ?? 0);
+        const marg = m.prixRevente! - ceUp;
+        stressRows.push([`Travaux +${pct}%`, fmtCurrency(tUp - m.travaux), fmtCurrency(marg), marg > 0 ? "OK" : "RISQUE"]);
+      }
+    } else { ndNotes.push("Travaux +10/20/30% : ND (travaux non chiffres)"); }
+    const rDn5  = m.prixRevente! * 0.95; const rDn10 = m.prixRevente! * 0.90; const rDn15 = m.prixRevente! * 0.85;
+    stressRows.push(["Revente -5%",  fmtCurrency(m.prixRevente!-rDn5),  fmtCurrency(rDn5 -m.capitalEngage!), (rDn5 -m.capitalEngage!)>0?"OK":"RISQUE"]);
+    stressRows.push(["Revente -10%", fmtCurrency(m.prixRevente!-rDn10), fmtCurrency(rDn10-m.capitalEngage!), (rDn10-m.capitalEngage!)>0?"OK":"RISQUE"]);
+    stressRows.push(["Revente -15%", fmtCurrency(m.prixRevente!-rDn15), fmtCurrency(rDn15-m.capitalEngage!), (rDn15-m.capitalEngage!)>0?"OK":"RISQUE"]);
+    for (const fpct of [4, 6] as const) {
+      const fraisVente = m.prixRevente! * (fpct / 100);
+      const margeNet   = m.prixRevente! - fraisVente - m.capitalEngage!;
+      stressRows.push([`Frais de vente ${fpct}%`, fmtCurrency(fraisVente), fmtCurrency(margeNet), margeNet > 0 ? "OK" : "RISQUE"]);
+    }
+    if (m.travaux != null) {
+      const ce20 = m.prixAchat! + m.travaux * 1.2 + (m.fraisNotaire ?? 0);
+      const ce30 = m.prixAchat! + m.travaux * 1.3 + (m.fraisNotaire ?? 0);
+      const mc20 = rDn10 - ce20; const mc30 = rDn15 - ce30;
+      stressRows.push(["Cumul (Trav+20% & Rev-10%)", "Combine", fmtCurrency(mc20), mc20 > 0 ? "OK" : "RISQUE"]);
+      stressRows.push(["Cumul (Trav+30% & Rev-15%)", "Combine", fmtCurrency(mc30), mc30 > 0 ? "OK" : "RISQUE"]);
+    } else { ndNotes.push("Cumuls : ND (travaux non chiffres)"); }
+    buildAndRenderStressTable(stressRows, ndNotes);
+  } else {
+    const reasons: string[] = [];
+    if (m.prixAchat    == null) reasons.push("prix d'achat");
+    if (m.prixRevente  == null) reasons.push("revente cible");
+    if (m.capitalEngage == null) reasons.push("capital engage");
+    roundedBox(doc, M.left, y, CW, 16, { fill: C.bgAlt, border: C.border, radius: 3 });
+    doc.setFont("helvetica", "italic"); doc.setFontSize(9); sc(doc, C.muted);
+    doc.text(sanitizeForPdf(`Stress test impossible : donnee(s) manquante(s) — ${reasons.join(", ")}.`), M.left + 5, y + 9, { maxWidth: CW - 10 });
+    y += 22;
+  }
+
+  y = sectionTitle(doc, "Resultat projete", y);
+  roundedBox(doc, M.left, y, CW, 22, { fill: C.bg, border: C.border, radius: 3, lw: 0.2, shadow: true });
+  const rows2 = [
+    { l: "Gain potentiel",    v: ai.gainPotentiel,    c: C.success as const },
+    { l: "Perte potentielle", v: ai.pertePotentielle, c: C.warning  as const },
+  ];
+  let ry = y + 6;
+  for (const r of rows2) {
+    const isNd = r.v === "ND" || r.v.startsWith("ND ");
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); sc(doc, C.muted);
+    doc.text(r.l, M.left + 6, ry);
+    doc.setFont("helvetica", "bold"); sc(doc, isNd ? C.muted : r.c);
+    doc.text(sanitizeForPdf(r.v), M.left + CW - 6, ry, { align: "right" });
+    ry += 7;
+  }
+  y += 26;
+
+  if (ai.stressTestReadable) {
+    roundedBox(doc, M.left, y, CW, 14, { fill: C.accentSoft, border: [196, 221, 253] as const, radius: 2, lw: 0.2 });
+    doc.setFont("helvetica", "italic"); doc.setFontSize(8); sc(doc, C.accentDark);
+    doc.text(doc.splitTextToSize(sanitizeForPdf(ai.stressTestReadable), CW - 12) as string[], M.left + 6, y + 5);
+    y += 18;
+  }
+
+  if (m.margeBrute != null && m.margeBrutePct != null) {
+    y = sectionTitle(doc, "Marge brute calculee", y, { fontSize: 8.5 });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); sc(doc, C.body);
+    doc.text(sanitizeForPdf(`Marge brute : ${dCur(m.margeBrute)} (${fmtPercent(m.margeBrutePct)})`), M.left + 2, y); y += 5.5;
+    if (m.premiumVsDvfPct != null) {
+      doc.text(sanitizeForPdf(`Premium vs DVF : ${fmtPercent(m.premiumVsDvfPct)}`), M.left + 2, y); y += 5.5;
+    }
+    if (m.travaux == null) {
+      doc.setFont("helvetica", "italic"); doc.setFontSize(7); sc(doc, C.warning);
+      doc.text("Note : marge calculee sans travaux (non chiffres). Resultat reel potentiellement inferieur.", M.left + 2, y, { maxWidth: CW - 4 }); y += 5;
+    }
+  }
+  setY(doc, y);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── PAGE 4 — Plan d'action ─────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+function buildPage4(doc: jsPDF, _m: DealMetrics, ai: NormalizedAi): void {
+  doc.addPage(); let y = M.top + 8;
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(14); sc(doc, C.primary);
+  doc.text("Plan d'action", M.left, y); y += 3;
+  sf(doc, C.accent); doc.rect(M.left, y, 48, 1.5, "F");
+  y += 10;
+
+  const phases: Record<string, ChecklistItem[]> = {};
+  if (ai.checklist.length > 0) {
+    for (const it of ai.checklist) { const ph = sanitizeForPdf(it.phase) || "Avant offre"; (phases[ph] ??= []).push(it); }
+  } else {
+    phases["Avant offre"] = [
+      { phase: "", label: "Verifier le titre de propriete" }, { phase: "", label: "Confirmer la surface reelle" },
+      { phase: "", label: "Estimer les travaux avec artisan" }, { phase: "", label: "Verifier le PLU / urbanisme" },
+    ];
+    phases["Avant compromis"] = [
+      { phase: "", label: "Diagnostic complet (DPE, amiante, plomb...)" }, { phase: "", label: "Verifier les servitudes" },
+      { phase: "", label: "Confirmer le financement" }, { phase: "", label: "Negocier les conditions suspensives" },
+    ];
+    phases["Conditions suspensives"] = [
+      { phase: "", label: "Obtention du pret" }, { phase: "", label: "Permis si necessaire" },
+      { phase: "", label: "Absence de preemption" }, { phase: "", label: "Conformite urbanistique" },
+    ];
+  }
+
+  for (const ph of Object.keys(phases)) {
+    if (y > PH - M.bottom - 30) { doc.addPage(); y = M.top + 12; }
+    y = sectionTitle(doc, ph, y, { fontSize: 8.5, color: C.accentDark });
+    const phItems = phases[ph];
+    const blockH = phItems.length * 7 + 8;
+    roundedBox(doc, M.left, y, CW, blockH, { fill: C.white, border: C.border, radius: 3, lw: 0.2, shadow: true });
+    let biy = y + 6;
+    for (const it of phItems) {
+      biy += drawCheckbox(doc, M.left + 5, biy, it.label, !!it.done, { fs: 8.5 });
+    }
+    y += blockH + 5;
+  }
+
+  setY(doc, y);
+}
+
+// ─── Annexes ─────────────────────────────────────────────────────
+
+function annexeFiche(doc: jsPDF, ai: NormalizedAi): void {
+  if (!ai.ficheOperation.length) return;
+  doc.addPage(); doc.setFont("helvetica", "bold"); doc.setFontSize(13); sc(doc, C.primary);
+  doc.text("Annexe — Fiche operation", M.left, M.top);
+  const body: string[][] = [];
+  for (const r of ai.ficheOperation) for (const [k, v] of Object.entries(r)) body.push([sanitizeForPdf(k), sanitizeForPdf(v)]);
+  autoTable(doc, {
+    startY: M.top + 8, head: [["Element", "Valeur"]], body,
+    margin: { left: M.left, right: M.right },
+    styles: { font: "helvetica", fontSize: 7.5, cellPadding: 2.5, textColor: [C.body[0], C.body[1], C.body[2]] },
+    headStyles: { fillColor: [C.primary[0], C.primary[1], C.primary[2]], textColor: [255,255,255], fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [C.bg[0], C.bg[1], C.bg[2]] },
   });
 }
 
-// ===========================================================================
-// INVESTISSEUR-ONLY PAGES
-// ===========================================================================
+function annexeDD(doc: jsPDF, ai: NormalizedAi): void {
+  if (!ai.dueDiligence.length) return;
+  doc.addPage(); doc.setFont("helvetica", "bold"); doc.setFontSize(13); sc(doc, C.primary);
+  doc.text("Annexe — Due Diligence", M.left, M.top);
+  autoTable(doc, {
+    startY: M.top + 8, head: [["Element", "Statut", "Detail"]],
+    body: ai.dueDiligence.map(r => [sanitizeForPdf(r.item), sanitizeForPdf(r.statut), sanitizeForPdf(r.detail ?? "")]),
+    margin: { left: M.left, right: M.right },
+    styles: { font: "helvetica", fontSize: 7.5, cellPadding: 2.5, textColor: [C.body[0], C.body[1], C.body[2]] },
+    headStyles: { fillColor: [C.primary[0], C.primary[1], C.primary[2]], textColor: [255,255,255], fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [C.bg[0], C.bg[1], C.bg[2]] },
+  });
+}
 
-// ---------------------------------------------------------------------------
-// Helper for investisseur appendix pages: consistent layout
-// ---------------------------------------------------------------------------
+// ═══════════════════════════════════════════════════════════════════
+// ─── LOAN COST COMPUTATION ─────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
 
-function investisseurPageTitle(doc: jsPDF, title: string, subtitle?: string): number {
+export interface LoanScenario {
+  durationYears: number;
+  mensualiteHorsAssurance: number;
+  assuranceMensuelle: number;
+  mensualiteTotale: number;
+  interetsTotaux: number;
+  assuranceTotale: number;
+  coutTotalCredit: number;
+  totalRembourse: number;
+}
+
+export function computeLoanCost(
+  principal: number,
+  annualRatePct: number,
+  durationYears: number,
+  annualInsurancePct = 0,
+  fraisInitiaux = 0,
+): LoanScenario {
+  const n  = durationYears * 12;
+  const r  = annualRatePct / 100 / 12;
+
+  let mensualiteHorsAssurance: number;
+  if (r === 0) {
+    mensualiteHorsAssurance = principal / n;
+  } else {
+    const factor = Math.pow(1 + r, n);
+    mensualiteHorsAssurance = (principal * r * factor) / (factor - 1);
+  }
+
+  const interetsTotaux        = mensualiteHorsAssurance * n - principal;
+  const assuranceMensuelle    = (principal * annualInsurancePct / 100) / 12;
+  const assuranceTotale       = assuranceMensuelle * n;
+  const mensualiteTotale      = mensualiteHorsAssurance + assuranceMensuelle;
+  const coutTotalCredit       = interetsTotaux + assuranceTotale + fraisInitiaux;
+  const totalRembourse        = principal + coutTotalCredit;
+
+  return {
+    durationYears,
+    mensualiteHorsAssurance: Math.round(mensualiteHorsAssurance),
+    assuranceMensuelle:      Math.round(assuranceMensuelle),
+    mensualiteTotale:        Math.round(mensualiteTotale),
+    interetsTotaux:          Math.round(interetsTotaux),
+    assuranceTotale:         Math.round(assuranceTotale),
+    coutTotalCredit:         Math.round(coutTotalCredit),
+    totalRembourse:          Math.round(totalRembourse),
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── PAGE COMPARATIF FINANCEMENT ───────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+function buildLoanComparison(doc: jsPDF, m: DealMetrics): void {
+  type DocWithTable = jsPDF & { lastAutoTable: { finalY: number } };
+
+  const principal = m.montantPret;
+  if (principal == null || principal <= 0) return;
+
+  const ratePct       = m.loanRatePct       ?? 3.5;
+  const insurancePct  = m.loanInsurancePct  ?? 0.25;
+  const fraisInitiaux = m.loanFraisInitiaux ?? 0;
+
+  const isDefaultRate      = m.loanRatePct      == null;
+  const isDefaultInsurance = m.loanInsurancePct == null;
+
+  const DURATIONS = [10, 15, 20] as const;
+  const scenarios = DURATIONS.map(dur =>
+    computeLoanCost(principal, ratePct, dur, insurancePct, fraisInitiaux),
+  );
+
   doc.addPage();
-  let y = M.top + 4;
-  y = sectionTitle(doc, y, title, subtitle);
-  return y;
-}
+  let y = M.top + 8;
 
-function writeParagraph(doc: jsPDF, y: number, text: string, fontSize = 7.5): number {
-  y = ensureSpace(doc, y, 10);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(fontSize); doc.setTextColor(...C.slate700);
-  const lines = doc.splitTextToSize(S(text), CW - 6);
-  doc.text(lines, M.left + 3, y);
-  return y + lines.length * 3.4 + 3;
-}
+  doc.setFont("helvetica", "bold"); doc.setFontSize(14); sc(doc, C.primary);
+  doc.text("Comparatif financement", M.left, y); y += 3;
+  sf(doc, C.accent); doc.rect(M.left, y, 48, 1.5, "F");
+  y += 10;
 
-function writeSubheading(doc: jsPDF, y: number, text: string, color: RGB = C.accentDark): number {
-  y = ensureSpace(doc, y, 12);
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...color);
-  doc.text(S(text), M.left + 3, y);
-  return y + 5;
-}
-
-function writeBullets(doc: jsPDF, y: number, items: string[], bulletColor: RGB = C.accent): number {
-  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...C.slate700);
-  for (const item of items) {
-    y = ensureSpace(doc, y, 8);
-    doc.setFillColor(...bulletColor); doc.circle(M.left + 5, y - 0.5, 0.6, "F");
-    const lines = doc.splitTextToSize(S(item), CW - 14);
-    doc.text(lines, M.left + 9, y);
-    y += lines.length * 3.3 + 2;
+  const isDefaultFrais = (m.loanFraisInitiaux ?? 0) === 0 && fraisInitiaux === 0;
+  const paramLines: string[] = [
+    [
+      `Capital emprunte : ${fmtCurrency(principal)}`,
+      `Taux nominal : ${ratePct.toFixed(2)} %${isDefaultRate ? " (hyp.)" : ""}`,
+      `Assurance : ${insurancePct.toFixed(2)} % / an${isDefaultInsurance ? " (hyp.)" : ""}`,
+    ].join("   |   "),
+  ];
+  if (!isDefaultFrais && fraisInitiaux > 0) {
+    paramLines.push(`Frais initiaux (dossier + garantie + courtier) : ${fmtCurrency(fraisInitiaux)}`);
   }
-  return y + 2;
-}
+  const paramH = paramLines.length * 5.5 + 6;
+  roundedBox(doc, M.left, y, CW, paramH, { fill: C.bg, border: C.border, radius: 3, lw: 0.2 });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); sc(doc, C.body);
+  paramLines.forEach((line, i) => {
+    doc.text(sanitizeForPdf(line), M.left + 5, y + 5 + i * 5.5);
+  });
+  y += paramH + 8;
 
-// ---------------------------------------------------------------------------
-// Page: Méthodologie Mimmoza
-// ---------------------------------------------------------------------------
+  const totalW = CW;
+  const labelColW = Math.round(totalW * 0.44);
+  const valColW   = Math.round((totalW - labelColW) / 3);
 
-function buildMethodologiePage(doc: jsPDF): void {
-  let y = investisseurPageTitle(doc, "M\u00e9thodologie Mimmoza", "Comment les scores sont calcul\u00e9s");
+  interface RowSpec {
+    label: string;
+    key:   keyof LoanScenario;
+    bold?:      boolean;
+    highlight?: boolean;
+    separator?: boolean;
+  }
+  const rowSpecs: RowSpec[] = [
+    { label: "Mensualite hors assurance",  key: "mensualiteHorsAssurance" },
+    { label: "Assurance mensuelle",        key: "assuranceMensuelle" },
+    { label: "Mensualite totale",          key: "mensualiteTotale",   bold: true, separator: true },
+    { label: "Interets totaux",            key: "interetsTotaux",     separator: true },
+    { label: "Assurance totale",           key: "assuranceTotale" },
+    { label: "Cout total du credit",       key: "coutTotalCredit",    bold: true },
+    { label: "Total rembourse",            key: "totalRembourse",     bold: true, highlight: true, separator: true },
+  ];
 
-  y = writeParagraph(doc, y,
-    "Le moteur d'analyse Mimmoza repose sur une approche multi-piliers qui croise des donn\u00e9es publiques (DVF, INSEE, BPE, cadastre) "
-    + "avec les param\u00e8tres sp\u00e9cifiques du deal saisi par l'investisseur. Chaque score est calcul\u00e9 de mani\u00e8re ind\u00e9pendante, "
-    + "puis agr\u00e9g\u00e9 dans le SmartScore selon une pond\u00e9ration configurable par profil."
-  );
-
-  y = writeSubheading(doc, y, "Principes fondamentaux");
-  y = writeBullets(doc, y, [
-    "Prudence par d\u00e9faut : toute donn\u00e9e manquante est p\u00e9nalis\u00e9e, jamais ignor\u00e9e. L'absence d'information joue contre le deal.",
-    "Seuil de s\u00e9curit\u00e9 \u00e0 12% de marge brute : en dessous, l'op\u00e9ration est consid\u00e9r\u00e9e fragile face aux al\u00e9as courants.",
-    "Stress testing syst\u00e9matique : chaque deal est soumis \u00e0 des sc\u00e9narios d\u00e9favorables (+10% travaux, -5% revente).",
-    "Transparence : tous les calculs sont reproductibles \u00e0 partir des donn\u00e9es saisies. Aucune bo\u00eete noire.",
-    "Score 0\u2013100 : chaque pilier produit un score normalis\u00e9. \"ND\" est affich\u00e9 si les donn\u00e9es sont insuffisantes.",
-  ]);
-
-  y = writeSubheading(doc, y, "Sources de donn\u00e9es");
-  y = writeBullets(doc, y, [
-    "DVF (Demandes de Valeurs Fonci\u00e8res) : transactions immobili\u00e8res r\u00e9elles, publi\u00e9es par la DGFiP. Utilis\u00e9 pour le benchmark prix/m\u00b2.",
-    "INSEE : donn\u00e9es socio-d\u00e9mographiques communales (population, revenus, emploi).",
-    "BPE (Base Permanente des \u00c9quipements) : commerces, services, transports \u00e0 proximit\u00e9.",
-    "Cadastre / MAJIC : parcelles, surfaces, zones urbanistiques.",
-    "Donn\u00e9es saisies par l'investisseur : prix d'achat, travaux, revente cible, frais de notaire.",
-  ]);
-
-  y = writeSubheading(doc, y, "Calcul du SmartScore");
-  y = writeParagraph(doc, y,
-    "Le SmartScore est une moyenne pond\u00e9r\u00e9e de plusieurs sous-scores (march\u00e9, risque, opportunit\u00e9, liquidit\u00e9). "
-    + "Les poids d\u00e9pendent du profil investisseur (particulier, marchand de biens, promoteur, entreprise). "
-    + "Un SmartScore >= 65 indique un deal solide, 40\u201365 un deal \u00e0 surveiller, < 40 un deal risqu\u00e9."
-  );
-
-  y = writeSubheading(doc, y, "Score Rentabilit\u00e9 (Investisseur)");
-  y = writeParagraph(doc, y,
-    "Mesure la capacit\u00e9 du deal \u00e0 g\u00e9n\u00e9rer du profit. Trois piliers : marge brute (50%), cushion vs seuil 12% (25%), "
-    + "r\u00e9sistance au stress test revente -5% (25%). ND si moins de 2 piliers calculables."
-  );
-
-  y = writeSubheading(doc, y, "Score Robustesse (Investisseur)");
-  y = writeParagraph(doc, y,
-    "Mesure la r\u00e9sistance du deal aux al\u00e9as. Quatre piliers : surcote vs DVF (30%), donn\u00e9es manquantes critiques (25%), "
-    + "dur\u00e9e de d\u00e9tention vs cible 18 mois (15%), cushion (30%). P\u00e9nalisation prudente si donn\u00e9e absente. ND si moins de 2 piliers avec donn\u00e9es r\u00e9elles."
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Page: Pourquoi Mimmoza est plus prudent que le marché
-// ---------------------------------------------------------------------------
-
-function buildPrudencePage(doc: jsPDF): void {
-  let y = investisseurPageTitle(doc, "Pourquoi Mimmoza est plus prudent que le march\u00e9", "Philosophie de protection investisseur");
-
-  // Encadré principal
-  const encadreH = 28;
-  y = ensureSpace(doc, y, encadreH + 4);
-  roundedBox(doc, M.left, y, CW, encadreH, 3, C.accentBg, C.accent, 0.4);
-  doc.setFillColor(...C.accent); doc.rect(M.left, y + 2, 3, encadreH - 4, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...C.accentDark);
-  doc.text("L'objectif de Mimmoza n'est pas de valider des deals, mais de prot\u00e9ger l'investisseur.", M.left + 8, y + 7);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...C.slate700);
-  const encLines = doc.splitTextToSize(S(
-    "La plupart des outils du march\u00e9 surestiment les marges et sous-estiment les risques. "
-    + "Mimmoza fait l'inverse : chaque inconnue est p\u00e9nalis\u00e9e, chaque hypoth\u00e8se est stress-test\u00e9e. "
-    + "Un deal qui passe le filtre Mimmoza a une probabilit\u00e9 significativement plus \u00e9lev\u00e9e de se r\u00e9aliser dans les conditions pr\u00e9vues."
-  ), CW - 16);
-  doc.text(encLines, M.left + 8, y + 12);
-  y += encadreH + 6;
-
-  y = writeSubheading(doc, y, "Diff\u00e9rences cl\u00e9s avec les pratiques courantes");
-
-  // Table comparison
-  const compHead = [["Pratique march\u00e9", "Approche Mimmoza"]];
-  const compBody = [
-    ["Marge brute calcul\u00e9e sans frais de notaire", "Marge brute int\u00e9grant TOUS les co\u00fbts (notaire, travaux, portage)"],
-    ["Travaux estim\u00e9s \"au doigt mouill\u00e9\"", "Exigence de devis chiffr\u00e9s + marge de s\u00e9curit\u00e9 15%"],
-    ["Prix de revente bas\u00e9 sur l'optimisme", "Prix de revente benchmark\u00e9 vs DVF r\u00e9el"],
-    ["Pas de stress test", "Stress test syst\u00e9matique (+10% travaux, -5% revente)"],
-    ["Donn\u00e9es manquantes = ignor\u00e9es", "Donn\u00e9es manquantes = p\u00e9nalit\u00e9 sur le score"],
-    ["Seuil de marge variable ou absent", "Seuil fixe \u00e0 12% de marge brute minimum"],
-  ].map(r => r.map(S));
+  const tableBody: (string | { content: string; styles?: Record<string, unknown> })[][] = rowSpecs.map(r => {
+    const isHighlight = !!r.highlight;
+    const isBold      = !!r.bold;
+    const labelCell = {
+      content: sanitizeForPdf(r.label),
+      styles: {
+        fontStyle: isBold ? "bold" : "normal",
+        textColor: isHighlight
+          ? [C.accent[0], C.accent[1], C.accent[2]]
+          : [C.body[0],   C.body[1],   C.body[2]],
+        fillColor: isHighlight
+          ? [C.accentSoft[0], C.accentSoft[1], C.accentSoft[2]]
+          : undefined,
+        cellPadding: { top: 3, bottom: 3, left: 4, right: 2 },
+      },
+    };
+    const valCells = scenarios.map(sc2 => ({
+      content: sanitizeForPdf(fmtCurrency(sc2[r.key] as number)),
+      styles: {
+        halign: "right" as const,
+        fontStyle: isBold ? "bold" : "normal",
+        fontSize: isHighlight ? 8.5 : 8,
+        textColor: isHighlight
+          ? [C.accent[0],  C.accent[1],  C.accent[2]]
+          : [C.body[0],    C.body[1],    C.body[2]],
+        fillColor: isHighlight
+          ? [C.accentSoft[0], C.accentSoft[1], C.accentSoft[2]]
+          : undefined,
+        cellPadding: { top: 3, bottom: 3, left: 2, right: 4 },
+      },
+    }));
+    return [labelCell, ...valCells];
+  });
 
   autoTable(doc, {
-    startY: y, head: compHead, body: compBody, theme: "grid",
-    margin: { left: M.left, right: M.right }, tableWidth: CW,
-    headStyles: { fillColor: C.navy, textColor: C.white, fontStyle: "bold", fontSize: 7 },
-    bodyStyles: { fontSize: 7, textColor: C.slate900, cellPadding: { top: 3, bottom: 3, left: 5, right: 5 } },
-    columnStyles: { 0: { cellWidth: CW / 2, fillColor: C.roseBg }, 1: { cellWidth: CW / 2, fillColor: C.emeraldBg } },
-    styles: { lineColor: C.slate200, lineWidth: 0.15 },
-  });
-  y = (doc as any).lastAutoTable.finalY + 8;
-
-  y = writeSubheading(doc, y, "Cons\u00e9quence pour l'investisseur");
-  y = writeParagraph(doc, y,
-    "Un deal not\u00e9 GO par Mimmoza signifie que l'op\u00e9ration r\u00e9siste \u00e0 des al\u00e9as raisonnables et que les donn\u00e9es "
-    + "disponibles sont suffisantes pour prendre une d\u00e9cision \u00e9clair\u00e9e. Un deal not\u00e9 GO AVEC R\u00c9SERVES ou NO GO "
-    + "n'est pas forc\u00e9ment mauvais, mais n\u00e9cessite des v\u00e9rifications suppl\u00e9mentaires avant engagement."
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Page: Charte d'Investissement Mimmoza
-// ---------------------------------------------------------------------------
-
-function buildChartePage(doc: jsPDF): void {
-  let y = investisseurPageTitle(doc, "Charte d'Investissement Mimmoza", "Engagements et principes directeurs");
-
-  const charteItems: { title: string; desc: string }[] = [
-    {
-      title: "1. Transparence totale",
-      desc: "Tous les scores, calculs et hypoth\u00e8ses sont explicites et reproductibles. L'investisseur a acc\u00e8s \u00e0 chaque composante du score.",
+    startY: y,
+    head: [[
+      { content: "Indicateur", styles: { halign: "left"  as const } },
+      { content: "10 ans",     styles: { halign: "right" as const } },
+      { content: "15 ans",     styles: { halign: "right" as const } },
+      { content: "20 ans",     styles: { halign: "right" as const } },
+    ]],
+    body: tableBody,
+    margin: { left: M.left, right: M.right },
+    tableWidth: totalW,
+    columnStyles: {
+      0: { cellWidth: labelColW },
+      1: { cellWidth: valColW, halign: "right" as const },
+      2: { cellWidth: valColW, halign: "right" as const },
+      3: { cellWidth: valColW, halign: "right" as const },
     },
-    {
-      title: "2. Prudence syst\u00e9matique",
-      desc: "Toute donn\u00e9e manquante p\u00e9nalise le score. Aucune hypoth\u00e8se optimiste n'est faite par d\u00e9faut. Le seuil de marge brute est fix\u00e9 \u00e0 12%.",
+    styles: {
+      font: "helvetica",
+      fontSize: 8,
+      cellPadding: 3,
+      lineColor:   [C.border[0],    C.border[1],    C.border[2]]  as [number,number,number],
+      lineWidth: 0.15,
+      textColor:   [C.body[0],      C.body[1],      C.body[2]]    as [number,number,number],
+      overflow: "linebreak",
     },
-    {
-      title: "3. Ind\u00e9pendance de l'analyse",
-      desc: "Mimmoza n'a aucun int\u00e9r\u00eat dans la transaction. L'analyse est objective et bas\u00e9e uniquement sur les donn\u00e9es fournies et les r\u00e9f\u00e9rences publiques.",
+    headStyles: {
+      fillColor:   [C.primary[0],   C.primary[1],   C.primary[2]] as [number,number,number],
+      textColor:   [255, 255, 255]                                 as [number,number,number],
+      fontStyle: "bold",
+      fontSize: 8.5,
+      halign: "center",
     },
-    {
-      title: "4. Stress testing obligatoire",
-      desc: "Chaque deal est soumis \u00e0 au moins 3 sc\u00e9narios de stress avant d\u00e9cision. Le deal doit r\u00e9sister au sc\u00e9nario d\u00e9favorable pour obtenir un GO.",
+    alternateRowStyles: {
+      fillColor:   [C.bg[0],        C.bg[1],        C.bg[2]]      as [number,number,number],
     },
-    {
-      title: "5. Protection du capital",
-      desc: "La priorit\u00e9 absolue est la pr\u00e9servation du capital investi. Le gain est secondaire par rapport \u00e0 la s\u00e9curit\u00e9 de l'investissement.",
-    },
-    {
-      title: "6. Aide \u00e0 la d\u00e9cision, pas d\u00e9cision",
-      desc: "Mimmoza fournit une analyse pour \u00e9clairer la d\u00e9cision de l'investisseur. La d\u00e9cision finale appartient toujours \u00e0 l'investisseur.",
-    },
-    {
-      title: "7. Am\u00e9lioration continue",
-      desc: "Les algorithmes sont r\u00e9guli\u00e8rement mis \u00e0 jour en fonction des retours terrain et de l'\u00e9volution des donn\u00e9es publiques disponibles.",
-    },
-  ];
-
-  charteItems.forEach((item) => {
-    y = ensureSpace(doc, y, 18);
-    roundedBox(doc, M.left, y, CW, 5, 1.5, C.accentBg, C.accentLight, 0.15);
-    doc.setFillColor(...C.accent); doc.rect(M.left, y + 0.5, 2, 4, "F");
-    doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(...C.accentDark);
-    doc.text(S(item.title), M.left + 6, y + 3.5);
-    y += 7;
-    doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...C.slate700);
-    const dl = doc.splitTextToSize(S(item.desc), CW - 8);
-    doc.text(dl, M.left + 4, y);
-    y += dl.length * 3.4 + 4;
   });
-}
 
-// ---------------------------------------------------------------------------
-// Page: Synthèse institutionnelle (banque / financement)
-// ---------------------------------------------------------------------------
+  y = (doc as DocWithTable).lastAutoTable.finalY + 10;
 
-function buildSyntheseInstitutionnellePage(doc: jsPDF, snapshot: MarchandSnapshotV1, opts?: ExportPdfOpts): void {
-  const metrics = extractDealMetrics(snapshot, opts);
-  const ai = opts?.aiReport ? normalizeAiReport(opts.aiReport) : null;
-  const narrative = sanitizeForPdf(opts?.aiReport?.narrativeMarkdown ?? opts?.aiReport?.narrative ?? "");
-  const creditScores = narrative ? extractFromNarrative(narrative).scores : {};
-  const invScores: InvestisseurScores = {
-    rentabilite: computeScoreRentabilite(metrics),
-    robustesse: computeScoreRobustesse(metrics, ai, snapshot),
-  };
-  const dataConf = computeDataConfidence(metrics, ai, creditScores, snapshot);
-  const smartScoreVal = creditScores["SmartScore"] ? Number(creditScores["SmartScore"]) : null;
-  const riskClass = computeRiskClass(smartScoreVal, invScores.robustesse, invScores.rentabilite, dataConf);
-  const deal: any = snapshot.deals.find((d) => d.id === snapshot.activeDealId) ?? {};
-
-  doc.addPage();
-  let y = M.top + 4;
-  y = sectionTitle(doc, y, "Synth\u00e8se institutionnelle (banque / financement)", "Lecture comit\u00e9 cr\u00e9dit");
-
-  // ── Avertissement ────────────────────────────────────────────────────────
-  roundedBox(doc, M.left, y, CW, 8, 2, C.amberBg, C.amberLight, 0.3);
-  doc.setFillColor(...C.amber); doc.rect(M.left, y + 1, 2, 6, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...C.amberDark);
-  doc.text(S("Ce document est un outil d'aide \u00e0 la d\u00e9cision. Il ne constitue ni un conseil financier, ni une garantie de r\u00e9sultat."), M.left + 6, y + 5);
-  y += 12;
-
-  // ── Lecture en 20 secondes ───────────────────────────────────────────────
-  y = ensureSpace(doc, y, 36);
-  roundedBox(doc, M.left, y, CW, 6, 1.5, C.navy, undefined, 0);
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...C.white);
-  doc.text("Lecture en 20 secondes", M.left + 5, y + 4);
-  y += 10;
-
-  const verdictLabel = ai?.verdict ? decisionLabel(ai.verdict) : "ND";
-  const classeLabel = riskClass.cls !== "ND" ? riskClass.label : "ND";
-  const confLabel = `${dataConfidenceLabel(dataConf)} (${dataConf}/100)`;
-
-  // Build short confidence reason
-  const confReasons: string[] = [];
-  if (metrics.travaux === 0) confReasons.push("travaux non chiffr\u00e9s");
-  if (ai?.missingData && ai.missingData.length > 0) confReasons.push(`${ai.missingData.length} donn\u00e9e(s) critique(s) manquante(s)`);
-  const confReasonStr = confReasons.length > 0 ? ` \u2014 ${confReasons.join(", ")}` : "";
-
-  const lecture20Lines: [string, string, RGB][] = [
-    ["Verdict", verdictLabel, ai?.verdict ? decisionColors(ai.verdict).text : C.slate500],
-    ["Classe de risque", classeLabel, riskClass.color],
-    ["Confiance donn\u00e9es", `${confLabel}${confReasonStr}`, dataConf >= 75 ? C.emeraldDark : dataConf >= 50 ? C.amberDark : C.roseDark],
-  ];
-
-  lecture20Lines.forEach(([label, value, color]) => {
-    doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(...C.slate600);
-    doc.text(S(label + " :"), M.left + 4, y);
-    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...color);
-    doc.text(S(value), M.left + 42, y);
-    y += 5;
-  });
-  y += 3;
-
-  // ── Risque principal (1 phrase) ──────────────────────────────────────────
-  y = ensureSpace(doc, y, 18);
-  roundedBox(doc, M.left, y, CW, 5.5, 1.5, C.roseBg, C.roseLight, 0.2);
-  doc.setFillColor(...C.rose); doc.rect(M.left, y + 0.5, 2, 4.5, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...C.roseDark);
-  doc.text("Risque principal", M.left + 6, y + 3.8);
-  y += 8;
-
-  const riskFactors: string[] = [];
-  if (metrics.cushion != null && metrics.cushion < 0) riskFactors.push("cushion n\u00e9gatif");
-  else if (metrics.cushion != null && metrics.cushion < 3) riskFactors.push("cushion minimal");
-  if (metrics.travaux === 0) riskFactors.push("travaux non chiffr\u00e9s");
-  if (ai?.missingData && ai.missingData.length >= 2) riskFactors.push("donn\u00e9es critiques manquantes");
-  if (metrics.premiumVsDvfPct != null && metrics.premiumVsDvfPct > 10) riskFactors.push("surcote DVF");
-
-  const riskSentence = riskFactors.length > 0
-    ? `${riskFactors.join(" + ")} > la marge peut passer sous le seuil au moindre al\u00e9a (travaux / d\u00e9lais / prix de sortie).`
-    : "Aucun facteur de risque critique identifi\u00e9 sur la base des donn\u00e9es disponibles.";
-  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...C.slate700);
-  const rl = doc.splitTextToSize(S(riskSentence), CW - 8);
-  doc.text(rl, M.left + 4, y);
-  y += rl.length * 3.4 + 5;
-
-  // ── Conditions recommandées avant engagement ─────────────────────────────
-  y = ensureSpace(doc, y, 30);
-  roundedBox(doc, M.left, y, CW, 5.5, 1.5, C.accentBg, C.accentLight, 0.2);
-  doc.setFillColor(...C.accent); doc.rect(M.left, y + 0.5, 2, 4.5, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...C.accentDark);
-  doc.text("Conditions recommand\u00e9es avant engagement", M.left + 6, y + 3.8);
-  y += 8;
-
-  const conditions: string[] = [
-    "Devis travaux chiffr\u00e9s (2\u20133 devis) + marge de s\u00e9curit\u00e9 15%",
-    "Diagnostics complets fournis et analys\u00e9s (DPE, amiante, plomb, \u00e9lectricit\u00e9...)",
-    "Validation donn\u00e9es critiques : type de bien, \u00e9tat, d\u00e9lais de commercialisation / d\u00e9tention",
-  ];
-  if (ai?.conditionsToBuy && ai.conditionsToBuy.length > 0) {
-    const aiCond = sanitizeVerdictInProse(ai.conditionsToBuy[0]);
-    // avoid duplicate if AI condition overlaps with the static ones
-    if (!/devis|diagnostic/i.test(aiCond)) conditions.push(aiCond);
-  }
-  if (metrics.premiumVsDvfPct != null && metrics.premiumVsDvfPct > 15) {
-    conditions.push("Clause ren\u00e9gociation si surcote DVF confirm\u00e9e > 15%");
-  }
-  // Plan B — optional
-  const liq = creditScores["Probabilit\u00e9 revente"] ? Number(creditScores["Probabilit\u00e9 revente"]) : null;
-  if (liq != null && liq < 50) {
-    conditions.push("Plan B valid\u00e9 : location temporaire si revente retard\u00e9e");
-  }
-
-  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...C.slate700);
-  conditions.slice(0, 5).forEach((cond) => {
-    y = ensureSpace(doc, y, 8);
-    doc.setFillColor(...C.accent); doc.circle(M.left + 5, y - 0.5, 0.6, "F");
-    const cl = doc.splitTextToSize(S(cond), CW - 14);
-    doc.text(cl, M.left + 9, y);
-    y += cl.length * 3.3 + 2;
-  });
-  y += 3;
-
-  // ── Déclencheurs NO GO ───────────────────────────────────────────────────
-  y = ensureSpace(doc, y, 24);
-  roundedBox(doc, M.left, y, CW, 5.5, 1.5, C.roseBg, C.roseLight, 0.2);
-  doc.setFillColor(...C.rose); doc.rect(M.left, y + 0.5, 2, 4.5, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...C.roseDark);
-  doc.text("D\u00e9clencheurs NO GO", M.left + 6, y + 3.8);
-  y += 8;
-
-  const noGo: string[] = [
-    "Cushion < 0 (marge brute < 12%)",
-    "Stress test -5% revente > marge < 5%",
-    "Refus de fournir devis / diagnostics / donn\u00e9es critiques",
-  ];
-
-  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...C.slate700);
-  noGo.forEach((trigger) => {
-    y = ensureSpace(doc, y, 8);
-    doc.setFillColor(...C.rose); doc.circle(M.left + 5, y - 0.5, 0.6, "F");
-    const tl = doc.splitTextToSize(S(trigger), CW - 14);
-    doc.text(tl, M.left + 9, y);
-    y += tl.length * 3.3 + 2;
-  });
-  y += 3;
-
-  // ── Checklist comité ─────────────────────────────────────────────────────
-  y = ensureSpace(doc, y, 28);
-  roundedBox(doc, M.left, y, CW, 5.5, 1.5, C.slate50, C.slate200, 0.2);
-  doc.setFillColor(...C.navy); doc.rect(M.left, y + 0.5, 2, 4.5, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...C.navy);
-  doc.text("Checklist comit\u00e9", M.left + 6, y + 3.8);
-  y += 9;
-
-  const isCopro = /copro|syndic|lot/i.test(
-    String(deal.typeBien ?? deal.propertyType ?? deal.notes ?? ""),
-  );
-
-  const checklist: string[] = [
-    "Devis + planning travaux valid\u00e9s",
-    isCopro
-      ? "PV AG des 3 derni\u00e8res ann\u00e9es + budget pr\u00e9visionnel charges + \u00e9tat impay\u00e9s"
-      : "Charges et \u00e9tat du bien document\u00e9s (diagnostics, conformit\u00e9 urbanisme)",
-    "Benchmark DVF par typologie (type de bien, surface, \u00e9tat) \u2014 pas seulement la m\u00e9diane commune",
-  ];
-
-  checklist.forEach((item, idx) => {
-    y = ensureSpace(doc, y, 9);
-    // numbered circle
-    doc.setFillColor(...C.navy); doc.circle(M.left + 5, y, 2.5, "F");
-    doc.setFont("helvetica", "bold"); doc.setFontSize(6); doc.setTextColor(...C.white);
-    doc.text(String(idx + 1), M.left + 5, y + 1, { align: "center" });
-    doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...C.slate700);
-    const il = doc.splitTextToSize(S(item), CW - 16);
-    doc.text(il, M.left + 10, y);
-    y += il.length * 3.3 + 3;
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Page: Appendice – Formules SmartScore
-// ---------------------------------------------------------------------------
-
-function buildFormulasPage(doc: jsPDF): void {
-  let y = investisseurPageTitle(doc, "Appendice \u2014 Formules SmartScore", "D\u00e9tail des calculs et pond\u00e9rations");
-
-  y = writeParagraph(doc, y,
-    "Cette section d\u00e9taille les formules utilis\u00e9es pour calculer les scores Mimmoza. "
-    + "Tous les scores sont normalis\u00e9s sur une \u00e9chelle de 0 \u00e0 100. \"ND\" est affich\u00e9 lorsque les donn\u00e9es sont insuffisantes."
-  );
-
-  // SmartScore
-  y = writeSubheading(doc, y, "SmartScore (0\u2013100)");
-  y = writeParagraph(doc, y, "SmartScore = w1 x ScoreMarche + w2 x ScoreRisque + w3 x ScoreOpportunite + w4 x ScoreLiquidite");
-  y = writeParagraph(doc, y,
-    "Les poids (w1..w4) d\u00e9pendent du profil : Marchand (march\u00e9 30%, risque 30%, opportunit\u00e9 20%, liquidit\u00e9 20%), "
-    + "Particulier (march\u00e9 25%, risque 35%, opportunit\u00e9 15%, liquidit\u00e9 25%)."
-  );
-
-  // Marge brute
-  y = writeSubheading(doc, y, "Marge brute");
-  y = writeParagraph(doc, y,
-    "Marge brute (%) = (Prix revente - Prix achat) / Prix achat x 100. "
-    + "Seuil Mimmoza : 12%. Cushion = Marge brute - 12."
-  );
-
-  // RiskPressureIndex
-  y = writeSubheading(doc, y, "RiskPressureIndex (0\u2013100)");
-  y = writeParagraph(doc, y,
-    "Indice cumulatif de facteurs d\u00e9favorables. Chaque facteur (surcote, donn\u00e9es manquantes, charges \u00e9lev\u00e9es, "
-    + "copropri\u00e9t\u00e9 fragile, march\u00e9 tendu) ajoute des points de pression. Plus le score est \u00e9lev\u00e9, plus le risque cumul\u00e9 est important."
-  );
-
-  // Score Rentabilité
-  y = writeSubheading(doc, y, "Score Rentabilit\u00e9 (0\u2013100) \u2014 Mode Investisseur");
-  y = writeBullets(doc, y, [
-    "Pilier 1 (50%) : Marge brute. 0% > 0, 12% > 48, 25% > 100.",
-    "Pilier 2 (25%) : Cushion vs seuil 12%. Cushion -5 > 0, 0 > 40, 8 > 100.",
-    "Pilier 3 (25%) : Stress revente -5%. Marge post-stress 0% > 0, 12% > 67, 18% > 100.",
-    "ND si moins de 2 piliers calculables.",
-  ]);
-
-  // Score Robustesse
-  y = writeSubheading(doc, y, "Score Robustesse (0\u2013100) \u2014 Mode Investisseur");
-  y = writeBullets(doc, y, [
-    "Pilier 1 (30%) : Surcote vs DVF. D\u00e9cote -10% > 100, 0% > 75, +20% > 10. P\u00e9nalisation \u00e0 35 si ND.",
-    "Pilier 2 (25%) : Donn\u00e9es manquantes. 0 manquantes > 100, 5+ > 5. P\u00e9nalisation \u00e0 30 si pas d'IA.",
-    "Pilier 3 (15%) : Dur\u00e9e d\u00e9tention vs 18 mois. 12 mois > 100, 48 mois > 0. P\u00e9nalisation \u00e0 45 si ND.",
-    "Pilier 4 (30%) : Cushion. Cushion -5 > 0, 0 > 40, 8 > 100. P\u00e9nalisation \u00e0 25 si ND.",
-    "ND si moins de 2 piliers avec donn\u00e9es r\u00e9elles (hors p\u00e9nalisations).",
-  ]);
-
-  // Probabilité revente
-  y = writeSubheading(doc, y, "Probabilit\u00e9 de revente / Liquidit\u00e9 (0\u2013100)");
-  y = writeParagraph(doc, y,
-    "Estim\u00e9e \u00e0 partir du volume de transactions DVF sur la commune, du d\u00e9lai moyen de commercialisation "
-    + "observ\u00e9, et de la tension du march\u00e9 local. > 60 = march\u00e9 fluide, < 40 = revente potentiellement longue."
-  );
-
-  // OpportunityScore
-  y = writeSubheading(doc, y, "OpportunityScore (0\u2013100)");
-  y = writeParagraph(doc, y,
-    "Potentiel de surperformance bas\u00e9 sur la d\u00e9cote par rapport au march\u00e9, la dynamique de prix locale, "
-    + "la qualit\u00e9 de l'emplacement (proximit\u00e9 transports, commerces, \u00e9coles), et le potentiel de valorisation par travaux."
-  );
-
-  // Data Confidence
-  y = writeSubheading(doc, y, "Confiance Donn\u00e9es (0\u2013100) \u2014 Mode Investisseur");
-  y = writeBullets(doc, y, [
-    "Base = Compl\u00e9tude (%) si disponible, sinon 60.",
-    "-10 par donn\u00e9e critique manquante (cap \u00e0 -30).",
-    "-10 si aucun montant travaux renseign\u00e9.",
-    "-10 si aucune dur\u00e9e de d\u00e9tention renseign\u00e9e.",
-    "Clamp\u00e9 entre 0 et 100. Label : >= 75 \u00c9lev\u00e9e, 50\u201374 Moyenne, < 50 Faible.",
-  ]);
-
-  // Risk Class
-  y = writeSubheading(doc, y, "Classe de Risque (A/B/C/D) \u2014 Mode Investisseur");
-  y = writeBullets(doc, y, [
-    "A (Robuste) : SmartScore >= 70, Robustesse >= 65, Rentabilit\u00e9 >= 60, Confiance >= 75 (si dispo).",
-    "B (Viable) : SmartScore >= 60, Robustesse >= 55.",
-    "C (Fragile) : SmartScore >= 45, Robustesse >= 40.",
-    "D (Risque \u00e9lev\u00e9) : SmartScore < 45 OU Robustesse < 40.",
-    "ND si SmartScore et Robustesse tous deux indisponibles.",
-  ]);
-}
-
-// ---------------------------------------------------------------------------
-// Page: Glossaire
-// ---------------------------------------------------------------------------
-
-function buildGlossairePage(doc: jsPDF): void {
-  let y = investisseurPageTitle(doc, "Glossaire", "D\u00e9finitions des termes utilis\u00e9s dans ce rapport");
-
-  const glossary: [string, string][] = [
-    ["Classe de risque", "Classification A/B/C/D du deal. A = robuste, B = viable, C = fragile (s\u00e9curisation obligatoire), D = risque \u00e9lev\u00e9 (NO GO probable). Bas\u00e9e sur SmartScore, Robustesse, Rentabilit\u00e9 et Confiance donn\u00e9es."],
-    ["Confiance donn\u00e9es", "Score 0\u2013100 mesurant la fiabilit\u00e9 de l'analyse. Bas\u00e9 sur la compl\u00e9tude du dossier, le nombre de donn\u00e9es critiques manquantes, et la pr\u00e9sence de devis/dur\u00e9es. >= 75 \u00c9lev\u00e9e, 50\u201374 Moyenne, < 50 Faible."],
-    ["Cushion", "Diff\u00e9rence en points de pourcentage entre la marge brute du deal et le seuil de s\u00e9curit\u00e9 Mimmoza de 12%. Un cushion de 3 pts signifie une marge brute de 15%."],
-    ["DVF", "Demandes de Valeurs Fonci\u00e8res. Base de donn\u00e9es publique des transactions immobili\u00e8res r\u00e9alis\u00e9es en France, publi\u00e9e par la DGFiP."],
-    ["GO / NO GO", "Verdicts Mimmoza. GO = le deal passe les seuils de s\u00e9curit\u00e9. GO AVEC R\u00c9SERVES = le deal n\u00e9cessite des v\u00e9rifications. NO GO = le deal ne passe pas les seuils."],
-    ["Marge brute", "Pourcentage de gain brut calcul\u00e9 comme (Prix revente - Prix achat) / Prix achat x 100. Ne prend pas en compte les frais de portage."],
-    ["ND", "Non Disponible. Affich\u00e9 lorsqu'une donn\u00e9e n\u00e9cessaire au calcul est manquante, nulle, ou non calculable."],
-    ["OpportunityScore", "Score mesurant le potentiel de surperformance d'un deal par rapport au march\u00e9 local (0\u2013100)."],
-    ["PLU", "Plan Local d'Urbanisme. Document r\u00e9glementaire d\u00e9finissant les r\u00e8gles de construction et d'am\u00e9nagement \u00e0 l'\u00e9chelle communale."],
-    ["Premium vs DVF", "Surcote ou d\u00e9cote du prix d'acquisition par rapport au prix m\u00e9dian DVF du march\u00e9 local. Positif = surcote, n\u00e9gatif = d\u00e9cote."],
-    ["Profil cible", "Profil d'investisseur recommand\u00e9 pour le deal : Patrimonial prudent (risque faible), Marchand exp\u00e9riment\u00e9 (risque mod\u00e9r\u00e9), ou Investisseur opportuniste (risque \u00e9lev\u00e9). D\u00e9termin\u00e9 par la robustesse, la liquidit\u00e9 et le cushion."],
-    ["RiskPressureIndex", "Indice cumulatif de pression risque (0\u2013100). Chaque facteur d\u00e9favorable ajoute des points. Plus c'est bas, mieux c'est."],
-    ["Score Rentabilit\u00e9", "Score sp\u00e9cifique au mode Investisseur (0\u2013100) mesurant la capacit\u00e9 du deal \u00e0 g\u00e9n\u00e9rer du profit apr\u00e8s int\u00e9gration des risques."],
-    ["Score Robustesse", "Score sp\u00e9cifique au mode Investisseur (0\u2013100) mesurant la r\u00e9sistance du deal face aux al\u00e9as (travaux, march\u00e9, d\u00e9lais)."],
-    ["SmartScore", "Score global Mimmoza (0\u2013100), moyenne pond\u00e9r\u00e9e de sous-scores adapt\u00e9e au profil investisseur."],
-    ["Stress test", "Simulation de sc\u00e9narios d\u00e9favorables appliqu\u00e9s au deal (ex: travaux +10%, revente -5%) pour tester sa r\u00e9silience."],
-    ["Surcote", "Diff\u00e9rence positive entre le prix d'acquisition et la r\u00e9f\u00e9rence march\u00e9 DVF. Une surcote \u00e9lev\u00e9e (>10\u201315%) est un signal de risque."],
-  ];
-
-  glossary.forEach(([term, definition]) => {
-    y = ensureSpace(doc, y, 14);
-    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...C.accentDark);
-    doc.text(S(term), M.left + 3, y);
-    y += 4;
-    doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(...C.slate700);
-    const dl = doc.splitTextToSize(S(definition), CW - 8);
-    doc.text(dl, M.left + 3, y);
-    y += dl.length * 3.2 + 3;
-    // Separator
-    doc.setDrawColor(...C.slate200); doc.setLineWidth(0.1);
-    doc.line(M.left + 3, y - 1, PW - M.right - 3, y - 1);
-  });
-}
-
-// ---------------------------------------------------------------------------
-// PAGE: Comprendre le deal simplement (Investisseur only, après Synthèse)
-// ---------------------------------------------------------------------------
-
-function buildComprendreDealPage(doc: jsPDF, snapshot: MarchandSnapshotV1, opts?: ExportPdfOpts): void {
-  const metrics = extractDealMetrics(snapshot, opts);
-  const ai = opts?.aiReport ? normalizeAiReport(opts.aiReport) : null;
-  const narrative = sanitizeForPdf(opts?.aiReport?.narrativeMarkdown ?? opts?.aiReport?.narrative ?? "");
-  const scores = narrative ? extractFromNarrative(narrative).scores : {};
-  const deal: any = snapshot.deals.find((d) => d.id === snapshot.activeDealId) ?? {};
-
-  doc.addPage();
-  let y = M.top + 4;
-  y = sectionTitle(doc, y, "Comprendre le deal simplement", "Lecture p\u00e9dagogique pour investisseurs");
-
-  // Intro
-  roundedBox(doc, M.left, y, CW, 10, 2.5, C.accentBg, C.accentLight, 0.2);
-  doc.setFillColor(...C.accent); doc.rect(M.left, y + 1, 2, 8, "F");
-  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...C.slate700);
-  const introLines = doc.splitTextToSize(
-    S("Cette page traduit les donn\u00e9es du dossier en langage clair. Elle ne remplace pas l'analyse d\u00e9taill\u00e9e, "
-    + "mais vous permet de comprendre en 2 minutes l'essentiel de ce deal : o\u00f9 est le gain, o\u00f9 est le risque, "
-    + "ce qui manque, et comment un investisseur chevronn\u00e9 aborderait cette op\u00e9ration."),
-    CW - 12,
-  );
-  doc.text(introLines, M.left + 6, y + 4);
-  y += 14;
-
-  // ────────────────────────────────────────────────────────────────────────
-  // 1. Ce qui peut vous faire gagner de l'argent
-  // ────────────────────────────────────────────────────────────────────────
-  y = ensureSpace(doc, y, 30);
-  y = _comprendreSubheading(doc, y, "1", "Ce qui peut vous faire gagner de l'argent", C.emerald, C.emeraldBg);
-
-  const gains: string[] = [];
-
-  if (metrics.margeBrute != null && metrics.margeBrute > 0) {
-    const reventeLabel = metrics.prixRevente > 0 ? ` (revente cible ${fmtCurrency(metrics.prixRevente)})` : "";
-    gains.push(
-      metrics.margeBrute >= 12
-        ? `La marge brute est de ${fmtPercent(metrics.margeBrute)}${reventeLabel}. C'est au-dessus du seuil de s\u00e9curit\u00e9 de 12% : l'op\u00e9ration d\u00e9gage un b\u00e9n\u00e9fice m\u00eame apr\u00e8s impr\u00e9vus mod\u00e9r\u00e9s.`
-        : `La marge brute est de ${fmtPercent(metrics.margeBrute)}${reventeLabel}. C'est en dessous de 12%, ce qui laisse peu de place aux al\u00e9as \u2014 mais reste un gain si tout se passe comme pr\u00e9vu.`,
+  const delta      = scenarios[0].mensualiteTotale  - scenarios[2].mensualiteTotale;
+  const surcoûtTot = scenarios[2].coutTotalCredit   - scenarios[0].coutTotalCredit;
+  if (delta > 0 && surcoûtTot > 0) {
+    if (y + 20 > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
+    const synthH = 20;
+    roundedBox(doc, M.left, y, CW, synthH, { fill: C.bg, border: C.border, radius: 3, lw: 0.2, shadow: true });
+    sf(doc, C.accent); doc.roundedRect(M.left, y, 3.5, synthH, 1.5, 1.5, "F");
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8); sc(doc, C.body);
+    doc.text(
+      sanitizeForPdf(`Passer de 10 a 20 ans reduit la mensualite de ${fmtCurrency(delta)} / mois`),
+      M.left + 8, y + 7,
     );
-  }
-  if (metrics.premiumVsDvfPct != null && metrics.premiumVsDvfPct < 0) {
-    gains.push(`Vous achetez ${fmtPercent(Math.abs(metrics.premiumVsDvfPct))} en dessous du prix m\u00e9dian du march\u00e9 (DVF). C'est une d\u00e9cote : vous payez moins que ce que les autres ont pay\u00e9 r\u00e9cemment pour des biens similaires.`);
-  }
-  if (metrics.travaux > 0 && metrics.prixRevente > 0) {
-    const plusValue = metrics.prixRevente - metrics.prixAchat - metrics.travaux;
-    if (plusValue > 0) {
-      gains.push(`Apr\u00e8s travaux (${fmtCurrency(metrics.travaux)}), la plus-value estim\u00e9e est de ${fmtCurrency(plusValue)}. Les travaux cr\u00e9ent de la valeur si les devis sont respect\u00e9s.`);
-    }
-  }
-  const liq = scores["Probabilit\u00e9 revente"] ? Number(scores["Probabilit\u00e9 revente"]) : null;
-  if (liq != null && liq >= 60) {
-    gains.push("Le march\u00e9 local est assez fluide : des biens comparables se vendent dans des d\u00e9lais raisonnables. C'est un atout pour la revente.");
-  }
-  if (ai?.strengths && ai.strengths.length > 0) {
-    gains.push(ai.strengths[0]);
-  }
-  if (gains.length === 0) {
-    gains.push("Les donn\u00e9es disponibles ne permettent pas d'identifier clairement les leviers de gain. Compl\u00e9tez le dossier (prix de revente, devis travaux) pour y voir plus clair.");
+    doc.text(
+      sanitizeForPdf(`mais augmente le cout total du credit de ${fmtCurrency(surcoûtTot)} sur la duree.`),
+      M.left + 8, y + 13.5,
+    );
+    y += synthH + 8;
   }
 
-  y = _comprendreBullets(doc, y, gains, C.emerald);
+  if (y + 18 > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
+  const noteText  = "Pour un pret amortissable, les interets sont calcules au fil du temps sur le capital restant du. Une duree plus longue reduit la mensualite mais augmente le cout total du credit.";
+  const noteLines = doc.splitTextToSize(sanitizeForPdf(noteText), CW - 14) as string[];
+  const noteH     = noteLines.length * 4.2 + 10;
+  roundedBox(doc, M.left, y, CW, noteH, { fill: C.white, border: C.border, radius: 3, lw: 0.2 });
+  doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); sc(doc, C.muted);
+  doc.text(noteLines, M.left + 6, y + 6);
+  y += noteH + 6;
 
-  // ────────────────────────────────────────────────────────────────────────
-  // 2. Ce qui peut vous faire perdre de l'argent
-  // ────────────────────────────────────────────────────────────────────────
-  y = ensureSpace(doc, y, 30);
-  y = _comprendreSubheading(doc, y, "2", "Ce qui peut vous faire perdre de l'argent", C.rose, C.roseBg);
-
-  const risks: string[] = [];
-
-  if (metrics.margeBrute != null && metrics.margeBrute < 12) {
-    risks.push(`Avec une marge brute de ${fmtPercent(metrics.margeBrute)}, un seul al\u00e9a (travaux plus chers, revente plus basse, d\u00e9lai plus long) peut transformer le gain en perte.`);
-  }
-  if (metrics.premiumVsDvfPct != null && metrics.premiumVsDvfPct > 10) {
-    risks.push(`Vous payez ${fmtPercent(metrics.premiumVsDvfPct)} au-dessus du prix du march\u00e9 DVF. Si le march\u00e9 ne monte pas, vous revendrez en dessous de votre prix d'achat.`);
-  }
-  if (metrics.travaux === 0) {
-    risks.push("Aucun budget travaux n'est chiffr\u00e9. Dans la r\u00e9alit\u00e9, m\u00eame un bien \"en bon \u00e9tat\" r\u00e9serve des surprises. Sans devis, le risque r\u00e9el est inconnu.");
-  } else if (metrics.travaux > 0 && metrics.prixAchat > 0) {
-    const travauxPct = (metrics.travaux / metrics.prixAchat) * 100;
-    if (travauxPct > 20) {
-      risks.push(`Les travaux repr\u00e9sentent ${fmtPercent(travauxPct)} du prix d'achat. Un d\u00e9rapage de 15\u201320% (fr\u00e9quent en r\u00e9novation) changerait le verdict.`);
-    }
-  }
-  const rpi = scores["RiskPressureIndex"] ? Number(scores["RiskPressureIndex"]) : null;
-  if (rpi != null && rpi >= 50) {
-    risks.push(`L'indice de pression risque est \u00e9lev\u00e9 (${rpi}/100). Plusieurs facteurs d\u00e9favorables se cumulent, ce qui augmente la probabilit\u00e9 d'un sc\u00e9nario n\u00e9gatif.`);
-  }
-  if (liq != null && liq < 40) {
-    risks.push("La liquidit\u00e9 du march\u00e9 local est faible : si vous devez revendre vite, il sera difficile de trouver un acheteur au prix souhait\u00e9.");
-  }
-  if (ai?.vigilances && ai.vigilances.length > 0 && risks.length < 4) {
-    risks.push(ai.vigilances[0]);
-  }
-  if (risks.length === 0) {
-    risks.push("Aucun facteur de perte critique identifi\u00e9 avec les donn\u00e9es disponibles. Mais attention : l'absence d'alerte peut venir d'un manque de donn\u00e9es, pas d'un risque nul.");
+  if (isDefaultRate || isDefaultInsurance) {
+    if (y + 10 > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
+    const hypParts: string[] = [];
+    if (isDefaultRate)      hypParts.push(`taux nominal ${ratePct} % (hypothese)`);
+    if (isDefaultInsurance) hypParts.push(`assurance ${insurancePct} % / an (hypothese)`);
+    const hypTxt = `Valeurs supposees car absentes du dossier : ${hypParts.join(", ")}.`;
+    const hypLines = doc.splitTextToSize(sanitizeForPdf(hypTxt), CW) as string[];
+    doc.setFont("helvetica", "italic"); doc.setFontSize(6.5); sc(doc, C.warning);
+    doc.text(hypLines, M.left, y);
+    y += hypLines.length * 4 + 4;
   }
 
-  y = _comprendreBullets(doc, y, risks, C.rose);
-
-  // ────────────────────────────────────────────────────────────────────────
-  // 3. Ce qui manque pour décider sereinement
-  // ────────────────────────────────────────────────────────────────────────
-  y = ensureSpace(doc, y, 30);
-  y = _comprendreSubheading(doc, y, "3", "Ce qui manque pour d\u00e9cider sereinement", C.amber, C.amberBg);
-
-  const missing: string[] = [];
-
-  if (metrics.travaux === 0) {
-    missing.push("Devis travaux : sans chiffrage pr\u00e9cis, impossible de savoir si la marge est r\u00e9elle. Obtenez 2\u20133 devis avant toute offre.");
-  }
-  if (metrics.prixRevente === 0) {
-    missing.push("Prix de revente cible : sans objectif de revente, aucun calcul de marge n'est possible. Estimez un prix r\u00e9aliste en vous basant sur les ventes DVF r\u00e9centes.");
-  }
-  const duree = Number(deal.dureeDetention ?? deal.holdingPeriodMonths ?? 0);
-  if (duree === 0) {
-    missing.push("Dur\u00e9e de d\u00e9tention : combien de temps allez-vous porter le bien ? 12 mois et 36 mois ne donnent pas le m\u00eame co\u00fbt de portage ni le m\u00eame risque.");
-  }
-  if (ai?.missingData && ai.missingData.length > 0) {
-    const displayedAlready = new Set(["devis travaux", "prix de revente", "dur\u00e9e"]);
-    for (const md of ai.missingData) {
-      const lower = md.toLowerCase();
-      const isDuplicate = [...displayedAlready].some((k) => lower.includes(k));
-      if (!isDuplicate && missing.length < 5) {
-        missing.push(`${md} : donn\u00e9e manquante identifi\u00e9e par l'analyse IA. \u00c0 obtenir avant engagement.`);
-      }
-    }
-  }
-  const completude = scores["Compl\u00e9tude"] ? Number(scores["Compl\u00e9tude"]) : null;
-  if (completude != null && completude < 60) {
-    missing.push(`Le dossier n'est compl\u00e9t\u00e9 qu'\u00e0 ${completude}%. Plus de la moiti\u00e9 des informations n\u00e9cessaires sont absentes : la d\u00e9cision est fragile.`);
-  }
-  if (missing.length === 0) {
-    missing.push("Les donn\u00e9es principales semblent pr\u00e9sentes. V\u00e9rifiez quand m\u00eame les diagnostics, l'\u00e9tat de la copropri\u00e9t\u00e9 et les conditions de financement.");
-  }
-
-  y = _comprendreBullets(doc, y, missing, C.amber);
-
-  // ────────────────────────────────────────────────────────────────────────
-  // 4. Ce que ferait un investisseur expérimenté
-  // ────────────────────────────────────────────────────────────────────────
-  y = ensureSpace(doc, y, 30);
-  y = _comprendreSubheading(doc, y, "4", "Ce que ferait un investisseur exp\u00e9riment\u00e9", C.accent, C.accentBg);
-
-  const actions: string[] = [];
-
-  // Négociation
-  if (metrics.prixAchat > 0) {
-    const negoPct = metrics.premiumVsDvfPct != null && metrics.premiumVsDvfPct > 5 ? "8\u201312" : "5\u20138";
-    actions.push(`N\u00e9gocier le prix d'achat de ${negoPct}% minimum. Chaque euro \u00e9conomis\u00e9 \u00e0 l'achat am\u00e9liore directement la marge.`);
-  }
-
-  // Devis
-  actions.push("Obtenir au moins 2 devis travaux d\u00e9taill\u00e9s avant de signer quoi que ce soit, et pr\u00e9voir une marge de 15% pour impr\u00e9vus.");
-
-  // Conditions suspensives
-  actions.push("Ins\u00e9rer des conditions suspensives solides dans le compromis : financement, diagnostics conformes, absence de vice cach\u00e9, devis valid\u00e9s.");
-
-  // Plan B
-  if (liq != null && liq < 50) {
-    actions.push("Pr\u00e9parer un plan B (location meubl\u00e9e ou longue dur\u00e9e) au cas o\u00f9 la revente prend plus de temps que pr\u00e9vu. Calculer le loyer minimum pour couvrir les mensualit\u00e9s.");
-  } else {
-    actions.push("Avoir un plan B en t\u00eate : si la revente tarde, pouvez-vous louer le bien pour couvrir le co\u00fbt de portage ?");
-  }
-
-  // Seuil
-  if (metrics.margeBrute != null && metrics.margeBrute < 12) {
-    const targetPrice = metrics.prixRevente > 0 ? Math.round(metrics.prixRevente / 1.12) : null;
-    const targetLine = targetPrice != null ? ` (soit un prix d'achat maximum de ~${fmtCurrency(targetPrice)})` : "";
-    actions.push(`Ne pas acheter tant que la marge brute n'atteint pas 12%${targetLine}. En dessous, le risque n'est pas r\u00e9mun\u00e9r\u00e9.`);
-  }
-
-  // Walk away
-  actions.push("Savoir dire non : un bon investisseur rate volontairement 9 deals sur 10. Le deal d'apr\u00e8s sera meilleur.");
-
-  y = _comprendreBullets(doc, y, actions.slice(0, 6), C.accent);
-
-  // ── Pied de page pédagogique ─────────────────────────────────────────────
-  y = ensureSpace(doc, y, 12);
-  doc.setDrawColor(...C.slate200); doc.setLineWidth(0.2); doc.line(M.left, y, PW - M.right, y);
-  y += 4;
-  doc.setFont("helvetica", "italic"); doc.setFontSize(6.5); doc.setTextColor(...C.slate400);
-  const footLines = doc.splitTextToSize(
-    S("Cette lecture simplifi\u00e9e est g\u00e9n\u00e9r\u00e9e \u00e0 partir des donn\u00e9es du dossier. Elle ne constitue pas un conseil en investissement. "
-    + "Les sections suivantes du rapport fournissent l'analyse d\u00e9taill\u00e9e, les stress tests et le plan d'action complet."),
-    CW - 4,
-  );
-  doc.text(footLines, M.left + 2, y);
+  setY(doc, y);
 }
 
-// ── Comprendre: sub-heading with numbered circle ───────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// ─── ORCHESTRATEUR PRINCIPAL ───────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
 
-function _comprendreSubheading(doc: jsPDF, y: number, num: string, title: string, color: RGB, bg: RGB): number {
-  roundedBox(doc, M.left, y, CW, 7, 1.5, bg, undefined, 0);
-  doc.setFillColor(...color); doc.rect(M.left, y + 0.5, 2, 6, "F");
+function buildPdf(snap: MarchandSnapshotV1, opts?: ExportPdfOpts): jsPDF {
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  doc.setFont("helvetica", "normal");
 
-  // Number circle
-  doc.setFillColor(...color); doc.circle(M.left + 7, y + 3.5, 3, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...C.white);
-  doc.text(num, M.left + 7, y + 4.5, { align: "center" });
+  const m    = extractMetrics(snap, opts);
+  const ai   = normalizeAiReport(opts, m);
+  const mode = opts?.pdfMode ?? "light";
 
-  // Title
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...color);
-  doc.text(S(title), M.left + 13, y + 4.5);
-  return y + 10;
+  buildCover(doc, m, ai, opts);
+  buildCommunePage(doc, opts, m);
+  buildNarrative(doc, m, ai, opts);
+  buildPage1(doc, m, ai, opts);
+  buildPage2(doc, m, ai);
+  buildPage3(doc, m, ai);
+  buildLoanComparison(doc, m);
+  buildPage4(doc, m, ai);
+
+  if (mode === "full" || opts?.space === "investisseur") buildSyntheseInstitutionnellePage(doc, snap, opts);
+  if (mode === "full") { annexeFiche(doc, ai); annexeDD(doc, ai); }
+
+  finalizeHF(doc, m.titre, true);
+  return doc;
 }
 
-// ── Comprendre: bullet list ────────────────────────────────────────────────
+// ─── Public API ──────────────────────────────────────────────────
 
-function _comprendreBullets(doc: jsPDF, y: number, items: string[], color: RGB): number {
-  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...C.slate700);
-  for (const item of items) {
-    y = ensureSpace(doc, y, 10);
-    doc.setFillColor(...color); doc.circle(M.left + 5, y - 0.5, 0.7, "F");
-    const lines = doc.splitTextToSize(S(item), CW - 15);
-    doc.text(lines, M.left + 9, y);
-    y += lines.length * 3.4 + 2.5;
-  }
-  return y + 3;
+export { buildPdf as buildSnapshotPdfDoc };
+
+export function buildSnapshotPdfBlob(snapshot: MarchandSnapshotV1, opts?: ExportPdfOpts): Blob {
+  return buildPdf(snapshot, opts).output("blob");
 }
-
-// ---------------------------------------------------------------------------
-// MAIN EXPORT
-// ---------------------------------------------------------------------------
 
 export function exportSnapshotToPdf(snapshot: MarchandSnapshotV1, opts?: ExportPdfOpts): void {
-  const space = opts?.space ?? "marchand";
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-
-  // 1. Cover
-  buildCoverPage(doc, snapshot);
-
-  // 2. Décision & Synthèse (page 1 utile)
-  buildDecisionSynthesePage(doc, snapshot, opts);
-
-  // 2b. Comprendre le deal simplement (investisseur uniquement)
-  if (space === "investisseur") {
-    buildComprendreDealPage(doc, snapshot, opts);
-  }
-
-  // 2c. Synthèse institutionnelle (investisseur uniquement — banque / financement)
-  if (space === "investisseur") {
-    buildSyntheseInstitutionnellePage(doc, snapshot, opts);
-  }
-
-  // 3. Radar Risk vs Upside
-  buildRadarPage(doc, snapshot, opts);
-
-  // 4. Capital at Risk
-  buildCapitalAtRiskPage(doc, snapshot, opts);
-
-  // 5. Fiche Opération + Portefeuille
-  doc.addPage();
-  let y = M.top + 4;
-  y = buildDealSection(doc, y, snapshot);
-  y = buildAllDealsSection(doc, y, snapshot);
-
-  // 6. Due Diligence
-  y = buildDueDiligenceSection(doc, y, opts?.context?.dueDiligence);
-
-  // 7. Analyse IA (nettoyée — pas de doublon verdict/résumé)
-  y = buildAiSection(doc, y, opts?.aiReport);
-
-  // 8. Plan d'action (dernière page obligatoire)
-  buildActionPlanPage(doc, snapshot, opts);
-
-  // 9. Investisseur-only appendix pages
-  if (space === "investisseur") {
-    buildMethodologiePage(doc);
-    buildPrudencePage(doc);
-    buildChartePage(doc);
-    buildFormulasPage(doc);
-    buildGlossairePage(doc);
-  }
-
-  // Header / Footer
-  addHeaderFooter(doc, snapshot, opts);
-
-  const deal = snapshot.deals.find((d) => d.id === snapshot.activeDealId);
-  const slug = (deal?.title ?? "export").replace(/[^a-zA-Z0-9\u00C0-\u024F\s-]/g, "").replace(/\s+/g, "-").toLowerCase().slice(0, 40);
-  doc.save("dossier-investisseur-" + slug + ".pdf");
+  const doc = buildPdf(snapshot, opts);
+  const d   = resolveDeal(snapshot);
+  doc.save(`${sanitizeForPdf(String(d.titre ?? d.title ?? "dossier")).replace(/\s+/g, "_")}_dossier_investisseur.pdf`);
 }
 
 export function exportSnapshotToPdfPrint(snapshot: MarchandSnapshotV1, _opts?: ExportPdfOpts): void {
-  const html = "<!DOCTYPE html><html><head><meta charset='utf-8'/><title>Dossier Investisseur</title><style>body{font-family:Arial,sans-serif;padding:32px;color:#1e293b}h1{font-size:22px}table{width:100%;border-collapse:collapse;margin-top:10px}td,th{border:1px solid #cbd5e1;padding:6px 8px;font-size:11px}th{background:#f8fafc;font-weight:600;width:180px}</style></head><body><h1>Dossier Investisseur</h1><p>Date : " + new Date().toLocaleDateString("fr-FR") + "</p></body></html>";
-  const win = window.open("", "_blank"); if (!win) return;
-  win.document.write(html); win.document.close(); win.focus(); win.print();
+  const doc  = buildPdf(snapshot, _opts);
+  const blob = doc.output("blob");
+  const url  = URL.createObjectURL(blob);
+  const w    = window.open(url);
+  if (w) { w.onload = () => { w.print(); URL.revokeObjectURL(url); }; }
 }

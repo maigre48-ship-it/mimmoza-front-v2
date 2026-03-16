@@ -1,348 +1,224 @@
-﻿import { useState } from "react";
-import { Link } from "react-router-dom";
+﻿import { Link } from "react-router-dom";
+import {
+  ArrowRight,
+  BarChart3,
+  Building2,
+  ShieldCheck,
+  Sparkles,
+  TrendingUp,
+  Layers3,
+  CheckCircle2,
+} from "lucide-react";
 
-// ============================================================================
-// TYPES
-// ============================================================================
-
-interface SpaceCard {
+type HomeSpaceCard = {
   id: string;
   title: string;
   description: string;
   route: string;
-  icon: React.ReactNode;
-}
+  icon: React.ComponentType<{ className?: string }>;
+  badge: string;
+  accentClass: string;
+  ringClass: string;
+  points: string[];
+};
 
-// ============================================================================
-// DONNÉES DES ESPACES
-// ============================================================================
-
-const spaces: SpaceCard[] = [
+const spaces: HomeSpaceCard[] = [
   {
-    id: "particulier",
-    title: "Particulier",
-    description: "Recherche, estimation et suivi de votre projet immobilier personnel.",
-    route: "/particulier",
-    icon: (
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-        <polyline points="9 22 9 12 15 12 15 22" />
-      </svg>
-    ),
-  },
-  {
-    id: "marchand",
-    title: "Marchand de bien",
-    description: "Sourcing, analyse rapide et calcul de marges pour vos opérations.",
+    id: "investisseur",
+    title: "Investisseur particulier et marchand de bien",
+    description:
+      "Analyse rapide d’opportunités, scoring, rentabilité, exécution des travaux et stratégie de sortie.",
     route: "/marchand-de-bien",
-    icon: (
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-      </svg>
-    ),
+    icon: BarChart3,
+    badge: "Investissement",
+    accentClass:
+      "from-indigo-600 via-blue-600 to-cyan-500",
+    ringClass:
+      "group-hover:ring-indigo-200 group-hover:border-indigo-200",
+    points: ["Sourcing", "Analyse", "Simulation"],
   },
   {
     id: "promoteur",
     title: "Promoteur",
-    description: "Faisabilité, PLU, analyse des risques, modélisation 3D et bilan.",
+    description:
+      "Faisabilité foncière, lecture PLU, analyse des risques, massing et bilan promoteur.",
     route: "/promoteur",
-    icon: (
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="4" y="2" width="16" height="20" rx="2" ry="2" />
-        <line x1="8" y1="6" x2="16" y2="6" />
-        <line x1="8" y1="10" x2="16" y2="10" />
-        <line x1="8" y1="14" x2="12" y2="14" />
-      </svg>
-    ),
+    icon: Building2,
+    badge: "Développement",
+    accentClass:
+      "from-sky-600 via-cyan-500 to-teal-400",
+    ringClass:
+      "group-hover:ring-cyan-200 group-hover:border-cyan-200",
+    points: ["Foncier", "Risques", "Bilan"],
   },
   {
-    id: "banque",
-    title: "Banque",
-    description: "Scoring, montage de financement et gestion des sûretés.",
+    id: "financeur",
+    title: "Financeur",
+    description:
+      "Étude du risque, comité crédit, lecture des garanties et pilotage des dossiers de financement.",
     route: "/banque",
-    icon: (
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="12" y1="1" x2="12" y2="23" />
-        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-      </svg>
-    ),
-  },
-  {
-    id: "assurance",
-    title: "Assurance",
-    description: "Évaluation de l’exposition aux risques et couverture adaptée.",
-    route: "/assurance",
-    icon: (
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-      </svg>
-    ),
+    icon: ShieldCheck,
+    badge: "Décision crédit",
+    accentClass:
+      "from-slate-700 via-slate-800 to-indigo-700",
+    ringClass:
+      "group-hover:ring-slate-200 group-hover:border-slate-200",
+    points: ["Risque", "Comité", "Suivi"],
   },
 ];
 
-// ============================================================================
-// STYLES
-// ============================================================================
+const trustPoints = [
+  "Scoring intelligent",
+  "Analyse parcellaire",
+  "Études de marché",
+  "Aide à la décision",
+];
 
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    minHeight: "100vh",
-    backgroundColor: "#f0f9ff",
-    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-  },
-  header: {
-    background: "linear-gradient(135deg, #0ea5e9 0%, #38bdf8 50%, #7dd3fc 100%)",
-    padding: "48px 24px 64px",
-    position: "relative" as const,
-    overflow: "hidden",
-  },
-  headerPattern: {
-    position: "absolute" as const,
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    opacity: 0.1,
-    backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
-    pointerEvents: "none" as const,
-  },
-  headerContent: {
-    maxWidth: "1200px",
-    margin: "0 auto",
-    position: "relative" as const,
-    zIndex: 1,
-  },
-  badge: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "6px",
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    backdropFilter: "blur(8px)",
-    padding: "6px 14px",
-    borderRadius: "20px",
-    fontSize: "0.8125rem",
-    fontWeight: 500,
-    color: "#ffffff",
-    marginBottom: "16px",
-    border: "1px solid rgba(255, 255, 255, 0.3)",
-  },
-  title: {
-    fontSize: "clamp(2rem, 5vw, 3rem)",
-    fontWeight: 700,
-    color: "#ffffff",
-    margin: 0,
-    marginBottom: "12px",
-    letterSpacing: "-0.025em",
-    textShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
-  },
-  subtitle: {
-    fontSize: "clamp(1rem, 2vw, 1.25rem)",
-    fontWeight: 400,
-    color: "rgba(255, 255, 255, 0.9)",
-    margin: 0,
-  },
-  main: {
-    maxWidth: "1200px",
-    margin: "0 auto",
-    padding: "0 24px",
-    marginTop: "-32px",
-    position: "relative" as const,
-    zIndex: 2,
-    paddingBottom: "48px",
-  },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-    gap: "20px",
-  },
-  card: {
-    display: "flex",
-    flexDirection: "column" as const,
-    textDecoration: "none",
-    backgroundColor: "#ffffff",
-    borderRadius: "16px",
-    padding: "28px",
-    boxShadow: "0 4px 20px rgba(14, 165, 233, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04)",
-    border: "1px solid rgba(14, 165, 233, 0.1)",
-    cursor: "pointer",
-    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-    boxSizing: "border-box" as const,
-    position: "relative" as const,
-    overflow: "hidden",
-  },
-  cardHovered: {
-    transform: "translateY(-6px)",
-    boxShadow: "0 20px 40px rgba(14, 165, 233, 0.15), 0 8px 16px rgba(14, 165, 233, 0.1)",
-    border: "1px solid #0ea5e9",
-  },
-  cardIconWrapper: {
-    width: "56px",
-    height: "56px",
-    borderRadius: "14px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: "20px",
-    background: "linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%)",
-    color: "#0ea5e9",
-    transition: "all 0.3s ease",
-  },
-  cardIconWrapperHovered: {
-    background: "linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%)",
-    color: "#ffffff",
-    transform: "scale(1.05)",
-  },
-  cardTitle: {
-    fontSize: "1.25rem",
-    fontWeight: 600,
-    color: "#0f172a",
-    margin: 0,
-    marginBottom: "10px",
-    transition: "color 0.3s ease",
-  },
-  cardTitleHovered: {
-    color: "#0ea5e9",
-  },
-  cardDescription: {
-    fontSize: "0.9375rem",
-    fontWeight: 400,
-    color: "#64748b",
-    margin: 0,
-    lineHeight: 1.6,
-    flex: 1,
-  },
-  cardArrow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    marginTop: "20px",
-    opacity: 0,
-    transform: "translateX(-10px)",
-    transition: "all 0.3s ease",
-  },
-  cardArrowVisible: {
-    opacity: 1,
-    transform: "translateX(0)",
-  },
-  arrowIcon: {
-    width: "20px",
-    height: "20px",
-    color: "#0ea5e9",
-  },
-  footer: {
-    maxWidth: "1200px",
-    margin: "0 auto",
-    padding: "24px",
-    textAlign: "center" as const,
-  },
-  footerText: {
-    fontSize: "0.875rem",
-    color: "#94a3b8",
-    margin: 0,
-  },
-};
-
-// ============================================================================
-// COMPOSANT PRINCIPAL
-// ============================================================================
-
-const HomePage: React.FC = () => {
-  const [hoveredCard, setHoveredCard] = useState<string | null>(null);
-
-  const getCardStyle = (cardId: string): React.CSSProperties => {
-    const isHovered = hoveredCard === cardId;
-    return {
-      ...styles.card,
-      ...(isHovered ? styles.cardHovered : {}),
-    };
-  };
-
-  const getIconWrapperStyle = (cardId: string): React.CSSProperties => {
-    const isHovered = hoveredCard === cardId;
-    return {
-      ...styles.cardIconWrapper,
-      ...(isHovered ? styles.cardIconWrapperHovered : {}),
-    };
-  };
-
-  const getTitleStyle = (cardId: string): React.CSSProperties => {
-    const isHovered = hoveredCard === cardId;
-    return {
-      ...styles.cardTitle,
-      ...(isHovered ? styles.cardTitleHovered : {}),
-    };
-  };
-
-  const getArrowStyle = (cardId: string): React.CSSProperties => {
-    const isHovered = hoveredCard === cardId;
-    return {
-      ...styles.cardArrow,
-      ...(isHovered ? styles.cardArrowVisible : {}),
-    };
-  };
-
+export default function HomePage() {
   return (
-    <div style={styles.container}>
-      {/* Header avec gradient bleu ciel */}
-      <header style={styles.header}>
-        <div style={styles.headerPattern} />
-        <div style={styles.headerContent}>
-          <div style={styles.badge}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M12 6v6l4 2" />
-            </svg>
-            Plateforme immobilière
+    <div className="relative min-h-screen overflow-hidden bg-slate-50">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute left-0 top-0 h-[520px] w-full bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.18),_transparent_42%),radial-gradient(circle_at_top_right,_rgba(6,182,212,0.14),_transparent_30%),linear-gradient(180deg,_#f8fbff_0%,_#eef6ff_38%,_#f8fafc_100%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:32px_32px] [mask-image:linear-gradient(to_bottom,black,transparent_85%)]" />
+      </div>
+
+      <section className="relative mx-auto max-w-7xl px-4 pb-12 pt-10 lg:px-6 lg:pb-16 lg:pt-16">
+        <div className="mx-auto max-w-4xl text-center">
+          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-sky-200/80 bg-white/80 px-4 py-2 text-sm font-medium text-sky-700 shadow-sm backdrop-blur">
+            <Sparkles className="h-4 w-4" />
+            Intelligence immobilière décisionnelle
           </div>
-          <h1 style={styles.title}>Accueil</h1>
-          <p style={styles.subtitle}>Choisissez votre espace pour commencer.</p>
-        </div>
-      </header>
 
-      {/* Grille des espaces */}
-      <main style={styles.main}>
-        <div style={styles.grid}>
-          {spaces.map((space) => (
-            <Link
-              key={space.id}
-              to={space.route}
-              style={getCardStyle(space.id)}
-              onMouseEnter={() => setHoveredCard(space.id)}
-              onMouseLeave={() => setHoveredCard(null)}
-            >
-              <div style={getIconWrapperStyle(space.id)}>{space.icon}</div>
-              <h2 style={getTitleStyle(space.id)}>{space.title}</h2>
-              <p style={styles.cardDescription}>{space.description}</p>
-              <div style={getArrowStyle(space.id)}>
-                <svg
-                  style={styles.arrowIcon}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M17 8l4 4m0 0l-4 4m4-4H3"
-                  />
-                </svg>
-              </div>
-            </Link>
-          ))}
-        </div>
-      </main>
+          <h1 className="mx-auto max-w-4xl text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
+            Une plateforme unique pour{" "}
+            <span className="bg-gradient-to-r from-indigo-600 via-sky-500 to-cyan-500 bg-clip-text text-transparent">
+              analyser, décider et piloter
+            </span>{" "}
+            vos opérations immobilières
+          </h1>
 
-      {/* Footer discret */}
-      <footer style={styles.footer}>
-        <p style={styles.footerText}>
-          Sélectionnez un espace pour accéder aux outils dédiés
-        </p>
-      </footer>
+          <p className="mx-auto mt-6 max-w-3xl text-base leading-8 text-slate-600 sm:text-lg">
+            Mimmoza centralise l’analyse de faisabilité, le scoring, la lecture
+            des risques, les études de marché et les outils opérationnels pour
+            investisseurs, promoteurs et financeurs.
+          </p>
+
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+            {trustPoints.map((point) => (
+              <span
+                key={point}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 shadow-sm"
+              >
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                {point}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-14 grid gap-6 lg:grid-cols-3">
+          {spaces.map((space) => {
+            const Icon = space.icon;
+
+            return (
+              <Link
+                key={space.id}
+                to={space.route}
+                className={`group relative overflow-hidden rounded-3xl border border-white/70 bg-white/90 p-7 shadow-[0_10px_40px_rgba(15,23,42,0.06)] ring-1 ring-transparent backdrop-blur transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_18px_60px_rgba(15,23,42,0.12)] ${space.ringClass}`}
+              >
+                <div
+                  className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${space.accentClass}`}
+                />
+
+                <div className="flex items-start justify-between gap-4">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    {space.badge}
+                  </div>
+
+                  <div
+                    className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${space.accentClass} text-white shadow-lg shadow-slate-200/50 transition-transform duration-300 group-hover:scale-105`}
+                  >
+                    <Icon className="h-6 w-6" />
+                  </div>
+                </div>
+
+                <div className="mt-8">
+                  <h2 className="text-2xl font-semibold tracking-tight text-slate-950">
+                    {space.title}
+                  </h2>
+                  <p className="mt-4 text-[15px] leading-7 text-slate-600">
+                    {space.description}
+                  </p>
+                </div>
+
+                <div className="mt-7 flex flex-wrap gap-2">
+                  {space.points.map((point) => (
+                    <span
+                      key={point}
+                      className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600"
+                    >
+                      {point}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="mt-8 flex items-center justify-between border-t border-slate-100 pt-5">
+                  <span className="text-sm font-medium text-slate-700">
+                    Ouvrir l’espace
+                  </span>
+                  <div className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 transition-all duration-300 group-hover:border-slate-300 group-hover:text-slate-950">
+                    <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-0.5" />
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+
+        <div className="mt-14 grid gap-4 rounded-3xl border border-slate-200/80 bg-white/80 p-6 shadow-sm backdrop-blur md:grid-cols-3">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 rounded-xl bg-indigo-50 p-2 text-indigo-600">
+              <TrendingUp className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">
+                Décision plus rapide
+              </h3>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                Des interfaces pensées pour aller de l’opportunité à la décision.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 rounded-xl bg-cyan-50 p-2 text-cyan-600">
+              <Layers3 className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">
+                Vue unifiée des dossiers
+              </h3>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                Marché, risques, faisabilité et exploitation dans une seule plateforme.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 rounded-xl bg-emerald-50 p-2 text-emerald-600">
+              <CheckCircle2 className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">
+                Restitution professionnelle
+              </h3>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                Un rendu premium adapté à l’analyse, à la présentation et au comité.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
-};
-
-export default HomePage;
-
+}

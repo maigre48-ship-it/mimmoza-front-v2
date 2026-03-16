@@ -22,7 +22,6 @@ import type {
   ScenarioResults,
   StressTestResults,
   DealInputs,
-  Financement,
   NegotiationResult,
   StrategyType,
   FiscalRegime,
@@ -35,6 +34,51 @@ import type {
 function safeNum(v: unknown, defaultVal = 0): number {
   if (typeof v === "number" && Number.isFinite(v)) return v;
   return defaultVal;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Fiscalité (v1.1 simplifiée mais cohérente avec la déductibilité)
+// ─────────────────────────────────────────────────────────────────────
+// Hypothèses v1.1:
+// - Taux d'impôt unique par défaut (30%) : à rendre paramétrable ensuite
+// - LMNP Micro: base imposable = (loyers encaissés) * 50% (abattement 50%)
+// - LMNP Réel: base imposable = loyers encaissés - charges - intérêts - assurance
+//   (PAS de déduction du remboursement de capital)
+// - Défiscalisation: traité comme LMNP Réel (v1.1 neutre)
+const DEFAULT_TAX_RATE_PCT = 30;
+
+function clampPct(v: number): number {
+  return Math.max(0, Math.min(100, safeNum(v)));
+}
+
+function computeTaxLocationV11(opts: {
+  regime: FiscalRegime;
+  loyersEncaisses: number; // net de vacance (≈ loyers réellement perçus)
+  chargesHorsCredit: number; // charges annuelles (copro/TF/PNO…)
+  interets: number; // intérêts payés sur l'année
+  assuranceEmprunteur: number; // assurance payée sur l'année
+  taxRatePct?: number;
+}): { baseImposable: number; impot: number } {
+  const rate = clampPct(opts.taxRatePct ?? DEFAULT_TAX_RATE_PCT) / 100;
+
+  const loyers = Math.max(0, safeNum(opts.loyersEncaisses));
+  const charges = Math.max(0, safeNum(opts.chargesHorsCredit));
+  const interets = Math.max(0, safeNum(opts.interets));
+  const assurance = Math.max(0, safeNum(opts.assuranceEmprunteur));
+
+  let base = 0;
+
+  if (opts.regime === "lmnp_micro") {
+    // Micro-BIC: abattement 50% sur recettes
+    base = loyers * 0.5;
+  } else {
+    // lmnp_reel / defiscalisation (v1.1): résultat fiscal simplifié
+    base = loyers - charges - interets - assurance;
+    base = Math.max(0, base);
+  }
+
+  const impot = Math.max(0, base * rate);
+  return { baseImposable: base, impot };
 }
 
 // ─── Helpers financiers ──────────────────────────────────────────────
@@ -109,7 +153,10 @@ export function computeCRD(
 /** VAN (NPV) d'une série de flux annuels, taux en % */
 export function computeNPV(flows: number[], ratePct: number): number {
   const r = safeNum(ratePct) / 100;
-  const result = flows.reduce((sum, cf, t) => sum + safeNum(cf) / Math.pow(1 + r, t), 0);
+  const result = flows.reduce(
+    (sum, cf, t) => sum + safeNum(cf) / Math.pow(1 + r, t),
+    0
+  );
   return safeNum(result);
 }
 
@@ -174,31 +221,23 @@ export function computeScenarioResults(
   const fin = scenario.financement;
 
   // ── Normalize deal inputs with fallback resolution ──
-  // Handles both canonical (loyerMensuelBrut) and alternate (loyerMensuel/loyerEstime) names
   const d = deal as any;
   const prixAchat = safeNum(deal.prixAchat);
   const fraisNotaire = safeNum(deal.fraisNotaire);
   const fraisAgence = safeNum(deal.fraisAgence);
-  const montantTravaux = safeNum(
-    deal.montantTravaux ?? d.travaux ?? d.travauxEstimes
-  );
-  const loyerMensuelBrut = safeNum(
-    deal.loyerMensuelBrut ?? d.loyerMensuel ?? d.loyerEstime
-  );
+  const montantTravaux = safeNum(deal.montantTravaux ?? d.travaux ?? d.travauxEstimes);
+  const loyerMensuelBrut = safeNum(deal.loyerMensuelBrut ?? d.loyerMensuel ?? d.loyerEstime);
   const chargesAnnuelles = safeNum(
     deal.chargesAnnuelles ??
       (d.chargesMensuelles != null ? d.chargesMensuelles * 12 : undefined) ??
       (d.chargesEstimees != null ? d.chargesEstimees * 12 : undefined)
   );
   const vacanceLocativePct = safeNum(deal.vacanceLocativePct, 5);
-  const prixReventeEstime = safeNum(
-    deal.prixReventeEstime || prixAchat
-  );
+  const prixReventeEstime = safeNum(deal.prixReventeEstime || prixAchat);
 
   // ── Coût total
   const coutTotal = prixAchat + fraisNotaire + fraisAgence + montantTravaux;
 
-  // Guard: if coutTotal is 0, return empty results
   if (coutTotal <= 0) {
     return {
       scenarioId: scenario.id,
@@ -219,24 +258,14 @@ export function computeScenarioResults(
   const apport = coutTotal * (apportPct / 100);
   const capitalEmprunte = coutTotal - apport;
 
-  // Mensualités
   const dureeMoisPret = safeNum(fin.dureeMois, 240);
   const differeMois = safeNum(fin.differeMois);
   const moisAmort = Math.max(1, dureeMoisPret - differeMois);
   const tauxNominal = safeNum(fin.tauxNominal, 3.5);
   const assurancePct = safeNum(fin.assurancePct, 0.34);
 
-  const mensualiteAmort = computeMensualite(
-    capitalEmprunte,
-    tauxNominal,
-    moisAmort,
-    assurancePct
-  );
-  const mensualiteDiffere = computeMensualiteDiffere(
-    capitalEmprunte,
-    tauxNominal,
-    assurancePct
-  );
+  const mensualiteAmort = computeMensualite(capitalEmprunte, tauxNominal, moisAmort, assurancePct);
+  const mensualiteDiffere = computeMensualiteDiffere(capitalEmprunte, tauxNominal, assurancePct);
 
   // ── Discount rate
   const discountRate =
@@ -249,11 +278,9 @@ export function computeScenarioResults(
 
   // ── Construire flux equity annuels
   const flows: number[] = [];
-
-  // t=0: apport + frais non financés (négatif)
   flows.push(-apport);
 
-  // CRD à la sortie (après N années = N*12 mois de prêt effectifs)
+  // CRD à la sortie
   const moisTotalEcoules = N * 12;
   const moisAmortEcoules = Math.max(0, moisTotalEcoules - differeMois);
   const crdSortie =
@@ -261,63 +288,101 @@ export function computeScenarioResults(
       ? 0
       : computeCRD(capitalEmprunte, tauxNominal, moisAmort, moisAmortEcoules);
 
+  // ───────────────────────────────────────────────────────────────────
+  // Simulation crédit mois par mois (pour intérêts/assurance déductibles)
+  // ───────────────────────────────────────────────────────────────────
+  const rMensuel = tauxNominal / 100 / 12;
+  const assuranceMensuelleConst = (capitalEmprunte * assurancePct) / 100 / 12;
+
+  let principalRestant = capitalEmprunte;
+  let monthCursor = 0; // 0..N*12-1
+
   // t=1 à t=N
   for (let t = 1; t <= N; t++) {
     const moisDebut = (t - 1) * 12;
     const moisFin = t * 12;
 
-    // Calcul mensualité annuelle (mix différé + amort selon la position)
     let chargeCredit = 0;
+    let interetsAnnee = 0;
+    let assuranceAnnee = 0;
+
     for (let m = moisDebut; m < moisFin; m++) {
+      // synchronise le curseur au cas où
+      monthCursor = m;
+
+      // assurance (approx constante sur capital initial, volontairement simple)
+      const assur = Math.max(0, assuranceMensuelleConst);
+      assuranceAnnee += assur;
+
       if (m < differeMois) {
+        // différé: intérêts seuls + assurance, principal constant
+        const interets = Math.max(0, principalRestant * rMensuel);
+        interetsAnnee += interets;
+
         chargeCredit += mensualiteDiffere;
       } else if (m - differeMois < moisAmort) {
-        chargeCredit += mensualiteAmort;
+        // amort: mensualité incl assurance (via computeMensualite)
+        const interets = Math.max(0, principalRestant * rMensuel);
+        interetsAnnee += interets;
+
+        // Mensualité amortissable inclut assuranceMensuelleConst (selon computeMensualite)
+        const payment = mensualiteAmort;
+
+        // part capital = payment - intérêts - assurance
+        const capitalRemb = Math.max(0, payment - interets - assur);
+        principalRestant = Math.max(0, principalRestant - capitalRemb);
+
+        chargeCredit += payment;
+      } else {
+        // prêt terminé
       }
-      // après fin de prêt: 0
     }
 
     if (scenario.strategy === "location") {
       // Loyers avec inflation et vacance
       const loyerAnnuelBrut =
-        loyerMensuelBrut *
-        12 *
-        Math.pow(1 + safeNum(scenario.inflationLoyers) / 100, t);
+        loyerMensuelBrut * 12 * Math.pow(1 + safeNum(scenario.inflationLoyers) / 100, t);
+
       const vacance = loyerAnnuelBrut * (vacanceLocativePct / 100);
-      const loyerNet = loyerAnnuelBrut - vacance;
+      const loyersEncaisses = loyerAnnuelBrut - vacance; // recettes "réelles"
 
-      // Charges
+      // Charges hors crédit
       const charges =
-        chargesAnnuelles *
-        Math.pow(1 + safeNum(scenario.inflationTravaux) / 100, t);
+        chargesAnnuelles * Math.pow(1 + safeNum(scenario.inflationTravaux) / 100, t);
 
-      const cashflowAnnuel = loyerNet - charges - chargeCredit;
+      // Impôt v1.1 selon régime
+      const { impot } = computeTaxLocationV11({
+        regime: scenario.fiscalRegime,
+        loyersEncaisses,
+        chargesHorsCredit: charges,
+        interets: interetsAnnee,
+        assuranceEmprunteur: assuranceAnnee,
+        taxRatePct: DEFAULT_TAX_RATE_PCT,
+      });
+
+      // Cashflow net (on retire bien la mensualité complète, car c'est ce qui sort en trésorerie)
+      const cashflowAnnuelNet = loyersEncaisses - charges - chargeCredit - impot;
 
       if (t < N) {
-        flows.push(safeNum(cashflowAnnuel));
+        flows.push(safeNum(cashflowAnnuelNet));
       } else {
-        // Dernière année: cashflow + revente - CRD
         const prixRevente =
-          prixReventeEstime *
-          Math.pow(1 + safeNum(scenario.inflationMarche) / 100, N);
-        flows.push(safeNum(cashflowAnnuel + prixRevente - crdSortie));
+          prixReventeEstime * Math.pow(1 + safeNum(scenario.inflationMarche) / 100, N);
+        flows.push(safeNum(cashflowAnnuelNet + prixRevente - crdSortie));
       }
     } else {
       // Stratégie REVENTE: pas de loyers, juste charges + crédit
       const charges =
-        chargesAnnuelles *
-        Math.pow(1 + safeNum(scenario.inflationTravaux) / 100, t);
+        chargesAnnuelles * Math.pow(1 + safeNum(scenario.inflationTravaux) / 100, t);
       const cashflowAnnuel = -charges - chargeCredit;
 
       if (t < N) {
         flows.push(safeNum(cashflowAnnuel));
       } else {
-        // Revente finale
         const travauxInflated =
-          montantTravaux *
-          Math.pow(1 + safeNum(scenario.inflationTravaux) / 100, N);
+          montantTravaux * Math.pow(1 + safeNum(scenario.inflationTravaux) / 100, N);
         const prixRevente =
-          (prixReventeEstime + travauxInflated * 0.3) * // +30% de la plus-value travaux
+          (prixReventeEstime + travauxInflated * 0.3) *
           Math.pow(1 + safeNum(scenario.inflationMarche) / 100, N);
         flows.push(safeNum(cashflowAnnuel + prixRevente - crdSortie));
       }
@@ -422,9 +487,7 @@ export function computeNegotiation(
   const zoneSecurity = prixMaxRecommande * 0.95;
   const seuilDanger = prixMaxRecommande * 1.05;
   const margeNego =
-    prixAchat > 0
-      ? ((prixMaxRecommande - prixAchat) / prixAchat) * 100
-      : 0;
+    prixAchat > 0 ? ((prixMaxRecommande - prixAchat) / prixAchat) * 100 : 0;
 
   return {
     prixMaxRecommande: Math.round(safeNum(prixMaxRecommande)),
@@ -462,10 +525,7 @@ function nextId(): string {
   return `sc-${Date.now()}-${scenarioCounter}`;
 }
 
-export function generateDefaultScenarios(
-  strategy: StrategyType,
-  regime: FiscalRegime
-): Scenario[] {
+export function generateDefaultScenarios(strategy: StrategyType, regime: FiscalRegime): Scenario[] {
   const base: Omit<Scenario, "id" | "name" | "dureeAnnees" | "inflationMarche"> = {
     strategy,
     fiscalRegime: regime,
@@ -566,8 +626,6 @@ export function formatPct(val: number | null, decimals = 1): string {
 }
 
 // ─── Map snapshot to DealInputs ─────────────────────────────────────
-// Adapter: mappe le snapshot investisseur existant vers DealInputs.
-// Si les champs exacts du snapshot diffèrent, ajuster ici sans casser.
 
 export function mapSnapshotToDealInputs(snapshot: any): DealInputs {
   const p = snapshot?.propertyDraft ?? {};

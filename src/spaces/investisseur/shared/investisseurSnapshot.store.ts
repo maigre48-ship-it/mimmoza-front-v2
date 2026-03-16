@@ -16,8 +16,16 @@
 // NOTE: Pas de dépendance React — utilisable partout.
 // ============================================================================
 
+import type {
+  TravauxSimulationV1,
+  ComputedTravaux,
+} from "./travauxSimulation.types";
+
 export const INVESTISSEUR_SNAPSHOT_KEY = "mimmoza.investisseur.snapshot.v1";
-export const INVESTISSEUR_LEGACY_RENTABILITE_PREFIX = "mimmoza.investisseur.rentabilite.v1.";
+export const INVESTISSEUR_LEGACY_RENTABILITE_PREFIX =
+  "mimmoza.investisseur.rentabilite.v1.";
+export const PENDING_OPPORTUNITY_STORAGE_KEY =
+  "mimmoza.pendingOpportunityDeal";
 
 export type InvestisseurAiSummary = {
   text: string;
@@ -27,6 +35,16 @@ export type InvestisseurAiSummary = {
   generatedAt: string; // ISO
   warnings?: string[];
   sourcesUsed?: string[];
+};
+
+export type InvestisseurTravauxSnapshot = {
+  input: TravauxSimulationV1;
+  computed: ComputedTravaux;
+  updatedAt: string; // ISO
+};
+
+export type InvestisseurExecutionSnapshot = {
+  travaux?: InvestisseurTravauxSnapshot;
 };
 
 export type InvestisseurProject = {
@@ -80,8 +98,10 @@ export type InvestisseurProject = {
     ltvPct?: number;
   };
 
-  market?: any; // à typer plus tard
-  risks?: any;  // à typer plus tard
+  execution?: InvestisseurExecutionSnapshot;
+
+  market?: Record<string, unknown>;
+  risks?: Record<string, unknown>;
 
   ai?: {
     summary?: InvestisseurAiSummary;
@@ -99,11 +119,27 @@ export type InvestisseurSnapshot = {
   events: Array<{ at: string; type: string; projectId?: string; message?: string }>;
 };
 
+export type PendingOpportunityDeal = {
+  source: "veille-marche";
+  canonicalKey: string;
+  title: string;
+  city: string | null;
+  zipCode: string;
+  price: number | null;
+  surfaceM2: number | null;
+  opportunityScore: number;
+  opportunityBucket: "faible" | "moyenne" | "forte";
+  pricePosition: string;
+  priceDropInfo: string;
+  diffusionInfo: string;
+  createdAt: string;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Utils
 // ─────────────────────────────────────────────────────────────────────────────
 
-function nowIso() {
+function nowIso(): string {
   return new Date().toISOString();
 }
 
@@ -116,11 +152,48 @@ function safeParseJson<T>(raw: string | null): T | null {
   }
 }
 
-function isObject(v: unknown): v is Record<string, any> {
+function isObject(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
 
-function ensureSnapshotShape(input: any): InvestisseurSnapshot {
+function makeProjectId(prefix = "inv"): string {
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `${prefix}_${Date.now()}_${rand}`;
+}
+
+/**
+ * Normalize an execution block read from raw JSON (localStorage).
+ * Returns undefined if the input is not a valid object or has no valid travaux.
+ */
+function normalizeExecution(raw: unknown): InvestisseurExecutionSnapshot | undefined {
+  if (!isObject(raw)) return undefined;
+
+  const travauxRaw = raw["travaux"];
+  if (!isObject(travauxRaw)) {
+    // execution exists but no travaux — preserve the shell
+    return {};
+  }
+
+  const inputRaw = travauxRaw["input"];
+  const computedRaw = travauxRaw["computed"];
+
+  if (!isObject(inputRaw) || !isObject(computedRaw)) return {};
+
+  const updatedAt =
+    typeof travauxRaw["updatedAt"] === "string"
+      ? travauxRaw["updatedAt"]
+      : nowIso();
+
+  return {
+    travaux: {
+      input: inputRaw as unknown as TravauxSimulationV1,
+      computed: computedRaw as unknown as ComputedTravaux,
+      updatedAt,
+    },
+  };
+}
+
+function ensureSnapshotShape(input: unknown): InvestisseurSnapshot {
   const base: InvestisseurSnapshot = {
     version: "1.0.0",
     updatedAt: nowIso(),
@@ -131,45 +204,62 @@ function ensureSnapshotShape(input: any): InvestisseurSnapshot {
 
   if (!isObject(input)) return base;
 
-  const projects = isObject(input.projects) ? (input.projects as Record<string, any>) : {};
+  const projects = isObject(input["projects"])
+    ? (input["projects"] as Record<string, unknown>)
+    : {};
   const normalizedProjects: Record<string, InvestisseurProject> = {};
 
-  for (const [pid, p] of Object.entries(projects)) {
-    if (!isObject(p)) continue;
-    const id = typeof p.id === "string" ? p.id : pid;
+  for (const [pid, pRaw] of Object.entries(projects)) {
+    if (!isObject(pRaw)) continue;
+    const p = pRaw as Record<string, unknown>;
+    const id = typeof p["id"] === "string" ? p["id"] : pid;
+
     normalizedProjects[id] = {
       id,
-      label: typeof p.label === "string" ? p.label : undefined,
-      asset: isObject(p.asset) ? p.asset : undefined,
-      acquisition: isObject(p.acquisition) ? p.acquisition : undefined,
-      financing: isObject(p.financing) ? p.financing : undefined,
-      operation: isObject(p.operation) ? p.operation : undefined,
-      kpis: isObject(p.kpis) ? p.kpis : undefined,
-      market: (p as any).market ?? undefined,
-      risks: (p as any).risks ?? undefined,
-      ai: isObject(p.ai) ? p.ai : undefined,
-      updatedAt: typeof p.updatedAt === "string" ? p.updatedAt : nowIso(),
+      label: typeof p["label"] === "string" ? p["label"] : undefined,
+      asset: isObject(p["asset"]) ? (p["asset"] as InvestisseurProject["asset"]) : undefined,
+      acquisition: isObject(p["acquisition"])
+        ? (p["acquisition"] as InvestisseurProject["acquisition"])
+        : undefined,
+      financing: isObject(p["financing"])
+        ? (p["financing"] as InvestisseurProject["financing"])
+        : undefined,
+      operation: isObject(p["operation"])
+        ? (p["operation"] as InvestisseurProject["operation"])
+        : undefined,
+      kpis: isObject(p["kpis"]) ? (p["kpis"] as InvestisseurProject["kpis"]) : undefined,
+      execution: normalizeExecution(p["execution"]),
+      market: isObject(p["market"]) ? (p["market"] as Record<string, unknown>) : undefined,
+      risks: isObject(p["risks"]) ? (p["risks"] as Record<string, unknown>) : undefined,
+      ai: isObject(p["ai"]) ? (p["ai"] as InvestisseurProject["ai"]) : undefined,
+      updatedAt: typeof p["updatedAt"] === "string" ? p["updatedAt"] : nowIso(),
     };
   }
 
   const activeProjectId =
-    typeof input.activeProjectId === "string" ? input.activeProjectId : null;
+    typeof input["activeProjectId"] === "string" ? input["activeProjectId"] : null;
 
-  const events = Array.isArray(input.events)
-    ? input.events
-        .filter((e: any) => isObject(e) && typeof e.at === "string" && typeof e.type === "string")
+  const eventsRaw = input["events"];
+  const events = Array.isArray(eventsRaw)
+    ? eventsRaw
+        .filter(
+          (e: unknown): e is Record<string, unknown> =>
+            isObject(e) &&
+            typeof (e as Record<string, unknown>)["at"] === "string" &&
+            typeof (e as Record<string, unknown>)["type"] === "string"
+        )
         .slice(-200)
-        .map((e: any) => ({
-          at: e.at,
-          type: e.type,
-          projectId: typeof e.projectId === "string" ? e.projectId : undefined,
-          message: typeof e.message === "string" ? e.message : undefined,
+        .map((e) => ({
+          at: e["at"] as string,
+          type: e["type"] as string,
+          projectId: typeof e["projectId"] === "string" ? e["projectId"] : undefined,
+          message: typeof e["message"] === "string" ? e["message"] : undefined,
         }))
     : [];
 
   return {
     version: "1.0.0",
-    updatedAt: typeof input.updatedAt === "string" ? input.updatedAt : nowIso(),
+    updatedAt: typeof input["updatedAt"] === "string" ? input["updatedAt"] : nowIso(),
     activeProjectId,
     projects: normalizedProjects,
     events,
@@ -177,11 +267,12 @@ function ensureSnapshotShape(input: any): InvestisseurSnapshot {
 }
 
 // Stable canonicalization for hash
-function canonicalize(value: any): any {
+function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (value && typeof value === "object") {
-    const out: Record<string, any> = {};
-    for (const k of Object.keys(value).sort()) out[k] = canonicalize((value as any)[k]);
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(value).sort())
+      out[k] = canonicalize((value as Record<string, unknown>)[k]);
     return out;
   }
   return value;
@@ -201,7 +292,7 @@ async function sha256Hex(input: string): Promise<string> {
 
 export function getInvestisseurSnapshot(): InvestisseurSnapshot {
   const raw = localStorage.getItem(INVESTISSEUR_SNAPSHOT_KEY);
-  const parsed = safeParseJson<any>(raw);
+  const parsed = safeParseJson<unknown>(raw);
   const snap = ensureSnapshotShape(parsed);
 
   // Migration douce si snapshot vide
@@ -228,9 +319,20 @@ export function setActiveInvestisseurProjectId(projectId: string | null): void {
   saveInvestisseurSnapshot(snap);
 }
 
-export function upsertInvestisseurProject(projectId: string, patch: Partial<InvestisseurProject>): InvestisseurProject {
+export function upsertInvestisseurProject(
+  projectId: string,
+  patch: Partial<InvestisseurProject>
+): InvestisseurProject {
   const snap = getInvestisseurSnapshot();
   const prev = snap.projects[projectId];
+
+  const mergedExecution: InvestisseurExecutionSnapshot | undefined =
+    patch.execution !== undefined || prev?.execution !== undefined
+      ? {
+          ...(prev?.execution ?? {}),
+          ...(patch.execution ?? {}),
+        }
+      : undefined;
 
   const merged: InvestisseurProject = {
     id: projectId,
@@ -240,6 +342,7 @@ export function upsertInvestisseurProject(projectId: string, patch: Partial<Inve
     financing: { ...(prev?.financing ?? {}), ...(patch.financing ?? {}) },
     operation: { ...(prev?.operation ?? {}), ...(patch.operation ?? {}) },
     kpis: { ...(prev?.kpis ?? {}), ...(patch.kpis ?? {}) },
+    execution: mergedExecution,
     market: patch.market ?? prev?.market,
     risks: patch.risks ?? prev?.risks,
     ai: { ...(prev?.ai ?? {}), ...(patch.ai ?? {}) },
@@ -252,11 +355,131 @@ export function upsertInvestisseurProject(projectId: string, patch: Partial<Inve
   return merged;
 }
 
-export function addInvestisseurEvent(e: { type: string; projectId?: string; message?: string }): void {
+export function addInvestisseurEvent(e: {
+  type: string;
+  projectId?: string;
+  message?: string;
+}): void {
   const snap = getInvestisseurSnapshot();
   snap.events.push({ at: nowIso(), type: e.type, projectId: e.projectId, message: e.message });
   snap.events = snap.events.slice(-300);
   saveInvestisseurSnapshot(snap);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Opportunity handoff (Veille → Acquisition)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function createInvestisseurProjectFromOpportunity(
+  deal: PendingOpportunityDeal
+): InvestisseurProject {
+  const snap = getInvestisseurSnapshot();
+
+  const existingEntry = Object.entries(snap.projects).find(([, project]) => {
+    const marketCanonical =
+      typeof project.market?.["canonicalKey"] === "string"
+        ? (project.market["canonicalKey"] as string)
+        : undefined;
+
+    return marketCanonical === deal.canonicalKey;
+  });
+
+  const projectId = existingEntry?.[0] ?? makeProjectId("deal");
+
+  const patch: Partial<InvestisseurProject> = {
+    label: deal.title,
+    asset: {
+      ...(existingEntry?.[1]?.asset ?? {}),
+      city: deal.city ?? undefined,
+      zip: deal.zipCode,
+      type: "appartement",
+      surfaceM2: deal.surfaceM2 ?? undefined,
+    },
+    acquisition: {
+      ...(existingEntry?.[1]?.acquisition ?? {}),
+      price: deal.price ?? undefined,
+    },
+    market: {
+      ...(existingEntry?.[1]?.market ?? {}),
+      source: deal.source,
+      canonicalKey: deal.canonicalKey,
+      opportunityScore: deal.opportunityScore,
+      opportunityBucket: deal.opportunityBucket,
+      pricePosition: deal.pricePosition,
+      priceDropInfo: deal.priceDropInfo,
+      diffusionInfo: deal.diffusionInfo,
+      importedFromVeilleAt: nowIso(),
+    },
+  };
+
+  const project = upsertInvestisseurProject(projectId, patch);
+  setActiveInvestisseurProjectId(projectId);
+  addInvestisseurEvent({
+    type: existingEntry ? "veille_update_project" : "veille_create_project",
+    projectId,
+    message: existingEntry
+      ? `Projet mis à jour depuis la veille marché : ${deal.title}`
+      : `Projet créé depuis la veille marché : ${deal.title}`,
+  });
+
+  return project;
+}
+
+export function consumePendingOpportunityDealIntoSnapshot():
+  | { ok: true; project: InvestisseurProject }
+  | { ok: false; reason: "missing" | "invalid" | "storage_unavailable" } {
+  try {
+    const raw = sessionStorage.getItem(PENDING_OPPORTUNITY_STORAGE_KEY);
+    if (!raw) return { ok: false, reason: "missing" };
+
+    const parsed = safeParseJson<unknown>(raw);
+    if (!isObject(parsed)) {
+      sessionStorage.removeItem(PENDING_OPPORTUNITY_STORAGE_KEY);
+      return { ok: false, reason: "invalid" };
+    }
+
+    const deal: PendingOpportunityDeal = {
+      source: "veille-marche",
+      canonicalKey:
+        typeof parsed["canonicalKey"] === "string" ? parsed["canonicalKey"] : "",
+      title: typeof parsed["title"] === "string" ? parsed["title"] : "Bien détecté",
+      city: typeof parsed["city"] === "string" ? parsed["city"] : null,
+      zipCode: typeof parsed["zipCode"] === "string" ? parsed["zipCode"] : "",
+      price: typeof parsed["price"] === "number" ? parsed["price"] : null,
+      surfaceM2:
+        typeof parsed["surfaceM2"] === "number" ? parsed["surfaceM2"] : null,
+      opportunityScore:
+        typeof parsed["opportunityScore"] === "number"
+          ? parsed["opportunityScore"]
+          : 0,
+      opportunityBucket:
+        parsed["opportunityBucket"] === "forte" ||
+        parsed["opportunityBucket"] === "moyenne" ||
+        parsed["opportunityBucket"] === "faible"
+          ? parsed["opportunityBucket"]
+          : "moyenne",
+      pricePosition:
+        typeof parsed["pricePosition"] === "string" ? parsed["pricePosition"] : "",
+      priceDropInfo:
+        typeof parsed["priceDropInfo"] === "string" ? parsed["priceDropInfo"] : "",
+      diffusionInfo:
+        typeof parsed["diffusionInfo"] === "string" ? parsed["diffusionInfo"] : "",
+      createdAt:
+        typeof parsed["createdAt"] === "string" ? parsed["createdAt"] : nowIso(),
+    };
+
+    if (!deal.canonicalKey || !deal.zipCode) {
+      sessionStorage.removeItem(PENDING_OPPORTUNITY_STORAGE_KEY);
+      return { ok: false, reason: "invalid" };
+    }
+
+    const project = createInvestisseurProjectFromOpportunity(deal);
+    sessionStorage.removeItem(PENDING_OPPORTUNITY_STORAGE_KEY);
+
+    return { ok: true, project };
+  } catch {
+    return { ok: false, reason: "storage_unavailable" };
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -271,8 +494,9 @@ export type InvestisseurAiInput = {
   financing?: InvestisseurProject["financing"];
   operation?: InvestisseurProject["operation"];
   kpis?: InvestisseurProject["kpis"];
-  market?: any;
-  risks?: any;
+  execution?: InvestisseurProject["execution"];
+  market?: Record<string, unknown>;
+  risks?: Record<string, unknown>;
   updatedAt: string;
 };
 
@@ -285,6 +509,7 @@ export function buildInvestisseurAiInput(project: InvestisseurProject): Investis
     financing: project.financing,
     operation: project.operation,
     kpis: project.kpis,
+    execution: project.execution,
     market: project.market,
     risks: project.risks,
     updatedAt: project.updatedAt,
@@ -295,7 +520,11 @@ export async function computeInvestisseurAiInputHash(input: InvestisseurAiInput)
   return sha256Hex(JSON.stringify(canonicalize(input)));
 }
 
-export async function saveInvestisseurAiSummary(projectId: string, summary: InvestisseurAiSummary, aiInputHash?: string): Promise<void> {
+export async function saveInvestisseurAiSummary(
+  projectId: string,
+  summary: InvestisseurAiSummary,
+  aiInputHash?: string
+): Promise<void> {
   const snap = getInvestisseurSnapshot();
   const p = snap.projects[projectId];
   if (!p) return;
@@ -325,7 +554,11 @@ function migrateLegacyRentabiliteKeysIntoSnapshot(
     }
     if (keys.length === 0) return { didMigrate: false, snapshot: snap };
 
-    const next: InvestisseurSnapshot = { ...snap, projects: { ...snap.projects }, events: [...snap.events] };
+    const next: InvestisseurSnapshot = {
+      ...snap,
+      projects: { ...snap.projects },
+      events: [...snap.events],
+    };
     let did = false;
 
     for (const k of keys) {
@@ -333,37 +566,45 @@ function migrateLegacyRentabiliteKeysIntoSnapshot(
       if (!projectId) continue;
 
       const raw = localStorage.getItem(k);
-      const legacy = safeParseJson<any>(raw);
-      if (!legacy) continue;
+      const legacy = safeParseJson<Record<string, unknown>>(raw);
+      if (!legacy || !isObject(legacy)) continue;
 
       const patch: Partial<InvestisseurProject> = {};
 
-      if (isObject(legacy)) {
-        patch.kpis = {
-          yieldGrossPct: typeof (legacy as any).yieldGrossPct === "number" ? (legacy as any).yieldGrossPct : undefined,
-          yieldNetPct: typeof (legacy as any).yieldNetPct === "number" ? (legacy as any).yieldNetPct : undefined,
-          cashflowMonthly: typeof (legacy as any).cashflowMonthly === "number" ? (legacy as any).cashflowMonthly : undefined,
-          roiPct: typeof (legacy as any).roiPct === "number" ? (legacy as any).roiPct : undefined,
-          irrPct: typeof (legacy as any).irrPct === "number" ? (legacy as any).irrPct : undefined,
-        };
+      patch.kpis = {
+        yieldGrossPct:
+          typeof legacy["yieldGrossPct"] === "number" ? legacy["yieldGrossPct"] : undefined,
+        yieldNetPct:
+          typeof legacy["yieldNetPct"] === "number" ? legacy["yieldNetPct"] : undefined,
+        cashflowMonthly:
+          typeof legacy["cashflowMonthly"] === "number" ? legacy["cashflowMonthly"] : undefined,
+        roiPct: typeof legacy["roiPct"] === "number" ? legacy["roiPct"] : undefined,
+        irrPct: typeof legacy["irrPct"] === "number" ? legacy["irrPct"] : undefined,
+      };
 
-        patch.acquisition = {
-          price: typeof (legacy as any).price === "number"
-            ? (legacy as any).price
-            : typeof (legacy as any).purchasePrice === "number"
-              ? (legacy as any).purchasePrice
+      patch.acquisition = {
+        price:
+          typeof legacy["price"] === "number"
+            ? legacy["price"]
+            : typeof legacy["purchasePrice"] === "number"
+              ? legacy["purchasePrice"]
               : undefined,
-          notaryFees: typeof (legacy as any).notaryFees === "number" ? (legacy as any).notaryFees : undefined,
-          worksBudget: typeof (legacy as any).worksBudget === "number" ? (legacy as any).worksBudget : undefined,
-        };
+        notaryFees:
+          typeof legacy["notaryFees"] === "number" ? legacy["notaryFees"] : undefined,
+        worksBudget:
+          typeof legacy["worksBudget"] === "number" ? legacy["worksBudget"] : undefined,
+      };
 
-        patch.operation = {
-          rentMonthly: typeof (legacy as any).rentMonthly === "number" ? (legacy as any).rentMonthly : undefined,
-          rentAnnual: typeof (legacy as any).rentAnnual === "number" ? (legacy as any).rentAnnual : undefined,
-          chargesMonthly: typeof (legacy as any).chargesMonthly === "number" ? (legacy as any).chargesMonthly : undefined,
-          chargesAnnual: typeof (legacy as any).chargesAnnual === "number" ? (legacy as any).chargesAnnual : undefined,
-        };
-      }
+      patch.operation = {
+        rentMonthly:
+          typeof legacy["rentMonthly"] === "number" ? legacy["rentMonthly"] : undefined,
+        rentAnnual:
+          typeof legacy["rentAnnual"] === "number" ? legacy["rentAnnual"] : undefined,
+        chargesMonthly:
+          typeof legacy["chargesMonthly"] === "number" ? legacy["chargesMonthly"] : undefined,
+        chargesAnnual:
+          typeof legacy["chargesAnnual"] === "number" ? legacy["chargesAnnual"] : undefined,
+      };
 
       const prev = next.projects[projectId];
       next.projects[projectId] = {
@@ -374,6 +615,7 @@ function migrateLegacyRentabiliteKeysIntoSnapshot(
         financing: prev?.financing,
         operation: { ...(prev?.operation ?? {}), ...(patch.operation ?? {}) },
         kpis: { ...(prev?.kpis ?? {}), ...(patch.kpis ?? {}) },
+        execution: prev?.execution,
         market: prev?.market,
         risks: prev?.risks,
         ai: prev?.ai,
@@ -382,7 +624,12 @@ function migrateLegacyRentabiliteKeysIntoSnapshot(
 
       did = true;
       if (!next.activeProjectId) next.activeProjectId = projectId;
-      next.events.push({ at: nowIso(), type: "migrate_legacy_rentabilite", projectId, message: `Migrated from ${k}` });
+      next.events.push({
+        at: nowIso(),
+        type: "migrate_legacy_rentabilite",
+        projectId,
+        message: `Migrated from ${k}`,
+      });
     }
 
     next.events = next.events.slice(-300);

@@ -1,6 +1,5 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { TrendingUp, Clock, Euro, Star, AlertTriangle } from "lucide-react";
-import PageShell from "../shared/ui/PageShell";
 import SectionCard from "../shared/ui/SectionCard";
 import KpiCard from "../shared/ui/KpiCard";
 import {
@@ -8,6 +7,13 @@ import {
   patchSortieForDeal,
 } from "../shared/marchandSnapshot.store";
 import useMarchandSnapshotTick from "../shared/hooks/useMarchandSnapshotTick";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Design tokens — Investisseur
+// ─────────────────────────────────────────────────────────────────────────────
+
+const GRAD_INV   = "linear-gradient(90deg, #2196f3 0%, #21cbf3 100%)";
+const ACCENT_INV = "#1a72c4";
 
 type ExitStrategy = "rapide" | "optimisee" | "location";
 
@@ -75,7 +81,6 @@ function buildScenariosFromRentabilite(dealId: string): {
   const rent = readJson<Record<string, any>>(RENT_KEY(dealId));
 
   if (!rent) {
-    // Aucune donnée de rentabilité → scénarios vides (pas de chiffres arbitraires)
     return {
       scenarios: [
         { id: "A", label: "Revente rapide", strategy: "rapide", prixRevente: 0, delaiMois: 1 },
@@ -87,14 +92,11 @@ function buildScenariosFromRentabilite(dealId: string): {
     };
   }
 
-  // Extraire les valeurs utiles depuis la clé rentabilité
-  // On cherche dans computed ou à la racine selon la structure
   const computed = rent.computed ?? rent;
   const prixAchat = Number(computed.prixAchat ?? computed.coutTotal ?? 0);
   const prixReventeCible = Number(computed.prixRevente ?? computed.prixReventeCible ?? 0);
   const dureeMois = Number(computed.dureeMois ?? 0);
 
-  // Si on a un prix de revente cible, on crée des variantes autour
   const baseRevente = prixReventeCible > 0 ? prixReventeCible : prixAchat;
   const hasUsableData = baseRevente > 0;
 
@@ -149,22 +151,15 @@ function parseSavedScenarios(raw: any[]): ExitScenario[] {
 }
 
 export default function MarchandSortie() {
-  // 🔗 Live snapshot reading (réagit aux changements même onglet + multi-onglets)
   const snapTick = useMarchandSnapshotTick();
   const snapshot = useMemo(() => readMarchandSnapshot(), [snapTick]);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Deal actif dérivé du snapshot (réactif)
-  // ─────────────────────────────────────────────────────────────────────────────
   const activeDealId = snapshot.activeDealId ?? null;
   const activeDeal = useMemo(
     () => snapshot.deals.find((d) => d.id === activeDealId) ?? null,
     [snapshot.deals, activeDealId]
   );
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Valeurs "référence" depuis Rentabilité (source de vérité via snapshot)
-  // ─────────────────────────────────────────────────────────────────────────────
   const rent = activeDealId ? snapshot.rentabiliteByDeal?.[activeDealId] : undefined;
   const rc = (rent as any)?.computed;
 
@@ -174,43 +169,30 @@ export default function MarchandSortie() {
 
   const hasComputedFromRentabilite = typeof rc?.coutTotal === "number";
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // State local (initialisé vide, hydraté par le useEffect ci-dessous)
-  // ─────────────────────────────────────────────────────────────────────────────
   const [holdingMensuel, setHoldingMensuel] = useState(DEFAULT_HOLDING_MENSUEL);
   const [scenarios, setScenarios] = useState<ExitScenario[]>([]);
   const [initializedFromRent, setInitializedFromRent] = useState(false);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Ref unique pour tracker le dernier deal hydraté
-  // ─────────────────────────────────────────────────────────────────────────────
   const lastHydratedDealIdRef = useRef<string | null>(null);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Hydratation: 1 fois par deal actif via clé localStorage scopée
-  // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!activeDealId) return;
     if (lastHydratedDealIdRef.current === activeDealId) return;
 
-    // 1) Essayer de lire les données Sortie déjà persistées pour CE deal
     const saved = readJson<Record<string, any>>(EXIT_KEY(activeDealId));
 
     if (saved && Array.isArray(saved.scenarios) && saved.scenarios.length > 0) {
-      // Deal existant avec données sauvegardées
       setHoldingMensuel(
         typeof saved.holdingMensuel === "number" ? saved.holdingMensuel : DEFAULT_HOLDING_MENSUEL
       );
       setScenarios(parseSavedScenarios(saved.scenarios));
       setInitializedFromRent(!!saved.initializedFromRent);
     } else {
-      // 2) Pas de données Sortie → tenter d'initialiser depuis Rentabilité
       const init = buildScenariosFromRentabilite(activeDealId);
       setHoldingMensuel(init.holdingMensuel);
       setScenarios(init.scenarios);
       setInitializedFromRent(init.fromRent);
 
-      // Persister immédiatement pour que le prochain chargement retrouve les données
       writeJson(EXIT_KEY(activeDealId), {
         holdingMensuel: init.holdingMensuel,
         scenarios: init.scenarios,
@@ -218,7 +200,6 @@ export default function MarchandSortie() {
       });
     }
 
-    // Sync aussi vers le snapshot store (compat existante)
     const finalSaved = readJson<Record<string, any>>(EXIT_KEY(activeDealId));
     if (finalSaved) {
       patchSortieForDeal(activeDealId, {
@@ -230,27 +211,16 @@ export default function MarchandSortie() {
     lastHydratedDealIdRef.current = activeDealId;
   }, [activeDealId]);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Persistance: uniquement après hydratation complète, vers la clé scopée
-  // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!activeDealId) return;
     if (lastHydratedDealIdRef.current !== activeDealId) return;
-    // Ne persiste que si on a des scénarios (évite d'écrire un état vide)
     if (scenarios.length === 0) return;
 
     const payload = { holdingMensuel, scenarios, initializedFromRent };
-
-    // Écrire dans la clé scopée
     writeJson(EXIT_KEY(activeDealId), payload);
-
-    // Sync vers le snapshot store (compat existante)
     patchSortieForDeal(activeDealId, { holdingMensuel, scenarios });
   }, [activeDealId, holdingMensuel, scenarios, initializedFromRent]);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Computed (DOIT être avant tout early return pour respecter les Rules of Hooks)
-  // ─────────────────────────────────────────────────────────────────────────────
   const noUsableData = scenarios.every((s) => s.prixRevente === 0);
 
   const computed = useMemo(() => {
@@ -272,189 +242,266 @@ export default function MarchandSortie() {
   const bestTRI = computed.length ? Math.max(...computed.map((c) => c.tri)) : 0;
   const bestSpeed = computed.length ? Math.min(...computed.map((c) => c.delaiMois)) : 0;
 
-  // Guard: aucun deal actif (ou deal actif introuvable)
+  // Guard: aucun deal actif
   if (!activeDealId || !activeDeal) {
     return (
-      <PageShell title="Sortie" subtitle="Sélectionne un deal dans Pipeline pour synchroniser toutes les pages.">
-        <SectionCard title="Aucun deal actif" subtitle="Va dans Pipeline et sélectionne un deal.">
-          <div style={{ color: "#64748b", fontSize: 13, lineHeight: 1.6 }}>
-            Aucun deal n'est sélectionné. Une fois un deal actif, cette page se pré-remplira automatiquement.
+      <div style={{ minHeight: "100vh", background: "#f5f7fa" }}>
+        <div style={{ maxWidth: 1400, margin: "0 auto", padding: "24px 24px 0" }}>
+          <div style={{
+            background: GRAD_INV,
+            borderRadius: 14,
+            padding: "20px 24px",
+            marginBottom: 20,
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 16,
+          }}>
+            <div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
+                Investisseur › Exécution
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>
+                Sortie
+              </div>
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+                Sélectionne un deal dans Pipeline pour synchroniser toutes les pages.
+              </div>
+            </div>
           </div>
-        </SectionCard>
-      </PageShell>
+        </div>
+        <div style={{ maxWidth: 1400, margin: "0 auto", padding: "0 24px" }}>
+          <SectionCard title="Aucun deal actif" subtitle="Va dans Pipeline et sélectionne un deal.">
+            <div style={{ color: "#64748b", fontSize: 13, lineHeight: 1.6 }}>
+              Aucun deal n'est sélectionné. Une fois un deal actif, cette page se pré-remplira automatiquement.
+            </div>
+          </SectionCard>
+        </div>
+      </div>
     );
   }
 
-  // Guard: scénarios pas encore hydratés (évite flash de données incohérentes)
+  // Guard: scénarios pas encore hydratés
   if (scenarios.length === 0) {
     return (
-      <PageShell title="Sortie" subtitle={`Deal actif : ${activeDeal.title}`}>
-        <SectionCard title="Chargement…" subtitle="Initialisation des scénarios pour ce deal.">
-          <div style={{ color: "#64748b", fontSize: 13, lineHeight: 1.6 }}>
-            Chargement des données de sortie…
+      <div style={{ minHeight: "100vh", background: "#f5f7fa" }}>
+        <div style={{ maxWidth: 1400, margin: "0 auto", padding: "24px 24px 0" }}>
+          <div style={{
+            background: GRAD_INV,
+            borderRadius: 14,
+            padding: "20px 24px",
+            marginBottom: 20,
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 16,
+          }}>
+            <div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
+                Investisseur › Exécution
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>
+                Sortie
+              </div>
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+                Deal actif : {activeDeal.title}
+              </div>
+            </div>
           </div>
-        </SectionCard>
-      </PageShell>
+        </div>
+        <div style={{ maxWidth: 1400, margin: "0 auto", padding: "0 24px" }}>
+          <SectionCard title="Chargement…" subtitle="Initialisation des scénarios pour ce deal.">
+            <div style={{ color: "#64748b", fontSize: 13, lineHeight: 1.6 }}>
+              Chargement des données de sortie…
+            </div>
+          </SectionCard>
+        </div>
+      </div>
     );
   }
 
   return (
-    <PageShell
-      title="Sortie"
-      subtitle={`Comparer les stratégies de sortie et choisir le meilleur arbitrage. Deal actif : ${activeDeal.title}`}
-    >
-      {/* KPIs globaux */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-        <KpiCard label="Coût total projet" value={eur(coutTotalProjet)} icon={<Euro size={18} />} />
-        <KpiCard label="Marge (Rentabilité)" value={eur(margeReference)} icon={<TrendingUp size={18} />} />
-        <KpiCard label="Durée (Rentabilité)" value={`${dureeReferenceMois} mois`} icon={<Clock size={18} />} />
+    <div style={{ minHeight: "100vh", background: "#f5f7fa" }}>
+      {/* ── Bannière Investisseur › Exécution ── */}
+      <div style={{ maxWidth: 1400, margin: "0 auto", padding: "24px 24px 0" }}>
+        <div style={{
+          background: GRAD_INV,
+          borderRadius: 14,
+          padding: "20px 24px",
+          marginBottom: 20,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 16,
+        }}>
+          <div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
+              Investisseur › Exécution
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>
+              Sortie
+            </div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+              Comparer les stratégies de sortie et choisir le meilleur arbitrage · {activeDeal.title}
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div style={{ height: 12 }} />
-
-      <SectionCard title="Hypothèses" subtitle="Paramètres de sortie (persistés par deal)">
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>Holding mensuel</div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="number"
-                value={holdingMensuel}
-                min={0}
-                step={50}
-                onChange={(e) => setHoldingMensuel(Number(e.target.value))}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: 12,
-                  border: "1px solid rgba(15, 23, 42, 0.10)",
-                  background: "rgba(255,255,255,0.95)",
-                  fontWeight: 800,
-                  color: "#0f172a",
-                  outline: "none",
-                }}
-              />
-              <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900, whiteSpace: "nowrap" }}>
-                € / mois
-              </div>
-            </div>
-          </div>
-
-          <div style={{ color: "#64748b", fontSize: 12, lineHeight: 1.6 }}>
-            Holding = coûts de détention pendant la commercialisation / attente (charges, assurance, copro, etc.).
-          </div>
-
-          <div style={{ color: "#64748b", fontSize: 12, lineHeight: 1.6 }}>
-            {hasComputedFromRentabilite
-              ? "Coût total projet, marge & durée de référence sont synchronisés depuis Rentabilité."
-              : null}
-          </div>
+      <div style={{ maxWidth: 1400, margin: "0 auto", padding: "0 24px 24px" }}>
+        {/* KPIs globaux */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+          <KpiCard label="Coût total projet" value={eur(coutTotalProjet)} icon={<Euro size={18} />} />
+          <KpiCard label="Marge (Rentabilité)" value={eur(margeReference)} icon={<TrendingUp size={18} />} />
+          <KpiCard label="Durée (Rentabilité)" value={`${dureeReferenceMois} mois`} icon={<Clock size={18} />} />
         </div>
 
-        {!hasComputedFromRentabilite && (
-          <div
-            style={{
-              marginTop: 12,
-              padding: "8px 10px",
-              borderRadius: 8,
-              background: "rgba(245, 158, 11, 0.08)",
-              border: "1px solid rgba(245, 158, 11, 0.20)",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
-            <AlertTriangle size={14} style={{ color: "#b45309", flexShrink: 0 }} />
-            <div style={{ fontSize: 11, color: "#92400e", lineHeight: 1.5 }}>
-              Ouvre Rentabilité et modifie un champ pour initialiser les valeurs partagées.
-            </div>
-          </div>
-        )}
+        <div style={{ height: 12 }} />
 
-        {noUsableData && (
-          <div
-            style={{
-              marginTop: 12,
-              padding: "8px 10px",
-              borderRadius: 8,
-              background: "rgba(245, 158, 11, 0.08)",
-              border: "1px solid rgba(245, 158, 11, 0.20)",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
-            <AlertTriangle size={14} style={{ color: "#b45309", flexShrink: 0 }} />
-            <div style={{ fontSize: 11, color: "#92400e", lineHeight: 1.5 }}>
-              Aucune donnée de rentabilité trouvée pour ce deal. Les prix de revente sont à initialiser manuellement.
-            </div>
-          </div>
-        )}
-      </SectionCard>
-
-      <div style={{ height: 12 }} />
-
-      {/* Scénarios */}
-      <SectionCard title="Scénarios de sortie" subtitle="Comparaison côte à côte">
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: `repeat(${Math.max(1, computed.length)}, 1fr)`,
-            gap: 12,
-          }}
-        >
-          {computed.map((s) => {
-            const isBestMarge = s.marge === bestMarge;
-            const isBestTRI = s.tri === bestTRI;
-            const isFastest = s.delaiMois === bestSpeed;
-            const showDash = s.prixRevente === 0;
-
-            return (
-              <div
-                key={s.id}
-                style={{
-                  borderRadius: 16,
-                  border: "1px solid rgba(15,23,42,0.08)",
-                  background: "rgba(255,255,255,0.95)",
-                  padding: 14,
-                  boxShadow: "0 10px 25px rgba(2,6,23,0.06)",
-                }}
-              >
-                <div style={{ fontWeight: 900, fontSize: 15, color: "#0f172a" }}>{s.label}</div>
-
-                <div style={{ height: 8 }} />
-
-                <div style={{ fontSize: 13, color: "#334155", lineHeight: 1.7 }}>
-                  <div>
-                    Prix sortie : <b>{showDash ? "—" : eur(s.prixRevente)}</b>
-                  </div>
-                  <div>
-                    Délai sortie : <b>{s.delaiMois} mois</b>
-                  </div>
-                  <div>
-                    Holding : <b>{eur(s.holding)}</b>
-                  </div>
-                  <div>
-                    Marge nette : <b>{showDash ? "—" : eur(s.marge)}</b>
-                  </div>
-                  <div>
-                    TRI projet (approx) : <b>{showDash ? "—" : pct(s.tri)}</b>
-                  </div>
-                </div>
-
-                <div style={{ height: 10 }} />
-
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {!showDash && isBestMarge && <Badge text="Meilleure marge" />}
-                  {!showDash && isBestTRI && <Badge text="Meilleur TRI" />}
-                  {isFastest && <Badge text="Sortie la plus rapide" />}
+        <SectionCard title="Hypothèses" subtitle="Paramètres de sortie (persistés par deal)">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>Holding mensuel</div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="number"
+                  value={holdingMensuel}
+                  min={0}
+                  step={50}
+                  onChange={(e) => setHoldingMensuel(Number(e.target.value))}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    border: "1px solid rgba(15, 23, 42, 0.10)",
+                    background: "rgba(255,255,255,0.95)",
+                    fontWeight: 800,
+                    color: "#0f172a",
+                    outline: "none",
+                  }}
+                />
+                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900, whiteSpace: "nowrap" }}>
+                  € / mois
                 </div>
               </div>
-            );
-          })}
-        </div>
-      </SectionCard>
-    </PageShell>
+            </div>
+
+            <div style={{ color: "#64748b", fontSize: 12, lineHeight: 1.6 }}>
+              Holding = coûts de détention pendant la commercialisation / attente (charges, assurance, copro, etc.).
+            </div>
+
+            <div style={{ color: "#64748b", fontSize: 12, lineHeight: 1.6 }}>
+              {hasComputedFromRentabilite
+                ? "Coût total projet, marge & durée de référence sont synchronisés depuis Rentabilité."
+                : null}
+            </div>
+          </div>
+
+          {!hasComputedFromRentabilite && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "8px 10px",
+                borderRadius: 8,
+                background: "rgba(245, 158, 11, 0.08)",
+                border: "1px solid rgba(245, 158, 11, 0.20)",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <AlertTriangle size={14} style={{ color: "#b45309", flexShrink: 0 }} />
+              <div style={{ fontSize: 11, color: "#92400e", lineHeight: 1.5 }}>
+                Ouvre Rentabilité et modifie un champ pour initialiser les valeurs partagées.
+              </div>
+            </div>
+          )}
+
+          {noUsableData && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "8px 10px",
+                borderRadius: 8,
+                background: "rgba(245, 158, 11, 0.08)",
+                border: "1px solid rgba(245, 158, 11, 0.20)",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <AlertTriangle size={14} style={{ color: "#b45309", flexShrink: 0 }} />
+              <div style={{ fontSize: 11, color: "#92400e", lineHeight: 1.5 }}>
+                Aucune donnée de rentabilité trouvée pour ce deal. Les prix de revente sont à initialiser manuellement.
+              </div>
+            </div>
+          )}
+        </SectionCard>
+
+        <div style={{ height: 12 }} />
+
+        {/* Scénarios */}
+        <SectionCard title="Scénarios de sortie" subtitle="Comparaison côte à côte">
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(${Math.max(1, computed.length)}, 1fr)`,
+              gap: 12,
+            }}
+          >
+            {computed.map((s) => {
+              const isBestMarge = s.marge === bestMarge;
+              const isBestTRI = s.tri === bestTRI;
+              const isFastest = s.delaiMois === bestSpeed;
+              const showDash = s.prixRevente === 0;
+
+              return (
+                <div
+                  key={s.id}
+                  style={{
+                    borderRadius: 16,
+                    border: "1px solid rgba(15,23,42,0.08)",
+                    background: "rgba(255,255,255,0.95)",
+                    padding: 14,
+                    boxShadow: "0 10px 25px rgba(2,6,23,0.06)",
+                  }}
+                >
+                  <div style={{ fontWeight: 900, fontSize: 15, color: "#0f172a" }}>{s.label}</div>
+
+                  <div style={{ height: 8 }} />
+
+                  <div style={{ fontSize: 13, color: "#334155", lineHeight: 1.7 }}>
+                    <div>
+                      Prix sortie : <b>{showDash ? "—" : eur(s.prixRevente)}</b>
+                    </div>
+                    <div>
+                      Délai sortie : <b>{s.delaiMois} mois</b>
+                    </div>
+                    <div>
+                      Holding : <b>{eur(s.holding)}</b>
+                    </div>
+                    <div>
+                      Marge nette : <b>{showDash ? "—" : eur(s.marge)}</b>
+                    </div>
+                    <div>
+                      TRI projet (approx) : <b>{showDash ? "—" : pct(s.tri)}</b>
+                    </div>
+                  </div>
+
+                  <div style={{ height: 10 }} />
+
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {!showDash && isBestMarge && <Badge text="Meilleure marge" />}
+                    {!showDash && isBestTRI && <Badge text="Meilleur TRI" />}
+                    {isFastest && <Badge text="Sortie la plus rapide" />}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </SectionCard>
+      </div>
+    </div>
   );
 }
 
@@ -468,7 +515,7 @@ function Badge({ text }: { text: string }) {
         fontWeight: 900,
         background: "rgba(59,130,246,0.10)",
         border: "1px solid rgba(59,130,246,0.22)",
-        color: "#1d4ed8",
+        color: ACCENT_INV,
         display: "inline-flex",
         alignItems: "center",
         gap: 4,
