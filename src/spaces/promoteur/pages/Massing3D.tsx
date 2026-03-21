@@ -12,6 +12,10 @@ import {
 // ✅ Snapshot store (existe déjà dans ton projet)
 import { patchPromoteurSnapshot, patchModule } from "../shared/promoteurSnapshot.store";
 
+// ─── Design tokens ───────────────────────────────────────────────────────────
+const GRAD_PRO = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
+const ACCENT_PRO = "#5247b8";
+
 type ReliefDiag = {
   deptCode: string;
   epsg: string | number | null | undefined;
@@ -78,8 +82,6 @@ export default function Massing3D(): React.ReactElement {
   }, [parcel, buildings, parkings, bbox, lastUpdatedAt]);
 
   const inferredDeptCode = useMemo(() => {
-    // Best effort: si tu as une propriété dans la parcelle (ex: deptCode, code_dept, departement, etc.)
-    // sinon fallback "75" (Paris) pour ne pas bloquer.
     const props: any = (parcel as any)?.properties ?? {};
     const cand =
       props.deptCode ??
@@ -97,7 +99,6 @@ export default function Massing3D(): React.ReactElement {
   // ✅ Persist snapshot (project + massing3d) — non bloquant
   useEffect(() => {
     try {
-      // Best-effort coords (si la parcelle porte un centroid, sinon rien)
       const props: any = (parcel as any)?.properties ?? {};
       const latCand =
         props.lat ??
@@ -118,22 +119,18 @@ export default function Massing3D(): React.ReactElement {
       const lat = Number.isFinite(Number(latCand)) ? Number(latCand) : undefined;
       const lon = Number.isFinite(Number(lonCand)) ? Number(lonCand) : undefined;
 
-      // Patch project (best effort)
       patchPromoteurSnapshot({
         project: {
-          // On ne connaît pas forcément parcelId ici, mais on peut stocker un identifiant si présent
           parcelId:
             (props.parcel_id ?? props.parcelId ?? props.idu ?? props.IDU ?? props.id) != null
               ? String(props.parcel_id ?? props.parcelId ?? props.idu ?? props.IDU ?? props.id)
               : undefined,
-          // dept / epsg / bbox / coords
-          departement: inferredDeptCode as any, // si ton type snapshot ne l'a pas, ce champ sera ignoré côté TS chez toi
+          departement: inferredDeptCode as any,
           lat,
           lon,
         } as any,
       });
 
-      // Patch massing3d module
       const ok = stats.hasAny;
 
       const summary = ok
@@ -155,7 +152,6 @@ export default function Massing3D(): React.ReactElement {
             buildings: stats.buildingsCount,
             parkings: stats.parkingsCount,
           },
-          // On stocke les geojson (FeatureCollection) si présents
           parcel: parcel ?? null,
           buildings: buildings ?? null,
           parkings: parkings ?? null,
@@ -190,8 +186,6 @@ export default function Massing3D(): React.ReactElement {
       return;
     }
 
-    // On s'attend à du Lambert-93 si tu veux appeler /elevation (EPSG:2154 mètres)
-    // Si epsg n'est pas 2154, la requête retournera probablement des null.
     const epsgStr = String(epsg ?? "");
     const note =
       epsgStr && epsgStr !== "2154"
@@ -203,13 +197,10 @@ export default function Massing3D(): React.ReactElement {
     try {
       setReliefLoading(true);
 
-      // 1) Ensure département (cache backend)
       await ensureDepartment(deptCode);
 
-      // 2) Sample grid sur bbox (petit: 9x9 = 81 points)
       const points = buildSampleGridFromBbox(bbox, 9, 9);
 
-      // 3) Elevation
       const r = await elevationLambert93(deptCode, points);
 
       const elevations = r.elevations ?? [];
@@ -255,57 +246,61 @@ export default function Massing3D(): React.ReactElement {
 
   return (
     <div style={{ padding: 16, display: "grid", gap: 12 }}>
-      {/* Header */}
-      <div
-        style={{
-          border: "1px solid #e5e7eb",
-          borderRadius: 12,
-          padding: 12,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
+
+      {/* ── Bannière dégradé Promoteur › Conception ── */}
+      <div style={{
+        background: GRAD_PRO,
+        borderRadius: 14,
+        padding: "20px 24px",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        gap: 16,
+      }}>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 16 }}>Massing 3D</div>
-          <div style={{ opacity: 0.75, fontSize: 13 }}>
-            Source de données : store Promoteur (Zustand). EPSG : {epsg} · BBOX :{" "}
-            {stats.bboxLabel} · Dernière MAJ : {stats.lastUpdatedLabel}
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
+            Promoteur › Conception
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>
+            Massing 3D
+          </div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+            EPSG : {epsg ?? "—"} · BBOX : {stats.bboxLabel} · MAJ : {stats.lastUpdatedLabel}
           </div>
         </div>
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", flexShrink: 0, marginTop: 4 }}>
           <button
             type="button"
             onClick={() => navigate("/promoteur/implantation-2d")}
             style={{
-              padding: "8px 10px",
+              padding: "9px 18px",
               borderRadius: 10,
-              border: "1px solid #e5e7eb",
+              border: "none",
               background: "white",
-              cursor: "pointer",
+              color: ACCENT_PRO,
               fontWeight: 600,
+              fontSize: 13,
+              cursor: "pointer",
             }}
           >
-            Revenir à Implantation 2D
+            ← Implantation 2D
           </button>
-
           <button
             type="button"
             onClick={handleClearProjectData}
             style={{
-              padding: "8px 10px",
+              padding: "9px 18px",
               borderRadius: 10,
-              border: "1px solid #fecaca",
-              background: "#fff1f2",
+              border: "1px solid rgba(255,255,255,0.35)",
+              background: "rgba(255,255,255,0.12)",
+              color: "white",
+              fontWeight: 600,
+              fontSize: 13,
               cursor: "pointer",
-              fontWeight: 700,
-              color: "#991b1b",
             }}
             title="Supprime parcel/bâtiments/parkings du store (persist)"
           >
-            Vider données projet
+            Vider données
           </button>
         </div>
       </div>
@@ -332,8 +327,8 @@ export default function Massing3D(): React.ReactElement {
 
         {!stats.hasAny && (
           <div style={{ fontSize: 13, color: "#b45309" }}>
-            Aucune donnée n’a été trouvée dans le store. Va dans Implantation 2D,
-            dessine puis “valide/sauvegarde”.
+            Aucune donnée n'a été trouvée dans le store. Va dans Implantation 2D,
+            dessine puis "valide/sauvegarde".
           </div>
         )}
       </div>
@@ -361,12 +356,14 @@ export default function Massing3D(): React.ReactElement {
             onClick={handleLoadReliefTest}
             disabled={reliefLoading}
             style={{
-              padding: "8px 10px",
+              padding: "8px 14px",
               borderRadius: 10,
-              border: "1px solid #e5e7eb",
-              background: reliefLoading ? "#f3f4f6" : "white",
+              border: `1px solid ${ACCENT_PRO}`,
+              background: reliefLoading ? "#f3f4f6" : "#ede9fe",
+              color: reliefLoading ? "#94a3b8" : ACCENT_PRO,
               cursor: reliefLoading ? "not-allowed" : "pointer",
               fontWeight: 700,
+              fontSize: 13,
             }}
           >
             {reliefLoading ? "Chargement..." : "Charger relief (test)"}

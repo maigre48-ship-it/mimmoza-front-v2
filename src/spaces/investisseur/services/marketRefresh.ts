@@ -1,6 +1,14 @@
 import { supabase } from "@/lib/supabase";
 import type { AccessContext } from "@/lib/access";
 
+// ─── Mode transaction sécurisé ────────────────────────────────────────────────
+//
+// La veille Mimmoza est exclusivement dédiée à l'achat/revente.
+// Ce verrou est appliqué à chaque étape du pipeline (policy, ingest, dédupe,
+// métriques, opportunités) afin qu'aucune location ne puisse transiter.
+
+const SAFE_TRANSACTION_MODE = "sale" as const;
+
 // ─── Configuration des politiques production ─────────────────────────────────
 //
 // Ces constantes peuvent à terme être externalisées dans une table Supabase
@@ -22,7 +30,8 @@ const ADMIN_UNLIMITED_QUOTA = 999;
 export type MarketRefreshParams = {
   zipCode?: string;
   city?: string;
-  transactionMode?: "all" | "sale" | "rent";
+  /** Toujours "sale" — toute autre valeur est ignorée par le pipeline. */
+  transactionMode?: "sale";
   withIngest?: boolean;
   dryRun?: boolean;
   limit?: number;
@@ -161,15 +170,21 @@ function normalizeCityKey(city: string): string {
     .toLowerCase();
 }
 
+/**
+ * Construit le payload zone pour les edge functions.
+ * Le transaction_mode est toujours forcé à SAFE_TRANSACTION_MODE ("sale")
+ * quelle que soit la valeur passée en entrée — sécurité défensive.
+ */
 function buildZoneFunctionPayload(params: {
   zipCode?: string;
   city?: string;
-  transactionMode?: "all" | "sale" | "rent";
+  transactionMode?: "sale";
 }) {
   return {
     zip_code: normalizeText(params.zipCode),
     city: normalizeText(params.city),
-    transaction_mode: params.transactionMode ?? "all",
+    // Verrou absolu : toujours "sale", le paramètre entrant est ignoré
+    transaction_mode: SAFE_TRANSACTION_MODE,
   };
 }
 
@@ -365,6 +380,7 @@ async function invokeFunction<T = unknown>(
 export async function refreshMarketZone(
   params: MarketRefreshParams
 ): Promise<MarketRefreshResult> {
+  // Verrou défensif : transaction_mode est toujours "sale" dans le payload zone
   const zonePayload = buildZoneFunctionPayload(params);
   const zoneKey = buildZoneKey(params);
   const dryRun = Boolean(params.dryRun);
@@ -540,9 +556,11 @@ function extractFunctionError(body: unknown): string | null {
 export function buildZoneKey(input: {
   zipCode?: string;
   city?: string;
-  transactionMode?: "all" | "sale" | "rent";
+  /** Ignoré — toujours "sale". */
+  transactionMode?: "sale";
 }): string {
-  const tx = input.transactionMode ?? "all";
+  // Le mode est toujours "sale" — le paramètre entrant est ignoré
+  const tx = SAFE_TRANSACTION_MODE;
   const zip = normalizeText(input.zipCode);
   if (zip) return `${zip}|${tx}`;
   const city = normalizeText(input.city);
@@ -553,7 +571,7 @@ export function buildZoneKey(input: {
 export async function fetchMarketZoneMetrics(input: {
   zipCode?: string;
   city?: string;
-  transactionMode?: "all" | "sale" | "rent";
+  transactionMode?: "sale";
 }): Promise<MarketZoneMetrics | null> {
   const zoneKey = buildZoneKey(input);
   const { data, error } = await supabase.from("market_zone_metrics").select("*").eq("zone_key", zoneKey).maybeSingle();
@@ -561,18 +579,45 @@ export async function fetchMarketZoneMetrics(input: {
   return (data ?? null) as MarketZoneMetrics | null;
 }
 
+// ─── Seuil de prix minimum pour une transaction de vente en France ────────────
+//
+// Toute annonce dont le prix est inférieur à ce seuil est un loyer mensuel
+// accidentellement ingéré, pas un prix de vente immobilière.
+// 10 000 € est un minimum absolu — même un garage en zone rurale dépasse ce seuil.
+
+const MIN_SALE_PRICE = 10_000;
+
+// Prix/m² minimum réaliste pour une vente (€/m²).
+// En dessous de 200 €/m², c'est mécaniquement un loyer mensuel ramené au m².
+
+const MIN_SALE_PRICE_M2 = 200;
+
 export async function fetchMarketOpportunities(input: {
   zipCode?: string;
   city?: string;
-  transactionMode?: "all" | "sale" | "rent";
+  transactionMode?: "sale";
   minScore?: number;
   limit?: number;
 }): Promise<MarketOpportunity[]> {
   const zoneKey = buildZoneKey(input);
-  let query = supabase.from("market_opportunities").select("*").eq("zone_key", zoneKey).order("opportunity_score", { ascending: false });
+  let query = supabase
+    .from("market_opportunities")
+    .select("*")
+    .eq("zone_key", zoneKey)
+    // ── Filtre prix vente : exclut les loyers mensuels ingérés par erreur ───
+    .gte("price", MIN_SALE_PRICE)
+    .order("opportunity_score", { ascending: false });
   if (typeof input.minScore === "number") query = query.gte("opportunity_score", input.minScore);
   if (typeof input.limit === "number") query = query.limit(input.limit);
   const { data, error } = await query;
   if (error) throw error;
-  return (data ?? []) as MarketOpportunity[];
+
+  const rows = (data ?? []) as MarketOpportunity[];
+
+  // ── Post-filtre défensif : double vérification prix + price_m2 ────────────
+  return rows.filter((row) => {
+    if (row.price != null && row.price < MIN_SALE_PRICE) return false;
+    if (row.price_m2 != null && row.price_m2 < MIN_SALE_PRICE_M2) return false;
+    return true;
+  });
 }

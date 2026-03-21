@@ -1,8 +1,14 @@
 ﻿// src/spaces/particulier/pages/Estimation.tsx
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "../../../supabaseClient";
 import { fetchBestDvfEstimate, fetchDvfComps } from "../../../lib/dvfEstimateApi";
 import type { DvfCompRow } from "../../../lib/dvfEstimateApi";
+import { usePromoteurStudy } from "../../promoteur/shared/usePromoteurStudy";
+
+// ─── Design tokens ───────────────────────────────────────────────────────────
+const GRAD_PRO = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
+const ACCENT_PRO = "#5247b8";
 
 type EstimationInputs = {
   adresse: string;
@@ -37,13 +43,14 @@ type DvfUi = {
   meta?: any;
 };
 
+// ── Patch 1 : champs vides par défaut ────────────────────────────────────────
 const DEFAULT_INPUTS: EstimationInputs = {
   adresse: "",
   ville: "",
   codePostal: "",
-  surfaceM2: 60,
-  pieces: 3,
-  annee: 1990,
+  surfaceM2: 0,
+  pieces: 0,
+  annee: 0,
   typeBien: "Appartement",
   etat: "bon",
   exterieur: false,
@@ -250,6 +257,43 @@ function persistAddressToLocalStorage(
 const Estimation: React.FC = () => {
   const [inputs, setInputs] = useState<EstimationInputs>(DEFAULT_INPUTS);
 
+  // ── Patch 2 : état showResult ─────────────────────────────────────────────
+  const [showResult, setShowResult] = useState(false);
+
+  // ── Préremplissage depuis l'étude Promoteur ───────────────────────────────
+  const [searchParams] = useSearchParams();
+  const studyId = searchParams.get("study");
+  const { study, loadState } = usePromoteurStudy(studyId);
+
+  // ── Patch 3 : useEffect d'hydratation corrigé ─────────────────────────────
+  useEffect(() => {
+    if (loadState !== "ready" || !study) return;
+
+    const f = study.foncier;
+    const m = study.marche;
+
+    // Adresse : référence parcellaire (meilleur proxy disponible)
+    const adresse = f?.focus_id
+      ? `Parcelle ${f.focus_id}`
+      : "";
+
+    // Ville : depuis les données marché
+    const ville = (m?.raw_data as any)?.meta?.commune_nom ?? "";
+
+    // Code postal : INSEE commune (5 chiffres)
+    const codePostal = f?.commune_insee
+      ? String(f.commune_insee).slice(0, 5)
+      : "";
+
+    setInputs((prev) => ({
+      ...prev,
+      ...(adresse    ? { adresse }    : {}),
+      ...(ville      ? { ville }      : {}),
+      ...(codePostal ? { codePostal } : {}),
+      // Surface, pièces, année : laissés vides → l'utilisateur remplit
+    }));
+  }, [loadState, study]);
+
   // DVF state
   const [dvfLoading, setDvfLoading] = useState(false);
   const [dvfError, setDvfError] = useState<string | null>(null);
@@ -314,8 +358,6 @@ const Estimation: React.FC = () => {
     }
 
     // --- PERSIST ADDRESS TO LOCALSTORAGE (avec prix offline en fallback) ---
-    // On sauvegarde l'adresse dès le lancement du calcul DVF
-    // pour que l'onglet Quartier puisse la récupérer.
     persistAddressToLocalStorage(inputs, resolvedInsee, {
       surface_m2: Number(inputs.surfaceM2 || 0) || null,
       prix: offlineResult?.prixCible ?? null,
@@ -394,7 +436,6 @@ const Estimation: React.FC = () => {
           setDvfBest(bestUi);
 
           // --- PERSIST ADDRESS WITH DVF PRICE ---
-          // Mise à jour du localStorage avec le prix DVF réel
           const finalInsee = retrievedInsee || resolvedInsee;
           persistAddressToLocalStorage(inputs, finalInsee, {
             surface_m2: Number(inputs.surfaceM2 || 0) || null,
@@ -414,7 +455,6 @@ const Estimation: React.FC = () => {
               limit: 30,
             };
 
-            // Si on a un INSEE réel côté meta, on le réutilise (uniquement si scope commune)
             if (res.best.scope === "commune" && res.best.result?.meta?.commune_insee) {
               compsParams.commune_insee = res.best.result.meta.commune_insee;
             }
@@ -440,21 +480,58 @@ const Estimation: React.FC = () => {
     } catch (e: any) {
       setDvfError(e?.message ?? String(e));
     } finally {
+      // ── Patch 2 : afficher le résultat après calcul ───────────────────────
+      setShowResult(true);
       setDvfLoading(false);
     }
   };
 
   return (
     <div style={pageStyle}>
-      <div style={headerStyle}>
+
+      {/* ── Bannière dégradé Promoteur › Évaluation ── */}
+      <div style={{
+        maxWidth: 1200,
+        margin: "0 auto 18px auto",
+        background: GRAD_PRO,
+        borderRadius: 14,
+        padding: "20px 24px",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        gap: 16,
+      }}>
         <div>
-          <div style={kickerStyle}>ÉVALUATION</div>
-          <h1 style={titleStyle}>Estimation</h1>
-          <p style={subtitleStyle}>
-            Saisis les caractéristiques du bien pour obtenir une fourchette de valeur. (Estimation DVF disponible via le
-            bouton Calculer.)
-          </p>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
+            Promoteur › Évaluation
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>
+            Estimation
+          </div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+            Saisis les caractéristiques du bien pour obtenir une fourchette de valeur.
+          </div>
         </div>
+        <button
+          type="button"
+          style={{
+            padding: "9px 18px",
+            borderRadius: 10,
+            border: "none",
+            background: "white",
+            color: ACCENT_PRO,
+            fontWeight: 600,
+            fontSize: 13,
+            cursor: dvfLoading ? "not-allowed" : "pointer",
+            flexShrink: 0,
+            marginTop: 4,
+            opacity: dvfLoading ? 0.7 : 1,
+          }}
+          onClick={handleComputeDvf}
+          disabled={dvfLoading}
+        >
+          {dvfLoading ? "Calcul DVF…" : "Calculer (DVF)"}
+        </button>
       </div>
 
       <div style={gridStyle}>
@@ -494,10 +571,11 @@ const Estimation: React.FC = () => {
               <input
                 style={inputStyle}
                 type="number"
-                min={10}
+                min={0}
                 max={1000}
-                value={inputs.surfaceM2}
+                value={inputs.surfaceM2 || ""}
                 onChange={(e) => setInputs((p) => ({ ...p, surfaceM2: Number(e.target.value || 0) }))}
+                placeholder="ex : 65"
               />
             </Field>
 
@@ -505,10 +583,11 @@ const Estimation: React.FC = () => {
               <input
                 style={inputStyle}
                 type="number"
-                min={1}
+                min={0}
                 max={20}
-                value={inputs.pieces}
+                value={inputs.pieces || ""}
                 onChange={(e) => setInputs((p) => ({ ...p, pieces: Number(e.target.value || 0) }))}
+                placeholder="ex : 3"
               />
             </Field>
 
@@ -518,8 +597,9 @@ const Estimation: React.FC = () => {
                 type="number"
                 min={1800}
                 max={new Date().getFullYear()}
-                value={inputs.annee}
+                value={inputs.annee || ""}
                 onChange={(e) => setInputs((p) => ({ ...p, annee: Number(e.target.value || 0) }))}
+                placeholder="ex : 1990"
               />
             </Field>
 
@@ -557,6 +637,7 @@ const Estimation: React.FC = () => {
           </div>
 
           <div style={actionsStyle}>
+            {/* ── Patch 5 : setShowResult(false) au reset ── */}
             <button
               type="button"
               style={btnSecondaryStyle}
@@ -567,6 +648,7 @@ const Estimation: React.FC = () => {
                 setDvfDetails({ cp: null, commune: null });
                 setDvfComps([]);
                 setDvfCompsError(null);
+                setShowResult(false);
               }}
             >
               Réinitialiser
@@ -674,37 +756,44 @@ const Estimation: React.FC = () => {
           )}
         </div>
 
-        {/* Result */}
+        {/* ── Patch 4 : Result conditionnel ── */}
         <div style={cardStyle}>
           <h2 style={cardTitleStyle}>Résultat</h2>
 
-          <div style={kpiRowStyle}>
-            <Kpi label="Fourchette basse" value={formatEUR(displayedResult.prixBas)} />
-            <Kpi label="Prix cible" value={formatEUR(displayedResult.prixCible)} />
-            <Kpi label="Fourchette haute" value={formatEUR(displayedResult.prixHaut)} />
-            <Kpi label="Prix / m²" value={`${formatInt(displayedResult.prixM2)} €/m²`} />
-          </div>
+          {!showResult ? (
+            <div style={{ color: "#94a3b8", fontSize: 13, padding: "20px 0" }}>
+              Renseignez les caractéristiques du bien puis cliquez sur <strong>Calculer (DVF)</strong>.
+            </div>
+          ) : (
+            <>
+              <div style={kpiRowStyle}>
+                <Kpi label="Fourchette basse" value={formatEUR(displayedResult.prixBas)} />
+                <Kpi label="Prix cible"       value={formatEUR(displayedResult.prixCible)} />
+                <Kpi label="Fourchette haute" value={formatEUR(displayedResult.prixHaut)} />
+                <Kpi label="Prix / m²"        value={`${formatInt(displayedResult.prixM2)} €/m²`} />
+              </div>
 
-          <div style={confidenceBoxStyle}>
-            <div style={confidenceLabelStyle}>Niveau de confiance</div>
-            <div style={confidenceValueStyle}>{displayedResult.confiance}</div>
-          </div>
+              <div style={confidenceBoxStyle}>
+                <div style={confidenceLabelStyle}>Niveau de confiance</div>
+                <div style={confidenceValueStyle}>{displayedResult.confiance}</div>
+              </div>
 
-          <div style={notesStyle}>
-            <div style={notesTitleStyle}>Notes</div>
-            <ul style={notesListStyle}>
-              {displayedResult.notes.map((n, idx) => (
-                <li key={idx} style={notesItemStyle}>
-                  {n}
-                </li>
-              ))}
-            </ul>
-          </div>
+              <div style={notesStyle}>
+                <div style={notesTitleStyle}>Notes</div>
+                <ul style={notesListStyle}>
+                  {displayedResult.notes.map((n, idx) => (
+                    <li key={idx} style={notesItemStyle}>
+                      {n}
+                    </li>
+                  ))}
+                </ul>
+              </div>
 
-          {/* Small hint */}
-          <div style={hintStyle}>
-            Astuce : renseigne le code postal, la surface et le type de bien, puis clique <strong>Calculer (DVF)</strong>.
-          </div>
+              <div style={hintStyle}>
+                Astuce : renseigne le code postal, la surface et le type de bien, puis clique <strong>Calculer (DVF)</strong>.
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -733,7 +822,7 @@ const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void }> = (
       onClick={() => onChange(!checked)}
       style={{
         ...toggleStyle,
-        background: checked ? "#0ea5e9" : "#e2e8f0",
+        background: checked ? ACCENT_PRO : "#e2e8f0",
       }}
       aria-pressed={checked}
     >
@@ -856,8 +945,8 @@ const btnPrimaryStyle: React.CSSProperties = {
   height: 40,
   padding: "0 14px",
   borderRadius: 10,
-  border: "1px solid rgba(2, 132, 199, 0.35)",
-  background: "#0ea5e9",
+  border: "none",
+  background: ACCENT_PRO,
   color: "#ffffff",
   fontWeight: 800,
   cursor: "pointer",
@@ -990,9 +1079,9 @@ const dvfTitleStyle: React.CSSProperties = {
 const dvfBadgeStyle: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 800,
-  color: "#0f172a",
-  background: "rgba(14,165,233,0.12)",
-  border: "1px solid rgba(14,165,233,0.22)",
+  color: ACCENT_PRO,
+  background: "rgba(82,71,184,0.08)",
+  border: `1px solid rgba(82,71,184,0.2)`,
   padding: "6px 10px",
   borderRadius: 999,
 };

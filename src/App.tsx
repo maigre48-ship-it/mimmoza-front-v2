@@ -15,6 +15,10 @@ import { SpaceSync, type Space } from "./components/SpaceSync";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import JetonsPage from "./pages/JetonsPage";
+import ApiPage from "./pages/ApiPage";
+import ApiKeysPage from "./pages/ApiKeysPage";
+import ApiPlaygroundPage from "./pages/ApiPlaygroundPage";
+import ApiDeveloperDashboardPage from "./pages/ApiDeveloperDashboardPage";
 
 import BanqueRisquesTestPage from "./pages/BanqueRisquesTestPage";
 
@@ -79,6 +83,7 @@ import PromoteurSynthese from "./spaces/promoteur/pages/Synthese";
 import PromoteurExports from "./spaces/promoteur/pages/Exports";
 import Implantation2DPage from "./spaces/promoteur/Implantation2DPage";
 import BilanPromoteurPage from "./spaces/promoteur/bilan-promoteur/BilanPromoteurPage";
+import PromoteurStudyRequired from "./spaces/promoteur/components/PromoteurStudyRequired";
 
 import BanqueLayout from "./spaces/banque/components/BanqueLayout";
 import BanquePipeline from "./spaces/banque/pages/Pipeline";
@@ -99,7 +104,10 @@ import AssuranceDocuments from "./spaces/assurance/pages/Documents";
 
 declare global {
   interface Window {
-    __mimmozaProjection?: (lon: number, lat: number) => { x: number; y: number };
+    __mimmozaProjection?: (
+      lon: number,
+      lat: number
+    ) => { x: number; y: number };
     __mimmozaElevation?: (
       deptCode: string,
       lon: number,
@@ -159,7 +167,12 @@ function AppRoot() {
 
     window.__mimmozaProjection = (lon: number, lat: number) => {
       const { x, y } = wgs84ToLambert93(lon, lat);
-      console.log("[mimmoza] projection EPSG:4326 -> EPSG:2154", { lon, lat, x, y });
+      console.log("[mimmoza] projection EPSG:4326 -> EPSG:2154", {
+        lon,
+        lat,
+        x,
+        y,
+      });
       return { x, y };
     };
 
@@ -199,18 +212,39 @@ function AppRoot() {
           <Route path="/abonnement" element={<AbonnementPage />} />
           <Route path="/jetons" element={<JetonsPage />} />
 
-          <Route path="/signup" element={<Navigate to="/inscription" replace />} />
-          <Route path="/register" element={<Navigate to="/inscription" replace />} />
-          <Route path="/billing" element={<Navigate to="/abonnement" replace />} />
+          <Route
+            path="/signup"
+            element={<Navigate to="/inscription" replace />}
+          />
+          <Route
+            path="/register"
+            element={<Navigate to="/inscription" replace />}
+          />
+          <Route
+            path="/billing"
+            element={<Navigate to="/abonnement" replace />}
+          />
           <Route path="/account" element={<Navigate to="/compte" replace />} />
           <Route path="/tokens" element={<Navigate to="/jetons" replace />} />
 
           {/* ═══ Paramètres ═══ */}
-          <Route path="/parametres/veille" element={<VeilleSettingsPage />} />
+          <Route
+            path="/parametres/veille"
+            element={<VeilleSettingsPage />}
+          />
 
           {/* ═══ Veille ═══ */}
           <Route path="/veille" element={<VeillePage />} />
           <Route path="/veille/marche" element={<VeilleMarchePage />} />
+
+          {/* ═══ API ═══ */}
+          <Route path="/api" element={<ApiPage />} />
+          <Route path="/api/keys" element={<ApiKeysPage />} />
+          <Route path="/api/playground" element={<ApiPlaygroundPage />} />
+          <Route
+            path="/api/developer"
+            element={<ApiDeveloperDashboardPage />}
+          />
 
           {/* ═══ Admin ═══ */}
           <Route path="/admin/login" element={<AdminLoginPage />} />
@@ -272,13 +306,19 @@ function AppRoot() {
             <Route
               path="rentabilite"
               element={
-                <Navigate to="/marchand-de-bien/analyse?tab=rentabilite" replace />
+                <Navigate
+                  to="/marchand-de-bien/analyse?tab=rentabilite"
+                  replace
+                />
               }
             />
             <Route
               path="due-diligence"
               element={
-                <Navigate to="/marchand-de-bien/analyse?tab=due-diligence" replace />
+                <Navigate
+                  to="/marchand-de-bien/analyse?tab=due-diligence"
+                  replace
+                />
               }
             />
             <Route
@@ -312,13 +352,20 @@ function AppRoot() {
             />
             <Route path="marche" element={<MarchePage />} />
             <Route path="risques" element={<RisquesPage />} />
-            <Route path="implantation-2d" element={<Implantation2DPage />} />
-            <Route path="massing-3d" element={<PromoteurMassing3D />} />
-            <Route path="bilan" element={<PromoteurBilan />} />
-            <Route path="bilan-promoteur" element={<BilanPromoteurPage />} />
-            <Route path="synthese" element={<PromoteurSynthese />} />
-            <Route path="exports" element={<PromoteurExports />} />
-            <Route path="estimation" element={<ParticulierEstimation />} />
+
+            <Route element={<PromoteurStudyRequired />}>
+              <Route path="estimation" element={<ParticulierEstimation />} />
+              <Route path="implantation-2d" element={<Implantation2DPage />} />
+              <Route path="massing-3d" element={<PromoteurMassing3D />} />
+              <Route path="bilan" element={<PromoteurBilan />} />
+              <Route
+                path="bilan-promoteur"
+                element={<BilanPromoteurPage />}
+              />
+              <Route path="synthese" element={<PromoteurSynthese />} />
+              <Route path="exports" element={<PromoteurExports />} />
+            </Route>
+
             <Route path="*" element={<Navigate to="/promoteur" replace />} />
           </Route>
 
@@ -330,7 +377,10 @@ function AppRoot() {
             <Route path="analyse/:id" element={<BanqueAnalysePage />} />
             <Route path="comite/:id" element={<BanqueComitePage />} />
             <Route path="alertes" element={<BanqueAlertes />} />
-            <Route path="smartscore-debug" element={<BanqueSmartScoreDebug />} />
+            <Route
+              path="smartscore-debug"
+              element={<BanqueSmartScoreDebug />}
+            />
             <Route path="risques-test" element={<BanqueRisquesTestPage />} />
             <Route path="estimation" element={<ParticulierEstimation />} />
             <Route path="marche" element={<MarchePage />} />
@@ -338,7 +388,10 @@ function AppRoot() {
 
             <Route path="assurance" element={<Outlet />}>
               <Route index element={<AssuranceDashboard />} />
-              <Route path="souscription" element={<AssuranceSouscription />} />
+              <Route
+                path="souscription"
+                element={<AssuranceSouscription />}
+              />
               <Route path="exposition" element={<AssuranceExposition />} />
               <Route path="tarification" element={<AssuranceTarification />} />
               <Route path="offre" element={<AssuranceOffre />} />
@@ -415,7 +468,10 @@ function AppRoot() {
             element={<Navigate to="/banque/assurance" replace />}
           />
           <Route path="/audit/*" element={<Navigate to="/" replace />} />
-          <Route path="/agence" element={<Navigate to="/particulier" replace />} />
+          <Route
+            path="/agence"
+            element={<Navigate to="/particulier" replace />}
+          />
           <Route
             path="/marchand"
             element={<Navigate to="/marchand-de-bien" replace />}

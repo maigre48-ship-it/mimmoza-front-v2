@@ -9,6 +9,7 @@
 // ✅ V1.6: Layout fix - fixed height layout, no page scroll, only right column scrolls
 // ✅ V1.7: Layout fix - scrollable page, sticky toolbar, large map as main element
 // ✅ V1.8: Data sync fix - PLU cache invalidation when parcels change
+// ✅ V1.9: Fallback Supabase via usePromoteurStudy quand useFoncierSelection revient vide
 
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
@@ -27,6 +28,7 @@ import * as turf from "@turf/turf";
 
 import type { ImplantationUserParams, ImplantationResult, PluRules } from "./types";
 import computeImplantationV1 from "./implantation";
+import { patchPromoteurSnapshot, patchModule, getSnapshot } from "./shared/promoteurSnapshot.store";
 
 // -----------------------------------------------------------------------------
 // Engine imports - delegated logic
@@ -53,19 +55,25 @@ import {
 import { useFoncierSelection, extractCommuneInsee, type SelectedParcel } from "./shared/hooks/useFoncierSelection";
 
 // -----------------------------------------------------------------------------
+// ✅ V1.9: Import usePromoteurStudy for Supabase fallback
+// -----------------------------------------------------------------------------
+import { usePromoteurStudy } from "./shared/usePromoteurStudy";
+
+// -----------------------------------------------------------------------------
 // Zustand store import for handoff to Massing 3D / Bilan Promoteur
 // -----------------------------------------------------------------------------
 import { usePromoteurProjectStore, type Implantation2DMeta, type FloorsSpec as StoreFloorsSpec } from "./store/promoteurProject.store";
-
-// -----------------------------------------------------------------------------
-// Snapshot store import for cross-module persistence
-// -----------------------------------------------------------------------------
-import { patchPromoteurSnapshot, patchModule } from "./shared/promoteurSnapshot.store";
 
 // ✅ FIX: dataSyncHelpers supprimé (causait des reloads en boucle)
 
 // Geoman CSS still needed for draw controls styling
 import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
+
+// -----------------------------------------------------------------------------
+// Design tokens
+// -----------------------------------------------------------------------------
+const GRAD_PRO = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
+const ACCENT_PRO = "#5247b8";
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -976,7 +984,7 @@ function SelectedParcelsPanel({
       {totalAreaM2 != null && (
         <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between" }}>
           <span style={{ fontWeight: 600, color: "#0f172a" }}>{"Surface totale"}</span>
-          <span style={{ fontWeight: 700, color: "#0f172a", background: "#e0f2fe", padding: "2px 8px", borderRadius: 6 }}>
+          <span style={{ fontWeight: 700, color: "white", background: ACCENT_PRO, padding: "2px 8px", borderRadius: 6 }}>
             {Math.round(totalAreaM2).toLocaleString("fr-FR")} m²
           </span>
         </div>
@@ -994,19 +1002,42 @@ export const Implantation2DPage: React.FC = () => {
 
   const studyId = searchParams.get("study");
 
+  // ── useFoncierSelection (source prioritaire : localStorage) ────────────────
   const {
-    selectedParcels,
+    selectedParcels: foncierSelectedParcels,
     communeInsee: foncierCommuneInsee,
-    focusParcelId,
-    totalAreaM2: foncierTotalAreaM2,
+    focusParcelId: foncierFocusParcelId,
+    totalAreaM2: foncierTotalAreaM2Raw,
     isHydrated: foncierIsHydrated,
   } = useFoncierSelection({ studyId });
+
+  // ── FALLBACK : données depuis Supabase quand localStorage est vide ─────────
+  const { study, loadState: studyLoadState } = usePromoteurStudy(studyId);
+
+  const selectedParcels = useMemo<SelectedParcel[]>(() => {
+    if (foncierSelectedParcels.length > 0) return foncierSelectedParcels;
+    const f = study?.foncier;
+    if (!f?.parcel_ids?.length) return [];
+    return (f.parcels_raw ?? f.parcel_ids.map((id: string) => ({ id, area_m2: null }))).map((p: any) => ({
+      id:      p.id,
+      area_m2: p.area_m2 ?? null,
+      feature: p.feature ?? undefined,
+    }));
+  }, [foncierSelectedParcels, study]);
+
+  const communeInseeRaw = foncierCommuneInsee || study?.foncier?.commune_insee || null;
+  const focusParcelId   = foncierFocusParcelId || study?.foncier?.focus_id      || null;
+  const foncierTotalAreaM2 = foncierTotalAreaM2Raw ?? study?.foncier?.surface_m2 ?? null;
+
+  // isHydrated : vrai dès que foncier est hydraté OU que Supabase a répondu
+  const isHydrated = foncierIsHydrated || studyLoadState === "ready" || studyLoadState === "error";
+  // ─────────────────────────────────────────────────────────────────────────────
 
   const setFromImplantation2D = usePromoteurProjectStore((s) => s.setFromImplantation2D);
 
   const parcelIds = useMemo(() => selectedParcels.map((p) => p.id), [selectedParcels]);
   const primaryParcelId = focusParcelId || parcelIds[0] || null;
-  const communeInsee = foncierCommuneInsee || (primaryParcelId ? extractCommuneInsee(primaryParcelId) : null);
+  const communeInsee = communeInseeRaw || (primaryParcelId ? extractCommuneInsee(primaryParcelId) : null);
 
   const missingParcels = parcelIds.length === 0;
   const missingCommuneInsee = !communeInsee;
@@ -1016,11 +1047,23 @@ export const Implantation2DPage: React.FC = () => {
   const [isLoadingGeometry, setIsLoadingGeometry] = useState(false);
 
   const resolvedRuleset = useMemo<ResolvedPluRuleset | null>(() => {
-    if (state.pluRuleset && typeof state.pluRuleset === "object") {
-      return state.pluRuleset;
+  // Priorité 1 : navigation state (passé via navigate())
+  if (state.pluRuleset && typeof state.pluRuleset === "object") {
+    return state.pluRuleset;
+  }
+  // Priorité 2 : snapshot (écrit par FoncierPluPage après "Analyser le PLU")
+  try {
+    const snapshotPlu = getSnapshot().plu;
+    if (snapshotPlu && typeof snapshotPlu === "object") {
+      const p = snapshotPlu as Record<string, unknown>;
+      if (p.version === "plu_ruleset_v1") {
+        return snapshotPlu as ResolvedPluRuleset;
+      }
     }
-    return loadResolvedRulesetFromLocalStorage();
-  }, [state.pluRuleset]);
+  } catch { /**/ }
+  // Priorité 3 : localStorage (rétrocompat)
+  return loadResolvedRulesetFromLocalStorage();
+}, [state.pluRuleset]);
 
   const rulesetValid = useMemo(() => isValidResolvedRuleset(resolvedRuleset), [resolvedRuleset]);
 
@@ -1121,10 +1164,10 @@ export const Implantation2DPage: React.FC = () => {
   }, [parcelFeatures]);
 
   const reculsEngine = useReculsEngine({
-    parcelFeature: primaryParcelFeature,
-    resolvedRuleset,
-    rulesetValid,
-  });
+  parcelFeature: combinedParcelFeature,  // ← union des 2 parcelles
+  resolvedRuleset,
+  rulesetValid,
+});
 
   const {
     facadeSegment,
@@ -1171,7 +1214,7 @@ export const Implantation2DPage: React.FC = () => {
 
   useEffect(() => {
     async function loadAllParcelGeometries() {
-      if (!foncierIsHydrated) return;
+      if (!isHydrated) return;
       if (parcelIds.length === 0 || !communeInsee) {
         setParcelFeatures([]);
         return;
@@ -1255,7 +1298,7 @@ export const Implantation2DPage: React.FC = () => {
     }
 
     loadAllParcelGeometries();
-  }, [parcelIds, communeInsee, foncierIsHydrated]);
+  }, [parcelIds, communeInsee, isHydrated]);
 
   useEffect(() => {
     if (!combinedParcelFeature) {
@@ -1523,30 +1566,37 @@ export const Implantation2DPage: React.FC = () => {
   // ✅ V1.8: Styles - Fixed layout issues
   // --------------------------------------------------
   const pageStyle: React.CSSProperties = {
-    display: "flex",
-    flexDirection: "row",
-    minHeight: "calc(100vh - 180px)", // Soustraire la hauteur du header
-    background: "#f8fafc",
-    color: "#0f172a",
-    padding: "12px 16px 16px 16px",
-    gap: "16px",
-    boxSizing: "border-box",
-    alignItems: "flex-start",
-  };
+  display: "flex",
+  flexDirection: "row",
+  background: "#f8fafc",
+  color: "#0f172a",
+  padding: "0 16px 16px 16px",
+  gap: "16px",
+  boxSizing: "border-box",
+  alignItems: "flex-start",
+  height: "calc(100vh - 180px)",  // ← hauteur fixe
+  overflow: "hidden",              // ← pas de scroll global
+};
   const leftCol: React.CSSProperties = {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
-    minWidth: 0,
-  };
+  flex: 1,
+  display: "flex",
+  flexDirection: "column",
+  gap: "8px",
+  minWidth: 0,
+  height: "100%",      // ← hauteur fixe
+  overflow: "hidden",  // ← la carte ne déborde pas
+};
   const rightCol: React.CSSProperties = {
-    display: "flex",
-    flexDirection: "column",
-    gap: "14px",
-    width: 280,
-    flexShrink: 0,
-  };
+  display: "flex",
+  flexDirection: "column",
+  gap: "14px",
+  width: 280,
+  flexShrink: 0,
+  height: "100%",        // ← prend toute la hauteur
+  overflowY: "auto",     // ← scroll vertical
+  overflowX: "hidden",
+  paddingRight: 4,       // ← évite le scrollbar collé au bord
+};
   const card: React.CSSProperties = {
     background: "white",
     borderRadius: 14,
@@ -1593,7 +1643,6 @@ export const Implantation2DPage: React.FC = () => {
     cursor: "pointer",
     fontSize: 12,
   };
-  // ✅ V1.8: Toolbar - position relative, pas sticky
   const toolbarStyle: React.CSSProperties = {
     position: "relative",
     zIndex: 10,
@@ -1618,524 +1667,556 @@ export const Implantation2DPage: React.FC = () => {
 
   const formatReculDisplay = (v: number): string => `${v} m`;
 
+  // ── Shared banner ─────────────────────────────────────────────────────────
+  const banner = (
+    <div style={{
+      background: GRAD_PRO,
+      borderRadius: 14,
+      padding: "20px 24px",
+      marginBottom: 16,
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: 16,
+    }}>
+      <div>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
+          Promoteur › Conception
+        </div>
+        <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>
+          Implantation 2D
+        </div>
+        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+          Définissez la façade, dessinez vos bâtiments et parkings sur la parcelle.
+        </div>
+      </div>
+      {studyId && (
+        <div style={{
+          padding: "6px 12px", borderRadius: 8, background: "rgba(255,255,255,0.15)",
+          color: "white", fontSize: 11, fontWeight: 500, flexShrink: 0, marginTop: 4,
+          border: "1px solid rgba(255,255,255,0.25)",
+        }}>
+          Étude&nbsp;{studyId.slice(0, 8)}…
+        </div>
+      )}
+    </div>
+  );
+
   // --------------------------------------------------
   // Render
   // --------------------------------------------------
 
-  if (!foncierIsHydrated) {
+  if (!isHydrated) {
     return (
-      <div style={pageStyle}>
+      <div style={{ padding: "16px", background: "#f8fafc", minHeight: "100vh" }}>
+        {banner}
         <div style={card}>
-          <div style={title}>{"Implantation 2D"}</div>
-          <p style={{ color: "#334155" }}>{"Chargement de la sélection foncière..."}</p>
+          <div style={title}>{"Chargement de la sélection foncière…"}</div>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={pageStyle}>
-      {hasMissingParams && (
-        <div
-          style={{ width: "100%", display: "flex", justifyContent: "center", alignItems: "flex-start", paddingTop: 40 }}
-        >
-          <MissingParcelParamsPanel
-            missingParcels={missingParcels}
-            missingCommuneInsee={missingCommuneInsee}
-            onReturnClick={() => {
-              const path = studyId ? `/promoteur/foncier?study=${encodeURIComponent(studyId)}` : "/promoteur/foncier";
-              navigate(path);
-            }}
-          />
-        </div>
-      )}
+    <div style={{ padding: "16px 0 0 0", background: "#f8fafc" }}>
+      {/* ── Bannière dégradé Promoteur › Conception ── */}
+      <div style={{ padding: "0 16px" }}>
+        {banner}
+      </div>
 
-      {/* ✅ FIX: PLU blocking panel supprimé — warning non-bloquant ajouté dans l'UI interactive */}
-
-      {!hasMissingParams && isLoadingGeometry && (
-        <div style={card}>
-          <div style={title}>{"Implantation 2D"}</div>
-          <p style={{ color: "#334155" }}>{"Chargement des géométries de parcelles..."}</p>
-        </div>
-      )}
-
-      {!hasMissingParams && !isLoadingGeometry && !result && (
-        <div style={card}>
-          <div style={title}>{"Implantation 2D"}</div>
-          <p style={{ color: "#334155" }}>{"Chargement des données..."}</p>
-        </div>
-      )}
-
-      {!hasMissingParams && !isLoadingGeometry && result && (
-        <>
-          <div style={leftCol}>
-            <div style={toolbarStyle}>
-              <button style={ghostButton} onClick={() => navigate(-1)}>
-                {"← Retour"}
-              </button>
-              <button
-                style={primaryButton}
-                onClick={() => {
-                  const path = studyId ? `/promoteur/bilan?study=${encodeURIComponent(studyId)}` : "/promoteur/bilan";
-                  navigate(path);
-                }}
-              >
-                {"Voir le bilan promoteur →"}
-              </button>
-              <div style={{ flex: 1 }} />
-              <button style={tinyButton} onClick={() => setShowOSM((v) => !v)}>
-                {showOSM ? "Masquer OSM" : "Afficher OSM"}
-              </button>
-              <button
-                style={{ ...tinyButton, borderColor: "rgba(239,68,68,0.5)" }}
-                onClick={() => {
-                  if (facadeSegment) {
-                    resetFacade();
-                    setError(null);
-                    userDisabledEditModeRef.current = false;
-                    setEditMode(false);
-                  } else {
-                    setError("Clique sur un bord de la parcelle pour définir la façade.");
-                  }
-                }}
-                disabled={parcelFeatures.length === 0}
-              >
-                {facadeSegment ? "Réinitialiser la façade" : "Choisir la façade"}
-              </button>
-              <button
-                style={{
-                  ...tinyButton,
-                  borderColor: editMode ? "#16a34a" : "#cbd5e1",
-                  background: editMode ? "rgba(22,163,74,0.1)" : "white",
-                }}
-                disabled={parcelFeatures.length === 0 || !facadeSegment}
-                onClick={handleEditModeToggle}
-              >
-                {editMode ? "✓ Mode édition actif" : "Mode édition"}
-              </button>
-            </div>
-
-            <div style={card}>
-              <div style={title}>{"Implantation 2D — Mode Édition"}</div>
-              <p style={{ fontSize: 13, opacity: 0.8, marginTop: 0, marginBottom: 8, color: "#475569" }}>
-                {`${parcelIds.length} parcelle(s) — Commune : ${communeInsee ?? "?"}`}
-                {studyId && (
-                  <span style={{ marginLeft: 8, fontSize: 11, color: "#64748b", background: "#f1f5f9", padding: "2px 6px", borderRadius: 4 }}>
-                    Étude: {studyId.slice(0, 12)}…
-                  </span>
-                )}
-              </p>
-
-              {!rulesetValid && (
-                <div
-                  style={{
-                    fontSize: 12,
-                    marginBottom: 8,
-                    padding: "10px 14px",
-                    background: "rgba(251,146,60,0.08)",
-                    borderRadius: 10,
-                    border: "1px solid rgba(251,146,60,0.3)",
-                    color: "#ea580c",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <span>{"⚠️ Règles PLU non chargées — reculs à 0m. Complétez l'étape PLU pour des valeurs précises."}</span>
-                  <button
-                    style={{
-                      padding: "4px 12px",
-                      borderRadius: 999,
-                      border: "1px solid rgba(251,146,60,0.5)",
-                      background: "rgba(251,146,60,0.15)",
-                      color: "#ea580c",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      fontSize: 12,
-                      whiteSpace: "nowrap",
-                      marginLeft: 12,
-                    }}
-                    onClick={() => {
-                      const path = studyId ? `/promoteur/plu-faisabilite?study=${encodeURIComponent(studyId)}` : "/promoteur/plu-faisabilite";
-                      navigate(path);
-                    }}
-                  >
-                    {"Configurer PLU →"}
-                  </button>
-                </div>
-              )}
-
-              {editMode && (
-                <div
-                  style={{
-                    fontSize: 11,
-                    opacity: 0.9,
-                    marginBottom: 8,
-                    padding: "8px 10px",
-                    background: "rgba(22,163,74,0.08)",
-                    borderRadius: 8,
-                    border: "1px solid rgba(22,163,74,0.25)",
-                    color: "#166534",
-                  }}
-                >
-                  <strong>Mode Édition :</strong> Cliquez sur un objet pour le sélectionner. Déplacez en glissant
-                  l'objet. Redimensionnez via les coins blancs. Tournez via la poignée orange en haut. Utilisez la bibliothèque de formes pour créer bâtiments ou parkings.
-                </div>
-              )}
-
-              {error && <p style={{ fontSize: 12, color: "#ea580c", marginTop: 0 }}>{error}</p>}
-
-              {parcelFeatures.length > 0 && !facadeSegment && !editMode && (
-                <div
-                  style={{
-                    fontSize: 13,
-                    padding: "10px 14px",
-                    marginBottom: 8,
-                    background: "rgba(56,189,248,0.08)",
-                    borderRadius: 10,
-                    border: "1px solid rgba(56,189,248,0.3)",
-                    color: "#0284c7",
-                  }}
-                >
-                  {"👆 Cliquez sur un des côtés de la parcelle pour définir la façade. Le mode édition s'activera automatiquement."}
-                </div>
-              )}
-
-              {!forbiddenBand &&
-                parcelFeatures.length > 0 &&
-                envelopeFeature &&
-                computedReculs &&
-                computedReculs.reculMax > 0 && (
-                  <p style={{ fontSize: 11, color: "#ea580c", marginTop: 0 }}>
-                    {"⚠️ Bande inconstructible indisponible (calcul échoué)"}
-                  </p>
-                )}
-
-              <div style={mapContainerStyle}>
-                {parcelFeatures.length > 0 ? (
-                  <MapContainer
-                    center={center as [number, number]}
-                    zoom={19}
-                    minZoom={17}
-                    maxZoom={22}
-                    scrollWheelZoom={true}
-                    doubleClickZoom={!editMode}
-                    zoomSnap={0.25}
-                    zoomDelta={0.5}
-                    maxBounds={maxBounds}
-                    maxBoundsViscosity={0.9}
-                    style={{
-                      height: "100%",
-                      width: "100%",
-                      borderRadius: 12,
-                      background: "#ffffff",
-                      backgroundImage:
-                        "linear-gradient(to right, rgba(15,23,42,0.06) 1px, transparent 1px), linear-gradient(to bottom, rgba(15,23,42,0.06) 1px, transparent 1px)",
-                      backgroundSize: "40px 40px",
-                    }}
-                  >
-                    <FitToFeatures features={parcelFeatures} />
-                    <MapReculsControl reculs={computedReculs} />
-                    <FacadeClickHandler enabled={!editMode && parcelFeatures.length > 0} onClickLatLng={handleFacadeClick} />
-                    <DrawEngineLayers
-                      drawEngine={drawEngine}
-                      onCreated={handleObjectCreated}
-                    />
-
-                    {showOSM && (
-                      <TileLayer
-                        attribution="&copy; OpenStreetMap"
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        maxNativeZoom={19}
-                        maxZoom={22}
-                      />
-                    )}
-
-                    {parcelFeatures.map((feature, idx) => {
-                      const isPrimary = feature.properties?.parcel_id === primaryParcelId;
-                      return (
-                        <GeoJSON
-                          key={`parcel-${idx}`}
-                          data={feature}
-                          style={() => ({
-                            weight: isPrimary ? 3 : 2,
-                            color: isPrimary ? "#f97316" : "#fb923c",
-                            fillColor: isPrimary ? "#fed7aa" : "#ffedd5",
-                            fillOpacity: isPrimary ? 0.2 : 0.1,
-                          })}
-                        />
-                      );
-                    })}
-
-                    {forbiddenBand && (
-                      <GeoJSON
-                        key={`forbidden-band-${Date.now()}`}
-                        data={forbiddenBand}
-                        style={() => ({
-                          weight: 2,
-                          color: "#dc2626",
-                          fillColor: "#fecaca",
-                          fillOpacity: 0.35,
-                          dashArray: "6,4",
-                        })}
-                      />
-                    )}
-
-                    {autoBuildingFeature && drawnBuildings.length === 0 && !editMode && (
-                      <GeoJSON
-                        key="auto-building"
-                        data={autoBuildingFeature}
-                        style={() => ({ weight: 2, color: "#22c55e", fillColor: "#bbf7d0", fillOpacity: 0.35 })}
-                      />
-                    )}
-
-                    {facadeSegment && (
-                      <GeoJSON
-                        key={`facade-${Date.now()}`}
-                        data={facadeSegment}
-                        style={() => ({ weight: 6, color: "#ef4444", opacity: 0.95 })}
-                      />
-                    )}
-                  </MapContainer>
-                ) : (
-                  <div
-                    style={{
-                      height: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      borderRadius: 12,
-                      border: "1px dashed #cbd5e1",
-                      fontSize: 13,
-                      opacity: 0.8,
-                      color: "#64748b",
-                    }}
-                  >
-                    {"Carte indisponible. Les calculs restent fonctionnels."}
-                  </div>
-                )}
-              </div>
-            </div>
+      <div style={pageStyle}>
+        {hasMissingParams && (
+          <div
+            style={{ width: "100%", display: "flex", justifyContent: "center", alignItems: "flex-start", paddingTop: 40 }}
+          >
+            <MissingParcelParamsPanel
+              missingParcels={missingParcels}
+              missingCommuneInsee={missingCommuneInsee}
+              onReturnClick={() => {
+                const path = studyId ? `/promoteur/foncier?study=${encodeURIComponent(studyId)}` : "/promoteur/foncier";
+                navigate(path);
+              }}
+            />
           </div>
+        )}
 
-          <div style={rightCol}>
-            <SelectedParcelsPanel
-              parcels={selectedParcels.map((p) => ({ id: p.id, area_m2: p.area_m2 ?? null }))}
-              totalAreaM2={foncierTotalAreaM2}
-            />
+        {/* ✅ FIX: PLU blocking panel supprimé — warning non-bloquant ajouté dans l'UI interactive */}
 
-            <div style={card}>
-              <div style={title}>{"Contraintes PLU"}</div>
-              <div style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 6, color: "#334155" }}>
-                <div>
-                  {"Surface terrain : "}
-                  <strong style={{ color: "#0f172a" }}>{`${result.surfaceTerrainM2.toFixed(0)} m²`}</strong>
-                </div>
-                <div>
-                  {"Emprise max : "}
-                  <strong style={{ color: "#0f172a" }}>{`${result.surfaceEmpriseMaxM2.toFixed(0)} m²`}</strong>
-                </div>
-                <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #e2e8f0" }}>
-                  <div style={{ fontWeight: 600, marginBottom: 6, color: "#0f172a" }}>
-                    {"Reculs : "}
-                    <span
-                      style={{
-                        fontWeight: 400,
-                        color:
-                          computedReculs?.mode === "DIRECTIONAL_BY_FACADE"
-                            ? "#16a34a"
-                            : computedReculs?.mode === "FALLBACK_UNIFORM"
-                              ? "#ea580c"
-                              : "#64748b",
-                      }}
-                    >
-                      {computedReculs?.mode === "DIRECTIONAL_BY_FACADE"
-                        ? "directionnels ✓"
-                        : computedReculs?.mode === "FALLBACK_UNIFORM"
-                          ? "uniformes (fallback)"
-                          : "uniformes"}
-                    </span>
-                  </div>
-                  {computedReculs ? (
-                    <>
-                      <div>
-                        {"Avant : "}
-                        <strong style={{ color: "#0f172a" }}>{formatReculDisplay(computedReculs.recul_avant_m)}</strong>
-                      </div>
-                      <div>
-                        {"Latéral : "}
-                        <strong style={{ color: "#0f172a" }}>{formatReculDisplay(computedReculs.recul_lateral_m)}</strong>
-                      </div>
-                      <div>
-                        {"Fond : "}
-                        <strong style={{ color: "#0f172a" }}>{formatReculDisplay(computedReculs.recul_fond_m)}</strong>
-                      </div>
-                      {!computedReculs.hasData && (
-                        <div style={{ fontSize: 11, color: "#ea580c", marginTop: 4 }}>
-                          {"⚠️ Aucune donnée PLU, valeurs par défaut"}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div style={{ opacity: 0.75 }}>{"En attente du ruleset PLU…"}</div>
-                  )}
-                </div>
-                <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #e2e8f0" }}>
-                  <div style={{ fontWeight: 600, marginBottom: 6, color: "#0f172a" }}>{"Façade"}</div>
-                  {facadeSegment ? (
-                    <div style={{ color: "#16a34a" }}>{"✓ Définie — reculs directionnels actifs"}</div>
-                  ) : (
-                    <div style={{ opacity: 0.75 }}>{"Non définie — clique un bord de parcelle"}</div>
-                  )}
-                </div>
-              </div>
-            </div>
+        {!hasMissingParams && isLoadingGeometry && (
+          <div style={card}>
+            <div style={title}>{"Chargement des géométries de parcelles…"}</div>
+          </div>
+        )}
 
-            <VolumetrySummaryPanel
-              buildingKind={buildingKind}
-              floorsSpec={floorsSpec}
-              drawnBuildings={drawnBuildings}
-            />
+        {!hasMissingParams && !isLoadingGeometry && !result && (
+          <div style={card}>
+            <div style={title}>{"Chargement des données…"}</div>
+          </div>
+        )}
 
-            <DrawnObjectsPanel
-              buildings={drawnBuildings}
-              parkings={drawnParkings}
-              activeId={activeObjectId}
-              onSelect={setActiveObjectId}
-              onDelete={deleteObject}
-              onClearAll={clearAll}
-            />
-
-            <ShapeLibraryPanel
-              onCreateShape={createFromTemplate}
-              disabled={!editMode || !envelopeFeature}
-            />
-
-            <div style={card}>
-              <div style={title}>{"Parkings & emprise"}</div>
-              <div style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 4, color: "#334155" }}>
-                <div>
-                  {"Places requises : "}
-                  <strong style={{ color: "#0f172a" }}>{result.placesParking}</strong>
-                </div>
-                <div>
-                  {"Surface parkings (estimée) : "}
-                  <strong style={{ color: "#0f172a" }}>{`${result.surfaceParkingM2.toFixed(0)} m²`}</strong>
-                </div>
-                <div>
-                  {"Surface résiduelle : "}
-                  <strong style={{ color: "#0f172a" }}>{`${result.surfaceEmpriseUtilisableM2.toFixed(0)} m²`}</strong>
-                </div>
-              </div>
-            </div>
-
-            <div style={card}>
-              <div style={title}>{"Paramètres"}</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <label style={label}>
-                  {"Type de bâtiment"}
-                  <select
-                    style={input}
-                    value={buildingKind}
-                    onChange={(e) => setBuildingKind(e.target.value as BuildingKind)}
-                  >
-                    <option value="COLLECTIF">Collectif</option>
-                    <option value="INDIVIDUEL">Individuel</option>
-                  </select>
-                </label>
-                <label style={label}>
-                  {"Étages (R+N)"}
-                  <input
-                    type="number"
-                    min={0}
-                    max={50}
-                    style={input}
-                    value={floorsSpec.aboveGroundFloors}
-                    onChange={(e) =>
-                      setFloorsSpec((f) => ({ ...f, aboveGroundFloors: Math.max(0, Number(e.target.value) || 0) }))
+        {!hasMissingParams && !isLoadingGeometry && result && (
+          <>
+            <div style={leftCol}>
+              <div style={toolbarStyle}>
+                <button style={ghostButton} onClick={() => navigate(-1)}>
+                  {"← Retour"}
+                </button>
+                <button
+                  style={primaryButton}
+                  onClick={() => {
+                    const path = studyId ? `/promoteur/bilan?study=${encodeURIComponent(studyId)}` : "/promoteur/bilan";
+                    navigate(path);
+                  }}
+                >
+                  {"Voir le bilan promoteur →"}
+                </button>
+                <div style={{ flex: 1 }} />
+                <button style={tinyButton} onClick={() => setShowOSM((v) => !v)}>
+                  {showOSM ? "Masquer OSM" : "Afficher OSM"}
+                </button>
+                <button
+                  style={{ ...tinyButton, borderColor: "rgba(239,68,68,0.5)" }}
+                  onClick={() => {
+                    if (facadeSegment) {
+                      resetFacade();
+                      setError(null);
+                      userDisabledEditModeRef.current = false;
+                      setEditMode(false);
+                    } else {
+                      setError("Clique sur un bord de la parcelle pour définir la façade.");
                     }
-                  />
-                </label>
-                <label style={label}>
-                  {"Hauteur RDC (m)"}
-                  <input
-                    type="number"
-                    min={2}
-                    max={10}
-                    step={0.1}
-                    style={input}
-                    value={floorsSpec.groundFloorHeightM}
-                    onChange={(e) =>
-                      setFloorsSpec((f) => ({ ...f, groundFloorHeightM: Math.max(2, Number(e.target.value) || 2.8) }))
-                    }
-                  />
-                </label>
-                <label style={label}>
-                  {"Hauteur étage (m)"}
-                  <input
-                    type="number"
-                    min={2}
-                    max={10}
-                    step={0.1}
-                    style={input}
-                    value={floorsSpec.typicalFloorHeightM}
-                    onChange={(e) =>
-                      setFloorsSpec((f) => ({ ...f, typicalFloorHeightM: Math.max(2, Number(e.target.value) || 2.7) }))
-                    }
-                  />
-                </label>
-                <div style={{ borderTop: "1px solid #e2e8f0", marginTop: 4, paddingTop: 10 }} />
-                <label style={label}>
-                  {"Nombre de logements"}
-                  <input
-                    type="number"
-                    min={1}
-                    max={500}
-                    style={input}
-                    value={draftParams.nbLogements}
-                    onChange={(e) =>
-                      setDraftParams((p) => ({ ...p, nbLogements: Math.max(1, Number(e.target.value) || 1) }))
-                    }
-                  />
-                </label>
-                <label style={label}>
-                  {"Surface moyenne / logement (m²)"}
-                  <input
-                    type="number"
-                    min={20}
-                    max={200}
-                    style={input}
-                    value={draftParams.surfaceMoyLogementM2}
-                    onChange={(e) =>
-                      setDraftParams((p) => ({
-                        ...p,
-                        surfaceMoyLogementM2: Math.max(20, Number(e.target.value) || 20),
-                      }))
-                    }
-                  />
-                </label>
+                  }}
+                  disabled={parcelFeatures.length === 0}
+                >
+                  {facadeSegment ? "Réinitialiser la façade" : "Choisir la façade"}
+                </button>
                 <button
                   style={{
-                    ...primaryButton,
-                    opacity: isDirty ? 1 : 0.55,
-                    cursor: isDirty ? "pointer" : "not-allowed",
+                    ...tinyButton,
+                    borderColor: editMode ? "#16a34a" : "#cbd5e1",
+                    background: editMode ? "rgba(22,163,74,0.1)" : "white",
                   }}
-                  disabled={!isDirty}
-                  onClick={() => {
-                    setAppliedParams({ ...draftParams });
-                    setApplyTick((t) => t + 1);
-                  }}
+                  disabled={parcelFeatures.length === 0 || !facadeSegment}
+                  onClick={handleEditModeToggle}
                 >
-                  {"Recalculer"}
+                  {editMode ? "✓ Mode édition actif" : "Mode édition"}
                 </button>
-                <div style={{ fontSize: 11, color: "#64748b", marginTop: 8, lineHeight: 1.4 }}>
-                  {"Applique les paramètres ci-dessus et recalcule les surfaces, l'emprise et les besoins en stationnement."}
+              </div>
+
+              <div style={card}>
+                <div style={title}>{"Implantation 2D — Mode Édition"}</div>
+                <p style={{ fontSize: 13, opacity: 0.8, marginTop: 0, marginBottom: 8, color: "#475569" }}>
+                  {`${parcelIds.length} parcelle(s) — Commune : ${communeInsee ?? "?"}`}
+                </p>
+
+                {!rulesetValid && (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      marginBottom: 8,
+                      padding: "10px 14px",
+                      background: "rgba(251,146,60,0.08)",
+                      borderRadius: 10,
+                      border: "1px solid rgba(251,146,60,0.3)",
+                      color: "#ea580c",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <span>{"⚠️ Règles PLU non chargées — reculs à 0m. Complétez l'étape PLU pour des valeurs précises."}</span>
+                    <button
+                      style={{
+                        padding: "4px 12px",
+                        borderRadius: 999,
+                        border: "1px solid rgba(251,146,60,0.5)",
+                        background: "rgba(251,146,60,0.15)",
+                        color: "#ea580c",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        fontSize: 12,
+                        whiteSpace: "nowrap",
+                        marginLeft: 12,
+                      }}
+                      onClick={() => {
+                        const path = studyId ? `/promoteur/plu-faisabilite?study=${encodeURIComponent(studyId)}` : "/promoteur/plu-faisabilite";
+                        navigate(path);
+                      }}
+                    >
+                      {"Configurer PLU →"}
+                    </button>
+                  </div>
+                )}
+
+                {editMode && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      opacity: 0.9,
+                      marginBottom: 8,
+                      padding: "8px 10px",
+                      background: "rgba(22,163,74,0.08)",
+                      borderRadius: 8,
+                      border: "1px solid rgba(22,163,74,0.25)",
+                      color: "#166534",
+                    }}
+                  >
+                    <strong>Mode Édition :</strong> Cliquez sur un objet pour le sélectionner. Déplacez en glissant
+                    l'objet. Redimensionnez via les coins blancs. Tournez via la poignée orange en haut. Utilisez la bibliothèque de formes pour créer bâtiments ou parkings.
+                  </div>
+                )}
+
+                {error && <p style={{ fontSize: 12, color: "#ea580c", marginTop: 0 }}>{error}</p>}
+
+                {parcelFeatures.length > 0 && !facadeSegment && !editMode && (
+                  <div
+                    style={{
+                      fontSize: 13,
+                      padding: "10px 14px",
+                      marginBottom: 8,
+                      background: "rgba(82,71,184,0.06)",
+                      borderRadius: 10,
+                      border: `1px solid rgba(82,71,184,0.2)`,
+                      color: ACCENT_PRO,
+                    }}
+                  >
+                    {"👆 Cliquez sur un des côtés de la parcelle pour définir la façade. Le mode édition s'activera automatiquement."}
+                  </div>
+                )}
+
+                {!forbiddenBand &&
+                  parcelFeatures.length > 0 &&
+                  envelopeFeature &&
+                  computedReculs &&
+                  computedReculs.reculMax > 0 && (
+                    <p style={{ fontSize: 11, color: "#ea580c", marginTop: 0 }}>
+                      {"⚠️ Bande inconstructible indisponible (calcul échoué)"}
+                    </p>
+                  )}
+
+                <div style={mapContainerStyle}>
+                  {parcelFeatures.length > 0 ? (
+                    <MapContainer
+                      center={center as [number, number]}
+                      zoom={19}
+                      minZoom={17}
+                      maxZoom={22}
+                      scrollWheelZoom={true}
+                      doubleClickZoom={!editMode}
+                      zoomSnap={0.25}
+                      zoomDelta={0.5}
+                      maxBounds={maxBounds}
+                      maxBoundsViscosity={0.9}
+                      style={{
+                        height: "100%",
+                        width: "100%",
+                        borderRadius: 12,
+                        background: "#ffffff",
+                        backgroundImage:
+                          "linear-gradient(to right, rgba(15,23,42,0.06) 1px, transparent 1px), linear-gradient(to bottom, rgba(15,23,42,0.06) 1px, transparent 1px)",
+                        backgroundSize: "40px 40px",
+                      }}
+                    >
+                      <FitToFeatures features={parcelFeatures} />
+                      <MapReculsControl reculs={computedReculs} />
+                      <FacadeClickHandler enabled={!editMode && parcelFeatures.length > 0} onClickLatLng={handleFacadeClick} />
+                      <DrawEngineLayers
+                        drawEngine={drawEngine}
+                        onCreated={handleObjectCreated}
+                      />
+
+                      {showOSM && (
+                        <TileLayer
+                          attribution="&copy; OpenStreetMap"
+                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                          maxNativeZoom={19}
+                          maxZoom={22}
+                        />
+                      )}
+
+                      {combinedParcelFeature && (
+                       <GeoJSON
+                         key="combined-parcel"
+                         data={combinedParcelFeature}
+                         style={() => ({
+                           weight: 3,
+                           color: "#f97316",
+                           fillColor: "#fed7aa",
+                           fillOpacity: 0.2,
+                        })}
+                      />
+                )}
+
+                      {forbiddenBand && (
+                        <GeoJSON
+                          key={`forbidden-band-${Date.now()}`}
+                          data={forbiddenBand}
+                          style={() => ({
+                            weight: 2,
+                            color: "#dc2626",
+                            fillColor: "#fecaca",
+                            fillOpacity: 0.35,
+                            dashArray: "6,4",
+                          })}
+                        />
+                      )}
+
+                      {autoBuildingFeature && drawnBuildings.length === 0 && !editMode && (
+                        <GeoJSON
+                          key="auto-building"
+                          data={autoBuildingFeature}
+                          style={() => ({ weight: 2, color: "#22c55e", fillColor: "#bbf7d0", fillOpacity: 0.35 })}
+                        />
+                      )}
+
+                      {facadeSegment && (
+                        <GeoJSON
+                          key={`facade-${Date.now()}`}
+                          data={facadeSegment}
+                          style={() => ({ weight: 6, color: "#ef4444", opacity: 0.95 })}
+                        />
+                      )}
+                    </MapContainer>
+                  ) : (
+                    <div
+                      style={{
+                        height: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderRadius: 12,
+                        border: "1px dashed #cbd5e1",
+                        fontSize: 13,
+                        opacity: 0.8,
+                        color: "#64748b",
+                      }}
+                    >
+                      {"Carte indisponible. Les calculs restent fonctionnels."}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
-          </div>
-        </>
-      )}
+
+            <div style={rightCol}>
+              <SelectedParcelsPanel
+                parcels={selectedParcels.map((p) => ({ id: p.id, area_m2: p.area_m2 ?? null }))}
+                totalAreaM2={foncierTotalAreaM2}
+              />
+
+              <div style={card}>
+                <div style={title}>{"Contraintes PLU"}</div>
+                <div style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 6, color: "#334155" }}>
+                  <div>
+                    {"Surface terrain : "}
+                    <strong style={{ color: "#0f172a" }}>{`${result.surfaceTerrainM2.toFixed(0)} m²`}</strong>
+                  </div>
+                  <div>
+                    {"Emprise max : "}
+                    <strong style={{ color: "#0f172a" }}>{`${result.surfaceEmpriseMaxM2.toFixed(0)} m²`}</strong>
+                  </div>
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #e2e8f0" }}>
+                    <div style={{ fontWeight: 600, marginBottom: 6, color: "#0f172a" }}>
+                      {"Reculs : "}
+                      <span
+                        style={{
+                          fontWeight: 400,
+                          color:
+                            computedReculs?.mode === "DIRECTIONAL_BY_FACADE"
+                              ? "#16a34a"
+                              : computedReculs?.mode === "FALLBACK_UNIFORM"
+                                ? "#ea580c"
+                                : "#64748b",
+                        }}
+                      >
+                        {computedReculs?.mode === "DIRECTIONAL_BY_FACADE"
+                          ? "directionnels ✓"
+                          : computedReculs?.mode === "FALLBACK_UNIFORM"
+                            ? "uniformes (fallback)"
+                            : "uniformes"}
+                      </span>
+                    </div>
+                    {computedReculs ? (
+                      <>
+                        <div>
+                          {"Avant : "}
+                          <strong style={{ color: "#0f172a" }}>{formatReculDisplay(computedReculs.recul_avant_m)}</strong>
+                        </div>
+                        <div>
+                          {"Latéral : "}
+                          <strong style={{ color: "#0f172a" }}>{formatReculDisplay(computedReculs.recul_lateral_m)}</strong>
+                        </div>
+                        <div>
+                          {"Fond : "}
+                          <strong style={{ color: "#0f172a" }}>{formatReculDisplay(computedReculs.recul_fond_m)}</strong>
+                        </div>
+                        {!computedReculs.hasData && (
+                          <div style={{ fontSize: 11, color: "#ea580c", marginTop: 4 }}>
+                            {"⚠️ Aucune donnée PLU, valeurs par défaut"}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div style={{ opacity: 0.75 }}>{"En attente du ruleset PLU…"}</div>
+                    )}
+                  </div>
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #e2e8f0" }}>
+                    <div style={{ fontWeight: 600, marginBottom: 6, color: "#0f172a" }}>{"Façade"}</div>
+                    {facadeSegment ? (
+                      <div style={{ color: "#16a34a" }}>{"✓ Définie — reculs directionnels actifs"}</div>
+                    ) : (
+                      <div style={{ opacity: 0.75 }}>{"Non définie — clique un bord de parcelle"}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <VolumetrySummaryPanel
+                buildingKind={buildingKind}
+                floorsSpec={floorsSpec}
+                drawnBuildings={drawnBuildings}
+              />
+
+              <DrawnObjectsPanel
+                buildings={drawnBuildings}
+                parkings={drawnParkings}
+                activeId={activeObjectId}
+                onSelect={setActiveObjectId}
+                onDelete={deleteObject}
+                onClearAll={clearAll}
+              />
+
+              <ShapeLibraryPanel
+                onCreateShape={createFromTemplate}
+                disabled={!editMode || !envelopeFeature}
+              />
+
+              <div style={card}>
+                <div style={title}>{"Parkings & emprise"}</div>
+                <div style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 4, color: "#334155" }}>
+                  <div>
+                    {"Places requises : "}
+                    <strong style={{ color: "#0f172a" }}>{result.placesParking}</strong>
+                  </div>
+                  <div>
+                    {"Surface parkings (estimée) : "}
+                    <strong style={{ color: "#0f172a" }}>{`${result.surfaceParkingM2.toFixed(0)} m²`}</strong>
+                  </div>
+                  <div>
+                    {"Surface résiduelle : "}
+                    <strong style={{ color: "#0f172a" }}>{`${result.surfaceEmpriseUtilisableM2.toFixed(0)} m²`}</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div style={card}>
+                <div style={title}>{"Paramètres"}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <label style={label}>
+                    {"Type de bâtiment"}
+                    <select
+                      style={input}
+                      value={buildingKind}
+                      onChange={(e) => setBuildingKind(e.target.value as BuildingKind)}
+                    >
+                      <option value="COLLECTIF">Collectif</option>
+                      <option value="INDIVIDUEL">Individuel</option>
+                    </select>
+                  </label>
+                  <label style={label}>
+                    {"Étages (R+N)"}
+                    <input
+                      type="number"
+                      min={0}
+                      max={50}
+                      style={input}
+                      value={floorsSpec.aboveGroundFloors}
+                      onChange={(e) =>
+                        setFloorsSpec((f) => ({ ...f, aboveGroundFloors: Math.max(0, Number(e.target.value) || 0) }))
+                      }
+                    />
+                  </label>
+                  <label style={label}>
+                    {"Hauteur RDC (m)"}
+                    <input
+                      type="number"
+                      min={2}
+                      max={10}
+                      step={0.1}
+                      style={input}
+                      value={floorsSpec.groundFloorHeightM}
+                      onChange={(e) =>
+                        setFloorsSpec((f) => ({ ...f, groundFloorHeightM: Math.max(2, Number(e.target.value) || 2.8) }))
+                      }
+                    />
+                  </label>
+                  <label style={label}>
+                    {"Hauteur étage (m)"}
+                    <input
+                      type="number"
+                      min={2}
+                      max={10}
+                      step={0.1}
+                      style={input}
+                      value={floorsSpec.typicalFloorHeightM}
+                      onChange={(e) =>
+                        setFloorsSpec((f) => ({ ...f, typicalFloorHeightM: Math.max(2, Number(e.target.value) || 2.7) }))
+                      }
+                    />
+                  </label>
+                  <div style={{ borderTop: "1px solid #e2e8f0", marginTop: 4, paddingTop: 10 }} />
+                  <label style={label}>
+                    {"Nombre de logements"}
+                    <input
+                      type="number"
+                      min={1}
+                      max={500}
+                      style={input}
+                      value={draftParams.nbLogements}
+                      onChange={(e) =>
+                        setDraftParams((p) => ({ ...p, nbLogements: Math.max(1, Number(e.target.value) || 1) }))
+                      }
+                    />
+                  </label>
+                  <label style={label}>
+                    {"Surface moyenne / logement (m²)"}
+                    <input
+                      type="number"
+                      min={20}
+                      max={200}
+                      style={input}
+                      value={draftParams.surfaceMoyLogementM2}
+                      onChange={(e) =>
+                        setDraftParams((p) => ({
+                          ...p,
+                          surfaceMoyLogementM2: Math.max(20, Number(e.target.value) || 20),
+                        }))
+                      }
+                    />
+                  </label>
+                  <button
+                    style={{
+                      ...primaryButton,
+                      opacity: isDirty ? 1 : 0.55,
+                      cursor: isDirty ? "pointer" : "not-allowed",
+                    }}
+                    disabled={!isDirty}
+                    onClick={() => {
+                      setAppliedParams({ ...draftParams });
+                      setApplyTick((t) => t + 1);
+                    }}
+                  >
+                    {"Recalculer"}
+                  </button>
+                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 8, lineHeight: 1.4 }}>
+                    {"Applique les paramètres ci-dessus et recalcule les surfaces, l'emprise et les besoins en stationnement."}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 };

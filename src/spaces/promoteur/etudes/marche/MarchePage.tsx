@@ -1,15 +1,16 @@
 ﻿// ============================================
-// MarchePage.tsx - VERSION 2.4
+// MarchePage.tsx - VERSION 2.8
 // ============================================
-// AMÉLIORATIONS v2.4:
-// - Carte correctement centrée sur la parcelle
-// - Labels BPE complets (plus de troncature)
-// - Fusion EHPAD + Résidence senior
-// - Scoring différencié par type de projet
-// - PDF fonctionnel
+// AMÉLIORATIONS v2.8 (patch chirurgical sur v2.7) :
+// - Système DataQuality (reel / estime / fallback / indisponible)
+// - Helpers réécrits : getAffordabilityScore, getEconomicStrengthScore,
+//   getPricingRiskScore, getBuyerTargetProfile, getEconomicMomentumV2
+// - EconomicDecisionCard : tuile "Risque pricing" remplace "Rendement brut",
+//   KPI 3 colonnes, badges qualité, momentum compact, narratif banquable
 // ============================================
 
 import React, { useState, useCallback, useEffect, useRef, useMemo, Component, ErrorInfo, ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import { 
   Search, MapPin, Grid3X3, Loader2, X, Building2, 
   Users, Euro, ShoppingCart, Stethoscope, GraduationCap, 
@@ -46,6 +47,17 @@ import { searchParcel } from "./services/parcel.service";
 import { patchProjectInfo, patchModule } from "../../shared/promoteurSnapshot.store";
 
 // ============================================
+// IMPORT STUDY HOOK + TYPES — v2.5
+// ============================================
+import { usePromoteurStudy } from "../../shared/usePromoteurStudy";
+import type { PromoteurMarcheData } from "../../shared/promoteurStudy.types";
+import ScoreTooltip, { SCORE_TOOLTIPS } from "../../../../components/ui/ScoreTooltip";
+
+// ─── Design tokens ───────────────────────────────────────────────────────────
+const GRAD_PRO = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
+const ACCENT_PRO = "#5247b8";
+
+// ============================================
 // DEBUG FLAGS
 // ============================================
 const DEBUG_MODE = true;
@@ -77,6 +89,7 @@ interface DvfData {
   coverage: string;
 }
 
+// ── v2.6 : revenu_median nullable + nouveaux champs économiques ──────────────
 interface InseeData {
   code_commune: string;
   commune_nom: string;
@@ -84,7 +97,10 @@ interface InseeData {
   region: string;
   population: number;
   densite: number;
-  revenu_median: number;
+  /** Peut être null si la commune n'a pas de données Filosofi */
+  revenu_median: number | null;
+  /** Source du revenu médian — détermine l'affichage (orange si dept_fallback) */
+  revenu_median_source?: "filosofi" | "socioeco" | "dept_fallback" | "none";
   taux_chomage: number;
   pct_proprietaires: number;
   pct_moins_15?: number;
@@ -104,6 +120,26 @@ interface InseeData {
   pct_actifs?: number;
   pct_logements_vacants?: number;
   pct_locataires?: number;
+  /** v2.6 – nouveaux indicateurs économiques */
+  taux_pauvrete?: number | null;
+  part_menages_imposes?: number | null;
+  pension_retraite_moyenne?: number | null;
+  /** v2.7 – revenus & structure socio-pro */
+  revenu_median_uc?: number | null;
+  revenu_moyen?: number | null;
+  niveau_vie_median?: number | null;
+  part_cadres?: number | null;
+  part_professions_intermediaires?: number | null;
+  part_employes?: number | null;
+  part_ouvriers?: number | null;
+  part_actifs_occupes?: number | null;
+  /** v2.7 – dynamiques temporelles */
+  evolution_population_5y?: number | null;
+  evolution_revenu_5y?: number | null;
+  evolution_chomage_5y?: number | null;
+  /** v2.7 – fiscalité locale */
+  taxe_fonciere_moyenne?: number | null;
+  taxe_fonciere_evolution_3y?: number | null;
   coverage: string;
 }
 
@@ -525,7 +561,6 @@ const calculateDifferentiatedScores = (
   const config = PROJECT_SCORING_CONFIG[projectType] || PROJECT_SCORING_CONFIG.logement;
   const baseScores = data.scores;
   
-  // Calculer le score pondéré de base
   let weightedBase = 
     baseScores.demande * config.weights.demande +
     baseScores.offre * config.weights.offre +
@@ -534,7 +569,6 @@ const calculateDifferentiatedScores = (
   
   const adjustments: { label: string; value: number }[] = [];
   
-  // Appliquer les bonus
   for (const bonus of config.bonusFactors) {
     try {
       if (bonus.condition(data)) {
@@ -546,7 +580,6 @@ const calculateDifferentiatedScores = (
     }
   }
   
-  // Appliquer les pénalités
   for (const penalty of config.penaltyFactors) {
     try {
       if (penalty.condition(data)) {
@@ -558,10 +591,8 @@ const calculateDifferentiatedScores = (
     }
   }
   
-  // Clamp entre 0 et 100
   const finalScore = Math.max(0, Math.min(100, Math.round(weightedBase)));
   
-  // Recalculer les sous-scores avec les pondérations
   const adjustedScores = {
     demande: Math.round(baseScores.demande * (1 + (config.weights.demande - 0.25) * 0.5)),
     offre: Math.round(baseScores.offre * (1 + (config.weights.offre - 0.25) * 0.5)),
@@ -570,13 +601,11 @@ const calculateDifferentiatedScores = (
     global: finalScore,
   };
   
-  // Clamp tous les scores
   Object.keys(adjustedScores).forEach(key => {
     const k = key as keyof typeof adjustedScores;
     adjustedScores[k] = Math.max(0, Math.min(100, adjustedScores[k]));
   });
   
-  // Générer l'explication
   const weightsExplanation = Object.entries(config.weights)
     .sort((a, b) => b[1] - a[1])
     .map(([k, v]) => `${k}: ${Math.round(v * 100)}%`)
@@ -675,7 +704,7 @@ const styles = {
     justifyContent: "center",
     gap: "10px",
     padding: "14px 32px",
-    background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
+    background: `linear-gradient(135deg, ${ACCENT_PRO} 0%, #7c6fcd 100%)`,
     color: "white",
     border: "none",
     borderRadius: "12px",
@@ -683,7 +712,7 @@ const styles = {
     fontWeight: 600,
     cursor: "pointer",
     transition: "all 0.2s",
-    boxShadow: "0 4px 12px rgba(79, 70, 229, 0.3)",
+    boxShadow: `0 4px 12px ${ACCENT_PRO}40`,
   } as React.CSSProperties,
   
   statBox: {
@@ -865,13 +894,8 @@ const MapWithMarkers: React.FC<{
     );
   }
 
-  // v2.4: Calcul du delta amélioré pour un meilleur centrage
-  // 1 degré ≈ 111km, donc pour un rayon de 2km, delta ≈ 0.018
-  const deltaLat = (radius / 111000) * 1.5; // Ajout de marge 50%
+  const deltaLat = (radius / 111000) * 1.5;
   const deltaLon = (radius / (111000 * Math.cos(lat * Math.PI / 180))) * 1.5;
-  
-  // Zoom level basé sur le rayon
-  const zoom = radius <= 1000 ? 16 : radius <= 3000 ? 15 : radius <= 5000 ? 14 : radius <= 10000 ? 13 : 12;
 
   const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${lon - deltaLon},${lat - deltaLat},${lon + deltaLon},${lat + deltaLat}&layer=mapnik&marker=${lat},${lon}`;
 
@@ -1019,7 +1043,9 @@ const DvfCard: React.FC<{ dvf: DvfData | null }> = ({ dvf }) => {
 };
 
 // ============================================
-// DEMOGRAPHIE CARD - ADAPTATIF PAR TYPE DE PROJET
+// DEMOGRAPHIE CARD - v2.6
+// ── Fixes : revenu_median nullable, dept_fallback styling,
+//            3 nouveaux indicateurs économiques (tous types)
 // ============================================
 const DemographieCard: React.FC<{ 
   insee: InseeData | null; 
@@ -1031,7 +1057,7 @@ const DemographieCard: React.FC<{
       <div style={styles.card}>
         <div style={styles.cardTitle}>
           <Users size={20} color="#6366f1" />
-          Données Démographiques
+          Données Démographiques & Économiques
         </div>
         <div style={{ padding: "40px", textAlign: "center", color: "#94a3b8" }}>
           <Users size={48} style={{ opacity: 0.3, marginBottom: "12px" }} />
@@ -1047,12 +1073,16 @@ const DemographieCard: React.FC<{
   const isCommerce = projectType === "commerce";
   const isBureaux = projectType === "bureaux";
 
+  // v2.6 : détecter l'estimation départementale
+  const isDeptFallback = insee.revenu_median_source === "dept_fallback";
+
   const mainStats = [
     { label: "POPULATION", value: formatNumber(insee.population), color: "#4338ca", bg: "linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)" },
     { label: "DENSITÉ", value: formatNumber(insee.densite), unit: "hab./km²", color: "#15803d", bg: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)" },
     { label: "RÉGION", value: insee.region, color: "#86198f", bg: "linear-gradient(135deg, #fdf4ff 0%, #fae8ff 100%)", isText: true },
   ];
 
+  // ── v2.6 : StatItem enrichi avec note optionnelle ──────────────────────────
   type StatItem = {
     icon: LucideIcon;
     label: string;
@@ -1060,13 +1090,37 @@ const DemographieCard: React.FC<{
     color: string;
     highlight?: boolean;
     bgColor?: string;
+    /** Courte note affichée sous la valeur, ex. "(estimation dépt.)" */
+    note?: string;
+    noteColor?: string;
   };
 
   const getSecondaryStats = (): StatItem[] => {
     const stats: StatItem[] = [];
     
-    stats.push({ icon: Euro, label: "Revenu médian", value: `${formatPrice(insee.revenu_median)}/an`, color: "#10b981" });
-    stats.push({ icon: Activity, label: "Taux chômage", value: formatPercent(insee.taux_chomage), color: insee.taux_chomage > 10 ? "#ef4444" : "#f59e0b" });
+    // ── v2.6 : revenu médian — gérer null + dept_fallback ─────────────────
+    const revenuValue = insee.revenu_median != null
+      ? `${formatPrice(insee.revenu_median)}/an`
+      : "—";
+
+    stats.push({
+      icon: Euro,
+      label: "Revenu médian",
+      value: revenuValue,
+      color: isDeptFallback ? "#d97706" : "#10b981",
+      ...(isDeptFallback && {
+        note: "(estimation dépt.)",
+        noteColor: "#d97706",
+        bgColor: "#fffbeb",
+      }),
+    });
+
+    stats.push({
+      icon: Activity,
+      label: "Taux chômage",
+      value: formatPercent(insee.taux_chomage),
+      color: insee.taux_chomage > 10 ? "#ef4444" : "#f59e0b",
+    });
     
     if (isEhpadOrSenior) {
       const pop75 = ehpadSpecific?.demographie_senior?.population_75_plus || Math.round(insee.population * 0.1);
@@ -1089,7 +1143,7 @@ const DemographieCard: React.FC<{
       if (insee.pct_familles_monoparentales) stats.push({ icon: Users, label: "% Familles mono.", value: formatPercent(insee.pct_familles_monoparentales), color: "#f59e0b" });
       if (insee.pct_logements_vacants) stats.push({ icon: Building2, label: "% Logements vacants", value: formatPercent(insee.pct_logements_vacants), color: "#64748b" });
     } else if (isCommerce) {
-      stats.push({ icon: PiggyBank, label: "Pouvoir d'achat", value: insee.revenu_median > 25000 ? "Élevé" : insee.revenu_median > 20000 ? "Moyen" : "Faible", color: insee.revenu_median > 25000 ? "#10b981" : "#f59e0b" });
+      stats.push({ icon: PiggyBank, label: "Pouvoir d'achat", value: (insee.revenu_median ?? 0) > 25000 ? "Élevé" : (insee.revenu_median ?? 0) > 20000 ? "Moyen" : "Faible", color: (insee.revenu_median ?? 0) > 25000 ? "#10b981" : "#f59e0b" });
       if (insee.pct_actifs) stats.push({ icon: Briefcase, label: "% Actifs", value: formatPercent(insee.pct_actifs), color: "#3b82f6" });
       if (insee.pct_30_44) stats.push({ icon: Users, label: "% 30-44 ans", value: formatPercent(insee.pct_30_44), color: "#6366f1" });
     } else if (isBureaux) {
@@ -1099,6 +1153,33 @@ const DemographieCard: React.FC<{
     } else {
       stats.push({ icon: Home, label: "% Propriétaires", value: formatPercent(insee.pct_proprietaires), color: "#3b82f6" });
     }
+
+    // ── v2.6 : 3 nouveaux indicateurs économiques (tous types de projet)
+    //          Affichés inconditionnellement — "—" si l'API ne retourne pas le champ
+    stats.push({
+      icon: AlertTriangle,
+      label: "Taux de pauvreté",
+      value: formatPercent(insee.taux_pauvrete),
+      color: (insee.taux_pauvrete ?? 0) > 20
+        ? "#ef4444"
+        : (insee.taux_pauvrete ?? 0) > 14
+          ? "#f59e0b"
+          : "#10b981",
+    });
+    stats.push({
+      icon: Banknote,
+      label: "Ménages imposés",
+      value: formatPercent(insee.part_menages_imposes),
+      color: "#6366f1",
+    });
+    stats.push({
+      icon: PiggyBank,
+      label: "Pension retraite moy.",
+      value: insee.pension_retraite_moyenne != null
+        ? `${formatPrice(insee.pension_retraite_moyenne)}/an`
+        : "—",
+      color: "#8b5cf6",
+    });
     
     return stats;
   };
@@ -1109,7 +1190,7 @@ const DemographieCard: React.FC<{
     <div style={styles.card}>
       <div style={styles.cardTitle}>
         <Users size={20} color="#6366f1" />
-        Données Démographiques
+        Données Démographiques & Économiques
         <span style={{ ...styles.badge, background: "#eef2ff", color: "#4f46e5", marginLeft: "auto" }}>
           {insee.commune_nom}
         </span>
@@ -1147,18 +1228,941 @@ const DemographieCard: React.FC<{
             <div key={i} style={{ 
               ...styles.statBox,
               background: stat.bgColor || "#f8fafc",
-              border: stat.highlight ? `2px solid ${stat.color}30` : "none"
+              border: stat.highlight ? `2px solid ${stat.color}30` : "none",
+              flexDirection: "column",
+              alignItems: "stretch",
+              gap: "0",
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <Icon size={16} color={stat.color} />
-                <span style={{ fontSize: "13px", color: "#64748b" }}>{stat.label}</span>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <Icon size={16} color={stat.color} />
+                  <span style={{ fontSize: "13px", color: "#64748b" }}>{stat.label}</span>
+                </div>
+                <span style={{ fontSize: "15px", fontWeight: 700, color: stat.color }}>
+                  {stat.value}
+                </span>
               </div>
-              <span style={{ fontSize: "15px", fontWeight: 700, color: stat.color }}>
-                {stat.value}
-              </span>
+              {/* v2.6 : note sous la valeur (ex. estimation département) */}
+              {stat.note && (
+                <div style={{
+                  fontSize: "10px",
+                  color: stat.noteColor || "#94a3b8",
+                  fontStyle: "italic",
+                  textAlign: "right",
+                  marginTop: "3px",
+                }}>
+                  {stat.note}
+                </div>
+              )}
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// v2.8 — HELPERS ÉCONOMIQUES PURS (réécriture)
+// ============================================
+
+// ── Qualité de donnée ────────────────────────────────────────────────────────
+
+type DataQuality = "reel" | "estime" | "fallback" | "indisponible";
+
+interface QualifiedValue {
+  value: string;
+  quality: DataQuality;
+}
+
+function qv(
+  raw: number | null | undefined,
+  fmt: (n: number) => string,
+  quality: DataQuality = "reel"
+): QualifiedValue {
+  if (raw == null) return { value: "—", quality: "indisponible" };
+  return { value: fmt(raw), quality };
+}
+
+const QUALITY_LABELS: Record<DataQuality, { label: string; color: string }> = {
+  reel:        { label: "réel",      color: "#10b981" },
+  estime:      { label: "estimé",    color: "#f59e0b" },
+  fallback:    { label: "estimation dépt.", color: "#d97706" },
+  indisponible:{ label: "—",         color: "#cbd5e1" },
+};
+
+// ── Types retour ─────────────────────────────────────────────────────────────
+
+interface AffordabilityScore {
+  score: number | null;
+  label: "accessible" | "tendu" | "très tendu" | "luxe / patrimonial" | "non calculable";
+  color: string;
+  explanation: string;
+  ratio: number | null;
+  quality: DataQuality;
+}
+
+interface EconomicStrengthScore {
+  score: number | null;
+  label: "fragile" | "intermédiaire" | "solide" | "premium" | "non calculable";
+  color: string;
+  explanation: string;
+}
+
+interface PricingRiskScore {
+  score: number | null;
+  label: "faible" | "modéré" | "élevé" | "critique" | "non calculable";
+  color: string;
+  explanation: string;
+}
+
+interface BuyerTargetProfile {
+  target: string;
+  confidence: "faible" | "moyenne" | "forte";
+  explanation: string;
+}
+
+interface EconomicMomentumV2 {
+  label: "positif" | "stable" | "fragile" | "non calculable";
+  color: string;
+  explanation: string;
+  quality: DataQuality;
+}
+
+// ── a) Score affordabilité ────────────────────────────────────────────────────
+// Heuristique : (prix_m2 × 60 m²) / revenu_median = nb d'années de revenus
+// < 3 → accessible | 3-5 → tendu | 5-9 → très tendu | > 9 → luxe / patrimonial
+function getAffordabilityScore(
+  insee: InseeData | null,
+  dvf: DvfData | null
+): AffordabilityScore {
+  const revenu = insee?.niveau_vie_median ?? insee?.revenu_median;
+  const prix   = dvf?.prix_m2_median;
+  const source = insee?.revenu_median_source;
+  const quality: DataQuality = source === "dept_fallback" ? "fallback"
+    : source === "none" ? "indisponible"
+    : revenu != null ? "reel"
+    : "indisponible";
+
+  if (revenu == null || prix == null || revenu <= 0 || prix <= 0) {
+    return {
+      score: null, label: "non calculable", color: "#94a3b8",
+      explanation: "Revenu médian ou prix m² médian non disponible.",
+      ratio: null, quality,
+    };
+  }
+
+  const ratio = (prix * 60) / revenu;
+  const score = Math.max(0, Math.min(100, Math.round(100 - (ratio / 12) * 100)));
+
+  if (ratio < 3) return {
+    score, label: "accessible", color: "#10b981", ratio, quality,
+    explanation: `~${ratio.toFixed(1)} ans de revenus pour 60 m² — marché abordable, bonne solvabilité locale.`,
+  };
+  if (ratio < 5) return {
+    score, label: "tendu", color: "#f59e0b", ratio, quality,
+    explanation: `~${ratio.toFixed(1)} ans de revenus pour 60 m² — marché sous tension, primo-accédants fragilisés.`,
+  };
+  if (ratio < 9) return {
+    score, label: "très tendu", color: "#ef4444", ratio, quality,
+    explanation: `~${ratio.toFixed(1)} ans de revenus pour 60 m² — marché fortement contraint, pricing exigeant.`,
+  };
+  return {
+    score, label: "luxe / patrimonial", color: "#7c3aed", ratio, quality,
+    explanation: `~${ratio.toFixed(1)} ans de revenus pour 60 m² — marché patrimonial, hors portée du marché local standard.`,
+  };
+}
+
+// ── b) Force économique de la zone ───────────────────────────────────────────
+function getEconomicStrengthScore(insee: InseeData | null): EconomicStrengthScore {
+  if (!insee) return {
+    score: null, label: "non calculable", color: "#94a3b8",
+    explanation: "Données INSEE non disponibles.",
+  };
+
+  type Signal = { value: number; weight: number };
+  const signals: Signal[] = [];
+  const notes: string[] = [];
+
+  // Revenu médian — comparé à la médiane nationale (~24 000 €)
+  if (insee.revenu_median != null) {
+    const rev = Math.min(100, Math.max(0, ((insee.revenu_median - 14000) / (60000 - 14000)) * 100));
+    signals.push({ value: rev, weight: 3 });
+    if (insee.revenu_median > 35000) notes.push("revenus très élevés");
+    else if (insee.revenu_median > 24000) notes.push("revenus supérieurs à la médiane");
+    else if (insee.revenu_median < 18000) notes.push("revenus faibles");
+  }
+  // Taux pauvreté — signal fort négatif si > 20 %
+  if (insee.taux_pauvrete != null) {
+    const pauv = Math.min(100, Math.max(0, 100 - (insee.taux_pauvrete / 30) * 100));
+    signals.push({ value: pauv, weight: 2 });
+    if (insee.taux_pauvrete > 20) notes.push(`pauvreté élevée (${formatPercent(insee.taux_pauvrete)})`);
+  }
+  // Part ménages imposés — proxy niveau de vie
+  if (insee.part_menages_imposes != null) {
+    const imp = Math.min(100, Math.max(0, (insee.part_menages_imposes / 80) * 100));
+    signals.push({ value: imp, weight: 2 });
+  }
+  // Part cadres
+  if (insee.part_cadres != null) {
+    const cad = Math.min(100, Math.max(0, (insee.part_cadres / 40) * 100));
+    signals.push({ value: cad, weight: 1.5 });
+    if (insee.part_cadres > 25) notes.push(`forte proportion de cadres (${formatPercent(insee.part_cadres)})`);
+  }
+  // Part actifs occupés
+  if (insee.part_actifs_occupes != null || insee.pct_actifs != null) {
+    const actifs = insee.part_actifs_occupes ?? insee.pct_actifs ?? 0;
+    const act = Math.min(100, Math.max(0, (actifs / 60) * 100));
+    signals.push({ value: act, weight: 1 });
+  }
+  // Chômage — signal négatif
+  if (insee.taux_chomage != null) {
+    const chom = Math.min(100, Math.max(0, 100 - (insee.taux_chomage / 20) * 100));
+    signals.push({ value: chom, weight: 2 });
+    if (insee.taux_chomage > 12) notes.push(`chômage élevé (${formatPercent(insee.taux_chomage)})`);
+  }
+
+  if (signals.length < 2) {
+    return {
+      score: null, label: "non calculable", color: "#94a3b8",
+      explanation: "Données insuffisantes (< 2 signaux disponibles).",
+    };
+  }
+
+  const totalWeight = signals.reduce((acc, s) => acc + s.weight, 0);
+  const score = Math.round(signals.reduce((acc, s) => acc + s.value * s.weight, 0) / totalWeight);
+  const explanation = notes.length > 0 ? notes.join(", ") + "." : "Profil économique équilibré.";
+
+  if (score >= 75) return { score, label: "premium",       color: "#7c3aed", explanation };
+  if (score >= 58) return { score, label: "solide",        color: "#10b981", explanation };
+  if (score >= 40) return { score, label: "intermédiaire", color: "#f59e0b", explanation };
+  return               { score, label: "fragile",       color: "#ef4444", explanation };
+}
+
+// ── c) Risque pricing ─────────────────────────────────────────────────────────
+function getPricingRiskScore(
+  insee: InseeData | null,
+  dvf: DvfData | null,
+  projectType: string
+): PricingRiskScore {
+  const affordability = getAffordabilityScore(insee, dvf);
+  const strength      = getEconomicStrengthScore(insee);
+
+  if (affordability.score == null && strength.score == null) {
+    return {
+      score: null, label: "non calculable", color: "#94a3b8",
+      explanation: "Données insuffisantes pour évaluer le risque pricing.",
+    };
+  }
+
+  // Base : plus le marché est cher ET la zone faible, plus le risque est élevé
+  let riskScore = 0;
+
+  // Affordability — ratio années revenus
+  if (affordability.ratio != null) {
+    if      (affordability.ratio > 9) riskScore += 40;
+    else if (affordability.ratio > 6) riskScore += 25;
+    else if (affordability.ratio > 4) riskScore += 15;
+    else                              riskScore += 5;
+  }
+
+  // Force économique de la zone — atténue ou amplifie
+  if (strength.score != null) {
+    if      (strength.score < 40) riskScore += 25;
+    else if (strength.score < 58) riskScore += 10;
+    else if (strength.score > 75) riskScore -= 10;
+  }
+
+  // Modulation par type de projet
+  const modifiers: Record<string, number> = {
+    logement:            0,
+    residence_etudiante: -5,  // profondeur locative compense
+    ehpad:               5,   // solvabilité familles souvent contrainte
+    bureaux:             -5,  // absorption tertiaire plus grande
+    commerce:            10,  // dépend fortement pouvoir d'achat local
+    hotel:               -10, // résilience touristique
+  };
+  riskScore += modifiers[projectType] ?? 0;
+  riskScore = Math.max(0, Math.min(100, riskScore));
+
+  const notes: string[] = [];
+  if (affordability.ratio != null) notes.push(`effort d'achat ~${affordability.ratio.toFixed(1)} ans`);
+  if (strength.label !== "non calculable") notes.push(`zone ${strength.label}`);
+
+  const explanation = notes.join(", ") + ".";
+
+  if (riskScore < 20) return { score: riskScore, label: "faible",   color: "#10b981", explanation };
+  if (riskScore < 40) return { score: riskScore, label: "modéré",   color: "#f59e0b", explanation };
+  if (riskScore < 65) return { score: riskScore, label: "élevé",    color: "#f97316", explanation };
+  return                    { score: riskScore, label: "critique", color: "#ef4444", explanation };
+}
+
+// ── d) Profil acheteur cible ──────────────────────────────────────────────────
+function getBuyerTargetProfile(
+  insee: InseeData | null,
+  dvf: DvfData | null,
+  projectType: string
+): BuyerTargetProfile {
+  if (!insee) return { target: "Non déterminable", confidence: "faible", explanation: "Données INSEE manquantes." };
+
+  const revenu    = insee.revenu_median ?? 0;
+  const pctJeunes = insee.pct_15_29 ?? 0;
+  const pctEtu    = insee.pct_etudiants ?? 0;
+  const pctSenior = insee.pct_plus_75 ?? (insee.pct_plus_60 != null && insee.pct_60_74 != null ? Math.max(0, insee.pct_plus_60 - insee.pct_60_74) : 0);
+  const pctProp   = insee.pct_proprietaires ?? 0;
+  const pctLoc    = insee.pct_locataires ?? Math.max(0, 100 - pctProp);
+  const chomage   = insee.taux_chomage ?? 0;
+  const vacance   = insee.pct_logements_vacants ?? 0;
+  const densite   = insee.densite ?? 0;
+  const cadres    = insee.part_cadres ?? 0;
+  const prixM2    = dvf?.prix_m2_median ?? 0;
+  const ratio     = revenu > 0 && prixM2 > 0 ? (prixM2 * 60) / revenu : null;
+
+  // Projection par type de projet en priorité
+  if (projectType === "ehpad") {
+    return {
+      target: "Marché senior",
+      confidence: pctSenior > 12 ? "forte" : "moyenne",
+      explanation: `Part 75+ (${pctSenior > 0 ? pctSenior.toFixed(1) + "%" : "n/d"}), pension moy. ${insee.pension_retraite_moyenne != null ? formatPrice(insee.pension_retraite_moyenne) + "/an" : "n/d"}.`,
+    };
+  }
+  if (projectType === "residence_etudiante") {
+    return {
+      target: "Marché étudiant / locatif jeune",
+      confidence: (pctJeunes > 20 && pctEtu > 8) ? "forte" : "moyenne",
+      explanation: `${pctJeunes.toFixed(0)}% de 15-29 ans, ${pctEtu.toFixed(1)}% d'étudiants, ${pctLoc.toFixed(0)}% de locataires.`,
+    };
+  }
+  if (projectType === "bureaux") {
+    return {
+      target: "Marché tertiaire / entreprises",
+      confidence: cadres > 20 ? "forte" : "moyenne",
+      explanation: `${cadres > 0 ? cadres.toFixed(0) + "% de cadres, " : ""}bassin d'actifs ${densite > 1000 ? "dense" : "intermédiaire"}.`,
+    };
+  }
+
+  // Signaux transversaux
+  if (cadres > 25 || revenu > 38000 || (ratio != null && ratio > 9)) {
+    return {
+      target: "Marché patrimonial / CSP+",
+      confidence: cadres > 25 ? "forte" : "moyenne",
+      explanation: `Revenu ${formatPrice(revenu)}/an${cadres > 0 ? `, ${cadres.toFixed(0)}% cadres` : ""}, profil aisé.`,
+    };
+  }
+  if (pctLoc > 55 && vacance < 7) {
+    return {
+      target: "Marché investisseur",
+      confidence: "forte",
+      explanation: `${pctLoc.toFixed(0)}% de locataires, vacance faible (${vacance.toFixed(1)}%) — rendement locatif défendable.`,
+    };
+  }
+  if (chomage > 11 || (ratio != null && ratio > 7)) {
+    return {
+      target: "Marché sous contrainte de solvabilité",
+      confidence: "moyenne",
+      explanation: `Chômage ${chomage.toFixed(1)}%${ratio != null ? `, effort d'achat ~${ratio.toFixed(1)} ans` : ""} — solvabilité à sécuriser.`,
+    };
+  }
+  if (pctProp > 60 && vacance < 10) {
+    const mixte = pctLoc > 35;
+    return {
+      target: mixte ? "Marché mixte occupants / investisseurs" : "Marché familial d'occupation",
+      confidence: "moyenne",
+      explanation: `${pctProp.toFixed(0)}% propriétaires, zone résidentielle ${mixte ? "mixte" : "stable"}.`,
+    };
+  }
+  return {
+    target: "Marché mixte",
+    confidence: "faible",
+    explanation: "Profil composite — positionner selon le produit et la gamme de prix.",
+  };
+}
+
+// ── e) Momentum v2.8 ──────────────────────────────────────────────────────────
+function getEconomicMomentumV2(insee: InseeData | null): EconomicMomentumV2 {
+  if (!insee) return { label: "non calculable", color: "#94a3b8", explanation: "Données manquantes.", quality: "indisponible" };
+
+  const evoPop  = insee.evolution_population_5y;
+  const evoRev  = insee.evolution_revenu_5y;
+  const evoChom = insee.evolution_chomage_5y;
+  const hasData = evoPop != null || evoRev != null || evoChom != null;
+
+  if (!hasData) {
+    return { label: "non calculable", color: "#94a3b8", explanation: "Évolutions temporelles non disponibles.", quality: "indisponible" };
+  }
+
+  let score = 0;
+  const notes: string[] = [];
+
+  if (evoPop != null) {
+    if (evoPop > 1)    { score += 2; notes.push(`pop. +${evoPop.toFixed(1)}%/an`); }
+    else if (evoPop > 0) { score += 1; }
+    else if (evoPop < -0.5) { score -= 2; notes.push(`pop. ${evoPop.toFixed(1)}%/an`); }
+  }
+  if (evoRev != null) {
+    if (evoRev > 2)    { score += 2; notes.push(`revenus +${evoRev.toFixed(1)}%/an`); }
+    else if (evoRev > 0) { score += 1; }
+    else if (evoRev < 0) { score -= 1; notes.push(`revenus en baisse`); }
+  }
+  if (evoChom != null) {
+    if (evoChom < -1)  { score += 2; notes.push(`chômage en forte baisse`); }
+    else if (evoChom < 0) { score += 1; }
+    else if (evoChom > 1) { score -= 2; notes.push(`chômage en hausse`); }
+  }
+
+  const explanation = notes.length > 0 ? notes.join(", ") + "." : "Évolutions modérées.";
+
+  if (score >= 3) return { label: "positif",  color: "#10b981", explanation: `Zone en croissance — ${explanation}`, quality: "reel" };
+  if (score <= -2) return { label: "fragile", color: "#ef4444", explanation: `Signaux de fragilité — ${explanation}`, quality: "reel" };
+  return               { label: "stable",  color: "#f59e0b", explanation: `Dynamiques modérées — ${explanation}`, quality: "reel" };
+}
+
+// ── f) Narratif v2.8 ──────────────────────────────────────────────────────────
+interface NarrativeParamsV2 {
+  affordability: AffordabilityScore;
+  strength:      EconomicStrengthScore;
+  pricingRisk:   PricingRiskScore;
+  buyerTarget:   BuyerTargetProfile;
+  momentum:      EconomicMomentumV2;
+  insee:         InseeData | null;
+  dvf:           DvfData | null;
+  projectType:   string;
+}
+
+function buildEconomicNarrativeV2(p: NarrativeParamsV2): string[] {
+  const { affordability, strength, pricingRisk, buyerTarget, momentum, insee, dvf, projectType } = p;
+  const phrases: string[] = [];
+
+  // 1 — Lecture prix / solvabilité (toujours en tête)
+  if (affordability.label !== "non calculable") {
+    if (affordability.label === "luxe / patrimonial") {
+      phrases.push(
+        `Le niveau de prix est hors de portée du marché local standard (~${affordability.ratio?.toFixed(1)} ans de revenus pour 60 m²) : ce projet cible structurellement une clientèle patrimoniale, CSP+ ou investisseur.`
+      );
+    } else if (affordability.label === "très tendu") {
+      phrases.push(
+        `Le marché est fortement sous tension prix/revenus (~${affordability.ratio?.toFixed(1)} ans), ce qui fragilise la solvabilité des acquéreurs locaux et impose une vigilance forte sur le pricing de sortie.`
+      );
+    } else if (affordability.label === "tendu") {
+      phrases.push(
+        `Le rapport prix/revenus est sous tension (~${affordability.ratio?.toFixed(1)} ans pour 60 m²) — les primo-accédants sont fragilisés et le couple prix / financement devra être soigneusement calibré.`
+      );
+    } else {
+      phrases.push(
+        `Le marché présente un bon niveau d'accessibilité financière (~${affordability.ratio?.toFixed(1)} ans de revenus pour 60 m²), ce qui soutient la solvabilité locale et limite le risque commercial.`
+      );
+    }
+  }
+
+  // 2 — Profil zone économique
+  if (strength.label !== "non calculable") {
+    if (strength.label === "fragile") {
+      phrases.push(
+        `Le profil socio-économique de la zone est fragile (${strength.explanation}) — le niveau de solvabilité ne sécurise pas, à lui seul, un positionnement ambitieux.`
+      );
+    } else if (strength.label === "premium") {
+      phrases.push(
+        `La zone affiche un profil socio-économique premium (${strength.explanation}), ce qui favorise un produit haut de gamme et une clientèle exigeante.`
+      );
+    } else if (strength.label === "solide") {
+      phrases.push(
+        `La structure économique de la zone est solide (${strength.explanation}), offrant une bonne profondeur de marché.`
+      );
+    }
+  }
+
+  // 3 — Cible acheteur
+  if (buyerTarget.confidence !== "faible") {
+    phrases.push(`Le profil de zone oriente vers un positionnement "${buyerTarget.target}" — ${buyerTarget.explanation}`);
+  }
+
+  // 4 — Angle spécifique par type de projet
+  if (projectType === "logement") {
+    const vacance = insee?.pct_logements_vacants;
+    const prop    = insee?.pct_proprietaires;
+    if (vacance != null && vacance > 12) {
+      phrases.push(`La vacance élevée (${vacance.toFixed(1)}%) est un signal d'alerte sur la capacité d'absorption : adapter le rythme de commercialisation en conséquence.`);
+    } else if (vacance != null && vacance < 6) {
+      phrases.push(`La vacance très faible (${vacance.toFixed(1)}%) témoigne d'une tension locative réelle — atout majeur pour la commercialisation.`);
+    }
+    if (prop != null && prop < 45) {
+      phrases.push(`La dominance locative (${(100 - prop).toFixed(0)}% de locataires) oriente davantage vers un produit investisseur ou locatif social.`);
+    }
+  } else if (projectType === "residence_etudiante") {
+    const pctEtu = insee?.pct_etudiants;
+    const pctLoc = insee?.pct_locataires ?? (100 - (insee?.pct_proprietaires ?? 0));
+    if (pctEtu != null) {
+      phrases.push(
+        `La part étudiante (${pctEtu.toFixed(1)}%) ${pctEtu > 10 ? "est un signal fort" : "reste modérée"} : la profondeur locative jeune${pctLoc > 55 ? " et le profil très locatif de la zone" : ""} soutiennent la logique de résidence étudiante.`
+      );
+    }
+  } else if (projectType === "ehpad") {
+    const pension = insee?.pension_retraite_moyenne;
+    const pctSr   = insee?.pct_plus_75;
+    if (pension != null) {
+      phrases.push(
+        `La pension retraite moyenne (${formatPrice(pension)}/an) est un paramètre central pour évaluer la solvabilité des résidents et calibrer le tarif hébergement.`
+      );
+    }
+    if (pctSr != null && pctSr < 8) {
+      phrases.push(`La part des 75+ ans reste faible (${pctSr.toFixed(1)}%) — la zone de chalandise devra être élargie pour atteindre les objectifs de taux d'occupation.`);
+    }
+  } else if (projectType === "bureaux") {
+    const cadres = insee?.part_cadres;
+    if (cadres != null) {
+      phrases.push(
+        `La part de cadres (${cadres.toFixed(0)}%) ${cadres > 20 ? "soutient l'attractivité tertiaire" : "est encore insuffisante pour du premium"} — le produit devra s'adapter au bassin d'emploi local.`
+      );
+    }
+  } else if (projectType === "commerce") {
+    const revenu = insee?.revenu_median;
+    const densite = insee?.densite;
+    if (revenu != null && densite != null) {
+      phrases.push(
+        `Le couple revenu médian (${formatPrice(revenu)}/an) / densité (${formatNumber(densite)} hab/km²) calibre directement le profil clientèle et le positionnement tarifaire du commerce.`
+      );
+    }
+  } else if (projectType === "hotel") {
+    const densite = insee?.densite;
+    if (densite != null) {
+      phrases.push(
+        `La densité de zone (${formatNumber(densite)} hab/km²) et le niveau de vie local conditionnent la fréquentation et le pricing hôtelier : ${densite > 2000 ? "zone très urbaine, profil affaires / loisirs" : "zone intermédiaire, mix clientèle à définir"}.`
+      );
+    }
+  }
+
+  // 5 — Momentum (si non calculable, ne pas mentionner)
+  if (momentum.label === "positif") {
+    phrases.push(`Le territoire est en croissance (${momentum.explanation}), ce qui renforce la pertinence du projet à moyen terme.`);
+  } else if (momentum.label === "fragile") {
+    phrases.push(`Des dynamiques de fragilité territoriale sont détectées (${momentum.explanation}) — anticiper l'évolution de la demande dans le plan de commercialisation.`);
+  }
+
+  // 6 — Risque pricing synthèse (seulement si élevé ou critique)
+  if (pricingRisk.label === "élevé" || pricingRisk.label === "critique") {
+    phrases.push(`Le risque pricing est ${pricingRisk.label} (${pricingRisk.explanation}) — la politique tarifaire de sortie devra rester prudente pour ne pas contraindre la commercialisation.`);
+  }
+
+  return phrases.slice(0, 5);
+}
+
+// ============================================
+// v2.8 — EconomicDecisionCard
+// ============================================
+interface EconomicDecisionCardProps {
+  insee:       InseeData | null;
+  dvf:         DvfData | null;
+  projectType: string;
+}
+
+const EconomicDecisionCard: React.FC<EconomicDecisionCardProps> = ({ insee, dvf, projectType }) => {
+  const affordability = useMemo(() => getAffordabilityScore(insee, dvf),              [insee, dvf]);
+  const strength      = useMemo(() => getEconomicStrengthScore(insee),                [insee]);
+  const pricingRisk   = useMemo(() => getPricingRiskScore(insee, dvf, projectType),  [insee, dvf, projectType]);
+  const buyerTarget   = useMemo(() => getBuyerTargetProfile(insee, dvf, projectType),[insee, dvf, projectType]);
+  const momentum      = useMemo(() => getEconomicMomentumV2(insee),                  [insee]);
+  const narrative     = useMemo(() => buildEconomicNarrativeV2({
+    affordability, strength, pricingRisk, buyerTarget, momentum, insee, dvf, projectType,
+  }), [affordability, strength, pricingRisk, buyerTarget, momentum, insee, dvf, projectType]);
+
+  // ── Mini badge qualité de donnée ──────────────────────────────────────────
+  const QualityBadge: React.FC<{ quality: DataQuality }> = ({ quality }) => {
+    if (quality === "indisponible" || quality === "reel") return null;
+    const cfg = QUALITY_LABELS[quality];
+    return (
+      <span style={{
+        fontSize: 9, fontWeight: 600, color: cfg.color,
+        padding: "1px 5px", borderRadius: 4,
+        background: quality === "fallback" ? "#fef3c7" : "#fef9c3",
+        border: `1px solid ${cfg.color}40`,
+        marginLeft: 4, verticalAlign: "middle",
+      }}>
+        {cfg.label}
+      </span>
+    );
+  };
+
+  // ── Bloc A — 4 tuiles ─────────────────────────────────────────────────────
+  const tiles = [
+    {
+      label:  "Pouvoir d'achat immo",
+      value:  affordability.ratio != null ? `${affordability.ratio.toFixed(1)} ans` : "—",
+      sub:    affordability.label,
+      color:  affordability.color,
+      quality: affordability.quality,
+    },
+    {
+      label:  "Positionnement",
+      value:  buyerTarget.target,
+      sub:    `Confiance ${buyerTarget.confidence}`,
+      color:  buyerTarget.confidence === "forte" ? "#4f46e5" : buyerTarget.confidence === "moyenne" ? "#0891b2" : "#94a3b8",
+      quality: "reel" as DataQuality,
+    },
+    {
+      label:  "Force éco. zone",
+      value:  strength.label === "non calculable" ? "—" : strength.label,
+      sub:    strength.score != null ? `Score ${strength.score}/100` : "Non calculable",
+      color:  strength.color,
+      quality: "reel" as DataQuality,
+    },
+    {
+      label:  "Risque pricing",
+      value:  pricingRisk.label,
+      sub:    pricingRisk.score != null ? `Score ${pricingRisk.score}/100` : "Non calculable",
+      color:  pricingRisk.color,
+      quality: "reel" as DataQuality,
+    },
+  ];
+
+  // ── Bloc B — KPI secondaires ──────────────────────────────────────────────
+  type KpiRow = { label: string; qv: QualifiedValue; note?: string };
+  const kpiRows: KpiRow[] = [
+    {
+      label: "Revenu médian",
+      qv: qv(insee?.revenu_median, (n) => `${formatPrice(n)}/an`,
+        insee?.revenu_median_source === "dept_fallback" ? "fallback" : "reel"),
+    },
+    {
+      label: "Revenu moyen",
+      qv: qv(insee?.revenu_moyen, (n) => `${formatPrice(n)}/an`, "estime"),
+    },
+    {
+      label: "Niveau de vie médian",
+      qv: qv(insee?.niveau_vie_median, (n) => `${formatPrice(n)}/an`),
+    },
+    {
+      label: "Taux de pauvreté",
+      qv: qv(insee?.taux_pauvrete, (n) => formatPercent(n)),
+    },
+    {
+      label: "Ménages imposés",
+      qv: qv(insee?.part_menages_imposes, (n) => formatPercent(n)),
+    },
+    {
+      label: "Pension retraite moy.",
+      qv: qv(insee?.pension_retraite_moyenne, (n) => `${formatPrice(n)}/an`),
+    },
+    {
+      label: "Part cadres",
+      qv: qv(insee?.part_cadres, (n) => formatPercent(n)),
+    },
+    {
+      label: "Actifs occupés",
+      qv: qv(insee?.part_actifs_occupes ?? insee?.pct_actifs, (n) => formatPercent(n)),
+    },
+    {
+      label: "Taxe foncière moy.",
+      qv: qv(insee?.taxe_fonciere_moyenne, (n) => `${formatNumber(n)} €/an`, "estime"),
+    },
+    {
+      label: "Évo. TF 3 ans",
+      qv: qv(insee?.taxe_fonciere_evolution_3y, (n) => formatPercent(n, true), "estime"),
+    },
+    {
+      label: "Évo. pop. 5 ans",
+      qv: qv(insee?.evolution_population_5y, (n) => formatPercent(n, true)),
+    },
+  ];
+
+  const getKpiValueColor = (row: KpiRow): string => {
+    if (row.qv.quality === "indisponible") return "#cbd5e1";
+    if (row.label === "Taux de pauvreté") {
+      const v = insee?.taux_pauvrete;
+      return v != null ? (v > 20 ? "#ef4444" : v > 14 ? "#f59e0b" : "#10b981") : "#cbd5e1";
+    }
+    if (row.label === "Évo. TF 3 ans") {
+      const v = insee?.taxe_fonciere_evolution_3y;
+      return v != null ? (v > 5 ? "#ef4444" : "#64748b") : "#cbd5e1";
+    }
+    return "#1e293b";
+  };
+
+  return (
+    <div style={{ ...styles.card, marginBottom: "24px", border: "1px solid #e0e7ff" }}>
+
+      {/* ── En-tête ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 10,
+            background: "linear-gradient(135deg, #4f46e5 0%, #7c6fcd 100%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <TrendingUp size={18} color="white" />
+          </div>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#1e293b" }}>
+              Lecture économique décisionnelle
+            </div>
+            <div style={{ fontSize: 12, color: "#64748b" }}>
+              Analyse Mimmoza — aide à la décision promoteur · investisseur · CGP
+            </div>
+          </div>
+        </div>
+        <span style={{ ...styles.badge, background: "#ede9fe", color: ACCENT_PRO }}>v2.8</span>
+      </div>
+
+      {/* ── Bloc A : 4 tuiles ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "24px" }}>
+        {tiles.map((tile, i) => (
+          <div key={i} style={{
+            padding: "16px 14px",
+            background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
+            borderRadius: 12,
+            borderTop: `3px solid ${tile.color}`,
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+              {tile.label}
+              <QualityBadge quality={tile.quality} />
+            </div>
+            <div style={{ fontSize: tile.value.length > 14 ? 13 : 17, fontWeight: 700, color: tile.color, lineHeight: 1.2, marginBottom: 4 }}>
+              {tile.value}
+            </div>
+            <div style={{ fontSize: 11, color: "#64748b" }}>{tile.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Séparateur ── */}
+      <div style={{ height: 1, background: "#f1f5f9", marginBottom: "20px" }} />
+
+      {/* ── Bloc B : KPI secondaires (grille 3 colonnes) ── */}
+      <div style={{ marginBottom: "20px" }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "12px" }}>
+          Indicateurs économiques
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
+          {kpiRows.map((row, i) => (
+            <div key={i} style={{
+              padding: "10px 12px",
+              background: row.qv.quality === "fallback" ? "#fffbeb" : "#f8fafc",
+              borderRadius: 8,
+              display: "flex", flexDirection: "column", gap: "3px",
+              border: row.qv.quality === "fallback" ? "1px solid #fde68a" : "none",
+            }}>
+              <div style={{ fontSize: 10, color: "#94a3b8", display: "flex", alignItems: "center", gap: 2 }}>
+                {row.label}
+                {(row.qv.quality === "fallback" || row.qv.quality === "estime") && (
+                  <QualityBadge quality={row.qv.quality} />
+                )}
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: getKpiValueColor(row) }}>
+                {row.qv.value}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Séparateur ── */}
+      <div style={{ height: 1, background: "#f1f5f9", marginBottom: "20px" }} />
+
+      {/* ── Momentum (ligne compacte) ── */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: "12px",
+        padding: "12px 14px", background: "#f8fafc", borderRadius: 10, marginBottom: "20px",
+      }}>
+        <div style={{
+          width: 8, height: 8, borderRadius: "50%", background: momentum.color, flexShrink: 0,
+        }} />
+        <div style={{ flex: 1 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: momentum.color, marginRight: 8 }}>
+            Momentum {momentum.label}
+          </span>
+          <span style={{ fontSize: 12, color: "#64748b" }}>{momentum.explanation}</span>
+        </div>
+        {momentum.quality === "indisponible" && (
+          <span style={{ fontSize: 10, color: "#94a3b8", fontStyle: "italic" }}>Évolutions non dispo.</span>
+        )}
+      </div>
+
+      {/* ── Bloc C : Synthèse narrative ── */}
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "12px" }}>
+          Synthèse Mimmoza
+        </div>
+        {narrative.length === 0 ? (
+          <p style={{ fontSize: 13, color: "#94a3b8", fontStyle: "italic" }}>
+            Données insuffisantes pour générer une synthèse décisionnelle.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {narrative.map((phrase, i) => (
+              <div key={i} style={{
+                display: "flex", gap: "10px", alignItems: "flex-start",
+                padding: "11px 14px",
+                background: i === 0 ? "linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)" : "#f8fafc",
+                borderRadius: 10,
+                borderLeft: `3px solid ${i === 0 ? ACCENT_PRO : "#e2e8f0"}`,
+              }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: i === 0 ? ACCENT_PRO : "#94a3b8", minWidth: 18, paddingTop: 2 }}>
+                  {i + 1}.
+                </span>
+                <p style={{ fontSize: 13, color: "#334155", margin: 0, lineHeight: 1.65 }}>{phrase}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Footer ── */}
+      <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "12px" }}>
+          {[
+            { quality: "reel" as DataQuality, show: true },
+            { quality: "estime" as DataQuality, show: true },
+            { quality: "fallback" as DataQuality, show: true },
+          ].map(({ quality }) => {
+            const cfg = QUALITY_LABELS[quality];
+            return (
+              <div key={quality} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: cfg.color, display: "inline-block" }} />
+                <span style={{ fontSize: 9, color: "#94a3b8" }}>{cfg.label}</span>
+              </div>
+            );
+          })}
+        </div>
+        <span style={{ fontSize: 9, color: "#cbd5e1" }}>
+          Sources : INSEE Filosofi · DVF · Mimmoza calculs internes
+        </span>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// AGE PYRAMID CHART — v2.6
+// ── SVG inline, sans dépendance externe
+// ── Barres horizontales, dégradé bleu→rouge
+// ============================================
+const AgePyramidChart: React.FC<{ insee: InseeData | null }> = ({ insee }) => {
+  if (!insee) return null;
+
+  // Tranches d'âge disponibles
+  const slices = [
+    { label: "< 15 ans",  pct: insee.pct_moins_15, color: "#3b82f6" },
+    { label: "15-29 ans", pct: insee.pct_15_29,    color: "#06b6d4" },
+    { label: "30-44 ans", pct: insee.pct_30_44,    color: "#10b981" },
+    { label: "45-59 ans", pct: insee.pct_45_59,    color: "#f59e0b" },
+    { label: "60-74 ans", pct: insee.pct_60_74,    color: "#f97316" },
+    { label: "75+ ans",   pct: insee.pct_plus_75 ?? (
+      (insee.pct_plus_60 != null && insee.pct_60_74 != null)
+        ? Math.max(0, insee.pct_plus_60 - insee.pct_60_74)
+        : undefined
+    ), color: "#ef4444" },
+  ].filter((s): s is { label: string; pct: number; color: string } => s.pct != null && !isNaN(s.pct));
+
+  if (slices.length === 0) return null;
+
+  const maxPct = Math.max(...slices.map(s => s.pct));
+  const scale  = Math.max(maxPct, 25);
+
+  // Dimensions SVG — barres plus compactes
+  const BAR_H   = 18;
+  const GAP     = 7;
+  const LABEL_W = 68;
+  const PCT_W   = 44;
+  const BAR_AREA = 340;
+  const TOTAL_H  = slices.length * (BAR_H + GAP) + 6;
+  const TOTAL_W  = LABEL_W + BAR_AREA + PCT_W + 12;
+
+  return (
+    <div style={{ ...styles.card, marginBottom: "24px", maxWidth: "680px" }}>
+      <div style={styles.cardTitle}>
+        <Users size={16} color="#6366f1" />
+        Pyramide des âges
+        <span style={{ ...styles.badge, background: "#eef2ff", color: "#4f46e5", marginLeft: "auto" }}>
+          {slices.length} tranches
+        </span>
+      </div>
+
+      {/* SVG responsive via viewBox */}
+      <svg
+        viewBox={`0 0 ${TOTAL_W} ${TOTAL_H}`}
+        style={{ width: "100%", height: "auto", display: "block" }}
+        aria-label="Pyramide des âges"
+      >
+        {slices.map((s, i) => {
+          const y    = i * (BAR_H + GAP) + 4;
+          const barW = Math.max(4, (s.pct / scale) * BAR_AREA);
+
+          return (
+            <g key={s.label}>
+              {/* Label tranche */}
+              <text
+                x={LABEL_W - 8}
+                y={y + BAR_H / 2 + 5}
+                textAnchor="end"
+                fontSize={11}
+                fill="#475569"
+                fontFamily="'Inter', sans-serif"
+              >
+                {s.label}
+              </text>
+
+              {/* Fond barre (track) */}
+              <rect
+                x={LABEL_W}
+                y={y}
+                width={BAR_AREA}
+                height={BAR_H}
+                rx={6}
+                fill="#f1f5f9"
+              />
+
+              {/* Barre colorée */}
+              <rect
+                x={LABEL_W}
+                y={y}
+                width={barW}
+                height={BAR_H}
+                rx={6}
+                fill={s.color}
+                opacity={0.88}
+              />
+
+              {/* Pourcentage dans/après la barre */}
+              <text
+                x={LABEL_W + barW + 8}
+                y={y + BAR_H / 2 + 5}
+                textAnchor="start"
+                fontSize={12}
+                fontWeight="700"
+                fill={s.color}
+                fontFamily="'Inter', sans-serif"
+              >
+                {formatPercent(s.pct)}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* Légende couleur */}
+      <div style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "10px",
+        marginTop: "16px",
+        padding: "12px 14px",
+        background: "#f8fafc",
+        borderRadius: "10px",
+      }}>
+        {slices.map(s => (
+          <div key={s.label} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span style={{
+              display: "inline-block",
+              width: "10px",
+              height: "10px",
+              borderRadius: "3px",
+              background: s.color,
+            }} />
+            <span style={{ fontSize: "11px", color: "#475569" }}>{s.label}</span>
+          </div>
+        ))}
+        <span style={{ marginLeft: "auto", fontSize: "10px", color: "#94a3b8", fontStyle: "italic" }}>
+          Source INSEE
+        </span>
       </div>
     </div>
   );
@@ -1369,7 +2373,6 @@ const BpeCard: React.FC<{ bpe: BpeData | null; projectType: string }> = ({ bpe, 
                 )}
               </div>
               
-              {/* v2.4: Labels complets sans troncature */}
               {cat.data.details && cat.data.details.length > 0 && (
                 <div style={{ fontSize: "12px", color: "#64748b" }}>
                   {cat.data.details.slice(0, isExpanded ? 10 : 2).map((d, i) => (
@@ -1401,7 +2404,6 @@ const BpeCard: React.FC<{ bpe: BpeData | null; projectType: string }> = ({ bpe, 
                 </div>
               )}
               
-              {/* Bouton voir plus si > 2 */}
               {hasDetails && cat.data.details.length > 2 && !isExpanded && (
                 <div style={{ 
                   fontSize: "11px", 
@@ -1796,9 +2798,9 @@ const ScoreAdjustmentsCard: React.FC<{
   return (
     <div style={{ ...styles.card, background: "#f8fafc", marginBottom: "24px" }}>
       <div style={styles.cardTitle}>
-        <Activity size={20} color="#6366f1" />
+        <Activity size={20} color={ACCENT_PRO} />
         Analyse spécifique - {projectType}
-        <span style={{ ...styles.badge, background: "#eef2ff", color: "#4f46e5", marginLeft: "auto" }}>
+        <span style={{ ...styles.badge, background: "#ede9fe", color: ACCENT_PRO, marginLeft: "auto" }}>
           Scoring différencié
         </span>
       </div>
@@ -1829,7 +2831,7 @@ const ScoreAdjustmentsCard: React.FC<{
 };
 
 // ============================================
-// MARKET STUDY RESULTS - v2.4
+// MARKET STUDY RESULTS - v2.8
 // ============================================
 const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }) => {
   const { meta, core, insights, specific } = data;
@@ -1838,7 +2840,6 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
   const isEhpad = meta.project_type === "ehpad";
   const ehpadSpecific = isEhpad ? (specific as EhpadSpecific) : null;
   
-  // v2.4: Calculer les scores différenciés
   const { scores, adjustments, explanation } = useMemo(
     () => calculateDifferentiatedScores(data, meta.project_type),
     [data, meta.project_type]
@@ -1848,7 +2849,6 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
   const warningInsights = insights.filter(i => i.type === "warning" || i.type === "negative");
   const neutralInsights = insights.filter(i => i.type === "neutral");
 
-  // PDF Handler
   const handleGeneratePdf = useCallback(() => {
     const verdict = getVerdictConfig(scores.global);
     const scoreColor = getScoreColor(scores.global);
@@ -1935,7 +2935,7 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
     <p style="font-size: 12px; color: #64748b; margin-bottom: 12px;">${explanation}</p>
     <div style="display: flex; flex-wrap: wrap; gap: 8px;">
       ${adjustments.map(adj => `
-        <span style="padding: 6px 12px; background: ${adj.value > 0 ? '#dcfce7' : '#fee2e2'}; border-radius: 6px; font-size: 12px; color: ${adj.value > 0 ? '#166534' : '#991b1b'};">
+        <span style="padding: 6px 12px; background: ${adj.value > 0 ? '#dcfce7' : '#fee2e2'}; border-radius: 6px; font-size: 12px; color: ${adj.value > 0 ? '#166634' : '#991b1b'};">
           ${adj.label} (${adj.value > 0 ? '+' : ''}${adj.value})
         </span>
       `).join('')}
@@ -1958,7 +2958,7 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
     <div class="grid">
       <div class="stat-box"><div class="stat-label">Population</div><div class="stat-value" style="color: #4338ca">${formatNumber(core.insee?.population)}</div></div>
       <div class="stat-box"><div class="stat-label">Densité</div><div class="stat-value" style="color: #15803d">${formatNumber(core.insee?.densite)} hab/km²</div></div>
-      <div class="stat-box"><div class="stat-label">Revenu médian</div><div class="stat-value" style="color: #10b981">${formatPrice(core.insee?.revenu_median)}</div></div>
+      <div class="stat-box"><div class="stat-label">Revenu médian</div><div class="stat-value" style="color: #10b981">${core.insee?.revenu_median != null ? formatPrice(core.insee.revenu_median) : '—'}</div></div>
       <div class="stat-box"><div class="stat-label">Taux chômage</div><div class="stat-value" style="color: #f59e0b">${formatPercent(core.insee?.taux_chomage)}</div></div>
     </div>
   </div>
@@ -2069,21 +3069,32 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
               <div style={{ fontSize: "13px", fontWeight: 600, marginBottom: "16px", opacity: 0.9 }}>
                 Sous-scores ({meta.project_type})
               </div>
-              {[
-                { label: "Demande", score: scores.demande },
-                { label: "Offre", score: scores.offre },
-                { label: "Accessibilité", score: scores.accessibilite },
-                { label: "Environnement", score: scores.environnement },
-              ].map((item, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "10px" }}>
-                  <span style={{ fontSize: "12px", opacity: 0.8, width: "90px" }}>{item.label}</span>
-                  <div style={{ flex: 1, height: "6px", background: "rgba(255,255,255,0.2)", borderRadius: "3px" }}>
-                    <div style={{
-                      width: `${item.score ?? 0}%`, height: "100%",
-                      background: getScoreColor(item.score), borderRadius: "3px"
-                    }} />
-                  </div>
-                  <span style={{ fontSize: "12px", fontWeight: 600, width: "28px" }}>{item.score ?? "—"}</span>
+              {(
+                [
+                  { label: "Demande",       score: scores.demande,       key: "demande"       },
+                  { label: "Offre",         score: scores.offre,         key: "offre"         },
+                  { label: "Accessibilité", score: scores.accessibilite, key: "accessibilite" },
+                  { label: "Environnement", score: scores.environnement, key: "environnement" },
+                ] as const
+              ).map((item, i) => (
+                <div key={i} style={{ marginBottom: "10px" }}>
+                  <ScoreTooltip
+                    content={SCORE_TOOLTIPS[item.key]}
+                    position="left"
+                  >
+                    <span style={{ fontSize: "12px", opacity: 0.8, width: "90px", flexShrink: 0 }}>
+                      {item.label}
+                    </span>
+                    <div style={{ flex: 1, height: "6px", background: "rgba(255,255,255,0.2)", borderRadius: "3px" }}>
+                      <div style={{
+                        width: `${item.score ?? 0}%`, height: "100%",
+                        background: getScoreColor(item.score), borderRadius: "3px"
+                      }} />
+                    </div>
+                    <span style={{ fontSize: "12px", fontWeight: 600, width: "28px", textAlign: "right", flexShrink: 0 }}>
+                      {item.score ?? "—"}
+                    </span>
+                  </ScoreTooltip>
                 </div>
               ))}
             </div>
@@ -2158,7 +3169,7 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
           </div>
         )}
         
-        {/* Grille principale */}
+        {/* ── DVF + Démographie côte à côte ── */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", marginBottom: "24px" }}>
           <DvfCard dvf={core.dvf} />
           <DemographieCard 
@@ -2167,6 +3178,16 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
             ehpadSpecific={ehpadSpecific}
           />
         </div>
+
+        {/* ── v2.7 : Lecture économique décisionnelle ── */}
+        <EconomicDecisionCard
+          insee={core.insee}
+          dvf={core.dvf}
+          projectType={meta.project_type}
+        />
+
+        {/* ── v2.6 : Pyramide des âges pleine largeur ── */}
+        <AgePyramidChart insee={core.insee} />
         
         {/* Transport + BPE */}
         <div style={{ 
@@ -2257,9 +3278,17 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
 };
 
 // ============================================
-// COMPOSANT PRINCIPAL - MarchePage
+// COMPOSANT PRINCIPAL - MarchePage v2.6
 // ============================================
 export function MarchePage() {
+  // ── v2.5 : studyId depuis l'URL ──────────────────────────────────────────
+  const [searchParams] = useSearchParams();
+  const studyId = searchParams.get("study");
+
+  // ── v2.5 : hook étude ────────────────────────────────────────────────────
+  const { study, loadState, patchMarche } = usePromoteurStudy(studyId);
+
+  // ── Form state ────────────────────────────────────────────────────────────
   const [address, setAddress] = useState("");
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [isSearchingAddress, setIsSearchingAddress] = useState(false);
@@ -2280,14 +3309,42 @@ export function MarchePage() {
   const parcelTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const resultsRef = useRef<HTMLDivElement | null>(null);
 
+  // ── v2.5 : mountedRef — évite les setState post-unmount ───────────────────
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
   const projectConfig = useMemo(() => getSafeProjectConfig(projectNature), [projectNature]);
 
+  // ── v2.5 : hydratation depuis la fiche étude ──────────────────────────────
+  useEffect(() => {
+    if (loadState !== "ready" || !study) return;
+
+    if (study.foncier?.commune_insee && !codeInsee) {
+      setCodeInsee(study.foncier.commune_insee);
+    }
+    if (study.foncier?.focus_id && !parcelId) {
+      setParcelId(study.foncier.focus_id);
+    }
+    if (study.marche?.raw_data && !analysisResult) {
+      setAnalysisResult(study.marche.raw_data as MarketStudyApiResponse);
+    }
+  // Les dépendances codeInsee / parcelId / analysisResult sont
+  // intentionnellement omises : on ne veut déclencher l'hydratation
+  // qu'une seule fois, au passage à "ready".
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadState, study]);
+
+  // ── Autocomplete adresse ──────────────────────────────────────────────────
   useEffect(() => {
     if (addressTimeoutRef.current) clearTimeout(addressTimeoutRef.current);
     if (address.length >= 3 && !selectedAddress) {
       setIsSearchingAddress(true);
       addressTimeoutRef.current = setTimeout(async () => {
         const suggestions = await searchAddress(address);
+        if (!mountedRef.current) return;
         setAddressSuggestions(suggestions);
         setIsSearchingAddress(false);
       }, 300);
@@ -2298,12 +3355,14 @@ export function MarchePage() {
     return () => { if (addressTimeoutRef.current) clearTimeout(addressTimeoutRef.current); };
   }, [address, selectedAddress]);
 
+  // ── Recherche parcelle ────────────────────────────────────────────────────
   useEffect(() => {
     if (parcelTimeoutRef.current) clearTimeout(parcelTimeoutRef.current);
     if (parcelId.length >= 10) {
       setIsSearchingParcel(true);
       parcelTimeoutRef.current = setTimeout(async () => {
         const info = await searchParcel(parcelId);
+        if (!mountedRef.current) return;
         setParcelInfo(info);
         setIsSearchingParcel(false);
         if (info?.lat && info?.lon) {
@@ -2319,6 +3378,7 @@ export function MarchePage() {
     return () => { if (parcelTimeoutRef.current) clearTimeout(parcelTimeoutRef.current); };
   }, [parcelId]);
 
+  // ── Rayon par défaut selon type de projet ─────────────────────────────────
   useEffect(() => {
     setRadius(projectConfig.radius.analysis);
   }, [projectConfig]);
@@ -2332,6 +3392,7 @@ export function MarchePage() {
     if (suggestion.citycode) setCodeInsee(suggestion.citycode);
   }, []);
 
+  // ── v2.5 : handleSubmit avec patchMarche ──────────────────────────────────
   const handleSubmit = useCallback(async () => {
     const hasLocation = (latitude && longitude) || codeInsee || parcelInfo;
     if (!hasLocation) {
@@ -2393,21 +3454,53 @@ export function MarchePage() {
         throw new Error(result.error || `Erreur ${apiResponse.status}`);
       }
 
-      setAnalysisResult(result as MarketStudyApiResponse);
+      const typedResult = result as MarketStudyApiResponse;
 
+      if (!mountedRef.current) return;
+      setAnalysisResult(typedResult);
+
+      // ── Scores différenciés (nécessaires pour patchMarche) ──────────────
+      const { scores } = calculateDifferentiatedScores(typedResult, projectNature);
+
+      // ── v2.5 : persister dans la fiche étude ────────────────────────────
+      const marchePayload: PromoteurMarcheData = {
+        prix_m2_median:   typedResult.core.dvf?.prix_m2_median   ?? null,
+        prix_m2_neuf:     null,
+        prix_m2_ancien:   typedResult.core.dvf?.prix_m2_median   ?? null,
+        tension_marche:   scores.global >= 70 ? "forte" : scores.global >= 50 ? "moyenne" : "faible",
+        taux_vacance_pct: typedResult.core.insee?.pct_logements_vacants ?? null,
+        zone_pinel:       null,
+        score_marche:     scores.global,
+        smart_scores:     {
+          demande:       scores.demande,
+          offre:         scores.offre,
+          accessibilite: scores.accessibilite,
+          environnement: scores.environnement,
+        },
+        raw_data: typedResult as unknown as Record<string, unknown>,
+        done:     true,
+      };
+
+      if (studyId) {
+        patchMarche(marchePayload).catch(e =>
+          console.error("[MarchePage] patchMarche failed:", e)
+        );
+      }
+
+      // ── Snapshot store (inchangé) ────────────────────────────────────────
       try {
         patchProjectInfo({
           address: selectedAddress?.label || address || undefined,
-          city: result?.meta?.commune_nom || undefined,
+          city: typedResult?.meta?.commune_nom || undefined,
           projectType: projectNature,
-          lat: result?.meta?.lat,
-          lon: result?.meta?.lon,
+          lat: typedResult?.meta?.lat,
+          lon: typedResult?.meta?.lon,
         });
 
         patchModule("market", {
           ok: true,
-          summary: `Score: ${result?.scores?.global}/100 - ${result?.meta?.commune_nom}`,
-          data: result,
+          summary: `Score: ${typedResult?.scores?.global}/100 - ${typedResult?.meta?.commune_nom}`,
+          data: typedResult,
         });
 
         log('💾', 'Snapshot saved');
@@ -2416,52 +3509,101 @@ export function MarchePage() {
       }
 
       setTimeout(() => {
-        resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (mountedRef.current) {
+          resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
       }, 100);
 
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Une erreur est survenue";
       log('❌', 'Submit error', errorMessage);
-      setError(errorMessage);
+      if (mountedRef.current) setError(errorMessage);
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) setIsLoading(false);
     }
-  }, [latitude, longitude, codeInsee, parcelInfo, radius, projectNature, selectedAddress, address]);
+  }, [
+    latitude, longitude, codeInsee, parcelInfo, radius, projectNature,
+    selectedAddress, address, studyId, patchMarche,
+  ]);
+
+  // ── INSEE depuis la fiche étude (pour le banner) ──────────────────────────
+  const studyInsee = study?.foncier?.commune_insee ?? null;
 
   return (
     <ErrorBoundary componentName="MarchePage">
       <div style={styles.container}>
-        {/* Header */}
+
+        {/* ── Bannière dégradé Promoteur › Études ── */}
         <div style={{
-          ...styles.header,
-          background: `linear-gradient(135deg, #1e293b 0%, ${projectConfig.color}80 50%, #1e293b 100%)`,
+          background: GRAD_PRO,
+          borderRadius: 14,
+          padding: "20px 24px",
+          margin: "16px 40px 0 40px",
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 16,
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-            <SafeIcon icon={projectConfig.icon} fallback={Building2} size={28} />
-            <h1 style={{ fontSize: "28px", fontWeight: 700, margin: 0 }}>Étude de Marché</h1>
+          <div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
+              Promoteur › Études
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
+              <SafeIcon icon={projectConfig.icon} fallback={Building2} size={22} color="white" />
+              Étude de Marché
+            </div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+              {projectConfig.description}. Scoring adapté au type de projet avec bonus/pénalités contextuels.
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, marginTop: 4 }}>
+            {/* ── v2.5 : badge INSEE depuis la fiche étude ── */}
+            {studyInsee && (
+              <span style={{
+                padding: "6px 12px",
+                background: "rgba(255,255,255,0.15)",
+                borderRadius: 8,
+                fontSize: 12,
+                fontWeight: 600,
+                color: "white",
+                border: "1px solid rgba(255,255,255,0.25)",
+              }}>
+                INSEE {studyInsee}
+              </span>
+            )}
             <span style={{
-              padding: "4px 12px",
-              background: "rgba(255,255,255,0.2)",
-              borderRadius: "6px",
-              fontSize: "13px",
-              fontWeight: 500,
+              padding: "6px 12px",
+              background: "rgba(255,255,255,0.15)",
+              borderRadius: 8,
+              fontSize: 12,
+              fontWeight: 600,
+              color: "white",
+              border: "1px solid rgba(255,255,255,0.25)",
             }}>
               {projectConfig.label}
             </span>
-            <span style={{
-              padding: "4px 10px",
-              background: "#dcfce7",
-              borderRadius: "6px",
-              fontSize: "11px",
-              fontWeight: 600,
-              color: "#166534",
-            }}>
-              v2.4 • Scoring différencié
-            </span>
+            <button
+              onClick={handleSubmit}
+              disabled={isLoading}
+              style={{
+                padding: "9px 18px",
+                borderRadius: 10,
+                border: "none",
+                background: "white",
+                color: ACCENT_PRO,
+                fontWeight: 600,
+                fontSize: 13,
+                cursor: isLoading ? "not-allowed" : "pointer",
+                opacity: isLoading ? 0.7 : 1,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              {isLoading ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Search size={14} />}
+              {isLoading ? "Analyse…" : "Lancer l'analyse"}
+            </button>
           </div>
-          <p style={{ fontSize: "14px", color: "rgba(255,255,255,0.7)", maxWidth: "700px", margin: 0 }}>
-            {projectConfig.description}. Scoring adapté au type de projet avec bonus/pénalités contextuels.
-          </p>
         </div>
 
         {/* Contenu principal */}
@@ -2471,7 +3613,7 @@ export function MarchePage() {
             <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
               <div style={{
                 width: "44px", height: "44px", borderRadius: "12px",
-                background: `linear-gradient(135deg, ${projectConfig.color} 0%, ${projectConfig.color}cc 100%)`,
+                background: `linear-gradient(135deg, ${ACCENT_PRO} 0%, #7c6fcd 100%)`,
                 display: "flex", alignItems: "center", justifyContent: "center"
               }}>
                 <Target size={22} color="white" />
@@ -2488,81 +3630,139 @@ export function MarchePage() {
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "24px" }}>
               {/* Adresse */}
-              <div style={{ gridColumn: "span 2", display: "flex", flexDirection: "column", gap: "8px" }}>
-                <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <MapPin size={14} color={projectConfig.color} />
-                  Adresse
-                  <span style={{ fontSize: "10px", fontWeight: 600, padding: "2px 8px", background: "#dbeafe", color: "#1d4ed8", borderRadius: "4px", marginLeft: "8px" }}>
-                    RECOMMANDÉ
-                  </span>
-                </label>
-                <div style={{ position: "relative" }}>
-                  <input
-                    type="text"
-                    placeholder="Ex: 12 rue de la République, Lyon"
-                    value={address}
-                    onChange={(e) => { setAddress(e.target.value); if (selectedAddress) setSelectedAddress(null); }}
-                    style={{ ...styles.input, paddingRight: "40px" }}
-                  />
-                  {isSearchingAddress && (
-                    <Loader2 size={18} color={projectConfig.color} style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", animation: "spin 1s linear infinite" }} />
-                  )}
-                  {address && !isSearchingAddress && (
-                    <button onClick={() => { setAddress(""); setSelectedAddress(null); }} style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", padding: "4px" }}>
-                      <X size={16} color="#94a3b8" />
-                    </button>
-                  )}
-                  {addressSuggestions.length > 0 && (
-                    <div style={{
-                      position: "absolute", top: "100%", left: 0, right: 0,
-                      background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "10px",
-                      boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 100,
-                      maxHeight: "220px", overflowY: "auto", marginTop: "4px"
-                    }}>
-                      {addressSuggestions.map((s, i) => (
-                        <div 
-                          key={i} 
-                          onClick={() => handleSelectAddress(s)} 
-                          style={{
-                            padding: "12px 14px", cursor: "pointer", fontSize: "13px", color: "#1e293b",
-                            display: "flex", alignItems: "center", gap: "10px",
-                            borderBottom: "1px solid #f1f5f9", transition: "background 0.15s"
-                          }}
-                          onMouseEnter={(e) => { (e.target as HTMLElement).style.background = "#f8fafc"; }}
-                          onMouseLeave={(e) => { (e.target as HTMLElement).style.background = "transparent"; }}
-                        >
-                          <MapPin size={14} color="#64748b" />
-                          {s.label}
+              {/* ── v2.8 mutex : si parcelle remplie → champ désactivé ── */}
+              {(() => {
+                const hasAddress = address.length > 0 || selectedAddress != null;
+                const hasParcel  = parcelId.length > 0;
+                const bothFilled = hasAddress && hasParcel;
+                const addressDisabled = (hasParcel || codeInsee.length > 0) && !hasAddress;
+
+                return (
+                  <div style={{ gridColumn: "span 2", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: "6px" }}>
+                      <MapPin size={14} color={ACCENT_PRO} />
+                      Adresse
+                      <span style={{ fontSize: "10px", fontWeight: 600, padding: "2px 8px", background: "#ede9fe", color: ACCENT_PRO, borderRadius: "4px", marginLeft: "8px" }}>
+                        RECOMMANDÉ
+                      </span>
+                    </label>
+                    <div style={{ position: "relative" }}>
+                      <input
+                        type="text"
+                        placeholder="Ex: 12 rue de la République, Lyon"
+                        value={address}
+                        disabled={addressDisabled}
+                        onChange={(e) => { setAddress(e.target.value); if (selectedAddress) setSelectedAddress(null); }}
+                        style={{
+                          ...styles.input,
+                          paddingRight: "40px",
+                          opacity: addressDisabled ? 0.45 : 1,
+                          cursor: addressDisabled ? "not-allowed" : undefined,
+                          background: addressDisabled ? "#f1f5f9" : undefined,
+                        }}
+                      />
+                      {isSearchingAddress && (
+                        <Loader2 size={18} color={ACCENT_PRO} style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", animation: "spin 1s linear infinite" }} />
+                      )}
+                      {address && !isSearchingAddress && !addressDisabled && (
+                        <button onClick={() => { setAddress(""); setSelectedAddress(null); }} style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", padding: "4px" }}>
+                          <X size={16} color="#94a3b8" />
+                        </button>
+                      )}
+                      {addressSuggestions.length > 0 && (
+                        <div style={{
+                          position: "absolute", top: "100%", left: 0, right: 0,
+                          background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "10px",
+                          boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 100,
+                          maxHeight: "220px", overflowY: "auto", marginTop: "4px"
+                        }}>
+                          {addressSuggestions.map((s, i) => (
+                            <div
+                              key={i}
+                              onClick={() => handleSelectAddress(s)}
+                              style={{
+                                padding: "12px 14px", cursor: "pointer", fontSize: "13px", color: "#1e293b",
+                                display: "flex", alignItems: "center", gap: "10px",
+                                borderBottom: "1px solid #f1f5f9", transition: "background 0.15s"
+                              }}
+                              onMouseEnter={(e) => { (e.target as HTMLElement).style.background = "#f8fafc"; }}
+                              onMouseLeave={(e) => { (e.target as HTMLElement).style.background = "transparent"; }}
+                            >
+                              <MapPin size={14} color="#64748b" />
+                              {s.label}
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  )}
-                </div>
-                {selectedAddress && (
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", background: "#ecfdf5", borderRadius: "8px" }}>
-                    <CheckCircle size={16} color="#10b981" />
-                    <span style={{ fontSize: "13px", color: "#065f46" }}>
-                      {selectedAddress.lat.toFixed(5)}, {selectedAddress.lon.toFixed(5)}
-                      {selectedAddress.citycode && ` • INSEE: ${selectedAddress.citycode}`}
-                    </span>
+                    {/* Message mutex : parcelle ou INSEE rempli → adresse bloquée */}
+                    {addressDisabled && (
+                      <div style={{ fontSize: "12px", color: "#d97706", display: "flex", alignItems: "center", gap: "6px" }}>
+                        <AlertTriangle size={13} color="#d97706" />
+                        Videz la parcelle{codeInsee.length > 0 && parcelId.length > 0 ? " et le code INSEE" : codeInsee.length > 0 ? " le code INSEE" : ""} pour saisir une adresse
+                      </div>
+                    )}
+                    {selectedAddress && (
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", background: "#ecfdf5", borderRadius: "8px" }}>
+                        <CheckCircle size={16} color="#10b981" />
+                        <span style={{ fontSize: "13px", color: "#065f46" }}>
+                          {selectedAddress.lat.toFixed(5)}, {selectedAddress.lon.toFixed(5)}
+                          {selectedAddress.citycode && ` • INSEE: ${selectedAddress.citycode}`}
+                        </span>
+                      </div>
+                    )}
+                    {/* Bandeau warning hydratation : les deux champs remplis */}
+                    {bothFilled && (
+                      <div style={{
+                        display: "flex", alignItems: "center", gap: "8px",
+                        padding: "10px 14px", background: "#fef3c7",
+                        border: "1px solid #fcd34d", borderRadius: "8px",
+                        fontSize: "12px", color: "#92400e",
+                      }}>
+                        <AlertTriangle size={14} color="#d97706" />
+                        Vérifiez que l'adresse correspond au numéro de parcelle cadastrale
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })()}
 
               {/* Parcelle */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <Grid3X3 size={14} color={projectConfig.color} />
-                  N° Parcelle cadastrale
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ex: 69123000AI0001"
-                  value={parcelId}
-                  onChange={(e) => setParcelId(e.target.value)}
-                  style={styles.input}
-                />
-              </div>
+              {/* ── v2.8 mutex : si adresse remplie → champ désactivé ── */}
+              {(() => {
+                const hasAddress = address.length > 0 || selectedAddress != null;
+                const hasParcel  = parcelId.length > 0;
+                const parcelDisabled = hasAddress && !hasParcel;
+
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: "6px" }}>
+                      <Grid3X3 size={14} color={ACCENT_PRO} />
+                      N° Parcelle cadastrale
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ex: 69123000AI0001"
+                      value={parcelId}
+                      disabled={parcelDisabled}
+                      onChange={(e) => setParcelId(e.target.value)}
+                      style={{
+                        ...styles.input,
+                        opacity: parcelDisabled ? 0.45 : 1,
+                        cursor: parcelDisabled ? "not-allowed" : undefined,
+                        background: parcelDisabled ? "#f1f5f9" : undefined,
+                      }}
+                    />
+                    {/* Message mutex : adresse remplie → parcelle bloquée */}
+                    {parcelDisabled && (
+                      <div style={{ fontSize: "12px", color: "#d97706", display: "flex", alignItems: "center", gap: "6px" }}>
+                        <AlertTriangle size={13} color="#d97706" />
+                        Videz l'adresse pour saisir une parcelle
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Coordonnées */}
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -2580,10 +3780,10 @@ export function MarchePage() {
                 <input type="text" placeholder="69123" value={codeInsee} onChange={(e) => setCodeInsee(e.target.value)} style={styles.input} />
               </div>
 
-              {/* Nature projet - v2.4: Fusion EHPAD/Résidence senior */}
+              {/* Nature projet */}
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <Building2 size={14} color={projectConfig.color} />
+                  <Building2 size={14} color={ACCENT_PRO} />
                   Nature du projet
                 </label>
                 <select 
@@ -2603,17 +3803,17 @@ export function MarchePage() {
               {/* Rayon */}
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <Compass size={14} color={projectConfig.color} />
-                  Rayon: <strong style={{ color: projectConfig.color }}>{radius} km</strong>
+                  <Compass size={14} color={ACCENT_PRO} />
+                  Rayon: <strong style={{ color: ACCENT_PRO }}>{radius} km</strong>
                 </label>
                 <input
                   type="range" min={1} max={30} step={1} value={radius}
                   onChange={(e) => setRadius(parseInt(e.target.value))}
-                  style={{ width: "100%", marginTop: "8px", accentColor: projectConfig.color }}
+                  style={{ width: "100%", marginTop: "8px", accentColor: ACCENT_PRO }}
                 />
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#94a3b8" }}>
                   <span>1 km</span>
-                  <span style={{ color: projectConfig.color, fontWeight: 500 }}>
+                  <span style={{ color: ACCENT_PRO, fontWeight: 500 }}>
                     Recommandé: {projectConfig.radius.analysis} km
                   </span>
                   <span>30 km</span>
@@ -2639,7 +3839,6 @@ export function MarchePage() {
                 disabled={isLoading}
                 style={{
                   ...styles.submitButton,
-                  background: `linear-gradient(135deg, ${projectConfig.color} 0%, ${projectConfig.color}cc 100%)`,
                   opacity: isLoading ? 0.7 : 1,
                   cursor: isLoading ? "not-allowed" : "pointer",
                 }}
@@ -2667,7 +3866,7 @@ export function MarchePage() {
                 display: "flex", flexDirection: "column", alignItems: "center",
                 justifyContent: "center", padding: "80px 40px"
               }}>
-                <Loader2 size={56} color={projectConfig.color} style={{ animation: "spin 1s linear infinite", marginBottom: "20px" }} />
+                <Loader2 size={56} color={ACCENT_PRO} style={{ animation: "spin 1s linear infinite", marginBottom: "20px" }} />
                 <h3 style={{ fontSize: "20px", color: "#1e293b", marginBottom: "8px" }}>Analyse en cours...</h3>
                 <p style={{ fontSize: "14px", color: "#64748b" }}>
                   Récupération des données DVF, INSEE, transport, équipements et tarifs CNSA
@@ -2687,10 +3886,10 @@ export function MarchePage() {
               }}>
                 <div style={{
                   width: "80px", height: "80px", borderRadius: "50%",
-                  background: `linear-gradient(135deg, ${projectConfig.color}20 0%, ${projectConfig.color}40 100%)`,
+                  background: "#ede9fe",
                   display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "24px"
                 }}>
-                  <SafeIcon icon={projectConfig.icon} fallback={Building2} size={36} color={projectConfig.color} />
+                  <SafeIcon icon={projectConfig.icon} fallback={Building2} size={36} color={ACCENT_PRO} />
                 </div>
                 <h3 style={{ fontSize: "22px", fontWeight: 700, color: "#1e293b", marginBottom: "12px" }}>
                   Nouvelle étude de marché - {projectConfig.label}
@@ -2703,7 +3902,7 @@ export function MarchePage() {
                   <span style={{ ...styles.badge, background: "#dcfce7", color: "#166534" }}>
                     ✅ Scoring différencié v1.1.0
                   </span>
-                  <span style={{ ...styles.badge, background: "#dbeafe", color: "#1d4ed8" }}>
+                  <span style={{ ...styles.badge, background: "#ede9fe", color: ACCENT_PRO }}>
                     DVF + INSEE
                   </span>
                   <span style={{ ...styles.badge, background: "#fef3c7", color: "#92400e" }}>
@@ -2725,8 +3924,8 @@ export function MarchePage() {
             to { transform: rotate(360deg); }
           }
           input:focus, select:focus {
-            border-color: ${projectConfig.color} !important;
-            box-shadow: 0 0 0 3px ${projectConfig.color}20 !important;
+            border-color: ${ACCENT_PRO} !important;
+            box-shadow: 0 0 0 3px ${ACCENT_PRO}20 !important;
           }
           button:hover:not(:disabled) {
             transform: translateY(-1px);

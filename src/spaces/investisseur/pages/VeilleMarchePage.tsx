@@ -15,6 +15,7 @@ import {
   ChevronUp,
   Search,
   Lock,
+  Tag,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useMarketVeille } from "../hooks/useMarketVeille";
@@ -343,7 +344,11 @@ function parseSafeDate(raw: unknown): string | null {
   return null;
 }
 
-// ─── Rental exclusion helpers ──────────────────────────────────────────────────
+// ─── Rental exclusion helpers (couche défensive) ───────────────────────────────
+//
+// Les locations sont déjà filtrées à la source (transaction_type = 0 dans
+// marketListings.ts et transaction_mode = "sale" dans marketRefresh.ts).
+// Ces helpers constituent une sécurité supplémentaire côté client.
 
 const RENTAL_TYPE_KEYWORDS = new Set([
   "rent",
@@ -500,7 +505,7 @@ export default function VeilleMarchePage() {
   const trackedZonesCount = savedZones.length;
   const remainingZonesCount = Math.max(0, ZONE_LIMIT - trackedZonesCount);
 
-  // ─── Hook veille (expose isAdmin + bypassLimits résolus via getCurrentAdminStatus) ──
+  // ─── Hook veille — mode toujours "sale", transactionMode non passé ─────────
   const {
     loading,
     refreshing,
@@ -508,7 +513,6 @@ export default function VeilleMarchePage() {
     data,
     refreshPipeline,
     reloadOnly,
-    // ── bypass admin exposé par le hook ──────────────────────────────────
     bypassLimits,
     isAdmin,
   } = useMarketVeille({
@@ -518,13 +522,6 @@ export default function VeilleMarchePage() {
   });
 
   // ─── Dérivation du statut lock avec bypass admin ───────────────────────────
-  //
-  // Si bypassLimits === true (admin) :
-  //   - filtersLocked est toujours false
-  //   - les quotas UI sont illimités
-  //   - writeZoneLock n'est jamais appelé
-  //   - les bandeaux amber ne s'affichent pas
-  //
   const rawLockActive = isLockActive(activeZoneLock);
   const filtersLocked = rawLockActive && !bypassLimits;
 
@@ -542,7 +539,6 @@ export default function VeilleMarchePage() {
       return;
     }
 
-    // Admin : on ignore complètement le lock localStorage
     if (bypassLimits) {
       setActiveZoneLock(null);
       console.log("[VeilleMarchePage] admin bypass — zone lock ignoré", {
@@ -577,7 +573,13 @@ export default function VeilleMarchePage() {
 
   const opportunities = useMemo(() => {
     if (!hasActiveZone) return [];
-    return ((data?.opportunities ?? []) as OpportunityItem[]).filter(Boolean);
+    return ((data?.opportunities ?? []) as OpportunityItem[]).filter((item) => {
+      if (!item) return false;
+      // Filtre anti-location : un loyer mensuel ne peut pas être un prix de vente
+      if (item.price != null && item.price < 10_000) return false;
+      if (item.price_m2 != null && item.price_m2 < 200) return false;
+      return true;
+    });
   }, [data?.opportunities, hasActiveZone]);
 
   const refreshDisabled =
@@ -618,6 +620,7 @@ export default function VeilleMarchePage() {
     const kw = filters.keywords.trim().toLowerCase();
 
     return listings.filter((l) => {
+      // Couche défensive : exclure toute location résiduelle
       if (isRentalListing(l)) return false;
       if (!matchesPropertyType(l.property_type, filters.propertyTypeFilter))
         return false;
@@ -768,7 +771,6 @@ export default function VeilleMarchePage() {
     key: K,
     value: FiltersState[K]
   ) {
-    // Filtres jamais verrouillés pour un admin
     if (filtersLocked) return;
     setFilters((prev) => ({ ...prev, [key]: value }));
   }
@@ -857,7 +859,6 @@ export default function VeilleMarchePage() {
     if (!hasActiveZone || refreshDisabled) return;
 
     if (bypassLimits) {
-      // ── Admin : pas de confirm, pas de lock, pas de quota
       console.log("[VeilleMarchePage] admin refresh — bypass total", {
         city: zoneCity,
         zipCode: zoneZipCode,
@@ -867,7 +868,6 @@ export default function VeilleMarchePage() {
       return;
     }
 
-    // ── Utilisateur normal : confirmation + lock quotidien ─────────────────
     const confirmed = window.confirm(
       "Vous êtes sur le point de lancer votre unique actualisation quotidienne pour cette zone.\n\n" +
         "Après validation, vos filtres seront verrouillés jusqu'à demain et vous ne pourrez plus modifier cette veille aujourd'hui.\n\n" +
@@ -976,7 +976,6 @@ export default function VeilleMarchePage() {
     return c;
   }, [filters]);
 
-  // fd = filters disabled (verrouillés pour utilisateur normal, jamais pour admin)
   const fd = filtersLocked;
 
   return (
@@ -999,14 +998,12 @@ export default function VeilleMarchePage() {
                   <p className="flex items-center gap-2">
                     <MapPin className="h-4 w-4" />
                     Zone active : {zoneLabel}
-                    {/* Bandeau "veille figée" uniquement pour les non-admin */}
                     {filtersLocked && !bypassLimits && (
                       <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/20 px-2 py-0.5 text-xs font-semibold text-amber-300">
                         <Lock className="h-3 w-3" />
                         Veille figée jusqu&apos;à demain
                       </span>
                     )}
-                    {/* Bandeau admin */}
                     {bypassLimits && (
                       <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-indigo-400/40 bg-indigo-400/20 px-2 py-0.5 text-xs font-semibold text-indigo-200">
                         <Sparkles className="h-3 w-3" />
@@ -1095,7 +1092,6 @@ export default function VeilleMarchePage() {
                 ) : (
                   savedZones.map((zone, index) => {
                     const isActive = activeZone ? sameZone(activeZone, zone) : false;
-                    // Affichage du lock sur la pill : ignoré pour admin
                     const zoneLock = bypassLimits
                       ? null
                       : readZoneLock(zone.city, zone.zipCode);
@@ -1179,7 +1175,6 @@ export default function VeilleMarchePage() {
                 </div>
               </div>
 
-              {/* Bandeau veille verrouillée — masqué pour admin */}
               {filtersLocked && !bypassLimits && (
                 <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                   <div className="flex items-start gap-2">
@@ -1216,7 +1211,12 @@ export default function VeilleMarchePage() {
                     </p>
                   </div>
 
-                  {/* Badge filtres verrouillés — masqué pour admin */}
+                  {/* Badge "Vente uniquement" — toujours visible */}
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                    <Tag className="h-3 w-3" />
+                    Vente uniquement
+                  </span>
+
                   {fd && !bypassLimits && (
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
                       <Lock className="h-3 w-3" />

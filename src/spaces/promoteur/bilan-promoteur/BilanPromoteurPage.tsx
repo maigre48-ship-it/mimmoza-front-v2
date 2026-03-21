@@ -4,8 +4,16 @@
 import React, { useMemo, useState, useEffect } from "react";
 import * as turf from "@turf/turf";
 import type { Feature, FeatureCollection, Geometry } from "geojson";
+import { useSearchParams } from "react-router-dom";
 import { usePromoteurProjectStore } from "../store/promoteurProject.store";
 import { patchModule } from "../shared/promoteurSnapshot.store";
+import { usePromoteurStudy } from "../shared/usePromoteurStudy";
+import type { PromoteurBilanData } from "../shared/promoteurStudy.types";
+import { PromoteurSynthesePage } from "../pages/PromoteurSynthesePage";
+
+// ─── Design tokens ───────────────────────────────────────────────────────────
+const GRAD_PRO = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
+const ACCENT_PRO = "#5247b8";
 
 // -------------------------------
 // Helpers
@@ -64,20 +72,16 @@ type FloorsSpec = {
 };
 
 type Assumptions = {
-  // Revenus
   salePriceEurM2Hab: number;
   commercialisationPct: number;
   coefVendable: number;
-  // Foncier
   landPriceEur: number;
   notaryFeesPct: number;
   acquisitionTaxesPct: number;
-  // Travaux
   worksCostEurM2Sdp: number;
   vrdPct: number;
   extPct: number;
   contingencyPct: number;
-  // Études & montage
   surveyorEur: number;
   geotechEur: number;
   moePct: number;
@@ -85,13 +89,10 @@ type Assumptions = {
   spsCtOpcEur: number;
   insuranceDoPct: number;
   miscEur: number;
-  // Commercialisation
   marketingPctCa: number;
   marketingFixedEur: number;
-  // Financement
   financingRatePct: number;
   financingFeesEur: number;
-  // Taxes
   taxeAmenagementEurM2Sdp: number;
 };
 
@@ -146,20 +147,17 @@ function computeProForma(
   sdpEstimatedM2: number,
   surfaceVendableM2: number
 ) {
-  // ========== RECETTES ==========
   const caLogements =
     surfaceVendableM2 *
     n(ass.salePriceEurM2Hab, 0) *
     (pct(ass.commercialisationPct, 100) / 100);
   const caTotal = caLogements;
 
-  // ========== A) FONCIER ==========
   const foncier = n(ass.landPriceEur, 0);
   const fraisNotaire = foncier * (pct(ass.notaryFeesPct, 7.5) / 100);
   const taxesAcq = foncier * (pct(ass.acquisitionTaxesPct, 0) / 100);
   const totalFoncier = foncier + fraisNotaire + taxesAcq;
 
-  // ========== B) ÉTUDES & MONTAGE ==========
   const travauxBase = sdpEstimatedM2 * n(ass.worksCostEurM2Sdp, 0);
   const surveyor = n(ass.surveyorEur, 0);
   const geotech = n(ass.geotechEur, 0);
@@ -170,28 +168,23 @@ function computeProForma(
   const misc = n(ass.miscEur, 0);
   const totalEtudes = surveyor + geotech + moe + bet + spsCtOpc + insuranceDo + misc;
 
-  // ========== C) TRAVAUX ==========
   const vrd = travauxBase * (pct(ass.vrdPct, 6) / 100);
   const ext = travauxBase * (pct(ass.extPct, 3) / 100);
   const aleas = travauxBase * (pct(ass.contingencyPct, 3) / 100);
   const totalTravaux = travauxBase + vrd + ext + aleas;
 
-  // ========== D) TAXES ==========
   const taxeAmenagement = sdpEstimatedM2 * n(ass.taxeAmenagementEurM2Sdp, 0);
   const totalTaxes = taxeAmenagement;
 
-  // ========== E) COMMERCIALISATION ==========
   const marketingPct = caTotal * (pct(ass.marketingPctCa, 2) / 100);
   const marketingFixed = n(ass.marketingFixedEur, 0);
   const totalCom = marketingPct + marketingFixed;
 
-  // ========== F) FINANCEMENT ==========
   const baseFin = totalFoncier + 0.5 * totalTravaux;
   const intercalaires = baseFin * (pct(ass.financingRatePct, 4) / 100);
   const fraisFin = n(ass.financingFeesEur, 0);
   const totalFin = intercalaires + fraisFin;
 
-  // ========== TOTAUX ==========
   const coutTotal =
     totalFoncier + totalEtudes + totalTravaux + totalTaxes + totalCom + totalFin;
   const marge = caTotal - coutTotal;
@@ -201,38 +194,11 @@ function computeProForma(
   const coutRevientEurM2Sdp = sdpEstimatedM2 > 0 ? coutTotal / sdpEstimatedM2 : 0;
 
   return {
-    caLogements,
-    caTotal,
-    foncier,
-    fraisNotaire,
-    taxesAcq,
-    totalFoncier,
-    travauxBase,
-    surveyor,
-    geotech,
-    moe,
-    bet,
-    spsCtOpc,
-    insuranceDo,
-    misc,
-    totalEtudes,
-    vrd,
-    ext,
-    aleas,
-    totalTravaux,
-    taxeAmenagement,
-    totalTaxes,
-    marketingPct,
-    marketingFixed,
-    totalCom,
-    intercalaires,
-    fraisFin,
-    totalFin,
-    coutTotal,
-    marge,
-    margePct,
-    coutRevientEurM2Hab,
-    coutRevientEurM2Sdp,
+    caLogements, caTotal, foncier, fraisNotaire, taxesAcq, totalFoncier,
+    travauxBase, surveyor, geotech, moe, bet, spsCtOpc, insuranceDo, misc, totalEtudes,
+    vrd, ext, aleas, totalTravaux, taxeAmenagement, totalTaxes,
+    marketingPct, marketingFixed, totalCom, intercalaires, fraisFin, totalFin,
+    coutTotal, marge, margePct, coutRevientEurM2Hab, coutRevientEurM2Sdp,
   };
 }
 
@@ -240,15 +206,17 @@ function computeProForma(
 // Main component
 // -------------------------------
 export const BilanPromoteurPage: React.FC = () => {
-  // Read buildings and parkings directly from store root
   const buildings = usePromoteurProjectStore((s) => s.buildings);
   const parkings = usePromoteurProjectStore((s) => s.parkings);
 
-  // Surfaces depuis géométries réelles (turf.area sur WGS84)
+  const [searchParams] = useSearchParams();
+  const studyId = searchParams.get("study");
+  const { study, loadState, patchBilan } = usePromoteurStudy(studyId);
+
   const footprintBuildingsM2 = useMemo(() => sumAreas(buildings), [buildings]);
   const footprintParkingsM2 = useMemo(() => sumAreas(parkings), [parkings]);
 
-  // Local state for volumetry params
+  const [activeTab, setActiveTab] = useState<"bilan" | "synthese">("bilan");
   const [buildingKind, setBuildingKind] = useState<BuildingKind>("COLLECTIF");
   const [floorsSpec, setFloorsSpec] = useState<FloorsSpec>({
     aboveGroundFloors: 1,
@@ -256,11 +224,20 @@ export const BilanPromoteurPage: React.FC = () => {
     typicalFloorHeightM: 2.7,
   });
   const [nbLogements, setNbLogements] = useState<number>(1);
-
-  // Assumptions state
   const [ass, setAss] = useState<Assumptions>(DEFAULT_ASSUMPTIONS);
 
-  // Derived volumetry
+  useEffect(() => {
+    if (loadState !== "ready" || !study) return;
+    const f = study.foncier;
+    if (f?.surface_m2 && f.surface_m2 > 0) { /* debug */ }
+    if (study.evaluation?.cout_foncier) {
+      setAss((prev) => ({ ...prev, landPriceEur: study.evaluation!.cout_foncier! }));
+    }
+    if (study.marche?.prix_m2_neuf) {
+      setAss((prev) => ({ ...prev, salePriceEurM2Hab: study.marche!.prix_m2_neuf! }));
+    }
+  }, [loadState, study]);
+
   const levelsCount = useMemo(
     () => 1 + Math.max(0, Math.floor(n(floorsSpec.aboveGroundFloors, 0))),
     [floorsSpec.aboveGroundFloors]
@@ -292,381 +269,138 @@ export const BilanPromoteurPage: React.FC = () => {
     [habitableEstimatedM2, ass.coefVendable]
   );
 
-  // -------------------------------
-  // Pro forma calculations
-  // -------------------------------
   const computed = useMemo(() => {
     const pf = computeProForma(ass, sdpEstimatedM2, surfaceVendableM2);
-
-    // ========== LINES ==========
     const lines: Line[] = [];
 
-    // RECETTES
-    lines.push({
-      section: "RECETTES",
-      label: "CA logements",
-      valueEur: pf.caLogements,
-      hint: `${m2(surfaceVendableM2)} × ${ass.salePriceEurM2Hab} €/m²`,
-    });
-    lines.push({
-      section: "RECETTES",
-      label: "CA TOTAL",
-      valueEur: pf.caTotal,
-      kind: "subtotal",
-    });
+    lines.push({ section: "RECETTES", label: "CA logements", valueEur: pf.caLogements, hint: `${m2(surfaceVendableM2)} × ${ass.salePriceEurM2Hab} €/m²` });
+    lines.push({ section: "RECETTES", label: "CA TOTAL", valueEur: pf.caTotal, kind: "subtotal" });
 
-    // A) FONCIER
     lines.push({ section: "A) FONCIER", label: "Prix foncier", valueEur: pf.foncier });
-    lines.push({
-      section: "A) FONCIER",
-      label: "Frais notaire",
-      valueEur: pf.fraisNotaire,
-      hint: `${ass.notaryFeesPct.toFixed(1)}%`,
-    });
-    lines.push({
-      section: "A) FONCIER",
-      label: "Droits / taxes acquisition",
-      valueEur: pf.taxesAcq,
-      hint: `${ass.acquisitionTaxesPct.toFixed(1)}%`,
-    });
-    lines.push({
-      section: "A) FONCIER",
-      label: "Total foncier",
-      valueEur: pf.totalFoncier,
-      kind: "subtotal",
-    });
+    lines.push({ section: "A) FONCIER", label: "Frais notaire", valueEur: pf.fraisNotaire, hint: `${ass.notaryFeesPct.toFixed(1)}%` });
+    lines.push({ section: "A) FONCIER", label: "Droits / taxes acquisition", valueEur: pf.taxesAcq, hint: `${ass.acquisitionTaxesPct.toFixed(1)}%` });
+    lines.push({ section: "A) FONCIER", label: "Total foncier", valueEur: pf.totalFoncier, kind: "subtotal" });
 
-    // B) ÉTUDES & MONTAGE
-    lines.push({
-      section: "B) ÉTUDES & MONTAGE",
-      label: "Géomètre",
-      valueEur: pf.surveyor,
-      hint: "forfait",
-    });
-    lines.push({
-      section: "B) ÉTUDES & MONTAGE",
-      label: "Géotechnique",
-      valueEur: pf.geotech,
-      hint: "forfait",
-    });
-    lines.push({
-      section: "B) ÉTUDES & MONTAGE",
-      label: "MOE / Architecte",
-      valueEur: pf.moe,
-      hint: `${ass.moePct.toFixed(1)}% travaux`,
-    });
-    lines.push({
-      section: "B) ÉTUDES & MONTAGE",
-      label: "BET",
-      valueEur: pf.bet,
-      hint: `${ass.betPct.toFixed(1)}% travaux`,
-    });
-    lines.push({
-      section: "B) ÉTUDES & MONTAGE",
-      label: "SPS / CT / OPC",
-      valueEur: pf.spsCtOpc,
-      hint: "forfait",
-    });
-    lines.push({
-      section: "B) ÉTUDES & MONTAGE",
-      label: "Assurance DO",
-      valueEur: pf.insuranceDo,
-      hint: `${ass.insuranceDoPct.toFixed(1)}% travaux`,
-    });
-    lines.push({
-      section: "B) ÉTUDES & MONTAGE",
-      label: "Divers montage",
-      valueEur: pf.misc,
-      hint: "forfait",
-    });
-    lines.push({
-      section: "B) ÉTUDES & MONTAGE",
-      label: "Total études & montage",
-      valueEur: pf.totalEtudes,
-      kind: "subtotal",
-    });
+    lines.push({ section: "B) ÉTUDES & MONTAGE", label: "Géomètre", valueEur: pf.surveyor, hint: "forfait" });
+    lines.push({ section: "B) ÉTUDES & MONTAGE", label: "Géotechnique", valueEur: pf.geotech, hint: "forfait" });
+    lines.push({ section: "B) ÉTUDES & MONTAGE", label: "MOE / Architecte", valueEur: pf.moe, hint: `${ass.moePct.toFixed(1)}% travaux` });
+    lines.push({ section: "B) ÉTUDES & MONTAGE", label: "BET", valueEur: pf.bet, hint: `${ass.betPct.toFixed(1)}% travaux` });
+    lines.push({ section: "B) ÉTUDES & MONTAGE", label: "SPS / CT / OPC", valueEur: pf.spsCtOpc, hint: "forfait" });
+    lines.push({ section: "B) ÉTUDES & MONTAGE", label: "Assurance DO", valueEur: pf.insuranceDo, hint: `${ass.insuranceDoPct.toFixed(1)}% travaux` });
+    lines.push({ section: "B) ÉTUDES & MONTAGE", label: "Divers montage", valueEur: pf.misc, hint: "forfait" });
+    lines.push({ section: "B) ÉTUDES & MONTAGE", label: "Total études & montage", valueEur: pf.totalEtudes, kind: "subtotal" });
 
-    // C) TRAVAUX
-    lines.push({
-      section: "C) TRAVAUX",
-      label: "Travaux principaux",
-      valueEur: pf.travauxBase,
-      hint: `${m2(sdpEstimatedM2)} × ${ass.worksCostEurM2Sdp} €/m² SDP`,
-    });
-    lines.push({
-      section: "C) TRAVAUX",
-      label: "VRD / raccordements",
-      valueEur: pf.vrd,
-      hint: `${ass.vrdPct.toFixed(1)}% travaux`,
-    });
-    lines.push({
-      section: "C) TRAVAUX",
-      label: "Aménagements extérieurs",
-      valueEur: pf.ext,
-      hint: `${ass.extPct.toFixed(1)}% travaux`,
-    });
-    lines.push({
-      section: "C) TRAVAUX",
-      label: "Aléas travaux",
-      valueEur: pf.aleas,
-      hint: `${ass.contingencyPct.toFixed(1)}% travaux`,
-    });
-    lines.push({
-      section: "C) TRAVAUX",
-      label: "Total travaux",
-      valueEur: pf.totalTravaux,
-      kind: "subtotal",
-    });
+    lines.push({ section: "C) TRAVAUX", label: "Travaux principaux", valueEur: pf.travauxBase, hint: `${m2(sdpEstimatedM2)} × ${ass.worksCostEurM2Sdp} €/m² SDP` });
+    lines.push({ section: "C) TRAVAUX", label: "VRD / raccordements", valueEur: pf.vrd, hint: `${ass.vrdPct.toFixed(1)}% travaux` });
+    lines.push({ section: "C) TRAVAUX", label: "Aménagements extérieurs", valueEur: pf.ext, hint: `${ass.extPct.toFixed(1)}% travaux` });
+    lines.push({ section: "C) TRAVAUX", label: "Aléas travaux", valueEur: pf.aleas, hint: `${ass.contingencyPct.toFixed(1)}% travaux` });
+    lines.push({ section: "C) TRAVAUX", label: "Total travaux", valueEur: pf.totalTravaux, kind: "subtotal" });
 
-    // D) TAXES
-    lines.push({
-      section: "D) TAXES",
-      label: "Taxe d'aménagement",
-      valueEur: pf.taxeAmenagement,
-      hint: `${ass.taxeAmenagementEurM2Sdp} €/m² SDP`,
-    });
-    lines.push({
-      section: "D) TAXES",
-      label: "Total taxes",
-      valueEur: pf.totalTaxes,
-      kind: "subtotal",
-    });
+    lines.push({ section: "D) TAXES", label: "Taxe d'aménagement", valueEur: pf.taxeAmenagement, hint: `${ass.taxeAmenagementEurM2Sdp} €/m² SDP` });
+    lines.push({ section: "D) TAXES", label: "Total taxes", valueEur: pf.totalTaxes, kind: "subtotal" });
 
-    // E) COMMERCIALISATION
-    lines.push({
-      section: "E) COMMERCIALISATION",
-      label: "Commercialisation (% CA)",
-      valueEur: pf.marketingPct,
-      hint: `${ass.marketingPctCa.toFixed(1)}%`,
-    });
-    lines.push({
-      section: "E) COMMERCIALISATION",
-      label: "Commercialisation (forfait)",
-      valueEur: pf.marketingFixed,
-      hint: "option",
-    });
-    lines.push({
-      section: "E) COMMERCIALISATION",
-      label: "Total commercialisation",
-      valueEur: pf.totalCom,
-      kind: "subtotal",
-    });
+    lines.push({ section: "E) COMMERCIALISATION", label: "Commercialisation (% CA)", valueEur: pf.marketingPct, hint: `${ass.marketingPctCa.toFixed(1)}%` });
+    lines.push({ section: "E) COMMERCIALISATION", label: "Commercialisation (forfait)", valueEur: pf.marketingFixed, hint: "option" });
+    lines.push({ section: "E) COMMERCIALISATION", label: "Total commercialisation", valueEur: pf.totalCom, kind: "subtotal" });
 
-    // F) FINANCEMENT
-    lines.push({
-      section: "F) FINANCEMENT",
-      label: "Intérêts intercalaires",
-      valueEur: pf.intercalaires,
-      hint: `${ass.financingRatePct.toFixed(1)}% × (foncier + 0.5×travaux)`,
-    });
-    lines.push({
-      section: "F) FINANCEMENT",
-      label: "Frais dossier / garanties",
-      valueEur: pf.fraisFin,
-      hint: "forfait",
-    });
-    lines.push({
-      section: "F) FINANCEMENT",
-      label: "Total financement",
-      valueEur: pf.totalFin,
-      kind: "subtotal",
-    });
+    lines.push({ section: "F) FINANCEMENT", label: "Intérêts intercalaires", valueEur: pf.intercalaires, hint: `${ass.financingRatePct.toFixed(1)}% × (foncier + 0.5×travaux)` });
+    lines.push({ section: "F) FINANCEMENT", label: "Frais dossier / garanties", valueEur: pf.fraisFin, hint: "forfait" });
+    lines.push({ section: "F) FINANCEMENT", label: "Total financement", valueEur: pf.totalFin, kind: "subtotal" });
 
-    // TOTAL
-    lines.push({
-      section: "TOTAL",
-      label: "COÛT TOTAL OPÉRATION",
-      valueEur: pf.coutTotal,
-      kind: "total",
-    });
-    lines.push({
-      section: "TOTAL",
-      label: "MARGE BRUTE",
-      valueEur: pf.marge,
-      kind: "total",
-    });
+    lines.push({ section: "TOTAL", label: "COÛT TOTAL OPÉRATION", valueEur: pf.coutTotal, kind: "total" });
+    lines.push({ section: "TOTAL", label: "MARGE BRUTE", valueEur: pf.marge, kind: "total" });
 
-    // Notes
     const notes: string[] = [];
-    if (footprintBuildingsM2 <= 0)
-      notes.push(
-        "Aucun bâtiment dessiné en Implantation 2D : SDP/Habitable = 0. Retournez sur Implantation 2D et dessinez au moins un bâtiment."
-      );
-    if (ass.salePriceEurM2Hab <= 0)
-      notes.push("Prix de vente €/m² non renseigné : CA = 0.");
-    if (ass.landPriceEur <= 0)
-      notes.push("Foncier non renseigné : le bilan est incomplet.");
+    if (footprintBuildingsM2 <= 0) notes.push("Aucun bâtiment dessiné en Implantation 2D : SDP/Habitable = 0. Retournez sur Implantation 2D et dessinez au moins un bâtiment.");
+    if (ass.salePriceEurM2Hab <= 0) notes.push("Prix de vente €/m² non renseigné : CA = 0.");
+    if (ass.landPriceEur <= 0) notes.push("Foncier non renseigné : le bilan est incomplet.");
 
-    // Per-unit metrics (safe division)
     const safeNbLogements = nbLogements > 0 ? nbLogements : 1;
     const prixParLogement = pf.caTotal / safeNbLogements;
     const coutParLogement = pf.coutTotal / safeNbLogements;
     const margeParLogement = pf.marge / safeNbLogements;
 
-    return {
-      ...pf,
-      lines,
-      notes,
-      prixParLogement,
-      coutParLogement,
-      margeParLogement,
-    };
+    return { ...pf, lines, notes, prixParLogement, coutParLogement, margeParLogement };
   }, [ass, footprintBuildingsM2, sdpEstimatedM2, surfaceVendableM2, nbLogements]);
 
-  // -------------------------------
-  // Lecture Promoteur (auto-generated insights)
-  // -------------------------------
   const lecturePromoteur = useMemo(() => {
     const insights: string[] = [];
-
-    // Marge analysis
-    if (computed.margePct >= 20) {
-      insights.push("✅ Marge confortable (≥ 20%)");
-    } else if (computed.margePct >= 12) {
-      insights.push("⚠️ Marge moyenne (12-20%) : prudence sur les hypothèses");
-    } else if (computed.margePct > 0) {
-      insights.push("🔴 Marge faible (< 12%) : risque élevé");
-    } else {
-      insights.push("🔴 Marge négative : opération non viable en l'état");
-    }
-
-    // Small operation
-    if (surfaceVendableM2 > 0 && surfaceVendableM2 < 150) {
-      insights.push(
-        "📏 Petite opération (< 150 m² vendable) : frais fixes proportionnellement élevés"
-      );
-    }
-
-    // Cost ratio analysis
+    if (computed.margePct >= 20) insights.push("✅ Marge confortable (≥ 20%)");
+    else if (computed.margePct >= 12) insights.push("⚠️ Marge moyenne (12-20%) : prudence sur les hypothèses");
+    else if (computed.margePct > 0) insights.push("🔴 Marge faible (< 12%) : risque élevé");
+    else insights.push("🔴 Marge négative : opération non viable en l'état");
+    if (surfaceVendableM2 > 0 && surfaceVendableM2 < 150) insights.push("📏 Petite opération (< 150 m² vendable) : frais fixes proportionnellement élevés");
     if (computed.coutRevientEurM2Hab > 0 && ass.salePriceEurM2Hab > 0) {
       const ratio = computed.coutRevientEurM2Hab / ass.salePriceEurM2Hab;
-      if (ratio > 0.7) {
-        insights.push(
-          "⚠️ Risque de compression de marge : coût de revient élevé vs prix"
-        );
-      }
+      if (ratio > 0.7) insights.push("⚠️ Risque de compression de marge : coût de revient élevé vs prix");
     }
-
-    // Foncier check
-    if (ass.landPriceEur <= 0) {
-      insights.push("📋 Foncier non renseigné : bilan incomplet");
-    }
-
-    // Building check
-    if (footprintBuildingsM2 <= 0) {
-      insights.push("🏗️ Aucun bâtiment dessiné : surfaces à 0");
-    }
-
+    if (ass.landPriceEur <= 0) insights.push("📋 Foncier non renseigné : bilan incomplet");
+    if (footprintBuildingsM2 <= 0) insights.push("🏗️ Aucun bâtiment dessiné : surfaces à 0");
     return insights;
-  }, [
-    computed,
-    surfaceVendableM2,
-    ass.salePriceEurM2Hab,
-    ass.landPriceEur,
-    footprintBuildingsM2,
-  ]);
+  }, [computed, surfaceVendableM2, ass.salePriceEurM2Hab, ass.landPriceEur, footprintBuildingsM2]);
 
-  // -------------------------------
-  // Sensibilité (Stress test)
-  // -------------------------------
   const sensitivity = useMemo(() => {
-    // Scenario A: +5% construction costs (affects travauxBase, and VRD/ext/aleas that are % of it)
-    const assScenarioA: Assumptions = {
-      ...ass,
-      worksCostEurM2Sdp: ass.worksCostEurM2Sdp * 1.05,
-    };
-    const pfA = computeProForma(assScenarioA, sdpEstimatedM2, surfaceVendableM2);
-
-    // Scenario B: -5% sale price
-    const assScenarioB: Assumptions = {
-      ...ass,
-      salePriceEurM2Hab: ass.salePriceEurM2Hab * 0.95,
-    };
-    const pfB = computeProForma(assScenarioB, sdpEstimatedM2, surfaceVendableM2);
-
+    const assA: Assumptions = { ...ass, worksCostEurM2Sdp: ass.worksCostEurM2Sdp * 1.05 };
+    const pfA = computeProForma(assA, sdpEstimatedM2, surfaceVendableM2);
+    const assB: Assumptions = { ...ass, salePriceEurM2Hab: ass.salePriceEurM2Hab * 0.95 };
+    const pfB = computeProForma(assB, sdpEstimatedM2, surfaceVendableM2);
     return {
-      base: {
-        marge: computed.marge,
-        margePct: computed.margePct,
-      },
-      scenarioA: {
-        label: "+5% coût travaux",
-        marge: pfA.marge,
-        margePct: pfA.margePct,
-        deltaMarge: pfA.marge - computed.marge,
-        deltaPct: pfA.margePct - computed.margePct,
-      },
-      scenarioB: {
-        label: "-5% prix de vente",
-        marge: pfB.marge,
-        margePct: pfB.margePct,
-        deltaMarge: pfB.marge - computed.marge,
-        deltaPct: pfB.margePct - computed.margePct,
-      },
+      base: { marge: computed.marge, margePct: computed.margePct },
+      scenarioA: { label: "+5% coût travaux", marge: pfA.marge, margePct: pfA.margePct, deltaMarge: pfA.marge - computed.marge, deltaPct: pfA.margePct - computed.margePct },
+      scenarioB: { label: "-5% prix de vente", marge: pfB.marge, margePct: pfB.margePct, deltaMarge: pfB.marge - computed.marge, deltaPct: pfB.margePct - computed.margePct },
     };
   }, [ass, sdpEstimatedM2, surfaceVendableM2, computed.marge, computed.margePct]);
 
-  // -------------------------------
-  // Persist to snapshot store
-  // -------------------------------
   useEffect(() => {
     try {
       const ok = surfaceVendableM2 > 0 && computed.caTotal > 0;
       patchModule("bilan", {
         ok,
         marge_pct: computed.margePct,
-        tri_pct: undefined, // Non disponible dans ce pro forma v2
+        tri_pct: undefined,
         ca: computed.caTotal,
         summary: `Marge ${computed.margePct.toFixed(1)}% · CA ${Math.round(computed.caTotal).toLocaleString("fr-FR")}€ · Coût ${Math.round(computed.coutTotal).toLocaleString("fr-FR")}€ · Vendable ${Math.round(surfaceVendableM2)} m²`,
         data: {
           assumptions: ass,
-          kpis: {
-            caTotal: computed.caTotal,
-            coutTotal: computed.coutTotal,
-            marge: computed.marge,
-            margePct: computed.margePct,
-            coutRevientEurM2Hab: computed.coutRevientEurM2Hab,
-            coutRevientEurM2Sdp: computed.coutRevientEurM2Sdp,
-          },
-          surfaces: {
-            footprintBuildingsM2,
-            footprintParkingsM2,
-            sdpEstimatedM2,
-            habitableEstimatedM2,
-            surfaceVendableM2,
-          },
-          params: {
-            buildingKind,
-            floorsSpec,
-            nbLogements,
-            levelsCount,
-            totalHeightM,
-          },
+          kpis: { caTotal: computed.caTotal, coutTotal: computed.coutTotal, marge: computed.marge, margePct: computed.margePct, coutRevientEurM2Hab: computed.coutRevientEurM2Hab, coutRevientEurM2Sdp: computed.coutRevientEurM2Sdp },
+          surfaces: { footprintBuildingsM2, footprintParkingsM2, sdpEstimatedM2, habitableEstimatedM2, surfaceVendableM2 },
+          params: { buildingKind, floorsSpec, nbLogements, levelsCount, totalHeightM },
           lines: computed.lines,
           notes: computed.notes,
           sensitivity,
         },
       });
+
+      if (studyId && surfaceVendableM2 > 0 && computed.caTotal > 0) {
+        const bilanPayload: PromoteurBilanData = {
+          prix_revient_total:   computed.coutTotal,
+          ca_previsionnel:      computed.caTotal,
+          marge_nette:          computed.marge,
+          taux_marge_nette_pct: computed.margePct,
+          fonds_propres:        null,
+          credit_promotion:     null,
+          taux_credit_pct:      ass.financingRatePct,
+          duree_mois:           null,
+          roi_pct:              null,
+          tri_pct:              null,
+          ai_narrative:         null,
+          ai_generated_at:      null,
+          notes:                computed.notes.join(" | ") || null,
+          done:                 true,
+        };
+        patchBilan(bilanPayload).catch((e) =>
+          console.warn("[BilanPromoteurPage] patchBilan failed:", e)
+        );
+      }
     } catch (err) {
       console.warn("[BilanPromoteurPage] Erreur persistance snapshot:", err);
     }
   }, [
-    computed,
-    ass,
-    surfaceVendableM2,
-    footprintBuildingsM2,
-    footprintParkingsM2,
-    sdpEstimatedM2,
-    habitableEstimatedM2,
-    buildingKind,
-    floorsSpec,
-    nbLogements,
-    levelsCount,
-    totalHeightM,
-    sensitivity,
+    computed, ass, surfaceVendableM2, footprintBuildingsM2, footprintParkingsM2,
+    sdpEstimatedM2, habitableEstimatedM2, buildingKind, floorsSpec, nbLogements,
+    levelsCount, totalHeightM, sensitivity, studyId, patchBilan,
   ]);
 
-  // Group lines by section
   const grouped = useMemo(() => {
     const map = new Map<string, Line[]>();
     for (const l of computed.lines) {
@@ -676,30 +410,19 @@ export const BilanPromoteurPage: React.FC = () => {
     return map;
   }, [computed.lines]);
 
-  // Scroll to stress test section
   const scrollToStressTest = () => {
-    document
-      .getElementById("stress-test")
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById("stress-test")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  // -------------------------------
-  // Export Excel handler
-  // -------------------------------
   const handleExportExcel = async () => {
     try {
       const XLSX = await import("xlsx");
-
-      // Generate filename with local date: bilan-promoteur-YYYYMMDD-HHmm.xlsx
       const now = new Date();
       const pad = (num: number) => num.toString().padStart(2, "0");
       const dateStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
       const filename = `bilan-promoteur-${dateStr}.xlsx`;
-
-      // Create workbook
       const wb = XLSX.utils.book_new();
 
-      // ========== Sheet 1: Synthese ==========
       const syntheseData = [
         { KPI: "CA total", Valeur: computed.caTotal },
         { KPI: "Coût total", Valeur: computed.coutTotal },
@@ -717,25 +440,19 @@ export const BilanPromoteurPage: React.FC = () => {
         { KPI: "Niveaux (R+N)", Valeur: floorsSpec.aboveGroundFloors },
         { KPI: "Hauteur totale (m)", Valeur: totalHeightM },
       ];
-      const wsSynthese = XLSX.utils.json_to_sheet(syntheseData);
-      XLSX.utils.book_append_sheet(wb, wsSynthese, "Synthese");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(syntheseData), "Synthese");
 
-      // ========== Sheet 2: Hypotheses ==========
       const hypothesesData = [
-        // Revenus
         { Cle: "Prix vente (€/m² vend.)", Valeur: ass.salePriceEurM2Hab },
         { Cle: "Commercialisation (%)", Valeur: ass.commercialisationPct },
         { Cle: "Coef vendable", Valeur: ass.coefVendable },
-        // Foncier
         { Cle: "Foncier (€)", Valeur: ass.landPriceEur },
         { Cle: "Notaire (%)", Valeur: ass.notaryFeesPct },
         { Cle: "Taxes acquisition (%)", Valeur: ass.acquisitionTaxesPct },
-        // Travaux
         { Cle: "Travaux (€/m² SDP)", Valeur: ass.worksCostEurM2Sdp },
         { Cle: "VRD (%)", Valeur: ass.vrdPct },
         { Cle: "Ext. (%)", Valeur: ass.extPct },
         { Cle: "Aléas (%)", Valeur: ass.contingencyPct },
-        // Études & montage
         { Cle: "Géomètre (€)", Valeur: ass.surveyorEur },
         { Cle: "Géotechnique (€)", Valeur: ass.geotechEur },
         { Cle: "MOE (%)", Valeur: ass.moePct },
@@ -743,29 +460,17 @@ export const BilanPromoteurPage: React.FC = () => {
         { Cle: "SPS/CT/OPC (€)", Valeur: ass.spsCtOpcEur },
         { Cle: "Assurance DO (%)", Valeur: ass.insuranceDoPct },
         { Cle: "Divers montage (€)", Valeur: ass.miscEur },
-        // Commercialisation
         { Cle: "Comm. (% CA)", Valeur: ass.marketingPctCa },
         { Cle: "Comm. forfait (€)", Valeur: ass.marketingFixedEur },
-        // Financement
         { Cle: "Taux financement (%)", Valeur: ass.financingRatePct },
         { Cle: "Frais dossier (€)", Valeur: ass.financingFeesEur },
-        // Taxes
         { Cle: "Taxe aménag. (€/m² SDP)", Valeur: ass.taxeAmenagementEurM2Sdp },
       ];
-      const wsHypotheses = XLSX.utils.json_to_sheet(hypothesesData);
-      XLSX.utils.book_append_sheet(wb, wsHypotheses, "Hypotheses");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hypothesesData), "Hypotheses");
 
-      // ========== Sheet 3: BilanDetaille ==========
-      const bilanData = computed.lines.map((l) => ({
-        Section: l.section,
-        Libelle: l.label,
-        Indication: l.hint ?? "",
-        MontantEUR: l.valueEur,
-      }));
-      const wsBilan = XLSX.utils.json_to_sheet(bilanData);
-      XLSX.utils.book_append_sheet(wb, wsBilan, "BilanDetaille");
+      const bilanData = computed.lines.map((l) => ({ Section: l.section, Libelle: l.label, Indication: l.hint ?? "", MontantEUR: l.valueEur }));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(bilanData), "BilanDetaille");
 
-      // Write file
       XLSX.writeFile(wb, filename);
     } catch (error) {
       console.error("Export Excel error:", error);
@@ -773,27 +478,56 @@ export const BilanPromoteurPage: React.FC = () => {
     }
   };
 
-  // -------------------------------
-  // UI Styles
-  // -------------------------------
+  // ─── Helpers visuels ─────────────────────────────────────────────────────
+  const isEmpty = footprintBuildingsM2 <= 0;
+  const margeColor = computed.marge >= 0 ? "#16a34a" : "#dc2626";
+  const margePctColor = computed.margePct >= 15 ? "#16a34a" : computed.margePct >= 8 ? "#ea580c" : "#dc2626";
+
+  // ── KPI card ─────────────────────────────────────────────────────────────
+  const kpiCard: React.CSSProperties = {
+    background: "white",
+    borderRadius: 14,
+    padding: "14px 16px 16px",
+    border: "1px solid #e8edf4",
+    boxShadow: "0 2px 8px rgba(15,23,42,0.05), 0 1px 2px rgba(15,23,42,0.04)",
+    borderTop: `3px solid ${ACCENT_PRO}`,
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 2,
+  };
+
+  const kpiLabel: React.CSSProperties = {
+    fontSize: 11,
+    fontWeight: 700,
+    color: "#64748b",
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.05em",
+    marginBottom: 4,
+  };
+
+  const kpiSub: React.CSSProperties = {
+    fontSize: 11,
+    color: "#94a3b8",
+    marginTop: 4,
+    lineHeight: 1.4,
+  };
+
   const card: React.CSSProperties = {
     background: "white",
     borderRadius: 16,
     padding: 16,
-    border: "1px solid #e2e8f0",
-    boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 10px 24px rgba(0,0,0,0.06)",
+    border: "1px solid #e8edf4",
+    boxShadow: "0 2px 8px rgba(15,23,42,0.05), 0 1px 2px rgba(15,23,42,0.04)",
   };
 
-  const kpi: React.CSSProperties = { ...card, padding: 16 };
-
-  const label: React.CSSProperties = {
+  const labelStyle: React.CSSProperties = {
     fontSize: 12,
     fontWeight: 700,
     color: "#0f172a",
     marginBottom: 6,
   };
 
-  const input: React.CSSProperties = {
+  const inputStyle: React.CSSProperties = {
     width: "100%",
     padding: "10px 12px",
     borderRadius: 12,
@@ -805,10 +539,10 @@ export const BilanPromoteurPage: React.FC = () => {
   };
 
   const sectionTitle: React.CSSProperties = {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 900,
-    color: "#0f172a",
-    letterSpacing: "0.06em",
+    color: "#64748b",
+    letterSpacing: "0.08em",
     textTransform: "uppercase",
   };
 
@@ -816,30 +550,78 @@ export const BilanPromoteurPage: React.FC = () => {
     setAss((s) => ({ ...s, [key]: value }));
   };
 
-  // Check if we have data from store
   const hasStoreData = buildings && buildings.features && buildings.features.length > 0;
 
-  // Export button style
-  const exportButtonStyle: React.CSSProperties = {
-    padding: "10px 18px",
-    borderRadius: 12,
-    border: "1px solid #e2e8f0",
-    background: "white",
-    color: "#0f172a",
-    fontSize: 13,
-    fontWeight: 600,
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    transition: "all 0.15s ease",
-    boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-  };
+  // ── studyData pour PromoteurSynthesePage ─────────────────────────────────
+  const synthesisPropData = useMemo(() => ({
+    foncier: {
+      adresse:           study?.foncier?.adresse_complete ?? undefined,
+      commune:           study?.foncier?.commune ?? undefined,
+      codePostal:        study?.foncier?.code_postal ?? undefined,
+      departement:       study?.foncier?.departement ?? undefined,
+      surfaceTerrain:    study?.foncier?.surface_m2 ?? undefined,
+      prixAcquisition:   ass.landPriceEur > 0 ? ass.landPriceEur : undefined,
+      fraisNotaire:      computed.fraisNotaire > 0 ? computed.fraisNotaire : undefined,
+      pollutionDetectee: false,
+    },
+    plu: {
+      zone:        study?.plu?.zone_plu ?? undefined,
+      cub:         study?.plu?.cos ?? undefined,
+      hauteurMax:  study?.plu?.hauteur_max ?? undefined,
+      pleineTerre: study?.plu?.pleine_terre_pct ?? undefined,
+    },
+    conception: {
+      surfacePlancher: sdpEstimatedM2 > 0 ? sdpEstimatedM2 : undefined,
+      nbLogements:     nbLogements > 0 ? nbLogements : undefined,
+      nbNiveaux:       levelsCount > 0 ? levelsCount : undefined,
+      hauteurProjet:   totalHeightM > 0 ? totalHeightM : undefined,
+      empriseBatie:    footprintBuildingsM2 > 0 ? footprintBuildingsM2 : undefined,
+      programmeType:   buildingKind === "COLLECTIF"
+        ? "Résidentiel collectif libre"
+        : "Résidentiel individuel",
+    },
+    marche: {
+      prixNeufM2:          study?.marche?.prix_m2_neuf ?? ass.salePriceEurM2Hab,
+      prixAncienM2:        study?.marche?.prix_m2_ancien ?? undefined,
+      nbTransactionsDvf:   study?.marche?.nb_transactions ?? undefined,
+      prixMoyenDvf:        study?.marche?.prix_moyen_dvf ?? undefined,
+      offreConcurrente:    study?.marche?.nb_programmes_concurrents ?? undefined,
+      absorptionMensuelle: study?.marche?.absorption_mensuelle ?? undefined,
+    },
+    risques: {
+      risquesIdentifies: [] as [],
+      zonageRisque: study?.risques?.zonage_risque ?? undefined,
+    },
+    evaluation: {
+      prixVenteM2:       ass.salePriceEurM2Hab > 0 ? ass.salePriceEurM2Hab : undefined,
+      prixVenteTotal:    computed.caTotal > 0 ? computed.caTotal : undefined,
+      nbLogementsLibres: nbLogements > 0 ? nbLogements : undefined,
+    },
+    bilan: {
+      coutFoncier:            computed.totalFoncier > 0 ? computed.totalFoncier : undefined,
+      coutTravaux:            computed.totalTravaux > 0 ? computed.totalTravaux : undefined,
+      coutTravauxM2:          ass.worksCostEurM2Sdp > 0 ? ass.worksCostEurM2Sdp : undefined,
+      fraisFinanciers:        computed.totalFin > 0 ? computed.totalFin : undefined,
+      fraisCommercialisation: computed.totalCom > 0 ? computed.totalCom : undefined,
+      fraisGestion:           computed.totalEtudes > 0 ? computed.totalEtudes : undefined,
+      chiffreAffaires:        computed.caTotal > 0 ? computed.caTotal : undefined,
+      margeNette:             computed.marge,
+      margeNettePercent:      computed.margePct,
+      trnRendement:           computed.caTotal > 0
+        ? (computed.marge / computed.coutTotal) * 100
+        : 0,
+      fondsPropres:    undefined,
+      creditPromoteur: undefined,
+    },
+  }), [
+    study, ass, computed, sdpEstimatedM2, nbLogements, levelsCount,
+    totalHeightM, footprintBuildingsM2, buildingKind,
+  ]);
 
   return (
     <div
       style={{
-        background: "#f8fafc",
+        background: "linear-gradient(135deg, #f8fafc 0%, #ffffff 45%, #eef2ff 100%)",
         minHeight: "100vh",
         padding: 24,
         color: "#0f172a",
@@ -847,816 +629,506 @@ export const BilanPromoteurPage: React.FC = () => {
       }}
     >
       <div style={{ maxWidth: 1280, margin: "0 auto" }}>
-        {/* Header */}
-        <div
-          style={{
-            marginBottom: 14,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-          }}
-        >
+
+        {/* ── Bannière dégradé Promoteur › Bilan ── */}
+        <div style={{
+          background: GRAD_PRO,
+          borderRadius: 14,
+          padding: "20px 24px",
+          marginBottom: 16,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 16,
+        }}>
           <div>
-            <div style={{ fontSize: 28, fontWeight: 950, letterSpacing: "-0.6px" }}>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
+              Promoteur › Bilan
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>
               Bilan Promoteur
             </div>
-            <div style={{ fontSize: 13, color: "#64748b", marginTop: 6 }}>
-              Pro forma détaillé — basé sur l'implantation 2D (empreintes) et des
-              hypothèses ajustables.
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+              Pro forma détaillé — basé sur l'implantation 2D et des hypothèses ajustables.
             </div>
-          </div>
-          <button
-            onClick={handleExportExcel}
-            style={exportButtonStyle}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "#f8fafc";
-              e.currentTarget.style.borderColor = "#cbd5e1";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "white";
-              e.currentTarget.style.borderColor = "#e2e8f0";
-            }}
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            Exporter Excel
-          </button>
-        </div>
 
-        {/* KPIs - Row 1 (6 columns) */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(6, 1fr)",
-            gap: 12,
-            marginBottom: 12,
-          }}
-        >
-          <div style={kpi}>
-            <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700, marginBottom: 6 }}>
-              CA total
-            </div>
-            <div style={{ fontSize: 22, fontWeight: 950 }}>{eur(computed.caTotal)}</div>
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
-              Vendable × Prix × Commercialisation
-            </div>
-          </div>
-          <div style={kpi}>
-            <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700, marginBottom: 6 }}>
-              Coût total
-            </div>
-            <div style={{ fontSize: 22, fontWeight: 950 }}>{eur(computed.coutTotal)}</div>
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
-              Foncier + Études + Travaux + …
-            </div>
-          </div>
-          <div style={kpi}>
-            <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700, marginBottom: 6 }}>
-              Marge brute
-            </div>
-            <div
-              style={{
-                fontSize: 22,
-                fontWeight: 950,
-                color: computed.marge >= 0 ? "#16a34a" : "#dc2626",
-              }}
-            >
-              {eur(computed.marge)}
-            </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
-              {computed.margePct.toFixed(1)} % du CA
-            </div>
-          </div>
-          <div style={kpi}>
-            <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700, marginBottom: 6 }}>
-              Coût revient
-            </div>
-            <div style={{ fontSize: 18, fontWeight: 950 }}>
-              {Math.round(computed.coutRevientEurM2Hab)} €/m² vend.
-            </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
-              {Math.round(computed.coutRevientEurM2Sdp)} €/m² SDP
-            </div>
-          </div>
-          <div style={kpi}>
-            <div style={{ fontSize: 12, color: "#64748b", fontWeight: 700, marginBottom: 6 }}>
-              Taux marge
-            </div>
-            <div
-              style={{
-                fontSize: 22,
-                fontWeight: 950,
-                color:
-                  computed.margePct >= 15
-                    ? "#16a34a"
-                    : computed.margePct >= 8
-                      ? "#ea580c"
-                      : "#dc2626",
-              }}
-            >
-              {computed.margePct.toFixed(1)} %
-            </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>Marge / CA</div>
-          </div>
-
-          {/* KPI Stress test */}
-          <div style={{ ...kpi, background: "linear-gradient(135deg, #fef9c3, #fef08a)" }}>
-            <div style={{ fontSize: 12, color: "#854d0e", fontWeight: 700, marginBottom: 6 }}>
-              📉 Stress test
-            </div>
-            <div style={{ fontSize: 11, color: "#713f12", lineHeight: 1.5 }}>
-              <div>
-                +5% travaux → Marge:{" "}
-                <span
+            {/* ── Onglets ── */}
+            <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
+              {([
+                ["bilan", "📊 Bilan pro forma"],
+                ["synthese", "📄 Synthèse & Export"],
+              ] as const).map(([tab, tabLabel]) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
                   style={{
+                    padding: "6px 16px",
+                    borderRadius: 20,
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: 12,
                     fontWeight: 700,
-                    color: sensitivity.scenarioA.marge >= 0 ? "#166534" : "#991b1b",
+                    transition: "all 0.15s",
+                    background: activeTab === tab ? "white" : "rgba(255,255,255,0.18)",
+                    color: activeTab === tab ? ACCENT_PRO : "rgba(255,255,255,0.85)",
+                    boxShadow: activeTab === tab ? "0 2px 8px rgba(0,0,0,0.15)" : "none",
                   }}
                 >
-                  {eur(sensitivity.scenarioA.marge)}
-                </span>{" "}
-                ({sensitivity.scenarioA.margePct.toFixed(1)}%)
-              </div>
-              <div style={{ fontSize: 10, color: "#a16207", marginBottom: 4 }}>
-                Δ {sensitivity.scenarioA.deltaMarge >= 0 ? "+" : ""}
-                {eur(sensitivity.scenarioA.deltaMarge)} (
-                {sensitivity.scenarioA.deltaPct >= 0 ? "+" : ""}
-                {sensitivity.scenarioA.deltaPct.toFixed(1)} pts)
-              </div>
-              <div>
-                -5% prix → Marge:{" "}
-                <span
-                  style={{
-                    fontWeight: 700,
-                    color: sensitivity.scenarioB.marge >= 0 ? "#166534" : "#991b1b",
-                  }}
-                >
-                  {eur(sensitivity.scenarioB.marge)}
-                </span>{" "}
-                ({sensitivity.scenarioB.margePct.toFixed(1)}%)
-              </div>
-              <div style={{ fontSize: 10, color: "#a16207" }}>
-                Δ {sensitivity.scenarioB.deltaMarge >= 0 ? "+" : ""}
-                {eur(sensitivity.scenarioB.deltaMarge)} (
-                {sensitivity.scenarioB.deltaPct >= 0 ? "+" : ""}
-                {sensitivity.scenarioB.deltaPct.toFixed(1)} pts)
-              </div>
-            </div>
-            <div
-              onClick={scrollToStressTest}
-              style={{
-                fontSize: 11,
-                color: "#1d4ed8",
-                marginTop: 6,
-                textDecoration: "underline",
-                cursor: "pointer",
-              }}
-            >
-              Voir le détail
-            </div>
-          </div>
-        </div>
-
-        {/* KPIs - Row 2 (Per unit) */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
-            gap: 12,
-            marginBottom: 16,
-          }}
-        >
-          <div style={{ ...kpi, background: "linear-gradient(135deg, #f0f9ff, #e0f2fe)" }}>
-            <div style={{ fontSize: 12, color: "#0369a1", fontWeight: 700, marginBottom: 6 }}>
-              Prix moyen / logement
-            </div>
-            <div style={{ fontSize: 20, fontWeight: 950, color: "#0c4a6e" }}>
-              {eur(computed.prixParLogement)}
-            </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
-              CA ÷ {nbLogements} logements
-            </div>
-          </div>
-          <div style={{ ...kpi, background: "linear-gradient(135deg, #fef3c7, #fde68a)" }}>
-            <div style={{ fontSize: 12, color: "#92400e", fontWeight: 700, marginBottom: 6 }}>
-              Coût / logement
-            </div>
-            <div style={{ fontSize: 20, fontWeight: 950, color: "#78350f" }}>
-              {eur(computed.coutParLogement)}
-            </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
-              Coût total ÷ {nbLogements} logements
-            </div>
-          </div>
-          <div
-            style={{
-              ...kpi,
-              background:
-                computed.margeParLogement >= 0
-                  ? "linear-gradient(135deg, #dcfce7, #bbf7d0)"
-                  : "linear-gradient(135deg, #fee2e2, #fecaca)",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 12,
-                color: computed.margeParLogement >= 0 ? "#166534" : "#991b1b",
-                fontWeight: 700,
-                marginBottom: 6,
-              }}
-            >
-              Marge / logement
-            </div>
-            <div
-              style={{
-                fontSize: 20,
-                fontWeight: 950,
-                color: computed.margeParLogement >= 0 ? "#14532d" : "#7f1d1d",
-              }}
-            >
-              {eur(computed.margeParLogement)}
-            </div>
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
-              Marge ÷ {nbLogements} logements
-            </div>
-          </div>
-        </div>
-
-        {/* Lecture Promoteur */}
-        <div
-          style={{
-            ...card,
-            marginBottom: 16,
-            background: "linear-gradient(135deg, #fafafa, #f5f5f5)",
-            borderLeft: "4px solid #6366f1",
-          }}
-        >
-          <div style={{ fontSize: 14, fontWeight: 950, marginBottom: 10, color: "#4338ca" }}>
-            📊 Lecture promoteur
-          </div>
-          <ul
-            style={{
-              margin: 0,
-              paddingLeft: 20,
-              fontSize: 13,
-              color: "#334155",
-              lineHeight: 1.7,
-            }}
-          >
-            {lecturePromoteur.map((insight, i) => (
-              <li key={i} style={{ marginBottom: 4 }}>
-                {insight}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Sensibilité (Stress test) - MOVED HERE: after Lecture promoteur, before Données sources */}
-        <div id="stress-test" style={{ ...card, marginBottom: 16 }}>
-          <div style={{ fontSize: 14, fontWeight: 950, marginBottom: 10 }}>
-            📉 Sensibilité (Stress test)
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            {/* Scenario A */}
-            <div
-              style={{
-                background: "#fef3c7",
-                borderRadius: 12,
-                padding: 14,
-                border: "1px solid #fcd34d",
-              }}
-            >
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#92400e", marginBottom: 8 }}>
-                {sensitivity.scenarioA.label}
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "#78350f" }}>Marge :</span>
-                  <span
-                    style={{
-                      fontWeight: 700,
-                      color: sensitivity.scenarioA.marge >= 0 ? "#166534" : "#991b1b",
-                    }}
-                  >
-                    {eur(sensitivity.scenarioA.marge)}
-                  </span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "#78350f" }}>Taux marge :</span>
-                  <span style={{ fontWeight: 700 }}>
-                    {sensitivity.scenarioA.margePct.toFixed(1)} %
-                  </span>
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    borderTop: "1px solid #fcd34d",
-                    paddingTop: 6,
-                    marginTop: 4,
-                  }}
-                >
-                  <span style={{ color: "#78350f" }}>Delta vs base :</span>
-                  <span
-                    style={{
-                      fontWeight: 700,
-                      color: sensitivity.scenarioA.deltaMarge < 0 ? "#dc2626" : "#16a34a",
-                    }}
-                  >
-                    {sensitivity.scenarioA.deltaMarge >= 0 ? "+" : ""}
-                    {eur(sensitivity.scenarioA.deltaMarge)} (
-                    {sensitivity.scenarioA.deltaPct >= 0 ? "+" : ""}
-                    {sensitivity.scenarioA.deltaPct.toFixed(1)} pts)
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Scenario B */}
-            <div
-              style={{
-                background: "#fee2e2",
-                borderRadius: 12,
-                padding: 14,
-                border: "1px solid #fca5a5",
-              }}
-            >
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#991b1b", marginBottom: 8 }}>
-                {sensitivity.scenarioB.label}
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "#7f1d1d" }}>Marge :</span>
-                  <span
-                    style={{
-                      fontWeight: 700,
-                      color: sensitivity.scenarioB.marge >= 0 ? "#166534" : "#991b1b",
-                    }}
-                  >
-                    {eur(sensitivity.scenarioB.marge)}
-                  </span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "#7f1d1d" }}>Taux marge :</span>
-                  <span style={{ fontWeight: 700 }}>
-                    {sensitivity.scenarioB.margePct.toFixed(1)} %
-                  </span>
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    borderTop: "1px solid #fca5a5",
-                    paddingTop: 6,
-                    marginTop: 4,
-                  }}
-                >
-                  <span style={{ color: "#7f1d1d" }}>Delta vs base :</span>
-                  <span
-                    style={{
-                      fontWeight: 700,
-                      color: sensitivity.scenarioB.deltaMarge < 0 ? "#dc2626" : "#16a34a",
-                    }}
-                  >
-                    {sensitivity.scenarioB.deltaMarge >= 0 ? "+" : ""}
-                    {eur(sensitivity.scenarioB.deltaMarge)} (
-                    {sensitivity.scenarioB.deltaPct >= 0 ? "+" : ""}
-                    {sensitivity.scenarioB.deltaPct.toFixed(1)} pts)
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>
-            Ces scénarios permettent d'évaluer la résilience de l'opération face aux aléas
-            du marché.
-          </div>
-        </div>
-
-        {/* Sources implantation */}
-        <div style={{ ...card, marginBottom: 16 }}>
-          <div style={{ fontSize: 14, fontWeight: 950, marginBottom: 10 }}>
-            Données sources (Implantation 2D)
-          </div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(6, 1fr)",
-              gap: 12,
-              fontSize: 13,
-              color: "#334155",
-            }}
-          >
-            <div>
-              <span style={{ color: "#64748b" }}>Empreinte bâtiments :</span>{" "}
-              <b>{m2(footprintBuildingsM2)}</b>
-            </div>
-            <div>
-              <span style={{ color: "#64748b" }}>Empreinte parkings :</span>{" "}
-              <b>{m2(footprintParkingsM2)}</b>
-            </div>
-            <div>
-              <span style={{ color: "#64748b" }}>Niveaux :</span>{" "}
-              <b>
-                R+{floorsSpec.aboveGroundFloors} ({levelsCount} niv.)
-              </b>
-            </div>
-            <div>
-              <span style={{ color: "#64748b" }}>SDP estimée :</span>{" "}
-              <b>{m2(sdpEstimatedM2)}</b>
-            </div>
-            <div>
-              <span style={{ color: "#64748b" }}>Habitable estimée :</span>{" "}
-              <b>{m2(habitableEstimatedM2)}</b>
-            </div>
-            <div>
-              <span style={{ color: "#64748b" }}>Vendable estimée :</span>{" "}
-              <b style={{ color: "#0369a1" }}>{m2(surfaceVendableM2)}</b>
-            </div>
-          </div>
-          <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>
-            {hasStoreData
-              ? `✓ Données récupérées depuis Implantation 2D (${nbLogements} logements, type ${buildingKind})`
-              : "⚠️ Aucun bâtiment dans le store. Retournez sur Implantation 2D et dessinez au moins un bâtiment."}
-          </div>
-        </div>
-
-        {/* Paramètres projet + Hypothèses */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 2fr",
-            gap: 16,
-            marginBottom: 16,
-          }}
-        >
-          {/* Paramètres projet */}
-          <div style={card}>
-            <div style={{ fontSize: 14, fontWeight: 950, marginBottom: 10 }}>
-              Paramètres projet
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div>
-                <div style={label}>Type bâtiment</div>
-                <select
-                  style={input}
-                  value={buildingKind}
-                  onChange={(e) => setBuildingKind(e.target.value as BuildingKind)}
-                >
-                  <option value="COLLECTIF">Collectif</option>
-                  <option value="INDIVIDUEL">Individuel</option>
-                </select>
-              </div>
-              <div>
-                <div style={label}>Étages (R+N)</div>
-                <input
-                  style={input}
-                  type="number"
-                  min={0}
-                  max={40}
-                  value={floorsSpec.aboveGroundFloors}
-                  onChange={(e) =>
-                    setFloorsSpec((f) => ({
-                      ...f,
-                      aboveGroundFloors: Math.max(0, Number(e.target.value) || 0),
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <div style={label}>Hauteur RDC (m)</div>
-                <input
-                  style={input}
-                  type="number"
-                  step="0.1"
-                  value={floorsSpec.groundFloorHeightM}
-                  onChange={(e) =>
-                    setFloorsSpec((f) => ({
-                      ...f,
-                      groundFloorHeightM: Number(e.target.value) || 2.8,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <div style={label}>Hauteur étage (m)</div>
-                <input
-                  style={input}
-                  type="number"
-                  step="0.1"
-                  value={floorsSpec.typicalFloorHeightM}
-                  onChange={(e) =>
-                    setFloorsSpec((f) => ({
-                      ...f,
-                      typicalFloorHeightM: Number(e.target.value) || 2.7,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <div style={label}>Nb logements</div>
-                <input
-                  style={input}
-                  type="number"
-                  min={1}
-                  max={500}
-                  value={nbLogements}
-                  onChange={(e) =>
-                    setNbLogements(
-                      Math.max(1, Math.min(500, Number(e.target.value) || 1))
-                    )
-                  }
-                />
-              </div>
-            </div>
-            <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>
-              Hauteur totale estimée : <b>{totalHeightM.toFixed(1)} m</b>
-            </div>
-          </div>
-
-          {/* Hypothèses complètes */}
-          <div style={card}>
-            <div style={{ fontSize: 14, fontWeight: 950, marginBottom: 10 }}>Hypothèses</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-              {/* Revenus */}
-              <div>
-                <div style={label}>Prix vente (€/m² vend.)</div>
-                <input
-                  style={input}
-                  type="number"
-                  value={ass.salePriceEurM2Hab}
-                  onChange={(e) =>
-                    updateAss("salePriceEurM2Hab", Number(e.target.value) || 0)
-                  }
-                />
-              </div>
-              <div>
-                <div style={label}>Commercialisation (%)</div>
-                <input
-                  style={input}
-                  type="number"
-                  value={ass.commercialisationPct}
-                  onChange={(e) =>
-                    updateAss("commercialisationPct", pct(e.target.value, 100))
-                  }
-                />
-              </div>
-              <div>
-                <div style={label}>Coef vendable</div>
-                <input
-                  style={input}
-                  type="number"
-                  step="0.01"
-                  min={0.8}
-                  max={1.2}
-                  value={ass.coefVendable}
-                  onChange={(e) =>
-                    updateAss(
-                      "coefVendable",
-                      Math.min(1.2, Math.max(0.8, Number(e.target.value) || 1))
-                    )
-                  }
-                />
-                <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>
-                  Vendable = Habitable × coef
-                </div>
-              </div>
-              {/* Foncier */}
-              <div>
-                <div style={label}>Foncier (€)</div>
-                <input
-                  style={input}
-                  type="number"
-                  value={ass.landPriceEur}
-                  onChange={(e) => updateAss("landPriceEur", Number(e.target.value) || 0)}
-                />
-              </div>
-              <div>
-                <div style={label}>Notaire (%)</div>
-                <input
-                  style={input}
-                  type="number"
-                  value={ass.notaryFeesPct}
-                  onChange={(e) => updateAss("notaryFeesPct", pct(e.target.value, 7.5))}
-                />
-              </div>
-              <div>
-                <div style={label}>Taxes acquisition (%)</div>
-                <input
-                  style={input}
-                  type="number"
-                  value={ass.acquisitionTaxesPct}
-                  onChange={(e) => updateAss("acquisitionTaxesPct", pct(e.target.value, 0))}
-                />
-              </div>
-              {/* Travaux */}
-              <div>
-                <div style={label}>Travaux (€/m² SDP)</div>
-                <input
-                  style={input}
-                  type="number"
-                  value={ass.worksCostEurM2Sdp}
-                  onChange={(e) =>
-                    updateAss("worksCostEurM2Sdp", Number(e.target.value) || 0)
-                  }
-                />
-              </div>
-              <div>
-                <div style={label}>VRD (%)</div>
-                <input
-                  style={input}
-                  type="number"
-                  value={ass.vrdPct}
-                  onChange={(e) => updateAss("vrdPct", pct(e.target.value, 6))}
-                />
-              </div>
-              <div>
-                <div style={label}>Ext. (%)</div>
-                <input
-                  style={input}
-                  type="number"
-                  value={ass.extPct}
-                  onChange={(e) => updateAss("extPct", pct(e.target.value, 3))}
-                />
-              </div>
-              <div>
-                <div style={label}>Aléas (%)</div>
-                <input
-                  style={input}
-                  type="number"
-                  value={ass.contingencyPct}
-                  onChange={(e) => updateAss("contingencyPct", pct(e.target.value, 3))}
-                />
-              </div>
-              {/* Études */}
-              <div>
-                <div style={label}>MOE (%)</div>
-                <input
-                  style={input}
-                  type="number"
-                  value={ass.moePct}
-                  onChange={(e) => updateAss("moePct", pct(e.target.value, 10))}
-                />
-              </div>
-              <div>
-                <div style={label}>BET (%)</div>
-                <input
-                  style={input}
-                  type="number"
-                  value={ass.betPct}
-                  onChange={(e) => updateAss("betPct", pct(e.target.value, 3))}
-                />
-              </div>
-              <div>
-                <div style={label}>DO (%)</div>
-                <input
-                  style={input}
-                  type="number"
-                  value={ass.insuranceDoPct}
-                  onChange={(e) => updateAss("insuranceDoPct", pct(e.target.value, 2))}
-                />
-              </div>
-              {/* Comm & Fin */}
-              <div>
-                <div style={label}>Comm. (% CA)</div>
-                <input
-                  style={input}
-                  type="number"
-                  value={ass.marketingPctCa}
-                  onChange={(e) => updateAss("marketingPctCa", pct(e.target.value, 2))}
-                />
-              </div>
-              <div>
-                <div style={label}>Taux financement (%)</div>
-                <input
-                  style={input}
-                  type="number"
-                  value={ass.financingRatePct}
-                  onChange={(e) => updateAss("financingRatePct", pct(e.target.value, 4))}
-                />
-              </div>
-              <div>
-                <div style={label}>Frais dossier (€)</div>
-                <input
-                  style={input}
-                  type="number"
-                  value={ass.financingFeesEur}
-                  onChange={(e) =>
-                    updateAss("financingFeesEur", Number(e.target.value) || 0)
-                  }
-                />
-              </div>
-              {/* Taxes */}
-              <div>
-                <div style={label}>Taxe aménag. (€/m² SDP)</div>
-                <input
-                  style={input}
-                  type="number"
-                  value={ass.taxeAmenagementEurM2Sdp}
-                  onChange={(e) =>
-                    updateAss("taxeAmenagementEurM2Sdp", Number(e.target.value) || 0)
-                  }
-                />
-              </div>
-            </div>
-            <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>
-              Les hypothèses sont simplifiées (v2). TVA, phasage, annexes, et cashflow seront
-              ajoutés dans les versions suivantes.
-            </div>
-          </div>
-        </div>
-
-        {/* Bilan détaillé */}
-        <div style={card}>
-          <div style={{ fontSize: 14, fontWeight: 950, marginBottom: 10 }}>
-            Bilan détaillé
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {Array.from(grouped.entries()).map(([section, lines]) => (
-              <div key={section}>
-                <div style={{ ...sectionTitle, marginBottom: 8 }}>{section}</div>
-                <div
-                  style={{
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 12,
-                    overflow: "hidden",
-                  }}
-                >
-                  {lines.map((l, idx) => {
-                    const isSubtotal = l.kind === "subtotal";
-                    const isTotal = l.kind === "total";
-                    const isNegative = l.valueEur < 0;
-                    return (
-                      <div
-                        key={idx}
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 180px 160px",
-                          gap: 12,
-                          padding: "10px 12px",
-                          borderTop: idx === 0 ? "none" : "1px solid #f1f5f9",
-                          background: isTotal
-                            ? "#0f172a"
-                            : isSubtotal
-                              ? "#f1f5f9"
-                              : "white",
-                          color: isTotal ? "white" : isNegative ? "#dc2626" : "#0f172a",
-                          fontWeight: isTotal ? 900 : isSubtotal ? 700 : 500,
-                          alignItems: "center",
-                        }}
-                      >
-                        <div>{l.label}</div>
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: isTotal ? "rgba(255,255,255,0.7)" : "#64748b",
-                            textAlign: "right",
-                          }}
-                        >
-                          {l.hint ?? ""}
-                        </div>
-                        <div
-                          style={{
-                            textAlign: "right",
-                            fontWeight: isTotal || isSubtotal ? 900 : 600,
-                          }}
-                        >
-                          {eur(l.valueEur)}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Notes */}
-        {computed.notes.length > 0 && (
-          <div style={{ ...card, marginTop: 16 }}>
-            <div style={{ fontSize: 14, fontWeight: 950, marginBottom: 10 }}>Notes</div>
-            <ul style={{ margin: 0, paddingLeft: 18, color: "#334155", fontSize: 13 }}>
-              {computed.notes.map((x, i) => (
-                <li key={i} style={{ marginBottom: 4 }}>
-                  {x}
-                </li>
+                  {tabLabel}
+                </button>
               ))}
-            </ul>
+            </div>
           </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, marginTop: 4 }}>
+            {study?.foncier?.commune_insee && (
+              <div style={{
+                fontSize: 12,
+                color: "rgba(255,255,255,0.85)",
+                background: "rgba(255,255,255,0.15)",
+                borderRadius: 8,
+                padding: "6px 12px",
+                fontWeight: 600,
+              }}>
+                INSEE {study.foncier.commune_insee}
+              </div>
+            )}
+            {activeTab === "bilan" && (
+              <button
+                onClick={handleExportExcel}
+                style={{
+                  padding: "9px 18px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "white",
+                  color: ACCENT_PRO,
+                  fontWeight: 600,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
+                }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                Exporter Excel
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ── Contenu conditionnel par onglet ── */}
+        {activeTab === "synthese" ? (
+          <PromoteurSynthesePage studyData={synthesisPropData} />
+        ) : (
+          <>
+            {/* ── Bandeau avertissement : aucun bâtiment dessiné ── */}
+            {isEmpty && (
+              <div style={{
+                marginBottom: 16,
+                padding: "12px 18px",
+                background: "#fffbeb",
+                border: "1px solid #fde68a",
+                borderLeft: "4px solid #f59e0b",
+                borderRadius: 12,
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 12,
+                fontSize: 13,
+                color: "#78350f",
+              }}>
+                <span style={{ fontSize: 16, marginTop: 1, flexShrink: 0 }}>⚠️</span>
+                <div style={{ lineHeight: 1.55 }}>
+                  <strong>Aucun bâtiment dessiné</strong> — le coût de{" "}
+                  {new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(computed.coutTotal)}{" "}
+                  affiché correspond uniquement aux <strong>forfaits fixes</strong> (géomètre, géotechnique, SPS/CT/OPC, divers, frais dossier).
+                  Le CA et la marge seront calculés une fois les bâtiments dessinés en <strong>Implantation 2D</strong>.
+                </div>
+              </div>
+            )}
+
+            {/* ── KPIs row 1 ── */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10, marginBottom: 10 }}>
+
+              <div style={kpiCard}>
+                <div style={kpiLabel}>CA total</div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: isEmpty ? "#94a3b8" : "#0f172a" }}>
+                  {eur(computed.caTotal)}
+                </div>
+                <div style={kpiSub}>Vendable × Prix × Comm.</div>
+              </div>
+
+              <div style={kpiCard}>
+                <div style={kpiLabel}>Coût total</div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: "#0f172a" }}>
+                  {eur(computed.coutTotal)}
+                </div>
+                <div style={kpiSub}>Foncier + Études + Travaux…</div>
+              </div>
+
+              <div style={kpiCard}>
+                <div style={kpiLabel}>Marge brute</div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: isEmpty ? "#94a3b8" : margeColor }}>
+                  {eur(computed.marge)}
+                </div>
+                <div style={kpiSub}>{computed.margePct.toFixed(1)}% du CA</div>
+              </div>
+
+              <div style={kpiCard}>
+                <div style={kpiLabel}>Coût revient</div>
+                <div style={{ fontSize: 17, fontWeight: 900, color: isEmpty ? "#94a3b8" : "#0f172a", lineHeight: 1.2 }}>
+                  {Math.round(computed.coutRevientEurM2Hab)} €/m² vend.
+                </div>
+                <div style={kpiSub}>{Math.round(computed.coutRevientEurM2Sdp)} €/m² SDP</div>
+              </div>
+
+              <div style={kpiCard}>
+                <div style={kpiLabel}>Taux marge</div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: isEmpty ? "#94a3b8" : margePctColor }}>
+                  {computed.margePct.toFixed(1)} %
+                </div>
+                <div style={kpiSub}>Marge / CA</div>
+              </div>
+
+              <div style={kpiCard}>
+                <div style={kpiLabel}>📉 Stress test</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 2 }}>
+                  <div style={{ background: "#f8fafc", borderRadius: 8, padding: "6px 8px" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", marginBottom: 2 }}>+5% travaux</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: sensitivity.scenarioA.marge >= 0 ? "#166534" : "#991b1b" }}>
+                        {eur(sensitivity.scenarioA.marge)}
+                      </span>
+                      <span style={{ fontSize: 10, color: sensitivity.scenarioA.deltaPct < 0 ? "#dc2626" : "#16a34a", fontWeight: 700 }}>
+                        {sensitivity.scenarioA.deltaPct >= 0 ? "+" : ""}{sensitivity.scenarioA.deltaPct.toFixed(1)} pts
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ background: "#f8fafc", borderRadius: 8, padding: "6px 8px" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", marginBottom: 2 }}>−5% prix vente</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: sensitivity.scenarioB.marge >= 0 ? "#166534" : "#991b1b" }}>
+                        {eur(sensitivity.scenarioB.marge)}
+                      </span>
+                      <span style={{ fontSize: 10, color: sensitivity.scenarioB.deltaPct < 0 ? "#dc2626" : "#16a34a", fontWeight: 700 }}>
+                        {sensitivity.scenarioB.deltaPct >= 0 ? "+" : ""}{sensitivity.scenarioB.deltaPct.toFixed(1)} pts
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div
+                  onClick={scrollToStressTest}
+                  style={{ fontSize: 11, color: ACCENT_PRO, marginTop: 6, textDecoration: "underline", cursor: "pointer" }}
+                >
+                  Voir le détail ↓
+                </div>
+              </div>
+            </div>
+
+            {/* ── KPIs row 2 — Par logement ── */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
+              <div style={kpiCard}>
+                <div style={kpiLabel}>Prix moyen / logement</div>
+                <div style={{ fontSize: 20, fontWeight: 900, color: isEmpty ? "#94a3b8" : "#0f172a" }}>
+                  {eur(computed.prixParLogement)}
+                </div>
+                <div style={kpiSub}>CA ÷ {nbLogements} logement{nbLogements > 1 ? "s" : ""}</div>
+              </div>
+              <div style={kpiCard}>
+                <div style={kpiLabel}>Coût / logement</div>
+                <div style={{ fontSize: 20, fontWeight: 900, color: "#0f172a" }}>
+                  {eur(computed.coutParLogement)}
+                </div>
+                <div style={kpiSub}>Coût total ÷ {nbLogements} logement{nbLogements > 1 ? "s" : ""}</div>
+              </div>
+              <div style={kpiCard}>
+                <div style={kpiLabel}>Marge / logement</div>
+                <div style={{ fontSize: 20, fontWeight: 900, color: isEmpty ? "#94a3b8" : (computed.margeParLogement >= 0 ? "#16a34a" : "#dc2626") }}>
+                  {eur(computed.margeParLogement)}
+                </div>
+                <div style={kpiSub}>Marge ÷ {nbLogements} logement{nbLogements > 1 ? "s" : ""}</div>
+              </div>
+            </div>
+
+            {/* ── Lecture Promoteur ── */}
+            <div style={{
+              ...card,
+              marginBottom: 12,
+              borderLeft: `4px solid ${ACCENT_PRO}`,
+              background: "linear-gradient(135deg, #fafafe, #f4f3ff)",
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10, color: ACCENT_PRO, display: "flex", alignItems: "center", gap: 6 }}>
+                <span>📊</span> Lecture promoteur
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: "#334155", lineHeight: 1.75 }}>
+                {lecturePromoteur.map((insight, i) => (
+                  <li key={i}>{insight}</li>
+                ))}
+              </ul>
+            </div>
+
+            {/* ── Sensibilité (Stress test) ── */}
+            <div id="stress-test" style={{ ...card, marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                <span>📉</span> Sensibilité — Stress test
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div style={{ background: "#fffbeb", borderRadius: 12, padding: "14px 16px", border: "1px solid #fcd34d" }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#92400e", marginBottom: 10 }}>
+                    {sensitivity.scenarioA.label}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: "#78350f" }}>Marge</span>
+                      <strong style={{ color: sensitivity.scenarioA.marge >= 0 ? "#166534" : "#991b1b" }}>{eur(sensitivity.scenarioA.marge)}</strong>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: "#78350f" }}>Taux marge</span>
+                      <strong>{sensitivity.scenarioA.margePct.toFixed(1)} %</strong>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #fde68a", paddingTop: 8 }}>
+                      <span style={{ color: "#78350f", fontSize: 12 }}>Delta vs base</span>
+                      <strong style={{ color: sensitivity.scenarioA.deltaMarge < 0 ? "#dc2626" : "#16a34a", fontSize: 12 }}>
+                        {sensitivity.scenarioA.deltaMarge >= 0 ? "+" : ""}{eur(sensitivity.scenarioA.deltaMarge)}{" "}
+                        ({sensitivity.scenarioA.deltaPct >= 0 ? "+" : ""}{sensitivity.scenarioA.deltaPct.toFixed(1)} pts)
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ background: "#fff1f2", borderRadius: 12, padding: "14px 16px", border: "1px solid #fecaca" }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#991b1b", marginBottom: 10 }}>
+                    {sensitivity.scenarioB.label}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: "#7f1d1d" }}>Marge</span>
+                      <strong style={{ color: sensitivity.scenarioB.marge >= 0 ? "#166534" : "#991b1b" }}>{eur(sensitivity.scenarioB.marge)}</strong>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: "#7f1d1d" }}>Taux marge</span>
+                      <strong>{sensitivity.scenarioB.margePct.toFixed(1)} %</strong>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #fecaca", paddingTop: 8 }}>
+                      <span style={{ color: "#7f1d1d", fontSize: 12 }}>Delta vs base</span>
+                      <strong style={{ color: sensitivity.scenarioB.deltaMarge < 0 ? "#dc2626" : "#16a34a", fontSize: 12 }}>
+                        {sensitivity.scenarioB.deltaMarge >= 0 ? "+" : ""}{eur(sensitivity.scenarioB.deltaMarge)}{" "}
+                        ({sensitivity.scenarioB.deltaPct >= 0 ? "+" : ""}{sensitivity.scenarioB.deltaPct.toFixed(1)} pts)
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div style={{ marginTop: 10, fontSize: 11, color: "#94a3b8" }}>
+                Ces scénarios évaluent la résilience de l'opération face aux aléas du marché.
+              </div>
+            </div>
+
+            {/* ── Sources implantation ── */}
+            <div style={{ ...card, marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ color: "#64748b" }}>📐</span> Données sources — Implantation 2D
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10 }}>
+                {[
+                  { label: "Empreinte bâtiments", value: m2(footprintBuildingsM2), highlight: footprintBuildingsM2 > 0 },
+                  { label: "Empreinte parkings",  value: m2(footprintParkingsM2),  highlight: false },
+                  { label: "Niveaux",             value: `R+${floorsSpec.aboveGroundFloors} (${levelsCount} niv.)`, highlight: false },
+                  { label: "SDP estimée",         value: m2(sdpEstimatedM2),        highlight: sdpEstimatedM2 > 0 },
+                  { label: "Habitable estimée",   value: m2(habitableEstimatedM2),  highlight: habitableEstimatedM2 > 0 },
+                  { label: "Vendable estimée",    value: m2(surfaceVendableM2),     highlight: true },
+                ].map((item, i) => (
+                  <div key={i} style={{ background: "#f8fafc", borderRadius: 10, padding: "10px 12px", border: "1px solid #e8edf4" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                      {item.label}
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: item.highlight ? ACCENT_PRO : (isEmpty ? "#94a3b8" : "#0f172a") }}>
+                      {item.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 10, fontSize: 12, color: hasStoreData ? "#16a34a" : "#f59e0b", fontWeight: 600 }}>
+                {hasStoreData
+                  ? `✓ Données récupérées depuis Implantation 2D (${nbLogements} logements, type ${buildingKind})`
+                  : "⚠️ Aucun bâtiment dans le store — retournez sur Implantation 2D."}
+              </div>
+            </div>
+
+            {/* ── Paramètres projet + Hypothèses ── */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 12, marginBottom: 12 }}>
+              <div style={card}>
+                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12 }}>Paramètres projet</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <div style={labelStyle}>Type bâtiment</div>
+                    <select style={inputStyle} value={buildingKind} onChange={(e) => setBuildingKind(e.target.value as BuildingKind)}>
+                      <option value="COLLECTIF">Collectif</option>
+                      <option value="INDIVIDUEL">Individuel</option>
+                    </select>
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Étages (R+N)</div>
+                    <input style={inputStyle} type="number" min={0} max={40} value={floorsSpec.aboveGroundFloors} onChange={(e) => setFloorsSpec((f) => ({ ...f, aboveGroundFloors: Math.max(0, Number(e.target.value) || 0) }))} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Hauteur RDC (m)</div>
+                    <input style={inputStyle} type="number" step="0.1" value={floorsSpec.groundFloorHeightM} onChange={(e) => setFloorsSpec((f) => ({ ...f, groundFloorHeightM: Number(e.target.value) || 2.8 }))} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Hauteur étage (m)</div>
+                    <input style={inputStyle} type="number" step="0.1" value={floorsSpec.typicalFloorHeightM} onChange={(e) => setFloorsSpec((f) => ({ ...f, typicalFloorHeightM: Number(e.target.value) || 2.7 }))} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Nb logements</div>
+                    <input style={inputStyle} type="number" min={1} max={500} value={nbLogements} onChange={(e) => setNbLogements(Math.max(1, Math.min(500, Number(e.target.value) || 1)))} />
+                  </div>
+                </div>
+                <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>
+                  Hauteur totale estimée : <b>{totalHeightM.toFixed(1)} m</b>
+                </div>
+              </div>
+
+              <div style={card}>
+                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12 }}>Hypothèses</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+                  <div>
+                    <div style={labelStyle}>Prix vente (€/m² vend.)</div>
+                    <input style={inputStyle} type="number" value={ass.salePriceEurM2Hab} onChange={(e) => updateAss("salePriceEurM2Hab", Number(e.target.value) || 0)} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Commercialisation (%)</div>
+                    <input style={inputStyle} type="number" value={ass.commercialisationPct} onChange={(e) => updateAss("commercialisationPct", pct(e.target.value, 100))} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Coef vendable</div>
+                    <input style={inputStyle} type="number" step="0.01" min={0.8} max={1.2} value={ass.coefVendable} onChange={(e) => updateAss("coefVendable", Math.min(1.2, Math.max(0.8, Number(e.target.value) || 1)))} />
+                    <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>Vendable = Habitable × coef</div>
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Foncier (€)</div>
+                    <input style={inputStyle} type="number" value={ass.landPriceEur} onChange={(e) => updateAss("landPriceEur", Number(e.target.value) || 0)} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Notaire (%)</div>
+                    <input style={inputStyle} type="number" value={ass.notaryFeesPct} onChange={(e) => updateAss("notaryFeesPct", pct(e.target.value, 7.5))} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Taxes acquisition (%)</div>
+                    <input style={inputStyle} type="number" value={ass.acquisitionTaxesPct} onChange={(e) => updateAss("acquisitionTaxesPct", pct(e.target.value, 0))} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Travaux (€/m² SDP)</div>
+                    <input style={inputStyle} type="number" value={ass.worksCostEurM2Sdp} onChange={(e) => updateAss("worksCostEurM2Sdp", Number(e.target.value) || 0)} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>VRD (%)</div>
+                    <input style={inputStyle} type="number" value={ass.vrdPct} onChange={(e) => updateAss("vrdPct", pct(e.target.value, 6))} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Ext. (%)</div>
+                    <input style={inputStyle} type="number" value={ass.extPct} onChange={(e) => updateAss("extPct", pct(e.target.value, 3))} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Aléas (%)</div>
+                    <input style={inputStyle} type="number" value={ass.contingencyPct} onChange={(e) => updateAss("contingencyPct", pct(e.target.value, 3))} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>MOE (%)</div>
+                    <input style={inputStyle} type="number" value={ass.moePct} onChange={(e) => updateAss("moePct", pct(e.target.value, 10))} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>BET (%)</div>
+                    <input style={inputStyle} type="number" value={ass.betPct} onChange={(e) => updateAss("betPct", pct(e.target.value, 3))} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>DO (%)</div>
+                    <input style={inputStyle} type="number" value={ass.insuranceDoPct} onChange={(e) => updateAss("insuranceDoPct", pct(e.target.value, 2))} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Comm. (% CA)</div>
+                    <input style={inputStyle} type="number" value={ass.marketingPctCa} onChange={(e) => updateAss("marketingPctCa", pct(e.target.value, 2))} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Taux financement (%)</div>
+                    <input style={inputStyle} type="number" value={ass.financingRatePct} onChange={(e) => updateAss("financingRatePct", pct(e.target.value, 4))} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Frais dossier (€)</div>
+                    <input style={inputStyle} type="number" value={ass.financingFeesEur} onChange={(e) => updateAss("financingFeesEur", Number(e.target.value) || 0)} />
+                  </div>
+                  <div>
+                    <div style={labelStyle}>Taxe aménag. (€/m² SDP)</div>
+                    <input style={inputStyle} type="number" value={ass.taxeAmenagementEurM2Sdp} onChange={(e) => updateAss("taxeAmenagementEurM2Sdp", Number(e.target.value) || 0)} />
+                  </div>
+                </div>
+                <div style={{ marginTop: 10, fontSize: 11, color: "#94a3b8" }}>
+                  Hypothèses simplifiées (v2). TVA, phasage, annexes et cashflow seront ajoutés prochainement.
+                </div>
+              </div>
+            </div>
+
+            {/* ── Bilan détaillé ── */}
+            <div style={card}>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12 }}>Bilan détaillé</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {Array.from(grouped.entries()).map(([section, lines]) => (
+                  <div key={section}>
+                    <div style={{ ...sectionTitle, marginBottom: 6 }}>{section}</div>
+                    <div style={{ border: "1px solid #e8edf4", borderRadius: 12, overflow: "hidden" }}>
+                      {lines.map((l, idx) => {
+                        const isSubtotal = l.kind === "subtotal";
+                        const isTotal = l.kind === "total";
+                        const isNegative = l.valueEur < 0;
+                        return (
+                          <div
+                            key={idx}
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "1fr 180px 160px",
+                              gap: 12,
+                              padding: "9px 14px",
+                              borderTop: idx === 0 ? "none" : `1px solid ${isTotal ? "rgba(255,255,255,0.08)" : "#f1f5f9"}`,
+                              background: isTotal ? "#1e293b" : isSubtotal ? "#f1f5f9" : "white",
+                              color: isTotal ? "white" : isNegative ? "#dc2626" : "#0f172a",
+                              fontWeight: isTotal ? 900 : isSubtotal ? 700 : 500,
+                              alignItems: "center",
+                              fontSize: 13,
+                            }}
+                          >
+                            <div>{l.label}</div>
+                            <div style={{ fontSize: 11, color: isTotal ? "rgba(255,255,255,0.5)" : "#94a3b8", textAlign: "right" }}>
+                              {l.hint ?? ""}
+                            </div>
+                            <div style={{ textAlign: "right", fontWeight: isTotal || isSubtotal ? 900 : 600 }}>
+                              {eur(l.valueEur)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Notes ── */}
+            {computed.notes.length > 0 && (
+              <div style={{ ...card, marginTop: 12, borderLeft: "4px solid #f59e0b", background: "#fffbeb" }}>
+                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, color: "#92400e" }}>Notes</div>
+                <ul style={{ margin: 0, paddingLeft: 18, color: "#78350f", fontSize: 13, lineHeight: 1.7 }}>
+                  {computed.notes.map((x, i) => (
+                    <li key={i}>{x}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
         )}
+
       </div>
     </div>
   );

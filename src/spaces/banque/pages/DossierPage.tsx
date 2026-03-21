@@ -7,6 +7,7 @@
 //    Calendrier, Ratios) moved here from AnalysePage — these are INPUT data.
 // ✅ REFACTOR v2: "Données du projet" fusionné dans BudgetSection
 //    pour supprimer le doublon montant/durée.
+// ✅ REDESIGN: Financeur visual tokens applied (GRAD_FIN / ACCENT_FIN).
 // ============================================================================
 
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -22,6 +23,10 @@ import CalendrierSection from "../components/analyse/CalendrierSection";
 import RatiosPanel from "../components/analyse/RatiosPanel";
 
 import type { ProjectFields } from "../components/analyse/BudgetSection";
+
+// ── Design tokens Financeur ──
+const GRAD_FIN = "linear-gradient(90deg, #26a69a 0%, #80cbc4 100%)";
+const ACCENT_FIN = "#1a7a50";
 
 // ── Types emprunteur ──
 
@@ -304,12 +309,47 @@ export default function DossierPage() {
   if (!dossierId) {
     return (
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-xl font-bold text-slate-900 mb-4">Dossier</h1>
-        <div className="rounded-xl border-2 border-dashed border-slate-200 p-12 text-center">
+        {/* ── Header banner (guard state) ── */}
+        <div style={{
+          background: GRAD_FIN,
+          borderRadius: 14,
+          padding: "20px 24px",
+          marginBottom: 20,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 16,
+        }}>
+          <div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
+              Financeur › Dossier
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>
+              Dossier
+            </div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+              Aucun dossier sélectionné
+            </div>
+          </div>
+        </div>
+
+        <div
+          className="rounded-xl p-12 text-center"
+          style={{ border: "2px dashed #c0e8d4" }}
+        >
           <p className="text-slate-500 mb-4">Aucun dossier sélectionné.</p>
           <button
             onClick={() => navigate("/banque/dossiers")}
-            className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
+            style={{
+              padding: "9px 18px",
+              borderRadius: 10,
+              border: "none",
+              background: GRAD_FIN,
+              color: "white",
+              fontWeight: 600,
+              fontSize: 13,
+              cursor: "pointer",
+            }}
           >
             Voir le pipeline
           </button>
@@ -322,46 +362,89 @@ export default function DossierPage() {
 
   return (
     <div className="max-w-4xl mx-auto">
-      {/* Page header */}
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-slate-900">
-          {dossier?.nom || "Dossier"}{" "}
-          <span className="text-sm font-normal text-slate-400 ml-2">{dossierId}</span>
-        </h1>
-        {dossier?.statut && (
-          <span className="inline-block mt-1 text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">
-            {dossier.statut}
-          </span>
-        )}
+
+      {/* ── Header banner ── */}
+      <div style={{
+        background: GRAD_FIN,
+        borderRadius: 14,
+        padding: "20px 24px",
+        marginBottom: 20,
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        gap: 16,
+      }}>
+        <div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
+            Financeur › Dossier
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>
+            {dossier?.nom || "Dossier"}
+          </div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)", display: "flex", alignItems: "center", gap: 10 }}>
+            <span>{dossierId}</span>
+            {dossier?.statut && (
+              <span style={{
+                fontSize: 10,
+                padding: "2px 8px",
+                borderRadius: 5,
+                background: "rgba(255,255,255,0.20)",
+                color: "white",
+                fontWeight: 600,
+              }}>
+                {dossier.statut}
+              </span>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={() => navigate(`/banque/analyse/${dossierId}`)}
+          style={{
+            padding: "9px 18px",
+            borderRadius: 10,
+            border: "none",
+            background: "white",
+            color: ACCENT_FIN,
+            fontWeight: 600,
+            fontSize: 13,
+            cursor: "pointer",
+            flexShrink: 0,
+            marginTop: 4,
+          }}
+        >
+          Passer à l'analyse →
+        </button>
       </div>
 
       {/* Internal section tabs */}
-      <div className="flex items-center gap-1 border-b border-slate-200 mb-6">
+      <div style={{ display: "flex", alignItems: "center", gap: 4, borderBottom: "1px solid #e2e8f0", marginBottom: 24 }}>
         {TABS.map((tab) => (
           <button
             key={tab.key}
             type="button"
             onClick={() => setActiveTab(tab.key)}
-            className={[
-              "px-4 py-2.5 text-sm font-medium border-b-2 transition-all duration-150 -mb-px",
-              activeTab === tab.key
-                ? "border-slate-900 text-slate-900"
-                : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300",
-            ].join(" ")}
+            style={{
+              padding: "10px 16px",
+              fontSize: 14,
+              fontWeight: 500,
+              borderRadius: "8px 8px 0 0",
+              border: "none",
+              cursor: "pointer",
+              transition: "all 0.15s",
+              ...(activeTab === tab.key
+                ? {
+                    background: GRAD_FIN,
+                    color: "white",
+                  }
+                : {
+                    background: "transparent",
+                    color: "#64748b",
+                  }),
+            }}
           >
             {tab.label}
           </button>
         ))}
-
-        <div className="flex-1" />
-
-        <button
-          type="button"
-          onClick={() => navigate(`/banque/analyse/${dossierId}`)}
-          className="px-3 py-1.5 rounded-lg text-xs font-medium text-indigo-600 hover:bg-indigo-50 transition-all duration-150"
-        >
-          Passer à l'analyse →
-        </button>
       </div>
 
       {/* ════════════════════════════════════════════
@@ -369,12 +452,13 @@ export default function DossierPage() {
          ════════════════════════════════════════════ */}
       {activeTab === "emprunteur" && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-slate-900">Données emprunteur &amp; projet</h2>
-          </div>
+          <h2 className="text-lg font-bold text-slate-900">Données emprunteur &amp; projet</h2>
 
           {/* ── Emprunteur type selector ── */}
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div
+            className="bg-white p-5"
+            style={{ borderRadius: 14, border: "1px solid #c0e8d4" }}
+          >
             <label className="block text-xs font-semibold text-slate-600 mb-3 uppercase tracking-wide">
               Type d'emprunteur
             </label>
@@ -382,24 +466,38 @@ export default function DossierPage() {
               <button
                 type="button"
                 onClick={() => switchEmprunteurType("personne_physique")}
-                className={[
-                  "flex-1 rounded-lg border-2 px-4 py-3 text-sm font-medium text-center transition-all duration-150",
-                  emprunteur.type === "personne_physique"
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 text-slate-600 hover:border-slate-400",
-                ].join(" ")}
+                style={{
+                  flex: 1,
+                  borderRadius: 10,
+                  padding: "12px 16px",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  border: "none",
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                  ...(emprunteur.type === "personne_physique"
+                    ? { background: GRAD_FIN, color: "white" }
+                    : { background: "#f8fafc", color: "#475569", border: "1px solid #c0e8d4" }),
+                }}
               >
                 Personne physique
               </button>
               <button
                 type="button"
                 onClick={() => switchEmprunteurType("personne_morale")}
-                className={[
-                  "flex-1 rounded-lg border-2 px-4 py-3 text-sm font-medium text-center transition-all duration-150",
-                  emprunteur.type === "personne_morale"
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 text-slate-600 hover:border-slate-400",
-                ].join(" ")}
+                style={{
+                  flex: 1,
+                  borderRadius: 10,
+                  padding: "12px 16px",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  border: "none",
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                  ...(emprunteur.type === "personne_morale"
+                    ? { background: GRAD_FIN, color: "white" }
+                    : { background: "#f8fafc", color: "#475569", border: "1px solid #c0e8d4" }),
+                }}
               >
                 Personne morale (Société / Association)
               </button>
@@ -408,8 +506,13 @@ export default function DossierPage() {
 
           {/* ── Emprunteur fields: Personne physique ── */}
           {emprunteur.type === "personne_physique" && (
-            <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
-              <h3 className="text-sm font-semibold text-slate-700">Identité de l'emprunteur</h3>
+            <div
+              className="bg-white p-5 space-y-4"
+              style={{ borderRadius: 14, border: "1px solid #c0e8d4" }}
+            >
+              <h3 className="text-sm font-semibold" style={{ color: ACCENT_FIN }}>
+                Identité de l'emprunteur
+              </h3>
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Prénom *" value={(emprunteur as EmprunteurPhysique).prenom}
                   onChange={(v) => patchEmprunteur("prenom" as any, v)} />
@@ -440,8 +543,13 @@ export default function DossierPage() {
 
           {/* ── Emprunteur fields: Personne morale ── */}
           {emprunteur.type === "personne_morale" && (
-            <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
-              <h3 className="text-sm font-semibold text-slate-700">Informations de la structure</h3>
+            <div
+              className="bg-white p-5 space-y-4"
+              style={{ borderRadius: 14, border: "1px solid #c0e8d4" }}
+            >
+              <h3 className="text-sm font-semibold" style={{ color: ACCENT_FIN }}>
+                Informations de la structure
+              </h3>
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Raison sociale *"
                   value={(emprunteur as EmprunteurMorale).raisonSociale}
@@ -451,7 +559,7 @@ export default function DossierPage() {
                   <select
                     value={(emprunteur as EmprunteurMorale).formeJuridique}
                     onChange={(e) => patchEmprunteur("formeJuridique" as any, e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400/30"
                   >
                     <option value="">Sélectionner…</option>
                     {FORMES_JURIDIQUES.map((f) => (
@@ -485,17 +593,34 @@ export default function DossierPage() {
           )}
 
           {/* ── Localisation du projet ── */}
-          <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
+          <div
+            className="bg-white p-5 space-y-4"
+            style={{ borderRadius: 14, border: "1px solid #c0e8d4" }}
+          >
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+              <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: ACCENT_FIN }}>
                 📍 Localisation du projet
               </h3>
               {locComplete ? (
-                <span className="rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                <span style={{
+                  fontSize: 10,
+                  padding: "3px 8px",
+                  borderRadius: 5,
+                  background: "rgba(38,166,154,0.10)",
+                  color: ACCENT_FIN,
+                  fontWeight: 600,
+                }}>
                   {locFieldsCount}/4
                 </span>
               ) : (
-                <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                <span style={{
+                  fontSize: 10,
+                  padding: "3px 8px",
+                  borderRadius: 5,
+                  background: "#fef3c7",
+                  color: "#92400e",
+                  fontWeight: 600,
+                }}>
                   Incomplet
                 </span>
               )}
@@ -520,7 +645,7 @@ export default function DossierPage() {
                   onChange={(e) => handleCpChange(e.target.value)}
                   placeholder="92210"
                   maxLength={5}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400/30"
                 />
               </div>
               <Field label="Commune" value={communeProjet}
@@ -533,7 +658,7 @@ export default function DossierPage() {
                   onChange={(e) => { setCommuneInseeProjet(e.target.value); setSaved(false); }}
                   placeholder="92064"
                   maxLength={5}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400/30"
                 />
               </div>
               <div>
@@ -543,7 +668,7 @@ export default function DossierPage() {
                   onChange={(e) => { setDepartementProjet(e.target.value); setSaved(false); }}
                   placeholder="92"
                   maxLength={3}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-400/30"
                 />
               </div>
             </div>
@@ -556,7 +681,7 @@ export default function DossierPage() {
                   value={parcelleCadastrale}
                   onChange={(e) => { setParcelleCadastrale(e.target.value.toUpperCase()); setSaved(false); }}
                   placeholder="000 AB 0123"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-400/30"
                 />
               </div>
               <div>
@@ -566,7 +691,7 @@ export default function DossierPage() {
                   onChange={(e) => { setSectionCadastrale(e.target.value.toUpperCase()); setSaved(false); }}
                   placeholder="AB"
                   maxLength={4}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-400/30"
                 />
               </div>
               <div>
@@ -576,7 +701,7 @@ export default function DossierPage() {
                   onChange={(e) => { setPrefixeCadastral(e.target.value); setSaved(false); }}
                   placeholder="000"
                   maxLength={3}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-400/30"
                 />
               </div>
             </div>
@@ -589,7 +714,7 @@ export default function DossierPage() {
                   value={latProjet}
                   onChange={(e) => { setLatProjet(e.target.value); setSaved(false); }}
                   placeholder="48.8448"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-400/30"
                 />
               </div>
               <div>
@@ -598,7 +723,7 @@ export default function DossierPage() {
                   value={lngProjet}
                   onChange={(e) => { setLngProjet(e.target.value); setSaved(false); }}
                   placeholder="2.2157"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-400/30"
                 />
               </div>
             </div>
@@ -608,7 +733,7 @@ export default function DossierPage() {
               SECTIONS CRÉDIT — Projet+Budget (unifié), Revenus, Bien, Calendrier
               Sauvegarde automatique dans dossier.analyse via upsertDossier
              ════════════════════════════════════════════════════════════ */}
-          <div className="border-t border-slate-200 pt-6 space-y-5">
+          <div className="border-t pt-6 space-y-5" style={{ borderColor: "#c0e8d4" }}>
             <div>
               <h2 className="text-lg font-bold text-slate-900">Données financières du crédit</h2>
               <p className="text-xs text-slate-500 mt-1">
@@ -653,11 +778,24 @@ export default function DossierPage() {
           <div className="flex flex-col items-end gap-2 pt-2">
             <button
               onClick={handleSave}
-              className="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-medium text-white hover:bg-slate-800 transition-colors"
+              style={{
+                padding: "9px 24px",
+                borderRadius: 10,
+                border: "none",
+                background: GRAD_FIN,
+                color: "white",
+                fontWeight: 600,
+                fontSize: 14,
+                cursor: "pointer",
+              }}
             >
               Enregistrer
             </button>
-            {saved && <span className="text-sm text-green-600 font-medium">✓ Sauvegardé</span>}
+            {saved && (
+              <span style={{ fontSize: 14, color: "#16a34a", fontWeight: 500 }}>
+                ✓ Sauvegardé
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -702,7 +840,7 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400/30"
       />
     </div>
   );

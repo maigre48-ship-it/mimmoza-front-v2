@@ -17,10 +17,16 @@ import {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Mode transaction unique autorisé dans la veille. */
+const SALE_MODE = "sale" as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 type UseMarketVeilleParams = {
   zipCode?: string;
   city?: string;
-  transactionMode?: "all" | "sale" | "rent";
+  /** Toujours "sale" — paramètre conservé pour compatibilité rétro mais ignoré. */
+  transactionMode?: "sale";
   autoLoad?: boolean;
   autoRefreshOnMount?: boolean;
   opportunitiesLimit?: number;
@@ -137,13 +143,15 @@ export function useMarketVeille(params: UseMarketVeilleParams): UseMarketVeilleR
 
   const hasZone = Boolean(params.zipCode?.trim() || params.city?.trim());
 
+  // transactionMode est toujours "sale" — le paramètre entrant est ignoré
+  // pour garantir qu'aucune location ne transite dans la veille.
   const baseParams = useMemo(
     () => ({
       zipCode: params.zipCode?.trim(),
       city: params.city?.trim(),
-      transactionMode: params.transactionMode ?? "all",
+      transactionMode: SALE_MODE,
     }),
-    [params.zipCode, params.city, params.transactionMode]
+    [params.zipCode, params.city]
   );
 
   const reload = useCallback(async () => {

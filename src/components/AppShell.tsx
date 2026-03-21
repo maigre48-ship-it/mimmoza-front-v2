@@ -8,6 +8,7 @@
 //    - redirection /compte si connecté
 // ✅ Dégradés par espace sur les onglets actifs
 // ✅ Espace Analyse : 4 sous-onglets dans la subnav (tabParam sur ?tab=)
+// ✅ Onglets globaux Veille (ambre) et API (indigo) dans la barre principale
 // ────────────────────────────────────────────────────────────────────
 
 import { useState, useMemo, useEffect } from "react";
@@ -36,6 +37,8 @@ import {
   Building,
   UserCircle2,
   LayoutDashboard,
+  Eye,
+  Code2,
 } from "lucide-react";
 
 import { preserveStudyInPath, extractStudyId } from "../utils/preserveStudyParam";
@@ -466,9 +469,10 @@ function TopNavigation({
               </div>
             </NavLink>
 
-            {/* Onglets espaces */}
+            {/* Onglets espaces + Veille + API */}
             <div className="flex flex-1 items-center justify-center">
               <nav className="flex items-center gap-1.5 overflow-x-auto rounded-2xl border border-slate-200/80 bg-slate-50/80 p-1.5 scrollbar-hide">
+                {/* ── Espaces métier ── */}
                 {SPACES.map((space) => {
                   const Icon = space.icon;
                   const isActive = currentSpace === space.id;
@@ -497,6 +501,55 @@ function TopNavigation({
                     </a>
                   );
                 })}
+
+                {/* ── Séparateur ── */}
+                <div className="mx-1 h-5 w-px shrink-0 bg-slate-200/80" />
+
+                {/* ── Veille ── */}
+                <NavLink
+                  to="/veille"
+                  onClick={() => onChangeSpace("none")}
+                  className="group relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all"
+                  style={({ isActive }) =>
+                    isActive
+                      ? { background: "linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%)", color: "white" }
+                      : { color: "#64748b" }
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      <Eye
+                        className={`h-4 w-4 transition-colors ${
+                          isActive ? "text-white" : "text-slate-400 group-hover:text-slate-700"
+                        }`}
+                      />
+                      <span>Veille</span>
+                    </>
+                  )}
+                </NavLink>
+
+                {/* ── API ── */}
+                <NavLink
+                  to="/api"
+                  onClick={() => onChangeSpace("none")}
+                  className="group relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all"
+                  style={({ isActive }) =>
+                    isActive
+                      ? { background: "linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%)", color: "white" }
+                      : { color: "#64748b" }
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      <Code2
+                        className={`h-4 w-4 transition-colors ${
+                          isActive ? "text-white" : "text-slate-400 group-hover:text-slate-700"
+                        }`}
+                      />
+                      <span>API</span>
+                    </>
+                  )}
+                </NavLink>
               </nav>
             </div>
 
@@ -608,7 +661,6 @@ function TopNavigation({
                   const active = section.id === activeSection;
                   const firstItem = section.items[0];
                   const firstPath = firstItem?.path ?? "";
-                  // Pour la section tab, on navigue vers le premier item (avec son tabParam si défini)
                   const resolvedBase = resolvePath(firstPath);
                   const resolvedPath = buildNavItemPath(resolvedBase, firstItem?.tabParam);
 
@@ -890,6 +942,49 @@ function MobileDrawer({
               </button>
             );
           })}
+
+          {/* ── Outils globaux : Veille + API ── */}
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Outils
+            </div>
+
+            <NavLink
+              to="/veille"
+              onClick={onClose}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 transition-all"
+              style={({ isActive }) =>
+                isActive
+                  ? { background: "linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%)", color: "white" }
+                  : { color: "#374151" }
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <Eye className={`h-4 w-4 ${isActive ? "text-white" : "text-amber-400"}`} />
+                  <span className="text-sm font-medium">Veille marché</span>
+                </>
+              )}
+            </NavLink>
+
+            <NavLink
+              to="/api"
+              onClick={onClose}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 transition-all"
+              style={({ isActive }) =>
+                isActive
+                  ? { background: "linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%)", color: "white" }
+                  : { color: "#374151" }
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <Code2 className={`h-4 w-4 ${isActive ? "text-white" : "text-indigo-400"}`} />
+                  <span className="text-sm font-medium">API</span>
+                </>
+              )}
+            </NavLink>
+          </div>
 
           <div className="mt-4 border-t border-slate-100 pt-4">
             <NavLink

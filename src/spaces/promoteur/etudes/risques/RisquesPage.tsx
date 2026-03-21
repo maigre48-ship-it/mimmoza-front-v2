@@ -8,6 +8,7 @@
 // ============================================
 
 import React, { useState, useCallback, useEffect, useRef, Component, ErrorInfo, ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import { 
   Search, MapPin, Grid3X3, Loader2, X, 
   AlertTriangle, CheckCircle, Shield, ShieldAlert, ShieldOff, ShieldCheck,
@@ -16,7 +17,7 @@ import {
   Layers, CircleDot, Compass,
   Target, Info,
   Bug, Skull,
-  Landmark, // 🆕 Banque scoring icon (kept for error display)
+  Landmark,
 } from "lucide-react";
 
 import type { LucideIcon } from "lucide-react";
@@ -41,6 +42,16 @@ import { patchProjectInfo, patchModule } from "../../shared/promoteurSnapshot.st
 // ============================================
 import { BanqueRiskScoreCard } from "../../../../components/banque/BanqueRiskScoreCard";
 import type { BankRiskScoring, BankRiskScoringGrade } from "../../../../components/banque/BanqueRiskScoreCard";
+
+// ============================================
+// 🆕 Study persistence
+// ============================================
+import { usePromoteurStudy } from "../../shared/usePromoteurStudy";
+import type { PromoteurRisquesData } from "../../shared/promoteurStudy.types";
+
+// ─── Design tokens ───────────────────────────────────────────────────────────
+const GRAD_PRO = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
+const ACCENT_PRO = "#5247b8";
 
 // ============================================
 // DEBUG
@@ -349,7 +360,6 @@ const getVerdictConfig = (score: number) => {
   return { label: "ZONE SÛRE", color: "#047857", bg: "#ecfdf5", icon: ShieldCheck };
 };
 
-// 🆕 Banque scoring – helpers pour PDF uniquement (grade → couleur)
 const getBankGradeColor = (grade: BankRiskScoringGrade): string => {
   switch (grade) {
     case "A": return "#047857";
@@ -1213,8 +1223,8 @@ const PollutionCard: React.FC<{
 // ============================================
 const RiskStudyResults: React.FC<{
   data: RiskStudyApiResponse;
-  bankScoring: BankRiskScoring | null;           // 🆕 Banque scoring
-  isBankScoringLoading: boolean;                  // 🆕 Banque scoring
+  bankScoring: BankRiskScoring | null;
+  isBankScoringLoading: boolean;
 }> = ({ data, bankScoring, isBankScoringLoading }) => {
   const { meta, scores, categories, insights, data: riskData } = data;
   
@@ -1223,7 +1233,6 @@ const RiskStudyResults: React.FC<{
   const positiveInsights = insights.filter(i => i.type === 'positive');
   const infoInsights = insights.filter(i => i.type === 'info');
 
-  // PDF Handler
   const handleGeneratePdf = useCallback(() => {
     const verdict = getVerdictConfig(scores.global);
     
@@ -1233,7 +1242,6 @@ const RiskStudyResults: React.FC<{
       return;
     }
 
-    // 🆕 Banque scoring – section PDF conditionnelle
     const bankScoringPdfSection = bankScoring ? `
       <div class="section">
         <div class="section-title">🏦 Scoring Banque</div>
@@ -1376,7 +1384,7 @@ const RiskStudyResults: React.FC<{
   return (
     <ErrorBoundary componentName="RiskStudyResults">
       <div>
-        {/* 🆕 Banque scoring – Composant réutilisable <BanqueRiskScoreCard /> */}
+        {/* 🆕 Banque scoring */}
         {isBankScoringLoading && (
           <BanqueRiskScoreCard
             scoring={{ score: 0, grade: "C", level_label: "", confidence: 0, rationale: [], items: [] }}
@@ -1596,6 +1604,12 @@ function extractDossierIdFromUrl(): string | null {
 // MAIN COMPONENT
 // ============================================
 export function RisquesPage() {
+  // ── Study persistence ──────────────────────────────────────────────────────
+  const [searchParams] = useSearchParams();
+  const studyId = searchParams.get("study");
+  const { study, loadState, patchRisques } = usePromoteurStudy(studyId);
+
+  // ── Form state ─────────────────────────────────────────────────────────────
   const [address, setAddress] = useState("");
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [isSearchingAddress, setIsSearchingAddress] = useState(false);
@@ -1620,7 +1634,33 @@ export function RisquesPage() {
   const parcelTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const resultsRef = useRef<HTMLDivElement | null>(null);
 
-  // Address search
+  // ── Guard against setState after unmount ───────────────────────────────────
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // ── Hydratation depuis l'étude persistée ──────────────────────────────────
+  useEffect(() => {
+    if (loadState !== "ready") return;
+
+    if (study?.foncier?.commune_insee && !codeInsee) {
+      setCodeInsee(study.foncier.commune_insee);
+    }
+
+    if (study?.foncier?.focus_id && !parcelId) {
+      setParcelId(study.foncier.focus_id);
+    }
+
+    if (study?.risques?.raw_georisques && analysisResult === null) {
+      setAnalysisResult(study.risques.raw_georisques as unknown as RiskStudyApiResponse);
+    }
+    // Intentionnellement, on ne met pas codeInsee/parcelId/analysisResult dans les deps
+    // pour éviter de boucler : on veut une hydratation one-shot au passage à "ready".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadState, study]);
+
   useEffect(() => {
     if (addressTimeoutRef.current) clearTimeout(addressTimeoutRef.current);
     if (address.length >= 3 && !selectedAddress) {
@@ -1637,7 +1677,6 @@ export function RisquesPage() {
     return () => { if (addressTimeoutRef.current) clearTimeout(addressTimeoutRef.current); };
   }, [address, selectedAddress]);
 
-  // Parcel search
   useEffect(() => {
     if (parcelTimeoutRef.current) clearTimeout(parcelTimeoutRef.current);
     if (parcelId.length >= 10) {
@@ -1668,7 +1707,6 @@ export function RisquesPage() {
     if (suggestion.citycode) setCodeInsee(suggestion.citycode);
   }, []);
 
-  // 🆕 Banque scoring – fetch function
   const fetchBankScoring = useCallback(async (params: {
     dossierId?: string | null;
     lat?: number;
@@ -1762,7 +1800,6 @@ export function RisquesPage() {
     setIsLoading(true);
     setError(null);
     setAnalysisResult(null);
-    // 🆕 Banque scoring – reset
     setBankScoring(null);
     setBankScoringError(null);
 
@@ -1813,9 +1850,32 @@ export function RisquesPage() {
         throw new Error(result.error || `Erreur ${apiResponse.status}`);
       }
 
+      if (!mountedRef.current) return;
       setAnalysisResult(result as RiskStudyApiResponse);
 
-      // 🆕 Banque scoring – fire in parallel (non-blocking)
+      // ── Persistance étude ────────────────────────────────────────────────
+      if (studyId) {
+        const risquesPayload: PromoteurRisquesData = {
+          score_inondation:
+            result.data?.inondation?.risk_level === "fort" ? 3
+            : result.data?.inondation?.risk_level === "moyen" ? 2
+            : 1,
+          score_seisme: result.data?.seisme?.zone ?? null,
+          score_retrait_argile:
+            result.data?.argiles?.risk_level === "fort" ? 3
+            : result.data?.argiles?.risk_level === "moyen" ? 2
+            : 1,
+          score_radon: result.data?.radon?.classe_potentiel ?? null,
+          pollution_sols: (result.data?.sis?.count ?? 0) > 0,
+          score_global: result.scores?.global ?? null,
+          raw_georisques: result as unknown as Record<string, unknown>,
+          done: true,
+        };
+        patchRisques(risquesPayload).catch(e =>
+          console.error("[RisquesPage] patchRisques failed:", e)
+        );
+      }
+
       const dossierId = extractDossierIdFromUrl();
       fetchBankScoring({
         dossierId,
@@ -1824,7 +1884,6 @@ export function RisquesPage() {
         commune_insee: result?.meta?.commune_insee ?? codeInsee,
       });
 
-      // Save to snapshot
       try {
         patchProjectInfo({
           address: selectedAddress?.label || address || undefined,
@@ -1845,50 +1904,102 @@ export function RisquesPage() {
       }
 
       setTimeout(() => {
-        resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (mountedRef.current) {
+          resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
       }, 100);
 
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Une erreur est survenue";
       log('❌', 'Submit error', errorMessage);
-      setError(errorMessage);
+      if (mountedRef.current) setError(errorMessage);
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) setIsLoading(false);
     }
-  }, [latitude, longitude, codeInsee, parcelInfo, radius, selectedAddress, address, fetchBankScoring]);
+  }, [latitude, longitude, codeInsee, parcelInfo, radius, selectedAddress, address, fetchBankScoring, studyId, patchRisques]);
+
+  // ── Derived display values ─────────────────────────────────────────────────
+  const bannerInseeLabel = study?.foncier?.commune_insee
+    ? `INSEE ${study.foncier.commune_insee}`
+    : null;
 
   return (
     <ErrorBoundary componentName="RisquesPage">
       <div style={styles.container}>
-        {/* Header */}
-        <div style={styles.header}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-            <ShieldAlert size={28} />
-            <h1 style={{ fontSize: "28px", fontWeight: 700, margin: 0 }}>Étude de Risques</h1>
+
+        {/* ── Bannière dégradé Promoteur › Études ── */}
+        <div style={{
+          background: GRAD_PRO,
+          borderRadius: 14,
+          padding: "20px 24px",
+          margin: "16px 40px 0 40px",
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 16,
+        }}>
+          <div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
+              Promoteur › Études
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
+              <ShieldAlert size={22} color="white" />
+              Étude de Risques
+              {bannerInseeLabel && (
+                <span style={{
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: "rgba(255,255,255,0.85)",
+                  background: "rgba(255,255,255,0.15)",
+                  border: "1px solid rgba(255,255,255,0.25)",
+                  borderRadius: 6,
+                  padding: "2px 10px",
+                  marginLeft: 4,
+                }}>
+                  {bannerInseeLabel}
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+              Risques naturels, technologiques, pollution et géotechniques. Sources&nbsp;: Géorisques, BRGM, GASPAR.
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, marginTop: 4 }}>
             <span style={{
-              padding: "4px 12px",
-              background: "rgba(255,255,255,0.2)",
-              borderRadius: "6px",
-              fontSize: "13px",
-              fontWeight: 500,
-            }}>
-              Géorisques
-            </span>
-            <span style={{
-              padding: "4px 10px",
-              background: "#fef3c7",
-              borderRadius: "6px",
-              fontSize: "11px",
+              padding: "6px 12px",
+              background: "rgba(255,255,255,0.15)",
+              borderRadius: 8,
+              fontSize: 12,
               fontWeight: 600,
-              color: "#92400e",
+              color: "white",
+              border: "1px solid rgba(255,255,255,0.25)",
             }}>
               v1.3.0
             </span>
+            <button
+              onClick={handleSubmit}
+              disabled={isLoading}
+              style={{
+                padding: "9px 18px",
+                borderRadius: 10,
+                border: "none",
+                background: "white",
+                color: ACCENT_PRO,
+                fontWeight: 600,
+                fontSize: 13,
+                cursor: isLoading ? "not-allowed" : "pointer",
+                opacity: isLoading ? 0.7 : 1,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              {isLoading
+                ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />Analyse…</>
+                : <><ShieldAlert size={14} />Lancer l'analyse</>
+              }
+            </button>
           </div>
-          <p style={{ fontSize: "14px", color: "rgba(255,255,255,0.7)", maxWidth: "700px", margin: 0 }}>
-            Analyse complète des risques naturels, technologiques, pollution et géotechniques.
-            Sources: Géorisques, BRGM, GASPAR.
-          </p>
         </div>
 
         {/* Main content */}
@@ -1898,7 +2009,7 @@ export function RisquesPage() {
             <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
               <div style={{
                 width: "44px", height: "44px", borderRadius: "12px",
-                background: "linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)",
+                background: `linear-gradient(135deg, ${ACCENT_PRO} 0%, #7c6fcd 100%)`,
                 display: "flex", alignItems: "center", justifyContent: "center"
               }}>
                 <Target size={22} color="white" />
@@ -1917,9 +2028,9 @@ export function RisquesPage() {
               {/* Adresse */}
               <div style={{ gridColumn: "span 2", display: "flex", flexDirection: "column", gap: "8px" }}>
                 <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <MapPin size={14} color="#dc2626" />
+                  <MapPin size={14} color={ACCENT_PRO} />
                   Adresse
-                  <span style={{ fontSize: "10px", fontWeight: 600, padding: "2px 8px", background: "#fee2e2", color: "#991b1b", borderRadius: "4px", marginLeft: "8px" }}>
+                  <span style={{ fontSize: "10px", fontWeight: 600, padding: "2px 8px", background: "#ede9fe", color: ACCENT_PRO, borderRadius: "4px", marginLeft: "8px" }}>
                     RECOMMANDÉ
                   </span>
                 </label>
@@ -1932,7 +2043,7 @@ export function RisquesPage() {
                     style={{ ...styles.input, paddingRight: "40px" }}
                   />
                   {isSearchingAddress && (
-                    <Loader2 size={18} color="#dc2626" style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", animation: "spin 1s linear infinite" }} />
+                    <Loader2 size={18} color={ACCENT_PRO} style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", animation: "spin 1s linear infinite" }} />
                   )}
                   {address && !isSearchingAddress && (
                     <button onClick={() => { setAddress(""); setSelectedAddress(null); }} style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", padding: "4px" }}>
@@ -1955,10 +2066,10 @@ export function RisquesPage() {
                             display: "flex", alignItems: "center", gap: "10px",
                             borderBottom: "1px solid #f1f5f9", transition: "background 0.15s"
                           }}
-                          onMouseEnter={(e) => { (e.target as HTMLElement).style.background = "#fef2f2"; }}
+                          onMouseEnter={(e) => { (e.target as HTMLElement).style.background = "#f8fafc"; }}
                           onMouseLeave={(e) => { (e.target as HTMLElement).style.background = "transparent"; }}
                         >
-                          <MapPin size={14} color="#dc2626" />
+                          <MapPin size={14} color={ACCENT_PRO} />
                           {s.label}
                         </div>
                       ))}
@@ -1979,7 +2090,7 @@ export function RisquesPage() {
               {/* Parcelle */}
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <Grid3X3 size={14} color="#dc2626" />
+                  <Grid3X3 size={14} color={ACCENT_PRO} />
                   N° Parcelle cadastrale
                 </label>
                 <input
@@ -2010,17 +2121,17 @@ export function RisquesPage() {
               {/* Rayon */}
               <div style={{ gridColumn: "span 3", display: "flex", flexDirection: "column", gap: "8px" }}>
                 <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <Compass size={14} color="#dc2626" />
-                  Rayon d'analyse: <strong style={{ color: "#dc2626" }}>{radius} km</strong>
+                  <Compass size={14} color={ACCENT_PRO} />
+                  Rayon d'analyse: <strong style={{ color: ACCENT_PRO }}>{radius} km</strong>
                 </label>
                 <input
                   type="range" min={1} max={20} step={1} value={radius}
                   onChange={(e) => setRadius(parseInt(e.target.value))}
-                  style={{ width: "100%", accentColor: "#dc2626" }}
+                  style={{ width: "100%", accentColor: ACCENT_PRO }}
                 />
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#94a3b8" }}>
                   <span>1 km</span>
-                  <span style={{ color: "#dc2626", fontWeight: 500 }}>Recommandé: 5 km</span>
+                  <span style={{ color: ACCENT_PRO, fontWeight: 500 }}>Recommandé: 5 km</span>
                   <span>20 km</span>
                 </div>
               </div>
@@ -2084,7 +2195,7 @@ export function RisquesPage() {
                 display: "flex", flexDirection: "column", alignItems: "center",
                 justifyContent: "center", padding: "80px 40px"
               }}>
-                <Loader2 size={56} color="#dc2626" style={{ animation: "spin 1s linear infinite", marginBottom: "20px" }} />
+                <Loader2 size={56} color={ACCENT_PRO} style={{ animation: "spin 1s linear infinite", marginBottom: "20px" }} />
                 <h3 style={{ fontSize: "20px", color: "#1e293b", marginBottom: "8px" }}>Analyse en cours...</h3>
                 <p style={{ fontSize: "14px", color: "#64748b" }}>
                   Interrogation de Géorisques, GASPAR, BRGM...
@@ -2095,8 +2206,8 @@ export function RisquesPage() {
             {!isLoading && analysisResult && (
               <RiskStudyResults
                 data={analysisResult}
-                bankScoring={bankScoring}                   // 🆕 Banque scoring
-                isBankScoringLoading={isBankScoringLoading} // 🆕 Banque scoring
+                bankScoring={bankScoring}
+                isBankScoringLoading={isBankScoringLoading}
               />
             )}
 
@@ -2108,10 +2219,10 @@ export function RisquesPage() {
               }}>
                 <div style={{
                   width: "80px", height: "80px", borderRadius: "50%",
-                  background: "linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)",
+                  background: "#ede9fe",
                   display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "24px"
                 }}>
-                  <ShieldAlert size={36} color="#dc2626" />
+                  <ShieldAlert size={36} color={ACCENT_PRO} />
                 </div>
                 <h3 style={{ fontSize: "22px", fontWeight: 700, color: "#1e293b", marginBottom: "12px" }}>
                   Nouvelle étude de risques
@@ -2149,8 +2260,8 @@ export function RisquesPage() {
             to { transform: rotate(360deg); }
           }
           input:focus, select:focus {
-            border-color: #dc2626 !important;
-            box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1) !important;
+            border-color: ${ACCENT_PRO} !important;
+            box-shadow: 0 0 0 3px ${ACCENT_PRO}20 !important;
           }
           button:hover:not(:disabled) {
             transform: translateY(-1px);

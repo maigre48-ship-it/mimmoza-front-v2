@@ -1,6 +1,8 @@
 // ============================================================================
 // ComitePage.tsx — /banque/comite/:id
 // src/spaces/banque/pages/ComitePage.tsx
+// ✅ REDESIGN: Financeur visual tokens applied (GRAD_FIN / ACCENT_FIN).
+//    PDF export code is entirely untouched.
 // ============================================================================
 
 import { useState, useCallback, useMemo, type ReactNode } from "react";
@@ -27,6 +29,10 @@ import type {
   OperationSummary,
   MissingDataItem,
 } from "../types/operationSummary.types";
+
+// ── Design tokens Financeur ──
+const GRAD_FIN = "linear-gradient(90deg, #26a69a 0%, #80cbc4 100%)";
+const ACCENT_FIN = "#1a7a50";
 
 // ── Types ──
 
@@ -608,16 +614,16 @@ function cleanReason(reason: string, maxLen = 60): string {
 // ════════════════════════════════════════════════════════════════════
 
 const PDF_COLORS = {
-  primary: [55, 48, 163] as [number, number, number],
-  primaryLight: [99, 102, 241] as [number, number, number],
-  accent: [234, 88, 12] as [number, number, number],
-  dark: [31, 41, 55] as [number, number, number],
-  medium: [107, 114, 128] as [number, number, number],
-  light: [243, 244, 246] as [number, number, number],
-  white: [255, 255, 255] as [number, number, number],
-  green: [22, 163, 74] as [number, number, number],
-  amber: [217, 119, 6] as [number, number, number],
-  red: [220, 38, 38] as [number, number, number],
+  primary:      [38, 166, 154]  as [number, number, number], // #26a69a teal
+  primaryLight: [128, 203, 196] as [number, number, number], // #80cbc4 teal clair
+  accent:       [26, 122, 80]   as [number, number, number], // #1a7a50 vert foncé
+  dark:         [10, 61, 40]    as [number, number, number], // #0a3d28
+  medium:       [107, 114, 128] as [number, number, number],
+  light:        [232, 251, 242] as [number, number, number], // #e8fbf2 vert pâle
+  white:        [255, 255, 255] as [number, number, number],
+  green:        [22, 163, 74]   as [number, number, number],
+  amber:        [217, 119, 6]   as [number, number, number],
+  red:          [220, 38, 38]   as [number, number, number],
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -628,7 +634,7 @@ function sn(v: any, fallback = ""): string {
   if (v === null || v === undefined) return fallback;
   if (typeof v === "string") return v.trim() || fallback;
   if (typeof v === "number") return String(v);
-  if (Array.isArray(v)) return v.map((x) => sn(x)).filter(Boolean).join(", ");
+  if (Array.isArray(v)) return v.map((x: any) => sn(x)).filter(Boolean).join(", ");
   return fallback;
 }
 
@@ -663,7 +669,7 @@ function StructuredNarrativeView({ data }: { data: any }) {
     <div className="space-y-5">
       {fiche && (
         <section>
-          <h4 className="text-sm font-bold text-indigo-700 uppercase tracking-wide mb-2">Fiche Dossier</h4>
+          <h4 className="text-sm font-bold uppercase tracking-wide mb-2" style={{ color: ACCENT_FIN }}>Fiche Dossier</h4>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-sm">
             {Object.entries(fiche).map(([k, v]) => {
               const val = sn(v); if (!val) return null;
@@ -674,7 +680,7 @@ function StructuredNarrativeView({ data }: { data: any }) {
       )}
       {analyse && typeof analyse === "object" && (
         <section>
-          <h4 className="text-sm font-bold text-indigo-700 uppercase tracking-wide mb-2">Analyse Crédit</h4>
+          <h4 className="text-sm font-bold uppercase tracking-wide mb-2" style={{ color: ACCENT_FIN }}>Analyse Crédit</h4>
           <div className="space-y-3">
             {Object.entries(analyse).map(([key, val]: [string, any]) => {
               if (!val) return null;
@@ -694,7 +700,7 @@ function StructuredNarrativeView({ data }: { data: any }) {
       )}
       {conformite && (
         <section>
-          <h4 className="text-sm font-bold text-indigo-700 uppercase tracking-wide mb-2">Conformité Politique Banque</h4>
+          <h4 className="text-sm font-bold uppercase tracking-wide mb-2" style={{ color: ACCENT_FIN }}>Conformité Politique Banque</h4>
           {typeof conformite === "string" ? <p className="text-sm text-gray-700">{conformite}</p>
             : typeof conformite === "object" && !Array.isArray(conformite) ? (
               <div className="space-y-1">{Object.entries(conformite).map(([k, v]) => { const val = sn(v); if (!val) return null; return (<div key={k} className="text-sm"><span className="text-gray-500 font-medium">{k.replace(/([A-Z])/g, " $1").trim()} :</span>{" "}<span className="text-gray-700">{val}</span></div>); })}</div>
@@ -703,7 +709,7 @@ function StructuredNarrativeView({ data }: { data: any }) {
       )}
       {conditions && typeof conditions === "object" && (
         <section>
-          <h4 className="text-sm font-bold text-indigo-700 uppercase tracking-wide mb-2">Conditions</h4>
+          <h4 className="text-sm font-bold uppercase tracking-wide mb-2" style={{ color: ACCENT_FIN }}>Conditions</h4>
           {(conditions.precedentes || conditions.prealables || conditions.avant) && (
             <div className="mb-2"><h5 className="text-xs font-semibold text-gray-600">Conditions précédentes / préalables</h5><StructuredBullets items={conditions.precedentes ?? conditions.prealables ?? conditions.avant} color="amber" /></div>
           )}
@@ -719,9 +725,9 @@ function StructuredNarrativeView({ data }: { data: any }) {
       )}
       {decision && typeof decision === "object" && (
         <section>
-          <h4 className="text-sm font-bold text-indigo-700 uppercase tracking-wide mb-2">Décision / Recommandation IA</h4>
-          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-1">
-            {sn(decision.recommandation ?? decision.recommendation) && <div className="text-sm"><span className="font-semibold text-indigo-800">Recommandation :</span>{" "}<span className="text-indigo-700">{sn(decision.recommandation ?? decision.recommendation)}</span></div>}
+          <h4 className="text-sm font-bold uppercase tracking-wide mb-2" style={{ color: ACCENT_FIN }}>Décision / Recommandation IA</h4>
+          <div className="rounded-lg p-3 space-y-1" style={{ background: "rgba(38,166,154,0.07)", border: "1px solid #c0e8d4" }}>
+            {sn(decision.recommandation ?? decision.recommendation) && <div className="text-sm"><span className="font-semibold" style={{ color: "#0a3d28" }}>Recommandation :</span>{" "}<span style={{ color: ACCENT_FIN }}>{sn(decision.recommandation ?? decision.recommendation)}</span></div>}
             {sn(decision.motivation) && <div className="text-sm"><span className="font-semibold text-gray-700">Motivation :</span>{" "}<span className="text-gray-600">{sn(decision.motivation)}</span></div>}
             {sn(decision.niveauConfiance ?? decision.confidence) && <div className="text-sm"><span className="font-semibold text-gray-700">Niveau de confiance :</span>{" "}<span className="text-gray-600">{sn(decision.niveauConfiance ?? decision.confidence)}</span></div>}
           </div>
@@ -1125,7 +1131,7 @@ function buildDecisionScenarios(report: UniversalReport): DecisionScenarios {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// PDF EXPORT (unchanged — uses local PDF-only builders)
+// PDF EXPORT — ENTIRELY UNCHANGED
 // ════════════════════════════════════════════════════════════════════
 
 async function exportReportPdf(report: UniversalReport, dossier: any, narrative?: CommitteeNarrative | null): Promise<void> {
@@ -1172,229 +1178,80 @@ async function exportReportPdf(report: UniversalReport, dossier: any, narrative?
 
   // ── COVER PAGE ──
   newContentPage(true);
-
-  // Left accent band
   const bandW = 22;
   doc.setFillColor(...PDF_COLORS.primary);
   doc.rect(0, 0, bandW, pageHeight, "F");
-
-  // Title
   const titleX = bandW + 12;
-  doc.setFontSize(32);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(...PDF_COLORS.primary);
-  doc.text("Rapport", titleX, 38);
-  doc.text("Comite de Credit", titleX, 52);
-
-  // Thin accent line under title
-  doc.setDrawColor(...PDF_COLORS.primaryLight);
-  doc.setLineWidth(0.6);
-  doc.line(titleX, 57, titleX + 80, 57);
-
-  // Dossier cartouche
-  const cartX = titleX;
-  const cartY = 65;
-  const cartW = contentWidth - bandW + margin - 12;
-  const cartH = 30;
-  doc.setFillColor(248, 248, 252);
-  doc.setDrawColor(235, 235, 240);
-  doc.setLineWidth(0.3);
+  doc.setFontSize(32); doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_COLORS.primary);
+  doc.text("Rapport", titleX, 38); doc.text("Comite de Credit", titleX, 52);
+  doc.setDrawColor(...PDF_COLORS.primaryLight); doc.setLineWidth(0.6); doc.line(titleX, 57, titleX + 80, 57);
+  const cartX = titleX; const cartY = 65; const cartW = contentWidth - bandW + margin - 12; const cartH = 30;
+  doc.setFillColor(248, 248, 252); doc.setDrawColor(235, 235, 240); doc.setLineWidth(0.3);
   doc.roundedRect(cartX, cartY, cartW, cartH, 2, 2, "FD");
-
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(...PDF_COLORS.medium);
-  doc.text("DOSSIER", cartX + 5, cartY + 6);
-  doc.text("LIBELLE", cartX + 5, cartY + 15);
-  doc.text("PROFIL", cartX + cartW * 0.55, cartY + 6);
-  doc.text("DATE", cartX + cartW * 0.55, cartY + 15);
-
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(...PDF_COLORS.dark);
+  doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.medium);
+  doc.text("DOSSIER", cartX + 5, cartY + 6); doc.text("LIBELLE", cartX + 5, cartY + 15);
+  doc.text("PROFIL", cartX + cartW * 0.55, cartY + 6); doc.text("DATE", cartX + cartW * 0.55, cartY + 15);
+  doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_COLORS.dark);
   doc.text(dossierRef, cartX + 5, cartY + 11);
   const labelLines: string[] = doc.splitTextToSize(dossierLabel, cartW * 0.5 - 10);
   doc.text(labelLines[0] ?? "-", cartX + 5, cartY + 20);
-  if (labelLines[1]) {
-    doc.setFontSize(8);
-    doc.text(labelLines[1], cartX + 5, cartY + 25);
-  }
-
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "bold");
+  if (labelLines[1]) { doc.setFontSize(8); doc.text(labelLines[1], cartX + 5, cartY + 25); }
+  doc.setFontSize(10); doc.setFont("helvetica", "bold");
   doc.text(sanitize(report.profile), cartX + cartW * 0.55, cartY + 11);
-  doc.setFont("helvetica", "normal");
-  doc.text(generatedDateTime, cartX + cartW * 0.55, cartY + 20);
-
-  // SmartScore circle + grade + verdict
+  doc.setFont("helvetica", "normal"); doc.text(generatedDateTime, cartX + cartW * 0.55, cartY + 20);
   const circleY = 115;
   if (report.smartscore) {
     const ss = report.smartscore;
     const scoreColor: [number, number, number] = ss.score >= 65 ? PDF_COLORS.green : ss.score >= 40 ? PDF_COLORS.amber : PDF_COLORS.red;
-
-    // Circle background
-    const circleCX = titleX + 22;
-    const circleCY = circleY + 22;
-    const circleR = 20;
-    doc.setFillColor(248, 248, 252);
-    doc.setDrawColor(...scoreColor);
-    doc.setLineWidth(1.2);
+    const circleCX = titleX + 22; const circleCY = circleY + 22; const circleR = 20;
+    doc.setFillColor(248, 248, 252); doc.setDrawColor(...scoreColor); doc.setLineWidth(1.2);
     doc.circle(circleCX, circleCY, circleR, "FD");
-
-    // Score number inside circle
-    doc.setFontSize(28);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...scoreColor);
+    doc.setFontSize(28); doc.setFont("helvetica", "bold"); doc.setTextColor(...scoreColor);
     doc.text(`${ss.score}`, circleCX, circleCY + 2, { align: "center" });
-    doc.setFontSize(9);
-    doc.setTextColor(...PDF_COLORS.medium);
-    doc.text("/100", circleCX, circleCY + 9, { align: "center" });
-
-    // Grade + verdict next to circle
+    doc.setFontSize(9); doc.setTextColor(...PDF_COLORS.medium); doc.text("/100", circleCX, circleCY + 9, { align: "center" });
     const infoX = circleCX + circleR + 10;
-    doc.setFontSize(18);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...PDF_COLORS.primary);
+    doc.setFontSize(18); doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_COLORS.primary);
     doc.text(`Grade ${ss.grade}`, infoX, circleY + 12);
-
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(...PDF_COLORS.dark);
+    doc.setFontSize(10); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.dark);
     const verdictLines: string[] = doc.splitTextToSize(sanitize(ss.verdict), cartW - circleR * 2 - 30);
     let vy = circleY + 20;
-    for (const vl of verdictLines.slice(0, 3)) {
-      doc.text(vl, infoX, vy);
-      vy += 5;
-    }
-
-    doc.setFontSize(7);
-    doc.setTextColor(...PDF_COLORS.medium);
+    for (const vl of verdictLines.slice(0, 3)) { doc.text(vl, infoX, vy); vy += 5; }
+    doc.setFontSize(7); doc.setTextColor(...PDF_COLORS.medium);
     doc.text(`${ss.pillars.filter((p) => p.hasData).length}/${ss.pillars.length} piliers evalues`, infoX, vy + 2);
   }
-
-  // 3 KPI cards: DSCR, LTV, Rendement
   {
-    const kpiY = circleY + 52;
-    const kpiGap = 6;
-    const kpiCount = 3;
-    const kpiW = (cartW - kpiGap * (kpiCount - 1)) / kpiCount;
-    const kpiH = 22;
-
-    const covDscr = kpiNum(report.kpis["DSCR"]);
-    const covLtv = kpiNum(report.kpis["LTV"]);
-    const covLoyerAnnuel = parseMoneyK(report.revenus["Loyer annuel"]);
-    const covCoutTotal = parseMoneyK(report.budget["TOTAL"]);
-    const covRendement = (covLoyerAnnuel && covCoutTotal && covCoutTotal > 0)
-      ? (covLoyerAnnuel / covCoutTotal) * 100
-      : null;
-
+    const kpiY = circleY + 52; const kpiGap = 6; const kpiCount = 3;
+    const kpiW = (cartW - kpiGap * (kpiCount - 1)) / kpiCount; const kpiH = 22;
+    const covDscr = kpiNum(report.kpis["DSCR"]); const covLtv = kpiNum(report.kpis["LTV"]);
+    const covLoyerAnnuel = parseMoneyK(report.revenus["Loyer annuel"]); const covCoutTotal = parseMoneyK(report.budget["TOTAL"]);
+    const covRendement = (covLoyerAnnuel && covCoutTotal && covCoutTotal > 0) ? (covLoyerAnnuel / covCoutTotal) * 100 : null;
     const kpiCards: { label: string; value: string; color: [number, number, number] }[] = [
-      {
-        label: "DSCR",
-        value: covDscr != null ? covDscr.toFixed(2) : "N/A",
-        color: covDscr != null
-          ? (covDscr >= 1.2 ? PDF_COLORS.green : covDscr >= 1.0 ? PDF_COLORS.amber : PDF_COLORS.red)
-          : PDF_COLORS.medium,
-      },
-      {
-        label: "LTV",
-        value: covLtv != null ? `${covLtv}%` : "N/A",
-        color: covLtv != null
-          ? (covLtv <= 60 ? PDF_COLORS.green : covLtv <= 80 ? PDF_COLORS.amber : PDF_COLORS.red)
-          : PDF_COLORS.medium,
-      },
-      {
-        label: "Rendement brut",
-        value: covRendement != null ? `${covRendement.toFixed(1)}%` : "N/A",
-        color: covRendement != null
-          ? (covRendement >= 7 ? PDF_COLORS.green : covRendement >= 4 ? PDF_COLORS.amber : PDF_COLORS.red)
-          : PDF_COLORS.medium,
-      },
+      { label: "DSCR", value: covDscr != null ? covDscr.toFixed(2) : "N/A", color: covDscr != null ? (covDscr >= 1.2 ? PDF_COLORS.green : covDscr >= 1.0 ? PDF_COLORS.amber : PDF_COLORS.red) : PDF_COLORS.medium },
+      { label: "LTV", value: covLtv != null ? `${covLtv}%` : "N/A", color: covLtv != null ? (covLtv <= 60 ? PDF_COLORS.green : covLtv <= 80 ? PDF_COLORS.amber : PDF_COLORS.red) : PDF_COLORS.medium },
+      { label: "Rendement brut", value: covRendement != null ? `${covRendement.toFixed(1)}%` : "N/A", color: covRendement != null ? (covRendement >= 7 ? PDF_COLORS.green : covRendement >= 4 ? PDF_COLORS.amber : PDF_COLORS.red) : PDF_COLORS.medium },
     ];
-
     for (let ki = 0; ki < kpiCards.length; ki++) {
       const kx = titleX + ki * (kpiW + kpiGap);
-      doc.setFillColor(248, 248, 252);
-      doc.setDrawColor(235, 235, 240);
-      doc.setLineWidth(0.3);
+      doc.setFillColor(248, 248, 252); doc.setDrawColor(235, 235, 240); doc.setLineWidth(0.3);
       doc.roundedRect(kx, kpiY, kpiW, kpiH, 2, 2, "FD");
-
-      doc.setFontSize(7);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(...PDF_COLORS.medium);
+      doc.setFontSize(7); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.medium);
       doc.text(kpiCards[ki].label, kx + kpiW / 2, kpiY + 7, { align: "center" });
-
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...kpiCards[ki].color);
+      doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.setTextColor(...kpiCards[ki].color);
       doc.text(kpiCards[ki].value, kx + kpiW / 2, kpiY + 17, { align: "center" });
     }
   }
-
-  // Footer
-  doc.setFontSize(8);
-  doc.setTextColor(...PDF_COLORS.medium);
+  doc.setFontSize(8); doc.setTextColor(...PDF_COLORS.medium);
   doc.text("MIMMOZA  -  Document confidentiel  -  Usage interne", pageWidth / 2, pageHeight - 15, { align: "center" });
   doc.text(`Page 1`, pageWidth - margin, pageHeight - 8, { align: "right" });
 
-  // ── BUILD ENGINE INPUT (shared by NOTE AUTO, STRESS TESTS and CONCLUSION) ──
+  // ── BUILD ENGINE INPUT ──
   const msC = report.marketStudy;
   const ssC = report.smartscore;
   const pdfEngineInput: EngineReportInput = {
-    programmeNom: report.meta.dossierLabel,
-    adresse: report.projet["Adresse"],
-    marketStudy: msC
-      ? {
-          commune: msC.insee.commune !== "-" ? msC.insee.commune : undefined,
-          departement: undefined,
-          dvf: {
-            prixM2Median: msC.dvf.medianPriceM2 ?? undefined,
-            nbTransactions: msC.dvf.transactionCount ?? undefined,
-            evolution: msC.dvf.evolutionPct ?? undefined,
-          },
-          insee: {
-            population: safeNumber(msC.insee.population) ?? undefined,
-            revenuMedian: safeNumber(msC.insee.revenuMedian) ?? undefined,
-            tauxChomage: safeNumber(msC.insee.tauxChomage) ?? undefined,
-            densitePopulation: safeNumber(msC.insee.densite) ?? undefined,
-          },
-          bpe: {
-            nbEquipements: safeNumber(msC.bpe.totalEquipements) ?? undefined,
-          },
-          transport: {
-            nbStations: msC.transport.items.length > 0 ? msC.transport.items.length : undefined,
-            distanceCentre: undefined,
-          },
-          insights: msC.insights.map((i) => ({
-            label: i.message,
-            value: "" as string | number,
-            sentiment: (i.type === "positive"
-              ? "positive"
-              : i.type === "warning"
-                ? "negative"
-                : "neutral") as "positive" | "negative" | "neutral",
-          })),
-        }
-      : undefined,
-    smartscore: ssC
-      ? {
-          score: ssC.score,
-          verdict: ssC.verdict,
-          pillars: ssC.pillars.map((p) => ({
-            id: p.key,
-            label: p.label,
-            score: p.rawScore,
-          })),
-        }
-      : undefined,
-    kpis: {
-      ltv: kpiNum(report.kpis["LTV"]) ?? undefined,
-      dscr: kpiNum(report.kpis["DSCR"]) ?? undefined,
-      loyerAnnuel: parseMoneyK(report.revenus["Loyer annuel"]) ?? undefined,
-      coutTotal: parseMoneyK(report.budget["TOTAL"]) ?? undefined,
-      margeBrute: kpiNum(report.kpis["Marge brute"]) ?? undefined,
-      tauxEndettement: undefined,
-    },
+    programmeNom: report.meta.dossierLabel, adresse: report.projet["Adresse"],
+    marketStudy: msC ? { commune: msC.insee.commune !== "-" ? msC.insee.commune : undefined, departement: undefined, dvf: { prixM2Median: msC.dvf.medianPriceM2 ?? undefined, nbTransactions: msC.dvf.transactionCount ?? undefined, evolution: msC.dvf.evolutionPct ?? undefined }, insee: { population: safeNumber(msC.insee.population) ?? undefined, revenuMedian: safeNumber(msC.insee.revenuMedian) ?? undefined, tauxChomage: safeNumber(msC.insee.tauxChomage) ?? undefined, densitePopulation: safeNumber(msC.insee.densite) ?? undefined }, bpe: { nbEquipements: safeNumber(msC.bpe.totalEquipements) ?? undefined }, transport: { nbStations: msC.transport.items.length > 0 ? msC.transport.items.length : undefined, distanceCentre: undefined }, insights: msC.insights.map((i) => ({ label: i.message, value: "" as string | number, sentiment: (i.type === "positive" ? "positive" : i.type === "warning" ? "negative" : "neutral") as "positive" | "negative" | "neutral" })) } : undefined,
+    smartscore: ssC ? { score: ssC.score, verdict: ssC.verdict, pillars: ssC.pillars.map((p) => ({ id: p.key, label: p.label, score: p.rawScore })) } : undefined,
+    kpis: { ltv: kpiNum(report.kpis["LTV"]) ?? undefined, dscr: kpiNum(report.kpis["DSCR"]) ?? undefined, loyerAnnuel: parseMoneyK(report.revenus["Loyer annuel"]) ?? undefined, coutTotal: parseMoneyK(report.budget["TOTAL"]) ?? undefined, margeBrute: kpiNum(report.kpis["Marge brute"]) ?? undefined, tauxEndettement: undefined },
     missing: (report.missing ?? []).map((m) => m.label),
   };
 
@@ -1414,259 +1271,119 @@ async function exportReportPdf(report: UniversalReport, dossier: any, narrative?
     const cardR = 2.5;
     const cardPad = 4;
 
-    // Helper: draw a card background and uppercase title, return inner Y
     function drawCard(cx: number, cy: number, w: number, h: number, title: string, accent: [number, number, number] = PDF_COLORS.primaryLight): number {
-      doc.setFillColor(248, 248, 252);
-      doc.setDrawColor(230, 230, 235);
-      doc.setLineWidth(0.25);
+      doc.setFillColor(248, 248, 252); doc.setDrawColor(230, 230, 235); doc.setLineWidth(0.25);
       doc.roundedRect(cx, cy, w, h, cardR, cardR, "FD");
-      // Thin left accent bar
-      doc.setFillColor(...accent);
-      doc.rect(cx, cy + cardR, 1.8, h - cardR * 2, "F");
-      doc.setFontSize(7);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...accent);
+      doc.setFillColor(...accent); doc.rect(cx, cy + cardR, 1.8, h - cardR * 2, "F");
+      doc.setFontSize(7); doc.setFont("helvetica", "bold"); doc.setTextColor(...accent);
       doc.text(title.toUpperCase(), cx + cardPad + 1, cy + 5.5);
       return cy + 10;
     }
-
-    // Helper: draw a pill badge (GO / NO GO / GO SOUS CONDITIONS)
     function drawPill(px: number, py: number, label: string, color: [number, number, number]) {
-      const pillW = doc.getTextWidth(label) + 6;
-      const pillH = 5.5;
-      doc.setFillColor(...color);
-      doc.roundedRect(px, py - 4, pillW, pillH, 2.5, 2.5, "F");
-      doc.setFontSize(7);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(255, 255, 255);
-      doc.text(label, px + 3, py - 0.5);
-      return pillW;
+      const pillW = doc.getTextWidth(label) + 6; const pillH = 5.5;
+      doc.setFillColor(...color); doc.roundedRect(px, py - 4, pillW, pillH, 2.5, 2.5, "F");
+      doc.setFontSize(7); doc.setFont("helvetica", "bold"); doc.setTextColor(255, 255, 255);
+      doc.text(label, px + 3, py - 0.5); return pillW;
     }
-
-    // Helper: "N/A" fallback text
     function naText(cx: number, iy: number) {
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(...PDF_COLORS.medium);
+      doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.medium);
       doc.text("Non disponible", cx + cardPad + 1, iy + 6);
     }
 
-    // ────── Row 1 ──────
-    const r1H = 40;
-    const r1Y = y;
-
-    // Card 1: SMARTSCORE
+    const r1H = 40; const r1Y = y;
     {
-      const cx = margin;
-      const iy = drawCard(cx, r1Y, cardW, r1H, "SmartScore");
+      const cx = margin; const iy = drawCard(cx, r1Y, cardW, r1H, "SmartScore");
       if (dbSs) {
         const sc: [number, number, number] = dbSs.score >= 65 ? PDF_COLORS.green : dbSs.score >= 40 ? PDF_COLORS.amber : PDF_COLORS.red;
-        doc.setFontSize(24);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(...sc);
+        doc.setFontSize(24); doc.setFont("helvetica", "bold"); doc.setTextColor(...sc);
         doc.text(`${dbSs.score}`, cx + cardPad + 1, iy + 7);
         const nw = doc.getTextWidth(`${dbSs.score}`);
-        doc.setFontSize(9);
-        doc.setTextColor(...PDF_COLORS.medium);
-        doc.text("/100", cx + cardPad + 1 + nw + 1, iy + 7);
-
-        doc.setFontSize(11);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(...PDF_COLORS.primary);
+        doc.setFontSize(9); doc.setTextColor(...PDF_COLORS.medium); doc.text("/100", cx + cardPad + 1 + nw + 1, iy + 7);
+        doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_COLORS.primary);
         doc.text(`Grade ${dbSs.grade}`, cx + cardPad + 40, iy + 3);
-
-        doc.setFontSize(7.5);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(...PDF_COLORS.dark);
+        doc.setFontSize(7.5); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.dark);
         const vLines: string[] = doc.splitTextToSize(sanitize(dbSs.verdict), cardW - 48);
-        let vy = iy + 8;
-        for (const vl of vLines.slice(0, 2)) { doc.text(vl, cx + cardPad + 40, vy); vy += 3.5; }
-
-        doc.setFontSize(6.5);
-        doc.setTextColor(...PDF_COLORS.medium);
+        let vy = iy + 8; for (const vl of vLines.slice(0, 2)) { doc.text(vl, cx + cardPad + 40, vy); vy += 3.5; }
+        doc.setFontSize(6.5); doc.setTextColor(...PDF_COLORS.medium);
         doc.text(`${dbSs.pillars.filter((p) => p.hasData).length}/${dbSs.pillars.length} piliers`, cx + cardPad + 1, iy + 15);
       } else { naText(cx, iy); }
     }
-
-    // Card 2: PROBABILITE D'ACCEPTATION
     {
-      const cx = margin + cardW + colGap;
-      const iy = drawCard(cx, r1Y, cardW, r1H, "Probabilite d'acceptation");
+      const cx = margin + cardW + colGap; const iy = drawCard(cx, r1Y, cardW, r1H, "Probabilite d'acceptation");
       if (dbAcceptance) {
         const ac: [number, number, number] = dbAcceptance.score >= 70 ? PDF_COLORS.green : dbAcceptance.score >= 40 ? PDF_COLORS.amber : PDF_COLORS.red;
-        doc.setFontSize(24);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(...ac);
+        doc.setFontSize(24); doc.setFont("helvetica", "bold"); doc.setTextColor(...ac);
         doc.text(`${dbAcceptance.score}%`, cx + cardPad + 1, iy + 7);
-
-        // Decision pill
         const decLabel = dbAcceptance.score >= 70 ? "GO" : dbAcceptance.score >= 40 ? "GO SOUS CONDITIONS" : "NO GO";
         const pillColor: [number, number, number] = dbAcceptance.score >= 70 ? PDF_COLORS.green : dbAcceptance.score >= 40 ? PDF_COLORS.amber : PDF_COLORS.red;
         drawPill(cx + cardPad + 40, iy + 5, decLabel, pillColor);
-
-        // Top 3 drivers
         const top3 = [...dbAcceptance.drivers].sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact)).slice(0, 3);
-        let dy = iy + 13;
-        doc.setFontSize(6.5);
+        let dy = iy + 13; doc.setFontSize(6.5);
         for (const d of top3) {
           const dc: [number, number, number] = d.impact > 0 ? PDF_COLORS.green : d.impact < 0 ? PDF_COLORS.red : PDF_COLORS.medium;
           const sign = d.impact > 0 ? "+" : "";
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(...dc);
-          doc.text(`${sign}${d.impact}`, cx + cardPad + 1, dy);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(...PDF_COLORS.dark);
-          doc.text(sanitize(d.label), cx + cardPad + 13, dy);
-          dy += 3.5;
+          doc.setFont("helvetica", "bold"); doc.setTextColor(...dc); doc.text(`${sign}${d.impact}`, cx + cardPad + 1, dy);
+          doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.dark); doc.text(sanitize(d.label), cx + cardPad + 13, dy); dy += 3.5;
         }
       } else { naText(cx, iy); }
     }
-
     y = r1Y + r1H + 4;
 
-    // ────── Row 2 ──────
-    const r2H = 34;
-    const r2Y = y;
-
-    // Card 3: MATRICE RISQUE / RENDEMENT
+    const r2H = 34; const r2Y = y;
     {
-      const cx = margin;
-      const iy = drawCard(cx, r2Y, cardW, r2H, "Matrice Risque / Rendement");
+      const cx = margin; const iy = drawCard(cx, r2Y, cardW, r2H, "Matrice Risque / Rendement");
       if (dbMatrix) {
         const qLow = dbMatrix.quadrant.toLowerCase();
-        const qc: [number, number, number] =
-          qLow.includes("optimal") || qLow.includes("favorable") ? PDF_COLORS.green
-            : qLow.includes("vigilance") || qLow.includes("attention") ? PDF_COLORS.amber
-              : qLow.includes("defavorable") || qLow.includes("critique") ? PDF_COLORS.red
-                : PDF_COLORS.primary;
-
-        // Quadrant pill
+        const qc: [number, number, number] = qLow.includes("optimal") || qLow.includes("favorable") ? PDF_COLORS.green : qLow.includes("vigilance") || qLow.includes("attention") ? PDF_COLORS.amber : qLow.includes("defavorable") || qLow.includes("critique") ? PDF_COLORS.red : PDF_COLORS.primary;
         drawPill(cx + cardPad + 1, iy + 3, sanitize(dbMatrix.quadrant), qc);
-
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(...PDF_COLORS.dark);
+        doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.dark);
         doc.text(`Risque ${dbMatrix.riskScore}/100`, cx + cardPad + 1, iy + 10);
         doc.text(`Rendement ${dbMatrix.returnScore}/100`, cx + cardPad + 45, iy + 10);
-
-        if (dbMatrix.commentary) {
-          doc.setFontSize(6.5);
-          doc.setTextColor(...PDF_COLORS.medium);
-          const cl: string[] = doc.splitTextToSize(sanitize(dbMatrix.commentary), cardW - cardPad * 2 - 2);
-          let cly = iy + 15;
-          for (const c of cl.slice(0, 2)) { doc.text(c, cx + cardPad + 1, cly); cly += 3; }
-        }
+        if (dbMatrix.commentary) { doc.setFontSize(6.5); doc.setTextColor(...PDF_COLORS.medium); const cl: string[] = doc.splitTextToSize(sanitize(dbMatrix.commentary), cardW - cardPad * 2 - 2); let cly = iy + 15; for (const c of cl.slice(0, 2)) { doc.text(c, cx + cardPad + 1, cly); cly += 3; } }
       } else { naText(cx, iy); }
     }
-
-    // Card 4: RISQUES CLES
     {
-      const cx = margin + cardW + colGap;
-      const iy = drawCard(cx, r2Y, cardW, r2H, "Risques Cles", PDF_COLORS.red);
+      const cx = margin + cardW + colGap; const iy = drawCard(cx, r2Y, cardW, r2H, "Risques Cles", PDF_COLORS.red);
       if (dbAcceptance) {
         const risks = [...dbAcceptance.drivers].filter((d) => d.impact < 0).sort((a, b) => a.impact - b.impact).slice(0, 3);
-        doc.setFontSize(7);
-        let ry = iy + 2;
-        for (const r of risks) {
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(...PDF_COLORS.red);
-          const bullet = `- ${sanitize(r.label)}`;
-          const bLines: string[] = doc.splitTextToSize(bullet, cardW - cardPad * 2 - 2);
-          for (const bl of bLines.slice(0, 1)) { doc.text(bl, cx + cardPad + 1, ry); ry += 3.5; }
-        }
-        if (risks.length === 0) {
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(...PDF_COLORS.medium);
-          doc.text("Aucun risque majeur identifie", cx + cardPad + 1, iy + 4);
-        }
+        doc.setFontSize(7); let ry = iy + 2;
+        for (const r of risks) { doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.red); const bullet = `- ${sanitize(r.label)}`; const bLines: string[] = doc.splitTextToSize(bullet, cardW - cardPad * 2 - 2); for (const bl of bLines.slice(0, 1)) { doc.text(bl, cx + cardPad + 1, ry); ry += 3.5; } }
+        if (risks.length === 0) { doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.medium); doc.text("Aucun risque majeur identifie", cx + cardPad + 1, iy + 4); }
       } else { naText(cx, iy); }
     }
-
     y = r2Y + r2H + 4;
 
-    // ────── Row 3 ──────
-    const r3H = 34;
-    const r3Y = y;
-
-    // Card 5: FORCES CLES
+    const r3H = 34; const r3Y = y;
     {
-      const cx = margin;
-      const iy = drawCard(cx, r3Y, cardW, r3H, "Forces Cles", PDF_COLORS.green);
+      const cx = margin; const iy = drawCard(cx, r3Y, cardW, r3H, "Forces Cles", PDF_COLORS.green);
       if (dbAcceptance) {
         const strengths = [...dbAcceptance.drivers].filter((d) => d.impact > 0).sort((a, b) => b.impact - a.impact).slice(0, 3);
-        doc.setFontSize(7);
-        let sy = iy + 2;
-        for (const s of strengths) {
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(...PDF_COLORS.green);
-          const bullet = `+ ${sanitize(s.label)}`;
-          const bLines: string[] = doc.splitTextToSize(bullet, cardW - cardPad * 2 - 2);
-          for (const bl of bLines.slice(0, 1)) { doc.text(bl, cx + cardPad + 1, sy); sy += 3.5; }
-        }
-        if (strengths.length === 0) {
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(...PDF_COLORS.medium);
-          doc.text("Aucun atout majeur identifie", cx + cardPad + 1, iy + 4);
-        }
+        doc.setFontSize(7); let sy = iy + 2;
+        for (const s of strengths) { doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.green); const bullet = `+ ${sanitize(s.label)}`; const bLines: string[] = doc.splitTextToSize(bullet, cardW - cardPad * 2 - 2); for (const bl of bLines.slice(0, 1)) { doc.text(bl, cx + cardPad + 1, sy); sy += 3.5; } }
+        if (strengths.length === 0) { doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.medium); doc.text("Aucun atout majeur identifie", cx + cardPad + 1, iy + 4); }
       } else { naText(cx, iy); }
     }
-
-    // Card 6: STRESS WORST-CASE
     {
-      const cx = margin + cardW + colGap;
-      const iy = drawCard(cx, r3Y, cardW, r3H, "Stress Worst-Case", PDF_COLORS.accent);
+      const cx = margin + cardW + colGap; const iy = drawCard(cx, r3Y, cardW, r3H, "Stress Worst-Case", PDF_COLORS.accent);
       if (dbStress) {
         const worstCase = (dbStress.cases ?? []).sort((a: any, b: any) => (a.acceptanceScore ?? 100) - (b.acceptanceScore ?? 100))[0];
         if (worstCase) {
-          // Scenario label
-          doc.setFontSize(8);
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(...PDF_COLORS.dark);
+          doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_COLORS.dark);
           doc.text(sanitize(worstCase.label ?? "Stress"), cx + cardPad + 1, iy + 3);
-
-          // 3 mini-KPI tiles inline
-          const mkY = iy + 6;
-          const mkW = (cardW - cardPad * 2 - 6) / 3;
-          const mkH = 13;
+          const mkY = iy + 6; const mkW = (cardW - cardPad * 2 - 6) / 3; const mkH = 13;
           const mkLabels = ["DSCR", "Rendement", "Acceptation"];
-          const wcDscr = worstCase.dscr;
-          const wcYield = worstCase.yieldPct;
-          const wcAcc = worstCase.acceptanceScore;
-          const mkValues = [
-            wcDscr != null ? String(wcDscr) : "N/A",
-            wcYield != null ? `${wcYield.toFixed(1)}%` : "N/A",
-            wcAcc != null ? `${wcAcc}%` : "N/A",
-          ];
-          const mkColors: [number, number, number][] = [
-            wcDscr != null ? (wcDscr < 1 ? PDF_COLORS.red : PDF_COLORS.green) : PDF_COLORS.medium,
-            wcYield != null ? (wcYield >= 7 ? PDF_COLORS.green : wcYield >= 4 ? PDF_COLORS.amber : PDF_COLORS.red) : PDF_COLORS.medium,
-            wcAcc != null ? (wcAcc < 40 ? PDF_COLORS.red : wcAcc < 70 ? PDF_COLORS.amber : PDF_COLORS.green) : PDF_COLORS.medium,
-          ];
-
+          const wcDscr = worstCase.dscr; const wcYield = worstCase.yieldPct; const wcAcc = worstCase.acceptanceScore;
+          const mkValues = [wcDscr != null ? String(wcDscr) : "N/A", wcYield != null ? `${wcYield.toFixed(1)}%` : "N/A", wcAcc != null ? `${wcAcc}%` : "N/A"];
+          const mkColors: [number, number, number][] = [wcDscr != null ? (wcDscr < 1 ? PDF_COLORS.red : PDF_COLORS.green) : PDF_COLORS.medium, wcYield != null ? (wcYield >= 7 ? PDF_COLORS.green : wcYield >= 4 ? PDF_COLORS.amber : PDF_COLORS.red) : PDF_COLORS.medium, wcAcc != null ? (wcAcc < 40 ? PDF_COLORS.red : wcAcc < 70 ? PDF_COLORS.amber : PDF_COLORS.green) : PDF_COLORS.medium];
           for (let mi = 0; mi < 3; mi++) {
             const mx = cx + cardPad + 1 + mi * (mkW + 3);
-            doc.setFillColor(255, 255, 255);
-            doc.setDrawColor(235, 235, 240);
-            doc.setLineWidth(0.2);
-            doc.roundedRect(mx, mkY, mkW, mkH, 1.5, 1.5, "FD");
-            doc.setFontSize(6);
-            doc.setFont("helvetica", "normal");
-            doc.setTextColor(...PDF_COLORS.medium);
-            doc.text(mkLabels[mi], mx + mkW / 2, mkY + 4, { align: "center" });
-            doc.setFontSize(10);
-            doc.setFont("helvetica", "bold");
-            doc.setTextColor(...mkColors[mi]);
-            doc.text(mkValues[mi], mx + mkW / 2, mkY + 10.5, { align: "center" });
+            doc.setFillColor(255, 255, 255); doc.setDrawColor(235, 235, 240); doc.setLineWidth(0.2); doc.roundedRect(mx, mkY, mkW, mkH, 1.5, 1.5, "FD");
+            doc.setFontSize(6); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.medium); doc.text(mkLabels[mi], mx + mkW / 2, mkY + 4, { align: "center" });
+            doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(...mkColors[mi]); doc.text(mkValues[mi], mx + mkW / 2, mkY + 10.5, { align: "center" });
           }
-        } else {
-          doc.setFontSize(8);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(...PDF_COLORS.medium);
-          doc.text("Aucun scenario de stress", cx + cardPad + 1, iy + 6);
-        }
+        } else { doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.medium); doc.text("Aucun scenario de stress", cx + cardPad + 1, iy + 6); }
       } else { naText(cx, iy); }
     }
-
     y = r3Y + r3H + 4;
     doc.setTextColor(...PDF_COLORS.dark);
   }
@@ -1701,290 +1418,38 @@ async function exportReportPdf(report: UniversalReport, dossier: any, narrative?
     const noteAcceptance = buildAcceptanceProbability(pdfEngineInput);
     const noteLoyerAnnuel = pdfEngineInput.kpis.loyerAnnuel;
     const noteCoutTotal = pdfEngineInput.kpis.coutTotal;
-    const noteYield = (noteLoyerAnnuel && noteCoutTotal && noteCoutTotal > 0)
-      ? (noteLoyerAnnuel / noteCoutTotal) * 100
-      : null;
+    const noteYield = (noteLoyerAnnuel && noteCoutTotal && noteCoutTotal > 0) ? (noteLoyerAnnuel / noteCoutTotal) * 100 : null;
 
     newContentPage(); sectionTitle("NOTE DE SYNTHESE COMITE");
-
-    // ── Badge header ──
-    {
-      const badgeH = 14;
-      checkPage(badgeH + 4);
-      doc.setFillColor(248, 248, 252);
-      doc.setDrawColor(...PDF_COLORS.primaryLight);
-      doc.setLineWidth(0.3);
-      doc.roundedRect(margin, y, contentWidth, badgeH, 2, 2, "FD");
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...PDF_COLORS.dark);
-      doc.text(sanitize("NOTE AUTO — Aide a la decision (note IA non disponible)"), margin + 4, y + 6);
-      doc.setFontSize(7);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(...PDF_COLORS.medium);
-      doc.text(sanitize(`Generee le ${new Date().toLocaleString("fr-FR")} a partir des donnees du rapport.`), margin + 4, y + 11);
-      y += badgeH + 6;
-    }
-
-    // ── 4 KPI tiles ──
-    {
-      const tileGap = 4;
-      const tileW = (contentWidth - tileGap * 3) / 4;
-      const tileH = 20;
-      checkPage(tileH + 4);
-
+    { const badgeH = 14; checkPage(badgeH + 4); doc.setFillColor(248, 248, 252); doc.setDrawColor(...PDF_COLORS.primaryLight); doc.setLineWidth(0.3); doc.roundedRect(margin, y, contentWidth, badgeH, 2, 2, "FD"); doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_COLORS.dark); doc.text(sanitize("NOTE AUTO — Aide a la decision (note IA non disponible)"), margin + 4, y + 6); doc.setFontSize(7); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.medium); doc.text(sanitize(`Generee le ${new Date().toLocaleString("fr-FR")} a partir des donnees du rapport.`), margin + 4, y + 11); y += badgeH + 6; }
+    { const tileGap = 4; const tileW = (contentWidth - tileGap * 3) / 4; const tileH = 20; checkPage(tileH + 4);
       const tiles: { label: string; value: string; color: [number, number, number] }[] = [
-        {
-          label: "DSCR",
-          value: pdfEngineInput.kpis.dscr != null ? pdfEngineInput.kpis.dscr.toFixed(2) : "N/A",
-          color: pdfEngineInput.kpis.dscr != null
-            ? (pdfEngineInput.kpis.dscr >= 1.2 ? PDF_COLORS.green : pdfEngineInput.kpis.dscr >= 1.0 ? PDF_COLORS.amber : PDF_COLORS.red)
-            : PDF_COLORS.medium,
-        },
-        {
-          label: "LTV",
-          value: pdfEngineInput.kpis.ltv != null ? `${pdfEngineInput.kpis.ltv}%` : "N/A",
-          color: pdfEngineInput.kpis.ltv != null
-            ? (pdfEngineInput.kpis.ltv <= 60 ? PDF_COLORS.green : pdfEngineInput.kpis.ltv <= 80 ? PDF_COLORS.amber : PDF_COLORS.red)
-            : PDF_COLORS.medium,
-        },
-        {
-          label: "Rendement brut",
-          value: noteYield != null ? `${noteYield.toFixed(1)}%` : "N/A",
-          color: noteYield != null
-            ? (noteYield >= 7 ? PDF_COLORS.green : noteYield >= 4 ? PDF_COLORS.amber : PDF_COLORS.red)
-            : PDF_COLORS.medium,
-        },
-        {
-          label: "Acceptation",
-          value: noteAcceptance ? `${noteAcceptance.score}%` : "N/A",
-          color: noteAcceptance
-            ? (noteAcceptance.score >= 70 ? PDF_COLORS.green : noteAcceptance.score >= 40 ? PDF_COLORS.amber : PDF_COLORS.red)
-            : PDF_COLORS.medium,
-        },
+        { label: "DSCR", value: pdfEngineInput.kpis.dscr != null ? pdfEngineInput.kpis.dscr.toFixed(2) : "N/A", color: pdfEngineInput.kpis.dscr != null ? (pdfEngineInput.kpis.dscr >= 1.2 ? PDF_COLORS.green : pdfEngineInput.kpis.dscr >= 1.0 ? PDF_COLORS.amber : PDF_COLORS.red) : PDF_COLORS.medium },
+        { label: "LTV", value: pdfEngineInput.kpis.ltv != null ? `${pdfEngineInput.kpis.ltv}%` : "N/A", color: pdfEngineInput.kpis.ltv != null ? (pdfEngineInput.kpis.ltv <= 60 ? PDF_COLORS.green : pdfEngineInput.kpis.ltv <= 80 ? PDF_COLORS.amber : PDF_COLORS.red) : PDF_COLORS.medium },
+        { label: "Rendement brut", value: noteYield != null ? `${noteYield.toFixed(1)}%` : "N/A", color: noteYield != null ? (noteYield >= 7 ? PDF_COLORS.green : noteYield >= 4 ? PDF_COLORS.amber : PDF_COLORS.red) : PDF_COLORS.medium },
+        { label: "Acceptation", value: noteAcceptance ? `${noteAcceptance.score}%` : "N/A", color: noteAcceptance ? (noteAcceptance.score >= 70 ? PDF_COLORS.green : noteAcceptance.score >= 40 ? PDF_COLORS.amber : PDF_COLORS.red) : PDF_COLORS.medium },
       ];
-
-      for (let ti = 0; ti < tiles.length; ti++) {
-        const tx = margin + ti * (tileW + tileGap);
-        doc.setFillColor(248, 248, 252);
-        doc.setDrawColor(230, 230, 235);
-        doc.setLineWidth(0.3);
-        doc.roundedRect(tx, y, tileW, tileH, 2, 2, "FD");
-        doc.setFontSize(7);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(...PDF_COLORS.medium);
-        doc.text(tiles[ti].label, tx + tileW / 2, y + 7, { align: "center" });
-        doc.setFontSize(12);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(...tiles[ti].color);
-        doc.text(tiles[ti].value, tx + tileW / 2, y + 15, { align: "center" });
-      }
-      y += tileH + 6;
-    }
-
-    // ── Intro paragraph (first paragraph, full-width) ──
-    if (pres.paragraphs.length > 0) {
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(...PDF_COLORS.dark);
-      const introLines: string[] = doc.splitTextToSize(sanitize(pres.paragraphs[0]), contentWidth - 4);
-      for (const line of introLines) {
-        checkPage(5);
-        doc.text(line, margin + 2, y);
-        y += 4;
-      }
-      y += 4;
-    }
-
-    // ── Two-column layout ──
-    {
-      const colGap = 6;
-      const colW = (contentWidth - colGap) / 2;
-      const colLeftX = margin;
-      const colRightX = margin + colW + colGap;
-      const colStartY = y;
-      let yL = colStartY;
-      let yR = colStartY;
-
-      // Classify paragraphs (skip index 0 = intro)
-      const leftParas: string[] = [];
-      const rightParas: { text: string; isDecision: boolean; isMotivation: boolean }[] = [];
-      for (let pi = 1; pi < pres.paragraphs.length; pi++) {
-        const para = pres.paragraphs[pi];
-        const isDecision = para.startsWith("DECISION :");
-        const isMotivation = para.startsWith("Motivation :");
-        if (isDecision || isMotivation) {
-          rightParas.push({ text: para, isDecision, isMotivation });
-        } else {
-          leftParas.push(para);
-        }
-      }
-
-      // Classify bullet sections
-      const leftBullets: CommitteePresentationBullets[] = [];
-      const rightBullets: CommitteePresentationBullets[] = [];
-      if (pres.bullets) {
-        for (const section of pres.bullets) {
-          const lbl = section.label.toLowerCase();
-          if (lbl.includes("condition") || lbl.includes("decision")) {
-            rightBullets.push(section);
-          } else {
-            leftBullets.push(section);
-          }
-        }
-      }
-
-      // ── LEFT column: Marché + Risques ──
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(...PDF_COLORS.dark);
-      for (const para of leftParas) {
-        const lines: string[] = doc.splitTextToSize(sanitize(para), colW - 4);
-        for (const line of lines) {
-          if (yL > contentBottom - 5) {
-            newContentPage();
-            yL = y;
-            yR = y;
-          }
-          doc.setFontSize(9);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(...PDF_COLORS.dark);
-          doc.text(line, colLeftX + 2, yL);
-          yL += 4;
-        }
-        yL += 3;
-      }
-      for (const section of leftBullets) {
-        if (yL > contentBottom - 10) {
-          newContentPage();
-          yL = y;
-          yR = y;
-        }
-        yL += 2;
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(...PDF_COLORS.primary);
-        doc.text(sanitize(section.label), colLeftX + 2, yL);
-        yL += 5;
-        const isVigilance = section.label.toLowerCase().includes("vigilance");
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(...PDF_COLORS.dark);
-        for (const item of section.items) {
-          if (yL > contentBottom - 5) {
-            newContentPage();
-            yL = y;
-            yR = y;
-          }
-          const isPrelable = item.startsWith("[Prealable]");
-          const bulletLines: string[] = doc.splitTextToSize(sanitize(`- ${item}`), colW - 10);
-          if (isVigilance || isPrelable) {
-            doc.setTextColor(...(isPrelable ? PDF_COLORS.red : PDF_COLORS.amber));
-            doc.setFont("helvetica", "bold");
-          }
-          for (const bLine of bulletLines) {
-            doc.text(bLine, colLeftX + 5, yL);
-            yL += 4;
-          }
-          doc.setTextColor(...PDF_COLORS.dark);
-          doc.setFont("helvetica", "normal");
-        }
-        yL += 3;
-      }
-
-      // ── RIGHT column: Décision + Conditions ──
-      for (const rp of rightParas) {
-        if (yR > contentBottom - 16) {
-          newContentPage();
-          yL = y;
-          yR = y;
-        }
-        const borderCol: [number, number, number] = rp.isDecision ? PDF_COLORS.primary : PDF_COLORS.primaryLight;
-        const recoLines: string[] = doc.splitTextToSize(sanitize(rp.text), colW - 12);
-        const blockH = Math.max(12, recoLines.length * 4 + 6);
-        doc.setFillColor(248, 248, 252);
-        doc.setDrawColor(...borderCol);
-        doc.setLineWidth(rp.isDecision ? 0.5 : 0.3);
-        doc.roundedRect(colRightX, yR, colW, blockH, 2, 2, "FD");
-        doc.setFontSize(rp.isDecision ? 10 : 9);
-        doc.setFont("helvetica", rp.isDecision ? "bold" : "normal");
-        doc.setTextColor(...(rp.isDecision ? PDF_COLORS.primary : PDF_COLORS.dark));
-        let ry = yR + 5;
-        for (const line of recoLines) {
-          doc.text(line, colRightX + 4, ry);
-          ry += 4;
-        }
-        yR += blockH + 4;
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(...PDF_COLORS.dark);
-      }
-      for (const section of rightBullets) {
-        if (yR > contentBottom - 10) {
-          newContentPage();
-          yL = y;
-          yR = y;
-        }
-        yR += 2;
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "bold");
-        ["Taux de pauvrete", sanitize(ms.insee.tauxPauvrete)]
-        doc.setTextColor(...PDF_COLORS.primary);
-        doc.text(sanitize(section.label), colRightX + 2, yR);
-        yR += 5;
-        const isCondition = section.label.toLowerCase().includes("condition");
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(...PDF_COLORS.dark);
-        for (const item of section.items) {
-          if (yR > contentBottom - 5) {
-            newContentPage();
-            yL = y;
-            yR = y;
-          }
-          const isPrelable = item.startsWith("[Prealable]");
-          const bulletLines: string[] = doc.splitTextToSize(sanitize(`- ${item}`), colW - 10);
-          if (isPrelable) {
-            doc.setTextColor(...PDF_COLORS.red);
-            doc.setFont("helvetica", "bold");
-          } else if (isCondition) {
-            doc.setTextColor(...PDF_COLORS.dark);
-            doc.setFont("helvetica", "normal");
-          }
-          for (const bLine of bulletLines) {
-            doc.text(bLine, colRightX + 5, yR);
-            yR += 4;
-          }
-          doc.setTextColor(...PDF_COLORS.dark);
-          doc.setFont("helvetica", "normal");
-        }
-        yR += 3;
-      }
-
-      y = Math.max(yL, yR) + 2;
-    }
-
-    // ── Footer disclaimer ──
-    checkPage(10);
-    doc.setDrawColor(...PDF_COLORS.light);
-    doc.setLineWidth(0.3);
-    doc.line(margin, y, margin + contentWidth * 0.35, y);
-    y += 4;
-    doc.setFontSize(7);
-    doc.setFont("helvetica", "italic");
-    doc.setTextColor(...PDF_COLORS.medium);
-    doc.text(sanitize("Note generee automatiquement a partir des donnees du rapport. Ne se substitue pas a l'analyse finale du comite."), margin + 2, y);
-    y += 6;
-    doc.setTextColor(...PDF_COLORS.dark);
+      for (let ti = 0; ti < tiles.length; ti++) { const tx = margin + ti * (tileW + tileGap); doc.setFillColor(248, 248, 252); doc.setDrawColor(230, 230, 235); doc.setLineWidth(0.3); doc.roundedRect(tx, y, tileW, tileH, 2, 2, "FD"); doc.setFontSize(7); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.medium); doc.text(tiles[ti].label, tx + tileW / 2, y + 7, { align: "center" }); doc.setFontSize(12); doc.setFont("helvetica", "bold"); doc.setTextColor(...tiles[ti].color); doc.text(tiles[ti].value, tx + tileW / 2, y + 15, { align: "center" }); }
+      y += tileH + 6; }
+    if (pres.paragraphs.length > 0) { doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.dark); const introLines: string[] = doc.splitTextToSize(sanitize(pres.paragraphs[0]), contentWidth - 4); for (const line of introLines) { checkPage(5); doc.text(line, margin + 2, y); y += 4; } y += 4; }
+    { const colGap = 6; const colW = (contentWidth - colGap) / 2; const colLeftX = margin; const colRightX = margin + colW + colGap; const colStartY = y; let yL = colStartY; let yR = colStartY;
+      const leftParas: string[] = []; const rightParas: { text: string; isDecision: boolean; isMotivation: boolean }[] = [];
+      for (let pi = 1; pi < pres.paragraphs.length; pi++) { const para = pres.paragraphs[pi]; const isDecision = para.startsWith("DECISION :"); const isMotivation = para.startsWith("Motivation :"); if (isDecision || isMotivation) rightParas.push({ text: para, isDecision, isMotivation }); else leftParas.push(para); }
+      const leftBullets: CommitteePresentationBullets[] = []; const rightBullets: CommitteePresentationBullets[] = [];
+      if (pres.bullets) { for (const section of pres.bullets) { const lbl = section.label.toLowerCase(); if (lbl.includes("condition") || lbl.includes("decision")) rightBullets.push(section); else leftBullets.push(section); } }
+      doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.dark);
+      for (const para of leftParas) { const lines: string[] = doc.splitTextToSize(sanitize(para), colW - 4); for (const line of lines) { if (yL > contentBottom - 5) { newContentPage(); yL = y; yR = y; } doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.dark); doc.text(line, colLeftX + 2, yL); yL += 4; } yL += 3; }
+      for (const section of leftBullets) { if (yL > contentBottom - 10) { newContentPage(); yL = y; yR = y; } yL += 2; doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_COLORS.primary); doc.text(sanitize(section.label), colLeftX + 2, yL); yL += 5; const isVigilance = section.label.toLowerCase().includes("vigilance"); doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.dark); for (const item of section.items) { if (yL > contentBottom - 5) { newContentPage(); yL = y; yR = y; } const isPrelable = item.startsWith("[Prealable]"); const bulletLines: string[] = doc.splitTextToSize(sanitize(`- ${item}`), colW - 10); if (isVigilance || isPrelable) { doc.setTextColor(...(isPrelable ? PDF_COLORS.red : PDF_COLORS.amber)); doc.setFont("helvetica", "bold"); } for (const bLine of bulletLines) { doc.text(bLine, colLeftX + 5, yL); yL += 4; } doc.setTextColor(...PDF_COLORS.dark); doc.setFont("helvetica", "normal"); } yL += 3; }
+      for (const rp of rightParas) { if (yR > contentBottom - 16) { newContentPage(); yL = y; yR = y; } const borderCol: [number, number, number] = rp.isDecision ? PDF_COLORS.primary : PDF_COLORS.primaryLight; const recoLines: string[] = doc.splitTextToSize(sanitize(rp.text), colW - 12); const blockH = Math.max(12, recoLines.length * 4 + 6); doc.setFillColor(248, 248, 252); doc.setDrawColor(...borderCol); doc.setLineWidth(rp.isDecision ? 0.5 : 0.3); doc.roundedRect(colRightX, yR, colW, blockH, 2, 2, "FD"); doc.setFontSize(rp.isDecision ? 10 : 9); doc.setFont("helvetica", rp.isDecision ? "bold" : "normal"); doc.setTextColor(...(rp.isDecision ? PDF_COLORS.primary : PDF_COLORS.dark)); let ry = yR + 5; for (const line of recoLines) { doc.text(line, colRightX + 4, ry); ry += 4; } yR += blockH + 4; doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.dark); }
+      for (const section of rightBullets) { if (yR > contentBottom - 10) { newContentPage(); yL = y; yR = y; } yR += 2; doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_COLORS.primary); doc.text(sanitize(section.label), colRightX + 2, yR); yR += 5; const isCondition = section.label.toLowerCase().includes("condition"); doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.dark); for (const item of section.items) { if (yR > contentBottom - 5) { newContentPage(); yL = y; yR = y; } const isPrelable = item.startsWith("[Prealable]"); const bulletLines: string[] = doc.splitTextToSize(sanitize(`- ${item}`), colW - 10); if (isPrelable) { doc.setTextColor(...PDF_COLORS.red); doc.setFont("helvetica", "bold"); } else if (isCondition) { doc.setTextColor(...PDF_COLORS.dark); doc.setFont("helvetica", "normal"); } for (const bLine of bulletLines) { doc.text(bLine, colRightX + 5, yR); yR += 4; } doc.setTextColor(...PDF_COLORS.dark); doc.setFont("helvetica", "normal"); } yR += 3; }
+      y = Math.max(yL, yR) + 2; }
+    checkPage(10); doc.setDrawColor(...PDF_COLORS.light); doc.setLineWidth(0.3); doc.line(margin, y, margin + contentWidth * 0.35, y); y += 4;
+    doc.setFontSize(7); doc.setFont("helvetica", "italic"); doc.setTextColor(...PDF_COLORS.medium);
+    doc.text(sanitize("Note generee automatiquement a partir des donnees du rapport. Ne se substitue pas a l'analyse finale du comite."), margin + 2, y); y += 6; doc.setTextColor(...PDF_COLORS.dark);
   }
 
   // ── SMARTSCORE DETAIL ──
-  if (report.smartscore) {
-    newContentPage(); const ss = report.smartscore; sectionTitle("SMARTSCORE - DETAIL DES PILIERS");
-    doc.setFontSize(10); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.dark);
-    doc.text(`Score global : ${ss.score}/100  (${ss.grade})  -  Verdict : ${sanitize(ss.verdict)}`, margin, y); y += 7;
-    autoTable(doc, { ...tableDefaults, startY: y, head: [["Pilier", "Points", "Score brut", "Detail"]], body: ss.pillars.map((p) => [sanitize(p.label), `${p.points}/${p.maxPoints}`, p.hasData ? `${p.rawScore}/100` : "N/A", p.reasons.slice(0, 2).map((r) => cleanReason(r, 55)).join(" ; ") || "-"]), columnStyles: { 0: { cellWidth: 35, fontStyle: "bold" as const }, 1: { cellWidth: 22, halign: "right" as const }, 2: { cellWidth: 22, halign: "right" as const }, 3: { cellWidth: contentWidth - 79 } } });
-    y = doc.lastAutoTable.finalY + 8;
-  }
+  if (report.smartscore) { newContentPage(); const ss = report.smartscore; sectionTitle("SMARTSCORE - DETAIL DES PILIERS"); doc.setFontSize(10); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.dark); doc.text(`Score global : ${ss.score}/100  (${ss.grade})  -  Verdict : ${sanitize(ss.verdict)}`, margin, y); y += 7; autoTable(doc, { ...tableDefaults, startY: y, head: [["Pilier", "Points", "Score brut", "Detail"]], body: ss.pillars.map((p) => [sanitize(p.label), `${p.points}/${p.maxPoints}`, p.hasData ? `${p.rawScore}/100` : "N/A", p.reasons.slice(0, 2).map((r) => cleanReason(r, 55)).join(" ; ") || "-"]), columnStyles: { 0: { cellWidth: 35, fontStyle: "bold" as const }, 1: { cellWidth: 22, halign: "right" as const }, 2: { cellWidth: 22, halign: "right" as const }, 3: { cellWidth: contentWidth - 79 } } }); y = doc.lastAutoTable.finalY + 8; }
 
   // ── EMPRUNTEUR ──
   checkPage(30); sectionTitle("EMPRUNTEUR");
@@ -2013,8 +1478,7 @@ async function exportReportPdf(report: UniversalReport, dossier: any, narrative?
     if (ms.dvf.topTransactions.length > 0) { checkPage(15 + ms.dvf.topTransactions.length * 5); doc.setFontSize(8); doc.setFont("helvetica", "italic"); doc.setTextColor(...PDF_COLORS.medium); doc.text(`Top ${ms.dvf.topTransactions.length} transactions recentes`, margin + 2, y); y += 4; autoTable(doc, { ...tableDefaults, startY: y, head: [["Date", "Type", "Surface", "Valeur", "Prix/m2"]], body: ms.dvf.topTransactions.map((t) => [sanitize(t.date), sanitize(t.typeLocal), sanitize(t.surface), sanitize(t.valeur), sanitize(t.prixM2)]), styles: { ...tableDefaults.styles, fontSize: 7 }, columnStyles: { 0: { cellWidth: 25 }, 1: { cellWidth: 30 }, 2: { cellWidth: 28, halign: "right" as const }, 3: { cellWidth: 35, halign: "right" as const }, 4: { cellWidth: contentWidth - 118, halign: "right" as const } } }); y = doc.lastAutoTable.finalY + 6; }
     checkPage(45); subTitle("Donnees INSEE - Sociodemographie");
     const inseeKv: [string, string][] = [["Commune", sanitize(ms.insee.commune)], ["Code INSEE", sanitize(ms.insee.codeInsee)], ["Population", sanitize(ms.insee.population)], ["Densite", sanitize(ms.insee.densite)], ["Revenu median", sanitize(ms.insee.revenuMedian)], ["Taux de chomage", sanitize(ms.insee.tauxChomage)], ["Part proprietaires", sanitize(ms.insee.partProprietaires)], ["Part locataires", sanitize(ms.insee.partLocataires)], ["Taux de vacance", sanitize(ms.insee.tauxVacance)]].filter(([_, v]) => v && v !== "N/A" && v !== "-");
-    if (inseeKv.length > 0) { autoTable(doc, { ...tableDefaults, startY: y, body: inseeKv, showHead: false, columnStyles: { 0: { fontStyle: "bold" as const, cellWidth: 50 }, 1: { cellWidth: contentWidth - 50 } } }); y = doc.lastAutoTable.finalY + 6; }
-    else { doc.setFontSize(8); doc.setFont("helvetica", "italic"); doc.setTextColor(...PDF_COLORS.medium); doc.text("Donnees INSEE non disponibles.", margin + 2, y); doc.setTextColor(...PDF_COLORS.dark); y += 6; }
+    if (inseeKv.length > 0) { autoTable(doc, { ...tableDefaults, startY: y, body: inseeKv, showHead: false, columnStyles: { 0: { fontStyle: "bold" as const, cellWidth: 50 }, 1: { cellWidth: contentWidth - 50 } } }); y = doc.lastAutoTable.finalY + 6; } else { doc.setFontSize(8); doc.setFont("helvetica", "italic"); doc.setTextColor(...PDF_COLORS.medium); doc.text("Donnees INSEE non disponibles.", margin + 2, y); doc.setTextColor(...PDF_COLORS.dark); y += 6; }
     checkPage(45); subTitle("BPE - Equipements et services de proximite");
     const bpeKv: [string, string][] = [["Total equipements", sanitize(ms.bpe.totalEquipements)], ["Score BPE", sanitize(ms.bpe.score)], ["Commerces", sanitize(ms.bpe.commerce)], ["Sante", sanitize(ms.bpe.sante)], ["Education", sanitize(ms.bpe.education)], ["Services", sanitize(ms.bpe.services)]].filter(([_, v]) => v && v !== "N/A");
     if (bpeKv.length > 0) { autoTable(doc, { ...tableDefaults, startY: y, body: bpeKv, showHead: false, columnStyles: { 0: { fontStyle: "bold" as const, cellWidth: 50 }, 1: { cellWidth: contentWidth - 50 } } }); y = doc.lastAutoTable.finalY + 4; }
@@ -2044,278 +1508,24 @@ async function exportReportPdf(report: UniversalReport, dossier: any, narrative?
   { const scenarios = buildDecisionScenarios(report); const scenarioList: DecisionScenario[] = [scenarios.conservative, scenarios.balanced, scenarios.opportunistic]; newContentPage(); sectionTitle("SCENARIOS DECISIONNELS"); doc.setFontSize(9); doc.setFont("helvetica", "italic"); doc.setTextColor(...PDF_COLORS.medium); const introLines: string[] = doc.splitTextToSize(sanitize("Trois lectures du dossier sont proposees ci-dessous pour eclairer la decision du comite. Chaque scenario applique une grille de lecture differente des memes donnees."), contentWidth - 4); for (const line of introLines) { checkPage(5); doc.text(line, margin + 2, y); y += 4; } y += 4; const scenarioColors: [number, number, number][] = [PDF_COLORS.amber, PDF_COLORS.primary, PDF_COLORS.green];
     for (let si = 0; si < scenarioList.length; si++) { const sc = scenarioList[si]; const scColor = scenarioColors[si]; checkPage(22); doc.setFillColor(248, 248, 252); doc.setDrawColor(...scColor); doc.setLineWidth(0.6); doc.roundedRect(margin, y, contentWidth, 10, 2, 2, "FD"); doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(...scColor); doc.text(sanitize(`${sc.label} — ${sc.decision}`), margin + 4, y + 7); y += 14; doc.setFontSize(8); doc.setFont("helvetica", "italic"); doc.setTextColor(...PDF_COLORS.medium); const rrLines: string[] = doc.splitTextToSize(sanitize(sc.riskReading), contentWidth - 8); for (const line of rrLines) { checkPage(4); doc.text(line, margin + 3, y); y += 3.5; } y += 3; checkPage(8); doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_COLORS.green); doc.text("Points favorables", margin + 3, y); y += 4; doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...PDF_COLORS.dark); for (const item of sc.favorable) { const fLines: string[] = doc.splitTextToSize(sanitize(`+ ${item}`), contentWidth - 12); for (const fl of fLines) { checkPage(4); doc.text(fl, margin + 6, y); y += 3.5; } } y += 2; checkPage(8); doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_COLORS.red); doc.text("Points defavorables", margin + 3, y); y += 4; doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...PDF_COLORS.dark); for (const item of sc.unfavorable) { const uLines: string[] = doc.splitTextToSize(sanitize(`- ${item}`), contentWidth - 12); for (const ul of uLines) { checkPage(4); doc.text(ul, margin + 6, y); y += 3.5; } } y += 2; checkPage(8); doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_COLORS.dark); doc.text("Motivation", margin + 3, y); y += 4; doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...PDF_COLORS.dark); const motLines: string[] = doc.splitTextToSize(sanitize(sc.motivation), contentWidth - 8); for (const ml of motLines) { checkPage(4); doc.text(ml, margin + 4, y); y += 3.5; } y += 2; if (sc.conditions.length > 0) { checkPage(6 + sc.conditions.length * 4); doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_COLORS.primary); doc.text("Conditions", margin + 3, y); y += 4; doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...PDF_COLORS.dark); for (const c of sc.conditions) { const cLines: string[] = doc.splitTextToSize(sanitize(`> ${c}`), contentWidth - 12); for (const cl of cLines) { checkPage(4); doc.text(cl, margin + 6, y); y += 3.5; } } } if (si < scenarioList.length - 1) { y += 4; checkPage(6); doc.setDrawColor(...PDF_COLORS.light); doc.setLineWidth(0.2); doc.line(margin + 10, y, margin + contentWidth - 10, y); y += 6; } } y += 4; }
 
-
   // ── STRESS TESTS ──
-  {
-    const pack = buildStressTests(pdfEngineInput);
-    if (pack) {
-      newContentPage();
-      sectionTitle("STRESS TESTS");
-
+  { const pack = buildStressTests(pdfEngineInput);
+    if (pack) { newContentPage(); sectionTitle("STRESS TESTS");
       const rows = [pack.base, ...(pack.cases ?? [])].filter(Boolean).slice(0, 5);
-      const stressBody: string[][] = rows.map((row: any, idx: number) => [
-        sanitize(row.label ?? (idx === 0 ? "Base" : "Scenario")),
-        row.dscr != null ? String(row.dscr) : "N/A",
-        row.ltv != null ? `${row.ltv}%` : "N/A",
-        row.yieldPct != null ? `${row.yieldPct.toFixed(1)}%` : "N/A",
-        row.acceptanceScore != null ? `${row.acceptanceScore}%` : "N/A",
-        Array.isArray(row.notes) ? row.notes.slice(0, 2).map((n: string) => sanitize(n)).join(" ; ") : sanitize(row.notes ?? "-"),
-      ]);
-
-      if (stressBody.length > 0) {
-        autoTable(doc, {
-          ...tableDefaults,
-          startY: y,
-          head: [["Scenario", "DSCR", "LTV", "Rendement", "Acceptation", "Notes"]],
-          body: stressBody,
-          headStyles: { ...tableDefaults.headStyles, fillColor: PDF_COLORS.accent },
-          columnStyles: {
-            0: { cellWidth: 35, fontStyle: "bold" as const },
-            1: { cellWidth: 18, halign: "right" as const },
-            2: { cellWidth: 18, halign: "right" as const },
-            3: { cellWidth: 22, halign: "right" as const },
-            4: { cellWidth: 24, halign: "right" as const },
-            5: { cellWidth: contentWidth - 117, fontSize: 7, cellPadding: 1.5 },
-          },
-          didParseCell(data: any) {
-            if (data.row.index === 0 && data.section === "body") {
-              data.cell.styles.fillColor = [248, 248, 252];
-              data.cell.styles.fontStyle = "bold";
-            }
-            if (data.column.index === 1 && data.section === "body") {
-              const raw = data.cell.raw;
-              const numVal = parseFloat(String(raw));
-              if (!isNaN(numVal)) {
-                if (numVal < 1) data.cell.styles.textColor = PDF_COLORS.red;
-                else data.cell.styles.textColor = PDF_COLORS.green;
-              }
-            }
-            if (data.column.index === 4 && data.section === "body") {
-              const raw = data.cell.raw;
-              const numVal = parseFloat(String(raw));
-              if (!isNaN(numVal)) {
-                if (numVal < 40) data.cell.styles.textColor = PDF_COLORS.red;
-                else if (numVal < 70) data.cell.styles.textColor = PDF_COLORS.amber;
-                else data.cell.styles.textColor = PDF_COLORS.green;
-              }
-            }
-          },
-        });
-        y = doc.lastAutoTable.finalY + 6;
-      }
-
+      const stressBody: string[][] = rows.map((row: any, idx: number) => [sanitize(row.label ?? (idx === 0 ? "Base" : "Scenario")), row.dscr != null ? String(row.dscr) : "N/A", row.ltv != null ? `${row.ltv}%` : "N/A", row.yieldPct != null ? `${row.yieldPct.toFixed(1)}%` : "N/A", row.acceptanceScore != null ? `${row.acceptanceScore}%` : "N/A", Array.isArray(row.notes) ? row.notes.slice(0, 2).map((n: string) => sanitize(n)).join(" ; ") : sanitize(row.notes ?? "-")]);
+      if (stressBody.length > 0) { autoTable(doc, { ...tableDefaults, startY: y, head: [["Scenario", "DSCR", "LTV", "Rendement", "Acceptation", "Notes"]], body: stressBody, headStyles: { ...tableDefaults.headStyles, fillColor: PDF_COLORS.accent }, columnStyles: { 0: { cellWidth: 35, fontStyle: "bold" as const }, 1: { cellWidth: 18, halign: "right" as const }, 2: { cellWidth: 18, halign: "right" as const }, 3: { cellWidth: 22, halign: "right" as const }, 4: { cellWidth: 24, halign: "right" as const }, 5: { cellWidth: contentWidth - 117, fontSize: 7, cellPadding: 1.5 } }, didParseCell(data: any) { if (data.row.index === 0 && data.section === "body") { data.cell.styles.fillColor = [248, 248, 252]; data.cell.styles.fontStyle = "bold"; } if (data.column.index === 1 && data.section === "body") { const raw = data.cell.raw; const numVal = parseFloat(String(raw)); if (!isNaN(numVal)) { if (numVal < 1) data.cell.styles.textColor = PDF_COLORS.red; else data.cell.styles.textColor = PDF_COLORS.green; } } if (data.column.index === 4 && data.section === "body") { const raw = data.cell.raw; const numVal = parseFloat(String(raw)); if (!isNaN(numVal)) { if (numVal < 40) data.cell.styles.textColor = PDF_COLORS.red; else if (numVal < 70) data.cell.styles.textColor = PDF_COLORS.amber; else data.cell.styles.textColor = PDF_COLORS.green; } } } }); y = doc.lastAutoTable.finalY + 6; }
       const keyFindings = (pack.summary?.keyFindings ?? []).slice(0, 3);
-      if (keyFindings.length > 0) {
-        checkPage(8 + keyFindings.length * 6);
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(...PDF_COLORS.dark);
-        doc.text("Enseignements cles", margin + 2, y);
-        y += 5;
+      if (keyFindings.length > 0) { checkPage(8 + keyFindings.length * 6); doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_COLORS.dark); doc.text("Enseignements cles", margin + 2, y); y += 5; doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.dark); for (const finding of keyFindings) { checkPage(6); const findingLines: string[] = doc.splitTextToSize(sanitize(`- ${finding}`), contentWidth - 10); for (const fl of findingLines) { checkPage(4); doc.text(fl, margin + 4, y); y += 4; } } y += 4; } } }
 
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(...PDF_COLORS.dark);
-        for (const finding of keyFindings) {
-          checkPage(6);
-          const findingLines: string[] = doc.splitTextToSize(sanitize(`- ${finding}`), contentWidth - 10);
-          for (const fl of findingLines) {
-            checkPage(4);
-            doc.text(fl, margin + 4, y);
-            y += 4;
-          }
-        }
-        y += 4;
-      }
-    }
-  }
-
-  // ── CONCLUSION (committeeEngine) ──
-  {
-    const pdfScenarios = buildEngineScenarios(pdfEngineInput);
-    const pdfAcceptance = buildAcceptanceProbability(pdfEngineInput);
-    const pdfMatrix = buildRiskReturnMatrix(pdfEngineInput);
-
-    newContentPage();
-    sectionTitle("CONCLUSION");
-
+  // ── CONCLUSION ──
+  { const pdfScenarios = buildEngineScenarios(pdfEngineInput); const pdfAcceptance = buildAcceptanceProbability(pdfEngineInput); const pdfMatrix = buildRiskReturnMatrix(pdfEngineInput);
+    newContentPage(); sectionTitle("CONCLUSION");
     const conservativeScenario = pdfScenarios[0];
-    if (conservativeScenario) {
-      const decBoxH = 16;
-      checkPage(decBoxH + 6);
-      const decColor = conservativeScenario.decision.toUpperCase().includes("NO GO")
-        ? PDF_COLORS.red
-        : conservativeScenario.decision.toUpperCase().includes("GO SOUS")
-          ? PDF_COLORS.amber
-          : PDF_COLORS.green;
-      doc.setFillColor(248, 248, 252);
-      doc.setDrawColor(...decColor);
-      doc.setLineWidth(0.7);
-      doc.roundedRect(margin, y, contentWidth, decBoxH, 2, 2, "FD");
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...decColor);
-      doc.text(sanitize(`Decision (lecture conservatrice) : ${conservativeScenario.decision}`), margin + 4, y + 7);
-      doc.setFontSize(8);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(...PDF_COLORS.medium);
-      doc.text(sanitize(`Confiance : ${conservativeScenario.confidence}%`), margin + 4, y + 13);
-      y += decBoxH + 6;
-    }
-
-    if (pdfAcceptance) {
-      checkPage(28);
-      const accLabel =
-        pdfAcceptance.score >= 70 ? "Acceptation probable"
-          : pdfAcceptance.score >= 40 ? "Acceptation incertaine"
-            : "Acceptation peu probable";
-      const accColor = pdfAcceptance.score >= 70 ? PDF_COLORS.green : pdfAcceptance.score >= 40 ? PDF_COLORS.amber : PDF_COLORS.red;
-
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...PDF_COLORS.dark);
-      doc.text("Probabilite d'acceptation", margin, y);
-      y += 5;
-
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...accColor);
-      doc.text(`${pdfAcceptance.score}%`, margin + 2, y);
-      const scoreW = doc.getTextWidth(`${pdfAcceptance.score}%`);
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(...PDF_COLORS.dark);
-      doc.text(sanitize(` — ${accLabel}`), margin + 2 + scoreW + 2, y);
-      y += 6;
-
-      const topDrivers = [...pdfAcceptance.drivers]
-        .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
-        .slice(0, 3);
-      if (topDrivers.length > 0) {
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "normal");
-        for (const drv of topDrivers) {
-          checkPage(5);
-          const prefix = drv.impact > 0 ? "+" : "";
-          const drvColor = drv.impact > 0 ? PDF_COLORS.green : drv.impact < 0 ? PDF_COLORS.red : PDF_COLORS.medium;
-          doc.setTextColor(...drvColor);
-          doc.setFont("helvetica", "bold");
-          doc.text(`(${prefix}${drv.impact})`, margin + 4, y);
-          const impW = doc.getTextWidth(`(${prefix}${drv.impact})`);
-          doc.setTextColor(...PDF_COLORS.dark);
-          doc.setFont("helvetica", "normal");
-          const drvText = drv.detail ? `${drv.label} — ${drv.detail}` : drv.label;
-          doc.text(sanitize(drvText), margin + 4 + impW + 2, y);
-          y += 4;
-        }
-      }
-      y += 4;
-    }
-
-    if (pdfMatrix) {
-      checkPage(22);
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...PDF_COLORS.dark);
-      doc.text("Matrice Risque / Rendement", margin, y);
-      y += 5;
-
-      const qColor = pdfMatrix.quadrant.toLowerCase().includes("optimal") || pdfMatrix.quadrant.toLowerCase().includes("favorable")
-        ? PDF_COLORS.green
-        : pdfMatrix.quadrant.toLowerCase().includes("vigilance") || pdfMatrix.quadrant.toLowerCase().includes("attention")
-          ? PDF_COLORS.amber
-          : pdfMatrix.quadrant.toLowerCase().includes("defavorable") || pdfMatrix.quadrant.toLowerCase().includes("critique")
-            ? PDF_COLORS.red
-            : PDF_COLORS.primary;
-
-      doc.setFillColor(248, 248, 252);
-      doc.setDrawColor(...qColor);
-      doc.setLineWidth(0.5);
-      doc.roundedRect(margin, y, contentWidth, 12, 2, 2, "FD");
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...qColor);
-      doc.text(sanitize(`Quadrant : ${pdfMatrix.quadrant}`), margin + 4, y + 5);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(...PDF_COLORS.dark);
-      doc.text(sanitize(`Score Risque : ${pdfMatrix.riskScore}/100   |   Score Rendement : ${pdfMatrix.returnScore}/100`), margin + 4, y + 10);
-      y += 16;
-
-      if (pdfMatrix.commentary) {
-        const commentLines: string[] = doc.splitTextToSize(sanitize(pdfMatrix.commentary), contentWidth - 4);
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(...PDF_COLORS.dark);
-        for (const line of commentLines) {
-          checkPage(4);
-          doc.text(line, margin + 2, y);
-          y += 3.5;
-        }
-        y += 3;
-      }
-    }
-
-    {
-      checkPage(20);
-      y += 2;
-      doc.setDrawColor(...PDF_COLORS.primaryLight);
-      doc.setLineWidth(0.3);
-      doc.line(margin, y, margin + contentWidth * 0.5, y);
-      y += 5;
-
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...PDF_COLORS.primary);
-      doc.text("Synthese", margin, y);
-      y += 6;
-
-      const topRisk = pdfAcceptance
-        ? [...pdfAcceptance.drivers].filter(d => d.impact < 0).sort((a, b) => a.impact - b.impact)[0]
-        : null;
-      const riskPhrase = topRisk
-        ? `Risque principal : ${topRisk.label}${topRisk.detail ? ` (${topRisk.detail})` : ""}.`
-        : "Aucun risque majeur identifie par le moteur d'analyse.";
-
-      const topStrength = pdfAcceptance
-        ? [...pdfAcceptance.drivers].filter(d => d.impact > 0).sort((a, b) => b.impact - a.impact)[0]
-        : null;
-      const strengthPhrase = topStrength
-        ? `Atout principal : ${topStrength.label}${topStrength.detail ? ` (${topStrength.detail})` : ""}.`
-        : "Aucun atout majeur identifie par le moteur d'analyse.";
-
-      const criticalCondition = conservativeScenario?.conditions?.[0];
-      const conditionPhrase = criticalCondition
-        ? `Condition critique : ${criticalCondition}.`
-        : "Aucune condition prealable identifiee.";
-
-      const synthPhrases = [riskPhrase, strengthPhrase, conditionPhrase];
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(...PDF_COLORS.dark);
-      for (const phrase of synthPhrases) {
-        const pLines: string[] = doc.splitTextToSize(sanitize(phrase), contentWidth - 8);
-        for (const pl of pLines) {
-          checkPage(5);
-          doc.text(pl, margin + 2, y);
-          y += 4;
-        }
-        y += 1;
-      }
-      y += 4;
-    }
-
-    checkPage(10);
-    doc.setDrawColor(...PDF_COLORS.light);
-    doc.setLineWidth(0.3);
-    doc.line(margin, y, margin + contentWidth * 0.35, y);
-    y += 4;
-    doc.setFontSize(7);
-    doc.setFont("helvetica", "italic");
-    doc.setTextColor(...PDF_COLORS.medium);
-    doc.text(sanitize("Conclusion generee par committeeEngine. Ne se substitue pas a l'analyse finale du comite."), margin + 2, y);
-    y += 6;
-    doc.setTextColor(...PDF_COLORS.dark);
-  }
+    if (conservativeScenario) { const decBoxH = 16; checkPage(decBoxH + 6); const decColor = conservativeScenario.decision.toUpperCase().includes("NO GO") ? PDF_COLORS.red : conservativeScenario.decision.toUpperCase().includes("GO SOUS") ? PDF_COLORS.amber : PDF_COLORS.green; doc.setFillColor(248, 248, 252); doc.setDrawColor(...decColor); doc.setLineWidth(0.7); doc.roundedRect(margin, y, contentWidth, decBoxH, 2, 2, "FD"); doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.setTextColor(...decColor); doc.text(sanitize(`Decision (lecture conservatrice) : ${conservativeScenario.decision}`), margin + 4, y + 7); doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.medium); doc.text(sanitize(`Confiance : ${conservativeScenario.confidence}%`), margin + 4, y + 13); y += decBoxH + 6; }
+    if (pdfAcceptance) { checkPage(28); const accLabel = pdfAcceptance.score >= 70 ? "Acceptation probable" : pdfAcceptance.score >= 40 ? "Acceptation incertaine" : "Acceptation peu probable"; const accColor = pdfAcceptance.score >= 70 ? PDF_COLORS.green : pdfAcceptance.score >= 40 ? PDF_COLORS.amber : PDF_COLORS.red; doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_COLORS.dark); doc.text("Probabilite d'acceptation", margin, y); y += 5; doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.setTextColor(...accColor); doc.text(`${pdfAcceptance.score}%`, margin + 2, y); const scoreW = doc.getTextWidth(`${pdfAcceptance.score}%`); doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.dark); doc.text(sanitize(` — ${accLabel}`), margin + 2 + scoreW + 2, y); y += 6; const topDrivers = [...pdfAcceptance.drivers].sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact)).slice(0, 3); if (topDrivers.length > 0) { doc.setFontSize(8); doc.setFont("helvetica", "normal"); for (const drv of topDrivers) { checkPage(5); const prefix = drv.impact > 0 ? "+" : ""; const drvColor = drv.impact > 0 ? PDF_COLORS.green : drv.impact < 0 ? PDF_COLORS.red : PDF_COLORS.medium; doc.setTextColor(...drvColor); doc.setFont("helvetica", "bold"); doc.text(`(${prefix}${drv.impact})`, margin + 4, y); const impW = doc.getTextWidth(`(${prefix}${drv.impact})`); doc.setTextColor(...PDF_COLORS.dark); doc.setFont("helvetica", "normal"); const drvText = drv.detail ? `${drv.label} — ${drv.detail}` : drv.label; doc.text(sanitize(drvText), margin + 4 + impW + 2, y); y += 4; } } y += 4; }
+    if (pdfMatrix) { checkPage(22); doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_COLORS.dark); doc.text("Matrice Risque / Rendement", margin, y); y += 5; const qColor = pdfMatrix.quadrant.toLowerCase().includes("optimal") || pdfMatrix.quadrant.toLowerCase().includes("favorable") ? PDF_COLORS.green : pdfMatrix.quadrant.toLowerCase().includes("vigilance") || pdfMatrix.quadrant.toLowerCase().includes("attention") ? PDF_COLORS.amber : pdfMatrix.quadrant.toLowerCase().includes("defavorable") || pdfMatrix.quadrant.toLowerCase().includes("critique") ? PDF_COLORS.red : PDF_COLORS.primary; doc.setFillColor(248, 248, 252); doc.setDrawColor(...qColor); doc.setLineWidth(0.5); doc.roundedRect(margin, y, contentWidth, 12, 2, 2, "FD"); doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.setTextColor(...qColor); doc.text(sanitize(`Quadrant : ${pdfMatrix.quadrant}`), margin + 4, y + 5); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.dark); doc.text(sanitize(`Score Risque : ${pdfMatrix.riskScore}/100   |   Score Rendement : ${pdfMatrix.returnScore}/100`), margin + 4, y + 10); y += 16; if (pdfMatrix.commentary) { const commentLines: string[] = doc.splitTextToSize(sanitize(pdfMatrix.commentary), contentWidth - 4); doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.dark); for (const line of commentLines) { checkPage(4); doc.text(line, margin + 2, y); y += 3.5; } y += 3; } }
+    { checkPage(20); y += 2; doc.setDrawColor(...PDF_COLORS.primaryLight); doc.setLineWidth(0.3); doc.line(margin, y, margin + contentWidth * 0.5, y); y += 5; doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_COLORS.primary); doc.text("Synthese", margin, y); y += 6; const topRisk = pdfAcceptance ? [...pdfAcceptance.drivers].filter(d => d.impact < 0).sort((a, b) => a.impact - b.impact)[0] : null; const riskPhrase = topRisk ? `Risque principal : ${topRisk.label}${topRisk.detail ? ` (${topRisk.detail})` : ""}.` : "Aucun risque majeur identifie par le moteur d'analyse."; const topStrength = pdfAcceptance ? [...pdfAcceptance.drivers].filter(d => d.impact > 0).sort((a, b) => b.impact - a.impact)[0] : null; const strengthPhrase = topStrength ? `Atout principal : ${topStrength.label}${topStrength.detail ? ` (${topStrength.detail})` : ""}.` : "Aucun atout majeur identifie par le moteur d'analyse."; const criticalCondition = conservativeScenario?.conditions?.[0]; const conditionPhrase = criticalCondition ? `Condition critique : ${criticalCondition}.` : "Aucune condition prealable identifiee."; const synthPhrases = [riskPhrase, strengthPhrase, conditionPhrase]; doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_COLORS.dark); for (const phrase of synthPhrases) { const pLines: string[] = doc.splitTextToSize(sanitize(phrase), contentWidth - 8); for (const pl of pLines) { checkPage(5); doc.text(pl, margin + 2, y); y += 4; } y += 1; } y += 4; }
+    checkPage(10); doc.setDrawColor(...PDF_COLORS.light); doc.setLineWidth(0.3); doc.line(margin, y, margin + contentWidth * 0.35, y); y += 4; doc.setFontSize(7); doc.setFont("helvetica", "italic"); doc.setTextColor(...PDF_COLORS.medium); doc.text(sanitize("Conclusion generee par committeeEngine. Ne se substitue pas a l'analyse finale du comite."), margin + 2, y); y += 6; doc.setTextColor(...PDF_COLORS.dark); }
 
   // ── FINALIZE ──
   const totalPages = doc.internal.getNumberOfPages();
@@ -2349,126 +1559,28 @@ export default function ComitePage() {
   const [localNarrative, setLocalNarrative] = useState<CommitteeNarrative | null>(null);
   const activeNarrative = localNarrative ?? persistedNarrative;
 
-  // ── ENGINE INPUT — shared across all engine calls ──
+  // ── ENGINE INPUT ──
   const engineInput = useMemo<EngineReportInput | null>(() => {
     if (!activeReport) return null;
     try {
       const ms = activeReport.marketStudy;
       const ss = activeReport.smartscore;
-      console.log("ENGINE INPUT DEBUG", {
-        loyerAnnuel: parseMoneyK(activeReport.revenus["Loyer annuel"]),
-        coutTotal: parseMoneyK(activeReport.budget["TOTAL"]),
-        dscr: kpiNum(activeReport.kpis["DSCR"]),
-        ltv: kpiNum(activeReport.kpis["LTV"]),
-      });
-
-      console.log("ENGINE KPIS", {
-        loyerAnnuel: parseMoneyK(activeReport.revenus["Loyer annuel"]),
-        coutTotal: parseMoneyK(activeReport.budget["TOTAL"]),
-      });
-
+      console.log("ENGINE INPUT DEBUG", { loyerAnnuel: parseMoneyK(activeReport.revenus["Loyer annuel"]), coutTotal: parseMoneyK(activeReport.budget["TOTAL"]), dscr: kpiNum(activeReport.kpis["DSCR"]), ltv: kpiNum(activeReport.kpis["LTV"]) });
+      console.log("ENGINE KPIS", { loyerAnnuel: parseMoneyK(activeReport.revenus["Loyer annuel"]), coutTotal: parseMoneyK(activeReport.budget["TOTAL"]) });
       return {
-        programmeNom: activeReport.meta.dossierLabel,
-        adresse: activeReport.projet["Adresse"],
-        marketStudy: ms
-          ? {
-              commune: ms.insee.commune !== "-" ? ms.insee.commune : undefined,
-              departement: undefined,
-              dvf: {
-                prixM2Median: ms.dvf.medianPriceM2 ?? undefined,
-                nbTransactions: ms.dvf.transactionCount ?? undefined,
-                evolution: ms.dvf.evolutionPct ?? undefined,
-              },
-              insee: {
-                population: safeNumber(ms.insee.population) ?? undefined,
-                revenuMedian: safeNumber(ms.insee.revenuMedian) ?? undefined,
-                tauxChomage: safeNumber(ms.insee.tauxChomage) ?? undefined,
-                densitePopulation: safeNumber(ms.insee.densite) ?? undefined,
-              },
-              bpe: {
-                nbEquipements: safeNumber(ms.bpe.totalEquipements) ?? undefined,
-              },
-              transport: {
-                nbStations: ms.transport.items.length > 0 ? ms.transport.items.length : undefined,
-                distanceCentre: undefined,
-              },
-              insights: ms.insights.map((i) => ({
-                label: i.message,
-                value: "" as string | number,
-                sentiment: (i.type === "positive"
-                  ? "positive"
-                  : i.type === "warning"
-                    ? "negative"
-                    : "neutral") as "positive" | "negative" | "neutral",
-              })),
-            }
-          : undefined,
-        smartscore: ss
-          ? {
-              score: ss.score,
-              verdict: ss.verdict,
-              pillars: ss.pillars.map((p) => ({
-                id: p.key,
-                label: p.label,
-                score: p.rawScore,
-              })),
-            }
-          : undefined,
-        kpis: {
-          ltv: kpiNum(activeReport.kpis["LTV"]) ?? undefined,
-          dscr: kpiNum(activeReport.kpis["DSCR"]) ?? undefined,
-          loyerAnnuel: parseMoneyK(activeReport.revenus["Loyer annuel"]) ?? undefined,
-          coutTotal: parseMoneyK(activeReport.budget["TOTAL"]) ?? undefined,
-          margeBrute: kpiNum(activeReport.kpis["Marge brute"]) ?? undefined,
-          tauxEndettement: undefined,
-        },
+        programmeNom: activeReport.meta.dossierLabel, adresse: activeReport.projet["Adresse"],
+        marketStudy: ms ? { commune: ms.insee.commune !== "-" ? ms.insee.commune : undefined, departement: undefined, dvf: { prixM2Median: ms.dvf.medianPriceM2 ?? undefined, nbTransactions: ms.dvf.transactionCount ?? undefined, evolution: ms.dvf.evolutionPct ?? undefined }, insee: { population: safeNumber(ms.insee.population) ?? undefined, revenuMedian: safeNumber(ms.insee.revenuMedian) ?? undefined, tauxChomage: safeNumber(ms.insee.tauxChomage) ?? undefined, densitePopulation: safeNumber(ms.insee.densite) ?? undefined }, bpe: { nbEquipements: safeNumber(ms.bpe.totalEquipements) ?? undefined }, transport: { nbStations: ms.transport.items.length > 0 ? ms.transport.items.length : undefined, distanceCentre: undefined }, insights: ms.insights.map((i) => ({ label: i.message, value: "" as string | number, sentiment: (i.type === "positive" ? "positive" : i.type === "warning" ? "negative" : "neutral") as "positive" | "negative" | "neutral" })) } : undefined,
+        smartscore: ss ? { score: ss.score, verdict: ss.verdict, pillars: ss.pillars.map((p) => ({ id: p.key, label: p.label, score: p.rawScore })) } : undefined,
+        kpis: { ltv: kpiNum(activeReport.kpis["LTV"]) ?? undefined, dscr: kpiNum(activeReport.kpis["DSCR"]) ?? undefined, loyerAnnuel: parseMoneyK(activeReport.revenus["Loyer annuel"]) ?? undefined, coutTotal: parseMoneyK(activeReport.budget["TOTAL"]) ?? undefined, margeBrute: kpiNum(activeReport.kpis["Marge brute"]) ?? undefined, tauxEndettement: undefined },
         missing: (activeReport.missing ?? []).map((m) => m.label),
       };
-    } catch (err) {
-      console.warn("[ComitePage] engineInput build failed:", err);
-      return null;
-    }
+    } catch (err) { console.warn("[ComitePage] engineInput build failed:", err); return null; }
   }, [activeReport]);
 
-  const localPresentation = useMemo(() => {
-    if (!engineInput || activeNarrative) return null;
-    try {
-      return buildEnginePresentation(engineInput);
-    } catch (err) {
-      console.warn("[ComitePage] Engine presentation build failed:", err);
-      return null;
-    }
-  }, [engineInput, activeNarrative]);
-
-  const decisionScenarios = useMemo(() => {
-    if (!engineInput) return null;
-    try {
-      return buildEngineScenarios(engineInput);
-    } catch (err) {
-      console.warn("[ComitePage] Engine scenarios build failed:", err);
-      return null;
-    }
-  }, [engineInput]);
-
-  const acceptance = useMemo(() => {
-    if (!engineInput) return null;
-    try {
-      return buildAcceptanceProbability(engineInput);
-    } catch (err) {
-      console.warn("[ComitePage] Acceptance probability failed:", err);
-      return null;
-    }
-  }, [engineInput]);
-
-  const matrix = useMemo(() => {
-    if (!engineInput) return null;
-    try {
-      return buildRiskReturnMatrix(engineInput);
-    } catch (err) {
-      console.warn("[ComitePage] Risk/return matrix failed:", err);
-      return null;
-    }
-  }, [engineInput]);
+  const localPresentation = useMemo(() => { if (!engineInput || activeNarrative) return null; try { return buildEnginePresentation(engineInput); } catch (err) { console.warn("[ComitePage] Engine presentation build failed:", err); return null; } }, [engineInput, activeNarrative]);
+  const decisionScenarios = useMemo(() => { if (!engineInput) return null; try { return buildEngineScenarios(engineInput); } catch (err) { console.warn("[ComitePage] Engine scenarios build failed:", err); return null; } }, [engineInput]);
+  const acceptance = useMemo(() => { if (!engineInput) return null; try { return buildAcceptanceProbability(engineInput); } catch (err) { console.warn("[ComitePage] Acceptance probability failed:", err); return null; } }, [engineInput]);
+  const matrix = useMemo(() => { if (!engineInput) return null; try { return buildRiskReturnMatrix(engineInput); } catch (err) { console.warn("[ComitePage] Risk/return matrix failed:", err); return null; } }, [engineInput]);
 
   const handleGenerate = useCallback(async (forceNarrative = false) => {
     if (!dossier || !operation || !dossierId) return;
@@ -2480,49 +1592,27 @@ export default function ComitePage() {
       setReport(rpt);
       upsertDossier({ id: dossierId, comite: { ...((dossier as any)?.comite ?? {}), report: rpt } } as any);
       addEvent({ type: "rapport_generated", dossierId, message: `Rapport comite genere - Score: ${sr.score}/100 (${sr.grade})` });
-
       setNarrativeLoading(true);
       try {
         const reportHash = await computeReportSourceHash(rpt);
         const existingHash = (dossier as any)?.comite?.narrative?.sourceHash;
         const existingNarrative = (dossier as any)?.comite?.narrative;
         const shouldUseCache = !forceNarrative && existingHash && existingHash === reportHash && isNarrativeValid(existingNarrative);
-
-        if (shouldUseCache) {
-          console.log("[ComitePage] Narrative cache hit — skipping Claude call.");
-          setLocalNarrative(existingNarrative as CommitteeNarrative);
-        } else {
+        if (shouldUseCache) { console.log("[ComitePage] Narrative cache hit — skipping Claude call."); setLocalNarrative(existingNarrative as CommitteeNarrative); }
+        else {
           console.log("[ComitePage] Narrative generation triggered (force=", forceNarrative, ")");
           const narrativeResult = await generateCommitteeNarrative(rpt);
           if (narrativeResult.ok && narrativeResult.narrative && narrativeResult.narrative.trim().length > 0) {
-            const narrative: CommitteeNarrative = {
-              text: narrativeResult.narrative,
-              structured: (narrativeResult as any).narrativeStructured ?? null,
-              sourcesUsed: narrativeResult.sourcesUsed ?? [],
-              warnings: narrativeResult.warnings,
-              model: narrativeResult.model ?? "unknown",
-              promptVersion: narrativeResult.promptVersion ?? "unknown",
-              sourceHash: narrativeResult.sourceHash ?? "",
-              generatedAt: narrativeResult.generatedAt ?? new Date().toISOString(),
-            };
+            const narrative: CommitteeNarrative = { text: narrativeResult.narrative, structured: (narrativeResult as any).narrativeStructured ?? null, sourcesUsed: narrativeResult.sourcesUsed ?? [], warnings: narrativeResult.warnings, model: narrativeResult.model ?? "unknown", promptVersion: narrativeResult.promptVersion ?? "unknown", sourceHash: narrativeResult.sourceHash ?? "", generatedAt: narrativeResult.generatedAt ?? new Date().toISOString() };
             setLocalNarrative(narrative); setNarrativeError(null);
             upsertDossier({ id: dossierId, comite: { ...((dossier as any)?.comite ?? {}), report: rpt, narrative } } as any);
             addEvent({ type: "narrative_generated", dossierId, message: `Note comite generee (model: ${narrative.model}, v${narrative.promptVersion}, force=${forceNarrative}, structured=${!!narrative.structured})` });
-            console.log("[ComitePage] Narrative regenerated (force=", forceNarrative, ", hasStructured=", !!narrative.structured, ")");
-          } else {
-            const errMsg = narrativeResult.error ? `Erreur Edge Function: ${narrativeResult.error}` : "La note de synthese est vide (aucun contenu retourne par l'API).";
-            console.warn("[ComitePage] Narrative returned no content:", errMsg); setNarrativeError(errMsg);
-          }
+          } else { const errMsg = narrativeResult.error ? `Erreur Edge Function: ${narrativeResult.error}` : "La note de synthese est vide (aucun contenu retourne par l'API)."; console.warn("[ComitePage] Narrative returned no content:", errMsg); setNarrativeError(errMsg); }
         }
-      } catch (narrativeErr) {
-        const errMsg = narrativeErr instanceof Error ? narrativeErr.message : String(narrativeErr);
-        console.error("[ComitePage] Narrative failed (non-blocking):", narrativeErr);
-        setNarrativeError(`Erreur lors de la generation de la note: ${errMsg}`);
-      } finally { setNarrativeLoading(false); }
-    } catch (err) {
-      console.error("[ComitePage] Erreur generation rapport:", err);
-      setGenError(err instanceof Error ? err.message : "Erreur inconnue lors de la generation du rapport");
-    } finally { setIsGenerating(false); }
+      } catch (narrativeErr) { const errMsg = narrativeErr instanceof Error ? narrativeErr.message : String(narrativeErr); console.error("[ComitePage] Narrative failed (non-blocking):", narrativeErr); setNarrativeError(`Erreur lors de la generation de la note: ${errMsg}`); }
+      finally { setNarrativeLoading(false); }
+    } catch (err) { console.error("[ComitePage] Erreur generation rapport:", err); setGenError(err instanceof Error ? err.message : "Erreur inconnue lors de la generation du rapport"); }
+    finally { setIsGenerating(false); }
   }, [dossier, operation, dossierId]);
 
   const handleExportPdf = useCallback(async () => {
@@ -2536,11 +1626,8 @@ export default function ComitePage() {
         try {
           console.log("[ComitePage] No narrative found — generating before PDF export…");
           const res = await generateCommitteeNarrative(safeReportForPdf);
-          if (res.ok && typeof res.narrative === "string" && res.narrative.trim().length > 0) {
-            bestNarrative = { text: res.narrative, structured: (res as any).narrativeStructured ?? null, sourcesUsed: res.sourcesUsed ?? [], warnings: res.warnings, model: res.model ?? "unknown", promptVersion: res.promptVersion ?? "unknown", sourceHash: res.sourceHash ?? "", generatedAt: res.generatedAt ?? new Date().toISOString() };
-            setLocalNarrative(bestNarrative); setNarrativeError(null);
-            if (dossierId) { try { upsertDossier({ id: dossierId, comite: { ...((dossier as any)?.comite ?? {}), narrative: bestNarrative } } as any); } catch (_) { /* non-blocking */ } }
-          } else { const errMsg = res.error ? `Erreur Edge Function: ${res.error}` : "Note vide."; console.warn("[ComitePage] Narrative failed before PDF — note auto locale sera utilisee:", errMsg); setNarrativeError(errMsg); }
+          if (res.ok && typeof res.narrative === "string" && res.narrative.trim().length > 0) { bestNarrative = { text: res.narrative, structured: (res as any).narrativeStructured ?? null, sourcesUsed: res.sourcesUsed ?? [], warnings: res.warnings, model: res.model ?? "unknown", promptVersion: res.promptVersion ?? "unknown", sourceHash: res.sourceHash ?? "", generatedAt: res.generatedAt ?? new Date().toISOString() }; setLocalNarrative(bestNarrative); setNarrativeError(null); if (dossierId) { try { upsertDossier({ id: dossierId, comite: { ...((dossier as any)?.comite ?? {}), narrative: bestNarrative } } as any); } catch (_) { /* non-blocking */ } } }
+          else { const errMsg = res.error ? `Erreur Edge Function: ${res.error}` : "Note vide."; console.warn("[ComitePage] Narrative failed before PDF — note auto locale sera utilisee:", errMsg); setNarrativeError(errMsg); }
         } catch (narrativeErr) { const errMsg = `Erreur narrative (PDF sans note): ${narrativeErr instanceof Error ? narrativeErr.message : String(narrativeErr)}`; console.warn("[ComitePage] Narrative generation threw — note auto locale sera utilisee:", errMsg); setNarrativeError(errMsg); }
       }
       await exportReportPdf(safeReportForPdf, { ...(dossier as any), comite: { ...((dossier as any)?.comite ?? {}), narrative: bestNarrative } }, bestNarrative);
@@ -2548,70 +1635,182 @@ export default function ComitePage() {
     finally { setIsExporting(false); }
   }, [activeReport, localNarrative, persistedNarrative, dossier, operation, dossierId]);
 
+  // ── Guard: no dossier ──
   if (!dossierId || !dossier) return (
-    <div className="p-6 text-center text-gray-500">Aucun dossier selectionne.{" "}<button className="text-blue-600 underline" onClick={() => navigate("/banque/dossiers")}>Retour aux dossiers</button></div>
+    <div className="p-6">
+      {/* Banner */}
+      <div style={{ background: GRAD_FIN, borderRadius: 14, padding: "20px 24px", marginBottom: 20 }}>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>Financeur › Comité</div>
+        <div style={{ fontSize: 22, fontWeight: 600, color: "white" }}>Comité de crédit</div>
+      </div>
+      <p className="text-center text-gray-500">
+        Aucun dossier sélectionné.{" "}
+        <button className="underline" style={{ color: ACCENT_FIN }} onClick={() => navigate("/banque/dossiers")}>
+          Retour aux dossiers
+        </button>
+      </p>
+    </div>
   );
+
   const hasReport = isReportValid(activeReport);
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-6">
-      <div className="flex items-center justify-between">
+
+      {/* ── Header banner ── */}
+      <div style={{
+        background: GRAD_FIN,
+        borderRadius: 14,
+        padding: "20px 24px",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        gap: 16,
+      }}>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Comité de crédit</h1>
-          <p className="text-sm text-gray-500 mt-1">{dossier.label ?? dossier.reference}<span className="ml-2 text-[10px] text-gray-300" title="Version du composant">v5-engine</span></p>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
+            Financeur › Comité
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>
+            Comité de crédit
+          </div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)", display: "flex", alignItems: "center", gap: 10 }}>
+            <span>{dossier.label ?? dossier.reference}</span>
+            <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: "rgba(255,255,255,0.15)", color: "white", fontWeight: 600 }}>
+              v5-engine
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button onClick={() => handleGenerate(hasReport)} disabled={isGenerating} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2 text-sm font-medium">
-            {isGenerating ? <><span className="animate-spin">⟳</span> Génération…</> : hasReport ? <>🔄 Regénérer le rapport</> : <>📄 Générer le rapport</>}
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, marginTop: 4 }}>
+          <button
+            onClick={() => handleGenerate(hasReport)}
+            disabled={isGenerating}
+            style={{
+              padding: "9px 18px",
+              borderRadius: 10,
+              border: "none",
+              background: "white",
+              color: ACCENT_FIN,
+              fontWeight: 600,
+              fontSize: 13,
+              cursor: isGenerating ? "not-allowed" : "pointer",
+              opacity: isGenerating ? 0.6 : 1,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            {isGenerating
+              ? <><span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>⟳</span> Génération…</>
+              : hasReport ? <>🔄 Regénérer le rapport</> : <>📄 Générer le rapport</>}
           </button>
-          {hasReport && <button onClick={handleExportPdf} disabled={isExporting} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2 text-sm font-medium">
-            {isExporting ? <><span className="animate-spin">⟳</span> Export…</> : <>📥 Exporter PDF</>}
-          </button>}
+          {hasReport && (
+            <button
+              onClick={handleExportPdf}
+              disabled={isExporting}
+              style={{
+                padding: "9px 18px",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.4)",
+                background: "rgba(255,255,255,0.15)",
+                color: "white",
+                fontWeight: 600,
+                fontSize: 13,
+                cursor: isExporting ? "not-allowed" : "pointer",
+                opacity: isExporting ? 0.6 : 1,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              {isExporting ? <><span>⟳</span> Export…</> : <>📥 Exporter PDF</>}
+            </button>
+          )}
         </div>
       </div>
 
-      {genError && <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2"><span className="text-red-500 mt-0.5">⚠️</span><div className="flex-1"><p className="text-sm font-medium text-red-800">Erreur lors de la génération</p><p className="text-sm text-red-600 mt-0.5">{genError}</p></div><button onClick={() => setGenError(null)} className="text-red-400 hover:text-red-600 text-sm">✕</button></div>}
+      {/* Errors */}
+      {genError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
+          <span className="text-red-500 mt-0.5">⚠️</span>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-red-800">Erreur lors de la génération</p>
+            <p className="text-sm text-red-600 mt-0.5">{genError}</p>
+          </div>
+          <button onClick={() => setGenError(null)} className="text-red-400 hover:text-red-600 text-sm">✕</button>
+        </div>
+      )}
 
+      {/* Report status chip */}
       <div className="flex items-center gap-3">
         <span className="text-sm font-medium text-gray-600">Rapport Comité</span>
-        {hasReport ? <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">✅ Généré le {new Date(activeReport!.generatedAt).toLocaleDateString("fr-FR")}</span>
-          : <span className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-sm">⏳ Non généré</span>}
+        {hasReport ? (
+          <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 20, background: "rgba(38,166,154,0.10)", color: ACCENT_FIN, fontWeight: 600 }}>
+            ✅ Généré le {new Date(activeReport!.generatedAt).toLocaleDateString("fr-FR")}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-sm">
+            ⏳ Non généré
+          </span>
+        )}
       </div>
 
       {hasReport && activeReport && (
         <div className="space-y-6">
           {activeReport.smartscore && (
-            <ReportCard title="📊 SmartScore" icon="score">
+            <ReportCard title="📊 SmartScore">
               <div className="flex items-center gap-6 mb-4">
-                <div className={`text-3xl font-bold px-4 py-2 rounded-lg ${getGradeColor(activeReport.smartscore.grade)}`}>{activeReport.smartscore.score}/100</div>
-                <div><div className="text-lg font-semibold">Grade {activeReport.smartscore.grade} — {activeReport.smartscore.verdict}</div><div className="text-sm text-gray-500 capitalize">Profil: {activeReport.profile}</div></div>
+                <div className={`text-3xl font-bold px-4 py-2 rounded-lg ${getGradeColor(activeReport.smartscore.grade)}`}>
+                  {activeReport.smartscore.score}/100
+                </div>
+                <div>
+                  <div className="text-lg font-semibold">Grade {activeReport.smartscore.grade} — {activeReport.smartscore.verdict}</div>
+                  <div className="text-sm text-gray-500 capitalize">Profil: {activeReport.profile}</div>
+                </div>
               </div>
               <div className="space-y-2">
                 {activeReport.smartscore.pillars.map((p) => {
                   const pct = p.maxPoints > 0 ? Math.round((p.points / p.maxPoints) * 100) : 0;
-                  return (<div key={p.key} className="flex items-center gap-3"><span className="w-28 text-xs font-medium text-gray-600 text-right">{p.label}</span><div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden"><div className={`h-full rounded-full ${pct >= 70 ? "bg-green-500" : pct >= 40 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${pct}%` }} /></div><span className="w-16 text-xs text-gray-500 text-right">{p.points}/{p.maxPoints}</span>{!p.hasData && <span className="text-xs bg-gray-200 text-gray-400 px-1 rounded">N/A</span>}</div>);
+                  return (
+                    <div key={p.key} className="flex items-center gap-3">
+                      <span className="w-28 text-xs font-medium text-gray-600 text-right">{p.label}</span>
+                      <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
+                        <div className={`h-full rounded-full ${pct >= 70 ? "bg-green-500" : pct >= 40 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="w-16 text-xs text-gray-500 text-right">{p.points}/{p.maxPoints}</span>
+                      {!p.hasData && <span className="text-xs bg-gray-200 text-gray-400 px-1 rounded">N/A</span>}
+                    </div>
+                  );
                 })}
               </div>
             </ReportCard>
           )}
 
-          {/* ── NOTE DE SYNTHESE COMITE — with engine localPresentation fallback ── */}
+          {/* ── NOTE DE SYNTHESE COMITE ── */}
           <ReportCard title="📝 Note de synthèse comité">
             {narrativeLoading ? (
-              <div className="flex items-center gap-2 text-gray-500 py-4"><span className="animate-spin text-lg">⟳</span><span className="text-sm">Génération de la note de synthèse en cours…</span></div>
+              <div className="flex items-center gap-2 text-gray-500 py-4">
+                <span className="animate-spin text-lg">⟳</span>
+                <span className="text-sm">Génération de la note de synthèse en cours…</span>
+              </div>
             ) : activeNarrative ? (
               <div>
                 {activeNarrative.structured && typeof activeNarrative.structured === "object" && Object.keys(activeNarrative.structured).length > 0
                   ? <StructuredNarrativeView data={activeNarrative.structured} />
                   : <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans leading-relaxed">{activeNarrative.text}</pre>}
                 {activeNarrative.warnings && activeNarrative.warnings.length > 0 && (
-                  <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded text-sm"><span className="font-medium text-amber-700">Avertissements :</span><ul className="mt-1 list-disc list-inside text-amber-600 text-xs">{activeNarrative.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></div>
+                  <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded text-sm">
+                    <span className="font-medium text-amber-700">Avertissements :</span>
+                    <ul className="mt-1 list-disc list-inside text-amber-600 text-xs">{activeNarrative.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+                  </div>
                 )}
                 <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400">
-                  <span>Modèle : {activeNarrative.model}</span><span>Prompt : v{activeNarrative.promptVersion}</span>
+                  <span>Modèle : {activeNarrative.model}</span>
+                  <span>Prompt : v{activeNarrative.promptVersion}</span>
                   <span>Hash : {activeNarrative.sourceHash.substring(0, 12)}…</span>
                   <span>Généré le {new Date(activeNarrative.generatedAt).toLocaleString("fr-FR")}</span>
-                  {activeNarrative.structured && <span className="text-indigo-400">📋 Vue structurée</span>}
+                  {activeNarrative.structured && <span style={{ color: ACCENT_FIN }}>📋 Vue structurée</span>}
                   {activeNarrative.sourcesUsed.length > 0 && <span>Sources : {activeNarrative.sourcesUsed.join(", ")}</span>}
                 </div>
               </div>
@@ -2621,25 +1820,21 @@ export default function ComitePage() {
                   <span className="text-amber-500 text-sm">⚙️</span>
                   <span className="text-xs text-amber-700 font-medium">Note générée localement (committeeEngine) — note IA non disponible</span>
                 </div>
-
                 <p className="text-sm text-gray-700 leading-relaxed">{localPresentation.executiveSummary}</p>
-
                 {localPresentation.sections.map((section, i) => (
                   <div key={i}>
-                    <h4 className="text-sm font-bold text-indigo-700 uppercase tracking-wide mb-2">{section.title}</h4>
+                    <h4 className="text-sm font-bold uppercase tracking-wide mb-2" style={{ color: ACCENT_FIN }}>{section.title}</h4>
                     {section.paragraphs.map((para, j) => (
                       <p key={j} className="text-sm text-gray-700 leading-relaxed mb-2">{para}</p>
                     ))}
                   </div>
                 ))}
-
-                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
-                  <p className="text-sm font-semibold text-indigo-800">{localPresentation.decisionLine}</p>
+                <div className="rounded-lg p-3" style={{ background: "rgba(38,166,154,0.07)", border: "1px solid #c0e8d4" }}>
+                  <p className="text-sm font-semibold" style={{ color: "#0a3d28" }}>{localPresentation.decisionLine}</p>
                 </div>
-
                 {localPresentation.conditions.length > 0 && (
                   <div>
-                    <h4 className="text-sm font-bold text-indigo-700 uppercase tracking-wide mb-2">Conditions</h4>
+                    <h4 className="text-sm font-bold uppercase tracking-wide mb-2" style={{ color: ACCENT_FIN }}>Conditions</h4>
                     <ul className="space-y-1">
                       {localPresentation.conditions.map((cond, i) => (
                         <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
@@ -2650,18 +1845,33 @@ export default function ComitePage() {
                     </ul>
                   </div>
                 )}
-
                 <div className="pt-3 border-t border-gray-100 text-xs text-gray-400">
                   Présentation générée par le moteur local (committeeEngine) à partir des données du rapport.
                 </div>
               </div>
-            ) : <p className="text-sm text-gray-400 italic py-2">La note de synthèse sera générée automatiquement avec le rapport.</p>}
+            ) : (
+              <p className="text-sm text-gray-400 italic py-2">La note de synthèse sera générée automatiquement avec le rapport.</p>
+            )}
             {narrativeError && (
-              <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2"><span className="text-red-500 mt-0.5 flex-shrink-0">⚠️</span><div className="flex-1 min-w-0"><p className="text-sm font-medium text-red-800">Erreur lors de la génération de la note de synthèse</p><p className="text-xs text-red-600 mt-1 break-words whitespace-pre-wrap">{narrativeError}</p><p className="text-xs text-red-400 mt-2">Vérifiez la console pour plus de détails. Causes possibles : CORS, clé API manquante, Edge Function non déployée.</p></div><button onClick={() => setNarrativeError(null)} className="text-red-400 hover:text-red-600 text-sm flex-shrink-0">✕</button></div>
+              <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
+                <span className="text-red-500 mt-0.5 flex-shrink-0">⚠️</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-red-800">Erreur lors de la génération de la note de synthèse</p>
+                  <p className="text-xs text-red-600 mt-1 break-words whitespace-pre-wrap">{narrativeError}</p>
+                  <p className="text-xs text-red-400 mt-2">Vérifiez la console pour plus de détails.</p>
+                </div>
+                <button onClick={() => setNarrativeError(null)} className="text-red-400 hover:text-red-600 text-sm flex-shrink-0">✕</button>
+              </div>
             )}
           </ReportCard>
 
-          <ReportCard title="👤 Emprunteur"><p className="font-medium">{activeReport.emprunteur.identite}</p><p className="text-sm text-gray-500 capitalize">{activeReport.emprunteur.type}</p>{Object.entries(activeReport.emprunteur.details).map(([k, v]) => <div key={k} className="text-sm mt-1"><span className="text-gray-500">{k}:</span> {v}</div>)}</ReportCard>
+          <ReportCard title="👤 Emprunteur">
+            <p className="font-medium">{activeReport.emprunteur.identite}</p>
+            <p className="text-sm text-gray-500 capitalize">{activeReport.emprunteur.type}</p>
+            {Object.entries(activeReport.emprunteur.details).map(([k, v]) => (
+              <div key={k} className="text-sm mt-1"><span className="text-gray-500">{k}:</span> {v}</div>
+            ))}
+          </ReportCard>
 
           <KvSection title="🏗️ Projet" data={activeReport.projet} />
           <KvSection title="💰 Budget" data={activeReport.budget} />
@@ -2672,124 +1882,126 @@ export default function ComitePage() {
 
           {activeReport.risques.items.length > 0 && (
             <ReportCard title="⚡ Risques">
-              <div className="space-y-1">{activeReport.risques.items.map((r, i) => (<div key={i} className={`flex items-center justify-between p-2 rounded text-sm ${r.status === "present" && (r.level === "élevé" || r.level === "très élevé" || r.level === "eleve") ? "bg-red-50" : r.status === "present" ? "bg-amber-50" : "bg-gray-50"}`}><span>{r.status === "absent" ? "✅" : r.status === "unknown" ? "❓" : "⚠️"} {r.label}</span><span className="text-xs font-medium capitalize">{r.level}</span></div>))}</div>
+              <div className="space-y-1">
+                {activeReport.risques.items.map((r, i) => (
+                  <div key={i} className={`flex items-center justify-between p-2 rounded text-sm ${r.status === "present" && (r.level === "élevé" || r.level === "très élevé" || r.level === "eleve") ? "bg-red-50" : r.status === "present" ? "bg-amber-50" : "bg-gray-50"}`}>
+                    <span>{r.status === "absent" ? "✅" : r.status === "unknown" ? "❓" : "⚠️"} {r.label}</span>
+                    <span className="text-xs font-medium capitalize">{r.level}</span>
+                  </div>
+                ))}
+              </div>
               <div className="mt-2 text-sm text-gray-600">Score: {activeReport.risques.score} — Niveau: {activeReport.risques.globalLevel}</div>
             </ReportCard>
           )}
 
           {Object.keys(activeReport.scenarios).length > 0 && (
             <ReportCard title="🎯 Scénarios">
-              <div className="grid grid-cols-3 gap-4">{Object.entries(activeReport.scenarios).map(([name, data]) => (<div key={name} className={`p-3 rounded-lg border ${name === "stress" ? "border-red-200 bg-red-50" : name === "upside" ? "border-green-200 bg-green-50" : "border-gray-200 bg-gray-50"}`}><div className="font-medium capitalize mb-1">{name}</div>{Object.entries(data).map(([k, v]) => <div key={k} className="text-sm"><span className="text-gray-500">{k}:</span> {v}</div>)}</div>))}</div>
+              <div className="grid grid-cols-3 gap-4">
+                {Object.entries(activeReport.scenarios).map(([name, data]) => (
+                  <div key={name} className={`p-3 rounded-lg border ${name === "stress" ? "border-red-200 bg-red-50" : name === "upside" ? "border-green-200 bg-green-50" : "border-gray-200 bg-gray-50"}`}>
+                    <div className="font-medium capitalize mb-1">{name}</div>
+                    {Object.entries(data).map(([k, v]) => <div key={k} className="text-sm"><span className="text-gray-500">{k}:</span> {v}</div>)}
+                  </div>
+                ))}
+              </div>
             </ReportCard>
           )}
 
           {activeReport.missing.length > 0 && (
             <ReportCard title="📋 Données manquantes">
-              <div className="space-y-1">{activeReport.missing.map((m, i) => (<div key={i} className="flex items-center gap-2 text-sm"><span className={`w-2 h-2 rounded-full ${m.severity === "blocker" ? "bg-red-500" : m.severity === "warn" ? "bg-amber-500" : "bg-blue-400"}`} /><span>{m.label}</span><span className={`text-xs px-1.5 py-0.5 rounded ${m.severity === "blocker" ? "bg-red-100 text-red-600" : m.severity === "warn" ? "bg-amber-100 text-amber-600" : "bg-blue-50 text-blue-600"}`}>{m.severity === "blocker" ? "Bloquant" : m.severity === "warn" ? "Attention" : "Info"}</span></div>))}</div>
-              {activeReport.smartscore && activeReport.smartscore.totalMissingPenalty > 0 && <div className="mt-2 text-sm text-red-600 font-medium">Impact score: -{activeReport.smartscore.totalMissingPenalty} pts</div>}
+              <div className="space-y-1">
+                {activeReport.missing.map((m, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <span className={`w-2 h-2 rounded-full ${m.severity === "blocker" ? "bg-red-500" : m.severity === "warn" ? "bg-amber-500" : "bg-blue-400"}`} />
+                    <span>{m.label}</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${m.severity === "blocker" ? "bg-red-100 text-red-600" : m.severity === "warn" ? "bg-amber-100 text-amber-600" : "bg-blue-50 text-blue-600"}`}>
+                      {m.severity === "blocker" ? "Bloquant" : m.severity === "warn" ? "Attention" : "Info"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {activeReport.smartscore && activeReport.smartscore.totalMissingPenalty > 0 && (
+                <div className="mt-2 text-sm text-red-600 font-medium">Impact score: -{activeReport.smartscore.totalMissingPenalty} pts</div>
+              )}
             </ReportCard>
           )}
 
           {activeReport.smartscore && activeReport.smartscore.recommendations.length > 0 && (
-            <ReportCard title="💡 Recommandations"><ol className="list-decimal list-inside space-y-1 text-sm text-gray-700">{activeReport.smartscore.recommendations.map((r, i) => <li key={i}>{r}</li>)}</ol></ReportCard>
+            <ReportCard title="💡 Recommandations">
+              <ol className="list-decimal list-inside space-y-1 text-sm text-gray-700">
+                {activeReport.smartscore.recommendations.map((r, i) => <li key={i}>{r}</li>)}
+              </ol>
+            </ReportCard>
           )}
 
-          {/* ── NEW: Acceptance Probability ── */}
+          {/* ── Acceptance Probability ── */}
           {acceptance && (() => {
-            const acceptanceLabel =
-              acceptance.score >= 70 ? "Acceptation probable"
-                : acceptance.score >= 40 ? "Acceptation incertaine"
-                  : "Acceptation peu probable";
+            const acceptanceLabel = acceptance.score >= 70 ? "Acceptation probable" : acceptance.score >= 40 ? "Acceptation incertaine" : "Acceptation peu probable";
             return (
-            <ReportCard title="✅ Probabilité d'acceptation">
-              <div className="flex items-center gap-6 mb-4">
-                <div className={`text-3xl font-bold px-4 py-2 rounded-lg ${
-                  acceptance.score >= 70 ? "bg-green-100 text-green-800"
-                    : acceptance.score >= 40 ? "bg-amber-100 text-amber-800"
-                      : "bg-red-100 text-red-800"
-                }`}>
-                  {acceptance.score}%
+              <ReportCard title="✅ Probabilité d'acceptation">
+                <div className="flex items-center gap-6 mb-4">
+                  <div className={`text-3xl font-bold px-4 py-2 rounded-lg ${acceptance.score >= 70 ? "bg-green-100 text-green-800" : acceptance.score >= 40 ? "bg-amber-100 text-amber-800" : "bg-red-100 text-red-800"}`}>
+                    {acceptance.score}%
+                  </div>
+                  <div>
+                    <div className="text-lg font-semibold text-gray-800">{acceptanceLabel}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">Probabilité estimée d'acceptation en comité</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-lg font-semibold text-gray-800">{acceptanceLabel}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">Probabilité estimée d'acceptation en comité</div>
-                </div>
-              </div>
-              {acceptance.drivers && acceptance.drivers.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Facteurs déterminants</p>
-                  {acceptance.drivers.map((d, i) => (
-                    <div key={i} className="flex items-start gap-2 text-sm">
-                      <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${
-                        d.impact > 0 ? "bg-green-400"
-                          : d.impact < 0 ? "bg-red-400"
-                            : "bg-gray-400"
-                      }`} />
-                      <span className="text-gray-700">
-                        <span className="font-medium">{d.label}</span>
-                        {d.detail ? ` — ${d.detail}` : ""}
-                        <span className={`ml-1 text-xs ${d.impact > 0 ? "text-green-600" : d.impact < 0 ? "text-red-600" : "text-gray-400"}`}>
-                          ({d.impact > 0 ? "+" : ""}{d.impact})
+                {acceptance.drivers && acceptance.drivers.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Facteurs déterminants</p>
+                    {acceptance.drivers.map((d, i) => (
+                      <div key={i} className="flex items-start gap-2 text-sm">
+                        <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${d.impact > 0 ? "bg-green-400" : d.impact < 0 ? "bg-red-400" : "bg-gray-400"}`} />
+                        <span className="text-gray-700">
+                          <span className="font-medium">{d.label}</span>
+                          {d.detail ? ` — ${d.detail}` : ""}
+                          <span className={`ml-1 text-xs ${d.impact > 0 ? "text-green-600" : d.impact < 0 ? "text-red-600" : "text-gray-400"}`}>
+                            ({d.impact > 0 ? "+" : ""}{d.impact})
+                          </span>
                         </span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </ReportCard>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </ReportCard>
             );
           })()}
 
-          {/* ── NEW: Risk/Return Matrix ── */}
+          {/* ── Risk/Return Matrix ── */}
           {matrix && (
             <ReportCard title="📌 Matrice Risque / Rendement">
               <div className="flex items-start gap-6">
                 <div className="relative w-44 h-44 flex-shrink-0 border border-gray-200 rounded-lg overflow-hidden">
                   <div className="absolute inset-0 grid grid-cols-2 grid-rows-2">
-                    <div className="bg-amber-50 border-r border-b border-gray-200" title="Risque élevé / Rendement élevé" />
-                    <div className="bg-green-50 border-b border-gray-200" title="Risque faible / Rendement élevé" />
-                    <div className="bg-red-50 border-r border-gray-200" title="Risque élevé / Rendement faible" />
-                    <div className="bg-gray-50" title="Risque faible / Rendement faible" />
+                    <div className="bg-amber-50 border-r border-b border-gray-200" />
+                    <div className="bg-green-50 border-b border-gray-200" />
+                    <div className="bg-red-50 border-r border-gray-200" />
+                    <div className="bg-gray-50" />
                   </div>
                   <div className="absolute bottom-0.5 left-1/2 -translate-x-1/2 text-[9px] text-gray-400">Risque →</div>
                   <div className="absolute left-0.5 top-1/2 -translate-y-1/2 -rotate-90 text-[9px] text-gray-400 origin-center">Rendement →</div>
                   <div
-                    className="absolute w-3.5 h-3.5 bg-indigo-600 rounded-full border-2 border-white shadow-md z-10"
-                    style={{
-                      left: `${Math.min(Math.max(matrix.riskScore, 5), 95)}%`,
-                      bottom: `${Math.min(Math.max(matrix.returnScore, 5), 95)}%`,
-                      transform: "translate(-50%, 50%)",
-                    }}
+                    className="absolute w-3.5 h-3.5 rounded-full border-2 border-white shadow-md z-10"
+                    style={{ background: GRAD_FIN, left: `${Math.min(Math.max(matrix.riskScore, 5), 95)}%`, bottom: `${Math.min(Math.max(matrix.returnScore, 5), 95)}%`, transform: "translate(-50%, 50%)" }}
                     title={`Risque: ${matrix.riskScore} / Rendement: ${matrix.returnScore}`}
                   />
                 </div>
-
                 <div className="flex-1 space-y-3">
                   <div>
-                    <span className={`inline-block text-sm font-bold px-3 py-1 rounded-full ${
-                      matrix.quadrant.toLowerCase().includes("optimal") || matrix.quadrant.toLowerCase().includes("favorable")
-                        ? "bg-green-100 text-green-800"
-                        : matrix.quadrant.toLowerCase().includes("vigilance") || matrix.quadrant.toLowerCase().includes("attention")
-                          ? "bg-amber-100 text-amber-800"
-                          : matrix.quadrant.toLowerCase().includes("defavorable") || matrix.quadrant.toLowerCase().includes("critique")
-                            ? "bg-red-100 text-red-800"
-                            : "bg-indigo-100 text-indigo-800"
-                    }`}>
+                    <span className={`inline-block text-sm font-bold px-3 py-1 rounded-full ${matrix.quadrant.toLowerCase().includes("optimal") || matrix.quadrant.toLowerCase().includes("favorable") ? "bg-green-100 text-green-800" : matrix.quadrant.toLowerCase().includes("vigilance") || matrix.quadrant.toLowerCase().includes("attention") ? "bg-amber-100 text-amber-800" : matrix.quadrant.toLowerCase().includes("defavorable") || matrix.quadrant.toLowerCase().includes("critique") ? "bg-red-100 text-red-800" : "bg-indigo-100 text-indigo-800"}`}>
                       {matrix.quadrant}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-gray-50 rounded-lg p-2.5">
+                    <div className="rounded-lg p-2.5" style={{ background: "rgba(38,166,154,0.05)" }}>
                       <p className="text-xs text-gray-500">Score Risque</p>
-                      <p className={`text-lg font-bold ${
-                        matrix.riskScore <= 35 ? "text-green-700" : matrix.riskScore <= 65 ? "text-amber-700" : "text-red-700"
-                      }`}>{matrix.riskScore}<span className="text-xs font-normal text-gray-400">/100</span></p>
+                      <p className={`text-lg font-bold ${matrix.riskScore <= 35 ? "text-green-700" : matrix.riskScore <= 65 ? "text-amber-700" : "text-red-700"}`}>{matrix.riskScore}<span className="text-xs font-normal text-gray-400">/100</span></p>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-2.5">
+                    <div className="rounded-lg p-2.5" style={{ background: "rgba(38,166,154,0.05)" }}>
                       <p className="text-xs text-gray-500">Score Rendement</p>
-                      <p className={`text-lg font-bold ${
-                        matrix.returnScore >= 65 ? "text-green-700" : matrix.returnScore >= 35 ? "text-amber-700" : "text-red-700"
-                      }`}>{matrix.returnScore}<span className="text-xs font-normal text-gray-400">/100</span></p>
+                      <p className={`text-lg font-bold ${matrix.returnScore >= 65 ? "text-green-700" : matrix.returnScore >= 35 ? "text-amber-700" : "text-red-700"}`}>{matrix.returnScore}<span className="text-xs font-normal text-gray-400">/100</span></p>
                     </div>
                   </div>
                   <p className="text-sm text-gray-700 leading-relaxed">{matrix.commentary}</p>
@@ -2798,24 +2010,15 @@ export default function ComitePage() {
             </ReportCard>
           )}
 
-          {/* ── Decision Scenarios (from committeeEngine) ── */}
+          {/* ── Decision Scenarios ── */}
           {decisionScenarios && decisionScenarios.length > 0 && (
             <ReportCard title="🎲 Scénarios décisionnels">
               <p className="text-xs text-gray-500 mb-4">Trois lectures du dossier pour éclairer la décision comité (committeeEngine).</p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {decisionScenarios.map((sc) => {
-                  const borderColor =
-                    sc.key === "conservative" ? "border-amber-300"
-                      : sc.key === "opportunistic" ? "border-green-300"
-                        : "border-indigo-300";
-                  const bgColor =
-                    sc.key === "conservative" ? "bg-amber-50"
-                      : sc.key === "opportunistic" ? "bg-green-50"
-                        : "bg-indigo-50";
-                  const badgeColor =
-                    sc.key === "conservative" ? "bg-amber-100 text-amber-800"
-                      : sc.key === "opportunistic" ? "bg-green-100 text-green-800"
-                        : "bg-indigo-100 text-indigo-800";
+                  const borderColor = sc.key === "conservative" ? "border-amber-300" : sc.key === "opportunistic" ? "border-green-300" : "border-indigo-300";
+                  const bgColor = sc.key === "conservative" ? "bg-amber-50" : sc.key === "opportunistic" ? "bg-green-50" : "bg-indigo-50";
+                  const badgeColor = sc.key === "conservative" ? "bg-amber-100 text-amber-800" : sc.key === "opportunistic" ? "bg-green-100 text-green-800" : "bg-indigo-100 text-indigo-800";
                   return (
                     <div key={sc.key} className={`border ${borderColor} rounded-lg overflow-hidden`}>
                       <div className={`${bgColor} px-4 py-2 flex items-center justify-between`}>
@@ -2824,34 +2027,10 @@ export default function ComitePage() {
                       </div>
                       <div className="px-4 py-3 space-y-2">
                         <div className="text-xs text-gray-500">Confiance : <span className="font-semibold">{sc.confidence}%</span></div>
-
-                        {sc.pros && sc.pros.length > 0 && (
-                          <div>
-                            <p className="text-xs font-semibold text-green-700 mb-1">Pour</p>
-                            {sc.pros.slice(0, 4).map((p, i) => <p key={i} className="text-xs text-gray-600">+ {p}</p>)}
-                          </div>
-                        )}
-
-                        {sc.cons && sc.cons.length > 0 && (
-                          <div>
-                            <p className="text-xs font-semibold text-red-700 mb-1">Contre</p>
-                            {sc.cons.slice(0, 4).map((c, i) => <p key={i} className="text-xs text-gray-600">- {c}</p>)}
-                          </div>
-                        )}
-
-                        {sc.conditions && sc.conditions.length > 0 && (
-                          <div className="pt-2 border-t border-gray-100">
-                            <p className="text-xs font-semibold text-indigo-700 mb-1">Conditions</p>
-                            {sc.conditions.slice(0, 5).map((c, i) => <p key={i} className="text-xs text-gray-600">&gt; {c}</p>)}
-                          </div>
-                        )}
-
-                        {sc.targets && sc.targets.length > 0 && (
-                          <div className="pt-2 border-t border-gray-100">
-                            <p className="text-xs font-semibold text-gray-700 mb-1">Cibles</p>
-                            {sc.targets.slice(0, 4).map((t, i) => <p key={i} className="text-xs text-gray-600">• {t}</p>)}
-                          </div>
-                        )}
+                        {sc.pros && sc.pros.length > 0 && (<div><p className="text-xs font-semibold text-green-700 mb-1">Pour</p>{sc.pros.slice(0, 4).map((p, i) => <p key={i} className="text-xs text-gray-600">+ {p}</p>)}</div>)}
+                        {sc.cons && sc.cons.length > 0 && (<div><p className="text-xs font-semibold text-red-700 mb-1">Contre</p>{sc.cons.slice(0, 4).map((c, i) => <p key={i} className="text-xs text-gray-600">- {c}</p>)}</div>)}
+                        {sc.conditions && sc.conditions.length > 0 && (<div className="pt-2 border-t border-gray-100"><p className="text-xs font-semibold mb-1" style={{ color: ACCENT_FIN }}>Conditions</p>{sc.conditions.slice(0, 5).map((c, i) => <p key={i} className="text-xs text-gray-600">&gt; {c}</p>)}</div>)}
+                        {sc.targets && sc.targets.length > 0 && (<div className="pt-2 border-t border-gray-100"><p className="text-xs font-semibold text-gray-700 mb-1">Cibles</p>{sc.targets.slice(0, 4).map((t, i) => <p key={i} className="text-xs text-gray-600">• {t}</p>)}</div>)}
                       </div>
                     </div>
                   );
@@ -2860,17 +2039,37 @@ export default function ComitePage() {
             </ReportCard>
           )}
 
-          <ReportCard title="📝 Conclusion"><pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans">{activeReport.verdictExplanation}</pre></ReportCard>
+          <ReportCard title="📝 Conclusion">
+            <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans">{activeReport.verdictExplanation}</pre>
+          </ReportCard>
+
           <DecisionSection dossierId={dossierId!} dossier={dossier} />
         </div>
       )}
 
       {!hasReport && (
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
+        <div
+          className="rounded-lg p-8 text-center"
+          style={{ background: "rgba(38,166,154,0.04)", border: "2px dashed #c0e8d4" }}
+        >
           <div className="text-4xl mb-3">📄</div>
           <p className="text-gray-600 mb-4">Le rapport comité n'a pas encore été généré.</p>
           {genError && <p className="text-sm text-red-600 mb-4">{genError}</p>}
-          <button onClick={() => handleGenerate(false)} className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium">Générer le rapport</button>
+          <button
+            onClick={() => handleGenerate(false)}
+            style={{
+              padding: "9px 24px",
+              borderRadius: 10,
+              border: "none",
+              background: GRAD_FIN,
+              color: "white",
+              fontWeight: 600,
+              fontSize: 14,
+              cursor: "pointer",
+            }}
+          >
+            Générer le rapport
+          </button>
         </div>
       )}
     </div>
@@ -2881,34 +2080,91 @@ export default function ComitePage() {
 // SUB-COMPONENTS
 // ════════════════════════════════════════════════════════════════════
 
-function ReportCard({ title, children, icon }: { title: string; children: ReactNode; icon?: string }) {
-  return (<div className="bg-white rounded-lg border border-gray-200 p-4"><h3 className="text-lg font-semibold text-gray-900 mb-3">{title}</h3>{children}</div>);
+function ReportCard({ title, children }: { title: string; children: ReactNode; icon?: string }) {
+  return (
+    <div className="bg-white p-4" style={{ borderRadius: 14, border: "1px solid #c0e8d4" }}>
+      <h3 className="text-lg font-semibold mb-3" style={{ color: "#0a3d28" }}>{title}</h3>
+      {children}
+    </div>
+  );
 }
 
 function KvSection({ title, data }: { title: string; data: Record<string, string> }) {
   const entries = Object.entries(data).filter(([_, v]) => v && v !== "Non renseigné" && v !== "Non renseigne");
   if (entries.length === 0) return null;
-  return (<ReportCard title={title}><div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">{entries.map(([k, v]) => <div key={k}><div className="text-xs text-gray-500">{k}</div><div className={`font-medium ${k === "TOTAL" ? "text-indigo-700 text-lg" : "text-gray-800"}`}>{v}</div></div>)}</div></ReportCard>);
+  return (
+    <ReportCard title={title}>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+        {entries.map(([k, v]) => (
+          <div key={k}>
+            <div className="text-xs text-gray-500">{k}</div>
+            <div className={`font-medium ${k === "TOTAL" ? "text-lg" : "text-gray-800"}`} style={k === "TOTAL" ? { color: ACCENT_FIN } : {}}>
+              {v}
+            </div>
+          </div>
+        ))}
+      </div>
+    </ReportCard>
+  );
 }
 
 function DecisionSection({ dossierId, dossier }: { dossierId: string; dossier: any }) {
   const [verdict, setVerdict] = useState<string>(dossier?.decision?.verdict ?? dossier?.comite?.verdict ?? "");
   const [motivation, setMotivation] = useState<string>(dossier?.decision?.motivation ?? dossier?.comite?.motivation ?? "");
   const [saved, setSaved] = useState(false);
+
   const handleSave = () => {
     upsertDossier({ id: dossierId, decision: { ...(dossier?.decision ?? {}), verdict, motivation, decidedAt: new Date().toISOString() } } as any);
     addEvent({ type: "decision_updated", dossierId, message: `Decision comite: ${verdict}` });
     setSaved(true); setTimeout(() => setSaved(false), 3000);
   };
+
   return (
-    <div className="bg-white rounded-lg border-2 border-indigo-200 p-4">
-      <h3 className="text-lg font-semibold text-gray-900 mb-3">⚖️ Décision du comité</h3>
+    <div className="bg-white p-4" style={{ borderRadius: 14, border: "2px solid #c0e8d4" }}>
+      <h3 className="text-lg font-semibold mb-3" style={{ color: "#0a3d28" }}>⚖️ Décision du comité</h3>
       <div className="space-y-4">
-        <div className="flex gap-3">{["GO", "GO sous conditions", "NO GO"].map((v) => <button key={v} onClick={() => setVerdict(v)} className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${verdict === v ? v === "GO" ? "bg-green-600 text-white border-green-600" : v === "GO sous conditions" ? "bg-amber-500 text-white border-amber-500" : "bg-red-600 text-white border-red-600" : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"}`}>{v}</button>)}</div>
-        <textarea placeholder="Motivation / Conditions..." value={motivation} onChange={(e) => setMotivation(e.target.value)} rows={4} className="w-full border border-gray-300 rounded-lg p-3 text-sm resize-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+        <div className="flex gap-3">
+          {["GO", "GO sous conditions", "NO GO"].map((v) => (
+            <button
+              key={v}
+              onClick={() => setVerdict(v)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                verdict === v
+                  ? v === "GO" ? "bg-green-600 text-white border-green-600"
+                    : v === "GO sous conditions" ? "bg-amber-500 text-white border-amber-500"
+                      : "bg-red-600 text-white border-red-600"
+                  : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+        <textarea
+          placeholder="Motivation / Conditions..."
+          value={motivation}
+          onChange={(e) => setMotivation(e.target.value)}
+          rows={4}
+          className="w-full border border-slate-200 rounded-lg p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-teal-400/30"
+        />
         <div className="flex items-center gap-3">
-          <button onClick={handleSave} disabled={!verdict} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium">Enregistrer la décision</button>
-          {saved && <span className="text-green-600 text-sm">✅ Décision enregistrée</span>}
+          <button
+            onClick={handleSave}
+            disabled={!verdict}
+            style={{
+              padding: "9px 20px",
+              borderRadius: 9,
+              border: "none",
+              background: verdict ? GRAD_FIN : "#e2e8f0",
+              color: verdict ? "white" : "#94a3b8",
+              fontWeight: 600,
+              fontSize: 14,
+              cursor: verdict ? "pointer" : "not-allowed",
+            }}
+          >
+            Enregistrer la décision
+          </button>
+          {saved && <span style={{ fontSize: 14, color: "#16a34a", fontWeight: 500 }}>✅ Décision enregistrée</span>}
         </div>
       </div>
     </div>

@@ -11,6 +11,7 @@
 // ✅ FIX #12: CommitteePanel replaces inline RIGHT card content.
 // ✅ FIX #13: Documentation pillar stripped at source via
 //    normalizeSmartScoreUniversal (calc + render + PDF aligned with ComitePage).
+// ✅ REDESIGN: Financeur visual tokens applied (GRAD_FIN / ACCENT_FIN).
 // ============================================================================
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -40,6 +41,10 @@ import {
   EVIDENCE_TYPE_LABELS,
 } from "../types/urbanismTypes";
 import CommitteePanel from "../components/committee/CommitteePanel";
+
+// ── Design tokens Financeur ──
+const GRAD_FIN = "linear-gradient(90deg, #26a69a 0%, #80cbc4 100%)";
+const ACCENT_FIN = "#1a7a50";
 
 // ══════════════════════════════════════════════════════════════════════
 // PILLAR WEIGHTS — configurable scoring weights
@@ -337,7 +342,10 @@ function WeightsSettingsModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div
+          className="px-6 py-4 flex items-center justify-between"
+          style={{ borderBottom: "1px solid #c0e8d4" }}
+        >
           <div>
             <h3 className="text-lg font-bold text-gray-900">⚙️ Pondération des piliers</h3>
             <p className="text-xs text-gray-400 mt-0.5">
@@ -365,7 +373,8 @@ function WeightsSettingsModal({
                 max={40}
                 value={draft[key]}
                 onChange={(e) => handleChange(key, parseInt(e.target.value, 10))}
-                className="flex-1 accent-indigo-600"
+                className="flex-1"
+                style={{ accentColor: ACCENT_FIN }}
               />
               <input
                 type="number"
@@ -373,26 +382,23 @@ function WeightsSettingsModal({
                 max={100}
                 value={draft[key]}
                 onChange={(e) => handleChange(key, parseInt(e.target.value, 10) || 0)}
-                className="w-14 text-center text-sm border border-gray-200 rounded-lg py-1 focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400"
+                className="w-14 text-center text-sm border border-gray-200 rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-teal-400/30"
               />
             </div>
           ))}
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-100 space-y-3">
+        <div className="px-6 py-4 space-y-3" style={{ borderTop: "1px solid #c0e8d4" }}>
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-500">Total des poids :</span>
-            <span
-              className={`text-sm font-bold ${
-                isValid ? "text-green-600" : "text-red-600"
-              }`}
-            >
+            <span className={`text-sm font-bold ${isValid ? "text-green-600" : "text-red-600"}`}>
               {total}/100
               {!isValid && (
                 <button
                   onClick={handleAutoBalance}
-                  className="ml-2 text-xs font-normal text-indigo-600 hover:text-indigo-800 underline"
+                  className="ml-2 text-xs font-normal underline"
+                  style={{ color: ACCENT_FIN }}
                 >
                   Équilibrer
                 </button>
@@ -415,12 +421,19 @@ function WeightsSettingsModal({
               Annuler
             </button>
             <button
-              onClick={() => {
-                onSave(draft);
-                onClose();
-              }}
+              onClick={() => { onSave(draft); onClose(); }}
               disabled={!isValid}
-              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{
+                padding: "8px 16px",
+                borderRadius: 8,
+                border: "none",
+                background: isValid ? GRAD_FIN : "#e2e8f0",
+                color: isValid ? "white" : "#94a3b8",
+                fontWeight: 600,
+                fontSize: 14,
+                cursor: isValid ? "pointer" : "not-allowed",
+                transition: "opacity 0.15s",
+              }}
             >
               Appliquer
             </button>
@@ -638,7 +651,8 @@ const fmtDate = (iso: string | null | undefined) => {
 function Tip({ text }: { text: string }) {
   return (
     <span
-      className="inline-flex items-center justify-center w-4 h-4 ml-1 text-[10px] text-gray-400 border border-gray-300 rounded-full cursor-help align-middle"
+      className="inline-flex items-center justify-center w-4 h-4 ml-1 text-[10px] border rounded-full cursor-help align-middle"
+      style={{ color: "#9ed4bc", borderColor: "#9ed4bc" }}
       title={text}
     >
       i
@@ -722,9 +736,14 @@ function UrbanismSection({
   };
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+    <div
+      className="bg-white p-5 space-y-4"
+      style={{ borderRadius: 14, border: "1px solid #c0e8d4" }}
+    >
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900">🏛️ Urbanisme & conformité</h3>
+        <h3 className="text-lg font-semibold" style={{ color: "#0a3d28" }}>
+          🏛️ Urbanisme &amp; conformité
+        </h3>
         <span className="text-xs text-gray-400 italic">Preuve / complétude — pas de lecture PLU automatique</span>
       </div>
 
@@ -757,7 +776,7 @@ function UrbanismSection({
           value={urbanism.source}
           onChange={(e) => onChange({ ...urbanism, source: e.target.value })}
           placeholder="Ex: Mairie de Bordeaux, notaire, urbaniste…"
-          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400"
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-400/30"
         />
       </div>
 
@@ -765,13 +784,14 @@ function UrbanismSection({
         <div className="flex items-center justify-between">
           <label className="text-sm font-medium text-gray-700">Pièces justificatives ({urbanism.evidence.length})</label>
           <div className="relative group">
-            <button className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">+ Ajouter une pièce</button>
+            <button className="text-xs font-medium" style={{ color: ACCENT_FIN }}>+ Ajouter une pièce</button>
             <div className="absolute right-0 top-6 z-10 hidden group-hover:block bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[200px]">
               {(Object.entries(EVIDENCE_TYPE_LABELS) as [UrbanismEvidence["type"], string][]).map(([type, label]) => (
                 <button
                   key={type}
                   onClick={() => addEvidence(type, label)}
-                  className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700"
+                  className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-teal-50"
+                  style={{ ["--tw-bg-opacity" as any]: 1 }}
                 >
                   {label}
                 </button>
@@ -790,7 +810,7 @@ function UrbanismSection({
                   <span className="text-gray-400">📄</span>
                   <span className="text-sm font-medium text-gray-800">{ev.label}</span>
                   <span className="text-xs text-gray-400">{fmtDate(ev.addedAt)}</span>
-                  {ev.fileName && <span className="text-xs text-indigo-500">{ev.fileName}</span>}
+                  {ev.fileName && <span className="text-xs" style={{ color: ACCENT_FIN }}>{ev.fileName}</span>}
                 </div>
                 <button onClick={() => removeEvidence(ev.id)} className="text-xs text-red-400 hover:text-red-600" title="Supprimer">✕</button>
               </div>
@@ -806,7 +826,7 @@ function UrbanismSection({
           onChange={(e) => onChange({ ...urbanism, notes: e.target.value })}
           rows={3}
           placeholder="Observations du chargé de crédit, prescriptions, réserves…"
-          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400"
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-400/30"
         />
       </div>
     </div>
@@ -1095,7 +1115,13 @@ export default function AnalysePage() {
       <div className="flex items-center justify-center h-64 text-gray-400">
         <p>
           Chargement du dossier…{" "}
-          <button className="text-blue-600 underline" onClick={() => navigate("/banque/dossiers")}>Retour aux dossiers</button>
+          <button
+            className="underline"
+            style={{ color: ACCENT_FIN }}
+            onClick={() => navigate("/banque/dossiers")}
+          >
+            Retour aux dossiers
+          </button>
         </p>
       </div>
     );
@@ -1112,32 +1138,83 @@ export default function AnalysePage() {
         />
       )}
 
-      {/* ══════════════ HEADER ══════════════ */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      {/* ══════════════ HEADER BANNER ══════════════ */}
+      <div style={{
+        background: GRAD_FIN,
+        borderRadius: 14,
+        padding: "20px 24px",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        gap: 16,
+      }}>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Analyse du dossier</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            {dossier.label ?? dossier.reference} — Profil:{" "}
-            <span className="font-medium capitalize">{profile}</span>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
+            Financeur › Analyse
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>
+            Analyse du dossier
+          </div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)", display: "flex", alignItems: "center", gap: 10 }}>
+            <span>{dossier.label ?? dossier.reference}</span>
+            <span style={{ opacity: 0.6 }}>·</span>
+            <span>Profil : <span style={{ fontWeight: 600 }}>{profile}</span></span>
             {hasEnrichedData(operation) && (
-              <span className="ml-2 text-green-600 text-xs font-medium">✓ Données enrichies</span>
+              <span style={{
+                fontSize: 10,
+                padding: "2px 8px",
+                borderRadius: 5,
+                background: "rgba(255,255,255,0.20)",
+                color: "white",
+                fontWeight: 600,
+              }}>
+                ✓ Données enrichies
+              </span>
             )}
-          </p>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
+
+        {/* CTA buttons */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, marginTop: 4 }}>
           <button
             onClick={handleEnrich}
             disabled={isEnriching}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2 text-sm font-medium transition-colors"
+            style={{
+              padding: "9px 16px",
+              borderRadius: 10,
+              border: "none",
+              background: "white",
+              color: ACCENT_FIN,
+              fontWeight: 600,
+              fontSize: 13,
+              cursor: isEnriching ? "not-allowed" : "pointer",
+              opacity: isEnriching ? 0.6 : 1,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
           >
-            {isEnriching ? (<><span className="animate-spin">⟳</span> Enrichissement…</>) : (<>🔍 Lancer l'analyse</>)}
+            {isEnriching ? <><span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>⟳</span> Enrichissement…</> : <>🔍 Lancer l'analyse</>}
           </button>
           <button
             onClick={handleAnalyze}
             disabled={isAnalyzing}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 text-sm font-medium transition-colors"
+            style={{
+              padding: "9px 16px",
+              borderRadius: 10,
+              border: "1px solid rgba(255,255,255,0.4)",
+              background: "rgba(255,255,255,0.15)",
+              color: "white",
+              fontWeight: 600,
+              fontSize: 13,
+              cursor: isAnalyzing ? "not-allowed" : "pointer",
+              opacity: isAnalyzing ? 0.6 : 1,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
           >
-            {isAnalyzing ? (<><span className="animate-spin">⟳</span> Calcul…</>) : (<>📊 {displayScore ? "Recalculer" : "Calculer le score"}</>)}
+            {isAnalyzing ? <><span>⟳</span> Calcul…</> : <>📊 {displayScore ? "Recalculer" : "Calculer le score"}</>}
           </button>
         </div>
       </div>
@@ -1171,12 +1248,15 @@ export default function AnalysePage() {
       )}
 
       {enrichSources.length > 0 && !enrichError && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-3">
-          <span className="text-green-500">✓</span>
+        <div
+          className="rounded-lg p-3 flex items-center gap-3"
+          style={{ background: "rgba(38,166,154,0.07)", border: "1px solid #c0e8d4" }}
+        >
+          <span style={{ color: ACCENT_FIN }}>✓</span>
           <div>
-            <span className="text-sm font-medium text-green-800">Données enrichies</span>
-            <span className="text-sm text-green-600 ml-2">Sources : {enrichSources.join(", ")}</span>
-            {enrichedAt && <span className="text-xs text-green-500 ml-2">({fmtDate(enrichedAt)})</span>}
+            <span className="text-sm font-medium" style={{ color: "#0a3d28" }}>Données enrichies</span>
+            <span className="text-sm ml-2" style={{ color: "#5a9a7a" }}>Sources : {enrichSources.join(", ")}</span>
+            {enrichedAt && <span className="text-xs ml-2" style={{ color: "#9ed4bc" }}>({fmtDate(enrichedAt)})</span>}
           </div>
         </div>
       )}
@@ -1186,20 +1266,24 @@ export default function AnalysePage() {
           ══════════════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* ──── LEFT: Score Dossier (Universal) ──── */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+        <div
+          className="bg-white p-5 space-y-4"
+          style={{ borderRadius: 14, border: "1px solid #c0e8d4" }}
+        >
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">
+              <h2 className="text-lg font-semibold" style={{ color: "#0a3d28" }}>
                 Score Dossier
                 <Tip text="Score universel : complétude du dossier, montage financier, qualité de l'opération. Pilote la décision si le pré-filtre risques est passé." />
               </h2>
-              <p className="text-xs text-gray-400 mt-0.5">Universal — complétude & montage</p>
+              <p className="text-xs text-gray-400 mt-0.5">Universal — complétude &amp; montage</p>
             </div>
             <div className="flex items-center gap-2">
-              {/* ✅ FIX #10: Settings gear */}
+              {/* Settings gear */}
               <button
                 onClick={() => setShowWeightsModal(true)}
-                className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+                style={{ color: "#9ed4bc" }}
                 title="Paramètres de pondération"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -1236,17 +1320,21 @@ export default function AnalysePage() {
                   {displayScore.pillars
                     .filter((p) => !DOCUMENTATION_KEYS.has(p.key))
                     .map((p) => (
-                    <div key={p.key} className="bg-gray-50 rounded-lg p-2.5 text-center">
+                    <div
+                      key={p.key}
+                      className="rounded-lg p-2.5 text-center"
+                      style={{ background: "rgba(38,166,154,0.05)", border: "1px solid #e8f5f0" }}
+                    >
                       <p className="text-[11px] text-gray-500 mb-0.5 truncate">{p.label}</p>
                       {p.hasData === false ? (
                         <p className="text-base font-bold text-gray-300">N/A</p>
                       ) : (
                         <>
-                          <p className="text-base font-bold text-gray-800">
+                          <p className="text-base font-bold" style={{ color: "#0a3d28" }}>
                             {p.rawScore}<span className="text-[10px] text-gray-400 font-normal">/100</span>
                           </p>
                           {p.maxPoints > 0 && (
-                            <p className="text-[10px] text-gray-400">{p.points}/{p.maxPoints} pts</p>
+                            <p className="text-[10px]" style={{ color: "#9ed4bc" }}>{p.points}/{p.maxPoints} pts</p>
                           )}
                         </>
                       )}
@@ -1256,12 +1344,19 @@ export default function AnalysePage() {
               )}
 
               {hasBlockers && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
+                <div
+                  className="rounded-lg px-4 py-3 flex items-center justify-between gap-3"
+                  style={{ background: "#fffbeb", border: "1px solid #fbbf24" }}
+                >
                   <div>
                     <p className="text-sm font-medium text-amber-800">⚠ Score provisoire : dossier incomplet</p>
                     <p className="text-xs text-amber-600 mt-0.5">{blockers.length} élément{blockers.length > 1 ? "s" : ""} bloquant{blockers.length > 1 ? "s" : ""}</p>
                   </div>
-                  <button onClick={() => scrollTo(refComplete)} className="shrink-0 px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium hover:bg-amber-700 transition-colors">
+                  <button
+                    onClick={() => scrollTo(refComplete)}
+                    className="shrink-0 px-3 py-1.5 text-white rounded-lg text-xs font-medium transition-colors"
+                    style={{ background: GRAD_FIN }}
+                  >
                     Compléter maintenant
                   </button>
                 </div>
@@ -1273,11 +1368,14 @@ export default function AnalysePage() {
         </div>
 
         {/* ──── RIGHT: Score Risques & Localisation ──── */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+        <div
+          className="bg-white p-5 space-y-4"
+          style={{ borderRadius: 14, border: "1px solid #c0e8d4" }}
+        >
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">
-                Risques & Localisation
+              <h2 className="text-lg font-semibold" style={{ color: "#0a3d28" }}>
+                Risques &amp; Localisation
                 <Tip text="Pré-filtre comité : risques exogènes (Géorisques, environnement, réglementaire). Un NO GO ici bloque la décision indépendamment du score dossier." />
               </h2>
               <p className="text-xs text-gray-400 mt-0.5">Committee — pré-filtre risques</p>
@@ -1327,8 +1425,13 @@ export default function AnalysePage() {
           <div ref={refComplete} />
 
           {incompleteItems.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">📋 À compléter ({incompleteItems.length})</h3>
+            <div
+              className="bg-white p-5"
+              style={{ borderRadius: 14, border: "1px solid #c0e8d4" }}
+            >
+              <h3 className="text-lg font-semibold mb-3" style={{ color: "#0a3d28" }}>
+                📋 À compléter ({incompleteItems.length})
+              </h3>
               <div className="space-y-2">
                 {incompleteItems.map((m: any, i: number) => (
                   <div key={i} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${m.severity === "blocker" ? "bg-red-50 text-red-700" : m.severity === "warn" ? "bg-amber-50 text-amber-700" : "bg-gray-50 text-gray-600"}`}>
@@ -1339,7 +1442,11 @@ export default function AnalysePage() {
                 ))}
               </div>
               {missing.length > 6 && <p className="text-xs text-gray-400 mt-2">… et {missing.length - 6} autre{missing.length - 6 > 1 ? "s" : ""}</p>}
-              <button onClick={() => navigate(`/banque/dossier/${dossierId}`)} className="mt-3 text-sm text-indigo-600 hover:text-indigo-800 font-medium">
+              <button
+                onClick={() => navigate(`/banque/dossier/${dossierId}`)}
+                className="mt-3 text-sm font-medium"
+                style={{ color: ACCENT_FIN }}
+              >
                 Compléter dans le dossier →
               </button>
             </div>
@@ -1348,49 +1455,52 @@ export default function AnalysePage() {
           <div ref={refFinances} />
 
           {operation.kpis && Object.keys(operation.kpis).length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">📈 KPIs financiers</h3>
+            <div
+              className="bg-white p-5"
+              style={{ borderRadius: 14, border: "1px solid #c0e8d4" }}
+            >
+              <h3 className="text-lg font-semibold mb-3" style={{ color: "#0a3d28" }}>📈 KPIs financiers</h3>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {operation.kpis.ltv !== undefined && (
-                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <div className="rounded-lg p-3 text-center" style={{ background: "rgba(38,166,154,0.05)" }}>
                     <p className="text-xs text-gray-500">LTV</p>
-                    <p className="text-xl font-bold text-gray-800">{fmtPct(operation.kpis.ltv)}</p>
+                    <p className="text-xl font-bold" style={{ color: "#0a3d28" }}>{fmtPct(operation.kpis.ltv)}</p>
                   </div>
                 )}
                 {operation.kpis.dsti !== undefined && (
-                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <div className="rounded-lg p-3 text-center" style={{ background: "rgba(38,166,154,0.05)" }}>
                     <p className="text-xs text-gray-500">DSTI</p>
-                    <p className="text-xl font-bold text-gray-800">{fmtPct(operation.kpis.dsti)}</p>
+                    <p className="text-xl font-bold" style={{ color: "#0a3d28" }}>{fmtPct(operation.kpis.dsti)}</p>
                   </div>
                 )}
                 {operation.kpis.monthlyPayment !== undefined && (
-                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <div className="rounded-lg p-3 text-center" style={{ background: "rgba(38,166,154,0.05)" }}>
                     <p className="text-xs text-gray-500">Mensualité</p>
-                    <p className="text-xl font-bold text-gray-800">{fmtNum(operation.kpis.monthlyPayment, " €")}</p>
+                    <p className="text-xl font-bold" style={{ color: "#0a3d28" }}>{fmtNum(operation.kpis.monthlyPayment, " €")}</p>
                   </div>
                 )}
                 {operation.kpis.projectCost !== undefined && (
-                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <div className="rounded-lg p-3 text-center" style={{ background: "rgba(38,166,154,0.05)" }}>
                     <p className="text-xs text-gray-500">Coût projet</p>
-                    <p className="text-xl font-bold text-gray-800">{fmtK(operation.kpis.projectCost)}</p>
+                    <p className="text-xl font-bold" style={{ color: "#0a3d28" }}>{fmtK(operation.kpis.projectCost)}</p>
                   </div>
                 )}
                 {operation.kpis.dscr !== undefined && (
-                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <div className="rounded-lg p-3 text-center" style={{ background: "rgba(38,166,154,0.05)" }}>
                     <p className="text-xs text-gray-500">DSCR</p>
-                    <p className="text-xl font-bold text-gray-800">{operation.kpis.dscr}x</p>
+                    <p className="text-xl font-bold" style={{ color: "#0a3d28" }}>{operation.kpis.dscr}x</p>
                   </div>
                 )}
                 {operation.kpis.yieldGross !== undefined && (
-                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <div className="rounded-lg p-3 text-center" style={{ background: "rgba(38,166,154,0.05)" }}>
                     <p className="text-xs text-gray-500">Rendement brut</p>
-                    <p className="text-xl font-bold text-gray-800">{fmtPct(operation.kpis.yieldGross)}</p>
+                    <p className="text-xl font-bold" style={{ color: "#0a3d28" }}>{fmtPct(operation.kpis.yieldGross)}</p>
                   </div>
                 )}
                 {operation.kpis.pricePerSqmMarket !== undefined && (
-                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <div className="rounded-lg p-3 text-center" style={{ background: "rgba(38,166,154,0.05)" }}>
                     <p className="text-xs text-gray-500">Prix marché</p>
-                    <p className="text-xl font-bold text-gray-800">{fmtNum(operation.kpis.pricePerSqmMarket, " €/m²")}</p>
+                    <p className="text-xl font-bold" style={{ color: "#0a3d28" }}>{fmtNum(operation.kpis.pricePerSqmMarket, " €/m²")}</p>
                   </div>
                 )}
               </div>
@@ -1398,8 +1508,11 @@ export default function AnalysePage() {
           )}
 
           {(operation.dvf?.stats || operation.market?.commune) && (
-            <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-5">
-              <h3 className="text-lg font-semibold text-gray-900">🏘️ Marché & transactions</h3>
+            <div
+              className="bg-white p-5 space-y-5"
+              style={{ borderRadius: 14, border: "1px solid #c0e8d4" }}
+            >
+              <h3 className="text-lg font-semibold" style={{ color: "#0a3d28" }}>🏘️ Marché &amp; transactions</h3>
 
               {operation.dvf?.stats && (
                 <div>
@@ -1442,7 +1555,7 @@ export default function AnalysePage() {
                                 <td className="py-1 pr-2 text-gray-600">{c.date?.slice(0, 10) ?? "—"}</td>
                                 <td className="py-1 pr-2 text-right font-medium">{fmtK(c.price)}</td>
                                 <td className="py-1 pr-2 text-right">{c.surface ? `${c.surface} m²` : "—"}</td>
-                                <td className="py-1 text-right font-medium text-indigo-600">{fmtNum(c.pricePerSqm, " €")}</td>
+                                <td className="py-1 text-right font-medium" style={{ color: ACCENT_FIN }}>{fmtNum(c.pricePerSqm, " €")}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -1528,27 +1641,30 @@ export default function AnalysePage() {
           <div ref={refRisks} />
 
           {operation.risks?.geo && (
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">🌍 Risques géographiques</h3>
+            <div
+              className="bg-white p-5"
+              style={{ borderRadius: 14, border: "1px solid #c0e8d4" }}
+            >
+              <h3 className="text-lg font-semibold mb-3" style={{ color: "#0a3d28" }}>🌍 Risques géographiques</h3>
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                <div className="rounded-lg p-3 text-center" style={{ background: "rgba(38,166,154,0.05)" }}>
                   <p className="text-xs text-gray-500">Score risque</p>
                   <p className={`text-2xl font-bold ${operation.risks.geo.score >= 70 ? "text-green-600" : operation.risks.geo.score >= 40 ? "text-amber-600" : "text-red-600"}`}>
                     {operation.risks.geo.score}/100
                   </p>
                   <p className="text-xs text-gray-500">{operation.risks.geo.label}</p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                <div className="rounded-lg p-3 text-center" style={{ background: "rgba(38,166,154,0.05)" }}>
                   <p className="text-xs text-gray-500">Risques identifiés</p>
                   <p className="text-xl font-bold text-gray-800">{operation.risks.geo.nbRisques}</p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                <div className="rounded-lg p-3 text-center" style={{ background: "rgba(38,166,154,0.05)" }}>
                   <p className="text-xs text-gray-500">Inondation</p>
                   <p className="text-lg font-bold">
                     {operation.risks.geo.hasInondation ? <span className="text-red-600">Oui</span> : <span className="text-green-600">Non</span>}
                   </p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                <div className="rounded-lg p-3 text-center" style={{ background: "rgba(38,166,154,0.05)" }}>
                   <p className="text-xs text-gray-500">Sismique</p>
                   <p className="text-lg font-bold">
                     {operation.risks.geo.hasSismique ? <span className="text-amber-600">Oui</span> : <span className="text-green-600">Non</span>}
@@ -1559,8 +1675,11 @@ export default function AnalysePage() {
           )}
 
           {alerts.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">🚨 Alertes ({alerts.length})</h3>
+            <div
+              className="bg-white p-5"
+              style={{ borderRadius: 14, border: "1px solid #c0e8d4" }}
+            >
+              <h3 className="text-lg font-semibold mb-3" style={{ color: "#0a3d28" }}>🚨 Alertes ({alerts.length})</h3>
               <div className="space-y-2">
                 {alerts.map((a: any, i: number) => (
                   <div key={i} className={`px-3 py-2 rounded-lg text-sm ${a.level === "critical" ? "bg-red-50 text-red-700 border border-red-200" : a.level === "warning" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-blue-50 text-blue-700 border border-blue-200"}`}>
@@ -1572,12 +1691,21 @@ export default function AnalysePage() {
           )}
 
           {(enrichSources.length > 0 || enrichedAt) && (
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <h3 className="text-sm font-semibold text-gray-900 mb-2">🔗 Sources d'enrichissement</h3>
+            <div
+              className="bg-white p-5"
+              style={{ borderRadius: 14, border: "1px solid #c0e8d4" }}
+            >
+              <h3 className="text-sm font-semibold mb-2" style={{ color: "#0a3d28" }}>🔗 Sources d'enrichissement</h3>
               {enrichSources.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mb-2">
                   {enrichSources.map((s, i) => (
-                    <span key={i} className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-xs font-medium">{s}</span>
+                    <span
+                      key={i}
+                      className="px-2 py-0.5 rounded text-xs font-medium"
+                      style={{ background: "rgba(38,166,154,0.10)", color: ACCENT_FIN }}
+                    >
+                      {s}
+                    </span>
                   ))}
                 </div>
               )}
@@ -1590,8 +1718,11 @@ export default function AnalysePage() {
             const events = snap?.events?.slice(-5)?.reverse() ?? [];
             if (events.length === 0) return null;
             return (
-              <div className="bg-white rounded-xl border border-gray-200 p-5">
-                <h3 className="text-sm font-semibold text-gray-900 mb-2">📝 Journal rapide</h3>
+              <div
+                className="bg-white p-5"
+                style={{ borderRadius: 14, border: "1px solid #c0e8d4" }}
+              >
+                <h3 className="text-sm font-semibold mb-2" style={{ color: "#0a3d28" }}>📝 Journal rapide</h3>
                 <div className="space-y-1.5">
                   {events.map((ev: any, i: number) => (
                     <div key={i} className="flex items-start gap-2 text-xs">

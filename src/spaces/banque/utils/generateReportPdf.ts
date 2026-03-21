@@ -35,6 +35,16 @@ const COLORS = {
   emerald:    [16, 185, 129] as const,
 };
 
+// ── Financeur palette ──
+const FIN = {
+  gradStart: [38, 166, 154]   as const, // #26a69a
+  gradEnd:   [128, 203, 196]  as const, // #80cbc4
+  accent:    [26, 122, 80]    as const, // #1a7a50
+  dark:      [10, 61, 40]     as const, // #0a3d28
+  light:     [192, 232, 212]  as const, // #c0e8d4
+  pale:      [232, 251, 242]  as const, // #e8fbf2
+};
+
 const NIVEAU_COLOR: Record<Niveau, readonly [number, number, number]> = {
   Faible:   COLORS.green,
   Modéré:   COLORS.amber,
@@ -50,12 +60,13 @@ const LABEL_COLOR: Record<Label, readonly [number, number, number]> = {
   E: COLORS.red,
 };
 
+// Variantes verts/teals distinctes par pilier, dans la palette Financeur
 const PILLAR_COLOR: Record<string, readonly [number, number, number]> = {
-  documentation: COLORS.blue,
-  garanties:     COLORS.indigo,
-  emprunteur:    COLORS.violet,
-  projet:        COLORS.cyan,
-  financier:     COLORS.emerald,
+  documentation: [38, 166, 154]  as const, // GRAD_FIN_START — teal
+  garanties:     [26, 122, 80]   as const, // ACCENT_FIN — forest green
+  emprunteur:    [16, 185, 129]  as const, // emerald proche palette
+  projet:        [20, 144, 100]  as const, // mid green
+  financier:     [128, 203, 196] as const, // GRAD_FIN_END — light teal
 };
 
 // ── Helpers ──
@@ -105,10 +116,10 @@ export function generateReportPdf(report: StructuredReport): void {
     checkSpace(14);
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(...COLORS.primary);
+    doc.setTextColor(...FIN.dark);                // ← DARK_FIN
     doc.text(title, M, y);
     y += 2;
-    doc.setDrawColor(...COLORS.indigo);
+    doc.setDrawColor(...FIN.gradStart);           // ← GRAD_FIN_START
     doc.setLineWidth(0.6);
     doc.line(M, y, M + CW, y);
     y += 6;
@@ -139,9 +150,13 @@ export function generateReportPdf(report: StructuredReport): void {
   // HEADER
   // ════════════════════════════════════════════════════════════════
 
-  // Background band
-  doc.setFillColor(...COLORS.primary);
+  // Background band — GRAD_FIN_START (dégradé simulé par bande pleine)
+  doc.setFillColor(...FIN.gradStart);             // ← GRAD_FIN_START
   doc.rect(0, 0, W, 42, "F");
+
+  // Thin bottom accent strip to suggest gradient
+  doc.setFillColor(...FIN.gradEnd);               // ← GRAD_FIN_END
+  doc.rect(0, 36, W, 6, "F");
 
   // Title
   doc.setFontSize(18);
@@ -156,7 +171,7 @@ export function generateReportPdf(report: StructuredReport): void {
   doc.setFontSize(8);
   doc.text(`Statut : ${report.meta.statut}  |  Généré le ${fmtDateTime(report.generatedAt)}`, M, 30);
 
-  // Score badge (right side)
+  // Score badge (right side) — inchangé, couleur par grade
   const gradeColor = LABEL_COLOR[report.risk.grade];
   doc.setFillColor(...gradeColor);
   doc.roundedRect(W - M - 30, 8, 28, 26, 4, 4, "F");
@@ -215,19 +230,19 @@ export function generateReportPdf(report: StructuredReport): void {
   const niveauColor = NIVEAU_COLOR[report.risk.niveau];
 
   // Score box
-  doc.setFillColor(...COLORS.light);
+  doc.setFillColor(...FIN.light);                 // ← LIGHT_FIN
   doc.roundedRect(M, y, boxW, 16, 2, 2, "F");
   doc.setFontSize(7);
   doc.setTextColor(...COLORS.secondary);
   doc.text("Score", M + boxW / 2, y + 5, { align: "center" });
   doc.setFontSize(14);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(...COLORS.primary);
+  doc.setTextColor(...FIN.dark);                  // ← DARK_FIN
   doc.text(`${report.risk.score}/100`, M + boxW / 2, y + 13, { align: "center" });
 
   // Grade box
   const gradeX = M + boxW + 4;
-  doc.setFillColor(...COLORS.light);
+  doc.setFillColor(...FIN.light);                 // ← LIGHT_FIN
   doc.roundedRect(gradeX, y, boxW, 16, 2, 2, "F");
   doc.setFontSize(7);
   doc.setFont("helvetica", "normal");
@@ -235,7 +250,7 @@ export function generateReportPdf(report: StructuredReport): void {
   doc.text("Note", gradeX + boxW / 2, y + 5, { align: "center" });
   doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(...gradeColor);
+  doc.setTextColor(...gradeColor);                // conservé (couleur par grade)
   doc.text(report.risk.grade, gradeX + boxW / 2, y + 13, { align: "center" });
 
   // Niveau box
@@ -301,12 +316,12 @@ export function generateReportPdf(report: StructuredReport): void {
       ]),
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: {
-        fillColor: COLORS.primary as unknown as [number, number, number],
+        fillColor: FIN.gradStart as unknown as [number, number, number], // ← GRAD_FIN_START
         textColor: COLORS.white as unknown as [number, number, number],
         fontStyle: "bold",
       },
       alternateRowStyles: {
-        fillColor: COLORS.light as unknown as [number, number, number],
+        fillColor: FIN.pale as unknown as [number, number, number],      // ← PALE_FIN
       },
       columnStyles: {
         0: { cellWidth: 8, halign: "center" },
@@ -339,11 +354,11 @@ export function generateReportPdf(report: StructuredReport): void {
   // Progress bar
   checkSpace(8);
   const barY = y;
-  doc.setFillColor(...COLORS.light);
+  doc.setFillColor(...FIN.light);                 // ← LIGHT_FIN
   doc.roundedRect(M + 60, barY - 3, CW - 60, 4, 1, 1, "F");
   const barFillW = ((CW - 60) * report.documents.completeness) / 100;
   if (barFillW > 0) {
-    doc.setFillColor(...COLORS.green);
+    doc.setFillColor(...FIN.gradStart);           // ← GRAD_FIN_START
     doc.roundedRect(M + 60, barY - 3, barFillW, 4, 1, 1, "F");
   }
   y += 4;
@@ -366,12 +381,12 @@ export function generateReportPdf(report: StructuredReport): void {
       ]),
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: {
-        fillColor: COLORS.primary as unknown as [number, number, number],
+        fillColor: FIN.gradStart as unknown as [number, number, number], // ← GRAD_FIN_START
         textColor: COLORS.white as unknown as [number, number, number],
         fontStyle: "bold",
       },
       alternateRowStyles: {
-        fillColor: COLORS.light as unknown as [number, number, number],
+        fillColor: FIN.pale as unknown as [number, number, number],      // ← PALE_FIN
       },
     });
     y = (doc as any).lastAutoTable.finalY + 5;
@@ -386,11 +401,11 @@ export function generateReportPdf(report: StructuredReport): void {
 
   // Overall score
   checkSpace(14);
-  doc.setFillColor(...COLORS.light);
+  doc.setFillColor(...FIN.light);                 // ← LIGHT_FIN
   doc.roundedRect(M, y, CW, 12, 2, 2, "F");
   doc.setFontSize(10);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(...COLORS.primary);
+  doc.setTextColor(...FIN.dark);                  // ← DARK_FIN
   doc.text(`Score global : ${report.smartscore.score}/100`, M + 4, y + 5);
   doc.setFontSize(12);
   doc.setTextColor(...LABEL_COLOR[report.smartscore.grade]);
@@ -398,14 +413,11 @@ export function generateReportPdf(report: StructuredReport): void {
 
   // Score bar
   const scoreBarY = y + 8;
-  doc.setFillColor(220, 220, 220);
+  doc.setFillColor(...FIN.light);                 // ← LIGHT_FIN
   doc.roundedRect(M + 4, scoreBarY, CW - 24, 2.5, 1, 1, "F");
   const fillW = ((CW - 24) * report.smartscore.score) / 100;
-  const scoreColor = report.smartscore.score >= 80 ? COLORS.green
-    : report.smartscore.score >= 60 ? COLORS.amber
-      : report.smartscore.score >= 40 ? COLORS.orange : COLORS.red;
   if (fillW > 0) {
-    doc.setFillColor(...scoreColor);
+    doc.setFillColor(...FIN.gradStart);           // ← GRAD_FIN_START (remplace la logique score color)
     doc.roundedRect(M + 4, scoreBarY, fillW, 2.5, 1, 1, "F");
   }
   y += 18;
@@ -414,20 +426,20 @@ export function generateReportPdf(report: StructuredReport): void {
   for (const p of report.smartscore.pillars) {
     checkSpace(18);
     const pct = Math.round((p.points / p.max) * 100);
-    const pColor = PILLAR_COLOR[p.key] ?? COLORS.secondary;
+    const pColor = PILLAR_COLOR[p.key] ?? FIN.gradStart;  // ← fallback GRAD_FIN_START
 
     // Label + score
     doc.setFontSize(9);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(...COLORS.primary);
+    doc.setTextColor(...FIN.dark);                // ← DARK_FIN
     doc.text(p.label, M, y);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(...COLORS.secondary);
     doc.text(`${p.points}/${p.max} pts`, W - M, y, { align: "right" });
     y += 3;
 
-    // Bar
-    doc.setFillColor(230, 230, 230);
+    // Bar background
+    doc.setFillColor(...FIN.light);               // ← LIGHT_FIN
     doc.roundedRect(M, y, CW, 3, 1, 1, "F");
     const pFillW = (CW * pct) / 100;
     if (pFillW > 0) {
@@ -452,7 +464,7 @@ export function generateReportPdf(report: StructuredReport): void {
     if (p.actions.length > 0) {
       doc.setFontSize(7);
       doc.setFont("helvetica", "normal");
-      doc.setTextColor(...COLORS.indigo);
+      doc.setTextColor(...FIN.accent);            // ← ACCENT_FIN (remplace indigo)
       for (const a of p.actions) {
         checkSpace(4);
         doc.text(`  → ${a}`, M, y);
@@ -470,7 +482,7 @@ export function generateReportPdf(report: StructuredReport): void {
     if (report.smartscore.drivers.up.length > 0) {
       doc.setFontSize(8);
       doc.setFont("helvetica", "bold");
-      doc.setTextColor(...COLORS.green);
+      doc.setTextColor(...FIN.gradStart);         // ← GRAD_FIN_START (points forts)
       doc.text("Points forts :", M, y);
       y += 4;
       doc.setFont("helvetica", "normal");
@@ -486,12 +498,12 @@ export function generateReportPdf(report: StructuredReport): void {
     if (report.smartscore.drivers.down.length > 0) {
       doc.setFontSize(8);
       doc.setFont("helvetica", "bold");
-      doc.setTextColor(...COLORS.red);
+      doc.setTextColor(...COLORS.red);            // conservé
       doc.text("Points de vigilance :", M, y);
       y += 4;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7.5);
-      doc.setTextColor(...COLORS.red);
+      doc.setTextColor(...COLORS.red);            // conservé
       for (const d of report.smartscore.drivers.down) {
         checkSpace(4);
         doc.text(`  - ${d}`, M, y);
@@ -507,7 +519,7 @@ export function generateReportPdf(report: StructuredReport): void {
     y += 2;
     doc.setFontSize(9);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(...COLORS.indigo);
+    doc.setTextColor(...FIN.accent);              // ← ACCENT_FIN
     doc.text("Recommandations", M, y);
     y += 5;
     doc.setFont("helvetica", "normal");
