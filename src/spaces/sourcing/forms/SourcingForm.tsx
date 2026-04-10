@@ -180,6 +180,22 @@ const styles = {
 };
 
 // ============================================
+// HELPERS
+// ============================================
+
+function ternaryToBoolean(value: Ternary | ''): boolean | undefined {
+  if (value === 'oui') return true;
+  if (value === 'non') return false;
+  return undefined;
+}
+
+function selectToBoolean(value: string): boolean | undefined {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return undefined;
+}
+
+// ============================================
 // FORM STATE (exporté pour le parent)
 // ============================================
 
@@ -201,23 +217,42 @@ export interface FormState {
   ruePassante: string;
   standingImmeuble: StandingImmeuble | '';
   commentaire: string;
+
   jardin: Ternary | '';
   terrasse: Ternary | '';
   piscine: Ternary | '';
   stationnement: StationnementMaison | '';
+
   ascenseurAppart: Ternary | '';
   balcon: Ternary | '';
   cave: Ternary | '';
   parkingAppart: Ternary | '';
+
   nbLots: string;
   ascenseurImmeuble: Ternary | '';
   etatGeneral: EtatGeneral | '';
   revenusLocatifsConnus: string;
   montantMensuel: string;
+
   surfaceParcelle: string;
   pente: PenteTerrain | '';
   acces: AccesTerrain | '';
   viabilise: Ternary | '';
+
+  // Nouveaux critères scoring
+  bus: string;
+  tram: string;
+  metro: string;
+  rerTrain: string;
+
+  loggia: string;
+  calme: string;
+  lumineux: string;
+  traversant: string;
+  visAVisFaible: string;
+  vueDegagee: string;
+  rdcSurRue: string;
+  box: string;
 }
 
 export const initialFormState: FormState = {
@@ -238,23 +273,41 @@ export const initialFormState: FormState = {
   ruePassante: '',
   standingImmeuble: '',
   commentaire: '',
+
   jardin: '',
   terrasse: '',
   piscine: '',
   stationnement: '',
+
   ascenseurAppart: '',
   balcon: '',
   cave: '',
   parkingAppart: '',
+
   nbLots: '',
   ascenseurImmeuble: '',
   etatGeneral: '',
   revenusLocatifsConnus: '',
   montantMensuel: '',
+
   surfaceParcelle: '',
   pente: '',
   acces: '',
   viabilise: '',
+
+  bus: '',
+  tram: '',
+  metro: '',
+  rerTrain: '',
+
+  loggia: '',
+  calme: '',
+  lumineux: '',
+  traversant: '',
+  visAVisFaible: '',
+  vueDegagee: '',
+  rdcSurRue: '',
+  box: '',
 };
 
 // ============================================
@@ -287,10 +340,8 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
   initialData,
   initialFormValues,
 }) => {
-  // ── Merge initialFormValues into initialFormState (only at mount) ──
   const [form, setForm] = useState<FormState>(() => {
     if (!initialFormValues) return { ...initialFormState };
-    // Merge: only override keys that have a non-empty value
     const merged = { ...initialFormState };
     for (const [key, value] of Object.entries(initialFormValues)) {
       if (value !== undefined && value !== null && value !== '') {
@@ -299,6 +350,7 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
     }
     return merged;
   });
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
@@ -316,8 +368,8 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
     });
   }, []);
 
-  const buildDraft = useCallback((): Partial<SourcingInput> => {
-    const draft: Partial<SourcingInput> = {
+  const buildDraft = useCallback((): Partial<SourcingInput> & Record<string, any> => {
+    const draft: Partial<SourcingInput> & Record<string, any> = {
       location: {
         codePostal: form.codePostal,
         rueProche: form.rueProche,
@@ -325,56 +377,91 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
         arrondissement: form.arrondissement || undefined,
         quartier: form.quartier || undefined,
       },
-      propertyType: form.propertyType as PropertyType || undefined,
+      propertyType: (form.propertyType as PropertyType) || undefined,
       price: form.price ? parseFloat(form.price) : undefined,
       surface: form.surface ? parseFloat(form.surface) : undefined,
       floor: parseFloor(form.floor) ?? undefined,
     };
 
-    if (form.proximiteTransport || form.nuisances || form.exposition || 
-        form.standingImmeuble || form.commentaire || form.proximiteCommerces || form.ruePassante) {
+    if (
+      form.proximiteTransport ||
+      form.nuisances ||
+      form.exposition ||
+      form.standingImmeuble ||
+      form.commentaire ||
+      form.proximiteCommerces ||
+      form.ruePassante
+    ) {
       draft.quartier = {
-        proximiteTransport: form.proximiteTransport as ProximiteTransport || undefined,
-        distanceTransport: form.distanceTransport ? parseInt(form.distanceTransport) : undefined,
-        proximiteCommerces: form.proximiteCommerces === 'true' ? true : form.proximiteCommerces === 'false' ? false : undefined,
-        nuisances: form.nuisances as NuisanceLevel || undefined,
-        exposition: form.exposition as Exposition || undefined,
-        ruePassante: form.ruePassante === 'true' ? true : form.ruePassante === 'false' ? false : undefined,
-        standingImmeuble: form.standingImmeuble as StandingImmeuble || undefined,
+        proximiteTransport: (form.proximiteTransport as ProximiteTransport) || undefined,
+        distanceTransport: form.distanceTransport ? parseInt(form.distanceTransport, 10) : undefined,
+        proximiteCommerces: selectToBoolean(form.proximiteCommerces),
+        nuisances: (form.nuisances as NuisanceLevel) || undefined,
+        exposition: (form.exposition as Exposition) || undefined,
+        ruePassante: selectToBoolean(form.ruePassante),
+        standingImmeuble: (form.standingImmeuble as StandingImmeuble) || undefined,
         commentaire: form.commentaire || undefined,
       };
     }
 
     if (form.propertyType === 'house') {
       draft.houseOptions = {
-        jardin: form.jardin as Ternary || undefined,
-        terrasse: form.terrasse as Ternary || undefined,
-        piscine: form.piscine as Ternary || undefined,
-        stationnement: form.stationnement as StationnementMaison || undefined,
+        jardin: (form.jardin as Ternary) || undefined,
+        terrasse: (form.terrasse as Ternary) || undefined,
+        piscine: (form.piscine as Ternary) || undefined,
+        stationnement: (form.stationnement as StationnementMaison) || undefined,
       };
     } else if (form.propertyType === 'apartment') {
       draft.apartmentOptions = {
-        ascenseur: form.ascenseurAppart as Ternary || undefined,
-        balcon: form.balcon as Ternary || undefined,
-        cave: form.cave as Ternary || undefined,
-        parking: form.parkingAppart as Ternary || undefined,
+        ascenseur: (form.ascenseurAppart as Ternary) || undefined,
+        balcon: (form.balcon as Ternary) || undefined,
+        cave: (form.cave as Ternary) || undefined,
+        parking: (form.parkingAppart as Ternary) || undefined,
       };
     } else if (form.propertyType === 'building') {
       draft.buildingOptions = {
-        nbLots: form.nbLots ? parseInt(form.nbLots) : undefined,
-        ascenseur: form.ascenseurImmeuble as Ternary || undefined,
-        etatGeneral: form.etatGeneral as EtatGeneral || undefined,
+        nbLots: form.nbLots ? parseInt(form.nbLots, 10) : undefined,
+        ascenseur: (form.ascenseurImmeuble as Ternary) || undefined,
+        etatGeneral: (form.etatGeneral as EtatGeneral) || undefined,
         revenusLocatifsConnus: form.revenusLocatifsConnus === 'true',
         montantMensuel: form.montantMensuel ? parseFloat(form.montantMensuel) : undefined,
       };
     } else if (form.propertyType === 'land') {
       draft.landOptions = {
         surfaceParcelle: form.surfaceParcelle ? parseFloat(form.surfaceParcelle) : undefined,
-        pente: form.pente as PenteTerrain || undefined,
-        acces: form.acces as AccesTerrain || undefined,
-        viabilise: form.viabilise as Ternary || undefined,
+        pente: (form.pente as PenteTerrain) || undefined,
+        acces: (form.acces as AccesTerrain) || undefined,
+        viabilise: (form.viabilise as Ternary) || undefined,
       };
     }
+
+    // Champs enrichis pour le scoring avancé
+    draft.ascenseur = ternaryToBoolean(form.ascenseurAppart || form.ascenseurImmeuble);
+    draft.balcon = ternaryToBoolean(form.balcon);
+    draft.terrasse = ternaryToBoolean(form.terrasse);
+    draft.cave = ternaryToBoolean(form.cave);
+    draft.parking = ternaryToBoolean(form.parkingAppart);
+    draft.jardin = ternaryToBoolean(form.jardin);
+    draft.commerces = selectToBoolean(form.proximiteCommerces);
+    draft.transport = form.proximiteTransport ? form.proximiteTransport !== 'aucun' : undefined;
+
+    draft.bus = selectToBoolean(form.bus);
+    draft.tram = selectToBoolean(form.tram);
+    draft.metro = selectToBoolean(form.metro);
+    draft.rerTrain = selectToBoolean(form.rerTrain);
+
+    draft.loggia = selectToBoolean(form.loggia);
+    draft.calme = selectToBoolean(form.calme);
+    draft.lumineux = selectToBoolean(form.lumineux);
+    draft.traversant = selectToBoolean(form.traversant);
+    draft.visAVisFaible = selectToBoolean(form.visAVisFaible);
+    draft.vueDegagee = selectToBoolean(form.vueDegagee);
+    draft.rdcSurRue = selectToBoolean(form.rdcSurRue);
+    draft.box = selectToBoolean(form.box);
+
+    draft.etatGeneral = form.etatGeneral || undefined;
+    draft.dpe = undefined; // conservé si tu l’ajoutes plus tard au formulaire
+    draft.nbPieces = undefined; // conservé si tu l’ajoutes plus tard au formulaire
 
     return draft;
   }, [form]);
@@ -382,8 +469,8 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     const draft = buildDraft();
-    const validation = validateDraft(draft);
-    
+    const validation = validateDraft(draft as Partial<SourcingInput>);
+
     if (!validation.ok) {
       setErrors(validation.errors);
       const touchedFields: Record<string, boolean> = {};
@@ -396,8 +483,10 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
     }
 
     const normalized = normalizeDraft(draft as SourcingInput);
+
     const finalDraft: SourcingItemDraft = {
       ...normalized,
+      ...(draft as any),
       profileTarget,
       createdAt: new Date(),
     };
@@ -431,7 +520,7 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
         {/* Section A: Localisation */}
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>📍 Localisation</h2>
-          
+
           <div style={styles.fieldRow}>
             <div style={styles.fieldSmall}>
               <label style={styles.label}>
@@ -447,7 +536,7 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
               />
               {hasError('codePostal') && <div style={styles.errorText}>{getError('codePostal')}</div>}
             </div>
-            
+
             <div style={styles.field}>
               <label style={styles.label}>
                 Rue proche / Repère <span style={styles.required}>*</span>
@@ -474,7 +563,7 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
                 style={styles.input}
               />
             </div>
-            
+
             <div style={styles.fieldSmall}>
               <label style={styles.label}>Arrondissement</label>
               <input
@@ -485,7 +574,7 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
                 style={styles.input}
               />
             </div>
-            
+
             <div style={styles.field}>
               <label style={styles.label}>Quartier</label>
               <input
@@ -502,7 +591,7 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
         {/* Section B: Bien */}
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>🏠 Caractéristiques du bien</h2>
-          
+
           <div style={styles.fieldRow}>
             <div style={styles.field}>
               <label style={styles.label}>
@@ -577,7 +666,7 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
         {/* Section C: Quartier (optionnel) */}
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>🏘️ Informations quartier (optionnel)</h2>
-          
+
           <div style={styles.fieldRow}>
             <div style={styles.field}>
               <label style={styles.label}>Proximité transport</label>
@@ -614,6 +703,64 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
               <select
                 value={form.proximiteCommerces}
                 onChange={e => updateField('proximiteCommerces', e.target.value)}
+                style={styles.select}
+              >
+                <option value="">Non renseigné</option>
+                {getBooleanOptions().map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div style={styles.fieldRow}>
+            <div style={styles.fieldSmall}>
+              <label style={styles.label}>Bus</label>
+              <select
+                value={form.bus}
+                onChange={e => updateField('bus', e.target.value)}
+                style={styles.select}
+              >
+                <option value="">Non renseigné</option>
+                {getBooleanOptions().map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.fieldSmall}>
+              <label style={styles.label}>Tram</label>
+              <select
+                value={form.tram}
+                onChange={e => updateField('tram', e.target.value)}
+                style={styles.select}
+              >
+                <option value="">Non renseigné</option>
+                {getBooleanOptions().map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.fieldSmall}>
+              <label style={styles.label}>Métro</label>
+              <select
+                value={form.metro}
+                onChange={e => updateField('metro', e.target.value)}
+                style={styles.select}
+              >
+                <option value="">Non renseigné</option>
+                {getBooleanOptions().map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.fieldSmall}>
+              <label style={styles.label}>RER / train</label>
+              <select
+                value={form.rerTrain}
+                onChange={e => updateField('rerTrain', e.target.value)}
                 style={styles.select}
               >
                 <option value="">Non renseigné</option>
@@ -754,6 +901,13 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
                   </select>
                 </div>
                 <div style={styles.fieldSmall}>
+                  <label style={styles.label}>Loggia</label>
+                  <select value={form.loggia} onChange={e => updateField('loggia', e.target.value)} style={styles.select}>
+                    <option value="">Non renseigné</option>
+                    {getBooleanOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+                <div style={styles.fieldSmall}>
                   <label style={styles.label}>Cave</label>
                   <select value={form.cave} onChange={e => updateField('cave', e.target.value as Ternary)} style={styles.select}>
                     <option value="">Non renseigné</option>
@@ -765,6 +919,63 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
                   <select value={form.parkingAppart} onChange={e => updateField('parkingAppart', e.target.value as Ternary)} style={styles.select}>
                     <option value="">Non renseigné</option>
                     {getTernaryOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+                <div style={styles.fieldSmall}>
+                  <label style={styles.label}>Box</label>
+                  <select value={form.box} onChange={e => updateField('box', e.target.value)} style={styles.select}>
+                    <option value="">Non renseigné</option>
+                    {getBooleanOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div style={styles.fieldRow}>
+                <div style={styles.fieldSmall}>
+                  <label style={styles.label}>Calme</label>
+                  <select value={form.calme} onChange={e => updateField('calme', e.target.value)} style={styles.select}>
+                    <option value="">Non renseigné</option>
+                    {getBooleanOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+
+                <div style={styles.fieldSmall}>
+                  <label style={styles.label}>Lumineux</label>
+                  <select value={form.lumineux} onChange={e => updateField('lumineux', e.target.value)} style={styles.select}>
+                    <option value="">Non renseigné</option>
+                    {getBooleanOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+
+                <div style={styles.fieldSmall}>
+                  <label style={styles.label}>Traversant</label>
+                  <select value={form.traversant} onChange={e => updateField('traversant', e.target.value)} style={styles.select}>
+                    <option value="">Non renseigné</option>
+                    {getBooleanOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+
+                <div style={styles.fieldSmall}>
+                  <label style={styles.label}>Faible vis-à-vis</label>
+                  <select value={form.visAVisFaible} onChange={e => updateField('visAVisFaible', e.target.value)} style={styles.select}>
+                    <option value="">Non renseigné</option>
+                    {getBooleanOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+
+                <div style={styles.fieldSmall}>
+                  <label style={styles.label}>Vue dégagée</label>
+                  <select value={form.vueDegagee} onChange={e => updateField('vueDegagee', e.target.value)} style={styles.select}>
+                    <option value="">Non renseigné</option>
+                    {getBooleanOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+
+                <div style={styles.fieldSmall}>
+                  <label style={styles.label}>RDC sur rue</label>
+                  <select value={form.rdcSurRue} onChange={e => updateField('rdcSurRue', e.target.value)} style={styles.select}>
+                    <option value="">Non renseigné</option>
+                    {getBooleanOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                   </select>
                 </div>
               </div>

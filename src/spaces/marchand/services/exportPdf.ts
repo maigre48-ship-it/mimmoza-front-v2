@@ -1,4 +1,6 @@
-// === exportPdf.ts — COMPLET (patch scoreCard100 couleur + cardH=40) ===
+// === exportPdf.ts — Investisseur — v2 SHARDS COVER ===
+// Identique à la version précédente sauf buildCover() qui utilise
+// des shards diagonaux sky-blue au lieu du dégradé plat.
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { MarchandSnapshotV1 } from "../shared/marchandSnapshot.store";
@@ -6,59 +8,45 @@ import { buildSyntheseInstitutionnellePage } from "./exportPdf.investisseur";
 
 export { autoTable };
 
-// ─── Color Tokens — Palette Mimmoza (indigo / cyan / emerald) ────
+// ─── Color Tokens ────────────────────────────────────────────────
 export const C = {
-  // Identité principale — slate-950 / slate-900
-  primary:    [2, 6, 23]      as const,   // slate-950
-  // Accent principal — indigo-600
-  accent:     [79, 70, 229]   as const,   // indigo-600
-  accentDark: [55, 48, 163]   as const,   // indigo-800
-  // Cyan — second accent
-  accentCyan: [6, 182, 212]   as const,   // cyan-500
-  // Sémantique
-  success:    [16, 185, 129]  as const,   // emerald-500
-  warning:    [245, 158, 11]  as const,   // amber-500
-  danger:     [100, 116, 139] as const,   // slate-500
-  // Texte
+  primary:    [2, 6, 23]      as const,
+  accent:     [79, 70, 229]   as const,
+  accentDark: [55, 48, 163]   as const,
+  accentCyan: [6, 182, 212]   as const,
+  success:    [16, 185, 129]  as const,
+  warning:    [245, 158, 11]  as const,
+  danger:     [100, 116, 139] as const,
   black:      [2, 6, 23]      as const,
-  body:       [51, 65, 85]    as const,   // slate-700
-  muted:      [100, 116, 139] as const,   // slate-500
-  mutedDark:  [71, 85, 105]   as const,   // slate-600
+  body:       [51, 65, 85]    as const,
+  muted:      [100, 116, 139] as const,
+  mutedDark:  [71, 85, 105]   as const,
   white:      [255, 255, 255] as const,
-  // Fonds
-  bg:         [241, 245, 249] as const,   // slate-100
-  bgAlt:      [226, 232, 240] as const,   // slate-200
+  bg:         [241, 245, 249] as const,
+  bgAlt:      [226, 232, 240] as const,
   bgCard:     [255, 255, 255] as const,
-  // Bordures
-  border:     [226, 232, 240] as const,   // slate-200
-  borderDark: [203, 213, 225] as const,   // slate-300
-  // Navy — couverture
-  navy:       [2, 6, 23]      as const,   // slate-950
-  navyMid:    [15, 23, 42]    as const,   // slate-900
+  border:     [226, 232, 240] as const,
+  borderDark: [203, 213, 225] as const,
+  navy:       [2, 6, 23]      as const,
+  navyMid:    [15, 23, 42]    as const,
   navyCard:   [15, 23, 42]    as const,
-  // Accents doux
-  accentSoft: [238, 242, 255] as const,   // indigo-50
-  accentSoft2:[240, 249, 255] as const,   // sky-50
+  accentSoft: [238, 242, 255] as const,
+  accentSoft2:[240, 249, 255] as const,
   shadow:     [218, 224, 232] as const,
-  // Kill / conf
   killBg:     [241, 245, 249] as const,
   killBorder: [203, 213, 225] as const,
   confBg:     [248, 250, 252] as const,
   confBorder: [203, 213, 225] as const,
   confText:   [71, 85, 105]   as const,
-  // Scores
-  scoreGreen: [16, 185, 129]  as const,   // emerald-500
-  scoreAmber: [245, 158, 11]  as const,   // amber-500
+  scoreGreen: [16, 185, 129]  as const,
+  scoreAmber: [245, 158, 11]  as const,
   scoreRed:   [100, 116, 139] as const,
-  // Chips
   chipBg:     [241, 245, 249] as const,
   chipText:   [71, 85, 105]   as const,
-  // Cover
   coverBg:    [2, 6, 23]      as const,
   coverMid:   [15, 23, 42]    as const,
-  // Décos
-  gold:       [6, 182, 212]   as const,   // cyan-500
-  teal:       [45, 212, 191]  as const,   // teal-400
+  gold:       [6, 182, 212]   as const,
+  teal:       [45, 212, 191]  as const,
 };
 
 export const M  = { top: 20, left: 16, right: 16, bottom: 20 };
@@ -278,11 +266,6 @@ function ribbon(
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function accentBar(doc: jsPDF, x: number, y: number, w = 20, h = 1): void {
-  sf(doc, C.accent); doc.rect(x, y, w, h, "F");
-}
-
 export function sectionTitle(
   doc: jsPDF, title: string, y: number,
   o?: { color?: readonly [number, number, number]; fontSize?: number },
@@ -347,7 +330,6 @@ export function scoreCard100(
   doc: jsPDF, x: number, y: number, w: number, h: number,
   label: string, score: number | null, opts?: ScoreCardOpts,
 ): void {
-  // ── Niveau ──────────────────────────────────────────────────────
   const lvl: "excellent" | "solide" | "moyen" | "fragile" =
     score == null       ? "fragile"
     : score >= 85       ? "excellent"
@@ -368,30 +350,26 @@ export function scoreCard100(
                         : "Fragile";
 
   const lvlBg: readonly [number, number, number] =
-    lvl === "excellent" ? [209, 250, 229] as const  // emerald-100
-    : lvl === "solide"  ? [238, 242, 255] as const  // indigo-50
-    : lvl === "moyen"   ? [254, 243, 199] as const  // amber-100
-    : [254, 226, 226]   as const;                   // red-100
+    lvl === "excellent" ? [209, 250, 229] as const
+    : lvl === "solide"  ? [238, 242, 255] as const
+    : lvl === "moyen"   ? [254, 243, 199] as const
+    : [254, 226, 226]   as const;
 
-  // ── Conteneur ───────────────────────────────────────────────────
   sf(doc, [210, 218, 230] as const);
   doc.roundedRect(x + 0.6, y + 0.6, w, h, 3, 3, "F");
   roundedBox(doc, x, y, w, h, { fill: C.white, border: C.border, radius: 3, lw: 0.2 });
 
-  // ── Bandeau header coloré selon niveau ──────────────────────────
   sf(doc, lvlColor);
   doc.roundedRect(x, y, w, 2.5, 1.5, 1.5, "F");
   sf(doc, lvlColor);
   doc.rect(x, y + 1, w, 1.5, "F");
 
-  // ── Label ───────────────────────────────────────────────────────
   doc.setFont("helvetica", "bold");
   doc.setFontSize(6);
   sc(doc, C.mutedDark);
   doc.text(sanitizeForPdf(label).toUpperCase(), x + w / 2, y + 8, { align: "center" });
 
   if (score != null) {
-    // ── Chiffre coloré ────────────────────────────────────────────
     doc.setFont("helvetica", "bold");
     doc.setFontSize(22);
     sc(doc, lvlColor);
@@ -404,18 +382,16 @@ export function scoreCard100(
     sc(doc, C.muted);
     doc.text("/100", cx + scoreW / 2, y + 17, { align: "left" });
 
-    // ── Barre dégradée indigo→cyan (palette Mimmoza) ──────────────
     const barX = x + 5; const barW = w - 10;
     const barY = y + 20.5; const barH = 2.5;
     roundedBox(doc, barX, barY, barW, barH, { fill: C.bgAlt, radius: 1.2 });
     const fillW = Math.max(2, (score / 100) * barW);
-    const INDIGO: readonly [number, number, number] = [79, 70, 229];   // indigo-600
-    const CYAN:   readonly [number, number, number] = [6, 182, 212];   // cyan-500
+    const INDIGO: readonly [number, number, number] = [79, 70, 229];
+    const CYAN:   readonly [number, number, number] = [6, 182, 212];
     const steps  = Math.max(4, Math.round(fillW * 2));
     ribbon(doc, barY, barH, INDIGO, CYAN, steps, barX, fillW);
 
   } else {
-    // ── ND ────────────────────────────────────────────────────────
     doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
     sc(doc, C.muted);
@@ -423,7 +399,6 @@ export function scoreCard100(
     roundedBox(doc, x + 5, y + 20.5, w - 10, 2.5, { fill: C.bgAlt, radius: 1.2 });
   }
 
-  // ── Badge niveau coloré ───────────────────────────────────────
   if (score != null) {
     const badgeLabel = sanitizeForPdf(lvlLabel);
     doc.setFont("helvetica", "bold");
@@ -436,7 +411,6 @@ export function scoreCard100(
     doc.text(badgeLabel, bX + bW / 2, bY + 2.8, { align: "center" });
   }
 
-  // ── Chip source (IA / calcule / estime) ──────────────────────
   if (opts?.source) {
     const chipLabel = sanitizeForPdf(opts.source);
     doc.setFont("helvetica", "normal");
@@ -449,7 +423,6 @@ export function scoreCard100(
     doc.text(chipLabel, chipX + chipW / 2, chipY + 2.8, { align: "center" });
   }
 
-  // ── Subtext (ex : "plus bas = mieux") ────────────────────────
   if (opts?.subtext) {
     doc.setFont("helvetica", "italic");
     doc.setFontSize(5);
@@ -471,7 +444,6 @@ function finalizeHF(doc: jsPDF, title?: string, skipCover = true): void {
     const hText = sanitizeForPdf(title ? `MIMMOZA  |  ${title}` : "MIMMOZA  |  Dossier Investisseur");
     doc.text(hText, M.left, 6);
     doc.text(new Date().toLocaleDateString("fr-FR"), PW - M.right, 6, { align: "right" });
-    // Fine ligne de séparation indigo sous le header
     sd(doc, [196, 221, 253] as const); doc.setLineWidth(0.3);
     doc.line(0, 9, PW, 9);
     ribbon(doc, PH - 8, 8, [224, 231, 255] as const, [240, 249, 255] as const, 60, 0, PW);
@@ -515,10 +487,6 @@ function pickNum(obj: Record<string, unknown>, ...keys: string[]): number | unde
 function pickStr(obj: Record<string, unknown>, ...keys: string[]): string {
   const v = pick(obj, ...keys); return v ? sanitizeForPdf(v) : "";
 }
-
-// ───────────────────────────────────────────────────────────────────
-// CanonicalFinancials — SOURCE DE VÉRITÉ UNIQUE pour tout le PDF
-// ───────────────────────────────────────────────────────────────────
 
 export interface CanonicalFinancials {
   dealId: string | undefined;
@@ -608,8 +576,7 @@ export function resolveCanonicalFinancials(
       ? prixAchat + (travaux ?? 0) + fraisNotaire
       : undefined;
 
-  const prixRevente = pickNum(
-    d,
+  const prixRevente = pickNum(d,
     "prixRevente", "prixReventeCible", "prixVenteEstime",
     "prixVente", "resaleTarget", "salePriceTarget", "salePrice",
   );
@@ -683,26 +650,10 @@ export function resolveCanonicalFinancials(
       : pickNum(d, "fraisInitiaux", "fraisDossier", "fraisGarantie", "setupFees");
 
   return {
-    dealId,
-    prixAchat,
-    travaux,
-    travauxSource,
-    fraisNotaire,
-    fraisNotaireIsFallback,
-    capitalEngage,
-    prixRevente,
-    margeBrute,
-    margeBrutePct,
-    apport,
-    montantPret,
-    mensualite,
-    loyerEstim,
-    chargesMensuelles,
-    loanRatePct,
-    loanInsurancePct,
-    loanFraisInitiaux,
-    stressReventeMinus5,
-    premiumVsDvfPct,
+    dealId, prixAchat, travaux, travauxSource, fraisNotaire, fraisNotaireIsFallback,
+    capitalEngage, prixRevente, margeBrute, margeBrutePct, apport, montantPret,
+    mensualite, loyerEstim, chargesMensuelles, loanRatePct, loanInsurancePct,
+    loanFraisInitiaux, stressReventeMinus5, premiumVsDvfPct,
     cushion: pickNum(d, "cushion"),
   };
 }
@@ -741,9 +692,7 @@ export function extractMetrics(snap: MarchandSnapshotV1, opts?: ExportPdfOpts): 
     adresseComplete = [ville, cp].filter(Boolean).join(" ");
 
   const surfaceM2 = pickNum(d, "surfaceM2", "surface", "area");
-  const prixM2    = cf.prixAchat && surfaceM2
-    ? Math.round(cf.prixAchat / surfaceM2)
-    : undefined;
+  const prixM2    = cf.prixAchat && surfaceM2 ? Math.round(cf.prixAchat / surfaceM2) : undefined;
 
   const balcon    = pickNum(d, "balconyM2", "surfaceBalcon", "balconM2");
   const garage    = !!pick(d, "garage", "parking", "stationnement");
@@ -1271,235 +1220,70 @@ function subTitle(doc: jsPDF, title: string, y: number): number {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// ─── WIKIMEDIA HELPERS — V2 ROBUSTE ────────────────────────────────
+// ─── COVER — Shards diagonaux sky-blue (Investisseur v2) ───────────
 // ═══════════════════════════════════════════════════════════════════
-
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-function deepFindKey(
-  root: unknown, key: string, maxDepth = 6,
-  seen = new Set<Record<string, unknown>>(),
-): Record<string, unknown> | null {
-  if (!isPlainObject(root) || maxDepth < 0) return null;
-  if (seen.has(root)) return null;
-  seen.add(root);
-  const direct = root[key];
-  if (isPlainObject(direct)) return direct;
-  for (const value of Object.values(root)) {
-    if (isPlainObject(value)) {
-      const found = deepFindKey(value, key, maxDepth - 1, seen);
-      if (found) return found;
-    }
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        const found = deepFindKey(item, key, maxDepth - 1, seen);
-        if (found) return found;
-      }
-    }
-  }
-  return null;
-}
-
-function getWikimediaBlock(opts?: ExportPdfOpts): Record<string, unknown> | null {
-  if (!opts) return null;
-
-  const WIKI_KEYS = new Set(["place", "wikipedia", "narrative", "wikidata", "facts", "extract"]);
-  const looksLikeWikiBlock = (o: unknown): o is Record<string, unknown> => {
-    if (!isPlainObject(o)) return false;
-    return Object.keys(o).some(k => WIKI_KEYS.has(k));
-  };
-
-  const ar       = opts.aiReport as unknown as Record<string, unknown> | undefined;
-  const computed = ar?.computed as Record<string, unknown> | undefined;
-  const ctx      = opts.context as Record<string, unknown> | undefined;
-  const analysis = ar?.analysis as Record<string, unknown> | undefined;
-
-  if (isPlainObject(computed?.wikimedia)) return computed!.wikimedia as Record<string, unknown>;
-  if (isPlainObject(ctx?.wikimedia)) return ctx!.wikimedia as Record<string, unknown>;
-  if (isPlainObject(analysis?.wikimedia)) return analysis!.wikimedia as Record<string, unknown>;
-  if (looksLikeWikiBlock(ctx)) return ctx;
-
-  const deep1 = deepFindKey(opts.aiReport, "wikimedia", 7);
-  if (deep1) return deep1;
-  const deep2 = deepFindKey(opts.context, "wikimedia", 7);
-  if (deep2) return deep2;
-
-  if (isPlainObject(ctx)) {
-    const hasWpExtract =
-      isPlainObject((ctx as Record<string, unknown>).wikipedia) &&
-      typeof ((ctx as Record<string, unknown>).wikipedia as Record<string, unknown>).extract === "string";
-    const hasNarrative =
-      typeof (ctx as Record<string, unknown>).narrative === "string" &&
-      ((ctx as Record<string, unknown>).narrative as string).trim().length > 20;
-    if (hasWpExtract || hasNarrative) return ctx;
-  }
-
-  return null;
-}
-
-function resolvePlaceBlock(wiki: Record<string, unknown> | null): Record<string, unknown> | null {
-  if (wiki == null) return null;
-  const place = wiki.place;
-  return (isPlainObject(place) ? place : wiki) as Record<string, unknown>;
-}
-
-function extractNarrativeString(field: unknown): string {
-  if (typeof field === "string") return field.trim();
-  if (!isPlainObject(field)) return "";
-  const obj = field as Record<string, unknown>;
-  for (const k of ["text", "content", "full", "summary", "value", "description", "body", "extract"]) {
-    const v = obj[k];
-    if (typeof v === "string" && v.trim().length > 20) return v.trim();
-  }
-  for (const k of ["sentences", "paragraphs", "parts", "items", "lines"]) {
-    const arr = obj[k];
-    if (Array.isArray(arr) && arr.length > 0) {
-      const joined = (arr as unknown[])
-        .map(s => {
-          if (typeof s === "string") return s;
-          if (isPlainObject(s)) {
-            for (const sk of ["text", "content", "value", "sentence"]) {
-              if (typeof (s as Record<string, unknown>)[sk] === "string") return (s as Record<string, unknown>)[sk] as string;
-            }
-            return Object.values(s as Record<string, unknown>).filter(v => typeof v === "string").join(" ");
-          }
-          return "";
-        })
-        .filter(s => s.trim().length > 0)
-        .join(" ")
-        .trim();
-      if (joined.length > 20) return joined;
-    }
-  }
-  const candidateKeys = Object.keys(obj).filter(k => !["length", "quality", "sources", "qid", "source", "title"].includes(k));
-  const longStrings = candidateKeys
-    .map(k => obj[k])
-    .filter((v): v is string => typeof v === "string" && v.trim().length > 20);
-  if (longStrings.length > 0) return longStrings.join(" ").trim();
-  const allStrings = Object.values(obj)
-    .filter((v): v is string => typeof v === "string" && Boolean(v.trim()))
-    .join(" ").trim();
-  return allStrings;
-}
-
-function resolveWikimediaRichText(
-  place: Record<string, unknown> | null,
-  wiki: Record<string, unknown> | null,
-): string {
-  const placeContext =
-    isPlainObject(place?.context) ? (place?.context as Record<string, unknown>) : null;
-  const wikiContext =
-    wiki && place !== wiki && isPlainObject(wiki?.context)
-      ? (wiki?.context as Record<string, unknown>)
-      : null;
-
-  const candidates: unknown[] = [
-    placeContext?.long,
-    placeContext?.short,
-    place?.narrative,
-    wikiContext?.long,
-    wikiContext?.short,
-    wiki?.narrative,
-    isPlainObject(place?.wikipedia) ? (place?.wikipedia as Record<string, unknown>).extract : null,
-    wiki && place !== wiki && isPlainObject(wiki?.wikipedia)
-      ? (wiki?.wikipedia as Record<string, unknown>).extract
-      : null,
-    place?.extract,
-    wiki?.extract,
-  ];
-
-  for (const candidate of candidates) {
-    const text = extractNarrativeString(candidate);
-    if (text && text.trim().length > 30) return text.trim();
-  }
-
-  return "";
-}
-
-function extractCommuneName(
-  place: Record<string, unknown> | null,
-  fallbackCity?: string,
-  fallbackCp?: string,
-  wiki?: Record<string, unknown> | null,
-): string {
-  const isValidName = (raw: unknown): raw is string => {
-    if (typeof raw !== "string") return false;
-    const clean = sanitizeForPdf(raw).trim();
-    if (clean.length < 2) return false;
-    if (/^Q\d+$/.test(clean)) return false;
-    if (/^-+$/.test(clean)) return false;
-    if (/^\d{3,5}$/.test(clean)) return false;
-    if (/^[A-Z]{2,3}$/.test(clean)) return false;
-    return true;
-  };
-
-  const queryData = place?.query as Record<string, unknown> | undefined;
-
-  const candidates: unknown[] = [
-    queryData?.city, queryData?.commune, queryData?.name, queryData?.label,
-    place?.title, place?.label, place?.name,
-    wiki?.title, wiki?.label, wiki?.name,
-    fallbackCity,
-  ];
-
-  for (const raw of candidates) {
-    if (isValidName(raw)) return sanitizeForPdf(raw as string).trim();
-  }
-
-  if (fallbackCp) return sanitizeForPdf(fallbackCp);
-  return "";
-}
-
-function extractFactSentences(facts: unknown): string[] {
-  if (Array.isArray(facts))
-    return (facts as unknown[]).map(f => {
-      if (typeof f === "string") return sanitizeForPdf(f);
-      if (typeof f === "object" && f !== null)
-        return Object.values(f as Record<string, unknown>).map(v => sanitizeForPdf(v)).filter(Boolean).join(" ");
-      return "";
-    }).filter(Boolean);
-  if (typeof facts === "object" && facts !== null)
-    return Object.values(facts as Record<string, unknown>).map(v => sanitizeForPdf(v)).filter(Boolean);
-  if (typeof facts === "string") return [sanitizeForPdf(facts)];
-  return [];
-}
-
-function buildFactItems(facts: unknown): string[] {
-  if (facts == null) return [];
-  let items: string[] = [];
-  if (Array.isArray(facts)) {
-    items = (facts as unknown[]).slice(0, 7).map(f => {
-      if (typeof f === "string") return sanitizeForPdf(f);
-      if (typeof f === "object" && f !== null) {
-        const entries = Object.entries(f as Record<string, unknown>);
-        if (entries.length > 0) return `${sanitizeForPdf(entries[0][0])} : ${sanitizeForPdf(entries[0][1])}`;
-      }
-      return "";
-    });
-  } else if (typeof facts === "object" && facts !== null) {
-    items = Object.entries(facts as Record<string, unknown>).slice(0, 7)
-      .map(([k, v]) => `${sanitizeForPdf(k)} : ${sanitizeForPdf(v)}`);
-  } else if (typeof facts === "string") {
-    items = [sanitizeForPdf(facts)];
-  }
-  return items.filter(s => s.length > 3).slice(0, 7);
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ─── COVER ─────────────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════
+//
+// Remplacement de l'ancien fond dégradé plat par 7 shards angulaires
+// (parallélogrammes rectilignes) glissant depuis la droite — même
+// esprit consulting/premium que les ribbons Promoteur, géométrie
+// différente : angulaire vs fluide.
+//
+// Tout le contenu textuel (titre, verdict, SmartScore, KPIs, résumé,
+// sommaire) est strictement identique à l'original.
 
 function buildCover(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportPdfOpts): void {
-  // Fond cover — dégradé très clair sky-50 → indigo-50 (palette homepage)
-  ribbon(doc, 0, 108, [248, 251, 255] as const, [238, 242, 255] as const, 90, 0, PW);
-  // Barre accent indigo→cyan en bas du fond
-  ribbon(doc, 107, 1.5, [79, 70, 229] as const, [6, 182, 212] as const, 60, 0, PW);
 
+  // ── 1. Fond blanc ─────────────────────────────────────────────
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, 0, PW, PH, "F");
+
+  // ── 2. Shards diagonaux — palette sky-blue / cyan ─────────────
+  // Coins dans l'ordre : haut-gauche, haut-droit, bas-droit, bas-gauche.
+  // Shards 1-5 touchent le bord droit (PW).
+  // Shards 6-7 : lames accent flottantes.
+  const INV = {
+    crystal: [227, 245, 254] as const, // sky-50
+    ultra:   [179, 229, 252] as const, // sky-100
+    pale:    [129, 212, 250] as const, // sky-200
+    light:   [79,  195, 247] as const, // sky-300
+    med:     [41,  182, 246] as const, // sky-400
+    main:    [33,  150, 243] as const, // sky-500 (#2196f3)
+    deep:    [14,  91,  167] as const, // sky-800
+  };
+
+  type ShardDef = {
+    p0: [number,number]; p1: [number,number];
+    p2: [number,number]; p3: [number,number];
+    col: readonly [number,number,number];
+  };
+
+  const shards: ShardDef[] = [
+    { p0:[42, 0],  p1:[PW,0], p2:[PW,PH], p3:[80, PH],  col: INV.crystal },
+    { p0:[76, 0],  p1:[PW,0], p2:[PW,PH], p3:[107,PH],  col: INV.ultra   },
+    { p0:[103,0],  p1:[PW,0], p2:[PW,PH], p3:[129,PH],  col: INV.pale    },
+    { p0:[124,0],  p1:[PW,0], p2:[PW,PH], p3:[147,PH],  col: INV.light   },
+    { p0:[143,0],  p1:[PW,0], p2:[PW,PH], p3:[163,PH],  col: INV.med     },
+    { p0:[158,0],  p1:[173,0], p2:[200,PH], p3:[185,PH], col: INV.main   },
+    { p0:[166,0],  p1:[175,0], p2:[202,PH], p3:[193,PH], col: INV.deep   },
+  ];
+
+  for (const sh of shards) {
+    doc.setFillColor(sh.col[0], sh.col[1], sh.col[2]);
+    doc.setDrawColor(sh.col[0], sh.col[1], sh.col[2]);
+    doc.setLineWidth(0.1);
+    doc.lines(
+      [
+        [sh.p1[0] - sh.p0[0], sh.p1[1] - sh.p0[1]],
+        [sh.p2[0] - sh.p1[0], sh.p2[1] - sh.p1[1]],
+        [sh.p3[0] - sh.p2[0], sh.p3[1] - sh.p2[1]],
+      ],
+      sh.p0[0], sh.p0[1], [1, 1], "FD", true,
+    );
+  }
+
+  // ── 3. Contenu textuel — identique à l'original ───────────────
   doc.setFont("helvetica", "bold"); doc.setFontSize(26); sc(doc, C.primary);
   doc.text("MIMMOZA", M.left, 26);
-  // Soulignement indigo
   sf(doc, C.accent); doc.rect(M.left, 29, 28, 0.7, "F");
   doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); sc(doc, C.muted);
   doc.text("Intelligence Immobiliere", M.left, 35.5);
@@ -1542,7 +1326,6 @@ function buildCover(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportP
 
   if (ai.verdict !== "ND") {
     const bH = 20;
-    // Bloc verdict — fond indigo-50 + bordure indigo + texte sombre
     roundedBox(doc, M.left, vy, CW, bH, { fill: C.accentSoft, border: C.accent, radius: 3, lw: 0.4 });
     doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); sc(doc, C.muted);
     doc.text("VERDICT STRATEGIQUE", M.left + CW / 2, vy + 6, { align: "center" });
@@ -1564,12 +1347,11 @@ function buildCover(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportP
     doc.text(String(coverScores.smartScore), M.left + 34, vy + 9.5, { align: "right" });
     doc.setFont("helvetica", "normal"); doc.setFontSize(7); sc(doc, C.muted);
     doc.text("/100", M.left + 35, vy + 9.5);
-    // Barre SmartScore cover — indigo→cyan
-    const bx = M.left + 54; const bw = CW - 59;
-    roundedBox(doc, bx, vy + 5, bw, 3, { fill: C.bgAlt, radius: 1.5 });
-    const fw = Math.max(3, (coverScores.smartScore / 100) * bw);
-    const INDIGO: readonly [number, number, number] = [79, 70, 229];
-    const CYAN:   readonly [number, number, number] = [6, 182, 212];
+    const bx = M.left + 54; const bw2 = CW - 59;
+    roundedBox(doc, bx, vy + 5, bw2, 3, { fill: C.bgAlt, radius: 1.5 });
+    const fw = Math.max(3, (coverScores.smartScore / 100) * bw2);
+    const INDIGO: readonly [number,number,number] = [79, 70, 229];
+    const CYAN:   readonly [number,number,number] = [6, 182, 212];
     ribbon(doc, vy + 5, 3, INDIGO, CYAN, Math.max(4, Math.round(fw * 2)), bx, fw);
     vy += 19;
   }
@@ -1592,7 +1374,7 @@ function buildCover(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportP
 
   const FALLBACK_COVER = "Analyse automatisee basee sur les donnees DVF, les indicateurs de marche et les hypotheses financieres du projet.";
   const BAD_PHRASES    = ["information non fournie", "non fourni", "non disponible", "aucune information"];
-  const rtRaw  = ai.resumeCourt || ai.nrResume || "";
+  const rtRaw   = ai.resumeCourt || ai.nrResume || "";
   const rtIsBad = BAD_PHRASES.some(p => rtRaw.toLowerCase().includes(p));
   const rt = (!rtRaw || rtIsBad)
     ? (ai.whyBuy.length > 0 ? ai.whyBuy[0] : FALLBACK_COVER)
@@ -1600,9 +1382,8 @@ function buildCover(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportP
   if (rt) {
     const rtTrunc = rt.length > 240 ? rt.slice(0, 237) + "..." : rt;
     const rtLines = doc.splitTextToSize(sanitizeForPdf(`"${rtTrunc}"`), CW - 12) as string[];
-    const rtH = rtLines.length * 4.2 + 10;
+    const rtH     = rtLines.length * 4.2 + 10;
     if (vy + rtH < PH - 28) {
-      // Bloc résumé — fond indigo-50 + barre indigo
       roundedBox(doc, M.left, vy, CW, rtH, { fill: C.accentSoft, border: [196, 221, 253] as const, radius: 3 });
       sf(doc, C.accent); doc.roundedRect(M.left, vy, 3, rtH, 1.5, 1.5, "F");
       doc.setFont("helvetica", "italic"); doc.setFontSize(8); sc(doc, C.body);
@@ -1635,70 +1416,220 @@ function buildCover(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportP
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// ─── WIKIMEDIA HELPERS — V2 ────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function deepFindKey(
+  root: unknown, key: string, maxDepth = 6,
+  seen = new Set<Record<string, unknown>>(),
+): Record<string, unknown> | null {
+  if (!isPlainObject(root) || maxDepth < 0) return null;
+  if (seen.has(root)) return null;
+  seen.add(root);
+  const direct = root[key];
+  if (isPlainObject(direct)) return direct;
+  for (const value of Object.values(root)) {
+    if (isPlainObject(value)) {
+      const found = deepFindKey(value, key, maxDepth - 1, seen);
+      if (found) return found;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = deepFindKey(item, key, maxDepth - 1, seen);
+        if (found) return found;
+      }
+    }
+  }
+  return null;
+}
+
+function getWikimediaBlock(opts?: ExportPdfOpts): Record<string, unknown> | null {
+  if (!opts) return null;
+  const WIKI_KEYS = new Set(["place", "wikipedia", "narrative", "wikidata", "facts", "extract"]);
+  const looksLikeWikiBlock = (o: unknown): o is Record<string, unknown> => {
+    if (!isPlainObject(o)) return false;
+    return Object.keys(o).some(k => WIKI_KEYS.has(k));
+  };
+  const ar       = opts.aiReport as unknown as Record<string, unknown> | undefined;
+  const computed = ar?.computed as Record<string, unknown> | undefined;
+  const ctx      = opts.context as Record<string, unknown> | undefined;
+  const analysis = ar?.analysis as Record<string, unknown> | undefined;
+  if (isPlainObject(computed?.wikimedia)) return computed!.wikimedia as Record<string, unknown>;
+  if (isPlainObject(ctx?.wikimedia)) return ctx!.wikimedia as Record<string, unknown>;
+  if (isPlainObject(analysis?.wikimedia)) return analysis!.wikimedia as Record<string, unknown>;
+  if (looksLikeWikiBlock(ctx)) return ctx;
+  const deep1 = deepFindKey(opts.aiReport, "wikimedia", 7);
+  if (deep1) return deep1;
+  const deep2 = deepFindKey(opts.context, "wikimedia", 7);
+  if (deep2) return deep2;
+  if (isPlainObject(ctx)) {
+    const hasWpExtract =
+      isPlainObject((ctx as Record<string, unknown>).wikipedia) &&
+      typeof ((ctx as Record<string, unknown>).wikipedia as Record<string, unknown>).extract === "string";
+    const hasNarrative =
+      typeof (ctx as Record<string, unknown>).narrative === "string" &&
+      ((ctx as Record<string, unknown>).narrative as string).trim().length > 20;
+    if (hasWpExtract || hasNarrative) return ctx;
+  }
+  return null;
+}
+
+function resolvePlaceBlock(wiki: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (wiki == null) return null;
+  const place = wiki.place;
+  return (isPlainObject(place) ? place : wiki) as Record<string, unknown>;
+}
+
+function extractNarrativeString(field: unknown): string {
+  if (typeof field === "string") return field.trim();
+  if (!isPlainObject(field)) return "";
+  const obj = field as Record<string, unknown>;
+  for (const k of ["text", "content", "full", "summary", "value", "description", "body", "extract"]) {
+    const v = obj[k];
+    if (typeof v === "string" && v.trim().length > 20) return v.trim();
+  }
+  for (const k of ["sentences", "paragraphs", "parts", "items", "lines"]) {
+    const arr = obj[k];
+    if (Array.isArray(arr) && arr.length > 0) {
+      const joined = (arr as unknown[])
+        .map(s => {
+          if (typeof s === "string") return s;
+          if (isPlainObject(s)) {
+            for (const sk of ["text", "content", "value", "sentence"]) {
+              if (typeof (s as Record<string, unknown>)[sk] === "string") return (s as Record<string, unknown>)[sk] as string;
+            }
+            return Object.values(s as Record<string, unknown>).filter(v => typeof v === "string").join(" ");
+          }
+          return "";
+        })
+        .filter(s => s.trim().length > 0)
+        .join(" ")
+        .trim();
+      if (joined.length > 20) return joined;
+    }
+  }
+  const candidateKeys = Object.keys(obj).filter(k => !["length", "quality", "sources", "qid", "source", "title"].includes(k));
+  const longStrings = candidateKeys
+    .map(k => obj[k])
+    .filter((v): v is string => typeof v === "string" && v.trim().length > 20);
+  if (longStrings.length > 0) return longStrings.join(" ").trim();
+  return Object.values(obj).filter((v): v is string => typeof v === "string" && Boolean(v.trim())).join(" ").trim();
+}
+
+function resolveWikimediaRichText(
+  place: Record<string, unknown> | null,
+  wiki: Record<string, unknown> | null,
+): string {
+  const placeContext =
+    isPlainObject(place?.context) ? (place?.context as Record<string, unknown>) : null;
+  const wikiContext =
+    wiki && place !== wiki && isPlainObject(wiki?.context)
+      ? (wiki?.context as Record<string, unknown>)
+      : null;
+  const candidates: unknown[] = [
+    placeContext?.long, placeContext?.short, place?.narrative,
+    wikiContext?.long, wikiContext?.short, wiki?.narrative,
+    isPlainObject(place?.wikipedia) ? (place?.wikipedia as Record<string, unknown>).extract : null,
+    wiki && place !== wiki && isPlainObject(wiki?.wikipedia) ? (wiki?.wikipedia as Record<string, unknown>).extract : null,
+    place?.extract, wiki?.extract,
+  ];
+  for (const candidate of candidates) {
+    const text = extractNarrativeString(candidate);
+    if (text && text.trim().length > 30) return text.trim();
+  }
+  return "";
+}
+
+function extractCommuneName(
+  place: Record<string, unknown> | null,
+  fallbackCity?: string, fallbackCp?: string,
+  wiki?: Record<string, unknown> | null,
+): string {
+  const isValidName = (raw: unknown): raw is string => {
+    if (typeof raw !== "string") return false;
+    const clean = sanitizeForPdf(raw).trim();
+    if (clean.length < 2) return false;
+    if (/^Q\d+$/.test(clean)) return false;
+    if (/^-+$/.test(clean)) return false;
+    if (/^\d{3,5}$/.test(clean)) return false;
+    if (/^[A-Z]{2,3}$/.test(clean)) return false;
+    return true;
+  };
+  const queryData = place?.query as Record<string, unknown> | undefined;
+  const candidates: unknown[] = [
+    queryData?.city, queryData?.commune, queryData?.name, queryData?.label,
+    place?.title, place?.label, place?.name,
+    wiki?.title, wiki?.label, wiki?.name,
+    fallbackCity,
+  ];
+  for (const raw of candidates) {
+    if (isValidName(raw)) return sanitizeForPdf(raw as string).trim();
+  }
+  if (fallbackCp) return sanitizeForPdf(fallbackCp);
+  return "";
+}
+
+function extractFactSentences(facts: unknown): string[] {
+  if (Array.isArray(facts))
+    return (facts as unknown[]).map(f => {
+      if (typeof f === "string") return sanitizeForPdf(f);
+      if (typeof f === "object" && f !== null)
+        return Object.values(f as Record<string, unknown>).map(v => sanitizeForPdf(v)).filter(Boolean).join(" ");
+      return "";
+    }).filter(Boolean);
+  if (typeof facts === "object" && facts !== null)
+    return Object.values(facts as Record<string, unknown>).map(v => sanitizeForPdf(v)).filter(Boolean);
+  if (typeof facts === "string") return [sanitizeForPdf(facts)];
+  return [];
+}
+
+function buildFactItems(facts: unknown): string[] {
+  if (facts == null) return [];
+  let items: string[] = [];
+  if (Array.isArray(facts)) {
+    items = (facts as unknown[]).slice(0, 7).map(f => {
+      if (typeof f === "string") return sanitizeForPdf(f);
+      if (typeof f === "object" && f !== null) {
+        const entries = Object.entries(f as Record<string, unknown>);
+        if (entries.length > 0) return `${sanitizeForPdf(entries[0][0])} : ${sanitizeForPdf(entries[0][1])}`;
+      }
+      return "";
+    });
+  } else if (typeof facts === "object" && facts !== null) {
+    items = Object.entries(facts as Record<string, unknown>).slice(0, 7)
+      .map(([k, v]) => `${sanitizeForPdf(k)} : ${sanitizeForPdf(v)}`);
+  } else if (typeof facts === "string") {
+    items = [sanitizeForPdf(facts)];
+  }
+  return items.filter(s => s.length > 3).slice(0, 7);
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // ─── COMMUNE PAGE ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
 
 function buildCommunePage(doc: jsPDF, opts?: ExportPdfOpts, metrics?: DealMetrics): void {
-  console.log("[PDF][COMMUNE][opts.context keys]",
-    opts?.context ? Object.keys(opts.context) : "(context absent)");
-  const ctxAny = opts?.context as Record<string, unknown> | undefined;
-  if (ctxAny?.wikimedia) {
-    const wk = ctxAny.wikimedia as Record<string, unknown>;
-    console.log("[PDF][COMMUNE][context.wikimedia keys]", Object.keys(wk));
-    if (wk.place && typeof wk.place === "object") {
-      const pl = wk.place as Record<string, unknown>;
-      console.log("[PDF][COMMUNE][context.wikimedia.place keys]", Object.keys(pl));
-      if (pl.context && typeof pl.context === "object") {
-        const cx = pl.context as Record<string, unknown>;
-        console.log("[PDF][COMMUNE][place.context keys]", Object.keys(cx));
-        console.log("[PDF][COMMUNE][place.context.long]",
-          typeof cx.long === "string" ? cx.long.slice(0, 150) + "…" : `(type: ${typeof cx.long})`);
-      } else {
-        console.log("[PDF][COMMUNE][place.context]", "(absent ou non-objet)", typeof pl.context);
-      }
-      console.log("[PDF][COMMUNE][place.narrative]",
-        typeof pl.narrative === "string" ? pl.narrative.slice(0, 150) + "…" : `(type: ${typeof pl.narrative})`);
-    } else {
-      console.log("[PDF][COMMUNE][context.wikimedia.place]", "(absent)", typeof wk.place);
-    }
-  } else {
-    console.log("[PDF][COMMUNE][context.wikimedia]", "(absent — deepFind va s'activer)");
-    console.log("[PDF][COMMUNE][aiReport.computed keys]",
-      opts?.aiReport?.computed ? Object.keys(opts.aiReport.computed as object) : "(absent)");
-  }
-
   const wiki  = getWikimediaBlock(opts);
-  console.log("[PDF][COMMUNE][wiki keys après getWikimediaBlock]",
-    wiki ? Object.keys(wiki) : "(null — bloc introuvable)");
   const place    = resolvePlaceBlock(wiki);
   const placeAny = place as Record<string, unknown> | null;
-  console.log("[PDF][COMMUNE][place keys après resolvePlaceBlock]",
-    placeAny ? Object.keys(placeAny) : "(null)");
 
   const communeName = extractCommuneName(placeAny, metrics?.ville, metrics?.cp, wiki);
-
   let narrative = resolveWikimediaRichText(placeAny, wiki);
 
   const wpPlace    = placeAny?.wikipedia as Record<string, unknown> | undefined;
-  const wpWikiRoot = (wiki && placeAny !== wiki)
-    ? wiki.wikipedia as Record<string, unknown> | undefined
-    : undefined;
-
+  const wpWikiRoot = (wiki && placeAny !== wiki) ? wiki.wikipedia as Record<string, unknown> | undefined : undefined;
   const rawExtract =
-    typeof wpPlace?.extract === "string"    ? wpPlace.extract.trim()    :
-    typeof wpWikiRoot?.extract === "string" ? wpWikiRoot.extract.trim() :
-    "";
+    typeof wpPlace?.extract === "string"    ? wpPlace.extract.trim() :
+    typeof wpWikiRoot?.extract === "string" ? wpWikiRoot.extract.trim() : "";
 
   const wdPlace    = placeAny?.wikidata as Record<string, unknown> | undefined;
-  const wdWikiRoot = (wiki && placeAny !== wiki)
-    ? wiki.wikidata as Record<string, unknown> | undefined
-    : undefined;
+  const wdWikiRoot = (wiki && placeAny !== wiki) ? wiki.wikidata as Record<string, unknown> | undefined : undefined;
   const rawFacts =
-    wdPlace?.facts    ??
-    placeAny?.facts   ??
-    wdWikiRoot?.facts ??
-    wiki?.facts       ??
-    null;
+    wdPlace?.facts ?? placeAny?.facts ?? wdWikiRoot?.facts ?? wiki?.facts ?? null;
 
   let profileText = "";
   const profileSrc =
@@ -1716,9 +1647,7 @@ function buildCommunePage(doc: jsPDF, opts?: ExportPdfOpts, metrics?: DealMetric
   doc.addPage();
   let y = M.top + 8;
 
-  const pageTitle = communeName
-    ? `Commune & contexte local — ${communeName}`
-    : "Commune & contexte local";
+  const pageTitle = communeName ? `Commune & contexte local — ${communeName}` : "Commune & contexte local";
   doc.setFont("helvetica", "bold"); doc.setFontSize(14); sc(doc, C.primary);
   doc.text(sanitizeForPdf(pageTitle), M.left, y); y += 3;
   sf(doc, C.accent); doc.rect(M.left, y, 48, 1.5, "F");
@@ -1739,9 +1668,7 @@ function buildCommunePage(doc: jsPDF, opts?: ExportPdfOpts, metrics?: DealMetric
     roundedBox(doc, M.left, y, CW, 28, { fill: C.bg, border: C.borderDark, radius: 3 });
     sf(doc, C.warning); doc.roundedRect(M.left, y, 3, 28, 1.5, 1.5, "F");
     doc.setFont("helvetica", "bold"); doc.setFontSize(10); sc(doc, C.mutedDark);
-    const msg = communeName
-      ? `${communeName} — Contenu Wikimedia non recupere`
-      : "Commune — Contenu Wikimedia non recupere";
+    const msg = communeName ? `${communeName} — Contenu Wikimedia non recupere` : "Commune — Contenu Wikimedia non recupere";
     doc.text(sanitizeForPdf(msg), M.left + CW / 2, y + 11, { align: "center" });
     doc.setFont("helvetica", "normal"); doc.setFontSize(8); sc(doc, C.muted);
     doc.text("Verifier la commune et le code postal renseignes dans le dossier.", M.left + CW / 2, y + 19, { align: "center" });
@@ -1751,39 +1678,18 @@ function buildCommunePage(doc: jsPDF, opts?: ExportPdfOpts, metrics?: DealMetric
 
   y = sectionTitle(doc, "Commune & contexte local", y);
 
-  const placeCtx = isPlainObject(placeAny?.context)
-    ? (placeAny!.context as Record<string, unknown>)
-    : null;
-
-  const contextLong  = typeof placeCtx?.long  === "string" && placeCtx.long.trim().length  > 30
-    ? placeCtx.long.trim()  : "";
-  const contextShort = typeof placeCtx?.short === "string" && placeCtx.short.trim().length > 30
-    ? placeCtx.short.trim() : "";
+  const placeCtx = isPlainObject(placeAny?.context) ? (placeAny!.context as Record<string, unknown>) : null;
+  const contextLong  = typeof placeCtx?.long  === "string" && placeCtx.long.trim().length  > 30 ? placeCtx.long.trim()  : "";
+  const contextShort = typeof placeCtx?.short === "string" && placeCtx.short.trim().length > 30 ? placeCtx.short.trim() : "";
   const placeNarrative = typeof placeAny?.narrative === "string" && (placeAny.narrative as string).trim().length > 30
     ? (placeAny.narrative as string).trim() : "";
 
-  console.log("[PDF][COMMUNE][context.long]",   contextLong   ? contextLong.slice(0, 120) + "…" : "(vide)");
-  console.log("[PDF][COMMUNE][context.short]",  contextShort  ? contextShort.slice(0, 120) + "…" : "(vide)");
-  console.log("[PDF][COMMUNE][narrative]",       placeNarrative ? placeNarrative.slice(0, 120) + "…" : "(vide)");
-
-  let sourceUsed: "context.long" | "context.short" | "narrative" | "profileText" | "facts" | "none" = "none";
   let presentationRaw: string;
-  if (contextLong) {
-    presentationRaw = contextLong;
-    sourceUsed = "context.long";
-  } else if (contextShort) {
-    presentationRaw = contextShort;
-    sourceUsed = "context.short";
-  } else if (placeNarrative) {
-    presentationRaw = placeNarrative;
-    sourceUsed = "narrative";
-  } else if (profileText) {
-    presentationRaw = profileText;
-    sourceUsed = "profileText";
-  } else {
-    presentationRaw = "";
-    sourceUsed = "facts";
-  }
+  if (contextLong)       presentationRaw = contextLong;
+  else if (contextShort) presentationRaw = contextShort;
+  else if (placeNarrative) presentationRaw = placeNarrative;
+  else if (profileText)  presentationRaw = profileText;
+  else                   presentationRaw = "";
 
   if (rawFacts != null) {
     const factsArr = extractFactSentences(rawFacts);
@@ -1799,47 +1705,22 @@ function buildCommunePage(doc: jsPDF, opts?: ExportPdfOpts, metrics?: DealMetric
   }
   if (presentationRaw.length > 900) presentationRaw = presentationRaw.slice(0, 897) + "...";
 
-  console.log("[PDF][COMMUNE][sourceUsed]",      sourceUsed);
-  console.log("[PDF][COMMUNE][presentationRaw]", presentationRaw ? presentationRaw.slice(0, 200) + "…" : "(vide)");
-
   if (presentationRaw.trim()) {
     const paragraphs = presentationRaw
       .split(/\n{2,}|\n/)
-      .map(p => sanitizeForPdf(p))
-      .map(p => p.trim())
-      .filter(p => p.length > 0);
-
+      .map(p => sanitizeForPdf(p)).map(p => p.trim()).filter(p => p.length > 0);
     const lineH = 4.6;
     const renderedParagraphs = paragraphs.map((p) => doc.splitTextToSize(p, CW - 14) as string[]);
-    const totalLines = renderedParagraphs.reduce((acc, lines) => acc + lines.length, 0);
     const paraGap = 3.2;
     const blockH =
       renderedParagraphs.reduce((acc, lines) => acc + lines.length * lineH, 0) +
-      Math.max(0, renderedParagraphs.length - 1) * paraGap +
-      12;
-
+      Math.max(0, renderedParagraphs.length - 1) * paraGap + 12;
     if (y + blockH > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
-
     roundedBox(doc, M.left, y, CW, blockH, { fill: C.bg, border: C.border, radius: 3, lw: 0.2 });
     sf(doc, C.accent); doc.roundedRect(M.left, y, 3, blockH, 1.5, 1.5, "F");
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.8);
-    sc(doc, C.body);
-
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.8); sc(doc, C.body);
     let ty = y + 8;
-    for (const lines of renderedParagraphs) {
-      doc.text(lines, M.left + 8, ty);
-      ty += lines.length * lineH + paraGap;
-    }
-
-    if (totalLines > 20) {
-      doc.setFont("helvetica", "italic");
-      doc.setFontSize(7);
-      sc(doc, C.muted);
-      doc.text("(texte enrichi)", M.left + CW - 4, y + blockH - 3, { align: "right" });
-    }
-
+    for (const lines of renderedParagraphs) { doc.text(lines, M.left + 8, ty); ty += lines.length * lineH + paraGap; }
     y += blockH + 8;
   }
 
@@ -1857,7 +1738,6 @@ function buildCommunePage(doc: jsPDF, opts?: ExportPdfOpts, metrics?: DealMetric
     });
     factsBlockH += 4;
     if (y + factsBlockH > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
-    // Bloc faits — fond indigo-50
     roundedBox(doc, M.left, y, CW, factsBlockH, { fill: C.accentSoft, border: [196, 221, 253] as const, radius: 3, lw: 0.2 });
     let fy = y + 8;
     for (const { lines, h } of renderedFacts) {
@@ -1871,7 +1751,6 @@ function buildCommunePage(doc: jsPDF, opts?: ExportPdfOpts, metrics?: DealMetric
 
   if (y + 20 > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
   y = sectionTitle(doc, "Implications immobilieres", y, { color: C.accentDark });
-
   const implications = [
     "L'accessibilite aux transports, commerces et services publics peut soutenir l'attractivite locative et faciliter la revente.",
     "Le dynamisme economique et demographique local influence directement la demande de logements et le niveau des loyers.",
@@ -1902,8 +1781,7 @@ function buildCommunePage(doc: jsPDF, opts?: ExportPdfOpts, metrics?: DealMetric
   doc.text("Source : Wikipedia / Wikidata via Wikimedia API. Contenu a titre indicatif uniquement.", M.left, y);
   setY(doc, y + 8);
 
-  void rawExtract;
-  void narrative;
+  void rawExtract; void narrative;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1915,33 +1793,21 @@ function buildNegotiationBlock(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, y: 
     v => ai.verdict.toLowerCase().includes(v),
   );
   if (!isNegocier) return y;
-
   if (y + 60 > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
-
   y = sectionTitle(doc, "Arguments de negociation", y, { color: C.accent });
 
   const args: string[] = [];
-
-  if (m.premiumVsDvfPct != null && m.premiumVsDvfPct > 0) {
+  if (m.premiumVsDvfPct != null && m.premiumVsDvfPct > 0)
     args.push(`Prix superieur aux references DVF de +${m.premiumVsDvfPct.toFixed(1)} % — decote justifiee`);
-  } else if (m.premiumVsDvfPct != null && m.premiumVsDvfPct <= 0) {
+  else if (m.premiumVsDvfPct != null && m.premiumVsDvfPct <= 0)
     args.push(`Prix dans la norme DVF (${m.premiumVsDvfPct.toFixed(1)} %) — marge de negociation limitee`);
-  }
-
-  if (ai.missingData.length > 0) {
-    const top2 = ai.missingData.slice(0, 2).join(", ");
-    args.push(`Donnees manquantes a clarifier avant offre : ${top2}`);
-  }
-
-  if (m.chargesMensuelles == null) {
+  if (ai.missingData.length > 0)
+    args.push(`Donnees manquantes a clarifier avant offre : ${ai.missingData.slice(0, 2).join(", ")}`);
+  if (m.chargesMensuelles == null)
     args.push("Charges de copropriete non communiquees — risque de rendement");
-  }
-
   const ss = ai.smartScore !== "ND" ? parseInt(ai.smartScore, 10) : null;
-  if (ss != null && ss < 60) {
+  if (ss != null && ss < 60)
     args.push(`SmartScore intermediaire (${ss}/100) — potentiel de valorisation a confirmer`);
-  }
-
   if (args.length === 0) {
     args.push("Verifier les donnees manquantes avant de formaliser l'offre");
     args.push("Demander les diagnostics et les proces-verbaux d'AG");
@@ -1950,7 +1816,6 @@ function buildNegotiationBlock(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, y: 
   const argBlockH = args.length * 7.5 + 24;
   roundedBox(doc, M.left, y, CW, argBlockH, { fill: C.bg, border: C.border, radius: 3, lw: 0.2, shadow: true });
   sf(doc, C.accent); doc.roundedRect(M.left, y, 3.5, argBlockH, 1.5, 1.5, "F");
-
   doc.setFont("helvetica", "bold"); doc.setFontSize(7); sc(doc, C.muted);
   doc.text("VERDICT STRATEGIQUE", M.left + 8, y + 6);
   doc.setFont("helvetica", "bold"); doc.setFontSize(10); sc(doc, C.primary);
@@ -1959,7 +1824,6 @@ function buildNegotiationBlock(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, y: 
   let ay = y + 19;
   doc.setFont("helvetica", "bold"); doc.setFontSize(7); sc(doc, C.mutedDark);
   doc.text("Arguments principaux :", M.left + 8, ay); ay += 5;
-
   for (const arg of args) {
     sf(doc, C.accent); doc.rect(M.left + 8, ay - 1.5, 2, 0.7, "F");
     doc.setFont("helvetica", "normal"); doc.setFontSize(8); sc(doc, C.body);
@@ -1967,9 +1831,7 @@ function buildNegotiationBlock(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, y: 
     doc.text(ls, M.left + 13, ay);
     ay += ls.length * 4.2 + 1.5;
   }
-
   y += argBlockH + 6;
-
   if (y + 18 > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
 
   let positionText: string;
@@ -1991,19 +1853,16 @@ function buildNegotiationBlock(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, y: 
   doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); sc(doc, C.accent);
   doc.text(posLines, M.left + 8, y + 11);
   y += posH + 6;
-
   return y;
 }
 
 function buildNarrative(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportPdfOpts): void {
   doc.addPage(); let y = M.top + 8;
-
   doc.setFont("helvetica", "bold"); doc.setFontSize(14); sc(doc, C.primary);
   doc.text("Synthese strategique du bien", M.left, y); y += 3;
   sf(doc, C.accent); doc.rect(M.left, y, 48, 1.5, "F");
   y += 8;
 
-  // En-tête deal — fond slate-950 + barre indigo
   roundedBox(doc, M.left, y, CW, 14, { fill: C.primary, radius: 3 });
   sf(doc, C.accent); doc.roundedRect(M.left, y, 3.5, 14, 1.5, 1.5, "F");
   doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); sc(doc, C.white);
@@ -2035,37 +1894,21 @@ function buildNarrative(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: Exp
   doc.text(cls, M.left + 8, y + 7); y += bH + 8;
 
   y = buildNegotiationBlock(doc, m, ai, y);
-
   void opts;
   setY(doc, y);
 }
-
-function vc(v: string): readonly [number, number, number] {
-  return decisionColors(v);
-}
-void vc;
 
 // ═══════════════════════════════════════════════════════════════════
 // ─── SMARTSCORE PEDAGOGY ───────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
 
 interface SmartScoreDisplay {
-  smartScore:          number | null;
-  liquidite:           number | null;
-  pressionRisque:      number | null;
-  dataConfidence:      number;
-  dataConfidenceLabel: "Elevee" | "Moyenne" | "Faible";
+  smartScore: number | null; liquidite: number | null; pressionRisque: number | null;
+  dataConfidence: number; dataConfidenceLabel: "Elevee" | "Moyenne" | "Faible";
 }
 
-function buildSmartScorePedagogy(
-  doc: jsPDF,
-  y: number,
-  display: SmartScoreDisplay,
-): number {
-  const innerW = CW - 10;
-  const lineH  = 4.3;
-  const fs     = 7.8;
-  const fsBold = 7.8;
+function buildSmartScorePedagogy(doc: jsPDF, y: number, display: SmartScoreDisplay): number {
+  const innerW = CW - 10; const lineH = 4.3; const fs = 7.8; const fsBold = 7.8;
 
   const textA =
     "Le SmartScore est une synthese rapide de la solidite du dossier, sur 100 points. " +
@@ -2107,7 +1950,7 @@ function buildSmartScorePedagogy(
   else               risqueQual = `la pression risque est contenue (${pr}/100)`;
 
   let liqQual: string;
-  if (liq == null)   liqQual = "";
+  if (liq == null)    liqQual = "";
   else if (liq >= 65) liqQual = ` La liquidite est favorable (${liq}/100).`;
   else if (liq >= 45) liqQual = ` La liquidite est correcte (${liq}/100).`;
   else                liqQual = ` La liquidite est faible (${liq}/100), la revente pourrait prendre du temps.`;
@@ -2133,19 +1976,11 @@ function buildSmartScorePedagogy(
   const linesA   = doc.splitTextToSize(sanitizeForPdf(textA), innerW) as string[];
   const linesC   = doc.splitTextToSize(sanitizeForPdf(textC), innerW) as string[];
 
-  const hdrH     = 6.5;
-  const gapSec   = 3;
-
-  const heightA  = linesA.length * lineH;
-  const heightB  = scaleLines.length * (lineH + 0.5) + noteLines.length * lineH + 2;
-  const heightC  = linesC.length * lineH;
-
-  const totalInner =
-    hdrH + heightA +
-    gapSec + hdrH + heightB +
-    gapSec + hdrH + heightC +
-    4;
-
+  const hdrH   = 6.5; const gapSec = 3;
+  const heightA = linesA.length * lineH;
+  const heightB = scaleLines.length * (lineH + 0.5) + noteLines.length * lineH + 2;
+  const heightC = linesC.length * lineH;
+  const totalInner = hdrH + heightA + gapSec + hdrH + heightB + gapSec + hdrH + heightC + 4;
   const blockH = totalInner + 10;
 
   if (y + blockH > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
@@ -2154,19 +1989,13 @@ function buildSmartScorePedagogy(
   sf(doc, C.accent); doc.roundedRect(M.left, y, 3, blockH, 1.5, 1.5, "F");
 
   let ty = y + 8;
-
   doc.setFont("helvetica", "bold"); doc.setFontSize(fsBold); sc(doc, C.primary);
-  doc.text("A quoi servent ces scores ?", M.left + 7, ty);
-  ty += hdrH;
-
+  doc.text("A quoi servent ces scores ?", M.left + 7, ty); ty += hdrH;
   doc.setFont("helvetica", "normal"); doc.setFontSize(fs); sc(doc, C.body);
-  doc.text(linesA, M.left + 7, ty);
-  ty += heightA + gapSec;
+  doc.text(linesA, M.left + 7, ty); ty += heightA + gapSec;
 
   doc.setFont("helvetica", "bold"); doc.setFontSize(fsBold); sc(doc, C.primary);
-  doc.text("Comment les lire ?", M.left + 7, ty);
-  ty += hdrH;
-
+  doc.text("Comment les lire ?", M.left + 7, ty); ty += hdrH;
   for (const row of scaleLines) {
     doc.setFont("helvetica", "bold"); doc.setFontSize(fs); sc(doc, row.color);
     doc.text(sanitizeForPdf(row.label), M.left + 7, ty);
@@ -2187,9 +2016,7 @@ function buildSmartScorePedagogy(
   ty += gapSec;
 
   doc.setFont("helvetica", "bold"); doc.setFontSize(fsBold); sc(doc, C.primary);
-  doc.text("Lecture de ce dossier", M.left + 7, ty);
-  ty += hdrH;
-
+  doc.text("Lecture de ce dossier", M.left + 7, ty); ty += hdrH;
   doc.setFont("helvetica", "normal"); doc.setFontSize(fs); sc(doc, C.body);
   doc.text(linesC, M.left + 7, ty);
 
@@ -2202,7 +2029,6 @@ function buildSmartScorePedagogy(
 
 function buildPage1(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportPdfOpts): void {
   doc.addPage(); let y = M.top + 8;
-
   doc.setFont("helvetica", "bold"); doc.setFontSize(14); sc(doc, C.primary);
   doc.text("Decision en 30 secondes", M.left, y); y += 3;
   sf(doc, C.accent); doc.rect(M.left, y, 48, 1.5, "F");
@@ -2214,7 +2040,6 @@ function buildPage1(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportP
   y += 2;
 
   if (ai.verdict !== "ND") {
-    // Bloc verdict — fond slate-950 + bordure indigo
     roundedBox(doc, M.left, y, CW, 20, { fill: C.primary, border: C.accent, radius: 3, lw: 0.4 });
     doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); sc(doc, [148, 163, 184] as const);
     doc.text("VERDICT STRATEGIQUE", PW / 2, y + 6.5, { align: "center" });
@@ -2245,7 +2070,6 @@ function buildPage1(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportP
   const globalSrc = toPillarSource(scores.source, scores.usedFallback);
 
   y = sectionTitle(doc, "SmartScore", y);
-  // cardH = 40 — place pour badge niveau + chip source
   const cardW = (CW - 9) / 4; const cardH = 40;
   const cards = [
     { label: "SmartScore",      score: scores.smartScore,     source: globalSrc },
@@ -2255,12 +2079,12 @@ function buildPage1(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportP
   ] as const;
   cards.forEach((c, i) => {
     scoreCard100(doc, M.left + i * (cardW + 3), y, cardW, cardH, c.label, c.score, {
-      source: pillarSourceLabel(c.source), inverted: "inverted" in c ? c.inverted : false, subtext: "subtext" in c ? c.subtext : undefined,
+      source: pillarSourceLabel(c.source), inverted: "inverted" in c ? c.inverted : false,
+      subtext: "subtext" in c ? c.subtext : undefined,
     });
   });
   y += cardH + 5;
 
-  // Confiance données — couleur sémantique
   const confColor: readonly [number, number, number] =
     v2meta.dataConfidenceLabel === "Elevee" ? C.success
     : v2meta.dataConfidenceLabel === "Moyenne" ? C.warning
@@ -2273,7 +2097,7 @@ function buildPage1(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportP
   doc.setFont("helvetica", "bold"); sc(doc, confColor);
   doc.text(sanitizeForPdf(`${v2meta.dataConfidence}/100 (${v2meta.dataConfidenceLabel})`), M.left + 3 + cTxtW, y + 5.5);
   const rentStr = v2meta.pillars.rentabilite.value != null ? `Rentabilite ${v2meta.pillars.rentabilite.value}/100` : "";
-  const robStr  = v2meta.pillars.robustesse.value  != null ? `Robustesse ${v2meta.pillars.robustesse.value}/100` : "";
+  const robStr  = v2meta.pillars.robustesse.value  != null ? `Robustesse ${v2meta.pillars.robustesse.value}/100`  : "";
   if (rentStr || robStr) {
     doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); sc(doc, C.mutedDark);
     doc.text(sanitizeForPdf([rentStr, robStr].filter(Boolean).join("  |  ")), PW - M.right, y + 5.5, { align: "right" });
@@ -2281,10 +2105,8 @@ function buildPage1(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportP
   y += 13;
 
   y = buildSmartScorePedagogy(doc, y, {
-    smartScore:          scores.smartScore,
-    liquidite:           scores.liquidite,
-    pressionRisque:      scores.pressionRisque,
-    dataConfidence:      v2meta.dataConfidence,
+    smartScore: scores.smartScore, liquidite: scores.liquidite,
+    pressionRisque: scores.pressionRisque, dataConfidence: v2meta.dataConfidence,
     dataConfidenceLabel: v2meta.dataConfidenceLabel,
   });
 
@@ -2338,7 +2160,6 @@ function buildPage1(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportP
 
 function buildPage2(doc: jsPDF, m: DealMetrics, ai: NormalizedAi): void {
   doc.addPage(); let y = M.top + 8;
-
   doc.setFont("helvetica", "bold"); doc.setFontSize(14); sc(doc, C.primary);
   doc.text("Risques & Conditions", M.left, y); y += 3;
   sf(doc, C.accent); doc.rect(M.left, y, 48, 1.5, "F");
@@ -2350,7 +2171,6 @@ function buildPage2(doc: jsPDF, m: DealMetrics, ai: NormalizedAi): void {
   const maxBullets    = Math.max(upsideItems.length, downsideItems.length, 2);
   const cardH         = Math.max(36, 16 + maxBullets * 7.5);
 
-  // Carte "Points favorables" — accent indigo
   const c1x = M.left;
   roundedBox(doc, c1x, y, cardW, cardH, { fill: C.white, border: C.border, radius: 3, lw: 0.3, shadow: true });
   sf(doc, C.accent); doc.roundedRect(c1x, y, cardW, 3, 1.5, 1.5, "F");
@@ -2365,7 +2185,6 @@ function buildPage2(doc: jsPDF, m: DealMetrics, ai: NormalizedAi): void {
     doc.text(ls, c1x + 8.5, cy1); cy1 += ls.length * 3.8 + 2;
   }
 
-  // Carte "Points de vigilance" — slate
   const c2x = M.left + cardW + cardGap;
   roundedBox(doc, c2x, y, cardW, cardH, { fill: C.white, border: C.border, radius: 3, lw: 0.3, shadow: true });
   sf(doc, C.muted); doc.roundedRect(c2x, y, cardW, 3, 1.5, 1.5, "F");
@@ -2380,7 +2199,6 @@ function buildPage2(doc: jsPDF, m: DealMetrics, ai: NormalizedAi): void {
     doc.text(ls, c2x + 8.5, cy2); cy2 += ls.length * 3.8 + 2;
   }
 
-  // Carte "Limites de prix" — slate-900
   const c3x = M.left + (cardW + cardGap) * 2;
   roundedBox(doc, c3x, y, cardW, cardH, { fill: C.white, border: C.border, radius: 3, lw: 0.3, shadow: true });
   sf(doc, C.navyMid); doc.roundedRect(c3x, y, cardW, 3, 1.5, 1.5, "F");
@@ -2444,7 +2262,6 @@ function buildPage2(doc: jsPDF, m: DealMetrics, ai: NormalizedAi): void {
     y = sectionTitle(doc, "Detail limites de prix", y, { color: C.primary });
     const pcw = (CW - 4) / 2;
 
-    // Carte prix max — fond slate-100 + barre indigo
     roundedBox(doc, M.left, y, pcw, 24, { fill: C.bg, border: C.border, radius: 3, lw: 0.2, shadow: true });
     sf(doc, C.accent); doc.roundedRect(M.left, y, 3.5, 24, 1.5, 1.5, "F");
     doc.setFont("helvetica", "bold"); doc.setFontSize(7); sc(doc, C.accentDark);
@@ -2460,7 +2277,6 @@ function buildPage2(doc: jsPDF, m: DealMetrics, ai: NormalizedAi): void {
       doc.text(mxls[0] ?? "", M.left + 7, y + 20);
     }
 
-    // Carte never exceed — fond slate-200
     const neX = M.left + pcw + 4;
     roundedBox(doc, neX, y, pcw, 24, { fill: C.bgAlt, border: C.borderDark, radius: 3, lw: 0.2, shadow: true });
     sf(doc, C.muted); doc.roundedRect(neX, y, 3.5, 24, 1.5, 1.5, "F");
@@ -2488,7 +2304,6 @@ function buildPage2(doc: jsPDF, m: DealMetrics, ai: NormalizedAi): void {
 function buildPage3(doc: jsPDF, m: DealMetrics, ai: NormalizedAi): void {
   type DocWithTable = jsPDF & { lastAutoTable: { finalY: number } };
   doc.addPage(); let y = M.top + 8;
-
   doc.setFont("helvetica", "bold"); doc.setFontSize(14); sc(doc, C.primary);
   doc.text("Stress test & Capital", M.left, y); y += 3;
   sf(doc, C.accent); doc.rect(M.left, y, 48, 1.5, "F");
@@ -2504,8 +2319,7 @@ function buildPage3(doc: jsPDF, m: DealMetrics, ai: NormalizedAi): void {
     headStyles: {
       fillColor: [C.primary[0], C.primary[1], C.primary[2]] as [number,number,number],
       textColor: [255, 255, 255] as [number,number,number],
-      fontStyle: "bold" as const,
-      fontSize: 8,
+      fontStyle: "bold" as const, fontSize: 8,
     },
     alternateRowStyles: { fillColor: [C.bg[0], C.bg[1], C.bg[2]] as [number,number,number] },
     margin: { left: M.left, right: M.right },
@@ -2616,7 +2430,6 @@ function buildPage3(doc: jsPDF, m: DealMetrics, ai: NormalizedAi): void {
 
 function buildPage4(doc: jsPDF, _m: DealMetrics, ai: NormalizedAi): void {
   doc.addPage(); let y = M.top + 8;
-
   doc.setFont("helvetica", "bold"); doc.setFontSize(14); sc(doc, C.primary);
   doc.text("Plan d'action", M.left, y); y += 3;
   sf(doc, C.accent); doc.rect(M.left, y, 48, 1.5, "F");
@@ -2647,16 +2460,13 @@ function buildPage4(doc: jsPDF, _m: DealMetrics, ai: NormalizedAi): void {
     const blockH = phItems.length * 7 + 8;
     roundedBox(doc, M.left, y, CW, blockH, { fill: C.white, border: C.border, radius: 3, lw: 0.2, shadow: true });
     let biy = y + 6;
-    for (const it of phItems) {
-      biy += drawCheckbox(doc, M.left + 5, biy, it.label, !!it.done, { fs: 8.5 });
-    }
+    for (const it of phItems) { biy += drawCheckbox(doc, M.left + 5, biy, it.label, !!it.done, { fs: 8.5 }); }
     y += blockH + 5;
   }
-
   setY(doc, y);
 }
 
-// ─── Annexes ─────────────────────────────────────────────────────
+// ─── Annexes ──────────────────────────────────────────────────────
 
 function annexeFiche(doc: jsPDF, ai: NormalizedAi): void {
   if (!ai.ficheOperation.length) return;
@@ -2693,40 +2503,29 @@ function annexeDD(doc: jsPDF, ai: NormalizedAi): void {
 
 export interface LoanScenario {
   durationYears: number;
-  mensualiteHorsAssurance: number;
-  assuranceMensuelle: number;
-  mensualiteTotale: number;
-  interetsTotaux: number;
-  assuranceTotale: number;
-  coutTotalCredit: number;
-  totalRembourse: number;
+  mensualiteHorsAssurance: number; assuranceMensuelle: number;
+  mensualiteTotale: number; interetsTotaux: number;
+  assuranceTotale: number; coutTotalCredit: number; totalRembourse: number;
 }
 
 export function computeLoanCost(
-  principal: number,
-  annualRatePct: number,
-  durationYears: number,
-  annualInsurancePct = 0,
-  fraisInitiaux = 0,
+  principal: number, annualRatePct: number, durationYears: number,
+  annualInsurancePct = 0, fraisInitiaux = 0,
 ): LoanScenario {
-  const n  = durationYears * 12;
-  const r  = annualRatePct / 100 / 12;
-
+  const n = durationYears * 12;
+  const r = annualRatePct / 100 / 12;
   let mensualiteHorsAssurance: number;
-  if (r === 0) {
-    mensualiteHorsAssurance = principal / n;
-  } else {
+  if (r === 0) { mensualiteHorsAssurance = principal / n; }
+  else {
     const factor = Math.pow(1 + r, n);
     mensualiteHorsAssurance = (principal * r * factor) / (factor - 1);
   }
-
-  const interetsTotaux        = mensualiteHorsAssurance * n - principal;
-  const assuranceMensuelle    = (principal * annualInsurancePct / 100) / 12;
-  const assuranceTotale       = assuranceMensuelle * n;
-  const mensualiteTotale      = mensualiteHorsAssurance + assuranceMensuelle;
-  const coutTotalCredit       = interetsTotaux + assuranceTotale + fraisInitiaux;
-  const totalRembourse        = principal + coutTotalCredit;
-
+  const interetsTotaux     = mensualiteHorsAssurance * n - principal;
+  const assuranceMensuelle = (principal * annualInsurancePct / 100) / 12;
+  const assuranceTotale    = assuranceMensuelle * n;
+  const mensualiteTotale   = mensualiteHorsAssurance + assuranceMensuelle;
+  const coutTotalCredit    = interetsTotaux + assuranceTotale + fraisInitiaux;
+  const totalRembourse     = principal + coutTotalCredit;
   return {
     durationYears,
     mensualiteHorsAssurance: Math.round(mensualiteHorsAssurance),
@@ -2745,98 +2544,72 @@ export function computeLoanCost(
 
 function buildLoanComparison(doc: jsPDF, m: DealMetrics): void {
   type DocWithTable = jsPDF & { lastAutoTable: { finalY: number } };
-
   const principal = m.montantPret;
   if (principal == null || principal <= 0) return;
 
   const ratePct       = m.loanRatePct       ?? 3.5;
   const insurancePct  = m.loanInsurancePct  ?? 0.25;
   const fraisInitiaux = m.loanFraisInitiaux ?? 0;
-
   const isDefaultRate      = m.loanRatePct      == null;
   const isDefaultInsurance = m.loanInsurancePct == null;
 
   const DURATIONS = [10, 15, 20] as const;
-  const scenarios = DURATIONS.map(dur =>
-    computeLoanCost(principal, ratePct, dur, insurancePct, fraisInitiaux),
-  );
+  const scenarios = DURATIONS.map(dur => computeLoanCost(principal, ratePct, dur, insurancePct, fraisInitiaux));
 
-  doc.addPage();
-  let y = M.top + 8;
-
+  doc.addPage(); let y = M.top + 8;
   doc.setFont("helvetica", "bold"); doc.setFontSize(14); sc(doc, C.primary);
   doc.text("Comparatif financement", M.left, y); y += 3;
   sf(doc, C.accent); doc.rect(M.left, y, 48, 1.5, "F");
   y += 10;
 
   const isDefaultFrais = (m.loanFraisInitiaux ?? 0) === 0 && fraisInitiaux === 0;
-  const paramLines: string[] = [
-    [
-      `Capital emprunte : ${fmtCurrency(principal)}`,
-      `Taux nominal : ${ratePct.toFixed(2)} %${isDefaultRate ? " (hyp.)" : ""}`,
-      `Assurance : ${insurancePct.toFixed(2)} % / an${isDefaultInsurance ? " (hyp.)" : ""}`,
-    ].join("   |   "),
-  ];
-  if (!isDefaultFrais && fraisInitiaux > 0) {
+  const paramLines: string[] = [[
+    `Capital emprunte : ${fmtCurrency(principal)}`,
+    `Taux nominal : ${ratePct.toFixed(2)} %${isDefaultRate ? " (hyp.)" : ""}`,
+    `Assurance : ${insurancePct.toFixed(2)} % / an${isDefaultInsurance ? " (hyp.)" : ""}`,
+  ].join("   |   ")];
+  if (!isDefaultFrais && fraisInitiaux > 0)
     paramLines.push(`Frais initiaux (dossier + garantie + courtier) : ${fmtCurrency(fraisInitiaux)}`);
-  }
   const paramH = paramLines.length * 5.5 + 6;
   roundedBox(doc, M.left, y, CW, paramH, { fill: C.bg, border: C.border, radius: 3, lw: 0.2 });
   doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); sc(doc, C.body);
-  paramLines.forEach((line, i) => {
-    doc.text(sanitizeForPdf(line), M.left + 5, y + 5 + i * 5.5);
-  });
+  paramLines.forEach((line, i) => { doc.text(sanitizeForPdf(line), M.left + 5, y + 5 + i * 5.5); });
   y += paramH + 8;
 
   const totalW = CW;
   const labelColW = Math.round(totalW * 0.44);
   const valColW   = Math.round((totalW - labelColW) / 3);
 
-  interface RowSpec {
-    label: string;
-    key:   keyof LoanScenario;
-    bold?:      boolean;
-    highlight?: boolean;
-    separator?: boolean;
-  }
+  interface RowSpec { label: string; key: keyof LoanScenario; bold?: boolean; highlight?: boolean; }
   const rowSpecs: RowSpec[] = [
     { label: "Mensualite hors assurance",  key: "mensualiteHorsAssurance" },
     { label: "Assurance mensuelle",        key: "assuranceMensuelle" },
-    { label: "Mensualite totale",          key: "mensualiteTotale",   bold: true, separator: true },
-    { label: "Interets totaux",            key: "interetsTotaux",     separator: true },
+    { label: "Mensualite totale",          key: "mensualiteTotale",   bold: true },
+    { label: "Interets totaux",            key: "interetsTotaux" },
     { label: "Assurance totale",           key: "assuranceTotale" },
     { label: "Cout total du credit",       key: "coutTotalCredit",    bold: true },
-    { label: "Total rembourse",            key: "totalRembourse",     bold: true, highlight: true, separator: true },
+    { label: "Total rembourse",            key: "totalRembourse",     bold: true, highlight: true },
   ];
 
-  const tableBody: (string | { content: string; styles?: Record<string, unknown> })[][] = rowSpecs.map(r => {
+  const tableBody = rowSpecs.map(r => {
     const isHighlight = !!r.highlight;
     const isBold      = !!r.bold;
     const labelCell = {
       content: sanitizeForPdf(r.label),
       styles: {
         fontStyle: isBold ? "bold" : "normal",
-        textColor: isHighlight
-          ? [C.accent[0], C.accent[1], C.accent[2]]
-          : [C.body[0],   C.body[1],   C.body[2]],
-        fillColor: isHighlight
-          ? [C.accentSoft[0], C.accentSoft[1], C.accentSoft[2]]
-          : undefined,
+        textColor: isHighlight ? [C.accent[0], C.accent[1], C.accent[2]] : [C.body[0], C.body[1], C.body[2]],
+        fillColor: isHighlight ? [C.accentSoft[0], C.accentSoft[1], C.accentSoft[2]] : undefined,
         cellPadding: { top: 3, bottom: 3, left: 4, right: 2 },
       },
     };
     const valCells = scenarios.map(sc2 => ({
       content: sanitizeForPdf(fmtCurrency(sc2[r.key] as number)),
       styles: {
-        halign: "right" as const,
-        fontStyle: isBold ? "bold" : "normal",
+        halign: "right" as const, fontStyle: isBold ? "bold" : "normal",
         fontSize: isHighlight ? 8.5 : 8,
-        textColor: isHighlight
-          ? [C.accent[0],  C.accent[1],  C.accent[2]]
-          : [C.body[0],    C.body[1],    C.body[2]],
-        fillColor: isHighlight
-          ? [C.accentSoft[0], C.accentSoft[1], C.accentSoft[2]]
-          : undefined,
+        textColor: isHighlight ? [C.accent[0], C.accent[1], C.accent[2]] : [C.body[0], C.body[1], C.body[2]],
+        fillColor: isHighlight ? [C.accentSoft[0], C.accentSoft[1], C.accentSoft[2]] : undefined,
         cellPadding: { top: 3, bottom: 3, left: 2, right: 4 },
       },
     }));
@@ -2861,44 +2634,31 @@ function buildLoanComparison(doc: jsPDF, m: DealMetrics): void {
       3: { cellWidth: valColW, halign: "right" as const },
     },
     styles: {
-      font: "helvetica",
-      fontSize: 8,
-      cellPadding: 3,
-      lineColor:   [C.border[0],    C.border[1],    C.border[2]]  as [number,number,number],
-      lineWidth: 0.15,
-      textColor:   [C.body[0],      C.body[1],      C.body[2]]    as [number,number,number],
+      font: "helvetica", fontSize: 8, cellPadding: 3,
+      lineColor: [C.border[0], C.border[1], C.border[2]] as [number,number,number],
+      lineWidth: 0.15, textColor: [C.body[0], C.body[1], C.body[2]] as [number,number,number],
       overflow: "linebreak",
     },
     headStyles: {
-      fillColor:   [C.primary[0],   C.primary[1],   C.primary[2]] as [number,number,number],
-      textColor:   [255, 255, 255]                                 as [number,number,number],
-      fontStyle: "bold",
-      fontSize: 8.5,
-      halign: "center",
+      fillColor: [C.primary[0], C.primary[1], C.primary[2]] as [number,number,number],
+      textColor: [255, 255, 255] as [number,number,number],
+      fontStyle: "bold", fontSize: 8.5, halign: "center",
     },
-    alternateRowStyles: {
-      fillColor:   [C.bg[0],        C.bg[1],        C.bg[2]]      as [number,number,number],
-    },
+    alternateRowStyles: { fillColor: [C.bg[0], C.bg[1], C.bg[2]] as [number,number,number] },
   });
 
   y = (doc as DocWithTable).lastAutoTable.finalY + 10;
 
-  const delta      = scenarios[0].mensualiteTotale  - scenarios[2].mensualiteTotale;
-  const surcoûtTot = scenarios[2].coutTotalCredit   - scenarios[0].coutTotalCredit;
-  if (delta > 0 && surcoûtTot > 0) {
+  const delta      = scenarios[0].mensualiteTotale - scenarios[2].mensualiteTotale;
+  const surcoutTot = scenarios[2].coutTotalCredit  - scenarios[0].coutTotalCredit;
+  if (delta > 0 && surcoutTot > 0) {
     if (y + 20 > PH - M.bottom) { doc.addPage(); y = M.top + 12; }
     const synthH = 20;
     roundedBox(doc, M.left, y, CW, synthH, { fill: C.bg, border: C.border, radius: 3, lw: 0.2, shadow: true });
     sf(doc, C.accent); doc.roundedRect(M.left, y, 3.5, synthH, 1.5, 1.5, "F");
     doc.setFont("helvetica", "normal"); doc.setFontSize(8); sc(doc, C.body);
-    doc.text(
-      sanitizeForPdf(`Passer de 10 a 20 ans reduit la mensualite de ${fmtCurrency(delta)} / mois`),
-      M.left + 8, y + 7,
-    );
-    doc.text(
-      sanitizeForPdf(`mais augmente le cout total du credit de ${fmtCurrency(surcoûtTot)} sur la duree.`),
-      M.left + 8, y + 13.5,
-    );
+    doc.text(sanitizeForPdf(`Passer de 10 a 20 ans reduit la mensualite de ${fmtCurrency(delta)} / mois`), M.left + 8, y + 7);
+    doc.text(sanitizeForPdf(`mais augmente le cout total du credit de ${fmtCurrency(surcoutTot)} sur la duree.`), M.left + 8, y + 13.5);
     y += synthH + 8;
   }
 
@@ -2922,7 +2682,6 @@ function buildLoanComparison(doc: jsPDF, m: DealMetrics): void {
     doc.text(hypLines, M.left, y);
     y += hypLines.length * 4 + 4;
   }
-
   setY(doc, y);
 }
 

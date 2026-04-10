@@ -2,98 +2,37 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import {
-  FileText,
-  RefreshCw,
-  AlertCircle,
-  CheckCircle2,
-  XCircle,
-  AlertTriangle,
-  TrendingUp,
-  TrendingDown,
-  BarChart3,
-  Euro,
-  Layers,
-  Scale,
-  MapPin,
-  ChevronRight,
-  Loader2,
-  Download,
-  ShieldAlert,
+  FileText, RefreshCw, AlertCircle, CheckCircle2, XCircle, AlertTriangle,
+  TrendingUp, TrendingDown, BarChart3, Euro, Layers, Scale, MapPin,
+  ChevronRight, Loader2, Download, ShieldAlert, Building2,
 } from 'lucide-react';
 import { generatePromoteurSynthese } from '../services/generatePromoteurSynthese';
 import { exportPromoteurPdf } from '../services/exportPromoteurPdf';
+import { usePromoteurProjectStore } from '../store/promoteurProject.store';
 import type {
-  PromoteurSynthese,
-  PromoteurRawInput,
-  RisqueItem,
-  RisqueNiveau,
-  Scenario,
-  RecommendationType,
+  PromoteurSynthese, PromoteurRawInput, RisqueItem, RisqueNiveau, Scenario, RecommendationType,
 } from '../services/promoteurSynthese.types';
 
 // ---- Types ------------------------------------------------------------------
 
 interface StudyData {
-  foncier?: {
-    adresse_complete?: string;
-    commune?: string;
-    code_postal?: string;
-    departement?: string;
-    surface_m2?: number;
-    commune_insee?: string;
-  };
-  plu?: {
-    zone_plu?: string;
-    cos?: number;
-    hauteur_max?: number;
-    pleine_terre_pct?: number;
-  };
-  marche?: {
-    prix_m2_neuf?: number;
-    prix_m2_ancien?: number;
-    nb_transactions?: number;
-    prix_moyen_dvf?: number;
-    nb_programmes_concurrents?: number;
-    absorption_mensuelle?: number;
-  };
-  risques?: {
-    zonage_risque?: string;
-  };
-  evaluation?: {
-    cout_foncier?: number;
-  };
-  bilan?: {
-    ca_previsionnel?: number;
-    prix_revient_total?: number;
-    marge_nette?: number;
-    taux_marge_nette_pct?: number;
-    taux_credit_pct?: number;
-  };
+  foncier?: { adresse_complete?: string; commune?: string; code_postal?: string; departement?: string; surface_m2?: number; commune_insee?: string; };
+  plu?: { zone_plu?: string; cos?: number; hauteur_max?: number; pleine_terre_pct?: number; };
+  marche?: { prix_m2_neuf?: number; prix_m2_ancien?: number; nb_transactions?: number; prix_moyen_dvf?: number; nb_programmes_concurrents?: number; absorption_mensuelle?: number; };
+  risques?: { zonage_risque?: string; };
+  evaluation?: { cout_foncier?: number; };
+  bilan?: { ca_previsionnel?: number; prix_revient_total?: number; marge_nette?: number; taux_marge_nette_pct?: number; taux_credit_pct?: number; };
 }
 
 interface Props {
   studyData?: StudyData;
-  // Direct bilan values from BilanPromoteurPage
   bilanValues?: {
-    caTotal: number;
-    coutTotal: number;
-    marge: number;
-    margePct: number;
-    coutTravauxBase: number;
-    coutTravauxM2: number;
-    totalFoncier: number;
-    totalFin: number;
-    totalCom: number;
-    totalEtudes: number;
-    sdpM2: number;
-    surfaceVendableM2: number;
-    nbLogements: number;
-    financingRatePct: number;
-    salePriceEurM2Hab: number;
-    commune?: string;
-    codePostal?: string;
-    adresse?: string;
-    programmeType?: string;
+    caTotal: number; coutTotal: number; marge: number; margePct: number;
+    coutTravauxBase: number; coutTravauxM2: number; totalFoncier: number;
+    totalFin: number; totalCom: number; totalEtudes: number;
+    sdpM2: number; surfaceVendableM2: number; nbLogements: number;
+    financingRatePct: number; salePriceEurM2Hab: number;
+    commune?: string; codePostal?: string; adresse?: string; programmeType?: string;
   };
 }
 
@@ -102,9 +41,7 @@ interface Props {
 function eur(v: number): string {
   return v.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
 }
-function pct(v: number): string {
-  return `${v.toFixed(1)}%`;
-}
+function pct(v: number): string { return `${v.toFixed(1)}%`; }
 
 // ---- Skeleton ---------------------------------------------------------------
 
@@ -132,7 +69,7 @@ const LoadingPreview: React.FC = () => (
 const REC_CFG: Record<RecommendationType, { bg: string; border: string; text: string; icon: React.ComponentType<{ className?: string }>; label: string }> = {
   GO:           { bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-700', icon: CheckCircle2, label: 'GO - Operation recommandee' },
   GO_CONDITION: { bg: 'bg-amber-50',   border: 'border-amber-300',   text: 'text-amber-700',   icon: AlertCircle,  label: 'GO CONDITIONNEL - Ajustements requis' },
-  NO_GO:        { bg: 'bg-red-50',     border: 'border-red-300',     text: 'text-red-700',     icon: XCircle,      label: 'NO GO - Operation non viable en l\'etat' },
+  NO_GO:        { bg: 'bg-red-50',     border: 'border-red-300',     text: 'text-red-700',     icon: XCircle,      label: "NO GO - Operation non viable en l'etat" },
 };
 
 const RecBanner: React.FC<{ rec: RecommendationType; motif: string }> = ({ rec, motif }) => {
@@ -195,17 +132,9 @@ const RISK_STYLE: Record<RisqueNiveau, string> = {
 
 // ---- Main preview -----------------------------------------------------------
 
-const SynthesePreview: React.FC<{ synthese: PromoteurSynthese }> = ({ synthese }) => {
+const SynthesePreview: React.FC<{ synthese: PromoteurSynthese; facadeRenderUrl?: string | null }> = ({ synthese, facadeRenderUrl }) => {
   const { executiveSummary: es, financier, marche, technique, risques, scenarios, financement, syntheseIA } = synthese;
-
   const stressScenario = scenarios.find(s => s.type === 'STRESS');
-  const pessScenario   = scenarios.find(s => s.type === 'PESSIMISTE');
-
-  const recStyle: Record<RecommendationType, string> = {
-    GO:           'text-emerald-600 font-bold',
-    GO_CONDITION: 'text-amber-600 font-bold',
-    NO_GO:        'text-red-600 font-bold',
-  };
 
   return (
     <div className="space-y-5">
@@ -225,6 +154,24 @@ const SynthesePreview: React.FC<{ synthese: PromoteurSynthese }> = ({ synthese }
           'bg-red-50 text-red-600 border-red-200'
         }`}>{synthese.metadata.dataQualite}</span>
       </div>
+
+      {/* Rendu facade */}
+      {facadeRenderUrl && (
+        <div className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-3 border-b bg-slate-50 border-slate-100">
+            <Building2 className="h-4 w-4 text-violet-500" />
+            <span className="text-xs font-bold uppercase tracking-wider text-violet-700">Perspective facade</span>
+          </div>
+          <div className="p-3">
+            <img
+              src={facadeRenderUrl}
+              alt="Rendu facade du projet"
+              className="w-full rounded-lg object-cover"
+              style={{ maxHeight: 360 }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Recommendation */}
       <RecBanner rec={es.recommendation} motif={es.motifRecommandation} />
@@ -248,31 +195,10 @@ const SynthesePreview: React.FC<{ synthese: PromoteurSynthese }> = ({ synthese }
 
       {/* KPIs principaux */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard
-          label="Marge nette"
-          value={pct(financier.margeNettePercent)}
-          sub={eur(financier.margeNette)}
-          alert={financier.margeNettePercent < 8}
-          trend={financier.margeNettePercent >= 12 ? 'up' : 'down'}
-        />
-        <KpiCard
-          label="CA total HT"
-          value={`${(financier.chiffreAffairesTotal / 1000000).toFixed(2)} M EUR`}
-          sub={`${financier.chiffreAffairesM2.toLocaleString('fr-FR')} EUR/m2`}
-        />
-        <KpiCard
-          label="TRN"
-          value={pct(financier.trnRendement)}
-          sub="Taux de rendement net"
-          alert={financier.trnRendement < 8}
-          trend={financier.trnRendement >= 10 ? 'up' : 'down'}
-        />
-        <KpiCard
-          label="Score global"
-          value={`${es.scores.global}/100`}
-          sub={`${synthese.projet.nbLogements} logements`}
-          trend={es.scores.global >= 65 ? 'up' : 'down'}
-        />
+        <KpiCard label="Marge nette" value={pct(financier.margeNettePercent)} sub={eur(financier.margeNette)} alert={financier.margeNettePercent < 8} trend={financier.margeNettePercent >= 12 ? 'up' : 'down'} />
+        <KpiCard label="CA total HT" value={`${(financier.chiffreAffairesTotal / 1000000).toFixed(2)} M EUR`} sub={`${financier.chiffreAffairesM2.toLocaleString('fr-FR')} EUR/m2`} />
+        <KpiCard label="TRN" value={pct(financier.trnRendement)} sub="Taux de rendement net" alert={financier.trnRendement < 8} trend={financier.trnRendement >= 10 ? 'up' : 'down'} />
+        <KpiCard label="Score global" value={`${es.scores.global}/100`} sub={`${synthese.projet.nbLogements} logements`} trend={es.scores.global >= 65 ? 'up' : 'down'} />
       </div>
 
       {/* Points forts / vigilance */}
@@ -305,19 +231,13 @@ const SynthesePreview: React.FC<{ synthese: PromoteurSynthese }> = ({ synthese }
         </div>
       </div>
 
-      {/* 3 sections principales */}
+      {/* 2 sections principales */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-        {/* Etude de marche */}
         <Section title="Etude de marche" icon={BarChart3}>
           <Row label="Zone marche"       value={marche.zoneMarche.replace('_', ' ')} />
           <Row label="Prix neuf moyen"   value={`${marche.prixNeufMoyenM2.toLocaleString('fr-FR')} EUR/m2`} />
           <Row label="Prix projet"       value={`${marche.prixProjetM2.toLocaleString('fr-FR')} EUR/m2`} />
-          <Row
-            label="Position vs marche"
-            value={`${marche.positionPrix > 0 ? '+' : ''}${pct(marche.positionPrix)}`}
-            highlight={Math.abs(marche.positionPrix) > 5}
-          />
+          <Row label="Position vs marche" value={`${marche.positionPrix > 0 ? '+' : ''}${pct(marche.positionPrix)}`} highlight={Math.abs(marche.positionPrix) > 5} />
           <Row label="Prime neuf/ancien" value={pct(marche.primiumNeuf)} />
           <Row label="Concurrence"       value={`${marche.offreConcurrente} programme(s)`} />
           {marche.delaiEcoulementMois != null && (
@@ -334,12 +254,11 @@ const SynthesePreview: React.FC<{ synthese: PromoteurSynthese }> = ({ synthese }
           )}
         </Section>
 
-        {/* Faisabilite technique */}
         <Section title="Faisabilite technique" icon={Layers} accent>
           <div className="flex items-center gap-2 mb-3">
             <span className={`text-xs font-bold rounded-full px-3 py-1 border ${
-              technique.faisabiliteTechnique === 'CONFIRME'    ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-              technique.faisabiliteTechnique === 'SOUS_RESERVE'? 'bg-amber-50 text-amber-700 border-amber-200' :
+              technique.faisabiliteTechnique === 'CONFIRME'     ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+              technique.faisabiliteTechnique === 'SOUS_RESERVE' ? 'bg-amber-50 text-amber-700 border-amber-200' :
               'bg-red-50 text-red-700 border-red-200'
             }`}>
               {technique.faisabiliteTechnique === 'CONFIRME' ? 'Confirmee' :
@@ -347,11 +266,11 @@ const SynthesePreview: React.FC<{ synthese: PromoteurSynthese }> = ({ synthese }
             </span>
             <span className="text-xs text-slate-400">Zone {technique.zonePlu}</span>
           </div>
-          <Row label="CUB"           value={technique.cub != null ? String(technique.cub) : 'N/D'} />
-          <Row label="Hauteur max"   value={technique.hauteurMax != null ? `${technique.hauteurMax} m` : 'N/D'} />
+          <Row label="CUB"            value={technique.cub != null ? String(technique.cub) : 'N/D'} />
+          <Row label="Hauteur max"    value={technique.hauteurMax != null ? `${technique.hauteurMax} m` : 'N/D'} />
           <Row label="Hauteur projet" value={technique.hauteurProjet != null ? `${technique.hauteurProjet} m` : 'N/D'} />
-          <Row label="Niveaux"       value={technique.nbNiveaux != null ? String(technique.nbNiveaux) : 'N/D'} />
-          <Row label="Pleine terre"  value={technique.pleineTerre != null ? `${technique.pleineTerre}%` : 'N/D'} />
+          <Row label="Niveaux"        value={technique.nbNiveaux != null ? String(technique.nbNiveaux) : 'N/D'} />
+          <Row label="Pleine terre"   value={technique.pleineTerre != null ? `${technique.pleineTerre}%` : 'N/D'} />
           {technique.contraintes.filter(c => c.statut !== 'CONFORME').length > 0 && (
             <div className="mt-3 pt-3 border-t border-slate-100">
               <p className="text-xs font-semibold text-slate-500 mb-2">Contraintes a surveiller</p>
@@ -365,10 +284,9 @@ const SynthesePreview: React.FC<{ synthese: PromoteurSynthese }> = ({ synthese }
             </div>
           )}
         </Section>
-
       </div>
 
-      {/* Analyse financiere comite */}
+      {/* Analyse financiere */}
       <Section title="Analyse financiere - Comite d'investissement" icon={Euro}>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1">
           <div className="col-span-2 md:col-span-3 pb-2 mb-1 border-b border-slate-100">
@@ -395,11 +313,11 @@ const SynthesePreview: React.FC<{ synthese: PromoteurSynthese }> = ({ synthese }
       {/* Plan de financement */}
       <Section title="Plan de financement" icon={Scale}>
         <div className="grid grid-cols-2 gap-x-6 gap-y-1">
-          <Row label="Fonds propres requis"  value={`${eur(financement.fondsPropresRequis)} (${pct(financement.fondsPropresPercent)})`} />
-          <Row label="Credit promoteur"      value={eur(financement.creditPromoteurMontant)} />
-          <Row label="Duree credit"          value={`${financement.creditPromoteurDuree} mois`} />
-          <Row label="Taux credit estime"    value={pct(financement.tauxCredit)} />
-          <Row label="Prefinancement VEFA"   value={pct(financement.prefinancementVentes)} />
+          <Row label="Fonds propres requis" value={`${eur(financement.fondsPropresRequis)} (${pct(financement.fondsPropresPercent)})`} />
+          <Row label="Credit promoteur"     value={eur(financement.creditPromoteurMontant)} />
+          <Row label="Duree credit"         value={`${financement.creditPromoteurDuree} mois`} />
+          <Row label="Taux credit estime"   value={pct(financement.tauxCredit)} />
+          <Row label="Prefinancement VEFA"  value={pct(financement.prefinancementVentes)} />
         </div>
         {financement.notesBancaires.length > 0 && (
           <div className="mt-3 pt-3 border-t border-slate-100 space-y-1">
@@ -419,9 +337,9 @@ const SynthesePreview: React.FC<{ synthese: PromoteurSynthese }> = ({ synthese }
             <div key={sc.id} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
               <div className="flex items-center gap-2 min-w-0">
                 <span className={`text-xs font-bold w-20 flex-shrink-0 ${
-                  sc.type === 'OPTIMISTE' ? 'text-emerald-600' :
-                  sc.type === 'BASE'      ? 'text-violet-600' :
-                  sc.type === 'PESSIMISTE'? 'text-amber-600' : 'text-red-600'
+                  sc.type === 'OPTIMISTE'  ? 'text-emerald-600' :
+                  sc.type === 'BASE'       ? 'text-violet-600' :
+                  sc.type === 'PESSIMISTE' ? 'text-amber-600' : 'text-red-600'
                 }`}>{sc.type}</span>
                 <span className="text-xs text-slate-400 truncate">{sc.libelle}</span>
               </div>
@@ -476,11 +394,11 @@ const SynthesePreview: React.FC<{ synthese: PromoteurSynthese }> = ({ synthese }
         <Section title="Synthese analytique" icon={FileText} accent>
           <div className="space-y-4">
             {[
-              { t: 'Resume executif',  c: syntheseIA.texteExecutif },
-              { t: 'Marche',           c: syntheseIA.analyseMarche },
-              { t: 'Technique',        c: syntheseIA.analyseTechnique },
-              { t: 'Financier',        c: syntheseIA.analyseFinanciere },
-              { t: 'Risques',          c: syntheseIA.analyseRisques },
+              { t: 'Resume executif',   c: syntheseIA.texteExecutif },
+              { t: 'Marche',            c: syntheseIA.analyseMarche },
+              { t: 'Technique',         c: syntheseIA.analyseTechnique },
+              { t: 'Financier',         c: syntheseIA.analyseFinanciere },
+              { t: 'Risques',           c: syntheseIA.analyseRisques },
             ].map(({ t, c }) => (
               <div key={t}>
                 <p className="text-xs font-bold text-violet-600 mb-1">{t}</p>
@@ -507,6 +425,15 @@ export const PromoteurSynthesePage: React.FC<Props> = ({ studyData, bilanValues 
   const [synthese, setSynthese] = useState<PromoteurSynthese | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Lecture de l'image façade depuis le store (injectée par FacadeGeneratorPage)
+  const facadeRenderUrl = usePromoteurProjectStore((s) => {
+    try {
+      return (s as Record<string, unknown>).facadeRenderUrl as string | null ?? null;
+    } catch {
+      return null;
+    }
+  });
 
   const rawInput = useMemo((): PromoteurRawInput => ({
     foncier: {
@@ -572,29 +499,28 @@ export const PromoteurSynthesePage: React.FC<Props> = ({ studyData, bilanValues 
       const result = generatePromoteurSynthese(rawInput);
       setSynthese(result);
       await new Promise<void>(r => setTimeout(r, 40));
-      exportPromoteurPdf(result);
+      exportPromoteurPdf(result, { facadeRenderUrl: facadeRenderUrl ?? undefined });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur lors de la generation');
     } finally {
       setLoading(false);
     }
-  }, [rawInput]);
+  }, [rawInput, facadeRenderUrl]);
 
   const handleRegenerate = useCallback(async () => {
     if (!synthese) return;
     setLoading(true);
     try {
       await new Promise<void>(r => setTimeout(r, 40));
-      exportPromoteurPdf(synthese);
+      exportPromoteurPdf(synthese, { facadeRenderUrl: facadeRenderUrl ?? undefined });
     } finally {
       setLoading(false);
     }
-  }, [synthese]);
+  }, [synthese, facadeRenderUrl]);
 
   return (
     <div className="space-y-5">
 
-      {/* Error */}
       {error && (
         <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
           <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
@@ -606,20 +532,25 @@ export const PromoteurSynthesePage: React.FC<Props> = ({ studyData, bilanValues 
         </div>
       )}
 
-      {/* CTA generate */}
       {!synthese && !loading && (
         <div className="flex flex-col items-center justify-center py-12 gap-5">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-50 border-2 border-dashed border-violet-200">
             <FileText className="h-7 w-7 text-violet-400" />
           </div>
           <div className="text-center">
-            <p className="text-sm font-semibold text-slate-700">
-              Synthese Promoteur - Comite d'investissement
-            </p>
+            <p className="text-sm font-semibold text-slate-700">Synthese Promoteur - Comite d'investissement</p>
             <p className="text-xs text-slate-400 mt-1 max-w-sm">
               Etude de marche, analyse economique du bilan et presentation financiere generes automatiquement.
             </p>
           </div>
+
+          {facadeRenderUrl && (
+            <div className="flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2">
+              <Building2 className="h-4 w-4 text-violet-500" />
+              <span className="text-xs font-medium text-violet-700">Image facade disponible — sera incluse dans le PDF</span>
+            </div>
+          )}
+
           <button
             onClick={handleGenerate}
             className="inline-flex items-center gap-2.5 rounded-xl bg-violet-600 px-6 py-3 text-sm font-semibold text-white shadow-md shadow-violet-200 hover:bg-violet-700 hover:-translate-y-0.5 transition-all"
@@ -630,7 +561,6 @@ export const PromoteurSynthesePage: React.FC<Props> = ({ studyData, bilanValues 
         </div>
       )}
 
-      {/* Loading */}
       {loading && (
         <div className="space-y-4">
           <div className="flex items-center gap-3 rounded-xl border border-violet-100 bg-violet-50 p-4">
@@ -643,35 +573,26 @@ export const PromoteurSynthesePage: React.FC<Props> = ({ studyData, bilanValues 
         </div>
       )}
 
-      {/* Preview + actions */}
       {synthese && !loading && (
         <>
           <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="h-5 w-5 text-emerald-600 flex-shrink-0" />
-              <span className="text-sm font-semibold text-emerald-700">
-                Synthese generee - PDF telecharge
-              </span>
+              <span className="text-sm font-semibold text-emerald-700">Synthese generee - PDF telecharge</span>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={handleRegenerate}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 transition-colors"
-              >
+              <button onClick={handleRegenerate} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 transition-colors">
                 <Download className="h-3.5 w-3.5" />
                 Re-telecharger PDF
               </button>
-              <button
-                onClick={() => setSynthese(null)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-              >
+              <button onClick={() => setSynthese(null)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors">
                 <RefreshCw className="h-3.5 w-3.5" />
                 Regenerer
               </button>
             </div>
           </div>
 
-          <SynthesePreview synthese={synthese} />
+          <SynthesePreview synthese={synthese} facadeRenderUrl={facadeRenderUrl} />
         </>
       )}
 

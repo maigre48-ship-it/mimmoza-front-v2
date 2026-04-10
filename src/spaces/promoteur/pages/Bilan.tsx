@@ -4,12 +4,13 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { useSearchParams } from "react-router-dom";
 import {
   BarChart2, Save, Loader2, Sparkles,
-  TrendingUp, TrendingDown, AlertTriangle,
-  FileText, Info
+  TrendingUp, AlertTriangle,
+  FileText, CheckCircle, Target, Home,
 } from "lucide-react";
 import { supabase } from "../../../supabaseClient";
 import { usePromoteurStudy } from "../shared/usePromoteurStudy";
 import type { PromoteurBilanData } from "../shared/promoteurStudy.types";
+import { patchModule } from "../shared/promoteurSnapshot.store";
 
 const GRAD_PRO   = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
 const ACCENT_PRO = "#5247b8";
@@ -21,6 +22,7 @@ const styles = {
   cardTitle:  { fontSize: "14px", fontWeight: 700, color: "#0f172a", display: "flex", alignItems: "center", gap: "8px", margin: 0 } as React.CSSProperties,
   cardBody:   { padding: "20px" } as React.CSSProperties,
   grid2:      { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 } as React.CSSProperties,
+  grid3:      { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 } as React.CSSProperties,
   fieldWrap:  { display: "flex", flexDirection: "column" as const, gap: 6 },
   label:      { fontSize: "12px", fontWeight: 600, color: "#475569" } as React.CSSProperties,
   hint:       { fontSize: "11px", color: "#94a3b8", marginTop: 2 } as React.CSSProperties,
@@ -38,6 +40,8 @@ export default function Bilan(): React.ReactElement {
   const studyId = searchParams.get("study");
   const { study, loadState, patchBilan } = usePromoteurStudy(studyId);
 
+  // ── Financement ───────────────────────────────────────────────────────────
+  const [prixFoncier,     setPrixFoncier]     = useState<number | null>(null);
   const [fondsPropres,    setFondsPropres]    = useState<number | null>(null);
   const [creditPromotion, setCreditPromotion] = useState<number | null>(null);
   const [tauxCreditPct,   setTauxCreditPct]   = useState<number | null>(null);
@@ -45,16 +49,21 @@ export default function Bilan(): React.ReactElement {
   const [roiPct,          setRoiPct]          = useState<number | null>(null);
   const [triPct,          setTriPct]          = useState<number | null>(null);
   const [notes,           setNotes]           = useState("");
-  const [aiNarrative,     setAiNarrative]     = useState<string | null>(null);
-  const [aiGeneratedAt,   setAiGeneratedAt]   = useState<string | null>(null);
-  const [isSaving,        setIsSaving]        = useState(false);
-  const [isGenerating,    setIsGenerating]    = useState(false);
-  const [saveMsg,         setSaveMsg]         = useState<string | null>(null);
+
+  // ── IA ───────────────────────────────────────────────────────────────────
+  const [aiNarrative,   setAiNarrative]   = useState<string | null>(null);
+  const [aiGeneratedAt, setAiGeneratedAt] = useState<string | null>(null);
+  const [isGenerating,  setIsGenerating]  = useState(false);
+
+  // ── UI ───────────────────────────────────────────────────────────────────
+  const [isSaving,       setIsSaving]       = useState(false);
+  const [saveMsg,        setSaveMsg]        = useState<string | null>(null);
+  const [synthesisSaved, setSynthesisSaved] = useState(false);
 
   const mountedRef = useRef(true);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
-  // Données depuis les autres modules de l'étude
+  // ── Données depuis les autres modules ─────────────────────────────────────
   const evaluation = study?.evaluation ?? null;
   const foncier    = study?.foncier    ?? null;
   const conception = study?.conception ?? null;
@@ -67,10 +76,14 @@ export default function Bilan(): React.ReactElement {
   const tauxMargePct     = evaluation?.taux_marge_pct     ?? null;
   const communeInsee     = foncier?.commune_insee         ?? null;
 
-  // Hydratation depuis Supabase
+  // ── Hydratation depuis Supabase ───────────────────────────────────────────
   useEffect(() => {
-    if (loadState !== "ready" || !study?.bilan) return;
+    if (loadState !== "ready") return;
+    // Prix foncier depuis foncier si disponible
+    if (foncier?.prix_foncier != null) setPrixFoncier(foncier.prix_foncier);
+    if (!study?.bilan) return;
     const b = study.bilan;
+    if (b.prix_foncier     != null) setPrixFoncier(b.prix_foncier);
     setFondsPropres(b.fonds_propres);
     setCreditPromotion(b.credit_promotion);
     setTauxCreditPct(b.taux_credit_pct);
@@ -80,18 +93,25 @@ export default function Bilan(): React.ReactElement {
     setNotes(b.notes ?? "");
     setAiNarrative(b.ai_narrative);
     setAiGeneratedAt(b.ai_generated_at);
-  }, [loadState, study]);
+  }, [loadState, study, foncier]);
 
-  // Calculs automatiques
+  // ── Calculs automatiques ─────────────────────────────────────────────────
   const computed = useMemo(() => {
     const roiCalc = fondsPropres && margeBrute ? (margeBrute / fondsPropres) * 100 : null;
     const interets = creditPromotion && tauxCreditPct && dureeMois
       ? creditPromotion * (tauxCreditPct / 100) * (dureeMois / 12)
       : null;
-    return { roiCalc, interets };
-  }, [fondsPropres, margeBrute, creditPromotion, tauxCreditPct, dureeMois]);
+    const totalFinancement = (fondsPropres ?? 0) + (creditPromotion ?? 0);
+    const couvertureFoncier = prixFoncier && totalFinancement
+      ? (prixFoncier / totalFinancement) * 100
+      : null;
+    return { roiCalc, interets, totalFinancement, couvertureFoncier };
+  }, [fondsPropres, margeBrute, creditPromotion, tauxCreditPct, dureeMois, prixFoncier]);
 
-  // Génération narrative IA
+  // ── Alerte foncier manquant ───────────────────────────────────────────────
+  const foncierManquant = !prixFoncier;
+
+  // ── Génération narrative IA ───────────────────────────────────────────────
   const handleGenerateNarrative = useCallback(async () => {
     if (!studyId) return;
     setIsGenerating(true);
@@ -110,6 +130,7 @@ export default function Bilan(): React.ReactElement {
         ca_previsionnel:      caPrevisionnel,
         marge_nette:          margeBrute,
         taux_marge_nette_pct: tauxMargePct,
+        prix_foncier:         prixFoncier,
         fonds_propres:        fondsPropres,
         credit_promotion:     creditPromotion,
         taux_credit_pct:      tauxCreditPct,
@@ -128,10 +149,10 @@ export default function Bilan(): React.ReactElement {
     }
   }, [studyId, foncier, plu, conception, evaluation, marche,
       prixRevientTotal, caPrevisionnel, margeBrute, tauxMargePct,
-      fondsPropres, creditPromotion, tauxCreditPct, dureeMois,
+      prixFoncier, fondsPropres, creditPromotion, tauxCreditPct, dureeMois,
       roiPct, triPct, notes, computed.roiCalc, patchBilan]);
 
-  // Sauvegarde
+  // ── Sauvegarde ────────────────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
     if (!studyId) return;
     setIsSaving(true);
@@ -140,6 +161,7 @@ export default function Bilan(): React.ReactElement {
       ca_previsionnel:      caPrevisionnel,
       marge_nette:          margeBrute,
       taux_marge_nette_pct: tauxMargePct,
+      prix_foncier:         prixFoncier,
       fonds_propres:        fondsPropres,
       credit_promotion:     creditPromotion,
       taux_credit_pct:      tauxCreditPct,
@@ -161,10 +183,29 @@ export default function Bilan(): React.ReactElement {
       }
     }
   }, [studyId, prixRevientTotal, caPrevisionnel, margeBrute, tauxMargePct,
-      fondsPropres, creditPromotion, tauxCreditPct, dureeMois,
+      prixFoncier, fondsPropres, creditPromotion, tauxCreditPct, dureeMois,
       roiPct, triPct, aiNarrative, aiGeneratedAt, notes, computed.roiCalc, patchBilan]);
 
-  // Loading
+  // ── Synthèse ──────────────────────────────────────────────────────────────
+  const handleSaveForSynthesis = useCallback(() => {
+    const roiFinal = roiPct ?? computed.roiCalc;
+    patchModule("bilan", {
+      ok: true,
+      validated: true,
+      summary: `ROI: ${roiFinal != null ? roiFinal.toFixed(1) + "%" : "—"} · Marge: ${fmtEur(margeBrute)} · ${fmtPct(tauxMargePct)}`,
+      data: {
+        prixFoncier, prixRevientTotal, caPrevisionnel, margeBrute,
+        tauxMargePct, fondsPropres, creditPromotion, roi: roiFinal,
+        triPct, aiNarrative,
+      },
+    });
+    setSynthesisSaved(true);
+    setTimeout(() => { if (mountedRef.current) setSynthesisSaved(false); }, 3000);
+  }, [roiPct, computed.roiCalc, margeBrute, tauxMargePct, prixFoncier,
+      prixRevientTotal, caPrevisionnel, fondsPropres, creditPromotion,
+      triPct, aiNarrative]);
+
+  // ── Loading ───────────────────────────────────────────────────────────────
   if (loadState === "loading") {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300, fontFamily: "'Inter', sans-serif" }}>
@@ -180,33 +221,65 @@ export default function Bilan(): React.ReactElement {
 
   return (
     <div style={styles.container}>
-      {/* Banner */}
-      <div style={{ background: GRAD_PRO, borderRadius: 14, padding: "20px 24px", marginBottom: 20, display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+
+      {/* ── Banner ── */}
+      <div style={{
+        background: GRAD_PRO, borderRadius: 14, padding: "20px 24px",
+        marginBottom: 20, display: "flex", alignItems: "flex-start", justifyContent: "space-between",
+      }}>
         <div>
           <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>Promoteur › Bilan</div>
           <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>Bilan de l'opération</div>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>Synthèse financière et décision d'investissement.</div>
-        </div>
-        {communeInsee && (
-          <div style={{ padding: "6px 12px", borderRadius: 8, background: "rgba(255,255,255,0.15)", color: "white", fontSize: 11, fontWeight: 500, border: "1px solid rgba(255,255,255,0.25)", marginTop: 4 }}>
-            INSEE {communeInsee}
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+            Synthèse financière et décision d'investissement.
           </div>
-        )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, marginTop: 4 }}>
+          {communeInsee && (
+            <div style={{ padding: "6px 12px", borderRadius: 8, background: "rgba(255,255,255,0.15)", color: "white", fontSize: 11, fontWeight: 500, border: "1px solid rgba(255,255,255,0.25)" }}>
+              INSEE {communeInsee}
+            </div>
+          )}
+          <button
+            onClick={handleSaveForSynthesis}
+            style={{
+              padding: "9px 16px", borderRadius: 10,
+              border: "1px solid rgba(255,255,255,0.4)",
+              background: synthesisSaved ? "rgba(16,185,129,0.3)" : "rgba(255,255,255,0.15)",
+              color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            {synthesisSaved ? <><CheckCircle size={14} />Enregistré</> : <><Target size={14} />Utiliser dans la synthèse</>}
+          </button>
+        </div>
       </div>
 
-      {/* Alerte si pas d'évaluation */}
-      {!evaluation && (
-        <div style={{ ...styles.card, border: "1px solid #fde68a" }}>
+      {/* ── Alerte foncier manquant ── */}
+      {foncierManquant && (
+        <div style={{ ...styles.card, border: "1px solid #fde68a", marginBottom: 20 }}>
           <div style={{ ...styles.cardBody, display: "flex", alignItems: "center", gap: 12 }}>
             <AlertTriangle size={20} color="#d97706" />
             <p style={{ fontSize: 13, color: "#92400e", margin: 0 }}>
+              <strong>Prix du foncier manquant</strong> — le bilan est incomplet. Renseignez-le dans la section Foncier ci-dessous.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Alerte évaluation manquante ── */}
+      {!evaluation && (
+        <div style={{ ...styles.card, border: "1px solid #fecaca", marginBottom: 20 }}>
+          <div style={{ ...styles.cardBody, display: "flex", alignItems: "center", gap: 12 }}>
+            <AlertTriangle size={20} color="#dc2626" />
+            <p style={{ fontSize: 13, color: "#991b1b", margin: 0 }}>
               Aucune évaluation financière trouvée. Complétez d'abord la page <strong>Évaluation</strong>.
             </p>
           </div>
         </div>
       )}
 
-      {/* KPIs récap depuis évaluation */}
+      {/* ── KPIs récap depuis évaluation ── */}
       {evaluation && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 20 }}>
           {[
@@ -223,16 +296,69 @@ export default function Bilan(): React.ReactElement {
         </div>
       )}
 
-      {/* Financement */}
+      {/* ── Foncier ── */}
+      <div style={styles.card}>
+        <div style={styles.cardHeader}>
+          <h3 style={styles.cardTitle}>
+            <Home size={16} color="#f59e0b" />
+            Foncier
+            {foncierManquant && (
+              <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", background: "#fef3c7", color: "#d97706", borderRadius: 6, marginLeft: 8 }}>
+                ⚠ Requis
+              </span>
+            )}
+          </h3>
+        </div>
+        <div style={styles.cardBody}>
+          <div style={styles.grid2}>
+            <div style={styles.fieldWrap}>
+              <label style={styles.label}>Prix d'acquisition du foncier (€)</label>
+              <input
+                type="number"
+                value={numVal(prixFoncier)}
+                onChange={e => setPrixFoncier(parseNum(e.target.value))}
+                placeholder="ex: 450 000"
+                style={{
+                  ...styles.input,
+                  borderColor: foncierManquant ? "#fbbf24" : "#e2e8f0",
+                  background: foncierManquant ? "#fffbeb" : "white",
+                }}
+              />
+              <span style={styles.hint}>Frais d'achat du terrain, hors droits et honoraires</span>
+            </div>
+            {prixFoncier && prixRevientTotal && (
+              <div style={{ padding: 16, borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0", display: "flex", flexDirection: "column", justifyContent: "center", gap: 6 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase" as const }}>Part du foncier</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: ACCENT_PRO }}>
+                  {((prixFoncier / prixRevientTotal) * 100).toFixed(1)} %
+                </div>
+                <div style={{ fontSize: 11, color: "#94a3b8" }}>du coût total de l'opération</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Financement ── */}
       <div style={styles.card}>
         <div style={styles.cardHeader}>
           <h3 style={styles.cardTitle}><BarChart2 size={16} color={ACCENT_PRO} />Structure de financement</h3>
+          {computed.totalFinancement > 0 && (
+            <span style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>
+              Total : {fmtEur(computed.totalFinancement)}
+            </span>
+          )}
         </div>
         <div style={styles.cardBody}>
           <div style={styles.grid2}>
             <div style={styles.fieldWrap}>
               <label style={styles.label}>Fonds propres (€)</label>
               <input type="number" value={numVal(fondsPropres)} onChange={e => setFondsPropres(parseNum(e.target.value))} placeholder="—" style={styles.input} />
+              {fondsPropres && computed.totalFinancement > 0 && (
+                <span style={styles.hint}>
+                  {((fondsPropres / computed.totalFinancement) * 100).toFixed(0)} % du financement total
+                </span>
+              )}
             </div>
             <div style={styles.fieldWrap}>
               <label style={styles.label}>Crédit promoteur (€)</label>
@@ -245,13 +371,15 @@ export default function Bilan(): React.ReactElement {
             <div style={styles.fieldWrap}>
               <label style={styles.label}>Durée (mois)</label>
               <input type="number" value={numVal(dureeMois)} onChange={e => setDureeMois(parseNum(e.target.value))} placeholder="ex: 24" style={styles.input} />
-              {computed.interets && <span style={styles.hint}>Intérêts estimés : {fmtEur(Math.round(computed.interets))}</span>}
+              {computed.interets != null && (
+                <span style={styles.hint}>Intérêts estimés : {fmtEur(Math.round(computed.interets))}</span>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Rentabilité */}
+      {/* ── Rentabilité ── */}
       <div style={styles.card}>
         <div style={styles.cardHeader}>
           <h3 style={styles.cardTitle}><TrendingUp size={16} color="#16a34a" />Rentabilité</h3>
@@ -260,8 +388,16 @@ export default function Bilan(): React.ReactElement {
           <div style={styles.grid2}>
             <div style={styles.fieldWrap}>
               <label style={styles.label}>ROI (%)</label>
-              <input type="number" value={numVal(roiPct)} onChange={e => setRoiPct(parseNum(e.target.value))} placeholder={computed.roiCalc ? computed.roiCalc.toFixed(1) : "—"} style={styles.input} />
-              {computed.roiCalc && !roiPct && <span style={styles.hint}>Calculé automatiquement : {computed.roiCalc.toFixed(1)} %</span>}
+              <input
+                type="number"
+                value={numVal(roiPct)}
+                onChange={e => setRoiPct(parseNum(e.target.value))}
+                placeholder={computed.roiCalc != null ? computed.roiCalc.toFixed(1) : "—"}
+                style={styles.input}
+              />
+              {computed.roiCalc != null && !roiPct && (
+                <span style={styles.hint}>Calculé automatiquement : {computed.roiCalc.toFixed(1)} %</span>
+              )}
             </div>
             <div style={styles.fieldWrap}>
               <label style={styles.label}>TRI (%)</label>
@@ -280,7 +416,12 @@ export default function Bilan(): React.ReactElement {
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase" as const }}>
                   {roiFinal >= 15 ? "✓ Excellent rendement" : roiFinal >= 8 ? "→ Rendement correct" : "⚠ Rendement faible"}
                 </div>
-                {fondsPropres && <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>Fonds propres : {fmtEur(fondsPropres)}</div>}
+                {fondsPropres && (
+                  <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                    Fonds propres : {fmtEur(fondsPropres)}
+                    {margeBrute != null && ` · Gain estimé : ${fmtEur(Math.round(margeBrute))}`}
+                  </div>
+                )}
               </div>
               <div style={{ fontSize: 36, fontWeight: 900, color: roiFinal >= 15 ? "#16a34a" : roiFinal >= 8 ? "#d97706" : "#dc2626" }}>
                 {roiFinal.toFixed(1)} %
@@ -290,7 +431,7 @@ export default function Bilan(): React.ReactElement {
         </div>
       </div>
 
-      {/* Narrative IA */}
+      {/* ── Narrative IA ── */}
       <div style={styles.card}>
         <div style={styles.cardHeader}>
           <h3 style={styles.cardTitle}><Sparkles size={16} color="#8b5cf6" />Note de synthèse IA</h3>
@@ -302,13 +443,19 @@ export default function Bilan(): React.ReactElement {
         </div>
         <div style={styles.cardBody}>
           {aiNarrative ? (
-            <div style={{ fontSize: 13, color: "#334155", lineHeight: 1.8, whiteSpace: "pre-wrap" as const, background: "#f8fafc", borderRadius: 10, padding: "16px 20px", border: "1px solid #e2e8f0" }}>
+            <div style={{
+              fontSize: 13, color: "#334155", lineHeight: 1.8,
+              whiteSpace: "pre-wrap" as const, background: "#f8fafc",
+              borderRadius: 10, padding: "16px 20px", border: "1px solid #e2e8f0",
+            }}>
               {aiNarrative}
             </div>
           ) : (
             <div style={{ textAlign: "center" as const, padding: "30px 20px", color: "#94a3b8" }}>
               <Sparkles size={28} style={{ marginBottom: 12, opacity: 0.4 }} />
-              <p style={{ margin: 0, fontSize: 13 }}>Générez une note de synthèse automatique à partir des données de l'étude.</p>
+              <p style={{ margin: 0, fontSize: 13 }}>
+                Générez une note de synthèse automatique à partir des données de l'étude.
+              </p>
             </div>
           )}
           <button
@@ -324,7 +471,8 @@ export default function Bilan(): React.ReactElement {
           >
             {isGenerating
               ? <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />Génération en cours…</>
-              : <><Sparkles size={16} />{aiNarrative ? "Regénérer la note" : "Générer la note de synthèse"}</>}
+              : <><Sparkles size={16} />{aiNarrative ? "Regénérer la note" : "Générer la note de synthèse"}</>
+            }
           </button>
           {!evaluation && (
             <p style={{ fontSize: 11, color: "#94a3b8", textAlign: "center" as const, marginTop: 8 }}>
@@ -334,9 +482,11 @@ export default function Bilan(): React.ReactElement {
         </div>
       </div>
 
-      {/* Notes */}
+      {/* ── Notes ── */}
       <div style={styles.card}>
-        <div style={styles.cardHeader}><h3 style={styles.cardTitle}><FileText size={16} color="#64748b" />Notes de décision</h3></div>
+        <div style={styles.cardHeader}>
+          <h3 style={styles.cardTitle}><FileText size={16} color="#64748b" />Notes de décision</h3>
+        </div>
         <div style={styles.cardBody}>
           <textarea
             value={notes}
@@ -348,22 +498,47 @@ export default function Bilan(): React.ReactElement {
         </div>
       </div>
 
-      {/* Barre de sauvegarde */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14 }}>
-        {saveMsg && (
-          <span style={{ fontSize: 13, fontWeight: 600, color: saveMsg.startsWith("✓") ? "#16a34a" : "#dc2626" }}>
-            {saveMsg}
-          </span>
-        )}
+      {/* ── Barre de sauvegarde ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14 }}>
         <button
-          onClick={handleSave}
-          disabled={isSaving}
-          style={{ ...styles.button, background: isSaving ? "#a78bfa" : ACCENT_PRO, color: "white", cursor: isSaving ? "not-allowed" : "pointer", minWidth: 180 }}
+          onClick={handleSaveForSynthesis}
+          style={{
+            ...styles.button,
+            background: synthesisSaved
+              ? "linear-gradient(135deg, #10b981 0%, #059669 100%)"
+              : `linear-gradient(135deg, ${ACCENT_PRO} 0%, #7c6fcd 100%)`,
+            color: "white",
+          }}
         >
-          {isSaving
-            ? <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />Enregistrement…</>
-            : <><Save size={16} />Enregistrer le bilan</>}
+          {synthesisSaved
+            ? <><CheckCircle size={16} />Enregistré dans la synthèse</>
+            : <><Target size={16} />Utiliser pour la synthèse</>
+          }
         </button>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          {saveMsg && (
+            <span style={{ fontSize: 13, fontWeight: 600, color: saveMsg.startsWith("✓") ? "#16a34a" : "#dc2626" }}>
+              {saveMsg}
+            </span>
+          )}
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            style={{
+              ...styles.button,
+              background: isSaving ? "#a78bfa" : ACCENT_PRO,
+              color: "white",
+              cursor: isSaving ? "not-allowed" : "pointer",
+              minWidth: 180,
+            }}
+          >
+            {isSaving
+              ? <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />Enregistrement…</>
+              : <><Save size={16} />Enregistrer le bilan</>
+            }
+          </button>
+        </div>
       </div>
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>

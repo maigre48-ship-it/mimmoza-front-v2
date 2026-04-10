@@ -1,5 +1,9 @@
 // ============================================================================
 // FILE: src/spaces/promoteur/terrain3d/components/Massing3DCanvas.tsx
+// ✅ MassingEditor3D branché (remplace SceneSvg3D)
+// ✅ bbox reliefData convertie L93 → WGS84 avant passage au renderer
+// ✅ showTerrain local (ne dépend plus de scene.visibility.terrain)
+// ✅ Logs diagnostics pour déboguer le pipeline relief
 // ============================================================================
 
 import React, { type FC, useEffect, useMemo, useState } from "react";
@@ -9,13 +13,21 @@ import proj4 from "proj4";
 import { useMassingScene } from "../hooks/useMassingScene";
 import { Controls3D } from "./Controls3D";
 import type { EarthworksKPIs } from "../types/earthworks.types";
-import { SceneSvg3D, type ReliefData } from "./SceneSvg3D";
-
+import type { ReliefData } from "./SceneSvg3D";
+import type { Implantation2DMeta } from "../../store/promoteurProject.store";
 import {
-  ensureDepartment,
-  elevationLambert93,
-  type ElevationPoint,
+  ensureDepartment, elevationLambert93, type ElevationPoint,
 } from "../../../../lib/terrainServiceClient";
+
+import { MassingEditor3D } from "../../massing3d/MassingEditor3D";
+
+const ACCENT = "#5247b8";
+
+// ─── Proj4 Lambert93 ─────────────────────────────────────────────────────────
+
+const E2154 = "+proj=lcc +lat_1=49 +lat_2=44 +lat_0=46.5 +lon_0=3 +x_0=700000 +y_0=6600000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs";
+
+// ─── Props ────────────────────────────────────────────────────────────────────
 
 export interface Massing3DCanvasProps {
   parcel?: Feature<Polygon | MultiPolygon>;
@@ -23,260 +35,16 @@ export interface Massing3DCanvasProps {
   parkings?: FeatureCollection<Polygon>;
   height?: string | number;
   className?: string;
+  meta?: Implantation2DMeta;
+  buildingHeightM?: number;
 }
 
-/**
- * Coûts unitaires de terrassement (€/m³)
- * Source: estimations moyennes France 2024
- */
-const EARTHWORKS_COSTS = {
-  /** Déblai (excavation) */
-  cutCostPerM3: 12,
-  /** Évacuation des terres excédentaires */
-  evacuationCostPerM3: 22,
-};
-
-function formatKpiValue(value: number | null, unit: string, decimals: number = 1): string {
-  if (value === null || value === undefined) return "—";
-  return `${value.toFixed(decimals)} ${unit}`;
-}
-
-function formatCurrency(value: number | null): string {
-  if (value === null || value === undefined) return "—";
-  return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
-}
-
-function looksLikeWgs84Bbox(bbox: [number, number, number, number]): boolean {
-  return !bbox.some(v => Math.abs(v) > 1000);
-}
-
-function detectCoordOrder(bbox: [number, number, number, number]): "lon-lat" | "lat-lon" | "unknown" {
-  const [v0, v1, v2, v3] = bbox;
-  const inFrance = (lon: number, lat: number) => (lon >= -6 && lon <= 11 && lat >= 41 && lat <= 52) ||
-    (lon >= 45 && lon <= 56 && lat >= -22 && lat <= -11) || (lon >= -64 && lon <= -60 && lat >= 14 && lat <= 18) || (lon >= -55 && lon <= -51 && lat >= 2 && lat <= 6);
-  
-  const lonLat = { minLon: Math.min(v0, v2), maxLon: Math.max(v0, v2), minLat: Math.min(v1, v3), maxLat: Math.max(v1, v3) };
-  const latLon = { minLon: Math.min(v1, v3), maxLon: Math.max(v1, v3), minLat: Math.min(v0, v2), maxLat: Math.max(v0, v2) };
-  
-  const lonLatOk = inFrance(lonLat.minLon, lonLat.minLat) && inFrance(lonLat.maxLon, lonLat.maxLat);
-  const latLonOk = inFrance(latLon.minLon, latLon.minLat) && inFrance(latLon.maxLon, latLon.maxLat);
-  
-  if (lonLatOk && !latLonOk) return "lon-lat";
-  if (latLonOk && !lonLatOk) return "lat-lon";
-  return lonLatOk ? "lon-lat" : "unknown";
-}
-
-function normalizeDeptCode(input: unknown): string | null {
-  if (input == null) return null;
-  const s = String(input).trim().toUpperCase();
-  if (/^\d{2,3}$/.test(s) || s === "2A" || s === "2B") return s;
-  return null;
-}
-
-function deptFromPostcode(cp: unknown): string | null {
-  if (!cp) return null;
-  const s = String(cp).trim();
-  if (/^97\d{3}$/.test(s)) return s.slice(0, 3);
-  if (/^20\d{3}$/.test(s)) return parseInt(s, 10) >= 20200 ? "2B" : "2A";
-  if (/^\d{5}$/.test(s)) return s.slice(0, 2);
-  return null;
-}
-
-function deptFromInsee(insee: unknown): string | null {
-  if (!insee) return null;
-  const s = String(insee).trim().toUpperCase();
-  if (s.startsWith("2A")) return "2A";
-  if (s.startsWith("2B")) return "2B";
-  if (/^97\d/.test(s)) return s.slice(0, 3);
-  if (/^\d{5}$/.test(s)) return s.slice(0, 2);
-  return null;
-}
-
-async function deptFromGeoApi(lon: number, lat: number): Promise<{ dept: string | null; commune?: string }> {
-  try {
-    const ctrl = new AbortController();
-    setTimeout(() => ctrl.abort(), 5000);
-    const r = await fetch(`https://geo.api.gouv.fr/communes?lon=${lon}&lat=${lat}&fields=nom,codeDepartement&limit=1`, { signal: ctrl.signal });
-    if (!r.ok) return { dept: null };
-    const j = await r.json();
-    if (!Array.isArray(j) || !j.length) return { dept: null };
-    return { dept: normalizeDeptCode(j[0].codeDepartement), commune: j[0].nom };
-  } catch { return { dept: null }; }
-}
-
-async function deptFromBanReverse(lon: number, lat: number): Promise<{ dept: string | null }> {
-  try {
-    const ctrl = new AbortController();
-    setTimeout(() => ctrl.abort(), 5000);
-    const r = await fetch(`https://api-adresse.data.gouv.fr/reverse/?lon=${lon}&lat=${lat}&limit=1`, { signal: ctrl.signal });
-    if (!r.ok) return { dept: null };
-    const j = await r.json();
-    const props = j?.features?.[0]?.properties;
-    return { dept: deptFromPostcode(props?.postcode || props?.citycode?.slice(0, 5)) };
-  } catch { return { dept: null }; }
-}
-
-const EPSG2154 = "+proj=lcc +lat_1=49 +lat_2=44 +lat_0=46.5 +lon_0=3 +x_0=700000 +y_0=6600000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs";
-
-function bboxWgs84ToLambert93(bbox: [number, number, number, number], coordOrder: string): [number, number, number, number] {
-  const [a, b, c, d] = bbox;
-  const [minLon, minLat, maxLon, maxLat] = coordOrder === "lat-lon" ? [b, a, d, c] : [a, b, c, d];
-  const p1 = proj4("EPSG:4326", EPSG2154, [minLon, minLat]);
-  const p2 = proj4("EPSG:4326", EPSG2154, [maxLon, maxLat]);
-  return [Math.min(p1[0], p2[0]), Math.min(p1[1], p2[1]), Math.max(p1[0], p2[0]), Math.max(p1[1], p2[1])];
-}
-
-function pointWgs84ToLambert93(lon: number, lat: number, coordOrder: string): [number, number] {
-  return coordOrder === "lat-lon" ? proj4("EPSG:4326", EPSG2154, [lat, lon]) as [number, number] : proj4("EPSG:4326", EPSG2154, [lon, lat]) as [number, number];
-}
-
-function extractRingsFromPolygon(geom: Polygon | MultiPolygon): Position[][] {
-  return geom.type === "Polygon" ? geom.coordinates : geom.coordinates.flatMap(p => p);
-}
-
-function pointInPolygon(x: number, y: number, ring: [number, number][]): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i], [xj, yj] = ring[j];
-    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
-  }
-  return inside;
-}
-
-function pointInAnyPolygon(x: number, y: number, polygons: [number, number][][]): boolean {
-  return polygons.some(ring => pointInPolygon(x, y, ring));
-}
-
-function buildGridPointsFromBBox(bbox: [number, number, number, number], stepM = 5, maxPts = 2500) {
-  const [minX, minY, maxX, maxY] = bbox;
-  const w = Math.max(1, maxX - minX), h = Math.max(1, maxY - minY);
-  let nx = Math.max(2, Math.floor(w / stepM) + 1), ny = Math.max(2, Math.floor(h / stepM) + 1);
-  while (nx * ny > maxPts && (nx > 2 || ny > 2)) { nx = Math.max(2, Math.floor(nx * 0.85)); ny = Math.max(2, Math.floor(ny * 0.85)); }
-  const dx = w / (nx - 1), dy = h / (ny - 1);
-  const points: ElevationPoint[] = [];
-  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) points.push({ x: minX + dx * i, y: minY + dy * j });
-  return { points, nx, ny, dx, dy };
-}
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
-function computeSlopeKPIs(z: number[], nx: number, ny: number, dx: number, dy: number) {
-  const at = (i: number, j: number) => z[j * nx + i];
-  let sum = 0, count = 0, max = 0, minZ = Infinity, maxZ = -Infinity;
-  for (let j = 0; j < ny; j++) {
-    for (let i = 0; i < nx; i++) {
-      const z0 = at(i, j);
-      if (!Number.isFinite(z0)) continue;
-      if (z0 < minZ) minZ = z0;
-      if (z0 > maxZ) maxZ = z0;
-      let dzdx = 0, dzdy = 0;
-      if (i > 0 && i < nx - 1 && Number.isFinite(at(i - 1, j)) && Number.isFinite(at(i + 1, j))) dzdx = (at(i + 1, j) - at(i - 1, j)) / (2 * dx);
-      if (j > 0 && j < ny - 1 && Number.isFinite(at(i, j - 1)) && Number.isFinite(at(i, j + 1))) dzdy = (at(i, j + 1) - at(i, j - 1)) / (2 * dy);
-      const slope = Math.sqrt(dzdx * dzdx + dzdy * dzdy) * 100;
-      sum += slope; count++; if (slope > max) max = slope;
-    }
-  }
-  return { meanPct: count ? sum / count : 0, maxPct: max, minZ: Number.isFinite(minZ) ? minZ : 0, maxZ: Number.isFinite(maxZ) ? maxZ : 0, deltaZ: (Number.isFinite(maxZ) && Number.isFinite(minZ)) ? maxZ - minZ : 0 };
-}
-
-/**
- * Calcule les volumes de terrassement sous les emprises
- * 
- * LOGIQUE:
- * - Niveau plateforme = altitude MINIMALE sous l'emprise
- * - Le bâtiment est posé au point le plus bas du terrain
- * - On creuse (déblai) tout ce qui dépasse ce niveau pour aplatir
- * - Pas de remblai technique (on ne rajoute pas de terre)
- * - Le bâtiment sera visuellement posé au bon niveau sur le terrain 3D
- */
-function computeEarthworksUnderFootprints(
-  elevations: number[], nx: number, ny: number, dx: number, dy: number,
-  bbox: [number, number, number, number], footprints: [number, number][][]
-) {
-  const [minX, minY] = bbox;
-  const cellArea = dx * dy;
-  
-  // Collecter les élévations sous les emprises
-  const zUnderFootprint: number[] = [];
-  const cellsUnderFootprint: { i: number; j: number; z: number }[] = [];
-  
-  for (let j = 0; j < ny; j++) {
-    for (let i = 0; i < nx; i++) {
-      const x = minX + i * dx;
-      const y = minY + j * dy;
-      const z = elevations[j * nx + i];
-      if (Number.isFinite(z) && pointInAnyPolygon(x, y, footprints)) {
-        zUnderFootprint.push(z);
-        cellsUnderFootprint.push({ i, j, z });
-      }
-    }
-  }
-
-  if (zUnderFootprint.length === 0) {
-    return { cutVolume: 0, fillVolume: 0, platformLevel: 0, balance: 0, footprintArea: 0 };
-  }
-
-  // NIVEAU PLATEFORME = ALTITUDE MINIMALE (on pose le bâtiment au point le plus bas)
-  const platformLevel = Math.min(...zUnderFootprint);
-  
-  // DÉBLAI = tout ce qui est au-dessus du niveau plateforme
-  // PAS DE REMBLAI car on pose au niveau min (pas besoin d'apporter de terre)
-  let cutVolume = 0;
-  
-  for (const cell of cellsUnderFootprint) {
-    const diff = cell.z - platformLevel;
-    if (diff > 0) {
-      cutVolume += diff * cellArea;
-    }
-    // Pas de remblai car platformLevel = min, donc diff ne peut pas être négatif
-  }
-
-  return {
-    cutVolume: Math.round(cutVolume),
-    fillVolume: 0, // Pas de remblai avec cette stratégie
-    platformLevel: Math.round(platformLevel * 100) / 100,
-    balance: Math.round(cutVolume), // Tout est évacué
-    footprintArea: Math.round(zUnderFootprint.length * cellArea),
-  };
-}
-
-function computeEarthworksCosts(cutVolume: number, costs = EARTHWORKS_COSTS) {
-  const cutCost = cutVolume * costs.cutCostPerM3;
-  const evacuationCost = cutVolume * costs.evacuationCostPerM3;
-  return { cutCost: Math.round(cutCost), evacuationCost: Math.round(evacuationCost), totalCost: Math.round(cutCost + evacuationCost) };
-}
-
-function convertFootprintsToLambert93(
-  buildings: FeatureCollection<Polygon> | undefined,
-  parkings: FeatureCollection<Polygon> | undefined,
-  coordOrder: string, isWgs84: boolean
-): [number, number][][] {
-  const result: [number, number][][] = [];
-  const process = (fc: FeatureCollection<Polygon> | undefined) => {
-    if (!fc?.features) return;
-    for (const f of fc.features) {
-      if (!f.geometry) continue;
-      for (const ring of extractRingsFromPolygon(f.geometry)) {
-        result.push(ring.map(pos => isWgs84 ? pointWgs84ToLambert93(pos[0], pos[1], coordOrder) : [pos[0], pos[1]] as [number, number]));
-      }
-    }
-  };
-  process(buildings);
-  process(parkings);
-  return result;
-}
+// ─── Relief state ─────────────────────────────────────────────────────────────
 
 type ReliefState = {
   status: "idle" | "loading" | "ready" | "error";
   message?: string;
-  deptCode?: string;
-  deptSource?: string;
-  commune?: string;
-  epsg?: string;
+  deptCode?: string; deptSource?: string; commune?: string; epsg?: string;
   minZ?: number; maxZ?: number; deltaZ?: number;
   meanSlopePct?: number; maxSlopePct?: number;
   reliefData?: ReliefData;
@@ -285,219 +53,486 @@ type ReliefState = {
   cutCost?: number; evacuationCost?: number; totalCost?: number;
 };
 
-const KpiPanel: FC<{ kpis: EarthworksKPIs; isLoading: boolean; relief?: ReliefState }> = ({ kpis, isLoading, relief }) => {
-  const row: React.CSSProperties = { display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #f3f4f6" };
-  const label: React.CSSProperties = { color: "#6b7280", fontSize: "12px" };
-  const value: React.CSSProperties = { fontWeight: 600, fontSize: "12px", fontVariantNumeric: "tabular-nums" };
-  const section: React.CSSProperties = { fontSize: "13px", fontWeight: 600, marginTop: "12px", marginBottom: "8px", color: "#374151", display: "flex", alignItems: "center", gap: "6px" };
+// ─── KPI panel ────────────────────────────────────────────────────────────────
 
-  const slope = relief?.status === "ready" && relief.meanSlopePct != null ? relief.meanSlopePct : kpis.naturalSlope;
-  const maxSlope = relief?.status === "ready" && relief.maxSlopePct != null ? relief.maxSlopePct : kpis.maxSlope;
-  const hasEarthworks = relief?.status === "ready" && (relief.cutVolume ?? 0) > 0;
+const EW_COSTS = { cutCostPerM3: 12, evacuationCostPerM3: 22 };
+const fmt    = (v: number | null, u: string, d = 1) => v == null ? "—" : `${v.toFixed(d)} ${u}`;
+const fmtEur = (v: number | null) => v == null ? "—" : new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(v);
+
+const KpiPanel: FC<{
+  kpis: EarthworksKPIs; relief?: ReliefState;
+  meta?: Implantation2DMeta; buildingHeightM?: number;
+}> = ({ kpis, relief, meta, buildingHeightM }) => {
+  const row: React.CSSProperties = { display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid #f3f4f6" };
+  const lbl: React.CSSProperties = { color: "#6b7280", fontSize: "11px" };
+  const val: React.CSSProperties = { fontWeight: 600, fontSize: "11px", fontVariantNumeric: "tabular-nums" };
+  const sec: React.CSSProperties = { fontSize: "11px", fontWeight: 700, marginTop: 10, marginBottom: 6, color: "#374151", display: "flex", alignItems: "center", gap: 5, textTransform: "uppercase", letterSpacing: "0.06em" };
+
+  const slope    = relief?.status === "ready" && relief.meanSlopePct != null ? relief.meanSlopePct : kpis.naturalSlope;
+  const maxSlope = relief?.status === "ready" && relief.maxSlopePct  != null ? relief.maxSlopePct  : kpis.maxSlope;
+  const hasEW    = relief?.status === "ready" && (relief.cutVolume ?? 0) > 0;
 
   return (
-    <div style={{ padding: "14px", backgroundColor: "#fff", borderRadius: "8px", boxShadow: "0 1px 3px rgba(0,0,0,0.1)", minWidth: "240px", maxHeight: "520px", overflowY: "auto", opacity: isLoading ? 0.6 : 1 }}>
-      <div style={{ fontSize: "14px", fontWeight: 600, marginBottom: "10px", color: "#111827" }}>📊 Indicateurs terrain</div>
+    <div style={{ background: "white", borderRadius: 12, padding: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: "#111827" }}>📊 Indicateurs terrain</div>
 
       {relief && (
-        <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 8, lineHeight: 1.4 }}>
+        <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 6, lineHeight: 1.4 }}>
           Relief: <b>{relief.status === "ready" ? "OK" : relief.status === "loading" ? "…" : relief.status === "error" ? "KO" : "—"}</b>
           {relief.deptCode && ` · dept ${relief.deptCode}`}
-          {relief.commune && ` · ${relief.commune}`}
+          {relief.commune  && ` · ${relief.commune}`}
           {relief.deltaZ != null && ` · ΔZ ${relief.deltaZ.toFixed(1)}m`}
         </div>
       )}
 
-      <div style={section}><span>📐</span> Pentes (parcelle)</div>
-      <div style={row}><span style={label}>Pente moyenne</span><span style={value}>{formatKpiValue(slope, "%")}</span></div>
-      <div style={row}><span style={label}>Pente max</span><span style={value}>{formatKpiValue(maxSlope, "%")}</span></div>
+      {relief?.status === "error" && relief.message && (
+        <div style={{ fontSize: 10, color: "#991b1b", padding: "4px 8px", background: "#fff1f2", borderRadius: 6, marginBottom: 6 }}>
+          ⚠️ {relief.message}
+        </div>
+      )}
 
-      {hasEarthworks ? (
+      {meta?.floorsSpec && (
         <>
-          <div style={section}><span>🏗️</span> Terrassement (emprises)</div>
-          {relief?.footprintArea != null && relief.footprintArea > 0 && (
-            <div style={row}><span style={label}>Emprise à terrasser</span><span style={value}>{formatKpiValue(relief.footprintArea, "m²", 0)}</span></div>
-          )}
-          {relief?.platformLevel != null && (
-            <div style={row}><span style={label}>Niveau plateforme</span><span style={value}>{relief.platformLevel.toFixed(2)} m NGF</span></div>
-          )}
-          <div style={row}><span style={label}>Volume de déblai</span><span style={{ ...value, color: "#dc2626" }}>{formatKpiValue(relief?.cutVolume ?? 0, "m³", 0)}</span></div>
-          
-          <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 4, marginBottom: 8, fontStyle: "italic" }}>
-            💡 Plateforme au point le plus bas → tout en déblai, pas de remblai
-          </div>
+          <div style={sec}><span>🏢</span>Volumétrie</div>
+          <div style={row}><span style={lbl}>Type</span>   <span style={val}>{meta.buildingKind === "COLLECTIF" ? "Collectif" : "Individuel"}</span></div>
+          <div style={row}><span style={lbl}>Niveaux</span><span style={val}>R+{meta.floorsSpec.aboveGroundFloors}</span></div>
+          {buildingHeightM != null && <div style={row}><span style={lbl}>Hauteur</span><span style={{ ...val, color: ACCENT }}>{buildingHeightM.toFixed(1)} m</span></div>}
+          {meta.nbLogements > 0 && <div style={row}><span style={lbl}>Logements</span><span style={val}>{meta.nbLogements} × {meta.surfaceMoyLogementM2} m²</span></div>}
+        </>
+      )}
 
-          <div style={section}><span>💰</span> Coûts de terrassement</div>
-          <div style={row}><span style={label}>Déblai ({EARTHWORKS_COSTS.cutCostPerM3}€/m³)</span><span style={value}>{formatCurrency(relief?.cutCost ?? 0)}</span></div>
-          <div style={row}><span style={label}>Évacuation ({EARTHWORKS_COSTS.evacuationCostPerM3}€/m³)</span><span style={value}>{formatCurrency(relief?.evacuationCost ?? 0)}</span></div>
-          <div style={{ ...row, borderBottom: "none", paddingTop: "8px", marginTop: "4px", borderTop: "2px solid #e5e7eb" }}>
-            <span style={{ ...label, fontWeight: 600, color: "#111827" }}>TOTAL TERRASSEMENT</span>
-            <span style={{ ...value, fontSize: "14px", color: "#111827" }}>{formatCurrency(relief?.totalCost ?? 0)}</span>
+      <div style={sec}><span>📐</span>Pentes</div>
+      <div style={row}><span style={lbl}>Moyenne</span><span style={val}>{fmt(slope, "%")}</span></div>
+      <div style={row}><span style={lbl}>Max</span>    <span style={val}>{fmt(maxSlope, "%")}</span></div>
+
+      {hasEW && (
+        <>
+          <div style={sec}><span>🏗</span>Terrassement</div>
+          {relief?.footprintArea != null && relief.footprintArea > 0 &&
+            <div style={row}><span style={lbl}>Emprise</span>    <span style={val}>{fmt(relief.footprintArea, "m²", 0)}</span></div>}
+          {relief?.platformLevel != null &&
+            <div style={row}><span style={lbl}>Plateforme</span><span style={val}>{relief.platformLevel.toFixed(2)} m NGF</span></div>}
+          <div style={row}><span style={lbl}>Déblai</span><span style={{ ...val, color: "#dc2626" }}>{fmt(relief?.cutVolume ?? 0, "m³", 0)}</span></div>
+          <div style={sec}><span>💰</span>Coûts</div>
+          <div style={row}><span style={lbl}>Déblai</span>      <span style={val}>{fmtEur(relief?.cutCost ?? 0)}</span></div>
+          <div style={row}><span style={lbl}>Évacuation</span>  <span style={val}>{fmtEur(relief?.evacuationCost ?? 0)}</span></div>
+          <div style={{ ...row, borderBottom: "none", borderTop: "1.5px solid #e5e7eb", paddingTop: 6, marginTop: 4 }}>
+            <span style={{ ...lbl, fontWeight: 700, color: "#111827" }}>Total</span>
+            <span style={{ ...val, color: "#111827" }}>{fmtEur(relief?.totalCost ?? 0)}</span>
           </div>
         </>
-      ) : (
-        <div style={{ ...section, color: "#9ca3af", fontWeight: 400, fontSize: "12px" }}>
-          <span>🏗️</span> Ajoutez des bâtiments ou parkings pour le terrassement
-        </div>
       )}
     </div>
   );
 };
 
-const Scene3D: FC<{
-  parcel?: Feature<Polygon | MultiPolygon>;
-  buildings?: FeatureCollection<Polygon>;
-  parkings?: FeatureCollection<Polygon>;
-  visibility: { terrain: boolean; buildings: boolean; parkings: boolean; wireframe?: boolean };
-  isLoading: boolean;
-  relief?: ReliefState;
-}> = ({ parcel, buildings, parkings, visibility, isLoading, relief }) => (
-  <div style={{ flex: 1, backgroundColor: "#f8fafc", borderRadius: "8px", display: "flex", flexDirection: "column", overflow: "hidden", minHeight: "400px", border: "1px solid #e2e8f0" }}>
-    <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", borderBottom: "1px solid #e2e8f0", backgroundColor: "#fff" }}>
-      <div style={{ color: "#475569", fontSize: 12 }}>
-        <span style={{ fontWeight: 600, color: "#1e293b" }}>Vue 3D du terrain</span>
-        <span style={{ opacity: 0.8 }}> · Bâtiments: <b>{buildings?.features?.length ?? 0}</b> · Parkings: <b>{parkings?.features?.length ?? 0}</b></span>
-        {relief?.status === "ready" && <span style={{ marginLeft: 8, color: "#16a34a" }}>· Relief OK</span>}
-      </div>
-      <div style={{ color: "#94a3b8", fontSize: 11 }}>Drag : orbit · Wheel : zoom</div>
-    </div>
-    <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center", padding: "12px" }}>
-      {isLoading ? (
-        <div style={{ textAlign: "center", color: "#64748b" }}>
-          <div style={{ fontSize: "28px", marginBottom: "12px" }}>⏳</div>
-          <div style={{ fontSize: "14px" }}>Chargement...</div>
-        </div>
-      ) : (
-        <SceneSvg3D
-          parcel={parcel} buildings={buildings} parkings={parkings}
-          showTerrain={visibility.terrain} showBuildings={visibility.buildings} showParkings={visibility.parkings}
-          showWireframe={Boolean(visibility.wireframe)} reliefData={relief?.reliefData}
-        />
-      )}
-    </div>
-  </div>
-);
+// ─── Geo helpers ──────────────────────────────────────────────────────────────
 
-export const Massing3DCanvas: FC<Massing3DCanvasProps> = ({ parcel, buildings, parkings, height = "600px", className }) => {
+function looksWgs84(b: [number, number, number, number]) {
+  return !b.some(v => Math.abs(v) > 1000);
+}
+
+function detectOrd(b: [number, number, number, number]): "lon-lat" | "lat-lon" | "unknown" {
+  const [v0, v1, v2, v3] = b;
+  const inFR = (lon: number, lat: number) => lon >= -6 && lon <= 11 && lat >= 41 && lat <= 52;
+  const ll = inFR(Math.min(v0, v2), Math.min(v1, v3)) && inFR(Math.max(v0, v2), Math.max(v1, v3));
+  const lr = inFR(Math.min(v1, v3), Math.min(v0, v2)) && inFR(Math.max(v1, v3), Math.max(v0, v2));
+  if (ll && !lr) return "lon-lat";
+  if (lr && !ll) return "lat-lon";
+  return ll ? "lon-lat" : "unknown";
+}
+
+const toL93 = (b: [number, number, number, number], ord: string): [number, number, number, number] => {
+  const [a, bv, c, d] = b;
+  const [mnLon, mnLat, mxLon, mxLat] = ord === "lat-lon" ? [bv, a, d, c] : [a, bv, c, d];
+  const p1 = proj4("EPSG:4326", E2154, [mnLon, mnLat]) as [number, number];
+  const p2 = proj4("EPSG:4326", E2154, [mxLon, mxLat]) as [number, number];
+  return [Math.min(p1[0], p2[0]), Math.min(p1[1], p2[1]), Math.max(p1[0], p2[0]), Math.max(p1[1], p2[1])];
+};
+
+/**
+ * Convertit une bbox Lambert93 [x0,y0,x1,y1] → WGS84 [lon0,lat0,lon1,lat1].
+ * CRITIQUE : MassingRenderer projette en WGS84. Une bbox en mètres L93
+ * serait interprétée comme des degrés → décalage de centaines de km.
+ */
+const l93ToWgs84Bbox = (b: [number, number, number, number]): [number, number, number, number] => {
+  const sw = proj4(E2154, "EPSG:4326", [b[0], b[1]]) as [number, number];
+  const ne = proj4(E2154, "EPSG:4326", [b[2], b[3]]) as [number, number];
+  return [sw[0], sw[1], ne[0], ne[1]];
+};
+
+const pt2L93 = (lon: number, lat: number, ord: string): [number, number] => (
+  ord === "lat-lon"
+    ? proj4("EPSG:4326", E2154, [lat, lon])
+    : proj4("EPSG:4326", E2154, [lon, lat])
+) as [number, number];
+
+const normDept      = (v: unknown): string | null => { if (!v) return null; const s = String(v).trim().toUpperCase(); return (/^\d{2,3}$/.test(s) || s === "2A" || s === "2B") ? s : null; };
+const deptFromInsee = (v: unknown): string | null => { if (!v) return null; const s = String(v).trim().toUpperCase(); if (s.startsWith("2A")) return "2A"; if (s.startsWith("2B")) return "2B"; if (/^97\d/.test(s)) return s.slice(0, 3); if (/^\d{5}$/.test(s)) return s.slice(0, 2); return null; };
+const deptFromCp    = (v: unknown): string | null => { if (!v) return null; const s = String(v).trim(); if (/^97\d{3}$/.test(s)) return s.slice(0, 3); if (/^20\d{3}$/.test(s)) return parseInt(s, 10) >= 20200 ? "2B" : "2A"; if (/^\d{5}$/.test(s)) return s.slice(0, 2); return null; };
+
+async function deptGeoApi(lon: number, lat: number): Promise<{ dept: string | null; commune?: string }> {
+  try {
+    const r = await fetch(`https://geo.api.gouv.fr/communes?lon=${lon}&lat=${lat}&fields=nom,codeDepartement&limit=1`);
+    if (!r.ok) return { dept: null };
+    const j = await r.json();
+    if (!Array.isArray(j) || !j.length) return { dept: null };
+    return { dept: normDept(j[0].codeDepartement), commune: j[0].nom };
+  } catch { return { dept: null }; }
+}
+
+async function deptBan(lon: number, lat: number): Promise<{ dept: string | null }> {
+  try {
+    const r = await fetch(`https://api-adresse.data.gouv.fr/reverse/?lon=${lon}&lat=${lat}&limit=1`);
+    if (!r.ok) return { dept: null };
+    const j = await r.json();
+    return { dept: deptFromCp(j?.features?.[0]?.properties?.postcode) };
+  } catch { return { dept: null }; }
+}
+
+function extractRings(g: Polygon | MultiPolygon): Position[][] {
+  return g.type === "Polygon" ? g.coordinates : g.coordinates.flatMap(p => p);
+}
+function inPoly(x: number, y: number, r: [number, number][]): boolean {
+  let ins = false;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+    const [xi, yi] = r[i], [xj, yj] = r[j];
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) ins = !ins;
+  }
+  return ins;
+}
+function inAny(x: number, y: number, ps: [number, number][][]): boolean {
+  return ps.some(r => inPoly(x, y, r));
+}
+
+function buildGrid(b: [number, number, number, number], step = 5, max = 2500) {
+  const [mnX, mnY, mxX, mxY] = b;
+  const w = Math.max(1, mxX - mnX), h = Math.max(1, mxY - mnY);
+  let nx = Math.max(2, Math.floor(w / step) + 1), ny = Math.max(2, Math.floor(h / step) + 1);
+  while (nx * ny > max && (nx > 2 || ny > 2)) {
+    nx = Math.max(2, Math.floor(nx * 0.85));
+    ny = Math.max(2, Math.floor(ny * 0.85));
+  }
+  const dx = w / (nx - 1), dy = h / (ny - 1);
+  const pts: ElevationPoint[] = [];
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) pts.push({ x: mnX + dx * i, y: mnY + dy * j });
+  return { pts, nx, ny, dx, dy };
+}
+
+function chunk<T>(a: T[], n: number): T[][] {
+  const o: T[][] = [];
+  for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n));
+  return o;
+}
+
+function slopeKPIs(z: number[], nx: number, ny: number, dx: number, dy: number) {
+  const at = (i: number, j: number) => z[j * nx + i];
+  let s = 0, cnt = 0, mx = 0, mn = Infinity, mxZ = -Infinity;
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const z0 = at(i, j); if (!Number.isFinite(z0)) continue;
+    if (z0 < mn) mn = z0; if (z0 > mxZ) mxZ = z0;
+    let dzdx = 0, dzdy = 0;
+    if (i > 0 && i < nx - 1 && Number.isFinite(at(i - 1, j)) && Number.isFinite(at(i + 1, j)))
+      dzdx = (at(i + 1, j) - at(i - 1, j)) / (2 * dx);
+    if (j > 0 && j < ny - 1 && Number.isFinite(at(i, j - 1)) && Number.isFinite(at(i, j + 1)))
+      dzdy = (at(i, j + 1) - at(i, j - 1)) / (2 * dy);
+    const sl = Math.sqrt(dzdx * dzdx + dzdy * dzdy) * 100;
+    s += sl; cnt++; if (sl > mx) mx = sl;
+  }
+  return {
+    meanPct: cnt ? s / cnt : 0, maxPct: mx,
+    minZ: Number.isFinite(mn) ? mn : 0,
+    maxZ: Number.isFinite(mxZ) ? mxZ : 0,
+    deltaZ: (Number.isFinite(mxZ) && Number.isFinite(mn)) ? mxZ - mn : 0,
+  };
+}
+
+function ewUnder(
+  e: number[], nx: number, ny: number, dx: number, dy: number,
+  b: [number, number, number, number], fps: [number, number][][],
+) {
+  const [mnX, mnY] = b, cA = dx * dy;
+  const zU: number[] = [], cs: { i: number; j: number; z: number }[] = [];
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const x = mnX + i * dx, y = mnY + j * dy, z = e[j * nx + i];
+    if (Number.isFinite(z) && inAny(x, y, fps)) { zU.push(z); cs.push({ i, j, z }); }
+  }
+  if (!zU.length) return { cutVolume: 0, fillVolume: 0, platformLevel: 0, balance: 0, footprintArea: 0 };
+  const pl = Math.min(...zU);
+  let cut = 0;
+  for (const c of cs) { const d = c.z - pl; if (d > 0) cut += d * cA; }
+  return {
+    cutVolume: Math.round(cut), fillVolume: 0,
+    platformLevel: Math.round(pl * 100) / 100,
+    balance: Math.round(cut),
+    footprintArea: Math.round(zU.length * cA),
+  };
+}
+
+function ewCosts(cut: number) {
+  return {
+    cutCost:       Math.round(cut * EW_COSTS.cutCostPerM3),
+    evacuationCost: Math.round(cut * EW_COSTS.evacuationCostPerM3),
+    totalCost:     Math.round(cut * (EW_COSTS.cutCostPerM3 + EW_COSTS.evacuationCostPerM3)),
+  };
+}
+
+function fpsL93(
+  b: FeatureCollection<Polygon> | undefined,
+  p: FeatureCollection<Polygon> | undefined,
+  ord: string, isW: boolean,
+): [number, number][][] {
+  const r: [number, number][][] = [];
+  const proc = (fc: FeatureCollection<Polygon> | undefined) => {
+    if (!fc?.features) return;
+    for (const f of fc.features) {
+      if (!f.geometry) continue;
+      for (const ring of extractRings(f.geometry as Polygon | MultiPolygon))
+        r.push(ring.map(pos => isW ? pt2L93(pos[0], pos[1], ord) : [pos[0], pos[1]] as [number, number]));
+    }
+  };
+  proc(b); proc(p); return r;
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export const Massing3DCanvas: FC<Massing3DCanvasProps> = ({
+  parcel, buildings, parkings, height = "600px", className, meta, buildingHeightM,
+}) => {
   const scene = useMassingScene(parcel, buildings, parkings);
   const [relief, setRelief] = useState<ReliefState>({ status: "idle" });
 
-  const parcelBBoxRaw = useMemo((): [number, number, number, number] | null => {
+  // ── BBox brute ────────────────────────────────────────────────────────────
+  const rawBBox = useMemo((): [number, number, number, number] | null => {
     const b = (parcel as any)?.bbox;
-    if (Array.isArray(b) && b.length === 4 && b.every((n: any) => typeof n === "number")) return b as [number, number, number, number];
-    const geom: any = parcel?.geometry;
-    if (!geom) return null;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    const visit = (c: any) => {
+    if (Array.isArray(b) && b.length === 4 && b.every((n: any) => typeof n === "number"))
+      return b as [number, number, number, number];
+    const geom: any = parcel?.geometry; if (!geom) return null;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const v = (c: any) => {
       if (!Array.isArray(c)) return;
-      if (typeof c[0] === "number" && typeof c[1] === "number") { minX = Math.min(minX, c[0]); minY = Math.min(minY, c[1]); maxX = Math.max(maxX, c[0]); maxY = Math.max(maxY, c[1]); return; }
-      for (const sub of c) visit(sub);
+      if (typeof c[0] === "number" && typeof c[1] === "number") {
+        x0 = Math.min(x0, c[0]); y0 = Math.min(y0, c[1]);
+        x1 = Math.max(x1, c[0]); y1 = Math.max(y1, c[1]); return;
+      }
+      for (const s of c) v(s);
     };
-    visit(geom.coordinates);
-    return Number.isFinite(minX) ? [minX, minY, maxX, maxY] : null;
+    v(geom.coordinates);
+    return Number.isFinite(x0) ? [x0, y0, x1, y1] : null;
   }, [parcel]);
 
-  const parcelEpsg = useMemo(() => parcelBBoxRaw && looksLikeWgs84Bbox(parcelBBoxRaw) ? "EPSG:4326" : "EPSG:2154", [parcelBBoxRaw]);
-  const coordOrder = useMemo(() => parcelBBoxRaw && parcelEpsg === "EPSG:4326" ? detectCoordOrder(parcelBBoxRaw) : "lon-lat", [parcelBBoxRaw, parcelEpsg]);
+  const parcelEpsg = useMemo(() => rawBBox && looksWgs84(rawBBox) ? "EPSG:4326" : "EPSG:2154", [rawBBox]);
+  const coordOrd   = useMemo(() => rawBBox && parcelEpsg === "EPSG:4326" ? detectOrd(rawBBox) : "lon-lat", [rawBBox, parcelEpsg]);
 
+  // ── Dept ──────────────────────────────────────────────────────────────────
   const deptFromProps = useMemo(() => {
-    const props: any = (parcel as any)?.properties ?? {};
-    for (const k of ["commune_insee", "insee", "code_insee", "citycode"]) if (props[k]) { const d = deptFromInsee(props[k]); if (d) return { dept: d, source: "insee" }; }
-    for (const k of ["code_postal", "cp", "postcode", "postal_code"]) if (props[k]) { const d = deptFromPostcode(props[k]); if (d) return { dept: d, source: "postcode" }; }
-    for (const k of ["deptCode", "code_dept", "departement", "dept"]) if (props[k]) { const d = normalizeDeptCode(props[k]); if (d) return { dept: d, source: "props" }; }
+    const p: any = (parcel as any)?.properties ?? {};
+    for (const k of ["commune_insee", "insee", "code_insee", "citycode"])
+      if (p[k]) { const d = deptFromInsee(p[k]); if (d) return { dept: d, source: "insee" }; }
+    for (const k of ["code_postal", "cp", "postcode", "postal_code"])
+      if (p[k]) { const d = deptFromCp(p[k]);    if (d) return { dept: d, source: "postcode" }; }
+    for (const k of ["deptCode", "code_dept", "departement", "dept"])
+      if (p[k]) { const d = normDept(p[k]);      if (d) return { dept: d, source: "props" }; }
     return { dept: null, source: null };
   }, [parcel]);
 
-  const [deptResolved, setDeptResolved] = useState<{ dept: string; source: string; commune?: string } | null>(null);
+  const [deptRes, setDeptRes] = useState<{ dept: string; source: string; commune?: string } | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    let cancel = false;
     (async () => {
-      if (deptFromProps.dept) { if (!cancelled) setDeptResolved({ dept: deptFromProps.dept, source: deptFromProps.source! }); return; }
-      if (parcelBBoxRaw && parcelEpsg === "EPSG:4326") {
-        const [v0, v1, v2, v3] = parcelBBoxRaw;
-        const [lon, lat] = coordOrder === "lat-lon" ? [(v1 + v3) / 2, (v0 + v2) / 2] : [(v0 + v2) / 2, (v1 + v3) / 2];
-        let r = await deptFromGeoApi(lon, lat);
-        if (!cancelled && r.dept) { setDeptResolved({ dept: r.dept, source: "geoapi", commune: r.commune }); return; }
-        r = await deptFromGeoApi(lat, lon);
-        if (!cancelled && r.dept) { setDeptResolved({ dept: r.dept, source: "geoapi", commune: r.commune }); return; }
-        let b = await deptFromBanReverse(lon, lat);
-        if (!cancelled && b.dept) { setDeptResolved({ dept: b.dept, source: "ban" }); return; }
-        b = await deptFromBanReverse(lat, lon);
-        if (!cancelled && b.dept) { setDeptResolved({ dept: b.dept, source: "ban" }); return; }
+      if (deptFromProps.dept) {
+        if (!cancel) setDeptRes({ dept: deptFromProps.dept, source: deptFromProps.source! });
+        return;
       }
-      if (!cancelled) setDeptResolved({ dept: "75", source: "fallback" });
+      if (rawBBox && parcelEpsg === "EPSG:4326") {
+        const [v0, v1, v2, v3] = rawBBox;
+        const [lon, lat] = coordOrd === "lat-lon" ? [(v1 + v3) / 2, (v0 + v2) / 2] : [(v0 + v2) / 2, (v1 + v3) / 2];
+        let r = await deptGeoApi(lon, lat); if (!cancel && r.dept) { setDeptRes({ dept: r.dept, source: "geoapi", commune: r.commune }); return; }
+        r     = await deptGeoApi(lat, lon); if (!cancel && r.dept) { setDeptRes({ dept: r.dept, source: "geoapi", commune: r.commune }); return; }
+        let bv = await deptBan(lon, lat);   if (!cancel && bv.dept) { setDeptRes({ dept: bv.dept, source: "ban" }); return; }
+        bv     = await deptBan(lat, lon);   if (!cancel && bv.dept) { setDeptRes({ dept: bv.dept, source: "ban" }); return; }
+      }
+      if (!cancel) setDeptRes({ dept: "75", source: "fallback" });
     })();
-    return () => { cancelled = true; };
-  }, [deptFromProps, parcelBBoxRaw, parcelEpsg, coordOrder]);
+    return () => { cancel = true; };
+  }, [deptFromProps, rawBBox, parcelEpsg, coordOrd]);
 
-  const parcelBBox2154 = useMemo(() => parcelBBoxRaw ? (parcelEpsg === "EPSG:4326" ? bboxWgs84ToLambert93(parcelBBoxRaw, coordOrder) : parcelBBoxRaw) : null, [parcelBBoxRaw, parcelEpsg, coordOrder]);
-  const footprintsLambert = useMemo(() => convertFootprintsToLambert93(buildings, parkings, coordOrder, parcelEpsg === "EPSG:4326"), [buildings, parkings, coordOrder, parcelEpsg]);
+  const bbox2154 = useMemo(() =>
+    rawBBox ? (parcelEpsg === "EPSG:4326" ? toL93(rawBBox, coordOrd) : rawBBox) : null,
+    [rawBBox, parcelEpsg, coordOrd],
+  );
+  const fpL93_ = useMemo(() =>
+    fpsL93(buildings, parkings, coordOrd, parcelEpsg === "EPSG:4326"),
+    [buildings, parkings, coordOrd, parcelEpsg],
+  );
 
+  // ── Fetch élévations ──────────────────────────────────────────────────────
+  // ⚠️  On ne conditionne PAS sur scene.visibility.terrain — ce flag est souvent
+  //     false par défaut dans useMassingScene, ce qui bloquait silencieusement
+  //     tout le pipeline. La visibilité terrain est gérée dans MassingEditor3D.
   useEffect(() => {
-    let cancelled = false;
+    let cancel = false;
     (async () => {
-      if (!parcelBBox2154 || !deptResolved?.dept || !scene.visibility?.terrain) { setRelief({ status: "idle" }); return; }
-      setRelief({ status: "loading", deptCode: deptResolved.dept, deptSource: deptResolved.source, commune: deptResolved.commune, epsg: parcelEpsg });
+      if (!bbox2154 || !deptRes?.dept) {
+        console.log("[Relief] En attente — bbox2154:", bbox2154, "dept:", deptRes?.dept);
+        return;
+      }
+
+      console.log("[Relief] Démarrage fetch — dept:", deptRes.dept, "bbox L93:", bbox2154);
+      setRelief({ status: "loading", deptCode: deptRes.dept, deptSource: deptRes.source, commune: deptRes.commune, epsg: parcelEpsg });
+
       try {
         const pad = 20;
-        const padded: [number, number, number, number] = [parcelBBox2154[0] - pad, parcelBBox2154[1] - pad, parcelBBox2154[2] + pad, parcelBBox2154[3] + pad];
-        await ensureDepartment(deptResolved.dept);
-        const { points, nx, ny, dx, dy } = buildGridPointsFromBBox(padded, 5, 2500);
-        const elevations: (number | null)[] = [];
-        for (const batch of chunk(points, 800)) { const r = await elevationLambert93(deptResolved.dept, batch); elevations.push(...(r.elevations ?? [])); }
-        
-        const valid = elevations.filter(v => typeof v === "number" && Number.isFinite(v)) as number[];
-        if (valid.length / elevations.length < 0.6) throw new Error(`Relief insuffisant (${Math.round(valid.length / elevations.length * 100)}% valid)`);
-        
-        const median = [...valid].sort((a, b) => a - b)[Math.floor(valid.length / 2)];
-        const filled = elevations.map(v => (typeof v === "number" && Number.isFinite(v)) ? v : median);
-        const slopes = computeSlopeKPIs(filled, nx, ny, dx, dy);
-        const earthworks = computeEarthworksUnderFootprints(filled, nx, ny, dx, dy, padded, footprintsLambert);
-        const costs = computeEarthworksCosts(earthworks.cutVolume);
+        const paddedL93: [number, number, number, number] = [
+          bbox2154[0] - pad, bbox2154[1] - pad,
+          bbox2154[2] + pad, bbox2154[3] + pad,
+        ];
 
-        if (cancelled) return;
+        console.log("[Relief] Ensure department:", deptRes.dept);
+        await ensureDepartment(deptRes.dept);
+
+        const { pts, nx, ny, dx, dy } = buildGrid(paddedL93, 5, 2500);
+        console.log("[Relief] Grid:", { nx, ny, totalPoints: pts.length, dx: dx.toFixed(1), dy: dy.toFixed(1) });
+
+        const elevs: (number | null)[] = [];
+        for (const batch of chunk(pts, 800)) {
+          const r = await elevationLambert93(deptRes.dept, batch);
+          elevs.push(...(r.elevations ?? []));
+        }
+
+        const valid = elevs.filter(v => typeof v === "number" && Number.isFinite(v)) as number[];
+        console.log("[Relief] Élévations reçues:", elevs.length, "| valides:", valid.length, "| ratio:", (valid.length / elevs.length * 100).toFixed(1) + "%");
+
+        if (valid.length / elevs.length < 0.6)
+          throw new Error(`Relief insuffisant: ${valid.length}/${elevs.length} points valides`);
+
+        const median = [...valid].sort((a, b) => a - b)[Math.floor(valid.length / 2)];
+        const filled = elevs.map(v => (typeof v === "number" && Number.isFinite(v)) ? v : median);
+
+        const sl = slopeKPIs(filled, nx, ny, dx, dy);
+        console.log("[Relief] Altitude:", { minZ: sl.minZ.toFixed(1), maxZ: sl.maxZ.toFixed(1), deltaZ: sl.deltaZ.toFixed(1), meanSlope: sl.meanPct.toFixed(1) + "%" });
+
+        const ew = ewUnder(filled, nx, ny, dx, dy, paddedL93, fpL93_);
+        const co = ewCosts(ew.cutVolume);
+
+        // ── CONVERSION CRITIQUE bbox L93 → WGS84 ─────────────────────────
+        // MassingRenderer projette en WGS84. Une bbox L93 en mètres serait
+        // interprétée comme des degrés → décalage de ~700 km vers l'est.
+        const bboxWgs84 = l93ToWgs84Bbox(paddedL93);
+        console.log("[Relief] bbox WGS84 (pour renderer):", bboxWgs84.map(v => v.toFixed(5)));
+
+        if (cancel) return;
         setRelief({
           status: "ready",
-          deptCode: deptResolved.dept, deptSource: deptResolved.source, commune: deptResolved.commune, epsg: parcelEpsg,
-          minZ: slopes.minZ, maxZ: slopes.maxZ, deltaZ: slopes.deltaZ,
-          meanSlopePct: slopes.meanPct, maxSlopePct: slopes.maxPct,
-          reliefData: { elevations: filled, nx, ny, dx, dy, minZ: slopes.minZ, maxZ: slopes.maxZ, bbox: padded, platformLevel: earthworks.platformLevel },
-          cutVolume: earthworks.cutVolume, fillVolume: earthworks.fillVolume,
-          platformLevel: earthworks.platformLevel, volumeBalance: earthworks.balance, footprintArea: earthworks.footprintArea,
-          cutCost: costs.cutCost, evacuationCost: costs.evacuationCost, totalCost: costs.totalCost,
+          deptCode: deptRes.dept, deptSource: deptRes.source, commune: deptRes.commune, epsg: parcelEpsg,
+          minZ: sl.minZ, maxZ: sl.maxZ, deltaZ: sl.deltaZ,
+          meanSlopePct: sl.meanPct, maxSlopePct: sl.maxPct,
+          reliefData: {
+            elevations:    filled,
+            nx, ny, dx, dy,
+            minZ:          sl.minZ,
+            maxZ:          sl.maxZ,
+            bbox:          bboxWgs84,     // ← WGS84 obligatoire pour MassingRenderer
+            platformLevel: ew.platformLevel,
+          },
+          cutVolume:      ew.cutVolume,
+          fillVolume:     ew.fillVolume,
+          platformLevel:  ew.platformLevel,
+          volumeBalance:  ew.balance,
+          footprintArea:  ew.footprintArea,
+          cutCost:        co.cutCost,
+          evacuationCost: co.evacuationCost,
+          totalCost:      co.totalCost,
         });
+
+        console.log("[Relief] ✅ Données prêtes — nx:", nx, "ny:", ny, "points:", filled.length);
       } catch (e: any) {
-        if (!cancelled) setRelief({ status: "error", deptCode: deptResolved.dept, message: e?.message ?? String(e) });
+        console.error("[Relief] ❌ Erreur:", e?.message ?? e);
+        if (!cancel) setRelief({ status: "error", deptCode: deptRes.dept, message: e?.message ?? String(e) });
       }
     })();
-    return () => { cancelled = true; };
-  }, [parcelBBox2154, deptResolved, parcelEpsg, scene.visibility?.terrain, footprintsLambert]);
+    return () => { cancel = true; };
+    // ⚠️  scene.visibility.terrain VOLONTAIREMENT ABSENT des deps —
+    //     il était false par défaut et bloquait le pipeline.
+  }, [bbox2154, deptRes, parcelEpsg, fpL93_]);
 
+  // ─── Layout ───────────────────────────────────────────────────────────────
   return (
-    <div className={className} style={{ display: "flex", flexDirection: "column", height: typeof height === "number" ? `${height}px` : height, backgroundColor: "#f8fafc", borderRadius: "12px", overflow: "hidden", border: "1px solid #e2e8f0" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid #e2e8f0", backgroundColor: "#fff" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ fontSize: "16px" }}>🎯</span>
-          <span style={{ fontWeight: 600, color: "#111827", fontSize: "14px" }}>Massing 3D</span>
-          <span style={{ marginLeft: 6, fontSize: 11, color: "#64748b" }}>
-            Dept: {deptResolved?.dept ?? "—"} ({deptResolved?.source ?? "—"})
-            {deptResolved?.commune && ` - ${deptResolved.commune}`}
+    <div className={className} style={{
+      display: "flex", flexDirection: "column",
+      height: typeof height === "number" ? `${height}px` : height,
+      backgroundColor: "#f8fafc", borderRadius: "12px",
+      overflow: "hidden", border: "1px solid #e2e8f0",
+    }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", borderBottom: "1px solid #e2e8f0", backgroundColor: "#fff", flexShrink: 0 }}>
+        <span style={{ fontSize: 15 }}>🎯</span>
+        <span style={{ fontWeight: 600, color: "#111827", fontSize: 13 }}>Massing 3D</span>
+        <span style={{ fontSize: 10, color: "#64748b" }}>
+          {deptRes?.dept ?? "—"} · {deptRes?.commune ?? "—"}
+        </span>
+        {buildingHeightM != null && (
+          <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 999, border: `1px solid rgba(82,71,184,0.3)`, color: ACCENT, background: "#f0eeff", fontWeight: 600 }}>
+            H {buildingHeightM.toFixed(1)} m · R+{meta?.floorsSpec?.aboveGroundFloors ?? "?"}
           </span>
-          <span style={{ marginLeft: 8, fontSize: 11, padding: "2px 8px", borderRadius: 999, border: "1px solid #e5e7eb",
-            color: relief.status === "ready" ? "#065f46" : relief.status === "error" ? "#991b1b" : "#334155",
-            background: relief.status === "ready" ? "#ecfdf5" : relief.status === "error" ? "#fff1f2" : "#f8fafc" }}>
-            Relief: {relief.status === "ready" ? "OK" : relief.status === "loading" ? "…" : relief.status === "error" ? "KO" : "—"}
+        )}
+        {/* Indicateur relief */}
+        <span style={{
+          fontSize: 10, padding: "2px 7px", borderRadius: 999, border: "1px solid #e5e7eb",
+          color:      relief.status === "ready" ? "#065f46" : relief.status === "error" ? "#991b1b" : "#334155",
+          background: relief.status === "ready" ? "#ecfdf5" : relief.status === "error" ? "#fff1f2" : "#f8fafc",
+        }}>
+          Relief: {relief.status === "ready" ? `OK · ΔZ ${relief.deltaZ?.toFixed(1)}m` : relief.status === "loading" ? "…" : relief.status === "error" ? "KO" : "—"}
+        </span>
+        {relief.status === "error" && relief.message && (
+          <span style={{ fontSize: 10, color: "#991b1b", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={relief.message}>
+            ⚠️ {relief.message}
           </span>
-        </div>
+        )}
       </div>
-      <div style={{ flex: 1, display: "flex", gap: "12px", padding: "12px", overflow: "hidden" }}>
-        <Scene3D parcel={parcel} buildings={buildings} parkings={parkings}
-          visibility={{ terrain: scene.visibility.terrain, buildings: scene.visibility.buildings, parkings: scene.visibility.parkings, wireframe: (scene.visibility as any)?.wireframe }}
-          isLoading={scene.isLoading} relief={relief} />
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px", flexShrink: 0 }}>
-          <Controls3D visibility={scene.visibility} viewMode={scene.viewMode} onToggleVisibility={scene.toggleVisibility} onViewModeChange={scene.setViewMode} disabled={scene.isLoading} />
-          <KpiPanel kpis={scene.kpis} isLoading={scene.isLoading} relief={relief} />
+
+      {/* Body */}
+      <div style={{ flex: 1, display: "flex", gap: 0, overflow: "hidden", minHeight: 0 }}>
+
+        {/* Vue 3D — MassingEditor3D */}
+        <div style={{ flex: 1, overflow: "hidden", position: "relative", minWidth: 0 }}>
+          {scene.isLoading ? (
+            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b" }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 24, marginBottom: 8 }}>⏳</div>
+                Chargement...
+              </div>
+            </div>
+          ) : (
+            <MassingEditor3D
+              parcel={parcel}
+              buildings={buildings}
+              parkings={parkings}
+              reliefData={relief.status === "ready" ? relief.reliefData : null}
+              buildingHeightM={buildingHeightM}
+              meta={meta}
+              height="100%"
+            />
+          )}
+        </div>
+
+        {/* Sidebar KPI */}
+        <div style={{
+          width: 220, flexShrink: 0,
+          display: "flex", flexDirection: "column", gap: 8,
+          padding: "10px 8px", height: "100%",
+          overflowY: "auto", overflowX: "hidden",
+          borderLeft: "1px solid #e2e8f0", background: "#f8fafc",
+          scrollbarWidth: "thin", scrollbarColor: "#cbd5e1 transparent",
+        }}>
+          <Controls3D
+            visibility={scene.visibility} viewMode={scene.viewMode}
+            onToggleVisibility={scene.toggleVisibility} onViewModeChange={scene.setViewMode}
+            disabled={scene.isLoading}
+          />
+          <KpiPanel kpis={scene.kpis} relief={relief} meta={meta} buildingHeightM={buildingHeightM} />
+          <div style={{ height: 4, flexShrink: 0 }} />
         </div>
       </div>
     </div>

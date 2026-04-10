@@ -347,17 +347,17 @@ const getRiskLabel = (level: RiskLevel): string => {
 };
 
 const getScoreColor = (score: number): string => {
-  if (score >= 60) return "#dc2626";
+  if (score >= 80) return "#10b981";
+  if (score >= 60) return "#22c55e";
   if (score >= 40) return "#f59e0b";
-  if (score >= 20) return "#22c55e";
-  return "#10b981";
+  return "#dc2626";
 };
 
 const getVerdictConfig = (score: number) => {
-  if (score >= 60) return { label: "RISQUE ÉLEVÉ", color: "#991b1b", bg: "#fee2e2", icon: ShieldOff };
+  if (score >= 80) return { label: "ZONE SÛRE", color: "#047857", bg: "#ecfdf5", icon: ShieldCheck };
+  if (score >= 60) return { label: "RISQUE FAIBLE", color: "#059669", bg: "#dcfce7", icon: Shield };
   if (score >= 40) return { label: "VIGILANCE", color: "#d97706", bg: "#fef3c7", icon: ShieldAlert };
-  if (score >= 20) return { label: "RISQUE FAIBLE", color: "#059669", bg: "#dcfce7", icon: Shield };
-  return { label: "ZONE SÛRE", color: "#047857", bg: "#ecfdf5", icon: ShieldCheck };
+  return { label: "RISQUE ÉLEVÉ", color: "#991b1b", bg: "#fee2e2", icon: ShieldOff };
 };
 
 const getBankGradeColor = (grade: BankRiskScoringGrade): string => {
@@ -377,7 +377,7 @@ const getBankGradeColor = (grade: BankRiskScoringGrade): string => {
 const styles = {
   container: {
     minHeight: "100vh",
-    background: "linear-gradient(135deg, #fef2f2 0%, #fff7ed 50%, #fefce8 100%)",
+    background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #f0fdf4 100%)",
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
   } as React.CSSProperties,
   
@@ -399,7 +399,7 @@ const styles = {
     padding: "28px",
     marginBottom: "24px",
     boxShadow: "0 4px 20px rgba(0,0,0,0.04)",
-    border: "1px solid #fecaca",
+    border: "1px solid #e2e8f0",
   } as React.CSSProperties,
   
   card: {
@@ -447,7 +447,7 @@ const styles = {
     justifyContent: "center",
     gap: "10px",
     padding: "14px 32px",
-    background: "linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)",
+    background: `linear-gradient(135deg, ${ACCENT_PRO} 0%, #7c6fcd 100%)`,
     color: "white",
     border: "none",
     borderRadius: "12px",
@@ -455,7 +455,7 @@ const styles = {
     fontWeight: 600,
     cursor: "pointer",
     transition: "all 0.2s",
-    boxShadow: "0 4px 12px rgba(220, 38, 38, 0.3)",
+    boxShadow: `0 4px 12px ${ACCENT_PRO}40`,
   } as React.CSSProperties,
 };
 
@@ -1232,147 +1232,258 @@ const RiskStudyResults: React.FC<{
   const warningInsights = insights.filter(i => i.type === 'warning');
   const positiveInsights = insights.filter(i => i.type === 'positive');
   const infoInsights = insights.filter(i => i.type === 'info');
+  const [synthesisSaved, setSynthesisSaved] = useState(false);
 
   const handleGeneratePdf = useCallback(() => {
     const verdict = getVerdictConfig(scores.global);
-    
+    const scoreColor = getScoreColor(scores.global);
+
     const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('Veuillez autoriser les popups pour générer le PDF');
-      return;
-    }
+    if (!printWindow) { alert('Autorisez les popups pour générer le PDF'); return; }
 
-    const bankScoringPdfSection = bankScoring ? `
-      <div class="section">
-        <div class="section-title">🏦 Scoring Banque</div>
-        <div class="grid-4">
-          <div class="stat-box">
-            <div class="stat-label">Score</div>
-            <div class="stat-value" style="color: ${getBankGradeColor(bankScoring.grade)}">${bankScoring.score}</div>
-          </div>
-          <div class="stat-box">
-            <div class="stat-label">Grade</div>
-            <div class="stat-value" style="color: ${getBankGradeColor(bankScoring.grade)}">${bankScoring.grade}</div>
-          </div>
-          <div class="stat-box">
-            <div class="stat-label">Niveau</div>
-            <div class="stat-value" style="font-size: 16px">${bankScoring.level_label}</div>
-          </div>
-          <div class="stat-box">
-            <div class="stat-label">Confiance</div>
-            <div class="stat-value">${Math.round(bankScoring.confidence * 100)}%</div>
-          </div>
+    const fmtN = (n: number | null | undefined, d = 0) =>
+      n == null || isNaN(n) ? '—' : new Intl.NumberFormat('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
+    const fmtDist = (m: number | null | undefined) =>
+      m == null ? '—' : m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`;
+    const riskBadge = (level: RiskLevel) => {
+      const c = getRiskColor(level); const b = getRiskBg(level);
+      return `<span style="padding:3px 10px;background:${b};color:${c};border-radius:6px;font-size:11px;font-weight:600;">${getRiskLabel(level)}</span>`;
+    };
+    const sectionTitle = (icon: string, title: string) =>
+      `<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;padding-bottom:10px;border-bottom:2px solid #e2e8f0;">
+        <span style="font-size:18px;">${icon}</span>
+        <span style="font-size:17px;font-weight:700;color:#1e293b;">${title}</span>
+      </div>`;
+    const section = (content: string) =>
+      `<div style="background:white;border-radius:14px;padding:24px;margin-bottom:20px;border:1px solid #e2e8f0;page-break-inside:avoid;">${content}</div>`;
+    const kpiBox = (label: string, value: string, color = '#1e293b', sub = '') =>
+      `<div style="background:#f8fafc;border-radius:10px;padding:14px;text-align:center;border:1px solid #e2e8f0;">
+        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:6px;">${label}</div>
+        <div style="font-size:22px;font-weight:800;color:${color};">${value}</div>
+        ${sub ? `<div style="font-size:10px;color:#94a3b8;margin-top:3px;">${sub}</div>` : ''}
+      </div>`;
+    const insightRow = (type: InsightType, cat: string, msg: string) => {
+      const cfg: Record<InsightType, {bg:string;border:string;dot:string}> = {
+        critical: {bg:'#fef2f2',border:'#fecaca',dot:'#dc2626'},
+        warning:  {bg:'#fef3c7',border:'#fcd34d',dot:'#f59e0b'},
+        positive: {bg:'#ecfdf5',border:'#a7f3d0',dot:'#10b981'},
+        info:     {bg:'#f0f9ff',border:'#bae6fd',dot:'#0ea5e9'},
+      };
+      const c = cfg[type];
+      return `<div style="padding:12px 14px;background:${c.bg};border:1px solid ${c.border};border-radius:8px;margin-bottom:8px;display:flex;gap:10px;align-items:flex-start;">
+        <span style="width:8px;height:8px;border-radius:50%;background:${c.dot};margin-top:5px;flex-shrink:0;display:inline-block;"></span>
+        <div><span style="font-size:9px;font-weight:600;color:#64748b;text-transform:uppercase;">${cat}</span>
+        <p style="font-size:13px;color:#1e293b;margin:3px 0 0 0;line-height:1.5;">${msg}</p></div>
+      </div>`;
+    };
+    const bar = (score: number, level: RiskLevel) => {
+      const c = getRiskColor(level);
+      return `<div style="display:flex;align-items:center;gap:10px;">
+        <div style="flex:1;height:8px;background:#e2e8f0;border-radius:4px;">
+          <div style="width:${score}%;height:100%;background:${c};border-radius:4px;"></div>
         </div>
-        ${bankScoring.rationale.length > 0 ? `
-          <div style="margin-top: 12px;">
-            ${bankScoring.rationale.slice(0, 3).map(r => `<div class="insight insight-info">${r}</div>`).join('')}
-          </div>
-        ` : ''}
-      </div>
-    ` : '';
+        <span style="font-size:13px;font-weight:700;color:${c};min-width:24px;">${score}</span>
+      </div>`;
+    };
 
-    const htmlContent = `
-<!DOCTYPE html>
+    const bankSection = bankScoring ? section(`
+      ${sectionTitle('🏦', 'Scoring Banque — Risques')}
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">
+        ${kpiBox('Score', String(bankScoring.score), getBankGradeColor(bankScoring.grade))}
+        ${kpiBox('Grade', bankScoring.grade, getBankGradeColor(bankScoring.grade))}
+        ${kpiBox('Niveau', bankScoring.level_label, '#1e293b')}
+        ${kpiBox('Confiance', Math.round(bankScoring.confidence * 100) + '%', '#6366f1')}
+      </div>
+      ${bankScoring.rationale.slice(0, 3).map(r => insightRow('info', 'Banque', r)).join('')}
+    `) : '';
+
+    const catnatRows = riskData.gaspar.catnat_events.slice(0, 10).map((e, i) =>
+      `<tr style="background:${i%2===0?'#f8fafc':'white'};">
+        <td style="padding:8px 10px;font-size:12px;color:#1e293b;">${e.libelle_risque || '—'}</td>
+        <td style="padding:8px 10px;font-size:12px;color:#64748b;">${e.date_debut || '—'}</td>
+        <td style="padding:8px 10px;font-size:12px;color:#64748b;">${e.date_fin || '—'}</td>
+      </tr>`
+    ).join('');
+
+    const icpeRows = riskData.icpe.installations.slice(0, 10).map((inst, i) =>
+      `<tr style="background:${inst.seveso ? '#fef2f2' : i%2===0?'#f8fafc':'white'};">
+        <td style="padding:8px 10px;font-size:12px;font-weight:600;color:#1e293b;">${inst.nom}</td>
+        <td style="padding:8px 10px;font-size:12px;color:#64748b;">${inst.activite || '—'}</td>
+        <td style="padding:8px 10px;font-size:12px;color:${inst.seveso ? '#dc2626' : '#64748b'};font-weight:${inst.seveso ? 600 : 400};">${inst.seveso || '—'}</td>
+        <td style="padding:8px 10px;font-size:12px;color:#64748b;">${fmtDist(inst.distance_m)}</td>
+      </tr>`
+    ).join('');
+
+    const htmlContent = `<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Étude de Risques - ${meta.commune_nom}</title>
+  <title>Étude de Risques — ${meta.commune_nom}</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1e293b; line-height: 1.6; }
-    .header { background: linear-gradient(135deg, #7f1d1d 0%, #dc2626 100%); color: white; padding: 30px; border-radius: 12px; margin-bottom: 30px; }
-    .header h1 { font-size: 28px; margin-bottom: 8px; }
-    .score-section { display: flex; align-items: center; gap: 30px; margin: 20px 0; }
-    .score-circle { width: 100px; height: 100px; border-radius: 50%; background: white; display: flex; align-items: center; justify-content: center; flex-direction: column; }
-    .score-value { font-size: 36px; font-weight: 800; color: ${getScoreColor(scores.global)}; }
-    .verdict { display: inline-block; padding: 8px 16px; background: ${verdict.bg}; color: ${verdict.color}; border-radius: 8px; font-weight: 600; }
-    .section { background: #f8fafc; border-radius: 12px; padding: 24px; margin-bottom: 20px; page-break-inside: avoid; }
-    .section-title { font-size: 18px; font-weight: 700; color: #1e293b; margin-bottom: 16px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }
-    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-    .stat-box { background: white; padding: 16px; border-radius: 8px; text-align: center; border: 1px solid #e2e8f0; }
-    .stat-label { font-size: 11px; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }
-    .stat-value { font-size: 24px; font-weight: 700; }
-    .insight { padding: 12px 16px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; }
-    .insight-critical { background: #fef2f2; border-left: 4px solid #dc2626; }
-    .insight-warning { background: #fef3c7; border-left: 4px solid #f59e0b; }
-    .insight-positive { background: #ecfdf5; border-left: 4px solid #10b981; }
-    .insight-info { background: #f0f9ff; border-left: 4px solid #0ea5e9; }
-    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8; text-align: center; }
-    @media print { body { padding: 20px; } .section { break-inside: avoid; } }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Segoe UI',Arial,sans-serif; background:#f8fafc; padding:40px; color:#1e293b; line-height:1.6; }
+    @media print { body { padding:20px; background:white; } @page { margin:15mm; } }
+    table { width:100%; border-collapse:collapse; }
+    th { background:#f1f5f9; padding:10px 12px; font-size:11px; font-weight:600; color:#64748b; text-transform:uppercase; text-align:left; }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>🛡️ Étude de Risques - ${meta.commune_nom}</h1>
-    <p>${meta.region} • Département ${meta.departement} • Rayon ${meta.radius_km} km</p>
-    <div class="score-section">
-      <div class="score-circle">
-        <div class="score-value">${scores.global}</div>
-        <div style="font-size: 10px; color: #64748b">/100</div>
+
+  <!-- HEADER violet Mimmoza -->
+  <div style="background:linear-gradient(135deg,#1e293b 0%,#5247b8 60%,#1e293b 100%);border-radius:16px;padding:36px 40px;margin-bottom:28px;color:white;">
+    <div style="font-size:12px;opacity:0.6;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.08em;">Mimmoza · Étude de Risques</div>
+    <h1 style="font-size:32px;font-weight:800;margin-bottom:6px;">${meta.commune_nom}</h1>
+    <p style="font-size:14px;opacity:0.75;margin-bottom:28px;">${meta.region} · Département ${meta.departement} · Rayon ${meta.radius_km} km · v${data.version}</p>
+
+    <div style="display:grid;grid-template-columns:160px 1fr auto;gap:32px;align-items:center;">
+      <!-- Score -->
+      <div style="text-align:center;background:rgba(255,255,255,0.1);border-radius:14px;padding:20px;">
+        <div style="font-size:56px;font-weight:800;color:${scoreColor};line-height:1;">${scores.global}</div>
+        <div style="font-size:12px;opacity:0.6;margin-bottom:8px;">/100</div>
+        <div style="padding:6px 14px;background:${verdict.bg};color:${verdict.color};border-radius:8px;font-weight:700;font-size:13px;display:inline-block;">${verdict.label}</div>
       </div>
-      <div>
-        <div class="verdict">${verdict.label}</div>
-        <p style="margin-top: 8px; font-size: 13px;">Score de risque global</p>
+
+      <!-- Sous-scores -->
+      <div style="background:rgba(255,255,255,0.08);border-radius:14px;padding:20px;">
+        <div style="font-size:11px;opacity:0.65;font-weight:600;text-transform:uppercase;margin-bottom:14px;">Scores par catégorie</div>
+        ${categories.map(cat => `
+          <div style="margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+              <span style="font-size:12px;opacity:0.85;">${cat.name}</span>
+              ${riskBadge(cat.level)}
+            </div>
+            ${bar(cat.score, cat.level)}
+          </div>`).join('')}
+      </div>
+
+      <!-- KPIs clés -->
+      <div style="background:rgba(255,255,255,0.08);border-radius:14px;padding:20px;min-width:180px;">
+        <div style="font-size:11px;opacity:0.65;font-weight:600;text-transform:uppercase;margin-bottom:14px;">Données clés</div>
+        ${[
+          {label:'Arrêtés CATNAT', value: String(riskData.gaspar.catnat_count)},
+          {label:'PPR applicables', value: String(riskData.gaspar.ppr_count)},
+          {label:'Sites SEVESO', value: String(riskData.icpe.seveso_haut_count + riskData.icpe.seveso_bas_count)},
+          {label:'Sites pollués SIS', value: String(riskData.sis.count)},
+          {label:'Zone sismique', value: String(riskData.seisme.zone ?? '—')},
+          {label:'Classe radon', value: String(riskData.radon.classe_potentiel ?? '—')},
+        ].map(k => `
+          <div style="margin-bottom:8px;">
+            <div style="font-size:10px;opacity:0.6;">${k.label}</div>
+            <div style="font-size:15px;font-weight:700;">${k.value}</div>
+          </div>`).join('')}
       </div>
     </div>
   </div>
 
-  ${bankScoringPdfSection}
+  ${bankSection}
 
-  <div class="section">
-    <div class="section-title">📊 Scores par catégorie</div>
-    <div class="grid-4">
-      ${categories.map(cat => `
-        <div class="stat-box">
-          <div class="stat-label">${cat.name}</div>
-          <div class="stat-value" style="color: ${getRiskColor(cat.level)}">${cat.score}</div>
-          <div style="font-size: 11px; color: ${getRiskColor(cat.level)}">${getRiskLabel(cat.level)}</div>
-        </div>
-      `).join('')}
+  <!-- INSIGHTS -->
+  ${(criticalInsights.length > 0 || warningInsights.length > 0 || positiveInsights.length > 0) ? section(`
+    <div style="display:grid;grid-template-columns:repeat(${[criticalInsights,warningInsights,positiveInsights].filter(a=>a.length>0).length},1fr);gap:24px;">
+      ${criticalInsights.length > 0 ? `<div>${sectionTitle('🚨','Alertes critiques')}${criticalInsights.map(i=>insightRow(i.type,i.category,i.message)).join('')}</div>` : ''}
+      ${warningInsights.length > 0 ? `<div>${sectionTitle('⚠️','Points de vigilance')}${warningInsights.map(i=>insightRow(i.type,i.category,i.message)).join('')}</div>` : ''}
+      ${positiveInsights.length > 0 ? `<div>${sectionTitle('✅','Points positifs')}${positiveInsights.map(i=>insightRow(i.type,i.category,i.message)).join('')}</div>` : ''}
     </div>
-  </div>
+  `) : ''}
 
-  ${criticalInsights.length > 0 ? `
-  <div class="section">
-    <div class="section-title">🚨 Alertes Critiques</div>
-    ${criticalInsights.map(i => `<div class="insight insight-critical">${i.message}</div>`).join('')}
-  </div>
-  ` : ''}
-
-  ${warningInsights.length > 0 ? `
-  <div class="section">
-    <div class="section-title">⚠️ Points de Vigilance</div>
-    ${warningInsights.map(i => `<div class="insight insight-warning">${i.message}</div>`).join('')}
-  </div>
-  ` : ''}
-
-  <div class="section">
-    <div class="section-title">📋 Données Détaillées</div>
-    <div class="grid">
-      <div class="stat-box"><div class="stat-label">Arrêtés CATNAT</div><div class="stat-value" style="color: #dc2626">${riskData.gaspar.catnat_count}</div></div>
-      <div class="stat-box"><div class="stat-label">PPR applicables</div><div class="stat-value" style="color: #f59e0b">${riskData.gaspar.ppr_count}</div></div>
-      <div class="stat-box"><div class="stat-label">Sites SEVESO</div><div class="stat-value" style="color: #991b1b">${riskData.icpe.seveso_haut_count + riskData.icpe.seveso_bas_count}</div></div>
-      <div class="stat-box"><div class="stat-label">Sites pollués (SIS)</div><div class="stat-value" style="color: #dc2626">${riskData.sis.count}</div></div>
-      <div class="stat-box"><div class="stat-label">Zone sismique</div><div class="stat-value" style="color: #8b5cf6">${riskData.seisme.zone}</div></div>
-      <div class="stat-box"><div class="stat-label">Classe radon</div><div class="stat-value" style="color: #6366f1">${riskData.radon.classe_potentiel ?? '—'}</div></div>
+  <!-- RISQUES NATURELS -->
+  ${section(`
+    ${sectionTitle('🌊', 'Risques Naturels')}
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+      ${kpiBox('Inondation', getRiskLabel(riskData.inondation.risk_level), getRiskColor(riskData.inondation.risk_level), riskData.inondation.ppri ? 'PPRI actif' : 'Hors PPRI')}
+      ${kpiBox('Séisme', `Zone ${riskData.seisme.zone ?? '—'}`, getRiskColor(riskData.seisme.risk_level), riskData.seisme.libelle)}
+      ${kpiBox('Feux de forêt', getRiskLabel(riskData.feux_foret.risk_level), getRiskColor(riskData.feux_foret.risk_level), riskData.feux_foret.zone_risque ? 'Zone exposée' : 'Hors zone')}
+      ${kpiBox('Argiles (RGA)', getRiskLabel(riskData.argiles.risk_level), getRiskColor(riskData.argiles.risk_level), riskData.argiles.niveau_alea || 'Non évalué')}
     </div>
+  `)}
+
+  <!-- POLLUTION & SOLS -->
+  ${section(`
+    ${sectionTitle('☢️', 'Pollution & Qualité des Sols')}
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+      ${kpiBox('Sites pollués (SIS)', String(riskData.sis.count), riskData.sis.count > 0 ? '#dc2626' : '#10b981')}
+      ${kpiBox('Radon — Classe', String(riskData.radon.classe_potentiel ?? '—'), getRiskColor(riskData.radon.risk_level), riskData.radon.libelle)}
+      ${kpiBox('Niveau risque pollution', getRiskLabel(riskData.sis.risk_level), getRiskColor(riskData.sis.risk_level))}
+    </div>
+    ${riskData.sis.count > 0 ? `
+    <div style="margin-top:16px;">
+      <div style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:10px;">Sites SIS identifiés</div>
+      ${riskData.sis.sites.map(s => `
+        <div style="padding:10px 14px;background:#fef2f2;border-radius:8px;margin-bottom:8px;border-left:4px solid #dc2626;">
+          <div style="font-size:13px;font-weight:600;color:#991b1b;">${s.nom}</div>
+          <div style="font-size:11px;color:#b91c1c;margin-top:2px;">${s.adresse || s.commune}${s.superficie_m2 ? ` · ${fmtN(s.superficie_m2)} m²` : ''}</div>
+        </div>`).join('')}
+    </div>` : ''}
+  `)}
+
+  <!-- GÉOTECHNIQUE -->
+  ${section(`
+    ${sectionTitle('🪨', 'Risques Géotechniques')}
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px;">
+      ${kpiBox('Cavités souterraines', String(riskData.cavites.count), getRiskColor(riskData.cavites.risk_level), riskData.cavites.cavites[0]?.distance_m ? `Plus proche: ${fmtDist(riskData.cavites.cavites[0].distance_m)}` : 'Dans le secteur')}
+      ${kpiBox('Mouvements de terrain', String(riskData.mouvements_terrain.count), getRiskColor(riskData.mouvements_terrain.risk_level), 'événements recensés')}
+    </div>
+    ${riskData.cavites.count > 0 ? `
+    <div style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:8px;">Cavités détaillées</div>
+    ${riskData.cavites.cavites.slice(0,5).map((c,i) => `
+      <div style="display:flex;justify-content:space-between;padding:8px 10px;background:${i%2===0?'#f8fafc':'white'};border-radius:6px;margin-bottom:4px;font-size:12px;">
+        <span style="color:#1e293b;">${c.type}${c.nom ? ' — ' + c.nom : ''}</span>
+        <span style="color:#64748b;font-weight:600;">${fmtDist(c.distance_m)}</span>
+      </div>`).join('')}` : ''}
+  `)}
+
+  <!-- CATNAT -->
+  ${section(`
+    ${sectionTitle('📋', 'Catastrophes Naturelles — CATNAT / GASPAR')}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:${riskData.gaspar.catnat_count > 0 ? '20px' : '0'};">
+      ${kpiBox('Arrêtés CATNAT', String(riskData.gaspar.catnat_count), riskData.gaspar.catnat_count > 5 ? '#dc2626' : riskData.gaspar.catnat_count > 0 ? '#f59e0b' : '#10b981')}
+      ${kpiBox('PPR applicables', String(riskData.gaspar.ppr_count), riskData.gaspar.ppr_count > 0 ? '#d97706' : '#10b981')}
+    </div>
+    ${catnatRows ? `
+    <table><thead><tr><th>Type de risque</th><th>Début</th><th>Fin</th></tr></thead>
+    <tbody>${catnatRows}</tbody></table>` : ''}
+    ${riskData.gaspar.ppr_list.length > 0 ? `
+    <div style="margin-top:16px;">
+      <div style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:8px;">Plans de Prévention des Risques</div>
+      ${riskData.gaspar.ppr_list.map(p => `
+        <div style="padding:10px 14px;background:#fef3c7;border-radius:8px;margin-bottom:6px;border-left:4px solid #f59e0b;">
+          <div style="font-size:13px;font-weight:600;color:#92400e;">${p.libelle}</div>
+          <div style="font-size:11px;color:#b45309;margin-top:2px;">État: ${p.etat || 'Inconnu'} · Code: ${p.code}</div>
+        </div>`).join('')}
+    </div>` : ''}
+  `)}
+
+  <!-- ICPE / SEVESO -->
+  ${section(`
+    ${sectionTitle('🏭', 'Installations Industrielles — ICPE / SEVESO')}
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:${riskData.icpe.count > 0 ? '20px' : '0'};">
+      ${kpiBox('SEVESO Seuil Haut', String(riskData.icpe.seveso_haut_count), riskData.icpe.seveso_haut_count > 0 ? '#991b1b' : '#10b981')}
+      ${kpiBox('SEVESO Seuil Bas', String(riskData.icpe.seveso_bas_count), riskData.icpe.seveso_bas_count > 0 ? '#d97706' : '#10b981')}
+      ${kpiBox('ICPE total', String(riskData.icpe.count), '#64748b')}
+    </div>
+    ${icpeRows ? `
+    <table><thead><tr><th>Nom</th><th>Activité</th><th>SEVESO</th><th>Distance</th></tr></thead>
+    <tbody>${icpeRows}</tbody></table>` : ''}
+  `)}
+
+  ${infoInsights.length > 0 ? section(`
+    ${sectionTitle('ℹ️', 'Informations complémentaires')}
+    ${infoInsights.map(i => insightRow(i.type, i.category, i.message)).join('')}
+  `) : ''}
+
+  <!-- FOOTER -->
+  <div style="text-align:center;padding-top:24px;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:11px;">
+    <p>Rapport généré le ${new Date().toLocaleDateString('fr-FR', {day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p>
+    <p style="margin-top:4px;">Mimmoza · Plateforme d'analyse immobilière intelligente · Sources : Géorisques, GASPAR, BRGM, ICPE</p>
   </div>
 
-  <div class="footer">
-    <p>Rapport généré le ${new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-    <p>Mimmoza - Plateforme d'analyse immobilière intelligente • Sources: Géorisques, BRGM</p>
-  </div>
 </body>
-</html>
-    `;
+</html>`;
 
     printWindow.document.write(htmlContent);
     printWindow.document.close();
-    printWindow.onload = () => {
-      setTimeout(() => { printWindow.print(); }, 250);
-    };
-  }, [meta, scores, categories, criticalInsights, warningInsights, riskData, bankScoring]);
+    printWindow.onload = () => { setTimeout(() => { printWindow.print(); }, 300); };
+  }, [meta, scores, categories, criticalInsights, warningInsights, positiveInsights, infoInsights, riskData, bankScoring, data]);
 
   const categoryIcons: Record<string, LucideIcon> = {
     "Risques Naturels": Mountain,
@@ -1397,7 +1508,7 @@ const RiskStudyResults: React.FC<{
 
         {/* Header avec score global */}
         <div style={{
-          background: "linear-gradient(135deg, #7f1d1d 0%, #991b1b 50%, #b91c1c 100%)",
+          background: "linear-gradient(135deg, #1e293b 0%, #7c6fcd 50%, #1e293b 100%)",
           borderRadius: "20px", padding: "32px", marginBottom: "24px", color: "white"
         }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 1fr", gap: "32px", alignItems: "center" }}>
@@ -1552,6 +1663,25 @@ const RiskStudyResults: React.FC<{
         
         {/* Actions */}
         <div style={{ display: "flex", justifyContent: "center", gap: "16px", marginTop: "32px" }}>
+          <button
+            onClick={() => {
+              patchModule("risks", { ok: true, validated: true, summary: `Score sécurité: ${scores.global}/100 - ${meta.commune_nom}`, data });
+              setSynthesisSaved(true);
+              setTimeout(() => setSynthesisSaved(false), 3000);
+            }}
+            style={{
+              display: "flex", alignItems: "center", gap: "8px",
+              padding: "14px 28px",
+              background: synthesisSaved
+                ? "linear-gradient(135deg, #10b981 0%, #059669 100%)"
+                : `linear-gradient(135deg, ${ACCENT_PRO} 0%, #7c6fcd 100%)`,
+              color: "white", border: "none", borderRadius: "12px",
+              fontSize: "14px", fontWeight: 600, cursor: "pointer",
+            }}
+          >
+            <Target size={18} />
+            {synthesisSaved ? "✓ Enregistré dans la synthèse" : "Utiliser pour la synthèse"}
+          </button>
           <button 
             onClick={handleGeneratePdf}
             style={{
@@ -1629,6 +1759,7 @@ export function RisquesPage() {
   const [bankScoring, setBankScoring] = useState<BankRiskScoring | null>(null);
   const [isBankScoringLoading, setIsBankScoringLoading] = useState(false);
   const [bankScoringError, setBankScoringError] = useState<string | null>(null);
+  const [synthesisSaved, setSynthesisSaved] = useState(false);
 
   const addressTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const parcelTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -1816,6 +1947,13 @@ export function RisquesPage() {
         payload.lat = lat;
         payload.lon = lon;
       }
+      // ── v1.3.1 : envoyer toutes les sources de géolocalisation disponibles ──
+      if (selectedAddress?.label || address) {
+        payload.address = selectedAddress?.label || address;
+      }
+      if (parcelId && parcelId.length >= 10) {
+        payload.parcel_id = parcelId;
+      }
       if (codeInsee) payload.commune_insee = codeInsee;
 
       log('📡', 'Payload', payload);
@@ -1976,6 +2114,24 @@ export function RisquesPage() {
             }}>
               v1.3.0
             </span>
+            {analysisResult && (
+              <button
+                onClick={() => {
+                  patchModule("risks", { ok: true, validated: true, summary: `Score sécurité: ${analysisResult.scores.global}/100 - ${analysisResult.meta.commune_nom}`, data: analysisResult });
+                  setSynthesisSaved(true);
+                  setTimeout(() => setSynthesisSaved(false), 3000);
+                }}
+                style={{
+                  padding: "9px 18px", borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.4)",
+                  background: synthesisSaved ? "rgba(16,185,129,0.3)" : "rgba(255,255,255,0.15)",
+                  color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 6,
+                }}
+              >
+                {synthesisSaved ? "✓ Enregistré" : "📌 Utiliser dans la synthèse"}
+              </button>
+            )}
             <button
               onClick={handleSubmit}
               disabled={isLoading}
@@ -2087,20 +2243,39 @@ export function RisquesPage() {
                 )}
               </div>
 
-              {/* Parcelle */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <Grid3X3 size={14} color={ACCENT_PRO} />
-                  N° Parcelle cadastrale
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ex: 69123000AI0001"
-                  value={parcelId}
-                  onChange={(e) => setParcelId(e.target.value)}
-                  style={styles.input}
-                />
-              </div>
+              {/* Parcelle — mutex avec adresse */}
+              {(() => {
+                const hasAddress = address.length > 0 || selectedAddress != null;
+                const hasParcel  = parcelId.length > 0;
+                const parcelDisabled = hasAddress && !hasParcel;
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: "6px" }}>
+                      <Grid3X3 size={14} color={ACCENT_PRO} />
+                      N° Parcelle cadastrale
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ex: 69123000AI0001"
+                      value={parcelId}
+                      disabled={parcelDisabled}
+                      onChange={(e) => setParcelId(e.target.value)}
+                      style={{
+                        ...styles.input,
+                        opacity: parcelDisabled ? 0.45 : 1,
+                        cursor: parcelDisabled ? "not-allowed" : undefined,
+                        background: parcelDisabled ? "#f1f5f9" : undefined,
+                      }}
+                    />
+                    {parcelDisabled && (
+                      <div style={{ fontSize: "12px", color: "#d97706", display: "flex", alignItems: "center", gap: "6px" }}>
+                        <AlertTriangle size={13} color="#d97706" />
+                        Videz l'adresse pour saisir une parcelle
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Coordonnées */}
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>

@@ -2844,153 +2844,340 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
     () => calculateDifferentiatedScores(data, meta.project_type),
     [data, meta.project_type]
   );
+  const [synthesisSaved, setSynthesisSaved] = useState(false);
   
   const positiveInsights = insights.filter(i => i.type === "positive");
   const warningInsights = insights.filter(i => i.type === "warning" || i.type === "negative");
   const neutralInsights = insights.filter(i => i.type === "neutral");
 
   const handleGeneratePdf = useCallback(() => {
-    const verdict = getVerdictConfig(scores.global);
-    const scoreColor = getScoreColor(scores.global);
-    
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('Veuillez autoriser les popups pour générer le PDF');
-      return;
-    }
+  const verdict = getVerdictConfig(scores.global);
+  const scoreColor = getScoreColor(scores.global);
+  const isEhpad = meta.project_type === "ehpad";
+  const ehpadS = isEhpad ? (specific as EhpadSpecific) : null;
 
-    const htmlContent = `
-<!DOCTYPE html>
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) { alert('Autorisez les popups pour générer le PDF'); return; }
+
+  // ── helpers PDF ──────────────────────────────────────────────────────────
+  const fmtN = (n: number | null | undefined, d = 0) =>
+    n == null || isNaN(n) ? '—' : new Intl.NumberFormat('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
+  const fmtP = (n: number | null | undefined) =>
+    n == null || isNaN(n) ? '—' : new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n);
+  const fmtPct = (n: number | null | undefined, sign = false) =>
+    n == null || isNaN(n) ? '—' : `${sign && n > 0 ? '+' : ''}${fmtN(n, 1)}%`;
+  const bar = (score: number | null | undefined) => {
+    const v = score ?? 0;
+    const c = v >= 70 ? '#10b981' : v >= 50 ? '#f59e0b' : v >= 35 ? '#f97316' : '#ef4444';
+    return `<div style="display:flex;align-items:center;gap:10px;">
+      <div style="flex:1;height:8px;background:#e2e8f0;border-radius:4px;">
+        <div style="width:${v}%;height:100%;background:${c};border-radius:4px;"></div>
+      </div>
+      <span style="font-size:14px;font-weight:700;color:${c};min-width:28px;">${v}</span>
+    </div>`;
+  };
+  const kpiBox = (label: string, value: string, color = '#1e293b') =>
+    `<div style="background:#f8fafc;border-radius:10px;padding:14px;text-align:center;border:1px solid #e2e8f0;">
+      <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:6px;">${label}</div>
+      <div style="font-size:22px;font-weight:800;color:${color};">${value}</div>
+    </div>`;
+  const sectionTitle = (icon: string, title: string) =>
+    `<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;padding-bottom:10px;border-bottom:2px solid #e2e8f0;">
+      <span style="font-size:18px;">${icon}</span>
+      <span style="font-size:17px;font-weight:700;color:#1e293b;">${title}</span>
+    </div>`;
+  const section = (content: string) =>
+    `<div style="background:white;border-radius:14px;padding:24px;margin-bottom:20px;border:1px solid #e2e8f0;page-break-inside:avoid;">${content}</div>`;
+  const insightRow = (type: string, cat: string, msg: string) => {
+    const cfg: Record<string, {bg:string;border:string;dot:string}> = {
+      positive: {bg:'#ecfdf5',border:'#a7f3d0',dot:'#10b981'},
+      warning:  {bg:'#fef3c7',border:'#fcd34d',dot:'#f59e0b'},
+      negative: {bg:'#fee2e2',border:'#fca5a5',dot:'#ef4444'},
+      neutral:  {bg:'#f1f5f9',border:'#cbd5e1',dot:'#64748b'},
+    };
+    const c = cfg[type] || cfg.neutral;
+    return `<div style="padding:12px 14px;background:${c.bg};border:1px solid ${c.border};border-radius:8px;margin-bottom:8px;display:flex;gap:10px;align-items:flex-start;">
+      <span style="width:8px;height:8px;border-radius:50%;background:${c.dot};margin-top:5px;flex-shrink:0;display:inline-block;"></span>
+      <div><span style="font-size:9px;font-weight:600;color:#64748b;text-transform:uppercase;">${cat}</span><p style="font-size:13px;color:#1e293b;margin:3px 0 0 0;line-height:1.5;">${msg}</p></div>
+    </div>`;
+  };
+
+  // ── Calculs économiques ──────────────────────────────────────────────────
+  const insee = core.insee;
+  const dvf = core.dvf;
+  const revenu = insee?.revenu_median;
+  const prixM2 = dvf?.prix_m2_median;
+  const ratio = revenu && prixM2 && revenu > 0 ? ((prixM2 * 60) / revenu).toFixed(1) : null;
+
+  // ── Transactions DVF sample ──────────────────────────────────────────────
+  const txRows = (dvf?.transactions || []).slice(0, 15).map((tx) =>
+    `<tr style="border-bottom:1px solid #f1f5f9;">
+      <td style="padding:8px 10px;font-size:12px;color:#64748b;">${tx.date_mutation || '—'}</td>
+      <td style="padding:8px 10px;font-size:12px;color:#1e293b;">${tx.type_local || '—'}</td>
+      <td style="padding:8px 10px;font-size:12px;font-weight:600;color:#10b981;">${fmtP(tx.valeur_fonciere)}</td>
+      <td style="padding:8px 10px;font-size:12px;font-weight:700;color:#6366f1;">${fmtN(tx.prix_m2)} €/m²</td>
+    </tr>`
+  ).join('');
+
+  // ── BPE rows ─────────────────────────────────────────────────────────────
+  const bpe = core.bpe;
+  const bpeRows = bpe ? [
+    { label: '🛒 Commerces', count: bpe.commerces?.count ?? 0, color: '#f59e0b' },
+    { label: '🏥 Santé', count: bpe.sante?.count ?? 0, color: '#ef4444' },
+    { label: '🏛 Services', count: bpe.services?.count ?? 0, color: '#3b82f6' },
+    { label: '🎓 Éducation', count: bpe.education?.count ?? 0, color: '#8b5cf6' },
+    { label: '🎭 Loisirs', count: bpe.loisirs?.count ?? 0, color: '#ec4899' },
+    { label: '⚽ Sport', count: bpe.sport?.count ?? 0, color: '#10b981' },
+  ].map(r =>
+    `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f1f5f9;">
+      <span style="font-size:13px;color:#475569;">${r.label}</span>
+      <span style="font-size:16px;font-weight:700;color:${r.color};">${r.count}</span>
+    </div>`
+  ).join('') : '<p style="color:#94a3b8;font-size:13px;">Non disponible</p>';
+
+  // ── Arrêts transport ─────────────────────────────────────────────────────
+  const transport = core.transport;
+  const stopRows = (transport?.stops || []).slice(0, 5).map(s =>
+    `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;">
+      <span style="font-size:13px;color:#1e293b;">${s.name}</span>
+      <span style="font-size:13px;font-weight:600;color:${s.distance_m < 500 ? '#10b981' : '#64748b'};">
+        ${s.distance_m < 1000 ? s.distance_m + ' m' : (s.distance_m/1000).toFixed(1) + ' km'}
+      </span>
+    </div>`
+  ).join('');
+
+  // ── EHPAD ─────────────────────────────────────────────────────────────────
+  const ehpadSection = isEhpad && ehpadS ? `
+  ${section(`
+    ${sectionTitle('🏥', 'EHPAD — Concurrence & Démographie senior')}
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
+      ${kpiBox('EHPAD zone', String(ehpadS.concurrence?.count ?? '—'), '#be185d')}
+      ${kpiBox('Lits totaux', fmtN(ehpadS.concurrence?.total_lits), '#1e293b')}
+      ${kpiBox('Pop. 75+ ans', fmtN(ehpadS.demographie_senior?.population_75_plus), '#4338ca')}
+      ${kpiBox('Lits/1000 seniors', String(ehpadS.indicateurs_marche?.densite_lits_1000_seniors ?? '—'), '#15803d')}
+    </div>
+    ${ehpadS.analyse_prix ? `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+      ${kpiBox('Prix min/jour', fmtN(ehpadS.analyse_prix.prix_hebergement_min, 0) + ' €', '#3b82f6')}
+      ${kpiBox('Prix médian/jour', fmtN(ehpadS.analyse_prix.prix_hebergement_median, 0) + ' €', '#10b981')}
+      ${kpiBox('Prix moyen/jour', fmtN(ehpadS.analyse_prix.prix_hebergement_moyen, 0) + ' €', '#8b5cf6')}
+      ${kpiBox('Prix max/jour', fmtN(ehpadS.analyse_prix.prix_hebergement_max, 0) + ' €', '#ef4444')}
+    </div>
+    ${ehpadS.analyse_prix.cout_mensuel_moyen_gir_1_2 ? `<p style="margin-top:14px;font-size:13px;color:#64748b;">Coût mensuel moyen GIR 1-2 : <strong style="color:#047857;">${fmtN(ehpadS.analyse_prix.cout_mensuel_moyen_gir_1_2)} €/mois</strong></p>` : ''}
+    ` : ''}
+  `)}` : '';
+
+  const htmlContent = `<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Étude de Marché - ${meta.commune_nom}</title>
+  <title>Étude de Marché — ${meta.commune_nom}</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1e293b; line-height: 1.6; }
-    .header { background: linear-gradient(135deg, #1e293b 0%, #4f46e5 100%); color: white; padding: 30px; border-radius: 12px; margin-bottom: 30px; }
-    .header h1 { font-size: 28px; margin-bottom: 8px; }
-    .header p { opacity: 0.8; font-size: 14px; }
-    .score-section { display: flex; align-items: center; gap: 30px; margin: 20px 0; }
-    .score-circle { width: 100px; height: 100px; border-radius: 50%; background: white; display: flex; align-items: center; justify-content: center; flex-direction: column; }
-    .score-value { font-size: 36px; font-weight: 800; color: ${scoreColor}; }
-    .score-label { font-size: 10px; color: #64748b; }
-    .verdict { display: inline-block; padding: 8px 16px; background: ${verdict.bg}; color: ${verdict.color}; border-radius: 8px; font-weight: 600; font-size: 14px; }
-    .section { background: #f8fafc; border-radius: 12px; padding: 24px; margin-bottom: 20px; page-break-inside: avoid; }
-    .section-title { font-size: 18px; font-weight: 700; color: #1e293b; margin-bottom: 16px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }
-    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-    .stat-box { background: white; padding: 16px; border-radius: 8px; text-align: center; border: 1px solid #e2e8f0; }
-    .stat-label { font-size: 11px; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }
-    .stat-value { font-size: 24px; font-weight: 700; }
-    .insight { padding: 12px 16px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; }
-    .insight-positive { background: #ecfdf5; border-left: 4px solid #10b981; }
-    .insight-warning { background: #fef3c7; border-left: 4px solid #f59e0b; }
-    .insight-negative { background: #fee2e2; border-left: 4px solid #ef4444; }
-    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8; text-align: center; }
-    @media print { body { padding: 20px; } .section { break-inside: avoid; } }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Segoe UI',Arial,sans-serif; background:#f8fafc; padding:40px; color:#1e293b; line-height:1.6; }
+    @media print { body { padding:20px; background:white; } @page { margin:15mm; } }
+    table { width:100%; border-collapse:collapse; }
+    th { background:#f1f5f9; padding:10px 12px; font-size:11px; font-weight:600; color:#64748b; text-transform:uppercase; text-align:left; }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>📊 Étude de Marché - ${meta.commune_nom}</h1>
-    <p>${meta.project_type_label} • ${meta.departement} • Rayon ${meta.radius_km} km • v${data.version}</p>
-    <div class="score-section">
-      <div class="score-circle">
-        <div class="score-value">${scores.global}</div>
-        <div class="score-label">/100</div>
+
+  <!-- HEADER -->
+  <div style="background:linear-gradient(135deg,#1e293b 0%,#312e81 60%,#1e293b 100%);border-radius:16px;padding:36px 40px;margin-bottom:28px;color:white;">
+    <div style="font-size:12px;opacity:0.6;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.08em;">Mimmoza · Étude de Marché</div>
+    <h1 style="font-size:32px;font-weight:800;margin-bottom:6px;">${meta.commune_nom}</h1>
+    <p style="font-size:14px;opacity:0.75;margin-bottom:28px;">${meta.project_type_label} · Département ${meta.departement} · Rayon ${meta.radius_km} km · v${data.version}</p>
+
+    <div style="display:grid;grid-template-columns:160px 1fr auto;gap:32px;align-items:center;">
+      <!-- Score -->
+      <div style="text-align:center;background:rgba(255,255,255,0.1);border-radius:14px;padding:20px;">
+        <div style="font-size:56px;font-weight:800;color:${scoreColor};line-height:1;">${scores.global}</div>
+        <div style="font-size:12px;opacity:0.6;margin-bottom:8px;">/100</div>
+        <div style="padding:6px 14px;background:${verdict.bg};color:${verdict.color};border-radius:8px;font-weight:700;font-size:13px;display:inline-block;">${verdict.label}</div>
+      </div>
+
+      <!-- Sous-scores -->
+      <div style="background:rgba(255,255,255,0.08);border-radius:14px;padding:20px;">
+        <div style="font-size:11px;opacity:0.65;font-weight:600;text-transform:uppercase;margin-bottom:14px;">Sous-scores (pondération ${meta.project_type})</div>
+        ${[
+          {label:'Demande', v: scores.demande},
+          {label:'Offre', v: scores.offre},
+          {label:'Accessibilité', v: scores.accessibilite},
+          {label:'Environnement', v: scores.environnement},
+        ].map(s => {
+          const c = s.v >= 70 ? '#10b981' : s.v >= 50 ? '#f59e0b' : s.v >= 35 ? '#f97316' : '#ef4444';
+          return `<div style="margin-bottom:10px;display:flex;align-items:center;gap:12px;">
+            <span style="font-size:12px;opacity:0.8;min-width:90px;">${s.label}</span>
+            <div style="flex:1;height:7px;background:rgba(255,255,255,0.2);border-radius:4px;">
+              <div style="width:${s.v}%;height:100%;background:${c};border-radius:4px;"></div>
+            </div>
+            <span style="font-size:13px;font-weight:700;color:${c};min-width:24px;">${s.v}</span>
+          </div>`;
+        }).join('')}
+      </div>
+
+      <!-- Infos clés -->
+      <div style="background:rgba(255,255,255,0.08);border-radius:14px;padding:20px;min-width:180px;">
+        <div style="font-size:11px;opacity:0.65;font-weight:600;text-transform:uppercase;margin-bottom:14px;">Données clés</div>
+        ${[
+          {label:'Population', value: fmtN(insee?.population)},
+          {label:'Prix médian m²', value: prixM2 ? fmtN(prixM2) + ' €' : '—'},
+          {label:'Transactions DVF', value: fmtN(dvf?.nb_transactions)},
+          {label:'Transport', value: transport?.score != null ? transport.score + '/100' : '—'},
+        ].map(k => `
+          <div style="margin-bottom:8px;">
+            <div style="font-size:10px;opacity:0.6;">${k.label}</div>
+            <div style="font-size:15px;font-weight:700;">${k.value}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+  </div>
+
+  ${adjustments.length > 0 ? section(`
+    ${sectionTitle('🎯', 'Facteurs d\'ajustement — Scoring ' + meta.project_type)}
+    <p style="font-size:12px;color:#64748b;margin-bottom:14px;">${explanation}</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+      ${adjustments.map(a => `<span style="padding:6px 12px;background:${a.value>0?'#dcfce7':'#fee2e2'};border-radius:8px;font-size:12px;font-weight:600;color:${a.value>0?'#166534':'#991b1b'};">${a.label} (${a.value>0?'+':''}${a.value})</span>`).join('')}
+    </div>
+  `) : ''}
+
+  <!-- INSIGHTS -->
+  ${(positiveInsights.length > 0 || warningInsights.length > 0) ? section(`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+      ${positiveInsights.length > 0 ? `
+      <div>
+        ${sectionTitle('✅', 'Points forts (' + positiveInsights.length + ')')}
+        ${positiveInsights.map(i => insightRow(i.type, i.category, i.message)).join('')}
+      </div>` : ''}
+      ${warningInsights.length > 0 ? `
+      <div>
+        ${sectionTitle('⚠️', 'Vigilance (' + warningInsights.length + ')')}
+        ${warningInsights.map(i => insightRow(i.type, i.category, i.message)).join('')}
+      </div>` : ''}
+    </div>
+  `) : ''}
+
+  <!-- MARCHÉ DVF -->
+  ${section(`
+    ${sectionTitle('💰', 'Marché Immobilier — DVF')}
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:${dvf?.transactions?.length ? '24px' : '0'};">
+      ${kpiBox('Transactions', fmtN(dvf?.nb_transactions), '#6366f1')}
+      ${kpiBox('Prix min', fmtN(dvf?.prix_m2_min) + ' €', '#3b82f6')}
+      ${kpiBox('Prix médian', fmtN(dvf?.prix_m2_median) + ' €', '#10b981')}
+      ${kpiBox('Prix moyen', fmtN(dvf?.prix_m2_moyen) + ' €', '#8b5cf6')}
+      ${kpiBox('Prix max', fmtN(dvf?.prix_m2_max) + ' €', '#ef4444')}
+    </div>
+    ${dvf?.evolution_prix_pct != null ? `<p style="font-size:13px;color:${dvf.evolution_prix_pct >= 0 ? '#059669' : '#dc2626'};font-weight:600;margin-bottom:16px;">Évolution 1 an : ${fmtPct(dvf.evolution_prix_pct, true)}</p>` : ''}
+    ${txRows ? `
+    <table>
+      <thead><tr><th>Date</th><th>Type</th><th>Prix total</th><th>Prix/m²</th></tr></thead>
+      <tbody>${txRows}</tbody>
+    </table>` : ''}
+  `)}
+
+  <!-- DÉMOGRAPHIE + ÉCONOMIQUE -->
+  ${section(`
+    ${sectionTitle('👥', 'Démographie & Économie — INSEE · ' + (insee?.commune_nom || meta.commune_nom))}
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
+      ${kpiBox('Population', fmtN(insee?.population), '#4338ca')}
+      ${kpiBox('Densité', fmtN(insee?.densite) + ' hab/km²', '#15803d')}
+      ${kpiBox('Revenu médian', revenu != null ? fmtP(revenu) + '/an' : '—', '#10b981')}
+      ${kpiBox('Taux chômage', fmtPct(insee?.taux_chomage), (insee?.taux_chomage ?? 0) > 10 ? '#ef4444' : '#f59e0b')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
+      ${kpiBox('% Propriétaires', fmtPct(insee?.pct_proprietaires), '#3b82f6')}
+      ${kpiBox('Taux pauvreté', fmtPct(insee?.taux_pauvrete), (insee?.taux_pauvrete ?? 0) > 20 ? '#ef4444' : '#f59e0b')}
+      ${kpiBox('Ménages imposés', fmtPct(insee?.part_menages_imposes), '#6366f1')}
+      ${kpiBox('Pension retraite', insee?.pension_retraite_moyenne != null ? fmtP(insee.pension_retraite_moyenne) + '/an' : '—', '#8b5cf6')}
+    </div>
+    ${(insee?.pct_moins_15 || insee?.pct_15_29 || insee?.pct_30_44 || insee?.pct_45_59 || insee?.pct_60_74) ? `
+    <div style="margin-top:4px;">
+      <div style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:10px;">Pyramide des âges</div>
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;">
+        ${[
+          {label:'< 15 ans', v: insee?.pct_moins_15, color:'#3b82f6'},
+          {label:'15-29 ans', v: insee?.pct_15_29, color:'#06b6d4'},
+          {label:'30-44 ans', v: insee?.pct_30_44, color:'#10b981'},
+          {label:'45-59 ans', v: insee?.pct_45_59, color:'#f59e0b'},
+          {label:'60-74 ans', v: insee?.pct_60_74, color:'#f97316'},
+          {label:'75+ ans', v: insee?.pct_plus_75, color:'#ef4444'},
+        ].filter(s => s.v != null).map(s => `
+          <div style="text-align:center;background:#f8fafc;border-radius:8px;padding:10px;border-top:3px solid ${s.color};">
+            <div style="font-size:16px;font-weight:700;color:${s.color};">${fmtPct(s.v)}</div>
+            <div style="font-size:10px;color:#64748b;margin-top:2px;">${s.label}</div>
+          </div>`).join('')}
+      </div>
+    </div>` : ''}
+    ${ratio ? `<p style="margin-top:16px;font-size:13px;color:#64748b;">Ratio prix/revenu : <strong style="color:#5247b8;">~${ratio} ans de revenus pour 60 m²</strong></p>` : ''}
+  `)}
+
+  <!-- TRANSPORT -->
+  ${section(`
+    ${sectionTitle('🚇', 'Accessibilité Transport')}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+      <div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+          ${kpiBox('Score transport', transport?.score != null ? transport.score + '/100' : '—', getScoreColor(transport?.score))}
+          ${kpiBox('Arrêt le plus proche', transport?.nearest_stop_m != null ? (transport.nearest_stop_m < 1000 ? transport.nearest_stop_m + ' m' : (transport.nearest_stop_m/1000).toFixed(1) + ' km') : '—', '#6366f1')}
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${transport?.has_metro_train ? '<span style="padding:6px 12px;background:#eef2ff;color:#4338ca;border-radius:8px;font-size:12px;font-weight:600;">🚇 Métro / Train</span>' : ''}
+          ${transport?.has_tram ? '<span style="padding:6px 12px;background:#f0fdf4;color:#15803d;border-radius:8px;font-size:12px;font-weight:600;">🚊 Tramway</span>' : ''}
+          ${!transport?.has_metro_train && !transport?.has_tram ? '<span style="padding:6px 12px;background:#f1f5f9;color:#64748b;border-radius:8px;font-size:12px;">🚌 Bus uniquement</span>' : ''}
+        </div>
       </div>
       <div>
-        <div class="verdict">${verdict.label}</div>
-        <p style="margin-top: 8px; font-size: 13px;">Score global d'opportunité (scoring ${meta.project_type})</p>
+        <div style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:10px;">Arrêts les plus proches</div>
+        ${stopRows || '<p style="font-size:13px;color:#94a3b8;font-style:italic;">Non disponible</p>'}
       </div>
     </div>
-  </div>
+    ${bar(transport?.score)}
+  `)}
 
-  <div class="section">
-    <div class="section-title">📈 Sous-scores (pondérés ${meta.project_type})</div>
-    <div class="grid-4">
-      <div class="stat-box">
-        <div class="stat-label">Demande</div>
-        <div class="stat-value" style="color: ${getScoreColor(scores.demande)}">${scores.demande}</div>
+  <!-- BPE -->
+  ${section(`
+    ${sectionTitle('🏪', 'Services & Équipements — BPE')}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+      <div>
+        <div style="margin-bottom:14px;">${kpiBox('Score BPE', bpe?.score != null ? bpe.score + '/100' : '—', getScoreColor(bpe?.score))}</div>
+        ${kpiBox('Total équipements', fmtN(bpe?.total_equipements), '#1e293b')}
+        <div style="margin-top:8px;">${bar(bpe?.score)}</div>
       </div>
-      <div class="stat-box">
-        <div class="stat-label">Offre</div>
-        <div class="stat-value" style="color: ${getScoreColor(scores.offre)}">${scores.offre}</div>
+      <div>${bpeRows}</div>
+    </div>
+    ${bpe?.sante?.details?.length ? `
+    <div style="margin-top:20px;">
+      <div style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:10px;">Équipements de santé les plus proches</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+        ${bpe.sante.details.slice(0,6).map(d => `
+          <div style="padding:10px;background:#fef2f2;border-radius:8px;font-size:12px;">
+            <div style="font-weight:600;color:#991b1b;">${d.label}</div>
+            <div style="color:#64748b;margin-top:2px;">${d.distance_m < 1000 ? d.distance_m + ' m' : (d.distance_m/1000).toFixed(1) + ' km'}</div>
+          </div>`).join('')}
       </div>
-      <div class="stat-box">
-        <div class="stat-label">Accessibilité</div>
-        <div class="stat-value" style="color: ${getScoreColor(scores.accessibilite)}">${scores.accessibilite}</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-label">Environnement</div>
-        <div class="stat-value" style="color: ${getScoreColor(scores.environnement)}">${scores.environnement}</div>
-      </div>
-    </div>
+    </div>` : ''}
+  `)}
+
+  ${ehpadSection}
+
+  ${neutralInsights.length > 0 ? section(`
+    ${sectionTitle('📋', 'Informations complémentaires')}
+    ${neutralInsights.map(i => insightRow(i.type, i.category, i.message)).join('')}
+  `) : ''}
+
+  <!-- FOOTER -->
+  <div style="text-align:center;padding-top:24px;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:11px;">
+    <p>Rapport généré le ${new Date().toLocaleDateString('fr-FR', {day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p>
+    <p style="margin-top:4px;">Mimmoza · Plateforme d'analyse immobilière intelligente · Sources : DVF data.gouv.fr, INSEE, GTFS, BPE${isEhpad ? ', CNSA/FINESS' : ''}</p>
   </div>
 
-  ${adjustments.length > 0 ? `
-  <div class="section">
-    <div class="section-title">🎯 Facteurs d'ajustement</div>
-    <p style="font-size: 12px; color: #64748b; margin-bottom: 12px;">${explanation}</p>
-    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-      ${adjustments.map(adj => `
-        <span style="padding: 6px 12px; background: ${adj.value > 0 ? '#dcfce7' : '#fee2e2'}; border-radius: 6px; font-size: 12px; color: ${adj.value > 0 ? '#166634' : '#991b1b'};">
-          ${adj.label} (${adj.value > 0 ? '+' : ''}${adj.value})
-        </span>
-      `).join('')}
-    </div>
-  </div>
-  ` : ''}
-
-  <div class="section">
-    <div class="section-title">💰 Marché Immobilier (DVF)</div>
-    <div class="grid-4">
-      <div class="stat-box"><div class="stat-label">Transactions</div><div class="stat-value" style="color: #6366f1">${core.dvf?.nb_transactions ?? '—'}</div></div>
-      <div class="stat-box"><div class="stat-label">Prix médian</div><div class="stat-value" style="color: #10b981">${core.dvf?.prix_m2_median ? formatNumber(core.dvf.prix_m2_median) + ' €' : '—'}</div></div>
-      <div class="stat-box"><div class="stat-label">Prix min</div><div class="stat-value" style="color: #3b82f6">${core.dvf?.prix_m2_min ? formatNumber(core.dvf.prix_m2_min) + ' €' : '—'}</div></div>
-      <div class="stat-box"><div class="stat-label">Prix max</div><div class="stat-value" style="color: #ef4444">${core.dvf?.prix_m2_max ? formatNumber(core.dvf.prix_m2_max) + ' €' : '—'}</div></div>
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">👥 Démographie (INSEE)</div>
-    <div class="grid">
-      <div class="stat-box"><div class="stat-label">Population</div><div class="stat-value" style="color: #4338ca">${formatNumber(core.insee?.population)}</div></div>
-      <div class="stat-box"><div class="stat-label">Densité</div><div class="stat-value" style="color: #15803d">${formatNumber(core.insee?.densite)} hab/km²</div></div>
-      <div class="stat-box"><div class="stat-label">Revenu médian</div><div class="stat-value" style="color: #10b981">${core.insee?.revenu_median != null ? formatPrice(core.insee.revenu_median) : '—'}</div></div>
-      <div class="stat-box"><div class="stat-label">Taux chômage</div><div class="stat-value" style="color: #f59e0b">${formatPercent(core.insee?.taux_chomage)}</div></div>
-    </div>
-  </div>
-
-  ${positiveInsights.length > 0 ? `
-  <div class="section">
-    <div class="section-title">✅ Points forts</div>
-    ${positiveInsights.map(i => `<div class="insight insight-positive">${i.message}</div>`).join('')}
-  </div>
-  ` : ''}
-
-  ${warningInsights.length > 0 ? `
-  <div class="section">
-    <div class="section-title">⚠️ Points de vigilance</div>
-    ${warningInsights.map(i => `<div class="insight ${i.type === 'negative' ? 'insight-negative' : 'insight-warning'}">${i.message}</div>`).join('')}
-  </div>
-  ` : ''}
-
-  <div class="footer">
-    <p>Rapport généré le ${new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-    <p>Mimmoza - Plateforme d'analyse immobilière intelligente</p>
-  </div>
 </body>
-</html>
-    `;
+</html>`;
 
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-    printWindow.onload = () => {
-      setTimeout(() => { printWindow.print(); }, 250);
-    };
-  }, [data, meta, scores, adjustments, explanation, core, positiveInsights, warningInsights]);
+  printWindow.document.write(htmlContent);
+  printWindow.document.close();
+  printWindow.onload = () => { setTimeout(() => { printWindow.print(); }, 300); };
+}, [data, meta, core, specific, scores, adjustments, explanation, positiveInsights, warningInsights, neutralInsights]);
 
   return (
     <ErrorBoundary componentName="MarketStudyResults">
@@ -3238,6 +3425,26 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
         
         {/* Actions */}
         <div style={{ display: "flex", justifyContent: "center", gap: "16px", marginTop: "32px" }}>
+          <button
+            onClick={() => {
+              const { scores: s } = calculateDifferentiatedScores(data, meta.project_type);
+              patchModule("market", { ok: true, validated: true, summary: `Score: ${s.global}/100 - ${meta.commune_nom}`, data });
+              setSynthesisSaved(true);
+              setTimeout(() => setSynthesisSaved(false), 3000);
+            }}
+            style={{
+              display: "flex", alignItems: "center", gap: "8px",
+              padding: "14px 28px",
+              background: synthesisSaved
+                ? "linear-gradient(135deg, #10b981 0%, #059669 100%)"
+                : `linear-gradient(135deg, ${ACCENT_PRO} 0%, #7c6fcd 100%)`,
+              color: "white", border: "none", borderRadius: "12px",
+              fontSize: "14px", fontWeight: 600, cursor: "pointer",
+            }}
+          >
+            <Target size={18} />
+            {synthesisSaved ? "✓ Enregistré dans la synthèse" : "Utiliser pour la synthèse"}
+          </button>
           <button 
             onClick={handleGeneratePdf}
             style={{
@@ -3304,6 +3511,7 @@ export function MarchePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<MarketStudyApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [synthesisSaved, setSynthesisSaved] = useState(false);
 
   const addressTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const parcelTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -3421,6 +3629,7 @@ export function MarchePage() {
         payload.lon = lon;
       }
       if (codeInsee) payload.commune_insee = codeInsee;
+      if (parcelId && parcelId.trim().length >= 10) payload.parcel_id = parcelId.trim();
 
       log('📡', 'Payload', payload);
 
@@ -3431,15 +3640,24 @@ export function MarchePage() {
         throw new Error("Configuration Supabase manquante");
       }
       
-      const apiResponse = await fetch(`${SUPABASE_URL}/functions/v1/market-study-promoteur-v1`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-          apikey: SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify(payload),
-      });
+      const controller = new AbortController();
+      const fetchTimeout = setTimeout(() => controller.abort(), 55000);
+
+      let apiResponse: Response;
+      try {
+        apiResponse = await fetch(`${SUPABASE_URL}/functions/v1/market-study-promoteur-v1`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            apikey: SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(fetchTimeout);
+      }
 
       const result = await apiResponse.json();
 
@@ -3515,6 +3733,13 @@ export function MarchePage() {
       }, 100);
 
     } catch (err: unknown) {
+      // ── v2.9 : message explicite si timeout 55s ──
+      if (err instanceof Error && err.name === "AbortError") {
+        const errorMessage = "L'analyse a dépassé 55s. Réessayez — les données sont généralement disponibles au 2e essai.";
+        log('❌', 'Fetch timeout', errorMessage);
+        if (mountedRef.current) setError(errorMessage);
+        return;
+      }
       const errorMessage = err instanceof Error ? err.message : "Une erreur est survenue";
       log('❌', 'Submit error', errorMessage);
       if (mountedRef.current) setError(errorMessage);
@@ -3582,6 +3807,25 @@ export function MarchePage() {
             }}>
               {projectConfig.label}
             </span>
+            {analysisResult && (
+              <button
+                onClick={() => {
+                  const { scores } = calculateDifferentiatedScores(analysisResult, projectNature);
+                  patchModule("market", { ok: true, validated: true, summary: `Score: ${scores.global}/100 - ${analysisResult.meta.commune_nom}`, data: analysisResult });
+                  setSynthesisSaved(true);
+                  setTimeout(() => setSynthesisSaved(false), 3000);
+                }}
+                style={{
+                  padding: "9px 18px", borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.4)",
+                  background: synthesisSaved ? "rgba(16,185,129,0.3)" : "rgba(255,255,255,0.15)",
+                  color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 6,
+                }}
+              >
+                {synthesisSaved ? "✓ Enregistré" : "📌 Utiliser dans la synthèse"}
+              </button>
+            )}
             <button
               onClick={handleSubmit}
               disabled={isLoading}

@@ -9,6 +9,11 @@ import type {
   TravauxSimulationComputed,
 } from "../modules/execution/services/travauxSimulation.types";
 
+import {
+  setActiveDealId as setDealContextActiveDealId,
+  type DealContextMeta,
+} from "./marchandDealContext.store";
+
 export const LS_MARCHAND_SNAPSHOT_V1 = "mimmoza.marchand.snapshot.v1";
 export const MARCHAND_SNAPSHOT_EVENT = "mimmoza:marchand:snapshot";
 
@@ -338,6 +343,36 @@ function writeSnapshot(next: MarchandSnapshotV1): void {
   window.dispatchEvent(new CustomEvent(MARCHAND_SNAPSHOT_EVENT));
 }
 
+function buildDealContextMetaFromDeal(deal: MarchandDeal): DealContextMeta {
+  return {
+    title: deal.title,
+    address: deal.address,
+    zipCode: deal.zipCode,
+    city: deal.city,
+    purchasePrice: deal.prixAchat,
+    surface: deal.surfaceM2,
+    resaleTarget: deal.prixReventeCible,
+    note: deal.note,
+    stage: deal.status,
+  };
+}
+
+function syncDealContextFromSnapshot(snapshot: MarchandSnapshotV1): void {
+  const activeId = snapshot.activeDealId;
+  if (!activeId) {
+    setDealContextActiveDealId(null);
+    return;
+  }
+
+  const activeDeal = snapshot.deals.find((d) => d.id === activeId);
+  if (!activeDeal) {
+    setDealContextActiveDealId(null);
+    return;
+  }
+
+  setDealContextActiveDealId(activeId, buildDealContextMetaFromDeal(activeDeal));
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
 // ─────────────────────────────────────────────────────────────────────────────
@@ -348,10 +383,13 @@ export function readMarchandSnapshot(): MarchandSnapshotV1 {
 
 export function saveMarchandSnapshot(snapshot: MarchandSnapshotV1): void {
   writeSnapshot(snapshot);
+  syncDealContextFromSnapshot(normalizeSnapshot(snapshot));
 }
 
 export function resetMarchandSnapshot(): void {
-  writeSnapshot(defaultSnapshot());
+  const next = defaultSnapshot();
+  writeSnapshot(next);
+  syncDealContextFromSnapshot(next);
 }
 
 export function getMarchandDealById(dealId: string): MarchandDeal | null {
@@ -405,10 +443,13 @@ export function patchDeal(
     updatedAt: nowIso(),
   };
 
-  writeSnapshot({
+  const nextSnapshot = normalizeSnapshot({
     ...snap,
     deals: snap.deals.map((d) => (d.id === dealId ? nextDeal : d)),
   });
+
+  writeSnapshot(nextSnapshot);
+  syncDealContextFromSnapshot(nextSnapshot);
 }
 
 export function upsertDeal(deal: MarchandDeal): void {
@@ -447,25 +488,27 @@ export function upsertDeal(deal: MarchandDeal): void {
       ? [...snap.deals, nextDeal]
       : snap.deals.map((d) => (d.id === deal.id ? { ...d, ...nextDeal } : d));
 
-  writeSnapshot(
-    normalizeSnapshot({
-      ...snap,
-      deals: nextDeals,
-      activeDealId: snap.activeDealId ?? nextDeal.id,
-    })
-  );
+  const nextSnapshot = normalizeSnapshot({
+    ...snap,
+    deals: nextDeals,
+    activeDealId: snap.activeDealId ?? nextDeal.id,
+  });
+
+  writeSnapshot(nextSnapshot);
+  syncDealContextFromSnapshot(nextSnapshot);
 }
 
 export function setActiveDeal(dealId: string): void {
   const snap = readRaw();
   const exists = snap.deals.some((d) => d.id === dealId);
 
-  writeSnapshot(
-    normalizeSnapshot({
-      ...snap,
-      activeDealId: exists ? dealId : snap.activeDealId,
-    })
-  );
+  const nextSnapshot = normalizeSnapshot({
+    ...snap,
+    activeDealId: exists ? dealId : snap.activeDealId,
+  });
+
+  writeSnapshot(nextSnapshot);
+  syncDealContextFromSnapshot(nextSnapshot);
 }
 
 export function ensureActiveDeal(): MarchandDeal | null {
@@ -473,24 +516,31 @@ export function ensureActiveDeal(): MarchandDeal | null {
 
   if (snap.deals.length === 0) {
     if (snap.activeDealId !== null) {
-      writeSnapshot({ ...snap, activeDealId: null });
+      const nextSnapshot = normalizeSnapshot({ ...snap, activeDealId: null });
+      writeSnapshot(nextSnapshot);
+      syncDealContextFromSnapshot(nextSnapshot);
     }
     return null;
   }
 
   if (!snap.activeDealId) {
     const first = snap.deals[0];
-    writeSnapshot({ ...snap, activeDealId: first.id });
+    const nextSnapshot = normalizeSnapshot({ ...snap, activeDealId: first.id });
+    writeSnapshot(nextSnapshot);
+    syncDealContextFromSnapshot(nextSnapshot);
     return first;
   }
 
   const found = snap.deals.find((d) => d.id === snap.activeDealId);
   if (!found) {
     const first = snap.deals[0];
-    writeSnapshot({ ...snap, activeDealId: first.id });
+    const nextSnapshot = normalizeSnapshot({ ...snap, activeDealId: first.id });
+    writeSnapshot(nextSnapshot);
+    syncDealContextFromSnapshot(nextSnapshot);
     return first;
   }
 
+  syncDealContextFromSnapshot(snap);
   return found;
 }
 
@@ -519,18 +569,19 @@ export function deleteDeal(dealId: string): void {
     nextActiveDealId = nextDeals.length > 0 ? nextDeals[0].id : null;
   }
 
-  writeSnapshot(
-    normalizeSnapshot({
-      ...snap,
-      deals: nextDeals,
-      activeDealId: nextActiveDealId,
-      rentabiliteByDeal: nextRentabilite,
-      executionByDeal: nextExecution,
-      sortieByDeal: nextSortie,
-      dueDiligenceByDeal: nextDD,
-      marcheRisquesByDeal: nextMR,
-    })
-  );
+  const nextSnapshot = normalizeSnapshot({
+    ...snap,
+    deals: nextDeals,
+    activeDealId: nextActiveDealId,
+    rentabiliteByDeal: nextRentabilite,
+    executionByDeal: nextExecution,
+    sortieByDeal: nextSortie,
+    dueDiligenceByDeal: nextDD,
+    marcheRisquesByDeal: nextMR,
+  });
+
+  writeSnapshot(nextSnapshot);
+  syncDealContextFromSnapshot(nextSnapshot);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

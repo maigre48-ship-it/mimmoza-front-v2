@@ -70,7 +70,8 @@ import MarchandPipeline from "./spaces/marchand/pages/Pipeline";
 import MarchandExecution from "./spaces/marchand/pages/Execution";
 import MarchandSortie from "./spaces/marchand/pages/Sortie";
 import MarchandExports from "./spaces/marchand/pages/Exports";
-import MarchandTravaux from "./spaces/marchand/pages/Travaux";
+// ── NOUVEAU : page Rendu Travaux (remplace MarchandTravaux sur /planning) ──
+import RenduTravauxPage from "./spaces/marchand/pages/RenduTravauxPage";
 import { SourcingHomePage } from "./spaces/sourcing";
 
 import PromoteurDashboard from "./spaces/promoteur/pages/Dashboard";
@@ -84,6 +85,7 @@ import PromoteurExports from "./spaces/promoteur/pages/Exports";
 import Implantation2DPage from "./spaces/promoteur/Implantation2DPage";
 import BilanPromoteurPage from "./spaces/promoteur/bilan-promoteur/BilanPromoteurPage";
 import PromoteurStudyRequired from "./spaces/promoteur/components/PromoteurStudyRequired";
+import FacadeGeneratorPage from "./spaces/promoteur/pages/FacadeGeneratorPage";
 
 import BanqueLayout from "./spaces/banque/components/BanqueLayout";
 import BanquePipeline from "./spaces/banque/pages/Pipeline";
@@ -212,43 +214,27 @@ function AppRoot() {
           <Route path="/abonnement" element={<AbonnementPage />} />
           <Route path="/jetons" element={<JetonsPage />} />
 
-          <Route
-            path="/signup"
-            element={<Navigate to="/inscription" replace />}
-          />
-          <Route
-            path="/register"
-            element={<Navigate to="/inscription" replace />}
-          />
-          <Route
-            path="/billing"
-            element={<Navigate to="/abonnement" replace />}
-          />
-          <Route path="/account" element={<Navigate to="/compte" replace />} />
-          <Route path="/tokens" element={<Navigate to="/jetons" replace />} />
+          <Route path="/signup"    element={<Navigate to="/inscription" replace />} />
+          <Route path="/register"  element={<Navigate to="/inscription" replace />} />
+          <Route path="/billing"   element={<Navigate to="/abonnement"  replace />} />
+          <Route path="/account"   element={<Navigate to="/compte"      replace />} />
+          <Route path="/tokens"    element={<Navigate to="/jetons"      replace />} />
 
           {/* ═══ Paramètres ═══ */}
-          <Route
-            path="/parametres/veille"
-            element={<VeilleSettingsPage />}
-          />
+          <Route path="/parametres/veille" element={<VeilleSettingsPage />} />
 
           {/* ═══ Veille ═══ */}
-          <Route path="/veille" element={<VeillePage />} />
+          <Route path="/veille"        element={<VeillePage />} />
           <Route path="/veille/marche" element={<VeilleMarchePage />} />
 
           {/* ═══ API ═══ */}
-          <Route path="/api" element={<ApiPage />} />
-          <Route path="/api/keys" element={<ApiKeysPage />} />
-          <Route path="/api/playground" element={<ApiPlaygroundPage />} />
-          <Route
-            path="/api/developer"
-            element={<ApiDeveloperDashboardPage />}
-          />
+          <Route path="/api"              element={<ApiPage />} />
+          <Route path="/api/keys"         element={<ApiKeysPage />} />
+          <Route path="/api/playground"   element={<ApiPlaygroundPage />} />
+          <Route path="/api/developer"    element={<ApiDeveloperDashboardPage />} />
 
           {/* ═══ Admin ═══ */}
           <Route path="/admin/login" element={<AdminLoginPage />} />
-
           <Route
             path="/admin"
             element={
@@ -257,113 +243,87 @@ function AppRoot() {
               </AdminGuard>
             }
           >
-            <Route index element={<AdminDashboardPage />} />
-            <Route path="utilisateurs" element={<AdminUtilisateursPage />} />
-            <Route path="abonnements" element={<AdminAbonnementsPage />} />
-            <Route path="jetons" element={<AdminJetonsPage />} />
-            <Route path="devis" element={<AdminDevisPage />} />
-            <Route path="factures" element={<AdminFacturesPage />} />
-            <Route path="entreprises" element={<AdminEntreprisesPage />} />
-            <Route path="parametres" element={<AdminParametresPage />} />
+            <Route index                    element={<AdminDashboardPage />} />
+            <Route path="utilisateurs"      element={<AdminUtilisateursPage />} />
+            <Route path="abonnements"       element={<AdminAbonnementsPage />} />
+            <Route path="jetons"            element={<AdminJetonsPage />} />
+            <Route path="devis"             element={<AdminDevisPage />} />
+            <Route path="factures"          element={<AdminFacturesPage />} />
+            <Route path="entreprises"       element={<AdminEntreprisesPage />} />
+            <Route path="parametres"        element={<AdminParametresPage />} />
           </Route>
 
           {/* ═══ Particulier ═══ */}
           <Route path="/particulier" element={<Outlet />}>
-            <Route index element={<ParticulierDashboard />} />
-            <Route path="projet" element={<ParticulierMonProjet />} />
-            <Route path="favoris" element={<ParticulierFavoris />} />
-            <Route path="recherche" element={<ParticulierRechercheBiens />} />
-            <Route path="alertes" element={<ParticulierAlertes />} />
-            <Route path="comparateur" element={<ParticulierComparateur />} />
-            <Route path="estimation" element={<ParticulierEstimation />} />
-            <Route
-              path="evaluation"
-              element={<Navigate to="/particulier/estimation" replace />}
-            />
-            <Route path="quartier" element={<ParticulierQuartier />} />
-            <Route path="charges" element={<ParticulierCharges />} />
-            <Route path="financement" element={<ParticulierCapacite />} />
-            <Route path="scenarios" element={<ParticulierScenarios />} />
-            <Route path="dossier" element={<ParticulierDossierBanque />} />
-            <Route path="travaux" element={<ParticulierBudgetTravaux />} />
-            <Route path="conformite" element={<ParticulierConformite />} />
-            <Route path="planning" element={<ParticulierPlanning />} />
-            <Route path="documents" element={<ParticulierMesDocuments />} />
-            <Route path="exports" element={<ParticulierExports />} />
-            <Route path="historique" element={<ParticulierHistorique />} />
-            <Route path="*" element={<Navigate to="/particulier" replace />} />
+            <Route index                    element={<ParticulierDashboard />} />
+            <Route path="projet"            element={<ParticulierMonProjet />} />
+            <Route path="favoris"           element={<ParticulierFavoris />} />
+            <Route path="recherche"         element={<ParticulierRechercheBiens />} />
+            <Route path="alertes"           element={<ParticulierAlertes />} />
+            <Route path="comparateur"       element={<ParticulierComparateur />} />
+            <Route path="estimation"        element={<ParticulierEstimation />} />
+            <Route path="evaluation"        element={<Navigate to="/particulier/estimation" replace />} />
+            <Route path="quartier"          element={<ParticulierQuartier />} />
+            <Route path="charges"           element={<ParticulierCharges />} />
+            <Route path="financement"       element={<ParticulierCapacite />} />
+            <Route path="scenarios"         element={<ParticulierScenarios />} />
+            <Route path="dossier"           element={<ParticulierDossierBanque />} />
+            <Route path="travaux"           element={<ParticulierBudgetTravaux />} />
+            <Route path="conformite"        element={<ParticulierConformite />} />
+            <Route path="planning"          element={<ParticulierPlanning />} />
+            <Route path="documents"         element={<ParticulierMesDocuments />} />
+            <Route path="exports"           element={<ParticulierExports />} />
+            <Route path="historique"        element={<ParticulierHistorique />} />
+            <Route path="*"                 element={<Navigate to="/particulier" replace />} />
           </Route>
 
           {/* ═══ Marchand-de-bien ═══ */}
           <Route path="/marchand-de-bien" element={<MarchandLayout />}>
             <Route index element={<MarchandPipeline />} />
-            <Route path="sourcing" element={<SourcingHomePage />} />
-            <Route
-              path="qualification"
-              element={<Navigate to="/marchand-de-bien" replace />}
-            />
-            <Route path="analyse" element={<InvestisseurAnalysePage />} />
+            <Route path="sourcing"         element={<SourcingHomePage />} />
+            <Route path="qualification"    element={<Navigate to="/marchand-de-bien" replace />} />
+            <Route path="analyse"          element={<InvestisseurAnalysePage />} />
             <Route
               path="rentabilite"
-              element={
-                <Navigate
-                  to="/marchand-de-bien/analyse?tab=rentabilite"
-                  replace
-                />
-              }
+              element={<Navigate to="/marchand-de-bien/analyse?tab=rentabilite" replace />}
             />
             <Route
               path="due-diligence"
-              element={
-                <Navigate
-                  to="/marchand-de-bien/analyse?tab=due-diligence"
-                  replace
-                />
-              }
+              element={<Navigate to="/marchand-de-bien/analyse?tab=due-diligence" replace />}
             />
-            <Route
-              path="execution/simulation"
-              element={<SimulationTravauxPage />}
-            />
-            <Route path="execution" element={<MarchandExecution />} />
-            <Route path="planning" element={<MarchandTravaux />} />
-            <Route path="sortie" element={<MarchandSortie />} />
-            <Route path="exports" element={<MarchandExports />} />
+            <Route path="execution/simulation" element={<SimulationTravauxPage />} />
+            <Route path="execution"            element={<MarchandExecution />} />
+
+            {/* ── Rendu Travaux (ex-Planning) ── */}
+            <Route path="planning" element={<RenduTravauxPage />} />
+
+            <Route path="sortie"     element={<MarchandSortie />} />
+            <Route path="exports"    element={<MarchandExports />} />
             <Route path="estimation" element={<ParticulierEstimation />} />
-            <Route path="marche" element={<MarchePage />} />
-            <Route path="risques" element={<RisquesPage />} />
-            <Route
-              path="*"
-              element={<Navigate to="/marchand-de-bien" replace />}
-            />
+            <Route path="marche"     element={<MarchePage />} />
+            <Route path="risques"    element={<RisquesPage />} />
+            <Route path="*"          element={<Navigate to="/marchand-de-bien" replace />} />
           </Route>
 
           {/* ═══ Promoteur ═══ */}
           <Route path="/promoteur" element={<Outlet />}>
             <Route index element={<PromoteurDashboard />} />
-            <Route path="foncier" element={<FoncierPluPage />} />
-            <Route
-              path="plu-faisabilite"
-              element={<Navigate to="/promoteur/foncier" replace />}
-            />
-            <Route
-              path="faisabilite"
-              element={<Navigate to="/promoteur/foncier" replace />}
-            />
-            <Route path="marche" element={<MarchePage />} />
-            <Route path="risques" element={<RisquesPage />} />
+            <Route path="foncier"       element={<FoncierPluPage />} />
+            <Route path="plu-faisabilite" element={<Navigate to="/promoteur/foncier" replace />} />
+            <Route path="faisabilite"   element={<Navigate to="/promoteur/foncier" replace />} />
+            <Route path="marche"        element={<MarchePage />} />
+            <Route path="risques"       element={<RisquesPage />} />
 
             <Route element={<PromoteurStudyRequired />}>
-              <Route path="estimation" element={<ParticulierEstimation />} />
-              <Route path="implantation-2d" element={<Implantation2DPage />} />
-              <Route path="massing-3d" element={<PromoteurMassing3D />} />
-              <Route path="bilan" element={<PromoteurBilan />} />
-              <Route
-                path="bilan-promoteur"
-                element={<BilanPromoteurPage />}
-              />
-              <Route path="synthese" element={<PromoteurSynthese />} />
-              <Route path="exports" element={<PromoteurExports />} />
+              <Route path="estimation"         element={<ParticulierEstimation />} />
+              <Route path="implantation-2d"    element={<Implantation2DPage />} />
+              <Route path="plan-2d"            element={<Navigate to="/promoteur/implantation-2d" replace />} />
+              <Route path="massing-3d"         element={<PromoteurMassing3D />} />
+              <Route path="generateur-facades" element={<FacadeGeneratorPage />} />
+              <Route path="bilan"              element={<PromoteurBilan />} />
+              <Route path="bilan-promoteur"    element={<BilanPromoteurPage />} />
+              <Route path="synthese"           element={<PromoteurSynthese />} />
+              <Route path="exports"            element={<PromoteurExports />} />
             </Route>
 
             <Route path="*" element={<Navigate to="/promoteur" replace />} />
@@ -372,111 +332,58 @@ function AppRoot() {
           {/* ═══ Banque / Assurance ═══ */}
           <Route path="/banque" element={<BanqueLayout />}>
             <Route index element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="dossiers" element={<BanquePipeline />} />
-            <Route path="dossier/:id" element={<BanqueDossierPage />} />
-            <Route path="analyse/:id" element={<BanqueAnalysePage />} />
-            <Route path="comite/:id" element={<BanqueComitePage />} />
-            <Route path="alertes" element={<BanqueAlertes />} />
-            <Route
-              path="smartscore-debug"
-              element={<BanqueSmartScoreDebug />}
-            />
-            <Route path="risques-test" element={<BanqueRisquesTestPage />} />
-            <Route path="estimation" element={<ParticulierEstimation />} />
-            <Route path="marche" element={<MarchePage />} />
-            <Route path="outil-risques/:id" element={<RisquesPage />} />
+            <Route path="dossiers"           element={<BanquePipeline />} />
+            <Route path="dossier/:id"        element={<BanqueDossierPage />} />
+            <Route path="analyse/:id"        element={<BanqueAnalysePage />} />
+            <Route path="comite/:id"         element={<BanqueComitePage />} />
+            <Route path="alertes"            element={<BanqueAlertes />} />
+            <Route path="smartscore-debug"   element={<BanqueSmartScoreDebug />} />
+            <Route path="risques-test"       element={<BanqueRisquesTestPage />} />
+            <Route path="estimation"         element={<ParticulierEstimation />} />
+            <Route path="marche"             element={<MarchePage />} />
+            <Route path="outil-risques/:id"  element={<RisquesPage />} />
 
             <Route path="assurance" element={<Outlet />}>
-              <Route index element={<AssuranceDashboard />} />
-              <Route
-                path="souscription"
-                element={<AssuranceSouscription />}
-              />
-              <Route path="exposition" element={<AssuranceExposition />} />
-              <Route path="tarification" element={<AssuranceTarification />} />
-              <Route path="offre" element={<AssuranceOffre />} />
-              <Route path="monitoring" element={<AssuranceMonitoring />} />
-              <Route path="documents" element={<AssuranceDocuments />} />
-              <Route path="estimation" element={<ParticulierEstimation />} />
-              <Route path="marche" element={<MarchePage />} />
-              <Route path="risques" element={<RisquesPage />} />
-              <Route
-                path="*"
-                element={<Navigate to="/banque/assurance" replace />}
-              />
+              <Route index                   element={<AssuranceDashboard />} />
+              <Route path="souscription"     element={<AssuranceSouscription />} />
+              <Route path="exposition"       element={<AssuranceExposition />} />
+              <Route path="tarification"     element={<AssuranceTarification />} />
+              <Route path="offre"            element={<AssuranceOffre />} />
+              <Route path="monitoring"       element={<AssuranceMonitoring />} />
+              <Route path="documents"        element={<AssuranceDocuments />} />
+              <Route path="estimation"       element={<ParticulierEstimation />} />
+              <Route path="marche"           element={<MarchePage />} />
+              <Route path="risques"          element={<RisquesPage />} />
+              <Route path="*"                element={<Navigate to="/banque/assurance" replace />} />
             </Route>
 
-            <Route path="garanties/:id" element={<BanqueRedirectToDossier />} />
-            <Route path="documents/:id" element={<BanqueRedirectToDossier />} />
-            <Route path="decision/:id" element={<BanqueRedirectToComite />} />
+            <Route path="garanties/:id"  element={<BanqueRedirectToDossier />} />
+            <Route path="documents/:id"  element={<BanqueRedirectToDossier />} />
+            <Route path="decision/:id"   element={<BanqueRedirectToComite />} />
             <Route path="smartscore/:id" element={<BanqueRedirectToAnalyse />} />
-            <Route path="risque/:id" element={<BanqueRedirectToAnalyse />} />
-            <Route path="risques/:id" element={<BanqueRedirectToAnalyse />} />
-            <Route
-              path="origination"
-              element={<Navigate to="/banque/dossiers" replace />}
-            />
-            <Route
-              path="monitoring"
-              element={<Navigate to="/banque/alertes" replace />}
-            />
-            <Route
-              path="pipeline"
-              element={<Navigate to="/banque/dossiers" replace />}
-            />
-            <Route
-              path="garanties"
-              element={<Navigate to="/banque/dossiers" replace />}
-            />
-            <Route
-              path="documents"
-              element={<Navigate to="/banque/dossiers" replace />}
-            />
-            <Route
-              path="decision"
-              element={<Navigate to="/banque/dossiers" replace />}
-            />
-            <Route
-              path="comite"
-              element={<Navigate to="/banque/dossiers" replace />}
-            />
-            <Route
-              path="analyse"
-              element={<Navigate to="/banque/dossiers" replace />}
-            />
-            <Route
-              path="risque"
-              element={<Navigate to="/banque/dossiers" replace />}
-            />
-            <Route
-              path="risques"
-              element={<Navigate to="/banque/dossiers" replace />}
-            />
-            <Route
-              path="dossier"
-              element={<Navigate to="/banque/dossiers" replace />}
-            />
-            <Route
-              path="*"
-              element={<Navigate to="/banque/dossiers" replace />}
-            />
+            <Route path="risque/:id"     element={<BanqueRedirectToAnalyse />} />
+            <Route path="risques/:id"    element={<BanqueRedirectToAnalyse />} />
+
+            <Route path="origination" element={<Navigate to="/banque/dossiers" replace />} />
+            <Route path="monitoring"  element={<Navigate to="/banque/alertes"  replace />} />
+            <Route path="pipeline"    element={<Navigate to="/banque/dossiers" replace />} />
+            <Route path="garanties"   element={<Navigate to="/banque/dossiers" replace />} />
+            <Route path="documents"   element={<Navigate to="/banque/dossiers" replace />} />
+            <Route path="decision"    element={<Navigate to="/banque/dossiers" replace />} />
+            <Route path="comite"      element={<Navigate to="/banque/dossiers" replace />} />
+            <Route path="analyse"     element={<Navigate to="/banque/dossiers" replace />} />
+            <Route path="risque"      element={<Navigate to="/banque/dossiers" replace />} />
+            <Route path="risques"     element={<Navigate to="/banque/dossiers" replace />} />
+            <Route path="dossier"     element={<Navigate to="/banque/dossiers" replace />} />
+            <Route path="*"           element={<Navigate to="/banque/dossiers" replace />} />
           </Route>
 
           {/* ═══ Compatibility redirects ═══ */}
-          <Route
-            path="/assurance/*"
-            element={<Navigate to="/banque/assurance" replace />}
-          />
-          <Route path="/audit/*" element={<Navigate to="/" replace />} />
-          <Route
-            path="/agence"
-            element={<Navigate to="/particulier" replace />}
-          />
-          <Route
-            path="/marchand"
-            element={<Navigate to="/marchand-de-bien" replace />}
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="/assurance/*" element={<Navigate to="/banque/assurance" replace />} />
+          <Route path="/audit/*"     element={<Navigate to="/"                 replace />} />
+          <Route path="/agence"      element={<Navigate to="/particulier"      replace />} />
+          <Route path="/marchand"    element={<Navigate to="/marchand-de-bien" replace />} />
+          <Route path="*"            element={<Navigate to="/"                 replace />} />
         </Routes>
       </AppShell>
     </>

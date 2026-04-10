@@ -99,7 +99,7 @@ function buildOpportunityNote(p: PendingOpportunityDeal): string {
 }
 
 function mapOpportunityToDeal(p: PendingOpportunityDeal): Deal {
-  const id = `D-${Math.floor(Math.random() * 900 + 100)}`;
+  const id = `D-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   return {
     id,
     title: p.title,
@@ -157,13 +157,13 @@ function syncDealContext(deal: Deal): void {
 }
 
 function makeNewDeal(): Deal {
-  const id = `D-${Math.floor(Math.random() * 900 + 100)}`;
+  const id = `D-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   return {
     id,
-    title: `Nouveau deal ${id}`,
+    title: `Nouveau deal`,
     address: "",
     zipCode: "",
-    city: "—",
+    city: "",
     country: "FR",
     prixAchat: undefined,
     surfaceM2: undefined,
@@ -176,7 +176,7 @@ function makeNewDeal(): Deal {
 }
 
 /* ────────────────────────────────────────────
-   Drawer
+   Drawer — redessiné v2
    ──────────────────────────────────────────── */
 
 function Drawer({
@@ -198,7 +198,8 @@ function Drawer({
         position: "fixed",
         inset: 0,
         zIndex: 60,
-        background: "rgba(2,6,23,0.35)",
+        background: "rgba(2,6,23,0.45)",
+        backdropFilter: "blur(2px)",
         display: "flex",
         justifyContent: "flex-end",
       }}
@@ -206,44 +207,111 @@ function Drawer({
     >
       <div
         style={{
-          width: 460,
+          width: 480,
           maxWidth: "92vw",
           height: "100%",
-          background: "white",
+          background: "#f8fafc",
           borderLeft: "1px solid rgba(15,23,42,0.10)",
-          padding: 16,
-          overflow: "auto",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          boxShadow: "-8px 0 40px rgba(2,6,23,0.15)",
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
+        {/* ── Header dégradé ── */}
         <div
           style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 10,
+            background: GRAD_INV,
+            padding: "22px 24px 20px",
+            flexShrink: 0,
           }}
         >
-          <div style={{ fontWeight: 950, fontSize: 16, color: "#0f172a" }}>
+          <div
+            style={{
+              fontSize: 10,
+              color: "rgba(255,255,255,0.6)",
+              letterSpacing: 1.5,
+              textTransform: "uppercase",
+              marginBottom: 6,
+            }}
+          >
+            Investisseur › Pipeline
+          </div>
+          <div
+            style={{
+              fontSize: 17,
+              fontWeight: 800,
+              color: "#fff",
+              marginBottom: 16,
+              lineHeight: 1.25,
+              opacity: 0.95,
+            }}
+          >
             {title}
           </div>
+
+          {/* Bouton Enregistrer — action principale */}
           <button
             type="button"
             onClick={onClose}
             style={{
-              border: "1px solid rgba(15,23,42,0.10)",
-              background: "rgba(15,23,42,0.04)",
+              width: "100%",
+              padding: "12px 0",
               borderRadius: 10,
-              padding: "8px 10px",
+              border: "none",
+              background: "#fff",
+              color: ACCENT_INV,
+              fontWeight: 800,
+              fontSize: 14,
               cursor: "pointer",
-              fontWeight: 900,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              boxShadow: "0 2px 16px rgba(0,0,0,0.14)",
+              transition: "transform 0.12s ease, box-shadow 0.12s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = "translateY(-1px)";
+              e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.18)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "translateY(0)";
+              e.currentTarget.style.boxShadow = "0 2px 16px rgba(0,0,0,0.14)";
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = "translateY(0) scale(0.98)";
             }}
           >
-            Fermer
+            {/* Icône check */}
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+              <path
+                d="M2.5 7.5L5.5 10.5L12.5 4"
+                stroke={ACCENT_INV}
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Enregistrer le deal
           </button>
         </div>
-        <div style={{ height: 12 }} />
-        {children}
+
+        {/* ── Séparateur visuel ── */}
+        <div
+          style={{
+            height: 3,
+            background: "linear-gradient(90deg, #2196f3 0%, #21cbf3 60%, transparent 100%)",
+            opacity: 0.15,
+            flexShrink: 0,
+          }}
+        />
+
+        {/* ── Corps scrollable ── */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "24px 24px 40px" }}>
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -290,6 +358,7 @@ function Field({
           fontWeight: 800,
           color: "#0f172a",
           outline: "none",
+          boxSizing: "border-box",
         }}
       />
       {hint && (
@@ -479,14 +548,20 @@ export default function MarchandPipeline() {
     if (deal) syncDealContext(deal);
   }, [activeDealId, deals]);
 
+  const activeDealIdRef = useRef(activeDealId);
+  activeDealIdRef.current = activeDealId;
+
   useEffect(() => {
     const unsub = subscribeDealContext((ctx) => {
-      if (ctx.activeDealId && ctx.activeDealId !== activeDealId) {
-        setActiveDeal(ctx.activeDealId);
+      if (
+        ctx.activeDealId &&
+        ctx.activeDealId !== activeDealIdRef.current
+      ) {
+        // Lecture seule : on laisse le snapTick re-render gérer la synchro.
       }
     });
     return unsub;
-  }, [activeDealId]);
+  }, []);
 
   const totalDeals = deals.length;
   const inProgress = deals.filter((d) => d.status !== "Vendu").length;
@@ -656,7 +731,7 @@ export default function MarchandPipeline() {
                   minHeight: 220,
                 }}
               >
-                {/* En-tête colonne — dégradé */}
+                {/* En-tête colonne */}
                 <div
                   style={{
                     background: GRAD_INV,
@@ -691,14 +766,15 @@ export default function MarchandPipeline() {
                       justifyContent: "center",
                       fontSize: 11,
                       fontWeight: 700,
-                      color: colDeals.length > 0 ? "white" : "rgba(255,255,255,0.6)",
+                      color:
+                        colDeals.length > 0 ? "white" : "rgba(255,255,255,0.6)",
                     }}
                   >
                     {colDeals.length}
                   </div>
                 </div>
 
-                {/* Corps colonne — blanc */}
+                {/* Corps colonne */}
                 <div
                   style={{
                     background: "white",
@@ -892,7 +968,7 @@ export default function MarchandPipeline() {
             Aucun deal sélectionné.
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <Field
               label="Titre"
               value={draftDeal.title}
@@ -987,9 +1063,19 @@ export default function MarchandPipeline() {
               placeholder="Remarques, contact, points à vérifier..."
             />
 
-            <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
-              Astuce : ces champs alimenteront Sourcing/Qualification.
-              Rentabilité/Exécution/Sortie restent par module.
+            <div
+              style={{
+                marginTop: 4,
+                padding: "12px 14px",
+                borderRadius: 10,
+                background: "rgba(33,150,243,0.06)",
+                border: "1px solid rgba(33,150,243,0.12)",
+                fontSize: 12,
+                color: "#64748b",
+                lineHeight: 1.6,
+              }}
+            >
+              💡 Ces champs alimentent automatiquement SmartScore, Rentabilité et les autres pages Investisseur.
             </div>
           </div>
         )}

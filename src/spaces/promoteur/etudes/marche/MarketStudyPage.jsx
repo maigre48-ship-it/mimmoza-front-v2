@@ -568,7 +568,7 @@ const PyramideAges = ({ data }) => {
 // ============================================================================
 // COMPONENTS - Sections
 // ============================================================================
-const HeaderSection = ({ data, status, onRefresh, onExportJSON, onExportCSV }) => {
+const HeaderSection = ({ data, status, onRefresh, onExportJSON, onExportCSV, savedForSynthesis, onSaveForSynthesis }) => {
   const location = data?.input?.resolved_point;
   const zoneType = data?.zone_type;
   
@@ -629,6 +629,21 @@ const HeaderSection = ({ data, status, onRefresh, onExportJSON, onExportCSV }) =
             >
               <FileSpreadsheet className="w-4 h-4" />
               CSV
+            </button>
+
+            <button
+              onClick={onSaveForSynthesis}
+              disabled={status === ANALYSIS_STATUS.IDLE || status === ANALYSIS_STATUS.LOADING || status === ANALYSIS_STATUS.ERROR}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-white text-sm font-medium transition-all disabled:opacity-50 ${
+                savedForSynthesis
+                  ? 'bg-teal-500 hover:bg-teal-400'
+                  : 'bg-violet-600 hover:bg-violet-500'
+              }`}
+            >
+              {savedForSynthesis
+                ? <><CheckCircle className="w-4 h-4" />Enregistré ✓</>
+                : <><Target className="w-4 h-4" />Utiliser pour la synthèse</>
+              }
             </button>
           </div>
         </div>
@@ -1575,17 +1590,23 @@ const MarketStudyPage = ({
   const [data, setData] = useState(null);
   const [status, setStatus] = useState(ANALYSIS_STATUS.IDLE);
   const [error, setError] = useState(null);
+  const [savedForSynthesis, setSavedForSynthesis] = useState(false);
   
   const fetchAnalysis = async () => {
     setStatus(ANALYSIS_STATUS.LOADING);
     setError(null);
     
     try {
+      // Si parcelle fournie sans coordonnées, extraire le code INSEE depuis les 5 premiers chiffres
+      const inseeFromParcel = (!params.commune_insee && params.parcel_id?.length >= 5)
+        ? params.parcel_id.substring(0, 5)
+        : undefined;
+
       const payload = {
         mode: 'market_study',
-        lat: params.lat,
-        lon: params.lon,
-        commune_insee: params.commune_insee || undefined,
+        lat: params.lat || undefined,
+        lon: params.lon || undefined,
+        commune_insee: params.commune_insee || inseeFromParcel || undefined,
         parcel_id: params.parcel_id || undefined,
         radius_km: params.radius_km,
         horizon_months: params.horizon_months,
@@ -1611,11 +1632,19 @@ const MarketStudyPage = ({
         headers['apikey'] = supabaseKey;
       }
       
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 55000);
+      let response;
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       
       const result = await response.json();
       
@@ -1654,7 +1683,11 @@ const MarketStudyPage = ({
       
     } catch (err) {
       console.error('Analysis error:', err);
-      setError(err.message);
+      if (err.name === 'AbortError') {
+        setError("L'analyse a dépassé 55s. Réessayez — les données sont disponibles au 2e essai.");
+      } else {
+        setError(err.message);
+      }
       setStatus(ANALYSIS_STATUS.ERROR);
     }
   };
@@ -1704,6 +1737,21 @@ const MarketStudyPage = ({
           onRefresh={fetchAnalysis}
           onExportJSON={handleExportJSON}
           onExportCSV={handleExportCSV}
+          savedForSynthesis={savedForSynthesis}
+          onSaveForSynthesis={() => {
+            if (!data) return;
+            const market = data.market;
+            // Stocke dans localStorage pour que SynthesePage puisse le récupérer
+            localStorage.setItem('synthesis_market_study', JSON.stringify({
+              validated: true,
+              timestamp: new Date().toISOString(),
+              score: market?.score,
+              commune: data.input?.commune_insee,
+              data: data,
+            }));
+            setSavedForSynthesis(true);
+            setTimeout(() => setSavedForSynthesis(false), 3000);
+          }}
         />
         
         {/* Paramètres */}

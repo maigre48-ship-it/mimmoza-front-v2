@@ -1,5 +1,9 @@
 // src/spaces/promoteur/pages/FoncierPluPage.tsx
-// VERSION 8.0.0
+// VERSION 8.1.0
+//   - FIX CRITIQUE : écriture dans mimmoza.promoteur.foncier.selected_v1 /
+//     focus_v1 / commune_v1 à chaque validation ET à l'hydratation Supabase.
+//     Ces clés sont les seules lues par useFoncierSelection (source de vérité
+//     pour Implantation2DPage). Sans ça la sélection ne se restaurait jamais.
 //   - Migration vers usePromoteurStudy + PromoteurStudyService
 //   - Hydratation depuis study.foncier / study.plu (JSONB)
 //   - Plus de dépendance aux colonnes plates pour la lecture
@@ -31,6 +35,12 @@ const PLU_PARSER_API_KEY = import.meta.env.VITE_PLU_PARSER_API_KEY || "";
 const GRAD_PRO = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
 const ACCENT_PRO = "#5247b8";
 
+// ── Clés localStorage partagées avec useFoncierSelection ──────────────────────
+// IMPORTANT : ces clés DOIVENT être identiques à celles de useFoncierSelection.ts
+const LS_FONCIER_SELECTED = "mimmoza.promoteur.foncier.selected_v1";
+const LS_FONCIER_FOCUS    = "mimmoza.promoteur.foncier.focus_v1";
+const LS_FONCIER_COMMUNE  = "mimmoza.promoteur.foncier.commune_v1";
+
 // ─── Types locaux ─────────────────────────────────────────────────────────────
 interface SelectedParcel { id: string; feature?: any; area_m2?: number | null; }
 interface PluData { zone_code?: string; zone_libelle?: string; ruleset?: any; raw?: any; found?: boolean; }
@@ -42,6 +52,9 @@ const DEFAULT_ZOOM = 17;
 const IGN_LIMIT = 500;
 const IGN_TIMEOUT_MS = 60000;
 const FETCH_RADIUS_KM = 0.5;
+
+// Taille max pour stocker une feature GeoJSON en localStorage (50 KB)
+const MAX_FEATURE_LS_BYTES = 50_000;
 
 const styles = {
   container: { padding: "24px", maxWidth: "1400px", margin: "0 auto", fontFamily: "'Inter', -apple-system, sans-serif", position: "relative" as const, zIndex: 1 } as React.CSSProperties,
@@ -162,6 +175,57 @@ function legacyRulesetToResolved(plu: PluData): object | null {
     cos: { max: rs.densite?.cos_max ?? null, note: rs.densite?.note ?? null },
     completeness: { ok: true, missing: [] },
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// persistFoncierSelectionForRestore
+//
+// Écrit la sélection foncière dans les clés lues par useFoncierSelection,
+// ce qui permet à usePromoteurParcelRestore (Implantation2DPage) de restaurer
+// automatiquement les parcelles.
+//
+// ⚠️ Les features GeoJSON sont tronquées à MAX_FEATURE_LS_BYTES pour éviter
+//    de saturer localStorage avec des géométries massives.
+// ─────────────────────────────────────────────────────────────────────────────
+function persistFoncierSelectionForRestore(
+  parcels: SelectedParcel[],
+  focusId: string,
+  commune: string
+): void {
+  try {
+    // Sérialiser les features en limitant leur taille
+    const serializable = parcels.map(p => {
+      let featureToStore: any = null;
+      if (p.feature) {
+        const serialized = JSON.stringify(p.feature);
+        featureToStore = serialized.length <= MAX_FEATURE_LS_BYTES ? p.feature : null;
+        if (serialized.length > MAX_FEATURE_LS_BYTES) {
+          console.debug(
+            `[FoncierPluPage] Feature ${p.id} trop grande pour localStorage` +
+            ` (${serialized.length} bytes) — stockée sans géométrie`
+          );
+        }
+      }
+      return {
+        id: p.id,
+        area_m2: p.area_m2 ?? null,
+        commune_insee: commune,
+        feature: featureToStore,
+      };
+    });
+
+    localStorage.setItem(LS_FONCIER_SELECTED, JSON.stringify(serializable));
+    localStorage.setItem(LS_FONCIER_FOCUS,    focusId);
+    localStorage.setItem(LS_FONCIER_COMMUNE,  commune);
+
+    console.debug(
+      `[FoncierPluPage] persistFoncierSelectionForRestore → ${serializable.length} parcelle(s),` +
+      ` focus=${focusId}, commune=${commune},` +
+      ` features=${serializable.filter(p => p.feature).length}`
+    );
+  } catch (err) {
+    console.warn("[FoncierPluPage] persistFoncierSelectionForRestore failed:", err);
+  }
 }
 
 // ─── Canvas + styles carte ────────────────────────────────────────────────────
@@ -404,10 +468,8 @@ type FieldMap = { hauteur_max: FieldValue; hauteur_faitage: FieldValue; ces_max:
 const EMPTY_FIELDS: FieldMap = { hauteur_max: { value: null, unit: "m" }, hauteur_faitage: { value: null, unit: "m" }, ces_max: { value: null, unit: "%" }, recul_voie: { value: null, unit: "m" }, recul_limites: { value: null, unit: "m" }, stationnement: { value: null, unit: "pl/logt" }, pleine_terre: { value: null, unit: "%" }, cos: { value: null, unit: "" } };
 
 function resolveRulesetSource(pluData: PluData | null): { rs: any; format: "resolved_v1" | "plu_ruleset_v2" | "legacy" } | null {
-  // Priorité : ruleset déjà dans pluData (vient de Supabase)
   const rs = pluData?.ruleset;
   if (!rs) {
-    // Fallback : localStorage (cache secondaire)
     try {
       const raw = localStorage.getItem("mimmoza.plu.resolved_ruleset_v1");
       if (raw) { const parsed = JSON.parse(raw); if (parsed?.version === "plu_ruleset_v1") return { rs: parsed, format: "resolved_v1" }; }
@@ -682,7 +744,6 @@ export function FoncierPluPage() {
 
     // ── Foncier ──────────────────────────────────────────────────────────────
     if (f?.commune_insee) {
-      // Priorité : parcels_raw (avec géométries), fallback : parcel_ids seuls
       const parcels: SelectedParcel[] = (f.parcels_raw ?? []).length > 0
         ? f.parcels_raw.map(r => ({
             id:      r.id,
@@ -705,14 +766,23 @@ export function FoncierPluPage() {
         setIsValidated(f.done);
         setSearchDone(true);
 
-        // Cache session secondaire (pages aval non encore migrées)
         const focusId = f.focus_id || parcels[0]?.id;
+
+        // ── FIX CRITIQUE : écriture dans les clés lues par useFoncierSelection ──
+        // Implantation2DPage (via usePromoteurParcelRestore → useFoncierSelection)
+        // lit exclusivement LS_FONCIER_SELECTED / FOCUS / COMMUNE.
+        // Sans cette écriture, Implantation2DPage affiche toujours "Aucune parcelle".
+        if (focusId) {
+          persistFoncierSelectionForRestore(parcels, focusId, f.commune_insee);
+        }
+
+        // Cache session secondaire (pages aval non encore migrées)
         if (focusId) localStorage.setItem("mimmoza.session.parcel_id", focusId);
         localStorage.setItem("mimmoza.session.parcel_ids",    JSON.stringify(f.parcel_ids ?? []));
         localStorage.setItem("mimmoza.session.commune_insee", f.commune_insee);
         if (f.surface_m2) localStorage.setItem("mimmoza.session.surface_m2", String(f.surface_m2));
 
-        // Compat store éphémère (à retirer quand toutes les pages migrées)
+        // Compat store éphémère
         patchModule("foncier", {
           parcelId:     focusId,
           parcelIds:    f.parcel_ids,
@@ -722,22 +792,20 @@ export function FoncierPluPage() {
 
         // Centrer la carte
         const firstParcel = parcels[0];
-if (firstParcel?.feature) {
-  // Priorité : centrer sur la géométrie de la parcelle stockée
-  const bc = getFeatureBoundsCenter(firstParcel.feature);
-  if (bc) {
-    setMapCenter(bc.center);
-  } else {
-    geocodeCommuneCenter(f.commune_insee).then(center => {
-      if (center && mountedRef.current) setMapCenter(center);
-    });
-  }
-} else {
-  // Fallback : centre de la commune
-  geocodeCommuneCenter(f.commune_insee).then(center => {
-    if (center && mountedRef.current) setMapCenter(center);
-  });
-}
+        if (firstParcel?.feature) {
+          const bc = getFeatureBoundsCenter(firstParcel.feature);
+          if (bc) {
+            setMapCenter(bc.center);
+          } else {
+            geocodeCommuneCenter(f.commune_insee).then(center => {
+              if (center && mountedRef.current) setMapCenter(center);
+            });
+          }
+        } else {
+          geocodeCommuneCenter(f.commune_insee).then(center => {
+            if (center && mountedRef.current) setMapCenter(center);
+          });
+        }
       }
     }
 
@@ -749,7 +817,6 @@ if (firstParcel?.feature) {
         ruleset:      p.ruleset,
         found:        true,
       });
-      // Cache secondaire localStorage
       localStorage.setItem("mimmoza.plu.resolved_ruleset_v1", JSON.stringify(p.ruleset));
     }
   }, [loadState, study]);
@@ -876,12 +943,17 @@ if (firstParcel?.feature) {
 
     if (!result.ok) {
       console.error("[FoncierPluPage] Supabase save failed:", result.error);
-      // Fallback localStorage uniquement en cas d'échec réseau
       localStorage.setItem(
         `mimmoza.promoteur.foncier.${studyId}.fallback_v2`,
         JSON.stringify(foncierPayload)
       );
     }
+
+    // ── FIX CRITIQUE : écriture dans les clés lues par useFoncierSelection ──
+    // C'est le point d'écriture principal. Sans ça, Implantation2DPage
+    // (usePromoteurParcelRestore → useFoncierSelection) hydrate sur []
+    // et affiche "Aucune parcelle sélectionnée" à tort.
+    persistFoncierSelectionForRestore(selectedParcels, primary.id, insee);
 
     // Sync state local + cache session secondaire
     setProjectInfo(prev => ({ ...prev, parcelId: primary.id, parcelIds, communeInsee: insee, surfaceM2: totalAreaM2 || undefined }));
@@ -902,10 +974,14 @@ if (firstParcel?.feature) {
     setProjectInfo({}); setSelectedParcels([]); setPluData(null);
     setMapCenter(null); setIsValidated(false); setSearchDone(false);
     patchModule("plu", null); patchModule("foncier", null);
-    ["mimmoza.session.parcel_id", "mimmoza.session.commune_insee", "mimmoza.session.parcel_ids",
-     "mimmoza.session.surface_m2", "mimmoza.plu.resolved_ruleset_v1", "mimmoza.plu.ai_extract_result",
-     "mimmoza.plu.detected_zone_code", "mimmoza.plu.selected_zone_code", "mimmoza.plu.selected_document_id",
-     "mimmoza.plu.selected_commune_insee"].forEach(k => localStorage.removeItem(k));
+    [
+      "mimmoza.session.parcel_id", "mimmoza.session.commune_insee", "mimmoza.session.parcel_ids",
+      "mimmoza.session.surface_m2", "mimmoza.plu.resolved_ruleset_v1", "mimmoza.plu.ai_extract_result",
+      "mimmoza.plu.detected_zone_code", "mimmoza.plu.selected_zone_code", "mimmoza.plu.selected_document_id",
+      "mimmoza.plu.selected_commune_insee",
+      // FIX : on efface aussi les clés useFoncierSelection au reset
+      LS_FONCIER_SELECTED, LS_FONCIER_FOCUS, LS_FONCIER_COMMUNE,
+    ].forEach(k => localStorage.removeItem(k));
   }, []);
 
   const handlePluParsed = useCallback(async (plu: PluData) => {
@@ -920,12 +996,12 @@ if (firstParcel?.feature) {
     };
 
     if (studyId) {
-      await patchPlu(pluPayload); // hook gère setStudy
+      await patchPlu(pluPayload);
     }
 
     if (resolved) {
       localStorage.setItem("mimmoza.plu.resolved_ruleset_v1", JSON.stringify(resolved));
-      patchModule("plu", resolved); // compat store
+      patchModule("plu", resolved);
     } else {
       localStorage.removeItem("mimmoza.plu.resolved_ruleset_v1");
       patchModule("plu", null);

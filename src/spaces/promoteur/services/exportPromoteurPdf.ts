@@ -1,1166 +1,1751 @@
 // src/spaces/promoteur/services/exportPromoteurPdf.ts
+// Promoteur PDF Export — v3 Corporate / Consulting (McKinsey-BCG style)
+// Refactored: modular architecture, business validation, audit-driven rendering.
 
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type {
-  PromoteurSynthese,
-  RecommendationType,
-  RisqueNiveau,
-  RisqueItem,
-  Scenario,
+  PromoteurSynthese, RecommendationType, RisqueNiveau, RisqueItem, Scenario,
 } from './promoteurSynthese.types';
+import { C, LAYOUT, CW, F, type RGB } from './promoteurPdf.theme';
+import {
+  s, fmtNum, eur, eurM, pct, m2v, safePct, safeDiv,
+  recColor, risqueColor, REC_LABELS, REC_LABELS_SHORT,
+  DOC_STATUS_LABELS, DOC_STATUS_COLORS, DOC_USAGE_LABELS,
+  fmtDate, fmtDateLong, fmtTime,
+  type DocumentStatus,
+} from './promoteurPdf.formatters';
+import { auditSynthese, type DocumentAudit } from './promoteurPdf.audit';
+import { drawQr, drawDocRef, getVerificationUrl } from './promoteurPdf.qr';
+import {
+  buildMetricContext, filterPointsForts, isMarginReliable, isTrnReliable,
+  isFinancialExploitable, isMarketPositionReliable, areScenariosExploitable,
+  generateExecMotif, generateFinancierConclusion, generateMarcheConclusion,
+  generateTechniqueConclusion, getEffectiveFaisabilite, scenariosGate,
+  filterSyntheseIA, shouldShowSyntheseIA,
+  generateFinalRecommendationText, generateFinalIAConclusion,
+  INCOMPLETE_NO_POINTS_FORTS, getCoverDocTypeLabel,
+  getCoverStatusLabel, getCoverRecommendationLabel,
+  type MetricContext,
+} from './promoteurPdf.narrative';
 
-// ---- Theme (violet Promoteur) -----------------------------------------------
+const { ML, MR, MT, MB, PW, PH, HDR_H, FTR_H } = LAYOUT;
 
-const V = {
-  // Violet palette
-  violet900: [46, 16, 101]   as [number, number, number],
-  violet800: [67, 26, 140]   as [number, number, number],
-  violet700: [109, 40, 217]  as [number, number, number],
-  violet600: [124, 111, 205] as [number, number, number],
-  violet500: [139, 92, 246]  as [number, number, number],
-  violet400: [167, 139, 250] as [number, number, number],
-  violet200: [221, 214, 254] as [number, number, number],
-  violet100: [237, 233, 254] as [number, number, number],
-  violet50:  [245, 243, 255] as [number, number, number],
-  // Semantic
-  success:   [21, 128, 61]   as [number, number, number],
-  warning:   [161, 98, 7]    as [number, number, number],
-  danger:    [185, 28, 28]   as [number, number, number],
-  // Neutrals
-  slate900:  [15, 23, 42]    as [number, number, number],
-  slate700:  [51, 65, 85]    as [number, number, number],
-  slate500:  [100, 116, 139] as [number, number, number],
-  slate300:  [148, 163, 184] as [number, number, number],
-  slate100:  [241, 245, 249] as [number, number, number],
-  white:     [255, 255, 255] as [number, number, number],
-};
+// ============================================================================
+// SPACE PALETTE — Promoteur = Violet
+// ============================================================================
+const SP = {
+  deep:    [72,  47,  135] as RGB,   // #482F87
+  main:    [82,  71,  184] as RGB,   // #5247B8
+  med:     [124, 111, 205] as RGB,   // #7C6FCD
+  light:   [157, 141, 219] as RGB,   // #9D8DDB
+  pale:    [195, 182, 235] as RGB,   // #C3B6EB
+  ultra:   [225, 218, 245] as RGB,   // #E1DAF5
+  crystal: [240, 236, 250] as RGB,   // #F0ECFA
+  label:   'SYNTHÈSE PROMOTEUR',
+} as const;
 
-const FONT = { title: 24, h1: 16, h2: 13, h3: 11, body: 9, small: 8, caption: 7 };
-const MARGIN = { left: 18, right: 18, top: 26, bottom: 22 };
-const PAGE_W = 210;
-const PAGE_H = 297;
-const CONTENT_W = PAGE_W - MARGIN.left - MARGIN.right;
-const HEADER_H = 12;
-const FOOTER_H = 10;
+// ============================================================================
+// STATE
+// ============================================================================
 
-// ---- Formatters -------------------------------------------------------------
-
-function eur(v: number): string {
-  return v.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
-}
-function pct(v: number): string {
-  return `${v.toFixed(1)}%`;
-}
-function m2(v: number): string {
-  return `${Math.round(v).toLocaleString('fr-FR')} m2`;
-}
-function recColor(rec: RecommendationType): [number, number, number] {
-  if (rec === 'GO') return V.success;
-  if (rec === 'GO_CONDITION') return V.warning;
-  return V.danger;
-}
-function risqueColor(n: RisqueNiveau): [number, number, number] {
-  if (n === 'CRITIQUE') return V.danger;
-  if (n === 'ELEVE')    return [220, 80, 10];
-  if (n === 'MODERE')   return V.warning;
-  return V.success;
-}
-
-// ---- State ------------------------------------------------------------------
-
-interface PdfState {
+interface St {
   doc: jsPDF;
-  pageNum: number;
-  totalPages: number;
+  p: number;
   y: number;
-  synthese: PromoteurSynthese;
+  syn: PromoteurSynthese;
+  audit: DocumentAudit;
+  mc: MetricContext;
+  tocEntries: TocEntry[];
+  facadeRenderUrl: string | null;
 }
 
-function newPage(state: PdfState): void {
-  state.doc.addPage();
-  state.pageNum++;
-  state.y = MARGIN.top + HEADER_H + 4;
-  drawPageHeader(state);
+interface TocEntry {
+  num: string;
+  label: string;
+  page: number;
 }
 
-function checkBreak(state: PdfState, needed: number): void {
-  if (state.y + needed > PAGE_H - FOOTER_H - MARGIN.bottom) newPage(state);
+function newPage(st: St): void {
+  st.doc.addPage();
+  st.p++;
+  st.y = MT + HDR_H + 5;
+  pageHeader(st);
 }
 
-// ---- Violet page header (all pages except cover) ----------------------------
+function chk(st: St, n: number): void {
+  if (st.y + n > PH - FTR_H - MB) newPage(st);
+}
 
-function drawPageHeader(state: PdfState): void {
-  const { doc, synthese, pageNum } = state;
+function tocRegister(st: St, num: string, label: string): void {
+  st.tocEntries.push({ num, label, page: st.p });
+}
 
-  // Violet bar
-  doc.setFillColor(...V.violet800);
-  doc.rect(0, 0, PAGE_W, HEADER_H, 'F');
+// ============================================================================
+// HEADER / FOOTER
+// ============================================================================
 
-  // Left: Mimmoza brand
-  doc.setFontSize(FONT.caption);
-  doc.setTextColor(...V.white);
+function pageHeader(st: St): void {
+  const { doc, syn, p, audit } = st;
+
+  doc.setFillColor(...SP.deep);
+  doc.rect(0, 0, PW, HDR_H, 'F');
+  doc.setFillColor(...SP.main);
+  doc.rect(0, HDR_H, PW, 0.4, 'F');
+
+  doc.setFontSize(F.xs);
   doc.setFont('helvetica', 'bold');
-  doc.text('MIMMOZA', MARGIN.left, 7.5);
+  doc.setTextColor(...C.white);
+  doc.text('MIMMOZA', ML, 7.2);
 
-  // Center: project name
   doc.setFont('helvetica', 'normal');
-  const title = synthese.projet.commune
-    ? `${synthese.projet.programmeType} -- ${synthese.projet.commune} (${synthese.projet.codePostal})`
-    : 'Synthese Promoteur';
-  const titleLines = doc.splitTextToSize(title, 100);
-  doc.text(titleLines[0], PAGE_W / 2, 7.5, { align: 'center' });
+  const title = syn.projet.commune
+    ? s(`${syn.projet.programmeType} — ${syn.projet.commune} (${syn.projet.codePostal})`)
+    : s('Synthèse Promoteur');
+  doc.text(doc.splitTextToSize(title, 100)[0], PW / 2, 7.2, { align: 'center' });
 
-  // Right: page number
   doc.setFont('helvetica', 'bold');
-  doc.text(`p. ${pageNum}`, PAGE_W - MARGIN.right, 7.5, { align: 'right' });
-
-  // Thin accent line below
-  doc.setFillColor(...V.violet400);
-  doc.rect(0, HEADER_H, PAGE_W, 0.5, 'F');
+  doc.text(`${p}`, PW - MR, 7.2, { align: 'right' });
 }
 
-// ---- Violet page footer (all pages except cover) ----------------------------
+function pageFooter(st: St): void {
+  const { doc, audit } = st;
+  const y = PH - FTR_H;
+  doc.setDrawColor(...C.slate4);
+  doc.setLineWidth(0.3);
+  doc.line(ML, y, PW - MR, y);
 
-function drawPageFooter(state: PdfState): void {
-  const { doc, pageNum } = state;
-  const y = PAGE_H - FOOTER_H;
-
-  // Footer bar
-  doc.setFillColor(...V.violet900);
-  doc.rect(0, y, PAGE_W, FOOTER_H, 'F');
-
-  doc.setFontSize(FONT.caption);
-  doc.setTextColor(...V.violet300 ?? V.violet400);
+  doc.setFontSize(F.xs);
   doc.setFont('helvetica', 'normal');
-  doc.text('CONFIDENTIEL -- Usage interne', MARGIN.left, y + 6.5);
-  doc.text('Mimmoza -- Intelligence Immobiliere B2B', PAGE_W / 2, y + 6.5, { align: 'center' });
-  doc.text(new Date().toLocaleDateString('fr-FR'), PAGE_W - MARGIN.right, y + 6.5, { align: 'right' });
+  doc.setTextColor(...C.slate3);
+  doc.text(s('CONFIDENTIEL — Usage interne exclusif'), ML, y + 5);
+  drawDocRef(doc, PW / 2, y + 5, audit.documentId, 'center');
+  doc.text(fmtDate(new Date()), PW - MR, y + 5, { align: 'right' });
 }
 
-// ---- Section header ---------------------------------------------------------
+// ============================================================================
+// TYPOGRAPHY HELPERS
+// ============================================================================
 
-function sectionHeader(state: PdfState, label: string, num: string): void {
-  checkBreak(state, 14);
-  const { doc } = state;
+function secTitle(st: St, num: string, label: string): void {
+  chk(st, 16);
+  const { doc } = st;
 
-  // Left accent bar
-  doc.setFillColor(...V.violet800);
-  doc.rect(MARGIN.left, state.y, 3, 9, 'F');
+  doc.setFillColor(...SP.main);
+  doc.rect(ML, st.y, 3, 10, 'F');
 
-  // Background
-  doc.setFillColor(...V.violet100);
-  doc.roundedRect(MARGIN.left + 3, state.y, CONTENT_W - 3, 9, 1, 1, 'F');
+  if (num) {
+    doc.setFontSize(F.xs);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...SP.main);
+    doc.text(num, ML + 6, st.y + 4.5);
+  }
 
-  // Text
-  doc.setFontSize(FONT.h2);
+  doc.setFontSize(F.h2);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...V.violet800);
-  doc.text(`${num}  ${label}`, MARGIN.left + 8, state.y + 6.5);
+  doc.setTextColor(...SP.deep);
+  doc.text(s(label), ML + (num ? 16 : 6), st.y + 8);
 
-  state.y += 13;
+  doc.setFillColor(...C.slate5);
+  doc.rect(ML, st.y + 11, CW, 0.3, 'F');
+  st.y += 16;
 }
 
-function subHeader(state: PdfState, label: string): void {
-  checkBreak(state, 10);
-  const { doc } = state;
-  doc.setFillColor(...V.violet200);
-  doc.rect(MARGIN.left, state.y, CONTENT_W, 0.3, 'F');
-  state.y += 2;
-  doc.setFontSize(FONT.h3);
+function subTitle(st: St, label: string): void {
+  chk(st, 10);
+  const { doc } = st;
+  doc.setFontSize(F.h4);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...V.violet700);
-  doc.text(label, MARGIN.left, state.y + 4);
-  state.y += 8;
+  doc.setTextColor(...SP.deep);
+  doc.text(s(label).toUpperCase(), ML, st.y);
+  doc.setFillColor(...SP.main);
+  doc.rect(ML, st.y + 2, 18, 0.5, 'F');
+  st.y += 7;
 }
 
-function bodyText(state: PdfState, text: string, indent = 0): void {
-  const { doc } = state;
-  doc.setFontSize(FONT.body);
+function body(st: St, text: string, indent = 0): void {
+  const { doc } = st;
+  doc.setFontSize(F.body);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...V.slate700);
-  const lines = doc.splitTextToSize(text, CONTENT_W - indent);
-  checkBreak(state, lines.length * 5 + 2);
-  doc.text(lines, MARGIN.left + indent, state.y);
-  state.y += lines.length * 5 + 3;
+  doc.setTextColor(...C.black);
+  const lines = doc.splitTextToSize(s(text), CW - indent);
+  chk(st, lines.length * 5 + 2);
+  doc.text(lines, ML + indent, st.y);
+  st.y += lines.length * 5 + 3;
 }
 
-function hRule(state: PdfState): void {
-  state.doc.setFillColor(...V.violet200);
-  state.doc.rect(MARGIN.left, state.y, CONTENT_W, 0.3, 'F');
-  state.y += 4;
+function rule(st: St): void {
+  st.doc.setFillColor(...C.slate5);
+  st.doc.rect(ML, st.y, CW, 0.3, 'F');
+  st.y += 5;
 }
 
-// ---- KPI blocks -------------------------------------------------------------
+function alertBanner(st: St, text: string, color: RGB, bgColor?: RGB): void {
+  chk(st, 14);
+  const { doc } = st;
+  const bg = bgColor ?? [
+    Math.min(255, color[0] + 100),
+    Math.min(255, color[1] + 130),
+    Math.min(255, color[2] + 130),
+  ] as RGB;
+  doc.setFillColor(...bg);
+  doc.rect(ML, st.y, CW, 12, 'F');
+  doc.setFillColor(...color);
+  doc.rect(ML, st.y, 3, 12, 'F');
+  doc.setFontSize(F.h4);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...color);
+  const lines = doc.splitTextToSize(s(text), CW - 12);
+  doc.text(lines[0], ML + 7, st.y + 8);
+  st.y += 15;
+}
 
-function kpiRow(
-  state: PdfState,
-  items: Array<{ label: string; value: string; color?: [number, number, number] }>,
-  cols = 3
+// ============================================================================
+// KPI CARDS
+// ============================================================================
+
+function kpiGrid(
+  st: St,
+  items: Array<{ label: string; value: string; sub?: string; color?: RGB }>,
+  cols = 3,
 ): void {
-  checkBreak(state, 20);
-  const { doc } = state;
-  const cw = CONTENT_W / cols;
+  const rows = Math.ceil(items.length / cols);
+  chk(st, rows * 22 + 4);
+  const { doc } = st;
+  const cw = CW / cols;
 
   for (let i = 0; i < items.length; i++) {
     const col = i % cols;
     const row = Math.floor(i / cols);
-    const x = MARGIN.left + col * cw;
-    const y = state.y + row * 20;
+    const x = ML + col * cw;
+    const y = st.y + row * 22;
 
-    doc.setFillColor(...V.violet50);
-    doc.roundedRect(x + 1, y, cw - 3, 16, 1.5, 1.5, 'F');
-    doc.setFillColor(...V.violet600);
-    doc.rect(x + 1, y, cw - 3, 2, 'F');
+    doc.setFillColor(...C.slate6);
+    doc.rect(x + 1, y, cw - 3, 19, 'F');
+    doc.setFillColor(...SP.deep);
+    doc.rect(x + 1, y, cw - 3, 1.5, 'F');
 
-    doc.setFontSize(FONT.caption);
-    doc.setTextColor(...V.slate500);
-    doc.setFont('helvetica', 'normal');
-    doc.text(items[i].label, x + cw / 2 - 1, y + 7, { align: 'center' });
-
-    doc.setFontSize(FONT.h3);
+    doc.setFontSize(F.xs);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...(items[i].color ?? V.violet800));
-    doc.text(items[i].value, x + cw / 2 - 1, y + 13.5, { align: 'center' });
-  }
+    doc.setTextColor(...C.slate2);
+    doc.text(s(items[i].label).toUpperCase(), x + cw / 2 - 1, y + 6, { align: 'center' });
 
-  state.y += Math.ceil(items.length / cols) * 20 + 4;
+    doc.setFontSize(F.h3);
+    doc.setFont('helvetica', 'bold');
+    const isNA = items[i].value === 'N/A';
+    doc.setTextColor(...(isNA ? C.slate3 : (items[i].color ?? SP.deep)));
+    doc.text(s(items[i].value), x + cw / 2 - 1, y + 14, { align: 'center' });
+
+    if (items[i].sub) {
+      doc.setFontSize(F.xs);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...C.slate3);
+      doc.text(s(items[i].sub!), x + cw / 2 - 1, y + 18.5, { align: 'center' });
+    }
+  }
+  st.y += rows * 22 + 4;
 }
 
-function scoreBar(state: PdfState, label: string, score: number, invert = false): void {
-  checkBreak(state, 8);
-  const { doc } = state;
+// ============================================================================
+// SCORE BAR
+// ============================================================================
+
+function scoreLine(st: St, label: string, score: number, invert = false): void {
+  chk(st, 8);
+  const { doc } = st;
   const display = invert ? 100 - score : score;
-  const barW = CONTENT_W * 0.45;
-  const barX = MARGIN.left + 58;
-  const color: [number, number, number] =
-    display >= 70 ? V.success : display >= 45 ? V.warning : V.danger;
+  const barW = CW * 0.42;
+  const barX = ML + 55;
+  const barH = 4;
+  const barY = st.y - 3.5;
+  const filled = (barW * score) / 100;
 
-  doc.setFontSize(FONT.body);
-  doc.setTextColor(...V.slate700);
+  const endColor: RGB = display >= 70 ? SP.main : display >= 45 ? C.amber : C.red;
+  const startColor: RGB = display >= 70
+    ? SP.ultra
+    : [Math.min(255, endColor[0] + 140), Math.min(255, endColor[1] + 130), Math.min(255, endColor[2] + 120)];
+
+  doc.setFontSize(F.sm);
   doc.setFont('helvetica', 'normal');
-  doc.text(label, MARGIN.left, state.y);
+  doc.setTextColor(...C.black);
+  doc.text(s(label), ML, st.y);
 
-  doc.setFillColor(...V.slate100);
-  doc.roundedRect(barX, state.y - 3, barW, 4, 1, 1, 'F');
-  doc.setFillColor(...color);
-  doc.roundedRect(barX, state.y - 3, (barW * score) / 100, 4, 1, 1, 'F');
+  doc.setFillColor(...C.slate5);
+  doc.rect(barX, barY, barW, barH, 'F');
 
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...color);
-  doc.text(`${score}`, barX + barW + 3, state.y);
-  state.y += 7;
-}
-
-// ---- Cover page -------------------------------------------------------------
-
-function addCoverPage(state: PdfState): void {
-  const { doc, synthese } = state;
-  const es = synthese.executiveSummary;
-
-  // Full violet gradient background
-  // Top zone (dark violet)
-  doc.setFillColor(...V.violet900);
-  doc.rect(0, 0, PAGE_W, 60, 'F');
-
-  // Mid zone (medium violet)
-  doc.setFillColor(...V.violet800);
-  doc.rect(0, 60, PAGE_W, 60, 'F');
-
-  // Bottom diagonal accent
-  doc.setFillColor(...V.violet700);
-  doc.triangle(0, 100, PAGE_W, 80, PAGE_W, 120, 'F');
-
-  // White card
-  doc.setFillColor(...V.white);
-  doc.roundedRect(16, 52, PAGE_W - 32, 192, 5, 5, 'F');
-
-  // Violet left accent on card
-  doc.setFillColor(...V.violet600);
-  doc.roundedRect(16, 52, 5, 192, 3, 3, 'F');
-
-  // Top: Mimmoza logo area
-  doc.setFontSize(26);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...V.violet200);
-  doc.text('MIMMOZA', PAGE_W / 2, 28, { align: 'center' });
-
-  doc.setFontSize(FONT.small);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...V.violet400);
-  doc.text('Intelligence Immobiliere B2B', PAGE_W / 2, 36, { align: 'center' });
-
-  // Violet pill: document type
-  doc.setFillColor(...V.violet600);
-  doc.roundedRect(PAGE_W / 2 - 40, 41, 80, 9, 4, 4, 'F');
-  doc.setFontSize(FONT.small);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...V.white);
-  doc.text('DOSSIER COMITE D\'INVESTISSEMENT', PAGE_W / 2, 47, { align: 'center' });
-
-  // Operation title
-  doc.setFontSize(FONT.h1);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...V.violet900);
-  const titleLines = doc.splitTextToSize(es.titreOperation, CONTENT_W - 20);
-  doc.text(titleLines, PAGE_W / 2, 72, { align: 'center' });
-
-  // Recommendation badge
-  const recY = 72 + titleLines.length * 8 + 4;
-  const rc = recColor(es.recommendation);
-  doc.setFillColor(...rc);
-  doc.roundedRect(PAGE_W / 2 - 32, recY, 64, 13, 4, 4, 'F');
-  doc.setFontSize(FONT.h3);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...V.white);
-  const recLabel: Record<RecommendationType, string> = {
-    GO: 'GO - RECOMMANDE',
-    GO_CONDITION: 'GO CONDITIONNEL',
-    NO_GO: 'NO GO',
-  };
-  doc.text(recLabel[es.recommendation], PAGE_W / 2, recY + 8.5, { align: 'center' });
-
-  // KPI grid on card
-  const kpiY = recY + 20;
-  const kpis = [
-    { l: 'Marge nette',  v: pct(synthese.financier.margeNettePercent) },
-    { l: 'CA total HT',  v: `${(synthese.financier.chiffreAffairesTotal / 1e6).toFixed(2)} M EUR` },
-    { l: 'TRN',          v: pct(synthese.financier.trnRendement) },
-    { l: 'Logements',    v: String(synthese.projet.nbLogements) },
-    { l: 'Score global', v: `${es.scores.global}/100` },
-    { l: 'Qualite data', v: synthese.metadata.dataQualite },
-  ];
-
-  const kcols = 3;
-  const kColW = (CONTENT_W - 10) / kcols;
-  kpis.forEach((kpi, i) => {
-    const col = i % kcols;
-    const row = Math.floor(i / kcols);
-    const x = 26 + col * kColW;
-    const y = kpiY + row * 22;
-
-    doc.setFillColor(...V.violet50);
-    doc.roundedRect(x, y, kColW - 4, 18, 2, 2, 'F');
-    doc.setFillColor(...V.violet600);
-    doc.rect(x, y, kColW - 4, 2, 'F');
-
-    doc.setFontSize(FONT.caption);
-    doc.setTextColor(...V.slate500);
-    doc.setFont('helvetica', 'normal');
-    doc.text(kpi.l, x + (kColW - 4) / 2, y + 7.5, { align: 'center' });
-
-    doc.setFontSize(FONT.h3);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...V.violet800);
-    doc.text(kpi.v, x + (kColW - 4) / 2, y + 15, { align: 'center' });
-  });
-
-  // Address & date
-  const infoY = kpiY + 50;
-  doc.setFontSize(FONT.body);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...V.slate500);
-  doc.text(
-    `${synthese.projet.adresse} -- ${synthese.projet.commune} (${synthese.projet.codePostal})`,
-    PAGE_W / 2, infoY, { align: 'center' }
-  );
-  doc.text(
-    `Etude realisee le ${new Date(synthese.createdAt).toLocaleDateString('fr-FR')}`,
-    PAGE_W / 2, infoY + 7, { align: 'center' }
-  );
-
-  // QR code
-  {
-    const qrSize = 22;
-    const qrX = PAGE_W / 2 - qrSize / 2;
-    const qrY = infoY + 14;
-    drawNativeQr(doc, qrX, qrY, qrSize, 'Document certifie Mimmoza');
+  if (filled > 0) {
+    const N = 28;
+    const sliceW = filled / N;
+    for (let i = 0; i < N; i++) {
+      const t = i / (N - 1);
+      doc.setFillColor(
+        Math.round(startColor[0] + (endColor[0] - startColor[0]) * t),
+        Math.round(startColor[1] + (endColor[1] - startColor[1]) * t),
+        Math.round(startColor[2] + (endColor[2] - startColor[2]) * t),
+      );
+      doc.rect(barX + i * sliceW, barY, sliceW + 0.2, barH, 'F');
+    }
   }
 
-  // Bottom footer on cover
-  doc.setFillColor(...V.violet900);
-  doc.rect(0, PAGE_H - 12, PAGE_W, 12, 'F');
-  doc.setFontSize(FONT.caption);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...V.violet400);
-  doc.text('DOCUMENT CONFIDENTIEL -- USAGE INTERNE EXCLUSIF', PAGE_W / 2, PAGE_H - 5, { align: 'center' });
-
-  state.pageNum = 1;
-  state.y = MARGIN.top + HEADER_H + 4;
+  doc.setFontSize(F.sm);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...endColor);
+  doc.text(`${score}`, barX + barW + 3, st.y);
+  st.y += 7;
 }
 
-// ---- Table of contents ------------------------------------------------------
+// ============================================================================
+// GRADIENT HELPERS
+// ============================================================================
 
-function addTocPage(state: PdfState): void {
-  newPage(state);
-  sectionHeader(state, 'SOMMAIRE', '');
+function drawGradientH(
+  doc: jsPDF, x: number, y: number, w: number, h: number,
+  from: RGB, to: RGB, steps = 30,
+): void {
+  const sliceW = w / steps;
+  for (let i = 0; i < steps; i++) {
+    const t = i / (steps - 1);
+    doc.setFillColor(
+      Math.round(from[0] + (to[0] - from[0]) * t),
+      Math.round(from[1] + (to[1] - from[1]) * t),
+      Math.round(from[2] + (to[2] - from[2]) * t),
+    );
+    doc.rect(x + i * sliceW, y, sliceW + 0.2, h, 'F');
+  }
+}
 
-  const toc = [
-    { n: '01', label: 'Executive Summary', pg: 3 },
-    { n: '02', label: 'Presentation du projet', pg: 4 },
-    { n: '03', label: 'Faisabilite technique & PLU', pg: 5 },
-    { n: '04', label: 'Etude de marche', pg: 6 },
-    { n: '05', label: 'Analyse financiere', pg: 7 },
-    { n: '06', label: 'Plan de financement', pg: 8 },
-    { n: '07', label: 'Analyse des risques', pg: 9 },
-    { n: '08', label: 'Scenarios de sensibilite', pg: 10 },
-    { n: '09', label: 'Synthese analytique', pg: 11 },
-    { n: '10', label: 'Recommandation finale', pg: 12 },
-  ];
+function drawGradientV(
+  doc: jsPDF, x: number, y: number, w: number, h: number,
+  from: RGB, to: RGB, steps = 40,
+): void {
+  const sliceH = h / steps;
+  for (let i = 0; i < steps; i++) {
+    const t = i / (steps - 1);
+    doc.setFillColor(
+      Math.round(from[0] + (to[0] - from[0]) * t),
+      Math.round(from[1] + (to[1] - from[1]) * t),
+      Math.round(from[2] + (to[2] - from[2]) * t),
+    );
+    doc.rect(x, y + i * sliceH, w, sliceH + 0.3, 'F');
+  }
+}
 
-  toc.forEach(({ n, label, pg }) => {
-    checkBreak(state, 10);
-    const { doc } = state;
+// ============================================================================
+// COVER PAGE — Flowing ribbon design
+// ============================================================================
 
-    doc.setFontSize(FONT.body);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...V.violet600);
-    doc.text(n, MARGIN.left + 2, state.y);
+function cbez(t: number, a: number, b: number, c: number, d: number): number {
+  const u = 1 - t;
+  return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d;
+}
 
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...V.slate700);
-    doc.text(label, MARGIN.left + 12, state.y);
+function cbezD(t: number, a: number, b: number, c: number, d: number): number {
+  const u = 1 - t;
+  return 3 * u * u * (b - a) + 6 * u * t * (c - b) + 3 * t * t * (d - c);
+}
 
-    // Dots
-    doc.setTextColor(...V.slate300);
-    const dotsStart = MARGIN.left + 12 + doc.getTextWidth(label) + 2;
-    const dotsEnd = PAGE_W - MARGIN.right - 12;
-    let dx = dotsStart;
-    while (dx < dotsEnd) {
-      doc.text('.', dx, state.y);
-      dx += 2.5;
+interface RibbonDef {
+  p0: [number, number]; p1: [number, number];
+  p2: [number, number]; p3: [number, number];
+  w0: number; w1: number;
+  c0: RGB;    c1: RGB;
+}
+
+function drawRibbon(doc: jsPDF, r: RibbonDef, steps = 150): void {
+  let prevL: [number, number] | null = null;
+  let prevR: [number, number] | null = null;
+
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+
+    const cx = cbez(t, r.p0[0], r.p1[0], r.p2[0], r.p3[0]);
+    const cy = cbez(t, r.p0[1], r.p1[1], r.p2[1], r.p3[1]);
+
+    let tx = cbezD(t, r.p0[0], r.p1[0], r.p2[0], r.p3[0]);
+    let ty = cbezD(t, r.p0[1], r.p1[1], r.p2[1], r.p3[1]);
+    const len = Math.sqrt(tx * tx + ty * ty) || 1;
+    tx /= len; ty /= len;
+
+    const nx = -ty, ny = tx;
+    const w = r.w0 + (r.w1 - r.w0) * t;
+
+    const lx = cx + nx * w / 2;
+    const ly = cy + ny * w / 2;
+    const rx = cx - nx * w / 2;
+    const ry = cy - ny * w / 2;
+
+    if (prevL && prevR && i > 0) {
+      const cr = Math.round(r.c0[0] + (r.c1[0] - r.c0[0]) * t);
+      const cg = Math.round(r.c0[1] + (r.c1[1] - r.c0[1]) * t);
+      const cb = Math.round(r.c0[2] + (r.c1[2] - r.c0[2]) * t);
+
+      doc.setFillColor(cr, cg, cb);
+      doc.setDrawColor(cr, cg, cb);
+      doc.setLineWidth(0.1);
+
+      doc.lines(
+        [
+          [lx - prevL[0], ly - prevL[1]],
+          [rx - lx, ry - ly],
+          [prevR[0] - rx, prevR[1] - ry],
+        ],
+        prevL[0], prevL[1], [1, 1], 'FD', true,
+      );
     }
 
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...V.violet800);
-    doc.text(String(pg), PAGE_W - MARGIN.right, state.y, { align: 'right' });
-
-    state.y += 9;
-  });
-
-  drawPageFooter(state);
+    prevL = [lx, ly];
+    prevR = [rx, ry];
+  }
 }
 
-// ---- Section 01: Executive Summary -----------------------------------------
+// ── Cover page (async — awaits QR generation) ────────────────────────────────
 
-function addExecutiveSummary(state: PdfState): void {
-  newPage(state);
-  const { synthese } = state;
-  const es = synthese.executiveSummary;
+async function addCover(st: St): Promise<void> {
+  const { doc, syn, audit, mc } = st;
+  const es = syn.executiveSummary;
+  const status = audit.documentStatus;
 
-  sectionHeader(state, 'EXECUTIVE SUMMARY', '01');
-
-  // Recommendation block
-  const rc = recColor(es.recommendation);
-  state.doc.setFillColor(...rc);
-  state.doc.roundedRect(MARGIN.left, state.y, CONTENT_W, 13, 2, 2, 'F');
-  state.doc.setFontSize(FONT.h2);
-  state.doc.setFont('helvetica', 'bold');
-  state.doc.setTextColor(...V.white);
-  const recFull: Record<RecommendationType, string> = {
-    GO: 'RECOMMANDATION : GO -- OPERATION RECOMMANDEE',
-    GO_CONDITION: 'RECOMMANDATION : GO CONDITIONNEL -- AJUSTEMENTS REQUIS',
-    NO_GO: 'RECOMMANDATION : NO GO -- OPERATION NON VIABLE EN L\'ETAT',
+  const V = {
+    deep:    [72,  47,  135] as RGB,
+    main:    [82,  71,  184] as RGB,
+    med:     [124, 111, 205] as RGB,
+    light:   [157, 141, 219] as RGB,
+    pale:    [195, 182, 235] as RGB,
+    ultra:   [225, 218, 245] as RGB,
+    crystal: [240, 236, 250] as RGB,
   };
-  state.doc.text(recFull[es.recommendation], PAGE_W / 2, state.y + 8.5, { align: 'center' });
-  state.y += 17;
 
-  bodyText(state, es.motifRecommandation);
-  state.y += 2;
+  doc.setFillColor(...C.white);
+  doc.rect(0, 0, PW, PH, 'F');
 
-  kpiRow(state, [
-    { label: 'Marge nette', value: pct(es.margeNette), color: es.margeNette < 8 ? V.danger : V.success },
-    { label: 'CA total HT', value: `${(es.caTotal / 1e6).toFixed(2)} M EUR` },
-    { label: 'Resultat net', value: eur(es.resultatNet) },
-    { label: 'TRN', value: pct(es.trnRendement), color: es.trnRendement < 8 ? V.danger : V.success },
+  // ── Ribbons ───────────────────────────────────────────────────────────────
+
+  drawRibbon(doc, {
+    p0: [245, -10], p1: [210, 80],  p2: [130, 200],  p3: [45, 340],
+    w0: 85, w1: 75, c0: V.crystal, c1: V.ultra,
+  }, 140);
+
+  drawRibbon(doc, {
+    p0: [242, 10],  p1: [205, 105], p2: [140, 220],  p3: [60, 345],
+    w0: 58, w1: 48, c0: V.ultra, c1: V.pale,
+  }, 140);
+
+  drawRibbon(doc, {
+    p0: [258, 30],  p1: [218, 130], p2: [150, 240],  p3: [70, 350],
+    w0: 44, w1: 32, c0: V.light, c1: V.med,
+  }, 150);
+
+  drawRibbon(doc, {
+    p0: [232, -15], p1: [222, 95],  p2: [120, 195],  p3: [35, 330],
+    w0: 38, w1: 28, c0: V.pale, c1: V.light,
+  }, 140);
+
+  drawRibbon(doc, {
+    p0: [255, 45],  p1: [222, 145], p2: [160, 248],  p3: [80, 355],
+    w0: 15, w1: 10, c0: V.main, c1: V.deep,
+  }, 130);
+
+  drawRibbon(doc, {
+    p0: [252, 25],  p1: [215, 118], p2: [145, 228],  p3: [65, 342],
+    w0: 5, w1: 3, c0: [240, 238, 252] as RGB, c1: V.crystal,
+  }, 110);
+
+  drawRibbon(doc, {
+    p0: [242, -5],  p1: [220, 90],  p2: [125, 190],  p3: [40, 325],
+    w0: 8, w1: 5, c0: V.med, c1: V.main,
+  }, 110);
+
+  // ── Text content ──────────────────────────────────────────────────────────
+
+  const hx = 18;
+  const hxR = PW - 18;
+
+  // Header
+  doc.setFontSize(24);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...V.deep);
+  doc.text('MIMMOZA', hx, 24);
+
+  doc.setFontSize(F.sm);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...C.slate2);
+  doc.text(s('Intelligence immobilière B2B'), hx, 31);
+
+  doc.setFontSize(F.sm);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...C.slate2);
+  doc.text(fmtDate(new Date()), hxR, 24, { align: 'right' });
+  doc.setFontSize(F.xs);
+  doc.setTextColor(...C.slate3);
+  doc.text(s(`Réf. ${audit.documentId}`), hxR, 30, { align: 'right' });
+
+  doc.setDrawColor(...V.pale);
+  doc.setLineWidth(0.4);
+  doc.line(hx, 36, hxR, 36);
+
+  // Document type + title
+  doc.setFontSize(F.body);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...V.main);
+  doc.text(s(SP.label), hx, 50);
+
+  doc.setFillColor(...V.main);
+  doc.rect(hx, 52, 36, 0.6, 'F');
+
+  doc.setFontSize(26);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...SP.deep);
+  const opTitle = es.titreOperation || s(`${syn.projet.programmeType || 'Opération'}`);
+  const titleLines = doc.splitTextToSize(s(opTitle), 120);
+  doc.text(titleLines, hx, 68);
+  const titleBottom = 68 + (titleLines.length - 1) * 10;
+
+  const commune = syn.projet.commune || '';
+  const cp = syn.projet.codePostal || '';
+  const locLine = commune ? s(`${commune} (${cp})`) : s('Localisation non renseignée');
+  doc.setFontSize(F.h3);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...C.slate);
+  doc.text(locLine, hx, titleBottom + 10);
+
+  // Decision block
+  const decY = 205;
+  const decW = 100;
+  const decH = 46;
+
+  doc.setFillColor(...C.white);
+  doc.rect(hx - 2, decY - 3, decW + 6, decH + 6, 'F');
+
+  const stCol: RGB = status === 'incomplete' ? C.red
+    : status === 'provisional' ? C.amber
+    : V.main;
+
+  doc.setDrawColor(...C.slate4);
+  doc.setLineWidth(0.3);
+  doc.rect(hx, decY, decW, decH);
+  doc.setFillColor(...stCol);
+  doc.rect(hx, decY, 3, decH, 'F');
+
+  doc.setFontSize(F.xs);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...C.slate2);
+  doc.text('STATUT', hx + 8, decY + 8);
+
+  doc.setFontSize(F.h3);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...stCol);
+  doc.text(s(getCoverStatusLabel(status)), hx + 8, decY + 16);
+
+  doc.setDrawColor(...C.slate5);
+  doc.setLineWidth(0.15);
+  doc.line(hx + 8, decY + 20, hx + decW - 8, decY + 20);
+
+  doc.setFontSize(F.xs);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...C.slate2);
+  doc.text('RECOMMANDATION', hx + 8, decY + 27);
+
+  const recLabel = getCoverRecommendationLabel(status, audit.effectiveRecommendation);
+  const recCol: RGB = status === 'incomplete' ? C.red : recColor(audit.effectiveRecommendation);
+  doc.setFontSize(F.h4);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...recCol);
+  doc.text(s(recLabel), hx + 8, decY + 35);
+
+  if (audit.recommendationOverridden) {
+    doc.setFontSize(5.5);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(...C.slate3);
+    doc.text(
+      s(`(initiale : ${REC_LABELS_SHORT[es.recommendation]})`),
+      hx + 8, decY + 41,
+    );
+  }
+
+  // KPIs
+  const kpiX = hx;
+  const kpiY = decY + decH + 10;
+  const hasFin = mc.hasCA && mc.hasCDR;
+
+  const kpis = [
+    { l: 'MARGE',     v: hasFin && isMarginReliable(mc) ? pct(syn.financier.margeNettePercent) : 'N/A' },
+    { l: 'TRN',       v: hasFin && isTrnReliable(mc) ? pct(syn.financier.trnRendement) : 'N/A' },
+    { l: 'CA HT',     v: mc.hasCA ? eurM(syn.financier.chiffreAffairesTotal) : 'N/A' },
+    { l: 'LOGEMENTS', v: mc.hasLots ? String(syn.projet.nbLogements) : 'N/A' },
+  ];
+
+  doc.setFillColor(...C.white);
+  doc.rect(kpiX - 2, kpiY - 6, decW + 6, 20, 'F');
+
+  const kpiColW = decW / kpis.length;
+  kpis.forEach((kpi, i) => {
+    const x = kpiX + i * kpiColW;
+    const cx = x + kpiColW / 2;
+    const isNA = kpi.v === 'N/A';
+
+    doc.setFontSize(F.xs);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...C.slate3);
+    doc.text(s(kpi.l), cx, kpiY, { align: 'center' });
+
+    doc.setFontSize(F.h3);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...(isNA ? C.slate3 : V.deep));
+    doc.text(s(kpi.v), cx, kpiY + 8, { align: 'center' });
+  });
+
+  // Footer
+  const ftY = PH - 30;
+
+  doc.setFillColor(...C.white);
+  doc.rect(hx - 4, ftY - 2, 140, 20, 'F');
+
+  doc.setDrawColor(...C.slate4);
+  doc.setLineWidth(0.2);
+  doc.line(hx, ftY, hx + 115, ftY);
+
+  doc.setFontSize(F.sm);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...C.slate2);
+  const addr = s(syn.projet.adresse || 'Adresse non renseignée');
+  doc.text(addr, hx, ftY + 6);
+  if (commune) {
+    doc.text(s(`${commune} (${cp})`), hx, ftY + 11);
+  }
+
+  doc.setFontSize(F.xs);
+  doc.setTextColor(...C.slate3);
+  doc.text(s('Document confidentiel — Usage interne'), PW / 2, ftY + 6, { align: 'center' });
+  doc.text('www.mimmoza.fr', PW / 2, ftY + 11, { align: 'center' });
+
+  // ── Vrai QR code scannable ────────────────────────────────────────────────
+  const qrSize = 14;
+  await drawQr(doc, hxR - qrSize, ftY + 2, qrSize, audit.documentId);
+
+  // Bottom accent bar
+  doc.setFillColor(...V.deep);
+  doc.rect(0, PH - 2.5, PW, 2.5, 'F');
+
+  st.p = 1;
+  st.y = MT + HDR_H + 5;
+}
+
+// ============================================================================
+// TABLE OF CONTENTS
+// ============================================================================
+
+function renderToc(st: St, tocPageNumber: number): void {
+  const { doc, tocEntries } = st;
+  doc.setPage(tocPageNumber);
+
+  let y = MT + HDR_H + 20;
+
+  doc.setFillColor(...SP.main);
+  doc.rect(ML, y - 5, 3, 10, 'F');
+  doc.setFontSize(F.h2);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...SP.deep);
+  doc.text('SOMMAIRE', ML + 6, y + 3);
+  doc.setFillColor(...C.slate5);
+  doc.rect(ML, y + 6, CW, 0.3, 'F');
+  y += 14;
+
+  tocEntries.forEach(({ num, label, page }, idx) => {
+    const bg = idx % 2 === 0 ? C.slate6 : C.white;
+    doc.setFillColor(...bg);
+    doc.rect(ML, y - 4, CW, 8, 'F');
+
+    doc.setFontSize(F.body);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...SP.main);
+    doc.text(num, ML + 2, y);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...C.black);
+    doc.text(s(label), ML + 14, y);
+
+    doc.setTextColor(...C.slate4);
+    let dx = ML + 14 + doc.getTextWidth(s(label)) + 3;
+    const de = PW - MR - 14;
+    while (dx < de) { doc.text('.', dx, y); dx += 2.5; }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...SP.deep);
+    doc.text(String(page), PW - MR, y, { align: 'right' });
+    y += 9;
+  });
+
+  const fy = PH - FTR_H;
+  doc.setDrawColor(...C.slate4);
+  doc.setLineWidth(0.3);
+  doc.line(ML, fy, PW - MR, fy);
+  doc.setFontSize(F.xs);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...C.slate3);
+  doc.text(s('CONFIDENTIEL — Usage interne exclusif'), ML, fy + 5);
+  doc.text(fmtDate(new Date()), PW - MR, fy + 5, { align: 'right' });
+}
+
+// ============================================================================
+// 01 EXECUTIVE SUMMARY
+// ============================================================================
+
+function addExecSummary(st: St): void {
+  newPage(st);
+  tocRegister(st, '01', 'Executive Summary');
+  const { syn, audit } = st;
+  const es = syn.executiveSummary;
+
+  secTitle(st, '01', 'EXECUTIVE SUMMARY');
+
+  if (audit.documentStatus !== 'committee_ready') {
+    alertBanner(st,
+      DOC_STATUS_LABELS[audit.documentStatus],
+      DOC_STATUS_COLORS[audit.documentStatus],
+    );
+  }
+
+  const rc = recColor(audit.effectiveRecommendation);
+  st.doc.setFillColor(...rc);
+  st.doc.rect(ML, st.y, CW, 12, 'F');
+  st.doc.setFillColor(...SP.main);
+  st.doc.rect(ML, st.y, 3, 12, 'F');
+  st.doc.setFontSize(F.h3);
+  st.doc.setFont('helvetica', 'bold');
+  st.doc.setTextColor(...C.white);
+  st.doc.text(s(`RECOMMANDATION : ${REC_LABELS[audit.effectiveRecommendation]}`), PW / 2, st.y + 8, { align: 'center' });
+  st.y += 16;
+
+  if (audit.recommendationOverridden) {
+    st.doc.setFontSize(F.sm);
+    st.doc.setFont('helvetica', 'italic');
+    st.doc.setTextColor(...C.amber);
+    st.doc.text(
+      s(`Note : recommandation ajustée de ${REC_LABELS_SHORT[es.recommendation]} en raison de données insuffisantes.`),
+      ML, st.y,
+    );
+    st.y += 6;
+  }
+
+  body(st, generateExecMotif(audit, syn, st.mc));
+  st.y += 3;
+
+  const hasFin = syn.financier.chiffreAffairesTotal > 0 && syn.financier.coutRevientTotal > 0;
+  kpiGrid(st, [
+    { label: 'Marge nette',  value: hasFin ? pct(es.margeNette) : 'N/A',
+      color: !hasFin ? C.slate3 : es.margeNette < 8 ? C.red : C.green,
+      sub: hasFin ? eur(es.resultatNet) : undefined },
+    { label: 'CA total HT',  value: es.caTotal > 0 ? eurM(es.caTotal) : 'N/A' },
+    { label: 'TRN',          value: hasFin ? pct(es.trnRendement) : 'N/A',
+      color: !hasFin ? C.slate3 : es.trnRendement < 8 ? C.red : C.green },
     { label: 'Score global', value: `${es.scores.global}/100` },
-    { label: 'Logements', value: String(synthese.projet.nbLogements) },
+    { label: 'Logements',    value: syn.projet.nbLogements > 0 ? String(syn.projet.nbLogements) : 'N/A' },
+    { label: s('Complétude'), value: `${audit.completenessScore}%`,
+      color: audit.completenessScore >= 75 ? C.green : audit.completenessScore >= 50 ? C.amber : C.red },
   ], 3);
 
-  subHeader(state, 'Scores par dimension');
-  scoreBar(state, 'Foncier', es.scores.foncier);
-  scoreBar(state, 'Technique / PLU', es.scores.technique);
-  scoreBar(state, 'Marche', es.scores.marche);
-  scoreBar(state, 'Financier', es.scores.financier);
-  scoreBar(state, 'Risque (inverse)', es.scores.risque, true);
-  state.y += 2;
+  subTitle(st, 'Scores par dimension');
+  scoreLine(st, 'Foncier',          es.scores.foncier);
+  scoreLine(st, 'Technique / PLU',  es.scores.technique);
+  scoreLine(st, s('Marché'),        es.scores.marche);
+  scoreLine(st, 'Financier',        es.scores.financier);
+  scoreLine(st, s('Risque (inversé)'), es.scores.risque, true);
+  st.y += 4;
 
-  // Points grid
-  checkBreak(state, 40);
-  const half = CONTENT_W / 2 - 3;
-  const leftX = MARGIN.left;
-  const rightX = MARGIN.left + half + 6;
-  const startY = state.y;
+  chk(st, 44);
+  const half = CW / 2 - 4;
+  const lx = ML, rx = ML + half + 8, sy = st.y;
 
-  // Forts
-  state.doc.setFillColor(236, 253, 245);
-  state.doc.roundedRect(leftX, startY, half, 4 + es.pointsForts.length * 5.5, 2, 2, 'F');
-  state.doc.setFillColor(...V.success);
-  state.doc.rect(leftX, startY, half, 2, 'F');
-  state.doc.setFontSize(FONT.small);
-  state.doc.setFont('helvetica', 'bold');
-  state.doc.setTextColor(21, 128, 61);
-  state.doc.text('POINTS FORTS', leftX + 3, startY + 6);
-  let fy = startY + 11;
-  es.pointsForts.forEach(p => {
-    state.doc.setFont('helvetica', 'normal');
-    state.doc.setFontSize(FONT.small);
-    state.doc.setTextColor(21, 128, 61);
-    const lines = state.doc.splitTextToSize(`+ ${p}`, half - 6);
-    state.doc.text(lines, leftX + 3, fy);
+  const safePointsForts = filterPointsForts(es.pointsForts, audit.documentStatus, st.mc);
+  const displayPF = safePointsForts.length > 0 ? safePointsForts : [INCOMPLETE_NO_POINTS_FORTS];
+  const pfIsEmpty = safePointsForts.length === 0;
+
+  const pfH = 4 + displayPF.length * 5.5;
+  st.doc.setFillColor(...C.slate6);
+  st.doc.rect(lx, sy, half, pfH, 'F');
+  st.doc.setFillColor(...(pfIsEmpty ? C.slate3 : C.green));
+  st.doc.rect(lx, sy, 3, pfH, 'F');
+  st.doc.setFontSize(F.sm);
+  st.doc.setFont('helvetica', 'bold');
+  st.doc.setTextColor(...(pfIsEmpty ? C.slate3 : C.green));
+  st.doc.text('POINTS FORTS', lx + 7, sy + 6);
+  let fy = sy + 12;
+  displayPF.forEach(p => {
+    st.doc.setFont('helvetica', pfIsEmpty ? 'italic' : 'normal');
+    st.doc.setFontSize(F.sm);
+    st.doc.setTextColor(...(pfIsEmpty ? C.slate2 : C.black));
+    const prefix = pfIsEmpty ? '' : '+ ';
+    const lines = st.doc.splitTextToSize(s(`${prefix}${p}`), half - 10);
+    st.doc.text(lines, lx + 7, fy);
     fy += lines.length * 4.5;
   });
 
-  // Vigilance
-  state.doc.setFillColor(255, 251, 235);
-  state.doc.roundedRect(rightX, startY, half, 4 + es.pointsVigilance.length * 5.5, 2, 2, 'F');
-  state.doc.setFillColor(...V.warning);
-  state.doc.rect(rightX, startY, half, 2, 'F');
-  state.doc.setFontSize(FONT.small);
-  state.doc.setFont('helvetica', 'bold');
-  state.doc.setTextColor(161, 98, 7);
-  state.doc.text('POINTS DE VIGILANCE', rightX + 3, startY + 6);
-  let vy = startY + 11;
+  const pvH = 4 + es.pointsVigilance.length * 5.5;
+  st.doc.setFillColor(...C.slate6);
+  st.doc.rect(rx, sy, half, pvH, 'F');
+  st.doc.setFillColor(...C.amber);
+  st.doc.rect(rx, sy, 3, pvH, 'F');
+  st.doc.setFontSize(F.sm);
+  st.doc.setFont('helvetica', 'bold');
+  st.doc.setTextColor(...C.amber);
+  st.doc.text('POINTS DE VIGILANCE', rx + 7, sy + 6);
+  let vy = sy + 12;
   es.pointsVigilance.forEach(p => {
-    state.doc.setFont('helvetica', 'normal');
-    state.doc.setFontSize(FONT.small);
-    state.doc.setTextColor(161, 98, 7);
-    const lines = state.doc.splitTextToSize(`! ${p}`, half - 6);
-    state.doc.text(lines, rightX + 3, vy);
+    st.doc.setFont('helvetica', 'normal');
+    st.doc.setFontSize(F.sm);
+    st.doc.setTextColor(...C.black);
+    const lines = st.doc.splitTextToSize(s(`! ${p}`), half - 10);
+    st.doc.text(lines, rx + 7, vy);
     vy += lines.length * 4.5;
   });
+  st.y = Math.max(fy, vy) + 6;
 
-  state.y = Math.max(fy, vy) + 6;
-
-  // Kill switches
   if (es.killSwitchesActifs.length > 0) {
-    checkBreak(state, 8 + es.killSwitchesActifs.length * 6);
-    state.doc.setFillColor(254, 226, 226);
-    state.doc.roundedRect(MARGIN.left, state.y, CONTENT_W, 6 + es.killSwitchesActifs.length * 6, 2, 2, 'F');
-    state.doc.setFillColor(...V.danger);
-    state.doc.rect(MARGIN.left, state.y, CONTENT_W, 2, 'F');
-    state.doc.setFontSize(FONT.small);
-    state.doc.setFont('helvetica', 'bold');
-    state.doc.setTextColor(...V.danger);
-    state.doc.text('POINTS BLOQUANTS', MARGIN.left + 3, state.y + 6);
-    state.y += 10;
-    es.killSwitchesActifs.forEach(ks => {
-      state.doc.setFont('helvetica', 'normal');
-      state.doc.text(`x  ${ks}`, MARGIN.left + 6, state.y);
-      state.y += 6;
+    const ksH = 6 + es.killSwitchesActifs.length * 6;
+    chk(st, 8 + ksH);
+    st.doc.setFillColor(...C.redBg);
+    st.doc.rect(ML, st.y, CW, ksH, 'F');
+    st.doc.setFillColor(...C.red);
+    st.doc.rect(ML, st.y, 3, ksH, 'F');
+    st.doc.setFontSize(F.sm);
+    st.doc.setFont('helvetica', 'bold');
+    st.doc.setTextColor(...C.red);
+    st.doc.text('POINTS BLOQUANTS', ML + 7, st.y + 6);
+    st.y += 10;
+    es.killSwitchesActifs.forEach(k => {
+      st.doc.setFont('helvetica', 'normal');
+      st.doc.text(s(`x  ${k}`), ML + 7, st.y);
+      st.y += 6;
     });
-    state.y += 4;
+    st.y += 4;
   }
 
-  drawPageFooter(state);
+  pageFooter(st);
 }
 
-// ---- Section 02: Projet -----------------------------------------------------
+// ============================================================================
+// 02 DATA QUALITY & CONFIDENCE
+// ============================================================================
 
-function addProjetPage(state: PdfState): void {
-  newPage(state);
-  const { synthese } = state;
-  const p = synthese.projet;
+function addDataQuality(st: St): void {
+  newPage(st);
+  tocRegister(st, '02', s('Qualité des données & niveau de confiance'));
+  const { syn, audit } = st;
 
-  sectionHeader(state, 'PRESENTATION DU PROJET', '02');
+  secTitle(st, '02', s('QUALITÉ DES DONNÉES & NIVEAU DE CONFIANCE'));
 
-  autoTable(state.doc, {
-    startY: state.y,
-    head: [['Parametre', 'Valeur']],
-    body: [
-      ['Adresse', p.adresse],
-      ['Commune', `${p.commune} (${p.codePostal})`],
-      ['Departement', p.departement || 'N/A'],
-      ['Type de programme', p.programmeType],
-      ['Surface terrain', m2(p.surfaceTerrain)],
-      ['Surface plancher', m2(p.surfacePlancher)],
-      ['Nombre de logements', String(p.nbLogements)],
-      ['Date etude', new Date(p.dateEtude).toLocaleDateString('fr-FR')],
-    ],
-    theme: 'striped',
-    headStyles: { fillColor: V.violet800, textColor: V.white, fontStyle: 'bold', fontSize: FONT.body },
-    bodyStyles: { fontSize: FONT.body, textColor: V.slate700 },
-    alternateRowStyles: { fillColor: V.violet50 },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 60, textColor: V.violet700 } },
-    margin: { left: MARGIN.left, right: MARGIN.right },
+  alertBanner(st,
+    s(`Statut : ${DOC_STATUS_LABELS[audit.documentStatus]}`),
+    DOC_STATUS_COLORS[audit.documentStatus],
+  );
+
+  kpiGrid(st, [
+    { label: s('Complétude'), value: `${audit.completenessScore}%`,
+      color: audit.completenessScore >= 75 ? C.green : audit.completenessScore >= 50 ? C.amber : C.red },
+    { label: s('Qualité données'), value: s(syn.metadata.dataQualite),
+      color: syn.metadata.dataQualite === 'HAUTE' ? C.green : syn.metadata.dataQualite === 'MOYENNE' ? C.amber : C.red },
+    { label: 'Usage', value: s(audit.documentStatus === 'committee_ready' ? 'Comité' :
+      audit.documentStatus === 'provisional' ? 'Pré-étude' : 'Brouillon'),
+      color: DOC_STATUS_COLORS[audit.documentStatus] },
+  ], 3);
+
+  subTitle(st, s('Couverture par catégorie'));
+  const cats = [
+    { label: s('Données projet'),    ok: audit.flags.hasCriticalProjectData },
+    { label: s('Données financières'), ok: audit.flags.hasCriticalFinancialData },
+    { label: s('Données marché'),    ok: audit.flags.hasCriticalMarketData },
+    { label: s('Données techniques'), ok: audit.flags.hasCriticalTechnicalData },
+  ];
+
+  cats.forEach(({ label, ok }) => {
+    chk(st, 7);
+    const { doc } = st;
+    doc.setFillColor(...(ok ? C.green : C.red));
+    doc.rect(ML, st.y - 2.5, 3, 3, 'F');
+    doc.setTextColor(...C.black);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(F.body);
+    doc.text(`${label} — ${ok ? 'Suffisante' : 'Insuffisante'}`, ML + 6, st.y);
+    st.y += 6;
   });
+  st.y += 4;
 
-  state.y = (state.doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
-
-  if (Object.keys(p.typologieMix).length > 0) {
-    subHeader(state, 'Mix typologique');
-    autoTable(state.doc, {
-      startY: state.y,
-      head: [['Typologie', 'Nb logements', '% du programme']],
-      body: Object.entries(p.typologieMix).map(([t, n]) => [
-        t, String(n), pct((n / Math.max(p.nbLogements, 1)) * 100),
-      ]),
-      theme: 'grid',
-      headStyles: { fillColor: V.violet600, textColor: V.white, fontSize: FONT.body },
-      bodyStyles: { fontSize: FONT.body },
-      margin: { left: MARGIN.left, right: MARGIN.right },
-    });
-    state.y = (state.doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+  if (audit.criticalMissingFields.length > 0) {
+    subTitle(st, 'Champs manquants');
+    body(st, audit.criticalMissingFields.join(', '), 2);
   }
 
-  drawPageFooter(state);
+  if (audit.blockingIssues.length > 0) {
+    subTitle(st, s('Problèmes bloquants'));
+    audit.blockingIssues.forEach(issue => body(st, s(`• ${issue}`), 4));
+  }
+
+  if (audit.warnings.length > 0) {
+    subTitle(st, 'Avertissements');
+    audit.warnings.forEach(w => body(st, s(`! ${w}`), 4));
+  }
+
+  pageFooter(st);
 }
 
-// ---- Section 03: Technique --------------------------------------------------
+// ============================================================================
+// 03 PROJET
+// ============================================================================
 
-function addTechniquePage(state: PdfState): void {
-  newPage(state);
-  const { synthese } = state;
-  const t = synthese.technique;
+function addProjet(st: St): void {
+  newPage(st);
+  tocRegister(st, '03', s('Présentation du projet'));
+  const { syn } = st;
+  const p = syn.projet;
 
-  sectionHeader(state, 'FAISABILITE TECHNIQUE & PLU', '03');
+  secTitle(st, '03', s('PRÉSENTATION DU PROJET'));
 
-  const statusCfg: Record<typeof t.faisabiliteTechnique, { color: [number,number,number]; label: string }> = {
-    CONFIRME:     { color: V.success, label: 'FAISABILITE CONFIRMEE' },
-    SOUS_RESERVE: { color: V.warning, label: 'FAISABILITE SOUS RESERVE' },
-    IMPOSSIBLE:   { color: V.danger,  label: 'FAISABILITE IMPOSSIBLE' },
-  };
-  const sc = statusCfg[t.faisabiliteTechnique];
-  state.doc.setFillColor(...sc.color);
-  state.doc.roundedRect(MARGIN.left, state.y, CONTENT_W, 11, 2, 2, 'F');
-  state.doc.setFontSize(FONT.h3);
-  state.doc.setFont('helvetica', 'bold');
-  state.doc.setTextColor(...V.white);
-  state.doc.text(sc.label, PAGE_W / 2, state.y + 7.5, { align: 'center' });
-  state.y += 15;
-
-  autoTable(state.doc, {
-    startY: state.y,
-    head: [['Parametre PLU', 'Reglementaire', 'Projet', 'Statut']],
+  autoTable(st.doc, {
+    startY: st.y,
+    head: [[s('Paramètre'), 'Valeur']],
     body: [
-      ['Zone PLU', t.zonePlu, t.zonePlu, 'CONFORME'],
-      ['CUB', t.cub != null ? String(t.cub) : 'N/D', 'N/D', 'N/D'],
-      ['Hauteur max', t.hauteurMax != null ? `${t.hauteurMax} m` : 'N/D',
-        t.hauteurProjet != null ? `${t.hauteurProjet} m` : 'N/D',
-        t.hauteurProjet && t.hauteurMax && t.hauteurProjet <= t.hauteurMax ? 'CONFORME' : 'A VERIFIER'],
-      ['Recul voirie', t.reculs.voirie != null ? `${t.reculs.voirie} m` : 'N/D', 'N/D', 'N/D'],
-      ['Pleine terre', t.pleineTerre != null ? `${t.pleineTerre}%` : 'N/D', 'N/D', 'N/D'],
-      ['Niveaux', 'N/D', t.nbNiveaux != null ? `R+${t.nbNiveaux - 1}` : 'N/D', 'N/D'],
+      ['Adresse',             s(p.adresse || 'Non renseignée')],
+      ['Commune',             s(p.commune ? `${p.commune} (${p.codePostal})` : 'Non renseignée')],
+      [s('Département'),      s(p.departement || 'N/A')],
+      ['Type de programme',   s(p.programmeType || 'N/A')],
+      ['Surface terrain',     m2v(p.surfaceTerrain)],
+      ['Surface plancher',    m2v(p.surfacePlancher)],
+      ['Nombre de logements', p.nbLogements > 0 ? String(p.nbLogements) : 'N/A'],
+      [s('Date étude'),       fmtDate(p.dateEtude)],
     ],
     theme: 'striped',
-    headStyles: { fillColor: V.violet800, textColor: V.white, fontSize: FONT.body },
-    bodyStyles: { fontSize: FONT.body },
-    alternateRowStyles: { fillColor: V.violet50 },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 45, textColor: V.violet700 } },
+    headStyles:         { fillColor: SP.deep, textColor: C.white, fontStyle: 'bold', fontSize: F.body },
+    bodyStyles:         { fontSize: F.body, textColor: C.black },
+    alternateRowStyles: { fillColor: C.slate6 },
+    columnStyles:       { 0: { fontStyle: 'bold', cellWidth: 60, textColor: SP.deep } },
+    margin:             { left: ML, right: MR },
+  });
+  st.y = (st.doc as any).lastAutoTable.finalY + 8;
+
+  if (Object.keys(p.typologieMix).length > 0 && p.nbLogements > 0) {
+    subTitle(st, 'Mix typologique');
+    autoTable(st.doc, {
+      startY: st.y,
+      head: [['Typologie', 'Nb logements', '% du programme']],
+      body: Object.entries(p.typologieMix).map(([t, n]) =>
+        [s(t), String(n), pct((n / Math.max(p.nbLogements, 1)) * 100)]),
+      theme: 'grid',
+      headStyles: { fillColor: SP.main, textColor: C.white, fontSize: F.body },
+      bodyStyles:  { fontSize: F.body },
+      margin:      { left: ML, right: MR },
+    });
+    st.y = (st.doc as any).lastAutoTable.finalY + 8;
+  }
+  pageFooter(st);
+}
+
+// ============================================================================
+// 03b FACADE RENDER (inserted after Projet when available)
+// ============================================================================
+
+function addFacadeRender(st: St): void {
+  if (!st.facadeRenderUrl) return;
+
+  try {
+    newPage(st);
+
+    secTitle(st, '', s('PERSPECTIVE FAÇADE'));
+
+    const { doc } = st;
+    const imgW = CW;
+    const imgH = CW * 0.56;
+    chk(st, imgH + 14);
+
+    doc.addImage(st.facadeRenderUrl, 'PNG', ML, st.y, imgW, imgH);
+    st.y += imgH + 5;
+
+    doc.setFontSize(F.xs);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(...C.slate3);
+    doc.text(s('Image générée par Mimmoza — Générateur de façades'), PW / 2, st.y, { align: 'center' });
+    st.y += 8;
+
+    pageFooter(st);
+  } catch (err) {
+    console.warn('[exportPromoteurPdf] Facade image insertion failed:', err);
+  }
+}
+
+// ============================================================================
+// 04 TECHNIQUE
+// ============================================================================
+
+function addTechnique(st: St): void {
+  newPage(st);
+  tocRegister(st, '04', s('Faisabilité technique & PLU'));
+  const { syn, audit } = st;
+  const t = syn.technique;
+
+  secTitle(st, '04', s('FAISABILITÉ TECHNIQUE & PLU'));
+
+  const effectiveFais = getEffectiveFaisabilite(t.faisabiliteTechnique, audit.documentStatus, st.mc);
+
+  const faisLabels: Record<string, { color: RGB; label: string }> = {
+    CONFIRME:     { color: C.green, label: s('FAISABILITÉ CONFIRMÉE')     },
+    SOUS_RESERVE: { color: C.amber, label: s('FAISABILITÉ SOUS RÉSERVE') },
+    IMPOSSIBLE:   { color: C.red,   label: s('FAISABILITÉ IMPOSSIBLE')    },
+  };
+  const fc = faisLabels[effectiveFais] ?? faisLabels.SOUS_RESERVE;
+  st.doc.setFillColor(...fc.color);
+  st.doc.rect(ML, st.y, CW, 10, 'F');
+  st.doc.setFillColor(...C.white);
+  st.doc.rect(ML, st.y, 3, 10, 'F');
+  st.doc.setFontSize(F.h4);
+  st.doc.setFont('helvetica', 'bold');
+  st.doc.setTextColor(...C.white);
+  st.doc.text(fc.label, PW / 2, st.y + 7, { align: 'center' });
+  st.y += 14;
+
+  if (!st.mc.hasZonePlu) {
+    alertBanner(st,
+      s('Zone PLU non renseignée — faisabilité technique non confirmable'),
+      C.red,
+    );
+  } else if (t.faisabiliteTechnique === 'CONFIRME' && effectiveFais !== 'CONFIRME') {
+    alertBanner(st,
+      s('Faisabilité rétrogradée : données techniques insuffisantes'),
+      C.amber,
+    );
+  }
+
+  autoTable(st.doc, {
+    startY: st.y,
+    head: [[s('Paramètre PLU'), s('Réglementaire'), 'Projet', 'Statut']],
+    body: [
+      ['Zone PLU',      s(t.zonePlu || 'N/A'), s(t.zonePlu || 'N/A'), t.zonePlu ? 'CONFORME' : 'N/D'],
+      ['CUB',           t.cub != null ? String(t.cub) : 'N/D', 'N/D', 'N/D'],
+      ['Hauteur max',   t.hauteurMax    != null ? `${t.hauteurMax} m`    : 'N/D',
+                        t.hauteurProjet != null ? `${t.hauteurProjet} m` : 'N/D',
+                        t.hauteurProjet && t.hauteurMax && t.hauteurProjet <= t.hauteurMax ? 'CONFORME' : s('À VÉRIFIER')],
+      ['Recul voirie',  t.reculs.voirie != null ? `${t.reculs.voirie} m` : 'N/D', 'N/D', 'N/D'],
+      ['Pleine terre',  t.pleineTerre   != null ? `${t.pleineTerre}%`    : 'N/D', 'N/D', 'N/D'],
+      ['Niveaux',       'N/D', t.nbNiveaux != null ? `R+${t.nbNiveaux - 1}` : 'N/D', 'N/D'],
+    ],
+    theme: 'striped',
+    headStyles:         { fillColor: SP.deep, textColor: C.white, fontSize: F.body },
+    bodyStyles:         { fontSize: F.body },
+    alternateRowStyles: { fillColor: C.slate6 },
+    columnStyles:       { 0: { fontStyle: 'bold', cellWidth: 45, textColor: SP.deep } },
     didParseCell: (data) => {
       if (data.column.index === 3 && data.section === 'body') {
         const v = String(data.cell.raw);
-        data.cell.styles.textColor = v === 'BLOQUANT' ? V.danger : v === 'LIMITE' ? V.warning : v === 'CONFORME' ? V.success : V.slate500;
+        data.cell.styles.textColor = v === 'BLOQUANT' ? C.red : v === 'LIMITE' ? C.amber : v === 'CONFORME' ? C.green : C.slate2;
         data.cell.styles.fontStyle = 'bold';
       }
     },
-    margin: { left: MARGIN.left, right: MARGIN.right },
+    margin: { left: ML, right: MR },
   });
-
-  state.y = (state.doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+  st.y = (st.doc as any).lastAutoTable.finalY + 6;
 
   if (t.contraintes.length > 0) {
-    subHeader(state, 'Analyse des contraintes PLU');
-    autoTable(state.doc, {
-      startY: state.y,
-      head: [['Regle', 'Valeur', 'Statut']],
-      body: t.contraintes.map(c => [c.libelle, String(c.valeur ?? 'N/D'), c.statut]),
+    subTitle(st, 'Contraintes PLU');
+    autoTable(st.doc, {
+      startY: st.y,
+      head: [[s('Règle'), 'Valeur', 'Statut']],
+      body: t.contraintes.map(c => [s(c.libelle), String(c.valeur ?? 'N/D'), c.statut]),
       theme: 'grid',
-      headStyles: { fillColor: V.violet600, textColor: V.white, fontSize: FONT.body },
-      bodyStyles: { fontSize: FONT.small },
+      headStyles: { fillColor: SP.main, textColor: C.white, fontSize: F.body },
+      bodyStyles:  { fontSize: F.sm },
       didParseCell: (data) => {
         if (data.column.index === 2 && data.section === 'body') {
           const v = String(data.cell.raw);
-          data.cell.styles.textColor = v === 'BLOQUANT' ? V.danger : v === 'LIMITE' ? V.warning : V.success;
+          data.cell.styles.textColor = v === 'BLOQUANT' ? C.red : v === 'LIMITE' ? C.amber : C.green;
           data.cell.styles.fontStyle = 'bold';
         }
       },
-      margin: { left: MARGIN.left, right: MARGIN.right },
+      margin: { left: ML, right: MR },
     });
-    state.y = (state.doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+    st.y = (st.doc as any).lastAutoTable.finalY + 6;
   }
 
   if (t.notesTechniques.length > 0) {
-    subHeader(state, 'Notes techniques');
-    t.notesTechniques.forEach(n => bodyText(state, `- ${n}`, 3));
+    subTitle(st, 'Notes techniques');
+    t.notesTechniques.forEach(n => body(st, `- ${n}`, 4));
   }
 
-  drawPageFooter(state);
+  const techConclusion = generateTechniqueConclusion(audit.documentStatus, st.mc, syn);
+  if (techConclusion) {
+    st.y += 2;
+    alertBanner(st, techConclusion, DOC_STATUS_COLORS[audit.documentStatus]);
+  }
+
+  pageFooter(st);
 }
 
-// ---- Section 04: Marche -----------------------------------------------------
+// ============================================================================
+// 05 MARCHE
+// ============================================================================
 
-function addMarchePage(state: PdfState): void {
-  newPage(state);
-  const { synthese } = state;
-  const m = synthese.marche;
+function addMarche(st: St): void {
+  newPage(st);
+  tocRegister(st, '05', s('Étude de marché'));
+  const { syn } = st;
+  const m = syn.marche;
 
-  sectionHeader(state, 'ETUDE DE MARCHE', '04');
+  secTitle(st, '05', s('ÉTUDE DE MARCHÉ'));
 
-  kpiRow(state, [
-    { label: 'Prix neuf moyen',    value: `${m.prixNeufMoyenM2.toLocaleString('fr-FR')} EUR/m2` },
-    { label: 'Prix projet',        value: `${m.prixProjetM2.toLocaleString('fr-FR')} EUR/m2` },
-    { label: 'Position vs marche', value: `${m.positionPrix > 0 ? '+' : ''}${pct(m.positionPrix)}`,
-      color: Math.abs(m.positionPrix) > 10 ? V.danger : Math.abs(m.positionPrix) > 5 ? V.warning : V.success },
-    { label: 'Prix ancien moyen',  value: `${m.prixAncienMoyenM2.toLocaleString('fr-FR')} EUR/m2` },
-    { label: 'Prime neuf',         value: pct(m.primiumNeuf) },
-    { label: 'Zone marche',        value: m.zoneMarche.replace('_', ' ') },
+  if (st.audit.documentStatus === 'incomplete' && !st.mc.hasDVF && !st.mc.hasPrixNeuf) {
+    alertBanner(st, s('Analyse de marché non exploitable — données DVF et prix neuf absentes'), C.red);
+  } else if (!st.audit.flags.hasCriticalMarketData) {
+    alertBanner(st, s('Données marché partielles — conclusions non confirmées'), C.amber);
+  }
+
+  const posColor = Math.abs(m.positionPrix) > 10 ? C.red : Math.abs(m.positionPrix) > 5 ? C.amber : C.green;
+  kpiGrid(st, [
+    { label: 'Prix neuf moyen',    value: m.prixNeufMoyenM2 > 0 ? `${fmtNum(m.prixNeufMoyenM2)} EUR/m²` : 'N/A' },
+    { label: 'Prix projet',        value: m.prixProjetM2 > 0 ? `${fmtNum(m.prixProjetM2)} EUR/m²` : 'N/A' },
+    { label: s('Position vs marché'),
+      value: m.prixProjetM2 > 0 && m.prixNeufMoyenM2 > 0 ? `${m.positionPrix > 0 ? '+' : ''}${pct(m.positionPrix)}` : 'N/A',
+      color: m.prixProjetM2 > 0 ? posColor : C.slate3 },
+    { label: 'Prix ancien moyen',  value: m.prixAncienMoyenM2 > 0 ? `${fmtNum(m.prixAncienMoyenM2)} EUR/m²` : 'N/A' },
+    { label: 'Prime neuf',         value: m.prixNeufMoyenM2 > 0 && m.prixAncienMoyenM2 > 0 ? pct(m.primiumNeuf) : 'N/A' },
+    { label: s('Zone marché'),     value: s(m.zoneMarche.replace('_', ' ')) },
   ], 3);
 
-  autoTable(state.doc, {
-    startY: state.y,
+  const hasDvf = (m.transactionsRecentes.nbTransactions ?? 0) > 0;
+  autoTable(st.doc, {
+    startY: st.y,
     head: [['Indicateur', 'Valeur', 'Source']],
     body: [
-      ['Transactions DVF', String(m.transactionsRecentes.nbTransactions), m.transactionsRecentes.source],
-      ['Prix moyen DVF', `${m.transactionsRecentes.prixMoyenM2.toLocaleString('fr-FR')} EUR/m2`, `Periode ${m.transactionsRecentes.periode}`],
-      ['Prix min DVF', `${m.transactionsRecentes.prixMin.toLocaleString('fr-FR')} EUR/m2`, ''],
-      ['Prix max DVF', `${m.transactionsRecentes.prixMax.toLocaleString('fr-FR')} EUR/m2`, ''],
-      ['Programmes concurrents', String(m.offreConcurrente), 'Marche local'],
-      ['Absorption mensuelle', m.absorptionMensuelle != null ? `${m.absorptionMensuelle} ventes/mois` : 'N/D', 'Estimation'],
-      ['Delai ecoulement', m.delaiEcoulementMois != null ? `${m.delaiEcoulementMois} mois` : 'N/D', 'Calcule'],
+      ['Transactions DVF',       hasDvf ? String(m.transactionsRecentes.nbTransactions) : 'N/A', s(m.transactionsRecentes.source || 'DVF')],
+      ['Prix moyen DVF',         hasDvf ? `${fmtNum(m.transactionsRecentes.prixMoyenM2)} EUR/m²` : 'N/A', hasDvf ? s(`Période ${m.transactionsRecentes.periode}`) : ''],
+      ['Prix min DVF',           hasDvf ? `${fmtNum(m.transactionsRecentes.prixMin)} EUR/m²` : 'N/A', ''],
+      ['Prix max DVF',           hasDvf ? `${fmtNum(m.transactionsRecentes.prixMax)} EUR/m²` : 'N/A', ''],
+      ['Programmes concurrents', m.offreConcurrente > 0 ? String(m.offreConcurrente) : 'N/A', s('Marché local')],
+      ['Absorption mensuelle',   m.absorptionMensuelle != null ? `${m.absorptionMensuelle} ventes/mois` : 'N/A', 'Estimation'],
+      [s('Délai écoulement'),    m.delaiEcoulementMois != null ? `${m.delaiEcoulementMois} mois` : 'N/A', s('Calculé')],
     ],
     theme: 'striped',
-    headStyles: { fillColor: V.violet800, textColor: V.white, fontSize: FONT.body },
-    bodyStyles: { fontSize: FONT.body },
-    alternateRowStyles: { fillColor: V.violet50 },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, textColor: V.violet700 } },
-    margin: { left: MARGIN.left, right: MARGIN.right },
+    headStyles:         { fillColor: SP.deep, textColor: C.white, fontSize: F.body },
+    bodyStyles:         { fontSize: F.body },
+    alternateRowStyles: { fillColor: C.slate6 },
+    columnStyles:       { 0: { fontStyle: 'bold', cellWidth: 55, textColor: SP.deep } },
+    margin:             { left: ML, right: MR },
   });
-
-  state.y = (state.doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+  st.y = (st.doc as any).lastAutoTable.finalY + 6;
 
   if (m.demographieIndicateurs.length > 0) {
-    subHeader(state, 'Indicateurs demographiques');
-    autoTable(state.doc, {
-      startY: state.y,
-      head: [['Indicateur', 'Valeur', 'Evolution', 'Source']],
-      body: m.demographieIndicateurs.map(d => [d.label, String(d.valeur), d.evolution ?? 'N/D', d.source]),
+    subTitle(st, s('Indicateurs démographiques'));
+    autoTable(st.doc, {
+      startY: st.y,
+      head: [['Indicateur', 'Valeur', s('Évolution'), 'Source']],
+      body: m.demographieIndicateurs.map(d => [s(d.label), String(d.valeur), s(d.evolution ?? 'N/A'), s(d.source)]),
       theme: 'grid',
-      headStyles: { fillColor: V.violet600, textColor: V.white, fontSize: FONT.body },
-      bodyStyles: { fontSize: FONT.small },
-      margin: { left: MARGIN.left, right: MARGIN.right },
+      headStyles: { fillColor: SP.main, textColor: C.white, fontSize: F.body },
+      bodyStyles:  { fontSize: F.sm },
+      margin:      { left: ML, right: MR },
     });
-    state.y = (state.doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+    st.y = (st.doc as any).lastAutoTable.finalY + 6;
   }
 
   if (m.notesMarcheLibre.length > 0) {
-    subHeader(state, 'Points de vigilance marche');
-    m.notesMarcheLibre.forEach(n => bodyText(state, `! ${n}`, 3));
+    subTitle(st, s('Points de vigilance marché'));
+    m.notesMarcheLibre.forEach(n => body(st, `! ${n}`, 4));
   }
 
-  drawPageFooter(state);
+  const marcheConclusion = generateMarcheConclusion(st.audit.documentStatus, st.mc);
+  if (marcheConclusion) {
+    st.y += 2;
+    alertBanner(st, marcheConclusion, DOC_STATUS_COLORS[st.audit.documentStatus]);
+  }
+
+  pageFooter(st);
 }
 
-// ---- Section 05: Financier --------------------------------------------------
+// ============================================================================
+// 06 FINANCIER
+// ============================================================================
 
-function addFinancierPage(state: PdfState): void {
-  newPage(state);
-  const { synthese } = state;
-  const f = synthese.financier;
+function addFinancier(st: St): void {
+  newPage(st);
+  tocRegister(st, '06', s('Analyse financière'));
+  const { syn } = st;
+  const f = syn.financier;
 
-  sectionHeader(state, 'ANALYSE FINANCIERE', '05');
+  secTitle(st, '06', s('ANALYSE FINANCIÈRE'));
 
-  autoTable(state.doc, {
-    startY: state.y,
+  const hasCA  = f.chiffreAffairesTotal > 0;
+  const hasCDR = f.coutRevientTotal > 0;
+
+  if (!hasCA || !hasCDR) {
+    alertBanner(st,
+      st.audit.documentStatus === 'incomplete'
+        ? s('Analyse financière non exploitable — données critiques absentes')
+        : s('Données financières insuffisantes — ratios non calculables'),
+      C.red,
+    );
+  }
+
+  autoTable(st.doc, {
+    startY: st.y,
     head: [['Poste', 'Montant HT', '% CA']],
     body: [
-      ["Chiffre d'affaires total HT", eur(f.chiffreAffairesTotal), '100%'],
-      ['Cout foncier', eur(f.coutFoncier), pct((f.coutFoncier / Math.max(f.chiffreAffairesTotal, 1)) * 100)],
-      ['Cout travaux', eur(f.coutTravaux), pct((f.coutTravaux / Math.max(f.chiffreAffairesTotal, 1)) * 100)],
-      ['Frais financiers', eur(f.coutFinanciers), pct((f.coutFinanciers / Math.max(f.chiffreAffairesTotal, 1)) * 100)],
-      ['Frais commercialisation', eur(f.fraisCommercialisation), pct((f.fraisCommercialisation / Math.max(f.chiffreAffairesTotal, 1)) * 100)],
-      ['Frais de gestion / etudes', eur(f.fraisGestion), pct((f.fraisGestion / Math.max(f.chiffreAffairesTotal, 1)) * 100)],
-      ...f.autresCouts.map(c => [c.libelle, eur(c.montantHT), pct(c.pourcentageCA)]),
-      ['COUT DE REVIENT TOTAL', eur(f.coutRevientTotal), pct((f.coutRevientTotal / Math.max(f.chiffreAffairesTotal, 1)) * 100)],
-      ['MARGE NETTE', eur(f.margeNette), pct(f.margeNettePercent)],
+      [s("Chiffre d'affaires total HT"), hasCA ? eur(f.chiffreAffairesTotal) : 'N/A', '100%'],
+      [s('Coût foncier'),                eur(f.coutFoncier),            hasCA ? safePct(f.coutFoncier, f.chiffreAffairesTotal) : 'N/A'],
+      [s('Coût travaux'),                eur(f.coutTravaux),            hasCA ? safePct(f.coutTravaux, f.chiffreAffairesTotal) : 'N/A'],
+      ['Frais financiers',               eur(f.coutFinanciers),         hasCA ? safePct(f.coutFinanciers, f.chiffreAffairesTotal) : 'N/A'],
+      ['Frais commercialisation',        eur(f.fraisCommercialisation), hasCA ? safePct(f.fraisCommercialisation, f.chiffreAffairesTotal) : 'N/A'],
+      [s('Frais de gestion / études'),   eur(f.fraisGestion),           hasCA ? safePct(f.fraisGestion, f.chiffreAffairesTotal) : 'N/A'],
+      ...f.autresCouts.map(c => [s(c.libelle), eur(c.montantHT), pct(c.pourcentageCA)]),
+      [s('COÛT DE REVIENT TOTAL'),       hasCDR ? eur(f.coutRevientTotal) : 'N/A', hasCA ? safePct(f.coutRevientTotal, f.chiffreAffairesTotal) : 'N/A'],
+      ['MARGE NETTE',                    hasCA && hasCDR ? eur(f.margeNette) : 'N/A', hasCA && hasCDR ? pct(f.margeNettePercent) : 'N/A'],
     ],
     theme: 'striped',
-    headStyles: { fillColor: V.violet800, textColor: V.white, fontStyle: 'bold', fontSize: FONT.body },
-    bodyStyles: { fontSize: FONT.body },
-    alternateRowStyles: { fillColor: V.violet50 },
-    columnStyles: { 0: { fontStyle: 'normal', cellWidth: 80 } },
+    headStyles:         { fillColor: SP.deep, textColor: C.white, fontStyle: 'bold', fontSize: F.body },
+    bodyStyles:         { fontSize: F.body },
+    alternateRowStyles: { fillColor: C.slate6 },
+    columnStyles:       { 0: { fontStyle: 'normal', cellWidth: 80 } },
     didParseCell: (data) => {
       const last = data.table.body.length - 1;
       const prev = data.table.body.length - 2;
       if (data.section === 'body' && data.row.index === last) {
-        data.cell.styles.fillColor = V.violet800;
-        data.cell.styles.textColor = V.white;
+        data.cell.styles.fillColor = SP.deep;
+        data.cell.styles.textColor = C.white;
         data.cell.styles.fontStyle = 'bold';
       }
       if (data.section === 'body' && data.row.index === prev) {
-        data.cell.styles.fillColor = V.violet100;
-        data.cell.styles.textColor = V.violet900;
+        data.cell.styles.fillColor = C.slate5;
+        data.cell.styles.textColor = SP.deep;
         data.cell.styles.fontStyle = 'bold';
       }
     },
-    margin: { left: MARGIN.left, right: MARGIN.right },
+    margin: { left: ML, right: MR },
   });
+  st.y = (st.doc as any).lastAutoTable.finalY + 6;
 
-  state.y = (state.doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
-
-  kpiRow(state, [
-    { label: 'CA / m2', value: `${f.chiffreAffairesM2.toLocaleString('fr-FR')} EUR/m2` },
-    { label: 'Cout revient / m2', value: `${f.coutRevientM2.toLocaleString('fr-FR')} EUR/m2` },
-    { label: 'Travaux / m2', value: `${f.coutTravauxM2.toLocaleString('fr-FR')} EUR/m2` },
-    { label: 'Marge operationnelle', value: pct(f.margeOperationnellePercent), color: f.margeOperationnellePercent < 15 ? V.warning : V.success },
-    { label: 'TRN', value: pct(f.trnRendement), color: f.trnRendement < 8 ? V.danger : V.success },
-    { label: 'Ratio foncier/CA', value: pct(f.bilancielRatio) },
+  const hasSDP = syn.projet.surfacePlancher > 0;
+  kpiGrid(st, [
+    { label: s('CA / m²'),              value: hasSDP && hasCA ? `${fmtNum(f.chiffreAffairesM2)} EUR/m²` : 'N/A' },
+    { label: s('Coût revient / m²'),    value: hasSDP && hasCDR ? `${fmtNum(f.coutRevientM2)} EUR/m²` : 'N/A' },
+    { label: s('Travaux / m²'),         value: hasSDP && f.coutTravaux > 0 ? `${fmtNum(f.coutTravauxM2)} EUR/m²` : 'N/A' },
+    { label: s('Marge opérationnelle'), value: hasCA && hasCDR ? pct(f.margeOperationnellePercent) : 'N/A',
+      color: hasCA && hasCDR ? (f.margeOperationnellePercent < 15 ? C.amber : C.green) : C.slate3 },
+    { label: 'TRN',                     value: hasCA && hasCDR ? pct(f.trnRendement) : 'N/A',
+      color: hasCA && hasCDR ? (f.trnRendement < 8 ? C.red : C.green) : C.slate3 },
+    { label: 'Ratio foncier/CA',        value: hasCA ? pct(f.bilancielRatio) : 'N/A' },
   ], 3);
 
-  drawPageFooter(state);
-}
-
-// ---- Section 06: Financement ------------------------------------------------
-
-function addFinancementPage(state: PdfState): void {
-  newPage(state);
-  const { synthese } = state;
-  const fin = synthese.financement;
-
-  sectionHeader(state, 'PLAN DE FINANCEMENT', '06');
-
-  autoTable(state.doc, {
-    startY: state.y,
-    head: [['Parametre', 'Valeur']],
-    body: [
-      ['Fonds propres requis', `${eur(fin.fondsPropresRequis)} (${pct(fin.fondsPropresPercent)})`],
-      ['Credit promoteur', `${eur(fin.creditPromoteurMontant)} -- ${fin.creditPromoteurDuree} mois`],
-      ['Taux credit estime', pct(fin.tauxCredit)],
-      ['Ratio fonds propres / cout revient', pct(fin.ratioFondsPropres)],
-      ['Prefinancement VEFA requis', pct(fin.prefinancementVentes)],
-    ],
-    theme: 'striped',
-    headStyles: { fillColor: V.violet800, textColor: V.white, fontSize: FONT.body },
-    bodyStyles: { fontSize: FONT.body },
-    alternateRowStyles: { fillColor: V.violet50 },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 80, textColor: V.violet700 } },
-    margin: { left: MARGIN.left, right: MARGIN.right },
-  });
-
-  state.y = (state.doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
-
-  subHeader(state, 'Garanties requises');
-  fin.garantiesRequises.forEach(g => bodyText(state, `- ${g}`, 3));
-
-  if (fin.notesBancaires.length > 0) {
-    state.y += 2;
-    subHeader(state, 'Notes bancaires');
-    fin.notesBancaires.forEach(n => bodyText(state, `! ${n}`, 3));
+  const finConclusion = generateFinancierConclusion(st.audit.documentStatus, st.mc, syn);
+  if (finConclusion) {
+    st.y += 2;
+    alertBanner(st, finConclusion, DOC_STATUS_COLORS[st.audit.documentStatus]);
   }
 
-  drawPageFooter(state);
+  pageFooter(st);
 }
 
-// ---- Section 07: Risques ----------------------------------------------------
+// ============================================================================
+// 07 FINANCEMENT
+// ============================================================================
 
-function addRisquesPage(state: PdfState): void {
-  newPage(state);
-  const { synthese } = state;
+function addFinancement(st: St): void {
+  newPage(st);
+  tocRegister(st, '07', 'Plan de financement');
+  const { syn } = st;
+  const fin = syn.financement;
 
-  sectionHeader(state, 'ANALYSE DES RISQUES', '07');
+  secTitle(st, '07', 'PLAN DE FINANCEMENT');
 
-  if (synthese.risques.length === 0) {
-    bodyText(state, 'Aucun risque significatif identifie lors de cette analyse.');
-    drawPageFooter(state);
+  if (st.audit.documentStatus === 'incomplete' && !st.mc.hasCA) {
+    alertBanner(st, s('Plan de financement non exploitable — chiffre d\'affaires absent'), C.red);
+  }
+
+  autoTable(st.doc, {
+    startY: st.y,
+    head: [[s('Paramètre'), 'Valeur']],
+    body: [
+      ['Fonds propres requis',               fin.fondsPropresRequis > 0 ? `${eur(fin.fondsPropresRequis)} (${pct(fin.fondsPropresPercent)})` : 'N/A'],
+      [s('Crédit promoteur'),                fin.creditPromoteurMontant > 0 ? `${eur(fin.creditPromoteurMontant)} — ${fin.creditPromoteurDuree} mois` : 'N/A'],
+      [s('Taux crédit estimé'),              fin.tauxCredit > 0 ? pct(fin.tauxCredit) : 'N/A'],
+      [s('Ratio fonds propres / coût revient'), pct(fin.ratioFondsPropres)],
+      [s('Préfinancement VEFA requis'),      pct(fin.prefinancementVentes)],
+    ],
+    theme: 'striped',
+    headStyles:         { fillColor: SP.deep, textColor: C.white, fontSize: F.body },
+    bodyStyles:         { fontSize: F.body },
+    alternateRowStyles: { fillColor: C.slate6 },
+    columnStyles:       { 0: { fontStyle: 'bold', cellWidth: 80, textColor: SP.deep } },
+    margin:             { left: ML, right: MR },
+  });
+  st.y = (st.doc as any).lastAutoTable.finalY + 8;
+
+  subTitle(st, 'Garanties requises');
+  if (fin.garantiesRequises.length > 0) {
+    fin.garantiesRequises.forEach(g => body(st, `- ${g}`, 4));
+  } else {
+    body(st, s('Aucune garantie spécifiée.'), 4);
+  }
+
+  if (fin.notesBancaires.length > 0) {
+    st.y += 2;
+    subTitle(st, 'Notes bancaires');
+    fin.notesBancaires.forEach(n => body(st, `! ${n}`, 4));
+  }
+  pageFooter(st);
+}
+
+// ============================================================================
+// 08 RISQUES
+// ============================================================================
+
+function addRisques(st: St): void {
+  newPage(st);
+  tocRegister(st, '08', 'Analyse des risques');
+  const { syn } = st;
+
+  secTitle(st, '08', 'ANALYSE DES RISQUES');
+
+  if (syn.risques.length === 0) {
+    if (st.audit.documentStatus === 'incomplete') {
+      alertBanner(st, s('Analyse des risques non réalisée — données insuffisantes'), C.red);
+      body(st, s('L\'absence de risques identifiés sur un dossier incomplet ne signifie pas l\'absence de risques. L\'analyse des risques doit être conduite après complétion des données projet, financières et techniques.'));
+    } else {
+      alertBanner(st, s('Aucun risque identifié — analyse potentiellement incomplète'), C.amber);
+      body(st, s('L\'absence de risques identifiés peut indiquer une analyse incomplète. Il est recommandé de compléter l\'étude avant présentation en comité.'));
+    }
+    pageFooter(st);
     return;
   }
 
-  autoTable(state.doc, {
-    startY: state.y,
-    head: [['Risque', 'Categorie', 'Niveau', 'Prob.', 'Impact', 'Mitigation', 'KS']],
-    body: synthese.risques.map((r: RisqueItem) => [
-      r.libelle.length > 45 ? r.libelle.slice(0, 42) + '...' : r.libelle,
-      r.categorie,
-      r.niveau,
+  autoTable(st.doc, {
+    startY: st.y,
+    head: [['Risque', s('Catégorie'), 'Niveau', 'Prob.', 'Impact', 'Mitigation', 'KS']],
+    body: syn.risques.map((r: RisqueItem) => [
+      s(r.libelle.length > 45 ? r.libelle.slice(0, 42) + '...' : r.libelle),
+      s(r.categorie), r.niveau,
       `${Math.round(r.probabilite * 100)}%`,
       `${Math.round(r.impact * 100)}%`,
-      r.mitigation.length > 60 ? r.mitigation.slice(0, 57) + '...' : r.mitigation,
+      s(r.mitigation.length > 60 ? r.mitigation.slice(0, 57) + '...' : r.mitigation),
       r.isKillSwitch ? 'OUI' : '',
     ]),
     theme: 'grid',
-    headStyles: { fillColor: V.violet800, textColor: V.white, fontSize: FONT.small, fontStyle: 'bold' },
-    bodyStyles: { fontSize: FONT.small, cellPadding: 2 },
+    headStyles: { fillColor: SP.deep, textColor: C.white, fontSize: F.sm, fontStyle: 'bold' },
+    bodyStyles:  { fontSize: F.sm, cellPadding: 2 },
     columnStyles: {
-      0: { cellWidth: 40 },
-      2: { cellWidth: 18, halign: 'center', fontStyle: 'bold' },
-      3: { cellWidth: 10, halign: 'center' },
-      4: { cellWidth: 10, halign: 'center' },
-      5: { cellWidth: 52 },
-      6: { cellWidth: 10, halign: 'center' },
+      0: { cellWidth: 40 }, 2: { cellWidth: 18, halign: 'center', fontStyle: 'bold' },
+      3: { cellWidth: 10, halign: 'center' }, 4: { cellWidth: 10, halign: 'center' },
+      5: { cellWidth: 52 }, 6: { cellWidth: 10, halign: 'center' },
     },
     didParseCell: (data) => {
-      if (data.column.index === 2 && data.section === 'body') {
-        const n = String(data.cell.raw) as RisqueNiveau;
-        data.cell.styles.textColor = risqueColor(n);
-      }
+      if (data.column.index === 2 && data.section === 'body')
+        data.cell.styles.textColor = risqueColor(String(data.cell.raw) as RisqueNiveau);
       if (data.column.index === 6 && data.section === 'body' && String(data.cell.raw) === 'OUI') {
-        data.cell.styles.textColor = V.danger;
+        data.cell.styles.textColor = C.red;
         data.cell.styles.fontStyle = 'bold';
       }
     },
-    margin: { left: MARGIN.left, right: MARGIN.right },
+    margin: { left: ML, right: MR },
   });
+  st.y = (st.doc as any).lastAutoTable.finalY + 6;
 
-  state.y = (state.doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
-
-  const critiques = synthese.risques.filter(r => r.niveau === 'CRITIQUE').length;
-  const eleves    = synthese.risques.filter(r => r.niveau === 'ELEVE').length;
-  kpiRow(state, [
-    { label: 'Total risques', value: String(synthese.risques.length) },
-    { label: 'Critiques', value: String(critiques), color: critiques > 0 ? V.danger : V.success },
-    { label: 'Eleves', value: String(eleves), color: eleves > 0 ? V.warning : V.success },
-    { label: 'Kill switches', value: String(synthese.risques.filter(r => r.isKillSwitch).length) },
-    { label: 'Moderes', value: String(synthese.risques.filter(r => r.niveau === 'MODERE').length) },
-    { label: 'Faibles', value: String(synthese.risques.filter(r => r.niveau === 'FAIBLE').length), color: V.success },
+  const critiques = syn.risques.filter(r => r.niveau === 'CRITIQUE').length;
+  const eleves    = syn.risques.filter(r => r.niveau === 'ELEVE').length;
+  kpiGrid(st, [
+    { label: 'Total',         value: String(syn.risques.length) },
+    { label: 'Critiques',     value: String(critiques), color: critiques > 0 ? C.red : C.green },
+    { label: s('Élevés'),     value: String(eleves),    color: eleves > 0 ? C.amber : C.green },
+    { label: 'Kill switches', value: String(syn.risques.filter(r => r.isKillSwitch).length) },
+    { label: s('Modérés'),    value: String(syn.risques.filter(r => r.niveau === 'MODERE').length) },
+    { label: 'Faibles',       value: String(syn.risques.filter(r => r.niveau === 'FAIBLE').length), color: C.green },
   ], 3);
 
-  drawPageFooter(state);
+  pageFooter(st);
 }
 
-// ---- Section 08: Scenarios --------------------------------------------------
+// ============================================================================
+// 09 SCENARIOS
+// ============================================================================
 
-function addScenariosPage(state: PdfState): void {
-  newPage(state);
-  const { synthese } = state;
+function addScenarios(st: St): void {
+  if ((st.syn.scenarios?.length ?? 0) === 0) return;
 
-  sectionHeader(state, 'SCENARIOS DE SENSIBILITE', '08');
+  const suppression = scenariosGate(st.audit.documentStatus, st.mc, st.syn.scenarios);
 
-  autoTable(state.doc, {
-    startY: state.y,
-    head: [['Scenario', 'Prix vente', 'Travaux', 'Absorption', 'Taux credit', 'Marge nette', 'TRN', 'Avis']],
-    body: synthese.scenarios.map((s: Scenario) => [
-      s.libelle,
-      `${s.hypotheses.prixVenteM2.toLocaleString('fr-FR')} EUR`,
-      `${s.hypotheses.coutTravauxM2.toLocaleString('fr-FR')} EUR`,
-      `${s.hypotheses.tauxAbsorption} mois`,
-      pct(s.hypotheses.tauxCredit),
-      pct(s.resultat.margeNettePercent),
-      pct(s.resultat.trnRendement),
-      s.resultat.recommendation,
+  newPage(st);
+  tocRegister(st, '09', s('Scénarios de sensibilité'));
+  const { syn } = st;
+
+  secTitle(st, '09', s('SCÉNARIOS DE SENSIBILITÉ'));
+
+  if (suppression) {
+    alertBanner(st, s('Scénarios non exploitables — hypothèses insuffisantes'), C.red);
+    body(st, suppression);
+    pageFooter(st);
+    return;
+  }
+
+  autoTable(st.doc, {
+    startY: st.y,
+    head: [[s('Scénario'), 'Prix vente', 'Travaux', 'Absorption', s('Taux crédit'), 'Marge nette', 'TRN', 'Avis']],
+    body: syn.scenarios.map((sc: Scenario) => [
+      s(sc.libelle),
+      `${fmtNum(sc.hypotheses.prixVenteM2)} EUR`,
+      `${fmtNum(sc.hypotheses.coutTravauxM2)} EUR`,
+      `${sc.hypotheses.tauxAbsorption} mois`,
+      pct(sc.hypotheses.tauxCredit),
+      pct(sc.resultat.margeNettePercent),
+      pct(sc.resultat.trnRendement),
+      REC_LABELS_SHORT[sc.resultat.recommendation],
     ]),
     theme: 'grid',
-    headStyles: { fillColor: V.violet800, textColor: V.white, fontSize: FONT.small },
-    bodyStyles: { fontSize: FONT.small },
-    columnStyles: {
-      0: { cellWidth: 35, fontStyle: 'bold' },
-      5: { fontStyle: 'bold' },
-      7: { fontStyle: 'bold', halign: 'center' },
-    },
+    headStyles: { fillColor: SP.deep, textColor: C.white, fontSize: F.sm },
+    bodyStyles:  { fontSize: F.sm },
+    columnStyles: { 0: { cellWidth: 35, fontStyle: 'bold' }, 5: { fontStyle: 'bold' }, 7: { fontStyle: 'bold', halign: 'center' } },
     didParseCell: (data) => {
       if (data.section === 'body') {
-        const sc = synthese.scenarios[data.row.index];
+        const sc = syn.scenarios[data.row.index];
         if (!sc) return;
         if (data.column.index === 0) {
-          data.cell.styles.textColor =
-            sc.type === 'OPTIMISTE' ? V.success :
-            sc.type === 'BASE'      ? V.violet700 :
-            sc.type === 'PESSIMISTE'? V.warning  : V.danger;
+          data.cell.styles.textColor = sc.type === 'OPTIMISTE' ? C.green : sc.type === 'BASE' ? SP.deep : sc.type === 'PESSIMISTE' ? C.amber : C.red;
         }
         if (data.column.index === 5) {
           const m = sc.resultat.margeNettePercent;
-          data.cell.styles.textColor = m < 8 ? V.danger : m < 12 ? V.warning : V.success;
+          data.cell.styles.textColor = m < 8 ? C.red : m < 12 ? C.amber : C.green;
         }
         if (data.column.index === 7) {
-          const r = sc.resultat.recommendation;
-          data.cell.styles.textColor = r === 'GO' ? V.success : r === 'GO_CONDITION' ? V.warning : V.danger;
+          data.cell.styles.textColor = recColor(sc.resultat.recommendation);
         }
       }
     },
-    margin: { left: MARGIN.left, right: MARGIN.right },
+    margin: { left: ML, right: MR },
   });
+  st.y = (st.doc as any).lastAutoTable.finalY + 8;
 
-  state.y = (state.doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
-  bodyText(state, 'Le scenario de stress teste la resilience de l\'operation dans des conditions degradees cumulees. Une marge positive en scenario stress confirme la robustesse de l\'operation.');
-
-  drawPageFooter(state);
+  if (st.audit.documentStatus === 'provisional') {
+    body(st, s("Les scénarios ci-dessus reposent sur des données partielles. Leurs résultats sont à interpréter avec prudence et à revalider après complétion du dossier."));
+  } else {
+    body(st, s("Le scénario de stress teste la résilience de l'opération dans des conditions dégradées cumulées. Une marge positive en scénario stress confirme la robustesse de l'opération."));
+  }
+  pageFooter(st);
 }
 
-// ---- Section 09: Synthese IA ------------------------------------------------
+// ============================================================================
+// 10 HYPOTHESES
+// ============================================================================
 
-function addSyntheseIAPage(state: PdfState): void {
-  if (!state.synthese.syntheseIA) return;
-  newPage(state);
-  const ia = state.synthese.syntheseIA;
+function addHypotheses(st: St): void {
+  newPage(st);
+  tocRegister(st, '10', s('Hypothèses de calcul'));
+  const { syn } = st;
+  const f = syn.financier;
+  const m = syn.marche;
+  const fin = syn.financement;
 
-  sectionHeader(state, 'SYNTHESE ANALYTIQUE', '09');
+  secTitle(st, '10', s('HYPOTHÈSES DE CALCUL'));
+
+  if (st.audit.documentStatus === 'incomplete') {
+    alertBanner(st, s('Hypothèses incomplètes — de nombreux paramètres ne sont pas renseignés'), C.red);
+    body(st, s('Les hypothèses ci-dessous sont présentées en l\'état. Les valeurs manquantes doivent être complétées avant toute exploitation du bilan.'));
+  } else if (st.audit.documentStatus === 'provisional') {
+    body(st, s('Ce tableau récapitule les hypothèses structurantes retenues pour le bilan promoteur. Certaines valeurs restent à confirmer.'));
+  } else {
+    body(st, s('Ce tableau récapitule les hypothèses structurantes retenues pour le bilan promoteur et l\'analyse de sensibilité.'));
+  }
+  st.y += 2;
+
+  const hasSDP = syn.projet.surfacePlancher > 0;
+  const hasCA  = f.chiffreAffairesTotal > 0;
+
+  autoTable(st.doc, {
+    startY: st.y,
+    head: [[s('Hypothèse'), 'Valeur retenue', 'Commentaire']],
+    body: [
+      [s('Prix de vente moyen /m²'),   m.prixProjetM2 > 0 ? `${fmtNum(m.prixProjetM2)} EUR/m²` : 'N/A',        s('Prix moyen pondéré sortie')],
+      [s('Coût travaux /m²'),          hasSDP && f.coutTravaux > 0 ? `${fmtNum(f.coutTravauxM2)} EUR/m²` : 'N/A', s('Hors fondations spéciales')],
+      [s('Coût foncier'),              f.coutFoncier > 0 ? eur(f.coutFoncier) : 'N/A',                              s('Acquisition + frais notaire')],
+      [s('Durée opération estimée'),   fin.creditPromoteurDuree > 0 ? `${fin.creditPromoteurDuree} mois` : 'N/A',  s('Permis à livraison')],
+      [s('Taux crédit promoteur'),     fin.tauxCredit > 0 ? pct(fin.tauxCredit) : 'N/A',                            s('Taux indicatif')],
+      ['Absorption',                   m.absorptionMensuelle != null ? `${m.absorptionMensuelle} ventes/mois` : 'N/A', 'Estimation locale'],
+      [s('Délai écoulement'),          m.delaiEcoulementMois != null ? `${m.delaiEcoulementMois} mois` : 'N/A',    s('Basé sur absorption')],
+      ['Frais commercialisation',      hasCA ? safePct(f.fraisCommercialisation, f.chiffreAffairesTotal) : 'N/A',    '% du CA HT'],
+      ['Frais de gestion',             hasCA ? safePct(f.fraisGestion, f.chiffreAffairesTotal) : 'N/A',              '% du CA HT'],
+      [s('Préfinancement VEFA'),       pct(fin.prefinancementVentes),                                                s('Seuil de déblocage crédit')],
+    ],
+    theme: 'striped',
+    headStyles:         { fillColor: SP.deep, textColor: C.white, fontSize: F.body },
+    bodyStyles:         { fontSize: F.body },
+    alternateRowStyles: { fillColor: C.slate6 },
+    columnStyles:       { 0: { fontStyle: 'bold', cellWidth: 55, textColor: SP.deep }, 2: { textColor: C.slate2, fontStyle: 'italic' } },
+    margin:             { left: ML, right: MR },
+  });
+  st.y = (st.doc as any).lastAutoTable.finalY + 6;
+
+  pageFooter(st);
+}
+
+// ============================================================================
+// 11 SYNTHESE IA
+// ============================================================================
+
+function addSyntheseIA(st: St): void {
+  if (!shouldShowSyntheseIA(st.audit.documentStatus, st.syn)) return;
+
+  const ia = st.syn.syntheseIA!;
+  const status = st.audit.documentStatus;
 
   const sections = [
-    { t: 'Resume executif',   c: ia.texteExecutif },
-    { t: 'Analyse de marche', c: ia.analyseMarche },
-    { t: 'Analyse technique', c: ia.analyseTechnique },
-    { t: 'Analyse financiere', c: ia.analyseFinanciere },
-    { t: 'Analyse des risques', c: ia.analyseRisques },
-  ];
+    { t: s('Résumé exécutif'),     c: filterSyntheseIA(ia.texteExecutif, 'executif', status, st.mc) },
+    { t: s('Analyse de marché'),   c: filterSyntheseIA(ia.analyseMarche, 'marche', status, st.mc) },
+    { t: 'Analyse technique',      c: filterSyntheseIA(ia.analyseTechnique, 'technique', status, st.mc) },
+    { t: s('Analyse financière'),  c: filterSyntheseIA(ia.analyseFinanciere, 'financiere', status, st.mc) },
+    { t: 'Analyse des risques',    c: filterSyntheseIA(ia.analyseRisques, 'risques', status, st.mc) },
+  ].filter(sec => sec.c != null);
 
-  sections.forEach(s => {
-    subHeader(state, s.t);
-    bodyText(state, s.c);
-    state.y += 2;
-  });
+  if (sections.length === 0) return;
 
-  drawPageFooter(state);
-}
+  newPage(st);
+  tocRegister(st, '11', s('Synthèse analytique'));
 
-// ---- Section 10: Recommandation finale + QR ---------------------------------
+  secTitle(st, '11', s('SYNTHÈSE ANALYTIQUE'));
 
-function addRecommandationPage(state: PdfState): void {
-  newPage(state);
-  const { synthese } = state;
-  const es = synthese.executiveSummary;
-  const ia = synthese.syntheseIA;
-
-  sectionHeader(state, 'RECOMMANDATION FINALE', '10');
-
-  const rc = recColor(es.recommendation);
-  state.doc.setFillColor(...rc);
-  state.doc.roundedRect(MARGIN.left, state.y, CONTENT_W, 18, 3, 3, 'F');
-  state.doc.setFontSize(FONT.title);
-  state.doc.setFont('helvetica', 'bold');
-  state.doc.setTextColor(...V.white);
-  const recFinal: Record<RecommendationType, string> = {
-    GO: 'GO -- OPERATION RECOMMANDEE',
-    GO_CONDITION: 'GO CONDITIONNEL',
-    NO_GO: 'NO GO -- NON VIABLE EN L\'ETAT',
-  };
-  state.doc.text(recFinal[es.recommendation], PAGE_W / 2, state.y + 12, { align: 'center' });
-  state.y += 22;
-
-  if (ia?.conclusion) {
-    bodyText(state, ia.conclusion);
-    state.y += 4;
-  }
-
-  if (es.recommendation === 'GO_CONDITION' && es.pointsVigilance.length > 0) {
-    subHeader(state, 'Conditions prealables a l\'engagement');
-    es.pointsVigilance.forEach(p => bodyText(state, `- ${p}`, 3));
-  }
-  if (es.recommendation === 'NO_GO' && es.killSwitchesActifs.length > 0) {
-    subHeader(state, 'Points bloquants a lever imperativement');
-    es.killSwitchesActifs.forEach(k => bodyText(state, `x  ${k}`, 3));
-  }
-
-  state.y += 4;
-  hRule(state);
-
-  // Avertissements data
-  if (synthese.metadata.avertissements.length > 0) {
-    state.doc.setFontSize(FONT.small);
-    state.doc.setTextColor(...V.slate300);
-    state.doc.setFont('helvetica', 'italic');
-    state.doc.text(
-      `Qualite des donnees : ${synthese.metadata.dataQualite} -- ${synthese.metadata.avertissements.join(' | ')}`,
-      MARGIN.left, state.y
+  if (status === 'provisional') {
+    alertBanner(st,
+      s('Synthèse générée sur données partielles — conclusions à confirmer'),
+      C.amber,
     );
-    state.y += 8;
   }
 
-  // QR code block
-  checkBreak(state, 55);
-  {
-    const qrSize = 30;
-    const qrX = PAGE_W / 2 - qrSize / 2;
-    drawNativeQr(state.doc, qrX, state.y, qrSize, 'Document genere par Mimmoza');
-    state.doc.setFontSize(FONT.small);
-    state.doc.setFont('helvetica', 'italic');
-    state.doc.setTextColor(...V.violet600);
-    state.doc.text('www.mimmoza.fr', PAGE_W / 2, state.y + qrSize + 10, { align: 'center' });
-    state.doc.setTextColor(...V.slate300);
-    state.doc.text(
-      `Genere le ${new Date().toLocaleDateString('fr-FR')} a ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`,
-      PAGE_W / 2, state.y + qrSize + 15, { align: 'center' }
+  sections.forEach(sec => {
+    subTitle(st, sec.t);
+    body(st, sec.c!);
+    st.y += 3;
+  });
+
+  pageFooter(st);
+}
+
+// ============================================================================
+// 12 SOURCES
+// ============================================================================
+
+function addSources(st: St): void {
+  newPage(st);
+  tocRegister(st, '12', s('Sources & fraîcheur des données'));
+  const { syn } = st;
+
+  secTitle(st, '12', s('SOURCES & FRAÎCHEUR DES DONNÉES'));
+
+  autoTable(st.doc, {
+    startY: st.y,
+    head: [['Source', s('Détail'), s('Fraîcheur')]],
+    body: [
+      ['Foncier',     s(syn.metadata.sourceFoncier || 'N/A'),  s('Selon date de l\'étude')],
+      ['PLU',         s(syn.metadata.sourcePlu || 'N/A'),      s('Règlement en vigueur')],
+      [s('Marché'),   s(syn.metadata.sourceMarche || 'N/A'),   s(syn.marche.transactionsRecentes.periode || 'N/A')],
+      ['DVF',         s('data.gouv.fr — DVF+'),                s(syn.marche.transactionsRecentes.periode || 'N/A')],
+      [s('Démographie'), 'INSEE',                              s('Dernier recensement disponible')],
+      [s('Génération'), s(`Mimmoza — ${fmtDate(new Date())}`), s(`${fmtDate(new Date())} à ${fmtTime()}`)],
+    ],
+    theme: 'striped',
+    headStyles:         { fillColor: SP.deep, textColor: C.white, fontSize: F.body },
+    bodyStyles:         { fontSize: F.body },
+    alternateRowStyles: { fillColor: C.slate6 },
+    columnStyles:       { 0: { fontStyle: 'bold', cellWidth: 40, textColor: SP.deep } },
+    margin:             { left: ML, right: MR },
+  });
+  st.y = (st.doc as any).lastAutoTable.finalY + 8;
+
+  if (syn.metadata.avertissements.length > 0) {
+    subTitle(st, 'Avertissements');
+    syn.metadata.avertissements.forEach(a => body(st, s(`! ${a}`), 4));
+  }
+
+  pageFooter(st);
+}
+
+// ============================================================================
+// 13 RECOMMANDATION FINALE
+// ============================================================================
+
+async function addRecommandation(st: St): Promise<void> {
+  newPage(st);
+  tocRegister(st, '13', 'Recommandation finale');
+  const { syn, audit } = st;
+  const es = syn.executiveSummary;
+
+  secTitle(st, '13', 'RECOMMANDATION FINALE');
+
+  if (audit.documentStatus !== 'committee_ready') {
+    alertBanner(st,
+      DOC_STATUS_LABELS[audit.documentStatus],
+      DOC_STATUS_COLORS[audit.documentStatus],
     );
-    state.y += qrSize + 20;
   }
 
-  drawPageFooter(state);
+  const rc = recColor(audit.effectiveRecommendation);
+  st.doc.setFillColor(...rc);
+  st.doc.rect(ML, st.y, CW, 16, 'F');
+  st.doc.setFillColor(...SP.main);
+  st.doc.rect(ML, st.y, 4, 16, 'F');
+  st.doc.setFontSize(F.h1);
+  st.doc.setFont('helvetica', 'bold');
+  st.doc.setTextColor(...C.white);
+  st.doc.text(s(REC_LABELS[audit.effectiveRecommendation]), PW / 2, st.y + 11, { align: 'center' });
+  st.y += 20;
+
+  if (audit.recommendationOverridden) {
+    st.doc.setFontSize(F.sm);
+    st.doc.setFont('helvetica', 'italic');
+    st.doc.setTextColor(...C.amber);
+    st.doc.text(
+      s(`Recommandation initiale : ${REC_LABELS_SHORT[es.recommendation]} — ajustée pour insuffisance de données.`),
+      ML, st.y,
+    );
+    st.y += 8;
+  }
+
+  body(st, generateFinalRecommendationText(audit, syn, st.mc));
+  st.y += 2;
+
+  const iaConclusion = generateFinalIAConclusion(audit, syn);
+  if (iaConclusion) {
+    subTitle(st, 'Conclusion analytique');
+    body(st, iaConclusion);
+    st.y += 4;
+  }
+
+  if (audit.effectiveRecommendation === 'GO_CONDITION' && es.pointsVigilance.length > 0) {
+    subTitle(st, s("Conditions préalables à l'engagement"));
+    es.pointsVigilance.forEach(p => body(st, `- ${p}`, 4));
+  }
+
+  if ((audit.effectiveRecommendation === 'NO_GO' || audit.effectiveRecommendation === 'GO_CONDITION') && es.killSwitchesActifs.length > 0) {
+    subTitle(st, s('Points bloquants à lever impérativement'));
+    es.killSwitchesActifs.forEach(k => body(st, s(`x  ${k}`), 4));
+  }
+
+  if (audit.documentStatus === 'incomplete') {
+    st.y += 4;
+    chk(st, 20);
+    st.doc.setFillColor(...C.redBg);
+    st.doc.rect(ML, st.y, CW, 16, 'F');
+    st.doc.setFillColor(...C.red);
+    st.doc.rect(ML, st.y, 4, 16, 'F');
+    st.doc.setFontSize(F.h4);
+    st.doc.setFont('helvetica', 'bold');
+    st.doc.setTextColor(...C.red);
+    st.doc.text(
+      s('Ce dossier ne peut pas être présenté en comité en l\'état.'),
+      ML + 8, st.y + 7,
+    );
+    st.doc.setFontSize(F.sm);
+    st.doc.setFont('helvetica', 'normal');
+    st.doc.text(
+      s('Compléter les données manquantes avant toute présentation.'),
+      ML + 8, st.y + 13,
+    );
+    st.y += 20;
+  }
+
+  st.y += 4;
+  rule(st);
+
+  st.doc.setFontSize(F.xs);
+  st.doc.setTextColor(...C.slate3);
+  st.doc.setFont('helvetica', 'italic');
+  st.doc.text(
+    s(`Qualité données : ${syn.metadata.dataQualite} — Complétude : ${audit.completenessScore}% — Statut : ${DOC_STATUS_LABELS[audit.documentStatus]}`),
+    ML, st.y,
+  );
+  st.y += 8;
+
+  // ── Vrai QR code scannable (grand, centré) ────────────────────────────────
+  chk(st, 50);
+  const qrSize = 28;
+  await drawQr(st.doc, PW / 2 - qrSize / 2, st.y, qrSize, audit.documentId);
+  st.doc.setFontSize(F.sm);
+  st.doc.setFont('helvetica', 'italic');
+  st.doc.setTextColor(...SP.main);
+  st.doc.text('www.mimmoza.fr', PW / 2, st.y + qrSize + 12, { align: 'center' });
+  st.doc.setTextColor(...C.slate3);
+  st.doc.text(
+    s(`Généré le ${fmtDate(new Date())} à ${fmtTime()}`),
+    PW / 2, st.y + qrSize + 17, { align: 'center' },
+  );
+  st.y += qrSize + 22;
+
+  pageFooter(st);
 }
 
-// ---- QR code generation -----------------------------------------------------
+// ============================================================================
+// MAIN EXPORT
+// ============================================================================
 
-// Native QR placeholder drawn with jsPDF -- no external lib needed
-function drawNativeQr(doc: jsPDF, x: number, y: number, size: number, label: string): void {
-  const cell = size / 21;
-
-  // Outer border
-  doc.setFillColor(46, 16, 101);
-  doc.rect(x, y, size, size, 'F');
-  doc.setFillColor(255, 255, 255);
-  doc.rect(x + cell, y + cell, size - cell * 2, size - cell * 2, 'F');
-
-  // Corner squares (top-left, top-right, bottom-left)
-  const corners: [number, number][] = [
-    [x + cell, y + cell],
-    [x + size - cell * 8, y + cell],
-    [x + cell, y + size - cell * 8],
-  ];
-  corners.forEach(([cx, cy]) => {
-    doc.setFillColor(46, 16, 101);
-    doc.rect(cx, cy, cell * 7, cell * 7, 'F');
-    doc.setFillColor(255, 255, 255);
-    doc.rect(cx + cell, cy + cell, cell * 5, cell * 5, 'F');
-    doc.setFillColor(46, 16, 101);
-    doc.rect(cx + cell * 2, cy + cell * 2, cell * 3, cell * 3, 'F');
-  });
-
-  // Data dots pattern (deterministic)
-  const pattern = [
-    [9,2],[10,2],[12,2],[9,3],[11,3],[10,4],[12,4],[9,5],[11,5],
-    [9,7],[12,7],[10,8],[11,8],[9,9],[12,9],[10,10],[9,11],[11,11],
-    [2,9],[4,9],[2,10],[3,11],[4,10],[2,11],[3,9],
-    [14,9],[16,9],[15,10],[14,11],[16,11],[15,9],
-    [14,14],[16,14],[15,15],[14,16],[16,16],[15,14],
-    [9,14],[11,14],[10,15],[9,16],[12,16],[11,16],
-  ];
-  doc.setFillColor(46, 16, 101);
-  pattern.forEach(([col, row]) => {
-    doc.rect(x + col * cell, y + row * cell, cell, cell, 'F');
-  });
-
-  // Label below
-  doc.setFontSize(6);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(100, 116, 139);
-  doc.text(label, x + size / 2, y + size + 4, { align: 'center' });
+export interface ExportOptions {
+  facadeRenderUrl?: string;
 }
 
-// ---- Main export ------------------------------------------------------------
+export interface ExportResult {
+  success: boolean;
+  audit: DocumentAudit;
+  error?: string;
+}
 
-export function exportPromoteurPdf(synthese: PromoteurSynthese): void {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+export async function exportPromoteurPdf(
+  synthese: PromoteurSynthese,
+  options?: ExportOptions,
+): Promise<ExportResult> {
+  const audit = auditSynthese(synthese);
 
-  doc.setProperties({
-    title: `Mimmoza -- ${synthese.executiveSummary.titreOperation}`,
-    subject: 'Dossier comite investissement',
-    author: 'Mimmoza',
-    creator: 'Mimmoza -- Intelligence Immobiliere B2B',
-  });
+  try {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-  const state: PdfState = {
-    doc,
-    pageNum: 0,
-    totalPages: 12,
-    y: MARGIN.top + HEADER_H + 4,
-    synthese,
-  };
+    doc.setProperties({
+      title:   s(`Mimmoza — ${synthese.executiveSummary.titreOperation}`),
+      subject: s('Dossier comité d\'investissement'),
+      author:  'Mimmoza',
+      creator: s('Mimmoza — Intelligence Immobilière B2B'),
+    });
 
-  // Cover (page 1 - no header/footer)
-  addCoverPage(state);
+    const st: St = {
+      doc,
+      p: 0,
+      y: MT + HDR_H + 5,
+      syn: synthese,
+      audit,
+      mc: buildMetricContext(synthese),
+      tocEntries: [],
+      facadeRenderUrl: options?.facadeRenderUrl ?? null,
+    };
 
-  // TOC (page 2)
-  addTocPage(state);
+    // ── Render pages ──────────────────────────────────────────────────────
+    await addCover(st);
 
-  // Content pages
-  addExecutiveSummary(state);
-  addProjetPage(state);
-  addTechniquePage(state);
-  addMarchePage(state);
-  addFinancierPage(state);
-  addFinancementPage(state);
-  addRisquesPage(state);
-  addScenariosPage(state);
-  addSyntheseIAPage(state);
-  addRecommandationPage(state);
+    newPage(st);
+    const tocPageNumber = st.p;
+    pageFooter(st);
 
-  const fileName = `Mimmoza_${synthese.projet.commune.replace(/\s/g, '_')}_${synthese.projet.codePostal}_${new Date().toISOString().slice(0, 10)}.pdf`;
-  doc.save(fileName);
+    addExecSummary(st);
+    addDataQuality(st);
+    addProjet(st);
+    addFacadeRender(st);
+    addTechnique(st);
+    addMarche(st);
+    addFinancier(st);
+    addFinancement(st);
+    addRisques(st);
+    addScenarios(st);
+    addHypotheses(st);
+    addSyntheseIA(st);
+    addSources(st);
+    await addRecommandation(st);
+
+    // ── TOC ───────────────────────────────────────────────────────────────
+    renderToc(st, tocPageNumber);
+
+    // ── Save ──────────────────────────────────────────────────────────────
+    const commune = s(synthese.projet.commune).replace(/\s/g, '_') || 'Projet';
+    const cp      = synthese.projet.codePostal || '';
+    doc.save(`Mimmoza_${commune}_${cp}_${new Date().toISOString().slice(0, 10)}.pdf`);
+
+    return { success: true, audit };
+  } catch (err) {
+    console.error('[exportPromoteurPdf] Error:', err);
+    return { success: false, audit, error: String(err) };
+  }
 }
