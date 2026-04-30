@@ -1,395 +1,361 @@
-// ─── usePlan2DEditor.ts ───────────────────────────────────────────────────────
-// Hook principal — version robuste
+// usePlan2DEditor.ts
+// Hook principal d'interaction pour l'éditeur 2D Mimmoza.
+// Gère : sélection, déplacement (move), redimensionnement (resize vectoriel).
 //
-// CHANGEMENTS CLÉ vs v1 :
-// • Retourne des React event handlers (plus d'addEventListener → zéro timing issue)
-// • storeRef.current = store directement dans le render (pas de useEffect → toujours à jour)
-// • Capture des coordonnées AVANT le RAF (pas de stale synthetic event)
-// • Conversion screen→monde avec fallback si getScreenCTM() null
-// • State transitoire dans un seul objet ref (zéro stale closure)
+// Architecture :
+//   - transformRef (useRef) → état courant du drag, PAS de setState pendant le drag
+//     → zéro re-render intermédiaire → fluidité maximale
+//   - Pointer capture sur le SVG root → stabilité même si le curseur sort du canvas
+//   - Delta calculé en mètres (espace SVG = espace monde parcelleLocal)
+//   - Snap grille appliqué sur le delta move / la position cible des poignées
+//   - Store mis à jour via useEditor2DStore.setState (batching Zustand)
+//
+// V2.0 — Resize vectoriel robuste + pointer capture + gestion Shift (ratio).
+// ─────────────────────────────────────────────────────────────────────────────
 
-import { useRef, useEffect, useCallback } from 'react';
-import type React from 'react';
-import { useEditor2DStore } from './editor2d.store';
-import { snapPoint }        from './editor2d.snap';
+import { useRef, useCallback, useEffect } from 'react';
+import { useEditor2DStore }               from './editor2d.store';
 import {
-  rectFromTwoPoints,
-  pointHitsRect,
-  moveRect,
-  resizeRectFromHandle,
-  genId,
-  computeParkingSlots,
-  rectCorners,
-  dist,
-} from './editor2d.geometry';
-import type {
-  Point2D,
-  Building2D,
-  Parking2D,
-  DragOp,
-  DrawOp,
-  OrientedRect,
-  HandleId,
-} from './editor2d.types';
+  applyResize,
+  applyMove,
+  snapDelta,
+  getHandleWorldPos,
+  snapPoint,
+  type HandleId,
+  type BuildingRect,
+  type TPoint2D,
+}                                         from './editor2d.transform';
 
-// ── Conversion coordonnées ────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Types publics
+// ─────────────────────────────────────────────────────────────────────────────
 
-function worldFromClient(
-  clientX: number,
-  clientY: number,
-  svg: SVGSVGElement,
-): Point2D {
-  // Méthode 1 : via CTM (précise, gère CSS transforms)
-  try {
-    const pt  = svg.createSVGPoint();
-    pt.x = clientX;
-    pt.y = clientY;
-    const ctm = svg.getScreenCTM();
-    if (ctm) {
-      const wp = pt.matrixTransform(ctm.inverse());
-      return { x: wp.x, y: wp.y };
-    }
-  } catch (_) { /* ignore, fallback ci-dessous */ }
-
-  // Méthode 2 : fallback BoundingRect + viewBox
-  const rect = svg.getBoundingClientRect();
-  const vb   = svg.viewBox.baseVal;
-  if (rect.width > 0 && rect.height > 0) {
-    return {
-      x: vb.x + (clientX - rect.left) / rect.width  * vb.width,
-      y: vb.y + (clientY - rect.top)  / rect.height * vb.height,
-    };
-  }
-  return { x: 0, y: 0 };
-}
-
-/** Zoom actuel en pixels/unité monde */
-function getZoom(svg: SVGSVGElement): number {
-  try {
-    const ctm = svg.getScreenCTM();
-    if (ctm) return Math.abs(ctm.a);
-  } catch (_) {}
-  const rect = svg.getBoundingClientRect();
-  const vb   = svg.viewBox.baseVal;
-  return vb.width > 0 ? rect.width / vb.width : 1;
-}
-
-// ── Handles ───────────────────────────────────────────────────────────────────
-
-const HANDLE_HIT_PX = 9;
-
-interface HandleDef { id: HandleId; pos: Point2D }
-
-function buildHandles(rect: OrientedRect): HandleDef[] {
-  const [nw, ne, se, sw] = rectCorners(rect);
-  const m = (a: Point2D, b: Point2D): Point2D => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-  return [
-    { id: 'resize-nw', pos: nw },       { id: 'resize-n',  pos: m(nw, ne) },
-    { id: 'resize-ne', pos: ne },       { id: 'resize-e',  pos: m(ne, se) },
-    { id: 'resize-se', pos: se },       { id: 'resize-s',  pos: m(se, sw) },
-    { id: 'resize-sw', pos: sw },       { id: 'resize-w',  pos: m(sw, nw) },
-  ];
-}
-
-function hitHandle(p: Point2D, rect: OrientedRect, zoom: number): HandleId | null {
-  const thresh = HANDLE_HIT_PX / zoom;
-  for (const h of buildHandles(rect)) {
-    if (dist(p, h.pos) < thresh) return h.id;
-  }
-  return null;
-}
-
-// ── État transitoire interne (tout dans un ref → zéro stale closure) ──────────
-
-interface TransientState {
-  isDown:  boolean;
-  draw:    DrawOp | null;
-  drag:    DragOp | null;
-  lastPos: { clientX: number; clientY: number };
-}
-
-// ── Hook ──────────────────────────────────────────────────────────────────────
+export type EditorTool = 'select' | 'draw' | 'parking';
 
 export interface UsePlan2DEditorOptions {
-  parcellePolygon: Point2D[];
-  svgRef:          React.RefObject<SVGSVGElement>;
+  /** Ref vers l'élément <svg> racine du canvas. Requis pour pointer capture + coords. */
+  svgRef:      React.RefObject<SVGSVGElement>;
+  /** Outil actif. Par défaut : 'select'. */
+  tool?:       EditorTool;
+  /**
+   * Taille de la grille de snap en mètres (0 ou undefined = snap désactivé).
+   * Appliqué sur le delta de déplacement et sur la position des poignées.
+   */
+  gridSnapM?:  number;
+  /**
+   * Callbacks optionnels pour brancher le mode "draw" (création de bâtiment).
+   * Si absent, le mode 'draw' n'est pas géré par ce hook.
+   */
+  onDrawStart?: (worldPt: TPoint2D) => void;
+  onDrawMove?:  (worldPt: TPoint2D) => void;
+  onDrawEnd?:   (worldPt: TPoint2D) => void;
 }
 
-export function usePlan2DEditor({ parcellePolygon, svgRef }: UsePlan2DEditorOptions) {
-  // ── Store : lecture synchrone à chaque render (JAMAIS via useEffect) ─────
-  const store    = useEditor2DStore();
-  const storeRef = useRef(store);
-  storeRef.current = store;          // mis à jour à chaque render, avant tout handler
+export interface Plan2DEditorHandlers {
+  /**
+   * À attacher sur pointerdown du corps SVG d'un bâtiment (rectangle principal).
+   * Déclenche : sélection + move.
+   */
+  onBuildingPointerDown: (e: React.PointerEvent, buildingId: string) => void;
+  /**
+   * À attacher sur pointerdown d'une poignée de SelectionOverlay.
+   * Déclenche : resize vectoriel.
+   */
+  onHandlePointerDown:   (e: React.PointerEvent, buildingId: string, handle: HandleId) => void;
+  /**
+   * À attacher sur pointerdown du fond du canvas (aucun bâtiment visé).
+   * Déclenche : désélection (+ début dessin si tool === 'draw').
+   */
+  onCanvasPointerDown:   (e: React.PointerEvent) => void;
+}
 
-  const polyRef  = useRef(parcellePolygon);
-  polyRef.current = parcellePolygon;
+// ─────────────────────────────────────────────────────────────────────────────
+// Types internes
+// ─────────────────────────────────────────────────────────────────────────────
 
-  // ── État transitoire dans un seul ref ────────────────────────────────────
-  const state = useRef<TransientState>({
-    isDown: false, draw: null, drag: null, lastPos: { clientX: 0, clientY: 0 },
-  });
+interface ActiveTransform {
+  kind:         'move' | 'resize';
+  buildingId:   string;
+  handle?:      HandleId;
+  pointerId:    number;
+  /** Position monde du pointer au départ du drag (mètres parcelleLocal). */
+  pointerStart: TPoint2D;
+  /**
+   * Snapshot du rect au départ du drag.
+   * CRITIQUE : ne jamais muter ce snapshot — le delta est toujours calculé
+   * depuis l'état initial pour éviter l'accumulation d'erreurs d'arrondi.
+   */
+  initialRect:  Readonly<BuildingRect>;
+}
 
-  // ── RAF ───────────────────────────────────────────────────────────────────
-  const rafId = useRef(0);
+// ─────────────────────────────────────────────────────────────────────────────
+// Conversion coordonnées écran → monde SVG
+// ─────────────────────────────────────────────────────────────────────────────
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+/**
+ * Convertit les coordonnées écran d'un PointerEvent en coordonnées SVG.
+ *
+ * Puisque le viewBox SVG est exprimé en mètres (parcelleLocal), les coordonnées
+ * SVG renvoyées sont directement les coordonnées monde.
+ *
+ * Utilise getScreenCTM() pour tenir compte du zoom, pan, et transforms CSS/SVG.
+ * Fallback : coordonnées client brutes (sans transform) si CTM indisponible.
+ */
+function getSVGWorldPoint(svgEl: SVGSVGElement, e: PointerEvent): TPoint2D {
+  const ctm = svgEl.getScreenCTM();
+  if (!ctm) {
+    // Fallback dégradé — rare (SVG hors écran ou display:none)
+    console.warn('[usePlan2DEditor] getScreenCTM() returned null — coords dégradées');
+    return { x: e.clientX, y: e.clientY };
+  }
+  const pt = svgEl.createSVGPoint();
+  pt.x     = e.clientX;
+  pt.y     = e.clientY;
+  const svgPt = pt.matrixTransform(ctm.inverse());
+  return { x: svgPt.x, y: svgPt.y };
+}
 
-  const getSvg = (): SVGSVGElement | null => svgRef.current;
+// ─────────────────────────────────────────────────────────────────────────────
+// Hook principal
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const getWorld = (clientX: number, clientY: number): Point2D => {
-    const svg = getSvg();
-    return svg ? worldFromClient(clientX, clientY, svg) : { x: 0, y: 0 };
-  };
+export function usePlan2DEditor({
+  svgRef,
+  tool      = 'select',
+  gridSnapM = 0.5,
+  onDrawStart,
+  onDrawMove,
+  onDrawEnd,
+}: UsePlan2DEditorOptions): Plan2DEditorHandlers {
 
-  const currentZoom = (): number => {
-    const svg = getSvg();
-    return svg ? getZoom(svg) : 1;
-  };
+  /**
+   * État courant de la transformation.
+   * Ref (pas state) → aucun re-render pendant le drag → fluidité max.
+   * Le store Zustand se charge des re-renders du canvas quand le rect change.
+   */
+  const transformRef = useRef<ActiveTransform | null>(null);
 
-  const findEntity = (p: Point2D): string | null => {
-    const { buildings, parkings } = storeRef.current;
-    for (let i = buildings.length - 1; i >= 0; i--)
-      if (pointHitsRect(p, buildings[i].rect)) return buildings[i].id;
-    for (let i = parkings.length - 1; i >= 0; i--)
-      if (pointHitsRect(p, parkings[i].rect)) return parkings[i].id;
-    return null;
-  };
+  // ── Helpers store ────────────────────────────────────────────────────────
 
-  const getEntityRect = (id: string): OrientedRect | null => {
-    const { buildings, parkings } = storeRef.current;
-    return buildings.find(b => b.id === id)?.rect
-        ?? parkings.find(p => p.id === id)?.rect
-        ?? null;
-  };
-
-  const commitRect = (entityId: string, rect: OrientedRect) => {
-    const { buildings } = storeRef.current;
-    if (buildings.some(b => b.id === entityId))
-      storeRef.current.updateBuildingRect(entityId, rect);
-    else
-      storeRef.current.updateParkingRect(entityId, rect);
-  };
-
-  // ── onPointerDown ─────────────────────────────────────────────────────────
-
-  const onPointerDown = useCallback((e: React.PointerEvent<SVGElement>) => {
-    if (e.button !== 0) return;
-    (e.currentTarget as SVGElement).setPointerCapture(e.pointerId);
-
-    state.current.isDown  = true;
-    state.current.lastPos = { clientX: e.clientX, clientY: e.clientY };
-
-    const { activeTool, selectedIds } = storeRef.current;
-    const world = getWorld(e.clientX, e.clientY);
-    const zoom  = currentZoom();
-
-    // ── Sélection ──────────────────────────────────────────────────────────
-    if (activeTool === 'selection') {
-      if (selectedIds.length === 1) {
-        const rect = getEntityRect(selectedIds[0]);
-        if (rect) {
-          const handle = hitHandle(world, rect, zoom);
-          if (handle) {
-            state.current.drag = {
-              type: 'resize', entityId: selectedIds[0],
-              handle, startWorld: world, currentWorld: world, originalRect: rect,
-            };
-            storeRef.current.setDrag(state.current.drag);
-            return;
-          }
-        }
-      }
-      const hitId = findEntity(world);
-      if (hitId) {
-        if (!selectedIds.includes(hitId)) storeRef.current.selectIds([hitId], e.shiftKey);
-        const rect = getEntityRect(hitId);
-        if (rect) {
-          state.current.drag = {
-            type: 'move', entityId: hitId,
-            startWorld: world, currentWorld: world, originalRect: rect,
-          };
-          storeRef.current.setDrag(state.current.drag);
-        }
-      } else {
-        storeRef.current.clearSelection();
-        state.current.drag = null;
-      }
-      return;
-    }
-
-    // ── Dessin bâtiment / parking ──────────────────────────────────────────
-    if (activeTool === 'building' || activeTool === 'parking') {
-      const op: DrawOp = { tool: activeTool, origin: world, current: world };
-      state.current.draw = op;
-      storeRef.current.setDraw(op);
-      // ← DEBUG (supprimer en prod) :
-      // console.log('[plan2d] draw start', { activeTool, world });
-    }
-  }, []); // pas de deps — tout lu via refs
-
-  // ── onPointerMove ──────────────────────────────────────────────────────────
-
-  const onPointerMove = useCallback((e: React.PointerEvent<SVGElement>) => {
-    // Capture des coords MAINTENANT (avant que le RAF ne s'exécute)
-    const clientX = e.clientX;
-    const clientY = e.clientY;
-    state.current.lastPos = { clientX, clientY };
-
-    // Hover sans drag
-    if (!state.current.isDown) {
-      const world = getWorld(clientX, clientY);
-      storeRef.current.setHovered(findEntity(world));
-      return;
-    }
-
-    // RAF throttle
-    if (rafId.current) return;
-    rafId.current = requestAnimationFrame(() => {
-      rafId.current = 0;
-      const { clientX: cx, clientY: cy } = state.current.lastPos;
-      const world = getWorld(cx, cy);
-      const zoom  = currentZoom();
-      const { activeTool } = storeRef.current;
-
-      // Update dessin
-      if ((activeTool === 'building' || activeTool === 'parking') && state.current.draw) {
-        const snapped = snapPoint(world, {
-          options:         storeRef.current.snapOptions,
-          zoom,
-          parcellePolygon: polyRef.current,
-          orthogonalRef:   state.current.draw.origin,
-        }).point;
-        const next: DrawOp = { ...state.current.draw, current: snapped };
-        state.current.draw = next;
-        storeRef.current.setDraw(next);
-        // ← DEBUG : console.log('[plan2d] draw move', next);
-        return;
-      }
-
-      // Update drag sélection
-      if (activeTool === 'selection' && state.current.drag) {
-        const op = state.current.drag;
-        const snapped = snapPoint(world, {
-          options:         storeRef.current.snapOptions,
-          zoom,
-          parcellePolygon: polyRef.current,
-        }).point;
-
-        if (op.type === 'move') {
-          const dx = snapped.x - op.startWorld.x;
-          const dy = snapped.y - op.startWorld.y;
-          commitRect(op.entityId, moveRect(op.originalRect, dx, dy));
-
-        } else if (op.type === 'resize' && op.handle) {
-          commitRect(op.entityId, resizeRectFromHandle(
-            op.originalRect, op.handle,
-            { x: snapped.x - op.startWorld.x, y: snapped.y - op.startWorld.y },
-          ));
-        }
-        state.current.drag = { ...op, currentWorld: snapped };
-      }
-    });
+  /** Met à jour le rect d'un bâtiment dans le store (patch partiel). */
+  const patchRect = useCallback((id: string, patch: Partial<BuildingRect>) => {
+    useEditor2DStore.setState(state => ({
+      buildings: state.buildings.map(b =>
+        b.id === id ? { ...b, rect: { ...b.rect, ...patch } } : b,
+      ),
+    }));
   }, []);
 
-  // ── onPointerUp ────────────────────────────────────────────────────────────
-
-  const onPointerUp = useCallback((e: React.PointerEvent<SVGElement>) => {
-    cancelAnimationFrame(rafId.current);
-    rafId.current = 0;
-    state.current.isDown = false;
-
-    const { activeTool } = storeRef.current;
-    const world = getWorld(e.clientX, e.clientY);
-
-    // ── Commit bâtiment ──────────────────────────────────────────────────
-    if (activeTool === 'building' && state.current.draw) {
-      const { origin, current } = state.current.draw;
-      const rect = rectFromTwoPoints(origin, current);
-
-      // ← DEBUG : console.log('[plan2d] draw end', { rect });
-
-      if (rect.width > 0.5 && rect.depth > 0.5) {
-        const id = genId();
-        const b: Building2D = {
-          id,
-          kind:   'building',
-          rect,
-          levels: 3,
-          label:  `Bât. ${id.slice(0, 4).toUpperCase()}`,
-        };
-        storeRef.current.addBuilding(b);
-        storeRef.current.selectIds([id]);
-        storeRef.current.setTool('selection');   // revenir en sélection après dessin
-        // ← DEBUG : console.log('[plan2d] building created', b);
-      }
-      state.current.draw = null;
-      storeRef.current.setDraw(null);
-      return;
-    }
-
-    // ── Commit parking ────────────────────────────────────────────────────
-    if (activeTool === 'parking' && state.current.draw) {
-      const { origin, current } = state.current.draw;
-      const rect = rectFromTwoPoints(origin, current);
-
-      if (rect.width > 1 && rect.depth > 1) {
-        const id = genId();
-        const slotW = 2.5, slotD = 5.0, aisleW = 6.0;
-        const p: Parking2D = {
-          id,
-          kind:            'parking',
-          rect,
-          slotWidth:       slotW,
-          slotDepth:       slotD,
-          driveAisleWidth: aisleW,
-          slotCount:       computeParkingSlots(rect.width, rect.depth, slotW, slotD, aisleW),
-        };
-        storeRef.current.addParking(p);
-        storeRef.current.selectIds([id]);
-        storeRef.current.setTool('selection');
-      }
-      state.current.draw = null;
-      storeRef.current.setDraw(null);
-      return;
-    }
-
-    // ── Fin drag ──────────────────────────────────────────────────────────
-    state.current.drag = null;
-    storeRef.current.setDrag(null);
+  const setSelectedIds = useCallback((ids: string[]) => {
+    useEditor2DStore.setState({ selectedIds: ids });
   }, []);
 
-  // ── Clavier ────────────────────────────────────────────────────────────────
+  // ── Pointer capture helpers ───────────────────────────────────────────────
+
+  const capturePointer = useCallback((pointerId: number) => {
+    if (!svgRef.current) return;
+    try { svgRef.current.setPointerCapture(pointerId); } catch (_) { /* ok */ }
+  }, [svgRef]);
+
+  const releasePointer = useCallback((pointerId: number) => {
+    if (!svgRef.current) return;
+    try { svgRef.current.releasePointerCapture(pointerId); } catch (_) { /* ok */ }
+  }, [svgRef]);
+
+  // ── Pointermove ───────────────────────────────────────────────────────────
+
+  const handlePointerMove = useCallback((e: PointerEvent) => {
+    const tf = transformRef.current;
+    if (!tf || !svgRef.current) return;
+
+    // Ne traiter que les événements du même pointer (multi-touch safe)
+    if (e.pointerId !== tf.pointerId) return;
+
+    const currentWorld = getSVGWorldPoint(svgRef.current, e);
+
+    // Delta brut en mètres depuis le départ du drag (calculé toujours depuis
+    // initialRect → pas d'accumulation d'erreurs d'arrondi)
+    const rawDelta: TPoint2D = {
+      x: currentWorld.x - tf.pointerStart.x,
+      y: currentWorld.y - tf.pointerStart.y,
+    };
+
+    if (tf.kind === 'move') {
+      // ── Move : snap du delta ──────────────────────────────────────
+      const delta = (gridSnapM && gridSnapM > 0)
+        ? snapDelta(rawDelta, gridSnapM)
+        : rawDelta;
+
+      const moved = applyMove(tf.initialRect, delta);
+      patchRect(tf.buildingId, moved);
+
+    } else if (tf.kind === 'resize' && tf.handle) {
+      // ── Resize vectoriel ──────────────────────────────────────────
+      //
+      // Option A (actuelle) : snap du delta brut → simple, cohérent
+      // Option B (alternative) : snap de la position monde de la poignée,
+      //   puis recalcul du delta → plus précis pour le snap absolu
+      //   mais peut créer un jitter si la grille est grande vs. la bâtiment
+      //
+      // On utilise ici l'Option A pour les bâtiments de taille standard.
+      // Décommenter le bloc ci-dessous pour passer en Option B.
+      /*
+      const handleCurrentWorld: TPoint2D = {
+        x: tf.pointerStart.x + rawDelta.x,
+        y: tf.pointerStart.y + rawDelta.y,
+      };
+      const snappedHandle = (gridSnapM && gridSnapM > 0)
+        ? snapPoint(handleCurrentWorld, gridSnapM)
+        : handleCurrentWorld;
+      const delta: TPoint2D = {
+        x: snappedHandle.x - tf.pointerStart.x,
+        y: snappedHandle.y - tf.pointerStart.y,
+      };
+      */
+      const delta = rawDelta;
+
+      const result = applyResize(
+        tf.initialRect,
+        tf.handle,
+        delta,
+        e.shiftKey,
+      );
+      patchRect(tf.buildingId, result);
+    }
+  }, [svgRef, gridSnapM, patchRect]);
+
+  // ── Pointerup ─────────────────────────────────────────────────────────────
+
+  const handlePointerUp = useCallback((e: PointerEvent) => {
+    const tf = transformRef.current;
+    if (!tf || e.pointerId !== tf.pointerId) return;
+
+    releasePointer(tf.pointerId);
+    transformRef.current = null;
+  }, [releasePointer]);
+
+  // ── Pointercancel (perte de focus, notification OS, etc.) ─────────────────
+
+  const handlePointerCancel = useCallback((e: PointerEvent) => {
+    const tf = transformRef.current;
+    if (!tf || e.pointerId !== tf.pointerId) return;
+
+    // Annuler la transformation → restaurer l'état initial
+    patchRect(tf.buildingId, tf.initialRect);
+    releasePointer(tf.pointerId);
+    transformRef.current = null;
+  }, [patchRect, releasePointer]);
+
+  // ── Listeners window ─────────────────────────────────────────────────────
+  // Attachés sur window (pas sur le SVG) pour capturer les events même si le
+  // curseur sort du canvas — pointer capture garantit la continuité.
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (document.activeElement as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-
-      if (e.key === 'Delete' || e.key === 'Backspace')
-        storeRef.current.deleteSelected();
-
-      if (e.key === 'Escape') {
-        storeRef.current.clearSelection();
-        storeRef.current.setDraw(null);
-        storeRef.current.setDrag(null);
-        state.current.draw = null;
-        state.current.drag = null;
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
-        e.preventDefault();
-        storeRef.current.duplicateSelected();
-      }
-
-      // Raccourcis outil
-      const tools: Record<string, string> = { v: 'selection', b: 'building', p: 'parking' };
-      const t = tools[e.key.toLowerCase()];
-      if (t && !e.ctrlKey && !e.metaKey) storeRef.current.setTool(t as any);
+    const opts: AddEventListenerOptions = { passive: false };
+    window.addEventListener('pointermove',   handlePointerMove,   opts);
+    window.addEventListener('pointerup',     handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerCancel);
+    return () => {
+      window.removeEventListener('pointermove',   handlePointerMove);
+      window.removeEventListener('pointerup',     handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerCancel);
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [handlePointerMove, handlePointerUp, handlePointerCancel]);
 
-  // Exposer les handlers + helper handles pour le SelectionOverlay
-  return { onPointerDown, onPointerMove, onPointerUp, buildHandles };
+  // ── Handlers exposés ─────────────────────────────────────────────────────
+
+  /**
+   * Pointerdown sur le corps d'un bâtiment → sélection + initialisation du move.
+   *
+   * Doit être appelé depuis l'élément SVG du bâtiment dans Plan2DCanvas :
+   *   <rect onPointerDown={e => onBuildingPointerDown(e, b.id)} />
+   */
+  const onBuildingPointerDown = useCallback((
+    e: React.PointerEvent,
+    buildingId: string,
+  ) => {
+    if (tool !== 'select') return;
+    e.stopPropagation(); // empêche onCanvasPointerDown de désélectionner
+
+    const state    = useEditor2DStore.getState();
+    const building = state.buildings.find(b => b.id === buildingId);
+    if (!building || !svgRef.current) return;
+
+    const nativeEvent = e.nativeEvent as PointerEvent;
+
+    // Capture pointer → le SVG reçoit tous les pointermove même hors canvas
+    capturePointer(nativeEvent.pointerId);
+
+    const worldPt = getSVGWorldPoint(svgRef.current, nativeEvent);
+
+    // Sélectionner le bâtiment si pas déjà sélectionné
+    setSelectedIds([buildingId]);
+
+    transformRef.current = {
+      kind:         'move',
+      buildingId,
+      pointerId:    nativeEvent.pointerId,
+      pointerStart: worldPt,
+      initialRect:  { ...building.rect }, // snapshot immuable
+    };
+  }, [tool, svgRef, capturePointer, setSelectedIds]);
+
+  /**
+   * Pointerdown sur une poignée de SelectionOverlay → initialisation du resize.
+   *
+   * Doit être appelé depuis SelectionOverlay :
+   *   onHandlePointerDown={(e, handle) => handlers.onHandlePointerDown(e, buildingId, handle)}
+   */
+  const onHandlePointerDown = useCallback((
+    e: React.PointerEvent,
+    buildingId: string,
+    handle: HandleId,
+  ) => {
+    if (tool !== 'select') return;
+    e.stopPropagation();
+    e.preventDefault(); // empêche la sélection de texte pendant le drag
+
+    const state    = useEditor2DStore.getState();
+    const building = state.buildings.find(b => b.id === buildingId);
+    if (!building || !svgRef.current) return;
+
+    const nativeEvent = e.nativeEvent as PointerEvent;
+    capturePointer(nativeEvent.pointerId);
+
+    const worldPt = getSVGWorldPoint(svgRef.current, nativeEvent);
+
+    transformRef.current = {
+      kind:         'resize',
+      buildingId,
+      handle,
+      pointerId:    nativeEvent.pointerId,
+      // pointerStart = position monde de la poignée au départ du drag
+      // (légèrement plus précis que la position brute du pointer en cas de hitbox large)
+      pointerStart: worldPt,
+      initialRect:  { ...building.rect }, // snapshot immuable
+    };
+  }, [tool, svgRef, capturePointer]);
+
+  /**
+   * Pointerdown sur le fond du canvas.
+   * → Désélection en mode 'select'.
+   * → Début dessin en mode 'draw' / 'parking'.
+   */
+  const onCanvasPointerDown = useCallback((e: React.PointerEvent) => {
+    if (tool === 'select') {
+      setSelectedIds([]);
+      return;
+    }
+
+    if ((tool === 'draw' || tool === 'parking') && svgRef.current) {
+      const worldPt = getSVGWorldPoint(svgRef.current, e.nativeEvent as PointerEvent);
+      onDrawStart?.(worldPt);
+    }
+  }, [tool, svgRef, setSelectedIds, onDrawStart]);
+
+  return {
+    onBuildingPointerDown,
+    onHandlePointerDown,
+    onCanvasPointerDown,
+  };
 }

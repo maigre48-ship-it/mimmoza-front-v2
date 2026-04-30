@@ -3,6 +3,14 @@
  * ─────────────────────────────────────────────────────────────────────
  * Panneau "Rentabilité" de l'onglet Analyse investisseur.
  *
+ * v8.1 PATCH (bridge promoteur):
+ * - Props optionnelles travauxFromSnapshot + promoteurMarketData
+ *   ajoutées pour compatibilité AnalysePage v12.1.
+ * - travauxFromSnapshot utilisé comme source fallback dans simTravaux
+ *   quand le snapshot marchand n'a pas de données travaux.
+ * - promoteurMarketData accepté (non utilisé directement dans ce panel
+ *   — les données marché sont consommées par MarcheRisquesPanel).
+ *
  * v8 PATCH:
  * - persistRentabiliteToSnapshot : paramètre renommé travauxCanonical
  *   (était travauxEstimes) — persiste la valeur réellement utilisée
@@ -80,6 +88,10 @@ interface RentabilitePanelProps {
   fiscalRegime: FiscalRegime;
   onStrategyChange: (s: StrategyType) => void;
   onRegimeChange: (r: FiscalRegime) => void;
+  /** Montant travaux depuis le snapshot investisseur (fallback si marchand absent) */
+  travauxFromSnapshot?: number;
+  /** Données marché fusionnées investisseur ← promoteur (non utilisé directement ici) */
+  promoteurMarketData?: Record<string, unknown> | null;
 }
 
 // ─── Fiscal mode type ────────────────────────────────────────────────
@@ -458,6 +470,10 @@ export default function RentabilitePanel({
   fiscalRegime,
   onStrategyChange,
   onRegimeChange,
+  travauxFromSnapshot,
+  // promoteurMarketData accepté mais non utilisé directement dans ce panel
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  promoteurMarketData: _promoteurMarketData,
 }: RentabilitePanelProps) {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [riskFreeRate, setRiskFreeRate] = useState<MacroRate | null>(null);
@@ -552,6 +568,7 @@ export default function RentabilitePanel({
   const rfRate = riskFreeRate?.valuePct ?? 3.0;
 
   // ── Travaux from simulation snapshot ───────────────────────────────
+  // v8.1: fallback sur travauxFromSnapshot (investisseur) si marchand absent
   const simTravaux = useMemo<number>(() => {
     try {
       const snap = readMarchandSnapshot();
@@ -560,13 +577,22 @@ export default function RentabilitePanel({
         | undefined;
       const computed = execution?.travaux?.computed;
       const val = computed?.totalWithBuffer ?? computed?.total ?? 0;
-      return typeof val === "number" && Number.isFinite(val) && val > 0
-        ? val
-        : 0;
+      if (typeof val === "number" && Number.isFinite(val) && val > 0) {
+        return val;
+      }
     } catch {
-      return 0;
+      // fallthrough
     }
-  }, [deal?.dealId, snapshotTick]);
+    // Fallback : travauxFromSnapshot (prop investisseur)
+    if (
+      typeof travauxFromSnapshot === "number" &&
+      Number.isFinite(travauxFromSnapshot) &&
+      travauxFromSnapshot > 0
+    ) {
+      return travauxFromSnapshot;
+    }
+    return 0;
+  }, [deal?.dealId, snapshotTick, travauxFromSnapshot]);
 
   const travauxEffective = useMemo<number>(() => {
     return travauxSource === "simulation" && simTravaux > 0

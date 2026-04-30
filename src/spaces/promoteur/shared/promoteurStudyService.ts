@@ -1,4 +1,13 @@
 // src/spaces/promoteur/shared/promoteurStudyService.ts
+// VERSION 2.1.0
+//
+// Nouveautés v2.1.0 :
+//   - patchImplantation2d : persist la colonne implantation2d (jsonb)
+//
+// ⚠️  MIGRATION SQL requise une seule fois :
+//     ALTER TABLE promoteur_studies
+//     ADD COLUMN IF NOT EXISTS implantation2d jsonb DEFAULT NULL;
+//
 // VERSION 2.0.1 — fix listStudies (syntaxe foncier->x non supportée par Supabase JS)
 
 import { supabase } from "../../../supabaseClient";
@@ -15,6 +24,7 @@ import type {
   PromoteurBilanData,
   ServiceResult,
 } from "./promoteurStudy.types";
+import type { Implantation2DSnapshot } from "../plan2d/implantation2d.snapshot";
 
 const TABLE = "promoteur_studies" as const;
 
@@ -54,7 +64,7 @@ export const PromoteurStudyService = {
     try {
       const { data, error } = await supabase
         .from(TABLE)
-        .select("*")
+        .select("*")       // implantation2d inclus dès que la colonne existe
         .eq("id", studyId)
         .single();
       return toResult(data as PromoteurStudy | null, error);
@@ -157,6 +167,34 @@ export const PromoteurStudyService = {
 
   patchBilan(studyId: string, data: PromoteurBilanData): Promise<ServiceResult<PromoteurStudy>> {
     return patchColumn(studyId, "bilan", data);
+  },
+
+  // ── Implantation 2D ───────────────────────────────────────────────────────
+  // Persist la colonne jsonb `implantation2d`.
+  // Appelé par Implantation2DPage (auto-save debounced) et par patchImplantation2d
+  // de usePromoteurStudy (écriture synchrone si besoin).
+  //
+  // ⚠️  La colonne doit exister en base :
+  //     ALTER TABLE promoteur_studies
+  //     ADD COLUMN IF NOT EXISTS implantation2d jsonb DEFAULT NULL;
+  async patchImplantation2d(
+    studyId: string,
+    data: Implantation2DSnapshot,
+  ): Promise<ServiceResult<PromoteurStudy>> {
+    try {
+      const { data: row, error } = await supabase
+        .from(TABLE)
+        .update({ implantation2d: data })
+        .eq("id", studyId)
+        .select()
+        .single();
+      if (error) {
+        console.error("[PromoteurStudyService] patchImplantation2d error:", error.message);
+      }
+      return toResult(row as PromoteurStudy | null, error);
+    } catch (e: any) {
+      return { ok: false, error: e?.message ?? "Erreur réseau" };
+    }
   },
 
   // ── Suppression ──────────────────────────────────────────────────────────

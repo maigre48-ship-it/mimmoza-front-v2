@@ -213,29 +213,85 @@ export const useEditor2DStore = create<Editor2DState & Editor2DActions>((set, ge
     set({ parkings: next });
   },
 
+  // ── CORRECTIF RESIZE ─────────────────────────────────────────────────────
+  // Ancien comportement : applyDeltaToVolumes(dx, dy, drot) était toujours
+  // appelé, même lors d'un resize. Or cette fonction ne modifie QUE la
+  // position (translation) et la rotation des volumes — jamais leur width/depth.
+  // Résultat : après commit d'un resize, les volumes revenaient à leur taille
+  // d'origine → bâtiment visuellement inchangé malgré le drag.
+  //
+  // Nouveau comportement :
+  //   - Détecter si width ou depth a changé → c'est un resize
+  //   - Si resize → scaler chaque volume proportionnellement autour du nouveau centre
+  //   - Si move/rotate seul → conserver applyDeltaToVolumes (chemin inchangé)
   updateBuildingRect: (id, rect, persist = true) => {
     const old = get().buildings.find(b => b.id === id);
     const next = get().buildings.map(b => {
       if (b.id !== id) return b;
+
+      // Sécurité : si on n'a pas l'ancien état, on applique juste le rect
       if (!old) return { ...b, rect };
+
       const dx   = rect.center.x    - old.rect.center.x;
       const dy   = rect.center.y    - old.rect.center.y;
       const drot = rect.rotationDeg - old.rect.rotationDeg;
-      const updatedFloorPlans = (b.floorPlans ?? []).map(fp => ({
-        ...fp,
-        volumes: applyDeltaToVolumes(fp.volumes, dx, dy, drot, rect.center),
-      }));
-      return { ...b, rect, volumes:[], floorPlans: updatedFloorPlans };
+
+      // Détection resize : au moins un axe a changé de dimension
+      const isResize =
+        Math.abs(rect.width  - old.rect.width)  > 0.001 ||
+        Math.abs(rect.depth - old.rect.depth) > 0.001;
+
+      let updatedFloorPlans: typeof b.floorPlans;
+
+      if (isResize) {
+        // Facteurs d'échelle par axe (protégé contre la division par zéro)
+        const scaleX = old.rect.width  > 0.001 ? rect.width  / old.rect.width  : 1;
+        const scaleY = old.rect.depth  > 0.001 ? rect.depth / old.rect.depth : 1;
+
+        // Centre original (avant resize) et nouveau centre (intègre déjà l'ancre)
+        const origCx = old.rect.center.x;
+        const origCy = old.rect.center.y;
+        const newCx  = rect.center.x;
+        const newCy  = rect.center.y;
+
+        updatedFloorPlans = (b.floorPlans ?? []).map(fp => ({
+          ...fp,
+          volumes: fp.volumes.map(v => {
+            // Position relative du volume par rapport au centre ORIGINAL du bâtiment
+            const relX = v.rect.center.x - origCx;
+            const relY = v.rect.center.y - origCy;
+            return {
+              ...v,
+              rect: {
+                ...v.rect,
+                center: {
+                  x: newCx + relX * scaleX,
+                  y: newCy + relY * scaleY,
+                },
+                width: v.rect.width  * scaleX,
+                depth: v.rect.depth * scaleY,
+                // rotationDeg conservé : le resize pur ne change pas l'orientation
+              },
+            };
+          }),
+        }));
+      } else {
+        // Move / Rotate : logique originale inchangée
+        updatedFloorPlans = (b.floorPlans ?? []).map(fp => ({
+          ...fp,
+          volumes: applyDeltaToVolumes(fp.volumes, dx, dy, drot, rect.center),
+        }));
+      }
+
+      return { ...b, rect, volumes: [], floorPlans: updatedFloorPlans };
     });
+
     if (persist) save(next, get().parkings);
     set({ buildings: next });
   },
 
-  // ── CORRECTION PRINCIPALE ─────────────────────────────────────────
+  // ── CORRECTION PRINCIPALE parking ─────────────────────────────────
   // slotCount est recalculé à chaque changement de rect.
-  // C'est la source de vérité pour providedParkingSpaces dans le panneau.
-  // Sans ce recalcul, le panneau affichait la valeur d'initialisation
-  // même après redimensionnement du parking.
   updateParkingRect: (id, rect, persist = true) => {
     const next = get().parkings.map(p => {
       if (p.id !== id) return p;
@@ -374,7 +430,6 @@ export const useEditor2DStore = create<Editor2DState & Editor2DActions>((set, ge
       const p = parkings.find(x => x.id === id);
       if (p) {
         const nid = genId();
-        // slotCount recalculé pour le doublon au même rect
         const newSlotCount = computeParkingSlots(
           p.rect.width, p.rect.depth,
           p.slotWidth ?? 2.5, p.slotDepth ?? 5.0, p.driveAisleWidth ?? 6.0,

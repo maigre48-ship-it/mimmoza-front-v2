@@ -33,7 +33,6 @@ export interface MetricContext {
   hasAbsorption: boolean;
 }
 
-/** Extract a snapshot of which key metrics are actually populated */
 export function buildMetricContext(syn: PromoteurSynthese): MetricContext {
   return {
     hasCA:        (syn.financier.chiffreAffairesTotal ?? 0) > 0,
@@ -49,35 +48,49 @@ export function buildMetricContext(syn: PromoteurSynthese): MetricContext {
   };
 }
 
-/** Is a financial margin metric reliable? */
 export function isMarginReliable(mc: MetricContext): boolean {
   return mc.hasCA && mc.hasCDR && mc.hasTravaux;
 }
 
-/** Is TRN reliable? */
 export function isTrnReliable(mc: MetricContext): boolean {
   return mc.hasCA && mc.hasCDR && mc.hasFoncier;
 }
 
-/** Is the financial analysis overall exploitable? */
 export function isFinancialExploitable(mc: MetricContext): boolean {
   return mc.hasCA && mc.hasCDR;
 }
 
-/** Is market positioning reliable? */
 export function isMarketPositionReliable(mc: MetricContext): boolean {
   return mc.hasPrixNeuf && mc.hasDVF;
 }
 
-/** Is the scenario analysis meaningful? */
 export function areScenariosExploitable(mc: MetricContext): boolean {
   return mc.hasCA && mc.hasCDR && mc.hasTravaux && mc.hasFoncier;
 }
 
 // ============================================================================
-// BANNED PHRASES (mode incomplete)
+// BUSINESS RECOMMENDATION WORDING
 // ============================================================================
-// These phrases or close equivalents must NEVER appear when status = incomplete.
+
+function getMargeLecture(marge: number): string {
+  if (marge >= 15) {
+    return `Marge nette ${marge.toFixed(1)}% : niveau confortable, opération recommandée.`;
+  }
+
+  if (marge >= 10) {
+    return `Marge nette ${marge.toFixed(1)}% : niveau correct, opération viable sous suivi.`;
+  }
+
+  if (marge >= 8) {
+    return `Marge nette ${marge.toFixed(1)}% : niveau limite, opération envisageable sous conditions.`;
+  }
+
+  return `Marge nette ${marge.toFixed(1)}% : marge insuffisante, opération non recommandée en l'état.`;
+}
+
+// ============================================================================
+// BANNED PHRASES
+// ============================================================================
 
 const BANNED_INCOMPLETE: RegExp[] = [
   /op[eé]ration\s+(viable|recommand[eé]e|solide|robuste)/i,
@@ -93,9 +106,9 @@ const BANNED_INCOMPLETE: RegExp[] = [
   /sans\s+difficult[eé]\s+majeure/i,
 ];
 
-/** Sanitize IA-generated or stored text: strip banned phrases in incomplete mode */
 function stripBannedPhrases(text: string, status: DocumentStatus): string {
   if (status !== 'incomplete') return text;
+
   let result = text;
   for (const re of BANNED_INCOMPLETE) {
     result = result.replace(re, '[donnée insuffisante]');
@@ -107,27 +120,22 @@ function stripBannedPhrases(text: string, status: DocumentStatus): string {
 // POINTS FORTS FILTERING
 // ============================================================================
 
-/** Filter points forts to only keep those backed by real data */
 export function filterPointsForts(
   pointsForts: string[],
   status: DocumentStatus,
   mc: MetricContext,
 ): string[] {
   if (status === 'committee_ready') return pointsForts;
-
-  // In incomplete mode, no points forts at all unless very solid
   if (status === 'incomplete') return [];
 
-  // In provisional mode, filter out any that reference unreliable metrics
   return pointsForts.filter(pf => {
     const lower = pf.toLowerCase();
-    // Reject margin/TRN-based claims if financial data is unreliable
+
     if ((lower.includes('marge') || lower.includes('rentabilit')) && !isMarginReliable(mc)) return false;
     if (lower.includes('trn') && !isTrnReliable(mc)) return false;
-    // Reject market claims if market data is missing
     if ((lower.includes('march') || lower.includes('prix') || lower.includes('positionn')) && !isMarketPositionReliable(mc)) return false;
-    // Reject feasibility claims if PLU is missing
     if (lower.includes('faisabilit') && !mc.hasZonePlu) return false;
+
     return true;
   });
 }
@@ -158,7 +166,10 @@ export function generateExecMotif(
       + `Les conclusions sont à confirmer après collecte des données manquantes.`;
   }
 
-  // committee_ready — use original text
+  if (isMarginReliable(mc)) {
+    return getMargeLecture(syn.financier.margeNettePercent);
+  }
+
   return syn.executiveSummary.motifRecommandation;
 }
 
@@ -177,6 +188,7 @@ export function generateFinancierConclusion(
         + 'Les ratios de marge, TRN et coût de revient ne peuvent pas être calculés '
         + 'faute de données suffisantes sur les coûts et le chiffre d\'affaires.';
     }
+
     return 'Les indicateurs financiers sont présentés à titre indicatif uniquement. '
       + 'Leur fiabilité est insuffisante pour fonder une décision d\'investissement.';
   }
@@ -186,10 +198,10 @@ export function generateFinancierConclusion(
       return 'Les ratios de marge sont à interpréter avec prudence : '
         + 'certains postes de coûts ne sont pas renseignés.';
     }
-    return null; // no extra conclusion needed
+    return null;
   }
 
-  return null; // committee_ready — data speaks for itself
+  return null;
 }
 
 export function generateMarcheConclusion(
@@ -201,6 +213,7 @@ export function generateMarcheConclusion(
       return 'L\'analyse de marché ne peut pas être conduite faute de données DVF et de références de prix neuf. '
         + 'Aucune conclusion sur le positionnement tarifaire n\'est possible.';
     }
+
     return 'Les données de marché sont insuffisantes. Les indicateurs présentés '
       + 'ne permettent pas de valider le positionnement tarifaire du projet.';
   }
@@ -210,10 +223,12 @@ export function generateMarcheConclusion(
       return 'En l\'absence de données DVF suffisantes, le positionnement prix est à confirmer '
         + 'par une étude de marché complémentaire.';
     }
+
     if (!mc.hasAbsorption) {
       return 'Le rythme d\'absorption n\'est pas renseigné. Le délai d\'écoulement '
         + 'reste à valider par une analyse commerciale locale.';
     }
+
     return null;
   }
 
@@ -242,21 +257,15 @@ export function generateTechniqueConclusion(
 // EFFECTIVE FEASIBILITY LABEL
 // ============================================================================
 
-/**
- * Override the displayed feasibility status when data is missing.
- * NEVER display "CONFIRMÉE" if the PLU zone is unknown.
- */
 export function getEffectiveFaisabilite(
   original: 'CONFIRME' | 'SOUS_RESERVE' | 'IMPOSSIBLE',
   status: DocumentStatus,
   mc: MetricContext,
 ): 'CONFIRME' | 'SOUS_RESERVE' | 'IMPOSSIBLE' {
-  // If PLU zone is missing, cap at SOUS_RESERVE regardless of input
   if (!mc.hasZonePlu && original === 'CONFIRME') {
     return 'SOUS_RESERVE';
   }
 
-  // If incomplete, never show CONFIRME
   if (status === 'incomplete' && original === 'CONFIRME') {
     return 'SOUS_RESERVE';
   }
@@ -268,16 +277,12 @@ export function getEffectiveFaisabilite(
 // SCENARIOS GATE
 // ============================================================================
 
-/**
- * Determine if scenarios should be rendered or suppressed.
- * Returns null if scenarios should show, or a replacement message if suppressed.
- */
 export function scenariosGate(
   status: DocumentStatus,
   mc: MetricContext,
   scenarios: unknown[],
 ): string | null {
-  if ((scenarios?.length ?? 0) === 0) return null; // no scenarios to show anyway
+  if ((scenarios?.length ?? 0) === 0) return null;
 
   if (status === 'incomplete' && !areScenariosExploitable(mc)) {
     return 'Les scénarios de sensibilité ne sont pas exploitables en l\'état. '
@@ -286,19 +291,13 @@ export function scenariosGate(
       + 'Cette section sera disponible après complétion du bilan financier.';
   }
 
-  return null; // show scenarios normally
+  return null;
 }
 
 // ============================================================================
 // SYNTHESE IA GATE
 // ============================================================================
 
-/**
- * Filter or suppress IA synthesis text.
- * In incomplete mode: suppress entirely (return null).
- * In provisional mode: wrap each section with a caveat.
- * In committee_ready: pass through with banned-phrase check.
- */
 export function filterSyntheseIA(
   text: string | undefined | null,
   sectionName: string,
@@ -308,19 +307,16 @@ export function filterSyntheseIA(
   if (!text?.trim()) return null;
 
   if (status === 'incomplete') {
-    return null; // suppress entirely
+    return null;
   }
 
   if (status === 'provisional') {
-    const cleaned = stripBannedPhrases(text, status);
-    return cleaned;
+    return stripBannedPhrases(text, status);
   }
 
-  // committee_ready
   return stripBannedPhrases(text, status);
 }
 
-/** Should the IA synthesis section be shown at all? */
 export function shouldShowSyntheseIA(
   status: DocumentStatus,
   syn: PromoteurSynthese,
@@ -356,11 +352,13 @@ export function generateFinalRecommendationText(
       + `Les conclusions sont à confirmer avant présentation définitive en comité.`;
   }
 
-  // committee_ready
+  if (isMarginReliable(mc)) {
+    return getMargeLecture(syn.financier.margeNettePercent);
+  }
+
   return syn.executiveSummary.motifRecommandation;
 }
 
-/** Conclusion text from IA, filtered by status */
 export function generateFinalIAConclusion(
   audit: DocumentAudit,
   syn: PromoteurSynthese,
@@ -368,7 +366,7 @@ export function generateFinalIAConclusion(
   if (!syn.syntheseIA?.conclusion?.trim()) return null;
 
   if (audit.documentStatus === 'incomplete') {
-    return null; // no IA conclusion on incomplete dossiers
+    return null;
   }
 
   if (audit.documentStatus === 'provisional') {
@@ -391,30 +389,29 @@ export const INCOMPLETE_NO_POINTS_FORTS =
 // ============================================================================
 
 export function getCoverDocTypeLabel(status: DocumentStatus): string {
-  if (status === 'incomplete')  return 'DOSSIER INCOMPLET — USAGE INTERNE UNIQUEMENT';
+  if (status === 'incomplete') return 'DOSSIER INCOMPLET — USAGE INTERNE UNIQUEMENT';
   if (status === 'provisional') return 'PRÉ-ÉTUDE — VALIDATION COMPLÉMENTAIRE REQUISE';
   return "DOSSIER COMITÉ D'INVESTISSEMENT";
 }
 
-/** Short status label for the decision block */
 export function getCoverStatusLabel(status: DocumentStatus): string {
-  if (status === 'incomplete')  return 'DOSSIER INCOMPLET';
+  if (status === 'incomplete') return 'DOSSIER INCOMPLET';
   if (status === 'provisional') return 'ANALYSE PROVISOIRE';
   return 'PRÊT COMITÉ';
 }
 
-/** Recommendation label adapted for cover display — never show GO on bad data */
 export function getCoverRecommendationLabel(
   status: DocumentStatus,
   effectiveRec: RecommendationType,
 ): string {
   if (status === 'incomplete') return 'AVIS NON DÉCIDABLE EN L\'ÉTAT';
+
   if (status === 'provisional') {
     if (effectiveRec === 'GO_CONDITION') return 'GO CONDITIONNEL — SOUS RÉSERVE';
     if (effectiveRec === 'NO_GO') return 'NO GO';
     return 'AVIS CONDITIONNEL';
   }
-  // committee_ready
+
   if (effectiveRec === 'GO') return 'GO — OPÉRATION RECOMMANDÉE';
   if (effectiveRec === 'GO_CONDITION') return 'GO CONDITIONNEL';
   return 'NO GO';

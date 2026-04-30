@@ -196,15 +196,54 @@ export function genId(): string {
   return Math.random().toString(36).slice(2, 9);
 }
 
+/**
+ * Calcule le nombre de places de parking.
+ *
+ * CORRECTIF : l'ancienne version supposait au plus 1 rangée simple après les
+ * baies doubles. Or le rendu ParkingSlots avance de slotD à chaque rangée
+ * simple et boucle — pouvant dessiner plusieurs rangées simples.
+ * Exemple : depth=11m, slotD=5m, aisleW=6m → aucune baie double (bayH=16m),
+ * mais le rendu dessine 2 rangées simples (y=0 puis y=5), soit 14 places.
+ * L'ancienne formule n'en comptait que 7.
+ *
+ * Nouveau calcul : boucle while identique au rendu ParkingSlots, avec les
+ * mêmes tolérances (+0.01m pour les baies doubles, strict pour les simples).
+ *
+ * Invariant : computeParkingSlots() == nombre de <rect> dessinés par ParkingSlots().
+ */
 export function computeParkingSlots(
-  width: number, depth: number,
-  slotW: number, slotD: number, aisleW: number,
+  width: number,
+  depth: number,
+  slotW: number,
+  slotD: number,
+  aisleW: number,
 ): number {
+  if (slotW <= 0 || slotD <= 0 || aisleW <= 0) return 0;
+
   const bayH = slotD * 2 + aisleW;
-  const doubleBays = Math.floor(depth / bayH);
-  const remaining = depth - doubleBays * bayH;
-  const singleBays = remaining >= slotD + aisleW ? 1 : 0;
-  return Math.max(0, (doubleBays * 2 + singleBays) * Math.floor(width / slotW));
+
+  // Nombre de colonnes — même condition que le rendu : x+slotW <= width+0.01
+  const slotsPerRow = Math.floor((width + 0.01) / slotW);
+  if (slotsPerRow <= 0) return 0;
+
+  let count = 0;
+  let y = 0;
+
+  while (y < depth) {
+    if (y + bayH <= depth + 0.01) {
+      // Baie double face-à-face : 2 rangées
+      count += slotsPerRow * 2;
+      y     += bayH;
+    } else if (y + slotD <= depth) {
+      // Rangée simple (même condition que le rendu, sans tolérance)
+      count += slotsPerRow;
+      y     += slotD;
+    } else {
+      break;
+    }
+  }
+
+  return Math.max(0, count);
 }
 
 export function geoPolygonToLocal(

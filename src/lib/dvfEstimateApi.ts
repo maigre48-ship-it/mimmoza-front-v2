@@ -1,12 +1,16 @@
 ﻿import type { SupabaseClient } from "@supabase/supabase-js";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────────────────────────────────────
+
 export type DvfEstimateParams = {
-  commune_insee: string; // ex "64065" (optionnel en scope=cp, mais requis par signature)
-  code_postal?: string | null; // ex "64310"
+  commune_insee: string;
+  code_postal?: string | null;
   surface_m2: number;
   type_local?: "Maison" | "Appartement" | string | null;
   pieces?: number | null;
-  months?: number; // ex 24
+  months?: number;
 };
 
 export type DvfEstimateResult = {
@@ -42,11 +46,9 @@ export type DvfCompRow = {
   commune: string | null;
 };
 
-// ============================================================================
-// Normalisation comparables (évite number|string partout)
-// - On ne casse pas l'existant : fetchDvfComps continue de renvoyer DvfCompRow[]
-// - On ajoute DvfComp + normalize + fetchDvfCompsNormalized
-// ============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
+// NORMALISATION COMPS
+// ─────────────────────────────────────────────────────────────────────────────
 
 export type DvfComp = Omit<
   DvfCompRow,
@@ -83,9 +85,9 @@ export function normalizeDvfCompRow(row: DvfCompRow): DvfComp {
   };
 }
 
-// ============================================================================
-// Estimation (RPC get_dvf_estimate_v3)
-// ============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
+// ESTIMATION (RPC get_dvf_estimate_v3)
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchDvfEstimate(
   supabase: SupabaseClient,
@@ -102,20 +104,38 @@ export async function fetchDvfEstimate(
     p_code_postal: scope === "cp" ? (code_postal ?? null) : null,
   };
 
+  console.log("[MMZ][DVF][fetchDvfEstimate] scope =", scope);
+  console.log("[MMZ][DVF][fetchDvfEstimate] rpcParams =", rpcParams);
+
   const { data, error } = await supabase.rpc("get_dvf_estimate_v3", rpcParams);
 
+  console.log("[MMZ][DVF][fetchDvfEstimate] raw data =", data);
+  console.log("[MMZ][DVF][fetchDvfEstimate] raw error =", error);
+
   if (error) {
-    return { success: false, error: "RPC_ERROR", message: error.message };
+    return {
+      success: false,
+      error: "RPC_ERROR",
+      message: error.message,
+    };
   }
 
   const payload = (data as any) ?? null;
 
   if (!payload || typeof payload !== "object") {
-    return { success: false, error: "INVALID_RESPONSE", message: "Réponse RPC invalide" };
+    return {
+      success: false,
+      error: "INVALID_RESPONSE",
+      message: "Réponse RPC invalide",
+    };
   }
 
   return payload as DvfEstimateResult;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STRATÉGIE BEST ESTIMATE
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchBestDvfEstimate(
   supabase: SupabaseClient,
@@ -128,26 +148,41 @@ export async function fetchBestDvfEstimate(
 }> {
   const base = { ...params };
 
-  // 1) Essai strict: avec type_local (si fourni)
+  console.log("[MMZ][DVF][fetchBestDvfEstimate] base params =", base);
+
+  // ── 1. Appel principal avec type_local
   const commune = await fetchDvfEstimate(supabase, { ...base, scope: "commune" });
 
   const cp = base.code_postal
     ? await fetchDvfEstimate(supabase, { ...base, scope: "cp" })
     : null;
 
+  console.log("[MMZ][DVF][fetchBestDvfEstimate] commune =", commune);
+  console.log("[MMZ][DVF][fetchBestDvfEstimate] cp =", cp);
+
   const pick = (c: DvfEstimateResult, p: DvfEstimateResult | null) => {
-    if (p?.success && (p.stats?.transactions_count ?? 0) >= 30) return { scope: "cp" as const, result: p };
-    if (c.success && (c.stats?.transactions_count ?? 0) >= 10) return { scope: "commune" as const, result: c };
-    if (p?.success && (p.stats?.transactions_count ?? 0) > 0) return { scope: "cp" as const, result: p };
-    if (c.success && (c.stats?.transactions_count ?? 0) > 0) return { scope: "commune" as const, result: c };
+    if (p?.success && (p.stats?.transactions_count ?? 0) >= 30)
+      return { scope: "cp" as const, result: p };
+
+    if (c.success && (c.stats?.transactions_count ?? 0) >= 10)
+      return { scope: "commune" as const, result: c };
+
+    if (p?.success && (p.stats?.transactions_count ?? 0) > 0)
+      return { scope: "cp" as const, result: p };
+
+    if (c.success && (c.stats?.transactions_count ?? 0) > 0)
+      return { scope: "commune" as const, result: c };
+
     return null;
   };
 
   let best = pick(commune, cp);
   let usedFallbackNoType = false;
 
-  // 2) Fallback: si aucune donnée, réessayer sans type_local (tolérant)
+  // ── 2. Fallback sans type_local
   if (!best && base.type_local) {
+    console.log("[MMZ][DVF] fallback sans type_local");
+
     usedFallbackNoType = true;
 
     const commune2 = await fetchDvfEstimate(supabase, {
@@ -157,20 +192,33 @@ export async function fetchBestDvfEstimate(
     });
 
     const cp2 = base.code_postal
-      ? await fetchDvfEstimate(supabase, { ...base, type_local: null, scope: "cp" })
+      ? await fetchDvfEstimate(supabase, {
+          ...base,
+          type_local: null,
+          scope: "cp",
+        })
       : null;
 
     best = pick(commune2, cp2);
 
-    return { best, commune: commune2, cp: cp2, usedFallbackNoType };
+    console.log("[MMZ][DVF] fallback results", { commune2, cp2, best });
+
+    return {
+      best,
+      commune: commune2,
+      cp: cp2,
+      usedFallbackNoType,
+    };
   }
+
+  console.log("[MMZ][DVF] best result =", best);
 
   return { best, commune, cp, usedFallbackNoType };
 }
 
-// ============================================================================
-// Comparables (RPC get_dvf_comps_v1)
-// ============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPARABLES (RPC get_dvf_comps_v1)
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchDvfComps(
   supabase: SupabaseClient,
@@ -187,24 +235,36 @@ export async function fetchDvfComps(
     p_limit: Math.min(Math.max(limit ?? 30, 1), 50),
   };
 
+  console.log("[MMZ][DVF][fetchDvfComps] scope =", scope);
+  console.log("[MMZ][DVF][fetchDvfComps] rpcParams =", rpcParams);
+
   const { data, error } = await supabase.rpc("get_dvf_comps_v1", rpcParams);
 
+  console.log("[MMZ][DVF][fetchDvfComps] raw data =", data);
+  console.log("[MMZ][DVF][fetchDvfComps] raw error =", error);
+
   if (error) {
-    return { success: false, data: [], error: "RPC_ERROR", message: error.message };
+    return {
+      success: false,
+      data: [],
+      error: "RPC_ERROR",
+      message: error.message,
+    };
   }
 
   return { success: true, data: (data as any[]) ?? [] };
 }
 
-/**
- * Variante "safe" : comparables normalisés (numbers garantis)
- * Recommandé pour tout affichage / tri / calcul dans le front.
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// VERSION NORMALISÉE
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function fetchDvfCompsNormalized(
   supabase: SupabaseClient,
   params: DvfEstimateParams & { scope: "commune" | "cp"; limit?: number }
 ): Promise<{ success: boolean; data: DvfComp[]; error?: string; message?: string }> {
   const res = await fetchDvfComps(supabase, params);
+
   return {
     ...res,
     data: res.data.map(normalizeDvfCompRow),

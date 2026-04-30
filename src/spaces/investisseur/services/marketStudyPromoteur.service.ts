@@ -11,11 +11,79 @@
  * ─────────────────────────────────────────────────────────────────────
  */
 
-import { supabase } from "@/lib/supabaseClient";
-
 // ─── Edge function name ──────────────────────────────────────────────
 
 const EDGE_FUNCTION_NAME = "market-study-investisseur-v1";
+const REQUEST_TIMEOUT_MS = 20_000;
+
+// ─── Env helpers ─────────────────────────────────────────────────────
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+function buildFunctionUrl(functionName: string): string | null {
+  const base = SUPABASE_URL?.trim();
+  if (!base) return null;
+  return `${base.replace(/\/+$/, "")}/functions/v1/${functionName}`;
+}
+
+function mergeAbortSignals(
+  externalSignal?: AbortSignal,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): { signal: AbortSignal; cleanup: () => void } {
+  const controller = new AbortController();
+  let timeoutId: number | null = null;
+
+  const abortFromExternal = () => {
+    controller.abort();
+  };
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener("abort", abortFromExternal, { once: true });
+    }
+  }
+
+  timeoutId = window.setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
+      if (externalSignal) {
+        externalSignal.removeEventListener("abort", abortFromExternal);
+      }
+    },
+  };
+}
+
+async function readResponseBodySafe(response: Response): Promise<unknown> {
+  const contentType = response.headers.get("content-type") ?? "";
+  const isJson = contentType.toLowerCase().includes("application/json");
+
+  try {
+    if (isJson) {
+      return await response.json();
+    }
+
+    const text = await response.text();
+    return text ? { raw: text } : null;
+  } catch {
+    try {
+      const clone = response.clone();
+      const text = await clone.text();
+      return text ? { raw: text } : null;
+    } catch {
+      return null;
+    }
+  }
+}
 
 // ─── Input ───────────────────────────────────────────────────────────
 
@@ -161,7 +229,6 @@ function buildPayload(input: MarketStudyInput): Record<string, unknown> {
     radius_km: input.radius_km ?? 5,
   };
 
-  // Priorité 1 : coordonnées
   if (
     input.lat != null &&
     input.lng != null &&
@@ -169,19 +236,14 @@ function buildPayload(input: MarketStudyInput): Record<string, unknown> {
     Number.isFinite(input.lng)
   ) {
     payload.lat = input.lat;
-    payload.lon = input.lng; // edge attend "lon", le front a "lng"
-  }
-  // Priorité 2 : adresse complète
-  else if (input.address && input.address.trim().length > 3) {
+    payload.lon = input.lng;
+  } else if (input.address && input.address.trim().length > 3) {
     payload.address = input.address.trim();
-  }
-  // Priorité 3 : zipCode + city
-  else if (input.zipCode && input.city) {
+  } else if (input.zipCode && input.city) {
     payload.zipCode = input.zipCode.trim();
     payload.city = input.city.trim();
   }
 
-  // Toujours ajouter zipCode/city si dispo (aide le geocoding côté edge)
   if (input.zipCode && !payload.zipCode) payload.zipCode = input.zipCode.trim();
   if (input.city && !payload.city) payload.city = input.city.trim();
 
@@ -197,63 +259,169 @@ export async function fetchMarketStudyPromoteur(
   signal?: AbortSignal,
 ): Promise<MarketStudyResponse> {
   const payload = buildPayload(input);
+  const functionUrl = buildFunctionUrl(EDGE_FUNCTION_NAME);
 
   console.log(`[MarketStudy] calling ${EDGE_FUNCTION_NAME}`, payload);
 
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !functionUrl) {
+    const details = {
+      hasUrl: Boolean(SUPABASE_URL),
+      hasAnonKey: Boolean(SUPABASE_ANON_KEY),
+      functionUrl,
+    };
+
+    console.error(`[MarketStudy] missing Supabase env`, details);
+
+    return {
+      ok: false,
+      error:
+        "Configuration Supabase manquante côté front (URL ou clé publique introuvable).",
+      details,
+    };
+  }
+
+  const startedAt = performance.now();
+  const { signal: requestSignal, cleanup } = mergeAbortSignals(signal, REQUEST_TIMEOUT_MS);
+
   try {
-    const { data, error } = await supabase.functions.invoke(
-      EDGE_FUNCTION_NAME,
-      {
-        body: payload,
-        // @ts-expect-error — supabase-js v2.42+ supports signal on invoke
-        signal,
+    const response = await fetch(functionUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
       },
+      body: JSON.stringify(payload),
+      signal: requestSignal,
+    });
+
+    console.log(
+      `[MarketStudy] HTTP response (${EDGE_FUNCTION_NAME}) in ${Math.round(performance.now() - startedAt)}ms`,
+      response.status,
+      response.statusText,
     );
 
-    // supabase-js invoke error (network, CORS, 404, etc.)
-    if (error) {
-      console.error(`[MarketStudy] invoke error (${EDGE_FUNCTION_NAME})`, error);
+    const parsedBody = await readResponseBodySafe(response);
 
-      const msg = error.message ?? String(error);
+    console.log(
+      `[MarketStudy] parsed response (${EDGE_FUNCTION_NAME}) in ${Math.round(performance.now() - startedAt)}ms`,
+      parsedBody,
+    );
 
-      if (
-        msg.includes("Failed to send") ||
-        msg.includes("Failed to fetch") ||
-        msg.includes("NetworkError") ||
-        msg.includes("ERR_")
-      ) {
-        return {
-          ok: false,
-          error:
-            "Impossible de joindre la fonction. Vérifiez votre connexion ou réessayez.",
-          details: msg,
-        };
-      }
+    if (!response.ok) {
+      console.error(
+        `[MarketStudy] HTTP error (${EDGE_FUNCTION_NAME})`,
+        response.status,
+        parsedBody,
+      );
 
-      return { ok: false, error: msg, details: error };
-    }
+      const message =
+        typeof parsedBody === "object" &&
+        parsedBody !== null &&
+        "error" in parsedBody &&
+        typeof (parsedBody as { error?: unknown }).error === "string"
+          ? (parsedBody as { error: string }).error
+          : `Erreur serveur (${response.status})`;
 
-    console.log(`[MarketStudy] response (${EDGE_FUNCTION_NAME})`, data);
-
-    if (!data || data.success !== true) {
       return {
         ok: false,
-        error: data?.error ?? "Réponse invalide du serveur",
-        details: data,
+        error: message,
+        details: {
+          status: response.status,
+          statusText: response.statusText,
+          body: parsedBody,
+          durationMs: Math.round(performance.now() - startedAt),
+        },
       };
     }
 
-    return { ok: true, data: data as MarketStudyResult };
+    if (
+      !parsedBody ||
+      typeof parsedBody !== "object" ||
+      !("success" in parsedBody) ||
+      (parsedBody as { success?: unknown }).success !== true
+    ) {
+      return {
+        ok: false,
+        error:
+          typeof parsedBody === "object" &&
+          parsedBody !== null &&
+          "error" in parsedBody &&
+          typeof (parsedBody as { error?: unknown }).error === "string"
+            ? (parsedBody as { error: string }).error
+            : "Réponse invalide du serveur",
+        details: {
+          body: parsedBody,
+          durationMs: Math.round(performance.now() - startedAt),
+        },
+      };
+    }
+
+    return { ok: true, data: parsedBody as MarketStudyResult };
   } catch (err: unknown) {
     if (err instanceof DOMException && err.name === "AbortError") {
-      throw err;
+      const durationMs = Math.round(performance.now() - startedAt);
+
+      if (signal?.aborted) {
+        console.warn(
+          `[MarketStudy] request cancelled by caller (${EDGE_FUNCTION_NAME}) after ${durationMs}ms`,
+        );
+
+        return {
+          ok: false,
+          error: "Requête annulée.",
+          details: {
+            reason: "aborted_by_caller",
+            durationMs,
+          },
+        };
+      }
+
+      console.error(
+        `[MarketStudy] timeout (${EDGE_FUNCTION_NAME}) after ${REQUEST_TIMEOUT_MS}ms`,
+      );
+
+      return {
+        ok: false,
+        error: "La fonction a mis trop de temps à répondre.",
+        details: {
+          reason: "timeout",
+          timeoutMs: REQUEST_TIMEOUT_MS,
+          durationMs,
+        },
+      };
     }
 
     console.error(`[MarketStudy] unexpected error (${EDGE_FUNCTION_NAME})`, err);
+
+    const message = err instanceof Error ? err.message : String(err);
+
+    if (
+      message.includes("Failed to fetch") ||
+      message.includes("NetworkError") ||
+      message.includes("ERR_") ||
+      message.includes("Load failed")
+    ) {
+      return {
+        ok: false,
+        error:
+          "Impossible de joindre la fonction. Vérifiez votre connexion ou réessayez.",
+        details: {
+          message,
+          durationMs: Math.round(performance.now() - startedAt),
+        },
+      };
+    }
+
     return {
       ok: false,
       error: "Erreur inattendue lors de l'appel",
-      details: String(err),
+      details: {
+        message,
+        durationMs: Math.round(performance.now() - startedAt),
+      },
     };
+  } finally {
+    cleanup();
   }
 }

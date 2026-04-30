@@ -1,8 +1,19 @@
-// src/spaces/promoteur/plan2d/Plan2DCanvas.tsx — V5.1 multi-étages
+// src/spaces/promoteur/plan2d/Plan2DCanvas.tsx — V5.2 enveloppe PLU réelle
 //
-// V5.1 : Pan sur clic-glisser fond vide (sélection)
-//   + curseur grab/grabbing cohérent
-//   Aucune régression fonctionnelle.
+// V5.2 (par rapport à V5.1) :
+//   - Zone de retrait visualisée (teinture ambrée entre parcelle et enveloppe)
+//   - Enveloppe PLU = contrainte de dessin réelle (create / move / resize / rotate)
+//   - buildableEnvelopeRef pour closure stable dans les callbacks
+//   - Bâtiment teinté orange en direct quand hors emprise (pendant le drag)
+//   - Helpers isRectAllowedInBuildZone / isRectAnyInBuildZone / isPointInBuildZone
+//   - Aucune régression V5.1
+//
+// CORRECTIF RESIZE (getEffectiveFloorVolumes) :
+//   La fonction propageait uniquement le dx/dy (déplacement du centre) et drot
+//   sur les volumes internes, mais ignorait le changement de width/depth.
+//   Résultat : la bounding box de sélection grandissait correctement, mais les
+//   volumes (bâtiment affiché) restaient à leur taille originale.
+//   Fix : détecter isResize et appliquer un scale proportionnel sur chaque volume.
 
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { useEditor2DStore, getFloorVolumes, getBuildingVolumes } from './editor2d.store';
@@ -86,23 +97,82 @@ function computeDrawRect(draw:DrawState):OrientedRect{
 
 // ── Volumes par étage ─────────────────────────────────────────────────
 
+/**
+ * Retourne les volumes d'un bâtiment à un étage donné, en appliquant
+ * la transformation live (liveRects) si elle existe.
+ *
+ * CORRECTIF RESIZE :
+ *   L'ancienne version ne propageait que dx/dy (translation du centre) et drot.
+ *   Elle ignorait le changement de width/depth → les volumes restaient à leur
+ *   taille originale pendant le drag de resize.
+ *
+ *   Nouvelle logique :
+ *     - Détecter si liveRect.width ou liveRect.depth diffère de b.rect
+ *       → c'est un resize
+ *     - Si resize : scaler chaque volume proportionnellement autour du nouveau centre
+ *     - Si move/rotate seul : logique d'origine conservée à l'identique
+ */
 function getEffectiveFloorVolumes(
-  b:Building2D, levelIndex:number, liveRects:Record<string,OrientedRect>
-):BuildingVolume2D[]{
+  b:         Building2D,
+  levelIndex: number,
+  liveRects: Record<string, OrientedRect>,
+): BuildingVolume2D[] {
   const baseVols = getFloorVolumes(b, levelIndex);
   const liveRect = liveRects[b.id];
-  if(!liveRect || !baseVols.length) return baseVols;
+  if (!liveRect || !baseVols.length) return baseVols;
 
-  const dx=liveRect.center.x-b.rect.center.x, dy=liveRect.center.y-b.rect.center.y;
-  const drot=liveRect.rotationDeg-b.rect.rotationDeg, hasRot=Math.abs(drot)>0.001;
+  const dx   = liveRect.center.x    - b.rect.center.x;
+  const dy   = liveRect.center.y    - b.rect.center.y;
+  const drot = liveRect.rotationDeg - b.rect.rotationDeg;
+  const hasRot = Math.abs(drot) > 0.001;
 
+  // ── Détection resize ──────────────────────────────────────────────
+  const isResize =
+    Math.abs(liveRect.width  - b.rect.width)  > 0.001 ||
+    Math.abs(liveRect.depth - b.rect.depth) > 0.001;
+
+  if (isResize) {
+    // Facteurs d'échelle par axe (protégé contre la division par zéro)
+    const scaleX = b.rect.width  > 0.001 ? liveRect.width  / b.rect.width  : 1;
+    const scaleY = b.rect.depth  > 0.001 ? liveRect.depth / b.rect.depth : 1;
+
+    // Centre original (avant resize) et nouveau centre du bâtiment.
+    // liveRect.center intègre déjà le déplacement dû à l'ancre fixe du resize
+    // (calculé par resizeRectFromHandle) → pas besoin d'ajouter dx/dy séparément.
+    const origCx = b.rect.center.x;
+    const origCy = b.rect.center.y;
+    const newCx  = liveRect.center.x;
+    const newCy  = liveRect.center.y;
+
+    return baseVols.map(v => {
+      // Position relative du volume par rapport au centre ORIGINAL du bâtiment
+      const relX = v.rect.center.x - origCx;
+      const relY = v.rect.center.y - origCy;
+
+      return {
+        ...v,
+        rect: {
+          ...v.rect,
+          center: {
+            x: newCx + relX * scaleX,
+            y: newCy + relY * scaleY,
+          },
+          width: v.rect.width  * scaleX,
+          depth: v.rect.depth * scaleY,
+          // rotationDeg conservé : le resize pur ne pivote pas le bâtiment
+        },
+      };
+    });
+  }
+
+  // ── Move / Rotate : logique originale inchangée ───────────────────
   return baseVols.map(v=>{
     let cx=v.rect.center.x+dx, cy=v.rect.center.y+dy;
     if(hasRot){
-      const gc=liveRect.center, rad=drot*Math.PI/180;
+      const rad=drot*Math.PI/180;
       const cos=Math.cos(rad), sin=Math.sin(rad);
-      const rx=cx-gc.x, ry=cy-gc.y;
-      cx=gc.x+rx*cos-ry*sin; cy=gc.y+rx*sin+ry*cos;
+      const rx=cx-liveRect.center.x, ry=cy-liveRect.center.y;
+      cx=liveRect.center.x+rx*cos-ry*sin; cy=liveRect.center.y+rx*sin+ry*cos;
     }
     return {...v, rect:{...v.rect, center:{x:cx,y:cy}, rotationDeg:((v.rect.rotationDeg+drot)%360+360)%360}};
   });
@@ -249,6 +319,38 @@ function isMostlyHiddenVolume(vol:BuildingVolume2D,selfIdx:number,vols:BuildingV
     }
   }
   return hidden>=testPts.length*0.6;
+}
+
+// ── Build zone helpers ────────────────────────────────────────────────
+
+function toSvgPath(pts: Point2D[]): string {
+  if (!pts.length) return '';
+  return `M ${pts.map(p => `${p.x},${p.y}`).join(' L ')} Z`;
+}
+
+function isPointInBuildZone(
+  p:        Point2D,
+  envelope: Point2D[] | null,
+  parcel:   Point2D[],
+): boolean {
+  if (envelope && envelope.length >= 3) return pointInPolygon(p, envelope);
+  return pointInPolygon(p, parcel);
+}
+
+function isRectAllowedInBuildZone(
+  rect:     OrientedRect,
+  envelope: Point2D[] | null,
+  parcel:   Point2D[],
+): boolean {
+  return rectCorners(rect).every(c => isPointInBuildZone(c, envelope, parcel));
+}
+
+function isRectAnyInBuildZone(
+  rect:     OrientedRect,
+  envelope: Point2D[] | null,
+  parcel:   Point2D[],
+): boolean {
+  return rectCorners(rect).some(c => isPointInBuildZone(c, envelope, parcel));
 }
 
 // ── Parking slots ─────────────────────────────────────────────────────
@@ -493,15 +595,15 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
     return computeBuildableEnvelope(parcellePolygon, parcelFrontEdgeIndex, setbackRules);
   }, [parcellePolygon, parcelFrontEdgeIndex, setbackRules]);
 
+  const buildableEnvelopeRef = useRef<Point2D[] | null>(null);
+  buildableEnvelopeRef.current = buildableEnvelope;
+
   const [previewDraw,setPreviewDraw]=useState<DrawState|null>(null);
   const [liveRects,setLiveRects]=useState<Record<string,OrientedRect>>({});
   const liveRectsRef=useRef<Record<string,OrientedRect>>({});
   const [hoveredHandle,setHoveredHandle]=useState<{entityId:string;handle:HandleId}|null>(null);
   const [spaceDown,setSpaceDown]=useState(false);
   const [isPanning,setIsPanning]=useState(false);
-
-  // ── V5.1 : état "survol fond vide" pour le curseur grab ──────────
-  // true quand la souris est sur le fond en mode sélection (pas d'entité).
   const [isHoverEmpty,setIsHoverEmpty]=useState(false);
 
   // ── Fusion auto ──────────────────────────────────────────────────
@@ -557,9 +659,6 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
     else updateParkingRect(id,rect,true);
   },[]);
 
-  // ── Helper pan ────────────────────────────────────────────────────
-  // Démarre le pan depuis un événement pointer.
-  // Réutilise l'infrastructure panStart existante.
   const startPan=useCallback((clientX:number,clientY:number)=>{
     const cam=cameraRef.current;
     ts.current.panStart={
@@ -578,7 +677,6 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
     ts.current.isDown=true; ts.current.shiftKey=e.shiftKey; ts.current.altKey=e.altKey;
     ts.current.pos={clientX:e.clientX,clientY:e.clientY};
 
-    // ── PRIORITÉ 0 : mode sélection façade terrain ────────────────
     if(selectingFacade){
       const w=getWorld(e.clientX,e.clientY), z=getZoom();
       const edgeIdx=nearestParcelEdge(w, parcellePolygon, 10/z);
@@ -587,7 +685,6 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
       ts.current.isDown=false; return;
     }
 
-    // ── PRIORITÉ 1 : Space → pan forcé ───────────────────────────
     if(ts.current.spaceKey){
       startPan(e.clientX,e.clientY);
       return;
@@ -595,17 +692,14 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
 
     const w=getWorld(e.clientX,e.clientY), z=getZoom(), tool=storeRef.current.activeTool;
 
-    // ── PRIORITÉ 2 : outil dessin ─────────────────────────────────
     if(tool==='building'||tool==='parking'){
       const draw:DrawState={tool,origin:w,current:w,square:e.shiftKey,fromCenter:e.altKey};
       ts.current.draw=draw; setPreviewDraw(draw); return;
     }
 
-    // ── PRIORITÉ 3 : outil sélection ─────────────────────────────
     if(tool==='selection'){
       const {selectedIds:sel}=storeRef.current;
 
-      // 3a. Handle sur entité sélectionnée → resize / rotate
       if(sel.length===1){
         const rect=getEffectiveRect(sel[0]);
         if(rect){
@@ -622,7 +716,6 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
         }
       }
 
-      // 3b. Hit sur une entité → sélection + move
       const hit=hitEntity(w);
       if(hit){
         if(!storeRef.current.selectedIds.includes(hit)) storeRef.current.selectIds([hit],e.shiftKey);
@@ -631,9 +724,6 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
         return;
       }
 
-      // 3c. Fond vide → clear sélection + pan
-      // C'est le seul changement par rapport à V5 :
-      // au lieu de s'arrêter après clearSelection, on démarre le pan.
       storeRef.current.clearSelection();
       startPan(e.clientX,e.clientY);
     }
@@ -645,13 +735,11 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
     ts.current.pos={clientX:cx,clientY:cy}; ts.current.shiftKey=e.shiftKey; ts.current.altKey=e.altKey;
 
     if(!ts.current.isDown){
-      // ── Hover façade terrain ──────────────────────────────────
       if(selectingFacade){
         const z=getZoom();
         setHoveredEdgeIdx(nearestParcelEdge(getWorld(cx,cy), parcellePolygon, 10/z));
         return;
       }
-      // ── Hover normal : entité + handle + empty ────────────────
       const w=getWorld(cx,cy);
       storeRef.current.setHovered(hitEntity(w));
       const {selectedIds:sel,activeTool:tool}=storeRef.current;
@@ -661,7 +749,6 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
         else setHoveredHandle(null);
       } else setHoveredHandle(null);
 
-      // V5.1 : mise à jour isHoverEmpty pour le curseur grab
       if(tool==='selection'){
         setIsHoverEmpty(hitEntity(w)===null);
       } else {
@@ -675,7 +762,6 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
       rafId.current=0;
       const {clientX:lx,clientY:ly}=ts.current.pos;
 
-      // ── Pan (Space ou fond vide) ──────────────────────────────
       if(ts.current.panStart){
         const {startClientX,startClientY,cameraX,cameraY,cameraW,cameraH,svgW,svgH}=ts.current.panStart;
         setCamera(cam=>({...cam,x:cameraX-(lx-startClientX)*(cameraW/svgW),y:cameraY-(ly-startClientY)*(cameraH/svgH)}));
@@ -706,7 +792,6 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
   const onPU=useCallback((_e:React.PointerEvent<SVGSVGElement>)=>{
     cancelAnimationFrame(rafId.current); rafId.current=0; ts.current.isDown=false;
 
-    // Arrêt pan (Space ou fond vide)
     if(ts.current.panStart){ ts.current.panStart=null; setIsPanning(false); return; }
 
     const tool=storeRef.current.activeTool;
@@ -715,11 +800,11 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
       const rawRect=computeDrawRect(ts.current.draw);
       if(Number.isFinite(rawRect.width)&&Number.isFinite(rawRect.depth)&&rawRect.width>0.5&&rawRect.depth>0.5){
         const rect=clampRectSize(rawRect,1,1);
-        const corners=rectCorners(rect);
-        const anyInsideParcel=corners.some(c=>pointInPolygon(c,parcellePolygon));
-        if(!anyInsideParcel){
-          ts.current.draw=null; setPreviewDraw(null); return;
-        }
+
+        const bzeCreate = buildableEnvelopeRef.current;
+        const allowedCreate = isRectAllowedInBuildZone(rect, bzeCreate, parcellePolygon);
+        if(!allowedCreate){ ts.current.draw=null; setPreviewDraw(null); return; }
+
         if(tool==='building'){
           const id=genId();
           const {activeLevelIndex:ali}=storeRef.current;
@@ -742,17 +827,17 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
 
     if(ts.current.drag){
       const entityId=ts.current.drag.entityId;
-      const isDragMove=ts.current.drag.type==='move';
       const finalRect=liveRectsRef.current[entityId];
 
-      let allowCommit=true;
-      if(isDragMove && finalRect && parcellePolygon.length>=3){
-        const corners=rectCorners(finalRect);
-        allowCommit=corners.some(c=>pointInPolygon(c,parcellePolygon));
+      let allowCommit = true;
+      if(finalRect && parcellePolygon.length >= 3){
+        const bze = buildableEnvelopeRef.current;
+        allowCommit = isRectAllowedInBuildZone(finalRect, bze, parcellePolygon);
       }
+
       if(allowCommit && finalRect) commitRect(entityId,finalRect);
 
-      if(isDragMove&&fusionAutoRef.current){
+      if(ts.current.drag.type==='move' && allowCommit && fusionAutoRef.current){
         const bs=storeRef.current.buildings, {activeLevelIndex:ali}=storeRef.current;
         const dropped=bs.find(b=>b.id===entityId);
         if(dropped&&dropped.kind==='building'){
@@ -781,7 +866,6 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
       if(e.key==='Escape'){
         storeRef.current.clearSelection();
         ts.current.draw=ts.current.drag=null;
-        // Arrêt propre du pan au Escape
         ts.current.panStart=null; setIsPanning(false);
         liveRectsRef.current={}; setPreviewDraw(null); setLiveRects({}); setHoveredHandle(null);
       }
@@ -793,7 +877,6 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
     const onUp=(e:KeyboardEvent)=>{
       if(e.code==='Space'){
         ts.current.spaceKey=false; setSpaceDown(false);
-        // Arrêt pan Space au relâchement
         ts.current.panStart=null; setIsPanning(false);
       }
     };
@@ -802,11 +885,6 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
   },[]);
 
   // ── Curseur ───────────────────────────────────────────────────────
-  // Priorité :
-  //   grabbing  → pan en cours
-  //   grab      → Space enfoncé OU (sélection + survol fond vide)
-  //   crosshair → outil dessin
-  //   default   → sinon
   const cursor = isPanning
     ? 'grabbing'
     : spaceDown || (activeTool === 'selection' && isHoverEmpty)
@@ -838,12 +916,24 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
   return (
     <div ref={wrapperRef} className={className} style={{position:'relative',width:'100%',height:height??'100%',...style}}>
 
-      {/* ── Sélecteur d'étages ── */}
       <div style={{position:'absolute',top:12,left:'50%',transform:'translateX(-50%)',zIndex:25}}>
         <FloorSelector buildings={buildings} activeLevelIndex={activeLevelIndex} showGhost={showGhost} storeActions={storeActions}/>
       </div>
 
-      {/* ── Fusion auto ── */}
+      {parcelFrontEdgeIndex === null && (
+        <div style={{
+          position:'absolute', top: 60, left:'50%', transform:'translateX(-50%)',
+          zIndex:40, pointerEvents:'none',
+          background:'rgba(245,158,11,0.92)', color:'#78350f',
+          padding:'7px 16px', borderRadius:10, fontSize:12, fontWeight:700,
+          boxShadow:'0 4px 14px rgba(0,0,0,0.12)', backdropFilter:'blur(6px)',
+          whiteSpace:'nowrap', display:'flex', alignItems:'center', gap:8,
+        }}>
+          <span>📍</span>
+          Cliquez sur <strong style={{margin:'0 3px'}}>Façade terrain</strong> pour définir les retraits PLU
+        </div>
+      )}
+
       <div style={{position:'absolute',bottom:16,left:16,zIndex:30}}>
         <button type="button" onClick={handleToggleFusion} style={{ display:'flex',alignItems:'center',gap:8,padding:'7px 14px',borderRadius:10,border:fusionAuto?'1.5px solid #4f46e5':'1.5px solid #cbd5e1',background:fusionAuto?'#4f46e5':'rgba(255,255,255,0.95)',color:fusionAuto?'white':'#64748b',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:fusionAuto?'0 4px 16px rgba(79,70,229,0.35)':'0 2px 8px rgba(0,0,0,0.10)',backdropFilter:'blur(6px)' }}>
           <div style={{width:32,height:18,borderRadius:9,background:fusionAuto?'rgba(255,255,255,0.35)':'#e2e8f0',position:'relative',flexShrink:0}}><div style={{position:'absolute',top:2,width:14,height:14,borderRadius:7,background:fusionAuto?'white':'#94a3b8',left:fusionAuto?16:2,transition:'left 0.15s'}}/></div>
@@ -852,7 +942,6 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
         </button>
       </div>
 
-      {/* ── Façade terrain + Reculs PLU ── */}
       <div style={{position:'absolute',bottom:64,left:16,zIndex:30,display:'flex',flexDirection:'column',gap:5,alignItems:'flex-start'}}>
         <button type="button" onClick={()=>setSelectingFacade(v=>!v)}
           title="Cliquer un bord de la parcelle pour définir la façade sur rue"
@@ -875,19 +964,26 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
                 <span style={{color:'#a8a29e',fontSize:10}}>m</span>
               </div>
             ))}
-            <button onClick={()=>storeRef.current.setParcelFrontEdge(null)} style={{marginTop:3,width:'100%',fontSize:9.5,color:'#dc2626',background:'none',border:'none',cursor:'pointer',textAlign:'left',padding:0}}>× Réinitialiser</button>
+            {buildableEnvelope && buildableEnvelope.length >= 3 ? (
+              <div style={{marginTop:5,fontSize:9.5,color:'#92400e',background:'#fef3c7',borderRadius:5,padding:'3px 6px',textAlign:'center'}}>
+                ✓ Enveloppe constructible active
+              </div>
+            ) : (
+              <div style={{marginTop:5,fontSize:9.5,color:'#dc2626',background:'#fee2e2',borderRadius:5,padding:'3px 6px',textAlign:'center'}}>
+                ⚠ Retraits trop grands / parcelle trop petite
+              </div>
+            )}
+            <button onClick={()=>storeRef.current.setParcelFrontEdge(null)} style={{marginTop:5,width:'100%',fontSize:9.5,color:'#dc2626',background:'none',border:'none',cursor:'pointer',textAlign:'left',padding:0}}>× Réinitialiser</button>
           </div>
         )}
       </div>
 
-      {/* ── Zoom buttons ── */}
       <div style={{position:'absolute',top:12,right:12,zIndex:20,display:'flex',flexDirection:'column',gap:4}}>
         {[{label:'+',action:()=>zoomBy(0.8)},{label:'−',action:()=>zoomBy(1.25)},{label:'⊙',action:resetCamera}].map(({label,action})=>(
           <button key={label} type="button" onClick={action} style={{width:32,height:32,borderRadius:8,border:'1px solid #e2e8f0',background:'white',color:'#374151',fontSize:16,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 1px 3px rgba(0,0,0,0.08)'}}>{label}</button>
         ))}
       </div>
 
-      {/* ── Surfaces ── */}
       {hasEntities&&(
         <div style={{position:'absolute',top:148,right:12,zIndex:20,minWidth:180,padding:'10px 12px',borderRadius:12,border:'1px solid #e2e8f0',background:'rgba(255,255,255,0.97)',boxShadow:'0 4px 14px rgba(0,0,0,0.07)',fontFamily:'Inter,system-ui,sans-serif'}}>
           <div style={{fontSize:10,fontWeight:700,color:'#94a3b8',marginBottom:4,textTransform:'uppercase',letterSpacing:'0.05em'}}>Surfaces — {activeLevelIndex===0?'RDC':`R+${activeLevelIndex}`}</div>
@@ -916,20 +1012,25 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
         <polygon points={toSvgPoints(parcellePolygon)} fill="#edf7e6" stroke="none" pointerEvents="none"/>
         <polygon points={toSvgPoints(parcellePolygon)} fill="none" stroke="#4a7c59" strokeWidth={sw(2.5)} strokeLinejoin="round" pointerEvents="none"/>
 
-        {/* ── Enveloppe constructible PLU ── */}
         {buildableEnvelope&&buildableEnvelope.length>=3&&(
           <g pointerEvents="none">
-            <polygon points={toSvgPoints(buildableEnvelope)}
-              fill="rgba(245,158,11,0.06)"
+            <path
+              d={`${toSvgPath(parcellePolygon)} ${toSvgPath(buildableEnvelope)}`}
+              fill="rgba(245,158,11,0.16)"
+              fillRule="evenodd"
+              stroke="none"
+            />
+            <polygon
+              points={toSvgPoints(buildableEnvelope)}
+              fill="none"
               stroke="#f59e0b"
-              strokeWidth={sw(1.8)}
-              strokeDasharray={`${sw(7)},${sw(3.5)}`}
+              strokeWidth={sw(2)}
+              strokeDasharray={`${sw(6)},${sw(3)}`}
               strokeLinejoin="round"
             />
           </g>
         )}
 
-        {/* ── Façade terrain sélectionnée ── */}
         {parcelFrontEdgeIndex!==null&&parcellePolygon.length>0&&(()=>{
           const n=parcellePolygon.length;
           const p1=parcellePolygon[parcelFrontEdgeIndex], p2=parcellePolygon[(parcelFrontEdgeIndex+1)%n];
@@ -944,7 +1045,6 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
           );
         })()}
 
-        {/* ── Arête hovered mode façade ── */}
         {selectingFacade&&hoveredEdgeIdx!==null&&parcellePolygon.length>0&&(()=>{
           const n=parcellePolygon.length;
           const p1=parcellePolygon[hoveredEdgeIdx], p2=parcellePolygon[(hoveredEdgeIdx+1)%n];
@@ -955,17 +1055,21 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
           );
         })()}
 
-        {/* ── Parkings ── */}
         {effectiveParkings.map(pk=>{
           const cs=rectCorners(pk.rect),sel=selectedIds.includes(pk.id),hov=hoveredId===pk.id&&!sel;
+          const liveRectPk = liveRects[pk.id] ?? null;
+          const bze0 = buildableEnvelope && buildableEnvelope.length >= 3 ? buildableEnvelope : null;
+          const pkOutOfZone = liveRectPk ? !isRectAllowedInBuildZone(liveRectPk, bze0, parcellePolygon) : false;
           return (<g key={pk.id} pointerEvents="none">
-            <polygon points={toSvgPoints(cs)} fill={sel?'#dbeafe':'#eff6ff'} stroke={sel?'#2563eb':hov?'#60a5fa':'#93c5fd'} strokeWidth={sw(sel?2:1.2)}/>
+            <polygon points={toSvgPoints(cs)}
+              fill={pkOutOfZone?'#fef9c3':sel?'#dbeafe':'#eff6ff'}
+              stroke={pkOutOfZone?'#f59e0b':sel?'#2563eb':hov?'#60a5fa':'#93c5fd'}
+              strokeWidth={sw(pkOutOfZone?2.5:sel?2:1.2)}/>
             <ParkingSlots rect={pk.rect} sw2={pk.slotWidth} sd={pk.slotDepth} aw={pk.driveAisleWidth}/>
             <text x={pk.rect.center.x} y={pk.rect.center.y} textAnchor="middle" dominantBaseline="middle" fontSize={sw(11)} fill="#1d4ed8" fontFamily="Inter,sans-serif" fontWeight="700" transform={`rotate(${pk.rect.rotationDeg},${pk.rect.center.x},${pk.rect.center.y})`} paintOrder="stroke" stroke="white" strokeWidth={sw(2.5)}>{Math.max(0,computeParkingSlots(pk.rect.width,pk.rect.depth,pk.slotWidth,pk.slotDepth,pk.driveAisleWidth))}pl</text>
           </g>);
         })}
 
-        {/* ── Bâtiments ── */}
         {effectiveBuildings.map(b=>{
           const sel=selectedIds.includes(b.id), hov=hoveredId===b.id&&!sel;
           const floors=b.floorsAboveGround??Math.max(0,(b as any).levels-1??0);
@@ -978,9 +1082,15 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
           const mainVols = activeVols.filter(v => v.role !== 'connector');
           const gc = globalCenter(mainVols.length > 0 ? mainVols : activeVols);
 
-          const fill   = sel?'#ede9fe':hov?'#f5f3ff':'#f0eeff';
-          const stroke = sel?'#4f46e5':hov?'#818cf8':'#a5b4fc';
-          const strokeW = sw(sel?2.5:1.5);
+          const liveRectForB = liveRects[b.id] ?? null;
+          const bze0 = buildableEnvelope && buildableEnvelope.length >= 3 ? buildableEnvelope : null;
+          const isLiveOutOfZone = liveRectForB
+            ? !isRectAllowedInBuildZone(liveRectForB, bze0, parcellePolygon)
+            : false;
+
+          const fill   = isLiveOutOfZone ? '#fef9c3' : sel?'#ede9fe':hov?'#f5f3ff':'#f0eeff';
+          const stroke = isLiveOutOfZone ? '#f59e0b' : sel?'#4f46e5':hov?'#818cf8':'#a5b4fc';
+          const strokeW = sw(isLiveOutOfZone ? 2.5 : sel ? 2.5 : 1.5);
 
           return (
             <g key={b.id} pointerEvents="none">
@@ -1044,21 +1154,45 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
           );
         })}
 
-        {/* ── Preview dessin ── */}
         {previewRect&&previewCorners&&(()=>{
-          const isBldg=previewDraw!.tool==='building';
-          const fullyIn=rectFullyInsidePolygon(previewRect,parcellePolygon);
-          const partlyIn=fullyIn||rectPartiallyInsidePolygon(previewRect,parcellePolygon);
-          const lc=!partlyIn?'#dc2626':!fullyIn?'#f59e0b':isBldg?'#4f46e5':'#2563eb';
-          const fc=!partlyIn?'rgba(220,38,38,0.10)':!fullyIn?'rgba(245,158,11,0.10)':isBldg?'rgba(79,70,229,0.12)':'rgba(37,99,235,0.12)';
+          const isBldg = previewDraw!.tool === 'building';
+          const bze2 = buildableEnvelope && buildableEnvelope.length >= 3 ? buildableEnvelope : null;
+
+          const inParcelAny  = rectCorners(previewRect).some(c => pointInPolygon(c, parcellePolygon));
+          const fullyInZone  = isRectAllowedInBuildZone(previewRect, bze2, parcellePolygon);
+          const partlyInZone = isRectAnyInBuildZone(previewRect, bze2, parcellePolygon);
+
+          const lc = !inParcelAny || !partlyInZone
+            ? '#dc2626'
+            : !fullyInZone
+              ? '#f59e0b'
+              : isBldg ? '#4f46e5' : '#2563eb';
+          const fc = !inParcelAny || !partlyInZone
+            ? 'rgba(220,38,38,0.10)'
+            : !fullyInZone
+              ? 'rgba(245,158,11,0.10)'
+              : isBldg ? 'rgba(79,70,229,0.12)' : 'rgba(37,99,235,0.12)';
+
+          const warnText = !inParcelAny
+            ? 'Hors parcelle'
+            : !partlyInZone
+              ? 'Zone de retrait'
+              : !fullyInZone
+                ? 'Hors emprise PLU'
+                : null;
+
           return (<g pointerEvents="none">
             <polygon points={toSvgPoints(previewCorners)} fill={fc} stroke={lc} strokeWidth={sw(2)} strokeDasharray={`${sw(5)},${sw(2.5)}`}/>
             {previewDraw!.tool==='parking'&&previewRect.width>4&&previewRect.depth>4&&<ParkingSlots rect={previewRect} sw2={2.5} sd={5.0} aw={6.0}/>}
             <text x={previewRect.center.x} y={previewRect.center.y-sw(5)} textAnchor="middle" dominantBaseline="middle" fontSize={sw(10)} fill={lc} fontFamily="Inter,sans-serif" fontWeight="700" paintOrder="stroke" stroke="white" strokeWidth={sw(2.5)}>
               {previewRect.width.toFixed(1)} × {previewRect.depth.toFixed(1)} m{previewDraw!.square?' ⬛':previewDraw!.fromCenter?' ⊕':''}
             </text>
-            {!fullyIn&&previewRect.width>2&&<text x={previewRect.center.x} y={previewRect.center.y+sw(8)} textAnchor="middle" dominantBaseline="middle" fontSize={sw(7.5)} fill={lc} fontFamily="Inter,sans-serif" fontWeight="600" paintOrder="stroke" stroke="white" strokeWidth={sw(2)}>{!partlyIn?'Hors parcelle':'Déborde'}</text>}
-            {previewDraw!.tool==='parking'&&previewRect.width>2&&previewRect.depth>2&&<text x={previewRect.center.x} y={previewRect.center.y+sw(!fullyIn?17:8)} textAnchor="middle" dominantBaseline="middle" fontSize={sw(8)} fill={lc} opacity={0.7} fontFamily="Inter,sans-serif" paintOrder="stroke" stroke="white" strokeWidth={sw(2)}>~{computeParkingSlots(previewRect.width,previewRect.depth,2.5,5.0,6.0)}pl</text>}
+            {warnText&&previewRect.width>2&&(
+              <text x={previewRect.center.x} y={previewRect.center.y+sw(8)} textAnchor="middle" dominantBaseline="middle" fontSize={sw(7.5)} fill={lc} fontFamily="Inter,sans-serif" fontWeight="600" paintOrder="stroke" stroke="white" strokeWidth={sw(2)}>{warnText}</text>
+            )}
+            {previewDraw!.tool==='parking'&&previewRect.width>2&&previewRect.depth>2&&(
+              <text x={previewRect.center.x} y={previewRect.center.y+sw(warnText?17:8)} textAnchor="middle" dominantBaseline="middle" fontSize={sw(8)} fill={lc} opacity={0.7} fontFamily="Inter,sans-serif" paintOrder="stroke" stroke="white" strokeWidth={sw(2)}>~{computeParkingSlots(previewRect.width,previewRect.depth,2.5,5.0,6.0)}pl</text>
+            )}
           </g>);
         })()}
 

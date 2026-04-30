@@ -1,4 +1,5 @@
-// MassingRenderer.tsx — V8.6
+// MassingRenderer.tsx — V8.7
+// V8.7 : prop showLabels — toggle visibilité conteneur HTML labels
 // V8.6 : branchement renderer V2 — exploitation de glazing, balconies, roof depuis resolved
 // ─────────────────────────────────────────────────────────────────────────────
 // Nouveautés vs V8.5 :
@@ -9,7 +10,19 @@
 //   C. buildFacadeGeometry reçoit hasBalconies/balconyFreq/balconyConfig depuis resolved
 //      (fallback sur styleDef/legacy si resolved.balconies.enabled = false)
 //   D. resolved.roof.color appliqué sur mesh.userData.isRoof === true dans v1Result
-// Tout le reste = V8.5 exact, aucune suppression.
+//
+// CORRECTIF Z-FIGHTING (V8.6.1) :
+//   Les tranches (slices) de assembleSimpleBuilding ont des faces coplanaires
+//   aux jonctions (top de tranche N = bottom de tranche N+1).
+//   Fix : polygonOffset sur tous les matériaux du groupe bâtiment après construction.
+//   Résultat : zéro scintillement du toit quel que soit l'angle de caméra ou le zoom.
+//
+// CORRECTIF SLOPE COLORS (V8.7.1) :
+//   eps = proj.scale * 0.003 était ~240 unités scène pour des coords WGS84 (France),
+//   soit ~333 m — bien plus large que la parcelle entière (~8 u. scène pour 66 m²).
+//   Le sampler clampait aux bords → h1≈h2≈h3≈h4 → gradient nul → tout vert.
+//   Fix : eps = 2 % de la plus grande dimension scène (sw/sd), cohérent avec la
+//   résolution RGE Alti (~20 cm d'échantillonnage). cellM supprimé (inutile).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useRef, useCallback, useState } from "react";
@@ -139,41 +152,27 @@ export interface MassingRendererCallbacks {
   onPlaceObject?:      (obj: Omit<PlacedObject, "id">) => void;
 }
 
-// ─── VegetationOptions ────────────────────────────────────────────────────────
-// Les 6 premiers champs sont lus par le renderer Three.js.
-// Les champs optionnels suivants sont stockés pour l'export Blender uniquement
-// — ils sont ignorés silencieusement par le renderer actuel.
-
 export interface VegetationOptions {
-  // ── Champs renderer Three.js (existants) ─────────────────────────────────
   showHedges?:   boolean;
   showTrees?:    boolean;
   showBushes?:   boolean;
   treeType?:     TreeType;
   treeSpacing?:  number;
   hedgeHeight?:  number;
-
-  // ── Haies — détail Blender ────────────────────────────────────────────────
   hedgeDensity?:    "sparse" | "medium" | "dense";
   hedgeSpecies?:    "buis" | "laurier" | "charme" | "thuya" | "bambou";
   hedgeFlowering?:  boolean;
-
-  // ── Arbres — détail Blender ───────────────────────────────────────────────
   treeCount?:       number;
   treeHeightM?:     number;
   treeCrownM?:      number;
   treeSeason?:      "spring" | "summer" | "autumn" | "winter";
   treeAlignment?:   "random" | "aligned" | "double_row";
   treeSpecies?:     string;
-
-  // ── Sol / tapis végétal — Blender ─────────────────────────────────────────
   groundCover?:      "none" | "grass_short" | "grass_long" | "wildflower" | "moss";
   plantingStrips?:   boolean;
   flowerBeds?:       boolean;
   climbingPlants?:   boolean;
   climbingSpecies?:  "lierre" | "glycine" | "rosier" | "vigne_vierge";
-
-  // ── Ambiance globale — Blender ────────────────────────────────────────────
   greenDensity?:     "minimal" | "standard" | "lush" | "jungle";
   season?:           "spring" | "summer" | "autumn" | "winter";
   maintenanceLevel?: "wild" | "natural" | "maintained" | "formal";
@@ -191,6 +190,7 @@ export interface MassingRendererProps {
   showTerrain:      boolean;
   showSlopeColors?: boolean;
   showWireframe:    boolean;
+  showLabels?:      boolean;
   vegetation?:      VegetationOptions;
   callbacks:        MassingRendererCallbacks;
 }
@@ -204,12 +204,11 @@ interface RendererState {
   lastHoverId:  string | null;
   proj:         ReturnType<typeof computeSceneProjection> | null;
   cameraFitted: boolean;
-  // ── NOUVEAU : intent dominant de la scène courante ────────────────────────
   lastIntent:   string | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// HELPERS GÉNÉRAUX — inchangés vs V8.3
+// HELPERS GÉNÉRAUX
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function safeArray<T>(v: T[] | undefined | null): T[] {
@@ -236,7 +235,7 @@ function signedAreaFromPts(pts: Array<{ x: number; y: number }>): number {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// HELPERS FAÇADE PREMIUM — inchangés vs V8.3, sauf frameColorOverride ajouté
+// HELPERS FAÇADE PREMIUM
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function polygonToFacadeEdgesStyled(
@@ -301,9 +300,7 @@ function polygonToFacadeEdgesStyled(
 
 function createFacadeMaterialsForStyle(
   styleDef: FacadeStyleDefinition,
-  // ── V8.5 : couleur de frame depuis renderSpec ─────────────────────────────
   frameColorOverride?: string,
-  // ── V8.6 : vitrage et garde-corps depuis renderSpec ───────────────────────
   glazingOverride?: { color: string; opacity: number; roughness: number; metalness: number } | undefined,
   railingColorOverride?: string | undefined,
 ): FacadeMaterials {
@@ -314,13 +311,11 @@ function createFacadeMaterialsForStyle(
     ? new THREE.Color(styleDef.ground.baseColor)
     : fc.clone().multiplyScalar(0.82);
 
-  // Vitrage : utilise les paramètres résolus si disponibles, sinon valeurs legacy
   const glassColor     = glazingOverride ? new THREE.Color(glazingOverride.color) : new THREE.Color(0x2c3e50);
   const glassOpacity   = glazingOverride?.opacity   ?? 0.82;
   const glassRoughness = glazingOverride?.roughness ?? 0.05;
   const glassMetalness = glazingOverride?.metalness ?? 0.10;
 
-  // Garde-corps : couleur résolue si disponible, sinon dérivée du frame
   const railingColor = railingColorOverride
     ? new THREE.Color(railingColorOverride)
     : frc.clone().multiplyScalar(0.7);
@@ -379,7 +374,7 @@ function injectFacadeMeshes(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// TEXTURE HERBE PROCÉDURALE — inchangée vs V8.3
+// TEXTURE HERBE PROCÉDURALE
 // ═══════════════════════════════════════════════════════════════════════════════
 
 let _grassTexture: THREE.CanvasTexture | null = null;
@@ -460,6 +455,7 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
   showTerrain,
   showSlopeColors = true,
   showWireframe,
+  showLabels = true,
   vegetation,
   callbacks,
 }) => {
@@ -477,13 +473,13 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
     lastHoverId:  null,
     proj:         null,
     cameraFitted: false,
-    lastIntent:   null,         // ← NOUVEAU
+    lastIntent:   null,
   });
 
   const cbRef = useRef(callbacks);
   cbRef.current = callbacks;
 
-  // ── Mount / unmount — INCHANGÉ vs V8.3 ────────────────────────────────────
+  // ── Mount / unmount ────────────────────────────────────────────────────────
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
@@ -501,8 +497,8 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
         light.shadow.mapSize.height = 2048;
         light.shadow.camera.near    = 0.5;
         light.shadow.camera.far     = 5000;
-        light.shadow.bias           = -0.0002;
-        light.shadow.normalBias     = 0.015;
+        light.shadow.bias           = -0.0008;
+        light.shadow.normalBias     = 0.06;
       }
     });
 
@@ -545,7 +541,16 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
     };
   }, []);
 
-  // ── Rebuild scene — V8.3 conservé + INTÉGRATION RENDERSPEC ────────────────
+  // ── Toggle visibilité labels ───────────────────────────────────────────────
+  // Les labels sont des DOM elements dans ctx.labelContainer. Plutôt que de
+  // les recréer/détruire à chaque toggle, on masque juste le conteneur.
+  useEffect(() => {
+    const { ctx } = stateRef.current;
+    if (!ctx) return;
+    ctx.labelContainer.style.display = showLabels ? "" : "none";
+  }, [showLabels]);
+
+  // ── Rebuild scene ──────────────────────────────────────────────────────────
   useEffect(() => {
     const { ctx, buildingMats, facadeMats } = stateRef.current;
     if (!ctx) return;
@@ -601,10 +606,7 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
 
     parcelScenePtsRef.current = parcelScenePts;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // V8.8 : résolution du landscape depuis le premier bâtiment visible.
-    // Pilote sol, végétation, parking. Fallback: undefined → comportements legacy.
-    // ─────────────────────────────────────────────────────────────────────────
+    // V8.8 : résolution du landscape
     type LandscapeResolved = {
       groundMaterial:    string;
       siteFinish:        string;
@@ -628,8 +630,7 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
           parkingVisible:    _lResolved.landscape.parkingVisible,
         };
       }
-    } catch { /* spec absent ou invalide — landscapeResolved reste undefined */ }
-    // ─────────────────────────────────────────────────────────────────────────
+    } catch { /* spec absent ou invalide */ }
 
     if (sampler && parcelScenePts) {
       const terrain = buildParcelTerrainShape(reliefData!, proj, parcelScenePts, showSlopeColors, sampler);
@@ -639,7 +640,6 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
       setShadowsRecursive(overlay, false, true);
       ctx.groundGroup.add(overlay);
     } else if (parcelScenePts) {
-      // V8.8 : couleur du sol selon groundMaterial résolu
       const groundMat   = landscapeResolved?.groundMaterial;
       const useGrass    = !showSlopeColors && (groundMat === "grass" || groundMat == null);
       const groundColor = resolveGroundMaterialColor(groundMat);
@@ -649,18 +649,14 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
     }
     if (parcelScenePts) buildParcelContour(ctx, parcelScenePts, sampler);
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // NOUVEAU : intent dominant → ambiance de scène
-    // Collecte les intents de tous les bâtiments visibles, puis applique
-    // la config d'éclairage/exposition correspondante sur la scène.
-    // ─────────────────────────────────────────────────────────────────────────
+    // Intent dominant → ambiance de scène
     const intentSet = new Set<string>();
     for (const bld of safeArray(buildings)) {
       if (bld.visible === false) continue;
       try {
         const spec = ensureBuildingRenderSpec(bld);
         if (spec.render?.intent) intentSet.add(spec.render.intent);
-      } catch { /* bâtiment sans renderSpec — ignoré */ }
+      } catch { /* ignoré */ }
     }
     const dominantIntent = pickDominantIntent(intentSet);
     if (dominantIntent !== stateRef.current.lastIntent) {
@@ -668,7 +664,6 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
       applySceneAmbiance(ctx.scene, ctx.renderer, ambiance);
       stateRef.current.lastIntent = dominantIntent;
     }
-    // ─────────────────────────────────────────────────────────────────────────
 
     // ── Bâtiments ─────────────────────────────────────────────────────────────
     const labelDefs: LabelDef[] = [];
@@ -683,7 +678,15 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
       const footprintV1 = scenePtsTuples.map((p: [number, number]) => ({ x: p[0], y: p[1] }));
       const samplePts: ScenePt[] = scenePtsTuples.map((p: [number, number]) => ({ x: p[0], z: p[1] }));
 
-      const platformY = sampler ? sampler.getAnchorHeight(samplePts, "footprint-avg") : 0;
+      // ── Ancre terrain ────────────────────────────────────────────────────────
+      // Stratégie : RDC = point le plus HAUT du footprint.
+      //   → Le bâtiment ne s'enfonce jamais dans la pente côté amont.
+      //   → Un soubassement béton est généré côté aval pour combler l'écart.
+      // (Avant : "footprint-avg" → bâtiment à moitié enfoui côté amont,
+      //  à moitié flottant côté aval)
+      const platformY = sampler
+        ? Math.max(...samplePts.map((p: ScenePt) => sampler.getHeight(p.x, p.z)))
+        : 0;
 
       const totalF = Math.max(1, totalLevelsCount(bld.levels));
       const hM     = Math.max(2.5, totalHeightM(bld.levels));
@@ -696,12 +699,7 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
         toFloor:   s.f1,
       }));
 
-      // ───────────────────────────────────────────────────────────────────────
-      // V8.5/V8.6 : résolution du renderSpec pour ce bâtiment
-      // Fallback transparent : si ensureBuildingRenderSpec throw ou retourne
-      // un spec invalide, on utilise bld.style.facadeColor comme avant.
-      // V8.6 ajoute : glazing, balconies, roof depuis resolved
-      // ───────────────────────────────────────────────────────────────────────
+      // V8.5/V8.6 : résolution du renderSpec
       let resolvedFacadeColor:  string = bld.style.facadeColor;
       let resolvedFrameColor:   string | undefined;
       let resolvedGlazing:      { color: string; opacity: number; roughness: number; metalness: number } | undefined;
@@ -716,8 +714,6 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
         const intent        = resolved.scene.renderIntent;
         resolvedFacadeColor = applyIntentToColor(resolved.facade.baseColor, intent);
         resolvedFrameColor  = resolved.structure.structureColor;
-
-        // V8.6 — nouveaux champs exploités
         resolvedGlazing = {
           color:     resolved.glazing.color,
           opacity:   resolved.glazing.opacity,
@@ -733,10 +729,7 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
           railingType: resolved.balconies.railingType,
         };
         resolvedRoofColor = resolved.roof.color;
-      } catch {
-        // Bâtiment legacy sans renderSpec — on garde les valeurs existantes
-      }
-      // ───────────────────────────────────────────────────────────────────────
+      } catch { /* bâtiment legacy sans renderSpec */ }
 
       const v1Result = assembleSimpleBuilding({
         id:           bld.id,
@@ -745,7 +738,7 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
         totalFloors:  totalF,
         floorHeight:  floorH,
         platformY,
-        facadeColor:  resolvedFacadeColor,   // ← couleur depuis renderSpec
+        facadeColor:  resolvedFacadeColor,
         isSelected:   bld.id === selectedId,
         isHovered:    bld.id === hoverId,
         showWireframe,
@@ -754,6 +747,18 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
       v1Result.group.userData.bldId = bld.id;
       setShadowsRecursive(v1Result.group, true, true);
       ctx.buildingsGroup.add(v1Result.group);
+
+      // ── Soubassement (voile béton côté aval) ─────────────────────────────
+      // Comble l'espace entre le terrain en pente et la plateforme du RDC.
+      // Rendu uniquement quand il y a un terrain chargé et un écart > 5cm.
+      if (sampler) {
+        const soubGroup = buildSoubassement(samplePts, platformY, sampler, bld.id);
+        if (soubGroup) {
+          setShadowsRecursive(soubGroup, true, true);
+          ctx.buildingsGroup.add(soubGroup);
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
 
       if (DEBUG_TERRAIN_ANCHORING && sampler) {
         const dbg = new THREE.Group();
@@ -772,7 +777,6 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
       if (facadeStyleId && !showWireframe) {
         try {
           const styleDef = getFacadeStyle(facadeStyleId);
-          // V8.6 : passe glazing et railingColor depuis le renderSpec
           const facadeMatsForBuilding = createFacadeMaterialsForStyle(
             styleDef,
             resolvedFrameColor,
@@ -783,8 +787,6 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
           const footprintPts: Pt2D[] = scenePtsTuples.map((p: [number, number]) => ({ x: p[0], z: p[1] }));
           const styledEdges = polygonToFacadeEdgesStyled(footprintPts, facadeStyleId, totalF, proj.zScale);
 
-          // V8.6 : balconyConfig depuis resolved.balconies si disponible
-          // Fallback sur les configs legacy/style def comme avant
           const balconyConfigResolved = resolvedBalconies?.enabled
             ? {
                 enabled:          true,
@@ -804,7 +806,6 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
             windowRatio:       styleDef.base.windowRatio,
             bayWidth:          styleDef.base.bayWidth * proj.zScale,
             attiqueStartFloor: Math.max(1, totalF - 1),
-            // V8.6 : hasBalconies depuis resolved si dispo, sinon styleDef
             hasBalconies:      resolvedBalconies?.enabled ?? styleDef.upper.hasBalconies,
             balconyFreq:       resolvedBalconies?.frequency ?? 1,
             facadeStyle:       facadeStyleId,
@@ -835,14 +836,12 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
         }
       }
 
-      // V8.6 : si la géométrie premium de toiture n'est pas dispo,
-      // on applique au moins resolved.roof.color sur le matériau haut du v1Result.
+      // V8.6 : resolved.roof.color → matériau du toit
       if (resolvedRoofColor) {
         const roofColor = new THREE.Color(resolvedRoofColor);
         v1Result.group.traverse((obj) => {
           if ((obj as THREE.Mesh).isMesh) {
             const mesh = obj as THREE.Mesh;
-            // La dalle de toit dans V1 est identifiée par userData.isRoof
             if (mesh.userData.isRoof === true) {
               const mat = mesh.material as THREE.MeshStandardMaterial;
               if (mat?.isMeshStandardMaterial) {
@@ -898,12 +897,6 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
       box3.getCenter(center);
       box3.getSize(size);
 
-      // ───────────────────────────────────────────────────────────────────────
-      // V8.7 : toutes les vues (y compris aerial_3q) passent par
-      // computeCameraFraming si un renderSpec valide + bbox valide existent.
-      // fitCameraToBox reste uniquement en fallback si l'une ou l'autre condition
-      // n'est pas remplie.
-      // ───────────────────────────────────────────────────────────────────────
       const firstBld = safeArray(buildings).find(b => b.visible !== false);
       let usedSpecCamera = false;
 
@@ -923,18 +916,17 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
             applyCameraFraming(ctx.camera, ctx.controls, framing);
             usedSpecCamera = true;
           }
-        } catch { /* bbox invalide ou spec absent — fallback ci-dessous */ }
+        } catch { /* fallback ci-dessous */ }
       }
 
       if (!usedSpecCamera) {
         fitCameraToBox(ctx, center, size);
       }
-      // ───────────────────────────────────────────────────────────────────────
 
       stateRef.current.cameraFitted = true;
     }
 
-    // ── Végétation périmètre — V8.8 : pilotée par resolved.landscape ─────────
+    // ── Végétation périmètre ──────────────────────────────────────────────────
     if (parcel && vegetation) {
       const pr = parcel.geometry.type === "Polygon"
         ? parcel.geometry.coordinates[0]
@@ -946,8 +938,6 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
           z: (c[1] - proj.cy) * proj.scale,
         }));
 
-        // Haies : vegetation.showHedges ET resolved.landscape.hedgeEnabled
-        // (fallback: hedgeEnabled = true si landscape non résolu → legacy)
         if (vegetation.showHedges && (landscapeResolved?.hedgeEnabled ?? true)) {
           const HEDGE_GATE_MARGIN = 0.4;
           const hedgeGaps: HedgeGap[] = safeArray(placedObjects)
@@ -966,8 +956,6 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
           ctx.groundGroup.add(hedges);
         }
 
-        // Arbres : capés par treeCount, filtrés par vegetationDensity
-        // (fallback: pas de cap, densité 1.0 → legacy)
         if (vegetation.showTrees) {
           const TREE_SPACING = Math.max(2, (vegetation.treeSpacing ?? 8) * proj.zScale);
           const treeH        = 1.5 * proj.zScale;
@@ -998,8 +986,7 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
       }
     }
 
-    // ── Parkings — V8.8 : conditionné par resolved.landscape.parkingVisible ──
-    // (fallback: parkingVisible = true si landscape non résolu → legacy)
+    // ── Parkings ──────────────────────────────────────────────────────────────
     if (parkings?.features?.length && (landscapeResolved?.parkingVisible ?? true)) {
       for (const feature of parkings.features) {
         const ring = feature.geometry?.coordinates?.[0];
@@ -1016,7 +1003,7 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
       }
     }
 
-    // ── Objets placés — INCHANGÉ vs V8.3 ─────────────────────────────────────
+    // ── Objets placés ─────────────────────────────────────────────────────────
     if (placedObjects?.length) {
       const ts = proj.zScale * 0.5;
       for (const obj of placedObjects) {
@@ -1048,7 +1035,7 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
     showWireframe, showTerrain, showSlopeColors, vegetation,
   ]);
 
-  // ── Mouse events — INCHANGÉS vs V8.3 ──────────────────────────────────────
+  // ── Mouse events ──────────────────────────────────────────────────────────
   const onPointerMove = useCallback(
     (e: React.PointerEvent) => {
       const { ctx, raycaster, mouse } = stateRef.current;
@@ -1113,7 +1100,7 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
     [activeTool],
   );
 
-  // ── Rendu JSX — INCHANGÉ vs V8.3 ──────────────────────────────────────────
+  // ── Rendu JSX ─────────────────────────────────────────────────────────────
   return (
     <div
       ref={mountRef}
@@ -1167,7 +1154,7 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// HELPERS GÉOMÉTRIE — INCHANGÉS vs V8.3
+// HELPERS GÉOMÉTRIE
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function findBldId(obj: THREE.Object3D): string | null {
@@ -1237,13 +1224,9 @@ function sampleAlongPerimeter(pts: Pt2D[], spacing: number): Pt2D[] {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SOL / TERRAIN — INCHANGÉ vs V8.3 sauf groundMaterialColor (V8.8)
+// SOL / TERRAIN
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Retourne la couleur hex Three.js correspondant à un groundMaterial résolu.
- * Utilisé pour la parcelle plate quand le terrain relief n'est pas disponible.
- */
 function resolveGroundMaterialColor(groundMaterial: string | undefined): number {
   switch (groundMaterial) {
     case "gravel":   return 0xC8C0A8;
@@ -1370,15 +1353,20 @@ function buildParcelTerrainShape(
     pos[i * 3 + 2] = sz;
 
     if (showSlopeColors) {
-      const eps   = Math.max(proj.scale * 0.003, 0.01);
-      const h1    = sampler.getHeight(sx + eps, sz);
-      const h2    = sampler.getHeight(sx - eps, sz);
-      const h3    = sampler.getHeight(sx, sz + eps);
-      const h4    = sampler.getHeight(sx, sz - eps);
-      const cellM = Math.max(eps * sampler.getElevScale(), 0.01);
-      const dzdx  = (h1 - h2) / (2 * cellM);
-      const dzdy  = (h3 - h4) / (2 * cellM);
-      const deg   = (Math.atan(Math.sqrt(dzdx * dzdx + dzdy * dzdy)) * 180) / Math.PI;
+      // FIX V8.7.1 — eps calibré sur l'étendue scène de la parcelle (sw/sd).
+      // L'ancienne valeur (proj.scale * 0.003) atteignait ~240 u. scène pour
+      // des coords WGS84 France, soit bien au-delà des ~8 u. d'une parcelle
+      // de 66 m² : le sampler clampait aux bords → gradient nul → tout vert.
+      // 2 % de la plus grande dimension ≈ 20 cm d'échantillonnage, cohérent
+      // avec la résolution RGE Alti. cellM supprimé : les unités se simplifient.
+      const eps  = Math.max(Math.max(sw, sd) * 0.02, 0.001);
+      const h1   = sampler.getHeight(sx + eps, sz);
+      const h2   = sampler.getHeight(sx - eps, sz);
+      const h3   = sampler.getHeight(sx, sz + eps);
+      const h4   = sampler.getHeight(sx, sz - eps);
+      const dzdx = (h1 - h2) / (2 * eps);
+      const dzdy = (h3 - h4) / (2 * eps);
+      const deg  = (Math.atan(Math.sqrt(dzdx * dzdx + dzdy * dzdy)) * 180) / Math.PI;
       const [r, g, bv] = slopeColor(deg);
       col[i * 3] = r; col[i * 3 + 1] = g; col[i * 3 + 2] = bv;
     } else {
@@ -1448,7 +1436,102 @@ function buildParcelOverlay(parcelPts: Pt2D[], sampler: TerrainSampler): THREE.G
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ARBRES — INCHANGÉ vs V8.3
+// SOUBASSEMENT — voile béton entre terrain et platformY
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Génère le soubassement (mur de fondation) entre le terrain en pente
+ * et la plateforme horizontale du RDC.
+ *
+ * Principe :
+ *   Pour chaque arête du footprint, un panneau vertical est créé :
+ *     - bas  = hauteur terrain à chaque sommet (variable selon la pente)
+ *     - haut = platformY (constant = niveau RDC)
+ *   Sur un terrain plat → soubassement nul (aucun groupe retourné).
+ *   Sur une pente forte → voile béton visible, similaire à un demi-étage.
+ *
+ * @param samplePts  Points du footprint en coordonnées scène (x, z en mètres)
+ * @param platformY  Hauteur du niveau RDC (max du terrain sous le footprint)
+ * @param sampler    Sampler de terrain pour récupérer la hauteur en chaque point
+ * @param bldId      ID du bâtiment (userData)
+ */
+function buildSoubassement(
+  samplePts: ScenePt[],
+  platformY: number,
+  sampler:   TerrainSampler,
+  bldId:     string,
+): THREE.Group | null {
+  if (samplePts.length < 3) return null;
+
+  /** Écart minimal pour générer un panneau (évite les artefacts sur terrain plat). */
+  const MIN_GAP_M = 0.05;
+
+  // Matériau béton brut — couleur neutre, légèrement plus sombre que la façade
+  const mat = new THREE.MeshStandardMaterial({
+    color:     new THREE.Color('#8A8580'),
+    roughness: 0.96,
+    metalness: 0.0,
+    side:      THREE.DoubleSide,
+  });
+
+  const positions: number[] = [];
+  const indices:   number[] = [];
+  let   vertIdx             = 0;
+  let   hasGeometry         = false;
+
+  for (let i = 0; i < samplePts.length; i++) {
+    const a  = samplePts[i];
+    const b  = samplePts[(i + 1) % samplePts.length];
+
+    // Hauteur terrain aux deux extrémités de l'arête
+    const aTerrY = sampler.getHeight(a.x, a.z);
+    const bTerrY = sampler.getHeight(b.x, b.z);
+
+    // Écart entre terrain et plateforme (toujours ≥ 0 car platformY = max)
+    const aGap = platformY - aTerrY;
+    const bGap = platformY - bTerrY;
+
+    // Pas de panneau si les deux extrémités sont presque au niveau de la plateforme
+    if (aGap < MIN_GAP_M && bGap < MIN_GAP_M) continue;
+
+    // Quad vertical : 4 sommets
+    //   v0 = a bas (terrain)   v1 = b bas (terrain)
+    //   v2 = b haut (RDC)      v3 = a haut (RDC)
+    positions.push(
+      a.x, aTerrY,    a.z,  // v0
+      b.x, bTerrY,    b.z,  // v1
+      b.x, platformY, b.z,  // v2
+      a.x, platformY, a.z,  // v3
+    );
+    // Deux triangles formant le quad (CCW vu de l'extérieur)
+    indices.push(
+      vertIdx,     vertIdx + 1, vertIdx + 2,
+      vertIdx,     vertIdx + 2, vertIdx + 3,
+    );
+    vertIdx   += 4;
+    hasGeometry = true;
+  }
+
+  if (!hasGeometry) return null;
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow    = true;
+  mesh.receiveShadow = true;
+  mesh.userData.bldId = bldId;
+
+  const group = new THREE.Group();
+  group.userData.bldId = bldId;
+  group.add(mesh);
+  return group;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ARBRES
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function buildTree(totalH: number, type: TreeType = "deciduous"): THREE.Group {
@@ -1486,7 +1569,7 @@ function buildTree(totalH: number, type: TreeType = "deciduous"): THREE.Group {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// HAIES — INCHANGÉ vs V8.3
+// HAIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function buildSegmentedHedges(
@@ -1545,7 +1628,7 @@ function buildSegmentedHedges(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PARKING — INCHANGÉ vs V8.3
+// PARKING
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function buildParkingProjectedOnTerrain(

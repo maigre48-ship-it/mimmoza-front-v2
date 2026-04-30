@@ -450,6 +450,50 @@ export default function HomePage() {
             })}
           </div>
 
+          {/* ═══ Footer légal ═══ */}
+          <div className="mt-10 pt-6 text-center">
+            <div
+              className="mx-auto flex max-w-5xl flex-wrap items-center justify-center gap-4 text-[11px]"
+              style={{ color: "#94a3b8" }}
+            >
+              <Link to="/cgv" className="transition-colors hover:text-slate-700">
+                CGV
+              </Link>
+
+              <span className="opacity-40">•</span>
+
+              <Link to="/cgu" className="transition-colors hover:text-slate-700">
+                CGU
+              </Link>
+
+              <span className="opacity-40">•</span>
+
+              <Link
+                to="/politique-confidentialite"
+                className="transition-colors hover:text-slate-700"
+              >
+                Politique de confidentialité
+              </Link>
+
+              <span className="opacity-40">•</span>
+
+              <Link
+                to="/mentions-legales"
+                className="transition-colors hover:text-slate-700"
+              >
+                Mentions légales
+              </Link>
+            </div>
+
+            <p className="mt-4 text-[10px]" style={{ color: "#94a3b8" }}>
+              Mimmoza est un outil d'aide à la décision. Les analyses ne constituent pas un conseil en investissement.
+            </p>
+
+            <p className="mt-2 text-[10px]" style={{ color: "#cbd5f5" }}>
+              © {new Date().getFullYear()} Mimmoza — Intelligence immobilière
+            </p>
+          </div>
+
         </div>
       </div>
     </div>

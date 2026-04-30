@@ -3,18 +3,32 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Correctifs :
 // - KIND_FACADE_COLOR / KIND_ROOF_COLOR définis LOCALEMENT
-//   (ces exports n'existent pas dans massingScene.types.ts original → crash runtime)
 // - bodyGeo.dispose() SUPPRIMÉ (fuite GPU → OOM)
 // - Import AnchorMode supprimé (inutilisé)
+//
+// CORRECTIF Z-FIGHTING (V1.1) :
+//   buildFlatRoof plaçait roofMesh.position.y = roofY, identique au top cap
+//   de l'ExtrudeGeometry (bodyGeo) créé dans buildSlice.
+//   Les deux faces étant coplanaires (même Y exact), le GPU alternait
+//   aléatoirement laquelle rendre → scintillement du toit selon angle/zoom.
+//   Fix : roofMesh.position.y = roofY + ROOF_ZFIGHT_OFFSET (+2mm).
+//   Imperceptible visuellement, casse définitivement l'égalité de profondeur.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from "three";
 import { ptsToShape, scalePolygon, centroid2D, extractEdges } from "./massingGeometry3d";
 import type { Pt2D } from "./massingGeometry3d";
 
+// ─── Offset anti z-fighting ───────────────────────────────────────────────────
+
+/**
+ * Décalage vertical du roofMesh par rapport au top cap du bodyGeo.
+ * 2mm : imperceptible à l'œil, mais suffit pour que le comparateur de
+ * profondeur GPU ne soit plus en égalité entre les deux faces.
+ */
+const ROOF_ZFIGHT_OFFSET = 0.002;
+
 // ─── Couleurs par défaut par type de bâtiment ────────────────────────────────
-// Définies localement pour éviter la dépendance à massingScene.types.ts
-// qui ne les exporte pas dans sa version actuelle.
 
 type SimpleBuildingKind =
   | "collectif" | "bureau" | "commerce"
@@ -170,13 +184,25 @@ function buildFlatRoof(
   roofGeo.computeVertexNormals();
 
   const roofMesh = new THREE.Mesh(roofGeo, mats.roof);
-  roofMesh.position.y     = roofY;
+
+  // ── CORRECTIF Z-FIGHTING ────────────────────────────────────────────────────
+  // Sans offset, roofMesh.position.y = roofY = yBot + height, identique au
+  // top cap de l'ExtrudeGeometry (bodyGeo) dans buildSlice.
+  // → Deux faces exactement coplanaires → z-fighting → scintillement du toit.
+  //
+  // +ROOF_ZFIGHT_OFFSET (2mm) : le roofMesh est désormais légèrement au-dessus
+  // du top cap → il gagne toujours le test de profondeur → couleur du toit
+  // stable quel que soit l'angle ou le zoom de caméra.
+  roofMesh.position.y = roofY + ROOF_ZFIGHT_OFFSET;
+  // ────────────────────────────────────────────────────────────────────────────
+
   roofMesh.castShadow     = false;
   roofMesh.receiveShadow  = true;
   roofMesh.userData.bldId = bldId;
+  roofMesh.userData.isRoof = true; // tag pour d'éventuels post-traitements
   group.add(roofMesh);
 
-  addParapet(group, pts, roofY, mats, bldId);
+  addParapet(group, pts, roofY + ROOF_ZFIGHT_OFFSET, mats, bldId);
 }
 
 // ─── Acrotère ─────────────────────────────────────────────────────────────────
@@ -246,8 +272,8 @@ function buildSimpleMaterials(facadeHex: string, roofHex: string): SimpleMats {
   const fc = new THREE.Color(facadeHex);
   const rc = new THREE.Color(roofHex);
   return {
-    body:    new THREE.MeshStandardMaterial({ color: fc,                            roughness: 0.88, metalness: 0.02 }),
-    roof:    new THREE.MeshStandardMaterial({ color: rc,                            roughness: 0.94, metalness: 0.0, side: THREE.DoubleSide }),
+    body:    new THREE.MeshStandardMaterial({ color: fc,                              roughness: 0.88, metalness: 0.02 }),
+    roof:    new THREE.MeshStandardMaterial({ color: rc,                              roughness: 0.94, metalness: 0.0, side: THREE.DoubleSide }),
     parapet: new THREE.MeshStandardMaterial({ color: fc.clone().multiplyScalar(0.88), roughness: 0.92, metalness: 0.0 }),
     edge:    new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: EDGE_OPACITY }),
     wire:    new THREE.MeshBasicMaterial({ color: WIREFRAME_COLOR, wireframe: true }),

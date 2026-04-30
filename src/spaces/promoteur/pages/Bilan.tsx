@@ -1,4 +1,13 @@
 ﻿// src/spaces/promoteur/pages/Bilan.tsx
+// v2.2 — Fix lecture implantation2d : useState+useEffect au lieu de useMemo.
+//
+// Correctif v2.2 :
+//   - implantation2d passe de useMemo → useState+useEffect
+//   - Relit localStorage au montage ET à chaque changement de study/studyId
+//   - Corrige le cas où Bilan est déjà monté quand l'utilisateur dessine
+//     sur Implantation2D (le useMemo ne se re-déclenchait pas sur storage changes)
+//
+// v2.1 — Lecture double-source : study.implantation2d (Supabase) → getSnapshot().implantation2d (localStorage fallback)
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -7,10 +16,16 @@ import {
   TrendingUp, AlertTriangle,
   FileText, CheckCircle, Target, Home,
 } from "lucide-react";
-import { supabase } from "../../../supabaseClient";
-import { usePromoteurStudy } from "../shared/usePromoteurStudy";
-import type { PromoteurBilanData } from "../shared/promoteurStudy.types";
-import { patchModule } from "../shared/promoteurSnapshot.store";
+import { supabase }                    from "../../../supabaseClient";
+import { usePromoteurStudy }           from "../shared/usePromoteurStudy";
+import type { PromoteurBilanData }     from "../shared/promoteurStudy.types";
+import { patchModule, getSnapshot }    from "../shared/promoteurSnapshot.store";
+import type { Implantation2DSnapshot } from "../plan2d/implantation2d.snapshot";
+import {
+  totalVendableM2,
+  totalSdpM2,
+  totalEmpriseM2,
+}                                      from "../plan2d/implantation2d.snapshot";
 
 const GRAD_PRO   = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
 const ACCENT_PRO = "#5247b8";
@@ -76,10 +91,62 @@ export default function Bilan(): React.ReactElement {
   const tauxMargePct     = evaluation?.taux_marge_pct     ?? null;
   const communeInsee     = foncier?.commune_insee         ?? null;
 
+  // ── Implantation 2D ───────────────────────────────────────────────────────
+  //
+  // useState + useEffect au lieu de useMemo (v2.2) :
+  //   - Le useMemo ne se re-déclenchait pas quand localStorage changeait
+  //     sans que study/studyId ne changent (cas navigation rapide)
+  //   - useEffect relit au montage ET à chaque changement de study ou studyId
+  //
+  // Double source :
+  //   1. study.implantation2d — Supabase (prioritaire, persistant entre sessions)
+  //   2. getSnapshot().implantation2d — localStorage (fallback navigation rapide)
+  // ─────────────────────────────────────────────────────────────────────────
+  const [implantation2d, setImplantation2d] = useState<Implantation2DSnapshot | null>(null);
+
+  useEffect(() => {
+    // 1. Priorité Supabase
+    const fromStudy = (study as any)?.implantation2d as Implantation2DSnapshot | undefined;
+    if (fromStudy?.buildings?.length) {
+      console.debug(
+        "[Bilan] implantation2d source: Supabase",
+        { studyId, buildingCount: fromStudy.buildings.length },
+      );
+      setImplantation2d(fromStudy);
+      return;
+    }
+    // 2. Fallback localStorage
+    const fromSnapshot = getSnapshot()?.implantation2d as Implantation2DSnapshot | undefined;
+    if (fromSnapshot?.buildings?.length) {
+      console.debug(
+        "[Bilan] implantation2d source: localStorage fallback",
+        { studyId, buildingCount: fromSnapshot.buildings.length },
+      );
+      setImplantation2d(fromSnapshot);
+      return;
+    }
+    console.debug("[Bilan] implantation2d source: aucune donnée", { studyId });
+    setImplantation2d(null);
+  }, [study, studyId]);
+
+  /** Vrai si au moins un bâtiment valide existe dans l'implantation. */
+  const hasBuildings = (implantation2d?.buildings?.length ?? 0) > 0;
+
+  /** Surfaces agrégées issues de l'implantation — pour alimenter le pro forma. */
+  const implantationSurfaces = useMemo(() => {
+    if (!implantation2d) return null;
+    return {
+      totalVendableM2: totalVendableM2(implantation2d),
+      totalSdpM2:      totalSdpM2(implantation2d),
+      totalEmpriseM2:  totalEmpriseM2(implantation2d),
+      buildingCount:   implantation2d.buildings.length,
+      updatedAt:       implantation2d.updatedAt,
+    };
+  }, [implantation2d]);
+
   // ── Hydratation depuis Supabase ───────────────────────────────────────────
   useEffect(() => {
     if (loadState !== "ready") return;
-    // Prix foncier depuis foncier si disponible
     if (foncier?.prix_foncier != null) setPrixFoncier(foncier.prix_foncier);
     if (!study?.bilan) return;
     const b = study.bilan;
@@ -190,20 +257,23 @@ export default function Bilan(): React.ReactElement {
   const handleSaveForSynthesis = useCallback(() => {
     const roiFinal = roiPct ?? computed.roiCalc;
     patchModule("bilan", {
-      ok: true,
+      ok:        true,
       validated: true,
-      summary: `ROI: ${roiFinal != null ? roiFinal.toFixed(1) + "%" : "—"} · Marge: ${fmtEur(margeBrute)} · ${fmtPct(tauxMargePct)}`,
+      summary:   `ROI: ${roiFinal != null ? roiFinal.toFixed(1) + "%" : "—"} · Marge: ${fmtEur(margeBrute)} · ${fmtPct(tauxMargePct)}`,
       data: {
         prixFoncier, prixRevientTotal, caPrevisionnel, margeBrute,
         tauxMargePct, fondsPropres, creditPromotion, roi: roiFinal,
         triPct, aiNarrative,
+        implantationSurfaces: implantationSurfaces ?? undefined,
       },
     });
     setSynthesisSaved(true);
     setTimeout(() => { if (mountedRef.current) setSynthesisSaved(false); }, 3000);
-  }, [roiPct, computed.roiCalc, margeBrute, tauxMargePct, prixFoncier,
-      prixRevientTotal, caPrevisionnel, fondsPropres, creditPromotion,
-      triPct, aiNarrative]);
+  }, [
+    roiPct, computed.roiCalc, margeBrute, tauxMargePct, prixFoncier,
+    prixRevientTotal, caPrevisionnel, fondsPropres, creditPromotion,
+    triPct, aiNarrative, implantationSurfaces,
+  ]);
 
   // ── Loading ───────────────────────────────────────────────────────────────
   if (loadState === "loading") {
@@ -254,6 +324,73 @@ export default function Bilan(): React.ReactElement {
           </button>
         </div>
       </div>
+
+      {/* ── Alerte bâtiments manquants ── */}
+      {!hasBuildings && (
+        <div style={{ ...styles.card, border: "1px solid #fde68a", marginBottom: 20 }}>
+          <div style={{ ...styles.cardBody, display: "flex", alignItems: "center", gap: 12 }}>
+            <AlertTriangle size={20} color="#d97706" />
+            <p style={{ fontSize: 13, color: "#92400e", margin: 0 }}>
+              <strong>Aucun bâtiment dessiné</strong> — retournez sur{" "}
+              <strong>Implantation 2D</strong> pour dessiner au moins un bâtiment.
+              Les surfaces seront automatiquement synchronisées ici.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Résumé implantation synchronisée ── */}
+      {hasBuildings && implantationSurfaces && (
+        <div style={{ ...styles.card, border: "1px solid #c7d2fe", marginBottom: 20 }}>
+          <div style={styles.cardHeader}>
+            <h3 style={styles.cardTitle}>
+              <CheckCircle size={16} color="#4f46e5" />
+              Implantation 2D synchronisée
+              <span style={{ fontSize: 11, fontWeight: 500, color: "#6366f1", marginLeft: 8 }}>
+                {implantationSurfaces.buildingCount} bâtiment{implantationSurfaces.buildingCount > 1 ? "s" : ""}
+              </span>
+            </h3>
+            <span style={{ fontSize: 11, color: "#94a3b8" }}>
+              Mis à jour {new Date(implantationSurfaces.updatedAt).toLocaleString("fr-FR")}
+            </span>
+          </div>
+          <div style={styles.cardBody}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+              {[
+                { label: "Surface vendable", val: `${Math.round(implantationSurfaces.totalVendableM2)} m²` },
+                { label: "SDP totale",        val: `${Math.round(implantationSurfaces.totalSdpM2)} m²` },
+                { label: "Emprise au sol",    val: `${Math.round(implantationSurfaces.totalEmpriseM2)} m²` },
+              ].map(({ label, val }) => (
+                <div key={label} style={{ padding: 14, borderRadius: 10, background: "#eef2ff", border: "1px solid #c7d2fe" }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "#4f46e5", textTransform: "uppercase" as const, marginBottom: 4 }}>
+                    {label}
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: "#312e81" }}>{val}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Détail par bâtiment */}
+            <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 6 }}>
+              {implantation2d!.buildings.map(b => (
+                <div
+                  key={b.id}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "8px 12px", borderRadius: 8,
+                    background: "#f8fafc", border: "1px solid #e2e8f0", fontSize: 12,
+                  }}
+                >
+                  <span style={{ fontWeight: 600, color: "#0f172a" }}>{b.name}</span>
+                  <span style={{ color: "#64748b" }}>
+                    {b.levels} niv. · {Math.round(b.sdpM2)} m² SDP · {Math.round(b.vendableM2)} m² vendable
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Alerte foncier manquant ── */}
       {foncierManquant && (

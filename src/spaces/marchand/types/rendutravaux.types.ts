@@ -5,6 +5,36 @@ export type TravauxGamme = "economique" | "standard" | "premium" | "luxe";
 export type TravauxNiveau = "leger" | "moyen" | "lourd" | "total";
 export type TravauxComplexite = "simple" | "moyenne" | "complexe";
 
+// ── Types de sols pour le rendu IA ────────────────────────────────
+export type TravauxSolType =
+  | "carrelage"
+  | "parquet"
+  | "moquette"
+  | "tapis"
+  | "coco"
+  | "beton_cire"
+  | "pierre_naturelle"
+  | "vinyle"
+  | "stratifie"
+  | "terre_cuite"
+  | "resine"
+  | "marbre";
+
+export const TRAVAUX_SOL_TYPE_LABELS: Record<TravauxSolType, string> = {
+  carrelage: "Carrelage",
+  parquet: "Parquet",
+  moquette: "Moquette",
+  tapis: "Tapis",
+  coco: "Coco / fibre naturelle",
+  beton_cire: "Béton ciré",
+  pierre_naturelle: "Pierre naturelle",
+  vinyle: "Vinyle / PVC",
+  stratifie: "Stratifié",
+  terre_cuite: "Terre cuite / tomette",
+  resine: "Résine",
+  marbre: "Marbre",
+};
+
 // ── Lots travaux (labels lisibles) ────────────────────────────────
 export type TravauxLot =
   | "gros_oeuvre"
@@ -39,17 +69,27 @@ export const TRAVAUX_LOT_LABELS: Record<TravauxLot, string> = {
   amenagement_exterieur: "Aménagement extérieur",
 };
 
-// ── Config travaux injectée depuis le simulateur ──────────────────
+// ── Config travaux injectée depuis le simulateur / l’UI rendu ─────
 export interface TravauxRenduConfig {
   gamme: TravauxGamme;
   niveau: TravauxNiveau;
   complexite?: TravauxComplexite;
   lots: TravauxLot[];
+
   surfaceM2?: number;
   typeBien?: string; // ex: "appartement", "maison", "studio"
   ville?: string;
   budgetEstime?: number; // € TTC
+
   styleDecoration?: string; // ex: "scandinave", "industriel", "classique"
+
+  // Options visuelles du rendu IA
+  solType?: TravauxSolType;
+  solColor?: string; // ex: "#E5D2B3" ou "beige clair"
+  murColor?: string; // ex: "#F5F1E8" ou "blanc cassé"
+
+  // Notes libres optionnelles pour enrichir le rendu sans casser le typage
+  instructionsComplementaires?: string;
 }
 
 // ── Image uploadée ────────────────────────────────────────────────
@@ -60,6 +100,7 @@ export interface TravauxImage {
   name: string;
   sizeKb: number;
   uploadedAt: Date;
+
   // après upload Supabase Storage
   storageUrl?: string;
   storagePath?: string;
@@ -76,6 +117,9 @@ export interface RenduResult {
   prompt: string;
   generatedAt: Date;
   durationMs?: number;
+
+  // utile pour debug / historique
+  configSnapshot?: TravauxRenduConfig;
 }
 
 // ── État global du module ─────────────────────────────────────────
@@ -86,18 +130,31 @@ export interface RenduTravauxState {
   status: RenduStatus;
   error: string | null;
   progress: number; // 0–100
+
   styleDecoration: string;
+
+  // Préférences visuelles courantes
+  solType: TravauxSolType | null;
+  solColor: string | null;
+  murColor: string | null;
 }
 
 // ── Retour du hook ────────────────────────────────────────────────
 export interface UseTravauxImageRenderReturn {
   state: RenduTravauxState;
+
   addImages: (files: FileList | File[]) => void;
   removeImage: (id: string) => void;
   selectImage: (id: string) => void;
+
   setStyleDecoration: (style: string) => void;
+  setSolType: (type: TravauxSolType | null) => void;
+  setSolColor: (color: string | null) => void;
+  setMurColor: (color: string | null) => void;
+
   generateRendu: (imageId: string, config: TravauxRenduConfig) => Promise<void>;
   clearResults: () => void;
+
   latestResult: RenduResult | null;
 }
 
@@ -107,6 +164,9 @@ export interface RenduTravauxEdgePayload {
   image_mime: string;
   prompt: string;
   style: string;
+
+  // Debug / traçabilité côté Edge Function
+  config?: TravauxRenduConfig;
 }
 
 export interface RenduTravauxEdgeResponse {

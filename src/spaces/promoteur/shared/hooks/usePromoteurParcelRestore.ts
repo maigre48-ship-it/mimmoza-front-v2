@@ -170,14 +170,61 @@ function computeCombined(
 ): Feature<Polygon | MultiPolygon> | null {
   if (!features.length) return null;
   if (features.length === 1) return features[0];
+
+  // Tentative 1 : union directe
+  let combined: Feature<Polygon | MultiPolygon> | null = null;
   try {
-    let combined: Feature<Polygon | MultiPolygon> = features[0];
+    combined = features[0];
     for (let i = 1; i < features.length; i++) {
       const u = turf.union(turf.featureCollection([combined, features[i]]));
       if (u) combined = u as Feature<Polygon | MultiPolygon>;
     }
-    return combined;
-  } catch { return features[0]; }
+  } catch (e) {
+    console.warn("[usePromoteurParcelRestore] union directe échouée:", e);
+    combined = features[0];
+  }
+
+  // Si le résultat est déjà un Polygon, c'est bon — parcelles fusionnées proprement
+  if (combined && combined.geometry.type === "Polygon") return combined;
+
+  // Tentative 2 : buffer + union + unbuffer pour corriger les erreurs topologiques
+  //   turf.union échoue souvent sur des parcelles adjacentes si les coordonnées
+  //   frontières ne matchent pas parfaitement (différences de 1e-6 degré typiques
+  //   en cadastre). Un buffer de 30 cm puis un unbuffer équivalent résout ça
+  //   dans la quasi-totalité des cas sans déformer la géométrie perceptiblement.
+  const EPSILON_M = 0.3;
+  try {
+    const buffered = features
+      .map(f => turf.buffer(f, EPSILON_M, { units: "meters" }))
+      .filter((f): f is Feature<Polygon | MultiPolygon> => !!f);
+    if (buffered.length === features.length) {
+      let merged = buffered[0];
+      for (let i = 1; i < buffered.length; i++) {
+        const u = turf.union(turf.featureCollection([merged, buffered[i]]));
+        if (u) merged = u as Feature<Polygon | MultiPolygon>;
+      }
+      if (merged.geometry.type === "Polygon") {
+        const shrunk = turf.buffer(merged, -EPSILON_M, { units: "meters" });
+        if (shrunk && shrunk.geometry.type === "Polygon") {
+          console.debug(
+            `[usePromoteurParcelRestore] Fusion réussie via buffer (${features.length} parcelles → 1 polygon)`,
+          );
+          return shrunk as Feature<Polygon>;
+        }
+        // unbuffer échoué → on garde le buffered (légèrement plus grand mais unique)
+        return merged;
+      }
+    }
+  } catch (e) {
+    console.warn("[usePromoteurParcelRestore] buffer+union échoué:", e);
+  }
+
+  // Tentative 3 : les parcelles sont vraiment disjointes → retourner MultiPolygon
+  //   Impl2DPage.featureToPoint2D sait gérer ce cas (cf. patch 2).
+  console.warn(
+    `[usePromoteurParcelRestore] Impossible de fusionner ${features.length} parcelles en un polygon unique — MultiPolygon conservé`,
+  );
+  return combined;
 }
 
 function computeCenter(

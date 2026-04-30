@@ -1,317 +1,244 @@
 // src/spaces/promoteur/services/promoteurSynthese.types.ts
+// v4.1 — Ajout des champs DVF détaillés dans PromoteurRawInput.marche
+//        pour remonter la richesse de market-study-promoteur-v1 vers la synthèse.
 
-export type RecommendationType = 'GO' | 'GO_CONDITION' | 'NO_GO';
+// ─── Types de base ────────────────────────────────────────────────────────────
 
-export type RisqueNiveau = 'FAIBLE' | 'MODERE' | 'ELEVE' | 'CRITIQUE';
+export type RecommendationType = 'GO' | 'GO_CONDITION' | 'NO_GO' | 'ANALYSE_INSUFFISANTE';
+export type RisqueNiveau = 'CRITIQUE' | 'ELEVE' | 'MODERE' | 'FAIBLE';
+export type DataQualite = 'HAUTE' | 'MOYENNE' | 'FAIBLE' | 'INSUFFISANT';
+export type ModuleStatut = 'COMPLET' | 'PARTIEL' | 'INSUFFISANT';
+export type AnomalieNiveau = 'CRITIQUE' | 'ALERTE' | 'INFO';
 
-export type ZoneMarche = 'TENDU' | 'INTERMEDIAIRE' | 'DETENDU';
-export type ReportType = 'banque' | 'investisseur' | 'technique';
+// ─── Anomalie détectée ────────────────────────────────────────────────────────
 
-export interface Scores {
-  foncier: number;
-  technique: number;
-  marche: number;
-  financier: number;
-  risque: number;
-  global: number;
-}
-
-export interface ProjetInfo {
-  adresse: string;
-  commune: string;
-  codePostal: string;
-  departement: string;
-  surfaceTerrain: number;
-  surfacePlancher: number;
-  nbLogements: number;
-  typologieMix: Record<string, number>;
-  programmeType: string;
-  dateEtude: string;
-  promoteur?: string;
-  referenceInterne?: string;
-}
-
-export interface ExecutiveSummary {
-  titreOperation: string;
-  recommendation: RecommendationType;
-  motifRecommandation: string;
-  pointsForts: string[];
-  pointsVigilance: string[];
-  killSwitchesActifs: string[];
-  scores: Scores;
-  margeNette: number;
-  trnRendement: number;
-  caTotal: number;
-  resultatNet: number;
-}
-
-export interface PluConstrainte {
-  libelle: string;
-  valeur: string | number | null;
-  statut: 'CONFORME' | 'LIMITE' | 'BLOQUANT';
-  detail?: string;
-}
-
-export interface TechniqueAnalysis {
-  zonePlu: string;
-  cub: number | null;
-  hauteurMax: number | null;
-  reculs: {
-    voirie: number | null;
-    limitesSeparatives: number | null;
-    fond: number | null;
-  };
-  pleineTerre: number | null;
-  contraintes: PluConstrainte[];
-  faisabiliteTechnique: 'CONFIRME' | 'SOUS_RESERVE' | 'IMPOSSIBLE';
-  notesTechniques: string[];
-  empriseBatie: number | null;
-  hauteurProjet: number | null;
-  nbNiveaux: number | null;
-  parking: {
-    nbPlacesRequises: number | null;
-    nbPlacesPrevues: number | null;
-    type: 'SURFACE' | 'SEMI_ENTERRE' | 'ENTERRE' | null;
-  };
-}
-
-export interface PrixMarche {
-  prixMoyenM2: number;
-  prixMin: number;
-  prixMax: number;
-  nbTransactions: number;
-  periode: string;
-  source: string;
-}
-
-export interface DemographieIndicateur {
-  label: string;
-  valeur: number | string;
-  evolution?: string;
-  source: string;
-}
-
-export interface MarcheAnalysis {
-  zoneMarche: ZoneMarche;
-  prixNeufMoyenM2: number;
-  prixProjetM2: number;
-  positionPrix: number;
-  prixAncienMoyenM2: number;
-  primiumNeuf: number;
-  prixParTypologie: Record<string, number>;
-  offreConcurrente: number;
-  demandeLocative: number | null;
-  demographieIndicateurs: DemographieIndicateur[];
-  transactionsRecentes: PrixMarche;
-  absorptionMensuelle: number | null;
-  delaiEcoulementMois: number | null;
-  notesMarcheLibre: string[];
-}
-
-export interface CoutPoste {
-  libelle: string;
-  montantHT: number;
-  pourcentageCA: number;
-  detail?: string;
-}
-
-export interface FinancierAnalysis {
-  chiffreAffairesTotal: number;
-  chiffreAffairesM2: number;
-  coutFoncier: number;
-  coutTravaux: number;
-  coutTravauxM2: number;
-  coutFinanciers: number;
-  fraisCommercialisation: number;
-  fraisGestion: number;
-  autresCouts: CoutPoste[];
-  coutRevientTotal: number;
-  coutRevientM2: number;
-  margeNette: number;
-  margeNettePercent: number;
-  margeOperationnelle: number;
-  margeOperationnellePercent: number;
-  trnRendement: number;
-  vatRecoverable: boolean;
-  bilancielRatio: number;
-}
-
-export interface RisqueItem {
+export type AnomalieItem = {
   id: string;
-  categorie: 'TECHNIQUE' | 'MARCHE' | 'FINANCIER' | 'REGLEMENTAIRE' | 'ENVIRONNEMENTAL' | 'JURIDIQUE';
+  niveau: AnomalieNiveau;
+  module: string;
   libelle: string;
+  detail?: string;
+  actionRequise?: string;
+};
+
+// ─── Qualité par module ───────────────────────────────────────────────────────
+
+export type ModuleQualite = {
+  module: string;
+  statut: ModuleStatut;
+  donneesManquantes: string[];
+  donneesPresentes: string[];
+};
+
+// ─── Risque ───────────────────────────────────────────────────────────────────
+
+export type RisqueItem = {
+  id: string;
   niveau: RisqueNiveau;
-  probabilite: number;
-  impact: number;
-  scoreCombine: number;
-  mitigation: string;
-  isKillSwitch: boolean;
-}
-
-export interface FinancementAnalysis {
-  fondsPropresRequis: number;
-  fondsPropresPercent: number;
-  creditPromoteurMontant: number;
-  creditPromoteurDuree: number;
-  tauxCredit: number;
-  garantiesRequises: string[];
-  ratioFondsPropres: number;
-  prefinancementVentes: number;
-  notesBancaires: string[];
-}
-
-export interface Scenario {
-  id: string;
   libelle: string;
+  mitigation: string;
+};
+
+// ─── Scénario de sensibilité ──────────────────────────────────────────────────
+
+export type Scenario = {
+  id: string;
   type: 'OPTIMISTE' | 'BASE' | 'PESSIMISTE' | 'STRESS';
-  hypotheses: {
-    prixVenteM2: number;
-    coutTravauxM2: number;
-    tauxAbsorption: number;
-    tauxCredit: number;
-  };
+  libelle: string;
   resultat: {
+    chiffreAffaires: number;
+    coutTotal: number;
+    margeNette: number;
     margeNettePercent: number;
-    resultatNet: number;
-    trnRendement: number;
     recommendation: RecommendationType;
   };
-}
+};
 
-export interface SyntheseIA {
-  texteExecutif: string;
-  analyseMarche: string;
-  analyseTechnique: string;
-  analyseFinanciere: string;
-  analyseRisques: string;
-  conclusion: string;
-  generatedAt: string;
-}
+// ─── Contrainte technique ─────────────────────────────────────────────────────
 
-export interface PromoteurSynthese {
-  id: string;
-  version: string;
-  createdAt: string;
-  updatedAt: string;
-  projet: ProjetInfo;
-  executiveSummary: ExecutiveSummary;
-  technique: TechniqueAnalysis;
-  marche: MarcheAnalysis;
-  financier: FinancierAnalysis;
-  risques: RisqueItem[];
-  financement: FinancementAnalysis;
-  scenarios: Scenario[];
-  syntheseIA: SyntheseIA | null;
+export type ContrainteTechnique = {
+  libelle: string;
+  statut: 'CONFORME' | 'A_VERIFIER' | 'BLOQUANT';
+  valeurProjet?: string;
+  valeurPlu?: string;
+};
+
+// ─── PromoteurSynthese (output complet) ───────────────────────────────────────
+
+export type PromoteurSynthese = {
   metadata: {
-    sourceFoncier: string;
-    sourcePlu: string;
-    sourceMarche: string;
-    dataQualite: 'HAUTE' | 'MOYENNE' | 'FAIBLE';
-    avertissements: string[];
+    generatedAt: string;
+    dataQualite: DataQualite;
+    analyseSuffisante: boolean;
+    version: string;
   };
-}
 
-export interface FoncierData {
-  adresse?: string;
-  commune?: string;
-  codePostal?: string;
-  departement?: string;
-  surfaceTerrain?: number;
-  prixAcquisition?: number;
-  fraisNotaire?: number;
-  fraisDemolition?: number;
-  servitudes?: string[];
-  pollutionDetectee?: boolean;
-}
-
-export interface PluData {
-  zone?: string;
-  cub?: number;
-  hauteurMax?: number;
-  reculs?: {
-    voirie?: number;
-    limitesSeparatives?: number;
-    fond?: number;
+  projet: {
+    adresse: string;
+    commune: string;
+    codePostal?: string;
+    departement?: string;
+    referenceParcellaire?: string;
+    surfaceTerrain?: number;
+    nbLogements: number;
+    programmeType: string;
   };
-  pleineTerre?: number;
-  reglesPlu?: Array<{
-    code: string;
-    libelle: string;
-    valeur: string | number | null;
-    statut?: 'CONFORME' | 'LIMITE' | 'BLOQUANT';
-  }>;
-}
 
-export interface ConceptionData {
-  surfacePlancher?: number;
-  nbLogements?: number;
-  typologieMix?: Record<string, number>;
-  nbNiveaux?: number;
-  hauteurProjet?: number;
-  empriseBatie?: number;
-  parking?: {
-    nbPlacesRequises?: number;
-    nbPlacesPrevues?: number;
-    type?: 'SURFACE' | 'SEMI_ENTERRE' | 'ENTERRE';
+  executiveSummary: {
+    titreOperation: string;
+    recommendation: RecommendationType;
+    motifRecommandation: string;
+    killSwitchesActifs: string[];
+    pointsForts: string[];
+    pointsVigilance: string[];
+    scores: {
+      global: number;
+      financier: number;
+      marche: number;
+      technique: number;
+      risque: number;
+    };
   };
-  programmeType?: string;
-}
 
-export interface MarcheData {
-  prixNeufM2?: number;
-  prixAncienM2?: number;
-  nbTransactionsDvf?: number;
-  prixMoyenDvf?: number;
-  prixMinDvf?: number;
-  prixMaxDvf?: number;
-  periodeDvf?: string;
-  demographieData?: DemographieIndicateur[];
-  offreConcurrente?: number;
-  absorptionMensuelle?: number;
-  prixParTypologie?: Record<string, number>;
-}
+  /** Anomalies détectées (incohérences, manquants critiques) */
+  anomalies: AnomalieItem[];
 
-export interface RisquesData {
-  risquesIdentifies?: Array<{
-    libelle: string;
-    niveau?: RisqueNiveau;
-    categorie?: RisqueItem['categorie'];
-    mitigation?: string;
-  }>;
-  georisguesScore?: number;
-  zonageRisque?: string;
-}
+  /** Qualité des données par module */
+  qualiteParModule: ModuleQualite[];
 
-export interface EvaluationData {
-  prixVenteM2?: number;
-  prixVenteTotal?: number;
-  nbLogementsLibres?: number;
-  nbLogementsAidesSocial?: number;
-  tauxLogementsAides?: number;
-}
+  financier: {
+    chiffreAffairesTotal: number;
+    chiffreAffairesM2: number;
+    coutRevientTotal: number;
+    coutRevientM2: number;
+    coutFoncier: number;
+    coutFoncierPresent: boolean;
+    coutTravaux: number;
+    coutTravauxM2: number;
+    coutFinanciers: number;
+    fraisCommercialisation: number;
+    fraisGestion: number;
+    margeNette: number;
+    margeNettePercent: number;
+    margeOperationnellePercent: number;
+    trnRendement: number;
+    bilancielRatio: number;
+  };
 
-export interface BilanData {
-  coutFoncier?: number;
-  coutTravaux?: number;
-  coutTravauxM2?: number;
-  fraisFinanciers?: number;
-  fraisCommercialisation?: number;
-  fraisGestion?: number;
-  autresCouts?: number;
-  chiffreAffaires?: number;
-  margeNette?: number;
-  margeNettePercent?: number;
-  trnRendement?: number;
-  fondsPropres?: number;
-  creditPromoteur?: number;
-}
+  marche: {
+    zoneMarche: string;
+    prixNeufMoyenM2: number;
+    prixProjetM2: number;
+    positionPrix: number;
+    primiumNeuf: number;
+    offreConcurrente: number;
+    delaiEcoulementMois: number | null;
+    analyseFiable: boolean;
+    notesMarcheLibre: string[];
+  };
 
-export interface PromoteurRawInput {
-  foncier: FoncierData;
-  plu: PluData;
-  conception: ConceptionData;
-  marche: MarcheData;
-  risques: RisquesData;
-  evaluation: EvaluationData;
-  bilan: BilanData;
-}
+  technique: {
+    faisabiliteTechnique: 'CONFIRME' | 'SOUS_RESERVE' | 'IMPOSSIBLE' | 'NON_DETERMINABLE';
+    zonePlu: string;
+    cub: number | null;
+    hauteurMax: number | null;
+    hauteurProjet: number | null;
+    nbNiveaux: number | null;
+    pleineTerre: number | null;
+    contraintes: ContrainteTechnique[];
+  };
+
+  risques: RisqueItem[];
+
+  scenarios: Scenario[];
+
+  financement: {
+    fondsPropresRequis: number;
+    fondsPropresPercent: number;
+    creditPromoteurMontant: number;
+    creditPromoteurDuree: number;
+    tauxCredit: number;
+    prefinancementVentes: number;
+    notesBancaires: string[];
+  };
+
+  syntheseIA: {
+    texteExecutif: string;
+    analyseMarche: string;
+    analyseTechnique: string;
+    analyseFinanciere: string;
+    analyseRisques: string;
+    conclusion: string;
+  };
+};
+
+// ─── PromoteurRawInput (input depuis le Bilan) ────────────────────────────────
+
+export type PromoteurRawInput = {
+  foncier?: {
+    adresse?: string;
+    commune?: string;
+    codePostal?: string;
+    departement?: string;
+    surfaceTerrain?: number;
+    prixAcquisition?: number;
+    fraisNotaire?: number;
+    pollutionDetectee?: boolean;
+  };
+  plu?: {
+    zone?: string;
+    cub?: number;
+    hauteurMax?: number;
+    pleineTerre?: number;
+  };
+  conception?: {
+    surfacePlancher?: number;
+    nbLogements?: number;
+    nbNiveaux?: number;
+    hauteurProjet?: number;
+    empriseBatie?: number;
+    programmeType?: string;
+  };
+  marche?: {
+    // Prix de référence (saisie utilisateur ou dérivés)
+    prixNeufM2?: number;
+    prixAncienM2?: number;
+
+    // DVF — statistiques agrégées (depuis market-study-promoteur-v1 core.dvf)
+    nbTransactionsDvf?: number;
+    prixMoyenDvf?: number;
+    /** v4.1 — prix min DVF sur la période (€/m²) */
+    prixMinDvf?: number;
+    /** v4.1 — prix max DVF sur la période (€/m²) */
+    prixMaxDvf?: number;
+    /** v4.1 — libellé de la période couverte par les transactions DVF (ex: "12 mois glissants") */
+    periodeDvf?: string;
+
+    // Marché local
+    offreConcurrente?: number;
+    absorptionMensuelle?: number;
+  };
+  risques?: {
+    risquesIdentifies?: string[];
+    zonageRisque?: string;
+  };
+  evaluation?: {
+    prixVenteM2?: number;
+    prixVenteTotal?: number;
+    nbLogementsLibres?: number;
+  };
+  bilan?: {
+    coutFoncier?: number;
+    coutTravaux?: number;
+    coutTravauxM2?: number;
+    fraisFinanciers?: number;
+    fraisCommercialisation?: number;
+    fraisGestion?: number;
+    chiffreAffaires?: number;
+    margeNette?: number;
+    margeNettePercent?: number;
+    trnRendement?: number;
+    fondsPropres?: number;
+    creditPromoteur?: number;
+  };
+};

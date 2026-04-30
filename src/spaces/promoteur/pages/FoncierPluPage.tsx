@@ -1,13 +1,8 @@
 // src/spaces/promoteur/pages/FoncierPluPage.tsx
-// VERSION 8.1.0
-//   - FIX CRITIQUE : écriture dans mimmoza.promoteur.foncier.selected_v1 /
-//     focus_v1 / commune_v1 à chaque validation ET à l'hydratation Supabase.
-//     Ces clés sont les seules lues par useFoncierSelection (source de vérité
-//     pour Implantation2DPage). Sans ça la sélection ne se restaurait jamais.
-//   - Migration vers usePromoteurStudy + PromoteurStudyService
-//   - Hydratation depuis study.foncier / study.plu (JSONB)
-//   - Plus de dépendance aux colonnes plates pour la lecture
-//   - localStorage = cache secondaire uniquement
+// VERSION 8.4.0
+//   - Capture cadastre scopée par studyId (via captures.store)
+//   - Plus de fuite des captures entre projets
+// VERSION 8.3.0 : bouton 📸 + capture automatique à la validation
 
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -21,7 +16,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { supabase } from "../../../supabaseClient";
 import { patchModule } from "../shared/promoteurSnapshot.store";
-import { PromoteurStudyService } from "../shared/promoteurStudyService";
+import { writeCapture } from "../shared/captures.store";
 import { usePromoteurStudy } from "../shared/usePromoteurStudy";
 import type {
   PromoteurParcelRaw,
@@ -29,14 +24,10 @@ import type {
   PromoteurPluData,
 } from "../shared/promoteurStudy.types";
 
-const PLU_PARSER_URL = import.meta.env.VITE_PLU_PARSER_URL || "http://localhost:3000";
-const PLU_PARSER_API_KEY = import.meta.env.VITE_PLU_PARSER_API_KEY || "";
-
-const GRAD_PRO = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
+const GRAD_PRO   = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
 const ACCENT_PRO = "#5247b8";
 
-// ── Clés localStorage partagées avec useFoncierSelection ──────────────────────
-// IMPORTANT : ces clés DOIVENT être identiques à celles de useFoncierSelection.ts
+// ── Clés localStorage ─────────────────────────────────────────────────────────
 const LS_FONCIER_SELECTED = "mimmoza.promoteur.foncier.selected_v1";
 const LS_FONCIER_FOCUS    = "mimmoza.promoteur.foncier.focus_v1";
 const LS_FONCIER_COMMUNE  = "mimmoza.promoteur.foncier.commune_v1";
@@ -48,28 +39,141 @@ interface ProjectInfo { parcelId?: string; parcelIds?: string[]; communeInsee?: 
 interface AddressSuggestion { label: string; citycode?: string; context?: string; lon: number; lat: number; id: string; }
 type BBox = { minLon: number; minLat: number; maxLon: number; maxLat: number };
 
-const DEFAULT_ZOOM = 17;
-const IGN_LIMIT = 500;
-const IGN_TIMEOUT_MS = 60000;
-const FETCH_RADIUS_KM = 0.5;
-
-// Taille max pour stocker une feature GeoJSON en localStorage (50 KB)
+const DEFAULT_ZOOM      = 17;
+const IGN_LIMIT         = 500;
+const IGN_TIMEOUT_MS    = 60000;
+const FETCH_RADIUS_KM   = 0.5;
 const MAX_FEATURE_LS_BYTES = 50_000;
 
 const styles = {
   container: { padding: "24px", maxWidth: "1400px", margin: "0 auto", fontFamily: "'Inter', -apple-system, sans-serif", position: "relative" as const, zIndex: 1 } as React.CSSProperties,
-  grid: { display: "grid", gridTemplateColumns: "1fr 380px", gap: "20px" } as React.CSSProperties,
-  card: { background: "white", borderRadius: "14px", border: "1px solid #e2e8f0", overflow: "hidden", position: "relative" as const } as React.CSSProperties,
-  cardHeader: { padding: "16px 18px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "space-between", zIndex: 5, position: "relative" as const } as React.CSSProperties,
+  grid:      { display: "grid", gridTemplateColumns: "1fr 380px", gap: "20px" } as React.CSSProperties,
+  card:      { background: "white", borderRadius: "14px", border: "1px solid #e2e8f0", overflow: "hidden", position: "relative" as const } as React.CSSProperties,
+  cardHeader:{ padding: "16px 18px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "space-between", zIndex: 5, position: "relative" as const } as React.CSSProperties,
   cardTitle: { fontSize: "14px", fontWeight: 700, color: "#0f172a", display: "flex", alignItems: "center", gap: "8px", margin: 0 } as React.CSSProperties,
-  cardBody: { padding: "18px" } as React.CSSProperties,
-  badge: { display: "inline-flex", alignItems: "center", padding: "4px 10px", borderRadius: "6px", fontSize: "11px", fontWeight: 600 } as React.CSSProperties,
-  button: { display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "10px 16px", borderRadius: "10px", border: "none", fontSize: "13px", fontWeight: 600, cursor: "pointer" } as React.CSSProperties,
-  input: { width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "13px", outline: "none", boxSizing: "border-box" as const } as React.CSSProperties,
-  inputLabel: { fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px", display: "block" } as React.CSSProperties,
+  cardBody:  { padding: "18px" } as React.CSSProperties,
+  badge:     { display: "inline-flex", alignItems: "center", padding: "4px 10px", borderRadius: "6px", fontSize: "11px", fontWeight: 600 } as React.CSSProperties,
+  button:    { display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "10px 16px", borderRadius: "10px", border: "none", fontSize: "13px", fontWeight: 600, cursor: "pointer" } as React.CSSProperties,
+  input:     { width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "13px", outline: "none", boxSizing: "border-box" as const } as React.CSSProperties,
+  inputLabel:{ fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px", display: "block" } as React.CSSProperties,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAPTURE CARTE CADASTRALE — scopée par studyId
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function captureCadastre(studyId: string | null): Promise<boolean> {
+  try {
+    const wrapper = document.getElementById("cadastre-map-capture-target");
+    if (!wrapper) {
+      console.warn("[FoncierPluPage] #cadastre-map-capture-target introuvable");
+      return false;
+    }
+
+    // Leaflet canvas renderer → export direct (pas de CORS)
+    const leafletCanvas = wrapper.querySelector<HTMLCanvasElement>("canvas.leaflet-zoom-animated, canvas");
+    if (leafletCanvas) {
+      const tmp = document.createElement("canvas");
+      tmp.width  = leafletCanvas.width;
+      tmp.height = leafletCanvas.height;
+      const ctx = tmp.getContext("2d");
+      if (ctx) {
+        ctx.fillStyle = "#f1f5f9";
+        ctx.fillRect(0, 0, tmp.width, tmp.height);
+        ctx.drawImage(leafletCanvas, 0, 0);
+        const dataUrl = tmp.toDataURL("image/jpeg", 0.80);
+        if (dataUrl && dataUrl.length > 500) {
+          const ok = writeCapture(studyId, "cadastre", dataUrl);
+          if (ok) {
+            console.debug("[FoncierPluPage] capture cadastre (canvas natif), taille:",
+              Math.round(dataUrl.length / 1024), "Ko", "studyId:", studyId);
+            return true;
+          }
+        }
+      }
+    }
+
+    // Fallback html2canvas
+    try {
+      const { default: html2canvas } = await import("html2canvas");
+      const canvas = await html2canvas(wrapper, {
+        useCORS:       true,
+        allowTaint:    true,
+        logging:       false,
+        scale:         1.2,
+        backgroundColor: "#f1f5f9",
+      });
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.80);
+      const ok = writeCapture(studyId, "cadastre", dataUrl);
+      if (ok) {
+        console.debug("[FoncierPluPage] capture cadastre (html2canvas), taille:",
+          Math.round(dataUrl.length / 1024), "Ko", "studyId:", studyId);
+        return true;
+      }
+    } catch {
+      // html2canvas absent — silencieux
+    }
+
+    console.warn("[FoncierPluPage] capture cadastre impossible");
+    return false;
+  } catch (e) {
+    console.warn("[FoncierPluPage] captureCadastre error:", e);
+    return false;
+  }
+}
+
+// ─── CaptureButton ────────────────────────────────────────────────────────────
+
+interface CadastreCaptureButtonProps {
+  studyId: string | null;
+}
+
+const CadastreCaptureButton: React.FC<CadastreCaptureButtonProps> = ({ studyId }) => {
+  const [status, setStatus] = useState<"idle" | "capturing" | "ok" | "fail">("idle");
+
+  const handle = useCallback(async () => {
+    setStatus("capturing");
+    const ok = await captureCadastre(studyId);
+    setStatus(ok ? "ok" : "fail");
+    setTimeout(() => setStatus("idle"), 2500);
+  }, [studyId]);
+
+  return (
+    <button
+      onClick={handle}
+      disabled={status === "capturing"}
+      title="Capturer cette carte pour la Synthèse Promoteur"
+      style={{
+        padding: "4px 10px",
+        background: status === "ok"   ? "#f0fdf4"
+                  : status === "fail" ? "#fef2f2"
+                  : "#f1f5f9",
+        border: "1px solid",
+        borderColor: status === "ok"   ? "#bbf7d0"
+                   : status === "fail" ? "#fecaca"
+                   : "#e2e8f0",
+        borderRadius: 6,
+        fontSize: 11,
+        fontWeight: 600,
+        color:  status === "ok"   ? "#16a34a"
+              : status === "fail" ? "#dc2626"
+              : "#475569",
+        cursor: status === "capturing" ? "wait" : "pointer",
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        transition: "all 0.2s",
+        flexShrink: 0,
+      }}
+    >
+      {status === "capturing" ? "⏳" : status === "ok" ? "✓" : status === "fail" ? "⚠" : "📸"}
+      {status === "capturing" ? "Capture…" : status === "ok" ? "Capturé !" : status === "fail" ? "Échec" : "Synthèse"}
+    </button>
+  );
 };
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
+
 function formatAreaM2(area: number | null | undefined): string {
   if (area == null) return "—";
   return area.toLocaleString("fr-FR") + " m²";
@@ -88,7 +192,7 @@ function getParcelIdFromFeature(f: any): string | null {
   const code_insee = p.code_insee || p.CODE_INSEE || p.commune;
   const prefixe = p.prefixe || p.com_abs || "000";
   const section = p.section || p.SECTION;
-  const numero = p.numero || p.NUMERO;
+  const numero  = p.numero  || p.NUMERO;
   if (code_insee && section && numero) {
     return `${String(code_insee)}${prefixe}${String(section).padStart(2, "0")}${String(numero).padStart(4, "0")}`;
   }
@@ -99,7 +203,7 @@ function calculatePolygonArea(geometry: any): number | null {
   try {
     if (!geometry) return null;
     let rings: number[][][] = [];
-    if (geometry.type === "Polygon") rings = [geometry.coordinates[0]];
+    if (geometry.type === "Polygon")      rings = [geometry.coordinates[0]];
     else if (geometry.type === "MultiPolygon") rings = geometry.coordinates.map((p: any) => p[0]);
     else return null;
     let total = 0;
@@ -127,7 +231,7 @@ function getFeatureArea(feature: any): number | null {
 function getFeatureBoundsCenter(feature: any): { center: [number, number] } | null {
   try {
     if (!feature?.geometry) return null;
-    const layer = L.geoJSON(feature);
+    const layer  = L.geoJSON(feature);
     const bounds = layer.getBounds();
     if (!bounds.isValid()) return null;
     const c = bounds.getCenter();
@@ -160,76 +264,51 @@ function legacyRulesetToResolved(plu: PluData): object | null {
   const rs = plu.ruleset;
   if (!rs) return null;
   return {
-    version: "plu_ruleset_v1",
-    zone_code: plu.zone_code,
+    version:    "plu_ruleset_v1",
+    zone_code:  plu.zone_code,
     zone_libelle: plu.zone_libelle,
-    hauteur: { max_m: rs.hauteur?.hauteur_egout_m ?? rs.hauteur?.hauteur_max_m ?? null, faitage_m: rs.hauteur?.hauteur_faitage_m ?? null, note: rs.hauteur?.note ?? null },
-    ces: { max_ratio: rs.emprise_sol?.emprise_sol_max ?? null, note: rs.emprise_sol?.note ?? null },
+    hauteur:    { max_m: rs.hauteur?.hauteur_egout_m ?? rs.hauteur?.hauteur_max_m ?? null, faitage_m: rs.hauteur?.hauteur_faitage_m ?? null, note: rs.hauteur?.note ?? null },
+    ces:        { max_ratio: rs.emprise_sol?.emprise_sol_max ?? null, note: rs.emprise_sol?.note ?? null },
     reculs: {
-      voirie: { min_m: rs.reculs?.voirie?.min_m ?? null, note: rs.reculs?.voirie?.note ?? null },
+      voirie:              { min_m: rs.reculs?.voirie?.min_m ?? null,              note: rs.reculs?.voirie?.note ?? null },
       limites_separatives: { min_m: rs.reculs?.limites_separatives?.min_m ?? null, note: rs.reculs?.limites_separatives?.note ?? null },
-      facades: { avant: { min_m: rs.reculs?.voirie?.min_m ?? null }, laterales: { min_m: rs.reculs?.limites_separatives?.min_m ?? null }, fond: { min_m: rs.reculs?.limites_separatives?.min_m ?? null } },
+      facades: {
+        avant:    { min_m: rs.reculs?.voirie?.min_m ?? null },
+        laterales:{ min_m: rs.reculs?.limites_separatives?.min_m ?? null },
+        fond:     { min_m: rs.reculs?.limites_separatives?.min_m ?? null },
+      },
     },
     stationnement: { par_logement: rs.stationnement?.places_par_logement ?? null, note: rs.stationnement?.note ?? null },
-    pleine_terre: { ratio_min: rs.pleine_terre?.min_pct != null ? rs.pleine_terre.min_pct / 100 : null, note: rs.pleine_terre?.note ?? null },
-    cos: { max: rs.densite?.cos_max ?? null, note: rs.densite?.note ?? null },
-    completeness: { ok: true, missing: [] },
+    pleine_terre:  { ratio_min: rs.pleine_terre?.min_pct != null ? rs.pleine_terre.min_pct / 100 : null, note: rs.pleine_terre?.note ?? null },
+    cos:           { max: rs.densite?.cos_max ?? null, note: rs.densite?.note ?? null },
+    completeness:  { ok: true, missing: [] },
   };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // persistFoncierSelectionForRestore
-//
-// Écrit la sélection foncière dans les clés lues par useFoncierSelection,
-// ce qui permet à usePromoteurParcelRestore (Implantation2DPage) de restaurer
-// automatiquement les parcelles.
-//
-// ⚠️ Les features GeoJSON sont tronquées à MAX_FEATURE_LS_BYTES pour éviter
-//    de saturer localStorage avec des géométries massives.
 // ─────────────────────────────────────────────────────────────────────────────
-function persistFoncierSelectionForRestore(
-  parcels: SelectedParcel[],
-  focusId: string,
-  commune: string
-): void {
+
+function persistFoncierSelectionForRestore(parcels: SelectedParcel[], focusId: string, commune: string): void {
   try {
-    // Sérialiser les features en limitant leur taille
     const serializable = parcels.map(p => {
       let featureToStore: any = null;
       if (p.feature) {
         const serialized = JSON.stringify(p.feature);
         featureToStore = serialized.length <= MAX_FEATURE_LS_BYTES ? p.feature : null;
-        if (serialized.length > MAX_FEATURE_LS_BYTES) {
-          console.debug(
-            `[FoncierPluPage] Feature ${p.id} trop grande pour localStorage` +
-            ` (${serialized.length} bytes) — stockée sans géométrie`
-          );
-        }
+        if (serialized.length > MAX_FEATURE_LS_BYTES) console.debug(`[FoncierPluPage] Feature ${p.id} trop grande pour localStorage (${serialized.length} bytes) — stockée sans géométrie`);
       }
-      return {
-        id: p.id,
-        area_m2: p.area_m2 ?? null,
-        commune_insee: commune,
-        feature: featureToStore,
-      };
+      return { id: p.id, area_m2: p.area_m2 ?? null, commune_insee: commune, feature: featureToStore };
     });
-
     localStorage.setItem(LS_FONCIER_SELECTED, JSON.stringify(serializable));
     localStorage.setItem(LS_FONCIER_FOCUS,    focusId);
     localStorage.setItem(LS_FONCIER_COMMUNE,  commune);
-
-    console.debug(
-      `[FoncierPluPage] persistFoncierSelectionForRestore → ${serializable.length} parcelle(s),` +
-      ` focus=${focusId}, commune=${commune},` +
-      ` features=${serializable.filter(p => p.feature).length}`
-    );
-  } catch (err) {
-    console.warn("[FoncierPluPage] persistFoncierSelectionForRestore failed:", err);
-  }
+    console.debug(`[FoncierPluPage] persistFoncierSelectionForRestore → ${serializable.length} parcelle(s), focus=${focusId}, commune=${commune}, features=${serializable.filter(p => p.feature).length}`);
+  } catch (err) { console.warn("[FoncierPluPage] persistFoncierSelectionForRestore failed:", err); }
 }
 
 // ─── Canvas + styles carte ────────────────────────────────────────────────────
-const cadastreCanvas = L.canvas({ padding: 0.5 });
+const cadastreCanvas         = L.canvas({ padding: 0.5 });
 const STYLE_DEFAULT: L.PathOptions        = { color: "#2563eb", opacity: 0.9, weight: 2, fillColor: "#60a5fa", fillOpacity: 0.22 };
 const STYLE_SELECTED: L.PathOptions       = { color: "#16a34a", opacity: 1,   weight: 3, fillColor: "#22c55e", fillOpacity: 0.45 };
 const STYLE_HOVER_DEFAULT: L.PathOptions  = { color: "#2563eb", opacity: 1,   weight: 3, fillColor: "#60a5fa", fillOpacity: 0.4  };
@@ -361,7 +440,7 @@ function CadastreMap({ communeInsee, center, selectedIds, selectedParcels, onTog
   useEffect(() => { if (center && communeInsee) fetchParcelles(center[0], center[1], communeInsee); }, [center, communeInsee, fetchParcelles]);
 
   return (
-    <div style={{ position: "relative", height: heightPx, overflow: "hidden", borderRadius: "0 0 14px 14px" }}>
+    <div id="cadastre-map-capture-target" style={{ position: "relative", height: heightPx, overflow: "hidden", borderRadius: "0 0 14px 14px" }}>
       <MapContainer center={center} zoom={DEFAULT_ZOOM} style={{ height: "100%", width: "100%" }} scrollWheelZoom preferCanvas>
         <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <MapCenterHandler center={center} />
@@ -382,7 +461,8 @@ function CadastreMap({ communeInsee, center, selectedIds, selectedParcels, onTog
 
 // ─── PluUploaderPanel ─────────────────────────────────────────────────────────
 function PluUploaderPanel({ communeInsee, communeNom, targetZoneCode, onPluParsed }: {
-  communeInsee: string; communeNom?: string; targetZoneCode?: string; onPluParsed: (pluData: PluData) => void;
+  communeInsee: string; communeNom?: string; targetZoneCode?: string;
+  onPluParsed: (pluData: PluData) => void;
 }) {
   const [file, setFile]               = useState<File | null>(null);
   const [uploading, setUploading]     = useState(false);
@@ -392,43 +472,46 @@ function PluUploaderPanel({ communeInsee, communeNom, targetZoneCode, onPluParse
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetch(`${PLU_PARSER_URL}/health`, { signal: AbortSignal.timeout(3000) })
-      .then(r => r.ok ? setPluServerStatus("ok") : setPluServerStatus("down"))
-      .catch(() => setPluServerStatus("down"));
+    let cancelled = false;
+    async function checkFunctionHealth() {
+      try {
+        const { data, error } = await supabase.functions.invoke("plu-parser", { method: "GET" });
+        if (cancelled) return;
+        if (error) { setPluServerStatus("down"); return; }
+        setPluServerStatus(data?.success === true || data?.status === "ok" ? "ok" : "down");
+      } catch { if (!cancelled) setPluServerStatus("down"); }
+    }
+    checkFunctionHealth();
+    return () => { cancelled = true; };
   }, []);
 
-  const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve((reader.result as string).split(",")[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+  const fileToBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => { const result = reader.result as string; const commaIndex = result.indexOf(","); resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result); };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
 
   const handleUploadAndParse = async () => {
     if (!file) return;
-    setUploading(true); setError(null); setProgress("Préparation...");
+    setUploading(true); setError(null); setProgress("Préparation du PDF...");
     try {
-      const healthCheck = await fetch(`${PLU_PARSER_URL}/health`, { signal: AbortSignal.timeout(3000) });
-      if (!healthCheck.ok) throw new Error("Serveur non accessible");
       const base64Data = await fileToBase64(file);
       setProgress("Analyse PLU en cours...");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (PLU_PARSER_API_KEY) headers["x-api-key"] = PLU_PARSER_API_KEY;
-      const res = await fetch(`${PLU_PARSER_URL}/api/plu-parse`, {
-        method: "POST", headers,
-        body: JSON.stringify({ commune_insee: communeInsee, commune_nom: communeNom || `Commune ${communeInsee}`, target_zone_code: targetZoneCode, pdf_base64: base64Data, pdf_filename: file.name }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({ message: res.statusText }))).message);
-      const result = await res.json();
+      const { data, error } = await supabase.functions.invoke("plu-parser", { body: { commune_insee: communeInsee, commune_nom: communeNom || `Commune ${communeInsee}`, target_zone_code: targetZoneCode, pdf_base64: base64Data, pdf_filename: file.name } });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.message || "Erreur d'analyse PLU");
       setProgress("Terminé !");
-      if (result.success && result.zones_rulesets?.length > 0) {
-        let zoneData = result.zones_rulesets[0];
-        if (targetZoneCode) { const m = result.zones_rulesets.find((z: any) => z.zone_code?.toUpperCase() === targetZoneCode.toUpperCase()); if (m) zoneData = m; }
-        const plu: PluData = { zone_code: zoneData.zone_code, zone_libelle: zoneData.zone_libelle, ruleset: zoneData.ruleset, raw: result, found: true };
-        try { await supabase.from("plu_parsed").upsert({ commune_insee: communeInsee, zone_code: plu.zone_code, ruleset: plu.ruleset, source_file: file.name, parsed_at: new Date().toISOString() }, { onConflict: "commune_insee,zone_code" }); } catch { /**/ }
+      if (data.zones_rulesets?.length > 0) {
+        let zoneData = data.zones_rulesets[0];
+        if (targetZoneCode) { const matched = data.zones_rulesets.find((z: any) => String(z.zone_code || "").toUpperCase() === String(targetZoneCode || "").toUpperCase()); if (matched) zoneData = matched; }
+        const plu: PluData = { zone_code: zoneData.zone_code, zone_libelle: zoneData.zone_libelle, ruleset: zoneData.ruleset, raw: data, found: true };
+        try { await supabase.from("plu_parsed").upsert({ commune_insee: communeInsee, zone_code: plu.zone_code, ruleset: plu.ruleset, source_file: file.name, parsed_at: new Date().toISOString() }, { onConflict: "commune_insee,zone_code" }); } catch (dbErr) { console.warn("[PluUploaderPanel] upsert plu_parsed failed:", dbErr); }
+        setPluServerStatus("ok");
         onPluParsed(plu);
-      } else throw new Error(result.message || "Aucune zone PLU trouvée");
-    } catch (err: any) { setError(err.message || "Erreur"); }
+      } else { throw new Error(data?.message || "Aucune zone PLU trouvée"); }
+    } catch (err: any) { console.error("[PluUploaderPanel] parse error:", err); setPluServerStatus("down"); setError(err?.message || "Erreur"); }
     finally { setUploading(false); setProgress(""); }
   };
 
@@ -436,15 +519,15 @@ function PluUploaderPanel({ communeInsee, communeNom, targetZoneCode, onPluParse
     <div style={{ ...styles.card, marginTop: "16px" }}>
       <div style={styles.cardHeader}>
         <h3 style={styles.cardTitle}><FileUp size={18} color="#f59e0b" />Importer le règlement PLU</h3>
-        <span style={{ ...styles.badge, background: pluServerStatus === "ok" ? "#f0fdf4" : "#fef2f2", color: pluServerStatus === "ok" ? "#16a34a" : "#dc2626" }}>
-          {pluServerStatus === "ok" ? "● Serveur OK" : pluServerStatus === "down" ? "● Serveur OFF" : "● …"}
+        <span style={{ ...styles.badge, background: pluServerStatus === "ok" ? "#f0fdf4" : pluServerStatus === "down" ? "#fef2f2" : "#f8fafc", color: pluServerStatus === "ok" ? "#16a34a" : pluServerStatus === "down" ? "#dc2626" : "#64748b" }}>
+          {pluServerStatus === "ok" ? "● Fonction OK" : pluServerStatus === "down" ? "● Fonction indisponible" : "● Vérification..."}
         </span>
       </div>
       <div style={styles.cardBody}>
-        {pluServerStatus === "down" && <div style={{ marginBottom: 16, padding: "12px 14px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, fontSize: 12, color: "#991b1b" }}><strong>⚠ Serveur non accessible</strong><br /><code style={{ fontSize: 11 }}>cd mimmoza-plu-parser && node index.cjs</code></div>}
+        {pluServerStatus === "down" && <div style={{ marginBottom: 16, padding: "12px 14px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, fontSize: 12, color: "#991b1b" }}><strong>⚠ Fonction Supabase non accessible</strong><br />Vérifiez que la fonction <code>plu-parser</code> est bien déployée.</div>}
         <p style={{ fontSize: 13, color: "#64748b", margin: "0 0 16px" }}>Uploadez le PDF du règlement pour extraire les règles.</p>
         <div onClick={() => fileInputRef.current?.click()} style={{ padding: 24, border: "2px dashed #cbd5e1", borderRadius: 12, background: file ? "#f0fdf4" : "#f8fafc", cursor: "pointer", textAlign: "center" }}>
-          <input ref={fileInputRef} type="file" accept=".pdf" style={{ display: "none" }} onChange={e => { const s = e.target.files?.[0]; if (s?.type === "application/pdf") { setFile(s); setError(null); } else setError("PDF requis"); }} />
+          <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" style={{ display: "none" }} onChange={e => { const selected = e.target.files?.[0]; if (selected?.type === "application/pdf" || selected?.name?.toLowerCase().endsWith(".pdf")) { setFile(selected); setError(null); } else { setError("PDF requis"); } }} />
           {file ? (<div><Check size={32} color="#16a34a" style={{ marginBottom: 8 }} /><p style={{ fontSize: 14, fontWeight: 600, color: "#16a34a", margin: "0 0 4px" }}>{file.name}</p></div>) : (<div><Upload size={32} color="#94a3b8" style={{ marginBottom: 8 }} /><p style={{ fontSize: 14, fontWeight: 600, color: "#475569", margin: "0 0 4px" }}>Cliquez pour sélectionner</p><p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>PDF du règlement PLU</p></div>)}
         </div>
         {targetZoneCode && <div style={{ marginTop: 12, padding: "8px 12px", background: "#ede9fe", borderRadius: 8, fontSize: 12, color: ACCENT_PRO }}><strong>Zone cible:</strong> {targetZoneCode}</div>}
@@ -470,10 +553,7 @@ const EMPTY_FIELDS: FieldMap = { hauteur_max: { value: null, unit: "m" }, hauteu
 function resolveRulesetSource(pluData: PluData | null): { rs: any; format: "resolved_v1" | "plu_ruleset_v2" | "legacy" } | null {
   const rs = pluData?.ruleset;
   if (!rs) {
-    try {
-      const raw = localStorage.getItem("mimmoza.plu.resolved_ruleset_v1");
-      if (raw) { const parsed = JSON.parse(raw); if (parsed?.version === "plu_ruleset_v1") return { rs: parsed, format: "resolved_v1" }; }
-    } catch { /**/ }
+    try { const raw = localStorage.getItem("mimmoza.plu.resolved_ruleset_v1"); if (raw) { const parsed = JSON.parse(raw); if (parsed?.version === "plu_ruleset_v1") return { rs: parsed, format: "resolved_v1" }; } } catch { /**/ }
     return null;
   }
   if (rs.version === "plu_ruleset_v1") return { rs, format: "resolved_v1" };
@@ -495,11 +575,7 @@ function PluInfoCard({ pluData, loading }: { pluData: PluData | null; loading: b
   const [isEditing, setIsEditing] = useState(false);
   const [fields, setFields]       = useState<FieldMap>(EMPTY_FIELDS);
 
-  useEffect(() => {
-    const source = resolveRulesetSource(pluData);
-    if (!source) { setFields(EMPTY_FIELDS); return; }
-    setFields(mapToFields(source.rs, source.format));
-  }, [pluData]);
+  useEffect(() => { const source = resolveRulesetSource(pluData); if (!source) { setFields(EMPTY_FIELDS); return; } setFields(mapToFields(source.rs, source.format)); }, [pluData]);
 
   if (loading) return (<div style={styles.card}><div style={styles.cardHeader}><h3 style={styles.cardTitle}><FileText size={18} color="#8b5cf6" />Règles PLU</h3></div><div style={{ ...styles.cardBody, display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}><Loader2 size={24} color={ACCENT_PRO} style={{ animation: "spin 1s linear infinite" }} /><span style={{ marginLeft: 12, color: "#64748b" }}>Chargement PLU...</span></div></div>);
 
@@ -713,10 +789,8 @@ export function FoncierPluPage() {
   const [searchParams] = useSearchParams();
   const studyId = searchParams.get("study");
 
-  // ── Source de vérité unique ────────────────────────────────────────────────
   const { study, loadState, patchFoncier, patchPlu } = usePromoteurStudy(studyId);
 
-  // ── State local UI ────────────────────────────────────────────────────────
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving]                   = useState(false);
   const [mapCenter, setMapCenter]                 = useState<[number, number] | null>(null);
@@ -728,100 +802,43 @@ export function FoncierPluPage() {
   const [isValidated, setIsValidated]             = useState(false);
   const [searchDone, setSearchDone]               = useState(false);
 
-  // Guard unmount
   const mountedRef = useRef(true);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
-  // ── Hydratation depuis Supabase (lecture JSONB) ────────────────────────────
+  // ── Hydratation Supabase ──────────────────────────────────────────────────
   useEffect(() => {
     if (loadState !== "ready" || !study) return;
+    const f = study.foncier;
+    const p = study.plu;
 
-    const f = study.foncier;   // PromoteurFoncierData | null
-    const p = study.plu;       // PromoteurPluData | null
-
-    // ── Foncier ──────────────────────────────────────────────────────────────
     if (f?.commune_insee) {
       const parcels: SelectedParcel[] = (f.parcels_raw ?? []).length > 0
-        ? f.parcels_raw.map(r => ({
-            id:      r.id,
-            area_m2: r.area_m2 ?? null,
-            feature: r.feature ?? undefined,
-          }))
-        : (f.parcel_ids ?? []).map(id => ({
-            id,
-            area_m2: (f.parcel_ids ?? []).length === 1 ? f.surface_m2 : null,
-          }));
+        ? f.parcels_raw.map(r => ({ id: r.id, area_m2: r.area_m2 ?? null, feature: r.feature ?? undefined }))
+        : (f.parcel_ids ?? []).map(id => ({ id, area_m2: (f.parcel_ids ?? []).length === 1 ? f.surface_m2 : null }));
 
       if (parcels.length > 0) {
         setSelectedParcels(parcels);
-        setProjectInfo({
-          parcelId:     f.focus_id || parcels[0]?.id,
-          parcelIds:    f.parcel_ids,
-          communeInsee: f.commune_insee,
-          surfaceM2:    f.surface_m2 ?? undefined,
-        });
+        setProjectInfo({ parcelId: f.focus_id || parcels[0]?.id, parcelIds: f.parcel_ids, communeInsee: f.commune_insee, surfaceM2: f.surface_m2 ?? undefined });
         setIsValidated(f.done);
         setSearchDone(true);
-
         const focusId = f.focus_id || parcels[0]?.id;
-
-        // ── FIX CRITIQUE : écriture dans les clés lues par useFoncierSelection ──
-        // Implantation2DPage (via usePromoteurParcelRestore → useFoncierSelection)
-        // lit exclusivement LS_FONCIER_SELECTED / FOCUS / COMMUNE.
-        // Sans cette écriture, Implantation2DPage affiche toujours "Aucune parcelle".
-        if (focusId) {
-          persistFoncierSelectionForRestore(parcels, focusId, f.commune_insee);
-        }
-
-        // Cache session secondaire (pages aval non encore migrées)
+        if (focusId) persistFoncierSelectionForRestore(parcels, focusId, f.commune_insee);
         if (focusId) localStorage.setItem("mimmoza.session.parcel_id", focusId);
         localStorage.setItem("mimmoza.session.parcel_ids",    JSON.stringify(f.parcel_ids ?? []));
         localStorage.setItem("mimmoza.session.commune_insee", f.commune_insee);
         if (f.surface_m2) localStorage.setItem("mimmoza.session.surface_m2", String(f.surface_m2));
-
-        // Compat store éphémère
-        patchModule("foncier", {
-          parcelId:     focusId,
-          parcelIds:    f.parcel_ids,
-          communeInsee: f.commune_insee,
-          surfaceM2:    f.surface_m2,
-        });
-
-        // Centrer la carte
+        patchModule("foncier", { parcelId: focusId, parcelIds: f.parcel_ids, communeInsee: f.commune_insee, surfaceM2: f.surface_m2 });
         const firstParcel = parcels[0];
         if (firstParcel?.feature) {
           const bc = getFeatureBoundsCenter(firstParcel.feature);
-          if (bc) {
-            setMapCenter(bc.center);
-          } else {
-            geocodeCommuneCenter(f.commune_insee).then(center => {
-              if (center && mountedRef.current) setMapCenter(center);
-            });
-          }
-        } else {
-          geocodeCommuneCenter(f.commune_insee).then(center => {
-            if (center && mountedRef.current) setMapCenter(center);
-          });
-        }
+          if (bc) { setMapCenter(bc.center); }
+          else { geocodeCommuneCenter(f.commune_insee).then(center => { if (center && mountedRef.current) setMapCenter(center); }); }
+        } else { geocodeCommuneCenter(f.commune_insee).then(center => { if (center && mountedRef.current) setMapCenter(center); }); }
       }
     }
-
-    // ── PLU ──────────────────────────────────────────────────────────────────
-    if (p?.ruleset) {
-      setPluData({
-        zone_code:    p.zone_code    ?? undefined,
-        zone_libelle: p.zone_libelle ?? undefined,
-        ruleset:      p.ruleset,
-        found:        true,
-      });
-      localStorage.setItem("mimmoza.plu.resolved_ruleset_v1", JSON.stringify(p.ruleset));
-    }
+    if (p?.ruleset) { setPluData({ zone_code: p.zone_code ?? undefined, zone_libelle: p.zone_libelle ?? undefined, ruleset: p.ruleset, found: true }); localStorage.setItem("mimmoza.plu.resolved_ruleset_v1", JSON.stringify(p.ruleset)); }
   }, [loadState, study]);
 
-  // ── Dérivés ───────────────────────────────────────────────────────────────
   const hasProject = !!(projectInfo.communeInsee && (selectedParcels.length > 0 || searchDone));
 
   const totalAreaM2 = useMemo(() => {
@@ -829,11 +846,8 @@ export function FoncierPluPage() {
     return a.length > 0 ? a.reduce((s, v) => s + v, 0) : null;
   }, [selectedParcels]);
 
-  const parcelMapSelectedParcels = useMemo(() =>
-    selectedParcels.map(p => ({ id: p.id, feature: p.feature, area_m2: p.area_m2 })),
-    [selectedParcels]);
+  const parcelMapSelectedParcels = useMemo(() => selectedParcels.map(p => ({ id: p.id, feature: p.feature, area_m2: p.area_m2 })), [selectedParcels]);
 
-  // ── Handlers ─────────────────────────────────────────────────────────────
   const fetchPlu = useCallback(async () => {
     if (!projectInfo.parcelId || !projectInfo.communeInsee) return;
     setPluLoading(true);
@@ -879,13 +893,10 @@ export function FoncierPluPage() {
     setSearchLoading(false);
   }, [projectInfo, fetchPlu, fetchParcelAndCenter]);
 
-  const handleToggleParcel = useCallback((pid: string, feature?: any, area_m2?: number | null) => {
-    setSelectedParcels(prev => prev.some(p => p.id === pid) ? prev.filter(p => p.id !== pid) : [...prev, { id: pid, feature, area_m2: area_m2 || feature?.properties?.contenance || null }]);
-    setIsValidated(false);
-  }, []);
-
-  const handleRemoveParcel  = useCallback((pid: string) => { setSelectedParcels(prev => prev.filter(p => p.id !== pid)); setIsValidated(false); }, []);
-  const handleClearAll      = useCallback(() => { setSelectedParcels([]); setIsValidated(false); }, []);
+  const handleToggleParcel    = useCallback((pid: string, feature?: any, area_m2?: number | null) => { setSelectedParcels(prev => prev.some(p => p.id === pid) ? prev.filter(p => p.id !== pid) : [...prev, { id: pid, feature, area_m2: area_m2 || feature?.properties?.contenance || null }]); setIsValidated(false); }, []);
+  const handleRemoveParcel    = useCallback((pid: string) => { setSelectedParcels(prev => prev.filter(p => p.id !== pid)); setIsValidated(false); }, []);
+  const handleClearAll        = useCallback(() => { setSelectedParcels([]); setIsValidated(false); }, []);
+  const handleUpdateParcelArea = useCallback((id: string, area_m2: number) => { setSelectedParcels(prev => prev.map(p => p.id === id ? { ...p, area_m2 } : p)); setIsValidated(false); }, []);
 
   const handleAddManualParcel = useCallback((id: string, area_m2: number | null) => {
     setSelectedParcels(prev => prev.some(p => p.id === id) ? prev : [...prev, { id, area_m2 }]);
@@ -898,21 +909,13 @@ export function FoncierPluPage() {
         if (m) {
           fetch(`https://apicarto.ign.fr/api/cadastre/parcelle?code_insee=${insee}&section=${m[1]}&numero=${m[2].padStart(4, "0")}&_limit=1`)
             .then(r => r.ok ? r.json() : null)
-            .then(data => {
-              const feat = data?.features?.[0];
-              if (feat) { const calcArea = feat.properties?.contenance || calculatePolygonArea(feat.geometry); if (calcArea && calcArea > 0) setSelectedParcels(prev => prev.map(p => p.id === id && (p.area_m2 == null || p.area_m2 === 0) ? { ...p, area_m2: Math.round(calcArea), feature: feat } : p)); }
-            }).catch(() => { /**/ });
+            .then(data => { const feat = data?.features?.[0]; if (feat) { const calcArea = feat.properties?.contenance || calculatePolygonArea(feat.geometry); if (calcArea && calcArea > 0) setSelectedParcels(prev => prev.map(p => p.id === id && (p.area_m2 == null || p.area_m2 === 0) ? { ...p, area_m2: Math.round(calcArea), feature: feat } : p)); } }).catch(() => { /**/ });
         }
       }
     }
   }, []);
 
-  const handleUpdateParcelArea = useCallback((id: string, area_m2: number) => {
-    setSelectedParcels(prev => prev.map(p => p.id === id ? { ...p, area_m2 } : p));
-    setIsValidated(false);
-  }, []);
-
-  // ── Validation + persistance Supabase ─────────────────────────────────────
+  // ── Validation + persistance ──────────────────────────────────────────────
   const handleValidateSelection = useCallback(async () => {
     if (selectedParcels.length === 0 || !studyId) return;
     setIsSaving(true);
@@ -929,41 +932,31 @@ export function FoncierPluPage() {
       parcels_raw:   selectedParcels.map(p => ({
         id:      p.id,
         area_m2: p.area_m2 ?? null,
-        feature: p.feature
-          ? (JSON.stringify(p.feature).length < 50_000 ? p.feature : null)
-          : null,
+        feature: p.feature ? (JSON.stringify(p.feature).length < 50_000 ? p.feature : null) : null,
       } satisfies PromoteurParcelRaw)),
       done: true,
     };
 
-    // patchFoncier met à jour study dans le hook ET écrit dans Supabase
     const result = await patchFoncier(foncierPayload);
-
     setIsSaving(false);
 
     if (!result.ok) {
       console.error("[FoncierPluPage] Supabase save failed:", result.error);
-      localStorage.setItem(
-        `mimmoza.promoteur.foncier.${studyId}.fallback_v2`,
-        JSON.stringify(foncierPayload)
-      );
+      localStorage.setItem(`mimmoza.promoteur.foncier.${studyId}.fallback_v2`, JSON.stringify(foncierPayload));
     }
 
-    // ── FIX CRITIQUE : écriture dans les clés lues par useFoncierSelection ──
-    // C'est le point d'écriture principal. Sans ça, Implantation2DPage
-    // (usePromoteurParcelRestore → useFoncierSelection) hydrate sur []
-    // et affiche "Aucune parcelle sélectionnée" à tort.
     persistFoncierSelectionForRestore(selectedParcels, primary.id, insee);
 
-    // Sync state local + cache session secondaire
+    // ← capture automatique après validation, scopée par studyId
+    captureCadastre(studyId);
+
     setProjectInfo(prev => ({ ...prev, parcelId: primary.id, parcelIds, communeInsee: insee, surfaceM2: totalAreaM2 || undefined }));
     patchModule("foncier", { parcelId: primary.id, parcelIds, communeInsee: insee, surfaceM2: totalAreaM2 });
     localStorage.setItem("mimmoza.session.parcel_id",     primary.id);
     localStorage.setItem("mimmoza.session.parcel_ids",    JSON.stringify(parcelIds));
     if (insee)       localStorage.setItem("mimmoza.session.commune_insee", insee);
     if (totalAreaM2) localStorage.setItem("mimmoza.session.surface_m2",    String(totalAreaM2));
-    ["mimmoza.plu.ai_extract_result", "mimmoza.plu.detected_zone_code", "mimmoza.plu.selected_zone_code",
-     "mimmoza.plu.selected_document_id", "mimmoza.plu.selected_commune_insee"].forEach(k => localStorage.removeItem(k));
+    ["mimmoza.plu.ai_extract_result", "mimmoza.plu.detected_zone_code", "mimmoza.plu.selected_zone_code", "mimmoza.plu.selected_document_id", "mimmoza.plu.selected_commune_insee"].forEach(k => localStorage.removeItem(k));
 
     setValidationMessage(`✓ ${parcelIds.length} parcelle${parcelIds.length > 1 ? "s" : ""} enregistrée${parcelIds.length > 1 ? "s" : ""} (${formatAreaM2(totalAreaM2)})`);
     setIsValidated(true);
@@ -978,60 +971,26 @@ export function FoncierPluPage() {
       "mimmoza.session.parcel_id", "mimmoza.session.commune_insee", "mimmoza.session.parcel_ids",
       "mimmoza.session.surface_m2", "mimmoza.plu.resolved_ruleset_v1", "mimmoza.plu.ai_extract_result",
       "mimmoza.plu.detected_zone_code", "mimmoza.plu.selected_zone_code", "mimmoza.plu.selected_document_id",
-      "mimmoza.plu.selected_commune_insee",
-      // FIX : on efface aussi les clés useFoncierSelection au reset
-      LS_FONCIER_SELECTED, LS_FONCIER_FOCUS, LS_FONCIER_COMMUNE,
+      "mimmoza.plu.selected_commune_insee", LS_FONCIER_SELECTED, LS_FONCIER_FOCUS, LS_FONCIER_COMMUNE,
     ].forEach(k => localStorage.removeItem(k));
   }, []);
 
   const handlePluParsed = useCallback(async (plu: PluData) => {
     const resolved = legacyRulesetToResolved(plu);
-
-    const pluPayload: PromoteurPluData = {
-      zone_code:    plu.zone_code    ?? null,
-      zone_libelle: plu.zone_libelle ?? null,
-      ruleset:      resolved ?? (plu.ruleset ?? null),
-      source:       "upload",
-      done:         true,
-    };
-
-    if (studyId) {
-      await patchPlu(pluPayload);
-    }
-
-    if (resolved) {
-      localStorage.setItem("mimmoza.plu.resolved_ruleset_v1", JSON.stringify(resolved));
-      patchModule("plu", resolved);
-    } else {
-      localStorage.removeItem("mimmoza.plu.resolved_ruleset_v1");
-      patchModule("plu", null);
-    }
+    const pluPayload: PromoteurPluData = { zone_code: plu.zone_code ?? null, zone_libelle: plu.zone_libelle ?? null, ruleset: resolved ?? (plu.ruleset ?? null), source: "upload", done: true };
+    if (studyId) await patchPlu(pluPayload);
+    if (resolved) { localStorage.setItem("mimmoza.plu.resolved_ruleset_v1", JSON.stringify(resolved)); patchModule("plu", resolved); }
+    else { localStorage.removeItem("mimmoza.plu.resolved_ruleset_v1"); patchModule("plu", null); }
     localStorage.removeItem("mimmoza.plu.ai_extract_result");
     setPluData(plu);
   }, [studyId, patchPlu]);
 
   // ── Loading / Error ───────────────────────────────────────────────────────
   if (loadState === "loading") {
-    return (
-      <div style={{ ...styles.container, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300 }}>
-        <Loader2 size={32} color={ACCENT_PRO} style={{ animation: "spin 1s linear infinite" }} />
-        <span style={{ marginLeft: 16, fontSize: 15, color: "#64748b" }}>Chargement de l'étude…</span>
-      </div>
-    );
+    return (<div style={{ ...styles.container, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300 }}><Loader2 size={32} color={ACCENT_PRO} style={{ animation: "spin 1s linear infinite" }} /><span style={{ marginLeft: 16, fontSize: 15, color: "#64748b" }}>Chargement de l'étude…</span></div>);
   }
-
   if (loadState === "error") {
-    return (
-      <div style={{ ...styles.container, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 300 }}>
-        <AlertTriangle size={40} color="#f59e0b" />
-        <p style={{ color: "#64748b", marginTop: 16, fontSize: 14 }}>
-          Impossible de charger l'étude {studyId ? `(${studyId.slice(0, 8)}…)` : ""}.
-        </p>
-        <button onClick={() => window.location.reload()} style={{ ...styles.button, marginTop: 12, background: ACCENT_PRO, color: "white" }}>
-          Réessayer
-        </button>
-      </div>
-    );
+    return (<div style={{ ...styles.container, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 300 }}><AlertTriangle size={40} color="#f59e0b" /><p style={{ color: "#64748b", marginTop: 16, fontSize: 14 }}>Impossible de charger l'étude {studyId ? `(${studyId.slice(0, 8)}…)` : ""}.</p><button onClick={() => window.location.reload()} style={{ ...styles.button, marginTop: 12, background: ACCENT_PRO, color: "white" }}>Réessayer</button></div>);
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -1051,7 +1010,7 @@ export function FoncierPluPage() {
         )}
       </div>
 
-      {/* Projet actif ou formulaire */}
+      {/* Projet actif */}
       {hasProject ? (
         <div style={{ ...styles.card, marginBottom: 20, padding: "12px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1072,9 +1031,13 @@ export function FoncierPluPage() {
           {/* Colonne gauche */}
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             <div style={styles.card}>
+              {/* Header avec bouton capture */}
               <div style={styles.cardHeader}>
                 <h3 style={styles.cardTitle}><MapPin size={18} color={ACCENT_PRO} />Carte cadastrale</h3>
-                <span style={{ ...styles.badge, background: "#ede9fe", color: ACCENT_PRO }}>INSEE {projectInfo.communeInsee}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <CadastreCaptureButton studyId={studyId} />
+                  <span style={{ ...styles.badge, background: "#ede9fe", color: ACCENT_PRO }}>INSEE {projectInfo.communeInsee}</span>
+                </div>
               </div>
               <CadastreMap
                 communeInsee={projectInfo.communeInsee!}
@@ -1087,29 +1050,19 @@ export function FoncierPluPage() {
             </div>
             <PluInfoCard pluData={pluData} loading={pluLoading} />
             {projectInfo.communeInsee && (
-              <PluUploaderPanel
-                communeInsee={projectInfo.communeInsee}
-                communeNom={projectInfo.address}
-                targetZoneCode={pluData?.zone_code}
-                onPluParsed={handlePluParsed}
-              />
+              <PluUploaderPanel communeInsee={projectInfo.communeInsee} communeNom={projectInfo.address} targetZoneCode={pluData?.zone_code} onPluParsed={handlePluParsed} />
             )}
           </div>
 
           {/* Colonne droite */}
           <div>
             <ParcelsSidebar
-              selectedParcels={selectedParcels}
-              totalAreaM2={totalAreaM2}
-              onRemoveParcel={handleRemoveParcel}
-              onClearAll={handleClearAll}
+              selectedParcels={selectedParcels} totalAreaM2={totalAreaM2}
+              onRemoveParcel={handleRemoveParcel} onClearAll={handleClearAll}
               onValidateSelection={handleValidateSelection}
-              onAddManualParcel={handleAddManualParcel}
-              onUpdateParcelArea={handleUpdateParcelArea}
-              isValid={selectedParcels.length > 0}
-              validationMessage={validationMessage}
-              isValidated={isValidated}
-              isSaving={isSaving}
+              onAddManualParcel={handleAddManualParcel} onUpdateParcelArea={handleUpdateParcelArea}
+              isValid={selectedParcels.length > 0} validationMessage={validationMessage}
+              isValidated={isValidated} isSaving={isSaving}
             />
             <div style={{ ...styles.card, marginTop: 20 }}>
               <div style={styles.cardHeader}><h3 style={styles.cardTitle}><Navigation size={18} color="#10b981" />Étapes suivantes</h3></div>
@@ -1128,9 +1081,7 @@ export function FoncierPluPage() {
             <MapPin size={36} color={ACCENT_PRO} />
           </div>
           <h2 style={{ fontSize: 20, fontWeight: 700, color: "#0f172a", margin: "0 0 12px" }}>Commencez par localiser votre projet</h2>
-          <p style={{ fontSize: 14, color: "#64748b", margin: "0 0 24px", maxWidth: 400, marginLeft: "auto", marginRight: "auto" }}>
-            Entrez l'identifiant de la parcelle cadastrale ou recherchez par adresse.
-          </p>
+          <p style={{ fontSize: 14, color: "#64748b", margin: "0 0 24px", maxWidth: 400, marginLeft: "auto", marginRight: "auto" }}>Entrez l'identifiant de la parcelle cadastrale ou recherchez par adresse.</p>
         </div>
       )}
 

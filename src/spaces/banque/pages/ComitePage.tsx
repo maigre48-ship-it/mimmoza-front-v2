@@ -1,7 +1,7 @@
 // ============================================================================
 // ComitePage.tsx — /banque/comite/:id
 // src/spaces/banque/pages/ComitePage.tsx
-// ✅ v2: Cover page redesign — arcs concentriques teal (Financeur palette)
+// ✅ v4: Cover page — cibles monochromes teal profond
 // ============================================================================
 
 import { useState, useCallback, useMemo, type ReactNode } from "react";
@@ -15,7 +15,8 @@ import {
   type SmartScoreUniversalResult,
 } from "../scoring/banqueSmartScoreUniversal";
 import { normalizeSmartScoreUniversal } from "../scoring/normalizeSmartScoreUniversal";
-import { generateCommitteeNarrative } from "../services/banqueCommitteeNarrative.service";
+// ❌ IA désactivée — import supprimé
+// import { generateCommitteeNarrative } from "../services/banqueCommitteeNarrative.service";
 import {
   buildCommitteePresentation as buildEnginePresentation,
   buildDecisionScenarios as buildEngineScenarios,
@@ -554,12 +555,12 @@ function cleanReason(reason: string, maxLen = 60): string {
 // ════════════════════════════════════════════════════════════════════
 
 const PDF_COLORS = {
-  primary:      [38, 166, 154]  as [number, number, number], // #26a69a teal
-  primaryLight: [128, 203, 196] as [number, number, number], // #80cbc4
-  accent:       [26, 122, 80]   as [number, number, number], // #1a7a50 vert foncé
-  dark:         [10, 61, 40]    as [number, number, number], // #0a3d28
+  primary:      [38, 166, 154]  as [number, number, number],
+  primaryLight: [128, 203, 196] as [number, number, number],
+  accent:       [26, 122, 80]   as [number, number, number],
+  dark:         [10, 61, 40]    as [number, number, number],
   medium:       [107, 114, 128] as [number, number, number],
-  light:        [232, 251, 242] as [number, number, number], // #e8fbf2
+  light:        [232, 251, 242] as [number, number, number],
   white:        [255, 255, 255] as [number, number, number],
   green:        [22, 163, 74]   as [number, number, number],
   amber:        [217, 119, 6]   as [number, number, number],
@@ -797,351 +798,7 @@ function renderStructuredNarrativePdf(
 }
 
 // ════════════════════════════════════════════════════════════════════
-// ─── COVER — Arcs concentriques teal / vert (Financeur / Banque) ────
-// ════════════════════════════════════════════════════════════════════
-//
-// Remplace la bande verticale de l'ancienne cover par 7 arcs
-// concentriques rayonnant depuis le coin supérieur gauche (hors page).
-// Balayage 2°→88°, palette crystal→dark identique au Promoteur/Investisseur.
-
-// ── Helper : bande d'arc torique ──────────────────────────────────────
-function drawArcBand(
-  doc: any,
-  cx: number, cy: number,
-  r1: number, r2: number,
-  startDeg: number, endDeg: number,
-  color: [number, number, number],
-  steps = 70,
-): void {
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const pts: [number, number][] = [];
-  for (let i = 0; i <= steps; i++) {
-    const a = toRad(startDeg + (endDeg - startDeg) * (i / steps));
-    pts.push([cx + Math.cos(a) * r2, cy + Math.sin(a) * r2]);
-  }
-  for (let i = steps; i >= 0; i--) {
-    const a = toRad(startDeg + (endDeg - startDeg) * (i / steps));
-    pts.push([cx + Math.cos(a) * r1, cy + Math.sin(a) * r1]);
-  }
-  doc.setFillColor(color[0], color[1], color[2]);
-  doc.setDrawColor(color[0], color[1], color[2]);
-  doc.setLineWidth(0.1);
-  const [sx, sy] = pts[0];
-  const segs: [number, number][] = pts.slice(1).map((p, i) => [p[0] - pts[i][0], p[1] - pts[i][1]]);
-  doc.lines(segs, sx, sy, [1, 1], "FD", true);
-}
-
-// ── Page de garde Financeur ───────────────────────────────────────────
-function addComiteCover(
-  doc: any,
-  report: UniversalReport,
-  dossier: any,
-  pageWidth: number,
-  pageHeight: number,
-  margin: number,
-): void {
-  const CW = pageWidth - 2 * margin;
-  const GSTEPS = 70;
-
-  // Fond blanc
-  doc.setFillColor(255, 255, 255);
-  doc.rect(0, 0, pageWidth, pageHeight, "F");
-
-  // ── Arcs concentriques depuis coin haut-gauche (hors page) ────────
-  // Balayage 2°→88°, du bord supérieur vers le bord gauche
-  const ARC_CX = -4;
-  const ARC_CY = -4;
-  const A1 = 2;
-  const A2 = 88;
-
-  const arcBands: Array<{ r1: number; r2: number; col: [number, number, number] }> = [
-    { r1: 198, r2: 236, col: [224, 242, 241] },  // crystal  #e0f2f1
-    { r1: 162, r2: 198, col: [178, 223, 219] },  // ultra    #b2dfdb
-    { r1: 128, r2: 162, col: [128, 203, 196] },  // pale     #80cbc4
-    { r1:  98, r2: 128, col: [ 77, 182, 172] },  // light    #4db6ac
-    { r1:  70, r2:  98, col: [ 38, 166, 154] },  // med      #26a69a
-    { r1:  50, r2:  70, col: [ 26, 122,  80] },  // main     #1a7a50
-    { r1:  34, r2:  50, col: [ 10,  61,  40] },  // deep     #0a3d28
-  ];
-
-  for (const b of arcBands) {
-    drawArcBand(doc, ARC_CX, ARC_CY, b.r1, b.r2, A1, A2, b.col, 70);
-  }
-
-  // ── Bande en-tête dégradée teal ───────────────────────────────────
-  const HDR_H = 52;
-  const gradStart: [number, number, number] = [38, 166, 154];
-  const gradEnd: [number, number, number]   = [128, 203, 196];
-
-  for (let i = 0; i < GSTEPS; i++) {
-    const t = i / (GSTEPS - 1);
-    doc.setFillColor(
-      Math.round(gradStart[0] + t * (gradEnd[0] - gradStart[0])),
-      Math.round(gradStart[1] + t * (gradEnd[1] - gradStart[1])),
-      Math.round(gradStart[2] + t * (gradEnd[2] - gradStart[2])),
-    );
-    doc.rect(i * (pageWidth / GSTEPS), 0, pageWidth / GSTEPS + 0.5, HDR_H, "F");
-  }
-  // Trait sombre sous l'en-tête
-  doc.setFillColor(10, 61, 40);
-  doc.rect(0, HDR_H, pageWidth, 1.5, "F");
-
-  // Marque MIMMOZA
-  doc.setFontSize(22);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(255, 255, 255);
-  doc.text("MIMMOZA", margin, 20);
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(200, 235, 225);
-  doc.text("Intelligence immobiliere B2B", margin, 27.5);
-
-  // Badge type document
-  const docBadge = "RAPPORT COMITE DE CREDIT";
-  doc.setFontSize(7);
-  doc.setFont("helvetica", "bold");
-  const dbW = doc.getTextWidth(docBadge) + 16;
-  doc.setFillColor(255, 255, 255);
-  doc.roundedRect(pageWidth - margin - dbW, 13, dbW, 10, 5, 5, "F");
-  doc.setTextColor(10, 61, 40);
-  doc.text(docBadge, pageWidth - margin - dbW / 2, 19.5, { align: "center" });
-
-  // Date + référence
-  const genDate = new Date(report.generatedAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
-  const genTime = new Date(report.generatedAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-  doc.setFontSize(7.5);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(200, 235, 225);
-  doc.text(genDate, margin, 37);
-  doc.setFontSize(6.5);
-  doc.setTextColor(170, 215, 205);
-  doc.text(`Ref. ${report.meta.dossierRef}  —  ${genTime}`, margin, 44);
-
-  // ── Titre du dossier ──────────────────────────────────────────────
-  const TITLE_Y = HDR_H + 14;
-  const TITLE_H = 34;
-  doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(192, 232, 212);
-  doc.setLineWidth(0.4);
-  doc.roundedRect(margin, TITLE_Y, CW, TITLE_H, 3, 3, "FD");
-  doc.setFillColor(38, 166, 154);
-  doc.roundedRect(margin, TITLE_Y, 3.5, TITLE_H, 1.5, 1.5, "F");
-
-  const titleLines = doc.splitTextToSize(report.meta.dossierLabel, CW - 18) as string[];
-  doc.setFontSize(15);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(10, 61, 40);
-  doc.text(titleLines.slice(0, 2), margin + 10, TITLE_Y + 12);
-
-  const adresse = report.projet["Adresse"] ?? "";
-  if (adresse) {
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(107, 114, 128);
-    doc.text(adresse, margin + 10, TITLE_Y + TITLE_H - 5);
-  }
-
-  // ── SmartScore + Grade + Profil — 3 cards ─────────────────────────
-  const SCORE_Y = TITLE_Y + TITLE_H + 10;
-  const COL3 = (CW - 8) / 3;
-  const ss = report.smartscore;
-
-  // Card SmartScore /100
-  doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(192, 232, 212);
-  doc.setLineWidth(0.3);
-  doc.roundedRect(margin, SCORE_Y, COL3, 30, 3, 3, "FD");
-  doc.setFillColor(38, 166, 154);
-  doc.roundedRect(margin, SCORE_Y, 3, 30, 1.5, 1.5, "F");
-
-  doc.setFontSize(6.5);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(107, 114, 128);
-  doc.text("SMARTSCORE", margin + 8, SCORE_Y + 7);
-
-  const score = ss?.score ?? null;
-  const scoreColor: [number, number, number] =
-    score === null ? [107, 114, 128]
-    : score >= 65  ? [22, 163, 74]
-    : score >= 40  ? [217, 119, 6]
-                   : [220, 38, 38];
-
-  doc.setFontSize(26);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(...scoreColor);
-  const scoreStr = score !== null ? String(score) : "N/A";
-  doc.text(scoreStr, margin + 8, SCORE_Y + 22);
-  if (score !== null) {
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(107, 114, 128);
-    doc.text("/100", margin + 8 + doc.getTextWidth(scoreStr), SCORE_Y + 22);
-  }
-
-  // Barre de score
-  const BAR_X = margin + 8;
-  const BAR_W = COL3 - 16;
-  const BAR_Y = SCORE_Y + 25;
-  doc.setFillColor(232, 251, 242);
-  doc.roundedRect(BAR_X, BAR_Y, BAR_W, 2.5, 1, 1, "F");
-  if (score !== null) {
-    const fillW = Math.max(2, (score / 100) * BAR_W);
-    doc.setFillColor(...scoreColor);
-    doc.roundedRect(BAR_X, BAR_Y, fillW, 2.5, 1, 1, "F");
-  }
-
-  // Card Grade
-  const gradeX = margin + COL3 + 4;
-  const grade = ss?.grade ?? "-";
-  const gradeColor: [number, number, number] =
-    grade === "A" || grade === "A+" || grade === "B" ? [22, 163, 74]
-    : grade === "C" ? [16, 185, 129]
-    : grade === "D" || grade === "D+" ? [217, 119, 6]
-    : [220, 38, 38];
-  doc.setFillColor(...gradeColor);
-  doc.roundedRect(gradeX, SCORE_Y, COL3, 30, 3, 3, "F");
-  doc.setFontSize(6.5);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(255, 255, 255);
-  doc.text("GRADE", gradeX + COL3 / 2, SCORE_Y + 7, { align: "center" });
-  doc.setFontSize(26);
-  doc.text(grade, gradeX + COL3 / 2, SCORE_Y + 22, { align: "center" });
-
-  // Card Profil / verdict
-  const profX = margin + (COL3 + 4) * 2;
-  doc.setFillColor(10, 61, 40);
-  doc.roundedRect(profX, SCORE_Y, COL3, 30, 3, 3, "F");
-  doc.setFontSize(6.5);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(255, 255, 255);
-  doc.text("PROFIL", profX + COL3 / 2, SCORE_Y + 7, { align: "center" });
-  doc.setFontSize(9);
-  doc.text(sanitize(report.profile).toUpperCase(), profX + COL3 / 2, SCORE_Y + 18, { align: "center" });
-  if (ss?.verdict) {
-    doc.setFontSize(6);
-    doc.setFont("helvetica", "normal");
-    const vLines: string[] = doc.splitTextToSize(sanitize(ss.verdict), COL3 - 6);
-    doc.text(vLines[0] ?? "", profX + COL3 / 2, SCORE_Y + 26, { align: "center" });
-  }
-
-  // ── KPIs principaux ───────────────────────────────────────────────
-  const KPI_Y = SCORE_Y + 40;
-  const covDscr = kpiNum(report.kpis["DSCR"]);
-  const covLtv  = kpiNum(report.kpis["LTV"]);
-  const covLoyerAnnuel = parseMoneyK(report.revenus["Loyer annuel"]);
-  const covCoutTotal   = parseMoneyK(report.budget["TOTAL"]);
-  const covRendement   = (covLoyerAnnuel && covCoutTotal && covCoutTotal > 0) ? (covLoyerAnnuel / covCoutTotal) * 100 : null;
-
-  const kpiCards: { label: string; value: string; color: [number, number, number] }[] = [
-    { label: "DSCR", value: covDscr != null ? covDscr.toFixed(2) : "N/A", color: covDscr != null ? (covDscr >= 1.2 ? [22, 163, 74] : covDscr >= 1.0 ? [217, 119, 6] : [220, 38, 38]) : [107, 114, 128] },
-    { label: "LTV", value: covLtv != null ? `${covLtv}%` : "N/A", color: covLtv != null ? (covLtv <= 60 ? [22, 163, 74] : covLtv <= 80 ? [217, 119, 6] : [220, 38, 38]) : [107, 114, 128] },
-    { label: "Rendement brut", value: covRendement != null ? `${covRendement.toFixed(1)}%` : "N/A", color: covRendement != null ? (covRendement >= 7 ? [22, 163, 74] : covRendement >= 4 ? [217, 119, 6] : [220, 38, 38]) : [107, 114, 128] },
-  ];
-
-  const IW = (CW - 8) / 3;
-  kpiCards.forEach((kpi, i) => {
-    const ix = margin + i * (IW + 4);
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(192, 232, 212);
-    doc.setLineWidth(0.25);
-    doc.roundedRect(ix, KPI_Y, IW, 18, 2, 2, "FD");
-    doc.setFontSize(6.5);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(107, 114, 128);
-    doc.text(kpi.label, ix + IW / 2, KPI_Y + 6, { align: "center" });
-    doc.setFontSize(13);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...kpi.color);
-    doc.text(kpi.value, ix + IW / 2, KPI_Y + 14, { align: "center" });
-  });
-
-  // ── Pilliers SmartScore (barres) ───────────────────────────────────
-  const PILLARS_Y = KPI_Y + 28;
-  const pillars = ss?.pillars ?? [];
-
-  if (pillars.length > 0) {
-    const visiblePillars = pillars.slice(0, 5);
-    const pw = CW / visiblePillars.length;
-
-    doc.setFontSize(6);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(10, 61, 40);
-    doc.text("PILIERS D'EVALUATION", margin, PILLARS_Y - 3);
-
-    visiblePillars.forEach((p: any, i: number) => {
-      const px = margin + i * pw;
-      const pct = p.maxPoints > 0 ? Math.round((p.points / p.maxPoints) * 100) : 0;
-      const pColor: [number, number, number] = pct >= 70 ? [22, 163, 74] : pct >= 40 ? [38, 166, 154] : [217, 119, 6];
-
-      // Barre fond
-      doc.setFillColor(232, 251, 242);
-      doc.roundedRect(px + 2, PILLARS_Y, pw - 4, 3, 1, 1, "F");
-      // Barre fill
-      const fillPW = Math.max(2, ((pw - 4) * pct) / 100);
-      doc.setFillColor(...pColor);
-      doc.roundedRect(px + 2, PILLARS_Y, fillPW, 3, 1, 1, "F");
-
-      // Label
-      doc.setFontSize(5.5);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(107, 114, 128);
-      const pLabel = sanitize(p.label ?? "").length > 12 ? sanitize(p.label ?? "").slice(0, 11) + "." : sanitize(p.label ?? "");
-      doc.text(pLabel, px + pw / 2, PILLARS_Y + 7, { align: "center" });
-
-      // Score
-      doc.setFontSize(6.5);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...pColor);
-      doc.text(p.hasData ? `${p.points}/${p.maxPoints}` : "N/A", px + pw / 2, PILLARS_Y + 12, { align: "center" });
-    });
-  }
-
-  // ── Données manquantes (max 3 bloquantes) ─────────────────────────
-  const MISSING_Y = pillars.length > 0 ? PILLARS_Y + 22 : KPI_Y + 28;
-  const blockers = (report.missing ?? []).filter((m: any) => m.severity === "blocker").slice(0, 3);
-
-  if (blockers.length > 0) {
-    const alertH = blockers.length * 7 + 12;
-    doc.setFillColor(254, 252, 232);
-    doc.setDrawColor(217, 119, 6);
-    doc.setLineWidth(0.3);
-    doc.roundedRect(margin, MISSING_Y, CW, alertH, 3, 3, "FD");
-
-    doc.setFontSize(7.5);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(120, 60, 0);
-    doc.text(`Donnees manquantes bloquantes (${blockers.length})`, margin + 6, MISSING_Y + 7);
-
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(51, 65, 85);
-    blockers.forEach((b: any, i: number) => {
-      doc.setFillColor(217, 119, 6);
-      doc.circle(margin + 8, MISSING_Y + 12.5 + i * 7, 0.9, "F");
-      const ls = doc.splitTextToSize(sanitize(b.label), CW - 18) as string[];
-      doc.text(ls[0] ?? "", margin + 12, MISSING_Y + 13 + i * 7);
-    });
-  }
-
-  // ── Pied de page dégradé ──────────────────────────────────────────
-  const FOOTER_Y = pageHeight - 8;
-  for (let i = 0; i < GSTEPS; i++) {
-    const t = i / (GSTEPS - 1);
-    doc.setFillColor(
-      Math.round(gradStart[0] + t * (gradEnd[0] - gradStart[0])),
-      Math.round(gradStart[1] + t * (gradEnd[1] - gradStart[1])),
-      Math.round(gradStart[2] + t * (gradEnd[2] - gradStart[2])),
-    );
-    doc.rect(i * (pageWidth / GSTEPS), FOOTER_Y, pageWidth / GSTEPS + 0.5, 8, "F");
-  }
-  doc.setFontSize(6.5);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(255, 255, 255);
-  doc.text("Confidentiel — Usage interne exclusif", margin, pageHeight - 2.5);
-  doc.text("www.mimmoza.fr", pageWidth - margin, pageHeight - 2.5, { align: "right" });
-}
-
-// ════════════════════════════════════════════════════════════════════
-// PDF-ONLY: LOCAL FALLBACKS (unchanged from original)
+// PDF-ONLY: LOCAL FALLBACKS
 // ════════════════════════════════════════════════════════════════════
 
 interface CommitteePresentationBullets { label: string; items: string[]; }
@@ -1329,7 +986,197 @@ function buildDecisionScenarios(report: UniversalReport): DecisionScenarios {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// PDF EXPORT — cover remplacée par arcs concentriques teal
+// ─── COVER — Cibles monochromes teal profond ────────────────────────
+// ════════════════════════════════════════════════════════════════════
+
+async function addComiteCover(
+  doc: any,
+  report: UniversalReport,
+  _dossier: any,
+  pageWidth: number,
+  pageHeight: number,
+  margin: number,
+): Promise<void> {
+  // ── Palette ───────────────────────────────────────────────────────
+  const BG:         [number, number, number] = [0,   86,  94 ]; // #00565e fond principal
+  const CYAN:       [number, number, number] = [0,  229, 255 ]; // #00e5ff accent cyan vif
+  const C1:         [number, number, number] = [0,   77,  90 ]; // #004d5a cercle ext.
+  const C2:         [number, number, number] = [0,   96, 100 ]; // #006064
+  const C3:         [number, number, number] = [0,  131, 143 ]; // #00838f
+  const C4:         [number, number, number] = [0,  172, 193 ]; // #00acc1 cercle int.
+  const WHITE:      [number, number, number] = [255, 255, 255];
+  const PALE:       [number, number, number] = [224, 247, 250]; // #e0f7fa badge bg
+  const GRAY:       [number, number, number] = [96,  120, 128]; // texte gris
+  const MUTED_W:    [number, number, number] = [180, 210, 216]; // blanc atténué
+  const VERY_MUTED: [number, number, number] = [155, 180, 188]; // très atténué
+
+  const ss    = report.smartscore;
+  const score = ss?.score ?? null;
+  const grade = ss?.grade ?? null;
+
+  const scoreColor: [number, number, number] =
+    score === null ? GRAY
+    : score >= 65  ? [22, 163, 74]
+    : score >= 40  ? [230, 126, 34]
+                   : [220, 38,  38];
+
+  const gradeColor: [number, number, number] =
+    grade === null                                       ? GRAY
+    : (grade === "A" || grade === "A+" || grade === "B") ? [22, 163, 74]
+    : grade === "C"                                      ? [16, 185, 129]
+    : (grade === "D" || grade === "D+")                  ? [230, 126, 34]
+                                                         : [220, 38,  38];
+
+  // ── Fond principal ────────────────────────────────────────────────
+  doc.setFillColor(...BG);
+  doc.rect(0, 0, pageWidth, pageHeight, "F");
+
+  // ── Cercles concentriques — cibles haut-droite ────────────────────
+  const cx = pageWidth  * 0.914; // ≈ 192mm
+  const cy = pageHeight * 0.242; // ≈ 72mm
+  doc.setFillColor(...C1); doc.circle(cx, cy, 88, "F");
+  doc.setFillColor(...C2); doc.circle(cx, cy, 62, "F");
+  doc.setFillColor(...C3); doc.circle(cx, cy, 38, "F");
+  doc.setFillColor(...C4); doc.circle(cx, cy, 18, "F");
+
+  // ── Barre verticale gauche ────────────────────────────────────────
+  doc.setFillColor(...CYAN);
+  doc.rect(0, 0, 6, pageHeight, "F");
+
+  // ── Marque MIMMOZA (discret, haut) ───────────────────────────────
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(80, 140, 150);
+  doc.text("MIMMOZA", margin, 13);
+
+  // ── Badge type document ──────────────────────────────────────────
+  doc.setFillColor(...C1);
+  doc.roundedRect(margin, 19, 66, 9, 2, 2, "F");
+  doc.setFontSize(5.5);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...CYAN);
+  doc.text("COMITE DE CREDIT", margin + 3, 25.5);
+
+  // ── Grand titre RAPPORT — une seule ligne (64pt) ──────────────────
+  doc.setFontSize(64);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...WHITE);
+  doc.text("RAPPORT", margin, 126);
+
+  // ── Sous-titre COMITÉ lettres espacées ───────────────────────────
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...CYAN);
+  doc.text("C  O  M  I  T  E", margin, 140);
+
+  // ── Séparateur ───────────────────────────────────────────────────
+  doc.setFillColor(...C4);
+  doc.rect(margin, 146, 80, 0.7, "F");
+
+  // ── Infos dossier ─────────────────────────────────────────────────
+  const dossierLabel = sanitize(report.meta.dossierLabel || "Dossier");
+  const adresse      = sanitize(report.projet["Adresse"] || "");
+  const dossierRef   = sanitize(report.meta.dossierRef || "-");
+  const genDate      = new Date(report.generatedAt).toLocaleDateString("fr-FR", {
+    day: "2-digit", month: "long", year: "numeric",
+  });
+
+  doc.setFontSize(6);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...MUTED_W);
+  doc.text("Dossier", margin, 157);
+
+  const labelLines = doc.splitTextToSize(dossierLabel, pageWidth * 0.56) as string[];
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...WHITE);
+  doc.text(labelLines.slice(0, 2), margin, 166);
+
+  if (adresse) {
+    const addrY = 166 + labelLines.slice(0, 2).length * 7;
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...MUTED_W);
+    doc.text(sanitize(adresse), margin, addrY);
+  }
+
+  // ── Emprunteur ───────────────────────────────────────────────────
+  const empIdentite = sanitize(report.emprunteur?.identite || "");
+  if (empIdentite && empIdentite !== "Non renseigne") {
+    doc.setFontSize(6);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...VERY_MUTED);
+    doc.text("Emprunteur", margin, 200);
+    doc.setFontSize(8.5);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(210, 232, 236);
+    doc.text(empIdentite, margin, 209);
+  }
+
+  // ── Bloc blanc bas ────────────────────────────────────────────────
+  const WY = 240;
+  doc.setFillColor(...WHITE);
+  doc.rect(0, WY, pageWidth, pageHeight - WY, "F");
+  doc.setFillColor(...CYAN);
+  doc.rect(0, WY, 6, pageHeight - WY, "F");
+
+  // Ref + date
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...GRAY);
+  doc.text("Ref. " + dossierRef, margin, 253);
+  doc.text(genDate, margin, 262);
+
+  // ── Badge SmartScore ──────────────────────────────────────────────
+  // Nombre (13pt) + /100 (6.5pt) bien séparés, sans chevauchement
+  doc.setFillColor(...PALE);
+  doc.roundedRect(118, 245, 38, 24, 3, 3, "F");
+  doc.setFontSize(5);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...GRAY);
+  doc.text("SMARTSCORE", 137, 252, { align: "center" });
+  if (score !== null) {
+    doc.setFontSize(13);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...scoreColor);
+    doc.text(String(score), 127, 263);
+    doc.setFontSize(6.5);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...GRAY);
+    doc.text("/100", 136, 263);
+  } else {
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...GRAY);
+    doc.text("N/A", 137, 263, { align: "center" });
+  }
+
+  // ── Badge Grade — même taille (13pt) que le score ─────────────────
+  doc.setFillColor(...PALE);
+  doc.roundedRect(162, 245, 30, 24, 3, 3, "F");
+  doc.setFontSize(5);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...GRAY);
+  doc.text("GRADE", 177, 252, { align: "center" });
+  doc.setFontSize(13);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...gradeColor);
+  doc.text(grade ?? "-", 177, 263, { align: "center" });
+
+  // ── Pied MIMMOZA + confidentiel ───────────────────────────────────
+  doc.setFontSize(6.5);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...BG);
+  doc.text("MIMMOZA", margin, 278);
+  doc.setFontSize(5.5);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...VERY_MUTED);
+  doc.text("Intelligence immobiliere B2B", margin, 285);
+  doc.text("Confidentiel — Usage interne exclusif", pageWidth - margin, 285, { align: "right" });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// PDF EXPORT
 // ════════════════════════════════════════════════════════════════════
 
 async function exportReportPdf(report: UniversalReport, dossier: any, narrative?: CommitteeNarrative | null): Promise<void> {
@@ -1350,7 +1197,6 @@ async function exportReportPdf(report: UniversalReport, dossier: any, narrative?
   const dossierRef = sanitize(report.meta.dossierRef);
   const dossierLabel = sanitize(report.meta.dossierLabel);
   const generatedDate = new Date(report.generatedAt).toLocaleDateString("fr-FR");
-  const generatedDateTime = new Date(report.generatedAt).toLocaleString("fr-FR");
   const headerY = 12; const footerY = pageHeight - 8;
   const contentTop = 22; const contentBottom = pageHeight - 15;
 
@@ -1393,11 +1239,9 @@ async function exportReportPdf(report: UniversalReport, dossier: any, narrative?
     theme: "striped" as const,
   };
 
-  // ══════════════════════════════════════════════════════════════════
-  // ── COVER PAGE — arcs concentriques teal ──────────────────────────
-  // ══════════════════════════════════════════════════════════════════
+  // ── COVER PAGE ────────────────────────────────────────────────────
   newContentPage(true);
-  addComiteCover(doc, report, dossier, pageWidth, pageHeight, margin);
+  await addComiteCover(doc, report, dossier, pageWidth, pageHeight, margin);
 
   // ── BUILD ENGINE INPUT ────────────────────────────────────────────
   const msC = report.marketStudy;
@@ -1442,9 +1286,11 @@ async function exportReportPdf(report: UniversalReport, dossier: any, narrative?
       return cy + 10;
     }
     function drawPill(px: number, py: number, label: string, color: [number,number,number]) {
+      // ⚠️ setFontSize AVANT getTextWidth pour mesurer à la bonne taille
+      doc.setFontSize(7); doc.setFont("helvetica", "bold");
       const pillW = doc.getTextWidth(label) + 6; const pillH = 5.5;
       doc.setFillColor(...color); doc.roundedRect(px, py - 4, pillW, pillH, 2.5, 2.5, "F");
-      doc.setFontSize(7); doc.setFont("helvetica", "bold"); doc.setTextColor(255, 255, 255);
+      doc.setTextColor(255, 255, 255);
       doc.text(label, px + 3, py - 0.5); return pillW;
     }
     function naText(cx: number, iy: number) {
@@ -1758,24 +1604,9 @@ export default function ComitePage() {
       setReport(rpt);
       upsertDossier({ id: dossierId, comite: { ...((dossier as any)?.comite ?? {}), report: rpt } } as any);
       addEvent({ type: "rapport_generated", dossierId, message: `Rapport comite genere - Score: ${sr.score}/100 (${sr.grade})` });
-      setNarrativeLoading(true);
-      try {
-        const reportHash = await computeReportSourceHash(rpt);
-        const existingHash = (dossier as any)?.comite?.narrative?.sourceHash;
-        const existingNarrative = (dossier as any)?.comite?.narrative;
-        const shouldUseCache = !forceNarrative && existingHash && existingHash === reportHash && isNarrativeValid(existingNarrative);
-        if (shouldUseCache) { setLocalNarrative(existingNarrative as CommitteeNarrative); }
-        else {
-          const narrativeResult = await generateCommitteeNarrative(rpt);
-          if (narrativeResult.ok && narrativeResult.narrative && narrativeResult.narrative.trim().length > 0) {
-            const narrative: CommitteeNarrative = { text: narrativeResult.narrative, structured: (narrativeResult as any).narrativeStructured ?? null, sourcesUsed: narrativeResult.sourcesUsed ?? [], warnings: narrativeResult.warnings, model: narrativeResult.model ?? "unknown", promptVersion: narrativeResult.promptVersion ?? "unknown", sourceHash: narrativeResult.sourceHash ?? "", generatedAt: narrativeResult.generatedAt ?? new Date().toISOString() };
-            setLocalNarrative(narrative); setNarrativeError(null);
-            upsertDossier({ id: dossierId, comite: { ...((dossier as any)?.comite ?? {}), report: rpt, narrative } } as any);
-            addEvent({ type: "narrative_generated", dossierId, message: `Note comite generee (model: ${narrative.model})` });
-          } else { setNarrativeError(narrativeResult.error ? `Erreur: ${narrativeResult.error}` : "Note vide."); }
-        }
-      } catch (narrativeErr) { setNarrativeError(`Erreur narrative: ${narrativeErr instanceof Error ? narrativeErr.message : String(narrativeErr)}`); }
-      finally { setNarrativeLoading(false); }
+      // ❌ IA désactivée — plus d'appel à generateCommitteeNarrative
+      setNarrativeLoading(false);
+      setLocalNarrative(null);
     } catch (err) { setGenError(err instanceof Error ? err.message : "Erreur inconnue"); }
     finally { setIsGenerating(false); }
   }, [dossier, operation, dossierId]);
@@ -1786,16 +1617,8 @@ export default function ComitePage() {
     try {
       const freshMarketStudy = operation ? extractMarketStudy(operation) : activeReport.marketStudy;
       const safeReportForPdf: UniversalReport = { ...activeReport, marketStudy: freshMarketStudy };
-      let bestNarrative: CommitteeNarrative | null = localNarrative ?? persistedNarrative ?? ((dossier as any)?.comite?.narrative as CommitteeNarrative | undefined) ?? null;
-      if (!isNarrativeValid(bestNarrative)) {
-        try {
-          const res = await generateCommitteeNarrative(safeReportForPdf);
-          if (res.ok && typeof res.narrative === "string" && res.narrative.trim().length > 0) {
-            bestNarrative = { text: res.narrative, structured: (res as any).narrativeStructured ?? null, sourcesUsed: res.sourcesUsed ?? [], warnings: res.warnings, model: res.model ?? "unknown", promptVersion: res.promptVersion ?? "unknown", sourceHash: res.sourceHash ?? "", generatedAt: res.generatedAt ?? new Date().toISOString() };
-            setLocalNarrative(bestNarrative); setNarrativeError(null);
-          } else { setNarrativeError(res.error ? `Erreur: ${res.error}` : "Note vide."); }
-        } catch (narrativeErr) { setNarrativeError(`Erreur narrative: ${narrativeErr instanceof Error ? narrativeErr.message : String(narrativeErr)}`); }
-      }
+      // ❌ IA désactivée — pas d'appel à generateCommitteeNarrative
+      const bestNarrative: CommitteeNarrative | null = null;
       await exportReportPdf(safeReportForPdf, { ...(dossier as any), comite: { ...((dossier as any)?.comite ?? {}), narrative: bestNarrative } }, bestNarrative);
     } catch (err) { alert(`Erreur export PDF: ${err instanceof Error ? err.message : String(err)}`); }
     finally { setIsExporting(false); }

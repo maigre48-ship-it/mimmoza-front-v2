@@ -1,214 +1,473 @@
 // src/spaces/promoteur/plan2d/pluEnvelope.geometry.ts
-// Moteur de calcul de l'enveloppe constructible PLU.
 //
-// Algorithme :
-//   Pour chaque arête de la parcelle :
-//     1. Classer : avant / arrière / latéral (selon façade terrain choisie)
-//     2. Calculer le recul correspondant
-//     3. Décaler l'arête vers l'intérieur de `recul` mètres
-//     4. Clipper le polygone courant contre cette arête décalée
-//   → Le résultat est le polygone constructible
+// Géométrie de l'enveloppe constructible — retraits PLU différenciés.
+// Repère : parcelleLocal (Y-down, mètres).
+//
+// Exports publics :
+//   computeBuildableEnvelope      retraits front / side / rear par arête
+//   polygonAreaM2                 aire fiable d'un polygone en m²
+//   nearestParcelEdge             arête de parcelle la plus proche
+//   pointInPolygon                test d'inclusion (ray casting)
+//   isRectPartiallyInsidePolygon  compat backward
 
-import type { Point2D } from './editor2d.types';
-import type { SetbackRules, EdgeRole } from './pluEnvelope.types';
+import type { Point2D, OrientedRect } from './editor2d.types';
+import { rectCorners } from './editor2d.geometry';
 
-// ─── UTILITAIRES GÉOMÉTRIQUES ─────────────────────────────────────────
+// ─── Types ─────────────────────────────────────────────────────────────────
 
-/** Distance d'un point à un segment. */
-export function pointToSegmentDist(p: Point2D, a: Point2D, b: Point2D): number {
-  const dx = b.x-a.x, dy = b.y-a.y, len2 = dx*dx+dy*dy;
-  if (len2 < 1e-10) return Math.sqrt((p.x-a.x)**2 + (p.y-a.y)**2);
-  const t = Math.max(0, Math.min(1, ((p.x-a.x)*dx+(p.y-a.y)*dy)/len2));
-  return Math.sqrt((p.x-a.x-t*dx)**2 + (p.y-a.y-t*dy)**2);
+export interface SetbackRules {
+  frontM: number;
+  sideM: number;
+  rearM: number;
 }
 
-/** Point dans polygone — ray casting. */
+// ─── Primitives ────────────────────────────────────────────────────────────
+
+export function polygonAreaM2(poly: Point2D[]): number {
+  if (poly.length < 3) return 0;
+
+  let area = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const j = (i + 1) % poly.length;
+    area += poly[i].x * poly[j].y - poly[j].x * poly[i].y;
+  }
+
+  return Math.abs(area) / 2;
+}
+
+/** Test d'inclusion point-dans-polygone. */
 export function pointInPolygon(p: Point2D, poly: Point2D[]): boolean {
   let inside = false;
-  const n = poly.length;
-  for (let i=0, j=n-1; i<n; j=i++) {
-    const pi=poly[i], pj=poly[j];
-    if ((pi.y>p.y)!==(pj.y>p.y) && p.x<(pj.x-pi.x)*(p.y-pi.y)/(pj.y-pi.y)+pi.x)
-      inside = !inside;
+
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x;
+    const yi = poly[i].y;
+    const xj = poly[j].x;
+    const yj = poly[j].y;
+
+    const intersects =
+      yi > p.y !== yj > p.y &&
+      p.x < ((xj - xi) * (p.y - yi)) / ((yj - yi) || 1e-12) + xi;
+
+    if (intersects) inside = !inside;
   }
+
   return inside;
 }
 
-/** Centroïde d'un polygone. */
+/** Distance d'un point à un segment. */
+function ptSegDist(p: Point2D, a: Point2D, b: Point2D): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+
+  if (len2 < 1e-12) return Math.hypot(p.x - a.x, p.y - a.y);
+
+  const t = Math.max(
+    0,
+    Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2),
+  );
+
+  return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
+}
+
+// ─── Simplification Douglas-Peucker ───────────────────────────────────────
+
+function perpDist(p: Point2D, a: Point2D, b: Point2D): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+
+  if (len < 1e-9) return Math.hypot(p.x - a.x, p.y - a.y);
+
+  return Math.abs(dy * p.x - dx * p.y + b.x * a.y - b.y * a.x) / len;
+}
+
+function dpRecurse(
+  pts: Point2D[],
+  eps: number,
+  s: number,
+  e: number,
+  keep: boolean[],
+): void {
+  if (e <= s + 1) return;
+
+  let maxD = 0;
+  let maxI = s;
+
+  for (let i = s + 1; i < e; i++) {
+    const d = perpDist(pts[i], pts[s], pts[e]);
+    if (d > maxD) {
+      maxD = d;
+      maxI = i;
+    }
+  }
+
+  if (maxD > eps) {
+    keep[maxI] = true;
+    dpRecurse(pts, eps, s, maxI, keep);
+    dpRecurse(pts, eps, maxI, e, keep);
+  }
+}
+
+function simplifyPolygon(poly: Point2D[], epsilon: number): Point2D[] {
+  const n = poly.length;
+  if (n <= 5) return poly;
+
+  const pts = [...poly, poly[0]];
+  const keep = new Array(pts.length).fill(false);
+
+  keep[0] = true;
+  keep[pts.length - 1] = true;
+
+  dpRecurse(pts, epsilon, 0, pts.length - 1, keep);
+
+  const result = pts.filter((_, i) => keep[i]);
+  result.pop();
+
+  return result.length >= 4 ? result : poly;
+}
+
+function remapFrontEdge(orig: Point2D[], idx: number, simp: Point2D[]): number {
+  const a = orig[idx];
+  const b = orig[(idx + 1) % orig.length];
+
+  const mid: Point2D = {
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2,
+  };
+
+  let minD = Infinity;
+  let best = 0;
+
+  for (let i = 0; i < simp.length; i++) {
+    const d = ptSegDist(mid, simp[i], simp[(i + 1) % simp.length]);
+    if (d < minD) {
+      minD = d;
+      best = i;
+    }
+  }
+
+  return best;
+}
+
+// ─── Arête la plus proche ──────────────────────────────────────────────────
+
+export function nearestParcelEdge(
+  p: Point2D,
+  poly: Point2D[],
+  thresholdWorld: number,
+): number | null {
+  let minDist = Infinity;
+  let nearest: number | null = null;
+
+  for (let i = 0; i < poly.length; i++) {
+    const d = ptSegDist(p, poly[i], poly[(i + 1) % poly.length]);
+    if (d < minDist && d < thresholdWorld) {
+      minDist = d;
+      nearest = i;
+    }
+  }
+
+  return nearest;
+}
+
+// ─── Normales / classification ─────────────────────────────────────────────
+
 function centroid(poly: Point2D[]): Point2D {
   return {
-    x: poly.reduce((s,p)=>s+p.x,0)/poly.length,
-    y: poly.reduce((s,p)=>s+p.y,0)/poly.length,
+    x: poly.reduce((s, p) => s + p.x, 0) / poly.length,
+    y: poly.reduce((s, p) => s + p.y, 0) / poly.length,
   };
 }
 
-/**
- * Normale entrante d'une arête (pointe vers l'intérieur du polygone).
- * Robuste quelle que soit l'orientation du polygone (CW ou CCW).
- */
-function inwardNormal(
-  p1: Point2D, p2: Point2D, polyCenter: Point2D,
-): { x:number; y:number } {
-  const dx=p2.x-p1.x, dy=p2.y-p1.y, len=Math.sqrt(dx*dx+dy*dy);
-  if (len<1e-10) return {x:0,y:0};
-  const n1={x:-dy/len, y:dx/len}, n2={x:dy/len, y:-dx/len};
-  const mx=(p1.x+p2.x)/2, my=(p1.y+p2.y)/2;
-  const dot=n1.x*(polyCenter.x-mx)+n1.y*(polyCenter.y-my);
-  return dot>0 ? n1 : n2;
+function inwardNormal(poly: Point2D[], i: number, c: Point2D): Point2D {
+  const n = poly.length;
+  const a = poly[i];
+  const b = poly[(i + 1) % n];
+
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+
+  if (len < 1e-9) return { x: 0, y: 0 };
+
+  const n1: Point2D = { x: -dy / len, y: dx / len };
+  const n2: Point2D = { x: dy / len, y: -dx / len };
+
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+
+  const d1 = (mx + n1.x - c.x) ** 2 + (my + n1.y - c.y) ** 2;
+  const d2 = (mx + n2.x - c.x) ** 2 + (my + n2.y - c.y) ** 2;
+
+  return d1 < d2 ? n1 : n2;
 }
 
-// ─── CLASSIFICATION DES ARÊTES ────────────────────────────────────────
+function outwardNormal(poly: Point2D[], i: number, c: Point2D): Point2D {
+  const inward = inwardNormal(poly, i, c);
+  return { x: -inward.x, y: -inward.y };
+}
 
-/**
- * Classe chaque arête comme 'front' / 'rear' / 'side'.
- *
- * Logique :
- *   - front = arête d'index `frontIdx` (façade terrain choisie)
- *   - rear  = arête dont la normale sortante est la plus opposée à celle du front
- *   - side  = toutes les autres arêtes
- */
-export function classifyParcelEdges(poly: Point2D[], frontIdx: number): EdgeRole[] {
+type EdgeClass = 'front' | 'rear' | 'side';
+
+function classifyEdges(poly: Point2D[], frontIdx: number): EdgeClass[] {
   const n = poly.length;
   const c = centroid(poly);
+  const frontNorm = outwardNormal(poly, frontIdx, c);
 
-  const fp1=poly[frontIdx], fp2=poly[(frontIdx+1)%n];
-  const frontIn  = inwardNormal(fp1, fp2, c);
-  const frontOut = { x:-frontIn.x, y:-frontIn.y };
+  let minDot = Infinity;
+  let rearIdx = (frontIdx + Math.floor(n / 2)) % n;
 
-  // Trouver l'arête arrière (normale sortante la plus anti-parallèle au front)
-  let rearIdx=-1, minDot=Infinity;
-  for (let i=0; i<n; i++) {
-    if (i===frontIdx) continue;
-    const p1=poly[i], p2=poly[(i+1)%n];
-    const inn=inwardNormal(p1,p2,c);
-    const out={x:-inn.x,y:-inn.y};
-    const dot=out.x*frontOut.x+out.y*frontOut.y;
-    if (dot<minDot){ minDot=dot; rearIdx=i; }
+  for (let i = 0; i < n; i++) {
+    if (i === frontIdx) continue;
+
+    const on = outwardNormal(poly, i, c);
+    const dot = on.x * frontNorm.x + on.y * frontNorm.y;
+
+    if (dot < minDot) {
+      minDot = dot;
+      rearIdx = i;
+    }
   }
 
-  return poly.map((_,i) => i===frontIdx?'front' : i===rearIdx?'rear' : 'side');
+  return poly.map((_, i) =>
+    i === frontIdx ? 'front' : i === rearIdx ? 'rear' : 'side',
+  ) as EdgeClass[];
 }
 
-// ─── CLIPPING SUTHERLAND-HODGMAN ─────────────────────────────────────
-//
-// Découpe un polygone contre une demi-plane définie par une ligne décalée.
-// On conserve le côté "intérieur" (celui de la normale entrante).
+// ─── Auto-intersections ────────────────────────────────────────────────────
 
-function clipByOffsetLine(
-  poly:     Point2D[],
-  lineP1:   Point2D, lineP2: Point2D,
-  inwardN:  { x:number; y:number },
+function segSegIntersect(
+  a: Point2D,
+  b: Point2D,
+  c: Point2D,
+  d: Point2D,
+): Point2D | null {
+  const d1x = b.x - a.x;
+  const d1y = b.y - a.y;
+  const d2x = d.x - c.x;
+  const d2y = d.y - c.y;
+
+  const cross = d1x * d2y - d1y * d2x;
+  if (Math.abs(cross) < 1e-10) return null;
+
+  const t = ((c.x - a.x) * d2y - (c.y - a.y) * d2x) / cross;
+  const u = ((c.x - a.x) * d1y - (c.y - a.y) * d1x) / cross;
+
+  const eps = 1e-6;
+
+  if (t > eps && t < 1 - eps && u > eps && u < 1 - eps) {
+    return {
+      x: a.x + t * d1x,
+      y: a.y + t * d1y,
+    };
+  }
+
+  return null;
+}
+
+function removeSelfIntersections(
+  poly: Point2D[],
+  refPoint: Point2D,
+  depth = 0,
 ): Point2D[] {
-  if (!poly.length) return [];
+  if (depth > 20 || poly.length < 4) return poly;
 
-  // Un point est "inside" si son produit scalaire avec la normale est >= 0
-  const inside = (p: Point2D) =>
-    (p.x-lineP1.x)*inwardN.x + (p.y-lineP1.y)*inwardN.y >= -1e-8;
-
-  const intersect = (a: Point2D, b: Point2D): Point2D => {
-    const dxAB=b.x-a.x, dyAB=b.y-a.y;
-    const denom=dxAB*inwardN.x+dyAB*inwardN.y;
-    if (Math.abs(denom)<1e-10) return a;
-    const t=((lineP1.x-a.x)*inwardN.x+(lineP1.y-a.y)*inwardN.y)/denom;
-    return {x:a.x+t*dxAB, y:a.y+t*dyAB};
-  };
-
-  const result: Point2D[] = [];
   const n = poly.length;
-  for (let i=0; i<n; i++) {
-    const cur=poly[i], nxt=poly[(i+1)%n];
-    const cIn=inside(cur), nIn=inside(nxt);
-    if (cIn) result.push(cur);
-    if (cIn!==nIn) result.push(intersect(cur,nxt));
+
+  for (let i = 0; i < n; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % n];
+
+    for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue;
+
+      const c = poly[j];
+      const d = poly[(j + 1) % n];
+      const pt = segSegIntersect(a, b, c, d);
+
+      if (!pt) continue;
+
+      const p1: Point2D[] = [pt];
+      for (let k = i + 1; k <= j; k++) p1.push(poly[k]);
+
+      const p2: Point2D[] = [
+        ...poly.slice(0, i + 1),
+        pt,
+        ...poly.slice(j + 1),
+      ];
+
+      const chosen = pointInPolygon(refPoint, p1) ? p1 : p2;
+      return removeSelfIntersections(chosen, refPoint, depth + 1);
+    }
   }
-  return result;
+
+  return poly;
 }
 
-// ─── API PUBLIQUE ─────────────────────────────────────────────────────
+// ─── Enveloppe constructible ───────────────────────────────────────────────
 
-/**
- * Trouve l'arête de la parcelle la plus proche d'un point,
- * dans un rayon `thresholdM` mètres.
- *
- * @returns index de l'arête, ou null si aucune dans le rayon.
- */
-export function nearestParcelEdge(
-  p:          Point2D,
-  poly:       Point2D[],
-  thresholdM: number,
-): number | null {
-  const n=poly.length;
-  let best=-1, bestD=Infinity;
-  for (let i=0; i<n; i++) {
-    const d=pointToSegmentDist(p, poly[i], poly[(i+1)%n]);
-    if (d<thresholdM && d<bestD){ bestD=d; best=i; }
+type ClipLine = {
+  p: Point2D;
+  inward: Point2D;
+};
+
+function isInsideHalfPlane(p: Point2D, line: ClipLine): boolean {
+  const vx = p.x - line.p.x;
+  const vy = p.y - line.p.y;
+
+  return vx * line.inward.x + vy * line.inward.y >= -1e-6;
+}
+
+function segmentLineIntersection(
+  a: Point2D,
+  b: Point2D,
+  line: ClipLine,
+): Point2D | null {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+
+  const denom = abx * line.inward.x + aby * line.inward.y;
+  if (Math.abs(denom) < 1e-10) return null;
+
+  const t =
+    ((line.p.x - a.x) * line.inward.x +
+      (line.p.y - a.y) * line.inward.y) /
+    denom;
+
+  if (t < -1e-6 || t > 1 + 1e-6) return null;
+
+  return {
+    x: a.x + abx * t,
+    y: a.y + aby * t,
+  };
+}
+
+function clipPolygon(subject: Point2D[], line: ClipLine): Point2D[] {
+  if (subject.length < 3) return [];
+
+  const output: Point2D[] = [];
+
+  for (let i = 0; i < subject.length; i++) {
+    const curr = subject[i];
+    const prev = subject[(i - 1 + subject.length) % subject.length];
+
+    const currInside = isInsideHalfPlane(curr, line);
+    const prevInside = isInsideHalfPlane(prev, line);
+
+    if (currInside) {
+      if (!prevInside) {
+        const inter = segmentLineIntersection(prev, curr, line);
+        if (inter) output.push(inter);
+      }
+
+      output.push(curr);
+    } else if (prevInside) {
+      const inter = segmentLineIntersection(prev, curr, line);
+      if (inter) output.push(inter);
+    }
   }
-  return best>=0 ? best : null;
+
+  return output;
 }
 
-/** Retourne le milieu d'une arête du polygone. */
-export function edgeMidpoint(poly: Point2D[], idx: number): Point2D {
-  const n=poly.length, p1=poly[idx], p2=poly[(idx+1)%n];
-  return {x:(p1.x+p2.x)/2, y:(p1.y+p2.y)/2};
-}
-
-/**
- * Calcule l'enveloppe constructible (polygone intérieur) à partir de :
- *   - `parcel`           : polygone de la parcelle (Point2D[])
- *   - `frontEdgeIndex`   : arête façade terrain (null = non sélectionnée)
- *   - `rules`            : reculs front / latéraux / arrière en mètres
- *
- * @returns polygone constructible (≥3 points), ou null si impossible.
- *
- * Algorithme : Sutherland-Hodgman sur chaque arête décalée vers l'intérieur.
- */
 export function computeBuildableEnvelope(
-  parcel:         Point2D[],
+  poly: Point2D[],
   frontEdgeIndex: number | null,
-  rules:          SetbackRules,
-): Point2D[] | null {
-  if (parcel.length < 3 || frontEdgeIndex === null) return null;
+  rules: SetbackRules,
+): Point2D[] {
+  if (poly.length < 3) return [];
 
-  const n   = parcel.length;
-  const c   = centroid(parcel);
-  const roles = classifyParcelEdges(parcel, frontEdgeIndex);
+  const parcelArea = polygonAreaM2(poly);
+  if (parcelArea < 0.5) return [];
 
-  let result = [...parcel];
+  const simp = simplifyPolygon(poly, 1.0);
+  const sn = simp.length;
+  if (sn < 3) return [];
 
-  for (let i=0; i<n; i++) {
-    const role    = roles[i];
-    const setback = role==='front' ? rules.frontM : role==='rear' ? rules.rearM : rules.sideM;
-    const p1=parcel[i], p2=parcel[(i+1)%n];
-    const inn=inwardNormal(p1,p2,c);
+  const c = centroid(simp);
 
-    // Arête décalée vers l'intérieur
-    const op1={x:p1.x+inn.x*setback, y:p1.y+inn.y*setback};
-    const op2={x:p2.x+inn.x*setback, y:p2.y+inn.y*setback};
+  const simpFrontIdx =
+    frontEdgeIndex !== null ? remapFrontEdge(poly, frontEdgeIndex, simp) : null;
 
-    result=clipByOffsetLine(result, op1, op2, inn);
-    if (!result.length) return null;
+  const setbacks: number[] = (() => {
+    if (simpFrontIdx !== null) {
+      const classes = classifyEdges(simp, simpFrontIdx);
+
+      return classes.map((edgeClass) => {
+        if (edgeClass === 'front') return Math.max(0, rules.frontM);
+        if (edgeClass === 'rear') return Math.max(0, rules.rearM);
+        return Math.max(0, rules.sideM);
+      });
+    }
+
+    const uniform = Math.max(
+      0,
+      Math.min(rules.frontM, rules.sideM, rules.rearM),
+    );
+
+    return new Array(sn).fill(uniform);
+  })();
+
+  const clipLines: ClipLine[] = [];
+
+  for (let i = 0; i < sn; i++) {
+    const a = simp[i];
+    const inward = inwardNormal(simp, i, c);
+
+    const setback = setbacks[i];
+
+    if (!Number.isFinite(setback)) continue;
+    if (Math.hypot(inward.x, inward.y) < 1e-9) continue;
+
+    clipLines.push({
+      p: {
+        x: a.x + inward.x * setback,
+        y: a.y + inward.y * setback,
+      },
+      inward,
+    });
   }
 
-  return result.length>=3 ? result : null;
+  let envelope = [...simp];
+
+  for (const line of clipLines) {
+    envelope = clipPolygon(envelope, line);
+    if (envelope.length < 3) return [];
+  }
+
+  const clean = removeSelfIntersections(envelope, c);
+  if (clean.length < 3) return [];
+
+  const cleanArea = polygonAreaM2(clean);
+
+  if (cleanArea < 0.5) return [];
+
+  // Verrou de sécurité : l'enveloppe constructible ne peut jamais dépasser la parcelle.
+  // Si cela arrive, on renvoie une enveloppe vide plutôt qu'une donnée fausse.
+  if (cleanArea > parcelArea * 1.001) {
+    console.warn('[Mimmoza][PLU] Enveloppe rejetée : aire supérieure à la parcelle', {
+      parcelArea,
+      cleanArea,
+      poly,
+      clean,
+      rules,
+      frontEdgeIndex,
+    });
+
+    return [];
+  }
+
+  return clean;
 }
 
-/**
- * Vérifie si un rectangle (ses 4 coins) est entièrement à l'intérieur
- * d'un polygone.
- */
-export function isRectInsidePolygon(
-  corners: Point2D[],
-  poly:    Point2D[],
-): boolean {
-  return corners.every(c => pointInPolygon(c, poly));
-}
+// ─── Compat backward ────────────────────────────────────────────────────────
 
-/**
- * Vérifie si au moins un coin du rectangle est à l'intérieur du polygone.
- */
 export function isRectPartiallyInsidePolygon(
-  corners: Point2D[],
-  poly:    Point2D[],
+  rect: OrientedRect,
+  poly: Point2D[],
 ): boolean {
-  return corners.some(c => pointInPolygon(c, poly));
+  if (poly.length < 3) return false;
+  return rectCorners(rect).some((corner) => pointInPolygon(corner, poly));
 }

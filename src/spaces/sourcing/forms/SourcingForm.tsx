@@ -196,6 +196,20 @@ function selectToBoolean(value: string): boolean | undefined {
 }
 
 // ============================================
+// DPE OPTIONS
+// ============================================
+
+const DPE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'A', label: 'A — Excellent' },
+  { value: 'B', label: 'B — Très bon' },
+  { value: 'C', label: 'C — Bon' },
+  { value: 'D', label: 'D — Moyen' },
+  { value: 'E', label: 'E — Médiocre' },
+  { value: 'F', label: 'F — Passoire (interdit 2028)' },
+  { value: 'G', label: 'G — Passoire (interdit 2025)' },
+];
+
+// ============================================
 // FORM STATE (exporté pour le parent)
 // ============================================
 
@@ -209,6 +223,7 @@ export interface FormState {
   price: string;
   surface: string;
   floor: string;
+  dpe: string;
   proximiteTransport: ProximiteTransport | '';
   distanceTransport: string;
   proximiteCommerces: string;
@@ -265,6 +280,7 @@ export const initialFormState: FormState = {
   price: '',
   surface: '',
   floor: '',
+  dpe: '',
   proximiteTransport: '',
   distanceTransport: '',
   proximiteCommerces: '',
@@ -460,8 +476,8 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
     draft.box = selectToBoolean(form.box);
 
     draft.etatGeneral = form.etatGeneral || undefined;
-    draft.dpe = undefined; // conservé si tu l’ajoutes plus tard au formulaire
-    draft.nbPieces = undefined; // conservé si tu l’ajoutes plus tard au formulaire
+    draft.dpe = form.dpe || undefined;
+    draft.nbPieces = undefined; // conservé si tu l'ajoutes plus tard au formulaire
 
     return draft;
   }, [form]);
@@ -659,6 +675,36 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
                 style={{ ...styles.input, ...(hasError('surface') ? styles.inputError : {}) }}
               />
               {hasError('surface') && <div style={styles.errorText}>{getError('surface')}</div>}
+            </div>
+          </div>
+
+          <div style={styles.fieldRow}>
+            <div style={styles.field}>
+              <label style={styles.label}>État général</label>
+              <select
+                value={form.etatGeneral}
+                onChange={e => updateField('etatGeneral', e.target.value as EtatGeneral)}
+                style={styles.select}
+              >
+                <option value="">Non renseigné</option>
+                {getEtatGeneralOptions().map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.fieldSmall}>
+              <label style={styles.label}>DPE</label>
+              <select
+                value={form.dpe}
+                onChange={e => updateField('dpe', e.target.value)}
+                style={styles.select}
+              >
+                <option value="">Non renseigné</option>
+                {DPE_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
             </div>
           </div>
         </div>

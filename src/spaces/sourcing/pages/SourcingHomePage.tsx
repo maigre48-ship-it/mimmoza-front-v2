@@ -4,12 +4,15 @@
  * ── v6.2 : critères qualité enrichis (transport détaillé, extérieurs, confort, box) ──
  * ── v6.3 : correctif DVF robuste (geocodeAddressViaBan multi-stratégie, extractDvfFromResponse profond) ──
  * ── v6.5 : commune_insee normalisé en code arrondissement DVF direct (75116 vs 75056) + radius 3km ──
+ * ── v6.6 : DPE bien / énergie / impact investissement UX (smartscore_v4 backend enrichi) ──
  *
  * Layout :
  *   ┌─────────────────────────────────────────────┐
  *   │  Bannière "Scoring"                         │
  *   ├─────────────────────────────────────────────┤
  *   │  SmartScore Hero (ring + axes + verdict)   │
+ *   ├─────────────────────────────────────────────┤
+ *   │  EnergyDpeInsightsCard (si dispo)          │
  *   ├──────────────┬──────────────────────────────┤
  *   │  Deal list   │  SourcingForm + Résumé      │
  *   │  (color-     │  (tous les champs :         │
@@ -57,10 +60,6 @@ import { supabase } from "../../../lib/supabaseClient";
 // ============================================
 // UTILITAIRE PRIVÉ 1 — Géocodage BAN multi-stratégie
 // ============================================
-// Stratégies tentées dans l'ordre :
-//   1. rue + postcode= séparé (plus fiable que tout concaténé)
-//   2. rue + CP dans q= (sans ville qui peut perturber BAN)
-//   3. CP seul (centroïde commune, dernier recours)
 
 interface BanGeoResult {
   lat: number;
@@ -129,8 +128,6 @@ async function geocodeAddressViaBan(params: {
 // ============================================
 // UTILITAIRE PRIVÉ 2 — Extraction DVF robuste
 // ============================================
-// Parcourt les chemins connus, puis fait une recherche en profondeur (2 niveaux)
-// pour survivre aux évolutions de structure de l'Edge Function.
 
 function extractDvfFromResponse(
   data: any,
@@ -176,7 +173,6 @@ function extractDvfFromResponse(
     if (result) return result;
   }
 
-  // Recherche en profondeur — filet de sécurité sur 2 niveaux
   for (const key of Object.keys(data)) {
     const val = data[key];
     const r1 = tryExtract(val);
@@ -199,8 +195,215 @@ function extractDvfFromResponse(
 }
 
 // ============================================
+// v6.6: UTILITAIRE PRIVÉ 3 — Extraction SmartScore V4 & DPE UX
+// ============================================
+
+interface DpeUxData {
+  label: string | null;
+  score: number | null;
+  isBlocking: boolean;
+  severity: "none" | "warning" | "critical";
+  title: string | null;
+  description: string | null;
+  maxScoreCap: number | null;
+  scoreBeforeAdjustment: number | null;
+  scoreAfterAdjustment: number | null;
+  renovationNeeded: boolean;
+  renovationCostTotal: number | null;
+  renovationCostPerM2: number | null;
+  renovationScenario: "none" | "light" | "medium" | "heavy" | null;
+  renovationConfidence: "low" | "medium" | null;
+  renovationDescription: string | null;
+  rentabilityPenaltyScore: number | null;
+  yieldDragPct: number | null;
+  cashflowDragMonthly: number | null;
+  exploitabilityRisk: "low" | "moderate" | "high" | "critical" | null;
+  investmentSummary: string | null;
+}
+
+const EMPTY_DPE_UX: DpeUxData = {
+  label: null, score: null, isBlocking: false, severity: "none",
+  title: null, description: null, maxScoreCap: null,
+  scoreBeforeAdjustment: null, scoreAfterAdjustment: null,
+  renovationNeeded: false, renovationCostTotal: null, renovationCostPerM2: null,
+  renovationScenario: null, renovationConfidence: null, renovationDescription: null,
+  rentabilityPenaltyScore: null, yieldDragPct: null, cashflowDragMonthly: null,
+  exploitabilityRisk: null, investmentSummary: null,
+};
+
+function extractSmartScoreV4Block(obj: any): any | null {
+  if (!obj || typeof obj !== "object") return null;
+  const candidates = [
+    obj.smartscore_v4,
+    obj.smartScoreV4,
+    obj.market_like?.smartscore_v4,
+    obj.market?.smartscore_v4,
+    obj.data?.smartscore_v4,
+    obj.data?.smartScoreV4,
+    obj.result?.smartscore_v4,
+    obj.result?.smartScoreV4,
+  ];
+  for (const c of candidates) {
+    if (c && typeof c === "object" && typeof c.score === "number") return c;
+  }
+  // depth-1 search
+  for (const key of Object.keys(obj)) {
+    const val = obj[key];
+    if (val && typeof val === "object") {
+      const inner = val.smartscore_v4 ?? val.smartScoreV4;
+      if (inner && typeof inner === "object" && typeof inner.score === "number") return inner;
+    }
+  }
+  return null;
+}
+
+function extractDpeUxData(v4: any): DpeUxData {
+  if (!v4 || typeof v4 !== "object") return { ...EMPTY_DPE_UX };
+
+  const dpe = v4.dpe;
+  const constraint = dpe?.constraint;
+  const reno = v4.energy_renovation;
+  const biz = v4.energy_business_impact;
+
+  const sev = constraint?.severity;
+  const validSeverity: DpeUxData["severity"] =
+    sev === "warning" || sev === "critical" ? sev : "none";
+
+  const renoScenario = reno?.scenario;
+  const validScenario: DpeUxData["renovationScenario"] =
+    renoScenario === "none" || renoScenario === "light" || renoScenario === "medium" || renoScenario === "heavy"
+      ? renoScenario : null;
+
+  const renoConf = reno?.confidence;
+  const validConfidence: DpeUxData["renovationConfidence"] =
+    renoConf === "low" || renoConf === "medium" ? renoConf : null;
+
+  const expRisk = biz?.exploitability_risk;
+  const validExpRisk: DpeUxData["exploitabilityRisk"] =
+    expRisk === "low" || expRisk === "moderate" || expRisk === "high" || expRisk === "critical"
+      ? expRisk : null;
+
+  return {
+    label: dpe?.label ?? null,
+    score: typeof dpe?.score === "number" ? dpe.score : null,
+    isBlocking: constraint?.is_blocking === true,
+    severity: validSeverity,
+    title: constraint?.title ?? null,
+    description: constraint?.description ?? null,
+    maxScoreCap: typeof constraint?.max_score_cap === "number" ? constraint.max_score_cap : null,
+    scoreBeforeAdjustment: typeof v4.score_before_dpe_adjustment === "number" ? v4.score_before_dpe_adjustment : null,
+    scoreAfterAdjustment: typeof v4.score === "number" ? v4.score : null,
+    renovationNeeded: reno?.needed === true,
+    renovationCostTotal: typeof reno?.estimated_cost_total_eur === "number" ? reno.estimated_cost_total_eur : null,
+    renovationCostPerM2: typeof reno?.estimated_cost_per_m2_eur === "number" ? reno.estimated_cost_per_m2_eur : null,
+    renovationScenario: validScenario,
+    renovationConfidence: validConfidence,
+    renovationDescription: typeof reno?.description === "string" ? reno.description : null,
+    rentabilityPenaltyScore: typeof biz?.rentability_penalty_score === "number" ? biz.rentability_penalty_score : null,
+    yieldDragPct: typeof biz?.estimated_yield_drag_pct === "number" ? biz.estimated_yield_drag_pct : null,
+    cashflowDragMonthly: typeof biz?.estimated_cashflow_drag_monthly_eur === "number" ? biz.estimated_cashflow_drag_monthly_eur : null,
+    exploitabilityRisk: validExpRisk,
+    investmentSummary: typeof biz?.summary === "string" ? biz.summary : null,
+  };
+}
+
+// ============================================
+// v6.6: FORMATTING HELPERS
+// ============================================
+
+function formatCurrencyCompact(value: number | null): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return value.toLocaleString("fr-FR", { maximumFractionDigits: 0 }) + " €";
+}
+
+function formatPercentSigned(value: number | null): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  const sign = value >= 0 ? "+" : "";
+  return `${sign}${value.toFixed(1)} %`;
+}
+
+function formatRiskLabel(risk: string | null): string {
+  switch (risk) {
+    case "low": return "Faible";
+    case "moderate": return "Modéré";
+    case "high": return "Élevé";
+    case "critical": return "Critique";
+    default: return "—";
+  }
+}
+
+function formatScenarioLabel(s: string | null): string {
+  switch (s) {
+    case "none": return "Aucun";
+    case "light": return "Léger";
+    case "medium": return "Modéré";
+    case "heavy": return "Lourd";
+    default: return "—";
+  }
+}
+
+function formatConfidenceLabel(c: string | null): string {
+  switch (c) {
+    case "low": return "Faible";
+    case "medium": return "Moyenne";
+    default: return "—";
+  }
+}
+
+function dpeBadgeColor(label: string | null): string {
+  if (!label) return "#94a3b8";
+  switch (label.toUpperCase()) {
+    case "A": return "#15803d";
+    case "B": return "#22c55e";
+    case "C": return "#84cc16";
+    case "D": return "#eab308";
+    case "E": return "#f97316";
+    case "F": return "#ef4444";
+    case "G": return "#991b1b";
+    default: return "#94a3b8";
+  }
+}
+
+function dpeBadgeBg(label: string | null): string {
+  if (!label) return "#f1f5f9";
+  switch (label.toUpperCase()) {
+    case "A": return "#dcfce7";
+    case "B": return "#dcfce7";
+    case "C": return "#ecfccb";
+    case "D": return "#fef9c3";
+    case "E": return "#ffedd5";
+    case "F": return "#fee2e2";
+    case "G": return "#fee2e2";
+    default: return "#f1f5f9";
+  }
+}
+
+function riskBorderColor(risk: string | null): string {
+  switch (risk) {
+    case "low": return "#a7f3d0";
+    case "moderate": return "#fde68a";
+    case "high": return "#fca5a5";
+    case "critical": return "#ef4444";
+    default: return "#e2e8f0";
+  }
+}
+
+function riskBgColor(risk: string | null): string {
+  switch (risk) {
+    case "low": return "#ecfdf5";
+    case "moderate": return "#fffbeb";
+    case "high": return "#fef2f2";
+    case "critical": return "#fef2f2";
+    default: return "#f8fafc";
+  }
+}
+
+// ============================================
 // DVF VIA EDGE FUNCTION — v6.5 corrigé
 // ============================================
+
+// Store the last full Edge Function response for V4 extraction
+let _lastEdgeFunctionResponse: any = null;
 
 async function fetchDvfViaEdgeFunction(params: {
   codePostal: string;
@@ -210,8 +413,10 @@ async function fetchDvfViaEdgeFunction(params: {
   surface?: number;
   lat?: number;
   lng?: number;
+  dpe_label?: string | null;
 }): Promise<{ price_m2_median: number | null; comparables_count: number }> {
   const FALLBACK = { price_m2_median: null, comparables_count: 0 };
+  _lastEdgeFunctionResponse = null;
 
   try {
     const cp    = (params.codePostal || "").trim();
@@ -225,6 +430,7 @@ async function fetchDvfViaEdgeFunction(params: {
       surface: params.surface,
       lat: params.lat,
       lng: params.lng,
+      dpe_label: params.dpe_label,
     });
 
     // ── Étape 1 : commune_insee ──
@@ -257,7 +463,7 @@ async function fetchDvfViaEdgeFunction(params: {
       return FALLBACK;
     }
 
-    // ── Étape 2 : lat / lon — param direct prioritaire, sinon BAN ──
+    // ── Étape 2 : lat / lon ──
     let lat: number | null =
       typeof params.lat === "number" && Number.isFinite(params.lat) ? params.lat : null;
     let lon: number | null =
@@ -277,34 +483,26 @@ async function fetchDvfViaEdgeFunction(params: {
       }
     }
 
-    // Garde-fou final avant envoi
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
       console.error("[DVF] ❌ lat/lon non finis après géocodage:", { lat, lon }, "→ FALLBACK");
       return FALLBACK;
     }
 
     // ── Étape 3 : normalisation commune_insee pour Paris / Lyon / Marseille ──
-    // On envoie directement le code arrondissement DVF (ex: 75116 pour Paris 16e)
-    // pour éviter que l'Edge Function rate la résolution BAN reverse interne.
-    // Si on envoie "75116", COMMUNES_A_ARRONDISSEMENTS["75116"] est undefined →
-    // Edge Function retourne dvfCode: "75116" directement, sans passer par BAN.
     let communeInseeForPayload = communeInsee;
 
     if (cp) {
-      // Paris : 75016 → 75116 | 75116 → 75116 (déjà code DVF)
       if (/^750(\d{2})$/.test(cp)) {
         communeInseeForPayload = "751" + cp.slice(3);
         console.log("[DVF] CP Paris (750XX) normalisé →", communeInseeForPayload);
       } else if (/^751(\d{2})$/.test(cp)) {
-        communeInseeForPayload = cp; // déjà le code arrondissement DVF
+        communeInseeForPayload = cp;
         console.log("[DVF] CP Paris (751XX) déjà code DVF →", communeInseeForPayload);
       }
-      // Lyon : 69001–69009 → 69381–69389
       else if (/^6900([1-9])$/.test(cp)) {
         communeInseeForPayload = "6938" + cp.slice(4);
         console.log("[DVF] CP Lyon normalisé →", communeInseeForPayload);
       }
-      // Marseille : 13001–13016 → 13201–13216
       else if (/^130(\d{2})$/.test(cp)) {
         const arr = parseInt(cp.slice(3), 10);
         if (arr >= 1 && arr <= 16) {
@@ -320,12 +518,11 @@ async function fetchDvfViaEdgeFunction(params: {
         ? "Maison"
         : "Appartement";
 
-    const payload = {
+    const payload: any = {
       mode:           "standard",
-      commune_insee:  communeInseeForPayload,   // ← code arrondissement DVF direct
+      commune_insee:  communeInseeForPayload,
       lat,
       lon,
-      // cp / ville / address : filtre DVF côté Edge Function
       cp:      cp    || null,
       ville:   ville || null,
       address: rue   || null,
@@ -336,10 +533,15 @@ async function fetchDvfViaEdgeFunction(params: {
         params.surface > 0
           ? params.surface
           : null,
-      radius_km:      3,   // élargi à 3 km pour maximiser les comparables DVF
+      radius_km:      3,
       horizon_months: 24,
       debug:          true,
     };
+
+    // v6.6: pass DPE label to backend for DPE business block
+    if (params.dpe_label) {
+      payload.dpe_label = params.dpe_label;
+    }
 
     console.log("[DVF] ✅ Payload confirmé (lat/lon réels, commune_insee:", communeInseeForPayload, "):", payload);
 
@@ -381,6 +583,9 @@ async function fetchDvfViaEdgeFunction(params: {
     }
 
     console.log("[DVF] Clés top-level réponse:", data ? Object.keys(data) : "null");
+
+    // v6.6: store the full response for V4 extraction
+    _lastEdgeFunctionResponse = data;
 
     // ── Étape 7 : extraction DVF robuste ──
     const extracted = extractDvfFromResponse(data);
@@ -887,14 +1092,9 @@ function computeSmartScoreFromDraft(draft: any): LocalSmartScoreResult {
 
   if (price <= 0 || surface <= 0) {
     return {
-      globalScore: 0,
-      score: 0,
-      grade: "E",
-      verdict: "NO_GO",
-      globalRationale: MINIMUM_VIABLE_MSG,
-      rationale: MINIMUM_VIABLE_MSG,
-      details: { prixM2: null, bonusMalus: [] },
-      minimumMet: false,
+      globalScore: 0, score: 0, grade: "E", verdict: "NO_GO",
+      globalRationale: MINIMUM_VIABLE_MSG, rationale: MINIMUM_VIABLE_MSG,
+      details: { prixM2: null, bonusMalus: [] }, minimumMet: false,
     };
   }
 
@@ -905,9 +1105,7 @@ function computeSmartScoreFromDraft(draft: any): LocalSmartScoreResult {
 
   const propertyType = draft.input?.propertyType || draft.propertyType || "";
   const completudeFields = [
-    price > 0,
-    surface > 0,
-    !!propertyType,
+    price > 0, surface > 0, !!propertyType,
     !!(draft.input?.etatGeneral  || draft.etatGeneral),
     !!(draft.input?.dpe          || draft.dpe),
     !!(draft.input?.nbPieces     || draft.nbPieces),
@@ -920,27 +1118,20 @@ function computeSmartScoreFromDraft(draft: any): LocalSmartScoreResult {
 
   const globalScore = clamp(
     Math.round(prixM2Score.rawScore * 0.4 + qualiteScore.rawScore * 0.35 + completudeRaw * 0.25),
-    0,
-    100,
+    0, 100,
   );
   const grade   = gradeFromScore(globalScore);
   const verdict = verdictFromScore(globalScore);
 
   const rationaleLines: string[] = [
-    prixM2Score.explanation,
-    qualiteScore.explanation,
-    `Complétude : ${completudeRaw}%`,
-    `Verdict : ${verdict.replace(/_/g, " ")}`,
+    prixM2Score.explanation, qualiteScore.explanation,
+    `Complétude : ${completudeRaw}%`, `Verdict : ${verdict.replace(/_/g, " ")}`,
   ];
   const rationale = rationaleLines.join(" · ");
 
   return {
-    globalScore,
-    score: globalScore,
-    grade,
-    verdict,
-    globalRationale: rationale,
-    rationale,
+    globalScore, score: globalScore, grade, verdict,
+    globalRationale: rationale, rationale,
     details: { prixM2, bonusMalus: qualiteScore.bonusMalus, dvf, prixM2Score, qualiteScore },
     minimumMet: true,
   };
@@ -957,12 +1148,8 @@ function buildEnrichedScore(computed: LocalSmartScoreResult, draft: any, hookSco
 
   if (!computed.minimumMet) {
     return {
-      globalScore: 0,
-      score: 0,
-      grade: "E" as const,
-      verdict: "NO_GO",
-      globalRationale: MINIMUM_VIABLE_MSG,
-      rationale: MINIMUM_VIABLE_MSG,
+      globalScore: 0, score: 0, grade: "E" as const, verdict: "NO_GO",
+      globalRationale: MINIMUM_VIABLE_MSG, rationale: MINIMUM_VIABLE_MSG,
       explanations: [MINIMUM_VIABLE_MSG],
       missingData: [...(price <= 0 ? ["price"] : []), ...(surface <= 0 ? ["surface"] : [])],
       subscores: [
@@ -970,14 +1157,10 @@ function buildEnrichedScore(computed: LocalSmartScoreResult, draft: any, hookSco
         { name: "qualite",    label: "Qualité",     rawScore: 0, weight: 0.35, hasData: false },
         { name: "completude", label: "Complétude",  rawScore: 0, weight: 0.25, hasData: false },
       ],
-      penalties: [],
-      blockers: [],
-      engineVersion: "sourcing-local-v2",
-      computedAt: new Date().toISOString(),
-      inputHash: "local",
+      penalties: [], blockers: [], engineVersion: "sourcing-local-v2",
+      computedAt: new Date().toISOString(), inputHash: "local",
       scoreHistory: history.length > 0 ? history : [0],
-      details: computed.details,
-      minimumMet: false,
+      details: computed.details, minimumMet: false,
     };
   }
 
@@ -985,17 +1168,12 @@ function buildEnrichedScore(computed: LocalSmartScoreResult, draft: any, hookSco
   const prixM2Score  = computed.details.prixM2Score;
   const qualiteScore = computed.details.qualiteScore;
 
-  if (prixM2Score)
-    explanations.push(prixM2Score.explanation);
-  else if (computed.details.prixM2 != null)
-    explanations.push(`Prix/m² estimé : ${Math.round(computed.details.prixM2).toLocaleString("fr-FR")} €/m²`);
+  if (prixM2Score) explanations.push(prixM2Score.explanation);
+  else if (computed.details.prixM2 != null) explanations.push(`Prix/m² estimé : ${Math.round(computed.details.prixM2).toLocaleString("fr-FR")} €/m²`);
 
-  if (qualiteScore)
-    explanations.push(qualiteScore.explanation);
+  if (qualiteScore) explanations.push(qualiteScore.explanation);
   else if (computed.details.bonusMalus.length > 0)
-    explanations.push(
-      `Ajustements : ${computed.details.bonusMalus.map((b) => `${b.label} (${b.value > 0 ? "+" : ""}${b.value})`).join(", ")}`,
-    );
+    explanations.push(`Ajustements : ${computed.details.bonusMalus.map((b) => `${b.label} (${b.value > 0 ? "+" : ""}${b.value})`).join(", ")}`);
 
   explanations.push(`Verdict : ${computed.verdict.replace(/_/g, " ")}`);
 
@@ -1008,9 +1186,7 @@ function buildEnrichedScore(computed: LocalSmartScoreResult, draft: any, hookSco
   const qualiteRawScore = qualiteScore?.rawScore  ?? 50;
 
   const completudeFields = [
-    price > 0,
-    surface > 0,
-    !!propertyType,
+    price > 0, surface > 0, !!propertyType,
     !!(draft?.input?.etatGeneral || draft?.etatGeneral),
     !!(draft?.input?.dpe         || draft?.dpe),
     !!(draft?.input?.nbPieces    || draft?.nbPieces),
@@ -1023,27 +1199,19 @@ function buildEnrichedScore(computed: LocalSmartScoreResult, draft: any, hookSco
 
   return {
     ...((hookScore && typeof hookScore === "object") ? hookScore : {}),
-    globalScore:     computed.globalScore,
-    score:           computed.globalScore,
-    grade:           computed.grade,
-    verdict:         computed.verdict,
-    globalRationale: computed.globalRationale,
-    rationale:       computed.rationale,
-    explanations,
-    missingData,
+    globalScore: computed.globalScore, score: computed.globalScore,
+    grade: computed.grade, verdict: computed.verdict,
+    globalRationale: computed.globalRationale, rationale: computed.rationale,
+    explanations, missingData,
     subscores: [
       { name: "prix",       label: "Prix/m²",    rawScore: prixRawScore,       weight: 0.4,  hasData: hasPriceData },
       { name: "qualite",    label: "Qualité",     rawScore: qualiteRawScore,    weight: 0.35, hasData: true },
       { name: "completude", label: "Complétude",  rawScore: completudeRawScore, weight: 0.25, hasData: true },
     ],
-    penalties:     [],
-    blockers:      [],
-    engineVersion: "sourcing-local-v2",
-    computedAt:    new Date().toISOString(),
-    inputHash:     "local",
-    scoreHistory:  history.length > 0 ? history : [computed.globalScore],
-    details:       computed.details,
-    minimumMet:    true,
+    penalties: [], blockers: [], engineVersion: "sourcing-local-v2",
+    computedAt: new Date().toISOString(), inputHash: "local",
+    scoreHistory: history.length > 0 ? history : [computed.globalScore],
+    details: computed.details, minimumMet: true,
   };
 }
 
@@ -1076,15 +1244,11 @@ function buildSeedFromMeta(meta: DealContextMeta | undefined): FormState | null 
   const hasAnyData = meta.zipCode || meta.city || meta.address || meta.purchasePrice || meta.surface;
   if (!hasAnyData) return null;
   return {
-    codePostal:    meta.zipCode ?? "",
-    rueProche:     meta.address ?? "",
-    ville:         meta.city ?? "",
-    arrondissement: "",
-    quartier:      "",
-    propertyType:  "",
-    price:         meta.purchasePrice != null && meta.purchasePrice > 0 ? String(meta.purchasePrice) : "",
-    surface:       meta.surface != null && meta.surface > 0 ? String(meta.surface) : "",
-    floor:         "",
+    codePostal: meta.zipCode ?? "", rueProche: meta.address ?? "", ville: meta.city ?? "",
+    arrondissement: "", quartier: "", propertyType: "",
+    price: meta.purchasePrice != null && meta.purchasePrice > 0 ? String(meta.purchasePrice) : "",
+    surface: meta.surface != null && meta.surface > 0 ? String(meta.surface) : "",
+    floor: "",
   };
 }
 
@@ -1127,8 +1291,7 @@ function hydrateFromScopedLS(dealId: string): HydrationBag {
 
 function writeSeedToAllLSKeys(dealId: string, formState: FormState): void {
   const payload = JSON.stringify({
-    formState,
-    savedAt: new Date().toISOString(),
+    formState, savedAt: new Date().toISOString(),
     source: { type: "investisseur.activeDeal", dealId },
   });
   try {
@@ -1173,19 +1336,15 @@ function hydrateCommonFieldsFromDeal(
   if (!shouldHydrate) return null;
 
   const nextForm: FormState = {
-    ...EMPTY_FORM,
-    ...(form as any),
-    codePostal: String(deal.zipCode  ?? ""),
-    rueProche:  String(deal.address  ?? ""),
-    ville:      String(deal.city     ?? ""),
-    price:      deal.purchasePrice != null ? String(deal.purchasePrice) : "",
-    surface:    deal.surface != null ? String(deal.surface) : "",
+    ...EMPTY_FORM, ...(form as any),
+    codePostal: String(deal.zipCode  ?? ""), rueProche: String(deal.address  ?? ""),
+    ville: String(deal.city ?? ""),
+    price: deal.purchasePrice != null ? String(deal.purchasePrice) : "",
+    surface: deal.surface != null ? String(deal.surface) : "",
   };
 
   const next = {
-    ...cur,
-    formState: nextForm,
-    savedAt: new Date().toISOString(),
+    ...cur, formState: nextForm, savedAt: new Date().toISOString(),
     source: { type: "investisseur.activeDeal", dealId: activeDealId },
   };
   try {
@@ -1234,221 +1393,93 @@ const injectStyles = () => {
 // SUB-COMPONENTS
 // ============================================
 
-const ScoreRing: React.FC<{ score: number; grade: string; size?: number }> = ({
-  score,
-  grade,
-  size = 130,
-}) => {
-  const r      = (size - 14) / 2;
-  const circ   = 2 * Math.PI * r;
+const ScoreRing: React.FC<{ score: number; grade: string; size?: number }> = ({ score, grade, size = 130 }) => {
+  const r = (size - 14) / 2;
+  const circ = 2 * Math.PI * r;
   const offset = circ - (score / 100) * circ;
-  const color  = gradeColor(grade);
+  const color = gradeColor(grade);
   return (
     <svg width={size} height={size} style={{ display: "block" }}>
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e2e8f0" strokeWidth="10" />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        fill="none"
-        stroke={color}
-        strokeWidth="10"
-        strokeLinecap="round"
-        strokeDasharray={circ}
-        strokeDashoffset={offset}
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth="10"
+        strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset}
         transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        style={{ transition: "stroke-dashoffset 0.8s ease" }}
-      />
-      <text x={size / 2} y={size / 2 - 4} textAnchor="middle" fill="#1e293b" fontSize={size * 0.28} fontWeight="800">
-        {score}
-      </text>
-      <text x={size / 2} y={size / 2 + 16} textAnchor="middle" fill="#94a3b8" fontSize={size * 0.11}>
-        /100
-      </text>
+        style={{ transition: "stroke-dashoffset 0.8s ease" }} />
+      <text x={size / 2} y={size / 2 - 4} textAnchor="middle" fill="#1e293b" fontSize={size * 0.28} fontWeight="800">{score}</text>
+      <text x={size / 2} y={size / 2 + 16} textAnchor="middle" fill="#94a3b8" fontSize={size * 0.11}>/100</text>
     </svg>
   );
 };
 
-const AxisBar: React.FC<{ label: string; value: number; weight: number }> = ({
-  label,
-  value,
-  weight,
-}) => {
+const AxisBar: React.FC<{ label: string; value: number; weight: number }> = ({ label, value, weight }) => {
   const barColor = value >= 65 ? "#22c55e" : value >= 40 ? "#f59e0b" : "#ef4444";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
       <span style={{ width: 80, color: "#64748b", flexShrink: 0, fontWeight: 500 }}>{label}</span>
       <div style={{ flex: 1, height: 7, borderRadius: 4, background: "#f1f5f9", overflow: "hidden" }}>
-        <div
-          style={{
-            width: `${value}%`,
-            height: "100%",
-            borderRadius: 4,
-            background: barColor,
-            transition: "width 0.6s ease",
-          }}
-        />
+        <div style={{ width: `${value}%`, height: "100%", borderRadius: 4, background: barColor, transition: "width 0.6s ease" }} />
       </div>
-      <span style={{ color: "#94a3b8", fontSize: 11, width: 70, textAlign: "right" }}>
-        {value}/100 · ×{weight}%
-      </span>
+      <span style={{ color: "#94a3b8", fontSize: 11, width: 70, textAlign: "right" }}>{value}/100 · ×{weight}%</span>
     </div>
   );
 };
 
-const SmartScoreHero: React.FC<{
-  score: LocalSmartScoreResult;
-  formState: FormState;
-  enriched: any;
-}> = ({ score, formState, enriched }) => {
-  const gc         = gradeColor(score.grade);
-  const vc         = verdictColor(score.verdict);
-  const prixM2Score  = score.details.prixM2Score;
+const SmartScoreHero: React.FC<{ score: LocalSmartScoreResult; formState: FormState; enriched: any }> = ({ score, formState, enriched }) => {
+  const gc = gradeColor(score.grade);
+  const vc = verdictColor(score.verdict);
+  const prixM2Score = score.details.prixM2Score;
   const qualiteScore = score.details.qualiteScore;
-  const subscores  = enriched?.subscores  ?? [];
+  const subscores = enriched?.subscores ?? [];
   const missingData = enriched?.missingData ?? [];
 
   return (
-    <div
-      style={{
-        background: "#fff",
-        borderRadius: 16,
-        padding: "28px 32px",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04)",
-        border: "1px solid #e2e8f0",
-        marginBottom: 24,
-        display: "flex",
-        gap: 32,
-        alignItems: "flex-start",
-        flexWrap: "wrap",
-        animation: "fadeIn 0.4s ease",
-      }}
-    >
+    <div style={{ background: "#fff", borderRadius: 16, padding: "28px 32px", boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04)", border: "1px solid #e2e8f0", marginBottom: 24, display: "flex", gap: 32, alignItems: "flex-start", flexWrap: "wrap", animation: "fadeIn 0.4s ease" }}>
       <div style={{ flexShrink: 0, textAlign: "center", position: "relative" }}>
         <ScoreRing score={score.globalScore} grade={score.grade} size={140} />
-        <div
-          style={{
-            marginTop: 8,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "4px 14px",
-            borderRadius: 20,
-            background: gc + "18",
-            border: `1px solid ${gc}33`,
-          }}
-        >
+        <div style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 14px", borderRadius: 20, background: gc + "18", border: `1px solid ${gc}33` }}>
           <span style={{ fontWeight: 800, fontSize: 13, color: gc }}>Grade {score.grade}</span>
         </div>
       </div>
 
       <div style={{ flex: 1, minWidth: 260 }}>
-        <div
-          style={{
-            fontSize: 11,
-            textTransform: "uppercase",
-            letterSpacing: 2,
-            color: "#94a3b8",
-            marginBottom: 4,
-          }}
-        >
-          SmartScore Mimmoza
-        </div>
-        <h2 style={{ margin: "0 0 2px", fontSize: 20, fontWeight: 700, color: "#1e293b" }}>
-          {formState.rueProche || "Bien à analyser"}
-        </h2>
+        <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 2, color: "#94a3b8", marginBottom: 4 }}>SmartScore Mimmoza</div>
+        <h2 style={{ margin: "0 0 2px", fontSize: 20, fontWeight: 700, color: "#1e293b" }}>{formState.rueProche || "Bien à analyser"}</h2>
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 14 }}>
           {[formState.ville, formState.codePostal].filter(Boolean).join(" · ")}
-          {formState.price   ? ` · ${formatPrice(parseNumberFR(formState.price))}`     : ""}
+          {formState.price ? ` · ${formatPrice(parseNumberFR(formState.price))}` : ""}
           {formState.surface ? ` · ${formatSurface(parseNumberFR(formState.surface))}` : ""}
         </div>
 
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "5px 14px",
-            borderRadius: 10,
-            background: vc + "14",
-            border: `1px solid ${vc}30`,
-            marginBottom: 18,
-          }}
-        >
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 14px", borderRadius: 10, background: vc + "14", border: `1px solid ${vc}30`, marginBottom: 18 }}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: vc }} />
           <span style={{ fontWeight: 700, fontSize: 14, color: vc }}>{verdictLabel(score.verdict)}</span>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {subscores.length > 0 ? (
-            subscores.map((s: any) => (
-              <AxisBar key={s.name} label={s.label} value={s.rawScore} weight={Math.round(s.weight * 100)} />
-            ))
+            subscores.map((s: any) => <AxisBar key={s.name} label={s.label} value={s.rawScore} weight={Math.round(s.weight * 100)} />)
           ) : (
             <>
-              <AxisBar label="Prix/m²"   value={prixM2Score?.rawScore  ?? 50} weight={40} />
-              <AxisBar label="Qualité"   value={qualiteScore?.rawScore ?? 50} weight={30} />
-              <AxisBar label="Complétude" value={50}                          weight={30} />
+              <AxisBar label="Prix/m²" value={prixM2Score?.rawScore ?? 50} weight={40} />
+              <AxisBar label="Qualité" value={qualiteScore?.rawScore ?? 50} weight={30} />
+              <AxisBar label="Complétude" value={50} weight={30} />
             </>
           )}
         </div>
       </div>
 
-      <div
-        style={{
-          width: 220,
-          flexShrink: 0,
-          background: "#f8fafc",
-          borderRadius: 12,
-          padding: 16,
-          border: "1px solid #e2e8f0",
-        }}
-      >
+      <div style={{ width: 220, flexShrink: 0, background: "#f8fafc", borderRadius: 12, padding: 16, border: "1px solid #e2e8f0" }}>
         {missingData.length > 0 && (
           <>
-            <div
-              style={{
-                fontSize: 10,
-                textTransform: "uppercase",
-                letterSpacing: 1.5,
-                color: "#94a3b8",
-                marginBottom: 6,
-                fontWeight: 600,
-              }}
-            >
-              Données manquantes
-            </div>
+            <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 1.5, color: "#94a3b8", marginBottom: 6, fontWeight: 600 }}>Données manquantes</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 14 }}>
               {missingData.map((d: string) => (
-                <span
-                  key={d}
-                  style={{
-                    fontSize: 11,
-                    padding: "2px 8px",
-                    borderRadius: 6,
-                    background: "#fef3c7",
-                    color: "#d97706",
-                    fontWeight: 500,
-                  }}
-                >
-                  {d}
-                </span>
+                <span key={d} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, background: "#fef3c7", color: "#d97706", fontWeight: 500 }}>{d}</span>
               ))}
             </div>
           </>
         )}
-        <div
-          style={{
-            fontSize: 10,
-            textTransform: "uppercase",
-            letterSpacing: 1.5,
-            color: "#94a3b8",
-            marginBottom: 6,
-            fontWeight: 600,
-          }}
-        >
-          Explication
-        </div>
+        <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 1.5, color: "#94a3b8", marginBottom: 6, fontWeight: 600 }}>Explication</div>
         <p style={{ fontSize: 12, color: "#64748b", lineHeight: 1.6, margin: 0 }}>
           {[prixM2Score?.explanation, qualiteScore?.explanation].filter(Boolean).join(" · ")}
         </p>
@@ -1457,81 +1488,176 @@ const SmartScoreHero: React.FC<{
   );
 };
 
-const DealRow: React.FC<{
-  dealId: string;
-  formState: FormState;
-  score: LocalSmartScoreResult | null;
-  isActive: boolean;
-  onClick: () => void;
-}> = ({ dealId, formState, score, isActive, onClick }) => {
-  const gc           = score?.minimumMet ? gradeColor(score.grade) : "#cbd5e1";
-  const displayScore = score?.minimumMet ? score.globalScore : "—";
-  const vc           = score?.minimumMet ? verdictColor(score.verdict) : "#cbd5e1";
+// ============================================
+// v6.6: ENERGY DPE INSIGHTS CARD
+// ============================================
+
+const EnergyDpeInsightsCard: React.FC<{ dpeUx: DpeUxData }> = ({ dpeUx }) => {
+  const hasAnyData = dpeUx.label != null || dpeUx.scoreBeforeAdjustment != null || dpeUx.renovationNeeded || dpeUx.investmentSummary != null;
+  if (!hasAnyData) return null;
+
+  const scoreWasAdjusted =
+    dpeUx.scoreBeforeAdjustment != null &&
+    dpeUx.scoreAfterAdjustment != null &&
+    dpeUx.scoreBeforeAdjustment !== dpeUx.scoreAfterAdjustment;
+
+  const sectionTitle = (text: string) => (
+    <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>{text}</div>
+  );
+
+  const kpiRow = (label: string, value: string, highlight?: boolean) => (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13, borderBottom: "1px solid #f1f5f9" }}>
+      <span style={{ color: "#64748b" }}>{label}</span>
+      <span style={{ color: highlight ? "#ef4444" : "#1e293b", fontWeight: highlight ? 700 : 500 }}>{value}</span>
+    </div>
+  );
 
   return (
-    <button
-      className="scoring-deal-row"
-      onClick={onClick}
-      style={{
-        all: "unset",
-        cursor: "pointer",
-        display: "flex",
-        alignItems: "center",
-        width: "100%",
-        boxSizing: "border-box",
-        padding: "12px 14px",
-        background: isActive ? "rgba(14,165,233,0.06)" : "transparent",
-        borderLeft: isActive ? `3px solid ${ACCENT}` : "3px solid transparent",
-        borderBottom: "1px solid #f1f5f9",
-      }}
-    >
-      <div
-        style={{
-          width: 42,
-          height: 42,
-          borderRadius: "50%",
-          flexShrink: 0,
-          border: `3px solid ${gc}`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          marginRight: 12,
-        }}
-      >
-        <span style={{ fontSize: 15, fontWeight: 800, color: gc }}>{displayScore}</span>
+    <div style={{ background: "#fff", borderRadius: 14, padding: "22px 28px", boxShadow: "0 1px 3px rgba(0,0,0,0.06)", border: "1px solid #e2e8f0", marginBottom: 24, animation: "fadeIn 0.4s ease" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+        <span style={{ fontSize: 18 }}>⚡</span>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>Diagnostic énergie & DPE du bien</span>
       </div>
 
+      <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+
+        {/* ── Col 1: DPE badge + alert ── */}
+        <div style={{ flex: 1, minWidth: 200 }}>
+          {sectionTitle("DPE du bien")}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+            <div style={{
+              width: 48, height: 48, borderRadius: 10,
+              background: dpeBadgeBg(dpeUx.label),
+              border: `2px solid ${dpeBadgeColor(dpeUx.label)}`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontWeight: 900, fontSize: 22, color: dpeBadgeColor(dpeUx.label),
+            }}>
+              {dpeUx.label?.toUpperCase() ?? "?"}
+            </div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>
+                {dpeUx.label ? `Classe ${dpeUx.label.toUpperCase()}` : "Non renseigné"}
+              </div>
+              {dpeUx.score != null && (
+                <div style={{ fontSize: 12, color: "#64748b" }}>Score DPE : {dpeUx.score}/100</div>
+              )}
+            </div>
+          </div>
+
+          {/* Alert block */}
+          {dpeUx.severity !== "none" && dpeUx.title && (
+            <div style={{
+              padding: "12px 16px", borderRadius: 10, marginBottom: 12,
+              background: dpeUx.severity === "critical" ? "#fef2f2" : "#fffbeb",
+              border: `1px solid ${dpeUx.severity === "critical" ? "#fca5a5" : "#fde68a"}`,
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: dpeUx.severity === "critical" ? "#991b1b" : "#92400e", marginBottom: 4 }}>
+                {dpeUx.severity === "critical" ? "🚫 " : "⚠️ "}{dpeUx.title}
+              </div>
+              {dpeUx.description && (
+                <p style={{ fontSize: 12, color: dpeUx.severity === "critical" ? "#b91c1c" : "#b45309", margin: 0, lineHeight: 1.5 }}>
+                  {dpeUx.description}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Score adjustment */}
+          {scoreWasAdjusted && (
+            <>
+              {sectionTitle("Impact sur le SmartScore V4")}
+              <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 8 }}>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: "#64748b" }}>{dpeUx.scoreBeforeAdjustment}</div>
+                  <div style={{ fontSize: 10, color: "#94a3b8" }}>Brut</div>
+                </div>
+                <div style={{ fontSize: 20, color: "#ef4444", fontWeight: 700 }}>→</div>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: "#ef4444" }}>{dpeUx.scoreAfterAdjustment}</div>
+                  <div style={{ fontSize: 10, color: "#94a3b8" }}>Ajusté</div>
+                </div>
+                <div style={{ fontSize: 12, color: "#94a3b8", marginLeft: 4 }}>/100</div>
+              </div>
+              {dpeUx.maxScoreCap != null && (
+                <div style={{ fontSize: 12, color: "#ef4444", fontWeight: 500, marginBottom: 4 }}>
+                  Plafonné à {dpeUx.maxScoreCap}/100 (DPE {dpeUx.label?.toUpperCase()})
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* ── Col 2: Renovation ── */}
+        {dpeUx.renovationNeeded && (
+          <div style={{ flex: 1, minWidth: 200 }}>
+            {sectionTitle("Travaux énergétiques estimés")}
+            {dpeUx.renovationCostTotal != null && kpiRow("Coût total estimé", formatCurrencyCompact(dpeUx.renovationCostTotal), true)}
+            {dpeUx.renovationCostPerM2 != null && kpiRow("Coût / m²", formatCurrencyCompact(dpeUx.renovationCostPerM2))}
+            {dpeUx.renovationScenario && kpiRow("Scénario", formatScenarioLabel(dpeUx.renovationScenario))}
+            {dpeUx.renovationConfidence && kpiRow("Confiance", formatConfidenceLabel(dpeUx.renovationConfidence))}
+            {dpeUx.renovationDescription && (
+              <p style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5, margin: "10px 0 0" }}>{dpeUx.renovationDescription}</p>
+            )}
+          </div>
+        )}
+
+        {/* ── Col 3: Business impact ── */}
+        {(dpeUx.exploitabilityRisk != null && dpeUx.exploitabilityRisk !== "low") && (
+          <div style={{ flex: 1, minWidth: 200 }}>
+            {sectionTitle("Impact investissement")}
+            {dpeUx.yieldDragPct != null && kpiRow("Impact rendement", formatPercentSigned(-dpeUx.yieldDragPct), true)}
+            {dpeUx.cashflowDragMonthly != null && kpiRow("Impact cashflow", `−${formatCurrencyCompact(dpeUx.cashflowDragMonthly)}/mois`, true)}
+            {dpeUx.exploitabilityRisk && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "4px 12px", borderRadius: 8,
+                  background: riskBgColor(dpeUx.exploitabilityRisk),
+                  border: `1px solid ${riskBorderColor(dpeUx.exploitabilityRisk)}`,
+                }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: dpeBadgeColor(dpeUx.label) }}>
+                    Risque : {formatRiskLabel(dpeUx.exploitabilityRisk)}
+                  </span>
+                </div>
+              </div>
+            )}
+            {dpeUx.investmentSummary && (
+              <p style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5, margin: "10px 0 0" }}>{dpeUx.investmentSummary}</p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// OTHER SUB-COMPONENTS (unchanged)
+// ============================================
+
+const DealRow: React.FC<{
+  dealId: string; formState: FormState; score: LocalSmartScoreResult | null; isActive: boolean; onClick: () => void;
+}> = ({ dealId, formState, score, isActive, onClick }) => {
+  const gc = score?.minimumMet ? gradeColor(score.grade) : "#cbd5e1";
+  const displayScore = score?.minimumMet ? score.globalScore : "—";
+  const vc = score?.minimumMet ? verdictColor(score.verdict) : "#cbd5e1";
+
+  return (
+    <button className="scoring-deal-row" onClick={onClick}
+      style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", width: "100%", boxSizing: "border-box", padding: "12px 14px", background: isActive ? "rgba(14,165,233,0.06)" : "transparent", borderLeft: isActive ? `3px solid ${ACCENT}` : "3px solid transparent", borderBottom: "1px solid #f1f5f9" }}>
+      <div style={{ width: 42, height: 42, borderRadius: "50%", flexShrink: 0, border: `3px solid ${gc}`, display: "flex", alignItems: "center", justifyContent: "center", marginRight: 12 }}>
+        <span style={{ fontSize: 15, fontWeight: 800, color: gc }}>{displayScore}</span>
+      </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontWeight: 600,
-            fontSize: 13,
-            color: "#1e293b",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
+        <div style={{ fontWeight: 600, fontSize: 13, color: "#1e293b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {formState.rueProche || `Deal ${dealId.slice(0, 6)}…`}
         </div>
         <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>
           {[formState.ville, formState.codePostal].filter(Boolean).join(" · ") || "Non renseigné"}
         </div>
       </div>
-
       {score?.minimumMet && (
-        <span
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            padding: "2px 8px",
-            borderRadius: 6,
-            background: vc + "18",
-            color: vc,
-            marginLeft: 8,
-            flexShrink: 0,
-          }}
-        >
+        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: vc + "18", color: vc, marginLeft: 8, flexShrink: 0 }}>
           {verdictLabel(score.verdict)}
         </span>
       )}
@@ -1540,144 +1666,47 @@ const DealRow: React.FC<{
 };
 
 const SummaryPanel: React.FC<{ form: FormState }> = ({ form }) => {
-  const price       = parseNumberFR(form.price);
-  const surface     = parseNumberFR(form.surface);
+  const price = parseNumberFR(form.price);
+  const surface = parseNumberFR(form.surface);
   const pricePerSqm = calculatePricePerSqm(price, surface);
-  const hasLocation  = !!(form.codePostal && form.rueProche);
+  const hasLocation = !!(form.codePostal && form.rueProche);
   const hasBasicInfo = !!(form.propertyType && form.price && form.surface);
-  const isValid      = hasLocation && hasBasicInfo;
+  const isValid = hasLocation && hasBasicInfo;
 
   return (
-    <div
-      style={{
-        background: "#fff",
-        borderRadius: 12,
-        padding: 18,
-        boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-        border: "1px solid #e2e8f0",
-      }}
-    >
-      <h3
-        style={{
-          fontSize: 14,
-          fontWeight: 600,
-          color: "#1e293b",
-          margin: "0 0 14px",
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-        }}
-      >
-        📋 Résumé
-      </h3>
-
+    <div style={{ background: "#fff", borderRadius: 12, padding: 18, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", border: "1px solid #e2e8f0" }}>
+      <h3 style={{ fontSize: 14, fontWeight: 600, color: "#1e293b", margin: "0 0 14px", display: "flex", alignItems: "center", gap: 6 }}>📋 Résumé</h3>
       <div style={{ marginBottom: 12 }}>
-        <div
-          style={{
-            fontSize: 10,
-            fontWeight: 600,
-            color: "#94a3b8",
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-            marginBottom: 6,
-          }}
-        >
-          LOCALISATION
-        </div>
-        {[
-          ["Code postal", form.codePostal],
-          ["Rue proche",  form.rueProche],
-          ...(form.ville ? [["Ville", form.ville]] : []),
-        ].map(([label, val]) => (
-          <div
-            key={label as string}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              fontSize: 13,
-              borderBottom: "1px solid #f8fafc",
-            }}
-          >
+        <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>LOCALISATION</div>
+        {[["Code postal", form.codePostal], ["Rue proche", form.rueProche], ...(form.ville ? [["Ville", form.ville]] : [])].map(([label, val]) => (
+          <div key={label as string} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13, borderBottom: "1px solid #f8fafc" }}>
             <span style={{ color: "#64748b" }}>{label}</span>
-            <span style={{ color: val ? "#1e293b" : "#cbd5e1", fontWeight: val ? 500 : 400 }}>
-              {(val as string) || "—"}
-            </span>
+            <span style={{ color: val ? "#1e293b" : "#cbd5e1", fontWeight: val ? 500 : 400 }}>{(val as string) || "—"}</span>
           </div>
         ))}
       </div>
-
       <div style={{ marginBottom: 12 }}>
-        <div
-          style={{
-            fontSize: 10,
-            fontWeight: 600,
-            color: "#94a3b8",
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-            marginBottom: 6,
-          }}
-        >
-          BIEN
-        </div>
+        <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>BIEN</div>
         {[
-          ["Type",   form.propertyType ? getPropertyTypeLabel(form.propertyType as PropertyType) : ""],
-          ["Prix",   price   > 0 ? formatPrice(price)     : ""],
+          ["Type", form.propertyType ? getPropertyTypeLabel(form.propertyType as PropertyType) : ""],
+          ["Prix", price > 0 ? formatPrice(price) : ""],
           ["Surface", surface > 0 ? formatSurface(surface) : ""],
-          ["Étage",  form.floor ? formatFloor(parseFloor(form.floor)) : ""],
+          ["Étage", form.floor ? formatFloor(parseFloor(form.floor)) : ""],
         ].map(([label, val]) => (
-          <div
-            key={label as string}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "4px 0",
-              fontSize: 13,
-              borderBottom: "1px solid #f8fafc",
-            }}
-          >
+          <div key={label as string} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13, borderBottom: "1px solid #f8fafc" }}>
             <span style={{ color: "#64748b" }}>{label}</span>
-            <span style={{ color: val ? "#1e293b" : "#cbd5e1", fontWeight: val ? 500 : 400 }}>
-              {(val as string) || "—"}
-            </span>
+            <span style={{ color: val ? "#1e293b" : "#cbd5e1", fontWeight: val ? 500 : 400 }}>{(val as string) || "—"}</span>
           </div>
         ))}
       </div>
-
       {pricePerSqm ? (
-        <div
-          style={{
-            background: "#f0f9ff",
-            padding: 10,
-            borderRadius: 8,
-            textAlign: "center",
-            marginBottom: 12,
-          }}
-        >
+        <div style={{ background: "#f0f9ff", padding: 10, borderRadius: 8, textAlign: "center", marginBottom: 12 }}>
           <div style={{ fontSize: 18, fontWeight: 700, color: ACCENT_DARK }}>{formatPrice(pricePerSqm)}</div>
           <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>prix au m²</div>
         </div>
       ) : null}
-
-      <div
-        style={{
-          padding: 10,
-          borderRadius: 8,
-          background: isValid ? "#ecfdf5" : "#fffbeb",
-          border: isValid ? "1px solid #a7f3d0" : "1px solid #fde68a",
-        }}
-      >
-        <div
-          style={{
-            fontSize: 10,
-            fontWeight: 600,
-            textTransform: "uppercase",
-            color: isValid ? "#065f46" : "#92400e",
-            marginBottom: 2,
-          }}
-        >
-          VALIDATION
-        </div>
+      <div style={{ padding: 10, borderRadius: 8, background: isValid ? "#ecfdf5" : "#fffbeb", border: isValid ? "1px solid #a7f3d0" : "1px solid #fde68a" }}>
+        <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", color: isValid ? "#065f46" : "#92400e", marginBottom: 2 }}>VALIDATION</div>
         <p style={{ fontSize: 13, color: isValid ? "#047857" : "#b45309", margin: 0 }}>
           {isValid ? "✓ Prêt à analyser" : "Remplir les champs obligatoires"}
         </p>
@@ -1686,82 +1715,25 @@ const SummaryPanel: React.FC<{ form: FormState }> = ({ form }) => {
   );
 };
 
-interface ToastProps {
-  type: "success" | "error";
-  title: string;
-  message?: string;
-  onClose: () => void;
-}
+interface ToastProps { type: "success" | "error"; title: string; message?: string; onClose: () => void; }
 const Toast: React.FC<ToastProps> = ({ type, title, message, onClose }) => (
-  <div
-    style={{
-      position: "fixed",
-      bottom: 24,
-      right: 24,
-      zIndex: 1000,
-      background: type === "success" ? "#10b981" : "#ef4444",
-      color: "#fff",
-      padding: "14px 20px",
-      borderRadius: 12,
-      boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-      maxWidth: 400,
-      animation: "slideIn 0.3s ease-out",
-    }}
-  >
+  <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 1000, background: type === "success" ? "#10b981" : "#ef4444", color: "#fff", padding: "14px 20px", borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,0.15)", display: "flex", alignItems: "center", gap: 10, maxWidth: 400, animation: "slideIn 0.3s ease-out" }}>
     <span style={{ fontSize: 18, flexShrink: 0 }}>{type === "success" ? "✓" : "✕"}</span>
     <div style={{ flex: 1, minWidth: 0 }}>
       <div style={{ fontWeight: 600, fontSize: 14 }}>{title}</div>
-      {message && (
-        <div
-          style={{
-            fontSize: 12,
-            opacity: 0.9,
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {message}
-        </div>
-      )}
+      {message && <div style={{ fontSize: 12, opacity: 0.9, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{message}</div>}
     </div>
-    <button onClick={onClose} style={{ all: "unset", cursor: "pointer", opacity: 0.8, fontSize: 16 }}>
-      ×
-    </button>
+    <button onClick={onClose} style={{ all: "unset", cursor: "pointer", opacity: 0.8, fontSize: 16 }}>×</button>
   </div>
 );
 
 const SmartScorePlaceholder: React.FC = () => (
-  <div
-    style={{
-      background: "#fff",
-      borderRadius: 16,
-      padding: "40px 28px",
-      textAlign: "center",
-      boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-      border: "1px solid #e2e8f0",
-      marginBottom: 24,
-    }}
-  >
-    <div
-      style={{
-        width: 72,
-        height: 72,
-        margin: "0 auto 16px",
-        borderRadius: "50%",
-        background: "linear-gradient(135deg, #e0f2fe 0%, #fef3c7 50%, #ecfdf5 100%)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
+  <div style={{ background: "#fff", borderRadius: 16, padding: "40px 28px", textAlign: "center", boxShadow: "0 1px 3px rgba(0,0,0,0.06)", border: "1px solid #e2e8f0", marginBottom: 24 }}>
+    <div style={{ width: 72, height: 72, margin: "0 auto 16px", borderRadius: "50%", background: "linear-gradient(135deg, #e0f2fe 0%, #fef3c7 50%, #ecfdf5 100%)", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <svg width="36" height="36" viewBox="0 0 32 32" fill="none">
-        <rect x="6"  y="14" width="6" height="12" rx="1" fill="#22c55e" />
-        <rect x="13" y="8"  width="6" height="18" rx="1" fill="#f59e0b" />
-        <rect x="20" y="4"  width="6" height="22" rx="1" fill={ACCENT}  />
+        <rect x="6" y="14" width="6" height="12" rx="1" fill="#22c55e" />
+        <rect x="13" y="8" width="6" height="18" rx="1" fill="#f59e0b" />
+        <rect x="20" y="4" width="6" height="22" rx="1" fill={ACCENT} />
       </svg>
     </div>
     <div style={{ fontSize: 18, fontWeight: 600, color: "#1e293b", marginBottom: 6 }}>SmartScore</div>
@@ -1772,15 +1744,7 @@ const SmartScorePlaceholder: React.FC = () => (
 );
 
 const NoDealPlaceholder: React.FC = () => (
-  <div
-    style={{
-      background: "#fffbeb",
-      border: "1px solid #fde68a",
-      borderRadius: 16,
-      padding: "48px 24px",
-      textAlign: "center",
-    }}
-  >
+  <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 16, padding: "48px 24px", textAlign: "center" }}>
     <div style={{ fontSize: 20, fontWeight: 600, color: "#92400e", marginBottom: 8 }}>Aucun deal actif</div>
     <p style={{ fontSize: 14, color: "#b45309", lineHeight: 1.6 }}>
       Sélectionnez un deal dans le Pipeline pour commencer le scoring.
@@ -1796,9 +1760,7 @@ interface SourcingHomePageProps {
   profileTarget?: ProfileTarget;
 }
 
-export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
-  profileTarget = "mdb",
-}) => {
+export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({ profileTarget = "mdb" }) => {
   const [dealId, setDealId] = useState<string | null>(() => getActiveDealId());
   const [dealMeta, setDealMeta] = useState<DealContextMeta | undefined>(() => {
     const snap = getDealContextSnapshot();
@@ -1806,10 +1768,7 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
   });
 
   useEffect(() => {
-    const unsub = subscribeDealContext((ctx) => {
-      setDealId(ctx.activeDealId);
-      setDealMeta(ctx.meta);
-    });
+    const unsub = subscribeDealContext((ctx) => { setDealId(ctx.activeDealId); setDealMeta(ctx.meta); });
     return unsub;
   }, []);
 
@@ -1818,18 +1777,16 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
     return resolveForDeal(dealId);
   }, [dealId]);
 
-  const [toast, setToast] = useState<{
-    show: boolean;
-    type: "success" | "error";
-    title: string;
-    message?: string;
-  } | null>(null);
-  const [formState,    setFormState]    = useState<FormState>(resolved.formState ?? EMPTY_FORM);
-  const [localScore,   setLocalScore]   = useState<LocalSmartScoreResult | null>(resolved.bag.localScore);
-  const [isComputing,  setIsComputing]  = useState(false);
-  const [submitFlash,  setSubmitFlash]  = useState(false);
-  const [lastDraft,    setLastDraft]    = useState<any>(resolved.bag.lastDraft);
+  const [toast, setToast] = useState<{ show: boolean; type: "success" | "error"; title: string; message?: string } | null>(null);
+  const [formState, setFormState] = useState<FormState>(resolved.formState ?? EMPTY_FORM);
+  const [localScore, setLocalScore] = useState<LocalSmartScoreResult | null>(resolved.bag.localScore);
+  const [isComputing, setIsComputing] = useState(false);
+  const [submitFlash, setSubmitFlash] = useState(false);
+  const [lastDraft, setLastDraft] = useState<any>(resolved.bag.lastDraft);
   const [scoreHistory, setScoreHistory] = useState<number[]>(resolved.bag.scoreHistory);
+
+  // v6.6: store the last Edge Function full response for V4 DPE extraction
+  const [lastEdgeFnResponse, setLastEdgeFnResponse] = useState<any>(null);
 
   const mountGuardRef = useRef(!!resolved.formState);
 
@@ -1843,32 +1800,25 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
     setLocalScore(resolved.bag.localScore);
     setLastDraft(resolved.bag.lastDraft);
     setScoreHistory(resolved.bag.scoreHistory);
+    setLastEdgeFnResponse(null);
     mountGuardRef.current = !!resolved.formState;
   }, [dealId, resolved]);
 
   useEffect(() => {
     if (!dealId) return;
-    const meta     = dealMeta ?? getDealContextMeta();
+    const meta = dealMeta ?? getDealContextMeta();
     const hydrated = hydrateCommonFieldsFromDeal(meta, dealId);
-    if (hydrated) {
-      setFormState(hydrated);
-      mountGuardRef.current = true;
-    }
+    if (hydrated) { setFormState(hydrated); mountGuardRef.current = true; }
   }, [dealId, dealMeta]);
 
   useEffect(() => { injectStyles(); }, []);
 
   useEffect(() => {
-    if (toast?.show) {
-      const t = setTimeout(() => setToast(null), 5000);
-      return () => clearTimeout(t);
-    }
+    if (toast?.show) { const t = setTimeout(() => setToast(null), 5000); return () => clearTimeout(t); }
   }, [toast]);
 
   useEffect(() => {
-    if ((errors?.length || 0) > 0) {
-      setToast({ show: true, type: "error", title: "Erreur de scoring", message: errors[0] });
-    }
+    if ((errors?.length || 0) > 0) setToast({ show: true, type: "error", title: "Erreur de scoring", message: errors[0] });
   }, [errors]);
 
   const handleFormChange = useCallback((form: FormState) => {
@@ -1884,12 +1834,7 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
     async (draft: SourcingItemDraft) => {
       const currentDealId = getActiveDealId();
       if (!currentDealId) {
-        setToast({
-          show: true,
-          type: "error",
-          title: "Aucun deal actif",
-          message: "Sélectionnez un deal dans le Pipeline avant d'enregistrer.",
-        });
+        setToast({ show: true, type: "error", title: "Aucun deal actif", message: "Sélectionnez un deal dans le Pipeline avant d'enregistrer." });
         return;
       }
 
@@ -1897,117 +1842,76 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
       setSubmitFlash(true);
       setTimeout(() => setSubmitFlash(false), 900);
 
-      // ── Pré-géocodage au niveau handleSubmit ──
-      // On géocode ici pour avoir lat/lng dispo dans les logs de submit
-      // ET pour les passer directement à fetchDvfEstimate (évite un double appel BAN).
       let submitLat: number | undefined;
       let submitLng: number | undefined;
       try {
         const preGeo = await geocodeAddressViaBan({
-          rue:        draft.location?.rueProche  || "",
-          codePostal: draft.location?.codePostal || "",
-          ville:      draft.location?.ville      || "",
+          rue: draft.location?.rueProche || "", codePostal: draft.location?.codePostal || "", ville: draft.location?.ville || "",
         });
-        if (preGeo) {
-          submitLat = preGeo.lat;
-          submitLng = preGeo.lon;
-          console.log("[handleSubmit] ✅ Géocodage pré-DVF réussi:", preGeo);
-        } else {
-          console.warn("[handleSubmit] ⚠ Géocodage pré-DVF échoué — fetchDvfEstimate tentera en interne");
-        }
-      } catch (preGeoErr) {
-        console.warn("[handleSubmit] Exception géocodage pré-DVF:", preGeoErr);
-      }
+        if (preGeo) { submitLat = preGeo.lat; submitLng = preGeo.lon; console.log("[handleSubmit] ✅ Géocodage pré-DVF réussi:", preGeo); }
+        else { console.warn("[handleSubmit] ⚠ Géocodage pré-DVF échoué — fetchDvfEstimate tentera en interne"); }
+      } catch (preGeoErr) { console.warn("[handleSubmit] Exception géocodage pré-DVF:", preGeoErr); }
 
       let dvfResult: DvfResult = DVF_FALLBACK;
       try {
         const dvfParams = {
-          codePostal:   draft.location?.codePostal || "",
-          rueProche:    draft.location?.rueProche  || "",
-          ville:        draft.location?.ville      || "",
+          codePostal: draft.location?.codePostal || "",
+          rueProche: draft.location?.rueProche || "",
+          ville: draft.location?.ville || "",
           propertyType: draft.propertyType || "appartement",
-          surface:      parseNumberFR(draft.surface),
-          lat:          submitLat,
-          lng:          submitLng,
+          surface: parseNumberFR(draft.surface),
+          lat: submitLat,
+          lng: submitLng,
+          // v6.6: pass DPE label for backend DPE business block
+          dpe_label: (draft as any).dpe || null,
         };
         console.log("[handleSubmit] dvfParams envoyés à fetchDvfEstimate:", dvfParams);
         const res = await fetchDvfEstimate(dvfParams);
         if (res && typeof res === "object") {
           dvfResult = {
-            price_m2_median:   res.price_m2_median ?? null,
+            price_m2_median: res.price_m2_median ?? null,
             comparables_count: typeof res.comparables_count === "number" ? res.comparables_count : 0,
           };
         }
         console.log("[handleSubmit] DVF result final:", dvfResult);
-      } catch (err) {
-        console.warn("[handleSubmit] DVF erreur (fallback neutre):", err);
-      }
+      } catch (err) { console.warn("[handleSubmit] DVF erreur (fallback neutre):", err); }
+
+      // v6.6: capture full Edge Function response for V4 extraction
+      setLastEdgeFnResponse(_lastEdgeFunctionResponse);
 
       const apiDraft: any = {
         profileTarget: draft.profileTarget,
-        location: {
-          codePostal: draft.location?.codePostal || "",
-          rueProche:  draft.location?.rueProche  || "",
-          ville:      draft.location?.ville      || "",
-        },
+        location: { codePostal: draft.location?.codePostal || "", rueProche: draft.location?.rueProche || "", ville: draft.location?.ville || "" },
         input: {
-          price:        parseNumberFR(draft.price),
-          surface:      parseNumberFR(draft.surface),
-          propertyType: draft.propertyType || "appartement",
-          floor:        draft.floor || "1",
-
-          nbPieces:    draft.nbPieces,
-          etatGeneral: draft.etatGeneral,
-          dpe:         draft.dpe,
-
-          ascenseur: draft.ascenseur,
-          balcon:    draft.balcon,
-          terrasse:  draft.terrasse,
-          cave:      draft.cave,
-          parking:   draft.parking,
-          jardin:    draft.jardin,
-          garage:    draft.garage,
-          commerces: (draft as any).commerces,
-          transport: (draft as any).transport,
-
-          bus:      (draft as any).bus,
-          tram:     (draft as any).tram,
-          metro:    (draft as any).metro,
-          rerTrain: (draft as any).rerTrain,
-
-          loggia:        (draft as any).loggia,
-          calme:         (draft as any).calme,
-          lumineux:      (draft as any).lumineux,
-          traversant:    (draft as any).traversant,
-          visAVisFaible: (draft as any).visAVisFaible,
-          vueDegagee:    (draft as any).vueDegagee,
-          rdcSurRue:     (draft as any).rdcSurRue,
-
-          box: (draft as any).box,
+          price: parseNumberFR(draft.price), surface: parseNumberFR(draft.surface),
+          propertyType: draft.propertyType || "appartement", floor: draft.floor || "1",
+          nbPieces: draft.nbPieces, etatGeneral: draft.etatGeneral, dpe: draft.dpe,
+          ascenseur: draft.ascenseur, balcon: draft.balcon, terrasse: draft.terrasse,
+          cave: draft.cave, parking: draft.parking, jardin: draft.jardin, garage: draft.garage,
+          commerces: (draft as any).commerces, transport: (draft as any).transport,
+          bus: (draft as any).bus, tram: (draft as any).tram, metro: (draft as any).metro, rerTrain: (draft as any).rerTrain,
+          loggia: (draft as any).loggia, calme: (draft as any).calme, lumineux: (draft as any).lumineux,
+          traversant: (draft as any).traversant, visAVisFaible: (draft as any).visAVisFaible,
+          vueDegagee: (draft as any).vueDegagee, rdcSurRue: (draft as any).rdcSurRue, box: (draft as any).box,
         },
         quartier: draft.quartier || {},
-        dvf:      dvfResult,
+        dvf: dvfResult,
       };
 
       const computed = computeSmartScoreFromDraft(apiDraft);
 
       console.log("[SMARTSCORE][QUALITE_V3]", {
-        apiDraft,
-        qualiteScore: computed.details.qualiteScore,
-        bonusMalus:   computed.details.bonusMalus,
-        globalScore:  computed.globalScore,
+        apiDraft, qualiteScore: computed.details.qualiteScore,
+        bonusMalus: computed.details.bonusMalus, globalScore: computed.globalScore,
       });
 
       const smartScoreObj = {
-        score:           computed.globalScore,
-        globalScore:     computed.globalScore,
-        grade:           computed.grade,
-        verdict:         computed.verdict,
-        globalRationale: computed.globalRationale,
-        rationale:       computed.rationale,
+        score: computed.globalScore, globalScore: computed.globalScore,
+        grade: computed.grade, verdict: computed.verdict,
+        globalRationale: computed.globalRationale, rationale: computed.rationale,
       };
-      (draft as any).smartScore       = smartScoreObj;
-      (draft as any).smartscore       = smartScoreObj;
+      (draft as any).smartScore = smartScoreObj;
+      (draft as any).smartscore = smartScoreObj;
       (draft as any).smartScoreResult = smartScoreObj;
 
       const newHistory = [...scoreHistory, computed.globalScore];
@@ -2017,34 +1921,24 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
       setIsComputing(false);
 
       const savedFormState: FormState = {
-        codePostal:    draft.location?.codePostal    || "",
-        rueProche:     draft.location?.rueProche     || "",
-        ville:         draft.location?.ville         || "",
-        arrondissement: draft.location?.arrondissement || "",
-        quartier:      typeof draft.quartier === "string" ? draft.quartier : draft.quartier?.nom || "",
-        propertyType:  draft.propertyType || "",
-        price:         String(draft.price   || ""),
-        surface:       String(draft.surface || ""),
-        floor:         String(draft.floor   || ""),
+        codePostal: draft.location?.codePostal || "", rueProche: draft.location?.rueProche || "",
+        ville: draft.location?.ville || "", arrondissement: draft.location?.arrondissement || "",
+        quartier: typeof draft.quartier === "string" ? draft.quartier : draft.quartier?.nom || "",
+        propertyType: draft.propertyType || "", price: String(draft.price || ""),
+        surface: String(draft.surface || ""), floor: String(draft.floor || ""),
       };
       setFormState(savedFormState);
 
-      const key     = smartscoreKey(currentDealId);
+      const key = smartscoreKey(currentDealId);
       const payload = {
-        computed,
-        formState:    savedFormState,
-        lastDraft:    apiDraft,
-        scoreHistory: newHistory,
-        savedAt:      new Date().toISOString(),
-        source: { type: "investisseur.activeDeal", dealId: currentDealId },
+        computed, formState: savedFormState, lastDraft: apiDraft, scoreHistory: newHistory,
+        savedAt: new Date().toISOString(), source: { type: "investisseur.activeDeal", dealId: currentDealId },
       };
       if (computed.minimumMet) {
         try {
           const json = JSON.stringify(payload);
           localStorage.setItem(key, json);
-          for (const lk of LEGACY_LS_KEYS) {
-            try { localStorage.setItem(lk, json); } catch { /* quota */ }
-          }
+          for (const lk of LEGACY_LS_KEYS) { try { localStorage.setItem(lk, json); } catch { /* quota */ } }
         } catch { /* quota */ }
       } else {
         try { localStorage.removeItem(key); } catch { /* ignore */ }
@@ -2055,69 +1949,76 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
       }
 
       if (computed.minimumMet) {
-        setToast({
-          show: true,
-          type: "success",
-          title:   `SmartScore: ${computed.globalScore}/100 (${computed.grade})`,
-          message: computed.globalRationale,
-        });
+        setToast({ show: true, type: "success", title: `SmartScore: ${computed.globalScore}/100 (${computed.grade})`, message: computed.globalRationale });
       } else {
-        setToast({
-          show: true,
-          type: "error",
-          title:   "Données insuffisantes",
-          message: MINIMUM_VIABLE_MSG,
-        });
+        setToast({ show: true, type: "error", title: "Données insuffisantes", message: MINIMUM_VIABLE_MSG });
       }
     },
     [analyzeAndComputeScore, scoreHistory],
   );
 
+  // v6.6: extract DPE UX data — backend V4 enriched, with local DPE fallback
+  const dpeUxData: DpeUxData = useMemo(() => {
+    // 1. Try backend V4 block
+    const v4 = extractSmartScoreV4Block(lastEdgeFnResponse);
+    const backendDpe = v4 ? extractDpeUxData(v4) : null;
+
+    // 2. Local DPE from form/draft as fallback
+    const localDpeLabel =
+      (lastDraft?.input?.dpe as string | undefined)?.trim().toUpperCase() || null;
+
+    // 3. If backend returned real DPE data, use it
+    if (backendDpe && backendDpe.label != null) {
+      console.log("[DPE UX] Using backend V4 DPE data:", backendDpe.label);
+      return backendDpe;
+    }
+
+    // 4. Fallback: build minimal DPE UX from local form DPE value
+    if (localDpeLabel && /^[A-G]$/.test(localDpeLabel)) {
+      console.log("[DPE UX] Fallback: using local DPE label:", localDpeLabel);
+      const localScore = ({ A: 95, B: 90, C: 80, D: 65, E: 50, F: 25, G: 5 } as Record<string, number>)[localDpeLabel] ?? null;
+      const isBlocking = localDpeLabel === "F" || localDpeLabel === "G";
+      const severity: DpeUxData["severity"] = localDpeLabel === "G" ? "critical" : localDpeLabel === "F" ? "warning" : localDpeLabel === "E" ? "warning" : "none";
+      const constraintTitles: Record<string, string> = {
+        G: "DPE G : interdiction de location",
+        F: "DPE F : interdiction de location imminente",
+        E: "DPE E : vigilance réglementaire",
+      };
+      const constraintDescs: Record<string, string> = {
+        G: "Depuis 2025, les logements classés G sont interdits à la location. Rénovation énergétique lourde obligatoire.",
+        F: "Les logements classés F seront interdits à la location à partir de 2028. Rénovation énergétique nécessaire à court terme.",
+        E: "Les logements classés E seront interdits à la location à partir de 2034. Travaux à anticiper.",
+      };
+      // Merge any partial backend data if available
+      return {
+        ...(backendDpe ?? EMPTY_DPE_UX),
+        label: localDpeLabel,
+        score: backendDpe?.score ?? localScore,
+        isBlocking: backendDpe?.isBlocking ?? isBlocking,
+        severity: (backendDpe && backendDpe.severity !== "none") ? backendDpe.severity : severity,
+        title: backendDpe?.title ?? constraintTitles[localDpeLabel] ?? null,
+        description: backendDpe?.description ?? constraintDescs[localDpeLabel] ?? null,
+      };
+    }
+
+    return { ...EMPTY_DPE_UX };
+  }, [lastEdgeFnResponse, lastDraft]);
+
   const Banner = (
     <div style={{ maxWidth: 1600, margin: "0 auto", padding: "20px 24px 0" }}>
-
-      {/* ── Bannière titre ── */}
-      <div
-        style={{
-          background: GRAD_BANNER,
-          borderRadius: 14,
-          padding: "22px 28px",
-          marginBottom: 16,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: 16,
-        }}
-      >
+      <div style={{ background: GRAD_BANNER, borderRadius: 14, padding: "22px 28px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
         <div>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginBottom: 4, letterSpacing: 1 }}>
-            Investisseur › Acquisition
-          </div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: "white", marginBottom: 2 }}>
-            🎯 SmartScore
-          </div>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
-            Qualifiez et scorez vos opportunités immobilières en quelques secondes
-          </div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginBottom: 4, letterSpacing: 1 }}>Investisseur › Acquisition</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: "white", marginBottom: 2 }}>🎯 SmartScore</div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>Qualifiez et scorez vos opportunités immobilières en quelques secondes</div>
         </div>
         <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
           {[
             { icon: "📊", label: "Prix/m²", sub: "vs marché DVF" },
-            { icon: "✨", label: "Qualité",  sub: "30+ critères" },
+            { icon: "✨", label: "Qualité", sub: "30+ critères" },
             { icon: "📋", label: "Complétude", sub: "dossier complet" },
           ].map((pill) => (
-            <div
-              key={pill.label}
-              style={{
-                background: "rgba(255,255,255,0.12)",
-                border: "1px solid rgba(255,255,255,0.2)",
-                borderRadius: 10,
-                padding: "8px 16px",
-                textAlign: "center",
-                minWidth: 90,
-              }}
-            >
+            <div key={pill.label} style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 10, padding: "8px 16px", textAlign: "center", minWidth: 90 }}>
               <div style={{ fontSize: 18 }}>{pill.icon}</div>
               <div style={{ fontSize: 12, fontWeight: 700, color: "#fff", marginTop: 2 }}>{pill.label}</div>
               <div style={{ fontSize: 10, color: "rgba(255,255,255,0.65)" }}>{pill.sub}</div>
@@ -2126,34 +2027,9 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
         </div>
       </div>
 
-      {/* ── Bloc d'explication SmartScore ── */}
-      <div
-        style={{
-          background: "#fff",
-          borderRadius: 14,
-          border: "1px solid #e2e8f0",
-          padding: "20px 28px",
-          marginBottom: 20,
-          display: "flex",
-          gap: 32,
-          alignItems: "flex-start",
-          flexWrap: "wrap",
-        }}
-      >
-        {/* Intro */}
+      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "20px 28px", marginBottom: 20, display: "flex", gap: 32, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div style={{ flex: 2, minWidth: 260 }}>
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              color: "#94a3b8",
-              textTransform: "uppercase",
-              letterSpacing: 1.5,
-              marginBottom: 8,
-            }}
-          >
-            Qu'est-ce que le SmartScore ?
-          </div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>Qu'est-ce que le SmartScore ?</div>
           <p style={{ margin: 0, fontSize: 14, color: "#334155", lineHeight: 1.7 }}>
             Le <strong>SmartScore Mimmoza</strong> est une note sur 100 qui évalue instantanément
             la qualité d'une opportunité immobilière. Il combine le{" "}
@@ -2162,126 +2038,38 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
             et la <strong>complétude du dossier</strong>. Plus le score est élevé, meilleure est l'opportunité.
           </p>
         </div>
-
-        {/* Séparateur vertical */}
         <div style={{ width: 1, background: "#e2e8f0", alignSelf: "stretch", flexShrink: 0 }} />
-
-        {/* Les 3 axes */}
         <div style={{ flex: 3, minWidth: 320 }}>
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              color: "#94a3b8",
-              textTransform: "uppercase",
-              letterSpacing: 1.5,
-              marginBottom: 10,
-            }}
-          >
-            Les 3 axes de notation
-          </div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>Les 3 axes de notation</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {[
-              {
-                pct: "40%",
-                color: ACCENT,
-                label: "Prix / m²",
-                desc: "Comparaison du prix demandé avec la médiane des transactions DVF dans un rayon de 3 km. Une décote de 20 % rapporte un score de 88/100.",
-              },
-              {
-                pct: "35%",
-                color: "#8b5cf6",
-                label: "Qualité du bien",
-                desc: "Évaluation de 30+ critères : étage, ascenseur, extérieurs (balcon, terrasse, jardin), luminosité, transports (métro, RER…), DPE, état général, équipements (parking, box…).",
-              },
-              {
-                pct: "25%",
-                color: "#10b981",
-                label: "Complétude du dossier",
-                desc: "Mesure la richesse des informations saisies. Plus vous renseignez de champs, plus le score est précis et fiable.",
-              },
+              { pct: "40%", color: ACCENT, label: "Prix / m²", desc: "Comparaison du prix demandé avec la médiane des transactions DVF dans un rayon de 3 km. Une décote de 20 % rapporte un score de 88/100." },
+              { pct: "35%", color: "#8b5cf6", label: "Qualité du bien", desc: "Évaluation de 30+ critères : étage, ascenseur, extérieurs (balcon, terrasse, jardin), luminosité, transports (métro, RER…), DPE, état général, équipements (parking, box…)." },
+              { pct: "25%", color: "#10b981", label: "Complétude du dossier", desc: "Mesure la richesse des informations saisies. Plus vous renseignez de champs, plus le score est précis et fiable." },
             ].map((ax) => (
               <div key={ax.label} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                <div
-                  style={{
-                    flexShrink: 0,
-                    marginTop: 2,
-                    background: ax.color + "18",
-                    border: `1px solid ${ax.color}33`,
-                    borderRadius: 6,
-                    padding: "2px 8px",
-                    fontSize: 11,
-                    fontWeight: 800,
-                    color: ax.color,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  ×{ax.pct}
-                </div>
+                <div style={{ flexShrink: 0, marginTop: 2, background: ax.color + "18", border: `1px solid ${ax.color}33`, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800, color: ax.color, whiteSpace: "nowrap" }}>×{ax.pct}</div>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", marginBottom: 2 }}>
-                    {ax.label}
-                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", marginBottom: 2 }}>{ax.label}</div>
                   <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>{ax.desc}</div>
                 </div>
               </div>
             ))}
           </div>
         </div>
-
-        {/* Séparateur vertical */}
         <div style={{ width: 1, background: "#e2e8f0", alignSelf: "stretch", flexShrink: 0 }} />
-
-        {/* Grille grades */}
         <div style={{ flex: 1, minWidth: 160 }}>
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              color: "#94a3b8",
-              textTransform: "uppercase",
-              letterSpacing: 1.5,
-              marginBottom: 10,
-            }}
-          >
-            Grille de lecture
-          </div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>Grille de lecture</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {[
-              { grade: "A", range: "80–100", verdict: "GO",              vc: "#22c55e" },
-              { grade: "B", range: "65–79",  verdict: "GO",              vc: "#3b82f6" },
-              { grade: "C", range: "50–64",  verdict: "GO avec réserves", vc: "#f59e0b" },
-              { grade: "D", range: "35–49",  verdict: "NO GO",           vc: "#ef4444" },
-              { grade: "E", range: "0–34",   verdict: "NO GO",           vc: "#991b1b" },
+              { grade: "A", range: "80–100", verdict: "GO", vc: "#22c55e" },
+              { grade: "B", range: "65–79", verdict: "GO", vc: "#3b82f6" },
+              { grade: "C", range: "50–64", verdict: "GO avec réserves", vc: "#f59e0b" },
+              { grade: "D", range: "35–49", verdict: "NO GO", vc: "#ef4444" },
+              { grade: "E", range: "0–34", verdict: "NO GO", vc: "#991b1b" },
             ].map((g) => (
-              <div
-                key={g.grade}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "4px 8px",
-                  borderRadius: 8,
-                  background: g.vc + "0d",
-                }}
-              >
-                <span
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: "50%",
-                    background: g.vc,
-                    color: "#fff",
-                    fontWeight: 800,
-                    fontSize: 12,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                  }}
-                >
-                  {g.grade}
-                </span>
+              <div key={g.grade} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 8, background: g.vc + "0d" }}>
+                <span style={{ width: 22, height: 22, borderRadius: "50%", background: g.vc, color: "#fff", fontWeight: 800, fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{g.grade}</span>
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, color: "#1e293b" }}>{g.range} pts</div>
                   <div style={{ fontSize: 10, color: g.vc, fontWeight: 700 }}>{g.verdict}</div>
@@ -2291,7 +2079,6 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
           </div>
         </div>
       </div>
-
     </div>
   );
 
@@ -2299,14 +2086,12 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
     return (
       <div style={{ minHeight: "100vh", background: "#f5f7fa" }}>
         {Banner}
-        <div style={{ maxWidth: 600, margin: "0 auto", padding: "0 24px" }}>
-          <NoDealPlaceholder />
-        </div>
+        <div style={{ maxWidth: 600, margin: "0 auto", padding: "0 24px" }}><NoDealPlaceholder /></div>
       </div>
     );
   }
 
-  const priceNum   = parseNumberFR(formState.price);
+  const priceNum = parseNumberFR(formState.price);
   const surfaceNum = parseNumberFR(formState.surface);
   const hasMinimum = priceNum > 0 && surfaceNum > 0;
 
@@ -2320,7 +2105,7 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
       ? resolveSmartScore(score)
       : { resolved: null, resolvedScore: null };
 
-  const resolvedSS    = localResolved.resolved   ?? hookResolved.resolved   ?? null;
+  const resolvedSS = localResolved.resolved ?? hookResolved.resolved ?? null;
   const resolvedScore = localResolved.resolvedScore ?? hookResolved.resolvedScore ?? null;
 
   const effectiveScore =
@@ -2329,27 +2114,23 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
       : hasMinimum && resolvedScore != null
         ? {
             ...((score && typeof score === "object") ? score : {}),
-            globalScore:     resolvedScore,
-            score:           resolvedScore,
-            grade:           resolvedSS?.grade   ?? gradeFromScore(resolvedScore),
-            verdict:         resolvedSS?.verdict ?? verdictFromScore(resolvedScore),
+            globalScore: resolvedScore, score: resolvedScore,
+            grade: resolvedSS?.grade ?? gradeFromScore(resolvedScore),
+            verdict: resolvedSS?.verdict ?? verdictFromScore(resolvedScore),
             globalRationale: resolvedSS?.globalRationale ?? resolvedSS?.rationale ?? "",
-            rationale:       resolvedSS?.rationale ?? resolvedSS?.globalRationale ?? "",
-            explanations:    [],
-            missingData:     [],
-            subscores:       [],
-            penalties:       [],
-            blockers:        [],
-            engineVersion:   "sourcing-local-v2",
-            computedAt:      new Date().toISOString(),
-            inputHash:       "hook",
-            scoreHistory:    [resolvedScore],
+            rationale: resolvedSS?.rationale ?? resolvedSS?.globalRationale ?? "",
+            explanations: [], missingData: [], subscores: [], penalties: [], blockers: [],
+            engineVersion: "sourcing-local-v2", computedAt: new Date().toISOString(),
+            inputHash: "hook", scoreHistory: [resolvedScore],
           }
         : null;
 
-  const effectiveLoading       = isComputing || isLoading;
+  const effectiveLoading = isComputing || isLoading;
   const sourcingInitialFormValues = resolved.formState ?? undefined;
-  const hasScore               = resolvedScore != null && localScore != null && localScore.minimumMet;
+  const hasScore = resolvedScore != null && localScore != null && localScore.minimumMet;
+
+  // v6.6: show DPE card when we have any DPE data (local or backend)
+  const showDpeCard = dpeUxData.label != null;
 
   return (
     <div style={{ minHeight: "100vh", background: "#f5f7fa" }}>
@@ -2357,34 +2138,10 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
 
       <div style={{ maxWidth: 1600, margin: "0 auto", padding: "0 24px 40px" }}>
         {effectiveLoading ? (
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: 16,
-              padding: "48px 24px",
-              textAlign: "center",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-              border: "1px solid #e2e8f0",
-              marginBottom: 24,
-            }}
-          >
-            <div
-              style={{
-                width: 48,
-                height: 48,
-                border: "4px solid #e2e8f0",
-                borderTopColor: ACCENT,
-                borderRadius: "50%",
-                animation: "spin 0.8s linear infinite",
-                margin: "0 auto 16px",
-              }}
-            />
-            <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b", marginBottom: 4 }}>
-              Analyse en cours...
-            </div>
-            <div style={{ fontSize: 14, color: "#64748b" }}>
-              Géocodage, DVF et calcul du SmartScore
-            </div>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "48px 24px", textAlign: "center", boxShadow: "0 1px 3px rgba(0,0,0,0.06)", border: "1px solid #e2e8f0", marginBottom: 24 }}>
+            <div style={{ width: 48, height: 48, border: "4px solid #e2e8f0", borderTopColor: ACCENT, borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
+            <div style={{ fontSize: 16, fontWeight: 600, color: "#1e293b", marginBottom: 4 }}>Analyse en cours...</div>
+            <div style={{ fontSize: 14, color: "#64748b" }}>Géocodage, DVF et calcul du SmartScore</div>
           </div>
         ) : hasScore && effectiveScore ? (
           <SmartScoreHero score={localScore!} formState={formState} enriched={effectiveScore} />
@@ -2392,42 +2149,16 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
           <SmartScorePlaceholder />
         )}
 
+        {/* v6.6: Energy/DPE insights card — shown between hero and 3-col layout */}
+        {showDpeCard && <EnergyDpeInsightsCard dpeUx={dpeUxData} />}
+
         <div style={{ display: "flex", gap: 24 }}>
           {/* ── Colonne gauche : liste deals ── */}
-          <div
-            style={{
-              width: 300,
-              flexShrink: 0,
-              background: "#fff",
-              borderRadius: 14,
-              boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-              border: "1px solid #e2e8f0",
-              alignSelf: "flex-start",
-              position: "sticky",
-              top: 24,
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                padding: "14px 16px",
-                borderBottom: "1px solid #e2e8f0",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
+          <div style={{ width: 300, flexShrink: 0, background: "#fff", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", border: "1px solid #e2e8f0", alignSelf: "flex-start", position: "sticky", top: 24, overflow: "hidden" }}>
+            <div style={{ padding: "14px 16px", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontWeight: 700, fontSize: 14, color: "#1e293b" }}>Mes opportunités</span>
             </div>
-
-            <DealRow
-              dealId={dealId}
-              formState={formState}
-              score={localScore}
-              isActive={true}
-              onClick={() => {}}
-            />
-
+            <DealRow dealId={dealId} formState={formState} score={localScore} isActive={true} onClick={() => {}} />
             <div style={{ padding: "16px", textAlign: "center" }}>
               <p style={{ fontSize: 12, color: "#94a3b8", margin: 0, lineHeight: 1.5 }}>
                 Sélectionnez un deal dans le Pipeline pour l'afficher ici.
@@ -2437,39 +2168,9 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
 
           {/* ── Colonne centrale : formulaire ── */}
           <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
-
-            {/* Flash visuel immédiat au clic sur Analyser */}
             {submitFlash && (
-              <div
-                className="submit-flash-overlay"
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  zIndex: 10,
-                  borderRadius: 14,
-                  background: "linear-gradient(135deg, rgba(14,165,233,0.08) 0%, rgba(99,102,241,0.08) 100%)",
-                  border: "2px solid rgba(14,165,233,0.4)",
-                  display: "flex",
-                  alignItems: "flex-end",
-                  justifyContent: "center",
-                  paddingBottom: 24,
-                }}
-              >
-                <div
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 8,
-                    background: ACCENT,
-                    color: "#fff",
-                    borderRadius: 30,
-                    padding: "8px 20px",
-                    fontSize: 14,
-                    fontWeight: 700,
-                    boxShadow: "0 4px 20px rgba(14,165,233,0.35)",
-                    animation: "submitPulse 0.9s ease",
-                  }}
-                >
+              <div className="submit-flash-overlay" style={{ position: "absolute", inset: 0, zIndex: 10, borderRadius: 14, background: "linear-gradient(135deg, rgba(14,165,233,0.08) 0%, rgba(99,102,241,0.08) 100%)", border: "2px solid rgba(14,165,233,0.4)", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 24 }}>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: ACCENT, color: "#fff", borderRadius: 30, padding: "8px 20px", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 20px rgba(14,165,233,0.35)", animation: "submitPulse 0.9s ease" }}>
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                     <path d="M3 8l3.5 3.5L13 4.5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
@@ -2477,26 +2178,11 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
                 </div>
               </div>
             )}
-
-            <SourcingForm
-              key={dealId}
-              profileTarget={profileTarget}
-              onSubmit={handleSubmit}
-              onFormChange={handleFormChange}
-              initialFormValues={sourcingInitialFormValues}
-            />
+            <SourcingForm key={dealId} profileTarget={profileTarget} onSubmit={handleSubmit} onFormChange={handleFormChange} initialFormValues={sourcingInitialFormValues} />
           </div>
 
           {/* ── Colonne droite : SmartScorePanel + résumé ── */}
-          <div
-            style={{
-              width: 280,
-              flexShrink: 0,
-              position: "sticky",
-              top: 24,
-              alignSelf: "flex-start",
-            }}
-          >
+          <div style={{ width: 280, flexShrink: 0, position: "sticky", top: 24, alignSelf: "flex-start" }}>
             {resolvedScore != null && effectiveScore != null ? (
               <SmartScorePanel score={effectiveScore} hints={hints} compact />
             ) : null}
@@ -2507,14 +2193,7 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({
         </div>
       </div>
 
-      {toast?.show && (
-        <Toast
-          type={toast.type}
-          title={toast.title}
-          message={toast.message}
-          onClose={() => setToast(null)}
-        />
-      )}
+      {toast?.show && <Toast type={toast.type} title={toast.title} message={toast.message} onClose={() => setToast(null)} />}
     </div>
   );
 };

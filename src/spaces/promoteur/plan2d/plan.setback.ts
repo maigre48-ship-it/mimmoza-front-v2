@@ -31,8 +31,13 @@ export type SetbackCheckResult = {
 
 /**
  * Signed area of a polygon (Shoelace formula).
- *  positive → CCW winding in Y-up world space
- *  negative → CW  winding
+ *
+ * IMPORTANT — coordinate system:
+ *   Coordinates in this codebase are in Y-DOWN screen space (canvas).
+ *   In Y-down space the sign convention is INVERTED relative to standard
+ *   Y-up math:
+ *     positive → CW  winding on screen  (interior to the LEFT  of each edge)
+ *     negative → CCW winding on screen  (interior to the RIGHT of each edge)
  */
 function signedArea(polygon: Vec2[]): number {
   const n = polygon.length;
@@ -71,10 +76,16 @@ function lineLineIntersection(
  * Computes an approximate inward offset of a convex (or near-convex) polygon.
  *
  * Algorithm — edge-inset with miter joins:
- *   1. Determine winding (CCW vs CW) via signed area.
+ *   1. Determine winding (CW vs CCW in Y-down screen space) via signed area.
  *   2. For each edge, compute the inward unit normal.
  *   3. Offset each edge inward by `distance`.
  *   4. New vertices = intersections of adjacent offset edges.
+ *
+ * Y-DOWN normal convention (screen / canvas space):
+ *   area > 0 → CW on screen  → interior is LEFT  of each directed edge
+ *                               left  normal of (ex,ey) = (-ey,  ex) → sign = +1
+ *   area < 0 → CCW on screen → interior is RIGHT of each directed edge
+ *                               right normal of (ex,ey) = ( ey, -ex) → sign = -1
  *
  * Accuracy:
  *   • Exact for convex polygons.
@@ -85,11 +96,8 @@ function lineLineIntersection(
  * Returns an empty array when the offset distance collapses the polygon
  * (setback is too large relative to the parcel).
  *
- * Extensibility: future V2 can swap this for a proper straight-skeleton
- * library (e.g. CGAL-JS, polygon-offset) without changing the call sites.
- *
- * @param polygon  World-space polygon to offset (Vec2[]).
- * @param distance Inward offset distance in world units.
+ * @param polygon  World-space polygon to offset (Vec2[], Y-down).
+ * @param distance Inward offset distance in world units (metres).
  */
 export function offsetPolygonInwardApprox(
   polygon: Vec2[],
@@ -101,8 +109,12 @@ export function offsetPolygonInwardApprox(
   const area = signedArea(polygon);
   if (Math.abs(area) < 1e-10) return [];
 
-  // sign: +1 = CCW (Y-up world) → inward normal is left normal of edge
-  //       -1 = CW              → inward normal is right normal
+  // In Y-DOWN screen space:
+  //   area > 0 → CW on screen  → inward = left  normal → sign = +1
+  //   area < 0 → CCW on screen → inward = right normal → sign = -1
+  //
+  // NOTE: this is the OPPOSITE of the Y-up convention used in standard
+  // geometry textbooks (where CCW → positive area → left normal is inward).
   const sign = area >= 0 ? 1 : -1;
 
   // ── Step 1: offset each edge inward ──────────────────────────────
@@ -118,14 +130,13 @@ export function offsetPolygonInwardApprox(
     const len   = Math.sqrt(edgeX * edgeX + edgeY * edgeY);
 
     if (len < 1e-10) {
-      // Degenerate edge — carry through unchanged
       offsetEdges.push({ ax: p1.x, ay: p1.y, bx: p2.x, by: p2.y });
       continue;
     }
 
-    // Inward unit normal
-    // CCW (sign=+1): left  normal of (ex,ey) = (-ey, ex) / len → inward
-    // CW  (sign=-1): right normal of (ex,ey) = ( ey,-ex) / len → inward
+    // Inward unit normal (Y-down, see convention above):
+    //   sign=+1: left  normal = (-ey,  ex) / len
+    //   sign=-1: right normal = ( ey, -ex) / len
     const nx = sign * (-edgeY / len);
     const ny = sign * ( edgeX / len);
 
@@ -149,15 +160,16 @@ export function offsetPolygonInwardApprox(
       { x: curr.ax, y: curr.ay }, { x: curr.bx, y: curr.by },
     );
 
-    // Fallback for parallel adjacent edges: use the start of the current offset edge
     result.push(intersection ?? { x: curr.ax, y: curr.ay });
   }
 
   // ── Guard: collapse detection ─────────────────────────────────────
-  // If the result polygon's area is too small (< 1 % of original),
-  // the setback is too large — return empty to signal no buildable zone.
   const resultArea = Math.abs(signedArea(result));
   const originArea = Math.abs(area);
+
+  // Envelope must not exceed parcel area (catches outward-offset regressions).
+  if (resultArea > originArea * 1.001) return [];
+  // Envelope too small → setback larger than parcel.
   if (resultArea < originArea * 0.005) return [];
 
   return result;
@@ -168,17 +180,11 @@ export function offsetPolygonInwardApprox(
 /**
  * Returns true when the building polygon does NOT fit entirely within
  * the inner buildable zone (i.e., it violates the setback rule).
- *
- * Uses the robust polygon containment check from plan.constraint.ts
- * which handles both vertex containment and edge-crossing cases.
- *
- * @param buildingPolygon   World-space building polygon.
- * @param innerBuildableZone  Inward-offset parcel polygon from offsetPolygonInwardApprox.
  */
 export function doesBuildingViolateSetback(
   buildingPolygon: Vec2[],
   innerBuildableZone: Vec2[],
 ): boolean {
-  if (innerBuildableZone.length < 3) return false; // no zone → no constraint
+  if (innerBuildableZone.length < 3) return false;
   return !isPolygonInsidePolygon(buildingPolygon, innerBuildableZone);
 }

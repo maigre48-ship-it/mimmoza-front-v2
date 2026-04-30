@@ -7,21 +7,13 @@
 //   V7    : setback_mass (masse haute en retrait)
 //   V8    : corner_pilaster (traitement d'angle)
 //   V9    : variation architecturale déterministe
-//           - facade_relief  : panneaux spandrils avec variation de profondeur
-//           - facade_fin     : fins verticaux entre zones de composition
-//           - seed contrôlé  : hash(building.id) → même bâtiment = même façade
-//           - zones A/B/C    : découpage de chaque arête en segments
-//             avec caractère propre (profondeur, teinte, présence fin)
 //   V9.1  : guard de dimensions footprint
-//           - validation width/depth < MAX_FACADE_FOOTPRINT_M
-//           - log diagnostic systématique
-//           - si footprint invalide → return [] sans exception
 //
-// Hors scope V9 :
-//   - retraits complexes multi-niveaux
-//   - loggias
-//   - marquise avancée
-//   - modénature fine par baie
+// CORRECTIF Z-FIGHTING (V9.2) :
+//   L'attique (attic) démarrait exactement à Y = totalHeight - atticHeight,
+//   même niveau que le top cap des murs → z-fighting entre les deux faces.
+//   Fix : décalage +0.005m (5mm) sur le translate de l'attic et du setback_mass.
+//   Imperceptible visuellement, mais casse l'égalité de profondeur entre faces.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import * as THREE from 'three';
@@ -47,14 +39,15 @@ import {
 // Constante seuil footprint
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Si width ou depth du footprint entrant dépasse cette valeur (mètres),
- * l'enrichissement est annulé. Dernier filet de sécurité contre le bug
- * « getBuildingScenePts retourne l'emprise parcelle ».
- * Cohérent avec MAX_FOOTPRINT_M dans buildBlenderSceneGraph et
- * MAX_EXTRACTED_FOOTPRINT_M dans exportSceneToGltf.
- */
 const MAX_FACADE_FOOTPRINT_M = 120;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Offset anti z-fighting (mètres)
+// Décalage vertical minimal pour éviter la coplanarité entre le dessus
+// des murs et le bas de l'attique / du setback.
+// 5mm → imperceptible à l'œil, mais suffit pour le comparateur de profondeur GPU.
+// ─────────────────────────────────────────────────────────────────────────────
+const ANTI_ZFIGHT_Y = 0.005;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -126,10 +119,6 @@ export function buildFacadeMeshGroupsForExport(input: FacadeExportInput): Export
   }
 
   // ── V9.1: Guard dimensions footprint ──────────────────────────────────────
-  // Protège contre le bug "getBuildingScenePts retourne l'emprise parcelle".
-  // Si le footprint dépasse MAX_FACADE_FOOTPRINT_M dans une dimension,
-  // tous les meshes d'enrichissement (SOCLE, ATTIC, CORNICE, RELIEF, FINS...)
-  // seraient générés à l'échelle de la parcelle → bbox bâtiment ~174m → caméra loin.
   {
     const fpXs = scenePts.map(p => p.x);
     const fpZs = scenePts.map(p => p.z);
@@ -138,7 +127,6 @@ export function buildFacadeMeshGroupsForExport(input: FacadeExportInput): Export
     const fpCx = (Math.max(...fpXs) + Math.min(...fpXs)) / 2;
     const fpCz = (Math.max(...fpZs) + Math.min(...fpZs)) / 2;
 
-    // Log systématique — utile pour diagnostic Blender
     console.log(
       `[MMZ][buildFacadeForExport] "${prefix}": ` +
       `footprint ${fpW.toFixed(1)}m × ${fpD.toFixed(1)}m ` +
@@ -157,7 +145,6 @@ export function buildFacadeMeshGroupsForExport(input: FacadeExportInput): Export
       return [];
     }
   }
-  // ── Fin guard ──────────────────────────────────────────────────────────────
 
   const arch = building.architecture;
   const styleId = building.style?.facadeStyleId as FacadeStyleId | undefined;
@@ -294,7 +281,7 @@ export function buildFacadeMeshGroupsForExport(input: FacadeExportInput): Export
     socleHeight,
     atticHeight,
     totalHeight,
-    rng:         createRNG(seed),          // RNG indépendant pour la relief
+    rng:         createRNG(seed),
   });
   if (reliefGroup)   groups.push(reliefGroup);
 
@@ -304,11 +291,11 @@ export function buildFacadeMeshGroupsForExport(input: FacadeExportInput): Export
     baseY:      platformY,
     totalHeight,
     atticHeight,
-    rng:        createRNG(seed ^ 0xDEAD),  // graine dérivée pour les fins
+    rng:        createRNG(seed ^ 0xDEAD),
   });
   if (finGroup)      groups.push(finGroup);
 
-  void rng; // consommation du rng principal (supprime warning lint)
+  void rng;
 
   console.log(
     `[MMZ][buildFacadeForExport][V9] floors=${totalFloors} floorH=${floorHeight.toFixed(2)} ` +
@@ -500,7 +487,9 @@ function buildEntranceMeshGroup(params: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ATTIQUE
+// ATTIQUE — CORRECTIF Z-FIGHTING V9.2
+// Le translate Y utilise + ANTI_ZFIGHT_Y pour ne pas être coplanaire
+// avec le top cap des murs du volume principal.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function buildAtticMeshGroup(params: {
@@ -520,7 +509,11 @@ function buildAtticMeshGroup(params: {
     depth: atticHeight, bevelEnabled: false, steps: 1, curveSegments: 1,
   });
   geo2d.rotateX(-Math.PI / 2);
-  geo2d.translate(0, baseY + Math.max(0, totalHeight - atticHeight), 0);
+
+  // ── CORRECTIF Z-FIGHTING : +ANTI_ZFIGHT_Y ────────────────────────────────
+  // Sans ce décalage, la face basse de l'attique = face haute du volume mur
+  // → exactement coplanaires → scintillement selon angle/zoom de caméra.
+  geo2d.translate(0, baseY + Math.max(0, totalHeight - atticHeight) + ANTI_ZFIGHT_Y, 0);
 
   const scaleXZ  = Math.max(0.80, 1.0 - atticInset);
   const atticGeo = insetHorizontalGeometry(geo2d, scaleXZ);
@@ -609,7 +602,7 @@ function buildCorniceMeshGroup(params: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SETBACK MASS — V7
+// SETBACK MASS — V7 + CORRECTIF Z-FIGHTING V9.2
 // ─────────────────────────────────────────────────────────────────────────────
 
 function buildSetbackMassMeshGroup(params: {
@@ -638,7 +631,11 @@ function buildSetbackMassMeshGroup(params: {
     Math.max(1.8, atticHeight * 0.8),
     Math.max(3.5, totalHeight * 0.45),
   );
-  const startY = baseY + totalHeight * setbackStartRatio;
+
+  // ── CORRECTIF Z-FIGHTING : +ANTI_ZFIGHT_Y sur startY ───────────────────
+  // Si setbackStartRatio tombe exactement sur une arête de plancher, la face
+  // basse du setback est coplanaire avec la face haute du volume sous-jacent.
+  const startY = baseY + totalHeight * setbackStartRatio + ANTI_ZFIGHT_Y;
 
   const geo2d = new THREE.ExtrudeGeometry(shape, {
     depth: effectiveHeight, bevelEnabled: false, steps: 1, curveSegments: 1,
@@ -1188,10 +1185,6 @@ function shapeFromScenePts(scenePts: Array<{ x: number; z: number }>): THREE.Sha
 // V9 — Utilitaires RNG déterministe
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * FNV-1a 32-bit hash d'une chaîne de caractères.
- * Résultat non signé, stable entre les appels.
- */
 export function hashString(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
@@ -1201,11 +1194,6 @@ export function hashString(s: string): number {
   return h >>> 0;
 }
 
-/**
- * Générateur pseudo-aléatoire xorshift32.
- * Déterministe à partir du seed : même seed → même séquence.
- * Retourne des valeurs dans [0, 1[.
- */
 export function createRNG(seed: number): () => number {
   let s = (seed >>> 0) || 1;
   return (): number => {

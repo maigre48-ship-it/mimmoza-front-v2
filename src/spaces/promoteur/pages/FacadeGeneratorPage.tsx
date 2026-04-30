@@ -1,6 +1,6 @@
 // src/spaces/promoteur/pages/FacadeGeneratorPage.tsx
 // -----------------------------------------------------------------------------
-// Générateur de façades -- V5.3
+// Générateur de façades -- V5.6
 //
 // -- CHANGELOG ----------------------------------------------------------------
 // [ÉTAPE 1] Export PNG de la preview 2D (SVG -> canvas -> base64)
@@ -21,10 +21,16 @@
 //   - depthM nettoyé (suppression doublon inutile)
 //   - logs debug enrichis
 // [V5.4] Ajout style "Photo réaliste" + avertissement complexité footprint
+// [V5.5] Persistance image façade entre onglets (getFacadeImage/setFacadeImage)
+// [V5.6] init nbEtages depuis snapshot Massing3D en priorité
+//   - Lecture de getSnapshot()["massing3d"].data.scene pour récupérer
+//     aboveGroundFloors modifié dans l'éditeur 3D
+//   - Fallback sur editor2DStore (comportement V5.5 inchangé)
+//   - Résout le bug : étages modifiés dans Massing3D ignorés dans le générateur
 // -----------------------------------------------------------------------------
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import * as THREE from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter";
 import {
@@ -51,16 +57,28 @@ import type {
 
 import { useEditor2DStore }          from "../plan2d/editor2d.store";
 import { usePromoteurProjectStore }  from "../store/promoteurProject.store";
+import { writeCapture }              from "../shared/captures.store";
 import {
   extractFromEditor2D, extractFromProjectStore, resolveFacadeProjectInput,
 } from "../terrain3d/facade2d/resolveFacadeProjectInput";
 import { computeLevelOpenings, toCenteredX } from "../terrain3d/facade2d/computeFacadeBays";
+import {
+  getFacadeImage,
+  setFacadeImage,
+  clearFacadeImage,
+  getSnapshot,
+} from "../shared/promoteurSnapshot.store";
+
+// [V5.6] Type MassingSceneModel — pour lire le snapshot Massing3D
+import type { MassingSceneModel } from "../terrain3d/massingScene.types";
 
 // -----------------------------------------------------------------------------
 // Types locaux
 // -----------------------------------------------------------------------------
 
-type Style            = FacadeConfig["style"];
+// Extension locale : "verre" n'existe pas dans FacadeConfig source.
+// Stocké via cast côté patch + override prompt côté IA.
+type Style            = FacadeConfig["style"] | "verre";
 type Ambiance         = FacadeConfig["ambiance"];
 type Vegetation       = FacadeConfig["vegetation"];
 type ViewMode         = NonNullable<FacadeAiPromptInput["view"]>;
@@ -117,6 +135,14 @@ export type ZoneMaterials = {
 export function getZoneMaterials(config: FacadeConfig): ZoneMaterials {
   const bc = FACADE_COLORS[config.materiauFacade] ?? 0xe0ddd5;
 
+  if ((config.style as Style) === "verre") {
+    return {
+      soubassement: { color: 0x9aa0a6, roughness: 0.6,  metalness: 0.2  },
+      corps:        { color: 0x7a94a8, roughness: 0.1,  metalness: 0.85 },
+      attique:      { color: 0xc4cad0, roughness: 0.35, metalness: 0.6  },
+    };
+  }
+
   switch (config.style) {
     case "contemporain":
       return {
@@ -170,6 +196,7 @@ const FACADE_COLORS: Record<string, number> = {
   "Bardage bois": 0x8c6038,
   "Composite HPL": 0x999ea6,
   "Béton architectonique": 0xa5a5a1,
+  "Mur-rideau verre": 0x7a94a8,
 };
 
 const TOITURE_COLORS: Record<string, number> = {
@@ -728,6 +755,7 @@ const STYLES: { id: Style; label: string; desc: string }[] = [
   { id: "contemporain",  label: "Contemporain",          desc: "Lignes épurées, matériaux nobles, fenêtres larges" },
   { id: "standard",      label: "Résidentiel standard",  desc: "Collectif traditionnel, équilibré et économique" },
   { id: "premium",       label: "Premium moderne",       desc: "Architecte, aluminium anodisé, toiture terrasse" },
+  { id: "verre",         label: "Tour de verre",         desc: "Mur-rideau intégral, structure acier, tertiaire moderne" },
   { id: "haussmannien",  label: "Haussmannien revisité", desc: "Pierre, zinc, balcons filants, corniches" },
   { id: "mediterraneen", label: "Méditerranéen",         desc: "Enduit coloré, volets bois, pergolas" },
 ];
@@ -740,6 +768,7 @@ const MATERIAUX_FACADE = [
   "Bardage bois",
   "Composite HPL",
   "Béton architectonique",
+  "Mur-rideau verre",
 ];
 
 const MATERIAUX_MENUISERIES = [
@@ -799,9 +828,9 @@ const BUILDING_STANDARDS: { id: BuildingStandard; label: string }[] = [
 ];
 
 const DRAWING_STYLES: { id: DrawingStyle; label: string; emoji: string }[] = [
-  { id: "aquarelle",       label: "Aquarelle",       emoji: "🎨" },
+  { id: "aquarelle",           label: "Aquarelle",           emoji: "🎨" },
   { id: "esquisse_architecte", label: "Esquisse architecte", emoji: "✏️" },
-  { id: "photo_realiste",  label: "Photo réaliste",  emoji: "📷" },
+  { id: "photo_realiste",      label: "Photo réaliste",      emoji: "📷" },
 ];
 
 const PRESETS: Preset[] = [
@@ -868,6 +897,27 @@ const PRESETS: Preset[] = [
       vegetation: "residentielle",
     },
   },
+  {
+    id: "verre",
+    label: "Tour de verre",
+    description: "Mur-rideau, structure acier, tertiaire moderne",
+    color: "from-sky-700 to-slate-900",
+    config: {
+      style: "verre" as FacadeConfig["style"],
+      materiauFacade: "Mur-rideau verre",
+      materiauMenuiseries: "Aluminium gris anthracite",
+      materiauToiture: "Toiture terrasse gravier",
+      ambiance: "golden",
+      vegetation: "legere",
+      balcons: false,
+      loggias: false,
+      corniche: false,
+      socle: false,
+      attique: true,
+      rdcType: "Hall résidentiel",
+      rythme: "Régulier",
+    },
+  },
 ];
 
 const DEFAULT_CONFIG: FacadeConfig = {
@@ -898,6 +948,7 @@ const FOOTPRINT_COMPLEXITY_THRESHOLD = 6;
 // -----------------------------------------------------------------------------
 
 function mapConfigToFacade2DPreset(style: Style): Facade2DStylePresetId {
+  if (style === "verre") return "contemporain-urbain";
   return style === "contemporain"
     ? "contemporain-urbain"
     : style === "premium"
@@ -1209,15 +1260,106 @@ function computeFootprintMetrics(pts: Pt2D[]): {
 }
 
 // -----------------------------------------------------------------------------
+// [FIX V5.5] Persistance image -- convertit n'importe quel format en base64
+// -----------------------------------------------------------------------------
+async function urlToDataUrl(url: string): Promise<string> {
+  if (url.startsWith("data:")) return url;
+
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("FileReader failed"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+// -----------------------------------------------------------------------------
+// [V5.6] Résolution du nombre d'étages depuis le snapshot Massing3D
+// Priorité : scène Massing3D (modifiée par l'utilisateur dans l'éditeur 3D)
+//            > editor2DStore (données 2D originales)
+// -----------------------------------------------------------------------------
+
+function resolveNbEtagesFromMassing3DSnapshot(): number | null {
+  try {
+    const snap = getSnapshot();
+    const payload = snap["massing3d"] as
+      | { data?: { scene?: MassingSceneModel } }
+      | undefined;
+    const scene = payload?.data?.scene;
+
+    if (!scene?.buildings?.length) return null;
+
+    // On prend le premier bâtiment (ou le plus grand si plusieurs)
+    const bld = scene.buildings[0];
+    if (!bld) return null;
+
+    const floorsAbove = bld.levels?.aboveGroundFloors;
+    if (typeof floorsAbove !== "number" || !Number.isFinite(floorsAbove) || floorsAbove < 0) {
+      return null;
+    }
+
+    const totalLevels = Math.max(1, Math.min(20, floorsAbove + 1));
+    console.log(
+      `[MMZ][FacadeGeneratorPage] V5.6 — nbEtages depuis snapshot Massing3D` +
+      ` floorsAboveGround=${floorsAbove} → nbEtages(total)=${totalLevels}`,
+    );
+    return totalLevels;
+  } catch (e) {
+    console.warn("[MMZ][FacadeGeneratorPage] V5.6 — lecture snapshot Massing3D échouée :", e);
+    return null;
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Page principale
 // -----------------------------------------------------------------------------
 
 export default function FacadeGeneratorPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const studyId = searchParams.get("study");
   const previewWrapperRef = useRef<HTMLDivElement | null>(null);
 
-  const [config, setConfig] = useState<FacadeConfig>(DEFAULT_CONFIG);
-  const [previewTab, setPreviewTab] = useState<"principale" | "frontale" | "contexte">("frontale");
+  const [config, setConfig] = useState<FacadeConfig>(() => {
+    // ── Priorité 1 : scène Massing3D (étages modifiés par l'utilisateur) ──
+    const nbEtagesFromMassing3D = resolveNbEtagesFromMassing3DSnapshot();
+    if (nbEtagesFromMassing3D !== null) {
+      return { ...DEFAULT_CONFIG, nbEtages: nbEtagesFromMassing3D };
+    }
+
+    // ── Priorité 2 : Implantation 2D (comportement V5.5 inchangé) ──────────
+    const { buildings, selectedIds } = useEditor2DStore.getState();
+    if (buildings.length === 0) return DEFAULT_CONFIG;
+
+    const selected = buildings.find((b) => selectedIds.includes(b.id));
+    const target =
+      selected ??
+      [...buildings].sort(
+        (a, b) => b.rect.width * b.rect.depth - a.rect.width * a.rect.depth,
+      )[0];
+
+    const floorsAbove =
+      typeof target?.floorsAboveGround === "number"
+        ? target.floorsAboveGround
+        : DEFAULT_CONFIG.nbEtages - 1;
+
+    const totalLevels = Math.max(1, Math.min(20, floorsAbove + 1));
+
+    console.log(
+      `[MMZ][FacadeGeneratorPage] init nbEtages depuis Implantation2D (fallback)` +
+      ` — target=${target?.id ?? "none"} floorsAboveGround=${floorsAbove}` +
+      ` → nbEtages(total)=${totalLevels}`,
+    );
+
+    return { ...DEFAULT_CONFIG, nbEtages: totalLevels };
+  });
+
+  // Si une image est déjà dans le cache mémoire (retour depuis Synthèse), afficher contexte.
+  const [previewTab, setPreviewTab] = useState<"principale" | "frontale" | "contexte">(
+    () => getFacadeImage(studyId) ? "contexte" : "frontale",
+  );
   const [viewMode, setViewMode] = useState<ViewMode>("3_quarts_legers");
   const [buildingStandard, setBuildingStandard] = useState<BuildingStandard>("standard");
   const [drawingStyle, setDrawingStyle] = useState<DrawingStyle>("aquarelle");
@@ -1226,7 +1368,28 @@ export default function FacadeGeneratorPage() {
   const [includeGroundFloorShops, setIncludeGroundFloorShops] = useState(false);
   const [includeWindowFlowerPots, setIncludeWindowFlowerPots] = useState(false);
 
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageUrl, setImageUrlState] = useState<string | null>(
+    () => getFacadeImage(studyId),
+  );
+
+  const setImageUrl = useCallback((url: string | null) => {
+    setImageUrlState(url);
+    if (!url) clearFacadeImage(studyId);
+  }, [studyId]);
+
+  const persistImageAsync = useCallback(async (url: string) => {
+    try {
+      const dataUrl = await urlToDataUrl(url);
+      setFacadeImage(studyId, dataUrl);
+      setImageUrlState(dataUrl);
+      console.log(
+        `[MMZ][FacadeGeneratorPage] Image persistée ✓ key=mimmoza.promoteur.facade_image.${studyId ?? "__default__"} size=${Math.round(dataUrl.length / 1024)}Ko`,
+      );
+    } catch (e) {
+      console.warn("[MMZ][FacadeGeneratorPage] persistImageAsync failed (quota ou fetch?):", e);
+    }
+  }, [studyId]);
+
   const [generating, setGenerating] = useState(false);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [lastPromptUsed, setLastPromptUsed] = useState<string | null>(null);
@@ -1340,10 +1503,8 @@ export default function FacadeGeneratorPage() {
   ]);
 
   const hasRealFootprint = facadeSceneInput.hasRealFootprint === true;
-  // Désactivé : l'encart isométrique ne correspond pas fidèlement au plan 2D.
   const showMassInset = false;
 
-  /** Heuristique simple : emprise réelle avec géométrie complexe (≥ seuil de points) */
   const isFootprintComplex = hasRealFootprint && rawFootprintPts.length >= FOOTPRINT_COMPLEXITY_THRESHOLD;
 
   if (showDebug) {
@@ -1373,7 +1534,7 @@ export default function FacadeGeneratorPage() {
     const lvl: "none" | "soft" | "hard" = !exc ? "none" : ov <= 1 ? "soft" : "hard";
     const msg = !exc
       ? null
-      : `Le PLU indique un plafond de ${plu} étage${plu! > 1 ? "s" : ""} sur cette parcelle. Vous en demandez ${config.nbEtages} — le rendu sera réalisé à titre indicatif.`;
+      : `Le PLU indique un plafond de ${plu} étage${plu! > 1 ? "s" : ""} sur cette parcelle. Vous en demandez ${config.nbEtages - 1} (R+${config.nbEtages - 1}) — le rendu sera réalisé à titre indicatif.`;
 
     return {
       pluMaxFloorsIndicative: plu,
@@ -1476,7 +1637,6 @@ export default function FacadeGeneratorPage() {
 
           insetImg.src = insetUrl;
         } else {
-          console.log("[MMZ][FacadeGeneratorPage] Export PNG sans encart masse (rawFootprintPts insuffisants)");
           resolve(canvas.toDataURL("image/png"));
         }
       };
@@ -1530,19 +1690,49 @@ export default function FacadeGeneratorPage() {
           ? " L'emprise au sol du bâtiment est irrégulière ; respecter scrupuleusement la volumétrie et ne pas la simplifier en bloc rectangulaire."
           : "";
 
-      // Override prompt suffix pour le style photo réaliste
+      const floorCountHint =
+        ` CONTRAINTE STRUCTURELLE IMPÉRATIVE : le bâtiment doit avoir EXACTEMENT ${config.nbEtages} niveau${config.nbEtages > 1 ? "x" : ""} habitable${config.nbEtages > 1 ? "s" : ""} au total${config.attique ? ", plus UN attique légèrement en retrait au sommet (et seulement un)" : ""}. ` +
+        `INTERDICTION FORMELLE d'ajouter des étages supplémentaires, même pour des raisons esthétiques ou de proportion. Respecter scrupuleusement la hauteur et le gabarit de l'image de référence. ` +
+        (config.nbEtages === 1
+          ? "Bâtiment BAS de type R+0 : UN SEUL niveau au-dessus du sol. Type pavillon, petit immeuble bas, maison individuelle contemporaine ou petit équipement urbain — PAS un immeuble, PAS une tour, PAS un ensemble multi-étages. "
+          : config.nbEtages === 2
+            ? "Bâtiment bas R+1 : exactement 2 niveaux visibles (RDC + 1 étage au-dessus). "
+            : config.nbEtages <= 4
+              ? `Immeuble bas à moyen R+${config.nbEtages - 1} : ${config.nbEtages} niveaux distincts visibles. `
+              : "");
+
       const photoRealisteHint =
         drawingStyle === "photo_realiste"
           ? " STYLE OBLIGATOIRE : rendu photoréaliste de promotion immobilière. Matériaux crédibles et texturés, ombres portées réalistes, lumière naturelle directionnelle, proportions architecturales strictes, ciel photographique, reflets vitrés réalistes. Ne PAS utiliser de style aquarelle, sketch, illustration ou dessin. Le résultat doit ressembler à une photographie professionnelle de perspective immobilière neuve."
           : "";
 
-      // Override prompt suffix pour le style esquisse architecte
       const esquisseArchitecteHint =
         drawingStyle === "esquisse_architecte"
           ? " STYLE OBLIGATOIRE : CROQUIS CONCEPTUEL D'ARCHITECTE sur papier technique. Le trait noir au crayon et à l'encre doit dominer — traits épais pour les contours, traits fins pour les détails. OBLIGATOIRE : lignes de construction, lignes de fuite, cotes et annotations techniques visibles dépassant les bords du bâtiment. Appliquer des lavis aquarelle transparents UNIQUEMENT en couleur secondaire sur le trait (cyan pour le verre, ocre pour la pierre, gris pour le béton). Ratio minimum 70% trait, 30% couleur. Inclure une texture de papier technique en fond. Ne PAS produire un rendu aquarelle fini, un rendu photoréaliste, ni une illustration de brochure propre."
           : "";
 
-      const prompt = basePrompt + massHint + photoRealisteHint + esquisseArchitecteHint;
+      const verreHint =
+        (config.style as Style) === "verre"
+          ? " ARCHITECTURE OBLIGATOIRE : façade ENTIÈREMENT VITRÉE type mur-rideau. " +
+            "Vitrage teinté bleu-gris occupant 90 à 95% de la surface de façade, " +
+            "structure métallique apparente en aluminium anodisé gris anthracite " +
+            "(montants verticaux fins espacés régulièrement, traverses horizontales discrètes). " +
+            "INTERDICTION ABSOLUE de fenêtres traditionnelles isolées, d'enduit, de pierre de taille, de brique, de bardage bois. " +
+            "Vitrage continu du sol au plafond sur chaque niveau existant. " +
+            "Reflets du ciel et du contexte environnant visibles sur le verre. " +
+            "Socle RDC en béton clair ou pierre sombre, attique (si présent) légèrement en retrait en aluminium. " +
+            "Si balcons : dalles fines béton blanc + garde-corps 100% verre sans montants. " +
+            "Matériaux : acier, verre, aluminium anodisé, béton clair uniquement — aucun matériau traditionnel. " +
+            "Respecter le gabarit bas/moyen/haut imposé par la contrainte de niveaux, sans extrapoler vers une tour."
+          : "";
+
+      const prompt =
+        basePrompt +
+        massHint +
+        floorCountHint +
+        photoRealisteHint +
+        esquisseArchitecteHint +
+        verreHint;
 
       const aiFootprint = sanitizeFootprintForAi(rawFootprintPts);
       const aiFootprintNormalized = normalizeFootprintForAi(aiFootprint);
@@ -1608,6 +1798,9 @@ export default function FacadeGeneratorPage() {
 
       setImageUrl(result.imageUrl);
       setLastPromptUsed(result.promptUsed);
+
+      void persistImageAsync(result.imageUrl);
+
     } catch (e) {
       console.error("[MMZ][FacadeGeneratorPage] render failed", e);
       setRenderError(e instanceof Error ? e.message : "Erreur inconnue");
@@ -1629,23 +1822,19 @@ export default function FacadeGeneratorPage() {
   const [savedToSynthese, setSavedToSynthese] = useState(false);
 
   const handleUseInSynthese = () => {
-    if (!imageUrl) return;
+    const imageToSave = getFacadeImage(studyId) ?? imageUrl;
+    if (!imageToSave) return;
     try {
-      const store = usePromoteurProjectStore.getState();
-      if (typeof store.patchConception === "function") {
-        store.patchConception({ facadeRenderUrl: imageUrl });
-      } else if (typeof store.patch === "function") {
-        store.patch({ facadeRenderUrl: imageUrl });
-      } else {
-        // Fallback : stocker directement dans le state
-        usePromoteurProjectStore.setState((s: Record<string, unknown>) => ({
-          ...s,
-          facadeRenderUrl: imageUrl,
-        }));
+      const ok = writeCapture(studyId, "facadeIA", imageToSave);
+      if (!ok) {
+        console.warn("[MMZ][FacadeGeneratorPage] writeCapture a échoué");
       }
       setSavedToSynthese(true);
       setTimeout(() => setSavedToSynthese(false), 3000);
-      console.log("[MMZ][FacadeGeneratorPage] Image façade enregistrée pour la synthèse PDF");
+      console.log(
+        "[MMZ][FacadeGeneratorPage] Image façade enregistrée pour la synthèse PDF",
+        "studyId:", studyId,
+      );
     } catch (err) {
       console.error("[MMZ][FacadeGeneratorPage] Erreur sauvegarde synthèse:", err);
     }
@@ -1756,7 +1945,7 @@ export default function FacadeGeneratorPage() {
                 <button
                   key={s.id}
                   type="button"
-                  onClick={() => patch({ style: s.id })}
+                  onClick={() => patch({ style: s.id as FacadeConfig["style"] })}
                   className={[
                     "w-full rounded-xl border px-3 py-2.5 text-left transition-all",
                     config.style === s.id
@@ -1805,9 +1994,9 @@ export default function FacadeGeneratorPage() {
               <div>
                 <label className="mb-1 block text-xs text-slate-500">
                   Nombre d&apos;étages —{" "}
-                  <span className="font-semibold" style={{ color: PROMOTEUR_ACCENT }}>
-                    {config.nbEtages}
-                  </span>
+<span className="font-semibold" style={{ color: PROMOTEUR_ACCENT }}>
+  R+{config.nbEtages - 1}
+</span>
                   {pluMaxFloorsIndicative !== null && (
                     <span
                       className={[
@@ -1835,9 +2024,9 @@ export default function FacadeGeneratorPage() {
                 />
 
                 <div className="mt-1 flex justify-between text-[10px] text-slate-400">
-                  <span>R+1</span>
-                  <span>R+10</span>
-                  <span>R+20</span>
+                  <span>R+0</span>
+                  <span>R+9</span>
+                  <span>R+19</span>
                 </div>
               </div>
 
@@ -2110,15 +2299,6 @@ export default function FacadeGeneratorPage() {
                   </span>
                 )}
 
-                {showMassInset && (
-                  <span
-                    className="inline-flex items-center gap-1 rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-medium"
-                    style={{ color: PROMOTEUR_ACCENT }}
-                  >
-                    ⬢ Masse ISO dans le PNG
-                  </span>
-                )}
-
                 {showDebug && !showMassInset && (
                   <span className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-500">
                     Inset OFF
@@ -2160,7 +2340,7 @@ export default function FacadeGeneratorPage() {
                       <span>src:{facadeSource}</span>
                       <span>buildingId:{selectedBuildingId ?? "null"}</span>
                       <span>hasFp:{String(hasRealFootprint)}</span>
-                      <span>fpPts:{rawFootprintPts.length}</span>
+                      <span>fPts:{rawFootprintPts.length}</span>
                       <span>seg:{facadeRenderSpec.footprintMeta?.segments?.length ?? "n/a"}</span>
                       <span>showInset:{String(showMassInset)}</span>
                       <span>w:{facadeRenderSpec.widthM.toFixed(2)}m</span>
@@ -2173,36 +2353,6 @@ export default function FacadeGeneratorPage() {
                       )}
                     </div>
                   )}
-                </div>
-              )}
-
-              {previewTab !== "contexte" && showMassInset && (
-                <div className="absolute right-2 top-2 z-20" style={{ pointerEvents: "none" }}>
-                  <div
-                    style={{
-                      background: "rgba(255,255,255,0.92)",
-                      border: "1px solid rgba(0,0,0,0.08)",
-                      borderRadius: 8,
-                      padding: "4px 8px 6px",
-                      boxShadow: "0 1px 6px rgba(0,0,0,0.09)",
-                    }}
-                  >
-                    <p
-                      style={{
-                        fontSize: 8,
-                        color: "#909090",
-                        textAlign: "center",
-                        margin: "0 0 3px",
-                        fontFamily: "'Helvetica Neue',Arial,sans-serif",
-                        fontWeight: 700,
-                        letterSpacing: "0.06em",
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      Masse · Emprise réelle
-                    </p>
-                    <FootprintMassInset rawPts={rawFootprintPts} nbEtages={config.nbEtages} svgW={112} svgH={96} />
-                  </div>
                 </div>
               )}
 
@@ -2291,7 +2441,7 @@ export default function FacadeGeneratorPage() {
                 </span>
 
                 <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600">
-                  R+{config.nbEtages}
+                  R+{config.nbEtages - 1}
                   {config.attique ? " + Attique" : ""}
                   {floorsExceedPlu && (
                     <span
@@ -2314,15 +2464,6 @@ export default function FacadeGeneratorPage() {
                 {hasRealFootprint && !facadeRenderSpec.footprintMeta && (
                   <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] text-emerald-700">
                     {facadeRenderSpec.widthM.toFixed(1)}m · emprise réelle
-                  </span>
-                )}
-
-                {showMassInset && (
-                  <span
-                    className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[11px]"
-                    style={{ color: PROMOTEUR_ACCENT }}
-                  >
-                    ⬢ Masse ISO ({rawFootprintPts.length}pts)
                   </span>
                 )}
 
@@ -2467,7 +2608,6 @@ export default function FacadeGeneratorPage() {
                   <p className="text-sm font-medium text-slate-600">Génération image façade…</p>
                   <p className="text-xs text-slate-400">
                     {currentView?.emoji} {currentView?.label} · {currentDrawing?.label} · {buildingStandard}
-                    {showMassInset && " · masse ISO"}
                     {hasRealFootprint && " · emprise réelle"}
                     {pluOverrideConfirmed && " · PLU override"}
                   </p>
@@ -2522,18 +2662,6 @@ export default function FacadeGeneratorPage() {
                       Configurez votre façade dans le panneau de gauche, puis lancez la génération.
                     </p>
 
-                    {showMassInset && (
-                      <p className="text-[11px] text-violet-600">
-                        ⬢ Mini masse isométrique ({rawFootprintPts.length}pts) sera incluse dans le PNG envoyé à l&apos;IA
-                      </p>
-                    )}
-
-                    {hasRealFootprint && !showMassInset && (
-                      <p className="text-[11px] text-amber-600">
-                        ⚠ Emprise réelle détectée mais footprint insuffisant ({rawFootprintPts.length} pts)
-                      </p>
-                    )}
-
                     {hasRealFootprint && facadeRenderSpec.footprintMeta && (
                       <p className="text-[11px] text-emerald-600">
                         Emprise réelle · {facadeRenderSpec.widthM.toFixed(1)}m × {facadeRenderSpec.footprintMeta.footprintDepth.toFixed(1)}m
@@ -2582,10 +2710,8 @@ export default function FacadeGeneratorPage() {
                 <p className="text-sm font-medium text-slate-700">Pipeline recommandé</p>
                 <p className="mt-1 text-xs leading-relaxed text-slate-500">
                   <strong>emprise réelle → façade 2D + masse ISO → PNG composite → rendu AI PNG</strong>.
-                  {showMassInset
-                    ? ` L'image de référence envoyée à l'IA contient la façade principale ET un encart isométrique de la masse réelle (${rawFootprintPts.length} points).`
-                    : hasRealFootprint
-                    ? ` Emprise réelle détectée (hasRealFootprint=true) mais footprint brut insuffisant (${rawFootprintPts.length} pts — min 3 requis).`
+                  {hasRealFootprint
+                    ? ` Emprise réelle détectée (hasRealFootprint=true) · ${rawFootprintPts.length} pts.`
                     : " Fallback géométrique (aucun bâtiment sélectionné ou emprise indisponible)."}
                 </p>
 
