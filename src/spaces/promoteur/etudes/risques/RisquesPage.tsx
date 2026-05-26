@@ -49,6 +49,9 @@ import type { BankRiskScoring, BankRiskScoringGrade } from "../../../../componen
 import { usePromoteurStudy } from "../../shared/usePromoteurStudy";
 import type { PromoteurRisquesData } from "../../shared/promoteurStudy.types";
 
+// 🆕 COPILOT : pont vers le store de contexte du Copilot
+import { useCopilotContext } from "../../../copilot/hooks/useCopilotContext";
+
 // ─── Design tokens ───────────────────────────────────────────────────────────
 const GRAD_PRO = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
 const ACCENT_PRO = "#5247b8";
@@ -1739,6 +1742,9 @@ export function RisquesPage() {
   const studyId = searchParams.get("study");
   const { study, loadState, patchRisques } = usePromoteurStudy(studyId);
 
+  // 🆕 COPILOT : accès au store de contexte
+  const { setContextHints } = useCopilotContext();
+
   // ── Form state ─────────────────────────────────────────────────────────────
   const [address, setAddress] = useState("");
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
@@ -1791,6 +1797,31 @@ export function RisquesPage() {
     // pour éviter de boucler : on veut une hydratation one-shot au passage à "ready".
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadState, study]);
+
+  // 🆕 COPILOT : pousse la parcelle courante dans le contexte du Copilot
+  // dès qu'une localisation exploitable est disponible. Le backend lit
+  // code_insee → commune_insee et lng → lon pour appeler risk-study.
+  useEffect(() => {
+    const lat = latitude ? parseFloat(latitude) : NaN;
+    const lng = longitude ? parseFloat(longitude) : NaN;
+    const insee = analysisResult?.meta?.commune_insee || codeInsee || undefined;
+
+    const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
+    if (!insee && !hasCoords) return; // rien d'exploitable encore
+
+    setContextHints({
+      vertical: "promoteur",
+      parcel: {
+        id: studyId || parcelId || insee || "parcelle",
+        lat: hasCoords ? lat : undefined,
+        lng: hasCoords ? lng : undefined,        // ⚠️ "lng" (le backend convertit en "lon")
+        code_insee: insee,                        // ⚠️ "code_insee" — lu par risk-study
+        address: selectedAddress?.label || address || undefined,
+        commune: analysisResult?.meta?.commune_nom || undefined,
+      },
+      study: studyId ? { id: studyId, type: "promoteur" } : undefined,
+    });
+  }, [latitude, longitude, codeInsee, analysisResult, studyId, parcelId, selectedAddress, address, setContextHints]);
 
   useEffect(() => {
     if (addressTimeoutRef.current) clearTimeout(addressTimeoutRef.current);

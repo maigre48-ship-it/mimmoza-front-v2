@@ -47,6 +47,7 @@ import { captureFacadeSvg }       from "../terrain3d/facade/captureFacadeSvg";
 import { buildFacadeAiPrompt }    from "../terrain3d/facade/buildFacadeAiPrompt";
 import { requestFacadeAiRender }  from "../terrain3d/facade/requestFacadeAiRender";
 import type { FacadeAiPromptInput } from "../terrain3d/facade/facadeAi.types";
+import { buildRectangularSilhouetteDataUrl } from "@/utils/buildRectangularSilhouette";
 
 import { buildFacade2DModel }    from "../terrain3d/facade2d/buildFacade2DModel";
 import Facade2DSvgRenderer       from "../terrain3d/facade2d/renderFacade2DSvg";
@@ -815,7 +816,6 @@ const VEGETATIONS: { id: Vegetation; label: string }[] = [
 const VIEW_MODES: { id: ViewMode; label: string; emoji: string }[] = [
   { id: "frontale",           label: "Frontale",  emoji: "⬜" },
   { id: "3_quarts_legers",    label: "3/4 léger", emoji: "◱" },
-  { id: "perspective_entree", label: "Entrée",    emoji: "🚪" },
   { id: "angle_rue",          label: "Angle rue", emoji: "🏙" },
 ];
 
@@ -1659,6 +1659,7 @@ export default function FacadeGeneratorPage() {
     setGenerating(true);
     setRenderError(null);
     setShowPluWarningBanner(false);
+    setPreviewTab("contexte"); // bascule immédiatement sur l'onglet résultat
 
     try {
       const effectiveWidthM = facadeRenderSpec.widthM;
@@ -1671,8 +1672,14 @@ export default function FacadeGeneratorPage() {
         );
       }
 
-      const pngDataUrl = await exportPreviewAsPng(1400, 900);
-      setBaseImageDataUrl(pngDataUrl);
+      let pngDataUrl = await exportPreviewAsPng(1400, 900);
+
+if ((viewMode === "frontale" || viewMode === "angle_rue") && !hasRealFp) {
+  pngDataUrl = buildRectangularSilhouetteDataUrl(1536, 1024, config.nbEtages, 5);
+  console.log("[MMZ][FacadeGeneratorPage] Silhouette rectangulaire injectée");
+}
+
+setBaseImageDataUrl(pngDataUrl);
 
       const basePrompt = buildFacadeAiPrompt({
         config,
@@ -2314,8 +2321,11 @@ export default function FacadeGeneratorPage() {
             </div>
 
             <div className="relative flex aspect-[16/10] w-full items-center justify-center overflow-hidden bg-gradient-to-br from-slate-100 via-slate-50 to-purple-50">
-              {previewTab !== "contexte" && (
-                <div ref={previewWrapperRef} className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white">
+              <div
+  ref={previewWrapperRef}
+  className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white"
+  style={{ display: previewTab === "contexte" ? "none" : "flex" }}
+>
                   <div className="w-full max-w-2xl px-4">
                     <Facade2DSvgRenderer model={facade2DModel} width={640} />
                   </div>
@@ -2354,7 +2364,6 @@ export default function FacadeGeneratorPage() {
                     </div>
                   )}
                 </div>
-              )}
 
               {previewTab === "contexte" && imageUrl && !generating && (
                 <img src={imageUrl} alt="Image façade générée" className="absolute inset-0 h-full w-full object-cover" />

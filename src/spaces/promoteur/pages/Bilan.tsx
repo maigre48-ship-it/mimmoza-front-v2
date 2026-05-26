@@ -1,20 +1,23 @@
 ﻿// src/spaces/promoteur/pages/Bilan.tsx
+// v2.3 — Enrichissement depuis ProgrammationPage (snapshot "programmation")
+//
+// Nouveautés v2.3 :
+//   - Lecture du snapshot "programmation" via useState+useEffect (double source :
+//     study.programmation → getSnapshot().programmation)
+//   - Card "Programme synchronisé" affichant SDP, CA, marge, typologies
+//   - Si evaluation absente : les chiffres de la programmation servent de
+//     valeurs de référence (CA, coût, marge) — labelisés "estimé (programmation)"
+//   - Indicateur PLU viabilité dans le résumé
+//
 // v2.2 — Fix lecture implantation2d : useState+useEffect au lieu de useMemo.
-//
-// Correctif v2.2 :
-//   - implantation2d passe de useMemo → useState+useEffect
-//   - Relit localStorage au montage ET à chaque changement de study/studyId
-//   - Corrige le cas où Bilan est déjà monté quand l'utilisateur dessine
-//     sur Implantation2D (le useMemo ne se re-déclenchait pas sur storage changes)
-//
-// v2.1 — Lecture double-source : study.implantation2d (Supabase) → getSnapshot().implantation2d (localStorage fallback)
+// v2.1 — Lecture double-source : study.implantation2d → getSnapshot().implantation2d
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   BarChart2, Save, Loader2, Sparkles,
   TrendingUp, AlertTriangle,
-  FileText, CheckCircle, Target, Home,
+  FileText, CheckCircle, Target, Home, LayoutGrid,
 } from "lucide-react";
 import { supabase }                    from "../../../supabaseClient";
 import { usePromoteurStudy }           from "../shared/usePromoteurStudy";
@@ -26,6 +29,7 @@ import {
   totalSdpM2,
   totalEmpriseM2,
 }                                      from "../plan2d/implantation2d.snapshot";
+import type { ProgrammationSnapshot }  from "./ProgrammationPage";
 
 const GRAD_PRO   = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
 const ACCENT_PRO = "#5247b8";
@@ -49,6 +53,25 @@ function numVal(v: number | null): string { return v != null ? String(v) : ""; }
 function parseNum(s: string): number | null { const n = parseFloat(s.replace(",", ".")); return isNaN(n) ? null : n; }
 function fmtEur(v: number | null): string { return v != null ? v.toLocaleString("fr-FR") + " €" : "—"; }
 function fmtPct(v: number | null, dec = 1): string { return v != null ? v.toFixed(dec) + " %" : "—"; }
+
+// ── Badge statut PLU ─────────────────────────────────────────────────────────
+function PluBadge({ status }: { status: ProgrammationSnapshot["pluViabilite"] }) {
+  const map = {
+    viable:     { bg: "#f0fdf4", color: "#15803d", border: "#bbf7d0", label: "✓ PLU conforme" },
+    conditions: { bg: "#fffbeb", color: "#b45309", border: "#fde68a", label: "⚠ PLU sous conditions" },
+    non_viable: { bg: "#fef2f2", color: "#b91c1c", border: "#fecaca", label: "✗ PLU non conforme" },
+  };
+  const s = map[status];
+  return (
+    <span style={{
+      display: "inline-block", padding: "3px 10px", borderRadius: 9999,
+      fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
+      background: s.bg, color: s.color, border: `1px solid ${s.border}`,
+    }}>
+      {s.label}
+    </span>
+  );
+}
 
 export default function Bilan(): React.ReactElement {
   const [searchParams] = useSearchParams();
@@ -92,47 +115,24 @@ export default function Bilan(): React.ReactElement {
   const communeInsee     = foncier?.commune_insee         ?? null;
 
   // ── Implantation 2D ───────────────────────────────────────────────────────
-  //
-  // useState + useEffect au lieu de useMemo (v2.2) :
-  //   - Le useMemo ne se re-déclenchait pas quand localStorage changeait
-  //     sans que study/studyId ne changent (cas navigation rapide)
-  //   - useEffect relit au montage ET à chaque changement de study ou studyId
-  //
-  // Double source :
-  //   1. study.implantation2d — Supabase (prioritaire, persistant entre sessions)
-  //   2. getSnapshot().implantation2d — localStorage (fallback navigation rapide)
-  // ─────────────────────────────────────────────────────────────────────────
   const [implantation2d, setImplantation2d] = useState<Implantation2DSnapshot | null>(null);
 
   useEffect(() => {
-    // 1. Priorité Supabase
     const fromStudy = (study as any)?.implantation2d as Implantation2DSnapshot | undefined;
     if (fromStudy?.buildings?.length) {
-      console.debug(
-        "[Bilan] implantation2d source: Supabase",
-        { studyId, buildingCount: fromStudy.buildings.length },
-      );
       setImplantation2d(fromStudy);
       return;
     }
-    // 2. Fallback localStorage
     const fromSnapshot = getSnapshot()?.implantation2d as Implantation2DSnapshot | undefined;
     if (fromSnapshot?.buildings?.length) {
-      console.debug(
-        "[Bilan] implantation2d source: localStorage fallback",
-        { studyId, buildingCount: fromSnapshot.buildings.length },
-      );
       setImplantation2d(fromSnapshot);
       return;
     }
-    console.debug("[Bilan] implantation2d source: aucune donnée", { studyId });
     setImplantation2d(null);
   }, [study, studyId]);
 
-  /** Vrai si au moins un bâtiment valide existe dans l'implantation. */
   const hasBuildings = (implantation2d?.buildings?.length ?? 0) > 0;
 
-  /** Surfaces agrégées issues de l'implantation — pour alimenter le pro forma. */
   const implantationSurfaces = useMemo(() => {
     if (!implantation2d) return null;
     return {
@@ -143,6 +143,40 @@ export default function Bilan(): React.ReactElement {
       updatedAt:       implantation2d.updatedAt,
     };
   }, [implantation2d]);
+
+  // ── Programmation ─────────────────────────────────────────────────────────
+  //
+  // Double source (même pattern qu'implantation2d) :
+  //   1. study.programmation — Supabase (prioritaire)
+  //   2. getSnapshot().programmation — localStorage (fallback)
+  // ─────────────────────────────────────────────────────────────────────────
+  const [programmation, setProgrammation] = useState<ProgrammationSnapshot | null>(null);
+
+  useEffect(() => {
+    const fromStudy = (study as any)?.programmation as ProgrammationSnapshot | undefined;
+    if (fromStudy?.nbLogements) {
+      console.debug("[Bilan] programmation source: Supabase", { studyId });
+      setProgrammation(fromStudy);
+      return;
+    }
+    const fromSnapshot = getSnapshot()?.programmation as ProgrammationSnapshot | undefined;
+    if (fromSnapshot?.nbLogements) {
+      console.debug("[Bilan] programmation source: localStorage fallback", { studyId });
+      setProgrammation(fromSnapshot);
+      return;
+    }
+    console.debug("[Bilan] programmation source: aucune donnée", { studyId });
+    setProgrammation(null);
+  }, [study, studyId]);
+
+  const hasProgrammation = programmation != null && programmation.nbLogements > 0;
+
+  // Chiffres de référence : évaluation en priorité, programmation en fallback
+  const caRef          = caPrevisionnel     ?? (hasProgrammation ? programmation!.caTotal        : null);
+  const coutRef        = prixRevientTotal   ?? (hasProgrammation ? programmation!.coutTotal       : null);
+  const margeRef       = margeBrute         ?? (hasProgrammation ? programmation!.margeBrute      : null);
+  const tauxMargeRef   = tauxMargePct       ?? (hasProgrammation ? programmation!.tauxMarge       : null);
+  const sourceLabel    = !evaluation && hasProgrammation ? " (estimé — programmation)" : "";
 
   // ── Hydratation depuis Supabase ───────────────────────────────────────────
   useEffect(() => {
@@ -164,7 +198,7 @@ export default function Bilan(): React.ReactElement {
 
   // ── Calculs automatiques ─────────────────────────────────────────────────
   const computed = useMemo(() => {
-    const roiCalc = fondsPropres && margeBrute ? (margeBrute / fondsPropres) * 100 : null;
+    const roiCalc = fondsPropres && margeRef ? (margeRef / fondsPropres) * 100 : null;
     const interets = creditPromotion && tauxCreditPct && dureeMois
       ? creditPromotion * (tauxCreditPct / 100) * (dureeMois / 12)
       : null;
@@ -173,9 +207,8 @@ export default function Bilan(): React.ReactElement {
       ? (prixFoncier / totalFinancement) * 100
       : null;
     return { roiCalc, interets, totalFinancement, couvertureFoncier };
-  }, [fondsPropres, margeBrute, creditPromotion, tauxCreditPct, dureeMois, prixFoncier]);
+  }, [fondsPropres, margeRef, creditPromotion, tauxCreditPct, dureeMois, prixFoncier]);
 
-  // ── Alerte foncier manquant ───────────────────────────────────────────────
   const foncierManquant = !prixFoncier;
 
   // ── Génération narrative IA ───────────────────────────────────────────────
@@ -184,7 +217,10 @@ export default function Bilan(): React.ReactElement {
     setIsGenerating(true);
     try {
       const { data, error } = await supabase.functions.invoke("promoteur-bilan-narrative-v1", {
-        body: { study_id: studyId, foncier, plu, conception, evaluation, marche },
+        body: {
+          study_id: studyId, foncier, plu, conception, evaluation, marche,
+          programmation: programmation ?? undefined,
+        },
       });
       if (error) throw error;
       const narrative = data?.narrative ?? "";
@@ -193,10 +229,10 @@ export default function Bilan(): React.ReactElement {
         setAiGeneratedAt(new Date().toISOString());
       }
       await patchBilan({
-        prix_revient_total:   prixRevientTotal,
-        ca_previsionnel:      caPrevisionnel,
-        marge_nette:          margeBrute,
-        taux_marge_nette_pct: tauxMargePct,
+        prix_revient_total:   coutRef,
+        ca_previsionnel:      caRef,
+        marge_nette:          margeRef,
+        taux_marge_nette_pct: tauxMargeRef,
         prix_foncier:         prixFoncier,
         fonds_propres:        fondsPropres,
         credit_promotion:     creditPromotion,
@@ -214,20 +250,22 @@ export default function Bilan(): React.ReactElement {
     } finally {
       if (mountedRef.current) setIsGenerating(false);
     }
-  }, [studyId, foncier, plu, conception, evaluation, marche,
-      prixRevientTotal, caPrevisionnel, margeBrute, tauxMargePct,
-      prixFoncier, fondsPropres, creditPromotion, tauxCreditPct, dureeMois,
-      roiPct, triPct, notes, computed.roiCalc, patchBilan]);
+  }, [
+    studyId, foncier, plu, conception, evaluation, marche, programmation,
+    coutRef, caRef, margeRef, tauxMargeRef,
+    prixFoncier, fondsPropres, creditPromotion, tauxCreditPct, dureeMois,
+    roiPct, triPct, notes, computed.roiCalc, patchBilan,
+  ]);
 
   // ── Sauvegarde ────────────────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
     if (!studyId) return;
     setIsSaving(true);
     const result = await patchBilan({
-      prix_revient_total:   prixRevientTotal,
-      ca_previsionnel:      caPrevisionnel,
-      marge_nette:          margeBrute,
-      taux_marge_nette_pct: tauxMargePct,
+      prix_revient_total:   coutRef,
+      ca_previsionnel:      caRef,
+      marge_nette:          margeRef,
+      taux_marge_nette_pct: tauxMargeRef,
       prix_foncier:         prixFoncier,
       fonds_propres:        fondsPropres,
       credit_promotion:     creditPromotion,
@@ -249,9 +287,11 @@ export default function Bilan(): React.ReactElement {
         setSaveMsg("⚠ Erreur d'enregistrement");
       }
     }
-  }, [studyId, prixRevientTotal, caPrevisionnel, margeBrute, tauxMargePct,
-      prixFoncier, fondsPropres, creditPromotion, tauxCreditPct, dureeMois,
-      roiPct, triPct, aiNarrative, aiGeneratedAt, notes, computed.roiCalc, patchBilan]);
+  }, [
+    studyId, coutRef, caRef, margeRef, tauxMargeRef,
+    prixFoncier, fondsPropres, creditPromotion, tauxCreditPct, dureeMois,
+    roiPct, triPct, aiNarrative, aiGeneratedAt, notes, computed.roiCalc, patchBilan,
+  ]);
 
   // ── Synthèse ──────────────────────────────────────────────────────────────
   const handleSaveForSynthesis = useCallback(() => {
@@ -259,20 +299,22 @@ export default function Bilan(): React.ReactElement {
     patchModule("bilan", {
       ok:        true,
       validated: true,
-      summary:   `ROI: ${roiFinal != null ? roiFinal.toFixed(1) + "%" : "—"} · Marge: ${fmtEur(margeBrute)} · ${fmtPct(tauxMargePct)}`,
+      summary:   `ROI: ${roiFinal != null ? roiFinal.toFixed(1) + "%" : "—"} · Marge: ${fmtEur(margeRef)} · ${fmtPct(tauxMargeRef)}`,
       data: {
-        prixFoncier, prixRevientTotal, caPrevisionnel, margeBrute,
-        tauxMargePct, fondsPropres, creditPromotion, roi: roiFinal,
+        prixFoncier, prixRevientTotal: coutRef, caPrevisionnel: caRef,
+        margeBrute: margeRef, tauxMargePct: tauxMargeRef,
+        fondsPropres, creditPromotion, roi: roiFinal,
         triPct, aiNarrative,
         implantationSurfaces: implantationSurfaces ?? undefined,
+        programmation:        programmation ?? undefined,
       },
     });
     setSynthesisSaved(true);
     setTimeout(() => { if (mountedRef.current) setSynthesisSaved(false); }, 3000);
   }, [
-    roiPct, computed.roiCalc, margeBrute, tauxMargePct, prixFoncier,
-    prixRevientTotal, caPrevisionnel, fondsPropres, creditPromotion,
-    triPct, aiNarrative, implantationSurfaces,
+    roiPct, computed.roiCalc, margeRef, tauxMargeRef, prixFoncier,
+    coutRef, caRef, fondsPropres, creditPromotion,
+    triPct, aiNarrative, implantationSurfaces, programmation,
   ]);
 
   // ── Loading ───────────────────────────────────────────────────────────────
@@ -286,7 +328,7 @@ export default function Bilan(): React.ReactElement {
     );
   }
 
-  const margePositive = margeBrute != null && margeBrute > 0;
+  const margePositive = margeRef != null && margeRef > 0;
   const roiFinal = roiPct ?? computed.roiCalc;
 
   return (
@@ -324,6 +366,88 @@ export default function Bilan(): React.ReactElement {
           </button>
         </div>
       </div>
+
+      {/* ── Card programmation synchronisée ── */}
+      {hasProgrammation ? (
+        <div style={{ ...styles.card, border: "1px solid #ddd6fe", marginBottom: 20 }}>
+          <div style={styles.cardHeader}>
+            <h3 style={styles.cardTitle}>
+              <LayoutGrid size={16} color="#7c3aed" />
+              Programme synchronisé
+              <span style={{ fontSize: 11, fontWeight: 500, color: "#7c3aed", marginLeft: 8 }}>
+                {programmation!.nbLogements} logement{programmation!.nbLogements > 1 ? "s" : ""}
+                {" · "}
+                {programmation!.niveaux} niv.
+              </span>
+              <PluBadge status={programmation!.pluViabilite} />
+            </h3>
+            <span style={{ fontSize: 11, color: "#94a3b8" }}>
+              Mis à jour {new Date(programmation!.updatedAt).toLocaleString("fr-FR")}
+            </span>
+          </div>
+          <div style={styles.cardBody}>
+
+            {/* KPIs surfaces + finances */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 14 }}>
+              {[
+                { label: "SDP totale",    val: `${Math.round(programmation!.sdpTotale)} m²` },
+                { label: "CA prévisionnel", val: fmtEur(programmation!.caTotal), accent: true },
+                { label: "Coût total",    val: fmtEur(programmation!.coutTotal) },
+                { label: "Marge brute",   val: fmtEur(programmation!.margeBrute) + ` (${programmation!.tauxMarge.toFixed(1)} %)`, accent: programmation!.margeBrute > 0 },
+              ].map(({ label, val, accent }) => (
+                <div key={label} style={{
+                  padding: "12px 14px", borderRadius: 10,
+                  background: accent ? "#f5f3ff" : "#f8fafc",
+                  border: `1px solid ${accent ? "#ddd6fe" : "#e2e8f0"}`,
+                }}>
+                  <div style={{ fontSize: 10, color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: "0.05em", marginBottom: 3 }}>{label}</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: accent ? "#5b21b6" : "#0f172a" }}>{val}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Typologies */}
+            {Object.values(programmation!.typologies).some(v => v > 0) && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>
+                {(["T1","T2","T3","T4","T5"] as const).map(t => {
+                  const n = programmation!.typologies[t];
+                  if (!n) return null;
+                  return (
+                    <div key={t} style={{
+                      padding: "5px 12px", borderRadius: 20,
+                      background: "#ede9fe", border: "1px solid #c4b5fd",
+                      fontSize: 12, fontWeight: 600, color: "#5b21b6",
+                    }}>
+                      {t} × {n}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Avertissement si evaluation absente */}
+            {!evaluation && (
+              <div style={{
+                marginTop: 12, padding: "9px 14px", borderRadius: 8,
+                background: "#fffbeb", border: "1px solid #fde68a",
+                fontSize: 12, color: "#92400e", display: "flex", alignItems: "center", gap: 8,
+              }}>
+                ⚠ Les chiffres ci-dessus proviennent de la programmation (pas encore d'évaluation financière). Complétez la page <strong style={{ marginLeft: 3 }}>Évaluation</strong> pour des données définitives.
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div style={{ ...styles.card, border: "1px solid #e2e8f0", marginBottom: 20 }}>
+          <div style={{ ...styles.cardBody, display: "flex", alignItems: "center", gap: 12 }}>
+            <LayoutGrid size={20} color="#94a3b8" />
+            <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>
+              Aucune programmation transmise — rendez-vous sur la page <strong>Programmation</strong>,
+              renseignez votre programme et cliquez sur <strong>Valider & envoyer au bilan</strong>.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Alerte bâtiments manquants ── */}
       {!hasBuildings && (
@@ -369,8 +493,6 @@ export default function Bilan(): React.ReactElement {
                 </div>
               ))}
             </div>
-
-            {/* Détail par bâtiment */}
             <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 6 }}>
               {implantation2d!.buildings.map(b => (
                 <div
@@ -405,25 +527,25 @@ export default function Bilan(): React.ReactElement {
       )}
 
       {/* ── Alerte évaluation manquante ── */}
-      {!evaluation && (
+      {!evaluation && !hasProgrammation && (
         <div style={{ ...styles.card, border: "1px solid #fecaca", marginBottom: 20 }}>
           <div style={{ ...styles.cardBody, display: "flex", alignItems: "center", gap: 12 }}>
             <AlertTriangle size={20} color="#dc2626" />
             <p style={{ fontSize: 13, color: "#991b1b", margin: 0 }}>
-              Aucune évaluation financière trouvée. Complétez d'abord la page <strong>Évaluation</strong>.
+              Aucune évaluation financière ni programmation trouvée. Complétez au moins la page <strong>Programmation</strong> ou <strong>Évaluation</strong>.
             </p>
           </div>
         </div>
       )}
 
-      {/* ── KPIs récap depuis évaluation ── */}
-      {evaluation && (
+      {/* ── KPIs récap ── */}
+      {(evaluation || hasProgrammation) && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 20 }}>
           {[
-            { label: "Prix de revient",  val: fmtEur(prixRevientTotal), color: "#0f172a" },
-            { label: "CA prévisionnel",  val: fmtEur(caPrevisionnel),   color: "#0f172a" },
-            { label: "Marge brute",      val: fmtEur(margeBrute),       color: margePositive ? "#16a34a" : "#dc2626" },
-            { label: "Taux de marge",    val: fmtPct(tauxMargePct),     color: tauxMargePct != null && tauxMargePct >= 8 ? "#16a34a" : "#dc2626" },
+            { label: `Prix de revient${sourceLabel}`,  val: fmtEur(coutRef),      color: "#0f172a" },
+            { label: `CA prévisionnel${sourceLabel}`,  val: fmtEur(caRef),        color: "#0f172a" },
+            { label: `Marge brute${sourceLabel}`,      val: fmtEur(margeRef),     color: margePositive ? "#16a34a" : "#dc2626" },
+            { label: `Taux de marge${sourceLabel}`,    val: fmtPct(tauxMargeRef), color: tauxMargeRef != null && tauxMargeRef >= 8 ? "#16a34a" : "#dc2626" },
           ].map(({ label, val, color }) => (
             <div key={label} style={{ padding: 16, borderRadius: 12, border: "1px solid #e2e8f0", background: "#f8fafc" }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase" as const, marginBottom: 4 }}>{label}</div>
@@ -463,11 +585,11 @@ export default function Bilan(): React.ReactElement {
               />
               <span style={styles.hint}>Frais d'achat du terrain, hors droits et honoraires</span>
             </div>
-            {prixFoncier && prixRevientTotal && (
+            {prixFoncier && coutRef && (
               <div style={{ padding: 16, borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0", display: "flex", flexDirection: "column", justifyContent: "center", gap: 6 }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase" as const }}>Part du foncier</div>
                 <div style={{ fontSize: 22, fontWeight: 800, color: ACCENT_PRO }}>
-                  {((prixFoncier / prixRevientTotal) * 100).toFixed(1)} %
+                  {((prixFoncier / coutRef) * 100).toFixed(1)} %
                 </div>
                 <div style={{ fontSize: 11, color: "#94a3b8" }}>du coût total de l'opération</div>
               </div>
@@ -556,7 +678,7 @@ export default function Bilan(): React.ReactElement {
                 {fondsPropres && (
                   <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
                     Fonds propres : {fmtEur(fondsPropres)}
-                    {margeBrute != null && ` · Gain estimé : ${fmtEur(Math.round(margeBrute))}`}
+                    {margeRef != null && ` · Gain estimé : ${fmtEur(Math.round(margeRef))}`}
                   </div>
                 )}
               </div>
@@ -597,13 +719,13 @@ export default function Bilan(): React.ReactElement {
           )}
           <button
             onClick={handleGenerateNarrative}
-            disabled={isGenerating || !evaluation}
+            disabled={isGenerating || (!evaluation && !hasProgrammation)}
             style={{
               ...styles.button,
               width: "100%", marginTop: 14,
-              background: isGenerating || !evaluation ? "#e2e8f0" : "linear-gradient(135deg, #7c6fcd, #8b5cf6)",
-              color: isGenerating || !evaluation ? "#94a3b8" : "white",
-              cursor: isGenerating || !evaluation ? "not-allowed" : "pointer",
+              background: isGenerating || (!evaluation && !hasProgrammation) ? "#e2e8f0" : "linear-gradient(135deg, #7c6fcd, #8b5cf6)",
+              color: isGenerating || (!evaluation && !hasProgrammation) ? "#94a3b8" : "white",
+              cursor: isGenerating || (!evaluation && !hasProgrammation) ? "not-allowed" : "pointer",
             }}
           >
             {isGenerating
@@ -611,9 +733,9 @@ export default function Bilan(): React.ReactElement {
               : <><Sparkles size={16} />{aiNarrative ? "Regénérer la note" : "Générer la note de synthèse"}</>
             }
           </button>
-          {!evaluation && (
+          {!evaluation && !hasProgrammation && (
             <p style={{ fontSize: 11, color: "#94a3b8", textAlign: "center" as const, marginTop: 8 }}>
-              Complétez l'évaluation financière pour activer la génération IA.
+              Transmettez au moins la programmation ou complétez l'évaluation pour activer la génération IA.
             </p>
           )}
         </div>

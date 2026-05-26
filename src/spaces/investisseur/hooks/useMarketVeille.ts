@@ -15,18 +15,15 @@ import {
   type AccessContext,
 } from "@/lib/access";
 
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Mode transaction unique autorisé dans la veille. */
 const SALE_MODE = "sale" as const;
 
-// ─────────────────────────────────────────────────────────────────────────────
+type PropertyTypeFilter = "all" | "apartment" | "house" | "land";
 
 type UseMarketVeilleParams = {
   zipCode?: string;
   city?: string;
-  /** Toujours "sale" — paramètre conservé pour compatibilité rétro mais ignoré. */
   transactionMode?: "sale";
+  propertyTypeFilter?: PropertyTypeFilter;
   autoLoad?: boolean;
   autoRefreshOnMount?: boolean;
   opportunitiesLimit?: number;
@@ -50,32 +47,22 @@ type UseMarketVeilleReturn = {
   loading: boolean;
   refreshing: boolean;
   error: string | null;
-
   data: UseMarketVeilleData | null;
   metrics: MarketZoneMetrics | null;
   opportunities: MarketOpportunity[];
-
   usedCache: boolean;
   ingestSkipped: boolean;
   skipReason: string | null;
   roiScore: number | null;
   quotaRemaining: number | null;
-
-  /** Contexte d'accès complet — exposé pour VeilleMarchePage. */
   accessCtx: AccessContext | null;
-  /** Alias pour la compatibilité rétro. */
   isAdmin: boolean;
   bypassLimits: boolean;
-
-  /** true si le refresh veille est accessible sur le plan/quota actuel. */
   canRefresh: boolean;
-
   reload: () => Promise<void>;
   reloadOnly: () => Promise<void>;
   refreshPipeline: (options?: { withIngest?: boolean }) => Promise<MarketRefreshResult>;
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 function extractStepError(result: MarketRefreshResult): string {
   if (result.error) return result.error;
@@ -96,6 +83,7 @@ function extractStepError(result: MarketRefreshResult): string {
     ) {
       return (candidate as { message: string }).message;
     }
+
     if (
       candidate &&
       typeof candidate === "object" &&
@@ -108,8 +96,6 @@ function extractStepError(result: MarketRefreshResult): string {
 
   return "Une erreur est survenue pendant le refresh marché.";
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 export function useMarketVeille(params: UseMarketVeilleParams): UseMarketVeilleReturn {
   const autoLoad = params.autoLoad ?? params.autoRefreshOnMount ?? false;
@@ -125,13 +111,14 @@ export function useMarketVeille(params: UseMarketVeilleParams): UseMarketVeilleR
   const [roiScore, setRoiScore] = useState<number | null>(null);
   const [quotaRemaining, setQuotaRemaining] = useState<number | null>(null);
 
-  // ── Résolution du contexte d'accès via le moteur centralisé ───────────────
   const { ctx: accessCtx, loading: ctxLoading } = useAccessContext(params.userId);
 
   const isAdmin = accessCtx?.isAdmin ?? false;
   const bypassLimits = accessCtx?.bypassLimits ?? false;
 
-  // ── canRefresh : expose si le bouton doit être actif ──────────────────────
+  const propertyTypeFilter = params.propertyTypeFilter ?? "all";
+  const hasZone = Boolean(params.zipCode?.trim() || params.city?.trim());
+
   const canRefresh = useMemo(() => {
     if (!accessCtx) return false;
     if (!canAccessFeature(accessCtx, "veille.refresh")) return false;
@@ -139,19 +126,15 @@ export function useMarketVeille(params: UseMarketVeilleParams): UseMarketVeilleR
     return true;
   }, [accessCtx]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-
-  const hasZone = Boolean(params.zipCode?.trim() || params.city?.trim());
-
-  // transactionMode est toujours "sale" — le paramètre entrant est ignoré
-  // pour garantir qu'aucune location ne transite dans la veille.
   const baseParams = useMemo(
     () => ({
       zipCode: params.zipCode?.trim(),
       city: params.city?.trim(),
       transactionMode: SALE_MODE,
+      propertyTypeFilter,
+      property_type_filter: propertyTypeFilter,
     }),
-    [params.zipCode, params.city]
+    [params.zipCode, params.city, propertyTypeFilter]
   );
 
   const reload = useCallback(async () => {
@@ -194,7 +177,6 @@ export function useMarketVeille(params: UseMarketVeilleParams): UseMarketVeilleR
         return { ok: false, error: message };
       }
 
-      // ── Vérification d'accès via le moteur centralisé ──────────────────
       if (accessCtx && !canAccessFeature(accessCtx, "veille.refresh")) {
         const message = "Accès veille.refresh non autorisé sur ce plan.";
         setError(message);
@@ -214,7 +196,10 @@ export function useMarketVeille(params: UseMarketVeilleParams): UseMarketVeilleR
         if (isAdmin) {
           console.log(
             "[useMarketVeille] admin bypass active — refresh sans quota ni blocage",
-            { zone: baseParams.zipCode ?? baseParams.city }
+            {
+              zone: baseParams.zipCode ?? baseParams.city,
+              propertyTypeFilter,
+            }
           );
         }
 
@@ -230,7 +215,6 @@ export function useMarketVeille(params: UseMarketVeilleParams): UseMarketVeilleR
           windowHours: 24 * 30,
           limit: 200,
           maxPages: 5,
-          // ── Propagation du bypass admin résolu par le moteur ──────────
           isAdmin,
           bypassLimits,
         });
@@ -240,7 +224,7 @@ export function useMarketVeille(params: UseMarketVeilleParams): UseMarketVeilleR
         setSkipReason(result.ingest_skip_reason ?? null);
         setRoiScore(result.roi_score ?? null);
         setQuotaRemaining(
-          isAdmin ? ADMIN_DISPLAY_QUOTA : (result.quota_remaining ?? null)
+          isAdmin ? ADMIN_DISPLAY_QUOTA : result.quota_remaining ?? null
         );
 
         if (!result.ok) {
@@ -263,6 +247,7 @@ export function useMarketVeille(params: UseMarketVeilleParams): UseMarketVeilleR
       hasZone,
       isAdmin,
       bypassLimits,
+      propertyTypeFilter,
       params.minScore,
       params.freshnessThresholdHours,
       params.userId,
@@ -272,6 +257,7 @@ export function useMarketVeille(params: UseMarketVeilleParams): UseMarketVeilleR
 
   useEffect(() => {
     if (!autoLoad || ctxLoading) return;
+
     if (!hasZone) {
       setLoading(false);
       setMetrics(null);
@@ -295,7 +281,6 @@ export function useMarketVeille(params: UseMarketVeilleParams): UseMarketVeilleR
     };
   }, [autoLoad, ctxLoading, hasZone, reload]);
 
-  // ── data : quotas overridés pour l'admin ──────────────────────────────────
   const data: UseMarketVeilleData | null = useMemo(() => {
     if (!metrics && opportunities.length === 0) return null;
 
@@ -305,9 +290,13 @@ export function useMarketVeille(params: UseMarketVeilleParams): UseMarketVeilleR
       narrative: metrics?.narrative,
       summary: metrics?.summary,
       tension: metrics?.tension,
-      daily_refresh_limit: isAdmin ? ADMIN_DISPLAY_QUOTA : (metrics?.daily_refresh_limit ?? undefined),
-      remaining_refreshes: isAdmin ? ADMIN_DISPLAY_QUOTA : (metrics?.remaining_refreshes ?? undefined),
-      refresh_blocked: isAdmin ? false : (metrics?.refresh_blocked ?? undefined),
+      daily_refresh_limit: isAdmin
+        ? ADMIN_DISPLAY_QUOTA
+        : metrics?.daily_refresh_limit ?? undefined,
+      remaining_refreshes: isAdmin
+        ? ADMIN_DISPLAY_QUOTA
+        : metrics?.remaining_refreshes ?? undefined,
+      refresh_blocked: isAdmin ? false : metrics?.refresh_blocked ?? undefined,
     };
   }, [metrics, opportunities, isAdmin]);
 

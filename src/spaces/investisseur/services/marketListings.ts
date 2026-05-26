@@ -1,17 +1,6 @@
 ﻿import { supabase } from "@/lib/supabase";
 
-// ─── Valeur numérique "vente" dans la vue v_market_active_listings ────────────
-//
-// Convention Stream Estate / Supabase :
-//   0 = vente (sale)
-//   1 = location (rent)
-//
-// Ce filtre est appliqué directement dans la requête Supabase pour éviter
-// que des annonces locatives ne soient jamais chargées côté client.
-
 const SALE_TRANSACTION_TYPE = 0 as const;
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 export type MarketActiveListing = {
   id: string;
@@ -29,7 +18,6 @@ export type MarketActiveListing = {
   bedrooms: number | null;
 
   property_type: number | null;
-  /** Toujours 0 (vente) — les locations sont exclues à la source. */
   transaction_type: number | null;
 
   city: string | null;
@@ -125,7 +113,6 @@ export async function fetchMarketActiveListings(
       last_seen_at,
       last_crawled_at
     `)
-    // ── Filtre vente uniquement — aucune location ne doit transiter ──────
     .eq("transaction_type", SALE_TRANSACTION_TYPE)
     .order("last_seen_at", { ascending: false })
     .limit(limit);
@@ -159,6 +146,5 @@ export async function fetchMarketActiveListings(
 
   const rows = (data ?? []) as MarketActiveListing[];
 
-  // ── Post-filtre défensif : double sécurité en cas de vue corrompue ────────
   return rows.filter((row) => row.transaction_type === SALE_TRANSACTION_TYPE);
 }

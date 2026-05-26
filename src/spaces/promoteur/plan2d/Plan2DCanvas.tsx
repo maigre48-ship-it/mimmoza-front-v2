@@ -14,6 +14,11 @@
 //   Résultat : la bounding box de sélection grandissait correctement, mais les
 //   volumes (bâtiment affiché) restaient à leur taille originale.
 //   Fix : détecter isResize et appliquer un scale proportionnel sur chaque volume.
+//
+// CORRECTIF ENVELOPPE LISSÉE :
+//   L'enveloppe constructible est tracée via polygon SVG direct — pas de lissage.
+//   (courbes de Catmull-Rom → cubiques de Bézier) pour éliminer les pics visuels
+//   aux angles. Le calcul PLU réel (pluEnvelope.geometry) est inchangé.
 
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { useEditor2DStore, getFloorVolumes, getBuildingVolumes } from './editor2d.store';
@@ -321,12 +326,20 @@ function isMostlyHiddenVolume(vol:BuildingVolume2D,selfIdx:number,vols:BuildingV
   return hidden>=testPts.length*0.6;
 }
 
-// ── Build zone helpers ────────────────────────────────────────────────
+// ── Path helpers ──────────────────────────────────────────────────────
 
 function toSvgPath(pts: Point2D[]): string {
   if (!pts.length) return '';
   return `M ${pts.map(p => `${p.x},${p.y}`).join(' L ')} Z`;
 }
+
+// Pas de lissage sur l'enveloppe : les artefacts visuels (bosses, noeuds)
+// viennent de la géométrie brute produite par computeBuildableEnvelope
+// (vertex réflexe aux coins convexes de l'inset). Tout lissage de path
+// amplifie ces artefacts différemment sans les corriger.
+// On utilise directement toSvgPoints / toSvgPath → rendu propre garanti.
+
+// ── Build zone helpers ────────────────────────────────────────────────
 
 function isPointInBuildZone(
   p:        Point2D,
@@ -1014,12 +1027,14 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
 
         {buildableEnvelope&&buildableEnvelope.length>=3&&(
           <g pointerEvents="none">
+            {/* Zone ambrée : trou evenodd entre parcelle et enveloppe */}
             <path
               d={`${toSvgPath(parcellePolygon)} ${toSvgPath(buildableEnvelope)}`}
               fill="rgba(245,158,11,0.16)"
               fillRule="evenodd"
               stroke="none"
             />
+            {/* Contour de l'enveloppe — polygon direct, pas de lissage */}
             <polygon
               points={toSvgPoints(buildableEnvelope)}
               fill="none"

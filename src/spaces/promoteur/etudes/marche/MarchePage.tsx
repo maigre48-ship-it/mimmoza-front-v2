@@ -1,6 +1,13 @@
 ﻿// ============================================
-// MarchePage.tsx - VERSION 2.8.1
+// MarchePage.tsx - VERSION 2.8.2
 // ============================================
+// AMÉLIORATIONS v2.8.2 (patch chirurgical sur v2.8.1) :
+// - WIRING COPILOT : push de la parcelle/commune active vers le store Copilot
+//   via setContextHints (lat/lng + code_insee + commune + parcelle).
+//   SmartScore & DVF étant déjà branchés côté backend, le Copilot devient
+//   contextuel sur cette page SANS aucun changement serveur. Nettoyage au
+//   démontage. Aucune autre logique modifiée.
+//
 // AMÉLIORATIONS v2.8.1 (patch chirurgical sur v2.8) :
 // - FIX NaN score : transport_exclu géré dans calculateDifferentiatedScores
 //   → si backend renvoie transport_exclu=true, on redistribue les poids
@@ -53,6 +60,11 @@ import { searchParcel } from "./services/parcel.service";
 // IMPORT SNAPSHOT STORE
 // ============================================
 import { patchProjectInfo, patchModule } from "../../shared/promoteurSnapshot.store";
+
+// ============================================
+// IMPORT COPILOT STORE (push de contexte) — v2.8.2
+// ============================================
+import { useCopilotStore } from "../../../copilot/store/copilotStore";
 
 // ============================================
 // IMPORT STUDY HOOK + TYPES — v2.5
@@ -2890,7 +2902,7 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
 };
 
 // ============================================
-// COMPOSANT PRINCIPAL - MarchePage v2.8.1
+// COMPOSANT PRINCIPAL - MarchePage v2.8.2
 // ============================================
 export function MarchePage() {
   const [searchParams] = useSearchParams();
@@ -2974,6 +2986,57 @@ export function MarchePage() {
   useEffect(() => {
     setRadius(projectConfig.radius.analysis);
   }, [projectConfig]);
+
+  // ─── v2.8.2 — Push du contexte parcelle/commune vers le Copilot ──────
+  // SmartScore + DVF sont déjà branchés côté backend : il suffit de fournir
+  // une localisation (lat/lng OU code_insee OU parcelle). Aucune invention.
+  useEffect(() => {
+    // Priorité aux coordonnées résolues par l'analyse, sinon au state du formulaire.
+    const lat =
+      analysisResult?.meta?.lat ??
+      (latitude ? parseFloat(latitude) : undefined);
+    const lng =
+      analysisResult?.meta?.lon ??
+      (longitude ? parseFloat(longitude) : undefined);
+
+    const insee =
+      analysisResult?.meta?.commune_insee ||
+      codeInsee ||
+      study?.foncier?.commune_insee ||
+      undefined;
+
+    const commune = analysisResult?.meta?.commune_nom || undefined;
+
+    const pid =
+      (parcelId && parcelId.trim().length >= 10 ? parcelId.trim() : undefined) ||
+      study?.foncier?.focus_id ||
+      undefined;
+
+    // Rien d'exploitable → on n'écrase pas le contexte avec du vide.
+    const hasLat = typeof lat === "number" && Number.isFinite(lat);
+    const hasLng = typeof lng === "number" && Number.isFinite(lng);
+    if (!hasLat && !hasLng && !insee && !pid) return;
+
+    useCopilotStore.getState().setContextHints({
+      parcel: {
+        id: pid ?? insee ?? "marche",            // identifiant best-effort
+        cadastral_ref: pid,
+        commune,
+        code_insee: insee,
+        lat: hasLat ? lat : undefined,
+        lng: hasLng ? lng : undefined,
+      },
+    });
+  }, [
+    analysisResult,
+    latitude,
+    longitude,
+    codeInsee,
+    parcelId,
+    study?.foncier?.commune_insee,
+    study?.foncier?.focus_id,
+  ]);
+
 
   const handleSelectAddress = useCallback((suggestion: AddressSuggestion) => {
     setSelectedAddress(suggestion);
@@ -3326,7 +3389,7 @@ export function MarchePage() {
                   pour lancer une analyse complète avec scoring adapté à votre type de projet.
                 </p>
                 <div style={{ marginTop: "20px", display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "center" }}>
-                  <span style={{ ...styles.badge, background: "#dcfce7", color: "#166534" }}>✅ Scoring différencié v2.8.1</span>
+                  <span style={{ ...styles.badge, background: "#dcfce7", color: "#166534" }}>✅ Scoring différencié v2.8.2</span>
                   <span style={{ ...styles.badge, background: "#ede9fe", color: ACCENT_PRO }}>DVF + INSEE</span>
                   <span style={{ ...styles.badge, background: "#fef3c7", color: "#92400e" }}>Transport + BPE</span>
                   <span style={{ ...styles.badge, background: "#fdf2f8", color: "#be185d" }}>EHPAD FINESS</span>

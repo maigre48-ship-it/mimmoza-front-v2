@@ -14,6 +14,8 @@
 // v3 — Refactored: modular architecture, business validation, audit-driven rendering.
 
 import { jsPDF } from 'jspdf';
+import logoMimmoza from '../../../assets/logo-mimmoza.png';
+import logoMimmozaSimple from '../../../assets/logo-mimmoza-simple.png';
 import autoTable from 'jspdf-autotable';
 import type {
   PromoteurSynthese, RecommendationType, RisqueNiveau, RisqueItem, Scenario,
@@ -55,6 +57,28 @@ const SP = {
   crystal: [240, 236, 250] as RGB,   // #F0ECFA
   label:   'SYNTHÈSE PROMOTEUR',
 } as const;
+
+// ============================================================================
+// LOGO HELPER
+// ============================================================================
+
+function addMimmozaLogo(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  simple = false,
+): void {
+  try {
+    doc.addImage(simple ? logoMimmozaSimple : logoMimmoza, 'PNG', x, y, w, h);
+  } catch {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...SP.deep);
+    doc.text('MIMMOZA', x, y + h * 0.7);
+  }
+}
 
 // ============================================================================
 // STATE
@@ -121,26 +145,38 @@ function tocRegister(st: St, num: string, label: string): void {
 // ============================================================================
 
 function pageHeader(st: St): void {
-  const { doc, syn, p, audit } = st;
+  const { doc, syn, p } = st;
 
-  doc.setFillColor(...SP.deep);
+  doc.setFillColor(255, 255, 255);
   doc.rect(0, 0, PW, HDR_H, 'F');
-  doc.setFillColor(...SP.main);
-  doc.rect(0, HDR_H, PW, 0.4, 'F');
 
-  doc.setFontSize(F.xs);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...C.white);
-  doc.text('MIMMOZA', ML, 7.2);
+  const logoH = 8;
+  const bandH = (HDR_H - logoH) / 2 - 0.5;
+
+  doc.setFillColor(133, 92, 255);
+  doc.rect(0, 0, PW, bandH, 'F');
+
+  doc.setFillColor(133, 92, 255);
+  addMimmozaLogo(doc, ML, bandH + 0.5, 24, logoH);
+
+  doc.setFillColor(133, 92, 255);
+  doc.rect(0, HDR_H - bandH, PW, bandH, 'F');
+  const textY = bandH + logoH / 2 + 1;
 
   doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(...C.slate3);
+  doc.text('|', ML + 25, textY);
+
   const title = syn.projet.commune
     ? s(`${syn.projet.programmeType} — ${syn.projet.commune} (${syn.projet.codePostal})`)
     : s('Synthèse Promoteur');
-  doc.text(doc.splitTextToSize(title, 100)[0], PW / 2, 7.2, { align: 'center' });
+  doc.setTextColor(...C.slate2);
+  doc.text(doc.splitTextToSize(title, 100)[0], PW / 2, textY, { align: 'center' });
 
   doc.setFont('helvetica', 'bold');
-  doc.text(`${p}`, PW - MR, 7.2, { align: 'right' });
+  doc.setTextColor(...C.slate3);
+  doc.text(`${p}`, PW - MR, textY, { align: 'right' });
 }
 
 function pageFooter(st: St): void {
@@ -518,20 +554,8 @@ async function addCover(st: St): Promise<void> {
   // HEADER BRAND
   // ==========================================================================
 
-  const logoX = left;
-  const logoY = 15;
-
-  drawMimmozaCube(doc, logoX, logoY, 10);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(20);
-  doc.setTextColor(...V.white);
-  doc.text('MIMMOZA', logoX + 16, logoY + 2.5);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(...V.lightText);
-  doc.text(s('Intelligence immobilière B2B'), logoX + 16, logoY + 8.5);
+   st.p = 1;
+   pageHeader(st);
 
   // ==========================================================================
   // TITRES
@@ -646,9 +670,6 @@ async function addCover(st: St): Promise<void> {
     doc.setTextColor(...row.color);
     doc.text(row.value, infoX + 26, y + 11.8);
 
-    doc.setFillColor(...V.main);
-    doc.circle(infoX + infoW + 6, y + 7, 1.15, 'F');
-
     if (i < infoRows.length - 1) {
       doc.setDrawColor(...V.faint);
       doc.setLineWidth(0.2);
@@ -728,12 +749,6 @@ async function addCover(st: St): Promise<void> {
 
   const ftY = pageH - 15;
 
-  doc.setDrawColor(...V.faint);
-  doc.setLineWidth(0.25);
-  doc.line(left - 2, ftY - 9, right, ftY - 9);
-
-  drawCalendarIcon(doc, left + 6, ftY - 0.5, V.soft);
-
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.6);
   doc.setTextColor(...V.muted);
@@ -744,25 +759,25 @@ async function addCover(st: St): Promise<void> {
   doc.setTextColor(...V.white);
   doc.text(`${fmtDate(new Date())} à ${fmtTime()}`, left + 16, ftY + 4.8);
 
-  doc.setDrawColor(...V.main);
-  doc.setLineWidth(0.35);
-  doc.circle(pageW / 2 - 2, ftY + 0.5, 7.6);
-  doc.circle(pageW / 2 - 2, ftY + 0.5, 5.9);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(15);
-  doc.setTextColor(...V.white);
-  doc.text('M', pageW / 2 - 2, ftY + 2.6, { align: 'center' });
-
+  // Date de génération — sous la référence dossier, texte clair
+  const dateY = infoY + rowH * 3 + 10;
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.2);
+  doc.setFontSize(7.2);
   doc.setTextColor(...V.muted);
-  doc.text(s('ACCÉDEZ AU DOSSIER COMPLET'), pageW / 2 + 28, ftY - 0.8, { align: 'center' });
-
+  doc.text(s('Généré le'), infoX, dateY);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10.2);
-  doc.setTextColor(...V.main);
-  doc.text('www.mimmoza.fr', pageW / 2 + 28, ftY + 5.1, { align: 'center' });
+  doc.setFontSize(8.2);
+  doc.setTextColor(...V.soft);
+  doc.text(`${fmtDate(new Date())} à ${fmtTime()}`, infoX, dateY + 6);
 
+  // Bande blanche bas de page de garde
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, pageH - 20, pageW, 20, 'F');
+
+  // Logo centré sur la bande blanche
+  addMimmozaLogo(doc, pageW / 2 - 23, pageH - 17, 47, 14);
+
+  // Liseré violet tout en bas
   doc.setFillColor(133, 92, 255);
   doc.rect(0, pageH - 2.7, pageW, 2.7, 'F');
 
@@ -952,7 +967,8 @@ function renderToc(st: St, tocPageNumber: number): void {
   doc.setPage(tocPageNumber);
 
   // 1. Background
-  drawGradientV(doc, 0, 0, PW, PH, [248, 247, 252], [255, 255, 255], 70);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, 0, PW, PH, 'F');
 
   setOpacity(doc, 0.12);
   doc.setFillColor(...SP.ultra);
@@ -962,19 +978,11 @@ function renderToc(st: St, tocPageNumber: number): void {
   doc.circle(20, PH - 28, 42, 'F');
   setOpacity(doc, 1);
 
-  // 2. Header
-  const topY = 18;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.setTextColor(...SP.deep);
-  doc.text('MIMMOZA', ML, topY);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor(...C.slate3);
-  doc.text('|', ML + 25, topY);
-  doc.text('Synthese Promoteur', ML + 32, topY);
-  doc.text(fmtDate(new Date()), PW - MR, topY, { align: 'right' });
+  // 2. Header — identique aux autres pages
+  const savedP = st.p;
+  st.p = tocPageNumber;
+  pageHeader(st);
+  st.p = savedP;
 
   // 3. Titre
   doc.setFont('helvetica', 'bold');
@@ -1022,17 +1030,12 @@ function renderToc(st: St, tocPageNumber: number): void {
   doc.setLineWidth(0.35);
   doc.roundedRect(ML, introY, CW, introH, 5.5, 5.5, 'S');
 
-  doc.setFillColor(...SP.main);
-  doc.roundedRect(ML + 7, introY + 6.5, 13, 13, 3, 3, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.setTextColor(...C.white);
-  doc.text('M', ML + 13.5, introY + 16, { align: 'center' });
+  // (logo supprimé)
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10.5);
   doc.setTextColor(...SP.deep);
-  doc.text("Dossier comite d'investissement", ML + 27, introY + 11);
+  doc.text("Dossier comite d'investissement", ML + 28, introY + 11);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
@@ -1173,14 +1176,9 @@ function addExecSummary(st: St): void {
   const pageTop = HDR_H + 12;
   const footerY = PH - FTR_H;
  
-  drawGradientV(doc, 0, HDR_H + 0.4, PW, PH - HDR_H, [248, 247, 252], [255, 255, 255], 70);
- 
-  setOpacity(doc, 0.11);
-  doc.setFillColor(...SP.ultra);
-  doc.circle(PW - 18, 38, 34, 'F');
-  doc.setFillColor(...SP.crystal);
-  doc.circle(18, PH - 36, 42, 'F');
-  setOpacity(doc, 1);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, HDR_H + 0.4, PW, PH - HDR_H, 'F');
+
  
   const shadowCard = (x: number, y: number, w: number, h: number, r = 5): void => {
     setOpacity(doc, 0.07);
@@ -1303,7 +1301,7 @@ function addExecSummary(st: St): void {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(6);
     doc.setTextColor(...C.white);
-    doc.text(tag, x + 9, y + 11, { align: 'center' });
+    doc.text(tag, x + 9, y + 10, { align: 'center' });
  
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.8);
@@ -1363,7 +1361,7 @@ function addExecSummary(st: St): void {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(...C.white);
-  doc.text('OK', ML + 13, recY + 16, { align: 'center' });
+  doc.text('OK', ML + 13, recY + 15, { align: 'center' });
  
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.2);
@@ -1508,7 +1506,7 @@ function addExecSummary(st: St): void {
  
   if (es.killSwitchesActifs.length > 0) {
     const ksH = 24;
-    const ksY = lowerY + 100;
+    const ksY = lowerY + scoresH + 6;
  
     doc.setFillColor(...C.redBg);
     doc.roundedRect(ML, ksY, CW, ksH, 5, 5, 'F');
@@ -1547,7 +1545,8 @@ function addDataQuality(st: St): void {
 
   const pageTop = MT + HDR_H + 4;
 
-  drawGradientV(doc, 0, HDR_H + 0.4, PW, PH - HDR_H, [248, 247, 252], [255, 255, 255], 70);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, HDR_H + 0.4, PW, PH - HDR_H, 'F');
 
   setOpacity(doc, 0.11);
   doc.setFillColor(...SP.ultra);
@@ -1596,7 +1595,7 @@ function addDataQuality(st: St): void {
     doc.text(s(label).toUpperCase(), x + 23, y + 9);
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13.2);
+    doc.setFontSize(11);
     doc.setTextColor(...color);
     doc.text(s(value), x + 23, y + 20);
   };
@@ -1643,7 +1642,7 @@ function addDataQuality(st: St): void {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7);
   doc.setTextColor(...C.white);
-  doc.text('OK', ML + 13, bannerY + 15.2, { align: 'center' });
+  doc.text('OK', ML + 13, bannerY + 14.2, { align: 'center' });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.2);
@@ -1654,18 +1653,6 @@ function addDataQuality(st: St): void {
   doc.setFontSize(12.2);
   doc.setTextColor(...SP.deep);
   doc.text(s(DOC_STATUS_LABELS[audit.documentStatus]).toUpperCase(), ML + 27, bannerY + 19);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor(...C.slate3);
-  doc.text(
-    doc.splitTextToSize(
-      'Cette page indique si les donnees disponibles sont suffisantes pour exploiter le dossier.',
-      64,
-    ),
-    PW - MR - 68,
-    bannerY + 11,
-  );
 
   // KPI row
   const kpiY = bannerY + bannerH + 7;
@@ -1749,7 +1736,7 @@ function addDataQuality(st: St): void {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(5.8);
     doc.setTextColor(...C.white);
-    doc.text(cat.tag, ML + 15, cy + 8.6, { align: 'center' });
+    doc.text(cat.tag, ML + 15, cy + 7.5, { align: 'center' });
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.4);
@@ -1872,7 +1859,8 @@ function addProjet(st: St): void {
 
   const pageTop = MT + HDR_H + 4;
 
-  drawGradientV(doc, 0, HDR_H + 0.4, PW, PH - HDR_H, [248, 247, 252], [255, 255, 255], 70);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, HDR_H + 0.4, PW, PH - HDR_H, 'F');
 
   setOpacity(doc, 0.11);
   doc.setFillColor(...SP.ultra);
@@ -1913,7 +1901,7 @@ function addProjet(st: St): void {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(6);
     doc.setTextColor(...SP.main);
-    doc.text(tag, x + 11.5, y + 14.6, { align: 'center' });
+    doc.text(tag, x + 11.5, y + 13.4, { align: 'center' });
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(6.6);
@@ -2106,65 +2094,6 @@ function addProjet(st: St): void {
     'PGM',
   );
 
-  // Bottom card
-  const bottomY = sectionY + 86;
-  const bottomH = 52;
-
-  shadowCard(ML, bottomY, CW, bottomH, 6);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(...SP.deep);
-  doc.text('SYNTHESE PROJET', ML + 8, bottomY + 12);
-
-  doc.setFillColor(...SP.main);
-  doc.roundedRect(ML + 8, bottomY + 15, 15, 1, 0.5, 0.5, 'F');
-
-  const summaryParts = [
-    p.programmeType ? `Programme : ${p.programmeType}.` : 'Programme non renseigne.',
-    p.commune ? `Localisation : ${p.commune}${p.codePostal ? ` (${p.codePostal})` : ''}.` : 'Localisation non renseignee.',
-    p.surfaceTerrain ? `Terrain : ${m2v(p.surfaceTerrain)}.` : 'Surface terrain non renseignee.',
-    p.surfacePlancher ? `Surface plancher : ${m2v(p.surfacePlancher)}.` : 'Surface plancher non renseignee.',
-    p.nbLogements > 0 ? `Logements : ${p.nbLogements}.` : 'Nombre de logements non renseigne.',
-  ];
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(...SP.deep);
-  doc.text(
-    doc.splitTextToSize(s(summaryParts.join(' ')), CW - 16),
-    ML + 8,
-    bottomY + 26,
-  );
-
-  // Data quality note
-  const noteY = bottomY + bottomH + 9;
-  const noteH = 24;
-
-  doc.setFillColor(...SP.crystal);
-  doc.roundedRect(ML, noteY, CW, noteH, 5, 5, 'F');
-
-  doc.setDrawColor(...SP.ultra);
-  doc.setLineWidth(0.3);
-  doc.roundedRect(ML, noteY, CW, noteH, 5, 5, 'S');
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.setTextColor(...SP.deep);
-  doc.text('NOTE', ML + 7, noteY + 9);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.setTextColor(...SP.deep);
-  doc.text(
-    doc.splitTextToSize(
-      'Cette page reprend uniquement les informations disponibles dans le dossier projet. Les valeurs non renseignees restent affichees en N/A ou non renseigne.',
-      CW - 22,
-    ),
-    ML + 7,
-    noteY + 16,
-  );
-
   pageFooter(st);
 }
 // ============================================================================
@@ -2187,7 +2116,8 @@ function addVisuels(st: St): void {
   const { doc } = st;
   const pageTop = MT + HDR_H + 4;
 
-  drawGradientV(doc, 0, HDR_H + 0.4, PW, PH - HDR_H, [248, 247, 252], [255, 255, 255], 70);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, HDR_H + 0.4, PW, PH - HDR_H, 'F');
 
   setOpacity(doc, 0.11);
   doc.setFillColor(...SP.ultra);
@@ -2372,7 +2302,8 @@ function addTechnique(st: St): void {
 
   const pageTop = MT + HDR_H + 4;
 
-  drawGradientV(doc, 0, HDR_H + 0.4, PW, PH - HDR_H, [248, 247, 252], [255, 255, 255], 70);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, HDR_H + 0.4, PW, PH - HDR_H, 'F');
 
   setOpacity(doc, 0.11);
   doc.setFillColor(...SP.ultra);
@@ -2453,7 +2384,7 @@ function addTechnique(st: St): void {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7);
   doc.setTextColor(...C.white);
-  doc.text('PLU', ML + 13, bannerY + 16, { align: 'center' });
+  doc.text('PLU', ML + 13, bannerY + 15, { align: 'center' });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.2);
@@ -2501,7 +2432,7 @@ function addTechnique(st: St): void {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(6.2);
     doc.setTextColor(...SP.main);
-    doc.text(tag, x + 12, y + 15, { align: 'center' });
+    doc.text(tag, x + 12, y + 14, { align: 'center' });
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(6.7);
@@ -2705,7 +2636,8 @@ function addMarche(st: St): void {
   const m = syn.marche;
   const pageTop = MT + HDR_H + 4;
 
-  drawGradientV(doc, 0, HDR_H + 0.4, PW, PH - HDR_H, [248, 247, 252], [255, 255, 255], 70);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, HDR_H + 0.4, PW, PH - HDR_H, 'F');
 
   setOpacity(doc, 0.11);
   doc.setFillColor(...SP.ultra);
@@ -2754,7 +2686,7 @@ function addMarche(st: St): void {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(6.4);
       doc.setTextColor(...C.slate3);
-      doc.text(s(sub), x + w / 2, y + 30, { align: 'center' });
+      doc.text(s(sub), x + w / 2, y + 25, { align: 'center' });
     }
   };
 
@@ -2813,7 +2745,7 @@ function addMarche(st: St): void {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7);
   doc.setTextColor(...C.white);
-  doc.text('DVF', ML + 13, bannerY + 16, { align: 'center' });
+  doc.text('DVF', ML + 13, bannerY + 15, { align: 'center' });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.2);
@@ -2970,88 +2902,31 @@ function addMarche(st: St): void {
   doc.setFillColor(...SP.main);
   doc.roundedRect(rightX + 7, lowerY + 15, 15, 1, 0.5, 0.5, 'F');
 
-  const gaugeY = lowerY + 34;
-const gaugeX = rightX + 18;
-const gaugeW = rightW - 36;
-const gaugeH = 7;
+const gaugeY = lowerY + 32;
+const gaugeX = rightX + 10;
+const gaugeW = rightW - 20;
+const gaugeH = 6;
 
-// Fond arrondi clip (masque les tranches débordantes)
 doc.setFillColor(234, 232, 244);
-doc.roundedRect(gaugeX, gaugeY, gaugeW, gaugeH, 3.5, 3.5, 'F');
+doc.roundedRect(gaugeX, gaugeY, gaugeW, gaugeH, 3, 3, 'F');
 
-// Dégradé fluide en tranches — vert (#4ade80) → blanc → rouge (#f87171)
-const steps = 80;
-const sliceW = gaugeW / steps;
-for (let i = 0; i < steps; i++) {
-  const t = i / (steps - 1); // 0 = gauche (vert), 1 = droite (rouge)
-  let r: number, g: number, b: number;
-  if (t < 0.5) {
-    // vert → blanc
-    const tt = t / 0.5;
-    r = Math.round(74  + (255 - 74)  * tt);
-    g = Math.round(222 + (255 - 222) * tt);
-    b = Math.round(128 + (255 - 128) * tt);
-  } else {
-    // blanc → rouge
-    const tt = (t - 0.5) / 0.5;
-    r = 255;
-    g = Math.round(255 - (255 - 113) * tt);
-    b = Math.round(255 - (255 - 113) * tt);
-  }
-  doc.setFillColor(r, g, b);
-  doc.rect(gaugeX + i * sliceW, gaugeY, sliceW + 0.3, gaugeH, 'F');
+const centerX = gaugeX + gaugeW / 2;
+const posNorm = Math.max(-20, Math.min(20, m.positionPrix));
+const fillW = Math.abs(posNorm / 20) * (gaugeW / 2);
+const fillX = posNorm >= 0 ? centerX : centerX - fillW;
+if (fillW > 0) {
+  drawGradientH(doc, fillX, gaugeY, fillW, gaugeH, SP.light, SP.main, 20);
 }
 
-// Masque arrondi blanc sur les bords pour simuler border-radius propre
-doc.setFillColor(255, 255, 255);
-doc.setDrawColor(255, 255, 255);
-doc.setLineWidth(0);
-// coins gauche
-doc.rect(gaugeX - 1, gaugeY - 1, 4, gaugeH + 2, 'F');
-doc.roundedRect(gaugeX, gaugeY, 4, gaugeH, 3.5, 3.5, 'F');
-// coins droit
-doc.rect(gaugeX + gaugeW - 3, gaugeY - 1, 4, gaugeH + 2, 'F');
-doc.roundedRect(gaugeX + gaugeW - 4, gaugeY, 4, gaugeH, 3.5, 3.5, 'F');
+doc.setFillColor(...SP.main);
+doc.rect(centerX - 0.4, gaugeY - 1, 0.8, gaugeH + 2, 'F');
 
-// Ligne 0% fine et nette
-const centerX = gaugeX + gaugeW / 2;
-doc.setDrawColor(255, 255, 255);
-doc.setLineWidth(0.8);
-doc.line(centerX, gaugeY, centerX, gaugeY + gaugeH);
-
-// Curseur rectangulaire pill
-const posNorm = Math.max(-20, Math.min(20, m.positionPrix));
-const markerX = centerX + (posNorm / 40) * gaugeW;
-const mW = 10;
-const mH = gaugeH + 4;
-
-// Ombre curseur
-setOpacity(doc, 0.18);
-doc.setFillColor(40, 25, 80);
-doc.roundedRect(markerX - mW / 2 + 0.8, gaugeY - 2 + 1.2, mW, mH, 2.5, 2.5, 'F');
-setOpacity(doc, 1);
-
-// Curseur pill blanc avec bordure violette
-doc.setFillColor(255, 255, 255);
-doc.roundedRect(markerX - mW / 2, gaugeY - 2, mW, mH, 2.5, 2.5, 'F');
-doc.setDrawColor(...SP.main);
-doc.setLineWidth(1.2);
-doc.roundedRect(markerX - mW / 2, gaugeY - 2, mW, mH, 2.5, 2.5, 'S');
-
-// Traits intérieurs du curseur (style "grip")
-doc.setDrawColor(...SP.main);
-doc.setLineWidth(0.5);
-doc.line(markerX - 1.5, gaugeY + 1.2, markerX - 1.5, gaugeY + gaugeH - 1.2);
-doc.line(markerX,       gaugeY + 1.2, markerX,       gaugeY + gaugeH - 1.2);
-doc.line(markerX + 1.5, gaugeY + 1.2, markerX + 1.5, gaugeY + gaugeH - 1.2);
-
-// Labels
 doc.setFont('helvetica', 'normal');
 doc.setFontSize(6);
 doc.setTextColor(...C.slate3);
-doc.text('-20%', gaugeX, gaugeY + gaugeH + 7);
-doc.text('0%',   centerX, gaugeY + gaugeH + 7, { align: 'center' });
-doc.text('+20%', gaugeX + gaugeW, gaugeY + gaugeH + 7, { align: 'right' });
+doc.text('-20%', gaugeX, gaugeY + gaugeH + 6);
+doc.text('0%', centerX, gaugeY + gaugeH + 6, { align: 'center' });
+doc.text('+20%', gaugeX + gaugeW, gaugeY + gaugeH + 6, { align: 'right' });
 
   const posValue = m.prixProjetM2 > 0 && m.prixNeufMoyenM2 > 0
     ? `${m.positionPrix > 0 ? '+' : ''}${pct(m.positionPrix)}`
@@ -3137,7 +3012,8 @@ function addFinancier(st: St): void {
   const hasCDR = f.coutRevientTotal > 0;
   const hasFin = hasCA && hasCDR;
 
-  drawGradientV(doc, 0, HDR_H + 0.4, PW, PH - HDR_H, [248, 247, 252], [255, 255, 255], 70);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, HDR_H + 0.4, PW, PH - HDR_H, 'F');
 
   const shadowCard = (x: number, y: number, w: number, h: number): void => {
     doc.setFillColor(255, 255, 255);
@@ -3151,9 +3027,17 @@ function addFinancier(st: St): void {
 
   // Header
   doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.2);
+  doc.setTextColor(...SP.main);
+  doc.text('06', ML, pageTop + 5);
+
+  doc.setFont('helvetica', 'bold');
   doc.setFontSize(20);
   doc.setTextColor(...SP.deep);
-  doc.text('ANALYSE FINANCIERE', ML, pageTop + 8);
+  doc.text('ANALYSE FINANCIERE', ML + 13, pageTop + 8);
+
+  doc.setFillColor(...SP.main);
+  doc.roundedRect(ML, pageTop + 12, 15, 1.2, 0.6, 0.6, 'F');
 
   // ===== KPI =====
   const kpiY = pageTop + 18;
@@ -3242,17 +3126,53 @@ function addFinancier(st: St): void {
   doc.setTextColor(...SP.deep);
   doc.text('RENTABILITE', rightX + 7, lowerY + 10);
 
-  const gaugeY = lowerY + 34;
-  const gaugeX = rightX + 12;
-  const gaugeW = rightW - 24;
-  const gaugeH = 6;
+  // Seuils annotés : 0% → 8% (rouge) → 15% (amber) → 25%+ (vert)
+  const gaugeY = lowerY + 28;
+  const gaugeX = rightX + 10;
+  const gaugeW = rightW - 20;
+  const gaugeH = 7;
 
+  // Fond
   doc.setFillColor(234, 232, 244);
-  doc.roundedRect(gaugeX, gaugeY, gaugeW, gaugeH, 3, 3, 'F');
+  doc.roundedRect(gaugeX, gaugeY, gaugeW, gaugeH, 3.5, 3.5, 'F');
 
-  const filled = hasFin ? (Math.min(25, f.margeNettePercent) / 25) * gaugeW : 0;
-  doc.setFillColor(...ratioColor(f.margeNettePercent));
-  doc.roundedRect(gaugeX, gaugeY, filled, gaugeH, 3, 3, 'F');
+  // Zones colorées
+  const pct8  = (8  / 25) * gaugeW;
+  const pct15 = (15 / 25) * gaugeW;
+
+  doc.setFillColor(235, 180, 180);
+  doc.rect(gaugeX, gaugeY, pct8, gaugeH, 'F');
+  doc.setFillColor(240, 210, 160);
+  doc.rect(gaugeX + pct8, gaugeY, pct15 - pct8, gaugeH, 'F');
+  drawGradientH(doc, gaugeX + pct15, gaugeY, gaugeW - pct15, gaugeH, [180, 230, 190] as RGB, [80, 180, 110] as RGB, 16);
+
+  // Curseur position projet
+  if (hasFin) {
+    const cursorX = gaugeX + Math.min(1, f.margeNettePercent / 25) * gaugeW;
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(cursorX - 4, gaugeY - 2, 8, gaugeH + 4, 2, 2, 'F');
+    doc.setDrawColor(...SP.main);
+    doc.setLineWidth(1);
+    doc.roundedRect(cursorX - 4, gaugeY - 2, 8, gaugeH + 4, 2, 2, 'S');
+  }
+
+  // Labels seuils
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(5.5);
+  doc.setTextColor(...C.slate3);
+  doc.text('0%',   gaugeX,              gaugeY + gaugeH + 5);
+  doc.text('8%',   gaugeX + pct8,       gaugeY + gaugeH + 5, { align: 'center' });
+  doc.text('15%',  gaugeX + pct15,      gaugeY + gaugeH + 5, { align: 'center' });
+  doc.text('25%+', gaugeX + gaugeW,     gaugeY + gaugeH + 5, { align: 'right' });
+
+  // Légende
+  doc.setFontSize(5.8);
+  doc.setTextColor(200, 80, 80);
+  doc.text('Faible', gaugeX + pct8 / 2, gaugeY + gaugeH + 10, { align: 'center' });
+  doc.setTextColor(200, 150, 60);
+  doc.text('Correct', gaugeX + (pct8 + pct15) / 2, gaugeY + gaugeH + 10, { align: 'center' });
+  doc.setTextColor(...SP.main);
+  doc.text('Bon', gaugeX + (pct15 + gaugeW) / 2, gaugeY + gaugeH + 10, { align: 'center' });
 
   doc.setFontSize(16);
   doc.setTextColor(...ratioColor(f.margeNettePercent));
@@ -3296,7 +3216,8 @@ function addFinancement(st: St): void {
   const hasCredit = fin.creditPromoteurMontant > 0;
   const hasFP = fin.fondsPropresRequis > 0;
 
-  drawGradientV(doc, 0, HDR_H + 0.4, PW, PH - HDR_H, [248, 247, 252], [255, 255, 255], 70);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, HDR_H + 0.4, PW, PH - HDR_H, 'F');
 
   setOpacity(doc, 0.11);
   doc.setFillColor(...SP.ultra);
@@ -3343,9 +3264,9 @@ function addFinancement(st: St): void {
 
     if (sub) {
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(6.2);
+      doc.setFontSize(7.5);
       doc.setTextColor(...C.slate3);
-      doc.text(s(sub), x + w / 2, y + 29, { align: 'center' });
+      doc.text(s(sub), x + w / 2, y + 26, { align: 'center' });
     }
   };
 
@@ -3393,7 +3314,7 @@ function addFinancement(st: St): void {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7);
   doc.setTextColor(...C.white);
-  doc.text('€', ML + 13, bannerY + 16, { align: 'center' });
+  doc.text('€', ML + 13, bannerY + 15, { align: 'center' });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.2);
@@ -3433,7 +3354,7 @@ function addFinancement(st: St): void {
     'Fonds propres',
     hasFP ? eurM(fin.fondsPropresRequis) : 'N/A',
     hasFP ? SP.main : C.amber,
-    hasFP ? pct(fin.fondsPropresPercent) : undefined,
+    hasFP ? `${pct(fin.fondsPropresPercent)} du CDR` : undefined,
   );
 
   miniMetric(
@@ -3444,7 +3365,7 @@ function addFinancement(st: St): void {
     'Credit promoteur',
     hasCredit ? eurM(fin.creditPromoteurMontant) : 'N/A',
     hasCredit ? SP.main : C.amber,
-    hasCredit ? `${fin.creditPromoteurDuree} mois` : undefined,
+    hasCredit ? `Durée : ${fin.creditPromoteurDuree} mois` : undefined,
   );
 
   miniMetric(
@@ -3647,7 +3568,8 @@ function addRisques(st: St): void {
 
   const pageTop = MT + HDR_H + 4;
 
-  drawGradientV(doc, 0, HDR_H + 0.4, PW, PH - HDR_H, [248, 247, 252], [255, 255, 255], 70);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, HDR_H + 0.4, PW, PH - HDR_H, 'F');
 
   setOpacity(doc, 0.11);
   doc.setFillColor(...SP.ultra);
@@ -3743,7 +3665,7 @@ function addRisques(st: St): void {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7);
   doc.setTextColor(...C.white);
-  doc.text('!', ML + 13, bannerY + 16, { align: 'center' });
+  doc.text('!', ML + 13, bannerY + 15, { align: 'center' });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.2);
@@ -3850,7 +3772,7 @@ function addRisques(st: St): void {
         r.niveau === 'MODERE' ? 'MO' :
         'FA',
         ML + 15,
-        ry + 10,
+        ry + 9,
         { align: 'center' },
       );
 
@@ -3933,7 +3855,8 @@ function addScenarios(st: St): void {
   const scenarios = syn.scenarios ?? [];
   const pageTop = MT + HDR_H + 4;
 
-  drawGradientV(doc, 0, HDR_H + 0.4, PW, PH - HDR_H, [248, 247, 252], [255, 255, 255], 70);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, HDR_H + 0.4, PW, PH - HDR_H, 'F');
 
   setOpacity(doc, 0.11);
   doc.setFillColor(...SP.ultra);
@@ -4048,7 +3971,7 @@ function addScenarios(st: St): void {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7);
   doc.setTextColor(...C.white);
-  doc.text('S', ML + 13, bannerY + 16, { align: 'center' });
+  doc.text('S', ML + 13, bannerY + 15, { align: 'center' });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.2);
@@ -4163,7 +4086,7 @@ function addScenarios(st: St): void {
       sc.type === 'PESSIMISTE' ? 'PE' :
       'ST',
       x + 12,
-      y + 13.5,
+      y + 12.5,
       { align: 'center' },
     );
 
@@ -4258,7 +4181,8 @@ function addHypotheses(st: St): void {
   const pageTop = MT + HDR_H + 4;
   const hasSDP = syn.projet.surfacePlancher > 0;
 
-  drawGradientV(doc, 0, HDR_H + 0.4, PW, PH - HDR_H, [248, 247, 252], [255, 255, 255], 70);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, HDR_H + 0.4, PW, PH - HDR_H, 'F');
 
   const shadowCard = (x: number, y: number, w: number, h: number): void => {
     doc.setFillColor(255, 255, 255);
@@ -4269,9 +4193,17 @@ function addHypotheses(st: St): void {
 
   // HEADER
   doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.2);
+  doc.setTextColor(...SP.main);
+  doc.text('10', ML, pageTop + 5);
+
+  doc.setFont('helvetica', 'bold');
   doc.setFontSize(20);
   doc.setTextColor(...SP.deep);
-  doc.text('HYPOTHESES DE CALCUL', ML, pageTop + 8);
+  doc.text('HYPOTHESES DE CALCUL', ML + 13, pageTop + 8);
+
+  doc.setFillColor(...SP.main);
+  doc.roundedRect(ML, pageTop + 12, 15, 1.2, 0.6, 0.6, 'F');
 
   // ===== KPI =====
   const kpiY = pageTop + 18;
@@ -4386,7 +4318,8 @@ function addSyntheseIA(st: St): void {
 
   const pageTop = MT + HDR_H + 4;
 
-  drawGradientV(doc, 0, HDR_H + 0.4, PW, PH - HDR_H, [248, 247, 252], [255, 255, 255], 70);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, HDR_H + 0.4, PW, PH - HDR_H, 'F');
 
   setOpacity(doc, 0.11);
   doc.setFillColor(...SP.ultra);
@@ -4478,7 +4411,7 @@ function addSyntheseIA(st: St): void {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(5.8);
     doc.setTextColor(...SP.main);
-    doc.text(sec.tag, x + 11, y + 13, { align: 'center' });
+    doc.text(sec.tag, x + 11, y + 12, { align: 'center' });
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.2);
@@ -4509,7 +4442,7 @@ function addSyntheseIA(st: St): void {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(5.8);
     doc.setTextColor(...SP.main);
-    doc.text(sec.tag, ML + 11, y + 13, { align: 'center' });
+    doc.text(sec.tag, ML + 11, y + 12, { align: 'center' });
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.2);
@@ -4571,7 +4504,8 @@ function addSources(st: St): void {
   const { doc, syn } = st;
   const pageTop = MT + HDR_H + 4;
 
-  drawGradientV(doc, 0, HDR_H + 0.4, PW, PH - HDR_H, [248, 247, 252], [255, 255, 255], 70);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, HDR_H + 0.4, PW, PH - HDR_H, 'F');
 
   setOpacity(doc, 0.11);
   doc.setFillColor(...SP.ultra);
@@ -4664,7 +4598,7 @@ function addSources(st: St): void {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7);
   doc.setTextColor(...C.white);
-  doc.text('SRC', ML + 13, bannerY + 13.5, { align: 'center' });
+  doc.text('SRC', ML + 13, bannerY + 12.2, { align: 'center' });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.2);
@@ -4792,7 +4726,8 @@ async function addRecommandation(st: St): Promise<void> {
   const es = syn.executiveSummary;
   const pageTop = MT + HDR_H + 4;
 
-  drawGradientV(doc, 0, HDR_H + 0.4, PW, PH - HDR_H, [248, 247, 252], [255, 255, 255], 70);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, HDR_H + 0.4, PW, PH - HDR_H, 'F');
 
   setOpacity(doc, 0.11);
   doc.setFillColor(...SP.ultra);
@@ -4848,7 +4783,11 @@ async function addRecommandation(st: St): Promise<void> {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(...C.white);
-  doc.text('GO', ML + 16, recY + 20, { align: 'center' });
+  doc.text(
+  audit.effectiveRecommendation === 'NO_GO' ? 'NON' :
+  audit.effectiveRecommendation === 'GO_CONDITION' ? 'GO?' : 'GO',
+  ML + 16, recY + 18.5, { align: 'center' }
+);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
@@ -4931,7 +4870,7 @@ async function addRecommandation(st: St): Promise<void> {
 
   // BLOQUANTS
   if (es.killSwitchesActifs.length > 0) {
-    const ksY = PH - FTR_H - MB - 30;
+    const ksY = PH - FTR_H - MB - 38;
 
     doc.setFillColor(254, 242, 242);
     doc.roundedRect(ML, ksY, CW, 26, 6, 6, 'F');
@@ -4954,7 +4893,7 @@ async function addRecommandation(st: St): Promise<void> {
   }
 
   // FOOTER INFO
-  const footY = PH - FTR_H - MB - 8;
+  const footY = PH - FTR_H - 4;
 
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(6.5);

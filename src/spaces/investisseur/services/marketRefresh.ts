@@ -1,18 +1,9 @@
 import { supabase } from "@/lib/supabase";
 import type { AccessContext } from "@/lib/access";
 
-// ─── Mode transaction sécurisé ────────────────────────────────────────────────
-//
-// La veille Mimmoza est exclusivement dédiée à l'achat/revente.
-// Ce verrou est appliqué à chaque étape du pipeline (policy, ingest, dédupe,
-// métriques, opportunités) afin qu'aucune location ne puisse transiter.
-
 const SAFE_TRANSACTION_MODE = "sale" as const;
 
-// ─── Configuration des politiques production ─────────────────────────────────
-//
-// Ces constantes peuvent à terme être externalisées dans une table Supabase
-// `app_config` pour permettre une modification sans redéploiement.
+type PropertyTypeFilter = "all" | "apartment" | "house" | "land";
 
 const POLICY = {
   DEFAULT_FRESHNESS_HOURS: 6,
@@ -25,13 +16,12 @@ const POLICY = {
 
 const ADMIN_UNLIMITED_QUOTA = 999;
 
-// ─────────────────────────────────────────────────────────────────────────────
-
 export type MarketRefreshParams = {
   zipCode?: string;
   city?: string;
-  /** Toujours "sale" — toute autre valeur est ignorée par le pipeline. */
   transactionMode?: "sale";
+  propertyTypeFilter?: PropertyTypeFilter;
+  property_type_filter?: PropertyTypeFilter;
   withIngest?: boolean;
   dryRun?: boolean;
   limit?: number;
@@ -44,12 +34,7 @@ export type MarketRefreshParams = {
   debugGeo?: boolean;
   freshnessThresholdHours?: number;
   userId?: string;
-  /**
-   * Contexte d'accès résolu par le moteur centralisé.
-   * Si fourni, il prime sur isAdmin/bypassLimits.
-   */
   accessCtx?: AccessContext | null;
-  /** Compatibilité rétro — sera retiré dans une future version. */
   isAdmin?: boolean;
   bypassLimits?: boolean;
 };
@@ -122,20 +107,24 @@ export type MarketOpportunity = {
   payload: Record<string, unknown> | null;
 };
 
-// ─── Types internes ───────────────────────────────────────────────────────────
-
 type ZonePolicyDecision =
-  | { allow: false; skip_reason: string; zone_age_hours: number | null; quota_remaining: number | null }
-  | { allow: true; used_cache: boolean; zone_age_hours: number | null; quota_remaining: number | null };
+  | {
+      allow: false;
+      skip_reason: string;
+      zone_age_hours: number | null;
+      quota_remaining: number | null;
+    }
+  | {
+      allow: true;
+      used_cache: boolean;
+      zone_age_hours: number | null;
+      quota_remaining: number | null;
+    };
 
 type RefreshLogRow = {
   retained_count: number;
   created_at: string;
 };
-
-// ─── Résolution admin bypass ──────────────────────────────────────────────────
-//
-// Priorité : accessCtx (moteur centralisé) > isAdmin/bypassLimits (rétro-compat)
 
 function resolveAdminBypass(params: MarketRefreshParams): boolean {
   if (params.accessCtx != null) {
@@ -149,10 +138,13 @@ function resolveUserId(params: MarketRefreshParams): string | null {
 }
 
 function buildUnlimitedQuotaState(): Extract<ZonePolicyDecision, { allow: true }> {
-  return { allow: true, used_cache: false, zone_age_hours: null, quota_remaining: ADMIN_UNLIMITED_QUOTA };
+  return {
+    allow: true,
+    used_cache: false,
+    zone_age_hours: null,
+    quota_remaining: ADMIN_UNLIMITED_QUOTA,
+  };
 }
-
-// ─── Utilitaires ──────────────────────────────────────────────────────────────
 
 function normalizeText(value?: string): string | undefined {
   const v = value?.trim();
@@ -170,11 +162,121 @@ function normalizeCityKey(city: string): string {
     .toLowerCase();
 }
 
+function normalizeSearchText(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function safeNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return fallback;
+}
+
+function resolvePropertyTypeFilter(input: {
+  propertyTypeFilter?: PropertyTypeFilter;
+  property_type_filter?: PropertyTypeFilter;
+}): PropertyTypeFilter {
+  return input.propertyTypeFilter ?? input.property_type_filter ?? "all";
+}
+
+function isLandLike(row: {
+  payload?: Record<string, unknown> | null;
+  title?: unknown;
+  description?: unknown;
+  category?: unknown;
+  project_type?: unknown;
+  property_type?: unknown;
+}): boolean {
+  const payload = row.payload ?? {};
+
+  const propertyType = safeNumber(
+    payload.property_type ?? payload.propertyType ?? row.property_type,
+    -1
+  );
+
+  const text = normalizeSearchText(
+    [
+      row.title,
+      row.description,
+      row.category,
+      row.project_type,
+      payload.title,
+      payload.description,
+      payload.category,
+      payload.project_type,
+      payload.property_type_label,
+      payload.asset_type,
+      payload.listing_type,
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+
+  return (
+    propertyType === 2 ||
+    text.includes("terrain") ||
+    text.includes("parcelle") ||
+    text.includes("constructible") ||
+    text.includes("terrain a batir") ||
+    text.includes("lot a batir")
+  );
+}
+
 /**
- * Construit le payload zone pour les edge functions.
- * Le transaction_mode est toujours forcé à SAFE_TRANSACTION_MODE ("sale")
- * quelle que soit la valeur passée en entrée — sécurité défensive.
+ * Détecte si une opportunité est un terrain via son prix/m².
+ *
+ * Un terrain se vend typiquement entre 5 et 150 €/m² selon la zone.
+ * Ce signal est utilisé en complément de `isLandLike` pour les opportunités
+ * dont le payload ne contient pas de libellé texte exploitable.
+ *
+ * Conditions : price_m2 < MIN_SALE_PRICE_M2 ET price total cohérent (> 10 k€).
+ * On exclut les cas price_m2 = null pour ne pas fausser la détection.
  */
+function isLandLikeByPrice(
+  price: number | null,
+  price_m2: number | null,
+  minSalePrice: number,
+  minPriceM2: number
+): boolean {
+  if (price_m2 == null || price == null) return false;
+  return price_m2 < minPriceM2 && price >= minSalePrice;
+}
+
+function matchesPropertyType(
+  row: {
+    payload?: Record<string, unknown> | null;
+    property_type?: unknown;
+    title?: unknown;
+    description?: unknown;
+    category?: unknown;
+    project_type?: unknown;
+  },
+  filter: PropertyTypeFilter
+): boolean {
+  if (filter === "all") return true;
+
+  const payload = row.payload ?? {};
+  const propertyType = safeNumber(
+    payload.property_type ?? payload.propertyType ?? row.property_type,
+    -1
+  );
+
+  if (filter === "apartment") return propertyType === 0 && !isLandLike(row);
+  if (filter === "house") return propertyType === 1 && !isLandLike(row);
+  if (filter === "land") return isLandLike(row);
+
+  return true;
+}
+
 function buildZoneFunctionPayload(params: {
   zipCode?: string;
   city?: string;
@@ -183,7 +285,6 @@ function buildZoneFunctionPayload(params: {
   return {
     zip_code: normalizeText(params.zipCode),
     city: normalizeText(params.city),
-    // Verrou absolu : toujours "sale", le paramètre entrant est ignoré
     transaction_mode: SAFE_TRANSACTION_MODE,
   };
 }
@@ -197,32 +298,27 @@ function computeRoiScore(params: {
     params.fetched_adverts > 0
       ? Math.min((params.retained_count / params.fetched_adverts) * 60, 60)
       : 0;
+
   const opportunityComponent = Math.min(params.opportunities_computed * 4, 40);
+
   return Math.round(retentionComponent + opportunityComponent);
 }
 
-// ─── Politique zone ───────────────────────────────────────────────────────────
-
-/**
- * Vérifie fraîcheur, cooldown et quota.
- * Court-circuite immédiatement si admin bypass actif (défense en profondeur).
- */
 async function checkZonePolicy(
   zoneKey: string,
   params: MarketRefreshParams
 ): Promise<ZonePolicyDecision> {
-  // ── [0] Court-circuit admin ───────────────────────────────────────────────
   if (resolveAdminBypass(params)) {
     console.log("[marketRefresh] policy skipped (admin)", { zone_key: zoneKey });
     return buildUnlimitedQuotaState();
   }
 
-  const freshnessThreshold = params.freshnessThresholdHours ?? POLICY.DEFAULT_FRESHNESS_HOURS;
+  const freshnessThreshold =
+    params.freshnessThresholdHours ?? POLICY.DEFAULT_FRESHNESS_HOURS;
   const userId = resolveUserId(params);
   const now = Date.now();
   const oneDayAgo = new Date(now - 24 * 3_600_000).toISOString();
 
-  // ── [1] Fraîcheur ─────────────────────────────────────────────────────────
   const { data: zoneMetrics } = await supabase
     .from("market_zone_metrics")
     .select("computed_at, active_listings")
@@ -239,12 +335,20 @@ async function checkZonePolicy(
       typeof zoneMetrics.active_listings === "number" &&
       zoneMetrics.active_listings > 0;
 
-    if (hasRealData && freshnessThreshold > 0 && zone_age_hours < freshnessThreshold) {
-      return { allow: false, skip_reason: "fresh_enough_data", zone_age_hours, quota_remaining: null };
+    if (
+      hasRealData &&
+      freshnessThreshold > 0 &&
+      zone_age_hours < freshnessThreshold
+    ) {
+      return {
+        allow: false,
+        skip_reason: "fresh_enough_data",
+        zone_age_hours,
+        quota_remaining: null,
+      };
     }
   }
 
-  // ── [2] Cooldown zone ─────────────────────────────────────────────────────
   const cooldownLookbackAt = new Date(
     now - POLICY.COOLDOWN_LOOKBACK_HOURS * 3_600_000
   ).toISOString();
@@ -258,21 +362,32 @@ async function checkZonePolicy(
     .order("created_at", { ascending: false })
     .limit(POLICY.COOLDOWN_TRIGGER_CONSECUTIVE_ZEROS + 1);
 
-  if (recentLogs && recentLogs.length >= POLICY.COOLDOWN_TRIGGER_CONSECUTIVE_ZEROS) {
-    const lastN = (recentLogs as RefreshLogRow[]).slice(0, POLICY.COOLDOWN_TRIGGER_CONSECUTIVE_ZEROS);
+  if (
+    recentLogs &&
+    recentLogs.length >= POLICY.COOLDOWN_TRIGGER_CONSECUTIVE_ZEROS
+  ) {
+    const lastN = (recentLogs as RefreshLogRow[]).slice(
+      0,
+      POLICY.COOLDOWN_TRIGGER_CONSECUTIVE_ZEROS
+    );
     const allZeros = lastN.every((r) => r.retained_count === 0);
 
     if (allZeros) {
       const mostRecentAt = new Date(lastN[0].created_at).getTime();
-      const cooldownExpiresAt = mostRecentAt + POLICY.COOLDOWN_DURATION_HOURS * 3_600_000;
+      const cooldownExpiresAt =
+        mostRecentAt + POLICY.COOLDOWN_DURATION_HOURS * 3_600_000;
 
       if (now < cooldownExpiresAt) {
-        return { allow: false, skip_reason: "low_roi_cooldown", zone_age_hours, quota_remaining: null };
+        return {
+          allow: false,
+          skip_reason: "low_roi_cooldown",
+          zone_age_hours,
+          quota_remaining: null,
+        };
       }
     }
   }
 
-  // ── [3] Quota utilisateur ─────────────────────────────────────────────────
   let quota_remaining: number | null = null;
 
   if (userId) {
@@ -287,7 +402,12 @@ async function checkZonePolicy(
     const remainingTotal = POLICY.QUOTA_DAILY_INGEST_PER_USER - usedTotal;
 
     if (remainingTotal <= 0) {
-      return { allow: false, skip_reason: "quota_exceeded", zone_age_hours, quota_remaining: 0 };
+      return {
+        allow: false,
+        skip_reason: "quota_exceeded",
+        zone_age_hours,
+        quota_remaining: 0,
+      };
     }
 
     const { count: zoneTotal } = await supabase
@@ -302,16 +422,24 @@ async function checkZonePolicy(
     const remainingZone = POLICY.QUOTA_DAILY_INGEST_PER_USER_PER_ZONE - usedZone;
 
     if (remainingZone <= 0) {
-      return { allow: false, skip_reason: "quota_exceeded_zone", zone_age_hours, quota_remaining: 0 };
+      return {
+        allow: false,
+        skip_reason: "quota_exceeded_zone",
+        zone_age_hours,
+        quota_remaining: 0,
+      };
     }
 
     quota_remaining = Math.min(remainingTotal, remainingZone);
   }
 
-  return { allow: true, used_cache: false, zone_age_hours, quota_remaining };
+  return {
+    allow: true,
+    used_cache: false,
+    zone_age_hours,
+    quota_remaining,
+  };
 }
-
-// ─── Log refresh ──────────────────────────────────────────────────────────────
 
 async function logZoneRefresh(params: {
   zoneKey: string;
@@ -347,22 +475,29 @@ async function logZoneRefresh(params: {
   }
 }
 
-// ─── Invocation edge functions ────────────────────────────────────────────────
-
 async function invokeFunction<T = unknown>(
   fnName: string,
   payload: Record<string, unknown>
 ): Promise<MarketRefreshStepResult & { data?: T }> {
   console.log(`[marketRefresh] invoke ${fnName}`, payload);
 
-  const { data, error } = await supabase.functions.invoke(fnName, { body: payload });
+  const { data, error } = await supabase.functions.invoke(fnName, {
+    body: payload,
+  });
 
-  console.log(`[marketRefresh] response ${fnName}`, { data, error: error ?? null });
+  console.log(`[marketRefresh] response ${fnName}`, {
+    data,
+    error: error ?? null,
+  });
 
   if (error) {
     return {
       ok: false,
-      body: { message: error.message, name: error.name, context: error.context },
+      body: {
+        message: error.message,
+        name: error.name,
+        context: error.context,
+      },
     };
   }
 
@@ -372,20 +507,20 @@ async function invokeFunction<T = unknown>(
     "ok" in data &&
     (data as { ok?: boolean }).ok === true;
 
-  return { ok: isOk, data: data as T, body: data };
+  return {
+    ok: isOk,
+    data: data as T,
+    body: data,
+  };
 }
-
-// ─── Pipeline principal ───────────────────────────────────────────────────────
 
 export async function refreshMarketZone(
   params: MarketRefreshParams
 ): Promise<MarketRefreshResult> {
-  // Verrou défensif : transaction_mode est toujours "sale" dans le payload zone
   const zonePayload = buildZoneFunctionPayload(params);
   const zoneKey = buildZoneKey(params);
   const dryRun = Boolean(params.dryRun);
   const userId = resolveUserId(params);
-
   const isAdminBypass = resolveAdminBypass(params);
 
   if (isAdminBypass) {
@@ -398,20 +533,16 @@ export async function refreshMarketZone(
   const result: MarketRefreshResult = { ok: false };
 
   if (params.withIngest) {
-    // checkZonePolicy gère déjà le bypass admin en interne (défense en profondeur)
     const policy = await checkZonePolicy(zoneKey, params);
 
     if (!policy.allow) {
-      console.log("[marketRefresh] ingest BLOCKED by policy", JSON.stringify({
-        zone_key: zoneKey,
-        skip_reason: policy.skip_reason,
-        zone_age_hours: policy.zone_age_hours,
-        quota_remaining: policy.quota_remaining,
-      }));
-
       result.ingest = {
         ok: true,
-        body: { skipped: true, reason: policy.skip_reason, zone_age_hours: policy.zone_age_hours },
+        body: {
+          skipped: true,
+          reason: policy.skip_reason,
+          zone_age_hours: policy.zone_age_hours,
+        },
       };
       result.ingest_skipped = true;
       result.ingest_skip_reason = policy.skip_reason;
@@ -421,19 +552,20 @@ export async function refreshMarketZone(
       result.roi_score = null;
 
       await logZoneRefresh({
-        zoneKey, userId,
-        fetchedAdverts: 0, retainedCount: 0, upserted: 0, opportunitiesComputed: 0,
-        roiScore: 0, ingestSkipped: true, skipReason: policy.skip_reason,
-        earlyBail: false, costEfficiencySignal: null, pagesFetched: 0,
+        zoneKey,
+        userId,
+        fetchedAdverts: 0,
+        retainedCount: 0,
+        upserted: 0,
+        opportunitiesComputed: 0,
+        roiScore: 0,
+        ingestSkipped: true,
+        skipReason: policy.skip_reason,
+        earlyBail: false,
+        costEfficiencySignal: null,
+        pagesFetched: 0,
       });
     } else {
-      console.log("[marketRefresh] ingest ALLOWED", JSON.stringify({
-        zone_key: zoneKey,
-        zone_age_hours: policy.zone_age_hours,
-        quota_remaining: policy.quota_remaining,
-        ...(isAdminBypass && { reason: "admin bypass active" }),
-      }));
-
       const ingest = await invokeFunction("stream-estate-ingest-v1", {
         ...zonePayload,
         limit: params.limit ?? 500,
@@ -448,50 +580,79 @@ export async function refreshMarketZone(
       result.quota_remaining = isAdminBypass
         ? ADMIN_UNLIMITED_QUOTA
         : policy.quota_remaining !== null
-        ? policy.quota_remaining - 1
-        : null;
+          ? policy.quota_remaining - 1
+          : null;
 
       if (!ingest.ok) {
         await logZoneRefresh({
-          zoneKey, userId,
-          fetchedAdverts: 0, retainedCount: 0, upserted: 0, opportunitiesComputed: 0,
-          roiScore: 0, ingestSkipped: false, skipReason: "ingest_error",
-          earlyBail: false, costEfficiencySignal: "zero", pagesFetched: 0,
+          zoneKey,
+          userId,
+          fetchedAdverts: 0,
+          retainedCount: 0,
+          upserted: 0,
+          opportunitiesComputed: 0,
+          roiScore: 0,
+          ingestSkipped: false,
+          skipReason: "ingest_error",
+          earlyBail: false,
+          costEfficiencySignal: "zero",
+          pagesFetched: 0,
         });
 
         return {
           ...result,
-          error: extractFunctionError(ingest.body) ?? "stream-estate-ingest-v1 failed",
+          error:
+            extractFunctionError(ingest.body) ??
+            "stream-estate-ingest-v1 failed",
         };
       }
 
       const ingestBody = ingest.body as Record<string, unknown> | null;
-      const fetchedAdverts = typeof ingestBody?.fetched_adverts === "number" ? ingestBody.fetched_adverts : 0;
-      const retainedCount = typeof ingestBody?.retained_count === "number" ? ingestBody.retained_count : 0;
-      const upserted = typeof ingestBody?.upserted === "number" ? ingestBody.upserted : 0;
+      const fetchedAdverts =
+        typeof ingestBody?.fetched_adverts === "number"
+          ? ingestBody.fetched_adverts
+          : 0;
+      const retainedCount =
+        typeof ingestBody?.retained_count === "number"
+          ? ingestBody.retained_count
+          : 0;
+      const upserted =
+        typeof ingestBody?.upserted === "number" ? ingestBody.upserted : 0;
       const earlyBail = Boolean(ingestBody?.early_bail);
-      const costEfficiencySignal = typeof ingestBody?.cost_efficiency_signal === "string" ? ingestBody.cost_efficiency_signal : null;
-      const pagesFetched = typeof ingestBody?.pages_fetched === "number" ? ingestBody.pages_fetched : 0;
+      const costEfficiencySignal =
+        typeof ingestBody?.cost_efficiency_signal === "string"
+          ? ingestBody.cost_efficiency_signal
+          : null;
+      const pagesFetched =
+        typeof ingestBody?.pages_fetched === "number"
+          ? ingestBody.pages_fetched
+          : 0;
 
-      const partialRoi = computeRoiScore({ fetched_adverts: fetchedAdverts, retained_count: retainedCount, opportunities_computed: 0 });
+      const partialRoi = computeRoiScore({
+        fetched_adverts: fetchedAdverts,
+        retained_count: retainedCount,
+        opportunities_computed: 0,
+      });
+
       result.roi_score = partialRoi;
 
-      if (retainedCount === 0) {
-        console.warn("[marketRefresh] ⚠ ingest retained=0", JSON.stringify({
-          zone_key: zoneKey, fetched_adverts: fetchedAdverts, early_bail: earlyBail,
-        }));
-      }
-
       await logZoneRefresh({
-        zoneKey, userId,
-        fetchedAdverts, retainedCount, upserted, opportunitiesComputed: 0,
-        roiScore: partialRoi, ingestSkipped: false, skipReason: null,
-        earlyBail, costEfficiencySignal, pagesFetched,
+        zoneKey,
+        userId,
+        fetchedAdverts,
+        retainedCount,
+        upserted,
+        opportunitiesComputed: 0,
+        roiScore: partialRoi,
+        ingestSkipped: false,
+        skipReason: null,
+        earlyBail,
+        costEfficiencySignal,
+        pagesFetched,
       });
     }
   }
 
-  // ── Dedupe ────────────────────────────────────────────────────────────────
   const dedupe = await invokeFunction("market-dedupe-v1", {
     ...zonePayload,
     window_hours: params.windowHours ?? 24 * 30,
@@ -501,9 +662,14 @@ export async function refreshMarketZone(
   });
 
   result.dedupe = dedupe;
-  if (!dedupe.ok) return { ...result, error: extractFunctionError(dedupe.body) ?? "market-dedupe-v1 failed" };
 
-  // ── Métriques zone ────────────────────────────────────────────────────────
+  if (!dedupe.ok) {
+    return {
+      ...result,
+      error: extractFunctionError(dedupe.body) ?? "market-dedupe-v1 failed",
+    };
+  }
+
   const metrics = await invokeFunction("market-metrics-zone-v1", {
     ...zonePayload,
     dry_run: dryRun,
@@ -512,9 +678,15 @@ export async function refreshMarketZone(
   });
 
   result.metrics = metrics;
-  if (!metrics.ok) return { ...result, error: extractFunctionError(metrics.body) ?? "market-metrics-zone-v1 failed" };
 
-  // ── Opportunités ──────────────────────────────────────────────────────────
+  if (!metrics.ok) {
+    return {
+      ...result,
+      error:
+        extractFunctionError(metrics.body) ?? "market-metrics-zone-v1 failed",
+    };
+  }
+
   const opportunities = await invokeFunction("market-opportunity-refresh-v1", {
     ...zonePayload,
     dry_run: dryRun,
@@ -524,47 +696,78 @@ export async function refreshMarketZone(
   });
 
   result.opportunities = opportunities;
-  if (!opportunities.ok) return { ...result, error: extractFunctionError(opportunities.body) ?? "market-opportunity-refresh-v1 failed" };
 
-  // ── ROI score final ───────────────────────────────────────────────────────
+  if (!opportunities.ok) {
+    return {
+      ...result,
+      error:
+        extractFunctionError(opportunities.body) ??
+        "market-opportunity-refresh-v1 failed",
+    };
+  }
+
   if (params.withIngest && !result.ingest_skipped) {
     const oppBody = opportunities.body as Record<string, unknown> | null;
-    const opportunitiesComputed = typeof oppBody?.opportunities_computed === "number" ? oppBody.opportunities_computed : 0;
+    const opportunitiesComputed =
+      typeof oppBody?.opportunities_computed === "number"
+        ? oppBody.opportunities_computed
+        : 0;
+
     const ingestBody = result.ingest?.body as Record<string, unknown> | null;
-    const fetchedAdverts = typeof ingestBody?.fetched_adverts === "number" ? ingestBody.fetched_adverts : 0;
-    const retainedCount = typeof ingestBody?.retained_count === "number" ? ingestBody.retained_count : 0;
-    const finalRoi = computeRoiScore({ fetched_adverts: fetchedAdverts, retained_count: retainedCount, opportunities_computed: opportunitiesComputed });
-    result.roi_score = finalRoi;
+    const fetchedAdverts =
+      typeof ingestBody?.fetched_adverts === "number"
+        ? ingestBody.fetched_adverts
+        : 0;
+    const retainedCount =
+      typeof ingestBody?.retained_count === "number"
+        ? ingestBody.retained_count
+        : 0;
+
+    result.roi_score = computeRoiScore({
+      fetched_adverts: fetchedAdverts,
+      retained_count: retainedCount,
+      opportunities_computed: opportunitiesComputed,
+    });
   }
 
   return { ...result, ok: true };
 }
 
-// ─── Helpers exports ──────────────────────────────────────────────────────────
-
 function extractFunctionError(body: unknown): string | null {
   if (!body || typeof body !== "object") return null;
-  if ("message" in body && typeof (body as { message?: unknown }).message === "string") {
+
+  if (
+    "message" in body &&
+    typeof (body as { message?: unknown }).message === "string"
+  ) {
     return (body as { message: string }).message;
   }
-  if ("error" in body && typeof (body as { error?: unknown }).error === "string") {
+
+  if (
+    "error" in body &&
+    typeof (body as { error?: unknown }).error === "string"
+  ) {
     return (body as { error: string }).error;
   }
+
   return null;
 }
 
 export function buildZoneKey(input: {
   zipCode?: string;
   city?: string;
-  /** Ignoré — toujours "sale". */
   transactionMode?: "sale";
+  propertyTypeFilter?: PropertyTypeFilter;
+  property_type_filter?: PropertyTypeFilter;
 }): string {
-  // Le mode est toujours "sale" — le paramètre entrant est ignoré
   const tx = SAFE_TRANSACTION_MODE;
   const zip = normalizeText(input.zipCode);
+
   if (zip) return `${zip}|${tx}`;
+
   const city = normalizeText(input.city);
   if (!city) return `all|${tx}`;
+
   return `${normalizeCityKey(city)}|${tx}`;
 }
 
@@ -572,52 +775,89 @@ export async function fetchMarketZoneMetrics(input: {
   zipCode?: string;
   city?: string;
   transactionMode?: "sale";
+  propertyTypeFilter?: PropertyTypeFilter;
+  property_type_filter?: PropertyTypeFilter;
 }): Promise<MarketZoneMetrics | null> {
   const zoneKey = buildZoneKey(input);
-  const { data, error } = await supabase.from("market_zone_metrics").select("*").eq("zone_key", zoneKey).maybeSingle();
+
+  const { data, error } = await supabase
+    .from("market_zone_metrics")
+    .select("*")
+    .eq("zone_key", zoneKey)
+    .maybeSingle();
+
   if (error) throw error;
+
   return (data ?? null) as MarketZoneMetrics | null;
 }
 
-// ─── Seuil de prix minimum pour une transaction de vente en France ────────────
-//
-// Toute annonce dont le prix est inférieur à ce seuil est un loyer mensuel
-// accidentellement ingéré, pas un prix de vente immobilière.
-// 10 000 € est un minimum absolu — même un garage en zone rurale dépasse ce seuil.
-
 const MIN_SALE_PRICE = 10_000;
-
-// Prix/m² minimum réaliste pour une vente (€/m²).
-// En dessous de 200 €/m², c'est mécaniquement un loyer mensuel ramené au m².
-
 const MIN_SALE_PRICE_M2 = 200;
 
 export async function fetchMarketOpportunities(input: {
   zipCode?: string;
   city?: string;
   transactionMode?: "sale";
+  propertyTypeFilter?: PropertyTypeFilter;
+  property_type_filter?: PropertyTypeFilter;
   minScore?: number;
   limit?: number;
 }): Promise<MarketOpportunity[]> {
   const zoneKey = buildZoneKey(input);
+  const propertyTypeFilter = resolvePropertyTypeFilter(input);
+  const finalLimit = input.limit ?? 50;
+
   let query = supabase
     .from("market_opportunities")
     .select("*")
     .eq("zone_key", zoneKey)
-    // ── Filtre prix vente : exclut les loyers mensuels ingérés par erreur ───
     .gte("price", MIN_SALE_PRICE)
-    .order("opportunity_score", { ascending: false });
-  if (typeof input.minScore === "number") query = query.gte("opportunity_score", input.minScore);
-  if (typeof input.limit === "number") query = query.limit(input.limit);
+    .order("opportunity_score", { ascending: false })
+    .limit(Math.max(finalLimit, 100));
+
+  if (typeof input.minScore === "number") {
+    query = query.gte("opportunity_score", input.minScore);
+  }
+
   const { data, error } = await query;
+
   if (error) throw error;
 
   const rows = (data ?? []) as MarketOpportunity[];
 
-  // ── Post-filtre défensif : double vérification prix + price_m2 ────────────
-  return rows.filter((row) => {
-    if (row.price != null && row.price < MIN_SALE_PRICE) return false;
-    if (row.price_m2 != null && row.price_m2 < MIN_SALE_PRICE_M2) return false;
-    return true;
-  });
+  return rows
+    .filter((row) => {
+      if (row.price != null && row.price < MIN_SALE_PRICE) return false;
+
+      // Détection terrain structurelle (property_type = 2 ou mots-clés payload)
+      const isLandByStructure = isLandLike(row);
+
+      // Détection terrain par signal prix/m² — filet de sécurité pour les
+      // opportunités dont le payload ne contient pas de libellé exploitable.
+      // Un terrain a typiquement un prix/m² très inférieur à 200 €/m².
+      const isLandByPrice = isLandLikeByPrice(
+        row.price,
+        row.price_m2,
+        MIN_SALE_PRICE,
+        MIN_SALE_PRICE_M2
+      );
+
+      const isLand = isLandByStructure || isLandByPrice;
+
+      // Exclure le filtre MIN_SALE_PRICE_M2 pour les terrains
+      if (!isLand && row.price_m2 != null && row.price_m2 < MIN_SALE_PRICE_M2) {
+        return false;
+      }
+
+      // Filtre par type de bien demandé par l'utilisateur.
+      // Pour filter="land" on retourne true si isLand (les deux méthodes),
+      // car matchesPropertyType ne connaît que la détection structurelle.
+      if (propertyTypeFilter === "land") return isLand;
+
+      // Pour apartment/house : exclure ce qui ressemble à un terrain
+      if (propertyTypeFilter !== "all" && isLand) return false;
+
+      return matchesPropertyType(row, propertyTypeFilter);
+    })
+    .slice(0, finalLimit);
 }

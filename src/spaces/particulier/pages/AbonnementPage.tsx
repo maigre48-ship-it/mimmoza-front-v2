@@ -1,18 +1,41 @@
 // src/spaces/particulier/pages/AbonnementPage.tsx
-import { useMemo, useState } from "react";
+// ─── changelog ────────────────────────────────────────────────────────────────
+// • pricingMap réactif : useState + storage event + visibilitychange
+//   → mise à jour immédiate quand /admin/tarifs enregistre, même onglet
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   Building2,
   CheckCircle2,
+  ChevronDown,
   Coins,
-  CreditCard,
-  ShieldCheck,
+  HeartHandshake,
+  Lock,
   Sparkles,
-  Users,
+  TrendingUp,
+  UserCheck,
+  Wrench,
+  Zap,
 } from "lucide-react";
+import type { PricingEntry } from "@/spaces/admin/pages/Tarifs";
 
-type OfferTab = "investisseur" | "promoteur" | "financeur";
+// ── Lecture du pricing depuis localStorage ────────────────────────────────────
+
+function readPricingMap(): Record<string, PricingEntry> {
+  try {
+    const raw = localStorage.getItem("mimmoza.pricing");
+    if (!raw) return {};
+    const arr = JSON.parse(raw) as PricingEntry[];
+    return Object.fromEntries(arr.map((e) => [e.planKey, e]));
+  } catch {
+    return {};
+  }
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type StoredUser = {
   email?: string;
@@ -21,148 +44,422 @@ type StoredUser = {
   plan?: string;
 };
 
-function PillButton({
-  active,
-  onClick,
-  icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[
-        "inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-medium transition-all",
-        active
-          ? "bg-slate-950 text-white shadow-sm"
-          : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900",
-      ].join(" ")}
-    >
-      {icon}
-      <span>{label}</span>
-    </button>
-  );
-}
-
-function FeatureList({ items }: { items: string[] }) {
-  return (
-    <ul className="mt-5 space-y-3 text-sm text-slate-600">
-      {items.map((item) => (
-        <li key={item} className="flex items-start gap-2">
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
-          <span>{item}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function OfferCard({
-  badge,
-  title,
-  price,
-  subtitle,
-  features,
-  ctaLabel,
-  onClick,
-  featured = false,
-  helper,
-}: {
+interface OfferItem {
+  id: string;
   badge: string;
   title: string;
   price: string;
   subtitle: string;
   features: string[];
   ctaLabel: string;
-  onClick: () => void;
+  planKey: string;
   featured?: boolean;
   helper?: string;
+}
+
+interface ColorSet {
+  icon: string;
+  price: string;
+  cta: string;
+  accent: string;
+  featuredBg: string;
+}
+
+interface SectionDef {
+  id: string;
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+  color: ColorSet;
+  summaryPrice: string;
+  summaryUnit: string;
+  offers: OfferItem[];
+  extras?: React.ReactNode;
+}
+
+const C: Record<string, ColorSet> = {
+  sky: {
+    icon: "bg-sky-100 text-sky-500",
+    price: "text-sky-500",
+    cta: "bg-sky-500 hover:bg-sky-400 text-white",
+    accent: "border-sky-200",
+    featuredBg: "bg-sky-50/50",
+  },
+  indigo: {
+    icon: "bg-indigo-100 text-indigo-500",
+    price: "text-indigo-500",
+    cta: "bg-indigo-600 hover:bg-indigo-500 text-white",
+    accent: "border-indigo-200",
+    featuredBg: "bg-indigo-50/50",
+  },
+  teal: {
+    icon: "bg-teal-100 text-teal-500",
+    price: "text-teal-500",
+    cta: "bg-teal-600 hover:bg-teal-500 text-white",
+    accent: "border-teal-200",
+    featuredBg: "bg-teal-50/50",
+  },
+  orange: {
+    icon: "bg-orange-100 text-orange-500",
+    price: "text-orange-500",
+    cta: "bg-orange-500 hover:bg-orange-400 text-white",
+    accent: "border-orange-200",
+    featuredBg: "bg-orange-50/40",
+  },
+};
+
+// ── Helper : applique le pricing localStorage sur une OfferItem ───────────────
+
+function applyPricing(
+  offer: OfferItem,
+  pricingMap: Record<string, PricingEntry>
+): OfferItem | null {
+  const entry = pricingMap[offer.planKey];
+  if (!entry) return offer;
+  if (entry.active === false) return null;
+  return {
+    ...offer,
+    badge: entry.badge || offer.badge,
+    title: entry.title || offer.title,
+    price: entry.unit ? `${entry.price}${entry.unit}` : entry.price,
+  };
+}
+
+// ── SectionAccordion ──────────────────────────────────────────────────────────
+
+function SectionAccordion({
+  section,
+  isOpen,
+  onToggle,
+  onSelect,
+}: {
+  section: SectionDef;
+  isOpen: boolean;
+  onToggle: () => void;
+  onSelect: (key: string) => void;
 }) {
+  const c = section.color;
+
   return (
     <div
       className={[
-        "rounded-3xl border p-6 shadow-sm transition-all",
-        featured
-          ? "border-sky-200 bg-gradient-to-b from-sky-50 to-white"
-          : "border-slate-200 bg-white",
+        "overflow-hidden rounded-2xl border bg-white transition-shadow duration-200",
+        isOpen
+          ? "border-slate-300 shadow-md"
+          : "border-slate-200 hover:border-slate-300 hover:shadow-sm",
       ].join(" ")}
     >
-      <div className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-        {badge}
-      </div>
-
-      <h3 className="mt-4 text-2xl font-semibold bg-gradient-to-r from-indigo-600 via-sky-500 to-cyan-500 bg-clip-text text-transparent animate-gradient-x drop-shadow-[0_0_8px_rgba(59,130,246,0.25)]">{title}</h3>
-      <div className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-        {price}
-      </div>
-      <p className="mt-2 text-sm leading-6 text-slate-500">{subtitle}</p>
-
-      <FeatureList items={features} />
-
-      {helper && (
-        <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-          {helper}
-        </div>
-      )}
-
       <button
         type="button"
-        onClick={onClick}
+        onClick={onToggle}
+        className="flex w-full items-center gap-4 px-5 py-5 text-left"
+      >
+        <div
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${c.icon}`}
+        >
+          {section.icon}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] font-semibold text-slate-900">
+            {section.label}
+          </p>
+          <p className="mt-0.5 text-sm leading-5 text-slate-500">
+            {section.description}
+          </p>
+        </div>
+
+        <div className="shrink-0 text-right">
+          <p className="text-xs font-medium text-slate-400">À partir de</p>
+          <p className="mt-0.5">
+            <span className={`text-[26px] font-bold leading-none ${c.price}`}>
+              {section.summaryPrice}
+            </span>
+            <span className="ml-1 text-sm text-slate-400">
+              {section.summaryUnit}
+            </span>
+          </p>
+        </div>
+
+        <ChevronDown
+          className={[
+            "h-5 w-5 shrink-0 text-slate-400 transition-transform duration-300",
+            isOpen ? "rotate-180" : "",
+          ].join(" ")}
+        />
+      </button>
+
+      <div
         className={[
-          "mt-7 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium transition-all",
-          featured
-            ? "bg-slate-950 text-white hover:bg-slate-800"
-            : "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50",
+          "overflow-hidden transition-all duration-300 ease-in-out",
+          isOpen ? "max-h-[900px] opacity-100" : "max-h-0 opacity-0",
         ].join(" ")}
       >
-        <span>{ctaLabel}</span>
-        <ArrowRight className="h-4 w-4" />
-      </button>
-    </div>
-  );
-}
+        <div className="border-t border-slate-100 px-5 pb-6 pt-5">
+          <div
+            className={`grid gap-3 ${
+              section.offers.length <= 2
+                ? "sm:grid-cols-2"
+                : "sm:grid-cols-2 lg:grid-cols-3"
+            }`}
+          >
+            {section.offers.map((offer) => (
+              <div
+                key={offer.id}
+                className={[
+                  "flex flex-col rounded-xl border p-4",
+                  offer.featured
+                    ? `${c.accent} ${c.featuredBg}`
+                    : "border-slate-200 bg-white",
+                ].join(" ")}
+              >
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+                  {offer.badge}
+                </span>
 
-function RechargeCard({
-  title,
-  price,
-  onClick,
-}: {
-  title: string;
-  price: string;
-  onClick: () => void;
-}) {
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-        <Coins className="h-3.5 w-3.5" />
-        Recharge
+                <p className="mt-1.5 text-sm font-semibold text-slate-900">
+                  {offer.title}
+                </p>
+
+                <p className={`mt-1 text-lg font-bold ${c.price}`}>
+                  {offer.price}
+                </p>
+
+                <ul className="mt-3 flex-1 space-y-1.5">
+                  {offer.features.map((f) => (
+                    <li
+                      key={f}
+                      className="flex items-start gap-1.5 text-xs text-slate-600"
+                    >
+                      <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+
+                {offer.helper && (
+                  <p className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-[11px] leading-4 text-slate-500">
+                    {offer.helper}
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => onSelect(offer.planKey)}
+                  className={[
+                    "mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-all",
+                    offer.featured
+                      ? c.cta
+                      : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                  ].join(" ")}
+                >
+                  {offer.ctaLabel}
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {section.extras && <div className="mt-4">{section.extras}</div>}
+        </div>
       </div>
-
-      <h3 className="mt-4 text-xl font-semibold bg-gradient-to-r from-indigo-600 via-sky-500 to-cyan-500 bg-clip-text text-transparent animate-gradient-x drop-shadow-[0_0_8px_rgba(59,130,246,0.25)]">{title}</h3>
-      <p className="mt-2 text-lg font-medium text-slate-900">{price}</p>
-      <p className="mt-2 text-sm text-slate-500">
-        Idéal en complément d'un abonnement ou pour un besoin ponctuel.
-      </p>
-
-      <button
-        type="button"
-        onClick={onClick}
-        className="mt-5 inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 transition-all hover:bg-slate-50"
-      >
-        Acheter
-      </button>
     </div>
   );
 }
+
+// ── buildSections ─────────────────────────────────────────────────────────────
+
+function buildSections(
+  savePlan: (p: string) => void,
+  pricingMap: Record<string, PricingEntry>
+): SectionDef[] {
+  function applyOffers(offers: OfferItem[]): OfferItem[] {
+    return offers
+      .map((o) => applyPricing(o, pricingMap))
+      .filter((o): o is OfferItem => o !== null);
+  }
+
+  const rawInvestisseur: OfferItem[] = [
+    {
+      id: "inv-10", badge: "Jetons", title: "10 analyses",
+      price: "9,90€ HT", subtitle: "1 analyse = 1 jeton.",
+      features: ["Découverte plateforme", "Sans engagement", "Usage ponctuel"],
+      ctaLabel: "Acheter", planKey: "tokens-10",
+    },
+    {
+      id: "inv-20", badge: "Jetons", title: "20 analyses",
+      price: "16,90€ HT", subtitle: "Meilleur prix unitaire.",
+      features: ["Volume intermédiaire", "Sans engagement", "Meilleur tarif/analyse"],
+      ctaLabel: "Acheter", planKey: "tokens-20",
+    },
+    {
+      id: "inv-starter", badge: "Abonnement", title: "Starter",
+      price: "39,90€ HT/mois", subtitle: "50 analyses incluses par mois.",
+      features: ["50 analyses/mois", "Recharge possible", "Meilleure conversion"],
+      helper: "La formule à pousser pour convertir les utilisateurs récurrents.",
+      ctaLabel: "Choisir Starter", planKey: "starter", featured: true,
+    },
+    {
+      id: "inv-pro", badge: "Abonnement", title: "Pro",
+      price: "74,99€ HT/mois", subtitle: "200 analyses incluses.",
+      features: ["200 analyses/mois", "Recharge disponible", "Usage intensif"],
+      ctaLabel: "Choisir Pro", planKey: "pro",
+    },
+  ];
+
+  const rawRecharges = [
+    { label: "25 analyses", price: "19,90€ HT", key: "recharge-25" },
+    { label: "50 analyses", price: "34,90€ HT", key: "recharge-50" },
+  ]
+    .filter((r) => {
+      const entry = pricingMap[r.key];
+      return !entry || entry.active !== false;
+    })
+    .map((r) => {
+      const entry = pricingMap[r.key];
+      return entry
+        ? {
+            ...r,
+            price: entry.unit ? `${entry.price}${entry.unit}` : entry.price,
+            label: entry.title || r.label,
+          }
+        : r;
+    });
+
+  return [
+    {
+      id: "investisseur",
+      label: "Investisseur",
+      description: "Accédez aux meilleures opportunités et pilotez vos investissements.",
+      icon: <Coins className="h-5 w-5" />,
+      color: C.sky,
+      summaryPrice: "149€",
+      summaryUnit: "/mois",
+      offers: applyOffers(rawInvestisseur),
+      extras:
+        rawRecharges.length > 0 ? (
+          <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              Recharges complémentaires
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {rawRecharges.map((r) => (
+                <div
+                  key={r.key}
+                  className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">{r.label}</p>
+                    <p className="text-xs text-slate-500">{r.price}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => savePlan(r.key)}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Acheter
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : undefined,
+    },
+    {
+      id: "promoteur",
+      label: "Promoteur",
+      description: "De l'identification foncière à la commercialisation de vos projets.",
+      icon: <Building2 className="h-5 w-5" />,
+      color: C.indigo,
+      summaryPrice: "199€",
+      summaryUnit: "/mois",
+      offers: applyOffers([
+        {
+          id: "pro-starter", badge: "Promoteur", title: "Starter",
+          price: "dès 149€/mois", subtitle: "Pour démarrer les premières études foncières.",
+          features: ["Faisabilité foncière", "Lecture PLU", "Études de marché", "Synthèses de base"],
+          ctaLabel: "Demander une démo", planKey: "promoteur-starter",
+        },
+        {
+          id: "pro-pro", badge: "Promoteur", title: "Pro",
+          price: "dès 299€/mois", subtitle: "Pour un usage régulier et des dossiers complets.",
+          features: ["Faisabilité + risques + bilan", "Exports avancés", "Équipe légère", "Montée en charge"],
+          ctaLabel: "Être recontacté", planKey: "promoteur-pro", featured: true,
+        },
+        {
+          id: "pro-enterprise", badge: "Entreprise", title: "Sur devis",
+          price: "Personnalisé", subtitle: "Multi-utilisateurs ou besoins spécifiques.",
+          features: ["Comptes équipe", "Paramétrage métier", "Accompagnement", "Intégrations"],
+          ctaLabel: "Contacter Mimmoza", planKey: "promoteur-enterprise",
+        },
+      ]),
+    },
+    {
+      id: "rehabilitation",
+      label: "Réhabilitation",
+      description: "Pilotez vos opérations de réhabilitation et améliorez la performance.",
+      icon: <Wrench className="h-5 w-5" />,
+      color: C.teal,
+      summaryPrice: "129€",
+      summaryUnit: "/mois",
+      offers: applyOffers([
+        {
+          id: "reh-starter", badge: "Réhabilitation", title: "Starter",
+          price: "dès 149€/mois", subtitle: "Pour démarrer les premiers audits.",
+          features: ["Audit conformité ERP/PMR", "Analyse de plans", "Études de marché", "Synthèses de base"],
+          ctaLabel: "Demander une démo", planKey: "rehabilitation-starter",
+        },
+        {
+          id: "reh-pro", badge: "Réhabilitation", title: "Pro",
+          price: "dès 299€/mois", subtitle: "Pour des dossiers d'audit complets.",
+          features: ["Audit complet + valorisation", "Exports avancés", "Équipe légère", "Montée en charge"],
+          ctaLabel: "Être recontacté", planKey: "rehabilitation-pro", featured: true,
+        },
+        {
+          id: "reh-enterprise", badge: "Entreprise", title: "Sur devis",
+          price: "Personnalisé", subtitle: "Multi-utilisateurs ou besoins spécifiques.",
+          features: ["Comptes équipe", "Paramétrage", "Accompagnement", "Intégrations"],
+          ctaLabel: "Contacter Mimmoza", planKey: "rehabilitation-enterprise",
+        },
+      ]),
+    },
+    {
+      id: "apporteur",
+      label: "Apporteur d'affaires",
+      description: "Déposez des opportunités et percevez des commissions.",
+      icon: <UserCheck className="h-5 w-5" />,
+      color: C.orange,
+      summaryPrice: "0€",
+      summaryUnit: "/mois",
+      offers: applyOffers([
+        {
+          id: "app-free", badge: "Apporteur", title: "Accès gratuit",
+          price: "0€", subtitle: "Dépôt sans abonnement requis.",
+          features: ["Accès espace apporteur", "Dépôt illimité", "Suivi des leads", "Sans engagement"],
+          ctaLabel: "Accéder", planKey: "apporteur-free", featured: true,
+        },
+        {
+          id: "app-commission", badge: "Commission", title: "Rémunération",
+          price: "À la commission", subtitle: "Rémunéré sur chaque opportunité transformée.",
+          features: ["Commission par contrat", "Versement à transformation", "Dashboard de suivi", "0 frais d'entrée"],
+          ctaLabel: "En savoir plus", planKey: "apporteur-commission",
+        },
+        {
+          id: "app-partenariat", badge: "Réseau", title: "Partenariat",
+          price: "Sur devis", subtitle: "Pour apporteurs à volume régulier.",
+          features: ["Conditions préférentielles", "Accompagnement dédié", "Rapports perf.", "Accord cadre"],
+          ctaLabel: "Contacter Mimmoza", planKey: "apporteur-partenariat",
+        },
+      ]),
+    },
+  ];
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AbonnementPage() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<OfferTab>("investisseur");
+  const [openSectionId, setOpenSectionId] = useState<string | null>(null);
 
   const user = useMemo<StoredUser>(() => {
     try {
@@ -173,340 +470,150 @@ export default function AbonnementPage() {
     }
   }, []);
 
+  // ── Pricing réactif ────────────────────────────────────────────────────────
+  // Initialisé depuis localStorage, puis mis à jour :
+  //   • visibilitychange → retour sur l'onglet après avoir édité dans /admin/tarifs
+  //   • storage         → changement depuis un autre onglet
+  const [pricingMap, setPricingMap] = useState<Record<string, PricingEntry>>(
+    () => readPricingMap()
+  );
+
+  useEffect(() => {
+    // Retour sur l'onglet (même fenêtre, navigation entre pages)
+    function handleVisibility() {
+      if (document.visibilityState === "visible") {
+        setPricingMap(readPricingMap());
+      }
+    }
+    // Changement localStorage depuis un autre onglet
+    function handleStorage(e: StorageEvent) {
+      if (e.key === "mimmoza.pricing") {
+        setPricingMap(readPricingMap());
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
   const savePlan = (plan: string) => {
-    localStorage.setItem(
-      "mimmoza.user",
-      JSON.stringify({
-        ...user,
-        plan,
-      })
-    );
+    localStorage.setItem("mimmoza.user", JSON.stringify({ ...user, plan }));
     navigate("/compte");
   };
 
-  const renderInvestisseur = () => {
-    return (
-      <>
-        <section className="mt-14">
-          <div className="mb-6">
-            <h2 className="text-2xl font-semibold text-slate-950">
-              Investisseur particulier & marchand de biens
-            </h2>
-            <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-600">
-              Un modèle simple et flexible : achat ponctuel de jetons pour tester
-              Mimmoza, puis abonnements mensuels pour les utilisateurs récurrents.
-            </p>
-          </div>
-
-          <div className="grid gap-6 xl:grid-cols-4">
-            <OfferCard
-              badge="Jetons"
-              title="10 analyses"
-              price="9,90€ HT"
-              subtitle="1 analyse = 1 jeton"
-              features={[
-                "Parfait pour découvrir la plateforme",
-                "Sans engagement",
-                "Usage ponctuel",
-              ]}
-              ctaLabel="Acheter"
-              onClick={() => savePlan("tokens-10")}
-            />
-
-            <OfferCard
-              badge="Jetons"
-              title="20 analyses"
-              price="16,90€ HT"
-              subtitle="Meilleur prix unitaire"
-              features={[
-                "Volume intermédiaire",
-                "Sans engagement",
-                "Adapté aux besoins occasionnels",
-              ]}
-              ctaLabel="Acheter"
-              onClick={() => savePlan("tokens-20")}
-            />
-
-            <OfferCard
-              badge="Abonnement"
-              title="Starter"
-              price="39,90€ HT / mois"
-              subtitle="50 analyses incluses"
-              features={[
-                "50 analyses par mois",
-                "Recharge de jetons possible",
-                "Très bon plan pour les utilisateurs réguliers",
-              ]}
-              helper="C'est la formule à pousser commercialement pour convertir les utilisateurs récurrents."
-              ctaLabel="Choisir Starter"
-              onClick={() => savePlan("starter")}
-              featured
-            />
-
-            <OfferCard
-              badge="Abonnement"
-              title="Pro"
-              price="74,99€ HT / mois"
-              subtitle="200 analyses incluses"
-              features={[
-                "200 analyses par mois",
-                "Recharge jetons disponible",
-                "Pensé pour marchands de biens actifs",
-              ]}
-              helper="Plus lisible et plus sûr qu'un illimité, tout en laissant une porte de sortie via recharge."
-              ctaLabel="Choisir Pro"
-              onClick={() => savePlan("pro")}
-            />
-          </div>
-        </section>
-
-        <section className="mt-12">
-          <div className="mb-6">
-            <h3 className="text-xl font-semibold text-slate-950">
-              Recharges complémentaires
-            </h3>
-            <p className="mt-2 text-sm leading-7 text-slate-600">
-              Pour les abonnés qui dépassent leur quota ou pour les utilisateurs
-              qui préfèrent acheter à la demande.
-            </p>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-2">
-            <RechargeCard
-              title="25 analyses"
-              price="19,90€ HT"
-              onClick={() => savePlan("recharge-25")}
-            />
-            <RechargeCard
-              title="50 analyses"
-              price="34,90€ HT"
-              onClick={() => savePlan("recharge-50")}
-            />
-          </div>
-        </section>
-      </>
-    );
-  };
-
-  const renderPromoteur = () => {
-    return (
-      <section className="mt-14">
-        <div className="mb-6">
-          <h2 className="text-2xl font-semibold text-slate-950">Promoteur</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-600">
-            Une offre pensée comme un outil métier B2B, plus proche d'un poste de
-            travail complet que d'une simple analyse à l'unité.
-          </p>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-3">
-          <OfferCard
-            badge="Promoteur"
-            title="Starter Promoteur"
-            price="À partir de 149€ HT / mois"
-            subtitle="Pour démarrer sur les premières études"
-            features={[
-              "Faisabilité foncière",
-              "Lecture PLU",
-              "Études de marché",
-              "Synthèses de base",
-            ]}
-            ctaLabel="Demander une démo"
-            onClick={() => savePlan("promoteur-starter")}
-          />
-
-          <OfferCard
-            badge="Promoteur"
-            title="Pro Promoteur"
-            price="À partir de 299€ HT / mois"
-            subtitle="Pour un usage régulier et des dossiers plus complets"
-            features={[
-              "Faisabilité + risques + bilan",
-              "Exports avancés",
-              "Usage équipe légère",
-              "Montée en charge progressive",
-            ]}
-            ctaLabel="Être recontacté"
-            onClick={() => savePlan("promoteur-pro")}
-            featured
-          />
-
-          <OfferCard
-            badge="Entreprise"
-            title="Sur devis"
-            price="Tarification personnalisée"
-            subtitle="Pour structures multi-utilisateurs ou besoins spécifiques"
-            features={[
-              "Comptes équipe",
-              "Paramétrage spécifique",
-              "Accompagnement au déploiement",
-              "Possibilités d'intégrations futures",
-            ]}
-            ctaLabel="Contacter Mimmoza"
-            onClick={() => savePlan("promoteur-enterprise")}
-          />
-        </div>
-      </section>
-    );
-  };
-
-  const renderFinanceur = () => {
-    return (
-      <section className="mt-14">
-        <div className="mb-6">
-          <h2 className="text-2xl font-semibold text-slate-950">Financeur</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-600">
-            Une offre institutionnelle pour l'analyse de risque, la lecture des
-            dossiers, les garanties et la préparation comité.
-          </p>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-3">
-          <OfferCard
-            badge="Financeur"
-            title="Professional"
-            price="À partir de 299€ HT / mois"
-            subtitle="Pour structurer les premiers usages en analyse dossier"
-            features={[
-              "Analyse de risque",
-              "Lecture synthétique des dossiers",
-              "Scoring opérationnel",
-              "Usage mono-utilisateur ou restreint",
-            ]}
-            ctaLabel="Demander une démo"
-            onClick={() => savePlan("financeur-pro")}
-          />
-
-          <OfferCard
-            badge="Financeur"
-            title="Équipe"
-            price="À partir de 699€ HT / mois"
-            subtitle="Pour usage collaboratif et suivi plus structuré"
-            features={[
-              "Comité crédit",
-              "Lecture garanties",
-              "Suivi portefeuille / dossiers",
-              "Accès multi-utilisateurs",
-            ]}
-            ctaLabel="Être recontacté"
-            onClick={() => savePlan("financeur-equipe")}
-            featured
-          />
-
-          <OfferCard
-            badge="Enterprise"
-            title="Sur devis"
-            price="Tarification personnalisée"
-            subtitle="Pour établissements, réseaux ou besoins spécifiques"
-            features={[
-              "Déploiement plus large",
-              "Paramétrage métier",
-              "Flux et gouvernance",
-              "Accompagnement projet",
-            ]}
-            ctaLabel="Contacter Mimmoza"
-            onClick={() => savePlan("financeur-enterprise")}
-          />
-        </div>
-      </section>
-    );
-  };
+  const sections = buildSections(savePlan, pricingMap);
 
   return (
     <div className="relative overflow-hidden rounded-[32px] border border-slate-200/80 bg-white shadow-sm">
       <style>{`
-@keyframes gradient-x {
-  0%   { background-position: 0%   50% }
-  50%  { background-position: 100% 50% }
-  100% { background-position: 0%   50% }
-}
-.animate-gradient-x {
-  background-size: 200% 200%;
-  animation: gradient-x 8s ease infinite;
-}
+        @keyframes gx {
+          0%, 100% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+        }
+        .agx {
+          background-size: 200% 200%;
+          animation: gx 7s ease infinite;
+        }
       `}</style>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.12),_transparent_35%),radial-gradient(circle_at_top_right,_rgba(6,182,212,0.10),_transparent_28%),linear-gradient(180deg,_#f8fbff_0%,_#ffffff_38%,_#f8fafc_100%)]" />
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.06)_1px,transparent_1px)] bg-[size:28px_28px] [mask-image:linear-gradient(to_bottom,black,transparent_90%)]" />
 
-      <div className="relative mx-auto max-w-7xl px-6 py-10 lg:px-10 lg:py-14">
-        <div className="mx-auto max-w-4xl text-center">
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white/85 px-4 py-2 text-sm font-medium text-sky-700 shadow-sm">
-            <Sparkles className="h-4 w-4" />
-            Offres Mimmoza
+      <div className="flex min-h-[calc(100vh-6rem)]">
+        <aside
+          className="hidden shrink-0 flex-col overflow-hidden lg:flex"
+          style={{
+            width: "320px",
+            background:
+              "linear-gradient(180deg, #eef4ff 0%, #f0f7ff 40%, #e8f3ff 100%)",
+          }}
+        >
+          <img
+            src="/illustrations/colone_abonnement.png"
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+            className="h-full w-full object-contain object-center"
+          />
+        </aside>
+
+        <div className="flex flex-1 flex-col px-8 py-10 lg:px-10 lg:py-12">
+          <div className="mb-10">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 shadow-sm">
+              <Sparkles className="h-3.5 w-3.5 text-sky-500" />
+              Offres Mimmoza
+            </div>
+
+            <h1 className="text-4xl font-semibold tracking-tight text-slate-950 sm:text-[2.6rem]">
+              Choisissez votre{" "}
+              <span className="agx bg-gradient-to-r from-indigo-600 via-sky-500 to-cyan-400 bg-clip-text text-transparent">
+                formule
+              </span>
+            </h1>
+
+            <p className="mt-3 text-base leading-7 text-slate-500">
+              Une tarification adaptée à chaque espace.
+            </p>
           </div>
 
-          <h1 className="text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
-            Choisissez votre{" "}
-            <span className="bg-gradient-to-r from-indigo-600 via-sky-500 to-cyan-500 bg-clip-text text-transparent">
-              formule
-            </span>
-          </h1>
+          <div className="flex-1 space-y-3">
+            {sections.map((section) => (
+              <SectionAccordion
+                key={section.id}
+                section={section}
+                isOpen={openSectionId === section.id}
+                onToggle={() =>
+                  setOpenSectionId(
+                    openSectionId === section.id ? null : section.id
+                  )
+                }
+                onSelect={savePlan}
+              />
+            ))}
+          </div>
 
-          <p className="mx-auto mt-5 max-w-3xl text-lg leading-8 text-slate-600">
-            Une tarification adaptée à chaque profil : investisseur, promoteur
-            ou financeur.
-          </p>
-
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <PillButton
-              active={activeTab === "investisseur"}
-              onClick={() => setActiveTab("investisseur")}
-              icon={<Coins className="h-4 w-4" />}
-              label="Investisseur"
-            />
-            <PillButton
-              active={activeTab === "promoteur"}
-              onClick={() => setActiveTab("promoteur")}
-              icon={<Building2 className="h-4 w-4" />}
-              label="Promoteur"
-            />
-            <PillButton
-              active={activeTab === "financeur"}
-              onClick={() => setActiveTab("financeur")}
-              icon={<ShieldCheck className="h-4 w-4" />}
-              label="Financeur"
-            />
+          <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              {
+                icon: <Zap className="h-4 w-4 text-sky-500" />,
+                label: "Sans engagement",
+                sub: "Résiliez à tout moment",
+              },
+              {
+                icon: <Lock className="h-4 w-4 text-emerald-500" />,
+                label: "Paiement sécurisé",
+                sub: "100% sécurisé",
+              },
+              {
+                icon: <HeartHandshake className="h-4 w-4 text-indigo-500" />,
+                label: "Support dédié",
+                sub: "Une équipe à votre écoute",
+              },
+              {
+                icon: <TrendingUp className="h-4 w-4 text-orange-500" />,
+                label: "Évolutif",
+                sub: "Changez de formule à tout moment",
+              },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+              >
+                <div className="shrink-0">{item.icon}</div>
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-slate-800">
+                    {item.label}
+                  </p>
+                  <p className="truncate text-[11px] text-slate-400">
+                    {item.sub}
+                  </p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-
-        {activeTab === "investisseur" && renderInvestisseur()}
-        {activeTab === "promoteur" && renderPromoteur()}
-        {activeTab === "financeur" && renderFinanceur()}
-
-        <section className="mt-14 grid gap-6 lg:grid-cols-3">
-          <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <Users className="h-4 w-4 text-sky-500" />
-              Offres entreprise
-            </div>
-            <p className="mt-3 text-sm leading-7 text-slate-600">
-              Pour les équipes, comptes multi-utilisateurs ou demandes spécifiques,
-              une offre sur mesure pourra être gérée côté administrateur.
-            </p>
-          </div>
-
-          <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <CreditCard className="h-4 w-4 text-indigo-500" />
-              Modèle hybride
-            </div>
-            <p className="mt-3 text-sm leading-7 text-slate-600">
-              Le couple abonnement + recharge est le plus sain pour Mimmoza :
-              revenu récurrent, souplesse pour le client et meilleure conversion.
-            </p>
-          </div>
-
-          <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <Sparkles className="h-4 w-4 text-emerald-500" />
-              Prochaine étape
-            </div>
-            <p className="mt-3 text-sm leading-7 text-slate-600">
-              Cette page prépare le branchement Stripe et le futur espace
-              administrateur pour piloter abonnements, recharges et devis.
-            </p>
-          </div>
-        </section>
       </div>
     </div>
   );

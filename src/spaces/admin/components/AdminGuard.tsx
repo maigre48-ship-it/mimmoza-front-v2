@@ -1,7 +1,19 @@
-﻿import { useEffect, useState, type ReactNode } from "react";
+﻿// src/spaces/admin/components/AdminGuard.tsx
+// ─── Accès admin ──────────────────────────────────────────────────────────────
+// Stratégie double :
+//   1. Vérification rapide localStorage (synchrone) → accès immédiat pour les
+//      emails admin connus, sans attendre Supabase.
+//   2. Fallback async via requireAdmin() (Supabase) si la vérification locale
+//      ne suffit pas.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { ShieldAlert, Loader2 } from "lucide-react";
 import { requireAdmin } from "../services/adminAccess";
+
+// ── Liste des emails administrateurs (temporaire, avant Supabase Auth complet) ─
+const ADMIN_EMAILS: string[] = ["maigre48@gmail.com"];
 
 type GuardState = "loading" | "allowed" | "denied-auth" | "denied-admin";
 
@@ -9,29 +21,58 @@ type Props = {
   children: ReactNode;
 };
 
+// ── Vérification locale synchrone ─────────────────────────────────────────────
+function checkLocalAdmin(): boolean {
+  try {
+    const raw = localStorage.getItem("mimmoza.user");
+    if (!raw) return false;
+    const user = JSON.parse(raw) as { email?: string; logged?: boolean };
+    if (!user?.logged) return false;
+    const email = (user.email ?? "").trim().toLowerCase();
+    return ADMIN_EMAILS.includes(email);
+  } catch {
+    return false;
+  }
+}
+
 export function AdminGuard({ children }: Props) {
   const location = useLocation();
-  const [state, setState] = useState<GuardState>("loading");
+
+  // Vérification locale synchrone avant le premier rendu
+  const localAdmin = checkLocalAdmin();
+
+  // Si l'admin est reconnu localement, on autorise immédiatement sans loader
+  const [state, setState] = useState<GuardState>(
+    localAdmin ? "allowed" : "loading"
+  );
 
   useEffect(() => {
+    // Si déjà autorisé localement, pas besoin de l'appel async
+    if (localAdmin) return;
+
     let mounted = true;
 
     async function check() {
-      const result = await requireAdmin();
+      try {
+        const result = await requireAdmin();
+        if (!mounted) return;
 
-      if (!mounted) return;
+        if (result.ok) {
+          setState("allowed");
+          return;
+        }
 
-      if (result.ok) {
-        setState("allowed");
-        return;
+        if (result.reason === "not_authenticated") {
+          setState("denied-auth");
+          return;
+        }
+
+        setState("denied-admin");
+      } catch {
+        if (!mounted) return;
+        // En cas d'erreur Supabase, on refuse l'accès proprement
+        setState("denied-admin");
       }
-
-      if (result.reason === "not_authenticated") {
-        setState("denied-auth");
-        return;
-      }
-
-      setState("denied-admin");
     }
 
     void check();
@@ -39,8 +80,9 @@ export function AdminGuard({ children }: Props) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [localAdmin]);
 
+  // ── Loader ─────────────────────────────────────────────────────────────────
   if (state === "loading") {
     return (
       <div className="mx-auto flex min-h-[60vh] w-full max-w-3xl items-center justify-center px-6">
@@ -54,7 +96,7 @@ export function AdminGuard({ children }: Props) {
                 Vérification sécurité
               </div>
               <div className="text-lg font-semibold text-slate-900">
-                Contrôle de l’accès administrateur…
+                Contrôle de l'accès administrateur…
               </div>
             </div>
           </div>
@@ -63,10 +105,12 @@ export function AdminGuard({ children }: Props) {
     );
   }
 
+  // ── Non authentifié → page de connexion ───────────────────────────────────
   if (state === "denied-auth") {
-    return <Navigate to="/login" replace state={{ from: location }} />;
+    return <Navigate to="/connexion" replace state={{ from: location }} />;
   }
 
+  // ── Authentifié mais pas admin ─────────────────────────────────────────────
   if (state === "denied-admin") {
     return (
       <div className="mx-auto flex min-h-[60vh] w-full max-w-3xl items-center justify-center px-6">
@@ -82,8 +126,8 @@ export function AdminGuard({ children }: Props) {
             Espace administrateur protégé
           </h1>
           <p className="mt-3 text-sm leading-6 text-slate-600">
-            Votre compte est bien connecté, mais il n’est pas autorisé à accéder
-            à l’interface d’administration Mimmoza.
+            Votre compte est bien connecté, mais il n'est pas autorisé à accéder
+            à l'interface d'administration Mimmoza.
           </p>
 
           <div className="mt-6">
@@ -91,7 +135,7 @@ export function AdminGuard({ children }: Props) {
               href="/"
               className="inline-flex items-center rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
             >
-              Retour à l’accueil
+              Retour à l'accueil
             </a>
           </div>
         </div>
@@ -99,5 +143,6 @@ export function AdminGuard({ children }: Props) {
     );
   }
 
+  // ── Autorisé ───────────────────────────────────────────────────────────────
   return <>{children}</>;
 }

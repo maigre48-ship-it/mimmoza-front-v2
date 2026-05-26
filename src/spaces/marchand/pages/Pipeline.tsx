@@ -15,8 +15,6 @@ import {
   X,
   Pencil,
 } from "lucide-react";
-import SectionCard from "../shared/ui/SectionCard";
-import KpiCard from "../shared/ui/KpiCard";
 import {
   readMarchandSnapshot,
   upsertDeal,
@@ -48,9 +46,21 @@ const COLUMNS: DealStatus[] = [
 
 const PENDING_OPPORTUNITY_STORAGE_KEY = "mimmoza.pendingOpportunityDeal";
 
-// ── Gradient tokens ────────────────────────────────────────────────
-const GRAD_INV = "linear-gradient(90deg, #2196f3 0%, #21cbf3 100%)";
+// ── Design tokens ──────────────────────────────────────────────────
+const GRAD_INV = "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)";
 const ACCENT_INV = "#1a72c4";
+const PAGE_BG = "#F6F8FB";
+
+// ── Statut → couleur badge ─────────────────────────────────────────
+const STATUS_COLOR: Record<DealStatus, { bg: string; text: string; dot: string }> = {
+  Nouveau:       { bg: "#EFF6FF", text: "#2563EB", dot: "#3B82F6" },
+  Visite:        { bg: "#F0FDF4", text: "#16A34A", dot: "#22C55E" },
+  Offre:         { bg: "#FFFBEB", text: "#D97706", dot: "#F59E0B" },
+  "Sous promesse": { bg: "#FDF4FF", text: "#9333EA", dot: "#A855F7" },
+  Travaux:       { bg: "#FFF7ED", text: "#EA580C", dot: "#F97316" },
+  "En vente":    { bg: "#F0F9FF", text: "#0369A1", dot: "#0EA5E9" },
+  Vendu:         { bg: "#F0FDF4", text: "#15803D", dot: "#16A34A" },
+};
 
 type PendingOpportunityDeal = {
   source: "veille-marche";
@@ -176,7 +186,7 @@ function makeNewDeal(): Deal {
 }
 
 /* ────────────────────────────────────────────
-   Drawer — redessiné v2
+   Modal centrée — style Réhabilitation
    ──────────────────────────────────────────── */
 
 function Drawer({
@@ -198,97 +208,180 @@ function Drawer({
         position: "fixed",
         inset: 0,
         zIndex: 60,
-        background: "rgba(2,6,23,0.45)",
-        backdropFilter: "blur(2px)",
+        background: "rgba(2,6,23,0.48)",
+        backdropFilter: "blur(4px)",
         display: "flex",
-        justifyContent: "flex-end",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px 16px",
       }}
       onMouseDown={onClose}
     >
+      {/* Carte modale */}
       <div
         style={{
-          width: 480,
-          maxWidth: "92vw",
-          height: "100%",
-          background: "#f8fafc",
-          borderLeft: "1px solid rgba(15,23,42,0.10)",
+          width: "100%",
+          maxWidth: 520,
+          maxHeight: "90vh",
+          background: "#fff",
+          borderRadius: 24,
+          boxShadow: "0 24px 64px rgba(2,6,23,0.22)",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
-          boxShadow: "-8px 0 40px rgba(2,6,23,0.15)",
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {/* ── Header dégradé ── */}
+        {/* ── Header avec icône style Réhabilitation ── */}
         <div
           style={{
-            background: GRAD_INV,
-            padding: "22px 24px 20px",
+            padding: "24px 28px 20px",
+            borderBottom: "1px solid #F1F5F9",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 16,
             flexShrink: 0,
           }}
         >
+          {/* Icône carrée arrondie — couleur Investisseur */}
           <div
             style={{
-              fontSize: 10,
-              color: "rgba(255,255,255,0.6)",
-              letterSpacing: 1.5,
-              textTransform: "uppercase",
-              marginBottom: 6,
+              width: 48,
+              height: 48,
+              borderRadius: 14,
+              background: GRAD_INV,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              boxShadow: "0 4px 16px rgba(33,150,243,0.28)",
             }}
           >
-            Investisseur › Pipeline
-          </div>
-          <div
-            style={{
-              fontSize: 17,
-              fontWeight: 800,
-              color: "#fff",
-              marginBottom: 16,
-              lineHeight: 1.25,
-              opacity: 0.95,
-            }}
-          >
-            {title}
+            {/* Icône immeuble/deal */}
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M3 21h18M3 7l9-4 9 4M4 21V7m16 14V7M9 21v-4h6v4"
+                stroke="white"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </div>
 
-          {/* Bouton Enregistrer — action principale */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: 700,
+                color: "#0F172A",
+                lineHeight: 1.25,
+                marginBottom: 3,
+              }}
+            >
+              Éditer le deal
+            </div>
+            <div style={{ fontSize: 13, color: "#64748B" }}>
+              Investisseur › Pipeline
+            </div>
+          </div>
+
+          {/* Bouton fermer × */}
           <button
             type="button"
             onClick={onClose}
             style={{
-              width: "100%",
-              padding: "12px 0",
-              borderRadius: 10,
-              border: "none",
-              background: "#fff",
-              color: ACCENT_INV,
-              fontWeight: 800,
-              fontSize: 14,
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              border: "1px solid #E2E8F0",
+              background: "#F8FAFC",
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              gap: 8,
-              boxShadow: "0 2px 16px rgba(0,0,0,0.14)",
-              transition: "transform 0.12s ease, box-shadow 0.12s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "translateY(-1px)";
-              e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.18)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "translateY(0)";
-              e.currentTarget.style.boxShadow = "0 2px 16px rgba(0,0,0,0.14)";
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = "translateY(0) scale(0.98)";
+              color: "#64748B",
+              flexShrink: 0,
+              fontSize: 18,
+              lineHeight: 1,
             }}
           >
-            {/* Icône check */}
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+            ×
+          </button>
+        </div>
+
+        {/* ── Corps scrollable ── */}
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "24px 28px",
+          }}
+        >
+          {children}
+        </div>
+
+        {/* ── Footer actions ── */}
+        <div
+          style={{
+            padding: "16px 28px 24px",
+            borderTop: "1px solid #F1F5F9",
+            display: "flex",
+            gap: 12,
+            justifyContent: "flex-end",
+            flexShrink: 0,
+          }}
+        >
+          {/* Annuler */}
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: "11px 22px",
+              borderRadius: 12,
+              border: "1.5px solid #E2E8F0",
+              background: "#fff",
+              color: "#374151",
+              fontWeight: 600,
+              fontSize: 14,
+              cursor: "pointer",
+            }}
+          >
+            Annuler
+          </button>
+
+          {/* Enregistrer */}
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: "11px 24px",
+              borderRadius: 12,
+              border: "none",
+              background: GRAD_INV,
+              color: "#fff",
+              fontWeight: 700,
+              fontSize: 14,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              boxShadow: "0 4px 16px rgba(33,150,243,0.30)",
+              transition: "opacity 0.12s, transform 0.12s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.opacity = "0.92";
+              e.currentTarget.style.transform = "translateY(-1px)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = "1";
+              e.currentTarget.style.transform = "translateY(0)";
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 15 15" fill="none">
               <path
                 d="M2.5 7.5L5.5 10.5L12.5 4"
-                stroke={ACCENT_INV}
+                stroke="#fff"
                 strokeWidth="2.2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -296,21 +389,6 @@ function Drawer({
             </svg>
             Enregistrer le deal
           </button>
-        </div>
-
-        {/* ── Séparateur visuel ── */}
-        <div
-          style={{
-            height: 3,
-            background: "linear-gradient(90deg, #2196f3 0%, #21cbf3 60%, transparent 100%)",
-            opacity: 0.15,
-            flexShrink: 0,
-          }}
-        />
-
-        {/* ── Corps scrollable ── */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "24px 24px 40px" }}>
-          {children}
         </div>
       </div>
     </div>
@@ -340,7 +418,15 @@ function Field({
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>
+      <div
+        style={{
+          fontSize: 11,
+          color: "#64748b",
+          fontWeight: 700,
+          letterSpacing: 0.4,
+          textTransform: "uppercase",
+        }}
+      >
         {label}
       </div>
       <input
@@ -351,18 +437,28 @@ function Field({
         onBlur={onBlur}
         style={{
           width: "100%",
-          padding: "10px 12px",
+          padding: "11px 14px",
           borderRadius: 12,
-          border: "1px solid rgba(15, 23, 42, 0.10)",
-          background: "rgba(255,255,255,0.95)",
-          fontWeight: 800,
+          border: "1.5px solid rgba(15, 23, 42, 0.10)",
+          background: "#fff",
+          fontWeight: 600,
+          fontSize: 14,
           color: "#0f172a",
           outline: "none",
           boxSizing: "border-box",
+          transition: "border-color 0.15s",
+        }}
+        onFocus={(e) => {
+          e.currentTarget.style.borderColor = "rgba(33,150,243,0.45)";
+          e.currentTarget.style.boxShadow = "0 0 0 3px rgba(33,150,243,0.08)";
+        }}
+        onBlurCapture={(e) => {
+          e.currentTarget.style.borderColor = "rgba(15, 23, 42, 0.10)";
+          e.currentTarget.style.boxShadow = "none";
         }}
       />
       {hint && (
-        <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700 }}>
+        <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600 }}>
           {hint}
         </div>
       )}
@@ -383,7 +479,15 @@ function Select({
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900 }}>
+      <div
+        style={{
+          fontSize: 11,
+          color: "#64748b",
+          fontWeight: 700,
+          letterSpacing: 0.4,
+          textTransform: "uppercase",
+        }}
+      >
         {label}
       </div>
       <select
@@ -391,11 +495,12 @@ function Select({
         onChange={(e) => onChange(e.target.value)}
         style={{
           width: "100%",
-          padding: "10px 12px",
+          padding: "11px 14px",
           borderRadius: 12,
-          border: "1px solid rgba(15, 23, 42, 0.10)",
-          background: "rgba(255,255,255,0.95)",
-          fontWeight: 800,
+          border: "1.5px solid rgba(15, 23, 42, 0.10)",
+          background: "#fff",
+          fontWeight: 600,
+          fontSize: 14,
           color: "#0f172a",
           outline: "none",
         }}
@@ -424,10 +529,8 @@ export default function MarchandPipeline() {
   const activeDealId = snapshot.activeDealId;
 
   const [editingDealId, setEditingDealId] = useState<string | null>(null);
-
   const [cityLookupHint, setCityLookupHint] = useState<string>("");
   const zipFetchRef = useRef(0);
-
   const handoffConsumedRef = useRef(false);
 
   useEffect(() => {
@@ -604,360 +707,604 @@ export default function MarchandPipeline() {
     setEditingDealId(null);
   }, [draftDeal, activeDealId]);
 
-  return (
-    <div>
-      {/* ── Bannière header dégradé ── */}
-      <div
-        style={{
-          background: GRAD_INV,
-          borderRadius: 14,
-          padding: "20px 24px",
-          marginBottom: 20,
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: 16,
-        }}
-      >
-        <div>
-          <div
-            style={{
-              fontSize: 11,
-              color: "rgba(255,255,255,0.65)",
-              marginBottom: 6,
-            }}
-          >
-            Investisseur › Acquisition
-          </div>
-          <div
-            style={{
-              fontSize: 22,
-              fontWeight: 600,
-              color: "white",
-              marginBottom: 4,
-              lineHeight: 1.2,
-            }}
-          >
-            Pipeline
-          </div>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
-            Deal flow et statuts — snapshot actif partagé entre toutes les pages Marchand.
-          </div>
-        </div>
+  // ── KPI config ───────────────────────────────────────────────────
+  const kpis = [
+    {
+      label: "Deals",
+      value: `${totalDeals}`,
+      hint: "Total pipeline",
+      icon: <Workflow size={20} />,
+      color: "#2196F3",
+      bg: "#EFF6FF",
+    },
+    {
+      label: "En cours",
+      value: `${inProgress}`,
+      hint: "Hors vendus",
+      icon: <Clock size={20} />,
+      color: "#0EA5E9",
+      bg: "#F0F9FF",
+    },
+    {
+      label: "Budget achat",
+      value: fmtEur(budgetAchat),
+      hint: "Snapshot (à brancher)",
+      icon: <Euro size={20} />,
+      color: "#6366F1",
+      bg: "#F5F3FF",
+    },
+    {
+      label: "Marge cible",
+      value: "—",
+      hint: "À calculer (Rentabilité)",
+      icon: <TrendingUp size={20} />,
+      color: "#10B981",
+      bg: "#F0FDF4",
+    },
+  ];
 
-        <button
-          type="button"
-          onClick={handleCreateDeal}
+  return (
+    /* ── Fond de page ── */
+    <div
+      style={{
+        minHeight: "100vh",
+        background: PAGE_BG,
+        padding: "32px 24px 56px",
+      }}
+    >
+      {/* ── Conteneur centré ── */}
+      <div style={{ maxWidth: 1240, margin: "0 auto" }}>
+
+        {/* ══════════════════════════════════════════════
+            HERO CARD
+        ══════════════════════════════════════════════ */}
+        <div
           style={{
-            display: "inline-flex",
+            background: GRAD_INV,
+            borderRadius: 24,
+            padding: "32px 36px",
+            marginBottom: 24,
+            display: "flex",
             alignItems: "center",
-            gap: 8,
-            padding: "9px 18px",
-            borderRadius: 10,
-            border: "none",
-            background: "white",
-            color: ACCENT_INV,
-            fontWeight: 600,
-            fontSize: 13,
-            cursor: "pointer",
-            flexShrink: 0,
-            marginTop: 4,
+            justifyContent: "space-between",
+            gap: 20,
+            boxShadow: "0 8px 32px rgba(33,150,243,0.22)",
+            position: "relative",
+            overflow: "hidden",
           }}
         >
-          <Plus size={16} />
-          Nouveau deal
-        </button>
-      </div>
+          {/* Décors géométriques */}
+          <div
+            style={{
+              position: "absolute",
+              top: -50,
+              right: -50,
+              width: 220,
+              height: 220,
+              borderRadius: "50%",
+              background: "rgba(255,255,255,0.07)",
+              pointerEvents: "none",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              bottom: -35,
+              right: 160,
+              width: 140,
+              height: 140,
+              borderRadius: "50%",
+              background: "rgba(255,255,255,0.05)",
+              pointerEvents: "none",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              top: 20,
+              right: 280,
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: "rgba(255,255,255,0.35)",
+              pointerEvents: "none",
+            }}
+          />
 
-      {/* ── KPI cards ── */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        <KpiCard
-          label="Deals"
-          value={`${totalDeals}`}
-          hint="Total"
-          icon={<Workflow size={18} />}
-        />
-        <KpiCard
-          label="En cours"
-          value={`${inProgress}`}
-          hint="Hors vendus"
-          icon={<Clock size={18} />}
-        />
-        <KpiCard
-          label="Budget achat"
-          value={fmtEur(budgetAchat)}
-          hint="Snapshot (à brancher)"
-          icon={<Euro size={18} />}
-        />
-        <KpiCard
-          label="Marge cible"
-          value="—"
-          hint="À calculer (Rentabilité)"
-          icon={<TrendingUp size={18} />}
-        />
-      </div>
+          <div style={{ position: "relative" }}>
+            <div
+              style={{
+                fontSize: 11,
+                color: "rgba(255,255,255,0.6)",
+                letterSpacing: 1.8,
+                textTransform: "uppercase",
+                marginBottom: 10,
+                fontWeight: 600,
+              }}
+            >
+              Investisseur › Acquisition
+            </div>
+            <div
+              style={{
+                fontSize: 30,
+                fontWeight: 800,
+                color: "#fff",
+                marginBottom: 10,
+                lineHeight: 1.12,
+                letterSpacing: -0.5,
+              }}
+            >
+              Pipeline
+            </div>
+            <div
+              style={{
+                fontSize: 14,
+                color: "rgba(255,255,255,0.75)",
+                maxWidth: 460,
+                lineHeight: 1.55,
+              }}
+            >
+              Deal flow et statuts — snapshot actif partagé entre toutes les pages Marchand.
+            </div>
+          </div>
 
-      {/* ── Deal flow ── */}
-      <SectionCard
-        title="Deal flow"
-        subtitle="Sélectionne un deal pour synchroniser toutes les pages."
-      >
+          <button
+            type="button"
+            onClick={handleCreateDeal}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "13px 22px",
+              borderRadius: 14,
+              border: "none",
+              background: "#fff",
+              color: ACCENT_INV,
+              fontWeight: 700,
+              fontSize: 14,
+              cursor: "pointer",
+              flexShrink: 0,
+              boxShadow: "0 4px 20px rgba(0,0,0,0.16)",
+              position: "relative",
+              transition: "transform 0.14s ease, box-shadow 0.14s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = "translateY(-2px)";
+              e.currentTarget.style.boxShadow = "0 8px 28px rgba(0,0,0,0.20)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "translateY(0)";
+              e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.16)";
+            }}
+          >
+            <Plus size={16} />
+            Nouveau deal
+          </button>
+        </div>
+
+        {/* ══════════════════════════════════════════════
+            KPI CARDS
+        ══════════════════════════════════════════════ */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: `repeat(${COLUMNS.length}, minmax(220px, 1fr))`,
-            gap: 10,
-            overflowX: "auto",
-            paddingBottom: 6,
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: 16,
+            marginBottom: 24,
           }}
         >
-          {COLUMNS.map((col) => {
-            const colDeals = deals.filter((d) => d.status === col);
-
-            return (
+          {kpis.map((kpi) => (
+            <div
+              key={kpi.label}
+              style={{
+                background: "#fff",
+                borderRadius: 20,
+                border: "1px solid #E5E7EB",
+                padding: "20px 22px",
+                boxShadow: "0 2px 12px rgba(15,23,42,0.05)",
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 14,
+                transition: "box-shadow 0.15s",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLDivElement).style.boxShadow =
+                  "0 6px 24px rgba(15,23,42,0.09)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLDivElement).style.boxShadow =
+                  "0 2px 12px rgba(15,23,42,0.05)";
+              }}
+            >
+              {/* Icône dans carré arrondi */}
               <div
-                key={col}
                 style={{
-                  borderRadius: 14,
-                  border: "1px solid rgba(15, 23, 42, 0.08)",
-                  overflow: "hidden",
-                  minHeight: 220,
+                  width: 46,
+                  height: 46,
+                  borderRadius: 13,
+                  background: kpi.bg,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: kpi.color,
+                  flexShrink: 0,
                 }}
               >
-                {/* En-tête colonne */}
+                {kpi.icon}
+              </div>
+
+              <div style={{ minWidth: 0 }}>
                 <div
                   style={{
-                    background: GRAD_INV,
-                    padding: "10px 12px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
+                    fontSize: 24,
+                    fontWeight: 800,
+                    color: "#0F172A",
+                    lineHeight: 1.1,
+                    letterSpacing: -0.5,
                   }}
                 >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: "white",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.06em",
-                    }}
-                  >
-                    {col}
-                  </div>
-                  <div
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: "50%",
-                      background:
-                        colDeals.length > 0
-                          ? "rgba(255,255,255,0.3)"
-                          : "rgba(255,255,255,0.15)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color:
-                        colDeals.length > 0 ? "white" : "rgba(255,255,255,0.6)",
-                    }}
-                  >
-                    {colDeals.length}
-                  </div>
+                  {kpi.value}
                 </div>
-
-                {/* Corps colonne */}
                 <div
                   style={{
-                    background: "white",
-                    padding: 10,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 8,
-                    minHeight: 170,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "#374151",
+                    marginTop: 4,
                   }}
                 >
-                  {colDeals.map((d) => {
-                    const isActive = activeDealId === d.id;
-
-                    return (
-                      <button
-                        key={d.id}
-                        type="button"
-                        onClick={() => handleSelectDeal(d.id)}
-                        style={{
-                          position: "relative",
-                          textAlign: "left",
-                          borderRadius: 12,
-                          background: isActive
-                            ? "rgba(33,150,243,0.07)"
-                            : "rgba(255,255,255,0.95)",
-                          border: isActive
-                            ? "1px solid rgba(33,150,243,0.25)"
-                            : "1px solid rgba(15, 23, 42, 0.08)",
-                          boxShadow: "0 2px 8px rgba(2,6,23,0.04)",
-                          padding: 10,
-                          cursor: "pointer",
-                        }}
-                      >
-                        <div
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => handleDeleteDeal(e, d.id, d.title)}
-                          style={{
-                            position: "absolute",
-                            top: 6,
-                            right: 6,
-                            width: 24,
-                            height: 24,
-                            borderRadius: 999,
-                            background: "rgba(239, 68, 68, 0.08)",
-                            border: "1px solid rgba(239, 68, 68, 0.15)",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            cursor: "pointer",
-                          }}
-                          title="Supprimer ce deal"
-                        >
-                          <X size={14} style={{ color: "#dc2626" }} />
-                        </div>
-
-                        <div
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveDeal(d.id);
-                            syncDealContext(d);
-                            setEditingDealId(d.id);
-                          }}
-                          style={{
-                            position: "absolute",
-                            top: 6,
-                            right: 36,
-                            width: 24,
-                            height: 24,
-                            borderRadius: 999,
-                            background: "rgba(15, 23, 42, 0.06)",
-                            border: "1px solid rgba(15, 23, 42, 0.10)",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            cursor: "pointer",
-                          }}
-                          title="Éditer ce deal"
-                        >
-                          <Pencil size={14} style={{ color: "#0f172a" }} />
-                        </div>
-
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            gap: 10,
-                            paddingRight: 64,
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontWeight: 700,
-                              color: "#0f172a",
-                              fontSize: 13,
-                            }}
-                          >
-                            {d.title}
-                          </div>
-
-                          {isActive && (
-                            <div
-                              style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 6,
-                                padding: "4px 8px",
-                                borderRadius: 999,
-                                fontSize: 11,
-                                fontWeight: 700,
-                                background: "rgba(33,150,243,0.10)",
-                                border: "1px solid rgba(33,150,243,0.22)",
-                                color: ACCENT_INV,
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              <CheckCircle2 size={14} />
-                              Actif
-                            </div>
-                          )}
-                        </div>
-
-                        <div
-                          style={{
-                            marginTop: 4,
-                            color: "#64748b",
-                            fontSize: 12,
-                          }}
-                        >
-                          {d.address ? d.address : (d.city ?? "—")}
-                        </div>
-
-                        <div
-                          style={{
-                            marginTop: 6,
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 6,
-                          }}
-                        >
-                          <span
-                            style={{
-                              fontSize: 10,
-                              padding: "2px 8px",
-                              borderRadius: 4,
-                              background: "rgba(33,150,243,0.10)",
-                              color: ACCENT_INV,
-                              fontWeight: 600,
-                            }}
-                          >
-                            {d.id}
-                          </span>
-                          <span style={{ fontSize: 10, color: "#94a3b8" }}>
-                            Maj {new Date(d.updatedAt).toLocaleDateString("fr-FR")}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-
-                  {colDeals.length === 0 && (
-                    <div
-                      style={{
-                        color: "#cbd5e1",
-                        fontSize: 18,
-                        padding: "16px 2px",
-                        textAlign: "center",
-                      }}
-                    >
-                      —
-                    </div>
-                  )}
+                  {kpi.label}
+                </div>
+                <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>
+                  {kpi.hint}
                 </div>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
-      </SectionCard>
 
-      {/* ── Drawer édition ── */}
+        {/* ══════════════════════════════════════════════
+            DEAL FLOW — carte blanche
+        ══════════════════════════════════════════════ */}
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: 20,
+            border: "1px solid #E5E7EB",
+            boxShadow: "0 2px 12px rgba(15,23,42,0.05)",
+            overflow: "hidden",
+          }}
+        >
+          {/* En-tête de la carte */}
+          <div
+            style={{
+              padding: "22px 28px",
+              borderBottom: "1px solid #F1F5F9",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <div>
+              <div
+                style={{ fontSize: 16, fontWeight: 700, color: "#0F172A" }}
+              >
+                Deal flow
+              </div>
+              <div
+                style={{ fontSize: 13, color: "#64748B", marginTop: 3 }}
+              >
+                Sélectionne un deal pour synchroniser toutes les pages.
+              </div>
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                color: "#94A3B8",
+                background: "#F8FAFC",
+                border: "1px solid #E2E8F0",
+                padding: "4px 10px",
+                borderRadius: 8,
+                fontWeight: 600,
+              }}
+            >
+              {deals.length} deal{deals.length !== 1 ? "s" : ""}
+            </div>
+          </div>
+
+          {/* Kanban */}
+          <div
+            style={{
+              padding: "20px 24px 24px",
+              overflowX: "auto",
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(${COLUMNS.length}, minmax(196px, 1fr))`,
+                gap: 12,
+                minWidth: COLUMNS.length * 208,
+              }}
+            >
+              {COLUMNS.map((col) => {
+                const colDeals = deals.filter((d) => d.status === col);
+                const statusStyle = STATUS_COLOR[col] ?? {
+                  bg: "#F8FAFC",
+                  text: "#64748B",
+                  dot: "#94A3B8",
+                };
+
+                return (
+                  <div
+                    key={col}
+                    style={{
+                      borderRadius: 16,
+                      border: "1px solid rgba(15,23,42,0.07)",
+                      overflow: "hidden",
+                      background: "#FAFBFC",
+                      minHeight: 200,
+                      display: "flex",
+                      flexDirection: "column",
+                    }}
+                  >
+                    {/* En-tête colonne */}
+                    <div
+                      style={{
+                        background: GRAD_INV,
+                        padding: "10px 14px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 8,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: "rgba(255,255,255,0.92)",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.08em",
+                        }}
+                      >
+                        {col}
+                      </div>
+                      <div
+                        style={{
+                          minWidth: 22,
+                          height: 22,
+                          borderRadius: 999,
+                          background:
+                            colDeals.length > 0
+                              ? "rgba(255,255,255,0.28)"
+                              : "rgba(255,255,255,0.12)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color:
+                            colDeals.length > 0
+                              ? "#fff"
+                              : "rgba(255,255,255,0.55)",
+                          paddingInline: 4,
+                        }}
+                      >
+                        {colDeals.length}
+                      </div>
+                    </div>
+
+                    {/* Corps colonne */}
+                    <div
+                      style={{
+                        flex: 1,
+                        padding: "10px 10px 12px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 8,
+                      }}
+                    >
+                      {colDeals.map((d) => {
+                        const isActive = activeDealId === d.id;
+
+                        return (
+                          <button
+                            key={d.id}
+                            type="button"
+                            onClick={() => handleSelectDeal(d.id)}
+                            style={{
+                              position: "relative",
+                              textAlign: "left",
+                              borderRadius: 12,
+                              background: isActive
+                                ? "rgba(33,150,243,0.07)"
+                                : "#fff",
+                              border: isActive
+                                ? "1.5px solid rgba(33,150,243,0.30)"
+                                : "1px solid rgba(15,23,42,0.08)",
+                              boxShadow: isActive
+                                ? "0 2px 12px rgba(33,150,243,0.12)"
+                                : "0 1px 6px rgba(2,6,23,0.04)",
+                              padding: "10px 10px 10px 12px",
+                              cursor: "pointer",
+                              transition:
+                                "border-color 0.12s, box-shadow 0.12s",
+                            }}
+                          >
+                            {/* Bouton supprimer */}
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) =>
+                                handleDeleteDeal(e, d.id, d.title)
+                              }
+                              style={{
+                                position: "absolute",
+                                top: 7,
+                                right: 7,
+                                width: 24,
+                                height: 24,
+                                borderRadius: 999,
+                                background: "rgba(239,68,68,0.07)",
+                                border: "1px solid rgba(239,68,68,0.15)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                cursor: "pointer",
+                              }}
+                              title="Supprimer ce deal"
+                            >
+                              <X size={13} style={{ color: "#DC2626" }} />
+                            </div>
+
+                            {/* Bouton éditer */}
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveDeal(d.id);
+                                syncDealContext(d);
+                                setEditingDealId(d.id);
+                              }}
+                              style={{
+                                position: "absolute",
+                                top: 7,
+                                right: 37,
+                                width: 24,
+                                height: 24,
+                                borderRadius: 999,
+                                background: "rgba(15,23,42,0.05)",
+                                border: "1px solid rgba(15,23,42,0.09)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                cursor: "pointer",
+                              }}
+                              title="Éditer ce deal"
+                            >
+                              <Pencil size={13} style={{ color: "#475569" }} />
+                            </div>
+
+                            {/* Titre + badge Actif */}
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "flex-start",
+                                justifyContent: "space-between",
+                                gap: 8,
+                                paddingRight: 60,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontWeight: 700,
+                                  color: "#0F172A",
+                                  fontSize: 13,
+                                  lineHeight: 1.3,
+                                }}
+                              >
+                                {d.title}
+                              </div>
+                            </div>
+
+                            {/* Actif badge */}
+                            {isActive && (
+                              <div
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  marginTop: 6,
+                                  padding: "3px 8px",
+                                  borderRadius: 999,
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  background: "rgba(33,150,243,0.10)",
+                                  border: "1px solid rgba(33,150,243,0.22)",
+                                  color: ACCENT_INV,
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                <CheckCircle2 size={12} />
+                                Actif
+                              </div>
+                            )}
+
+                            {/* Adresse / ville */}
+                            <div
+                              style={{
+                                marginTop: isActive ? 4 : 6,
+                                color: "#64748B",
+                                fontSize: 12,
+                              }}
+                            >
+                              {d.address ? d.address : (d.city ?? "—")}
+                            </div>
+
+                            {/* Footer : ID + date */}
+                            <div
+                              style={{
+                                marginTop: 8,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  padding: "2px 7px",
+                                  borderRadius: 5,
+                                  background: statusStyle.bg,
+                                  color: statusStyle.text,
+                                  fontWeight: 600,
+                                  border: `1px solid ${statusStyle.dot}22`,
+                                }}
+                              >
+                                {d.id}
+                              </span>
+                              <span
+                                style={{ fontSize: 10, color: "#94A3B8" }}
+                              >
+                                {new Date(d.updatedAt).toLocaleDateString(
+                                  "fr-FR"
+                                )}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+
+                      {colDeals.length === 0 && (
+                        <div
+                          style={{
+                            flex: 1,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#D1D5DB",
+                            fontSize: 22,
+                            padding: "24px 0",
+                          }}
+                        >
+                          —
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* ══════════════════════════════════════════════
+          DRAWER ÉDITION
+      ══════════════════════════════════════════════ */}
       <Drawer
         open={Boolean(draftDeal)}
         title={draftDeal ? `Éditer — ${draftDeal.id}` : "Éditer"}
@@ -968,7 +1315,7 @@ export default function MarchandPipeline() {
             Aucun deal sélectionné.
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             <Field
               label="Titre"
               value={draftDeal.title}
@@ -986,7 +1333,11 @@ export default function MarchandPipeline() {
             />
 
             <div
-              style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 12,
+              }}
             >
               <Field
                 label="Code postal"
@@ -1007,7 +1358,11 @@ export default function MarchandPipeline() {
             </div>
 
             <div
-              style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 12,
+              }}
             >
               <Field
                 label="Prix d'achat (€)"
@@ -1063,16 +1418,17 @@ export default function MarchandPipeline() {
               placeholder="Remarques, contact, points à vérifier..."
             />
 
+            {/* Info tip */}
             <div
               style={{
-                marginTop: 4,
-                padding: "12px 14px",
-                borderRadius: 10,
-                background: "rgba(33,150,243,0.06)",
-                border: "1px solid rgba(33,150,243,0.12)",
+                marginTop: 2,
+                padding: "14px 16px",
+                borderRadius: 12,
+                background: "rgba(33,150,243,0.05)",
+                border: "1px solid rgba(33,150,243,0.13)",
                 fontSize: 12,
                 color: "#64748b",
-                lineHeight: 1.6,
+                lineHeight: 1.65,
               }}
             >
               💡 Ces champs alimentent automatiquement SmartScore, Rentabilité et les autres pages Investisseur.

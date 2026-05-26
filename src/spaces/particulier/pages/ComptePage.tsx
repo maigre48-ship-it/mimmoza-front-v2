@@ -1,16 +1,35 @@
+// src/spaces/particulier/pages/ComptePage.tsx
+// ─── Espace personnel ─────────────────────────────────────────────────────────
+// • Infos utilisateur (nom, email, initiales)
+// • Plan actif + jetons restants
+// • Bloc admin conditionnel (emails ADMIN_EMAILS) → /admin
+// • Message "Aucune formule active" si plan free
+// • Bouton "Voir les abonnements" → /abonnement
+// • Si non connecté → invite à se connecter
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import {
   ArrowRight,
-  CheckCircle2,
+  BadgeCheck,
+  CircleAlert,
+  Coins,
   CreditCard,
+  LayoutDashboard,
+  LogIn,
   LogOut,
+  Mail,
   ShieldCheck,
   Sparkles,
-  Ticket,
-  UserCircle2,
+  User,
+  Zap,
 } from "lucide-react";
-import { VeilleSummaryCard } from "@/spaces/investisseur/components/veille/VeilleSummaryCard";
+
+// ── Emails administrateurs ────────────────────────────────────────────────────
+const ADMIN_EMAILS: string[] = ["maigre48@gmail.com"];
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type StoredUser = {
   email?: string;
@@ -20,313 +39,319 @@ type StoredUser = {
   tokens?: number;
 };
 
-function getPlanLabel(plan?: string): string {
-  switch (plan) {
-    case "pro":
-      return "Pro";
-    case "starter":
-      return "Starter";
-    default:
-      return "Gratuit";
-  }
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function getPlanPrice(plan?: string): string {
-  switch (plan) {
-    case "pro":
-      return "99€ / mois";
-    case "starter":
-      return "29€ / mois";
-    default:
-      return "0€ / mois";
-  }
-}
-
-function getInitials(fullName?: string, email?: string): string {
-  const name = (fullName ?? "").trim();
-
-  if (name) {
-    const parts = name.split(/\s+/).filter(Boolean);
-    const initials = parts
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() ?? "")
-      .join("");
-
+function buildInitials(fullName?: string, email?: string): string {
+  const trimmed = (fullName ?? "").trim();
+  if (trimmed) {
+    const parts = trimmed.split(/\s+/).filter(Boolean);
+    const first = parts[0]?.[0] ?? "";
+    const second = parts[1]?.[0] ?? "";
+    const initials = (first + second).toUpperCase();
     if (initials) return initials;
   }
-
-  return (email ?? "AM").slice(0, 2).toUpperCase();
+  return (email ?? "M").trim().slice(0, 2).toUpperCase();
 }
+
+function readUser(): StoredUser | null {
+  try {
+    const raw = localStorage.getItem("mimmoza.user");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredUser;
+    return parsed?.logged ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+const PLAN_LABELS: Record<string, string> = {
+  free: "Compte gratuit",
+  "tokens-10": "Pack 10 analyses",
+  "tokens-20": "Pack 20 analyses",
+  starter: "Abonnement Starter",
+  pro: "Abonnement Pro",
+  "promoteur-starter": "Promoteur Starter",
+  "promoteur-pro": "Promoteur Pro",
+  "promoteur-enterprise": "Promoteur Entreprise",
+  "rehabilitation-starter": "Réhabilitation Starter",
+  "rehabilitation-pro": "Réhabilitation Pro",
+  "rehabilitation-enterprise": "Réhabilitation Entreprise",
+  "apporteur-free": "Apporteur – Accès gratuit",
+  "apporteur-commission": "Apporteur – Commission",
+  "apporteur-partenariat": "Apporteur – Partenariat",
+  "recharge-25": "Recharge 25 analyses",
+  "recharge-50": "Recharge 50 analyses",
+};
+
+function getPlanLabel(plan?: string): string {
+  if (!plan || plan === "free") return "Compte gratuit";
+  return PLAN_LABELS[plan] ?? plan;
+}
+
+function isPlanActive(plan?: string): boolean {
+  return Boolean(plan) && plan !== "free";
+}
+
+// ── Composant principal ───────────────────────────────────────────────────────
 
 export default function ComptePage() {
   const navigate = useNavigate();
 
-  const user = useMemo<StoredUser>(() => {
-    try {
-      const raw = localStorage.getItem("mimmoza.user");
-      return raw ? (JSON.parse(raw) as StoredUser) : {};
-    } catch {
-      return {};
-    }
-  }, []);
+  const user = useMemo(() => readUser(), []);
 
-  const isLogged = Boolean(user.logged && user.email);
+  // ── Non connecté ─────────────────────────────────────────────────────────
+  if (!user) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 px-6 py-16 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100">
+          <User className="h-7 w-7 text-slate-400" />
+        </div>
 
-  const logout = () => {
-    localStorage.removeItem("mimmoza.user");
-    navigate("/connexion");
-  };
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">
+            Vous n'êtes pas connecté
+          </h1>
+          <p className="mt-2 text-sm text-slate-500">
+            Connectez-vous pour accéder à votre espace personnel.
+          </p>
+        </div>
 
-  if (!isLogged) {
-    navigate("/connexion");
-    return null;
+        <Link
+          to="/connexion"
+          className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-sky-500 px-6 py-3 text-sm font-medium text-white shadow-md shadow-sky-200/60 transition-all hover:from-indigo-500 hover:to-sky-400"
+        >
+          <LogIn className="h-4 w-4" />
+          Se connecter
+        </Link>
+      </div>
+    );
   }
 
-  const initials = getInitials(user.fullName, user.email);
+  // ── Données ───────────────────────────────────────────────────────────────
+  const initials = buildInitials(user.fullName, user.email);
+  const planActive = isPlanActive(user.plan);
   const planLabel = getPlanLabel(user.plan);
-  const planPrice = getPlanPrice(user.plan);
-  const tokens = typeof user.tokens === "number" ? user.tokens : 0;
+  const tokens = user.tokens ?? 0;
+  const isAdmin = ADMIN_EMAILS.includes((user.email ?? "").trim().toLowerCase());
+
+  const handleLogout = () => {
+    localStorage.removeItem("mimmoza.user");
+    localStorage.removeItem("mimmoza-auth");
+    navigate("/", { replace: true });
+  };
 
   return (
-    <div className="relative overflow-hidden rounded-[32px] border border-slate-200/80 bg-white shadow-sm">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.12),_transparent_35%),radial-gradient(circle_at_top_right,_rgba(6,182,212,0.10),_transparent_28%),linear-gradient(180deg,_#f8fbff_0%,_#ffffff_38%,_#f8fafc_100%)]" />
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.06)_1px,transparent_1px)] bg-[size:28px_28px] [mask-image:linear-gradient(to_bottom,black,transparent_90%)]" />
+    <div className="mx-auto max-w-2xl space-y-4 py-4">
 
-      <div className="relative mx-auto grid min-h-[calc(100vh-10rem)] max-w-6xl gap-8 px-6 py-10 lg:grid-cols-[1.08fr_0.92fr] lg:px-10 lg:py-14">
-        <div className="flex flex-col justify-center">
-          <div className="mb-5 inline-flex w-fit items-center gap-2 rounded-full border border-sky-200 bg-white/85 px-4 py-2 text-sm font-medium text-sky-700 shadow-sm">
-            <Sparkles className="h-4 w-4" />
-            Mon espace Mimmoza
-          </div>
-
-          <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
-            Gérez votre{" "}
-            <span className="bg-gradient-to-r from-indigo-600 via-sky-500 to-cyan-500 bg-clip-text text-transparent">
-              compte, abonnement et jetons
-            </span>
-          </h1>
-
-          <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">
-            Retrouvez ici vos informations personnelles, votre formule actuelle
-            et vos accès à la gestion d’abonnement ainsi qu’aux jetons Mimmoza.
-          </p>
-
-          <div className="mt-8 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                Compte actif
-              </div>
-              <div className="mt-1 text-sm leading-6 text-slate-600">
-                Votre accès utilisateur est bien enregistré dans cette V1 locale.
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <CreditCard className="h-4 w-4 text-sky-500" />
-                Facturation prête
-              </div>
-              <div className="mt-1 text-sm leading-6 text-slate-600">
-                La structure est prête pour brancher l’abonnement, les jetons et
-                le portail client.
-              </div>
-            </div>
-          </div>
+      {/* ── En-tête ─────────────────────────────────────────────────────── */}
+      <div className="mb-6">
+        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 shadow-sm">
+          <Sparkles className="h-3.5 w-3.5 text-sky-500" />
+          Espace personnel
         </div>
+        <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
+          Mon compte
+        </h1>
+        <p className="mt-1.5 text-sm text-slate-500">
+          Gérez votre profil, votre formule et vos jetons.
+        </p>
+      </div>
 
-        <div className="flex items-start">
-          <div className="w-full space-y-5">
-            <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-[0_10px_40px_rgba(15,23,42,0.06)] backdrop-blur sm:p-8">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-600 via-sky-500 to-cyan-500 text-lg font-semibold text-white shadow-lg shadow-sky-100">
-                    {initials}
-                  </div>
-
-                  <div>
-                    <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                      <UserCircle2 className="h-3.5 w-3.5" />
-                      Compte
-                    </div>
-
-                    <h2 className="mt-3 text-2xl font-semibold text-slate-950">
-                      {user.fullName?.trim() || "Utilisateur Mimmoza"}
-                    </h2>
-
-                    <p className="mt-1 break-all text-sm text-slate-500">
-                      {user.email}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="hidden sm:flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
-                  <CheckCircle2 className="mr-1.5 h-4 w-4" />
-                  Actif
-                </div>
-              </div>
-
-              <div className="mt-8 grid gap-4 sm:grid-cols-3">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-sm font-medium text-slate-500">
-                    Adresse email
-                  </div>
-                  <div className="mt-1 break-all text-base font-semibold text-slate-950">
-                    {user.email}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-sm font-medium text-slate-500">
-                    Formule actuelle
-                  </div>
-                  <div className="mt-1 text-base font-semibold text-slate-950">
-                    {planLabel}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">{planPrice}</div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
-                    <Ticket className="h-4 w-4 text-amber-500" />
-                    Jetons disponibles
-                  </div>
-                  <div className="mt-1 text-base font-semibold text-slate-950">
-                    {tokens}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    Solde actuel de votre compte
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-6 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={() => navigate("/abonnement")}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-5 py-3.5 text-sm font-medium text-white transition-all hover:bg-slate-800"
-                >
-                  <CreditCard className="h-4 w-4" />
-                  Gérer mon abonnement
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => navigate("/jetons")}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900"
-                >
-                  <Ticket className="h-4 w-4" />
-                  Gérer mes jetons
-                </button>
-
-                <button
-                  type="button"
-                  onClick={logout}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 hover:text-slate-900"
-                >
-                  <LogOut className="h-4 w-4" />
-                  Déconnexion
-                </button>
-              </div>
-            </div>
-
-            <VeilleSummaryCard />
-
-            <div className="grid gap-5 md:grid-cols-2">
-              <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
-                <div className="flex h-full flex-col">
-                  <h3 className="text-lg font-semibold text-slate-950">
-                    Abonnement Mimmoza
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    Consultez les offres disponibles et gérez votre formule
-                    actuelle.
-                  </p>
-
-                  <div className="mt-5">
-                    <Link
-                      to="/abonnement"
-                      className="inline-flex items-center gap-2 text-sm font-medium text-sky-700 transition hover:text-sky-800"
-                    >
-                      Voir les offres
-                      <ArrowRight className="h-4 w-4" />
-                    </Link>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
-                <div className="flex h-full flex-col">
-                  <h3 className="text-lg font-semibold text-slate-950">
-                    Jetons Mimmoza
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    Achetez ou consultez vos jetons pour lancer vos analyses et
-                    exports.
-                  </p>
-
-                  <div className="mt-5">
-                    <Link
-                      to="/jetons"
-                      className="inline-flex items-center gap-2 text-sm font-medium text-sky-700 transition hover:text-sky-800"
-                    >
-                      Ouvrir les jetons
-                      <ArrowRight className="h-4 w-4" />
-                    </Link>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
-                <div className="flex h-full flex-col">
-                  <h3 className="text-lg font-semibold text-slate-950">
-                    Paramètres de veille
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    Gérez les zones et critères que Mimmoza doit surveiller pour
-                    vous signaler les nouveaux biens, baisses de prix et
-                    opportunités.
-                  </p>
-
-                  <div className="mt-5">
-                    <button
-                      type="button"
-                      onClick={() => navigate("/parametres/veille")}
-                      className="inline-flex items-center gap-2 text-sm font-medium text-sky-700 transition hover:text-sky-800"
-                    >
-                      Configurer ma veille
-                      <ArrowRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
-                <div className="flex h-full flex-col">
-                  <h3 className="text-lg font-semibold text-slate-950">
-                    Retour à la plateforme
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    Reprenez votre navigation dans Mimmoza et accédez directement
-                    à l’espace investisseur.
-                  </p>
-
-                  <div className="mt-5">
-                    <button
-                      type="button"
-                      onClick={() => navigate("/marchand-de-bien")}
-                      className="inline-flex items-center gap-2 text-sm font-medium text-sky-700 transition hover:text-sky-800"
-                    >
-                      Ouvrir la plateforme
-                      <ArrowRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
+      {/* ── Carte profil ─────────────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center gap-4 px-6 py-5">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-sky-100 text-lg font-bold text-indigo-700">
+            {initials}
           </div>
+
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-base font-semibold text-slate-900">
+              {user.fullName?.trim() || "Utilisateur Mimmoza"}
+            </p>
+            <p className="mt-0.5 flex items-center gap-1.5 truncate text-sm text-slate-500">
+              <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              {user.email ?? "—"}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            title="Se déconnecter"
+            className="shrink-0 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Déconnexion</span>
+          </button>
         </div>
       </div>
+
+      {/* ── Bloc administration (réservé aux admins) ──────────────────────── */}
+      {isAdmin && (
+        <div className="overflow-hidden rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-indigo-50 shadow-sm">
+          <div className="flex items-center justify-between gap-4 px-6 py-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm">
+                <ShieldCheck className="h-5 w-5 text-violet-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">
+                  Espace administration
+                </p>
+                <p className="mt-0.5 text-xs text-violet-600 font-medium">
+                  Accès administrateur actif
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => navigate("/admin")}
+              className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-medium text-white shadow-sm transition hover:bg-violet-500"
+            >
+              <LayoutDashboard className="h-3.5 w-3.5" />
+              Dashboard admin
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Formule active ────────────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 px-6 py-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <CreditCard className="h-4 w-4 text-slate-400" />
+            Formule
+          </div>
+        </div>
+
+        <div className="px-6 py-5">
+          {planActive ? (
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50">
+                  <BadgeCheck className="h-5 w-5 text-emerald-500" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {planLabel}
+                  </p>
+                  <p className="mt-0.5 text-xs text-emerald-600">
+                    Formule active
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate("/abonnement")}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-800"
+              >
+                Changer
+                <ArrowRight className="h-3 w-3" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50">
+                  <CircleAlert className="h-5 w-5 text-amber-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">
+                    Aucune formule active
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Accédez aux espaces Mimmoza en choisissant une offre.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => navigate("/abonnement")}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-sky-500 px-4 py-2.5 text-xs font-medium text-white shadow-sm shadow-sky-200/60 transition hover:from-indigo-500 hover:to-sky-400"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Voir les abonnements
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Jetons ───────────────────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 px-6 py-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <Coins className="h-4 w-4 text-slate-400" />
+            Jetons d'analyse
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-4 px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div
+              className={[
+                "flex h-10 w-10 items-center justify-center rounded-xl",
+                tokens > 0 ? "bg-sky-50" : "bg-slate-100",
+              ].join(" ")}
+            >
+              <Zap
+                className={[
+                  "h-5 w-5",
+                  tokens > 0 ? "text-sky-500" : "text-slate-400",
+                ].join(" ")}
+              />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-slate-900 leading-none">
+                {tokens}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {tokens === 1 ? "jeton disponible" : "jetons disponibles"}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => navigate("/abonnement")}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-800"
+          >
+            Recharger
+            <ArrowRight className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+
+      {/* ── CTA abonnement (si pas de plan actif) ────────────────────────── */}
+      {!planActive && (
+        <div className="overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-sky-50 px-6 py-5 shadow-sm">
+          <div className="flex items-start gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm">
+              <Sparkles className="h-5 w-5 text-indigo-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-900">
+                Débloquez tout Mimmoza
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Investisseur, Promoteur, Réhabilitation — choisissez la formule
+                adaptée à votre usage.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate("/abonnement")}
+            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-sky-500 px-4 py-3 text-sm font-medium text-white shadow-sm shadow-sky-200/50 transition hover:from-indigo-500 hover:to-sky-400"
+          >
+            Voir les abonnements
+            <ArrowRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 ﻿// src/spaces/investisseur/pages/execution/SimulationTravauxPage.tsx
-// v6: isEmpty basé sur surface/pièces (pas total), lots désactivables par l'utilisateur.
+// v7: theme + breadcrumb injectables (même système que RenduTravauxPage)
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import type {
@@ -30,7 +30,28 @@ import {
   patchRentabiliteForDeal,
 } from "../../../marchand/shared/marchandSnapshot.store";
 
-const GRAD_INV = "linear-gradient(90deg, #2196f3 0%, #21cbf3 100%)";
+/* ================================================================== */
+/*  Theme                                                              */
+/* ================================================================== */
+
+export type SimuTheme = {
+  gradient: string;
+  accent: string;
+  accentLight: string;
+  accentDark: string;
+};
+
+type Props = {
+  theme?: SimuTheme;
+  breadcrumb?: string;
+};
+
+const DEFAULT_THEME: SimuTheme = {
+  gradient: "linear-gradient(90deg, #2196f3 0%, #21cbf3 100%)",
+  accent: "#1a72c4",
+  accentLight: "#dbeafe",
+  accentDark: "#1a72c4",
+};
 
 /* ================================================================== */
 /*  Pricing index                                                      */
@@ -282,7 +303,8 @@ type ApplyStatus = "idle" | "success" | "error";
 const ApplyToAnalyseButton: React.FC<{
   totalWithBuffer: number; sourceMode: "simple" | "expert";
   simulation: TravauxSimulationV1; computed: ComputedTravaux;
-}> = ({ totalWithBuffer, sourceMode, simulation, computed }) => {
+  accent: string; accentLight: string; accentDark: string;
+}> = ({ totalWithBuffer, sourceMode, simulation, computed, accent, accentLight, accentDark }) => {
   const [status, setStatus] = useState<ApplyStatus>("idle");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timerRef.current !== null) clearTimeout(timerRef.current); }, []);
@@ -295,20 +317,28 @@ const ApplyToAnalyseButton: React.FC<{
   }, [totalWithBuffer, sourceMode, simulation, computed]);
 
   if (status === "success") return (
-    <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium">
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 10, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#15803d", fontSize: 13, fontWeight: 700 }}>
       <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
       Ajouté à l'analyse
     </div>
   );
   if (status === "error") return (
-    <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm font-medium">
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 10, background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", fontSize: 13, fontWeight: 700 }}>
       <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 3a9 9 0 100 18 9 9 0 000-18z" /></svg>
       Aucun deal actif
     </div>
   );
   return (
-    <button type="button" onClick={handleClick}
-      className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-violet-600 hover:bg-violet-700 active:bg-violet-800 text-white text-sm font-medium shadow-sm transition-colors">
+    <button
+      type="button"
+      onClick={handleClick}
+      style={{
+        display: "flex", alignItems: "center", gap: 8,
+        padding: "10px 18px", borderRadius: 10, border: "none",
+        background: accent, color: "#fff", fontSize: 13, fontWeight: 700,
+        cursor: "pointer", boxShadow: `0 4px 16px ${accent}55`, transition: "all .15s",
+      }}
+    >
       <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
       Utiliser ce total dans mon analyse
     </button>
@@ -392,15 +422,15 @@ const PieceCard: React.FC<{
       </div>
       {isCuisine && (
         <div className="border-t border-gray-100 pt-2 space-y-1.5">
-          <ToggleRow label="Pack cuisine"  checked={p.cuisinePack}  onChange={(v) => update({ cuisinePack: v })} />
-          <ToggleRow label="Pose cuisine"  checked={p.cuisinePose}  onChange={(v) => update({ cuisinePose: v })} />
+          <ToggleRow label="Pack cuisine"   checked={p.cuisinePack}   onChange={(v) => update({ cuisinePack: v })} />
+          <ToggleRow label="Pose cuisine"   checked={p.cuisinePose}   onChange={(v) => update({ cuisinePose: v })} />
           <ToggleRow label="Dépose cuisine" checked={p.cuisineDepose} onChange={(v) => update({ cuisineDepose: v })} hint="forfait" />
         </div>
       )}
       {isSDB && (
         <div className="border-t border-gray-100 pt-2 space-y-1.5">
-          <ToggleRow label="Pack SDB"       checked={p.sdbPack}   onChange={(v) => update({ sdbPack: v })} />
-          <ToggleRow label="Étanchéité SPEC" checked={p.sdbSpec}  onChange={(v) => update({ sdbSpec: v })} />
+          <ToggleRow label="Pack SDB"        checked={p.sdbPack}   onChange={(v) => update({ sdbPack: v })} />
+          <ToggleRow label="Étanchéité SPEC" checked={p.sdbSpec}   onChange={(v) => update({ sdbSpec: v })} />
           <ToggleRow label="Dépose faïence"  checked={p.sdbDepose} onChange={(v) => update({ sdbDepose: v })} hint="forfait" />
         </div>
       )}
@@ -524,7 +554,7 @@ const PieceResultList: React.FC<{ pieces: PieceTravaux[]; range: TravauxRange }>
 };
 
 /* ================================================================== */
-/*  LotsBreakdown — avec lots désactivables                            */
+/*  LotsBreakdown                                                      */
 /* ================================================================== */
 
 const LotsBreakdown: React.FC<{
@@ -532,27 +562,20 @@ const LotsBreakdown: React.FC<{
   totalWithBuffer: number; costPerM2: number | null; complexityCoef: number;
   simulation: TravauxSimulationV1; computed: ComputedTravaux; sourceMode: "simple" | "expert";
   disabledLots: Set<string>; onToggleLot: (code: string) => void;
-}> = ({ lots, total, bufferPct, bufferAmount, totalWithBuffer, costPerM2, complexityCoef, simulation, computed, sourceMode, disabledLots, onToggleLot }) => {
+  accent: string; accentLight: string; accentDark: string;
+}> = ({ lots, total, bufferPct, totalWithBuffer, costPerM2, complexityCoef, simulation, computed, sourceMode, disabledLots, onToggleLot, accent, accentLight, accentDark }) => {
   const [expandedLot, setExpandedLot] = useState<string | null>(null);
-
   const activeLots = lots.filter((l) => l.amount > 0);
 
-  // Total recalculé sans les lots désactivés
-  const filteredTotal = activeLots
-    .filter((l) => !disabledLots.has(l.code))
-    .reduce((sum, l) => sum + l.amount, 0);
+  const filteredTotal = activeLots.filter((l) => !disabledLots.has(l.code)).reduce((sum, l) => sum + l.amount, 0);
   const filteredBuffer = Math.round(filteredTotal * bufferPct);
   const filteredTotalWithBuffer = filteredTotal + filteredBuffer;
-  const filteredCostPerM2 = costPerM2 !== null && total > 0
-    ? Math.round((filteredTotal / total) * (costPerM2 ?? 0))
-    : null;
-
+  const filteredCostPerM2 = costPerM2 !== null && total > 0 ? Math.round((filteredTotal / total) * (costPerM2 ?? 0)) : null;
   const disabledCount = disabledLots.size;
 
   return (
     <div className="space-y-4">
-
-      {/* Summary cards — basés sur les lots actifs uniquement */}
+      {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
           <p className="text-xs text-gray-500 uppercase tracking-wide">Total HT</p>
@@ -563,7 +586,7 @@ const LotsBreakdown: React.FC<{
           <p className="text-xs text-gray-500 uppercase tracking-wide">Buffer ({(bufferPct * 100).toFixed(0)}%)</p>
           <p className="text-xl font-bold text-amber-600 mt-1">{fmtEuro(filteredBuffer)}</p>
         </div>
-        <div className="bg-gradient-to-br from-violet-600 to-indigo-700 rounded-xl p-4 text-center text-white">
+        <div className="rounded-xl p-4 text-center text-white" style={{ background: `linear-gradient(135deg, ${accent}, ${accentDark})` }}>
           <p className="text-xs uppercase tracking-wide opacity-80">Total + Buffer</p>
           <p className="text-xl font-bold mt-1">{fmtEuro(filteredTotalWithBuffer)}</p>
         </div>
@@ -573,12 +596,12 @@ const LotsBreakdown: React.FC<{
         </div>
       </div>
 
-      {/* Boutons action */}
+      {/* Actions */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           {disabledCount > 0 && (
-            <button type="button" onClick={() => { /* reset handled in parent */ onToggleLot("__reset__"); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-violet-600 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition-colors">
+            <button type="button" onClick={() => onToggleLot("__reset__")}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, border: `1px solid ${accent}`, background: accentLight, color: accentDark, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/>
               </svg>
@@ -586,31 +609,35 @@ const LotsBreakdown: React.FC<{
             </button>
           )}
         </div>
-        <ApplyToAnalyseButton totalWithBuffer={filteredTotalWithBuffer} sourceMode={sourceMode} simulation={simulation} computed={computed} />
+        <ApplyToAnalyseButton
+          totalWithBuffer={filteredTotalWithBuffer}
+          sourceMode={sourceMode}
+          simulation={simulation}
+          computed={computed}
+          accent={accent}
+          accentLight={accentLight}
+          accentDark={accentDark}
+        />
       </div>
 
       {complexityCoef > 1 && (
         <p className="text-xs text-gray-500 text-right">Coef. complexité appliqué : ×{complexityCoef.toFixed(2)}</p>
       )}
 
-      {/* Liste des lots */}
+      {/* Liste lots */}
       <div className="space-y-2">
         {activeLots.map((lot) => {
           const isDisabled = disabledLots.has(lot.code);
           const pct = filteredTotal > 0 && !isDisabled ? (lot.amount / filteredTotal) * 100 : 0;
           const isOpen = expandedLot === lot.code && !isDisabled;
-
           return (
             <div key={lot.code}
               className={`rounded-xl border overflow-hidden transition-opacity ${isDisabled ? "opacity-40 border-gray-200 bg-gray-50" : "border-gray-200 bg-white"}`}>
               <div className="flex items-center gap-0">
-                {/* Bouton supprimer / réactiver */}
                 <button type="button" onClick={() => onToggleLot(lot.code)}
                   title={isDisabled ? "Réactiver ce lot" : "Masquer ce lot"}
                   className={`flex-shrink-0 w-9 h-full flex items-center justify-center border-r transition-colors ${
-                    isDisabled
-                      ? "border-gray-200 text-violet-400 hover:bg-violet-50"
-                      : "border-gray-100 text-gray-300 hover:text-red-400 hover:bg-red-50"
+                    isDisabled ? "border-gray-200 text-violet-400 hover:bg-violet-50" : "border-gray-100 text-gray-300 hover:text-red-400 hover:bg-red-50"
                   }`}
                   style={{ minHeight: 48 }}>
                   {isDisabled ? (
@@ -623,34 +650,26 @@ const LotsBreakdown: React.FC<{
                     </svg>
                   )}
                 </button>
-
-                {/* Contenu du lot */}
                 <button type="button"
                   onClick={() => !isDisabled && setExpandedLot((prev) => (prev === lot.code ? null : lot.code))}
                   disabled={isDisabled}
                   className="flex-1 flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors text-left disabled:cursor-default disabled:hover:bg-transparent">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="h-2 rounded-full bg-violet-500 flex-shrink-0 transition-all"
-                      style={{ width: isDisabled ? "4px" : `${Math.max(4, pct * 0.8)}px`, opacity: isDisabled ? 0.3 : 1 }} />
-                    <span className={`text-sm font-medium truncate ${isDisabled ? "line-through text-gray-400" : "text-gray-800"}`}>
-                      {lot.label}
-                    </span>
+                    <div className="h-2 rounded-full flex-shrink-0 transition-all"
+                      style={{ width: isDisabled ? "4px" : `${Math.max(4, pct * 0.8)}px`, opacity: isDisabled ? 0.3 : 1, background: accent }} />
+                    <span className={`text-sm font-medium truncate ${isDisabled ? "line-through text-gray-400" : "text-gray-800"}`}>{lot.label}</span>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
                     {!isDisabled && <span className="text-xs text-gray-400">{pct.toFixed(1)}%</span>}
-                    <span className={`text-sm font-semibold ${isDisabled ? "text-gray-400" : "text-gray-900"}`}>
-                      {fmtEuro(lot.amount)}
-                    </span>
+                    <span className={`text-sm font-semibold ${isDisabled ? "text-gray-400" : "text-gray-900"}`}>{fmtEuro(lot.amount)}</span>
                     {!isDisabled && (
-                      <svg className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
-                        fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
                     )}
                   </div>
                 </button>
               </div>
-
               {isOpen && lot.lines.length > 0 && (
                 <div className="border-t border-gray-100 px-4 py-2 bg-gray-50/50">
                   <table className="w-full text-xs">
@@ -710,7 +729,14 @@ const RecapEmptyState: React.FC<{ mode: "simple" | "expert" }> = ({ mode }) => (
 
 const PERSIST_DEBOUNCE_MS = 600;
 
-const SimulationTravauxPage: React.FC = () => {
+const SimulationTravauxPage: React.FC<Props> = ({ theme, breadcrumb }) => {
+  const t = theme ?? DEFAULT_THEME;
+  const GRAD = t.gradient;
+  const ACCENT = t.accent;
+  const ACCENT_LIGHT = t.accentLight;
+  const ACCENT_DARK = t.accentDark;
+  const resolvedBreadcrumb = breadcrumb ?? "Investisseur › Exécution";
+
   const [mode, setMode] = useState<"simple" | "expert">("simple");
   const [range, setRange] = useState<TravauxRange>("standard");
   const [renovationLevel, setRenovationLevel] = useState<RenovationLevel>("standard");
@@ -718,33 +744,21 @@ const SimulationTravauxPage: React.FC = () => {
   const [surface, setSurface] = useState(0);
   const [options, setOptions] = useState<TravauxOptionsSimple>(DEFAULT_OPTIONS);
   const [piecesUI, setPiecesUI] = useState<PieceUI[]>([]);
-
-  // ── Lots désactivés par l'utilisateur ─────────────────────────────
   const [disabledLots, setDisabledLots] = useState<Set<string>>(new Set());
 
   const handleToggleLot = useCallback((code: string) => {
-    if (code === "__reset__") {
-      setDisabledLots(new Set());
-      return;
-    }
+    if (code === "__reset__") { setDisabledLots(new Set()); return; }
     setDisabledLots((prev) => {
       const next = new Set(prev);
-      if (next.has(code)) next.delete(code);
-      else next.add(code);
+      if (next.has(code)) next.delete(code); else next.add(code);
       return next;
     });
   }, []);
 
-  // Reset global
   const handleReset = useCallback(() => {
-    setMode("simple");
-    setRange("standard");
-    setRenovationLevel("standard");
-    setComplexity(1);
-    setSurface(0);
-    setOptions(DEFAULT_OPTIONS);
-    setPiecesUI([]);
-    setDisabledLots(new Set());
+    setMode("simple"); setRange("standard"); setRenovationLevel("standard");
+    setComplexity(1); setSurface(0); setOptions(DEFAULT_OPTIONS);
+    setPiecesUI([]); setDisabledLots(new Set());
   }, []);
 
   const simulation = useMemo((): TravauxSimulationV1 => {
@@ -770,31 +784,66 @@ const SimulationTravauxPage: React.FC = () => {
     setOptions((prev) => ({ ...prev, [key]: value }));
 
   const piecesTravaux = useMemo(() => piecesUI.map(pieceUIToTravaux), [piecesUI]);
-
-  // ── Empty state : basé sur les inputs, pas sur le total calculé ───
-  // Le calculateur peut générer des forfaits même avec surface=0.
-  // On masque le récap tant que l'utilisateur n'a pas saisi de données réelles.
   const isEmpty = mode === "simple" ? surface === 0 : piecesUI.length === 0;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div style={{ minHeight: "100vh", background: "#f1f5f9" }}>
 
-      {/* Bannière */}
-      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "24px 24px 0" }}>
-        <div style={{
-          background: GRAD_INV, borderRadius: 14, padding: "20px 24px", marginBottom: 20,
-          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16,
-        }}>
-          <div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>Investisseur › Exécution</div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>Simulation Travaux</div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>Estimez le budget travaux de votre opération</div>
+      {/* ── Bannière thémée (même layout que RenduTravauxPage) ── */}
+      <div
+        style={{
+          background: GRAD,
+          borderRadius: 16,
+          padding: "24px 28px",
+          marginBottom: 24,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: 16,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>
+            {resolvedBreadcrumb}
           </div>
-          <button type="button" onClick={handleReset}
-            style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 18px", borderRadius: 10, border: "none", cursor: "pointer", background: "rgba(255,255,255,0.18)", color: "#fff", fontSize: 13, fontWeight: 600, flexShrink: 0, transition: "background .15s" }}
+          <div style={{ fontSize: 24, fontWeight: 900, color: "#fff", marginBottom: 4 }}>📋 Simulation Travaux</div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,.75)" }}>
+            Estimez le budget travaux de votre opération
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          {/* Badge gamme courante */}
+          <div
+            style={{
+              background: "rgba(255,255,255,0.15)",
+              border: "1px solid rgba(255,255,255,0.25)",
+              borderRadius: 10,
+              padding: "8px 14px",
+              fontSize: 12,
+              color: "#fff",
+              fontWeight: 600,
+            }}
+          >
+            {range} · {renovationLevel}
+          </div>
+
+          {/* Bouton reset */}
+          <button
+            type="button"
+            onClick={handleReset}
+            style={{
+              display: "flex", alignItems: "center", gap: 8,
+              padding: "9px 18px", borderRadius: 10, border: "none",
+              cursor: "pointer", background: "rgba(255,255,255,0.18)",
+              color: "#fff", fontSize: 13, fontWeight: 600, flexShrink: 0,
+              transition: "background .15s",
+            }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.30)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.18)")}
-            title="Remettre à zéro">
+            title="Remettre à zéro"
+          >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/>
             </svg>
@@ -803,130 +852,212 @@ const SimulationTravauxPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-4 py-6 sm:px-6 space-y-6">
+      {/* ── Corps (même grille 2/5 + 3/5 que RenduTravauxPage) ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 20, alignItems: "start" }}>
 
-        {/* Mode toggle */}
-        <div className="flex items-center gap-1 bg-white rounded-xl border border-gray-200 p-1 w-fit">
-          {(["simple", "expert"] as const).map((m) => (
-            <button key={m} type="button" onClick={() => setMode(m)}
-              className={`px-5 py-2 text-sm font-medium rounded-lg transition-colors ${mode === m ? "bg-violet-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
-              {m === "simple" ? "Simple" : "Expert (pièce par pièce)"}
-            </button>
-          ))}
-        </div>
+        {/* ── Colonne gauche : contrôles ── */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-
-          {/* Gauche */}
-          <div className="lg:col-span-2 space-y-4">
-
-            <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-              <SectionTitle>Gamme de finitions</SectionTitle>
-              <div className="flex gap-2">
-                {RANGE_OPTIONS.map((r) => (
-                  <button key={r.value} type="button" onClick={() => setRange(r.value)}
-                    className={`flex-1 py-2 text-sm font-medium rounded-lg border transition-colors ${range === r.value ? r.color : "bg-white text-gray-400 border-gray-200 hover:border-gray-300"}`}>
-                    {r.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-              <SectionTitle>Niveau de rénovation</SectionTitle>
-              <div className="grid grid-cols-2 gap-2">
-                {LEVEL_OPTIONS.map((l) => (
-                  <button key={l.value} type="button" onClick={() => setRenovationLevel(l.value)}
-                    className={`py-2 text-xs font-medium rounded-lg border transition-colors ${renovationLevel === l.value ? "bg-violet-100 text-violet-700 border-violet-300" : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"}`}>
-                    {l.label}
-                  </button>
-                ))}
-              </div>
-              <div className="pt-2">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-gray-500">Complexité chantier</span>
-                  <span className="text-xs font-medium text-gray-700">{complexity}/4</span>
-                </div>
-                <input type="range" min={0} max={4} step={1} value={complexity}
-                  onChange={(e) => setComplexity(Number(e.target.value) as ChantierComplexity)}
-                  className="w-full accent-violet-600" />
-                <div className="flex justify-between text-[10px] text-gray-400"><span>Facile</span><span>Complexe</span></div>
-              </div>
-            </div>
-
-            {mode === "simple" && (
-              <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <SectionTitle>Surface totale</SectionTitle>
-                <div className="flex items-center gap-3">
-                  <input type="number" min={0} max={500} value={surface === 0 ? "" : surface} placeholder="Ex : 55"
-                    onChange={(e) => setSurface(Math.max(0, Number(e.target.value) || 0))}
-                    className="w-24 text-lg text-right font-semibold border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-400" />
-                  <span className="text-gray-500">m²</span>
-                </div>
-              </div>
-            )}
-
-            {mode === "simple" && (
-              <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-1">
-                <SectionTitle>Options de travaux</SectionTitle>
-                <TriSelect label="Cuisine"             value={options.cuisineRefaire}      onChange={(v) => setOpt("cuisineRefaire", v)} />
-                <TriSelect label="Salle de bain"       value={options.sdbRefaire}          onChange={(v) => setOpt("sdbRefaire", v)} />
-                <TriSelect label="Électricité"         value={options.electricite}         onChange={(v) => setOpt("electricite", v)} />
-                <TriSelect label="Plomberie"           value={options.plomberie}           onChange={(v) => setOpt("plomberie", v)} />
-                <TriSelect label="Menuiseries"         value={options.menuiseries}         onChange={(v) => setOpt("menuiseries", v)} />
-                <TriSelect label="Isolation thermique" value={options.isolationThermique}  onChange={(v) => setOpt("isolationThermique", v)} />
-                <TriSelect label="Isolation phonique"  value={options.isolationPhonique}   onChange={(v) => setOpt("isolationPhonique", v)} />
-                <TriSelect label="Démolition"          value={options.demolition}          onChange={(v) => setOpt("demolition", v)} />
-                <TriSelect label="Gravats"             value={options.gravats}             onChange={(v) => setOpt("gravats", v)} />
-                <BinSelect label="Traitement humidité" value={options.humiditeTraitement}  onChange={(v) => setOpt("humiditeTraitement", v)} />
-                <BinSelect label="Maîtrise d'œuvre"    value={options.moe}                onChange={(v) => setOpt("moe", v)} />
-              </div>
-            )}
-
-            {mode === "expert" && (
-              <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-                <SectionTitle>Pièces</SectionTitle>
-                <PieceEditor pieces={piecesUI} onChange={setPiecesUI} range={range} />
-              </div>
-            )}
-
-            {mode === "expert" && (
-              <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-1">
-                <SectionTitle>Options globales</SectionTitle>
-                <BinSelect label="Traitement humidité" value={options.humiditeTraitement} onChange={(v) => setOpt("humiditeTraitement", v)} />
-                <BinSelect label="Maîtrise d'œuvre"    value={options.moe}               onChange={(v) => setOpt("moe", v)} />
-              </div>
-            )}
+          {/* Mode toggle */}
+          <div style={{ background: "#fff", borderRadius: 12, padding: 6, display: "flex", gap: 4, border: "1px solid #e2e8f0" }}>
+            {(["simple", "expert"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                style={{
+                  flex: 1, padding: "7px 4px", borderRadius: 8, border: "none",
+                  fontSize: 12, fontWeight: 700, cursor: "pointer",
+                  background: mode === m ? ACCENT : "transparent",
+                  color: mode === m ? "#fff" : "#64748b",
+                  transition: "all .15s",
+                }}
+              >
+                {m === "simple" ? "Simple" : "Pièce par pièce"}
+              </button>
+            ))}
           </div>
 
-          {/* Droite */}
-          <div className="lg:col-span-3 space-y-4">
-            {mode === "expert" && (
-              <div>
-                <SectionTitle>Détail par pièce</SectionTitle>
-                <PieceResultList pieces={piecesTravaux} range={range} />
+          {/* Gamme de finitions */}
+          <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #e2e8f0" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10 }}>
+              Gamme de finitions
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {RANGE_OPTIONS.map((r) => (
+                <button
+                  key={r.value}
+                  type="button"
+                  onClick={() => setRange(r.value)}
+                  style={{
+                    flex: 1, padding: "8px 4px", borderRadius: 8,
+                    border: `2px solid ${range === r.value ? ACCENT : "#e2e8f0"}`,
+                    background: range === r.value ? ACCENT_LIGHT : "#fff",
+                    color: range === r.value ? ACCENT_DARK : "#94a3b8",
+                    fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all .15s",
+                  }}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Niveau de rénovation */}
+          <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #e2e8f0", display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 1.2 }}>
+              Niveau de rénovation
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+              {LEVEL_OPTIONS.map((l) => (
+                <button
+                  key={l.value}
+                  type="button"
+                  onClick={() => setRenovationLevel(l.value)}
+                  style={{
+                    padding: "8px 10px", borderRadius: 8,
+                    border: `2px solid ${renovationLevel === l.value ? ACCENT : "#e2e8f0"}`,
+                    background: renovationLevel === l.value ? ACCENT_LIGHT : "#fff",
+                    color: renovationLevel === l.value ? ACCENT_DARK : "#374151",
+                    fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all .15s",
+                  }}
+                >
+                  {l.label}
+                </button>
+              ))}
+            </div>
+            {/* Complexité */}
+            <div style={{ paddingTop: 4 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ fontSize: 11, color: "#94a3b8" }}>Complexité chantier</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: ACCENT_DARK }}>{complexity}/4</span>
               </div>
-            )}
-            <div>
-              <SectionTitle>Récapitulatif par lots</SectionTitle>
-              {isEmpty ? (
-                <RecapEmptyState mode={mode} />
-              ) : (
-                <LotsBreakdown
-                  lots={result.lots}
-                  total={result.total}
-                  bufferPct={result.bufferPct}
-                  bufferAmount={result.bufferAmount}
-                  totalWithBuffer={result.totalWithBuffer}
-                  costPerM2={result.costPerM2}
-                  complexityCoef={result.complexityCoef}
-                  simulation={simulation}
-                  computed={result}
-                  sourceMode={mode}
-                  disabledLots={disabledLots}
-                  onToggleLot={handleToggleLot}
+              <input
+                type="range" min={0} max={4} step={1} value={complexity}
+                onChange={(e) => setComplexity(Number(e.target.value) as ChantierComplexity)}
+                style={{ width: "100%", accentColor: ACCENT }}
+              />
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#94a3b8" }}>
+                <span>Facile</span><span>Complexe</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Surface (mode simple) */}
+          {mode === "simple" && (
+            <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #e2e8f0" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10 }}>
+                Surface totale
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <input
+                  type="number" min={0} max={500}
+                  value={surface === 0 ? "" : surface}
+                  placeholder="Ex : 55"
+                  onChange={(e) => setSurface(Math.max(0, Number(e.target.value) || 0))}
+                  style={{
+                    width: 90, fontSize: 18, fontWeight: 700, textAlign: "right",
+                    border: `2px solid ${ACCENT}`, borderRadius: 10, padding: "8px 12px",
+                    outline: "none", color: "#1e293b",
+                  }}
                 />
+                <span style={{ fontSize: 14, color: "#64748b", fontWeight: 600 }}>m²</span>
+              </div>
+            </div>
+          )}
+
+          {/* Options de travaux (mode simple) */}
+          {mode === "simple" && (
+            <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #e2e8f0" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 8 }}>
+                Options de travaux
+              </div>
+              <TriSelect label="Cuisine"             value={options.cuisineRefaire}     onChange={(v) => setOpt("cuisineRefaire", v)} />
+              <TriSelect label="Salle de bain"       value={options.sdbRefaire}         onChange={(v) => setOpt("sdbRefaire", v)} />
+              <TriSelect label="Électricité"         value={options.electricite}        onChange={(v) => setOpt("electricite", v)} />
+              <TriSelect label="Plomberie"           value={options.plomberie}          onChange={(v) => setOpt("plomberie", v)} />
+              <TriSelect label="Menuiseries"         value={options.menuiseries}        onChange={(v) => setOpt("menuiseries", v)} />
+              <TriSelect label="Isolation thermique" value={options.isolationThermique} onChange={(v) => setOpt("isolationThermique", v)} />
+              <TriSelect label="Isolation phonique"  value={options.isolationPhonique}  onChange={(v) => setOpt("isolationPhonique", v)} />
+              <TriSelect label="Démolition"          value={options.demolition}         onChange={(v) => setOpt("demolition", v)} />
+              <TriSelect label="Gravats"             value={options.gravats}            onChange={(v) => setOpt("gravats", v)} />
+              <BinSelect label="Traitement humidité" value={options.humiditeTraitement} onChange={(v) => setOpt("humiditeTraitement", v)} />
+              <BinSelect label="Maîtrise d'œuvre"   value={options.moe}               onChange={(v) => setOpt("moe", v)} />
+            </div>
+          )}
+
+          {/* Pièces (mode expert) */}
+          {mode === "expert" && (
+            <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #e2e8f0" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10 }}>
+                Pièces
+              </div>
+              <PieceEditor pieces={piecesUI} onChange={setPiecesUI} range={range} />
+            </div>
+          )}
+
+          {/* Options globales (mode expert) */}
+          {mode === "expert" && (
+            <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #e2e8f0" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 8 }}>
+                Options globales
+              </div>
+              <BinSelect label="Traitement humidité" value={options.humiditeTraitement} onChange={(v) => setOpt("humiditeTraitement", v)} />
+              <BinSelect label="Maîtrise d'œuvre"   value={options.moe}               onChange={(v) => setOpt("moe", v)} />
+            </div>
+          )}
+        </div>
+
+        {/* ── Colonne droite : résultats ── */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", overflow: "hidden", minHeight: 400 }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid #f1f5f9" }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: "#1e293b" }}>
+                {mode === "expert" ? "Détail par pièce & récapitulatif" : "Récapitulatif par lots"}
+              </div>
+              <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                {mode === "simple"
+                  ? "Saisissez une surface pour voir l'estimation"
+                  : "Ajoutez des pièces pour démarrer"}
+              </div>
+            </div>
+
+            <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 20 }}>
+              {mode === "expert" && piecesTravaux.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10 }}>
+                    Détail par pièce
+                  </div>
+                  <PieceResultList pieces={piecesTravaux} range={range} />
+                </div>
               )}
+
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10 }}>
+                  Récapitulatif par lots
+                </div>
+                {isEmpty ? (
+                  <RecapEmptyState mode={mode} />
+                ) : (
+                  <LotsBreakdown
+                    lots={result.lots}
+                    total={result.total}
+                    bufferPct={result.bufferPct}
+                    bufferAmount={result.bufferAmount}
+                    totalWithBuffer={result.totalWithBuffer}
+                    costPerM2={result.costPerM2}
+                    complexityCoef={result.complexityCoef}
+                    simulation={simulation}
+                    computed={result}
+                    sourceMode={mode}
+                    disabledLots={disabledLots}
+                    onToggleLot={handleToggleLot}
+                    accent={ACCENT}
+                    accentLight={ACCENT_LIGHT}
+                    accentDark={ACCENT_DARK}
+                  />
+                )}
+              </div>
             </div>
           </div>
         </div>

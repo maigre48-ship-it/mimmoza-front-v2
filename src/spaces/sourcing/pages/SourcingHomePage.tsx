@@ -54,6 +54,11 @@ import {
   type DealContextMeta,
 } from "../../marchand/shared/marchandDealContext.store";
 
+import {
+  setActiveCopilotContext,
+  clearActiveCopilotContext,
+} from "../../copilot/store/activeCopilotContext.store";
+
 // ── DVF via Edge Function smartscore-enriched-v3 (v6.5) ──
 import { supabase } from "../../../lib/supabaseClient";
 
@@ -1812,6 +1817,56 @@ export const SourcingHomePage: React.FC<SourcingHomePageProps> = ({ profileTarge
   }, [dealId, dealMeta]);
 
   useEffect(() => { injectStyles(); }, []);
+
+  useEffect(() => { injectStyles(); }, []);
+
+// ── Sync Copilot context ──────────────────────────────────────────────────────
+useEffect(() => {
+  if (!dealId) {
+    clearActiveCopilotContext();
+    return;
+  }
+
+  const price   = parseNumberFR(formState.price);
+  const surface = parseNumberFR(formState.surface);
+
+  if (price <= 0 || surface <= 0) return;
+
+  const city =
+    formState.ville              ||
+    lastDraft?.location?.ville   ||
+    dealMeta?.city               ||
+    undefined;
+
+  const zipCode =
+    formState.codePostal             ||
+    lastDraft?.location?.codePostal  ||
+    dealMeta?.zipCode                ||
+    undefined;
+
+  setActiveCopilotContext({
+    activeListingId: dealId,
+    city,
+    zipCode,
+    price,
+    surface,
+    propertyType: formState.propertyType || lastDraft?.input?.propertyType || undefined,
+    vertical:     'investisseur',
+    route:        window.location.pathname,
+  });
+
+  return () => clearActiveCopilotContext();
+}, [
+  dealId,
+  formState.codePostal,
+  formState.ville,
+  formState.price,
+  formState.surface,
+  formState.propertyType,
+  lastDraft,
+  dealMeta?.city,
+  dealMeta?.zipCode,
+]);
 
   useEffect(() => {
     if (toast?.show) { const t = setTimeout(() => setToast(null), 5000); return () => clearTimeout(t); }

@@ -1,6 +1,7 @@
 // src/utils/buildTravauxImagePrompt.ts
 //
-// V6 — Prompt affirmatif + type de sol + couleurs personnalisées sol/murs + mobilier
+// V7.1 — Prompt affirmatif + verrou géométrique court.
+// Objectif : respecter strictement la forme source sans provoquer d'inventions.
 
 import type {
   TravauxRenduConfig,
@@ -9,8 +10,8 @@ import type {
 import type { TravauxZone } from "./buildTravauxZoning";
 
 // ── Config étendue / rétrocompatibilité ────────────────────────────
-interface TravauxRenduConfigV6 extends TravauxRenduConfig {
-  mobilier?: string; // "none" | "scandinave" | "contemporain" | ...
+interface TravauxRenduConfigV7 extends TravauxRenduConfig {
+  mobilier?: string;
 
   // Anciens champs encore tolérés si présents dans du vieux code
   couleurSol?: string;
@@ -20,7 +21,7 @@ interface TravauxRenduConfigV6 extends TravauxRenduConfig {
 // ── Types ──────────────────────────────────────────────────────────
 
 export interface TravauxPromptConfig {
-  config: TravauxRenduConfigV6;
+  config: TravauxRenduConfigV7;
   style?: string;
   roomHint?: string;
   zones?: TravauxZone[];
@@ -50,8 +51,6 @@ const FLOOR_TYPE_DESCRIPTIONS: Record<TravauxSolType, string> = {
   resine: "smooth resin flooring with seamless satin finish",
   marbre: "large-format marble flooring with elegant natural veining",
 };
-
-// ── Mappings matériaux par gamme + style ───────────────────────────
 
 const FLOOR_MATERIALS: Record<string, Record<string, string>> = {
   economique: {
@@ -139,9 +138,7 @@ const CEILING_MATERIALS: Record<string, Record<string, string>> = {
 };
 
 function floorDesc(gamme: string, style: string, solType?: TravauxSolType): string {
-  if (solType) {
-    return FLOOR_TYPE_DESCRIPTIONS[solType] ?? "new flooring";
-  }
+  if (solType) return FLOOR_TYPE_DESCRIPTIONS[solType] ?? "new flooring";
 
   const g = FLOOR_MATERIALS[gamme] ?? FLOOR_MATERIALS.standard;
   return g[style] ?? g.default ?? "new flooring";
@@ -233,39 +230,42 @@ export function buildTravauxImagePrompt(params: TravauxPromptConfig): TravauxPro
 
   const effectiveStyle = style || styleDecoration || "contemporain";
 
-  // Nouveaux champs prioritaires, anciens champs en fallback.
   const finalSolColor = solColor ?? couleurSol;
   const finalMurColor = murColor ?? couleurMurs;
 
-  // ── Contexte ─────────────────────────────────────────────────────
   const contextParts: string[] = [];
   if (typeBien) contextParts.push(typeBien);
   if (surfaceM2) contextParts.push(`${surfaceM2} m²`);
   if (ville) contextParts.push(ville);
 
-  const contextStr = contextParts.length > 0 ? contextParts.join(", ") : "residential interior";
+  const contextStr =
+    contextParts.length > 0 ? contextParts.join(", ") : "residential interior";
   const roomStr = roomHint || "interior room";
 
-  // ── Descriptions par zone avec matériaux/couleurs ────────────────
   const zoneDescLines: string[] = [];
 
   for (const zone of zones) {
     switch (zone) {
       case "floor": {
         const mat = floorDesc(gamme, effectiveStyle, solType);
-        const color = finalSolColor ? ` The floor color tone must be ${finalSolColor}.` : "";
+        const color = finalSolColor
+          ? ` The floor color tone must be ${finalSolColor}.`
+          : "";
         const strictType = solType
-          ? ` The floor material/type is strictly ${floorTypeLabel(solType)}; do not replace it with another floor material.`
+          ? ` The floor material/type is strictly ${floorTypeLabel(
+              solType
+            )}; keep this exact material category.`
           : "";
 
-        zoneDescLines.push(`FLOOR: Replace the visible floor with ${mat}.${color}${strictType}`);
+        zoneDescLines.push(
+          `FLOOR: Replace the visible floor with ${mat}.${color}${strictType}`
+        );
         break;
       }
 
       case "walls": {
         const mat = wallDesc(gamme, effectiveStyle);
         const color = finalMurColor ? ` Wall color must be ${finalMurColor}.` : "";
-
         zoneDescLines.push(`WALLS: Apply ${mat}.${color}`);
         break;
       }
@@ -283,66 +283,84 @@ export function buildTravauxImagePrompt(params: TravauxPromptConfig): TravauxPro
         break;
 
       case "openings":
-        zoneDescLines.push(`WINDOWS & DOORS: Replace frames with ${openingsDesc(gamme)}.`);
+        zoneDescLines.push(
+          `WINDOWS & DOORS: Replace frames with ${openingsDesc(gamme)}.`
+        );
         break;
 
       case "all":
-        zoneDescLines.push(`ALL SURFACES: Full ${effectiveStyle} style renovation with ${gamme}-grade materials.`);
+        zoneDescLines.push(
+          `ALL SURFACES: Full ${effectiveStyle} style renovation with ${gamme}-grade materials.`
+        );
         break;
     }
   }
 
-  // ── Mobilier ─────────────────────────────────────────────────────
   const hasMobilier = mobilier && mobilier !== "none";
 
   const mobilierDesc: Record<string, string> = {
-    scandinave: "Scandinavian furniture: light oak dining table, linen sofa, simple shelving, soft wool rug",
-    contemporain: "contemporary furniture: low-profile sofa in grey, glass coffee table, minimalist shelves",
-    industriel: "industrial furniture: metal and wood table, leather sofa, open steel shelving, Edison pendant",
+    scandinave:
+      "Scandinavian furniture: light oak dining table, linen sofa, simple shelving, soft wool rug",
+    contemporain:
+      "contemporary furniture: low-profile sofa in grey, glass coffee table, minimalist shelves",
+    industriel:
+      "industrial furniture: metal and wood table, leather sofa, open steel shelving, Edison pendant",
     luxe: "luxury furniture: velvet sofa, marble side tables, designer armchairs, statement chandelier",
-    japandi: "Japandi furniture: low platform sofa, natural linen, rattan details, wabi-sabi ceramics",
-    vintage: "vintage furniture: mid-century modern sofa, retro armchair, warm teak sideboard, geometric rug",
+    japandi:
+      "Japandi furniture: low platform sofa, natural linen, rattan details, wabi-sabi ceramics",
+    vintage:
+      "vintage furniture: mid-century modern sofa, retro armchair, warm teak sideboard, geometric rug",
   };
 
   const mobilierLine = hasMobilier
-    ? `FURNISHING: Stage the room with ${mobilierDesc[mobilier!] ?? `${mobilier} style furniture`}. Arrange naturally for a real estate photo.`
+    ? `FURNISHING: Stage the room with ${
+        mobilierDesc[mobilier!] ?? `${mobilier} style furniture`
+      }. Arrange naturally for a real estate photo.`
     : `FURNISHING: Leave the room completely empty — no furniture, no objects.`;
 
-  // ── Verrou architectural ─────────────────────────────────────────
-  const architecturalLock = [
-    `ABSOLUTE RULE — READ FIRST:`,
-    `This is a surface-only renovation. You are ONLY allowed to change visible floor, wall, and ceiling finishes, plus furnishing only if explicitly requested.`,
-    `You must NEVER add, create, suggest, or show: new doors, new openings, new passageways, adjacent rooms, bathrooms, hallways, or any space not already visible in the input image.`,
-    `If the original image shows a wall, that wall must remain a solid wall — do NOT open it.`,
-    `If the original image shows no door, there must be no door in the output.`,
-    `The room boundary, shape, proportions, camera angle, perspective, window position, and all architectural openings must be identical to the original.`,
+  const geometryLock = [
+    `STRICT PLAN FIDELITY:`,
+    `Use the source image as the only authority for the building or room shape.`,
+    `Keep the exact same footprint, roof outline, wall planes, corners, height, proportions, camera angle, and perspective.`,
+    `The building or room must remain a simple rigid existing volume.`,
+    `Do not change the silhouette.`,
+    `Do not add any geometry that is not visible in the source.`,
+    `Only improve materials, lighting, rendering quality, textures, colors, window frames, and environment.`,
+    `The final image must show the same property, same shape, same volume, same roof, same walls.`,
+  ].join(" ");
+
+  const renovationLock = [
+    `SURFACE RENOVATION RULE:`,
+    `Keep the existing layout, openings, walls, ceiling height, visible boundaries, and perspective unchanged.`,
+    `Only modify the selected renovation zones and the requested decoration or furniture.`,
   ].join(" ");
 
   const floorLock = solType
     ? [
         `FLOOR MATERIAL LOCK:`,
         `The floor must visibly read as ${floorTypeLabel(solType)}.`,
-        `Do not turn it into parquet, wood, tiles, carpet, rug, stone, marble, concrete, resin, or vinyl unless that exact type was selected.`,
+        `Keep the selected floor material category exactly as requested.`,
       ].join(" ")
     : "";
 
-  // ── Prompt ───────────────────────────────────────────────────────
   const sections: string[] = [
-    architecturalLock,
+    geometryLock,
+    renovationLock,
     floorLock,
     `Interior renovation photo of a ${roomStr} (${contextStr}).`,
     `Renovation level: ${niveau}. Renovation style: ${effectiveStyle}. Material grade: ${gamme}.`,
     ...zoneDescLines,
     mobilierLine,
-    `Preserve the exact camera angle, perspective, room layout, window locations, wall boundaries, ceiling height, and visible geometry.`,
+    `Preserve the exact camera angle, perspective, room layout, window locations, wall boundaries, ceiling height, facade limits, roof limits, building footprint, volume, alignment, and visible geometry.`,
+    `The final image must look like the same property after renovation, not a redesigned property.`,
     `Output: photorealistic real estate photography, natural daylight, professional interior photographer, sharp and clean.`,
     ...(extraInstructions ? [extraInstructions] : []),
   ].filter(Boolean);
 
   const prompt = sections.join(" ");
 
-  // ── Summary ──────────────────────────────────────────────────────
   const summaryParts = [
+    "géométrie stricte",
     gamme,
     effectiveStyle,
     `zones: [${zones.join(", ")}]`,
@@ -356,7 +374,7 @@ export function buildTravauxImagePrompt(params: TravauxPromptConfig): TravauxPro
 
   const debugTokenCount = Math.round(prompt.split(/\s+/).length * 1.3);
 
-  console.log("[buildTravauxImagePrompt] Prompt V6", {
+  console.log("[buildTravauxImagePrompt] Prompt V7.1", {
     zones,
     gamme,
     niveau,
@@ -367,13 +385,13 @@ export function buildTravauxImagePrompt(params: TravauxPromptConfig): TravauxPro
     mobilier,
     tokenEstimate: debugTokenCount,
     promptLength: prompt.length,
-    promptPreview: prompt.slice(0, 180) + "…",
+    promptPreview: prompt.slice(0, 220) + "…",
   });
 
   return {
     prompt,
     negativePrompt:
-      "blurry, distorted, cartoon, overexposed, different room, changed layout, extra door, new opening, hallway, adjacent room, invented bathroom, invented kitchen, people, text, watermark, logo, low quality",
+      "extra volume, extension, annex, added wing, changed footprint, changed roof shape, changed silhouette, protrusion, recess, additional wall, additional building, distorted geometry, different building, wrong perspective, extra door, new opening, hallway, adjacent room, invented bathroom, invented kitchen, blurry, cartoon, watermark, text, logo, low quality",
     summary: summaryParts,
     debugTokenCount,
   };

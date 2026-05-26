@@ -25,6 +25,11 @@ const AI_EXTRACT_ENDPOINT =
   ((import.meta as Record<string, unknown>)?.env as Record<string, string> | undefined)?.VITE_PLU_AI_EXTRACT_ENDPOINT?.trim() ||
   "http://localhost:3000/api/plu-parse";
 
+const OAP_EXTRACT_ENDPOINT =
+  ((import.meta as Record<string, unknown>)?.env as Record<string, string> | undefined)
+    ?.VITE_OAP_EXTRACT_ENDPOINT?.trim() ||
+  "http://localhost:3000/api/oap-parse";
+
 // ============================================
 // Types
 // ============================================
@@ -219,7 +224,6 @@ type AiExtractResultData = {
   ces?: { max_ratio: number | null; note?: string | null };
   notes?: string[];
   zone_libelle?: string | null;
-  // Champs enrichis propagés depuis PLURulesetV2
   _hauteur_faitage_m?: number | null;
   _hauteur_egout_note?: string | null;
   _hauteur_faitage_note?: string | null;
@@ -267,6 +271,42 @@ type PersistedAiExtractResult = {
   commune_insee: string;
   extracted_at: string;
   data: AiExtractResultData;
+};
+
+// ============================================
+// OAP Types
+// ============================================
+
+type OapExtractResult = {
+  has_oap: boolean;
+  oap_name?: string | null;
+  oap_type?: "sectorielle" | "thematique" | null;
+  summary?: string | null;
+  constraints?: {
+    access?: string[];
+    roads?: string[];
+    green_spaces?: string[];
+    pedestrian_links?: string[];
+    social_housing?: string[];
+    density?: string[];
+    built_form?: string[];
+    heights?: string[];
+    parking?: string[];
+    phasing?: string[];
+    landscape?: string[];
+    public_facilities?: string[];
+  };
+  promoter_impacts?: string[];
+  permit_risks?: string[];
+  source_url?: string | null;
+  source_document?: string | null;
+};
+
+type OapExtractResponse = {
+  success: boolean;
+  data?: OapExtractResult;
+  error?: string;
+  message?: string;
 };
 
 // ============================================
@@ -346,19 +386,16 @@ export type ResolvedPluRulesetV1 = {
     max_ratio: number | null;
     note?: string | null;
   };
-  // NOUVEAU : hauteur séparée égout / faîtage
   hauteur: {
-    max_m: number | null;           // égout / acrotère
-    faitage_m: number | null;       // faîtage
-    note?: string | null;           // note égout
-    faitage_note?: string | null;   // note faîtage
+    max_m: number | null;
+    faitage_m: number | null;
+    note?: string | null;
+    faitage_note?: string | null;
   };
-  // NOUVEAU : pleine terre
   pleine_terre: {
     ratio_min: number | null;
     note?: string | null;
   };
-  // NOUVEAU : COS
   cos: {
     max: number | null;
     note?: string | null;
@@ -594,14 +631,12 @@ function extractPdfUrlFromDocument(doc: PluDocument | null | undefined): string 
 
 // ============================================
 // convertParserRulesetToAiExtractResult — REÉCRIT
-// Propage les champs note depuis PLURulesetV2
 // ============================================
 
 function convertParserRulesetToAiExtractResult(
   ruleset: Record<string, unknown>,
   zoneLibelle: string | null
 ): AiExtractResultData {
-  // ---- Reculs depuis implantation (PLURulesetV2) ou reculs (ancien format) ----
   const voirieMinM = pickFirstNumber(
     getRulesetValue(ruleset, "implantation", "recul_min_rue_m"),
     getRulesetValue(ruleset, "reculs", "voirie", "min_m"),
@@ -634,7 +669,6 @@ function convertParserRulesetToAiExtractResult(
     getRulesetValue(ruleset, "reculs", "implantation_en_limite", "autorisee")
   );
 
-  // ---- Hauteurs ----
   const hauteurEgout = pickFirstNumber(
     getRulesetValue(ruleset, "hauteurs", "h_max_egout_m"),
     getRulesetValue(ruleset, "hauteur", "max_m"),
@@ -652,7 +686,6 @@ function convertParserRulesetToAiExtractResult(
     getRulesetValue(ruleset, "hauteurs", "h_max_faitage_note")
   );
 
-  // ---- Stationnement ----
   const statParLogement = pickFirstNumber(
     getRulesetValue(ruleset, "stationnement", "logement", "places_par_logement"),
     getRulesetValue(ruleset, "stationnement", "par_logement"),
@@ -664,7 +697,6 @@ function convertParserRulesetToAiExtractResult(
     getRulesetValue(ruleset, "stationnement", "note")
   );
 
-  // ---- CES (emprise au sol) ----
   const cesMaxRatio = pickFirstNumber(
     getRulesetValue(ruleset, "densite_emprise", "emprise_max_ratio"),
     getRulesetValue(ruleset, "emprise", "ces_max_ratio"),
@@ -676,7 +708,6 @@ function convertParserRulesetToAiExtractResult(
     getRulesetValue(ruleset, "ces", "note")
   );
 
-  // ---- Pleine terre ----
   const pleineTerreRatio = pickFirstNumber(
     getRulesetValue(ruleset, "pleine_terre", "ratio_min"),
     getRulesetValue(ruleset, "reglesComplementaires", "espaceLibrePleineTerre"),
@@ -686,7 +717,6 @@ function convertParserRulesetToAiExtractResult(
     getRulesetValue(ruleset, "pleine_terre", "commentaire")
   );
 
-  // ---- COS ----
   const cosMax = pickFirstNumber(
     getRulesetValue(ruleset, "densite_emprise", "cos_max"),
     getRulesetValue(ruleset, "cos", "max"),
@@ -699,7 +729,6 @@ function convertParserRulesetToAiExtractResult(
     })()
   );
 
-  // ---- Notes générales ----
   const notesArray: string[] = [];
   const rawNotes = getRulesetValue(ruleset, "notes") ?? getRulesetValue(ruleset, "brut", "notes_generales");
   if (Array.isArray(rawNotes)) {
@@ -708,7 +737,6 @@ function convertParserRulesetToAiExtractResult(
     notesArray.push(rawNotes.trim());
   }
 
-  // ---- Completeness ----
   const missing: string[] = [];
   if (voirieMinM === null) missing.push("reculs.voirie.min_m");
   if (limitesMinM === null) missing.push("reculs.limites_separatives.min_m");
@@ -735,7 +763,6 @@ function convertParserRulesetToAiExtractResult(
     stationnement: { par_logement: statParLogement, note: statNote },
     ces: { max_ratio: cesMaxRatio, note: cesNote },
     notes: notesArray,
-    // Champs enrichis
     _hauteur_faitage_m: hauteurFaitage,
     _hauteur_egout_note: hauteurEgoutNote,
     _hauteur_faitage_note: hauteurFaitageNote,
@@ -824,7 +851,6 @@ function resolvePluRulesetV1(z: PluRulesZoneRow): ResolvedPluRulesetV1 {
     implantationEnLimiteAutorisee = safeBoolean(getRulesetValue(ruleset, "reculs", "implantation_en_limite", "autorisee"));
   }
 
-  // Facades
   const extractFacadeFromRuleset = (key: string) => ({
     min_m: pickFirstNumber(
       getRulesetValue(ruleset, "rules", "implantation", "facades", key, "recul_min_m"),
@@ -868,7 +894,6 @@ function resolvePluRulesetV1(z: PluRulesZoneRow): ResolvedPluRulesetV1 {
     else if (fondParcelleValue !== null) { facadeFondMinM = fondParcelleValue; facadeFondDerived = true; facadeFondNote = "Dérivé du recul fond de parcelle"; }
   }
 
-  // CES
   const cesPercent = pickFirstNumber(
     z.rules.emprise?.ces_max_percent,
     getRulesetValue(ruleset, "emprise", "ces_max_percent"),
@@ -882,7 +907,6 @@ function resolvePluRulesetV1(z: PluRulesZoneRow): ResolvedPluRulesetV1 {
   else if (cesPercent >= 0 && cesPercent < 1) { cesMaxRatio = cesPercent; }
   else { cesNote = `Valeur invalide (${cesPercent}) ignorée`; }
 
-  // Hauteurs
   const hauteurMaxM = pickFirstNumber(
     z.rules.hauteur?.hauteur_max_m,
     getRulesetValue(ruleset, "hauteur", "max_m"),
@@ -898,7 +922,6 @@ function resolvePluRulesetV1(z: PluRulesZoneRow): ResolvedPluRulesetV1 {
   );
   const hauteurFaitageNote = safeString(getRulesetValue(ruleset, "hauteurs", "h_max_faitage_note"));
 
-  // Pleine terre
   const pleineTerreRatio = pickFirstNumber(
     getRulesetValue(ruleset, "pleine_terre", "ratio_min"),
     getRulesetValue(ruleset, "reglesComplementaires", "espaceLibrePleineTerre"),
@@ -908,7 +931,6 @@ function resolvePluRulesetV1(z: PluRulesZoneRow): ResolvedPluRulesetV1 {
     getRulesetValue(ruleset, "pleine_terre", "commentaire")
   );
 
-  // COS
   const cosMax = pickFirstNumber(
     getRulesetValue(ruleset, "densite_emprise", "cos_max"),
     getRulesetValue(ruleset, "cos", "max"),
@@ -921,7 +943,6 @@ function resolvePluRulesetV1(z: PluRulesZoneRow): ResolvedPluRulesetV1 {
     })()
   );
 
-  // Stationnement
   const stationnementParLogement = pickFirstNumber(
     z.places_par_logement,
     z.rules?.stationnement?.places_par_logement,
@@ -1005,7 +1026,6 @@ function buildResolvedRulesetFromAi(
     aiData.hauteur?.max_m,
   );
 
-  // Champs enrichis depuis PLURulesetV2
   const hauteurFaitageM = aiData._hauteur_faitage_m ?? pickFirstNumber(extractAiValue(aiData.hauteur?.hauteur_faitage));
   const hauteurEgoutNote = aiData._hauteur_egout_note ?? null;
   const hauteurFaitageNote = aiData._hauteur_faitage_note ?? null;
@@ -1219,7 +1239,27 @@ function applyUserOverrides(baseResolved: ResolvedPluRulesetV1, overrides: UserO
 }
 
 // ============================================
-// Composant RuleCard — NOUVEAU
+// OAP Helpers
+// ============================================
+
+function hasList(items?: string[]): boolean {
+  return Array.isArray(items) && items.length > 0;
+}
+
+function renderOapList(title: string, items?: string[]): React.ReactElement | null {
+  if (!hasList(items)) return null;
+  return (
+    <div className="oap-section">
+      <div className="oap-section-title">{title}</div>
+      <ul className="oap-list">
+        {items!.map((item, i) => <li key={i}>{item}</li>)}
+      </ul>
+    </div>
+  );
+}
+
+// ============================================
+// Composant RuleCard
 // ============================================
 
 type RuleCardDef = {
@@ -1276,6 +1316,87 @@ function RuleCard({ card }: { card: RuleCardDef }) {
 }
 
 // ============================================
+// OAP Block Component
+// ============================================
+
+function OapBlock({ oapExtract, oapStatus, oapError }: {
+  oapExtract: OapExtractResult | null;
+  oapStatus: Status;
+  oapError: string | null;
+}): React.ReactElement | null {
+  if (oapStatus === "idle") return null;
+
+  if (oapStatus === "error") {
+    return (
+      <div className="oap-card oap-card--error">
+        <div className="oap-header">
+          <span className="oap-badge oap-badge--error">❌ Erreur OAP</span>
+          <span className="oap-title">OAP — erreur d'analyse</span>
+        </div>
+        {oapError && <p className="oap-summary">{oapError}</p>}
+      </div>
+    );
+  }
+
+  if (!oapExtract) return null;
+
+  if (!oapExtract.has_oap) {
+    return (
+      <div className="oap-card oap-card--empty">
+        <div className="oap-header">
+          <span className="oap-badge oap-badge--empty">Aucune OAP détectée</span>
+          <span className="oap-title">OAP</span>
+        </div>
+        <p className="oap-summary">La parcelle / zone ne semble pas concernée par une OAP dans le document analysé.</p>
+      </div>
+    );
+  }
+
+  const c = oapExtract.constraints;
+  return (
+    <div className="oap-card oap-card--found">
+      <div className="oap-header">
+        <span className="oap-badge oap-badge--found">OAP détectée</span>
+        {oapExtract.oap_name && <span className="oap-title">{oapExtract.oap_name}</span>}
+      </div>
+      <div className="oap-meta">
+        {oapExtract.oap_type && (
+          <span>Type : <strong>{oapExtract.oap_type === "sectorielle" ? "Sectorielle" : "Thématique"}</strong></span>
+        )}
+        {oapExtract.source_document && (
+          <span>Document : <strong>{oapExtract.source_document}</strong></span>
+        )}
+        {oapExtract.source_url && (
+          <a className="oap-source-link" href={oapExtract.source_url} target="_blank" rel="noopener noreferrer">
+            Voir la source ↗
+          </a>
+        )}
+      </div>
+      {oapExtract.summary && <p className="oap-summary">{oapExtract.summary}</p>}
+
+      {c && (
+        <>
+          {renderOapList("Accès", c.access)}
+          {renderOapList("Voirie", c.roads)}
+          {renderOapList("Cheminements piétons", c.pedestrian_links)}
+          {renderOapList("Espaces verts", c.green_spaces)}
+          {renderOapList("Paysage", c.landscape)}
+          {renderOapList("Logement social", c.social_housing)}
+          {renderOapList("Densité", c.density)}
+          {renderOapList("Forme bâtie", c.built_form)}
+          {renderOapList("Hauteurs", c.heights)}
+          {renderOapList("Stationnement", c.parking)}
+          {renderOapList("Phasage", c.phasing)}
+          {renderOapList("Équipements publics", c.public_facilities)}
+        </>
+      )}
+      {renderOapList("Impacts promoteur", oapExtract.promoter_impacts)}
+      {renderOapList("Risques permis", oapExtract.permit_risks)}
+    </div>
+  );
+}
+
+// ============================================
 // Page Component
 // ============================================
 
@@ -1324,6 +1445,11 @@ export default function PluFaisabilite(): React.ReactElement {
     return readLS(LS_SESSION_PARCEL_ID, "") || null;
   });
   const [sessionCommuneInsee, setSessionCommuneInsee] = useState<string | null>(() => readLS(LS_SESSION_COMMUNE_INSEE, "") || null);
+
+  // OAP states
+  const [oapExtract, setOapExtract] = useState<OapExtractResult | null>(null);
+  const [oapStatus, setOapStatus] = useState<Status>("idle");
+  const [oapError, setOapError] = useState<string | null>(null);
 
   const communeInseeRef = useRef(communeInsee);
   const autoDetectAttemptedRef = useRef(false);
@@ -1499,13 +1625,61 @@ export default function PluFaisabilite(): React.ReactElement {
     }
   }, [selectedDocumentId, selectedZoneCode, documents, communeInsee, sessionCommuneInsee, rulesZones]);
 
+  const handleExtractOap = useCallback(async () => {
+    if (!selectedDocumentId) { setOapError("Veuillez sélectionner un document PLU."); setOapStatus("error"); return; }
+    if (!selectedZoneCode) { setOapError("Veuillez sélectionner ou détecter une zone PLU."); setOapStatus("error"); return; }
+    const selectedDoc = documents.find(d => d.id === selectedDocumentId);
+    const effectiveCommuneInsee = communeInsee || sessionCommuneInsee || selectedDoc?.commune_insee;
+    if (!effectiveCommuneInsee) { setOapError("Code INSEE de la commune manquant."); setOapStatus("error"); return; }
+    const sourcePdfUrl = extractPdfUrlFromDocument(selectedDoc);
+    if (!sourcePdfUrl) { setOapError("URL PDF introuvable pour ce document."); setOapStatus("error"); return; }
+    setOapStatus("loading"); setOapError(null);
+    const requestBody = {
+      commune_insee: effectiveCommuneInsee,
+      commune_nom: selectedDoc?.commune_nom ?? selectedDoc?.commune_name ?? null,
+      source_pdf_url: sourcePdfUrl,
+      target_zone_code: selectedZoneCode,
+      parcel_id: readLS(LS_SESSION_PARCEL_ID, "") || sessionParcelId || null,
+      address: readLS(LS_SESSION_ADDRESS, "") || null,
+    };
+    try {
+      const res = await fetch(OAP_EXTRACT_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": "test" },
+        body: JSON.stringify(requestBody),
+      });
+      const txt = await res.text();
+      const rawData = safeJsonParse<OapExtractResponse>(txt);
+      if (!res.ok || !rawData?.success) {
+        throw new Error(
+          typeof rawData?.error === "string" ? rawData.error :
+          typeof rawData?.message === "string" ? rawData.message :
+          `Erreur ${res.status}`
+        );
+      }
+      if (!rawData.data) throw new Error("Réponse OAP vide.");
+      setOapExtract(rawData.data);
+      setOapStatus("success");
+      setOapError(null);
+    } catch (e: unknown) {
+      setOapStatus("error");
+      setOapError(e instanceof Error ? e.message : "Erreur lors de l'analyse OAP.");
+    }
+  }, [selectedDocumentId, selectedZoneCode, documents, communeInsee, sessionCommuneInsee, sessionParcelId]);
+
+  // Reset AI extract + OAP when document or zone changes
   useEffect(() => {
     if (aiExtractResult) {
       if (aiExtractResult.document_id !== selectedDocumentId || !zonesMatch(aiExtractResult.zone_code, selectedZoneCode)) {
         setAiExtractResult(null); setActiveResolvedRuleset(null); setAiExtractStatus("idle"); setAiExtractError(null);
+        setOapExtract(null); setOapStatus("idle"); setOapError(null);
       }
     } else if (activeResolvedRuleset && !zonesMatch(activeResolvedRuleset.zone_code, selectedZoneCode)) {
       setActiveResolvedRuleset(null);
+      setOapExtract(null); setOapStatus("idle"); setOapError(null);
+    } else if (!aiExtractResult && !activeResolvedRuleset) {
+      // Zone changed without AI data — reset OAP too
+      setOapExtract(null); setOapStatus("idle"); setOapError(null);
     }
   }, [selectedDocumentId, selectedZoneCode, aiExtractResult, activeResolvedRuleset]);
 
@@ -1595,16 +1769,34 @@ export default function PluFaisabilite(): React.ReactElement {
         const v = resolvedRuleset.reculs.voirie.min_m ?? "?";
         const l = resolvedRuleset.reculs.limites_separatives.min_m ?? "?";
         const f = resolvedRuleset.reculs.fond_parcelle.min_m ?? "?";
+        const summaryBase = `Zone ${resolvedRuleset.zone_code} · Reculs voirie ${v}m / limites ${l}m / fond ${f}m`;
+        const summary = oapExtract?.has_oap === true
+          ? `Zone ${resolvedRuleset.zone_code} · OAP ${oapExtract.oap_name || "détectée"} · Reculs voirie ${v}m / limites ${l}m / fond ${f}m`
+          : summaryBase;
         patchModule("plu", {
           ok: resolvedRuleset.completeness?.ok === true,
-          summary: `Zone ${resolvedRuleset.zone_code} · Reculs voirie ${v}m / limites ${l}m / fond ${f}m`,
-          data: { document_id: selectedDocumentId, zone_code: resolvedRuleset.zone_code, zone_libelle: resolvedRuleset.zone_libelle, ruleset: resolvedRuleset, detectedZoneCode, selectedZoneCode, aiExtractResult, sqlSummary, currentUserOverrides, session: { parcel_id: effectiveParcelId || null, commune_insee: effectiveCommuneInsee || null, address: effectiveAddress || null } },
+          summary,
+          data: {
+            document_id: selectedDocumentId,
+            zone_code: resolvedRuleset.zone_code,
+            zone_libelle: resolvedRuleset.zone_libelle,
+            ruleset: resolvedRuleset,
+            detectedZoneCode,
+            selectedZoneCode,
+            aiExtractResult,
+            sqlSummary,
+            currentUserOverrides,
+            oapExtract,
+            oapStatus,
+            oapError,
+            session: { parcel_id: effectiveParcelId || null, commune_insee: effectiveCommuneInsee || null, address: effectiveAddress || null },
+          },
         });
       }
     } catch { /* non-bloquant */ }
-  }, [resolvedRuleset, selectedDocumentId, selectedZoneCode, detectedZoneCode, sessionParcelId, sessionCommuneInsee, aiExtractResult, sqlSummary, currentUserOverrides]);
+  }, [resolvedRuleset, selectedDocumentId, selectedZoneCode, detectedZoneCode, sessionParcelId, sessionCommuneInsee, aiExtractResult, sqlSummary, currentUserOverrides, oapExtract, oapStatus, oapError]);
 
-  useEffect(() => { persistPluToSnapshot(); }, [resolvedRuleset, selectedDocumentId, selectedZoneCode, detectedZoneCode, sessionParcelId, sessionCommuneInsee, aiExtractResult, sqlSummary, currentUserOverrides, persistPluToSnapshot]);
+  useEffect(() => { persistPluToSnapshot(); }, [resolvedRuleset, selectedDocumentId, selectedZoneCode, detectedZoneCode, sessionParcelId, sessionCommuneInsee, aiExtractResult, sqlSummary, currentUserOverrides, oapExtract, oapStatus, oapError, persistPluToSnapshot]);
 
   useEffect(() => {
     if (editPanelOpen && resolvedRuleset) {
@@ -1636,7 +1828,6 @@ export default function PluFaisabilite(): React.ReactElement {
       stationnement_par_100m2: editStat100m2.trim() ? toNumber(editStat100m2) : undefined,
       notes_append: editUserNote.trim() || undefined,
     };
-    // Clean undefined
     Object.keys(overrides.reculs).forEach(k => { if ((overrides.reculs as Record<string, unknown>)[k] === undefined) delete (overrides.reculs as Record<string, unknown>)[k]; });
     if (overrides.ces_max_ratio === undefined) delete overrides.ces_max_ratio;
     if (overrides.hauteur_max_m === undefined) delete overrides.hauteur_max_m;
@@ -1734,6 +1925,9 @@ export default function PluFaisabilite(): React.ReactElement {
               </button>
               <button className="ai-extract-btn" onClick={handleAiExtractZone} disabled={!canAiExtract || aiExtractStatus === "loading"}>
                 {aiExtractStatus === "loading" ? <><span className="ai-spinner">⏳</span> Extraction…</> : <><span className="ai-icon">🤖</span> Extraire règles IA</>}
+              </button>
+              <button className="oap-extract-btn" onClick={handleExtractOap} disabled={!canAiExtract || oapStatus === "loading"}>
+                {oapStatus === "loading" ? "Analyse OAP…" : "Extraire OAP"}
               </button>
               <button className="primary-btn" onClick={handleLaunchImplantation2D} disabled={!canLaunchImplantation2D || !accessToken}>
                 Lancer l'Implantation 2D
@@ -1836,6 +2030,11 @@ export default function PluFaisabilite(): React.ReactElement {
             </div>
           )}
 
+          {/* OAP Block */}
+          {(oapStatus !== "idle") && (
+            <OapBlock oapExtract={oapExtract} oapStatus={oapStatus} oapError={oapError} />
+          )}
+
           {resolvedRuleset && !resolvedRuleset.completeness.ok && !aiExtractResult && (
             <div className="completeness-warning">
               <span className="completeness-icon">⚠️</span>
@@ -1867,6 +2066,7 @@ export default function PluFaisabilite(): React.ReactElement {
                   setSelectedZoneCode(newZone);
                   if (newZone) writeLS(LS_SELECTED_PLU_ZONE_CODE, newZone);
                   setAiExtractResult(null); setActiveResolvedRuleset(null); setAiExtractStatus("idle"); setAiExtractError(null); setEditPanelOpen(false);
+                  setOapExtract(null); setOapStatus("idle"); setOapError(null);
                 }}>
                   {rulesZones.map(z => (
                     <option key={`${z.document_id}:${z.zone_code}`} value={z.zone_code}>
@@ -1916,7 +2116,6 @@ export default function PluFaisabilite(): React.ReactElement {
                         </div>
                       </div>
 
-                      {/* NOUVELLE GRILLE DE CARTES */}
                       {cards ? (
                         <div className="rule-cards-grid">
                           {cards.map(card => <RuleCard key={card.label} card={card} />)}
@@ -1928,7 +2127,6 @@ export default function PluFaisabilite(): React.ReactElement {
                         </div>
                       )}
 
-                      {/* Notes générales */}
                       {useResolved && resolvedRuleset && resolvedRuleset.notes.length > 0 && (
                         <div className="rule-notes">
                           <div className="rule-notes-title">Notes</div>
@@ -2014,6 +2212,9 @@ const pageStyles = `
 .ai-extract-btn:hover:not(:disabled) { background: linear-gradient(135deg,rgba(139,92,246,.15),rgba(167,139,250,.2)); transform: translateY(-1px); }
 .ai-extract-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 .ai-icon,.ai-spinner { font-size: 1rem; }
+.oap-extract-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(99,102,241,.4); background: linear-gradient(135deg,rgba(99,102,241,.08),rgba(129,140,248,.12)); color: #4338ca; border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: .875rem; font-weight: 600; transition: background .15s,transform .1s; }
+.oap-extract-btn:hover:not(:disabled) { background: linear-gradient(135deg,rgba(99,102,241,.15),rgba(129,140,248,.2)); transform: translateY(-1px); }
+.oap-extract-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 .analysis-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .placeholder-title { font-size: 1.125rem; font-weight: 600; color: var(--text-primary, #111827); margin: 0; }
 .placeholder-text { font-size: .875rem; color: var(--text-secondary, #6b7280); margin: 0 0 16px 0; }
@@ -2076,6 +2277,27 @@ const pageStyles = `
 .ai-extract-value--ok { color: #047857; }
 .ai-extract-value--ko { color: #b45309; }
 
+/* OAP Card */
+.oap-card { margin-bottom: 12px; padding: 16px 18px; border-radius: 10px; border: 1px solid rgba(99,102,241,.3); background: linear-gradient(135deg,rgba(99,102,241,.04),rgba(129,140,248,.08)); }
+.oap-card--found { border-color: rgba(99,102,241,.5); background: linear-gradient(135deg,rgba(99,102,241,.06),rgba(129,140,248,.1)); }
+.oap-card--empty { border-color: rgba(107,114,128,.3); background: var(--bg-muted, #f9fafb); }
+.oap-card--error { border-color: rgba(185,28,28,.3); background: rgba(185,28,28,.04); }
+.oap-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.oap-title { font-size: .9375rem; font-weight: 700; color: var(--text-primary, #111827); }
+.oap-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: .6875rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.oap-badge--found { background: rgba(99,102,241,.15); border: 1px solid rgba(99,102,241,.35); color: #4338ca; }
+.oap-badge--empty { background: rgba(107,114,128,.12); border: 1px solid rgba(107,114,128,.25); color: #6b7280; }
+.oap-badge--error { background: rgba(185,28,28,.1); border: 1px solid rgba(185,28,28,.25); color: #b91c1c; }
+.oap-meta { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; font-size: .8125rem; color: var(--text-secondary, #6b7280); }
+.oap-meta strong { color: var(--text-primary, #111827); font-weight: 600; }
+.oap-source-link { color: #4338ca; text-decoration: none; font-weight: 600; }
+.oap-source-link:hover { text-decoration: underline; }
+.oap-summary { font-size: .875rem; color: var(--text-secondary, #6b7280); line-height: 1.6; margin: 0 0 12px 0; }
+.oap-section { margin-top: 10px; }
+.oap-section-title { font-size: .75rem; font-weight: 700; color: #4338ca; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+.oap-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+.oap-list li { font-size: .8125rem; color: var(--text-secondary, #6b7280); line-height: 1.5; }
+
 .completeness-warning { display: flex; gap: 12px; margin-bottom: 12px; padding: 12px 16px; background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.3); border-radius: 8px; }
 .completeness-icon { font-size: 1.25rem; flex-shrink: 0; }
 .completeness-content { flex: 1; }
@@ -2109,7 +2331,6 @@ const pageStyles = `
 .rule-zone-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .confidence-pill,.source-pill { display: inline-flex; padding: 2px 10px; border-radius: 999px; background: var(--card-bg, #fff); border: 1px solid var(--border-color, #e5e7eb); color: var(--text-secondary, #6b7280); font-size: .75rem; }
 
-/* NOUVELLE GRILLE DE CARTES AVEC NOTES */
 .rule-cards-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
 @media (min-width: 900px) { .rule-cards-grid { grid-template-columns: repeat(4,minmax(0,1fr)); } }
 
@@ -2131,6 +2352,7 @@ const pageStyles = `
   .primary-btn { background: #4f46e5; border-color: #4f46e5; }
   .secondary-btn { background: var(--bg-muted,#111827); color: #f9fafb; }
   .ai-extract-btn { background: linear-gradient(135deg,rgba(139,92,246,.2),rgba(167,139,250,.25)); border-color: rgba(139,92,246,.5); color: #a78bfa; }
+  .oap-extract-btn { background: linear-gradient(135deg,rgba(99,102,241,.2),rgba(129,140,248,.25)); border-color: rgba(99,102,241,.5); color: #818cf8; }
   .zone-pill { color: #f9fafb; }
   .zone-detected-badge { background: rgba(16,185,129,.2); border-color: rgba(16,185,129,.4); color: #34d399; }
   .zone-ai-badge { background: rgba(139,92,246,.2); border-color: rgba(139,92,246,.4); color: #a78bfa; }
@@ -2146,5 +2368,12 @@ const pageStyles = `
   .ai-extract-result-value { color: #f9fafb; }
   .ai-extract-value--ok { color: #34d399; }
   .ai-extract-value--ko { color: #fbbf24; }
+  .oap-card { background: linear-gradient(135deg,rgba(99,102,241,.1),rgba(129,140,248,.14)); border-color: rgba(99,102,241,.4); }
+  .oap-card--empty { background: var(--bg-muted,#111827); border-color: rgba(107,114,128,.4); }
+  .oap-card--error { background: rgba(185,28,28,.08); border-color: rgba(185,28,28,.4); }
+  .oap-title { color: #f9fafb; }
+  .oap-badge--found { background: rgba(99,102,241,.25); border-color: rgba(99,102,241,.5); color: #818cf8; }
+  .oap-section-title { color: #818cf8; }
+  .oap-source-link { color: #818cf8; }
 }
 `;

@@ -554,7 +554,12 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId }) =
 
   const buildableEnvelope = useMemo<Vec2[] | null>(() => {
     if (parcelVec2.length < 3) return null;
-    const env = computeBuildableEnvelope(parcelVec2, { setbackMeters: PLACEHOLDER_PLU_RULES.minSetbackMeters ?? 0 });
+    const env = computeBuildableEnvelope(parcelVec2, {
+  setbackMeters: PLACEHOLDER_PLU_RULES.minSetbackMeters ?? 0,
+  frontageSetbackMeters: 5,
+  sideSetbackMeters: 3,
+  rearSetbackMeters: 3,
+});
     return env.length >= 3 ? env : null;
   }, [parcelVec2]);
 
@@ -735,7 +740,7 @@ export const Implantation2DPage: React.FC = () => {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#f8fafc", overflow: "hidden" }}>
 
-      <div style={{ padding: "14px 20px", background: GRAD_PRO, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ margin: "14px 16px 0", borderRadius: 14, padding: "14px 20px", background: GRAD_PRO, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", marginBottom: 2 }}>Promoteur › Conception</div>
           <div style={{ fontSize: 18, fontWeight: 700, color: "white" }}>Implantation 2D</div>

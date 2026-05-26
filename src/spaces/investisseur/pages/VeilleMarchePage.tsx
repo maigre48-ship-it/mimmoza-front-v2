@@ -7,6 +7,7 @@ import {
   Plus,
   Home,
   Building2,
+  Trees,
   SlidersHorizontal,
   MapPin,
   Sparkles,
@@ -114,7 +115,7 @@ type SelectedZone = {
 // ─── Filters state ─────────────────────────────────────────────────────────────
 
 type FiltersState = {
-  propertyTypeFilter: "all" | "apartment" | "house";
+  propertyTypeFilter: "all" | "apartment" | "house" | "land";
   projectTypes: string[];
   priceMin: string;
   priceMax: string;
@@ -477,12 +478,46 @@ function matchesEnergyClass(raw: unknown, classes: string[]): boolean {
 
 function matchesPropertyType(
   propertyType: number | null | undefined,
-  filter: "all" | "apartment" | "house"
+  filter: "all" | "apartment" | "house" | "land",
+  listing?: ListingExtended
 ): boolean {
+  const text = normalizeText(
+    [
+      listing?.title,
+      listing?.description,
+      listing?.category,
+      listing?.project_type,
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+
+  const hasLandSurface =
+    typeof listing?.land_surface_m2 === "number" && listing.land_surface_m2 > 0;
+
+  // Heuristique prix/m² : terrain = price_m2 très bas mais prix total cohérent
+  const priceM2 = parseSafeNumber(listing?.price_per_m2 ?? listing?.price_m2);
+  const price = parseSafeNumber(listing?.price);
+  const isLandByPrice =
+    priceM2 != null && priceM2 < 200 && price != null && price >= 10_000;
+
+  const isLand =
+    propertyType === 2 ||
+    hasLandSurface ||
+    isLandByPrice ||
+    text.includes("terrain") ||
+    text.includes("parcelle") ||
+    text.includes("constructible") ||
+    text.includes("lot à bâtir") ||
+    text.includes("lot a batir") ||
+    text.includes("terrain à bâtir") ||
+    text.includes("terrain a batir");
+
   if (filter === "all") return true;
-  if (propertyType == null) return false;
-  if (filter === "apartment") return propertyType === 0;
-  if (filter === "house") return propertyType === 1;
+  if (filter === "land") return isLand;
+  if (filter === "apartment") return propertyType === 0 && !isLand;
+  if (filter === "house") return propertyType === 1 && !isLand;
+
   return true;
 }
 
@@ -516,10 +551,11 @@ export default function VeilleMarchePage() {
     bypassLimits,
     isAdmin,
   } = useMarketVeille({
-    zipCode: zoneZipCode,
-    city: zoneCity,
-    autoRefreshOnMount: false,
-  });
+  zipCode: zoneZipCode,
+  city: zoneCity,
+  propertyTypeFilter: filters.propertyTypeFilter,
+  autoRefreshOnMount: false,
+});
 
   // ─── Dérivation du statut lock avec bypass admin ───────────────────────────
   const rawLockActive = isLockActive(activeZoneLock);
@@ -572,15 +608,51 @@ export default function VeilleMarchePage() {
   );
 
   const opportunities = useMemo(() => {
-    if (!hasActiveZone) return [];
-    return ((data?.opportunities ?? []) as OpportunityItem[]).filter((item) => {
-      if (!item) return false;
-      // Filtre anti-location : un loyer mensuel ne peut pas être un prix de vente
-      if (item.price != null && item.price < 10_000) return false;
-      if (item.price_m2 != null && item.price_m2 < 200) return false;
-      return true;
-    });
-  }, [data?.opportunities, hasActiveZone]);
+  if (!hasActiveZone) return [];
+
+  return ((data?.opportunities ?? []) as OpportunityItem[]).filter((item) => {
+    if (!item) return false;
+
+    // Filtre anti-location
+    if (item.price != null && item.price < 10_000) return false;
+
+    // Détection terrain (texte)
+    const text = normalizeText(
+      [
+        item.intro,
+        item.price_position,
+        item.price_drop_info,
+        item.diffusion_info,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    );
+
+    const isLandByText =
+  text.includes("terrain") ||
+  text.includes("parcelle") ||
+  text.includes("constructible") ||
+  text.includes("lot à bâtir") ||
+  text.includes("lot a batir") ||
+  text.includes("terrain à bâtir") ||
+  text.includes("terrain a batir");
+
+// Filet de sécurité : terrain sans libellé mais prix/m² caractéristique
+const isLandByPrice =
+  item.price_m2 != null &&
+  item.price_m2 < 200 &&
+  item.price != null &&
+  item.price >= 10_000;
+
+const isLand = isLandByText || isLandByPrice;
+
+if (!isLand && item.price_m2 != null && item.price_m2 < 200) {
+  return false;
+}
+
+    return true;
+  });
+}, [data?.opportunities, hasActiveZone]);
 
   const refreshDisabled =
     !hasActiveZone ||
@@ -601,9 +673,10 @@ export default function VeilleMarchePage() {
       try {
         setListingsLoading(true);
         const rows = await fetchMarketActiveListings({
-          zipCodes: activeZipCodes,
-          limit: 24,
-        });
+  zipCodes: activeZipCodes,
+  limit: filters.propertyTypeFilter === "land" ? 200 : 60,
+  propertyTypeFilter: filters.propertyTypeFilter,
+});
         setListings(rows as ListingExtended[]);
       } catch (err) {
         console.error("[Veille] erreur chargement annonces:", err);
@@ -614,7 +687,7 @@ export default function VeilleMarchePage() {
     }
 
     void loadListings();
-  }, [activeZipCodes, activeZone]);
+  }, [activeZipCodes, activeZone, filters.propertyTypeFilter]);
 
   const filteredListings = useMemo(() => {
     const kw = filters.keywords.trim().toLowerCase();
@@ -622,8 +695,9 @@ export default function VeilleMarchePage() {
     return listings.filter((l) => {
       // Couche défensive : exclure toute location résiduelle
       if (isRentalListing(l)) return false;
-      if (!matchesPropertyType(l.property_type, filters.propertyTypeFilter))
-        return false;
+      if (!matchesPropertyType(l.property_type, filters.propertyTypeFilter, l)) {
+  return false;
+}
 
       if (filters.projectTypes.length > 0) {
         const pt = normalizeText(l.project_type);
@@ -1248,6 +1322,7 @@ export default function VeilleMarchePage() {
                   <option value="all">Tous les biens</option>
                   <option value="apartment">Appartement</option>
                   <option value="house">Maison</option>
+                  <option value="land">Terrain</option>
                 </FSelect>
 
                 <FInput
@@ -2355,21 +2430,26 @@ function PropertyTypeBadge({
   propertyType: number | null | undefined;
 }) {
   const isHouse = propertyType === 1;
+  const isLand = propertyType === 2;
 
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
-        isHouse
-          ? "border-amber-200 bg-amber-50 text-amber-700"
-          : "border-blue-200 bg-blue-50 text-blue-700"
+        isLand
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          : isHouse
+            ? "border-amber-200 bg-amber-50 text-amber-700"
+            : "border-blue-200 bg-blue-50 text-blue-700"
       }`}
     >
-      {isHouse ? (
+      {isLand ? (
+        <Trees className="h-3.5 w-3.5" />
+      ) : isHouse ? (
         <Home className="h-3.5 w-3.5" />
       ) : (
         <Building2 className="h-3.5 w-3.5" />
       )}
-      {isHouse ? "Maison" : "Appartement"}
+      {isLand ? "Terrain" : isHouse ? "Maison" : "Appartement"}
     </span>
   );
 }
@@ -2485,6 +2565,7 @@ function formatPortalLabel(value: string | null | undefined): string {
 
 function getPropertyTypeLabel(propertyType: number | null | undefined): string {
   if (propertyType === 1) return "Maison";
+  if (propertyType === 2) return "Terrain";
   return "Appartement";
 }
 

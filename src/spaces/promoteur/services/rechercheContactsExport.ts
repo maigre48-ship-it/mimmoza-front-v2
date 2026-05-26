@@ -34,16 +34,17 @@ function buildFilename(ctx: ExportContext): string {
   const hh = String(now.getHours()).padStart(2, '0');
   const mi = String(now.getMinutes()).padStart(2, '0');
 
-  const slug = ctx.query
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40) || 'export';
+  const slug =
+    ctx.query
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'export';
 
   const radiusPart = ctx.radiusKm > 0 ? `-${ctx.radiusKm}km` : '';
 
-  return `mimmoza-contacts-mairies-${slug}${radiusPart}-${yyyy}${mm}${dd}-${hh}${mi}.xlsx`;
+  return `mimmoza-contacts-mairies-crm-${slug}${radiusPart}-${yyyy}${mm}${dd}-${hh}${mi}.xlsx`;
 }
 
 /**
@@ -51,6 +52,7 @@ function buildFilename(ctx: ExportContext): string {
  *
  * - Colonne distance affichée uniquement si au moins une ligne la possède.
  * - Cellules vides affichées "Non disponible" pour cohérence avec l'UI.
+ * - Colonnes CRM ajoutées pour le suivi commercial.
  * - Largeurs de colonnes pré-dimensionnées pour un rendu direct.
  * - Ligne d'en-tête mise en gras.
  */
@@ -65,12 +67,10 @@ export function exportMairieContactsToXlsx(
   );
 
   // 1) En-têtes
-  const headers: string[] = [
-    'Commune',
-    'Code postal',
-    'Code INSEE',
-  ];
+  const headers: string[] = ['Commune', 'Code postal', 'Code INSEE'];
+
   if (hasDistance) headers.push('Distance');
+
   headers.push(
     'Civilité',
     'Prénom du maire',
@@ -80,6 +80,15 @@ export function exportMairieContactsToXlsx(
     'Téléphone',
     'Adresse',
     'Source',
+
+    // Suivi CRM léger
+    'Statut contact',
+    'Contacté le',
+    'Relance le',
+    'Canal',
+    'Interlocuteur',
+    'Commentaires',
+    'Prochaine action',
   );
 
   // 2) Lignes
@@ -89,7 +98,9 @@ export function exportMairieContactsToXlsx(
       cellOrPlaceholder(row.codePostal),
       cellOrPlaceholder(row.codeInsee),
     ];
+
     if (hasDistance) line.push(formatDistanceForExport(row.distanceKm));
+
     line.push(
       cellOrPlaceholder(row.civiliteMaire),
       cellOrPlaceholder(row.prenomMaire),
@@ -99,7 +110,17 @@ export function exportMairieContactsToXlsx(
       cellOrPlaceholder(row.telephoneMairie),
       cellOrPlaceholder(row.adresseMairie),
       cellOrPlaceholder(row.source),
+
+      // Suivi CRM léger — champs à compléter dans Excel
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
     );
+
     return line;
   });
 
@@ -107,60 +128,99 @@ export function exportMairieContactsToXlsx(
   const aoa: Array<Array<string>> = [headers, ...dataRows];
   const worksheet = XLSX.utils.aoa_to_sheet(aoa);
 
-  // 4) Largeurs de colonnes (approximatives en caractères)
+  // 4) Largeurs de colonnes
   const widthsBase = [
     { wch: 30 }, // Commune
     { wch: 12 }, // Code postal
     { wch: 11 }, // Code INSEE
   ];
+
   const widthsMid: Array<{ wch: number }> = [];
-  if (hasDistance) widthsMid.push({ wch: 10 }); // Distance
+
+  if (hasDistance) {
+    widthsMid.push({ wch: 10 }); // Distance
+  }
+
   const widthsRest = [
     { wch: 10 }, // Civilité
-    { wch: 18 }, // Prénom
-    { wch: 22 }, // Nom
+    { wch: 18 }, // Prénom du maire
+    { wch: 22 }, // Nom du maire
     { wch: 35 }, // Maire formaté
-    { wch: 35 }, // Email
+    { wch: 35 }, // Email mairie
     { wch: 16 }, // Téléphone
     { wch: 50 }, // Adresse
     { wch: 30 }, // Source
+
+    // Suivi CRM léger
+    { wch: 18 }, // Statut contact
+    { wch: 14 }, // Contacté le
+    { wch: 14 }, // Relance le
+    { wch: 16 }, // Canal
+    { wch: 24 }, // Interlocuteur
+    { wch: 50 }, // Commentaires
+    { wch: 30 }, // Prochaine action
   ];
+
   worksheet['!cols'] = [...widthsBase, ...widthsMid, ...widthsRest];
 
   // 5) Liens hypertextes pour email et téléphone
   const emailColIdx = hasDistance ? 8 : 7;
   const phoneColIdx = emailColIdx + 1;
+
   for (let r = 0; r < rows.length; r++) {
     const row = rows[r];
     const excelRow = r + 2; // ligne 1 = en-têtes
 
     if (row.emailMairie) {
-      const addr = XLSX.utils.encode_cell({ c: emailColIdx, r: excelRow - 1 });
+      const addr = XLSX.utils.encode_cell({
+        c: emailColIdx,
+        r: excelRow - 1,
+      });
+
       const cell = worksheet[addr];
+
       if (cell) {
-        cell.l = { Target: 'mailto:' + row.emailMairie, Tooltip: 'Envoyer un email' };
+        cell.l = {
+          Target: 'mailto:' + row.emailMairie,
+          Tooltip: 'Envoyer un email',
+        };
       }
     }
+
     if (row.telephoneMairie) {
-      const addr = XLSX.utils.encode_cell({ c: phoneColIdx, r: excelRow - 1 });
+      const addr = XLSX.utils.encode_cell({
+        c: phoneColIdx,
+        r: excelRow - 1,
+      });
+
       const cell = worksheet[addr];
+
       if (cell) {
         const tel = row.telephoneMairie.replace(/\s+/g, '');
-        cell.l = { Target: 'tel:' + tel, Tooltip: 'Appeler' };
+
+        cell.l = {
+          Target: 'tel:' + tel,
+          Tooltip: 'Appeler',
+        };
       }
     }
   }
 
   // 6) Gel de la première ligne et filtres auto
   worksheet['!freeze'] = { xSplit: 0, ySplit: 1 };
-  const lastColLetter = XLSX.utils.encode_col(headers.length - 1);
-  worksheet['!autofilter'] = { ref: `A1:${lastColLetter}${rows.length + 1}` };
 
-  // 7) Style des en-têtes (gras). Note : le style dépend du support côté moteur XLSX.
-  //    SheetJS (xlsx community) applique ces props si supportées par le client.
+  const lastColLetter = XLSX.utils.encode_col(headers.length - 1);
+
+  worksheet['!autofilter'] = {
+    ref: `A1:${lastColLetter}${rows.length + 1}`,
+  };
+
+  // 7) Style des en-têtes
+  // SheetJS community peut ignorer certains styles selon le lecteur Excel.
   for (let c = 0; c < headers.length; c++) {
     const addr = XLSX.utils.encode_cell({ c, r: 0 });
     const cell = worksheet[addr];
+
     if (cell) {
       cell.s = {
         font: { bold: true },
@@ -172,29 +232,39 @@ export function exportMairieContactsToXlsx(
 
   // 8) Feuille méta
   const metaRows: Array<Array<string>> = [
-    ['Mimmoza — Export contacts mairies'],
+    ['Mimmoza — Export contacts mairies CRM'],
     [],
     ['Date export', new Date().toLocaleString('fr-FR')],
     ['Requête', ctx.query],
-    [
-      'Rayon',
-      ctx.radiusKm > 0 ? `${ctx.radiusKm} km` : 'Sans rayon',
-    ],
+    ['Rayon', ctx.radiusKm > 0 ? `${ctx.radiusKm} km` : 'Sans rayon'],
     [
       'Centre de recherche',
       ctx.centerCommune ?? (ctx.radiusKm > 0 ? 'Non déterminé' : 'Sans objet'),
     ],
     ['Nombre de mairies', String(rows.length)],
+    [],
+    ['Colonnes CRM'],
+    ['Statut contact', 'À faire / Contacté / Relancé / Répondu / Refus / Opportunité'],
+    ['Contacté le', 'Date du premier contact'],
+    ['Relance le', 'Date de relance prévue'],
+    ['Canal', 'Email / Téléphone / Courrier / RDV'],
+    ['Interlocuteur', 'Nom ou fonction de la personne contactée'],
+    ['Commentaires', 'Notes libres'],
+    ['Prochaine action', 'Action suivante à réaliser'],
   ];
+
   const metaSheet = XLSX.utils.aoa_to_sheet(metaRows);
-  metaSheet['!cols'] = [{ wch: 22 }, { wch: 40 }];
+
+  metaSheet['!cols'] = [{ wch: 24 }, { wch: 70 }];
 
   // 9) Assemblage du classeur
   const workbook = XLSX.utils.book_new();
+
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Contacts mairies');
   XLSX.utils.book_append_sheet(workbook, metaSheet, 'Paramètres');
 
   // 10) Téléchargement
   const filename = buildFilename(ctx);
+
   XLSX.writeFile(workbook, filename);
 }
