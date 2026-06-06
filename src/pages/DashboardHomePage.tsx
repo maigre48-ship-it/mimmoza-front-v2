@@ -1,6 +1,7 @@
 // src/pages/DashboardHomePage.tsx
 // Ancienne HomePage déplacée ici — affichée sur /dashboard (utilisateurs connectés)
-// v3 — Homepage orientée verticales métiers + section basse premium
+// v4 — HERO moteur de décision + bloc "Analyse Rapide" mocké
+//      Reste de la page inchangé (verticales + section IA + workflow)
 
 import { useNavigate } from "react-router-dom";
 import {
@@ -16,6 +17,14 @@ import {
   Wallet,
   ShieldCheck,
   BrainCircuit,
+  Zap,
+  Gauge,
+  TrendingUp,
+  Activity,
+  Bus,
+  Store,
+  GraduationCap,
+  LineChart,
 } from "lucide-react";
 import type { ComponentType } from "react";
 
@@ -34,18 +43,6 @@ type VerticalCard = {
 
 const VERTICALS: VerticalCard[] = [
   {
-    id: "promoteur",
-    title: "Promoteur",
-    badge: "Cœur produit",
-    description: "Analyse foncière, PLU, massing 3D et bilan promoteur complet.",
-    features: ["Faisabilité foncière", "Lecture PLU", "Massing 3D", "Bilan promoteur"],
-    icon: Building2,
-    gradient: "from-violet-500/10 via-violet-500/5 to-transparent",
-    border: "border-violet-200",
-    button: "bg-violet-600 hover:bg-violet-700",
-    route: "/promoteur",
-  },
-  {
     id: "investisseur",
     title: "Investisseur",
     badge: "Investissement",
@@ -58,17 +55,16 @@ const VERTICALS: VerticalCard[] = [
     route: "/marchand-de-bien",
   },
   {
-    id: "apporteur",
-    title: "Apporteur d'affaire",
-    badge: "Mise en relation",
-    description:
-      "Qualifiez rapidement une opportunité et transmettez-la à un promoteur.",
-    features: ["Qualification", "Pré-analyse", "Partage promoteur", "Synthèse PDF"],
-    icon: Handshake,
-    gradient: "from-emerald-500/10 via-emerald-500/5 to-transparent",
-    border: "border-emerald-200",
-    button: "bg-emerald-600 hover:bg-emerald-700",
-    route: "/apporteur",
+    id: "promoteur",
+    title: "Promoteur",
+    badge: "Cœur produit",
+    description: "Analyse foncière, PLU, massing 3D et bilan promoteur complet.",
+    features: ["Faisabilité foncière", "Lecture PLU", "Massing 3D", "Bilan promoteur"],
+    icon: Building2,
+    gradient: "from-violet-500/10 via-violet-500/5 to-transparent",
+    border: "border-violet-200",
+    button: "bg-violet-600 hover:bg-violet-700",
+    route: "/promoteur",
   },
   {
     id: "rehabilitation",
@@ -83,6 +79,52 @@ const VERTICALS: VerticalCard[] = [
     button: "bg-amber-500 hover:bg-amber-600",
     route: "/rehabilitation",
   },
+  {
+    id: "apporteur",
+    title: "Apporteur d'affaire",
+    badge: "Mise en relation",
+    description:
+      "Qualifiez rapidement une opportunité et transmettez-la à un promoteur.",
+    features: ["Qualification", "Pré-analyse", "Partage promoteur", "Synthèse PDF"],
+    icon: Handshake,
+    gradient: "from-emerald-500/10 via-emerald-500/5 to-transparent",
+    border: "border-emerald-200",
+    button: "bg-emerald-600 hover:bg-emerald-700",
+    route: "/apporteur",
+  },
+];
+
+// ───────────────── Données mockées (Hero uniquement) ─────────────────
+// Aligné sur la vraie sortie du moteur "Analyse rapide" :
+// Score opportunité, Sécurité du projet, Valeur estimée + fourchette + €/m²,
+// Écart prix/estimation, Fiabilité, sous-scores d'emplacement.
+const HERO_BADGES = ["PLU", "Faisabilité", "Marché", "Travaux", "Rentabilité", "Valorisation"];
+
+const MOCK_ANALYSE = {
+  adresse: "15 Rue de la République, 69002 Lyon",
+  parcelle: "AB123",
+  surface: "520 m²",
+  scoreOpportunite: 82,
+  scoreLabel: "Bonne opportunité",
+  positionnement: "Prix cohérent avec le marché",
+  securite: 96,
+  fiabilite: 67,
+  valeurEstimee: "485 000 €",
+  fourchetteBasse: "461 000 €",
+  fourchetteHaute: "509 000 €",
+  prixDemande: "460 000 €",
+  marcheM2: "6 730 €/m²",
+  ecart: "+25 000 €",
+  ecartPct: "+5,4 %",
+  scoreLocalisation: 83,
+};
+
+// Sous-scores d'emplacement (cf. carte EMPLACEMENT du moteur réel)
+const EMPLACEMENT = [
+  { label: "Transports", value: 78, icon: Bus },
+  { label: "Commerces", value: 85, icon: Store },
+  { label: "Écoles", value: 90, icon: GraduationCap },
+  { label: "Marché", value: 80, icon: LineChart },
 ];
 
 export default function DashboardHomePage() {
@@ -100,57 +142,212 @@ export default function DashboardHomePage() {
   return (
     <div className="min-h-screen bg-[#f7f8fc]">
       {/* ───────────────── HERO ───────────────── */}
-      <section className="relative overflow-hidden border-b border-slate-200 bg-[#0f0b2e]">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(124,111,205,0.35),transparent_35%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(59,130,246,0.18),transparent_30%)]" />
+      <section className="relative overflow-hidden border-b border-slate-200 bg-gradient-to-br from-[#0b0820] via-[#140a36] to-[#1d0f4d]">
+        {/* halos lumineux */}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(139,92,246,0.30),transparent_40%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(56,189,248,0.16),transparent_38%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(99,102,241,0.10),transparent_55%)]" />
 
-        <div className="relative mx-auto max-w-7xl px-6 py-20">
+        <div className="relative mx-auto max-w-7xl px-6 pt-20 pb-14">
           <div className="max-w-4xl">
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-violet-100 backdrop-blur">
               <Sparkles className="h-4 w-4" />
               Intelligence immobilière décisionnelle
             </div>
 
-            <h1 className="max-w-4xl text-5xl font-black tracking-tight text-white sm:text-6xl">
-              La plateforme IA des
-              <span className="bg-gradient-to-r from-violet-300 via-blue-300 to-cyan-300 bg-clip-text text-transparent">
-                {" "}professionnels de l'immobilier
+            <h1 className="max-w-4xl text-4xl font-black uppercase leading-[1.05] tracking-tight text-white sm:text-6xl">
+              L'intelligence immobilière
+              <span className="block bg-gradient-to-r from-violet-300 via-blue-300 to-cyan-300 bg-clip-text text-transparent">
+                décisionnelle
               </span>
             </h1>
 
             <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">
-              De l'analyse foncière à la réhabilitation complète, Mimmoza centralise
-              faisabilité, travaux, marché, réglementation et valorisation dans un seul outil.
+              Analysez un bien, une parcelle ou un projet en moins de 2 minutes.
             </p>
 
+            {/* Barre de recherche */}
             <div className="mt-10 flex max-w-2xl flex-col gap-3 sm:flex-row">
-              <div className="flex flex-1 items-center gap-3 rounded-2xl border border-white/10 bg-white/10 px-4 py-4 backdrop-blur">
-                <MapPinned className="h-5 w-5 text-violet-300" />
+              <div className="flex flex-1 items-center gap-3 rounded-2xl border border-white/10 bg-white/10 px-5 py-4 shadow-lg shadow-violet-950/30 backdrop-blur transition-colors focus-within:border-violet-400/40">
+                <MapPinned className="h-5 w-5 shrink-0 text-violet-300" />
                 <input
                   type="text"
-                  placeholder="Entrez une adresse ou une ville..."
+                  placeholder="Entrez une adresse, une parcelle ou une ville..."
                   className="w-full bg-transparent text-white placeholder:text-slate-400 focus:outline-none"
                 />
               </div>
               <button
                 type="button"
-                className="rounded-2xl bg-violet-600 px-6 py-4 font-semibold text-white transition-all hover:bg-violet-700"
+                onClick={() => navigate("/analyse-rapide")}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-4 font-semibold text-white shadow-lg shadow-violet-900/40 transition-all hover:from-violet-500 hover:to-indigo-500"
               >
-                Lancer l'analyse
+                <Zap className="h-5 w-5" />
+                Analyse rapide
               </button>
             </div>
 
+            {/* Badges */}
             <div className="mt-6 flex flex-wrap gap-2">
-              {["PLU", "Massing 3D", "Bilan promoteur", "Étude de marché", "Travaux", "Rendu façade IA"].map(
-                (item) => (
-                  <span
-                    key={item}
-                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300"
-                  >
-                    {item}
+              {HERO_BADGES.map((item) => (
+                <span
+                  key={item}
+                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300"
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* ───────────────── BLOC ANALYSE RAPIDE (mock) ───────────────── */}
+          <div className="mt-14 overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.04] shadow-2xl shadow-violet-950/40 backdrop-blur">
+            {/* En-tête du dossier */}
+            <div className="flex flex-col gap-4 border-b border-white/10 bg-white/[0.03] px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/20 text-violet-200">
+                  <ScanSearch className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-bold uppercase tracking-[0.2em] text-white">
+                      Analyse rapide
+                    </p>
+                    <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-300">
+                      Exemple
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-300">{MOCK_ANALYSE.adresse}</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 font-medium text-slate-300">
+                  Parcelle <span className="text-white">{MOCK_ANALYSE.parcelle}</span>
+                </span>
+                <span className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 font-medium text-slate-300">
+                  Surface <span className="text-white">{MOCK_ANALYSE.surface}</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Grille des cartes */}
+            <div className="grid gap-4 p-6 md:grid-cols-2 lg:grid-cols-3">
+              {/* CARTE 1 — Score opportunité + Sécurité du projet */}
+              <div className="flex flex-col rounded-2xl border border-white/10 bg-gradient-to-br from-violet-500/10 to-transparent p-5">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  <Gauge className="h-4 w-4 text-violet-300" />
+                  Score opportunité
+                </div>
+                <div className="mt-4 flex items-end gap-1">
+                  <span className="text-5xl font-black text-white">{MOCK_ANALYSE.scoreOpportunite}</span>
+                  <span className="mb-1 text-lg font-semibold text-slate-400">/ 100</span>
+                </div>
+                <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-violet-400 to-cyan-400"
+                    style={{ width: `${MOCK_ANALYSE.scoreOpportunite}%` }}
+                  />
+                </div>
+                <div className="mt-3">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    {MOCK_ANALYSE.scoreLabel}
                   </span>
-                )
-              )}
+                  <p className="mt-2 text-xs text-slate-400">{MOCK_ANALYSE.positionnement}</p>
+                </div>
+                <div className="mt-auto flex items-center justify-between border-t border-white/10 pt-3 text-sm">
+                  <span className="flex items-center gap-2 text-slate-400">
+                    <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                    Sécurité du projet
+                  </span>
+                  <span className="font-semibold text-emerald-300">{MOCK_ANALYSE.securite}/100</span>
+                </div>
+              </div>
+
+              {/* CARTE 2 — Valeur estimée (moteur Mimmoza) */}
+              <div className="flex flex-col rounded-2xl border border-white/10 bg-gradient-to-br from-blue-500/10 to-transparent p-5">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  <Wallet className="h-4 w-4 text-blue-300" />
+                  Valeur estimée — moteur Mimmoza
+                </div>
+                <div className="mt-4">
+                  <span className="text-3xl font-black text-white">{MOCK_ANALYSE.valeurEstimee}</span>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {MOCK_ANALYSE.fourchetteBasse} → {MOCK_ANALYSE.fourchetteHaute}
+                  </p>
+                  <p className="text-xs text-slate-400">Marché : {MOCK_ANALYSE.marcheM2}</p>
+                </div>
+                <div className="mt-4 space-y-2 border-t border-white/10 pt-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Prix demandé</span>
+                    <span className="font-semibold text-slate-200">{MOCK_ANALYSE.prixDemande}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Écart prix / estimation</span>
+                    <span className="inline-flex items-center gap-1 font-semibold text-emerald-300">
+                      <TrendingUp className="h-3.5 w-3.5" />
+                      {MOCK_ANALYSE.ecart} ({MOCK_ANALYSE.ecartPct})
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-auto pt-3">
+                  <div className="mb-1 flex items-center justify-between text-xs text-slate-400">
+                    <span>Fiabilité de l'estimation</span>
+                    <span className="font-semibold text-slate-200">{MOCK_ANALYSE.fiabilite}/100</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400"
+                      style={{ width: `${MOCK_ANALYSE.fiabilite}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* CARTE 3 — Emplacement (sous-scores) */}
+              <div className="flex flex-col rounded-2xl border border-white/10 bg-gradient-to-br from-cyan-500/10 to-transparent p-5">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  <Activity className="h-4 w-4 text-cyan-300" />
+                  Emplacement
+                </div>
+                <div className="mt-4 space-y-3">
+                  {EMPLACEMENT.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <div key={item.label}>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="flex items-center gap-2 text-slate-400">
+                            <Icon className="h-4 w-4 text-slate-500" />
+                            {item.label}
+                          </span>
+                          <span className="font-semibold text-slate-200">{item.value}</span>
+                        </div>
+                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-blue-400"
+                            style={{ width: `${item.value}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-auto flex items-center justify-between border-t border-white/10 pt-3 text-sm">
+                  <span className="text-slate-400">Score localisation global</span>
+                  <span className="font-semibold text-cyan-300">{MOCK_ANALYSE.scoreLocalisation}/100</span>
+                </div>
+              </div>
+            </div>
+
+            {/* CTA bas du bloc */}
+            <div className="flex justify-center border-t border-white/10 bg-white/[0.02] px-6 py-4">
+              <button
+                type="button"
+                onClick={() => navigate("/analyse-rapide")}
+                className="inline-flex items-center gap-2 text-sm font-semibold text-violet-200 transition-colors hover:text-white"
+              >
+                Voir l'analyse complète
+                <ArrowRight className="h-4 w-4" />
+              </button>
             </div>
           </div>
         </div>

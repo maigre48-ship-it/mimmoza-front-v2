@@ -1,6 +1,4 @@
-// === exportPdf.ts — Investisseur — v2 SHARDS COVER ===
-// Identique à la version précédente sauf buildCover() qui utilise
-// des shards diagonaux sky-blue au lieu du dégradé plat.
+// === exportPdf.ts — Investisseur — v4 DARK COVER PREMIUM ===
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { MarchandSnapshotV1 } from "../shared/marchandSnapshot.store";
@@ -11,9 +9,9 @@ export { autoTable };
 // ─── Color Tokens ────────────────────────────────────────────────
 export const C = {
   primary:    [2, 6, 23]      as const,
-  accent:     [79, 70, 229]   as const,
-  accentDark: [55, 48, 163]   as const,
-  accentCyan: [6, 182, 212]   as const,
+  accent:     [37, 99, 235]   as const,
+  accentDark: [30, 64, 175]   as const,
+  accentCyan: [14, 165, 233]  as const,
   success:    [16, 185, 129]  as const,
   warning:    [245, 158, 11]  as const,
   danger:     [100, 116, 139] as const,
@@ -30,7 +28,7 @@ export const C = {
   navy:       [2, 6, 23]      as const,
   navyMid:    [15, 23, 42]    as const,
   navyCard:   [15, 23, 42]    as const,
-  accentSoft: [238, 242, 255] as const,
+  accentSoft: [239, 246, 255] as const,
   accentSoft2:[240, 249, 255] as const,
   shadow:     [218, 224, 232] as const,
   killBg:     [241, 245, 249] as const,
@@ -45,7 +43,7 @@ export const C = {
   chipText:   [71, 85, 105]   as const,
   coverBg:    [2, 6, 23]      as const,
   coverMid:   [15, 23, 42]    as const,
-  gold:       [6, 182, 212]   as const,
+  gold:       [14, 165, 233]  as const,
   teal:       [45, 212, 191]  as const,
 };
 
@@ -63,6 +61,9 @@ export interface ExportPdfOpts {
   space?: "marchand" | "investisseur";
   aiReport?: AiReport;
   context?: Record<string, unknown>;
+  coverImage?: string;
+  logo?: string;
+  logoAspect?: number;
 }
 
 export interface AiReport {
@@ -321,7 +322,7 @@ export function drawCheckbox(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// ─── SCORE CARD /100 — palette Mimmoza ─────────────────────────────
+// ─── SCORE CARD /100 ───────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
 
 interface ScoreCardOpts { source?: string; inverted?: boolean; subtext?: string; }
@@ -351,7 +352,7 @@ export function scoreCard100(
 
   const lvlBg: readonly [number, number, number] =
     lvl === "excellent" ? [209, 250, 229] as const
-    : lvl === "solide"  ? [238, 242, 255] as const
+    : lvl === "solide"  ? [239, 246, 255] as const
     : lvl === "moyen"   ? [254, 243, 199] as const
     : [254, 226, 226]   as const;
 
@@ -364,45 +365,33 @@ export function scoreCard100(
   sf(doc, lvlColor);
   doc.rect(x, y + 1, w, 1.5, "F");
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(6);
-  sc(doc, C.mutedDark);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(6); sc(doc, C.mutedDark);
   doc.text(sanitizeForPdf(label).toUpperCase(), x + w / 2, y + 8, { align: "center" });
 
   if (score != null) {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(22);
-    sc(doc, lvlColor);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(22); sc(doc, lvlColor);
     const scoreStr = String(score);
     const scoreW   = doc.getTextWidth(scoreStr);
     const cx       = x + w / 2;
     doc.text(scoreStr, cx - 2, y + 17, { align: "center" });
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    sc(doc, C.muted);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7); sc(doc, C.muted);
     doc.text("/100", cx + scoreW / 2, y + 17, { align: "left" });
-
     const barX = x + 5; const barW = w - 10;
     const barY = y + 20.5; const barH = 2.5;
     roundedBox(doc, barX, barY, barW, barH, { fill: C.bgAlt, radius: 1.2 });
     const fillW = Math.max(2, (score / 100) * barW);
-    const INDIGO: readonly [number, number, number] = [79, 70, 229];
-    const CYAN:   readonly [number, number, number] = [6, 182, 212];
-    const steps  = Math.max(4, Math.round(fillW * 2));
-    ribbon(doc, barY, barH, INDIGO, CYAN, steps, barX, fillW);
-
+    const BLUE: readonly [number, number, number] = [37, 99, 235];
+    const CYAN: readonly [number, number, number] = [6, 182, 212];
+    ribbon(doc, barY, barH, BLUE, CYAN, Math.max(4, Math.round(fillW * 2)), barX, fillW);
   } else {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    sc(doc, C.muted);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(16); sc(doc, C.muted);
     doc.text("ND", x + w / 2, y + 17, { align: "center" });
     roundedBox(doc, x + 5, y + 20.5, w - 10, 2.5, { fill: C.bgAlt, radius: 1.2 });
   }
 
   if (score != null) {
     const badgeLabel = sanitizeForPdf(lvlLabel);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(5.5);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(5.5);
     const bW = doc.getTextWidth(badgeLabel) + 6;
     const bX = x + (w - bW) / 2;
     const bY = opts?.source ? y + h - 13.5 : y + h - 8;
@@ -413,8 +402,7 @@ export function scoreCard100(
 
   if (opts?.source) {
     const chipLabel = sanitizeForPdf(opts.source);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(5.5);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(5.5);
     const chipW = doc.getTextWidth(chipLabel) + 5;
     const chipX = x + (w - chipW) / 2;
     const chipY = y + h - 7;
@@ -424,9 +412,7 @@ export function scoreCard100(
   }
 
   if (opts?.subtext) {
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(5);
-    sc(doc, C.muted);
+    doc.setFont("helvetica", "italic"); doc.setFontSize(5); sc(doc, C.muted);
     doc.text(sanitizeForPdf(opts.subtext), x + w / 2, y + h - 1.5, { align: "center" });
   }
 }
@@ -439,14 +425,14 @@ function finalizeHF(doc: jsPDF, title?: string, skipCover = true): void {
     doc.setPage(i);
     if (skipCover && i === 1) continue;
     const dn = skipCover ? i - 1 : i;
-    ribbon(doc, 0, 9, [238, 242, 255] as const, [240, 249, 255] as const, 90, 0, PW);
+    ribbon(doc, 0, 9, [239, 246, 255] as const, [240, 249, 255] as const, 90, 0, PW);
     doc.setFontSize(6); doc.setFont("helvetica", "normal"); sc(doc, C.accent);
     const hText = sanitizeForPdf(title ? `MIMMOZA  |  ${title}` : "MIMMOZA  |  Dossier Investisseur");
     doc.text(hText, M.left, 6);
     doc.text(new Date().toLocaleDateString("fr-FR"), PW - M.right, 6, { align: "right" });
     sd(doc, [196, 221, 253] as const); doc.setLineWidth(0.3);
     doc.line(0, 9, PW, 9);
-    ribbon(doc, PH - 8, 8, [224, 231, 255] as const, [240, 249, 255] as const, 60, 0, PW);
+    ribbon(doc, PH - 8, 8, [219, 234, 254] as const, [240, 249, 255] as const, 60, 0, PW);
     sd(doc, C.border); doc.setLineWidth(0.2);
     doc.line(0, PH - 8, PW, PH - 8);
     doc.setFontSize(6); sc(doc, C.muted);
@@ -454,9 +440,7 @@ function finalizeHF(doc: jsPDF, title?: string, skipCover = true): void {
     doc.text("MIMMOZA Intelligence Immobiliere", M.left, PH - 3);
     doc.text(new Date().toLocaleDateString("fr-FR"), PW - M.right, PH - 3, { align: "right" });
   }
-}
-
-// ═══════════════════════════════════════════════════════════════════
+}// ═══════════════════════════════════════════════════════════════════
 // ─── DATA EXTRACTION ───────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1220,203 +1204,231 @@ function subTitle(doc: jsPDF, title: string, y: number): number {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// ─── COVER — Shards diagonaux sky-blue (Investisseur v2) ───────────
+// ─── COVER — style premium sombre, image pleine page ───────────────
 // ═══════════════════════════════════════════════════════════════════
-//
-// Remplacement de l'ancien fond dégradé plat par 7 shards angulaires
-// (parallélogrammes rectilignes) glissant depuis la droite — même
-// esprit consulting/premium que les ribbons Promoteur, géométrie
-// différente : angulaire vs fluide.
-//
-// Tout le contenu textuel (titre, verdict, SmartScore, KPIs, résumé,
-// sommaire) est strictement identique à l'original.
 
-function buildCover(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportPdfOpts): void {
+// ─── Fond générique bleu nuit (fallback sans coverImage) ──────────
+function drawCoverGenericBackground(doc: jsPDF): void {
+  // Zone haute : bleu nuit dégradé simulé
+  sf(doc, [8, 15, 40] as const);
+  doc.rect(0, 0, PW, PH * 0.55, "F");
 
-  // ── 1. Fond blanc ─────────────────────────────────────────────
-  doc.setFillColor(255, 255, 255);
-  doc.rect(0, 0, PW, PH, "F");
+  // Rectangles décoratifs discrets (volumes géométriques)
+  sf(doc, [15, 28, 65] as const);
+  doc.roundedRect(130, 28, 92, 125, 4, 4, "F");
+  sf(doc, [10, 20, 50] as const);
+  doc.roundedRect(148, 48, 76, 92, 3, 3, "F");
+  sf(doc, [6, 13, 35] as const);
+  doc.roundedRect(162, 62, 55, 65, 2, 2, "F");
 
-  // ── 2. Shards diagonaux — palette sky-blue / cyan ─────────────
-  // Coins dans l'ordre : haut-gauche, haut-droit, bas-droit, bas-gauche.
-  // Shards 1-5 touchent le bord droit (PW).
-  // Shards 6-7 : lames accent flottantes.
-  const INV = {
-    crystal: [227, 245, 254] as const, // sky-50
-    ultra:   [179, 229, 252] as const, // sky-100
-    pale:    [129, 212, 250] as const, // sky-200
-    light:   [79,  195, 247] as const, // sky-300
-    med:     [41,  182, 246] as const, // sky-400
-    main:    [33,  150, 243] as const, // sky-500 (#2196f3)
-    deep:    [14,  91,  167] as const, // sky-800
-  };
+  // Ligne d'accent horizontale
+  sf(doc, C.accent);
+  doc.rect(0, 108, PW * 0.42, 1.0, "F");
 
-  type ShardDef = {
-    p0: [number,number]; p1: [number,number];
-    p2: [number,number]; p3: [number,number];
-    col: readonly [number,number,number];
-  };
-
-  const shards: ShardDef[] = [
-    { p0:[42, 0],  p1:[PW,0], p2:[PW,PH], p3:[80, PH],  col: INV.crystal },
-    { p0:[76, 0],  p1:[PW,0], p2:[PW,PH], p3:[107,PH],  col: INV.ultra   },
-    { p0:[103,0],  p1:[PW,0], p2:[PW,PH], p3:[129,PH],  col: INV.pale    },
-    { p0:[124,0],  p1:[PW,0], p2:[PW,PH], p3:[147,PH],  col: INV.light   },
-    { p0:[143,0],  p1:[PW,0], p2:[PW,PH], p3:[163,PH],  col: INV.med     },
-    { p0:[158,0],  p1:[173,0], p2:[200,PH], p3:[185,PH], col: INV.main   },
-    { p0:[166,0],  p1:[175,0], p2:[202,PH], p3:[193,PH], col: INV.deep   },
-  ];
-
-  for (const sh of shards) {
-    doc.setFillColor(sh.col[0], sh.col[1], sh.col[2]);
-    doc.setDrawColor(sh.col[0], sh.col[1], sh.col[2]);
-    doc.setLineWidth(0.1);
-    doc.lines(
-      [
-        [sh.p1[0] - sh.p0[0], sh.p1[1] - sh.p0[1]],
-        [sh.p2[0] - sh.p1[0], sh.p2[1] - sh.p1[1]],
-        [sh.p3[0] - sh.p2[0], sh.p3[1] - sh.p2[1]],
-      ],
-      sh.p0[0], sh.p0[1], [1, 1], "FD", true,
-    );
-  }
-
-  // ── 3. Contenu textuel — identique à l'original ───────────────
-  doc.setFont("helvetica", "bold"); doc.setFontSize(26); sc(doc, C.primary);
-  doc.text("MIMMOZA", M.left, 26);
-  sf(doc, C.accent); doc.rect(M.left, 29, 28, 0.7, "F");
-  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); sc(doc, C.muted);
-  doc.text("Intelligence Immobiliere", M.left, 35.5);
-
-  const badgeTxt = "DOSSIER INVESTISSEUR";
-  const bW = doc.getTextWidth(badgeTxt) + 14;
-  roundedBox(doc, PW - M.right - bW, 18, bW, 9, { fill: C.white as const, border: C.accent, radius: 4.5, lw: 0.4 });
-  doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); sc(doc, C.accent);
-  doc.text(badgeTxt, PW - M.right - bW / 2, 23.7, { align: "center" });
-
-  const cx = M.left; const cy = 44; const cw = PW - M.left - M.right; const ch = 38;
-  roundedBox(doc, cx, cy, cw, ch, { fill: C.white as const, border: [196, 221, 253] as const, radius: 3, lw: 0.4 });
-  sf(doc, C.accent); doc.roundedRect(cx, cy, 3.5, ch, 1.5, 1.5, "F");
-
-  let iy = cy + 11;
-  doc.setFont("helvetica", "bold"); doc.setFontSize(13); sc(doc, C.primary);
-  const tl = doc.splitTextToSize(sanitizeForPdf(m.titre), cw - 18);
-  doc.text(tl, cx + 10, iy); iy += tl.length * 6;
-
-  if (m.id) {
-    doc.setFont("helvetica", "normal"); doc.setFontSize(7); sc(doc, C.muted);
-    doc.text(sanitizeForPdf(`Ref. : ${m.id}`), cx + 10, iy); iy += 5;
-  }
-  if (m.adresseComplete) {
-    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); sc(doc, C.mutedDark);
-    const addrL = doc.splitTextToSize(sanitizeForPdf(m.adresseComplete), cw - 18) as string[];
-    doc.text(addrL[0] ?? "", cx + 10, iy);
-  }
-
-  const dateStr = new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
-  doc.setFont("helvetica", "normal"); doc.setFontSize(7); sc(doc, C.muted);
-  doc.text(sanitizeForPdf(dateStr), M.left, 100);
-  const confStr = "CONFIDENTIEL";
-  const confW = doc.getTextWidth(confStr) + 10;
-  roundedBox(doc, PW - M.right - confW, 94, confW, 8, { fill: C.white as const, border: C.borderDark, radius: 4 });
-  doc.setFont("helvetica", "bold"); doc.setFontSize(6); sc(doc, C.muted);
-  doc.text(confStr, PW - M.right - confW / 2, 99.2, { align: "center" });
-
-  let vy = 117;
-
-  if (ai.verdict !== "ND") {
-    const bH = 20;
-    roundedBox(doc, M.left, vy, CW, bH, { fill: C.accentSoft, border: C.accent, radius: 3, lw: 0.4 });
-    doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); sc(doc, C.muted);
-    doc.text("VERDICT STRATEGIQUE", M.left + CW / 2, vy + 6, { align: "center" });
-    doc.setFont("helvetica", "bold"); doc.setFontSize(13); sc(doc, C.accent);
-    doc.text(sanitizeForPdf(decisionLabel(ai.verdict)), M.left + CW / 2, vy + 14, { align: "center" });
-    if (ai.confidence !== "ND") {
-      doc.setFont("helvetica", "normal"); doc.setFontSize(7); sc(doc, C.muted);
-      doc.text(sanitizeForPdf(`Confiance : ${ai.confidence}`), M.left + CW - 4, vy + 17.5, { align: "right" });
-    }
-    vy += bH + 8;
-  }
-
-  const coverScores = resolveSmartScores(opts, opts?.aiReport?.analysis?.narrativeMarkdown, m);
-  if (coverScores.smartScore != null) {
-    roundedBox(doc, M.left, vy, CW, 13, { fill: C.white, border: C.border, radius: 3, lw: 0.2 });
-    doc.setFont("helvetica", "normal"); doc.setFontSize(7); sc(doc, C.muted);
-    doc.text("SmartScore", M.left + 5, vy + 5);
-    doc.setFont("helvetica", "bold"); doc.setFontSize(12); sc(doc, C.accent);
-    doc.text(String(coverScores.smartScore), M.left + 34, vy + 9.5, { align: "right" });
-    doc.setFont("helvetica", "normal"); doc.setFontSize(7); sc(doc, C.muted);
-    doc.text("/100", M.left + 35, vy + 9.5);
-    const bx = M.left + 54; const bw2 = CW - 59;
-    roundedBox(doc, bx, vy + 5, bw2, 3, { fill: C.bgAlt, radius: 1.5 });
-    const fw = Math.max(3, (coverScores.smartScore / 100) * bw2);
-    const INDIGO: readonly [number,number,number] = [79, 70, 229];
-    const CYAN:   readonly [number,number,number] = [6, 182, 212];
-    ribbon(doc, vy + 5, 3, INDIGO, CYAN, Math.max(4, Math.round(fw * 2)), bx, fw);
-    vy += 19;
-  }
-
-  const kpiData = [
-    { label: "Prix d'achat", value: dCur(m.prixAchat) },
-    { label: "Surface",      value: dSurf(m.surfaceM2) },
-    { label: "Prix / m2",    value: dCur(m.prixM2) },
-  ];
-  const kw = CW / 3;
-  kpiData.forEach((k, i) => {
-    const kx = M.left + i * kw;
-    roundedBox(doc, kx + 1, vy, kw - 2, 15, { fill: C.white, border: C.border, radius: 3, lw: 0.2, shadow: true });
-    doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); sc(doc, k.value.startsWith("ND") ? C.muted : C.accent);
-    doc.text(sanitizeForPdf(k.value), kx + kw / 2, vy + 7.5, { align: "center" });
-    doc.setFont("helvetica", "normal"); doc.setFontSize(6); sc(doc, C.muted);
-    doc.text(k.label, kx + kw / 2, vy + 12, { align: "center" });
-  });
-  vy += 21;
-
-  const FALLBACK_COVER = "Analyse automatisee basee sur les donnees DVF, les indicateurs de marche et les hypotheses financieres du projet.";
-  const BAD_PHRASES    = ["information non fournie", "non fourni", "non disponible", "aucune information"];
-  const rtRaw   = ai.resumeCourt || ai.nrResume || "";
-  const rtIsBad = BAD_PHRASES.some(p => rtRaw.toLowerCase().includes(p));
-  const rt = (!rtRaw || rtIsBad)
-    ? (ai.whyBuy.length > 0 ? ai.whyBuy[0] : FALLBACK_COVER)
-    : rtRaw;
-  if (rt) {
-    const rtTrunc = rt.length > 240 ? rt.slice(0, 237) + "..." : rt;
-    const rtLines = doc.splitTextToSize(sanitizeForPdf(`"${rtTrunc}"`), CW - 12) as string[];
-    const rtH     = rtLines.length * 4.2 + 10;
-    if (vy + rtH < PH - 28) {
-      roundedBox(doc, M.left, vy, CW, rtH, { fill: C.accentSoft, border: [196, 221, 253] as const, radius: 3 });
-      sf(doc, C.accent); doc.roundedRect(M.left, vy, 3, rtH, 1.5, 1.5, "F");
-      doc.setFont("helvetica", "italic"); doc.setFontSize(8); sc(doc, C.body);
-      doc.text(rtLines, M.left + 8, vy + 6);
-      vy += rtH + 6;
-    }
-  }
-
-  const toc = [
-    "1 — Commune & contexte local",
-    "2 — Synthese strategique",
-    "3 — Decision en 30 secondes",
-    "4 — Risques & Conditions",
-    "5 — Stress test & Capital",
-    "6 — Plan d'action",
-  ];
-  if (vy + toc.length * 5 + 14 < PH - 14) {
-    roundedBox(doc, M.left, vy, CW, toc.length * 5 + 12, { fill: C.white, border: C.border, radius: 3, lw: 0.2 });
-    doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); sc(doc, C.muted);
-    doc.text("SOMMAIRE", M.left + 4, vy + 5.5);
-    toc.forEach((item, idx) => {
-      doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); sc(doc, C.mutedDark);
-      doc.text(sanitizeForPdf(item), M.left + 4, vy + 10 + idx * 5);
-    });
-  }
-
-  ribbon(doc, PH - 6, 6, [238, 242, 255] as const, [240, 249, 255] as const, 60, 0, PW);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(6); sc(doc, C.muted);
-  doc.text("Genere par MIMMOZA — Intelligence immobiliere", PW / 2, PH - 1.5, { align: "center" });
+  // Petits carrés accent haut droite
+  sf(doc, [37, 99, 235] as const);
+  doc.roundedRect(PW - 30, 38, 15, 15, 2, 2, "F");
+  sf(doc, [14, 165, 233] as const);
+  doc.roundedRect(PW - 23, 57, 9, 9, 1.5, 1.5, "F");
+  sf(doc, [30, 80, 180] as const);
+  doc.roundedRect(PW - 18, 70, 5, 5, 1, 1, "F");
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// ─── WIKIMEDIA HELPERS — V2 ────────────────────────────────────────
+// ─── Logo Mimmoza (cover) ─────────────────────────────────────────
+function drawCoverBrand(doc: jsPDF, opts?: ExportPdfOpts): void {
+  const logo = typeof opts?.logo === "string" ? opts.logo.trim() : "";
+
+  // Cartouche blanc derrière le logo pour lisibilité sur fond sombre
+  roundedBox(doc, 13, 10, 74, 22, { fill: C.white, border: C.border, radius: 2, lw: 0.15 });
+
+  if (logo.startsWith("data:image/")) {
+    const aspect  = opts?.logoAspect && opts.logoAspect > 0 ? opts.logoAspect : 3.2;
+    const targetW = 60; const maxH = 18;
+    let w = targetW; let h = w / aspect;
+    if (h > maxH) { h = maxH; w = h * aspect; }
+    const fmt: "PNG" | "JPEG" = /^data:image\/png/i.test(logo) ? "PNG" : "JPEG";
+    try {
+      doc.addImage(logo, fmt, 16, 14, w, h, undefined, "FAST");
+      return;
+    } catch { /* fallback texte */ }
+  }
+  // Fallback wordmark texte
+  doc.setFont("helvetica", "bold"); doc.setFontSize(20); sc(doc, C.primary);
+  doc.text("MIMMOZA", 18, 24);
+  sf(doc, C.accent); doc.rect(18, 26.5, 26, 0.6, "F");
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7); sc(doc, C.muted);
+  doc.text("Intelligence Immobiliere", 18, 30);
+}
+
+// ─── Cover principale ─────────────────────────────────────────────
+function buildCover(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportPdfOpts): void {
+
+  // ── 1. Fond de base bleu nuit ────────────────────────────────
+  sf(doc, C.primary);
+  doc.rect(0, 0, PW, PH, "F");
+
+  // ── 2. Image de fond pleine page ou fond générique ───────────
+  const img = typeof opts?.coverImage === "string" ? opts.coverImage.trim() : "";
+  if (img.startsWith("data:image/")) {
+    const fmt: "PNG" | "JPEG" = /^data:image\/png/i.test(img) ? "PNG" : "JPEG";
+    try {
+      doc.addImage(img, fmt, 0, 0, PW, PH, undefined, "FAST");
+    } catch {
+      drawCoverGenericBackground(doc);
+    }
+  } else {
+    drawCoverGenericBackground(doc);
+  }
+
+
+  // ── 3. Logo en haut à gauche ─────────────────────────────────
+  drawCoverBrand(doc, opts);
+
+  // ── 4. Badge "DOSSIER INVESTISSEUR" en haut à droite ────────
+  const badgeTxt = "DOSSIER INVESTISSEUR";
+  doc.setFont("helvetica", "bold"); doc.setFontSize(6.5);
+  const bW = doc.getTextWidth(badgeTxt) + 12;
+  const bX = PW - M.right - bW;
+  roundedBox(doc, bX, 13, bW, 9, { fill: C.white, border: C.border, radius: 4.5, lw: 0.3 });
+  sc(doc, C.accent);
+  doc.text(badgeTxt, bX + bW / 2, 19.2, { align: "center" });
+
+  // ── 5. Grand titre DOSSIER / INVESTISSEUR ───────────────────
+  const titleY = 150;
+  roundedBox(doc, M.left - 2, titleY - 22, 110, 52, { fill: C.white, border: C.border, radius: 3, lw: 0.2 });
+  doc.setFont("helvetica", "bold"); doc.setFontSize(30); sc(doc, C.primary);
+  doc.text("DOSSIER", M.left + 2, titleY);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(30); sc(doc, C.primary);
+  doc.text("INVESTISSEUR", M.left + 2, titleY + 14);
+
+  // ── 6. Adresse sous le titre ─────────────────────────────────
+  let addrY = titleY + 26;
+  if (m.adresseComplete || m.adresse) {
+    const addrText = sanitizeForPdf(m.adresseComplete || m.adresse);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
+    sc(doc, C.body);
+    const addrLines = doc.splitTextToSize(addrText, CW - 20) as string[];
+    doc.text(addrLines, M.left, addrY);
+    addrY += addrLines.length * 5.5;
+  }
+  if (m.ville || m.cp) {
+    const locText = sanitizeForPdf([m.ville, m.cp].filter(Boolean).join("  "));
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8);
+    sc(doc, C.mutedDark);
+    doc.text(locText, M.left + 2, addrY);
+  }
+
+  // ── 7. Panneau bas SmartScore / Verdict ─────────────────────
+  const panelX = M.left;
+  const panelY = 206;
+  const panelW = CW;
+  const panelH = 50;
+
+  roundedBox(doc, panelX, panelY, panelW, panelH, {
+    fill:   C.white,
+    border: C.border,
+    radius: 3,
+    lw:     0.5,
+  });
+
+  const sepX = panelX + panelW / 2;
+  sd(doc, C.border); doc.setLineWidth(0.35);
+  doc.line(sepX, panelY + 6, sepX, panelY + panelH - 6);
+
+  // ── Partie gauche : SmartScore ────────────────────────────
+  const coverScores = resolveSmartScores(opts, opts?.aiReport?.analysis?.narrativeMarkdown, m);
+  const ss = coverScores.smartScore;
+
+  doc.setFont("helvetica", "normal"); doc.setFontSize(6);
+  sc(doc, C.muted);
+  doc.text("SMARTSCORE", panelX + 10, panelY + 10);
+
+  if (ss != null) {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(28); sc(doc, C.accent);
+    doc.text(String(ss), panelX + 10, panelY + 29);
+    const ssW = doc.getTextWidth(String(ss));
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10);
+    sc(doc, [100, 116, 139] as const);
+    doc.text("/100", panelX + 10 + ssW + 1, panelY + 29);
+
+    // Barre de progression
+    const barX  = panelX + 10;
+    const barW2 = sepX - panelX - 22;
+    const barY2 = panelY + 33;
+    const barH2 = 2.5;
+    roundedBox(doc, barX, barY2, barW2, barH2, { fill: C.bgAlt, radius: 1.2 });
+    const fillW2 = Math.max(2, (ss / 100) * barW2);
+    const BLUE: readonly [number,number,number] = [37, 99, 235];
+    const CYAN: readonly [number,number,number] = [6, 182, 212];
+    ribbon(doc, barY2, barH2, BLUE, CYAN, Math.max(4, Math.round(fillW2 * 2)), barX, fillW2);
+  } else {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(22);
+    sc(doc, [100, 116, 139] as const);
+    doc.text("ND", panelX + 10, panelY + 29);
+    roundedBox(doc, panelX + 10, panelY + 33, sepX - panelX - 22, 2.5, { fill: [25, 38, 72] as const, radius: 1.2 });
+  }
+
+  doc.setFont("helvetica", "normal"); doc.setFontSize(6);
+  sc(doc, [80, 100, 130] as const);
+  doc.text("SCORE GLOBAL", panelX + 10, panelY + 42);
+
+  // ── Partie droite : Verdict ───────────────────────────────
+  const rightX = sepX + 8;
+
+  doc.setFont("helvetica", "normal"); doc.setFontSize(6);
+  sc(doc, C.muted);
+  doc.text("VERDICT STRATEGIQUE", rightX, panelY + 10);
+
+  if (ai.verdict !== "ND") {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(13); sc(doc, C.primary);
+    doc.text(sanitizeForPdf(decisionLabel(ai.verdict)), rightX, panelY + 21);
+  } else {
+    doc.setFont("helvetica", "italic"); doc.setFontSize(10);
+    sc(doc, [100, 116, 139] as const);
+    doc.text("En cours d'analyse", rightX, panelY + 21);
+  }
+
+  // Texte secondaire contextuel
+  const verdictSubtext = (() => {
+    const vl = ai.verdict.toLowerCase();
+    if (vl.includes("strong_buy") || vl === "acheter") return "Operation solide. Engagement recommande.";
+    if (vl === "negocier" || vl === "negotiate" || vl === "hold" || vl === "attendre")
+      return "Potentiel interessant sous conditions. Negociation recommandee.";
+    if (vl.includes("pass")) return "Rapport risque/rendement insuffisant.";
+    return ai.resumeCourt ? ai.resumeCourt.slice(0, 75) : "";
+  })();
+
+  if (verdictSubtext) {
+    const halfW = panelW / 2 - 20;
+    const vLines = doc.splitTextToSize(sanitizeForPdf(verdictSubtext), halfW) as string[];
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7.5);
+    sc(doc, C.body);
+    doc.text(vLines.slice(0, 2), rightX, panelY + 29);
+  }
+
+  if (ai.confidence !== "ND") {
+    doc.setFont("helvetica", "normal"); doc.setFontSize(6);
+    sc(doc, C.muted);
+    doc.text(sanitizeForPdf(`Confiance : ${ai.confidence}`), rightX, panelY + 44);
+  }
+
+  // ── 9. Footer ───────────────────────────────────────────────
+  const footerY = 265;
+  sd(doc, [45, 80, 150] as const); doc.setLineWidth(0.25);
+  doc.line(M.left, footerY, PW - M.right, footerY);
+
+  const dateStr = new Date().toLocaleDateString("fr-FR", {
+    day: "2-digit", month: "long", year: "numeric",
+  });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(6.5);
+  sc(doc, [100, 116, 139] as const);
+  doc.text(sanitizeForPdf(dateStr), M.left, footerY + 5.5);
+  doc.text("CONFIDENTIEL", PW / 2, footerY + 5.5, { align: "center" });
+  if (m.id) {
+    doc.text(sanitizeForPdf(`Ref. ${m.id}`), PW - M.right, footerY + 5.5, { align: "right" });
+  }
+}// ═══════════════════════════════════════════════════════════════════
+// ─── WIKIMEDIA HELPERS ─────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -1618,7 +1630,7 @@ function buildCommunePage(doc: jsPDF, opts?: ExportPdfOpts, metrics?: DealMetric
   const placeAny = place as Record<string, unknown> | null;
 
   const communeName = extractCommuneName(placeAny, metrics?.ville, metrics?.cp, wiki);
-  let narrative = resolveWikimediaRichText(placeAny, wiki);
+  const narrative = resolveWikimediaRichText(placeAny, wiki);
 
   const wpPlace    = placeAny?.wikipedia as Record<string, unknown> | undefined;
   const wpWikiRoot = (wiki && placeAny !== wiki) ? wiki.wikipedia as Record<string, unknown> | undefined : undefined;
@@ -1685,11 +1697,11 @@ function buildCommunePage(doc: jsPDF, opts?: ExportPdfOpts, metrics?: DealMetric
     ? (placeAny.narrative as string).trim() : "";
 
   let presentationRaw: string;
-  if (contextLong)       presentationRaw = contextLong;
-  else if (contextShort) presentationRaw = contextShort;
+  if (contextLong)         presentationRaw = contextLong;
+  else if (contextShort)   presentationRaw = contextShort;
   else if (placeNarrative) presentationRaw = placeNarrative;
-  else if (profileText)  presentationRaw = profileText;
-  else                   presentationRaw = "";
+  else if (profileText)    presentationRaw = profileText;
+  else                     presentationRaw = "";
 
   if (rawFacts != null) {
     const factsArr = extractFactSentences(rawFacts);
@@ -2152,9 +2164,7 @@ function buildPage1(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportP
 
   void bulletPrefix;
   setY(doc, y);
-}
-
-// ═══════════════════════════════════════════════════════════════════
+}// ═══════════════════════════════════════════════════════════════════
 // ─── PAGE 2 — Risques & Conditions ─────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
 
@@ -2698,7 +2708,6 @@ function buildPdf(snap: MarchandSnapshotV1, opts?: ExportPdfOpts): jsPDF {
   const mode = opts?.pdfMode ?? "light";
 
   buildCover(doc, m, ai, opts);
-  buildCommunePage(doc, opts, m);
   buildNarrative(doc, m, ai, opts);
   buildPage1(doc, m, ai, opts);
   buildPage2(doc, m, ai);

@@ -2,12 +2,10 @@
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import mimmozaLogo from '@/assets/logo-mimmoza.png';
+
 import type { Invoice, InvoiceLine, Quote, QuoteLine } from './types';
 import { formatBillingStatusLabel, formatDate } from './helpers';
-
-// ============================================================
-// Helpers formatage — ASCII uniquement (pas de toLocaleString)
-// ============================================================
 
 function fmtEur(cents: number): string {
   const euros = cents / 100;
@@ -23,62 +21,51 @@ function fmtEurShort(cents: number): string {
   return `${intFormatted}.${decPart}`;
 }
 
-// ============================================================
-// Palette
-// ============================================================
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
 
-const HDR_TOP:    [number, number, number] = [186, 224, 252]; // bleu ciel
-const HDR_BOTTOM: [number, number, number] = [255, 255, 255]; // blanc pur
+const BLUE_DARK: [number, number, number] = [15, 82, 186];
+const BLUE_MID: [number, number, number] = [56, 132, 222];
 
-const BLUE_DARK:  [number, number, number] = [15,  82,  186];
-const BLUE_MID:   [number, number, number] = [56, 132,  222];
-const BLUE_LIGHT: [number, number, number] = [99, 173,  242];
+const WHITE: [number, number, number] = [255, 255, 255];
+const SLATE_900: [number, number, number] = [15, 23, 42];
+const SLATE_700: [number, number, number] = [51, 65, 85];
+const SLATE_600: [number, number, number] = [71, 85, 105];
+const SLATE_200: [number, number, number] = [226, 232, 240];
+const SLATE_50: [number, number, number] = [248, 250, 252];
 
-const WHITE:      [number, number, number] = [255, 255, 255];
-const SLATE_900:  [number, number, number] = [15,  23,  42];
-const SLATE_700:  [number, number, number] = [51,  65,  85];
-const SLATE_600:  [number, number, number] = [71,  85,  105];
-const SLATE_200:  [number, number, number] = [226, 232, 240];
-const SLATE_50:   [number, number, number] = [248, 250, 252];
-
-// ============================================================
-// Header — dégradé vertical bleu ciel → blanc, sans cercles
-// ============================================================
-
-function drawGradientHeader(doc: jsPDF, docType: 'FACTURE' | 'DEVIS', number: string): void {
+async function drawGradientHeader(
+  doc: jsPDF,
+  docType: 'FACTURE' | 'DEVIS',
+  number: string
+): Promise<void> {
   const w = doc.internal.pageSize.getWidth();
-  const headerH = 44;
-  const steps = 60;
 
-  // Dégradé vertical : bleu ciel en haut → blanc en bas
-  for (let i = 0; i < steps; i++) {
-    const t = i / (steps - 1);
-    const r = Math.round(HDR_TOP[0] + (HDR_BOTTOM[0] - HDR_TOP[0]) * t);
-    const g = Math.round(HDR_TOP[1] + (HDR_BOTTOM[1] - HDR_TOP[1]) * t);
-    const b = Math.round(HDR_TOP[2] + (HDR_BOTTOM[2] - HDR_TOP[2]) * t);
-    doc.setFillColor(r, g, b);
-    const sliceY = (i / steps) * headerH;
-    doc.rect(0, sliceY, w, headerH / steps + 0.5, 'F');
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, 0, w, 44, 'F');
+
+  try {
+    const logo = await loadImage(mimmozaLogo);
+    doc.addImage(logo, 'PNG', 14, 8, 44, 17);
+  } catch {
+    doc.setFontSize(17);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...SLATE_900);
+    doc.text('Mimmoza', 14, 18);
   }
 
-  // Logo — texte uniquement, sans cercles
-  doc.setFontSize(17);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...SLATE_900);
-  doc.text('Mimmoza', 14, 18);
-
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...SLATE_600);
-  doc.text('Intelligence immobiliere', 14, 27);
-
-  // Type de document
   doc.setFontSize(22);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...BLUE_DARK);
   doc.text(docType, w - 14, 19, { align: 'right' });
 
-  // Numéro
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...SLATE_700);
@@ -86,10 +73,6 @@ function drawGradientHeader(doc: jsPDF, docType: 'FACTURE' | 'DEVIS', number: st
 
   doc.setTextColor(0, 0, 0);
 }
-
-// ============================================================
-// Blocs info
-// ============================================================
 
 function drawInfoBlocks(
   doc: jsPDF,
@@ -100,7 +83,6 @@ function drawInfoBlocks(
   const pageW = doc.internal.pageSize.getWidth();
   const blockW = (pageW - 14 - 14 - 6) / 2;
 
-  // Bloc gauche
   doc.setFillColor(...SLATE_50);
   doc.setDrawColor(...SLATE_200);
   doc.setLineWidth(0.3);
@@ -120,8 +102,8 @@ function drawInfoBlocks(
     doc.text(line, 21, y + 18 + i * 6.5);
   });
 
-  // Bloc droit
   const rx = 14 + blockW + 6;
+
   doc.setFillColor(...SLATE_50);
   doc.setDrawColor(...SLATE_200);
   doc.roundedRect(rx, y, blockW, 38, 3, 3, 'FD');
@@ -143,10 +125,6 @@ function drawInfoBlocks(
   doc.setTextColor(0, 0, 0);
 }
 
-// ============================================================
-// Totaux
-// ============================================================
-
 function drawTotals(
   doc: jsPDF,
   amountHt: number,
@@ -156,10 +134,10 @@ function drawTotals(
   finalY: number
 ): void {
   const pageW = doc.internal.pageSize.getWidth();
-  const boxW  = 82;
-  const boxX  = pageW - 14 - boxW;
-  const y     = finalY + 10;
-  const rowH  = 8;
+  const boxW = 82;
+  const boxX = pageW - 14 - boxW;
+  const y = finalY + 10;
+  const rowH = 8;
 
   doc.setFillColor(...SLATE_50);
   doc.setDrawColor(...SLATE_200);
@@ -168,28 +146,32 @@ function drawTotals(
 
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
+
   doc.setTextColor(...SLATE_600);
   doc.text('Total HT', boxX + 5, y + 7);
+
   doc.setTextColor(...SLATE_900);
   doc.text(fmtEur(amountHt), boxX + boxW - 5, y + 7, { align: 'right' });
 
   doc.setTextColor(...SLATE_600);
   doc.text(`TVA ${vatRateBps / 100}%`, boxX + 5, y + 7 + rowH);
+
   doc.setTextColor(...SLATE_900);
   doc.text(fmtEur(vatAmount), boxX + boxW - 5, y + 7 + rowH, { align: 'right' });
 
   doc.setDrawColor(...SLATE_200);
   doc.line(boxX + 4, y + 7 + rowH + 3, boxX + boxW - 4, y + 7 + rowH + 3);
 
-  // Fond TTC — dégradé bleu foncé
   const ttcY = y + rowH * 2 + 5;
   const ttcH = 10;
   const steps = 20;
+
   for (let i = 0; i < steps; i++) {
     const t = i / (steps - 1);
     const r = Math.round(BLUE_DARK[0] + (BLUE_MID[0] - BLUE_DARK[0]) * t);
     const g = Math.round(BLUE_DARK[1] + (BLUE_MID[1] - BLUE_DARK[1]) * t);
     const b = Math.round(BLUE_DARK[2] + (BLUE_MID[2] - BLUE_DARK[2]) * t);
+
     doc.setFillColor(r, g, b);
     doc.rect(boxX + (i / steps) * boxW, ttcY, boxW / steps + 0.5, ttcH, 'F');
   }
@@ -203,26 +185,12 @@ function drawTotals(
   doc.setTextColor(0, 0, 0);
 }
 
-// ============================================================
-// Footer — dégradé vertical blanc → bleu ciel (miroir header)
-// ============================================================
-
 function drawFooter(doc: jsPDF): void {
   const pageH = doc.internal.pageSize.getHeight();
   const pageW = doc.internal.pageSize.getWidth();
-  const footerH = 13;
-  const steps = 40;
 
-  // Dégradé vertical : blanc en haut → bleu ciel en bas
-  for (let i = 0; i < steps; i++) {
-    const t = i / (steps - 1);
-    const r = Math.round(HDR_BOTTOM[0] + (HDR_TOP[0] - HDR_BOTTOM[0]) * t);
-    const g = Math.round(HDR_BOTTOM[1] + (HDR_TOP[1] - HDR_BOTTOM[1]) * t);
-    const b = Math.round(HDR_BOTTOM[2] + (HDR_TOP[2] - HDR_BOTTOM[2]) * t);
-    doc.setFillColor(r, g, b);
-    const sliceY = pageH - footerH + (i / steps) * footerH;
-    doc.rect(0, sliceY, pageW, footerH / steps + 0.5, 'F');
-  }
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, pageH - 13, pageW, 13, 'F');
 
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'bold');
@@ -231,22 +199,20 @@ function drawFooter(doc: jsPDF): void {
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...SLATE_600);
-  doc.text('Intelligence immobiliere', 36, pageH - 4.5);
-
-  doc.setTextColor(...SLATE_600);
-  doc.text('Document genere automatiquement', pageW - 14, pageH - 4.5, { align: 'right' });
+  doc.text('Document genere automatiquement', pageW - 14, pageH - 4.5, {
+    align: 'right',
+  });
 
   doc.setTextColor(0);
 }
 
-// ============================================================
-// Export FACTURE individuelle
-// ============================================================
-
-export function exportInvoicePdf(invoice: Invoice, lines: InvoiceLine[]): void {
+export async function exportInvoicePdf(
+  invoice: Invoice,
+  lines: InvoiceLine[]
+): Promise<void> {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-  drawGradientHeader(doc, 'FACTURE', invoice.invoice_number);
+  await drawGradientHeader(doc, 'FACTURE', invoice.invoice_number);
 
   drawInfoBlocks(
     doc,
@@ -281,17 +247,17 @@ export function exportInvoicePdf(invoice: Invoice, lines: InvoiceLine[]): void {
       fmtEurShort(l.total_ht_cents),
     ]),
     headStyles: {
-      fillColor: [...BLUE_DARK] as [number, number, number],
+      fillColor: BLUE_DARK,
       textColor: 255,
       fontStyle: 'bold',
       fontSize: 8,
     },
     bodyStyles: {
       fontSize: 8.5,
-      textColor: [...SLATE_900] as [number, number, number],
+      textColor: SLATE_900,
     },
     alternateRowStyles: {
-      fillColor: [...SLATE_50] as [number, number, number],
+      fillColor: SLATE_50,
     },
     columnStyles: {
       0: { cellWidth: 48, fontStyle: 'bold' },
@@ -301,7 +267,7 @@ export function exportInvoicePdf(invoice: Invoice, lines: InvoiceLine[]): void {
       4: { cellWidth: 32, halign: 'right', fontStyle: 'bold' },
     },
     margin: { left: 14, right: 14 },
-    tableLineColor: [...SLATE_200] as [number, number, number],
+    tableLineColor: SLATE_200,
     tableLineWidth: 0.2,
   });
 
@@ -328,14 +294,13 @@ export function exportInvoicePdf(invoice: Invoice, lines: InvoiceLine[]): void {
   doc.save(`${invoice.invoice_number}.pdf`);
 }
 
-// ============================================================
-// Export DEVIS individuel
-// ============================================================
-
-export function exportQuotePdf(quote: Quote, lines: QuoteLine[]): void {
+export async function exportQuotePdf(
+  quote: Quote,
+  lines: QuoteLine[]
+): Promise<void> {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-  drawGradientHeader(doc, 'DEVIS', quote.quote_number);
+  await drawGradientHeader(doc, 'DEVIS', quote.quote_number);
 
   drawInfoBlocks(
     doc,
@@ -370,17 +335,17 @@ export function exportQuotePdf(quote: Quote, lines: QuoteLine[]): void {
       fmtEurShort(l.total_ht_cents),
     ]),
     headStyles: {
-      fillColor: [...BLUE_DARK] as [number, number, number],
+      fillColor: BLUE_DARK,
       textColor: 255,
       fontStyle: 'bold',
       fontSize: 8,
     },
     bodyStyles: {
       fontSize: 8.5,
-      textColor: [...SLATE_900] as [number, number, number],
+      textColor: SLATE_900,
     },
     alternateRowStyles: {
-      fillColor: [...SLATE_50] as [number, number, number],
+      fillColor: SLATE_50,
     },
     columnStyles: {
       0: { cellWidth: 48, fontStyle: 'bold' },
@@ -390,7 +355,7 @@ export function exportQuotePdf(quote: Quote, lines: QuoteLine[]): void {
       4: { cellWidth: 32, halign: 'right', fontStyle: 'bold' },
     },
     margin: { left: 14, right: 14 },
-    tableLineColor: [...SLATE_200] as [number, number, number],
+    tableLineColor: SLATE_200,
     tableLineWidth: 0.2,
   });
 

@@ -25,6 +25,7 @@ export function CopilotFloatingButton() {
     <button
       onClick={toggleCopilot}
       aria-label="Ouvrir Mimmoza Copilot"
+      data-print-hide
       style={{
         position: 'fixed', bottom: 24, right: 24, zIndex: 9998,
         height: 56, width: 56, borderRadius: 18,

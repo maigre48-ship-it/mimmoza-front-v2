@@ -130,7 +130,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ invoiceId, onClose, onPaid })
     setExporting(true);
     try {
       // Les lignes sont déjà chargées
-      exportInvoicePdf(invoice, lines);
+      await exportInvoicePdf(invoice, lines);
     } finally {
       setExporting(false);
     }

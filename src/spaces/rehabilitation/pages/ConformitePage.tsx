@@ -800,36 +800,39 @@ export default function RehabilitationConformitePage() {
 
       {/* ── BANNIÈRE GRADIENT ── */}
       <div
-        className="w-full rounded-2xl px-6 py-5 mb-6"
-        style={{ background: "linear-gradient(90deg, #f97316 0%, #ef4444 100%)" }}
+        className="w-full mb-6"
+        style={{
+          background: "linear-gradient(135deg, #ea580c 0%, #fb923c 100%)",
+          borderRadius: 24,
+          padding: "32px 36px",
+          boxShadow: "0 8px 32px rgba(234,88,12,0.22)",
+          position: "relative",
+          overflow: "hidden",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 20,
+        }}
       >
-        <p className="text-[11px] font-semibold text-white/60 uppercase tracking-widest mb-2">
-          Réhabilitation › Travaux
-        </p>
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <ShieldCheck size={22} className="text-white shrink-0" />
-            <div>
-              <h1 className="text-xl font-bold text-white leading-tight">Conformité réglementaire</h1>
-              <p className="text-sm text-white/70 mt-0.5">
-                Analysez les risques et identifiez les actions prioritaires selon l'usage du bien
-              </p>
-            </div>
-          </div>
-          {findings && decision && (
-            <div className="shrink-0 hidden sm:flex items-center gap-2 bg-white/15 backdrop-blur-sm border border-white/20 rounded-xl px-3.5 py-2">
-              <div className={`w-2 h-2 rounded-full ${
-                decision === "conforme" ? "bg-emerald-300"
-                : decision === "a_verifier" ? "bg-amber-300"
-                : decision === "sous_conditions" ? "bg-orange-300"
-                : "bg-red-300"
-              }`} />
-              <span className="text-xs font-semibold text-white">
-                {DECISION_CONFIG[decision].label}
-              </span>
-            </div>
-          )}
+        <div style={{ position: "relative" }}>
+          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
+            Réhabilitation · Conformité
+          </p>
+          <h1 style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5 }}>
+            Conformité réglementaire
+          </h1>
+          <p style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>
+            Analysez les risques et identifiez les actions prioritaires selon l'usage du bien
+          </p>
         </div>
+        {findings && decision && (
+          <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 12, padding: "8px 14px" }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: decision === "conforme" ? "#6ee7b7" : decision === "a_verifier" ? "#fcd34d" : decision === "sous_conditions" ? "#fdba74" : "#fca5a5" }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>
+              {DECISION_CONFIG[decision].label}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* ── CONTENU ── */}

@@ -727,114 +727,60 @@ export default function ProjetsPage() {
           "'DM Sans', 'Outfit', system-ui, -apple-system, sans-serif",
       }}
     >
-      {/* ── Header ── */}
-      <div
-        style={{
-          background: "#fff",
-          borderBottom: "1px solid #f3f4f6",
-          padding: "28px 32px 22px",
-        }}
-      >
-        <div
-          style={{
-            maxWidth: 1200,
-            margin: "0 auto",
-            display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "space-between",
-            gap: 16,
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <div
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: 13,
-                background: "linear-gradient(135deg, #f97316, #ea580c)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                boxShadow: "0 4px 12px rgba(249,115,22,0.3)",
-              }}
-            >
-              <HardHat size={24} color="#fff" />
-            </div>
-            <div>
-              <h1
-                style={{
-                  margin: 0,
-                  fontSize: 22,
-                  fontWeight: 800,
-                  color: "#111827",
-                  letterSpacing: "-0.3px",
-                }}
-              >
-                Projets de réhabilitation
-              </h1>
-              <p style={{ margin: "3px 0 0", fontSize: 13.5, color: "#6b7280" }}>
-                Centralisez vos analyses, travaux, conformité et valorisation par
-                projet
-              </p>
-            </div>
+      {/* ── Bandeau orange Réhabilitation ── */}
+      <div style={{
+        background: "linear-gradient(135deg, #ea580c 0%, #fb923c 100%)",
+        borderRadius: 24,
+        padding: "32px 36px",
+        marginBottom: 24,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 20,
+        boxShadow: "0 8px 32px rgba(234,88,12,0.22)",
+        position: "relative",
+        overflow: "hidden",
+      }}>
+        <div style={{ position: "relative" }}>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
+            Réhabilitation · Projets
           </div>
-
-          <button
-            onClick={openNew}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "10px 20px",
-              borderRadius: 10,
-              border: "none",
-              background: "linear-gradient(135deg, #f97316, #ea580c)",
-              color: "#fff",
-              fontWeight: 700,
-              fontSize: 14,
-              cursor: "pointer",
-              boxShadow: "0 4px 12px rgba(249,115,22,0.3)",
-              whiteSpace: "nowrap",
-            }}
-          >
-            <Plus size={16} />
-            Nouveau projet
-          </button>
+          <div style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5 }}>
+            Projets de réhabilitation
+          </div>
+          <div style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>
+            Centralisez vos analyses, travaux, conformité et valorisation par projet
+          </div>
+          {projects.length > 0 && (
+            <div style={{ display: "flex", gap: 12, marginTop: 14, flexWrap: "wrap" }}>
+              {(Object.keys(STATUS_CONFIG) as RehabilitationProject["status"][]).map((s) => {
+                const count = projects.filter((p) => p.status === s).length;
+                if (!count) return null;
+                return (
+                  <span key={s} style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.9)", background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, padding: "3px 10px" }}>
+                    {STATUS_CONFIG[s].label} : {count}
+                  </span>
+                );
+              })}
+            </div>
+          )}
         </div>
-
-        {/* Stats bar */}
-        {projects.length > 0 && (
-          <div
-            style={{
-              maxWidth: 1200,
-              margin: "18px auto 0",
-              display: "flex",
-              gap: 20,
-              flexWrap: "wrap",
-            }}
-          >
-            <StatPill
-              label="Total"
-              value={projects.length}
-              color="#f97316"
-            />
-            {(
-              Object.keys(STATUS_CONFIG) as RehabilitationProject["status"][]
-            ).map((s) => {
-              const count = projects.filter((p) => p.status === s).length;
-              if (!count) return null;
-              return (
-                <StatPill
-                  key={s}
-                  label={STATUS_CONFIG[s].label}
-                  value={count}
-                  color={STATUS_CONFIG[s].dot}
-                />
-              );
-            })}
-          </div>
-        )}
+        <button
+          onClick={openNew}
+          style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "13px 22px", borderRadius: 14, border: "none",
+            background: "#fff", color: "#ea580c",
+            fontWeight: 700, fontSize: 14, cursor: "pointer",
+            flexShrink: 0, boxShadow: "0 4px 20px rgba(0,0,0,0.16)",
+            transition: "transform 0.14s ease, box-shadow 0.14s ease",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 28px rgba(0,0,0,0.20)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.16)"; }}
+        >
+          <Plus size={16} />
+          Nouveau projet
+        </button>
       </div>
 
       {/* ── Content ── */}

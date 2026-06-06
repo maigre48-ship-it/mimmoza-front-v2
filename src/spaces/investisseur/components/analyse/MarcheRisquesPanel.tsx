@@ -107,7 +107,7 @@ function Card({ title, icon, children, coverage }: { title: string; icon: string
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2"><span>{icon}</span>{title}</h3>
-        {coverage && (<span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${coverage === "ok" ? "bg-emerald-50 text-emerald-600" : coverage === "partial" ? "bg-amber-50 text-amber-600" : "bg-gray-100 text-gray-400"}`}>{coverage === "ok" ? "✓ OK" : coverage === "partial" ? "Partiel" : "Pas de données"}</span>)}
+        {coverage && (<span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${coverage === "ok" ? "bg-emerald-50 text-emerald-600" : coverage === "partial" ? "bg-amber-50 text-amber-600" : coverage === "aucun-arret" ? "bg-gray-50 text-gray-500" : "bg-gray-100 text-gray-400"}`}>{coverage === "ok" ? "✓ OK" : coverage === "partial" ? "Partiel" : coverage === "aucun-arret" ? "Aucun arrêt" : "Pas de données"}</span>)}
       </div>
       <div className="px-4 py-3">{children}</div>
     </div>
@@ -395,33 +395,53 @@ function ResultsView({ data, showDetails }: { data: MarketStudyResult; showDetai
         <Card title="INSEE — Socio-démographie" icon="👥" coverage={insee?.coverage}>
           {insee ? (<><Stat label="Population" value={fmtNum(insee.population)} /><Stat label="Densité" value={fmtNum(insee.densite, " hab/km²")} /><Stat label={`Revenu médian${insee.incomeMedianUcYear ? ` (${insee.incomeMedianUcYear})` : ""}`} value={fmtNum(insee.revenu_median, " €/UC/an")} /><Stat label="Taux pauvreté" value={fmtPct(insee.taux_pauvrete)} /><Stat label="Taux chômage" value={fmtPct(insee.taux_chomage)} /><MenagesImposesStat insee={insee} />{insee.revenu_source && (<p className="text-[10px] text-gray-400 mt-1">Source: {insee.revenu_source}</p>)}</>) : <p className="text-xs text-gray-400 italic">Données INSEE indisponibles</p>}
         </Card>
-        <Card title="Transport" icon="🚇" coverage={transport?.coverage}>
-          {transport ? (
-            <>
-              <Stat label="Score transport" value={`${transport.score ?? 0}/100`} />
-              <div className="flex items-center justify-between py-1">
-                <span className="text-xs text-gray-500">Arrêt le plus proche</span>
-                <span className="text-sm font-medium text-gray-800 text-right max-w-[55%] truncate">
-                  {transport.nearest_stop_m != null
-                    ? firstRealStop
-                      ? `${firstRealStop.name} — ${fmtNum(transport.nearest_stop_m)} m`
-                      : fmtNum(transport.nearest_stop_m, " m")
-                    : "—"}
-                </span>
-              </div>
-              <Stat label="Métro / Train" value={transport.has_metro_train ? "✅ Oui" : "❌ Non"} />
-              <Stat label="Tramway" value={transport.has_tram ? "✅ Oui" : "❌ Non"} />
-              <Stat label="Arrêts (10min à pied)" value={realStopsCount > 0 ? fmtNum(realStopsCount) : fmtNum(transport.stops?.length ?? 0)} />
-              {realModes.length > 1 && (
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {realModes.slice(0, 4).map((m, i) => (
-                    <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">{m}</span>
-                  ))}
-                </div>
-              )}
-            </>
-          ) : <p className="text-xs text-gray-400 italic">Données transport indisponibles</p>}
-        </Card>
+        <Card
+  title="Transport"
+  icon="🚇"
+  coverage={
+    !transport ? undefined
+    : transport.is_urban === false ? "aucun-arret"
+    : transport.coverage
+  }
+>
+  {transport ? (
+    transport.is_urban === false ? (
+      <div className="space-y-1">
+        <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 border border-amber-100">
+          🌾 Zone non-urbaine — transport non évalué au scoring.
+        </p>
+        <Stat label="Score transport" value="— (exclu)" />
+        <Stat label="Métro / Train" value="❌ Non" />
+        <Stat label="Tramway" value="❌ Non" />
+        <Stat label="Arrêts détectés" value="0" />
+      </div>
+    ) : (
+      <>
+        <Stat label="Score transport" value={`${transport.score ?? 0}/100`} />
+        <div className="flex items-center justify-between py-1">
+          <span className="text-xs text-gray-500">Arrêt le plus proche</span>
+          <span className="text-sm font-medium text-gray-800 text-right max-w-[55%] truncate">
+            {transport.nearest_stop_m != null
+              ? firstRealStop
+                ? `${firstRealStop.name} — ${fmtNum(transport.nearest_stop_m)} m`
+                : fmtNum(transport.nearest_stop_m, " m")
+              : "—"}
+          </span>
+        </div>
+        <Stat label="Métro / Train" value={transport.has_metro_train ? "✅ Oui" : "❌ Non"} />
+        <Stat label="Tramway" value={transport.has_tram ? "✅ Oui" : "❌ Non"} />
+        <Stat label="Arrêts (10min à pied)" value={realStopsCount > 0 ? fmtNum(realStopsCount) : fmtNum(transport.stops?.length ?? 0)} />
+        {realModes.length > 1 && (
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {realModes.slice(0, 4).map((m, i) => (
+              <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">{m}</span>
+            ))}
+          </div>
+        )}
+      </>
+    )
+  ) : <p className="text-xs text-gray-400 italic">Données transport indisponibles</p>}
+</Card>
         <Card title="BPE — Équipements" icon="🏪" coverage={bpeCoverage}>
           {bpe && (bpe.total_equipements > 0 || bpe.score > 0 || bpe.score_v2 > 0) ? (<><Stat label="Total équipements" value={fmtNum(bpe.total_equipements)} /><Stat label="Score BPE" value={`${bpe.score_v2 ?? bpe.score ?? 0}/100`} /><div className="border-t border-gray-100 mt-2 pt-2"><Stat label="Écoles" value={fmtNum(bpe.nb_ecoles)} /><Stat label="Pharmacies" value={fmtNum(bpe.nb_pharmacies)} /><Stat label="Supermarchés" value={fmtNum(bpe.nb_supermarches)} /><Stat label="Universités / Sup." value={fmtNum(bpe.nb_universites)} /></div><div className="border-t border-gray-100 mt-2 pt-2"><Stat label="Commerces" value={fmtNum(bpe.commerces?.count)} /><Stat label="Santé" value={fmtNum(bpe.sante?.count)} /><Stat label="Éducation" value={fmtNum(bpe.education?.count)} /><Stat label="Loisirs" value={fmtNum(bpe.loisirs?.count)} /></div></>) : <p className="text-xs text-gray-400 italic">Aucun équipement</p>}
         </Card>

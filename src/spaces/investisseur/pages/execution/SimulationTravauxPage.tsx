@@ -29,6 +29,9 @@ import {
   readMarchandSnapshot,
   patchRentabiliteForDeal,
 } from "../../../marchand/shared/marchandSnapshot.store";
+import {
+  setActiveCopilotContext,
+} from '@/spaces/copilot/store/activeCopilotContext.store';
 
 /* ================================================================== */
 /*  Theme                                                              */
@@ -780,6 +783,18 @@ const SimulationTravauxPage: React.FC<Props> = ({ theme, breadcrumb }) => {
     return () => { if (persistTimerRef.current !== null) clearTimeout(persistTimerRef.current); };
   }, [simulation, result]);
 
+  // ── Sync travaux → Copilot context ───────────────────────────────────────
+  useEffect(() => {
+    if (result.totalWithBuffer <= 0) return;
+    const surfaceTotal = simulation.surfaceTotalM2 > 0 ? simulation.surfaceTotalM2 : undefined;
+    setActiveCopilotContext({
+      renovation_cost_total:  result.totalWithBuffer,
+      renovation_cost_per_m2: surfaceTotal ? Math.round(result.totalWithBuffer / surfaceTotal) : undefined,
+      renovation_level:       simulation.renovationLevel,
+      renovation_gamme:       simulation.range,
+    });
+  }, [result.totalWithBuffer, simulation.renovationLevel, simulation.range, simulation.surfaceTotalM2]);
+
   const setOpt = <K extends keyof TravauxOptionsSimple>(key: K, value: TravauxOptionsSimple[K]) =>
     setOptions((prev) => ({ ...prev, [key]: value }));
 
@@ -793,22 +808,25 @@ const SimulationTravauxPage: React.FC<Props> = ({ theme, breadcrumb }) => {
       <div
         style={{
           background: GRAD,
-          borderRadius: 16,
-          padding: "24px 28px",
+          borderRadius: 24,
+          padding: "32px 36px",
           marginBottom: 24,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           flexWrap: "wrap",
-          gap: 16,
+          gap: 20,
+          boxShadow: "0 8px 32px rgba(33,150,243,0.22)",
+          position: "relative",
+          overflow: "hidden",
         }}
       >
-        <div>
-          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>
+        <div style={{ position: "relative" }}>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
             {resolvedBreadcrumb}
           </div>
-          <div style={{ fontSize: 24, fontWeight: 900, color: "#fff", marginBottom: 4 }}>📋 Simulation Travaux</div>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,.75)" }}>
+          <div style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5 }}>Simulation Travaux</div>
+          <div style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>
             Estimez le budget travaux de votre opération
           </div>
         </div>

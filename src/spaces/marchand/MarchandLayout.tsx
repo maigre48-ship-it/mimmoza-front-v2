@@ -1,7 +1,19 @@
+// src/spaces/marchand/MarchandLayout.tsx
+
 import React from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
+import { useCopilotPageSync } from "../copilot/hooks/useCopilotPageSync";
+import { useMarchandDealCopilotSync } from "./hooks/useMarchandDealCopilotSync";
 
 export default function MarchandLayout() {
+  const { pathname } = useLocation();
+
+  // Sync vertical + pageContext dans activeCopilotContext (route change)
+  useCopilotPageSync(pathname, "marchand");
+
+  // Sync deal actif + données travaux dans activeCopilotContext
+  useMarchandDealCopilotSync(pathname);
+
   return (
     <div
       style={{
@@ -13,7 +25,6 @@ export default function MarchandLayout() {
           "linear-gradient(180deg, rgba(248,250,252,1), rgba(255,255,255,1))",
       }}
     >
-      {/* Content only (sidebar removed) */}
       <div
         style={{
           borderRadius: 18,

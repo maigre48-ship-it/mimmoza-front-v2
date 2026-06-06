@@ -16,6 +16,12 @@ import { useSearchParams } from "react-router-dom";
 import { usePromoteurProjectStore } from "../store/promoteurProject.store";
 import { patchModule, getSnapshot } from "../shared/promoteurSnapshot.store";
 import { usePromoteurStudy } from "../shared/usePromoteurStudy";
+import { GRAD_PRO, ACCENT_PRO } from "../shared/promoteurDesign.tokens";
+import {
+  PromoteurPageHero,
+  HeroPrimaryButton,
+  HeroGhostButton,
+} from "../shared/components/PromoteurPageHero";
 import { PromoteurSynthesePage } from "../pages/PromoteurSynthesePage";
 import type { PromoteurRawInput } from "../services/promoteurSynthese.types";
 import type { Implantation2DSnapshot } from "../plan2d/implantation2d.snapshot";
@@ -45,9 +51,6 @@ interface BilanTravauxBridgePayload {
 function bilanLandPriceKey(id: string)   { return `mimmoza.bilan.land_price_eur.${id}`; }
 function bilanAssumptionsKey(id: string) { return `mimmoza.bilan.assumptions.${id}`; }
 function terrassementKey(id: string)     { return `mimmoza.terrassement.export.${id}`; }
-
-const GRAD_PRO   = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
-const ACCENT_PRO = "#5247b8";
 
 function n(v: unknown, fallback = 0): number { const x = Number(v); return Number.isFinite(x) ? x : fallback; }
 function pct(v: unknown, fallback = 0): number { const x = n(v, fallback); if (x < 0) return 0; if (x > 100) return 100; return x; }
@@ -550,31 +553,47 @@ export const BilanPromoteurPage: React.FC = () => {
       <div style={{ maxWidth: 1280, margin: "0 auto" }}>
 
         {/* Bannière */}
-        <div style={{ background: GRAD_PRO, borderRadius: 14, padding: "20px 24px", marginBottom: 16, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
-          <div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>Promoteur › Bilan</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ fontSize: 22, fontWeight: 600, color: "white" }}>Bilan Promoteur</div>
-              {ass.rehabMode && ass.travauxRehabTotal > 0
-                ? <span style={{ fontSize: 11, fontWeight: 800, background: "rgba(255,255,255,0.2)", color: "#fff", borderRadius: 20, padding: "3px 10px" }}>🔧 Réhabilitation</span>
-                : hasConceptionData
-                  ? <span style={{ fontSize: 11, fontWeight: 800, background: "rgba(255,255,255,0.2)", color: "#fff", borderRadius: 20, padding: "3px 10px" }}>🏗 Programme neuf</span>
-                  : null
-              }
-            </div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)", marginTop: 4 }}>Pro forma détaillé — basé sur l'implantation 2D et des hypothèses ajustables.</div>
-            <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
-              {([["bilan", "📊 Bilan pro forma"], ["synthese", "📄 Synthèse & Export"]] as const).map(([tab, tabLabel]) => (
-                <button key={tab} onClick={() => setActiveTab(tab)} style={{ padding: "6px 16px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, background: activeTab === tab ? "white" : "rgba(255,255,255,0.18)", color: activeTab === tab ? ACCENT_PRO : "rgba(255,255,255,0.85)" }}>{tabLabel}</button>
-              ))}
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, marginTop: 4 }}>
-            {study?.foncier?.commune_insee && <div style={{ fontSize: 12, color: "rgba(255,255,255,0.85)", background: "rgba(255,255,255,0.15)", borderRadius: 8, padding: "6px 12px", fontWeight: 600 }}>INSEE {study.foncier.commune_insee}</div>}
-            {activeTab === "bilan" && <button onClick={handleSaveForSynthesis} style={{ padding: "9px 16px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.4)", background: synthesisSaved ? "rgba(16,185,129,0.35)" : "rgba(255,255,255,0.15)", color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>{synthesisSaved ? "✓ Enregistré" : "📌 Utiliser dans la synthèse"}</button>}
-            {activeTab === "bilan" && <button onClick={handleExportExcel} style={{ padding: "9px 18px", borderRadius: 10, border: "none", background: "white", color: ACCENT_PRO, fontWeight: 600, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 7 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Exporter Excel</button>}
-          </div>
-        </div>
+        <div style={{ marginBottom: 16 }}>
+  <PromoteurPageHero
+    badge="Promoteur · Bilan"
+    title={`Bilan Promoteur${ass.rehabMode && ass.travauxRehabTotal > 0 ? " 🔧 Réhabilitation" : hasConceptionData ? " 🏗 Programme neuf" : ""}`}
+    metaLines={[
+      { text: "Pro forma détaillé — basé sur l'implantation 2D et des hypothèses ajustables." },
+      ...(study?.foncier?.commune_insee ? [{ text: `INSEE ${study.foncier.commune_insee}` }] : []),
+    ]}
+    statCards={computed.caTotal > 0 ? [
+      {
+        label: "Marge brute",
+        value: `${computed.margePct.toFixed(1)} %`,
+        tone: "indigo" as const,
+      },
+      {
+        label: "CA total",
+        value: `${Math.round(computed.caTotal / 1000)} k€`,
+        tone: "emerald" as const,
+      },
+    ] : undefined}
+    actions={
+      <>
+        {([["bilan", "📊 Bilan pro forma"], ["synthese", "📄 Synthèse & Export"]] as const).map(([tab, tabLabel]) => (
+          activeTab === tab
+            ? <HeroPrimaryButton key={tab} onClick={() => setActiveTab(tab)}>{tabLabel}</HeroPrimaryButton>
+            : <HeroGhostButton key={tab} onClick={() => setActiveTab(tab)}>{tabLabel}</HeroGhostButton>
+        ))}
+        {activeTab === "bilan" && (
+          <HeroPrimaryButton onClick={handleSaveForSynthesis}>
+            {synthesisSaved ? "✓ Enregistré" : "📌 Utiliser dans la synthèse"}
+          </HeroPrimaryButton>
+        )}
+        {activeTab === "bilan" && (
+          <HeroGhostButton onClick={handleExportExcel}>
+            ⬇ Exporter Excel
+          </HeroGhostButton>
+        )}
+      </>
+    }
+  />
+</div>
 
         {activeTab === "synthese" ? <PromoteurSynthesePage rawInputOverride={synthesisRawInput} /> : (
           <>

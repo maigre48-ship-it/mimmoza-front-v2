@@ -53,34 +53,45 @@ export function ApporteurDashboard() {
   return (
     <div className="min-h-screen bg-[#f7f8fc]">
 
-      {/* Header */}
-      <div className="border-b border-slate-200 bg-white px-6 py-6">
-        <div className="mx-auto max-w-5xl">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100">
-                <Handshake className="h-5 w-5 text-emerald-700" />
-              </div>
-              <div>
-                <h1 className="text-lg font-bold text-slate-900">
-                  Espace Apporteur d'affaire
-                </h1>
-                <p className="text-xs text-slate-500">
-                  Qualifiez et transmettez vos opportunités foncières
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => navigate("/apporteur/deposer")}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-emerald-700"
-            >
-              <PlusCircle className="h-4 w-4" />
-              Nouvelle opportunité
-            </button>
+      {/* Bandeau vert Apporteur */}
+      <div style={{
+        background: "linear-gradient(135deg, #16a34a 0%, #4ade80 100%)",
+        borderRadius: 24,
+        padding: "32px 36px",
+        marginBottom: 24,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 20,
+        boxShadow: "0 8px 32px rgba(22,163,74,0.22)",
+        position: "relative",
+        overflow: "hidden",
+      }}>
+        <div style={{ position: "relative" }}>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
+            Apporteur · Deals
+          </div>
+          <div style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5 }}>
+            Espace Apporteur d'affaire
+          </div>
+          <div style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>
+            Qualifiez et transmettez vos opportunités foncières
           </div>
         </div>
+        <button
+          type="button"
+          onClick={() => navigate("/apporteur/deposer")}
+          style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "13px 22px", borderRadius: 14, border: "none",
+            background: "#fff", color: "#15803d",
+            fontWeight: 700, fontSize: 14, cursor: "pointer",
+            flexShrink: 0, boxShadow: "0 4px 20px rgba(0,0,0,0.16)",
+          }}
+        >
+          <PlusCircle className="h-4 w-4" />
+          Nouvelle opportunité
+        </button>
       </div>
 
       {/* Content */}

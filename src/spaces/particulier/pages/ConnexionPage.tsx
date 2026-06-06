@@ -1,11 +1,6 @@
 // src/spaces/particulier/pages/ConnexionPage.tsx
-// ─── changelog ───────────────────────────────────────────────────────────────
-// • handleLogin → redirige vers /dashboard (plus vers /abonnement)
-// • Audio robuste : autoplay + fallback bouton son
-// • Connexion temporaire via localStorage
-// ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -17,7 +12,6 @@ import {
   ShieldCheck,
   Sparkles,
   CheckCircle2,
-  Volume2,
 } from "lucide-react";
 import AnimatedWaveBackground from "@/components/backgrounds/AnimatedWaveBackground";
 
@@ -43,34 +37,9 @@ export default function ConnexionPage() {
   const [email, setEmail] = useState(storedUser.email ?? "");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [showSoundBtn, setShowSoundBtn] = useState(false);
 
   const firstName = storedUser.fullName?.trim().split(/\s+/)[0] ?? "";
 
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  useEffect(() => {
-    const audio = new Audio("/sons/son_intro.mp3");
-    audio.volume = 0.8;
-    audioRef.current = audio;
-
-    audio
-      .play()
-      .then(() => setShowSoundBtn(false))
-      .catch(() => setShowSoundBtn(true));
-
-    return () => {
-      audio.pause();
-      audio.src = "";
-    };
-  }, []);
-
-  const handleSoundBtn = () => {
-    audioRef.current?.play().catch(console.warn);
-    setShowSoundBtn(false);
-  };
-
-  // ── Connexion : toujours vers /dashboard ────────────────────────────────
   const handleLogin = () => {
     localStorage.setItem(
       "mimmoza.user",
@@ -230,18 +199,6 @@ export default function ConnexionPage() {
           </div>
         </div>
       </div>
-
-      {showSoundBtn && (
-        <button
-          type="button"
-          onClick={handleSoundBtn}
-          title="Activer le son d'intro"
-          className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full border border-white/60 bg-white/70 px-4 py-2 text-xs font-medium text-sky-700 shadow-md backdrop-blur-sm transition hover:bg-white"
-        >
-          <Volume2 className="h-4 w-4" />
-          Activer le son
-        </button>
-      )}
     </div>
   );
 }

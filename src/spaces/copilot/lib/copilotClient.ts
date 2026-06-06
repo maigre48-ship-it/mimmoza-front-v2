@@ -1,6 +1,7 @@
 // src/spaces/copilot/lib/copilotClient.ts
-// =============================================================
-// Client HTTP Copilot Mimmoza.
+// PATCH V1.1 : buildEnrichedContext inclut activeDeal + pageContext
+// PATCH V1.2 : predictive_snapshot transmis explicitement (LOT 6)
+// PATCH V1.3 : valuation_engine transmis explicitement (LOT 7)
 // =============================================================
 
 import { supabase } from '@/lib/supabase';
@@ -57,12 +58,11 @@ function extractText(content: unknown): string {
 }
 
 // =============================================================
-// buildEnrichedContext
+// buildEnrichedContext — V1.3
 // ─────────────────────────────────────────────────────────────
-// CORRECTION CLÉE : les champs listing sont injectés à la RACINE
-// de context (city, zip_code, price, surface, listing_id) ET
-// sous context.listing — pour couvrir les deux conventions
-// possibles côté backend Edge Function.
+// Injecte les données listing, deal actif, pageContext,
+// le predictive_snapshot (LOT 6 — 17 sources prédictives) ET
+// le valuation_engine (LOT 7 — valorisation + rendements + analyse).
 // =============================================================
 function buildEnrichedContext(
   requestContext: CopilotChatRequest['context'],
@@ -75,13 +75,12 @@ function buildEnrichedContext(
     listing_id:    active.activeListingId,
     url:           active.listingUrl,
     city:          active.city,
-    zip_code:      active.zipCode,   // zipCode store → zip_code backend
+    zip_code:      active.zipCode,
     price:         active.price,
     surface:       active.surface,
     property_type: active.propertyType,
   };
 
-  // Les valeurs explicites de la requête ont la priorité
   const mergedListing = {
     ...listingFromStore,
     ...(reqCtx.listing ?? {}),
@@ -94,10 +93,6 @@ function buildEnrichedContext(
   const parcel =
     reqCtx.parcel ?? (active.parcelId ? { id: active.parcelId } : undefined);
 
-  // ── Construction du context enrichi ────────────────────────
-  // On spread les champs listing à DEUX niveaux :
-  //   1. Racine du context  → ce que le backend attend dans context.city / context.zip_code
-  //   2. context.listing    → convention objet imbriqué (pour d'éventuels futurs consumers)
   const listingRootFields = hasListingData
     ? {
         listing_id:    mergedListing.listing_id,
@@ -110,23 +105,79 @@ function buildEnrichedContext(
       }
     : {};
 
-  return {
-    // Vertical et route : fallback store si absent
+  // ── V1.1 — Deal actif et contexte de page ─────────────────
+  const activeDeal  = active.activeDeal;
+  const pageContext = active.pageContext;
+
+  // ── V1.2 — Snapshot prédictif (LOT 6) ─────────────────────
+  // Transmis explicitement depuis reqCtx (buildContext l'a lu
+  // depuis contextHints.predictive_snapshot du copilotStore).
+  const predictiveSnapshot = reqCtx.predictive_snapshot ?? null;
+
+  // ── V1.3 — Valuation Engine (LOT 7) ───────────────────────
+  // Transmis explicitement depuis reqCtx (buildContext l'a lu
+  // depuis contextHints.valuation_engine du copilotStore).
+  const valuationEngine = reqCtx.valuation_engine ?? null;
+
+  // ── Construction du contexte enrichi ──────────────────────
+  const enriched: CopilotMimmozaContext = {
     vertical: reqCtx.vertical ?? active.vertical ?? 'generique',
     route:    reqCtx.route    ?? active.route    ?? window.location.pathname,
 
     // Spread du context appelant (study, user, plu…)
     ...reqCtx,
 
-    // ── Champs listing à la RACINE (priorité sur le spread reqCtx) ──
+    // Champs listing à la racine (priorité sur le spread reqCtx)
     ...listingRootFields,
 
     // Parcel enrichi
     parcel,
 
-    // Listing aussi en objet imbriqué (compatibilité future)
+    // Listing en objet imbriqué (compatibilité future)
     ...(hasListingData ? { listing: mergedListing } : {}),
+
+    // V1.1 — Deal actif (donne le contexte projet au LLM)
+    ...(activeDeal  ? { activeDeal }  : {}),
+
+    // V1.1 — Page context (espace / mode / onglet)
+    ...(pageContext ? { pageContext } : {}),
+
+    // V1.2 — Snapshot prédictif : réaffecté APRÈS le spread pour
+    // éviter tout écrasement par un champ homonyme dans reqCtx.
+    predictive_snapshot: predictiveSnapshot,
+
+    // V1.3 — Valuation Engine : réaffecté APRÈS le spread pour
+    // éviter tout écrasement par un champ homonyme dans reqCtx.
+    valuation_engine: valuationEngine,
   };
+
+  // ── Debug LOT 6 — à retirer après validation ───────────────
+  console.log('[Copilot] context enrichi envoyé:', JSON.stringify({
+    city:                  (enriched as any)?.city,
+    zip_code:              (enriched as any)?.zip_code,
+    price:                 (enriched as any)?.price,
+    surface:               (enriched as any)?.surface,
+    listing_id:            (enriched as any)?.listing_id,
+    activeDeal:            (enriched as any)?.activeDeal,
+    pageContext:           (enriched as any)?.pageContext,
+    // V1.2
+    has_predictive_snapshot: !!predictiveSnapshot,
+    predictive_sources_count: predictiveSnapshot?.sources_count ?? null,
+    predictive_dvf_median:    predictiveSnapshot?.dvf?.prix_m2_median ?? null,
+    predictive_score_global:  predictiveSnapshot?.market_scores?.global ?? null,
+    predictive_dpe:           predictiveSnapshot?.dpe ?? null,
+    predictive_sitadel:       predictiveSnapshot?.sitadel_score ?? null,
+  }));
+
+  // ── Debug LOT 7 — à retirer après validation ───────────────
+  console.log('[Copilot] valuation engine:', {
+    estimatedValue:  valuationEngine?.estimatedValue,
+    confidence:      valuationEngine?.confidenceScore,
+    opportunity:     valuationEngine?.opportunityScore,
+    marketPosition:  valuationEngine?.marketPosition,
+  });
+
+  return enriched;
 }
 
 export async function streamCopilotChat(params: {
@@ -141,15 +192,6 @@ export async function streamCopilotChat(params: {
     ...request,
     context: buildEnrichedContext(request.context),
   };
-
-  // Debug temporaire — à retirer une fois validé
-  console.log('[Copilot] context enrichi envoyé:', JSON.stringify({
-    city:       (enrichedRequest.context as any)?.city,
-    zip_code:   (enrichedRequest.context as any)?.zip_code,
-    price:      (enrichedRequest.context as any)?.price,
-    surface:    (enrichedRequest.context as any)?.surface,
-    listing_id: (enrichedRequest.context as any)?.listing_id,
-  }));
 
   const res = await fetch(`${functionsBaseUrl()}/copilot-chat`, {
     method: 'POST',

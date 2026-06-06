@@ -8,12 +8,16 @@ import { supabase } from "../../../supabaseClient";
 import { fetchBestDvfEstimate, fetchDvfComps } from "../../../lib/dvfEstimateApi";
 import type { DvfCompRow } from "../../../lib/dvfEstimateApi";
 import { usePromoteurStudy } from "../shared/usePromoteurStudy";
+import { GRAD_PRO, ACCENT_PRO } from "../shared/promoteurDesign.tokens";
+import {
+  PromoteurPageHero,
+  HeroPrimaryButton,
+  HeroGhostButton,
+} from "../shared/components/PromoteurPageHero";
 
 // ─────────────────────────────────────────────
 // Constantes design
 // ─────────────────────────────────────────────
-const GRAD_PRO = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
-const ACCENT_PRO = "#5247b8";
 const ACCENT_LIGHT = "rgba(82,71,184,0.08)";
 const ACCENT_BORDER = "rgba(82,71,184,0.2)";
 
@@ -773,31 +777,38 @@ const EvaluationPage: React.FC = () => {
   return (
     <div style={S.page}>
       {/* ── HERO ── */}
-      <div style={S.hero}>
-        <div>
-          <div style={S.heroCrumb}>Promoteur › Évaluation</div>
-          <div style={S.heroTitle}>Fiche d'analyse du bien</div>
-          <div style={S.heroSub}>Données DVF réelles uniquement · Aucune donnée inventée</div>
-        </div>
-        <div style={S.heroActions}>
-          <button onClick={handleReset} style={S.heroButtonGhost}>↺ Réinitialiser</button>
-          {hasDvfData && (
-            <button
-              onClick={handleSaveForSynthesis}
-              style={{ ...S.heroButtonGhost, background: synthSaved ? "rgba(16,185,129,0.3)" : "rgba(255,255,255,0.15)" }}
-            >
-              {synthSaved ? "✓ Enregistré" : "📌 Utiliser dans la synthèse"}
-            </button>
-          )}
-          <button onClick={handleComputeDvf} disabled={dvfLoading} style={S.heroButtonPri}>
-            {dvfLoading ? (
-              <><span style={S.spinner} />Analyse DVF…</>
-            ) : (
-              <>⚡ Calculer DVF</>
-            )}
-          </button>
-        </div>
-      </div>
+      <div style={{ maxWidth: 1340, margin: "0 auto 18px auto" }}>
+  <PromoteurPageHero
+    badge="Promoteur · Évaluation"
+    title="Fiche d'analyse du bien"
+    metaLines={[{ text: "Données DVF réelles uniquement · Aucune donnée inventée" }]}
+    statCards={hasDvfData && dvfBest ? [
+      {
+        label: "Estimation cible",
+        value: fmt(dvfBest.prixCible),
+        tone: "indigo" as const,
+      },
+      {
+        label: "Confiance DVF",
+        value: dvfBest.confiance,
+        tone: "emerald" as const,
+      },
+    ] : undefined}
+    actions={
+      <>
+        <HeroGhostButton onClick={handleReset}>↺ Réinitialiser</HeroGhostButton>
+        {hasDvfData && (
+          <HeroPrimaryButton onClick={handleSaveForSynthesis}>
+            {synthSaved ? "✓ Enregistré" : "📌 Utiliser dans la synthèse"}
+          </HeroPrimaryButton>
+        )}
+        <HeroPrimaryButton onClick={handleComputeDvf} disabled={dvfLoading}>
+          {dvfLoading ? <><span style={S.spinner} />Analyse DVF…</> : <>⚡ Calculer DVF</>}
+        </HeroPrimaryButton>
+      </>
+    }
+  />
+</div>
 
       {/* ── GRID ── */}
       <div style={S.grid}>
@@ -1460,53 +1471,7 @@ const S: Record<string, React.CSSProperties> = {
     color: "#0f172a",
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
   },
-  hero: {
-    maxWidth: 1340,
-    margin: "0 auto 18px auto",
-    background: GRAD_PRO,
-    borderRadius: 14,
-    padding: "20px 28px",
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 16,
-  },
-  heroCrumb: { fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 5 },
-  heroTitle: { fontSize: 24, fontWeight: 700, color: "white", marginBottom: 4, letterSpacing: "-0.02em" },
-  heroSub: { fontSize: 13, color: "rgba(255,255,255,0.75)" },
-  heroActions: { display: "flex", gap: 10, alignItems: "center", flexShrink: 0, marginTop: 4, flexWrap: "wrap" },
-  heroButtonPri: {
-    height: 44,
-    padding: "0 22px",
-    borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.45)",
-    background: "linear-gradient(135deg, #ffffff 0%, #f7f5ff 45%, #ede9fe 100%)",
-    color: ACCENT_PRO,
-    fontWeight: 900,
-    fontSize: 14,
-    letterSpacing: "0.01em",
-    cursor: "pointer",
-    boxShadow: "0 12px 28px rgba(15,23,42,0.2)",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    transition: "transform 140ms ease, box-shadow 140ms ease",
-  },
-  heroButtonGhost: {
-    height: 44,
-    padding: "0 16px",
-    borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.4)",
-    background: "rgba(255,255,255,0.15)",
-    color: "white",
-    fontWeight: 600,
-    fontSize: 13,
-    cursor: "pointer",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-  },
+  
   grid: {
     maxWidth: 1340,
     margin: "0 auto",

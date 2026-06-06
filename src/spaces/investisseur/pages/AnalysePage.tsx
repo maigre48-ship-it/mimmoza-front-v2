@@ -1,31 +1,14 @@
 ﻿/**
  * AnalysePage.tsx
  * ─────────────────────────────────────────────────────────────────────
- * v12.2 changelog:
- * - PATCH smartScoresUi : lit mergedInvestorStudy (données fusionnées
- *   investisseur ← promoteur) au lieu de snap.marcheRisquesByDeal brut.
- *   Cohérence d'affichage : les SmartScores voient les mêmes données
- *   que MarcheRisquesPanel et RentabilitePanel.
- * - PATCH investorStudyData : dépendance snapshotTick (événement
- *   MARCHAND_SNAPSHOT_EVENT) au lieu de aiReportCache. Plus propre :
- *   le recalcul est déclenché par un changement réel du snapshot.
- * - PATCH promoteurMarketSnapshot : ajout snapshotTick pour re-lecture
- *   si le snapshot promoteur change pendant la session.
- * - PATCH smartScoresUi : ajout mrAny?.scores comme fallback pour
- *   mrScores (le snapshot promoteur peut exposer scores au top-level).
- * - Aucune régression : API, sauvegarde, handlers, calculs métiers,
- *   composants promoteur inchangés.
- *
- * v12.1 changelog:
- * - Import readPromoteurMarketSnapshot + deepMergeInvestorWithPromoteur
- * - useMemo promoteurMarketSnapshot (lecture snapshot promoteur par dealId)
- * - useMemo investorStudyData (lecture marcheRisquesByDeal investisseur)
- * - useMemo mergedInvestorStudy = deepMergeInvestorWithPromoteur(...)
- * - MarcheRisquesPanel & RentabilitePanel reçoivent promoteurMarketData
- * - Aucune régression : API investisseur, sauvegarde, handlers, calculs
- *   métiers investisseur, composants promoteur inchangés.
- * ─────────────────────────────────────────────────────────────────────
- * (changelog v12.0 → v11.5 : voir historique git)
+ * v12.4 changelog:
+ * - Suppression complète de toute référence wikimedia :
+ *   deepFindWikimedia, wikimediaExtract, wikimediaFromExport,
+ *   AiReportCache.wikimedia, contexte wikimedia dans PDF opts,
+ *   section "Contexte du secteur" dans injectSyntheseExpress.
+ * - pickObj / pickVal supprimés (plus utilisés).
+ * - supabase import supprimé (export-report-v1 supprimé en v12.3).
+ * - Code restant inchangé.
  * ─────────────────────────────────────────────────────────────────────
  */
 
@@ -53,7 +36,6 @@ import DueDiligencePanel, {
 import MarcheRisquesPanel from "../components/analyse/MarcheRisquesPanel";
 import SyntheseIAPanel from "../components/analyse/SyntheseIAPanel";
 import AnalysePredictivePanel from "../components/analyse/AnalysePredictivePanel";
-import { supabase } from "../../../lib/supabaseClient";
 import { exportSnapshotToPdf, buildSnapshotPdfBlob } from "../../marchand/services/exportPdf";
 import {
   fetchMarketStudyPromoteur,
@@ -70,16 +52,18 @@ import type {
   AnalyseTab,
 } from "../types/strategy.types";
 
-// ─── v12.1 : Bridge promoteur → investisseur ─────────────────────────
 import { readPromoteurMarketSnapshot } from "../services/readPromoteurMarketSnapshot";
 import { deepMergeInvestorWithPromoteur } from "../services/promoteurMarketStudyBridge";
+import logoMimmozaUrl from "@/assets/logo-mimmoza-baseline.png";
+import { loadImageDataUrl } from "@/spaces/shared/loadImageDataUrl";
+import coverImageUrl from "@/assets/image-investissement-immo.png";
 
 // ─── Design tokens — Investisseur ────────────────────────────────────
 
 const GRAD_INV   = "linear-gradient(90deg, #2196f3 0%, #21cbf3 100%)";
 const ACCENT_INV = "#1a72c4";
 
-// ─── Tab valides (pour lecture URL) ──────────────────────────────────
+// ─── Tab valides ──────────────────────────────────────────────────────
 
 const VALID_ANALYSE_TABS = new Set<string>([
   "rentabilite",
@@ -98,15 +82,11 @@ function resolveAnalyseTab(raw: string | null): AnalyseTab {
 
 function useActiveMarchandDeal() {
   const [deal, setDeal] = useState<MarchandDeal | null>(() => ensureActiveDeal());
-
   useEffect(() => {
     const handleSnapshotEvent = () => setDeal(ensureActiveDeal());
     const handleStorage = (e: StorageEvent) => {
-      if (e.key && e.key.includes("marchand_snapshot")) {
-        setDeal(ensureActiveDeal());
-      }
+      if (e.key && e.key.includes("marchand_snapshot")) setDeal(ensureActiveDeal());
     };
-
     window.addEventListener(MARCHAND_SNAPSHOT_EVENT, handleSnapshotEvent);
     window.addEventListener("storage", handleStorage);
     return () => {
@@ -114,11 +94,10 @@ function useActiveMarchandDeal() {
       window.removeEventListener("storage", handleStorage);
     };
   }, []);
-
   return deal;
 }
 
-// ─── Hook: travaux depuis snapshot Investisseur (v9) ─────────────────
+// ─── Hook: travaux depuis snapshot Investisseur ───────────────────────
 
 function useInvestisseurTravaux(): InvestisseurTravauxSnapshot | null {
   const [travaux, setTravaux] = useState<InvestisseurTravauxSnapshot | null>(() => {
@@ -127,7 +106,6 @@ function useInvestisseurTravaux(): InvestisseurTravauxSnapshot | null {
     if (!pid) return null;
     return snap.projects[pid]?.execution?.travaux ?? null;
   });
-
   useEffect(() => {
     const refresh = () => {
       const snap = getInvestisseurSnapshot();
@@ -135,11 +113,7 @@ function useInvestisseurTravaux(): InvestisseurTravauxSnapshot | null {
       if (!pid) { setTravaux(null); return; }
       setTravaux(snap.projects[pid]?.execution?.travaux ?? null);
     };
-
-    const onStorage = (e: StorageEvent) => {
-      if (e.key && e.key.includes("investisseur")) refresh();
-    };
-
+    const onStorage = (e: StorageEvent) => { if (e.key && e.key.includes("investisseur")) refresh(); };
     window.addEventListener("storage", onStorage);
     window.addEventListener("mimmoza:investisseur:snapshot", refresh);
     return () => {
@@ -147,11 +121,10 @@ function useInvestisseurTravaux(): InvestisseurTravauxSnapshot | null {
       window.removeEventListener("mimmoza:investisseur:snapshot", refresh);
     };
   }, []);
-
   return travaux;
 }
 
-// ─── Mapping MarchandDeal → DealInputs ───────────────────────────────
+// ─── DealInputs ──────────────────────────────────────────────────────
 
 interface DealInputs {
   dealId: string;
@@ -186,7 +159,7 @@ function mapMarchandDealToDealInputs(deal: MarchandDeal): DealInputs {
   };
 }
 
-// ─── localStorage persistence (analyse state) ───────────────────────
+// ─── localStorage persistence ────────────────────────────────────────
 
 const ANALYSE_STORAGE_PREFIX = "mimmoza_analyse_";
 
@@ -214,61 +187,13 @@ function createDefaultDueDiligence(): DueDiligenceState {
   };
 }
 
-// ─── Object path helpers ─────────────────────────────────────────────
+// ─── Object helpers ───────────────────────────────────────────────────
 
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-function pickObj(root: unknown, ...path: string[]): Record<string, unknown> | null {
-  let cur: unknown = root;
-  for (const k of path) {
-    if (!isObj(cur)) return null;
-    cur = cur[k];
-  }
-  return isObj(cur) ? cur : null;
-}
-
-function pickVal(root: unknown, ...path: string[]): unknown {
-  let cur: unknown = root;
-  for (const k of path) {
-    if (!isObj(cur)) return null;
-    cur = cur[k];
-  }
-  return cur ?? null;
-}
-
-// ─── deepFindWikimedia — détection par STRUCTURE (v11.5) ─────────────
-
-function deepFindWikimedia(obj: unknown, depth = 0): unknown {
-  if (depth > 7 || !isObj(obj)) return null;
-  const o = obj as Record<string, unknown>;
-
-  const hasPlace     = isObj(o.place);
-  const hasWikipedia = isObj(o.wikipedia);
-  const hasWikidata  = isObj(o.wikidata);
-  const hasNarrative = typeof o.narrative === "string" && o.narrative.length > 20;
-  const hasQuery     = isObj(o.query);
-
-  if (
-    (hasPlace && (hasWikipedia || hasWikidata || hasNarrative)) ||
-    (hasWikipedia && hasWikidata) ||
-    (hasNarrative && hasQuery) ||
-    (hasPlace && hasQuery)
-  ) {
-    return o;
-  }
-
-  for (const v of Object.values(o)) {
-    if (!isObj(v)) continue;
-    const found = deepFindWikimedia(v, depth + 1);
-    if (found) return found;
-  }
-
-  return null;
-}
-
-// ─── Safe number extraction ──────────────────────────────────────────
+// ─── Safe number extraction ───────────────────────────────────────────
 
 function safeNum(v: unknown): number | undefined {
   if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -287,7 +212,7 @@ function firstNum(...candidates: unknown[]): number | undefined {
   return undefined;
 }
 
-// ─── Decision normalizer ─────────────────────────────────────────────
+// ─── Decision normalizer ──────────────────────────────────────────────
 
 function normalizeDecisionFromReport(rawAnalysis: Record<string, unknown> | null): string {
   const conclusion = (rawAnalysis?.conclusion ?? null) as Record<string, unknown> | null;
@@ -295,26 +220,24 @@ function normalizeDecisionFromReport(rawAnalysis: Record<string, unknown> | null
     (conclusion?.decisionAdvised as string | undefined) ??
     (conclusion?.decision as string | undefined) ??
     undefined;
-
   if (decisionAdvised && decisionAdvised.trim().length > 0 &&
       decisionAdvised.toUpperCase() !== "INCONNU" &&
       decisionAdvised.toUpperCase() !== "UNKNOWN" &&
       decisionAdvised.toUpperCase() !== "ND") {
     return decisionAdvised;
   }
-
   const verdict = (rawAnalysis?.verdict as string | undefined) ?? (conclusion?.verdict as string | undefined) ?? "";
   switch (verdict.toUpperCase()) {
-    case "GO":               return "ACHETER";
+    case "GO":                    return "ACHETER";
     case "GO_AVEC_RESERVES":
-    case "GO_WITH_RESERVATIONS": return "NEGOCIER";
+    case "GO_WITH_RESERVATIONS":  return "NEGOCIER";
     case "NO_GO":
-    case "NOGO":             return "PASSER";
-    default:                 return decisionAdvised ?? verdict ?? "ND";
+    case "NOGO":                  return "PASSER";
+    default:                      return decisionAdvised ?? verdict ?? "ND";
   }
 }
 
-// ─── Strategy / fiscal label helpers ─────────────────────────────────
+// ─── Strategy / fiscal labels ─────────────────────────────────────────
 
 function strategyLabel(s: StrategyType): string {
   switch (s) {
@@ -337,7 +260,7 @@ function fiscalRegimeLabel(r: FiscalRegime): string {
   }
 }
 
-// ─── BPE utilities ───────────────────────────────────────────────────
+// ─── BPE utilities ────────────────────────────────────────────────────
 
 function getBpeLevel(score: number): string {
   if (score >= 80) return "TRÈS FORT";
@@ -425,7 +348,7 @@ function cleanNarrativeMarkdown(raw: string): string {
   return text;
 }
 
-// ─── Prefetch Marché/Risques helper ──────────────────────────────────
+// ─── Prefetch Marché/Risques ──────────────────────────────────────────
 
 async function prefetchMarcheRisquesIfNeeded(
   dealId: string,
@@ -438,9 +361,7 @@ async function prefetchMarcheRisquesIfNeeded(
     (existingData?.core as { dvf?: unknown } | undefined)?.dvf != null ||
     (existingData as { dvf?: unknown } | undefined)?.dvf != null ||
     (existing?.core as { dvf?: unknown } | undefined)?.dvf != null;
-
   if (existing && hasDvf) { console.log("[AnalysePage] Marché/Risques déjà présent, skip prefetch."); return true; }
-
   console.log("[AnalysePage] Marché/Risques absent — lancement du prefetch…");
   try {
     const res = await fetchMarketStudyPromoteur({
@@ -461,8 +382,7 @@ async function prefetchMarcheRisquesIfNeeded(
   } catch (err) { console.warn("[AnalysePage] Prefetch Marché/Risques erreur:", err); return false; }
 }
 
-// ─── v11.8: resolveMarketScoresForPdf ────────────────────────────────
-// Note: reste sur snap brut (source canonique pour PDF/backend).
+// ─── resolveMarketScoresForPdf ────────────────────────────────────────
 
 function resolveMarketScoresForPdf(snap: ReturnType<typeof readMarchandSnapshot>, dealId: string): Record<string, number | undefined> {
   const mr = snap.marcheRisquesByDeal[dealId] as Record<string, unknown> | undefined;
@@ -477,8 +397,7 @@ function resolveMarketScoresForPdf(snap: ReturnType<typeof readMarchandSnapshot>
   };
 }
 
-// ─── Canonical payload builder ────────────────────────────────────────
-// Note: reste sur snap brut (source canonique pour API/PDF).
+// ─── buildCanonicalPayload ────────────────────────────────────────────
 
 function buildCanonicalPayload(deal: DealInputs, activeDeal: MarchandDeal, canonicalDealId: string, strategyCtx?: { strategy: StrategyType; fiscalRegime: FiscalRegime }): Record<string, unknown> {
   const dealId = canonicalDealId;
@@ -597,11 +516,7 @@ function buildCanonicalPayload(deal: DealInputs, activeDeal: MarchandDeal, canon
   };
 
   return { ...canonical, rentabilite: rentabilite ?? undefined, execution: execution ?? undefined, sortie: sortie ?? undefined, dueDiligence: dueDiligence ?? undefined, marcheRisques: marcheRisques ?? undefined };
-}
-
-// ─── Synthèse Express (v11.6 — PATCH 2 + PATCH 3) ───────────────────
-
-interface SyntheseExpressCtx { qualiteDossier?: number; rentabiliteScore?: number; strategy: StrategyType; loyerEstime?: number; montantPretEur?: number; tauxNominalAnnuelPct?: number; dureePretAnnees?: number; tauxAssuranceAnnuelPct?: number; upfrontFeesEur?: number; wikimediaExtract?: string; }
+}// ─── Financement : injectSyntheseExpress (conservé pour PDF) ─────────
 
 function syntheseVerdict(score: number | undefined): string {
   if (score == null) return "Données insuffisantes pour statuer.";
@@ -615,6 +530,18 @@ function fmtEur(v: number): string { return v.toLocaleString("fr-FR", { maximumF
 
 const LOAN_COMPARISON_DURATIONS = [10, 15, 20] as const;
 
+interface SyntheseExpressCtx {
+  qualiteDossier?: number;
+  rentabiliteScore?: number;
+  strategy: StrategyType;
+  loyerEstime?: number;
+  montantPretEur?: number;
+  tauxNominalAnnuelPct?: number;
+  dureePretAnnees?: number;
+  tauxAssuranceAnnuelPct?: number;
+  upfrontFeesEur?: number;
+}
+
 function injectSyntheseExpress(narrative: string, ctx: SyntheseExpressCtx): string {
   const ND = "ND";
   const isRevente = ctx.strategy === "revente";
@@ -623,18 +550,42 @@ function injectSyntheseExpress(narrative: string, ctx: SyntheseExpressCtx): stri
   const verdictStr = syntheseVerdict(ctx.qualiteDossier);
   const prixMaxMatch = /prix\s+max(?:imum|imale?)?\s*(?:conseill[eé][e]?|recommand[eé][e]?)?\s*[:\-]?\s*([\d\s\u00a0]+)\s*[€e]/i.exec(narrative);
   const prixMaxStr = prixMaxMatch ? prixMaxMatch[1].replace(/[\s\u00a0]/g, "").replace(/^0+/, "").trim() + " \u20ac" : ND;
-  const lines: string[] = ["### Synth\u00e8se Express", "", `**Qualit\u00e9 dossier\u00a0: ${qualiteStr}**`, `**Rentabilit\u00e9\u00a0: ${rentaStr}**`, "", `**Verdict\u00a0: ${verdictStr}**`, `**Prix max conseill\u00e9\u00a0: ${prixMaxStr}**`, ""];
-  if (!isRevente) { const loyerStr = ctx.loyerEstime != null ? `${fmtEur(Math.round(ctx.loyerEstime))}/mois` : ND; lines.push(`**Location \u2014 loyer optimal\u00a0: ${loyerStr}**`, ""); }
+  const lines: string[] = [
+    "### Synth\u00e8se Express", "",
+    `**Qualit\u00e9 dossier\u00a0: ${qualiteStr}**`,
+    `**Rentabilit\u00e9\u00a0: ${rentaStr}**`, "",
+    `**Verdict\u00a0: ${verdictStr}**`,
+    `**Prix max conseill\u00e9\u00a0: ${prixMaxStr}**`, "",
+  ];
+  if (!isRevente) {
+    const loyerStr = ctx.loyerEstime != null ? `${fmtEur(Math.round(ctx.loyerEstime))}/mois` : ND;
+    lines.push(`**Location \u2014 loyer optimal\u00a0: ${loyerStr}**`, "");
+  }
   lines.push("### Financement \u2014 co\u00fbt r\u00e9el du cr\u00e9dit", "");
-  if (isRevente) { lines.push("_Logique marchand de biens\u00a0: l\u2019horizon de d\u00e9tention vis\u00e9 est g\u00e9n\u00e9ralement court. Le co\u00fbt du financement devient particuli\u00e8rement sensible si la dur\u00e9e r\u00e9elle du portage s\u2019allonge \u2014 premier levier d\u2019optimisation \u00e0 monitorer._", ""); }
-
+  if (isRevente) {
+    lines.push("_Logique marchand de biens\u00a0: l\u2019horizon de d\u00e9tention vis\u00e9 est g\u00e9n\u00e9ralement court. Le co\u00fbt du financement devient particuli\u00e8rement sensible si la dur\u00e9e r\u00e9elle du portage s\u2019allonge \u2014 premier levier d\u2019optimisation \u00e0 monitorer._", "");
+  }
   const hasLoanInputs = ctx.montantPretEur != null && ctx.tauxNominalAnnuelPct != null && ctx.dureePretAnnees != null;
   if (hasLoanInputs) {
-    const principal = ctx.montantPretEur as number; const annualRate = ctx.tauxNominalAnnuelPct as number; const years = ctx.dureePretAnnees as number;
-    const insurancePct = ctx.tauxAssuranceAnnuelPct; const upfront = ctx.upfrontFeesEur;
+    const principal = ctx.montantPretEur as number;
+    const annualRate = ctx.tauxNominalAnnuelPct as number;
+    const years = ctx.dureePretAnnees as number;
+    const insurancePct = ctx.tauxAssuranceAnnuelPct;
+    const upfront = ctx.upfrontFeesEur;
     const breakdown = computeLoanCost({ principal, annualRateNominalPct: annualRate, years, annualInsuranceRatePct: insurancePct, upfrontFeesEur: upfront });
-    const durationLabel = isRevente ? `Dur\u00e9e propos\u00e9e\u00a0: **${years}\u00a0an${years > 1 ? "s" : ""}** _(portage court terme vis\u00e9 \u2014 ajuster selon d\u00e9lai r\u00e9el de sortie)_` : `Dur\u00e9e retenue\u00a0: **${years}\u00a0an${years > 1 ? "s" : ""}**`;
-    lines.push(durationLabel, `- Montant emprunt\u00e9\u00a0: ${fmtEur(principal)}`, `- Mensualit\u00e9 (hors assurance)\u00a0: ${fmtEur(Math.round(breakdown.monthlyPaymentExclInsurance))}/mois`, `- Assurance\u00a0: ${breakdown.monthlyInsurance != null ? `${fmtEur(Math.round(breakdown.monthlyInsurance))}/mois` : ND}`, `- Int\u00e9r\u00eats totaux\u00a0: ${fmtEur(Math.round(breakdown.totalInterest))}`, `- Frais initiaux\u00a0: ${fmtEur(Math.round(breakdown.upfrontFees))}`, `- **Co\u00fbt total du cr\u00e9dit\u00a0: ${fmtEur(Math.round(breakdown.totalCostOfCredit))}**`, `- **Total rembours\u00e9\u00a0: ${fmtEur(Math.round(breakdown.totalRepaidAllIn))}**`);
+    const durationLabel = isRevente
+      ? `Dur\u00e9e propos\u00e9e\u00a0: **${years}\u00a0an${years > 1 ? "s" : ""}** _(portage court terme vis\u00e9 \u2014 ajuster selon d\u00e9lai r\u00e9el de sortie)_`
+      : `Dur\u00e9e retenue\u00a0: **${years}\u00a0an${years > 1 ? "s" : ""}**`;
+    lines.push(
+      durationLabel,
+      `- Montant emprunt\u00e9\u00a0: ${fmtEur(principal)}`,
+      `- Mensualit\u00e9 (hors assurance)\u00a0: ${fmtEur(Math.round(breakdown.monthlyPaymentExclInsurance))}/mois`,
+      `- Assurance\u00a0: ${breakdown.monthlyInsurance != null ? `${fmtEur(Math.round(breakdown.monthlyInsurance))}/mois` : ND}`,
+      `- Int\u00e9r\u00eats totaux\u00a0: ${fmtEur(Math.round(breakdown.totalInterest))}`,
+      `- Frais initiaux\u00a0: ${fmtEur(Math.round(breakdown.upfrontFees))}`,
+      `- **Co\u00fbt total du cr\u00e9dit\u00a0: ${fmtEur(Math.round(breakdown.totalCostOfCredit))}**`,
+      `- **Total rembours\u00e9\u00a0: ${fmtEur(Math.round(breakdown.totalRepaidAllIn))}**`,
+    );
     breakdown.notes.forEach((note) => lines.push(`- _${note}_`));
     lines.push("", "**Comparatif dur\u00e9es \u2014 \u00e0 montant et taux constants**", "");
     for (const cy of LOAN_COMPARISON_DURATIONS) {
@@ -643,23 +594,20 @@ function injectSyntheseExpress(narrative: string, ctx: SyntheseExpressCtx): stri
       lines.push(`- **${cy}\u00a0ans${marker}**\u00a0: mensualit\u00e9 ${fmtEur(Math.round(cb.monthlyPaymentExclInsurance))}/mois \u00b7 int\u00e9r\u00eats ${fmtEur(Math.round(cb.totalInterest))} \u00b7 co\u00fbt total cr\u00e9dit ${fmtEur(Math.round(cb.totalCostOfCredit))}`);
     }
     const isStandardDuration = (LOAN_COMPARISON_DURATIONS as readonly number[]).includes(years);
-    if (!isStandardDuration) { lines.push(`- **${years}\u00a0an${years > 1 ? "s" : ""} \u2713 (retenu)**\u00a0: mensualit\u00e9 ${fmtEur(Math.round(breakdown.monthlyPaymentExclInsurance))}/mois \u00b7 int\u00e9r\u00eats ${fmtEur(Math.round(breakdown.totalInterest))} \u00b7 co\u00fbt total cr\u00e9dit ${fmtEur(Math.round(breakdown.totalCostOfCredit))}`); }
-    if (isRevente) { lines.push("", "_\u00c0 dur\u00e9e de portage \u00e9gale, une dur\u00e9e de pr\u00eat plus courte r\u00e9duit sensiblement le co\u00fbt total du cr\u00e9dit mais alourdit la mensualit\u00e9. L\u2019arbitrage d\u00e9pend du d\u00e9lai r\u00e9el de sortie et de la marge de man\u0153uvre tr\u00e9sorerie sur la p\u00e9riode de portage._"); }
-  } else { lines.push(`- ${ND} \u2014 Donn\u00e9es manquantes\u00a0: montant pr\u00eat / taux / dur\u00e9e`); }
-
-  lines.push("", "### Contexte du secteur", "");
-  if (ctx.wikimediaExtract && ctx.wikimediaExtract.trim().length > 0) {
-    const raw = ctx.wikimediaExtract.trim();
-    const sentencePattern = /[^.!?]*[.!?]+(?:\s|$)/g;
-    const sentences: string[] = []; let m: RegExpExecArray | null;
-    while ((m = sentencePattern.exec(raw)) !== null && sentences.length < 4) { const s = m[0].trim(); if (s.length > 0) sentences.push(s); }
-    lines.push(sentences.length > 0 ? sentences.join(" ") : raw.slice(0, 400));
-  } else { lines.push("Contexte local indisponible via Wikimedia."); }
+    if (!isStandardDuration) {
+      lines.push(`- **${years}\u00a0an${years > 1 ? "s" : ""} \u2713 (retenu)**\u00a0: mensualit\u00e9 ${fmtEur(Math.round(breakdown.monthlyPaymentExclInsurance))}/mois \u00b7 int\u00e9r\u00eats ${fmtEur(Math.round(breakdown.totalInterest))} \u00b7 co\u00fbt total cr\u00e9dit ${fmtEur(Math.round(breakdown.totalCostOfCredit))}`);
+    }
+    if (isRevente) {
+      lines.push("", "_\u00c0 dur\u00e9e de portage \u00e9gale, une dur\u00e9e de pr\u00eat plus courte r\u00e9duit sensiblement le co\u00fbt total du cr\u00e9dit mais alourdit la mensualit\u00e9. L\u2019arbitrage d\u00e9pend du d\u00e9lai r\u00e9el de sortie et de la marge de man\u0153uvre tr\u00e9sorerie sur la p\u00e9riode de portage._");
+    }
+  } else {
+    lines.push(`- ${ND} \u2014 Donn\u00e9es manquantes\u00a0: montant pr\u00eat / taux / dur\u00e9e`);
+  }
   lines.push("");
   return lines.join("\n") + "\n\n" + narrative;
 }
 
-// ─── SmartScores UI helpers ──────────────────────────────────────────
+// ─── SmartScores UI helpers ───────────────────────────────────────────
 
 type ScoreLevel = "Fragile" | "Moyen" | "Solide" | "Excellent";
 function clamp100(n: number): number { if (!Number.isFinite(n)) return 0; return Math.max(0, Math.min(100, n)); }
@@ -674,7 +622,10 @@ function levelTone(level: ScoreLevel): { badge: string; dot: string; ring: strin
   }
 }
 
-function ScoreBadge({ value }: { value: number }) { const lvl = scoreLevel(value); const tone = levelTone(lvl); return (<span className={["inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-semibold ring-1", tone.badge, "print:bg-white print:text-gray-900 print:ring-gray-300"].join(" ")}><span className={["h-1.5 w-1.5 rounded-full", tone.dot, "print:bg-gray-900"].join(" ")} />{lvl}</span>); }
+function ScoreBadge({ value }: { value: number }) {
+  const lvl = scoreLevel(value); const tone = levelTone(lvl);
+  return (<span className={["inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-semibold ring-1", tone.badge, "print:bg-white print:text-gray-900 print:ring-gray-300"].join(" ")}><span className={["h-1.5 w-1.5 rounded-full", tone.dot, "print:bg-gray-900"].join(" ")} />{lvl}</span>);
+}
 
 function ConfidenceMeter({ value }: { value: number | undefined }) {
   const v = value ?? 0;
@@ -703,10 +654,270 @@ function NoDealPlaceholder() {
 // ─── PDF Preview state ────────────────────────────────────────────────
 
 interface PdfPreviewState { url: string | null; loading: boolean; error: string | null; }
-interface AiReportCache { wikimedia: unknown; raw: unknown; }
 const PDF_PREVIEW_INITIAL: PdfPreviewState = { url: null, loading: false, error: null };
 
-// ─── Component ───────────────────────────────────────────────────────
+// ─── v12.4 : Synthèse déterministe locale ────────────────────────────
+
+function fmtPct(v: number | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "ND";
+  return `${(Math.round(v * 10) / 10).toLocaleString("fr-FR")} %`;
+}
+function fmtEurLocal(v: number | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "ND";
+  return v.toLocaleString("fr-FR", { maximumFractionDigits: 0 }) + " €";
+}
+function scoreStr(v: number | undefined): string {
+  return v != null && Number.isFinite(v) ? `${Math.round(v)}/100` : "ND";
+}
+
+function buildDeterministicSynthese(
+  deal: DealInputs,
+  canonicalDealId: string,
+  strategy: StrategyType,
+  fiscalRegime: FiscalRegime,
+): string {
+  const snap = readMarchandSnapshot();
+  const rentaRaw = snap.rentabiliteByDeal[canonicalDealId] as Record<string, unknown> | undefined;
+  const mrRaw = snap.marcheRisquesByDeal[canonicalDealId] as Record<string, unknown> | undefined;
+  const ddRaw = snap.dueDiligenceByDeal[canonicalDealId] as Record<string, unknown> | undefined;
+
+  const rentaInputs = (rentaRaw?.inputs ?? null) as Record<string, unknown> | null;
+  const rentaComputed = (rentaRaw?.computed ?? null) as Record<string, unknown> | null;
+  const mrData = (mrRaw?.data ?? null) as Record<string, unknown> | null;
+  const mrScores = (mrData?.scores ?? mrRaw?.breakdown ?? null) as Record<string, unknown> | null;
+
+  // ── Scores ──
+  const smartScore = toScore100(firstNum(
+    mrRaw?.scoreGlobal, mrRaw?.score,
+    (mrScores as { global?: unknown } | null)?.global,
+    (mrData as { smartScore?: unknown } | null)?.smartScore,
+  ));
+  const liquidite = toScore100(firstNum(
+    (mrScores as { liquidite?: unknown } | null)?.liquidite,
+    (mrScores as { demande?: unknown } | null)?.demande,
+    (mrScores as { liquidity?: unknown } | null)?.liquidity,
+  ));
+  const opportunity = toScore100(firstNum(
+    (mrScores as { opportunity?: unknown } | null)?.opportunity,
+    (mrScores as { offre?: unknown } | null)?.offre,
+    (mrScores as { opportunite?: unknown } | null)?.opportunite,
+  ));
+  const pressionRisque = toScore100(firstNum(
+    (mrScores as { pressionRisque?: unknown } | null)?.pressionRisque,
+    (mrScores as { environnement?: unknown } | null)?.environnement,
+    (mrScores as { riskPressure?: unknown } | null)?.riskPressure,
+  ));
+  const rentabilite = toScore100(firstNum(
+    (rentaComputed as { rentabilite?: unknown } | null)?.rentabilite,
+    (rentaComputed as { profitability?: unknown } | null)?.profitability,
+  ));
+  const robustesse = toScore100(firstNum(
+    (rentaComputed as { robustesse?: unknown } | null)?.robustesse,
+    (rentaComputed as { robustness?: unknown } | null)?.robustness,
+  ));
+  const confidence = toScore100(firstNum(
+    (mrData as { dataConfidence?: unknown } | null)?.dataConfidence,
+    (mrRaw as { dataConfidence?: unknown } | undefined)?.dataConfidence,
+  ));
+
+  // ── Rentabilité ──
+  const rendementBrut = firstNum((rentaComputed as { rendementBrut?: unknown } | null)?.rendementBrut, (rentaComputed as { yieldBrut?: unknown } | null)?.yieldBrut);
+  const rendementNet = firstNum((rentaComputed as { rendementNet?: unknown } | null)?.rendementNet, (rentaComputed as { yieldNet?: unknown } | null)?.yieldNet);
+  const cashflow = firstNum((rentaComputed as { cashflowMensuel?: unknown } | null)?.cashflowMensuel, (rentaComputed as { cashflow?: unknown } | null)?.cashflow);
+  const margeBrute = firstNum((rentaComputed as { margeBrute?: unknown } | null)?.margeBrute, (rentaComputed as { grossMargin?: unknown } | null)?.grossMargin);
+  const margeBrutePct = firstNum((rentaComputed as { margeBrutePct?: unknown } | null)?.margeBrutePct, (rentaComputed as { grossMarginPct?: unknown } | null)?.grossMarginPct);
+  const mensualite = firstNum((rentaComputed as { mensualite?: unknown } | null)?.mensualite, (rentaComputed as { monthlyPayment?: unknown } | null)?.monthlyPayment);
+  const travauxEstimes = firstNum(
+    (rentaInputs as { travauxUtilises?: unknown } | null)?.travauxUtilises,
+    (rentaInputs as { travauxEstimes?: unknown } | null)?.travauxEstimes,
+    (rentaInputs as { travaux?: unknown } | null)?.travaux,
+  );
+  const capitalEngage = deal.prixAchat > 0 ? deal.prixAchat + (travauxEstimes ?? 0) : undefined;
+
+  // ── DVF ──
+  const dvfCore = (mrData?.core as { dvf?: unknown } | undefined)?.dvf ?? (mrData as { dvf?: unknown } | undefined)?.dvf ?? (mrRaw as { dvf?: unknown } | undefined)?.dvf ?? null;
+  const dvf = dvfCore as Record<string, unknown> | null;
+  const prixM2Median = dvf != null ? firstNum((dvf as { prix_m2_median?: unknown }).prix_m2_median, (dvf as { prixM2Median?: unknown }).prixM2Median) : undefined;
+  const nbTransactions = dvf != null ? firstNum((dvf as { nb_transactions?: unknown }).nb_transactions, (dvf as { nbTransactions?: unknown }).nbTransactions) : undefined;
+
+  // ── BPE ──
+  const bpeCore = (mrData?.core as { bpe?: unknown } | undefined)?.bpe ?? (mrData as { bpe?: unknown } | undefined)?.bpe ?? (mrRaw as { bpe?: unknown } | undefined)?.bpe ?? null;
+  const bpe = bpeCore as Record<string, unknown> | null;
+  const bpeScore = bpe != null ? firstNum((bpe as { score_v2?: unknown }).score_v2, (bpe as { score?: unknown }).score) : undefined;
+
+  // ── Travaux (investisseur snapshot) ──
+  const investisseurSnap = getInvestisseurSnapshot();
+  const investisseurPid = investisseurSnap.activeProjectId;
+  const travauxComputed = investisseurPid ? investisseurSnap.projects[investisseurPid]?.execution?.travaux?.computed : undefined;
+
+  // ── Due diligence ──
+  const ddState = (ddRaw?.state ?? null) as Record<string, unknown> | null;
+  const checklist = (ddState?.checklist ?? null) as unknown[] | null;
+  const risquesNonFin = (ddState?.risquesNonFinanciers ?? null) as unknown[] | null;
+
+  // ── Décision déterministe ──
+  const hasEnoughData = smartScore != null || rentabilite != null;
+  let decision = "DONNÉES INSUFFISANTES";
+  if (hasEnoughData) {
+    const ss = smartScore ?? 0;
+    const rr = rentabilite ?? 0;
+    const pr = pressionRisque ?? 100;
+    if (ss >= 75 && rr >= 60 && pr <= 60) decision = "ACHETER";
+    else if (ss >= 60 || rr >= 60) decision = "NEGOCIER";
+    else decision = "PASSER";
+  }
+
+  // ── Lecture Mimmoza ──
+  function lectureMimmoza(): string {
+    if (!hasEnoughData) return "Données insuffisantes pour établir une lecture Mimmoza. Lancez une étude de marché depuis l'onglet Marché/Risques.";
+    const ss = smartScore ?? 0;
+    const pr = pressionRisque ?? 50;
+    const liq = liquidite ?? 50;
+    if (ss >= 75 && pr <= 40) return `SmartScore solide (${scoreStr(smartScore)}) avec une pression risque maîtrisée (${scoreStr(pressionRisque)}). Liquidité ${liq >= 65 ? "favorable" : "correcte"} — opération bien positionnée sur le marché local.`;
+    if (ss >= 60) return `SmartScore correct (${scoreStr(smartScore)}) — des marges de négociation existent. Surveiller la pression risque (${scoreStr(pressionRisque)}) et la liquidité (${scoreStr(liquidite)}) avant engagement.`;
+    return `SmartScore en dessous du seuil de confort Mimmoza (${scoreStr(smartScore)}). Risques structurels à qualifier impérativement avant toute décision.`;
+  }
+
+  // ── Points forts / vigilance ──
+  const pointsForts: string[] = [];
+  const vigilances: string[] = [];
+
+  if (smartScore != null) { if (smartScore >= 70) pointsForts.push(`SmartScore élevé (${Math.round(smartScore)}/100) — position marché favorable.`); else if (smartScore < 50) vigilances.push(`SmartScore sous le seuil (${Math.round(smartScore)}/100) — attractivité marché limitée.`); }
+  if (rentabilite != null) { if (rentabilite >= 70) pointsForts.push(`Score de rentabilité solide (${Math.round(rentabilite)}/100).`); else if (rentabilite < 50) vigilances.push(`Score de rentabilité insuffisant (${Math.round(rentabilite)}/100) — revoir le pricing ou les charges.`); }
+  if (liquidite != null) { if (liquidite >= 70) pointsForts.push(`Bonne liquidité du marché (${Math.round(liquidite)}/100) — friction de sortie faible.`); else if (liquidite < 50) vigilances.push(`Liquidité faible (${Math.round(liquidite)}/100) — délai de commercialisation allongé à anticiper.`); }
+  if (pressionRisque != null) { if (pressionRisque <= 40) pointsForts.push(`Pression risque contenue (${Math.round(pressionRisque)}/100).`); else if (pressionRisque > 65) vigilances.push(`Pression risque élevée (${Math.round(pressionRisque)}/100) — stress tests à réaliser.`); }
+  if (margeBrute != null) { if (margeBrute > 0) pointsForts.push(`Marge brute positive (${fmtEurLocal(margeBrute)}).`); else vigilances.push(`Marge brute nulle ou négative (${fmtEurLocal(margeBrute)}) — l'opération ne dégage pas de valeur dans les hypothèses actuelles.`); }
+  if (cashflow != null) { if (cashflow > 0) pointsForts.push(`Cashflow mensuel positif (${fmtEurLocal(cashflow)}/mois).`); else vigilances.push(`Cashflow mensuel négatif (${fmtEurLocal(cashflow)}/mois) — effort mensuel à financer.`); }
+  if (!hasEnoughData) vigilances.push("Données marché absentes — lancez l'étude de marché pour obtenir les SmartScores.");
+
+  // ── Checklist ──
+  const checklistDone = checklist != null
+    ? checklist.filter((c) => {
+        const item = c as { checked?: boolean; done?: boolean; status?: string };
+        return item.checked === true || item.done === true || item.status === "done" || item.status === "ok";
+      }).length
+    : null;
+  const checklistTotal = checklist?.length ?? null;
+
+  // ── Adresse / prix au m² ──
+  const adresse = [deal.address, deal.zipCode, deal.city].filter(Boolean).join(", ") || "Non renseignée";
+  const prixM2Deal = deal.surfaceM2 > 0 ? Math.round(deal.prixAchat / deal.surfaceM2) : null;
+
+  // ── BUILD MARKDOWN ────────────────────────────────────────────────
+  const L: string[] = [];
+
+  L.push("# Synthèse Exécutive Mimmoza", "");
+  L.push(`_Générée le ${new Date().toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })} — synthèse déterministe Mimmoza_`, "");
+
+  L.push("## Décision", "");
+  L.push(`**${decision}**`, "");
+  L.push(lectureMimmoza(), "");
+
+  L.push("## Résumé du deal", "");
+  L.push(`- **Adresse** : ${adresse}`);
+  L.push(`- **Prix d'achat** : ${fmtEurLocal(deal.prixAchat)}`);
+  L.push(`- **Surface** : ${deal.surfaceM2 > 0 ? deal.surfaceM2 + " m²" : "ND"}`);
+  L.push(`- **Prix au m²** : ${prixM2Deal != null ? prixM2Deal.toLocaleString("fr-FR") + " €/m²" : "ND"}`);
+  if (deal.prixReventeCible > 0) L.push(`- **Prix de revente cible** : ${fmtEurLocal(deal.prixReventeCible)}`);
+  L.push(`- **Stratégie** : ${strategyLabel(strategy)}`);
+  if (strategy === "location") L.push(`- **Régime fiscal** : ${fiscalRegimeLabel(fiscalRegime)}`);
+  L.push(`- **DPE** : ${deal.dpeNote}`);
+  L.push("");
+
+  L.push("## SmartScores", "");
+  L.push("| Score | Valeur | Niveau |");
+  L.push("|-------|--------|--------|");
+  const scoreRows: [string, number | undefined][] = [
+    ["SmartScore (global)", smartScore],
+    ["Liquidité", liquidite],
+    ["Opportunity", opportunity],
+    ["Pression Risque", pressionRisque],
+    ["Rentabilité", rentabilite],
+    ["Robustesse", robustesse],
+    ["Confiance données", confidence],
+  ];
+  for (const [label, val] of scoreRows) {
+    const v = val != null ? Math.round(val) : null;
+    const lvl = v != null ? scoreLevel(v) : "ND";
+    L.push(`| ${label} | ${v != null ? `${v}/100` : "ND"} | ${lvl} |`);
+  }
+  L.push("");
+
+  L.push("## Rentabilité", "");
+  L.push(`- **Rendement brut** : ${fmtPct(rendementBrut)}`);
+  L.push(`- **Rendement net** : ${fmtPct(rendementNet)}`);
+  L.push(`- **Cashflow mensuel** : ${cashflow != null ? fmtEurLocal(cashflow) + "/mois" : "ND"}`);
+  L.push(`- **Marge brute** : ${fmtEurLocal(margeBrute)}`);
+  L.push(`- **Marge brute %** : ${fmtPct(margeBrutePct)}`);
+  L.push(`- **Mensualité crédit** : ${mensualite != null ? fmtEurLocal(mensualite) + "/mois" : "ND"}`);
+  L.push(`- **Capital engagé** : ${fmtEurLocal(capitalEngage)}`);
+  L.push("");
+
+  L.push("## Marché / Risques", "");
+  if (prixM2Median != null) L.push(`- **Prix m² médian DVF** : ${prixM2Median.toLocaleString("fr-FR")} €/m²`);
+  if (nbTransactions != null) L.push(`- **Transactions DVF** : ${Math.round(nbTransactions)}`);
+  if (smartScore != null) L.push(`- **Score marché global** : ${scoreStr(smartScore)}`);
+  if (bpeScore != null) L.push(`- **BPE Score (équipements)** : ${Math.round(bpeScore)}/100 — ${getBpeLevel(bpeScore)}`);
+  if (prixM2Median == null && nbTransactions == null && smartScore == null) L.push("_Données marché non chargées — lancez l'étude depuis l'onglet Marché/Risques._");
+  L.push("");
+
+  L.push("## Travaux", "");
+  if (travauxComputed) {
+    if (travauxComputed.total != null) L.push(`- **Budget travaux (brut)** : ${fmtEurLocal(travauxComputed.total)}`);
+    if (travauxComputed.totalWithBuffer != null) L.push(`- **Total avec marge (${travauxComputed.bufferPct ?? "?"}%)** : ${fmtEurLocal(travauxComputed.totalWithBuffer)}`);
+    if (travauxComputed.costPerM2 != null) L.push(`- **Coût au m²** : ${fmtEurLocal(travauxComputed.costPerM2)}/m²`);
+  } else if (travauxEstimes != null) {
+    L.push(`- **Travaux estimés** : ${fmtEurLocal(travauxEstimes)}`);
+  } else {
+    L.push("_Aucune simulation travaux renseignée._");
+  }
+  L.push("");
+
+  L.push("## Due Diligence", "");
+  if (checklistTotal != null && checklistTotal > 0) {
+    L.push(`- **Checklist** : ${checklistDone ?? 0}/${checklistTotal} points validés`);
+  } else {
+    L.push("- Checklist non renseignée.");
+  }
+  if (risquesNonFin && risquesNonFin.length > 0) {
+    L.push(`- **Risques non financiers** : ${risquesNonFin.length} identifié(s)`);
+    risquesNonFin.slice(0, 5).forEach((r) => {
+      const label = typeof r === "string" ? r : ((r as { label?: string }).label ?? (r as { description?: string }).description ?? JSON.stringify(r));
+      L.push(`  - ${label}`);
+    });
+  }
+  L.push("");
+
+  L.push("## Points forts", "");
+  if (pointsForts.length > 0) pointsForts.forEach((p) => L.push(`- ✅ ${p}`));
+  else L.push("- Aucun point fort identifié sur la base des données disponibles.");
+  L.push("");
+
+  L.push("## Points de vigilance", "");
+  if (vigilances.length > 0) vigilances.forEach((v) => L.push(`- ⚠️ ${v}`));
+  else L.push("- Aucun point de vigilance majeur détecté.");
+  L.push("");
+
+  L.push("## Recommandation finale", "");
+  switch (decision) {
+    case "ACHETER":
+      L.push(`Sur la base des données Mimmoza disponibles, l'opération présente un profil favorable. SmartScore (${scoreStr(smartScore)}), rentabilité (${scoreStr(rentabilite)}) et pression risque (${scoreStr(pressionRisque)}) sont cohérents avec un passage à l'acte. Vérifiez la due diligence juridique et technique avant signature.`);
+      break;
+    case "NEGOCIER":
+      L.push("L'opération mérite d'être travaillée : certains indicateurs sont encourageants mais des marges de négociation existent. Ciblez en priorité le prix d'acquisition et le cadrage travaux. Relancez la synthèse après ajustement des hypothèses.");
+      break;
+    case "PASSER":
+      L.push("Les indicateurs disponibles ne permettent pas de valider cette opération dans ses paramètres actuels. Risque trop élevé et/ou rentabilité insuffisante. Réévaluez le prix cible ou les conditions d'acquisition.");
+      break;
+    default:
+      L.push("Données insuffisantes pour conclure. Complétez l'étude de marché et les paramètres de rentabilité pour obtenir une recommandation fiable.");
+  }
+  L.push("");
+  L.push("---");
+  L.push("_Synthèse Mimmoza — données issues du snapshot local._");
+
+  return L.join("\n");
+}// ─── Component ───────────────────────────────────────────────────────
 
 export default function AnalysePage() {
   const activeDeal = useActiveMarchandDeal();
@@ -723,9 +934,10 @@ export default function AnalysePage() {
   const [pdfPreview, setPdfPreview] = useState<PdfPreviewState>(PDF_PREVIEW_INITIAL);
   const pdfUrlRef = useRef<string | null>(null);
   const autoExportedRef = useRef(false);
-  const [aiReportCache, setAiReportCache] = useState<AiReportCache | null>(null);
+  const [pdfLogo, setPdfLogo] = useState<{ dataUrl: string; aspect: number } | null>(null);
+  const [pdfCoverImage, setPdfCoverImage] = useState<string | null>(null);
 
-  // ─── v12.2 : snapshotTick — écoute MARCHAND_SNAPSHOT_EVENT ─────────
+  // ─── snapshotTick ─────────────────────────────────────────────────
   const [snapshotTick, setSnapshotTick] = useState(0);
   useEffect(() => {
     const onSnap = () => setSnapshotTick((x) => x + 1);
@@ -733,33 +945,45 @@ export default function AnalysePage() {
     return () => window.removeEventListener(MARCHAND_SNAPSHOT_EVENT, onSnap as EventListener);
   }, []);
 
-  const revokePreviousPdfUrl = useCallback(() => { if (pdfUrlRef.current) { URL.revokeObjectURL(pdfUrlRef.current); pdfUrlRef.current = null; } }, []);
+  useEffect(() => {
+    let mounted = true;
+    loadImageDataUrl(logoMimmozaUrl)
+      .then((logo) => { if (mounted) setPdfLogo(logo); })
+      .catch((err) => { console.warn("[PDF] impossible de charger le logo", err); });
+    loadImageDataUrl(coverImageUrl)
+      .then((cover) => { if (mounted) setPdfCoverImage(cover.dataUrl); })
+      .catch((err) => { console.warn("[PDF] impossible de charger la cover", err); });
+    return () => { mounted = false; };
+  }, []);
+
+  const revokePreviousPdfUrl = useCallback(() => {
+    if (pdfUrlRef.current) { URL.revokeObjectURL(pdfUrlRef.current); pdfUrlRef.current = null; }
+  }, []);
+
   useEffect(() => () => { revokePreviousPdfUrl(); }, [canonicalDealId, revokePreviousPdfUrl]);
+
   useEffect(() => {
     if (pdfPreview.loading) { autoExportedRef.current = false; return; }
     if (pdfPreview.url && !autoExportedRef.current) {
       autoExportedRef.current = true;
       const anchor = document.createElement("a"); anchor.href = pdfPreview.url;
       const safeLabel = (deal?.label ?? "export").replace(/[^a-zA-Z0-9À-ÿ _-]/g, "").replace(/\s+/g, "_").slice(0, 80);
-      anchor.download = `analyse-${safeLabel}.pdf`; document.body.appendChild(anchor); anchor.click(); document.body.removeChild(anchor);
+      anchor.download = `analyse-${safeLabel}.pdf`;
+      document.body.appendChild(anchor); anchor.click(); document.body.removeChild(anchor);
     }
   }, [pdfPreview.url, pdfPreview.loading, deal?.label]);
 
-  // ─── v12.2 : Investor study data ──────────────────────────────────
-  // PATCH v12.2: snapshotTick au lieu de aiReportCache comme dépendance.
+  // ─── Merged investor ← promoteur study ───────────────────────────
   const investorStudyData = useMemo(() => {
     if (!canonicalDealId) return null;
     const snap = readMarchandSnapshot();
     return (snap.marcheRisquesByDeal[canonicalDealId] ?? null) as Record<string, unknown> | null;
   }, [canonicalDealId, snapshotTick]);
 
-  // ─── v12.2 : Promoteur market snapshot ─────────────────────────────
-  // PATCH v12.2: ajout snapshotTick pour re-lecture après bascule d'espace.
   const promoteurMarketSnapshot = useMemo(() => {
     return readPromoteurMarketSnapshot(canonicalDealId);
   }, [canonicalDealId, snapshotTick]);
 
-  // ─── v12.1 : Merged investor ← promoteur study ────────────────────
   const mergedInvestorStudy = useMemo(() => {
     const merged = deepMergeInvestorWithPromoteur(investorStudyData, promoteurMarketSnapshot);
     console.debug("[InvestisseurBridge] Fusion investisseur <- promoteur", {
@@ -769,38 +993,45 @@ export default function AnalysePage() {
     return merged;
   }, [canonicalDealId, investorStudyData, promoteurMarketSnapshot]);
 
+  // ─── PDF preview ──────────────────────────────────────────────────
   const generatePdfPreview = useCallback(async (markdown: string): Promise<void> => {
     setPdfPreview({ url: null, loading: true, error: null });
     try {
-      const snapshot = readMarchandSnapshot(); const now = new Date().toISOString();
-      const wikimedia = aiReportCache?.wikimedia ?? (aiReportCache?.raw as { computed?: { wikimedia?: unknown } } | null)?.computed?.wikimedia ?? null;
-      const reportRaw = aiReportCache?.raw as Record<string, unknown> | null;
-      const rawAnalysis = (reportRaw?.analysis ?? null) as Record<string, unknown> | null;
-      const rawConclusion = (rawAnalysis?.conclusion ?? null) as Record<string, unknown> | null;
-      const normalizedDecision = normalizeDecisionFromReport(rawAnalysis);
-      const rawConfidence = rawAnalysis?.confidence;
-      const normalizedConfidence: number | undefined = typeof rawConfidence === "number" ? rawConfidence <= 1 ? Math.round(rawConfidence * 100) : Math.round(rawConfidence) : undefined;
+      const snapshot = readMarchandSnapshot();
+      const now = new Date().toISOString();
       const marketScores = resolveMarketScoresForPdf(snapshot, canonicalDealId);
-      const aiComputedScores = (reportRaw?.computed as { scores?: Record<string, unknown> } | null)?.scores ?? {};
       const blob = await buildSnapshotPdfBlob(snapshot, {
-        aiReport: { analysis: { ...rawAnalysis, narrativeMarkdown: markdown, confidence: normalizedConfidence, conclusion: { ...rawConclusion, decision: normalizedDecision, decisionAdvised: normalizedDecision } }, computed: { ...(reportRaw?.computed as Record<string, unknown> | null ?? {}), scores: { ...marketScores, ...aiComputedScores } } },
-        context: { generatedAt: now, wikimedia }, space: "investisseur",
+        aiReport: {
+          analysis: { narrativeMarkdown: markdown },
+          computed: { scores: marketScores },
+        },
+        context: { generatedAt: now },
+        space: "investisseur",
+        logo: pdfLogo?.dataUrl,
+        logoAspect: pdfLogo?.aspect,
+        coverImage: pdfCoverImage ?? undefined,
       });
-      revokePreviousPdfUrl(); const url = URL.createObjectURL(blob); pdfUrlRef.current = url;
+      revokePreviousPdfUrl();
+      const url = URL.createObjectURL(blob);
+      pdfUrlRef.current = url;
       setPdfPreview({ url, loading: false, error: null });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erreur lors de la génération du PDF";
       console.error("[AnalysePage] generatePdfPreview error:", err);
       setPdfPreview({ url: null, loading: false, error: message });
     }
-  }, [aiReportCache, canonicalDealId, revokePreviousPdfUrl]);
+  }, [canonicalDealId, revokePreviousPdfUrl, pdfLogo, pdfCoverImage]);
 
-  const refreshPdfPreview = useCallback(async (markdown: string): Promise<void> => { await generatePdfPreview(markdown); }, [generatePdfPreview]);
+  const refreshPdfPreview = useCallback(async (markdown: string): Promise<void> => {
+    await generatePdfPreview(markdown);
+  }, [generatePdfPreview]);
 
   useEffect(() => {
     if (!canonicalDealId) return;
     ddJustLoadedRef.current = true;
-    revokePreviousPdfUrl(); setPdfPreview(PDF_PREVIEW_INITIAL); autoExportedRef.current = false; setAiReportCache(null);
+    revokePreviousPdfUrl();
+    setPdfPreview(PDF_PREVIEW_INITIAL);
+    autoExportedRef.current = false;
     const saved = loadAnalyseState(canonicalDealId);
     if (saved) { setStrategy(saved.strategy); setFiscalRegime(saved.fiscalRegime); setDueDiligence(saved.dueDiligence); }
     else { setStrategy("revente"); setFiscalRegime("lmnp_reel"); setDueDiligence(createDefaultDueDiligence()); }
@@ -810,7 +1041,9 @@ export default function AnalysePage() {
   useEffect(() => {
     if (!canonicalDealId) return;
     saveAnalyseState(canonicalDealId, { strategy, fiscalRegime, scenarios: [], dueDiligence });
-    if (!ddJustLoadedRef.current) { patchDueDiligenceForDeal(canonicalDealId, { state: dueDiligence, updatedAt: new Date().toISOString() }); }
+    if (!ddJustLoadedRef.current) {
+      patchDueDiligenceForDeal(canonicalDealId, { state: dueDiligence, updatedAt: new Date().toISOString() });
+    }
   }, [strategy, fiscalRegime, dueDiligence, canonicalDealId]);
 
   const risquesExistants = useMemo(() => {
@@ -819,7 +1052,15 @@ export default function AnalysePage() {
     if (!enriched?.risques) return [];
     const r = enriched.risques as { items?: unknown; nbRisques?: unknown };
     const items: string[] = [];
-    if (r.items && Array.isArray(r.items)) { (r.items as unknown[]).forEach((item) => { if (typeof item === "string") items.push(item); else if (typeof item === "object" && item != null && "label" in item) { const lbl = (item as { label?: unknown }).label; if (typeof lbl === "string" && lbl.trim()) items.push(lbl); } }); }
+    if (r.items && Array.isArray(r.items)) {
+      (r.items as unknown[]).forEach((item) => {
+        if (typeof item === "string") items.push(item);
+        else if (typeof item === "object" && item != null && "label" in item) {
+          const lbl = (item as { label?: unknown }).label;
+          if (typeof lbl === "string" && lbl.trim()) items.push(lbl);
+        }
+      });
+    }
     const nbRisk = safeNum(r.nbRisques);
     if (nbRisk != null && nbRisk > 0 && items.length === 0) items.push(`${nbRisk} risque(s) identifié(s) — détails à consulter sur Géorisques.`);
     return items;
@@ -827,155 +1068,98 @@ export default function AnalysePage() {
 
   const handleDueDiligenceUpdate = useCallback((dd: DueDiligenceState) => setDueDiligence(dd), []);
 
-  if (!deal || !canonicalDealId) return <NoDealPlaceholder />;
-  const fmt = (v: number | undefined | null) => v != null && v > 0 ? v.toLocaleString("fr-FR") : "—";
-
-  // ── v12.2 PATCH: SmartScores UI — lit mergedInvestorStudy ──────────
+  // ─── SmartScores UI ───────────────────────────────────────────────
   const smartScoresUi = useMemo(() => {
     const snap = readMarchandSnapshot();
     const renta = snap.rentabiliteByDeal[canonicalDealId] as RentabiliteSaved | undefined;
-
-    // v12.2: source marché = données fusionnées investisseur ← promoteur
     const mr = mergedInvestorStudy as Record<string, unknown> | null;
-
     const rentaComputed = (renta?.computed ?? (renta as unknown as { results?: unknown })?.results ?? (renta as unknown as { output?: unknown })?.output ?? null) as Record<string, unknown> | null;
     const mrAny = mr as unknown as Record<string, unknown> | undefined;
     const mrData = (mrAny?.data ?? null) as Record<string, unknown> | null;
-    // v12.2: ajout mrAny?.scores comme fallback (le snapshot promoteur peut exposer scores au top-level)
     const mrScores = (mrData?.scores ?? mrAny?.breakdown ?? mrAny?.scores ?? null) as Record<string, unknown> | null;
-    const aiRaw = aiReportCache?.raw as Record<string, unknown> | null;
-    const aiAnalysis = (aiRaw?.analysis ?? null) as Record<string, unknown> | null;
-    const aiComputed = (aiRaw?.computed ?? null) as Record<string, unknown> | null;
 
-    const globalRaw = firstNum(mrAny?.scoreGlobal, mrAny?.score, (mrScores as { global?: unknown } | null)?.global, (mrData as { smartScore?: unknown } | null)?.smartScore, (mrData as { score?: unknown } | null)?.score, (mrData as { scoreGlobal?: unknown } | null)?.scoreGlobal, (aiAnalysis as { smartScore?: unknown } | null)?.smartScore, (aiAnalysis as { score?: unknown } | null)?.score, (aiComputed as { smartScore?: unknown } | null)?.smartScore, (aiComputed as { score?: unknown } | null)?.score, (activeDeal as unknown as { smartScore?: unknown } | null)?.smartScore, (activeDeal as unknown as { enriched?: { smartScore?: unknown } } | null)?.enriched?.smartScore, (activeDeal as unknown as { enriched?: { score?: unknown } } | null)?.enriched?.score, (activeDeal as unknown as { scores?: { smartScore?: unknown } } | null)?.scores?.smartScore, (activeDeal as unknown as { scores?: { global?: unknown } } | null)?.scores?.global);
-    const liquiditeRaw = firstNum((mrScores as { liquidite?: unknown } | null)?.liquidite, (mrScores as { liquidity?: unknown } | null)?.liquidity, (mrScores as { liquidityScore?: unknown } | null)?.liquidityScore, (mrData as { liquidite?: unknown } | null)?.liquidite, (mrData as { liquidity?: unknown } | null)?.liquidity, (mrData as { liquidityScore?: unknown } | null)?.liquidityScore, (aiAnalysis as { liquidite?: unknown } | null)?.liquidite, (aiAnalysis as { liquidity?: unknown } | null)?.liquidity, (aiAnalysis as { liquidityScore?: unknown } | null)?.liquidityScore, (aiComputed as { liquidite?: unknown } | null)?.liquidite, (aiComputed as { liquidity?: unknown } | null)?.liquidity, (aiComputed as { liquidityScore?: unknown } | null)?.liquidityScore, (activeDeal as unknown as { enriched?: { liquidite?: unknown } } | null)?.enriched?.liquidite, (activeDeal as unknown as { enriched?: { liquidity?: unknown } } | null)?.enriched?.liquidity, (activeDeal as unknown as { enriched?: { liquidityScore?: unknown } } | null)?.enriched?.liquidityScore, (mrScores as { demande?: unknown } | null)?.demande);
-    const opportunityRaw = firstNum((mrScores as { opportunity?: unknown } | null)?.opportunity, (mrScores as { opportunite?: unknown } | null)?.opportunite, (mrScores as { opportunityScore?: unknown } | null)?.opportunityScore, (mrData as { opportunity?: unknown } | null)?.opportunity, (mrData as { opportunite?: unknown } | null)?.opportunite, (mrData as { opportunityScore?: unknown } | null)?.opportunityScore, (aiAnalysis as { opportunity?: unknown } | null)?.opportunity, (aiAnalysis as { opportunite?: unknown } | null)?.opportunite, (aiAnalysis as { opportunityScore?: unknown } | null)?.opportunityScore, (aiComputed as { opportunity?: unknown } | null)?.opportunity, (aiComputed as { opportunite?: unknown } | null)?.opportunite, (aiComputed as { opportunityScore?: unknown } | null)?.opportunityScore, (activeDeal as unknown as { enriched?: { opportunity?: unknown } } | null)?.enriched?.opportunity, (activeDeal as unknown as { enriched?: { opportunite?: unknown } } | null)?.enriched?.opportunite, (activeDeal as unknown as { enriched?: { opportunityScore?: unknown } } | null)?.enriched?.opportunityScore, (mrScores as { offre?: unknown } | null)?.offre);
-    const pressionRisqueRaw = firstNum((mrScores as { pressionRisque?: unknown } | null)?.pressionRisque, (mrScores as { riskPressure?: unknown } | null)?.riskPressure, (mrScores as { riskPressureScore?: unknown } | null)?.riskPressureScore, (mrData as { pressionRisque?: unknown } | null)?.pressionRisque, (mrData as { riskPressure?: unknown } | null)?.riskPressure, (mrData as { riskPressureScore?: unknown } | null)?.riskPressureScore, (aiAnalysis as { pressionRisque?: unknown } | null)?.pressionRisque, (aiAnalysis as { riskPressure?: unknown } | null)?.riskPressure, (aiAnalysis as { riskPressureScore?: unknown } | null)?.riskPressureScore, (aiComputed as { pressionRisque?: unknown } | null)?.pressionRisque, (aiComputed as { riskPressure?: unknown } | null)?.riskPressure, (aiComputed as { riskPressureScore?: unknown } | null)?.riskPressureScore, (activeDeal as unknown as { enriched?: { pressionRisque?: unknown } } | null)?.enriched?.pressionRisque, (activeDeal as unknown as { enriched?: { riskPressure?: unknown } } | null)?.enriched?.riskPressure, (activeDeal as unknown as { enriched?: { riskPressureScore?: unknown } } | null)?.enriched?.riskPressureScore, (mrScores as { environnement?: unknown } | null)?.environnement);
+    const globalRaw = firstNum(mrAny?.scoreGlobal, mrAny?.score, (mrScores as { global?: unknown } | null)?.global, (mrData as { smartScore?: unknown } | null)?.smartScore, (mrData as { score?: unknown } | null)?.score, (mrData as { scoreGlobal?: unknown } | null)?.scoreGlobal, (activeDeal as unknown as { smartScore?: unknown } | null)?.smartScore, (activeDeal as unknown as { enriched?: { smartScore?: unknown } } | null)?.enriched?.smartScore, (activeDeal as unknown as { enriched?: { score?: unknown } } | null)?.enriched?.score, (activeDeal as unknown as { scores?: { smartScore?: unknown } } | null)?.scores?.smartScore, (activeDeal as unknown as { scores?: { global?: unknown } } | null)?.scores?.global);
+    const liquiditeRaw = firstNum((mrScores as { liquidite?: unknown } | null)?.liquidite, (mrScores as { liquidity?: unknown } | null)?.liquidity, (mrScores as { liquidityScore?: unknown } | null)?.liquidityScore, (mrData as { liquidite?: unknown } | null)?.liquidite, (mrData as { liquidity?: unknown } | null)?.liquidity, (mrData as { liquidityScore?: unknown } | null)?.liquidityScore, (activeDeal as unknown as { enriched?: { liquidite?: unknown } } | null)?.enriched?.liquidite, (activeDeal as unknown as { enriched?: { liquidity?: unknown } } | null)?.enriched?.liquidity, (activeDeal as unknown as { enriched?: { liquidityScore?: unknown } } | null)?.enriched?.liquidityScore, (mrScores as { demande?: unknown } | null)?.demande);
+    const opportunityRaw = firstNum((mrScores as { opportunity?: unknown } | null)?.opportunity, (mrScores as { opportunite?: unknown } | null)?.opportunite, (mrScores as { opportunityScore?: unknown } | null)?.opportunityScore, (mrData as { opportunity?: unknown } | null)?.opportunity, (mrData as { opportunite?: unknown } | null)?.opportunite, (mrData as { opportunityScore?: unknown } | null)?.opportunityScore, (activeDeal as unknown as { enriched?: { opportunity?: unknown } } | null)?.enriched?.opportunity, (activeDeal as unknown as { enriched?: { opportunite?: unknown } } | null)?.enriched?.opportunite, (activeDeal as unknown as { enriched?: { opportunityScore?: unknown } } | null)?.enriched?.opportunityScore, (mrScores as { offre?: unknown } | null)?.offre);
+    const pressionRisqueRaw = firstNum((mrScores as { pressionRisque?: unknown } | null)?.pressionRisque, (mrScores as { riskPressure?: unknown } | null)?.riskPressure, (mrScores as { riskPressureScore?: unknown } | null)?.riskPressureScore, (mrData as { pressionRisque?: unknown } | null)?.pressionRisque, (mrData as { riskPressure?: unknown } | null)?.riskPressure, (mrData as { riskPressureScore?: unknown } | null)?.riskPressureScore, (activeDeal as unknown as { enriched?: { pressionRisque?: unknown } } | null)?.enriched?.pressionRisque, (activeDeal as unknown as { enriched?: { riskPressure?: unknown } } | null)?.enriched?.riskPressure, (activeDeal as unknown as { enriched?: { riskPressureScore?: unknown } } | null)?.enriched?.riskPressureScore, (mrScores as { environnement?: unknown } | null)?.environnement);
     const rentabiliteRaw = firstNum(rentaComputed?.rentabilite, (rentaComputed as { profitability?: unknown } | null)?.profitability);
     const robustesseRaw = firstNum(rentaComputed?.robustesse, (rentaComputed as { robustness?: unknown } | null)?.robustness);
-    const confidenceRaw = firstNum((aiComputed as { dataConfidence?: unknown } | null)?.dataConfidence, (aiComputed as { confidence?: unknown } | null)?.confidence, (aiAnalysis as { dataConfidence?: unknown } | null)?.dataConfidence, (aiAnalysis as { confidence?: unknown } | null)?.confidence, (mrData as { dataConfidence?: unknown } | null)?.dataConfidence, (mrAny as { dataConfidence?: unknown } | undefined)?.dataConfidence, (mrData as { confidence?: unknown } | null)?.confidence, (mrAny as { confidence?: unknown } | undefined)?.confidence, (activeDeal as unknown as { enriched?: { dataConfidence?: unknown } } | null)?.enriched?.dataConfidence, (activeDeal as unknown as { enriched?: { confidence?: unknown } } | null)?.enriched?.confidence);
+    const confidenceRaw = firstNum((mrData as { dataConfidence?: unknown } | null)?.dataConfidence, (mrAny as { dataConfidence?: unknown } | undefined)?.dataConfidence, (mrData as { confidence?: unknown } | null)?.confidence, (mrAny as { confidence?: unknown } | undefined)?.confidence, (activeDeal as unknown as { enriched?: { dataConfidence?: unknown } } | null)?.enriched?.dataConfidence, (activeDeal as unknown as { enriched?: { confidence?: unknown } } | null)?.enriched?.confidence);
     const ks = ((rentaComputed?.killSwitches as unknown) ?? (rentaComputed as { kill_switches?: unknown } | null)?.kill_switches ?? (rentaComputed as { redFlags?: unknown } | null)?.redFlags) as unknown;
     const killSwitches: string[] = Array.isArray(ks) ? (ks as unknown[]).flatMap((x) => (typeof x === "string" ? [x] : [])) : [];
-    const hasCanonicalAi = globalRaw != null || liquiditeRaw != null || opportunityRaw != null || pressionRisqueRaw != null || confidenceRaw != null;
-    const status: "calculé" | "estimé" = hasCanonicalAi ? "calculé" : "estimé";
+    const hasCanonicalMarket = globalRaw != null || liquiditeRaw != null || opportunityRaw != null || pressionRisqueRaw != null || confidenceRaw != null;
+    const status: "calculé" | "estimé" = hasCanonicalMarket ? "calculé" : "estimé";
     return { global: toScore100(globalRaw), liquidite: toScore100(liquiditeRaw), opportunity: toScore100(opportunityRaw), pressionRisque: toScore100(pressionRisqueRaw), rentabilite: toScore100(rentabiliteRaw), robustesse: toScore100(robustesseRaw), confidence: toScore100(confidenceRaw), status, killSwitches };
-  }, [canonicalDealId, activeDeal, aiReportCache, mergedInvestorStudy, snapshotTick]);
+  }, [canonicalDealId, activeDeal, mergedInvestorStudy, snapshotTick]);
 
-  const handleExportPdfFromSynthese = useCallback((markdown: string, exportContext?: Record<string, unknown>) => {
-    const snapshot = readMarchandSnapshot(); const now = new Date().toISOString();
-    const ctxWiki = exportContext && isObj(exportContext) ? (exportContext as { wikimedia?: unknown }).wikimedia : undefined;
-    const wikimedia = ctxWiki ?? aiReportCache?.wikimedia ?? (aiReportCache?.raw as { computed?: { wikimedia?: unknown } } | null)?.computed?.wikimedia ?? null;
-    const reportRaw = aiReportCache?.raw as Record<string, unknown> | null;
-    const rawAnalysis = (reportRaw?.analysis ?? null) as Record<string, unknown> | null;
-    const rawConclusion = (rawAnalysis?.conclusion ?? null) as Record<string, unknown> | null;
-    const normalizedDecision = normalizeDecisionFromReport(rawAnalysis);
-    const rawConfidence = rawAnalysis?.confidence;
-    const normalizedConfidence: number | undefined = typeof rawConfidence === "number" ? rawConfidence <= 1 ? Math.round(rawConfidence * 100) : Math.round(rawConfidence) : undefined;
+  // ─── Export PDF depuis SyntheseIAPanel ────────────────────────────
+  const handleExportPdfFromSynthese = useCallback((markdown: string) => {
+    const snapshot = readMarchandSnapshot();
+    const now = new Date().toISOString();
     const marketScores = resolveMarketScoresForPdf(snapshot, canonicalDealId);
-    const aiComputedScores = (reportRaw?.computed as { scores?: Record<string, unknown> } | null)?.scores ?? {};
-    const _opts = {
-      aiReport: { analysis: { ...rawAnalysis, narrativeMarkdown: markdown, confidence: normalizedConfidence, conclusion: { ...rawConclusion, decision: normalizedDecision, decisionAdvised: normalizedDecision } }, computed: { ...(reportRaw?.computed as Record<string, unknown> | null ?? {}), scores: { ...marketScores, ...aiComputedScores } } },
-      context: { generatedAt: now, wikimedia }, space: "investisseur" as const,
-    };
-    const _wikiDbg = (_opts.aiReport.computed as Record<string, unknown> | undefined)?.wikimedia as Record<string, unknown> | undefined;
-    const _placeDbg = _wikiDbg?.place as Record<string, unknown> | undefined;
-    const _ctxDbg = _placeDbg?.context as Record<string, unknown> | undefined;
-    console.log("[PDF_EXPORT][wikimedia]", _wikiDbg); console.log("[PDF_EXPORT][narrative]", _placeDbg?.narrative);
-    console.log("[PDF_EXPORT][context.short]", _ctxDbg?.short); console.log("[PDF_EXPORT][context.long]", _ctxDbg?.long);
-    console.log("[PDF_EXPORT][opts]", _opts); console.log("[PDF_EXPORT][opts.context]", _opts.context);
-    console.log("[PDF_EXPORT][opts.aiReport.computed.wikimedia]", _wikiDbg);
-    console.log("[PDF_EXPORT][v11.8][marketScores]", marketScores);
-    console.log("[PDF_EXPORT][v11.8][computed.scores]", _opts.aiReport.computed.scores);
-    exportSnapshotToPdf(snapshot, _opts);
-  }, [aiReportCache, canonicalDealId]);
+    exportSnapshotToPdf(snapshot, {
+      aiReport: {
+        analysis: { narrativeMarkdown: markdown },
+        computed: { scores: marketScores },
+      },
+      context: { generatedAt: now },
+      space: "investisseur",
+      logo: pdfLogo?.dataUrl,
+      logoAspect: pdfLogo?.aspect,
+      coverImage: pdfCoverImage ?? undefined,
+    });
+  }, [canonicalDealId, pdfLogo, pdfCoverImage]);
 
-  const emitProgress = useCallback((pct: number, label: string) => { window.dispatchEvent(new CustomEvent("mimmoza:synthese:progress", { detail: { pct, label } })); }, []);
+  const emitProgress = useCallback((pct: number, label: string) => {
+    window.dispatchEvent(new CustomEvent("mimmoza:synthese:progress", { detail: { pct, label } }));
+  }, []);
 
+  // ─── v12.4 : Synthèse déterministe — aucun appel réseau ──────────
   const handleGenerateSyntheseIA = useCallback(async () => {
     if (!activeDeal || !deal) throw new Error("Aucun deal actif");
+
     emitProgress(5, "Initialisation…");
-    emitProgress(10, "Chargement données marché…");
-    await prefetchMarcheRisquesIfNeeded(canonicalDealId, { address: deal.address, zipCode: deal.zipCode, city: deal.city, lat: deal.lat, lng: deal.lng });
-    emitProgress(30, "Construction du dossier d'analyse…");
+    emitProgress(20, "Lecture des données existantes…");
+
+    emitProgress(55, "Construction de la synthèse exécutive…");
+    const baseMarkdown = buildDeterministicSynthese(deal, canonicalDealId, strategy, fiscalRegime);
+
+    emitProgress(80, "Mise en forme du rapport…");
     const payload = buildCanonicalPayload(deal, activeDeal, canonicalDealId, { strategy, fiscalRegime });
-    console.log("=== CANONICAL PAYLOAD (v11.7) ===", JSON.stringify(payload, null, 2));
-
-    const freshSnap = readMarchandSnapshot();
-    const freshRi = ((freshSnap.rentabiliteByDeal[canonicalDealId] as Record<string, unknown> | undefined)?.inputs ?? null) as Record<string, unknown> | null;
-    const montantPretEur = firstNum(freshRi?.montantPretEur, freshRi?.montantPret, freshRi?.capitalEmprunte, freshRi?.loanAmount);
-    const tauxNominalAnnuelPct = firstNum(freshRi?.tauxNominalAnnuelPct, freshRi?.tauxAnnuel, freshRi?.taux, freshRi?.interestRatePct);
-    const dureePretAnnees = firstNum(freshRi?.dureePretAnnees, freshRi?.loanDureeAnnees, freshRi?.dureeAnnees, freshRi?.loanYears, freshRi?.duree);
-    const tauxAssuranceAnnuelPct = firstNum(freshRi?.tauxAssuranceAnnuelPct, freshRi?.tauxAssurance, freshRi?.assurancePct);
-    const upfrontFeesEur = (firstNum(freshRi?.fraisDossierEur, freshRi?.fraisDossier) ?? 0) + (firstNum(freshRi?.fraisGarantieEur, freshRi?.fraisGarantie) ?? 0) + (firstNum(freshRi?.fraisCourtierEur, freshRi?.fraisCourtier) ?? 0);
-    const freshRentaRaw = freshSnap.rentabiliteByDeal[canonicalDealId] as Record<string, unknown> | undefined;
-    const freshRentaComputed = (freshRentaRaw?.computed ?? null) as Record<string, unknown> | null;
-    const qualiteDossier = firstNum((freshRentaRaw as { smartScore?: unknown } | undefined)?.smartScore, (payload as { smartScore?: unknown }).smartScore, freshRentaComputed?.rentabiliteLocalScore);
-    const rentabiliteScore = firstNum(freshRentaComputed?.rentabilite, (freshRentaComputed as { profitability?: unknown } | null)?.profitability);
-    const loyerEstime = firstNum(freshRi?.loyerEstime, freshRi?.loyerMensuel, freshRi?.loyer, (payload as { loyerEstime?: unknown }).loyerEstime);
-    emitProgress(35, "Génération du rapport IA…");
-
-    const { data: reportData, error: reportErr } = await supabase.functions.invoke("export-report-v1", { body: { context: payload } });
-    if (reportErr) throw new Error(reportErr.message || "Erreur export-report-v1");
-    const rd = reportData as Record<string, unknown>;
-    if (rd?.ok !== true) throw new Error((rd?.error as string | undefined) ?? "export-report-v1 : ok=false");
-
-    const wikimediaFromExport = pickVal(rd, "computed", "wikimedia") ?? pickVal(rd, "wikimedia") ?? pickVal(rd, "enrichment", "wikimedia") ?? pickVal(rd, "computed", "enrichment", "wikimedia") ?? pickVal(rd, "computed", "place") ?? pickVal(rd, "place") ?? deepFindWikimedia(rd);
-    console.log("[AnalysePage v11.7] wikimediaFromExport =", wikimediaFromExport);
-    console.log("[AnalysePage v11.7] rd keys =", Object.keys(rd));
-    if (isObj(pickVal(rd, "computed"))) { console.log("[AnalysePage v11.7] rd.computed keys =", Object.keys(pickVal(rd, "computed") as Record<string, unknown>)); }
-    setAiReportCache({ wikimedia: wikimediaFromExport, raw: reportData });
-
-    const reportAnalysis = (rd.analysis ?? null) as Record<string, unknown> | null;
-    const baseNarrative: string = typeof reportAnalysis?.narrativeMarkdown === "string" && reportAnalysis.narrativeMarkdown.trim() ? reportAnalysis.narrativeMarkdown.trim() : "";
-    console.log("[WIKI][raw object]", wikimediaFromExport);
-    console.log("[WIKI][place.narrative]", (wikimediaFromExport as any)?.place?.narrative);
-    console.log("[WIKI][wikipedia.extract]", (wikimediaFromExport as any)?.place?.wikipedia?.extract);
-    console.log("[WIKI][root wikipedia.extract]", (wikimediaFromExport as any)?.wikipedia?.extract);
-    console.log("[WIKI][analysis.narrativeMarkdown length]", baseNarrative.length);
-    console.log("[AnalysePage v11.7] rd.warnings =", rd.warnings);
-    console.log("[AnalysePage v11.7] rd.sourcesUsed =", rd.sourcesUsed);
-    console.log("[WIKI][place.context]", rd?.computed?.wikimedia?.place?.context);
-    console.log("[WIKI][place.context.short]", rd?.computed?.wikimedia?.place?.context?.short);
-    console.log("[WIKI][place.context.long]", rd?.computed?.wikimedia?.place?.context?.long);
-    console.log("[WIKI][place.profile]", rd?.computed?.wikimedia?.place?.profile);
-
-    const wikiBlock = wikimediaFromExport as { place?: { wikipedia?: { extract?: string }; narrative?: string }; wikipedia?: { extract?: string }; narrative?: string } | null;
-    const wikimediaExtract: string | undefined =
-      (typeof wikiBlock?.place?.wikipedia?.extract === "string" && wikiBlock.place.wikipedia.extract.trim().length > 0 ? wikiBlock.place.wikipedia.extract.trim() : undefined) ??
-      (typeof wikiBlock?.wikipedia?.extract === "string" && wikiBlock.wikipedia.extract.trim().length > 0 ? wikiBlock.wikipedia.extract.trim() : undefined) ??
-      (typeof wikiBlock?.place?.narrative === "string" && wikiBlock.place.narrative.trim().length > 20 ? wikiBlock.place.narrative.trim().slice(0, 600) : undefined) ??
-      (typeof wikiBlock?.narrative === "string" && wikiBlock.narrative.trim().length > 20 ? wikiBlock.narrative.trim().slice(0, 600) : undefined);
-
-    emitProgress(70, "Narrative prête…");
-    emitProgress(80, "Enrichissement BPE…");
-    const withBpe = injectBpeIntoNarrative(baseNarrative, (payload as { bpe?: unknown }).bpe);
+    const withBpe = injectBpeIntoNarrative(baseMarkdown, (payload as { bpe?: unknown }).bpe);
     const withStrategy = ensureStrategyInNarrative(withBpe, payload.investmentStrategy as Record<string, unknown>);
-    emitProgress(88, "Synthèse Express…");
-    const withSyntheseExpress = injectSyntheseExpress(withStrategy, {
-      qualiteDossier, rentabiliteScore, strategy, loyerEstime,
-      montantPretEur, tauxNominalAnnuelPct, dureePretAnnees, tauxAssuranceAnnuelPct,
-      upfrontFeesEur: upfrontFeesEur > 0 ? upfrontFeesEur : undefined, wikimediaExtract,
-    });
-    emitProgress(90, "Nettoyage et mise en forme…");
-    const cleaned = cleanNarrativeMarkdown(withSyntheseExpress);
+    const cleaned = cleanNarrativeMarkdown(withStrategy);
+
     emitProgress(100, "Synthèse prête !");
-    return { markdown: cleaned, context: { wikimedia: wikimediaFromExport ?? null } };
+    return { markdown: cleaned, context: { wikimedia: null } };
   }, [activeDeal, deal, canonicalDealId, emitProgress, strategy, fiscalRegime]);
+
+  if (!deal || !canonicalDealId) return <NoDealPlaceholder />;
+
+  const tabTitles: Record<AnalyseTab, string> = {
+    rentabilite:        "Rentabilité",
+    due_diligence:      "Due Diligence",
+    marche_risques:     "Étude de marché",
+    analyse_predictive: "Analyse prédictive",
+    synthese_ia:        "Synthèse IA",
+  };
+
+  const fmt = (v: number | undefined | null) => v != null && v > 0 ? v.toLocaleString("fr-FR") : "—";
 
   // ── JSX ──────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-50/50">
       <div style={{ maxWidth: 1152, margin: "0 auto", padding: "24px 24px 0" }}>
-        <div style={{ background: GRAD_INV, borderRadius: 14, padding: "20px 24px", marginBottom: 20, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
-          <div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>Investisseur › Analyse</div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>Analyse marché et financière</div>
-<div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>{[deal.address, deal.zipCode, deal.city].filter(Boolean).join(", ") || "Adresse non renseignée"}</div>
-          </div>            
-          <button style={{ padding: "9px 18px", borderRadius: 10, border: "none", background: "white", color: ACCENT_INV, fontWeight: 600, fontSize: 13, cursor: "default", flexShrink: 0, marginTop: 4, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-            <span>{fmt(deal.prixAchat)} €</span>
-            <span style={{ fontWeight: 400, fontSize: 11, color: "#64748b" }}>{fmt(deal.surfaceM2)} m² · DPE {deal.dpeNote}</span>
-          </button>
+        <div style={{ background: "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)", borderRadius: 24, padding: "32px 36px", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, boxShadow: "0 8px 32px rgba(33,150,243,0.22)", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "relative" }}>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>Investisseur · Analyse</div>
+            <div style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5 }}>{tabTitles[activeTab]}</div>
+            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>{[deal.address, deal.zipCode, deal.city].filter(Boolean).join(", ") || "Adresse non renseignée"}</div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, background: "rgba(255,255,255,0.18)", borderRadius: 12, padding: "12px 18px", flexShrink: 0 }}>
+            <span style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>{fmt(deal.prixAchat)} €</span>
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.75)" }}>{fmt(deal.surfaceM2)} m² · DPE {deal.dpeNote}</span>
+          </div>
         </div>
       </div>
 
@@ -1013,14 +1197,25 @@ export default function AnalysePage() {
           <AnalysePredictivePanel deal={deal} travauxEstime={travauxImpactWithBuffer > 0 ? travauxImpactWithBuffer : undefined} />
         )}
         {activeTab === "synthese_ia" && (
-          <SyntheseIAPanel dealLabel={deal.label} isAvailable={true} onGenerate={handleGenerateSyntheseIA} onExportPdf={handleExportPdfFromSynthese} pdfUrl={pdfPreview.url} pdfLoading={pdfPreview.loading} pdfError={pdfPreview.error} onGeneratePdfPreview={generatePdfPreview} onRefreshPdfPreview={refreshPdfPreview} exportContext={{ wikimedia: aiReportCache?.wikimedia ?? null }} />
+          <SyntheseIAPanel
+            dealLabel={deal.label}
+            isAvailable={true}
+            onGenerate={handleGenerateSyntheseIA}
+            onExportPdf={handleExportPdfFromSynthese}
+            pdfUrl={pdfPreview.url}
+            pdfLoading={pdfPreview.loading}
+            pdfError={pdfPreview.error}
+            onGeneratePdfPreview={generatePdfPreview}
+            onRefreshPdfPreview={refreshPdfPreview}
+            exportContext={{ wikimedia: null }}
+          />
         )}
       </div>
     </div>
   );
 }
 
-// ─── v8.2 + PATCH 3 : Ensure strategy section in narrative ───────────
+// ─── ensureStrategyInNarrative ────────────────────────────────────────
 
 function ensureStrategyInNarrative(narrative: string, investmentStrategy: Record<string, unknown> | undefined): string {
   if (!investmentStrategy) return narrative;
@@ -1033,13 +1228,19 @@ function ensureStrategyInNarrative(narrative: string, investmentStrategy: Record
   const alreadyPresent = /strat[ée]gie\s+(choisie|d['']investissement|retenue)/i.test(narrative);
   if (alreadyPresent) return narrative;
   const lines: string[] = ["", "### Strat\u00e9gie d\u2019investissement", "", `**Strat\u00e9gie choisie\u00a0: ${strat}**`];
-  if (isRevente) { lines.push(`- _Logique marchand de biens\u00a0: horizon de d\u00e9tention vis\u00e9 court. La dur\u00e9e effective de portage d\u00e9termine directement le co\u00fbt financier et la fiscalit\u00e9 applicable \u2014 \u00e0 cadrer pr\u00e9cis\u00e9ment avec le conseil juridique et fiscal adapt\u00e9 \u00e0 la structure retenue._`); }
-  else { if (fiscal && investmentStrategy.fiscalRegime !== "none") { lines.push(`- R\u00e9gime fiscal\u00a0: ${fiscal}`); } }
-  if (horizon != null) { lines.push(isRevente ? `- Horizon cible\u00a0: **${horizon}\u00a0an${horizon > 1 ? "s" : ""}** _(portage court terme vis\u00e9)_` : `- Horizon\u00a0: ${horizon}\u00a0an${horizon > 1 ? "s" : ""}`); }
-  if (resale != null) { lines.push(`- Revente cible\u00a0: ${resale.toLocaleString("fr-FR")}\u00a0\u20ac`); }
+  if (isRevente) {
+    lines.push("- _Logique marchand de biens\u00a0: horizon de d\u00e9tention vis\u00e9 court. La dur\u00e9e effective de portage d\u00e9termine directement le co\u00fbt financier et la fiscalit\u00e9 applicable \u2014 \u00e0 cadrer pr\u00e9cis\u00e9ment avec le conseil juridique et fiscal adapt\u00e9 \u00e0 la structure retenue._");
+  } else {
+    if (fiscal && investmentStrategy.fiscalRegime !== "none") lines.push(`- R\u00e9gime fiscal\u00a0: ${fiscal}`);
+  }
+  if (horizon != null) lines.push(isRevente ? `- Horizon cible\u00a0: **${horizon}\u00a0an${horizon > 1 ? "s" : ""}** _(portage court terme vis\u00e9)_` : `- Horizon\u00a0: ${horizon}\u00a0an${horizon > 1 ? "s" : ""}`);
+  if (resale != null) lines.push(`- Revente cible\u00a0: ${resale.toLocaleString("fr-FR")}\u00a0\u20ac`);
   lines.push("");
   const block = lines.join("\n");
   const firstHeadingMatch = /^#{1,3}\s+.+$/m.exec(narrative);
-  if (firstHeadingMatch) { const insertAfter = firstHeadingMatch.index + firstHeadingMatch[0].length; return narrative.slice(0, insertAfter) + "\n" + block + narrative.slice(insertAfter); }
+  if (firstHeadingMatch) {
+    const insertAfter = firstHeadingMatch.index + firstHeadingMatch[0].length;
+    return narrative.slice(0, insertAfter) + "\n" + block + narrative.slice(insertAfter);
+  }
   return block + "\n" + narrative;
 }

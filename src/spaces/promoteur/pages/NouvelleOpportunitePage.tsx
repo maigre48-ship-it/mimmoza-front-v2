@@ -7,6 +7,12 @@ import {
   updateApporteurDeal,
   type ApporteurDeal,
 } from "@/spaces/apporteur/shared/apporteurDeals.store";
+import { GRAD_PRO, ACCENT_PRO } from "../shared/promoteurDesign.tokens";
+import {
+  PromoteurPageHero,
+  HeroPrimaryButton,
+  HeroGhostButton,
+} from "../shared/components/PromoteurPageHero";
 
 // ---------------------------------------------------------------------------
 // Helpers promoteur
@@ -82,8 +88,6 @@ const TYPE_BIEN_OPTIONS: { value: TypeBien; label: string }[] = [
 
 // ---------------------------------------------------------------------------
 // ── PAYWALL FLAG ────────────────────────────────────────────────────────────
-// Mettre à `true` une fois le paiement confirmé.
-// ---------------------------------------------------------------------------
 const IS_UNLOCKED_DEFAULT = false;
 
 // ---------------------------------------------------------------------------
@@ -95,10 +99,8 @@ export default function NouvelleOpportunitePage() {
   const [searchParams] = useSearchParams();
   const dealId         = searchParams.get("dealId");
 
-  // ── Paywall state (brancher ici le résultat du paiement) ────────────────
   const [isUnlocked, setIsUnlocked] = useState<boolean>(IS_UNLOCKED_DEFAULT);
 
-  // deal source (null = pas de prefill, undefined = en cours de chargement)
   const [sourceDeal, setSourceDeal] = useState<ApporteurDeal | null | undefined>(undefined);
   const prefillDone = useRef(false);
 
@@ -118,7 +120,6 @@ export default function NouvelleOpportunitePage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState<string | null>(null);
 
-  // ── Chargement + prefill (une seule fois) ────────────────────────────────
   useEffect(() => {
     if (prefillDone.current) return;
     prefillDone.current = true;
@@ -143,14 +144,11 @@ export default function NouvelleOpportunitePage() {
     }));
   }, [dealId]);
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
   function handleUnlock() {
-    // TODO : déclencher le tunnel de paiement ici
-    // Pour le moment : bascule en mode débloqué (demo)
     setIsUnlocked(true);
   }
 
@@ -190,37 +188,51 @@ export default function NouvelleOpportunitePage() {
     }
   }
 
-  // ── Loading guard ─────────────────────────────────────────────────────────
   if (sourceDeal === undefined) {
     return (
       <div style={pageStyle}>
-        <p style={{ color: "#9CA3AF", fontSize: 14 }}>Chargement…</p>
+        <div style={{ padding: "16px 0 0" }}>
+          <PromoteurPageHero
+            badge="Promoteur · Opportunités"
+            title="Nouvelle opportunité"
+            metaLines={[{ text: "Chargement…" }]}
+          />
+        </div>
       </div>
     );
   }
 
   const dealIntrouvable = dealId && sourceDeal === null;
-
-  // Données teaser toujours visibles
   const postalCode = extractPostalCode(form.adresse, form.commune);
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={pageStyle}>
 
-      {/* Header */}
-      <div style={{ marginBottom: 28 }}>
-        <button onClick={() => navigate(-1)} style={backBtnStyle}>
-          ← Retour
-        </button>
-        <h1 style={{ margin: "10px 0 4px", fontSize: 22, fontWeight: 800, color: "#111827" }}>
-          Nouvelle opportunité
-        </h1>
-        <p style={{ margin: 0, fontSize: 14, color: "#6B7280" }}>
-          {isUnlocked
-            ? "Créez une étude promoteur et lancez la qualification foncière."
-            : "Débloquez cette opportunité pour accéder à toutes les informations et lancer l'étude."}
-        </p>
+      {/* ── Hero v2 — design VeilleMarchePage ── */}
+      <div style={{ marginBottom: 24 }}>
+        <PromoteurPageHero
+          badge="Promoteur · Opportunités"
+          title="Nouvelle opportunité"
+          metaLines={[{
+            text: isUnlocked
+              ? "Créez une étude promoteur et lancez la qualification foncière."
+              : "Débloquez cette opportunité pour accéder à toutes les informations et lancer l'étude.",
+          }]}
+          actions={
+            <>
+              <HeroGhostButton onClick={() => navigate(-1)}>← Retour</HeroGhostButton>
+              {isUnlocked ? (
+                <HeroPrimaryButton onClick={handleSubmit} disabled={submitting}>
+                  {submitting ? "Création…" : "Créer l'étude et qualifier →"}
+                </HeroPrimaryButton>
+              ) : (
+                <HeroPrimaryButton onClick={handleUnlock}>
+                  🔓 Débloquer l'opportunité
+                </HeroPrimaryButton>
+              )}
+            </>
+          }
+        />
       </div>
 
       {/* Bannière deal introuvable */}
@@ -230,7 +242,7 @@ export default function NouvelleOpportunitePage() {
         </div>
       )}
 
-      {/* Bannière apporteur (toujours visible mais anonymisée si verrouillé) */}
+      {/* Bannière apporteur */}
       {sourceDeal && (
         <div style={bannerApporteurStyle}>
           <span style={{ fontSize: 20 }}>🤝</span>
@@ -270,10 +282,9 @@ export default function NouvelleOpportunitePage() {
         </div>
       )}
 
-      {/* ── Carte formulaire ─────────────────────────────────────────────── */}
+      {/* ── Carte formulaire ── */}
       <div style={cardStyle}>
 
-        {/* Titre — masqué si verrouillé (peut contenir l'adresse) */}
         {isUnlocked && (
           <Field label="Titre de l'étude" required>
             <input
@@ -287,7 +298,6 @@ export default function NouvelleOpportunitePage() {
 
         <Divider label="Bien" />
 
-        {/* Adresse : code postal seulement si verrouillé */}
         {isUnlocked ? (
           <div style={rowStyle}>
             <Field label="Adresse" required style={{ flex: 2 }}>
@@ -325,7 +335,6 @@ export default function NouvelleOpportunitePage() {
           </div>
         )}
 
-        {/* Type de bien + surface + prix */}
         <div style={rowStyle}>
           <Field label="Type de bien" style={{ flex: 1 }}>
             {isUnlocked ? (
@@ -348,12 +357,7 @@ export default function NouvelleOpportunitePage() {
           </Field>
           <Field label="Surface terrain (m²)" style={{ flex: 1 }}>
             <input
-              style={{
-                ...inputStyle,
-                background: "#F0FDF4",
-                color: "#065F46",
-                fontWeight: 700,
-              }}
+              style={{ ...inputStyle, background: "#F0FDF4", color: "#065F46", fontWeight: 700 }}
               type={isUnlocked ? "number" : "text"}
               min={0}
               value={form.surface || "—"}
@@ -363,12 +367,7 @@ export default function NouvelleOpportunitePage() {
           </Field>
           <Field label="Prix vendeur (€)" style={{ flex: 1 }}>
             <input
-              style={{
-                ...inputStyle,
-                background: "#F0FDF4",
-                color: "#065F46",
-                fontWeight: 700,
-              }}
+              style={{ ...inputStyle, background: "#F0FDF4", color: "#065F46", fontWeight: 700 }}
               type={isUnlocked ? "number" : "text"}
               min={0}
               value={form.prixVendeur ? (isUnlocked ? form.prixVendeur : Number(form.prixVendeur).toLocaleString("fr-FR") + " €") : "—"}
@@ -378,7 +377,6 @@ export default function NouvelleOpportunitePage() {
           </Field>
         </div>
 
-        {/* Commentaire */}
         <Field label="Commentaire / contexte">
           {isUnlocked ? (
             <textarea
@@ -395,7 +393,6 @@ export default function NouvelleOpportunitePage() {
                   Information réservée aux promoteurs ayant débloqué l'opportunité.
                 </span>
               </div>
-              {/* Texte fantôme flouté derrière */}
               <div style={{ filter: "blur(5px)", userSelect: "none", fontSize: 13, color: "#374151", lineHeight: 1.6 }}>
                 Lorem ipsum dolor sit amet, consectetur adipiscing elit. Terrain idéalement situé, viabilisé,
                 CU positif obtenu. Proche école, commerces, transport. Vendeur motivé, négociation possible.
@@ -404,11 +401,9 @@ export default function NouvelleOpportunitePage() {
           )}
         </Field>
 
-        {/* Section Apporteur */}
         <Divider label="Apporteur" />
 
         <div style={{ position: "relative" }}>
-          {/* Champs — toujours rendus mais flouté + inerte si verrouillé */}
           <div style={{ pointerEvents: isUnlocked ? "auto" : "none" }}>
             <div style={{ ...rowStyle, filter: isUnlocked ? "none" : "blur(6px)", userSelect: isUnlocked ? "auto" : "none" }}>
               <Field label="Nom apporteur" style={{ flex: 1 }}>
@@ -443,7 +438,6 @@ export default function NouvelleOpportunitePage() {
             </div>
           </div>
 
-          {/* Overlay apporteur verrouillé */}
           {!isUnlocked && (
             <div style={apporteurOverlayStyle}>
               <div style={apporteurOverlayInnerStyle}>
@@ -459,41 +453,27 @@ export default function NouvelleOpportunitePage() {
           )}
         </div>
 
-        {/* Erreur */}
         {error && (
           <p style={{ margin: "4px 0 0", fontSize: 13, color: "#B91C1C" }}>{error}</p>
         )}
 
-        {/* Actions */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 24 }}>
-          <button
-            onClick={() => navigate(-1)}
-            disabled={submitting}
-            style={btnGhostStyle}
-          >
+          <button onClick={() => navigate(-1)} disabled={submitting} style={btnGhostStyle}>
             Annuler
           </button>
-
           {isUnlocked ? (
-            <button
-              onClick={handleSubmit}
-              disabled={submitting}
-              style={btnPrimaryStyle}
-            >
+            <button onClick={handleSubmit} disabled={submitting} style={btnPrimaryStyle}>
               {submitting ? "Création…" : "Créer l'étude et qualifier →"}
             </button>
           ) : (
-            <button
-              onClick={handleUnlock}
-              style={btnUnlockStyle}
-            >
+            <button onClick={handleUnlock} style={btnUnlockStyle}>
               🔓 Débloquer l'opportunité
             </button>
           )}
         </div>
       </div>
 
-      {/* CTA paywall bas de page si verrouillé */}
+      {/* CTA paywall bas de page */}
       {!isUnlocked && (
         <div style={paywallCtaStyle}>
           <div style={{ flex: 1 }}>
@@ -551,7 +531,7 @@ function Divider({ label }: { label: string }) {
 // ---------------------------------------------------------------------------
 
 const pageStyle: React.CSSProperties = {
-  padding: "32px 28px", maxWidth: 860, margin: "0 auto", fontFamily: "inherit",
+  padding: "24px 28px 40px", maxWidth: 900, margin: "0 auto", fontFamily: "inherit",
 };
 const cardStyle: React.CSSProperties = {
   background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12,
@@ -631,12 +611,8 @@ const bannerWarnStyle: React.CSSProperties = {
 
 // ── Boutons ─────────────────────────────────────────────────────────────────
 
-const backBtnStyle: React.CSSProperties = {
-  background: "none", border: "none", cursor: "pointer",
-  fontSize: 13, color: "#6B7280", padding: 0, fontFamily: "inherit",
-};
 const btnPrimaryStyle: React.CSSProperties = {
-  background: "#6D28D9", color: "#fff", border: "1px solid #6D28D9",
+  background: ACCENT_PRO, color: "#fff", border: `1px solid ${ACCENT_PRO}`,
   padding: "9px 20px", borderRadius: 8, fontSize: 14,
   fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
 };
@@ -646,7 +622,7 @@ const btnGhostStyle: React.CSSProperties = {
   fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
 };
 const btnUnlockStyle: React.CSSProperties = {
-  background: "linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)",
+  background: GRAD_PRO,
   color: "#fff", border: "none",
   padding: "10px 22px", borderRadius: 8, fontSize: 14,
   fontWeight: 700, cursor: "pointer", fontFamily: "inherit",

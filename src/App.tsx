@@ -16,7 +16,6 @@ import { SpaceSync, type Space } from "./components/SpaceSync";
 import { PrivateRoute } from "./components/PrivateRoute";
 
 import DashboardHomePage from "./pages/DashboardHomePage";
-// HomePage conservé dans le repo — redirige vers "/" pour compatibilité
 import HomePage from "./pages/HomePage";
 import JetonsPage from "./pages/JetonsPage";
 import ApiPage from "./pages/ApiPage";
@@ -32,12 +31,19 @@ import CGUPage from "./pages/legal/CGUPage";
 import PrivacyPolicyPage from "./pages/legal/PrivacyPolicyPage";
 import MentionsLegalesPage from "./pages/legal/MentionsLegalesPage";
 
+/* ── Analyse rapide ──────────────────────────────────────────── */
+import QuickAnalysisPage from "./spaces/shared/pages/quick-analysis/QuickAnalysisPage";
+
 import { bootInvestisseurSnapshot } from "./spaces/investisseur/shared/investisseurBootstrap";
 import InvestisseurAnalysePage from "./spaces/investisseur/pages/AnalysePage";
 import SimulationTravauxPage from "./spaces/investisseur/pages/execution/SimulationTravauxPage";
 import VeilleSettingsPage from "@/spaces/investisseur/pages/VeilleSettingsPage";
 import VeillePage from "@/spaces/investisseur/pages/VeillePage";
 import VeilleMarchePage from "@/spaces/investisseur/pages/VeilleMarchePage";
+// ── AJOUT : page Géorisques espace Investisseur ───────────────
+import InvestisseurRisquesPanel from "./spaces/investisseur/pages/analyse/InvestisseurRisquesPanel";
+// ── AJOUT : page Deal Center espace Investisseur ──────────────
+import DealCenterPage from "./spaces/investisseur/pages/deal-center/DealCenterPage";
 
 import ParticulierDashboard from "./spaces/particulier/pages/Dashboard";
 import ParticulierMonProjet from "./spaces/particulier/pages/MonProjet";
@@ -67,6 +73,7 @@ import AdminDashboardPage from "./spaces/admin/pages/Dashboard";
 import AdminUtilisateursPage from "./spaces/admin/pages/Utilisateurs";
 import AdminAbonnementsPage from "./spaces/admin/pages/Abonnements";
 import AdminJetonsPage from "./spaces/admin/pages/Jetons";
+import AdminCopilotPage from "./spaces/admin/pages/AdminCopilotPage";
 import AdminDevisPage from "./spaces/admin/pages/Devis";
 import AdminFacturesPage from "./spaces/admin/pages/Factures";
 import AdminEntreprisesPage from "./spaces/admin/pages/Entreprises";
@@ -100,7 +107,6 @@ import BilanPromoteurPage from "./spaces/promoteur/bilan-promoteur/BilanPromoteu
 import PromoteurStudyRequired from "./spaces/promoteur/components/PromoteurStudyRequired";
 import FacadeGeneratorPage from "./spaces/promoteur/pages/FacadeGeneratorPage";
 import EvaluationPage from "./spaces/promoteur/pages/EvaluationPage";
-import PromoteurRenduTravauxPage from "./spaces/promoteur/pages/PromoteurRenduTravauxPage";
 import PromoteurSimulationTravauxPage from "./spaces/promoteur/pages/PromoteurSimulationTravauxPage";
 import OpportunitesApporteursPage from "./spaces/promoteur/pages/OpportunitesApporteursPage";
 import NouvelleOpportunitePage from "./spaces/promoteur/pages/NouvelleOpportunitePage";
@@ -141,7 +147,6 @@ import SyntheseAuditPage from "./spaces/rehabilitation/pages/SyntheseAuditPage";
 import RehabilitationRenduTravauxPage from "./spaces/rehabilitation/pages/RenduTravauxPage";
 import RehabilitationValorisationPage from "./spaces/rehabilitation/pages/ValorisationPage";
 import CreationPlanPage from "./spaces/rehabilitation/pages/CreationPlanPage";
-// AuditPage reste dans le repo mais n'est plus branchée en route ni en nav
 
 /* ── Mimmoza Copilot (global : bouton flottant + drawer) ─────── */
 import { CopilotRoot } from "./spaces/copilot/CopilotRoot";
@@ -283,6 +288,9 @@ function AppRoot() {
           <Route path="/veille"        element={<VeillePage />} />
           <Route path="/veille/marche" element={<VeilleMarchePage />} />
 
+          {/* ═══ Analyse rapide ═══ */}
+          <Route path="/analyse-rapide" element={<QuickAnalysisPage />} />
+
           {/* ═══ API ═══ */}
           <Route path="/api"            element={<ApiPage />} />
           <Route path="/api/keys"       element={<ApiKeysPage />} />
@@ -303,6 +311,7 @@ function AppRoot() {
             <Route path="utilisateurs"  element={<AdminUtilisateursPage />} />
             <Route path="abonnements"   element={<AdminAbonnementsPage />} />
             <Route path="jetons"        element={<AdminJetonsPage />} />
+            <Route path="copilot"       element={<AdminCopilotPage />} />
             <Route path="devis"         element={<AdminDevisPage />} />
             <Route path="factures"      element={<AdminFacturesPage />} />
             <Route path="entreprises"   element={<AdminEntreprisesPage />} />
@@ -358,6 +367,10 @@ function AppRoot() {
             <Route path="estimation"           element={<ParticulierEstimation />} />
             <Route path="marche"               element={<MarchePage />} />
             <Route path="risques"              element={<RisquesPage />} />
+            {/* ── Géorisques Investisseur ─────────────────────────────── */}
+            <Route path="georisques"           element={<InvestisseurRisquesPanel />} />
+            {/* ── Deal Center ─────────────────────────────────────────── */}
+            <Route path="deal-center"          element={<DealCenterPage />} />
             <Route path="*"                    element={<Navigate to="/marchand-de-bien" replace />} />
           </Route>
 
@@ -389,7 +402,6 @@ function AppRoot() {
               <Route path="massing-3d"         element={<PromoteurMassing3D />} />
               <Route path="generateur-facades" element={<FacadeGeneratorPage />} />
               <Route path="simulation-travaux" element={<PromoteurSimulationTravauxPage />} />
-              <Route path="rendu-travaux"      element={<PromoteurRenduTravauxPage />} />
               <Route path="bilan"              element={<PromoteurBilan />} />
               <Route path="bilan-promoteur"    element={<BilanPromoteurPage />} />
               <Route path="synthese"           element={<PromoteurSynthese />} />

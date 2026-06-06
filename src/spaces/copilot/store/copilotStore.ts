@@ -1,4 +1,6 @@
 // src/spaces/copilot/store/copilotStore.ts
+// PATCH V1.2 : ajout de predictive_snapshot dans ContextHints (LOT 6)
+// PATCH V1.3 : ajout de valuation_engine dans ContextHints (LOT 7)
 import { create } from 'zustand';
 import {
   fetchBalance,
@@ -12,18 +14,29 @@ import type {
   StudyContextRef,
   PluContextRef,
   ListingContextRef,
+  PredictiveSnapshotContext,
+  ValuationEngineContext,
   CopilotConversation,
   ChatMessage,
   CopilotStatus,
   CopilotStreamEvent,
 } from '../types/copilot.types';
 
+// ── V1.3 : valuation_engine ajouté ───────────────────────────────────────────
 interface ContextHints {
   vertical?: Vertical;
   parcel?: ParcelContextRef;
   study?: StudyContextRef;
   listing?: ListingContextRef;
   plu?: PluContextRef;
+  // LOT 6 — snapshot des 17 sources du moteur prédictif Mimmoza.
+  // Injecté par AnalysePredictivePanel via setContextHints({ predictive_snapshot }).
+  // Transmis tel quel dans MimmozaContext → system prompt copilot-chat.
+  predictive_snapshot?: PredictiveSnapshotContext | null;
+  // LOT 7 — résultat complet du valuation engine Mimmoza.
+  // Injecté par AnalysePage via setContextHints({ valuation_engine }).
+  // Complète le predictive_snapshot avec valorisation, rendements et analyse quali.
+  valuation_engine?: ValuationEngineContext | null;
 }
 
 interface CopilotStore {
@@ -48,7 +61,7 @@ interface CopilotStore {
   closeCopilot: () => void;
   toggleCopilot: () => void;
   setMode: (mode: CopilotMode) => void;
-  setContextHints: (hints: ContextHints) => void;
+  setContextHints: (hints: Partial<ContextHints>) => void;
   clearContextHints: () => void;
 
   refreshCredits: () => Promise<void>;
@@ -89,6 +102,7 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
   toggleCopilot: () => set((s) => ({ isOpen: !s.isOpen })),
   setMode: (mode) => set({ mode }),
 
+  // V1.3 : Partial<ContextHints> accepte predictive_snapshot ET valuation_engine
   setContextHints: (hints) =>
     set((s) => ({
       contextHints: {

@@ -55,6 +55,8 @@ import type {
 import { PROJECT_CONFIGS, getProjectConfig } from "./config/project.config";
 import { searchAddress } from "./services/address.service";
 import { searchParcel } from "./services/parcel.service";
+import { GRAD_PRO, ACCENT_PRO } from "../../shared/promoteurDesign.tokens";
+import { PromoteurPageHero, HeroPrimaryButton, HeroGhostButton } from "../../shared/components/PromoteurPageHero";
 
 // ============================================
 // IMPORT SNAPSHOT STORE
@@ -72,10 +74,7 @@ import { useCopilotStore } from "../../../copilot/store/copilotStore";
 import { usePromoteurStudy } from "../../shared/usePromoteurStudy";
 import type { PromoteurMarcheData } from "../../shared/promoteurStudy.types";
 import ScoreTooltip, { SCORE_TOOLTIPS } from "../../../../components/ui/ScoreTooltip";
-
-// ─── Design tokens ───────────────────────────────────────────────────────────
-const GRAD_PRO = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
-const ACCENT_PRO = "#5247b8";
+import { fetchMobilityScoreSafe } from '@/services/mobility/mobilityClient';
 
 // ============================================
 // DEBUG FLAGS
@@ -100,6 +99,7 @@ interface DvfTransaction {
 
 interface DvfData {
   nb_transactions: number;
+  nb_transactions_total?: number;
   prix_m2_median: number;
   prix_m2_moyen: number;
   prix_m2_min: number;
@@ -589,8 +589,13 @@ const calculateDifferentiatedScores = (
   adjustments: { label: string; value: number }[];
   explanation: string;
 } => {
-  const config = PROJECT_SCORING_CONFIG[projectType] || PROJECT_SCORING_CONFIG.logement;
+   const config = PROJECT_SCORING_CONFIG[projectType] || PROJECT_SCORING_CONFIG.logement;
   const baseScores = data.scores;
+
+  // GTFS prioritaire : mesure réelle du point > forfait département du backend.
+  const gtfsTotal = (data.core?.transport as { mobility_gtfs?: { total?: number } } | undefined)?.mobility_gtfs?.total;
+  const accessibiliteEffective =
+    typeof gtfsTotal === "number" ? gtfsTotal : (baseScores.accessibilite ?? 50);
 
   // v2.8.1 : détecter si le backend a exclu le transport (zone non-urbaine)
   const transportExclu = !!(baseScores.transport_exclu ?? data.scoring_details?.transport_exclu);
@@ -605,13 +610,12 @@ const calculateDifferentiatedScores = (
       baseScores.offre         * (config.weights.offre         / totalOther) +
       baseScores.environnement * (config.weights.environnement / totalOther);
   } else {
-    // Calcul normal — accessibilite présent et valide
-    const accessibilite = baseScores.accessibilite ?? 50;
+    // Calcul normal — accessibilite = GTFS si dispo, sinon backend
     weightedBase =
-      baseScores.demande       * config.weights.demande +
-      baseScores.offre         * config.weights.offre +
-      accessibilite            * config.weights.accessibilite +
-      baseScores.environnement * config.weights.environnement;
+      baseScores.demande           * config.weights.demande +
+      baseScores.offre             * config.weights.offre +
+      accessibiliteEffective       * config.weights.accessibilite +
+      baseScores.environnement     * config.weights.environnement;
   }
 
   const adjustments: { label: string; value: number }[] = [];
@@ -648,7 +652,7 @@ const calculateDifferentiatedScores = (
     // accessibilite : 0 (sentinelle masquée dans l'UI) si transport exclu, sinon calcul normal
     accessibilite: transportExclu
       ? 0
-      : clamp((baseScores.accessibilite ?? 50) * (1 + (config.weights.accessibilite - 0.25) * 0.5)),
+      : clamp(accessibiliteEffective * (1 + (config.weights.accessibilite - 0.25) * 0.5)),
     environnement: clamp(baseScores.environnement * (1 + (config.weights.environnement - 0.25) * 0.5)),
     global:        finalScore,
     transport_exclu: transportExclu,
@@ -676,11 +680,6 @@ const styles = {
     minHeight: "100vh",
     background: "linear-gradient(135deg, #f8fafc 0%, #eef2ff 50%, #f0fdf4 100%)",
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
-  } as React.CSSProperties,
-  header: {
-    background: "linear-gradient(135deg, #1e293b 0%, #312e81 50%, #1e293b 100%)",
-    padding: "32px 40px",
-    color: "white",
   } as React.CSSProperties,
   mainContent: {
     maxWidth: "1400px",
@@ -998,7 +997,9 @@ const DvfCard: React.FC<{ dvf: DvfData | null }> = ({ dvf }) => {
         <Euro size={20} color="#10b981" />
         Marché Immobilier & Prix
         <span style={{ ...styles.badge, background: "#dcfce7", color: "#166534", marginLeft: "auto" }}>
-          {dvf.nb_transactions} transactions DVF
+          {dvf.nb_transactions_total && dvf.nb_transactions_total > dvf.nb_transactions
+            ? `${dvf.nb_transactions_total.toLocaleString("fr-FR")} transactions (${dvf.nb_transactions} analysées)`
+            : `${dvf.nb_transactions} transactions DVF`}
         </span>
       </div>
 
@@ -1882,8 +1883,61 @@ const AgePyramidChart: React.FC<{ insee: InseeData | null }> = ({ insee }) => {
   );
 };
 
+const PillarRow: React.FC<{
+  label: string;
+  score: number;
+  color: string;
+  tooltip: string;
+}> = ({ label, score, color, tooltip }) => {
+  const [hovered, setHovered] = React.useState(false);
+  return (
+    <div
+      style={{ position: "relative", marginBottom: "10px" }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", cursor: "help" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "4px", width: "170px", flexShrink: 0 }}>
+          <span style={{ fontSize: "12px", color: "#64748b" }}>{label}</span>
+          <span style={{ fontSize: "11px", color: "#cbd5e1" }}>ⓘ</span>
+        </div>
+        <div style={{ flex: 1, height: "8px", background: "#f1f5f9", borderRadius: "4px", overflow: "hidden" }}>
+          <div style={{
+            width: `${Math.max(0, Math.min(100, score))}%`,
+            height: "100%", background: color, borderRadius: "4px",
+            transition: "width 0.7s ease-out"
+          }} />
+        </div>
+        <span style={{ fontSize: "13px", fontWeight: 700, color, width: "32px", textAlign: "right", flexShrink: 0 }}>
+          {score}
+        </span>
+      </div>
+      {hovered && (
+        <div style={{
+          position: "absolute", bottom: "calc(100% + 8px)", left: "0", zIndex: 50,
+          background: "#1e293b", color: "white", fontSize: "12px", lineHeight: 1.6,
+          padding: "10px 14px", borderRadius: "10px", maxWidth: "320px",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.2)", pointerEvents: "none",
+        }}>
+          <div style={{ fontWeight: 600, marginBottom: "4px", color }}>{label}</div>
+          {tooltip}
+          <div style={{
+            position: "absolute", bottom: "-6px", left: "20px",
+            width: "12px", height: "12px", background: "#1e293b",
+            transform: "rotate(45deg)", borderRadius: "2px",
+          }} />
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ============================================
 // TRANSPORT CARD
+// ============================================
+// ============================================
+// TRANSPORT CARD — v2.8.3
+// Ajout : message d'estimation quand stops:[] + coverage:"partial"
 // ============================================
 const TransportCard: React.FC<{ transport: TransportData | null }> = ({ transport }) => {
   if (!transport) {
@@ -1901,19 +1955,43 @@ const TransportCard: React.FC<{ transport: TransportData | null }> = ({ transpor
     );
   }
 
+  // v4.4 — lire mobility_gtfs si présent dans la réponse
+  const gtfs = (transport as any).mobility_gtfs ?? null;
+  const pillars = gtfs?.pillars ?? null;
+
+  const isPartialFallback =
+    !gtfs &&
+    transport.coverage === "partial" &&
+    (!transport.stops || transport.stops.filter((s: TransportStop) => !s.name.includes("(estimation)")).length === 0);
+
+  const realStops = transport.stops
+    ? transport.stops.filter((s: TransportStop) => !s.name.includes("(estimation)"))
+    : [];
+
   return (
     <div style={styles.card}>
       <div style={styles.cardTitle}>
         <Train size={20} color="#8b5cf6" />
         Accessibilité Transport
-        <span style={{
-          ...styles.badge,
-          background: transport.score >= 70 ? "#dcfce7" : transport.score >= 50 ? "#fef3c7" : "#fee2e2",
-          color: transport.score >= 70 ? "#166534" : transport.score >= 50 ? "#92400e" : "#991b1b",
-          marginLeft: "auto"
-        }}>
-          {transport.is_urban === false ? "Zone non-urbaine" : `Score: ${transport.score}/100`}
-        </span>
+        {(() => {
+          const displayScore = gtfs ? gtfs.total : transport.score;
+          return (
+            <span style={{
+              ...styles.badge,
+              background: displayScore >= 70 ? "#dcfce7" : displayScore >= 50 ? "#fef3c7" : "#fee2e2",
+              color: displayScore >= 70 ? "#166534" : displayScore >= 50 ? "#92400e" : "#991b1b",
+              marginLeft: "auto"
+            }}>
+              {transport.is_urban === false ? "Zone non-urbaine" : `Score: ${displayScore}/100`}
+              {gtfs && <span style={{ fontSize: "9px", opacity: 0.7, marginLeft: "4px" }}>GTFS</span>}
+            </span>
+          );
+        })()}
+        {isPartialFallback && (
+          <span style={{ ...styles.badge, background: "#fef3c7", color: "#92400e" }}>
+            Estimation
+          </span>
+        )}
       </div>
 
       {transport.is_urban === false ? (
@@ -1921,25 +1999,29 @@ const TransportCard: React.FC<{ transport: TransportData | null }> = ({ transpor
           <Bus size={36} style={{ opacity: 0.4, marginBottom: "12px" }} />
           <p style={{ fontSize: "14px", fontWeight: 500 }}>Zone non-urbaine</p>
           <p style={{ fontSize: "13px", marginTop: "8px" }}>
-            Le critère transport n'est pas évalué pour cette commune — il n'a pas été pris en compte dans le score global.
+            Le critère transport n'est pas évalué pour cette commune.
           </p>
         </div>
       ) : (
         <>
+          {/* Badges modes */}
           <div style={{ display: "flex", gap: "10px", marginBottom: "20px", flexWrap: "wrap" }}>
-            {transport.has_metro_train && (
+            {(gtfs ? gtfs.has_metro_train : transport.has_metro_train) && (
               <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px", background: "#eef2ff", borderRadius: "8px" }}>
                 <Train size={16} color="#6366f1" />
                 <span style={{ fontSize: "13px", fontWeight: 600, color: "#4338ca" }}>Métro / Train</span>
               </div>
             )}
-            {transport.has_tram && (
+            {(gtfs ? gtfs.has_tram : transport.has_tram) && (
               <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px", background: "#f0fdf4", borderRadius: "8px" }}>
                 <Bus size={16} color="#16a34a" />
                 <span style={{ fontSize: "13px", fontWeight: 600, color: "#15803d" }}>Tramway</span>
               </div>
             )}
-            {!transport.has_metro_train && !transport.has_tram && (
+            {(gtfs
+              ? (!gtfs.has_metro_train && !gtfs.has_tram)
+              : (!transport.has_metro_train && !transport.has_tram)
+            ) && (
               <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px", background: "#f1f5f9", borderRadius: "8px" }}>
                 <Bus size={16} color="#64748b" />
                 <span style={{ fontSize: "13px", fontWeight: 500, color: "#64748b" }}>Bus uniquement</span>
@@ -1947,34 +2029,123 @@ const TransportCard: React.FC<{ transport: TransportData | null }> = ({ transpor
             )}
           </div>
 
-          {transport.stops && transport.stops.length > 0 && (
+          {/* ── GTFS pillars (v4.4) ── */}
+          {/* ── GTFS pillars (v4.4) ── */}
+          {pillars && (
+            <div style={{ marginBottom: "20px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+                <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748b" }}>
+                  Détail par pilier (GTFS · rayon 1 km)
+                </div>
+                <span style={{ fontSize: "11px", color: "#94a3b8", fontStyle: "italic" }}>
+                  56 000 arrêts · base nationale
+                </span>
+              </div>
+              {[
+                {
+                  label: "Rail régional (TGV/TER)", score: pillars.rail, color: "#6366f1",
+                  tooltip: "Gare SNCF grandes lignes (TGV/TER) à proximité. En cœur d'agglomération ce pilier est souvent à 0 : le métro et le RER sont comptés dans le « Réseau urbain »."
+                },
+                {
+                  label: "Réseau urbain", score: pillars.urban, color: "#10b981",
+                  tooltip: "Métro, RER, tramway et bus dans un rayon de 1 km. C'est ce pilier qui valorise la desserte quotidienne en cœur de ville."
+                },
+                {
+                  label: "Accessibilité emploi", score: pillars.employment, color: "#f59e0b",
+                  tooltip: "Capacité à rejoindre les bassins d'emploi majeurs en transports en commun. Calculé à partir des correspondances disponibles et du maillage multimodal."
+                },
+                {
+                  label: "Multimodalité", score: pillars.multimodal, color: "#8b5cf6",
+                  tooltip: "Qualité des correspondances entre modes (bus ↔ métro ↔ train). Un score élevé indique un nœud d'interchange bien structuré dans le rayon analysé."
+                },
+              ].filter(p => p.score != null).map((p, i) => (
+                <PillarRow key={i} label={p.label} score={p.score} color={p.color} tooltip={p.tooltip} />
+              ))}
+              {gtfs.nearest_stop_m != null && (
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "12px", padding: "8px 12px", background: "#f8fafc", borderRadius: "8px" }}>
+                  <span style={{ fontSize: "16px" }}>📍</span>
+                  <p style={{ fontSize: "12px", color: "#64748b", margin: 0 }}>
+                    Arrêt le plus proche : <strong style={{ color: "#475569" }}>{gtfs.nearest_stop_m} m</strong>
+                    {gtfs.summary && <span style={{ color: "#94a3b8" }}> — {gtfs.summary}</span>}
+                  </p>
+                </div>
+              )}
+
+              {gtfs.top_stops && gtfs.top_stops.length > 0 && (
+                <div style={{ marginTop: "16px" }}>
+                  <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748b", marginBottom: "10px" }}>
+                    Stations les plus proches
+                  </div>
+                  {gtfs.top_stops.slice(0, 5).map((stop: any, i: number) => {
+                    const isRail = ['metro','rer','train','ter','tgv','transilien'].includes((stop.mode || '').toLowerCase());
+                    const count = Math.min(gtfs.top_stops.length, 5);
+                    return (
+                      <div key={i} style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        padding: "10px 0", borderBottom: i < count - 1 ? "1px solid #f1f5f9" : "none"
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: isRail ? "#eef2ff" : "#f0fdf4", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            {isRail ? <Train size={14} color="#6366f1" /> : <Bus size={14} color="#16a34a" />}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: "13px", color: "#1e293b", fontWeight: 500 }}>{stop.name}</div>
+                            <div style={{ fontSize: "11px", color: "#94a3b8", textTransform: "uppercase" }}>
+                              {stop.mode}
+                              {stop.lines && stop.lines.length > 0 && ` · ${stop.lines.join(', ')}`}
+                            </div>
+                          </div>
+                        </div>
+                        <span style={{ fontSize: "13px", fontWeight: 600, color: stop.distance_m < 500 ? "#10b981" : stop.distance_m < 1000 ? "#f59e0b" : "#64748b" }}>
+                          {stop.distance_m < 1000 ? `${stop.distance_m} m` : `${(stop.distance_m / 1000).toFixed(1)} km`}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Arrêts réels (legacy) ── */}
+          {!pillars && realStops.length > 0 && (
             <div>
               <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748b", marginBottom: "10px" }}>
                 Arrêts les plus proches
               </div>
-              {transport.stops.slice(0, 5).map((stop, i) => (
+              {realStops.slice(0, 5).map((stop: TransportStop, i: number) => (
                 <div key={i} style={{
                   display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "10px 0", borderBottom: i < transport.stops.length - 1 ? "1px solid #f1f5f9" : "none"
+                  padding: "10px 0", borderBottom: i < 4 ? "1px solid #f1f5f9" : "none"
                 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <div style={{
-                      width: "32px", height: "32px", borderRadius: "8px",
-                      background: stop.type === "metro" || stop.type === "train" ? "#eef2ff" : "#f0fdf4",
-                      display: "flex", alignItems: "center", justifyContent: "center"
-                    }}>
+                    <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: stop.type === "metro" || stop.type === "train" ? "#eef2ff" : "#f0fdf4", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       {stop.type === "metro" || stop.type === "train" ? <Train size={14} color="#6366f1" /> : <Bus size={14} color="#16a34a" />}
                     </div>
                     <span style={{ fontSize: "13px", color: "#1e293b" }}>{stop.name}</span>
                   </div>
-                  <span style={{
-                    fontSize: "13px", fontWeight: 600,
-                    color: stop.distance_m < 500 ? "#10b981" : stop.distance_m < 1000 ? "#f59e0b" : "#64748b"
-                  }}>
+                  <span style={{ fontSize: "13px", fontWeight: 600, color: stop.distance_m < 500 ? "#10b981" : stop.distance_m < 1000 ? "#f59e0b" : "#64748b" }}>
                     {stop.distance_m < 1000 ? `${stop.distance_m} m` : `${(stop.distance_m / 1000).toFixed(1)} km`}
                   </span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* ── Fallback 429 : message d'estimation ── */}
+          {isPartialFallback && (
+            <div style={{ marginTop: "16px", padding: "14px 16px", background: "#fefce8", border: "1px solid #fde68a", borderRadius: "10px", display: "flex", gap: "10px", alignItems: "flex-start" }}>
+              <AlertTriangle size={16} color="#d97706" style={{ marginTop: "2px", flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: "13px", fontWeight: 600, color: "#92400e", marginBottom: "4px" }}>
+                  Score estimé — détail des arrêts indisponible
+                </div>
+                <div style={{ fontSize: "12px", color: "#78350f", lineHeight: 1.5 }}>
+                  Le référentiel OSM (Overpass) est temporairement surchargé pour ce secteur ({transport.score}).
+                  Le score <strong>{transport.score}/100</strong> est calculé à partir des données de référence
+                  du département — il reste fiable pour le scoring global.
+                </div>
+              </div>
             </div>
           )}
         </>
@@ -1982,7 +2153,6 @@ const TransportCard: React.FC<{ transport: TransportData | null }> = ({ transpor
     </div>
   );
 };
-
 // ============================================
 // BPE CARD
 // ============================================
@@ -3093,6 +3263,45 @@ export function MarchePage() {
       if (!mountedRef.current) return;
       setAnalysisResult(typedResult);
 
+// v4.4 — enrichissement GTFS côté frontend
+try {
+  const lat = typedResult.meta?.lat;
+  const lon = typedResult.meta?.lon;
+  if (lat && lon) {
+    fetchMobilityScoreSafe(lat, lon, 500).then((mobility) => {
+      if (!mountedRef.current || !mobility) return;
+      setAnalysisResult(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          core: {
+            ...prev.core,
+            transport: {
+              ...prev.core.transport,
+              mobility_gtfs: {
+                total:           mobility.total,
+                pillars: {
+                  rail:       mobility.pillars.rail.score       ?? null,
+                  urban:      mobility.pillars.urban.score      ?? null,
+                  employment: mobility.pillars.employment.score ?? null,
+                  multimodal: mobility.pillars.multimodal.score ?? null,
+                },
+                nearest_stop_m:  mobility.top_stops[0]?.distance_m ?? null,
+                top_stops:       mobility.top_stops ?? [],
+                has_metro_train: (mobility as any).has_metro_train ?? mobility.top_stops.some(s => ['metro','rer','train','ter','tgv'].includes(s.mode.toLowerCase())),
+has_tram:        (mobility as any).has_tram        ?? mobility.top_stops.some(s => s.mode.toLowerCase() === 'tram'),
+is_urban:        (mobility as any).is_urban        ?? (mobility.total > 0 && (mobility.pillars.urban.score ?? 0) > 0),
+label:           mobility.total >= 80 ? 'Très bien desservi' : mobility.total >= 60 ? 'Bien desservi' : mobility.total >= 40 ? 'Desservi' : 'Peu desservi',
+summary:         '',
+              },
+            },
+          },
+        };
+      });
+    });
+  }
+} catch { /* non-bloquant */ }
+
       const { scores } = calculateDifferentiatedScores(typedResult, projectNature);
 
       const marchePayload: PromoteurMarcheData = {
@@ -3136,53 +3345,50 @@ export function MarchePage() {
     <ErrorBoundary componentName="MarchePage">
       <div style={styles.container}>
 
-        {/* Bannière */}
-        <div style={{
-          background: GRAD_PRO, borderRadius: 14, padding: "20px 24px",
-          margin: "16px 40px 0 40px",
-          display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16,
-        }}>
-          <div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>Promoteur › Études</div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
-              <SafeIcon icon={projectConfig.icon} fallback={Building2} size={22} color="white" />
-              Étude de Marché
-            </div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
-              {projectConfig.description}. Scoring adapté au type de projet avec bonus/pénalités contextuels.
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, marginTop: 4 }}>
-            {studyInsee && (
-              <span style={{ padding: "6px 12px", background: "rgba(255,255,255,0.15)", borderRadius: 8, fontSize: 12, fontWeight: 600, color: "white", border: "1px solid rgba(255,255,255,0.25)" }}>
-                INSEE {studyInsee}
-              </span>
-            )}
-            <span style={{ padding: "6px 12px", background: "rgba(255,255,255,0.15)", borderRadius: 8, fontSize: 12, fontWeight: 600, color: "white", border: "1px solid rgba(255,255,255,0.25)" }}>
-              {projectConfig.label}
-            </span>
-            {analysisResult && (
-              <button
-                onClick={() => {
-                  const { scores } = calculateDifferentiatedScores(analysisResult, projectNature);
-                  patchModule("market", { ok: true, validated: true, summary: `Score: ${scores.global}/100 - ${analysisResult.meta.commune_nom}`, data: analysisResult });
-                  setSynthesisSaved(true);
-                  setTimeout(() => setSynthesisSaved(false), 3000);
-                }}
-                style={{ padding: "9px 18px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.4)", background: synthesisSaved ? "rgba(16,185,129,0.3)" : "rgba(255,255,255,0.15)", color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
-              >
-                {synthesisSaved ? "✓ Enregistré" : "📌 Utiliser dans la synthèse"}
-              </button>
-            )}
-            <button
-              onClick={handleSubmit}
-              disabled={isLoading}
-              style={{ padding: "9px 18px", borderRadius: 10, border: "none", background: "white", color: ACCENT_PRO, fontWeight: 600, fontSize: 13, cursor: isLoading ? "not-allowed" : "pointer", opacity: isLoading ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}
-            >
-              {isLoading ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Search size={14} />}
-              {isLoading ? "Analyse…" : "Lancer l'analyse"}
-            </button>
-          </div>
+        {/* Hero unifié — design VeilleMarchePage */}
+        <div style={{ padding: "16px 40px 0" }}>
+          <PromoteurPageHero
+            badge={`Promoteur · ${projectConfig.label}`}
+            title="Étude de Marché"
+            metaLines={[
+              { text: `${projectConfig.description}. Scoring adapté au type de projet.` },
+              ...(studyInsee ? [{ text: `INSEE : ${studyInsee}` }] : []),
+            ]}
+            statCards={analysisResult ? [
+              {
+                label: "Score global",
+                value: `${calculateDifferentiatedScores(analysisResult, projectNature).scores.global}/100`,
+                tone: "indigo" as const,
+              },
+              {
+                label: "Commune",
+                value: analysisResult.meta.commune_nom,
+                tone: "emerald" as const,
+              },
+            ] : undefined}
+            actions={
+              <>
+                {analysisResult && (
+                  <HeroPrimaryButton
+                    onClick={() => {
+                      const { scores } = calculateDifferentiatedScores(analysisResult, projectNature);
+                      patchModule("market", { ok: true, validated: true, summary: `Score: ${scores.global}/100 - ${analysisResult.meta.commune_nom}`, data: analysisResult });
+                      setSynthesisSaved(true);
+                      setTimeout(() => setSynthesisSaved(false), 3000);
+                    }}
+                  >
+                    {synthesisSaved ? "✓ Enregistré" : "📌 Utiliser dans la synthèse"}
+                  </HeroPrimaryButton>
+                )}
+                <HeroGhostButton onClick={handleSubmit} disabled={isLoading}>
+                  {isLoading
+                    ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Analyse…</>
+                    : <><Search size={14} /> Lancer l'analyse</>
+                  }
+                </HeroGhostButton>
+              </>
+            }
+          />
         </div>
 
         {/* Contenu principal */}

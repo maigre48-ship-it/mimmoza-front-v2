@@ -929,6 +929,168 @@ const MapEnvironment = ({ data }) => {
   );
 };
 
+const TRANSPORT_MODE_CONFIG = {
+  metro:    { label: 'Métro',      color: 'bg-blue-500',   text: 'text-blue-700',   bg: 'bg-blue-50'   },
+  rer:      { label: 'RER',        color: 'bg-indigo-500', text: 'text-indigo-700', bg: 'bg-indigo-50' },
+  train:    { label: 'Train',      color: 'bg-slate-600',  text: 'text-slate-700',  bg: 'bg-slate-50'  },
+  ter:      { label: 'TER',        color: 'bg-green-600',  text: 'text-green-700',  bg: 'bg-green-50'  },
+  tgv:      { label: 'TGV',        color: 'bg-red-500',    text: 'text-red-700',    bg: 'bg-red-50'    },
+  tram:     { label: 'Tramway',    color: 'bg-emerald-500',text: 'text-emerald-700',bg: 'bg-emerald-50'},
+  bus:      { label: 'Bus',        color: 'bg-amber-500',  text: 'text-amber-700',  bg: 'bg-amber-50'  },
+  default:  { label: 'TC',         color: 'bg-slate-400',  text: 'text-slate-700',  bg: 'bg-slate-50'  },
+};
+
+const getModeConfig = (mode) => {
+  const key = (mode || '').toLowerCase();
+  return TRANSPORT_MODE_CONFIG[key] || TRANSPORT_MODE_CONFIG.default;
+};
+
+const PillarBar = ({ label, score, color }) => {
+  if (score == null) return null;
+  const pct = Math.max(0, Math.min(100, score));
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-xs text-slate-500 w-24 flex-shrink-0">{label}</span>
+      <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+        <div
+          className={`h-full ${color} rounded-full transition-all duration-700`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="text-xs font-semibold text-slate-700 w-8 text-right">{score}</span>
+    </div>
+  );
+};
+
+const TransportGtfsPanel = ({ transport }) => {
+  const gtfs = transport?.mobility_gtfs ?? null;
+  const legacyScore = transport?.score ?? null;
+  const applicable = transport?.applicable !== false;
+
+  if (!applicable) {
+    return (
+      <div className="flex items-center justify-between py-2.5">
+        <div className="flex items-center gap-2">
+          <Car className="w-4 h-4 text-slate-400" />
+          <span className="text-sm text-slate-500">Zone hors grande agglomération</span>
+        </div>
+        <span className="text-xs text-slate-400">Non évalué</span>
+      </div>
+    );
+  }
+
+  if (gtfs) {
+    const score = gtfs.total;
+    const pillars = gtfs.pillars ?? {};
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Train className="w-4 h-4 text-indigo-500" />
+            <span className="text-sm font-semibold text-slate-700">Accessibilité Transport</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`text-sm font-bold px-2 py-0.5 rounded-lg ${
+              score >= 70 ? 'bg-emerald-100 text-emerald-700' :
+              score >= 50 ? 'bg-amber-100 text-amber-700' :
+              score >= 30 ? 'bg-orange-100 text-orange-700' :
+              'bg-red-100 text-red-700'
+            }`}>
+              Score: {score}/100
+            </span>
+            {gtfs.has_metro_train && (
+              <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-700 flex items-center gap-1">
+                <Train className="w-3 h-3" /> Métro / Train
+              </span>
+            )}
+            {gtfs.has_tram && (
+              <span className="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-700">
+                Tramway
+              </span>
+            )}
+          </div>
+        </div>
+        {gtfs.label && (
+          <p className="text-xs text-slate-500 italic">
+            {gtfs.label}
+            {gtfs.nearest_stop_m != null ? ` — stop le plus proche : ${gtfs.nearest_stop_m} m` : ''}
+          </p>
+        )}
+        <div className="space-y-1.5 pt-1">
+          <PillarBar label="Rail (TER/TGV)" score={pillars.rail}       color="bg-blue-400"    />
+          <PillarBar label="Réseau urbain"  score={pillars.urban}      color="bg-emerald-400" />
+          <PillarBar label="Emploi"         score={pillars.employment} color="bg-amber-400"   />
+          <PillarBar label="Multimodalité"  score={pillars.multimodal} color="bg-violet-400"  />
+        </div>
+        {gtfs.summary && (
+          <p className="text-xs text-slate-500 bg-slate-50 rounded p-2 mt-1">{gtfs.summary}</p>
+        )}
+      </div>
+    );
+  }
+
+  if (legacyScore != null) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between py-1">
+          <div className="flex items-center gap-2">
+            <Train className="w-4 h-4 text-indigo-400" />
+            <span className="text-sm font-medium text-slate-700">Transports en commun</span>
+          </div>
+          <span className={`text-sm font-semibold ${getScoreColor(legacyScore)}`}>
+            {legacyScore}/100
+          </span>
+        </div>
+        <div className="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg">
+          <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-700">
+            Score estimé — données de référence du département ({legacyScore}/100).
+            Le détail des arrêts est temporairement indisponible.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between py-2.5">
+      <div className="flex items-center gap-2">
+        <Train className="w-4 h-4 text-slate-300" />
+        <span className="text-sm text-slate-400">Données transport non disponibles</span>
+      </div>
+      <span className="text-xs text-slate-300">—</span>
+    </div>
+  );
+};
+
+const MobiliteEducationBlock = ({ market }) => (
+  <div>
+    <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+      <Train className="w-4 h-4 text-indigo-500" />
+      Mobilité & Éducation
+    </h4>
+    <div className="bg-slate-50 rounded-lg p-3 space-y-3">
+      <TransportGtfsPanel transport={market?.transport} />
+      {market?.ecoles && (
+        <div className="flex items-center justify-between py-2.5 border-t border-slate-200">
+          <div className="flex items-center gap-2">
+            <GraduationCap className="w-4 h-4 text-amber-500" />
+            <div>
+              <span className="text-sm font-medium text-slate-700">Écoles</span>
+              <p className="text-xs text-slate-500">
+                {market.ecoles.count1000m || 0} établissements à 1 km
+              </p>
+            </div>
+          </div>
+          <span className={`text-sm font-semibold ${getScoreColor(market.ecoles.scoreEcoles)}`}>
+            {market.ecoles.scoreEcoles != null ? `${market.ecoles.scoreEcoles}/100` : '—'}
+          </span>
+        </div>
+      )}
+    </div>
+  </div>
+);
+
 const ServicesEquipements = ({ data }) => {
   const market = data?.market;
   const essentialServices = market?.essential_services;
@@ -1008,51 +1170,8 @@ const ServicesEquipements = ({ data }) => {
           </div>
         </div>
         
-        {/* Mobilité */}
-        <div>
-          <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-            <Train className="w-4 h-4 text-indigo-500" />
-            Mobilité & Éducation
-          </h4>
-          <div className="bg-slate-50 rounded-lg p-3">
-            {market?.transport?.applicable ? (
-              <div className="flex items-center justify-between py-2.5">
-                <div className="flex items-center gap-2">
-                  <Train className="w-4 h-4 text-indigo-500" />
-                  <span className="text-sm font-medium text-slate-700">Transports en commun</span>
-                </div>
-                <span className={`text-sm font-semibold ${getScoreColor(market.transport?.score)}`}>
-                  {market.transport?.score != null ? `${market.transport.score}/100` : '—'}
-                </span>
-              </div>
-            ) : (
-              <div className="flex items-center justify-between py-2.5">
-                <div className="flex items-center gap-2">
-                  <Car className="w-4 h-4 text-slate-400" />
-                  <span className="text-sm text-slate-600">Zone hors métropole</span>
-                </div>
-                <span className="text-xs text-slate-400">Non évalué</span>
-              </div>
-            )}
-            
-            {market?.ecoles && (
-              <div className="flex items-center justify-between py-2.5 border-t border-slate-200">
-                <div className="flex items-center gap-2">
-                  <GraduationCap className="w-4 h-4 text-amber-500" />
-                  <div>
-                    <span className="text-sm font-medium text-slate-700">Écoles</span>
-                    <p className="text-xs text-slate-500">
-                      {market.ecoles.count1000m || 0} établissements à 1km
-                    </p>
-                  </div>
-                </div>
-                <span className={`text-sm font-semibold ${getScoreColor(market.ecoles.scoreEcoles)}`}>
-                  {market.ecoles.scoreEcoles != null ? `${market.ecoles.scoreEcoles}/100` : '—'}
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
+      {/* Mobilité */}
+        <MobiliteEducationBlock market={market} />
       </div>
       
       {/* Résumé BPE */}

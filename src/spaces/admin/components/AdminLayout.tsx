@@ -4,6 +4,7 @@ import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import {
   BarChart3,
   BadgeEuro,
+  Bot,
   Building2,
   ClipboardList,
   CreditCard,
@@ -17,10 +18,10 @@ import {
 // ── Items de navigation ───────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
-  { label: "Dashboard",    path: "/admin",                icon: BarChart3,     end: true },
+  { label: "Dashboard",    path: "/admin",               icon: BarChart3,     end: true },
   { label: "Utilisateurs", path: "/admin/utilisateurs",  icon: Users },
   { label: "Abonnements",  path: "/admin/abonnements",   icon: CreditCard },
-  { label: "Jetons",       path: "/admin/jetons",        icon: Ticket },
+  { label: "Copilot",      path: "/admin/copilot",       icon: Bot },
   { label: "Devis",        path: "/admin/devis",         icon: ClipboardList },
   { label: "Factures",     path: "/admin/factures",      icon: FileText },
   { label: "Entreprises",  path: "/admin/entreprises",   icon: Building2 },
@@ -46,7 +47,7 @@ function AdminSidebar() {
           Mimmoza
         </div>
         <div className="mt-0.5 text-base font-semibold text-slate-900">
-          Piloage plateforme
+          Pilotage plateforme
         </div>
       </div>
 
@@ -54,6 +55,7 @@ function AdminSidebar() {
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
+          const isCopilot = item.path === "/admin/copilot";
           return (
             <NavLink
               key={item.path}
@@ -63,7 +65,9 @@ function AdminSidebar() {
                 [
                   "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
                   isActive
-                    ? "bg-slate-950 text-white"
+                    ? isCopilot
+                      ? "bg-violet-600 text-white"
+                      : "bg-slate-950 text-white"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
                 ].join(" ")
               }
@@ -73,10 +77,19 @@ function AdminSidebar() {
                   <Icon
                     className={[
                       "h-4 w-4 shrink-0",
-                      isActive ? "text-white" : "text-slate-400",
+                      isActive
+                        ? "text-white"
+                        : isCopilot
+                          ? "text-violet-400"
+                          : "text-slate-400",
                     ].join(" ")}
                   />
                   {item.label}
+                  {isCopilot && !isActive && (
+                    <span className="ml-auto rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-600">
+                      V1
+                    </span>
+                  )}
                 </>
               )}
             </NavLink>

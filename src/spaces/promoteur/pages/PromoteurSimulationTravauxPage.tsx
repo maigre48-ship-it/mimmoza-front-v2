@@ -1,5 +1,6 @@
 // src/spaces/promoteur/pages/PromoteurSimulationTravauxPage.tsx
 // v4 — Bridge bilan enrichi : surface totale transmise avec le total travaux
+// v4.1 — Hero v2 : PromoteurPageHero (design unifié Promoteur)
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import type {
@@ -25,6 +26,11 @@ import {
   addInvestisseurEvent,
 } from "../../investisseur/shared/investisseurSnapshot.store";
 import { patchExecutionTravaux } from "../../marchand/shared/marchandSnapshot.store";
+import { GRAD_PRO, ACCENT_PRO } from "../shared/promoteurDesign.tokens";
+import {
+  PromoteurPageHero,
+  HeroGhostButton,
+} from "../shared/components/PromoteurPageHero";
 
 /* ================================================================== */
 /*  Bridge bilan promoteur                                             */
@@ -34,12 +40,10 @@ export const BILAN_TRAVAUX_KEY   = "mimmoza.promoteur.bilan.travaux.v1";
 export const BILAN_TRAVAUX_EVENT = "mimmoza:promoteur-bilan-travaux-updated";
 
 export interface BilanTravauxBridgePayload {
-  /** Total avec buffer à injecter dans le champ travaux du bilan */
   totalWithBuffer: number;
   totalHT: number;
   bufferPct: number;
   mode: "simple" | "expert";
-  /** Surface totale réhabilitée (m²) — pour pré-remplir le champ surface du bilan */
   surfaceTotaleM2: number;
   updatedAt: string;
 }
@@ -66,8 +70,8 @@ function applyTravauxToBilanPromo(
 /*  Thème violet                                                       */
 /* ================================================================== */
 
-const GRAD         = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
-const ACCENT       = "#5247b8";
+const GRAD         = GRAD_PRO;
+const ACCENT       = ACCENT_PRO;
 const ACCENT_LIGHT = "#ede9fe";
 const ACCENT_DARK  = "#4338ca";
 
@@ -157,10 +161,22 @@ interface PieceUI {
 
 function defaultQtys(kind: PieceType, s: number) {
   s = Math.max(0, s);
-  return { qtyPeinture: Math.round(s * 2.6), qtySol: s, qtySpots: Math.max(1, Math.round(s / 6)), qtyRj45: kind === "sdb" || kind === "wc" ? 0 : Math.max(0, Math.round(s / 25)), qtyPlombPoints: kind === "cuisine" ? 2 : kind === "sdb" ? 2 : kind === "wc" ? 1 : 0, qtyIsolTh: s, qtyIsolPh: s };
+  return {
+    qtyPeinture: Math.round(s * 2.6), qtySol: s,
+    qtySpots: Math.max(1, Math.round(s / 6)),
+    qtyRj45: kind === "sdb" || kind === "wc" ? 0 : Math.max(0, Math.round(s / 25)),
+    qtyPlombPoints: kind === "cuisine" ? 2 : kind === "sdb" ? 2 : kind === "wc" ? 1 : 0,
+    qtyIsolTh: s, qtyIsolPh: s,
+  };
 }
 function defaultToggles(kind: PieceType) {
-  return { peinture: true, sol: true, elec: true, plomb: kind === "cuisine" || kind === "sdb" || kind === "wc", isolTh: false, isolPh: false, cuisinePack: kind === "cuisine", cuisinePose: kind === "cuisine", cuisineDepose: false, sdbPack: kind === "sdb", sdbSpec: kind === "sdb", sdbDepose: false };
+  return {
+    peinture: true, sol: true, elec: true,
+    plomb: kind === "cuisine" || kind === "sdb" || kind === "wc",
+    isolTh: false, isolPh: false,
+    cuisinePack: kind === "cuisine", cuisinePose: kind === "cuisine", cuisineDepose: false,
+    sdbPack: kind === "sdb", sdbSpec: kind === "sdb", sdbDepose: false,
+  };
 }
 
 let _counter = 0;
@@ -203,10 +219,16 @@ function computeUnitCost(p: PieceUI, range: TravauxRange): number {
 /*  Defaults                                                           */
 /* ================================================================== */
 
-const DEFAULT_OPTIONS: TravauxOptionsSimple = { cuisineRefaire: "none", sdbRefaire: "none", electricite: "none", plomberie: "none", menuiseries: "none", isolationThermique: "none", isolationPhonique: "none", demolition: "none", gravats: "none", humiditeTraitement: "none", moe: "none" };
-const RANGE_OPTIONS: { value: TravauxRange; label: string }[] = [{ value: "eco", label: "Éco" }, { value: "standard", label: "Standard" }, { value: "premium", label: "Premium" }];
+const DEFAULT_OPTIONS: TravauxOptionsSimple = {
+  cuisineRefaire: "none", sdbRefaire: "none", electricite: "none", plomberie: "none",
+  menuiseries: "none", isolationThermique: "none", isolationPhonique: "none",
+  demolition: "none", gravats: "none", humiditeTraitement: "none", moe: "none",
+};
+const RANGE_OPTIONS: { value: TravauxRange; label: string }[] = [
+  { value: "eco", label: "Éco" }, { value: "standard", label: "Standard" }, { value: "premium", label: "Premium" },
+];
 const LEVEL_OPTIONS: { value: RenovationLevel; label: string; desc: string }[] = [
-  { value: "refresh", label: "Rafraîchissement", desc: "Peinture, finitions légères" },
+  { value: "refresh",  label: "Rafraîchissement", desc: "Peinture, finitions légères" },
   { value: "standard", label: "Standard",         desc: "Sol, cuisine, sdb" },
   { value: "heavy",    label: "Lourde",           desc: "Rénovation complète par lots" },
   { value: "full",     label: "Complète",         desc: "Remise à nu totale" },
@@ -291,18 +313,14 @@ const MultiplierControl: React.FC<{ value: number; onChange: (v: number) => void
 );
 
 /* ================================================================== */
-/*  ApplyToBilanButton — transmet total + surface                     */
+/*  ApplyToBilanButton                                                 */
 /* ================================================================== */
 
 type ApplyStatus = "idle" | "success" | "error";
 
 const ApplyToBilanButton: React.FC<{
-  totalWithBuffer: number;
-  totalHT: number;
-  bufferPct: number;
-  sourceMode: "simple" | "expert";
-  /** Surface totale réhabilitée à transmettre au bilan */
-  surfaceTotaleM2: number;
+  totalWithBuffer: number; totalHT: number; bufferPct: number;
+  sourceMode: "simple" | "expert"; surfaceTotaleM2: number;
 }> = ({ totalWithBuffer, totalHT, bufferPct, sourceMode, surfaceTotaleM2 }) => {
   const [status, setStatus] = useState<ApplyStatus>("idle");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -343,7 +361,10 @@ const ApplyToBilanButton: React.FC<{
 const ZoneCard: React.FC<{ piece: PieceUI; range: TravauxRange; onChange: (u: PieceUI) => void; onRemove: () => void }> = ({ piece, range, onChange, onRemove }) => {
   const p = piece;
   const update = (partial: Partial<PieceUI>) => onChange({ ...p, ...partial });
-  const updateKind = (kind: PieceType) => { const label = PROMOTEUR_ZONE_OPTIONS.find((o) => o.value === kind)?.label ?? kind; update({ kind, ...defaultToggles(kind), ...defaultQtys(kind, p.surfaceM2), name: label }); };
+  const updateKind = (kind: PieceType) => {
+    const label = PROMOTEUR_ZONE_OPTIONS.find((o) => o.value === kind)?.label ?? kind;
+    update({ kind, ...defaultToggles(kind), ...defaultQtys(kind, p.surfaceM2), name: label });
+  };
   const updateSurface = (s: number) => update({ surfaceM2: s, ...defaultQtys(p.kind, s) });
   const unitCost  = computeUnitCost(p, range);
   const totalCost = unitCost * Math.max(1, p.multiplier);
@@ -375,11 +396,23 @@ const ZoneCard: React.FC<{ piece: PieceUI; range: TravauxRange; onChange: (u: Pi
         <ToggleRow label="Sol"          checked={p.sol}      onChange={(v) => update({ sol: v })}>{p.sol      && <InlineQty value={p.qtySol}         unit="m²"    onChange={(v) => update({ qtySol: v })} />}</ToggleRow>
         <ToggleRow label="Électricité"  checked={p.elec}     onChange={(v) => update({ elec: v })}>{p.elec     && <InlineQty value={p.qtySpots}       unit="spots" onChange={(v) => update({ qtySpots: v })} />}</ToggleRow>
         <ToggleRow label="Plomberie"    checked={p.plomb}    onChange={(v) => update({ plomb: v })}>{p.plomb    && <InlineQty value={p.qtyPlombPoints} unit="pts"   onChange={(v) => update({ qtyPlombPoints: v })} />}</ToggleRow>
-        <ToggleRow label="Isol. therm." checked={p.isolTh}  onChange={(v) => update({ isolTh: v })}>{p.isolTh   && <InlineQty value={p.qtyIsolTh}      unit="m²"    onChange={(v) => update({ qtyIsolTh: v })} />}</ToggleRow>
-        <ToggleRow label="Isol. phon."  checked={p.isolPh}  onChange={(v) => update({ isolPh: v })}>{p.isolPh   && <InlineQty value={p.qtyIsolPh}      unit="m²"    onChange={(v) => update({ qtyIsolPh: v })} />}</ToggleRow>
+        <ToggleRow label="Isol. therm." checked={p.isolTh}   onChange={(v) => update({ isolTh: v })}>{p.isolTh   && <InlineQty value={p.qtyIsolTh}      unit="m²"    onChange={(v) => update({ qtyIsolTh: v })} />}</ToggleRow>
+        <ToggleRow label="Isol. phon."  checked={p.isolPh}   onChange={(v) => update({ isolPh: v })}>{p.isolPh   && <InlineQty value={p.qtyIsolPh}      unit="m²"    onChange={(v) => update({ qtyIsolPh: v })} />}</ToggleRow>
       </div>
-      {p.kind === "cuisine" && <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: 8, marginTop: 4 }}><ToggleRow label="Pack réseau" checked={p.cuisinePack} onChange={(v) => update({ cuisinePack: v })} /><ToggleRow label="Pose" checked={p.cuisinePose} onChange={(v) => update({ cuisinePose: v })} /><ToggleRow label="Dépose" checked={p.cuisineDepose} onChange={(v) => update({ cuisineDepose: v })} hint="forfait" /></div>}
-      {p.kind === "sdb"     && <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: 8, marginTop: 4 }}><ToggleRow label="Pack" checked={p.sdbPack} onChange={(v) => update({ sdbPack: v })} /><ToggleRow label="Étanchéité" checked={p.sdbSpec} onChange={(v) => update({ sdbSpec: v })} /><ToggleRow label="Dépose" checked={p.sdbDepose} onChange={(v) => update({ sdbDepose: v })} hint="forfait" /></div>}
+      {p.kind === "cuisine" && (
+        <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: 8, marginTop: 4 }}>
+          <ToggleRow label="Pack réseau" checked={p.cuisinePack}  onChange={(v) => update({ cuisinePack: v })} />
+          <ToggleRow label="Pose"        checked={p.cuisinePose}  onChange={(v) => update({ cuisinePose: v })} />
+          <ToggleRow label="Dépose"      checked={p.cuisineDepose} onChange={(v) => update({ cuisineDepose: v })} hint="forfait" />
+        </div>
+      )}
+      {p.kind === "sdb" && (
+        <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: 8, marginTop: 4 }}>
+          <ToggleRow label="Pack"        checked={p.sdbPack}  onChange={(v) => update({ sdbPack: v })} />
+          <ToggleRow label="Étanchéité"  checked={p.sdbSpec}  onChange={(v) => update({ sdbSpec: v })} />
+          <ToggleRow label="Dépose"      checked={p.sdbDepose} onChange={(v) => update({ sdbDepose: v })} hint="forfait" />
+        </div>
+      )}
     </div>
   );
 };
@@ -467,7 +500,10 @@ const ZoneResultList: React.FC<{ pieces: PieceTravaux[]; originals: PieceUI[]; r
                 {multiplier > 1 && <div style={{ marginBottom: 10, padding: "6px 10px", background: ACCENT_LIGHT, borderRadius: 8, fontSize: 11, color: ACCENT_DARK, fontWeight: 600 }}>📐 {fmtEuro(unitTotal)} / lot × {multiplier} lots = {fmtEuro(total)}</div>}
                 {groups.map((g) => (
                   <div key={g.lotLabel} style={{ marginBottom: 10 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontSize: 11, fontWeight: 700, color: ACCENT, textTransform: "uppercase", letterSpacing: 1 }}>{g.lotLabel}</span><span style={{ fontSize: 11, fontWeight: 600, color: "#64748b" }}>{fmtEuro(g.amount)}</span></div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: ACCENT, textTransform: "uppercase", letterSpacing: 1 }}>{g.lotLabel}</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: "#64748b" }}>{fmtEuro(g.amount)}</span>
+                    </div>
                     {g.lines.map((line, i) => (
                       <div key={`${line.code}-${i}`} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#64748b", paddingLeft: 8, paddingBottom: 2 }}>
                         <span>{line.label}</span>
@@ -486,7 +522,7 @@ const ZoneResultList: React.FC<{ pieces: PieceTravaux[]; originals: PieceUI[]; r
 };
 
 /* ================================================================== */
-/*  LotsBreakdown — reçoit surfaceTotaleM2 pour le bouton             */
+/*  LotsBreakdown                                                      */
 /* ================================================================== */
 
 const LotsBreakdown: React.FC<{
@@ -494,7 +530,6 @@ const LotsBreakdown: React.FC<{
   totalWithBuffer: number; costPerM2: number | null; complexityCoef: number;
   simulation: TravauxSimulationV1; computed: ComputedTravaux; sourceMode: "simple" | "expert";
   disabledLots: Set<string>; onToggleLot: (code: string) => void;
-  /** Surface totale réhabilitée à transmettre au bilan */
   surfaceTotaleM2: number;
 }> = ({ lots, total, bufferPct, totalWithBuffer, costPerM2, complexityCoef, simulation, computed, sourceMode, disabledLots, onToggleLot, surfaceTotaleM2 }) => {
   const [expandedLot, setExpandedLot] = useState<string | null>(null);
@@ -533,13 +568,7 @@ const LotsBreakdown: React.FC<{
             </button>
           )}
         </div>
-        <ApplyToBilanButton
-          totalWithBuffer={filteredTotalWithBuffer}
-          totalHT={filteredTotal}
-          bufferPct={bufferPct}
-          sourceMode={sourceMode}
-          surfaceTotaleM2={surfaceTotaleM2}
-        />
+        <ApplyToBilanButton totalWithBuffer={filteredTotalWithBuffer} totalHT={filteredTotal} bufferPct={bufferPct} sourceMode={sourceMode} surfaceTotaleM2={surfaceTotaleM2} />
       </div>
 
       {complexityCoef > 1 && <p style={{ fontSize: 11, color: "#94a3b8", textAlign: "right" }}>Coef. complexité : ×{complexityCoef.toFixed(2)}</p>}
@@ -573,7 +602,14 @@ const LotsBreakdown: React.FC<{
               {isOpen && lot.lines.length > 0 && (
                 <div style={{ borderTop: "1px solid #f1f5f9", padding: "8px 14px", background: "#fafafa" }}>
                   <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
-                    <thead><tr style={{ color: "#94a3b8" }}><th style={{ textAlign: "left", paddingBottom: 4 }}>Poste</th><th style={{ textAlign: "right", paddingBottom: 4 }}>Qté</th><th style={{ textAlign: "right", paddingBottom: 4 }}>P.U.</th><th style={{ textAlign: "right", paddingBottom: 4 }}>Montant</th></tr></thead>
+                    <thead>
+                      <tr style={{ color: "#94a3b8" }}>
+                        <th style={{ textAlign: "left", paddingBottom: 4 }}>Poste</th>
+                        <th style={{ textAlign: "right", paddingBottom: 4 }}>Qté</th>
+                        <th style={{ textAlign: "right", paddingBottom: 4 }}>P.U.</th>
+                        <th style={{ textAlign: "right", paddingBottom: 4 }}>Montant</th>
+                      </tr>
+                    </thead>
                     <tbody>
                       {lot.lines.map((line, idx) => (
                         <tr key={`${line.code}-${idx}`} style={{ borderTop: "1px solid #f1f5f9" }}>
@@ -673,8 +709,6 @@ const PromoteurSimulationTravauxPage: React.FC = () => {
 
   const zonesTravaux = useMemo(() => piecesUI.map(pieceUIToTravaux), [piecesUI]);
 
-  // ── Surface totale pour le bridge ─────────────────────────────────────────
-  // Mode simple : saisie directe. Mode expert : somme des zones × multiplicateur.
   const surfaceTotaleM2 = useMemo(() => {
     if (mode === "simple") return surface;
     return piecesUI.reduce((acc, p) => acc + p.surfaceM2 * Math.max(1, p.multiplier), 0);
@@ -705,26 +739,22 @@ const PromoteurSimulationTravauxPage: React.FC = () => {
 
   return (
     <div style={{ minHeight: "100vh", background: "#f1f5f9" }}>
-      {/* Bannière */}
-      <div style={{ background: GRAD, borderRadius: 16, padding: "24px 28px", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
-        <div>
-          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>Promoteur › Rénovation</div>
-          <div style={{ fontSize: 24, fontWeight: 900, color: "#fff", marginBottom: 4 }}>🏗 Réhabilitation lourde</div>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,.75)" }}>Estimez le coût de rénovation lourde d'un immeuble ou d'une opération de restructuration</div>
-        </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          {surfaceTotaleM2 > 0 && (
-            <div style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 10, padding: "8px 14px", fontSize: 12, color: "#fff", fontWeight: 600 }}>
-              📐 {Math.round(surfaceTotaleM2)} m² · {range} · {renovationLevel}
-            </div>
-          )}
-          <button type="button" onClick={handleReset}
-            style={{ ...BTN, display: "flex", alignItems: "center", gap: 8, padding: "9px 18px", borderRadius: 10, border: "none", background: "rgba(255,255,255,0.18)", color: "#fff", fontSize: 13, fontWeight: 600 }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.30)")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.18)")}>
-            ↺ Nouvelle simulation
-          </button>
-        </div>
+
+      {/* ── Hero v2 ── */}
+      <div style={{ marginBottom: 20 }}>
+        <PromoteurPageHero
+          badge="Promoteur · Rénovation"
+          title="Réhabilitation lourde"
+          metaLines={[
+            { text: "Estimez le coût de rénovation lourde d'un immeuble ou d'une opération de restructuration." },
+            ...(surfaceTotaleM2 > 0 ? [{ text: `📐 ${Math.round(surfaceTotaleM2)} m² · ${range} · ${renovationLevel}` }] : []),
+          ]}
+          actions={
+            <HeroGhostButton onClick={handleReset}>
+              ↺ Nouvelle simulation
+            </HeroGhostButton>
+          }
+        />
       </div>
 
       <div style={{ marginBottom: 20 }}><DisclaimerPromo /></div>
@@ -733,6 +763,7 @@ const PromoteurSimulationTravauxPage: React.FC = () => {
 
         {/* Colonne gauche */}
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
           {/* Mode */}
           <div style={{ background: "#fff", borderRadius: 12, padding: 6, display: "flex", gap: 4, border: "1px solid #e2e8f0" }}>
             {(["simple", "expert"] as const).map((m) => (

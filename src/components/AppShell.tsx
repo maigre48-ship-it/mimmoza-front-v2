@@ -8,6 +8,7 @@ import {
   TrendingUp, AlertTriangle, Grid3X3, Cuboid, Calculator, ChevronRight, Sparkles,
   Search, ClipboardList, Building, LayoutDashboard, Eye, Code2, Wand2,
   FileSearch, Users, Plus, Hammer, ScanSearch, FolderKanban, PenSquare,
+  ShieldAlert, Zap,
 } from "lucide-react";
 
 import mimmozaLogo from "../assets/mimmoza-logo.png";
@@ -20,7 +21,6 @@ import { unlockDealIfNeeded } from "../spaces/marchand/services/dealUnlock";
 import { ensureActiveDeal, type MarchandDeal } from "../spaces/marchand/shared/marchandSnapshot.store";
 import { DealUnlockModal } from "../spaces/marchand/components/DealUnlockModal";
 
-// ── "rehabilitation" ajouté ──────────────────────────────────────────────────
 type Space = "none" | "promoteur" | "agence" | "marchand" | "banque" | "rehabilitation";
 
 type AppShellProps = {
@@ -72,9 +72,9 @@ function MimmozaLogo(props: { className?: string }) {
 }
 
 function getSpaceGradient(space: Space): string {
-  if (space === "marchand")       return "linear-gradient(90deg, #2196f3 0%, #21cbf3 100%)";
-  if (space === "promoteur")      return "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
-  if (space === "agence")         return "linear-gradient(90deg, #60a5fa 0%, #93c5fd 100%)";
+  if (space === "marchand")       return "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)";
+  if (space === "promoteur")      return "linear-gradient(90deg, #6f5bd6 0%, #8d78df 50%, #b39ddb 100%)";
+  if (space === "agence")         return "linear-gradient(135deg, #16a34a 0%, #4ade80 100%)";
   if (space === "banque")         return "linear-gradient(90deg, #26a69a 0%, #80cbc4 100%)";
   if (space === "rehabilitation") return "linear-gradient(90deg, #ea580c 0%, #fb923c 100%)";
   return "linear-gradient(90deg, #2196f3 0%, #21cbf3 100%)";
@@ -83,7 +83,7 @@ function getSpaceGradient(space: Space): string {
 function getSpaceAccentColor(space: Space): string {
   if (space === "marchand")       return "#1a72c4";
   if (space === "promoteur")      return "#5247b8";
-  if (space === "agence")         return "#3b82f6";
+  if (space === "agence")         return "#16a34a";
   if (space === "banque")         return "#1a7a50";
   if (space === "rehabilitation") return "#ea580c";
   return "#1a72c4";
@@ -120,10 +120,12 @@ function readStoredAccount(): StoredAccount | null {
 }
 
 function isMarchandPremiumPath(path: string): boolean {
-  if (path.indexOf("/marchand-de-bien/sourcing")  >= 0) return true;
-  if (path.indexOf("/marchand-de-bien/execution") >= 0) return true;
-  if (path.indexOf("/marchand-de-bien/planning")  >= 0) return true;
-  if (path.indexOf("/marchand-de-bien/analyse")   >= 0) return true;
+  if (path.indexOf("/marchand-de-bien/sourcing")    >= 0) return true;
+  if (path.indexOf("/marchand-de-bien/execution")   >= 0) return true;
+  if (path.indexOf("/marchand-de-bien/planning")    >= 0) return true;
+  if (path.indexOf("/marchand-de-bien/analyse")     >= 0) return true;
+  if (path.indexOf("/marchand-de-bien/georisques")  >= 0) return true;
+  if (path.indexOf("/marchand-de-bien/deal-center") >= 0) return true;
   return false;
 }
 
@@ -166,14 +168,12 @@ function getPromoteurActiveSection(pathname: string): string | null {
     ["/promoteur/massing-3d",                "faisabilite"],
     ["/promoteur/generateur-facades",        "faisabilite"],
     ["/promoteur/simulation-travaux",        "faisabilite"],
-    ["/promoteur/rendu-travaux",             "faisabilite"],
     ["/promoteur/estimation",                "marche"],
     ["/promoteur/marche",                    "marche"],
     ["/promoteur/logements-sociaux",         "marche"],
     ["/promoteur/bilan-promoteur",           "bilan"],
     ["/promoteur/bilan",                     "bilan"],
-    ["/promoteur/exports",                   "comite"],
-    ["/promoteur/synthese",                  "comite"],
+    ["/promoteur/synthese",                  "bilan"],
   ];
 
   for (const [prefix, sectionId] of prefixMap) {
@@ -234,8 +234,7 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
         { label: "Implantation 2D",    path: "/promoteur/implantation-2d",    icon: Grid3X3 },
         { label: "Massing 3D",         path: "/promoteur/massing-3d",         icon: Cuboid },
         { label: "Façades IA",         path: "/promoteur/generateur-facades", icon: Wand2 },
-        { label: "Simulation travaux", path: "/promoteur/simulation-travaux", icon: Calculator,   separatorBefore: true },
-        { label: "Rendu travaux",      path: "/promoteur/rendu-travaux",      icon: ClipboardList },
+        { label: "Simulation travaux", path: "/promoteur/simulation-travaux", icon: Calculator, separatorBefore: true },
       ],
     },
     {
@@ -252,16 +251,8 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       id: "bilan",
       label: "Bilan",
       items: [
-        { label: "Bilan promoteur",    path: "/promoteur/bilan-promoteur", icon: Calculator },
-        { label: "Exports financiers", path: "/promoteur/exports",         icon: FileText },
-      ],
-    },
-    {
-      id: "comite",
-      label: "Comité",
-      items: [
-        { label: "Synthèse comité", path: "/promoteur/synthese", icon: Sparkles },
-        { label: "Export PDF",      path: "/promoteur/exports",  icon: FileText },
+        { label: "Bilan promoteur", path: "/promoteur/bilan-promoteur", icon: Calculator },
+        { label: "Synthèse comité", path: "/promoteur/synthese",        icon: Sparkles },
       ],
     },
   ],
@@ -297,17 +288,28 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       id: "analyse",
       label: "Analyse",
       items: [
-        { label: "Rentabilite",        path: "/marchand-de-bien/analyse", icon: PieChart,   end: true, tabParam: "rentabilite"       },
-        { label: "Due Diligence",      path: "/marchand-de-bien/analyse", icon: FileText,              tabParam: "due_diligence"     },
-        { label: "Marche / Risques",   path: "/marchand-de-bien/analyse", icon: BarChart3,             tabParam: "marche_risques"    },
-        { label: "Analyse predictive", path: "/marchand-de-bien/analyse", icon: TrendingUp,            tabParam: "analyse_predictive"},
-        { label: "Synthese IA",        path: "/marchand-de-bien/analyse", icon: Sparkles,              tabParam: "synthese_ia"       },
+        { label: "Rentabilite",        path: "/marchand-de-bien/analyse",    icon: PieChart,   end: true, tabParam: "rentabilite"        },
+        { label: "Due Diligence",      path: "/marchand-de-bien/analyse",    icon: FileText,              tabParam: "due_diligence"      },
+        { label: "Étude de marché",    path: "/marchand-de-bien/analyse",    icon: BarChart3,             tabParam: "marche_risques"     },
+        { label: "Étude de risques",   path: "/marchand-de-bien/georisques", icon: ShieldAlert             },
+        { label: "Analyse predictive", path: "/marchand-de-bien/analyse",    icon: TrendingUp,            tabParam: "analyse_predictive" },
+        { label: "Synthese IA",        path: "/marchand-de-bien/analyse",    icon: Sparkles,              tabParam: "synthese_ia"        },
+      ],
+    },
+    {
+      id: "deal-center",
+      label: "Deal Center",
+      items: [
+        { label: "Qualification",     path: "/marchand-de-bien/deal-center", icon: ClipboardList, end: true, tabParam: "qualification"   },
+        { label: "Confiance données", path: "/marchand-de-bien/deal-center", icon: ShieldCheck,             tabParam: "data_confidence"  },
+        { label: "Pack investisseur", path: "/marchand-de-bien/deal-center", icon: FileText,                tabParam: "investment_pack"  },
+        { label: "Revue comité",      path: "/marchand-de-bien/deal-center", icon: Users,                   tabParam: "committee_review" },
+        { label: "Moteur financier",  path: "/marchand-de-bien/deal-center", icon: Calculator,              tabParam: "financial_engine" },
+        { label: "Exports",           path: "/marchand-de-bien/deal-center", icon: FileSearch,              tabParam: "exports"          },
       ],
     },
   ],
   banque: [],
-
-  // ── Réhabilitation ────────────────────────────────────────────────────────
   rehabilitation: [
     {
       id: "projets",
@@ -375,9 +377,7 @@ function getBanqueActiveId(loc: { pathname: string; search: string }): string | 
   try {
     const sp = new URLSearchParams(loc.search);
     return sp.get("id") ?? sp.get("dossierId") ?? sp.get("dossier") ?? sp.get("d") ?? null;
-  } catch {
-    /* noop */
-  }
+  } catch { /* noop */ }
   try {
     return selectActiveDossierId(readBanqueSnapshot()) ?? localStorage.getItem("mimmoza.banque.active_dossier_id");
   } catch {
@@ -475,14 +475,11 @@ function TopNavigation(props: {
   const spaceGradient    = getSpaceGradient(currentSpace);
   const spaceAccent      = getSpaceAccentColor(currentSpace);
 
-  // ── PATCH 1 : toujours vers /compte, ComptePage gère le cas non connecté ──
   function handleAccountClick() {
     navigate("/compte");
   }
 
-  const subTabBaseCls     = "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium whitespace-nowrap transition-all";
-  const subTabActiveCls   = "border border-slate-200 bg-white text-slate-950 shadow-sm";
-  const subTabInactiveCls = "text-slate-500 hover:bg-white/70 hover:text-slate-700";
+  const subTabBaseCls = "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium whitespace-nowrap transition-all";
 
   return (
     <>
@@ -533,6 +530,21 @@ function TopNavigation(props: {
                   {function (navArgs) {
                     const cls = "h-4 w-4 transition-colors " + (navArgs.isActive ? "text-white" : "text-slate-400 group-hover:text-slate-700");
                     return (<><Eye className={cls} /><span>Veille</span></>);
+                  }}
+                </NavLink>
+
+                <NavLink
+                  to="/analyse-rapide"
+                  onClick={() => onChangeSpace("none")}
+                  className="group relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all"
+                  style={function (navArgs) {
+                    if (navArgs.isActive) return { background: "linear-gradient(135deg, #6366f1 0%, #818cf8 100%)", color: "white" };
+                    return { color: "#64748b" };
+                  }}
+                >
+                  {function (navArgs) {
+                    const cls = "h-4 w-4 transition-colors " + (navArgs.isActive ? "text-white" : "text-slate-400 group-hover:text-slate-700");
+                    return (<><Zap className={cls} /><span>Analyse rapide</span></>);
                   }}
                 </NavLink>
 
@@ -638,13 +650,13 @@ function TopNavigation(props: {
             {spaceSections.length > 1 && (
               <div className="flex items-center gap-1 py-2 overflow-x-auto scrollbar-hide">
                 {spaceSections.map(function (section) {
-                  const active    = section.id === activeSection;
-                  const firstItem = section.items[0];
-                  const firstPath = firstItem ? firstItem.path : "";
-                  const firstTab  = firstItem ? firstItem.tabParam : undefined;
+                  const active       = section.id === activeSection;
+                  const firstItem    = section.items[0];
+                  const firstPath    = firstItem ? firstItem.path : "";
+                  const firstTab     = firstItem ? firstItem.tabParam : undefined;
                   const resolvedBase = resolvePath(firstPath);
                   const resolvedPath = buildNavItemPath(resolvedBase, firstTab);
-                  const sectStyle = active ? { background: spaceGradient, color: "white" } : { color: "#64748b" };
+                  const sectStyle    = active ? { background: spaceGradient, color: "white" } : { color: "#64748b" };
                   return (
                     <a
                       key={section.id}
@@ -669,8 +681,8 @@ function TopNavigation(props: {
                     const resolvedBase = resolvePath(item.path);
                     const resolvedPath = buildNavItemPath(resolvedBase, item.tabParam);
                     const itemKey      = item.path + "-" + (item.tabParam ? item.tabParam : "default") + "-" + idx;
-                    const linkCls      = subTabBaseCls + " " + (active ? subTabActiveCls : subTabInactiveCls);
-                    const iconColor    = active ? spaceAccent : "#94a3b8";
+                    const linkStyle    = active ? { background: spaceGradient, color: "white" } : { color: "#64748b" };
+                    const iconColor    = active ? "white" : "#94a3b8";
                     return (
                       <span key={itemKey} className="flex items-center gap-2">
                         {item.separatorBefore && (
@@ -679,7 +691,8 @@ function TopNavigation(props: {
                         <a
                           href={resolvedPath}
                           onClick={function (e) { e.preventDefault(); void onProtectedNavigate(resolvedPath); }}
-                          className={linkCls}
+                          className={subTabBaseCls}
+                          style={linkStyle}
                         >
                           <Icon className="h-4 w-4" style={{ color: iconColor }} />
                           <span>{item.label}</span>
@@ -752,7 +765,7 @@ function MobileDrawer(props: {
     return true;
   }
 
-  const spaceSections = SPACE_NAVIGATION[currentSpace] || [];
+  const spaceSections    = SPACE_NAVIGATION[currentSpace] || [];
   const allNavItems: NavItem[] = [];
   for (const s of spaceSections) {
     for (const it of s.items) allNavItems.push(it);
@@ -767,7 +780,6 @@ function MobileDrawer(props: {
     onClose();
   }
 
-  // ── PATCH 2 : toujours vers /compte, ComptePage gère le cas non connecté ──
   function handleAccountClick() {
     navigate("/compte");
     onClose();
@@ -830,11 +842,11 @@ function MobileDrawer(props: {
                 {currentSpaceMeta ? currentSpaceMeta.label : ""}
               </div>
               {allNavItems.map(function (item, idx) {
-                const Icon     = item.icon;
-                const isActive = isPathActive(item.path, item.end, item.tabParam);
-                const itemKey  = item.path + "-" + (item.tabParam ? item.tabParam : "default") + "-" + idx;
-                const href     = buildNavItemPath(resolvePath(item.path), item.tabParam);
-                const iconCls  = "h-4 w-4 " + (isActive ? "text-white" : "text-slate-400");
+                const Icon        = item.icon;
+                const isActive    = isPathActive(item.path, item.end, item.tabParam);
+                const itemKey     = item.path + "-" + (item.tabParam ? item.tabParam : "default") + "-" + idx;
+                const href        = buildNavItemPath(resolvePath(item.path), item.tabParam);
+                const iconCls     = "h-4 w-4 " + (isActive ? "text-white" : "text-slate-400");
                 const anchorStyle = isActive ? { background: spaceGradient, color: "white" } : { color: "#374151" };
                 return (
                   <div key={itemKey}>
@@ -879,6 +891,7 @@ function MobileDrawer(props: {
 
           <div className="mt-4 border-t border-slate-100 pt-4">
             <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Outils</div>
+
             <NavLink
               to="/veille"
               onClick={onClose}
@@ -893,6 +906,22 @@ function MobileDrawer(props: {
                 return (<><Eye className={cls} /><span className="text-sm font-medium">Veille marche</span></>);
               }}
             </NavLink>
+
+            <NavLink
+              to="/analyse-rapide"
+              onClick={onClose}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 transition-all"
+              style={function (navArgs) {
+                if (navArgs.isActive) return { background: "linear-gradient(135deg, #6366f1 0%, #818cf8 100%)", color: "white" };
+                return { color: "#374151" };
+              }}
+            >
+              {function (navArgs) {
+                const cls = "h-4 w-4 " + (navArgs.isActive ? "text-white" : "text-indigo-400");
+                return (<><Zap className={cls} /><span className="text-sm font-medium">Analyse rapide</span></>);
+              }}
+            </NavLink>
+
             <NavLink
               to="/api"
               onClick={onClose}
@@ -1020,7 +1049,6 @@ export function AppShell(props: AppShellProps) {
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900">
-      {/* ── Mobile header ── */}
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur-md supports-[backdrop-filter]:bg-white/80 md:hidden">
         <div className="flex h-14 items-center justify-between px-4">
           <NavLink to="/" onClick={() => onChangeSpace("none")} className="flex items-center">
@@ -1048,7 +1076,6 @@ export function AppShell(props: AppShellProps) {
         </div>
       </header>
 
-      {/* ── Desktop header ── */}
       <header className="sticky top-0 z-40 hidden md:block">
         <TopNavigation
           currentSpace={currentSpace}

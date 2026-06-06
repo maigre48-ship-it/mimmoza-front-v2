@@ -583,34 +583,13 @@ export default function PermisConstruirePage() {
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-8">
         {/* En-tête violet */}
-        <div className="mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-violet-400 to-violet-500 px-6 py-6 shadow-sm md:px-8 md:py-7">
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-violet-100">
-            Promoteur › Études
+        <div className="mb-6 overflow-hidden rounded-[32px] bg-gradient-to-r from-[#6f5bd6] via-[#8d78df] to-[#b39ddb] px-8 py-8 text-white shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white/90">
+            Promoteur · Opportunités
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <div
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 text-white backdrop-blur-sm"
-              aria-hidden="true"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <path d="M14 2v6h6" />
-                <path d="M9 13h6" />
-                <path d="M9 17h6" />
-              </svg>
-            </div>
-            <h1 className="text-2xl font-bold text-white md:text-3xl">
-              Permis de construire
+            <h1 className="text-4xl font-semibold tracking-tight">
+              Permis comparables
             </h1>
             {selectedCommune && (
               <span className="inline-flex items-center rounded-lg bg-white/15 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm">
@@ -626,25 +605,10 @@ export default function PermisConstruirePage() {
               className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm"
               title="Base officielle des autorisations d'urbanisme · data.gouv.fr"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                <path d="m9 12 2 2 4-4" />
-              </svg>
               Source : Sit@del2 · data.gouv.fr
             </span>
           </div>
-          <p className="mt-2 max-w-3xl text-sm text-violet-50/90">
+          <p className="mt-3 max-w-3xl text-sm text-slate-200">
             Recherchez les permis déposés autour du projet dans un rayon paramétrable.
             Filtres explicites, tri explicite, aucun scoring.
           </p>

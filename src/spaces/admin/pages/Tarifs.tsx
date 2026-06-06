@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import {
   BadgeEuro,
+  Bot,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -23,7 +24,7 @@ import {
 
 export type PricingEntry = {
   planKey: string;
-  space: "investisseur" | "promoteur" | "rehabilitation" | "apporteur";
+  space: "investisseur" | "promoteur" | "rehabilitation" | "apporteur" | "copilot";
   title: string;
   badge: string;
   price: string;
@@ -32,7 +33,7 @@ export type PricingEntry = {
   active: boolean;
 };
 
-// ── Tarifs par défaut (miroir exact de AbonnementPage) ────────────────────────
+// ── Tarifs par défaut ─────────────────────────────────────────────────────────
 
 export const DEFAULT_PRICING: PricingEntry[] = [
   // ── Investisseur ────────────────────────────────────────────────────────
@@ -114,6 +115,34 @@ export const DEFAULT_PRICING: PricingEntry[] = [
     badge: "Réseau", title: "Partenariat",
     price: "Sur devis", unit: "", quota: 0, active: true,
   },
+  // ── Copilot — Crédits (base ×12, 0,040 €/crédit) ────────────────────────
+  // Quick = 1 crédit = 0,04 €  |  Avancé = 15 crédits = 0,60 €
+  // Coût réel : 0,00358 $ / crédit  →  ×12 = 0,043 $ ≈ 0,040 €
+  {
+    planKey: "copilot-100", space: "copilot",
+    badge: "Copilot", title: "Pack 100 crédits",
+    price: "4,00€ HT", unit: "", quota: 100, active: true,
+  },
+  {
+    planKey: "copilot-500", space: "copilot",
+    badge: "Copilot", title: "Pack 500 crédits",
+    price: "18,00€ HT", unit: "", quota: 500, active: true,
+  },
+  {
+    planKey: "copilot-1000", space: "copilot",
+    badge: "Copilot", title: "Pack 1 000 crédits",
+    price: "34,00€ HT", unit: "", quota: 1000, active: true,
+  },
+  {
+    planKey: "copilot-5000", space: "copilot",
+    badge: "Copilot", title: "Pack 5 000 crédits",
+    price: "160,00€ HT", unit: "", quota: 5000, active: true,
+  },
+  {
+    planKey: "copilot-10000", space: "copilot",
+    badge: "Copilot", title: "Pack 10 000 crédits",
+    price: "300,00€ HT", unit: "", quota: 10000, active: true,
+  },
 ];
 
 const STORAGE_KEY = "mimmoza.pricing";
@@ -123,10 +152,11 @@ const SPACE_LABELS: Record<PricingEntry["space"], string> = {
   promoteur:      "Promoteur",
   rehabilitation: "Réhabilitation",
   apporteur:      "Apporteur",
+  copilot:        "Copilot IA",
 };
 
 const SPACE_ORDER: PricingEntry["space"][] = [
-  "investisseur", "promoteur", "rehabilitation", "apporteur",
+  "copilot", "investisseur", "promoteur", "rehabilitation", "apporteur",
 ];
 
 const SPACE_COLORS: Record<PricingEntry["space"], string> = {
@@ -134,6 +164,7 @@ const SPACE_COLORS: Record<PricingEntry["space"], string> = {
   promoteur:      "bg-indigo-100 text-indigo-700 border-indigo-200",
   rehabilitation: "bg-teal-100 text-teal-700 border-teal-200",
   apporteur:      "bg-orange-100 text-orange-700 border-orange-200",
+  copilot:        "bg-violet-100 text-violet-700 border-violet-200",
 };
 
 // ── Helpers localStorage ──────────────────────────────────────────────────────
@@ -143,7 +174,6 @@ export function loadPricing(): PricingEntry[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_PRICING;
     const parsed = JSON.parse(raw) as PricingEntry[];
-    // Merge : on garde les entrées par défaut non présentes dans le storage
     const keys = new Set(parsed.map((e) => e.planKey));
     const missing = DEFAULT_PRICING.filter((e) => !keys.has(e.planKey));
     return [...parsed, ...missing];
@@ -163,7 +193,6 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
     const t = setTimeout(onDone, 2500);
     return () => clearTimeout(t);
   }, [onDone]);
-
   return (
     <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 shadow-lg">
       <CheckCircle2 className="h-5 w-5 text-emerald-500" />
@@ -175,10 +204,7 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
 type EditableField = "title" | "badge" | "price" | "unit" | "quota";
 
 function EditableCell({
-  value,
-  type = "text",
-  onChange,
-  className = "",
+  value, type = "text", onChange, className = "",
 }: {
   value: string | number;
   type?: "text" | "number";
@@ -199,13 +225,33 @@ function EditableCell({
   );
 }
 
+// ── Bloc info Copilot ─────────────────────────────────────────────────────────
+
+function CopilotPricingInfo() {
+  return (
+    <div className="mx-6 mb-4 mt-2 rounded-2xl border border-violet-100 bg-violet-50 px-5 py-4">
+      <div className="flex items-start gap-3">
+        <Bot className="mt-0.5 h-4 w-4 shrink-0 text-violet-500" />
+        <div className="text-xs leading-5 text-violet-700">
+          <strong className="font-semibold text-violet-900">Base tarifaire ×12</strong>
+          {" "}— Coût réel Anthropic : <strong>0,00358 $ / crédit</strong> (mesuré sur 30j).
+          Marge ×12 → <strong>0,040 € / crédit</strong>.
+          <span className="ml-2 text-violet-500">
+            Quick (1 crédit) = 0,04 € · Avancé (15 crédits) = 0,60 € · Report (30 crédits) = 1,20 €
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Page principale ───────────────────────────────────────────────────────────
 
 export default function AdminTarifsPage() {
-  const [entries, setEntries]         = useState<PricingEntry[]>(() => loadPricing());
-  const [collapsed, setCollapsed]     = useState<Set<string>>(new Set());
-  const [toast, setToast]             = useState<string | null>(null);
-  const [dirty, setDirty]             = useState(false);
+  const [entries, setEntries] = useState<PricingEntry[]>(() => loadPricing());
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
 
   function update(planKey: string, field: EditableField | "active", value: string | number | boolean) {
     setEntries((prev) =>
@@ -257,14 +303,9 @@ export default function AdminTarifsPage() {
             </h1>
             <p className="mt-1.5 text-sm text-slate-500">
               Modifiez les tarifs affichés sur{" "}
-              <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[12px]">
-                /abonnement
-              </code>
-              . Les modifications sont enregistrées dans{" "}
-              <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[12px]">
-                localStorage
-              </code>
-              .
+              <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[12px]">/abonnement</code>.
+              Les modifications sont enregistrées dans{" "}
+              <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[12px]">localStorage</code>.
             </p>
           </div>
 
@@ -280,13 +321,11 @@ export default function AdminTarifsPage() {
             <button
               type="button"
               onClick={handleSave}
+              disabled={!dirty}
               className={[
                 "inline-flex items-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-medium text-white shadow-sm transition",
-                dirty
-                  ? "bg-indigo-600 hover:bg-indigo-500"
-                  : "bg-slate-300 cursor-default",
+                dirty ? "bg-indigo-600 hover:bg-indigo-500" : "bg-slate-300 cursor-default",
               ].join(" ")}
-              disabled={!dirty}
             >
               <Save className="h-4 w-4" />
               Enregistrer
@@ -303,135 +342,158 @@ export default function AdminTarifsPage() {
 
       {/* ── Tableaux par espace ─────────────────────────────────────────────── */}
       {bySpace.map(({ space, items }) => {
-        const isOpen = !collapsed.has(space);
+        const isOpen   = !collapsed.has(space);
         const colorCls = SPACE_COLORS[space];
+        const isCopilot = space === "copilot";
 
         return (
           <div
             key={space}
-            className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm"
+            className={[
+              "overflow-hidden rounded-[28px] border bg-white shadow-sm",
+              isCopilot ? "border-violet-200" : "border-slate-200",
+            ].join(" ")}
           >
             {/* Section header */}
             <button
               type="button"
               onClick={() => toggleCollapse(space)}
-              className="flex w-full items-center justify-between px-6 py-4 text-left hover:bg-slate-50/60 transition-colors"
+              className={[
+                "flex w-full items-center justify-between px-6 py-4 text-left transition-colors",
+                isCopilot ? "hover:bg-violet-50/40" : "hover:bg-slate-50/60",
+              ].join(" ")}
             >
               <div className="flex items-center gap-3">
-                <span
-                  className={`inline-flex items-center rounded-xl border px-3 py-1 text-xs font-semibold ${colorCls}`}
-                >
+                {isCopilot && <Bot className="h-4 w-4 text-violet-500" />}
+                <span className={`inline-flex items-center rounded-xl border px-3 py-1 text-xs font-semibold ${colorCls}`}>
                   {SPACE_LABELS[space]}
                 </span>
                 <span className="text-sm text-slate-400">{items.length} offre(s)</span>
+                {isCopilot && (
+                  <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-600">
+                    0,040 € / crédit · ×12
+                  </span>
+                )}
               </div>
-              {isOpen ? (
-                <ChevronDown className="h-4 w-4 text-slate-400" />
-              ) : (
-                <ChevronRight className="h-4 w-4 text-slate-400" />
-              )}
+              {isOpen
+                ? <ChevronDown className="h-4 w-4 text-slate-400" />
+                : <ChevronRight className="h-4 w-4 text-slate-400" />
+              }
             </button>
 
             {isOpen && (
-              <div className="overflow-x-auto border-t border-slate-100">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-slate-50 text-left text-xs font-medium text-slate-400">
-                    <tr>
-                      <th className="px-4 py-3 w-28">Plan Key</th>
-                      <th className="px-4 py-3 w-28">Badge</th>
-                      <th className="px-4 py-3">Titre</th>
-                      <th className="px-4 py-3 w-36">Prix HT</th>
-                      <th className="px-4 py-3 w-28">Unité</th>
-                      <th className="px-4 py-3 w-24">Quota</th>
-                      <th className="px-4 py-3 w-24 text-center">Actif</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((entry, idx) => (
-                      <tr
-                        key={entry.planKey}
-                        className={[
-                          "border-t border-slate-100 align-middle transition-colors",
-                          !entry.active ? "opacity-40" : "hover:bg-slate-50/40",
-                          idx % 2 === 0 ? "" : "bg-slate-50/30",
-                        ].join(" ")}
-                      >
-                        {/* planKey — non éditable, identifiant */}
-                        <td className="px-4 py-2.5">
-                          <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">
-                            {entry.planKey}
-                          </code>
-                        </td>
-
-                        {/* badge */}
-                        <td className="px-4 py-2.5">
-                          <EditableCell
-                            value={entry.badge}
-                            onChange={(v) => update(entry.planKey, "badge", v)}
-                          />
-                        </td>
-
-                        {/* title */}
-                        <td className="px-4 py-2.5">
-                          <EditableCell
-                            value={entry.title}
-                            onChange={(v) => update(entry.planKey, "title", v)}
-                            className="font-medium"
-                          />
-                        </td>
-
-                        {/* price */}
-                        <td className="px-4 py-2.5">
-                          <EditableCell
-                            value={entry.price}
-                            onChange={(v) => update(entry.planKey, "price", v)}
-                          />
-                        </td>
-
-                        {/* unit */}
-                        <td className="px-4 py-2.5">
-                          <select
-                            value={entry.unit}
-                            onChange={(e) => update(entry.planKey, "unit", e.target.value)}
-                            className="w-full rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm text-slate-700 outline-none transition hover:border-slate-200 hover:bg-slate-50 focus:border-slate-300 focus:bg-white"
-                          >
-                            <option value="">—</option>
-                            <option value="/mois">/mois</option>
-                            <option value="/an">/an</option>
-                            <option value="/analyse">/analyse</option>
-                            <option value="sur devis">sur devis</option>
-                          </select>
-                        </td>
-
-                        {/* quota */}
-                        <td className="px-4 py-2.5">
-                          <EditableCell
-                            type="number"
-                            value={entry.quota}
-                            onChange={(v) => update(entry.planKey, "quota", parseInt(v, 10) || 0)}
-                          />
-                        </td>
-
-                        {/* active toggle */}
-                        <td className="px-4 py-2.5 text-center">
-                          <button
-                            type="button"
-                            onClick={() => update(entry.planKey, "active", !entry.active)}
-                            className="inline-flex items-center justify-center rounded-lg p-1 transition hover:bg-slate-100"
-                            title={entry.active ? "Désactiver" : "Activer"}
-                          >
-                            {entry.active ? (
-                              <ToggleRight className="h-6 w-6 text-emerald-500" />
-                            ) : (
-                              <ToggleLeft className="h-6 w-6 text-slate-300" />
-                            )}
-                          </button>
-                        </td>
+              <>
+                {isCopilot && <CopilotPricingInfo />}
+                <div className="overflow-x-auto border-t border-slate-100">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-xs font-medium text-slate-400">
+                      <tr>
+                        <th className="px-4 py-3 w-36">Plan Key</th>
+                        <th className="px-4 py-3 w-28">Badge</th>
+                        <th className="px-4 py-3">Titre</th>
+                        <th className="px-4 py-3 w-36">Prix HT</th>
+                        <th className="px-4 py-3 w-28">Unité</th>
+                        <th className="px-4 py-3 w-28">Crédits</th>
+                        <th className="px-4 py-3 w-24 text-center">Actif</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {items.map((entry, idx) => (
+                        <tr
+                          key={entry.planKey}
+                          className={[
+                            "border-t border-slate-100 align-middle transition-colors",
+                            !entry.active ? "opacity-40" : isCopilot ? "hover:bg-violet-50/30" : "hover:bg-slate-50/40",
+                            idx % 2 === 0 ? "" : "bg-slate-50/30",
+                          ].join(" ")}
+                        >
+                          {/* planKey */}
+                          <td className="px-4 py-2.5">
+                            <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">
+                              {entry.planKey}
+                            </code>
+                          </td>
+
+                          {/* badge */}
+                          <td className="px-4 py-2.5">
+                            <EditableCell
+                              value={entry.badge}
+                              onChange={(v) => update(entry.planKey, "badge", v)}
+                            />
+                          </td>
+
+                          {/* title */}
+                          <td className="px-4 py-2.5">
+                            <EditableCell
+                              value={entry.title}
+                              onChange={(v) => update(entry.planKey, "title", v)}
+                              className="font-medium"
+                            />
+                          </td>
+
+                          {/* price */}
+                          <td className="px-4 py-2.5">
+                            <EditableCell
+                              value={entry.price}
+                              onChange={(v) => update(entry.planKey, "price", v)}
+                            />
+                          </td>
+
+                          {/* unit */}
+                          <td className="px-4 py-2.5">
+                            <select
+                              value={entry.unit}
+                              onChange={(e) => update(entry.planKey, "unit", e.target.value)}
+                              className="w-full rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm text-slate-700 outline-none transition hover:border-slate-200 hover:bg-slate-50 focus:border-slate-300 focus:bg-white"
+                            >
+                              <option value="">—</option>
+                              <option value="/mois">/mois</option>
+                              <option value="/an">/an</option>
+                              <option value="/analyse">/analyse</option>
+                              <option value="sur devis">sur devis</option>
+                            </select>
+                          </td>
+
+                          {/* quota / crédits */}
+                          <td className="px-4 py-2.5">
+                            {isCopilot ? (
+                              <div className="flex items-center gap-1.5">
+                                <EditableCell
+                                  type="number"
+                                  value={entry.quota}
+                                  onChange={(v) => update(entry.planKey, "quota", parseInt(v, 10) || 0)}
+                                />
+                                <span className="shrink-0 text-xs text-slate-400">cr.</span>
+                              </div>
+                            ) : (
+                              <EditableCell
+                                type="number"
+                                value={entry.quota}
+                                onChange={(v) => update(entry.planKey, "quota", parseInt(v, 10) || 0)}
+                              />
+                            )}
+                          </td>
+
+                          {/* active toggle */}
+                          <td className="px-4 py-2.5 text-center">
+                            <button
+                              type="button"
+                              onClick={() => update(entry.planKey, "active", !entry.active)}
+                              className="inline-flex items-center justify-center rounded-lg p-1 transition hover:bg-slate-100"
+                              title={entry.active ? "Désactiver" : "Activer"}
+                            >
+                              {entry.active
+                                ? <ToggleRight className="h-6 w-6 text-emerald-500" />
+                                : <ToggleLeft  className="h-6 w-6 text-slate-300" />
+                              }
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         );
@@ -442,12 +504,12 @@ export default function AdminTarifsPage() {
         <div className="flex items-start gap-3">
           <Pencil className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
           <div className="text-xs leading-5 text-slate-500">
-            <strong className="font-semibold text-slate-700">Comment ça marche</strong>{" "}
-            — cliquez dans une cellule pour éditer. Le bouton{" "}
+            <strong className="font-semibold text-slate-700">Comment ça marche</strong>
+            {" "}— cliquez dans une cellule pour éditer. Le bouton{" "}
             <strong>Enregistrer</strong> écrit dans{" "}
             <code className="rounded bg-slate-200 px-1">localStorage["mimmoza.pricing"]</code>.
             La page <code className="rounded bg-slate-200 px-1">/abonnement</code> relit cette clé à chaque affichage.
-            Le champ <strong>Quota</strong> est informatif (0 = illimité ou non applicable).
+            Pour les packs Copilot, le champ <strong>Crédits</strong> correspond au nombre de crédits débloqués.
             Désactiver une offre la masque sur la page abonnement.
           </div>
         </div>

@@ -10,7 +10,7 @@ import { useNavigate } from "react-router-dom";
 
 /* ── Thème ── */
 const ACCENT    = "#f97316";
-const GRAD      = "linear-gradient(90deg, #f97316 0%, #ef4444 100%)";
+const GRAD      = "linear-gradient(135deg, #ea580c 0%, #fb923c 100%)";
 const ACCENT_DARK = "#c2410c";
 
 /* ── Clés localStorage ── */
@@ -181,36 +181,39 @@ const SyntheseAuditPage: React.FC = () => {
     <div style={{ minHeight: "100vh", background: "#f1f5f9" }}>
 
       {/* Bannière */}
-      <div style={{ background: GRAD, borderRadius: 16, padding: "24px 28px", marginBottom: 24 }}>
-        <p style={{ fontSize: 10, color: "rgba(255,255,255,.6)", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>
-          Réhabilitation › Synthèse audit
-        </p>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <Sparkles size={22} color="#fff" />
-            <div>
-              <h1 style={{ fontSize: 22, fontWeight: 900, color: "#fff", margin: 0 }}>Synthèse audit</h1>
-              <p style={{ fontSize: 13, color: "rgba(255,255,255,.75)", margin: 0 }}>
-                Consolidation de toutes les étapes du projet
-              </p>
-            </div>
-          </div>
-          <button
-            type="button" onClick={loadAll}
-            style={{
-              display: "flex", alignItems: "center", gap: 8,
-              padding: "9px 18px", borderRadius: 10, border: "none",
-              background: "rgba(255,255,255,0.18)", color: "#fff",
-              fontSize: 13, fontWeight: 600, cursor: "pointer",
-            }}
-          >
-            <RefreshCw size={14} />
-            Actualiser
-          </button>
+      <div style={{
+        background: GRAD, borderRadius: 24, padding: "32px 36px", marginBottom: 24,
+        boxShadow: "0 8px 32px rgba(234,88,12,0.22)",
+        position: "relative", overflow: "hidden",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        gap: 20, flexWrap: "wrap",
+      }}>
+        <div style={{ position: "relative" }}>
+          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
+            Réhabilitation · Synthèse audit
+          </p>
+          <h1 style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5 }}>
+            Synthèse audit
+          </h1>
+          <p style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55, margin: 0 }}>
+            Consolidation de toutes les étapes du projet
+          </p>
+          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 10, marginBottom: 0 }}>
+            Dernière mise à jour : {lastRefresh.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+          </p>
         </div>
-        <p style={{ fontSize: 11, color: "rgba(255,255,255,.5)", marginTop: 10, marginBottom: 0 }}>
-          Dernière mise à jour : {lastRefresh.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
-        </p>
+        <button
+          type="button" onClick={loadAll}
+          style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "10px 20px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.2)",
+            background: "rgba(255,255,255,0.15)", color: "#fff",
+            fontSize: 13, fontWeight: 600, cursor: "pointer", flexShrink: 0,
+          }}
+        >
+          <RefreshCw size={14} />
+          Actualiser
+        </button>
       </div>
 
       <div style={{ maxWidth: 860, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>

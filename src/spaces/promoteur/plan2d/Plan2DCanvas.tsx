@@ -339,6 +339,7 @@ function toSvgPath(pts: Point2D[]): string {
 // amplifie ces artefacts différemment sans les corriger.
 // On utilise directement toSvgPoints / toSvgPath → rendu propre garanti.
 
+
 // ── Build zone helpers ────────────────────────────────────────────────
 
 function isPointInBuildZone(
@@ -1034,7 +1035,7 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
               fillRule="evenodd"
               stroke="none"
             />
-            {/* Contour de l'enveloppe — polygon direct, pas de lissage */}
+            {/* Contour de l'enveloppe — géométrie nettoyée par removeSpikes, pas de lissage */}
             <polygon
               points={toSvgPoints(buildableEnvelope)}
               fill="none"

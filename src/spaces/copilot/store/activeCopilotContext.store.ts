@@ -1,8 +1,31 @@
 // src/spaces/copilot/store/activeCopilotContext.store.ts
+// PATCH V1.1 : ajout de ActiveDealRef et PageContextRef dans le snapshot
+// ─────────────────────────────────────────────────────────────────────────────
 
 import { create } from 'zustand';
 
-// ─── Type snapshot (défini AVANT l'interface pour pouvoir l'y référencer) ────
+// ─── Nouveaux types V1.1 ──────────────────────────────────────────────────────
+
+export interface ActiveDealRef {
+  id: string;
+  title?: string;
+  address?: string;
+  parcelId?: string | null;
+  surface?: number | null;
+  purchasePrice?: number | null;
+  resalePrice?: number | null;
+  worksBudget?: number | null;
+  status?: string;
+}
+
+export interface PageContextRef {
+  pathname: string;
+  space?: string;   // 'marchand' | 'investisseur' | 'promoteur' | ...
+  mode?: string;    // 'acquisition' | 'execution' | 'analyse'
+  tab?: string;     // 'pipeline' | 'simulation' | 'travaux' | 'rentabilite' | ...
+}
+
+// ─── Type snapshot ─────────────────────────────────────────────────────────────
 export interface ActiveCopilotSnapshot {
   activeListingId?: string;
   listingUrl?: string;
@@ -20,9 +43,17 @@ export interface ActiveCopilotSnapshot {
     | 'apporteur'
     | 'particulier'
     | 'generique';
+  // ── Travaux (simulateur) ─────────────────────────────────
+  renovation_cost_total?: number;
+  renovation_cost_per_m2?: number;
+  renovation_level?: string;
+  renovation_gamme?: string;
+  // ── V1.1 — Deal actif et contexte de page ───────────────
+  activeDeal?: ActiveDealRef;
+  pageContext?: PageContextRef;
 }
 
-// ─── Interface store complète (actions + snapshot) ────────────────────────────
+// ─── Interface store ───────────────────────────────────────────────────────────
 export interface ActiveCopilotContextState extends ActiveCopilotSnapshot {
   setActiveCopilotContext: (partial: Partial<ActiveCopilotSnapshot>) => void;
   clearActiveCopilotContext: () => void;
@@ -30,16 +61,23 @@ export interface ActiveCopilotContextState extends ActiveCopilotSnapshot {
 }
 
 const INITIAL_STATE: ActiveCopilotSnapshot = {
-  activeListingId: undefined,
-  listingUrl:      undefined,
-  city:            undefined,
-  zipCode:         undefined,
-  price:           undefined,
-  surface:         undefined,
-  propertyType:    undefined,
-  parcelId:        undefined,
-  route:           undefined,
-  vertical:        undefined,
+  activeListingId:        undefined,
+  listingUrl:             undefined,
+  city:                   undefined,
+  zipCode:                undefined,
+  price:                  undefined,
+  surface:                undefined,
+  propertyType:           undefined,
+  parcelId:               undefined,
+  route:                  undefined,
+  vertical:               undefined,
+  renovation_cost_total:  undefined,
+  renovation_cost_per_m2: undefined,
+  renovation_level:       undefined,
+  renovation_gamme:       undefined,
+  // V1.1
+  activeDeal:             undefined,
+  pageContext:            undefined,
 };
 
 export const useActiveCopilotContext = create<ActiveCopilotContextState>(
@@ -86,4 +124,10 @@ export function hasActiveListing(): boolean {
     ctx.listingUrl ||
     (ctx.city && ctx.price && ctx.surface)
   );
+}
+
+/** V1.1 — Retourne true si un deal est actif dans le contexte courant */
+export function hasActiveDeal(): boolean {
+  const ctx = getActiveCopilotContext();
+  return !!(ctx.activeDeal?.id);
 }

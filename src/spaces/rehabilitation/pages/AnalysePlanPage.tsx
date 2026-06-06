@@ -39,7 +39,7 @@ import { EMPTY_GEOMETRY, confidenceLabel } from '../plan-reader/types';
 const ACCENT       = "#f97316";
 const ACCENT_LIGHT = "#fff7ed";
 const ACCENT_DARK  = "#c2410c";
-const GRAD         = "linear-gradient(90deg, #f97316 0%, #ef4444 100%)";
+const GRAD         = "linear-gradient(135deg, #ea580c 0%, #fb923c 100%)";
 
 // ─── Types locaux ─────────────────────────────────────────────────────────────
 
@@ -1232,29 +1232,28 @@ export const AnalysePlanPage: React.FC = () => {
 
       {/* Bannière */}
       <div style={{
-        background: GRAD, borderRadius: 16, padding: "24px 28px",
+        background: GRAD, borderRadius: 24, padding: "32px 36px",
         marginBottom: 24, display: "flex", alignItems: "center",
-        justifyContent: "space-between", flexWrap: "wrap", gap: 16,
+        justifyContent: "space-between", flexWrap: "wrap", gap: 20,
+        boxShadow: "0 8px 32px rgba(234,88,12,0.22)",
+        position: "relative", overflow: "hidden",
       }}>
-        <div>
-          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>
-            Réhabilitation › Analyse du plan
+        <div style={{ position: "relative" }}>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
+            Réhabilitation · Analyse du plan
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <ScanLine size={22} color="#fff" />
-            <div>
-              <h1 style={{ fontSize: 22, fontWeight: 900, color: "#fff", margin: 0 }}>Analyse du plan</h1>
-              <p style={{ fontSize: 13, color: "rgba(255,255,255,.75)", margin: 0 }}>
-                Analyse réglementaire et fonctionnelle du bâtiment
-              </p>
-            </div>
-          </div>
+          <h1 style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5 }}>
+            Analyse du plan
+          </h1>
+          <p style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>
+            Analyse réglementaire et fonctionnelle du bâtiment
+          </p>
         </div>
         <span style={{
           display: "inline-flex", alignItems: "center", gap: 6,
-          padding: "6px 14px", borderRadius: 10,
-          background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,.25)",
-          color: "#fff", fontSize: 12, fontWeight: 700,
+          padding: "8px 14px", borderRadius: 12,
+          background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)",
+          color: "#fff", fontSize: 12, fontWeight: 700, flexShrink: 0,
         }}>
           <Sparkles size={13} />
           V9 — Surface officielle plan

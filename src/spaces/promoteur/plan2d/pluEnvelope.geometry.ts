@@ -1,25 +1,38 @@
-// src/spaces/promoteur/plan2d/pluEnvelope.geometry.ts — v9
+// src/spaces/promoteur/plan2d/pluEnvelope.geometry.ts — v12
 //
 // Inward offset polygon + résolveur d'auto-intersections.
 // Aucun clip Sutherland-Hodgman global → stable sur toutes formes de parcelles.
 //
-// Pipeline :
-//   1. classifyEdgeSetbacks   → front / side / rear
-//   2. buildOffsetPolygon     → miter (sommet convexe) / bevel (sommet concave)
-//   3. resolvePolygon         → supprime les boucles parasites d'auto-intersection
-//                               en gardant le sous-polygone qui contient un point
-//                               de référence GARANTI à l'intérieur de la parcelle
-//   4. clampToInterior        → sécurité : points hors-parcelle ramenés à l'intérieur
-//   5. removeNearDuplicates + removeCollinear
-//   6. Validation aire
+// CHANGEMENTS v12 (vs v11) — corrige le notch persistant aux pointes :
+//   • simplifyClosed (Douglas-Peucker) en TÊTE de computeBuildableEnvelope.
+//     CAUSE RACINE : buildOffsetPolygon itère sur chaque sommet BRUT du cadastre
+//     (le regroupement en faces ne sert qu'à l'attribution des reculs, pas à la
+//     géométrie de l'offset). Aux pointes, chaque micro-sommet émet un point
+//     offset → ils zigzaguent → notch. DP retire le bruit des côtés mais garde
+//     les vrais coins/pointes (forte déviation) → l'offset tourne sur une
+//     géométrie propre, la pointe = 1 seul apex net.
+//   • buildOffsetPolygon : sur angle aigu, l'apex est borné LE LONG de la
+//     bissectrice (vers l'intérieur) au lieu de pousser aPrev/aCurr (qui
+//     débordaient vers la pointe).
+//   • frontEdgeIndex est remappé sur le polygone simplifié (par proximité du
+//     milieu de l'arête façade d'origine).
 //
-// Robustesse clé :
-//   • findInteriorPoint()  → centroïde surfacique (Σ aires), puis scan de l'arête
-//                            la plus longue si le centroïde est hors-polygone.
-//                            Garantit un point de référence correct même sur
-//                            des parcelles très concaves ou en L/U.
-//   • resolvePolygon()     → fallback "sous-polygone le plus grand" si le point
-//                            de référence tombe dans les deux ou aucune portion.
+// CHANGEMENTS v11 :
+//   • removeSpikes : supprime les "aiguilles" (rebroussements) laissées par
+//     resolvePolygon sur les pointes trop étroites pour le recul.
+//
+// CHANGEMENTS v10 :
+//   1. classifyEdgeSetbacks raisonne sur des FACES (groupes d'arêtes colinéaires).
+//   2. buildOffsetPolygon : garde-fou quasi-colinéaire (bissecteur).
+//
+// Pipeline :
+//   0. simplifyClosed         → Douglas-Peucker (retire le bruit cadastral)
+//   1. classifyEdgeSetbacks   → front / side / rear (par faces)
+//   2. buildOffsetPolygon     → miter (convexe) / bevel (concave) / bissecteur
+//   3. resolvePolygon         → supprime les boucles parasites d'auto-intersection
+//   4. clampToInterior        → points hors-parcelle ramenés à l'intérieur
+//   5. removeNearDuplicates + removeCollinear + removeSpikes
+//   6. Validation aire
 //
 // Exports conservés :
 //   polygonAreaM2 · pointInPolygon · nearestParcelEdge
@@ -34,11 +47,15 @@ export interface SetbackRules {
   rearM:  number;
 }
 
-const EPS         = 1e-9;
-const SEG_EPS     = 1e-6;
-const MITER_LIMIT = 8;
-const DEDUP_DIST  = 0.05;
-const COLLIN_SIN  = 0.02;
+const EPS                = 1e-9;
+const SEG_EPS            = 1e-6;
+const MITER_LIMIT        = 8;
+const DEDUP_DIST         = 0.05;
+const COLLIN_SIN         = 0.02;
+const NEAR_COLLINEAR_SIN = 0.07;  // ~4° : seuil de quasi-colinéarité (miter)
+const FACE_ANGLE_TOL_DEG = 12;    // tolérance de regroupement des arêtes en faces
+const SPIKE_REVERSE_DOT  = -0.7;  // rebroussement > ~134° = aiguille à supprimer
+const SIMPLIFY_EPS_M     = 0.5;   // Douglas-Peucker : tolérance de simplification (m)
 
 // ── Utilitaires géométriques ───────────────────────────────────────────
 
@@ -63,6 +80,10 @@ function shoelaceSigned(poly: Point2D[]): number {
 
 function dot(a: Point2D, b: Point2D): number {
   return a.x * b.x + a.y * b.y;
+}
+
+function crossZ(a: Point2D, b: Point2D): number {
+  return a.x * b.y - a.y * b.x;
 }
 
 function normalize(v: Point2D): Point2D {
@@ -93,17 +114,62 @@ function areaCentroid(poly: Point2D[]): Point2D {
   return { x: cx / (3 * signedArea), y: cy / (3 * signedArea) };
 }
 
+// ── Simplification Douglas-Peucker (polygone fermé) ────────────────────
+//
+// Retire les micro-segments parasites de la numérisation cadastrale tout en
+// conservant les vrais coins (forte déviation). C'est ce polygone qui alimente
+// l'offset → plus de points offset parasites aux pointes.
+
+// Distance point → DROITE (a,b) (pas segment) : DP travaille sur la droite.
+function perpLineDist(p: Point2D, a: Point2D, b: Point2D): number {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len < EPS) return Math.hypot(p.x - a.x, p.y - a.y);
+  return Math.abs(dx * (a.y - p.y) - (a.x - p.x) * dy) / len;
+}
+
+function douglasPeuckerOpen(pts: Point2D[], eps: number): Point2D[] {
+  if (pts.length < 3) return pts.slice();
+  let maxD = 0, idx = 0;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const d = perpLineDist(pts[i], pts[0], pts[pts.length - 1]);
+    if (d > maxD) { maxD = d; idx = i; }
+  }
+  if (maxD > eps) {
+    const left  = douglasPeuckerOpen(pts.slice(0, idx + 1), eps);
+    const right = douglasPeuckerOpen(pts.slice(idx), eps);
+    return left.slice(0, -1).concat(right);
+  }
+  return [pts[0], pts[pts.length - 1]];
+}
+
+function simplifyClosed(poly: Point2D[], eps: number): Point2D[] {
+  const n = poly.length;
+  if (n < 4) return poly.slice();
+
+  // Ancrer sur le sommet le plus éloigné du centroïde : c'est un vrai coin
+  // (souvent une pointe) → on garantit qu'il survit à la simplification.
+  const c = vertexCentroid(poly);
+  let anchor = 0, far = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const d = Math.hypot(poly[i].x - c.x, poly[i].y - c.y);
+    if (d > far) { far = d; anchor = i; }
+  }
+
+  const rotated: Point2D[] = [];
+  for (let k = 0; k <= n; k++) rotated.push(poly[(anchor + k) % n]); // boucle fermée (anchor dupliqué)
+
+  const simplified = douglasPeuckerOpen(rotated, eps);
+  simplified.pop(); // retire le doublon de fermeture
+
+  return simplified.length >= 3 ? simplified : poly.slice();
+}
+
 // Trouve un point GARANTI à l'intérieur de la parcelle.
-// Stratégie :
-//   1. Centroïde surfacique
-//   2. Si hors-polygon → pour chaque arête, sonde des points décalés vers
-//      l'intérieur (1 m, 2 m, 5 m) jusqu'à trouver un point intérieur.
-//   3. Fallback : centroïde des sommets
 function findInteriorPoint(poly: Point2D[]): Point2D {
   const c = areaCentroid(poly);
   if (pointInPolygon(c, poly)) return c;
 
-  // Scan des milieux d'arêtes + décalage vers l'intérieur approximatif
   const vc = vertexCentroid(poly);
   for (let i = 0; i < poly.length; i++) {
     const a = poly[i], b = poly[(i + 1) % poly.length];
@@ -111,7 +177,6 @@ function findInteriorPoint(poly: Point2D[]): Point2D {
     const dx = b.x - a.x, dy = b.y - a.y;
     const len = Math.hypot(dx, dy);
     if (len < EPS) continue;
-    // Normale vers le centroïde des sommets (approximation de "vers l'intérieur")
     const nx = -dy / len, ny = dx / len;
     const toVc = dot({ x: vc.x - mid.x, y: vc.y - mid.y }, { x: nx, y: ny });
     const sign = toVc >= 0 ? 1 : -1;
@@ -274,13 +339,106 @@ function removeCollinear(poly: Point2D[], sinTol = COLLIN_SIN): Point2D[] {
   return out.length >= 3 ? out : poly;
 }
 
-// ── Classification des reculs par arête ───────────────────────────────
+// Supprime les "aiguilles" : sommets où le contour rebrousse chemin (directions
+// entrante/sortante quasi opposées). Ce sont les moignons laissés par
+// resolvePolygon sur les pointes trop étroites pour le recul. Les coins normaux
+// (même aigus) ne rebroussent jamais à ce point → non touchés.
+function removeSpikes(poly: Point2D[], reverseDot = SPIKE_REVERSE_DOT, maxIter = 6): Point2D[] {
+  let pts = poly.slice();
+  for (let iter = 0; iter < maxIter; iter++) {
+    if (pts.length <= 4) break;
+    let removed = -1;
+    for (let i = 0; i < pts.length; i++) {
+      const n = pts.length;
+      const prev = pts[(i - 1 + n) % n];
+      const curr = pts[i];
+      const next = pts[(i + 1) % n];
+      const ix = curr.x - prev.x, iy = curr.y - prev.y;
+      const ox = next.x - curr.x, oy = next.y - curr.y;
+      const il = Math.hypot(ix, iy), ol = Math.hypot(ox, oy);
+      if (il < EPS || ol < EPS) { removed = i; break; }
+      const d = (ix / il) * (ox / ol) + (iy / il) * (oy / ol);
+      if (d < reverseDot) { removed = i; break; }
+    }
+    if (removed < 0) break;
+    pts.splice(removed, 1);
+  }
+  return pts;
+}
+
+// ── Regroupement des arêtes en faces colinéaires ───────────────────────
+
+interface ParcelFace {
+  edgeIndices: number[];
+  midpoint:    Point2D;
+}
+
+function groupCollinearFaces(
+  poly: Point2D[],
+  angleToleranceDeg: number,
+): ParcelFace[] {
+  const n = poly.length;
+  if (n < 3) {
+    return [{ edgeIndices: Array.from({ length: n }, (_, i) => i), midpoint: vertexCentroid(poly) }];
+  }
+
+  const dirs: Point2D[] = [];
+  const lens: number[]  = [];
+  for (let i = 0; i < n; i++) {
+    const a = poly[i], b = poly[(i + 1) % n];
+    dirs.push(normalize({ x: b.x - a.x, y: b.y - a.y }));
+    lens.push(Math.hypot(b.x - a.x, b.y - a.y));
+  }
+
+  const cosTol = Math.cos((angleToleranceDeg * Math.PI) / 180);
+
+  const groups: number[][] = [];
+  for (let i = 0; i < n; i++) {
+    if (groups.length === 0) { groups.push([i]); continue; }
+    const last = groups[groups.length - 1];
+    const refDir = dirs[last[last.length - 1]];
+
+    if (lens[i] < SEG_EPS) { last.push(i); continue; }
+
+    if (dot(dirs[i], refDir) >= cosTol) last.push(i);
+    else groups.push([i]);
+  }
+
+  if (groups.length > 1) {
+    const first = groups[0];
+    const last  = groups[groups.length - 1];
+    if (dot(dirs[first[0]], dirs[last[last.length - 1]]) >= cosTol) {
+      groups[0] = last.concat(first);
+      groups.pop();
+    }
+  }
+
+  return groups.map((g) => {
+    const startV = poly[g[0]];
+    const endV   = poly[(g[g.length - 1] + 1) % n];
+    return {
+      edgeIndices: g,
+      midpoint: { x: (startV.x + endV.x) / 2, y: (startV.y + endV.y) / 2 },
+    };
+  });
+}
+
+function faceOfEdge(faces: ParcelFace[], edgeIndex: number): number {
+  for (let i = 0; i < faces.length; i++) {
+    if (faces[i].edgeIndices.includes(edgeIndex)) return i;
+  }
+  return 0;
+}
+
+// ── Classification des reculs par arête (via faces) ───────────────────
 
 function classifyEdgeSetbacks(
-  n:              number,
+  poly:           Point2D[],
   frontEdgeIndex: number | null,
   rules:          SetbackRules,
 ): number[] {
+  const n = poly.length;
+
   if (frontEdgeIndex === null) {
     const uniform = Math.max(
       Number.isFinite(rules.frontM) ? rules.frontM : 0,
@@ -289,22 +447,39 @@ function classifyEdgeSetbacks(
     );
     return Array(n).fill(uniform);
   }
-  const rearIndex = (frontEdgeIndex + Math.floor(n / 2)) % n;
-  return Array.from({ length: n }, (_, i) => {
-    if (i === frontEdgeIndex) return Math.max(0, rules.frontM ?? 0);
-    if (i === rearIndex)      return Math.max(0, rules.rearM  ?? 0);
-    return Math.max(0, rules.sideM ?? 0);
-  });
+
+  const front = Math.max(0, rules.frontM ?? 0);
+  const side  = Math.max(0, rules.sideM  ?? 0);
+  const rear  = Math.max(0, rules.rearM  ?? 0);
+
+  const faces = groupCollinearFaces(poly, FACE_ANGLE_TOL_DEG);
+
+  const safeFrontIdx = ((frontEdgeIndex % n) + n) % n;
+  const frontFaceIdx = faceOfEdge(faces, safeFrontIdx);
+
+  const frontMid = faces[frontFaceIdx].midpoint;
+  const c = areaCentroid(poly);
+  const axis = normalize({ x: c.x - frontMid.x, y: c.y - frontMid.y });
+
+  let rearFaceIdx = frontFaceIdx;
+  let bestProj = -Infinity;
+  for (let i = 0; i < faces.length; i++) {
+    if (i === frontFaceIdx) continue;
+    const m = faces[i].midpoint;
+    const proj = (m.x - frontMid.x) * axis.x + (m.y - frontMid.y) * axis.y;
+    if (proj > bestProj) { bestProj = proj; rearFaceIdx = i; }
+  }
+
+  const setbacks = Array(n).fill(side);
+  for (const e of faces[frontFaceIdx].edgeIndices) setbacks[e] = front;
+  if (rearFaceIdx !== frontFaceIdx) {
+    for (const e of faces[rearFaceIdx].edgeIndices) setbacks[e] = rear;
+  }
+
+  return setbacks;
 }
 
-// ── Construction du polygone offset (miter / bevel) ───────────────────
-//
-// Pour chaque sommet i (jonction arête prevEdge=(i-1) et currEdge=i) :
-//   aPrev = poly[i] + normal[prevEdge] * setback[prevEdge]
-//   aCurr = poly[i] + normal[currEdge] * setback[currEdge]
-//
-//   Convexe → intersection miter (limitée par MITER_LIMIT)
-//   Concave → bevel : aPrev + aCurr (pan coupé propre, pas de pic)
+// ── Construction du polygone offset (miter / bevel / bissecteur) ──────
 
 function buildOffsetPolygon(
   poly:     Point2D[],
@@ -336,6 +511,14 @@ function buildOffsetPolygon(
       y: poly[i].y + normals[currEdge].y * setbacks[currEdge],
     };
 
+    // Garde-fou quasi-colinéaire : entre deux arêtes presque alignées,
+    // l'intersection miter est instable → point stable sur le bissecteur.
+    const turnSin = crossZ(dirs[prevEdge], dirs[currEdge]);
+    if (Math.abs(turnSin) < NEAR_COLLINEAR_SIN) {
+      result.push({ x: (aPrev.x + aCurr.x) / 2, y: (aPrev.y + aCurr.y) / 2 });
+      continue;
+    }
+
     if (isVertexConvex(poly, i, isCW)) {
       const inter = lineIntersect(aPrev, dirs[prevEdge], aCurr, dirs[currEdge]);
       if (inter !== null) {
@@ -344,12 +527,13 @@ function buildOffsetPolygon(
         if (miterLen <= maxMiter) {
           result.push(inter);
         } else {
-          // Angle très aigu → bevel de sécurité
-          result.push(aPrev);
-          result.push(aCurr);
+          // Angle très aigu : on BORNE l'apex le long de la bissectrice (vers
+          // l'intérieur), au lieu de pousser aPrev/aCurr qui débordent vers la pointe.
+          const bx = (inter.x - poly[i].x) / miterLen;
+          const by = (inter.y - poly[i].y) / miterLen;
+          result.push({ x: poly[i].x + bx * maxMiter, y: poly[i].y + by * maxMiter });
         }
       } else {
-        // Arêtes parallèles
         result.push({ x: (aPrev.x + aCurr.x) / 2, y: (aPrev.y + aCurr.y) / 2 });
       }
     } else {
@@ -363,12 +547,6 @@ function buildOffsetPolygon(
 }
 
 // ── Résolveur d'auto-intersections ────────────────────────────────────
-//
-// Trouver la première auto-intersection du polygone offset, la couper en
-// deux sous-polygones, garder celui qui contient le point de référence
-// intérieur de la parcelle. Fallback : le plus grand des deux.
-//
-// Itérer jusqu'à absence totale d'auto-intersection (max 40 passes).
 
 function resolveSelfIntersectionOnce(
   poly:      Point2D[],
@@ -388,11 +566,9 @@ function resolveSelfIntersectionOnce(
 
       const P = inter.pt;
 
-      // subA : boucle entre les deux arêtes croisées
       const subA: Point2D[] = [P];
       for (let k = i + 1; k <= j; k++) subA.push(poly[k]);
 
-      // subB : le reste
       const subB: Point2D[] = [P];
       for (let k = j + 1; k < n; k++) subB.push(poly[k]);
       for (let k = 0; k <= i; k++)     subB.push(poly[k]);
@@ -406,7 +582,6 @@ function resolveSelfIntersectionOnce(
       } else if (cInB && !cInA) {
         chosen = subB;
       } else {
-        // Fallback : garder le plus grand (boucle parasite = plus petite)
         chosen = polygonAreaM2(subA) >= polygonAreaM2(subB) ? subA : subB;
       }
 
@@ -441,21 +616,36 @@ export function computeBuildableEnvelope(
 ): Point2D[] {
   if (poly.length < 3) return [];
 
-  const parcelArea = polygonAreaM2(poly);
+  // 0. Pré-simplification (Douglas-Peucker) : retire le bruit cadastral mais
+  //    garde les vrais coins. L'offset tourne ensuite sur une géométrie propre.
+  const origN = poly.length;
+  const fiOrig = frontEdgeIndex;
+  let origFrontMid: Point2D | null = null;
+  if (fiOrig != null) {
+    const fi = ((fiOrig % origN) + origN) % origN;
+    const a = poly[fi], b = poly[(fi + 1) % origN];
+    origFrontMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  }
+
+  const work = simplifyClosed(poly, SIMPLIFY_EPS_M);
+  if (work.length < 3) return [];
+
+  // Remap de l'arête façade sur le polygone simplifié.
+  const frontIdx = origFrontMid ? nearestParcelEdge(origFrontMid, work, Infinity) : null;
+
+  const parcelArea = polygonAreaM2(work);
   if (parcelArea < 0.5) return [];
 
-  const n    = poly.length;
-  const isCW = shoelaceSigned(poly) > 0;
+  const isCW = shoelaceSigned(work) > 0;
 
-  // Point de référence intérieur garanti (robuste aux parcelles très concaves)
-  const refPoint = findInteriorPoint(poly);
+  const refPoint = findInteriorPoint(work);
 
-  const edgeSetbacks = classifyEdgeSetbacks(n, frontEdgeIndex, rules);
+  const edgeSetbacks = classifyEdgeSetbacks(work, frontIdx, rules);
 
-  if (edgeSetbacks.every(s => s <= 0)) return [...poly];
+  if (edgeSetbacks.every(s => s <= 0)) return [...work];
 
-  // 1. Polygone offset (miter/bevel, peut être auto-intersectant)
-  let offset = buildOffsetPolygon(poly, edgeSetbacks, refPoint, isCW);
+  // 1. Polygone offset (miter/bevel/bissecteur, peut être auto-intersectant)
+  let offset = buildOffsetPolygon(work, edgeSetbacks, refPoint, isCW);
   if (offset.length < 3) {
     console.warn('[Mimmoza][PLU] buildOffsetPolygon → polygone vide');
     return [];
@@ -470,12 +660,13 @@ export function computeBuildableEnvelope(
 
   // 3. Sécurité : ramener les points hors-parcelle à l'intérieur
   offset = offset.map(p =>
-    pointInPolygon(p, poly) ? p : clampToInterior(p, poly, refPoint),
+    pointInPolygon(p, work) ? p : clampToInterior(p, work, refPoint),
   );
 
   // 4. Nettoyage géométrique
   let clean = removeNearDuplicates(offset, DEDUP_DIST);
   clean = removeCollinear(clean, COLLIN_SIN);
+  clean = removeSpikes(clean);
 
   if (clean.length < 3) {
     console.warn('[Mimmoza][PLU] Enveloppe dégénérée après nettoyage');

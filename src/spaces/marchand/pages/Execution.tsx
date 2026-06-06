@@ -433,23 +433,26 @@ export default function MarchandExecution() {
         {/* ── Bannière ── */}
         <div style={{ maxWidth: 1400, margin: "0 auto", padding: "24px 24px 0" }}>
           <div style={{
-            background: GRAD_INV,
-            borderRadius: 14,
-            padding: "20px 24px",
+            background: "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)",
+            borderRadius: 24,
+            padding: "32px 36px",
             marginBottom: 20,
             display: "flex",
-            alignItems: "flex-start",
+            alignItems: "center",
             justifyContent: "space-between",
-            gap: 16,
+            gap: 20,
+            boxShadow: "0 8px 32px rgba(33,150,243,0.22)",
+            position: "relative",
+            overflow: "hidden",
           }}>
-            <div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
-                Investisseur › Exécution
+            <div style={{ position: "relative" }}>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
+                Investisseur · Exécution
               </div>
-              <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>
+              <div style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5 }}>
                 Exécution
               </div>
-              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+              <div style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>
                 Travaux, planning, suivi paiements
               </div>
             </div>
@@ -471,38 +474,39 @@ export default function MarchandExecution() {
       {/* ── Bannière Investisseur › Exécution ── */}
       <div style={{ maxWidth: 1400, margin: "0 auto", padding: "24px 24px 0" }}>
         <div style={{
-          background: GRAD_INV,
-          borderRadius: 14,
-          padding: "20px 24px",
+          background: "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)",
+          borderRadius: 24,
+          padding: "32px 36px",
           marginBottom: 20,
           display: "flex",
-          alignItems: "flex-start",
+          alignItems: "center",
           justifyContent: "space-between",
-          gap: 16,
+          gap: 20,
+          boxShadow: "0 8px 32px rgba(33,150,243,0.22)",
+          position: "relative",
+          overflow: "hidden",
         }}>
-          <div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
-              Investisseur › Exécution
+          <div style={{ position: "relative" }}>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
+              Investisseur · Exécution
             </div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>
+            <div style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5 }}>
               Exécution
             </div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>
               Travaux, planning, suivi paiements · {activeDeal.label || activeDeal.id}
             </div>
           </div>
-          {/* Badge risque */}
           <div style={{
             padding: "9px 18px",
             borderRadius: 10,
             border: "none",
-            background: "white",
-            color: ACCENT_INV,
+            background: "rgba(255,255,255,0.18)",
+            color: "#fff",
             fontWeight: 600,
             fontSize: 13,
             cursor: "default",
             flexShrink: 0,
-            marginTop: 4,
             display: "inline-flex",
             alignItems: "center",
             gap: 8,

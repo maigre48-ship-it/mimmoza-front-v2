@@ -5,17 +5,31 @@ import { CREDIT_COST, V1_AVAILABLE_MODES } from '../types/copilot.types';
 import { COPILOT_THEME as T } from './copilotTheme';
 
 const LABELS: Record<CopilotMode, { label: string; icon: typeof Zap }> = {
-  quick: { label: 'Rapide', icon: Zap },
+  quick:    { label: 'Rapide',  icon: Zap   },
   advanced: { label: 'Avancé', icon: Brain },
-  report: { label: 'Rapport', icon: Brain },
+  report:   { label: 'Rapport', icon: Brain },
 };
+
+function isAnalyseRapidePage(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.pathname.startsWith('/analyse-rapide');
+}
 
 export function CopilotModeSelector({
   mode, onChange, disabled,
 }: { mode: CopilotMode; onChange: (m: CopilotMode) => void; disabled?: boolean }) {
+
+  // Sur la page Analyse rapide : on n'affiche que le mode Rapide
+  const availableModes = isAnalyseRapidePage()
+    ? V1_AVAILABLE_MODES.filter((m) => m === 'quick')
+    : V1_AVAILABLE_MODES;
+
   return (
-    <div style={{ display: 'inline-flex', gap: 4, padding: 3, borderRadius: 12, background: 'rgb(255 255 255 / 0.04)', border: `1px solid ${T.borderSoft}` }}>
-      {V1_AVAILABLE_MODES.map((m) => {
+    <div style={{
+      display: 'inline-flex', gap: 4, padding: 3, borderRadius: 12,
+      background: 'rgb(255 255 255 / 0.04)', border: `1px solid ${T.borderSoft}`,
+    }}>
+      {availableModes.map((m) => {
         const active = m === mode;
         const { label, icon: Icon } = LABELS[m];
         return (

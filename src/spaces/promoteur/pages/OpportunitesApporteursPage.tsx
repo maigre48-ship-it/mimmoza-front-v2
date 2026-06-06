@@ -10,15 +10,7 @@ import {
   type ApporteurDealStatus,
 } from "@/spaces/apporteur/shared/apporteurDeals.store";
 
-// ---------------------------------------------------------------------------
-// Paywall flag — passer à true pour débloquer toutes les opportunités
-// ---------------------------------------------------------------------------
-
 const isUnlocked = false;
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 const STATUS_LABEL: Record<ApporteurDealStatus, string> = {
   depose:             "Déposé",
@@ -43,36 +35,20 @@ const TYPE_LABEL: Record<ApporteurDeal["typeBien"], string> = {
   autre:    "Autre",
 };
 
-/** Masque le code postal : "92210" → "92***" */
 function maskPostalCode(cp: string): string {
   return cp ? cp.slice(0, 2) + "***" : "";
 }
 
-/**
- * Extrait le code postal depuis une adresse ou une commune.
- * Cherche un bloc de 5 chiffres dans la chaîne.
- * Si absent, retourne "".
- */
 function extractPostalCode(text: string): string {
   const match = text.match(/\b(\d{5})\b/);
   return match ? match[1] : "";
 }
 
-/**
- * Construit le titre masqué d'un deal.
- * Priorité : code postal dans commune > code postal dans adresse > département seul.
- */
 function buildMaskedTitle(deal: ApporteurDeal): string {
   const typeLabel = TYPE_LABEL[deal.typeBien] ?? "Opportunité";
-
   const cpSource = deal.commune ?? deal.adresse ?? "";
   const cp = extractPostalCode(cpSource);
-
-  if (cp) {
-    return `${typeLabel} — ${maskPostalCode(cp)}`;
-  }
-
-  // Fallback : "Opportunité off-market"
+  if (cp) return `${typeLabel} — ${maskPostalCode(cp)}`;
   return `Opportunité off-market — ${typeLabel.toLowerCase()}`;
 }
 
@@ -89,10 +65,6 @@ function formatPrix(prix: number): string {
     style: "currency", currency: "EUR", maximumFractionDigits: 0,
   }).format(prix);
 }
-
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
 
 function StatusBadge({ status }: { status: ApporteurDealStatus }) {
   const { bg, text, border } = STATUS_COLOR[status] ?? STATUS_COLOR.depose;
@@ -168,12 +140,10 @@ function DealCard({ deal, onQualifier, onRefuser }: {
   onQualifier: (d: ApporteurDeal) => void;
   onRefuser: (d: ApporteurDeal) => void;
 }) {
-  // Titre : masqué ou complet selon le flag
   const titleText = isUnlocked
     ? `${deal.adresse}${deal.commune ? `, ${deal.commune}` : ""}`
     : buildMaskedTitle(deal);
 
-  // Sous-titre apporteur : masqué ou affiché
   const apporteurNode = deal.apporteurName ? (
     isUnlocked
       ? <> · Apporteur : <span style={{ fontWeight: 500, color: "#374151" }}>{deal.apporteurName}</span></>
@@ -183,16 +153,12 @@ function DealCard({ deal, onQualifier, onRefuser }: {
   return (
     <div style={{
       ...cardStyle,
-      // Bordure violette subtile quand verrouillé pour renforcer le signal paywall
       borderColor: isUnlocked ? "#E5E7EB" : "#DDD6FE",
       borderLeftWidth: isUnlocked ? 1 : 3,
       borderLeftColor: isUnlocked ? "#E5E7EB" : "#7C3AED",
     }}>
-      {/* ── En-tête ── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-
-          {/* Titre avec blur si verrouillé */}
           <p style={{
             margin: 0, fontWeight: 700, fontSize: 15, color: "#111827",
             ...(isUnlocked ? {} : {
@@ -206,21 +172,17 @@ function DealCard({ deal, onQualifier, onRefuser }: {
           }}>
             {titleText}
           </p>
-
           <p style={{ margin: "2px 0 0", fontSize: 13, color: "#6B7280" }}>
             {TYPE_LABEL[deal.typeBien]}
             {apporteurNode}
           </p>
         </div>
-
-        {/* Badges droite */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
           <StatusBadge status={deal.status} />
           {!isUnlocked && <LockedBadge />}
         </div>
       </div>
 
-      {/* ── KPIs — surface, prix, date (toujours visibles) ── */}
       <div style={{ display: "flex", gap: 24, marginTop: 12, flexWrap: "wrap" }}>
         {deal.surfaceTerrainM2 !== undefined && (
           <Kpi label="Surface terrain" value={`${deal.surfaceTerrainM2.toLocaleString("fr-FR")} m²`} />
@@ -231,7 +193,6 @@ function DealCard({ deal, onQualifier, onRefuser }: {
         <Kpi label="Déposé le" value={formatDate(deal.createdAt)} />
       </div>
 
-      {/* ── Commentaire — masqué si verrouillé ── */}
       {deal.commentaire && (
         isUnlocked ? (
           <p style={{
@@ -253,7 +214,6 @@ function DealCard({ deal, onQualifier, onRefuser }: {
         )
       )}
 
-      {/* ── Actions ── */}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
         <ActionButton
           variant={isUnlocked ? "primary" : "unlock"}
@@ -285,10 +245,6 @@ function EmptyState() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Page principale
-// ---------------------------------------------------------------------------
-
 export default function OpportunitesApporteursPage() {
   const navigate = useNavigate();
   const [deals, setDeals] = useState<ApporteurDeal[]>(() => listApporteurDeals());
@@ -310,73 +266,53 @@ export default function OpportunitesApporteursPage() {
   }
 
   return (
-    <div style={pageStyle}>
-      <div style={headerStyle}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#111827" }}>
-            Opportunités apporteurs
+    <div className="space-y-6">
+      {/* ── Bandeau violet ── */}
+      <div className="overflow-hidden rounded-[32px] bg-gradient-to-r from-[#6f5bd6] via-[#8d78df] to-[#b39ddb] px-8 py-8 text-white shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
+        <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white/90">
+          Promoteur · Opportunités
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-4xl font-semibold tracking-tight">
+            Deals apporteurs
           </h1>
-          <p style={{ margin: "4px 0 0", fontSize: 14, color: "#6B7280" }}>
-            Deals reçus en attente de qualification
-          </p>
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-          <div style={counterBadgeStyle}>
-            <span style={{ fontSize: 20, fontWeight: 800, color: "#6D28D9" }}>
-              {visibleDeals.length}
+          <div className="ml-auto flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+              {visibleDeals.length} opportunité{visibleDeals.length > 1 ? "s" : ""}
             </span>
-            <span style={{ fontSize: 12, color: "#9CA3AF", marginTop: 1 }}>
-              {visibleDeals.length === 1 ? "opportunité" : "opportunités"}
-            </span>
+            {!isUnlocked && (
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+                🔒 Mode aperçu
+              </span>
+            )}
           </div>
-          {!isUnlocked && (
-            <span style={{
-              fontSize: 11, color: "#7C3AED", fontWeight: 600,
-              background: "#F5F3FF", padding: "2px 8px", borderRadius: 6,
-              border: "1px solid #DDD6FE",
-            }}>
-              🔒 Mode aperçu
-            </span>
-          )}
         </div>
+        <p className="mt-3 max-w-2xl text-sm text-slate-200">
+          Deals reçus en attente de qualification
+        </p>
       </div>
 
-      <hr style={{ border: "none", borderTop: "1px solid #F3F4F6", margin: "0 0 24px" }} />
-
-      {visibleDeals.length === 0 ? (
-        <EmptyState />
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {visibleDeals.map((deal) => (
-            <DealCard
-              key={deal.id}
-              deal={deal}
-              onQualifier={handleQualifier}
-              onRefuser={handleRefuser}
-            />
-          ))}
-        </div>
-      )}
+      {/* ── Contenu ── */}
+      <div style={{ maxWidth: 860, margin: "0 auto", fontFamily: "inherit" }}>
+        {visibleDeals.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {visibleDeals.map((deal) => (
+              <DealCard
+                key={deal.id}
+                deal={deal}
+                onQualifier={handleQualifier}
+                onRefuser={handleRefuser}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
-const pageStyle: React.CSSProperties = {
-  padding: "32px 28px", maxWidth: 860, margin: "0 auto", fontFamily: "inherit",
-};
-const headerStyle: React.CSSProperties = {
-  display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20,
-};
-const counterBadgeStyle: React.CSSProperties = {
-  display: "flex", flexDirection: "column", alignItems: "center",
-  background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 10,
-  padding: "8px 18px", minWidth: 72,
-};
 const cardStyle: React.CSSProperties = {
   background: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: 10,
   padding: "18px 20px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)",

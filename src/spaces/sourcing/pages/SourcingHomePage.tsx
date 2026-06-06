@@ -2061,11 +2061,11 @@ useEffect(() => {
 
   const Banner = (
     <div style={{ maxWidth: 1600, margin: "0 auto", padding: "20px 24px 0" }}>
-      <div style={{ background: GRAD_BANNER, borderRadius: 14, padding: "22px 28px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
-        <div>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginBottom: 4, letterSpacing: 1 }}>Investisseur › Acquisition</div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: "white", marginBottom: 2 }}>🎯 SmartScore</div>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>Qualifiez et scorez vos opportunités immobilières en quelques secondes</div>
+      <div style={{ background: "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)", borderRadius: 24, padding: "32px 36px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, boxShadow: "0 8px 32px rgba(33,150,243,0.22)", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "relative" }}>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginBottom: 10, letterSpacing: 1.8, textTransform: "uppercase", fontWeight: 600 }}>Investisseur › Acquisition</div>
+          <div style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5 }}>SmartScore</div>
+          <div style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>Qualifiez et scorez vos opportunités immobilières en quelques secondes</div>
         </div>
         <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
           {[

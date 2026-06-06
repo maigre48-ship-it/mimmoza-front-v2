@@ -1,6 +1,7 @@
 ﻿// src/spaces/promoteur/pages/Massing3D.tsx
-// v2.3 — Loader terrain centré (spinner + barre indéterminée) remplace le badge haut-écran
-// v2.2 — Bouton Synthèse déplacé en overlay haut-gauche du canvas 3D
+// v2.4 — Hero v2 : design identique à VeilleMarchePage
+// v2.3 — Loader terrain centré
+// v2.2 — Bouton Synthèse en overlay haut-gauche du canvas 3D
 // v2.1 — Capture scopée par studyId
 // v2.0 — Capture synthèse
 
@@ -12,9 +13,12 @@ import { writeCapture } from "../shared/captures.store";
 import { MassingEditor3D } from "../terrain3d/components/MassingEditor3D";
 import type { MassingSceneModel } from "../terrain3d/massingScene.types";
 import type { Feature, Polygon, MultiPolygon } from "geojson";
-
-const GRAD_PRO   = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
-const ACCENT_PRO = "#5247b8";
+import { GRAD_PRO, ACCENT_PRO } from "../shared/promoteurDesign.tokens";
+import {
+  PromoteurPageHero,
+  HeroPrimaryButton,
+  HeroGhostButton,
+} from "../shared/components/PromoteurPageHero";
 
 function parcelFeatureKey(studyId: string): string {
   return `mimmoza.parcelFeature.${studyId}`;
@@ -83,55 +87,26 @@ async function captureMassing3D(studyId: string | null): Promise<boolean> {
 
 const TerrainLoader: React.FC = () => (
   <div style={{
-    position:       "absolute",
-    inset:          0,
-    zIndex:         40,
-    display:        "flex",
-    flexDirection:  "column",
-    alignItems:     "center",
-    justifyContent: "center",
-    gap:            16,
-    background:     "rgba(248,250,252,0.72)",
-    backdropFilter: "blur(6px)",
-    borderRadius:   "inherit",
-    pointerEvents:  "none",
+    position: "absolute", inset: 0, zIndex: 40,
+    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+    gap: 16, background: "rgba(248,250,252,0.72)", backdropFilter: "blur(6px)",
+    borderRadius: "inherit", pointerEvents: "none",
   }}>
-    {/* Cercle tournant */}
     <div style={{
-      width:        52,
-      height:       52,
-      border:       "5px solid #e2e8f0",
-      borderTopColor: ACCENT_PRO,
-      borderRadius: "50%",
-      animation:    "mmz-spin 0.85s linear infinite",
+      width: 52, height: 52,
+      border: "5px solid #e2e8f0", borderTopColor: ACCENT_PRO,
+      borderRadius: "50%", animation: "mmz-spin 0.85s linear infinite",
     }} />
-
-    {/* Barre de progression indéterminée */}
-    <div style={{
-      width:        220,
-      height:       6,
-      background:   "#e2e8f0",
-      borderRadius: 99,
-      overflow:     "hidden",
-    }}>
+    <div style={{ width: 220, height: 6, background: "#e2e8f0", borderRadius: 99, overflow: "hidden" }}>
       <div style={{
-        height:       "100%",
-        width:        "38%",
-        background:   `linear-gradient(90deg, ${ACCENT_PRO}, #b39ddb)`,
-        borderRadius: 99,
-        animation:    "mmz-slide 1.35s ease-in-out infinite",
+        height: "100%", width: "38%",
+        background: `linear-gradient(90deg, ${ACCENT_PRO}, #b39ddb)`,
+        borderRadius: 99, animation: "mmz-slide 1.35s ease-in-out infinite",
       }} />
     </div>
-
-    <span style={{
-      fontSize:   13,
-      color:      ACCENT_PRO,
-      fontWeight: 600,
-      letterSpacing: "0.01em",
-    }}>
+    <span style={{ fontSize: 13, color: ACCENT_PRO, fontWeight: 600, letterSpacing: "0.01em" }}>
       Chargement du terrain…
     </span>
-
     <style>{`
       @keyframes mmz-spin  { to { transform: rotate(360deg); } }
       @keyframes mmz-slide {
@@ -171,21 +146,17 @@ const CaptureButton: React.FC<CaptureButtonProps> = ({ studyId }) => {
       onClick={handleCapture}
       disabled={status === "capturing"}
       style={{
-        padding:        "8px 14px",
-        borderRadius:   10,
-        border:         "1px solid #e2e8f0",
-        background:     status === "ok"   ? "rgba(16,185,129,0.15)"
-                      : status === "fail" ? "rgba(239,68,68,0.15)"
-                      : "rgba(255,255,255,0.92)",
-        color:          status === "ok"   ? "#15803d"
-                      : status === "fail" ? "#dc2626"
-                      : ACCENT_PRO,
-        fontWeight:     600,
-        fontSize:       12,
-        cursor:         status === "capturing" ? "wait" : "pointer",
-        transition:     "background 0.2s",
-        backdropFilter: "blur(8px)",
-        boxShadow:      "0 1px 4px rgba(0,0,0,0.08)",
+        padding: "8px 14px", borderRadius: 10, border: "1px solid #e2e8f0",
+        background: status === "ok"   ? "rgba(16,185,129,0.15)"
+                  : status === "fail" ? "rgba(239,68,68,0.15)"
+                  : "rgba(255,255,255,0.92)",
+        color: status === "ok"   ? "#15803d"
+             : status === "fail" ? "#dc2626"
+             : ACCENT_PRO,
+        fontWeight: 600, fontSize: 12,
+        cursor: status === "capturing" ? "wait" : "pointer",
+        transition: "background 0.2s", backdropFilter: "blur(8px)",
+        boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
       }}
       title="Capturer cette vue 3D pour la Synthèse Promoteur"
     >
@@ -234,9 +205,9 @@ export default function Massing3D(): React.ReactElement {
       meta.floorsSpec.aboveGroundFloors * meta.floorsSpec.typicalFloorHeightM
     : null;
 
-  const [scene3D,          setScene3D]          = React.useState<MassingSceneModel | null>(null);
-  const [showLabels,       setShowLabels]        = React.useState(false);
-  const [isLoadingTerrain, setIsLoadingTerrain]  = React.useState(false);
+  const [scene3D,          setScene3D]         = React.useState<MassingSceneModel | null>(null);
+  const [showLabels,       setShowLabels]       = React.useState(false);
+  const [isLoadingTerrain, setIsLoadingTerrain] = React.useState(false);
 
   const handleSceneChange = (scene: MassingSceneModel) => {
     setScene3D(scene);
@@ -251,47 +222,6 @@ export default function Massing3D(): React.ReactElement {
     }
   };
 
-  const banner = (
-    <div style={{
-      background:     GRAD_PRO,
-      borderRadius:   14,
-      padding:        "16px 24px",
-      display:        "flex",
-      alignItems:     "center",
-      justifyContent: "space-between",
-      gap:            16,
-      flexShrink:     0,
-    }}>
-      <div>
-        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 4 }}>Promoteur › Conception</div>
-        <div style={{ fontSize: 20, fontWeight: 700, color: "white", marginBottom: 2 }}>Massing 3D — Éditeur</div>
-        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.75)" }}>Dessinez, sélectionnez et éditez vos volumes directement en 3D.</div>
-      </div>
-
-      <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap", alignItems: "center" }}>
-        <button
-          onClick={() => navigate(studyId ? `/promoteur/implantation-2d?study=${encodeURIComponent(studyId)}` : "/promoteur/implantation-2d")}
-          style={{ padding: "8px 16px", borderRadius: 10, border: "none", background: "white", color: ACCENT_PRO, fontWeight: 600, fontSize: 13, cursor: "pointer" }}
-        >
-          ← Implantation 2D
-        </button>
-
-        <button
-          onClick={() => navigate(studyId ? `/promoteur/bilan?study=${encodeURIComponent(studyId)}` : "/promoteur/bilan")}
-          style={{ padding: "8px 16px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.35)", background: "rgba(255,255,255,0.12)", color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
-        >
-          Voir le bilan →
-        </button>
-
-        {studyId && (
-          <div style={{ padding: "6px 12px", borderRadius: 8, background: "rgba(255,255,255,0.15)", color: "white", fontSize: 11, fontWeight: 500, border: "1px solid rgba(255,255,255,0.25)", alignSelf: "center" }}>
-            Étude {studyId.slice(0, 8)}…
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
   const metaBar = meta?.floorsSpec ? (
     <div style={{ display: "flex", gap: 16, padding: "8px 16px", background: "white", borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 12, color: "#475569", flexShrink: 0, flexWrap: "wrap", alignItems: "center" }}>
       <span><b style={{ color: "#0f172a" }}>R+{meta.floorsSpec.aboveGroundFloors}</b> · {buildingHeightM?.toFixed(1)} m</span>
@@ -302,12 +232,10 @@ export default function Massing3D(): React.ReactElement {
       <span style={{ color: "#94a3b8", fontStyle: "italic" }}>
         {meta.buildingKind === "COLLECTIF" ? "Collectif" : "Individuel"}
       </span>
-
       <label style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto", cursor: "pointer", padding: "4px 10px", borderRadius: 6, background: showLabels ? "rgba(82,71,184,0.08)" : "#f1f5f9", border: showLabels ? "1px solid rgba(82,71,184,0.25)" : "1px solid #e2e8f0", color: showLabels ? ACCENT_PRO : "#64748b", fontSize: 11, fontWeight: 600 }}>
         <input type="checkbox" checked={showLabels} onChange={e => setShowLabels(e.target.checked)} style={{ accentColor: ACCENT_PRO }} />
         🏷 Étiquettes
       </label>
-
       {lastUpdatedAt && (
         <span style={{ color: "#94a3b8" }}>
           MAJ {new Date(lastUpdatedAt).toLocaleString("fr-FR", { timeStyle: "short", dateStyle: "short" })}
@@ -317,17 +245,46 @@ export default function Massing3D(): React.ReactElement {
   ) : null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16, height: "calc(100vh - 64px)", background: "#f8fafc", boxSizing: "border-box" }}>
-      {banner}
-      {metaBar}
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 64px)", background: "#f8fafc", boxSizing: "border-box" }}>
+
+      {/* ── Hero v2 — pleine largeur ── */}
+      <div style={{ padding: "14px 16px 0", flexShrink: 0 }}>
+        <PromoteurPageHero
+          badge="Promoteur · Conception"
+          title="Massing 3D — Éditeur"
+          metaLines={[
+            { text: "Dessinez, sélectionnez et éditez vos volumes directement en 3D." },
+            ...(studyId ? [{ text: `Étude ${studyId.slice(0, 8)}…` }] : []),
+          ]}
+          actions={
+            <>
+              <HeroGhostButton onClick={() => navigate(studyId ? `/promoteur/implantation-2d?study=${encodeURIComponent(studyId)}` : "/promoteur/implantation-2d")}>
+                ← Implantation 2D
+              </HeroGhostButton>
+              <HeroPrimaryButton onClick={() => navigate(studyId ? `/promoteur/bilan?study=${encodeURIComponent(studyId)}` : "/promoteur/bilan")}>
+                Voir le bilan →
+              </HeroPrimaryButton>
+            </>
+          }
+        />
+      </div>
+
+      {/* ── MetaBar (optionnelle) ── */}
+      {metaBar && (
+        <div style={{ padding: "8px 16px 0", flexShrink: 0 }}>
+          {metaBar}
+        </div>
+      )}
+
+      {/* ── Canvas 3D ── */}
       <div
         id="massing3d-capture-target"
-        style={{ flex: 1, minHeight: 0, position: "relative" }}
+        style={{ flex: 1, minHeight: 0, position: "relative", margin: "12px 16px 16px" }}
       >
-        {/* Overlay loader terrain — centré, remplace le badge haut-écran */}
+        {/* Overlay loader terrain */}
         {isLoadingTerrain && <TerrainLoader />}
 
-        {/* Bouton Synthèse en overlay haut-gauche du canvas 3D */}
+        {/* Bouton Synthèse en overlay haut-gauche */}
         <div style={{ position: "absolute", top: 12, left: 12, zIndex: 20 }}>
           <CaptureButton studyId={studyId} />
         </div>

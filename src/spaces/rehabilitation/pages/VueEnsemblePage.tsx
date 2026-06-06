@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 
 /* ── Thème ── */
 const ACCENT  = "#f97316";
-const GRAD    = "linear-gradient(90deg, #f97316 0%, #ef4444 100%)";
+const GRAD    = "linear-gradient(135deg, #ea580c 0%, #fb923c 100%)";
 
 const LS_KEY  = "mimmoza_rehab_overview";
 
@@ -134,15 +134,15 @@ const VueEnsemblePage: React.FC = () => {
     <div style={{ minHeight: "100vh", background: "#f1f5f9" }}>
 
       {/* Bannière */}
-      <div style={{ background: GRAD, borderRadius: 16, padding: "24px 28px", marginBottom: 24 }}>
-        <p style={{ fontSize: 10, color: "rgba(255,255,255,.6)", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>
+      <div style={{ background: GRAD, borderRadius: 24, padding: "32px 36px", marginBottom: 24, boxShadow: "0 8px 32px rgba(234,88,12,0.22)", position: "relative", overflow: "hidden" }}>
+        <p style={{ fontSize: 11, color: "rgba(255,255,255,.6)", letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
           Réhabilitation › Vue d'ensemble
         </p>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <Building2 size={22} color="#fff" />
             <div>
-              <h1 style={{ fontSize: 22, fontWeight: 900, color: "#fff", margin: 0 }}>Vue d'ensemble</h1>
+              <h1 style={{ fontSize: 30, fontWeight: 800, color: "#fff", margin: 0, lineHeight: 1.12, letterSpacing: -0.5 }}>Vue d'ensemble</h1>
               <p style={{ fontSize: 13, color: "rgba(255,255,255,.75)", margin: 0 }}>
                 Données générales du projet de réhabilitation
               </p>

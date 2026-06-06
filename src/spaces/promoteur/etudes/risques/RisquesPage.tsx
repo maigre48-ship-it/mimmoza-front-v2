@@ -36,6 +36,8 @@ import type {
 // IMPORT SNAPSHOT STORE
 // ============================================
 import { patchProjectInfo, patchModule } from "../../shared/promoteurSnapshot.store";
+// Pont → marchandSnapshot (Deal Center Investisseur)
+import { ensureActiveDeal, patchMarcheRisquesForDeal } from "../../../marchand/shared/marchandSnapshot.store";
 
 // ============================================
 // 🆕 Banque scoring – composant réutilisable
@@ -51,10 +53,12 @@ import type { PromoteurRisquesData } from "../../shared/promoteurStudy.types";
 
 // 🆕 COPILOT : pont vers le store de contexte du Copilot
 import { useCopilotContext } from "../../../copilot/hooks/useCopilotContext";
-
-// ─── Design tokens ───────────────────────────────────────────────────────────
-const GRAD_PRO = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
-const ACCENT_PRO = "#5247b8";
+import { GRAD_PRO, ACCENT_PRO } from "../../shared/promoteurDesign.tokens";
+import {
+  PromoteurPageHero,
+  HeroPrimaryButton,
+  HeroGhostButton,
+} from "../../shared/components/PromoteurPageHero";
 
 // ============================================
 // DEBUG
@@ -382,12 +386,6 @@ const styles = {
     minHeight: "100vh",
     background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #f0fdf4 100%)",
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
-  } as React.CSSProperties,
-  
-  header: {
-    background: "linear-gradient(135deg, #7f1d1d 0%, #991b1b 50%, #b91c1c 100%)",
-    padding: "32px 40px",
-    color: "white",
   } as React.CSSProperties,
   
   mainContent: {
@@ -1736,7 +1734,13 @@ function extractDossierIdFromUrl(): string | null {
 // ============================================
 // MAIN COMPONENT
 // ============================================
-export function RisquesPage() {
+export function RisquesPage({ onStudyComplete, theme }: {
+  onStudyComplete?: (data: unknown) => void;
+  theme?: { gradient: string; accent: string };
+} = {}) {
+  // Variables locales qui surchargent les constantes module-level
+  const GRAD   = theme?.gradient ?? GRAD_PRO;
+  const ACCENT = theme?.accent   ?? ACCENT_PRO;
   // ── Study persistence ──────────────────────────────────────────────────────
   const [searchParams] = useSearchParams();
   const studyId = searchParams.get("study");
@@ -2072,6 +2076,27 @@ export function RisquesPage() {
         log('❌', 'Snapshot error', snapshotErr);
       }
 
+      // ── Pont Deal Center Investisseur ────────────────────────────────────
+      try {
+        const activeDeal = ensureActiveDeal();
+        if (activeDeal) {
+          patchMarcheRisquesForDeal(activeDeal.id, {
+            scoreGlobal: result.scores?.global ?? undefined,
+            breakdown: {
+              environnement: result.scores?.global ?? undefined,
+              demande:       result.scores?.naturels ?? undefined,
+              offre:         result.scores?.technologiques ?? undefined,
+              accessibilite: result.scores?.geotechniques ?? undefined,
+            },
+            data: result,
+            updatedAt: new Date().toISOString(),
+          });
+          log('💾', '[marchandSnapshot] Géorisques patched on deal', activeDeal.id);
+        }
+      } catch (e) {
+        log('⚠️', '[marchandSnapshot] patch skipped', e);
+      }
+
       setTimeout(() => {
         if (mountedRef.current) {
           resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2097,97 +2122,49 @@ export function RisquesPage() {
       <div style={styles.container}>
 
         {/* ── Bannière dégradé Promoteur › Études ── */}
-        <div style={{
-          background: GRAD_PRO,
-          borderRadius: 14,
-          padding: "20px 24px",
-          margin: "16px 40px 0 40px",
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: 16,
-        }}>
-          <div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>
-              Promoteur › Études
-            </div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
-              <ShieldAlert size={22} color="white" />
-              Étude de Risques
-              {bannerInseeLabel && (
-                <span style={{
-                  fontSize: 13,
-                  fontWeight: 500,
-                  color: "rgba(255,255,255,0.85)",
-                  background: "rgba(255,255,255,0.15)",
-                  border: "1px solid rgba(255,255,255,0.25)",
-                  borderRadius: 6,
-                  padding: "2px 10px",
-                  marginLeft: 4,
-                }}>
-                  {bannerInseeLabel}
-                </span>
-              )}
-            </div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
-              Risques naturels, technologiques, pollution et géotechniques. Sources&nbsp;: Géorisques, BRGM, GASPAR.
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, marginTop: 4 }}>
-            <span style={{
-              padding: "6px 12px",
-              background: "rgba(255,255,255,0.15)",
-              borderRadius: 8,
-              fontSize: 12,
-              fontWeight: 600,
-              color: "white",
-              border: "1px solid rgba(255,255,255,0.25)",
-            }}>
-              v1.3.0
-            </span>
-            {analysisResult && (
-              <button
-                onClick={() => {
-                  patchModule("risks", { ok: true, validated: true, summary: `Score sécurité: ${analysisResult.scores.global}/100 - ${analysisResult.meta.commune_nom}`, data: analysisResult });
-                  setSynthesisSaved(true);
-                  setTimeout(() => setSynthesisSaved(false), 3000);
-                }}
-                style={{
-                  padding: "9px 18px", borderRadius: 10,
-                  border: "1px solid rgba(255,255,255,0.4)",
-                  background: synthesisSaved ? "rgba(16,185,129,0.3)" : "rgba(255,255,255,0.15)",
-                  color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer",
-                  display: "flex", alignItems: "center", gap: 6,
-                }}
-              >
-                {synthesisSaved ? "✓ Enregistré" : "📌 Utiliser dans la synthèse"}
-              </button>
-            )}
-            <button
-              onClick={handleSubmit}
-              disabled={isLoading}
-              style={{
-                padding: "9px 18px",
-                borderRadius: 10,
-                border: "none",
-                background: "white",
-                color: ACCENT_PRO,
-                fontWeight: 600,
-                fontSize: 13,
-                cursor: isLoading ? "not-allowed" : "pointer",
-                opacity: isLoading ? 0.7 : 1,
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              {isLoading
-                ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />Analyse…</>
-                : <><ShieldAlert size={14} />Lancer l'analyse</>
-              }
-            </button>
-          </div>
-        </div>
+        <div style={{ padding: "16px 40px 0" }}>
+  <PromoteurPageHero
+    badge="Promoteur · Études"
+    title="Étude de Risques"
+    metaLines={[
+      { text: "Risques naturels, technologiques, pollution et géotechniques. Sources : Géorisques, BRGM, GASPAR." },
+      ...(bannerInseeLabel ? [{ text: bannerInseeLabel }] : []),
+    ]}
+    statCards={analysisResult ? [
+      {
+        label: "Score sécurité",
+        value: `${analysisResult.scores.global}/100`,
+        tone: "indigo" as const,
+      },
+      {
+        label: "Commune",
+        value: analysisResult.meta.commune_nom,
+        tone: "emerald" as const,
+      },
+    ] : undefined}
+    actions={
+      <>
+        {analysisResult && (
+          <HeroPrimaryButton
+            onClick={() => {
+              patchModule("risks", { ok: true, validated: true, summary: `Score sécurité: ${analysisResult.scores.global}/100 - ${analysisResult.meta.commune_nom}`, data: analysisResult });
+              setSynthesisSaved(true);
+              setTimeout(() => setSynthesisSaved(false), 3000);
+            }}
+          >
+            {synthesisSaved ? "✓ Enregistré" : "📌 Utiliser dans la synthèse"}
+          </HeroPrimaryButton>
+        )}
+        <HeroGhostButton onClick={handleSubmit} disabled={isLoading}>
+          {isLoading
+            ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Analyse…</>
+            : <><ShieldAlert size={14} /> Lancer l'analyse</>
+          }
+        </HeroGhostButton>
+      </>
+    }
+  />
+</div>
 
         {/* Main content */}
         <div style={styles.mainContent}>

@@ -1,8 +1,9 @@
 // src/spaces/copilot/types/copilot.types.ts
-
-/* =============================================================
- * Mimmoza Copilot — Types V1 (fusion LOT 1 + LOT 7 + LOT 5)
- * ============================================================= */
+// PATCH V1.1 : ajout PageContextRef + ActiveDealRef dans MimmozaContext
+// PATCH V1.2 : ajout PredictiveSnapshotContext dans MimmozaContext (LOT 6)
+// PATCH V1.3 : ajout ValuationEngineContext dans MimmozaContext (LOT 7)
+// PATCH V1.4 : ajout TransportGtfsSnapshot + transport_gtfs dans PredictiveSnapshotContext (v4.4)
+// =============================================================
 
 export type Vertical =
   | 'promoteur'
@@ -36,6 +37,199 @@ export interface PluContextRef {
   oap?: unknown;
 }
 
+// ─── V1.1 — Contexte de page ──────────────────────────────────────────────────
+
+export interface PageContextRef {
+  pathname: string;
+  space?: string;
+  mode?: string;
+  tab?: string;
+}
+
+export interface ActiveDealRef {
+  id: string;
+  title?: string;
+  address?: string;
+  parcelId?: string | null;
+  surface?: number | null;
+  purchasePrice?: number | null;
+  resalePrice?: number | null;
+  worksBudget?: number | null;
+  status?: string;
+}
+
+// ─── V1.4 — Transport GTFS PostGIS ───────────────────────────────────────────
+// Score de mobilité calculé depuis la table mobility_stops (56k stops).
+// Plus précis que transport legacy (OSM/IDFM). Prioritaire pour le Copilot.
+//
+// Règle Copilot 4dodicies :
+//   - Utiliser transport_gtfs.total plutôt que transport.score (legacy)
+//   - Citer les pillars si pertinent : rail (RER/Métro/TGV/TER), urban, employment, multimodal
+//   - Ne jamais confondre pillars.rail avec le SmartScore global (règle 4decies)
+//   - Si is_urban=false ET pillars.rail > 0 → mentionner TER/TGV même hors agglo
+
+export interface TransportGtfsSnapshot {
+  /** Score global /100 */
+  total: number;
+  pillars: {
+    /** Métro, RER, TGV, TER */
+    rail:       number | null;
+    /** Bus, tram, réseau urbain */
+    urban:      number | null;
+    /** Accessibilité bassins d'emploi */
+    employment: number | null;
+    /** Qualité des correspondances */
+    multimodal: number | null;
+  };
+  /** Distance au stop le plus proche (mètres) */
+  nearest_stop_m:  number | null;
+  has_metro_train: boolean;
+  has_tram:        boolean;
+  /** false = zone rurale / péri-urbaine */
+  is_urban:        boolean;
+  /** Label humain ex. "Bien desservi" */
+  label:   string;
+  summary: string;
+}
+
+// ─── V1.2 — Snapshot prédictif (17 sources moteur Mimmoza) ───────────────────
+// Transmis par le front depuis le localStorage (snapshot Marchand + Investisseur).
+// Injecté directement dans le system prompt de copilot-chat — zéro appel réseau.
+
+export interface PredictiveSnapshotContext {
+  // ── DVF ──────────────────────────────────────────────────────
+  dvf?: {
+    prix_m2_median?:     number | null;
+    nb_transactions?:    number | null;
+    evolution_prix_pct?: number | null;
+    prix_m2_min?:        number | null;
+    prix_m2_max?:        number | null;
+  } | null;
+  // ── Scores marché ─────────────────────────────────────────────
+  market_scores?: {
+    global?:          number | null;
+    demande?:         number | null;
+    offre?:           number | null;
+    accessibilite?:   number | null;
+    environnement?:   number | null;
+    transport_exclu?: boolean;
+  } | null;
+  // ── INSEE / Démographie ───────────────────────────────────────
+  insee?: {
+    population?:    number | null;
+    densite?:       number | null;
+    revenu_median?: number | null;
+    taux_chomage?:  number | null;
+    taux_pauvrete?: number | null;
+    pct_75_plus?:   number | null;
+    pct_etudiants?: number | null;
+    commune_nom?:   string | null;
+    departement?:   string | null;
+  } | null;
+  // ── BPE — équipements ─────────────────────────────────────────
+  bpe?: {
+    score?:              number | null;
+    total_equipements?:  number | null;
+    nb_ecoles?:          number | null;
+    nb_pharmacies?:      number | null;
+    nb_supermarches?:    number | null;
+    commerces_count?:    number | null;
+    sante_count?:        number | null;
+    education_count?:    number | null;
+    loisirs_count?:      number | null;
+  } | null;
+  // ── Transport legacy (OSM/IDFM) — maintenu pour rétro-compat ─
+  transport?: {
+    score?:           number | null;
+    has_metro_train?: boolean;
+    has_tram?:        boolean;
+    nearest_stop_m?:  number | null;
+    is_urban?:        boolean;
+  } | null;
+  // ── Transport GTFS PostGIS (v4.4) — prioritaire pour le Copilot
+  transport_gtfs?: TransportGtfsSnapshot | null;
+  // ── Géorisques ───────────────────────────────────────────────
+  georisques?: {
+    nb_risques?:          number | null;
+    inondation?:          boolean | null;
+    sismique?:            number | null;
+    retrait_gonflement?:  boolean | null;
+    radon?:               number | null;
+    cavites?:             boolean | null;
+  } | null;
+  // ── Rentabilité ───────────────────────────────────────────────
+  rentabilite?: {
+    rendement_brut?:     number | null;
+    rendement_net?:      number | null;
+    cashflow_mensuel?:   number | null;
+    marge_brute?:        number | null;
+    marge_brute_pct?:    number | null;
+    prix_revente_cible?: number | null;
+  } | null;
+  // ── Sources individuelles ─────────────────────────────────────
+  dpe?:               string | null;   // "A"–"G"
+  dpe_source?:        string | null;   // "ademe" | "snap" | "manual"
+  plu_zone?:          string | null;
+  sitadel_score?:     number | null;
+  demographie_score?: number | null;
+  loyer_median_zone?: number | null;   // €/m²/mois
+  travaux_budget?:    number | null;   // € TTC
+  fiscal_regime?:     string | null;
+  bce_rate?:          number | null;
+  bce_pressure_label?: string | null;
+  horizon_mois?:      number | null;
+  // ── Méta ──────────────────────────────────────────────────────
+  deal_id?:           string | null;
+  deal_label?:        string | null;
+  generated_at?:      string | null;
+  sources_count?:     number | null;
+}
+
+// ─── V1.3 — Valuation Engine (moteur de valorisation Mimmoza) ────────────────
+// Transmis par AnalysePage quand le valuation engine a produit un résultat.
+// Complète predictive_snapshot avec les données financières et de valorisation.
+
+export interface ValuationEngineContext {
+  // ── Valorisation ──────────────────────────────────────────────
+  estimatedValue?:    number;
+  minEstimatedValue?: number;
+  maxEstimatedValue?: number;
+
+  marketPriceM2?:   number;
+  valuationBasis?:  string;
+
+  // ── Scores ────────────────────────────────────────────────────
+  confidenceScore?:  number;
+  opportunityScore?: number;
+  marketPosition?:   string;
+  securityScore?:    number;
+
+  // ── Localisation ──────────────────────────────────────────────
+  locationScore?:     number;
+  locationBreakdown?: Record<string, number>;
+
+  // ── Rendements ────────────────────────────────────────────────
+  estimatedRent?: number;
+  grossYield?:    number;
+  netYield?:      number;
+
+  // ── Contextes spécialisés ─────────────────────────────────────
+  rehab?:    unknown;
+  promoteur?: unknown;
+
+  // ── Analyse qualitative ───────────────────────────────────────
+  strengths?:  string[];
+  weaknesses?: string[];
+  warnings?:   string[];
+
+  recommendation?: string;
+
+  // ── Méta ──────────────────────────────────────────────────────
+  meta?: Record<string, unknown>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export interface MimmozaContext {
   vertical: Vertical;
   route: string;
@@ -44,6 +238,13 @@ export interface MimmozaContext {
   listing?: ListingContextRef;
   user?: UserContextRef;
   plu?: PluContextRef;
+  // V1.1
+  pageContext?: PageContextRef;
+  activeDeal?: ActiveDealRef;
+  // V1.2 — snapshot prédictif (17 sources, transmis par le front)
+  predictive_snapshot?: PredictiveSnapshotContext | null;
+  // V1.3 — résultat du valuation engine (valorisation + rendements + analyse)
+  valuation_engine?: ValuationEngineContext | null;
 }
 
 export interface ParcelContextRef {
@@ -65,21 +266,14 @@ export interface StudyContextRef {
   title?: string;
 }
 
-/**
- * Contexte annonce actif (investisseur / marchand — LOT 5).
- *
- * ⚠️ Nommage aligné sur le contrat backend `get_quick_market_insight` :
- *   - `listing_id`   (et non `id`) → colonne `id` de la vue v_quick_questions_mvp
- *   - `property_type`              → filtre optionnel type de bien
- */
 export interface ListingContextRef {
-  listing_id?: string;     // identifiant interne Mimmoza (= id dans v_quick_questions_mvp)
-  url?: string;            // URL publique de l'annonce (priorité 2 après listing_id)
+  listing_id?: string;
+  url?: string;
   city?: string;
   zip_code?: string;
-  price?: number;          // Prix en euros
-  surface?: number;        // Surface en m²
-  property_type?: string;  // ex. "Appartement", "Maison", "Local"
+  price?: number;
+  surface?: number;
+  property_type?: string;
 }
 
 export interface UserContextRef {
@@ -293,3 +487,14 @@ export interface ChatMessage {
 }
 
 export type CopilotStatus = 'idle' | 'streaming' | 'error';
+
+// ─── Alias pour copilotClient.ts ──────────────────────────────────────────────
+export type CopilotMimmozaContext = MimmozaContext & {
+  listing_id?: string;
+  url?: string;
+  city?: string;
+  zip_code?: string;
+  price?: number;
+  surface?: number;
+  property_type?: string;
+};

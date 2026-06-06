@@ -476,20 +476,19 @@ export default function RechercheContactsPage() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <div className="flex items-center gap-2 mb-2">
-          <span className="inline-block w-1.5 h-6 rounded-sm bg-gradient-to-b from-violet-500 to-purple-600" />
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            Recherche contacts
-          </h1>
+      <div className="overflow-hidden rounded-[32px] bg-gradient-to-r from-[#6f5bd6] via-[#8d78df] to-[#b39ddb] px-8 py-8 text-white shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
+        <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white/90">
+          Promoteur · Opportunités
         </div>
-
-        <p className="text-sm text-slate-600 max-w-3xl">
+        <h1 className="text-4xl font-semibold tracking-tight">
+          Contacts mairie
+        </h1>
+        <p className="mt-3 max-w-2xl text-sm text-slate-200">
           Retrouvez les coordonnées des mairies d&apos;une zone : commune, code
           postal, maire, email, téléphone et adresse postale. Les informations
           manquantes sont signalées explicitement et ne sont jamais déduites.
         </p>
-      </header>
+      </div>
 
       <section
         className="bg-white rounded-xl border border-slate-200 shadow-sm p-5"

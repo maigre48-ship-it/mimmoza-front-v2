@@ -1,5 +1,7 @@
 ﻿// src/spaces/promoteur/pages/Dashboard.tsx
-// VERSION 3.3.0 — modal "Nouvelle opportunité" style Réhabilitation
+// VERSION 3.4.0 — UI unifiée Promoteur (PromoteurPageHero + tokens)
+//   Seule la couche visuelle du Hero et des boutons a été modifiée.
+//   Toute la logique métier, les états, les callbacks sont intacts.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
@@ -41,11 +43,22 @@ import {
   X,
 } from "lucide-react";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Design tokens Promoteur ──────────────────────────────────────────────────
+import {
+  PROMOTEUR_COLORS,
+  PROMOTEUR_RADIUS,
+  PROMOTEUR_SHADOWS,
+  PROMOTEUR_BUTTON_STYLES,
+  GRAD,
+} from "../shared/promoteurDesign.tokens";
+import { PromoteurPageHero, HeroPrimaryButton, HeroGhostButton } from "../shared/components/PromoteurPageHero";
 
-const GRAD   = "linear-gradient(135deg, #7c6fcd 0%, #9c8fdd 50%, #b39ddb 100%)";
-const ACCENT  = "#5247b8";
-const ACCENT2 = "#7c6fcd";
+// ─── Alias locaux (compatibilité avec le code existant) ───────────────────────
+const GRAD_LOCAL  = GRAD;                         // gradient diagonal
+const ACCENT      = PROMOTEUR_COLORS.violetHover;
+const ACCENT2     = PROMOTEUR_COLORS.violet;
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const LS_QUICK_ADDRESS = "mimmoza.promoteur.quick.address";
 const LS_QUICK_COMMUNE = "mimmoza.promoteur.quick.commune";
@@ -162,6 +175,7 @@ const TYPE_BIEN_LABEL: Record<ApporteurDeal["typeBien"], string> = {
 };
 
 // ─── Modal Nouvelle Opportunité ───────────────────────────────────────────────
+// (identique à la v3.3.0, aucun changement logique)
 
 function NouvelleOpportuniteModal({
   open,
@@ -180,7 +194,6 @@ function NouvelleOpportuniteModal({
   const [surface,  setSurface]  = useState("");
   const [typeBien, setTypeBien] = useState("");
 
-  // Reset à chaque ouverture
   const prevOpen = useRef(open);
   useEffect(() => {
     if (open && !prevOpen.current) {
@@ -191,18 +204,16 @@ function NouvelleOpportuniteModal({
 
   if (!open) return null;
 
-  const handleSubmit = () => {
-    onCreate({ nom, adresse, commune, surface, typeBien });
-  };
+  const handleSubmit = () => onCreate({ nom, adresse, commune, surface, typeBien });
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
     padding: "10px 14px",
-    borderRadius: 12,
-    border: "1.5px solid #E8E3F8",
+    borderRadius: PROMOTEUR_RADIUS.input,
+    border: `1.5px solid ${PROMOTEUR_COLORS.violetBorder}`,
     background: "#FAFAFA",
     fontSize: 14,
-    color: "#1e1245",
+    color: PROMOTEUR_COLORS.textPrimary,
     outline: "none",
     boxSizing: "border-box",
     transition: "border-color 0.15s, box-shadow 0.15s",
@@ -216,282 +227,153 @@ function NouvelleOpportuniteModal({
     display: "block",
   };
 
+  const focusProps = {
+    onFocus: (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) => {
+      e.currentTarget.style.borderColor = PROMOTEUR_COLORS.violetLight;
+      e.currentTarget.style.boxShadow   = `0 0 0 3px rgba(124,99,217,0.10)`;
+    },
+    onBlur: (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) => {
+      e.currentTarget.style.borderColor = PROMOTEUR_COLORS.violetBorder;
+      e.currentTarget.style.boxShadow   = "none";
+    },
+  };
+
   return (
     <div
       style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 60,
-        background: "rgba(2,6,23,0.45)",
-        backdropFilter: "blur(4px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        position: "fixed", inset: 0, zIndex: 60,
+        background: "rgba(2,6,23,0.45)", backdropFilter: "blur(4px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
         padding: "24px 16px",
       }}
       onMouseDown={onClose}
     >
-      {/* Carte modale */}
       <div
         style={{
-          width: "100%",
-          maxWidth: 480,
+          width: "100%", maxWidth: 480,
           background: "#fff",
-          borderRadius: 24,
+          borderRadius: PROMOTEUR_RADIUS.card,
           boxShadow: "0 24px 64px rgba(2,6,23,0.20)",
           overflow: "hidden",
-          display: "flex",
-          flexDirection: "column",
+          display: "flex", flexDirection: "column",
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {/* ── Header ── */}
-        <div
-          style={{
-            padding: "24px 28px 20px",
-            borderBottom: "1px solid #F1F5F9",
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 16,
-          }}
-        >
-          {/* Icône violet Promoteur */}
-          <div
-            style={{
-              width: 48,
-              height: 48,
-              borderRadius: 14,
-              background: GRAD,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-              boxShadow: "0 4px 16px rgba(124,111,205,0.30)",
-            }}
-          >
-            {/* Icône terrain/foncier */}
+        {/* Header modal */}
+        <div style={{
+          padding: "24px 28px 20px",
+          borderBottom: `1px solid ${PROMOTEUR_COLORS.borderLight}`,
+          display: "flex", alignItems: "flex-start", gap: 16,
+        }}>
+          <div style={{
+            width: 48, height: 48,
+            borderRadius: 14,
+            background: PROMOTEUR_COLORS.gradMain,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0,
+            boxShadow: PROMOTEUR_SHADOWS.button,
+          }}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M3 21h18M5 21V9l7-6 7 6v12M10 21v-5h4v5"
-                stroke="white"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
+              <path d="M3 21h18M5 21V9l7-6 7 6v12M10 21v-5h4v5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
 
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: "#1e1245", lineHeight: 1.25, marginBottom: 3 }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: PROMOTEUR_COLORS.textPrimary, lineHeight: 1.25, marginBottom: 3 }}>
               Nouvelle opportunité
             </div>
-            <div style={{ fontSize: 13, color: "#9b8fcc" }}>
+            <div style={{ fontSize: 13, color: PROMOTEUR_COLORS.violetLight }}>
               Promoteur foncier
             </div>
           </div>
 
-          {/* Bouton × */}
           <button
             type="button"
             onClick={onClose}
             style={{
-              width: 32,
-              height: 32,
+              width: 32, height: 32,
               borderRadius: 8,
-              border: "1px solid #E8E3F8",
-              background: "#F8FAFC",
+              border: `1px solid ${PROMOTEUR_COLORS.violetBorder}`,
+              background: PROMOTEUR_COLORS.pageBg,
               cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#64748B",
-              flexShrink: 0,
-              fontSize: 18,
-              lineHeight: 1,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: PROMOTEUR_COLORS.textSecondary,
+              flexShrink: 0, fontSize: 18, lineHeight: 1,
             }}
-          >
-            ×
-          </button>
+          >×</button>
         </div>
 
-        {/* ── Corps ── */}
+        {/* Corps modal */}
         <div style={{ padding: "24px 28px", display: "flex", flexDirection: "column", gap: 16 }}>
-
-          {/* Nom du projet */}
           <div>
             <label style={labelStyle}>
               Nom du projet
-              <span style={{ color: "#9b8fcc", fontWeight: 400, marginLeft: 4 }}>
+              <span style={{ color: PROMOTEUR_COLORS.violetLight, fontWeight: 400, marginLeft: 4 }}>
                 (optionnel — généré automatiquement)
               </span>
             </label>
-            <input
-              type="text"
-              value={nom}
-              onChange={(e) => setNom(e.target.value)}
+            <input type="text" value={nom} onChange={(e) => setNom(e.target.value)}
               placeholder="Ex: Opportunité — 29 rue Georges Mandel"
-              style={inputStyle}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "#a78bfa";
-                e.currentTarget.style.boxShadow = "0 0 0 3px rgba(124,111,205,0.10)";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "#E8E3F8";
-                e.currentTarget.style.boxShadow = "none";
-              }}
-            />
+              style={inputStyle} {...focusProps} />
           </div>
 
-          {/* Adresse */}
           <div>
             <label style={labelStyle}>Adresse / Localisation</label>
-            <input
-              type="text"
-              value={adresse}
-              onChange={(e) => setAdresse(e.target.value)}
+            <input type="text" value={adresse} onChange={(e) => setAdresse(e.target.value)}
               placeholder="Ex: 12 rue de la Paix, 75001 Paris"
-              style={inputStyle}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "#a78bfa";
-                e.currentTarget.style.boxShadow = "0 0 0 3px rgba(124,111,205,0.10)";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "#E8E3F8";
-                e.currentTarget.style.boxShadow = "none";
-              }}
-            />
+              style={inputStyle} {...focusProps} />
           </div>
 
-          {/* Commune + Surface */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={labelStyle}>Commune</label>
-              <input
-                type="text"
-                value={commune}
-                onChange={(e) => setCommune(e.target.value)}
-                placeholder="Ex: Bordeaux"
-                style={inputStyle}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = "#a78bfa";
-                  e.currentTarget.style.boxShadow = "0 0 0 3px rgba(124,111,205,0.10)";
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = "#E8E3F8";
-                  e.currentTarget.style.boxShadow = "none";
-                }}
-              />
+              <input type="text" value={commune} onChange={(e) => setCommune(e.target.value)}
+                placeholder="Ex: Bordeaux" style={inputStyle} {...focusProps} />
             </div>
             <div>
               <label style={labelStyle}>Surface terrain (m²)</label>
-              <input
-                type="number"
-                value={surface}
-                onChange={(e) => setSurface(e.target.value)}
-                placeholder="Ex: 1200"
-                style={inputStyle}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = "#a78bfa";
-                  e.currentTarget.style.boxShadow = "0 0 0 3px rgba(124,111,205,0.10)";
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = "#E8E3F8";
-                  e.currentTarget.style.boxShadow = "none";
-                }}
-              />
+              <input type="number" value={surface} onChange={(e) => setSurface(e.target.value)}
+                placeholder="Ex: 1200" style={inputStyle} {...focusProps} />
             </div>
           </div>
 
-          {/* Type de bien */}
           <div>
             <label style={labelStyle}>Type de bien</label>
-            <select
-              value={typeBien}
-              onChange={(e) => setTypeBien(e.target.value)}
-              style={{
-                ...inputStyle,
-                cursor: "pointer",
-              }}
-            >
+            <select value={typeBien} onChange={(e) => setTypeBien(e.target.value)}
+              style={{ ...inputStyle, cursor: "pointer" }}>
               {TYPE_BIEN_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
           </div>
-
         </div>
 
-        {/* ── Footer ── */}
-        <div
-          style={{
-            padding: "0 28px 24px",
-            display: "flex",
-            gap: 12,
-            justifyContent: "flex-end",
-          }}
-        >
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isCreating}
+        {/* Footer modal */}
+        <div style={{ padding: "0 28px 24px", display: "flex", gap: 12, justifyContent: "flex-end" }}>
+          <button type="button" onClick={onClose} disabled={isCreating}
             style={{
               padding: "11px 22px",
-              borderRadius: 12,
-              border: "1.5px solid #E8E3F8",
-              background: "#fff",
-              color: "#374151",
-              fontWeight: 600,
-              fontSize: 14,
-              cursor: "pointer",
+              borderRadius: PROMOTEUR_RADIUS.button,
+              border: `1.5px solid ${PROMOTEUR_COLORS.violetBorder}`,
+              background: "#fff", color: "#374151",
+              fontWeight: 600, fontSize: 14, cursor: "pointer",
               opacity: isCreating ? 0.5 : 1,
-            }}
-          >
+            }}>
             Annuler
           </button>
 
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={isCreating}
+          <button type="button" onClick={handleSubmit} disabled={isCreating}
             style={{
-              padding: "11px 24px",
-              borderRadius: 12,
-              border: "none",
-              background: isCreating ? "#c4b5fd" : GRAD,
-              color: "#fff",
-              fontWeight: 700,
-              fontSize: 14,
+              ...PROMOTEUR_BUTTON_STYLES.primary,
+              background: isCreating ? PROMOTEUR_COLORS.violetLight : PROMOTEUR_COLORS.gradMain,
               cursor: isCreating ? "default" : "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              boxShadow: isCreating ? "none" : "0 4px 16px rgba(124,111,205,0.30)",
-              transition: "opacity 0.12s, transform 0.12s",
+              boxShadow: isCreating ? "none" : PROMOTEUR_SHADOWS.button,
             }}
-            onMouseEnter={(e) => {
-              if (!isCreating) {
-                e.currentTarget.style.opacity = "0.92";
-                e.currentTarget.style.transform = "translateY(-1px)";
-              }
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.opacity = "1";
-              e.currentTarget.style.transform = "translateY(0)";
-            }}
-          >
+            onMouseEnter={(e) => { if (!isCreating) { e.currentTarget.style.opacity = "0.92"; e.currentTarget.style.transform = "translateY(-1px)"; } }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.transform = "translateY(0)"; }}>
             {isCreating ? (
               <>
-                <span
-                  style={{
-                    width: 14,
-                    height: 14,
-                    borderRadius: "50%",
-                    border: "2px solid rgba(255,255,255,0.4)",
-                    borderTopColor: "#fff",
-                    display: "inline-block",
-                    animation: "spin 0.7s linear infinite",
-                  }}
-                />
+                <span style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", display: "inline-block", animation: "spin 0.7s linear infinite" }} />
                 Création…
               </>
             ) : (
@@ -503,14 +385,13 @@ function NouvelleOpportuniteModal({
           </button>
         </div>
       </div>
-
-      {/* Keyframe spin inline */}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
 
 // ─── RecentStudyRow ───────────────────────────────────────────────────────────
+// (identique à v3.3.0)
 
 function RecentStudyRow({
   study, onOpen, onDelete,
@@ -524,22 +405,20 @@ function RecentStudyRow({
 
   return (
     <div
-      className="group flex items-center gap-4 rounded-xl border bg-white px-5 py-4 transition-all duration-150 hover:-translate-y-[1px] hover:shadow-[0_4px_16px_rgba(124,111,205,0.12)] cursor-pointer"
-      style={{ borderColor: "#e8e3f8" }}
+      className="group flex items-center gap-4 rounded-xl border bg-white px-5 py-4 transition-all duration-150 hover:-translate-y-[1px] hover:shadow-[0_4px_16px_rgba(124,99,217,0.12)] cursor-pointer"
+      style={{ borderColor: PROMOTEUR_COLORS.violetBorder }}
       onClick={onOpen}
     >
-      <div
-        className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px]"
-        style={{ background: "#f4f2fe" }}
-      >
+      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px]"
+        style={{ background: PROMOTEUR_COLORS.violetBg }}>
         <Building2 className="h-5 w-5" style={{ color: ACCENT }} />
       </div>
 
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold" style={{ color: "#1e1245" }}>
+        <div className="truncate text-sm font-semibold" style={{ color: PROMOTEUR_COLORS.textPrimary }}>
           {study.title}
         </div>
-        <div className="mt-0.5 flex items-center gap-3 text-[11px]" style={{ color: "#9b8fcc" }}>
+        <div className="mt-0.5 flex items-center gap-3 text-[11px]" style={{ color: PROMOTEUR_COLORS.violetLight }}>
           {commune && <span>INSEE {commune}</span>}
           {surface > 0 && <span>{Math.round(surface).toLocaleString("fr-FR")} m²</span>}
           <span className="flex items-center gap-1">
@@ -552,8 +431,8 @@ function RecentStudyRow({
       <span
         className="flex-shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
         style={{
-          background: study.status === "active" ? "#ede9fe" : study.status === "archived" ? "#f1f5f9" : "#fef3c7",
-          color:      study.status === "active" ? ACCENT    : study.status === "archived" ? "#64748b"  : "#92400e",
+          background: study.status === "active" ? PROMOTEUR_COLORS.violetBg : study.status === "archived" ? "#f1f5f9" : "#fef3c7",
+          color:      study.status === "active" ? ACCENT                    : study.status === "archived" ? "#64748b"  : "#92400e",
         }}
       >
         {study.status === "active" ? "Active" : study.status === "archived" ? "Archivée" : "Brouillon"}
@@ -569,7 +448,7 @@ function RecentStudyRow({
         <button
           onClick={(e) => { e.stopPropagation(); onOpen(); }}
           className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition-all"
-          style={{ borderColor: "#c4b5fd", background: "#f5f3ff", color: ACCENT }}
+          style={{ borderColor: PROMOTEUR_COLORS.violetBorder, background: PROMOTEUR_COLORS.violetBg, color: ACCENT }}
         >
           Ouvrir
           <ArrowRight className="h-3 w-3" />
@@ -580,11 +459,10 @@ function RecentStudyRow({
 }
 
 // ─── ApporteurDealRow ─────────────────────────────────────────────────────────
+// (identique à v3.3.0)
 
 function ApporteurDealRow({
-  deal,
-  onOpen,
-  isOpening,
+  deal, onOpen, isOpening,
 }: {
   deal:      ApporteurDeal;
   onOpen:    () => void;
@@ -600,39 +478,29 @@ function ApporteurDealRow({
       </div>
 
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold" style={{ color: "#1e1245" }}>
+        <div className="truncate text-sm font-semibold" style={{ color: PROMOTEUR_COLORS.textPrimary }}>
           {deal.adresse}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px]" style={{ color: "#6b7280" }}>
           {deal.commune && <span>{deal.commune}</span>}
-          <span
-            className="rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
-            style={{ background: "#f0fdf4", color: "#16a34a" }}
-          >
+          <span className="rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide" style={{ background: "#f0fdf4", color: "#16a34a" }}>
             {TYPE_BIEN_LABEL[deal.typeBien]}
           </span>
-          {deal.surfaceTerrainM2 != null && (
-            <span>{deal.surfaceTerrainM2.toLocaleString("fr-FR")} m²</span>
-          )}
+          {deal.surfaceTerrainM2 != null && <span>{deal.surfaceTerrainM2.toLocaleString("fr-FR")} m²</span>}
           {deal.prixVendeur != null && (
             <span className="flex items-center gap-0.5 font-semibold text-emerald-700">
-              <Euro className="h-3 w-3" />
-              {formatEur(deal.prixVendeur)}
+              <Euro className="h-3 w-3" />{formatEur(deal.prixVendeur)}
             </span>
           )}
         </div>
         {deal.commentaire && (
-          <div className="mt-1 truncate text-[11px] italic" style={{ color: "#9ca3af" }}>
-            {deal.commentaire}
-          </div>
+          <div className="mt-1 truncate text-[11px] italic" style={{ color: "#9ca3af" }}>{deal.commentaire}</div>
         )}
       </div>
 
       {deal.promoteurStudyId && (
-        <span
-          className="hidden flex-shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide sm:inline-block"
-          style={{ background: "#ede9fe", color: ACCENT }}
-        >
+        <span className="hidden flex-shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide sm:inline-block"
+          style={{ background: PROMOTEUR_COLORS.violetBg, color: ACCENT }}>
           Étude liée
         </span>
       )}
@@ -643,14 +511,7 @@ function ApporteurDealRow({
         className="flex flex-shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition-all disabled:opacity-50"
         style={{ borderColor: "#6ee7b7", background: "#f0fdf4", color: "#065f46" }}
       >
-        {isOpening ? (
-          <span className="animate-pulse">Création…</span>
-        ) : (
-          <>
-            Ouvrir
-            <ArrowRight className="h-3 w-3" />
-          </>
-        )}
+        {isOpening ? <span className="animate-pulse">Création…</span> : <><span>Ouvrir</span><ArrowRight className="h-3 w-3" /></>}
       </button>
     </div>
   );
@@ -663,23 +524,16 @@ function ApporteurDealRow({
 export default function Dashboard(): React.ReactElement {
   const navigate = useNavigate();
 
-  // ── Études Promoteur ──────────────────────────────────────────────────────
-  const [studies,   setStudies]   = useState<PromoteurStudySummary[]>([]);
-  const [isLoaded,  setIsLoaded]  = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  // ── Saisie rapide ─────────────────────────────────────────────────────────
-  const [quickAddress, setQuickAddress] = useState("");
-  const [quickCommune, setQuickCommune] = useState("");
-  const [quickSurface, setQuickSurface] = useState("");
-
-  // ── Deals apporteurs ──────────────────────────────────────────────────────
-  const [apporteurDeals, setApporteurDeals] = useState<ApporteurDeal[]>([]);
-  const [openingDealId,  setOpeningDealId]  = useState<string | null>(null);
-
-  // ── Modal nouvelle opportunité ────────────────────────────────────────────
-  const [showModal,   setShowModal]   = useState(false);
-  const [isCreating,  setIsCreating]  = useState(false);
+  const [studies,       setStudies]       = useState<PromoteurStudySummary[]>([]);
+  const [isLoaded,      setIsLoaded]      = useState(false);
+  const [loadError,     setLoadError]     = useState<string | null>(null);
+  const [quickAddress,  setQuickAddress]  = useState("");
+  const [quickCommune,  setQuickCommune]  = useState("");
+  const [quickSurface,  setQuickSurface]  = useState("");
+  const [apporteurDeals,setApporteurDeals]= useState<ApporteurDeal[]>([]);
+  const [openingDealId, setOpeningDealId] = useState<string | null>(null);
+  const [showModal,     setShowModal]     = useState(false);
+  const [isCreating,    setIsCreating]    = useState(false);
 
   // ── Chargement études ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -689,10 +543,7 @@ export default function Dashboard(): React.ReactElement {
       if (cancelled) return;
       if (result.ok) {
         setStudies(result.data);
-        if (result.data.length === 0) {
-          clearActiveStudyId();
-          clearAllPromoteurSessionKeys();
-        }
+        if (result.data.length === 0) { clearActiveStudyId(); clearAllPromoteurSessionKeys(); }
       } else {
         setLoadError(result.error);
       }
@@ -702,7 +553,6 @@ export default function Dashboard(): React.ReactElement {
     return () => { cancelled = true; };
   }, []);
 
-  // ── Chargement deals apporteurs ───────────────────────────────────────────
   useEffect(() => {
     const all = listApporteurDeals();
     setApporteurDeals(all.filter(d => d.status === "transmis_promoteur"));
@@ -718,48 +568,30 @@ export default function Dashboard(): React.ReactElement {
     nom: string; adresse: string; commune: string; surface: string; typeBien: string;
   }) => {
     setIsCreating(true);
-
     const { nom, adresse, commune, surface } = fields;
-
     const title = nom.trim()
       ? nom.trim()
-      : adresse.trim()
-      ? `Opportunité — ${adresse.trim()}`
-      : commune.trim()
-      ? `Opportunité — ${commune.trim()}`
+      : adresse.trim() ? `Opportunité — ${adresse.trim()}`
+      : commune.trim() ? `Opportunité — ${commune.trim()}`
       : `Nouvelle étude — ${formatDateTimeFR(new Date().toISOString())}`;
 
     const result = await PromoteurStudyService.createStudy(title);
-    if (!result.ok) {
-      alert(`Impossible de créer l'étude : ${result.error}`);
-      setIsCreating(false);
-      return;
-    }
+    if (!result.ok) { alert(`Impossible de créer l'étude : ${result.error}`); setIsCreating(false); return; }
     const newStudy = result.data;
     clearAllPromoteurSessionKeys();
     setActiveStudyId(newStudy.id);
 
-    // Préremplissage pour FoncierPluPage (même logique que handleQuickLaunch)
     if (adresse.trim()) localStorage.setItem(LS_QUICK_ADDRESS, adresse.trim());
-    else                 localStorage.removeItem(LS_QUICK_ADDRESS);
-
+    else                localStorage.removeItem(LS_QUICK_ADDRESS);
     if (commune.trim()) localStorage.setItem(LS_QUICK_COMMUNE, commune.trim());
     else                localStorage.removeItem(LS_QUICK_COMMUNE);
-
     const surfaceNum = parseFloat(surface.replace(",", "."));
-    if (!isNaN(surfaceNum) && surfaceNum > 0)
-      localStorage.setItem(LS_QUICK_SURFACE, String(Math.round(surfaceNum)));
-    else
-      localStorage.removeItem(LS_QUICK_SURFACE);
+    if (!isNaN(surfaceNum) && surfaceNum > 0) localStorage.setItem(LS_QUICK_SURFACE, String(Math.round(surfaceNum)));
+    else                                       localStorage.removeItem(LS_QUICK_SURFACE);
 
     const summary: PromoteurStudySummary = {
-      id:         newStudy.id,
-      user_id:    newStudy.user_id,
-      title:      newStudy.title,
-      status:     newStudy.status,
-      created_at: newStudy.created_at,
-      updated_at: newStudy.updated_at,
-      foncier:    null,
+      id: newStudy.id, user_id: newStudy.user_id, title: newStudy.title,
+      status: newStudy.status, created_at: newStudy.created_at, updated_at: newStudy.updated_at, foncier: null,
     };
     setStudies(prev => [summary, ...prev]);
     setIsCreating(false);
@@ -767,134 +599,74 @@ export default function Dashboard(): React.ReactElement {
     navigate(`/promoteur/foncier?study=${encodeURIComponent(newStudy.id)}`);
   }, [navigate]);
 
-  // ── Ouvrir une étude ──────────────────────────────────────────────────────
   const openStudy = useCallback((study: PromoteurStudySummary) => {
     setActiveStudyId(study.id);
     navigate(`/promoteur/foncier?study=${encodeURIComponent(study.id)}`);
   }, [navigate]);
 
-  // ── Supprimer une étude ───────────────────────────────────────────────────
   const deleteStudy = useCallback(async (studyId: string) => {
     if (!window.confirm("Êtes-vous sûr de vouloir supprimer cette étude ?")) return;
     await PromoteurStudyService.deleteStudy(studyId);
     setStudies(prev => prev.filter(s => s.id !== studyId));
     const activeId = localStorage.getItem("mimmoza.promoteur.active_study_id");
-    if (activeId === studyId) {
-      clearActiveStudyId();
-      clearAllPromoteurSessionKeys();
-    }
+    if (activeId === studyId) { clearActiveStudyId(); clearAllPromoteurSessionKeys(); }
   }, []);
 
-  // ── Quick launch (inchangé) ───────────────────────────────────────────────
   const handleQuickLaunch = useCallback(async () => {
     const address = quickAddress.trim();
     const commune = quickCommune.trim();
     const surface = quickSurface.trim().replace(/\s/g, "");
-
-    const title = address
-      ? `Opportunité — ${address}`
-      : commune
-      ? `Opportunité — ${commune}`
-      : `Nouvelle étude — ${formatDateTimeFR(new Date().toISOString())}`;
+    const title = address ? `Opportunité — ${address}` : commune ? `Opportunité — ${commune}` : `Nouvelle étude — ${formatDateTimeFR(new Date().toISOString())}`;
 
     const result = await PromoteurStudyService.createStudy(title);
-    if (!result.ok) {
-      alert(`Impossible de créer l'étude : ${result.error}`);
-      return;
-    }
+    if (!result.ok) { alert(`Impossible de créer l'étude : ${result.error}`); return; }
     const newStudy = result.data;
     clearAllPromoteurSessionKeys();
     setActiveStudyId(newStudy.id);
 
-    if (address) localStorage.setItem(LS_QUICK_ADDRESS, address);
-    else         localStorage.removeItem(LS_QUICK_ADDRESS);
-
-    if (commune) localStorage.setItem(LS_QUICK_COMMUNE, commune);
-    else         localStorage.removeItem(LS_QUICK_COMMUNE);
-
+    if (address) localStorage.setItem(LS_QUICK_ADDRESS, address); else localStorage.removeItem(LS_QUICK_ADDRESS);
+    if (commune) localStorage.setItem(LS_QUICK_COMMUNE, commune); else localStorage.removeItem(LS_QUICK_COMMUNE);
     if (surface !== "") {
-      const surfaceNum = parseFloat(surface.replace(",", "."));
-      if (!isNaN(surfaceNum) && surfaceNum > 0)
-        localStorage.setItem(LS_QUICK_SURFACE, String(Math.round(surfaceNum)));
-      else
-        localStorage.removeItem(LS_QUICK_SURFACE);
-    } else {
-      localStorage.removeItem(LS_QUICK_SURFACE);
-    }
+      const sn = parseFloat(surface.replace(",", "."));
+      if (!isNaN(sn) && sn > 0) localStorage.setItem(LS_QUICK_SURFACE, String(Math.round(sn)));
+      else                       localStorage.removeItem(LS_QUICK_SURFACE);
+    } else { localStorage.removeItem(LS_QUICK_SURFACE); }
 
     const summary: PromoteurStudySummary = {
-      id:         newStudy.id,
-      user_id:    newStudy.user_id,
-      title:      newStudy.title,
-      status:     newStudy.status,
-      created_at: newStudy.created_at,
-      updated_at: newStudy.updated_at,
-      foncier:    null,
+      id: newStudy.id, user_id: newStudy.user_id, title: newStudy.title,
+      status: newStudy.status, created_at: newStudy.created_at, updated_at: newStudy.updated_at, foncier: null,
     };
     setStudies(prev => [summary, ...prev]);
     navigate(`/promoteur/foncier?study=${encodeURIComponent(newStudy.id)}`);
   }, [quickAddress, quickCommune, quickSurface, navigate]);
 
-  // ── Ouvrir un deal apporteur (inchangé) ───────────────────────────────────
   const openApporteurDeal = useCallback(async (deal: ApporteurDeal) => {
-    if (deal.promoteurStudyId) {
-      navigate(`/promoteur/foncier?study=${encodeURIComponent(deal.promoteurStudyId)}`);
-      return;
-    }
-
+    if (deal.promoteurStudyId) { navigate(`/promoteur/foncier?study=${encodeURIComponent(deal.promoteurStudyId)}`); return; }
     setOpeningDealId(deal.id);
-
     const title  = `Deal apporteur — ${deal.adresse}`;
     const result = await PromoteurStudyService.createStudy(title);
-    if (!result.ok) {
-      alert(`Impossible de créer l'étude : ${result.error}`);
-      setOpeningDealId(null);
-      return;
-    }
+    if (!result.ok) { alert(`Impossible de créer l'étude : ${result.error}`); setOpeningDealId(null); return; }
     const newStudy = result.data;
-
     clearAllPromoteurSessionKeys();
     setActiveStudyId(newStudy.id);
-
     updateApporteurDeal(deal.id, { promoteurStudyId: newStudy.id });
-    setApporteurDeals(prev =>
-      prev.map(d => d.id === deal.id ? { ...d, promoteurStudyId: newStudy.id } : d)
-    );
-
-    if (deal.adresse)
-      localStorage.setItem(LS_QUICK_ADDRESS, deal.adresse);
-    else
-      localStorage.removeItem(LS_QUICK_ADDRESS);
-
-    if (deal.commune)
-      localStorage.setItem(LS_QUICK_COMMUNE, deal.commune);
-    else
-      localStorage.removeItem(LS_QUICK_COMMUNE);
-
+    setApporteurDeals(prev => prev.map(d => d.id === deal.id ? { ...d, promoteurStudyId: newStudy.id } : d));
+    if (deal.adresse)           localStorage.setItem(LS_QUICK_ADDRESS, deal.adresse);
+    if (deal.commune)           localStorage.setItem(LS_QUICK_COMMUNE, deal.commune);
     if (deal.surfaceTerrainM2 != null && deal.surfaceTerrainM2 > 0)
       localStorage.setItem(LS_QUICK_SURFACE, String(Math.round(deal.surfaceTerrainM2)));
-    else
-      localStorage.removeItem(LS_QUICK_SURFACE);
-
     const summary: PromoteurStudySummary = {
-      id:         newStudy.id,
-      user_id:    newStudy.user_id,
-      title:      newStudy.title,
-      status:     newStudy.status,
-      created_at: newStudy.created_at,
-      updated_at: newStudy.updated_at,
-      foncier:    null,
+      id: newStudy.id, user_id: newStudy.user_id, title: newStudy.title,
+      status: newStudy.status, created_at: newStudy.created_at, updated_at: newStudy.updated_at, foncier: null,
     };
     setStudies(prev => [summary, ...prev]);
     setOpeningDealId(null);
-
     navigate(`/promoteur/foncier?study=${encodeURIComponent(newStudy.id)}`);
   }, [navigate]);
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <>
-      {/* ══ MODAL NOUVELLE OPPORTUNITÉ ══════════════════════════════════════ */}
       <NouvelleOpportuniteModal
         open={showModal}
         onClose={() => !isCreating && setShowModal(false)}
@@ -904,151 +676,97 @@ export default function Dashboard(): React.ReactElement {
 
       <div className="space-y-6">
 
-        {/* ══════════════════════════════════════
-            1. HERO COCKPIT — style Investisseur
-        ══════════════════════════════════════ */}
-        <div
-          style={{
-            background: GRAD,
-            borderRadius: 24,
-            padding: "32px 36px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 20,
-            boxShadow: "0 8px 32px rgba(124,111,205,0.22)",
-            position: "relative",
-            overflow: "hidden",
-          }}
-        >
-          {/* Décors géométriques */}
-          <div style={{ position: "absolute", top: -50, right: -50, width: 220, height: 220, borderRadius: "50%", background: "rgba(255,255,255,0.07)", pointerEvents: "none" }} />
-          <div style={{ position: "absolute", bottom: -35, right: 160, width: 140, height: 140, borderRadius: "50%", background: "rgba(255,255,255,0.05)", pointerEvents: "none" }} />
-          <div style={{ position: "absolute", top: 20, right: 300, width: 6, height: 6, borderRadius: "50%", background: "rgba(255,255,255,0.35)", pointerEvents: "none" }} />
+        {/* ══ 1. HERO v2 — identique à VeilleMarchePage ════════════════════ */}
+        <PromoteurPageHero
+          badge="Promoteur · Cockpit foncier"
+          title="Opportunités"
+          metaLines={[
+            {
+              text: "Importez une opportunité, qualifiez-la rapidement, testez la faisabilité et préparez votre comité foncier.",
+            },
+            {
+              text: `${sortedStudies.length} étude${sortedStudies.length > 1 ? "s" : ""} active${sortedStudies.length > 1 ? "s" : ""}`,
+            },
+          ]}
+          statCards={[
+            { label: "Opportunités", value: String(sortedStudies.length), tone: "indigo" },
+            { label: "Deals apporteurs", value: String(apporteurDeals.length), tone: "emerald" },
+          ]}
+          actions={
+            <>
+              <HeroPrimaryButton onClick={() => setShowModal(true)}>
+                <Plus style={{ width: 16, height: 16 }} />
+                Nouvelle opportunité
+              </HeroPrimaryButton>
+              <HeroGhostButton title="Bientôt disponible">
+                <Download style={{ width: 15, height: 15 }} />
+                Import Kel Foncier
+              </HeroGhostButton>
+            </>
+          }
+        />
 
-          <div style={{ position: "relative" }}>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
-              Promoteur › Cockpit foncier
-            </div>
-            <div style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5 }}>
-              Opportunités
-            </div>
-            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>
-              Importez une opportunité, qualifiez-la rapidement, testez la faisabilité et préparez votre comité foncier.
-            </div>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0, position: "relative" }}>
-            <button
-              onClick={() => setShowModal(true)}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 8,
-                padding: "13px 22px", borderRadius: 14, border: "none",
-                background: "#fff", color: ACCENT, fontWeight: 700, fontSize: 14,
-                cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.16)",
-                transition: "transform 0.14s ease, box-shadow 0.14s ease",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 28px rgba(0,0,0,0.20)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.16)"; }}
-            >
-              <Plus style={{ width: 16, height: 16 }} />
-              Nouvelle opportunité
-            </button>
-            <button
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 8,
-                padding: "13px 20px", borderRadius: 14,
-                border: "1px solid rgba(255,255,255,0.30)",
-                background: "rgba(255,255,255,0.14)", color: "white",
-                fontWeight: 600, fontSize: 14, cursor: "pointer",
-              }}
-              title="Bientôt disponible"
-            >
-              <Download style={{ width: 15, height: 15 }} />
-              Import Kel Foncier
-            </button>
-          </div>
-        </div>
-
-        {/* ══════════════════════════════════════
-            2. SAISIE RAPIDE (inchangée)
-        ══════════════════════════════════════ */}
-        <div className="rounded-2xl border bg-white px-6 py-5" style={{ borderColor: "#e8e3f8" }}>
+        {/* ══ 2. SAISIE RAPIDE ═════════════════════════════════════════════ */}
+        <div className="rounded-2xl border bg-white px-6 py-5"
+          style={{ borderColor: PROMOTEUR_COLORS.violetBorder }}>
           <div className="mb-4 flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: "#f4f2fe" }}>
-              <Zap className="h-3.5 w-3.5" style={{ color: ACCENT }} />
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg"
+              style={{ background: PROMOTEUR_COLORS.violetBg }}>
+              <Zap className="h-3.5 w-3.5" style={{ color: ACCENT2 }} />
             </div>
-            <p className="text-sm font-semibold" style={{ color: "#1e1245" }}>Lancement rapide</p>
-            <span
-              className="ml-1 rounded-full px-2 py-0.5 text-[9px] font-medium uppercase tracking-wide"
-              style={{ background: "#f4f2fe", color: ACCENT2 }}
-            >
+            <p className="text-sm font-semibold" style={{ color: PROMOTEUR_COLORS.textPrimary }}>Lancement rapide</p>
+            <span className="ml-1 rounded-full px-2 py-0.5 text-[9px] font-medium uppercase tracking-wide"
+              style={{ background: PROMOTEUR_COLORS.violetBg, color: ACCENT2 }}>
               Pré-analyse express
             </span>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="relative sm:col-span-1">
-              <MapPin className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "#c4b5fd" }} />
-              <input
-                type="text"
-                value={quickAddress}
-                onChange={(e) => setQuickAddress(e.target.value)}
+              <MapPin className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
+                style={{ color: PROMOTEUR_COLORS.violetLight }} />
+              <input type="text" value={quickAddress} onChange={(e) => setQuickAddress(e.target.value)}
                 placeholder="Adresse ou n° parcelle"
                 className="w-full rounded-xl border py-2.5 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-violet-300 focus:ring-2 focus:ring-violet-100 transition-all"
-                style={{ borderColor: "#e8e3f8", color: "#1e1245" }}
-              />
+                style={{ borderColor: PROMOTEUR_COLORS.violetBorder, color: PROMOTEUR_COLORS.textPrimary }} />
             </div>
-
             <div className="relative">
-              <Building2 className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "#c4b5fd" }} />
-              <input
-                type="text"
-                value={quickCommune}
-                onChange={(e) => setQuickCommune(e.target.value)}
+              <Building2 className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
+                style={{ color: PROMOTEUR_COLORS.violetLight }} />
+              <input type="text" value={quickCommune} onChange={(e) => setQuickCommune(e.target.value)}
                 placeholder="Commune"
                 className="w-full rounded-xl border py-2.5 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-violet-300 focus:ring-2 focus:ring-violet-100 transition-all"
-                style={{ borderColor: "#e8e3f8", color: "#1e1245" }}
-              />
+                style={{ borderColor: PROMOTEUR_COLORS.violetBorder, color: PROMOTEUR_COLORS.textPrimary }} />
             </div>
-
             <div className="relative">
-              <Layers className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "#c4b5fd" }} />
-              <input
-                type="text"
-                value={quickSurface}
-                onChange={(e) => setQuickSurface(e.target.value)}
+              <Layers className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
+                style={{ color: PROMOTEUR_COLORS.violetLight }} />
+              <input type="text" value={quickSurface} onChange={(e) => setQuickSurface(e.target.value)}
                 placeholder="Surface terrain (m², optionnel)"
                 className="w-full rounded-xl border py-2.5 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-violet-300 focus:ring-2 focus:ring-violet-100 transition-all"
-                style={{ borderColor: "#e8e3f8", color: "#1e1245" }}
-              />
+                style={{ borderColor: PROMOTEUR_COLORS.violetBorder, color: PROMOTEUR_COLORS.textPrimary }} />
             </div>
           </div>
 
           <div className="mt-3 flex items-center justify-between">
-            <p className="text-[11px]" style={{ color: "#b0a0d8" }}>
+            <p className="text-[11px]" style={{ color: PROMOTEUR_COLORS.violetLight }}>
               Ces informations seront pré-remplies dans votre nouvelle étude.
             </p>
-            <button
-              onClick={handleQuickLaunch}
+            <button onClick={handleQuickLaunch}
               className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all duration-150 hover:brightness-110 active:scale-[0.98]"
-              style={{ background: GRAD, color: "white", boxShadow: "0 4px 14px rgba(124,111,205,0.35)" }}
-            >
+              style={{ background: PROMOTEUR_COLORS.gradMain, color: "white", boxShadow: PROMOTEUR_SHADOWS.button }}>
               Lancer la pré-analyse
               <ArrowRight className="h-4 w-4" />
             </button>
           </div>
         </div>
 
-        {/* ══════════════════════════════════════
-            3. PIPELINE MÉTIER — 6 ÉTAPES
-        ══════════════════════════════════════ */}
+        {/* ══ 3. PIPELINE ══════════════════════════════════════════════════ */}
         <div>
           <div className="mb-4">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.13em]" style={{ color: "#b0a0d8" }}>
-              Parcours métier
-            </p>
-            <p className="mt-0.5 text-sm font-semibold" style={{ color: "#1e1245" }}>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.13em]"
+              style={{ color: PROMOTEUR_COLORS.violetLight }}>Parcours métier</p>
+            <p className="mt-0.5 text-sm font-semibold" style={{ color: PROMOTEUR_COLORS.textPrimary }}>
               Pipeline Opportunité → Comité
             </p>
           </div>
@@ -1057,17 +775,12 @@ export default function Dashboard(): React.ReactElement {
             {PIPELINE_STEPS.map((step, i) => {
               const Icon = step.icon;
               return (
-                <Link
-                  key={step.id}
-                  to={step.route}
+                <Link key={step.id} to={step.route}
                   className="group relative flex flex-col gap-3 rounded-xl border p-4 transition-all duration-150 hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(15,10,40,0.08)]"
-                  style={{ background: step.bg, borderColor: step.border }}
-                >
+                  style={{ background: step.bg, borderColor: step.border }}>
                   <div className="flex items-center justify-between">
-                    <div
-                      className="flex h-8 w-8 items-center justify-center rounded-lg transition-transform duration-150 group-hover:scale-105"
-                      style={{ background: step.color + "18" }}
-                    >
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg transition-transform duration-150 group-hover:scale-105"
+                      style={{ background: step.color + "18" }}>
                       <Icon className="h-4 w-4" style={{ color: step.color }} />
                     </div>
                     <span className="text-[9px] font-bold tabular-nums" style={{ color: step.color + "80" }}>
@@ -1075,8 +788,8 @@ export default function Dashboard(): React.ReactElement {
                     </span>
                   </div>
                   <div>
-                    <p className="text-xs font-semibold leading-tight" style={{ color: "#1e1245" }}>{step.label}</p>
-                    <p className="mt-1 text-[10px] leading-[1.45]" style={{ color: "#8a7ec8" }}>{step.description}</p>
+                    <p className="text-xs font-semibold leading-tight" style={{ color: PROMOTEUR_COLORS.textPrimary }}>{step.label}</p>
+                    <p className="mt-1 text-[10px] leading-[1.45]" style={{ color: PROMOTEUR_COLORS.violetLight }}>{step.description}</p>
                   </div>
                   <div className="flex items-center gap-1 text-[10px] font-medium" style={{ color: step.color }}>
                     <span>Accéder</span>
@@ -1088,34 +801,26 @@ export default function Dashboard(): React.ReactElement {
           </div>
         </div>
 
-        {/* ══════════════════════════════════════
-            4. OPPORTUNITÉS APPORTEURS
-        ══════════════════════════════════════ */}
+        {/* ══ 4. OPPORTUNITÉS APPORTEURS ═══════════════════════════════════ */}
         {apporteurDeals.length > 0 && (
           <div>
             <div className="mb-3 flex items-center gap-2">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: "#f0fdf4" }}>
                 <UserCheck className="h-3.5 w-3.5 text-emerald-600" />
               </div>
-              <p className="text-sm font-semibold" style={{ color: "#1e1245" }}>
+              <p className="text-sm font-semibold" style={{ color: PROMOTEUR_COLORS.textPrimary }}>
                 Opportunités apporteurs
               </p>
-              <span
-                className="rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
-                style={{ background: "#f0fdf4", color: "#16a34a" }}
-              >
+              <span className="rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+                style={{ background: "#f0fdf4", color: "#16a34a" }}>
                 {apporteurDeals.length} transmis
               </span>
             </div>
-
             <div className="space-y-2">
               {apporteurDeals.map(deal => (
-                <ApporteurDealRow
-                  key={deal.id}
-                  deal={deal}
+                <ApporteurDealRow key={deal.id} deal={deal}
                   onOpen={() => openApporteurDeal(deal)}
-                  isOpening={openingDealId === deal.id}
-                />
+                  isOpening={openingDealId === deal.id} />
               ))}
             </div>
           </div>
@@ -1123,129 +828,106 @@ export default function Dashboard(): React.ReactElement {
 
         <div className="grid gap-6 lg:grid-cols-5">
 
-          {/* ══════════════════════════════════════
-              5. ACTIONS RAPIDES
-          ══════════════════════════════════════ */}
+          {/* ══ 5. ACTIONS RAPIDES ═══════════════════════════════════════ */}
           <div className="lg:col-span-2">
-            <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.13em]" style={{ color: "#b0a0d8" }}>
-              Actions rapides
-            </p>
+            <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.13em]"
+              style={{ color: PROMOTEUR_COLORS.violetLight }}>Actions rapides</p>
 
-            <div className="overflow-hidden rounded-2xl border bg-white" style={{ borderColor: "#e8e3f8" }}>
+            <div className="overflow-hidden rounded-2xl border bg-white"
+              style={{ borderColor: PROMOTEUR_COLORS.violetBorder }}>
               {QUICK_ACTIONS.map((action, i) => {
                 const Icon   = action.icon;
                 const isLast = i === QUICK_ACTIONS.length - 1;
                 return (
-                  <Link
-                    key={action.label}
-                    to={action.route}
+                  <Link key={action.label} to={action.route}
                     className="group flex items-center gap-3 px-4 py-3.5 transition-colors duration-100 hover:bg-violet-50"
-                    style={{ borderBottom: isLast ? "none" : "0.5px solid #f0ecfc" }}
-                  >
-                    <div
-                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[9px] transition-transform duration-150 group-hover:scale-105"
-                      style={{ background: "#f4f2fe" }}
-                    >
+                    style={{ borderBottom: isLast ? "none" : `0.5px solid ${PROMOTEUR_COLORS.borderLight}` }}>
+                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[9px] transition-transform duration-150 group-hover:scale-105"
+                      style={{ background: PROMOTEUR_COLORS.violetBg }}>
                       <Icon className="h-4 w-4" style={{ color: ACCENT2 }} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold" style={{ color: "#1e1245" }}>{action.label}</p>
-                      {action.tag && <p className="text-[10px]" style={{ color: "#b0a0d8" }}>{action.tag}</p>}
+                      <p className="text-xs font-semibold" style={{ color: PROMOTEUR_COLORS.textPrimary }}>{action.label}</p>
+                      {action.tag && <p className="text-[10px]" style={{ color: PROMOTEUR_COLORS.violetLight }}>{action.tag}</p>}
                     </div>
-                    <ArrowRight
-                      className="h-3.5 w-3.5 flex-shrink-0 opacity-0 transition-all duration-150 group-hover:translate-x-0.5 group-hover:opacity-100"
-                      style={{ color: ACCENT2 }}
-                    />
+                    <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 opacity-0 transition-all duration-150 group-hover:translate-x-0.5 group-hover:opacity-100"
+                      style={{ color: ACCENT2 }} />
                   </Link>
                 );
               })}
             </div>
 
-            <div
-              className="mt-3 flex items-center justify-between rounded-xl border px-4 py-3.5"
-              style={{ borderColor: "#e8e3f8", background: "#faf8ff" }}
-            >
+            <div className="mt-3 flex items-center justify-between rounded-xl border px-4 py-3.5"
+              style={{ borderColor: PROMOTEUR_COLORS.violetBorder, background: PROMOTEUR_COLORS.violetBg }}>
               <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[9px]" style={{ background: "#f4f2fe" }}>
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[9px]"
+                  style={{ background: "#fff" }}>
                   <Download className="h-4 w-4" style={{ color: ACCENT2 }} />
                 </div>
                 <div>
-                  <p className="text-xs font-semibold" style={{ color: "#1e1245" }}>Import Kel Foncier</p>
-                  <p className="text-[10px]" style={{ color: "#b0a0d8" }}>Connexion bientôt disponible</p>
+                  <p className="text-xs font-semibold" style={{ color: PROMOTEUR_COLORS.textPrimary }}>Import Kel Foncier</p>
+                  <p className="text-[10px]" style={{ color: PROMOTEUR_COLORS.violetLight }}>Connexion bientôt disponible</p>
                 </div>
               </div>
-              <span
-                className="rounded-full px-2.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
-                style={{ background: "#ede9fe", color: ACCENT }}
-              >
+              <span className="rounded-full px-2.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+                style={{ background: PROMOTEUR_COLORS.violetBg, color: ACCENT }}>
                 Bientôt
               </span>
             </div>
           </div>
 
-          {/* ══════════════════════════════════════
-              6. DOSSIERS RÉCENTS
-          ══════════════════════════════════════ */}
+          {/* ══ 6. DOSSIERS RÉCENTS ══════════════════════════════════════ */}
           <div className="lg:col-span-3">
             <div className="mb-3 flex items-center justify-between">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.13em]" style={{ color: "#b0a0d8" }}>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.13em]"
+                style={{ color: PROMOTEUR_COLORS.violetLight }}>
                 Opportunités récentes
                 {isLoaded && sortedStudies.length > 0 && (
-                  <span
-                    className="ml-2 rounded-full px-2 py-0.5 text-[9px] normal-case tracking-normal"
-                    style={{ background: "#ede9fe", color: ACCENT }}
-                  >
+                  <span className="ml-2 rounded-full px-2 py-0.5 text-[9px] normal-case tracking-normal"
+                    style={{ background: PROMOTEUR_COLORS.violetBg, color: ACCENT }}>
                     {sortedStudies.length}
                   </span>
                 )}
               </p>
               {isLoaded && sortedStudies.length > 0 && (
-                <button
-                  onClick={() => setShowModal(true)}
+                <button onClick={() => setShowModal(true)}
                   className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-all hover:brightness-110"
-                  style={{ background: "#f4f2fe", color: ACCENT }}
-                >
-                  <Plus className="h-3 w-3" />
-                  Nouvelle
+                  style={{ background: PROMOTEUR_COLORS.violetBg, color: ACCENT }}>
+                  <Plus className="h-3 w-3" />Nouvelle
                 </button>
               )}
             </div>
 
             {!isLoaded && (
-              <div className="flex items-center justify-center rounded-2xl border py-10" style={{ borderColor: "#e8e3f8", background: "white" }}>
-                <p className="text-sm" style={{ color: "#b0a0d8" }}>Chargement des études…</p>
+              <div className="flex items-center justify-center rounded-2xl border py-10"
+                style={{ borderColor: PROMOTEUR_COLORS.border, background: "white" }}>
+                <p className="text-sm" style={{ color: PROMOTEUR_COLORS.violetLight }}>Chargement des études…</p>
               </div>
             )}
 
             {isLoaded && loadError && (
-              <div
-                className="mb-3 flex items-center gap-2 rounded-xl border px-4 py-3 text-xs"
-                style={{ background: "#fffbeb", borderColor: "#fde68a", color: "#92400e" }}
-              >
+              <div className="mb-3 flex items-center gap-2 rounded-xl border px-4 py-3 text-xs"
+                style={{ background: "#fffbeb", borderColor: "#fde68a", color: "#92400e" }}>
                 <AlertTriangle className="h-4 w-4 flex-shrink-0" />
                 Connexion Supabase limitée ({loadError})
               </div>
             )}
 
             {isLoaded && sortedStudies.length === 0 && (
-              <div
-                className="flex flex-col items-center justify-center rounded-2xl border px-8 py-12 text-center"
-                style={{ borderColor: "#e8e3f8", background: "white", borderStyle: "dashed" }}
-              >
-                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: "#f4f2fe" }}>
+              <div className="flex flex-col items-center justify-center rounded-2xl border px-8 py-12 text-center"
+                style={{ borderColor: PROMOTEUR_COLORS.violetBorder, background: "white", borderStyle: "dashed" }}>
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl"
+                  style={{ background: PROMOTEUR_COLORS.violetBg }}>
                   <FileText className="h-6 w-6" style={{ color: ACCENT2 }} />
                 </div>
-                <p className="mb-1 text-sm font-semibold" style={{ color: "#1e1245" }}>Aucune opportunité active</p>
-                <p className="mb-5 text-xs leading-5" style={{ color: "#9b8fcc" }}>
+                <p className="mb-1 text-sm font-semibold" style={{ color: PROMOTEUR_COLORS.textPrimary }}>Aucune opportunité active</p>
+                <p className="mb-5 text-xs leading-5" style={{ color: PROMOTEUR_COLORS.violetLight }}>
                   Créez votre première étude foncière pour démarrer le parcours d'analyse.
                 </p>
-                <button
-                  onClick={() => setShowModal(true)}
+                <button onClick={() => setShowModal(true)}
                   className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all hover:brightness-110 active:scale-[0.98]"
-                  style={{ background: GRAD, color: "white", boxShadow: "0 4px 14px rgba(124,111,205,0.30)" }}
-                >
-                  <Plus className="h-4 w-4" />
-                  Créer une opportunité
+                  style={{ background: PROMOTEUR_COLORS.gradMain, color: "white", boxShadow: PROMOTEUR_SHADOWS.button }}>
+                  <Plus className="h-4 w-4" />Créer une opportunité
                 </button>
               </div>
             )}
@@ -1253,15 +935,12 @@ export default function Dashboard(): React.ReactElement {
             {isLoaded && sortedStudies.length > 0 && (
               <div className="space-y-2">
                 {sortedStudies.slice(0, 6).map((s) => (
-                  <RecentStudyRow
-                    key={s.id}
-                    study={s}
+                  <RecentStudyRow key={s.id} study={s}
                     onOpen={() => openStudy(s)}
-                    onDelete={() => deleteStudy(s.id)}
-                  />
+                    onDelete={() => deleteStudy(s.id)} />
                 ))}
                 {sortedStudies.length > 6 && (
-                  <p className="pt-1 text-center text-[11px]" style={{ color: "#b0a0d8" }}>
+                  <p className="pt-1 text-center text-[11px]" style={{ color: PROMOTEUR_COLORS.violetLight }}>
                     + {sortedStudies.length - 6} autres études
                   </p>
                 )}

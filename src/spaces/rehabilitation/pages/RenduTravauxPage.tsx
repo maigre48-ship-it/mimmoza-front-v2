@@ -12,8 +12,8 @@ import RenduTravauxSource, {
 /* ------------------------------------------------------------------ */
 
 const REHAB_THEME: RenduTheme = {
-  gradient:    "linear-gradient(90deg, #f97316 0%, #ef4444 100%)",
-  accent:      "#f97316",
+  gradient:    "linear-gradient(135deg, #ea580c 0%, #fb923c 100%)",
+  accent:      "#ea580c",
   accentLight: "#fff7ed",
   accentDark:  "#c2410c",
 };
@@ -25,7 +25,7 @@ const REHAB_THEME: RenduTheme = {
 const RenduTravauxPage: React.FC = () => (
   <RenduTravauxSource
     theme={REHAB_THEME}
-    breadcrumb="Réhabilitation › Rendu travaux"
+    breadcrumb="Réhabilitation · Rendu travaux"
   />
 );
 

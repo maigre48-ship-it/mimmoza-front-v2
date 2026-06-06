@@ -12,3 +12,15 @@ body {
 #root {
   min-height: 100vh;
 }
+
+@media print {
+  [data-print-hide] { display: none !important; }
+
+  /* Masquer la scrollbar à l'impression */
+  html {
+    overflow: hidden !important;
+    scrollbar-width: none !important;
+  }
+  html::-webkit-scrollbar { display: none !important; }
+  body { overflow: hidden !important; }
+}

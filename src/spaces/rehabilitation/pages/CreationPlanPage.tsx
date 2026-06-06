@@ -73,7 +73,7 @@ import {
 const ACCENT       = '#f97316' as const;
 const ACCENT_LIGHT = '#fff7ed' as const;
 const ACCENT_DARK  = '#c2410c' as const;
-const GRAD         = 'linear-gradient(90deg, #f97316 0%, #ef4444 100%)' as const;
+const GRAD         = 'linear-gradient(135deg, #ea580c 0%, #fb923c 100%)' as const;
 
 // ─── Types locaux ─────────────────────────────────────────────────────────────
 
@@ -965,23 +965,22 @@ const CreationPlanPage: React.FC = () => {
 
       {/* ── Bannière ──────────────────────────────────────────────────────── */}
       <div style={{
-        background: GRAD, borderRadius: 16, padding: '20px 24px', marginBottom: 20,
+        background: GRAD, borderRadius: 24, padding: '32px 36px', marginBottom: 24,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        flexWrap: 'wrap', gap: 12,
+        flexWrap: 'wrap', gap: 20,
+        boxShadow: '0 8px 32px rgba(234,88,12,0.22)',
+        position: 'relative', overflow: 'hidden',
       }}>
-        <div>
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 5 }}>
-            Réhabilitation › Création de plan
+        <div style={{ position: 'relative' }}>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 10, fontWeight: 600 }}>
+            Réhabilitation · Assistant plan
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <PenSquare size={20} color="#fff" />
-            <div>
-              <h1 style={{ fontSize: 20, fontWeight: 900, color: '#fff', margin: 0 }}>Assistant plan</h1>
-              <p style={{ fontSize: 12, color: 'rgba(255,255,255,.75)', margin: 0 }}>
-                Dessin · Transcription IA · Vue vectorielle
-              </p>
-            </div>
-          </div>
+          <h1 style={{ fontSize: 30, fontWeight: 800, color: '#fff', marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5 }}>
+            Assistant plan
+          </h1>
+          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.75)', maxWidth: 460, lineHeight: 1.55, margin: 0 }}>
+            Dessin · Transcription IA · Vue vectorielle
+          </p>
         </div>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

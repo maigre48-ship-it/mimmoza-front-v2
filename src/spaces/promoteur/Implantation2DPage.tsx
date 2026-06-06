@@ -1,6 +1,6 @@
 ﻿// src/spaces/promoteur/Implantation2DPage.tsx
+// V6.10 — Hero v2 : design identique à VeilleMarchePage
 // V6.9 — Fix MultiPolygon : featureToPoint2D prend le polygone de plus grande surface
-//        (au lieu du premier) quand la fusion turf.union n'a pas fonctionné.
 // V6.8 — Captures scopées par studyId
 // V6.7 — Fix race condition hydration/auto-save (useLayoutEffect + hydratedRef)
 
@@ -42,12 +42,15 @@ import { patchModule }                            from "./shared/promoteurSnapsh
 import { writeCapture }                           from "./shared/captures.store";
 import { buildImplantation2DForPromoteurSnapshot } from "./plan2d/implantation2d.snapshot";
 
+import {
+  PromoteurPageHero,
+  HeroPrimaryButton,
+  StudyIdBadge,
+} from "./shared/components/PromoteurPageHero";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
 // ─────────────────────────────────────────────────────────────────────────────
-
-const VIOLET   = "#7c6fcd";
-const GRAD_PRO = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
 
 const PLACEHOLDER_PLU_RULES: PluRules = {
   minSetbackMeters:     3,
@@ -212,8 +215,6 @@ function isWGS84Feature(feature: Feature<Polygon | MultiPolygon>): boolean {
   return Math.abs(coords[0]) <= 180 && Math.abs(coords[1]) <= 90;
 }
 
-// Surface approximative (en unités carrées de coordonnées) d'un ring via la formule du lacet.
-// Sert uniquement à comparer des polygones entre eux, pas à calculer une aire réelle.
 function ringAreaApprox(ring: number[][]): number {
   if (!ring || ring.length < 3) return 0;
   let area = 0;
@@ -229,9 +230,6 @@ function featureToPoint2D(feature: Feature<Polygon | MultiPolygon>): Point2D[] {
   if (feature.geometry.type === "Polygon") {
     rawCoords = (feature.geometry.coordinates as number[][][])[0] ?? [];
   } else {
-    // MultiPolygon : prendre le polygone de plus grande surface (pas le premier).
-    //   Nécessaire quand turf.union n'a pas réussi à fusionner les parcelles
-    //   sélectionnées en un polygone unique (cf. computeCombined du hook).
     const polys = (feature.geometry.coordinates as number[][][][]) ?? [];
     if (polys.length > 0) {
       let biggestIdx = 0;
@@ -264,29 +262,25 @@ function featureToPoint2D(feature: Feature<Polygon | MultiPolygon>): Point2D[] {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ÉTATS DE CHARGEMENT / ERREUR
+// ÉTATS DE CHARGEMENT / ERREUR — hero v2
 // ─────────────────────────────────────────────────────────────────────────────
 
 function LoadingScreen({ studyId, label }: { studyId: string | null; label: string }) {
   return (
-    <div style={{ padding: "16px 0 0 0", background: "#f8fafc", minHeight: "100vh" }}>
-      <div style={{ padding: "0 16px", marginBottom: 16 }}>
-        <div style={{ background: GRAD_PRO, borderRadius: 14, padding: "20px 24px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
-          <div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>Promoteur › Conception</div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: "white", marginBottom: 4 }}>Implantation 2D</div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>Chargement de la parcelle…</div>
-          </div>
-          {studyId && (
-            <div style={{ padding: "6px 12px", borderRadius: 8, background: "rgba(255,255,255,0.15)", color: "white", fontSize: 11, fontWeight: 500, flexShrink: 0, marginTop: 4, border: "1px solid rgba(255,255,255,0.25)" }}>
-              Étude {studyId.slice(0, 8)}…
-            </div>
-          )}
-        </div>
+    <div style={{ background: "#f8fafc", minHeight: "100vh" }}>
+      <div style={{ padding: "16px 16px 0" }}>
+        <PromoteurPageHero
+          badge="Promoteur · Conception"
+          title="Implantation 2D"
+          metaLines={[
+            { text: label },
+            ...(studyId ? [{ text: <StudyIdBadge studyId={studyId} /> }] : []),
+          ]}
+        />
       </div>
-      <div style={{ padding: "0 16px" }}>
+      <div style={{ padding: "16px" }}>
         <div style={{ background: "white", borderRadius: 14, padding: "32px 28px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.06)", maxWidth: 480, display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ width: 36, height: 36, borderRadius: "50%", border: "3px solid #e2e8f0", borderTopColor: VIOLET, animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+          <div style={{ width: 36, height: 36, borderRadius: "50%", border: "3px solid #e2e8f0", borderTopColor: "#7c6fcd", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
           <div>
             <div style={{ fontSize: 15, fontWeight: 600, color: "#0f172a" }}>Restauration de la sélection foncière</div>
             <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>{label}</div>
@@ -300,23 +294,25 @@ function LoadingScreen({ studyId, label }: { studyId: string | null; label: stri
 
 function EmptyState({ onGoToFoncier }: { onGoToFoncier: () => void }) {
   return (
-    <div style={{ padding: "16px 0 0 0", background: "#f8fafc", minHeight: "100vh" }}>
-      <div style={{ padding: "0 16px", marginBottom: 16 }}>
-        <div style={{ background: GRAD_PRO, borderRadius: 14, padding: "20px 24px" }}>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>Promoteur › Conception</div>
-          <div style={{ fontSize: 22, fontWeight: 600, color: "white" }}>Implantation 2D</div>
-        </div>
+    <div style={{ background: "#f8fafc", minHeight: "100vh" }}>
+      <div style={{ padding: "16px 16px 0" }}>
+        <PromoteurPageHero
+          badge="Promoteur · Conception"
+          title="Implantation 2D"
+          actions={
+            <HeroPrimaryButton onClick={onGoToFoncier}>
+              Aller dans Foncier →
+            </HeroPrimaryButton>
+          }
+        />
       </div>
-      <div style={{ padding: "0 16px" }}>
+      <div style={{ padding: "16px" }}>
         <div style={{ background: "white", borderRadius: 14, padding: "36px 28px", border: "1px solid #e2e8f0", maxWidth: 480 }}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>📍</div>
           <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>Aucune parcelle sélectionnée</div>
-          <div style={{ fontSize: 14, color: "#475569", lineHeight: 1.6, marginBottom: 24 }}>
+          <div style={{ fontSize: 14, color: "#475569", lineHeight: 1.6 }}>
             Pour ouvrir le Plan 2D, sélectionnez d'abord une parcelle dans l'outil Foncier.
           </div>
-          <button onClick={onGoToFoncier} style={{ padding: "10px 22px", borderRadius: 999, border: "none", background: GRAD_PRO, color: "white", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
-            Aller dans Foncier →
-          </button>
         </div>
       </div>
     </div>
@@ -328,14 +324,24 @@ function ErrorState({ error, parcelIds, communeInsee, onContinueAnyway, onRefetc
   onContinueAnyway: () => void; onRefetch: () => void;
 }) {
   return (
-    <div style={{ padding: "16px 0 0 0", background: "#f8fafc", minHeight: "100vh" }}>
-      <div style={{ padding: "0 16px", marginBottom: 16 }}>
-        <div style={{ background: GRAD_PRO, borderRadius: 14, padding: "20px 24px" }}>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 6 }}>Promoteur › Conception</div>
-          <div style={{ fontSize: 22, fontWeight: 600, color: "white" }}>Implantation 2D</div>
-        </div>
+    <div style={{ background: "#f8fafc", minHeight: "100vh" }}>
+      <div style={{ padding: "16px 16px 0" }}>
+        <PromoteurPageHero
+          badge="Promoteur · Conception"
+          title="Implantation 2D"
+          actions={
+            <>
+              <HeroPrimaryButton onClick={onRefetch}>
+                🔄 Réessayer
+              </HeroPrimaryButton>
+              <HeroPrimaryButton onClick={onContinueAnyway}>
+                Continuer sans contour →
+              </HeroPrimaryButton>
+            </>
+          }
+        />
       </div>
-      <div style={{ padding: "0 16px" }}>
+      <div style={{ padding: "16px" }}>
         <div style={{ background: "white", borderRadius: 14, padding: "32px 28px", border: "1px solid #fecaca", maxWidth: 520 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: "#dc2626", marginBottom: 8 }}>⚠️ Géométrie cadastrale indisponible</div>
           <div style={{ marginBottom: 16, padding: "10px 14px", background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0" }}>
@@ -347,15 +353,7 @@ function ErrorState({ error, parcelIds, communeInsee, onContinueAnyway, onRefetc
             ))}
             {communeInsee && <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>INSEE {communeInsee}</div>}
           </div>
-          <div style={{ fontSize: 13, color: "#334155", marginBottom: 20, lineHeight: 1.65 }}>{error}</div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button onClick={onRefetch} style={{ padding: "9px 20px", borderRadius: 999, border: "1px solid #e2e8f0", background: "white", color: "#374151", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
-              🔄 Réessayer
-            </button>
-            <button onClick={onContinueAnyway} style={{ padding: "9px 20px", borderRadius: 999, border: "none", background: GRAD_PRO, color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
-              Continuer sans contour →
-            </button>
-          </div>
+          <div style={{ fontSize: 13, color: "#334155", lineHeight: 1.65 }}>{error}</div>
         </div>
       </div>
     </div>
@@ -555,11 +553,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId }) =
   const buildableEnvelope = useMemo<Vec2[] | null>(() => {
     if (parcelVec2.length < 3) return null;
     const env = computeBuildableEnvelope(parcelVec2, {
-  setbackMeters: PLACEHOLDER_PLU_RULES.minSetbackMeters ?? 0,
-  frontageSetbackMeters: 5,
-  sideSetbackMeters: 3,
-  rearSetbackMeters: 3,
-});
+      setbackMeters: PLACEHOLDER_PLU_RULES.minSetbackMeters ?? 0,
+      frontageSetbackMeters: 5,
+      sideSetbackMeters: 3,
+      rearSetbackMeters: 3,
+    });
     return env.length >= 3 ? env : null;
   }, [parcelVec2]);
 
@@ -660,7 +658,7 @@ const CaptureButton: React.FC<CaptureButtonProps> = ({ studyId }) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PAGE PRINCIPALE — V6.9
+// PAGE PRINCIPALE — V6.10
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const Implantation2DPage: React.FC = () => {
@@ -740,19 +738,14 @@ export const Implantation2DPage: React.FC = () => {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#f8fafc", overflow: "hidden" }}>
 
-      <div style={{ margin: "14px 16px 0", borderRadius: 14, padding: "14px 20px", background: GRAD_PRO, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div>
-          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", marginBottom: 2 }}>Promoteur › Conception</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: "white" }}>Implantation 2D</div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {studyId && (
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", background: "rgba(255,255,255,0.15)", padding: "4px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.2)" }}>
-              Étude {studyId.slice(0, 8)}…
-            </div>
-          )}
-          <CaptureButton studyId={studyId} />
-        </div>
+      {/* ── Hero v2 — design identique à VeilleMarchePage ── */}
+      <div style={{ padding: "14px 16px 0", flexShrink: 0 }}>
+        <PromoteurPageHero
+          badge="Promoteur · Conception"
+          title="Implantation 2D"
+          metaLines={studyId ? [{ text: <StudyIdBadge studyId={studyId} /> }] : undefined}
+          actions={<CaptureButton studyId={studyId} />}
+        />
       </div>
 
       <div style={{ padding: "8px 16px", background: "white", borderBottom: "1px solid #e2e8f0", flexShrink: 0 }}>
