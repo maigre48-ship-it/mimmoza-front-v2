@@ -49,8 +49,8 @@ type Props = {
   breadcrumb?: string;
 };
 
-const DEFAULT_THEME: SimuTheme = {
-  gradient: "linear-gradient(90deg, #2196f3 0%, #21cbf3 100%)",
+const DEFAULT_THEME = {
+  gradient: "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)",
   accent: "#1a72c4",
   accentLight: "#dbeafe",
   accentDark: "#1a72c4",
@@ -738,7 +738,7 @@ const SimulationTravauxPage: React.FC<Props> = ({ theme, breadcrumb }) => {
   const ACCENT = t.accent;
   const ACCENT_LIGHT = t.accentLight;
   const ACCENT_DARK = t.accentDark;
-  const resolvedBreadcrumb = breadcrumb ?? "Investisseur › Exécution";
+  const resolvedBreadcrumb = breadcrumb ?? "INVESTISSEUR · EXÉCUTION";
 
   const [mode, setMode] = useState<"simple" | "expert">("simple");
   const [range, setRange] = useState<TravauxRange>("standard");
@@ -810,22 +810,21 @@ const SimulationTravauxPage: React.FC<Props> = ({ theme, breadcrumb }) => {
           background: GRAD,
           borderRadius: 24,
           padding: "32px 36px",
-          marginBottom: 24,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: 20,
-          boxShadow: "0 8px 32px rgba(33,150,243,0.22)",
+          borderRadius: 32,
+padding: "40px 44px",
+marginBottom: 32,
+boxShadow: "0 20px 60px rgba(15,23,42,0.08)",
           position: "relative",
           overflow: "hidden",
         }}
       >
         <div style={{ position: "relative" }}>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.9)", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
+
             {resolvedBreadcrumb}
           </div>
-          <div style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5 }}>Simulation Travaux</div>
+          <div style={{ fontSize: 36, fontWeight: 600, color: "#fff", marginBottom: 10, lineHeight: 1.1, letterSpacing: "-0.025em" }}>Simulation Travaux</div>
+
           <div style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>
             Estimez le budget travaux de votre opération
           </div>

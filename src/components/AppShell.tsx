@@ -7,8 +7,7 @@ import {
   Menu, X, Home, FileText, Building2, ShieldCheck, PieChart, BarChart3, Map, Layers,
   TrendingUp, AlertTriangle, Grid3X3, Cuboid, Calculator, ChevronRight, Sparkles,
   Search, ClipboardList, Building, LayoutDashboard, Eye, Code2, Wand2,
-  FileSearch, Users, Plus, Hammer, ScanSearch, FolderKanban, PenSquare,
-  ShieldAlert, Zap,
+  FileSearch, Users, Plus, Hammer, ScanSearch, FolderKanban, ShieldAlert, Zap,
 } from "lucide-react";
 
 import mimmozaLogo from "../assets/mimmoza-logo.png";
@@ -337,13 +336,6 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       label: "Analyse du plan",
       items: [
         { label: "Analyse du plan", path: "/rehabilitation/analyse-plan", icon: ScanSearch, end: true },
-      ],
-    },
-    {
-      id: "creation-plan",
-      label: "Assistant plan",
-      items: [
-        { label: "Assistant plan", path: "/rehabilitation/creation-plan", icon: PenSquare, end: true },
       ],
     },
     {
@@ -1095,11 +1087,11 @@ export function AppShell(props: AppShellProps) {
       />
 
       <main className="flex-1 overflow-auto">
-        {isPublicPage
-          ? children
-          : <div className="mx-auto max-w-7xl px-4 py-6 lg:px-6">{children}</div>
-        }
-      </main>
+  {isPublicPage
+    ? children
+    : <div className="mx-auto max-w-7xl px-4 lg:px-6">{children}</div>
+  }
+</main>
 
       <footer className="border-t border-slate-200/80 bg-white py-3 px-4">
         <div className="mx-auto flex max-w-7xl items-center justify-between">

@@ -501,7 +501,7 @@ export default function ProgrammationPage() {
     <div style={{ fontFamily: "inherit" }}>
 
       {/* ── Hero — pleine largeur ── */}
-      <div style={{ padding: "16px 40px 0", marginBottom: 24 }}>
+      <div style={{ marginBottom: 24 }}>
         <PromoteurPageHero
           badge="Promoteur · Programmation"
           title="Programmation du projet"
@@ -522,7 +522,7 @@ export default function ProgrammationPage() {
       </div>
 
       {/* ── Contenu contraint ── */}
-      <div style={{ padding: "0 28px 32px", maxWidth: 1120, margin: "0 auto" }}>
+      <div style={{ padding: "0 0 32px" }}>
 
         {/* ── Ligne 1 : Terrain + Programme ── */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>

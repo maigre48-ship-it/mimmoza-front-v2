@@ -989,40 +989,41 @@ export function FoncierPluPage() {
   return (
     <div style={styles.container}>
 
-      {/* ══ v9.5.1 : Hero identique à VeilleMarchePage ══════════════════════ */}
-      <div style={{ marginBottom: 20 }}>
+      {/* ══ Hero — sorti du padding du container, pleine largeur ════════════ */}
+      <div style={{ margin: "-24px -24px 20px -24px" }}>
         <PromoteurPageHero
-          badge="Promoteur · Foncier & PLU"
-          title="Foncier & PLU"
-          metaLines={[
-            {
-              icon: <MapPin className="h-4 w-4" />,
-              text: projectInfo.parcelId
-                ? `Parcelle : ${projectInfo.parcelId}`
-                : projectInfo.address
-                ? projectInfo.address
-                : "Sélectionnez un terrain pour démarrer",
-            },
-            ...(studyId
-              ? [{ text: <StudyIdBadge studyId={studyId} /> }]
-              : []),
-          ]}
-          statCards={[
-            {
-              label: "Parcelles",
-              value: String(selectedParcels.length),
-              tone: "indigo",
-            },
-            {
-              label: "Surface totale",
-              value: totalAreaM2 != null
-                ? `${Math.round(totalAreaM2).toLocaleString("fr-FR")} m²`
-                : "—",
-              tone: "emerald",
-            },
-          ]}
+        badge="Promoteur · Foncier & PLU"
+        title="Foncier & PLU"
+        metaLines={[
+          {
+            icon: <MapPin className="h-4 w-4" />,
+            text: projectInfo.parcelId
+              ? `Parcelle : ${projectInfo.parcelId}`
+              : projectInfo.address
+              ? projectInfo.address
+              : "Sélectionnez un terrain pour démarrer",
+          },
+          ...(studyId
+            ? [{ text: <StudyIdBadge studyId={studyId} /> }]
+            : []),
+        ]}
+        statCards={[
+          {
+            label: "Parcelles",
+            value: String(selectedParcels.length),
+            tone: "indigo",
+          },
+          {
+            label: "Surface totale",
+            value: totalAreaM2 != null
+              ? `${Math.round(totalAreaM2).toLocaleString("fr-FR")} m²`
+              : "—",
+            tone: "emerald",
+          },
+        ]}
+        actions={<></>}
         />
-      </div>
+        </div>
 
       {/* Projet actif / ProjectSelector */}
       {hasProject ? (

@@ -549,8 +549,8 @@ export const BilanPromoteurPage: React.FC = () => {
   };
 
   return (
-    <div style={{ background: "linear-gradient(135deg, #f8fafc 0%, #ffffff 45%, #eef2ff 100%)", minHeight: "100vh", padding: 24, color: "#0f172a", fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }}>
-      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+    <div style={{ color: "#0f172a", fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }}>
+      <div>
 
         {/* Bannière */}
         <div style={{ marginBottom: 16 }}>

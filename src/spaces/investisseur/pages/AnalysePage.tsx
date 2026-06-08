@@ -1148,22 +1148,35 @@ export default function AnalysePage() {
 
   // ── JSX ──────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gray-50/50">
-      <div style={{ maxWidth: 1152, margin: "0 auto", padding: "24px 24px 0" }}>
-        <div style={{ background: "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)", borderRadius: 24, padding: "32px 36px", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, boxShadow: "0 8px 32px rgba(33,150,243,0.22)", position: "relative", overflow: "hidden" }}>
+    <div>
+      <div style={{ margin: "0 auto", padding: "0" }}>
+        <div style={{
+  background: "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)",
+  borderRadius: 32,
+  padding: "40px 44px",
+  marginBottom: 32,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 24,
+  boxShadow: "0 20px 60px rgba(15,23,42,0.08)",
+  position: "relative",
+  overflow: "hidden",
+}}>
           <div style={{ position: "relative" }}>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>Investisseur · Analyse</div>
-            <div style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5 }}>{tabTitles[activeTab]}</div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.9)", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>Investisseur · Analyse</div>
+            <div style={{ fontSize: 36, fontWeight: 600, color: "#fff", marginBottom: 10, lineHeight: 1.1, letterSpacing: "-0.025em" }}>{tabTitles[activeTab]}</div>
             <div style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>{[deal.address, deal.zipCode, deal.city].filter(Boolean).join(", ") || "Adresse non renseignée"}</div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, background: "rgba(255,255,255,0.18)", borderRadius: 12, padding: "12px 18px", flexShrink: 0 }}>
-            <span style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>{fmt(deal.prixAchat)} €</span>
+            <span style={{ fontSize: 30, fontWeight: 600, color: "#fff" }}>{fmt(deal.prixAchat)} €</span>
+
             <span style={{ fontSize: 12, color: "rgba(255,255,255,0.75)" }}>{fmt(deal.surfaceM2)} m² · DPE {deal.dpeNote}</span>
           </div>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-6 py-2 pb-6">
+      <div className="pb-6">
         {activeTab === "rentabilite" && (
           <RentabilitePanel deal={deal} dealId={canonicalDealId} strategy={strategy} fiscalRegime={fiscalRegime} onStrategyChange={setStrategy} onRegimeChange={setFiscalRegime} travauxFromSnapshot={travauxImpactWithBuffer > 0 ? travauxImpactWithBuffer : undefined} promoteurMarketData={mergedInvestorStudy} />
         )}

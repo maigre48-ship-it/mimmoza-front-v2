@@ -580,8 +580,8 @@ export default function PermisConstruirePage() {
     projectLatitude !== null || projectCommuneInsee !== null || manualCoords !== null;
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-8">
+    <div>
+      <div>
         {/* En-tête violet */}
         <div className="mb-6 overflow-hidden rounded-[32px] bg-gradient-to-r from-[#6f5bd6] via-[#8d78df] to-[#b39ddb] px-8 py-8 text-white shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white/90">

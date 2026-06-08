@@ -77,13 +77,11 @@ const PromoteurSynthese: React.FC = () => {
 
   return (
     <div style={{
-      background: "linear-gradient(135deg, #f8fafc 0%, #ffffff 45%, #eef2ff 100%)",
-      minHeight: "100vh",
       fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
     }}>
 
       {/* ── Hero v2 — pleine largeur ── */}
-      <div style={{ padding: "16px 40px 0" }}>
+      <div>
         <PromoteurPageHero
           badge="Promoteur · Comité"
           title="Synthèse Promoteur"
@@ -95,7 +93,7 @@ const PromoteurSynthese: React.FC = () => {
       </div>
 
       {/* ── Contenu ── */}
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 40px 40px" }}>
+      <div style={{ padding: "24px 0 40px" }}>
         <PromoteurSynthesePage studyData={studyData} />
       </div>
     </div>

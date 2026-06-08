@@ -248,7 +248,7 @@ export default function Massing3D(): React.ReactElement {
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 64px)", background: "#f8fafc", boxSizing: "border-box" }}>
 
       {/* ── Hero v2 — pleine largeur ── */}
-      <div style={{ padding: "14px 16px 0", flexShrink: 0 }}>
+      <div style={{ flexShrink: 0 }}>
         <PromoteurPageHero
           badge="Promoteur · Conception"
           title="Massing 3D — Éditeur"
@@ -271,7 +271,7 @@ export default function Massing3D(): React.ReactElement {
 
       {/* ── MetaBar (optionnelle) ── */}
       {metaBar && (
-        <div style={{ padding: "8px 16px 0", flexShrink: 0 }}>
+        <div style={{ padding: "8px 0 0", flexShrink: 0 }}>
           {metaBar}
         </div>
       )}
@@ -279,7 +279,7 @@ export default function Massing3D(): React.ReactElement {
       {/* ── Canvas 3D ── */}
       <div
         id="massing3d-capture-target"
-        style={{ flex: 1, minHeight: 0, position: "relative", margin: "12px 16px 16px" }}
+        style={{ flex: 1, minHeight: 0, position: "relative", margin: "12px 0 16px" }}
       >
         {/* Overlay loader terrain */}
         {isLoadingTerrain && <TerrainLoader />}

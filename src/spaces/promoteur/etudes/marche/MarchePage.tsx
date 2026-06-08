@@ -677,14 +677,11 @@ const calculateDifferentiatedScores = (
 // ============================================
 const styles = {
   container: {
-    minHeight: "100vh",
-    background: "linear-gradient(135deg, #f8fafc 0%, #eef2ff 50%, #f0fdf4 100%)",
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
   } as React.CSSProperties,
   mainContent: {
-    maxWidth: "1400px",
-    margin: "0 auto",
-    padding: "32px 40px",
+    width: "100%",
+    padding: "24px 0 0",
   } as React.CSSProperties,
   formSection: {
     background: "white",
@@ -3346,7 +3343,7 @@ summary:         '',
       <div style={styles.container}>
 
         {/* Hero unifié — design VeilleMarchePage */}
-        <div style={{ padding: "16px 40px 0" }}>
+        <div>
           <PromoteurPageHero
             badge={`Promoteur · ${projectConfig.label}`}
             title="Étude de Marché"

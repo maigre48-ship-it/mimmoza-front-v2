@@ -336,25 +336,95 @@ const QuickAnalysisPage: React.FC = () => {
         .fi{animation:fadein 0.3s ease both}
       `}</style>
 
-      {/* HEADER */}
-      <div style={{ background:"#fff", borderBottom:"1px solid #e5e7eb", padding:"13px 28px",
-        display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky",
-        top:0, zIndex:40, boxShadow:"0 1px 3px rgba(0,0,0,0.04)" }}>
+      {/* HERO */}
+      <div
+        style={{
+          background: "linear-gradient(135deg, #6366f1 0%, #7c83f7 50%, #818cf8 100%)",
+borderRadius: 32,
+padding: "40px 44px",
+marginTop: 24,
+marginBottom: 32,
+display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 24,
+          boxShadow: "0 20px 60px rgba(15,23,42,0.08)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
         <div>
-          <h1 style={{ margin:0, fontSize:17, fontWeight:800, color:"#111827", letterSpacing:"-0.025em" }}>⚡ Analyse rapide</h1>
-          <p style={{ margin:0, fontSize:11, color:"#9ca3af", marginTop:1 }}>
+          <div
+            style={{
+              fontSize: 12,
+              color: "rgba(255,255,255,0.9)",
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+              marginBottom: 10,
+              fontWeight: 600,
+            }}
+          >
+            MIMMOZA · ANALYSE RAPIDE
+          </div>
+
+          <div
+            style={{
+              fontSize: 36,
+              fontWeight: 600,
+              color: "#fff",
+              marginBottom: 10,
+              lineHeight: 1.1,
+              letterSpacing: "-0.025em",
+            }}
+          >
+            Analyse rapide
+          </div>
+
+          <div
+            style={{
+              fontSize: 14,
+              color: "rgba(255,255,255,0.75)",
+              maxWidth: 520,
+              lineHeight: 1.55,
+            }}
+          >
             Valeur · Opportunité · Risque · Recommandation — moteur Mimmoza
-          </p>
+          </div>
         </div>
+
         {result && (
-          <div style={{ display:"flex", gap:10 }}>
-            <button onClick={() => window.print()}
-              style={{ border:"1px solid #e5e7eb", background:"#fff", borderRadius:8,
-                padding:"7px 13px", fontSize:12, fontWeight:600, color:"#374151", cursor:"pointer" }}>📄 PDF</button>
-            <button onClick={handleDeepAnalysis}
-              style={{ background:"linear-gradient(135deg,#6366f1,#818cf8)", color:"#fff", border:"none",
-                borderRadius:8, padding:"7px 16px", fontSize:13, fontWeight:700, cursor:"pointer",
-                boxShadow:"0 2px 8px rgba(99,102,241,.4)" }}>Analyse approfondie →</button>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              onClick={() => window.print()}
+              style={{
+                border: "1px solid rgba(255,255,255,0.3)",
+                background: "rgba(255,255,255,0.15)",
+                color: "#fff",
+                borderRadius: 10,
+                padding: "9px 18px",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              📄 PDF
+            </button>
+
+            <button
+              onClick={handleDeepAnalysis}
+              style={{
+                background: "#fff",
+                color: "#1d6fe8",
+                border: "none",
+                borderRadius: 10,
+                padding: "9px 18px",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Analyse approfondie →
+            </button>
           </div>
         )}
       </div>
@@ -364,7 +434,7 @@ const QuickAnalysisPage: React.FC = () => {
           border:"1px solid #fca5a5", color:"#991b1b", fontSize:13, fontWeight:600 }}>⚠ {error}</div>
       )}
 
-      <div style={{ display:"grid", gridTemplateColumns:"272px 1fr 308px", gap:16, padding:"18px 28px", maxWidth:1440, margin:"0 auto" }}>
+      <div style={{ display:"grid", gridTemplateColumns:"272px 1fr 308px", gap:16, padding:"18px 28px 18px", maxWidth:1440, margin:"0 auto" }}>
 
         {/* ══ GAUCHE ══ */}
         <div style={{ display:"flex", flexDirection:"column", gap:12 }}>

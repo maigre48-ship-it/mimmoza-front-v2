@@ -2060,11 +2060,25 @@ useEffect(() => {
   }, [lastEdgeFnResponse, lastDraft]);
 
   const Banner = (
-    <div style={{ maxWidth: 1600, margin: "0 auto", padding: "20px 24px 0" }}>
-      <div style={{ background: "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)", borderRadius: 24, padding: "32px 36px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, boxShadow: "0 8px 32px rgba(33,150,243,0.22)", position: "relative", overflow: "hidden" }}>
+    <div style={{ margin: "0 auto", padding: "4px 0 0" }}>
+      <div style={{
+  background: "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)",
+  borderRadius: 32,
+  padding: "40px 44px",
+  marginBottom: 24,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 24,
+  boxShadow: "0 20px 60px rgba(15,23,42,0.08)",
+  position: "relative",
+  overflow: "hidden",
+}}>
         <div style={{ position: "relative" }}>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginBottom: 10, letterSpacing: 1.8, textTransform: "uppercase", fontWeight: 600 }}>Investisseur › Acquisition</div>
-          <div style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5 }}>SmartScore</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.9)", marginBottom: 10, letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 600 }}>Investisseur › Acquisition</div>
+
+          <div style={{ fontSize: 36, fontWeight: 600, color: "#fff", marginBottom: 10, lineHeight: 1.1, letterSpacing: "-0.025em" }}>SmartScore</div>
+
           <div style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>Qualifiez et scorez vos opportunités immobilières en quelques secondes</div>
         </div>
         <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
@@ -2082,7 +2096,18 @@ useEffect(() => {
         </div>
       </div>
 
-      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "20px 28px", marginBottom: 20, display: "flex", gap: 32, alignItems: "flex-start", flexWrap: "wrap" }}>
+      <div style={{
+  background: "#fff",
+  borderRadius: 20,
+  border: "1px solid #e2e8f0",
+  padding: "24px 32px",
+  marginBottom: 24,
+  display: "flex",
+  gap: 32,
+  alignItems: "flex-start",
+  flexWrap: "wrap",
+  boxShadow: "0 2px 12px rgba(15,23,42,0.05)",
+}}>
         <div style={{ flex: 2, minWidth: 260 }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>Qu'est-ce que le SmartScore ?</div>
           <p style={{ margin: 0, fontSize: 14, color: "#334155", lineHeight: 1.7 }}>
@@ -2139,7 +2164,7 @@ useEffect(() => {
 
   if (!dealId) {
     return (
-      <div style={{ minHeight: "100vh", background: "#f5f7fa" }}>
+  <div style={{ minHeight: "100vh", background: "transparent" }}>
         {Banner}
         <div style={{ maxWidth: 600, margin: "0 auto", padding: "0 24px" }}><NoDealPlaceholder /></div>
       </div>
@@ -2188,10 +2213,10 @@ useEffect(() => {
   const showDpeCard = dpeUxData.label != null;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f5f7fa" }}>
+  <div style={{ minHeight: "100vh", background: "transparent" }}>
       {Banner}
 
-      <div style={{ maxWidth: 1600, margin: "0 auto", padding: "0 24px 40px" }}>
+      <div style={{ margin: "0 auto", padding: "0 0 40px" }}>
         {effectiveLoading ? (
           <div style={{ background: "#fff", borderRadius: 16, padding: "48px 24px", textAlign: "center", boxShadow: "0 1px 3px rgba(0,0,0,0.06)", border: "1px solid #e2e8f0", marginBottom: 24 }}>
             <div style={{ width: 48, height: 48, border: "4px solid #e2e8f0", borderTopColor: ACCENT, borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />

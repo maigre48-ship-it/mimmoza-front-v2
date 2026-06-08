@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   X,
   Pencil,
+  Sparkles,
 } from "lucide-react";
 import {
   readMarchandSnapshot,
@@ -46,20 +47,16 @@ const COLUMNS: DealStatus[] = [
 
 const PENDING_OPPORTUNITY_STORAGE_KEY = "mimmoza.pendingOpportunityDeal";
 
-// ── Design tokens ──────────────────────────────────────────────────
-const GRAD_INV = "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)";
 const ACCENT_INV = "#1a72c4";
-const PAGE_BG = "#F6F8FB";
 
-// ── Statut → couleur badge ─────────────────────────────────────────
 const STATUS_COLOR: Record<DealStatus, { bg: string; text: string; dot: string }> = {
-  Nouveau:       { bg: "#EFF6FF", text: "#2563EB", dot: "#3B82F6" },
-  Visite:        { bg: "#F0FDF4", text: "#16A34A", dot: "#22C55E" },
-  Offre:         { bg: "#FFFBEB", text: "#D97706", dot: "#F59E0B" },
+  Nouveau: { bg: "#EFF6FF", text: "#2563EB", dot: "#3B82F6" },
+  Visite: { bg: "#F0FDF4", text: "#16A34A", dot: "#22C55E" },
+  Offre: { bg: "#FFFBEB", text: "#D97706", dot: "#F59E0B" },
   "Sous promesse": { bg: "#FDF4FF", text: "#9333EA", dot: "#A855F7" },
-  Travaux:       { bg: "#FFF7ED", text: "#EA580C", dot: "#F97316" },
-  "En vente":    { bg: "#F0F9FF", text: "#0369A1", dot: "#0EA5E9" },
-  Vendu:         { bg: "#F0FDF4", text: "#15803D", dot: "#16A34A" },
+  Travaux: { bg: "#FFF7ED", text: "#EA580C", dot: "#F97316" },
+  "En vente": { bg: "#F0F9FF", text: "#0369A1", dot: "#0EA5E9" },
+  Vendu: { bg: "#F0FDF4", text: "#15803D", dot: "#16A34A" },
 };
 
 type PendingOpportunityDeal = {
@@ -90,7 +87,6 @@ const fmtEur = (n?: number) =>
     : "—";
 
 const nowIso = () => new Date().toISOString();
-
 const makeCanonicalTag = (key: string) => `[veille:${key}]`;
 
 function buildOpportunityNote(p: PendingOpportunityDeal): string {
@@ -110,6 +106,7 @@ function buildOpportunityNote(p: PendingOpportunityDeal): string {
 
 function mapOpportunityToDeal(p: PendingOpportunityDeal): Deal {
   const id = `D-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
   return {
     id,
     title: p.title,
@@ -133,8 +130,9 @@ async function fetchCityFromZipCode(zipCode: string): Promise<string | null> {
 
   try {
     const url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(
-      cleaned
+      cleaned,
     )}&type=municipality&limit=1`;
+
     const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
     if (!res.ok) return null;
 
@@ -168,6 +166,7 @@ function syncDealContext(deal: Deal): void {
 
 function makeNewDeal(): Deal {
   const id = `D-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
   return {
     id,
     title: `Nouveau deal`,
@@ -185,13 +184,8 @@ function makeNewDeal(): Deal {
   } as Deal;
 }
 
-/* ────────────────────────────────────────────
-   Modal centrée — style Réhabilitation
-   ──────────────────────────────────────────── */
-
 function Drawer({
   open,
-  title,
   onClose,
   children,
 }: {
@@ -217,7 +211,6 @@ function Drawer({
       }}
       onMouseDown={onClose}
     >
-      {/* Carte modale */}
       <div
         style={{
           width: "100%",
@@ -232,7 +225,6 @@ function Drawer({
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {/* ── Header avec icône style Réhabilitation ── */}
         <div
           style={{
             padding: "24px 28px 20px",
@@ -243,13 +235,13 @@ function Drawer({
             flexShrink: 0,
           }}
         >
-          {/* Icône carrée arrondie — couleur Investisseur */}
           <div
             style={{
               width: 48,
               height: 48,
               borderRadius: 14,
-              background: GRAD_INV,
+              background:
+                "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -257,7 +249,6 @@ function Drawer({
               boxShadow: "0 4px 16px rgba(33,150,243,0.28)",
             }}
           >
-            {/* Icône immeuble/deal */}
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
               <path
                 d="M3 21h18M3 7l9-4 9 4M4 21V7m16 14V7M9 21v-4h6v4"
@@ -286,7 +277,6 @@ function Drawer({
             </div>
           </div>
 
-          {/* Bouton fermer × */}
           <button
             type="button"
             onClick={onClose}
@@ -310,18 +300,10 @@ function Drawer({
           </button>
         </div>
 
-        {/* ── Corps scrollable ── */}
-        <div
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            padding: "24px 28px",
-          }}
-        >
+        <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }}>
           {children}
         </div>
 
-        {/* ── Footer actions ── */}
         <div
           style={{
             padding: "16px 28px 24px",
@@ -332,7 +314,6 @@ function Drawer({
             flexShrink: 0,
           }}
         >
-          {/* Annuler */}
           <button
             type="button"
             onClick={onClose}
@@ -350,7 +331,6 @@ function Drawer({
             Annuler
           </button>
 
-          {/* Enregistrer */}
           <button
             type="button"
             onClick={onClose}
@@ -358,7 +338,8 @@ function Drawer({
               padding: "11px 24px",
               borderRadius: 12,
               border: "none",
-              background: GRAD_INV,
+              background:
+                "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)",
               color: "#fff",
               fontWeight: 700,
               fontSize: 14,
@@ -395,10 +376,6 @@ function Drawer({
   );
 }
 
-/* ────────────────────────────────────────────
-   Field / Select
-   ──────────────────────────────────────────── */
-
 function Field({
   label,
   value,
@@ -429,6 +406,7 @@ function Field({
       >
         {label}
       </div>
+
       <input
         type={type}
         value={value ?? ""}
@@ -439,7 +417,7 @@ function Field({
           width: "100%",
           padding: "11px 14px",
           borderRadius: 12,
-          border: "1.5px solid rgba(15, 23, 42, 0.10)",
+          border: "1.5px solid rgba(15,23,42,0.10)",
           background: "#fff",
           fontWeight: 600,
           fontSize: 14,
@@ -453,10 +431,11 @@ function Field({
           e.currentTarget.style.boxShadow = "0 0 0 3px rgba(33,150,243,0.08)";
         }}
         onBlurCapture={(e) => {
-          e.currentTarget.style.borderColor = "rgba(15, 23, 42, 0.10)";
+          e.currentTarget.style.borderColor = "rgba(15,23,42,0.10)";
           e.currentTarget.style.boxShadow = "none";
         }}
       />
+
       {hint && (
         <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600 }}>
           {hint}
@@ -490,6 +469,7 @@ function Select({
       >
         {label}
       </div>
+
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -497,7 +477,7 @@ function Select({
           width: "100%",
           padding: "11px 14px",
           borderRadius: 12,
-          border: "1.5px solid rgba(15, 23, 42, 0.10)",
+          border: "1.5px solid rgba(15,23,42,0.10)",
           background: "#fff",
           fontWeight: 600,
           fontSize: 14,
@@ -515,16 +495,12 @@ function Select({
   );
 }
 
-/* ════════════════════════════════════════════
-   MarchandPipeline
-   ════════════════════════════════════════════ */
-
 export default function MarchandPipeline() {
   const snapTick = useMarchandSnapshotTick();
   const snapshot = useMemo(() => readMarchandSnapshot(), [snapTick]);
   const deals: Deal[] = useMemo(
     () => snapshot.deals.map((d) => ({ ...d })),
-    [snapshot.deals]
+    [snapshot.deals],
   );
   const activeDealId = snapshot.activeDealId;
 
@@ -532,6 +508,7 @@ export default function MarchandPipeline() {
   const [cityLookupHint, setCityLookupHint] = useState<string>("");
   const zipFetchRef = useRef(0);
   const handoffConsumedRef = useRef(false);
+  const [draftDeal, setDraftDeal] = useState<Deal | null>(null);
 
   useEffect(() => {
     if (handoffConsumedRef.current) return;
@@ -541,6 +518,7 @@ export default function MarchandPipeline() {
     if (!raw) return;
 
     let payload: PendingOpportunityDeal;
+
     try {
       payload = JSON.parse(raw) as PendingOpportunityDeal;
     } catch {
@@ -565,10 +543,7 @@ export default function MarchandPipeline() {
       setActiveDeal(newDeal.id);
       syncDealContext(newDeal);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const [draftDeal, setDraftDeal] = useState<Deal | null>(null);
 
   useEffect(() => {
     if (editingDealId) {
@@ -577,19 +552,21 @@ export default function MarchandPipeline() {
     } else {
       setDraftDeal(null);
     }
+
     setCityLookupHint("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingDealId]);
+  }, [editingDealId, deals]);
 
   const updateDraft = useCallback((patch: Partial<Deal>) => {
     setDraftDeal((prev) =>
-      prev ? { ...prev, ...patch, updatedAt: nowIso() } : null
+      prev ? { ...prev, ...patch, updatedAt: nowIso() } : null,
     );
   }, []);
 
   const flushDraft = useCallback(() => {
     if (!draftDeal) return;
+
     upsertDeal(draftDeal);
+
     if (activeDealId === draftDeal.id) {
       syncDealContext(draftDeal);
     }
@@ -599,6 +576,7 @@ export default function MarchandPipeline() {
     if (!draftDeal) return;
 
     upsertDeal(draftDeal);
+
     if (activeDealId === draftDeal.id) {
       syncDealContext(draftDeal);
     }
@@ -617,9 +595,14 @@ export default function MarchandPipeline() {
           setCityLookupHint(`→ ${city}`);
           setDraftDeal((prev) => {
             if (!prev) return prev;
+
             const updated = { ...prev, city, updatedAt: nowIso() };
             upsertDeal(updated);
-            if (activeDealId === prev.id) syncDealContext(updated);
+
+            if (activeDealId === prev.id) {
+              syncDealContext(updated);
+            }
+
             patchDealContextMeta({ city });
             return updated;
           });
@@ -636,17 +619,23 @@ export default function MarchandPipeline() {
     (patch: Partial<Deal>) => {
       setDraftDeal((prev) => {
         if (!prev) return prev;
+
         const updated = { ...prev, ...patch, updatedAt: nowIso() };
         upsertDeal(updated);
-        if (activeDealId === updated.id) syncDealContext(updated);
+
+        if (activeDealId === updated.id) {
+          syncDealContext(updated);
+        }
+
         return updated;
       });
     },
-    [activeDealId]
+    [activeDealId],
   );
 
   useEffect(() => {
     if (!activeDealId) return;
+
     const deal = deals.find((d) => d.id === activeDealId);
     if (deal) syncDealContext(deal);
   }, [activeDealId, deals]);
@@ -656,13 +645,11 @@ export default function MarchandPipeline() {
 
   useEffect(() => {
     const unsub = subscribeDealContext((ctx) => {
-      if (
-        ctx.activeDealId &&
-        ctx.activeDealId !== activeDealIdRef.current
-      ) {
-        // Lecture seule : on laisse le snapTick re-render gérer la synchro.
+      if (ctx.activeDealId && ctx.activeDealId !== activeDealIdRef.current) {
+        // lecture seule
       }
     });
+
     return unsub;
   }, []);
 
@@ -685,14 +672,17 @@ export default function MarchandPipeline() {
   const handleDeleteDeal = (
     e: React.MouseEvent,
     dealId: string,
-    dealTitle: string
+    dealTitle: string,
   ) => {
     e.stopPropagation();
-    const confirmed = window.confirm(
-      `Supprimer ce deal ?\n\n"${dealTitle}"\n\nToutes les données associées (Rentabilité, Exécution, Sortie) seront également supprimées.`
-    );
-    if (confirmed) {
+
+    if (
+      window.confirm(
+        `Supprimer ce deal ?\n\n"${dealTitle}"\n\nToutes les données associées seront supprimées.`,
+      )
+    ) {
       deleteDeal(dealId);
+
       if (activeDealId === dealId) {
         setBridgeActiveDealId(null);
       }
@@ -702,12 +692,15 @@ export default function MarchandPipeline() {
   const handleCloseDrawer = useCallback(() => {
     if (draftDeal) {
       upsertDeal(draftDeal);
-      if (activeDealId === draftDeal.id) syncDealContext(draftDeal);
+
+      if (activeDealId === draftDeal.id) {
+        syncDealContext(draftDeal);
+      }
     }
+
     setEditingDealId(null);
   }, [draftDeal, activeDealId]);
 
-  // ── KPI config ───────────────────────────────────────────────────
   const kpis = [
     {
       label: "Deals",
@@ -744,153 +737,165 @@ export default function MarchandPipeline() {
   ];
 
   return (
-    /* ── Fond de page ── */
-    <div
-      style={{
-        minHeight: "100vh",
-        background: PAGE_BG,
-        padding: "32px 24px 56px",
-      }}
-    >
-      {/* ── Conteneur centré ── */}
-      <div style={{ maxWidth: 1240, margin: "0 auto" }}>
+    <>
+      <Drawer
+        open={Boolean(draftDeal)}
+        title={draftDeal ? `Éditer — ${draftDeal.id}` : "Éditer"}
+        onClose={handleCloseDrawer}
+      >
+        {!draftDeal ? (
+          <div style={{ color: "#64748b", fontSize: 13 }}>
+            Aucun deal sélectionné.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <Field
+              label="Titre"
+              value={draftDeal.title}
+              onChange={(v) => updateDraft({ title: v })}
+              onBlur={flushDraft}
+              placeholder="Ex: T2 à rénover — 42 m²"
+            />
 
-        {/* ══════════════════════════════════════════════
-            HERO CARD
-        ══════════════════════════════════════════════ */}
-        <div
-          style={{
-            background: GRAD_INV,
-            borderRadius: 24,
-            padding: "32px 36px",
-            marginBottom: 24,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 20,
-            boxShadow: "0 8px 32px rgba(33,150,243,0.22)",
-            position: "relative",
-            overflow: "hidden",
-          }}
-        >
-          {/* Décors géométriques */}
-          <div
-            style={{
-              position: "absolute",
-              top: -50,
-              right: -50,
-              width: 220,
-              height: 220,
-              borderRadius: "50%",
-              background: "rgba(255,255,255,0.07)",
-              pointerEvents: "none",
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              bottom: -35,
-              right: 160,
-              width: 140,
-              height: 140,
-              borderRadius: "50%",
-              background: "rgba(255,255,255,0.05)",
-              pointerEvents: "none",
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              top: 20,
-              right: 280,
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              background: "rgba(255,255,255,0.35)",
-              pointerEvents: "none",
-            }}
-          />
+            <Field
+              label="Adresse"
+              value={draftDeal.address ?? ""}
+              onChange={(v) => updateDraft({ address: v })}
+              onBlur={flushDraft}
+              placeholder="Ex: 12 rue de la Paix"
+            />
 
-          <div style={{ position: "relative" }}>
-            <div
-              style={{
-                fontSize: 11,
-                color: "rgba(255,255,255,0.6)",
-                letterSpacing: 1.8,
-                textTransform: "uppercase",
-                marginBottom: 10,
-                fontWeight: 600,
-              }}
-            >
-              Investisseur › Acquisition
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <Field
+                label="Code postal"
+                value={draftDeal.zipCode ?? ""}
+                onChange={(v) => updateDraft({ zipCode: v })}
+                onBlur={flushDraftWithCityLookup}
+                placeholder="Ex: 44000"
+                hint={cityLookupHint || undefined}
+              />
+
+              <Field
+                label="Ville"
+                value={draftDeal.city ?? ""}
+                onChange={(v) => updateDraft({ city: v })}
+                onBlur={flushDraft}
+                placeholder="Ex: Nantes"
+                hint="Auto-remplie via code postal"
+              />
             </div>
-            <div
-              style={{
-                fontSize: 30,
-                fontWeight: 800,
-                color: "#fff",
-                marginBottom: 10,
-                lineHeight: 1.12,
-                letterSpacing: -0.5,
-              }}
-            >
-              Pipeline
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <Field
+                label="Prix d'achat (€)"
+                type="number"
+                value={draftDeal.prixAchat ?? ""}
+                onChange={(v) =>
+                  updateDraft({ prixAchat: v === "" ? undefined : Number(v) })
+                }
+                onBlur={flushDraft}
+                placeholder="Ex: 180000"
+              />
+
+              <Field
+                label="Surface (m²)"
+                type="number"
+                value={draftDeal.surfaceM2 ?? ""}
+                onChange={(v) =>
+                  updateDraft({ surfaceM2: v === "" ? undefined : Number(v) })
+                }
+                onBlur={flushDraft}
+                placeholder="Ex: 42"
+              />
             </div>
+
+            <Field
+              label="Prix revente cible (€)"
+              type="number"
+              value={draftDeal.prixReventeCible ?? ""}
+              onChange={(v) =>
+                updateDraft({
+                  prixReventeCible: v === "" ? undefined : Number(v),
+                })
+              }
+              onBlur={flushDraft}
+              placeholder="Ex: 260000"
+            />
+
+            <Select
+              label="Statut"
+              value={draftDeal.status}
+              onChange={(v) => updateAndFlush({ status: v as DealStatus })}
+              options={COLUMNS.map((c) => ({ value: c, label: c }))}
+            />
+
+            <Field
+              label="Note"
+              value={draftDeal.note ?? ""}
+              onChange={(v) => updateDraft({ note: v })}
+              onBlur={flushDraft}
+              placeholder="Remarques, contact, points à vérifier..."
+            />
+
             <div
               style={{
-                fontSize: 14,
-                color: "rgba(255,255,255,0.75)",
-                maxWidth: 460,
-                lineHeight: 1.55,
+                marginTop: 2,
+                padding: "14px 16px",
+                borderRadius: 12,
+                background: "rgba(33,150,243,0.05)",
+                border: "1px solid rgba(33,150,243,0.13)",
+                fontSize: 12,
+                color: "#64748b",
+                lineHeight: 1.65,
               }}
             >
-              Deal flow et statuts — snapshot actif partagé entre toutes les pages Marchand.
+              💡 Ces champs alimentent automatiquement SmartScore, Rentabilité et les
+              autres pages Investisseur.
             </div>
           </div>
+        )}
+      </Drawer>
 
-          <button
-            type="button"
-            onClick={handleCreateDeal}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "13px 22px",
-              borderRadius: 14,
-              border: "none",
-              background: "#fff",
-              color: ACCENT_INV,
-              fontWeight: 700,
-              fontSize: 14,
-              cursor: "pointer",
-              flexShrink: 0,
-              boxShadow: "0 4px 20px rgba(0,0,0,0.16)",
-              position: "relative",
-              transition: "transform 0.14s ease, box-shadow 0.14s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "translateY(-2px)";
-              e.currentTarget.style.boxShadow = "0 8px 28px rgba(0,0,0,0.20)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "translateY(0)";
-              e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.16)";
-            }}
-          >
-            <Plus size={16} />
-            Nouveau deal
-          </button>
+      <div className="space-y-8">
+        <div className="relative isolate overflow-hidden rounded-[32px] bg-gradient-to-r from-[#1d6fe8] via-[#0ea5e9] to-[#22d3ee] px-10 py-10 text-white shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
+          <div className="pointer-events-none absolute -right-12 -top-12 h-56 w-56 rounded-full bg-white/[0.06]" />
+          <div className="pointer-events-none absolute -bottom-8 right-40 h-36 w-36 rounded-full bg-white/[0.05]" />
+          <div className="pointer-events-none absolute right-72 top-5 h-1.5 w-1.5 rounded-full bg-white/35" />
+
+          <div className="relative z-10 flex flex-wrap items-start justify-between gap-6">
+            <div className="max-w-2xl">
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white/90">
+                <Sparkles className="h-3.5 w-3.5" />
+                Investisseur · Pipeline
+              </div>
+
+              <h1 className="text-4xl font-semibold tracking-tight">Pipeline</h1>
+
+              <div className="mt-4 max-w-md text-sm leading-relaxed text-white/75">
+                Deal flow et statuts — snapshot actif partagé entre toutes les pages
+                Marchand.
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 pt-3">
+              <button
+                type="button"
+                onClick={handleCreateDeal}
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/30 bg-white px-5 py-3 text-sm font-semibold text-[#1a72c4] shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+              >
+                <Plus className="h-4 w-4" />
+                Nouveau deal
+              </button>
+            </div>
+          </div>
         </div>
 
-        {/* ══════════════════════════════════════════════
-            KPI CARDS
-        ══════════════════════════════════════════════ */}
         <div
+          className="relative z-0"
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(4, 1fr)",
             gap: 16,
-            marginBottom: 24,
           }}
         >
           {kpis.map((kpi) => (
@@ -916,7 +921,6 @@ export default function MarchandPipeline() {
                   "0 2px 12px rgba(15,23,42,0.05)";
               }}
             >
-              {/* Icône dans carré arrondi */}
               <div
                 style={{
                   width: 46,
@@ -963,9 +967,6 @@ export default function MarchandPipeline() {
           ))}
         </div>
 
-        {/* ══════════════════════════════════════════════
-            DEAL FLOW — carte blanche
-        ══════════════════════════════════════════════ */}
         <div
           style={{
             background: "#fff",
@@ -975,7 +976,6 @@ export default function MarchandPipeline() {
             overflow: "hidden",
           }}
         >
-          {/* En-tête de la carte */}
           <div
             style={{
               padding: "22px 28px",
@@ -986,17 +986,14 @@ export default function MarchandPipeline() {
             }}
           >
             <div>
-              <div
-                style={{ fontSize: 16, fontWeight: 700, color: "#0F172A" }}
-              >
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#0F172A" }}>
                 Deal flow
               </div>
-              <div
-                style={{ fontSize: 13, color: "#64748B", marginTop: 3 }}
-              >
+              <div style={{ fontSize: 13, color: "#64748B", marginTop: 3 }}>
                 Sélectionne un deal pour synchroniser toutes les pages.
               </div>
             </div>
+
             <div
               style={{
                 fontSize: 12,
@@ -1012,13 +1009,7 @@ export default function MarchandPipeline() {
             </div>
           </div>
 
-          {/* Kanban */}
-          <div
-            style={{
-              padding: "20px 24px 24px",
-              overflowX: "auto",
-            }}
-          >
+          <div style={{ padding: "20px 24px 24px", overflowX: "auto" }}>
             <div
               style={{
                 display: "grid",
@@ -1029,11 +1020,12 @@ export default function MarchandPipeline() {
             >
               {COLUMNS.map((col) => {
                 const colDeals = deals.filter((d) => d.status === col);
-                const statusStyle = STATUS_COLOR[col] ?? {
-                  bg: "#F8FAFC",
-                  text: "#64748B",
-                  dot: "#94A3B8",
-                };
+                const statusStyle =
+                  STATUS_COLOR[col] ?? {
+                    bg: "#F8FAFC",
+                    text: "#64748B",
+                    dot: "#94A3B8",
+                  };
 
                 return (
                   <div
@@ -1048,10 +1040,10 @@ export default function MarchandPipeline() {
                       flexDirection: "column",
                     }}
                   >
-                    {/* En-tête colonne */}
                     <div
                       style={{
-                        background: GRAD_INV,
+                        background:
+                          "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)",
                         padding: "10px 14px",
                         display: "flex",
                         alignItems: "center",
@@ -1070,6 +1062,7 @@ export default function MarchandPipeline() {
                       >
                         {col}
                       </div>
+
                       <div
                         style={{
                           minWidth: 22,
@@ -1085,9 +1078,7 @@ export default function MarchandPipeline() {
                           fontSize: 11,
                           fontWeight: 700,
                           color:
-                            colDeals.length > 0
-                              ? "#fff"
-                              : "rgba(255,255,255,0.55)",
+                            colDeals.length > 0 ? "#fff" : "rgba(255,255,255,0.55)",
                           paddingInline: 4,
                         }}
                       >
@@ -1095,7 +1086,6 @@ export default function MarchandPipeline() {
                       </div>
                     </div>
 
-                    {/* Corps colonne */}
                     <div
                       style={{
                         flex: 1,
@@ -1117,9 +1107,7 @@ export default function MarchandPipeline() {
                               position: "relative",
                               textAlign: "left",
                               borderRadius: 12,
-                              background: isActive
-                                ? "rgba(33,150,243,0.07)"
-                                : "#fff",
+                              background: isActive ? "rgba(33,150,243,0.07)" : "#fff",
                               border: isActive
                                 ? "1.5px solid rgba(33,150,243,0.30)"
                                 : "1px solid rgba(15,23,42,0.08)",
@@ -1128,17 +1116,13 @@ export default function MarchandPipeline() {
                                 : "0 1px 6px rgba(2,6,23,0.04)",
                               padding: "10px 10px 10px 12px",
                               cursor: "pointer",
-                              transition:
-                                "border-color 0.12s, box-shadow 0.12s",
+                              transition: "border-color 0.12s, box-shadow 0.12s",
                             }}
                           >
-                            {/* Bouton supprimer */}
                             <div
                               role="button"
                               tabIndex={0}
-                              onClick={(e) =>
-                                handleDeleteDeal(e, d.id, d.title)
-                              }
+                              onClick={(e) => handleDeleteDeal(e, d.id, d.title)}
                               style={{
                                 position: "absolute",
                                 top: 7,
@@ -1153,12 +1137,11 @@ export default function MarchandPipeline() {
                                 justifyContent: "center",
                                 cursor: "pointer",
                               }}
-                              title="Supprimer ce deal"
+                              title="Supprimer"
                             >
                               <X size={13} style={{ color: "#DC2626" }} />
                             </div>
 
-                            {/* Bouton éditer */}
                             <div
                               role="button"
                               tabIndex={0}
@@ -1182,12 +1165,11 @@ export default function MarchandPipeline() {
                                 justifyContent: "center",
                                 cursor: "pointer",
                               }}
-                              title="Éditer ce deal"
+                              title="Éditer"
                             >
                               <Pencil size={13} style={{ color: "#475569" }} />
                             </div>
 
-                            {/* Titre + badge Actif */}
                             <div
                               style={{
                                 display: "flex",
@@ -1209,7 +1191,6 @@ export default function MarchandPipeline() {
                               </div>
                             </div>
 
-                            {/* Actif badge */}
                             {isActive && (
                               <div
                                 style={{
@@ -1227,12 +1208,10 @@ export default function MarchandPipeline() {
                                   whiteSpace: "nowrap",
                                 }}
                               >
-                                <CheckCircle2 size={12} />
-                                Actif
+                                <CheckCircle2 size={12} /> Actif
                               </div>
                             )}
 
-                            {/* Adresse / ville */}
                             <div
                               style={{
                                 marginTop: isActive ? 4 : 6,
@@ -1240,10 +1219,9 @@ export default function MarchandPipeline() {
                                 fontSize: 12,
                               }}
                             >
-                              {d.address ? d.address : (d.city ?? "—")}
+                              {d.address ? d.address : d.city ?? "—"}
                             </div>
 
-                            {/* Footer : ID + date */}
                             <div
                               style={{
                                 marginTop: 8,
@@ -1265,12 +1243,9 @@ export default function MarchandPipeline() {
                               >
                                 {d.id}
                               </span>
-                              <span
-                                style={{ fontSize: 10, color: "#94A3B8" }}
-                              >
-                                {new Date(d.updatedAt).toLocaleDateString(
-                                  "fr-FR"
-                                )}
+
+                              <span style={{ fontSize: 10, color: "#94A3B8" }}>
+                                {new Date(d.updatedAt).toLocaleDateString("fr-FR")}
                               </span>
                             </div>
                           </button>
@@ -1299,143 +1274,7 @@ export default function MarchandPipeline() {
             </div>
           </div>
         </div>
-
       </div>
-
-      {/* ══════════════════════════════════════════════
-          DRAWER ÉDITION
-      ══════════════════════════════════════════════ */}
-      <Drawer
-        open={Boolean(draftDeal)}
-        title={draftDeal ? `Éditer — ${draftDeal.id}` : "Éditer"}
-        onClose={handleCloseDrawer}
-      >
-        {!draftDeal ? (
-          <div style={{ color: "#64748b", fontSize: 13 }}>
-            Aucun deal sélectionné.
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-            <Field
-              label="Titre"
-              value={draftDeal.title}
-              onChange={(v) => updateDraft({ title: v })}
-              onBlur={flushDraft}
-              placeholder="Ex: T2 à rénover — 42 m²"
-            />
-
-            <Field
-              label="Adresse"
-              value={draftDeal.address ?? ""}
-              onChange={(v) => updateDraft({ address: v })}
-              onBlur={flushDraft}
-              placeholder="Ex: 12 rue de la Paix"
-            />
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 12,
-              }}
-            >
-              <Field
-                label="Code postal"
-                value={draftDeal.zipCode ?? ""}
-                onChange={(v) => updateDraft({ zipCode: v })}
-                onBlur={flushDraftWithCityLookup}
-                placeholder="Ex: 44000"
-                hint={cityLookupHint || undefined}
-              />
-              <Field
-                label="Ville"
-                value={draftDeal.city ?? ""}
-                onChange={(v) => updateDraft({ city: v })}
-                onBlur={flushDraft}
-                placeholder="Ex: Nantes"
-                hint="Auto-remplie via code postal"
-              />
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 12,
-              }}
-            >
-              <Field
-                label="Prix d'achat (€)"
-                type="number"
-                value={draftDeal.prixAchat ?? ""}
-                onChange={(v) =>
-                  updateDraft({
-                    prixAchat: v === "" ? undefined : Number(v),
-                  })
-                }
-                onBlur={flushDraft}
-                placeholder="Ex: 180000"
-              />
-              <Field
-                label="Surface (m²)"
-                type="number"
-                value={draftDeal.surfaceM2 ?? ""}
-                onChange={(v) =>
-                  updateDraft({
-                    surfaceM2: v === "" ? undefined : Number(v),
-                  })
-                }
-                onBlur={flushDraft}
-                placeholder="Ex: 42"
-              />
-            </div>
-
-            <Field
-              label="Prix revente cible (€)"
-              type="number"
-              value={draftDeal.prixReventeCible ?? ""}
-              onChange={(v) =>
-                updateDraft({
-                  prixReventeCible: v === "" ? undefined : Number(v),
-                })
-              }
-              onBlur={flushDraft}
-              placeholder="Ex: 260000"
-            />
-
-            <Select
-              label="Statut"
-              value={draftDeal.status}
-              onChange={(v) => updateAndFlush({ status: v as DealStatus })}
-              options={COLUMNS.map((c) => ({ value: c, label: c }))}
-            />
-
-            <Field
-              label="Note"
-              value={draftDeal.note ?? ""}
-              onChange={(v) => updateDraft({ note: v })}
-              onBlur={flushDraft}
-              placeholder="Remarques, contact, points à vérifier..."
-            />
-
-            {/* Info tip */}
-            <div
-              style={{
-                marginTop: 2,
-                padding: "14px 16px",
-                borderRadius: 12,
-                background: "rgba(33,150,243,0.05)",
-                border: "1px solid rgba(33,150,243,0.13)",
-                fontSize: 12,
-                color: "#64748b",
-                lineHeight: 1.65,
-              }}
-            >
-              💡 Ces champs alimentent automatiquement SmartScore, Rentabilité et les autres pages Investisseur.
-            </div>
-          </div>
-        )}
-      </Drawer>
-    </div>
+    </>
   );
 }

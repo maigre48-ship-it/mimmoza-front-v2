@@ -146,7 +146,6 @@ import RehabilitationTravauxPage from "./spaces/rehabilitation/pages/TravauxPage
 import SyntheseAuditPage from "./spaces/rehabilitation/pages/SyntheseAuditPage";
 import RehabilitationRenduTravauxPage from "./spaces/rehabilitation/pages/RenduTravauxPage";
 import RehabilitationValorisationPage from "./spaces/rehabilitation/pages/ValorisationPage";
-import CreationPlanPage from "./spaces/rehabilitation/pages/CreationPlanPage";
 
 /* ── Mimmoza Copilot (global : bouton flottant + drawer) ─────── */
 import { CopilotRoot } from "./spaces/copilot/CopilotRoot";
@@ -472,7 +471,6 @@ function AppRoot() {
             <Route path="synthese-audit" element={<SyntheseAuditPage />} />
             <Route path="valorisation"   element={<RehabilitationValorisationPage />} />
             <Route path="rendu-travaux"  element={<RehabilitationRenduTravauxPage />} />
-            <Route path="creation-plan"  element={<CreationPlanPage />} />
 
             {/* Legacy redirects */}
             <Route path="audit"   element={<Navigate to="/rehabilitation/vue-ensemble" replace />} />

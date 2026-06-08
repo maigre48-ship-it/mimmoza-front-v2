@@ -135,14 +135,16 @@ const VueEnsemblePage: React.FC = () => {
 
       {/* Bannière */}
       <div style={{ background: GRAD, borderRadius: 24, padding: "32px 36px", marginBottom: 24, boxShadow: "0 8px 32px rgba(234,88,12,0.22)", position: "relative", overflow: "hidden" }}>
-        <p style={{ fontSize: 11, color: "rgba(255,255,255,.6)", letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
+        <p style={{ fontSize: 12, color: "rgba(255,255,255,.9)", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
+
           Réhabilitation › Vue d'ensemble
         </p>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <Building2 size={22} color="#fff" />
             <div>
-              <h1 style={{ fontSize: 30, fontWeight: 800, color: "#fff", margin: 0, lineHeight: 1.12, letterSpacing: -0.5 }}>Vue d'ensemble</h1>
+              <h1 style={{ fontSize: 36, fontWeight: 600, color: "#fff", margin: 0, lineHeight: 1.1, letterSpacing: "-0.025em" }}>Vue d'ensemble</h1>
+
               <p style={{ fontSize: 13, color: "rgba(255,255,255,.75)", margin: 0 }}>
                 Données générales du projet de réhabilitation
               </p>

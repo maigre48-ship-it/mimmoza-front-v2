@@ -347,15 +347,12 @@ const getBankGradeColor = (grade: BankRiskScoringGrade): string => {
 
 const styles = {
   container: {
-    minHeight: "100vh",
-    background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #f0fdf4 100%)",
-    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
-  } as React.CSSProperties,
+  fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+} as React.CSSProperties,
   mainContent: {
-    maxWidth: "1400px",
-    margin: "0 auto",
-    padding: "32px 40px",
-  } as React.CSSProperties,
+  margin: "0 auto",
+  padding: "0",
+} as React.CSSProperties,
   formSection: {
     background: "white",
     borderRadius: "16px",
@@ -1284,23 +1281,25 @@ export default function InvestisseurRisquesPanel() {
       <div style={styles.container}>
 
         <div style={{
-          background: "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)",
-          borderRadius: 24,
-          padding: "32px 36px",
-          margin: "16px 40px 0 40px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 20,
-          boxShadow: "0 8px 32px rgba(33,150,243,0.22)",
-          position: "relative",
-          overflow: "hidden",
-        }}>
+  background: "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)",
+  borderRadius: 32,
+  padding: "40px 44px",
+  margin: "0 0 32px 0",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 24,
+  boxShadow: "0 20px 60px rgba(15,23,42,0.08)",
+  position: "relative",
+  overflow: "hidden",
+}}>
           <div style={{ position: "relative" }}>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.9)", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
+
               Investisseur · Analyse
             </div>
-            <div style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5, display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ fontSize: 36, fontWeight: 600, color: "#fff", marginBottom: 10, lineHeight: 1.1, letterSpacing: "-0.025em", display: "flex", alignItems: "center", gap: 12 }}>
+
               Géorisques
               {bannerInseeLabel && (
                 <span style={{ fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.85)", background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 6, padding: "2px 10px" }}>

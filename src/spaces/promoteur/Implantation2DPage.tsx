@@ -268,7 +268,7 @@ function featureToPoint2D(feature: Feature<Polygon | MultiPolygon>): Point2D[] {
 function LoadingScreen({ studyId, label }: { studyId: string | null; label: string }) {
   return (
     <div style={{ background: "#f8fafc", minHeight: "100vh" }}>
-      <div style={{ padding: "16px 16px 0" }}>
+      <div>
         <PromoteurPageHero
           badge="Promoteur · Conception"
           title="Implantation 2D"
@@ -295,7 +295,7 @@ function LoadingScreen({ studyId, label }: { studyId: string | null; label: stri
 function EmptyState({ onGoToFoncier }: { onGoToFoncier: () => void }) {
   return (
     <div style={{ background: "#f8fafc", minHeight: "100vh" }}>
-      <div style={{ padding: "16px 16px 0" }}>
+      <div>
         <PromoteurPageHero
           badge="Promoteur · Conception"
           title="Implantation 2D"
@@ -325,7 +325,7 @@ function ErrorState({ error, parcelIds, communeInsee, onContinueAnyway, onRefetc
 }) {
   return (
     <div style={{ background: "#f8fafc", minHeight: "100vh" }}>
-      <div style={{ padding: "16px 16px 0" }}>
+      <div>
         <PromoteurPageHero
           badge="Promoteur · Conception"
           title="Implantation 2D"
@@ -739,7 +739,7 @@ export const Implantation2DPage: React.FC = () => {
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#f8fafc", overflow: "hidden" }}>
 
       {/* ── Hero v2 — design identique à VeilleMarchePage ── */}
-      <div style={{ padding: "14px 16px 0", flexShrink: 0 }}>
+      <div style={{ flexShrink: 0 }}>
         <PromoteurPageHero
           badge="Promoteur · Conception"
           title="Implantation 2D"

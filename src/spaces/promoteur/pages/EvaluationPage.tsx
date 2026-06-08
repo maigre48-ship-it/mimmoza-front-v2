@@ -777,7 +777,7 @@ const EvaluationPage: React.FC = () => {
   return (
     <div style={S.page}>
       {/* ── HERO ── */}
-      <div style={{ maxWidth: 1340, margin: "0 auto 18px auto" }}>
+      <div style={{ marginBottom: 18 }}>
   <PromoteurPageHero
     badge="Promoteur · Évaluation"
     title="Fiche d'analyse du bien"
@@ -1465,16 +1465,11 @@ export default EvaluationPage;
 // ─────────────────────────────────────────────
 const S: Record<string, React.CSSProperties> = {
   page: {
-    minHeight: "100vh",
-    padding: "24px 18px 40px",
-    background: "linear-gradient(135deg, #f8fafc 0%, #ffffff 45%, #eef2ff 100%)",
     color: "#0f172a",
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
   },
   
   grid: {
-    maxWidth: 1340,
-    margin: "0 auto",
     display: "grid",
     gridTemplateColumns: "1.1fr 0.9fr",
     gap: 16,

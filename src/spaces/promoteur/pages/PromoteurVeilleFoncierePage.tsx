@@ -734,8 +734,8 @@ export default function PromoteurVeilleFoncierePage() {
   const fd = filtersLocked;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50/40 p-6">
-      <div className="mx-auto max-w-[1500px] space-y-6">
+    <div>
+      <div className="space-y-6">
 
         {/* ── Bandeau violet — card séparée ── */}
         <div className="overflow-hidden rounded-[32px] bg-gradient-to-r from-[#6f5bd6] via-[#8d78df] to-[#b39ddb] px-8 py-8 text-white shadow-[0_20px_60px_rgba(15,23,42,0.06)]">

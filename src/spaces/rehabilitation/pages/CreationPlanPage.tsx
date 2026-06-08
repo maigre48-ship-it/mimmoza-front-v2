@@ -972,10 +972,12 @@ const CreationPlanPage: React.FC = () => {
         position: 'relative', overflow: 'hidden',
       }}>
         <div style={{ position: 'relative' }}>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 10, fontWeight: 600 }}>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.9)', letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 10, fontWeight: 600 }}>
+
             Réhabilitation · Assistant plan
           </div>
-          <h1 style={{ fontSize: 30, fontWeight: 800, color: '#fff', marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5 }}>
+          <h1 style={{ fontSize: 36, fontWeight: 600, color: '#fff', marginBottom: 10, lineHeight: 1.1, letterSpacing: '-0.025em' }}>
+
             Assistant plan
           </h1>
           <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.75)', maxWidth: 460, lineHeight: 1.55, margin: 0 }}>
