@@ -1,0 +1,5 @@
+.env
+.env.local
+.env.*.local
+tools/ai-orchestrator/.env.local
+.env.local.backup*
