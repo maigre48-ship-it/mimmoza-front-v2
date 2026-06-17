@@ -16,8 +16,7 @@
 // onglets resteront vides.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useState } from "react";
-import { useNavigate, Link, useSearchParams } from "react-router-dom";
+import { supabase } from "@/lib/supabase";
 import {
   ArrowRight,
   BadgeCheck,
@@ -41,25 +40,26 @@ import {
   User,
   Zap,
 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
-import type { Invoice, Quote } from "@/features/admin/billing/types";
+import { exportInvoicePdf, exportQuotePdf } from "@/features/admin/billing/exportBillingPdf";
 import {
-  listMyInvoices,
+  formatBillingStatusLabel,
+  formatCents,
+  formatDate,
+  getInvoiceStatusColor,
+  getQuoteStatusColor,
+} from "@/features/admin/billing/helpers";
+import {
   listInvoiceLines,
+  listMyInvoices,
 } from "@/features/admin/billing/services/invoices.service";
 import {
   listMyQuotes,
   listQuoteLines,
 } from "@/features/admin/billing/services/quotes.service";
-import { exportInvoicePdf, exportQuotePdf } from "@/features/admin/billing/exportBillingPdf";
-import {
-  formatCents,
-  formatBillingStatusLabel,
-  formatDate,
-  getInvoiceStatusColor,
-  getQuoteStatusColor,
-} from "@/features/admin/billing/helpers";
+import type { Invoice, Quote } from "@/features/admin/billing/types";
 
 type TabId = "profil" | "abonnement" | "factures" | "devis" | "jetons" | "api";
 

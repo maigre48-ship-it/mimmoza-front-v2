@@ -18,14 +18,14 @@
  */
 
 import type {
-  Scenario,
-  ScenarioResults,
-  StressTestResults,
   DealInputs,
-  NegotiationResult,
-  StrategyType,
   FiscalRegime,
+  NegotiationResult,
+  Scenario,
   ScenarioComparison,
+  ScenarioResults,
+  StrategyType,
+  StressTestResults,
 } from "../types/strategy.types";
 
 // ─── Safe number helper ─────────────────────────────────────────────

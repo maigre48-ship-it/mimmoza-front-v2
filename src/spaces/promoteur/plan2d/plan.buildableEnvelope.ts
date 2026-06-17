@@ -11,9 +11,9 @@
 //   (peut rogner un peu plus près des angles rentrants). C'est le comportement
 //   voulu pour une enveloppe constructible : ne jamais proposer du non-conforme.
 
-import type { Vec2 } from "./plan.types";
+import { isPointInPolygon, isPolygonInsidePolygon } from "./plan.constraint";
 import { offsetPolygonInwardApprox } from "./plan.setback";
-import { isPolygonInsidePolygon, isPointInPolygon } from "./plan.constraint";
+import type { Vec2 } from "./plan.types";
 
 // ─── ENVELOPE OPTIONS ─────────────────────────────────────────────────
 

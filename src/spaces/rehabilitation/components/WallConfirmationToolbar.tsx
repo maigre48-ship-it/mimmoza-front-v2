@@ -6,18 +6,18 @@
 
 import React, { useCallback, useState } from 'react';
 import type { DetectedWall } from '../plan-reader/planTranscription.types';
+import type {
+  ValidationProgress,
+  WallUserValidationStatus,
+  WallValidationRecord,
+} from '../plan-reader/planUserValidationEngine';
 import {
-  confirmWallAsPorteur,
   confirmWallAsCloison,
+  confirmWallAsPorteur,
+  lockPlan,
   rejectWall,
   resetWallValidation,
-  lockPlan,
   unlockPlan,
-} from '../plan-reader/planUserValidationEngine';
-import type {
-  WallValidationRecord,
-  WallUserValidationStatus,
-  ValidationProgress,
 } from '../plan-reader/planUserValidationEngine';
 
 // ── Props ─────────────────────────────────────────────────────────────────────

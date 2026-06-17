@@ -1,12 +1,18 @@
 // src/spaces/promoteur/plan2d/editor2d.types.ts — V4 multi-étages
 
 import type {
-  FacadeEdge, RoofType, BuildingType,
-  BuildingVolume2D, FloorPlan2D, BuildingLevelProfile,
-  Balcon2D, Loggia2D, Terrasse2D,
+  Balcon2D,
+  BuildingLevelProfile,
+  BuildingType,
+  BuildingVolume2D,
+  FacadeEdge,
+  FloorPlan2D,
+  Loggia2D,
+  RoofType,
+  Terrasse2D,
 } from './buildingProgram.types';
 
-export type { FacadeEdge, RoofType, BuildingType, BuildingVolume2D, FloorPlan2D };
+export type { BuildingType, BuildingVolume2D, FacadeEdge, FloorPlan2D, RoofType };
 
 // ─── PRIMITIVES ───────────────────────────────────────────────────────
 

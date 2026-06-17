@@ -1,8 +1,8 @@
 // src/spaces/rehabilitation/pages/VueEnsemblePage.tsx
 // Vue d'ensemble projet — Mimmoza / Espace Réhabilitation
 
+import { ArrowRight, Building2, CheckCheck, Save } from "lucide-react";
 import React, { useEffect, useState } from "react";
-import { Building2, Save, CheckCheck, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 /* ── Thème ── */

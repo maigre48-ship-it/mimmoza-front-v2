@@ -10,7 +10,7 @@
 // Sortie  : téléchargement navigateur
 
 import jsPDF from 'jspdf';
-import type { MasterScenario, MasterConformityStatus } from '../plan2d/plan.master.types';
+import type { MasterConformityStatus, MasterScenario } from '../plan2d/plan.master.types';
 
 // ─── PALETTE ──────────────────────────────────────────────────────────
 

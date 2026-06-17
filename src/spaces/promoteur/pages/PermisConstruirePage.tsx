@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
+import { CommuneAutocomplete } from "../components/CommuneAutocomplete";
+import { usePermisConstruire } from "../hooks/usePermisConstruire";
 import type {
   PermisConstruireProjectType,
   PermisConstruireSearchParams,
@@ -8,7 +10,8 @@ import type {
   PermisConstruireStatut,
   PermisConstruireTypeAutorisation,
 } from "../types/permisConstruire.types";
-import { usePermisConstruire } from "../hooks/usePermisConstruire";
+import type { CommuneSuggestion } from "../utils/communeResolver";
+import { getCommuneByLatLon } from "../utils/communeResolver";
 import {
   formatDate,
   formatDistance,
@@ -20,9 +23,6 @@ import {
   formatTypologie,
   sortPermis,
 } from "../utils/permisConstruire.format";
-import type { CommuneSuggestion } from "../utils/communeResolver";
-import { getCommuneByLatLon } from "../utils/communeResolver";
-import { CommuneAutocomplete } from "../components/CommuneAutocomplete";
 
 /* ------------------------------------------------------------------
  * Lecture de la localisation projet.

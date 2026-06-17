@@ -4,12 +4,12 @@
 // Opportunity -> Parcelle -> Zone PLU -> Marché DVF -> Mobilité -> Risques
 // ============================================================================
 
+import { buildKnowledgeSnapshot, createEdge, createNode } from '../knowledgeGraph.service';
 import {
   KnowledgeGraphError,
   type KnowledgeGraphContext,
   type KnowledgeSnapshot,
 } from '../knowledgeGraph.types';
-import { createEdge, createNode, buildKnowledgeSnapshot } from '../knowledgeGraph.service';
 import { ensureParcelSubgraph } from './parcelGraph.builder';
 
 export async function buildOpportunityGraph(

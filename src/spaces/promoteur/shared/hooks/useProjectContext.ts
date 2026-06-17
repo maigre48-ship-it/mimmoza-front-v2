@@ -4,7 +4,7 @@
 // Source de vérité unique pour toutes les pages
 // ============================================
 
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 // ============================================
 // TYPES

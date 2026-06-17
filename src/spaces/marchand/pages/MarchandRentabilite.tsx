@@ -1,20 +1,19 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Calculator, Euro, TrendingUp, Clock, ShieldAlert, AlertTriangle } from "lucide-react";
+import { AlertTriangle, Calculator, Clock, Euro, TrendingUp } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import KpiCard from "../shared/ui/KpiCard";
 import PageShell from "../shared/ui/PageShell";
 import SectionCard from "../shared/ui/SectionCard";
-import KpiCard from "../shared/ui/KpiCard";
 
 import {
   computeNetAfterTaxes,
   getDefaultTaxConfig,
   type TaxConfig,
-  type TaxRegime,
-  type VatMode,
+  type TaxRegime
 } from "../services/taxEngine";
 
 import {
-  readMarchandSnapshot,
   patchRentabiliteForDeal,
+  readMarchandSnapshot,
 } from "../shared/marchandSnapshot.store";
 
 import useMarchandSnapshotTick from "../shared/hooks/useMarchandSnapshotTick";

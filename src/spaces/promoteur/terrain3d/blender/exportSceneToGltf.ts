@@ -8,6 +8,7 @@
 import * as THREE from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 
+import { makeBuildingRootName } from "./blenderNaming";
 import {
   buildBlenderSceneGraph,
   type BuildBlenderSceneGraphInput,
@@ -17,7 +18,6 @@ import {
   buildFacadeMeshGroupsForExport,
   type ExportMeshGroup,
 } from "./buildFacadeForExport";
-import { makeBuildingRootName } from "./blenderNaming";
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTE SEUIL

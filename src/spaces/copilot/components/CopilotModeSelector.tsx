@@ -1,5 +1,5 @@
 // src/spaces/copilot/components/CopilotModeSelector.tsx
-import { Zap, Brain } from 'lucide-react';
+import { Brain, Zap } from 'lucide-react';
 import type { CopilotMode } from '../types/copilot.types';
 import { CREDIT_COST, V1_AVAILABLE_MODES } from '../types/copilot.types';
 import { COPILOT_THEME as T } from './copilotTheme';

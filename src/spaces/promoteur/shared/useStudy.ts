@@ -4,9 +4,9 @@
 // Fallback transparent sur localStorage si Supabase indispo
 // ============================================================
 
-import { useState, useEffect, useCallback } from "react";
-import { StudyService } from "./promoteurStudyService";
+import { useCallback, useEffect, useState } from "react";
 import type { PromoteurStudyRow } from "./promoteurStudyService";
+import { StudyService } from "./promoteurStudyService";
 
 export type StudyLoadState = "idle" | "loading" | "ready" | "error";
 

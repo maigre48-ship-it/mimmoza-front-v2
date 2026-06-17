@@ -1,10 +1,10 @@
 // src/spaces/promoteur/terrain3d/facade/facadeRenderPresets.ts
 
 import type {
-  FacadeRenderResolvedOptions,
-  FacadeRenderStyle,
   FacadeRenderOptions,
   FacadeRenderPalette,
+  FacadeRenderResolvedOptions,
+  FacadeRenderStyle,
 } from "./facadeRenderer.types";
 
 const DEFAULT_PALETTE: FacadeRenderPalette = {

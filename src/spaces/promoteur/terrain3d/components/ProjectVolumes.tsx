@@ -1,5 +1,5 @@
+import type { Feature, FeatureCollection, Polygon, Position } from "geojson";
 import React, { useMemo } from "react";
-import type { FeatureCollection, Feature, Polygon, Position } from "geojson";
 
 type Props = {
   buildings?: FeatureCollection<Polygon>;

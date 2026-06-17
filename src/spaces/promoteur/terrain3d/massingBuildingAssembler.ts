@@ -13,17 +13,16 @@
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import type { Pt2D } from "./massingGeometry3d";
-import { extractEdges, ptsToShape, scalePolygon, centroid2D } from "./massingGeometry3d";
+import { buildFacadeGeometry, type FacadeConfig } from "./massingFacadeEngine";
+import { centroid2D, extractEdges, ptsToShape, scalePolygon } from "./massingGeometry3d";
 import {
+  applyFacadeColor,
   createBuildingMaterials,
   disposeBuildingMaterials,
-  applyFacadeColor,
   type BuildingMaterials,
   type FacadePaletteKey,
   type RoofStyleKey,
 } from "./massingRenderMaterials";
-import { buildFacadeGeometry, type FacadeConfig } from "./massingFacadeEngine";
 import { buildRoofGeometry, type RoofConfig } from "./massingRoofEngine";
 import { buildTerraceGeometry, hasRealTerrace, type TerraceConfig } from "./massingTerraceEngine";
 

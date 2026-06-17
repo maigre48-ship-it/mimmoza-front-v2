@@ -14,7 +14,7 @@
  */
 
 import { useState } from "react";
-import type { SmartScoreResult, SubscoreDetail } from "../shared/services/banqueSmartscore";
+import type { SmartScoreResult } from "../shared/services/banqueSmartscore";
 
 // ════════════════════════════════════════════════════════════════════
 // ViewModel unifié

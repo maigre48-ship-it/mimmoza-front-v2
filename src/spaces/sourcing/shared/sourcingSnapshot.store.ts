@@ -17,9 +17,9 @@
  */
 
 import type {
-  SourcingSmartScore,
   QualificationInput,
   QualificationResult,
+  SourcingSmartScore,
 } from "../qualification/qualification.types";
 
 import { getActiveDealId } from "../../marchand/shared/marchandDealContext.store";

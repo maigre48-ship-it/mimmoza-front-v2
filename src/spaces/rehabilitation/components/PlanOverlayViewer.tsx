@@ -9,9 +9,9 @@
 // Style Mimmoza Réhabilitation : orange #f97316.
 // ---------------------------------------------------------------------------
 
-import React, { useMemo, useRef, useState } from 'react';
-import type { PlanOverlaySnapshot, LayerVisibility, Wall, Opening, Room, Point2D, PlanGeometry } from '../plan-reader/types';
+import React, { useMemo, useRef } from 'react';
 import { polygonCentroid } from '../plan-reader/planGeometryNormalizer';
+import type { LayerVisibility, Opening, PlanGeometry, PlanOverlaySnapshot, Point2D, Room, Wall } from '../plan-reader/types';
 
 // ---------------------------------------------------------------------------
 // Palette

@@ -1,16 +1,10 @@
 // Point d'entrée unique du moteur d'explication.
+export {
+  buildMimmozaDecision, buildOpportunityExplanation, buildValuationExplanation, selectNegative, selectPositive
+} from "./explainability.service";
 export * from "./explainability.types";
 export {
-  buildValuationExplanation,
-  buildOpportunityExplanation,
-  buildMimmozaDecision,
-  selectPositive,
-  selectNegative,
-} from "./explainability.service";
-export {
-  knowledgeGraphFactors,
-  explainFromKnowledgeGraph,
-  mapKnowledgeGraphToSignals,
+  explainFromKnowledgeGraph, knowledgeGraphFactors, mapKnowledgeGraphToSignals,
   type KnowledgeGraphSignal,
-  type RawKnowledgeGraph,
+  type RawKnowledgeGraph
 } from "./knowledgeExplain.service";

@@ -8,18 +8,18 @@ import {
   fetchMessages,
 } from '../lib/copilotClient';
 import type {
-  CopilotMode,
-  Vertical,
-  ParcelContextRef,
-  StudyContextRef,
-  PluContextRef,
-  ListingContextRef,
-  PredictiveSnapshotContext,
-  ValuationEngineContext,
-  CopilotConversation,
   ChatMessage,
+  CopilotConversation,
+  CopilotMode,
   CopilotStatus,
   CopilotStreamEvent,
+  ListingContextRef,
+  ParcelContextRef,
+  PluContextRef,
+  PredictiveSnapshotContext,
+  StudyContextRef,
+  ValuationEngineContext,
+  Vertical,
 } from '../types/copilot.types';
 
 // ── V1.3 : valuation_engine ajouté ───────────────────────────────────────────

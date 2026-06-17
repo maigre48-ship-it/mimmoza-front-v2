@@ -1,5 +1,5 @@
-﻿import type { BanqueAlert, BanqueProject } from "../types/banque.types";
-import { getAllProjects, setAlerts } from "../banqueSnapshot.store";
+﻿import { getAllProjects, setAlerts } from "../banqueSnapshot.store";
+import type { BanqueAlert, BanqueProject } from "../types/banque.types";
 import { computeSmartScore } from "./banqueSmartscore";
 
 function generateId(): string {

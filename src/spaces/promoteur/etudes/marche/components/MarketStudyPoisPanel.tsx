@@ -1,9 +1,9 @@
 // FILE: src/spaces/promoteur/etudes/marche/components/MarketStudyPoisPanel.tsx
 
 import React, { useState } from "react";
-import type { MarketStudyResponse, PoiCategory, Poi } from "../types/marketStudy.types";
-import { POI_CATEGORY_LABELS, POI_CATEGORY_ICONS } from "../types/marketStudy.types";
 import { formatDistance } from "../hooks/useMarketStudy";
+import type { MarketStudyResponse, Poi, PoiCategory } from "../types/marketStudy.types";
+import { POI_CATEGORY_ICONS, POI_CATEGORY_LABELS } from "../types/marketStudy.types";
 
 interface MarketStudyPoisPanelProps {
   data: MarketStudyResponse | null;

@@ -28,8 +28,8 @@
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { centroid2D } from "./massingGeometry3d";
 import type { Pt2D } from "./massingGeometry3d";
+import { centroid2D } from "./massingGeometry3d";
 
 export type WindowType = "single" | "casement2" | "cross4" | "bay";
 export type ShutterType = "none" | "battants" | "roulant";

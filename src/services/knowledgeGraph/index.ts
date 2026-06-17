@@ -2,28 +2,21 @@
 // Knowledge Graph — API interne publique
 // ============================================================================
 
-import type { KnowledgeGraphContext, KnowledgeSnapshot, Explanation } from './knowledgeGraph.types';
-import { buildParcelGraph } from './builders/parcelGraph.builder';
 import { buildOpportunityGraph } from './builders/opportunityGraph.builder';
+import { buildParcelGraph } from './builders/parcelGraph.builder';
 import { buildValuationGraph } from './builders/valuationGraph.builder';
-import { explainParcel, explainOpportunity, explainValuation } from './knowledgeExplain.service';
+import { explainOpportunity, explainParcel, explainValuation } from './knowledgeExplain.service';
+import type { Explanation, KnowledgeGraphContext, KnowledgeSnapshot } from './knowledgeGraph.types';
 
 // --- Exports directs (signature : (key, ctx)) --------------------------------
-export { buildParcelGraph } from './builders/parcelGraph.builder';
 export { buildOpportunityGraph } from './builders/opportunityGraph.builder';
+export { buildParcelGraph } from './builders/parcelGraph.builder';
 export { buildValuationGraph } from './builders/valuationGraph.builder';
-export { explainParcel, explainOpportunity, explainValuation } from './knowledgeExplain.service';
+export { explainOpportunity, explainParcel, explainValuation } from './knowledgeExplain.service';
 
 // --- Primitives bas niveau (optionnel) ---------------------------------------
 export {
-  createNode,
-  getNode,
-  findNode,
-  createEdge,
-  getOutgoingEdges,
-  getIncomingEdges,
-  buildKnowledgeSnapshot,
-  buildCommuneGraph,
+  buildCommuneGraph, buildKnowledgeSnapshot, createEdge, createNode, findNode, getIncomingEdges, getNode, getOutgoingEdges
 } from './knowledgeGraph.service';
 
 // --- Types -------------------------------------------------------------------

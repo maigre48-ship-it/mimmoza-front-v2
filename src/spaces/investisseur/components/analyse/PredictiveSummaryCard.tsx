@@ -1,4 +1,3 @@
-import React from "react";
 import type { PredictiveAnalysisSnapshot } from "../../services/predictive/predictive.types";
 
 interface Props {

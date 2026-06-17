@@ -3,11 +3,11 @@
 // Writes to: dossiersById[id].origination
 // ============================================================================
 
-import { useState, useEffect } from "react";
-import { useBanqueDossierContext } from "../hooks/useBanqueDossierContext";
-import { upsertDossier, addEvent } from "../store/banqueSnapshot.store";
-import type { DossierOrigination, ProjectType } from "../store/banqueSnapshot.types";
+import { useEffect, useState } from "react";
 import DossierContextBar from "../components/DossierContextBar";
+import { useBanqueDossierContext } from "../hooks/useBanqueDossierContext";
+import { addEvent, upsertDossier } from "../store/banqueSnapshot.store";
+import type { DossierOrigination, ProjectType } from "../store/banqueSnapshot.types";
 
 const PROJECT_TYPES: { value: ProjectType; label: string }[] = [
   { value: "promotion_residentielle", label: "Promotion résidentielle" },

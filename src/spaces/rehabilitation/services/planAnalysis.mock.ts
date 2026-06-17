@@ -5,13 +5,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type {
+  ComplianceLevel,
+  ComplianceScore,
   PlanAnalysisInput,
   PlanAnalysisResult,
   PlanIssue,
   PlanRecommendation,
-  ComplianceScore,
   RiskLevel,
-  ComplianceLevel,
 } from "../shared/planAnalysis.types";
 
 // ---------------------------------------------------------------------------

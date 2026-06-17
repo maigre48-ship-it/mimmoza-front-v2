@@ -7,12 +7,12 @@
  */
 
 import { supabase } from "@/lib/supabaseClient";
-import { ensureActiveDeal } from "../shared/marchandSnapshot.store";
 import {
   upsertItemsForDossier,
-  type DueDiligenceItem,
   type DDStatus,
+  type DueDiligenceItem,
 } from "../shared/dueDiligence.store";
+import { ensureActiveDeal } from "../shared/marchandSnapshot.store";
 
 // ─── Helpers ────────────────────────────────────────────────────────
 

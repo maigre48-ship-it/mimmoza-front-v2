@@ -10,17 +10,17 @@
 // ✅ REDESIGN: Financeur visual tokens applied (GRAD_FIN / ACCENT_FIN).
 // ============================================================================
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useBanqueDossierContext } from "../hooks/useBanqueDossierContext";
-import { upsertDossier, addEvent } from "../store/banqueSnapshot.store";
-import GarantiesSection from "../components/GarantiesSection";
 import DocumentsSection from "../components/DocumentsSection";
-import BudgetSection from "../components/analyse/BudgetSection";
-import RevenusSection from "../components/analyse/RevenusSection";
+import GarantiesSection from "../components/GarantiesSection";
 import BienEtatSection from "../components/analyse/BienEtatSection";
+import BudgetSection from "../components/analyse/BudgetSection";
 import CalendrierSection from "../components/analyse/CalendrierSection";
 import RatiosPanel from "../components/analyse/RatiosPanel";
+import RevenusSection from "../components/analyse/RevenusSection";
+import { useBanqueDossierContext } from "../hooks/useBanqueDossierContext";
+import { addEvent, upsertDossier } from "../store/banqueSnapshot.store";
 
 import type { ProjectFields } from "../components/analyse/BudgetSection";
 

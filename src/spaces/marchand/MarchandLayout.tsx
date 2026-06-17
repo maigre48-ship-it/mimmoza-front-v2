@@ -1,6 +1,5 @@
 // src/spaces/marchand/MarchandLayout.tsx
 
-import React from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { useCopilotPageSync } from "../copilot/hooks/useCopilotPageSync";
 import { useMarchandDealCopilotSync } from "./hooks/useMarchandDealCopilotSync";

@@ -1,5 +1,5 @@
 ﻿import type { FinancialSnapshotV1, NumberOrNull } from "./financialSnapshot.types";
-import type { SmartScoreResultV1, SmartScoreDecision } from "./smartscoreBank.types";
+import type { SmartScoreDecision, SmartScoreResultV1 } from "./smartscoreBank.types";
 
 function clamp(n: number, min = 0, max = 100) {
   if (!Number.isFinite(n)) return min;

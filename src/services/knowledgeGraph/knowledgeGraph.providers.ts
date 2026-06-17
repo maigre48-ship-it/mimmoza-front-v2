@@ -14,8 +14,6 @@
 // ============================================================================
 
 import { supabase } from "@/lib/supabaseClient";
-import { resolveParcelCoordinates } from "./resolvers/parcelResolver";
-import { resolveParcelPluContext } from "./resolvers/pluResolver";
 import {
   createKnowledgeGraph,
   type CommuneData,
@@ -33,6 +31,8 @@ import {
   type TransactionData,
   type ValuationResolution,
 } from "@/services/knowledgeGraph";
+import { resolveParcelCoordinates } from "./resolvers/parcelResolver";
+import { resolveParcelPluContext } from "./resolvers/pluResolver";
 
 // --- Helpers -----------------------------------------------------------------
 type Json = Record<string, unknown>;

@@ -6,18 +6,19 @@
 // ✅ Logs diagnostics pour déboguer le pipeline relief
 // ============================================================================
 
-import React, { type FC, useEffect, useMemo, useState } from "react";
-import type { Feature, FeatureCollection, Polygon, MultiPolygon, Position } from "geojson";
+import type { Feature, FeatureCollection, MultiPolygon, Polygon, Position } from "geojson";
 import proj4 from "proj4";
+import React, { type FC, useEffect, useMemo, useState } from "react";
 
-import { useMassingScene } from "../hooks/useMassingScene";
-import { Controls3D } from "./Controls3D";
-import type { EarthworksKPIs } from "../types/earthworks.types";
-import type { ReliefData } from "./SceneSvg3D";
-import type { Implantation2DMeta } from "../../store/promoteurProject.store";
 import {
-  ensureDepartment, elevationLambert93, type ElevationPoint,
+  elevationLambert93, type ElevationPoint,
+  ensureDepartment,
 } from "../../../../lib/terrainServiceClient";
+import type { Implantation2DMeta } from "../../store/promoteurProject.store";
+import { useMassingScene } from "../hooks/useMassingScene";
+import type { EarthworksKPIs } from "../types/earthworks.types";
+import { Controls3D } from "./Controls3D";
+import type { ReliefData } from "./SceneSvg3D";
 
 import { MassingEditor3D } from "../../massing3d/MassingEditor3D";
 

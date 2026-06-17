@@ -6,7 +6,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import type { PlanTranscriptionResult, NormalizedPoint } from '../plan-reader/planTranscription.types';
+import {
+  clearSelection,
+  getLayersStoreState,
+  resetLayersToDefaults,
+  setLayerOpacity,
+  subscribeToLayersStore,
+  toggleDisplayOption,
+  toggleLayerVisibility,
+} from '../plan-reader/planLayers.store';
 import type {
   LayerId,
   PlanDisplayOptions,
@@ -14,20 +22,12 @@ import type {
   SelectedElementDetail,
 } from '../plan-reader/planOverlay.types';
 import {
-  subscribeToLayersStore,
-  getLayersStoreState,
-  toggleLayerVisibility,
-  setLayerOpacity,
-  toggleDisplayOption,
-  clearSelection,
-  resetLayersToDefaults,
-} from '../plan-reader/planLayers.store';
-import { confidenceToColor } from '../plan-reader/planVectorGeometry';
-import {
-  useScaleCalibrator,
-  formatCalibrationLabel,
   computePolygonArea_m2,
+  formatCalibrationLabel,
+  useScaleCalibrator,
 } from '../plan-reader/planScaleCalibrator';
+import type { NormalizedPoint, PlanTranscriptionResult } from '../plan-reader/planTranscription.types';
+import { confidenceToColor } from '../plan-reader/planVectorGeometry';
 import PlanVectorCanvas from './PlanVectorCanvas';
 
 interface PlanLayerViewerProps {

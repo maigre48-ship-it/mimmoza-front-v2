@@ -2,8 +2,8 @@
 // Fonctions géométriques pour les éléments architecturaux par étage.
 // Toutes les fonctions respectent la rotation de l'OrientedRect.
 
-import type { FloorEdge, FloorBalcony2D, FloorLoggia2D, FloorTerrace2D } from './floorElements.types';
 import { rectCorners } from './editor2d.geometry';
+import type { FloorBalcony2D, FloorEdge, FloorLoggia2D, FloorTerrace2D } from './floorElements.types';
 
 // ─── Types locaux ─────────────────────────────────────────────────────
 

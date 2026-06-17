@@ -1,6 +1,5 @@
 // src/spaces/promoteur/shared/StudyLoader.tsx
 
-import React from "react";
 import { Loader2 } from "lucide-react";
 
 const ACCENT_PRO = "#5247b8";

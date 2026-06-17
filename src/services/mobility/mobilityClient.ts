@@ -10,8 +10,8 @@
 // ============================================================
 
 import { supabase } from '@/lib/supabaseClient';
-import type { MobilityScore, TransportScoreResponse } from './mobility.types';
 import type { TransportGtfsSnapshot } from '@/spaces/copilot/types/copilot.types';
+import type { MobilityScore, TransportScoreResponse } from './mobility.types';
 
 // ------------------------------------------------------------
 // Fetch principal — appelé depuis les pages d'analyse

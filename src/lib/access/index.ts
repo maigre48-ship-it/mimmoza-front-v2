@@ -5,48 +5,34 @@
 
 // Types
 export type {
-  FeatureKey,
-  PlanId,
-  AccessQuotas,
-  AccessContext,
-  PaywallBlockReason,
+  AccessAuditEvent, AccessContext, AccessEventType, AccessQuotas, ConsumeResult,
+  ConsumeSkipReason, FeatureKey, PaywallBlockReason,
   PaywallCTA,
-  PaywallState,
-  ConsumeResult,
-  ConsumeSkipReason,
-  AccessEventType,
-  AccessAuditEvent,
+  PaywallState, PlanId
 } from "./access.types";
 
 // Plan config (interne au moteur d'accès — pas de billing ici)
-export { PLAN_CONFIGS, getPlanConfig, planHasFeature, getTokenCost, getDailyQuota } from "./planConfig";
+export { PLAN_CONFIGS, getDailyQuota, getPlanConfig, getTokenCost, planHasFeature } from "./planConfig";
 export type { PlanConfig } from "./planConfig";
 
 // Context resolver
 export {
-  buildUserAccessContext,
-  useAccessContext,
   ADMIN_DISPLAY_QUOTA,
-  ANONYMOUS_ACCESS_CONTEXT,
+  ANONYMOUS_ACCESS_CONTEXT, buildUserAccessContext,
+  useAccessContext
 } from "./accessContext";
 
 // Policies
 export {
-  canAccessFeature,
-  shouldConsumeToken,
-  shouldConsumeQuota,
-  getTokenCostForContext,
-  isQuotaExhausted,
-  hasSufficientTokens,
-  checkAccess,
+  canAccessFeature, checkAccess, getTokenCostForContext, hasSufficientTokens, isQuotaExhausted, shouldConsumeQuota, shouldConsumeToken
 } from "./accessPolicies";
 export type { AccessCheckResult } from "./accessPolicies";
 
 // Paywall
-export { getPaywallState, isFeatureBlocked, getPaywallStates } from "./paywall";
+export { getPaywallState, getPaywallStates, isFeatureBlocked } from "./paywall";
 
 // Consumption
-export { consumeToken, consumeQuota } from "./consumption";
+export { consumeQuota, consumeToken } from "./consumption";
 
 // Audit
 export { logAccessEvent, logFeatureAccess } from "./audit";

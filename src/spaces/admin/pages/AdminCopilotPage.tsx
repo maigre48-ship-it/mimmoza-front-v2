@@ -4,7 +4,6 @@
 // Stats globales · liste utilisateurs · ajustement manuel de crédits.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Bot,
@@ -26,6 +25,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import {
   adminAdjustCopilotCredits,
   getAdminCopilotDailyUsage,

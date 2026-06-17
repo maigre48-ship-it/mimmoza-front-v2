@@ -11,18 +11,36 @@
 // + 🆕 Sauvegarde dans projet Investisseur (risks) pour Analyse prédictive
 // ============================================
 
-import React, { useState, useCallback, useEffect, useRef, Component, ErrorInfo, ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
-import { 
-  Search, MapPin, Grid3X3, Loader2, X, 
-  AlertTriangle, CheckCircle, Shield, ShieldAlert, ShieldOff, ShieldCheck,
-  Activity, Download, FileText, ChevronDown, ChevronUp,
-  Flame, Droplets, Mountain, Factory, Atom, AlertOctagon,
-  Layers, CircleDot, Compass,
-  Target, Info,
-  Bug, Skull,
+import {
+  Activity,
+  AlertOctagon,
+  AlertTriangle,
+  Atom,
+  Bug,
+  CheckCircle,
+  ChevronDown, ChevronUp,
+  CircleDot, Compass,
+  Download,
+  Droplets,
+  Factory,
+  FileText,
+  Flame,
+  Grid3X3,
+  Info,
   Landmark,
+  Layers,
+  Loader2,
+  MapPin,
+  Mountain,
+  Shield, ShieldAlert,
+  ShieldCheck,
+  ShieldOff,
+  Skull,
+  Target,
+  X
 } from "lucide-react";
+import React, { Component, ErrorInfo, ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import type { LucideIcon } from "lucide-react";
 
@@ -34,17 +52,17 @@ import type {
   ParcelInfo,
 } from "../../../promoteur/etudes/marche/types/market.types";
 
-import { patchProjectInfo, patchModule } from "../../../promoteur/shared/promoteurSnapshot.store";
+import { patchModule, patchProjectInfo } from "../../../promoteur/shared/promoteurSnapshot.store";
 
-import { BanqueRiskScoreCard } from "../../../../components/banque/BanqueRiskScoreCard";
 import type { BankRiskScoring, BankRiskScoringGrade } from "../../../../components/banque/BanqueRiskScoreCard";
+import { BanqueRiskScoreCard } from "../../../../components/banque/BanqueRiskScoreCard";
 
-import { usePromoteurStudy } from "../../../promoteur/shared/usePromoteurStudy";
 import type { PromoteurRisquesData } from "../../../promoteur/shared/promoteurStudy.types";
+import { usePromoteurStudy } from "../../../promoteur/shared/usePromoteurStudy";
 
 import { useCopilotContext } from "../../../copilot/hooks/useCopilotContext";
-import { getInvestisseurSnapshot, upsertInvestisseurProject } from "../../shared/investisseurSnapshot.store";
 import { readMarchandSnapshot } from "../../../marchand/shared/marchandSnapshot.store";
+import { getInvestisseurSnapshot, upsertInvestisseurProject } from "../../shared/investisseurSnapshot.store";
 
 // ─── Design tokens par défaut (Investisseur = bleu) ───────────────────────────
 const GRAD_PRO   = "linear-gradient(90deg, #2196f3 0%, #21cbf3 100%)";

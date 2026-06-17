@@ -11,27 +11,27 @@
 // - Le recalcul SmartScore utilise en priorité les ratios calculés (LTV/DSCR/DSTI, etc.)
 // ============================================================================
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { useBanqueDossierContext } from "../hooks/useBanqueDossierContext";
 import { useSmartScore } from "../hooks/useSmartScore";
-import { upsertDossier, addEvent } from "../store/banqueSnapshot.store";
+import { addEvent, upsertDossier } from "../store/banqueSnapshot.store";
 import type { DossierAnalyse } from "../store/banqueSnapshot.types";
 
-import SmartScorePanel from "../components/SmartScorePanel";
 import { Flame, RefreshCw, ShieldAlert } from "lucide-react";
+import SmartScorePanel from "../components/SmartScorePanel";
 
 // ✅ FIX Vite alias: use relative import instead of "@/..."
 // (tu as aussi supabase via "@/lib/supabaseClient" ailleurs, mais on garde celui-ci ici)
 import { supabase } from "../../../lib/supabaseClient";
 
 // ✅ OPTION B — New sections + ratios
-import BudgetSection from "../components/analyse/BudgetSection";
-import RevenusSection from "../components/analyse/RevenusSection";
 import BienEtatSection from "../components/analyse/BienEtatSection";
+import BudgetSection from "../components/analyse/BudgetSection";
 import CalendrierSection from "../components/analyse/CalendrierSection";
 import RatiosPanel from "../components/analyse/RatiosPanel";
+import RevenusSection from "../components/analyse/RevenusSection";
 import { computeRatios } from "../utils/banqueRatios";
 
 // 🆕 Banque scoring — Types locaux pour risks_data.scoring

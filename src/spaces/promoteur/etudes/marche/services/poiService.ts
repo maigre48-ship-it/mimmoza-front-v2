@@ -1,7 +1,7 @@
 // FILE: src/spaces/promoteur/etudes/marche/services/poiService.ts
 
-import { Poi, PoiCategoryId, PoiSearchResult, PoiProjectConfig } from "../types";
 import { POI_CATEGORIES } from "../config/poiCategories";
+import { Poi, PoiCategoryId, PoiProjectConfig, PoiSearchResult } from "../types";
 
 export interface PoiFetchParams {
   lat: number;

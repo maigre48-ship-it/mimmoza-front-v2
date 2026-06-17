@@ -1,11 +1,12 @@
 // src/spaces/copilot/hooks/useCopilot.ts
 import { useCallback } from 'react';
 import { useCopilotStore } from '../store/copilotStore';
+import type {
+  ParcelContextRef, StudyContextRef,
+  Vertical,
+} from '../types/copilot.types';
 import { useCopilotContext } from './useCopilotContext';
 import { useCopilotStreaming } from './useCopilotStreaming';
-import type {
-  Vertical, ParcelContextRef, StudyContextRef,
-} from '../types/copilot.types';
 
 interface SendOptions {
   vertical?: Vertical;

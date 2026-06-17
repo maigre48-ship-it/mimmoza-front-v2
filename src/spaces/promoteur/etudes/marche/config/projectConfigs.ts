@@ -1,19 +1,19 @@
 // FILE: src/spaces/promoteur/etudes/marche/config/projectConfigs.ts
 
 import {
-  Home,
-  Users,
-  Heart,
-  GraduationCap,
   Briefcase,
-  ShoppingCart,
+  GraduationCap,
+  Heart,
+  Home,
   Hotel,
+  ShoppingCart,
+  Users,
 } from "lucide-react";
 import {
+  DemographicSegment,
+  PoiProjectConfig,
   ProjectType,
   ProjectTypeConfig,
-  PoiProjectConfig,
-  DemographicSegment,
 } from "../types";
 
 // ============================================

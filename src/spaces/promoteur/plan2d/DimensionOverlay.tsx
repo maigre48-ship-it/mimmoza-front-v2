@@ -1,13 +1,12 @@
-import React from 'react';
-import { useEditor2DStore } from './editor2d.store';
 import {
-  rectCorners,
-  midpoint,
   angleDeg,
-  pointToSegmentDist,
   closestPointOnSegment,
+  midpoint,
+  pointToSegmentDist,
+  rectCorners,
 } from './editor2d.geometry';
-import type { Point2D, Building2D, Parking2D } from './editor2d.types';
+import { useEditor2DStore } from './editor2d.store';
+import type { Building2D, Parking2D, Point2D } from './editor2d.types';
 
 interface DimensionOverlayProps {
   parcellePolygon: Point2D[];

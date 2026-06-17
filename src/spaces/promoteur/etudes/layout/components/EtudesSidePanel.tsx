@@ -1,6 +1,6 @@
 // FILE: src/spaces/promoteur/etudes/layout/components/EtudesSidePanel.tsx
 
-import { FC, useState, useId } from 'react';
+import { FC, useId, useState } from 'react';
 import type { EtudesSidePanelProps } from '../etudesLayout.types';
 
 const widthClasses: Record<string, string> = {

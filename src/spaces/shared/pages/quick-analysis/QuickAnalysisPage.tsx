@@ -18,23 +18,23 @@
 // Principe conservé : zéro fictif. Chaque bloc masqué si données absentes.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState, useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   useValuationEngine,
-  type EngineInput,
   type ComparableSale,
+  type EngineInput,
   type MarketPosition,
   type PropertyType,
 } from "./useValuationEngine";
 // Page située dans src/spaces/shared/pages/quick-analysis/ → on remonte 4 niveaux.
 // (remplace par l'alias "@/services/explainability" si tu en configures un)
 import {
-  buildValuationExplanation,
-  buildOpportunityExplanation,
   buildMimmozaDecision,
-  selectPositive,
+  buildOpportunityExplanation,
+  buildValuationExplanation,
   selectNegative,
+  selectPositive,
 } from "../../../../services/explainability";
 
 // ─────────────────────────────────────────────────────────────────────────────

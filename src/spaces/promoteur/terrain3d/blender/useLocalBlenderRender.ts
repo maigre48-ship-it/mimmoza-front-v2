@@ -1,11 +1,11 @@
 // src/spaces/promoteur/terrain3d/blender/useLocalBlenderRender.ts
 
 import { useCallback, useState } from "react";
-import { requestLocalRender } from "./requestLocalRender";
 import type {
   LocalBlenderRenderResponse,
   LocalBlenderRenderStatus,
 } from "./localRender.types";
+import { requestLocalRender } from "./requestLocalRender";
 
 export function useLocalBlenderRender() {
   const [status, setStatus] = useState<LocalBlenderRenderStatus>("idle");

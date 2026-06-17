@@ -1,9 +1,9 @@
 // FILE: src/spaces/promoteur/etudes/marche/api/marketStudyApi.ts
 
 import type {
+  MarketStudyError,
   MarketStudyRequest,
   MarketStudyResponse,
-  MarketStudyError,
 } from "../types/marketStudy.types";
 
 // ─────────────────────────────────────────────────────────────

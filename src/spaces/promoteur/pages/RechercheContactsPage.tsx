@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  searchMairieContacts,
   enrichRowsWithMaires,
+  searchMairieContacts,
 } from '../services/rechercheContacts.service';
 import { exportMairieContactsToXlsx } from '../services/rechercheContactsExport';
 import type {

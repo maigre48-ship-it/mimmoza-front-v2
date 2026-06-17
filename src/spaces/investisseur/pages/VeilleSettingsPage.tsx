@@ -1,5 +1,5 @@
-import { WatchlistsSettingsCard } from "../components/veille/WatchlistsSettingsCard";
 import { VeilleSummaryCard } from "../components/veille/VeilleSummaryCard";
+import { WatchlistsSettingsCard } from "../components/veille/WatchlistsSettingsCard";
 
 export default function VeilleSettingsPage() {
   return (

@@ -1,9 +1,8 @@
 // src/spaces/promoteur/pages/PromoteurRenduTravauxPage.tsx
 // Wrapper Promoteur — injecte le thème violet dans RenduTravauxPage
 
-import React from "react";
-import RenduTravauxPage from "../../marchand/pages/RenduTravauxPage";
 import type { RenduTheme } from "../../marchand/pages/RenduTravauxPage";
+import RenduTravauxPage from "../../marchand/pages/RenduTravauxPage";
 
 const promoteurTheme: RenduTheme = {
   gradient:    "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)",

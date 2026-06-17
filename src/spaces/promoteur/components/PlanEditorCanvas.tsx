@@ -13,39 +13,38 @@
 // V1.2 : Parcelle rendue en deux passes (fill en premier, stroke en dernier).
 // V1.1 : Overlay "aucune parcelle" quand canvas vide.
 
-import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import type { GeoJSON } from "geojson";
-import type {
-  Vec2,
-  PlanBuildingWithTransform,
-  ResizeHandle,
-} from "../plan2d/plan.types";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isBuildingInsideEnvelope } from "../plan2d/plan.buildableEnvelope";
+import { constrainBuildingToParcel } from "../plan2d/plan.constraint";
 import {
   getBoundingBox,
   getPolygonBounds,
   getResizeHandles,
   getRotationHandle,
 } from "../plan2d/plan.geometry";
-import { applyTransform } from "../plan2d/plan.transform";
+import type { PluRuleStatus } from "../plan2d/plan.plu.types";
 import { resizeBuilding } from "../plan2d/plan.resize";
 import { rotateBuilding } from "../plan2d/plan.rotate";
 import {
-  snapPosition,
+  SNAP_ANGLE_STEP,
   SNAP_GRID_SIZE,
   SNAP_SCALE_STEP,
-  SNAP_ANGLE_STEP,
+  snapPosition,
   type SnapConfig,
 } from "../plan2d/plan.snap";
-import { constrainBuildingToParcel } from "../plan2d/plan.constraint";
-import { isBuildingInsideEnvelope } from "../plan2d/plan.buildableEnvelope";
-import type { ZoningOverlay } from "../plan2d/plan.zoning.types";
+import { applyTransform } from "../plan2d/plan.transform";
+import type {
+  PlanBuildingWithTransform,
+  ResizeHandle,
+  Vec2,
+} from "../plan2d/plan.types";
 import {
-  sortZoningOverlays,
   getDefaultZoningStyle,
-  mergeZoningStyle,
   getOverlayLabelPosition,
+  mergeZoningStyle,
+  sortZoningOverlays,
 } from "../plan2d/plan.zoning";
-import type { PluRuleStatus } from "../plan2d/plan.plu.types";
+import type { ZoningOverlay } from "../plan2d/plan.zoning.types";
 import type { usePlanEditor } from "../plan2d/store/usePlanEditor";
 
 // ─── TYPES ────────────────────────────────────────────────────────────

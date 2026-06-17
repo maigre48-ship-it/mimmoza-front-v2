@@ -1,6 +1,6 @@
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { point as turfPoint } from "@turf/helpers";
-import type { Feature, Polygon, MultiPolygon } from "geojson";
+import type { Feature, MultiPolygon, Polygon } from "geojson";
 
 type BBox = [number, number, number, number]; // [minLng,minLat,maxLng,maxLat]
 

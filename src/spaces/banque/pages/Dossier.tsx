@@ -2,7 +2,7 @@
 import { useEffect, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 // ✅ BANQUE TOOL RISQUES — ajout import Flame pour l'icône outil rouge
-import { AlertTriangle, ShieldCheck, FileText, Gavel, Clock, Euro, Flame } from "lucide-react";
+import { AlertTriangle, Clock, Euro, FileText, Flame, Gavel, ShieldCheck } from "lucide-react";
 
 import { readBanqueSnapshot } from "../store/banqueSnapshot.store";
 

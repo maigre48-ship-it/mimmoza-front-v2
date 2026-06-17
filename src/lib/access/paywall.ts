@@ -1,9 +1,9 @@
 import type { AccessContext, FeatureKey, PaywallState } from "./access.types";
 import {
   canAccessFeature,
+  hasSufficientTokens,
   isQuotaExhausted,
   shouldConsumeToken,
-  hasSufficientTokens,
 } from "./accessPolicies";
 
 // ─── Labels UI ────────────────────────────────────────────────────────────────

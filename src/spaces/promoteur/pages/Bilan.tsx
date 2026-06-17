@@ -12,24 +12,30 @@
 // v2.2 — Fix lecture implantation2d : useState+useEffect au lieu de useMemo.
 // v2.1 — Lecture double-source : study.implantation2d → getSnapshot().implantation2d
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
 import {
-  BarChart2, Save, Loader2, Sparkles,
-  TrendingUp, AlertTriangle,
-  FileText, CheckCircle, Target, Home, LayoutGrid,
+  AlertTriangle,
+  BarChart2,
+  CheckCircle,
+  FileText,
+  Home, LayoutGrid,
+  Loader2,
+  Save,
+  Sparkles,
+  Target,
+  TrendingUp,
 } from "lucide-react";
-import { supabase }                    from "../../../supabaseClient";
-import { usePromoteurStudy }           from "../shared/usePromoteurStudy";
-import type { PromoteurBilanData }     from "../shared/promoteurStudy.types";
-import { patchModule, getSnapshot }    from "../shared/promoteurSnapshot.store";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { supabase } from "../../../supabaseClient";
 import type { Implantation2DSnapshot } from "../plan2d/implantation2d.snapshot";
 import {
-  totalVendableM2,
-  totalSdpM2,
   totalEmpriseM2,
-}                                      from "../plan2d/implantation2d.snapshot";
-import type { ProgrammationSnapshot }  from "./ProgrammationPage";
+  totalSdpM2,
+  totalVendableM2,
+} from "../plan2d/implantation2d.snapshot";
+import { getSnapshot, patchModule } from "../shared/promoteurSnapshot.store";
+import { usePromoteurStudy } from "../shared/usePromoteurStudy";
+import type { ProgrammationSnapshot } from "./ProgrammationPage";
 
 const GRAD_PRO   = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
 const ACCENT_PRO = "#5247b8";

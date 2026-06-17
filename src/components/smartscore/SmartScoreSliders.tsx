@@ -3,7 +3,7 @@
 // Sliders de pondération par pilier — recalcul temps réel
 // ============================================================================
 
-import { useState, useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 

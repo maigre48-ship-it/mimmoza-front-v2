@@ -14,15 +14,14 @@
  * ────────────────────────────────────────────────────────────────────
  */
 
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
-  useBanqueSnapshot,
+  computeSmartScore,
   patchRiskAnalysis,
   patchSmartScore,
-  buildRiskSummary,
-  computeSmartScore,
+  useBanqueSnapshot,
   type BanqueRiskAnalysis,
-  type RiskItem,
+  type RiskItem
 } from "../shared";
 
 // Supposons que tu as un service existant pour appeler l'Edge Function

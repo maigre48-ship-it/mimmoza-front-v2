@@ -3,55 +3,54 @@
 //   Seule la couche visuelle du Hero et des boutons a été modifiée.
 //   Toute la logique métier, les états, les callbacks sont intacts.
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
 import {
-  clearAllPromoteurSessionKeys,
-  clearActiveStudyId,
-  setActiveStudyId,
-} from "../shared/promoteurSnapshot.store";
-import { PromoteurStudyService } from "../shared/promoteurStudyService";
-import type { PromoteurStudySummary } from "../shared/promoteurStudy.types";
-import {
-  listApporteurDeals,
-  updateApporteurDeal,
-} from "../../apporteur/shared/apporteurDeals.store";
-import type { ApporteurDeal } from "../../apporteur/shared/apporteurDeals.store";
-import {
+  AlertTriangle,
   ArrowRight,
+  BarChart3,
   Building2,
   Calculator,
   ChevronRight,
+  Clock,
   Download,
+  Euro,
   FileSearch,
   FileText,
   Grid3X3,
+  Landmark,
   Layers,
   MapPin,
   Plus,
   Search,
   Sparkles,
   TrendingUp,
-  Users,
-  Zap,
-  AlertTriangle,
-  BarChart3,
-  Clock,
-  Landmark,
   UserCheck,
-  Euro,
-  X,
+  Users,
+  Zap
 } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import type { ApporteurDeal } from "../../apporteur/shared/apporteurDeals.store";
+import {
+  listApporteurDeals,
+  updateApporteurDeal,
+} from "../../apporteur/shared/apporteurDeals.store";
+import {
+  clearActiveStudyId,
+  clearAllPromoteurSessionKeys,
+  setActiveStudyId,
+} from "../shared/promoteurSnapshot.store";
+import type { PromoteurStudySummary } from "../shared/promoteurStudy.types";
+import { PromoteurStudyService } from "../shared/promoteurStudyService";
 
 // ─── Design tokens Promoteur ──────────────────────────────────────────────────
+import { HeroGhostButton, HeroPrimaryButton, PromoteurPageHero } from "../shared/components/PromoteurPageHero";
 import {
+  GRAD,
+  PROMOTEUR_BUTTON_STYLES,
   PROMOTEUR_COLORS,
   PROMOTEUR_RADIUS,
   PROMOTEUR_SHADOWS,
-  PROMOTEUR_BUTTON_STYLES,
-  GRAD,
 } from "../shared/promoteurDesign.tokens";
-import { PromoteurPageHero, HeroPrimaryButton, HeroGhostButton } from "../shared/components/PromoteurPageHero";
 
 // ─── Alias locaux (compatibilité avec le code existant) ───────────────────────
 const GRAD_LOCAL  = GRAD;                         // gradient diagonal

@@ -24,21 +24,47 @@
 //   KPI 3 colonnes, badges qualité, momentum compact, narratif banquable
 // ============================================
 
-import React, { useState, useCallback, useEffect, useRef, useMemo, Component, ErrorInfo, ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
-import { 
-  Search, MapPin, Grid3X3, Loader2, X, Building2, 
-  Users, Euro, ShoppingCart, Stethoscope, GraduationCap, 
-  TrendingUp, TrendingDown, Banknote, CheckCircle,
-  AlertTriangle, Home, Activity, Download,
-  ChevronDown, ChevronUp, Heart,
-  Target, Building,
-  Eye, Minus, MapPinned,
-  Compass, FileText, Train, Bus,
-  Bed, BadgeEuro, Baby, UserCheck, Briefcase,
+import {
+  Activity,
+  AlertTriangle,
+  Baby,
+  BadgeEuro,
+  Banknote,
+  Bed,
+  Briefcase,
+  Building,
+  Building2,
+  Bus,
+  CheckCircle,
+  ChevronDown, ChevronUp,
+  Compass,
+  Download,
+  Dumbbell,
+  Euro,
+  Eye,
+  FileText,
+  GraduationCap,
+  Grid3X3,
+  Heart,
+  Home,
+  Loader2,
+  MapPin,
+  MapPinned,
+  Minus,
   PiggyBank, School,
-  Theater, Dumbbell
+  Search,
+  ShoppingCart, Stethoscope,
+  Target,
+  Theater,
+  Train,
+  TrendingDown,
+  TrendingUp,
+  UserCheck,
+  Users,
+  X
 } from "lucide-react";
+import React, { Component, ErrorInfo, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import type { LucideIcon } from "lucide-react";
 
@@ -46,22 +72,22 @@ import type { LucideIcon } from "lucide-react";
 // IMPORTS MODULES EXTRAITS
 // ============================================
 import type {
-  ProjectType,
   AddressSuggestion,
-  ParcelInfo,
   DataSourceType,
+  ParcelInfo,
+  ProjectType,
 } from "./types/market.types";
 
-import { PROJECT_CONFIGS, getProjectConfig } from "./config/project.config";
+import { HeroGhostButton, HeroPrimaryButton, PromoteurPageHero } from "../../shared/components/PromoteurPageHero";
+import { ACCENT_PRO } from "../../shared/promoteurDesign.tokens";
+import { getProjectConfig } from "./config/project.config";
 import { searchAddress } from "./services/address.service";
 import { searchParcel } from "./services/parcel.service";
-import { GRAD_PRO, ACCENT_PRO } from "../../shared/promoteurDesign.tokens";
-import { PromoteurPageHero, HeroPrimaryButton, HeroGhostButton } from "../../shared/components/PromoteurPageHero";
 
 // ============================================
 // IMPORT SNAPSHOT STORE
 // ============================================
-import { patchProjectInfo, patchModule } from "../../shared/promoteurSnapshot.store";
+import { patchModule, patchProjectInfo } from "../../shared/promoteurSnapshot.store";
 
 // ============================================
 // IMPORT COPILOT STORE (push de contexte) — v2.8.2
@@ -71,10 +97,10 @@ import { useCopilotStore } from "../../../copilot/store/copilotStore";
 // ============================================
 // IMPORT STUDY HOOK + TYPES — v2.5
 // ============================================
-import { usePromoteurStudy } from "../../shared/usePromoteurStudy";
-import type { PromoteurMarcheData } from "../../shared/promoteurStudy.types";
-import ScoreTooltip, { SCORE_TOOLTIPS } from "../../../../components/ui/ScoreTooltip";
 import { fetchMobilityScoreSafe } from '@/services/mobility/mobilityClient';
+import ScoreTooltip, { SCORE_TOOLTIPS } from "../../../../components/ui/ScoreTooltip";
+import type { PromoteurMarcheData } from "../../shared/promoteurStudy.types";
+import { usePromoteurStudy } from "../../shared/usePromoteurStudy";
 
 // ============================================
 // DEBUG FLAGS

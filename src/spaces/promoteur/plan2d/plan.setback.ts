@@ -1,7 +1,7 @@
 // src/spaces/promoteur/plan2d/plan.setback.ts
 
-import type { Vec2 } from "./plan.types";
 import { isPolygonInsidePolygon } from "./plan.constraint";
+import type { Vec2 } from "./plan.types";
 
 // ─── EXTENSIBILITY TYPES ──────────────────────────────────────────────
 //

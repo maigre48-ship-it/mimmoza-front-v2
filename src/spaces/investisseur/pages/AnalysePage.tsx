@@ -12,51 +12,50 @@
  * ─────────────────────────────────────────────────────────────────────
  */
 
-import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { buildSnapshotPdfBlob, exportSnapshotToPdf } from "../../marchand/services/exportPdf";
+import { computeLoanCost } from "../../marchand/services/loanCost";
+import type {
+  ExecutionSaved,
+  MarchandDeal,
+  RentabiliteSaved,
+  SortieSaved
+} from "../../marchand/shared/marchandSnapshot.store";
 import {
-  readMarchandSnapshot,
   ensureActiveDeal,
+  MARCHAND_SNAPSHOT_EVENT,
   patchDueDiligenceForDeal,
   patchMarcheRisquesForDeal,
-  MARCHAND_SNAPSHOT_EVENT,
+  readMarchandSnapshot,
 } from "../../marchand/shared/marchandSnapshot.store";
-import type {
-  MarchandDeal,
-  MarcheRisquesSaved,
-  RentabiliteSaved,
-  ExecutionSaved,
-  SortieSaved,
-} from "../../marchand/shared/marchandSnapshot.store";
-import RentabilitePanel from "../components/analyse/RentabilitePanel";
+import AnalysePredictivePanel from "../components/analyse/AnalysePredictivePanel";
 import DueDiligencePanel, {
   createDefaultChecklist,
   createDefaultDocuments,
 } from "../components/analyse/DueDiligencePanel";
 import MarcheRisquesPanel from "../components/analyse/MarcheRisquesPanel";
+import RentabilitePanel from "../components/analyse/RentabilitePanel";
 import SyntheseIAPanel from "../components/analyse/SyntheseIAPanel";
-import AnalysePredictivePanel from "../components/analyse/AnalysePredictivePanel";
-import { exportSnapshotToPdf, buildSnapshotPdfBlob } from "../../marchand/services/exportPdf";
 import {
   fetchMarketStudyPromoteur,
   type MarketStudyResult,
 } from "../services/marketStudyPromoteur.service";
-import { getInvestisseurSnapshot } from "../shared/investisseurSnapshot.store";
 import type { InvestisseurTravauxSnapshot } from "../shared/investisseurSnapshot.store";
-import { computeLoanCost } from "../../marchand/services/loanCost";
+import { getInvestisseurSnapshot } from "../shared/investisseurSnapshot.store";
 import type {
-  StrategyType,
-  FiscalRegime,
-  DueDiligenceState,
   AnalyseState,
   AnalyseTab,
+  DueDiligenceState,
+  FiscalRegime,
+  StrategyType,
 } from "../types/strategy.types";
 
-import { readPromoteurMarketSnapshot } from "../services/readPromoteurMarketSnapshot";
-import { deepMergeInvestorWithPromoteur } from "../services/promoteurMarketStudyBridge";
+import coverImageUrl from "@/assets/image-investissement-immo.png";
 import logoMimmozaUrl from "@/assets/logo-mimmoza-baseline.png";
 import { loadImageDataUrl } from "@/spaces/shared/loadImageDataUrl";
-import coverImageUrl from "@/assets/image-investissement-immo.png";
+import { deepMergeInvestorWithPromoteur } from "../services/promoteurMarketStudyBridge";
+import { readPromoteurMarketSnapshot } from "../services/readPromoteurMarketSnapshot";
 
 // ─── Design tokens — Investisseur ────────────────────────────────────
 

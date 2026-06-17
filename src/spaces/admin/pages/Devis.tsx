@@ -1,25 +1,44 @@
 // src/spaces/admin/pages/Devis.tsx
 
+import {
+  ArrowRight,
+  CheckCircle2,
+  ChevronDown,
+  Eye,
+  FileDown,
+  FileText,
+  Loader2,
+  Plus,
+  Send,
+  Trash2,
+  X,
+} from 'lucide-react';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Plus, Trash2, ArrowRight, Eye, Loader2,
-  ChevronDown, FileText, FileDown, Send, X, CheckCircle2,
-} from 'lucide-react';
-import type {
-  Quote, QuoteStatus, TargetSpace, CreateQuoteLinePayload,
-} from '../../../features/admin/billing/types';
-import {
-  listQuotes, createQuoteWithLines, updateQuoteStatus,
-  convertQuoteToInvoice, listQuoteLines, sendQuoteToClient,
-} from '../../../features/admin/billing/services/quotes.service';
-import {
-  formatCents, formatBillingStatusLabel, formatTargetSpaceLabel,
-  formatDate, getQuoteStatusColor, canConvertQuoteToInvoice,
-  isQuoteConverted, computeLineTotals,
-} from '../../../features/admin/billing/helpers';
-import { exportQuotePdf } from '../../../features/admin/billing/exportBillingPdf';
 import { ClientPicker, type ClientOption } from '../../../features/admin/billing/components/ClientPicker';
+import { exportQuotePdf } from '../../../features/admin/billing/exportBillingPdf';
+import {
+  canConvertQuoteToInvoice,
+  computeLineTotals,
+  formatBillingStatusLabel,
+  formatCents,
+  formatDate,
+  formatTargetSpaceLabel,
+  getQuoteStatusColor,
+  isQuoteConverted,
+} from '../../../features/admin/billing/helpers';
+import {
+  convertQuoteToInvoice,
+  createQuoteWithLines,
+  listQuoteLines,
+  listQuotes,
+  sendQuoteToClient,
+  updateQuoteStatus,
+} from '../../../features/admin/billing/services/quotes.service';
+import type {
+  CreateQuoteLinePayload,
+  Quote, QuoteStatus, TargetSpace,
+} from '../../../features/admin/billing/types';
 
 // recipient_user_id existe en base (cf. migration) mais peut manquer au type Quote.
 type QuoteRow = Quote & { recipient_user_id?: string | null };

@@ -1,5 +1,5 @@
-import { supabase } from "@/lib/supabase";
 import type { AccessContext } from "@/lib/access";
+import { supabase } from "@/lib/supabase";
 
 const SAFE_TRANSACTION_MODE = "sale" as const;
 

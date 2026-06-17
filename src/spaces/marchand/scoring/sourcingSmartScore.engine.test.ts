@@ -12,11 +12,11 @@
  * ─────────────────────────────────────────────────────────────────────
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   computeSourcingSmartScore,
-  SOURCING_SMARTSCORE_KEY,
   ENGINE_VERSION,
+  SOURCING_SMARTSCORE_KEY,
   type SmartScoreResult,
 } from "./sourcingSmartScore.engine";
 

@@ -1,18 +1,18 @@
 // src/spaces/marchand/pages/AnalyseBien.tsx
 
-import React, { useState, useCallback, useEffect } from "react";
-import {
-  loadSnapshot,
-  saveSnapshot,
-  resetSnapshot,
-  updateEnriched,
-  isMinimumViable,
-  type InvestisseurSnapshot,
-} from "../store/investisseurSnapshot.store";
-import { setNestedValue } from "../questionnaire/questionnaireSchema";
+import { useCallback, useEffect, useState } from "react";
 import QuestionnaireEngine from "../questionnaire/QuestionnaireEngine";
+import { setNestedValue } from "../questionnaire/questionnaireSchema";
 import { computeSmartScoreInvestisseur } from "../scoring/smartScoreInvestisseur";
 import { enrichSnapshot, extractFromAdText } from "../services/investisseurEnrich.service";
+import {
+  isMinimumViable,
+  loadSnapshot,
+  resetSnapshot,
+  saveSnapshot,
+  updateEnriched,
+  type InvestisseurSnapshot,
+} from "../store/investisseurSnapshot.store";
 
 // ─── Verdict colors ──────────────────────────────────────────────────
 

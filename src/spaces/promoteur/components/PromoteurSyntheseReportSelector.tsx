@@ -1,13 +1,13 @@
 // src/spaces/promoteur/components/PromoteurSyntheseReportSelector.tsx
 import type { ReportType } from '../services/promoteurSynthese.types';
 
-import React from 'react';
 import {
   Building2,
-  TrendingUp,
-  HardHat,
   ChevronRight,
+  HardHat,
+  TrendingUp,
 } from 'lucide-react';
+import React from 'react';
 
 
 

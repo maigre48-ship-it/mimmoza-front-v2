@@ -1,15 +1,14 @@
 // src/spaces/apporteur/pages/Dashboard.tsx
 
-import { useNavigate } from "react-router-dom";
 import {
-  Handshake,
-  PlusCircle,
-  FileText,
-  Clock,
-  CheckCircle2,
   ArrowRight,
-  TrendingUp,
+  CheckCircle2,
+  Clock,
+  FileText,
+  PlusCircle,
+  TrendingUp
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const MOCK_OPPORTUNITES = [
   {

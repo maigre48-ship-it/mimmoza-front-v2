@@ -1,16 +1,16 @@
-import { useState } from "react";
 import {
-  ScanSearch,
-  MapPin,
   AlertCircle,
   CheckCircle2,
-  Info,
   ChevronRight,
-  TrendingUp,
   HardHat,
-  ShieldAlert,
+  Info,
   Lightbulb,
+  MapPin,
+  ScanSearch,
+  ShieldAlert,
+  TrendingUp,
 } from "lucide-react";
+import { useState } from "react";
 
 type FormData = {
   adresse: string;

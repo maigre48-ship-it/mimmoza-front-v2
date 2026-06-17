@@ -1,8 +1,8 @@
 import React from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
-  INVESTISSEURS_SIDEBAR,
   INVESTISSEURS_BASE_PATH,
+  INVESTISSEURS_SIDEBAR,
   MARCHAND_LEGACY_BASE_PATH,
 } from "./nav";
 

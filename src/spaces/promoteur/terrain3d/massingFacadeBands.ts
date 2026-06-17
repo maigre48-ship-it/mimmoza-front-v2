@@ -20,8 +20,8 @@
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { centroid2D } from "./massingGeometry3d";
 import type { Pt2D } from "./massingGeometry3d";
+import { centroid2D } from "./massingGeometry3d";
 
 export interface MaterialBandsConfig {
   enabled:    boolean;

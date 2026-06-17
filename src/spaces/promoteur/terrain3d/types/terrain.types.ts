@@ -2,7 +2,7 @@
 // FILE: src/spaces/promoteur/terrain3d/types/terrain.types.ts
 // ============================================================================
 
-import type { Feature, Polygon, MultiPolygon, Position } from 'geojson';
+import type { Feature, MultiPolygon, Polygon, Position } from 'geojson';
 
 /**
  * Point 3D avec coordonnées x, y, z

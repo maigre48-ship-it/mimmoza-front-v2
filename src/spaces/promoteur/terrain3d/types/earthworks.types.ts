@@ -2,8 +2,8 @@
 // FILE: src/spaces/promoteur/terrain3d/types/earthworks.types.ts
 // ============================================================================
 
-import type { Feature, Polygon, MultiPolygon } from 'geojson';
-import type { Point3D, TerrainGrid } from './terrain.types';
+import type { Feature, Polygon } from 'geojson';
+import type { Point3D } from './terrain.types';
 
 /**
  * Type de mouvement de terre

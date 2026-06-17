@@ -5,6 +5,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type {
+  ElementDetailField,
+  OpeningSymbol,
+  RoomColorSpec,
+  SelectedElementDetail,
+} from './planOverlay.types';
+import { SVG_VIEWBOX_SIZE } from './planOverlay.types';
+import type {
   AnnotationCategory,
   DetectedAnnotation,
   DetectedOpening,
@@ -15,13 +22,6 @@ import type {
   RoomUsage,
   WallMaterial,
 } from './planTranscription.types';
-import { SVG_VIEWBOX_SIZE } from './planOverlay.types';
-import type {
-  OpeningSymbol,
-  RoomColorSpec,
-  SelectedElementDetail,
-  ElementDetailField,
-} from './planOverlay.types';
 
 // ── Transformation de coordonnées ─────────────────────────────────────────────
 

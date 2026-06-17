@@ -25,17 +25,17 @@
  * ─────────────────────────────────────────────────────────────────────
  */
 
-import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  patchMarcheRisquesForDeal,
+  readMarchandSnapshot,
+} from "../../../marchand/shared/marchandSnapshot.store";
 import {
   fetchMarketStudyPromoteur,
+  type Insight,
   type MarketStudyInput,
   type MarketStudyResult,
-  type Insight,
 } from "../../services/marketStudyPromoteur.service";
-import {
-  readMarchandSnapshot,
-  patchMarcheRisquesForDeal,
-} from "../../../marchand/shared/marchandSnapshot.store";
 
 // ─── Props ───────────────────────────────────────────────────────────
 

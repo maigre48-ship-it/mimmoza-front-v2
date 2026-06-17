@@ -1,5 +1,5 @@
-﻿import type { BanqueProject, BanqueDossierGenerated, DossierTone } from "../types/banque.types";
-import { updateProject, addHistoryEntry } from "../banqueSnapshot.store";
+﻿import { addHistoryEntry, updateProject } from "../banqueSnapshot.store";
+import type { BanqueDossierGenerated, BanqueProject, DossierTone } from "../types/banque.types";
 
 const EDGE_FUNCTION_URL =
   import.meta.env.VITE_SUPABASE_URL

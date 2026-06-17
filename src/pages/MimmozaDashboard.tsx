@@ -1,17 +1,17 @@
 ﻿import { useEffect, useMemo, useState } from "react";
-import { MainLayout } from "../components/layouts/MainLayout";
-import { PageContainer } from "../components/layouts/PageContainer";
-import { ContentSection } from "../components/layouts/ContentSection";
-import { Grid } from "../components/layouts/Grid";
-import { StatCard } from "../components/layouts/StatCard";
 import {
   Card,
-  CardHeader,
-  CardTitle,
   CardBody,
   CardFooter,
+  CardHeader,
+  CardTitle,
 } from "../components/layouts/Card";
+import { ContentSection } from "../components/layouts/ContentSection";
 import { EmptyState } from "../components/layouts/EmptyState";
+import { Grid } from "../components/layouts/Grid";
+import { MainLayout } from "../components/layouts/MainLayout";
+import { PageContainer } from "../components/layouts/PageContainer";
+import { StatCard } from "../components/layouts/StatCard";
 
 // IMPORTANT: adapte ce chemin si ton client Supabase est ailleurs
 import { supabase } from "../lib/supabaseClient";

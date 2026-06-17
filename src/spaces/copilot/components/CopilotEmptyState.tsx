@@ -3,11 +3,11 @@
 
 import { MapPin, Sparkles } from 'lucide-react';
 import { useActiveCopilotContext } from '../store/activeCopilotContext.store';
+import type { CopilotMode, Vertical } from '../types/copilot.types';
 import {
-  getCopilotQuickQuestions,
   getCopilotContextLabel,
+  getCopilotQuickQuestions,
 } from '../utils/quickQuestions';
-import type { Vertical, CopilotMode } from '../types/copilot.types';
 import { COPILOT_THEME as T } from './copilotTheme';
 
 const SUGGESTIONS_QUICK: Record<Vertical, string[]> = {

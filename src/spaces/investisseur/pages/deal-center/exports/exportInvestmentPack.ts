@@ -6,17 +6,28 @@
 
 import { jsPDF } from "jspdf";
 import {
-  C, PW, PH, ML, MR, CW, HDR_H, BODY_START,
-  today, fmtEur, fmtPct, fmt,
-  hGrad, floatCard, sectionHead, pill, kvRow, tableBlock, alertBox,
-  drawPremiumHeader, drawPageHeader, drawPremiumFooter, kpiCard,
+  alertBox,
+  BODY_START,
+  C,
+  CW,
+  drawPageHeader, drawPremiumFooter,
+  drawPremiumHeader,
+  floatCard,
+  fmt,
+  fmtEur, fmtPct,
+  hGrad,
+  kpiCard,
+  kvRow,
+  ML,
+  sectionHead,
+  tableBlock
 } from "./exportPremiumPdf.utils";
 
 import {
-  readMarchandSnapshot,
   ensureActiveDeal,
-  type RentabiliteSaved,
+  readMarchandSnapshot,
   type MarcheRisquesSaved,
+  type RentabiliteSaved,
 } from "../../../../marchand/shared/marchandSnapshot.store";
 import type { RentabiliteSnapshot } from "../../../../marchand/types/rentabilite.types";
 

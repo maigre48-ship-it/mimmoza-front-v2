@@ -1,5 +1,4 @@
 ﻿// src/spaces/banque/components/committee/CommitteeDevRaw.tsx
-import React from "react";
 
 export default function CommitteeDevRaw({
   operation,

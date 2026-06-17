@@ -1,9 +1,9 @@
 ﻿// src/spaces/particulier/pages/Estimation.tsx
-import { useMemo, useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { supabase } from "../../../supabaseClient";
-import { fetchBestDvfEstimate, fetchDvfComps } from "../../../lib/dvfEstimateApi";
 import type { DvfCompRow } from "../../../lib/dvfEstimateApi";
+import { fetchBestDvfEstimate, fetchDvfComps } from "../../../lib/dvfEstimateApi";
+import { supabase } from "../../../supabaseClient";
 import { usePromoteurStudy } from "../../promoteur/shared/usePromoteurStudy";
 
 // ─── Design tokens ───────────────────────────────────────────────────────────

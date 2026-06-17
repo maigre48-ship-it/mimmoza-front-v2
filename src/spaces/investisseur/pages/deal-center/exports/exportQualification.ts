@@ -6,15 +6,26 @@
 
 import { jsPDF } from "jspdf";
 import {
-  C, PW, PH, ML, MR, CW, HDR_H, BODY_START, FOOTER_Y,
-  today, fmtEur, fmtPct,
-  hGrad, floatCard, sectionHead, pill, kvRow, tableBlock, verdictCard, alertBox,
-  drawPremiumHeader, drawPageHeader, drawPremiumFooter, kpiCard,
+  alertBox,
+  BODY_START,
+  C,
+  CW,
+  drawPageHeader, drawPremiumFooter,
+  drawPremiumHeader,
+  floatCard,
+  fmtEur, fmtPct,
+  hGrad,
+  kpiCard,
+  kvRow,
+  ML,
+  pill,
+  sectionHead,
+  tableBlock, verdictCard
 } from "./exportPremiumPdf.utils";
 
 import {
-  readMarchandSnapshot,
   ensureActiveDeal,
+  readMarchandSnapshot,
 } from "../../../../marchand/shared/marchandSnapshot.store";
 
 // ─── Types & logique métier (inchangés) ──────────────────────────────────────

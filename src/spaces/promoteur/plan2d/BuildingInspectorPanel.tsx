@@ -8,8 +8,8 @@
 //              Programme volumétrique (étages, hauteurs, toiture)
 //              Badge étage actif
 
-import React, { useState, useCallback } from 'react';
-import { useEditor2DStore }              from './editor2d.store';
+import React from 'react';
+import { useEditor2DStore } from './editor2d.store';
 import type { Building2D, OrientedRect } from './editor2d.types';
 
 // ─── TOKENS ───────────────────────────────────────────────────────────

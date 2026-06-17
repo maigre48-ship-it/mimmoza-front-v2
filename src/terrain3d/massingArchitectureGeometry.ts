@@ -4,9 +4,9 @@
 // Il calcule des slices volumétriques à partir d'une empreinte 2D.
 
 import type {
-  Pt2D,
-  MassingArchitectureStyle,
   BuildingSide,
+  MassingArchitectureStyle,
+  Pt2D,
 } from "./massingScene.types";
 
 // ═══════════════════════════════════════════════════════════════════════════════

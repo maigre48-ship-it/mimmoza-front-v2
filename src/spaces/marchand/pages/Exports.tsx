@@ -1,12 +1,12 @@
 // src/spaces/marchand/pages/Exports.tsx
 
-import React, { useState } from "react";
 import { Download, FileText, Loader2 } from "lucide-react";
-import SectionCard from "../shared/ui/SectionCard";
+import { useState } from "react";
 import {
   exportMarchandCsv,
   exportSnapshotToPdfWithAi,
 } from "../services/export.service";
+import SectionCard from "../shared/ui/SectionCard";
 
 // ─── Design tokens — Investisseur ────────────────────────────────────
 

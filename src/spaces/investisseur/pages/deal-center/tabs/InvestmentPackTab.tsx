@@ -15,43 +15,43 @@
 //
 // Style identique à AnalysePage.tsx.
 
-import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Building2,
-  MapPin,
-  Ruler,
-  Euro,
-  Hammer,
-  TrendingUp,
-  Sparkles,
-  Clock,
-  BarChart3,
-  Map,
-  ShieldAlert,
-  CheckCircle2,
   AlertTriangle,
-  Info,
-  Calendar,
-  Percent,
-  XCircle,
   Award,
-  Gauge,
-  Scale,
-  Navigation,
+  BarChart3,
+  Building2,
+  Calendar,
+  CheckCircle2,
+  Clock,
   Droplets,
+  Euro,
+  Gauge,
+  Hammer,
+  Info,
+  Map,
+  MapPin,
+  Navigation,
+  Percent,
+  Ruler,
+  Scale,
+  ShieldAlert,
+  Sparkles,
   Trees,
+  TrendingUp,
+  XCircle,
 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import useMarchandSnapshotTick from "../../../../marchand/shared/hooks/useMarchandSnapshotTick";
 import {
-  readMarchandSnapshot,
   ensureActiveDeal,
+  readMarchandSnapshot,
   type MarchandDeal,
   type MarcheRisquesSaved,
   type RentabiliteSaved,
 } from "../../../../marchand/shared/marchandSnapshot.store";
 
-import type { RentabiliteSnapshot, RentabiliteInput, RentabiliteResult } from "../../../../marchand/types/rentabilite.types";
+import type { RentabiliteInput, RentabiliteResult, RentabiliteSnapshot } from "../../../../marchand/types/rentabilite.types";
 
 // ─── Types internes ───────────────────────────────────────────────────────────
 

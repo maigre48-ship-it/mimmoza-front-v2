@@ -1,7 +1,7 @@
 // FILE: src/spaces/promoteur/etudes/marche/components/InsightsPanel.tsx
 
+import { AlertTriangle, CheckCircle, Lightbulb, XCircle } from "lucide-react";
 import React from "react";
-import { CheckCircle, AlertTriangle, Lightbulb, XCircle } from "lucide-react";
 import { Insight } from "../types";
 
 interface InsightsPanelProps {

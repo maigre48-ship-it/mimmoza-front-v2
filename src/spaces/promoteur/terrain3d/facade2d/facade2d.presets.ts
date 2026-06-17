@@ -1,10 +1,10 @@
 import type {
-  Facade2DStylePresetId,
   Facade2DBalconyMode,
-  Facade2DLoggiaMode,
   Facade2DBaseKind,
+  Facade2DLoggiaMode,
   Facade2DRenderTheme,
   Facade2DRoofKind,
+  Facade2DStylePresetId,
 } from './facade2d.types';
 
 export interface Facade2DPreset {

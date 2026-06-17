@@ -3,15 +3,15 @@
 import React from "react";
 import type {
   PluEngineResult,
-  PluRuleStatus,
-  PluRuleResult,
   PluMetricSet,
+  PluRuleResult,
+  PluRuleStatus,
 } from "../plan2d/plan.plu.types";
-import { PluRuleBadge } from "./PluRuleBadge";
-import { PluMetricCard } from "./PluMetricCard";
-import { PluRulesLegend } from "./PluRulesLegend";
 import { FeasibilitySummaryCard } from "./FeasibilitySummaryCard";
+import { PluMetricCard } from "./PluMetricCard";
+import { PluRuleBadge } from "./PluRuleBadge";
 import { PluRuleExplanationDrawer } from "./PluRuleExplanationDrawer";
+import { PluRulesLegend } from "./PluRulesLegend";
 
 // ─── DESIGN TOKENS ────────────────────────────────────────────────────
 

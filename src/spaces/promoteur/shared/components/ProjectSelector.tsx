@@ -4,11 +4,17 @@
 // Affiché en header de chaque page d'analyse
 // ============================================
 
-import React, { useState, useCallback, useEffect } from "react";
 import {
-  MapPin, Search, ChevronDown, ChevronUp, X, Check, Loader2,
-  Building2, Navigation, Edit3
+  Building2,
+  Check,
+  ChevronDown, ChevronUp,
+  Loader2,
+  MapPin,
+  Navigation,
+  Search,
+  X
 } from "lucide-react";
+import React, { useCallback, useEffect, useState } from "react";
 import { supabase } from "../../../../supabaseClient";
 import type { ProjectInfo } from "../hooks/useProjectContext";
 

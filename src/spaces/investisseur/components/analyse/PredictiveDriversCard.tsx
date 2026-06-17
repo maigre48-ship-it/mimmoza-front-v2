@@ -1,4 +1,3 @@
-import React from "react";
 import type { PredictiveDriver } from "../../services/predictive/predictive.types";
 
 const DIR_STYLE: Record<string, { icon: string; color: string; bg: string }> = {

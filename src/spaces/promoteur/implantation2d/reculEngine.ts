@@ -1,9 +1,9 @@
 // src/spaces/promoteur/reculEngine.ts
 // Engine for setback (reculs) calculations, facade selection, envelope computation
 
-import { useMemo, useState, useCallback } from "react";
-import type { Feature, Polygon, MultiPolygon, LineString, MultiLineString, Position } from "geojson";
 import * as turf from "@turf/turf";
+import type { Feature, LineString, MultiLineString, MultiPolygon, Polygon, Position } from "geojson";
+import { useCallback, useMemo, useState } from "react";
 
 // -----------------------------------------------------------------------------
 // Types

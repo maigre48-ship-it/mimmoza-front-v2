@@ -1,5 +1,5 @@
+import { Home, Sparkles, TrendingDown } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Sparkles, TrendingDown, Home } from "lucide-react";
 
 export function VeilleSummaryCard() {
   return (

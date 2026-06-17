@@ -1,9 +1,9 @@
 ﻿import type {
-  FinancialSnapshotV1,
-  SnapshotSource,
   AssetClass,
-  Stage,
+  FinancialSnapshotV1,
   NumberOrNull,
+  SnapshotSource,
+  Stage,
 } from "./financialSnapshot.types";
 
 export type PromoteurSnapshot = Record<string, unknown>;

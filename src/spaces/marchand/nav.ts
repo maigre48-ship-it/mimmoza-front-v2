@@ -1,15 +1,15 @@
 // src/spaces/marchand/shared/nav.ts
-import React from "react";
 import {
-  Workflow,
-  Search,
-  ClipboardCheck,
-  Calculator,
-  Hammer,
-  TrendingUp,
-  Download,
   Bell,
+  Calculator,
+  ClipboardCheck,
+  Download,
+  Hammer,
+  Search,
+  TrendingUp,
+  Workflow,
 } from "lucide-react";
+import React from "react";
 
 export type InvestisseursNavItem = {
   label: string;

@@ -8,7 +8,7 @@
 //   Fix : comparer changed flag et retourner `prev` (même référence) si rien n'a changé.
 //   Idem pour enrichParcels() par cohérence.
 
-import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type SelectedParcel = {
   id: string;

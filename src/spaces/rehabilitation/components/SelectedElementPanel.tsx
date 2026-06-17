@@ -6,17 +6,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useCallback, useMemo, useState } from 'react';
-import type { PlanTranscriptionResult } from '../plan-reader/planTranscription.types';
 import type { SelectedElementDetail } from '../plan-reader/planOverlay.types';
-import { useValidationEngine } from '../plan-reader/planUserValidationEngine';
+import type { PlanTranscriptionResult } from '../plan-reader/planTranscription.types';
 import type {
-  WallValidationRecord,
   WallUserValidationStatus,
+  WallValidationRecord,
 } from '../plan-reader/planUserValidationEngine';
+import { useValidationEngine } from '../plan-reader/planUserValidationEngine';
+import { confidenceToColor } from '../plan-reader/planVectorGeometry';
 import type { WallCorrection } from '../shared/planValidation.types';
 import { WallConfirmationToolbar } from './WallConfirmationToolbar';
 import { WallEditorPanel } from './WallEditorPanel';
-import { confidenceToColor } from '../plan-reader/planVectorGeometry';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 

@@ -1,13 +1,13 @@
 // src/spaces/promoteur/plan2d/plan.zoning.ts
 
+import { getBoundingBox, getPolygonCentroid } from "./plan.geometry";
 import type { Vec2 } from "./plan.types";
 import type {
+  ZoningLayerSet,
   ZoningOverlay,
   ZoningOverlayKind,
   ZoningOverlayStyle,
-  ZoningLayerSet,
 } from "./plan.zoning.types";
-import { getPolygonCentroid, getBoundingBox } from "./plan.geometry";
 
 // ─── DEFAULT STYLE TABLE ──────────────────────────────────────────────
 //

@@ -1,14 +1,22 @@
 // src/spaces/promoteur/pages/BesoinLogementsSociauxPage.tsx
 // v1.1 — Hero v2 : PromoteurPageHero (design unifié Promoteur)
 
-import { useState, useEffect, useRef } from "react";
 import {
-  Users, Search, AlertTriangle, TrendingUp, Building2, CheckCircle,
-  Info, Database, ChevronRight, BarChart3, XCircle,
+  AlertTriangle,
+  BarChart3,
+  Building2, CheckCircle,
+  ChevronRight,
+  Database,
+  Info,
+  Search,
+  TrendingUp,
+  Users,
+  XCircle,
 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabase";
-import { GRAD_PRO, ACCENT_PRO } from "../shared/promoteurDesign.tokens";
 import { PromoteurPageHero } from "../shared/components/PromoteurPageHero";
+import { GRAD_PRO } from "../shared/promoteurDesign.tokens";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

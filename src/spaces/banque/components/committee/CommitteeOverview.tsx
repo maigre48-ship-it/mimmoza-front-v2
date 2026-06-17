@@ -1,5 +1,5 @@
 ﻿// src/spaces/banque/components/committee/CommitteeOverview.tsx
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 
 interface CommitteeData {
   decision: "GO" | "GO_AVEC_RESERVES" | "NO_GO" | null;

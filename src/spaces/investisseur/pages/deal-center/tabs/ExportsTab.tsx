@@ -3,28 +3,27 @@
 // Exports — V4 — Exports fonctionnels (jsPDF + XLSX + ZIP)
 // Style identique à AnalysePage.tsx
 
-import { useMemo, useState, useCallback } from "react";
 import {
-  FileDown,
-  FileText,
-  FileSpreadsheet,
-  Archive,
-  CheckCircle2,
   AlertCircle,
-  History,
+  Archive,
+  CheckCheck,
+  CheckCircle2,
   Download,
+  FileSpreadsheet,
+  FileText,
+  History,
   Info,
   Loader2,
-  CheckCheck,
-  XCircle,
+  XCircle
 } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 
 import useMarchandSnapshotTick from "../../../../marchand/shared/hooks/useMarchandSnapshotTick";
 import {
-  readMarchandSnapshot,
   ensureActiveDeal,
-  type RentabiliteSaved,
+  readMarchandSnapshot,
   type MarcheRisquesSaved,
+  type RentabiliteSaved,
 } from "../../../../marchand/shared/marchandSnapshot.store";
 
 import type { RentabiliteSnapshot } from "../../../../marchand/types/rentabilite.types";

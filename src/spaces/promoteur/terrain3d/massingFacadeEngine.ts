@@ -10,13 +10,13 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import * as THREE from "three";
-import type { Pt2D } from "./massingGeometry3d";
 import {
-  addIndividualBalcony,
   addContinuousBalcony,
+  addIndividualBalcony,
   addLoggiaGeo,
   addShading,
 } from "./massingFacadeDetails";
+import type { Pt2D } from "./massingGeometry3d";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES PUBLICS

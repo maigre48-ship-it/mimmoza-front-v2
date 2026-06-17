@@ -1,9 +1,10 @@
 // src/spaces/particulier/pages/ConnexionPage.tsx
 
-import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import AnimatedWaveBackground from "@/components/backgrounds/AnimatedWaveBackground";
+import { supabase } from "@/lib/supabase";
 import {
   ArrowRight,
+  CheckCircle2,
   Eye,
   EyeOff,
   Lock,
@@ -11,10 +12,9 @@ import {
   Mail,
   ShieldCheck,
   Sparkles,
-  CheckCircle2,
 } from "lucide-react";
-import AnimatedWaveBackground from "@/components/backgrounds/AnimatedWaveBackground";
-import { supabase } from "@/lib/supabase";
+import { useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
 type StoredUser = {
   email?: string;

@@ -14,33 +14,33 @@
 // ✅ REDESIGN: Financeur visual tokens applied (GRAD_FIN / ACCENT_FIN).
 // ============================================================================
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { buildOperationSummaryFromDossier } from "../adapters/manualOperationAdapter";
+import { hasEnrichedData, normalizeEnrichedOperation } from "../adapters/normalizeEnrichedOperation";
+import CommitteePanel from "../components/committee/CommitteePanel";
 import { useBanqueDossierContext } from "../hooks/useBanqueDossierContext";
 import { useBanqueSnapshotTick } from "../hooks/useBanqueSnapshotTick";
-import { buildOperationSummaryFromDossier } from "../adapters/manualOperationAdapter";
-import { normalizeEnrichedOperation, hasEnrichedData } from "../adapters/normalizeEnrichedOperation";
-import { enrichOperationForDossier } from "../services/banqueEnrichOperation.service";
 import {
-  computeSmartScoreFromOperation,
   computeAlertsFromOperation,
+  computeSmartScoreFromOperation,
 } from "../scoring/banqueSmartScoreUniversal";
 import { normalizeSmartScoreUniversal } from "../scoring/normalizeSmartScoreUniversal";
-import { upsertDossier, addEvent, readBanqueSnapshot } from "../store/banqueSnapshot.store";
-import { computeRatios } from "../utils/banqueRatios";
-import type { OperationSummary, OperationProfile } from "../types/operationSummary.types";
+import { enrichOperationForDossier } from "../services/banqueEnrichOperation.service";
+import { addEvent, readBanqueSnapshot, upsertDossier } from "../store/banqueSnapshot.store";
+import type { OperationProfile, OperationSummary } from "../types/operationSummary.types";
 import type {
   OperationUrbanism,
-  UrbanismStatus,
   UrbanismEvidence,
+  UrbanismStatus,
 } from "../types/urbanismTypes";
 import {
   defaultUrbanism,
-  URBANISM_STATUS_LABELS,
-  URBANISM_STATUS_COLORS,
   EVIDENCE_TYPE_LABELS,
+  URBANISM_STATUS_COLORS,
+  URBANISM_STATUS_LABELS,
 } from "../types/urbanismTypes";
-import CommitteePanel from "../components/committee/CommitteePanel";
+import { computeRatios } from "../utils/banqueRatios";
 
 // ── Design tokens Financeur ──
 const GRAD_FIN = "linear-gradient(90deg, #26a69a 0%, #80cbc4 100%)";

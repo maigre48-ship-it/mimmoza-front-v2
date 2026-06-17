@@ -1,6 +1,6 @@
 // ─── editor2d.geometry.ts V2 ─────────────────────────────────────────────────
 
-import type { Point2D, OrientedRect } from './editor2d.types';
+import type { OrientedRect, Point2D } from './editor2d.types';
 
 export const DEG2RAD = Math.PI / 180;
 export const RAD2DEG = 180 / Math.PI;

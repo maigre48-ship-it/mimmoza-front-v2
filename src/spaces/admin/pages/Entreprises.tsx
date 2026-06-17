@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { StatusBadge } from "../components/StatusBadge";
-import type { AdminCompany, CompanyStatus } from "../types/admin.types";
 import {
   getAdminCompanies,
   initAdminStorage,
   updateAdminCompanyStatus,
 } from "../services/adminStorage";
+import type { AdminCompany, CompanyStatus } from "../types/admin.types";
 
 export default function AdminEntreprisesPage() {
   const [companies, setCompanies] = useState<AdminCompany[]>([]);

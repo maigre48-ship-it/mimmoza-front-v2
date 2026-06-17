@@ -1,4 +1,4 @@
-import { Lock, Sparkles, Ticket, CreditCard } from "lucide-react";
+import { CreditCard, Lock, Sparkles, Ticket } from "lucide-react";
 
 type DealUnlockModalProps = {
   open: boolean;

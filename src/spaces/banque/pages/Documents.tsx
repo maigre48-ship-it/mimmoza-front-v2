@@ -3,11 +3,11 @@
 // Writes to: dossiersById[id].documents
 // ============================================================================
 
-import { useState, useEffect } from "react";
-import { useBanqueDossierContext } from "../hooks/useBanqueDossierContext";
-import { upsertDossier, addEvent } from "../store/banqueSnapshot.store";
-import type { DocumentItem, DossierDocuments } from "../store/banqueSnapshot.types";
+import { useEffect, useState } from "react";
 import DossierContextBar from "../components/DossierContextBar";
+import { useBanqueDossierContext } from "../hooks/useBanqueDossierContext";
+import { addEvent, upsertDossier } from "../store/banqueSnapshot.store";
+import type { DocumentItem, DossierDocuments } from "../store/banqueSnapshot.types";
 
 type DocStatus = DocumentItem["statut"];
 

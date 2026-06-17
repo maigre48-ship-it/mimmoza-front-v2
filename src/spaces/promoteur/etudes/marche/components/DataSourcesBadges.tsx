@@ -1,7 +1,7 @@
 // FILE: src/spaces/promoteur/etudes/marche/components/DataSourcesBadges.tsx
 
+import { AlertCircle, CheckCircle, XCircle } from "lucide-react";
 import React from "react";
-import { Database, CheckCircle, AlertCircle, XCircle } from "lucide-react";
 import { DataSourceStatus, DataSourceType } from "../types";
 
 interface DataSourcesBadgesProps {

@@ -11,18 +11,18 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 // ─── Composants SmartScore V4 ───────────────────────────────────────────────
+import PipelineAlerts from "@/components/smartscore/PipelineAlerts";
+import SmartScoreComparison from "@/components/smartscore/SmartScoreComparison";
 import SmartScoreExplainer from "@/components/smartscore/SmartScoreExplainer";
 import SmartScoreGauge from "@/components/smartscore/SmartScoreGauge";
 import SmartScoreSliders from "@/components/smartscore/SmartScoreSliders";
-import SmartScoreComparison from "@/components/smartscore/SmartScoreComparison";
-import PipelineAlerts from "@/components/smartscore/PipelineAlerts";
 
 // ─── Hooks ──────────────────────────────────────────────────────────────────
 import { useSmartScore } from "@/hooks/useSmartScore";
 import {
   useSmartScoreAlerts,
-  useUserWeights,
   useSmartScoreComparison,
+  useUserWeights,
 } from "@/hooks/useSmartScoreHooks";
 
 // ─── Ton store/context existant ─────────────────────────────────────────────

@@ -4,8 +4,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from "three";
-import type { AnchorMode } from "../massingScene.types";
 import type { SceneProjection } from "../massingGeometry";
+import type { AnchorMode } from "../massingScene.types";
 
 // ─── ReliefData — source unique ───────────────────────────────────────────────
 // Les autres fichiers (SceneSvg3D, MassingEditor3D) importent depuis ici.

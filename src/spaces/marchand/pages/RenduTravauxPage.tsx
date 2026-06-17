@@ -1,14 +1,14 @@
 // src/spaces/marchand/pages/RenduTravauxPage.tsx
 // V8 — Bouton "Utiliser dans la synthèse" + thème injectable + type de sol + couleur sol/murs
 
-import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { useTravauxImageRender } from "../hooks/useTravauxImageRender";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabase";
+import { useTravauxImageRender } from "../hooks/useTravauxImageRender";
 import type {
-  TravauxRenduConfig,
   TravauxGamme,
-  TravauxNiveau,
   TravauxLot,
+  TravauxNiveau,
+  TravauxRenduConfig,
   TravauxSolType,
 } from "../types/rendutravaux.types";
 import {

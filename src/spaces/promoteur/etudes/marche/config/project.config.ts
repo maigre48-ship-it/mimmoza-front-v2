@@ -4,19 +4,19 @@
  */
 
 import {
-  Home,
-  Users,
-  Heart,
-  GraduationCap,
   Briefcase,
-  ShoppingCart,
+  GraduationCap,
+  Heart,
+  Home,
   Hotel,
+  ShoppingCart,
+  Users,
 } from "lucide-react";
 
 import type {
+  DemographicSegment,
   ProjectType,
   ProjectTypeConfig,
-  DemographicSegment,
 } from "../types/market.types";
 
 // ============================================

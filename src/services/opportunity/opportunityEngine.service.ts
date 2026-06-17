@@ -4,8 +4,8 @@
 // Branchable plus tard : StreamEstate / DVF / valuation / risques / mobilité.
 // =============================================================
 
-import { resolvePluContext } from '../plu/pluRegistry.service';
 import type { ResolvePluContextResult } from '../plu/pluEngine.types';
+import { resolvePluContext } from '../plu/pluRegistry.service';
 import type {
   OpportunityConfidence,
   OpportunityInput,

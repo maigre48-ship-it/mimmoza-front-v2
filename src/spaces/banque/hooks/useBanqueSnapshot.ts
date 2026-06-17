@@ -10,8 +10,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { BanqueSnapshot } from "../types/banque.types";
-import { onBanqueSnapshotChange, readBanqueSnapshot } from "../store/banqueSnapshot.store";
 import {
   buildDashboardOneLiner,
   buildGuaranteesSummary,
@@ -21,6 +19,8 @@ import {
   computeSmartScore,
   getDossierHealth,
 } from "../shared/selectors/banqueSelectors";
+import { onBanqueSnapshotChange, readBanqueSnapshot } from "../store/banqueSnapshot.store";
+import type { BanqueSnapshot } from "../types/banque.types";
 
 export function useBanqueSnapshot() {
   const [snap, setSnap] = useState<BanqueSnapshot>(() => readBanqueSnapshot());

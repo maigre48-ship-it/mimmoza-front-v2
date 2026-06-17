@@ -1,26 +1,53 @@
 ﻿// src/components/AppShell.tsx
 
-import { useState, useMemo, useEffect } from "react";
-import type { ReactNode, ComponentType } from "react";
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
-  Menu, X, Home, FileText, Building2, ShieldCheck, PieChart, BarChart3, Map, Layers,
-  TrendingUp, AlertTriangle, Grid3X3, Cuboid, Calculator, ChevronRight, Sparkles,
-  Search, ClipboardList, Building, LayoutDashboard, Eye, Code2, Wand2,
-  FileSearch, Users, Plus, Hammer, ScanSearch, FolderKanban, ShieldAlert, Zap,
+  AlertTriangle,
+  BarChart3,
+  Building,
+  Building2,
+  Calculator, ChevronRight,
+  ClipboardList,
+  Code2,
+  Cuboid,
+  Eye,
+  FileSearch,
+  FileText,
+  FolderKanban,
+  Grid3X3,
+  Hammer,
+  Home,
+  Layers,
+  LayoutDashboard,
+  Map,
+  Menu,
+  PieChart,
+  Plus,
+  ScanSearch,
+  Search,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
   Target,
+  TrendingUp,
+  Users,
+  Wand2,
+  X,
+  Zap,
 } from "lucide-react";
+import type { ComponentType, ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import mimmozaLogo from "../assets/mimmoza-logo.png";
-import { preserveStudyInPath, extractStudyId } from "../utils/preserveStudyParam";
-import { readBanqueSnapshot, selectActiveDossierId } from "../spaces/banque/store/banqueSnapshot.store";
-import { preserveDossierInPath } from "../spaces/banque/utils/banqueDossierUrl";
 import { getCurrentAdminStatus } from "../lib/admin";
 import { supabase } from "../lib/supabase";
+import { countUnseen } from "../services/opportunity/opportunityWatch.service";
+import { readBanqueSnapshot, selectActiveDossierId } from "../spaces/banque/store/banqueSnapshot.store";
+import { preserveDossierInPath } from "../spaces/banque/utils/banqueDossierUrl";
+import { DealUnlockModal } from "../spaces/marchand/components/DealUnlockModal";
 import { unlockDealIfNeeded } from "../spaces/marchand/services/dealUnlock";
 import { ensureActiveDeal, type MarchandDeal } from "../spaces/marchand/shared/marchandSnapshot.store";
-import { DealUnlockModal } from "../spaces/marchand/components/DealUnlockModal";
-import { countUnseen } from "../services/opportunity/opportunityWatch.service";
+import { extractStudyId, preserveStudyInPath } from "../utils/preserveStudyParam";
 
 type Space = "none" | "promoteur" | "agence" | "marchand" | "banque" | "rehabilitation";
 

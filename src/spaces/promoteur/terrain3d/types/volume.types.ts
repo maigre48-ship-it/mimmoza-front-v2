@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { Feature, FeatureCollection, Polygon } from 'geojson';
-import type { Point3D, BBox3D } from './terrain.types';
+import type { BBox3D, Point3D } from './terrain.types';
 
 /**
  * Type de volume projeté

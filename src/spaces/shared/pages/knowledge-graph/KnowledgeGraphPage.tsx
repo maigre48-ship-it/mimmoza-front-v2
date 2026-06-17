@@ -1,20 +1,20 @@
 // src/spaces/shared/pages/knowledge-graph/KnowledgeGraphPage.tsx
 
-import { useMemo, useState } from "react";
+import type { Explanation, ExplanationReason } from "@/services/knowledgeGraph";
+import { createMimmozaKnowledgeGraph } from "@/services/knowledgeGraph/knowledgeGraph.providers";
 import {
+  AlertTriangle,
+  CheckCircle2,
+  Loader2,
+  MapPin,
+  MinusCircle,
   Network,
   Sparkles,
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  MinusCircle,
-  AlertTriangle,
-  MapPin,
-  TrendingUp,
   TrendingDown,
+  TrendingUp,
+  XCircle,
 } from "lucide-react";
-import { createMimmozaKnowledgeGraph } from "@/services/knowledgeGraph/knowledgeGraph.providers";
-import type { Explanation, ExplanationReason } from "@/services/knowledgeGraph";
+import { useMemo, useState } from "react";
 
 type Subject = "parcel" | "opportunity" | "valuation";
 

@@ -43,41 +43,41 @@
  * ─────────────────────────────────────────────────────────────────────
  */
 
-import React, {
-  useState,
-  useMemo,
+import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
+  useState,
 } from "react";
-import type {
-  Scenario,
-  DealInputs,
-  StrategyType,
-  FiscalRegime,
-  MacroRate,
-  ScenarioResults,
-  StressTestResults,
-  NegotiationResult,
-  Financement,
-} from "../../types/strategy.types";
+import { computeLoanCost } from "../../../marchand/services/loanCost";
 import {
-  generateDefaultScenarios,
-  computeScenarioResults,
-  computeStressTests,
-  computeNegotiation,
-  computeRecommendedDiscountRate,
-  buildScenarioComparisons,
-  formatEuro,
-  formatPct,
-} from "../../engine/strategyEngine";
-import { fetchRiskFreeRate } from "../../services/macroRates.service";
-import {
+  MARCHAND_SNAPSHOT_EVENT,
   patchRentabiliteForDeal,
   readMarchandSnapshot,
-  MARCHAND_SNAPSHOT_EVENT,
 } from "../../../marchand/shared/marchandSnapshot.store";
-import { computeLoanCost } from "../../../marchand/services/loanCost";
+import {
+  buildScenarioComparisons,
+  computeNegotiation,
+  computeRecommendedDiscountRate,
+  computeScenarioResults,
+  computeStressTests,
+  formatEuro,
+  formatPct,
+  generateDefaultScenarios,
+} from "../../engine/strategyEngine";
+import { fetchRiskFreeRate } from "../../services/macroRates.service";
+import type {
+  DealInputs,
+  Financement,
+  FiscalRegime,
+  MacroRate,
+  NegotiationResult,
+  Scenario,
+  ScenarioResults,
+  StrategyType,
+  StressTestResults,
+} from "../../types/strategy.types";
 
 // ─── Props ───────────────────────────────────────────────────────────
 

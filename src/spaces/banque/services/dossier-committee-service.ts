@@ -296,7 +296,6 @@ export function removeDossier(
 export function clearSnapshot(): void {
   localStorage.removeItem(STORAGE_KEY);
 }// ---- Compat: addDossier (utilisé par Pipeline.tsx) ----
-import type { BanqueDossier, BanqueSnapshot } from "../roles/types";
 
 export function addDossier(snapshot: BanqueSnapshot, dossier: BanqueDossier): BanqueSnapshot {
   const now = new Date().toISOString();

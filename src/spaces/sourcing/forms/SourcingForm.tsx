@@ -4,43 +4,43 @@
  * NOTE: Ce composant ne contient QUE le formulaire. Le Résumé et SmartScore sont gérés par SourcingHomePage.
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  getAccesOptions,
+  getBooleanOptions,
+  getDistanceTransportOptions,
+  getEtatGeneralOptions,
+  getExpositionOptions,
+  getFloorOptions,
+  getNuisanceOptions,
+  getPenteOptions,
+  getPropertyTypeOptions,
+  getProximiteTransportOptions,
+  getStandingOptions,
+  getStationnementMaisonOptions,
+  getTernaryOptions,
+} from '../selectors/propertySelectors';
 import type {
+  AccesTerrain,
+  EtatGeneral,
+  Exposition,
+  NuisanceLevel,
+  PenteTerrain,
   ProfileTarget,
   PropertyType,
+  ProximiteTransport,
   SourcingInput,
   SourcingItemDraft,
-  Ternary,
-  ProximiteTransport,
-  NuisanceLevel,
-  Exposition,
   StandingImmeuble,
   StationnementMaison,
-  EtatGeneral,
-  PenteTerrain,
-  AccesTerrain,
+  Ternary,
 } from '../types/sourcing.types';
 import { PROFILE_LABELS } from '../types/sourcing.types';
 import {
-  validateDraft,
   normalizeDraft,
   parseFloor,
+  validateDraft,
 } from '../utils/validators';
-import {
-  getPropertyTypeOptions,
-  getTernaryOptions,
-  getFloorOptions,
-  getProximiteTransportOptions,
-  getDistanceTransportOptions,
-  getNuisanceOptions,
-  getExpositionOptions,
-  getStandingOptions,
-  getBooleanOptions,
-  getStationnementMaisonOptions,
-  getEtatGeneralOptions,
-  getPenteOptions,
-  getAccesOptions,
-} from '../selectors/propertySelectors';
 
 // ============================================
 // STYLES

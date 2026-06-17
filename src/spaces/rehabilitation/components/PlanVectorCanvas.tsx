@@ -5,6 +5,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useCallback, useEffect, useState } from 'react';
+import {
+  getLayersStoreState,
+  isElementHovered,
+  isElementSelected,
+  selectElement,
+  setHoveredElement,
+  subscribeToLayersStore,
+} from '../plan-reader/planLayers.store';
+import type { PlanOverlayState, SelectedElementDetail } from '../plan-reader/planOverlay.types';
+import { SVG_VIEWBOX_SIZE } from '../plan-reader/planOverlay.types';
+import type { CalibrationStatus } from '../plan-reader/planScaleCalibrator';
 import type {
   DetectedAnnotation,
   DetectedOpening,
@@ -13,17 +24,6 @@ import type {
   NormalizedPoint,
   PlanTranscriptionResult,
 } from '../plan-reader/planTranscription.types';
-import { SVG_VIEWBOX_SIZE } from '../plan-reader/planOverlay.types';
-import type { PlanOverlayState } from '../plan-reader/planOverlay.types';
-import type { CalibrationStatus } from '../plan-reader/planScaleCalibrator';
-import {
-  subscribeToLayersStore,
-  getLayersStoreState,
-  selectElement,
-  setHoveredElement,
-  isElementSelected,
-  isElementHovered,
-} from '../plan-reader/planLayers.store';
 import {
   annotationToSVGProps,
   buildAnnotationDetail,
@@ -41,7 +41,6 @@ import {
   wallMaterialToStrokeColor,
   wallThicknessToStrokeWidth,
 } from '../plan-reader/planVectorGeometry';
-import type { SelectedElementDetail } from '../plan-reader/planOverlay.types';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 

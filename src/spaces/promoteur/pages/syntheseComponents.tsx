@@ -2,12 +2,18 @@
 // Composants additionnels pour PromoteurSynthesePage v4.0
 // À importer dans PromoteurSynthesePage.tsx
 
-import React from 'react';
 import {
-  AlertTriangle, XCircle, CheckCircle2, AlertCircle,
-  Info, Database, ChevronRight, ShieldAlert,
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  ChevronRight,
+  Database,
+  Info,
+  ShieldAlert,
+  XCircle,
 } from 'lucide-react';
-import type { AnomalieItem, ModuleQualite, RecommendationType, ModuleStatut, DataQualite } from '../services/promoteurSynthese.types';
+import React from 'react';
+import type { AnomalieItem, DataQualite, ModuleQualite, ModuleStatut, RecommendationType } from '../services/promoteurSynthese.types';
 
 // ─── Constantes couleurs ──────────────────────────────────────────────────────
 

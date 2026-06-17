@@ -8,7 +8,7 @@
  * - Les champs legacy sont préservés pour rétrocompatibilité
  */
 
-import type { FinessEtablissement, EHPADData, InseeData } from "../types/market.types";
+import type { EHPADData, FinessEtablissement, InseeData } from "../types/market.types";
 
 const DEBUG = true;
 

@@ -5,17 +5,17 @@
  * Fournit state réactif + actions (runAlerts, acknowledge, seed demo).
  */
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  type BanqueSnapshot,
-  type BanqueAlert,
   type AlertSeverity,
+  type BanqueAlert,
+  type BanqueSnapshot,
   type RunAlertsOptions,
+  acknowledgeAlert,
+  getAlertStats,
+  getAllAlerts,
   readBanqueSnapshot,
   runAndPersistAlerts,
-  acknowledgeAlert,
-  getAllAlerts,
-  getAlertStats,
   seedDemoDossiers,
 } from "../services/banqueAlerts";
 

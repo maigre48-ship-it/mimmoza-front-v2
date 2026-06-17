@@ -1,11 +1,11 @@
 // src/spaces/marchand/services/export.service.ts
 
-import { readMarchandSnapshot } from "../shared/marchandSnapshot.store";
 import type { MarchandSnapshotV1 } from "../shared/marchandSnapshot.store";
+import { readMarchandSnapshot } from "../shared/marchandSnapshot.store";
+import type { ExportContextV1 } from "../types/exportContext.types";
+import { generateExportAiReport } from "./exportAiReport.service";
 import { snapshotToCsv } from "./exportCsv";
 import { exportSnapshotToPdf } from "./exportPdf";
-import { generateExportAiReport } from "./exportAiReport.service";
-import type { ExportContextV1 } from "../types/exportContext.types";
 
 // ---------------------------------------------------------------------------
 // Helpers

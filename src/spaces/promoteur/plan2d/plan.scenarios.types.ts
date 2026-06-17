@@ -4,10 +4,10 @@
 // Toujours dérivé de ImplantationScenarioFull via toImplantationScenario().
 // Ne jamais construire manuellement depuis une source partielle.
 
-import type { PlanBuilding }                    from "./plan.types";
-import type { ImplantationScenarioFull }        from "./scenarioGenerator.types";
-import type { ScenarioScoreResult }             from "./plan.scenarioScore.types";
-import type { ScenarioRecommendationLayer }     from "./plan.scenarioNotes.types";
+import type { ScenarioRecommendationLayer } from "./plan.scenarioNotes.types";
+import type { ScenarioScoreResult } from "./plan.scenarioScore.types";
+import type { PlanBuilding } from "./plan.types";
+import type { ImplantationScenarioFull } from "./scenarioGenerator.types";
 
 // ─── MÉTRIQUES ────────────────────────────────────────────────────────
 

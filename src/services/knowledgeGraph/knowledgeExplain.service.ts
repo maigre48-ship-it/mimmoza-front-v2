@@ -3,6 +3,9 @@
 // Génère raisons + signaux positifs + score traçable à partir d'un snapshot.
 // ============================================================================
 
+import { buildOpportunityGraph } from './builders/opportunityGraph.builder';
+import { buildParcelGraph } from './builders/parcelGraph.builder';
+import { buildValuationGraph } from './builders/valuationGraph.builder';
 import {
   type Explanation,
   type ExplanationReason,
@@ -17,9 +20,6 @@ import {
   type PositiveSignal,
   type ScoreContribution,
 } from './knowledgeGraph.types';
-import { buildParcelGraph } from './builders/parcelGraph.builder';
-import { buildOpportunityGraph } from './builders/opportunityGraph.builder';
-import { buildValuationGraph } from './builders/valuationGraph.builder';
 
 // --- Lecture sûre des métadonnées -------------------------------------------
 function readNumber(meta: JsonObject, key: string): number | undefined {

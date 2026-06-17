@@ -12,11 +12,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef } from 'react';
-import {
-  setActiveCopilotContext,
-  getActiveCopilotContext,
-} from '../store/activeCopilotContext.store';
 import type { ActiveCopilotSnapshot } from '../store/activeCopilotContext.store';
+import {
+  getActiveCopilotContext,
+  setActiveCopilotContext,
+} from '../store/activeCopilotContext.store';
 
 type CopilotVertical = NonNullable<ActiveCopilotSnapshot['vertical']>;
 

@@ -1,22 +1,22 @@
 // FILE: src/spaces/promoteur/etudes/marche/components/KpiGrid.tsx
 
-import React from "react";
 import {
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  Euro,
-  Users,
-  Home,
-  Percent,
-  BedDouble,
   AlertTriangle,
-  Heart,
-  GraduationCap,
+  BedDouble,
   Building,
+  Euro,
+  GraduationCap,
+  Heart,
+  Home,
+  Minus,
+  Percent,
+  TrendingDown,
+  TrendingUp,
+  Users,
 } from "lucide-react";
-import { Kpi, KpiStatus, ProjectType } from "../types";
+import React from "react";
 import { getProjectConfig } from "../config";
+import { Kpi, KpiStatus, ProjectType } from "../types";
 
 interface KpiGridProps {
   kpis: Kpi[];

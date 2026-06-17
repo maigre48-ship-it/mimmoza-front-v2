@@ -1,13 +1,13 @@
 // FILE: src/spaces/promoteur/etudes/marche/services/marketStudyService.ts
 
-import { MarketStudyResult, ProjectType, CompetitionData } from "../types";
-import { fetchMockMarketStudy } from "./providers/mockProvider";
-import { fetchInseeData } from "./providers/inseeProvider";
-import { fetchFinessData, DEFAULT_EHPAD_CATEGORIES } from "./providers/finessProvider";
-import { fetchDvfData } from "./providers/dvfProvider";
+import { getPoiConfigsForProject, getProjectConfig } from "../config";
+import { CompetitionData, MarketStudyResult, ProjectType } from "../types";
+import { computePoiStats, fetchPoisForProject } from "./poiService";
 import { fetchBpeData } from "./providers/bpeProvider";
-import { getProjectConfig, getPoiConfigsForProject } from "../config";
-import { fetchPoisForProject, computePoiStats } from "./poiService";
+import { fetchDvfData } from "./providers/dvfProvider";
+import { DEFAULT_EHPAD_CATEGORIES, fetchFinessData } from "./providers/finessProvider";
+import { fetchInseeData } from "./providers/inseeProvider";
+import { fetchMockMarketStudy } from "./providers/mockProvider";
 
 export interface MarketStudyParams {
   projectType: ProjectType;

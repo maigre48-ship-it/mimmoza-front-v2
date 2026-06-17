@@ -1,14 +1,13 @@
 // ─── editor2d.measure.ts ─────────────────────────────────────────────────────
 // Calculs des lignes de cotes — purs, sans dépendance React
 
-import type { Point2D, Building2D, Parking2D } from './editor2d.types';
 import {
-  rectCorners,
+  closestPointOnSegment,
   midpoint,
   pointToSegmentDist,
-  closestPointOnSegment,
-  dist,
+  rectCorners
 } from './editor2d.geometry';
+import type { Building2D, Parking2D, Point2D } from './editor2d.types';
 
 export type CoteFamily = 'building' | 'setback' | 'interBuilding' | 'parking';
 

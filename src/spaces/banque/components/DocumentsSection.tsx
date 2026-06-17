@@ -6,8 +6,8 @@
 //    (et pas seulement quand dossier.id change)
 // ============================================================================
 
-import { useState, useEffect } from "react";
-import { upsertDossier, addEvent } from "../store/banqueSnapshot.store";
+import { useEffect, useState } from "react";
+import { addEvent, upsertDossier } from "../store/banqueSnapshot.store";
 import type { DocumentItem, DossierDocuments } from "../store/banqueSnapshot.types";
 
 type DocStatus = DocumentItem["statut"];

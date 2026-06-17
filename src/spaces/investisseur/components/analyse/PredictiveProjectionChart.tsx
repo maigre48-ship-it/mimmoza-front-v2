@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import type { PredictiveAnalysisSnapshot } from "../../services/predictive/predictive.types";
 
 function fmtEur(v: number): string {

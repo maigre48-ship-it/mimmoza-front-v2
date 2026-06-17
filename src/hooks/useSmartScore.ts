@@ -4,8 +4,8 @@
 // Fetch, cache, recalcul temps réel avec poids custom
 // ============================================================================
 
-import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 

@@ -11,7 +11,7 @@
 
 import React, { useMemo } from "react";
 import { useBanqueAlerts } from "../shared/hooks/useBanqueAlerts";
-import type { BanqueAlert, AlertSeverity } from "../shared/services/banqueAlerts";
+import type { AlertSeverity, BanqueAlert } from "../shared/services/banqueAlerts";
 
 /* ─── Style helpers ─────────────────────────────────────── */
 

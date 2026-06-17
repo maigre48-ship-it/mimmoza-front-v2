@@ -6,8 +6,8 @@
 // Clé : "mimmoza.rehabilitation.planOverlay.v1"
 // ---------------------------------------------------------------------------
 
-import type { PlanOverlaySnapshot, LayerVisibility, PlanMetadata, PlanCalibration, PlanGeometry, RawAIResult, ValidationResult, PlanSourceImage } from './types';
-import { PLAN_OVERLAY_STORAGE_KEY, DEFAULT_LAYER_VISIBILITY, emptyMetadata, emptyCalibration, emptyValidation, EMPTY_GEOMETRY } from './types';
+import type { LayerVisibility, PlanCalibration, PlanGeometry, PlanMetadata, PlanOverlaySnapshot, PlanSourceImage, RawAIResult, ValidationResult } from './types';
+import { DEFAULT_LAYER_VISIBILITY, EMPTY_GEOMETRY, emptyCalibration, emptyMetadata, emptyValidation, PLAN_OVERLAY_STORAGE_KEY } from './types';
 
 // ---------------------------------------------------------------------------
 // Helpers safe-storage (SSR / mode privé)
@@ -137,7 +137,7 @@ export const toggleLayer = (layer: keyof LayerVisibility): PlanOverlaySnapshot =
 // Hook React minimaliste pour s'abonner aux changements (cross-tab + local)
 // ---------------------------------------------------------------------------
 
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export const usePlanOverlaySnapshot = (): [
   PlanOverlaySnapshot | null,

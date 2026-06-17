@@ -7,7 +7,7 @@
 // Total des poids = 100 points.
 // ============================================================================
 
-import type { OperationProfile, MissingSeverity } from "../types/operationSummary.types";
+import type { MissingSeverity, OperationProfile } from "../types/operationSummary.types";
 
 // ── Pillar definition ──
 

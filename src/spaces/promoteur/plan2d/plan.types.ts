@@ -1,6 +1,5 @@
 // src/spaces/promoteur/plan2d/plan.types.ts
 
-import type { GeoJSON } from "geojson";
 
 export type Vec2 = { x: number; y: number };
 

@@ -1,10 +1,10 @@
 // src/spaces/banque/hooks/useDueDiligence.ts
 
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 
 import type {
-  DueDiligenceReport,
   DueDiligenceEvidence,
+  DueDiligenceReport,
   DueDiligenceStatus,
 } from "../types/dueDiligence.types";
 
@@ -14,10 +14,10 @@ import {
 } from "../store/dueDiligenceSnapshot.store";
 
 import {
-  updateDueDiligenceItemStatus,
-  updateDueDiligenceItemValue,
   addDueDiligenceEvidence as mutateAddEvidence,
   removeDueDiligenceEvidence as mutateRemoveEvidence,
+  updateDueDiligenceItemStatus,
+  updateDueDiligenceItemValue,
 } from "../services/dueDiligence.mutate";
 
 export interface UseDueDiligenceReturn {

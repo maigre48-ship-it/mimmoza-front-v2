@@ -1,16 +1,16 @@
 // src/spaces/promoteur/plan2d/plan.scenarios.ts
 
-import type { Vec2, PlanBuilding } from "./plan.types";
+import { computeCoverageRatio, computeTotalFootprintArea, polygonArea } from "./plan.plu.metrics";
 import type { PluRules } from "./plan.plu.types";
+import { buildScenarioRecommendationLayer } from "./plan.scenarioNotes";
 import type {
   ImplantationScenario,
   ImplantationScenarioMetrics,
-  ScenarioStatus,
   ScenarioComparison,
+  ScenarioStatus,
 } from "./plan.scenarios.types";
-import { polygonArea, computeTotalFootprintArea, computeCoverageRatio } from "./plan.plu.metrics";
 import { applyScenarioScores, getBestScoringScenarioId } from "./plan.scenarioScore";
-import { buildScenarioRecommendationLayer } from "./plan.scenarioNotes";
+import type { PlanBuilding, Vec2 } from "./plan.types";
 
 // ─── STATUS DERIVATION ────────────────────────────────────────────────
 

@@ -11,8 +11,8 @@
 // Contrat de données : cohérent avec masterScenario.service et le tooltip
 // canvas (même filtre hasValidRdcContent appliqué en amont).
 
+import { rectCorners } from "./editor2d.geometry";
 import type { Building2D } from "./editor2d.types";
-import { rectCorners }     from "./editor2d.geometry";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES EXPORTÉS

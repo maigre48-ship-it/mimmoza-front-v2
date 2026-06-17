@@ -8,10 +8,10 @@
 //     <Outlet />   ← or your tab/page system
 //   </DossierCommitteeProvider>
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import type { DossierCommitteeSlice, CommitteeCondition } from '../types/committee-workflow';
-import { useCommitteeWorkflow } from '../hooks/useCommitteeWorkflow';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { CommitteeWorkflow } from '../hooks/useCommitteeWorkflow';
+import { useCommitteeWorkflow } from '../hooks/useCommitteeWorkflow';
+import type { DossierCommitteeSlice } from '../types/committee-workflow';
 
 // ─── Context Shape ───────────────────────────
 

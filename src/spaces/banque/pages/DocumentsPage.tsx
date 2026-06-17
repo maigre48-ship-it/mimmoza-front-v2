@@ -1,6 +1,6 @@
 // pages/DocumentsPage.tsx
 
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { useDossierCommittee } from '../context/DossierCommitteeContext';
 import type { RequiredDoc } from '../types/committee-workflow';
 

@@ -1,6 +1,6 @@
 // src/spaces/copilot/components/CopilotDrawer.tsx
+import { Plus, Sparkles, X } from 'lucide-react';
 import { useEffect, type CSSProperties } from 'react';
-import { X, Plus, Sparkles } from 'lucide-react';
 import { useCopilot } from '../hooks/useCopilot';
 import { CopilotChat } from './CopilotChat';
 import { CopilotCreditsPill } from './CopilotCreditsPill';

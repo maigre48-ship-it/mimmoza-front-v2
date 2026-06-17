@@ -11,16 +11,14 @@
  * ────────────────────────────────────────────────────────────────────
  */
 
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
-  useBanqueSnapshot,
-  upsertAlert,
   acknowledgeAlert,
-  removeAlert,
   patchMonitoringConfig,
+  removeAlert,
+  useBanqueSnapshot,
   type MonitoringAlert,
-  type MonitoringRule,
-  type AlertSeverity,
+  type MonitoringRule
 } from "../shared";
 
 const BanqueMonitoring = () => {

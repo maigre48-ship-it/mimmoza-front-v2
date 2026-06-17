@@ -1,15 +1,15 @@
 // src/spaces/marchand/pages/Qualification.tsx
 
-import React, { useEffect, useMemo, useState } from "react";
-import PageShell from "../shared/ui/PageShell";
-import SectionCard from "../shared/ui/SectionCard";
+import { useEffect, useMemo, useState } from "react";
 import {
-  readMarchandSnapshot,
   ensureActiveDeal,
+  MARCHAND_SNAPSHOT_EVENT,
+  readMarchandSnapshot,
   setActiveDeal,
   type MarchandDeal,
-  MARCHAND_SNAPSHOT_EVENT,
 } from "../shared/marchandSnapshot.store";
+import PageShell from "../shared/ui/PageShell";
+import SectionCard from "../shared/ui/SectionCard";
 
 function fmtMoney(v: number | undefined | null) {
   if (v == null || !Number.isFinite(v)) return "—";

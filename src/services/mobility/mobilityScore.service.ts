@@ -8,9 +8,7 @@
 import type {
   MobilityModeGroup,
   MobilityScore,
-  PillarScore,
-  TransportScoreRequest,
-  TransportScoreResponse,
+  PillarScore
 } from './mobility.types';
 
 // ------------------------------------------------------------

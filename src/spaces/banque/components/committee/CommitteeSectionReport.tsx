@@ -1,5 +1,5 @@
 ﻿// src/spaces/banque/components/committee/CommitteeSectionReport.tsx
-import React, { useState } from "react";
+import { useState } from "react";
 
 interface CommitteeData {
   decision: "GO" | "GO_AVEC_RESERVES" | "NO_GO" | null;

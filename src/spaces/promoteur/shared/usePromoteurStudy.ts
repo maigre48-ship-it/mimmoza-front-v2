@@ -11,21 +11,21 @@
 // ⚠️  PRÉREQUIS : dans PromoteurStudyService.getStudy(), le .select() doit
 //     inclure "implantation2d" (ou être un .select("*")).
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { PromoteurStudyService }                     from "./promoteurStudyService";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Implantation2DSnapshot } from "../plan2d/implantation2d.snapshot";
 import type {
-  PromoteurStudy,
-  PromoteurFoncierData,
-  PromoteurPluData,
-  PromoteurConceptionData,
-  PromoteurMarcheData,
-  PromoteurRisquesData,
-  PromoteurEvaluationData,
   PromoteurBilanData,
+  PromoteurConceptionData,
+  PromoteurEvaluationData,
+  PromoteurFoncierData,
+  PromoteurMarcheData,
+  PromoteurPluData,
+  PromoteurRisquesData,
+  PromoteurStudy,
   PromoteurStudyMetaPatch,
   ServiceResult,
-}                                                    from "./promoteurStudy.types";
-import type { Implantation2DSnapshot }               from "../plan2d/implantation2d.snapshot";
+} from "./promoteurStudy.types";
+import { PromoteurStudyService } from "./promoteurStudyService";
 
 export type StudyLoadState = "idle" | "loading" | "ready" | "error";
 

@@ -6,14 +6,14 @@
 // Style Tailwind neutre — à reskinner selon le gradient de l'espace courant.
 // =============================================================================
 
-import type {
-  ExplanationResult,
-  MimmozaDecision,
-} from "../../services/explainability/explainability.types";
 import {
   selectNegative,
   selectPositive,
 } from "../../services/explainability/explainability.service";
+import type {
+  ExplanationResult,
+  MimmozaDecision,
+} from "../../services/explainability/explainability.types";
 
 interface ExplanationPanelProps {
   /** Explication du score opportunité (Phase 3) — bloc "POURQUOI CE SCORE ?". */

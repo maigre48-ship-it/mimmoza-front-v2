@@ -1,11 +1,11 @@
 // src/features/admin/billing/exportBillingPdf.ts
 
+import mimmozaLogo from '@/assets/logo-mimmoza.png';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import mimmozaLogo from '@/assets/logo-mimmoza.png';
 
-import type { Invoice, InvoiceLine, Quote, QuoteLine } from './types';
 import { formatBillingStatusLabel, formatDate } from './helpers';
+import type { Invoice, InvoiceLine, Quote, QuoteLine } from './types';
 
 function fmtEur(cents: number): string {
   const euros = cents / 100;

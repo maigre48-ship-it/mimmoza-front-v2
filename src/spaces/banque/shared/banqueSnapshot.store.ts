@@ -1,9 +1,9 @@
 ﻿import type {
-  BanqueProject,
-  BanqueStoreState,
   BanqueAlert,
-  BanqueStatut,
   BanqueHistoryEntry,
+  BanqueProject,
+  BanqueStatut,
+  BanqueStoreState,
 } from "./types/banque.types";
 
 const STORE_KEY = "mimmoza.banque.snapshot.v1";

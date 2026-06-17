@@ -2,17 +2,16 @@
 // FILE: src/spaces/promoteur/terrain3d/hooks/useTerrainMesh.ts
 // ============================================================================
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { Feature, Polygon, MultiPolygon } from 'geojson';
-import type {
-  TerrainMeshState,
-  TerrainData,
-  TerrainConfig,
-} from '../types/terrain.types';
-import { DEFAULT_TERRAIN_CONFIG } from '../types/terrain.types';
+import type { Feature, MultiPolygon, Polygon } from 'geojson';
+import { useCallback, useEffect, useState } from 'react';
 import { getTerrainSamplingService } from '../services/terrainSampling.service';
 import type { StubGeometry } from '../three/createTerrainGeometry';
 import { createTerrainGeometry } from '../three/createTerrainGeometry';
+import type {
+  TerrainConfig,
+  TerrainMeshState
+} from '../types/terrain.types';
+import { DEFAULT_TERRAIN_CONFIG } from '../types/terrain.types';
 
 /**
  * Options du hook useTerrainMesh

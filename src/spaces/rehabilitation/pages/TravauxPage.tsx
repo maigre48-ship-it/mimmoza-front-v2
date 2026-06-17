@@ -2,24 +2,24 @@
 // Copie autonome du simulateur travaux — adapté Réhabilitation (thème orange).
 // Modifiable indépendamment de la version Investisseur.
 
-import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { computeTravauxSimulation } from "../../investisseur/services/travauxCalculator.service";
+import { TRAVAUX_PRICING_V1 } from "../../investisseur/services/travauxPricing.config";
 import type {
-  TravauxSimulationV1,
-  TravauxRange,
-  RenovationLevel,
-  ChantierComplexity,
-  TravauxOptionsSimple,
-  TriChoice,
   BinaryChoice,
-  ComputedTravaux,
+  ChantierComplexity,
   ComputedLot,
-  PricingItemCode,
+  ComputedTravaux,
   ExpertLineItem,
   PieceTravaux,
   PieceType,
+  PricingItemCode,
+  RenovationLevel,
+  TravauxOptionsSimple,
+  TravauxRange,
+  TravauxSimulationV1,
+  TriChoice,
 } from "../../investisseur/shared/travauxSimulation.types";
-import { computeTravauxSimulation } from "../../investisseur/services/travauxCalculator.service";
-import { TRAVAUX_PRICING_V1 } from "../../investisseur/services/travauxPricing.config";
 
 /* ================================================================== */
 /*  Thème Réhabilitation                                               */

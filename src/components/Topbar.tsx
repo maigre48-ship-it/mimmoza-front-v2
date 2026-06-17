@@ -1,11 +1,11 @@
 ﻿
 import {
-  Brain,
-  Building2,
-  Briefcase,
   Banknote,
-  ShieldCheck,
+  Brain,
+  Briefcase,
+  Building2,
   LayoutDashboard,
+  ShieldCheck,
 } from "lucide-react";
 
 type Space =

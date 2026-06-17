@@ -11,8 +11,7 @@
 //   métrique : scale = mètres/unité-source, zScale = 1 → X, Y et Z partagent enfin
 //   la même unité (le mètre). Les textures, ombres et hauteurs deviennent stables.
 
-import type { Pt2D, MassingBuildingModel, BuildingTransform } from "./massingScene.types";
-import { polygonArea } from "./massingScene.types";
+import type { BuildingTransform, MassingBuildingModel, Pt2D } from "./massingScene.types";
 
 // ─── Coordinate system ────────────────────────────────────────────────────────
 

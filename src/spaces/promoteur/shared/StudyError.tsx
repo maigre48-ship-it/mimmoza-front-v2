@@ -1,6 +1,5 @@
 // src/spaces/promoteur/shared/StudyError.tsx
 
-import React from "react";
 import { AlertTriangle } from "lucide-react";
 
 const ACCENT_PRO = "#5247b8";

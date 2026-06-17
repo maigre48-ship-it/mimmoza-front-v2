@@ -1,7 +1,7 @@
 // FILE: src/spaces/promoteur/etudes/layout/components/EtudesSectionCard.tsx
 
-import { FC, useState, useId } from 'react';
-import type { EtudesSectionCardProps, ActionVariant } from '../etudesLayout.types';
+import { FC, useId, useState } from 'react';
+import type { ActionVariant, EtudesSectionCardProps } from '../etudesLayout.types';
 
 const buttonVariants: Record<ActionVariant, string> = {
   primary: 'text-blue-600 hover:text-blue-800 hover:bg-blue-50',

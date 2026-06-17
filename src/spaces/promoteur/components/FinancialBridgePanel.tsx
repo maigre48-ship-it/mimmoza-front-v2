@@ -2,8 +2,8 @@
 
 import React from "react";
 import type {
-  FinancialBridgeResult,
   FinancialBridgeAssumptions,
+  FinancialBridgeResult,
 } from "../plan2d/plan.financialBridge.types";
 
 // ─── TOKENS ───────────────────────────────────────────────────────────

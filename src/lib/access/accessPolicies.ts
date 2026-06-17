@@ -1,5 +1,5 @@
 import type { AccessContext, FeatureKey } from "./access.types";
-import { planHasFeature, getTokenCost, getDailyQuota } from "./planConfig";
+import { getDailyQuota, getTokenCost, planHasFeature } from "./planConfig";
 
 // ─── Accès feature ─────────────────────────────────────────────────────────────
 //

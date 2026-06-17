@@ -3,17 +3,17 @@
  * Carte compacte affichant le SmartScore pour les listes
  */
 
-import React from 'react';
-import { TrendingUp, TrendingDown, Minus, ChevronRight, AlertTriangle } from 'lucide-react';
-import { ScoreGauge } from './ScoreGauge';
 import {
-  getScoreLevel,
   getScoreColor,
+  getScoreLevel,
   PROFILE_LABELS,
   SUB_SCORE_LABELS,
   type SmartScoreResult,
   type SubScoreKey,
 } from '@/types/sourcing.types';
+import { AlertTriangle, ChevronRight, Minus, TrendingDown, TrendingUp } from 'lucide-react';
+import React from 'react';
+import { ScoreGauge } from './ScoreGauge';
 
 interface SmartScoreCardProps {
   score: SmartScoreResult;

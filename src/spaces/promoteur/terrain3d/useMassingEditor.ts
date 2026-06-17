@@ -5,18 +5,18 @@
 // No Three.js, no rendering logic.
 // =============================================================================
 
-import { useReducer, useCallback, useMemo } from "react";
+import { useCallback, useMemo, useReducer } from "react";
 import type {
-  EditorState,
-  EditorAction,
-  EditorTool,
-  MassingBuildingModel,
-  MassingSceneModel,
-  BuildingTransform,
+  BuildingFootprint,
   BuildingLevels,
   BuildingStyleOptions,
-  BuildingFootprint,
+  BuildingTransform,
+  EditorAction,
+  EditorState,
+  EditorTool,
   LevelSetback,
+  MassingBuildingModel,
+  MassingSceneModel,
   PlacedObject,
 } from "./massingScene.types";
 import {

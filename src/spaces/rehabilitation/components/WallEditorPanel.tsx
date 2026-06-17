@@ -7,9 +7,9 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { DetectedWall, WallMaterial } from '../plan-reader/planTranscription.types';
-import type { WallCorrection } from '../shared/planValidation.types';
-import { correctWall } from '../plan-reader/planUserValidationEngine';
 import type { WallValidationRecord } from '../plan-reader/planUserValidationEngine';
+import { correctWall } from '../plan-reader/planUserValidationEngine';
+import type { WallCorrection } from '../shared/planValidation.types';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 

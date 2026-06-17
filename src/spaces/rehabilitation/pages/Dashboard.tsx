@@ -1,15 +1,15 @@
-import { useNavigate } from "react-router-dom";
 import {
-  ScanSearch,
+  ArrowRight,
+  Building2,
   HardHat,
-  ShieldCheck,
   Layers,
+  ScanSearch,
+  ShieldCheck,
   Sparkles,
   TrendingUp,
-  ArrowRight,
   Upload,
-  Building2,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const cards = [
   {

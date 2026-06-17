@@ -1,31 +1,31 @@
 // src/spaces/promoteur/components/PromoteurSynthesePreview.tsx
 
-import React from 'react';
 import {
-  TrendingUp,
-  TrendingDown,
-  AlertTriangle,
-  ShieldAlert,
-  CheckCircle2,
-  XCircle,
   AlertCircle,
+  AlertTriangle,
   BarChart3,
-  MapPin,
-  Euro,
   Building2,
-  Scale,
-  Layers,
+  CheckCircle2,
   ChevronRight,
+  Euro,
   FileText,
+  Layers,
+  MapPin,
+  Scale,
+  ShieldAlert,
+  TrendingDown,
+  TrendingUp,
+  XCircle,
 } from 'lucide-react';
+import React from 'react';
 import type {
   PromoteurSynthese,
   RecommendationType,
-  RisqueNiveau,
+  ReportType,
   RisqueItem,
+  RisqueNiveau,
   Scenario,
 } from '../services/promoteurSynthese.types';
-import type { ReportType } from '../services/promoteurSynthese.types';
 
 // ??? Helpers ????????????????????????????????????????????????????????????????
 

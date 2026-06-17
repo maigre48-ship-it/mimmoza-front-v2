@@ -12,13 +12,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef } from 'react';
-import {
-  readMarchandSnapshot,
-  MARCHAND_SNAPSHOT_EVENT,
-  type MarchandDeal,
-  type ExecutionSaved,
-} from '../shared/marchandSnapshot.store';
 import { setActiveCopilotContext } from '../../copilot/store/activeCopilotContext.store';
+import {
+  MARCHAND_SNAPSHOT_EVENT,
+  readMarchandSnapshot,
+  type ExecutionSaved,
+  type MarchandDeal,
+} from '../shared/marchandSnapshot.store';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

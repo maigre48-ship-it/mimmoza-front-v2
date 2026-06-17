@@ -5,11 +5,11 @@
 // v4.4 — Ajout transport_gtfs (MobilityScore GTFS PostGIS)
 // =============================================================================
 
-import type { PredictiveSnapshotContext } from '../types/copilot.types';
-import { readMarchandSnapshot } from '../../marchand/shared/marchandSnapshot.store';
-import { getInvestisseurSnapshot } from '../../investisseur/shared/investisseurSnapshot.store';
-import { formatMobilityForSnapshot } from '../../../services/mobility/mobilityClient';
 import type { MobilityScore } from '../../../services/mobility/mobility.types';
+import { formatMobilityForSnapshot } from '../../../services/mobility/mobilityClient';
+import { getInvestisseurSnapshot } from '../../investisseur/shared/investisseurSnapshot.store';
+import { readMarchandSnapshot } from '../../marchand/shared/marchandSnapshot.store';
+import type { PredictiveSnapshotContext } from '../types/copilot.types';
 
 // ── Helpers typés ─────────────────────────────────────────────────────────────
 

@@ -1,7 +1,7 @@
-﻿import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, AlertTriangle, AlertCircle, Info } from 'lucide-react';
-import { getScoreColor } from '../../types/sourcing.types';
+﻿import { AlertCircle, AlertTriangle, ChevronDown, ChevronUp, Info } from 'lucide-react';
+import React, { useState } from 'react';
 import type { SubScore } from '../../types/sourcing.types';
+import { getScoreColor } from '../../types/sourcing.types';
 
 interface SubScoreBarProps {
   label: string;

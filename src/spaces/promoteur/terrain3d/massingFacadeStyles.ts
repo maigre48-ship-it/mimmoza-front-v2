@@ -7,9 +7,9 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import type {
-  FacadeOpeningType,
-  BalconyType,
   BalconyConfig,
+  BalconyType,
+  FacadeOpeningType,
   LoggiaConfig,
   ShadingConfig,
   ShadingDeviceType,

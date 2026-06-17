@@ -3,31 +3,44 @@
 //   (rounded-[32px], gradient from-[#6f5bd6], badge pill, font-semibold)
 //   Toute la logique métier v9.4.2 est intacte.
 
-import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
-import {
-  MapPin, Building2, Layers, FileText,
-  Check, AlertTriangle, Loader2, RefreshCw, Eye, EyeOff,
-  Navigation, Search, X, Info, Upload, MapPinned, FileUp,
-  FileSearch
-} from "lucide-react";
-import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import {
+  AlertTriangle,
+  Building2,
+  Check,
+  Eye, EyeOff,
+  FileSearch,
+  FileText,
+  FileUp,
+  Info,
+  Layers,
+  Loader2,
+  MapPin,
+  MapPinned,
+  Navigation,
+  RefreshCw,
+  Search,
+  Upload,
+  X
+} from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MapContainer, TileLayer, useMap } from "react-leaflet";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "../../../supabaseClient";
-import { patchModule } from "../shared/promoteurSnapshot.store";
-import { writeCapture } from "../shared/captures.store";
-import { usePromoteurStudy } from "../shared/usePromoteurStudy";
 import { useCopilotStore } from "../../copilot/store/copilotStore";
+import { writeCapture } from "../shared/captures.store";
+import { patchModule } from "../shared/promoteurSnapshot.store";
 import type {
-  PromoteurParcelRaw,
   PromoteurFoncierData,
+  PromoteurParcelRaw,
   PromoteurPluData,
 } from "../shared/promoteurStudy.types";
+import { usePromoteurStudy } from "../shared/usePromoteurStudy";
 
 // ── Design tokens Promoteur (v9.5.0) ─────────────────────────────────────────
-import { GRAD_PRO, ACCENT_PRO } from "../shared/promoteurDesign.tokens";
 import { PromoteurPageHero, StudyIdBadge } from "../shared/components/PromoteurPageHero";
+import { ACCENT_PRO } from "../shared/promoteurDesign.tokens";
 
 // ── Clés localStorage ─────────────────────────────────────────────────────────
 const LS_FONCIER_SELECTED = "mimmoza.promoteur.foncier.selected_v1";

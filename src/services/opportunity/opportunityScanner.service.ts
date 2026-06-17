@@ -11,10 +11,22 @@
 // =============================================================
 
 // ⚠️ CHEMINS À CONFIRMER (services existants).
-import { refreshMarketZone } from '@/spaces/investisseur/services/marketRefresh';
 import { supabase } from '@/lib/supabase';
+import { refreshMarketZone } from '@/spaces/investisseur/services/marketRefresh';
 
 import { computeOpportunity } from './opportunityEngine.service';
+import type {
+  OpportunityAssetType,
+  OpportunityResult,
+  OpportunityStrategy,
+} from './opportunityEngine.types';
+import {
+  extractAskingPrice,
+  extractLandArea,
+  extractLivingArea,
+  inferAssetTypeFromListing,
+  normalizeListingToOpportunityInput,
+} from './opportunityListingAdapter.service';
 import {
   resolveLocationForZone,
   type LocationContext,
@@ -23,18 +35,6 @@ import {
   resolveMarketReference,
   type MarketReference,
 } from './opportunityMarket.service';
-import {
-  normalizeListingToOpportunityInput,
-  inferAssetTypeFromListing,
-  extractAskingPrice,
-  extractLivingArea,
-  extractLandArea,
-} from './opportunityListingAdapter.service';
-import type {
-  OpportunityAssetType,
-  OpportunityResult,
-  OpportunityStrategy,
-} from './opportunityEngine.types';
 
 /** Annonce de veille telle que lue depuis `portal_snapshots` (mappée). */
 export interface WatchListing {

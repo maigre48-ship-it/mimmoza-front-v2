@@ -3,15 +3,15 @@
 // Writes to: dossiersById[id].garanties + dossiersById[id].origination
 // ============================================================================
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+import DossierContextBar from "../components/DossierContextBar";
 import { useBanqueDossierContext } from "../hooks/useBanqueDossierContext";
-import { upsertDossier, addEvent } from "../store/banqueSnapshot.store";
+import { addEvent, upsertDossier } from "../store/banqueSnapshot.store";
 import type {
-  GarantieItem,
   DossierGaranties,
   DossierOrigination,
+  GarantieItem,
 } from "../store/banqueSnapshot.types";
-import DossierContextBar from "../components/DossierContextBar";
 
 // ── Constants ──
 

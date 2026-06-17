@@ -1,5 +1,4 @@
 ﻿// src/spaces/banque/components/committee/CommitteeSectionLocalization.tsx
-import React from "react";
 
 export default function CommitteeSectionLocalization({
   operation,

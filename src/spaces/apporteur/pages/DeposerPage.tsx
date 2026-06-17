@@ -1,8 +1,8 @@
 // src/spaces/apporteur/pages/DeposerPage.tsx
 
+import { ArrowLeft, MapPin, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, MapPin, Sparkles } from "lucide-react";
 import { createApporteurDeal } from "../shared/apporteurDeals.store";
 
 type TypeBien = "terrain" | "maison" | "immeuble" | "autre";

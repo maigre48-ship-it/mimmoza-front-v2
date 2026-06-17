@@ -4,21 +4,21 @@
 // Style identique à AnalysePage.tsx : tokens gray-*, ring-gray-200,
 // bg-gray-50, border-gray-200, shadow-sm, print-safe.
 
-import { useMemo } from "react";
 import {
+  AlertCircle,
   CheckCircle2,
   Clock,
-  AlertCircle,
-  GitMerge,
   Gauge,
-  Minus,
+  GitMerge,
   Info,
+  Minus,
 } from "lucide-react";
+import { useMemo } from "react";
 
 import useMarchandSnapshotTick from "../../../../marchand/shared/hooks/useMarchandSnapshotTick";
 import {
-  readMarchandSnapshot,
   ensureActiveDeal,
+  readMarchandSnapshot,
   type MarcheRisquesSaved,
   type RentabiliteSaved,
 } from "../../../../marchand/shared/marchandSnapshot.store";

@@ -10,13 +10,13 @@
 //
 // V1.5 — Fix fusion MultiPolygon sans déformer la géométrie (inchangé).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as turf from "@turf/turf";
-import type { Feature, Polygon, MultiPolygon } from "geojson";
+import type { Feature, MultiPolygon, Polygon } from "geojson";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { useFoncierSelection, type SelectedParcel } from "./useFoncierSelection";
 import { normalizeToGeoJSONFeature } from "../getCurrentPromoteurParcelSelection";
 import { getSnapshot } from "../promoteurSnapshot.store";
+import { useFoncierSelection, type SelectedParcel } from "./useFoncierSelection";
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;

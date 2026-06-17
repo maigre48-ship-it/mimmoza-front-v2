@@ -1,4 +1,4 @@
-﻿export { ScoreGauge } from './ScoreGauge';
-export { SubScoreBar } from './SubScoreBar';
+﻿export * from '../../types/sourcing.types';
+export { ScoreGauge } from './ScoreGauge';
 export { SmartScorePanel } from './SmartScorePanel';
-export * from '../../types/sourcing.types';
+export { SubScoreBar } from './SubScoreBar';

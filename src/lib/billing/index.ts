@@ -18,107 +18,72 @@
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 export type {
-  PlanCode,
-  TokenPackCode,
-  SubscriptionStatus,
-  BillingProfile,
-  TokenLedgerDirection,
-  TokenLedgerReason,
-  TokenLedgerEntry,
-  PaymentStatus,
-  InvoiceType,
-  InvoiceRow,
-  StripeWebhookEventType,
-  StripeWebhookLog,
-  AdminUserBillingView,
-  AdminBillingMetrics,
-  BillingPriceTarget,
-  StripeCheckoutMode,
-  CreateCheckoutSessionInput,
-  CreateCheckoutSessionResult,
-  AdminBypassConsumeResult,
-  AdminFeatureUsageLog,
+  AdminBillingMetrics, AdminBypassConsumeResult,
+  AdminFeatureUsageLog, AdminUserBillingView, BillingPriceTarget, BillingProfile, CreateCheckoutSessionInput,
+  CreateCheckoutSessionResult, InvoiceRow, InvoiceType, PaymentStatus, PlanCode, StripeCheckoutMode, StripeWebhookEventType,
+  StripeWebhookLog, SubscriptionStatus, TokenLedgerDirection, TokenLedgerEntry, TokenLedgerReason, TokenPackCode
 } from "./billing.types";
 
 // ─── Catalog ───────────────────────────────────────────────────────────────────
 
 export {
   PLAN_CATALOG,
-  TOKEN_PACK_CATALOG,
-  getPlanCatalogItem,
-  getTokenPackCatalogItem,
-  getStripePriceIdForPlan,
-  getStripePriceIdForTokenPack,
-  formatCents,
+  TOKEN_PACK_CATALOG, formatCents, getPlanCatalogItem, getStripePriceIdForPlan,
+  getStripePriceIdForTokenPack, getTokenPackCatalogItem
 } from "./catalog";
 
 export type {
   PlanCatalogItem,
-  TokenPackCatalogItem,
+  TokenPackCatalogItem
 } from "./catalog";
 
 // ─── Token ledger ──────────────────────────────────────────────────────────────
 
 export {
   applyTokenLedgerEntry,
-  creditTokensForPackPurchase,
-  creditTokensForSubscriptionGrant,
-  creditTokensForRefund,
-  debitTokensForFeature,
+  creditTokensForPackPurchase, creditTokensForRefund, creditTokensForSubscriptionGrant, debitTokensForFeature,
   getTokenLedgerHistory,
-  getTokenLedgerTotals,
+  getTokenLedgerTotals
 } from "./tokenLedger";
 
 export type {
   ApplyTokenLedgerEntryInput,
   TokenLedgerHistoryParams,
-  TokenLedgerTotals,
+  TokenLedgerTotals
 } from "./tokenLedger";
 
 // ─── Subscriptions / billing profiles ─────────────────────────────────────────
 
 export {
-  getBillingProfile,
-  upsertBillingProfile,
-  updateStripeCustomerForUser,
-  updateSubscriptionStateForUser,
-  clearSubscriptionForUser,
-  isSubscriptionActive,
-  getProfileMrrCents,
-  createStripeCheckoutSession,
+  clearSubscriptionForUser, createStripeCheckoutSession, getBillingProfile, getProfileMrrCents, isSubscriptionActive, updateStripeCustomerForUser,
+  updateSubscriptionStateForUser, upsertBillingProfile
 } from "./subscriptions";
 
 // ─── Invoices ──────────────────────────────────────────────────────────────────
 
 export {
-  upsertInvoiceRow,
-  getInvoicesByUser,
-  listAllInvoices,
-  getInvoiceTotalsByUser,
+  getInvoiceTotalsByUser, getInvoicesByUser,
+  listAllInvoices, upsertInvoiceRow
 } from "./invoices";
 
 export type {
-  ListInvoicesParams,
-  InvoiceTotalsByUser,
+  InvoiceTotalsByUser, ListInvoicesParams
 } from "./invoices";
 
 // ─── Admin analytics ───────────────────────────────────────────────────────────
 
 export {
-  buildAdminUserBillingView,
-  listAdminUserBilling,
-  getAdminBillingMetrics,
-  getTopClients,
+  buildAdminUserBillingView, getAdminBillingMetrics,
+  getTopClients, listAdminUserBilling
 } from "./adminAnalytics";
 
 export type {
   ListAdminUserBillingParams,
-  TopClientRow,
+  TopClientRow
 } from "./adminAnalytics";
 
 // ─── Admin billing / bypass ───────────────────────────────────────────────────
 
 export {
-  tryAdminBypassConsume,
-  logAdminFeatureUsage,
+  logAdminFeatureUsage, tryAdminBypassConsume
 } from "./adminBilling";

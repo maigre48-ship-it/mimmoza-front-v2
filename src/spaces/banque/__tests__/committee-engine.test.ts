@@ -1,24 +1,24 @@
 // FILE: src/spaces/banque/__tests__/committee-engine.test.ts
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import type {
   BanqueDossier,
+  Condition,
   DossierDocument,
   DossierGuarantee,
-  Condition,
 } from "../types";
 
 import { getRequiredDocuments } from "../config/required-documents";
 
 import {
+  buildDecisionDraft,
   computeCompleteness,
   computeLtv,
   computeLtvFromDossier,
   computeRiskLevel,
-  suggestConditions,
-  buildDecisionDraft,
   resetConditionIdCounter,
+  suggestConditions,
 } from "../services/committee-engine";
 
 // ============================================================================

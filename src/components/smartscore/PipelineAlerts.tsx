@@ -3,7 +3,7 @@
 // Badge de notification + panneau d'alertes pour le Pipeline
 // ============================================================================
 
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 

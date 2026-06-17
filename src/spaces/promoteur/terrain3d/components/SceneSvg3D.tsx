@@ -8,11 +8,11 @@
 // - Aucune autre modification comportementale.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import type { Feature, FeatureCollection, MultiPolygon, Polygon, Position } from "geojson";
 import React, { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import type { Feature, FeatureCollection, Polygon, MultiPolygon, Position } from "geojson";
 
 // ReliefData — source unique dans services/terrainSampler
 import type { ReliefData as BaseReliefData } from "../services/terrainSampler";

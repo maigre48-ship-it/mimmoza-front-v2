@@ -8,9 +8,9 @@
 //   Page 6 — Conclusion
 
 import jsPDF from 'jspdf';
-import type { ImplantationScenarioFull } from '../plan2d/scenarioGenerator.types';
-import type { Point2D } from '../plan2d/editor2d.types';
 import { rectCorners } from '../plan2d/editor2d.geometry';
+import type { Point2D } from '../plan2d/editor2d.types';
+import type { ImplantationScenarioFull } from '../plan2d/scenarioGenerator.types';
 
 // ─── PALETTE ──────────────────────────────────────────────────────────
 

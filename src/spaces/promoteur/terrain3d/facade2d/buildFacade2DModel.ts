@@ -1,26 +1,25 @@
-import type {
-  Facade2DBuildInput,
-  Facade2DModel,
-  Facade2DLevel,
-  Facade2DOpening,
-  Facade2DBalcony,
-  Facade2DLoggia,
-  Facade2DBalconyMode,
-  Facade2DLoggiaMode,
-  Facade2DRhythm,
-  Facade2DAmbiance,
-  Facade2DVegetation,
-  Facade2DPalette,
-} from './facade2d.types';
-import { getFacade2DPreset } from './facade2d.presets';
-import type { Facade2DPreset } from './facade2d.presets';
 import {
   computeBayCount,
   computeBayLayout,
   computeOpeningSpec,
-  type BayRhythm,
-  type BayLayout,
+  type BayRhythm
 } from './computeFacadeBays';
+import type { Facade2DPreset } from './facade2d.presets';
+import { getFacade2DPreset } from './facade2d.presets';
+import type {
+  Facade2DAmbiance,
+  Facade2DBalcony,
+  Facade2DBalconyMode,
+  Facade2DBuildInput,
+  Facade2DLevel,
+  Facade2DLoggia,
+  Facade2DLoggiaMode,
+  Facade2DModel,
+  Facade2DOpening,
+  Facade2DPalette,
+  Facade2DRhythm,
+  Facade2DVegetation,
+} from './facade2d.types';
 
 // ─── Fallbacks ───
 const DEFAULTS = {

@@ -1,35 +1,34 @@
 ﻿// src/App.tsx
 
-import { useState, useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  Routes,
-  Route,
   Navigate,
   Outlet,
+  Route,
+  Routes,
   useNavigate,
   useParams,
 } from "react-router-dom";
 import { wgs84ToLambert93 } from "./lib/projection";
 
 import { AppShell } from "./components/AppShell";
-import { SpaceSync, type Space } from "./components/SpaceSync";
 import { PrivateRoute } from "./components/PrivateRoute";
+import { SpaceSync, type Space } from "./components/SpaceSync";
 
-import DashboardHomePage from "./pages/DashboardHomePage";
-import HomePage from "./pages/HomePage";
-import JetonsPage from "./pages/JetonsPage";
-import ApiPage from "./pages/ApiPage";
-import ApiKeysPage from "./pages/ApiKeysPage";
-import ApiPlaygroundPage from "./pages/ApiPlaygroundPage";
 import ApiDeveloperDashboardPage from "./pages/ApiDeveloperDashboardPage";
+import ApiKeysPage from "./pages/ApiKeysPage";
+import ApiPage from "./pages/ApiPage";
+import ApiPlaygroundPage from "./pages/ApiPlaygroundPage";
+import DashboardHomePage from "./pages/DashboardHomePage";
+import JetonsPage from "./pages/JetonsPage";
 
 import BanqueRisquesTestPage from "./pages/BanqueRisquesTestPage";
 
 /* ── Pages légales ───────────────────────────────────────────── */
-import CGVPage from "./pages/legal/CGVPage";
 import CGUPage from "./pages/legal/CGUPage";
-import PrivacyPolicyPage from "./pages/legal/PrivacyPolicyPage";
+import CGVPage from "./pages/legal/CGVPage";
 import MentionsLegalesPage from "./pages/legal/MentionsLegalesPage";
+import PrivacyPolicyPage from "./pages/legal/PrivacyPolicyPage";
 
 /* ── Analyse rapide ──────────────────────────────────────────── */
 import QuickAnalysisPage from "./spaces/shared/pages/quick-analysis/QuickAnalysisPage";
@@ -37,104 +36,104 @@ import QuickAnalysisPage from "./spaces/shared/pages/quick-analysis/QuickAnalysi
 /* ── Opportunités (transversal) ──────────────────────────────── */
 import OpportunitesHubPage from "./spaces/shared/pages/opportunities/OpportunitesHubPage";
 
-import { bootInvestisseurSnapshot } from "./spaces/investisseur/shared/investisseurBootstrap";
+import VeilleMarchePage from "@/spaces/investisseur/pages/VeilleMarchePage";
+import VeillePage from "@/spaces/investisseur/pages/VeillePage";
+import VeilleSettingsPage from "@/spaces/investisseur/pages/VeilleSettingsPage";
 import InvestisseurAnalysePage from "./spaces/investisseur/pages/AnalysePage";
 import SimulationTravauxPage from "./spaces/investisseur/pages/execution/SimulationTravauxPage";
-import VeilleSettingsPage from "@/spaces/investisseur/pages/VeilleSettingsPage";
-import VeillePage from "@/spaces/investisseur/pages/VeillePage";
-import VeilleMarchePage from "@/spaces/investisseur/pages/VeilleMarchePage";
+import { bootInvestisseurSnapshot } from "./spaces/investisseur/shared/investisseurBootstrap";
 // ── AJOUT : page Géorisques espace Investisseur ───────────────
 import InvestisseurRisquesPanel from "./spaces/investisseur/pages/analyse/InvestisseurRisquesPanel";
 // ── AJOUT : page Deal Center espace Investisseur ──────────────
 import DealCenterPage from "./spaces/investisseur/pages/deal-center/DealCenterPage";
 
-import ParticulierDashboard from "./spaces/particulier/pages/Dashboard";
-import ParticulierMonProjet from "./spaces/particulier/pages/MonProjet";
-import ParticulierFavoris from "./spaces/particulier/pages/Favoris";
-import ParticulierRechercheBiens from "./spaces/particulier/pages/RechercheBiens";
 import ParticulierAlertes from "./spaces/particulier/pages/Alertes";
-import ParticulierComparateur from "./spaces/particulier/pages/Comparateur";
-import ParticulierEstimation from "./spaces/particulier/pages/Estimation";
-import ParticulierQuartier from "./spaces/particulier/pages/Quartier";
-import ParticulierCharges from "./spaces/particulier/pages/Charges";
-import ParticulierCapacite from "./spaces/particulier/pages/Capacite";
-import ParticulierScenarios from "./spaces/particulier/pages/Scenarios";
-import ParticulierDossierBanque from "./spaces/particulier/pages/DossierBanque";
 import ParticulierBudgetTravaux from "./spaces/particulier/pages/BudgetTravaux";
+import ParticulierCapacite from "./spaces/particulier/pages/Capacite";
+import ParticulierCharges from "./spaces/particulier/pages/Charges";
+import ParticulierComparateur from "./spaces/particulier/pages/Comparateur";
 import ParticulierConformite from "./spaces/particulier/pages/Conformite";
-import ParticulierPlanning from "./spaces/particulier/pages/Planning";
-import ParticulierMesDocuments from "./spaces/particulier/pages/MesDocuments";
+import ParticulierDashboard from "./spaces/particulier/pages/Dashboard";
+import ParticulierDossierBanque from "./spaces/particulier/pages/DossierBanque";
+import ParticulierEstimation from "./spaces/particulier/pages/Estimation";
 import ParticulierExports from "./spaces/particulier/pages/Exports";
+import ParticulierFavoris from "./spaces/particulier/pages/Favoris";
 import ParticulierHistorique from "./spaces/particulier/pages/Historique";
+import ParticulierMesDocuments from "./spaces/particulier/pages/MesDocuments";
+import ParticulierMonProjet from "./spaces/particulier/pages/MonProjet";
+import ParticulierPlanning from "./spaces/particulier/pages/Planning";
+import ParticulierQuartier from "./spaces/particulier/pages/Quartier";
+import ParticulierRechercheBiens from "./spaces/particulier/pages/RechercheBiens";
+import ParticulierScenarios from "./spaces/particulier/pages/Scenarios";
 
+import AbonnementPage from "./spaces/particulier/pages/AbonnementPage";
+import ComptePage from "./spaces/particulier/pages/ComptePage";
 import ConnexionPage from "./spaces/particulier/pages/ConnexionPage";
 import InscriptionPage from "./spaces/particulier/pages/InscriptionPage";
-import ComptePage from "./spaces/particulier/pages/ComptePage";
-import AbonnementPage from "./spaces/particulier/pages/AbonnementPage";
 
-import AdminDashboardPage from "./spaces/admin/pages/Dashboard";
-import AdminUtilisateursPage from "./spaces/admin/pages/Utilisateurs";
-import AdminAbonnementsPage from "./spaces/admin/pages/Abonnements";
-import AdminJetonsPage from "./spaces/admin/pages/Jetons";
-import AdminCopilotPage from "./spaces/admin/pages/AdminCopilotPage";
-import AdminDevisPage from "./spaces/admin/pages/Devis";
-import AdminFacturesPage from "./spaces/admin/pages/Factures";
-import AdminEntreprisesPage from "./spaces/admin/pages/Entreprises";
-import AdminParametresPage from "./spaces/admin/pages/Parametres";
-import AdminTarifsPage from "./spaces/admin/pages/Tarifs";
-import AdminLoginPage from "./spaces/admin/pages/Login";
 import { AdminGuard } from "./spaces/admin/components/AdminGuard";
 import { AdminLayout } from "./spaces/admin/components/AdminLayout";
+import AdminAbonnementsPage from "./spaces/admin/pages/Abonnements";
+import AdminCopilotPage from "./spaces/admin/pages/AdminCopilotPage";
+import AdminDashboardPage from "./spaces/admin/pages/Dashboard";
+import AdminDevisPage from "./spaces/admin/pages/Devis";
+import AdminEntreprisesPage from "./spaces/admin/pages/Entreprises";
+import AdminFacturesPage from "./spaces/admin/pages/Factures";
+import AdminJetonsPage from "./spaces/admin/pages/Jetons";
+import AdminLoginPage from "./spaces/admin/pages/Login";
+import AdminParametresPage from "./spaces/admin/pages/Parametres";
+import AdminTarifsPage from "./spaces/admin/pages/Tarifs";
+import AdminUtilisateursPage from "./spaces/admin/pages/Utilisateurs";
 
 import MarchandLayout from "./spaces/marchand/MarchandLayout";
-import MarchandPipeline from "./spaces/marchand/pages/Pipeline";
 import MarchandExecution from "./spaces/marchand/pages/Execution";
-import MarchandSortie from "./spaces/marchand/pages/Sortie";
 import MarchandExports from "./spaces/marchand/pages/Exports";
+import MarchandPipeline from "./spaces/marchand/pages/Pipeline";
 import RenduTravauxPage from "./spaces/marchand/pages/RenduTravauxPage";
+import MarchandSortie from "./spaces/marchand/pages/Sortie";
 import { SourcingHomePage } from "./spaces/sourcing";
 
 /* ── Promoteur ───────────────────────────────────────────────── */
-import PromoteurDashboard from "./spaces/promoteur/pages/Dashboard";
-import FoncierPluPage from "./spaces/promoteur/pages/FoncierPluPage";
-import MarchePage from "./spaces/promoteur/etudes/marche/MarchePage";
-import RisquesPage from "./spaces/promoteur/etudes/risques/RisquesPage";
-import PermisConstruirePage from "./spaces/promoteur/pages/PermisConstruirePage";
-import RechercheContactsPage from "./spaces/promoteur/pages/RechercheContactsPage";
-import PromoteurMassing3D from "./spaces/promoteur/pages/Massing3D";
-import PromoteurMassingPage from "./spaces/promoteur/pages/MassingPage"; // ── AJOUT : Massing V2 (analyse de capacité)
-import PromoteurBilan from "./spaces/promoteur/pages/Bilan";
-import PromoteurSynthese from "./spaces/promoteur/pages/Synthese";
-import PromoteurExports from "./spaces/promoteur/pages/Exports";
 import Implantation2DPage from "./spaces/promoteur/Implantation2DPage";
 import BilanPromoteurPage from "./spaces/promoteur/bilan-promoteur/BilanPromoteurPage";
 import PromoteurStudyRequired from "./spaces/promoteur/components/PromoteurStudyRequired";
-import FacadeGeneratorPage from "./spaces/promoteur/pages/FacadeGeneratorPage";
-import EvaluationPage from "./spaces/promoteur/pages/EvaluationPage";
-import PromoteurSimulationTravauxPage from "./spaces/promoteur/pages/PromoteurSimulationTravauxPage";
-import OpportunitesApporteursPage from "./spaces/promoteur/pages/OpportunitesApporteursPage";
-import NouvelleOpportunitePage from "./spaces/promoteur/pages/NouvelleOpportunitePage";
-import PromoteurVeilleFoncierePage from "./spaces/promoteur/pages/PromoteurVeilleFoncierePage";
-import ProgrammationPage from "./spaces/promoteur/pages/ProgrammationPage";
+import MarchePage from "./spaces/promoteur/etudes/marche/MarchePage";
+import RisquesPage from "./spaces/promoteur/etudes/risques/RisquesPage";
 import BesoinLogementsSociauxPage from "./spaces/promoteur/pages/BesoinLogementsSociauxPage";
+import PromoteurBilan from "./spaces/promoteur/pages/Bilan";
+import PromoteurDashboard from "./spaces/promoteur/pages/Dashboard";
+import EvaluationPage from "./spaces/promoteur/pages/EvaluationPage";
+import PromoteurExports from "./spaces/promoteur/pages/Exports";
+import FacadeGeneratorPage from "./spaces/promoteur/pages/FacadeGeneratorPage";
+import FoncierPluPage from "./spaces/promoteur/pages/FoncierPluPage";
+import PromoteurMassing3D from "./spaces/promoteur/pages/Massing3D";
+import PromoteurMassingPage from "./spaces/promoteur/pages/MassingPage"; // ── AJOUT : Massing V2 (analyse de capacité)
+import NouvelleOpportunitePage from "./spaces/promoteur/pages/NouvelleOpportunitePage";
+import OpportunitesApporteursPage from "./spaces/promoteur/pages/OpportunitesApporteursPage";
+import PermisConstruirePage from "./spaces/promoteur/pages/PermisConstruirePage";
+import ProgrammationPage from "./spaces/promoteur/pages/ProgrammationPage";
+import PromoteurSimulationTravauxPage from "./spaces/promoteur/pages/PromoteurSimulationTravauxPage";
+import PromoteurVeilleFoncierePage from "./spaces/promoteur/pages/PromoteurVeilleFoncierePage";
+import RechercheContactsPage from "./spaces/promoteur/pages/RechercheContactsPage";
+import PromoteurSynthese from "./spaces/promoteur/pages/Synthese";
 
 /* ── Banque ──────────────────────────────────────────────────── */
 import BanqueLayout from "./spaces/banque/components/BanqueLayout";
-import BanquePipeline from "./spaces/banque/pages/Pipeline";
-import BanqueDossierPage from "./spaces/banque/pages/DossierPage";
-import BanqueAnalysePage from "./spaces/banque/pages/AnalysePage";
-import BanqueComitePage from "./spaces/banque/pages/ComitePage";
 import BanqueAlertes from "./spaces/banque/pages/Alertes";
-import BanqueSmartScoreDebug from "./spaces/banque/pages/SmartScoreDebug";
+import BanqueAnalysePage from "./spaces/banque/pages/AnalysePage";
 import BanqueRedirectToDossier from "./spaces/banque/pages/BanqueRedirectToDossier";
+import BanqueComitePage from "./spaces/banque/pages/ComitePage";
+import BanqueDossierPage from "./spaces/banque/pages/DossierPage";
+import BanquePipeline from "./spaces/banque/pages/Pipeline";
+import BanqueSmartScoreDebug from "./spaces/banque/pages/SmartScoreDebug";
 
 import AssuranceDashboard from "./spaces/assurance/pages/Dashboard";
-import AssuranceSouscription from "./spaces/assurance/pages/Souscription";
-import AssuranceExposition from "./spaces/assurance/pages/Exposition";
-import AssuranceTarification from "./spaces/assurance/pages/Tarification";
-import AssuranceOffre from "./spaces/assurance/pages/Offre";
-import AssuranceMonitoring from "./spaces/assurance/pages/Monitoring";
 import AssuranceDocuments from "./spaces/assurance/pages/Documents";
+import AssuranceExposition from "./spaces/assurance/pages/Exposition";
+import AssuranceMonitoring from "./spaces/assurance/pages/Monitoring";
+import AssuranceOffre from "./spaces/assurance/pages/Offre";
+import AssuranceSouscription from "./spaces/assurance/pages/Souscription";
+import AssuranceTarification from "./spaces/assurance/pages/Tarification";
 
 /* ── Apporteur ───────────────────────────────────────────────── */
 import ApporteurDashboard from "./spaces/apporteur/pages/Dashboard";
@@ -142,14 +141,14 @@ import { ApporteurDeposerPage } from "./spaces/apporteur/pages/DeposerPage";
 
 /* ── Réhabilitation ──────────────────────────────────────────── */
 import RehabilitationLayout from "./spaces/rehabilitation/RehabilitationLayout";
-import ProjetsPage from "./spaces/rehabilitation/pages/ProjetsPage";
-import VueEnsemblePage from "./spaces/rehabilitation/pages/VueEnsemblePage";
-import ConformitePage from "./spaces/rehabilitation/pages/ConformitePage";
 import AnalysePlanPage from "./spaces/rehabilitation/pages/AnalysePlanPage";
-import RehabilitationTravauxPage from "./spaces/rehabilitation/pages/TravauxPage";
-import SyntheseAuditPage from "./spaces/rehabilitation/pages/SyntheseAuditPage";
+import ConformitePage from "./spaces/rehabilitation/pages/ConformitePage";
+import ProjetsPage from "./spaces/rehabilitation/pages/ProjetsPage";
 import RehabilitationRenduTravauxPage from "./spaces/rehabilitation/pages/RenduTravauxPage";
+import SyntheseAuditPage from "./spaces/rehabilitation/pages/SyntheseAuditPage";
+import RehabilitationTravauxPage from "./spaces/rehabilitation/pages/TravauxPage";
 import RehabilitationValorisationPage from "./spaces/rehabilitation/pages/ValorisationPage";
+import VueEnsemblePage from "./spaces/rehabilitation/pages/VueEnsemblePage";
 
 /* ── Mimmoza Copilot (global : bouton flottant + drawer) ─────── */
 import { CopilotRoot } from "./spaces/copilot/CopilotRoot";

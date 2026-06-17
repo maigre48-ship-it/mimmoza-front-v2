@@ -1,9 +1,9 @@
 import { supabase } from "@/lib/supabase";
 import type {
   BillingProfile,
+  PlanCode,
   SubscriptionStatus,
 } from "./billing.types";
-import type { PlanCode } from "./billing.types";
 import { getPlanEntry, planCodeFromStripePriceId } from "./catalog";
 
 // ─── Lecture profil ───────────────────────────────────────────────────────────

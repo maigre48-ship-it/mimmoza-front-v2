@@ -2,35 +2,35 @@
 // v4 — Bridge bilan enrichi : surface totale transmise avec le total travaux
 // v4.1 — Hero v2 : PromoteurPageHero (design unifié Promoteur)
 
-import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import type {
-  TravauxSimulationV1,
-  TravauxRange,
-  RenovationLevel,
-  ChantierComplexity,
-  TravauxOptionsSimple,
-  TriChoice,
-  BinaryChoice,
-  ComputedTravaux,
-  ComputedLot,
-  PricingItemCode,
-  ExpertLineItem,
-  PieceTravaux,
-  PieceType,
-} from "../../investisseur/shared/travauxSimulation.types";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeTravauxSimulation } from "../../investisseur/services/travauxCalculator.service";
 import { TRAVAUX_PRICING_V1 } from "../../investisseur/services/travauxPricing.config";
 import {
+  addInvestisseurEvent,
   getInvestisseurSnapshot,
   upsertInvestisseurProject,
-  addInvestisseurEvent,
 } from "../../investisseur/shared/investisseurSnapshot.store";
+import type {
+  BinaryChoice,
+  ChantierComplexity,
+  ComputedLot,
+  ComputedTravaux,
+  ExpertLineItem,
+  PieceTravaux,
+  PieceType,
+  PricingItemCode,
+  RenovationLevel,
+  TravauxOptionsSimple,
+  TravauxRange,
+  TravauxSimulationV1,
+  TriChoice,
+} from "../../investisseur/shared/travauxSimulation.types";
 import { patchExecutionTravaux } from "../../marchand/shared/marchandSnapshot.store";
-import { GRAD_PRO, ACCENT_PRO } from "../shared/promoteurDesign.tokens";
 import {
-  PromoteurPageHero,
   HeroGhostButton,
+  PromoteurPageHero,
 } from "../shared/components/PromoteurPageHero";
+import { ACCENT_PRO, GRAD_PRO } from "../shared/promoteurDesign.tokens";
 
 /* ================================================================== */
 /*  Bridge bilan promoteur                                             */

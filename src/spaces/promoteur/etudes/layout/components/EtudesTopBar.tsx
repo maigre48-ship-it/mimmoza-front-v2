@@ -1,7 +1,7 @@
 // FILE: src/spaces/promoteur/etudes/layout/components/EtudesTopBar.tsx
 
 import { FC } from 'react';
-import type { EtudesTopBarProps, EtudesStatusKind, ActionVariant } from '../etudesLayout.types';
+import type { ActionVariant, EtudesStatusKind, EtudesTopBarProps } from '../etudesLayout.types';
 
 const statusConfig: Record<EtudesStatusKind, { bg: string; text: string; dot: string; label: string }> = {
   idle: {

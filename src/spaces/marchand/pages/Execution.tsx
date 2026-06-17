@@ -1,23 +1,23 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Hammer,
-  CalendarDays,
+﻿import {
   AlertTriangle,
-  Plus,
+  CalendarDays,
   CheckCircle2,
   Clock,
   Euro,
+  Hammer,
+  Plus,
   Trash2,
 } from "lucide-react";
-import SectionCard from "../shared/ui/SectionCard";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import KpiCard from "../shared/ui/KpiCard";
+import SectionCard from "../shared/ui/SectionCard";
 import TimelinePlanner, { type TimelinePhase } from "../shared/ui/TimelinePlanner";
 
-import {
-  readMarchandSnapshot,
-  patchExecutionForDeal,
-} from "../shared/marchandSnapshot.store";
 import useMarchandSnapshotTick from "../shared/hooks/useMarchandSnapshotTick";
+import {
+  patchExecutionForDeal,
+  readMarchandSnapshot,
+} from "../shared/marchandSnapshot.store";
 
 type TaskStatus = "todo" | "doing" | "done";
 

@@ -8,8 +8,8 @@
 // =============================================================
 
 // ⚠️ CHEMINS À CONFIRMER.
-import { supabase } from '@/lib/supabase';
 import { fetchBestDvfEstimate } from '@/lib/dvfEstimateApi';
+import { supabase } from '@/lib/supabase';
 
 import type { OpportunityAssetType } from './opportunityEngine.types';
 

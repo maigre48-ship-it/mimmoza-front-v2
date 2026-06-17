@@ -10,30 +10,56 @@
 // v4.4 — Facade IA : lecture depuis cache mémoire module-level (getFacadeImage)
 //        en priorité sur readCaptures (localStorage soumis au quota).
 
-import React, { useState, useMemo, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import {
-  FileText, RefreshCw, AlertCircle, CheckCircle2, XCircle, AlertTriangle,
-  TrendingUp, TrendingDown, BarChart3, Euro, Layers, Scale, MapPin,
-  ChevronRight, Loader2, Download, ShieldAlert, Building2, Camera,
-  Map, Grid3X3, Box, ExternalLink, Info, Sparkles, ArrowRight,
+  AlertCircle,
+  AlertTriangle,
+  ArrowRight,
+  BarChart3,
+  Box,
+  Building2, Camera,
+  CheckCircle2,
+  ChevronRight,
+  Download,
+  Euro,
+  ExternalLink,
+  FileText,
+  Grid3X3,
+  Info,
+  Layers,
+  Loader2,
+  Map,
+  MapPin,
+  RefreshCw,
+  Scale,
+  ShieldAlert,
+  Sparkles,
+  TrendingDown,
+  TrendingUp,
+  XCircle,
 } from 'lucide-react';
-import { generatePromoteurSynthese } from '../services/generatePromoteurSynthese';
-import { exportPromoteurPdf }         from '../services/exportPromoteurPdf';
-import { completePromoteurData, type CompletionStep } from '../services/completePromoteurData';
-import { usePromoteurProjectStore }   from '../store/promoteurProject.store';
-import { getSnapshot, getFacadeImage } from '../shared/promoteurSnapshot.store';
-import { readCaptures }               from '../shared/captures.store';
-import { usePromoteurStudy }          from '../shared/usePromoteurStudy';
+import React, { useCallback, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import type { Implantation2DSnapshot } from '../plan2d/implantation2d.snapshot';
 import {
   totalEmpriseM2 as snapTotalEmprise,
-  totalSdpM2    as snapTotalSdp,
+  totalSdpM2 as snapTotalSdp,
 } from '../plan2d/implantation2d.snapshot';
-import type { Implantation2DSnapshot } from '../plan2d/implantation2d.snapshot';
+import { completePromoteurData, type CompletionStep } from '../services/completePromoteurData';
+import { exportPromoteurPdf } from '../services/exportPromoteurPdf';
+import { generatePromoteurSynthese } from '../services/generatePromoteurSynthese';
 import type {
-  PromoteurSynthese, PromoteurRawInput, RisqueItem, RisqueNiveau,
-  Scenario, RecommendationType, AnomalieItem, ModuleQualite, ModuleStatut, DataQualite,
+  AnomalieItem,
+  DataQualite,
+  ModuleQualite, ModuleStatut,
+  PromoteurRawInput,
+  PromoteurSynthese,
+  RecommendationType,
+  RisqueItem, RisqueNiveau,
+  Scenario,
 } from '../services/promoteurSynthese.types';
+import { readCaptures } from '../shared/captures.store';
+import { getFacadeImage, getSnapshot } from '../shared/promoteurSnapshot.store';
+import { usePromoteurStudy } from '../shared/usePromoteurStudy';
 
 // ── Clés localStorage ─────────────────────────────────────────────────────────
 const SYNTHESE_RAW_KEY      = "mimmoza.promoteur.synthese.rawInput.v1";

@@ -2,17 +2,17 @@
 // Mapper principal : BuildingBlenderSpec → ResolvedBuildingRender
 // V2 : presets externalisés vers buildingRenderPresets.ts + renderScenePresets.ts
 
-import type { BuildingBlenderSpec } from "./buildingBlenderSpec.types";
 import type { MassingBuildingModel } from "../massingScene.types";
 import { ensureBuildingRenderSpec } from "./buildingBlenderSpec.helpers";
+import type { BuildingBlenderSpec } from "./buildingBlenderSpec.types";
 import {
+  defaultTreeCount,
   getFacadePreset,
   getGlazingForFamily,
-  getRoofPreset,
   getRailingPreset,
+  getRoofPreset,
   legacyFacadeToFamily,
   vegetationDensityForSiteFinish,
-  defaultTreeCount,
 } from "./buildingRenderPresets";
 import { getScenePreset } from "./renderScenePresets";
 

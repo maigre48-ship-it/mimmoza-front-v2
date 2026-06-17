@@ -1,10 +1,10 @@
-import React, { useMemo } from "react";
-import { Briefcase, TrendingUp, Hammer, Banknote } from "lucide-react";
-import PageShell from "../shared/ui/PageShell";
-import KpiCard from "../shared/ui/KpiCard";
-import SectionCard from "../shared/ui/SectionCard";
-import { readMarchandSnapshot } from "../shared/marchandSnapshot.store";
+import { Banknote, Briefcase, Hammer, TrendingUp } from "lucide-react";
+import { useMemo } from "react";
 import useMarchandSnapshotTick from "../shared/hooks/useMarchandSnapshotTick";
+import { readMarchandSnapshot } from "../shared/marchandSnapshot.store";
+import KpiCard from "../shared/ui/KpiCard";
+import PageShell from "../shared/ui/PageShell";
+import SectionCard from "../shared/ui/SectionCard";
 
 export default function Dashboard() {
   const snapTick = useMarchandSnapshotTick();

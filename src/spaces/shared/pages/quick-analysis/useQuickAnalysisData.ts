@@ -3,12 +3,12 @@
 // Hook d'orchestration des sources de données pour l'Analyse Rapide
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useCallback } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import {
   fetchBestDvfEstimate,
   fetchDvfCompsNormalized,
 } from "@/lib/dvfEstimateApi";
+import { supabase } from "@/lib/supabaseClient";
+import { useCallback, useState } from "react";
 import type { MimmozaValuationInput, RiskLevel } from "../../valuation/valuation.types";
 
 // ─────────────────────────────────────────────────────────────────────────────

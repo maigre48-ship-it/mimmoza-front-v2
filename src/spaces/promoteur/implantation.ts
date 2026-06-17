@@ -1,12 +1,12 @@
 // src/spaces/promoteur/implantation.ts
 import * as turf from "@turf/turf";
-import type { Feature, Polygon, MultiPolygon } from "geojson";
-import type { ImplantationUserParams, ImplantationResult, PluRules } from "./types";
+import type { Feature, MultiPolygon, Polygon } from "geojson";
+import type { ImplantationResult, ImplantationUserParams, PluRules } from "./types";
 
 /**
- * computeImplantationV1 — implémentation minimale "safe"
- * Objectif: ne pas casser l'UI, renvoyer un résultat cohérent,
- * et une enveloppe après reculs simple (buffer négatif).
+ * computeImplantationV1 ï¿½ implï¿½mentation minimale "safe"
+ * Objectif: ne pas casser l'UI, renvoyer un rï¿½sultat cohï¿½rent,
+ * et une enveloppe aprï¿½s reculs simple (buffer nï¿½gatif).
  */
 export default function computeImplantationV1(args: {
   parcelGeometry: Feature<Polygon | MultiPolygon>;

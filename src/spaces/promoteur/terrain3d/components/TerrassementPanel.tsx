@@ -2,13 +2,13 @@
 // Estimation du coût de terrassement pour mise en plateforme sur terrain en pente.
 // V3 : export scopé par studyId (lecture via useSearchParams) — plus de fuite entre projets.
 
-import React, { type FC, useMemo, useState, useCallback, useEffect } from "react";
+import type { Feature, MultiPolygon, Polygon } from "geojson";
+import React, { type FC, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { Feature, Polygon, MultiPolygon } from "geojson";
-import type { MassingBuildingModel } from "../massingScene.types";
-import type { ReliefData } from "./SceneSvg3D";
 import { computeSceneProjection, getBuildingScenePts } from "../massingGeometry";
+import type { MassingBuildingModel } from "../massingScene.types";
 import { TerrainSampler } from "../services/terrainSampler";
+import type { ReliefData } from "./SceneSvg3D";
 
 const ACCENT = "#5247b8";
 

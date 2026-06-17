@@ -1,4 +1,3 @@
-import React from "react";
 import PageShell from "../shared/ui/PageShell";
 import SectionCard from "../shared/ui/SectionCard";
 

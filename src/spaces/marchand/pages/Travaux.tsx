@@ -1,4 +1,3 @@
-import React from "react";
 import SectionCard from "../shared/ui/SectionCard";
 
 const GRAD_INV = "linear-gradient(90deg, #2196f3 0%, #21cbf3 100%)";

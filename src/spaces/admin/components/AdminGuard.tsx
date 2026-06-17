@@ -7,9 +7,9 @@
 //      ne suffit pas.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { Loader2, ShieldAlert } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { ShieldAlert, Loader2 } from "lucide-react";
 import { requireAdmin } from "../services/adminAccess";
 
 // ── Liste des emails administrateurs (temporaire, avant Supabase Auth complet) ─

@@ -10,19 +10,18 @@
 // Containment : si parcelPolygon est fourni, chaque rect est clampé
 // à l'intérieur de la parcelle avant l'évaluation.
 
-import type { Building2D, Parking2D, OrientedRect } from './editor2d.types';
-import type { Point2D }                             from './editor2d.types';
+import type { BuildingVolume2D, FloorPlan2D } from './buildingProgram.types';
+import { computeParkingSlots, genId, rectCorners } from './editor2d.geometry';
+import type { Building2D, OrientedRect, Parking2D, Point2D } from './editor2d.types';
+import { evaluateScenario } from './scenarioEvaluation';
 import type {
   ImplantationScenarioFull,
   ScenarioFinancialAssumptions,
-}                                                    from './scenarioGenerator.types';
+} from './scenarioGenerator.types';
 import {
   DEFAULT_FINANCIAL_ASSUMPTIONS,
   DEFAULT_FINANCIAL_ASSUMPTIONS as DEF_ASSUM,
-}                                                    from './scenarioGenerator.types';
-import { genId, computeParkingSlots, rectCorners }   from './editor2d.geometry';
-import { evaluateScenario }                          from './scenarioEvaluation';
-import type { FloorPlan2D, BuildingVolume2D }        from './buildingProgram.types';
+} from './scenarioGenerator.types';
 
 // ─── GÉOMÉTRIE PARCELLE ───────────────────────────────────────────────
 

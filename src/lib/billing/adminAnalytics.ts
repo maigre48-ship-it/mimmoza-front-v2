@@ -1,13 +1,13 @@
 import { supabase } from "@/lib/supabase";
 import type {
-  AdminUserBillingView,
   AdminBillingMetrics,
+  AdminUserBillingView,
   BillingProfile,
   InvoiceRow,
 } from "./billing.types";
+import { getUserInvoiceSummary } from "./invoices";
 import { profileMrr } from "./subscriptions";
 import { getTokenLedgerSummary } from "./tokenLedger";
-import { getUserInvoiceSummary } from "./invoices";
 
 // ─── Fiche utilisateur ────────────────────────────────────────────────────────
 

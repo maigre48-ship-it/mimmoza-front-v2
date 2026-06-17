@@ -1,6 +1,6 @@
-import { Zap, Check } from 'lucide-react';
-import { PAY_AS_YOU_GO } from '../member/apiPlans';
+import { Check, Zap } from 'lucide-react';
 import type { PlanTier } from '../member/apiPlans';
+import { PAY_AS_YOU_GO } from '../member/apiPlans';
 
 interface PayAsYouGoCardProps {
   currentPlan: PlanTier;

@@ -1,4 +1,3 @@
-import React from "react";
 import type { PredictiveAnalysisSnapshot } from "../../services/predictive/predictive.types";
 
 const REGIME_LABELS: Record<string, { label: string; color: string; bg: string }> = {

@@ -10,15 +10,15 @@
 //   • Transparent logic — every transformation is documented.
 //   • Stable — same input always produces the same output.
 
-import type { PlanBuilding, PlanBuildingWithTransform, Vec2 } from "./plan.types";
+import { getPolygonCentroid } from "./plan.geometry";
 import type { ImplantationScenario } from "./plan.scenarios.types";
+import { applyTransform } from "./plan.transform";
+import type { PlanBuilding, PlanBuildingWithTransform, Vec2 } from "./plan.types";
 import type {
   GeneratedVariant,
   GeneratedVariantKind,
   VariantGeneratorConfig,
 } from "./plan.variantGenerator.types";
-import { getPolygonCentroid } from "./plan.geometry";
-import { applyTransform } from "./plan.transform";
 
 // ─── DEFAULTS ─────────────────────────────────────────────────────────
 

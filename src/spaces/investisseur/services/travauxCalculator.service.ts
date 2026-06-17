@@ -2,14 +2,14 @@
 // v2 — complexité corrigée : table réaliste + application unique sans double-comptage
 
 import type {
-  TravauxSimulationV1,
-  ComputedTravaux,
-  ComputedLot,
   ComputedLine,
+  ComputedLot,
+  ComputedTravaux,
   LotCode,
+  Price3,
   PricingItemCode,
   QuantityUnit,
-  Price3,
+  TravauxSimulationV1,
 } from "../shared/travauxSimulation.types";
 import { TRAVAUX_PRICING_V1 } from "./travauxPricing.config";
 

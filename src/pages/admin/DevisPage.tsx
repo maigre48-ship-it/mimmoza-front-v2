@@ -1,23 +1,23 @@
+import { ArrowRight, ChevronDown, Eye, FileText, Loader2, Plus, Trash2 } from 'lucide-react';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, ArrowRight, Eye, Loader2, ChevronDown, FileText } from 'lucide-react';
-import type { Quote, QuoteStatus, TargetSpace, CreateQuoteLinePayload } from '../../features/admin/billing/types';
 import {
-  listQuotes,
-  createQuoteWithLines,
-  updateQuoteStatus,
-  convertQuoteToInvoice,
-} from '../../features/admin/billing/services/quotes.service';
-import {
-  formatCents,
-  formatBillingStatusLabel,
-  formatTargetSpaceLabel,
-  formatDate,
-  getQuoteStatusColor,
   canConvertQuoteToInvoice,
-  isQuoteConverted,
   computeLineTotals,
+  formatBillingStatusLabel,
+  formatCents,
+  formatDate,
+  formatTargetSpaceLabel,
+  getQuoteStatusColor,
+  isQuoteConverted,
 } from '../../features/admin/billing/helpers';
+import {
+  convertQuoteToInvoice,
+  createQuoteWithLines,
+  listQuotes,
+  updateQuoteStatus,
+} from '../../features/admin/billing/services/quotes.service';
+import type { CreateQuoteLinePayload, Quote, QuoteStatus, TargetSpace } from '../../features/admin/billing/types';
 
 // ---- Types formulaire ----
 

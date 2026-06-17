@@ -1,36 +1,36 @@
-﻿import React, {
-  useEffect,
-  useMemo,
-  useState,
-  useRef,
-  useCallback,
-} from "react";
-import {
-  Plus,
-  Workflow,
+﻿import {
+  CheckCircle2,
   Clock,
   Euro,
-  TrendingUp,
-  CheckCircle2,
-  X,
   Pencil,
+  Plus,
   Sparkles,
+  TrendingUp,
+  Workflow,
+  X,
 } from "lucide-react";
-import {
-  readMarchandSnapshot,
-  upsertDeal,
-  setActiveDeal,
-  deleteDeal,
-  type MarchandDealStatus,
-  type MarchandDeal,
-} from "../shared/marchandSnapshot.store";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import useMarchandSnapshotTick from "../shared/hooks/useMarchandSnapshotTick";
 import {
-  setActiveDealId as setBridgeActiveDealId,
   patchDealContextMeta,
+  setActiveDealId as setBridgeActiveDealId,
   subscribe as subscribeDealContext,
   type DealContextMeta,
 } from "../shared/marchandDealContext.store";
+import {
+  deleteDeal,
+  readMarchandSnapshot,
+  setActiveDeal,
+  upsertDeal,
+  type MarchandDeal,
+  type MarchandDealStatus,
+} from "../shared/marchandSnapshot.store";
 
 type DealStatus = MarchandDealStatus;
 type Deal = MarchandDeal;

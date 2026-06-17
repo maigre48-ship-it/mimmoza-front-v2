@@ -1,6 +1,6 @@
 // src/spaces/promoteur/plan2d/plan.transform.ts
 
-import type { Vec2, PlanBuildingWithTransform } from "./plan.types";
+import type { PlanBuildingWithTransform, Vec2 } from "./plan.types";
 
 type TransformParams = Pick<
   PlanBuildingWithTransform,

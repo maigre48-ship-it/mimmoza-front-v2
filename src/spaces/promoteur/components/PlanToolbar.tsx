@@ -11,8 +11,7 @@
 //   • Tooltip sous chaque bouton (title HTML)
 
 import React, { useEffect } from "react";
-import type { usePlanEditor } from "../store/usePlanEditor";
-import type { ActiveTool } from "../store/usePlanEditor";
+import type { ActiveTool, usePlanEditor } from "../store/usePlanEditor";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 

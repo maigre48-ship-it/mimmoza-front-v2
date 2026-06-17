@@ -12,9 +12,9 @@
 // RULE: if the data doesn't support a claim, the claim must not appear.
 // ============================================================================
 
-import type { PromoteurSynthese, RecommendationType } from './promoteurSynthese.types';
 import type { DocumentAudit } from './promoteurPdf.audit';
 import type { DocumentStatus } from './promoteurPdf.formatters';
+import type { PromoteurSynthese, RecommendationType } from './promoteurSynthese.types';
 
 // ============================================================================
 // METRIC RELIABILITY

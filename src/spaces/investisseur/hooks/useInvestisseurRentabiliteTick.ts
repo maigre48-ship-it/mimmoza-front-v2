@@ -1,13 +1,13 @@
 // src/spaces/investisseur/hooks/useInvestisseurRentabiliteTick.ts
 
-import { useState, useEffect, useCallback } from 'react';
-import type { RentabiliteSnapshot } from '../types/rentabilite.types';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  readRentabiliteSnapshot,
-  writeRentabiliteSnapshot,
   clearRentabiliteSnapshot,
+  readRentabiliteSnapshot,
   subscribe,
+  writeRentabiliteSnapshot,
 } from '../store/investisseurRentabilite.store';
+import type { RentabiliteSnapshot } from '../types/rentabilite.types';
 
 /**
  * Hook that subscribes to the rentabilite store for a given dealId.

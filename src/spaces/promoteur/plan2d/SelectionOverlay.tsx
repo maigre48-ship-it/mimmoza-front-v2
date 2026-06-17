@@ -19,10 +19,10 @@ import {
   HANDLE_CURSORS,
   getAllHandlePositions,
   getRectCornersWorld,
-  type HandleId,
   type BuildingRect,
+  type HandleId,
   type TPoint2D,
-}                                   from './editor2d.transform';
+} from './editor2d.transform';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constantes visuelles (toutes en pixels écran)

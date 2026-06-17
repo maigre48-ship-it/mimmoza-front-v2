@@ -2,15 +2,15 @@
 // FILE: src/spaces/promoteur/terrain3d/services/earthworks.service.ts
 // ============================================================================
 
-import type { Feature, Polygon, MultiPolygon } from 'geojson';
-import type { TerrainGrid } from '../types/terrain.types';
+import type { Feature, MultiPolygon, Polygon } from 'geojson';
 import type {
+  EarthworksKPIs,
   EarthworksResult,
   EarthworkZone,
   PlatformConfig,
-  EarthworksKPIs,
 } from '../types/earthworks.types';
 import { DEFAULT_PLATFORM_CONFIG, EMPTY_EARTHWORKS_KPIS } from '../types/earthworks.types';
+import type { TerrainGrid } from '../types/terrain.types';
 
 /**
  * Service de calcul des terrassements (déblai/remblai)

@@ -10,8 +10,8 @@ import type {
   LayerUpdate,
   PlanDisplayOptions,
   PlanOverlayState,
-  SelectedElement,
   SelectableElementType,
+  SelectedElement,
   ViewportState,
 } from './planOverlay.types';
 

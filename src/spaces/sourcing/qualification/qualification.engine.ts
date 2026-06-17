@@ -1,7 +1,7 @@
 import type {
+  QualificationDecision,
   QualificationInput,
   QualificationResult,
-  QualificationDecision,
 } from "./qualification.types";
 
 export function computeQualification(

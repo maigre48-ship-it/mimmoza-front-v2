@@ -2,7 +2,7 @@
 // Mimmoza Valuation Engine — Recommandation textuelle
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { MimmozaValuationResult, MimmozaValuationInput } from "./valuation.types";
+import type { MimmozaValuationInput, MimmozaValuationResult } from "./valuation.types";
 
 /**
  * Construit la recommandation textuelle et les listes strengths/weaknesses/warnings

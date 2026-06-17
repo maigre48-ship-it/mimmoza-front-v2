@@ -11,12 +11,12 @@
 //   - Ratio murs/surface plausible
 // ---------------------------------------------------------------------------
 
-import type { PlanGeometry, PlanMetadata, PlanCalibration, ValidationResult, ValidationIssue, Room } from './types';
 import {
   isPointInPolygon,
   polygonsOverlap,
 } from './planGeometryNormalizer';
 import { estimateSurface } from './planScaleCalibrator';
+import type { PlanCalibration, PlanGeometry, PlanMetadata, Room, ValidationIssue, ValidationResult } from './types';
 
 export const SURFACE_ECART_MAX = 0.10; // 10 %
 

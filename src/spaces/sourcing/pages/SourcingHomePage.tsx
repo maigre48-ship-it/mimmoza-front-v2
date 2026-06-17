@@ -24,23 +24,23 @@
  * est conservée à l'identique.
  */
 
-import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { SourcingForm } from "../forms/SourcingForm";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import SmartScorePanel from "../../../components/sourcing/SmartScorePanel";
+import { SourcingForm } from "../forms/SourcingForm";
 
 import { useSmartScore } from "../shared/hooks/useSmartScore";
 
 import type {
-  SourcingItemDraft,
   ProfileTarget,
   PropertyType,
+  SourcingItemDraft,
 } from "../types/sourcing.types";
 
 import {
+  calculatePricePerSqm,
   formatFloor,
   formatPrice,
   formatSurface,
-  calculatePricePerSqm,
   parseFloor,
 } from "../utils/validators";
 
@@ -48,15 +48,15 @@ import { getPropertyTypeLabel } from "../selectors/propertySelectors";
 
 import {
   getActiveDealId,
-  getDealContextSnapshot,
   getDealContextMeta,
+  getDealContextSnapshot,
   subscribe as subscribeDealContext,
   type DealContextMeta,
 } from "../../marchand/shared/marchandDealContext.store";
 
 import {
-  setActiveCopilotContext,
   clearActiveCopilotContext,
+  setActiveCopilotContext,
 } from "../../copilot/store/activeCopilotContext.store";
 
 // ── DVF via Edge Function smartscore-enriched-v3 (v6.5) ──

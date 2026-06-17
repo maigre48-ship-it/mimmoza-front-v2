@@ -4,12 +4,12 @@
 //          -> Transactions DVF -> Opportunity
 // ============================================================================
 
+import { buildKnowledgeSnapshot, createEdge, createNode } from '../knowledgeGraph.service';
 import {
   type KnowledgeGraphContext,
   type KnowledgeNode,
   type KnowledgeSnapshot,
 } from '../knowledgeGraph.types';
-import { createEdge, createNode, buildKnowledgeSnapshot } from '../knowledgeGraph.service';
 
 // Construit (ou met à jour) le sous-graphe d'une parcelle et renvoie son noeud.
 export async function ensureParcelSubgraph(

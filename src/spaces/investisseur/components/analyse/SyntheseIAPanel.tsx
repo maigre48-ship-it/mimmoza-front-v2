@@ -8,7 +8,7 @@
 // - ✅ FIX: merge context (prop + generated) au lieu d’écraser, pour éviter de perdre wikimedia
 // ─────────────────────────────────────────────────────────────────────
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 type GenerateResult = {
   markdown: string;

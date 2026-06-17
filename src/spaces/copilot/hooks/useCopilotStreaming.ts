@@ -1,6 +1,6 @@
 // src/spaces/copilot/hooks/useCopilotStreaming.ts
 import { useCallback, useRef } from 'react';
-import { streamCopilotChat, CopilotClientError } from '../lib/copilotClient';
+import { CopilotClientError, streamCopilotChat } from '../lib/copilotClient';
 import { useCopilotStore } from '../store/copilotStore';
 import type { CopilotChatRequest } from '../types/copilot.types';
 

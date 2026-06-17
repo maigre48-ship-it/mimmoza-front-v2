@@ -11,15 +11,13 @@
 // ============================================================================
 
 import type {
-  OperationSummary,
-  OperationProfile,
   MissingDataItem,
+  OperationProfile,
+  OperationSummary,
 } from "../types/operationSummary.types";
 import {
   getScoreProfile,
-  type ScoreProfile,
-  type PillarKey,
-  type PillarConfig,
+  type PillarKey
 } from "./scoreProfiles";
 
 // ── Result types ──

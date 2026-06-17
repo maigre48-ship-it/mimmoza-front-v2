@@ -7,8 +7,8 @@
 // l'environnement par un HDR via RGBELoader (voir note en bas).
 
 import * as THREE from 'three';
-import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { Sky } from 'three/examples/jsm/objects/Sky.js';
 
 export interface EnvOptions {
   sun?: {

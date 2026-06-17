@@ -2,13 +2,13 @@
 // Detects Lambert 93 (EPSG:2154) coords and reprojects to WGS84 (EPSG:4326).
 // Detects lat/lon swap and corrects it. Logs diagnostics once per fetch.
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { MapContainer, TileLayer, useMapEvents, useMap } from "react-leaflet";
-import type { FeatureCollection, Feature, Position } from "geojson";
-import L from "leaflet";
-import { supabase } from "../../../supabaseClient";
 import turfArea from "@turf/area";
+import type { Feature, FeatureCollection, Position } from "geojson";
+import L from "leaflet";
 import proj4 from "proj4";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import { supabase } from "../../../supabaseClient";
 
 import "leaflet/dist/leaflet.css";
 

@@ -14,81 +14,32 @@
 
 // Types
 export type {
-  BanqueDossier,
-  BanqueDossierStatut,
-  BanqueTag,
-  RiskLevel,
-  BanqueRiskAnalysis,
-  RiskSubscore,
-  RiskItem,
-  BanqueGuarantees,
-  GuaranteeItem,
-  BanqueDocuments,
-  DocumentItem,
-  BanqueCommittee,
-  CommitteeDecision,
-  CommitteeTone,
-  CommitteeCondition,
-  BanqueMonitoring,
-  MonitoringAlert,
-  MonitoringRule,
-  AlertSeverity,
-  BanqueSmartScore,
-  SmartScoreSubscore,
-  ScorePenalty,
-  BanqueMarketData,
-  BanqueSnapshot,
-  BanqueModuleKey,
+  AlertSeverity, BanqueCommittee, BanqueDocuments, BanqueDossier,
+  BanqueDossierStatut, BanqueGuarantees, BanqueMarketData, BanqueModuleKey, BanqueMonitoring, BanqueRiskAnalysis, BanqueSmartScore, BanqueSnapshot, BanqueTag, CommitteeCondition, CommitteeDecision,
+  CommitteeTone, DocumentItem, GuaranteeItem, MonitoringAlert,
+  MonitoringRule, RiskItem, RiskLevel, RiskSubscore, ScorePenalty, SmartScoreSubscore
 } from "./types/banque.types";
 
 // Store — lecture
 export {
-  LS_BANQUE_SNAPSHOT_V1,
-  BANQUE_SNAPSHOT_EVENT,
-  readBanqueSnapshot,
-  readActiveDossier,
-  readModule,
+  BANQUE_SNAPSHOT_EVENT, LS_BANQUE_SNAPSHOT_V1, readActiveDossier, readBanqueSnapshot, readModule
 } from "./store/banqueSnapshot.store";
 
 // Store — écriture
 export {
-  patchBanqueSnapshot,
-  patchModule,
-  upsertDossier,
-  updateDossierStatut,
-  patchRiskAnalysis,
-  patchDocuments,
-  patchGuarantees,
-  patchCommittee,
-  patchSmartScore,
-  patchMarket,
-  upsertAlert,
-  acknowledgeAlert,
-  removeAlert,
-  patchMonitoringConfig,
-  clearBanqueSnapshot,
+  acknowledgeAlert, clearBanqueSnapshot,
   clearModule,
-  onBanqueSnapshotChange,
+  onBanqueSnapshotChange, patchBanqueSnapshot, patchCommittee, patchDocuments,
+  patchGuarantees, patchMarket, patchModule, patchMonitoringConfig, patchRiskAnalysis, patchSmartScore, removeAlert, updateDossierStatut, upsertAlert, upsertDossier
 } from "./store/banqueSnapshot.store";
 
 // Selectors
 export {
-  computeCompleteness,
-  buildRiskSummary,
-  buildMarketSummary,
-  buildGuaranteesSummary,
-  buildCommitteePayload,
-  computeSmartScore,
-  getDossierHealth,
-  buildDashboardOneLiner,
+  buildCommitteePayload, buildDashboardOneLiner, buildGuaranteesSummary, buildMarketSummary, buildRiskSummary, computeCompleteness, computeSmartScore,
+  getDossierHealth
 } from "./selectors/banqueSelectors";
 export type {
-  CompletenessResult,
-  RiskSummary,
-  MarketSummary,
-  GuaranteesSummary,
-  CommitteePayload,
-  DossierHealth,
+  CommitteePayload, CompletenessResult, DossierHealth, GuaranteesSummary, MarketSummary, RiskSummary
 } from "./selectors/banqueSelectors";
 
 // Hook

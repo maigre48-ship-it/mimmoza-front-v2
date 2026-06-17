@@ -10,20 +10,24 @@
 //   • Plus AUCUN calcul € ici : l'argent est entièrement au Bilan.
 //     Conservés : Contrôle PLU (réglementaire, non chiffré) + Conclusion viabilité.
 
+import { CheckCircle, Loader2, Target } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { CheckCircle, Target, Loader2 } from "lucide-react";
-import { patchModule, getSnapshot }    from "../shared/promoteurSnapshot.store";
-import { usePromoteurStudy }           from "../shared/usePromoteurStudy";
-import { GRAD_PRO, ACCENT_PRO } from "../shared/promoteurDesign.tokens";
 import {
-  PromoteurPageHero,
   HeroPrimaryButton,
+  PromoteurPageHero,
 } from "../shared/components/PromoteurPageHero";
+import { getSnapshot, patchModule } from "../shared/promoteurSnapshot.store";
+import { usePromoteurStudy } from "../shared/usePromoteurStudy";
 import {
+  nbLogementsMix,
+  reconcile,
+  sdpProgrammeM2,
+  shabProgrammeM2,
   usePromoteurProgrammeStore,
-  reconcile, nbLogementsMix, shabProgrammeM2, sdpProgrammeM2,
-  type ProgrammeEnvelope, type TypologieKey, type Reconciliation,
+  type ProgrammeEnvelope,
+  type Reconciliation,
+  type TypologieKey,
 } from "../store/promoteurProgramme.store";
 
 // ─── Types ────────────────────────────────────────────────────────────────────

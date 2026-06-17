@@ -14,33 +14,47 @@
 // v3 — Refactored: modular architecture, business validation, audit-driven rendering.
 
 import { jsPDF } from 'jspdf';
-import logoMimmoza from '../../../assets/logo-mimmoza.png';
 import logoMimmozaSimple from '../../../assets/logo-mimmoza-simple.png';
-import autoTable from 'jspdf-autotable';
-import type {
-  PromoteurSynthese, RecommendationType, RisqueNiveau, RisqueItem, Scenario,
-} from './promoteurSynthese.types';
-import { C, LAYOUT, CW, F, type RGB } from './promoteurPdf.theme';
-import {
-  s, fmtNum, eur, eurM, pct, m2v, safePct, safeDiv,
-  recColor, risqueColor, REC_LABELS, REC_LABELS_SHORT,
-  DOC_STATUS_LABELS, DOC_STATUS_COLORS, DOC_USAGE_LABELS,
-  fmtDate, fmtDateLong, fmtTime,
-  type DocumentStatus,
-} from './promoteurPdf.formatters';
+import logoMimmoza from '../../../assets/logo-mimmoza.png';
 import { auditSynthese, type DocumentAudit } from './promoteurPdf.audit';
-import { drawQr, drawDocRef, getVerificationUrl } from './promoteurPdf.qr';
 import {
-  buildMetricContext, filterPointsForts, isMarginReliable, isTrnReliable,
-  isFinancialExploitable, isMarketPositionReliable, areScenariosExploitable,
-  generateExecMotif, generateFinancierConclusion, generateMarcheConclusion,
-  generateTechniqueConclusion, getEffectiveFaisabilite, scenariosGate,
-  filterSyntheseIA, shouldShowSyntheseIA,
-  generateFinalRecommendationText, generateFinalIAConclusion,
-  INCOMPLETE_NO_POINTS_FORTS, getCoverDocTypeLabel,
-  getCoverStatusLabel, getCoverRecommendationLabel,
-  type MetricContext,
+  DOC_STATUS_COLORS,
+  DOC_STATUS_LABELS,
+  eur, eurM,
+  fmtDate,
+  fmtNum,
+  fmtTime,
+  m2v,
+  pct,
+  REC_LABELS, REC_LABELS_SHORT,
+  recColor,
+  s,
+  safePct
+} from './promoteurPdf.formatters';
+import {
+  buildMetricContext, filterPointsForts,
+  filterSyntheseIA,
+  generateExecMotif,
+  generateFinalIAConclusion,
+  generateFinalRecommendationText,
+  generateMarcheConclusion,
+  generateTechniqueConclusion,
+  getCoverRecommendationLabel,
+  getCoverStatusLabel,
+  getEffectiveFaisabilite,
+  INCOMPLETE_NO_POINTS_FORTS,
+  isMarginReliable, isTrnReliable,
+  scenariosGate,
+  shouldShowSyntheseIA,
+  type MetricContext
 } from './promoteurPdf.narrative';
+import { drawDocRef } from './promoteurPdf.qr';
+import { C, CW, F, LAYOUT, type RGB } from './promoteurPdf.theme';
+import type {
+  PromoteurSynthese,
+  RisqueNiveau,
+  Scenario
+} from './promoteurSynthese.types';
 
 const { ML, MR, MT, MB, PW, PH, HDR_H, FTR_H } = LAYOUT;
 

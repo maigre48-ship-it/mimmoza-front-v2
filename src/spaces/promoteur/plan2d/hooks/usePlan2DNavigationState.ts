@@ -16,9 +16,9 @@
 // Si le Plan 2D est ouvert directement (sans passer par Implantation2D),
 // il retourne des valeurs nulles et Plan 2D se replie sur usePromoteurParcelRestore.
 
+import type { Feature, MultiPolygon, Polygon } from "geojson";
 import { useMemo } from "react";
 import { useLocation } from "react-router-dom";
-import type { Feature, Polygon, MultiPolygon } from "geojson";
 import { normalizeToGeoJSONFeature } from "../getCurrentPromoteurParcelSelection";
 
 export interface Plan2DNavigationState {

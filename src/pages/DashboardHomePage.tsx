@@ -3,30 +3,30 @@
 // v4 — HERO moteur de décision + bloc "Analyse Rapide" mocké
 //      Reste de la page inchangé (verticales + section IA + workflow)
 
-import { useNavigate } from "react-router-dom";
 import {
-  Building2,
-  Landmark,
-  Handshake,
-  Hammer,
+  Activity,
   ArrowRight,
-  Sparkles,
+  BrainCircuit,
+  Building2,
+  Bus,
+  Gauge,
+  GraduationCap,
+  Hammer,
+  Handshake,
+  Landmark,
+  Layers3,
+  LineChart,
   MapPinned,
   ScanSearch,
-  Layers3,
-  Wallet,
   ShieldCheck,
-  BrainCircuit,
-  Zap,
-  Gauge,
-  TrendingUp,
-  Activity,
-  Bus,
+  Sparkles,
   Store,
-  GraduationCap,
-  LineChart,
+  TrendingUp,
+  Wallet,
+  Zap,
 } from "lucide-react";
 import type { ComponentType } from "react";
+import { useNavigate } from "react-router-dom";
 
 type VerticalCard = {
   id: "promoteur" | "investisseur" | "apporteur" | "rehabilitation";

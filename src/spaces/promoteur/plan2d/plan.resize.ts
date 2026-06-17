@@ -1,9 +1,9 @@
 // src/spaces/promoteur/plan2d/plan.resize.ts
 
-import type { Vec2, PlanBuildingWithTransform, ResizeHandle } from "./plan.types";
 import { getBoundingBox } from "./plan.geometry";
+import { DEFAULT_SNAP_CONFIG, snapScale, type SnapConfig } from "./plan.snap";
 import { applyTransform } from "./plan.transform";
-import { snapScale, DEFAULT_SNAP_CONFIG, type SnapConfig } from "./plan.snap";
+import type { PlanBuildingWithTransform, ResizeHandle, Vec2 } from "./plan.types";
 
 const MIN_SCALE = 0.05; // lower bound: ~5 % of original size
 

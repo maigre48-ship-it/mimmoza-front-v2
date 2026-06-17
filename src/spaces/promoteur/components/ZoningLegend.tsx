@@ -1,8 +1,8 @@
 // src/spaces/promoteur/components/ZoningLegend.tsx
 
 import React from "react";
-import type { ZoningOverlayKind } from "../plan2d/plan.zoning.types";
 import { getDefaultZoningStyle } from "../plan2d/plan.zoning";
+import type { ZoningOverlayKind } from "../plan2d/plan.zoning.types";
 
 // ─── LEGEND METADATA ──────────────────────────────────────────────────
 

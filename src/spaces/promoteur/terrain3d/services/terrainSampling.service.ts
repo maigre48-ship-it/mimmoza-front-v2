@@ -2,17 +2,16 @@
 // FILE: src/spaces/promoteur/terrain3d/services/terrainSampling.service.ts
 // ============================================================================
 
-import type { Feature, Polygon, MultiPolygon, Position } from 'geojson';
+import type { Feature, MultiPolygon, Polygon, Position } from 'geojson';
 import type {
-  TerrainGrid,
-  TerrainData,
-  TerrainConfig,
   BBox2D,
   BBox3D,
   ElevationSample,
+  TerrainConfig,
+  TerrainData
 } from '../types/terrain.types';
 import { DEFAULT_TERRAIN_CONFIG } from '../types/terrain.types';
-import { createEmptyTerrainGrid, computeOptimalGridStep } from '../utils/grid.utils';
+import { computeOptimalGridStep, createEmptyTerrainGrid } from '../utils/grid.utils';
 
 /**
  * Extrait la bounding box d'une feature GeoJSON Polygon/MultiPolygon

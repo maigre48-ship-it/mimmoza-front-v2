@@ -5,11 +5,11 @@
 // Header calé exactement sur les dimensions du hero de QuickAnalysis.
 // =============================================================
 
-import React from 'react';
-import { Bell, ScanSearch } from 'lucide-react';
-import OpportunitiesPage from './OpportunitiesPage';
-import OpportunityWatchesPage from '@/spaces/shared/pages/veille/OpportunityWatchesPage';
 import { countUnseen } from '@/services/opportunity/opportunityWatch.service';
+import OpportunityWatchesPage from '@/spaces/shared/pages/veille/OpportunityWatchesPage';
+import { Bell, ScanSearch } from 'lucide-react';
+import React from 'react';
+import OpportunitiesPage from './OpportunitiesPage';
 
 type HubView = 'scan' | 'watches';
 

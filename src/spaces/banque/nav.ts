@@ -1,4 +1,4 @@
-﻿import { LayoutDashboard, Kanban, FileText, BarChart3, Gavel, Bell, ShieldAlert } from "lucide-react";
+﻿import { BarChart3, Bell, FileText, Gavel, Kanban, LayoutDashboard, ShieldAlert } from "lucide-react";
 import type { ComponentType } from "react";
 
 export interface BanqueNavItem {

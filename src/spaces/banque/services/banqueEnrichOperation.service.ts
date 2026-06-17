@@ -23,7 +23,7 @@
 // ============================================================================
 
 import { supabase } from "@/lib/supabaseClient";
-import type { OperationSummary, OperationProfile } from "../types/operationSummary.types";
+import type { OperationProfile, OperationSummary } from "../types/operationSummary.types";
 
 // ── Types ─────────────────────────────────────────────────────────────
 

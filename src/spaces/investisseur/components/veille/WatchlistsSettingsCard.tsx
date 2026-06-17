@@ -1,22 +1,22 @@
-import { useMemo, useState } from "react";
 import {
-  Trash2,
-  Power,
-  MapPin,
   Bell,
-  Sparkles,
+  Building2,
   ChevronRight,
   Loader2,
+  MapPin,
   Plus,
-  Building2,
+  Power,
   Search,
+  Sparkles,
+  Trash2,
 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useUserWatchlists } from "../../hooks/useUserWatchlists";
 import {
-  toggleWatchlistActive,
-  deleteWatchlist,
   createUserWatchlist,
+  deleteWatchlist,
+  toggleWatchlistActive,
 } from "../../services/watchlists.service";
 
 type PendingAction =

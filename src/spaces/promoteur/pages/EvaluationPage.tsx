@@ -2,18 +2,18 @@
 // Règle fondamentale : Mimmoza n'invente jamais de données.
 // Version 2.0 — Fiche d'analyse immobilière complète, inspirée onglet Investisseur.
 
-import React, { useMemo, useState, useEffect, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { supabase } from "../../../supabaseClient";
-import { fetchBestDvfEstimate, fetchDvfComps } from "../../../lib/dvfEstimateApi";
 import type { DvfCompRow } from "../../../lib/dvfEstimateApi";
-import { usePromoteurStudy } from "../shared/usePromoteurStudy";
-import { GRAD_PRO, ACCENT_PRO } from "../shared/promoteurDesign.tokens";
+import { fetchBestDvfEstimate, fetchDvfComps } from "../../../lib/dvfEstimateApi";
+import { supabase } from "../../../supabaseClient";
 import {
-  PromoteurPageHero,
-  HeroPrimaryButton,
   HeroGhostButton,
+  HeroPrimaryButton,
+  PromoteurPageHero,
 } from "../shared/components/PromoteurPageHero";
+import { ACCENT_PRO } from "../shared/promoteurDesign.tokens";
+import { usePromoteurStudy } from "../shared/usePromoteurStudy";
 
 // ─────────────────────────────────────────────
 // Constantes design

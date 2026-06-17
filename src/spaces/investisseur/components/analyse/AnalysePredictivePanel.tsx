@@ -1,28 +1,28 @@
-import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { usePredictiveAnalysis } from "../../hooks/usePredictiveAnalysis";
-import type {
-  PredictiveEngineInput,
-  PredictiveDataSource,
-  PredictivePlu,
-  PredictiveGeorisques,
-  PredictiveFiscalite,
-} from "../../services/predictive/predictive.types";
+import { supabase } from "../../../../lib/supabaseClient";
+import { useCopilotStore } from "../../../copilot/store/copilotStore";
+import { buildPredictiveSnapshotForCopilot } from "../../../copilot/utils/buildPredictiveSnapshotForCopilot";
 import { readMarchandSnapshot } from "../../../marchand/shared/marchandSnapshot.store";
-import { getInvestisseurSnapshot } from "../../shared/investisseurSnapshot.store";
+import { usePredictiveAnalysis } from "../../hooks/usePredictiveAnalysis";
 import { getEcbRatesAnalysis, type EcbRatesAnalysis } from "../../services/predictive/ecbRate.service";
+import type {
+  PredictiveDataSource,
+  PredictiveEngineInput,
+  PredictiveFiscalite,
+  PredictiveGeorisques,
+  PredictivePlu,
+} from "../../services/predictive/predictive.types";
 import {
   getPredictiveSitadelScore,
   type PredictiveSitadelResult,
 } from "../../services/predictive/sitadelPredictive.service";
-import { supabase } from "../../../../lib/supabaseClient";
-import { useCopilotStore } from "../../../copilot/store/copilotStore";
-import { buildPredictiveSnapshotForCopilot } from "../../../copilot/utils/buildPredictiveSnapshotForCopilot";
-import PredictiveExecutiveCard from "./PredictiveExecutiveCard";
-import PredictiveProjectionChart from "./PredictiveProjectionChart";
+import { getInvestisseurSnapshot } from "../../shared/investisseurSnapshot.store";
 import PredictiveDriversCard from "./PredictiveDriversCard";
-import PredictiveScenariosTable from "./PredictiveScenariosTable";
+import PredictiveExecutiveCard from "./PredictiveExecutiveCard";
 import PredictiveOperationImpactCard from "./PredictiveOperationImpactCard";
+import PredictiveProjectionChart from "./PredictiveProjectionChart";
+import PredictiveScenariosTable from "./PredictiveScenariosTable";
 import PredictiveSummaryCard from "./PredictiveSummaryCard";
 
 // ── Helpers ──────────────────────────────────────────────────────────

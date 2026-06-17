@@ -1,4 +1,4 @@
-import type { QuoteStatus, InvoiceStatus, TargetSpace, Quote, Invoice, CreateQuoteLinePayload } from './types';
+import type { CreateQuoteLinePayload, Invoice, InvoiceStatus, Quote, QuoteStatus, TargetSpace } from './types';
 
 // ---- Formatage montant ----
 

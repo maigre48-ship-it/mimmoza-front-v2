@@ -1,6 +1,6 @@
 ﻿// src/spaces/banque/components/committee/CommitteeSectionMarket.tsx
-import React, { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useEffect, useState } from "react";
 import type { CommitteeScoringSettings } from "./CommitteeSettingsModal";
 
 const fmtNum = (v: number | undefined | null, suffix = "") =>

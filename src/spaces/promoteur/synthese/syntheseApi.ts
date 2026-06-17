@@ -1,7 +1,7 @@
 // src/spaces/promoteur/synthese/syntheseApi.ts
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { SynthesePayload, SyntheseResult, SyntheseTone } from "./syntheseTypes";
 import { getSnapshot } from "../shared/promoteurSnapshot.store";
+import type { SynthesePayload, SyntheseResult, SyntheseTone } from "./syntheseTypes";
 
 type GenerateSyntheseArgs = {
   supabase: SupabaseClient;

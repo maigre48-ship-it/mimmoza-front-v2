@@ -9,15 +9,25 @@ import { jsPDF } from "jspdf";
 import * as XLSX from "xlsx";
 
 import {
-  C, PW, PH, ML, MR, CW, HDR_H, BODY_START,
-  today, fmtEur, fmtPct,
-  hGrad, floatCard, sectionHead, kvRow, tableBlock, alertBox,
-  drawPremiumHeader, drawPageHeader, drawPremiumFooter, kpiCard,
+  alertBox,
+  BODY_START,
+  C,
+  CW,
+  drawPageHeader, drawPremiumFooter,
+  drawPremiumHeader,
+  floatCard,
+  fmtEur, fmtPct,
+  hGrad,
+  kpiCard,
+  kvRow,
+  ML,
+  sectionHead,
+  tableBlock
 } from "./exportPremiumPdf.utils";
 
 import {
-  readMarchandSnapshot,
   ensureActiveDeal,
+  readMarchandSnapshot,
 } from "../../../../marchand/shared/marchandSnapshot.store";
 import type { RentabiliteSnapshot } from "../../../../marchand/types/rentabilite.types";
 

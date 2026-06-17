@@ -4,7 +4,7 @@
 // =============================================================
 
 import { supabase } from '@/lib/supabase';
-import type { OpportunityStrategy, OpportunityAssetType } from './opportunityEngine.types';
+import type { OpportunityAssetType, OpportunityStrategy } from './opportunityEngine.types';
 
 export interface WatchCriteria {
   assetType?: OpportunityAssetType | 'all';

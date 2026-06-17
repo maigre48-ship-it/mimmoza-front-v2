@@ -8,7 +8,7 @@
 // avec confiance "a-confirmer".
 // ---------------------------------------------------------------------------
 
-import type { PlanMetadata, MetadataField, DetectedCotation } from './types';
+import type { DetectedCotation, MetadataField, PlanMetadata } from './types';
 import { emptyMetadata } from './types';
 
 // ---------------------------------------------------------------------------

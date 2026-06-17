@@ -1,7 +1,10 @@
 import React from 'react';
 import type {
-  Facade2DModel, Facade2DLevel, Facade2DPalette, Facade2DRenderTheme,
-  Facade2DVegetation, Facade2DOpening, Facade2DStylePresetId,
+  Facade2DLevel,
+  Facade2DModel,
+  Facade2DPalette, Facade2DRenderTheme,
+  Facade2DStylePresetId,
+  Facade2DVegetation
 } from './facade2d.types';
 
 interface Props { model: Facade2DModel; width?: number; }

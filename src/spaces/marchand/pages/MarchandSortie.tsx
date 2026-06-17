@@ -1,13 +1,13 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { TrendingUp, Clock, Euro, Star, AlertTriangle } from "lucide-react";
+import { AlertTriangle, Clock, Euro, Star, TrendingUp } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import useMarchandSnapshotTick from "../shared/hooks/useMarchandSnapshotTick";
+import {
+  patchSortieForDeal,
+  readMarchandSnapshot,
+} from "../shared/marchandSnapshot.store";
+import KpiCard from "../shared/ui/KpiCard";
 import PageShell from "../shared/ui/PageShell";
 import SectionCard from "../shared/ui/SectionCard";
-import KpiCard from "../shared/ui/KpiCard";
-import {
-  readMarchandSnapshot,
-  patchSortieForDeal,
-} from "../shared/marchandSnapshot.store";
-import useMarchandSnapshotTick from "../shared/hooks/useMarchandSnapshotTick";
 
 type ExitStrategy = "rapide" | "optimisee" | "location";
 

@@ -3,17 +3,7 @@
 
 // Layout et composants UI (tout dans EtudesLayout.tsx)
 export {
-  EtudesLayout,
-  EtudesColors,
-  PanelHeader,
-  FormField,
-  TextInput,
-  InputRow,
-  Divider,
-  ToggleButtons,
-  SliderField,
-  PrimaryButton,
-  EmptyState,
+  Divider, EmptyState, EtudesColors, EtudesLayout, FormField, InputRow, PanelHeader, PrimaryButton, SliderField, TextInput, ToggleButtons
 } from "./EtudesLayout";
 
 // Pages

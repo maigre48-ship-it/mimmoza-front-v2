@@ -2,8 +2,8 @@
  * Composant ServiceRow - Affiche un service de proximité avec sa distance
  */
 
-import React from "react";
 import type { LucideIcon } from "lucide-react";
+import React from "react";
 import type { ServiceProche } from "../../types/market.types";
 
 // ============================================

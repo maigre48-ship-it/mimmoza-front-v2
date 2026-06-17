@@ -1,6 +1,6 @@
 ﻿// src/spaces/particulier/quartier/QuartierPage.tsx
-import { useEffect, useMemo, useState, useRef } from "react";
 import type { CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../supabaseClient";
 import { fetchQuartierSmartscore, type QuartierResponse } from "./quartierApi";
 

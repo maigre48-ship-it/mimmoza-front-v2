@@ -3,13 +3,13 @@
 // Export ZIP — agrège tous les PDFs + Excel disponibles
 // Utilise JSZip + file-saver pour générer l'archive côté client
 
-import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import { jsPDF } from "jspdf";
+import JSZip from "jszip";
 
 import {
-  readMarchandSnapshot,
   ensureActiveDeal,
+  readMarchandSnapshot,
 } from "../../../../marchand/shared/marchandSnapshot.store";
 
 // On importe les générateurs PDF mais on récupère les bytes sans save()
@@ -17,15 +17,9 @@ import {
 // pour retourner le Uint8Array au lieu de déclencher le téléchargement.
 // → On fait ça via des wrappers internes ci-dessous.
 
-import {
-  AMBER, MARGIN, CONTENT_W, BODY_TOP,
-  drawCover, drawHeader, drawFooter, drawSectionTitle,
-  drawKV, drawTable, drawAlert, drawGauge,
-  fmtEur, fmtPct, fmtNum, today, checkY,
-} from "./exportInvestisseurPdf.utils";
 
-import type { RentabiliteSnapshot } from "../../../../marchand/types/rentabilite.types";
 import * as XLSX from "xlsx";
+import type { RentabiliteSnapshot } from "../../../../marchand/types/rentabilite.types";
 
 // ─── Helpers — génère les PDFs en bytes (pas de save) ────────────────────────
 

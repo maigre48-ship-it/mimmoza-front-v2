@@ -1,15 +1,15 @@
 // src/spaces/marchand/pages/Sourcing.tsx
 
-import React, { useEffect, useMemo, useState } from "react";
-import PageShell from "../shared/ui/PageShell";
-import SectionCard from "../shared/ui/SectionCard";
+import { useEffect, useMemo, useState } from "react";
 import {
-  readMarchandSnapshot,
   ensureActiveDeal,
+  MARCHAND_SNAPSHOT_EVENT,
+  readMarchandSnapshot,
   setActiveDeal,
   type MarchandDeal,
-  MARCHAND_SNAPSHOT_EVENT,
 } from "../shared/marchandSnapshot.store";
+import PageShell from "../shared/ui/PageShell";
+import SectionCard from "../shared/ui/SectionCard";
 
 const SOURCING_SMARTSCORE_KEY = "mimmoza.sourcing.smartscore.v1";
 const SOURCING_SMARTSCORE_EVENT = "mimmoza:sourcing:smartscore:updated";

@@ -38,8 +38,8 @@
 //   polygonAreaM2 · pointInPolygon · nearestParcelEdge
 //   computeBuildableEnvelope · isRectPartiallyInsidePolygon
 
-import type { Point2D, OrientedRect } from './editor2d.types';
 import { rectCorners } from './editor2d.geometry';
+import type { OrientedRect, Point2D } from './editor2d.types';
 
 export interface SetbackRules {
   frontM: number;

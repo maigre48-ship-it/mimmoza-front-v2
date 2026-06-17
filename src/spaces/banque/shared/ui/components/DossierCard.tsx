@@ -1,7 +1,7 @@
-﻿import { X, Copy, ArrowRight } from "lucide-react";
-import type { BanqueProject } from "../../types/banque.types";
-import { BANQUE_STATUT_LABELS, BANQUE_STATUT_COLORS } from "../../types/banque.types";
+﻿import { ArrowRight, Copy, X } from "lucide-react";
 import { scoreColor } from "../../services/banqueSmartscore";
+import type { BanqueProject } from "../../types/banque.types";
+import { BANQUE_STATUT_COLORS, BANQUE_STATUT_LABELS } from "../../types/banque.types";
 
 interface DossierCardProps {
   project: BanqueProject;

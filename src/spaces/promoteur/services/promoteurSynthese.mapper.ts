@@ -1,21 +1,21 @@
 // src/spaces/promoteur/services/promoteurSynthese.mapper.ts
 
 import type {
+  ExecutiveSummary,
+  FinancementAnalysis,
+  FinancierAnalysis,
+  MarcheAnalysis,
+  PluConstrainte,
+  PrixMarche,
+  ProjetInfo,
   PromoteurRawInput,
   PromoteurSynthese,
-  ProjetInfo,
-  TechniqueAnalysis,
-  MarcheAnalysis,
-  FinancierAnalysis,
-  RisqueItem,
-  FinancementAnalysis,
-  Scores,
-  ExecutiveSummary,
-  Scenario,
-  PluConstrainte,
   RecommendationType,
-  PrixMarche,
+  RisqueItem,
   RisqueNiveau,
+  Scenario,
+  Scores,
+  TechniqueAnalysis,
 } from './promoteurSynthese.types';
 
 // ---- Helpers ----------------------------------------------------------------

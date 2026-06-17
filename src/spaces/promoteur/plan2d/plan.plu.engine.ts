@@ -1,10 +1,10 @@
 // src/spaces/promoteur/plan2d/plan.plu.engine.ts
 
-import type { Vec2, PlanBuilding } from "./plan.types";
-import type { PluRules, PluEngineResult, PluRuleStatus, PluRuleResult } from "./plan.plu.types";
-import { PLU_STATUS_WEIGHT } from "./plan.plu.types";
 import { computePluMetrics } from "./plan.plu.metrics";
 import { ALL_RULE_CHECKERS } from "./plan.plu.rules";
+import type { PluEngineResult, PluRuleResult, PluRules, PluRuleStatus } from "./plan.plu.types";
+import { PLU_STATUS_WEIGHT } from "./plan.plu.types";
+import type { PlanBuilding, Vec2 } from "./plan.types";
 
 // ─── AGGREGATION HELPERS ──────────────────────────────────────────────
 

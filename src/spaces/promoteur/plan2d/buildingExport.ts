@@ -1,11 +1,10 @@
 // src/spaces/promoteur/plan2d/buildingExport.ts — V2
 // Export avec volumes composés
 
-import jsPDF from 'jspdf';
-import type { Building2D, Parking2D } from './editor2d.types';
 import type { ExportedBuilding, ExportedParking, ExportedScene } from './buildingProgram.types';
 import { rectCorners } from './editor2d.geometry';
 import { getBuildingVolumes } from './editor2d.store';
+import type { Building2D, Parking2D } from './editor2d.types';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────
 

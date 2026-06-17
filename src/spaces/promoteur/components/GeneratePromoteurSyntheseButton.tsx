@@ -1,11 +1,10 @@
 // src/spaces/promoteur/components/GeneratePromoteurSyntheseButton.tsx
 
-import React, { useState, useCallback } from 'react';
 import { FileDown, Loader2, Sparkles } from 'lucide-react';
-import { generatePromoteurSynthese } from '../services/generatePromoteurSynthese';
+import React, { useCallback, useState } from 'react';
 import { exportPromoteurPdf } from '../services/exportPromoteurPdf';
-import type { PromoteurRawInput, PromoteurSynthese } from '../services/promoteurSynthese.types';
-import type { ReportType } from '../services/promoteurSynthese.types';
+import { generatePromoteurSynthese } from '../services/generatePromoteurSynthese';
+import type { PromoteurRawInput, PromoteurSynthese, ReportType } from '../services/promoteurSynthese.types';
 
 interface Props {
   rawData: PromoteurRawInput;

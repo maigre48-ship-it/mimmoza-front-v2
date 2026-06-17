@@ -1,14 +1,14 @@
 // src/spaces/promoteur/etudes/marche/engine/smartscore.base.ts
 
 import type {
-  SmartScoreResult,
+  ProjectNature,
   ScoreComponent,
+  SmartScoreResult,
   Verdict,
   VerdictThresholds,
-  ProjectNature,
 } from "../types/smartscore.types";
 import { DEFAULT_THRESHOLDS } from "../types/smartscore.types";
-import { clamp, weightedMean, roundScore } from "../utils/score.utils";
+import { clamp, roundScore, weightedMean } from "../utils/score.utils";
 
 /**
  * Détermine le verdict selon les seuils.

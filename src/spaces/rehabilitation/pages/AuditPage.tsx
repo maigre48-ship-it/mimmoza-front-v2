@@ -2,16 +2,38 @@
 // Onglet central "Audit de réhabilitation" — remplace Diagnostic + Travaux
 // Workflow : Vue d'ensemble → Conformité → Analyse du plan → Budget → Synthèse
 
-import { useState, useCallback, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
 import {
-  LayoutDashboard, ShieldCheck, ScanSearch, Calculator, Sparkles,
-  ChevronRight, CheckCircle2, AlertTriangle, AlertCircle, XCircle,
-  Building2, Flame, Users, FileText, Info, Ruler, Layers,
-  MapPin, Calendar, DoorOpen, Hammer, ClipboardCheck, TrendingUp,
-  Upload, ArrowRight, SquareCheckBig, Circle, BadgeEuro, RefreshCcw,
+  AlertCircle,
+  AlertTriangle,
   ArrowDownToLine,
+  ArrowRight,
+  BadgeEuro,
+  Building2,
+  Calculator,
+  CheckCircle2,
+  ChevronRight,
+  Circle,
+  ClipboardCheck,
+  DoorOpen,
+  FileText,
+  Flame,
+  Hammer,
+  Info,
+  Layers,
+  LayoutDashboard,
+  MapPin,
+  Ruler,
+  ScanSearch,
+  ShieldCheck,
+  Sparkles,
+  SquareCheckBig,
+  TrendingUp,
+  Upload,
+  Users,
+  XCircle
 } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

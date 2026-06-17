@@ -1,13 +1,13 @@
 // src/spaces/investisseur/engine/rentabilite.engine.ts
 
 import type {
+  RegimeFiscalLocation,
+  RentabiliteDecision,
+  RentabiliteFormStrings,
   RentabiliteInput,
   RentabiliteResult,
   RentabiliteScenarios,
   RentabiliteStressTests,
-  RentabiliteDecision,
-  RentabiliteFormStrings,
-  RegimeFiscalLocation,
 } from "../types/rentabilite.types";
 
 /* ------------------------------------------------------------------ */

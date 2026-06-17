@@ -9,8 +9,8 @@
 //   • addParking(polygon)  : crée un nouveau parking et revient en "select"
 
 import { useCallback, useMemo, useState } from "react";
-import type { PlanBuilding, PlanParking, PlanProject, Vec2 } from "../plan.types";
 import { translatePolygon } from "../geometry/plan.geometry";
+import type { PlanBuilding, PlanParking, PlanProject, Vec2 } from "../plan.types";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 

@@ -1,8 +1,8 @@
 // src/spaces/promoteur/components/ScenarioRecommendationCard.tsx
 
 import React from "react";
-import type { ImplantationScenario, ScenarioStatus } from "../plan2d/plan.scenarios.types";
 import type { ScenarioRecommendationLayer } from "../plan2d/plan.scenarioNotes.types";
+import type { ImplantationScenario, ScenarioStatus } from "../plan2d/plan.scenarios.types";
 
 // ─── DESIGN TOKENS ────────────────────────────────────────────────────
 

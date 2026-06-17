@@ -1,19 +1,19 @@
 // FILE: src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts
 
 import {
-  MarketStudyResult,
-  ProjectType,
-  DemographicsData,
-  RealEstateMarketData,
-  CompetitionData,
-  ServicesData,
-  HealthcareData,
   AccessibilityData,
-  Insight,
-  Scores,
-  Kpi,
-  Poi,
+  CompetitionData,
   DataSourceStatus,
+  DemographicsData,
+  HealthcareData,
+  Insight,
+  Kpi,
+  MarketStudyResult,
+  Poi,
+  ProjectType,
+  RealEstateMarketData,
+  Scores,
+  ServicesData,
 } from "../../types";
 
 interface MockProviderParams {

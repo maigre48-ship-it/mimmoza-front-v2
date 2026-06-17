@@ -1,21 +1,21 @@
 // FILE: src/spaces/banque/hooks/useSmartScore.ts
 
-import { useState, useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
-  computeBankSmartScore,
-  buildRiskAnalysisPatch,
-  detectScoreDrop,
   buildComitePayload,
+  buildRiskAnalysisPatch,
+  computeBankSmartScore,
+  detectScoreDrop,
   type SmartScoreInput,
   type SmartScoreResult,
 } from "../shared/services/banqueSmartscore";
 
 import {
-  readBanqueSnapshot,
-  patchSmartScore,
-  patchRiskAnalysis,
   onBanqueSnapshotChange,
+  patchRiskAnalysis,
+  patchSmartScore,
+  readBanqueSnapshot,
 } from "../store/banqueSnapshot.store";
 
 import { useBanqueDossierContext } from "./useBanqueDossierContext";

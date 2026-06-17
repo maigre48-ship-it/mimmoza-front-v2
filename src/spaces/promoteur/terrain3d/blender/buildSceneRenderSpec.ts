@@ -19,9 +19,9 @@ import {
 } from "../massingScene.types";
 import type { ReliefData } from "../services/terrainSampler";
 
-import { getFacadeStyle } from "../massingFacadeStyles";
 import { ensureBuildingRenderSpec } from "../buildingBlenderSpec.helpers";
 import { resolveBuildingRenderSpecSafe } from "../buildingRenderMapper";
+import { getFacadeStyle } from "../massingFacadeStyles";
 
 import type {
   BuildingMetaSpec,

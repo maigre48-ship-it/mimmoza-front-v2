@@ -8,8 +8,8 @@
 //   - meta-lines (icône + texte) en slate-200
 //   - stat cards à droite fond semi-transparent (grille 2 cols)
 
-import React from "react";
 import { Sparkles } from "lucide-react";
+import React from "react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

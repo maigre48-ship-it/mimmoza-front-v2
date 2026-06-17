@@ -2,22 +2,22 @@
 // FILE: src/spaces/promoteur/terrain3d/hooks/useProjectVolumes.ts
 // ============================================================================
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Feature, FeatureCollection, Polygon } from 'geojson';
+import { useCallback, useEffect, useState } from 'react';
+import { extractBBoxFromFeature, toBBox3D } from '../services/terrainSampling.service';
+import type { StubGeometry } from '../three/createTerrainGeometry';
+import { createVolumeGeometry } from '../three/createVolumeGeometry';
 import type {
-  ProjectVolumesState,
-  ProjectVolumesData,
   ProjectVolume,
+  ProjectVolumesData,
+  ProjectVolumesState,
   VolumeType,
 } from '../types/volume.types';
 import {
   DEFAULT_BUILDING_HEIGHT,
-  DEFAULT_PARKING_HEIGHT,
   DEFAULT_LEVEL_HEIGHT,
+  DEFAULT_PARKING_HEIGHT,
 } from '../types/volume.types';
-import type { StubGeometry } from '../three/createTerrainGeometry';
-import { createVolumeGeometry } from '../three/createVolumeGeometry';
-import { extractBBoxFromFeature, toBBox3D } from '../services/terrainSampling.service';
 
 /**
  * Options du hook useProjectVolumes

@@ -1,6 +1,6 @@
 // ── PlanBadge ──────────────────────────────────────────────────────────────
-import type { PlanTier, BillingMode } from '../member/apiPlans';
 import type { PlanEnvironment } from '../member/apiMemberMock';
+import type { BillingMode, PlanTier } from '../member/apiPlans';
 
 const PLAN_STYLES: Record<PlanTier, string> = {
   free:    'bg-slate-100 text-slate-600 border-slate-200',

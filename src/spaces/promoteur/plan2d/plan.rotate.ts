@@ -1,8 +1,8 @@
 // src/spaces/promoteur/plan2d/plan.rotate.ts
 
-import type { Vec2, PlanBuildingWithTransform } from "./plan.types";
+import { DEFAULT_SNAP_CONFIG, snapAngle, type SnapConfig } from "./plan.snap";
 import { applyTransform } from "./plan.transform";
-import { snapAngle, DEFAULT_SNAP_CONFIG, type SnapConfig } from "./plan.snap";
+import type { PlanBuildingWithTransform, Vec2 } from "./plan.types";
 
 // ─── ANGLE MATH ───────────────────────────────────────────────────────
 

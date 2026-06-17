@@ -3,8 +3,8 @@
 // Service layer — gestion des clés API Mimmoza via Supabase
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { supabase } from "./supabase";
 import { getPlanById, type PlanTier } from "../features/api/member/apiPlans";
+import { supabase } from "./supabase";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 

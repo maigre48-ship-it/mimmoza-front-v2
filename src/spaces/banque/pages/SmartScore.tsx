@@ -5,12 +5,12 @@ import { getSnapshot as getPromoteurSnapshot } from "../../promoteur/shared/prom
 import { mapPromoteurToFinancialSnapshot } from "../shared/financialSnapshot.mapper";
 import { computeSmartScoreBankV1 } from "../shared/smartscoreBank.engine";
 
-import type { FinancialSnapshotV1 } from "../shared/financialSnapshot.types";
 import {
   readBanqueFinancialSnapshot,
-  writeBanqueFinancialSnapshot,
   resetBanqueFinancialSnapshot,
+  writeBanqueFinancialSnapshot,
 } from "../shared/banqueFinancialSnapshot.store";
+import type { FinancialSnapshotV1 } from "../shared/financialSnapshot.types";
 
 import FinancialSnapshotEditor from "../components/FinancialSnapshotEditor";
 

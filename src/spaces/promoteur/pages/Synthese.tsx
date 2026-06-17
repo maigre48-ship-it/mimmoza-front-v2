@@ -1,14 +1,14 @@
 ﻿// src/spaces/promoteur/pages/Synthese.tsx
 // v2 — Hero v2 : PromoteurPageHero (design unifié Promoteur)
 
+import * as turf from "@turf/turf";
+import type { Feature, FeatureCollection, Geometry } from "geojson";
 import React from "react";
 import { useSearchParams } from "react-router-dom";
+import { PromoteurPageHero } from "../shared/components/PromoteurPageHero";
 import { usePromoteurStudy } from "../shared/usePromoteurStudy";
 import { usePromoteurProjectStore } from "../store/promoteurProject.store";
 import { PromoteurSynthesePage } from "./PromoteurSynthesePage";
-import { PromoteurPageHero } from "../shared/components/PromoteurPageHero";
-import * as turf from "@turf/turf";
-import type { Feature, FeatureCollection, Geometry } from "geojson";
 
 // ---- Helpers ----------------------------------------------------------------
 

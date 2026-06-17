@@ -11,20 +11,20 @@
 // VERSION 2.0.1 — fix listStudies (syntaxe foncier->x non supportée par Supabase JS)
 
 import { supabase } from "../../../supabaseClient";
+import type { Implantation2DSnapshot } from "../plan2d/implantation2d.snapshot";
 import type {
-  PromoteurStudy,
-  PromoteurStudySummary,
-  PromoteurStudyMetaPatch,
-  PromoteurFoncierData,
-  PromoteurPluData,
-  PromoteurConceptionData,
-  PromoteurMarcheData,
-  PromoteurRisquesData,
-  PromoteurEvaluationData,
   PromoteurBilanData,
+  PromoteurConceptionData,
+  PromoteurEvaluationData,
+  PromoteurFoncierData,
+  PromoteurMarcheData,
+  PromoteurPluData,
+  PromoteurRisquesData,
+  PromoteurStudy,
+  PromoteurStudyMetaPatch,
+  PromoteurStudySummary,
   ServiceResult,
 } from "./promoteurStudy.types";
-import type { Implantation2DSnapshot } from "../plan2d/implantation2d.snapshot";
 
 const TABLE = "promoteur_studies" as const;
 

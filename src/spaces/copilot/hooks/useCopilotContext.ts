@@ -7,12 +7,12 @@ import { useCallback } from 'react';
 import { useCopilotStore } from '../store/copilotStore';
 import type {
   MimmozaContext,
-  Vertical,
   ParcelContextRef,
-  StudyContextRef,
   PluContextRef,
   PredictiveSnapshotContext,
+  StudyContextRef,
   ValuationEngineContext,
+  Vertical,
 } from '../types/copilot.types';
 
 // ⚠️ Ordre important : les préfixes les plus spécifiques d'abord.

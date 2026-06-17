@@ -3,38 +3,38 @@
 // Deal Center — Page principale — V4 — Géorisques auto depuis QualificationTab
 // Style identique à AnalysePage.tsx.
 
-import { useMemo, useState, useCallback } from "react";
-import { useLocation } from "react-router-dom";
 import {
-  TrendingUp,
-  Gauge,
-  MapPin,
+  AlertCircle,
   Building2,
-  Ruler,
-  Euro,
-  Hammer,
-  Sparkles,
+  CheckCircle2,
   ChevronRight,
   Clock,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  ShieldAlert,
+  Euro,
+  Gauge,
+  Hammer,
   Loader2,
+  MapPin,
   RefreshCw,
+  Ruler,
+  ShieldAlert,
+  Sparkles,
+  TrendingUp,
+  XCircle,
 } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 
-import DataConfidenceTab  from "./tabs/DataConfidenceTab";
-import InvestmentPackTab  from "./tabs/InvestmentPackTab";
 import CommitteeReviewTab from "./tabs/CommitteeReviewTab";
+import DataConfidenceTab from "./tabs/DataConfidenceTab";
+import ExportsTab from "./tabs/ExportsTab";
 import FinancialEngineTab from "./tabs/FinancialEngineTab";
-import ExportsTab         from "./tabs/ExportsTab";
+import InvestmentPackTab from "./tabs/InvestmentPackTab";
 
 import useMarchandSnapshotTick from "../../../marchand/shared/hooks/useMarchandSnapshotTick";
 import {
-  readMarchandSnapshot,
   ensureActiveDeal,
   patchMarcheRisquesForDeal,
+  readMarchandSnapshot,
   type MarchandDeal,
   type MarcheRisquesSaved,
   type RentabiliteSaved,

@@ -15,16 +15,15 @@
 
 import * as THREE from "three";
 import {
-  pushBox,
-  facadeRotation,
-  facadeAngle,
-  translateOnFacade,
   clamp,
-  safeNumber,
+  facadeAngle,
+  facadeRotation,
+  pushBox,
+  translateOnFacade,
   type FacadePt,
-  type LocalFacadeAxes,
   type FacadeResult,
-  type ShadingDeviceType,
+  type LocalFacadeAxes,
+  type ShadingDeviceType
 } from "./massingFacadeEngine";
 
 // ═══════════════════════════════════════════════════════════════════════════════

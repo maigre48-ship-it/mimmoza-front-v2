@@ -3,16 +3,15 @@
 // Zéro dépendance Three.js / React — testable unitairement.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { Feature, FeatureCollection, Polygon, MultiPolygon } from "geojson";
+import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson";
 import {
-  type MassingBuildingModel,
-  type ProjectSceneModel,
-  type SimpleBuildingKind,
   type BuildingV1Meta,
   createBuilding,
-  buildingLevelsFromArchitecture,
   defaultBuildingV1Meta,
   generateBuildingId,
+  type MassingBuildingModel,
+  type ProjectSceneModel,
+  type SimpleBuildingKind
 } from "../massingScene.types";
 
 // ─── Types entrée ─────────────────────────────────────────────────────────────

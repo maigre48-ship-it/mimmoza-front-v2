@@ -52,19 +52,27 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from "three";
-import { ptsToShape, scalePolygon, centroid2D, extractEdges } from "./massingGeometry3d";
-import type { Pt2D } from "./massingGeometry3d";
-import { buildPitchedRoof, type RoofConfig } from "./massingRoofEngine";
 import {
-  addOpeningsToSlice, longestEdgeIndex, newBuffers, flushOpenings,
-  planEdgeOpenings, styleForEdge, MIN_OPENING_EDGE,
-  type OpeningsConfig, type OpeningBuffers,
-} from "./massingFacadeOpenings";
+  addBalconiesToSlice,
+  flushBalconies,
+  newBalconyBuffers,
+  type BalconyBuffers,
+  type BalconyConfig,
+} from "./massingBalconies";
 import { addMaterialBands, type MaterialBandsConfig } from "./massingFacadeBands";
 import {
-  addBalconiesToSlice, newBalconyBuffers, flushBalconies,
-  type BalconyConfig, type BalconyBuffers,
-} from "./massingBalconies";
+  addOpeningsToSlice,
+  flushOpenings,
+  longestEdgeIndex,
+  MIN_OPENING_EDGE,
+  newBuffers,
+  planEdgeOpenings, styleForEdge,
+  type OpeningBuffers,
+  type OpeningsConfig,
+} from "./massingFacadeOpenings";
+import type { Pt2D } from "./massingGeometry3d";
+import { centroid2D, extractEdges, ptsToShape, scalePolygon } from "./massingGeometry3d";
+import { buildPitchedRoof, type RoofConfig } from "./massingRoofEngine";
 
 
 // ─── Offset anti z-fighting ───────────────────────────────────────────────────

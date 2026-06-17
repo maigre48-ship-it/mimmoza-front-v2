@@ -1,6 +1,8 @@
 import React from 'react';
 import type {
-  Facade2DModel, Facade2DLevel, Facade2DPalette, Facade2DRenderTheme,
+  Facade2DLevel,
+  Facade2DModel,
+  Facade2DPalette, Facade2DRenderTheme,
   Facade2DVegetation,
 } from './facade2d.types';
 

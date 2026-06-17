@@ -17,16 +17,16 @@
  */
 
 import type {
-  BanqueSnapshot,
-  BanqueDossier,
-  BanqueRiskAnalysis,
-  BanqueGuarantees,
-  BanqueDocuments,
   BanqueCommittee,
-  BanqueMonitoring,
-  BanqueSmartScore,
+  BanqueDocuments,
+  BanqueDossier,
+  BanqueGuarantees,
   BanqueMarketData,
   BanqueModuleKey,
+  BanqueMonitoring,
+  BanqueRiskAnalysis,
+  BanqueSmartScore,
+  BanqueSnapshot,
   MonitoringAlert,
 } from "../types/banque.types";
 

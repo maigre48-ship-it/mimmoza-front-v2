@@ -5,7 +5,6 @@
 // • Bannière d'info amber dismissible au lieu d'une erreur rouge bloquante.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -20,6 +19,7 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import {
   getAdminDashboardMetrics,
   type AdminDashboardMetrics,

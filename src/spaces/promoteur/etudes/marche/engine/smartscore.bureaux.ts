@@ -2,8 +2,8 @@
 
 import type { InseeData } from "../types/market.types";
 import type { ScoreComponent, SmartScoreResult } from "../types/smartscore.types";
+import { roundScore, scoreFromRange, weightedMean } from "../utils/score.utils";
 import { computeSmartScore } from "./smartscore.base";
-import { scoreFromRange, weightedMean, roundScore } from "../utils/score.utils";
 
 export interface BureauxSmartScoreInput {
   insee?: InseeData | null;

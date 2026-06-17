@@ -1,8 +1,8 @@
 // FILE: src/spaces/promoteur/etudes/marche/components/MarketStudyInseePanel.tsx
 
 import React, { useState } from "react";
-import type { MarketStudyResponse } from "../types/marketStudy.types";
 import { formatNumber } from "../hooks/useMarketStudy";
+import type { MarketStudyResponse } from "../types/marketStudy.types";
 
 interface MarketStudyInseePanelProps {
   data: MarketStudyResponse | null;

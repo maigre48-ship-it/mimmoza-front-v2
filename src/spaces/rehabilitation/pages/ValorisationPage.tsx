@@ -1,5 +1,5 @@
+import { AlertTriangle, Calculator, ChevronRight, Euro, Info, TrendingUp } from "lucide-react";
 import { useMemo, useState } from "react";
-import { TrendingUp, Calculator, ChevronRight, Info, Euro, AlertTriangle } from "lucide-react";
 
 type FormData = {
   prixAcquisition: string;

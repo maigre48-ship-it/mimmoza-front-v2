@@ -1,5 +1,5 @@
-import { useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, CreditCard, Key, PlayCircle } from 'lucide-react';
+import { CreditCard, Key, LayoutDashboard, PlayCircle } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 interface NavItem {
   label: string;

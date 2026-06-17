@@ -3,8 +3,8 @@
 // Hook pour les alertes pipeline
 // ============================================================================
 
-import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useCallback, useEffect, useState } from "react";
 
 type Alert = {
   id: string;

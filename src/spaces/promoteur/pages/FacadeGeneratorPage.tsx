@@ -22,50 +22,77 @@
 // [V4] Pipeline footprint réel
 // -----------------------------------------------------------------------------
 
-import { useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  Blinds,
+  BrickWall,
+  Building2,
+  Check,
+  Cloud,
+  Download, Eye,
+  Fence,
+  FileText,
+  Flower2,
+  Frame,
+  Grid3x3,
+  Home,
+  ImageOff,
+  Paintbrush,
+  RefreshCw,
+  Rows3,
+  SeparatorHorizontal,
+  ShoppingBag,
+  Sun,
+  Sunset,
+  TreePine,
+  Users,
+  Wand2,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import * as THREE from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter";
-import {
-  Wand2, ArrowLeft, ImageOff, Sun, Cloud, Sunset,
-  TreePine, AlertCircle, RefreshCw, Download, Eye, Building2, Paintbrush,
-  Users, ShoppingBag, Flower2, FileText, Check,
-  Grid3x3, Blinds, Frame, Home, Fence, SeparatorHorizontal, Rows3, BrickWall,
-} from "lucide-react";
 
-import { useLocalBlenderRender } from "../terrain3d/blender/useLocalBlenderRender";
-import type { FacadeConfig } from "../terrain3d/facade/buildFacadeSceneInput";
-import { buildFacadeSceneInput }  from "../terrain3d/facade/buildFacadeSceneInput";
-import { buildFacadeRenderSpec }  from "../terrain3d/facade/buildFacadeRenderSpec";
-import { captureFacadeSvg }       from "../terrain3d/facade/captureFacadeSvg";
-import { buildFacadeAiPrompt }    from "../terrain3d/facade/buildFacadeAiPrompt";
-import { requestFacadeAiRender }  from "../terrain3d/facade/requestFacadeAiRender";
-import type { FacadeAiPromptInput } from "../terrain3d/facade/facadeAi.types";
 import { buildRectangularSilhouetteDataUrl } from "@/utils/buildRectangularSilhouette";
+import { useLocalBlenderRender } from "../terrain3d/blender/useLocalBlenderRender";
+import { buildFacadeAiPrompt } from "../terrain3d/facade/buildFacadeAiPrompt";
+import { buildFacadeRenderSpec } from "../terrain3d/facade/buildFacadeRenderSpec";
+import type { FacadeConfig } from "../terrain3d/facade/buildFacadeSceneInput";
+import { buildFacadeSceneInput } from "../terrain3d/facade/buildFacadeSceneInput";
+import { captureFacadeSvg } from "../terrain3d/facade/captureFacadeSvg";
+import type { FacadeAiPromptInput } from "../terrain3d/facade/facadeAi.types";
+import { requestFacadeAiRender } from "../terrain3d/facade/requestFacadeAiRender";
 
-import { buildFacade2DModel }    from "../terrain3d/facade2d/buildFacade2DModel";
-import Facade2DSvgRenderer       from "../terrain3d/facade2d/renderFacade2DSvg";
+import { buildFacade2DModel } from "../terrain3d/facade2d/buildFacade2DModel";
 import type {
-  Facade2DStylePresetId, Facade2DBuildInput,
-  Facade2DRhythm, Facade2DAmbiance, Facade2DVegetation,
+  Facade2DAmbiance,
+  Facade2DBuildInput,
+  Facade2DRhythm,
+  Facade2DStylePresetId,
+  Facade2DVegetation,
 } from "../terrain3d/facade2d/facade2d.types";
+import Facade2DSvgRenderer from "../terrain3d/facade2d/renderFacade2DSvg";
 
-import { useEditor2DStore }          from "../plan2d/editor2d.store";
-import { usePromoteurProjectStore }  from "../store/promoteurProject.store";
-import { writeCapture }              from "../shared/captures.store";
+import { useEditor2DStore } from "../plan2d/editor2d.store";
+import { writeCapture } from "../shared/captures.store";
+import {
+  HeroGhostButton,
+  HeroPrimaryButton,
+  PromoteurPageHero,
+} from "../shared/components/PromoteurPageHero";
+import { ACCENT_PRO, GRAD_PRO } from "../shared/promoteurDesign.tokens";
+import {
+  clearFacadeImage,
+  getFacadeImage,
+  getSnapshot,
+  setFacadeImage,
+} from "../shared/promoteurSnapshot.store";
+import { usePromoteurProjectStore } from "../store/promoteurProject.store";
+import { computeLevelOpenings, toCenteredX } from "../terrain3d/facade2d/computeFacadeBays";
 import {
   extractFromEditor2D, extractFromProjectStore, resolveFacadeProjectInput,
 } from "../terrain3d/facade2d/resolveFacadeProjectInput";
-import { computeLevelOpenings, toCenteredX } from "../terrain3d/facade2d/computeFacadeBays";
-import {
-  getFacadeImage, setFacadeImage, clearFacadeImage, getSnapshot,
-} from "../shared/promoteurSnapshot.store";
-import { GRAD_PRO, ACCENT_PRO } from "../shared/promoteurDesign.tokens";
-import {
-  PromoteurPageHero,
-  HeroPrimaryButton,
-  HeroGhostButton,
-} from "../shared/components/PromoteurPageHero";
 
 import type { MassingSceneModel } from "../terrain3d/massingScene.types";
 

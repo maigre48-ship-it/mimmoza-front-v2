@@ -4,30 +4,30 @@
 // Style identique à AnalysePage.tsx : tokens gray-*, ring-gray-200,
 // bg-gray-50, border-gray-200, shadow-sm, print-safe.
 
-import { useMemo } from "react";
 import {
-  Euro,
-  Percent,
-  Clock,
-  TrendingUp,
-  TrendingDown,
-  Minus,
+  AlertTriangle,
   BarChart3,
   Calculator,
-  Sparkles,
-  Info,
-  AlertTriangle,
   CheckCircle2,
-  XCircle,
   ChevronDown,
   ChevronUp,
+  Clock,
+  Euro,
+  Info,
+  Minus,
+  Percent,
+  Sparkles,
+  TrendingDown,
+  TrendingUp,
+  XCircle,
 } from "lucide-react";
+import { useMemo } from "react";
 
 import { useNavigate } from "react-router-dom";
 import useMarchandSnapshotTick from "../../../../marchand/shared/hooks/useMarchandSnapshotTick";
 import {
-  readMarchandSnapshot,
   ensureActiveDeal,
+  readMarchandSnapshot,
   type RentabiliteSaved,
 } from "../../../../marchand/shared/marchandSnapshot.store";
 import type {

@@ -7,10 +7,7 @@
 
 import React from 'react';
 
-import {
-  useOpportunityEngine,
-  type OpportunityFormState,
-} from '@/services/opportunity/useOpportunityEngine';
+import { getCurrentAdminStatus } from '@/lib/admin';
 import type {
   OpportunityAssetType,
   OpportunityConfidence,
@@ -23,8 +20,11 @@ import {
   type IngestSummary,
   type ScannedOpportunity,
 } from '@/services/opportunity/opportunityScanner.service';
-import { getCurrentAdminStatus } from '@/lib/admin';
 import { createWatch } from '@/services/opportunity/opportunityWatch.service';
+import {
+  useOpportunityEngine,
+  type OpportunityFormState,
+} from '@/services/opportunity/useOpportunityEngine';
 
 // -------------------------------------------------------------
 // Constantes UI

@@ -1,5 +1,5 @@
-﻿import type { BanqueSmartScore } from "../../types/banque.types";
-import { scoreColor, scoreLabel } from "../../services/banqueSmartscore";
+﻿import { scoreColor, scoreLabel } from "../../services/banqueSmartscore";
+import type { BanqueSmartScore } from "../../types/banque.types";
 
 interface ScoreBarsProps { smartscore: BanqueSmartScore; }
 

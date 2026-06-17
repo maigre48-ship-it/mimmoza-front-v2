@@ -18,20 +18,19 @@
 //
 // Fonction pure — aucune dépendance au store React.
 
-import type { Building2D, Parking2D } from './editor2d.types';
-import type { Point2D }               from './editor2d.types';
 import { computeParkingSlots, genId } from './editor2d.geometry';
+import type { Building2D, Parking2D, Point2D } from './editor2d.types';
 import type {
+  MasterConformityStatus,
+  MasterEconomicAssumptions,
   MasterScenario,
-  MasterScenarioGeometry,
-  MasterScenarioProgram,
-  MasterScenarioMetrics,
   MasterScenarioConformity,
   MasterScenarioEconomics,
-  MasterScenarioScores,
+  MasterScenarioGeometry,
+  MasterScenarioMetrics,
   MasterScenarioNarrative,
-  MasterEconomicAssumptions,
-  MasterConformityStatus,
+  MasterScenarioProgram,
+  MasterScenarioScores,
 } from './plan.master.types';
 import { DEFAULT_MASTER_ECONOMIC_ASSUMPTIONS } from './plan.master.types';
 

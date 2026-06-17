@@ -2,10 +2,10 @@
 
 import {
   FileText,
-  FolderPlus,
   FolderOpen,
-  MessageCircle,
+  FolderPlus,
   Home,
+  MessageCircle,
 } from "lucide-react";
 
 export function AgenceLayout() {

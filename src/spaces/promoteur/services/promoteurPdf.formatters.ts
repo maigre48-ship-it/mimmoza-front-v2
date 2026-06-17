@@ -2,8 +2,8 @@
 // Formatting helpers for the Promoteur PDF export
 // Handles EUR, %, m², dates, N/A cases, and French-safe text sanitization
 
-import type { RecommendationType, RisqueNiveau } from './promoteurSynthese.types';
 import { C, type RGB } from './promoteurPdf.theme';
+import type { RecommendationType, RisqueNiveau } from './promoteurSynthese.types';
 
 // ============================================================================
 // FRENCH-SAFE TEXT SANITIZER

@@ -2,8 +2,8 @@
 // FILE: src/spaces/promoteur/terrain3d/components/Controls3D.tsx
 // ============================================================================
 
-import React from 'react';
 import type { FC } from 'react';
+import React from 'react';
 import type { SceneVisibility, TerrainViewMode } from '../hooks/useMassingScene';
 
 /**

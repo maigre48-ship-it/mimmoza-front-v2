@@ -1,3 +1,10 @@
+import {
+  ADMIN_DISPLAY_QUOTA,
+  canAccessFeature,
+  isQuotaExhausted,
+  useAccessContext,
+  type AccessContext,
+} from "@/lib/access";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   fetchMarketOpportunities,
@@ -7,13 +14,6 @@ import {
   type MarketRefreshResult,
   type MarketZoneMetrics,
 } from "../services/marketRefresh";
-import {
-  useAccessContext,
-  canAccessFeature,
-  isQuotaExhausted,
-  ADMIN_DISPLAY_QUOTA,
-  type AccessContext,
-} from "@/lib/access";
 
 const SALE_MODE = "sale" as const;
 

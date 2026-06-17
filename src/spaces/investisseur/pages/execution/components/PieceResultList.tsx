@@ -1,12 +1,12 @@
 ﻿// src/spaces/investisseur/components/travaux/PieceResultList.tsx
 import React, { useState } from "react";
+import { TRAVAUX_PRICING_V1 } from "../../services/travauxPricing.config";
 import type {
-  TravauxRange,
-  PricingItemCode,
   ExpertLineItem,
   PieceTravaux,
+  PricingItemCode,
+  TravauxRange,
 } from "../../shared/travauxSimulation.types";
-import { TRAVAUX_PRICING_V1 } from "../../services/travauxPricing.config";
 
 /* ------------------------------------------------------------------ */
 /*  Pricing index (local helper)                                       */

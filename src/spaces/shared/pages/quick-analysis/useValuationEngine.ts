@@ -2,8 +2,8 @@
 // useValuationEngine.ts v3
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useCallback, useState } from "react";
 
 export type AnalysisType = "investisseur" | "rehabilitateur" | "promoteur";
 export type PropertyType =

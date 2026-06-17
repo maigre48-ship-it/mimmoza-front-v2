@@ -2,16 +2,16 @@
 // FILE: src/spaces/promoteur/terrain3d/hooks/useMassingScene.ts
 // ============================================================================
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
-import type { Feature, FeatureCollection, Polygon, MultiPolygon } from 'geojson';
-import type { EarthworksKPIs } from '../types/earthworks.types';
-import { EMPTY_EARTHWORKS_KPIS } from '../types/earthworks.types';
-import { useTerrainMesh, type UseTerrainMeshResult } from './useTerrainMesh';
-import { useProjectVolumes, type UseProjectVolumesResult } from './useProjectVolumes';
-import { getSlopeService } from '../services/slope.service';
+import type { Feature, FeatureCollection, MultiPolygon, Polygon } from 'geojson';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getEarthworksService } from '../services/earthworks.service';
+import { getSlopeService } from '../services/slope.service';
 import type { StubMaterial } from '../three/materials';
 import { createSceneMaterials, disposeSceneMaterials } from '../three/materials';
+import type { EarthworksKPIs } from '../types/earthworks.types';
+import { EMPTY_EARTHWORKS_KPIS } from '../types/earthworks.types';
+import { useProjectVolumes, type UseProjectVolumesResult } from './useProjectVolumes';
+import { useTerrainMesh, type UseTerrainMeshResult } from './useTerrainMesh';
 
 /**
  * État de visibilité des éléments

@@ -2,8 +2,8 @@
 // Contrôles végétation Three.js + contrat export Blender
 
 import React, { type FC, useState } from "react";
-import type { VegetationOptions } from "./MassingRenderer";
 import type { TreeType } from "../massingVegetationEngine";
+import type { VegetationOptions } from "./MassingRenderer";
 
 const ACCENT = "#5247b8";
 

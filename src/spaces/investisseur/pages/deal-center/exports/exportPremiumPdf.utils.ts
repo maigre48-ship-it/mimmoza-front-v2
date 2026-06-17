@@ -4,9 +4,9 @@
 // Stripe · Linear · Pitchbook · Palantir
 // Aucune logique métier — uniquement rendu PDF
 
-import { jsPDF } from "jspdf";
 import logoMimmozaUrl from "@/assets/logo-mimmoza-baseline.png";
 import { loadImageDataUrl } from "@/spaces/shared/loadImageDataUrl";
+import { jsPDF } from "jspdf";
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 

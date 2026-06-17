@@ -2,9 +2,12 @@
 // 5 templates architecturaux enrichis, chacun avec un caractère distinct
 
 import type {
-  MassingBuildingModel, BuildingStyleOptions, BuildingTemplateConfig,
-  BuildingTemplateType, TemplateFacadeStyle, TemplateRoofType,
-  SetbackRule, BuildingLevels,
+  BuildingLevels,
+  BuildingStyleOptions, BuildingTemplateConfig,
+  BuildingTemplateType,
+  MassingBuildingModel,
+  SetbackRule,
+  TemplateFacadeStyle, TemplateRoofType,
 } from "./massingScene.types";
 import { BUILDING_TEMPLATES, DEFAULT_BUILDING_STYLE } from "./massingScene.types";
 

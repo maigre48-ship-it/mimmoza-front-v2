@@ -1,20 +1,20 @@
 // src/pages/ApiPlaygroundPage.tsx
-import { useMemo, useState } from 'react';
 import {
-  PlayCircle,
-  Copy,
-  Check,
-  Key,
-  Globe,
-  Code2,
   AlertCircle,
+  Check,
   ChevronLeft,
+  Code2,
+  Copy,
   CreditCard,
+  Globe,
+  Key,
+  PlayCircle,
   Wifi,
 } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ApiDeveloperNav from '../features/api/components/ApiDeveloperNav';
-import { PlanBadge, EnvBadge } from '../features/api/components/ApiStatusBadge';
+import { EnvBadge, PlanBadge } from '../features/api/components/ApiStatusBadge';
 import { useApiMember } from '../features/api/member/useApiMember';
 
 const API_BASE_URL = 'https://fwvrqngbafqdaekbdfnm.supabase.co/functions/v1/api-gateway';

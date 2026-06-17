@@ -4,9 +4,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type {
+  AssetType,
   MimmozaValuationInput,
   MimmozaValuationResult,
-  AssetType,
   RiskLevel,
   SourceStatus,
 } from "./valuation.types";

@@ -12,32 +12,32 @@
 // v3.2 — forfaits éditables + bridge réhab "consume-once".
 // v3.1 — surfaceRehabM2 : champ surface en mode Réhabilitation.
 
-import React, { useMemo, useState, useEffect, useLayoutEffect, useRef } from "react";
 import * as turf from "@turf/turf";
 import type { Feature, FeatureCollection, Geometry } from "geojson";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { usePromoteurProjectStore } from "../store/promoteurProject.store";
-import { patchModule, getSnapshot } from "../shared/promoteurSnapshot.store";
-import { usePromoteurStudy } from "../shared/usePromoteurStudy";
-import { GRAD_PRO, ACCENT_PRO } from "../shared/promoteurDesign.tokens";
-import {
-  PromoteurPageHero,
-  HeroPrimaryButton,
-  HeroGhostButton,
-} from "../shared/components/PromoteurPageHero";
 import { PromoteurSynthesePage } from "../pages/PromoteurSynthesePage";
-import type { PromoteurRawInput } from "../services/promoteurSynthese.types";
 import type { Implantation2DSnapshot } from "../plan2d/implantation2d.snapshot";
 import {
   totalEmpriseM2 as snapTotalEmprise,
-  totalSdpM2    as snapTotalSdp,
+  totalSdpM2 as snapTotalSdp,
 } from "../plan2d/implantation2d.snapshot";
-import { readMassingMetrics, MASSING_METRICS_EVENT, type MassingMetrics } from "../terrain3d/massingBilanBridge";
+import type { PromoteurRawInput } from "../services/promoteurSynthese.types";
 import {
-  usePromoteurProgrammeStore,
-  resolvedNbLogements,
+  HeroGhostButton,
+  HeroPrimaryButton,
+  PromoteurPageHero,
+} from "../shared/components/PromoteurPageHero";
+import { ACCENT_PRO } from "../shared/promoteurDesign.tokens";
+import { getSnapshot, patchModule } from "../shared/promoteurSnapshot.store";
+import { usePromoteurStudy } from "../shared/usePromoteurStudy";
+import {
   PROGRAMME_EVENT,
+  resolvedNbLogements,
+  usePromoteurProgrammeStore,
 } from "../store/promoteurProgramme.store";
+import { usePromoteurProjectStore } from "../store/promoteurProject.store";
+import { MASSING_METRICS_EVENT, readMassingMetrics, type MassingMetrics } from "../terrain3d/massingBilanBridge";
 import { deriveConstructionCosts } from "../terrain3d/massingConstructionCosts";
 
 // ── Clés localStorage ─────────────────────────────────────────────────────────

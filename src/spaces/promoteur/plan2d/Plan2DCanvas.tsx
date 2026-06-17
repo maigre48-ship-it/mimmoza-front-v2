@@ -20,26 +20,42 @@
 //   (courbes de Catmull-Rom → cubiques de Bézier) pour éliminer les pics visuels
 //   aux angles. Le calcul PLU réel (pluEnvelope.geometry) est inchangé.
 
-import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { useEditor2DStore, getFloorVolumes, getBuildingVolumes } from './editor2d.store';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Balcon2D, BuildingVolume2D, Loggia2D, Terrasse2D } from './buildingProgram.types';
 import { DimensionOverlay } from './DimensionOverlay';
 import {
-  rectCorners, rectFromTwoPoints, squareFromTwoPoints,
-  rectFromCenterAndPoint, squareFromCenterAndPoint, clampRectSize,
-  rotationHandlePos, normalizeAngleDeg,
-  rectFullyInsidePolygon, rectPartiallyInsidePolygon,
-  moveRect, resizeRectFromHandle, pointHitsRect,
-  toSvgPoints, polygonBBox, genId, computeParkingSlots, dist, angleDeg,
+  angleDeg,
+  clampRectSize,
+  computeParkingSlots, dist,
+  genId,
+  moveRect,
+  normalizeAngleDeg,
+  pointHitsRect,
+  polygonBBox,
+  rectCorners,
+  rectFromCenterAndPoint,
+  rectFromTwoPoints,
+  resizeRectFromHandle,
+  rotationHandlePos,
+  squareFromCenterAndPoint,
+  squareFromTwoPoints,
+  toSvgPoints
 } from './editor2d.geometry';
 import { snapPoint } from './editor2d.snap';
+import { getFloorVolumes, useEditor2DStore } from './editor2d.store';
 import type {
-  Point2D, Building2D, Parking2D, DrawState, DragState,
-  OrientedRect, HandleId, FacadeEdge, FloorPlan2D,
+  Building2D,
+  DragState,
+  DrawState,
+  FacadeEdge, FloorPlan2D,
+  HandleId,
+  OrientedRect,
+  Parking2D,
+  Point2D,
 } from './editor2d.types';
-import type { BuildingVolume2D, Balcon2D, Loggia2D, Terrasse2D } from './buildingProgram.types';
 import {
   computeBuildableEnvelope, nearestParcelEdge,
-  isRectPartiallyInsidePolygon, pointInPolygon,
+  pointInPolygon
 } from './pluEnvelope.geometry';
 
 // ── Helpers de base ───────────────────────────────────────────────────

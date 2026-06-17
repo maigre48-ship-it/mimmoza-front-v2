@@ -6,9 +6,9 @@
 
 import React, { useState } from 'react';
 import type {
-  MasterScenario,
-  MasterEconomicAssumptions,
   MasterConformityStatus,
+  MasterEconomicAssumptions,
+  MasterScenario,
 } from '../plan2d/plan.master.types';
 
 // ─── TOKENS ───────────────────────────────────────────────────────────

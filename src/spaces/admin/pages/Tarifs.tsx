@@ -6,7 +6,6 @@
 // • AbonnementPage lit cette clé pour afficher les prix
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useState } from "react";
 import {
   BadgeEuro,
   Bot,
@@ -19,6 +18,7 @@ import {
   ToggleLeft,
   ToggleRight,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

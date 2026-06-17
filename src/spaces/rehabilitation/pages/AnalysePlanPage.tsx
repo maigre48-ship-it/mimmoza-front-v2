@@ -4,13 +4,13 @@
 //      (champ retourné par la Edge Function après ajout de la règle 13)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertOctagon, AlertTriangle, ArrowRightLeft, BookOpen, CheckCircle2,
   ChevronDown, Eye, FileText, Info, Layers, LayoutGrid, Lightbulb,
   Loader2, Puzzle, Ruler, ScanLine, ShieldAlert, Sparkles, TriangleAlert,
   Upload, X, XCircle, Zap,
 } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { analyzePlanReal } from "../services/analyzePlanReal";
 import type {
@@ -24,13 +24,14 @@ import {
 } from "../shared/rehabilitationProject.store";
 
 import { PlanOverlayViewer } from "../components/PlanOverlayViewer";
-import { usePlanOverlaySnapshot, createEmptySnapshot } from "../plan-reader/planOverlayStore";
 import { extractPlanMetadata } from "../plan-reader/planMetadataExtractor";
+import { createEmptySnapshot, usePlanOverlaySnapshot } from "../plan-reader/planOverlayStore";
 import { calibratePlan } from "../plan-reader/planScaleCalibrator";
 import { validatePlan } from "../plan-reader/planValidationEngine";
 import type {
-  LayerVisibility, PlanOverlaySnapshot, RawAIResult,
+  LayerVisibility,
   ValidationIssue as PipelineValidationIssue,
+  PlanOverlaySnapshot, RawAIResult,
 } from '../plan-reader/types';
 import { EMPTY_GEOMETRY, confidenceLabel } from '../plan-reader/types';
 

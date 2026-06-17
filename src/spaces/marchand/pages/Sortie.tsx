@@ -1,12 +1,12 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from "react";
-import { TrendingUp, Clock, Euro, Star, AlertTriangle } from "lucide-react";
-import SectionCard from "../shared/ui/SectionCard";
-import KpiCard from "../shared/ui/KpiCard";
-import {
-  readMarchandSnapshot,
-  patchSortieForDeal,
-} from "../shared/marchandSnapshot.store";
+﻿import { AlertTriangle, Clock, Euro, Star, TrendingUp } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useMarchandSnapshotTick from "../shared/hooks/useMarchandSnapshotTick";
+import {
+  patchSortieForDeal,
+  readMarchandSnapshot,
+} from "../shared/marchandSnapshot.store";
+import KpiCard from "../shared/ui/KpiCard";
+import SectionCard from "../shared/ui/SectionCard";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Design tokens — Investisseur

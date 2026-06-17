@@ -3,8 +3,8 @@
 // places guard rails ONLY on exposed edges (not covered by upper volume)
 
 import * as THREE from "three";
-import type { Pt2D, Edge2D } from "./massingGeometry3d";
-import { extractEdges, isEdgeCoveredByPolygon, centroid2D } from "./massingGeometry3d";
+import type { Edge2D, Pt2D } from "./massingGeometry3d";
+import { extractEdges, isEdgeCoveredByPolygon } from "./massingGeometry3d";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

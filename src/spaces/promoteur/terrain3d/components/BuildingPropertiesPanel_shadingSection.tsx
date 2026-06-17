@@ -187,4 +187,4 @@ function patchShading(
 */
 
 // ─── Export vide (ce fichier est un snippet, pas un module réel) ─────────────
-export {};
+export { };

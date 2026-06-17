@@ -7,18 +7,36 @@
 //   → Refactoré : utilise <BanqueRiskScoreCard />
 // ============================================
 
-import React, { useState, useCallback, useEffect, useRef, Component, ErrorInfo, ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
-import { 
-  Search, MapPin, Grid3X3, Loader2, X, 
-  AlertTriangle, CheckCircle, Shield, ShieldAlert, ShieldOff, ShieldCheck,
-  Activity, Download, FileText, ChevronDown, ChevronUp,
-  Flame, Droplets, Mountain, Factory, Atom, AlertOctagon,
-  Layers, CircleDot, Compass,
-  Target, Info,
-  Bug, Skull,
+import {
+  Activity,
+  AlertOctagon,
+  AlertTriangle,
+  Atom,
+  Bug,
+  CheckCircle,
+  ChevronDown, ChevronUp,
+  CircleDot, Compass,
+  Download,
+  Droplets,
+  Factory,
+  FileText,
+  Flame,
+  Grid3X3,
+  Info,
   Landmark,
+  Layers,
+  Loader2,
+  MapPin,
+  Mountain,
+  Shield, ShieldAlert,
+  ShieldCheck,
+  ShieldOff,
+  Skull,
+  Target,
+  X
 } from "lucide-react";
+import React, { Component, ErrorInfo, ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import type { LucideIcon } from "lucide-react";
 
@@ -35,30 +53,30 @@ import type {
 // ============================================
 // IMPORT SNAPSHOT STORE
 // ============================================
-import { patchProjectInfo, patchModule } from "../../shared/promoteurSnapshot.store";
+import { patchModule, patchProjectInfo } from "../../shared/promoteurSnapshot.store";
 // Pont → marchandSnapshot (Deal Center Investisseur)
 import { ensureActiveDeal, patchMarcheRisquesForDeal } from "../../../marchand/shared/marchandSnapshot.store";
 
 // ============================================
 // 🆕 Banque scoring – composant réutilisable
 // ============================================
-import { BanqueRiskScoreCard } from "../../../../components/banque/BanqueRiskScoreCard";
 import type { BankRiskScoring, BankRiskScoringGrade } from "../../../../components/banque/BanqueRiskScoreCard";
+import { BanqueRiskScoreCard } from "../../../../components/banque/BanqueRiskScoreCard";
 
 // ============================================
 // 🆕 Study persistence
 // ============================================
-import { usePromoteurStudy } from "../../shared/usePromoteurStudy";
 import type { PromoteurRisquesData } from "../../shared/promoteurStudy.types";
+import { usePromoteurStudy } from "../../shared/usePromoteurStudy";
 
 // 🆕 COPILOT : pont vers le store de contexte du Copilot
 import { useCopilotContext } from "../../../copilot/hooks/useCopilotContext";
-import { GRAD_PRO, ACCENT_PRO } from "../../shared/promoteurDesign.tokens";
 import {
-  PromoteurPageHero,
-  HeroPrimaryButton,
   HeroGhostButton,
+  HeroPrimaryButton,
+  PromoteurPageHero,
 } from "../../shared/components/PromoteurPageHero";
+import { ACCENT_PRO, GRAD_PRO } from "../../shared/promoteurDesign.tokens";
 
 // ============================================
 // DEBUG

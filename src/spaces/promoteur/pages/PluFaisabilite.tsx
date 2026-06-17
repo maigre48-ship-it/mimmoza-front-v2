@@ -1,8 +1,8 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "../../../lib/supabaseClient";
+import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "../../../lib/supabaseClient";
 import PluUploaderPanel from "../components/PluUploaderPanel";
-import { patchPromoteurSnapshot, patchModule } from "../shared/promoteurSnapshot.store";
+import { patchModule, patchPromoteurSnapshot } from "../shared/promoteurSnapshot.store";
 
 // ============================================
 // Configuration

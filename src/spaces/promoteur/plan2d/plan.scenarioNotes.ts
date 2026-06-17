@@ -1,7 +1,7 @@
 // src/spaces/promoteur/plan2d/plan.scenarioNotes.ts
 
-import type { ScenarioStatus } from "./plan.scenarios.types";
 import type { ScenarioRecommendationLayer } from "./plan.scenarioNotes.types";
+import type { ScenarioStatus } from "./plan.scenarios.types";
 
 // ─── PARAMS ───────────────────────────────────────────────────────────
 

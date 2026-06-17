@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { getUserWatchlists } from "../services/watchlists.service";
 import type { UserWatchlist } from "../services/watchlists.service";
+import { getUserWatchlists } from "../services/watchlists.service";
 
 export function useUserWatchlists() {
   const [watchlists, setWatchlists] = useState<UserWatchlist[]>([]);

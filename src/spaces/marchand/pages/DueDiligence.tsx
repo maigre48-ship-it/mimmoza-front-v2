@@ -9,23 +9,21 @@
  * (ex: "D-117") pour que le PDF récupère les bonnes données.
  */
 
-import { useState, useEffect, useCallback } from "react";
-import {
-  readMarchandSnapshot,
-  ensureActiveDeal,
-  MARCHAND_SNAPSHOT_EVENT,
-  type MarchandDeal,
-} from "../shared/marchandSnapshot.store";
-import {
-  readItemsForDossier,
-  upsertItemsForDossier,
-  DD_EVENT,
-  type DueDiligenceItem,
-  type DDStatus,
-  type DDCategory,
-} from "../shared/dueDiligence.store";
+import { useCallback, useEffect, useState } from "react";
 import { enrichMarketToDueDiligence } from "../services/enrichMarketToDueDiligence.service";
 import { enrichRisksToDueDiligence } from "../services/enrichRisksToDueDiligence.service";
+import {
+  DD_EVENT,
+  readItemsForDossier,
+  type DDCategory,
+  type DDStatus,
+  type DueDiligenceItem
+} from "../shared/dueDiligence.store";
+import {
+  ensureActiveDeal,
+  MARCHAND_SNAPSHOT_EVENT,
+  type MarchandDeal
+} from "../shared/marchandSnapshot.store";
 
 // ─── Category config ────────────────────────────────────────────────
 

@@ -1,5 +1,6 @@
 // FILE: src/spaces/banque/services/committee-engine.ts
 
+import type { RequiredDocument } from "../config/required-documents";
 import type {
   BanqueDossier,
   CompletenessResult,
@@ -8,7 +9,6 @@ import type {
   RiskLevel,
   Verdict,
 } from "../types";
-import type { RequiredDocument } from "../config/required-documents";
 
 // ============================================================================
 // 1. COMPLÉTUDE

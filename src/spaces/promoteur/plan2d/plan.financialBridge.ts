@@ -1,10 +1,10 @@
 // src/spaces/promoteur/plan2d/plan.financialBridge.ts
 
-import type { ImplantationScenario } from "./plan.scenarios.types";
 import type {
   FinancialBridgeAssumptions,
   FinancialBridgeResult,
 } from "./plan.financialBridge.types";
+import type { ImplantationScenario } from "./plan.scenarios.types";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 // src/spaces/copilot/components/CopilotToolCallCard.tsx
-import { Loader2, Check, AlertTriangle, Wrench, Info } from 'lucide-react';
+import { AlertTriangle, Check, Info, Loader2, Wrench } from 'lucide-react';
 import type { ActiveToolCall } from '../types/copilot.types';
 import { COPILOT_THEME as T } from './copilotTheme';
 

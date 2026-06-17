@@ -1,11 +1,11 @@
 // src/spaces/banque/services/dueDiligence.mutate.ts
 
 import type {
-  DueDiligenceReport,
-  DueDiligenceEvidence,
-  DueDiligenceStatus,
-  DueDiligenceItem,
   DueDiligenceCategory,
+  DueDiligenceEvidence,
+  DueDiligenceItem,
+  DueDiligenceReport,
+  DueDiligenceStatus,
 } from "../types/dueDiligence.types";
 import { computeDueDiligence } from "./dueDiligence.compute";
 

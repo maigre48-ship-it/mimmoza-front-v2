@@ -32,8 +32,8 @@
 import * as THREE from 'three';
 import { computeCentroid } from '../massingFacadeStyles';
 import type { MassingBuildingModel } from '../massingScene.types';
-import { hashString, createRNG } from './buildFacadeForExport';
 import type { ExportMeshGroup } from './buildFacadeForExport';
+import { createRNG, hashString } from './buildFacadeForExport';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

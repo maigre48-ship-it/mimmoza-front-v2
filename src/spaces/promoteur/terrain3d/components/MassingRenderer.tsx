@@ -33,11 +33,11 @@
 //   résolution RGE Alti (~20 cm d'échantillonnage). cellM supprimé (inutile).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useEffect, useRef, useCallback, useState } from "react";
+import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js"; // V8.8
-import type { Feature, FeatureCollection, Polygon, MultiPolygon } from "geojson";
-import type { MassingBuildingModel, EditorTool, PlacedObject } from "../massingScene.types";
+import type { EditorTool, MassingBuildingModel, PlacedObject } from "../massingScene.types";
 import { totalHeightM, totalLevelsCount } from "../massingScene.types";
 
 import {
@@ -49,24 +49,24 @@ import {
 
 import {
   computeSceneProjection,
-  getBuildingScenePts,
   computeVolumeSlices,
+  getBuildingScenePts,
   type VolumeSlice as GeoVolumeSlice,
 } from "../massingGeometry";
 
 import {
   createSceneContext,
-  handleResize,
-  fitCameraToBox,
-  disposeSceneContext,
   disposeGroup,
+  disposeSceneContext,
+  fitCameraToBox,
+  handleResize,
   type SceneContext,
 } from "../massingRendererScene";
 
 import {
+  clearLabels,
   rebuildLabels,
   updateLabelPositions,
-  clearLabels,
   type LabelDef,
 } from "../massingRendererLabels";
 
@@ -82,10 +82,10 @@ import { buildBush } from "../massingVegetationEngine";
 
 import { buildFacadeGeometry } from "../massingFacadeEngine";
 import {
-  getFacadeStyle,
   classifyEdge,
-  resolveStyleForEdge,
   computeCentroid,
+  getFacadeStyle,
+  resolveStyleForEdge,
   type FacadeStyleDefinition,
 } from "../massingFacadeStyles";
 
@@ -93,16 +93,16 @@ import {
 import { ensureBuildingRenderSpec } from "../buildingBlenderSpec.helpers";
 import { resolveBuildingRenderSpecSafe } from "../buildingRenderMapper";
 import {
+  applyCameraFraming,
+  bboxFromBox3,
+  computeCameraFraming,
+} from "../renderCamera.helpers";
+import {
+  applyIntentToColor,
   applySceneAmbiance,
   buildAmbianceFromIntent,
   pickDominantIntent,
-  applyIntentToColor,
 } from "../renderScenePresets";
-import {
-  bboxFromBox3,
-  computeCameraFraming,
-  applyCameraFraming,
-} from "../renderCamera.helpers";
 
 // ─── Debug ────────────────────────────────────────────────────────────────────
 

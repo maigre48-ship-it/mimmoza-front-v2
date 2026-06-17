@@ -1,10 +1,10 @@
 // src/spaces/promoteur/plan2d/plan.bestSuggestion.ts
 
-import type { ImplantationScenario } from "./plan.scenarios.types";
 import type {
   BestImplantationSuggestion,
   SuggestionConfidence,
 } from "./plan.bestSuggestion.types";
+import type { ImplantationScenario } from "./plan.scenarios.types";
 
 // ─── SCORING THRESHOLDS ───────────────────────────────────────────────
 

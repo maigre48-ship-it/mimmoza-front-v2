@@ -3,18 +3,18 @@
 import React, { useMemo, useState } from "react";
 import type { InvestisseurSnapshot } from "../store/investisseurSnapshot.store";
 import {
-  questionnaireSchema,
-  STEP_LABELS,
-  getNestedValue,
-  setNestedValue,
-  isQuestionVisible,
-  filterByMode,
   countMissingForStep,
+  filterByMode,
+  getNestedValue,
+  isQuestionVisible,
+  questionnaireSchema,
+  setNestedValue,
+  STEP_LABELS,
   validateSnapshot,
   type QuestionDef,
   type QuestionnaireMode,
-  type ValidationWarning,
   type ValidationSeverity,
+  type ValidationWarning,
 } from "./questionnaireSchema";
 
 // ─── Props ───────────────────────────────────────────────────────────

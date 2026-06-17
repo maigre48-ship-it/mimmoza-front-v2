@@ -1,9 +1,9 @@
 // FILE: src/spaces/promoteur/etudes/marche/components/CompetitionCard.tsx
 
+import { Building, ChevronDown, ChevronUp, MapPin, Star } from "lucide-react";
 import React, { useState } from "react";
-import { Building, ChevronDown, ChevronUp, Users, Percent, Euro, MapPin, Star } from "lucide-react";
-import { CompetitionData, ProjectType } from "../types";
 import { getProjectConfig } from "../config";
+import { CompetitionData, ProjectType } from "../types";
 
 interface CompetitionCardProps {
   competition: CompetitionData;

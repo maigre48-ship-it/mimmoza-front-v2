@@ -3,18 +3,18 @@
 import HomePage from "../pages/HomePage";
 
 // Layouts
-import ParticulierLayout from "../spaces/particulier/ParticulierLayout";
-import MarchandLayout from "../spaces/marchand/MarchandLayout";
-import PromoteurLayout from "../spaces/promoteur/PromoteurLayout";
-import BanqueLayout from "../spaces/banque/BanqueLayout";
 import AssuranceLayout from "../spaces/assurance/AssuranceLayout";
+import BanqueLayout from "../spaces/banque/BanqueLayout";
+import MarchandLayout from "../spaces/marchand/MarchandLayout";
+import ParticulierLayout from "../spaces/particulier/ParticulierLayout";
+import PromoteurLayout from "../spaces/promoteur/PromoteurLayout";
 
 // Home pages (per space)
-import ParticulierHomePage from "../spaces/particulier/pages/ParticulierHomePage";
-import MarchandHomePage from "../spaces/marchand/pages/MarchandHomePage";
-import PromoteurHomePage from "../spaces/promoteur/pages/PromoteurHomePage";
-import BanqueHomePage from "../spaces/banque/pages/BanqueHomePage";
 import AssuranceHomePage from "../spaces/assurance/pages/AssuranceHomePage";
+import BanqueHomePage from "../spaces/banque/pages/BanqueHomePage";
+import MarchandHomePage from "../spaces/marchand/pages/MarchandHomePage";
+import ParticulierHomePage from "../spaces/particulier/pages/ParticulierHomePage";
+import PromoteurHomePage from "../spaces/promoteur/pages/PromoteurHomePage";
 
 // Shared page (currently stored in Particulier space)
 import EstimationPage from "../spaces/particulier/pages/Estimation";

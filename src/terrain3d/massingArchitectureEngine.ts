@@ -3,13 +3,6 @@
 // Construit des meshes Three.js à partir du modèle d'architecture paramétrique.
 
 import * as THREE from "three";
-import type {
-  Pt2D,
-  MassingBuildingModel,
-  MassingArchitectureStyle,
-  BuildingSide,
-  MassingFacadeStyle,
-} from "./massingScene.types";
 import {
   buildArchitectureSlices,
   buildFacadeRunsForSlice,
@@ -17,6 +10,13 @@ import {
   type ArchitectureSliceRole,
   type FacadeRun,
 } from "./massingArchitectureGeometry";
+import type {
+  BuildingSide,
+  MassingArchitectureStyle,
+  MassingBuildingModel,
+  MassingFacadeStyle,
+  Pt2D,
+} from "./massingScene.types";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES PUBLICS

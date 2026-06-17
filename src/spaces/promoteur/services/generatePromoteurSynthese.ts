@@ -6,16 +6,16 @@
 //   - Zéro invention : aucune valeur affichée si non présente dans les données
 
 import type {
-  PromoteurSynthese,
-  PromoteurRawInput,
   AnomalieItem,
+  ContrainteTechnique,
+  DataQualite,
   ModuleQualite,
+  ModuleStatut,
+  PromoteurRawInput,
+  PromoteurSynthese,
+  RecommendationType,
   RisqueItem,
   Scenario,
-  ContrainteTechnique,
-  RecommendationType,
-  DataQualite,
-  ModuleStatut,
 } from './promoteurSynthese.types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

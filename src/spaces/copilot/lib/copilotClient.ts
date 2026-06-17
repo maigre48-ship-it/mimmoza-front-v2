@@ -5,15 +5,15 @@
 // =============================================================
 
 import { supabase } from '@/lib/supabase';
-import { SSEParser } from './streamParser';
 import { getActiveCopilotContext } from '../store/activeCopilotContext.store';
 import type {
+  ChatMessage,
   CopilotChatRequest,
+  CopilotConversation,
   CopilotMimmozaContext,
   CopilotStreamEvent,
-  CopilotConversation,
-  ChatMessage,
 } from '../types/copilot.types';
+import { SSEParser } from './streamParser';
 
 export class CopilotClientError extends Error {
   constructor(

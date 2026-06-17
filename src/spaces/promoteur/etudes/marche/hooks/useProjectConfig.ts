@@ -1,8 +1,8 @@
 // FILE: src/spaces/promoteur/etudes/marche/hooks/useProjectConfig.ts
 
 import { useMemo } from "react";
-import { ProjectType, ProjectTypeConfig, PoiProjectConfig } from "../types";
-import { getProjectConfig, getPoiConfigsForProject } from "../config";
+import { getPoiConfigsForProject, getProjectConfig } from "../config";
+import { PoiProjectConfig, ProjectType, ProjectTypeConfig } from "../types";
 
 interface UseProjectConfigReturn {
   config: ProjectTypeConfig;

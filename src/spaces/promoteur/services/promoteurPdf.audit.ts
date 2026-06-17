@@ -2,9 +2,9 @@
 // Document audit: completeness scoring, document status classification,
 // conservative recommendation override, and structured metadata for the PDF.
 
-import type { PromoteurSynthese, RecommendationType } from './promoteurSynthese.types';
-import { validateSynthese, type ValidationResult } from './promoteurPdf.validators';
 import type { DocumentStatus } from './promoteurPdf.formatters';
+import { validateSynthese, type ValidationResult } from './promoteurPdf.validators';
+import type { PromoteurSynthese, RecommendationType } from './promoteurSynthese.types';
 
 // ============================================================================
 // TYPES

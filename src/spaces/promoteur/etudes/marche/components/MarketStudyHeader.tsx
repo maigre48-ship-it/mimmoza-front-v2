@@ -1,7 +1,7 @@
 // FILE: src/spaces/promoteur/etudes/marche/components/MarketStudyHeader.tsx
 
 import React from "react";
-import type { MarketStudyResponse, MarketStudyParams } from "../types/marketStudy.types";
+import type { MarketStudyParams, MarketStudyResponse } from "../types/marketStudy.types";
 
 interface MarketStudyHeaderProps {
   data: MarketStudyResponse | null;

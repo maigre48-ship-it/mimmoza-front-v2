@@ -1,6 +1,6 @@
+import { Banknote, Briefcase, Building2, Shield, ShieldCheck, User, Wrench } from "lucide-react";
 import React, { useMemo } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { Home, Building2, Briefcase, ShieldCheck, Banknote, Shield, User, Wrench } from "lucide-react";
 
 type SpaceId =
   | "audit"

@@ -4,30 +4,30 @@
 // ✅ v4: Cover page — cibles monochromes teal profond
 // ============================================================================
 
-import { useState, useCallback, useMemo, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { useBanqueDossierContext } from "../hooks/useBanqueDossierContext";
-import { upsertDossier, addEvent } from "../store/banqueSnapshot.store";
 import { buildOperationSummaryFromDossier } from "../adapters/manualOperationAdapter";
+import { useBanqueDossierContext } from "../hooks/useBanqueDossierContext";
 import {
-  computeSmartScoreFromOperation,
   buildVerdictExplanation,
+  computeSmartScoreFromOperation,
   type SmartScoreUniversalResult,
 } from "../scoring/banqueSmartScoreUniversal";
 import { normalizeSmartScoreUniversal } from "../scoring/normalizeSmartScoreUniversal";
+import { addEvent, upsertDossier } from "../store/banqueSnapshot.store";
 // ❌ IA désactivée — import supprimé
 // import { generateCommitteeNarrative } from "../services/banqueCommitteeNarrative.service";
+import type { ReportInput as EngineReportInput } from "../committee/committeeEngine";
 import {
+  buildAcceptanceProbability,
   buildCommitteePresentation as buildEnginePresentation,
   buildDecisionScenarios as buildEngineScenarios,
-  buildAcceptanceProbability,
   buildRiskReturnMatrix,
   buildStressTests,
 } from "../committee/committeeEngine";
-import type { ReportInput as EngineReportInput } from "../committee/committeeEngine";
 import type {
-  OperationSummary,
   MissingDataItem,
+  OperationSummary,
 } from "../types/operationSummary.types";
 
 // ── Design tokens Financeur ──

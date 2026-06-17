@@ -1,9 +1,9 @@
-﻿import React, { useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
+import CommitteeDevRaw from "./CommitteeDevRaw";
 import CommitteeOverview from "./CommitteeOverview";
 import CommitteeSectionLocalization from "./CommitteeSectionLocalization";
-import CommitteeSectionRisks from "./CommitteeSectionRisks";
 import CommitteeSectionMarket from "./CommitteeSectionMarket";
-import CommitteeDevRaw from "./CommitteeDevRaw";
+import CommitteeSectionRisks from "./CommitteeSectionRisks";
 
 import CommitteeSettingsModal, {
   loadCommitteeSettings,

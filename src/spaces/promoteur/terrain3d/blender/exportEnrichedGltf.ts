@@ -13,17 +13,17 @@
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter';
 import {
-  buildArchitecturalMeshGroups,
-  type BuildingEnvelope,
   type ArchitecturalStyle,
   type ArchMeshGroupResult,
+  buildArchitecturalMeshGroups,
+  type BuildingEnvelope,
   DEFAULT_STYLE,
 } from './buildArchitecturalMeshGroups';
 import {
   buildRenderSpecV3,
   type BuildRenderSpecV3Input,
-  type RenderSpecV3,
   type LandscapeSpec,
+  type RenderSpecV3,
 } from './buildRenderSpecV3';
 
 // ─────────────────────────────────────────────────────────────────────────────

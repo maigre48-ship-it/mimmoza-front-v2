@@ -25,12 +25,13 @@
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { centroid2D } from "./massingGeometry3d";
-import type { Pt2D } from "./massingGeometry3d";
 import {
-  planEdgeOpenings, styleForEdge, DEFAULT_OPENING_STYLE, MIN_OPENING_EDGE,
+  DEFAULT_OPENING_STYLE, MIN_OPENING_EDGE,
+  planEdgeOpenings, styleForEdge,
   type OpeningsConfig,
 } from "./massingFacadeOpenings";
+import type { Pt2D } from "./massingGeometry3d";
+import { centroid2D } from "./massingGeometry3d";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 

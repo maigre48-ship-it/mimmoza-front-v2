@@ -1,6 +1,6 @@
 // FILE: src/spaces/banque/hooks/useCommitteeWorkflow.ts
 
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
   BanqueDossier,
@@ -14,24 +14,24 @@ import type {
 import { getRequiredDocuments } from "../config/required-documents";
 
 import {
+  buildDecisionDraft,
   computeCompleteness,
   computeLtvFromDossier,
   computeRiskLevel,
-  suggestConditions,
-  buildDecisionDraft,
   resetConditionIdCounter,
+  suggestConditions,
 } from "../services/committee-engine";
 
 import {
-  loadSnapshot,
-  saveSnapshot,
   getActiveDossier,
+  loadSnapshot,
   patchAddOrUpdateDocument,
-  patchRemoveDocument,
   patchAddOrUpdateGuarantee,
+  patchRemoveDocument,
   patchRemoveGuarantee,
   patchSetConditions,
   patchSetDecision,
+  saveSnapshot,
 } from "../services/dossier-committee-service";
 
 // ============================================================================

@@ -3,11 +3,11 @@
 // Fixed: version counter to force re-render on rotation/transforms
 // Fixed: template sizing for elongated parcels
 
-import React, { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { GeoJSON, Polyline, useMap, useMapEvents, Marker } from "react-leaflet";
-import L from "leaflet";
-import type { Feature, Polygon, MultiPolygon, Position } from "geojson";
 import * as turf from "@turf/turf";
+import type { Feature, MultiPolygon, Polygon, Position } from "geojson";
+import L from "leaflet";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { GeoJSON, Marker, Polyline, useMap, useMapEvents } from "react-leaflet";
 
 import "@geoman-io/leaflet-geoman-free";
 
@@ -1831,11 +1831,5 @@ export function DrawToolbar({ drawEngine }: DrawToolbarProps): React.ReactElemen
 // =============================================================================
 
 export {
-  computeEdgeDimensions,
-  computeDistanceToEnvelope,
-  computePowerPointHandles,
-  formatDistance,
-  formatArea,
-  createTemplateShape,
-  snapToGrid,
+  computeDistanceToEnvelope, computeEdgeDimensions, computePowerPointHandles, createTemplateShape, formatArea, formatDistance, snapToGrid
 };

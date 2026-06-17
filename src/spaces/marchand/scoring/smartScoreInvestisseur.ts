@@ -1,11 +1,11 @@
 // src/spaces/marchand/scoring/smartScoreInvestisseur.ts
 
 import type {
-  InvestisseurSnapshot,
-  SmartScoreResult,
-  SmartScorePillar,
-  MissingDataItem,
   Grade,
+  InvestisseurSnapshot,
+  MissingDataItem,
+  SmartScorePillar,
+  SmartScoreResult,
   Verdict,
 } from "../store/investisseurSnapshot.store";
 

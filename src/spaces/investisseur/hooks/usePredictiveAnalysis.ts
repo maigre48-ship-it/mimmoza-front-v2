@@ -1,9 +1,9 @@
-import { useState, useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { computePredictiveSnapshot } from "../services/predictive/predictive.engine";
 import type {
   PredictiveAnalysisSnapshot,
   PredictiveEngineInput,
 } from "../services/predictive/predictive.types";
-import { computePredictiveSnapshot } from "../services/predictive/predictive.engine";
 
 type Status = "idle" | "computing" | "done" | "error";
 

@@ -1,8 +1,8 @@
 // ─── editor2d.snap.ts ────────────────────────────────────────────────────────
 // Moteur de snap — priorité intelligente, calculs en espace monde
 
+import { closestPointOnSegment, dist, pointToSegmentDist } from './editor2d.geometry';
 import type { Point2D, SnapOptions } from './editor2d.types';
-import { closestPointOnSegment, pointToSegmentDist, dist } from './editor2d.geometry';
 
 export type SnapKind = 'parcelleVertex' | 'parcelleEdge' | 'orthogonal' | 'grid' | null;
 

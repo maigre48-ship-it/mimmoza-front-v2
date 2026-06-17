@@ -1,37 +1,37 @@
 ﻿// src/spaces/investisseur/pages/execution/SimulationTravauxPage.tsx
 // v7: theme + breadcrumb injectables (même système que RenduTravauxPage)
 
-import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import type {
-  TravauxSimulationV1,
-  TravauxRange,
-  RenovationLevel,
-  ChantierComplexity,
-  TravauxOptionsSimple,
-  TriChoice,
-  BinaryChoice,
-  ComputedTravaux,
-  ComputedLot,
-  PricingItemCode,
-  ExpertLineItem,
-  PieceTravaux,
-  PieceType,
-} from "../../shared/travauxSimulation.types";
-import { computeTravauxSimulation } from "../../services/travauxCalculator.service";
-import { TRAVAUX_PRICING_V1 } from "../../services/travauxPricing.config";
-import {
-  getInvestisseurSnapshot,
-  upsertInvestisseurProject,
-  addInvestisseurEvent,
-} from "../../shared/investisseurSnapshot.store";
-import {
-  patchExecutionTravaux,
-  readMarchandSnapshot,
-  patchRentabiliteForDeal,
-} from "../../../marchand/shared/marchandSnapshot.store";
 import {
   setActiveCopilotContext,
 } from '@/spaces/copilot/store/activeCopilotContext.store';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  patchExecutionTravaux,
+  patchRentabiliteForDeal,
+  readMarchandSnapshot,
+} from "../../../marchand/shared/marchandSnapshot.store";
+import { computeTravauxSimulation } from "../../services/travauxCalculator.service";
+import { TRAVAUX_PRICING_V1 } from "../../services/travauxPricing.config";
+import {
+  addInvestisseurEvent,
+  getInvestisseurSnapshot,
+  upsertInvestisseurProject,
+} from "../../shared/investisseurSnapshot.store";
+import type {
+  BinaryChoice,
+  ChantierComplexity,
+  ComputedLot,
+  ComputedTravaux,
+  ExpertLineItem,
+  PieceTravaux,
+  PieceType,
+  PricingItemCode,
+  RenovationLevel,
+  TravauxOptionsSimple,
+  TravauxRange,
+  TravauxSimulationV1,
+  TriChoice,
+} from "../../shared/travauxSimulation.types";
 
 /* ================================================================== */
 /*  Theme                                                              */

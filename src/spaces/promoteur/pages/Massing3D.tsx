@@ -5,20 +5,20 @@
 // v2.1 — Capture scopée par studyId
 // v2.0 — Capture synthèse
 
+import type { Feature, MultiPolygon, Polygon } from "geojson";
 import React from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
-import { usePromoteurProjectStore } from "../store/promoteurProject.store";
-import { patchModule } from "../shared/promoteurSnapshot.store";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { writeCapture } from "../shared/captures.store";
+import {
+  HeroGhostButton,
+  HeroPrimaryButton,
+  PromoteurPageHero,
+} from "../shared/components/PromoteurPageHero";
+import { ACCENT_PRO } from "../shared/promoteurDesign.tokens";
+import { patchModule } from "../shared/promoteurSnapshot.store";
+import { usePromoteurProjectStore } from "../store/promoteurProject.store";
 import { MassingEditor3D } from "../terrain3d/components/MassingEditor3D";
 import type { MassingSceneModel } from "../terrain3d/massingScene.types";
-import type { Feature, Polygon, MultiPolygon } from "geojson";
-import { GRAD_PRO, ACCENT_PRO } from "../shared/promoteurDesign.tokens";
-import {
-  PromoteurPageHero,
-  HeroPrimaryButton,
-  HeroGhostButton,
-} from "../shared/components/PromoteurPageHero";
 
 function parcelFeatureKey(studyId: string): string {
   return `mimmoza.parcelFeature.${studyId}`;

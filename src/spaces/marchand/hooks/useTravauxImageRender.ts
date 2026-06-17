@@ -3,7 +3,7 @@
 // V4 — Hook principal du module Rendu Travaux.
 // Ajout : solType, solColor, murColor, configSnapshot, payload config.
 
-import { useState, useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { buildTravauxImagePrompt } from "../../../utils/buildTravauxImagePrompt";
 import {
   buildMaskBase64,
@@ -11,14 +11,14 @@ import {
   type TravauxZone,
 } from "../../../utils/buildTravauxZoning";
 import type {
-  TravauxImage,
   RenduResult,
+  RenduTravauxEdgePayload,
+  RenduTravauxEdgeResponse,
   RenduTravauxState,
+  TravauxImage,
   TravauxRenduConfig,
   TravauxSolType,
   UseTravauxImageRenderReturn,
-  RenduTravauxEdgePayload,
-  RenduTravauxEdgeResponse,
 } from "../types/rendutravaux.types";
 
 const DALLE_TARGET_SIZE = 1024;

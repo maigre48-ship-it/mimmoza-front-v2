@@ -5,11 +5,11 @@
 
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import DossierContextBar from "../components/DossierContextBar";
 import { useBanqueDossierContext } from "../hooks/useBanqueDossierContext";
-import { upsertDossier, removeDossier, addEvent } from "../store/banqueSnapshot.store";
+import { addEvent, removeDossier, upsertDossier } from "../store/banqueSnapshot.store";
 import { createEmptyDossier } from "../store/banqueSnapshot.types";
 import { preserveDossierInPath } from "../utils/banqueDossierUrl";
-import DossierContextBar from "../components/DossierContextBar";
 
 const STATUS_COLORS: Record<string, string> = {
   brouillon: "bg-gray-100 text-gray-700",

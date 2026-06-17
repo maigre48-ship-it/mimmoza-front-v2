@@ -1,9 +1,9 @@
 // src/spaces/promoteur/etudes/marche/engine/smartscore.ehpad.ts
 
-import type { InseeData, EHPADData, ServiceProche } from "../types/market.types";
+import type { EHPADData, InseeData, ServiceProche } from "../types/market.types";
 import type { ScoreComponent, SmartScoreResult } from "../types/smartscore.types";
+import { clamp, roundScore, scoreFromRange, weightedMean } from "../utils/score.utils";
 import { computeSmartScore } from "./smartscore.base";
-import { clamp, scoreFromRange, weightedMean, roundScore } from "../utils/score.utils";
 
 /**
  * Entrée SmartScore EHPAD

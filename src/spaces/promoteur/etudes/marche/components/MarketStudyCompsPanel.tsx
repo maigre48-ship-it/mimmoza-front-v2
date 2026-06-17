@@ -1,8 +1,8 @@
 // FILE: src/spaces/promoteur/etudes/marche/components/MarketStudyCompsPanel.tsx
 
-import React, { useState, useMemo } from "react";
-import type { MarketStudyResponse, DvfTransaction } from "../types/marketStudy.types";
-import { formatPrice, formatNumber, formatDistance } from "../hooks/useMarketStudy";
+import React, { useMemo, useState } from "react";
+import { formatDistance, formatNumber, formatPrice } from "../hooks/useMarketStudy";
+import type { DvfTransaction, MarketStudyResponse } from "../types/marketStudy.types";
 
 interface MarketStudyCompsPanelProps {
   data: MarketStudyResponse | null;

@@ -3,28 +3,28 @@
 // Committee Review — V4 — Branché marchandSnapshot
 // Style identique à AnalysePage.tsx.
 
-import { useMemo } from "react";
 import {
-  Users,
   BarChart3,
-  ShieldAlert,
-  TrendingUp,
+  CheckCircle2,
   ClipboardList,
+  Clock,
+  FileText,
   Gauge,
   Hammer,
-  FileText,
-  CheckCircle2,
-  Clock,
+  ShieldAlert,
+  TrendingUp,
+  Users,
   XCircle,
 } from "lucide-react";
+import { useMemo } from "react";
 
 import useMarchandSnapshotTick from "../../../../marchand/shared/hooks/useMarchandSnapshotTick";
 import {
-  readMarchandSnapshot,
   ensureActiveDeal,
+  readMarchandSnapshot,
+  type ExecutionSaved,
   type MarcheRisquesSaved,
   type RentabiliteSaved,
-  type ExecutionSaved,
 } from "../../../../marchand/shared/marchandSnapshot.store";
 
 import type { RentabiliteSnapshot } from "../../../../marchand/types/rentabilite.types";

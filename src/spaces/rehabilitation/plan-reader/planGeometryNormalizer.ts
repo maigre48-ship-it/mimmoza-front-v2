@@ -12,7 +12,7 @@
 // Les pièces humides sont marquées (cuisine, salle de bain, WC, buanderie).
 // ---------------------------------------------------------------------------
 
-import type { PlanGeometry, Wall, Opening, Room, Point2D, WallType, OpeningType, RoomType, DataSource, ConfidenceLevel } from './types';
+import type { ConfidenceLevel, DataSource, Opening, OpeningType, PlanGeometry, Point2D, Room, RoomType, Wall, WallType } from './types';
 import { EMPTY_GEOMETRY } from './types';
 
 // ---------------------------------------------------------------------------

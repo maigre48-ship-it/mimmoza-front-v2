@@ -11,10 +11,9 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type {
-  StructuredReport,
-  PillarResult,
-  Niveau,
   Label,
+  Niveau,
+  StructuredReport
 } from "./banqueCalcUtils";
 
 // ── Color palette ──

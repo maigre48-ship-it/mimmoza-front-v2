@@ -1,11 +1,12 @@
 // src/spaces/rehabilitation/pages/SyntheseAuditPage.tsx
 // Synthèse audit — Mimmoza / Espace Réhabilitation
 
-import React, { useEffect, useState } from "react";
 import {
   ArrowRight, Building2, Calculator, CheckCircle2, ClipboardList,
-  RefreshCw, ShieldCheck, Sparkles, TriangleAlert, XCircle,
+  RefreshCw, ShieldCheck,
+  TriangleAlert, XCircle
 } from "lucide-react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 /* ── Thème ── */

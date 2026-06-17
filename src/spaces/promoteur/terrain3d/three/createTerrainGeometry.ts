@@ -2,7 +2,7 @@
 // FILE: src/spaces/promoteur/terrain3d/three/createTerrainGeometry.ts
 // ============================================================================
 
-import type { TerrainGrid, Point3D } from '../types/terrain.types';
+import type { TerrainGrid } from '../types/terrain.types';
 
 /**
  * Représentation stub d'une géométrie Three.js

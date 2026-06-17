@@ -5,15 +5,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { supabase } from '../../../lib/supabaseClient';
-import { DEFAULT_TRANSCRIPTION_OPTIONS } from '../plan-reader/planTranscription.types';
 import type {
+  PlanTranscriptionResult,
   TranscribePlanPayload,
   TranscribePlanRawResponse,
-  PlanTranscriptionResult,
   TranscriptionError,
   TranscriptionErrorCode,
   TranscriptionOptions,
 } from '../plan-reader/planTranscription.types';
+import { DEFAULT_TRANSCRIPTION_OPTIONS } from '../plan-reader/planTranscription.types';
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 

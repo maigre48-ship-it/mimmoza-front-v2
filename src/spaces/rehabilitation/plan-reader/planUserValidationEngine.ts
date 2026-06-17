@@ -6,8 +6,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from 'react';
-import type { DetectedWall, WallMaterial } from './planTranscription.types';
 import type { WallCorrection } from '../shared/planValidation.types';
+import type { DetectedWall, WallMaterial } from './planTranscription.types';
 
 // ── Clé de stockage ───────────────────────────────────────────────────────────
 

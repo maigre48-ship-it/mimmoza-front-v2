@@ -1,9 +1,8 @@
 // src/spaces/admin/components/AdminLayout.tsx
 
-import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import {
-  BarChart3,
   BadgeEuro,
+  BarChart3,
   Bot,
   Building2,
   ClipboardList,
@@ -11,9 +10,9 @@ import {
   FileText,
   LogOut,
   Settings,
-  Ticket,
-  Users,
+  Users
 } from "lucide-react";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
 // ── Items de navigation ───────────────────────────────────────────────────────
 

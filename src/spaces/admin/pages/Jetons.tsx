@@ -1,5 +1,3 @@
-import { useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   CheckCircle2,
@@ -8,6 +6,8 @@ import {
   Sparkles,
   Ticket,
 } from "lucide-react";
+import { useMemo } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
 type StoredUser = {
   email?: string;

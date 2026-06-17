@@ -1,17 +1,17 @@
+import {
+  Building2,
+  ChevronRight,
+  Coins,
+  CreditCard,
+  FileText,
+  LayoutDashboard,
+  LogOut,
+  ReceiptText,
+  Settings,
+  Users,
+} from 'lucide-react';
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import {
-  LayoutDashboard,
-  Users,
-  CreditCard,
-  Coins,
-  FileText,
-  ReceiptText,
-  Building2,
-  Settings,
-  LogOut,
-  ChevronRight,
-} from 'lucide-react';
 
 interface NavItem {
   label: string;

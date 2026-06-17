@@ -14,48 +14,48 @@
 // V6.8 — Captures scopées par studyId
 // V6.7 — Fix race condition hydration/auto-save (useLayoutEffect + hydratedRef)
 
-import React, { useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { useSearchParams, useNavigate }                              from "react-router-dom";
-import type { Feature, Polygon, MultiPolygon }                       from "geojson";
+import type { Feature, MultiPolygon, Polygon } from "geojson";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { usePromoteurParcelRestore }              from "./shared/hooks/usePromoteurParcelRestore";
-import { Plan2DCanvas }                           from "./plan2d/Plan2DCanvas";
-import { Plan2DToolbar }                          from "./plan2d/Plan2DToolbar";
-import type { Point2D, Building2D }               from "./plan2d/editor2d.types";
-import { useEditor2DStore }                       from "./plan2d/editor2d.store";
-import { rectCorners, computeParkingSlots }       from "./plan2d/editor2d.geometry";
-import { BuildingInspectorPanel }                 from "./plan2d/BuildingInspectorPanel";
-import { FloorElementsPanel }                     from "./plan2d/FloorElementsPanel";
+import { BuildingInspectorPanel } from "./plan2d/BuildingInspectorPanel";
+import { FloorElementsPanel } from "./plan2d/FloorElementsPanel";
+import { Plan2DCanvas } from "./plan2d/Plan2DCanvas";
+import { Plan2DToolbar } from "./plan2d/Plan2DToolbar";
+import { computeParkingSlots, rectCorners } from "./plan2d/editor2d.geometry";
+import { useEditor2DStore } from "./plan2d/editor2d.store";
+import type { Building2D, Point2D } from "./plan2d/editor2d.types";
+import { usePromoteurParcelRestore } from "./shared/hooks/usePromoteurParcelRestore";
 
-import { ParcelDiagnosticsPanel }                 from "./components/ParcelDiagnosticsPanel";
-import { PluAnalysisPanel }                       from "./components/PluAnalysisPanel";
-import { ScenarioFullPanel }                      from "./components/ScenarioFullPanel";
+import { ParcelDiagnosticsPanel } from "./components/ParcelDiagnosticsPanel";
+import { PluAnalysisPanel } from "./components/PluAnalysisPanel";
+import { ScenarioFullPanel } from "./components/ScenarioFullPanel";
 
-import { buildMasterScenario }                    from "./plan2d/masterScenario.service";
+import { buildMasterScenario } from "./plan2d/masterScenario.service";
 import type {
-  MasterScenario,
   MasterEconomicAssumptions,
-}                                                 from "./plan2d/plan.master.types";
-import { DEFAULT_MASTER_ECONOMIC_ASSUMPTIONS }    from "./plan2d/plan.master.types";
-import { exportDrawnScenarioPdf }                 from "./services/exportDrawnScenarioPdf";
+  MasterScenario,
+} from "./plan2d/plan.master.types";
+import { DEFAULT_MASTER_ECONOMIC_ASSUMPTIONS } from "./plan2d/plan.master.types";
+import { exportDrawnScenarioPdf } from "./services/exportDrawnScenarioPdf";
 
-import type { Vec2, PlanBuilding }                from "./plan2d/plan.types";
-import type { PluRules, PluEngineResult }         from "./plan2d/plan.plu.types";
-import type { ParcelDiagnostics }                 from "./plan2d/plan.parcelDiagnostics";
+import type { ParcelDiagnostics } from "./plan2d/plan.parcelDiagnostics";
+import type { PluEngineResult, PluRules } from "./plan2d/plan.plu.types";
+import type { PlanBuilding, Vec2 } from "./plan2d/plan.types";
 
-import { runPluChecks }                           from "./plan2d/plan.plu.engine";
+import { runPluChecks } from "./plan2d/plan.plu.engine";
 // V6.11 — MÊME moteur que le canvas (offset concave), au lieu de plan.buildableEnvelope (convexe).
-import { computeBuildableEnvelope }               from "./plan2d/pluEnvelope.geometry";
-import { computeParcelDiagnostics }               from "./plan2d/plan.parcelDiagnostics";
+import { computeParcelDiagnostics } from "./plan2d/plan.parcelDiagnostics";
+import { computeBuildableEnvelope } from "./plan2d/pluEnvelope.geometry";
 
-import { supabase }                               from "../../supabaseClient";
-import { patchModule }                            from "./shared/promoteurSnapshot.store";
-import { writeCapture }                           from "./shared/captures.store";
+import { supabase } from "../../supabaseClient";
 import { buildImplantation2DForPromoteurSnapshot } from "./plan2d/implantation2d.snapshot";
+import { writeCapture } from "./shared/captures.store";
+import { patchModule } from "./shared/promoteurSnapshot.store";
 
 import {
-  PromoteurPageHero,
   HeroPrimaryButton,
+  PromoteurPageHero,
   StudyIdBadge,
 } from "./shared/components/PromoteurPageHero";
 

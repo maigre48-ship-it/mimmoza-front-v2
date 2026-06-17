@@ -10,16 +10,16 @@
 //
 // Aucune dépendance au store React — fonctions pures uniquement.
 
-import type { Building2D, Parking2D }         from './editor2d.types';
-import type { BuildingVolume2D }               from './buildingProgram.types';
+import type { BuildingVolume2D } from './buildingProgram.types';
+import { computeParkingSlots, genId } from './editor2d.geometry';
+import type { Building2D, Parking2D } from './editor2d.types';
 import type {
   ImplantationScenarioFull,
-  ScenarioKey,
   ScenarioFinancialAssumptions,
   ScenarioFinancialResult,
-}                                              from './scenarioGenerator.types';
+  ScenarioKey,
+} from './scenarioGenerator.types';
 import { DEFAULT_FINANCIAL_ASSUMPTIONS as DEF_ASSUM } from './scenarioGenerator.types';
-import { computeParkingSlots, genId }          from './editor2d.geometry';
 
 // ─── CONSTANTES PLU SIMPLIFIÉES ───────────────────────────────────────
 

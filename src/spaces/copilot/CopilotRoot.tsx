@@ -1,8 +1,8 @@
 // src/spaces/copilot/CopilotRoot.tsx
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { CopilotFloatingButton } from './components/CopilotFloatingButton';
 import { CopilotDrawer } from './components/CopilotDrawer';
+import { CopilotFloatingButton } from './components/CopilotFloatingButton';
 import { useCopilotStore } from './store/copilotStore';
 
 // Routes où le Copilot ne doit PAS apparaître :

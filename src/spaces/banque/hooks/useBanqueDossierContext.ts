@@ -6,14 +6,14 @@
 
 import { useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { useBanqueSnapshotTick } from "./useBanqueSnapshotTick";
 import {
   readBanqueSnapshot,
-  selectDossier,
-  selectActiveDossierId,
-  upsertDossier,
   removeDossier,
+  selectActiveDossierId,
+  selectDossier,
+  upsertDossier,
 } from "../store/banqueSnapshot.store";
+import { useBanqueSnapshotTick } from "./useBanqueSnapshotTick";
 
 /**
  * Contexte dossier Banque (hook)

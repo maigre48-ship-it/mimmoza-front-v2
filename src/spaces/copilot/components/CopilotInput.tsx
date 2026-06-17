@@ -1,8 +1,8 @@
 // src/spaces/copilot/components/CopilotInput.tsx
-import { useState, useRef, useEffect, type KeyboardEvent, type CSSProperties } from 'react';
 import { Send, Square } from 'lucide-react';
-import { CopilotModeSelector } from './CopilotModeSelector';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import type { CopilotMode } from '../types/copilot.types';
+import { CopilotModeSelector } from './CopilotModeSelector';
 import { COPILOT_THEME as T } from './copilotTheme';
 
 export function CopilotInput({

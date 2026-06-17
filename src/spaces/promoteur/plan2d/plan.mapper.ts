@@ -11,9 +11,9 @@
 // PlanParking.spacesEstimate n'est pas renseigné ici intentionnellement.
 
 import type {
-  PlanProject,
   PlanBuilding,
   PlanParking,
+  PlanProject,
   Vec2,
 } from "./plan.types";
 

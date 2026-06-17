@@ -1,6 +1,6 @@
 // src/spaces/copilot/components/CopilotFloatingButton.tsx
-import { useEffect } from 'react';
 import { Sparkles } from 'lucide-react';
+import { useEffect } from 'react';
 import { useCopilot } from '../hooks/useCopilot';
 import { COPILOT_THEME as T } from './copilotTheme';
 

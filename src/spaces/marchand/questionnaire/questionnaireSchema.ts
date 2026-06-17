@@ -1,11 +1,5 @@
 // src/spaces/marchand/questionnaire/questionnaireSchema.ts
 
-import type {
-  PropertyType,
-  Financement,
-  Strategie,
-  InvestisseurSnapshot,
-} from "../store/investisseurSnapshot.store";
 
 // ─── Schema types ────────────────────────────────────────────────────
 

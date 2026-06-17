@@ -1,13 +1,13 @@
 ﻿// src/spaces/investisseur/components/travaux/PieceEditor.tsx
 import React, { useCallback } from "react";
+import { TRAVAUX_PRICING_V1 } from "../../services/travauxPricing.config";
 import type {
-  TravauxRange,
+  ExpertLineItem,
   PieceTravaux,
   PieceType,
   PricingItemCode,
-  ExpertLineItem,
+  TravauxRange,
 } from "../../shared/travauxSimulation.types";
-import { TRAVAUX_PRICING_V1 } from "../../services/travauxPricing.config";
 
 /* ================================================================== */
 /*  Types & constants                                                  */

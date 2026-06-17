@@ -2,10 +2,10 @@
 // Panneau simple pour ajouter balcons / loggias / terrasses à l'étage actif.
 // V1 : ajoute un élément avec des valeurs par défaut intelligentes (40% de l'emprise, etc.)
 
-import React, { useState } from 'react';
-import { useEditor2DStore } from './editor2d.store';
-import type { FloorBalcony2D, FloorLoggia2D, FloorTerrace2D, FloorEdge } from './floorElements.types';
+import React from 'react';
 import { genId } from './editor2d.geometry';
+import { useEditor2DStore } from './editor2d.store';
+import type { FloorBalcony2D, FloorEdge, FloorLoggia2D, FloorTerrace2D } from './floorElements.types';
 
 // ─── TOKENS ───────────────────────────────────────────────────────────
 

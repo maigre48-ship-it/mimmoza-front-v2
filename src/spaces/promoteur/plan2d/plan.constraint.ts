@@ -1,7 +1,7 @@
 // src/spaces/promoteur/plan2d/plan.constraint.ts
 
-import type { Vec2, PlanBuildingWithTransform } from "./plan.types";
 import { applyTransform } from "./plan.transform";
+import type { PlanBuildingWithTransform, Vec2 } from "./plan.types";
 
 // ─── EXTENSIBLE RESULT TYPES ──────────────────────────────────────────
 //

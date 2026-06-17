@@ -17,8 +17,8 @@
 // ============================================================================
 
 import type {
-  TravauxSimulationV1,
   ComputedTravaux,
+  TravauxSimulationV1,
 } from "./travauxSimulation.types";
 
 export const INVESTISSEUR_SNAPSHOT_KEY = "mimmoza.investisseur.snapshot.v1";

@@ -1,8 +1,8 @@
 // FILE: src/spaces/promoteur/etudes/marche/hooks/useMarketStudy.ts
 
-import { useState, useCallback } from "react";
-import { MarketStudyResult, ProjectType } from "../types";
+import { useCallback, useState } from "react";
 import { getMarketStudy, MarketStudyParams } from "../services";
+import { MarketStudyResult } from "../types";
 
 interface UseMarketStudyReturn {
   data: MarketStudyResult | null;

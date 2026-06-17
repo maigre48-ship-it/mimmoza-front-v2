@@ -4,9 +4,9 @@
 // Writes to: dossiersById[id].garanties
 // ============================================================================
 
-import { useState, useEffect } from "react";
-import { upsertDossier, addEvent } from "../store/banqueSnapshot.store";
-import type { GarantieItem, DossierGaranties } from "../store/banqueSnapshot.types";
+import { useEffect, useState } from "react";
+import { addEvent, upsertDossier } from "../store/banqueSnapshot.store";
+import type { DossierGaranties, GarantieItem } from "../store/banqueSnapshot.types";
 
 // ── Props ──
 

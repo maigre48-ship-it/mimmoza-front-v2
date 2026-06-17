@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { getVeilleSummary } from "../services/veille.service";
 import type { VeilleSummary } from "../services/veille.service";
+import { getVeilleSummary } from "../services/veille.service";
 
 export function useVeilleSummary() {
   const [data, setData] = useState<VeilleSummary | null>(null);

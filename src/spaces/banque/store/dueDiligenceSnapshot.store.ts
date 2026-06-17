@@ -1,8 +1,8 @@
 // src/spaces/banque/store/dueDiligenceSnapshot.store.ts
 
+import { computeDueDiligence } from "../services/dueDiligence.compute";
 import type { DueDiligenceReport } from "../types/dueDiligence.types";
 import { createDefaultDueDiligenceReport } from "../types/dueDiligence.types";
-import { computeDueDiligence } from "../services/dueDiligence.compute";
 
 const KEY = "mimmoza.banque.duediligence.v1";
 

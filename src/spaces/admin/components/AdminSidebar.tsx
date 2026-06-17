@@ -1,6 +1,5 @@
 // src/spaces/admin/components/AdminSidebar.tsx
 
-import { NavLink, useNavigate } from "react-router-dom";
 import {
   Building2,
   CreditCard,
@@ -12,6 +11,7 @@ import {
   Ticket,
   Users,
 } from "lucide-react";
+import { NavLink, useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
 
 const items = [

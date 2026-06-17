@@ -10,8 +10,7 @@
 // Construit exclusivement par buildMasterScenario()
 // dans masterScenario.service.ts.
 
-import type { Building2D, Parking2D } from './editor2d.types';
-import type { Point2D }               from './editor2d.types';
+import type { Building2D, Parking2D, Point2D } from './editor2d.types';
 
 // ─── HYPOTHÈSES ÉCONOMIQUES ───────────────────────────────────────────
 

@@ -1,5 +1,5 @@
-import type { PredictiveEngineInput } from "./predictive.types";
 import { computePredictiveSnapshot } from "./predictive.engine";
+import type { PredictiveEngineInput } from "./predictive.types";
 
 /** Fallback mock input — used only when no real deal data is available */
 export const MOCK_INPUT: PredictiveEngineInput = {

@@ -14,12 +14,12 @@
 // ============================================================================
 
 import {
-  getInvestisseurSnapshot,
-  saveInvestisseurSnapshot,
-  upsertInvestisseurProject,
-  setActiveInvestisseurProjectId,
   addInvestisseurEvent,
+  getInvestisseurSnapshot,
   INVESTISSEUR_SNAPSHOT_KEY,
+  saveInvestisseurSnapshot,
+  setActiveInvestisseurProjectId,
+  upsertInvestisseurProject,
 } from "@/spaces/investisseur/shared/investisseurSnapshot.store";
 
 // Réexporte tout (dont les types) depuis le store canonique

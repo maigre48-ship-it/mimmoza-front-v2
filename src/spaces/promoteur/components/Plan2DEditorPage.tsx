@@ -1,55 +1,53 @@
 // src/spaces/promoteur/components/Plan2DEditorPage.tsx
 
-import React, { useState, useCallback, useEffect, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import type { GeoJSON } from "geojson";
-import type {
-  PlanProject,
-  PlanBuilding,
-  PlanBuildingWithTransform,
-  Vec2,
-} from "../plan2d/plan.types";
-import type { PluRules } from "../plan2d/plan.plu.types";
-import type { PluEngineResult } from "../plan2d/plan.plu.types";
-import { getPolygonCentroid } from "../plan2d/plan.geometry";
 import { computeParkingSlots } from "../plan2d/editor2d.geometry";
-import { usePlanEditor } from "../plan2d/store/usePlanEditor";
-import { runPluChecks } from "../plan2d/plan.plu.engine";
+import { buildBestImplantationSuggestion } from "../plan2d/plan.bestSuggestion";
+import type { BestImplantationSuggestion } from "../plan2d/plan.bestSuggestion.types";
 import {
   computeBuildableEnvelope,
   type BuildableEnvelopeOptions,
 } from "../plan2d/plan.buildableEnvelope";
-import type { ZoningOverlay } from "../plan2d/plan.zoning.types";
-import { createDemoZoningOverlays } from "../plan2d/plan.zoning";
-import { ZoningLegend } from "./ZoningLegend";
-import { ParcelDiagnosticsPanel } from "./ParcelDiagnosticsPanel";
-import { ImplantationScenariosPanel } from "./ImplantationScenariosPanel";
-import { ScenarioComparisonMatrix } from "./ScenarioComparisonMatrix";
-import { ScenarioRecommendationCard } from "./ScenarioRecommendationCard";
-import { exportScenarioComparisonPdf } from "../services/exportScenarioComparisonPdf";
-import { FinancialBridgePanel } from "./FinancialBridgePanel";
-import { GeneratedVariantsPanel } from "./GeneratedVariantsPanel";
-import { BestImplantationSuggestionCard } from "./BestImplantationSuggestionCard";
-import { buildBestImplantationSuggestion } from "../plan2d/plan.bestSuggestion";
-import type { BestImplantationSuggestion } from "../plan2d/plan.bestSuggestion.types";
 import { computeFinancialBridge } from "../plan2d/plan.financialBridge";
 import type {
   FinancialBridgeAssumptions,
   FinancialBridgeResult,
 } from "../plan2d/plan.financialBridge.types";
-import { generateVariantsFromScenario } from "../plan2d/plan.variantGenerator";
+import { getPolygonCentroid } from "../plan2d/plan.geometry";
 import { computeParcelDiagnostics, type ParcelDiagnostics } from "../plan2d/plan.parcelDiagnostics";
+import { runPluChecks } from "../plan2d/plan.plu.engine";
+import type { PluEngineResult, PluRules } from "../plan2d/plan.plu.types";
 import {
-  buildScenarioSummary,
   buildScenarioList,
+  buildScenarioSummary,
   computeRealScenarioMetrics,
   scaleScenarioMetrics,
 } from "../plan2d/plan.scenarios";
 import type { ImplantationScenario } from "../plan2d/plan.scenarios.types";
+import type {
+  PlanBuilding,
+  PlanBuildingWithTransform,
+  PlanProject,
+  Vec2,
+} from "../plan2d/plan.types";
+import { generateVariantsFromScenario } from "../plan2d/plan.variantGenerator";
+import { createDemoZoningOverlays } from "../plan2d/plan.zoning";
+import type { ZoningOverlay } from "../plan2d/plan.zoning.types";
+import { usePlanEditor } from "../plan2d/store/usePlanEditor";
+import { exportScenarioComparisonPdf } from "../services/exportScenarioComparisonPdf";
+import { BestImplantationSuggestionCard } from "./BestImplantationSuggestionCard";
+import { FinancialBridgePanel } from "./FinancialBridgePanel";
+import { GeneratedVariantsPanel } from "./GeneratedVariantsPanel";
+import { ImplantationScenariosPanel } from "./ImplantationScenariosPanel";
+import { ParcelDiagnosticsPanel } from "./ParcelDiagnosticsPanel";
+import { ScenarioComparisonMatrix } from "./ScenarioComparisonMatrix";
+import { ScenarioRecommendationCard } from "./ScenarioRecommendationCard";
+import { ZoningLegend } from "./ZoningLegend";
 
 import PlanEditorCanvas from "./PlanEditorCanvas";
-import PlanToolbar from "./PlanToolbar";
 import PlanPropertiesPanel from "./PlanPropertiesPanel";
+import PlanToolbar from "./PlanToolbar";
 import PluAnalysisPanel from "./PluAnalysisPanel";
 
 // ─── PLU RULES PLACEHOLDER ────────────────────────────────────────────

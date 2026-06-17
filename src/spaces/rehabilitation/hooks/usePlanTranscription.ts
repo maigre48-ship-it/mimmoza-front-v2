@@ -5,30 +5,30 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useState } from 'react';
-import { transcribePlanReal, generatePlanId } from '../services/transcribePlanReal';
 import type {
   PlanTranscriptionEntry,
   PlanTranscriptionResult,
   TranscriptionError,
   TranscriptionOptions,
 } from '../plan-reader/planTranscription.types';
+import type { PlanTranscriptionStoreState } from '../plan-reader/planTranscriptionStore';
 import {
-  subscribeToTranscriptionStore,
-  getTranscriptionStoreState,
   getActivePlanEntry,
-  getPlanEntry,
   getAllPlanEntries,
   getCompletedTranscriptions,
+  getPlanEntry,
+  getTranscriptionStoreState,
   initPlanEntry,
-  setPlanUploading,
-  setPlanProcessing,
+  removePlanEntry,
+  resetPlanEntry,
+  setActivePlan,
   setPlanCompleted,
   setPlanError,
-  setActivePlan,
-  resetPlanEntry,
-  removePlanEntry,
+  setPlanProcessing,
+  setPlanUploading,
+  subscribeToTranscriptionStore,
 } from '../plan-reader/planTranscriptionStore';
-import type { PlanTranscriptionStoreState } from '../plan-reader/planTranscriptionStore';
+import { generatePlanId, transcribePlanReal } from '../services/transcribePlanReal';
 
 // ── Types exposés par le hook ─────────────────────────────────────────────────
 

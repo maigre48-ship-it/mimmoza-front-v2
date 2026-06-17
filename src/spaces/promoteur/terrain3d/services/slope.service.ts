@@ -2,10 +2,9 @@
 // FILE: src/spaces/promoteur/terrain3d/services/slope.service.ts
 // ============================================================================
 
-import type { TerrainGrid } from '../types/terrain.types';
 import type { SlopeData, TerrainProfile } from '../types/earthworks.types';
-import type { Point3D } from '../types/terrain.types';
-import { distance2D, slopePercent, radToDeg } from '../utils/math3d.utils';
+import type { Point3D, TerrainGrid } from '../types/terrain.types';
+import { distance2D, slopePercent } from '../utils/math3d.utils';
 
 /**
  * Calcule la pente entre deux cellules de grille adjacentes

@@ -1,7 +1,7 @@
 // src/spaces/promoteur/plan2d/plan.plu.metrics.ts
 
-import type { Vec2, PlanBuilding } from "./plan.types";
 import type { PluMetricSet } from "./plan.plu.types";
+import type { PlanBuilding, Vec2 } from "./plan.types";
 
 // ─── POLYGON AREA (Shoelace / Gauss) ─────────────────────────────────
 

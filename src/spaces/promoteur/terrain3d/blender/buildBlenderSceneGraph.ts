@@ -1,12 +1,12 @@
 // src/spaces/promoteur/terrain3d/blender/buildBlenderSceneGraph.ts
 // V3 — Ajout guards de dimension footprint + diagnostic logging.
 
-import * as THREE from "three";
 import type { Feature, MultiPolygon, Polygon } from "geojson";
+import * as THREE from "three";
 
+import { computeSceneProjection, getBuildingScenePts } from "../massingGeometry";
 import type { MassingBuildingModel } from "../massingScene.types";
 import { totalHeightM } from "../massingScene.types";
-import { computeSceneProjection, getBuildingScenePts } from "../massingGeometry";
 
 import { ensureBuildingRenderSpec } from "../buildingBlenderSpec.helpers";
 import { resolveBuildingRenderSpecSafe } from "../buildingRenderMapper";

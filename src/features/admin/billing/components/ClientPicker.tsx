@@ -2,8 +2,8 @@
 // Recherche et sélection d'un compte client (auth.users) via la RPC admin_users_list.
 // Émet l'utilisateur choisi { userId, email, ... } pour renseigner recipient_user_id.
 
+import { Loader2, Search, User, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Search, X, Loader2, User } from "lucide-react";
 import { supabase } from "../../../../lib/supabase";
 
 export interface ClientOption {

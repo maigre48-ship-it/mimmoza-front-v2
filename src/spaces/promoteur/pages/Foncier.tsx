@@ -1,19 +1,14 @@
-﻿import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "../../../supabaseClient";
 import ParcelMapSelector from "../foncier/ParcelMapSelector";
 
 // ✅ Hook réutilisable pour la sélection foncière
-import { useFoncierSelection, extractCommuneInsee } from "../shared/hooks/useFoncierSelection";
+import { extractCommuneInsee, useFoncierSelection } from "../shared/hooks/useFoncierSelection";
 
 // ✅ Snapshot store (existe déjà)
-import { patchPromoteurSnapshot, patchModule } from "../shared/promoteurSnapshot.store";
+import { patchModule, patchPromoteurSnapshot } from "../shared/promoteurSnapshot.store";
 // ✅ NOUVEAU: Import des helpers de synchronisation
-import { 
-  invalidatePluCache, 
-  checkAndInvalidatePluIfNeeded,
-  updateSessionKeys,
-} from "../shared/dataSyncHelpers";
 
 // TEMP: désactivé à cause du CORS (header x-client-info rejeté par foncier-lookup-v1)
 const ENABLE_FONCIER_LOOKUP_ENRICH = false;

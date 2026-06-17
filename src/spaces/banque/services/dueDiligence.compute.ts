@@ -1,8 +1,8 @@
 // src/spaces/banque/services/dueDiligence.compute.ts
 
 import type {
-  DueDiligenceReport,
   DueDiligenceComputed,
+  DueDiligenceReport,
   DueDiligenceStatus,
 } from "../types/dueDiligence.types";
 

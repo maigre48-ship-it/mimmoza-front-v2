@@ -1,13 +1,13 @@
 // src/spaces/promoteur/plan2d/plan.parcelDiagnostics.ts
 
-import type { Vec2, PlanBuilding } from "./plan.types";
+import { isBuildingInsideEnvelope } from "./plan.buildableEnvelope";
 import {
-  polygonArea,
-  computeTotalFootprintArea,
   computeCoverageRatio,
   computeMinSetback,
+  computeTotalFootprintArea,
+  polygonArea,
 } from "./plan.plu.metrics";
-import { isBuildingInsideEnvelope } from "./plan.buildableEnvelope";
+import type { PlanBuilding, Vec2 } from "./plan.types";
 
 // ─── RESULT TYPE ──────────────────────────────────────────────────────
 

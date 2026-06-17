@@ -7,7 +7,7 @@
  * If xlsx is not available, falls back to CSV export.
  */
 
-import type { TimelinePhase, PhaseCategory } from "../ui/TimelinePlanner";
+import type { PhaseCategory, TimelinePhase } from "../ui/TimelinePlanner";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

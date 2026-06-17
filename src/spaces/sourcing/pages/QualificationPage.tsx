@@ -1,24 +1,24 @@
-import React, { useState, useEffect, useCallback } from "react";
-import type {
-  QualificationInput,
-  QualificationResult,
-  SourcingSmartScore,
-  QualificationDecision,
-} from "../qualification/qualification.types";
-import { computeQualification } from "../qualification/qualification.engine";
-import {
-  loadSmartScore,
-  setSmartScore,
-  upsertQualification,
-  readSourcingSnapshot,
-} from "../shared/sourcingSnapshot.store";
-import { useSourcingSnapshotTick } from "../shared/hooks/useSourcingSnapshotTick";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   getActiveDealId,
   getDealContextSnapshot,
   subscribe as subscribeDealContext,
   type DealContextMeta,
 } from "../../marchand/shared/marchandDealContext.store";
+import { computeQualification } from "../qualification/qualification.engine";
+import type {
+  QualificationDecision,
+  QualificationInput,
+  QualificationResult,
+  SourcingSmartScore,
+} from "../qualification/qualification.types";
+import { useSourcingSnapshotTick } from "../shared/hooks/useSourcingSnapshotTick";
+import {
+  loadSmartScore,
+  readSourcingSnapshot,
+  setSmartScore,
+  upsertQualification,
+} from "../shared/sourcingSnapshot.store";
 
 /* ────────────────────────────────────────────
    Helpers

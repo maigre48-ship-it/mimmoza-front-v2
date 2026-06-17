@@ -11,13 +11,13 @@
  * ────────────────────────────────────────────────────────────────────
  */
 
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
-  useBanqueSnapshot,
-  patchCommittee,
   buildCommitteePayload,
-  type CommitteeTone,
+  patchCommittee,
+  useBanqueSnapshot,
   type CommitteeDecision,
+  type CommitteeTone,
 } from "../shared";
 
 const TONE_OPTIONS: { value: CommitteeTone; label: string }[] = [

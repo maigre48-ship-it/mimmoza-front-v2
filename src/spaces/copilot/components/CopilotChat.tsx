@@ -2,9 +2,9 @@
 import { useEffect, useRef } from 'react';
 import { useCopilot } from '../hooks/useCopilot';
 import { useCopilotContext } from '../hooks/useCopilotContext';
-import { CopilotMessage } from './CopilotMessage';
-import { CopilotInput } from './CopilotInput';
 import { CopilotEmptyState } from './CopilotEmptyState';
+import { CopilotInput } from './CopilotInput';
+import { CopilotMessage } from './CopilotMessage';
 import { COPILOT_THEME as T } from './copilotTheme';
 
 export function CopilotChat() {

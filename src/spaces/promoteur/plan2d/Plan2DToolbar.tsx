@@ -1,8 +1,8 @@
 // ─── Plan2DToolbar.tsx ────────────────────────────────────────────────────────
 // Toolbar horizontale des outils — intégrable dans l'existant de la page
 
+import { Building2, Copy, MousePointer2, ParkingSquare, Ruler, Trash2 } from 'lucide-react';
 import React from 'react';
-import { MousePointer2, Building2, ParkingSquare, Ruler, Trash2, Copy } from 'lucide-react';
 import { useEditor2DStore } from './editor2d.store';
 import type { Tool } from './editor2d.types';
 

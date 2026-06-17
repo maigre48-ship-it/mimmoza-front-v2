@@ -10,26 +10,28 @@
 // V2.7  : fix scoping par studyId
 // V2.6  : suppression VegetationPanel → TerrassementPanel
 
-import React, { type FC, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson";
+import { useCallback, useEffect, useMemo, useRef, useState, type FC } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { Feature, FeatureCollection, Polygon, MultiPolygon } from "geojson";
 
-import { useMassingEditor, makeNewBuilding } from "../useMassingEditor";
-import { MassingRenderer } from "./MassingRenderer";
+import { supabase } from "../../../../lib/supabaseClient";
+import { getReliefCache, patchModule, setReliefCache } from "../../shared/promoteurSnapshot.store";
+import { usePromoteurProgrammeStore } from "../../store/promoteurProgramme.store";
+import type { Implantation2DMeta } from "../../store/promoteurProject.store";
+import { writeMassingMetrics } from "../massingBilanBridge";
 import { SLOPE_LEGEND } from "../massingConstants";
-import { BuildingPropertiesPanel } from "./BuildingPropertiesPanel";
-import { TerrassementPanel, type TerrassementExport } from "./TerrassementPanel";
-import type { ReliefData } from "./SceneSvg3D";
 import type {
-  MassingSceneModel, MassingBuildingModel, PlacedObject,
+  MassingBuildingModel,
+  MassingSceneModel,
+  PlacedObject,
 } from "../massingScene.types";
 import { totalHeightM, totalLevelsCount } from "../massingScene.types";
 import { deriveMassingMetrics } from "../massingToBilan";
-import { writeMassingMetrics } from "../massingBilanBridge";
-import { usePromoteurProgrammeStore } from "../../store/promoteurProgramme.store";
-import type { Implantation2DMeta } from "../../store/promoteurProject.store";
-import { supabase } from "../../../../lib/supabaseClient";
-import { patchModule, getReliefCache, setReliefCache } from "../../shared/promoteurSnapshot.store";
+import { makeNewBuilding, useMassingEditor } from "../useMassingEditor";
+import { BuildingPropertiesPanel } from "./BuildingPropertiesPanel";
+import { MassingRenderer } from "./MassingRenderer";
+import type { ReliefData } from "./SceneSvg3D";
+import { TerrassementPanel, type TerrassementExport } from "./TerrassementPanel";
 
 const ACCENT = "#5247b8";
 

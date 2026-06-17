@@ -1,9 +1,9 @@
 // src/spaces/promoteur/store/promoteurProject.store.ts
 // Updated: adds implantation2d structure with meta for business parameters handoff
 
+import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson";
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
-import type { Feature, FeatureCollection, Polygon, MultiPolygon } from "geojson";
+import { createJSONStorage, persist } from "zustand/middleware";
 
 // -----------------------------------------------------------------------------
 // Types

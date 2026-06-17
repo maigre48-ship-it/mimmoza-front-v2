@@ -1,6 +1,6 @@
 // src/spaces/promoteur/pages/OpportunitesApporteursPage.tsx
 
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {

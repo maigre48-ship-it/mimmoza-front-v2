@@ -1,9 +1,9 @@
 // FILE: src/spaces/promoteur/etudes/marche/components/TargetPopulationCard.tsx
 
+import { TrendingDown, TrendingUp, Users } from "lucide-react";
 import React from "react";
-import { Users, TrendingUp, TrendingDown, UserX } from "lucide-react";
-import { DemographicsData, DemographicSegment, ProjectType } from "../types";
 import { getProjectConfig } from "../config";
+import { DemographicsData, ProjectType } from "../types";
 
 interface TargetPopulationCardProps {
   demographics: DemographicsData;

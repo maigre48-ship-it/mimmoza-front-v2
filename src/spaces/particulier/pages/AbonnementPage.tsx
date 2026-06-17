@@ -4,8 +4,7 @@
 //   → mise à jour immédiate quand /admin/tarifs enregistre, même onglet
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import type { PricingEntry } from "@/spaces/admin/pages/Tarifs";
 import {
   ArrowRight,
   Building2,
@@ -20,7 +19,8 @@ import {
   Wrench,
   Zap,
 } from "lucide-react";
-import type { PricingEntry } from "@/spaces/admin/pages/Tarifs";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 // ── Lecture du pricing depuis localStorage ────────────────────────────────────
 

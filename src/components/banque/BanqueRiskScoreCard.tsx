@@ -6,14 +6,14 @@
 // Aucune dépendance store global.
 // ============================================
 
-import React, { useState } from "react";
 import {
-  Landmark,
-  TrendingUp,
   ChevronDown,
   ChevronUp,
+  Landmark,
   Loader2,
+  TrendingUp,
 } from "lucide-react";
+import React, { useState } from "react";
 
 // ============================================
 // TYPES (exportés pour réutilisation)

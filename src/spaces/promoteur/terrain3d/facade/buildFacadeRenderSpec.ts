@@ -24,9 +24,9 @@
 //         • 100% rétrocompatible : tous les champs existants restent valides
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { Facade2DModel } from './facade2d.types';
-import type { FootprintPoint } from './extractFootprintFrom2D';
 import type { FacadeSceneInput } from './buildFacadeSceneInput';
+import type { FootprintPoint } from './extractFootprintFrom2D';
+import type { Facade2DModel } from './facade2d.types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types publics (compatibles V1/V2)

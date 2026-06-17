@@ -18,8 +18,8 @@
 
 import {
   type MassingBuildingModel,
-  totalLevelsCount,
   totalHeightM,
+  totalLevelsCount,
 } from "./massingScene.types";
 
 // ─── Coefficients d'estimation (ajustables) ───────────────────────────────────

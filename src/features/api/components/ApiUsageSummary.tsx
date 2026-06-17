@@ -1,7 +1,7 @@
+import { Calendar, Settings, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, Calendar, Settings } from 'lucide-react';
 import type { ApiSubscription, ApiUsageStats } from '../member/apiMemberMock';
-import { getUsagePercent, formatRequests } from '../member/apiMemberMock';
+import { formatRequests, getUsagePercent } from '../member/apiMemberMock';
 import { PlanBadge } from './ApiStatusBadge';
 
 interface ApiUsageSummaryProps {

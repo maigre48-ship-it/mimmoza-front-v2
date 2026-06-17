@@ -1,10 +1,10 @@
-import { useEffect, useRef } from "react";
 import L, {
-  Map as LeafletMap,
   GeoJSON,
+  Map as LeafletMap,
   PathOptions,
 } from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { useEffect, useRef } from "react";
 
 type GeocodingCenter = { lat: number; lon: number } | null;
 

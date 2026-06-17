@@ -1,5 +1,4 @@
 ﻿// src/spaces/banque/components/committee/CommitteeSectionRisks.tsx
-import React from "react";
 import type { CommitteeScoringSettings } from "./CommitteeSettingsModal";
 
 interface CommitteeData {

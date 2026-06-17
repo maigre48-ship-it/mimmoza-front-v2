@@ -13,18 +13,16 @@
 // V2.0 — Resize vectoriel robuste + pointer capture + gestion Shift (ratio).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useRef, useCallback, useEffect } from 'react';
-import { useEditor2DStore }               from './editor2d.store';
+import { useCallback, useEffect, useRef } from 'react';
+import { useEditor2DStore } from './editor2d.store';
 import {
-  applyResize,
   applyMove,
+  applyResize,
   snapDelta,
-  getHandleWorldPos,
-  snapPoint,
-  type HandleId,
   type BuildingRect,
-  type TPoint2D,
-}                                         from './editor2d.transform';
+  type HandleId,
+  type TPoint2D
+} from './editor2d.transform';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types publics

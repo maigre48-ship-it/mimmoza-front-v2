@@ -1,7 +1,7 @@
-import React from "react";
-import type { MarketStudyResult, EHPADData, ProjectType } from "../types/market.types";
-import { getProjectConfig } from "../config/project.config";
 import { Building } from "lucide-react";
+import React from "react";
+import { getProjectConfig } from "../config/project.config";
+import type { EHPADData, MarketStudyResult, ProjectType } from "../types/market.types";
 
 interface Props {
   data: MarketStudyResult;

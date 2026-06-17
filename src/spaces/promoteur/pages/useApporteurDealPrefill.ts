@@ -1,11 +1,11 @@
 // src/spaces/promoteur/pages/useApporteurDealPrefill.ts
 
-import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import {
   getApporteurDeal,
   type ApporteurDeal,
 } from "@/spaces/apporteur/shared/apporteurDeals.store";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 export type PrefillResult =
   | { status: "idle" }

@@ -1,6 +1,6 @@
 // src/spaces/promoteur/etudes/EtudesLayout.tsx
-import React from "react";
 import { Sparkles } from "lucide-react";
+import React from "react";
 
 // ============================================
 // COLORS (shared)

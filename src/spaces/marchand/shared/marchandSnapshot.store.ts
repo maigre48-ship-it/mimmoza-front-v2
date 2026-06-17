@@ -5,8 +5,8 @@
  */
 
 import type {
-  TravauxSimulationV1,
   TravauxSimulationComputed,
+  TravauxSimulationV1,
 } from "../modules/execution/services/travauxSimulation.types";
 
 import {

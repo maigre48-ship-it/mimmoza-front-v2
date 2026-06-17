@@ -13,7 +13,7 @@
 //         4. snapshot.project
 //         5. mimmoza.session.* (clés génériques)
 
-import type { Feature, Polygon, MultiPolygon, Geometry, FeatureCollection } from "geojson";
+import type { Feature, MultiPolygon, Polygon } from "geojson";
 import type { SelectedParcel } from "./hooks/useFoncierSelection";
 import { getSnapshot } from "./promoteurSnapshot.store";
 

@@ -1,9 +1,9 @@
 import { supabase } from "@/lib/supabase";
 import type { AccessContext, ConsumeResult, FeatureKey } from "./access.types";
 import {
-  shouldConsumeToken,
-  shouldConsumeQuota,
   getTokenCostForContext,
+  shouldConsumeQuota,
+  shouldConsumeToken,
 } from "./accessPolicies";
 import { logAccessEvent } from "./audit";
 

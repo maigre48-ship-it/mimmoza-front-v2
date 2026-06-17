@@ -1,24 +1,37 @@
 // src/spaces/admin/pages/Factures.tsx
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import {
-  ReceiptText, CheckCircle2, Clock, Search, X,
-  Loader2, ChevronRight, Euro, Download, FileDown, Send, UserCheck,
-} from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import type { Invoice, InvoiceLine, InvoiceStatus } from '../../../features/admin/billing/types';
 import {
-  listInvoices, markInvoiceAsPaid, listInvoiceLines, getInvoiceById,
-  sendInvoiceToClient,
-} from '../../../features/admin/billing/services/invoices.service';
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  Download,
+  Euro,
+  FileDown,
+  Loader2,
+  ReceiptText,
+  Search,
+  Send, UserCheck,
+  X,
+} from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { ClientPicker, type ClientOption } from '../../../features/admin/billing/components/ClientPicker';
+import { exportInvoicePdf } from '../../../features/admin/billing/exportBillingPdf';
 import {
-  formatCents, formatBillingStatusLabel, formatDate,
+  formatBillingStatusLabel,
+  formatCents,
+  formatDate,
   getInvoiceStatusColor, isInvoicePayable,
 } from '../../../features/admin/billing/helpers';
-import { exportInvoicePdf } from '../../../features/admin/billing/exportBillingPdf';
-import { ClientPicker, type ClientOption } from '../../../features/admin/billing/components/ClientPicker';
+import {
+  getInvoiceById,
+  listInvoiceLines,
+  listInvoices, markInvoiceAsPaid,
+  sendInvoiceToClient,
+} from '../../../features/admin/billing/services/invoices.service';
+import type { Invoice, InvoiceLine, InvoiceStatus } from '../../../features/admin/billing/types';
 
 // recipient_user_id existe en base (cf. migration) mais peut manquer au type Invoice.
 type InvoiceRow = Invoice & { recipient_user_id?: string | null };

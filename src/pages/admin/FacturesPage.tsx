@@ -1,24 +1,29 @@
+import {
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  Euro,
+  Loader2,
+  ReceiptText,
+  Search,
+  X
+} from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  ReceiptText, CheckCircle2, Clock, AlertCircle, Search,
-  X, Loader2, ChevronRight, Euro,
-} from 'lucide-react';
-import type { Invoice, InvoiceLine, InvoiceStatus } from '../../features/admin/billing/types';
-import {
-  listInvoices,
-  markInvoiceAsPaid,
-  updateInvoiceStatus,
-  listInvoiceLines,
-  getInvoiceById,
-} from '../../features/admin/billing/services/invoices.service';
-import {
-  formatCents,
   formatBillingStatusLabel,
+  formatCents,
   formatDate,
   getInvoiceStatusColor,
   isInvoicePayable,
 } from '../../features/admin/billing/helpers';
+import {
+  getInvoiceById,
+  listInvoiceLines,
+  listInvoices,
+  markInvoiceAsPaid
+} from '../../features/admin/billing/services/invoices.service';
+import type { Invoice, InvoiceLine, InvoiceStatus } from '../../features/admin/billing/types';
 
 const ALL_INVOICE_STATUSES: InvoiceStatus[] = [
   'draft', 'issued', 'sent', 'paid', 'partially_paid', 'overdue', 'cancelled',

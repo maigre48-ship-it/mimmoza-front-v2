@@ -3,7 +3,7 @@
  * Vérifie les champs obligatoires et normalise les données
  */
 
-import type { SourcingInput, FloorValue } from '../types/sourcing.types';
+import type { FloorValue, SourcingInput } from '../types/sourcing.types';
 
 export interface ValidationResult {
   ok: boolean;

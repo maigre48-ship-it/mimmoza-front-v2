@@ -1,9 +1,9 @@
 // src/spaces/promoteur/plan2d/editor2d.store.ts — V4 multi-étages
 
 import { create } from 'zustand';
-import type { Editor2DState, Editor2DActions, Building2D, Parking2D, OrientedRect, CotesVisibility, Tool } from './editor2d.types';
 import type { BuildingVolume2D, FloorPlan2D } from './buildingProgram.types';
-import { genId, rectCorners, computeParkingSlots } from './editor2d.geometry';
+import { computeParkingSlots, genId, rectCorners } from './editor2d.geometry';
+import type { Building2D, Editor2DActions, Editor2DState, OrientedRect, Parking2D } from './editor2d.types';
 
 // ─── HELPERS EXPORTÉS ─────────────────────────────────────────────────
 

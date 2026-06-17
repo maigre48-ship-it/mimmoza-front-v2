@@ -14,17 +14,23 @@
 // v3 : suppression des sections liées à BuildingBlenderSpec
 
 import React, { useState, type FC } from "react";
-import type {
-  MassingBuildingModel, BuildingLevels, BuildingTransform, BuildingStyleOptions,
-  FacadeMaterialSpec, RoofConfig, OpeningsConfig, OpeningStyle, MaterialBandsConfig,
-} from "../massingScene.types";
-import { totalHeightM, totalLevelsCount } from "../massingScene.types";
-import { FACADE_LIBRARY } from "../massingBuildingAssemblerV1";
-import { ROOF_LIBRARY } from "../massingRoofEngine";
 import {
   DEFAULT_BALCONIES,
   type BalconyConfig, type BalconyMode, type RailingStyle,
 } from "../massingBalconies";
+import { FACADE_LIBRARY } from "../massingBuildingAssemblerV1";
+import { ROOF_LIBRARY } from "../massingRoofEngine";
+import type {
+  BuildingLevels,
+  BuildingStyleOptions,
+  BuildingTransform,
+  FacadeMaterialSpec,
+  MassingBuildingModel,
+  MaterialBandsConfig,
+  OpeningsConfig, OpeningStyle,
+  RoofConfig,
+} from "../massingScene.types";
+import { totalHeightM, totalLevelsCount } from "../massingScene.types";
 
 const ACCENT = "#5247b8";
 

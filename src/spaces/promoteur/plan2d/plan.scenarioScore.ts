@@ -1,6 +1,6 @@
 // src/spaces/promoteur/plan2d/plan.scenarioScore.ts
 
-import type { ImplantationScenarioMetrics, ScenarioStatus, ImplantationScenario } from "./plan.scenarios.types";
+import type { ImplantationScenario, ImplantationScenarioMetrics, ScenarioStatus } from "./plan.scenarios.types";
 import type { ScenarioScoreBreakdown, ScenarioScoreResult } from "./plan.scenarioScore.types";
 
 // ─── WEIGHTS ──────────────────────────────────────────────────────────

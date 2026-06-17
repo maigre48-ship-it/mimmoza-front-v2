@@ -3,8 +3,8 @@
 // ============================================================================
 
 import type { Feature, Polygon, Position } from 'geojson';
-import type { StubGeometry } from './createTerrainGeometry';
 import type { VolumeExtrusionConfig } from '../types/volume.types';
+import type { StubGeometry } from './createTerrainGeometry';
 
 /**
  * Options de création de géométrie de volume

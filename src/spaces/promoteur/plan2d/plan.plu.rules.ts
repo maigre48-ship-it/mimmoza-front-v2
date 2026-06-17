@@ -1,6 +1,6 @@
 // src/spaces/promoteur/plan2d/plan.plu.rules.ts
 
-import type { PluRules, PluMetricSet, PluRuleResult, PluRuleStatus } from "./plan.plu.types";
+import type { PluMetricSet, PluRuleResult, PluRules, PluRuleStatus } from "./plan.plu.types";
 
 // ─── THRESHOLD HELPERS ────────────────────────────────────────────────
 

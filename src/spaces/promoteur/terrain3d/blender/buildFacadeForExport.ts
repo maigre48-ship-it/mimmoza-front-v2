@@ -22,14 +22,14 @@ import {
   type FacadeConfig,
   type FacadeResult,
 } from '../massingFacadeEngine';
-import { extractEdges } from '../massingGeometry3d';
 import {
-  getFacadeStyle,
-  resolveStyleForEdge,
   classifyEdge,
   computeCentroid,
+  getFacadeStyle,
+  resolveStyleForEdge,
   type FacadeStyleId,
 } from '../massingFacadeStyles';
+import { extractEdges } from '../massingGeometry3d';
 import type { MassingBuildingModel } from '../massingScene.types';
 import {
   totalLevelsFromArchitecture,

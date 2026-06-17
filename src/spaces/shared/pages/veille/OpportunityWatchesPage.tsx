@@ -4,32 +4,32 @@
 // opportunité forte). Root sans background (AppShell fournit bg-slate-50).
 // =============================================================
 
-import React from 'react';
-import { Link } from 'react-router-dom';
+import type { OpportunityAssetType, OpportunityStrategy } from '@/services/opportunity/opportunityEngine.types';
 import {
-  Eye,
-  Bell,
-  TrendingDown,
-  Sparkles,
-  Plus,
-  Play,
-  Trash2,
-  RefreshCw,
-} from 'lucide-react';
-import {
-  listWatches,
-  listEvents,
   createWatch,
   deleteWatch,
-  toggleWatchActive,
-  runWatchNow,
+  listEvents,
+  listWatches,
   markAllEventsSeen,
   markEventSeen,
+  runWatchNow,
+  toggleWatchActive,
   type OpportunityWatch,
   type WatchEvent,
   type WatchEventType,
 } from '@/services/opportunity/opportunityWatch.service';
-import type { OpportunityStrategy, OpportunityAssetType } from '@/services/opportunity/opportunityEngine.types';
+import {
+  Bell,
+  Eye,
+  Play,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+  TrendingDown,
+} from 'lucide-react';
+import React from 'react';
+import { Link } from 'react-router-dom';
 
 const STRATEGIES: { value: OpportunityStrategy; label: string }[] = [
   { value: 'investisseur', label: 'Investisseur' },
