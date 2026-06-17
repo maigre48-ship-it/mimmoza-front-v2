@@ -3,3 +3,11 @@
 .env.*.local
 tools/ai-orchestrator/.env.local
 .env.local.backup*
+
+# Fichiers de travail TS cleanup (régénérés)
+tsc-after.txt
+tsc-errors.txt
+risk-map.md
+analyze-tsc.cjs
+eslint.unused.config.mjs
+*.tsbuildinfo
