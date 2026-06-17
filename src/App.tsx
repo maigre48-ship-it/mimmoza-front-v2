@@ -7,7 +7,6 @@ import {
   Route,
   Routes,
   useNavigate,
-  useParams,
 } from "react-router-dom";
 import { wgs84ToLambert93 } from "./lib/projection";
 
@@ -21,8 +20,6 @@ import ApiPage from "./pages/ApiPage";
 import ApiPlaygroundPage from "./pages/ApiPlaygroundPage";
 import DashboardHomePage from "./pages/DashboardHomePage";
 import JetonsPage from "./pages/JetonsPage";
-
-import BanqueRisquesTestPage from "./pages/BanqueRisquesTestPage";
 
 /* ── Pages légales ───────────────────────────────────────────── */
 import CGUPage from "./pages/legal/CGUPage";
@@ -117,15 +114,12 @@ import PromoteurVeilleFoncierePage from "./spaces/promoteur/pages/PromoteurVeill
 import RechercheContactsPage from "./spaces/promoteur/pages/RechercheContactsPage";
 import PromoteurSynthese from "./spaces/promoteur/pages/Synthese";
 
-/* ── Banque ──────────────────────────────────────────────────── */
-import BanqueLayout from "./spaces/banque/components/BanqueLayout";
-import BanqueAlertes from "./spaces/banque/pages/Alertes";
-import BanqueAnalysePage from "./spaces/banque/pages/AnalysePage";
-import BanqueRedirectToDossier from "./spaces/banque/pages/BanqueRedirectToDossier";
-import BanqueComitePage from "./spaces/banque/pages/ComitePage";
-import BanqueDossierPage from "./spaces/banque/pages/DossierPage";
-import BanquePipeline from "./spaces/banque/pages/Pipeline";
-import BanqueSmartScoreDebug from "./spaces/banque/pages/SmartScoreDebug";
+/* ──────────────────────────────────────────────────────────────
+   ⚠️ Espace BANQUE mis hors-build (migration types inachevée).
+   Dossier déplacé dans _drafts/banque + exclu du tsconfig.
+   Pour le réactiver : restaurer les imports + le bloc <Route path="/banque">
+   depuis l'historique git, et remettre AppShell dans son état d'origine.
+   ────────────────────────────────────────────────────────────── */
 
 import AssuranceDashboard from "./spaces/assurance/pages/Dashboard";
 import AssuranceDocuments from "./spaces/assurance/pages/Documents";
@@ -175,21 +169,9 @@ function getSpacePath(space: Space): string {
       return "/apporteur";
     case "marchand":
       return "/marchand-de-bien";
-    case "banque":
-      return "/banque";
     default:
       return "/dashboard";
   }
-}
-
-function BanqueRedirectToComite() {
-  const { id } = useParams<{ id: string }>();
-  return <Navigate to={`/banque/comite/${id ?? ""}`} replace />;
-}
-
-function BanqueRedirectToAnalyse() {
-  const { id } = useParams<{ id: string }>();
-  return <Navigate to={`/banque/analyse/${id ?? ""}`} replace />;
 }
 
 function AppRoot() {
@@ -429,53 +411,21 @@ function AppRoot() {
             <Route path="*" element={<Navigate to="/promoteur" replace />} />
           </Route>
 
-          {/* ═══ Banque ═══ */}
-          <Route path="/banque" element={<BanqueLayout />}>
-            <Route index element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="dossiers"          element={<BanquePipeline />} />
-            <Route path="dossier/:id"       element={<BanqueDossierPage />} />
-            <Route path="analyse/:id"       element={<BanqueAnalysePage />} />
-            <Route path="comite/:id"        element={<BanqueComitePage />} />
-            <Route path="alertes"           element={<BanqueAlertes />} />
-            <Route path="smartscore-debug"  element={<BanqueSmartScoreDebug />} />
-            <Route path="risques-test"      element={<BanqueRisquesTestPage />} />
-            <Route path="estimation"        element={<ParticulierEstimation />} />
-            <Route path="marche"            element={<MarchePage />} />
-            <Route path="outil-risques/:id" element={<RisquesPage />} />
-
-            <Route path="assurance" element={<Outlet />}>
-              <Route index element={<AssuranceDashboard />} />
-              <Route path="souscription" element={<AssuranceSouscription />} />
-              <Route path="exposition"   element={<AssuranceExposition />} />
-              <Route path="tarification" element={<AssuranceTarification />} />
-              <Route path="offre"        element={<AssuranceOffre />} />
-              <Route path="monitoring"   element={<AssuranceMonitoring />} />
-              <Route path="documents"    element={<AssuranceDocuments />} />
-              <Route path="estimation"   element={<ParticulierEstimation />} />
-              <Route path="marche"       element={<MarchePage />} />
-              <Route path="risques"      element={<RisquesPage />} />
-              <Route path="*"            element={<Navigate to="/banque/assurance" replace />} />
-            </Route>
-
-            <Route path="garanties/:id"  element={<BanqueRedirectToDossier />} />
-            <Route path="documents/:id"  element={<BanqueRedirectToDossier />} />
-            <Route path="decision/:id"   element={<BanqueRedirectToComite />} />
-            <Route path="smartscore/:id" element={<BanqueRedirectToAnalyse />} />
-            <Route path="risque/:id"     element={<BanqueRedirectToAnalyse />} />
-            <Route path="risques/:id"    element={<BanqueRedirectToAnalyse />} />
-
-            <Route path="origination" element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="monitoring"  element={<Navigate to="/banque/alertes" replace />} />
-            <Route path="pipeline"    element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="garanties"   element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="documents"   element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="decision"    element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="comite"      element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="analyse"     element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="risque"      element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="risques"     element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="dossier"     element={<Navigate to="/banque/dossiers" replace />} />
-            <Route path="*"           element={<Navigate to="/banque/dossiers" replace />} />
+          {/* ═══ Assurance ═══
+              (autrefois monté sous /banque/assurance ; remonté ici en
+              autonome suite à la mise hors-build de l'espace banque) */}
+          <Route path="/assurance" element={<Outlet />}>
+            <Route index element={<AssuranceDashboard />} />
+            <Route path="souscription" element={<AssuranceSouscription />} />
+            <Route path="exposition"   element={<AssuranceExposition />} />
+            <Route path="tarification" element={<AssuranceTarification />} />
+            <Route path="offre"        element={<AssuranceOffre />} />
+            <Route path="monitoring"   element={<AssuranceMonitoring />} />
+            <Route path="documents"    element={<AssuranceDocuments />} />
+            <Route path="estimation"   element={<ParticulierEstimation />} />
+            <Route path="marche"       element={<MarchePage />} />
+            <Route path="risques"      element={<RisquesPage />} />
+            <Route path="*"            element={<Navigate to="/assurance" replace />} />
           </Route>
 
           {/* ═══ Réhabilitation ═══ */}
@@ -498,7 +448,8 @@ function AppRoot() {
           </Route>
 
           {/* ═══ Compatibility redirects ═══ */}
-          <Route path="/assurance/*" element={<Navigate to="/banque/assurance" replace />} />
+          {/* ⚠️ Banque hors-build : toute ancienne route /banque/* → accueil */}
+          <Route path="/banque/*"    element={<Navigate to="/" replace />} />
           <Route path="/audit/*"     element={<Navigate to="/" replace />} />
           <Route path="/agence"      element={<Navigate to="/apporteur" replace />} />
           <Route path="/marchand"    element={<Navigate to="/marchand-de-bien" replace />} />

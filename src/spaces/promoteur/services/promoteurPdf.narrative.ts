@@ -258,10 +258,10 @@ export function generateTechniqueConclusion(
 // ============================================================================
 
 export function getEffectiveFaisabilite(
-  original: 'CONFIRME' | 'SOUS_RESERVE' | 'IMPOSSIBLE',
+  original: 'CONFIRME' | 'SOUS_RESERVE' | 'IMPOSSIBLE' | 'NON_DETERMINABLE',
   status: DocumentStatus,
   mc: MetricContext,
-): 'CONFIRME' | 'SOUS_RESERVE' | 'IMPOSSIBLE' {
+): 'CONFIRME' | 'SOUS_RESERVE' | 'IMPOSSIBLE' | 'NON_DETERMINABLE' {
   if (!mc.hasZonePlu && original === 'CONFIRME') {
     return 'SOUS_RESERVE';
   }

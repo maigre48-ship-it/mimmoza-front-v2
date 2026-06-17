@@ -209,177 +209,6 @@ function pageFooter(st: St): void {
 }
 
 // ============================================================================
-// TYPOGRAPHY HELPERS
-// ============================================================================
-
-function secTitle(st: St, num: string, label: string): void {
-  chk(st, 16);
-  const { doc } = st;
-
-  doc.setFillColor(...SP.main);
-  doc.rect(ML, st.y, 3, 10, 'F');
-
-  if (num) {
-    doc.setFontSize(F.xs);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...SP.main);
-    doc.text(num, ML + 6, st.y + 4.5);
-  }
-
-  doc.setFontSize(F.h2);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...SP.deep);
-  doc.text(s(label), ML + (num ? 16 : 6), st.y + 8);
-
-  doc.setFillColor(...C.slate5);
-  doc.rect(ML, st.y + 11, CW, 0.3, 'F');
-  st.y += 16;
-}
-
-function subTitle(st: St, label: string): void {
-  chk(st, 10);
-  const { doc } = st;
-  doc.setFontSize(F.h4);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...SP.deep);
-  doc.text(s(label).toUpperCase(), ML, st.y);
-  doc.setFillColor(...SP.main);
-  doc.rect(ML, st.y + 2, 18, 0.5, 'F');
-  st.y += 7;
-}
-
-function body(st: St, text: string, indent = 0): void {
-  const { doc } = st;
-  doc.setFontSize(F.body);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...C.black);
-  const lines = doc.splitTextToSize(s(text), CW - indent);
-  chk(st, lines.length * 5 + 2);
-  doc.text(lines, ML + indent, st.y);
-  st.y += lines.length * 5 + 3;
-}
-
-function rule(st: St): void {
-  st.doc.setFillColor(...C.slate5);
-  st.doc.rect(ML, st.y, CW, 0.3, 'F');
-  st.y += 5;
-}
-
-function alertBanner(st: St, text: string, color: RGB, bgColor?: RGB): void {
-  chk(st, 14);
-  const { doc } = st;
-  const bg = bgColor ?? [
-    Math.min(255, color[0] + 100),
-    Math.min(255, color[1] + 130),
-    Math.min(255, color[2] + 130),
-  ] as RGB;
-  doc.setFillColor(...bg);
-  doc.rect(ML, st.y, CW, 12, 'F');
-  doc.setFillColor(...color);
-  doc.rect(ML, st.y, 3, 12, 'F');
-  doc.setFontSize(F.h4);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...color);
-  const lines = doc.splitTextToSize(s(text), CW - 12);
-  doc.text(lines[0], ML + 7, st.y + 8);
-  st.y += 15;
-}
-
-// ============================================================================
-// KPI CARDS
-// ============================================================================
-
-function kpiGrid(
-  st: St,
-  items: Array<{ label: string; value: string; sub?: string; color?: RGB }>,
-  cols = 3,
-): void {
-  const rows = Math.ceil(items.length / cols);
-  chk(st, rows * 22 + 4);
-  const { doc } = st;
-  const cw = CW / cols;
-
-  for (let i = 0; i < items.length; i++) {
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    const x = ML + col * cw;
-    const y = st.y + row * 22;
-
-    doc.setFillColor(...C.slate6);
-    doc.rect(x + 1, y, cw - 3, 19, 'F');
-    doc.setFillColor(...SP.deep);
-    doc.rect(x + 1, y, cw - 3, 1.5, 'F');
-
-    doc.setFontSize(F.xs);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...C.slate2);
-    doc.text(s(items[i].label).toUpperCase(), x + cw / 2 - 1, y + 6, { align: 'center' });
-
-    doc.setFontSize(F.h3);
-    doc.setFont('helvetica', 'bold');
-    const isNA = items[i].value === 'N/A';
-    doc.setTextColor(...(isNA ? C.slate3 : (items[i].color ?? SP.deep)));
-    doc.text(s(items[i].value), x + cw / 2 - 1, y + 14, { align: 'center' });
-
-    if (items[i].sub) {
-      doc.setFontSize(F.xs);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(...C.slate3);
-      doc.text(s(items[i].sub!), x + cw / 2 - 1, y + 18.5, { align: 'center' });
-    }
-  }
-  st.y += rows * 22 + 4;
-}
-
-// ============================================================================
-// SCORE BAR
-// ============================================================================
-
-function scoreLine(st: St, label: string, score: number, invert = false): void {
-  chk(st, 8);
-  const { doc } = st;
-  const display = invert ? 100 - score : score;
-  const barW = CW * 0.42;
-  const barX = ML + 55;
-  const barH = 4;
-  const barY = st.y - 3.5;
-  const filled = (barW * score) / 100;
-
-  const endColor: RGB = display >= 70 ? SP.main : display >= 45 ? C.amber : C.red;
-  const startColor: RGB = display >= 70
-    ? SP.ultra
-    : [Math.min(255, endColor[0] + 140), Math.min(255, endColor[1] + 130), Math.min(255, endColor[2] + 120)];
-
-  doc.setFontSize(F.sm);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...C.black);
-  doc.text(s(label), ML, st.y);
-
-  doc.setFillColor(...C.slate5);
-  doc.rect(barX, barY, barW, barH, 'F');
-
-  if (filled > 0) {
-    const N = 28;
-    const sliceW = filled / N;
-    for (let i = 0; i < N; i++) {
-      const t = i / (N - 1);
-      doc.setFillColor(
-        Math.round(startColor[0] + (endColor[0] - startColor[0]) * t),
-        Math.round(startColor[1] + (endColor[1] - startColor[1]) * t),
-        Math.round(startColor[2] + (endColor[2] - startColor[2]) * t),
-      );
-      doc.rect(barX + i * sliceW, barY, sliceW + 0.2, barH, 'F');
-    }
-  }
-
-  doc.setFontSize(F.sm);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...endColor);
-  doc.text(`${score}`, barX + barW + 3, st.y);
-  st.y += 7;
-}
-
-// ============================================================================
 // GRADIENT HELPERS
 // ============================================================================
 
@@ -415,73 +244,6 @@ function drawGradientV(
   }
 }
 
-// ============================================================================
-// COVER PAGE — Flowing ribbon design
-// ============================================================================
-
-function cbez(t: number, a: number, b: number, c: number, d: number): number {
-  const u = 1 - t;
-  return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d;
-}
-
-function cbezD(t: number, a: number, b: number, c: number, d: number): number {
-  const u = 1 - t;
-  return 3 * u * u * (b - a) + 6 * u * t * (c - b) + 3 * t * t * (d - c);
-}
-
-interface RibbonDef {
-  p0: [number, number]; p1: [number, number];
-  p2: [number, number]; p3: [number, number];
-  w0: number; w1: number;
-  c0: RGB;    c1: RGB;
-}
-
-function drawRibbon(doc: jsPDF, r: RibbonDef, steps = 150): void {
-  let prevL: [number, number] | null = null;
-  let prevR: [number, number] | null = null;
-
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-
-    const cx = cbez(t, r.p0[0], r.p1[0], r.p2[0], r.p3[0]);
-    const cy = cbez(t, r.p0[1], r.p1[1], r.p2[1], r.p3[1]);
-
-    let tx = cbezD(t, r.p0[0], r.p1[0], r.p2[0], r.p3[0]);
-    let ty = cbezD(t, r.p0[1], r.p1[1], r.p2[1], r.p3[1]);
-    const len = Math.sqrt(tx * tx + ty * ty) || 1;
-    tx /= len; ty /= len;
-
-    const nx = -ty, ny = tx;
-    const w = r.w0 + (r.w1 - r.w0) * t;
-
-    const lx = cx + nx * w / 2;
-    const ly = cy + ny * w / 2;
-    const rx = cx - nx * w / 2;
-    const ry = cy - ny * w / 2;
-
-    if (prevL && prevR && i > 0) {
-      const cr = Math.round(r.c0[0] + (r.c1[0] - r.c0[0]) * t);
-      const cg = Math.round(r.c0[1] + (r.c1[1] - r.c0[1]) * t);
-      const cb = Math.round(r.c0[2] + (r.c1[2] - r.c0[2]) * t);
-
-      doc.setFillColor(cr, cg, cb);
-      doc.setDrawColor(cr, cg, cb);
-      doc.setLineWidth(0.1);
-
-      doc.lines(
-        [
-          [lx - prevL[0], ly - prevL[1]],
-          [rx - lx, ry - ly],
-          [prevR[0] - rx, prevR[1] - ry],
-        ],
-        prevL[0], prevL[1], [1, 1], 'FD', true,
-      );
-    }
-
-    prevL = [lx, ly];
-    prevR = [rx, ry];
-  }
-}
 
 // ── Cover page (async — premium cover corrected) ─────────────────────────────
 
@@ -514,7 +276,6 @@ async function addCover(st: St): Promise<void> {
   const pageW = PW;
   const pageH = PH;
   const left = 14;
-  const right = pageW - 14;
 
   const panelW = 104;
   const heroX = 104;
@@ -874,10 +635,6 @@ function detectImageFormatFromDataUrl(dataUrl: string): 'PNG' | 'JPEG' | 'WEBP' 
   return 'JPEG';
 }
 
-function rgba(rgb: RGB, alpha: number): string {
-  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
-}
-
 function setOpacity(doc: any, opacity: number): void {
   doc.setGState?.(new doc.GState({ opacity }));
 }
@@ -887,7 +644,7 @@ function drawFallbackArchitecturalPattern(
   x: number,
   y: number,
   w: number,
-  h: number,
+  _h: number,
 ): void {
   doc.setDrawColor(224, 220, 245);
   doc.setLineWidth(0.3);
@@ -910,28 +667,6 @@ function drawFallbackArchitecturalPattern(
   doc.line(bx + 22, by + 128, bx + 62, by + 128);
   doc.line(bx + 35, by + 16, bx + 35, by + 164);
   doc.line(bx + 48, by + 16, bx + 48, by + 164);
-}
-
-function drawMimmozaCube(doc: any, x: number, y: number, size: number): void {
-  const s = size;
-
-  doc.setFillColor(122, 84, 255);
-  doc.lines(
-    [[s * 0.5, -s * 0.28], [s * 0.5, s * 0.28], [-s * 0.5, s * 0.28], [-s * 0.5, -s * 0.28]],
-    x + s * 0.5, y, [1, 1], 'F', true,
-  );
-
-  doc.setFillColor(160, 124, 255);
-  doc.lines(
-    [[s * 0.5, s * 0.28], [0, s * 0.58], [-s * 0.5, -s * 0.28], [0, -s * 0.58]],
-    x + s, y + s * 0.28, [1, 1], 'F', true,
-  );
-
-  doc.setFillColor(78, 52, 190);
-  doc.lines(
-    [[-s * 0.5, s * 0.28], [0, s * 0.58], [s * 0.5, -s * 0.28], [0, -s * 0.58]],
-    x + s * 0.5, y + s * 0.28, [1, 1], 'F', true,
-  );
 }
 
 function drawDocIcon(doc: any, cx: number, cy: number, color: RGB): void {
@@ -960,16 +695,6 @@ function drawFolderIcon(doc: any, cx: number, cy: number, color: RGB): void {
   doc.line(cx + 3, cy - 2.5, cx + 3, cy + 2.3);
   doc.line(cx + 3, cy + 2.3, cx - 3, cy + 2.3);
   doc.line(cx - 3, cy + 2.3, cx - 3, cy - 1.5);
-}
-
-function drawCalendarIcon(doc: any, cx: number, cy: number, color: RGB): void {
-  doc.setDrawColor(...color);
-  doc.setLineWidth(0.3);
-  doc.circle(cx, cy, 6.2);
-  doc.roundedRect(cx - 2.4, cy - 1.8, 4.8, 4.2, 0.4, 0.4, 'S');
-  doc.line(cx - 1.4, cy - 2.7, cx - 1.4, cy - 1.2);
-  doc.line(cx + 1.4, cy - 2.7, cx + 1.4, cy - 1.2);
-  doc.line(cx - 2.4, cy - 0.5, cx + 2.4, cy - 0.5);
 }
 
 // ============================================================================
@@ -1188,7 +913,6 @@ function addExecSummary(st: St): void {
  
   // FIX: réduit de +12 à +4 pour remonter tout le contenu
   const pageTop = HDR_H + 12;
-  const footerY = PH - FTR_H;
  
   doc.setFillColor(255, 255, 255);
   doc.rect(0, HDR_H + 0.4, PW, PH - HDR_H, 'F');
@@ -2584,7 +2308,7 @@ function addTechnique(st: St): void {
       doc.setTextColor(...C.slate3);
       doc.text(
         doc.splitTextToSize(
-          `Projet: ${s(c.valeurProjet ?? 'N/A')} | PLU: ${s(c.valeurPlu ?? 'N/A')}`,
+          `${s(c.libelle)} : ${s(String(c.valeur ?? c.detail ?? 'N/A'))}`,
           rightW - 38,
         ).slice(0, 1),
         rightX + 22,

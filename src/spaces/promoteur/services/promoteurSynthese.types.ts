@@ -1,18 +1,25 @@
 // src/spaces/promoteur/services/promoteurSynthese.types.ts
-// v4.1 — Ajout des champs DVF détaillés dans PromoteurRawInput.marche
-//        pour remonter la richesse de market-study-promoteur-v1 vers la synthèse.
-// v4.2 — Réexport des alias dérivés (ExecutiveSummary, FinancierAnalysis, …)
-//        attendus par promoteurSynthese.mapper.ts (indexed access types).
+// v5.0 — Contrat de types reagligne sur la sortie reelle de promoteurSynthese.mapper.ts.
+//        Le type precedent etait une version appauvrie ; il a diverge du mapper.
+//        Source de verite = ce que le mapper calcule (livrable comite).
 
-// ─── Types de base ────────────────────────────────────────────────────────────
+// ─── Types de base ──────────────────────────────────────────────────────────
 
 export type RecommendationType = 'GO' | 'GO_CONDITION' | 'NO_GO' | 'ANALYSE_INSUFFISANTE';
 export type RisqueNiveau = 'CRITIQUE' | 'ELEVE' | 'MODERE' | 'FAIBLE';
+export type RisqueCategorie =
+  | 'FINANCIER'
+  | 'MARCHE'
+  | 'REGLEMENTAIRE'
+  | 'ENVIRONNEMENTAL'
+  | 'TECHNIQUE'
+  | 'JURIDIQUE'
+  | 'AUTRE';
 export type DataQualite = 'HAUTE' | 'MOYENNE' | 'FAIBLE' | 'INSUFFISANT';
 export type ModuleStatut = 'COMPLET' | 'PARTIEL' | 'INSUFFISANT';
 export type AnomalieNiveau = 'CRITIQUE' | 'ALERTE' | 'INFO';
 
-// ─── Anomalie détectée ────────────────────────────────────────────────────────
+// ─── Anomalie detectee ────────────────────────────────────────────────────────
 
 export type AnomalieItem = {
   id: string;
@@ -23,7 +30,7 @@ export type AnomalieItem = {
   actionRequise?: string;
 };
 
-// ─── Qualité par module ───────────────────────────────────────────────────────
+// ─── Qualite par module ───────────────────────────────────────────────────────
 
 export type ModuleQualite = {
   module: string;
@@ -33,57 +40,93 @@ export type ModuleQualite = {
 };
 
 // ─── Risque ───────────────────────────────────────────────────────────────────
+// Le mapper produit des objets riches (probabilite, impact, scoreCombine, etc.).
 
 export type RisqueItem = {
   id: string;
-  niveau: RisqueNiveau;
+  categorie: RisqueCategorie;
   libelle: string;
+  niveau: RisqueNiveau;
+  probabilite: number;
+  impact: number;
+  scoreCombine: number;
   mitigation: string;
+  isKillSwitch: boolean;
 };
 
-// ─── Scénario de sensibilité ──────────────────────────────────────────────────
+// ─── Scenario de sensibilite ──────────────────────────────────────────────────
+// resultat reagligne sur le mapper : margeNettePercent / resultatNet / trnRendement.
 
 export type Scenario = {
   id: string;
   type: 'OPTIMISTE' | 'BASE' | 'PESSIMISTE' | 'STRESS';
   libelle: string;
+  hypotheses: {
+    prixVenteM2: number;
+    coutTravauxM2: number;
+    tauxAbsorption: number;
+    tauxCredit: number;
+  };
   resultat: {
-    chiffreAffaires: number;
-    coutTotal: number;
-    margeNette: number;
     margeNettePercent: number;
+    resultatNet: number;
+    trnRendement: number;
     recommendation: RecommendationType;
   };
 };
 
-// ─── Contrainte technique ─────────────────────────────────────────────────────
+// ─── Contrainte technique (PLU) ───────────────────────────────────────────────
+// statut inclut 'LIMITE' (utilise par le mapper pour deduire SOUS_RESERVE).
 
 export type ContrainteTechnique = {
   libelle: string;
-  statut: 'CONFORME' | 'A_VERIFIER' | 'BLOQUANT';
-  valeurProjet?: string;
-  valeurPlu?: string;
+  valeur?: string | number;
+  statut: 'CONFORME' | 'A_VERIFIER' | 'BLOQUANT' | 'LIMITE';
+  detail?: string;
+};
+
+// ─── Prix de marche (transactions DVF agregees) ───────────────────────────────
+
+export type PrixMarche = {
+  prixMoyenM2: number;
+  prixMin: number;
+  prixMax: number;
+  nbTransactions: number;
+  periode: string;
+  source: string;
+};
+
+// ─── Synthese IA (optionnelle : non generee par le mapper actuel) ─────────────
+
+export type SyntheseIA = {
+  texteExecutif: string;
+  analyseMarche: string;
+  analyseTechnique: string;
+  analyseFinanciere: string;
+  analyseRisques: string;
+  conclusion: string;
 };
 
 // ─── PromoteurSynthese (output complet) ───────────────────────────────────────
 
 export type PromoteurSynthese = {
-  metadata: {
-    generatedAt: string;
-    dataQualite: DataQualite;
-    analyseSuffisante: boolean;
-    version: string;
-  };
+  id: string;
+  version: string;
+  createdAt: string;
+  updatedAt: string;
 
   projet: {
     adresse: string;
     commune: string;
-    codePostal?: string;
-    departement?: string;
+    codePostal: string;
+    departement: string;
     referenceParcellaire?: string;
-    surfaceTerrain?: number;
+    surfaceTerrain: number;
+    surfacePlancher: number;
     nbLogements: number;
+    typologieMix: Record<string, number>;
     programmeType: string;
+    dateEtude: string;
   };
 
   executiveSummary: {
@@ -95,48 +138,16 @@ export type PromoteurSynthese = {
     pointsVigilance: string[];
     scores: {
       global: number;
+      foncier: number;
       financier: number;
       marche: number;
       technique: number;
       risque: number;
     };
-  };
-
-  /** Anomalies détectées (incohérences, manquants critiques) */
-  anomalies: AnomalieItem[];
-
-  /** Qualité des données par module */
-  qualiteParModule: ModuleQualite[];
-
-  financier: {
-    chiffreAffairesTotal: number;
-    chiffreAffairesM2: number;
-    coutRevientTotal: number;
-    coutRevientM2: number;
-    coutFoncier: number;
-    coutFoncierPresent: boolean;
-    coutTravaux: number;
-    coutTravauxM2: number;
-    coutFinanciers: number;
-    fraisCommercialisation: number;
-    fraisGestion: number;
     margeNette: number;
-    margeNettePercent: number;
-    margeOperationnellePercent: number;
     trnRendement: number;
-    bilancielRatio: number;
-  };
-
-  marche: {
-    zoneMarche: string;
-    prixNeufMoyenM2: number;
-    prixProjetM2: number;
-    positionPrix: number;
-    primiumNeuf: number;
-    offreConcurrente: number;
-    delaiEcoulementMois: number | null;
-    analyseFiable: boolean;
-    notesMarcheLibre: string[];
+    caTotal: number;
+    resultatNet: number;
   };
 
   technique: {
@@ -146,8 +157,59 @@ export type PromoteurSynthese = {
     hauteurMax: number | null;
     hauteurProjet: number | null;
     nbNiveaux: number | null;
+    empriseBatie: number | null;
     pleineTerre: number | null;
+    reculs: {
+      voirie: number | null;
+      limitesSeparatives: number | null;
+      fond: number | null;
+    };
+    parking: {
+      nbPlacesRequises: number | null;
+      nbPlacesPrevues: number | null;
+      type: string | null;
+    };
     contraintes: ContrainteTechnique[];
+    notesTechniques: string[];
+  };
+
+  marche: {
+    zoneMarche: string;
+    prixNeufMoyenM2: number;
+    prixProjetM2: number;
+    positionPrix: number;
+    prixAncienMoyenM2: number;
+    primiumNeuf: number;
+    prixParTypologie: Record<string, number>;
+    offreConcurrente: number;
+    demandeLocative: number | null;
+    demographieIndicateurs: unknown[];
+    transactionsRecentes: PrixMarche;
+    absorptionMensuelle: number | null;
+    delaiEcoulementMois: number | null;
+    notesMarcheLibre: string[];
+  };
+
+  financier: {
+    chiffreAffairesTotal: number;
+    chiffreAffairesM2: number;
+    coutRevientTotal: number;
+    coutRevientM2: number;
+    coutFoncier: number;
+    coutFoncierPresent?: boolean;
+    coutTravaux: number;
+    coutTravauxM2: number;
+    coutFinanciers: number;
+    fraisCommercialisation: number;
+    fraisGestion: number;
+    autresCouts: Array<{ libelle: string; montantHT: number; pourcentageCA: number }>;
+    margeNette: number;
+    margeNettePercent: number;
+    margeOperationnelle: number;
+    margeOperationnellePercent: number;
+    trnRendement: number;
+    vatRecoverable: boolean;
+    bilancielRatio: number;
   };
 
   risques: RisqueItem[];
@@ -160,18 +222,29 @@ export type PromoteurSynthese = {
     creditPromoteurMontant: number;
     creditPromoteurDuree: number;
     tauxCredit: number;
+    garantiesRequises: string[];
+    ratioFondsPropres: number;
     prefinancementVentes: number;
     notesBancaires: string[];
   };
 
-  syntheseIA: {
-    texteExecutif: string;
-    analyseMarche: string;
-    analyseTechnique: string;
-    analyseFinanciere: string;
-    analyseRisques: string;
-    conclusion: string;
+  /** Genere par une couche IA optionnelle. Null tant que non produit. */
+  syntheseIA: SyntheseIA | null;
+
+  metadata: {
+    sourceFoncier: string;
+    sourcePlu: string;
+    sourceMarche: string;
+    dataQualite: DataQualite;
+    avertissements: string[];
+    generatedAt?: string;
+    analyseSuffisante?: boolean;
+    version?: string;
   };
+
+  /** Optionnels : non produits par le mapper actuel. */
+  anomalies?: AnomalieItem[];
+  qualiteParModule?: ModuleQualite[];
 };
 
 // ─── PromoteurRawInput (input depuis le Bilan) ────────────────────────────────
@@ -185,6 +258,7 @@ export type PromoteurRawInput = {
     surfaceTerrain?: number;
     prixAcquisition?: number;
     fraisNotaire?: number;
+    fraisDemolition?: number;
     pollutionDetectee?: boolean;
   };
   plu?: {
@@ -192,6 +266,16 @@ export type PromoteurRawInput = {
     cub?: number;
     hauteurMax?: number;
     pleineTerre?: number;
+    reculs?: {
+      voirie?: number;
+      limitesSeparatives?: number;
+      fond?: number;
+    };
+    reglesPlu?: Array<{
+      libelle: string;
+      valeur?: string | number;
+      statut?: ContrainteTechnique['statut'];
+    }>;
   };
   conception?: {
     surfacePlancher?: number;
@@ -200,28 +284,33 @@ export type PromoteurRawInput = {
     hauteurProjet?: number;
     empriseBatie?: number;
     programmeType?: string;
+    typologieMix?: Record<string, number>;
+    parking?: {
+      nbPlacesRequises?: number;
+      nbPlacesPrevues?: number;
+      type?: string;
+    };
   };
   marche?: {
-    // Prix de référence (saisie utilisateur ou dérivés)
     prixNeufM2?: number;
     prixAncienM2?: number;
-
-    // DVF — statistiques agrégées (depuis market-study-promoteur-v1 core.dvf)
     nbTransactionsDvf?: number;
     prixMoyenDvf?: number;
-    /** v4.1 — prix min DVF sur la période (€/m²) */
     prixMinDvf?: number;
-    /** v4.1 — prix max DVF sur la période (€/m²) */
     prixMaxDvf?: number;
-    /** v4.1 — libellé de la période couverte par les transactions DVF (ex: "12 mois glissants") */
     periodeDvf?: string;
-
-    // Marché local
     offreConcurrente?: number;
     absorptionMensuelle?: number;
+    prixParTypologie?: Record<string, number>;
+    demographieData?: unknown[];
   };
   risques?: {
-    risquesIdentifies?: string[];
+    risquesIdentifies?: Array<{
+      libelle: string;
+      niveau?: RisqueNiveau;
+      categorie?: RisqueCategorie;
+      mitigation?: string;
+    }>;
     zonageRisque?: string;
   };
   evaluation?: {
@@ -236,6 +325,7 @@ export type PromoteurRawInput = {
     fraisFinanciers?: number;
     fraisCommercialisation?: number;
     fraisGestion?: number;
+    autresCouts?: number;
     chiffreAffaires?: number;
     margeNette?: number;
     margeNettePercent?: number;
@@ -245,10 +335,8 @@ export type PromoteurRawInput = {
   };
 };
 
-// ─── Alias dérivés (compat promoteurSynthese.mapper.ts) ───────────────────────
-// Ces sous-structures ont été inlinées dans PromoteurSynthese lors d'un refactor ;
-// le mapper les importe encore sous leur nom. On les réexpose par indexed access
-// pour qu'elles restent synchronisées automatiquement avec PromoteurSynthese.
+// ─── Alias derives (compat promoteurSynthese.mapper.ts) ───────────────────────
+// Reexposes par indexed access pour rester synchronises avec PromoteurSynthese.
 
 export type ProjetInfo = PromoteurSynthese['projet'];
 export type ExecutiveSummary = PromoteurSynthese['executiveSummary'];
@@ -257,7 +345,4 @@ export type FinancierAnalysis = PromoteurSynthese['financier'];
 export type MarcheAnalysis = PromoteurSynthese['marche'];
 export type TechniqueAnalysis = PromoteurSynthese['technique'];
 export type FinancementAnalysis = PromoteurSynthese['financement'];
-
-// À vérifier via le compilateur (usage réel dans le mapper) :
 export type PluConstrainte = ContrainteTechnique;
-export type PrixMarche = PromoteurSynthese['marche'];

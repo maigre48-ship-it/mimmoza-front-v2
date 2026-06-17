@@ -42,8 +42,6 @@ import mimmozaLogo from "../assets/mimmoza-logo.png";
 import { getCurrentAdminStatus } from "../lib/admin";
 import { supabase } from "../lib/supabase";
 import { countUnseen } from "../services/opportunity/opportunityWatch.service";
-import { readBanqueSnapshot, selectActiveDossierId } from "../spaces/banque/store/banqueSnapshot.store";
-import { preserveDossierInPath } from "../spaces/banque/utils/banqueDossierUrl";
 import { DealUnlockModal } from "../spaces/marchand/components/DealUnlockModal";
 import { unlockDealIfNeeded } from "../spaces/marchand/services/dealUnlock";
 import { ensureActiveDeal, type MarchandDeal } from "../spaces/marchand/shared/marchandSnapshot.store";
@@ -422,20 +420,6 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
   ],
 };
 
-function getBanqueActiveId(loc: { pathname: string; search: string }): string | null {
-  const m = loc.pathname.match(/^\/banque\/(?:dossier|analyse|comite|outil-risques)\/([^/]+)/i);
-  if (m && m[1]) return m[1];
-  try {
-    const sp = new URLSearchParams(loc.search);
-    return sp.get("id") ?? sp.get("dossierId") ?? sp.get("dossier") ?? sp.get("d") ?? null;
-  } catch { /* noop */ }
-  try {
-    return selectActiveDossierId(readBanqueSnapshot()) ?? localStorage.getItem("mimmoza.banque.active_dossier_id");
-  } catch {
-    return null;
-  }
-}
-
 // ─── TopNavigation ────────────────────────────────────────────────────────────
 
 function TopNavigation(props: {
@@ -456,18 +440,6 @@ function TopNavigation(props: {
   }
 
   function resolvePath(targetPath: string): string {
-    if (currentSpace !== "banque") return buildPath(targetPath);
-    const activeId = getBanqueActiveId(location);
-    const needsId  = new Set(["/banque/dossier", "/banque/analyse", "/banque/comite", "/banque/outil-risques"]);
-    if (targetPath === "/banque") {
-      if (activeId) return buildPath("/banque/dossier/" + activeId);
-      return buildPath("/banque/dossiers");
-    }
-    if (needsId.has(targetPath)) {
-      if (!activeId) return buildPath("/banque/dossiers");
-      return buildPath(targetPath + "/" + activeId);
-    }
-    if (activeId) return preserveDossierInPath(buildPath(targetPath), activeId);
     return buildPath(targetPath);
   }
 
@@ -784,18 +756,6 @@ function MobileDrawer(props: {
   }
 
   function resolvePath(tp: string): string {
-    if (currentSpace !== "banque") return buildPath(tp);
-    const activeId = getBanqueActiveId(location);
-    const needsId  = new Set(["/banque/dossier", "/banque/analyse", "/banque/comite", "/banque/outil-risques"]);
-    if (tp === "/banque") {
-      if (activeId) return buildPath("/banque/dossier/" + activeId);
-      return buildPath("/banque/dossiers");
-    }
-    if (needsId.has(tp)) {
-      if (!activeId) return buildPath("/banque/dossiers");
-      return buildPath(tp + "/" + activeId);
-    }
-    if (activeId) return preserveDossierInPath(buildPath(tp), activeId);
     return buildPath(tp);
   }
 

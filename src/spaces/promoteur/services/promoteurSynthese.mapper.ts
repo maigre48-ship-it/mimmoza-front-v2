@@ -119,6 +119,7 @@ function mapTechniqueAnalysis(input: PromoteurRawInput): TechniqueAnalysis {
 function mapMarcheAnalysis(input: PromoteurRawInput): MarcheAnalysis {
   const marche = input.marche ?? {};
   const evaluation = input.evaluation ?? {};
+  const conception = input.conception ?? {};
 
   const prixNeuf = marche.prixNeufM2 ?? 0;
   const prixProjet = evaluation.prixVenteM2 ?? 0;
@@ -172,8 +173,8 @@ function mapMarcheAnalysis(input: PromoteurRawInput): MarcheAnalysis {
     transactionsRecentes,
     absorptionMensuelle: marche.absorptionMensuelle ?? null,
     delaiEcoulementMois:
-      marche.absorptionMensuelle && input.conception.nbLogements
-        ? roundTo(safeDiv(input.conception.nbLogements, marche.absorptionMensuelle), 1)
+      marche.absorptionMensuelle && conception.nbLogements
+        ? roundTo(safeDiv(conception.nbLogements, marche.absorptionMensuelle), 1)
         : null,
     notesMarcheLibre,
   };
@@ -248,6 +249,12 @@ function mapRisques(input: PromoteurRawInput, financier: FinancierAnalysis): Ris
   const risques: RisqueItem[] = [];
   let idx = 0;
 
+  const marche = input.marche ?? {};
+  const evaluation = input.evaluation ?? {};
+  const plu = input.plu ?? {};
+  const foncier = input.foncier ?? {};
+  const risquesInput = input.risques ?? {};
+
   const add = (
     categorie: RisqueItem['categorie'],
     libelle: string,
@@ -278,21 +285,21 @@ function mapRisques(input: PromoteurRawInput, financier: FinancierAnalysis): Ris
       'Surveiller absorption et maitrise des couts travaux.');
   }
 
-  const prixNeuf = input.marche.prixNeufM2 ?? 0;
-  const prixProjet = input.evaluation.prixVenteM2 ?? 0;
+  const prixNeuf = marche.prixNeufM2 ?? 0;
+  const prixProjet = evaluation.prixVenteM2 ?? 0;
   if (prixNeuf > 0 && prixProjet > prixNeuf * 1.1) {
     const delta = roundTo(safeDiv(prixProjet - prixNeuf, prixNeuf) * 100, 1);
     add('MARCHE', `Prix de vente > marche +10% (${delta}%)`, 'CRITIQUE', 0.8, 0.9,
       'Repositionnement tarifaire ou differenciation produit necessaire.', true);
   }
 
-  const pluBloquant = (input.plu.reglesPlu ?? []).some((r) => r.statut === 'BLOQUANT');
+  const pluBloquant = (plu.reglesPlu ?? []).some((r) => r.statut === 'BLOQUANT');
   if (pluBloquant) {
     add('REGLEMENTAIRE', 'Contrainte PLU bloquante detectee', 'CRITIQUE', 1, 1,
       'Consultation urbanisme prealable et eventuelle derogation.', true);
   }
 
-  if (input.foncier.pollutionDetectee) {
+  if (foncier.pollutionDetectee) {
     add('ENVIRONNEMENTAL', 'Pollution de terrain detectee', 'ELEVE', 0.8, 0.7,
       'Diagnostic pollution approfondi et estimation cout depollution.');
   }
@@ -300,7 +307,7 @@ function mapRisques(input: PromoteurRawInput, financier: FinancierAnalysis): Ris
   const probMap: Record<RisqueNiveau, number> = { FAIBLE: 0.2, MODERE: 0.4, ELEVE: 0.7, CRITIQUE: 0.9 };
   const impMap: Record<RisqueNiveau, number> = { FAIBLE: 0.2, MODERE: 0.5, ELEVE: 0.7, CRITIQUE: 0.9 };
 
-  for (const r of input.risques.risquesIdentifies ?? []) {
+  for (const r of risquesInput.risquesIdentifies ?? []) {
     const niv: RisqueNiveau = r.niveau ?? 'MODERE';
     add(
       r.categorie ?? 'TECHNIQUE',
@@ -351,7 +358,7 @@ function mapFinancement(input: PromoteurRawInput, financier: FinancierAnalysis):
 // ---- Scenarios --------------------------------------------------------------
 
 function buildScenarios(financier: FinancierAnalysis, input: PromoteurRawInput): Scenario[] {
-  const sp = input.conception.surfacePlancher ?? 1;
+  const sp = input.conception?.surfacePlancher ?? 1;
   const baseTravauxM2 = financier.coutTravauxM2;
   const basePrixM2 = financier.chiffreAffairesM2;
 
@@ -471,18 +478,22 @@ function buildExecutiveSummary(
 ): ExecutiveSummary {
   const killSwitches: string[] = [];
 
+  const marche = input.marche ?? {};
+  const evaluation = input.evaluation ?? {};
+  const plu = input.plu ?? {};
+
   if (financier.margeNettePercent < 8) {
     killSwitches.push(`Marge nette ${financier.margeNettePercent}% < seuil 8%`);
   }
 
-  const prixNeuf = input.marche.prixNeufM2 ?? 0;
-  const prixProjet = input.evaluation.prixVenteM2 ?? 0;
+  const prixNeuf = marche.prixNeufM2 ?? 0;
+  const prixProjet = evaluation.prixVenteM2 ?? 0;
   if (prixNeuf > 0 && prixProjet > prixNeuf * 1.1) {
     const delta = roundTo(safeDiv(prixProjet - prixNeuf, prixNeuf) * 100, 0);
     killSwitches.push(`Prix projet +${delta}% vs marche (> +10%)`);
   }
 
-  if ((input.plu.reglesPlu ?? []).some((r) => r.statut === 'BLOQUANT')) {
+  if ((plu.reglesPlu ?? []).some((r) => r.statut === 'BLOQUANT')) {
     killSwitches.push('Contrainte PLU bloquante non levee');
   }
 
@@ -494,6 +505,7 @@ function buildExecutiveSummary(
     GO: 'Operation viable avec une marge satisfaisante et un positionnement marche coherent.',
     GO_CONDITION: 'Operation presentant un potentiel mais necessitant des ajustements avant engagement.',
     NO_GO: "Des indicateurs critiques bloquent la viabilite de l'operation en l'etat.",
+    ANALYSE_INSUFFISANTE: "Donnees insuffisantes pour conclure : completer le dossier avant decision.",
   };
 
   const pointsForts: string[] = [];
@@ -542,10 +554,10 @@ export function mapToPromoteurSynthese(input: PromoteurRawInput): PromoteurSynth
   const executiveSummary = buildExecutiveSummary(input, financier, risques, scores, projet);
 
   const avertissements: string[] = [];
-  if (!input.foncier.surfaceTerrain) avertissements.push('Surface terrain manquante.');
-  if (!input.conception.surfacePlancher) avertissements.push('Surface plancher manquante.');
-  if (!input.marche.prixNeufM2) avertissements.push('Prix marche neuf absent.');
-  if (!input.bilan.chiffreAffaires) avertissements.push("Chiffre d'affaires non renseigne -- calcule par estimation.");
+  if (!input.foncier?.surfaceTerrain) avertissements.push('Surface terrain manquante.');
+  if (!input.conception?.surfacePlancher) avertissements.push('Surface plancher manquante.');
+  if (!input.marche?.prixNeufM2) avertissements.push('Prix marche neuf absent.');
+  if (!input.bilan?.chiffreAffaires) avertissements.push("Chiffre d'affaires non renseigne -- calcule par estimation.");
 
   const dataQualite: PromoteurSynthese['metadata']['dataQualite'] =
     avertissements.length === 0 ? 'HAUTE' :
