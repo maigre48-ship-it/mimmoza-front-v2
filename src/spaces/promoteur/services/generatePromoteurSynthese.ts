@@ -1,4 +1,14 @@
 // src/spaces/promoteur/services/generatePromoteurSynthese.ts
+// v4.4 — Alignement sur PromoteurSynthese v5.0 :
+//   - ContrainteTechnique : valeur/detail (plus valeurProjet/valeurPlu)
+//   - RisqueItem enrichi (categorie, probabilite, impact, scoreCombine, isKillSwitch)
+//   - Scenario.resultat : margeNettePercent/resultatNet/trnRendement/recommendation
+//   - projet : codePostal/departement/surfaceTerrain non optionnels
+//   - financier : margeOperationnelle + vatRecoverable
+//   - marche : suppression analyseFiable, ajout prixParTypologie/demandeLocative
+//   - technique : empriseBatie, reculs.fond, parking
+//   - top-level id/version/createdAt/updatedAt
+//
 // v4.3 — Correction analyseMarche :
 //   - Prix DVF réel (prixMoyenDvf) séparé du prix de vente projet (prixNeufM2)
 //   - Position prix calculée vs DVF moyen quand disponible, vs prix neuf sinon
@@ -83,9 +93,8 @@ export function generatePromoteurSynthese(raw: PromoteurRawInput): PromoteurSynt
   const chiffreAffairesM2    = Math.round(caTotal / surfaceVendableEstim);
   const coutRevientM2        = coutRevientTotal > 0 ? Math.round(coutRevientTotal / surfaceVendableEstim) : 0;
   const bilancielRatio       = caTotal > 0 ? (coutFoncier / caTotal) * 100 : 0;
-  const margeOpPct           = caTotal > 0
-    ? ((caTotal - coutTravaux - coutFinanciers - fraisComm - fraisGestion) / caTotal) * 100
-    : 0;
+  const margeOpEur           = caTotal - coutTravaux - coutFinanciers - fraisComm - fraisGestion;
+  const margeOpPct           = caTotal > 0 ? (margeOpEur / caTotal) * 100 : 0;
 
   // ─── DÉTECTION D'ANOMALIES ───────────────────────────────────────────────
 
@@ -221,7 +230,7 @@ export function generatePromoteurSynthese(raw: PromoteurRawInput): PromoteurSynt
     const hasRisques = Array.isArray(risquesIn.risquesIdentifies) && risquesIn.risquesIdentifies.length > 0;
     const manquants: string[] = [];
     const presents: string[] = [];
-    if (hasRisques) risquesIn.risquesIdentifies!.forEach(r => presents.push(r));
+    if (hasRisques) risquesIn.risquesIdentifies!.forEach(r => presents.push(r.libelle));
     else manquants.push('Aucun risque analysé — module vide');
     if (isPresent(risquesIn.zonageRisque)) presents.push(`Zonage : ${risquesIn.zonageRisque}`);
     else manquants.push('Zonage risque');
@@ -270,28 +279,19 @@ export function generatePromoteurSynthese(raw: PromoteurRawInput): PromoteurSynt
   const nbTransactionsDvf = n(marche.nbTransactionsDvf, 0);
   const marcheFiable      = nbTransactionsDvf >= 10;
 
-  // [v4.3] Séparation stricte :
-  // - prixDvfMoyen  = prix réel des transactions DVF (prixMoyenDvf)
-  // - prixNeufM2    = prix de vente projet (saisie utilisateur)
-  // - prixAncienM2  = prix médian DVF ou prix ancien saisi (référence transaction)
-  const prixDvfMoyen  = n(marche.prixMoyenDvf, 0);  // prix moyen DVF brut
-  const prixNeufM2    = n(marche.prixNeufM2, 0);     // prix de vente projet
-  const prixAncienM2  = n(marche.prixAncienM2, 0);   // médian DVF ou ancien saisi
+  const prixDvfMoyen  = n(marche.prixMoyenDvf, 0);
+  const prixNeufM2    = n(marche.prixNeufM2, 0);
+  const prixAncienM2  = n(marche.prixAncienM2, 0);
 
-  // prixNeufMoyenM2 : référence de marché neuf pour les calculs de position.
-  // Priorité : prix neuf saisi explicitement > prix DVF moyen (ne pas mélanger).
   const prixNeufMoyenM2 = prixNeufM2 > 0 ? prixNeufM2 : prixDvfMoyen;
 
-  // Prix projet = prix de vente retenu (evaluation > prixNeufM2)
   const prixProjetM2 = n(raw.evaluation?.prixVenteM2 ?? marche.prixNeufM2, 0);
 
-  // Position prix : vs DVF moyen si disponible, vs prix neuf sinon
   const refPrixPosition = prixDvfMoyen > 0 ? prixDvfMoyen : prixNeufMoyenM2;
   const positionPrix = refPrixPosition > 0 && prixProjetM2 > 0
     ? ((prixProjetM2 - refPrixPosition) / refPrixPosition) * 100
     : 0;
 
-  // Prime neuf/ancien : prix DVF moyen vs prix ancien/médian DVF
   const primiumNeuf = prixAncienM2 > 0 && prixDvfMoyen > 0
     ? ((prixDvfMoyen - prixAncienM2) / prixAncienM2) * 100
     : prixAncienM2 > 0 && prixNeufMoyenM2 > 0
@@ -332,15 +332,15 @@ export function generatePromoteurSynthese(raw: PromoteurRawInput): PromoteurSynt
     contraintes.push({
       libelle: 'Hauteur du projet',
       statut: hauteurProjet <= hauteurMaxPlu ? 'CONFORME' : 'BLOQUANT',
-      valeurProjet: `${hauteurProjet} m`,
-      valeurPlu: `max ${hauteurMaxPlu} m`,
+      valeur: `${hauteurProjet} m`,
+      detail: `max ${hauteurMaxPlu} m`,
     });
   } else if (hauteurProjet > 0 && !hauteurMaxPlu) {
     contraintes.push({
       libelle: 'Hauteur — PLU non renseigné',
       statut: 'A_VERIFIER',
-      valeurProjet: `${hauteurProjet} m`,
-      valeurPlu: 'NON RENSEIGNÉ',
+      valeur: `${hauteurProjet} m`,
+      detail: 'PLU non renseigné',
     });
   }
 
@@ -348,8 +348,8 @@ export function generatePromoteurSynthese(raw: PromoteurRawInput): PromoteurSynt
     contraintes.push({
       libelle: 'CES (emprise au sol max) — non renseigné',
       statut: 'A_VERIFIER',
-      valeurProjet: emprise > 0 ? `${Math.round(emprise)} m²` : 'N/A',
-      valeurPlu: 'NON RENSEIGNÉ',
+      valeur: emprise > 0 ? `${Math.round(emprise)} m²` : 'N/A',
+      detail: 'PLU non renseigné',
     });
   }
 
@@ -357,8 +357,8 @@ export function generatePromoteurSynthese(raw: PromoteurRawInput): PromoteurSynt
     contraintes.push({
       libelle: `Pleine terre min ${Math.round(n(plu.pleineTerre) * 100)}%`,
       statut: 'A_VERIFIER',
-      valeurProjet: 'À vérifier sur plan masse',
-      valeurPlu: `min ${Math.round(n(plu.pleineTerre) * 100)}%`,
+      valeur: 'À vérifier sur plan masse',
+      detail: `min ${Math.round(n(plu.pleineTerre) * 100)}%`,
     });
   }
 
@@ -375,27 +375,42 @@ export function generatePromoteurSynthese(raw: PromoteurRawInput): PromoteurSynt
   if (!hasRisques) {
     risqueItems.push({
       id: 'RISQUES_NON_ANALYSES',
+      categorie: 'AUTRE',
       niveau: 'ELEVE',
       libelle: 'RISQUES NON ANALYSÉS — module vide',
+      probabilite: 0,
+      impact: 0,
+      scoreCombine: 0,
       mitigation: 'Lancer l\'analyse depuis le module Risques (Géorisques, risques naturels, servitudes PLU).',
+      isKillSwitch: false,
     });
   }
 
   if (!coutFoncierPresent) {
     risqueItems.push({
       id: 'BILAN_INCOMPLET',
+      categorie: 'FINANCIER',
       niveau: 'CRITIQUE',
       libelle: 'Bilan financier structurellement incomplet — foncier manquant',
+      probabilite: 0,
+      impact: 0,
+      scoreCombine: 0,
       mitigation: 'Renseigner le prix d\'acquisition foncier dans le Bilan.',
+      isKillSwitch: true,
     });
   }
 
   if (!marcheFiable) {
     risqueItems.push({
       id: 'MARCHE_NON_VALIDE',
+      categorie: 'MARCHE',
       niveau: 'MODERE',
       libelle: 'Prix de vente non validé par des données de marché',
+      probabilite: 0,
+      impact: 0,
+      scoreCombine: 0,
       mitigation: 'Lancer l\'étude de marché DVF pour confirmer le prix de vente sur la commune.',
+      isKillSwitch: false,
     });
   }
 
@@ -425,10 +440,8 @@ export function generatePromoteurSynthese(raw: PromoteurRawInput): PromoteurSynt
     const mp = ca2 > 0 ? (m / ca2) * 100 : 0;
     const trn = cost2 > 0 ? (m / cost2) * 100 : 0;
     return {
-      chiffreAffaires: ca2,
-      coutTotal: cost2,
-      margeNette: m,
       margeNettePercent: mp,
+      resultatNet: m,
       trnRendement: trn,
       recommendation: computeReco(mp),
     };
@@ -441,10 +454,8 @@ export function generatePromoteurSynthese(raw: PromoteurRawInput): PromoteurSynt
       libelle: 'Hypothèses du bilan',
       hypotheses: baseHypotheses,
       resultat: {
-        chiffreAffaires:   caTotal,
-        coutTotal:         coutRevientTotal,
-        margeNette,
         margeNettePercent,
+        resultatNet: margeNette,
         trnRendement,
         recommendation: killSwitches.length > 0 ? 'ANALYSE_INSUFFISANTE' : computeReco(margeNettePercent),
       },
@@ -570,24 +581,15 @@ export function generatePromoteurSynthese(raw: PromoteurRawInput): PromoteurSynt
         : `Marge nette : ${margeNettePercent.toFixed(1)}% — ${recommendation}.`,
     ].join(' '),
 
-    // [v4.3] analyseMarche corrigée :
-    // - Prix DVF moyen (prixDvfMoyen) clairement séparé du prix projet (prixProjetM2)
-    // - Position prix calculée vs DVF moyen (référence transactions réelles)
-    // - Prime neuf/ancien = DVF moyen / médian DVF (pas prix projet / DVF)
-    // - Aucune valeur inventée : chaque segment est conditionnel à sa présence
     analyseMarche: marcheFiable
       ? [
-          // Période uniquement — pas le count de transactions (source peut varier)
           marche.periodeDvf ? `Données DVF (${marche.periodeDvf}).` : '',
-          // Prix DVF réel — séparé du prix de vente projet
           prixDvfMoyen > 0
             ? `Prix moyen DVF : ${prixDvfMoyen.toLocaleString('fr-FR')} EUR/m².`
             : '',
-          // Prix médian DVF (prixAncienM2 = médian DVF dans ce contexte)
           prixAncienM2 > 0 && prixAncienM2 !== prixDvfMoyen
             ? `Prix médian DVF : ${prixAncienM2.toLocaleString('fr-FR')} EUR/m².`
             : '',
-          // Prix projet vs DVF moyen (la vraie référence de marché)
           prixProjetM2 > 0
             ? `Prix projet : ${prixProjetM2.toLocaleString('fr-FR')} EUR/m²${
                 refPrixPosition > 0
@@ -595,7 +597,6 @@ export function generatePromoteurSynthese(raw: PromoteurRawInput): PromoteurSynt
                   : ''
               }.`
             : '',
-          // Prime neuf/ancien = DVF moyen vs médian DVF (transactions réelles)
           primiumNeuf !== 0 && prixAncienM2 > 0
             ? `Prime neuf/ancien : ${primiumNeuf.toFixed(1)}%.`
             : '',
@@ -671,30 +672,25 @@ export function generatePromoteurSynthese(raw: PromoteurRawInput): PromoteurSynt
     dataQualite === 'FAIBLE' ||
     dataQualite === 'INSUFFISANT';
 
+  const nowIso = new Date().toISOString();
+
   return {
-    metadata: {
-      generatedAt: new Date().toISOString(),
-      dataQualite,
-      analyseSuffisante,
-      version: '4.3',
-      sourceFoncier:  foncier.commune ? 'Saisie utilisateur / cadastre' : 'Non renseigné',
-      sourcePlu:      isPresent(plu.zone) ? 'PLU communal' : 'Non renseigné',
-      sourceMarche:   marcheFiable ? 'DVF + saisie utilisateur' : 'Saisie utilisateur',
-      avertissements: hasQualityWarning ? [
-        'Analyse générée sur données partielles — conclusions à confirmer après complétion du dossier.',
-      ] : [],
-    },
+    id: (globalThis.crypto?.randomUUID?.() ?? `syn-${Date.now()}`),
+    version: '4.4',
+    createdAt: nowIso,
+    updatedAt: nowIso,
+
     projet: {
       adresse:         foncier.adresse               ?? 'Adresse non renseignée',
       commune:         foncier.commune               ?? 'Commune non renseignée',
-      codePostal:      foncier.codePostal,
-      departement:     foncier.departement,
-      surfaceTerrain:  isPresent(foncier.surfaceTerrain) ? n(foncier.surfaceTerrain) : undefined,
+      codePostal:      foncier.codePostal            ?? '',
+      departement:     foncier.departement           ?? '',
+      surfaceTerrain:  isPresent(foncier.surfaceTerrain) ? n(foncier.surfaceTerrain) : 0,
       surfacePlancher: sdp > 0 ? sdp : 0,
       nbLogements,
       programmeType:   programmeType || 'Non renseigné',
       typologieMix:    {},
-      dateEtude:       new Date().toISOString(),
+      dateEtude:       nowIso,
     },
     executiveSummary: {
       titreOperation,
@@ -732,8 +728,10 @@ export function generatePromoteurSynthese(raw: PromoteurRawInput): PromoteurSynt
       fraisGestion,
       margeNette,
       margeNettePercent,
+      margeOperationnelle:        margeOpEur,
       margeOperationnellePercent: margeOpPct,
       trnRendement,
+      vatRecoverable:             false,
       bilancielRatio,
       autresCouts:                [],
     },
@@ -744,11 +742,10 @@ export function generatePromoteurSynthese(raw: PromoteurRawInput): PromoteurSynt
       prixAncienMoyenM2:     prixAncienM2,
       positionPrix,
       primiumNeuf,
+      prixParTypologie:      {},
       offreConcurrente,
-      absorptionMensuelle:   absorptionMensuelle > 0 ? absorptionMensuelle : null,
-      delaiEcoulementMois,
-      analyseFiable:         marcheFiable,
-      notesMarcheLibre,
+      demandeLocative:       null,
+      demographieIndicateurs: [],
       transactionsRecentes: {
         nbTransactions: nbTransactionsDvf,
         prixMoyenM2:    prixDvfMoyen,
@@ -757,7 +754,9 @@ export function generatePromoteurSynthese(raw: PromoteurRawInput): PromoteurSynt
         periode:        marche.periodeDvf ?? '',
         source:         nbTransactionsDvf > 0 ? 'DVF' : '',
       },
-      demographieIndicateurs: [],
+      absorptionMensuelle:   absorptionMensuelle > 0 ? absorptionMensuelle : null,
+      delaiEcoulementMois,
+      notesMarcheLibre,
     },
     technique: {
       faisabiliteTechnique,
@@ -766,10 +765,17 @@ export function generatePromoteurSynthese(raw: PromoteurRawInput): PromoteurSynt
       hauteurMax:    hauteurMaxPlu > 0 ? hauteurMaxPlu : null,
       hauteurProjet: hauteurProjet > 0 ? hauteurProjet : null,
       nbNiveaux:     niveaux > 0 ? niveaux : null,
+      empriseBatie:  emprise > 0 ? emprise : null,
       pleineTerre:   isPresent(plu.pleineTerre) ? Math.round(n(plu.pleineTerre) * 100) : null,
       reculs: {
         voirie:             null,
         limitesSeparatives: null,
+        fond:               null,
+      },
+      parking: {
+        nbPlacesRequises: null,
+        nbPlacesPrevues:  null,
+        type:             null,
       },
       contraintes,
       notesTechniques: [],
@@ -788,5 +794,17 @@ export function generatePromoteurSynthese(raw: PromoteurRawInput): PromoteurSynt
       notesBancaires,
     },
     syntheseIA,
+    metadata: {
+      generatedAt: nowIso,
+      dataQualite,
+      analyseSuffisante,
+      version: '4.4',
+      sourceFoncier:  foncier.commune ? 'Saisie utilisateur / cadastre' : 'Non renseigné',
+      sourcePlu:      isPresent(plu.zone) ? 'PLU communal' : 'Non renseigné',
+      sourceMarche:   marcheFiable ? 'DVF + saisie utilisateur' : 'Saisie utilisateur',
+      avertissements: hasQualityWarning ? [
+        'Analyse générée sur données partielles — conclusions à confirmer après complétion du dossier.',
+      ] : [],
+    },
   };
 }
