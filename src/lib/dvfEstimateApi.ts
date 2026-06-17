@@ -93,7 +93,15 @@ export async function fetchDvfEstimate(
   supabase: SupabaseClient,
   params: DvfEstimateParams & { scope: "commune" | "cp" }
 ): Promise<DvfEstimateResult> {
-  const { commune_insee, code_postal, surface_m2, type_local, pieces, months, scope } = params;
+  const {
+    commune_insee,
+    code_postal,
+    surface_m2,
+    type_local,
+    pieces,
+    months,
+    scope,
+  } = params;
 
   const rpcParams = {
     p_commune_insee: commune_insee,
@@ -101,16 +109,10 @@ export async function fetchDvfEstimate(
     p_months: months ?? 24,
     p_type_local: type_local ?? null,
     p_pieces: pieces ?? null,
-    p_code_postal: scope === "cp" ? (code_postal ?? null) : null,
+    p_code_postal: scope === "cp" ? code_postal ?? null : null,
   };
 
-  console.log("[MMZ][DVF][fetchDvfEstimate] scope =", scope);
-  console.log("[MMZ][DVF][fetchDvfEstimate] rpcParams =", rpcParams);
-
   const { data, error } = await supabase.rpc("get_dvf_estimate_v3", rpcParams);
-
-  console.log("[MMZ][DVF][fetchDvfEstimate] raw data =", data);
-  console.log("[MMZ][DVF][fetchDvfEstimate] raw error =", error);
 
   if (error) {
     return {
@@ -148,17 +150,14 @@ export async function fetchBestDvfEstimate(
 }> {
   const base = { ...params };
 
-  console.log("[MMZ][DVF][fetchBestDvfEstimate] base params =", base);
-
-  // ── 1. Appel principal avec type_local
-  const commune = await fetchDvfEstimate(supabase, { ...base, scope: "commune" });
+  const commune = await fetchDvfEstimate(supabase, {
+    ...base,
+    scope: "commune",
+  });
 
   const cp = base.code_postal
     ? await fetchDvfEstimate(supabase, { ...base, scope: "cp" })
     : null;
-
-  console.log("[MMZ][DVF][fetchBestDvfEstimate] commune =", commune);
-  console.log("[MMZ][DVF][fetchBestDvfEstimate] cp =", cp);
 
   const pick = (c: DvfEstimateResult, p: DvfEstimateResult | null) => {
     if (p?.success && (p.stats?.transactions_count ?? 0) >= 30)
@@ -179,10 +178,8 @@ export async function fetchBestDvfEstimate(
   let best = pick(commune, cp);
   let usedFallbackNoType = false;
 
-  // ── 2. Fallback sans type_local
+  // ── Fallback sans type_local
   if (!best && base.type_local) {
-    console.log("[MMZ][DVF] fallback sans type_local");
-
     usedFallbackNoType = true;
 
     const commune2 = await fetchDvfEstimate(supabase, {
@@ -201,8 +198,6 @@ export async function fetchBestDvfEstimate(
 
     best = pick(commune2, cp2);
 
-    console.log("[MMZ][DVF] fallback results", { commune2, cp2, best });
-
     return {
       best,
       commune: commune2,
@@ -210,8 +205,6 @@ export async function fetchBestDvfEstimate(
       usedFallbackNoType,
     };
   }
-
-  console.log("[MMZ][DVF] best result =", best);
 
   return { best, commune, cp, usedFallbackNoType };
 }
@@ -224,24 +217,26 @@ export async function fetchDvfComps(
   supabase: SupabaseClient,
   params: DvfEstimateParams & { scope: "commune" | "cp"; limit?: number }
 ): Promise<{ success: boolean; data: DvfCompRow[]; error?: string; message?: string }> {
-  const { commune_insee, code_postal, type_local, pieces, months, scope, limit } = params;
+  const {
+    commune_insee,
+    code_postal,
+    type_local,
+    pieces,
+    months,
+    scope,
+    limit,
+  } = params;
 
   const rpcParams = {
     p_commune_insee: commune_insee,
     p_months: months ?? 24,
     p_type_local: type_local ?? null,
     p_pieces: pieces ?? null,
-    p_code_postal: scope === "cp" ? (code_postal ?? null) : null,
+    p_code_postal: scope === "cp" ? code_postal ?? null : null,
     p_limit: Math.min(Math.max(limit ?? 30, 1), 50),
   };
 
-  console.log("[MMZ][DVF][fetchDvfComps] scope =", scope);
-  console.log("[MMZ][DVF][fetchDvfComps] rpcParams =", rpcParams);
-
   const { data, error } = await supabase.rpc("get_dvf_comps_v1", rpcParams);
-
-  console.log("[MMZ][DVF][fetchDvfComps] raw data =", data);
-  console.log("[MMZ][DVF][fetchDvfComps] raw error =", error);
 
   if (error) {
     return {

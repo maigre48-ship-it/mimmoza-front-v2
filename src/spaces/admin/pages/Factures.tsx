@@ -4,19 +4,24 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom';
 import {
   ReceiptText, CheckCircle2, Clock, Search, X,
-  Loader2, ChevronRight, Euro, Download, FileDown,
+  Loader2, ChevronRight, Euro, Download, FileDown, Send, UserCheck,
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { Invoice, InvoiceLine, InvoiceStatus } from '../../../features/admin/billing/types';
 import {
   listInvoices, markInvoiceAsPaid, listInvoiceLines, getInvoiceById,
+  sendInvoiceToClient,
 } from '../../../features/admin/billing/services/invoices.service';
 import {
   formatCents, formatBillingStatusLabel, formatDate,
   getInvoiceStatusColor, isInvoicePayable,
 } from '../../../features/admin/billing/helpers';
 import { exportInvoicePdf } from '../../../features/admin/billing/exportBillingPdf';
+import { ClientPicker, type ClientOption } from '../../../features/admin/billing/components/ClientPicker';
+
+// recipient_user_id existe en base (cf. migration) mais peut manquer au type Invoice.
+type InvoiceRow = Invoice & { recipient_user_id?: string | null };
 
 const ALL_INVOICE_STATUSES: InvoiceStatus[] = [
   'draft', 'issued', 'sent', 'paid', 'partially_paid', 'overdue', 'cancelled',
@@ -88,14 +93,20 @@ interface DetailPanelProps {
   invoiceId: string;
   onClose: () => void;
   onPaid: (invoice: Invoice) => void;
+  onSent: (invoice: Invoice) => void;
 }
 
-const DetailPanel: React.FC<DetailPanelProps> = ({ invoiceId, onClose, onPaid }) => {
-  const [invoice, setInvoice] = useState<Invoice | null>(null);
+const DetailPanel: React.FC<DetailPanelProps> = ({ invoiceId, onClose, onPaid, onSent }) => {
+  const [invoice, setInvoice] = useState<InvoiceRow | null>(null);
   const [lines, setLines] = useState<InvoiceLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  // Envoi au client
+  const [client, setClient] = useState<ClientOption | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -105,7 +116,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ invoiceId, onClose, onPaid })
           getInvoiceById(invoiceId),
           listInvoiceLines(invoiceId),
         ]);
-        setInvoice(inv);
+        setInvoice(inv as InvoiceRow);
         setLines(ls);
       } finally {
         setLoading(false);
@@ -118,7 +129,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ invoiceId, onClose, onPaid })
     setPaying(true);
     try {
       const updated = await markInvoiceAsPaid(invoice.id);
-      setInvoice(updated);
+      setInvoice(updated as InvoiceRow);
       onPaid(updated);
     } finally {
       setPaying(false);
@@ -129,12 +140,32 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ invoiceId, onClose, onPaid })
     if (!invoice) return;
     setExporting(true);
     try {
-      // Les lignes sont déjà chargées
       await exportInvoicePdf(invoice, lines);
     } finally {
       setExporting(false);
     }
   };
+
+  const handleSend = async () => {
+    if (!invoice || !client) {
+      setSendError('Choisissez un compte client destinataire.');
+      return;
+    }
+    setSending(true);
+    setSendError(null);
+    try {
+      const updated = await sendInvoiceToClient(invoice.id, client.userId);
+      setInvoice(updated as InvoiceRow);
+      setClient(null);
+      onSent(updated);
+    } catch (e) {
+      setSendError((e as Error).message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const alreadyLinked = Boolean(invoice?.recipient_user_id);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -194,6 +225,37 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ invoiceId, onClose, onPaid })
                   Marquer payée
                 </button>
               )}
+            </div>
+
+            {/* ── Envoyer au client ──────────────────────────────────────── */}
+            <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-4">
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-indigo-700">
+                <Send size={12} />
+                Espace client
+              </div>
+
+              {alreadyLinked && (
+                <div className="mb-3 flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                  <UserCheck size={13} />
+                  Cette facture est visible dans l'espace « Mon compte » d'un client.
+                  Choisir un autre client la réassignera.
+                </div>
+              )}
+
+              <ClientPicker value={client} onSelect={setClient} />
+
+              {sendError && (
+                <p className="mt-2 text-xs text-red-600">{sendError}</p>
+              )}
+
+              <button
+                onClick={handleSend}
+                disabled={sending || !client}
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              >
+                {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                {alreadyLinked ? 'Réassigner au client' : 'Envoyer au client'}
+              </button>
             </div>
 
             {/* Infos */}
@@ -291,7 +353,7 @@ const FacturesPage: React.FC = () => {
   const highlightId = searchParams.get('highlight');
   const highlightRef = useRef<string | null>(highlightId);
 
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -303,7 +365,7 @@ const FacturesPage: React.FC = () => {
     setLoading(true);
     try {
       const data = await listInvoices();
-      setInvoices(data);
+      setInvoices(data as InvoiceRow[]);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -353,7 +415,11 @@ const FacturesPage: React.FC = () => {
   };
 
   const handlePaid = (updated: Invoice) => {
-    setInvoices((prev) => prev.map((inv) => (inv.id === updated.id ? updated : inv)));
+    setInvoices((prev) => prev.map((inv) => (inv.id === updated.id ? { ...inv, ...updated } : inv)));
+  };
+
+  const handleSent = (updated: Invoice) => {
+    setInvoices((prev) => prev.map((inv) => (inv.id === updated.id ? { ...inv, ...updated } : inv)));
   };
 
   return (
@@ -479,7 +545,7 @@ const FacturesPage: React.FC = () => {
             <table className="min-w-full divide-y divide-gray-100 text-sm">
               <thead>
                 <tr className="bg-gray-50">
-                  {['Numéro', 'Société', 'Devis source', 'Émission', 'Échéance', 'HT', 'TTC', 'Statut', ''].map((h) => (
+                  {['Numéro', 'Société', 'Client', 'Émission', 'Échéance', 'HT', 'TTC', 'Statut', ''].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">
                       {h}
                     </th>
@@ -495,10 +561,14 @@ const FacturesPage: React.FC = () => {
                   >
                     <td className="px-4 py-3 font-mono text-xs font-semibold text-indigo-700">{inv.invoice_number}</td>
                     <td className="px-4 py-3 font-medium text-gray-900">{inv.company_name}</td>
-                    <td className="px-4 py-3 text-xs text-gray-400">
-                      {inv.quote_id
-                        ? <span className="rounded bg-purple-50 px-1.5 py-0.5 font-medium text-purple-600">lié</span>
-                        : '—'}
+                    <td className="px-4 py-3 text-xs">
+                      {inv.recipient_user_id
+                        ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
+                            <UserCheck size={11} /> Envoyée
+                          </span>
+                        )
+                        : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">{formatDate(inv.issue_date)}</td>
                     <td className="px-4 py-3 text-xs">
@@ -529,6 +599,7 @@ const FacturesPage: React.FC = () => {
           invoiceId={detailId}
           onClose={() => setDetailId(null)}
           onPaid={handlePaid}
+          onSent={handleSent}
         />
       )}
     </div>

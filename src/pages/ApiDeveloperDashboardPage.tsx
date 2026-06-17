@@ -142,7 +142,7 @@ export default function ApiDeveloperDashboardPage() {
       <div className="grid gap-4 md:grid-cols-4">
         {[
           {
-            label: 'Requêtes ce mois',
+            label: 'Crédits ce mois',
             value: usedRequests.toLocaleString('fr-FR'),
             icon: BarChart3,
             color: 'text-indigo-600',
@@ -347,7 +347,7 @@ export default function ApiDeveloperDashboardPage() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                <span className="text-sm text-slate-700">SmartScore v3 disponible</span>
+                <span className="text-sm text-slate-700">SmartScore v4.4 disponible</span>
               </div>
             </div>
           </div>

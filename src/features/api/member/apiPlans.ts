@@ -1,6 +1,8 @@
+// src/features/api/member/apiPlans.ts
 // ─────────────────────────────────────────────────────────────────────────────
 // Mimmoza – API Plans catalog
-// Prêt à remplacer par un fetch Supabase : table api_plans
+// Unité de facturation : CRÉDITS. Conso par appel : /v1/scoring/smart = 10,
+// /v1/market/dvf = 2, /v1/risks = 2.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type BillingMode = 'payg' | 'monthly' | 'annual';
@@ -13,18 +15,18 @@ export interface ApiPlan {
   tagline: string;
   monthlyPrice: number;       // € HT / mois (facturation mensuelle)
   annualPrice: number;        // € HT / mois (facturation annuelle)
-  requestsIncluded: number;   // requêtes incluses / mois
-  overagePerK: number;        // € pour 1 000 requêtes supplémentaires
+  requestsIncluded: number;   // crédits inclus / mois
+  overagePerK: number;        // € pour 1 000 crédits supplémentaires
   rateLimit: number;          // requêtes / minute
   maxKeys: number;
   features: string[];
-  highlighted?: boolean;      // badge "Recommandé"
-  contactSales?: boolean;     // tier enterprise → pas de self-serve
+  highlighted?: boolean;
+  contactSales?: boolean;
 }
 
 export interface PayAsYouGoConfig {
-  pricePerK: number;          // € pour 1 000 requêtes
-  minimumBilling: number;     // montant minimum / mois
+  pricePerK: number;          // € pour 1 000 crédits
+  minimumBilling: number;
   rateLimit: number;
   maxKeys: number;
 }
@@ -48,11 +50,11 @@ export const API_PLANS: ApiPlan[] = [
     rateLimit: 60,
     maxKeys: 5,
     features: [
-      '10 000 requêtes / mois incluses',
+      '10 000 crédits / mois inclus',
+      'env. 1 000 SmartScore ou 5 000 DVF / mois',
       '60 requêtes / minute',
       '5 clés API maximum',
       'Environnements test & live',
-      'Support email standard',
     ],
   },
   {
@@ -66,12 +68,12 @@ export const API_PLANS: ApiPlan[] = [
     rateLimit: 200,
     maxKeys: 20,
     features: [
-      '50 000 requêtes / mois incluses',
+      '50 000 crédits / mois inclus',
+      'env. 5 000 SmartScore ou 25 000 DVF / mois',
       '200 requêtes / minute',
       '20 clés API maximum',
       'Logs & analytics avancés',
       'Webhooks',
-      'Support prioritaire',
       'SLA 99,9 %',
     ],
     highlighted: true,
@@ -87,12 +89,12 @@ export const API_PLANS: ApiPlan[] = [
     rateLimit: 1000,
     maxKeys: 100,
     features: [
-      '250 000 requêtes / mois incluses',
+      '250 000 crédits / mois inclus',
+      'env. 25 000 SmartScore ou 125 000 DVF / mois',
       '1 000 requêtes / minute',
       '100 clés API maximum',
       'Logs & analytics temps réel',
       'IP allowlisting',
-      'Support dédié & SLA 99,95 %',
       'Custom rate limits sur demande',
     ],
     contactSales: true,

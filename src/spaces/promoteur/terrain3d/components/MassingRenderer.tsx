@@ -1,4 +1,12 @@
-// MassingRenderer.tsx — V8.7
+// MassingRenderer.tsx — V8.8
+// V8.8 : environnement PBR (IBL) + tone mapping ACES.
+//   Les matériaux de vitrage (MeshPhysicalMaterial : transmission/reflectivity/
+//   envMapIntensity) et les métaux (frames, garde-corps) avaient leurs réglages
+//   de réflexion définis mais AUCUN scene.environment n'était assigné → réflexions
+//   invisibles, verre plat. On génère ici un environnement studio neutre via
+//   PMREM (RoomEnvironment) et on l'assigne à scene.environment : le verre
+//   réfléchit/réfracte enfin, les métaux gagnent en relief. ACES tone mapping
+//   pour des hautes lumières propres. Aucun changement de logique métier.
 // V8.7 : prop showLabels — toggle visibilité conteneur HTML labels
 // V8.6 : branchement renderer V2 — exploitation de glazing, balconies, roof depuis resolved
 // ─────────────────────────────────────────────────────────────────────────────
@@ -27,6 +35,7 @@
 
 import React, { useEffect, useRef, useCallback, useState } from "react";
 import * as THREE from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js"; // V8.8
 import type { Feature, FeatureCollection, Polygon, MultiPolygon } from "geojson";
 import type { MassingBuildingModel, EditorTool, PlacedObject } from "../massingScene.types";
 import { totalHeightM, totalLevelsCount } from "../massingScene.types";
@@ -98,6 +107,9 @@ import {
 // ─── Debug ────────────────────────────────────────────────────────────────────
 
 const DEBUG_TERRAIN_ANCHORING = false;
+
+// ─── V8.8 : exposition tone mapping (ajuste si l'ambiance paraît trop sombre/claire) ─
+const TONE_EXPOSURE = 1.0;
 
 // ─── Offsets Z-fighting ───────────────────────────────────────────────────────
 
@@ -205,6 +217,8 @@ interface RendererState {
   proj:         ReturnType<typeof computeSceneProjection> | null;
   cameraFitted: boolean;
   lastIntent:   string | null;
+  envTexture:   THREE.Texture | null;          // V8.8 — IBL généré par PMREM
+  pmrem:        THREE.PMREMGenerator | null;    // V8.8 — à disposer au démontage
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -474,6 +488,8 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
     proj:         null,
     cameraFitted: false,
     lastIntent:   null,
+    envTexture:   null, // V8.8
+    pmrem:        null, // V8.8
   });
 
   const cbRef = useRef(callbacks);
@@ -501,6 +517,23 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
         light.shadow.normalBias     = 0.06;
       }
     });
+
+    // ── V8.8 : Environnement PBR (IBL) + tone mapping ──────────────────────────
+    // Le vitrage (MeshPhysicalMaterial : transmission/reflectivity/envMapIntensity)
+    // et les métaux (frames metalness 0.75, garde-corps 0.80) avaient leurs réglages
+    // de réflexion définis mais aucun scene.environment n'était assigné → réflexions
+    // invisibles. On génère un environnement studio neutre via PMREM : le verre
+    // réfléchit/réfracte enfin, les métaux gagnent en relief. ACES tone mapping
+    // pour des hautes lumières propres (règle TONE_EXPOSURE en haut du fichier).
+    // Note : seuls les matériaux PBR (Standard/Physical) exploitent l'IBL — le sol,
+    // l'herbe, les arbres et haies (MeshLambertMaterial) restent inchangés.
+    ctx.renderer.toneMapping = THREE.NoToneMapping;
+
+    const pmrem  = new THREE.PMREMGenerator(ctx.renderer);
+    const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    ctx.scene.environment       = envTex;
+    stateRef.current.envTexture = envTex;
+    stateRef.current.pmrem      = pmrem;
 
     stateRef.current.ctx          = ctx;
     stateRef.current.cameraFitted = false;
@@ -536,6 +569,11 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
       stateRef.current.buildingMats.clear();
       stateRef.current.facadeMats.forEach(m => disposeFacadeMaterials(m));
       stateRef.current.facadeMats.clear();
+      // V8.8 : libère l'environnement PBR
+      stateRef.current.envTexture?.dispose();
+      stateRef.current.pmrem?.dispose();
+      stateRef.current.envTexture = null;
+      stateRef.current.pmrem      = null;
       disposeSceneContext(ctx, mount);
       stateRef.current.ctx = null;
     };
@@ -662,6 +700,12 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
     if (dominantIntent !== stateRef.current.lastIntent) {
       const ambiance = buildAmbianceFromIntent(dominantIntent);
       applySceneAmbiance(ctx.scene, ctx.renderer, ambiance);
+      // V8.8 : réaffirme l'environnement PBR si l'ambiance l'a réinitialisé
+      // (on ne touche pas au tone mapping ici pour ne pas écraser un réglage
+      //  d'ambiance volontaire, ex. intent "esquisse_blanche").
+      if (stateRef.current.envTexture && !ctx.scene.environment) {
+        ctx.scene.environment = stateRef.current.envTexture;
+      }
       stateRef.current.lastIntent = dominantIntent;
     }
 
@@ -732,15 +776,20 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
       } catch { /* bâtiment legacy sans renderSpec */ }
 
       const v1Result = assembleSimpleBuilding({
-        id:           bld.id,
-        name:         bld.name,
-        slices:       simpleSlices,
-        totalFloors:  totalF,
-        floorHeight:  floorH,
+        id:             bld.id,
+        name:           bld.name,
+        slices:         simpleSlices,
+        totalFloors:    totalF,
+        floorHeight:    floorH,
         platformY,
-        facadeColor:  resolvedFacadeColor,
-        isSelected:   bld.id === selectedId,
-        isHovered:    bld.id === hoverId,
+        facadeColor:    resolvedFacadeColor,
+        facadeMaterial: bld.style.facadeMaterial, // ← absent = fallback preset par kind
+        roof:           bld.style.roofConfig,      // ← absent = toit plat
+        openings:       bld.style.openings,        // ← absent = aucune ouverture
+        bands:          bld.style.bands,           // ← absent = aucun bandeau
+        balconies:      bld.style.balconies,       // ← absent = aucun balcon
+        isSelected:     bld.id === selectedId,
+        isHovered:      bld.id === hoverId,
         showWireframe,
       });
 

@@ -388,7 +388,7 @@ const FacturesPage: React.FC = () => {
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <ReceiptText size={36} className="mb-3 text-gray-200" />
             <p className="text-sm font-medium text-gray-500">
-              {invoices.length === 0 ? 'Aucune facture pour l'instant' : 'Aucun résultat pour ces filtres'}
+              {invoices.length === 0 ? "Aucune facture pour l'instant" : 'Aucun résultat pour ces filtres'}
             </p>
             {invoices.length === 0 && (
               <p className="mt-1 text-xs text-gray-400">

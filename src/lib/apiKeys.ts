@@ -4,6 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { supabase } from "./supabase";
+import { getPlanById, type PlanTier } from "../features/api/member/apiPlans";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -15,7 +16,7 @@ export type ApiKey = {
   name: string;
   prefix: string;         // ex: "mk_live_AbCd"
   env: ApiKeyEnv;
-  plan: "starter" | "pro" | "enterprise";
+  plan: "free" | "starter" | "growth" | "scale";
   requests_count: number;
   requests_limit: number;
   last_used_at: string | null;
@@ -32,6 +33,7 @@ export type ApiUsageDay = {
 export type CreateApiKeyInput = {
   name: string;
   env: ApiKeyEnv;
+  plan?: PlanTier;        // plan de l'abonnement du user (défaut starter)
 };
 
 export type CreateApiKeyResult = {
@@ -61,11 +63,25 @@ async function hashSecret(secret: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * Résout le quota (crédits/mois) d'un plan depuis apiPlans.ts.
+ * Source de vérité unique : requestsIncluded du plan.
+ */
+function planToRequestsLimit(plan: PlanTier): number {
+  return getPlanById(plan)?.requestsIncluded ?? 10_000;
+}
+
 // ── API ────────────────────────────────────────────────────────────────────
 
 /**
  * Crée une nouvelle clé API pour l'utilisateur connecté.
  * Retourne la clé en clair UNE SEULE FOIS — à stocker côté client immédiatement.
+ *
+ * NOTE SÉCURITÉ : le plan ne doit PAS être un choix libre du client. Tant que
+ * la facturation (Stripe) n'est pas branchée, on force "starter". Quand les
+ * abonnements existeront, lire le plan depuis l'abonnement réel du user
+ * (table subscriptions) au lieu de input.plan, pour empêcher qu'un user
+ * s'attribue un quota Scale sans payer.
  */
 export async function createApiKey(
   input: CreateApiKeyInput
@@ -76,6 +92,10 @@ export async function createApiKey(
   } = await supabase.auth.getUser();
 
   if (authError || !user) throw new Error("Non authentifié");
+
+  // TODO(billing): remplacer par le plan de l'abonnement réel du user.
+  const plan: PlanTier = input.plan ?? "starter";
+  const requestsLimit = planToRequestsLimit(plan);
 
   const secret = generateSecret(input.env);
   const hash = await hashSecret(secret);
@@ -90,9 +110,9 @@ export async function createApiKey(
       prefix,
       secret_hash: hash,
       env: input.env,
-      plan: "starter",
+      plan,
       requests_count: 0,
-      requests_limit: 10_000,
+      requests_limit: requestsLimit,
     })
     .select()
     .single();

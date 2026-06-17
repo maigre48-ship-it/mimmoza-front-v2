@@ -1,4 +1,14 @@
 ﻿// src/spaces/promoteur/Implantation2DPage.tsx
+// V6.11 — Source UNIQUE pour l'enveloppe constructible.
+//   Le diagnostic parcellaire (RightSidebar) calculait l'enveloppe avec
+//   plan.buildableEnvelope (clipping par demi-plans → CONVEXE) et sans
+//   frontEdgeIndex, alors que le canvas (Plan2DCanvas) la dessine avec
+//   pluEnvelope.geometry (offset CONCAVE) + parcelFrontEdgeIndex + setbackRules
+//   issus du store. Deux polygones distincts → un bâtiment visuellement dans la
+//   ligne orange ressortait "0/1 conforme".
+//   Correctif : la sidebar utilise EXACTEMENT le même moteur et les mêmes
+//   entrées que le canvas (pluEnvelope.geometry + store). Fonction pure +
+//   mêmes entrées ⇒ même polygone ⇒ diagnostic et canvas ne peuvent plus diverger.
 // V6.10 — Hero v2 : design identique à VeilleMarchePage
 // V6.9 — Fix MultiPolygon : featureToPoint2D prend le polygone de plus grande surface
 // V6.8 — Captures scopées par studyId
@@ -34,7 +44,8 @@ import type { PluRules, PluEngineResult }         from "./plan2d/plan.plu.types"
 import type { ParcelDiagnostics }                 from "./plan2d/plan.parcelDiagnostics";
 
 import { runPluChecks }                           from "./plan2d/plan.plu.engine";
-import { computeBuildableEnvelope }               from "./plan2d/plan.buildableEnvelope";
+// V6.11 — MÊME moteur que le canvas (offset concave), au lieu de plan.buildableEnvelope (convexe).
+import { computeBuildableEnvelope }               from "./plan2d/pluEnvelope.geometry";
 import { computeParcelDiagnostics }               from "./plan2d/plan.parcelDiagnostics";
 
 import { supabase }                               from "../../supabaseClient";
@@ -406,6 +417,13 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId }) =
   const storeParkings = useEditor2DStore(s => s.parkings);
   const selectedIds   = useEditor2DStore(s => s.selectedIds);
 
+  // V6.11 — MÊMES entrées d'enveloppe que le canvas (Plan2DCanvas lit ces deux
+  // valeurs depuis ce store et les passe à pluEnvelope.geometry).
+  // ⚠️ Vérifie que les noms de sélecteurs correspondent EXACTEMENT à ceux que
+  //    Plan2DCanvas destructure du store (setbackRules / parcelFrontEdgeIndex).
+  const setbackRules         = useEditor2DStore(s => s.setbackRules);
+  const parcelFrontEdgeIndex = useEditor2DStore(s => s.parcelFrontEdgeIndex);
+
   const storeBuildings = useMemo(
     () => allBuildings.filter(hasValidRdcContent),
     [allBuildings],
@@ -550,16 +568,20 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId }) =
     return runPluChecks({ parcel: parcelVec2, buildings: planBuildings, rules: PLACEHOLDER_PLU_RULES, providedParkingSpaces });
   }, [parcelVec2, planBuildings, providedParkingSpaces]);
 
+  // V6.11 — Enveloppe constructible : MÊME source que le canvas.
+  //   pluEnvelope.geometry::computeBuildableEnvelope(parcelleLocal, frontEdgeIndex, setbackRules)
+  //   — fonction pure, mêmes entrées → polygone identique à la ligne orange dessinée.
+  //   parcelleLocal (Point2D[]) sert directement de polygone source ; frontEdgeIndex
+  //   indexe ce même tableau, exactement comme côté canvas.
   const buildableEnvelope = useMemo<Vec2[] | null>(() => {
-    if (parcelVec2.length < 3) return null;
-    const env = computeBuildableEnvelope(parcelVec2, {
-      setbackMeters: PLACEHOLDER_PLU_RULES.minSetbackMeters ?? 0,
-      frontageSetbackMeters: 5,
-      sideSetbackMeters: 3,
-      rearSetbackMeters: 3,
-    });
-    return env.length >= 3 ? env : null;
-  }, [parcelVec2]);
+    if (parcelleLocal.length < 3) return null;
+    const env = computeBuildableEnvelope(
+      parcelleLocal,
+      parcelFrontEdgeIndex ?? null,
+      setbackRules,
+    );
+    return env.length >= 3 ? asVec2(env) : null;
+  }, [parcelleLocal, parcelFrontEdgeIndex, setbackRules]);
 
   const parcelDiagnostics = useMemo<ParcelDiagnostics | null>(() => {
     if (parcelVec2.length < 3) return null;
@@ -658,7 +680,7 @@ const CaptureButton: React.FC<CaptureButtonProps> = ({ studyId }) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PAGE PRINCIPALE — V6.10
+// PAGE PRINCIPALE — V6.11
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const Implantation2DPage: React.FC = () => {

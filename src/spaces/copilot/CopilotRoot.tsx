@@ -5,11 +5,17 @@ import { CopilotFloatingButton } from './components/CopilotFloatingButton';
 import { CopilotDrawer } from './components/CopilotDrawer';
 import { useCopilotStore } from './store/copilotStore';
 
-// Routes où le Copilot ne doit PAS apparaître (avant connexion / pages publiques)
+// Routes où le Copilot ne doit PAS apparaître :
+//  - pages publiques / avant connexion
+//  - espace compte (compte, abonnement, jetons)
+//  - admin
+//  - opportunités (transversal, sans contexte métier parcelle/deal)
 const HIDDEN_PREFIXES = [
   '/', '/login', '/connexion', '/inscription',
   '/cgv', '/cgu', '/politique-confidentialite', '/mentions-legales',
-  '/admin/login',
+  '/admin',
+  '/compte', '/account', '/abonnement', '/jetons',
+  '/opportunites',
 ];
 
 function isHidden(pathname: string): boolean {

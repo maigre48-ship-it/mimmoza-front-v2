@@ -12,6 +12,7 @@ import {
   User,
   UserPlus,
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 type StoredUser = {
   email?: string;
@@ -31,8 +32,10 @@ export default function InscriptionPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
 
-  const handleSignup = () => {
+  const handleSignup = async () => {
     const trimmedName = fullName.trim();
     const trimmedEmail = email.trim().toLowerCase();
     const trimmedPassword = password.trim();
@@ -53,16 +56,54 @@ export default function InscriptionPage() {
       return;
     }
 
-    const payload: StoredUser = {
-      email: trimmedEmail,
-      logged: true,
-      fullName: trimmedName,
-      plan: "free",
-    };
-
-    localStorage.setItem("mimmoza.user", JSON.stringify(payload));
+    setLoading(true);
     setError("");
-    navigate("/compte");
+
+    try {
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: trimmedEmail,
+        password: trimmedPassword,
+        options: {
+          data: { full_name: trimmedName },
+        },
+      });
+
+      if (signUpError) {
+        const msg = signUpError.message.toLowerCase();
+        if (msg.includes("already") || msg.includes("registered")) {
+          setError("Un compte existe déjà avec cet email. Connectez-vous.");
+        } else {
+          setError("Impossible de créer le compte. Vérifiez vos informations et réessayez.");
+        }
+        return;
+      }
+
+      // Cas 1 : confirmation email activée → pas de session immédiate
+      if (!data.session) {
+        setNeedsConfirmation(true);
+        return;
+      }
+
+      // Cas 2 : session créée directement → on persiste et on entre dans l'app
+      const payload: StoredUser = {
+        email: trimmedEmail,
+        logged: true,
+        fullName: trimmedName,
+        plan: "free",
+      };
+      localStorage.setItem("mimmoza.user", JSON.stringify(payload));
+      localStorage.setItem("mimmoza-auth", "true");
+
+      navigate("/compte", { replace: true });
+    } catch {
+      setError("Une erreur est survenue. Veuillez réessayer.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleSignup();
   };
 
   return (
@@ -96,8 +137,7 @@ export default function InscriptionPage() {
                 Compte sécurisé
               </div>
               <div className="mt-1 text-sm leading-6 text-slate-600">
-                Structure prête pour l’authentification complète et la gestion
-                des accès.
+                Authentification Supabase Auth avec session JWT persistée.
               </div>
             </div>
 
@@ -115,153 +155,185 @@ export default function InscriptionPage() {
 
         <div className="flex items-center">
           <div className="w-full rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-[0_10px_40px_rgba(15,23,42,0.06)] backdrop-blur sm:p-8">
-            <div className="mb-6">
-              <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                <UserPlus className="h-3.5 w-3.5" />
-                Inscription
+            {needsConfirmation ? (
+              <div className="flex flex-col items-center gap-4 py-6 text-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 ring-8 ring-emerald-100/60">
+                  <Mail className="h-8 w-8 text-emerald-500" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-semibold text-slate-950">
+                    Vérifiez votre email
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    Un lien de confirmation a été envoyé à{" "}
+                    <span className="font-medium text-slate-700">{email.trim().toLowerCase()}</span>.
+                    Cliquez dessus pour activer votre compte, puis connectez-vous.
+                  </p>
+                </div>
+                <Link
+                  to="/connexion"
+                  className="mt-2 inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-sky-500 px-5 py-3 text-sm font-medium text-white shadow-md shadow-sky-200/60 transition-all hover:from-indigo-500 hover:to-sky-400"
+                >
+                  Aller à la connexion
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
               </div>
+            ) : (
+              <>
+                <div className="mb-6">
+                  <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    <UserPlus className="h-3.5 w-3.5" />
+                    Inscription
+                  </div>
 
-              <h2 className="mt-4 text-2xl font-semibold text-slate-950">
-                Ouvrez votre espace personnel
-              </h2>
+                  <h2 className="mt-4 text-2xl font-semibold text-slate-950">
+                    Ouvrez votre espace personnel
+                  </h2>
 
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Renseignez vos informations pour créer votre compte Mimmoza.
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">
-                  Nom complet
-                </span>
-                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 transition-all focus-within:border-sky-300 focus-within:bg-white focus-within:ring-4 focus-within:ring-sky-100">
-                  <User className="h-4 w-4 shrink-0 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Votre nom"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    className="w-full border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400"
-                  />
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    Renseignez vos informations pour créer votre compte Mimmoza.
+                  </p>
                 </div>
-              </label>
 
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">
-                  Email
-                </span>
-                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 transition-all focus-within:border-sky-300 focus-within:bg-white focus-within:ring-4 focus-within:ring-sky-100">
-                  <Mail className="h-4 w-4 shrink-0 text-slate-400" />
-                  <input
-                    type="email"
-                    placeholder="nom@exemple.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400"
-                  />
-                </div>
-              </label>
+                <div className="space-y-4">
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-slate-700">
+                      Nom complet
+                    </span>
+                    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 transition-all focus-within:border-sky-300 focus-within:bg-white focus-within:ring-4 focus-within:ring-sky-100">
+                      <User className="h-4 w-4 shrink-0 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Votre nom"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        className="w-full border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                      />
+                    </div>
+                  </label>
 
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">
-                  Mot de passe
-                </span>
-                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 transition-all focus-within:border-sky-300 focus-within:bg-white focus-within:ring-4 focus-within:ring-sky-100">
-                  <Lock className="h-4 w-4 shrink-0 text-slate-400" />
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Choisissez un mot de passe"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400"
-                  />
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-slate-700">
+                      Email
+                    </span>
+                    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 transition-all focus-within:border-sky-300 focus-within:bg-white focus-within:ring-4 focus-within:ring-sky-100">
+                      <Mail className="h-4 w-4 shrink-0 text-slate-400" />
+                      <input
+                        type="email"
+                        placeholder="nom@exemple.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        className="w-full border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                      />
+                    </div>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-slate-700">
+                      Mot de passe
+                    </span>
+                    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 transition-all focus-within:border-sky-300 focus-within:bg-white focus-within:ring-4 focus-within:ring-sky-100">
+                      <Lock className="h-4 w-4 shrink-0 text-slate-400" />
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Choisissez un mot de passe"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        className="w-full border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((v) => !v)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                        aria-label={
+                          showPassword
+                            ? "Masquer le mot de passe"
+                            : "Afficher le mot de passe"
+                        }
+                        title={
+                          showPassword
+                            ? "Masquer le mot de passe"
+                            : "Afficher le mot de passe"
+                        }
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-slate-700">
+                      Confirmer le mot de passe
+                    </span>
+                    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 transition-all focus-within:border-sky-300 focus-within:bg-white focus-within:ring-4 focus-within:ring-sky-100">
+                      <Lock className="h-4 w-4 shrink-0 text-slate-400" />
+                      <input
+                        type={showConfirmPassword ? "text" : "password"}
+                        placeholder="Confirmez votre mot de passe"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        className="w-full border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword((v) => !v)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                        aria-label={
+                          showConfirmPassword
+                            ? "Masquer le mot de passe"
+                            : "Afficher le mot de passe"
+                        }
+                        title={
+                          showConfirmPassword
+                            ? "Masquer le mot de passe"
+                            : "Afficher le mot de passe"
+                        }
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </label>
+
+                  {error && (
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                      {error}
+                    </div>
+                  )}
+
                   <button
                     type="button"
-                    onClick={() => setShowPassword((v) => !v)}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-                    aria-label={
-                      showPassword
-                        ? "Masquer le mot de passe"
-                        : "Afficher le mot de passe"
-                    }
-                    title={
-                      showPassword
-                        ? "Masquer le mot de passe"
-                        : "Afficher le mot de passe"
-                    }
+                    onClick={handleSignup}
+                    disabled={loading}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3.5 text-sm font-medium text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
+                    <span>{loading ? "Création en cours..." : "Créer mon compte"}</span>
+                    {!loading && <ArrowRight className="h-4 w-4" />}
                   </button>
                 </div>
-              </label>
 
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">
-                  Confirmer le mot de passe
-                </span>
-                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 transition-all focus-within:border-sky-300 focus-within:bg-white focus-within:ring-4 focus-within:ring-sky-100">
-                  <Lock className="h-4 w-4 shrink-0 text-slate-400" />
-                  <input
-                    type={showConfirmPassword ? "text" : "password"}
-                    placeholder="Confirmez votre mot de passe"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword((v) => !v)}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-                    aria-label={
-                      showConfirmPassword
-                        ? "Masquer le mot de passe"
-                        : "Afficher le mot de passe"
-                    }
-                    title={
-                      showConfirmPassword
-                        ? "Masquer le mot de passe"
-                        : "Afficher le mot de passe"
-                    }
+                <div className="mt-5 text-sm text-slate-500">
+                  Déjà inscrit ?{" "}
+                  <Link
+                    to="/connexion"
+                    className="font-medium text-sky-700 transition hover:text-sky-800"
                   >
-                    {showConfirmPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </button>
+                    Se connecter
+                  </Link>
                 </div>
-              </label>
-
-              {error && (
-                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                  {error}
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={handleSignup}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3.5 text-sm font-medium text-white transition-all hover:bg-slate-800"
-              >
-                <span>Créer mon compte</span>
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="mt-5 text-sm text-slate-500">
-              Déjà inscrit ?{" "}
-              <Link
-                to="/connexion"
-                className="font-medium text-sky-700 transition hover:text-sky-800"
-              >
-                Se connecter
-              </Link>
-            </div>
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -20,8 +20,12 @@ const FAQ_ITEMS = [
     a: "Vous êtes facturé pour 12 mois en avance, avec une réduction appliquée automatiquement. Aucun remboursement partiel en cas de résiliation anticipée.",
   },
   {
+    q: "Comment sont décomptés les crédits ?",
+    a: "Chaque appel consomme un nombre de crédits selon l'endpoint : 10 crédits pour /v1/scoring/smart, 2 crédits pour /v1/market/dvf et /v1/risks. Votre quota mensuel est exprimé en crédits.",
+  },
+  {
     q: "Que se passe-t-il si je dépasse mon quota ?",
-    a: "L'API continue de fonctionner. Les requêtes supplémentaires sont facturées en fin de mois selon le tarif de dépassement de votre plan.",
+    a: "L'API continue de fonctionner. Les crédits supplémentaires sont facturés en fin de mois selon le tarif de dépassement de votre plan.",
   },
   {
     q: "Puis-je avoir plusieurs clés API ?",
@@ -92,7 +96,7 @@ export default function ApiBillingPage() {
   if (error || !member) {
     return (
       <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-600">
-        {error ?? 'Impossible de charger les données d'abonnement.'}
+        {error ?? "Impossible de charger les données d'abonnement."}
       </div>
     );
   }
@@ -186,7 +190,7 @@ export default function ApiBillingPage() {
             </div>
             <h3 className="text-lg font-bold text-slate-900">Volumes croissants ?</h3>
             <p className="mt-2 max-w-xs text-sm text-slate-500">
-              Passez à un abonnement et économisez dès 10 000 requêtes / mois.
+              Passez à un abonnement et économisez dès 10 000 crédits / mois.
             </p>
             <button
               type="button"
@@ -216,9 +220,9 @@ export default function ApiBillingPage() {
         <div className="flex items-start gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <HelpCircle className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" />
           <div>
-            <p className="font-medium text-slate-900">Requêtes supplémentaires</p>
+            <p className="font-medium text-slate-900">Crédits supplémentaires</p>
             <p className="mt-1 text-sm text-slate-500">
-              Au-delà du quota inclus, chaque plan facture les requêtes supplémentaires par tranche
+              Au-delà du quota inclus, chaque plan facture les crédits supplémentaires par tranche
               de 1 000. Le dépassement est calculé en fin de mois et facturé séparément. Aucun
               blocage automatique — vous gardez le contrôle.
             </p>

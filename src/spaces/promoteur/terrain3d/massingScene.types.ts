@@ -5,6 +5,70 @@ import type { BuildingBlenderSpec } from './terrain3d/components/buildingBlender
 export type FacadeStyle = "beton" | "vitrage" | "brique" | "zinc" | "bois";
 export type RoofStyle = "terrasse" | "vegetalise" | "inclinee";
 
+// Matière façade pilotable par bâtiment (miroir de l'assembleur V1)
+export type FacadeMaterialSpec =
+  | { mode: "preset"; preset: SimpleBuildingKind }
+  | { mode: "lib";    id: string; tileM?: number }
+  | { mode: "color";  color: string }
+  | { mode: "custom"; textureUrl: string; tileM?: number };
+
+// ── Forme de toiture (massing V1) ──
+export type RoofShape = "flat" | "gable" | "hip";
+export interface RoofConfig {
+  shape:      RoofShape;
+  slopeDeg?:  number;
+  overhangM?: number;
+  textureId?: string;   // clé ROOF_LIBRARY ; absent = couleur unie
+  rotate90?:  boolean;  // bascule le faîtage de 90°
+}
+
+// ── Ouvertures de façade (fenêtres / portes / volets), personnalisable par façade ──
+export type WindowType  = "single" | "casement2" | "cross4" | "bay";
+export type ShutterType = "none" | "battants" | "roulant";
+export type DoorType    = "plain" | "glazed" | "transom";
+
+export interface OpeningStyle {
+  windowType:  WindowType;
+  mullions:    boolean;
+  sill:        boolean;
+  shutterType: ShutterType;
+  doorType:    DoorType;
+  widthRatio:  number;
+  heightRatio: number;
+}
+
+export interface OpeningsConfig {
+  enabled:      boolean;
+  baysPerEdge:  number;
+  door:         boolean;
+  base:         OpeningStyle;
+  edgeOverrides?: Record<number, Partial<OpeningStyle>>;
+  shutterColor?: string;   // couleur GLOBALE des volets (indépendante de la façade)
+}
+
+// ── Bandeaux de matière (accents verticaux contrastants) ──
+export interface MaterialBandsConfig {
+  enabled:    boolean;
+  color:      string;
+  perEdge:    number;
+  widthRatio: number;
+}
+
+// ── Balcons en étage (miroir de massingBalconies) ──
+export type BalconyMode  = "none" | "continuous" | "perBay" | "french";
+export type RailingStyle = "bars" | "glass" | "solid";
+
+export interface BalconyConfig {
+  enabled:        boolean;
+  mode:           BalconyMode;
+  fromFloor:      number;        // premier étage concerné (0 = RDC)
+  depthFrac:      number;        // profondeur dalle / hauteur d'étage
+  railStyle:      RailingStyle;
+  railHeightFrac: number;        // hauteur garde-corps / hauteur d'étage
+  railColor?:     string;
+  edges?:         number[];      // restreindre à certaines façades
+}
+
 export interface BuildingStyleOptions {
   facade: FacadeStyle;
   roof: RoofStyle;
@@ -36,6 +100,22 @@ export interface BuildingStyleOptions {
 
   /** Style architectural sélectionné dans le panneau */
   facadeStyleId?: string;
+
+  /** Matière façade explicite. Prioritaire sur le preset déduit du kind.
+   *  Absent → preset par kind (rétrocompatible). */
+  facadeMaterial?: FacadeMaterialSpec;
+
+  /** Forme de toiture massing. Absent → flat (terrasse), rétrocompatible. */
+  roofConfig?: RoofConfig;
+
+  /** Ouvertures de façade (fenêtres/portes/volets). Absent → aucune. */
+  openings?: OpeningsConfig;
+
+  /** Bandeaux de matière (accents verticaux). Absent → aucun. */
+  bands?: MaterialBandsConfig;
+
+  /** Balcons en étage. Absent → aucun. */
+  balconies?: BalconyConfig;
 }
 
 export const DEFAULT_BUILDING_STYLE: BuildingStyleOptions = {

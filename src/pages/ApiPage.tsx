@@ -32,7 +32,7 @@ import { useApiMember } from "../features/api/member/useApiMember";
 
 const GRAD_API = "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)";
 const ACCENT_API = "#6366f1";
-const API_BASE_URL = "https://api.mimmoza.io";
+const API_BASE_URL = "https://fwvrqngbafqdaekbdfnm.supabase.co/functions/v1/api-gateway";
 
 // ── Types & data ─────────────────────────────────────────────────────────────
 
@@ -52,36 +52,15 @@ const ENDPOINT_GROUPS: {
     label: "Scoring & Risques",
     icon: ShieldCheck,
     endpoints: [
-      { method: "POST", path: "/v1/scoring/smart",    description: "SmartScore multi-piliers enrichi",     status: "live" },
-      { method: "POST", path: "/v1/risques/analyse",  description: "Analyse de risques enrichie",          status: "beta" },
-      { method: "GET",  path: "/v1/risques/{id}",     description: "Récupération d'un rapport de risque",  status: "planned" },
-    ],
-  },
-  {
-    label: "Foncier & PLU",
-    icon: Map,
-    endpoints: [
-      { method: "GET",  path: "/v1/parcelles/{id}",   description: "Données cadastrales d'une parcelle",   status: "planned" },
-      { method: "POST", path: "/v1/plu/extract",      description: "Extraction automatique des règles PLU",status: "planned" },
-      { method: "GET",  path: "/v1/plu/{commune}",    description: "Règlement PLU d'une commune",          status: "planned" },
+      { method: "POST", path: "/v1/scoring/smart", description: "SmartScore multi-piliers enrichi (transport, commodités, écoles, marché, santé, environnement, DPE)", status: "live" },
+      { method: "POST", path: "/v1/risks",         description: "Analyse de risques : environnement, DPE, contrainte énergétique et impact rentabilité", status: "live" },
     ],
   },
   {
     label: "Marché & Prix",
     icon: BarChart3,
     endpoints: [
-      { method: "GET",  path: "/v1/dvf/{commune}",    description: "Transactions DVF sur une commune",     status: "planned" },
-      { method: "GET",  path: "/v1/marche/metrics",   description: "Indices de marché par zone",           status: "planned" },
-      { method: "POST", path: "/v1/marche/estimate",  description: "Estimation de prix",                   status: "planned" },
-    ],
-  },
-  {
-    label: "Bilan & Financement",
-    icon: Database,
-    endpoints: [
-      { method: "POST", path: "/v1/bilan/promoteur",      description: "Calcul de bilan promoteur",           status: "planned" },
-      { method: "POST", path: "/v1/financement/simulate", description: "Simulation de financement",           status: "planned" },
-      { method: "GET",  path: "/v1/bilan/{id}",           description: "Récupération d'un bilan enregistré",  status: "planned" },
+      { method: "POST", path: "/v1/market/dvf", description: "Statistiques de marché DVF : prix médian/moyen, quartiles et comparables", status: "live" },
     ],
   },
 ];
@@ -96,31 +75,36 @@ const CODE_EXAMPLE = `curl -X POST ${API_BASE_URL}/v1/scoring/smart \\
 
 const RESPONSE_EXAMPLE = `{
   "success": true,
-  "version": "v3.23",
+  "version": "v4.4",
   "orchestrator": "smartscore-enriched-v3",
   "mode": "standard",
+  "zone_type": "urbain",
   "resolved_point": {
     "lat": 48.8686,
     "lon": 2.3306,
     "source": "payload"
   },
   "smartscore": {
-    "score": 100,
+    "score": 87,
     "verdict": "Excellent emplacement",
     "components": {
-      "transport": null,
+      "transport": 90,
       "ecoles": 100,
-      "commodites": null,
-      "marche": null,
-      "sante": null
+      "commodites": 78,
+      "marche": 65,
+      "sante": 72
     }
+  },
+  "smartscore_v4": {
+    "score": 84,
+    "verdict": "Excellent potentiel (V4)..."
   }
 }`;
 
 const ERROR_EXAMPLES = [
   { code: 401, title: "Invalid API key",  body: `{\n  "error": "Invalid API key"\n}` },
   { code: 404, title: "Route not found", body: `{\n  "error": "Route not found"\n}` },
-  { code: 429, title: "Quota exceeded",  body: `{\n  "error": "Quota exceeded (1000)"\n}` },
+  { code: 429, title: "Quota exceeded",  body: `{\n  "error": "Quota exceeded"\n}` },
 ];
 
 // ── Composants utilitaires ────────────────────────────────────────────────────
@@ -263,20 +247,20 @@ export default function ApiPage() {
           </h1>
 
           <p className="mt-4 max-w-2xl text-lg leading-relaxed text-indigo-100">
-            Score foncier, signaux marché, risques, accessibilité, données
-            territoriales et analyses promoteur via une API REST sécurisée,
-            pensée pour les outils métiers, SaaS, CRM et workflows d'investissement.
+            Score foncier, signaux marché DVF et analyse de risques via une API
+            REST sécurisée, pensée pour les outils métiers, SaaS, CRM et
+            workflows d'investissement.
           </p>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
             {[
-              { label: "Base URL",  value: API_BASE_URL },
+              { label: "Base URL",  value: "…supabase.co/functions/v1/api-gateway" },
               { label: "Auth",      value: "Bearer API Key" },
               { label: "Format",    value: "JSON · HTTPS" },
             ].map((item) => (
               <div key={item.label} className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur-sm">
                 <div className="text-xs uppercase tracking-wide text-indigo-200">{item.label}</div>
-                <div className="mt-1 font-mono text-sm text-white">{item.value}</div>
+                <div className="mt-1 truncate font-mono text-sm text-white">{item.value}</div>
               </div>
             ))}
           </div>
@@ -315,7 +299,7 @@ export default function ApiPage() {
       {/* ── Stats ───────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {[
-          { value: "40+",    label: "Endpoints cibles" },
+          { value: "3",      label: "Endpoints en production" },
           { value: "<200ms", label: "Latence médiane" },
           { value: "99.9%",  label: "Disponibilité SLA" },
           { value: "Bearer", label: "Authentification" },
@@ -340,7 +324,6 @@ export default function ApiPage() {
                 label={`API ${healthStatus === "operational" ? "opérationnelle" : "dégradée"}`}
                 size="sm"
               />
-              {/* BONUS: indicateur connexion réelle */}
               <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
                 <Wifi className="h-3 w-3" />
                 Connected to API
@@ -468,7 +451,7 @@ export default function ApiPage() {
               <div className="min-w-0 flex-1">
                 <h3 className="font-semibold text-slate-900">Requête minimale valide</h3>
                 <p className="mt-1 text-sm text-slate-500">
-                  Le endpoint public disponible aujourd'hui utilise le point d'analyse fourni par latitude / longitude.
+                  Chaque endpoint utilise le point d'analyse fourni par latitude / longitude.
                 </p>
                 <div className="mt-4 rounded-xl bg-slate-950 p-4 font-mono text-xs leading-relaxed text-emerald-300">
                   {`POST /v1/scoring/smart\nAuthorization: Bearer mk_live_...\nContent-Type: application/json\n\n{\n  "lat": 48.8686,\n  "lon": 2.3306\n}`}
@@ -585,16 +568,16 @@ export default function ApiPage() {
             {
               plan: "Starter",
               price: "49 €/mois",
-              requests: "10 000 req/mois",
-              endpoints: "Accès initial",
+              requests: "10 000 crédits/mois",
+              endpoints: "Tous les endpoints v1",
               color: "#64748b",
               highlight: false,
             },
             {
               plan: "Growth",
               price: "149 €/mois",
-              requests: "50 000 req/mois",
-              endpoints: "Tous les endpoints publics",
+              requests: "50 000 crédits/mois",
+              endpoints: "Tous les endpoints v1",
               color: ACCENT_API,
               highlight: true,
             },
@@ -602,7 +585,7 @@ export default function ApiPage() {
               plan: "Scale",
               price: "Sur devis",
               requests: "Quotas dédiés",
-              endpoints: "SLA + endpoints privés + support",
+              endpoints: "SLA + support prioritaire",
               color: "#0f172a",
               highlight: false,
             },
@@ -647,6 +630,12 @@ export default function ApiPage() {
             </div>
           ))}
         </div>
+
+        <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+          Facturation au crédit : <code className="font-mono">/v1/scoring/smart</code> = 10 crédits ·{" "}
+          <code className="font-mono">/v1/market/dvf</code> = 2 crédits ·{" "}
+          <code className="font-mono">/v1/risks</code> = 2 crédits.
+        </p>
       </div>
 
       {/* ── Integration guide ────────────────────────────────────────── */}

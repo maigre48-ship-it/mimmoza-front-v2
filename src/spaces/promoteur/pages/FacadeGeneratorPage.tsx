@@ -1,16 +1,25 @@
 // src/spaces/promoteur/pages/FacadeGeneratorPage.tsx
 // -----------------------------------------------------------------------------
-// Générateur de façades -- V5.7
-// [V5.7] Hero v2 : PromoteurPageHero (design unifié Promoteur)
+// Générateur de façades -- V5.9
+// [V5.9] Sélecteur de style UNIFIÉ (fusion Styles prédéfinis + Style architectural
+//        + Inspiration régionale en un seul axe, 3 familles : Contemporain ·
+//        Classique · Régional). "Détails architecturaux" enrichi de 8 ornements
+//        (colombages, volets, encadrements, lucarnes, ferronnerie, bandeaux,
+//        brise-soleil, parement brique) — injectés au prompt IA ET câblés vers
+//        le modèle 2D pour être DESSINÉS dans la preview. Auto-activation des
+//        ornements pertinents selon le style choisi.
+//        ⚠ Dépend des fichiers étendus : facade2d.types.ts, buildFacade2DModel.ts,
+//          renderFacade2DSvg.tsx (livrés ensuite).
+// [V5.8] Couche "Inspiration régionale" (remplacée par le sélecteur unifié)
+// [V5.7] Hero v2 : PromoteurPageHero
 // [V5.6] init nbEtages depuis snapshot Massing3D en priorité
 // [V5.5] Persistance image façade entre onglets
-// [V5.4] Ajout style "Photo réaliste" + avertissement complexité footprint
+// [V5.4] Style "Photo réaliste" + avertissement complexité footprint
 // [V5.3 FIX] fallback direct editor2d + normalizedFootprintPoints
-// [V5.2 PATCH] sanitizeFootprintForAi + payload footprintPoints injecté
+// [V5.2 PATCH] sanitizeFootprintForAi + payload footprintPoints
 // [V5.1 FIX] rawFootprintPts -- priorité facadeSceneInput.footprint brut
 // [V5] Mini masse isométrique dans le PNG de référence IA
 // [V4] Pipeline footprint réel
-// [V3] Mise en scène + second bouton + suppression UI Blender
 // -----------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
@@ -18,9 +27,10 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import * as THREE from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter";
 import {
-  Wand2, ArrowLeft, Layers, ImageOff, Sun, Cloud, Sunset,
+  Wand2, ArrowLeft, ImageOff, Sun, Cloud, Sunset,
   TreePine, AlertCircle, RefreshCw, Download, Eye, Building2, Paintbrush,
   Users, ShoppingBag, Flower2, FileText, Check,
+  Grid3x3, Blinds, Frame, Home, Fence, SeparatorHorizontal, Rows3, BrickWall,
 } from "lucide-react";
 
 import { useLocalBlenderRender } from "../terrain3d/blender/useLocalBlenderRender";
@@ -69,10 +79,6 @@ type Vegetation       = FacadeConfig["vegetation"];
 type ViewMode         = NonNullable<FacadeAiPromptInput["view"]>;
 type BuildingStandard = NonNullable<FacadeAiPromptInput["buildingStandard"]>;
 type DrawingStyle     = NonNullable<FacadeAiPromptInput["drawingStyle"]> | "photo_realiste" | "esquisse_architecte";
-type Preset           = {
-  id: string; label: string; description: string;
-  config: Partial<FacadeConfig>; color: string;
-};
 type Pt2D = { x: number; y: number };
 
 // -----------------------------------------------------------------------------
@@ -372,17 +378,196 @@ async function buildFacadeGltfBlob(config: FacadeConfig): Promise<Blob> {
 }
 
 // -----------------------------------------------------------------------------
+// [V5.9] Ornements de façade (détails architecturaux d'habillage)
+// -----------------------------------------------------------------------------
+// Chaque ornement actif est : (a) injecté dans le prompt IA via `promptHint`,
+// (b) câblé vers le modèle 2D via `buildFlag` (clé de Facade2DBuildInput) pour
+// être DESSINÉ dans la preview. Pour en ajouter un : une entrée ici + le flag
+// correspondant dans facade2d.types.ts / buildFacade2DModel.ts / renderFacade2DSvg.tsx.
+// -----------------------------------------------------------------------------
+
+type OrnamentId =
+  | "colombages" | "volets" | "encadrements" | "lucarnes"
+  | "ferronnerie" | "bandeaux" | "brise_soleil" | "parement_brique";
+
+interface OrnamentDef {
+  id: OrnamentId;
+  label: string;
+  icon: ReactNode;
+  /** Clé booléenne transmise à Facade2DBuildInput pour le rendu 2D. */
+  buildFlag: keyof Facade2DBuildInput;
+  /** Descripteur injecté dans le prompt IA. */
+  promptHint: string;
+}
+
+const ORNAMENTS: OrnamentDef[] = [
+  {
+    id: "colombages", label: "Colombages", icon: <Grid3x3 className="h-3.5 w-3.5 shrink-0" />,
+    buildFlag: "hasColombages",
+    promptHint: " ORNEMENT : pans de bois (colombages) apparents structurant la façade — montants verticaux et croisillons sombres sur un remplissage en enduit clair.",
+  },
+  {
+    id: "volets", label: "Volets battants", icon: <Blinds className="h-3.5 w-3.5 shrink-0" />,
+    buildFlag: "hasShutters",
+    promptHint: " ORNEMENT : volets battants en bois (pleins ou persiennés) de part et d'autre de chaque fenêtre.",
+  },
+  {
+    id: "encadrements", label: "Encadrements", icon: <Frame className="h-3.5 w-3.5 shrink-0" />,
+    buildFlag: "hasEncadrements",
+    promptHint: " ORNEMENT : encadrements de baies marqués (pierre ou enduit contrastant) autour de chaque ouverture.",
+  },
+  {
+    id: "lucarnes", label: "Lucarnes", icon: <Home className="h-3.5 w-3.5 shrink-0" />,
+    buildFlag: "hasLucarnes",
+    promptHint: " ORNEMENT : lucarnes à fronton émergeant des versants de toiture (uniquement si toiture en pente).",
+  },
+  {
+    id: "ferronnerie", label: "Ferronnerie", icon: <Fence className="h-3.5 w-3.5 shrink-0" />,
+    buildFlag: "hasFerronnerie",
+    promptHint: " ORNEMENT : garde-corps et grilles en fer forgé ouvragé aux balcons et fenêtres.",
+  },
+  {
+    id: "bandeaux", label: "Bandeaux & moulures", icon: <SeparatorHorizontal className="h-3.5 w-3.5 shrink-0" />,
+    buildFlag: "hasBandeaux",
+    promptHint: " ORNEMENT : bandeaux horizontaux et moulures soulignant la séparation des niveaux.",
+  },
+  {
+    id: "brise_soleil", label: "Brise-soleil", icon: <Rows3 className="h-3.5 w-3.5 shrink-0" />,
+    buildFlag: "hasBriseSoleil",
+    promptHint: " ORNEMENT : brise-soleil à lames horizontales / pergolas contemporaines en façade.",
+  },
+  {
+    id: "parement_brique", label: "Parement brique", icon: <BrickWall className="h-3.5 w-3.5 shrink-0" />,
+    buildFlag: "hasParementBrique",
+    promptHint: " ORNEMENT : parement de brique apparente en accent sur une partie de la façade.",
+  },
+];
+
+// -----------------------------------------------------------------------------
+// [V5.9] Sélecteur de style UNIFIÉ
+// -----------------------------------------------------------------------------
+// Fusionne les anciens "Styles prédéfinis" + "Style architectural" + "Inspiration
+// régionale" en un seul axe rangé en 3 familles. Choisir un style applique une
+// config complète + (régional) un `promptHint` + des ornements pertinents.
+// Pour ajouter un style : une entrée dans FACADE_STYLES. Rien d'autre à toucher.
+// -----------------------------------------------------------------------------
+
+type FacadeStyleFamily = "contemporain" | "classique" | "regional";
+
+interface FacadeStyleDef {
+  id: string;
+  family: FacadeStyleFamily;
+  label: string;
+  description: string;
+  /** Config appliquée à la sélection (inclut `style` structurel). */
+  config: Partial<FacadeConfig>;
+  /** Descripteur IA fort (styles régionaux). */
+  promptHint?: string;
+  /** Ornements auto-activés à la sélection. */
+  autoOrnaments?: OrnamentId[];
+}
+
+const FACADE_FAMILIES: { id: FacadeStyleFamily; label: string }[] = [
+  { id: "contemporain", label: "Contemporain" },
+  { id: "classique",    label: "Classique" },
+  { id: "regional",     label: "Régional" },
+];
+
+const BASQUE_HINT =
+  " STYLE RÉGIONAL OBLIGATOIRE — MAISON BASQUE LABOURDINE : murs en enduit à la chaux BLANC immaculé ; colombages verticaux peints en ROUGE BASQUE (rouge sang-de-bœuf), parfois vert basque, concentrés sur l'étage et autour des ouvertures ; toiture à deux pans ASYMÉTRIQUES de faible pente en tuiles canal rouge-orangé ; large débord de toit ; volets bois assortis. NE PAS produire un immeuble contemporain. Conserver impérativement le nombre d'étages de l'image de référence.";
+const BRETONNE_HINT =
+  " STYLE RÉGIONAL OBLIGATOIRE — LONGÈRE BRETONNE : murs en GRANIT gris apparent en moellons, encadrements de baies en pierre de taille plus claire ; toiture à FORTE pente en ARDOISE bleu-noir ; lucarnes à fronton ; menuiseries bois peint ; volume bas et allongé ; ambiance côtière atlantique. Conserver impérativement le nombre d'étages de l'image de référence.";
+const ALSACIENNE_HINT =
+  " STYLE RÉGIONAL OBLIGATOIRE — MAISON ALSACIENNE À COLOMBAGES (Fachwerk) : pans de bois TRÈS APPARENTS en motifs géométriques (croix de Saint-André, losanges) ; remplissage en enduit coloré (ocre, rose pâle, bleu) ; toiture à TRÈS FORTE pente en tuiles plates ; lucarnes ; volets bois peint. Conserver impérativement le nombre d'étages de l'image de référence.";
+const NORMANDE_HINT =
+  " STYLE RÉGIONAL OBLIGATOIRE — MAISON NORMANDE À COLOMBAGES (Pays d'Auge) : pans de bois BRUN FONCÉ verticaux et en croisillons sur enduit clair ; toiture à forte pente en ardoise foncée ; lucarnes ; soubassement brique ou silex. Conserver impérativement le nombre d'étages de l'image de référence.";
+const LANDAISE_HINT =
+  " STYLE RÉGIONAL OBLIGATOIRE — MAISON LANDAISE (airial) : maison BASSE et allongée, façade sous un grand AUVENT débordant porté par des poteaux de bois ; murs en enduit clair avec colombages discrets ; toiture à deux pans de faible pente en tuiles canal ; environnement de pins. Conserver impérativement le nombre d'étages de l'image de référence.";
+const CHALET_HINT =
+  " STYLE RÉGIONAL OBLIGATOIRE — CHALET SAVOYARD ALPIN : soubassement en PIERRE maçonnée, étages en BOIS (madriers/bardage) couleur miel à brun ; grands BALCONS en bois ouvragé ; toiture à deux pans de faible pente avec TRÈS LARGE débord ; volets bois ; ambiance montagne. Conserver impérativement le nombre d'étages de l'image de référence.";
+const PROVENCAL_HINT =
+  " STYLE RÉGIONAL OBLIGATOIRE — MAISON PROVENÇALE / MAS : façade en enduit à la chaux teinté OCRE (jaune paille, terre de Sienne) ; corniche en GÉNOISE sous le toit ; toiture à faible pente en tuiles canal vieillies ; volets bois persiennés (bleu lavande, vert amande) ; cyprès et oliviers. Conserver impérativement le nombre d'étages de l'image de référence.";
+
+const FACADE_STYLES: FacadeStyleDef[] = [
+  // ── Contemporain ──
+  {
+    id: "contemporain-urbain", family: "contemporain",
+    label: "Contemporain urbain", description: "Façade épurée, zinc, balcons filants",
+    config: { style: "contemporain", materiauFacade: "Béton architectonique", materiauMenuiseries: "Aluminium gris anthracite", materiauToiture: "Zinc joint debout", ambiance: "matin", vegetation: "legere", balcons: true, corniche: false },
+  },
+  {
+    id: "premium-moderne", family: "contemporain",
+    label: "Premium moderne", description: "Pierre, aluminium, toiture terrasse",
+    config: { style: "premium", materiauFacade: "Pierre de taille", materiauMenuiseries: "Aluminium gris anthracite", materiauToiture: "Toiture terrasse végétalisée", ambiance: "golden", vegetation: "premium", loggias: true, attique: true },
+    autoOrnaments: ["brise_soleil"],
+  },
+  {
+    id: "tour-de-verre", family: "contemporain",
+    label: "Tour de verre", description: "Mur-rideau, structure acier, tertiaire",
+    config: { style: "verre" as FacadeConfig["style"], materiauFacade: "Mur-rideau verre", materiauMenuiseries: "Aluminium gris anthracite", materiauToiture: "Toiture terrasse gravier", ambiance: "golden", vegetation: "legere", balcons: false, loggias: false, corniche: false, socle: false, attique: true, rdcType: "Hall résidentiel", rythme: "Régulier" },
+  },
+  // ── Classique ──
+  {
+    id: "haussmannien", family: "classique",
+    label: "Haussmannien revisité", description: "Pierre, zinc, corniches, balcons filants",
+    config: { style: "haussmannien", materiauFacade: "Pierre de taille", materiauMenuiseries: "Bois peint sombre", materiauToiture: "Zinc joint debout", ambiance: "couvert", vegetation: "aucune", corniche: true, socle: true, balcons: true },
+    autoOrnaments: ["encadrements", "ferronnerie", "bandeaux", "lucarnes"],
+  },
+  {
+    id: "mediterraneen", family: "classique",
+    label: "Méditerranéen", description: "Enduit ocre, volets bois, pergola",
+    config: { style: "mediterraneen", materiauFacade: "Enduit beige", materiauMenuiseries: "Bois naturel", materiauToiture: "Tuile canal", ambiance: "golden", vegetation: "residentielle" },
+    autoOrnaments: ["volets"],
+  },
+  {
+    id: "neo-provencal", family: "classique",
+    label: "Néo-provençal", description: "Génoise, tuiles canal, volets pastel",
+    config: { style: "mediterraneen", materiauFacade: "Enduit beige", materiauMenuiseries: "Bois peint sombre", materiauToiture: "Tuile canal", ambiance: "golden", vegetation: "residentielle" },
+    promptHint: PROVENCAL_HINT, autoOrnaments: ["volets", "bandeaux"],
+  },
+  // ── Régional ──
+  {
+    id: "basque", family: "regional",
+    label: "Maison basque", description: "Colombages rouge basque, toit asymétrique",
+    config: { style: "mediterraneen", materiauFacade: "Enduit blanc", materiauMenuiseries: "Bois peint sombre", materiauToiture: "Tuile canal", ambiance: "matin", vegetation: "residentielle" },
+    promptHint: BASQUE_HINT, autoOrnaments: ["colombages", "volets"],
+  },
+  {
+    id: "bretonne", family: "regional",
+    label: "Longère bretonne", description: "Granit, ardoise pentue, lucarnes",
+    config: { style: "standard", materiauFacade: "Pierre de taille", materiauMenuiseries: "Bois peint sombre", materiauToiture: "Ardoise", ambiance: "couvert", vegetation: "legere" },
+    promptHint: BRETONNE_HINT, autoOrnaments: ["lucarnes", "encadrements"],
+  },
+  {
+    id: "alsacienne", family: "regional",
+    label: "Alsacienne", description: "Colombages géométriques, toit pentu",
+    config: { style: "standard", materiauFacade: "Enduit beige", materiauMenuiseries: "Bois naturel", materiauToiture: "Tuile mécanique", ambiance: "matin", vegetation: "residentielle" },
+    promptHint: ALSACIENNE_HINT, autoOrnaments: ["colombages", "volets"],
+  },
+  {
+    id: "normande", family: "regional",
+    label: "Normande", description: "Colombages bruns, ardoise, lucarnes",
+    config: { style: "standard", materiauFacade: "Enduit blanc", materiauMenuiseries: "Bois peint sombre", materiauToiture: "Ardoise", ambiance: "couvert", vegetation: "residentielle" },
+    promptHint: NORMANDE_HINT, autoOrnaments: ["colombages", "lucarnes"],
+  },
+  {
+    id: "landaise", family: "regional",
+    label: "Landaise", description: "Basse, grand auvent bois en façade",
+    config: { style: "mediterraneen", materiauFacade: "Enduit blanc", materiauMenuiseries: "Bois peint sombre", materiauToiture: "Tuile canal", ambiance: "golden", vegetation: "residentielle" },
+    promptHint: LANDAISE_HINT, autoOrnaments: ["colombages"],
+  },
+  {
+    id: "chalet-savoyard", family: "regional",
+    label: "Chalet savoyard", description: "Bois, balcons ouvragés, toit débordant",
+    config: { style: "standard", materiauFacade: "Bardage bois", materiauMenuiseries: "Bois naturel", materiauToiture: "Tuile mécanique", ambiance: "golden", vegetation: "premium" },
+    promptHint: CHALET_HINT, autoOrnaments: ["volets", "ferronnerie"],
+  },
+];
+
+// -----------------------------------------------------------------------------
 // UI constants
 // -----------------------------------------------------------------------------
 
-const STYLES: { id: Style; label: string; desc: string }[] = [
-  { id: "contemporain",  label: "Contemporain",          desc: "Lignes épurées, matériaux nobles, fenêtres larges" },
-  { id: "standard",      label: "Résidentiel standard",  desc: "Collectif traditionnel, équilibré et économique" },
-  { id: "premium",       label: "Premium moderne",       desc: "Architecte, aluminium anodisé, toiture terrasse" },
-  { id: "verre",         label: "Tour de verre",         desc: "Mur-rideau intégral, structure acier, tertiaire moderne" },
-  { id: "haussmannien",  label: "Haussmannien revisité", desc: "Pierre, zinc, balcons filants, corniches" },
-  { id: "mediterraneen", label: "Méditerranéen",         desc: "Enduit coloré, volets bois, pergolas" },
-];
 const MATERIAUX_FACADE = ["Enduit blanc","Enduit beige","Pierre de taille","Brique rouge","Bardage bois","Composite HPL","Béton architectonique","Mur-rideau verre"];
 const MATERIAUX_MENUISERIES = ["Aluminium gris anthracite","Aluminium blanc","PVC blanc","Bois naturel","Bois peint sombre"];
 const MATERIAUX_TOITURE = ["Zinc joint debout","Tuile canal","Tuile mécanique","Ardoise","Toiture terrasse végétalisée","Toiture terrasse gravier"];
@@ -415,14 +600,6 @@ const DRAWING_STYLES: { id: DrawingStyle; label: string; emoji: string }[] = [
   { id: "photo_realiste",      label: "Photo réaliste",      emoji: "📷" },
 ];
 
-const PRESETS: Preset[] = [
-  { id: "urbain",    label: "Contemporain urbain",       description: "Façade épurée, zinc, balcons filants",      color: "from-slate-700 to-slate-900",    config: { style: "contemporain", materiauFacade: "Béton architectonique", materiauMenuiseries: "Aluminium gris anthracite", materiauToiture: "Zinc joint debout", ambiance: "matin", vegetation: "legere", balcons: true, corniche: false } },
-  { id: "premium",   label: "Résidentiel premium",       description: "Pierre, aluminium, toiture terrasse",       color: "from-violet-700 to-indigo-800",  config: { style: "premium", materiauFacade: "Pierre de taille", materiauMenuiseries: "Aluminium gris anthracite", materiauToiture: "Toiture terrasse végétalisée", ambiance: "golden", vegetation: "premium", loggias: true, attique: true } },
-  { id: "classique", label: "Façade classique revisitée", description: "Haussmannien moderne, corniches, zinc",    color: "from-amber-700 to-orange-800",   config: { style: "haussmannien", materiauFacade: "Pierre de taille", materiauMenuiseries: "Bois peint sombre", materiauToiture: "Zinc joint debout", ambiance: "couvert", vegetation: "aucune", corniche: true, socle: true, balcons: true } },
-  { id: "med",       label: "Méditerranéen lumineux",    description: "Enduit ocre, volets, pergola",              color: "from-orange-500 to-yellow-600",  config: { style: "mediterraneen", materiauFacade: "Enduit beige", materiauMenuiseries: "Bois naturel", materiauToiture: "Tuile canal", ambiance: "golden", vegetation: "residentielle" } },
-  { id: "verre",     label: "Tour de verre",             description: "Mur-rideau, structure acier, tertiaire",    color: "from-sky-700 to-slate-900",      config: { style: "verre" as FacadeConfig["style"], materiauFacade: "Mur-rideau verre", materiauMenuiseries: "Aluminium gris anthracite", materiauToiture: "Toiture terrasse gravier", ambiance: "golden", vegetation: "legere", balcons: false, loggias: false, corniche: false, socle: false, attique: true, rdcType: "Hall résidentiel", rythme: "Régulier" } },
-];
-
 const DEFAULT_CONFIG: FacadeConfig = {
   style: "contemporain", materiauFacade: "Enduit blanc", materiauMenuiseries: "Aluminium gris anthracite",
   materiauToiture: "Zinc joint debout", rdcType: "Hall résidentiel", nbEtages: 4,
@@ -445,7 +622,12 @@ function mapRhythm(r: string): Facade2DRhythm { return r === "Syncopé" ? "synco
 function mapAmbiance(a: string): Facade2DAmbiance { return a === "golden" ? "golden" : a === "couvert" ? "couvert" : a === "crepuscule" ? "crepuscule" : "matin"; }
 function mapVegetation(v: string): Facade2DVegetation { return v === "legere" ? "legere" : v === "residentielle" ? "residentielle" : v === "premium" ? "premium" : "aucune"; }
 
-function configToFacade2DInput(config: FacadeConfig, dims?: { widthM?: number; depthM?: number }): Facade2DBuildInput {
+function configToFacade2DInput(
+  config: FacadeConfig,
+  dims?: { widthM?: number; depthM?: number },
+  ornaments?: Set<OrnamentId>,
+): Facade2DBuildInput {
+  const orn = ornaments ?? new Set<OrnamentId>();
   return {
     widthM: dims?.widthM ?? W, depthM: dims?.depthM ?? D, levelsCount: config.nbEtages, levelHeightM: FLOOR_H,
     roofKind: config.materiauToiture.includes("terrasse") ? "flat" : config.materiauToiture.includes("Tuile") ? "hip" : config.style === "haussmannien" ? "mansard" : "flat",
@@ -455,6 +637,15 @@ function configToFacade2DInput(config: FacadeConfig, dims?: { widthM?: number; d
     windowMaterial: config.materiauMenuiseries, roofMaterial: config.materiauToiture, rhythm: mapRhythm(config.rythme),
     hasCornice: config.corniche, hasSocle: config.socle, ambiance: mapAmbiance(config.ambiance),
     vegetation: mapVegetation(config.vegetation), archStyle: config.style, rdcType: config.rdcType,
+    // [V5.9] Ornements → rendu 2D (flags consommés par buildFacade2DModel / renderFacade2DSvg)
+    hasColombages: orn.has("colombages"),
+    hasShutters: orn.has("volets"),
+    hasEncadrements: orn.has("encadrements"),
+    hasLucarnes: orn.has("lucarnes"),
+    hasFerronnerie: orn.has("ferronnerie"),
+    hasBandeaux: orn.has("bandeaux"),
+    hasBriseSoleil: orn.has("brise_soleil"),
+    hasParementBrique: orn.has("parement_brique"),
   };
 }
 
@@ -480,6 +671,19 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
         <span className={["inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform", value ? "translate-x-4" : "translate-x-0.5"].join(" ")} />
       </button>
     </label>
+  );
+}
+/** Toggle compact 2-colonnes (icône + label + mini-switch) pour la liste de détails. */
+function DetailToggle({ label, icon, value, onChange }: { label: string; icon: ReactNode; value: boolean; onChange: () => void }) {
+  return (
+    <button type="button" role="switch" aria-checked={value} onClick={onChange} className={["flex items-center justify-between gap-2 rounded-xl border px-2.5 py-2 text-left transition-all", value ? "border-violet-300 bg-violet-50 shadow-sm" : "border-slate-200 bg-slate-50/60 hover:border-slate-300 hover:bg-white"].join(" ")}>
+      <span className="flex items-center gap-1.5 text-xs font-medium" style={value ? { color: PROMOTEUR_ACCENT } : { color: "#475569" }}>
+        <span style={{ color: value ? PROMOTEUR_ACCENT : "#94a3b8" }}>{icon}</span>{label}
+      </span>
+      <span className="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors" style={{ background: value ? PROMOTEUR_ACCENT : "#e2e8f0" }}>
+        <span className={["inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform", value ? "translate-x-3.5" : "translate-x-0.5"].join(" ")} />
+      </span>
+    </button>
   );
 }
 function PreviewTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
@@ -580,6 +784,13 @@ export default function FacadeGeneratorPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("3_quarts_legers");
   const [buildingStandard, setBuildingStandard] = useState<BuildingStandard>("standard");
   const [drawingStyle, setDrawingStyle] = useState<DrawingStyle>("aquarelle");
+
+  // [V5.9] Sélecteur de style unifié
+  const [activeFamily, setActiveFamily] = useState<FacadeStyleFamily>("contemporain");
+  const [selectedStyleId, setSelectedStyleId] = useState<string | null>(null);
+  // [V5.9] Ornements actifs
+  const [ornaments, setOrnaments] = useState<Set<OrnamentId>>(() => new Set());
+
   const [includePeople, setIncludePeople] = useState(false);
   const [includeGroundFloorShops, setIncludeGroundFloorShops] = useState(false);
   const [includeWindowFlowerPots, setIncludeWindowFlowerPots] = useState(false);
@@ -599,7 +810,19 @@ export default function FacadeGeneratorPage() {
   useLocalBlenderRender();
 
   const patch = (p: Partial<FacadeConfig>) => setConfig((prev) => ({ ...prev, ...p }));
-  const applyPreset = (preset: Preset) => { setConfig((prev) => ({ ...prev, ...preset.config })); setRenderError(null); };
+
+  // [V5.9] Application d'un style unifié : config + ornements pertinents + (régional) hint
+  const applyFacadeStyle = (s: FacadeStyleDef) => {
+    setSelectedStyleId(s.id);
+    setActiveFamily(s.family);
+    setConfig((prev) => ({ ...prev, ...s.config }));
+    setOrnaments(new Set(s.autoOrnaments ?? []));
+    setRenderError(null);
+  };
+
+  const toggleOrnament = (id: OrnamentId) => {
+    setOrnaments((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  };
 
   const editor2dBuildings = useEditor2DStore((s) => s.buildings ?? []);
   const implMeta = usePromoteurProjectStore((s) => { try { return s.implantation2d?.meta ?? null; } catch { return null; } });
@@ -610,10 +833,10 @@ export default function FacadeGeneratorPage() {
     const facadeRenderSpec   = buildFacadeRenderSpec(facadeSceneInput);
     const widthM = facadeRenderSpec.widthM;
     const depthM = facadeRenderSpec.footprintMeta?.footprintDepth ?? (facadeSceneInput.footprint?.length >= 3 ? (() => { const pts = facadeSceneInput.footprint as Array<{ x: number; y: number }>; const ys = pts.map((p) => p.y); return Math.max(...ys) - Math.min(...ys); })() : D);
-    const uiFallback = configToFacade2DInput(config);
+    const uiFallback = configToFacade2DInput(config, undefined, ornaments);
     const resolved = resolveFacadeProjectInput(extractFromEditor2D(editor2dBuildings), extractFromProjectStore(implMeta), uiFallback);
-    return { facade2DModel: buildFacade2DModel(configToFacade2DInput(config, { widthM, depthM })), facadeSource: resolved.sourceResolved, facadeRenderSpec, facadeSceneInput, selectedBuildingId };
-  }, [config, editor2dBuildings, implMeta]);
+    return { facade2DModel: buildFacade2DModel(configToFacade2DInput(config, { widthM, depthM }, ornaments)), facadeSource: resolved.sourceResolved, facadeRenderSpec, facadeSceneInput, selectedBuildingId };
+  }, [config, editor2dBuildings, implMeta, ornaments]);
 
   const rawFootprintPts = useMemo((): Pt2D[] => {
     const rawFp = facadeSceneInput.footprint as Array<{ x: number; y: number }> | undefined;
@@ -702,14 +925,20 @@ export default function FacadeGeneratorPage() {
       const photoRealisteHint = drawingStyle === "photo_realiste" ? " STYLE OBLIGATOIRE : rendu photoréaliste de promotion immobilière. Matériaux crédibles et texturés, ombres portées réalistes, lumière naturelle directionnelle, proportions architecturales strictes, ciel photographique, reflets vitrés réalistes. Ne PAS utiliser de style aquarelle, sketch, illustration ou dessin." : "";
       const esquisseArchitecteHint = drawingStyle === "esquisse_architecte" ? " STYLE OBLIGATOIRE : CROQUIS CONCEPTUEL D'ARCHITECTE sur papier technique. Le trait noir au crayon et à l'encre doit dominer. OBLIGATOIRE : lignes de construction, lignes de fuite, cotes et annotations techniques visibles. Appliquer des lavis aquarelle transparents UNIQUEMENT en couleur secondaire. Ratio minimum 70% trait, 30% couleur. Inclure une texture de papier technique en fond." : "";
       const verreHint = (config.style as Style) === "verre" ? " ARCHITECTURE OBLIGATOIRE : façade ENTIÈREMENT VITRÉE type mur-rideau. Vitrage teinté bleu-gris occupant 90 à 95% de la surface de façade, structure métallique apparente en aluminium anodisé gris anthracite. INTERDICTION ABSOLUE de fenêtres traditionnelles isolées, d'enduit, de pierre de taille, de brique, de bardage bois. Vitrage continu du sol au plafond sur chaque niveau existant. Matériaux : acier, verre, aluminium anodisé, béton clair uniquement." : "";
-      const prompt = basePrompt + massHint + floorCountHint + photoRealisteHint + esquisseArchitecteHint + verreHint;
+      // [V5.9] Renfort de style régional (si style sélectionné porteur d'un hint)
+      const styleDef = FACADE_STYLES.find((s) => s.id === selectedStyleId);
+      const styleHint = styleDef?.promptHint ?? "";
+      // [V5.9] Ornements actifs → descripteurs injectés
+      const ornamentHint = ORNAMENTS.filter((o) => ornaments.has(o.id)).map((o) => o.promptHint).join("");
+      const prompt = basePrompt + massHint + floorCountHint + photoRealisteHint + esquisseArchitecteHint + verreHint + styleHint + ornamentHint;
       const aiFootprint = sanitizeFootprintForAi(rawFootprintPts);
       const aiFootprintNormalized = normalizeFootprintForAi(aiFootprint);
       const footprintMetrics = computeFootprintMetrics(aiFootprint);
+      const activeOrnaments = ORNAMENTS.filter((o) => ornaments.has(o.id)).map((o) => o.id);
       const result = await requestFacadeAiRender({
         prompt, baseImageDataUrl: pngDataUrl, drawingStyle: drawingStyle as string, view: viewMode, buildingStandard,
         floors: config.nbEtages, levelsCount: facade2DModel.levelsCount, widthM: effectiveWidthM, heightM: facade2DModel.heightM,
-        facadeStyleLabel: (facade2DModel as { styleLabel?: string }).styleLabel ?? config.style, sourceLabel: facadeSource,
+        facadeStyleLabel: styleDef?.label ?? (facade2DModel as { styleLabel?: string }).styleLabel ?? config.style, sourceLabel: facadeSource,
         includePeople, includeGroundFloorShops, includeWindowFlowerPots,
         hasRealFootprint: hasRealFp,
         footprintPoints: aiFootprint.length >= 3 ? aiFootprint : undefined,
@@ -718,6 +947,8 @@ export default function FacadeGeneratorPage() {
         footprintAspectRatio: footprintMetrics.aspectRatio ?? undefined, footprintComplexity: footprintMetrics.complexity ?? undefined,
         volumeBreakCount: footprintMetrics.volumeBreakCount ?? undefined,
         massingNotes: hasRealFp ? ["Non rectangular building footprint","Preserve all recesses and offsets","Do not simplify into a rectangular building","Side volumes must follow real footprint","Main facade must match the 2D elevation exactly","Use the isometric mass inset as a strict volumetric guide"] : undefined,
+        ...(styleDef ? { facadeStyleId: styleDef.id, facadeStyleFamily: styleDef.family } : {}),
+        ...(activeOrnaments.length ? { ornaments: activeOrnaments } : {}),
         ...(pluOverrideConfirmed && pluMaxFloorsIndicative !== null ? { pluContext: { maxFloorsIndicative: pluMaxFloorsIndicative, notes: [`Dépassement PLU confirmé : ${config.nbEtages} étages demandés, plafond indicatif ${pluMaxFloorsIndicative}.`, "Rendu à titre indicatif uniquement."] } } : {}),
         size: "1536x1024", quality: "high", outputFormat: "png", background: "opaque",
       } as Parameters<typeof requestFacadeAiRender>[0]);
@@ -741,9 +972,20 @@ export default function FacadeGeneratorPage() {
     try { const ok = writeCapture(studyId, "facadeIA", imageToSave); if (!ok) console.warn("[MMZ] writeCapture a échoué"); setSavedToSynthese(true); setTimeout(() => setSavedToSynthese(false), 3000); } catch (err) { console.error("[MMZ] Erreur sauvegarde synthèse:", err); }
   };
 
-  const currentStyle   = STYLES.find((s) => s.id === config.style);
-  const currentView    = VIEW_MODES.find((v) => v.id === viewMode);
-  const currentDrawing = DRAWING_STYLES.find((d) => d.id === drawingStyle);
+  const currentStyleDef = FACADE_STYLES.find((s) => s.id === selectedStyleId);
+  const currentView     = VIEW_MODES.find((v) => v.id === viewMode);
+  const currentDrawing  = DRAWING_STYLES.find((d) => d.id === drawingStyle);
+  const familyStyles    = FACADE_STYLES.filter((s) => s.family === activeFamily);
+  const activeOrnamentDefs = ORNAMENTS.filter((o) => ornaments.has(o.id));
+
+  // Liste unique des détails architecturaux (volumétrie + ornements), sans étiquette de groupe.
+  const detailItems: { key: string; label: string; icon: ReactNode; on: boolean; toggle: () => void }[] = [
+    { key: "balcons",  label: "Balcons",  icon: <Building2 className="h-3.5 w-3.5 shrink-0" />, on: config.balcons,  toggle: () => patch({ balcons: !config.balcons }) },
+    { key: "loggias",  label: "Loggias",  icon: <Building2 className="h-3.5 w-3.5 shrink-0" />, on: config.loggias,  toggle: () => patch({ loggias: !config.loggias }) },
+    { key: "corniche", label: "Corniche", icon: <SeparatorHorizontal className="h-3.5 w-3.5 shrink-0" />, on: config.corniche, toggle: () => patch({ corniche: !config.corniche }) },
+    { key: "socle",    label: "Socle",    icon: <BrickWall className="h-3.5 w-3.5 shrink-0" />, on: config.socle,    toggle: () => patch({ socle: !config.socle }) },
+    ...ORNAMENTS.map((o) => ({ key: o.id, label: o.label, icon: o.icon, on: ornaments.has(o.id), toggle: () => toggleOrnament(o.id) })),
+  ];
 
   // ── render ──────────────────────────────────────────────────────────────────
 
@@ -773,37 +1015,46 @@ export default function FacadeGeneratorPage() {
         }
       />
 
-      {/* ── Styles prédéfinis ── */}
-      <div>
-        <h2 className="mb-3 text-sm font-semibold text-slate-700">Styles prédéfinis</h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {PRESETS.map((p) => (
-            <button key={p.id} type="button" onClick={() => applyPreset(p)} className={["group relative overflow-hidden rounded-2xl bg-gradient-to-br p-4 text-left text-white shadow-md transition-all hover:scale-[1.02] hover:shadow-lg", p.color].join(" ")}>
-              <div className="text-sm font-semibold leading-tight">{p.label}</div>
-              <div className="mt-1 text-[11px] leading-snug text-white/70">{p.description}</div>
-              <div className="mt-3 inline-flex items-center gap-1 rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-[10px] font-medium backdrop-blur-sm">Appliquer</div>
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* ── Grid panneau + preview ── */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[360px_1fr]">
 
         {/* ── Panneau gauche ── */}
         <div className="space-y-4">
+
+          {/* ── [V5.9] Sélecteur de style unifié ── */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <SectionTitle>Style architectural</SectionTitle>
-            <div className="space-y-2">
-              {STYLES.map((s) => (
-                <button key={s.id} type="button" onClick={() => patch({ style: s.id as FacadeConfig["style"] })} className={["w-full rounded-xl border px-3 py-2.5 text-left transition-all", config.style === s.id ? "border-violet-300 bg-violet-50 shadow-sm" : "border-slate-200 bg-slate-50/60 text-slate-700 hover:border-slate-300 hover:bg-white"].join(" ")} style={config.style === s.id ? { color: PROMOTEUR_ACCENT } : {}}>
-                  <div className="text-sm font-medium">{s.label}</div>
-                  <div className="mt-0.5 text-[11px] text-slate-400">{s.desc}</div>
-                </button>
-              ))}
+            <SectionTitle><span className="flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" />Style de façade</span></SectionTitle>
+            {/* Onglets familles */}
+            <div className="mb-3 flex gap-1.5">
+              {FACADE_FAMILIES.map((f) => {
+                const active = activeFamily === f.id;
+                return (
+                  <button key={f.id} type="button" onClick={() => setActiveFamily(f.id)} className={["flex-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-all", active ? "text-white shadow-sm" : "border border-slate-200 bg-white text-slate-500 hover:text-slate-700"].join(" ")} style={active ? { background: PROMOTEUR_ACCENT } : {}}>
+                    {f.label}
+                  </button>
+                );
+              })}
             </div>
+            {/* Grille de styles */}
+            <div className="grid grid-cols-2 gap-2">
+              {familyStyles.map((s) => {
+                const active = selectedStyleId === s.id;
+                return (
+                  <button key={s.id} type="button" onClick={() => applyFacadeStyle(s)} title={s.description} className={["flex flex-col items-start gap-0.5 rounded-xl border px-2.5 py-2 text-left transition-all", active ? "border-violet-300 bg-violet-50 shadow-sm" : "border-slate-200 bg-slate-50/60 text-slate-700 hover:border-slate-300 hover:bg-white"].join(" ")} style={active ? { color: PROMOTEUR_ACCENT } : {}}>
+                    <span className="text-xs font-medium leading-tight">{s.label}</span>
+                    <span className="text-[10px] leading-snug text-slate-400">{s.description}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {currentStyleDef?.promptHint && (
+              <p className="mt-2.5 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-2 text-[11px] leading-relaxed text-violet-700">
+                <strong>{currentStyleDef.label}</strong> — renfort de caractère régional appliqué au rendu IA. Matériaux et ornements préréglés, ajustables ci-dessous.
+              </p>
+            )}
           </div>
 
+          {/* ── Matériaux ── */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <SectionTitle>Matériaux</SectionTitle>
             <div className="space-y-3">
@@ -813,6 +1064,7 @@ export default function FacadeGeneratorPage() {
             </div>
           </div>
 
+          {/* ── Composition ── */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <SectionTitle>Composition</SectionTitle>
             <div className="space-y-3">
@@ -843,17 +1095,18 @@ export default function FacadeGeneratorPage() {
             </div>
           </div>
 
+          {/* ── [V5.9] Détails architecturaux enrichis (liste unique) ── */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <SectionTitle>Détails architecturaux</SectionTitle>
-            <div className="space-y-2">
-              <Toggle label="Balcons" value={config.balcons} onChange={(v) => patch({ balcons: v })} />
-              <Toggle label="Loggias" value={config.loggias} onChange={(v) => patch({ loggias: v })} />
-              <Toggle label="Corniche" value={config.corniche} onChange={(v) => patch({ corniche: v })} />
-              <Toggle label="Socle" value={config.socle} onChange={(v) => patch({ socle: v })} />
-              <div className="pt-1"><label className="mb-1 block text-xs text-slate-500">Rythme de façade</label><Select value={config.rythme} options={RYTHMES} onChange={(v) => patch({ rythme: v })} /></div>
+            <div className="grid grid-cols-2 gap-2">
+              {detailItems.map((d) => (
+                <DetailToggle key={d.key} label={d.label} icon={d.icon} value={d.on} onChange={d.toggle} />
+              ))}
             </div>
+            <div className="pt-3"><label className="mb-1 block text-xs text-slate-500">Rythme de façade</label><Select value={config.rythme} options={RYTHMES} onChange={(v) => patch({ rythme: v })} /></div>
           </div>
 
+          {/* ── Mise en scène ── */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <SectionTitle><span className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />Mise en scène</span></SectionTitle>
             <div className="space-y-2">
@@ -875,6 +1128,7 @@ export default function FacadeGeneratorPage() {
             )}
           </div>
 
+          {/* ── Ambiance ── */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <SectionTitle>Ambiance</SectionTitle>
             <div className="grid grid-cols-2 gap-2">
@@ -886,6 +1140,7 @@ export default function FacadeGeneratorPage() {
             </div>
           </div>
 
+          {/* ── Végétation ── */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <SectionTitle>Végétation</SectionTitle>
             <div className="grid grid-cols-2 gap-2">
@@ -997,16 +1252,17 @@ export default function FacadeGeneratorPage() {
 
             <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-3">
               <div className="flex flex-wrap gap-2">
-                <span className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-medium" style={{ color: PROMOTEUR_ACCENT }}>{currentStyle?.label}</span>
+                {currentStyleDef && <span className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-medium" style={{ color: PROMOTEUR_ACCENT }}>{currentStyleDef.label}</span>}
                 <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600">R+{config.nbEtages - 1}{config.attique ? " + Attique" : ""}</span>
                 {hasRealFootprint && facadeRenderSpec.footprintMeta && <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] text-emerald-700">{facadeRenderSpec.widthM.toFixed(1)}m × {facadeRenderSpec.footprintMeta.footprintDepth.toFixed(1)}m</span>}
                 <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600">{config.materiauFacade}</span>
                 <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600">{AMBIANCES.find((a) => a.id === config.ambiance)?.label}</span>
                 <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600">{currentView?.emoji} {currentView?.label}</span>
                 <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600">{currentDrawing?.emoji} {currentDrawing?.label}</span>
-                {config.balcons && <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600">Balcons</span>}
-                {config.loggias && <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600">Loggias</span>}
                 {config.vegetation !== "aucune" && <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] text-emerald-700"><TreePine className="h-3 w-3" />Végétation {config.vegetation}</span>}
+                {activeOrnamentDefs.map((o) => (
+                  <span key={o.id} className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[11px]" style={{ color: PROMOTEUR_ACCENT }}>{o.icon}{o.label}</span>
+                ))}
                 {includePeople && <span className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] text-violet-700"><Users className="h-3 w-3" />Personnes</span>}
                 {includeGroundFloorShops && <span className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] text-violet-700"><ShoppingBag className="h-3 w-3" />Commerces</span>}
                 {includeWindowFlowerPots && <span className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] text-violet-700"><Flower2 className="h-3 w-3" />Fleurs</span>}
@@ -1037,7 +1293,7 @@ export default function FacadeGeneratorPage() {
                 <div className="flex flex-col items-center justify-center gap-3 py-12">
                   <div className="h-10 w-10 animate-spin rounded-full border-4" style={{ borderColor: "#e9d5ff", borderTopColor: PROMOTEUR_ACCENT }} />
                   <p className="text-sm font-medium text-slate-600">Génération image façade…</p>
-                  <p className="text-xs text-slate-400">{currentView?.emoji} {currentView?.label} · {currentDrawing?.label} · {buildingStandard}{hasRealFootprint && " · emprise réelle"}</p>
+                  <p className="text-xs text-slate-400">{currentView?.emoji} {currentView?.label} · {currentDrawing?.label} · {buildingStandard}{currentStyleDef ? ` · ${currentStyleDef.label}` : ""}{hasRealFootprint && " · emprise réelle"}</p>
                 </div>
               )}
               {!generating && renderError && (

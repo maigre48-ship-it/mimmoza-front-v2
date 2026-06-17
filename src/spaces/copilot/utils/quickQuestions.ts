@@ -6,6 +6,18 @@
 //     CopilotEmptyState construit un "pathname virtuel" :
 //       /marchand-de-bien/analyse?tab=rentabilite
 //       → effectivePathname = /marchand-de-bien/analyse/rentabilite
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// RÉVISION AUDIT — alignement question ↔ capacité réelle du Copilot
+//   • Questions visuelles (massing 3D, façades, implantation) reformulées vers
+//     les règles PLU réellement sourçables : le Copilot ne voit ni le rendu 3D,
+//     ni le plan masse, ni la façade. Il ne se prononce donc plus dessus.
+//   • Questions fiscalité / TRI / projection pluriannuelle / sensibilité
+//     retirées : aucun moteur ni source ne les alimente (réponse non sourcée).
+//   • Questions promettant risques/DVF/SmartScore retirées du mode "quick"
+//     (ces tools n'existent qu'en mode "advanced") et déplacées en "advanced".
+//   • bilan / analyse-plan : questions conservées — alimentées par le contexte
+//     injecté côté page (cf. câblage BilanPage / AnalysePlanPage).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface QuickQuestion {
@@ -50,13 +62,12 @@ const ROUTE_QUESTIONS: RouteQuestions[] = [
     quick: [
       { label: '📊 Rentabilité brute',                  prompt: "Quelle est la rentabilité brute de ce bien ? Calcule rapidement avec le prix d'achat et le prix de revente." },
       { label: '🔄 Revente ou location ?',              prompt: "Ce bien est-il plus adapté à la revente ou à la location ? Donne un avis basé sur les données disponibles." },
-      { label: '🏦 Régime fiscal le plus avantageux',   prompt: "Quel régime fiscal est le plus avantageux pour cette opération (plus-value professionnelle, IS, IR) ?" },
+      { label: '💶 Loyer de marché estimé',             prompt: "Quel loyer mensuel de marché peut-on espérer pour ce bien selon les données locales ? Donne une fourchette réaliste et le rendement brut associé." },
     ],
     advanced: [
-      { label: '🔬 Rentabilité nette complète',         prompt: "Calcule la rentabilité nette complète : brut → net après charges, travaux, fiscalité et coût de portage. Détaille chaque étape." },
-      { label: '📅 Revente vs location sur 10 ans',     prompt: "Compare revente vs location sur 10 ans : cash-flow mensuel, cumul de trésorerie, TRI et recommandation finale." },
-      { label: '📈 TRI et seuil de rentabilité',        prompt: "Calcule le TRI de cette opération et le seuil de rentabilité. À partir de quel prix de revente l'opération est-elle positive ?" },
-      { label: '📉 Sensibilité : -10% sur la revente',  prompt: "Analyse de sensibilité : quel impact d'une baisse de 10% du prix de revente sur la rentabilité nette et le TRI ?" },
+      { label: '🔬 Rentabilité nette détaillée',        prompt: "Détaille la rentabilité nette à partir du rendement et de la marge calculés par Mimmoza : brut → net après charges et travaux. Appuie-toi uniquement sur les données disponibles." },
+      { label: '📊 Rendement vs marché local',          prompt: "Compare le rendement de ce bien aux niveaux observés sur le marché local. Le positionnement est-il favorable ?" },
+      { label: '📈 Prix de revente cible et marge',     prompt: "Quel prix de revente cible ressort de l'analyse Mimmoza et quelle marge brute y est associée ?" },
     ],
   },
 
@@ -91,13 +102,12 @@ const ROUTE_QUESTIONS: RouteQuestions[] = [
   {
     prefix: '/marchand-de-bien/analyse/analyse_predictive',
     quick: [
-      { label: '📈 Tendance des prix ici',              prompt: "La tendance des prix est-elle à la hausse ou à la baisse dans cette zone ? Signal clair." },
-      { label: '🏙️ Zone en tension ou en déclin ?',     prompt: "Ce bien est-il dans une zone en tension (demande > offre) ou en déclin démographique ?" },
+      { label: '📈 Tendance des prix ici',              prompt: "La tendance des prix est-elle à la hausse ou à la baisse dans cette zone ? Appuie-toi sur l'évolution des prix et les scores marché disponibles." },
+      { label: '🏙️ Zone en tension ou en déclin ?',     prompt: "Ce bien est-il dans une zone en tension (demande > offre) ou en déclin démographique ? Base-toi sur les indicateurs disponibles." },
     ],
     advanced: [
-      { label: '🔮 Valorisation sur 3 et 5 ans',        prompt: "Prévision de valorisation sur 3 et 5 ans : hypothèses, scénario optimiste / central / pessimiste." },
-      { label: '📅 Meilleur horizon de revente',         prompt: "Quel est le meilleur horizon de revente pour maximiser la plus-value nette ?" },
-      { label: '🔢 Analyse croisée prix + marge',        prompt: "Analyse prédictive croisée : évolution des prix + rentabilité future. Quelle stratégie sur 3 ans ?" },
+      { label: '🚦 Indicateurs prédictifs au vert/rouge', prompt: "Quels indicateurs prédictifs Mimmoza (évolution des prix, scores marché, démographie, Sitadel, pression crédit BCE) sont favorables ou défavorables sur ce deal ? Synthétise sans extrapoler au-delà des données." },
+      { label: '🔢 Lecture croisée prix + marge',        prompt: "Croise l'évolution des prix et la marge calculée par Mimmoza : que disent les données sur l'intérêt de l'opération ?" },
     ],
   },
 
@@ -122,7 +132,7 @@ const ROUTE_QUESTIONS: RouteQuestions[] = [
       { label: '🔄 Revente ou location ?',              prompt: "Ce bien est-il plus adapté à la revente ou à la location ?" },
     ],
     advanced: [
-      { label: '🔬 Rentabilité nette complète',         prompt: "Calcule la rentabilité nette complète avec TRI, cash-flow et seuil de rentabilité." },
+      { label: '🔬 Rentabilité nette détaillée',        prompt: "Détaille la rentabilité nette à partir des données Mimmoza (rendement, marge, cash-flow)." },
       { label: '📊 Analyse marché + Géorisques',        prompt: "Analyse marché complète et rapport Géorisques pour ce bien." },
       { label: '📄 Synthèse IA complète',               prompt: "Synthèse IA complète : marché, rentabilité, risques et recommandation." },
     ],
@@ -143,7 +153,7 @@ const ROUTE_QUESTIONS: RouteQuestions[] = [
     advanced: [
       { label: '📊 Analyse complète du deal',            prompt: "Analyse complète : marché local, décote estimée, potentiel de revente, risques et verdict." },
       { label: '📈 Compare aux ventes DVF récentes',     prompt: "Compare ce bien aux ventes DVF récentes dans un rayon de 500m. Décote et positionnement." },
-      { label: '💶 Prix maximal avec marge 15% nette',   prompt: "Quel prix d'achat maximal pour une marge nette de 15% après travaux et fiscalité ? Détaille le calcul." },
+      { label: '💶 Prix maximal avec marge 15% nette',   prompt: "Quel prix d'achat maximal pour une marge nette de 15% après travaux ? Détaille le calcul à partir des données disponibles." },
       { label: '📋 Fiche deal complète',                 prompt: "Prépare une fiche deal complète : bien, marché, financier (achat/travaux/revente/marge), risques et recommandation." },
     ],
   },
@@ -282,40 +292,40 @@ const ROUTE_QUESTIONS: RouteQuestions[] = [
   {
     prefix: '/promoteur/implantation-2d',
     quick: [
-      { label: '✅ Reculs PLU respectés ?',              prompt: "L'implantation actuelle respecte-t-elle les reculs PLU (voirie, limites séparatives, fond de parcelle) ?" },
-      { label: '📐 Emprise au sol dans les limites ?',   prompt: "L'emprise au sol du projet est-elle dans les limites autorisées par le PLU ?" },
-      { label: '⚠️ Conflits de gabarit visibles ?',     prompt: "Y a-t-il des conflits de gabarit visibles sur le plan masse (hauteur, recul, prospect) ?" },
+      { label: '📐 Reculs imposés par le PLU',          prompt: "Quels reculs le PLU impose-t-il sur cette parcelle (voirie, limites séparatives, fond de parcelle) ?" },
+      { label: '📏 Emprise au sol maximale',            prompt: "Quelle emprise au sol maximale le PLU autorise-t-il sur cette parcelle ?" },
+      { label: '📐 Hauteur et prospect',                prompt: "Quelles règles de hauteur et de prospect s'appliquent à l'implantation selon le PLU ?" },
     ],
     advanced: [
-      { label: '📋 Analyse de conformité PLU complète',  prompt: "Analyse complète de conformité PLU sur l'implantation : reculs, hauteur, emprise, stationnement, prospect. Points conformes et non-conformes." },
-      { label: '🎯 Optimise l\'implantation',            prompt: "Comment optimiser l'implantation pour maximiser la SDP constructible tout en respectant toutes les règles PLU ?" },
-      { label: '🏗️ Comment densifier sans sortir du PLU ?', prompt: "Quels ajustements de l'implantation permettraient de densifier le programme sans sortir des règles PLU ?" },
+      { label: '📋 Contraintes PLU pour l\'implantation', prompt: "Synthétise toutes les contraintes PLU qui encadrent l'implantation : reculs, emprise, hauteur, prospect, stationnement." },
+      { label: '📐 SDP maximale réglementaire',         prompt: "Calcule la SDP maximale réglementaire à partir des règles PLU (emprise, hauteur, gabarit)." },
+      { label: '🏗️ Marges pour densifier',              prompt: "Selon les règles PLU, quelles marges de manœuvre existent pour maximiser la SDP constructible sur cette parcelle ?" },
     ],
   },
 
   {
     prefix: '/promoteur/massing-3d',
     quick: [
-      { label: '📏 Gabarit 3D conforme aux hauteurs PLU ?', prompt: "Le gabarit 3D respecte-t-il les hauteurs maximales autorisées par le PLU ?" },
-      { label: '☀️ Ensoleillement acceptable ?',         prompt: "L'ensoleillement est-il acceptable pour les logements projetés dans cette configuration volumétrique ?" },
-      { label: '🏘️ Conflits visuels avec le bâti voisin ?', prompt: "Y a-t-il des conflits visuels avec le bâti voisin qui pourraient générer des recours ou des contraintes ?" },
+      { label: '📏 Hauteur max autorisée',              prompt: "Quelle hauteur maximale le PLU autorise-t-il sur cette parcelle (égout / faîtage) ?" },
+      { label: '📐 Règles de gabarit PLU',              prompt: "Quelles règles de gabarit et de prospect le PLU impose-t-il pour le volume bâti ?" },
+      { label: '🏗️ Combien de niveaux possibles ?',      prompt: "Combien de niveaux sont envisageables selon la hauteur maximale autorisée par le PLU ?" },
     ],
     advanced: [
-      { label: '📊 Analyse volumétrique complète',       prompt: "Analyse volumétrique complète : hauteur, gabarit, impact visuel sur le voisinage, conformité PLU et risques de recours." },
-      { label: '☀️ Optimise vues et ensoleillement',     prompt: "Comment optimiser le massing pour maximiser les vues dégagées et l'ensoleillement des logements ?" },
-      { label: '🏗️ Variantes pour augmenter la SDP',     prompt: "Quelles variantes de volumétrie permettent d'augmenter la SDP tout en restant dans les gabarits PLU autorisés ?" },
+      { label: '📊 Enveloppe constructible PLU',         prompt: "Décris l'enveloppe constructible maximale autorisée par le PLU (emprise × hauteur) et le volume théorique associé." },
+      { label: '🏗️ Optimiser la SDP dans le gabarit',   prompt: "Comment maximiser la SDP en restant dans le gabarit PLU autorisé sur cette parcelle ?" },
+      { label: '⚖️ Contraintes de hauteur et servitudes', prompt: "Quelles contraintes de hauteur ou servitudes pourraient limiter le volume constructible sur cette parcelle ?" },
     ],
   },
 
   {
     prefix: '/promoteur/generateur-facades',
     quick: [
-      { label: '🏙️ Façade cohérente avec le contexte ?', prompt: "Ce rendu de façade est-il cohérent avec le contexte urbain et architectural du secteur ?" },
-      { label: '🧱 Matériaux adaptés au secteur ?',      prompt: "Les matériaux envisagés sont-ils adaptés au secteur et aux exigences réglementaires ?" },
+      { label: '🧱 Matériaux courants du secteur',       prompt: "À titre indicatif, quels matériaux de façade sont couramment utilisés et bien perçus pour ce type de programme et de secteur ?" },
+      { label: '📋 Règles de façade à vérifier',        prompt: "Quelles règles d'aspect extérieur (PLU, ABF/AVAP) faut-il vérifier avant d'arrêter le traitement de façade ?" },
     ],
     advanced: [
-      { label: '🎯 Attractivité commerciale du rendu',   prompt: "Ce rendu architectural maximise-t-il l'attractivité commerciale du programme auprès des acquéreurs cibles ?" },
-      { label: '💸 Alternatives moins coûteuses',       prompt: "Quelles alternatives de traitement de façade permettraient de réduire les coûts de construction sans dégrader la qualité perçue ?" },
+      { label: '🎯 Critères d\'attractivité façade',     prompt: "En conseil général, quels critères de façade influencent l'attractivité commerciale d'un programme neuf auprès des acquéreurs cibles ?" },
+      { label: '💸 Leviers de coût façade',             prompt: "En conseil général, quels leviers permettent de réduire le coût d'une façade sans dégrader la qualité perçue ?" },
     ],
   },
 
@@ -330,7 +340,7 @@ const ROUTE_QUESTIONS: RouteQuestions[] = [
       { label: '📋 Analyse complète par corps d\'état',  prompt: "Analyse complète du budget travaux par corps d'état avec benchmarks marché. Quels postes sont sur-estimés ou sous-estimés ?" },
       { label: '🔢 3 scénarios construction + marge',   prompt: "Simule 3 scénarios de construction (économique / standard / premium) avec pour chacun le coût au m² SDP et l'impact sur le taux de marge." },
       { label: '🎯 Optimisation pour la marge cible',   prompt: "Quels postes optimiser en priorité pour tenir l'objectif de marge promoteur sans dégrader la qualité livrable ?" },
-      { label: '💶 Coût max pour 8% de marge',          prompt: "Quel coût de construction au m² SDP maximal pour atteindre un taux de marge promoteur de 8% net ?" },
+      { label: '💶 Coût compatible avec la marge',      prompt: "À titre indicatif, quel niveau de coût de construction au m² SDP resterait compatible avec une marge promoteur saine ?" },
     ],
   },
 
@@ -352,14 +362,13 @@ const ROUTE_QUESTIONS: RouteQuestions[] = [
   {
     prefix: '/promoteur/bilan-promoteur',
     quick: [
-      { label: '📊 Taux de marge suffisant ?',          prompt: "Le taux de marge promoteur est-il suffisant pour valider l'opération ? Donne un verdict rapide." },
-      { label: '💶 Prix foncier maximal acceptable',    prompt: "Quel est le prix foncier maximal acceptable pour maintenir la marge promoteur cible ?" },
+      { label: '📊 Taux de marge suffisant ?',          prompt: "À partir du bilan, le taux de marge promoteur est-il suffisant pour valider l'opération ? Donne un verdict rapide." },
+      { label: '💶 Prix foncier maximal acceptable',    prompt: "À partir du bilan, quel est le prix foncier maximal acceptable pour maintenir la marge promoteur cible ?" },
       { label: '🏦 Bilan bancable en l\'état ?',         prompt: "Ce bilan promoteur est-il bancable en l'état ? Y a-t-il des points bloquants pour un financement ?" },
     ],
     advanced: [
-      { label: '🔬 Analyse bilan complète',             prompt: "Analyse complète du bilan promoteur : CA, coûts détaillés, marge brute, marge nette, TRI et comparaison aux standards du marché." },
-      { label: '📉 Stress test -5% prix de vente',      prompt: "Stress test : quel impact d'une baisse de 5% du prix de vente sur le taux de marge et la viabilité de l'opération ?" },
-      { label: '💶 Prix foncier max pour 8% net',       prompt: "Quel prix foncier maximal pour maintenir un taux de marge promoteur de 8% net dans les hypothèses actuelles ?" },
+      { label: '🔬 Analyse bilan complète',             prompt: "Analyse complète du bilan promoteur : CA, coûts détaillés, marge brute, marge nette et comparaison aux standards du marché." },
+      { label: '💶 Prix foncier max pour la marge cible', prompt: "À partir des données du bilan, quel prix foncier maximal permet de tenir la marge promoteur cible ?" },
       { label: '📊 Benchmark standards marché',         prompt: "Compare ce bilan aux standards du marché promoteur dans ce secteur. Marge, coûts et prix sont-ils dans les normes ?" },
     ],
   },
@@ -367,12 +376,12 @@ const ROUTE_QUESTIONS: RouteQuestions[] = [
   {
     prefix: '/promoteur/bilan',
     quick: [
-      { label: '📊 Taux de marge suffisant ?',          prompt: "Le taux de marge promoteur est-il suffisant pour valider l'opération ?" },
-      { label: '💶 Prix foncier maximal acceptable',    prompt: "Quel est le prix foncier maximal acceptable pour cette opération ?" },
+      { label: '📊 Taux de marge suffisant ?',          prompt: "À partir du bilan, le taux de marge promoteur est-il suffisant pour valider l'opération ?" },
+      { label: '💶 Prix foncier maximal acceptable',    prompt: "À partir du bilan, quel est le prix foncier maximal acceptable pour cette opération ?" },
     ],
     advanced: [
-      { label: '🔬 Analyse bilan complète',             prompt: "Analyse complète du bilan promoteur : CA, coûts, marge, TRI et benchmark marché." },
-      { label: '📉 Stress test et sensibilité',         prompt: "Stress test complet : impact d'une variation de prix de vente ±5% et de coûts travaux ±10% sur la marge." },
+      { label: '🔬 Analyse bilan complète',             prompt: "Analyse complète du bilan promoteur : CA, coûts, marge et benchmark marché." },
+      { label: '📊 Postes qui pèsent sur la marge',     prompt: "Quels postes du bilan pèsent le plus sur la marge ? Où sont les principaux leviers d'optimisation ?" },
     ],
   },
 
@@ -437,7 +446,7 @@ const ROUTE_QUESTIONS: RouteQuestions[] = [
     advanced: [
       { label: '📊 Analyse complète de l\'opportunité', prompt: "Analyse complète de cette opportunité foncière : PLU, constructibilité, marché, bilan et recommandation." },
       { label: '📋 Note de comité',                     prompt: "Prépare une note de comité synthétique pour ce projet promoteur." },
-      { label: '💶 Prix foncier maximal',               prompt: "Quel prix foncier maximal pour une marge promoteur de 8% net dans les hypothèses actuelles ?" },
+      { label: '💶 Prix foncier maximal',               prompt: "Quel prix foncier maximal pour tenir une marge promoteur saine dans les hypothèses actuelles ?" },
     ],
   },
 
@@ -490,28 +499,14 @@ const ROUTE_QUESTIONS: RouteQuestions[] = [
   {
     prefix: '/rehabilitation/analyse-plan',
     quick: [
-      { label: '📐 Surface cohérente avec le permis ?',  prompt: "La surface utile calculée est-elle cohérente avec la surface indiquée au permis de construire ou à l'état des lieux ?" },
-      { label: '⚠️ Anomalies structurelles sur le plan ?', prompt: "Y a-t-il des anomalies structurelles ou des incohérences visibles sur ce plan ?" },
-      { label: '✅ Plan compatible avec l\'usage visé ?', prompt: "Ce plan permet-il l'usage envisagé sans modification majeure de la structure ou des circulations ?" },
+      { label: '📐 Surface cohérente avec le permis ?',  prompt: "À partir de l'analyse de plan disponible, la surface utile est-elle cohérente avec la surface indiquée au permis ou à l'état des lieux ?" },
+      { label: '⚠️ Anomalies relevées sur le plan ?',    prompt: "Quelles anomalies ou incohérences ont été relevées par l'analyse de plan sur ce bâtiment ?" },
+      { label: '✅ Plan compatible avec l\'usage visé ?', prompt: "Selon l'analyse de plan, ce bâtiment permet-il l'usage envisagé sans modification majeure de la structure ou des circulations ?" },
     ],
     advanced: [
-      { label: '📊 Analyse fonctionnelle complète',      prompt: "Analyse réglementaire et fonctionnelle complète du plan : surfaces, circulations, conformité, potentiel de redistribution et optimisations possibles." },
-      { label: '🎯 Optimiser la surface utile',          prompt: "Quelles modifications de plan permettraient d'optimiser la surface utile sans toucher aux murs porteurs ?" },
-      { label: '🏘️ Division en plusieurs lots possible ?', prompt: "Ce bâtiment peut-il être divisé en plusieurs lots ? Quelles contraintes techniques, réglementaires et de copropriété ?" },
-    ],
-  },
-
-  {
-    prefix: '/rehabilitation/creation-plan',
-    quick: [
-      { label: '📏 Comment calibrer l\'échelle ?',        prompt: "Comment calibrer correctement l'échelle sur ce plan pour obtenir des surfaces précises ?" },
-      { label: '📐 Quelle surface de référence utiliser ?', prompt: "Quelle surface de référence utiliser pour la calibration (permis de construire, état des lieux, acte notarié) ?" },
-      { label: '✅ Surfaces calculées cohérentes ?',      prompt: "Les surfaces calculées par l'outil sont-elles cohérentes avec les données connues du bâtiment ?" },
-    ],
-    advanced: [
-      { label: '🎯 Optimiser le découpage Carrez',       prompt: "Comment optimiser le découpage des pièces pour maximiser la surface Carrez et la valeur locative ?" },
-      { label: '🏠 Configuration optimale pour la location ?', prompt: "Quelle configuration des espaces est la plus adaptée à l'usage locatif envisagé dans ce marché ?" },
-      { label: '⚖️ Conformité surfaces minimales',        prompt: "Ce plan est-il conforme aux normes minimales de surface par pièce (loi Carrez, décence, habitabilité) ?" },
+      { label: '📊 Analyse fonctionnelle complète',      prompt: "À partir de l'analyse de plan : analyse réglementaire et fonctionnelle complète (surfaces, circulations, conformité, potentiel de redistribution et optimisations possibles)." },
+      { label: '🎯 Optimiser la surface utile',          prompt: "Selon l'analyse de plan, quelles modifications permettraient d'optimiser la surface utile sans toucher aux murs porteurs ?" },
+      { label: '🏘️ Division en plusieurs lots possible ?', prompt: "Selon l'analyse de plan, ce bâtiment peut-il être divisé en plusieurs lots ? Quelles contraintes techniques, réglementaires et de copropriété ?" },
     ],
   },
 
@@ -526,7 +521,6 @@ const ROUTE_QUESTIONS: RouteQuestions[] = [
       { label: '📋 Analyse complète par lots',           prompt: "Analyse complète du budget travaux par lots avec benchmarks marché pour ce type et cette époque de bâtiment." },
       { label: '🔢 3 niveaux + impact valorisation',     prompt: "Compare les 3 niveaux de rénovation (rafraîchissement / standard / complet) : budget estimé, délai et impact sur la valorisation finale." },
       { label: '🎯 Postes à prioriser',                  prompt: "Quels postes prioriser pour tenir le budget et maximiser la plus-value après travaux ?" },
-      { label: '💶 Budget max pour rentabilité positive', prompt: "Quel budget travaux maximal pour maintenir une rentabilité positive sur cette opération de réhabilitation ?" },
     ],
   },
 
@@ -547,13 +541,12 @@ const ROUTE_QUESTIONS: RouteQuestions[] = [
   {
     prefix: '/rehabilitation/valorisation',
     quick: [
-      { label: '💶 Prix de sortie réaliste ?',           prompt: "Le prix de sortie visé est-il réaliste par rapport au marché local et aux transactions récentes ?" },
+      { label: '💶 Prix de sortie cohérent ?',           prompt: "Le prix de sortie visé est-il cohérent avec la valorisation Mimmoza du bien ? Donne un verdict rapide." },
       { label: '📊 Marge suffisante pour valider ?',     prompt: "La marge après travaux est-elle suffisante pour valider l'opération ? Donne un verdict rapide." },
       { label: '⚖️ Prix de sortie minimal à l\'équilibre', prompt: "Quel prix de sortie minimal faut-il atteindre pour être à l'équilibre sur cette opération ?" },
     ],
     advanced: [
-      { label: '🔬 Valorisation complète',               prompt: "Calcule la valorisation complète : prix de revient total (acquisition + travaux + frais), prix de sortie minimal, marge nette et TRI." },
-      { label: '📉 Impact hausse 15% budget travaux',    prompt: "Quel impact d'une hausse de 15% du budget travaux sur le prix de sortie minimal et la marge nette ?" },
+      { label: '🔬 Valorisation complète',               prompt: "Calcule la valorisation complète : prix de revient total (acquisition + travaux + frais), prix de sortie minimal et marge nette." },
       { label: '📈 Compare aux DVF du secteur',          prompt: "Compare ce projet aux transactions DVF récentes dans ce secteur pour valider le prix de sortie envisagé." },
     ],
   },
@@ -622,7 +615,6 @@ export function getCopilotContextLabel(ctx: QuickQuestionsContext): string | nul
     'vue-ensemble':        'Vue d\'ensemble',
     'conformite':          'Conformité réglementaire',
     'analyse-plan':        'Analyse du plan',
-    'creation-plan':       'Assistant plan',
     'synthese-audit':      'Synthèse audit',
     'valorisation':        'Valorisation',
     // Promoteur paths

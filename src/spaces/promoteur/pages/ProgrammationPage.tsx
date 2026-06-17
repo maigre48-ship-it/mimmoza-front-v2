@@ -1,6 +1,16 @@
 // src/spaces/promoteur/pages/ProgrammationPage.tsx
+//
+// V3 — Branchée sur le store central « programme » (source de vérité unique).
+//   • Typologie (T1–T5) + surfaces + commerce + équipements → store.mix (écriture).
+//   • Emprise / niveaux / SDP géométrique → store.envelope.
+//       - Pré-remplis depuis le Massing 3D (badge « Massing »).
+//       - Restent éditables ici (toute édition repasse l'enveloppe en source « manual »).
+//   • Widget de RÉCONCILIATION : compare SDP enveloppe (volume dessiné) vs SDP
+//     programme (typologies saisies) → cohérent / sous-rempli / dépassement.
+//   • Plus AUCUN calcul € ici : l'argent est entièrement au Bilan.
+//     Conservés : Contrôle PLU (réglementaire, non chiffré) + Conclusion viabilité.
 
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CheckCircle, Target, Loader2 } from "lucide-react";
 import { patchModule, getSnapshot }    from "../shared/promoteurSnapshot.store";
@@ -10,42 +20,17 @@ import {
   PromoteurPageHero,
   HeroPrimaryButton,
 } from "../shared/components/PromoteurPageHero";
+import {
+  usePromoteurProgrammeStore,
+  reconcile, nbLogementsMix, shabProgrammeM2, sdpProgrammeM2,
+  type ProgrammeEnvelope, type TypologieKey, type Reconciliation,
+} from "../store/promoteurProgramme.store";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type TypeProjet = "collectif" | "maisons_groupees" | "residence_senior" | "mixte";
 type ComplianceStatus = "conforme" | "a_verifier" | "non_conforme";
 type ViabiliteStatus = "viable" | "conditions" | "non_viable";
-
-export interface ProgrammationSnapshot {
-  typeProjet:     TypeProjet;
-  niveaux:        number;
-  nbLogements:    number;
-  empriseSol:     number;
-  typologies:     { T1: number; T2: number; T3: number; T4: number; T5: number };
-  surfacesTypologies: { T1: number; T2: number; T3: number; T4: number; T5: number };
-  surfaceCommerce: number;
-  nbParkings:     number;
-  espacesVerts:   number;
-  prixVenteLog:   number;
-  prixVenteCom:   number;
-  coutConstrLog:  number;
-  coutConstrCom:  number;
-  fraisPct:       number;
-  margeCiblePct:  number;
-  sdpLogement:    number;
-  sdpCommerce:    number;
-  sdpTotale:      number;
-  caTotal:        number;
-  caLogement:     number;
-  caCommerce:     number;
-  coutTravaux:    number;
-  coutTotal:      number;
-  margeBrute:     number;
-  tauxMarge:      number;
-  pluViabilite:   ViabiliteStatus;
-  updatedAt:      string;
-}
 
 const TYPE_PROJET_OPTIONS: Array<{ label: string; value: TypeProjet }> = [
   { label: "Collectif (logements)",          value: "collectif" },
@@ -160,9 +145,9 @@ function StatusBadge({ status }: { status: ComplianceStatus }) {
   );
 }
 
-function NumberInput({ label, value, onChange, unit, min, max, step }: {
+function NumberInput({ label, value, onChange, unit, min, max, step, disabled, hint }: {
   label: string; value: number; onChange: (v: number) => void;
-  unit?: string; min?: number; max?: number; step?: number;
+  unit?: string; min?: number; max?: number; step?: number; disabled?: boolean; hint?: string;
 }) {
   return (
     <div style={{ marginBottom: 10 }}>
@@ -171,14 +156,15 @@ function NumberInput({ label, value, onChange, unit, min, max, step }: {
       </label>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <input
-          type="number" value={value} min={min ?? 0} max={max} step={step ?? 1}
+          type="number" value={value} min={min ?? 0} max={max} step={step ?? 1} disabled={disabled}
           onChange={(e) => onChange(Number(e.target.value))}
-          style={{ flex: 1, padding: "6px 10px", borderRadius: 6, border: "1px solid #D1D5DB", fontSize: 13, color: "#111827", outline: "none", background: "#FAFAFA", fontFamily: "inherit" }}
-          onFocus={(e) => (e.currentTarget.style.borderColor = "#7C3AED")}
+          style={{ flex: 1, padding: "6px 10px", borderRadius: 6, border: "1px solid #D1D5DB", fontSize: 13, color: disabled ? "#6B7280" : "#111827", outline: "none", background: disabled ? "#F3F4F6" : "#FAFAFA", fontFamily: "inherit" }}
+          onFocus={(e) => { if (!disabled) e.currentTarget.style.borderColor = "#7C3AED"; }}
           onBlur={(e)  => (e.currentTarget.style.borderColor = "#D1D5DB")}
         />
         {unit && <span style={{ fontSize: 12, color: "#9CA3AF", minWidth: 38, textAlign: "left" }}>{unit}</span>}
       </div>
+      {hint && <p style={{ margin: "3px 0 0", fontSize: 10, color: "#9CA3AF" }}>{hint}</p>}
     </div>
   );
 }
@@ -200,6 +186,42 @@ function SelectInput<T extends string>({ label, value, onChange, options }: {
       >
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
+    </div>
+  );
+}
+
+// ─── Réconciliation enveloppe ↔ programme ──────────────────────────────────────
+
+function ReconcileBanner({ recon }: { recon: Reconciliation }) {
+  const theme: Record<Reconciliation["statut"], { bg: string; border: string; text: string; icon: string }> = {
+    coherent:    { bg: "#F0FDF4", border: "#86EFAC", text: "#15803D", icon: "✅" },
+    sous_rempli: { bg: "#FFFBEB", border: "#FDE68A", text: "#B45309", icon: "🟡" },
+    depassement: { bg: "#FEF2F2", border: "#FECACA", text: "#B91C1C", icon: "⚠️" },
+    vide:        { bg: "#FFFBEB", border: "#FDE68A", text: "#B45309", icon: "📐" },
+    no_envelope: { bg: "#F9FAFB", border: "#E5E7EB", text: "#6B7280", icon: "🏗" },
+  };
+  const t = theme[recon.statut];
+  const showBar = recon.sdpGeoM2 > 0;
+  const pct = Math.min(120, Math.round(recon.tauxRemplissage * 100));
+  return (
+    <div style={{ background: t.bg, border: `1.5px solid ${t.border}`, borderRadius: 10, padding: "14px 16px", marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: showBar ? 10 : 0 }}>
+        <span style={{ fontSize: 20, flexShrink: 0 }}>{t.icon}</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{recon.message}</div>
+        </div>
+      </div>
+      {showBar && (
+        <div>
+          <div style={{ height: 8, borderRadius: 6, background: "rgba(0,0,0,0.06)", overflow: "hidden" }}>
+            <div style={{ width: `${pct}%`, height: "100%", background: t.text, opacity: 0.55, transition: "width 0.25s" }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: t.text, marginTop: 4, fontWeight: 600 }}>
+            <span>Programme {Math.round(recon.sdpProgrammeM2)} m²</span>
+            <span>Enveloppe {Math.round(recon.sdpGeoM2)} m²</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -228,6 +250,18 @@ export default function ProgrammationPage() {
   const studyId = searchParams.get("study");
   const { study, loadState } = usePromoteurStudy(studyId);
 
+  // ── Store programme (source de vérité) ──
+  const envelope     = usePromoteurProgrammeStore((s) => s.envelope);
+  const mix          = usePromoteurProgrammeStore((s) => s.mix);
+  const loadStudy    = usePromoteurProgrammeStore((s) => s.loadStudy);
+  const setEnvelope  = usePromoteurProgrammeStore((s) => s.setEnvelope);
+  const setTypologie = usePromoteurProgrammeStore((s) => s.setTypologie);
+  const setSurface   = usePromoteurProgrammeStore((s) => s.setSurface);
+  const patchMix     = usePromoteurProgrammeStore((s) => s.patchMix);
+
+  useEffect(() => { loadStudy(studyId); }, [studyId, loadStudy]);
+
+  // ── Terrain (lecture étude / snapshot) ──
   const foncierData = useMemo(() => {
     const fromStudy = (study as any)?.foncier;
     const fromSnap  = getSnapshot()?.foncier as any;
@@ -237,7 +271,6 @@ export default function ProgrammationPage() {
   const terrain = useMemo(() => {
     const f = foncierData;
     if (!f) return { surfaceM2: 0, prixVendeur: 0, codePostal: "", commune: "", typeBien: "", adresse: "", pluDisponible: false };
-
     const featureProps = f.parcels_raw?.[0]?.feature?.properties ?? {};
     const inseeFromParcel = (() => {
       const id = f.focus_id ?? f.parcel_ids?.[0] ?? "";
@@ -264,18 +297,15 @@ export default function ProgrammationPage() {
     const fromStudy = (study as any)?.plu;
     const fromSnap  = getSnapshot()?.plu as any;
     const p = fromStudy ?? fromSnap ?? null;
-
     if (!p) return {
       zone: "", description: "", hauteurEgoutM: null, hauteurFaitageM: null,
-      hauteurMaxM: 0, empriseMaxPct: 0, empriseNote: null,
+      hauteurMaxM: 0, empriseMaxPct: 0, empriseNote: null, hauteurEgoutFromNote: null,
       reculVoirie: null, reculVoirieNote: null, reculLimites: null, reculLimitesNote: null,
-      parkingParLogement: 1, espaceVertMinPct: 0, pleineTerreMinPct: null,
+      parkingParLogement: 1, espaceVertMinPct: 0, pleineTerreMinPct: null, pleineTerreNote: null,
       coefficientOccupSol: null, cosNote: null,
       extra: [] as Array<{ label: string; value: string | null; note: string | null }>,
     };
-
     const rs = p.ruleset ?? p;
-
     function numFrom(obj: any): number | null {
       if (obj == null) return null;
       if (typeof obj === "number") return obj;
@@ -290,7 +320,6 @@ export default function ProgrammationPage() {
       if (!obj || typeof obj !== "object") return null;
       return obj.note ?? obj.label ?? obj.description ?? null;
     }
-
     const ces      = rs.ces ?? {};
     const cos      = rs.cos ?? {};
     const reculs   = rs.reculs ?? rs.recul ?? {};
@@ -300,7 +329,6 @@ export default function ProgrammationPage() {
     const reculsVoirie  = reculs.voirie ?? reculs.voirie_m ?? null;
     const reculsLimites = reculs.limites ?? reculs.limites_separatives ?? reculs.limite ?? null;
     const parkingParLogement = numFrom(stat) ?? numFrom(stat.par_logement) ?? numFrom(p.parking_par_logement) ?? 1;
-
     const HANDLED = new Set(["ces","cos","reculs","recul","stationnement","parking","hauteurs","gabarit","hauteur","pleine_terre","espaces_verts","espace_vert"]);
     const LABELS: Record<string, string> = {
       hauteurs: "Hauteurs", gabarit: "Gabarit", hauteur: "Hauteur",
@@ -310,7 +338,6 @@ export default function ProgrammationPage() {
       assainissement: "Assainissement", acces: "Accès / voirie",
       servitudes: "Servitudes", mixite: "Mixité fonctionnelle",
     };
-
     function flattenEntry(key: string, val: any): Array<{ label: string; value: string | null; note: string | null }> {
       if (val == null) return [];
       const baseLabel = LABELS[key] ?? key.replace(/_/g, " ");
@@ -333,16 +360,13 @@ export default function ProgrammationPage() {
       if (n == null && nt == null) return [];
       return [{ label: baseLabel, value: n != null ? String(n) : null, note: nt }];
     }
-
     const extra = Object.entries(rs).filter(([k]) => !HANDLED.has(k)).flatMap(([k, v]) => flattenEntry(k, v)).filter(e => e.value != null || e.note != null);
-
     return {
       zone: p.zone ?? p.zone_plu ?? rs.zone ?? "",
       description: p.description ?? p.libelle_zone ?? rs.libelle ?? "",
       hauteurEgoutM: numFrom(hauteurs.egout) ?? numFrom(hauteurs.egout_m) ?? numFrom(hauteurs.egout_max) ?? numFrom(hauteurs.hauteur_egout) ?? numFrom(hauteurs.max) ?? numFrom(p.hauteur_egout_m) ?? null,
       hauteurFaitageM: numFrom(hauteurs.faitage) ?? numFrom(hauteurs.faitage_m) ?? numFrom(hauteurs.faitage_max) ?? numFrom(p.hauteur_faitage_m) ?? null,
       hauteurMaxM: numFrom(hauteurs.max) ?? numFrom(p.hauteur_max_m) ?? 0,
-      hauteurNote: noteFrom(hauteurs) ?? null,
       hauteurEgoutFromNote: (() => {
         const note = noteFrom(hauteurs);
         if (!note) return null;
@@ -365,126 +389,109 @@ export default function ProgrammationPage() {
     };
   }, [study]);
 
-  const [typeProjet,      setTypeProjet]      = useState<TypeProjet>("collectif");
-  const [niveaux,         setNiveaux]         = useState(3);
-  const [empriseSol,      setEmpriseSol]      = useState(0);
-  const [nbT1, setNbT1] = useState(0);
-  const [nbT2, setNbT2] = useState(0);
-  const [nbT3, setNbT3] = useState(0);
-  const [nbT4, setNbT4] = useState(0);
-  const [nbT5, setNbT5] = useState(0);
-  const [surfT1, setSurfT1] = useState(35);
-  const [surfT2, setSurfT2] = useState(50);
-  const [surfT3, setSurfT3] = useState(68);
-  const [surfT4, setSurfT4] = useState(85);
-  const [surfT5, setSurfT5] = useState(105);
-  const nbLogements = nbT1 + nbT2 + nbT3 + nbT4 + nbT5;
-  const [surfaceCommerce, setSurfaceCommerce] = useState(0);
-  const [nbParkings,      setNbParkings]      = useState(0);
-  const [espacesVerts,    setEspacesVerts]    = useState(0);
-  const [prixVenteLog,    setPrixVenteLog]    = useState(5_500);
-  const [prixVenteCom,    setPrixVenteCom]    = useState(4_000);
-  const [coutConstrLog,   setCoutConstrLog]   = useState(1_800);
-  const [coutConstrCom,   setCoutConstrCom]   = useState(1_400);
-  const [fraisPct,        setFraisPct]        = useState(12);
-  const [margeCiblePct,   setMargeCiblePct]   = useState(10);
-  const [savedForBilan,   setSavedForBilan]   = useState(false);
-
+  // ── Valeurs effectives (enveloppe = store, éditable) ──
+  const typeProjet = (mix.typeProjet || "collectif") as TypeProjet;
   const showCommerce = typeProjet === "mixte";
+  const emprise = envelope?.empriseSolM2 ?? 0;
+  const niveaux = envelope?.niveaux ?? mix.niveauxSouhaites;
+  const sdpGeo  = envelope?.sdpGeoM2 ?? 0;
+  const envFromMassing = envelope?.source === "massing";
 
-  const calculs = useMemo(() => {
-    const sdpLogement    = nbT1*surfT1 + nbT2*surfT2 + nbT3*surfT3 + nbT4*surfT4 + nbT5*surfT5;
-    const sdpCommerce    = showCommerce ? surfaceCommerce : 0;
-    const sdpTotale      = sdpLogement + sdpCommerce;
-    const hauteurEstimeeM = niveaux * 3.2;
-    const prixTerrainM2  = terrain.surfaceM2 > 0 ? terrain.prixVendeur / terrain.surfaceM2 : 0;
-    const chargeFonciere = sdpTotale > 0 ? terrain.prixVendeur / sdpTotale : 0;
-    const caLogement     = sdpLogement * prixVenteLog;
-    const caCommerce     = sdpCommerce * prixVenteCom;
-    const caTotal        = caLogement + caCommerce;
-    const coutTravauxLog = sdpLogement * coutConstrLog;
-    const coutTravauxCom = sdpCommerce * coutConstrCom;
-    const coutTravaux    = coutTravauxLog + coutTravauxCom;
-    const fraisAnnexes   = (coutTravaux + terrain.prixVendeur) * (fraisPct / 100);
-    const coutTotal      = terrain.prixVendeur + coutTravaux + fraisAnnexes;
-    const margeBrute     = caTotal - coutTotal;
-    const tauxMarge      = caTotal > 0 ? (margeBrute / caTotal) * 100 : 0;
-    return { sdpLogement, sdpCommerce, sdpTotale, hauteurEstimeeM, prixTerrainM2, chargeFonciere, caLogement, caCommerce, caTotal, coutTravauxLog, coutTravauxCom, coutTravaux, fraisAnnexes, coutTotal, margeBrute, tauxMarge };
-  }, [nbT1,nbT2,nbT3,nbT4,nbT5,surfT1,surfT2,surfT3,surfT4,surfT5,showCommerce,surfaceCommerce,niveaux,terrain,prixVenteLog,prixVenteCom,coutConstrLog,coutConstrCom,fraisPct]);
+  // Écrit l'enveloppe (crée une enveloppe « manual » si aucune n'existe encore).
+  const ensureEnv = (patch: Partial<ProgrammeEnvelope>) => {
+    const base: ProgrammeEnvelope = envelope ?? {
+      empriseSolM2: 0, niveaux: mix.niveauxSouhaites, sdpGeoM2: 0,
+      facadeM2: 0, facadeNetteM2: 0, toitureTerrasseM2: 0, toiturePenteM2: 0,
+      balconsM2: 0, nbMenuiseries: 0, nbBatiments: 0, source: "manual", updatedAt: "",
+    };
+    setEnvelope({ ...base, ...patch, source: "manual", updatedAt: new Date().toISOString() });
+  };
 
+  // ── Dérivés programme ──
+  const nbLogements   = nbLogementsMix(mix);
+  const sdpLogement   = shabProgrammeM2(mix);
+  const hauteurEstimeeM = niveaux * 3.2;
+  const recon = useMemo(() => reconcile(envelope, mix), [envelope, mix]);
+
+  // ── Contrôle PLU (réglementaire, NON chiffré) ──
   type PluCheck = { critere: string; valeurProjet: string; valeurPLU: string; status: ComplianceStatus };
 
   const pluChecks = useMemo((): PluCheck[] => {
     if (!terrain.pluDisponible) return [];
-    const emprisePctProjet = terrain.surfaceM2 > 0 ? (empriseSol / terrain.surfaceM2) * 100 : 0;
+    const emprisePctProjet = terrain.surfaceM2 > 0 ? (emprise / terrain.surfaceM2) * 100 : 0;
     const parkingsRequis  = nbLogements * plu.parkingParLogement;
     const espaceVertMin   = terrain.surfaceM2 * ((plu.pleineTerreMinPct ?? plu.espaceVertMinPct) / 100);
-    function checkEmprise(): ComplianceStatus {
+    const checkEmprise = (): ComplianceStatus => {
       if (plu.empriseMaxPct === 0) return "a_verifier";
       if (emprisePctProjet <= plu.empriseMaxPct) return "conforme";
       if (emprisePctProjet <= plu.empriseMaxPct * 1.05) return "a_verifier";
       return "non_conforme";
-    }
-    function checkHauteur(): ComplianceStatus {
+    };
+    const checkHauteur = (): ComplianceStatus => {
       const hMax = plu.hauteurEgoutM ?? plu.hauteurMaxM;
       if (!hMax) return "a_verifier";
-      if (calculs.hauteurEstimeeM <= hMax) return "conforme";
-      if (calculs.hauteurEstimeeM <= hMax * 1.05) return "a_verifier";
+      if (hauteurEstimeeM <= hMax) return "conforme";
+      if (hauteurEstimeeM <= hMax * 1.05) return "a_verifier";
       return "non_conforme";
-    }
-    function checkParkings(): ComplianceStatus {
-      if (nbParkings >= parkingsRequis) return "conforme";
-      if (nbParkings >= Math.ceil(parkingsRequis * 0.9)) return "a_verifier";
+    };
+    const checkParkings = (): ComplianceStatus => {
+      if (mix.nbParkings >= parkingsRequis) return "conforme";
+      if (mix.nbParkings >= Math.ceil(parkingsRequis * 0.9)) return "a_verifier";
       return "non_conforme";
-    }
-    function checkVerts(): ComplianceStatus {
-      if (espacesVerts >= espaceVertMin) return "conforme";
-      if (espacesVerts >= espaceVertMin * 0.9) return "a_verifier";
+    };
+    const checkVerts = (): ComplianceStatus => {
+      if (mix.espacesVertsM2 >= espaceVertMin) return "conforme";
+      if (mix.espacesVertsM2 >= espaceVertMin * 0.9) return "a_verifier";
       return "non_conforme";
-    }
+    };
     return [
-      { critere: "Emprise au sol",              valeurProjet: fmtPct(emprisePctProjet) + ` (${fmt(empriseSol)} m²)`, valeurPLU: plu.empriseMaxPct > 0 ? `max. ${fmtPct(plu.empriseMaxPct)}` : "Pas de règle CES", status: checkEmprise() },
-      { critere: "Hauteur du projet",           valeurProjet: `${calculs.hauteurEstimeeM.toFixed(1)} m (${niveaux} niv.)`, valeurPLU: plu.hauteurEgoutM != null ? `max. ${plu.hauteurEgoutM} m (égout)` : plu.hauteurMaxM > 0 ? `max. ${plu.hauteurMaxM} m` : "—", status: checkHauteur() },
-      { critere: "Stationnement",               valeurProjet: `${nbParkings} place${nbParkings > 1 ? "s" : ""}`, valeurPLU: `min. ${parkingsRequis} (${plu.parkingParLogement} pl/logt)`, status: checkParkings() },
-      { critere: "Pleine terre / espaces verts", valeurProjet: `${fmt(espacesVerts)} m²`, valeurPLU: espaceVertMin > 0 ? `min. ${fmt(Math.round(espaceVertMin))} m² (${plu.pleineTerreMinPct ?? plu.espaceVertMinPct} %)` : "Pas de règle", status: checkVerts() },
+      { critere: "Emprise au sol",               valeurProjet: fmtPct(emprisePctProjet) + ` (${fmt(emprise)} m²)`, valeurPLU: plu.empriseMaxPct > 0 ? `max. ${fmtPct(plu.empriseMaxPct)}` : "Pas de règle CES", status: checkEmprise() },
+      { critere: "Hauteur du projet",            valeurProjet: `${hauteurEstimeeM.toFixed(1)} m (${niveaux} niv.)`, valeurPLU: plu.hauteurEgoutM != null ? `max. ${plu.hauteurEgoutM} m (égout)` : plu.hauteurMaxM > 0 ? `max. ${plu.hauteurMaxM} m` : "—", status: checkHauteur() },
+      { critere: "Stationnement",                valeurProjet: `${mix.nbParkings} place${mix.nbParkings > 1 ? "s" : ""}`, valeurPLU: `min. ${parkingsRequis} (${plu.parkingParLogement} pl/logt)`, status: checkParkings() },
+      { critere: "Pleine terre / espaces verts", valeurProjet: `${fmt(mix.espacesVertsM2)} m²`, valeurPLU: espaceVertMin > 0 ? `min. ${fmt(Math.round(espaceVertMin))} m² (${plu.pleineTerreMinPct ?? plu.espaceVertMinPct} %)` : "Pas de règle", status: checkVerts() },
     ];
-  }, [terrain, empriseSol, nbLogements, plu, calculs.hauteurEstimeeM, niveaux, nbParkings, espacesVerts]);
+  }, [terrain, emprise, nbLogements, plu, hauteurEstimeeM, niveaux, mix.nbParkings, mix.espacesVertsM2]);
 
+  // ── Conclusion viabilité (PLU + cohérence enveloppe, sans argent) ──
   const { viabilite, reasons } = useMemo((): { viabilite: ViabiliteStatus; reasons: string[] } => {
     const msgs: string[] = [];
-    let blocages = 0; let warnings = 0;
+    let warnings = 0;
+    // En phase Programmation, RIEN n'est bloquant : tout est « à confirmer ».
+    // Les non-conformités PLU deviennent des points de vigilance, pas des blocages.
     for (const check of pluChecks) {
-      if (check.status === "non_conforme") { blocages++; msgs.push(`PLU — ${check.critere} non conforme : ${check.valeurProjet} (règle : ${check.valeurPLU})`); }
+      if (check.status === "non_conforme") { warnings++; msgs.push(`PLU — ${check.critere} à confirmer : ${check.valeurProjet} (règle : ${check.valeurPLU})`); }
       else if (check.status === "a_verifier") { warnings++; msgs.push(`PLU — ${check.critere} à vérifier : ${check.valeurProjet} (règle : ${check.valeurPLU})`); }
     }
     if (!terrain.pluDisponible) { warnings++; msgs.push("PLU non chargé — le contrôle réglementaire reste à confirmer"); }
-    if (calculs.margeBrute <= 0) { blocages++; msgs.push(`Marge brute négative : ${fmtEur(calculs.margeBrute)} — projet déficitaire`); }
-    else if (calculs.tauxMarge < margeCiblePct) { warnings++; msgs.push(`Marge ${fmtPct(calculs.tauxMarge)} inférieure à la cible de ${fmtPct(margeCiblePct)}`); }
-    else { msgs.push(`Marge ${fmtPct(calculs.tauxMarge)} — cible ${fmtPct(margeCiblePct)} atteinte`); }
-    const detailTotal = nbT1+nbT2+nbT3+nbT4+nbT5;
-    if (detailTotal === 0) { warnings++; msgs.push("Aucun logement saisi — renseignez au moins un type de logement"); }
-    const sdpEmprise = empriseSol * niveaux;
-    if (calculs.sdpTotale > sdpEmprise * 1.15) { warnings++; msgs.push(`SDP totale (${fmt(Math.round(calculs.sdpTotale))} m²) dépasse l'emprise × niveaux (${fmt(Math.round(sdpEmprise))} m²)`); }
-    const status: ViabiliteStatus = blocages > 0 ? "non_viable" : warnings > 0 ? "conditions" : "viable";
+    if (nbLogements === 0) { warnings++; msgs.push("Aucun logement saisi — renseignez au moins un type de logement"); }
+    // Cohérence enveloppe / programme
+    if (recon.statut === "depassement") { warnings++; msgs.push(recon.message); }
+    else if (recon.statut === "sous_rempli") { msgs.push(recon.message); }
+    else if (recon.statut === "coherent") { msgs.push(recon.message); }
+    else if (recon.statut === "no_envelope") { warnings++; msgs.push("Enveloppe non définie — dessinez le volume dans le Massing 3D ou saisissez l'emprise/niveaux."); }
+    // Jamais « non viable » depuis la Programmation : viable ou sous conditions.
+    const status: ViabiliteStatus = warnings > 0 ? "conditions" : "viable";
     return { viabilite: status, reasons: msgs };
-  }, [pluChecks, terrain.pluDisponible, calculs, margeCiblePct, nbT1,nbT2,nbT3,nbT4,nbT5, empriseSol, niveaux]);
+  }, [pluChecks, terrain.pluDisponible, nbLogements, recon]);
 
+  // ── Snapshot synthèse (sans argent — l'argent est au Bilan) ──
+  const [validated, setValidated] = useState(false);
   const handleSaveForBilan = () => {
-    const snapshot: ProgrammationSnapshot = {
-      typeProjet, niveaux, nbLogements, empriseSol,
-      typologies: { T1: nbT1, T2: nbT2, T3: nbT3, T4: nbT4, T5: nbT5 },
-      surfacesTypologies: { T1: surfT1, T2: surfT2, T3: surfT3, T4: surfT4, T5: surfT5 },
-      surfaceCommerce: showCommerce ? surfaceCommerce : 0,
-      nbParkings, espacesVerts, prixVenteLog, prixVenteCom, coutConstrLog, coutConstrCom, fraisPct, margeCiblePct,
-      sdpLogement: calculs.sdpLogement, sdpCommerce: calculs.sdpCommerce, sdpTotale: calculs.sdpTotale,
-      caTotal: calculs.caTotal, caLogement: calculs.caLogement, caCommerce: calculs.caCommerce,
-      coutTravaux: calculs.coutTravaux, coutTotal: calculs.coutTotal,
-      margeBrute: calculs.margeBrute, tauxMarge: calculs.tauxMarge,
-      pluViabilite: viabilite, updatedAt: new Date().toISOString(),
-    };
-    patchModule("programmation", snapshot);
-    setSavedForBilan(true);
-    setTimeout(() => setSavedForBilan(false), 3000);
+    setValidated(true);
+    setTimeout(() => setValidated(false), 2600);
+    patchModule("programmation", {
+      typeProjet, niveaux, nbLogements, empriseSol: emprise,
+      typologies: { ...mix.typologies },
+      surfacesTypologies: { ...mix.surfaces },
+      surfaceCommerce: showCommerce ? mix.commerceM2 : 0,
+      nbParkings: mix.nbParkings, espacesVerts: mix.espacesVertsM2,
+      sdpLogement, sdpGeoM2: sdpGeo,
+      tauxRemplissage: recon.tauxRemplissage,
+      pluViabilite: viabilite,
+      ok: true, validated: true,
+      summary: `${nbLogements} logement(s) · ${Math.round(sdpLogement)} m² SHAB · ${viabilite}`,
+      updatedAt: new Date().toISOString(),
+    } as any);
   };
 
   if (loadState === "loading") {
@@ -500,28 +507,30 @@ export default function ProgrammationPage() {
   return (
     <div style={{ fontFamily: "inherit" }}>
 
-      {/* ── Hero — pleine largeur ── */}
+      {/* ── Hero ── */}
       <div style={{ marginBottom: 24 }}>
         <PromoteurPageHero
           badge="Promoteur · Programmation"
           title="Programmation du projet"
           metaLines={[
-            { text: "Définissez votre programme et vérifiez la viabilité avant de passer en faisabilité." },
-            ...(!terrain.pluDisponible ? [{ text: "⚠️ PLU non encore chargé — simulation provisoire basée sur valeurs par défaut." }] : []),
+            { text: "Répartissez vos logements et vérifiez la cohérence avec l'enveloppe et le PLU." },
+            ...(!terrain.pluDisponible ? [{ text: "⚠️ PLU non encore chargé — contrôle réglementaire provisoire." }] : []),
+            ...(envFromMassing ? [{ text: "🏗 Enveloppe synchronisée depuis le Massing 3D." }] : []),
           ]}
-          statCards={calculs.caTotal > 0 ? [
-            { label: "Marge brute", value: `${calculs.tauxMarge.toFixed(1)} %`, tone: "indigo" as const },
-            { label: "CA total",    value: `${Math.round(calculs.caTotal / 1000)} k€`, tone: "emerald" as const },
-          ] : undefined}
+          statCards={[
+            { label: "Logements", value: `${nbLogements}`, tone: "indigo" as const },
+            ...(recon.sdpGeoM2 > 0
+              ? [{ label: "Remplissage", value: `${Math.round(recon.tauxRemplissage * 100)} %`, tone: "emerald" as const }]
+              : [{ label: "SHAB", value: `${Math.round(sdpLogement)} m²`, tone: "emerald" as const }]),
+          ]}
           actions={
             <HeroPrimaryButton onClick={handleSaveForBilan}>
-              {savedForBilan ? "✓ Envoyé au bilan" : "Valider & envoyer au bilan"}
+              {validated ? "✓ Programme validé" : "Valider le programme"}
             </HeroPrimaryButton>
           }
         />
       </div>
 
-      {/* ── Contenu contraint ── */}
       <div style={{ padding: "0 0 32px" }}>
 
         {/* ── Ligne 1 : Terrain + Programme ── */}
@@ -554,16 +563,31 @@ export default function ProgrammationPage() {
               </>
             ) : (
               <div style={{ marginTop: 14, padding: "12px 14px", borderRadius: 8, background: "#F9FAFB", border: "1px dashed #D1D5DB", fontSize: 13, color: "#9CA3AF", textAlign: "center" }}>
-                📋 PLU non encore chargé — simulation provisoire.
+                📋 PLU non encore chargé — contrôle provisoire.
               </div>
             )}
           </SectionCard>
 
           <SectionCard title="Programme immobilier">
-            <SelectInput<TypeProjet> label="Type de projet" value={typeProjet} onChange={setTypeProjet} options={TYPE_PROJET_OPTIONS} />
-            <SelectInput<string> label="Nombre de niveaux" value={String(niveaux)} onChange={(v) => setNiveaux(Number(v))} options={NIVEAUX_OPTIONS} />
+
+            {/* Réconciliation enveloppe ↔ programme */}
+            <ReconcileBanner recon={recon} />
+
+            <SelectInput<TypeProjet> label="Type de projet" value={typeProjet} onChange={(v) => patchMix({ typeProjet: v })} options={TYPE_PROJET_OPTIONS} />
+            <SelectInput<string> label="Nombre de niveaux" value={String(niveaux)} onChange={(v) => ensureEnv({ niveaux: Number(v) })} options={NIVEAUX_OPTIONS} />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
-              <NumberInput label="Emprise au sol projetée" value={empriseSol} onChange={setEmpriseSol} unit="m²" min={0} />
+              <NumberInput label="Emprise au sol projetée" value={emprise} onChange={(v) => ensureEnv({ empriseSolM2: Math.max(0, v || 0) })} unit="m²" min={0}
+                hint={envFromMassing ? "🏗 depuis Massing — modifiable" : "saisie manuelle"} />
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 3 }}>SDP géométrique</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ flex: 1, padding: "6px 10px", borderRadius: 6, border: "1px solid #E5E7EB", fontSize: 13, color: sdpGeo > 0 ? "#111827" : "#9CA3AF", background: "#F3F4F6" }}>
+                    {sdpGeo > 0 ? `${fmt(Math.round(sdpGeo))}` : "—"}
+                  </div>
+                  <span style={{ fontSize: 12, color: "#9CA3AF", minWidth: 38 }}>m²</span>
+                </div>
+                <p style={{ margin: "3px 0 0", fontSize: 10, color: "#9CA3AF" }}>{sdpGeo > 0 ? "🏗 mesuré sur le volume 3D" : "dessine le volume en Massing 3D"}</p>
+              </div>
             </div>
 
             <SubHeading label="Répartition typologies" />
@@ -573,24 +597,20 @@ export default function ProgrammationPage() {
               <div style={{ display: "grid", gridTemplateColumns: "56px 1fr 1fr 72px", background: "#F5F3FF", padding: "7px 12px", fontSize: 11, fontWeight: 700, color: "#7C3AED", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
                 <span>Type</span><span>Nb logements</span><span>Surface (m²)</span><span style={{ textAlign: "right" as const }}>SDP</span>
               </div>
-              {([
-                { key: "T1" as const, nb: nbT1, setNb: setNbT1, surf: surfT1, setSurf: setSurfT1 },
-                { key: "T2" as const, nb: nbT2, setNb: setNbT2, surf: surfT2, setSurf: setSurfT2 },
-                { key: "T3" as const, nb: nbT3, setNb: setNbT3, surf: surfT3, setSurf: setSurfT3 },
-                { key: "T4" as const, nb: nbT4, setNb: setNbT4, surf: surfT4, setSurf: setSurfT4 },
-                { key: "T5" as const, nb: nbT5, setNb: setNbT5, surf: surfT5, setSurf: setSurfT5 },
-              ] as const).map(({ key, nb, setNb, surf, setSurf }, i) => {
+              {(["T1", "T2", "T3", "T4", "T5"] as TypologieKey[]).map((key, i) => {
+                const nb = mix.typologies[key] || 0;
+                const surf = mix.surfaces[key] || 0;
                 const sdp = nb * surf; const isActive = nb > 0;
                 return (
                   <div key={key} style={{ display: "grid", gridTemplateColumns: "56px 1fr 1fr 72px", alignItems: "center", padding: "6px 12px", borderTop: i > 0 ? "1px solid #F3F4F6" : undefined, background: isActive ? "#FDFCFF" : "white" }}>
                     <span style={{ fontSize: 13, fontWeight: 700, color: isActive ? "#7C3AED" : "#9CA3AF" }}>{key}</span>
                     <div style={{ paddingRight: 10 }}>
-                      <input type="number" value={nb} min={0} onChange={e => setNb(Number(e.target.value))} placeholder="0"
+                      <input type="number" value={nb} min={0} onChange={e => setTypologie(key, Number(e.target.value))} placeholder="0"
                         style={{ width: "100%", padding: "5px 8px", borderRadius: 6, border: `1px solid ${isActive ? "#C4B5FD" : "#E5E7EB"}`, fontSize: 13, color: "#111827", outline: "none", background: isActive ? "#F5F3FF" : "#FAFAFA", fontFamily: "inherit", boxSizing: "border-box" as const }}
                         onFocus={e => (e.currentTarget.style.borderColor = "#7C3AED")} onBlur={e => (e.currentTarget.style.borderColor = isActive ? "#C4B5FD" : "#E5E7EB")} />
                     </div>
                     <div style={{ paddingRight: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                      <input type="number" value={surf} min={10} step={1} onChange={e => setSurf(Number(e.target.value))}
+                      <input type="number" value={surf} min={10} step={1} onChange={e => setSurface(key, Number(e.target.value))}
                         style={{ flex: 1, padding: "5px 8px", borderRadius: 6, border: `1px solid ${isActive ? "#C4B5FD" : "#E5E7EB"}`, fontSize: 13, color: "#111827", outline: "none", background: isActive ? "#F5F3FF" : "#FAFAFA", fontFamily: "inherit", boxSizing: "border-box" as const }}
                         onFocus={e => (e.currentTarget.style.borderColor = "#7C3AED")} onBlur={e => (e.currentTarget.style.borderColor = isActive ? "#C4B5FD" : "#E5E7EB")} />
                       <span style={{ fontSize: 11, color: "#9CA3AF", flexShrink: 0 }}>m²</span>
@@ -602,58 +622,34 @@ export default function ProgrammationPage() {
               <div style={{ display: "grid", gridTemplateColumns: "56px 1fr 1fr 72px", alignItems: "center", padding: "8px 12px", background: "#EDE9FE", borderTop: "2px solid #DDD6FE" }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: "#6D28D9" }}>Total</span>
                 <span style={{ fontSize: 13, fontWeight: 800, color: "#111827" }}>{nbLogements} lgt.</span>
-                <span style={{ fontSize: 11, color: "#7C3AED" }}>{nbLogements > 0 ? `moy. ${(calculs.sdpLogement / nbLogements).toFixed(0)} m²` : "—"}</span>
-                <span style={{ fontSize: 13, fontWeight: 800, color: "#5B21B6", textAlign: "right" as const }}>{Math.round(calculs.sdpLogement)} m²</span>
+                <span style={{ fontSize: 11, color: "#7C3AED" }}>{nbLogements > 0 ? `moy. ${(sdpLogement / nbLogements).toFixed(0)} m²` : "—"}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: "#5B21B6", textAlign: "right" as const }}>{Math.round(sdpLogement)} m²</span>
               </div>
             </div>
 
-            {showCommerce && (<><SubHeading label="Commerce" /><NumberInput label="Surface commerce" value={surfaceCommerce} onChange={setSurfaceCommerce} unit="m²" min={0} /></>)}
+            {showCommerce && (<><SubHeading label="Commerce" /><NumberInput label="Surface commerce" value={mix.commerceM2} onChange={(v) => patchMix({ commerceM2: Math.max(0, v || 0) })} unit="m²" min={0} /></>)}
 
             <SubHeading label="Équipements" />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
-              <NumberInput label="Parkings prévus" value={nbParkings}   onChange={setNbParkings}   min={0} />
-              <NumberInput label="Espaces verts"   value={espacesVerts} onChange={setEspacesVerts} unit="m²" min={0} />
+              <NumberInput label="Parkings prévus" value={mix.nbParkings}   onChange={(v) => patchMix({ nbParkings: Math.max(0, Math.floor(v || 0)) })} min={0} />
+              <NumberInput label="Espaces verts"   value={mix.espacesVertsM2} onChange={(v) => patchMix({ espacesVertsM2: Math.max(0, v || 0) })} unit="m²" min={0} />
             </div>
           </SectionCard>
         </div>
 
-        {/* ── Ligne 2 : Hypothèses + KPIs ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 20, marginBottom: 20 }}>
-          <SectionCard title="Hypothèses économiques">
-            <NumberInput label="Prix vente logement"     value={prixVenteLog}  onChange={setPrixVenteLog}  unit="€/m²" min={1_000} step={50} />
-            {showCommerce && <NumberInput label="Prix vente commerce"   value={prixVenteCom}  onChange={setPrixVenteCom}  unit="€/m²" min={500}   step={50} />}
-            <NumberInput label="Coût constr. logement"   value={coutConstrLog} onChange={setCoutConstrLog} unit="€/m²" min={500}   step={50} />
-            {showCommerce && <NumberInput label="Coût constr. commerce" value={coutConstrCom} onChange={setCoutConstrCom} unit="€/m²" min={400}   step={50} />}
-            <NumberInput label="Frais annexes (honoraires, notaire…)" value={fraisPct}      onChange={setFraisPct}      unit="%" min={1}  max={30} step={0.5} />
-            <NumberInput label="Marge cible"             value={margeCiblePct} onChange={setMargeCiblePct} unit="%" min={0}  max={40} step={0.5} />
-          </SectionCard>
-
-          <SectionCard title="Résultats calculés">
-            <SubHeading label="Surfaces & foncier" />
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
-              <KpiCard label="SDP logements"  value={`${fmt(Math.round(calculs.sdpLogement))} m²`} sub={nbLogements > 0 ? `moy. ${(calculs.sdpLogement / nbLogements).toFixed(0)} m²/lgt` : undefined} />
-              {showCommerce && <KpiCard label="SDP commerce" value={`${fmt(Math.round(calculs.sdpCommerce))} m²`} />}
-              <KpiCard label="SDP totale"     value={`${fmt(Math.round(calculs.sdpTotale))} m²`} accent />
-              <KpiCard label="Hauteur estimée" value={`${calculs.hauteurEstimeeM.toFixed(1)} m`} sub={`${niveaux} niveaux`} />
-              <KpiCard label="Prix terrain / m²" value={terrain.surfaceM2 > 0 && terrain.prixVendeur > 0 ? `${fmt(Math.round(calculs.prixTerrainM2))} €/m²` : "—"} />
-              <KpiCard label="Charge foncière / m² SDP" value={calculs.sdpTotale > 0 && terrain.prixVendeur > 0 ? `${fmt(Math.round(calculs.chargeFonciere))} €/m²` : "—"} />
-            </div>
-            <SubHeading label="Chiffre d'affaires" />
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
-              <KpiCard label="CA logements" value={fmtEur(calculs.caLogement)} />
-              {showCommerce && <KpiCard label="CA commerce" value={fmtEur(calculs.caCommerce)} />}
-              <KpiCard label="CA total" value={fmtEur(calculs.caTotal)} accent />
-            </div>
-            <SubHeading label="Coûts & marge" />
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
-              <KpiCard label="Coût travaux"      value={fmtEur(calculs.coutTravaux)} />
-              <KpiCard label="Frais annexes"     value={fmtEur(calculs.fraisAnnexes)} sub={`${fraisPct}%`} />
-              <KpiCard label="Coût total projet" value={fmtEur(calculs.coutTotal)} />
-              <KpiCard label="Marge brute"       value={fmtEur(calculs.margeBrute)} accent={calculs.margeBrute > 0} />
-              <KpiCard label="Taux de marge"     value={fmtPct(calculs.tauxMarge)} sub={`Cible : ${fmtPct(margeCiblePct)}`} accent={calculs.tauxMarge >= margeCiblePct && calculs.tauxMarge > 0} />
-            </div>
-          </SectionCard>
-        </div>
+        {/* ── Ligne 2 : Programme & enveloppe (surfaces, sans argent) ── */}
+        <SectionCard title="Programme & enveloppe" style={{ marginBottom: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+            <KpiCard label="Logements"         value={`${nbLogements}`} sub={nbLogements > 0 ? `moy. ${(sdpLogement / nbLogements).toFixed(0)} m²/lgt` : undefined} accent />
+            <KpiCard label="SHAB logements"    value={`${fmt(Math.round(sdpLogement))} m²`} />
+            {showCommerce && <KpiCard label="Surface commerce" value={`${fmt(Math.round(mix.commerceM2))} m²`} />}
+            <KpiCard label="SDP programme"     value={`${fmt(Math.round(sdpProgrammeM2(mix)))} m²`} sub="SHAB + commerce" />
+            <KpiCard label="SDP géométrique"   value={sdpGeo > 0 ? `${fmt(Math.round(sdpGeo))} m²` : "—"} sub={envFromMassing ? "🏗 Massing" : "dessine le volume"} />
+            <KpiCard label="Remplissage"       value={recon.sdpGeoM2 > 0 ? `${Math.round(recon.tauxRemplissage * 100)} %` : "—"} accent={recon.statut === "coherent"} />
+            <KpiCard label="Hauteur estimée"   value={`${hauteurEstimeeM.toFixed(1)} m`} sub={`${niveaux} niveaux`} />
+            <KpiCard label="Emprise au sol"    value={emprise > 0 ? `${fmt(Math.round(emprise))} m²` : "—"} sub={terrain.surfaceM2 > 0 && emprise > 0 ? `${fmtPct((emprise / terrain.surfaceM2) * 100)} du terrain` : undefined} />
+          </div>
+        </SectionCard>
 
         {/* ── Contrôle PLU ── */}
         <SectionCard title="Contrôle PLU" style={{ marginBottom: 20 }}>
@@ -689,28 +685,31 @@ export default function ProgrammationPage() {
         <SectionCard title="Conclusion & viabilité" style={{ marginBottom: 20 }}>
           <ConclusionCard status={viabilite} reasons={reasons} />
           <p style={{ margin: "14px 0 0", fontSize: 12, color: "#9CA3AF" }}>
-            * Simulation provisoire — les résultats définitifs seront disponibles après bilan promoteur et validation PLU complète.
+            * Viabilité réglementaire et cohérence d'enveloppe. Le bilan financier (CA, coûts, marge) est calculé dans l'onglet <strong>Bilan</strong>.
           </p>
         </SectionCard>
 
-        {/* ── Footer envoi ── */}
+        {/* ── Footer ── */}
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
             onClick={handleSaveForBilan}
             style={{
               display: "flex", alignItems: "center", gap: 8,
               padding: "12px 24px", borderRadius: 10, border: "none",
-              fontSize: 14, fontWeight: 700, cursor: "pointer",
-              background: savedForBilan
+              fontSize: 14, fontWeight: 700,
+              cursor: validated ? "default" : "pointer",
+              background: validated
                 ? "linear-gradient(135deg, #10b981 0%, #059669 100%)"
                 : "linear-gradient(135deg, #7c6fcd 0%, #5247b8 100%)",
               color: "white",
+              transform: validated ? "scale(1.03)" : "scale(1)",
+              boxShadow: validated ? "0 6px 18px rgba(16,185,129,0.4)" : "0 2px 8px rgba(82,71,184,0.25)",
+              transition: "all 0.25s cubic-bezier(0.34,1.56,0.64,1)",
             }}
           >
-            {savedForBilan
-              ? <><CheckCircle size={16} />Programme envoyé au bilan</>
-              : <><Target size={16} />Valider & envoyer au bilan</>
-            }
+            {validated
+              ? <><CheckCircle size={16} />Programme validé ✓</>
+              : <><Target size={16} />Valider le programme</>}
           </button>
         </div>
 

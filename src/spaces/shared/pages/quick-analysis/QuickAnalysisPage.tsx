@@ -1,7 +1,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Mimmoza — Page "Analyse rapide" v6
+// Mimmoza — Page "Analyse rapide" v8
 // Branché sur valuation-engine v1.1 (Edge Function).
-// Nouveautés v6 :
+// Nouveautés v8 :
+//  - Suppression des 3 profils (Investisseur/Réhabilitateur/Promoteur) : l'analyse
+//    rapide est désormais générique. Sélecteur, champs spécifiques (travaux/revente/
+//    terrain) et blocs Réhabilitation/Promoteur retirés. Loyer attendu conservé en
+//    option (alimente le rendement). Le moteur tourne en profil unique générique.
+//  - Explainability Engine intégré (Phases 4+5) : bloc "Pourquoi ce score ?",
+//    "Facteurs de valorisation" et "Décision Mimmoza" sous les résultats.
+//  - Scores existants EXPLIQUÉS (providedScore), jamais recalculés. Déterministe, aucune IA.
+// Héritage v6 :
 //  - Jamais 0 € : affichage du repli marché (valuationBasis) + fiabilité honnête.
 //  - Bloc Emplacement (Transports / Commerces / Écoles / Marché).
 //  - Bloc Réhabilitation (valeur après travaux, marges, TRI).
@@ -17,9 +25,17 @@ import {
   type EngineInput,
   type ComparableSale,
   type MarketPosition,
-  type AnalysisType,
   type PropertyType,
 } from "./useValuationEngine";
+// Page située dans src/spaces/shared/pages/quick-analysis/ → on remonte 4 niveaux.
+// (remplace par l'alias "@/services/explainability" si tu en configures un)
+import {
+  buildValuationExplanation,
+  buildOpportunityExplanation,
+  buildMimmozaDecision,
+  selectPositive,
+  selectNegative,
+} from "../../../../services/explainability";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers d'affichage
@@ -181,6 +197,34 @@ const ScoreCell: React.FC<{ label: string; value: number | null | undefined }> =
   );
 };
 
+// ── Explainability Engine — affichage (Phases 4+5) ──────────────────────────
+const FactorCol: React.FC<{ title: string; items: { id: string; label: string; description?: string }[]; tone: "pos" | "neg" }> = ({ title, items, tone }) => {
+  if (!items.length) return null;
+  const dot = tone === "pos" ? "#22c55e" : "#ef4444";
+  return (
+    <div>
+      <p style={{ margin: "0 0 6px", fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.07em" }}>{title}</p>
+      {items.map((f) => (
+        <div key={f.id} style={{ display: "flex", gap: 7, alignItems: "flex-start", marginBottom: 5 }}>
+          <span style={{ marginTop: 6, width: 6, height: 6, borderRadius: "50%", background: dot, flexShrink: 0 }} />
+          <span style={{ fontSize: 12, color: "#374151", lineHeight: 1.45 }}>
+            {f.label}{f.description ? <span style={{ color: "#9ca3af" }}> — {f.description}</span> : null}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+function decisionStyle(v: string): React.CSSProperties {
+  switch (v) {
+    case "ACHAT_DECONSEILLE":       return { background: "#fee2e2", color: "#991b1b", border: "1px solid #fca5a5" };
+    case "NEGOCIATION_RECOMMANDEE": return { background: "#fef9c3", color: "#854d0e", border: "1px solid #fde68a" };
+    case "PRIX_COHERENT":           return { background: "#dcfce7", color: "#166534", border: "1px solid #86efac" };
+    default:                        return { background: "#f3f4f6", color: "#374151", border: "1px solid #e5e7eb" };
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tableau comparables
 // ─────────────────────────────────────────────────────────────────────────────
@@ -244,19 +288,14 @@ const ComparableTable: React.FC<{ comps: ComparableSale[]; title: string; hasDis
 interface FormState {
   address: string; city: string; postalCode: string;
   surface: string; askingPrice: string;
-  propertyType: PropertyType; analysisType: AnalysisType;
-  expectedRent: string; worksAmount: string; resaleTarget: string; landSurface: string;
+  propertyType: PropertyType;
+  expectedRent: string;
 }
 const defaultForm: FormState = {
   address: "", city: "", postalCode: "", surface: "", askingPrice: "",
-  propertyType: "appartement", analysisType: "investisseur",
-  expectedRent: "", worksAmount: "", resaleTarget: "", landSurface: "",
+  propertyType: "appartement",
+  expectedRent: "",
 };
-const ANALYSIS_TYPES: { id: AnalysisType; label: string; icon: string; color: string; bg: string }[] = [
-  { id: "investisseur",   label: "Investisseur",   icon: "📈", color: "#6366f1", bg: "#eef2ff" },
-  { id: "rehabilitateur", label: "Réhabilitateur", icon: "🔨", color: "#f59e0b", bg: "#fffbeb" },
-  { id: "promoteur",      label: "Promoteur",      icon: "🏗️", color: "#10b981", bg: "#ecfdf5" },
-];
 const PROPERTY_TYPES: { id: PropertyType; label: string }[] = [
   { id: "appartement", label: "Appartement" }, { id: "maison", label: "Maison" },
   { id: "immeuble", label: "Immeuble" }, { id: "terrain", label: "Terrain" },
@@ -278,7 +317,6 @@ const QuickAnalysisPage: React.FC = () => {
     setForm((p) => ({ ...p, [k]: v }));
   }, []);
 
-  const vCfg = ANALYSIS_TYPES.find((a) => a.id === form.analysisType)!;
   const { result, loading, error, location, steps, context } = state;
 
   const handleRun = useCallback(async () => {
@@ -289,12 +327,12 @@ const QuickAnalysisPage: React.FC = () => {
       postalCode:   form.postalCode,
       surface:      +form.surface,
       askingPrice:  form.askingPrice ? +form.askingPrice : undefined,
-      landSurface:  form.landSurface ? +form.landSurface : undefined,
       propertyType: form.propertyType,
-      analysisType: form.analysisType,
+      analysisType: "investisseur", // profil unique — analyse rapide générique
       medianRentM2: form.expectedRent && form.surface ? +form.expectedRent / +form.surface : undefined,
-      worksAmount:  form.worksAmount ? +form.worksAmount : undefined,
-      resaleTarget: form.resaleTarget ? +form.resaleTarget : undefined,
+      landSurface:  undefined,
+      worksAmount:  undefined,
+      resaleTarget: undefined,
     };
     await run(input);
   }, [form, run]);
@@ -302,15 +340,10 @@ const QuickAnalysisPage: React.FC = () => {
   const handleReset = useCallback(() => { setForm(defaultForm); reset(); }, [reset]);
 
   const handleDeepAnalysis = useCallback(() => {
-    const routes: Record<AnalysisType, string> = {
-      investisseur:   "/marchand-de-bien/analyse",
-      rehabilitateur: "/rehabilitation/vue-ensemble",
-      promoteur:      "/promoteur/foncier",
-    };
     if (result) {
       try { localStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ form, result })); } catch { /* noop */ }
     }
-    navigate(routes[form.analysisType]);
+    navigate("/marchand-de-bien/analyse");
   }, [navigate, form, result]);
 
   // ── Dérivés ───────────────────────────────────────────────────────────────
@@ -324,6 +357,58 @@ const QuickAnalysisPage: React.FC = () => {
   const priceExpl  = result ? buildPriceExplanation(stats, primary.length) : null;
   const isReferenceBasis = result?.valuationBasis === "market_reference";
   const isInsufficient   = result?.valuationBasis === "insufficient";
+
+  // ── Explainability Engine (Phases 2/3/5) ───────────────────────────────────
+  // SEUL point de couplage : on mappe `result`/`context`/`form` vers les
+  // contrats du moteur. opportunityScore / confidenceScore passés en
+  // `providedScore` => EXPLIQUÉS, jamais recalculés. Dégradation silencieuse
+  // si une donnée manque (aucun crash, juste moins de facteurs).
+  const explain = React.useMemo(() => {
+    if (!result || result.estimatedValue <= 0) return null;
+
+    const askingPrice = form.askingPrice ? +form.askingPrice : undefined;
+    const sample = result.meta.marketStats?.sampleSize ?? result.comparables.length;
+    const marketDepth: "low" | "medium" | "high" = sample >= 8 ? "high" : sample <= 3 ? "low" : "medium";
+    const riskSeverity: "low" | "medium" | "high" =
+      result.securityScore >= 75 ? "low" : result.securityScore >= 50 ? "medium" : "high";
+    const discountPct = askingPrice != null
+      ? ((result.estimatedValue - askingPrice) / result.estimatedValue) * 100
+      : undefined;
+    const worksCost = result.rehab?.budgetTravaux ?? undefined;
+    const worksHeavy = worksCost != null && worksCost > 0 ? worksCost >= result.estimatedValue * 0.15 : false;
+    const yieldPct = result.netYield ?? result.grossYield ?? undefined;
+
+    const valuation = buildValuationExplanation({
+      valuation: {
+        estimatedValue: result.estimatedValue,
+        askingPrice,
+        confidence: result.confidenceScore / 100,
+        providedScore: result.confidenceScore,
+      },
+      dvf: {
+        comparablesCount: result.comparables.length,
+        recentCount: result.comparables.filter((c) => c.ageYears < 1).length,
+        medianPricePerSqm: result.meta.marketStats?.medianPriceM2,
+        marketDepth,
+      },
+      mobility: { score: result.locationBreakdown.transport },
+      risk: { severity: riskSeverity },
+      market: { dynamism: result.locationBreakdown.marche_local, liquidity: marketDepth },
+    });
+
+    const opportunity = buildOpportunityExplanation({
+      opportunity: { discountPct, yieldPct, worksHeavy, worksCost, providedScore: result.opportunityScore },
+      market: { dynamism: result.locationBreakdown.marche_local, liquidity: marketDepth },
+      dvf: { marketDepth },
+    });
+
+    const decision = buildMimmozaDecision({
+      estimatedValue: result.estimatedValue,
+      askingPrice, profile: "auto", yieldPct, worksHeavy, riskSeverity, valuation, opportunity,
+    });
+
+    return { valuation, opportunity, decision };
+  }, [result, form.askingPrice]);
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -464,24 +549,6 @@ display: "flex",
           </Card>
 
           <Card>
-            <ST>Profil d'analyse</ST>
-            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-              {ANALYSIS_TYPES.map((a) => {
-                const active = form.analysisType === a.id;
-                return (
-                  <button key={a.id} onClick={() => setF("analysisType", a.id)}
-                    style={{ display:"flex", alignItems:"center", gap:9, padding:"8px 12px",
-                      border: active ? `2px solid ${a.color}` : "2px solid #e5e7eb", borderRadius:10,
-                      background: active ? a.bg : "#fafafa", cursor:"pointer", textAlign:"left", transition:"all .12s" }}>
-                    <span style={{ fontSize:15 }}>{a.icon}</span>
-                    <span style={{ fontSize:13, fontWeight:700, color: active ? a.color : "#374151" }}>{a.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </Card>
-
-          <Card>
             <ST>Paramètres</ST>
             <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
               <div><Lbl>Type de bien</Lbl>
@@ -495,16 +562,7 @@ display: "flex",
                 <div><Lbl>Surface (m²) *</Lbl><Inp type="number" value={form.surface} placeholder="65" onChange={(e) => setF("surface", e.target.value)} /></div>
                 <div><Lbl>Prix demandé (€)</Lbl><Inp type="number" value={form.askingPrice} placeholder="520000" onChange={(e) => setF("askingPrice", e.target.value)} /></div>
               </div>
-              {form.analysisType === "investisseur" && (
-                <div><Lbl>Loyer attendu (€/mois)</Lbl><Inp type="number" value={form.expectedRent} placeholder="1500" onChange={(e) => setF("expectedRent", e.target.value)} /></div>
-              )}
-              {form.analysisType === "rehabilitateur" && (<>
-                <div><Lbl>Budget travaux (€)</Lbl><Inp type="number" value={form.worksAmount} placeholder="40000" onChange={(e) => setF("worksAmount", e.target.value)} /></div>
-                <div><Lbl>Prix revente cible (€)</Lbl><Inp type="number" value={form.resaleTarget} placeholder="260000" onChange={(e) => setF("resaleTarget", e.target.value)} /></div>
-              </>)}
-              {form.analysisType === "promoteur" && (
-                <div><Lbl>Surface terrain (m²)</Lbl><Inp type="number" value={form.landSurface} placeholder="800" onChange={(e) => setF("landSurface", e.target.value)} /></div>
-              )}
+              <div><Lbl>Loyer attendu (€/mois) — optionnel</Lbl><Inp type="number" value={form.expectedRent} placeholder="1500" onChange={(e) => setF("expectedRent", e.target.value)} /></div>
             </div>
 
             <button onClick={handleRun} disabled={loading || !form.surface}
@@ -715,8 +773,8 @@ display: "flex",
               )}
             </Card>
 
-            {/* Potentiel locatif (investisseur) */}
-            {form.analysisType === "investisseur" && (result.estimatedRent || result.grossYield) && (
+            {/* Potentiel locatif (si loyer renseigné) */}
+            {(result.estimatedRent || result.grossYield) && (
               <Card className="fi">
                 <ST>Potentiel locatif</ST>
                 <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10 }}>
@@ -734,57 +792,32 @@ display: "flex",
               </Card>
             )}
 
-            {/* Réhabilitation */}
-            {form.analysisType === "rehabilitateur" && result.rehab && (
+            {/* ══ EXPLAINABILITY ENGINE — Pourquoi ce score ? + Décision (Phases 4+5) ══ */}
+            {explain && (
               <Card className="fi">
-                <ST>Potentiel réhabilitation</ST>
-                <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10 }}>
-                  {[
-                    { l:"Valeur après travaux", v:fmt(result.rehab.valeurApresTravaux), c:"#4338ca" },
-                    { l:"Budget travaux",       v:fmt(result.rehab.budgetTravaux),      c:"#854d0e" },
-                    { l:"Coût total",           v:fmt(result.rehab.coutTotal),          c:"#374151" },
-                    { l:"Marge brute",          v:fmt(result.rehab.margeBrute),         c: result.rehab.margeBrute >= 0 ? "#166534" : "#991b1b" },
-                    { l:"Marge nette",          v:fmt(result.rehab.margeNette),         c: result.rehab.margeNette >= 0 ? "#166534" : "#991b1b" },
-                    { l:"Marge nette %",        v:fmtPct(result.rehab.margeNettePct),   c: result.rehab.margeNettePct >= 0 ? "#166534" : "#991b1b" },
-                    ...(result.rehab.triEstime != null ? [{ l:"TRI estimé", v:fmtPct(result.rehab.triEstime), c:"#0369a1" }] : []),
-                  ].filter((x) => x.v).map(({l,v,c}) => (
-                    <div key={l} style={{ textAlign:"center", padding:"10px 6px", background:"#f8fafc", borderRadius:10 }}>
-                      <p style={{ margin:0, fontSize:9, color:"#9ca3af", fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em" }}>{l}</p>
-                      <p style={{ margin:"5px 0 0", fontSize:15, fontWeight:800, color:c }}>{v}</p>
-                    </div>
-                  ))}
+                <ST>Pourquoi ce score ?</ST>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"4px 22px" }}>
+                  <FactorCol title="Facteurs positifs" items={selectPositive(explain.opportunity)} tone="pos" />
+                  <FactorCol title="Facteurs négatifs" items={selectNegative(explain.opportunity)} tone="neg" />
                 </div>
-                <p style={{ margin:"8px 0 0", fontSize:11, color:"#9ca3af", fontStyle:"italic" }}>
-                  TRI indicatif (hypothèse de durée d'opération). Affiner via l'analyse approfondie.
-                </p>
-              </Card>
-            )}
 
-            {/* Promoteur */}
-            {form.analysisType === "promoteur" && result.promoteur && (
-              <Card className="fi">
-                <ST>Potentiel promoteur</ST>
-                <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginBottom:12 }}>
-                  {[
-                    { l:"SDP potentielle",   v:fmt(result.promoteur.sdpPotentielM2,"m²"),       c:"#059669" },
-                    { l:"Emprise au sol",    v:fmt(result.promoteur.empriseAuSolM2,"m²"),       c:"#374151" },
-                    { l:"Charge foncière",   v:fmt(result.promoteur.chargeFonciereM2Sdp,"€/m² SDP"), c:"#4338ca" },
-                  ].filter((x) => x.v).map(({l,v,c}) => (
-                    <div key={l} style={{ textAlign:"center", padding:"10px 6px", background:"#f8fafc", borderRadius:10 }}>
-                      <p style={{ margin:0, fontSize:9, color:"#9ca3af", fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em" }}>{l}</p>
-                      <p style={{ margin:"5px 0 0", fontSize:15, fontWeight:800, color:c }}>{v}</p>
-                    </div>
-                  ))}
+                <div style={{ height:1, background:"#f3f4f6", margin:"14px 0" }} />
+
+                <ST>Facteurs de valorisation</ST>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"4px 22px" }}>
+                  <FactorCol title="En faveur" items={selectPositive(explain.valuation)} tone="pos" />
+                  <FactorCol title="En défaveur" items={selectNegative(explain.valuation)} tone="neg" />
                 </div>
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"12px 22px" }}>
-                  <ScoreCell label="Constructibilité" value={result.promoteur.constructibiliteScore} />
-                  <ScoreCell label="Densification"    value={result.promoteur.densificationScore} />
+
+                <div style={{ marginTop:14, padding:"11px 14px", borderRadius:10, ...decisionStyle(explain.decision.verdict) }}>
+                  <p style={{ margin:0, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.08em", opacity:0.7 }}>Décision Mimmoza</p>
+                  <p style={{ margin:"3px 0 0", fontSize:15, fontWeight:800 }}>{explain.decision.message}</p>
+                  {explain.decision.drivers.length > 0 && (
+                    <p style={{ margin:"3px 0 0", fontSize:12, opacity:0.85 }}>
+                      Déterminé par : {explain.decision.drivers.map((d) => d.label).join(" · ")}
+                    </p>
+                  )}
                 </div>
-                {!context.plu && (
-                  <p style={{ margin:"10px 0 0", fontSize:11, color:"#854d0e", fontStyle:"italic" }}>
-                    ⚠ Règles PLU non branchées : potentiel calculé sur hypothèses. Brancher le PLU Engine pour fiabiliser.
-                  </p>
-                )}
               </Card>
             )}
 

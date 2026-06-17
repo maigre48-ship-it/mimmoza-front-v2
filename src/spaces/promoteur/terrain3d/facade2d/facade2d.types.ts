@@ -1,4 +1,10 @@
-// ─── Facade2D Types V2 ───
+// ─── Facade2D Types V3 ───
+// [V3] Ornements d'habillage : 8 flags optionnels sur Facade2DBuildInput,
+//      propagés sur Facade2DModel (lus par renderFacade2DSvg) + couleurs
+//      d'ornements ajoutées à Facade2DPalette (remplies par buildFacade2DModel).
+//      colombages · volets(shutters) · encadrements · lucarnes · ferronnerie ·
+//      bandeaux · brise-soleil · parement brique.
+// [V2] Input enrichi (matériaux/ambiance/végétation/rythme…)
 
 export type Facade2DStylePresetId =
   | 'contemporain-urbain'
@@ -73,6 +79,19 @@ export interface Facade2DPalette {
   /** Teinte végétation */
   treeFill: string;
   treeTrunk: string;
+  // ─── [V3] Couleurs d'ornements (remplies par buildFacade2DModel) ───
+  /** Pans de bois apparents (colombages) */
+  colombageFill: string;
+  /** Encadrements de baies (pierre / enduit contrastant) */
+  encadrementFill: string;
+  /** Ferronnerie / fer forgé (garde-corps ouvragés) */
+  ferronnerieFill: string;
+  /** Bandeaux & moulures horizontales */
+  bandeauFill: string;
+  /** Parement de brique apparente */
+  briqueFill: string;
+  /** Brise-soleil / lames pare-soleil */
+  briseSoleilFill: string;
 }
 
 export interface Facade2DRenderTheme {
@@ -104,9 +123,26 @@ export interface Facade2DModel {
   vegetation: Facade2DVegetation;
   levels: Facade2DLevel[];
   theme: Facade2DRenderTheme;
+  // ─── [V3] Ornements actifs (lus par renderFacade2DSvg) ───
+  /** Pans de bois apparents structurant la façade */
+  hasColombages: boolean;
+  /** Volets battants forcés sur tous les niveaux courants */
+  hasShutters: boolean;
+  /** Encadrements de baies marqués */
+  hasEncadrements: boolean;
+  /** Lucarnes émergeant des versants (toiture en pente uniquement) */
+  hasLucarnes: boolean;
+  /** Garde-corps / grilles en fer forgé */
+  hasFerronnerie: boolean;
+  /** Bandeaux horizontaux & moulures inter-niveaux */
+  hasBandeaux: boolean;
+  /** Brise-soleil / lames horizontales */
+  hasBriseSoleil: boolean;
+  /** Parement de brique apparente en accent */
+  hasParementBrique: boolean;
 }
 
-/** Input enrichi V2 — tout ce que le panneau gauche peut transmettre */
+/** Input enrichi V3 — tout ce que le panneau gauche peut transmettre */
 export interface Facade2DBuildInput {
   widthM?: number;
   depthM?: number;
@@ -140,4 +176,21 @@ export interface Facade2DBuildInput {
   rdcType?: string;
   /** Style architectural brut */
   archStyle?: string;
+  // ─── [V3] Ornements d'habillage (câblés depuis FacadeGeneratorPage) ───
+  /** Pans de bois apparents (colombages) */
+  hasColombages?: boolean;
+  /** Volets battants forcés (override global du hasShutter par ouverture) */
+  hasShutters?: boolean;
+  /** Encadrements de baies marqués */
+  hasEncadrements?: boolean;
+  /** Lucarnes en toiture (pente uniquement) */
+  hasLucarnes?: boolean;
+  /** Ferronnerie / fer forgé */
+  hasFerronnerie?: boolean;
+  /** Bandeaux & moulures horizontales */
+  hasBandeaux?: boolean;
+  /** Brise-soleil / lames horizontales */
+  hasBriseSoleil?: boolean;
+  /** Parement de brique apparente */
+  hasParementBrique?: boolean;
 }

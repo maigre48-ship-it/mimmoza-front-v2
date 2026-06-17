@@ -686,11 +686,16 @@ export default function RenduTravauxPage({ theme, breadcrumb }: Props) {
 
       if (uploadError) throw uploadError;
 
-      const { data } = supabase.storage
-        .from("rendu-travaux-synthese")
-        .getPublicUrl(filePath);
+      const { data: signedUrlData, error: signedUrlError } =
+  await supabase.storage
+    .from("rendu-travaux-synthese")
+    .createSignedUrl(filePath, 3600);
 
-      const publicUrl = data.publicUrl;
+if (signedUrlError || !signedUrlData?.signedUrl) {
+  throw signedUrlError ?? new Error("Impossible de générer l'URL signée.");
+}
+
+const publicUrl = signedUrlData.signedUrl;
 
       const payload = {
         id: result.id,

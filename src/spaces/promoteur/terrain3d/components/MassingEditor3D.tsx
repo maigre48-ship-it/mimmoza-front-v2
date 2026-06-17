@@ -24,6 +24,9 @@ import type {
   MassingSceneModel, MassingBuildingModel, PlacedObject,
 } from "../massingScene.types";
 import { totalHeightM, totalLevelsCount } from "../massingScene.types";
+import { deriveMassingMetrics } from "../massingToBilan";
+import { writeMassingMetrics } from "../massingBilanBridge";
+import { usePromoteurProgrammeStore } from "../../store/promoteurProgramme.store";
 import type { Implantation2DMeta } from "../../store/promoteurProject.store";
 import { supabase } from "../../../../lib/supabaseClient";
 import { patchModule, getReliefCache, setReliefCache } from "../../shared/promoteurSnapshot.store";
@@ -115,6 +118,22 @@ function approxRingArea(ring: number[][]): number {
     a += x1 * y2 - x2 * y1;
   }
   return Math.abs(a / 2);
+}
+// Surface d'un ring footprint en m² (WGS84 → m via 111 000 m/deg + cos(lat)).
+function ringAreaM2(ring: [number, number][]): number {
+  if (!ring || ring.length < 3) return 0;
+  let a = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const j = (i + 1) % ring.length;
+    a += ring[i][0] * ring[j][1] - ring[j][0] * ring[i][1];
+  }
+  const area = Math.abs(a / 2);
+  const geo = Math.abs(ring[0][0]) <= 180 && Math.abs(ring[0][1]) <= 90;
+  if (geo) {
+    const lat = (ring.reduce((s, p) => s + p[1], 0) / ring.length) * Math.PI / 180;
+    return area * 111000 * 111000 * Math.cos(lat);
+  }
+  return area;
 }
 
 function pickLargestPolygonFeature(
@@ -450,6 +469,39 @@ export const MassingEditor3D: FC<MassingEditor3DProps> = ({
   };
 
   useEffect(() => { onSceneChange?.(scene); }, [scene, onSceneChange]);
+  // ── Bridge Massing → métré : enveloppe du store programme + bridge bilan legacy ──
+  useEffect(() => {
+    if (!studyId) return;
+    let parcelAreaM2: number | undefined;
+    const ring = normalizedParcel?.geometry.coordinates?.[0] as [number, number][] | undefined;
+    if (ring) parcelAreaM2 = ringAreaM2(ring);
+    const metrics = deriveMassingMetrics(scene.buildings, { parcelAreaM2 });
+
+    // 1) SOURCE DE VÉRITÉ : enveloppe du store programme.
+    const niveaux = scene.buildings.reduce(
+      (max, b) => Math.max(max, totalLevelsCount(b.levels)), 0,
+    );
+    const t = metrics.totaux;
+    const store = usePromoteurProgrammeStore.getState();
+    store.loadStudy(studyId); // idempotent : hydrate si l'étude change, conserve la mémoire sinon
+    store.setEnvelope({
+      empriseSolM2:      t.empriseSolM2,
+      niveaux,
+      sdpGeoM2:          t.sdpM2,
+      facadeM2:          t.surfaceFacadeM2,
+      facadeNetteM2:     t.surfaceFacadeNetteM2,
+      toitureTerrasseM2: t.surfaceToitureTerrasseM2,
+      toiturePenteM2:    t.surfaceToiturePenteM2,
+      balconsM2:         t.surfaceBalconsM2,
+      nbMenuiseries:     t.nbMenuiseries,
+      nbBatiments:       t.nbBatiments,
+      source:            "massing",
+      updatedAt:         new Date().toISOString(),
+    });
+
+    // 2) Bridge legacy → Bilan (conservé tant que le Bilan lit encore le bridge).
+    writeMassingMetrics(studyId, metrics);
+  }, [scene.buildings, normalizedParcel, studyId]);
 
   // ── Relief ────────────────────────────────────────────────────────────────
 

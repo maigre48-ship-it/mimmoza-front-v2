@@ -34,6 +34,9 @@ import MentionsLegalesPage from "./pages/legal/MentionsLegalesPage";
 /* ── Analyse rapide ──────────────────────────────────────────── */
 import QuickAnalysisPage from "./spaces/shared/pages/quick-analysis/QuickAnalysisPage";
 
+/* ── Opportunités (transversal) ──────────────────────────────── */
+import OpportunitesHubPage from "./spaces/shared/pages/opportunities/OpportunitesHubPage";
+
 import { bootInvestisseurSnapshot } from "./spaces/investisseur/shared/investisseurBootstrap";
 import InvestisseurAnalysePage from "./spaces/investisseur/pages/AnalysePage";
 import SimulationTravauxPage from "./spaces/investisseur/pages/execution/SimulationTravauxPage";
@@ -99,6 +102,7 @@ import RisquesPage from "./spaces/promoteur/etudes/risques/RisquesPage";
 import PermisConstruirePage from "./spaces/promoteur/pages/PermisConstruirePage";
 import RechercheContactsPage from "./spaces/promoteur/pages/RechercheContactsPage";
 import PromoteurMassing3D from "./spaces/promoteur/pages/Massing3D";
+import PromoteurMassingPage from "./spaces/promoteur/pages/MassingPage"; // ── AJOUT : Massing V2 (analyse de capacité)
 import PromoteurBilan from "./spaces/promoteur/pages/Bilan";
 import PromoteurSynthese from "./spaces/promoteur/pages/Synthese";
 import PromoteurExports from "./spaces/promoteur/pages/Exports";
@@ -267,6 +271,15 @@ function AppRoot() {
           <Route path="/politique-confidentialite" element={<PrivacyPolicyPage />} />
           <Route path="/mentions-legales"          element={<MentionsLegalesPage />} />
 
+          {/* Alias légaux */}
+          <Route path="/privacy"                   element={<Navigate to="/politique-confidentialite" replace />} />
+          <Route path="/confidentialite"           element={<Navigate to="/politique-confidentialite" replace />} />
+          <Route path="/privacy-policy"            element={<Navigate to="/politique-confidentialite" replace />} />
+          <Route path="/terms"                     element={<Navigate to="/cgu" replace />} />
+          <Route path="/conditions-utilisation"    element={<Navigate to="/cgu" replace />} />
+          <Route path="/conditions-generales"      element={<Navigate to="/cgv" replace />} />
+          <Route path="/legal"                     element={<Navigate to="/mentions-legales" replace />} />
+
           {/* ═══ Compte / Auth ═══ */}
           <Route path="/inscription" element={<InscriptionPage />} />
           <Route path="/compte"      element={<ComptePage />} />
@@ -283,12 +296,17 @@ function AppRoot() {
           {/* ═══ Paramètres ═══ */}
           <Route path="/parametres/veille" element={<VeilleSettingsPage />} />
 
-          {/* ═══ Veille standalone ═══ */}
-          <Route path="/veille"        element={<VeillePage />} />
+          {/* ═══ Veille → fusionnée dans Opportunités ═══ */}
+          <Route path="/veille"        element={<Navigate to="/opportunites" replace />} />
+          {/* Anciennes pages conservées (réversible) */}
+          <Route path="/veille/legacy" element={<VeillePage />} />
           <Route path="/veille/marche" element={<VeilleMarchePage />} />
 
           {/* ═══ Analyse rapide ═══ */}
           <Route path="/analyse-rapide" element={<QuickAnalysisPage />} />
+
+          {/* ═══ Opportunités (transversal) — scan + suivi dans le temps ═══ */}
+          <Route path="/opportunites" element={<OpportunitesHubPage />} />
 
           {/* ═══ API ═══ */}
           <Route path="/api"            element={<ApiPage />} />
@@ -392,6 +410,8 @@ function AppRoot() {
             <Route path="opportunites/nouvelle"   element={<NouvelleOpportunitePage />} />
             <Route path="programmation"           element={<ProgrammationPage />} />
             <Route path="logements-sociaux"       element={<BesoinLogementsSociauxPage />} />
+            {/* ── AJOUT : Massing V2 — analyse de capacité (route libre, sans étude requise) ── */}
+            <Route path="massing"                 element={<PromoteurMassingPage />} />
 
             {/* Routes nécessitant une étude active */}
             <Route element={<PromoteurStudyRequired />}>

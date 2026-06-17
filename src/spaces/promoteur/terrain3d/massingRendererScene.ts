@@ -1,21 +1,50 @@
-// massingRendererScene.ts — V3.1
+// massingRendererScene.ts — V3.3
 // ═══════════════════════════════════════════════════════════════════════════════
-// V3.1 vs V3 premium :
-// - fitCameraToBox repositionnée : caméra AU SUD du centre, regardant NORD
-//   → la vue 3D est nord-haut, alignée avec la carte 2D
-// - heightFactor augmenté pour vue plus aérienne (bird's eye)
-// - légère translation ouest pour perspective naturelle
+// V3.3 vs V3.2 — post-processing À SÉCURITÉ INTÉGRÉE (fini l'écran blanc) :
+//   • Le composer ne peut plus casser le rendu :
+//       - construction dans un try/catch (si une passe échoue → composer = null)
+//       - renderFrame() : composer.render() dans un try ; au MOINDRE throw, on
+//         bascule définitivement sur renderer.render(scene, camera).
+//     → si quoi que ce soit foire, tu vois le rendu de base (lumière améliorée),
+//       jamais un écran blanc.
+//   • Construction progressive et tolérante aux versions de three :
+//       - OutputPass absent (< r152) → repli sur GammaCorrectionShader (ShaderPass)
+//       - SSAO / SMAA protégés individuellement
+//   • Diagnostic : chaque échec est loggé en console (préfixe [MassingScene]).
+//
+// V3.2 — lumière : soleil dominant + ambiant modéré (conservé tel quel).
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
+// ─── Réglages globaux ──────────────────────────────────────────────────────────
+
+const TONE_EXPOSURE = 1.15;   // exposition ACES (source unique)
+const ENABLE_POST   = false;  // ← false = rendu direct renderer.render, aucun post-processing
+const ENABLE_SSAO   = false;  // ← false = pas d'occlusion ambiante (mais AA + tone mapping gardés)
+const ENABLE_SMAA   = true;  // ← false = pas d'anti-aliasing post (le MSAA du renderer reste off sous composer)
+
+const SSAO_KERNEL_RADIUS = 6;
+const SSAO_MIN_DISTANCE  = 0.001;
+const SSAO_MAX_DISTANCE  = 0.06;
+
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+// EffectComposer typé en `any` : import dynamique tolérant, pas de dépendance dure.
+type AnyComposer = {
+  setPixelRatio: (r: number) => void;
+  setSize: (w: number, h: number) => void;
+  addPass: (p: unknown) => void;
+  render: () => void;
+  dispose: () => void;
+};
 
 export interface SceneContext {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   renderer: THREE.WebGLRenderer;
+  composer: AnyComposer | null;
   controls: OrbitControls;
   buildingsGroup: THREE.Group;
   groundGroup: THREE.Group;
@@ -58,11 +87,92 @@ function disposeObject3D(obj: THREE.Object3D): void {
   else if (material) disposeMaterial(material);
 }
 
+// ─── Construction du composer (tolérante aux versions, jamais bloquante) ───────
+//
+// Retourne null si l'EffectComposer ou ses passes essentielles ne sont pas
+// disponibles → le rendu retombera sur renderer.render(scene, camera).
+//
+// Imports dynamiques : on tente les modules ; si l'un manque dans la version de
+// three installée, l'erreur est attrapée et on renvoie null (rendu direct).
+
+async function tryBuildComposer(
+  renderer: THREE.WebGLRenderer,
+  scene: THREE.Scene,
+  camera: THREE.PerspectiveCamera,
+  w: number,
+  h: number,
+  dpr: number,
+): Promise<AnyComposer | null> {
+  try {
+    const { EffectComposer } = await import("three/addons/postprocessing/EffectComposer.js");
+    const { RenderPass }     = await import("three/addons/postprocessing/RenderPass.js");
+
+    const composer = new EffectComposer(renderer) as unknown as AnyComposer;
+    composer.setPixelRatio(dpr);
+    composer.setSize(w, h);
+
+    // ── Passe de base : SSAO si possible, sinon RenderPass ──
+    let basePassAdded = false;
+    if (ENABLE_SSAO) {
+      try {
+        const { SSAOPass } = await import("three/addons/postprocessing/SSAOPass.js");
+        const ssao = new SSAOPass(scene, camera, w, h);
+        (ssao as unknown as { kernelRadius: number }).kernelRadius = SSAO_KERNEL_RADIUS;
+        (ssao as unknown as { minDistance: number }).minDistance   = SSAO_MIN_DISTANCE;
+        (ssao as unknown as { maxDistance: number }).maxDistance   = SSAO_MAX_DISTANCE;
+        composer.addPass(ssao);
+        basePassAdded = true;
+      } catch (e) {
+        console.warn("[MassingScene] SSAO indisponible, repli RenderPass :", e);
+      }
+    }
+    if (!basePassAdded) {
+      composer.addPass(new RenderPass(scene, camera));
+    }
+
+    // ── Anti-aliasing (optionnel) ──
+    if (ENABLE_SMAA) {
+      try {
+        const { SMAAPass } = await import("three/addons/postprocessing/SMAAPass.js");
+        composer.addPass(new SMAAPass(w * dpr, h * dpr));
+      } catch (e) {
+        console.warn("[MassingScene] SMAA indisponible, ignoré :", e);
+      }
+    }
+
+    // ── Sortie : OutputPass (ACES + sRGB) ; repli GammaCorrection si absent ──
+    let outputAdded = false;
+    try {
+      const { OutputPass } = await import("three/addons/postprocessing/OutputPass.js");
+      composer.addPass(new OutputPass());
+      outputAdded = true;
+    } catch {
+      // three < r152 : pas d'OutputPass.
+    }
+    if (!outputAdded) {
+      try {
+        const { ShaderPass }            = await import("three/addons/postprocessing/ShaderPass.js");
+        const { GammaCorrectionShader } = await import("three/addons/shaders/GammaCorrectionShader.js");
+        composer.addPass(new ShaderPass(GammaCorrectionShader));
+        console.info("[MassingScene] OutputPass absent → GammaCorrectionShader utilisé.");
+      } catch (e) {
+        console.warn("[MassingScene] Aucune passe de sortie disponible :", e);
+      }
+    }
+
+    return composer;
+  } catch (e) {
+    console.warn("[MassingScene] EffectComposer indisponible → rendu direct :", e);
+    return null;
+  }
+}
+
 // ─── Factory scène ───────────────────────────────────────────────────────────
 
 export function createSceneContext(mount: HTMLDivElement): SceneContext {
   const w = mount.clientWidth || 800;
   const h = mount.clientHeight || 600;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
   // ── Renderer ───────────────────────────────────────────────────────────────
   const renderer = new THREE.WebGLRenderer({
@@ -71,9 +181,9 @@ export function createSceneContext(mount: HTMLDivElement): SceneContext {
     powerPreference: "high-performance",
   });
   renderer.setSize(w, h);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.08;
+  renderer.setPixelRatio(dpr);
+  renderer.toneMapping = THREE.NoToneMapping;
+  renderer.toneMappingExposure = TONE_EXPOSURE;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -85,12 +195,16 @@ export function createSceneContext(mount: HTMLDivElement): SceneContext {
   scene.background = new THREE.Color(0xd7e3ee);
   scene.fog = new THREE.FogExp2(0xd7e3ee, 0.00135);
 
-  // ── Lighting ──────────────────────────────────────────────────────────────
-  const hemi = new THREE.HemisphereLight(0xddebf7, 0xb49b7f, 0.88);
+  // ── Lighting (V3.2 : soleil dominant + ambiant modéré) ──────────────────────
+  const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+  ambient.name = "ambient";
+  scene.add(ambient);
+
+  const hemi = new THREE.HemisphereLight(0xddebf7, 0xb49b7f, 0.90);
   hemi.name = "hemi";
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xfff7ea, 2.25);
+  const sun = new THREE.DirectionalLight(0xfff7ea, 1.7);
   sun.name = "sun";
   sun.position.set(95, 135, 72);
   sun.target.position.set(0, 0, 0);
@@ -108,25 +222,24 @@ export function createSceneContext(mount: HTMLDivElement): SceneContext {
   sun.shadow.bias = -0.00045;
   sun.shadow.normalBias = 0.02;
 
-  const fill = new THREE.DirectionalLight(0xcbd9f0, 0.52);
+  const fill = new THREE.DirectionalLight(0xcbd9f0, 0.28);
   fill.name = "fill";
   fill.position.set(-75, 58, -46);
   scene.add(fill);
 
-  const back = new THREE.DirectionalLight(0xf1e8d8, 0.22);
+  const back = new THREE.DirectionalLight(0xf1e8d8, 0.12);
   back.name = "back";
   back.position.set(-20, 42, -135);
   scene.add(back);
 
-  const front = new THREE.DirectionalLight(0xf3f6fb, 0.18);
+  const front = new THREE.DirectionalLight(0xf3f6fb, 0.10);
   front.name = "front";
   front.position.set(20, 35, 110);
   scene.add(front);
 
   // ── Caméra ────────────────────────────────────────────────────────────────
-  // Position initiale provisoire — sera remplacée par fitCameraToBox
   const camera = new THREE.PerspectiveCamera(42, w / h, 0.35, 3000);
-  camera.position.set(0, 120, -80);   // Au-dessus, légèrement au SUD
+  camera.position.set(0, 120, -80);
   camera.lookAt(0, 10, 0);
 
   // ── Controls ──────────────────────────────────────────────────────────────
@@ -155,16 +268,55 @@ export function createSceneContext(mount: HTMLDivElement): SceneContext {
     "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:hidden;";
   mount.appendChild(labelContainer);
 
-  // ── Boucle de rendu ───────────────────────────────────────────────────────
-  let animId = 0;
-  const tick = () => {
-    animId = requestAnimationFrame(tick);
-    controls.update();
+  // ── Contexte (composer rempli en asynchrone ci-dessous) ─────────────────────
+  const ctx: SceneContext = {
+    scene, camera, renderer, composer: null, controls,
+    buildingsGroup, groundGroup, labelContainer, animId: 0,
+  };
+
+  // ── Boucle de rendu — À SÉCURITÉ INTÉGRÉE ───────────────────────────────────
+  // Tant que le composer n'est pas prêt (ou s'il a échoué), on rend en direct.
+  // Si composer.render() lève une exception une seule fois, on le désactive
+  // définitivement et on bascule sur renderer.render → jamais d'écran blanc.
+  let composerBroken = false;
+  const renderFrame = () => {
+    if (ENABLE_POST && ctx.composer && !composerBroken) {
+      try {
+        ctx.composer.render();
+        return;
+      } catch (e) {
+        composerBroken = true;
+        ctx.composer = null;
+        console.error("[MassingScene] composer.render a échoué → rendu direct définitif :", e);
+      }
+    }
     renderer.render(scene, camera);
+  };
+
+  const tick = () => {
+    ctx.animId = requestAnimationFrame(tick);
+    controls.update();
+    renderFrame();
   };
   tick();
 
-  return { scene, camera, renderer, controls, buildingsGroup, groundGroup, labelContainer, animId };
+  // ── Tentative de branchement du post-processing (non bloquante) ─────────────
+  if (ENABLE_POST) {
+    tryBuildComposer(renderer, scene, camera, w, h, dpr)
+      .then((composer) => {
+        if (composer && !composerBroken) {
+          ctx.composer = composer;
+          console.info("[MassingScene] post-processing actif.");
+        } else if (!composer) {
+          console.info("[MassingScene] post-processing indisponible → rendu direct.");
+        }
+      })
+      .catch((e) => {
+        console.warn("[MassingScene] init post-processing échouée → rendu direct :", e);
+      });
+  }
+
+  return ctx;
 }
 
 // ─── Resize ──────────────────────────────────────────────────────────────────
@@ -173,24 +325,25 @@ export function handleResize(ctx: SceneContext, mount: HTMLDivElement): void {
   const w = mount.clientWidth;
   const h = mount.clientHeight;
   if (!w || !h) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   ctx.camera.aspect = w / h;
   ctx.camera.updateProjectionMatrix();
   ctx.renderer.setSize(w, h);
-  ctx.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  ctx.renderer.setPixelRatio(dpr);
+  if (ctx.composer) {
+    try {
+      ctx.composer.setPixelRatio(dpr);
+      ctx.composer.setSize(w, h);
+    } catch (e) {
+      console.warn("[MassingScene] composer.setSize a échoué :", e);
+    }
+  }
 }
 
 // ─── Fit caméra ──────────────────────────────────────────────────────────────
-// Orientation nord-haut, alignée avec la carte 2D.
-//
-// Système de coordonnées de la scène :
-//   +X = est (longitude croissante)
-//   +Z = nord (latitude croissante)
-//   +Y = altitude
-//
-// Pour une vue nord-haut (comme la carte 2D) :
-//   → caméra positionnée AU SUD du centre (Z négatif par rapport au centre)
-//   → regardant vers le NORD (vers Z positif / le centre)
-//   → légèrement à l'OUEST pour une perspective naturelle
+// Vue nord-haut, alignée avec la carte 2D.
+//   +X = est · +Z = nord · +Y = altitude
+//   → caméra au SUD du centre, regardant le NORD, légèrement à l'OUEST.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function fitCameraToBox(
@@ -204,16 +357,14 @@ export function fitCameraToBox(
   const fov = ctx.camera.fov * (Math.PI / 180);
   const dist = ((maxDim / 2) / Math.tan(fov / 2)) * 1.75;
 
-  // Caméra au SUD du centre, haute, légèrement à l'ouest
-  // → vue nord-haut comme la carte 2D
-  const southOffset  = dist * 0.72;   // Distance vers le sud (Z négatif)
-  const westOffset   = dist * 0.08;   // Très légère décalage ouest pour perspective
-  const heightOffset = dist * 0.88;   // Hauteur au-dessus du centre
+  const southOffset  = dist * 0.72;
+  const westOffset   = dist * 0.08;
+  const heightOffset = dist * 0.88;
 
   ctx.camera.position.set(
-    center.x - westOffset,             // Légèrement à l'OUEST
-    center.y + heightOffset,            // AU-DESSUS
-    center.z - southOffset,             // AU SUD (Z négatif = sud dans notre scène)
+    center.x - westOffset,
+    center.y + heightOffset,
+    center.z - southOffset,
   );
 
   ctx.camera.near = Math.max(0.1, dist / 800);
@@ -223,7 +374,6 @@ export function fitCameraToBox(
   ctx.controls.target.copy(center);
   ctx.controls.update();
 
-  // Ajustement shadow frustum au volume de la scène
   const sun = ctx.scene.getObjectByName("sun") as THREE.DirectionalLight | undefined;
   if (sun) {
     const margin = Math.max(maxDim * 1.35, 60);
@@ -234,6 +384,14 @@ export function fitCameraToBox(
     sun.shadow.camera.near   = 1;
     sun.shadow.camera.far    = Math.max(600, maxDim * 6);
     sun.shadow.camera.updateProjectionMatrix();
+
+    // Direction solaire stable, recalée sur le centre.
+    const sunDist = Math.max(maxDim * 1.6, 120);
+    sun.position.set(
+      center.x + sunDist * 0.55,
+      center.y + sunDist * 0.85,
+      center.z + sunDist * 0.42,
+    );
     sun.target.position.copy(center);
     sun.target.updateMatrixWorld();
   }
@@ -244,6 +402,9 @@ export function fitCameraToBox(
 export function disposeSceneContext(ctx: SceneContext, mount: HTMLDivElement): void {
   cancelAnimationFrame(ctx.animId);
   ctx.controls.dispose();
+  if (ctx.composer) {
+    try { ctx.composer.dispose(); } catch { /* no-op */ }
+  }
   disposeGroup(ctx.buildingsGroup);
   disposeGroup(ctx.groundGroup);
   ctx.scene.traverse((obj) => {

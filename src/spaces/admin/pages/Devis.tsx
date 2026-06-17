@@ -4,14 +4,14 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus, Trash2, ArrowRight, Eye, Loader2,
-  ChevronDown, FileText, FileDown,
+  ChevronDown, FileText, FileDown, Send, X, CheckCircle2,
 } from 'lucide-react';
 import type {
   Quote, QuoteStatus, TargetSpace, CreateQuoteLinePayload,
 } from '../../../features/admin/billing/types';
 import {
   listQuotes, createQuoteWithLines, updateQuoteStatus,
-  convertQuoteToInvoice, listQuoteLines,
+  convertQuoteToInvoice, listQuoteLines, sendQuoteToClient,
 } from '../../../features/admin/billing/services/quotes.service';
 import {
   formatCents, formatBillingStatusLabel, formatTargetSpaceLabel,
@@ -19,6 +19,10 @@ import {
   isQuoteConverted, computeLineTotals,
 } from '../../../features/admin/billing/helpers';
 import { exportQuotePdf } from '../../../features/admin/billing/exportBillingPdf';
+import { ClientPicker, type ClientOption } from '../../../features/admin/billing/components/ClientPicker';
+
+// recipient_user_id existe en base (cf. migration) mais peut manquer au type Quote.
+type QuoteRow = Quote & { recipient_user_id?: string | null };
 
 // ---- Types formulaire ----
 
@@ -61,25 +65,120 @@ const QUOTE_STATUSES: { value: QuoteStatus; label: string }[] = [
 const TARGET_SPACES: TargetSpace[] = ['promoteur', 'financeur', 'investisseur', 'autre'];
 
 // ============================================================
-// Composant
+// Modale "Envoyer au client"
+// ============================================================
+
+function SendQuoteModal({
+  quote,
+  onClose,
+  onSent,
+}: {
+  quote: QuoteRow;
+  onClose: () => void;
+  onSent: (updated: Quote) => void;
+}) {
+  const [client, setClient] = useState<ClientOption | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const alreadyLinked = Boolean(quote.recipient_user_id);
+
+  const handleSend = async () => {
+    if (!client) {
+      setError('Choisissez un compte client destinataire.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const updated = await sendQuoteToClient(quote.id, client.userId);
+      onSent(updated);
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-xl">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Envoyer au client</h2>
+            <p className="mt-0.5 font-mono text-xs text-indigo-600">{quote.quote_number}</p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100">
+            <X size={16} />
+          </button>
+        </div>
+
+        <p className="mt-4 text-sm text-gray-500">
+          Le devis sera rendu visible dans l'espace « Mon compte » du client choisi et passera
+          au statut « Envoyé ».
+          {alreadyLinked && " Ce devis est déjà rattaché à un compte ; choisir un client le réassignera."}
+        </p>
+
+        <div className="mt-4">
+          <label className="mb-1.5 block text-xs font-medium text-gray-600">
+            Compte client destinataire
+          </label>
+          <ClientPicker value={client} onSelect={setClient} />
+        </div>
+
+        {error && (
+          <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        <div className="mt-5 flex gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50"
+          >
+            Annuler
+          </button>
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={loading || !client}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+            Envoyer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Page
 // ============================================================
 
 const DevisPage: React.FC = () => {
   const navigate = useNavigate();
-  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [quotes, setQuotes] = useState<QuoteRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<QuoteForm>(defaultForm());
+  const [recipient, setRecipient] = useState<ClientOption | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [convertingId, setConvertingId] = useState<string | null>(null);
   const [exportingId, setExportingId] = useState<string | null>(null);
+  const [sendTarget, setSendTarget] = useState<QuoteRow | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const data = await listQuotes();
-      setQuotes(data);
+      setQuotes(data as QuoteRow[]);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -112,6 +211,11 @@ const DevisPage: React.FC = () => {
   const removeLine = (index: number) =>
     setForm((f) => ({ ...f, lines: f.lines.filter((_, i) => i !== index) }));
 
+  const resetForm = () => {
+    setForm(defaultForm());
+    setRecipient(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -125,15 +229,16 @@ const DevisPage: React.FC = () => {
         sort_order: i,
       }));
       await createQuoteWithLines({
-        company_name:  form.company_name,
-        contact_name:  form.contact_name  || undefined,
-        contact_email: form.contact_email || undefined,
-        target_space:  form.target_space,
-        vat_rate_bps:  vatRateBps,
-        notes:         form.notes         || undefined,
+        company_name:      form.company_name,
+        contact_name:      form.contact_name  || undefined,
+        contact_email:     form.contact_email || recipient?.email || undefined,
+        target_space:      form.target_space,
+        vat_rate_bps:      vatRateBps,
+        notes:             form.notes         || undefined,
+        recipient_user_id: recipient?.userId  ?? null,
         lines,
       });
-      setForm(defaultForm());
+      resetForm();
       setShowForm(false);
       await load();
     } catch (e) {
@@ -146,7 +251,7 @@ const DevisPage: React.FC = () => {
   const handleStatusChange = async (id: string, status: QuoteStatus) => {
     try {
       const updated = await updateQuoteStatus(id, status);
-      setQuotes((prev) => prev.map((q) => (q.id === id ? updated : q)));
+      setQuotes((prev) => prev.map((q) => (q.id === id ? { ...q, ...updated } : q)));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -178,6 +283,10 @@ const DevisPage: React.FC = () => {
     }
   };
 
+  const handleSent = (updated: Quote) => {
+    setQuotes((prev) => prev.map((q) => (q.id === updated.id ? { ...q, ...updated } : q)));
+  };
+
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
@@ -185,7 +294,7 @@ const DevisPage: React.FC = () => {
         <div>
           <h1 className="text-xl font-bold text-gray-900">Devis</h1>
           <p className="mt-0.5 text-sm text-gray-500">
-            {"Gérez vos devis et convertissez-les en factures."}
+            {"Gérez vos devis, envoyez-les au client et convertissez-les en factures."}
           </p>
         </div>
         <button
@@ -269,6 +378,15 @@ const DevisPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Destinataire (compte client) — optionnel à la création, assignable plus tard */}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">
+                Client destinataire (compte Mimmoza)
+                <span className="ml-1 font-normal text-gray-400">— optionnel, requis pour l'envoi</span>
+              </label>
+              <ClientPicker value={recipient} onSelect={setRecipient} />
+            </div>
+
             {/* Lignes */}
             <div>
               <div className="mb-2 flex items-center justify-between">
@@ -349,7 +467,7 @@ const DevisPage: React.FC = () => {
             <div className="flex justify-end gap-3">
               <button
                 type="button"
-                onClick={() => { setShowForm(false); setForm(defaultForm()); }}
+                onClick={() => { setShowForm(false); resetForm(); }}
                 className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
               >
                 Annuler
@@ -383,7 +501,7 @@ const DevisPage: React.FC = () => {
             <table className="min-w-full divide-y divide-gray-100 text-sm">
               <thead>
                 <tr className="bg-gray-50">
-                  {['Numéro', 'Société', 'Contact', 'Espace', 'Statut', 'HT', 'TTC', 'Date', 'Actions'].map((h) => (
+                  {['Numéro', 'Société', 'Client', 'Espace', 'Statut', 'HT', 'TTC', 'Date', 'Actions'].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400">
                       {h}
                     </th>
@@ -397,7 +515,15 @@ const DevisPage: React.FC = () => {
                       {q.quote_number}
                     </td>
                     <td className="px-4 py-3 font-medium text-gray-900">{q.company_name}</td>
-                    <td className="px-4 py-3 text-gray-500">{q.contact_name ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      {q.recipient_user_id ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                          <CheckCircle2 size={11} /> Lié
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-gray-500">{formatTargetSpaceLabel(q.target_space)}</td>
                     <td className="px-4 py-3">
                       {isQuoteConverted(q) ? (
@@ -441,6 +567,18 @@ const DevisPage: React.FC = () => {
                           PDF
                         </button>
 
+                        {/* Envoyer au client (devis non converti) */}
+                        {!isQuoteConverted(q) && (
+                          <button
+                            onClick={() => setSendTarget(q)}
+                            title="Envoyer au client"
+                            className="flex items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
+                          >
+                            <Send size={11} />
+                            {q.recipient_user_id ? 'Renvoyer' : 'Envoyer'}
+                          </button>
+                        )}
+
                         {/* Facturer */}
                         {canConvertQuoteToInvoice(q) && (
                           <button
@@ -474,6 +612,14 @@ const DevisPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {sendTarget && (
+        <SendQuoteModal
+          quote={sendTarget}
+          onClose={() => setSendTarget(null)}
+          onSent={handleSent}
+        />
+      )}
     </div>
   );
 };

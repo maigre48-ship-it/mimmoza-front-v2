@@ -1,790 +1,349 @@
-// massingRoofEngine.ts — V3.1
-// Retour à computeVertexNormals() simple, mais avec correction d’orientation
-// des triangles/quads de toiture pour éviter les normales inversées.
-// Projection ridge : V2.7 (ridgeDist sur droite infinie, classification correcte)
+// massingRoofEngine.ts — toiture plate (déléguée) + 2 pentes (gable) + 4 pentes (hip)
+// ─────────────────────────────────────────────────────────────────────────────
+// gable ET hip sont construits sur la BOUNDING BOX ORIENTÉE du footprint :
+//   1. direction de l'arête la plus longue = axe de faîtage,
+//   2. emprise rectangulaire alignée sur cet axe,
+//   3. gable → faîtage + 2 versants + 2 pignons ; hip → faîtage raccourci
+//      + 2 versants trapèze + 2 croupes triangle (ou pyramide si quasi carré).
+// → robuste sur n'importe quel polygone (la bbox existe toujours).
+// Sur un footprint très irrégulier (L, T), le toit couvre la bbox : suivre le
+// polygone réel (croupe vraie) demanderait un straight skeleton complet.
+//
+// ORIENTATION (rotate90) : par défaut le faîtage est posé sur le plus grand côté.
+// rotate90 = true ajoute une bascule de 90° → échange axe faîtage ↔ pente, pour
+// changer l'orientation du toit indépendamment de la forme du footprint.
+//
+// Débord (overhangM) : avant-toits étendus vers l'extérieur, abaissés de
+// overhang * tan(pente) sous le haut de mur. Pentes égales sur toutes les faces.
+//
+// Texture (textureId) : tuile de toit depuis ROOF_LIBRARY, appliquée aux VERSANTS
+// uniquement (pignons restent unis). UV alignées sur le repère du TOIT (U = axe
+// faîtage, V = sens de la pente) → les rangées de tuiles montent toujours droit.
+// Chargement via Image().decode()+CanvasTexture (évite le bug TextureLoader noir).
+// ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from "three";
 import type { Pt2D } from "./massingGeometry3d";
-import { ptsToShape, aabb2D, extractEdges, insetPolygon, centroid2D } from "./massingGeometry3d";
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// TYPES PUBLICS
-// ═══════════════════════════════════════════════════════════════════════════════
+const ROOF_ZFIGHT_OFFSET = 0.002;
 
-export type RoofType = "terrasse" | "vegetalise" | "inclinee";
-
-export interface DormerSpec {
-  enabled: boolean;
-  count: number;
-  widthFactor: number;
-  heightFactor: number;
-}
+export type RoofShape = "flat" | "gable" | "hip";
 
 export interface RoofConfig {
-  topPts: Pt2D[];
-  roofBaseY: number;
-  floorHeight: number;
-  totalFloors: number;
-  roofType: RoofType;
-  roofSlopes: number;
-  acrotereHeight?: number;
-  overhangM?: number;
-  dormers?: DormerSpec;
+  shape:     RoofShape;
+  slopeDeg?: number;   // pente des versants (défaut 30°)
+  overhangM?: number;  // débord d'avant-toit en mètres (défaut 0.4)
+  textureId?: string;  // clé ROOF_LIBRARY ; absent = couleur unie
+  rotate90?: boolean;  // bascule le faîtage de 90° (change l'orientation du toit)
 }
 
-export interface RoofResult {
-  acrotere: THREE.BufferGeometry[];
-  roofSurface: THREE.BufferGeometry[];
-  roofCap: THREE.BufferGeometry[];
-  edicule: THREE.BufferGeometry[];
-  dormerGlass: THREE.BufferGeometry[];
+interface OrientedBox {
+  cx: number; cz: number;   // centre de la bbox (monde, plan x/z)
+  angle: number;            // direction du faîtage (rad)
+  halfLen: number;          // demi-longueur le long du faîtage
+  halfSpan: number;         // demi-portée transversale (sens de la pente)
 }
 
-// Types internes niveau module
-interface SlopeData {
-  eaveA: Pt2D;
-  eaveB: Pt2D;
-  ridgeA: Pt2D;
-  ridgeB: Pt2D;
-  edgeNx: number;
-  edgeNy: number;
+// ─── Bibliothèque de tuiles de toit (extensible) ──────────────────────────────
+// Ajouter une tuile = déposer le _Color dans /public/textures/roof/ + 1 ligne.
+export const ROOF_LIBRARY: Record<string, { label: string; color: string; tileM: number }> = {
+  tuile1: { label: "Tuile 1", color: "/textures/roof/RoofingTiles014A_2K-JPG/RoofingTiles014A_2K-JPG_Color.jpg", tileM: 1.0 },
+  tuile2: { label: "Tuile 2", color: "/textures/roof/RoofingTiles013A_2K-JPG/RoofingTiles013A_2K-JPG_Color.jpg", tileM: 1.0 },
+  tuile3: { label: "Tuile 3", color: "/textures/roof/RoofTiles014B_Color.jpg", tileM: 1.0 },
+  tuile4: { label: "Tuile 4", color: "/textures/roof/RoofTiles015A_Color.jpg", tileM: 1.0 },
+};
+
+// ─── Chargement texture toit (Image.decode + CanvasTexture) ───────────────────
+
+function loadRoofTexture(material: THREE.MeshLambertMaterial, url: string): void {
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.src = url;
+  img.decode()
+    .then(() => {
+      const cnv = document.createElement("canvas");
+      cnv.width = img.naturalWidth; cnv.height = img.naturalHeight;
+      const cctx = cnv.getContext("2d")!;
+      cctx.drawImage(img, 0, 0);
+      const tex = new THREE.CanvasTexture(cnv);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(1, 1);          // tuilage encodé dans les UV
+      tex.anisotropy = 8;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+      material.map = tex;
+      material.color.set(0xffffff);  // ne pas teinter la texture
+      material.needsUpdate = true;
+    })
+    .catch(err => console.warn("[roofEngine] texture toit échouée:", url, err));
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// CONSTANTES
-// ═══════════════════════════════════════════════════════════════════════════════
+// Matériau de versant : couleur unie, ou texturé si textureId fourni.
+function makeSlopeMaterial(roofMat: THREE.Material, config: RoofConfig): THREE.MeshLambertMaterial {
+  const baseColor = (roofMat as THREE.MeshLambertMaterial).color?.clone?.() ?? new THREE.Color(0x9a948c);
+  const entry = config.textureId ? ROOF_LIBRARY[config.textureId] : undefined;
+  const mat = new THREE.MeshLambertMaterial({ color: baseColor, side: THREE.DoubleSide });
+  if (entry) loadRoofTexture(mat, entry.color);
+  return mat;
+}
 
-const DEFAULT_ACROTERE_H = 0.40;
-const ACROTERE_THICKNESS = 0.12;
-const EDICULE_SIZE = 1.50;
-const EDICULE_HEIGHT = 1.80;
-const FASCIA_H = 0.18;
-const DORMER_SLOPE_T = 0.18;
-const DORMER_MINI_RIDGE = 0.28;
+// Génère des UV alignées sur le repère du TOIT (pas du triangle) :
+//   U = le long du faîtage, V = sens de la pente (eave → faîtage).
+function generateRoofUVs(
+  geo: THREE.BufferGeometry,
+  tileM: number,
+  uDirX: number, uDirZ: number,
+  vDirX: number, vDirZ: number,
+): void {
+  const pos = geo.getAttribute("position") as THREE.BufferAttribute;
+  if (!pos) return;
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const u = (x * uDirX + z * uDirZ) / tileM;
+    const vHoriz = x * vDirX + z * vDirZ;
+    const v = (Math.hypot(vHoriz, y) * Math.sign(vHoriz || 1)) / tileM;
+    uv[i * 2]     = Number.isFinite(u) ? u : 0;
+    uv[i * 2 + 1] = Number.isFinite(v) ? v : 0;
+  }
+  geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+}
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// HELPERS — normales / orientation
-// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Bounding box orientée (axe = arête la plus longue) ───────────────────────
 
-function orientTriUp(pos: number[]): number[] {
-  if (pos.length !== 9) return pos;
+function orientedBox(pts: Pt2D[], rotate90 = false): OrientedBox | null {
+  if (pts.length < 3) return null;
 
-  const ax = pos[0], ay = pos[1], az = pos[2];
-  const bx = pos[3], by = pos[4], bz = pos[5];
-  const cx = pos[6], cy = pos[7], cz = pos[8];
+  const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+  const cz = pts.reduce((s, p) => s + p.y, 0) / pts.length;
 
-  const abx = bx - ax;
-  const aby = by - ay;
-  const abz = bz - az;
+  let bestLen = 0, angle = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    const dx = pts[j].x - pts[i].x;
+    const dz = pts[j].y - pts[i].y;
+    const len = Math.hypot(dx, dz);
+    if (len > bestLen) { bestLen = len; angle = Math.atan2(dz, dx); }
+  }
 
-  const acx = cx - ax;
-  const acy = cy - ay;
-  const acz = cz - az;
+  const extents = (a: number) => {
+    const c = Math.cos(a), s = Math.sin(a);
+    let uMin = Infinity, uMax = -Infinity, vMin = Infinity, vMax = -Infinity;
+    for (const p of pts) {
+      const u =  (p.x - cx) * c + (p.y - cz) * s;
+      const v = -(p.x - cx) * s + (p.y - cz) * c;
+      uMin = Math.min(uMin, u); uMax = Math.max(uMax, u);
+      vMin = Math.min(vMin, v); vMax = Math.max(vMax, v);
+    }
+    return { uMin, uMax, vMin, vMax };
+  };
 
-  // composante Y de AB x AC
-  const ny = abz * acx - abx * acz;
+  let e = extents(angle);
+  // faîtage sur le plus grand côté → bascule de 90° si besoin
+  if ((e.uMax - e.uMin) < (e.vMax - e.vMin)) {
+    angle += Math.PI / 2;
+    e = extents(angle);
+  }
+  // Bascule manuelle 90° : échange axe faîtage ↔ pente (orientation au choix).
+  if (rotate90) {
+    angle += Math.PI / 2;
+    e = extents(angle);
+  }
 
-  // Si la normale pointe vers le bas, on inverse B et C
+  const c = Math.cos(angle), s = Math.sin(angle);
+  const uc = (e.uMin + e.uMax) / 2;
+  const vc = (e.vMin + e.vMax) / 2;
+
+  return {
+    cx: cx + uc * c - vc * s,
+    cz: cz + uc * s + vc * c,
+    angle,
+    halfLen:  (e.uMax - e.uMin) / 2,
+    halfSpan: (e.vMax - e.vMin) / 2,
+  };
+}
+
+// ─── Helper : pousse un triangle en garantissant une normale vers le haut ─────
+
+function pushTriUp(
+  arr: number[],
+  ax: number, ay: number, az: number,
+  bx: number, by: number, bz: number,
+  cx: number, cy: number, cz: number,
+): void {
+  const ux = bx - ax, uy = by - ay, uz = bz - az;
+  const vx = cx - ax, vy = cy - ay, vz = cz - az;
+  const ny = uz * vx - ux * vz; // composante Y du produit vectoriel u×v
   if (ny < 0) {
-    return [
-      ax, ay, az,
-      cx, cy, cz,
-      bx, by, bz,
-    ];
-  }
-
-  return pos;
-}
-
-function geo(pos: number[]): THREE.BufferGeometry {
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-  g.computeVertexNormals();
-  return g;
-}
-
-function geoN(pos: number[], nrm: number[]): THREE.BufferGeometry {
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
-  return g;
-}
-
-function tri(pos: number[]): THREE.BufferGeometry {
-  return geo(orientTriUp(pos));
-}
-
-function quad(pos: number[]): THREE.BufferGeometry {
-  const t1 = orientTriUp([
-    pos[0], pos[1], pos[2],
-    pos[3], pos[4], pos[5],
-    pos[6], pos[7], pos[8],
-  ]);
-
-  const t2 = orientTriUp([
-    pos[0], pos[1], pos[2],
-    pos[6], pos[7], pos[8],
-    pos[9], pos[10], pos[11],
-  ]);
-
-  return geo([...t1, ...t2]);
-}
-
-function wallQ(
-  x0: number, z0: number,
-  x1: number, z1: number,
-  yBot: number, yTop: number,
-  nx: number, nz: number,
-): THREE.BufferGeometry {
-  return geoN(
-    [
-      x0, yBot, z0,
-      x1, yBot, z1,
-      x1, yTop, z1,
-
-      x0, yBot, z0,
-      x1, yTop, z1,
-      x0, yTop, z0,
-    ],
-    [
-      nx, 0, nz,
-      nx, 0, nz,
-      nx, 0, nz,
-
-      nx, 0, nz,
-      nx, 0, nz,
-      nx, 0, nz,
-    ],
-  );
-}
-
-function edgeN(a: Pt2D, b: Pt2D): [number, number] {
-  const dx = b.x - a.x;
-  const dz = b.y - a.y;
-  const l = Math.hypot(dx, dz);
-  return l > 1e-8 ? [dz / l, -dx / l] : [0, 0];
-}
-
-function expandPoly(pts: Pt2D[], amount: number): Pt2D[] {
-  if (amount <= 0 || pts.length < 3) return pts.slice();
-  const edges = extractEdges(pts);
-  const n = pts.length;
-
-  return pts.map((pt, i) => {
-    const e0 = edges[(i - 1 + n) % n];
-    const e1 = edges[i];
-    if (!e0 || !e1) return { x: pt.x, y: pt.y };
-
-    const bx = e0.nx + e1.nx;
-    const by = e0.ny + e1.ny;
-    const bl = Math.hypot(bx, by);
-
-    if (bl < 0.15) {
-      return { x: pt.x + e1.nx * amount, y: pt.y + e1.ny * amount };
-    }
-
-    const m = Math.min((amount * 2) / bl, amount * 4);
-    return {
-      x: pt.x + (bx / bl) * m,
-      y: pt.y + (by / bl) * m,
-    };
-  });
-}
-
-function lerp2(a: Pt2D, b: Pt2D, t: number): Pt2D {
-  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-}
-
-function empty(): RoofResult {
-  return {
-    acrotere: [],
-    roofSurface: [],
-    roofCap: [],
-    edicule: [],
-    dormerGlass: [],
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// AXE DE FAÎTAGE — plus longue arête réelle (rotation-agnostique)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-interface RidgeAxis {
-  rdx: number;
-  rdz: number;
-  cx: number;
-  cy: number;
-  halfLen: number;
-}
-
-function ridgeAxis(topPts: Pt2D[], overhang: number): RidgeAxis {
-  const n = topPts.length;
-  let best = -1;
-  let rdx = 1;
-  let rdz = 0;
-
-  for (let i = 0; i < n; i++) {
-    const a = topPts[i];
-    const b = topPts[(i + 1) % n];
-    const dx = b.x - a.x;
-    const dz = b.y - a.y;
-    const l = Math.hypot(dx, dz);
-    if (l > best) {
-      best = l;
-      rdx = dx / l;
-      rdz = dz / l;
-    }
-  }
-
-  let cx = 0;
-  let cy = 0;
-  for (const p of topPts) {
-    cx += p.x;
-    cy += p.y;
-  }
-  cx /= n;
-  cy /= n;
-
-  let minA = Infinity;
-  let maxA = -Infinity;
-  for (const p of topPts) {
-    const a = (p.x - cx) * rdx + (p.y - cy) * rdz;
-    if (a < minA) minA = a;
-    if (a > maxA) maxA = a;
-  }
-
-  return {
-    rdx,
-    rdz,
-    cx,
-    cy,
-    halfLen: (maxA - minA) * 0.5 + overhang,
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// ENTRY POINT
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export function buildRoofGeometry(config: RoofConfig): RoofResult {
-  try {
-    if (!config?.topPts || config.topPts.length < 3) return empty();
-
-    const result = empty();
-    const acroH = config.acrotereHeight ?? DEFAULT_ACROTERE_H;
-    const overhang = Math.max(0, config.overhangM ?? 0);
-    const eavePts = overhang > 0 ? expandPoly(config.topPts, overhang) : config.topPts.slice();
-
-    if (config.roofType !== "inclinee") {
-      try {
-        result.acrotere.push(...buildAcrotere(config.topPts, config.roofBaseY, acroH));
-      } catch (e) {
-        console.warn("[roof]acrotere", e);
-      }
-
-      try {
-        result.roofSurface.push(buildFlatCap(config.topPts, config.roofBaseY + acroH + 0.05));
-      } catch (e) {
-        console.warn("[roof]flatCap", e);
-      }
-
-      if (config.totalFloors >= 3) {
-        try {
-          result.edicule.push(...buildEdicule(config.topPts, config.roofBaseY + acroH));
-        } catch (e) {
-          console.warn("[roof]edicule", e);
-        }
-      }
-    } else {
-      if (overhang > 0) {
-        try {
-          buildFascia(eavePts, config.roofBaseY, result);
-        } catch (e) {
-          console.warn("[roof]fascia", e);
-        }
-      } else {
-        try {
-          result.acrotere.push(...buildAcrotere(config.topPts, config.roofBaseY, acroH * 0.5));
-        } catch (e) {
-          console.warn("[roof]acrotere-half", e);
-        }
-      }
-
-      try {
-        buildInclined(config, eavePts, overhang, result);
-      } catch (e) {
-        console.error("[roof]inclined CRASH:", e);
-        try {
-          result.roofSurface.push(buildFlatCap(config.topPts, config.roofBaseY + 0.05));
-        } catch {
-          // noop
-        }
-      }
-    }
-
-    return result;
-  } catch (e) {
-    console.error("[roof]global crash", e);
-    return empty();
+    arr.push(ax, ay, az, cx, cy, cz, bx, by, bz); // inverse b/c
+  } else {
+    arr.push(ax, ay, az, bx, by, bz, cx, cy, cz);
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// TOIT PLAT
-// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Toit 2 pentes (gable) ────────────────────────────────────────────────────
 
-function buildAcrotere(pts: Pt2D[], baseY: number, h: number): THREE.BufferGeometry[] {
-  if (pts.length < 3 || h <= 0) return [];
-
-  const geos: THREE.BufferGeometry[] = [];
-  const n = pts.length;
-
-  for (let i = 0; i < n; i++) {
-    const a = pts[i];
-    const b = pts[(i + 1) % n];
-    const [nx, ny] = edgeN(a, b);
-
-    geos.push(wallQ(a.x, a.y, b.x, b.y, baseY, baseY + h, nx, ny));
-
-    const ia = { x: a.x - nx * ACROTERE_THICKNESS, y: a.y - ny * ACROTERE_THICKNESS };
-    const ib = { x: b.x - nx * ACROTERE_THICKNESS, y: b.y - ny * ACROTERE_THICKNESS };
-    geos.push(wallQ(ib.x, ib.y, ia.x, ia.y, baseY, baseY + h, -nx, -ny));
-  }
-
-  try {
-    const inner = insetPolygon(pts, ACROTERE_THICKNESS);
-    if (inner?.length >= 3) {
-      const pos: number[] = [];
-      const nrm: number[] = [];
-      const m = Math.min(pts.length, inner.length);
-
-      for (let i = 0; i < m; i++) {
-        const j = (i + 1) % m;
-        const o0 = pts[i];
-        const o1 = pts[j];
-        const i0 = inner[i];
-        const i1 = inner[j];
-
-        pos.push(
-          o0.x, baseY + h, o0.y,
-          o1.x, baseY + h, o1.y,
-          i1.x, baseY + h, i1.y,
-
-          o0.x, baseY + h, o0.y,
-          i1.x, baseY + h, i1.y,
-          i0.x, baseY + h, i0.y,
-        );
-
-        for (let k = 0; k < 6; k++) nrm.push(0, 1, 0);
-      }
-
-      if (pos.length > 0) geos.push(geoN(pos, nrm));
-    }
-  } catch (e) {
-    console.warn("[roof]topCap", e);
-  }
-
-  return geos;
-}
-
-function buildFlatCap(pts: Pt2D[], y: number): THREE.BufferGeometry {
-  const g = new THREE.ShapeGeometry(ptsToShape(pts));
-  g.rotateX(-Math.PI / 2);
-  g.translate(0, y, 0);
-  g.computeVertexNormals();
-  return g;
-}
-
-function buildEdicule(pts: Pt2D[], roofY: number): THREE.BufferGeometry[] {
-  const c = centroid2D(pts);
-  const bb = aabb2D(pts);
-  const size = Math.min(EDICULE_SIZE, bb.w * 0.15, bb.h * 0.15);
-  if (size < 0.3) return [];
-
-  const g = new THREE.BoxGeometry(size, EDICULE_HEIGHT, size * 0.6);
-  g.translate(c.x, roofY + EDICULE_HEIGHT / 2, c.y);
-  return [g];
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// FASCIA
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function buildFascia(eavePts: Pt2D[], baseY: number, result: RoofResult): void {
-  const n = eavePts.length;
-  if (n < 3) return;
-
-  for (let i = 0; i < n; i++) {
-    const a = eavePts[i];
-    const b = eavePts[(i + 1) % n];
-    const [nx, ny] = edgeN(a, b);
-    result.acrotere.push(wallQ(a.x, a.y, b.x, b.y, baseY - FASCIA_H, baseY, nx, ny));
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// DISPATCH
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function buildInclined(
+function buildGableRoof(
+  group:  THREE.Group,
+  pts:    Pt2D[],
+  baseY:  number,
   config: RoofConfig,
-  eavePts: Pt2D[],
-  overhang: number,
-  result: RoofResult,
+  roofMat: THREE.Material,
+  bldId:  string,
 ): void {
-  if (eavePts.length < 3 || config.topPts.length < 3) return;
+  const box = orientedBox(pts, config.rotate90 ?? false);
+  if (!box) return;
 
-  const acroH = overhang > 0 ? 0 : (config.acrotereHeight ?? DEFAULT_ACROTERE_H) * 0.5;
-  const baseY = config.roofBaseY + acroH;
-  const ridgeH = Math.max(1.2, (config.floorHeight ?? 3) * 0.75);
+  const slope = Math.max(5, Math.min(60, config.slopeDeg ?? 30));
+  const oh    = Math.max(0, config.overhangM ?? 0.4);
+  const tan   = Math.tan((slope * Math.PI) / 180);
 
-  switch (config.roofSlopes) {
-    case 1:
-      buildShed(eavePts, config.topPts, baseY, ridgeH, result);
-      break;
-    case 4:
-      buildHip(eavePts, config.topPts, baseY, ridgeH, result);
-      break;
-    case 2:
-    default:
-      buildGable(eavePts, config.topPts, baseY, ridgeH, overhang, config.dormers, result);
-      break;
+  const { cx, cz, angle, halfLen, halfSpan } = box;
+  const cA = Math.cos(angle), sA = Math.sin(angle);
+
+  const W = (u: number, v: number): [number, number] => [
+    cx + u * cA - v * sA,
+    cz + u * sA + v * cA,
+  ];
+
+  const ridgeY  = baseY + halfSpan * tan;
+  const eaveYoh = baseY - oh * tan;
+  const Z = ROOF_ZFIGHT_OFFSET;
+
+  const [r0x, r0z] = W(-(halfLen + oh), 0);
+  const [r1x, r1z] = W( (halfLen + oh), 0);
+  const [nA, nAz]  = W(-(halfLen + oh),  (halfSpan + oh));
+  const [nB, nBz]  = W( (halfLen + oh),  (halfSpan + oh));
+  const [sA0, sAz] = W(-(halfLen + oh), -(halfSpan + oh));
+  const [sB0, sBz] = W( (halfLen + oh), -(halfSpan + oh));
+
+  const slopes: number[] = [];
+  pushTriUp(slopes, r0x, ridgeY + Z, r0z, r1x, ridgeY + Z, r1z, nB, eaveYoh + Z, nBz);
+  pushTriUp(slopes, r0x, ridgeY + Z, r0z, nB, eaveYoh + Z, nBz, nA, eaveYoh + Z, nAz);
+  pushTriUp(slopes, r1x, ridgeY + Z, r1z, r0x, ridgeY + Z, r0z, sA0, eaveYoh + Z, sAz);
+  pushTriUp(slopes, r1x, ridgeY + Z, r1z, sA0, eaveYoh + Z, sAz, sB0, eaveYoh + Z, sBz);
+
+  const slopeGeo = new THREE.BufferGeometry();
+  slopeGeo.setAttribute("position", new THREE.Float32BufferAttribute(slopes, 3));
+  slopeGeo.computeVertexNormals();
+  const slopeMat = makeSlopeMaterial(roofMat, config);
+  if (config.textureId && ROOF_LIBRARY[config.textureId]) {
+    // U = axe faîtage (cA,sA) ; V = transversale (-sA,cA) = sens pente
+    generateRoofUVs(slopeGeo, ROOF_LIBRARY[config.textureId].tileM, -sA, cA, cA, sA);
   }
+  const slopeMesh = new THREE.Mesh(slopeGeo, slopeMat);
+  slopeMesh.castShadow      = true;
+  slopeMesh.receiveShadow   = true;
+  slopeMesh.userData.bldId  = bldId;
+  slopeMesh.userData.isRoof = true;
+  group.add(slopeMesh);
+
+  // Pignons triangulaires (au nu du mur, sans débord) — DoubleSide, restent unis
+  const gableMat = new THREE.MeshLambertMaterial({
+    color: (roofMat as THREE.MeshLambertMaterial).color?.clone?.() ?? new THREE.Color(0x9a948c),
+    side:  THREE.DoubleSide,
+  });
+  const gable: number[] = [];
+  for (const uEnd of [-halfLen, halfLen]) {
+    const [tx, tz] = W(uEnd, 0);
+    const [blx, blz] = W(uEnd,  halfSpan);
+    const [brx, brz] = W(uEnd, -halfSpan);
+    gable.push(tx, ridgeY, tz, blx, baseY, blz, brx, baseY, brz);
+  }
+  const gableGeo = new THREE.BufferGeometry();
+  gableGeo.setAttribute("position", new THREE.Float32BufferAttribute(gable, 3));
+  gableGeo.computeVertexNormals();
+  const gableMesh = new THREE.Mesh(gableGeo, gableMat);
+  gableMesh.castShadow     = true;
+  gableMesh.receiveShadow  = true;
+  gableMesh.userData.bldId = bldId;
+  group.add(gableMesh);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PIGNON (2 PENTES)
-// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Toit 4 pentes (hip) — croupe sur bounding box orientée ───────────────────
 
-function buildGable(
-  eavePts: Pt2D[],
-  topPts: Pt2D[],
-  baseY: number,
-  ridgeH: number,
-  overhang: number,
-  dormers: DormerSpec | undefined,
-  result: RoofResult,
-): void {
-  const ridgeY = baseY + ridgeH;
-  const ax = ridgeAxis(topPts, overhang);
-  const { rdx, rdz, cx, cy, halfLen } = ax;
-  const nE = eavePts.length;
-  const nT = topPts.length;
-  const pignonThresh = Math.max(halfLen * 0.15, 0.3);
-  const longSides: SlopeData[] = [];
+function buildHipRoof(
+  group:  THREE.Group,
+  pts:    Pt2D[],
+  baseY:  number,
+  config: RoofConfig,
+  roofMat: THREE.Material,
+  bldId:  string,
+): boolean {
+  const box = orientedBox(pts, config.rotate90 ?? false);
+  if (!box) return false;
 
-  for (let i = 0; i < nE; i++) {
-    try {
-      const eA = eavePts[i];
-      const eB = eavePts[(i + 1) % nE];
-      const tA = topPts[i % nT];
-      const tB = topPts[(i + 1) % nT];
+  const slope = Math.max(5, Math.min(60, config.slopeDeg ?? 30));
+  const oh    = Math.max(0, config.overhangM ?? 0.4);
+  const tan   = Math.tan((slope * Math.PI) / 180);
+  const Z     = ROOF_ZFIGHT_OFFSET;
 
-      if (
-        !Number.isFinite(eA.x) || !Number.isFinite(eA.y) ||
-        !Number.isFinite(eB.x) || !Number.isFinite(eB.y)
-      ) {
-        continue;
-      }
+  const { cx, cz, angle, halfLen, halfSpan } = box;
+  const cA = Math.cos(angle), sA = Math.sin(angle);
+  const W = (u: number, v: number): [number, number] => [
+    cx + u * cA - v * sA,
+    cz + u * sA + v * cA,
+  ];
 
-      const pA = (eA.x - cx) * rdx + (eA.y - cy) * rdz;
-      const pB = (eB.x - cx) * rdx + (eB.y - cy) * rdz;
-      const rAx = cx + pA * rdx;
-      const rAz = cy + pA * rdz;
-      const rBx = cx + pB * rdx;
-      const rBz = cy + pB * rdz;
-      const rDist = Math.hypot(rBx - rAx, rBz - rAz);
+  const ridgeY = baseY + halfSpan * tan; // hauteur du faîtage
+  const eaveY  = baseY - oh * tan;        // avant-toit (descend)
 
-      const [enx, enz] = edgeN(eA, eB);
+  const [Ax, Az] = W(-(halfLen + oh),  (halfSpan + oh)); // arrière-gauche
+  const [Bx, Bz] = W( (halfLen + oh),  (halfSpan + oh)); // arrière-droite
+  const [Cx, Cz] = W( (halfLen + oh), -(halfSpan + oh)); // avant-droite
+  const [Dx, Dz] = W(-(halfLen + oh), -(halfSpan + oh)); // avant-gauche
 
-      if (rDist < pignonThresh) {
-        const apX = (rAx + rBx) * 0.5;
-        const apZ = (rAz + rBz) * 0.5;
-        if (!Number.isFinite(apX) || !Number.isFinite(apZ)) continue;
+  const rl = halfLen - halfSpan;
+  const tris: number[] = [];
 
-        result.roofSurface.push(
-          tri([
-            eA.x, baseY, eA.y,
-            eB.x, baseY, eB.y,
-            apX, ridgeY, apZ,
-          ]),
-        );
+  if (rl > 0.05) {
+    const [R0x, R0z] = W(-rl, 0);
+    const [R1x, R1z] = W( rl, 0);
 
-        result.roofCap.push(
-          tri([
-            tA.x, baseY, tA.y,
-            tB.x, baseY, tB.y,
-            apX, ridgeY, apZ,
-          ]),
-        );
-
-        if (overhang > 0) {
-          result.roofCap.push(
-            quad([
-              tA.x, baseY, tA.y,
-              tB.x, baseY, tB.y,
-              eB.x, baseY, eB.y,
-              eA.x, baseY, eA.y,
-            ]),
-          );
-        }
-      } else {
-        if (
-          !Number.isFinite(rAx) || !Number.isFinite(rAz) ||
-          !Number.isFinite(rBx) || !Number.isFinite(rBz)
-        ) {
-          continue;
-        }
-
-        result.roofSurface.push(
-          quad([
-            eA.x, baseY, eA.y,
-            eB.x, baseY, eB.y,
-            rBx, ridgeY, rBz,
-            rAx, ridgeY, rAz,
-          ]),
-        );
-
-        if (overhang > 0) {
-          result.roofCap.push(
-            quad([
-              eA.x, baseY, eA.y,
-              eB.x, baseY, eB.y,
-              tB.x, baseY, tB.y,
-              tA.x, baseY, tA.y,
-            ]),
-          );
-        }
-
-        longSides.push({
-          eaveA: eA,
-          eaveB: eB,
-          ridgeA: { x: rAx, y: rAz },
-          ridgeB: { x: rBx, y: rBz },
-          edgeNx: enx,
-          edgeNy: enz,
-        });
-      }
-    } catch (e) {
-      console.warn(`[roof]gable edge ${i}`, e);
-    }
+    pushTriUp(tris, R0x, ridgeY + Z, R0z, R1x, ridgeY + Z, R1z, Bx, eaveY + Z, Bz);
+    pushTriUp(tris, R0x, ridgeY + Z, R0z, Bx, eaveY + Z, Bz, Ax, eaveY + Z, Az);
+    pushTriUp(tris, R1x, ridgeY + Z, R1z, R0x, ridgeY + Z, R0z, Dx, eaveY + Z, Dz);
+    pushTriUp(tris, R1x, ridgeY + Z, R1z, Dx, eaveY + Z, Dz, Cx, eaveY + Z, Cz);
+    pushTriUp(tris, R0x, ridgeY + Z, R0z, Ax, eaveY + Z, Az, Dx, eaveY + Z, Dz);
+    pushTriUp(tris, R1x, ridgeY + Z, R1z, Cx, eaveY + Z, Cz, Bx, eaveY + Z, Bz);
+  } else {
+    const [Px, Pz] = W(0, 0);
+    pushTriUp(tris, Px, ridgeY + Z, Pz, Ax, eaveY + Z, Az, Bx, eaveY + Z, Bz);
+    pushTriUp(tris, Px, ridgeY + Z, Pz, Bx, eaveY + Z, Bz, Cx, eaveY + Z, Cz);
+    pushTriUp(tris, Px, ridgeY + Z, Pz, Cx, eaveY + Z, Cz, Dx, eaveY + Z, Dz);
+    pushTriUp(tris, Px, ridgeY + Z, Pz, Dx, eaveY + Z, Dz, Ax, eaveY + Z, Az);
   }
 
-  if (dormers?.enabled && longSides.length > 0) {
-    for (const s of longSides) {
-      try {
-        addDormers(s, baseY, ridgeY, ridgeH, dormers, result);
-      } catch (e) {
-        console.warn("[roof]dormer", e);
-      }
-    }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(tris, 3));
+  geo.computeVertexNormals();
+  const hipMat = makeSlopeMaterial(roofMat, config);
+  if (config.textureId && ROOF_LIBRARY[config.textureId]) {
+    generateRoofUVs(geo, ROOF_LIBRARY[config.textureId].tileM, -sA, cA, cA, sA);
   }
+  const mesh = new THREE.Mesh(geo, hipMat);
+  mesh.castShadow      = true;
+  mesh.receiveShadow   = true;
+  mesh.userData.bldId  = bldId;
+  mesh.userData.isRoof = true;
+  group.add(mesh);
+
+  return true;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// CHIENS ASSIS
-// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Point d'entrée toit en pente (gable + hip) ───────────────────────────────
 
-function addDormers(
-  slope: SlopeData,
-  baseY: number,
-  ridgeY: number,
-  ridgeH: number,
-  spec: DormerSpec,
-  result: RoofResult,
+export function buildPitchedRoof(
+  group:  THREE.Group,
+  pts:    Pt2D[],
+  baseY:  number,
+  config: RoofConfig,
+  roofMat: THREE.Material,
+  bldId:  string,
 ): void {
-  const { eaveA, eaveB, ridgeA, ridgeB, edgeNx, edgeNy } = slope;
-  const slopeW = Math.hypot(eaveB.x - eaveA.x, eaveB.y - eaveA.y);
-  if (slopeW < 3) return;
-
-  const count = Math.max(1, Math.round(spec.count));
-  const dHW = Math.min(slopeW * spec.widthFactor * 0.5, slopeW / (count * 2.5));
-  const dormerH = ridgeH * Math.max(0.25, Math.min(0.65, spec.heightFactor));
-  const miniRH = dormerH * DORMER_MINI_RIDGE;
-  const li = 1 / Math.max(slopeW, 0.01);
-  const aX = (eaveB.x - eaveA.x) * li;
-  const aZ = (eaveB.y - eaveA.y) * li;
-
-  for (let di = 0; di < count; di++) {
-    const t = (di + 0.5) / count;
-    const ec = lerp2(eaveA, eaveB, t);
-    const rc = lerp2(ridgeA, ridgeB, t);
-
-    const fbcX = ec.x + DORMER_SLOPE_T * (rc.x - ec.x);
-    const fbcZ = ec.y + DORMER_SLOPE_T * (rc.y - ec.y);
-    const fbcY = baseY + DORMER_SLOPE_T * (ridgeY - baseY);
-    const ftY = fbcY + dormerH;
-
-    if (ftY >= ridgeY - 0.3) continue;
-
-    const BLx = fbcX - aX * dHW;
-    const BLz = fbcZ - aZ * dHW;
-    const BRx = fbcX + aX * dHW;
-    const BRz = fbcZ + aZ * dHW;
-    const rPX = (BLx + BRx) * 0.5;
-    const rPZ = (BLz + BRz) * 0.5;
-    const rPY = ftY + miniRH;
-
-    if (!Number.isFinite(BLx + BLz + BRx + BRz + rPX + rPZ + rPY)) continue;
-
-    const sT = (ftY - baseY) / Math.max(0.01, ridgeY - baseY);
-    const tL = Math.max(0, t - dHW / slopeW);
-    const tR = Math.min(1, t + dHW / slopeW);
-    const ecL = lerp2(eaveA, eaveB, tL);
-    const rcL = lerp2(ridgeA, ridgeB, tL);
-    const ecR = lerp2(eaveA, eaveB, tR);
-    const rcR = lerp2(ridgeA, ridgeB, tR);
-    const bkLx = ecL.x + sT * (rcL.x - ecL.x);
-    const bkLz = ecL.y + sT * (rcL.y - ecL.y);
-    const bkRx = ecR.x + sT * (rcR.x - ecR.x);
-    const bkRz = ecR.y + sT * (rcR.y - ecR.y);
-
-    result.roofCap.push(
-      quad([
-        BLx, fbcY, BLz,
-        BRx, fbcY, BRz,
-        BRx, ftY, BRz,
-        BLx, ftY, BLz,
-      ]),
-    );
-
-    result.roofCap.push(
-      tri([
-        BLx, ftY, BLz,
-        BRx, ftY, BRz,
-        rPX, rPY, rPZ,
-      ]),
-    );
-
-    result.roofSurface.push(
-      tri([
-        BLx, ftY, BLz,
-        rPX, rPY, rPZ,
-        bkLx, ftY, bkLz,
-      ]),
-    );
-
-    result.roofSurface.push(
-      tri([
-        BRx, ftY, BRz,
-        bkRx, ftY, bkRz,
-        rPX, rPY, rPZ,
-      ]),
-    );
-
-    result.roofCap.push(
-      tri([
-        BLx, fbcY, BLz,
-        BLx, ftY, BLz,
-        bkLx, ftY, bkLz,
-      ]),
-    );
-
-    result.roofCap.push(
-      tri([
-        BRx, fbcY, BRz,
-        bkRx, ftY, bkRz,
-        BRx, ftY, BRz,
-      ]),
-    );
-
-    const gInset = dHW * 0.28;
-    const gBot = fbcY + dormerH * 0.18;
-    const gTop = ftY - dormerH * 0.12;
-
-    if (gTop > gBot + 0.1) {
-      const ox = edgeNx * 0.06;
-      const oz = edgeNy * 0.06;
-      result.dormerGlass.push(
-        quad([
-          BLx + aX * gInset + ox, gBot, BLz + aZ * gInset + oz,
-          BRx - aX * gInset + ox, gBot, BRz - aZ * gInset + oz,
-          BRx - aX * gInset + ox, gTop, BRz - aZ * gInset + oz,
-          BLx + aX * gInset + ox, gTop, BLz + aZ * gInset + oz,
-        ]),
-      );
-    }
+  if (config.shape === "hip") {
+    if (buildHipRoof(group, pts, baseY, config, roofMat, bldId)) return;
+    // bbox introuvable (footprint < 3 pts) → repli 2 pentes, jamais d'écran cassé
   }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// HIP ROOF (4 PENTES)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function buildHip(
-  eavePts: Pt2D[],
-  topPts: Pt2D[],
-  baseY: number,
-  ridgeH: number,
-  result: RoofResult,
-): void {
-  if (eavePts.length < 3) return;
-
-  const c = centroid2D(topPts);
-  const ridgeY = baseY + ridgeH;
-
-  for (let i = 0; i < eavePts.length; i++) {
-    const a = eavePts[i];
-    const b = eavePts[(i + 1) % eavePts.length];
-    result.roofSurface.push(
-      tri([
-        a.x, baseY, a.y,
-        b.x, baseY, b.y,
-        c.x, ridgeY, c.y,
-      ]),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// SHED ROOF (1 PENTE)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function buildShed(
-  eavePts: Pt2D[],
-  topPts: Pt2D[],
-  baseY: number,
-  ridgeH: number,
-  result: RoofResult,
-): void {
-  if (eavePts.length < 3 || topPts.length < 3) return;
-
-  const edges = extractEdges(topPts);
-  if (!edges?.length) return;
-
-  const be = [...edges].sort((a, b) => b.length - a.length)[0];
-  if (!be) return;
-
-  const bb = aabb2D(topPts);
-  const maxD = Math.max(bb.w, bb.h, 0.01);
-  const c = centroid2D(topPts);
-
-  for (let i = 0; i < eavePts.length; i++) {
-    const p0 = eavePts[i];
-    const p1 = eavePts[(i + 1) % eavePts.length];
-    const h0 = shedH(p0.x, p0.y, be.mx, be.my, be.nx, be.ny, maxD, ridgeH);
-    const h1 = shedH(p1.x, p1.y, be.mx, be.my, be.nx, be.ny, maxD, ridgeH);
-    const hc = shedH(c.x, c.y, be.mx, be.my, be.nx, be.ny, maxD, ridgeH);
-
-    result.roofSurface.push(
-      tri([
-        p0.x, baseY + h0, p0.y,
-        p1.x, baseY + h1, p1.y,
-        c.x, baseY + hc, c.y,
-      ]),
-    );
-  }
-}
-
-function shedH(
-  px: number,
-  py: number,
-  mx: number,
-  my: number,
-  nx: number,
-  ny: number,
-  maxD: number,
-  maxH: number,
-): number {
-  return Math.max(0, ((px - mx) * nx + (py - my) * ny) / maxD) * maxH;
+  buildGableRoof(group, pts, baseY, config, roofMat, bldId);
 }

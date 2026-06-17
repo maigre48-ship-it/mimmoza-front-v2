@@ -14,6 +14,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import AnimatedWaveBackground from "@/components/backgrounds/AnimatedWaveBackground";
+import { supabase } from "@/lib/supabase";
 
 type StoredUser = {
   email?: string;
@@ -37,23 +38,82 @@ export default function ConnexionPage() {
   const [email, setEmail] = useState(storedUser.email ?? "");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
 
   const firstName = storedUser.fullName?.trim().split(/\s+/)[0] ?? "";
 
-  const handleLogin = () => {
-    localStorage.setItem(
-      "mimmoza.user",
-      JSON.stringify({
-        email,
-        logged: true,
-        fullName: storedUser.fullName ?? "",
-        plan: storedUser.plan ?? "free",
-      })
-    );
+  const handleLogin = async () => {
+    if (!email.trim() || !password) {
+      setLoginError("Veuillez renseigner votre email et votre mot de passe.");
+      return;
+    }
 
-    localStorage.setItem("mimmoza-auth", "true");
+    setLoginLoading(true);
+    setLoginError(null);
 
-    navigate("/dashboard", { replace: true });
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (error || !data.session) {
+        const msg = (error?.message ?? "").toLowerCase();
+        if (msg.includes("email not confirmed")) {
+          setLoginError("Votre adresse email n'a pas encore été confirmée. Vérifiez votre boîte mail.");
+        } else {
+          setLoginError(
+            "Identifiants incorrects. Si vous aviez supprimé ce compte, il n'existe plus : créez-en un nouveau."
+          );
+        }
+        return;
+      }
+
+      const user = data.user;
+
+      // Récupère le fullName depuis user_metadata si disponible
+      const fullName =
+        (user.user_metadata?.full_name as string | undefined) ??
+        (user.user_metadata?.name as string | undefined) ??
+        storedUser.fullName ??
+        "";
+
+      // Récupère le plan depuis la table profiles si elle existe, sinon garde l'existant
+      let plan = storedUser.plan ?? "free";
+      try {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("plan")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (profile?.plan) plan = profile.plan as string;
+      } catch {
+        // table profiles absente ou inaccessible — on garde le plan existant
+      }
+
+      localStorage.setItem(
+        "mimmoza.user",
+        JSON.stringify({
+          email: user.email,
+          logged: true,
+          fullName,
+          plan,
+        })
+      );
+
+      localStorage.setItem("mimmoza-auth", "true");
+
+      navigate("/dashboard", { replace: true });
+    } catch {
+      setLoginError("Une erreur est survenue. Veuillez réessayer.");
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleLogin();
   };
 
   return (
@@ -86,7 +146,7 @@ export default function ConnexionPage() {
                 Accès sécurisé
               </div>
               <div className="mt-1 text-sm leading-6 text-slate-600">
-                Connexion simple avant branchement complet Supabase Auth.
+                Authentification Supabase Auth avec session JWT persistée.
               </div>
             </div>
 
@@ -141,6 +201,7 @@ export default function ConnexionPage() {
                     placeholder="nom@exemple.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    onKeyDown={handleKeyDown}
                     className="w-full border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400"
                   />
                 </div>
@@ -159,6 +220,7 @@ export default function ConnexionPage() {
                     placeholder="Votre mot de passe"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={handleKeyDown}
                     className="w-full border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400"
                   />
 
@@ -177,13 +239,20 @@ export default function ConnexionPage() {
                 </div>
               </label>
 
+              {loginError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {loginError}
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={handleLogin}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-sky-500 px-5 py-3.5 text-sm font-medium text-white shadow-md shadow-sky-200/60 transition-all hover:from-indigo-500 hover:to-sky-400"
+                disabled={loginLoading}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-sky-500 px-5 py-3.5 text-sm font-medium text-white shadow-md shadow-sky-200/60 transition-all hover:from-indigo-500 hover:to-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <span>Se connecter</span>
-                <ArrowRight className="h-4 w-4" />
+                <span>{loginLoading ? "Connexion en cours..." : "Se connecter"}</span>
+                {!loginLoading && <ArrowRight className="h-4 w-4" />}
               </button>
             </div>
 
@@ -194,6 +263,24 @@ export default function ConnexionPage() {
                 className="font-medium text-sky-600 transition hover:text-sky-700"
               >
                 Créer un compte
+              </Link>
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-center gap-x-4 gap-y-2 border-t border-slate-200 pt-4 text-xs text-slate-500">
+              <Link to="/mentions-legales" className="hover:text-slate-900 transition-colors">
+                Mentions légales
+              </Link>
+              <Link to="/cgu" className="hover:text-slate-900 transition-colors">
+                CGU
+              </Link>
+              <Link to="/cgv" className="hover:text-slate-900 transition-colors">
+                CGV
+              </Link>
+              <Link
+                to="/politique-confidentialite"
+                className="hover:text-slate-900 transition-colors"
+              >
+                Confidentialité
               </Link>
             </div>
           </div>

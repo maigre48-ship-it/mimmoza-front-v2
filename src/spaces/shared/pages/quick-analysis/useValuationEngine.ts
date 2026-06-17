@@ -243,15 +243,16 @@ async function fetchPlu(
       body: { address: fullAddress },
     });
     if (error || !data) return null;
-    console.log("[PLU raw]", JSON.stringify(data));
     const z = data?.zone ?? data?.plu ?? data?.result ?? data ?? {};
-    return {
+    const ctx: PluContext = {
       zone:               z.zone_code       ?? z.zone         ?? undefined,
       cesMaxPercent:      z.ces_max         ?? z.emprise_sol  ?? undefined,
       hauteurMaxM:        z.hauteur_max_m   ?? z.hauteur_m    ?? undefined,
       hauteurMaxNiveaux:  z.hauteur_niveaux ?? undefined,
       pleineTerrePercent: z.pleine_terre    ?? undefined,
     };
+    // Zéro donnée fictive : si aucune info exploitable, on ne renvoie rien.
+    return ctx.zone !== undefined || ctx.cesMaxPercent !== undefined ? ctx : null;
   } catch {
     return null;
   }
@@ -270,14 +271,18 @@ async function fetchSitadel(communeInsee: string): Promise<SitadelContext | null
       body: { epciCode },
     });
     if (error || !data) return null;
-    console.log("[Sitadel raw]", JSON.stringify(data));
     const s = data?.sitadel ?? data?.stats ?? data ?? {};
-    return {
+    const ctx: SitadelContext = {
       logementsAutorises: s.logements_autorises ?? s.nb_logements ?? undefined,
       permisRecents:      s.permis_recents      ?? s.nb_permis    ?? undefined,
       constructionNeuve:  s.construction_neuve  ?? undefined,
       pressionPromoteur:  s.pression_promoteur  ?? s.pression     ?? undefined,
     };
+    const hasData =
+      ctx.logementsAutorises !== undefined ||
+      ctx.permisRecents !== undefined ||
+      ctx.pressionPromoteur !== undefined;
+    return hasData ? ctx : null;
   } catch {
     return null;
   }
@@ -331,7 +336,7 @@ export function useValuationEngine() {
       return;
     }
 
-    const [dvfSales, ssResult, riskResult, cadastreCtx] = await Promise.all([
+    const [dvfSales, ssResult, riskResult, pluCtx, sitadelCtx, cadastreCtx] = await Promise.all([
       fetchDvfSales(loc.communeInsee, loc.codePostal, input.surface, input.propertyType)
         .then((r) => { setStep("dvf", r.length > 0 ? "ok" : "empty"); return r; })
         .catch(() => { setStep("dvf", "error"); return [] as RawDvfSale[]; }),
@@ -343,6 +348,14 @@ export function useValuationEngine() {
       fetchRisk(loc.communeInsee, loc.lat, loc.lng)
         .then((r) => { setStep("georisques", r ? "ok" : "error"); return r; })
         .catch(() => { setStep("georisques", "error"); return null; }),
+
+      fetchPlu(loc.communeInsee, loc.lat, loc.lng, input.address, input.city, input.postalCode)
+        .then((r) => { setStep("plu", r ? "ok" : "empty"); return r; })
+        .catch(() => { setStep("plu", "error"); return null; }),
+
+      fetchSitadel(loc.communeInsee)
+        .then((r) => { setStep("sitadel", r ? "ok" : "empty"); return r; })
+        .catch(() => { setStep("sitadel", "error"); return null; }),
 
       fetchCadastre(loc.communeInsee, loc.lat, loc.lng)
         .then((r) => { setStep("cadastre", r ? "ok" : "empty"); return r; })
@@ -357,7 +370,7 @@ export function useValuationEngine() {
     else if (dvfPrice && dvfPrice > 0) { marketReferenceM2 = dvfPrice; marketReferenceSource = "DVF commune/CP"; }
 
     setState((p) => ({ ...p, context: {
-      plu: null, sitadel: null, cadastre: cadastreCtx,
+      plu: pluCtx, sitadel: sitadelCtx, cadastre: cadastreCtx,
       marketReferenceM2, marketReferenceSource,
     }}));
     setStep("engine", "loading");
@@ -387,16 +400,16 @@ export function useValuationEngine() {
         locationSignals: ssResult?.locationSignals ?? undefined,
         marketContext:   ssResult?.marketContext   ?? undefined,
         risk:            riskResult                ?? undefined,
-        plu:             undefined,
+        plu:             pluCtx ?? undefined,
         marketReference: marketReferenceM2
           ? { pricePerM2: marketReferenceM2, source: marketReferenceSource ?? undefined }
           : undefined,
         sources: {
           dvf:        dvfSales.length > 0,
           georisques: !!riskResult,
-          plu:        false,
+          plu:        !!pluCtx,
           cadastre:   !!cadastreCtx,
-          sitadel:    false,
+          sitadel:    false, // récupéré et exposé dans context, pas envoyé au moteur (contrat à confirmer)
         },
       };
 

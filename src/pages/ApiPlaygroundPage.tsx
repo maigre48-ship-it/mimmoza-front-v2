@@ -17,11 +17,18 @@ import ApiDeveloperNav from '../features/api/components/ApiDeveloperNav';
 import { PlanBadge, EnvBadge } from '../features/api/components/ApiStatusBadge';
 import { useApiMember } from '../features/api/member/useApiMember';
 
-const API_BASE_URL = 'https://api.mimmoza.io';
+const API_BASE_URL = 'https://fwvrqngbafqdaekbdfnm.supabase.co/functions/v1/api-gateway';
 const DEFAULT_BODY = `{
   "lat": 48.8686,
   "lon": 2.3306
 }`;
+
+// Endpoints réels exposés par le gateway, avec leur coût en crédits
+const ENDPOINTS = [
+  { path: '/v1/scoring/smart', label: 'SmartScore complet', cost: 10 },
+  { path: '/v1/market/dvf',    label: 'Marché DVF',         cost: 2 },
+  { path: '/v1/risks',         label: 'Risques',            cost: 2 },
+] as const;
 
 // ── CopyButton ─────────────────────────────────────────────────────────────
 function CopyButton({ text }: { text: string }) {
@@ -57,7 +64,7 @@ export default function ApiPlaygroundPage() {
 
   // État local du playground
   const [method] = useState('POST');
-  const [path] = useState('/v1/scoring/smart');
+  const [path, setPath] = useState<string>('/v1/scoring/smart');
   const [body, setBody] = useState(DEFAULT_BODY);
   const [reqLoading, setReqLoading] = useState(false);
   const [status, setStatus] = useState<number | null>(null);
@@ -80,6 +87,10 @@ export default function ApiPlaygroundPage() {
   }, [defaultKey?.prefix]);
 
   const fullUrl = useMemo(() => `${API_BASE_URL}${path}`, [path]);
+  const selectedEndpoint = useMemo(
+    () => ENDPOINTS.find((e) => e.path === path) ?? ENDPOINTS[0],
+    [path]
+  );
 
   // ── Logique fetch ─────────────────────────────────────────────────────────
   async function handleSend() {
@@ -150,7 +161,6 @@ export default function ApiPlaygroundPage() {
         <div className="flex items-center gap-2">
           {defaultKey && <EnvBadge env={defaultKey.environment ?? defaultKey.env} size="sm" />}
           <PlanBadge plan={member.subscription.plan} size="sm" />
-          {/* BONUS: indicateur connexion réelle */}
           <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
             <Wifi className="h-3 w-3" />
             Connected to API
@@ -212,7 +222,7 @@ export default function ApiPlaygroundPage() {
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <div className="text-xs uppercase tracking-wide text-slate-500">Base URL</div>
-            <div className="mt-1 font-mono text-sm text-slate-800">{API_BASE_URL}</div>
+            <div className="mt-1 max-w-xs truncate font-mono text-sm text-slate-800">{API_BASE_URL}</div>
           </div>
         </div>
       </div>
@@ -278,18 +288,27 @@ export default function ApiPlaygroundPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700">Endpoint</label>
-                <input
+                <select
                   value={path}
-                  disabled
-                  className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-sm text-slate-600"
-                />
+                  onChange={(e) => setPath(e.target.value)}
+                  className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-mono text-sm text-slate-800 outline-none transition focus:border-indigo-400"
+                >
+                  {ENDPOINTS.map((ep) => (
+                    <option key={ep.path} value={ep.path}>
+                      {ep.path} — {ep.label} ({ep.cost} crédits)
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-xs text-slate-500">
+                  Coût : <span className="font-semibold">{selectedEndpoint.cost} crédits</span> par appel
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700">Body JSON</label>
                 <textarea
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
-                  rows={14}
+                  rows={12}
                   spellCheck={false}
                   className="mt-2 w-full rounded-xl border border-slate-300 bg-slate-950 px-4 py-3 font-mono text-sm text-emerald-300 outline-none transition focus:border-indigo-400"
                 />
@@ -364,7 +383,7 @@ export default function ApiPlaygroundPage() {
               <div>
                 <div className="font-medium text-amber-900">Payload minimal recommandé</div>
                 <p className="mt-1 text-sm text-amber-800">
-                  Pour le endpoint actuel, utilise au minimum{' '}
+                  Chaque endpoint accepte au minimum{' '}
                   <code className="rounded bg-amber-100 px-1 font-mono text-xs">lat</code> et{' '}
                   <code className="rounded bg-amber-100 px-1 font-mono text-xs">lon</code>.
                 </p>
@@ -380,7 +399,7 @@ export default function ApiPlaygroundPage() {
                   Plan actuel : {member.subscription?.plan ?? '—'}
                 </p>
                 <p className="mt-1 text-sm text-indigo-700">
-                  {(member.usage?.usedRequests ?? 0).toLocaleString('fr-FR')} requêtes ce mois
+                  {(member.usage?.usedRequests ?? 0).toLocaleString('fr-FR')} crédits consommés ce mois
                 </p>
               </div>
               {member.subscription ? (

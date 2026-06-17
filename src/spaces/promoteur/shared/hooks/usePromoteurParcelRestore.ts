@@ -1,13 +1,14 @@
 // src/spaces/promoteur/shared/hooks/usePromoteurParcelRestore.ts
 //
-// V1.5 — Fix fusion MultiPolygon sans déformer la géométrie
-//   • Après un union direct qui produit un MultiPolygon (2 sous-polygones),
-//     on applique des buffers progressifs en cm sur CES 2 sous-polygones
-//     (pas sur les 4 features originales). Les 2 sous-polygones sont déjà
-//     partiellement fusionnés → ils partagent une frontière quasi-identique
-//     → 1 cm de buffer suffit à combler le micro-écart de précision cadastrale
-//     sans déformer la forme de la parcelle de manière perceptible.
-//   • Aucun hull convexe/concave → la forme exacte est préservée.
+// V1.6 — Restauration à la reprise d'un dossier
+//   • Nouvelle source de fallback : `mimmoza.parcelFeature.<studyId>` (clé scopée
+//     écrite par Implantation 2D, lue par Massing 3D, qui SURVIT à la reprise).
+//     Elle est lue EN PREMIER dans la chaîne de fallback car elle porte déjà la
+//     géométrie → aucun refetch Supabase/IGN, restauration instantanée et fiable.
+//   • Corrige le symptôme "Aucune parcelle sélectionnée" alors que Massing 3D,
+//     lui, affiche bien la parcelle (il lisait déjà cette clé).
+//
+// V1.5 — Fix fusion MultiPolygon sans déformer la géométrie (inchangé).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as turf from "@turf/turf";
@@ -211,7 +212,6 @@ function computeCombined(
   if (combined?.geometry.type === "Polygon") return combined;
 
   // ── Tentative 2 : buffer 0.3 m sur les features originales ──────────────
-  // Corrige les micro-écarts de précision < 30 cm entre bordures cadastrales.
   const result03 = tryBufferUnion(features, 0.3);
   if (result03) {
     console.debug(
@@ -221,17 +221,6 @@ function computeCombined(
   }
 
   // ── Tentative 3 : buffers microscopiques sur les sous-polygones ──────────
-  //
-  // Si l'union produit un MultiPolygon (ex: 4 parcelles → 2 sous-polygones),
-  // les 2 sous-polygones sont DÉJÀ partiellement fusionnés et partagent une
-  // frontière quasi-identique. Un buffer de 1 cm suffit à combler le micro-écart
-  // restant sans déformer la géométrie de manière perceptible.
-  //
-  // On travaille sur les sous-polygones du résultat (pas sur les 4 features
-  // originales) car ils sont beaucoup plus proches à relier.
-  //
-  // On n'utilise PAS de hull (convexe ou concave) : la forme exacte de la
-  // parcelle doit être préservée.
   if (combined?.geometry.type === "MultiPolygon") {
     const subFeatures: Feature<Polygon>[] = (
       combined.geometry.coordinates as number[][][][]
@@ -250,8 +239,6 @@ function computeCombined(
   }
 
   // ── Dernier recours : MultiPolygon ──────────────────────────────────────
-  // Les parcelles sont genuinement disjointes (aucun buffer ne les relie).
-  // featureToPoint2D prendra le plus grand sous-polygone.
   console.warn(
     `[usePromoteurParcelRestore] Impossible de fusionner ${features.length} parcelles` +
     ` en un polygon unique — MultiPolygon conservé`,
@@ -284,6 +271,54 @@ interface FallbackSelection {
   _source:  string;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// NOUVEAU (V1.6) — readFallbackFromParcelFeature
+// Lit la clé scopée `mimmoza.parcelFeature.<studyId>` écrite par Implantation 2D.
+// Cette clé survit à la reprise d'un dossier et porte la géométrie complète :
+// on attache directement le Feature → aucun refetch Supabase/IGN nécessaire.
+// ─────────────────────────────────────────────────────────────────────────────
+function readFallbackFromParcelFeature(
+  studyId?: string | null,
+): FallbackSelection | null {
+  if (!studyId) return null;
+  try {
+    const raw = localStorage.getItem(`mimmoza.parcelFeature.${studyId}`);
+    if (!raw) return null;
+
+    const feat = JSON.parse(raw) as Feature<Polygon | MultiPolygon> | null;
+    if (!feat?.geometry?.type) return null;
+
+    const props = (feat.properties ?? {}) as Record<string, unknown>;
+    const rawId = props.id ?? props.idu ?? props.IDU ?? props.parcelle ?? feat.id;
+    const id =
+      typeof rawId === "string" && rawId.trim()
+        ? rawId.trim()
+        : typeof rawId === "number"
+          ? String(rawId)
+          : `restored-${studyId}`;
+
+    let commune: string | null =
+      (typeof props.commune === "string" && props.commune) ||
+      (typeof props.code_insee === "string" && props.code_insee) ||
+      (typeof props.insee === "string" && props.insee) ||
+      null;
+    if (!commune && /^\d{5}/.test(id)) commune = id.slice(0, 5);
+
+    // On attache le Feature pour éviter tout refetch (missingFeatureIds = []).
+    const parcel = { id, area_m2: null, feature: feat } as unknown as SelectedParcel;
+
+    return {
+      parcels: [parcel],
+      focusId: id,
+      commune,
+      _source: "parcelFeature.<studyId>",
+    };
+  } catch (e) {
+    console.warn("[usePromoteurParcelRestore] lecture parcelFeature échouée:", e);
+    return null;
+  }
+}
+
 function readFallbackFromSnapshot(): FallbackSelection | null {
   try {
     const snapshot = getSnapshot();
@@ -294,7 +329,7 @@ function readFallbackFromSnapshot(): FallbackSelection | null {
       const commune   = (foncier.communeInsee as string | undefined) ?? null;
       const ids = parcelIds.length > 0 ? parcelIds : (parcelId ? [parcelId] : []);
       if (ids.length > 0) return {
-        parcels: ids.map(id => ({ id, area_m2: null })),
+        parcels: ids.map(id => ({ id, area_m2: null } as SelectedParcel)),
         focusId: parcelId ?? ids[0] ?? null,
         commune,
         _source: "snapshot.foncier",
@@ -305,7 +340,7 @@ function readFallbackFromSnapshot(): FallbackSelection | null {
     if (implData && Array.isArray(implData.parcelIds) && (implData.parcelIds as string[]).length > 0) {
       const ids = implData.parcelIds as string[];
       return {
-        parcels: ids.map(id => ({ id, area_m2: null })),
+        parcels: ids.map(id => ({ id, area_m2: null } as SelectedParcel)),
         focusId: (implData.primaryParcelId as string | undefined) ?? ids[0] ?? null,
         commune: (implData.communeInsee as string | undefined) ?? null,
         _source: "snapshot.implantation2d",
@@ -315,7 +350,7 @@ function readFallbackFromSnapshot(): FallbackSelection | null {
     if (project?.parcelId) {
       const id = String(project.parcelId);
       return {
-        parcels: [{ id, area_m2: null }],
+        parcels: [{ id, area_m2: null } as SelectedParcel],
         focusId: id,
         commune: project.commune_insee ? String(project.commune_insee) : null,
         _source: "snapshot.project",
@@ -333,7 +368,7 @@ function readFallbackFromSession(): FallbackSelection | null {
     const ids       = parcelIds.length > 0 ? parcelIds : (parcelId ? [parcelId] : []);
     if (!ids.length) return null;
     return {
-      parcels: ids.map(id => ({ id, area_m2: null })),
+      parcels: ids.map(id => ({ id, area_m2: null } as SelectedParcel)),
       focusId: parcelId ?? ids[0] ?? null,
       commune,
       _source: "session.*",
@@ -388,7 +423,13 @@ export function usePromoteurParcelRestore({
     if (fallbackInjectedRef.current) return;
     fallbackInjectedRef.current = true;
 
-    const fallback = readFallbackFromSnapshot() ?? readFallbackFromSession();
+    // Ordre : parcelFeature scopé (géométrie en main, survit à la reprise)
+    //         → snapshot → session.*
+    const fallback =
+      readFallbackFromParcelFeature(studyId) ??
+      readFallbackFromSnapshot() ??
+      readFallbackFromSession();
+
     if (!fallback) {
       console.debug("[usePromoteurParcelRestore] Aucune sélection dans aucune source → empty");
       return;
@@ -400,7 +441,7 @@ export function usePromoteurParcelRestore({
     setSelectedParcels(fallback.parcels);
     if (fallback.focusId) setFoncierFocusId(fallback.focusId);
     if (fallback.commune) setFoncierCommune(fallback.commune);
-  }, [isHydrated, foncierParcels.length, setSelectedParcels, setFoncierFocusId, setFoncierCommune]);
+  }, [isHydrated, foncierParcels.length, studyId, setSelectedParcels, setFoncierFocusId, setFoncierCommune]);
 
   const selectedParcels = foncierParcels;
   const focusParcelId   = foncierFocusId;

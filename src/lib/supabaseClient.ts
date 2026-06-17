@@ -27,7 +27,8 @@ export const supabase: SupabaseClient =
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      storageKey: "mimmoza.auth.token.v1", // évite collisions si plusieurs apps
+      // PAS de storageKey custom : on garde la clé par défaut
+      // (sb-<ref>-auth-token), celle où ta session de login est déjà écrite.
     },
   });
 

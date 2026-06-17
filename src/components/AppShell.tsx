@@ -8,6 +8,7 @@ import {
   TrendingUp, AlertTriangle, Grid3X3, Cuboid, Calculator, ChevronRight, Sparkles,
   Search, ClipboardList, Building, LayoutDashboard, Eye, Code2, Wand2,
   FileSearch, Users, Plus, Hammer, ScanSearch, FolderKanban, ShieldAlert, Zap,
+  Target,
 } from "lucide-react";
 
 import mimmozaLogo from "../assets/mimmoza-logo.png";
@@ -19,6 +20,7 @@ import { supabase } from "../lib/supabase";
 import { unlockDealIfNeeded } from "../spaces/marchand/services/dealUnlock";
 import { ensureActiveDeal, type MarchandDeal } from "../spaces/marchand/shared/marchandSnapshot.store";
 import { DealUnlockModal } from "../spaces/marchand/components/DealUnlockModal";
+import { countUnseen } from "../services/opportunity/opportunityWatch.service";
 
 type Space = "none" | "promoteur" | "agence" | "marchand" | "banque" | "rehabilitation";
 
@@ -67,6 +69,36 @@ function MimmozaLogo(props: { className?: string }) {
       className={props.className ?? "h-12 w-auto object-contain"}
       draggable={false}
     />
+  );
+}
+
+// ── Badge de non-lus de la Veille active ──────────────────────────────────────
+// Auto-suffisant : interroge le compteur d'événements non lus au montage et
+// toutes les 60 s. Silencieux si erreur (ex. utilisateur non connecté).
+function VeilleNavBadge() {
+  const [count, setCount] = useState(0);
+  useEffect(function () {
+    let mounted = true;
+    async function load() {
+      try {
+        const n = await countUnseen();
+        if (mounted) setCount(n);
+      } catch {
+        /* silencieux */
+      }
+    }
+    void load();
+    const id = setInterval(function () { void load(); }, 60000);
+    return function () {
+      mounted = false;
+      clearInterval(id);
+    };
+  }, []);
+  if (count <= 0) return null;
+  return (
+    <span className="ml-1 inline-flex min-w-[1.1rem] items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+      {count > 99 ? "99+" : count}
+    </span>
   );
 }
 
@@ -160,7 +192,8 @@ function getPromoteurActiveSection(pathname: string): string | null {
     ["/promoteur/foncier",                   "preanalyse"],
     ["/promoteur/plu-faisabilite",           "preanalyse"],
     ["/promoteur/faisabilite",               "preanalyse"],
-    ["/promoteur/risques",                   "preanalyse"],
+    // ── L'étude de risques vit désormais UNIQUEMENT dans l'onglet Marché ──
+    ["/promoteur/risques",                   "marche"],
     ["/promoteur/programmation",             "programmation"],
     ["/promoteur/implantation-2d",           "faisabilite"],
     ["/promoteur/plan-2d",                   "faisabilite"],
@@ -216,7 +249,6 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       label: "Pré-analyse",
       items: [
         { label: "PLU express",       path: "/promoteur/foncier",  icon: Map },
-        { label: "Risques bloquants", path: "/promoteur/risques",  icon: AlertTriangle },
       ],
     },
     {
@@ -242,7 +274,7 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       items: [
         { label: "DVF & comparables", path: "/promoteur/estimation",        icon: TrendingUp },
         { label: "Étude de marché",   path: "/promoteur/marche",            icon: Layers },
-        { label: "Risques marché",    path: "/promoteur/risques",           icon: AlertTriangle },
+        { label: "Étude de risques",  path: "/promoteur/risques",           icon: AlertTriangle },
         { label: "Logements sociaux", path: "/promoteur/logements-sociaux", icon: Users },
       ],
     },
@@ -511,21 +543,6 @@ function TopNavigation(props: {
                 <div className="mx-1 h-5 w-px shrink-0 bg-slate-200/80" />
 
                 <NavLink
-                  to="/veille"
-                  onClick={() => onChangeSpace("none")}
-                  className="group relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all"
-                  style={function (navArgs) {
-                    if (navArgs.isActive) return { background: "linear-gradient(90deg, #1e3a5f 0%, #1a3060 100%)", color: "white" };
-                    return { color: "#64748b" };
-                  }}
-                >
-                  {function (navArgs) {
-                    const cls = "h-4 w-4 transition-colors " + (navArgs.isActive ? "text-white" : "text-slate-400 group-hover:text-slate-700");
-                    return (<><Eye className={cls} /><span>Veille</span></>);
-                  }}
-                </NavLink>
-
-                <NavLink
                   to="/analyse-rapide"
                   onClick={() => onChangeSpace("none")}
                   className="group relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all"
@@ -537,6 +554,21 @@ function TopNavigation(props: {
                   {function (navArgs) {
                     const cls = "h-4 w-4 transition-colors " + (navArgs.isActive ? "text-white" : "text-slate-400 group-hover:text-slate-700");
                     return (<><Zap className={cls} /><span>Analyse rapide</span></>);
+                  }}
+                </NavLink>
+
+                <NavLink
+                  to="/opportunites"
+                  onClick={() => onChangeSpace("none")}
+                  className="group relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all"
+                  style={function (navArgs) {
+                    if (navArgs.isActive) return { background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)", color: "white" };
+                    return { color: "#64748b" };
+                  }}
+                >
+                  {function (navArgs) {
+                    const cls = "h-4 w-4 transition-colors " + (navArgs.isActive ? "text-white" : "text-slate-400 group-hover:text-slate-700");
+                    return (<><Target className={cls} /><span>Opportunités</span><VeilleNavBadge /></>);
                   }}
                 </NavLink>
 
@@ -885,21 +917,6 @@ function MobileDrawer(props: {
             <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Outils</div>
 
             <NavLink
-              to="/veille"
-              onClick={onClose}
-              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 transition-all"
-              style={function (navArgs) {
-                if (navArgs.isActive) return { background: "linear-gradient(90deg, #1e3a5f 0%, #1a3060 100%)", color: "white" };
-                return { color: "#374151" };
-              }}
-            >
-              {function (navArgs) {
-                const cls = "h-4 w-4 " + (navArgs.isActive ? "text-white" : "text-blue-400");
-                return (<><Eye className={cls} /><span className="text-sm font-medium">Veille marche</span></>);
-              }}
-            </NavLink>
-
-            <NavLink
               to="/analyse-rapide"
               onClick={onClose}
               className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 transition-all"
@@ -911,6 +928,21 @@ function MobileDrawer(props: {
               {function (navArgs) {
                 const cls = "h-4 w-4 " + (navArgs.isActive ? "text-white" : "text-indigo-400");
                 return (<><Zap className={cls} /><span className="text-sm font-medium">Analyse rapide</span></>);
+              }}
+            </NavLink>
+
+            <NavLink
+              to="/opportunites"
+              onClick={onClose}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 transition-all"
+              style={function (navArgs) {
+                if (navArgs.isActive) return { background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)", color: "white" };
+                return { color: "#374151" };
+              }}
+            >
+              {function (navArgs) {
+                const cls = "h-4 w-4 " + (navArgs.isActive ? "text-white" : "text-indigo-400");
+                return (<><Target className={cls} /><span className="text-sm font-medium">Opportunités</span><VeilleNavBadge /></>);
               }}
             </NavLink>
 
@@ -1093,16 +1125,50 @@ export function AppShell(props: AppShellProps) {
   }
 </main>
 
-      <footer className="border-t border-slate-200/80 bg-white py-3 px-4">
-        <div className="mx-auto flex max-w-7xl items-center justify-between">
-          <div className="flex items-center gap-2">
-            <MimmozaLogo className="h-5 w-auto object-contain" />
-            <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-            <span className="text-[10px] text-slate-400">Prototype local</span>
-          </div>
-          <span className="text-[10px] text-slate-400">Intelligence immobilière</span>
-        </div>
-      </footer>
+      <footer className="border-t border-slate-200/80 bg-white py-4 px-4">
+  <div className="mx-auto max-w-7xl">
+    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+
+      <div className="flex items-center gap-2">
+        <MimmozaLogo className="h-5 w-auto object-contain" />
+        <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+        <span className="text-[10px] text-slate-400">
+          Intelligence immobilière
+        </span>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
+        <NavLink
+          to="/mentions-legales"
+          className="hover:text-slate-900 transition-colors"
+        >
+          Mentions légales
+        </NavLink>
+
+        <NavLink
+          to="/cgu"
+          className="hover:text-slate-900 transition-colors"
+        >
+          CGU
+        </NavLink>
+
+        <NavLink
+          to="/cgv"
+          className="hover:text-slate-900 transition-colors"
+        >
+          CGV
+        </NavLink>
+
+        <NavLink
+          to="/politique-confidentialite"
+          className="hover:text-slate-900 transition-colors"
+        >
+          Politique de confidentialité
+        </NavLink>
+      </div>
+    </div>
+  </div>
+</footer>
 
       <DealUnlockModal
         open={Boolean(pendingUnlock)}

@@ -1,6 +1,15 @@
 // massingGeometry.ts
 // Helpers de géométrie pour le Massing Engine
 // Séparé du renderer : pas d'import Three.js ici → testable unitairement
+//
+// V2 — ÉCHELLE MÉTRIQUE FIXE (1 unité scène = 1 mètre réel).
+//   Avant, computeSceneProjection normalisait l'échelle sur l'étendue des points
+//   (scale = TARGET_SCENE_UNITS / max(span)). Conséquence : l'échelle variait à
+//   chaque rebuild selon le contenu de allPts (parcelle seule vs + relief/bbox),
+//   d'où des proportions et des hauteurs instables (footprint 90 puis 51 unités,
+//   floorHeight 14.7 puis 8.3 pour le même R+0). Désormais l'échelle est fixe et
+//   métrique : scale = mètres/unité-source, zScale = 1 → X, Y et Z partagent enfin
+//   la même unité (le mètre). Les textures, ombres et hauteurs deviennent stables.
 
 import type { Pt2D, MassingBuildingModel, BuildingTransform } from "./massingScene.types";
 import { polygonArea } from "./massingScene.types";
@@ -27,19 +36,25 @@ export function metersPerGeoUnit(pts: [number, number][]): number {
 
 // ─── Projection scène ─────────────────────────────────────────────────────────
 
-/**
- * Calcule le centre et l'échelle pour projeter un ensemble de points
- * dans un espace scène de taille TARGET_SCENE_UNITS unités.
- */
-const TARGET_SCENE_UNITS = 520;
-
 export interface SceneProjection {
   cx:    number;  // centroïde X des coords source
   cy:    number;  // centroïde Y des coords source
-  scale: number;  // unités-scène / unité-source
-  zScale: number; // unités-scène / mètre réel
+  scale: number;  // unités-scène / unité-source  (= mètres / unité-source)
+  zScale: number; // unités-scène / mètre réel     (= 1, échelle métrique)
 }
 
+/**
+ * Calcule le centre et l'échelle MÉTRIQUE FIXE pour projeter un ensemble de
+ * points en coordonnées scène où 1 unité = 1 mètre réel.
+ *
+ * - En WGS84 (degrés) : projection équirectangulaire locale autour du centroïde.
+ *   mètres/degré ≈ 111 320 · cos(latitude) — on applique la même résolution aux
+ *   deux axes (l'écart lon/lat est négligeable sur l'emprise d'une parcelle).
+ * - En Lambert93 / mètres : échelle 1:1 directe.
+ *
+ * Important : l'échelle ne dépend PLUS de l'étendue des points → elle est stable
+ * d'un rebuild à l'autre, quel que soit le contenu de la scène (relief, bbox…).
+ */
 export function computeSceneProjection(
   allPts: [number, number][],
 ): SceneProjection {
@@ -48,14 +63,17 @@ export function computeSceneProjection(
     if (x < x0) x0 = x; if (x > x1) x1 = x;
     if (y < y0) y0 = y; if (y > y1) y1 = y;
   }
-  const cx    = (x0 + x1) / 2;
-  const cy    = (y0 + y1) / 2;
-  const spanX = Math.max(1e-9, x1 - x0);
-  const spanY = Math.max(1e-9, y1 - y0);
-  const scale = TARGET_SCENE_UNITS / Math.max(spanX, spanY);
-  const isGeo = detectIsGeographic(allPts);
-  const mPU   = isGeo ? 111_000 : 1;
-  const zScale = scale / mPU;
+  const cx = (x0 + x1) / 2;
+  const cy = (y0 + y1) / 2;
+
+  const isGeo  = detectIsGeographic(allPts);
+  const latRad = isGeo ? (cy * Math.PI) / 180 : 0;
+  // mètres par unité source : WGS84 → 111 320·cos(lat) ; Lambert93/mètres → 1.
+  const mPerUnit = isGeo ? 111_320 * Math.cos(latRad) : 1;
+
+  const scale  = mPerUnit; // source → mètres (= unités scène)
+  const zScale = 1;        // 1 mètre réel = 1 unité scène
+
   return { cx, cy, scale, zScale };
 }
 

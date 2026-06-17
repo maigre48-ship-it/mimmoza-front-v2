@@ -91,12 +91,6 @@ async function fileToBase64DataUrl(
 
           const pngDataUrl = canvas.toDataURL("image/png");
 
-          console.log("[fileToBase64DataUrl] Converti en PNG 1024×1024", {
-            originalType: file.type,
-            originalSize: `${img.width}×${img.height}`,
-            outputSizeKb: Math.round(pngDataUrl.length / 1024),
-          });
-
           resolve(pngDataUrl);
         } catch (e) {
           reject(new Error(`Erreur canvas : ${e}`));
@@ -169,23 +163,6 @@ async function callRenduEdgeFunction(
     // fallback anon key
   }
 
-  console.log("[RenduTravaux] PAYLOAD →", {
-    hasImage: Boolean(payload.image_base64),
-    imageSizeKb: payload.image_base64
-      ? Math.round(payload.image_base64.length / 1024)
-      : 0,
-    hasMask: Boolean(payload.mask_base64),
-    maskSizeKb: payload.mask_base64
-      ? Math.round(payload.mask_base64.length / 1024)
-      : 0,
-    hasPrompt: Boolean(payload.prompt),
-    promptLength: payload.prompt?.length ?? 0,
-    promptPreview: payload.prompt?.slice(0, 100) + "…",
-    style: payload.style,
-    mime: payload.image_mime,
-    config: payload.config,
-  });
-
   try {
     const resp = await fetch(`${supabaseUrl}/functions/v1/rendu-travaux-v1`, {
       method: "POST",
@@ -218,14 +195,6 @@ async function callRenduEdgeFunction(
 
     try {
       const parsed = JSON.parse(rawText) as RenduTravauxEdgeResponse;
-
-      console.log("[RenduTravaux] Edge Function OK →", {
-        success: parsed.success,
-        hasUrl: Boolean(parsed.image_url),
-        hasBase64: Boolean(parsed.image_base64),
-        durationMs: parsed.duration_ms,
-      });
-
       return parsed;
     } catch {
       throw new Error("Réponse invalide du serveur (JSON mal formé)");
@@ -373,19 +342,10 @@ export function useTravauxImageRender(): UseTravauxImageRenderReturn {
       }));
 
       try {
-        console.log("[RenduTravaux] Étape 1 — Conversion image base64");
-
         const imageDataUrl = await fileToBase64DataUrl(image.file);
         const imageBase64 = extractBase64FromDataUrl(imageDataUrl);
 
-        console.log("[RenduTravaux] Image convertie", {
-          mime: "image/png",
-          base64Kb: Math.round(imageBase64.length / 1024),
-        });
-
         setState((prev) => ({ ...prev, progress: 15 }));
-
-        console.log("[RenduTravaux] Étape 2 — Préparation configuration");
 
         const finalConfig: TravauxRenduConfig = {
           ...config,
@@ -396,8 +356,6 @@ export function useTravauxImageRender(): UseTravauxImageRenderReturn {
         };
 
         setState((prev) => ({ ...prev, progress: 25 }));
-
-        console.log("[RenduTravaux] Étape 3 — Inférence zones");
 
         const lots: string[] = finalConfig.lots ?? [];
         const zones: TravauxZone[] = inferZonesFromLots(lots);
@@ -410,30 +368,13 @@ export function useTravauxImageRender(): UseTravauxImageRenderReturn {
           ])
         );
 
-        console.log("[RenduTravaux] Zones inférées :", {
-          lots,
-          zones,
-          effectiveZones,
-          solType: finalConfig.solType,
-          solColor: finalConfig.solColor,
-          murColor: finalConfig.murColor,
-        });
-
         const promptObjFinal = buildTravauxImagePrompt({
           config: finalConfig,
           style: state.styleDecoration,
           zones: effectiveZones,
         });
 
-        console.log("[RenduTravaux] Prompt final :", {
-          summary: promptObjFinal.summary,
-          tokenEstimate: promptObjFinal.debugTokenCount,
-          promptLength: promptObjFinal.prompt.length,
-        });
-
         setState((prev) => ({ ...prev, progress: 35 }));
-
-        console.log("[RenduTravaux] Étape 4 — Génération mask");
 
         setState((prev) => ({
           ...prev,
@@ -447,15 +388,7 @@ export function useTravauxImageRender(): UseTravauxImageRenderReturn {
           zones: effectiveZones,
         });
 
-        console.log("[RenduTravaux] Mask généré", {
-          zones: effectiveZones,
-          maskKb: Math.round(maskDataUrl.length / 1024),
-          isDataUrl: maskDataUrl.startsWith("data:"),
-        });
-
         setState((prev) => ({ ...prev, progress: 55 }));
-
-        console.log("[RenduTravaux] Étape 5 — Appel Edge Function");
 
         const payload: RenduTravauxEdgePayloadV4 = {
           image_base64: imageDataUrl,
@@ -502,13 +435,6 @@ export function useTravauxImageRender(): UseTravauxImageRenderReturn {
           summary: promptObjFinal.summary,
           zones: effectiveZones,
         };
-
-        console.log("[RenduTravaux] ✅ Rendu terminé", {
-          durationMs,
-          summary: result.summary,
-          hasUrl: Boolean(generatedUrl),
-          configSnapshot: result.configSnapshot,
-        });
 
         setState((prev) => ({
           ...prev,
