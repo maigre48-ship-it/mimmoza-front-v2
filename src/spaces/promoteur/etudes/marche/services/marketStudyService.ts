@@ -1,13 +1,12 @@
 // FILE: src/spaces/promoteur/etudes/marche/services/marketStudyService.ts
 
 import { getPoiConfigsForProject, getProjectConfig } from "../config";
-import type { CompetitionData, MarketStudyResult, ProjectType } from "../types";
+import type { CompetitionData, MarketStudyResult, ProjectType } from "../types/competition";
 import { computePoiStats, fetchPoisForProject } from "./poiService";
 import { fetchBpeData } from "./providers/bpeProvider";
 import { fetchDvfData } from "./providers/dvfProvider";
 import { DEFAULT_EHPAD_CATEGORIES, fetchFinessData } from "./providers/finessProvider";
 import { fetchInseeData } from "./providers/inseeProvider";
-import { fetchMockMarketStudy } from "./providers/mockProvider";
 
 export interface MarketStudyParams {
   projectType: ProjectType;
@@ -15,7 +14,6 @@ export interface MarketStudyParams {
   lon: number;
   communeInsee?: string;
   radiusKm?: number;
-  useMock?: boolean;
 }
 
 /**
@@ -29,23 +27,10 @@ export async function getMarketStudy(params: MarketStudyParams): Promise<MarketS
     lon,
     communeInsee,
     radiusKm,
-    useMock = false, // CHANGÉ: Par défaut on utilise les vraies données
   } = params;
 
   const config = getProjectConfig(projectType);
   const effectiveRadius = radiusKm ?? config.radius.analysis;
-
-  // Mode mock : retourne directement les données simulées
-  if (useMock) {
-    console.log("[marketStudyService] Mode mock activé");
-    return fetchMockMarketStudy({
-      projectType,
-      lat,
-      lon,
-      communeInsee,
-      radiusKm: effectiveRadius,
-    });
-  }
 
   console.log(`[marketStudyService] Lancement étude de marché pour ${projectType}`);
   console.log(`[marketStudyService] Position: ${lat}, ${lon} - Rayon: ${effectiveRadius}km`);
@@ -53,7 +38,7 @@ export async function getMarketStudy(params: MarketStudyParams): Promise<MarketS
   // Mode réel : agrège les différentes sources en parallèle
   const [inseeData, finessData, dvfData, bpeData] = await Promise.all([
     // Données INSEE (démographie)
-    communeInsee 
+    communeInsee
       ? fetchInseeData({ codeInsee: communeInsee }).catch((err) => {
           console.warn("[marketStudyService] Erreur INSEE:", err);
           return null;
@@ -62,9 +47,9 @@ export async function getMarketStudy(params: MarketStudyParams): Promise<MarketS
 
     // Données FINESS (concurrence EHPAD)
     config.requiredDataSources.includes("finess")
-      ? fetchFinessData({ 
-          lat, 
-          lon, 
+      ? fetchFinessData({
+          lat,
+          lon,
           radiusKm: effectiveRadius,
           categories: DEFAULT_EHPAD_CATEGORIES,
         }).catch((err) => {

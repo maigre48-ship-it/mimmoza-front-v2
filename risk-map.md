@@ -1,12 +1,11 @@
 # Carte du risque tsc
 
-Total : 837 - Dangereuses : 362, Cosmetiques : 204, Autres : 271
+Total : 780 - Dangereuses : 315, Cosmetiques : 203, Autres : 262
 
 ## Fichiers (tries par erreurs dangereuses)
 
 | Dang | Total | Zone | Fichier | Codes |
 |---:|---:|---|---|---|
-| 39 | 48 | CALC/GEN | src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts | TS2339x37 TS2305x7 TS2353x2 TS2724x1 TS6133x1 |
 | 39 | 42 | CALC/GEN | src/spaces/promoteur/etudes/marche/services/finess.service.ts | TS2339x35 TS2353x4 TS6133x2 TS2305x1 |
 | 18 | 21 | CALC/GEN | src/spaces/promoteur/pages/PromoteurSynthesePage.tsx | TS2339x7 TS18047x6 TS2322x3 TS6133x3 TS18048x2 |
 | 18 | 18 | AFFICHAGE | src/spaces/admin/pages/Dashboard.tsx | TS2339x17 TS2353x1 |
@@ -14,7 +13,6 @@ Total : 837 - Dangereuses : 362, Cosmetiques : 204, Autres : 271
 | 17 | 17 | AFFICHAGE | src/spaces/admin/pages/AdminDashboardPage.tsx | TS2339x17 |
 | 16 | 23 | CALC/GEN | src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx | TS2339x16 TS6133x5 TS2503x2 |
 | 14 | 20 | CALC/GEN | src/spaces/marchand/scoring/smartScoreInvestisseur.ts | TS2339x14 TS2305x5 TS6133x1 |
-| 13 | 15 | CALC/GEN | src/spaces/promoteur/etudes/marche/services/marketStudyService.ts | TS2339x12 TS2305x1 TS2353x1 TS6133x1 |
 | 13 | 15 | CALC/GEN | src/spaces/promoteur/services/generatePromoteurSynthese.ts | TS2353x5 TS2345x4 TS2322x4 TS2739x1 TS2741x1 |
 | 13 | 15 | AFFICHAGE | src/spaces/sourcing/pages/SourcingHomePage.tsx | TS2339x11 TS2322x2 TS6133x1 TS2554x1 |
 | 13 | 14 | CALC/GEN | src/spaces/promoteur/pages/Synthese.tsx | TS2339x13 TS6133x1 |
@@ -27,6 +25,7 @@ Total : 837 - Dangereuses : 362, Cosmetiques : 204, Autres : 271
 | 4 | 9 | CALC/GEN | src/spaces/promoteur/terrain3d/useMassingEditor.ts | TS2678x5 TS2339x3 TS2353x1 |
 | 4 | 4 | CALC/GEN | src/spaces/promoteur/etudes/marche/services/parcel.service.ts | TS2353x4 |
 | 3 | 10 | AFFICHAGE | src/spaces/investisseur/pages/execution/SimulationTravauxPage.tsx | TS6133x4 TS2339x2 TS1117x2 TS7053x1 TS2551x1 |
+| 3 | 4 | CALC/GEN | src/spaces/promoteur/etudes/marche/services/marketStudyService.ts | TS2345x3 TS6133x1 |
 | 3 | 4 | CALC/GEN | src/spaces/promoteur/terrain3d/massingBuildingAssembler.ts | TS2339x2 TS2305x1 TS2353x1 |
 | 3 | 3 | AFFICHAGE | src/spaces/marchand/pages/Execution.tsx | TS2345x2 TS2339x1 |
 | 2 | 13 | AFFICHAGE | src/spaces/investisseur/pages/AnalysePage.tsx | TS6133x6 TS2678x3 TS2353x1 TS2740x1 TS2367x1 TS2322x1 |
@@ -43,6 +42,7 @@ Total : 837 - Dangereuses : 362, Cosmetiques : 204, Autres : 271
 | 2 | 2 | AFFICHAGE | src/components/CadastreMap.tsx | TS2345x2 |
 | 2 | 2 | CALC/GEN | src/spaces/admin/services/adminStorage.ts | TS2322x2 |
 | 2 | 2 | CALC/GEN | src/spaces/promoteur/components/ScenarioComparisonMatrix.tsx | TS2551x2 |
+| 2 | 2 | CALC/GEN | src/spaces/promoteur/etudes/marche/hooks/useMarketStudy.ts | TS2353x1 TS2345x1 |
 | 2 | 2 | CALC/GEN | src/spaces/promoteur/synthese/SyntheseStartPage.tsx | TS2353x1 TS2339x1 |
 | 1 | 12 | AFFICHAGE | src/spaces/rehabilitation/pages/AnalysePlanPage.tsx | TS2352x10 TS2739x1 TS2345x1 |
 | 1 | 7 | AFFICHAGE | src/pages/investisseur/PipelinePageV4.tsx | TS6133x6 TS2322x1 |

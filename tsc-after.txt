@@ -407,6 +407,8 @@ src/spaces/promoteur/etudes/marche/components/TargetPopulationCard.tsx(6,15): er
 src/spaces/promoteur/etudes/marche/config/kpiDefinitions.ts(319,56): error TS6133: 'isPrimary' is declared but its value is never read.
 src/spaces/promoteur/etudes/marche/config/project.config.ts(17,3): error TS2305: Module '"../types/market.types"' has no exported member 'DemographicSegment'.
 src/spaces/promoteur/etudes/marche/config/project.config.ts(19,3): error TS2305: Module '"../types/market.types"' has no exported member 'ProjectTypeConfig'.
+src/spaces/promoteur/etudes/marche/hooks/useMarketStudy.ts(28,58): error TS2353: Object literal may only specify known properties, and 'useMock' does not exist in type 'MarketStudyParams'.
+src/spaces/promoteur/etudes/marche/hooks/useMarketStudy.ts(29,17): error TS2345: Argument of type 'MarketStudyResult' is not assignable to parameter of type 'SetStateAction<MarketStudyResult | null>'.
 src/spaces/promoteur/etudes/marche/index.ts(7,10): error TS2305: Module '"./hooks/useMarketStudy"' has no exported member 'formatDistance'.
 src/spaces/promoteur/etudes/marche/index.ts(7,26): error TS2305: Module '"./hooks/useMarketStudy"' has no exported member 'formatNumber'.
 src/spaces/promoteur/etudes/marche/index.ts(7,40): error TS2305: Module '"./hooks/useMarketStudy"' has no exported member 'formatPrice'.
@@ -460,21 +462,13 @@ src/spaces/promoteur/etudes/marche/services/finess.service.ts(742,89): error TS6
 src/spaces/promoteur/etudes/marche/services/finess.service.ts(808,7): error TS2353: Object literal may only specify known properties, and 'finess' does not exist in type 'FinessEtablissementEnriched'.
 src/spaces/promoteur/etudes/marche/services/finess.service.ts(947,7): error TS2353: Object literal may only specify known properties, and 'capacite_disponible' does not exist in type 'EhpadAnalyseConcurrence'.
 src/spaces/promoteur/etudes/marche/services/insee.normalize.ts(30,5): error TS2353: Object literal may only specify known properties, and 'pct_40_54' does not exist in type 'InseeData'.
-src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(4,15): error TS2305: Module '"../types"' has no exported member 'CompetitionData'.
-src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(153,5): error TS2353: Object literal may only specify known properties, and 'projectType' does not exist in type 'MarketStudyResult'.
-src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(224,9): error TS6133: 'config' is declared but its value is never read.
-src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(234,14): error TS2339: Property 'competition' does not exist on type 'MarketStudyResult'.
-src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(238,21): error TS2339: Property 'competition' does not exist on type 'MarketStudyResult'.
-src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(239,22): error TS2339: Property 'competition' does not exist on type 'MarketStudyResult'.
-src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(245,24): error TS2339: Property 'competition' does not exist on type 'MarketStudyResult'.
-src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(249,16): error TS2339: Property 'competition' does not exist on type 'MarketStudyResult'.
-src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(253,26): error TS2339: Property 'competition' does not exist on type 'MarketStudyResult'.
-src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(254,24): error TS2339: Property 'competition' does not exist on type 'MarketStudyResult'.
-src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(260,14): error TS2339: Property 'demographics' does not exist on type 'MarketStudyResult'.
-src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(261,16): error TS2339: Property 'demographics' does not exist on type 'MarketStudyResult'.
-src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(265,23): error TS2339: Property 'demographics' does not exist on type 'MarketStudyResult'.
-src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(272,14): error TS2339: Property 'realEstate' does not exist on type 'MarketStudyResult'.
-src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(276,24): error TS2339: Property 'realEstate' does not exist on type 'MarketStudyResult'.
+src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(32,35): error TS2345: Argument of type 'import("C:/Users/maigr/OneDrive/Bureau/mimmoza-front-v2/src/spaces/promoteur/etudes/marche/types/competition").ProjectType' is not assignable to parameter of type 'import("C:/Users/maigr/OneDrive/Bureau/mimmoza-front-v2/src/spaces/promoteur/etudes/marche/types/market.types").ProjectType'.
+  Type '"bureau"' is not assignable to type 'ProjectType'. Did you mean '"bureaux"'?
+src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(84,46): error TS2345: Argument of type 'import("C:/Users/maigr/OneDrive/Bureau/mimmoza-front-v2/src/spaces/promoteur/etudes/marche/types/competition").ProjectType' is not assignable to parameter of type 'import("C:/Users/maigr/OneDrive/Bureau/mimmoza-front-v2/src/spaces/promoteur/etudes/marche/types/market.types").ProjectType'.
+  Type '"bureau"' is not assignable to type 'ProjectType'. Did you mean '"bureaux"'?
+src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(209,9): error TS6133: 'config' is declared but its value is never read.
+src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(209,35): error TS2345: Argument of type 'import("C:/Users/maigr/OneDrive/Bureau/mimmoza-front-v2/src/spaces/promoteur/etudes/marche/types/competition").ProjectType' is not assignable to parameter of type 'import("C:/Users/maigr/OneDrive/Bureau/mimmoza-front-v2/src/spaces/promoteur/etudes/marche/types/market.types").ProjectType'.
+  Type '"bureau"' is not assignable to type 'ProjectType'. Did you mean '"bureaux"'?
 src/spaces/promoteur/etudes/marche/services/parcel.service.ts(27,58): error TS2353: Object literal may only specify known properties, and 'section' does not exist in type 'ParcelInfo'.
 src/spaces/promoteur/etudes/marche/services/parcel.service.ts(45,9): error TS2353: Object literal may only specify known properties, and 'section' does not exist in type 'ParcelInfo'.
 src/spaces/promoteur/etudes/marche/services/parcel.service.ts(53,56): error TS2353: Object literal may only specify known properties, and 'section' does not exist in type 'ParcelInfo'.
@@ -496,54 +490,6 @@ src/spaces/promoteur/etudes/marche/services/providers/finessProvider.ts(314,59):
 src/spaces/promoteur/etudes/marche/services/providers/inseeProvider.ts(3,15): error TS2305: Module '"../../types"' has no exported member 'DemographicsData'.
 src/spaces/promoteur/etudes/marche/services/providers/inseeProvider.ts(26,46): error TS6133: 'codeInsee' is declared but its value is never read.
 src/spaces/promoteur/etudes/marche/services/providers/inseeProvider.ts(35,45): error TS6133: 'codeInsee' is declared but its value is never read.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(4,3): error TS2305: Module '"../../types"' has no exported member 'AccessibilityData'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(5,3): error TS2305: Module '"../../types"' has no exported member 'CompetitionData'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(7,3): error TS2305: Module '"../../types"' has no exported member 'DemographicsData'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(8,3): error TS2305: Module '"../../types"' has no exported member 'HealthcareData'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(9,3): error TS2305: Module '"../../types"' has no exported member 'Insight'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(14,3): error TS2305: Module '"../../types"' has no exported member 'RealEstateMarketData'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(15,3): error TS2305: Module '"../../types"' has no exported member 'Scores'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(16,3): error TS2724: '"../../types"' has no exported member named 'ServicesData'. Did you mean 'PricesData'?
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(444,12): error TS2339: Property 'demographics' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(444,46): error TS2339: Property 'demographics' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(450,56): error TS2339: Property 'demographics' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(451,23): error TS2339: Property 'demographics' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(458,12): error TS2339: Property 'realEstate' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(458,52): error TS2339: Property 'realEstate' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(464,46): error TS2339: Property 'realEstate' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(465,23): error TS2339: Property 'realEstate' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(472,39): error TS2339: Property 'competition' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(473,14): error TS2339: Property 'competition' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(479,38): error TS2339: Property 'competition' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(480,24): error TS2339: Property 'competition' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(486,14): error TS2339: Property 'competition' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(486,51): error TS2339: Property 'competition' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(492,57): error TS2339: Property 'competition' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(493,24): error TS2339: Property 'competition' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(501,12): error TS2339: Property 'healthcare' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(501,41): error TS2339: Property 'healthcare' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(507,28): error TS2339: Property 'healthcare' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(507,63): error TS2339: Property 'healthcare' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(508,22): error TS2339: Property 'healthcare' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(515,12): error TS2339: Property 'demographics' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(515,55): error TS2339: Property 'demographics' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(521,28): error TS2339: Property 'demographics' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(522,22): error TS2339: Property 'demographics' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(531,26): error TS6133: 'projectType' is declared but its value is never read.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(533,29): error TS2339: Property 'demographics' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(533,63): error TS2339: Property 'demographics' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(534,23): error TS2339: Property 'realEstate' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(534,63): error TS2339: Property 'realEstate' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(535,28): error TS2339: Property 'competition' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(535,76): error TS2339: Property 'competition' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(536,25): error TS2339: Property 'services' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(536,60): error TS2339: Property 'services' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(537,30): error TS2339: Property 'accessibility' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(538,27): error TS2339: Property 'healthcare' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(655,5): error TS2353: Object literal may only specify known properties, and 'projectType' does not exist in type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(672,5): error TS2353: Object literal may only specify known properties, and 'projectType' does not exist in type 'MarketStudyResult'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(685,31): error TS2339: Property 'realEstate' does not exist on type 'Partial<MarketStudyResult>'.
-src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts(688,31): error TS2339: Property 'healthcare' does not exist on type 'Partial<MarketStudyResult>'.
 src/spaces/promoteur/etudes/marche/types/index.ts(6,1): error TS2308: Module "./market.types" has already exported a member named 'DataSourceType'. Consider explicitly re-exporting to resolve the ambiguity.
 src/spaces/promoteur/etudes/marche/types/index.ts(6,1): error TS2308: Module "./market.types" has already exported a member named 'ProjectType'. Consider explicitly re-exporting to resolve the ambiguity.
 src/spaces/promoteur/etudes/marche/ui/components/MarketStudyResults.tsx(3,34): error TS2307: Cannot find module '../config/project.config' or its corresponding type declarations.
