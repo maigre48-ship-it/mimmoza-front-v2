@@ -39,7 +39,8 @@ import {
   Target,
   X
 } from "lucide-react";
-import React, { Component, ErrorInfo, ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import type { ErrorInfo, ReactNode} from "react";
+import React, { Component, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import type { LucideIcon } from "lucide-react";
@@ -1235,7 +1236,7 @@ export default function InvestisseurRisquesPanel() {
         const activeDeal = ensureActiveDeal();
         if (activeDeal?.id) {
           const snap = rms() as Record<string, unknown>;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           const snapAny = snap as any;
           if (!snapAny.dueDiligenceByDeal) snapAny.dueDiligenceByDeal = {};
           if (!snapAny.dueDiligenceByDeal[activeDeal.id]) snapAny.dueDiligenceByDeal[activeDeal.id] = { state: {}, updatedAt: new Date().toISOString() };

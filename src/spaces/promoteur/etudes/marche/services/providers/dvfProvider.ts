@@ -1,6 +1,6 @@
 // FILE: src/spaces/promoteur/etudes/marche/services/providers/dvfProvider.ts
 
-import { RealEstateMarketData } from "../../types";
+import type { RealEstateMarketData } from "../../types";
 
 export interface DvfProviderParams {
   lat: number;

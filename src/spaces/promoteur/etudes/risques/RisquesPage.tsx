@@ -35,7 +35,8 @@ import {
   Target,
   X
 } from "lucide-react";
-import React, { Component, ErrorInfo, ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import type { ErrorInfo, ReactNode} from "react";
+import React, { Component, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import type { LucideIcon } from "lucide-react";

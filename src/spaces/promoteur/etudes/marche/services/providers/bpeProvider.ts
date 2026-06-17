@@ -1,6 +1,6 @@
 // FILE: src/spaces/promoteur/etudes/marche/services/providers/bpeProvider.ts
 
-import { Poi, PoiCategoryId, ServicesData } from "../../types";
+import type { Poi, PoiCategoryId, ServicesData } from "../../types";
 
 export interface BpeProviderParams {
   lat: number;

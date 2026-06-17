@@ -151,7 +151,7 @@ function createDefaultProject(): RehabilitationProject {
 /** Sérialise le projet SANS imageDataUrl (stockée séparément en sessionStorage). */
 function serializeProject(project: RehabilitationProject): RehabilitationProject {
   if (!project.plan) return project;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const { imageDataUrl: _img, ...planWithoutImage } = project.plan;
   return { ...project, plan: planWithoutImage };
 }

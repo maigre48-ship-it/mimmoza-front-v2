@@ -1,6 +1,6 @@
 // FILE: src/spaces/promoteur/etudes/marche/types/project.types.ts
 
-import { LucideIcon } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 /** Types de projets supportés */
 export type ProjectType = 

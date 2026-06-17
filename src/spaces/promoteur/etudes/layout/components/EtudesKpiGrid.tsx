@@ -1,6 +1,6 @@
 // FILE: src/spaces/promoteur/etudes/layout/components/EtudesKpiGrid.tsx
 
-import { FC } from 'react';
+import type { FC } from 'react';
 import type { EtudesKpiGridProps, KpiItem, KpiTrend } from '../etudesLayout.types';
 
 const TrendIcon: FC<{ trend: KpiTrend; className?: string }> = ({

@@ -1,6 +1,6 @@
 // FILE: src/spaces/promoteur/etudes/layout/etudesLayout.types.ts
 
-import { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 // ============================================================================
 // STATUS

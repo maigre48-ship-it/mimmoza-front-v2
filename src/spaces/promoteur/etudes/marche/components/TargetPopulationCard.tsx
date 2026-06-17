@@ -3,7 +3,7 @@
 import { TrendingDown, TrendingUp, Users } from "lucide-react";
 import React from "react";
 import { getProjectConfig } from "../config";
-import { DemographicsData, ProjectType } from "../types";
+import type { DemographicsData, ProjectType } from "../types";
 
 interface TargetPopulationCardProps {
   demographics: DemographicsData;

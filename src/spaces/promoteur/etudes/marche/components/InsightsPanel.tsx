@@ -2,7 +2,7 @@
 
 import { AlertTriangle, CheckCircle, Lightbulb, XCircle } from "lucide-react";
 import React from "react";
-import { Insight } from "../types";
+import type { Insight } from "../types";
 
 interface InsightsPanelProps {
   insights: Insight[];

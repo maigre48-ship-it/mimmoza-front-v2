@@ -94,9 +94,9 @@ export const useActiveCopilotContext = create<ActiveCopilotContextState>(
 
     getActiveCopilotContext(): ActiveCopilotSnapshot {
       const {
-        setActiveCopilotContext,    // eslint-disable-line @typescript-eslint/no-unused-vars
-        clearActiveCopilotContext,  // eslint-disable-line @typescript-eslint/no-unused-vars
-        getActiveCopilotContext,    // eslint-disable-line @typescript-eslint/no-unused-vars
+        setActiveCopilotContext,     
+        clearActiveCopilotContext,   
+        getActiveCopilotContext,     
         ...rest
       } = get();
       return rest;

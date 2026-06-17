@@ -6,17 +6,17 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 if (!SUPABASE_URL) {
-  // eslint-disable-next-line no-console
+   
   console.error("[supabaseClient] Missing VITE_SUPABASE_URL");
 }
 if (!SUPABASE_ANON_KEY) {
-  // eslint-disable-next-line no-console
+   
   console.error("[supabaseClient] Missing VITE_SUPABASE_ANON_KEY");
 }
 
 // Singleton global (évite les multiples GoTrueClient)
 declare global {
-  // eslint-disable-next-line no-var
+   
   var __mimmoza_supabase__: SupabaseClient | undefined;
 }
 

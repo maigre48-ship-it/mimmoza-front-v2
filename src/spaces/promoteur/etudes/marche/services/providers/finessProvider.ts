@@ -1,6 +1,6 @@
 // FILE: src/spaces/promoteur/etudes/marche/services/providers/finessProvider.ts
 
-import { CompetitionData } from "../../types";
+import type { CompetitionData } from "../../types";
 
 export interface FinessProviderParams {
   lat: number;

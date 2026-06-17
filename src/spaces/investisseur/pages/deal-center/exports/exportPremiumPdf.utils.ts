@@ -6,7 +6,7 @@
 
 import logoMimmozaUrl from "@/assets/logo-mimmoza-baseline.png";
 import { loadImageDataUrl } from "@/spaces/shared/loadImageDataUrl";
-import { jsPDF } from "jspdf";
+import type { jsPDF } from "jspdf";
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 

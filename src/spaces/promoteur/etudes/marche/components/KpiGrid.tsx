@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import React from "react";
 import { getProjectConfig } from "../config";
-import { Kpi, KpiStatus, ProjectType } from "../types";
+import type { Kpi, KpiStatus, ProjectType } from "../types";
 
 interface KpiGridProps {
   kpis: Kpi[];

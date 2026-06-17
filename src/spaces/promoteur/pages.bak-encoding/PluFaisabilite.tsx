@@ -2040,7 +2040,7 @@ export default function PluFaisabilite(): React.ReactElement {
         throw new Error(rawData?.error || "RÃ©ponse invalide de l'API d'extraction IA.");
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const payload = (rawData as any).data ?? rawData;
 
       const missingArray = Array.isArray(payload.missing) ? payload.missing : [];
@@ -2290,7 +2290,7 @@ export default function PluFaisabilite(): React.ReactElement {
 
   // Get current user overrides for the selected document/zone
   const currentUserOverrides = useMemo<UserOverrideEntry | null>(() => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const _version = userOverridesVersion; // Force re-computation when overrides change
     return getUserOverrideEntry(selectedDocumentId, selectedZoneCode);
   }, [selectedDocumentId, selectedZoneCode, userOverridesVersion]);

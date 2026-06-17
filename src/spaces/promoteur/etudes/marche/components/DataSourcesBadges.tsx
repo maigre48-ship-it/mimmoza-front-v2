@@ -2,7 +2,7 @@
 
 import { AlertCircle, CheckCircle, XCircle } from "lucide-react";
 import React from "react";
-import { DataSourceStatus, DataSourceType } from "../types";
+import type { DataSourceStatus, DataSourceType } from "../types";
 
 interface DataSourcesBadgesProps {
   sources: DataSourceStatus[];

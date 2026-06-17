@@ -1,6 +1,6 @@
 // FILE: src/spaces/promoteur/etudes/marche/config/poiCategories.ts
 
-import { PoiCategory, PoiCategoryId } from "../types";
+import type { PoiCategory, PoiCategoryId } from "../types";
 
 export const POI_CATEGORIES: Record<PoiCategoryId, PoiCategory> = {
   // Santé

@@ -970,7 +970,7 @@ function CarteLocalisation({
   useEffect(() => {
     if (!hasCoords || mapFailed) return;
     let cancelled = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     let map: any;
 
     ensureMaplibreCss();
@@ -980,7 +980,7 @@ function CarteLocalisation({
         // maplibre-gl est installé : import dynamique standard, résolu et
         // pré-bundlé par Vite. Chargé à la demande (~800 ko) uniquement quand
         // des coordonnées sont disponibles. En cas d'échec → catch → fallback.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const mod: any = await import("maplibre-gl");
         const maplibregl = mod.default ?? mod;
         if (cancelled || !containerRef.current) return;
@@ -1519,7 +1519,7 @@ export default function InvestmentPackTab() {
   // Handoff temporaire vers l'onglet Exports — à remplacer par ton canal de
   // persistance réel (ex. writeMarchandSnapshot / store dédié) une fois câblé.
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     (window as any).__mimmozaInvestmentPack = investmentPackData;
   }, [investmentPackData]);
 

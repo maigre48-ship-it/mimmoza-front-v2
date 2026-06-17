@@ -1,4 +1,6 @@
 ﻿// src/pages/ApiPage.tsx
+import type {
+  Map} from "lucide-react";
 import {
   Activity,
   AlertCircle,
@@ -14,7 +16,6 @@ import {
   Key,
   LayoutDashboard,
   Lock,
-  Map,
   PlayCircle,
   ShieldCheck,
   Terminal,

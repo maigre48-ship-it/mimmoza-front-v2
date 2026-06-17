@@ -1,7 +1,7 @@
 // FILE: src/spaces/promoteur/etudes/marche/services/marketStudyService.ts
 
 import { getPoiConfigsForProject, getProjectConfig } from "../config";
-import { CompetitionData, MarketStudyResult, ProjectType } from "../types";
+import type { CompetitionData, MarketStudyResult, ProjectType } from "../types";
 import { computePoiStats, fetchPoisForProject } from "./poiService";
 import { fetchBpeData } from "./providers/bpeProvider";
 import { fetchDvfData } from "./providers/dvfProvider";

@@ -7,7 +7,8 @@ import ApiDeveloperNav from '../features/api/components/ApiDeveloperNav';
 import ApiPlanCard from '../features/api/components/ApiPlanCard';
 import ApiUsageSummary from '../features/api/components/ApiUsageSummary';
 import PayAsYouGoCard from '../features/api/components/PayAsYouGoCard';
-import { API_PLANS, BillingMode, getAnnualSavingPercent, PlanTier } from '../features/api/member/apiPlans';
+import type { BillingMode, PlanTier } from '../features/api/member/apiPlans';
+import { API_PLANS, getAnnualSavingPercent } from '../features/api/member/apiPlans';
 import { useApiMember } from '../features/api/member/useApiMember';
 
 const FAQ_ITEMS = [

@@ -623,8 +623,8 @@ export const BilanPromoteurPage: React.FC = () => {
   const hasRehabData      = ass.travauxRehabTotal > 0;
   const realConflict      = hasConceptionData && hasRehabData;
 
-  const marcheFromLS = useMemo(() => { try { const raw = localStorage.getItem(LS_MARKET_STUDY); if (!raw) return null; const p = JSON.parse(raw); return p?.data?.market ?? null; } catch { return null; } }, []); // eslint-disable-line
-  const risquesFromSnap = useMemo(() => { try { const snap = getSnapshot() as any; return snap?.risks?.data ?? null; } catch { return null; } }, []); // eslint-disable-line
+  const marcheFromLS = useMemo(() => { try { const raw = localStorage.getItem(LS_MARKET_STUDY); if (!raw) return null; const p = JSON.parse(raw); return p?.data?.market ?? null; } catch { return null; } }, []);  
+  const risquesFromSnap = useMemo(() => { try { const snap = getSnapshot() as any; return snap?.risks?.data ?? null; } catch { return null; } }, []);  
 
   // ── Computed ──────────────────────────────────────────────────────────────
   const computed = useMemo(() => {

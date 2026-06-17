@@ -472,7 +472,7 @@ export default function RentabilitePanel({
   onRegimeChange,
   travauxFromSnapshot,
   // promoteurMarketData accepté mais non utilisé directement dans ce panel
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   promoteurMarketData: _promoteurMarketData,
 }: RentabilitePanelProps) {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);

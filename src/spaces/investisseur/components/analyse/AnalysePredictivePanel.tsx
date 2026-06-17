@@ -245,7 +245,7 @@ function extractRealInput(
 ): PredictiveEngineInput {
   const dealId  = deal.dealId;
   const snap    = readMarchandSnapshot();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const snapAny = snap as any;
 
   const mr         = (snap.marcheRisquesByDeal[dealId] ?? null) as Record<string, unknown> | null;
@@ -660,7 +660,7 @@ export default function AnalysePredictivePanel({ deal, travauxEstime }: Props) {
   useEffect(() => {
     let cancelled = false;
     setSitadelResult(null);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const snapAny = readMarchandSnapshot() as any;
     const mr      = snapAny?.marcheRisquesByDeal?.[deal.dealId] ?? null;
     const mrData  = isObj(mr?.data) ? mr.data : (isObj(mr) ? mr : null);

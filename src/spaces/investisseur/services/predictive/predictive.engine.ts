@@ -812,7 +812,7 @@ export function computePredictiveSnapshot(
     : rateSource === "market_scores" ? 72
     : 58;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const forecast: any = {
     horizon6m:  buildPoint(spotPsm, surfaceM2, rate6,  6,  forecastConf),
     horizon12m: buildPoint(spotPsm, surfaceM2, rate12, 12, forecastConf),
@@ -833,7 +833,7 @@ export function computePredictiveSnapshot(
   const sv = (rate: number, factor: number) =>
     Math.round(spotPsm * (1 + rate * factor) * surfaceM2);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const scenarios: any = {
     prudent: {
       horizon6m:  sv(rate6,  -stressFactor),

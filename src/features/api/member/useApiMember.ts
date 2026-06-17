@@ -105,7 +105,7 @@ export function useApiMember(): UseApiMemberReturn {
 
       if (keysError) throw new Error(`Clés API : ${keysError.message}`);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const keys: ApiKeyRecord[] = (rawKeys ?? []).map((k: any) => {
         const revokedAt: string | null = k.revoked_at ?? null;
         const envRaw: string = k.env ?? k.environment ?? 'test';

@@ -9,7 +9,7 @@ import {
   ShoppingCart,
   Users,
 } from "lucide-react";
-import {
+import type {
   DemographicSegment,
   PoiProjectConfig,
   ProjectType,

@@ -1,6 +1,6 @@
 // FILE: src/spaces/promoteur/etudes/marche/config/kpiDefinitions.ts
 
-import { KpiDefinition } from "../types";
+import type { KpiDefinition } from "../types";
 
 export const KPI_DEFINITIONS: Record<string, KpiDefinition> = {
   // ========== PRIX / MARCHÉ ==========

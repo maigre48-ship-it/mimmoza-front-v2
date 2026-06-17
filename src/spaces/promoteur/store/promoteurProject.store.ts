@@ -158,7 +158,7 @@ export const usePromoteurProjectStore = create<PromoteurProjectState>()(
       version: STORE_VERSION,
       storage: createJSONStorage(() => localStorage),
       migrate: (persistedState, version) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const s: any = persistedState;
         if (!s) return persistedState;
 

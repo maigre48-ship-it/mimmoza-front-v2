@@ -1,5 +1,5 @@
 // src/spaces/promoteur/services/promoteurPdf.qr.ts
-import { jsPDF } from 'jspdf';
+import type { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
 
 const VERIFY_BASE_URL = 'https://www.mimmoza.fr/verify';

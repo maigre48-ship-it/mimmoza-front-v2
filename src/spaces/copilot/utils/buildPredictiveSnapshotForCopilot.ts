@@ -78,7 +78,7 @@ export function buildPredictiveSnapshotForCopilot(
   try {
     const { dealId } = opts;
     const snap    = readMarchandSnapshot();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const snapAny = snap as any;
 
     // ── Données marché (market-study-investisseur/marchand-v1) ──────────────

@@ -593,7 +593,7 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
 
   const baseVB=useMemo(()=>makeVB(parcellePolygon,size.w,size.h),[parcellePolygon,size.w,size.h]);
   const [camera,setCamera]=useState<Camera>(baseVB);
-  useEffect(()=>{ setCamera(baseVB); /* eslint-disable-next-line */ },[baseVB.x,baseVB.y,baseVB.w,baseVB.h]);
+  useEffect(()=>{ setCamera(baseVB);   },[baseVB.x,baseVB.y,baseVB.w,baseVB.h]);
 
   const viewBox=`${camera.x} ${camera.y} ${camera.w} ${camera.h}`;
   const approxZoom=size.w/camera.w;

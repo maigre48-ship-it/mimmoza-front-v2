@@ -1,8 +1,9 @@
-import L, {
+import type {
   GeoJSON,
   Map as LeafletMap,
   PathOptions,
 } from "leaflet";
+import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef } from "react";
 

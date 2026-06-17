@@ -1,6 +1,6 @@
 // FILE: src/spaces/promoteur/etudes/marche/services/providers/inseeProvider.ts
 
-import { DemographicsData } from "../../types";
+import type { DemographicsData } from "../../types";
 
 export interface InseeProviderParams {
   codeInsee: string;

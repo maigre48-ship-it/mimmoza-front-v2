@@ -104,7 +104,7 @@ export async function enrichRisksToDueDiligence(): Promise<{
     const { address, city, zipCode } = deal;
 
     // dealAny: si tu ajoutes lat/lng plus tard au deal, on les supporte
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const dealAny = deal as Record<string, any>;
     const lat: number | undefined =
       dealAny.lat ?? dealAny.latitude ?? dealAny.LAT ?? undefined;
@@ -119,7 +119,7 @@ export async function enrichRisksToDueDiligence(): Promise<{
     }
 
     // 2) Body
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const body: Record<string, any> = {};
     if (address) body.adresse = address; // ⚠️ l'EF marchand-risques-v1 attend "adresse" (comme banque-risques-v1)
     if (lat != null && lng != null) {
@@ -141,7 +141,7 @@ export async function enrichRisksToDueDiligence(): Promise<{
       return { ok: false, error: `Edge Function error: ${error.message}` };
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const resp = (data ?? null) as Record<string, any> | null;
     if (!resp) {
       return { ok: false, error: "Réponse vide de marchand-risques-v1." };

@@ -1,6 +1,6 @@
 // FILE: src/spaces/promoteur/etudes/layout/components/EtudesEmptyState.tsx
 
-import { FC } from 'react';
+import type { FC } from 'react';
 import type { ActionVariant, EtudesEmptyStateProps } from '../etudesLayout.types';
 
 const variantStyles: Record<string, { container: string; icon: string }> = {

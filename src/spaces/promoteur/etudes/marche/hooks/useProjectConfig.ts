@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { getPoiConfigsForProject, getProjectConfig } from "../config";
-import { PoiProjectConfig, ProjectType, ProjectTypeConfig } from "../types";
+import type { PoiProjectConfig, ProjectType, ProjectTypeConfig } from "../types";
 
 interface UseProjectConfigReturn {
   config: ProjectTypeConfig;

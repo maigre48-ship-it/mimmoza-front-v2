@@ -575,11 +575,11 @@ export default function MarcheRisquesPanel({ dealId, dealInputs, promoteurMarket
     }
   }, [dealInputs.address, dealInputs.zipCode, dealInputs.city, dealInputs.lat, dealInputs.lng, debugMode, persistSuccess]);
 
-  useEffect(() => { if (!dealId) return; const saved = readSavedMarcheRisques(dealId); if (saved) { setResult(saved.data); setStatus("success"); hydratedFromSnapshotRef.current = true; if (isSavedDataStale(saved.updatedAt)) setShouldBackgroundFetch(true); } else { const fromPromoteur = tryExtractMarketStudy(promoteurMarketData); if (fromPromoteur) { setResult(fromPromoteur); setStatus("success"); hydratedFromSnapshotRef.current = true; setShouldBackgroundFetch(true); } else { setResult(null); setStatus("idle"); hydratedFromSnapshotRef.current = false; setShouldBackgroundFetch(true); } } }, [dealId]); // eslint-disable-line
-  useEffect(() => { if (result || !promoteurMarketData || status === "loading") return; const fromPromoteur = tryExtractMarketStudy(promoteurMarketData); if (fromPromoteur) { setResult(fromPromoteur); setStatus("success"); hydratedFromSnapshotRef.current = true; } }, [promoteurMarketData]); // eslint-disable-line
+  useEffect(() => { if (!dealId) return; const saved = readSavedMarcheRisques(dealId); if (saved) { setResult(saved.data); setStatus("success"); hydratedFromSnapshotRef.current = true; if (isSavedDataStale(saved.updatedAt)) setShouldBackgroundFetch(true); } else { const fromPromoteur = tryExtractMarketStudy(promoteurMarketData); if (fromPromoteur) { setResult(fromPromoteur); setStatus("success"); hydratedFromSnapshotRef.current = true; setShouldBackgroundFetch(true); } else { setResult(null); setStatus("idle"); hydratedFromSnapshotRef.current = false; setShouldBackgroundFetch(true); } } }, [dealId]);  
+  useEffect(() => { if (result || !promoteurMarketData || status === "loading") return; const fromPromoteur = tryExtractMarketStudy(promoteurMarketData); if (fromPromoteur) { setResult(fromPromoteur); setStatus("success"); hydratedFromSnapshotRef.current = true; } }, [promoteurMarketData]);  
 
   const [shouldBackgroundFetch, setShouldBackgroundFetch] = useState(false);
-  useEffect(() => { if (!shouldBackgroundFetch) return; setShouldBackgroundFetch(false); doFetch(); }, [shouldBackgroundFetch]); // eslint-disable-line
+  useEffect(() => { if (!shouldBackgroundFetch) return; setShouldBackgroundFetch(false); doFetch(); }, [shouldBackgroundFetch]);  
   useEffect(() => { return () => { abortRef.current?.abort(); }; }, []);
   const handleRetry = useCallback(() => doFetch(), [doFetch]);
 

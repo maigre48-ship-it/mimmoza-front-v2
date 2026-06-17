@@ -1,6 +1,7 @@
 // FILE: src/spaces/promoteur/etudes/layout/components/EtudesSectionCard.tsx
 
-import { FC, useId, useState } from 'react';
+import type { FC} from 'react';
+import { useId, useState } from 'react';
 import type { ActionVariant, EtudesSectionCardProps } from '../etudesLayout.types';
 
 const buttonVariants: Record<ActionVariant, string> = {

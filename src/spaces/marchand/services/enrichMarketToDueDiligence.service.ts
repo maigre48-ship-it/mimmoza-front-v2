@@ -99,7 +99,7 @@ export async function enrichMarketToDueDiligence(): Promise<{
       return { ok: false, error: `Edge Function error: ${error.message}` };
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const mc = data as Record<string, any> | null;
     if (!mc) {
       return { ok: false, error: "Réponse vide de market-context-v1." };
