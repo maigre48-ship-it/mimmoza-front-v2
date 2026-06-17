@@ -41,7 +41,8 @@ function generateId(): string {
 // ---- ProjetInfo -------------------------------------------------------------
 
 function mapProjetInfo(input: PromoteurRawInput): ProjetInfo {
-  const { foncier, conception } = input;
+  const foncier = input.foncier ?? {};
+  const conception = input.conception ?? {};
   return {
     adresse: foncier.adresse ?? 'Non renseignee',
     commune: foncier.commune ?? 'Non renseignee',
@@ -59,7 +60,8 @@ function mapProjetInfo(input: PromoteurRawInput): ProjetInfo {
 // ---- TechniqueAnalysis ------------------------------------------------------
 
 function mapTechniqueAnalysis(input: PromoteurRawInput): TechniqueAnalysis {
-  const { plu, conception } = input;
+  const plu = input.plu ?? {};
+  const conception = input.conception ?? {};
 
   const contraintes: PluConstrainte[] = (plu.reglesPlu ?? []).map((r) => ({
     libelle: r.libelle,
@@ -115,7 +117,8 @@ function mapTechniqueAnalysis(input: PromoteurRawInput): TechniqueAnalysis {
 // ---- MarcheAnalysis ---------------------------------------------------------
 
 function mapMarcheAnalysis(input: PromoteurRawInput): MarcheAnalysis {
-  const { marche, evaluation } = input;
+  const marche = input.marche ?? {};
+  const evaluation = input.evaluation ?? {};
 
   const prixNeuf = marche.prixNeufM2 ?? 0;
   const prixProjet = evaluation.prixVenteM2 ?? 0;
@@ -179,7 +182,10 @@ function mapMarcheAnalysis(input: PromoteurRawInput): MarcheAnalysis {
 // ---- FinancierAnalysis ------------------------------------------------------
 
 function mapFinancierAnalysis(input: PromoteurRawInput): FinancierAnalysis {
-  const { bilan, evaluation, foncier, conception } = input;
+  const bilan = input.bilan ?? {};
+  const evaluation = input.evaluation ?? {};
+  const foncier = input.foncier ?? {};
+  const conception = input.conception ?? {};
 
   const ca = bilan.chiffreAffaires ?? evaluation.prixVenteTotal ?? 0;
   const sp = conception.surfacePlancher ?? 1;
@@ -312,7 +318,7 @@ function mapRisques(input: PromoteurRawInput, financier: FinancierAnalysis): Ris
 // ---- Financement ------------------------------------------------------------
 
 function mapFinancement(input: PromoteurRawInput, financier: FinancierAnalysis): FinancementAnalysis {
-  const { bilan } = input;
+  const bilan = input.bilan ?? {};
   const fondsPropres = bilan.fondsPropres ?? financier.coutRevientTotal * 0.2;
   const credit = bilan.creditPromoteur ?? financier.coutRevientTotal - fondsPropres;
   const fondsPropresPercent = roundTo(safeDiv(fondsPropres, financier.coutRevientTotal) * 100, 1);

@@ -1,6 +1,8 @@
 // src/spaces/promoteur/services/promoteurSynthese.types.ts
 // v4.1 — Ajout des champs DVF détaillés dans PromoteurRawInput.marche
 //        pour remonter la richesse de market-study-promoteur-v1 vers la synthèse.
+// v4.2 — Réexport des alias dérivés (ExecutiveSummary, FinancierAnalysis, …)
+//        attendus par promoteurSynthese.mapper.ts (indexed access types).
 
 // ─── Types de base ────────────────────────────────────────────────────────────
 
@@ -242,3 +244,20 @@ export type PromoteurRawInput = {
     creditPromoteur?: number;
   };
 };
+
+// ─── Alias dérivés (compat promoteurSynthese.mapper.ts) ───────────────────────
+// Ces sous-structures ont été inlinées dans PromoteurSynthese lors d'un refactor ;
+// le mapper les importe encore sous leur nom. On les réexpose par indexed access
+// pour qu'elles restent synchronisées automatiquement avec PromoteurSynthese.
+
+export type ProjetInfo = PromoteurSynthese['projet'];
+export type ExecutiveSummary = PromoteurSynthese['executiveSummary'];
+export type Scores = PromoteurSynthese['executiveSummary']['scores'];
+export type FinancierAnalysis = PromoteurSynthese['financier'];
+export type MarcheAnalysis = PromoteurSynthese['marche'];
+export type TechniqueAnalysis = PromoteurSynthese['technique'];
+export type FinancementAnalysis = PromoteurSynthese['financement'];
+
+// À vérifier via le compilateur (usage réel dans le mapper) :
+export type PluConstrainte = ContrainteTechnique;
+export type PrixMarche = PromoteurSynthese['marche'];
