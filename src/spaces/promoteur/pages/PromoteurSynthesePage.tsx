@@ -1,14 +1,14 @@
-// src/spaces/promoteur/pages/PromoteurSynthesePage.tsx
-// v4.3 — Patch DVF : lecture de study.marche.raw_data.core.dvf via
+﻿// src/spaces/promoteur/pages/PromoteurSynthesePage.tsx
+// v4.3 â€” Patch DVF : lecture de study.marche.raw_data.core.dvf via
 //        usePromoteurStudy et injection dans effectiveRawInput.marche.
-//        Le PDF synthèse reçoit maintenant nb_transactions, prix moyen/min/max,
-//        période et absorption mensuelle issus de market-study-promoteur-v1.
+//        Le PDF synthÃ¨se reÃ§oit maintenant nb_transactions, prix moyen/min/max,
+//        pÃ©riode et absorption mensuelle issus de market-study-promoteur-v1.
 //
-// v4.2 — Ajout bouton "Compléter les données" (séquentiel) + bloc "Actions utilisateur restantes"
-// Fix : wrap des textes inline après icônes dans <span> pour éviter erreur Babel
+// v4.2 â€” Ajout bouton "ComplÃ©ter les donnÃ©es" (sÃ©quentiel) + bloc "Actions utilisateur restantes"
+// Fix : wrap des textes inline aprÃ¨s icÃ´nes dans <span> pour Ã©viter erreur Babel
 //
-// v4.4 — Facade IA : lecture depuis cache mémoire module-level (getFacadeImage)
-//        en priorité sur readCaptures (localStorage soumis au quota).
+// v4.4 â€” Facade IA : lecture depuis cache mÃ©moire module-level (getFacadeImage)
+//        en prioritÃ© sur readCaptures (localStorage soumis au quota).
 
 import {
   AlertCircle,
@@ -61,15 +61,15 @@ import { readCaptures } from '../shared/captures.store';
 import { getFacadeImage, getSnapshot } from '../shared/promoteurSnapshot.store';
 import { usePromoteurStudy } from '../shared/usePromoteurStudy';
 
-// ── Clés localStorage ─────────────────────────────────────────────────────────
+// â”€â”€ ClÃ©s localStorage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const SYNTHESE_RAW_KEY      = "mimmoza.promoteur.synthese.rawInput.v1";
 const LS_FONCIER_SELECTED   = "mimmoza.promoteur.foncier.selected_v1";
 const LS_PLU_RULESET        = "mimmoza.plu.resolved_ruleset_v1";
 const AUTOCOMPLETE_DONE_KEY = "mimmoza.promoteur.synthese.autocomplete_done_v1";
-// Données DVF locales sauvegardées par EvaluationPage (source la plus précise — scope CP/commune)
+// DonnÃ©es DVF locales sauvegardÃ©es par EvaluationPage (source la plus prÃ©cise â€” scope CP/commune)
 const LS_EVALUATION = "mimmoza.promoteur.evaluation.v1";
 const LS_RENDU_TRAVAUX_SYNTHESE = "mimmoza.promoteur.renduTravaux.synthese.v1";
-// ─── Types ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface StudyData {
   foncier?: { adresse_complete?: string; commune?: string; code_postal?: string; departement?: string; surface_m2?: number; commune_insee?: string; };
@@ -102,11 +102,11 @@ interface Props {
   };
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function eur(v: number): string { return v.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }); }
 function pct(v: number): string { return `${v.toFixed(1)}%`; }
-function m2(v: number): string  { return `${Math.round(v).toLocaleString('fr-FR')} m²`; }
+function m2(v: number): string  { return `${Math.round(v).toLocaleString('fr-FR')} mÂ²`; }
 
 function featureCentroid(feature: any): { lat: number; lon: number } | null {
   try {
@@ -131,7 +131,7 @@ function buildStaticMapUrl(lat: number, lon: number): string {
   );
 }
 
-// ─── Skeleton ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Skeleton â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const Skeleton: React.FC<{ className?: string }> = ({ className = '' }) => (
   <div className={`animate-pulse rounded-lg bg-slate-200 ${className}`} />
@@ -146,7 +146,7 @@ const LoadingPreview: React.FC = () => (
   </div>
 );
 
-// ─── RecBanner v4 ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ RecBanner v4 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const REC_CFG: Record<RecommendationType, {
   bg: string; border: string; text: string;
@@ -155,19 +155,19 @@ const REC_CFG: Record<RecommendationType, {
 }> = {
   GO: {
     bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-700',
-    icon: CheckCircle2, label: 'GO — Opération recommandée',
+    icon: CheckCircle2, label: 'GO â€” OpÃ©ration recommandÃ©e',
   },
   GO_CONDITION: {
     bg: 'bg-amber-50', border: 'border-amber-300', text: 'text-amber-700',
-    icon: AlertCircle, label: 'GO CONDITIONNEL — Ajustements requis',
+    icon: AlertCircle, label: 'GO CONDITIONNEL â€” Ajustements requis',
   },
   NO_GO: {
     bg: 'bg-red-50', border: 'border-red-300', text: 'text-red-700',
-    icon: XCircle, label: "NO GO — Opération non viable en l'état",
+    icon: XCircle, label: "NO GO â€” OpÃ©ration non viable en l'Ã©tat",
   },
   ANALYSE_INSUFFISANTE: {
     bg: 'bg-slate-50', border: 'border-slate-400', text: 'text-slate-700',
-    icon: ShieldAlert, label: 'ANALYSE INSUFFISANTE — Données critiques manquantes',
+    icon: ShieldAlert, label: 'ANALYSE INSUFFISANTE â€” DonnÃ©es critiques manquantes',
   },
 };
 
@@ -186,7 +186,7 @@ const RecBanner: React.FC<{
         <p className={`text-xs mt-1 leading-relaxed ${cfg.text} opacity-80`}>{motif}</p>
         {!analyseSuffisante && (
           <p className={`text-xs mt-2 font-semibold ${cfg.text}`}>
-            ⛔ Aucune recommandation d'investissement ne peut être émise tant que les points bloquants ne sont pas résolus.
+            â›” Aucune recommandation d'investissement ne peut Ãªtre Ã©mise tant que les points bloquants ne sont pas rÃ©solus.
           </p>
         )}
       </div>
@@ -194,7 +194,7 @@ const RecBanner: React.FC<{
   );
 };
 
-// ─── CompletionBlock ──────────────────────────────────────────────────────────
+// â”€â”€â”€ CompletionBlock â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const STEP_ICON: Record<CompletionStep['status'], React.FC<{ className?: string }>> = {
   pending: ({ className }) => <div className={`rounded-full border border-slate-300 ${className ?? ''}`} />,
@@ -228,11 +228,11 @@ const CompletionBlock: React.FC<CompletionBlockProps> = ({ steps, running, done,
           className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-violet-200 hover:bg-violet-700 hover:-translate-y-0.5 transition-all"
         >
           <Sparkles className="h-4 w-4" />
-          <span>Compléter les données automatiquement</span>
+          <span>ComplÃ©ter les donnÃ©es automatiquement</span>
         </button>
         <p className="text-xs text-slate-500 text-center max-w-md leading-relaxed">
-          Récupère les données de marché (DVF, absorption), PLU et informations foncières manquantes.
-          L'implantation 2D et la façade IA restent à votre charge.
+          RÃ©cupÃ¨re les donnÃ©es de marchÃ© (DVF, absorption), PLU et informations fonciÃ¨res manquantes.
+          L'implantation 2D et la faÃ§ade IA restent Ã  votre charge.
         </p>
       </div>
     );
@@ -243,10 +243,10 @@ const CompletionBlock: React.FC<CompletionBlockProps> = ({ steps, running, done,
   const successCount = steps.filter(s => s.status === 'success').length;
   const errorCount   = steps.filter(s => s.status === 'error').length;
   const headerText = running
-    ? 'Complétion automatique des données…'
+    ? 'ComplÃ©tion automatique des donnÃ©esâ€¦'
     : errorCount > 0
-      ? `Complétion terminée — ${successCount} réussie(s), ${errorCount} erreur(s)`
-      : `Complétion terminée — ${successCount} donnée(s) complétée(s)`;
+      ? `ComplÃ©tion terminÃ©e â€” ${successCount} rÃ©ussie(s), ${errorCount} erreur(s)`
+      : `ComplÃ©tion terminÃ©e â€” ${successCount} donnÃ©e(s) complÃ©tÃ©e(s)`;
 
   return (
     <div className={`rounded-xl border-2 p-4 ${
@@ -276,7 +276,7 @@ const CompletionBlock: React.FC<CompletionBlockProps> = ({ steps, running, done,
             <div key={s.id} className="flex items-center gap-2 text-xs">
               <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${STEP_COLOR[s.status]} ${s.status === 'running' ? 'animate-spin' : ''}`} />
               <span className={`${STEP_COLOR[s.status]} ${s.status === 'running' ? 'font-semibold' : ''}`}>{s.label}</span>
-              {s.detail && <span className="text-slate-400 truncate">— {s.detail}</span>}
+              {s.detail && <span className="text-slate-400 truncate">â€” {s.detail}</span>}
             </div>
           );
         })}
@@ -285,7 +285,7 @@ const CompletionBlock: React.FC<CompletionBlockProps> = ({ steps, running, done,
         <div className="mt-3 pt-3 border-t border-emerald-200 flex items-center gap-2 text-xs text-emerald-700">
           <ArrowRight className="h-3.5 w-3.5 flex-shrink-0" />
           <span className="font-medium">
-            Cliquez sur <strong>Regénérer</strong> en haut de la page pour mettre à jour la synthèse.
+            Cliquez sur <strong>RegÃ©nÃ©rer</strong> en haut de la page pour mettre Ã  jour la synthÃ¨se.
           </span>
         </div>
       )}
@@ -293,7 +293,7 @@ const CompletionBlock: React.FC<CompletionBlockProps> = ({ steps, running, done,
   );
 };
 
-// ─── UserActionsBlock ─────────────────────────────────────────────────────────
+// â”€â”€â”€ UserActionsBlock â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface UserActionsBlockProps {
   anomalies: AnomalieItem[];
@@ -332,7 +332,7 @@ const UserActionRow: React.FC<{ anomalie: AnomalieItem; studyQ: string }> = ({ a
           <p className="text-xs font-semibold text-amber-900">{anomalie.libelle}</p>
         </div>
         {anomalie.detail ? <p className="text-xs text-amber-800 opacity-80 leading-relaxed">{anomalie.detail}</p> : null}
-        {anomalie.actionRequise ? <p className="text-xs mt-1 font-medium text-amber-900">→ {anomalie.actionRequise}</p> : null}
+        {anomalie.actionRequise ? <p className="text-xs mt-1 font-medium text-amber-900">â†’ {anomalie.actionRequise}</p> : null}
       </div>
       {target ? <a href={target.href} className={linkClass}>{target.label}</a> : null}
     </div>
@@ -350,7 +350,7 @@ const UserActionsBlock: React.FC<UserActionsBlockProps> = ({ anomalies, studyId 
         <p className="text-sm font-bold text-amber-800">Actions utilisateur restantes ({anomalies.length})</p>
       </div>
       <p className="text-xs text-amber-700 leading-relaxed mb-3">
-        Les données externes ont été complétées automatiquement. Il reste {countLabel} nécessitant votre intervention — ces éléments ne peuvent pas être résolus automatiquement.
+        Les donnÃ©es externes ont Ã©tÃ© complÃ©tÃ©es automatiquement. Il reste {countLabel} nÃ©cessitant votre intervention â€” ces Ã©lÃ©ments ne peuvent pas Ãªtre rÃ©solus automatiquement.
       </p>
       <div className="space-y-2">
         {anomalies.map(a => <UserActionRow key={a.id} anomalie={a} studyQ={studyQ} />)}
@@ -359,7 +359,7 @@ const UserActionsBlock: React.FC<UserActionsBlockProps> = ({ anomalies, studyId 
   );
 };
 
-// ─── AnomaliesSection ─────────────────────────────────────────────────────────
+// â”€â”€â”€ AnomaliesSection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const ANOMALIE_NIVEAU_CFG = {
   CRITIQUE: { bg: 'bg-red-50',   border: 'border-red-200',   text: 'text-red-700',   badge: 'bg-red-100 text-red-700',   icon: XCircle },
@@ -402,7 +402,7 @@ const AnomaliesSection: React.FC<{ anomalies: AnomalieItem[] }> = ({ anomalies }
           <div className="flex items-center gap-2 px-4 py-2.5 bg-red-100 border-b border-red-200">
             <XCircle className="h-4 w-4 text-red-600" />
             <span className="text-xs font-bold uppercase tracking-wider text-red-700">
-              {critiques.length} anomalie{critiques.length > 1 ? 's' : ''} critique{critiques.length > 1 ? 's' : ''} — bloque{critiques.length > 1 ? 'nt' : ''} la recommandation
+              {critiques.length} anomalie{critiques.length > 1 ? 's' : ''} critique{critiques.length > 1 ? 's' : ''} â€” bloque{critiques.length > 1 ? 'nt' : ''} la recommandation
             </span>
           </div>
           <div className="p-3 space-y-3">{critiques.map(a => <AnomalieCard key={a.id} anomalie={a} />)}</div>
@@ -413,7 +413,7 @@ const AnomaliesSection: React.FC<{ anomalies: AnomalieItem[] }> = ({ anomalies }
           <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-100 border-b border-amber-200">
             <AlertTriangle className="h-4 w-4 text-amber-600" />
             <span className="text-xs font-bold uppercase tracking-wider text-amber-700">
-              {alertes.length} alerte{alertes.length > 1 ? 's' : ''} — à corriger avant décision
+              {alertes.length} alerte{alertes.length > 1 ? 's' : ''} â€” Ã  corriger avant dÃ©cision
             </span>
           </div>
           <div className="p-3 space-y-3">{alertes.map(a => <AnomalieCard key={a.id} anomalie={a} />)}</div>
@@ -428,7 +428,7 @@ const AnomaliesSection: React.FC<{ anomalies: AnomalieItem[] }> = ({ anomalies }
   );
 };
 
-// ─── QualiteSection ───────────────────────────────────────────────────────────
+// â”€â”€â”€ QualiteSection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const STATUT_CFG: Record<ModuleStatut, { bg: string; text: string; label: string }> = {
   COMPLET:     { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'COMPLET' },
@@ -446,8 +446,8 @@ const QUALITE_BADGE: Record<DataQualite, string> = {
 const QualiteSection: React.FC<{ modules: ModuleQualite[]; dataQualite: DataQualite }> = ({ modules, dataQualite }) => (
   <div className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-hidden">
     <div className="flex items-center justify-between gap-3 px-4 py-3 border-b bg-slate-50">
-      <span className="text-xs font-bold uppercase tracking-wider text-slate-600">Qualité des données par module</span>
-      <span className={`text-xs font-bold rounded-full px-3 py-1 border ${QUALITE_BADGE[dataQualite]}`}>Données {dataQualite}</span>
+      <span className="text-xs font-bold uppercase tracking-wider text-slate-600">QualitÃ© des donnÃ©es par module</span>
+      <span className={`text-xs font-bold rounded-full px-3 py-1 border ${QUALITE_BADGE[dataQualite]}`}>DonnÃ©es {dataQualite}</span>
     </div>
     <div className="divide-y divide-slate-50">
       {modules.map(mod => {
@@ -463,7 +463,7 @@ const QualiteSection: React.FC<{ modules: ModuleQualite[]; dataQualite: DataQual
                 <div className="flex flex-wrap gap-1 mb-1">
                   {mod.donneesManquantes.map((d, i) => (
                     <span key={i} className={`inline-flex text-[10px] rounded px-1.5 py-0.5 ${d.includes('CRITIQUE') ? 'bg-red-100 text-red-600 font-bold' : 'bg-amber-100 text-amber-700'}`}>
-                      — {d}
+                      â€” {d}
                     </span>
                   ))}
                 </div>
@@ -471,7 +471,7 @@ const QualiteSection: React.FC<{ modules: ModuleQualite[]; dataQualite: DataQual
               {mod.donneesPresentes.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {mod.donneesPresentes.map((d, i) => (
-                    <span key={i} className="inline-flex text-[10px] bg-slate-100 text-slate-500 rounded px-1.5 py-0.5">✓ {d}</span>
+                    <span key={i} className="inline-flex text-[10px] bg-slate-100 text-slate-500 rounded px-1.5 py-0.5">âœ“ {d}</span>
                   ))}
                 </div>
               )}
@@ -483,7 +483,7 @@ const QualiteSection: React.FC<{ modules: ModuleQualite[]; dataQualite: DataQual
   </div>
 );
 
-// ─── KPI card ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ KPI card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const KpiCard: React.FC<{ label: string; value: string; sub?: string; alert?: boolean; trend?: 'up' | 'down' }> = ({ label, value, sub, alert, trend }) => (
   <div className={`rounded-xl border bg-white p-4 shadow-sm ${alert ? 'border-red-200' : 'border-slate-100'}`}>
@@ -497,7 +497,7 @@ const KpiCard: React.FC<{ label: string; value: string; sub?: string; alert?: bo
   </div>
 );
 
-// ─── Section wrapper ──────────────────────────────────────────────────────────
+// â”€â”€â”€ Section wrapper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const Section: React.FC<{ title: string; icon: React.ComponentType<{ className?: string }>; children: React.ReactNode; accent?: boolean }> = ({ title, icon: Icon, children, accent }) => (
   <div className={`rounded-xl border bg-white shadow-sm overflow-hidden ${accent ? 'border-violet-100' : 'border-slate-100'}`}>
@@ -523,7 +523,7 @@ const RISK_STYLE: Record<RisqueNiveau, string> = {
   FAIBLE:   'bg-emerald-100 text-emerald-700',
 };
 
-// ─── VisuelSlot ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ VisuelSlot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const VisuelSlot: React.FC<{
   title: string; icon: React.ComponentType<{ className?: string }>;
@@ -536,7 +536,7 @@ const VisuelSlot: React.FC<{
       <div className="flex items-center gap-2 px-3 py-2 border-b bg-slate-50 flex-shrink-0">
         <Icon className="h-4 w-4 text-slate-400" />
         <span className="text-xs font-bold uppercase tracking-wider text-slate-600 flex-1">{title}</span>
-        {captured ? <span className="text-xs text-emerald-600 font-medium flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Capturé</span>
+        {captured ? <span className="text-xs text-emerald-600 font-medium flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> CapturÃ©</span>
           : staticUrl ? <span className="text-xs text-blue-500 font-medium">Carte statique</span> : null}
       </div>
       {imageDataUrl ? (
@@ -553,7 +553,7 @@ const VisuelSlot: React.FC<{
         <div className="flex flex-col items-center justify-center gap-3 p-5 flex-1" style={{ minHeight: 140, display: staticUrl ? 'none' : 'flex' }}>
           <Camera className="h-8 w-8 text-slate-200" />
           <p className="text-xs text-slate-400 text-center leading-relaxed max-w-xs">
-            Pas encore capturé. Allez sur la page correspondante et cliquez sur <strong>📸 Synthèse</strong>.
+            Pas encore capturÃ©. Allez sur la page correspondante et cliquez sur <strong>ðŸ“¸ SynthÃ¨se</strong>.
           </p>
           {captureHref && (
             <a href={captureHref} className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 transition-colors no-underline">
@@ -575,7 +575,7 @@ const VisuelSlot: React.FC<{
   );
 };
 
-// ─── VisuelsSection ───────────────────────────────────────────────────────────
+// â”€â”€â”€ VisuelsSection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const VisuelsSection: React.FC<{
   captures: { cadastre?: string; impl2d?: string; massing3d?: string } | null;
@@ -593,14 +593,14 @@ const VisuelsSection: React.FC<{
         <VisuelSlot title="Implantation 2D" icon={Grid3X3} imageDataUrl={captures?.impl2d} captured={!!captures?.impl2d} captureHref={`/promoteur/implantation-2d${studyQ}`} captureLabel="Aller sur Implantation 2D" />
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <VisuelSlot title="Massing 3D — Relief terrain" icon={Box} imageDataUrl={captures?.massing3d} captured={!!captures?.massing3d} captureHref={`/promoteur/massing-3d${studyQ}`} captureLabel="Aller sur Massing 3D" />
+        <VisuelSlot title="Massing 3D â€” Relief terrain" icon={Box} imageDataUrl={captures?.massing3d} captured={!!captures?.massing3d} captureHref={`/promoteur/massing-3d${studyQ}`} captureLabel="Aller sur Massing 3D" />
         <VisuelSlot
-          title="Perspective façade IA"
+          title="Perspective faÃ§ade IA"
           icon={Building2}
           imageDataUrl={facadeRenderUrl ?? undefined}
           captured={!!facadeRenderUrl}
           captureHref={`/promoteur/generateur-facades${studyQ}`}
-          captureLabel="Générer une façade IA"
+          captureLabel="GÃ©nÃ©rer une faÃ§ade IA"
         />
       </div>
 
@@ -618,7 +618,7 @@ const VisuelsSection: React.FC<{
   );
 };
 
-// ─── PreGenerationView ────────────────────────────────────────────────────────
+// â”€â”€â”€ PreGenerationView â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const PreGenerationView: React.FC<{
   snapshotFoncier: { communeInsee?: string; surfaceM2?: number; parcelId?: string };
@@ -645,15 +645,15 @@ const PreGenerationView: React.FC<{
         <div className="flex items-center gap-2 mb-3">
           {hasData ? <CheckCircle2 className="h-4 w-4 text-violet-600" /> : <AlertTriangle className="h-4 w-4 text-amber-600" />}
           <p className={`text-xs font-bold uppercase tracking-wide ${hasData ? 'text-violet-700' : 'text-amber-700'}`}>
-            {hasData ? 'Données disponibles pour la synthèse' : 'Données insuffisantes — synthèse possible avec signalement des manquants'}
+            {hasData ? 'DonnÃ©es disponibles pour la synthÃ¨se' : 'DonnÃ©es insuffisantes â€” synthÃ¨se possible avec signalement des manquants'}
           </p>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: 'CA total HT', value: caTotal ? `${(caTotal / 1_000_000).toFixed(2)} M €` : 'NON RENSEIGNÉ', ok: !!caTotal },
-            { label: 'Marge nette', value: marge != null ? pct(marge) + (hasFoncier ? '' : ' ⚠') : 'NON RENSEIGNÉ', ok: marge != null },
-            { label: 'SDP',         value: sdp ? m2(sdp) : 'NON RENSEIGNÉ', ok: !!sdp },
-            { label: 'Commune',     value: commune ?? 'NON RENSEIGNÉ', ok: !!commune },
+            { label: 'CA total HT', value: caTotal ? `${(caTotal / 1_000_000).toFixed(2)} M â‚¬` : 'NON RENSEIGNÃ‰', ok: !!caTotal },
+            { label: 'Marge nette', value: marge != null ? pct(marge) + (hasFoncier ? '' : ' âš ') : 'NON RENSEIGNÃ‰', ok: marge != null },
+            { label: 'SDP',         value: sdp ? m2(sdp) : 'NON RENSEIGNÃ‰', ok: !!sdp },
+            { label: 'Commune',     value: commune ?? 'NON RENSEIGNÃ‰', ok: !!commune },
           ].map(item => (
             <div key={item.label} className="bg-white rounded-lg p-3 border border-white/80">
               <p className="text-xs text-slate-400 font-medium mb-1">{item.label}</p>
@@ -663,7 +663,7 @@ const PreGenerationView: React.FC<{
         </div>
         {!hasFoncier && (
           <p className="mt-3 text-xs text-amber-700 font-medium">
-            ⚠ Coût foncier absent — la synthèse signalera cette anomalie critique et bloquera la recommandation.
+            âš  CoÃ»t foncier absent â€” la synthÃ¨se signalera cette anomalie critique et bloquera la recommandation.
           </p>
         )}
       </div>
@@ -675,11 +675,11 @@ const PreGenerationView: React.FC<{
             <p className="text-xs font-bold text-slate-600 uppercase tracking-wide">Foncier</p>
           </div>
           <div className="space-y-1">
-            <Row label="Référence / adresse" value={effectiveInput.foncier?.adresse ?? snapshotFoncier.parcelId ?? 'NON RENSEIGNÉ'} highlight={!!effectiveInput.foncier?.adresse} missing={!effectiveInput.foncier?.adresse && !snapshotFoncier.parcelId} />
-            <Row label="Commune / INSEE"     value={commune ?? 'NON RENSEIGNÉ'} highlight={!!commune} missing={!commune} />
-            <Row label="Département"         value={effectiveInput.foncier?.departement ?? snapshotFoncier.communeInsee?.slice(0, 2) ?? 'NON RENSEIGNÉ'} />
-            <Row label="Surface terrain"     value={surface ? m2(surface) : 'NON RENSEIGNÉ'} highlight={!!surface} missing={!surface} />
-            <Row label="Prix acquisition"    value={hasFoncier ? eur(effectiveInput.bilan?.coutFoncier ?? effectiveInput.foncier?.prixAcquisition ?? 0) : 'NON RENSEIGNÉ'} highlight={hasFoncier} missing={!hasFoncier} />
+            <Row label="RÃ©fÃ©rence / adresse" value={effectiveInput.foncier?.adresse ?? snapshotFoncier.parcelId ?? 'NON RENSEIGNÃ‰'} highlight={!!effectiveInput.foncier?.adresse} missing={!effectiveInput.foncier?.adresse && !snapshotFoncier.parcelId} />
+            <Row label="Commune / INSEE"     value={commune ?? 'NON RENSEIGNÃ‰'} highlight={!!commune} missing={!commune} />
+            <Row label="DÃ©partement"         value={effectiveInput.foncier?.departement ?? snapshotFoncier.communeInsee?.slice(0, 2) ?? 'NON RENSEIGNÃ‰'} />
+            <Row label="Surface terrain"     value={surface ? m2(surface) : 'NON RENSEIGNÃ‰'} highlight={!!surface} missing={!surface} />
+            <Row label="Prix acquisition"    value={hasFoncier ? eur(effectiveInput.bilan?.coutFoncier ?? effectiveInput.foncier?.prixAcquisition ?? 0) : 'NON RENSEIGNÃ‰'} highlight={hasFoncier} missing={!hasFoncier} />
           </div>
         </div>
         <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -689,15 +689,15 @@ const PreGenerationView: React.FC<{
           </div>
           {snapshotImpl2D ? (
             <div className="space-y-1">
-              <Row label="Bâtiments"     value={`${snapshotImpl2D.nbBatiments} bâtiment${snapshotImpl2D.nbBatiments > 1 ? 's' : ''}`} />
-              <Row label="SDP estimée"   value={snapshotImpl2D.sdp ? m2(snapshotImpl2D.sdp) : 'NON RENSEIGNÉ'} highlight={!!snapshotImpl2D.sdp} missing={!snapshotImpl2D.sdp} />
-              <Row label="Emprise bâtie" value={snapshotImpl2D.emprise ? m2(snapshotImpl2D.emprise) : 'NON RENSEIGNÉ'} />
-              <Row label="Nb logements"  value={effectiveInput.conception?.nbLogements ? String(effectiveInput.conception.nbLogements) : 'NON RENSEIGNÉ'} />
+              <Row label="BÃ¢timents"     value={`${snapshotImpl2D.nbBatiments} bÃ¢timent${snapshotImpl2D.nbBatiments > 1 ? 's' : ''}`} />
+              <Row label="SDP estimÃ©e"   value={snapshotImpl2D.sdp ? m2(snapshotImpl2D.sdp) : 'NON RENSEIGNÃ‰'} highlight={!!snapshotImpl2D.sdp} missing={!snapshotImpl2D.sdp} />
+              <Row label="Emprise bÃ¢tie" value={snapshotImpl2D.emprise ? m2(snapshotImpl2D.emprise) : 'NON RENSEIGNÃ‰'} />
+              <Row label="Nb logements"  value={effectiveInput.conception?.nbLogements ? String(effectiveInput.conception.nbLogements) : 'NON RENSEIGNÃ‰'} />
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-4 gap-2">
               <Grid3X3 className="h-8 w-8 text-slate-200" />
-              <p className="text-xs text-slate-400 text-center">Aucune donnée d'implantation</p>
+              <p className="text-xs text-slate-400 text-center">Aucune donnÃ©e d'implantation</p>
             </div>
           )}
         </div>
@@ -718,12 +718,12 @@ const PreGenerationView: React.FC<{
         <button onClick={onGenerate}
           className="inline-flex items-center gap-2.5 rounded-xl bg-violet-600 px-6 py-3 text-sm font-semibold text-white shadow-md shadow-violet-200 hover:bg-violet-700 hover:-translate-y-0.5 transition-all">
           <FileText className="h-4 w-4" />
-          <span>Générer la synthèse et exporter PDF</span>
+          <span>GÃ©nÃ©rer la synthÃ¨se et exporter PDF</span>
         </button>
         {!hasData && (
           <p className="text-xs text-slate-400 text-center max-w-sm">
-            La synthèse sera générée avec signalement explicite de toutes les données manquantes.
-            Aucune recommandation ne sera émise sans données suffisantes.
+            La synthÃ¨se sera gÃ©nÃ©rÃ©e avec signalement explicite de toutes les donnÃ©es manquantes.
+            Aucune recommandation ne sera Ã©mise sans donnÃ©es suffisantes.
           </p>
         )}
       </div>
@@ -731,7 +731,7 @@ const PreGenerationView: React.FC<{
   );
 };
 
-// ─── SynthesePreview ─────────────────────────────────────────────────────────
+// â”€â”€â”€ SynthesePreview â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface SynthesePreviewProps {
   synthese:         PromoteurSynthese;
@@ -760,8 +760,8 @@ const SynthesePreview: React.FC<SynthesePreviewProps> = ({
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-slate-800 leading-tight">{es.titreOperation}</p>
           <p className="text-xs text-slate-400 mt-0.5">
-            {synthese.projet.adresse !== 'Adresse non renseignée' ? synthese.projet.adresse : synthese.projet.commune}
-            {synthese.projet.surfaceTerrain && ` · ${synthese.projet.surfaceTerrain.toLocaleString('fr-FR')} m² terrain`}
+            {synthese.projet.adresse !== 'Adresse non renseignÃ©e' ? synthese.projet.adresse : synthese.projet.commune}
+            {synthese.projet.surfaceTerrain && ` Â· ${synthese.projet.surfaceTerrain.toLocaleString('fr-FR')} mÂ² terrain`}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -772,7 +772,7 @@ const SynthesePreview: React.FC<SynthesePreviewProps> = ({
             <div className="text-[9px] text-slate-400 uppercase tracking-wide">Score</div>
           </div>
           <span className={`text-xs rounded-full px-2 py-0.5 font-medium border flex-shrink-0 ${QUALITE_BADGE[synthese.metadata.dataQualite]}`}>
-            Données {synthese.metadata.dataQualite}
+            DonnÃ©es {synthese.metadata.dataQualite}
           </span>
         </div>
       </div>
@@ -787,28 +787,28 @@ const SynthesePreview: React.FC<SynthesePreviewProps> = ({
 />
       </Section>
 
-      <RecBanner rec={es.recommendation} motif={es.motifRecommandation} analyseSuffisante={synthese.metadata.analyseSuffisante} />
+      <RecBanner rec={es.recommendation} motif={es.motifRecommandation} analyseSuffisante={synthese.metadata.analyseSuffisante ?? false} />
 
       {completionSlot}
       {userActionsSlot}
 
-      {synthese.anomalies.length > 0 && <AnomaliesSection anomalies={synthese.anomalies} />}
+      {(synthese.anomalies ?? []).length > 0 && <AnomaliesSection anomalies={synthese.anomalies ?? []} />}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard label={financier.coutFoncierPresent ? 'Marge nette' : 'Marge nette ⚠'} value={financier.chiffreAffairesTotal > 0 ? pct(financier.margeNettePercent) : '—'} sub={financier.coutFoncierPresent ? eur(financier.margeNette) : 'Hors foncier — non fiable'} alert={!financier.coutFoncierPresent || financier.margeNettePercent < 8} trend={financier.coutFoncierPresent && financier.margeNettePercent >= 12 ? 'up' : 'down'} />
-        <KpiCard label="CA total HT" value={financier.chiffreAffairesTotal > 0 ? `${(financier.chiffreAffairesTotal / 1_000_000).toFixed(2)} M €` : '—'} sub={financier.chiffreAffairesM2 > 0 ? `${financier.chiffreAffairesM2.toLocaleString('fr-FR')} €/m²` : undefined} />
-        <KpiCard label={financier.coutFoncierPresent ? 'TRN' : 'TRN ⚠'} value={financier.trnRendement > 0 ? pct(financier.trnRendement) : '—'} sub={!financier.coutFoncierPresent ? 'Hors foncier — non fiable' : 'Taux de rendement net'} alert={!financier.coutFoncierPresent || financier.trnRendement < 8} trend={financier.coutFoncierPresent && financier.trnRendement >= 10 ? 'up' : 'down'} />
-        <KpiCard label="Score global" value={`${es.scores.global}/100`} sub={`${synthese.projet.nbLogements} logement${synthese.projet.nbLogements > 1 ? 's' : ''} · ${synthese.projet.programmeType}`} trend={es.scores.global >= 65 ? 'up' : 'down'} />
+        <KpiCard label={financier.coutFoncierPresent ? 'Marge nette' : 'Marge nette âš '} value={financier.chiffreAffairesTotal > 0 ? pct(financier.margeNettePercent) : 'â€”'} sub={financier.coutFoncierPresent ? eur(financier.margeNette) : 'Hors foncier â€” non fiable'} alert={!financier.coutFoncierPresent || financier.margeNettePercent < 8} trend={financier.coutFoncierPresent && financier.margeNettePercent >= 12 ? 'up' : 'down'} />
+        <KpiCard label="CA total HT" value={financier.chiffreAffairesTotal > 0 ? `${(financier.chiffreAffairesTotal / 1_000_000).toFixed(2)} M â‚¬` : 'â€”'} sub={financier.chiffreAffairesM2 > 0 ? `${financier.chiffreAffairesM2.toLocaleString('fr-FR')} â‚¬/mÂ²` : undefined} />
+        <KpiCard label={financier.coutFoncierPresent ? 'TRN' : 'TRN âš '} value={financier.trnRendement > 0 ? pct(financier.trnRendement) : 'â€”'} sub={!financier.coutFoncierPresent ? 'Hors foncier â€” non fiable' : 'Taux de rendement net'} alert={!financier.coutFoncierPresent || financier.trnRendement < 8} trend={financier.coutFoncierPresent && financier.trnRendement >= 10 ? 'up' : 'down'} />
+        <KpiCard label="Score global" value={`${es.scores.global}/100`} sub={`${synthese.projet.nbLogements} logement${synthese.projet.nbLogements > 1 ? 's' : ''} Â· ${synthese.projet.programmeType}`} trend={es.scores.global >= 65 ? 'up' : 'down'} />
       </div>
 
       {!financier.coutFoncierPresent && (
         <div className="flex items-start gap-3 rounded-xl border-2 border-red-200 bg-red-50 p-4">
           <ShieldAlert className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-bold text-red-700">Coût foncier absent — indicateurs financiers non exploitables</p>
+            <p className="text-sm font-bold text-red-700">CoÃ»t foncier absent â€” indicateurs financiers non exploitables</p>
             <p className="text-xs text-red-600 mt-1 leading-relaxed">
-              La marge ({pct(financier.margeNettePercent)}) et le TRN ({pct(financier.trnRendement)}) sont calculés hors foncier.
-              Ces valeurs sont surestimées et ne peuvent pas servir de base de décision.
+              La marge ({pct(financier.margeNettePercent)}) et le TRN ({pct(financier.trnRendement)}) sont calculÃ©s hors foncier.
+              Ces valeurs sont surestimÃ©es et ne peuvent pas servir de base de dÃ©cision.
               Renseigner le prix d'acquisition dans le Bilan.
             </p>
           </div>
@@ -832,39 +832,39 @@ const SynthesePreview: React.FC<SynthesePreviewProps> = ({
         </div>
       )}
 
-      <QualiteSection modules={synthese.qualiteParModule} dataQualite={synthese.metadata.dataQualite} />
+      <QualiteSection modules={synthese.qualiteParModule ?? []} dataQualite={synthese.metadata.dataQualite} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Section title="Étude de marché" icon={BarChart3}>
-          {!marche.analyseFiable && (
+        <Section title="Ã‰tude de marchÃ©" icon={BarChart3}>
+          {!(marche.transactionsRecentes.nbTransactions > 0) && (
             <div className="flex items-start gap-2 p-3 rounded-lg border border-red-100 bg-red-50/60 mb-3">
               <AlertTriangle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-xs font-bold text-red-600 uppercase tracking-wide">ANALYSE DE MARCHÉ NON FIABLE</p>
-                <p className="text-xs text-red-500 mt-0.5">Données DVF et concurrence absentes. Le prix de vente est une hypothèse non étayée par des transactions réelles.</p>
+                <p className="text-xs font-bold text-red-600 uppercase tracking-wide">ANALYSE DE MARCHÃ‰ NON FIABLE</p>
+                <p className="text-xs text-red-500 mt-0.5">DonnÃ©es DVF et concurrence absentes. Le prix de vente est une hypothÃ¨se non Ã©tayÃ©e par des transactions rÃ©elles.</p>
               </div>
             </div>
           )}
           <div className="space-y-0">
-            <Row label="Zone marché" value={marche.zoneMarche} />
-            <Row label="Prix neuf moyen" value={marche.prixNeufMoyenM2 > 0 ? `${marche.prixNeufMoyenM2.toLocaleString('fr-FR')} €/m²` : 'NON RENSEIGNÉ'} highlight={marche.prixNeufMoyenM2 > 0} missing={marche.prixNeufMoyenM2 === 0} />
-            <Row label="Prix projet" value={marche.prixProjetM2 > 0 ? `${marche.prixProjetM2.toLocaleString('fr-FR')} €/m²` : 'NON RENSEIGNÉ'} missing={marche.prixProjetM2 === 0} />
-            {marche.prixNeufMoyenM2 > 0 && marche.prixProjetM2 > 0 && <Row label="Position vs marché" value={`${marche.positionPrix > 0 ? '+' : ''}${pct(marche.positionPrix)}`} highlight={Math.abs(marche.positionPrix) > 5} />}
+            <Row label="Zone marchÃ©" value={marche.zoneMarche} />
+            <Row label="Prix neuf moyen" value={marche.prixNeufMoyenM2 > 0 ? `${marche.prixNeufMoyenM2.toLocaleString('fr-FR')} â‚¬/mÂ²` : 'NON RENSEIGNÃ‰'} highlight={marche.prixNeufMoyenM2 > 0} missing={marche.prixNeufMoyenM2 === 0} />
+            <Row label="Prix projet" value={marche.prixProjetM2 > 0 ? `${marche.prixProjetM2.toLocaleString('fr-FR')} â‚¬/mÂ²` : 'NON RENSEIGNÃ‰'} missing={marche.prixProjetM2 === 0} />
+            {marche.prixNeufMoyenM2 > 0 && marche.prixProjetM2 > 0 && <Row label="Position vs marchÃ©" value={`${marche.positionPrix > 0 ? '+' : ''}${pct(marche.positionPrix)}`} highlight={Math.abs(marche.positionPrix) > 5} />}
             {marche.primiumNeuf !== 0 && <Row label="Prime neuf/ancien" value={pct(marche.primiumNeuf)} />}
-            <Row label="Transactions DVF" value={marche.analyseFiable ? 'Présentes (base DVF exploitée)' : 'NON RENSEIGNÉ'} highlight={marche.analyseFiable} missing={!marche.analyseFiable} />
-            <Row label="Concurrence" value={marche.offreConcurrente > 0 ? `${marche.offreConcurrente} programme(s)` : 'Non répertoriée'} />
-            {marche.delaiEcoulementMois != null && <Row label="Délai écoulement estimé" value={`${marche.delaiEcoulementMois} mois`} />}
+            <Row label="Transactions DVF" value={(marche.transactionsRecentes.nbTransactions > 0) ? 'PrÃ©sentes (base DVF exploitÃ©e)' : 'NON RENSEIGNÃ‰'} highlight={(marche.transactionsRecentes.nbTransactions > 0)} missing={!(marche.transactionsRecentes.nbTransactions > 0)} />
+            <Row label="Concurrence" value={marche.offreConcurrente > 0 ? `${marche.offreConcurrente} programme(s)` : 'Non rÃ©pertoriÃ©e'} />
+            {marche.delaiEcoulementMois != null && <Row label="DÃ©lai Ã©coulement estimÃ©" value={`${marche.delaiEcoulementMois} mois`} />}
           </div>
-          {marche.notesMarcheLibre.filter(n => !n.startsWith('ANALYSE DE MARCHÉ NON FIABLE')).length > 0 && (
+          {marche.notesMarcheLibre.filter(n => !n.startsWith('ANALYSE DE MARCHÃ‰ NON FIABLE')).length > 0 && (
             <div className="mt-3 pt-3 border-t border-slate-100 space-y-1">
-              {marche.notesMarcheLibre.filter(note => !note.startsWith('ANALYSE DE MARCHÉ NON FIABLE')).map((note, i) => (
+              {marche.notesMarcheLibre.filter(note => !note.startsWith('ANALYSE DE MARCHÃ‰ NON FIABLE')).map((note, i) => (
                 <p key={i} className="text-xs text-amber-600 flex items-start gap-1.5"><AlertTriangle className="h-3 w-3 flex-shrink-0 mt-0.5" /><span>{note}</span></p>
               ))}
             </div>
           )}
         </Section>
 
-        <Section title="Faisabilité technique" icon={Layers} accent>
+        <Section title="FaisabilitÃ© technique" icon={Layers} accent>
           <div className="flex items-center gap-2 mb-3">
             <span className={`text-xs font-bold rounded-full px-3 py-1 border ${
               technique.faisabiliteTechnique === 'CONFIRME'     ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
@@ -872,19 +872,19 @@ const SynthesePreview: React.FC<SynthesePreviewProps> = ({
               technique.faisabiliteTechnique === 'IMPOSSIBLE'   ? 'bg-red-50 text-red-700 border-red-200' :
               'bg-slate-50 text-slate-600 border-slate-200'
             }`}>
-              {technique.faisabiliteTechnique === 'CONFIRME'     ? 'Confirmée' :
-               technique.faisabiliteTechnique === 'SOUS_RESERVE' ? 'Sous réserve' :
-               technique.faisabiliteTechnique === 'IMPOSSIBLE'   ? '⛔ Impossible' :
-               'NON DÉTERMINABLE'}
+              {technique.faisabiliteTechnique === 'CONFIRME'     ? 'ConfirmÃ©e' :
+               technique.faisabiliteTechnique === 'SOUS_RESERVE' ? 'Sous rÃ©serve' :
+               technique.faisabiliteTechnique === 'IMPOSSIBLE'   ? 'â›” Impossible' :
+               'NON DÃ‰TERMINABLE'}
             </span>
-            <span className="text-xs text-slate-400">Zone {technique.zonePlu !== 'NON RENSEIGNÉ' ? technique.zonePlu : '—'}</span>
+            <span className="text-xs text-slate-400">Zone {technique.zonePlu !== 'NON RENSEIGNÃ‰' ? technique.zonePlu : 'â€”'}</span>
           </div>
           <div className="space-y-0">
-            <Row label="CES / CUB"       value={technique.cub != null ? String(technique.cub) : 'NON RENSEIGNÉ'} missing={technique.cub == null} />
-            <Row label="Hauteur max PLU" value={technique.hauteurMax != null ? `${technique.hauteurMax} m` : 'NON RENSEIGNÉ'} missing={technique.hauteurMax == null} />
-            <Row label="Hauteur projet"  value={technique.hauteurProjet != null ? `${technique.hauteurProjet} m` : 'NON RENSEIGNÉ'} missing={technique.hauteurProjet == null} />
-            <Row label="Niveaux"         value={technique.nbNiveaux != null ? String(technique.nbNiveaux) : 'NON RENSEIGNÉ'} missing={technique.nbNiveaux == null} />
-            <Row label="Pleine terre"    value={technique.pleineTerre != null ? `${technique.pleineTerre}% min` : 'NON RENSEIGNÉ'} missing={technique.pleineTerre == null} />
+            <Row label="CES / CUB"       value={technique.cub != null ? String(technique.cub) : 'NON RENSEIGNÃ‰'} missing={technique.cub == null} />
+            <Row label="Hauteur max PLU" value={technique.hauteurMax != null ? `${technique.hauteurMax} m` : 'NON RENSEIGNÃ‰'} missing={technique.hauteurMax == null} />
+            <Row label="Hauteur projet"  value={technique.hauteurProjet != null ? `${technique.hauteurProjet} m` : 'NON RENSEIGNÃ‰'} missing={technique.hauteurProjet == null} />
+            <Row label="Niveaux"         value={technique.nbNiveaux != null ? String(technique.nbNiveaux) : 'NON RENSEIGNÃ‰'} missing={technique.nbNiveaux == null} />
+            <Row label="Pleine terre"    value={technique.pleineTerre != null ? `${technique.pleineTerre}% min` : 'NON RENSEIGNÃ‰'} missing={technique.pleineTerre == null} />
           </div>
           {technique.contraintes.length > 0 && (
             <div className="mt-3 pt-3 border-t border-slate-100">
@@ -904,27 +904,27 @@ const SynthesePreview: React.FC<SynthesePreviewProps> = ({
         </Section>
       </div>
 
-      <Section title="Analyse financière — Comité d'investissement" icon={Euro}>
+      <Section title="Analyse financiÃ¨re â€” ComitÃ© d'investissement" icon={Euro}>
         {!financier.coutFoncierPresent && (
           <div className="mb-3 p-2 rounded-lg bg-red-50 border border-red-100 text-xs text-red-600 font-semibold">
-            ⛔ DONNÉES INCOMPLÈTES — Coût foncier absent. Les indicateurs ci-dessous sont non fiables.
+            â›” DONNÃ‰ES INCOMPLÃˆTES â€” CoÃ»t foncier absent. Les indicateurs ci-dessous sont non fiables.
           </div>
         )}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-0">
-          <div className="col-span-2 md:col-span-3 pb-2 mb-1 border-b border-slate-100"><p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Bilan économique</p></div>
-          <Row label="Chiffre d'affaires"    value={financier.chiffreAffairesTotal > 0 ? eur(financier.chiffreAffairesTotal) : 'NON RENSEIGNÉ'} missing={financier.chiffreAffairesTotal === 0} />
-          <Row label="CA / m² vendable"      value={financier.chiffreAffairesM2 > 0 ? `${financier.chiffreAffairesM2.toLocaleString('fr-FR')} €/m²` : '—'} />
-          <Row label="Coût de revient total" value={financier.coutRevientTotal > 0 ? eur(financier.coutRevientTotal) : '—'} />
-          <Row label="Coût revient / m²"     value={financier.coutRevientM2 > 0 ? `${financier.coutRevientM2.toLocaleString('fr-FR')} €/m²` : '—'} />
-          <Row label="Foncier"               value={financier.coutFoncierPresent ? eur(financier.coutFoncier) : 'NON RENSEIGNÉ'} highlight={financier.coutFoncierPresent} missing={!financier.coutFoncierPresent} />
-          <Row label="Travaux"               value={financier.coutTravaux > 0 ? `${eur(financier.coutTravaux)} (${financier.coutTravauxM2.toLocaleString('fr-FR')} €/m²)` : '—'} />
-          <Row label="Frais financiers"      value={financier.coutFinanciers > 0 ? eur(financier.coutFinanciers) : '—'} />
-          <Row label="Commercialisation"     value={financier.fraisCommercialisation > 0 ? eur(financier.fraisCommercialisation) : '—'} />
-          <div className="col-span-2 md:col-span-3 pt-2 mt-1 border-t border-slate-100"><p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Rentabilité</p></div>
-          <Row label={financier.coutFoncierPresent ? 'Marge nette' : 'Marge nette ⚠ (hors foncier)'} value={financier.chiffreAffairesTotal > 0 ? `${eur(financier.margeNette)} (${pct(financier.margeNettePercent)})` : 'NON CALCULABLE'} highlight missing={financier.chiffreAffairesTotal === 0} />
-          <Row label="Marge opérationnelle"  value={financier.margeOperationnellePercent !== 0 ? pct(financier.margeOperationnellePercent) : '—'} />
-          <Row label={financier.coutFoncierPresent ? 'TRN' : 'TRN ⚠ (hors foncier)'} value={financier.trnRendement > 0 ? pct(financier.trnRendement) : '—'} highlight />
-          <Row label="Part foncier / CA"     value={financier.bilancielRatio > 0 ? pct(financier.bilancielRatio) : '—'} />
+          <div className="col-span-2 md:col-span-3 pb-2 mb-1 border-b border-slate-100"><p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Bilan Ã©conomique</p></div>
+          <Row label="Chiffre d'affaires"    value={financier.chiffreAffairesTotal > 0 ? eur(financier.chiffreAffairesTotal) : 'NON RENSEIGNÃ‰'} missing={financier.chiffreAffairesTotal === 0} />
+          <Row label="CA / mÂ² vendable"      value={financier.chiffreAffairesM2 > 0 ? `${financier.chiffreAffairesM2.toLocaleString('fr-FR')} â‚¬/mÂ²` : 'â€”'} />
+          <Row label="CoÃ»t de revient total" value={financier.coutRevientTotal > 0 ? eur(financier.coutRevientTotal) : 'â€”'} />
+          <Row label="CoÃ»t revient / mÂ²"     value={financier.coutRevientM2 > 0 ? `${financier.coutRevientM2.toLocaleString('fr-FR')} â‚¬/mÂ²` : 'â€”'} />
+          <Row label="Foncier"               value={financier.coutFoncierPresent ? eur(financier.coutFoncier) : 'NON RENSEIGNÃ‰'} highlight={financier.coutFoncierPresent} missing={!financier.coutFoncierPresent} />
+          <Row label="Travaux"               value={financier.coutTravaux > 0 ? `${eur(financier.coutTravaux)} (${financier.coutTravauxM2.toLocaleString('fr-FR')} â‚¬/mÂ²)` : 'â€”'} />
+          <Row label="Frais financiers"      value={financier.coutFinanciers > 0 ? eur(financier.coutFinanciers) : 'â€”'} />
+          <Row label="Commercialisation"     value={financier.fraisCommercialisation > 0 ? eur(financier.fraisCommercialisation) : 'â€”'} />
+          <div className="col-span-2 md:col-span-3 pt-2 mt-1 border-t border-slate-100"><p className="text-xs font-bold text-slate-500 uppercase tracking-wide">RentabilitÃ©</p></div>
+          <Row label={financier.coutFoncierPresent ? 'Marge nette' : 'Marge nette âš  (hors foncier)'} value={financier.chiffreAffairesTotal > 0 ? `${eur(financier.margeNette)} (${pct(financier.margeNettePercent)})` : 'NON CALCULABLE'} highlight missing={financier.chiffreAffairesTotal === 0} />
+          <Row label="Marge opÃ©rationnelle"  value={financier.margeOperationnellePercent !== 0 ? pct(financier.margeOperationnellePercent) : 'â€”'} />
+          <Row label={financier.coutFoncierPresent ? 'TRN' : 'TRN âš  (hors foncier)'} value={financier.trnRendement > 0 ? pct(financier.trnRendement) : 'â€”'} highlight />
+          <Row label="Part foncier / CA"     value={financier.bilancielRatio > 0 ? pct(financier.bilancielRatio) : 'â€”'} />
         </div>
       </Section>
 
@@ -941,15 +941,15 @@ const SynthesePreview: React.FC<SynthesePreviewProps> = ({
         )}
         <div className="grid grid-cols-2 gap-x-6 gap-y-0">
           <Row label="Fonds propres requis" value={`${eur(financement.fondsPropresRequis)} (${pct(financement.fondsPropresPercent)})`} />
-          <Row label="Crédit promoteur"     value={eur(financement.creditPromoteurMontant)} />
-          <Row label="Durée crédit estimée" value={`${financement.creditPromoteurDuree} mois`} />
-          <Row label="Taux crédit estimé"   value={pct(financement.tauxCredit)} />
-          <Row label="Préfinancement VEFA"  value={pct(financement.prefinancementVentes)} />
+          <Row label="CrÃ©dit promoteur"     value={eur(financement.creditPromoteurMontant)} />
+          <Row label="DurÃ©e crÃ©dit estimÃ©e" value={`${financement.creditPromoteurDuree} mois`} />
+          <Row label="Taux crÃ©dit estimÃ©"   value={pct(financement.tauxCredit)} />
+          <Row label="PrÃ©financement VEFA"  value={pct(financement.prefinancementVentes)} />
         </div>
       </Section>
 
       {scenarios.length > 0 && (
-        <Section title="Scénarios de sensibilité" icon={TrendingUp}>
+        <Section title="ScÃ©narios de sensibilitÃ©" icon={TrendingUp}>
           <div className="space-y-2">
             {scenarios.map((sc: Scenario) => (
               <div key={sc.id} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
@@ -968,18 +968,18 @@ const SynthesePreview: React.FC<SynthesePreviewProps> = ({
           </div>
           {stressScenario && (
             <p className="text-xs text-slate-400 mt-3 pt-2 border-t border-slate-100">
-              Stress test ({stressScenario.libelle}) : marge {pct(stressScenario.resultat.margeNettePercent)} —{' '}
-              {stressScenario.resultat.recommendation === 'GO' ? 'opération résiliente.' :
-               stressScenario.resultat.recommendation === 'GO_CONDITION' ? 'opération fragile en scénario dégradé.' :
-               stressScenario.resultat.recommendation === 'ANALYSE_INSUFFISANTE' ? 'analyse incomplète, données insuffisantes.' :
-               'opération non viable en scénario dégradé.'}
+              Stress test ({stressScenario.libelle}) : marge {pct(stressScenario.resultat.margeNettePercent)} â€”{' '}
+              {stressScenario.resultat.recommendation === 'GO' ? 'opÃ©ration rÃ©siliente.' :
+               stressScenario.resultat.recommendation === 'GO_CONDITION' ? 'opÃ©ration fragile en scÃ©nario dÃ©gradÃ©.' :
+               stressScenario.resultat.recommendation === 'ANALYSE_INSUFFISANTE' ? 'analyse incomplÃ¨te, donnÃ©es insuffisantes.' :
+               'opÃ©ration non viable en scÃ©nario dÃ©gradÃ©.'}
             </p>
           )}
         </Section>
       )}
 
       {risques.length > 0 && (
-        <Section title={`Risques identifiés (${risques.length})`} icon={AlertTriangle}>
+        <Section title={`Risques identifiÃ©s (${risques.length})`} icon={AlertTriangle}>
           <div className="space-y-2">
             {risques.map((r: RisqueItem) => (
               <div key={r.id} className="flex items-start gap-2">
@@ -994,11 +994,11 @@ const SynthesePreview: React.FC<SynthesePreviewProps> = ({
         </Section>
       )}
 
-      <Section title="Synthèse analytique" icon={FileText} accent>
+      {syntheseIA && (<Section title="SynthÃ¨se analytique" icon={FileText} accent>
         <div className="space-y-4">
           {[
-            { t: 'Résumé exécutif', c: syntheseIA.texteExecutif },
-            { t: 'Marché',          c: syntheseIA.analyseMarche },
+            { t: 'RÃ©sumÃ© exÃ©cutif', c: syntheseIA.texteExecutif },
+            { t: 'MarchÃ©',          c: syntheseIA.analyseMarche },
             { t: 'Technique',       c: syntheseIA.analyseTechnique },
             { t: 'Financier',       c: syntheseIA.analyseFinanciere },
             { t: 'Risques',         c: syntheseIA.analyseRisques },
@@ -1013,13 +1013,13 @@ const SynthesePreview: React.FC<SynthesePreviewProps> = ({
           <p className="text-xs font-bold text-violet-700 mb-1">Conclusion</p>
           <p className="text-xs text-violet-700 leading-relaxed">{syntheseIA.conclusion}</p>
         </div>
-      </Section>
+      </Section>)}
 
     </div>
   );
 };
 
-// ─── Page principale ──────────────────────────────────────────────────────────
+// â”€â”€â”€ Page principale â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const PromoteurSynthesePage: React.FC<Props> = ({ rawInputOverride, studyData, bilanValues }) => {
   const [synthese, setSynthese] = useState<PromoteurSynthese | null>(null);
@@ -1063,18 +1063,18 @@ export const PromoteurSynthesePage: React.FC<Props> = ({ rawInputOverride, study
     };
   }, [study]);
 
-  // ── [v4.4] DVF local depuis EvaluationPage (priorité max) ────────────────
-  // EvaluationPage sauvegarde les résultats DVF locaux (scope CP ou commune)
-  // dans LS_EVALUATION. Ces données sont plus précises que study.marche
-  // (scope plus large, 500+ transactions) car filtrées sur la zone exacte.
+  // â”€â”€ [v4.4] DVF local depuis EvaluationPage (prioritÃ© max) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // EvaluationPage sauvegarde les rÃ©sultats DVF locaux (scope CP ou commune)
+  // dans LS_EVALUATION. Ces donnÃ©es sont plus prÃ©cises que study.marche
+  // (scope plus large, 500+ transactions) car filtrÃ©es sur la zone exacte.
   const evaluationDvf = useMemo(() => {
     try {
       const raw = localStorage.getItem(LS_EVALUATION);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      if (!parsed?.prixM2) return null; // données incomplètes
+      if (!parsed?.prixM2) return null; // donnÃ©es incomplÃ¨tes
       return {
-        // dvfLocalTransactions = dvfBest.transactions (26 local) sauvé par EvaluationPage
+        // dvfLocalTransactions = dvfBest.transactions (26 local) sauvÃ© par EvaluationPage
       // NE PAS lire parsed.nbTransactions = marche.nb_transactions (500 du market study large)
       nbTransactionsDvf:   typeof parsed.dvfLocalTransactions === 'number' ? parsed.dvfLocalTransactions : undefined,
         prixMoyenDvf:        typeof parsed.prixM2 === 'number' ? parsed.prixM2 : undefined,
@@ -1085,7 +1085,7 @@ export const PromoteurSynthesePage: React.FC<Props> = ({ rawInputOverride, study
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [completionSteps]);
 
-  // ── Captures scopées par studyId ──────────────────────────────────────────
+  // â”€â”€ Captures scopÃ©es par studyId â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const captureImages = useMemo(() => {
     const caps = readCaptures(studyId);
     return {
@@ -1095,14 +1095,14 @@ export const PromoteurSynthesePage: React.FC<Props> = ({ rawInputOverride, study
     };
   }, [studyId]);
 
-  // ── [v4.4] Facade IA — cache mémoire en priorité sur localStorage ─────────
-  // Le cache mémoire module-level (_facadeImageCache dans promoteurSnapshot.store)
+  // â”€â”€ [v4.4] Facade IA â€” cache mÃ©moire en prioritÃ© sur localStorage â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Le cache mÃ©moire module-level (_facadeImageCache dans promoteurSnapshot.store)
   // est insensible au quota localStorage et survit aux remounts de composant.
-  // Fallback sur readCaptures pour les images persistées en session précédente.
+  // Fallback sur readCaptures pour les images persistÃ©es en session prÃ©cÃ©dente.
   const facadeRenderUrl = useMemo<string | null>(() => {
     const cached = getFacadeImage(studyId);
     if (cached) {
-      console.log('[PromoteurSynthese] Image façade lue depuis cache mémoire ✓');
+      console.log('[PromoteurSynthese] Image faÃ§ade lue depuis cache mÃ©moire âœ“');
       return cached;
     }
     const caps = readCaptures(studyId);
@@ -1137,13 +1137,13 @@ if (!generatedImageUrl) return null;
         configSnapshot: parsed.configSnapshot ?? null,
       };
     } catch (e) {
-      console.warn('[PromoteurSynthese] lecture rendu travaux synthèse impossible:', e);
+      console.warn('[PromoteurSynthese] lecture rendu travaux synthÃ¨se impossible:', e);
       return null;
     }
   }, []);
 
 
-  // ── Snapshot foncier ──────────────────────────────────────────────────────
+  // â”€â”€ Snapshot foncier â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const snapshotFoncier = useMemo(() => {
     try {
       const snap = getSnapshot() as any;
@@ -1169,7 +1169,7 @@ if (!generatedImageUrl) return null;
       const adresse = props.adresse    ?? props.label        ?? null;
       const id      = props.id         ?? null;
       const ref = section && numero
-        ? `Section ${String(section).trim()} n°${String(numero).replace(/^0+/, '')}`
+        ? `Section ${String(section).trim()} nÂ°${String(numero).replace(/^0+/, '')}`
         : (id ?? null);
       return { ref, surface: surface != null ? Number(surface) : null, adresse: adresse ?? ref ?? null, id };
     } catch { return null; }
@@ -1223,14 +1223,14 @@ if (!generatedImageUrl) return null;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [completionSteps]);
 
-  // ── [FIX] rawInputFromStudy — reconstruit depuis Supabase + localStorage bilan ─
+  // â”€â”€ [FIX] rawInputFromStudy â€” reconstruit depuis Supabase + localStorage bilan â”€
   // Fallback critique quand mimmoza.promoteur.synthese.rawInput.v1 est vide.
-  // Sources par priorité :
-  //   1. mimmoza.bilan.assumptions.{studyId} → landPriceEur, prix vente, travaux
-  //   2. mimmoza.bilan.land_price_eur.{studyId} → prix foncier backup
-  //   3. study.bilan → ca_previsionnel, marge (depuis patchBilan Supabase)
-  //   4. study.foncier / plu / conception → données structurelles
-  // Ces clés localStorage NE sont PAS dans la liste des clés supprimées.
+  // Sources par prioritÃ© :
+  //   1. mimmoza.bilan.assumptions.{studyId} â†’ landPriceEur, prix vente, travaux
+  //   2. mimmoza.bilan.land_price_eur.{studyId} â†’ prix foncier backup
+  //   3. study.bilan â†’ ca_previsionnel, marge (depuis patchBilan Supabase)
+  //   4. study.foncier / plu / conception â†’ donnÃ©es structurelles
+  // Ces clÃ©s localStorage NE sont PAS dans la liste des clÃ©s supprimÃ©es.
   const rawInputFromStudy = useMemo((): PromoteurRawInput | null => {
     if (!study && !studyId) return null;
 
@@ -1240,8 +1240,8 @@ if (!generatedImageUrl) return null;
     const m = study?.marche ?? null;
     const b = study?.bilan ?? null;
 
-    // Lire les hypothèses bilan depuis localStorage (clés scopées par studyId)
-    // Ces clés survivent à la suppression de synthese.rawInput.v1
+    // Lire les hypothÃ¨ses bilan depuis localStorage (clÃ©s scopÃ©es par studyId)
+    // Ces clÃ©s survivent Ã  la suppression de synthese.rawInput.v1
     let bilanAss: Record<string, unknown> | null = null;
     let landPriceEur: number | undefined = undefined;
     if (studyId) {
@@ -1256,7 +1256,7 @@ if (!generatedImageUrl) return null;
       } catch { /* ignore */ }
     }
 
-    // Récupérer landPriceEur depuis bilanAss si pas trouvé directement
+    // RÃ©cupÃ©rer landPriceEur depuis bilanAss si pas trouvÃ© directement
     if (!landPriceEur && bilanAss) {
       const lp = Number(bilanAss.landPriceEur);
       if (Number.isFinite(lp) && lp > 0) landPriceEur = lp;
@@ -1264,15 +1264,16 @@ if (!generatedImageUrl) return null;
 
     const salePriceEurM2Hab = Number((bilanAss?.salePriceEurM2Hab as number | undefined) ?? 0);
     const worksCostEurM2Sdp = Number((bilanAss?.worksCostEurM2Sdp as number | undefined) ?? 0);
-    const financingRatePct  = Number((bilanAss?.financingRatePct as number | undefined) ?? 4);
-    const marketingPctCa    = Number((bilanAss?.marketingPctCa as number | undefined) ?? 2);
-    const moePct            = Number((bilanAss?.moePct as number | undefined) ?? 10);
+    const _financingRatePct = Number((bilanAss?.financingRatePct as number | undefined) ?? 4);
+    const _marketingPctCa   = Number((bilanAss?.marketingPctCa as number | undefined) ?? 2);
+    const _moePct           = Number((bilanAss?.moePct as number | undefined) ?? 10);
 
     // Extraire PLU depuis ruleset Supabase
-    const ruleset        = p?.ruleset as Record<string, unknown> | null ?? null;
-    const pluHauteurMax  = (ruleset?.hauteur as any)?.max_m ?? p?.hauteur_max ?? null;
-    const pluPleineTerre = (ruleset?.pleine_terre as any)?.ratio_min ?? p?.pleine_terre_pct ?? null;
-    const pluCub         = (ruleset?.ces as any)?.max_ratio ?? p?.cos ?? null;
+    const pAny           = p as Record<string, any> | null;
+    const ruleset        = pAny?.ruleset as Record<string, unknown> | null ?? null;
+    const pluHauteurMax  = (ruleset?.hauteur as any)?.max_m ?? pAny?.hauteur_max ?? null;
+    const pluPleineTerre = (ruleset?.pleine_terre as any)?.ratio_min ?? pAny?.pleine_terre_pct ?? null;
+    const pluCub         = (ruleset?.ces as any)?.max_ratio ?? pAny?.cos ?? null;
 
     // Ne retourner null que si VRAIMENT rien n'est disponible
     if (!f && !b && !bilanAss && !landPriceEur) return null;
@@ -1295,7 +1296,7 @@ if (!generatedImageUrl) return null;
         nbLogements:     c.nb_logements_total ?? undefined,
         nbNiveaux:       c.nb_niveaux ?? undefined,
         hauteurProjet:   c.hauteur_retenue_m ?? undefined,
-        programmeType:   'Résidentiel collectif',
+        programmeType:   'RÃ©sidentiel collectif',
       } : undefined,
       marche: {
         prixNeufM2:   m?.prix_m2_neuf ?? (salePriceEurM2Hab > 0 ? salePriceEurM2Hab : undefined),
@@ -1337,7 +1338,7 @@ if (!generatedImageUrl) return null;
       pollutionDetectee: false,
     },
     plu: { zone: studyData?.plu?.zone_plu, cub: studyData?.plu?.cos, hauteurMax: studyData?.plu?.hauteur_max, pleineTerre: studyData?.plu?.pleine_terre_pct },
-    conception: { surfacePlancher: bilanValues?.sdpM2 || undefined, nbLogements: bilanValues?.nbLogements || undefined, programmeType: bilanValues?.programmeType ?? 'Résidentiel collectif' },
+    conception: { surfacePlancher: bilanValues?.sdpM2 || undefined, nbLogements: bilanValues?.nbLogements || undefined, programmeType: bilanValues?.programmeType ?? 'RÃ©sidentiel collectif' },
     marche: { prixNeufM2: studyData?.marche?.prix_m2_neuf ?? (bilanValues?.salePriceEurM2Hab || undefined), prixAncienM2: studyData?.marche?.prix_m2_ancien, nbTransactionsDvf: studyData?.marche?.nb_transactions, prixMoyenDvf: studyData?.marche?.prix_moyen_dvf, offreConcurrente: studyData?.marche?.nb_programmes_concurrents, absorptionMensuelle: studyData?.marche?.absorption_mensuelle },
     risques: { risquesIdentifies: [], zonageRisque: studyData?.risques?.zonage_risque },
     evaluation: { prixVenteM2: bilanValues?.salePriceEurM2Hab || undefined, prixVenteTotal: bilanValues?.caTotal || undefined, nbLogementsLibres: bilanValues?.nbLogements || undefined },
@@ -1357,7 +1358,7 @@ if (!generatedImageUrl) return null;
   }), [studyData, bilanValues]);
 
   const effectiveRawInput = useMemo((): PromoteurRawInput => {
-    // Priorité : override > localStorage > Supabase study > legacy props
+    // PrioritÃ© : override > localStorage > Supabase study > legacy props
     const base = rawInputOverride ?? rawInputFromLS ?? rawInputFromStudy ?? rawInputLegacy;
 
     const needsCommunePatch = !base.foncier?.commune        && snapshotFoncier.communeInsee;
@@ -1389,9 +1390,9 @@ if (!generatedImageUrl) return null;
       } : base.plu,
       marche: needsDvfMerge ? {
         ...base.marche,
-        // [v4.5] Priorité DVF : evaluationDvf (EvaluationPage, scope local CP/commune)
+        // [v4.5] PrioritÃ© DVF : evaluationDvf (EvaluationPage, scope local CP/commune)
         //   > studyMarcheDvf (Supabase market-study, scope large ~500 transactions)
-        //   > undefined (honnête si aucune source)
+        //   > undefined (honnÃªte si aucune source)
         // On ne fallback JAMAIS sur base.marche pour les champs DVF bruts
         // car base.marche peut contenir des valeurs stale (ex: 500 du localStorage).
         nbTransactionsDvf:   evaluationDvf?.nbTransactionsDvf   ?? studyMarcheDvf!.nbTransactionsDvf,
@@ -1399,11 +1400,11 @@ if (!generatedImageUrl) return null;
         prixMinDvf:          studyMarcheDvf!.prixMinDvf,
         prixMaxDvf:          studyMarcheDvf!.prixMaxDvf,
         periodeDvf:          studyMarcheDvf!.periodeDvf,
-        // prixAncienM2 = médian DVF local (EvaluationPage) ou médian Supabase
+        // prixAncienM2 = mÃ©dian DVF local (EvaluationPage) ou mÃ©dian Supabase
         prixAncienM2:        evaluationDvf?.prixMedianDvf        ?? studyMarcheDvf!.prixMedianDvf,
         // Absorption : EvaluationPage (locale) prioritaire sur Supabase (large)
         absorptionMensuelle: evaluationDvf?.absorptionMensuelle  ?? studyMarcheDvf!.absorptionMensuelle,
-        // prixNeufM2 : prix de vente projet (saisie utilisateur) — jamais écrasé
+        // prixNeufM2 : prix de vente projet (saisie utilisateur) â€” jamais Ã©crasÃ©
         prixNeufM2:          base.marche?.prixNeufM2,
         offreConcurrente:    base.marche?.offreConcurrente,
       } : base.marche,
@@ -1427,12 +1428,12 @@ if (!generatedImageUrl) return null;
       await new Promise<void>(r => setTimeout(r, 40));
       const pdfResult = await exportPromoteurPdf(result, buildExportOptions());
       if (!pdfResult.success) {
-        console.error('[PromoteurSynthese] Export PDF échoué:', pdfResult.error);
-        setError(`PDF non généré : ${pdfResult.error ?? 'erreur inconnue'}`);
+        console.error('[PromoteurSynthese] Export PDF Ã©chouÃ©:', pdfResult.error);
+        setError(`PDF non gÃ©nÃ©rÃ© : ${pdfResult.error ?? 'erreur inconnue'}`);
       }
     } catch (e) {
       console.error('[PromoteurSynthese] handleGenerate crash:', e);
-      setError(e instanceof Error ? e.message : 'Erreur lors de la génération');
+      setError(e instanceof Error ? e.message : 'Erreur lors de la gÃ©nÃ©ration');
     } finally { setLoading(false); }
   }, [effectiveRawInput, buildExportOptions]);
 
@@ -1443,12 +1444,12 @@ if (!generatedImageUrl) return null;
       await new Promise<void>(r => setTimeout(r, 40));
       const pdfResult = await exportPromoteurPdf(synthese, buildExportOptions());
       if (!pdfResult.success) {
-        console.error('[PromoteurSynthese] Export PDF échoué:', pdfResult.error);
-        setError(`PDF non généré : ${pdfResult.error ?? 'erreur inconnue'}`);
+        console.error('[PromoteurSynthese] Export PDF Ã©chouÃ©:', pdfResult.error);
+        setError(`PDF non gÃ©nÃ©rÃ© : ${pdfResult.error ?? 'erreur inconnue'}`);
       }
     } catch (e) {
       console.error('[PromoteurSynthese] handleRegenerate crash:', e);
-      setError(e instanceof Error ? e.message : 'Erreur lors du re-téléchargement');
+      setError(e instanceof Error ? e.message : 'Erreur lors du re-tÃ©lÃ©chargement');
     } finally { setLoading(false); }
   }, [synthese, buildExportOptions]);
 
@@ -1467,7 +1468,7 @@ if (!generatedImageUrl) return null;
       try {
         localStorage.setItem(SYNTHESE_RAW_KEY, JSON.stringify(result.updatedInput));
       } catch (e) {
-        console.warn('[PromoteurSynthese] Échec persistance rawInput:', e);
+        console.warn('[PromoteurSynthese] Ã‰chec persistance rawInput:', e);
       }
 
       try {
@@ -1477,12 +1478,12 @@ if (!generatedImageUrl) return null;
           steps: result.steps,
         }));
       } catch (e) {
-        console.warn('[PromoteurSynthese] Échec persistance flag autocomplete:', e);
+        console.warn('[PromoteurSynthese] Ã‰chec persistance flag autocomplete:', e);
       }
 
       setAutocompleteDone(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur lors de la complétion');
+      setError(e instanceof Error ? e.message : 'Erreur lors de la complÃ©tion');
     } finally {
       setCompleting(false);
     }
@@ -1501,7 +1502,7 @@ if (!generatedImageUrl) return null;
 
   const userActionsRemaining = useMemo(() => {
     if (!synthese || !autocompleteDone) return [];
-    return synthese.anomalies.filter(a => a.niveau === 'ALERTE' || a.niveau === 'CRITIQUE');
+    return (synthese.anomalies ?? []).filter(a => a.niveau === 'ALERTE' || a.niveau === 'CRITIQUE');
   }, [synthese, autocompleteDone]);
 
   const userActionsSlot = synthese && autocompleteDone && !completing && userActionsRemaining.length > 0 ? (
@@ -1518,7 +1519,7 @@ if (!generatedImageUrl) return null;
             <p className="text-sm font-semibold text-red-700">Erreur</p>
             <p className="text-xs text-red-600 mt-0.5">{error}</p>
           </div>
-          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 text-lg leading-none flex-shrink-0">×</button>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 text-lg leading-none flex-shrink-0">Ã—</button>
         </div>
       )}
 
@@ -1541,7 +1542,7 @@ if (!generatedImageUrl) return null;
           <div className="flex items-center gap-3 rounded-xl border border-violet-100 bg-violet-50 p-4">
             <Loader2 className="h-5 w-5 text-violet-500 animate-spin flex-shrink-0" />
             <p className="text-sm font-medium text-violet-700">
-              {synthese ? 'Export PDF en cours...' : 'Analyse en cours — validation des données et génération de la synthèse...'}
+              {synthese ? 'Export PDF en cours...' : 'Analyse en cours â€” validation des donnÃ©es et gÃ©nÃ©ration de la synthÃ¨se...'}
             </p>
           </div>
           {!synthese && <LoadingPreview />}
@@ -1554,13 +1555,13 @@ if (!generatedImageUrl) return null;
             <div className="flex items-center gap-2">
               <CheckCircle2 className="h-5 w-5 text-emerald-600 flex-shrink-0" />
               <span className="text-sm font-semibold text-emerald-700">
-                Synthèse générée — {synthese.metadata.analyseSuffisante ? 'PDF téléchargé' : 'analyse insuffisante, voir les anomalies'}
+                SynthÃ¨se gÃ©nÃ©rÃ©e â€” {synthese.metadata.analyseSuffisante ? 'PDF tÃ©lÃ©chargÃ©' : 'analyse insuffisante, voir les anomalies'}
               </span>
             </div>
             <div className="flex items-center gap-2">
               <button onClick={handleRegenerate} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 transition-colors">
                 <Download className="h-3.5 w-3.5" />
-                <span>Re-télécharger PDF</span>
+                <span>Re-tÃ©lÃ©charger PDF</span>
               </button>
               <button
                 onClick={() => { setSynthese(null); setCompletionSteps(null); }}
@@ -1571,7 +1572,7 @@ if (!generatedImageUrl) return null;
                 }`}
               >
                 <RefreshCw className="h-3.5 w-3.5" />
-                <span>Regénérer</span>
+                <span>RegÃ©nÃ©rer</span>
               </button>
             </div>
           </div>

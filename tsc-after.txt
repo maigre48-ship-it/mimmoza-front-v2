@@ -566,30 +566,9 @@ src/spaces/promoteur/pages/PromoteurSimulationTravauxPage.tsx(534,77): error TS6
 src/spaces/promoteur/pages/PromoteurSimulationTravauxPage.tsx(534,89): error TS6133: 'computed' is declared but its value is never read.
 src/spaces/promoteur/pages/PromoteurSimulationTravauxPage.tsx(889,21): error TS2322: Type '{ lots: ComputedLot[]; total: number; bufferPct: number; bufferAmount: number; totalWithBuffer: number; costPerM2: number | null; complexityCoef: number; simulation: TravauxSimulationV1; ... 4 more ...; surfaceTotaleM2: number; }' is not assignable to type 'IntrinsicAttributes & { lots: ComputedLot[]; total: number; bufferPct: number; totalWithBuffer: number; costPerM2: number | null; complexityCoef: number; ... 5 more ...; surfaceTotaleM2: number; }'.
   Property 'bufferAmount' does not exist on type 'IntrinsicAttributes & { lots: ComputedLot[]; total: number; bufferPct: number; totalWithBuffer: number; costPerM2: number | null; complexityCoef: number; ... 5 more ...; surfaceTotaleM2: number; }'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(790,73): error TS2322: Type 'boolean | undefined' is not assignable to type 'boolean'.
-  Type 'undefined' is not assignable to type 'boolean'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(795,8): error TS18048: 'synthese.anomalies' is possibly 'undefined'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(795,59): error TS2322: Type 'AnomalieItem[] | undefined' is not assignable to type 'AnomalieItem[]'.
-  Type 'undefined' is not assignable to type 'AnomalieItem[]'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(835,23): error TS2322: Type 'ModuleQualite[] | undefined' is not assignable to type 'ModuleQualite[]'.
-  Type 'undefined' is not assignable to type 'ModuleQualite[]'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(839,20): error TS2339: Property 'analyseFiable' does not exist on type '{ zoneMarche: string; prixNeufMoyenM2: number; prixProjetM2: number; positionPrix: number; prixAncienMoyenM2: number; primiumNeuf: number; prixParTypologie: Record<string, number>; ... 6 more ...; notesMarcheLibre: string[]; }'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(854,57): error TS2339: Property 'analyseFiable' does not exist on type '{ zoneMarche: string; prixNeufMoyenM2: number; prixProjetM2: number; positionPrix: number; prixAncienMoyenM2: number; primiumNeuf: number; prixParTypologie: Record<string, number>; ... 6 more ...; notesMarcheLibre: string[]; }'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(854,143): error TS2339: Property 'analyseFiable' does not exist on type '{ zoneMarche: string; prixNeufMoyenM2: number; prixProjetM2: number; positionPrix: number; prixAncienMoyenM2: number; primiumNeuf: number; prixParTypologie: Record<string, number>; ... 6 more ...; notesMarcheLibre: string[]; }'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(854,175): error TS2339: Property 'analyseFiable' does not exist on type '{ zoneMarche: string; prixNeufMoyenM2: number; prixProjetM2: number; positionPrix: number; prixAncienMoyenM2: number; primiumNeuf: number; prixParTypologie: Record<string, number>; ... 6 more ...; notesMarcheLibre: string[]; }'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(1000,40): error TS18047: 'syntheseIA' is possibly 'null'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(1001,40): error TS18047: 'syntheseIA' is possibly 'null'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(1002,40): error TS18047: 'syntheseIA' is possibly 'null'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(1003,40): error TS18047: 'syntheseIA' is possibly 'null'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(1004,40): error TS18047: 'syntheseIA' is possibly 'null'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(1014,67): error TS18047: 'syntheseIA' is possibly 'null'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(1267,11): error TS6133: 'financingRatePct' is declared but its value is never read.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(1268,11): error TS6133: 'marketingPctCa' is declared but its value is never read.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(1269,11): error TS6133: 'moePct' is declared but its value is never read.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(1273,67): error TS2339: Property 'hauteur_max' does not exist on type 'PromoteurPluData'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(1274,76): error TS2339: Property 'pleine_terre_pct' does not exist on type 'PromoteurPluData'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(1275,67): error TS2339: Property 'cos' does not exist on type 'PromoteurPluData'.
-src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(1504,12): error TS18048: 'synthese.anomalies' is possibly 'undefined'.
+src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(1267,11): error TS6133: '_financingRatePct' is declared but its value is never read.
+src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(1268,11): error TS6133: '_marketingPctCa' is declared but its value is never read.
+src/spaces/promoteur/pages/PromoteurSynthesePage.tsx(1269,11): error TS6133: '_moePct' is declared but its value is never read.
 src/spaces/promoteur/pages/PromoteurVeilleFoncierePage.tsx(386,69): error TS2339: Property 'price_m2' does not exist on type 'ListingExtended'.
 src/spaces/promoteur/pages/PromoteurVeilleFoncierePage.tsx(462,13): error TS2352: Conversion of type 'MarketOpportunity[]' to type 'OpportunityItem[]' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
   Type 'MarketOpportunity' is missing the following properties from type 'OpportunityItem': intro, price_position, price_drop_info, diffusion_info

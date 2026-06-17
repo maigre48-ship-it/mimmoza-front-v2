@@ -1,12 +1,11 @@
 # Carte du risque tsc
 
-Total : 741 - Dangereuses : 277, Cosmetiques : 203, Autres : 261
+Total : 723 - Dangereuses : 259, Cosmetiques : 203, Autres : 261
 
 ## Fichiers (tries par erreurs dangereuses)
 
 | Dang | Total | Zone | Fichier | Codes |
 |---:|---:|---|---|---|
-| 18 | 21 | CALC/GEN | src/spaces/promoteur/pages/PromoteurSynthesePage.tsx | TS2339x7 TS18047x6 TS2322x3 TS6133x3 TS18048x2 |
 | 18 | 18 | AFFICHAGE | src/spaces/admin/pages/Dashboard.tsx | TS2339x17 TS2353x1 |
 | 17 | 23 | AFFICHAGE | src/spaces/marchand/pages/AnalyseBien.tsx | TS2339x14 TS7006x4 TS2345x3 TS7053x2 |
 | 17 | 17 | AFFICHAGE | src/spaces/admin/pages/AdminDashboardPage.tsx | TS2339x17 |
@@ -112,6 +111,7 @@ Total : 741 - Dangereuses : 277, Cosmetiques : 203, Autres : 261
 | 0 | 3 | CALC/GEN | src/spaces/promoteur/etudes/marche/components/MarketStudyCompsPanel.tsx | TS2305x3 |
 | 0 | 3 | CALC/GEN | src/spaces/promoteur/etudes/marche/services/providers/inseeProvider.ts | TS6133x2 TS2305x1 |
 | 0 | 3 | CALC/GEN | src/spaces/promoteur/pages/Dashboard.tsx | TS2769x2 TS6133x1 |
+| 0 | 3 | CALC/GEN | src/spaces/promoteur/pages/PromoteurSynthesePage.tsx | TS6133x3 |
 | 0 | 3 | CALC/GEN | src/spaces/promoteur/plan2d/Plan2DCanvas.tsx | TS6133x2 TS2869x1 |
 | 0 | 3 | CALC/GEN | src/spaces/promoteur/terrain3d/massingFacadeEngine.ts | TS6133x3 |
 | 0 | 3 | CALC/GEN | src/spaces/shared/pages/quick-analysis/useValuationEngine.ts | TS6133x3 |
