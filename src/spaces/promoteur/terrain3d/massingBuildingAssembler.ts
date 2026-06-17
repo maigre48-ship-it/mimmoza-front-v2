@@ -13,7 +13,7 @@
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { buildFacadeGeometry, type FacadeConfig } from "./massingFacadeEngine";
+import { buildFacadeGeometry, type FacadeConfig, type BalconyConfig, type LoggiaConfig, type ShadingConfig } from "./massingFacadeEngine";
 import { centroid2D, extractEdges, ptsToShape, scalePolygon } from "./massingGeometry3d";
 import {
   applyFacadeColor,
@@ -65,9 +65,9 @@ export interface BuildingAssemblyInput {
     roofDormerEnabled?: boolean;
     roofDormerCount?: number;
   };
-  balconyConfig?: import("./massingFacadeEngine").BalconyConfig;
-  loggiaConfig?: import("./massingFacadeEngine").LoggiaConfig;
-  shadingConfig?: import("./massingFacadeEngine").ShadingConfig;
+  balconyConfig?: BalconyConfig;
+  loggiaConfig?: LoggiaConfig;
+  shadingConfig?: ShadingConfig;
   showWireframe: boolean;
   isSelected: boolean;
   isHovered: boolean;

@@ -11,6 +11,7 @@
 // VERSION 2.0.1 — fix listStudies (syntaxe foncier->x non supportée par Supabase JS)
 
 import { supabase } from "../../../supabaseClient";
+import type { PromoteurParcelRaw } from "./promoteurStudy.types";
 import type { Implantation2DSnapshot } from "../plan2d/implantation2d.snapshot";
 import type {
   PromoteurBilanData,
@@ -232,4 +233,4 @@ export const PromoteurStudyService = {
 
 // ─── Export legacy pour compat avec les imports existants ─────────────────────
 export const StudyService = PromoteurStudyService;
-export type  SelectedParcelRaw = import("./promoteurStudy.types").PromoteurParcelRaw;
+export type SelectedParcelRaw = PromoteurParcelRaw;
