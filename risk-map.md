@@ -1,6 +1,6 @@
 # Carte du risque tsc
 
-Total : 708 - Dangereuses : 246, Cosmetiques : 203, Autres : 259
+Total : 694 - Dangereuses : 233, Cosmetiques : 202, Autres : 259
 
 ## Fichiers (tries par erreurs dangereuses)
 
@@ -12,7 +12,6 @@ Total : 708 - Dangereuses : 246, Cosmetiques : 203, Autres : 259
 | 16 | 23 | CALC/GEN | src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx | TS2339x16 TS6133x5 TS2503x2 |
 | 14 | 20 | CALC/GEN | src/spaces/marchand/scoring/smartScoreInvestisseur.ts | TS2339x14 TS2305x5 TS6133x1 |
 | 13 | 15 | AFFICHAGE | src/spaces/sourcing/pages/SourcingHomePage.tsx | TS2339x11 TS2322x2 TS6133x1 TS2554x1 |
-| 13 | 14 | CALC/GEN | src/spaces/promoteur/pages/Synthese.tsx | TS2339x13 TS6133x1 |
 | 11 | 11 | AFFICHAGE | src/spaces/investisseur/components/analyse/MarcheRisquesPanel.tsx | TS2339x5 TS2322x4 TS18047x2 |
 | 10 | 17 | CALC/GEN | src/spaces/promoteur/terrain3d/blender/buildFacadeForExport.ts | TS2353x9 TS2352x6 TS2339x1 TS6133x1 |
 | 8 | 14 | CALC/GEN | src/spaces/promoteur/terrain3d/components/MassingRenderer.tsx | TS2352x4 TS2345x4 TS2322x3 TS6133x2 TS2339x1 |

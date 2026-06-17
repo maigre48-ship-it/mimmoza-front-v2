@@ -1,26 +1,11 @@
 ﻿// src/spaces/promoteur/pages/Synthese.tsx
 // v2 — Hero v2 : PromoteurPageHero (design unifié Promoteur)
 
-import * as turf from "@turf/turf";
-import type { Feature, FeatureCollection, Geometry } from "geojson";
 import React from "react";
 import { useSearchParams } from "react-router-dom";
 import { PromoteurPageHero } from "../shared/components/PromoteurPageHero";
 import { usePromoteurStudy } from "../shared/usePromoteurStudy";
-import { usePromoteurProjectStore } from "../store/promoteurProject.store";
 import { PromoteurSynthesePage } from "./PromoteurSynthesePage";
-
-// ---- Helpers ----------------------------------------------------------------
-
-function safeArea(feat: Feature<Geometry> | null | undefined): number {
-  if (!feat?.geometry) return 0;
-  try { return turf.area(feat as turf.AllGeoJSON); } catch { return 0; }
-}
-
-function sumAreas(fc?: FeatureCollection<Geometry> | null): number {
-  if (!fc?.features) return 0;
-  return fc.features.reduce((acc, f) => acc + safeArea(f as Feature<Geometry>), 0);
-}
 
 // ---- Page -------------------------------------------------------------------
 
@@ -28,43 +13,6 @@ const PromoteurSynthese: React.FC = () => {
   const [searchParams] = useSearchParams();
   const studyId = searchParams.get("study");
   const { study, loadState } = usePromoteurStudy(studyId);
-
-  const buildings = usePromoteurProjectStore(s => s.buildings);
-  const footprintM2 = React.useMemo(() => sumAreas(buildings), [buildings]);
-
-  const studyData = React.useMemo(() => ({
-    foncier: study?.foncier ? {
-      adresse_complete: study.foncier.adresse_complete ?? undefined,
-      commune:          study.foncier.commune ?? undefined,
-      code_postal:      study.foncier.code_postal ?? undefined,
-      departement:      study.foncier.departement ?? undefined,
-      surface_m2:       study.foncier.surface_m2 ?? undefined,
-      commune_insee:    study.foncier.commune_insee ?? undefined,
-    } : undefined,
-    plu: study?.plu ? {
-      zone_plu:         study.plu.zone_plu ?? undefined,
-      cos:              study.plu.cos ?? undefined,
-      hauteur_max:      study.plu.hauteur_max ?? undefined,
-      pleine_terre_pct: study.plu.pleine_terre_pct ?? undefined,
-    } : undefined,
-    marche: study?.marche ? {
-      prix_m2_neuf:              study.marche.prix_m2_neuf ?? undefined,
-      prix_m2_ancien:            study.marche.prix_m2_ancien ?? undefined,
-      nb_transactions:           study.marche.nb_transactions ?? undefined,
-      prix_moyen_dvf:            study.marche.prix_moyen_dvf ?? undefined,
-      nb_programmes_concurrents: study.marche.nb_programmes_concurrents ?? undefined,
-      absorption_mensuelle:      study.marche.absorption_mensuelle ?? undefined,
-    } : undefined,
-    risques: study?.risques ? { zonage_risque: study.risques.zonage_risque ?? undefined } : undefined,
-    evaluation: study?.evaluation ? { cout_foncier: study.evaluation.cout_foncier ?? undefined } : undefined,
-    bilan: study?.bilan ? {
-      ca_previsionnel:      study.bilan.ca_previsionnel ?? undefined,
-      prix_revient_total:   study.bilan.prix_revient_total ?? undefined,
-      marge_nette:          study.bilan.marge_nette ?? undefined,
-      taux_marge_nette_pct: study.bilan.taux_marge_nette_pct ?? undefined,
-      taux_credit_pct:      study.bilan.taux_credit_pct ?? undefined,
-    } : undefined,
-  }), [study]);
 
   if (loadState === "loading") {
     return (
@@ -94,7 +42,7 @@ const PromoteurSynthese: React.FC = () => {
 
       {/* ── Contenu ── */}
       <div style={{ padding: "24px 0 40px" }}>
-        <PromoteurSynthesePage studyData={studyData} />
+        <PromoteurSynthesePage />
       </div>
     </div>
   );

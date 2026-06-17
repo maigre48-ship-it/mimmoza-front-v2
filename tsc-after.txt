@@ -573,20 +573,6 @@ src/spaces/promoteur/pages/PromoteurVeilleFoncierePage.tsx(386,69): error TS2339
 src/spaces/promoteur/pages/PromoteurVeilleFoncierePage.tsx(462,13): error TS2352: Conversion of type 'MarketOpportunity[]' to type 'OpportunityItem[]' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
   Type 'MarketOpportunity' is missing the following properties from type 'OpportunityItem': intro, price_position, price_drop_info, diffusion_info
 src/spaces/promoteur/pages/PromoteurVeilleFoncierePage.tsx(492,11): error TS2353: Object literal may only specify known properties, and 'propertyTypeFilter' does not exist in type 'FetchMarketActiveListingsParams'.
-src/spaces/promoteur/pages/Synthese.tsx(33,9): error TS6133: 'footprintM2' is declared but its value is never read.
-src/spaces/promoteur/pages/Synthese.tsx(37,39): error TS2339: Property 'adresse_complete' does not exist on type 'PromoteurFoncierData'.
-src/spaces/promoteur/pages/Synthese.tsx(38,39): error TS2339: Property 'commune' does not exist on type 'PromoteurFoncierData'.
-src/spaces/promoteur/pages/Synthese.tsx(39,39): error TS2339: Property 'code_postal' does not exist on type 'PromoteurFoncierData'.
-src/spaces/promoteur/pages/Synthese.tsx(40,39): error TS2339: Property 'departement' does not exist on type 'PromoteurFoncierData'.
-src/spaces/promoteur/pages/Synthese.tsx(45,35): error TS2339: Property 'zone_plu' does not exist on type 'PromoteurPluData'.
-src/spaces/promoteur/pages/Synthese.tsx(46,35): error TS2339: Property 'cos' does not exist on type 'PromoteurPluData'.
-src/spaces/promoteur/pages/Synthese.tsx(47,35): error TS2339: Property 'hauteur_max' does not exist on type 'PromoteurPluData'.
-src/spaces/promoteur/pages/Synthese.tsx(48,35): error TS2339: Property 'pleine_terre_pct' does not exist on type 'PromoteurPluData'.
-src/spaces/promoteur/pages/Synthese.tsx(53,47): error TS2339: Property 'nb_transactions' does not exist on type 'PromoteurMarcheData'.
-src/spaces/promoteur/pages/Synthese.tsx(54,47): error TS2339: Property 'prix_moyen_dvf' does not exist on type 'PromoteurMarcheData'.
-src/spaces/promoteur/pages/Synthese.tsx(55,47): error TS2339: Property 'nb_programmes_concurrents' does not exist on type 'PromoteurMarcheData'.
-src/spaces/promoteur/pages/Synthese.tsx(56,47): error TS2339: Property 'absorption_mensuelle' does not exist on type 'PromoteurMarcheData'.
-src/spaces/promoteur/pages/Synthese.tsx(58,62): error TS2339: Property 'zonage_risque' does not exist on type 'PromoteurRisquesData'.
 src/spaces/promoteur/plan2d/buildingExport.ts(45,5): error TS2353: Object literal may only specify known properties, and 'balconies' does not exist in type 'ExportedBuilding'.
 src/spaces/promoteur/plan2d/DimensionOverlay.tsx(46,22): error TS6133: 'sw' is declared but its value is never read.
 src/spaces/promoteur/plan2d/editor2d.store.ts(199,7): error TS2783: 'floorsAboveGround' is specified more than once, so this usage will be overwritten.
