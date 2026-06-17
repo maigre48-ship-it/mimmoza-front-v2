@@ -1,4 +1,4 @@
-{
+﻿{
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "target": "ES2022",
@@ -24,5 +24,12 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    "src/app/_unused",
+    "src/spaces/promoteur/pages.bak-encoding",
+    "src/pages/LoginPage_integration_example.tsx",
+    "**/*.test.ts",
+    "**/*.test.tsx"
+  ]
 }
