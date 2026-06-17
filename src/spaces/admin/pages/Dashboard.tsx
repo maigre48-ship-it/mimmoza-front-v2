@@ -1,10 +1,15 @@
 // src/spaces/admin/pages/Dashboard.tsx
 // ─── changelog ────────────────────────────────────────────────────────────────
+// • Métriques réalignées sur le service réel (adminDashboard.ts) : crédits,
+//   organisations, analyses, dossiers banque, packs. Les anciennes métriques
+//   SaaS (users/MRR/devis/stock) n'existaient pas côté données et ont été
+//   remplacées par les vraies sorties du RPC admin_dashboard_metrics.
 // • Mode local : si Supabase échoue, affiche le dashboard avec métriques vides
 //   (zéros) plutôt qu'un état bloquant.
 // • Bannière d'info amber dismissible au lieu d'une erreur rouge bloquante.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -19,7 +24,6 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
 import {
   getAdminDashboardMetrics,
   type AdminDashboardMetrics,
@@ -29,18 +33,20 @@ type LoadState = "loading" | "ready" | "error";
 
 // ── Métriques vides — affichées quand Supabase est inaccessible ──────────────
 const EMPTY_METRICS: AdminDashboardMetrics = {
-  activeUsers: 0,
-  trialUsers: 0,
-  suspendedUsers: 0,
-  activeSubscriptions: 0,
-  estimatedMrrEur: 0,
-  openQuotes: 0,
-  wonQuotes: 0,
-  lostQuotes: 0,
-  tokensConsumed: 0,
-  lowStockAlerts: 0,
-  companies: 0,
-  estimatedAiCostEur: 0,
+  activeAdmins: 0,
+  organisations: 0,
+  organisationMembers: 0,
+  activeCreditAccounts: 0,
+  totalCreditsAvailable: 0,
+  consumedCredits: 0,
+  lowCreditAccounts: 0,
+  analysesCount: 0,
+  analysesSuccessCount: 0,
+  analysesErrorCount: 0,
+  banqueDossiersCount: 0,
+  banqueDossiersVigilanceCount: 0,
+  activeCreditPacks: 0,
+  estimatedPackCatalogValueEur: 0,
 };
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -133,8 +139,8 @@ function HealthBadge({
 }
 
 function computeHealth(metrics: AdminDashboardMetrics) {
-  if (metrics.lowStockAlerts >= 5) return { label: "À surveiller", tone: "amber" as const };
-  if (metrics.activeUsers === 0)   return { label: "Initialisation", tone: "slate" as const };
+  if (metrics.lowCreditAccounts >= 5)     return { label: "À surveiller", tone: "amber" as const };
+  if (metrics.activeCreditAccounts === 0) return { label: "Initialisation", tone: "slate" as const };
   return { label: "Sain", tone: "green" as const };
 }
 
@@ -184,9 +190,9 @@ export default function AdminDashboardPage() {
               Dashboard Mimmoza
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
-              Vue consolidée de la plateforme pour piloter les utilisateurs,
-              abonnements, jetons, devis et entreprises depuis une interface
-              fiable, claire et orientée décision.
+              Vue consolidée de la plateforme pour piloter les comptes crédits,
+              les organisations, les analyses et les dossiers banque depuis une
+              interface fiable, claire et orientée décision.
             </p>
 
             <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -254,58 +260,58 @@ export default function AdminDashboardPage() {
         ) : (
           <>
             <StatCard
-              title="Utilisateurs actifs"
-              value={displayMetrics.activeUsers}
-              subtitle={`${displayMetrics.trialUsers} en essai · ${displayMetrics.suspendedUsers} suspendus`}
+              title="Comptes crédits actifs"
+              value={displayMetrics.activeCreditAccounts}
+              subtitle={`${displayMetrics.organisations} organisation(s) · ${displayMetrics.organisationMembers} membre(s)`}
               icon={Users}
               muted={isLocalMode}
             />
             <StatCard
-              title="Abonnements actifs"
-              value={displayMetrics.activeSubscriptions}
-              subtitle="Plans mensuels ou annuels actifs"
+              title="Crédits disponibles"
+              value={displayMetrics.totalCreditsAvailable}
+              subtitle="Solde cumulé des comptes crédits"
               icon={CreditCard}
               muted={isLocalMode}
             />
             <StatCard
-              title="MRR HT"
-              value={formatEur(displayMetrics.estimatedMrrEur)}
-              subtitle="Revenu mensuel récurrent estimé"
+              title="Valeur catalogue packs"
+              value={formatEur(displayMetrics.estimatedPackCatalogValueEur)}
+              subtitle={`${displayMetrics.activeCreditPacks} pack(s) actif(s)`}
               icon={BadgeEuro}
               muted={isLocalMode}
             />
             <StatCard
-              title="Devis ouverts"
-              value={displayMetrics.openQuotes}
-              subtitle={`${displayMetrics.wonQuotes} gagnés · ${displayMetrics.lostQuotes} perdus`}
+              title="Analyses"
+              value={displayMetrics.analysesCount}
+              subtitle={`${displayMetrics.analysesSuccessCount} réussies · ${displayMetrics.analysesErrorCount} en erreur`}
               icon={ClipboardList}
               muted={isLocalMode}
             />
             <StatCard
-              title="Consommation"
-              value={displayMetrics.tokensConsumed}
-              subtitle="Jetons consommés sur l'historique disponible"
+              title="Crédits consommés"
+              value={displayMetrics.consumedCredits}
+              subtitle="Total consommé sur l'historique disponible"
               icon={Ticket}
               muted={isLocalMode}
             />
             <StatCard
-              title="Alertes jetons"
-              value={displayMetrics.lowStockAlerts}
-              subtitle="Comptes avec stock faible ou quota à surveiller"
+              title="Comptes crédit faibles"
+              value={displayMetrics.lowCreditAccounts}
+              subtitle="Comptes avec solde de crédits faible à surveiller"
               icon={AlertTriangle}
               muted={isLocalMode}
             />
             <StatCard
-              title="Entreprises"
-              value={displayMetrics.companies}
+              title="Organisations"
+              value={displayMetrics.organisations}
               subtitle="Comptes B2B suivis dans l'espace administrateur"
               icon={Building2}
               muted={isLocalMode}
             />
             <StatCard
-              title="Coût IA estimé"
-              value={formatEur(displayMetrics.estimatedAiCostEur)}
-              subtitle="Basé sur la consommation de jetons connue"
+              title="Dossiers banque"
+              value={displayMetrics.banqueDossiersCount}
+              subtitle={`${displayMetrics.banqueDossiersVigilanceCount} en vigilance`}
               icon={Sparkles}
               muted={isLocalMode}
             />
@@ -332,19 +338,19 @@ export default function AdminDashboardPage() {
 
           <div className="mt-6 grid gap-4 md:grid-cols-3">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-sm font-medium text-slate-500">Base active</div>
+              <div className="text-sm font-medium text-slate-500">Comptes crédits actifs</div>
               <div className="mt-2 text-2xl font-semibold text-slate-950">
-                {showContent ? displayMetrics.activeUsers : "—"}
+                {showContent ? displayMetrics.activeCreditAccounts : "—"}
               </div>
               <p className="mt-2 text-sm text-slate-600">
-                Utilisateurs actuellement actifs sur la plateforme.
+                Comptes disposant d'un solde de crédits actif.
               </p>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-sm font-medium text-slate-500">Pression jetons</div>
+              <div className="text-sm font-medium text-slate-500">Comptes crédit faibles</div>
               <div className="mt-2 text-2xl font-semibold text-slate-950">
-                {showContent ? displayMetrics.lowStockAlerts : "—"}
+                {showContent ? displayMetrics.lowCreditAccounts : "—"}
               </div>
               <p className="mt-2 text-sm text-slate-600">
                 Comptes nécessitant une attention rapide.
@@ -352,12 +358,12 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-sm font-medium text-slate-500">Run-rate estimé</div>
+              <div className="text-sm font-medium text-slate-500">Valeur catalogue</div>
               <div className="mt-2 text-2xl font-semibold text-slate-950">
-                {showContent ? formatEur(displayMetrics.estimatedMrrEur) : "—"}
+                {showContent ? formatEur(displayMetrics.estimatedPackCatalogValueEur) : "—"}
               </div>
               <p className="mt-2 text-sm text-slate-600">
-                Vision mensuelle simplifiée du revenu récurrent.
+                Valeur estimée du catalogue de packs de crédits.
               </p>
             </div>
           </div>
@@ -368,26 +374,26 @@ export default function AdminDashboardPage() {
           <div className="mt-5 space-y-3">
             <div className="rounded-2xl border border-slate-200 p-4">
               <div className="text-sm font-semibold text-slate-900">
-                Vérifier les alertes jetons
+                Vérifier les comptes crédit faibles
               </div>
               <p className="mt-1 text-sm leading-6 text-slate-600">
-                Confirmer les comptes avec faible stock avant blocage utilisateur.
+                Confirmer les comptes à faible solde avant blocage utilisateur.
               </p>
             </div>
             <div className="rounded-2xl border border-slate-200 p-4">
               <div className="text-sm font-semibold text-slate-900">
-                Contrôler le run-rate
+                Contrôler les analyses en erreur
               </div>
               <p className="mt-1 text-sm leading-6 text-slate-600">
-                Vérifier la cohérence entre abonnements actifs et MRR estimé.
+                Surveiller le taux d'échec des analyses pour détecter un incident.
               </p>
             </div>
             <div className="rounded-2xl border border-slate-200 p-4">
               <div className="text-sm font-semibold text-slate-900">
-                Suivre le pipe devis
+                Suivre les dossiers banque en vigilance
               </div>
               <p className="mt-1 text-sm leading-6 text-slate-600">
-                Prioriser les devis ouverts et les comptes entreprise à convertir.
+                Prioriser les dossiers signalés en vigilance pour revue.
               </p>
             </div>
           </div>
