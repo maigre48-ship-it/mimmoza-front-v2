@@ -1,12 +1,11 @@
 # Carte du risque tsc
 
-Total : 780 - Dangereuses : 315, Cosmetiques : 203, Autres : 262
+Total : 741 - Dangereuses : 277, Cosmetiques : 203, Autres : 261
 
 ## Fichiers (tries par erreurs dangereuses)
 
 | Dang | Total | Zone | Fichier | Codes |
 |---:|---:|---|---|---|
-| 39 | 42 | CALC/GEN | src/spaces/promoteur/etudes/marche/services/finess.service.ts | TS2339x35 TS2353x4 TS6133x2 TS2305x1 |
 | 18 | 21 | CALC/GEN | src/spaces/promoteur/pages/PromoteurSynthesePage.tsx | TS2339x7 TS18047x6 TS2322x3 TS6133x3 TS18048x2 |
 | 18 | 18 | AFFICHAGE | src/spaces/admin/pages/Dashboard.tsx | TS2339x17 TS2353x1 |
 | 17 | 23 | AFFICHAGE | src/spaces/marchand/pages/AnalyseBien.tsx | TS2339x14 TS7006x4 TS2345x3 TS7053x2 |
@@ -56,6 +55,7 @@ Total : 780 - Dangereuses : 315, Cosmetiques : 203, Autres : 262
 | 1 | 4 | CALC/GEN | src/spaces/promoteur/plan2d/FloorElementsPanel.tsx | TS2352x2 TS6133x1 TS2551x1 |
 | 1 | 3 | CALC/GEN | src/spaces/investisseur/pages/deal-center/exports/exportCommitteeReview.ts | TS2307x1 TS2339x1 TS6133x1 |
 | 1 | 3 | CALC/GEN | src/spaces/marchand/services/enrichRisksToDueDiligence.service.ts | TS6133x2 TS2322x1 |
+| 1 | 3 | CALC/GEN | src/spaces/promoteur/etudes/marche/services/finess.service.ts | TS6133x2 TS2353x1 |
 | 1 | 3 | CALC/GEN | src/spaces/promoteur/pages/FoncierPluPage.tsx | TS6196x1 TS2353x1 TS6133x1 |
 | 1 | 3 | AFFICHAGE | src/spaces/rehabilitation/pages/TravauxPage.tsx | TS7053x1 TS6133x1 TS2322x1 |
 | 1 | 2 | CALC/GEN | src/hooks/useSmartScoreHooks.ts | TS2339x1 TS7006x1 |

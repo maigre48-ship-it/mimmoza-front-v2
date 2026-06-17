@@ -419,48 +419,9 @@ src/spaces/promoteur/etudes/marche/MarchePage.tsx(2307,22): error TS6133: 'concu
 src/spaces/promoteur/etudes/marche/MarchePage.tsx(3113,10): error TS6133: 'isSearchingParcel' is declared but its value is never read.
 src/spaces/promoteur/etudes/marche/MarchePage.tsx(3140,70): error TS2352: Conversion of type 'Record<string, unknown>' to type 'MarketStudyApiResponse' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
   Type 'Record<string, unknown>' is missing the following properties from type 'MarketStudyApiResponse': success, version, meta, core, and 3 more.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(11,26): error TS2305: Module '"../types/market.types"' has no exported member 'FinessEtablissement'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(75,9): error TS6133: 'a' is declared but its value is never read.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(346,60): error TS2339: Property 'address' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(346,77): error TS2339: Property 'postalCode' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(346,97): error TS2339: Property 'commune' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(349,24): error TS2339: Property 'capacity' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(349,38): error TS2339: Property 'capacity' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(349,56): error TS2339: Property 'capacity' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(352,25): error TS2339: Property 'distance' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(352,63): error TS2339: Property 'distance' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(352,78): error TS2339: Property 'distance' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(356,13): error TS2339: Property 'name' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(360,15): error TS2339: Property 'finess' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(361,29): error TS2339: Property 'telephone' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(362,28): error TS2339: Property 'lat' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(362,37): error TS2339: Property 'lat' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(363,28): error TS2339: Property 'lon' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(363,37): error TS2339: Property 'lon' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(366,17): error TS2339: Property 'finessEj' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(367,17): error TS2339: Property 'category' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(368,22): error TS2339: Property 'categoryLabel' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(369,19): error TS2339: Property 'postalCode' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(370,16): error TS2339: Property 'commune' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(371,20): error TS2339: Property 'departement' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(372,17): error TS2339: Property 'capacity' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(373,17): error TS2339: Property 'distance' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(381,10): error TS2339: Property 'finess' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(381,29): error TS2339: Property 'finess' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(382,13): error TS2339: Property 'name' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(382,57): error TS2339: Property 'lat' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(382,77): error TS2339: Property 'lon' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(384,22): error TS2339: Property 'capacity' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(384,50): error TS2339: Property 'capacity' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(386,51): error TS2339: Property 'distance' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(386,71): error TS2339: Property 'distance' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(565,7): error TS2353: Object literal may only specify known properties, and 'finess' does not exist in type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(585,32): error TS2339: Property 'distance' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(585,52): error TS2339: Property 'distance' does not exist on type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(714,7): error TS2353: Object literal may only specify known properties, and 'finess' does not exist in type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(742,89): error TS6133: 'codePostal' is declared but its value is never read.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(808,7): error TS2353: Object literal may only specify known properties, and 'finess' does not exist in type 'FinessEtablissementEnriched'.
-src/spaces/promoteur/etudes/marche/services/finess.service.ts(947,7): error TS2353: Object literal may only specify known properties, and 'capacite_disponible' does not exist in type 'EhpadAnalyseConcurrence'.
+src/spaces/promoteur/etudes/marche/services/finess.service.ts(76,9): error TS6133: 'a' is declared but its value is never read.
+src/spaces/promoteur/etudes/marche/services/finess.service.ts(743,89): error TS6133: 'codePostal' is declared but its value is never read.
+src/spaces/promoteur/etudes/marche/services/finess.service.ts(948,7): error TS2353: Object literal may only specify known properties, and 'capacite_disponible' does not exist in type 'EhpadAnalyseConcurrence'.
 src/spaces/promoteur/etudes/marche/services/insee.normalize.ts(30,5): error TS2353: Object literal may only specify known properties, and 'pct_40_54' does not exist in type 'InseeData'.
 src/spaces/promoteur/etudes/marche/services/marketStudyService.ts(32,35): error TS2345: Argument of type 'import("C:/Users/maigr/OneDrive/Bureau/mimmoza-front-v2/src/spaces/promoteur/etudes/marche/types/competition").ProjectType' is not assignable to parameter of type 'import("C:/Users/maigr/OneDrive/Bureau/mimmoza-front-v2/src/spaces/promoteur/etudes/marche/types/market.types").ProjectType'.
   Type '"bureau"' is not assignable to type 'ProjectType'. Did you mean '"bureaux"'?
