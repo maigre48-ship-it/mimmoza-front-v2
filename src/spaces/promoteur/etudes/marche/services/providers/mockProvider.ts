@@ -1,6 +1,6 @@
 // FILE: src/spaces/promoteur/etudes/marche/services/providers/mockProvider.ts
 
-import {
+import type {
   AccessibilityData,
   CompetitionData,
   DataSourceStatus,
