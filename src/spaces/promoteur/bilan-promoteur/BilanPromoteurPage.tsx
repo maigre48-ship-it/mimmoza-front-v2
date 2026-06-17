@@ -23,6 +23,7 @@ import {
   totalSdpM2 as snapTotalSdp,
 } from "../plan2d/implantation2d.snapshot";
 import type { PromoteurRawInput } from "../services/promoteurSynthese.types";
+import type ExcelJSTypes from "exceljs";
 import {
   HeroGhostButton,
   HeroPrimaryButton,
@@ -69,7 +70,32 @@ function eur(v: number): string { try { return new Intl.NumberFormat("fr-FR", { 
 function m2(v: number): string { return `${Math.round(v)} m²`; }
 function safeAreaM2(feat: Feature<Geometry> | null | undefined): number { if (!feat?.geometry) return 0; try { return turf.area(feat as turf.AllGeoJSON); } catch { return 0; } }
 function sumAreas(fc?: FeatureCollection<Geometry> | null): number { if (!fc?.features || !Array.isArray(fc.features)) return 0; return fc.features.reduce((acc, f) => acc + safeAreaM2(f as Feature<Geometry>), 0); }
-
+// ── Lecture des vraies sources study (DVF dans raw_data, PLU dans ruleset). ──
+function readStudyDvf(study: unknown): {
+  nbTransactions: number | null; prixMoyen: number | null; absorptionMensuelle: number | null;
+} {
+  const dvf = (study as any)?.marche?.raw_data?.core?.dvf;
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  if (!dvf || typeof dvf !== "object") return { nbTransactions: null, prixMoyen: null, absorptionMensuelle: null };
+  return {
+    nbTransactions:      num(dvf.nb_transactions),
+    prixMoyen:           num(dvf.prix_m2_moyen),
+    absorptionMensuelle: num(dvf.absorption_mensuelle),
+  };
+}
+function readStudyPlu(study: unknown): {
+  zone: string; hauteurMax: number; cos: number; pleineTerre: number | null;
+} {
+  const plu = (study as any)?.plu;
+  const rs  = plu?.ruleset as Record<string, any> | null | undefined;
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  return {
+    zone:        (plu?.zone_code ?? "").toString(),
+    hauteurMax:  num(rs?.hauteur?.max_m),
+    cos:         num(rs?.ces?.max_ratio),
+    pleineTerre: typeof rs?.pleine_terre?.ratio_min === "number" ? rs.pleine_terre.ratio_min : null,
+  };
+}
 // ── Coefficient régional de construction (table configurable). ──────────────────
 const REGION_CONSTRUCTION_FACTORS: { depts: string[]; factor: number; label: string }[] = [
   { depts: ["75", "92", "93", "94"], factor: 1.15, label: "Île-de-France dense" },
@@ -746,10 +772,11 @@ export const BilanPromoteurPage: React.FC = () => {
     const chargeFonciereMaxEurM2Sdp      = sdpEstimatedM2 > 0 ? foncierMax / sdpEstimatedM2    : 0;
 
     // ── ÉV.2 — Charge foncière marché (≈ 15 % du prix de vente de marché). ──
+    const dvfStudy = readStudyDvf(study);
     const marketPriceRef =
       study?.marche?.prix_m2_neuf ??
       (marcheFromLS?.prices?.median_eur_m2 ?? null) ??
-      study?.marche?.prix_moyen_dvf ??
+      dvfStudy.prixMoyen ??
       (marcheFromLS?.dvf?.prix_m2_median ?? null);
     const chargeFonciereMarcheEurM2Sdp = marketPriceRef && marketPriceRef > 0 ? marketPriceRef * 0.15 : null;
     let chargeMarchePositionPct: number | null = null;
@@ -804,9 +831,9 @@ export const BilanPromoteurPage: React.FC = () => {
 
     // ── ÉV.3 — scoreMarche /100 : prix 40 + transactions 20 + concurrence 20 + absorption 20. ──
     //  Chaque composante absente prend une valeur neutre (la moitié) → 50/100 si tout absent.
-    const nbTx        = study?.marche?.nb_transactions ?? (marcheFromLS?.dvf?.nb_transactions ?? null);
-    const concurrence = study?.marche?.nb_programmes_concurrents ?? null;
-    const absorption  = study?.marche?.absorption_mensuelle ?? null;
+    const nbTx        = dvfStudy.nbTransactions ?? (marcheFromLS?.dvf?.nb_transactions ?? null);
+    const concurrence = (study?.marche as Record<string, any> | undefined)?.nb_programmes_concurrents ?? null;
+    const absorption  = dvfStudy.absorptionMensuelle ?? (marcheFromLS?.dvf?.absorption_mensuelle ?? null);
 
     const hasPrix = !!(marketPriceRef && marketPriceRef > 0 && ass.salePriceEurM2Hab > 0);
     const hasTx   = !!(nbTx && nbTx > 0);
@@ -860,9 +887,10 @@ export const BilanPromoteurPage: React.FC = () => {
     // ── ÉV.1 (polish) — SmartScore Urbanisme renforcé /25. ──
     //  Zone 10 + Hauteur 5 + Densité 5 + Contraintes/OAP 5. Optional chaining, neutre si absent.
     const plu = study?.plu ?? null;
-    const zone = (plu?.zone_plu ?? "").toString().toUpperCase();
-    const hauteurMaxPlu = n(plu?.hauteur_max, 0);
-    const cosPlu = n(plu?.cos, 0);
+    const pluStudy = readStudyPlu(study);
+    const zone = pluStudy.zone.toUpperCase();
+    const hauteurMaxPlu = pluStudy.hauteurMax;
+    const cosPlu = pluStudy.cos;
     const hasPlu = !!(zone || hauteurMaxPlu > 0 || cosPlu > 0);
 
     // Zone PLU (10)
@@ -985,15 +1013,17 @@ export const BilanPromoteurPage: React.FC = () => {
     const communeLabel = communeNom ?? (study?.foncier as any)?.commune ?? inseeCode ?? undefined;
     const cpLabel = codePostal ?? (study?.foncier as any)?.code_postal ?? undefined;
     const prixFoncierBrut = n(ass.landPriceEur, 0);
+    const dvfForInput = readStudyDvf(study);
+    const pluForInput = readStudyPlu(study);
     const dvfLS = marcheFromLS?.dvf ?? null; const pricesLS = marcheFromLS?.prices ?? null; const transactionsLS = marcheFromLS?.transactions ?? null;
     const riskCategories = risquesFromSnap?.categories ?? []; const riskData = risquesFromSnap?.data ?? null; const riskMeta = risquesFromSnap?.meta ?? null; const riskScoreGlobal = risquesFromSnap?.scores?.global ?? null;
     const risquesIdentifies: string[] = riskCategories.filter((c: any) => c.level !== 'nul' && c.level !== 'inconnu').map((c: any) => `${c.name} (${c.level})`);
-    const zonageRisque = study?.risques?.zonage_risque ?? (riskData?.inondation?.zone_inondable ? `Zone inondable — ${riskData.inondation.type_zone || 'type inconnu'}` : undefined) ?? (riskData?.seisme?.zone != null ? `Zone sismique ${riskData.seisme.zone}` : undefined) ?? (riskMeta?.commune_nom ? `${riskMeta.commune_nom} — risques analysés` : undefined) ?? undefined;
+    const zonageRisque = (study?.risques as Record<string, any> | undefined)?.zonage_risque ?? (riskData?.inondation?.zone_inondable ? `Zone inondable — ${riskData.inondation.type_zone || 'type inconnu'}` : undefined) ?? (riskData?.seisme?.zone != null ? `Zone sismique ${riskData.seisme.zone}` : undefined) ?? (riskMeta?.commune_nom ? `${riskMeta.commune_nom} — risques analysés` : undefined) ?? undefined;
     return {
       foncier: { adresse: (study?.foncier as any)?.adresse_complete ?? undefined, commune: communeLabel, codePostal: cpLabel, departement: (study?.foncier as any)?.departement ?? dept ?? undefined, surfaceTerrain: surfTerrain ?? undefined, prixAcquisition: prixFoncierBrut > 0 ? prixFoncierBrut : undefined, fraisNotaire: computed.fraisNotaire > 0 ? computed.fraisNotaire : undefined, pollutionDetectee: (riskData?.sis?.count ?? 0) > 0 },
-      plu: { zone: study?.plu?.zone_plu ?? undefined, cub: study?.plu?.cos ?? undefined, hauteurMax: study?.plu?.hauteur_max ?? undefined, pleineTerre: study?.plu?.pleine_terre_pct ?? undefined },
+      plu: { zone: pluForInput.zone || undefined, cub: pluForInput.cos || undefined, hauteurMax: pluForInput.hauteurMax || undefined, pleineTerre: pluForInput.pleineTerre ?? undefined },
       conception: { surfacePlancher: sdpEstimatedM2 > 0 ? sdpEstimatedM2 : undefined, nbLogements: nbLogementsEffectif > 0 ? nbLogementsEffectif : undefined, nbNiveaux: levelsCount > 0 ? levelsCount : undefined, hauteurProjet: totalHeightM > 0 ? totalHeightM : undefined, empriseBatie: footprintBuildingsM2 > 0 ? footprintBuildingsM2 : undefined, programmeType: ass.rehabMode ? "Réhabilitation" : buildingKind === "COLLECTIF" ? "Résidentiel collectif libre" : "Résidentiel individuel" },
-      marche: { prixNeufM2: study?.marche?.prix_m2_neuf ?? (pricesLS?.median_eur_m2 > 0 ? pricesLS.median_eur_m2 : undefined) ?? (ass.salePriceEurM2Hab > 0 ? ass.salePriceEurM2Hab : undefined), prixAncienM2: study?.marche?.prix_m2_ancien ?? (dvfLS?.prix_m2_median > 0 ? dvfLS.prix_m2_median : undefined) ?? undefined, nbTransactionsDvf: study?.marche?.nb_transactions ?? (dvfLS?.nb_transactions > 0 ? dvfLS.nb_transactions : undefined) ?? (transactionsLS?.count > 0 ? transactionsLS.count : undefined) ?? undefined, prixMoyenDvf: study?.marche?.prix_moyen_dvf ?? (dvfLS?.prix_m2_moyen > 0 ? dvfLS.prix_m2_moyen : undefined) ?? (pricesLS?.mean_eur_m2 > 0 ? pricesLS.mean_eur_m2 : undefined) ?? undefined, offreConcurrente: study?.marche?.nb_programmes_concurrents ?? undefined, absorptionMensuelle: study?.marche?.absorption_mensuelle ?? undefined },
+      marche: { prixNeufM2: study?.marche?.prix_m2_neuf ?? (pricesLS?.median_eur_m2 > 0 ? pricesLS.median_eur_m2 : undefined) ?? (ass.salePriceEurM2Hab > 0 ? ass.salePriceEurM2Hab : undefined), prixAncienM2: study?.marche?.prix_m2_ancien ?? (dvfLS?.prix_m2_median > 0 ? dvfLS.prix_m2_median : undefined) ?? undefined, nbTransactionsDvf: (dvfForInput.nbTransactions ?? undefined) ?? (dvfLS?.nb_transactions > 0 ? dvfLS.nb_transactions : undefined) ?? (transactionsLS?.count > 0 ? transactionsLS.count : undefined) ?? undefined, prixMoyenDvf: (dvfForInput.prixMoyen ?? undefined) ?? (dvfLS?.prix_m2_moyen > 0 ? dvfLS.prix_m2_moyen : undefined) ?? (pricesLS?.mean_eur_m2 > 0 ? pricesLS.mean_eur_m2 : undefined) ?? undefined, offreConcurrente: (study?.marche as Record<string, any> | undefined)?.nb_programmes_concurrents ?? undefined, absorptionMensuelle: (dvfForInput.absorptionMensuelle ?? undefined) ?? (dvfLS?.absorption_mensuelle ?? undefined) ?? undefined },
       risques: { risquesIdentifies, zonageRisque, scoreGlobal: riskScoreGlobal ?? undefined, nbCatnat: riskData?.gaspar?.catnat_count ?? undefined, nbSeveso: riskData?.icpe ? (riskData.icpe.seveso_haut_count ?? 0) + (riskData.icpe.seveso_bas_count ?? 0) : undefined, pprCount: riskData?.gaspar?.ppr_count ?? undefined, classeRadon: riskData?.radon?.classe_potentiel ?? undefined } as any,
       evaluation: { prixVenteM2: ass.salePriceEurM2Hab > 0 ? ass.salePriceEurM2Hab : undefined, prixVenteTotal: computed.caTotal > 0 ? computed.caTotal : undefined, nbLogementsLibres: nbLogementsEffectif > 0 ? nbLogementsEffectif : undefined },
       bilan: { coutFoncier: prixFoncierBrut > 0 ? prixFoncierBrut : undefined, coutTravaux: computed.totalTravaux > 0 ? computed.totalTravaux : undefined, coutTravauxM2: ass.rehabMode ? undefined : (ass.worksCostEurM2Sdp > 0 ? ass.worksCostEurM2Sdp : undefined), fraisFinanciers: computed.totalFin > 0 ? computed.totalFin : undefined, fraisCommercialisation: computed.totalCom > 0 ? computed.totalCom : undefined, fraisGestion: computed.totalEtudes > 0 ? computed.totalEtudes : undefined, chiffreAffaires: computed.caTotal > 0 ? computed.caTotal : undefined, margeNette: computed.marge, margeNettePercent: computed.margePct, trnRendement: computed.caTotal > 0 && computed.coutTotal > 0 ? (computed.marge / computed.coutTotal) * 100 : undefined, fondsPropres: undefined, creditPromoteur: undefined },
@@ -1075,7 +1105,7 @@ export const BilanPromoteurPage: React.FC = () => {
   const foncierVide  = !n(ass.landPriceEur, 0);
   const margeColor   = computed.marge >= 0 ? "#16a34a" : "#dc2626";
   const margePctColor = computed.margePct >= 15 ? "#16a34a" : computed.margePct >= 8 ? "#ea580c" : "#dc2626";
-  const hasStoreData  = (buildings?.features?.length ?? 0) > 0 || (snap2d?.buildings?.length ?? 0) > 0;
+  const _hasStoreData   = (buildings?.features?.length ?? 0) > 0 || (snap2d?.buildings?.length ?? 0) > 0;
 
   const kpiCard: React.CSSProperties      = { background: "white", borderRadius: 14, padding: "14px 16px 16px", border: "1px solid #e8edf4", boxShadow: "0 2px 8px rgba(15,23,42,0.05)", borderTop: `3px solid ${ACCENT_PRO}`, display: "flex", flexDirection: "column" as const, gap: 2 };
   const kpiLabel: React.CSSProperties     = { fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase" as const, letterSpacing: "0.05em", marginBottom: 4 };
@@ -1169,13 +1199,13 @@ export const BilanPromoteurPage: React.FC = () => {
       const now = new Date(); const pad = (x: number) => x.toString().padStart(2, "0");
       const dateStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
       const communeName = (study?.foncier as any)?.commune ?? study?.foncier?.commune_insee ?? "Projet";
-      const fmtE = (v: number) => (Number.isFinite(v) ? Math.round(v) : 0); const TVA = 0.20;
+      const fmtE = (v: number) => (Number.isFinite(v) ? Math.round(v) : 0); const _TVA = 0.20;
       const wb = new ExcelJS.Workbook(); wb.creator = "Mimmoza";
       const ws = wb.addWorksheet("Bilan"); ws.columns = [{ width: 2 }, { width: 42 }, { width: 14 }, { width: 10 }, { width: 12 }, { width: 18 }, { width: 14 }, { width: 18 }, { width: 34 }];
-      type ExcelFill = ExcelJS.Fill;
+      type ExcelFill = ExcelJSTypes.Fill;
       const solidFill = (hex: string): ExcelFill => ({ type: "pattern", pattern: "solid", fgColor: { argb: "FF" + hex } });
       const FMT_EUR = '# ##0 "€";(# ##0 "€");"-"';
-      const sC = (cell: ExcelJS.Cell, opts: { bold?: boolean; color?: string; bg?: string; size?: number; italic?: boolean; align?: "left"|"center"|"right"; numFmt?: string }) => { cell.font = { name: "Arial", size: opts.size ?? 9, bold: opts.bold ?? false, italic: opts.italic ?? false, color: { argb: "FF" + (opts.color ?? "000000") } }; if (opts.bg) cell.fill = solidFill(opts.bg); cell.alignment = { vertical: "middle", horizontal: opts.align ?? "left" }; if (opts.numFmt) cell.numFmt = opts.numFmt; };
+      const sC = (cell: ExcelJSTypes.Cell, opts: { bold?: boolean; color?: string; bg?: string; size?: number; italic?: boolean; align?: "left"|"center"|"right"; numFmt?: string }) => { cell.font = { name: "Arial", size: opts.size ?? 9, bold: opts.bold ?? false, italic: opts.italic ?? false, color: { argb: "FF" + (opts.color ?? "000000") } }; if (opts.bg) cell.fill = solidFill(opts.bg); cell.alignment = { vertical: "middle", horizontal: opts.align ?? "left" }; if (opts.numFmt) cell.numFmt = opts.numFmt; };
       const r1 = ws.addRow(["", `BILAN PROMOTEUR — ${ass.rehabMode ? "RÉHABILITATION" : "PROGRAMME NEUF"}`]); r1.height = 30; ws.mergeCells("B1:I1"); sC(r1.getCell("B"), { bold: true, color: "FFFFFF", bg: "2D2D6B", size: 14, align: "center" }); for (const col of ["C","D","E","F","G","H","I"]) r1.getCell(col).fill = solidFill("2D2D6B");
       const r2 = ws.addRow(["", `${communeName}   |   ${new Date().toLocaleDateString("fr-FR")}   |   Mimmoza`]); r2.height = 16; ws.mergeCells("B2:I2"); sC(r2.getCell("B"), { italic: true, color: "94A3B8", bg: "F4F3FF", align: "center", size: 9 }); for (const col of ["C","D","E","F","G","H","I"]) r2.getCell(col).fill = solidFill("F4F3FF");
       ws.addRow([]); const rh = ws.addRow(["", "POSTE", "", "", "", "Montant HT (€)", "TVA (€)", "Montant TTC (€)", "Notes"]); rh.height = 18;

@@ -1,6 +1,6 @@
 # Carte du risque tsc
 
-Total : 694 - Dangereuses : 233, Cosmetiques : 202, Autres : 259
+Total : 676 - Dangereuses : 217, Cosmetiques : 202, Autres : 257
 
 ## Fichiers (tries par erreurs dangereuses)
 
@@ -9,7 +9,6 @@ Total : 694 - Dangereuses : 233, Cosmetiques : 202, Autres : 259
 | 18 | 18 | AFFICHAGE | src/spaces/admin/pages/Dashboard.tsx | TS2339x17 TS2353x1 |
 | 17 | 23 | AFFICHAGE | src/spaces/marchand/pages/AnalyseBien.tsx | TS2339x14 TS7006x4 TS2345x3 TS7053x2 |
 | 17 | 17 | AFFICHAGE | src/spaces/admin/pages/AdminDashboardPage.tsx | TS2339x17 |
-| 16 | 23 | CALC/GEN | src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx | TS2339x16 TS6133x5 TS2503x2 |
 | 14 | 20 | CALC/GEN | src/spaces/marchand/scoring/smartScoreInvestisseur.ts | TS2339x14 TS2305x5 TS6133x1 |
 | 13 | 15 | AFFICHAGE | src/spaces/sourcing/pages/SourcingHomePage.tsx | TS2339x11 TS2322x2 TS6133x1 TS2554x1 |
 | 11 | 11 | AFFICHAGE | src/spaces/investisseur/components/analyse/MarcheRisquesPanel.tsx | TS2339x5 TS2322x4 TS18047x2 |
@@ -87,6 +86,7 @@ Total : 694 - Dangereuses : 233, Cosmetiques : 202, Autres : 259
 | 0 | 5 | AFFICHAGE | src/components/Sidebar.tsx | TS7031x4 TS7006x1 |
 | 0 | 5 | AFFICHAGE | src/spaces/investisseur/pages/execution/components/PieceEditor.tsx | TS2307x2 TS7006x2 TS7053x1 |
 | 0 | 5 | AFFICHAGE | src/spaces/marchand/pages/ScoringHomePage.tsx | TS2307x5 |
+| 0 | 5 | CALC/GEN | src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx | TS6133x5 |
 | 0 | 5 | CALC/GEN | src/spaces/promoteur/components/PromoteurSynthesePreview.tsx | TS2741x4 TS2305x1 |
 | 0 | 5 | CALC/GEN | src/spaces/promoteur/etudes/marche/index.ts | TS2305x5 |
 | 0 | 5 | CALC/GEN | src/spaces/promoteur/plan2d/editor2d.store.ts | TS2783x5 |

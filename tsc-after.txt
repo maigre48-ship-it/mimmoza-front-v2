@@ -340,29 +340,11 @@ src/spaces/particulier/pages/Estimation.tsx(860,7): error TS6133: 'headerStyle' 
 src/spaces/particulier/pages/Estimation.tsx(869,7): error TS6133: 'kickerStyle' is declared but its value is never read.
 src/spaces/particulier/pages/Estimation.tsx(876,7): error TS6133: 'titleStyle' is declared but its value is never read.
 src/spaces/particulier/pages/Estimation.tsx(882,7): error TS6133: 'subtitleStyle' is declared but its value is never read.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(153,7): error TS6133: 'COEF_SDP' is declared but its value is never read.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(154,7): error TS6133: 'COEF_HABITABLE_COLLECTIF' is declared but its value is never read.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(155,7): error TS6133: 'COEF_HABITABLE_INDIVIDUEL' is declared but its value is never read.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(752,22): error TS2339: Property 'prix_moyen_dvf' does not exist on type 'PromoteurMarcheData'.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(807,40): error TS2339: Property 'nb_transactions' does not exist on type 'PromoteurMarcheData'.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(808,40): error TS2339: Property 'nb_programmes_concurrents' does not exist on type 'PromoteurMarcheData'.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(809,40): error TS2339: Property 'absorption_mensuelle' does not exist on type 'PromoteurMarcheData'.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(863,24): error TS2339: Property 'zone_plu' does not exist on type 'PromoteurPluData'.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(864,34): error TS2339: Property 'hauteur_max' does not exist on type 'PromoteurPluData'.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(865,27): error TS2339: Property 'cos' does not exist on type 'PromoteurPluData'.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(991,42): error TS2339: Property 'zonage_risque' does not exist on type 'PromoteurRisquesData'.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(994,32): error TS2339: Property 'zone_plu' does not exist on type 'PromoteurPluData'.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(994,72): error TS2339: Property 'cos' does not exist on type 'PromoteurPluData'.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(994,114): error TS2339: Property 'hauteur_max' does not exist on type 'PromoteurPluData'.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(994,165): error TS2339: Property 'pleine_terre_pct' does not exist on type 'PromoteurPluData'.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(996,353): error TS2339: Property 'nb_transactions' does not exist on type 'PromoteurMarcheData'.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(996,546): error TS2339: Property 'prix_moyen_dvf' does not exist on type 'PromoteurMarcheData'.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(996,738): error TS2339: Property 'nb_programmes_concurrents' does not exist on type 'PromoteurMarcheData'.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(996,814): error TS2339: Property 'absorption_mensuelle' does not exist on type 'PromoteurMarcheData'.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(1078,9): error TS6133: 'hasStoreData' is declared but its value is never read.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(1172,83): error TS6133: 'TVA' is declared but its value is never read.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(1175,24): error TS2503: Cannot find namespace 'ExcelJS'.
-src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(1178,25): error TS2503: Cannot find namespace 'ExcelJS'.
+src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(179,7): error TS6133: 'COEF_SDP' is declared but its value is never read.
+src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(180,7): error TS6133: 'COEF_HABITABLE_COLLECTIF' is declared but its value is never read.
+src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(181,7): error TS6133: 'COEF_HABITABLE_INDIVIDUEL' is declared but its value is never read.
+src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(1108,9): error TS6133: '_hasStoreData' is declared but its value is never read.
+src/spaces/promoteur/bilan-promoteur/BilanPromoteurPage.tsx(1202,83): error TS6133: '_TVA' is declared but its value is never read.
 src/spaces/promoteur/components/GeneratePromoteurSyntheseButton.tsx(7,53): error TS2305: Module '"../services/promoteurSynthese.types"' has no exported member 'ReportType'.
 src/spaces/promoteur/components/Plan2DEditorPage.tsx(176,11): error TS2339: Property 'rect' does not exist on type 'PlanParking'.
 src/spaces/promoteur/components/Plan2DEditorPage.tsx(176,25): error TS2339: Property 'rect' does not exist on type 'PlanParking'.
