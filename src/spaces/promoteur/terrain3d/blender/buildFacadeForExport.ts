@@ -164,7 +164,7 @@ export function buildFacadeMeshGroupsForExport(input: FacadeExportInput): Export
 
   const socleHeight =
     arch
-      ? clampNumber((arch.vertical?.groundFloorHeightM ?? floorHeight), 2.8, 5.5)
+      ? clampNumber(((arch.vertical as unknown as Record<string, number | undefined>)?.groundFloorHeightM ?? floorHeight), 2.8, 5.5)
       : clampNumber((building.levels?.groundFloorHeightM ?? floorHeight), 2.8, 5.5);
 
   const attiqueStart = Math.max(1, totalFloors - 1);
@@ -189,7 +189,7 @@ export function buildFacadeMeshGroupsForExport(input: FacadeExportInput): Export
   const balconiesEnabled = resolveBalconiesEnabled(building, facadeStyleDef);
   const balconyFreq      = resolveBalconyFreq(building);
 
-  const facadeEdges = edges.map((edge, i) => {
+  const facadeEdges = edges.map((_edge, i) => {
     const a = edgesXZ[i].a;
     const b = edgesXZ[i].b;
     const edgeType = classifyEdge(a, b, centerFacade, edgesXZ);
@@ -266,8 +266,8 @@ export function buildFacadeMeshGroupsForExport(input: FacadeExportInput): Export
 
   // ── V9 : variation architecturale déterministe ────────────────────────────
 
-  const buildingId = (building as Record<string, unknown>)?.id as string
-    ?? (building as Record<string, unknown>)?.uuid as string
+  const buildingId = (building as unknown as Record<string, unknown>)?.id as string
+    ?? (building as unknown as Record<string, unknown>)?.uuid as string
     ?? prefix;
   const seed = hashString(buildingId);
   const rng  = createRNG(seed);
@@ -341,7 +341,7 @@ function facadeResultToMeshGroups(
     const material = new THREE.MeshStandardMaterial({
       color:     new THREE.Color(matDef.color),
       roughness: matDef.roughness,
-      metallic:  matDef.metallic,
+      metalness: matDef.metallic,
       side:      THREE.DoubleSide,
       ...(matDef.transparent
         ? { transparent: true, opacity: matDef.opacity ?? 1, depthWrite: false }
@@ -388,7 +388,7 @@ function buildSocleMeshGroup(params: {
   const matDef   = EXPORT_MATERIALS.socle;
   const material = new THREE.MeshStandardMaterial({
     color: new THREE.Color(matDef.color), roughness: matDef.roughness,
-    metallic: matDef.metallic, side: THREE.DoubleSide,
+    metalness: matDef.metallic, side: THREE.DoubleSide,
   });
 
   const mesh = new THREE.Mesh(socleGeo, material);
@@ -475,7 +475,7 @@ function buildEntranceMeshGroup(params: {
   const matDef   = EXPORT_MATERIALS.entrance;
   const material = new THREE.MeshStandardMaterial({
     color: new THREE.Color(matDef.color), roughness: matDef.roughness,
-    metallic: matDef.metallic, side: THREE.DoubleSide,
+    metalness: matDef.metallic, side: THREE.DoubleSide,
   });
 
   const mesh = new THREE.Mesh(merged, material);
@@ -523,7 +523,7 @@ function buildAtticMeshGroup(params: {
   const matDef   = EXPORT_MATERIALS.attic;
   const material = new THREE.MeshStandardMaterial({
     color: new THREE.Color(matDef.color), roughness: matDef.roughness,
-    metallic: matDef.metallic, side: THREE.DoubleSide,
+    metalness: matDef.metallic, side: THREE.DoubleSide,
   });
 
   const mesh = new THREE.Mesh(atticGeo, material);
@@ -590,7 +590,7 @@ function buildCorniceMeshGroup(params: {
   const matDef   = EXPORT_MATERIALS.cornice;
   const material = new THREE.MeshStandardMaterial({
     color: new THREE.Color(matDef.color), roughness: matDef.roughness,
-    metallic: matDef.metallic, side: THREE.DoubleSide,
+    metalness: matDef.metallic, side: THREE.DoubleSide,
   });
 
   const mesh = new THREE.Mesh(merged, material);
@@ -648,7 +648,7 @@ function buildSetbackMassMeshGroup(params: {
   const matDef   = EXPORT_MATERIALS.setback_mass;
   const material = new THREE.MeshStandardMaterial({
     color: new THREE.Color(matDef.color), roughness: matDef.roughness,
-    metallic: matDef.metallic, side: THREE.DoubleSide,
+    metalness: matDef.metallic, side: THREE.DoubleSide,
   });
 
   const mesh = new THREE.Mesh(geo2d, material);
@@ -730,7 +730,7 @@ function buildCornerPilasterMeshGroup(params: {
   const matDef   = EXPORT_MATERIALS.corner_pilaster;
   const material = new THREE.MeshStandardMaterial({
     color: new THREE.Color(matDef.color), roughness: matDef.roughness,
-    metallic: matDef.metallic, side: THREE.DoubleSide,
+    metalness: matDef.metallic, side: THREE.DoubleSide,
   });
 
   const mesh = new THREE.Mesh(merged, material);
@@ -854,7 +854,7 @@ function buildFacadeReliefGroup(params: {
   const matDef   = EXPORT_MATERIALS.facade_relief;
   const material = new THREE.MeshStandardMaterial({
     color: new THREE.Color(matDef.color), roughness: matDef.roughness,
-    metallic: matDef.metallic, side: THREE.DoubleSide,
+    metalness: matDef.metallic, side: THREE.DoubleSide,
   });
 
   const mesh = new THREE.Mesh(merged, material);
@@ -938,7 +938,7 @@ function buildFacadeVerticalFinsGroup(params: {
   const matDef   = EXPORT_MATERIALS.facade_fin;
   const material = new THREE.MeshStandardMaterial({
     color: new THREE.Color(matDef.color), roughness: matDef.roughness,
-    metallic: matDef.metallic, side: THREE.DoubleSide,
+    metalness: matDef.metallic, side: THREE.DoubleSide,
   });
 
   const mesh = new THREE.Mesh(merged, material);
@@ -1018,7 +1018,7 @@ export function collectCategories(groups: ExportMeshGroup[]): string[] {
 
 function resolveBalconiesEnabled(building: MassingBuildingModel, facadeStyleDef: unknown): boolean {
   const archAny  = building.architecture as Record<string, unknown> | undefined;
-  const styleAny = building.style        as Record<string, unknown> | undefined;
+  const styleAny = building.style        as unknown as Record<string, unknown> | undefined;
   const details  = archAny?.details  as Record<string, unknown> | undefined;
   const balcs    = archAny?.balconies as Record<string, unknown> | undefined;
   const fd       = facadeStyleDef     as Record<string, unknown> | undefined;
@@ -1032,7 +1032,7 @@ function resolveBalconiesEnabled(building: MassingBuildingModel, facadeStyleDef:
 
 function resolveBalconyFreq(building: MassingBuildingModel): number {
   const archAny  = building.architecture as Record<string, unknown> | undefined;
-  const styleAny = building.style        as Record<string, unknown> | undefined;
+  const styleAny = building.style        as unknown as Record<string, unknown> | undefined;
   const details  = archAny?.details      as Record<string, unknown> | undefined;
   const balcs    = archAny?.balconies    as Record<string, unknown> | undefined;
   const raw = details?.balconyFrequency ?? balcs?.frequency ?? styleAny?.balconiesFrequency ?? 1;
@@ -1043,7 +1043,7 @@ function resolveBalconyFreq(building: MassingBuildingModel): number {
 
 function resolveAtticInset(building: MassingBuildingModel): number {
   const archAny  = building.architecture as Record<string, unknown> | undefined;
-  const styleAny = building.style        as Record<string, unknown> | undefined;
+  const styleAny = building.style        as unknown as Record<string, unknown> | undefined;
   const details  = archAny?.details      as Record<string, unknown> | undefined;
   const vert     = archAny?.vertical     as Record<string, unknown> | undefined;
   const attic    = archAny?.attic        as Record<string, unknown> | undefined;
@@ -1055,7 +1055,7 @@ function resolveAtticInset(building: MassingBuildingModel): number {
 
 function resolveSetbackInset(building: MassingBuildingModel): number {
   const archAny  = building.architecture as Record<string, unknown> | undefined;
-  const styleAny = building.style        as Record<string, unknown> | undefined;
+  const styleAny = building.style        as unknown as Record<string, unknown> | undefined;
   const details  = archAny?.details      as Record<string, unknown> | undefined;
   const vert     = archAny?.vertical     as Record<string, unknown> | undefined;
   const setbacks = archAny?.setbacks     as Record<string, unknown> | undefined;
