@@ -28,62 +28,60 @@ export type {
 
 export {
   PLAN_CATALOG,
-  TOKEN_PACK_CATALOG, formatCents, getPlanCatalogItem, getStripePriceIdForPlan,
-  getStripePriceIdForTokenPack, getTokenPackCatalogItem
+  TOKEN_PACK_CATALOG, formatCents, getPlanEntry, getTokenPackEntry
 } from "./catalog";
 
 export type {
-  PlanCatalogItem,
-  TokenPackCatalogItem
+  PlanCatalogEntry,
+  TokenPackCatalogEntry
 } from "./catalog";
 
 // ─── Token ledger ──────────────────────────────────────────────────────────────
 
 export {
-  applyTokenLedgerEntry,
-  creditTokensForPackPurchase, creditTokensForRefund, creditTokensForSubscriptionGrant, debitTokensForFeature,
+  getTokenBalance, writeLedgerEntry,
+  creditTokensForPackPurchase, creditTokensForSubscription, adminCreditTokens, debitTokensForFeature,
   getTokenLedgerHistory,
-  getTokenLedgerTotals
+  getTokenLedgerSummary
 } from "./tokenLedger";
 
 export type {
-  ApplyTokenLedgerEntryInput,
-  TokenLedgerHistoryParams,
-  TokenLedgerTotals
+  TokenLedgerSummary
 } from "./tokenLedger";
 
 // ─── Subscriptions / billing profiles ─────────────────────────────────────────
 
 export {
-  clearSubscriptionForUser, createStripeCheckoutSession, getBillingProfile, getProfileMrrCents, isSubscriptionActive, updateStripeCustomerForUser,
-  updateSubscriptionStateForUser, upsertBillingProfile
+  getBillingProfile, getOrCreateBillingProfile, updateSubscriptionFromStripe, markSubscriptionCanceled,
+  downgradeToPlan, isSubscriptionActive, daysUntilRenewal, profileMrr,
+  createCheckoutSession, createBillingPortalSession
 } from "./subscriptions";
 
 // ─── Invoices ──────────────────────────────────────────────────────────────────
 
 export {
-  getInvoiceTotalsByUser, getInvoicesByUser,
-  listAllInvoices, upsertInvoiceRow
+  getInvoices, getInvoiceById, upsertInvoiceFromStripe,
+  markInvoiceRefunded, markInvoiceFailed, getUserInvoiceSummary
 } from "./invoices";
 
 export type {
-  InvoiceTotalsByUser, ListInvoicesParams
+  UserInvoiceSummary
 } from "./invoices";
 
 // ─── Admin analytics ───────────────────────────────────────────────────────────
 
 export {
   buildAdminUserBillingView, getAdminBillingMetrics,
-  getTopClients, listAdminUserBilling
+  getTopClientsByRevenue, listAdminUserBilling, listAllInvoices
 } from "./adminAnalytics";
 
 export type {
-  ListAdminUserBillingParams,
   TopClientRow
 } from "./adminAnalytics";
 
 // ─── Admin billing / bypass ───────────────────────────────────────────────────
 
 export {
-  logAdminFeatureUsage, tryAdminBypassConsume
+  buildAdminBypassConsumeResult, isAdminBypassActive,
+  tryAdminBypassConsume, tryAdminBypassQuota, logAdminFeatureUsage
 } from "./adminBilling";
