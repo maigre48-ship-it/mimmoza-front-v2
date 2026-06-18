@@ -127,7 +127,7 @@ function resolvePluAdjustment(plu?: PredictivePlu): {
 
 function resolveFiscalImpact(
   fiscalite?: PredictiveFiscalite,
-  rendementBrut?: number
+  _rendementBrut?: number
 ): { bonus: number; label: string; hasData: boolean } {
   if (!fiscalite?.regime) return { bonus: 0, label: "Fiscalité non renseignée", hasData: false };
 
@@ -578,7 +578,6 @@ function buildDrivers(input: PredictiveEngineInput): PredictiveDriver[] {
 
   const ecb = input.ecbAnalysis;
   if (ecb) {
-    const trendLabel = ecb.trend === "hausse" ? "en hausse" : ecb.trend === "baisse" ? "en baisse" : "stables";
     drivers.push({
       key: "pression_credit_bce",
       label: `Pression crédit BCE — ${ecb.pressureLabel}`,
@@ -780,7 +779,7 @@ export function computePredictiveSnapshot(
   const horizonDetention = input.horizonDetention ?? 12;
 
   // ── Spot ───────────────────────────────────────────────────────────────
-  const { spotPsm, rawSpotPsm, source: spotSource, confidence: spotBaseConf } = resolveSpotPsm(input);
+  const { spotPsm, source: spotSource, confidence: spotBaseConf } = resolveSpotPsm(input);
   const marketValue = Math.round(spotPsm * surfaceM2);
 
   const rangePct  = spotSource === "dvf" ? 0.05 : 0.08;
