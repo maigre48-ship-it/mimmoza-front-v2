@@ -180,16 +180,20 @@ function safeDifference(
     const cleanA = safeClean(a);
     const cleanB = safeClean(b);
     const result = turf.difference(
-      turf.featureCollection([cleanA as turf.Feature<turf.Polygon | turf.MultiPolygon>]),
-      cleanB as turf.Feature<turf.Polygon | turf.MultiPolygon>
+      turf.featureCollection([
+        cleanA as Feature<Polygon | MultiPolygon>,
+        cleanB as Feature<Polygon | MultiPolygon>,
+      ])
     );
     if (!result || !result.geometry) return null;
     return normalizeToFeature(result);
   } catch {
     try {
       const result = turf.difference(
-        a as turf.Feature<turf.Polygon | turf.MultiPolygon>,
-        b as turf.Feature<turf.Polygon | turf.MultiPolygon>
+        turf.featureCollection([
+          a as Feature<Polygon | MultiPolygon>,
+          b as Feature<Polygon | MultiPolygon>,
+        ])
       );
       if (!result || !result.geometry) return null;
       return normalizeToFeature(result);
@@ -208,8 +212,8 @@ function safeIntersect(
     const cleanB = safeClean(b);
     const result = turf.intersect(
       turf.featureCollection([
-        cleanA as turf.Feature<turf.Polygon | turf.MultiPolygon>,
-        cleanB as turf.Feature<turf.Polygon | turf.MultiPolygon>,
+        cleanA as Feature<Polygon | MultiPolygon>,
+        cleanB as Feature<Polygon | MultiPolygon>,
       ])
     );
     if (!result || !result.geometry) return null;
@@ -233,8 +237,8 @@ function safeUnion(
       try {
         const unionResult = turf.union(
           turf.featureCollection([
-            result as turf.Feature<turf.Polygon | turf.MultiPolygon>,
-            cleaned as turf.Feature<turf.Polygon | turf.MultiPolygon>,
+            result as Feature<Polygon | MultiPolygon>,
+            cleaned as Feature<Polygon | MultiPolygon>,
           ])
         );
         if (unionResult && unionResult.geometry) {
@@ -335,7 +339,7 @@ function normalizeToFeature(raw: unknown): Feature<Polygon | MultiPolygon> | nul
   if (data.type === "Polygon" || data.type === "MultiPolygon") {
     return {
       type: "Feature",
-      geometry: data as Polygon | MultiPolygon,
+      geometry: data as unknown as Polygon | MultiPolygon,
       properties: {},
     } as Feature<Polygon | MultiPolygon>;
   }
