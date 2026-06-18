@@ -176,10 +176,6 @@ type Assumptions = {
 
 type Line = { section: string; label: string; valueEur: number; kind?: "subtotal" | "total"; hint?: string; };
 
-const COEF_SDP = 1.0;
-const COEF_HABITABLE_COLLECTIF  = 0.82;
-const COEF_HABITABLE_INDIVIDUEL = 0.9;
-
 const DEFAULT_ASSUMPTIONS: Assumptions = {
   salePriceEurM2Hab: 5200, commercialisationPct: 100, coefVendable: 1.0, landPriceEur: NaN,
   notaryFeesPct: 7.5, acquisitionTaxesPct: 0, worksCostEurM2Sdp: 1800, vrdPct: 6, extPct: 3,
@@ -1105,7 +1101,6 @@ export const BilanPromoteurPage: React.FC = () => {
   const foncierVide  = !n(ass.landPriceEur, 0);
   const margeColor   = computed.marge >= 0 ? "#16a34a" : "#dc2626";
   const margePctColor = computed.margePct >= 15 ? "#16a34a" : computed.margePct >= 8 ? "#ea580c" : "#dc2626";
-  const _hasStoreData   = (buildings?.features?.length ?? 0) > 0 || (snap2d?.buildings?.length ?? 0) > 0;
 
   const kpiCard: React.CSSProperties      = { background: "white", borderRadius: 14, padding: "14px 16px 16px", border: "1px solid #e8edf4", boxShadow: "0 2px 8px rgba(15,23,42,0.05)", borderTop: `3px solid ${ACCENT_PRO}`, display: "flex", flexDirection: "column" as const, gap: 2 };
   const kpiLabel: React.CSSProperties     = { fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase" as const, letterSpacing: "0.05em", marginBottom: 4 };
@@ -1199,7 +1194,7 @@ export const BilanPromoteurPage: React.FC = () => {
       const now = new Date(); const pad = (x: number) => x.toString().padStart(2, "0");
       const dateStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
       const communeName = (study?.foncier as any)?.commune ?? study?.foncier?.commune_insee ?? "Projet";
-      const fmtE = (v: number) => (Number.isFinite(v) ? Math.round(v) : 0); const _TVA = 0.20;
+      const fmtE = (v: number) => (Number.isFinite(v) ? Math.round(v) : 0);
       const wb = new ExcelJS.Workbook(); wb.creator = "Mimmoza";
       const ws = wb.addWorksheet("Bilan"); ws.columns = [{ width: 2 }, { width: 42 }, { width: 14 }, { width: 10 }, { width: 12 }, { width: 18 }, { width: 14 }, { width: 18 }, { width: 34 }];
       type ExcelFill = ExcelJSTypes.Fill;
