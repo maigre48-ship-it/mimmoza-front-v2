@@ -114,90 +114,6 @@ function compute(inputs: Inputs, taxConfig: TaxConfig): Computed {
   };
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-  suffix,
-  min,
-  step,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  suffix?: string;
-  min?: number;
-  step?: number;
-}) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>{label}</div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <input
-          type="number"
-          value={Number.isFinite(value) ? value : 0}
-          min={min ?? 0}
-          step={step ?? 1}
-          onChange={(e) => onChange(Number(e.target.value))}
-          style={{
-            width: "100%",
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid rgba(15, 23, 42, 0.10)",
-            background: "rgba(255,255,255,0.95)",
-            fontWeight: 800,
-            color: "#0f172a",
-            outline: "none",
-          }}
-        />
-        {suffix && (
-          <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900, whiteSpace: "nowrap" }}>
-            {suffix}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Select({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>{label}</div>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        style={{
-          width: "100%",
-          padding: "10px 12px",
-          borderRadius: 12,
-          border: "1px solid rgba(15, 23, 42, 0.10)",
-          background: "rgba(255,255,255,0.95)",
-          fontWeight: 800,
-          color: "#0f172a",
-          outline: "none",
-        }}
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
 export default function MarchandRentabilite() {
   // 🔗 Live snapshot (deal actif change => rerender)
   const snapTick = useMarchandSnapshotTick();
@@ -244,11 +160,6 @@ export default function MarchandRentabilite() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDealId]);
 
-  const handleRegime = (r: TaxRegime) => {
-    setTaxRegime(r);
-    setTaxConfig(getDefaultTaxConfig(r));
-  };
-
   const computedBase = useMemo(() => compute(base, taxConfig), [base, taxConfig]);
 
   // ✅ Snapshot computed (source de vérité pour Sortie)
@@ -283,17 +194,6 @@ export default function MarchandRentabilite() {
       computed: computedForSnapshot,
     });
   }, [activeDealId, base, taxRegime, taxConfig, computedForSnapshot]);
-
-  const pessimiste = useMemo<Inputs>(() => {
-    return {
-      ...base,
-      prixRevente: Math.round(base.prixRevente * 0.95),
-      travaux: Math.round(base.travaux * 1.15),
-      dureeMois: base.dureeMois + 2,
-    };
-  }, [base]);
-
-  const computedPess = useMemo(() => compute(pessimiste, taxConfig), [pessimiste, taxConfig]);
 
   const badge = (marge: number) => {
     if (marge >= 30000)
