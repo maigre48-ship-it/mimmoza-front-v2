@@ -2,6 +2,7 @@
 
 import { getPoiConfigsForProject, getProjectConfig } from "../config";
 import type { CompetitionData, MarketStudyResult, ProjectType } from "../types/competition";
+import type { ProjectType as MarketProjectType } from "../types/market.types";
 import { computePoiStats, fetchPoisForProject } from "./poiService";
 import { fetchBpeData } from "./providers/bpeProvider";
 import { fetchDvfData } from "./providers/dvfProvider";
@@ -29,7 +30,7 @@ export async function getMarketStudy(params: MarketStudyParams): Promise<MarketS
     radiusKm,
   } = params;
 
-  const config = getProjectConfig(projectType);
+  const config = getProjectConfig(projectType as MarketProjectType);
   const effectiveRadius = radiusKm ?? config.radius.analysis;
 
   console.log(`[marketStudyService] Lancement étude de marché pour ${projectType}`);
@@ -81,7 +82,7 @@ export async function getMarketStudy(params: MarketStudyParams): Promise<MarketS
   console.log("  - BPE:", bpeData ? "OK" : "N/A");
 
   // Récupération des POIs
-  const poiConfigs = getPoiConfigsForProject(projectType);
+  const poiConfigs = getPoiConfigsForProject(projectType as MarketProjectType);
   const poisByCategory = await fetchPoisForProject(lat, lon, poiConfigs);
   const poiStats = computePoiStats(poisByCategory, poiConfigs);
 
@@ -201,12 +202,11 @@ function assembleMarketStudyResult(params: AssembleParams): MarketStudyResult {
  */
 export function computeKpis(
   result: MarketStudyResult,
-  projectType: ProjectType
+  _projectType: ProjectType
 ): {
   primary: Array<{ id: string; label: string; value: string; status: string }>;
   secondary: Array<{ id: string; label: string; value: string; status: string }>;
 } {
-  const config = getProjectConfig(projectType);
   const kpis: {
     primary: Array<{ id: string; label: string; value: string; status: string }>;
     secondary: Array<{ id: string; label: string; value: string; status: string }>;
