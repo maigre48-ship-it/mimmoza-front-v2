@@ -339,7 +339,7 @@ export async function saveAdminUsers(users: AdminUser[]): Promise<void> {
     status: user.status,
     plan: user.plan,
     tokens_remaining: user.tokensRemaining,
-    monthly_quota: user.monthlyQuota,
+    monthly_quota: user.monthlyQuota ?? null,
     created_at: user.createdAt,
     company_name: user.companyName ?? null,
   }));
@@ -370,8 +370,8 @@ export async function saveAdminSubscriptions(
     amount_ht_eur: sub.amountHtEur,
     interval: sub.interval,
     status: sub.status,
-    quota_included: sub.quotaIncluded,
-    renewal_date: sub.renewalDate,
+    quota_included: sub.quotaIncluded ?? null,
+    renewal_date: sub.renewalDate ?? null,
     created_at: new Date().toISOString(),
   }));
 
