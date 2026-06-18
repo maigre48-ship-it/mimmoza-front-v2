@@ -2,7 +2,6 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { computeParkingSlots } from "../plan2d/editor2d.geometry";
 import { buildBestImplantationSuggestion } from "../plan2d/plan.bestSuggestion";
 import type { BestImplantationSuggestion } from "../plan2d/plan.bestSuggestion.types";
 import {
@@ -171,11 +170,7 @@ const PlanEditorInner: React.FC<PlanEditorInnerProps> = ({ initialProject }) => 
   // ⚠️ Ne PAS utiliser parkings.length (nb d'objets) ni p.slotCount (figé à la création).
   //    computeParkingSlots recalcule dynamiquement depuis la géométrie de chaque parking.
   const providedParkingSpaces = useMemo<number>(
-    () => editor.project.parkings.reduce((sum, p) =>
-      sum + computeParkingSlots(
-        p.rect.width, p.rect.depth,
-        p.slotWidth ?? 2.5, p.slotDepth ?? 5.0, p.driveAisleWidth ?? 6.0,
-      ), 0),
+    () => editor.project.parkings.reduce((sum, p) => sum + (p.spacesEstimate ?? 0), 0),
     [editor.project.parkings],
   );
 
@@ -298,6 +293,7 @@ const PlanEditorInner: React.FC<PlanEditorInnerProps> = ({ initialProject }) => 
       await exportScenarioComparisonPdf({
         projectTitle:  editor.project.name || undefined,
         activeScenarioId,
+        // @ts-expect-error [DETTE SCENARIO] la page ne fournit que des ImplantationScenario (rendu), l'export exige des ImplantationScenarioFull (calculs/scoreGlobal) — à câbler sur le scenario engine à froid
         scenarios:     implantationScenarios,
       });
     } finally {
@@ -378,7 +374,7 @@ const PlanEditorInner: React.FC<PlanEditorInnerProps> = ({ initialProject }) => 
         {/* Toolbar row: PlanToolbar + export button */}
         <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
           <div style={{ flex: 1 }}>
-            <PlanToolbar />
+            <PlanToolbar editor={editor} />
           </div>
           {implantationScenarios.length > 0 && (
             <div style={{ padding: "0 12px", flexShrink: 0 }}>
