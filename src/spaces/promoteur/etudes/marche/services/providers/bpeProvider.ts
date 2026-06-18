@@ -1,6 +1,6 @@
 // FILE: src/spaces/promoteur/etudes/marche/services/providers/bpeProvider.ts
 
-import type { Poi, PoiCategoryId, ServicesData } from "../../types";
+import type { Poi, PoiCategoryId } from "../../types";
 
 export interface BpeProviderParams {
   lat: number;
@@ -13,7 +13,7 @@ export interface BpeProviderParams {
  * Stub pour l'API BPE (Base Permanente des Équipements)
  * À implémenter avec les vrais endpoints
  */
-export async function fetchBpeData(params: BpeProviderParams): Promise<ServicesData | null> {
+export async function fetchBpeData(_params: BpeProviderParams): Promise<unknown | null> {
   // TODO: Implémenter l'appel réel
   // Source: https://www.data.gouv.fr/fr/datasets/base-permanente-des-equipements/
   // API possible via geo.api.gouv.fr ou données locales
@@ -26,10 +26,10 @@ export async function fetchBpeData(params: BpeProviderParams): Promise<ServicesD
  * Récupère les équipements BPE dans un rayon
  */
 export async function fetchBpeEquipments(
-  lat: number,
-  lon: number,
-  radiusKm: number,
-  bpeCodes?: string[]
+  _lat: number,
+  _lon: number,
+  _radiusKm: number,
+  _bpeCodes?: string[]
 ): Promise<Poi[]> {
   // TODO: Implémenter
   console.warn("[bpeProvider] fetchBpeEquipments - stub");

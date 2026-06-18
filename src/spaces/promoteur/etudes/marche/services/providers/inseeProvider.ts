@@ -1,6 +1,6 @@
 // FILE: src/spaces/promoteur/etudes/marche/services/providers/inseeProvider.ts
 
-import type { DemographicsData } from "../../types";
+import type { DemographicsData } from "../../types/competition";
 
 export interface InseeProviderParams {
   codeInsee: string;
@@ -23,7 +23,7 @@ export async function fetchInseeData(params: InseeProviderParams): Promise<Demog
 /**
  * Récupère les données de population par tranche d'âge
  */
-export async function fetchInseeAgeStructure(codeInsee: string): Promise<Record<string, number> | null> {
+export async function fetchInseeAgeStructure(_codeInsee: string): Promise<Record<string, number> | null> {
   // TODO: Implémenter avec données INSEE détaillées
   console.warn("[inseeProvider] fetchInseeAgeStructure - stub");
   return null;
@@ -32,7 +32,7 @@ export async function fetchInseeAgeStructure(codeInsee: string): Promise<Record<
 /**
  * Récupère les données économiques (revenus, emploi)
  */
-export async function fetchInseeEconomyData(codeInsee: string): Promise<Record<string, number> | null> {
+export async function fetchInseeEconomyData(_codeInsee: string): Promise<Record<string, number> | null> {
   // TODO: Implémenter
   console.warn("[inseeProvider] fetchInseeEconomyData - stub");
   return null;

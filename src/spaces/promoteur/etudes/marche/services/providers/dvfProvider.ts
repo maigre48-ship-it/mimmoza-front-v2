@@ -1,6 +1,6 @@
 // FILE: src/spaces/promoteur/etudes/marche/services/providers/dvfProvider.ts
 
-import type { RealEstateMarketData } from "../../types";
+import type { RealEstateData } from "../../types/competition";
 
 export interface DvfProviderParams {
   lat: number;
@@ -14,7 +14,7 @@ export interface DvfProviderParams {
  * Stub pour l'API DVF (Demandes de Valeurs Foncières)
  * À implémenter avec les vrais endpoints
  */
-export async function fetchDvfData(params: DvfProviderParams): Promise<RealEstateMarketData | null> {
+export async function fetchDvfData(_params: DvfProviderParams): Promise<RealEstateData | null> {
   // TODO: Implémenter l'appel réel
   // Source: https://app.dvf.etalab.gouv.fr/
   // API: https://api.cquest.org/dvf
@@ -27,10 +27,10 @@ export async function fetchDvfData(params: DvfProviderParams): Promise<RealEstat
  * Récupère les transactions brutes dans un périmètre
  */
 export async function fetchDvfTransactions(
-  lat: number,
-  lon: number,
-  radiusKm: number,
-  periodMonths: number = 24
+  _lat: number,
+  _lon: number,
+  _radiusKm: number,
+  _periodMonths: number = 24
 ): Promise<Array<{
   id: string;
   date: string;
