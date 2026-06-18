@@ -1,9 +1,9 @@
-// src/spaces/investisseur/pages/deal-center/exports/exportFinancialEngine.ts
+﻿// src/spaces/investisseur/pages/deal-center/exports/exportFinancialEngine.ts
 //
-// Export PDF + Excel – Modele Financier  v2.0
-// Style premium identique à exportDataConfidence (PDF)
-// Excel : logique inchangée
-// Logique métier : 100% inchangée
+// Export PDF + Excel â€“ Modele Financier  v2.0
+// Style premium identique Ã  exportDataConfidence (PDF)
+// Excel : logique inchangÃ©e
+// Logique mÃ©tier : 100% inchangÃ©e
 
 import { jsPDF } from "jspdf";
 import * as XLSX from "xlsx";
@@ -29,9 +29,9 @@ import {
   ensureActiveDeal,
   readMarchandSnapshot,
 } from "../../../../marchand/shared/marchandSnapshot.store";
-import type { RentabiliteSnapshot } from "../../../../marchand/types/rentabilite.types";
+import type { RentabiliteSnapshot } from "../../../types/rentabilite.types";
 
-// ─── PDF ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ PDF â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function exportFinancialEnginePdf(): Promise<void> {
   const snap     = readMarchandSnapshot();
@@ -50,14 +50,14 @@ export async function exportFinancialEnginePdf(): Promise<void> {
 
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
 
-  // ════════════════════════════════════════════════════════════════
-  // PAGE 1 — Header + KPIs + Paramètres
-  // ════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // PAGE 1 â€” Header + KPIs + ParamÃ¨tres
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   const logoDataUrl = await drawPremiumHeader(doc, TITLE, SUBTITLE, dealName);
   let y = BODY_START;
 
-  // ── KPI row ─────────────────────────────────────────────────────
+  // â”€â”€ KPI row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const KPI_H = 28;
   const KPI_GAP = 3;
   const KPI_W = (CW - KPI_GAP * 3) / 4;
@@ -106,7 +106,7 @@ export async function exportFinancialEnginePdf(): Promise<void> {
 
   y += KPI_H + 7;
 
-  // ── Paramètres ──────────────────────────────────────────────────
+  // â”€â”€ ParamÃ¨tres â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   y = sectionHead(doc, "PARAMETRES DU MODELE", y);
 
   const PARAMS_H = 104;
@@ -131,15 +131,15 @@ export async function exportFinancialEnginePdf(): Promise<void> {
 
   drawPremiumFooter(doc);
 
-  // ════════════════════════════════════════════════════════════════
-  // PAGE 2 — Scénarios complets
-  // ════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // PAGE 2 â€” ScÃ©narios complets
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   doc.addPage();
   drawPageHeader(doc, TITLE, 2, PAGES, dealName, logoDataUrl);
   y = BODY_START;
 
-  y = sectionHead(doc, "RESULTATS — 3 SCENARIOS", y);
+  y = sectionHead(doc, "RESULTATS â€” 3 SCENARIOS", y);
 
   if (!base) {
     y = alertBox(doc, "Aucun calcul de rentabilite disponible. Renseigner les parametres dans l'onglet Financial Engine.", "warning", y);
@@ -168,16 +168,16 @@ export async function exportFinancialEnginePdf(): Promise<void> {
 
   drawPremiumFooter(doc);
 
-  // ════════════════════════════════════════════════════════════════
-  // PAGE 3 — Sensibilité + Charges
-  // ════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // PAGE 3 â€” SensibilitÃ© + Charges
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   doc.addPage();
   drawPageHeader(doc, TITLE, 3, PAGES, dealName, logoDataUrl);
   y = BODY_START;
 
-  // ── Sensibilité ─────────────────────────────────────────────────
-  y = sectionHead(doc, "ANALYSE DE SENSIBILITE — Rendement net selon taux x loyer", y);
+  // â”€â”€ SensibilitÃ© â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  y = sectionHead(doc, "ANALYSE DE SENSIBILITE â€” Rendement net selon taux x loyer", y);
 
   if (sensi && Array.isArray(sensi)) {
     const rows = sensi.slice(0, 8).map((row: any) => ({
@@ -193,11 +193,11 @@ export async function exportFinancialEnginePdf(): Promise<void> {
       { header: "Loyer +15%",   key: "l_115", w: 50, align: "right" },
     ], rows, y);
   } else {
-    y = alertBox(doc, "Matrice de sensibilite non disponible — recalculer depuis l'onglet Financial Engine.", "info", y);
+    y = alertBox(doc, "Matrice de sensibilite non disponible â€” recalculer depuis l'onglet Financial Engine.", "info", y);
   }
   y += 5;
 
-  // ── Charges ─────────────────────────────────────────────────────
+  // â”€â”€ Charges â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   y = sectionHead(doc, "DECOMPOSITION DES CHARGES ANNUELLES", y);
 
   const chargesItems: Record<string, string>[] = [];
@@ -240,7 +240,7 @@ export async function exportFinancialEnginePdf(): Promise<void> {
   doc.save(filename);
 }
 
-// ─── Excel (logique 100% inchangée) ──────────────────────────────────────────
+// â”€â”€â”€ Excel (logique 100% inchangÃ©e) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function exportFinancialEngineExcel(): Promise<void> {
   const snap     = readMarchandSnapshot();

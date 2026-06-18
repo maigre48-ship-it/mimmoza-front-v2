@@ -1,8 +1,8 @@
-// src/spaces/investisseur/pages/deal-center/exports/exportCommitteeReview.ts
+﻿// src/spaces/investisseur/pages/deal-center/exports/exportCommitteeReview.ts
 //
-// Export PDF – Rapport Comite d'Investissement  v2.0
-// Style premium identique à exportDataConfidence
-// Logique métier : 100% inchangée
+// Export PDF â€“ Rapport Comite d'Investissement  v2.0
+// Style premium identique Ã  exportDataConfidence
+// Logique mÃ©tier : 100% inchangÃ©e
 
 import { jsPDF } from "jspdf";
 import {
@@ -28,9 +28,9 @@ import {
   ensureActiveDeal,
   readMarchandSnapshot,
 } from "../../../../marchand/shared/marchandSnapshot.store";
-import type { RentabiliteSnapshot } from "../../../../marchand/types/rentabilite.types";
+import type { RentabiliteSnapshot } from "../../../types/rentabilite.types";
 
-// ─── Logique métier (100% inchangée) ─────────────────────────────────────────
+// â”€â”€â”€ Logique mÃ©tier (100% inchangÃ©e) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface CritereComite {
   categorie: string;
@@ -127,7 +127,7 @@ function calcVerdictGlobal(grille: CritereComite[]): "GO" | "NO GO" | "CONDITION
   return "CONDITIONNEL";
 }
 
-// ─── Génération PDF ───────────────────────────────────────────────────────────
+// â”€â”€â”€ GÃ©nÃ©ration PDF â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function exportCommitteeReviewPdf(): Promise<void> {
   const snap     = readMarchandSnapshot();
@@ -150,14 +150,14 @@ export async function exportCommitteeReviewPdf(): Promise<void> {
 
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
 
-  // ════════════════════════════════════════════════════════════════
-  // PAGE 1 — Header + KPIs + Fiche deal
-  // ════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // PAGE 1 â€” Header + KPIs + Fiche deal
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   const logoDataUrl = await drawPremiumHeader(doc, TITLE, SUBTITLE, dealName);
   let y = BODY_START;
 
-  // ── KPIs compteurs ──────────────────────────────────────────────
+  // â”€â”€ KPIs compteurs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const KPI_H = 26;
   const KPI_GAP = 3;
   const KPI_W = (CW - KPI_GAP * 3) / 4;
@@ -194,7 +194,7 @@ export async function exportCommitteeReviewPdf(): Promise<void> {
 
   y += KPI_H + 7;
 
-  // ── Fiche deal ──────────────────────────────────────────────────
+  // â”€â”€ Fiche deal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   y = sectionHead(doc, "FICHE DE PRESENTATION", y);
 
   const FICHE_H = 46;
@@ -210,15 +210,15 @@ export async function exportCommitteeReviewPdf(): Promise<void> {
 
   drawPremiumFooter(doc);
 
-  // ════════════════════════════════════════════════════════════════
-  // PAGE 2 — Grille + Verdict + Conditions
-  // ════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // PAGE 2 â€” Grille + Verdict + Conditions
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   doc.addPage();
   drawPageHeader(doc, TITLE, 2, PAGES, dealName, logoDataUrl);
   y = BODY_START;
 
-  // ── Grille de decision ──────────────────────────────────────────
+  // â”€â”€ Grille de decision â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   y = sectionHead(doc, "GRILLE DE DECISION", y);
 
   y = tableBlock(doc, [
@@ -237,20 +237,20 @@ export async function exportCommitteeReviewPdf(): Promise<void> {
   })), y);
   y += 5;
 
-  // ── Verdict global ──────────────────────────────────────────────
+  // â”€â”€ Verdict global â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   y = sectionHead(doc, "VERDICT DU COMITE", y);
 
   const vText =
     verdictGlobal === "GO"
       ? "L'ensemble des criteres de rentabilite et de marche sont satisfaits. Le comite emet un avis favorable a l'investissement."
       : verdictGlobal === "NO GO"
-      ? "Un ou plusieurs criteres bloquants sont identifies. Le comite emet un avis defavorable. Des renégociations sont necessaires avant toute decision."
+      ? "Un ou plusieurs criteres bloquants sont identifies. Le comite emet un avis defavorable. Des renÃ©gociations sont necessaires avant toute decision."
       : "Certains criteres sont en zone d'attention. Le comite emet un avis conditionnel. Des verifications complementaires sont requises.";
 
   y = verdictCard(doc, verdictGlobal, vText, y);
   y += 5;
 
-  // ── Conditions suspensives ──────────────────────────────────────
+  // â”€â”€ Conditions suspensives â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   y = sectionHead(doc, "CONDITIONS SUSPENSIVES RECOMMANDEES", y);
 
   const conditions: string[] = [];
