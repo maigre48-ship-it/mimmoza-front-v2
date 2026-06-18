@@ -141,6 +141,7 @@ export interface InseeData {
 
 export interface TransportData {
   score: number;
+  is_urban?: boolean;
   stops: Array<{ name: string; type: string; distance_m: number }>;
   nearest_stop_m: number | null;
   has_metro_train: boolean;
@@ -151,6 +152,7 @@ export interface TransportData {
 export interface BpeData {
   total_equipements: number;
   score: number;
+  score_v2?: number;
   commerces: { count: number; details: unknown[] };
   sante: { count: number; details: unknown[] };
   services: { count: number; details: unknown[] };

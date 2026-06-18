@@ -340,8 +340,8 @@ function DetailsBlock({ data }: { data: MarketStudyResult }) {
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">📋 Détails</h3>
-      <Accordion title="Transactions DVF (30 dernières)" icon="🏠" badge={(dvf?.transactions?.length ?? 0) > 0 ? dvf.transactions.length : undefined}><DvfTransactionsDetail transactions={dvf?.transactions} /></Accordion>
-      <Accordion title="Équipements / Commerces (BPE)" icon="🏪" badge={(bpe?.total_equipements ?? 0) > 0 ? bpe.total_equipements : undefined}><BpeEquipementsDetail bpe={bpe} /></Accordion>
+      <Accordion title="Transactions DVF (30 dernières)" icon="🏠" badge={(dvf?.transactions?.length ?? 0) > 0 ? dvf?.transactions?.length : undefined}><DvfTransactionsDetail transactions={dvf?.transactions} /></Accordion>
+      <Accordion title="Équipements / Commerces (BPE)" icon="🏪" badge={(bpe?.total_equipements ?? 0) > 0 ? bpe?.total_equipements : undefined}><BpeEquipementsDetail bpe={bpe} /></Accordion>
       <Accordion title="Transport (OSM)" icon="🚇" badge={realStopsCount > 0 ? realStopsCount : undefined}><TransportDetail transport={transport} /></Accordion>
     </div>
   );
@@ -352,7 +352,7 @@ function LoadingBanner() {
 }
 
 function ErrorState({ error, details, onRetry }: { error: string; details?: unknown; onRetry: () => void }) {
-  return (<div className="bg-white rounded-xl border border-red-200 shadow-sm p-6 text-center"><div className="text-4xl mb-3">⚠️</div><h3 className="text-base font-semibold text-gray-900 mb-1">Données indisponibles</h3><p className="text-sm text-red-600 mb-4">{error}</p>{details && (<details className="text-left text-xs text-gray-400 mb-4 max-w-lg mx-auto"><summary className="cursor-pointer hover:text-gray-600">Détails techniques</summary><pre className="mt-2 p-2 bg-gray-50 rounded overflow-auto max-h-40">{typeof details === "string" ? details : JSON.stringify(details, null, 2)}</pre></details>)}<button onClick={onRetry} className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">🔄 Réessayer</button></div>);
+  return (<div className="bg-white rounded-xl border border-red-200 shadow-sm p-6 text-center"><div className="text-4xl mb-3">⚠️</div><h3 className="text-base font-semibold text-gray-900 mb-1">Données indisponibles</h3><p className="text-sm text-red-600 mb-4">{error}</p>{!!details && (<details className="text-left text-xs text-gray-400 mb-4 max-w-lg mx-auto"><summary className="cursor-pointer hover:text-gray-600">Détails techniques</summary><pre className="mt-2 p-2 bg-gray-50 rounded overflow-auto max-h-40">{typeof details === "string" ? details : String(JSON.stringify(details, null, 2))}</pre></details>)}<button onClick={onRetry} className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">🔄 Réessayer</button></div>);
 }
 
 // ─── Results ─────────────────────────────────────────────────────────
@@ -367,7 +367,7 @@ function ResultsView({ data, showDetails }: { data: MarketStudyResult; showDetai
   const dvf = core.dvf ?? null; const insee = core.insee ?? null;
   const transport = core.transport ?? null; const bpe = core.bpe ?? null;
   const globalScore = typeof scores.global === "number" && Number.isFinite(scores.global) ? scores.global : 0;
-  const bpeCoverage: string | undefined = bpe?.coverage ?? (bpe && (bpe.total_equipements > 0 || bpe.score > 0 || bpe.score_v2 > 0) ? "ok" : undefined);
+  const bpeCoverage: string | undefined = bpe?.coverage ?? (bpe && (bpe.total_equipements > 0 || bpe.score > 0 || (bpe.score_v2 ?? 0) > 0) ? "ok" : undefined);
 
   // v3.8: stops réels (hors placeholder estimation)
   const realStops = (transport?.stops ?? []).filter((s: any) => !isEstimationStop(s.name));
@@ -443,7 +443,7 @@ function ResultsView({ data, showDetails }: { data: MarketStudyResult; showDetai
   ) : <p className="text-xs text-gray-400 italic">Données transport indisponibles</p>}
 </Card>
         <Card title="BPE — Équipements" icon="🏪" coverage={bpeCoverage}>
-          {bpe && (bpe.total_equipements > 0 || bpe.score > 0 || bpe.score_v2 > 0) ? (<><Stat label="Total équipements" value={fmtNum(bpe.total_equipements)} /><Stat label="Score BPE" value={`${bpe.score_v2 ?? bpe.score ?? 0}/100`} /><div className="border-t border-gray-100 mt-2 pt-2"><Stat label="Écoles" value={fmtNum(bpe.nb_ecoles)} /><Stat label="Pharmacies" value={fmtNum(bpe.nb_pharmacies)} /><Stat label="Supermarchés" value={fmtNum(bpe.nb_supermarches)} /><Stat label="Universités / Sup." value={fmtNum(bpe.nb_universites)} /></div><div className="border-t border-gray-100 mt-2 pt-2"><Stat label="Commerces" value={fmtNum(bpe.commerces?.count)} /><Stat label="Santé" value={fmtNum(bpe.sante?.count)} /><Stat label="Éducation" value={fmtNum(bpe.education?.count)} /><Stat label="Loisirs" value={fmtNum(bpe.loisirs?.count)} /></div></>) : <p className="text-xs text-gray-400 italic">Aucun équipement</p>}
+          {bpe && (bpe.total_equipements > 0 || bpe.score > 0 || (bpe.score_v2 ?? 0) > 0) ? (<><Stat label="Total équipements" value={fmtNum(bpe.total_equipements)} /><Stat label="Score BPE" value={`${bpe.score_v2 ?? bpe.score ?? 0}/100`} /><div className="border-t border-gray-100 mt-2 pt-2"><Stat label="Écoles" value={fmtNum(bpe.nb_ecoles)} /><Stat label="Pharmacies" value={fmtNum(bpe.nb_pharmacies)} /><Stat label="Supermarchés" value={fmtNum(bpe.nb_supermarches)} /><Stat label="Universités / Sup." value={fmtNum(bpe.nb_universites)} /></div><div className="border-t border-gray-100 mt-2 pt-2"><Stat label="Commerces" value={fmtNum(bpe.commerces?.count)} /><Stat label="Santé" value={fmtNum(bpe.sante?.count)} /><Stat label="Éducation" value={fmtNum(bpe.education?.count)} /><Stat label="Loisirs" value={fmtNum(bpe.loisirs?.count)} /></div></>) : <p className="text-xs text-gray-400 italic">Aucun équipement</p>}
         </Card>
       </div>
 
@@ -460,8 +460,8 @@ function ResultsView({ data, showDetails }: { data: MarketStudyResult; showDetai
 
 // ─── Debug panel ─────────────────────────────────────────────────────
 
-function DebugPanel({ debug }: { debug: Record<string, unknown> }) {
-  const filosofi = debug.filosofi as Record<string, unknown> | null;
+function DebugPanel({ debug }: { debug: Record<string, any> }) {
+  const filosofi = debug.filosofi as Record<string, any> | null;
   const bpeTop = debug.bpeTopTypequ as Array<{ type: string; label: string; count: number }> | null;
   const bpeSample = debug.bpeSample as Array<Record<string, unknown>> | null;
   return (
