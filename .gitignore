@@ -30,3 +30,9 @@ tsc-after.txt
 tsc-errors.txt
 risk-map.md
 *.tsbuildinfo
+
+# Sorties TS cleanup (régénérées)
+tsc-after.txt
+tsc-errors.txt
+risk-map.md
+*.tsbuildinfo
