@@ -1,19 +1,19 @@
-﻿// src/spaces/investisseur/pages/deal-center/tabs/InvestmentPackTab.tsx
+// src/spaces/investisseur/pages/deal-center/tabs/InvestmentPackTab.tsx
 //
-// Investment Pack â€” V6 â€” Investment Memorandum
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// NouveautÃ©s V6 (additives â€” aucun calcul de rentabilitÃ© V5 modifiÃ©) :
-//   1. Comparables DVF rÃ©els (extraction tolÃ©rante depuis marcheSaved / snapshot)
-//   2. SynthÃ¨se DVF automatique (mÃ©diane / projet / Ã©cart + verdict)
-//   3. Investment Rating (note A+ â†’ D + score global /100 + jauge)
-//   4. Risques synthÃ©tiques enrichis (MarchÃ© / AccessibilitÃ© / LiquiditÃ© / Env.)
-//   5. Carte MapLibre rÃ©elle (marqueur + cercle 500 m) avec fallback conservÃ©
-//   6. Structure investmentPackData prÃªte pour l'export PDF (non implÃ©mentÃ©)
+// Investment Pack — V6 — Investment Memorandum
+// ───────────────────────────────────────────────────────────────────────────
+// Nouveautés V6 (additives — aucun calcul de rentabilité V5 modifié) :
+//   1. Comparables DVF réels (extraction tolérante depuis marcheSaved / snapshot)
+//   2. Synthèse DVF automatique (médiane / projet / écart + verdict)
+//   3. Investment Rating (note A+ → D + score global /100 + jauge)
+//   4. Risques synthétiques enrichis (Marché / Accessibilité / Liquidité / Env.)
+//   5. Carte MapLibre réelle (marqueur + cercle 500 m) avec fallback conservé
+//   6. Structure investmentPackData prête pour l'export PDF (non implémenté)
 //
 // La logique FinancialEngine V5 (computeTriAnnualise / computeLocalScenario /
-// reconstruction du snapshot) est conservÃ©e Ã  l'identique.
+// reconstruction du snapshot) est conservée à l'identique.
 //
-// Style identique Ã  AnalysePage.tsx.
+// Style identique à AnalysePage.tsx.
 
 import {
   AlertTriangle,
@@ -53,7 +53,7 @@ import {
 
 import type { RentabiliteInput, RentabiliteResult, RentabiliteSnapshot } from "../../../types/rentabilite.types";
 
-// â”€â”€â”€ Types internes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Types internes ───────────────────────────────────────────────────────────
 
 interface StrategyInputs {
   prixAchat?:             number;
@@ -93,18 +93,18 @@ interface ScenarioFinancials {
   cashflow:        number;
 }
 
-// Comparable DVF normalisÃ© (V6)
+// Comparable DVF normalisé (V6)
 interface NormalizedComp {
   adresse?:    string;
   dateLabel?:  string;   // "03/2025"
   dateTs?:     number;   // timestamp pour le tri
-  surface?:    number;   // mÂ²
-  prixTotal?:  number;   // â‚¬
-  prixM2?:     number;   // â‚¬/mÂ²
-  distanceM?:  number;   // mÃ¨tres
+  surface?:    number;   // m²
+  prixTotal?:  number;   // €
+  prixM2?:     number;   // €/m²
+  distanceM?:  number;   // mètres
 }
 
-// â”€â”€â”€ Moteur de scÃ©nario local (V5 â€” INCHANGÃ‰) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Moteur de scénario local (V5 — INCHANGÉ) ─────────────────────────────────
 
 function computeTriAnnualise(
   apport: number,
@@ -115,7 +115,7 @@ function computeTriAnnualise(
 
   const fluxFinal = apport + margeBrute;
 
-  // Si les fonds propres sont entiÃ¨rement dÃ©truits, le TRI n'est pas calculable.
+  // Si les fonds propres sont entièrement détruits, le TRI n'est pas calculable.
   if (fluxFinal <= 0) return null;
 
   const multiple = fluxFinal / apport;
@@ -149,48 +149,48 @@ function computeLocalScenario(
   } as RentabiliteResult;
 }
 
-// â”€â”€â”€ Extraction des raw inputs depuis le store (V5 â€” INCHANGÃ‰) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Extraction des raw inputs depuis le store (V5 — INCHANGÉ) ────────────────
 
 function extractRawInputs(saved: RentabiliteSaved | undefined): StrategyInputs | null {
   if (!saved?.inputs) return null;
   return saved.inputs as StrategyInputs;
 }
 
-// â”€â”€â”€ Helpers format â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Helpers format ───────────────────────────────────────────────────────────
 
 function fmtEUR(n: number | null | undefined): string {
-  if (n == null) return "â€”";
+  if (n == null) return "—";
   return n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 }
 
 function fmtPct(n: number | null | undefined): string {
-  if (n == null) return "â€”";
+  if (n == null) return "—";
   return `${n.toFixed(2)} %`;
 }
 
 function fmtM2(n: number | null | undefined): string {
-  if (n == null) return "â€”";
-  return `${n.toLocaleString("fr-FR")} mÂ²`;
+  if (n == null) return "—";
+  return `${n.toLocaleString("fr-FR")} m²`;
 }
 
 function fmtEURm2(n: number | null | undefined): string {
-  if (n == null) return "â€”";
-  return `${Math.round(n).toLocaleString("fr-FR")} â‚¬/mÂ²`;
+  if (n == null) return "—";
+  return `${Math.round(n).toLocaleString("fr-FR")} €/m²`;
 }
 
 function fmtDist(m: number | null | undefined): string {
-  if (m == null) return "â€”";
+  if (m == null) return "—";
   if (m >= 1000) return `${(m / 1000).toFixed(1).replace(".", ",")} km`;
   return `${Math.round(m)} m`;
 }
 
 function fmtSignedPct(n: number | null | undefined): string {
-  if (n == null) return "â€”";
+  if (n == null) return "—";
   const s = n >= 0 ? "+" : "";
   return `${s}${n.toFixed(1).replace(".", ",")} %`;
 }
 
-// â”€â”€â”€ Helpers numÃ©riques gÃ©nÃ©riques (V6) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Helpers numériques génériques (V6) ───────────────────────────────────────
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
@@ -241,7 +241,7 @@ function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): num
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// â”€â”€â”€ Lecture des coordonnÃ©es (tolÃ©rante) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Lecture des coordonnées (tolérante) ──────────────────────────────────────
 
 function readCoords(obj: Record<string, unknown> | null | undefined): { lat?: number; lng?: number } {
   if (!obj || typeof obj !== "object") return {};
@@ -267,7 +267,7 @@ function readCoords(obj: Record<string, unknown> | null | undefined): { lat?: nu
   return { lat, lng };
 }
 
-// â”€â”€â”€ Extraction du tableau de comparables (tolÃ©rante) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Extraction du tableau de comparables (tolérante) ─────────────────────────
 
 const DVF_ARRAY_KEYS = [
   "dvf", "comparables", "comps", "transactions", "mutations", "ventes",
@@ -284,7 +284,7 @@ function findCompsArray(
       const v = src[k];
       if (Array.isArray(v) && v.length) return v as Record<string, unknown>[];
     }
-    // niveau imbriquÃ© (1 cran)
+    // niveau imbriqué (1 cran)
     for (const val of Object.values(src)) {
       if (val && typeof val === "object" && !Array.isArray(val)) {
         for (const k of DVF_ARRAY_KEYS) {
@@ -297,7 +297,7 @@ function findCompsArray(
   return [];
 }
 
-// Heuristique : un objet Â« comparable Â» possÃ¨de un prix ET (une surface OU un prix/mÂ²).
+// Heuristique : un objet « comparable » possède un prix ET (une surface OU un prix/m²).
 function looksLikeComp(o: Record<string, unknown>): boolean {
   const hasPrice =
     pickNum(o, ["valeur_fonciere", "valeurFonciere", "prix", "prix_total", "prixTotal", "montant", "valeur", "price"]) != null ||
@@ -308,8 +308,8 @@ function looksLikeComp(o: Record<string, unknown>): boolean {
   return hasPrice && hasSurface;
 }
 
-// Repli : parcourt rÃ©cursivement tout l'objet et retient le plus grand tableau
-// d'objets ressemblant Ã  des transactions DVF, quelle que soit la profondeur.
+// Repli : parcourt récursivement tout l'objet et retient le plus grand tableau
+// d'objets ressemblant à des transactions DVF, quelle que soit la profondeur.
 function deepFindComps(root: unknown, maxDepth = 7): Record<string, unknown>[] {
   const seen = new Set<unknown>();
   let best: Record<string, unknown>[] = [];
@@ -333,7 +333,7 @@ function deepFindComps(root: unknown, maxDepth = 7): Record<string, unknown>[] {
   return best;
 }
 
-// GÃ©ocodage via la Base Adresse Nationale (gratuit, CORS, sans clÃ©).
+// Géocodage via la Base Adresse Nationale (gratuit, CORS, sans clé).
 async function geocodeBan(query: string): Promise<{ lat: number; lng: number } | null> {
   if (!query || query.trim().length < 4) return null;
   try {
@@ -349,7 +349,7 @@ async function geocodeBan(query: string): Promise<{ lat: number; lng: number } |
     }
     return null;
   } catch (e) {
-    console.warn("[InvestmentPack] gÃ©ocodage BAN Ã©chouÃ© :", e);
+    console.warn("[InvestmentPack] géocodage BAN échoué :", e);
     return null;
   }
 }
@@ -401,11 +401,11 @@ function normalizeComp(
 function sortComps(a: NormalizedComp, b: NormalizedComp): number {
   const da = a.distanceM ?? Infinity;
   const db = b.distanceM ?? Infinity;
-  if (da !== db) return da - db;          // proximitÃ© d'abord
-  return (b.dateTs ?? 0) - (a.dateTs ?? 0); // date la plus rÃ©cente ensuite
+  if (da !== db) return da - db;          // proximité d'abord
+  return (b.dateTs ?? 0) - (a.dateTs ?? 0); // date la plus récente ensuite
 }
 
-// â”€â”€â”€ Verdict DVF â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Verdict DVF ───────────────────────────────────────────────────────────────
 
 interface DvfSynthese {
   medianeM2: number | null;
@@ -418,21 +418,21 @@ interface DvfSynthese {
 function buildDvfVerdict(ecartPct: number | null): { verdict: string | null; tone: DvfSynthese["tone"] } {
   if (ecartPct == null) return { verdict: null, tone: null };
   if (ecartPct < -10) {
-    return { verdict: "Prix de sortie infÃ©rieur au marchÃ©. Commercialisation facilitÃ©e.", tone: "good" };
+    return { verdict: "Prix de sortie inférieur au marché. Commercialisation facilitée.", tone: "good" };
   }
   if (ecartPct <= 10) {
-    return { verdict: "Prix de sortie cohÃ©rent avec les rÃ©fÃ©rences DVF.", tone: "neutral" };
+    return { verdict: "Prix de sortie cohérent avec les références DVF.", tone: "neutral" };
   }
-  return { verdict: "Prix de sortie supÃ©rieur aux rÃ©fÃ©rences DVF. Risque commercial accru.", tone: "warn" };
+  return { verdict: "Prix de sortie supérieur aux références DVF. Risque commercial accru.", tone: "warn" };
 }
 
-// â”€â”€â”€ Investment Rating â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Investment Rating ─────────────────────────────────────────────────────────
 
 interface RatingCriterion {
   key:   string;
   label: string;
-  raw:   number | null;   // valeur brute affichÃ©e (%, /100â€¦)
-  score: number | null;   // score normalisÃ© 0â€“100
+  raw:   number | null;   // valeur brute affichée (%, /100…)
+  score: number | null;   // score normalisé 0–100
   display: string;
 }
 
@@ -488,9 +488,9 @@ function computeRating(
   const marche   = marketGlobalScore(marcheSaved);
   const risque   = risqueScore(snapshot, marcheSaved);
 
-  const sMarge  = margePct != null ? clamp((margePct / 20) * 100, 0, 100) : null;   // 20 %+ â†’ 100
-  const sRoi    = roiPct   != null ? clamp((roiPct / 40) * 100, 0, 100)   : null;   // 40 %+ â†’ 100
-  const sTri    = triPct   != null ? clamp((triPct / 25) * 100, 0, 100)   : null;   // 25 %+ â†’ 100
+  const sMarge  = margePct != null ? clamp((margePct / 20) * 100, 0, 100) : null;   // 20 %+ → 100
+  const sRoi    = roiPct   != null ? clamp((roiPct / 40) * 100, 0, 100)   : null;   // 40 %+ → 100
+  const sTri    = triPct   != null ? clamp((triPct / 25) * 100, 0, 100)   : null;   // 25 %+ → 100
   const sMarche = marche   != null ? clamp(marche, 0, 100)                : null;
   const sRisque = risque   != null ? clamp(risque, 0, 100)                : null;
 
@@ -498,8 +498,8 @@ function computeRating(
     { key: "marge",  label: "Marge nette",      raw: margePct, score: sMarge,  display: fmtPct(margePct) },
     { key: "roi",    label: "ROI fonds propres", raw: roiPct,   score: sRoi,    display: fmtPct(roiPct) },
     { key: "tri",    label: "TRI",               raw: triPct,   score: sTri,    display: fmtPct(triPct) },
-    { key: "marche", label: "SmartScore marchÃ©", raw: marche,   score: sMarche, display: marche != null ? `${Math.round(marche)}/100` : "â€”" },
-    { key: "risque", label: "Risques",           raw: risque,   score: sRisque, display: risque != null ? `${Math.round(risque)}/100` : "â€”" },
+    { key: "marche", label: "SmartScore marché", raw: marche,   score: sMarche, display: marche != null ? `${Math.round(marche)}/100` : "—" },
+    { key: "risque", label: "Risques",           raw: risque,   score: sRisque, display: risque != null ? `${Math.round(risque)}/100` : "—" },
   ];
 
   const weights: Record<string, number> = { marge: 0.30, roi: 0.20, tri: 0.20, marche: 0.20, risque: 0.10 };
@@ -535,7 +535,7 @@ function gradeStyle(grade: string): { text: string; bg: string; ring: string } {
   }
 }
 
-// â”€â”€â”€ Bloc 1 â€” Fiche Deal (V5 â€” INCHANGÃ‰) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Bloc 1 — Fiche Deal (V5 — INCHANGÉ) ─────────────────────────────────────
 
 function FicheDeal({ deal, inputs }: { deal: MarchandDeal | null; inputs: RentabiliteInput | null }) {
   const adresse = deal ? [deal.address, deal.zipCode, deal.city].filter(Boolean).join(", ") : null;
@@ -544,9 +544,9 @@ function FicheDeal({ deal, inputs }: { deal: MarchandDeal | null; inputs: Rentab
 
   const carats = [
     { label: "Type de bien",  icon: Building2,  value: typeOp ?? null },
-    { label: "StratÃ©gie",     icon: TrendingUp, value: inputs?.strategy === "revente" ? "Achat / Revente" : inputs?.strategy === "location" ? "Locatif" : null },
-    { label: "DurÃ©e portage", icon: Calendar,   value: inputs?.dureeMois ? `${inputs.dureeMois} mois` : null },
-    { label: "RÃ©gime fiscal", icon: Percent,    value: inputs?.useFlatTax ? "Flat tax 30 %" : inputs?.tmiPct ? `TMI ${inputs.tmiPct} %` : null },
+    { label: "Stratégie",     icon: TrendingUp, value: inputs?.strategy === "revente" ? "Achat / Revente" : inputs?.strategy === "location" ? "Locatif" : null },
+    { label: "Durée portage", icon: Calendar,   value: inputs?.dureeMois ? `${inputs.dureeMois} mois` : null },
+    { label: "Régime fiscal", icon: Percent,    value: inputs?.useFlatTax ? "Flat tax 30 %" : inputs?.tmiPct ? `TMI ${inputs.tmiPct} %` : null },
   ];
 
   return (
@@ -558,12 +558,12 @@ function FicheDeal({ deal, inputs }: { deal: MarchandDeal | null; inputs: Rentab
           </div>
           <div>
             <div className={["text-base font-bold", typeOp ? "text-gray-900" : "text-gray-400 select-none"].join(" ")}>
-              {typeOp ?? "â€” Type d'opÃ©ration"}
+              {typeOp ?? "— Type d'opération"}
             </div>
             <div className="flex items-center gap-1 text-sm text-gray-400 mt-0.5">
               <MapPin className="h-3.5 w-3.5" />
               <span className={adresse ? "text-gray-600" : "select-none"}>
-                {adresse || "â€” Adresse non renseignÃ©e"}
+                {adresse || "— Adresse non renseignée"}
               </span>
             </div>
           </div>
@@ -592,7 +592,7 @@ function FicheDeal({ deal, inputs }: { deal: MarchandDeal | null; inputs: Rentab
               <span className="text-[11px] uppercase tracking-wide text-gray-500">{label}</span>
             </div>
             <span className={["text-sm font-semibold", value ? "text-gray-800" : "text-gray-300 select-none"].join(" ")}>
-              {value ?? "â€”"}
+              {value ?? "—"}
             </span>
           </div>
         ))}
@@ -601,24 +601,24 @@ function FicheDeal({ deal, inputs }: { deal: MarchandDeal | null; inputs: Rentab
   );
 }
 
-// â”€â”€â”€ Bloc 2 â€” HypothÃ¨ses financiÃ¨res (V5 â€” INCHANGÃ‰) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Bloc 2 — Hypothèses financières (V5 — INCHANGÉ) ─────────────────────────
 
 function HypothesesFinancieres({ deal, inputs }: { deal: MarchandDeal | null; inputs: RentabiliteInput | null }) {
   const rows = [
     { label: "Prix d'acquisition",    icon: Euro,       hint: "Prix net vendeur",           value: fmtEUR(deal?.prixAchat ?? inputs?.prixAchat)             },
-    { label: "Frais de notaire",      icon: Percent,    hint: "~7â€“8 % dans l'ancien",       value: inputs ? fmtPct(inputs.fraisNotairePct) : "â€”"             },
-    { label: "Frais divers",          icon: Euro,       hint: "Si applicable",              value: inputs?.fraisDivers != null ? fmtEUR(inputs.fraisDivers) : "â€”" },
-    { label: "Budget travaux",        icon: Hammer,     hint: "Estimation TCE",             value: inputs?.budgetTravaux != null ? fmtEUR(inputs.budgetTravaux) : "â€”" },
-    { label: "Prix de revente cible", icon: TrendingUp, hint: "Prix net vendeur estimÃ©",    value: fmtEUR(deal?.prixReventeCible ?? inputs?.prixReventeCible) },
-    { label: "DurÃ©e de portage",      icon: Calendar,   hint: "En mois",                    value: inputs?.dureeMois ? `${inputs.dureeMois} mois` : "â€”"       },
-    { label: "Apport personnel",      icon: Euro,       hint: "Fonds propres engagÃ©s",      value: inputs?.apport != null ? fmtEUR(inputs.apport) : "â€”"       },
+    { label: "Frais de notaire",      icon: Percent,    hint: "~7–8 % dans l'ancien",       value: inputs ? fmtPct(inputs.fraisNotairePct) : "—"             },
+    { label: "Frais divers",          icon: Euro,       hint: "Si applicable",              value: inputs?.fraisDivers != null ? fmtEUR(inputs.fraisDivers) : "—" },
+    { label: "Budget travaux",        icon: Hammer,     hint: "Estimation TCE",             value: inputs?.budgetTravaux != null ? fmtEUR(inputs.budgetTravaux) : "—" },
+    { label: "Prix de revente cible", icon: TrendingUp, hint: "Prix net vendeur estimé",    value: fmtEUR(deal?.prixReventeCible ?? inputs?.prixReventeCible) },
+    { label: "Durée de portage",      icon: Calendar,   hint: "En mois",                    value: inputs?.dureeMois ? `${inputs.dureeMois} mois` : "—"       },
+    { label: "Apport personnel",      icon: Euro,       hint: "Fonds propres engagés",      value: inputs?.apport != null ? fmtEUR(inputs.apport) : "—"       },
   ];
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden print:shadow-none print:border-gray-300">
       <div className="px-5 py-4 border-b border-gray-100">
-        <h3 className="text-sm font-semibold text-gray-900 print:text-black">HypothÃ¨ses financiÃ¨res</h3>
-        <p className="mt-1 text-sm text-gray-500 print:text-gray-700">ParamÃ¨tres du montage synchronisÃ©s depuis l'analyse de rentabilitÃ©.</p>
+        <h3 className="text-sm font-semibold text-gray-900 print:text-black">Hypothèses financières</h3>
+        <p className="mt-1 text-sm text-gray-500 print:text-gray-700">Paramètres du montage synchronisés depuis l'analyse de rentabilité.</p>
       </div>
       <div className="grid grid-cols-3 px-5 py-3 bg-gray-50 border-b border-gray-100 print:bg-white">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Poste</span>
@@ -627,7 +627,7 @@ function HypothesesFinancieres({ deal, inputs }: { deal: MarchandDeal | null; in
       </div>
       <div className="divide-y divide-gray-100">
         {rows.map(({ label, icon: Icon, hint, value }) => {
-          const hasVal = value !== "â€”";
+          const hasVal = value !== "—";
           return (
             <div key={label} className="grid grid-cols-3 items-center px-5 py-3.5 gap-2">
               <div className="flex items-center gap-2">
@@ -654,36 +654,36 @@ function HypothesesFinancieres({ deal, inputs }: { deal: MarchandDeal | null; in
       <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 print:bg-white">
         <p className="text-[11px] text-gray-400 flex items-center gap-1.5">
           <Info className="h-3 w-3 shrink-0" />
-          Modifiez ces valeurs depuis la page Analyse / RentabilitÃ©.
+          Modifiez ces valeurs depuis la page Analyse / Rentabilité.
         </p>
       </div>
     </div>
   );
 }
 
-// â”€â”€â”€ Bloc 3 â€” Tableau de rentabilitÃ© (V5 â€” INCHANGÃ‰) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Bloc 3 — Tableau de rentabilité (V5 — INCHANGÉ) ─────────────────────────
 
 function TableauRentabilite({ snapshot }: { snapshot: RentabiliteSnapshot | null }) {
   const base = snapshot?.scenarios?.base ?? null;
 
   const metrics = [
-    { label: "Marge brute",       icon: Euro,       sub: "Revente âˆ’ CoÃ»t total",       value: fmtEUR(base?.margeBrute),        pct: base ? Math.min(100, Math.max(0, base.margePct * 4)) : 0 },
-    { label: "Marge nette %",     icon: TrendingUp, sub: "En % du coÃ»t total",         value: fmtPct(base?.margePct),          pct: base ? Math.min(100, Math.max(0, base.margePct * 4)) : 0 },
+    { label: "Marge brute",       icon: Euro,       sub: "Revente − Coût total",       value: fmtEUR(base?.margeBrute),        pct: base ? Math.min(100, Math.max(0, base.margePct * 4)) : 0 },
+    { label: "Marge nette %",     icon: TrendingUp, sub: "En % du coût total",         value: fmtPct(base?.margePct),          pct: base ? Math.min(100, Math.max(0, base.margePct * 4)) : 0 },
     { label: "TRI",               icon: Percent,    sub: "Taux de rendement interne",  value: fmtPct(base?.triPct),            pct: base?.triPct != null ? Math.min(100, Math.max(0, base.triPct * 3)) : 0 },
     { label: "Cash-flow mensuel", icon: BarChart3,  sub: "Pendant le portage",         value: fmtEUR(base?.cashflowMensuel),   pct: base?.cashflowMensuel ? 60 : 0                          },
-    { label: "CoÃ»t total",        icon: Clock,      sub: "Acquisition + travaux + frais", value: fmtEUR(base?.coutTotal),      pct: base ? 100 : 0                                          },
+    { label: "Coût total",        icon: Clock,      sub: "Acquisition + travaux + frais", value: fmtEUR(base?.coutTotal),      pct: base ? 100 : 0                                          },
     { label: "ROI",               icon: Sparkles,   sub: "Rendement fonds propres",    value: fmtPct(base?.roiPct),            pct: base ? Math.min(100, Math.max(0, (base.roiPct ?? 0) * 2)) : 0 },
   ];
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-5 print:shadow-none print:border-gray-300">
       <div className="mb-5">
-        <h3 className="text-sm font-semibold text-gray-900 print:text-black">Tableau de rentabilitÃ©</h3>
-        <p className="mt-1 text-sm text-gray-500 print:text-gray-700">Indicateurs financiers synthÃ©tiques du deal.</p>
+        <h3 className="text-sm font-semibold text-gray-900 print:text-black">Tableau de rentabilité</h3>
+        <p className="mt-1 text-sm text-gray-500 print:text-gray-700">Indicateurs financiers synthétiques du deal.</p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {metrics.map(({ label, icon: Icon, sub, value, pct }) => {
-          const hasVal = value !== "â€”";
+          const hasVal = value !== "—";
           return (
             <div key={label} className="rounded-2xl border border-gray-200 bg-white shadow-sm p-4 flex flex-col gap-1.5 print:shadow-none print:border-gray-300">
               <div className="flex items-center justify-between">
@@ -708,7 +708,7 @@ function TableauRentabilite({ snapshot }: { snapshot: RentabiliteSnapshot | null
   );
 }
 
-// â”€â”€â”€ Bloc V6 â€” Investment Rating â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Bloc V6 — Investment Rating ───────────────────────────────────────────────
 
 function InvestmentRating({ rating }: { rating: InvestmentRatingResult }) {
   const { global, grade, criteria } = rating;
@@ -724,7 +724,7 @@ function InvestmentRating({ rating }: { rating: InvestmentRatingResult }) {
             Investment Rating
           </h3>
           <p className="mt-1 text-sm text-gray-500 print:text-gray-700">
-            Note de synthÃ¨se pondÃ©rÃ©e â€” marge, ROI, TRI, marchÃ© et risques.
+            Note de synthèse pondérée — marge, ROI, TRI, marché et risques.
           </p>
         </div>
       </div>
@@ -736,7 +736,7 @@ function InvestmentRating({ rating }: { rating: InvestmentRatingResult }) {
           gs ? `${gs.bg} ${gs.ring}` : "bg-gray-50 ring-gray-200",
         ].join(" ")}>
           <span className={["text-5xl font-bold leading-none", gs ? gs.text : "text-gray-300 select-none"].join(" ")}>
-            {grade ?? "â€”"}
+            {grade ?? "—"}
           </span>
           <span className="mt-2 text-[11px] uppercase tracking-wide text-gray-500">Note du deal</span>
           <div className="mt-3 flex items-center gap-1">
@@ -762,7 +762,7 @@ function InvestmentRating({ rating }: { rating: InvestmentRatingResult }) {
               <span className="text-[11px] uppercase tracking-wide text-gray-500">Score global</span>
             </div>
             <span className={["text-2xl font-bold", global != null ? "text-gray-800" : "text-gray-300 select-none"].join(" ")}>
-              {global != null ? `${Math.round(global)}/100` : "â€”"}
+              {global != null ? `${Math.round(global)}/100` : "—"}
             </span>
           </div>
           <div className="mt-2 h-2.5 rounded-full bg-gray-200 overflow-hidden">
@@ -772,7 +772,7 @@ function InvestmentRating({ rating }: { rating: InvestmentRatingResult }) {
             />
           </div>
 
-          {/* CritÃ¨res */}
+          {/* Critères */}
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5">
             {criteria.map((c) => {
               const has = c.score != null;
@@ -801,7 +801,7 @@ function InvestmentRating({ rating }: { rating: InvestmentRatingResult }) {
         <div className="mt-4 px-4 py-3 rounded-xl bg-gray-50 ring-1 ring-gray-200 print:bg-white print:ring-gray-300">
           <p className="text-[11px] text-gray-500 flex items-center gap-1.5">
             <Info className="h-3 w-3 shrink-0" />
-            La note se calculera automatiquement une fois la rentabilitÃ© et le SmartScore marchÃ© renseignÃ©s.
+            La note se calculera automatiquement une fois la rentabilité et le SmartScore marché renseignés.
           </p>
         </div>
       )}
@@ -809,18 +809,18 @@ function InvestmentRating({ rating }: { rating: InvestmentRatingResult }) {
   );
 }
 
-// â”€â”€â”€ Bloc 4 â€” Comparables DVF (V6 â€” donnÃ©es rÃ©elles) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Bloc 4 — Comparables DVF (V6 — données réelles) ──────────────────────────
 
 function ComparablesDVF({ comps }: { comps: NormalizedComp[] }) {
   const hasComps = comps.length > 0;
-  const headers = ["Distance", "Date", "Surface", "Prix total", "Prix / mÂ²"];
+  const headers = ["Distance", "Date", "Surface", "Prix total", "Prix / m²"];
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden print:shadow-none print:border-gray-300">
       <div className="px-5 py-4 border-b border-gray-100">
         <h3 className="text-sm font-semibold text-gray-900 print:text-black">Comparables DVF</h3>
         <p className="mt-1 text-sm text-gray-500 print:text-gray-700">
-          Transactions de rÃ©fÃ©rence extraites du moteur DVF, triÃ©es par proximitÃ© puis date.
+          Transactions de référence extraites du moteur DVF, triées par proximité puis date.
         </p>
       </div>
       <div className="hidden sm:grid grid-cols-5 px-5 py-3 bg-gray-50 border-b border-gray-100 print:bg-white">
@@ -840,8 +840,8 @@ function ComparablesDVF({ comps }: { comps: NormalizedComp[] }) {
                 )}
               </div>
             </div>
-            <div className="text-center hidden sm:block text-sm text-gray-600">{c.dateLabel ?? "â€”"}</div>
-            <div className="text-center hidden sm:block text-sm text-gray-600">{c.surface != null ? fmtM2(c.surface) : "â€”"}</div>
+            <div className="text-center hidden sm:block text-sm text-gray-600">{c.dateLabel ?? "—"}</div>
+            <div className="text-center hidden sm:block text-sm text-gray-600">{c.surface != null ? fmtM2(c.surface) : "—"}</div>
             <div className="text-center hidden sm:block text-sm text-gray-600">{fmtEUR(c.prixTotal)}</div>
             <div className="text-center hidden sm:block text-sm font-semibold text-gray-700">{fmtEURm2(c.prixM2)}</div>
           </div>
@@ -849,10 +849,10 @@ function ComparablesDVF({ comps }: { comps: NormalizedComp[] }) {
           <div key={i} className="grid grid-cols-2 sm:grid-cols-5 items-center px-5 py-3.5 gap-2">
             <div className="col-span-2 sm:col-span-1 flex items-center gap-2">
               <div className="h-1.5 w-1.5 rounded-full bg-gray-200 shrink-0" />
-              <span className="text-sm text-gray-300 select-none">â€” Distance</span>
+              <span className="text-sm text-gray-300 select-none">— Distance</span>
             </div>
-            {["Date", "Surface", "Prix total", "Prix / mÂ²"].map((col) => (
-              <div key={col} className="text-center hidden sm:block text-sm text-gray-300 select-none">â€”</div>
+            {["Date", "Surface", "Prix total", "Prix / m²"].map((col) => (
+              <div key={col} className="text-center hidden sm:block text-sm text-gray-300 select-none">—</div>
             ))}
           </div>
         ))}
@@ -862,22 +862,22 @@ function ComparablesDVF({ comps }: { comps: NormalizedComp[] }) {
           <Info className="h-3 w-3 shrink-0" />
           {hasComps
             ? `${comps.length} transaction${comps.length > 1 ? "s" : ""} comparable${comps.length > 1 ? "s" : ""} retenue${comps.length > 1 ? "s" : ""} (max. 10).`
-            : "Les transactions comparables seront extraites du moteur DVF une fois la parcelle renseignÃ©e."}
+            : "Les transactions comparables seront extraites du moteur DVF une fois la parcelle renseignée."}
         </p>
       </div>
     </div>
   );
 }
 
-// â”€â”€â”€ Bloc V6 â€” SynthÃ¨se DVF â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Bloc V6 — Synthèse DVF ─────────────────────────────────────────────────────
 
 function SyntheseDVF({ synthese }: { synthese: DvfSynthese }) {
   const { medianeM2, projetM2, ecartPct, verdict, tone } = synthese;
 
   const tiles = [
-    { label: "MÃ©diane DVF", icon: Scale,       value: fmtEURm2(medianeM2),     muted: medianeM2 == null },
+    { label: "Médiane DVF", icon: Scale,       value: fmtEURm2(medianeM2),     muted: medianeM2 == null },
     { label: "Projet",      icon: Building2,    value: fmtEURm2(projetM2),      muted: projetM2 == null },
-    { label: "Ã‰cart",       icon: TrendingUp,   value: fmtSignedPct(ecartPct),  muted: ecartPct == null },
+    { label: "Écart",       icon: TrendingUp,   value: fmtSignedPct(ecartPct),  muted: ecartPct == null },
   ];
 
   const toneCls =
@@ -893,7 +893,7 @@ function SyntheseDVF({ synthese }: { synthese: DvfSynthese }) {
       <div className="mb-4">
         <h3 className="text-sm font-semibold text-gray-900 print:text-black">Analyse DVF</h3>
         <p className="mt-1 text-sm text-gray-500 print:text-gray-700">
-          Positionnement du prix de sortie par rapport aux rÃ©fÃ©rences de marchÃ©.
+          Positionnement du prix de sortie par rapport aux références de marché.
         </p>
       </div>
 
@@ -914,14 +914,14 @@ function SyntheseDVF({ synthese }: { synthese: DvfSynthese }) {
       <div className={["flex items-start gap-2.5 rounded-xl ring-1 px-4 py-3 print:bg-white print:ring-gray-300", toneCls].join(" ")}>
         <VerdictIcon className="h-4 w-4 mt-0.5 shrink-0" />
         <span className="text-sm font-medium">
-          {verdict ?? "Verdict disponible une fois les comparables DVF et le prix de revente renseignÃ©s."}
+          {verdict ?? "Verdict disponible une fois les comparables DVF et le prix de revente renseignés."}
         </span>
       </div>
     </div>
   );
 }
 
-// â”€â”€â”€ Bloc 5 â€” Carte localisation (V6 â€” MapLibre rÃ©elle + fallback) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Bloc 5 — Carte localisation (V6 — MapLibre réelle + fallback) ────────────
 
 function circlePolygon(lng: number, lat: number, radiusM: number, points = 64) {
   const coords: [number, number][] = [];
@@ -977,9 +977,9 @@ function CarteLocalisation({
 
     (async () => {
       try {
-        // maplibre-gl est installÃ© : import dynamique standard, rÃ©solu et
-        // prÃ©-bundlÃ© par Vite. ChargÃ© Ã  la demande (~800 ko) uniquement quand
-        // des coordonnÃ©es sont disponibles. En cas d'Ã©chec â†’ catch â†’ fallback.
+        // maplibre-gl est installé : import dynamique standard, résolu et
+        // pré-bundlé par Vite. Chargé à la demande (~800 ko) uniquement quand
+        // des coordonnées sont disponibles. En cas d'échec → catch → fallback.
          
         const mod: any = await import("maplibre-gl");
         const maplibregl = mod.default ?? mod;
@@ -994,7 +994,7 @@ function CarteLocalisation({
                 type: "raster",
                 tiles: ["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"],
                 tileSize: 256,
-                attribution: "Â© OpenStreetMap",
+                attribution: "© OpenStreetMap",
               },
             },
             layers: [{ id: "osm", type: "raster", source: "osm" }],
@@ -1039,7 +1039,7 @@ function CarteLocalisation({
     };
   }, [hasCoords, lat, lng, mapFailed]);
 
-  // â”€â”€ Carte rÃ©elle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Carte réelle ─────────────────────────────────────────────────────────
   if (hasCoords && !mapFailed) {
     return (
       <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-5 print:shadow-none print:border-gray-300">
@@ -1061,16 +1061,16 @@ function CarteLocalisation({
     );
   }
 
-  // â”€â”€ Fallback (messages d'Ã©tat distincts) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Fallback (messages d'état distincts) ──────────────────────────────────
   const fallbackMsg = mapFailed
-    ? "Carte indisponible : Ã©chec du chargement de MapLibre (voir la console)."
+    ? "Carte indisponible : échec du chargement de MapLibre (voir la console)."
     : geoStatus === "loading"
-    ? "Recherche des coordonnÃ©es de l'adresseâ€¦"
+    ? "Recherche des coordonnées de l'adresse…"
     : geoStatus === "failed"
-    ? "GÃ©ocodage indisponible pour cette adresse (vÃ©rifiez la connexion rÃ©seau ou la CSP)."
+    ? "Géocodage indisponible pour cette adresse (vérifiez la connexion réseau ou la CSP)."
     : adresse
-    ? "IntÃ©gration cartographique disponible aprÃ¨s connexion des coordonnÃ©es GPS."
-    : "La carte s'affichera automatiquement une fois les coordonnÃ©es GPS du bien renseignÃ©es.";
+    ? "Intégration cartographique disponible après connexion des coordonnées GPS."
+    : "La carte s'affichera automatiquement une fois les coordonnées GPS du bien renseignées.";
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-5 print:shadow-none print:border-gray-300">
@@ -1095,7 +1095,7 @@ function CarteLocalisation({
   );
 }
 
-// â”€â”€â”€ Bloc 6 â€” Risques synthÃ©tiques (V5 conservÃ© + mÃ©triques marchÃ© V6) â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Bloc 6 — Risques synthétiques (V5 conservé + métriques marché V6) ────────
 
 function buildFeuxVerts(snapshot: RentabiliteSnapshot | null, marcheSaved: MarcheRisquesSaved | undefined): string[] {
   const items: string[] = [];
@@ -1103,9 +1103,9 @@ function buildFeuxVerts(snapshot: RentabiliteSnapshot | null, marcheSaved: March
   const b    = marcheSaved?.breakdown;
   if (base?.margePct   != null && base.margePct   >= 15) items.push(`Marge nette solide (${base.margePct.toFixed(1)} %)`);
   if (base?.triPct     != null && base.triPct     >= 15) items.push(`TRI attractif (${base.triPct.toFixed(1)} %)`);
-  if (base?.decision   === "GO")                         items.push("RentabilitÃ© GO selon les paramÃ¨tres actuels");
+  if (base?.decision   === "GO")                         items.push("Rentabilité GO selon les paramètres actuels");
   if (b?.demande       != null && b.demande       >= 65) items.push(`Demande solide (${b.demande}/100)`);
-  if (b?.accessibilite != null && b.accessibilite >= 65) items.push(`Bonne accessibilitÃ© (${b.accessibilite}/100)`);
+  if (b?.accessibilite != null && b.accessibilite >= 65) items.push(`Bonne accessibilité (${b.accessibilite}/100)`);
   return items;
 }
 
@@ -1115,7 +1115,7 @@ function buildVigilances(snapshot: RentabiliteSnapshot | null, marcheSaved: Marc
   const b    = marcheSaved?.breakdown;
   if (base?.margePct     != null && base.margePct     < 10) items.push(`Marge nette faible (${base.margePct.toFixed(1)} %)`);
   if (base?.triPct       != null && base.triPct       < 15) items.push(`TRI insuffisant (${base.triPct.toFixed(1)} %)`);
-  if (b?.environnement   != null && b.environnement   < 50) items.push(`Environnement dÃ©gradÃ© (${b.environnement}/100)`);
+  if (b?.environnement   != null && b.environnement   < 50) items.push(`Environnement dégradé (${b.environnement}/100)`);
   if (b?.demande         != null && b.demande         < 50) items.push(`Demande faible (${b.demande}/100)`);
   return items;
 }
@@ -1124,8 +1124,8 @@ function buildKillSwitches(snapshot: RentabiliteSnapshot | null): string[] {
   const base = snapshot?.scenarios?.base;
   if (!base) return [];
   const ks: string[] = [];
-  if (base.decision   === "NO_GO")  ks.push("RentabilitÃ© NO GO â€” opÃ©ration non viable");
-  if (base.margeBrute  < 0)         ks.push("Marge brute nÃ©gative â€” perte certaine");
+  if (base.decision   === "NO_GO")  ks.push("Rentabilité NO GO — opération non viable");
+  if (base.margeBrute  < 0)         ks.push("Marge brute négative — perte certaine");
   if (base.margePct    < 5)         ks.push(`Marge nette < 5 % (${base.margePct.toFixed(1)} %)`);
   return ks;
 }
@@ -1140,9 +1140,9 @@ function buildMarketMetrics(marcheSaved: MarcheRisquesSaved | undefined): Market
   const b = marcheSaved?.breakdown as Record<string, unknown> | undefined;
   if (!b) return [];
   const defs: Array<{ label: string; keys: string[]; icon: MarketMetric["icon"] }> = [
-    { label: "MarchÃ©",        keys: ["marche", "marchÃ©", "market", "demande"], icon: TrendingUp },
-    { label: "AccessibilitÃ©", keys: ["accessibilite", "accessibilitÃ©", "access"], icon: Navigation },
-    { label: "LiquiditÃ©",     keys: ["liquidite", "liquiditÃ©", "liquidity"], icon: Droplets },
+    { label: "Marché",        keys: ["marche", "marché", "market", "demande"], icon: TrendingUp },
+    { label: "Accessibilité", keys: ["accessibilite", "accessibilité", "access"], icon: Navigation },
+    { label: "Liquidité",     keys: ["liquidite", "liquidité", "liquidity"], icon: Droplets },
     { label: "Environnement", keys: ["environnement", "environment", "env"], icon: Trees },
   ];
   const out: MarketMetric[] = [];
@@ -1202,13 +1202,13 @@ function RisquesSynthetiques({
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-5 print:shadow-none print:border-gray-300">
       <div className="mb-4">
-        <h3 className="text-sm font-semibold text-gray-900 print:text-black">Risques synthÃ©tiques</h3>
+        <h3 className="text-sm font-semibold text-gray-900 print:text-black">Risques synthétiques</h3>
         <p className="mt-1 text-sm text-gray-500 print:text-gray-700">
-          SynthÃ¨se des points favorables, vigilances et kill switches.
+          Synthèse des points favorables, vigilances et kill switches.
         </p>
       </div>
 
-      {/* MÃ©triques marchÃ© (V6) â€” affichÃ©es uniquement si disponibles */}
+      {/* Métriques marché (V6) — affichées uniquement si disponibles */}
       {marketMetrics.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           {marketMetrics.map(({ label, value, icon: Icon }) => (
@@ -1232,18 +1232,18 @@ function RisquesSynthetiques({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
         <Section
           title="Points favorables" icon={CheckCircle2}
-          items={feuxVerts} emptyMsg="Disponible aprÃ¨s analyse SmartScore."
+          items={feuxVerts} emptyMsg="Disponible après analyse SmartScore."
           iconCls="text-emerald-500" itemCls="text-emerald-500" ItemIcon={CheckCircle2}
         />
         <Section
           title="Points de vigilance" icon={AlertTriangle}
-          items={vigilances} emptyMsg="Disponible aprÃ¨s analyse GÃ©orisques et marchÃ©."
+          items={vigilances} emptyMsg="Disponible après analyse Géorisques et marché."
           iconCls="text-amber-500" itemCls="text-amber-500" ItemIcon={AlertTriangle}
         />
       </div>
       <Section
         title="Kill Switches" icon={ShieldAlert}
-        items={killSwitches} emptyMsg="Aucun kill switch dÃ©tectÃ© â€” analyse des risques non lancÃ©e."
+        items={killSwitches} emptyMsg="Aucun kill switch détecté — analyse des risques non lancée."
         iconCls={killSwitches.length > 0 ? "text-rose-500" : "text-gray-400"}
         itemCls="text-rose-500" ItemIcon={XCircle}
       />
@@ -1251,7 +1251,7 @@ function RisquesSynthetiques({
   );
 }
 
-// â”€â”€â”€ Structure investmentPackData (V6 â€” prÃªte pour l'onglet Exports) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Structure investmentPackData (V6 — prête pour l'onglet Exports) ──────────
 
 interface InvestmentPackData {
   generatedAt: string;
@@ -1301,7 +1301,7 @@ interface InvestmentPackData {
   };
 }
 
-// â”€â”€â”€ Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Export ───────────────────────────────────────────────────────────────────
 
 export default function InvestmentPackTab() {
   const tick = useMarchandSnapshotTick();
@@ -1318,10 +1318,10 @@ export default function InvestmentPackTab() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tick]);
 
-  // â”€â”€ Raw inputs depuis le store (V5 â€” INCHANGÃ‰) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Raw inputs depuis le store (V5 — INCHANGÉ) ─────────────────────────────
   const rawInputs = useMemo(() => extractRawInputs(rentaSaved), [rentaSaved]);
 
-  // â”€â”€ RentabiliteInput normalisÃ© (V5 â€” INCHANGÃ‰) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── RentabiliteInput normalisé (V5 — INCHANGÉ) ─────────────────────────────
   const inputs = useMemo((): RentabiliteInput | null => {
     if (!rawInputs) return null;
     return {
@@ -1343,7 +1343,7 @@ export default function InvestmentPackTab() {
     };
   }, [rawInputs, deal]);
 
-  // â”€â”€ DonnÃ©es financiÃ¨res de base (V5 â€” INCHANGÃ‰) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Données financières de base (V5 — INCHANGÉ) ────────────────────────────
   const financials = useMemo((): ScenarioFinancials | null => {
     if (!rawInputs) return null;
 
@@ -1375,7 +1375,7 @@ export default function InvestmentPackTab() {
     return { prixAchat, fraisNotaire, fraisDivers, travauxBase, fraisFinanciers, reventeBase, apport, dureeAnnees, cashflow };
   }, [rawInputs, deal]);
 
-  // â”€â”€ Snapshot reconstruit localement (V5 â€” INCHANGÃ‰) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Snapshot reconstruit localement (V5 — INCHANGÉ) ────────────────────────
   const snapshot = useMemo((): RentabiliteSnapshot | null => {
     if (!inputs || !financials) return null;
     return {
@@ -1393,14 +1393,14 @@ export default function InvestmentPackTab() {
     } as RentabiliteSnapshot;
   }, [inputs, financials]);
 
-  // â”€â”€ CoordonnÃ©es du bien â€” depuis les donnÃ©es (V6) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Coordonnées du bien — depuis les données (V6) ──────────────────────────
   const rawCoords = useMemo(() => {
     const fromDeal = readCoords(deal as unknown as Record<string, unknown>);
     if (fromDeal.lat != null && fromDeal.lng != null) return fromDeal;
     return readCoords((marcheSaved?.data as Record<string, unknown>) ?? null);
   }, [deal, marcheSaved]);
 
-  // â”€â”€ GÃ©ocodage de secours via la Base Adresse Nationale (V6) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Géocodage de secours via la Base Adresse Nationale (V6) ────────────────
   const adresseComplete = useMemo(
     () => (deal ? [deal.address, deal.zipCode, deal.city].filter(Boolean).join(", ") : ""),
     [deal],
@@ -1425,7 +1425,7 @@ export default function InvestmentPackTab() {
       else { setGeo(null); setGeoStatus("failed"); }
     })();
     return () => { cancelled = true; };
-    // deps primitives : Ã©vite les rÃ©-exÃ©cutions dues Ã  l'identitÃ© des objets
+    // deps primitives : évite les ré-exécutions dues à l'identité des objets
   }, [rawCoords.lat, rawCoords.lng, adresseComplete, adresseFallback]);
 
   const coords = useMemo(
@@ -1434,19 +1434,19 @@ export default function InvestmentPackTab() {
     [rawCoords, geo],
   );
 
-  // â”€â”€ Comparables DVF normalisÃ©s (V6) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Comparables DVF normalisés (V6) ────────────────────────────────────────
   const comps = useMemo((): NormalizedComp[] => {
     let raws = findCompsArray(
       marcheSaved?.data as Record<string, unknown> | undefined,
       marcheSaved as unknown as Record<string, unknown> | undefined,
     );
-    // Repli : scan rÃ©cursif de tout l'objet marcheSaved si rien trouvÃ© par clÃ©.
+    // Repli : scan récursif de tout l'objet marcheSaved si rien trouvé par clé.
     if (!raws.length) raws = deepFindComps(marcheSaved);
     const normalized = raws.map((r) => normalizeComp(r, coords.lat, coords.lng));
     return normalized.sort(sortComps).slice(0, 10);
   }, [marcheSaved, coords]);
 
-  // â”€â”€ SynthÃ¨se DVF (V6) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Synthèse DVF (V6) ──────────────────────────────────────────────────────
   const dvfSynthese = useMemo((): DvfSynthese => {
     const medianeM2 = median(comps.map((c) => c.prixM2).filter((n): n is number => n != null));
     const revente   = deal?.prixReventeCible ?? inputs?.prixReventeCible ?? 0;
@@ -1457,10 +1457,10 @@ export default function InvestmentPackTab() {
     return { medianeM2, projetM2, ecartPct, verdict, tone };
   }, [comps, deal, inputs]);
 
-  // â”€â”€ Investment Rating (V6) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Investment Rating (V6) ─────────────────────────────────────────────────
   const rating = useMemo(() => computeRating(snapshot, marcheSaved), [snapshot, marcheSaved]);
 
-  // â”€â”€ Structure pour l'export PDF (V6 â€” prÃªte, non implÃ©mentÃ©e) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Structure pour l'export PDF (V6 — prête, non implémentée) ──────────────
   const investmentPackData = useMemo((): InvestmentPackData => {
     const base = snapshot?.scenarios?.base ?? null;
     const adresse = deal ? [deal.address, deal.zipCode, deal.city].filter(Boolean).join(", ") : null;
@@ -1516,8 +1516,8 @@ export default function InvestmentPackTab() {
     };
   }, [snapshot, deal, inputs, comps, dvfSynthese, rating, marcheSaved, coords]);
 
-  // Handoff temporaire vers l'onglet Exports â€” Ã  remplacer par ton canal de
-  // persistance rÃ©el (ex. writeMarchandSnapshot / store dÃ©diÃ©) une fois cÃ¢blÃ©.
+  // Handoff temporaire vers l'onglet Exports — à remplacer par ton canal de
+  // persistance réel (ex. writeMarchandSnapshot / store dédié) une fois câblé.
   useEffect(() => {
      
     (window as any).__mimmozaInvestmentPack = investmentPackData;

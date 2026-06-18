@@ -1,7 +1,7 @@
-﻿// src/spaces/investisseur/pages/deal-center/tabs/FinancialEngineTab.tsx
+// src/spaces/investisseur/pages/deal-center/tabs/FinancialEngineTab.tsx
 //
-// Financial Engine â€” V5 â€” TRI non calculable si fonds propres dÃ©truits
-// Style identique Ã  AnalysePage.tsx : tokens gray-*, ring-gray-200,
+// Financial Engine — V5 — TRI non calculable si fonds propres détruits
+// Style identique à AnalysePage.tsx : tokens gray-*, ring-gray-200,
 // bg-gray-50, border-gray-200, shadow-sm, print-safe.
 
 import {
@@ -36,7 +36,7 @@ import type {
   RentabiliteSnapshot,
 } from "../../../types/rentabilite.types";
 
-// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 interface StrategyComputed {
   triEquity?: number;
@@ -141,7 +141,7 @@ function extractFromStore(saved: RentabiliteSaved | undefined): {
 }
 
 function fmtEUR(n: number | undefined | null): string {
-  if (n == null) return "â€”";
+  if (n == null) return "—";
   return n.toLocaleString("fr-FR", {
     style: "currency",
     currency: "EUR",
@@ -150,20 +150,20 @@ function fmtEUR(n: number | undefined | null): string {
 }
 
 function fmtPct(n: number | undefined | null): string {
-  if (n == null) return "â€”";
+  if (n == null) return "—";
   return `${n.toFixed(2)} %`;
 }
 
 function fmtMonths(n: number | undefined | null): string {
-  if (n == null) return "â€”";
+  if (n == null) return "—";
   return `${n} mois`;
 }
 
 function fmtCharge(n: number | undefined | null): string {
-  return n == null ? "â€”" : fmtEUR(n);
+  return n == null ? "—" : fmtEUR(n);
 }
 
-// â”€â”€â”€ Moteur financier local â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Moteur financier local ──────────────────────────────────────────────────
 
 function computeTriAnnualise(
   apport: number,
@@ -216,7 +216,7 @@ function computeLocalScenario(
   } as RentabiliteResult;
 }
 
-// â”€â”€â”€ UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── UI ───────────────────────────────────────────────────────────────────────
 
 function InputField({
   label,
@@ -231,7 +231,7 @@ function InputField({
   icon: React.ComponentType<{ className?: string }>;
   value?: string | null;
 }) {
-  const hasValue = !!value && value !== "â€”";
+  const hasValue = !!value && value !== "—";
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -251,7 +251,7 @@ function InputField({
               : "bg-gray-50 text-gray-400 cursor-not-allowed",
           ].join(" ")}
         >
-          {value ?? "â€”"}
+          {value ?? "—"}
         </div>
         <div className="rounded-r-xl border border-l-0 border-gray-200 bg-gray-100 px-3 py-2.5 text-xs font-semibold text-gray-500 print:bg-white print:border-gray-300">
           {unit}
@@ -271,7 +271,7 @@ function ParametresEntree({ inputs }: { inputs: RentabiliteInput | null }) {
   const fields = [
     {
       label: "Prix d'acquisition",
-      unit: "â‚¬",
+      unit: "€",
       hint: "Prix net vendeur",
       icon: Euro,
       value: inputs ? fmtEUR(inputs.prixAchat) : null,
@@ -279,42 +279,42 @@ function ParametresEntree({ inputs }: { inputs: RentabiliteInput | null }) {
     {
       label: "Frais de notaire",
       unit: "%",
-      hint: "~7â€“8 % dans l'ancien",
+      hint: "~7–8 % dans l'ancien",
       icon: Percent,
       value: inputs ? fmtPct(inputs.fraisNotairePct) : null,
     },
     {
       label: "Frais divers",
-      unit: "â‚¬",
+      unit: "€",
       hint: "Autres frais d'acquisition",
       icon: Euro,
       value: inputs ? fmtEUR(inputs.fraisDivers) : null,
     },
     {
       label: "Budget travaux",
-      unit: "â‚¬",
+      unit: "€",
       hint: "Estimation TCE",
       icon: Calculator,
       value: inputs ? fmtEUR(inputs.budgetTravaux) : null,
     },
     {
       label: "Prix de revente cible",
-      unit: "â‚¬",
-      hint: "Prix net vendeur visÃ©",
+      unit: "€",
+      hint: "Prix net vendeur visé",
       icon: TrendingUp,
       value: inputs ? fmtEUR(inputs.prixReventeCible) : null,
     },
     {
-      label: "DurÃ©e de portage",
+      label: "Durée de portage",
       unit: "mois",
-      hint: "Acquisition â†’ acte de vente",
+      hint: "Acquisition → acte de vente",
       icon: Clock,
       value: inputs ? fmtMonths(inputs.dureeMois) : null,
     },
     {
       label: "TMI / Flat tax",
       unit: "%",
-      hint: "Taux fiscal appliquÃ©",
+      hint: "Taux fiscal appliqué",
       icon: Percent,
       value: inputs
         ? fmtPct(inputs.useFlatTax ? inputs.taxFlatPct : inputs.tmiPct)
@@ -322,8 +322,8 @@ function ParametresEntree({ inputs }: { inputs: RentabiliteInput | null }) {
     },
     {
       label: "Apport personnel",
-      unit: "â‚¬",
-      hint: "Fonds propres engagÃ©s",
+      unit: "€",
+      hint: "Fonds propres engagés",
       icon: Sparkles,
       value: inputs ? fmtEUR(inputs.apport) : null,
     },
@@ -333,10 +333,10 @@ function ParametresEntree({ inputs }: { inputs: RentabiliteInput | null }) {
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden print:shadow-none print:border-gray-300">
       <div className="px-6 py-5 border-b border-gray-100">
         <h3 className="text-sm font-semibold text-gray-900 print:text-black">
-          ParamÃ¨tres d'entrÃ©e
+          Paramètres d'entrée
         </h3>
         <p className="mt-1 text-sm text-gray-500 print:text-gray-700">
-          HypothÃ¨ses du montage issues de l'onglet Analyse / RentabilitÃ©.
+          Hypothèses du montage issues de l'onglet Analyse / Rentabilité.
         </p>
       </div>
 
@@ -356,8 +356,8 @@ function ParametresEntree({ inputs }: { inputs: RentabiliteInput | null }) {
       <div className="px-6 py-3 bg-gray-50 border-t border-gray-100 print:bg-white">
         <p className="text-[11px] text-gray-400 flex items-center gap-1.5 print:text-gray-600">
           <Info className="h-3 w-3 shrink-0" />
-          Les paramÃ¨tres sont synchronisÃ©s depuis l'onglet Analyse. Modifiez-les
-          depuis la page RentabilitÃ©.
+          Les paramètres sont synchronisés depuis l'onglet Analyse. Modifiez-les
+          depuis la page Rentabilité.
         </p>
       </div>
     </div>
@@ -377,7 +377,7 @@ function ResultatCard({
   value: string;
   pct: number;
 }) {
-  const hasValue = value !== "â€”";
+  const hasValue = value !== "—";
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-4 flex flex-col gap-1.5 print:shadow-none print:border-gray-300">
@@ -420,20 +420,20 @@ function ResultatsTempsReel({ base }: { base: RentabiliteResult | null }) {
   const metrics = [
     {
       label: "Marge brute",
-      sub: "Revente âˆ’ CoÃ»t total",
+      sub: "Revente − Coût total",
       icon: TrendingUp,
       value: fmtEUR(base?.margeBrute),
       pct: base ? Math.min(100, Math.max(0, base.margePct * 4)) : 0,
     },
     {
       label: "Marge nette %",
-      sub: "En % du coÃ»t total",
+      sub: "En % du coût total",
       icon: Sparkles,
       value: fmtPct(base?.margePct),
       pct: base ? Math.min(100, Math.max(0, base.margePct * 4)) : 0,
     },
     {
-      label: "TRI annualisÃ©",
+      label: "TRI annualisé",
       sub: "Taux de rendement interne",
       icon: Percent,
       value: fmtPct(base?.triPct),
@@ -449,7 +449,7 @@ function ResultatsTempsReel({ base }: { base: RentabiliteResult | null }) {
       pct: base?.cashflowMensuel ? 60 : 0,
     },
     {
-      label: "CoÃ»t total",
+      label: "Coût total",
       sub: "Acquisition + travaux + frais",
       icon: Calculator,
       value: fmtEUR(base?.coutTotal),
@@ -468,10 +468,10 @@ function ResultatsTempsReel({ base }: { base: RentabiliteResult | null }) {
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-5 print:shadow-none print:border-gray-300">
       <div className="mb-5">
         <h3 className="text-sm font-semibold text-gray-900 print:text-black">
-          RÃ©sultats
+          Résultats
         </h3>
         <p className="mt-1 text-sm text-gray-500 print:text-gray-700">
-          Indicateurs financiers calculÃ©s Ã  partir des paramÃ¨tres d'entrÃ©e.
+          Indicateurs financiers calculés à partir des paramètres d'entrée.
         </p>
       </div>
 
@@ -488,7 +488,7 @@ const SCENARIO_CONFIG = [
   {
     id: "pessimiste",
     label: "Pessimiste",
-    desc: "Revente âˆ’5 % / Travaux +10 %",
+    desc: "Revente −5 % / Travaux +10 %",
     card: "bg-rose-50 border-rose-200",
     badge: "bg-rose-100 text-rose-800 ring-1 ring-rose-200",
     sub: "text-rose-600",
@@ -499,7 +499,7 @@ const SCENARIO_CONFIG = [
   {
     id: "base",
     label: "Base",
-    desc: "HypothÃ¨ses cibles",
+    desc: "Hypothèses cibles",
     card: "bg-blue-50 border-blue-200",
     badge: "bg-blue-100 text-blue-800 ring-1 ring-blue-200",
     sub: "text-blue-600",
@@ -510,7 +510,7 @@ const SCENARIO_CONFIG = [
   {
     id: "optimiste",
     label: "Optimiste",
-    desc: "Revente +3 % / Travaux âˆ’5 %",
+    desc: "Revente +3 % / Travaux −5 %",
     card: "bg-emerald-50 border-emerald-200",
     badge: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200",
     sub: "text-emerald-600",
@@ -535,10 +535,10 @@ function Scenarios({
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-5 print:shadow-none print:border-gray-300">
       <div className="mb-5">
         <h3 className="text-sm font-semibold text-gray-900 print:text-black">
-          ScÃ©narios
+          Scénarios
         </h3>
         <p className="mt-1 text-sm text-gray-500 print:text-gray-700">
-          Simulation sur trois hypothÃ¨ses de prix de revente et de coÃ»t travaux.
+          Simulation sur trois hypothèses de prix de revente et de coût travaux.
         </p>
       </div>
 
@@ -582,7 +582,7 @@ function Scenarios({
 
                 <div className="flex flex-col gap-2.5">
                   {[
-                    { lbl: "CoÃ»t total", val: fmtEUR(r?.coutTotal) },
+                    { lbl: "Coût total", val: fmtEUR(r?.coutTotal) },
                     { lbl: "Marge nette", val: fmtPct(r?.margePct) },
                     { lbl: "TRI", val: fmtPct(r?.triPct) },
                     {
@@ -643,19 +643,19 @@ function AnalyseSensibilite({
 
   const rows = [
     {
-      label: "Revente âˆ’10 %",
+      label: "Revente −10 %",
       icon: ChevronDown,
       highlight: false,
       result: sensitivityRows?.moins10 ?? null,
     },
     {
-      label: "Revente âˆ’5 %",
+      label: "Revente −5 %",
       icon: ChevronDown,
       highlight: false,
       result: sensitivityRows?.moins5 ?? null,
     },
     {
-      label: "ScÃ©nario base",
+      label: "Scénario base",
       icon: Minus,
       highlight: true,
       result: base,
@@ -678,7 +678,7 @@ function AnalyseSensibilite({
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden print:shadow-none print:border-gray-300">
       <div className="px-5 py-4 border-b border-gray-100">
         <h3 className="text-sm font-semibold text-gray-900 print:text-black">
-          Analyse de sensibilitÃ© â€” Prix de revente
+          Analyse de sensibilité — Prix de revente
         </h3>
         <p className="mt-1 text-sm text-gray-500 print:text-gray-700">
           Impact d'une variation du prix de revente sur les principaux
@@ -688,7 +688,7 @@ function AnalyseSensibilite({
 
       <div className="grid grid-cols-5 px-5 py-3 bg-gray-50 border-b border-gray-100 print:bg-white">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 print:text-gray-700">
-          ScÃ©nario
+          Scénario
         </span>
         {SENSITIVITY_COLS.map((col) => (
           <span
@@ -763,8 +763,8 @@ function AnalyseSensibilite({
       <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 print:bg-white">
         <p className="text-[11px] text-gray-400 flex items-center gap-1.5 print:text-gray-600">
           <Info className="h-3 w-3 shrink-0" />
-          La variation s'applique au prix de revente cible, Ã  partir du coÃ»t
-          total rÃ©el de base.
+          La variation s'applique au prix de revente cible, à partir du coût
+          total réel de base.
         </p>
       </div>
     </div>
@@ -775,11 +775,11 @@ const CHARGE_ROWS = [
   { label: "Frais de notaire", cat: "Acquisition" },
   { label: "Frais divers", cat: "Acquisition" },
   { label: "Budget travaux", cat: "Acquisition" },
-  { label: "IntÃ©rÃªts d'emprunt", cat: "Financement" },
+  { label: "Intérêts d'emprunt", cat: "Financement" },
   { label: "Assurance emprunteur", cat: "Financement" },
-  { label: "Taxe fonciÃ¨re (portage)", cat: "Portage" },
-  { label: "Charges de copropriÃ©tÃ©", cat: "Portage" },
-  { label: "ImpÃ´t sur la plus-value", cat: "Fiscal" },
+  { label: "Taxe foncière (portage)", cat: "Portage" },
+  { label: "Charges de copropriété", cat: "Portage" },
+  { label: "Impôt sur la plus-value", cat: "Fiscal" },
 ] as const;
 
 const CAT_CLS: Record<string, string> = {
@@ -817,21 +817,21 @@ function ChargesDetaillees({
     "Frais de notaire": base?.fraisNotaire ?? undefined,
     "Frais divers": inputs?.fraisDivers ?? undefined,
     "Budget travaux": inputs?.budgetTravaux ?? undefined,
-    "IntÃ©rÃªts d'emprunt": interetsEstimes ?? undefined,
+    "Intérêts d'emprunt": interetsEstimes ?? undefined,
     "Assurance emprunteur": assuranceEstimee ?? undefined,
-    "Taxe fonciÃ¨re (portage)": undefined,
-    "Charges de copropriÃ©tÃ©": undefined,
-    "ImpÃ´t sur la plus-value": undefined,
+    "Taxe foncière (portage)": undefined,
+    "Charges de copropriété": undefined,
+    "Impôt sur la plus-value": undefined,
   };
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden print:shadow-none print:border-gray-300">
       <div className="px-5 py-4 border-b border-gray-100">
         <h3 className="text-sm font-semibold text-gray-900 print:text-black">
-          Charges dÃ©taillÃ©es
+          Charges détaillées
         </h3>
         <p className="mt-1 text-sm text-gray-500 print:text-gray-700">
-          DÃ©composition poste par poste du coÃ»t total de l'opÃ©ration.
+          Décomposition poste par poste du coût total de l'opération.
         </p>
       </div>
 
@@ -848,7 +848,7 @@ function ChargesDetaillees({
         {CHARGE_ROWS.map(({ label, cat }) => {
           const raw = valuesMap[label];
           const val = fmtCharge(raw);
-          const hasVal = val !== "â€”";
+          const hasVal = val !== "—";
 
           return (
             <div
@@ -909,7 +909,7 @@ function ChargesDetaillees({
       <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 print:bg-white">
         <p className="text-[11px] text-gray-400 flex items-center gap-1.5 print:text-gray-600">
           <Info className="h-3 w-3 shrink-0" />
-          Certains postes (intÃ©rÃªts, fiscalitÃ©) dÃ©pendent du rÃ©gime et du
+          Certains postes (intérêts, fiscalité) dépendent du régime et du
           financement saisis.
         </p>
       </div>
@@ -936,12 +936,12 @@ function IndicateursFaisabilite({
       ok: base ? base.triPct != null && base.triPct >= 15 : null,
     },
     {
-      label: "DurÃ©e de portage â‰¤ 24 mois",
+      label: "Durée de portage ≤ 24 mois",
       valeur: inputs ? fmtMonths(inputs.dureeMois) : null,
       ok: inputs ? inputs.dureeMois <= 24 : null,
     },
     {
-      label: "Marge brute > 30 000 â‚¬",
+      label: "Marge brute > 30 000 €",
       valeur: base ? fmtEUR(base.margeBrute) : null,
       ok: base ? base.margeBrute >= 30000 : null,
     },
@@ -952,16 +952,16 @@ function IndicateursFaisabilite({
       <div className="flex items-start justify-between gap-4 mb-4">
         <div>
           <h3 className="text-sm font-semibold text-gray-900 print:text-black">
-            Indicateurs de faisabilitÃ©
+            Indicateurs de faisabilité
           </h3>
           <p className="mt-1 text-sm text-gray-500 print:text-gray-700">
-            Seuils de validation adaptÃ©s au profil de l'opÃ©ration.
+            Seuils de validation adaptés au profil de l'opération.
           </p>
         </div>
 
         <div className="hidden sm:flex items-center gap-2 rounded-full bg-gray-50 px-3 py-1.5 text-xs text-gray-600 ring-1 ring-gray-200 print:bg-white print:ring-gray-300">
           <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />
-          {checks.length} critÃ¨res
+          {checks.length} critères
         </div>
       </div>
 
@@ -988,7 +988,7 @@ function IndicateursFaisabilite({
                 ? "bg-emerald-100 text-emerald-700 ring-emerald-200"
                 : "bg-rose-100 text-rose-700 ring-rose-200";
           const badgeLabel =
-            ok === null ? "En attente" : ok ? "ValidÃ©" : "Non validÃ©";
+            ok === null ? "En attente" : ok ? "Validé" : "Non validé";
 
           return (
             <li
@@ -1016,7 +1016,7 @@ function IndicateursFaisabilite({
               </span>
 
               <div className="flex items-center gap-2 shrink-0">
-                {valeur && valeur !== "â€”" && (
+                {valeur && valeur !== "—" && (
                   <span className="text-sm font-semibold text-gray-700 print:text-gray-800">
                     {valeur}
                   </span>
@@ -1037,13 +1037,13 @@ function IndicateursFaisabilite({
 
       <p className="mt-4 text-[11px] text-gray-400 flex items-center gap-1.5 print:text-gray-600">
         <Info className="h-3 w-3 shrink-0" />
-        Les seuils s'adaptent au profil de l'opÃ©ration (type, zone, stratÃ©gie).
+        Les seuils s'adaptent au profil de l'opération (type, zone, stratégie).
       </p>
     </div>
   );
 }
 
-// â”€â”€â”€ Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Export ───────────────────────────────────────────────────────────────────
 
 export default function FinancialEngineTab() {
   const tick = useMarchandSnapshotTick();
@@ -1191,13 +1191,13 @@ export default function FinancialEngineTab() {
           <div>
             <div className="text-sm font-semibold text-gray-900">
               {hasData
-                ? "ParamÃ¨tres synchronisÃ©s depuis Analyse â€º RentabilitÃ©"
-                : "Moteur financier non configurÃ©"}
+                ? "Paramètres synchronisés depuis Analyse › Rentabilité"
+                : "Moteur financier non configuré"}
             </div>
             <div className="text-xs text-gray-500">
               {hasData
-                ? "Modifiez les hypothÃ¨ses directement sur la page RentabilitÃ© â€” les rÃ©sultats ici se mettent Ã  jour automatiquement."
-                : "Renseignez vos paramÃ¨tres (loyer, travaux, prix de revente) sur la page RentabilitÃ© pour alimenter ce moteur."}
+                ? "Modifiez les hypothèses directement sur la page Rentabilité — les résultats ici se mettent à jour automatiquement."
+                : "Renseignez vos paramètres (loyer, travaux, prix de revente) sur la page Rentabilité pour alimenter ce moteur."}
             </div>
           </div>
         </div>
@@ -1213,7 +1213,7 @@ export default function FinancialEngineTab() {
           ].join(" ")}
         >
           <TrendingUp className="h-3.5 w-3.5" />
-          {hasData ? "Modifier les paramÃ¨tres" : "Configurer la rentabilitÃ©"}
+          {hasData ? "Modifier les paramètres" : "Configurer la rentabilité"}
         </button>
       </div>
 

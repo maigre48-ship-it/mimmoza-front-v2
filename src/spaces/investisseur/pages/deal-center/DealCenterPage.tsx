@@ -40,7 +40,7 @@ import {
   type RentabiliteSaved,
 } from "../../../marchand/shared/marchandSnapshot.store";
 
-import type { RentabiliteSnapshot } from "../../../marchand/types/rentabilite.types";
+import type { RentabiliteSnapshot } from "../../types/rentabilite.types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -230,8 +230,8 @@ function DealScorecard({ smartScore, confidence, risque, potentiel }: {
 function ExecutiveSummaryBlock({ deal, computed }: { deal: MarchandDeal | null; computed: RentabiliteSnapshot | null }) {
   const base    = computed?.scenarios?.base ?? null;
   const adresse = [deal?.address, deal?.zipCode, deal?.city].filter(Boolean).join(", ");
-  const typeOp  = base?.input.strategy === "revente" ? "Marchand de bien / Revente"
-    : base?.input.strategy === "location" ? "Investissement locatif" : null;
+  const typeOp  = computed?.input.strategy=== "revente" ? "Marchand de bien / Revente"
+    : computed?.input.strategy === "location" ? "Investissement locatif" : null;
   return (
     <section className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden print:shadow-none print:border-gray-300">
       <div className="px-6 py-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -256,7 +256,7 @@ function ExecutiveSummaryBlock({ deal, computed }: { deal: MarchandDeal | null; 
       <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-gray-100">
         {[
           { label: "Acquisition",          icon: Euro,       value: deal?.prixAchat          ? formatEUR(deal.prixAchat)           : null },
-          { label: "Travaux",              icon: Hammer,     value: base?.input.budgetTravaux ? formatEUR(base.input.budgetTravaux) : null },
+          { label: "Travaux",              icon: Hammer,     value: computed?.input.budgetTravaux ? formatEUR(computed.input.budgetTravaux) : null },
           { label: "Valeur après travaux", icon: TrendingUp, value: deal?.prixReventeCible   ? formatEUR(deal.prixReventeCible)    : null },
           { label: "Marge estimée",        icon: Sparkles,   value: base?.margeBrute != null  ? formatEUR(base.margeBrute)          : null },
         ].map(({ label, icon: Icon, value }) => (
@@ -272,8 +272,8 @@ function ExecutiveSummaryBlock({ deal, computed }: { deal: MarchandDeal | null; 
       <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center gap-2 print:bg-white">
         <ChevronRight className="h-4 w-4 text-gray-400" />
         <span className="text-sm font-semibold text-gray-500">Stratégie :</span>
-        <span className={["text-sm", base?.input.strategy ? "text-gray-700" : "text-gray-400 select-none"].join(" ")}>
-          {base?.input.strategy === "revente" ? "Achat / Rénovation / Revente" : base?.input.strategy === "location" ? "Investissement locatif" : "Non renseignée"}
+        <span className={["text-sm", computed?.input.strategy ? "text-gray-700" : "text-gray-400 select-none"].join(" ")}>
+          {computed?.input.strategy === "revente" ? "Achat / Rénovation / Revente" : computed?.input.strategy === "location" ? "Investissement locatif" : "Non renseignée"}
         </span>
       </div>
     </section>

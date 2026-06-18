@@ -1,7 +1,7 @@
-﻿// src/spaces/investisseur/pages/deal-center/tabs/ExportsTab.tsx
+// src/spaces/investisseur/pages/deal-center/tabs/ExportsTab.tsx
 //
-// Exports â€” V4 â€” Exports fonctionnels (jsPDF + XLSX + ZIP)
-// Style identique Ã  AnalysePage.tsx
+// Exports — V4 — Exports fonctionnels (jsPDF + XLSX + ZIP)
+// Style identique à AnalysePage.tsx
 
 import {
   AlertCircle,
@@ -28,7 +28,7 @@ import {
 
 import type { RentabiliteSnapshot } from "../../../types/rentabilite.types";
 
-// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type ExportFormat  = "PDF" | "Excel" | "ZIP";
 type ExportStatus  = "ready" | "partial" | "unavailable";
@@ -44,7 +44,7 @@ interface ExportCard {
   source:      string;
 }
 
-// â”€â”€â”€ Toast interne â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Toast interne ────────────────────────────────────────────────────────────
 
 interface Toast {
   id:      number;
@@ -90,7 +90,7 @@ function ToastStack({ toasts }: { toasts: Toast[] }) {
   );
 }
 
-// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function castComputed(saved: RentabiliteSaved | undefined): RentabiliteSnapshot | null {
   if (!saved?.computed) return null;
@@ -136,7 +136,7 @@ function deriveExportStatuses(
   };
 }
 
-// â”€â”€â”€ UI helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── UI helpers ───────────────────────────────────────────────────────────────
 
 function getStatusCls(status: ExportStatus) {
   if (status === "ready")   return { wrapper: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200", icon: CheckCircle2, iconCls: "text-emerald-500" };
@@ -145,9 +145,9 @@ function getStatusCls(status: ExportStatus) {
 }
 
 function getStatusLabel(status: ExportStatus): string {
-  if (status === "ready")   return "PrÃªt";
-  if (status === "partial") return "DonnÃ©es partielles";
-  return "DonnÃ©es manquantes";
+  if (status === "ready")   return "Prêt";
+  if (status === "partial") return "Données partielles";
+  return "Données manquantes";
 }
 
 function getFormatCls(fmt: ExportFormat): string {
@@ -162,14 +162,14 @@ function getFormatIcon(fmt: ExportFormat) {
   return FileText;
 }
 
-// â”€â”€â”€ Config cartes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Config cartes ────────────────────────────────────────────────────────────
 
 function buildExportCards(statuts: Record<string, ExportStatus>): ExportCard[] {
   return [
     {
       id:          "qualification",
-      title:       "SynthÃ¨se Qualification",
-      description: "Scorecard, rÃ©sumÃ© exÃ©cutif, points favorables, vigilances, kill switches et recommandation Mimmoza.",
+      title:       "Synthèse Qualification",
+      description: "Scorecard, résumé exécutif, points favorables, vigilances, kill switches et recommandation Mimmoza.",
       format:      ["PDF"],
       status:      statuts["qualification"]     ?? "unavailable",
       statusLabel: getStatusLabel(statuts["qualification"]     ?? "unavailable"),
@@ -178,7 +178,7 @@ function buildExportCards(statuts: Record<string, ExportStatus>): ExportCard[] {
     {
       id:          "data-confidence",
       title:       "Rapport Data Confidence",
-      description: "Matrice de fiabilitÃ© des sources, donnÃ©es manquantes et impact sur le SmartScore.",
+      description: "Matrice de fiabilité des sources, données manquantes et impact sur le SmartScore.",
       format:      ["PDF"],
       status:      statuts["data-confidence"]   ?? "unavailable",
       statusLabel: getStatusLabel(statuts["data-confidence"]   ?? "unavailable"),
@@ -187,7 +187,7 @@ function buildExportCards(statuts: Record<string, ExportStatus>): ExportCard[] {
     {
       id:          "investment-pack",
       title:       "Investment Pack",
-      description: "Fiche deal, hypothÃ¨ses financiÃ¨res, tableau de rentabilitÃ©, comparables DVF et risques synthÃ©tiques.",
+      description: "Fiche deal, hypothèses financières, tableau de rentabilité, comparables DVF et risques synthétiques.",
       format:      ["PDF"],
       status:      statuts["investment-pack"]   ?? "unavailable",
       statusLabel: getStatusLabel(statuts["investment-pack"]   ?? "unavailable"),
@@ -195,8 +195,8 @@ function buildExportCards(statuts: Record<string, ExportStatus>): ExportCard[] {
     },
     {
       id:          "committee-review",
-      title:       "Rapport ComitÃ©",
-      description: "Fiche de prÃ©sentation, grille de dÃ©cision, verdict GO/NO GO et conditions suspensives.",
+      title:       "Rapport Comité",
+      description: "Fiche de présentation, grille de décision, verdict GO/NO GO et conditions suspensives.",
       format:      ["PDF"],
       status:      statuts["committee-review"]  ?? "unavailable",
       statusLabel: getStatusLabel(statuts["committee-review"]  ?? "unavailable"),
@@ -204,8 +204,8 @@ function buildExportCards(statuts: Record<string, ExportStatus>): ExportCard[] {
     },
     {
       id:          "financial-engine",
-      title:       "ModÃ¨le Financier",
-      description: "ParamÃ¨tres, rÃ©sultats, scÃ©narios, analyse de sensibilitÃ© et dÃ©composition des charges.",
+      title:       "Modèle Financier",
+      description: "Paramètres, résultats, scénarios, analyse de sensibilité et décomposition des charges.",
       format:      ["PDF", "Excel"],
       status:      statuts["financial-engine"]  ?? "unavailable",
       statusLabel: getStatusLabel(statuts["financial-engine"]  ?? "unavailable"),
@@ -214,7 +214,7 @@ function buildExportCards(statuts: Record<string, ExportStatus>): ExportCard[] {
   ];
 }
 
-// â”€â”€â”€ Hook export individuel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Hook export individuel ───────────────────────────────────────────────────
 
 function useExportFn(fn: () => Promise<void>, label: string, toast: (t: Toast["type"], m: string) => void) {
   const [state, setState] = useState<ExportState>("idle");
@@ -225,7 +225,7 @@ function useExportFn(fn: () => Promise<void>, label: string, toast: (t: Toast["t
     try {
       await fn();
       setState("success");
-      toast("success", `${label} tÃ©lÃ©chargÃ©.`);
+      toast("success", `${label} téléchargé.`);
       setTimeout(() => setState("idle"), 2500);
     } catch (err) {
       console.error(`[Export] ${label}`, err);
@@ -238,7 +238,7 @@ function useExportFn(fn: () => Promise<void>, label: string, toast: (t: Toast["t
   return { state, trigger };
 }
 
-// â”€â”€â”€ Bouton export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Bouton export ────────────────────────────────────────────────────────────
 
 interface ExportButtonProps {
   label:    string;
@@ -279,7 +279,7 @@ function ExportButton({ label, disabled, state, onClick, size = "sm", fmt }: Exp
   );
 }
 
-// â”€â”€â”€ Bloc Export complet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Bloc Export complet ──────────────────────────────────────────────────────
 
 function ExportComplet({
   cards,
@@ -305,16 +305,16 @@ function ExportComplet({
       });
       if (result.ok) {
         setZipState("success");
-        toast("success", `Archive ZIP gÃ©nÃ©rÃ©e â€” ${result.count} document${result.count > 1 ? "s" : ""}.`);
+        toast("success", `Archive ZIP générée — ${result.count} document${result.count > 1 ? "s" : ""}.`);
       } else {
         setZipState("error");
-        toast("error", `ZIP partiel â€” erreurs : ${result.errors.join(", ")}`);
+        toast("error", `ZIP partiel — erreurs : ${result.errors.join(", ")}`);
       }
       setTimeout(() => { setZipState("idle"); setZipProgress(""); }, 3000);
     } catch (err) {
       console.error("[ExportZip]", err);
       setZipState("error");
-      toast("error", "Erreur lors de la gÃ©nÃ©ration de l'archive ZIP.");
+      toast("error", "Erreur lors de la génération de l'archive ZIP.");
       setTimeout(() => { setZipState("idle"); setZipProgress(""); }, 3000);
     }
   }, [available, zipState, toast]);
@@ -343,11 +343,11 @@ function ExportComplet({
           <Archive className={["h-6 w-6", available > 0 ? "text-amber-600" : "text-gray-500"].join(" ")} />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold text-gray-800">Archive ZIP â€” Tous les documents</div>
+          <div className="text-sm font-semibold text-gray-800">Archive ZIP — Tous les documents</div>
           <div className="text-xs text-gray-500 mt-1 leading-relaxed">
             {zipState === "loading" && zipProgress
               ? zipProgress
-              : "GÃ©nÃ¨re une archive contenant l'ensemble des exports disponibles : Qualification, Investment Pack, rapport comitÃ©, modÃ¨le financier."}
+              : "Génère une archive contenant l'ensemble des exports disponibles : Qualification, Investment Pack, rapport comité, modèle financier."}
           </div>
           <div className="mt-2 flex items-center gap-3">
             <span className={[
@@ -356,11 +356,11 @@ function ExportComplet({
             ].join(" ")}>
               {available} document{available > 1 ? "s" : ""} disponible{available > 1 ? "s" : ""}
             </span>
-            <span className="text-[11px] text-gray-400">Â· PDF + Excel inclus</span>
+            <span className="text-[11px] text-gray-400">· PDF + Excel inclus</span>
           </div>
         </div>
         <ExportButton
-          label={zipState === "loading" ? "GÃ©nÃ©rationâ€¦" : "TÃ©lÃ©charger ZIP"}
+          label={zipState === "loading" ? "Génération…" : "Télécharger ZIP"}
           disabled={available === 0}
           state={zipState}
           onClick={handleZip}
@@ -372,7 +372,7 @@ function ExportComplet({
   );
 }
 
-// â”€â”€â”€ Carte export individuelle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Carte export individuelle ────────────────────────────────────────────────
 
 function ExportCardItem({
   card,
@@ -384,7 +384,7 @@ function ExportCardItem({
   const statusCls  = getStatusCls(card.status);
   const StatusIcon = statusCls.icon;
 
-  // Ã‰tats par format
+  // États par format
   const [pdfState,   setPdfState]   = useState<ExportState>("idle");
   const [xlsxState,  setXlsxState]  = useState<ExportState>("idle");
 
@@ -426,7 +426,7 @@ function ExportCardItem({
         }
       }
       setS("success");
-      toast("success", `${card.title} (${fmt}) tÃ©lÃ©chargÃ©.`);
+      toast("success", `${card.title} (${fmt}) téléchargé.`);
       setTimeout(() => setS("idle"), 2500);
     } catch (err) {
       console.error(`[Export:${card.id}:${fmt}]`, err);
@@ -493,7 +493,7 @@ function ExportCardItem({
   );
 }
 
-// â”€â”€â”€ Grille exports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Grille exports ───────────────────────────────────────────────────────────
 
 function GrilleExports({
   cards,
@@ -509,7 +509,7 @@ function GrilleExports({
         <div>
           <h3 className="text-sm font-semibold text-gray-900 print:text-black">Documents disponibles</h3>
           <p className="mt-1 text-sm text-gray-500 print:text-gray-700">
-            Chaque document s'active automatiquement dÃ¨s que ses donnÃ©es source sont connectÃ©es.
+            Chaque document s'active automatiquement dès que ses données source sont connectées.
           </p>
         </div>
         <div className={[
@@ -517,7 +517,7 @@ function GrilleExports({
           readyCount > 0 ? "bg-amber-50 text-amber-700 ring-amber-200" : "bg-gray-50 text-gray-600 ring-gray-200",
         ].join(" ")}>
           <span className={["h-1.5 w-1.5 rounded-full", readyCount > 0 ? "bg-amber-500" : "bg-gray-400"].join(" ")} />
-          {readyCount} / {cards.length} avec donnÃ©es
+          {readyCount} / {cards.length} avec données
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -529,7 +529,7 @@ function GrilleExports({
   );
 }
 
-// â”€â”€â”€ Historique â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Historique ───────────────────────────────────────────────────────────────
 
 function HistoriqueExports() {
   return (
@@ -537,7 +537,7 @@ function HistoriqueExports() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h3 className="text-sm font-semibold text-gray-900 print:text-black">Historique des exports</h3>
-          <p className="mt-1 text-sm text-gray-500 print:text-gray-700">TraÃ§abilitÃ© des tÃ©lÃ©chargements associÃ©s Ã  ce deal.</p>
+          <p className="mt-1 text-sm text-gray-500 print:text-gray-700">Traçabilité des téléchargements associés à ce deal.</p>
         </div>
         <div className="hidden sm:flex items-center gap-2 rounded-full bg-gray-50 px-3 py-1.5 text-xs text-gray-600 ring-1 ring-gray-200 print:bg-white print:ring-gray-300">
           <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />
@@ -545,7 +545,7 @@ function HistoriqueExports() {
         </div>
       </div>
       <div className="hidden sm:grid grid-cols-5 mt-4 px-3 py-2 bg-gray-50 rounded-xl ring-1 ring-gray-200 print:bg-white print:ring-gray-300">
-        {["Document", "Format", "Date", "Poids", "TÃ©lÃ©charger"].map((h) => (
+        {["Document", "Format", "Date", "Poids", "Télécharger"].map((h) => (
           <span key={h} className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-center first:text-left last:text-right">{h}</span>
         ))}
       </div>
@@ -554,35 +554,35 @@ function HistoriqueExports() {
           <History className="h-5 w-5 text-gray-400" />
         </div>
         <div className="text-center">
-          <div className="text-sm font-semibold text-gray-700">Aucun export rÃ©alisÃ©</div>
+          <div className="text-sm font-semibold text-gray-700">Aucun export réalisé</div>
           <div className="text-xs text-gray-500 mt-1 max-w-xs leading-relaxed">
-            L'historique des exports apparaÃ®tra ici aprÃ¨s le premier tÃ©lÃ©chargement.
+            L'historique des exports apparaîtra ici après le premier téléchargement.
           </div>
         </div>
       </div>
       <p className="mt-4 text-[11px] text-gray-400 flex items-center gap-1.5">
         <Info className="h-3 w-3 shrink-0" />
-        Les exports sont conservÃ©s 30 jours et associÃ©s au deal actif.
+        Les exports sont conservés 30 jours et associés au deal actif.
       </p>
     </div>
   );
 }
 
-// â”€â”€â”€ ParamÃ¨tres â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Paramètres ───────────────────────────────────────────────────────────────
 
 const PARAMS = [
-  { label: "Logo sociÃ©tÃ©",         hint: "AffichÃ© en en-tÃªte de chaque document"    },
-  { label: "Mentions lÃ©gales",     hint: "AjoutÃ©es automatiquement en pied de page" },
-  { label: "Destinataire",         hint: "Nom affichÃ© dans le rapport comitÃ©"       },
-  { label: "Langue des documents", hint: "FranÃ§ais par dÃ©faut"                      },
+  { label: "Logo société",         hint: "Affiché en en-tête de chaque document"    },
+  { label: "Mentions légales",     hint: "Ajoutées automatiquement en pied de page" },
+  { label: "Destinataire",         hint: "Nom affiché dans le rapport comité"       },
+  { label: "Langue des documents", hint: "Français par défaut"                      },
 ] as const;
 
 function ParametresExport() {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-5 print:shadow-none print:border-gray-300">
       <div className="mb-4">
-        <h3 className="text-sm font-semibold text-gray-900 print:text-black">ParamÃ¨tres d'export</h3>
-        <p className="mt-1 text-sm text-gray-500 print:text-gray-700">Options globales appliquÃ©es Ã  tous les documents de ce deal.</p>
+        <h3 className="text-sm font-semibold text-gray-900 print:text-black">Paramètres d'export</h3>
+        <p className="mt-1 text-sm text-gray-500 print:text-gray-700">Options globales appliquées à tous les documents de ce deal.</p>
       </div>
       <ul className="space-y-2">
         {PARAMS.map(({ label, hint }) => (
@@ -592,7 +592,7 @@ function ParametresExport() {
               <div className="text-xs text-gray-500 mt-0.5">{hint}</div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <span className="text-sm font-semibold text-gray-300 select-none">â€”</span>
+              <span className="text-sm font-semibold text-gray-300 select-none">—</span>
               <button type="button" disabled className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-400 cursor-not-allowed opacity-60 print:hidden">
                 Modifier
               </button>
@@ -602,13 +602,13 @@ function ParametresExport() {
       </ul>
       <p className="mt-4 text-[11px] text-gray-400 flex items-center gap-1.5">
         <Info className="h-3 w-3 shrink-0" />
-        Ces paramÃ¨tres s'appliqueront Ã  tous les exports de ce deal.
+        Ces paramètres s'appliqueront à tous les exports de ce deal.
       </p>
     </div>
   );
 }
 
-// â”€â”€â”€ Root â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function ExportsTab() {
   const tick = useMarchandSnapshotTick();

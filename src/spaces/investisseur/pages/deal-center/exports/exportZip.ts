@@ -1,7 +1,7 @@
-﻿// src/spaces/investisseur/pages/deal-center/exports/exportZip.ts
+// src/spaces/investisseur/pages/deal-center/exports/exportZip.ts
 //
-// Export ZIP â€” agrÃ¨ge tous les PDFs + Excel disponibles
-// Utilise JSZip + file-saver pour gÃ©nÃ©rer l'archive cÃ´tÃ© client
+// Export ZIP — agrège tous les PDFs + Excel disponibles
+// Utilise JSZip + file-saver pour générer l'archive côté client
 
 import { saveAs } from "file-saver";
 import { jsPDF } from "jspdf";
@@ -12,26 +12,26 @@ import {
   readMarchandSnapshot,
 } from "../../../../marchand/shared/marchandSnapshot.store";
 
-// On importe les gÃ©nÃ©rateurs PDF mais on rÃ©cupÃ¨re les bytes sans save()
-// Chaque fonction accepte un paramÃ¨tre optionnel `returnBytes: true`
-// pour retourner le Uint8Array au lieu de dÃ©clencher le tÃ©lÃ©chargement.
-// â†’ On fait Ã§a via des wrappers internes ci-dessous.
+// On importe les générateurs PDF mais on récupère les bytes sans save()
+// Chaque fonction accepte un paramètre optionnel `returnBytes: true`
+// pour retourner le Uint8Array au lieu de déclencher le téléchargement.
+// → On fait ça via des wrappers internes ci-dessous.
 
 
 import * as XLSX from "xlsx";
 import type { RentabiliteSnapshot } from "../../../types/rentabilite.types";
 
-// â”€â”€â”€ Helpers â€” gÃ©nÃ¨re les PDFs en bytes (pas de save) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Helpers — génère les PDFs en bytes (pas de save) ────────────────────────
 
 /**
  * Pattern : on reconstruit un mini-doc jsPDF identique aux exports individuels
  * mais on retourne doc.output("arraybuffer") au lieu de doc.save().
- * Pour Ã©viter la duplication massive, on importe les builders des autres modules
- * via dynamic import et on exploite le fait que jsPDF peut sortir en mÃ©moire.
+ * Pour éviter la duplication massive, on importe les builders des autres modules
+ * via dynamic import et on exploite le fait que jsPDF peut sortir en mémoire.
  *
- * Alternative plus lÃ©gÃ¨re : on rÃ©importe les modules et on monkey-patche jsPDF.save()
- * â†’ on utilise la mÃ©thode propre : chaque module exporte aussi une variante `*Bytes`.
- * Ici on contourne en faisant dynamic import + override de la mÃ©thode save sur l'instance.
+ * Alternative plus légère : on réimporte les modules et on monkey-patche jsPDF.save()
+ * → on utilise la méthode propre : chaque module exporte aussi une variante `*Bytes`.
+ * Ici on contourne en faisant dynamic import + override de la méthode save sur l'instance.
  */
 
 async function getPdfBytes(exportFn: () => Promise<void>): Promise<Uint8Array> {
@@ -40,7 +40,7 @@ async function getPdfBytes(exportFn: () => Promise<void>): Promise<Uint8Array> {
     const originalSave = jsPDF.prototype.save;
     jsPDF.prototype.save = function (filename?: string) {
       const bytes = this.output("arraybuffer");
-      jsPDF.prototype.save = originalSave; // restore immÃ©diatement
+      jsPDF.prototype.save = originalSave; // restore immédiatement
       resolve(new Uint8Array(bytes as ArrayBuffer));
     } as any;
 
@@ -68,7 +68,7 @@ async function getExcelBytes(exportFn: () => Promise<void>): Promise<Uint8Array>
   });
 }
 
-// â”€â”€â”€ Export ZIP principal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Export ZIP principal ─────────────────────────────────────────────────────
 
 export interface ZipExportResult {
   ok:     boolean;
@@ -107,7 +107,7 @@ export async function exportZip(
     import("./exportFinancialEngine"),
   ]);
 
-  // Liste des exports Ã  inclure selon disponibilitÃ© des donnÃ©es
+  // Liste des exports à inclure selon disponibilité des données
   interface ZipEntry {
     label:    string;
     filename: string;
@@ -117,7 +117,7 @@ export async function exportZip(
 
   const entries: ZipEntry[] = [
     {
-      label:    "SynthÃ¨se Qualification",
+      label:    "Synthèse Qualification",
       filename: `Qualification_${safeName}_${dateStr}.pdf`,
       fn:       () => getPdfBytes(exportQualificationPdf),
       active:   hasBaseDeal,
@@ -135,19 +135,19 @@ export async function exportZip(
       active:   hasBaseDeal,
     },
     {
-      label:    "Rapport ComitÃ©",
+      label:    "Rapport Comité",
       filename: `RapportComite_${safeName}_${dateStr}.pdf`,
       fn:       () => getPdfBytes(exportCommitteeReviewPdf),
       active:   hasRenta || hasMarche,
     },
     {
-      label:    "ModÃ¨le Financier (PDF)",
+      label:    "Modèle Financier (PDF)",
       filename: `ModeleFinancier_${safeName}_${dateStr}.pdf`,
       fn:       () => getPdfBytes(exportFinancialEnginePdf),
       active:   hasRenta,
     },
     {
-      label:    "ModÃ¨le Financier (Excel)",
+      label:    "Modèle Financier (Excel)",
       filename: `ModeleFinancier_${safeName}_${dateStr}.xlsx`,
       fn:       () => getExcelBytes(exportFinancialEngineExcel),
       active:   hasRenta,
@@ -169,36 +169,36 @@ export async function exportZip(
       folder.file(entry.filename, bytes);
     } catch (err) {
       errors.push(entry.label);
-      console.error(`[exportZip] Ã‰chec : ${entry.label}`, err);
+      console.error(`[exportZip] Échec : ${entry.label}`, err);
     }
     done++;
   }
 
   // README.txt dans le ZIP
   const readme = [
-    `MIMMOZA â€” Export Deal`,
+    `MIMMOZA — Export Deal`,
     `Deal     : ${dealName}`,
-    `Adresse  : ${deal?.address ?? "â€”"}`,
+    `Adresse  : ${deal?.address ?? "—"}`,
     `Date     : ${new Date().toLocaleDateString("fr-FR")}`,
     ``,
     `Contenu de cette archive :`,
-    ...active.map((e) => `  Â· ${e.filename}`),
+    ...active.map((e) => `  · ${e.filename}`),
     ``,
-    `Ces documents sont gÃ©nÃ©rÃ©s Ã  titre indicatif.`,
+    `Ces documents sont générés à titre indicatif.`,
     `Ils ne constituent pas un conseil en investissement.`,
-    `Â© Mimmoza ${new Date().getFullYear()}`,
+    `© Mimmoza ${new Date().getFullYear()}`,
   ].join("\n");
   folder.file("README.txt", readme);
 
-  onProgress?.("Compressionâ€¦", 95);
+  onProgress?.("Compression…", 95);
 
   try {
     const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });
     saveAs(blob, `Mimmoza_${safeName}_${dateStr}.zip`);
-    onProgress?.("TerminÃ©", 100);
+    onProgress?.("Terminé", 100);
   } catch (err) {
-    errors.push("GÃ©nÃ©ration ZIP");
-    console.error("[exportZip] Erreur gÃ©nÃ©ration ZIP", err);
+    errors.push("Génération ZIP");
+    console.error("[exportZip] Erreur génération ZIP", err);
   }
 
   return {

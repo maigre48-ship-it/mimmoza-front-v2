@@ -1,7 +1,7 @@
-﻿// src/spaces/investisseur/pages/deal-center/tabs/CommitteeReviewTab.tsx
+// src/spaces/investisseur/pages/deal-center/tabs/CommitteeReviewTab.tsx
 //
-// Committee Review â€” V4 â€” BranchÃ© marchandSnapshot
-// Style identique Ã  AnalysePage.tsx.
+// Committee Review — V4 — Branché marchandSnapshot
+// Style identique à AnalysePage.tsx.
 
 import {
   BarChart3,
@@ -29,7 +29,7 @@ import {
 
 import type { RentabiliteSnapshot } from "../../../types/rentabilite.types";
 
-// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function castComputed(saved: RentabiliteSaved | undefined): RentabiliteSnapshot | null {
   if (!saved?.computed) return null;
@@ -37,11 +37,11 @@ function castComputed(saved: RentabiliteSaved | undefined): RentabiliteSnapshot 
 }
 
 function fmtPct(n: number | null | undefined): string {
-  if (n == null) return "â€”";
+  if (n == null) return "—";
   return `${n.toFixed(0)} %`;
 }
 
-/** Score qualitÃ© dossier â€” basÃ© sur complÃ©tude du deal actif */
+/** Score qualité dossier — basé sur complétude du deal actif */
 function deriveQualiteDossier(
   deal: ReturnType<typeof ensureActiveDeal>,
   rentaSaved: RentabiliteSaved | undefined,
@@ -57,7 +57,7 @@ function deriveQualiteDossier(
   return score;
 }
 
-/** Score analyse financiÃ¨re depuis rentabilitÃ© */
+/** Score analyse financière depuis rentabilité */
 function deriveScoreFinancier(snapshot: RentabiliteSnapshot | null): number | null {
   const base = snapshot?.scenarios?.base;
   if (!base) return null;
@@ -73,7 +73,7 @@ function deriveScoreFinancier(snapshot: RentabiliteSnapshot | null): number | nu
   return Math.min(100, score);
 }
 
-/** Score analyse marchÃ© depuis breakdown */
+/** Score analyse marché depuis breakdown */
 function deriveScoreMarche(marcheSaved: MarcheRisquesSaved | undefined): number | null {
   const b = marcheSaved?.breakdown;
   if (!b) return null;
@@ -82,14 +82,14 @@ function deriveScoreMarche(marcheSaved: MarcheRisquesSaved | undefined): number 
   return Math.round(vals.reduce((a, c) => a + c, 0) / vals.length);
 }
 
-/** Score analyse risques depuis environnement + prÃ©sence data */
+/** Score analyse risques depuis environnement + présence data */
 function deriveScoreRisques(marcheSaved: MarcheRisquesSaved | undefined): number | null {
   const b = marcheSaved?.breakdown;
   if (!b) return null;
   return b.environnement ?? null;
 }
 
-/** Score global comitÃ© â€” moyenne pondÃ©rÃ©e des 4 axes */
+/** Score global comité — moyenne pondérée des 4 axes */
 function deriveScoreComite(
   qualite: number | null,
   marche: number | null,
@@ -117,7 +117,7 @@ function deriveDecision(score: number | null, base: ReturnType<typeof castComput
   return "GO_SOUS_CONDITIONS";
 }
 
-// â”€â”€â”€ ScoreCard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── ScoreCard ────────────────────────────────────────────────────────────────
 
 function ScoreCard({
   label, hint, weightLabel, value,
@@ -141,7 +141,7 @@ function ScoreCard({
         </div>
         <div className="mt-1 flex items-baseline gap-2">
           <div className={["text-3xl leading-none font-semibold", hasValue ? "text-gray-800" : "text-gray-300 select-none"].join(" ")}>
-            {hasValue ? value!.toFixed(0) : "â€”"}
+            {hasValue ? value!.toFixed(0) : "—"}
           </div>
           <div className="text-sm text-gray-400">/100</div>
         </div>
@@ -165,15 +165,15 @@ function ScoreCard({
   );
 }
 
-// â”€â”€â”€ InfoBlock â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── InfoBlock ────────────────────────────────────────────────────────────────
 
 function InfoBlock() {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-5 print:shadow-none print:border-gray-300">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900 print:text-black">Comprendre la grille comitÃ©</h3>
-          <p className="mt-1 text-sm text-gray-500 print:text-gray-700">Quatre axes Ã©valuÃ©s pour statuer sur la qualitÃ© du dossier prÃ©sentÃ© en comitÃ©.</p>
+          <h3 className="text-sm font-semibold text-gray-900 print:text-black">Comprendre la grille comité</h3>
+          <p className="mt-1 text-sm text-gray-500 print:text-gray-700">Quatre axes évalués pour statuer sur la qualité du dossier présenté en comité.</p>
         </div>
         <div className="hidden sm:flex items-center gap-2 rounded-full bg-gray-50 px-3 py-1.5 text-xs text-gray-600 ring-1 ring-gray-200 print:bg-white print:ring-gray-300">
           <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />
@@ -182,25 +182,25 @@ function InfoBlock() {
       </div>
       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-5">
         <div className="space-y-3">
-          <div className="text-[11px] uppercase tracking-wide text-gray-500">DÃ©finitions</div>
+          <div className="text-[11px] uppercase tracking-wide text-gray-500">Définitions</div>
           <ul className="space-y-2 text-sm text-gray-700 print:text-gray-800">
             {[
-              { t: "QualitÃ© dossier",    d: "complÃ©tude et cohÃ©rence des donnÃ©es renseignÃ©es." },
-              { t: "Analyse marchÃ©",     d: "dynamique locale (DVF, liquiditÃ©, offre/demande)." },
-              { t: "Analyse risques",    d: "risques naturels, PLU, urbanisme, GÃ©orisques." },
-              { t: "Analyse financiÃ¨re", d: "rentabilitÃ©, TRI, marge, robustesse du montage." },
+              { t: "Qualité dossier",    d: "complétude et cohérence des données renseignées." },
+              { t: "Analyse marché",     d: "dynamique locale (DVF, liquidité, offre/demande)." },
+              { t: "Analyse risques",    d: "risques naturels, PLU, urbanisme, Géorisques." },
+              { t: "Analyse financière", d: "rentabilité, TRI, marge, robustesse du montage." },
             ].map(({ t, d }) => (
               <li key={t}><span className="font-semibold text-gray-900 print:text-black">{t}</span> : {d}</li>
             ))}
           </ul>
         </div>
         <div className="space-y-3">
-          <div className="text-[11px] uppercase tracking-wide text-gray-500">Comment interprÃ©ter</div>
+          <div className="text-[11px] uppercase tracking-wide text-gray-500">Comment interpréter</div>
           <div className="rounded-xl bg-gray-50 ring-1 ring-gray-200 p-4 print:bg-white print:ring-gray-300">
             <div className="grid grid-cols-3 gap-2 text-xs text-gray-700">
               {[
                 { color: "bg-emerald-500", range: ">70",   label: "solide"  },
-                { color: "bg-amber-500",   range: "50â€“70", label: "moyen"   },
+                { color: "bg-amber-500",   range: "50–70", label: "moyen"   },
                 { color: "bg-rose-500",    range: "<50",   label: "fragile" },
               ].map(({ color, range, label }) => (
                 <div key={range} className="flex items-center gap-2">
@@ -217,15 +217,15 @@ function InfoBlock() {
   );
 }
 
-// â”€â”€â”€ Ã‰lÃ©ments disponibles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Éléments disponibles ─────────────────────────────────────────────────────
 
 const ELEMENTS_CONFIG = [
   { label: "SmartScore",      source: "smartscore-enriched-v3",       icon: Gauge,       key: "smartscore"   },
-  { label: "MarchÃ©",          source: "market-study-investisseur-v1",  icon: BarChart3,   key: "marche"       },
+  { label: "Marché",          source: "market-study-investisseur-v1",  icon: BarChart3,   key: "marche"       },
   { label: "Risques",         source: "risk-study-v1",                 icon: ShieldAlert, key: "risques"      },
   { label: "Travaux",         source: "simulation-travaux",            icon: Hammer,      key: "travaux"      },
-  { label: "RentabilitÃ©",     source: "InvestisseurAnalysePage",       icon: TrendingUp,  key: "rentabilite"  },
-  { label: "Investment Pack", source: "Deal Center â€” Investment Pack", icon: FileText,    key: "invpack"      },
+  { label: "Rentabilité",     source: "InvestisseurAnalysePage",       icon: TrendingUp,  key: "rentabilite"  },
+  { label: "Investment Pack", source: "Deal Center — Investment Pack", icon: FileText,    key: "invpack"      },
 ] as const;
 
 function ElementsDisponibles({
@@ -254,15 +254,15 @@ function ElementsDisponibles({
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-5 print:shadow-none print:border-gray-300">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900 print:text-black">Ã‰lÃ©ments disponibles pour le comitÃ©</h3>
-          <p className="mt-1 text-sm text-gray-500 print:text-gray-700">Sources connectÃ©es qui alimenteront la dÃ©cision du comitÃ©.</p>
+          <h3 className="text-sm font-semibold text-gray-900 print:text-black">Éléments disponibles pour le comité</h3>
+          <p className="mt-1 text-sm text-gray-500 print:text-gray-700">Sources connectées qui alimenteront la décision du comité.</p>
         </div>
         <div className={[
           "hidden sm:flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 print:bg-white print:ring-gray-300",
           okCount > 0 ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-gray-50 text-gray-600 ring-gray-200",
         ].join(" ")}>
           <span className={["h-1.5 w-1.5 rounded-full", okCount > 0 ? "bg-emerald-500" : "bg-gray-400"].join(" ")} />
-          {okCount} / {ELEMENTS_CONFIG.length} connectÃ©s
+          {okCount} / {ELEMENTS_CONFIG.length} connectés
         </div>
       </div>
       <ul className="mt-4 space-y-2">
@@ -286,7 +286,7 @@ function ElementsDisponibles({
               </div>
               <span className={["inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 shrink-0 print:bg-white print:ring-gray-300", statusCls].join(" ")}>
                 <StatusIcon className="h-2.5 w-2.5" />
-                {s === "ok" ? "ConnectÃ©" : "En attente"}
+                {s === "ok" ? "Connecté" : "En attente"}
               </span>
             </li>
           );
@@ -296,7 +296,7 @@ function ElementsDisponibles({
   );
 }
 
-// â”€â”€â”€ Questions / RÃ©serves â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Questions / Réserves ─────────────────────────────────────────────────────
 
 function buildQuestions(
   qualite: number | null,
@@ -305,10 +305,10 @@ function buildQuestions(
   financier: number | null,
 ): string[] {
   const q: string[] = [];
-  if (qualite   != null && qualite   < 60) q.push("Dossier incomplet â€” complÃ©ter adresse, surface et prix avant prÃ©sentation.");
-  if (marche    != null && marche    < 50) q.push("MarchÃ© en tension â€” justifier la demande et la liquiditÃ© du secteur.");
-  if (risques   != null && risques   < 50) q.push("Risques environnementaux identifiÃ©s â€” dÃ©tailler les mesures de mitigation.");
-  if (financier != null && financier < 50) q.push("RentabilitÃ© insuffisante â€” retravailler le prix d'acquisition ou le budget travaux.");
+  if (qualite   != null && qualite   < 60) q.push("Dossier incomplet — compléter adresse, surface et prix avant présentation.");
+  if (marche    != null && marche    < 50) q.push("Marché en tension — justifier la demande et la liquidité du secteur.");
+  if (risques   != null && risques   < 50) q.push("Risques environnementaux identifiés — détailler les mesures de mitigation.");
+  if (financier != null && financier < 50) q.push("Rentabilité insuffisante — retravailler le prix d'acquisition ou le budget travaux.");
   return q;
 }
 
@@ -318,9 +318,9 @@ function buildReserves(
 ): string[] {
   const r: string[] = [];
   const base = snapshot?.scenarios?.base;
-  if (base?.decision === "NO_GO")           r.push("RentabilitÃ© NO GO â€” opÃ©ration non viable selon les paramÃ¨tres actuels.");
-  if (base?.margePct != null && base.margePct < 10) r.push(`Marge nette trop faible (${base.margePct.toFixed(1)} %) â€” seuil minimum 10 %.`);
-  if (marche != null && marche < 40)        r.push("Score marchÃ© trÃ¨s faible â€” risque de liquiditÃ© Ã©levÃ© Ã  la revente.");
+  if (base?.decision === "NO_GO")           r.push("Rentabilité NO GO — opération non viable selon les paramètres actuels.");
+  if (base?.margePct != null && base.margePct < 10) r.push(`Marge nette trop faible (${base.margePct.toFixed(1)} %) — seuil minimum 10 %.`);
+  if (marche != null && marche < 40)        r.push("Score marché très faible — risque de liquidité élevé à la revente.");
   return r;
 }
 
@@ -375,7 +375,7 @@ function ComiteBox({
   );
 }
 
-// â”€â”€â”€ DÃ©cision comitÃ© â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Décision comité ──────────────────────────────────────────────────────────
 
 function DecisionComite({ decision }: { decision: Decision }) {
   const ALL = [
@@ -390,8 +390,8 @@ function DecisionComite({ decision }: { decision: Decision }) {
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-5 print:shadow-none print:border-gray-300">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900 print:text-black">DÃ©cision comitÃ©</h3>
-          <p className="mt-1 text-sm text-gray-500 print:text-gray-700">Verdict final basÃ© sur l'ensemble des analyses.</p>
+          <h3 className="text-sm font-semibold text-gray-900 print:text-black">Décision comité</h3>
+          <p className="mt-1 text-sm text-gray-500 print:text-gray-700">Verdict final basé sur l'ensemble des analyses.</p>
         </div>
         <div className={[
           "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 print:bg-white print:text-gray-900 print:ring-gray-300",
@@ -403,7 +403,7 @@ function DecisionComite({ decision }: { decision: Decision }) {
       </div>
       {!decision && (
         <div className="mt-4 rounded-xl bg-gray-50 ring-1 ring-gray-200 px-4 py-3 text-sm text-gray-500 print:bg-white print:ring-gray-300">
-          La dÃ©cision du comitÃ© sera prÃ©parÃ©e automatiquement Ã  partir du SmartScore, des risques, de la rentabilitÃ© et de l'Investment Pack.
+          La décision du comité sera préparée automatiquement à partir du SmartScore, des risques, de la rentabilité et de l'Investment Pack.
         </div>
       )}
       <div className="mt-4 grid grid-cols-3 gap-2">
@@ -426,7 +426,7 @@ function DecisionComite({ decision }: { decision: Decision }) {
   );
 }
 
-// â”€â”€â”€ Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Export ───────────────────────────────────────────────────────────────────
 
 export default function CommitteeReviewTab() {
   const tick = useMarchandSnapshotTick();
@@ -468,15 +468,15 @@ export default function CommitteeReviewTab() {
             <Users className="h-4 w-4 text-indigo-500" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 print:text-black">PrÃ©paration du comitÃ©</h2>
-            <p className="text-sm text-gray-500 print:text-gray-700">QualitÃ© des dossiers soumis Ã  la revue d'investissement.</p>
+            <h2 className="text-lg font-semibold text-gray-900 print:text-black">Préparation du comité</h2>
+            <p className="text-sm text-gray-500 print:text-gray-700">Qualité des dossiers soumis à la revue d'investissement.</p>
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <ScoreCard label="QualitÃ© dossier"    hint="complÃ©tude deal"        weightLabel="30 %" value={qualite}   />
-          <ScoreCard label="Analyse marchÃ©"     hint="DVF + liquiditÃ©"        weightLabel="25 %" value={marche}    />
-          <ScoreCard label="Analyse risques"    hint="PLU + GÃ©orisques"       weightLabel="25 %" value={risques}   />
-          <ScoreCard label="Analyse financiÃ¨re" hint="TRI + marge + montage"  weightLabel="20 %" value={financier} />
+          <ScoreCard label="Qualité dossier"    hint="complétude deal"        weightLabel="30 %" value={qualite}   />
+          <ScoreCard label="Analyse marché"     hint="DVF + liquidité"        weightLabel="25 %" value={marche}    />
+          <ScoreCard label="Analyse risques"    hint="PLU + Géorisques"       weightLabel="25 %" value={risques}   />
+          <ScoreCard label="Analyse financière" hint="TRI + marge + montage"  weightLabel="20 %" value={financier} />
         </div>
         <div className="mt-5">
           <InfoBlock />
@@ -492,20 +492,20 @@ export default function CommitteeReviewTab() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <ComiteBox
-          title="Questions du comitÃ©"
-          subtitle="Points Ã  clarifier avant la dÃ©cision finale."
+          title="Questions du comité"
+          subtitle="Points à clarifier avant la décision finale."
           badgeLabel={questions.length > 0 ? `${questions.length} point${questions.length > 1 ? "s" : ""}` : "En attente"}
           badgeVariant={questions.length > 0 ? "watch" : "neutral"}
           items={questions}
-          emptyMessage="Les questions du comitÃ© seront gÃ©nÃ©rÃ©es automatiquement aprÃ¨s connexion des moteurs d'analyse."
+          emptyMessage="Les questions du comité seront générées automatiquement après connexion des moteurs d'analyse."
         />
         <ComiteBox
-          title="RÃ©serves identifiÃ©es"
+          title="Réserves identifiées"
           subtitle="Points bloquants ou conditions suspensives."
-          badgeLabel={reserves.length > 0 ? `${reserves.length} rÃ©serve${reserves.length > 1 ? "s" : ""}` : "Rien Ã  signaler"}
+          badgeLabel={reserves.length > 0 ? `${reserves.length} réserve${reserves.length > 1 ? "s" : ""}` : "Rien à signaler"}
           badgeVariant={reserves.length > 0 ? "nogo" : "go"}
           items={reserves}
-          emptyMessage="Les rÃ©serves du comitÃ© apparaÃ®tront ici aprÃ¨s l'analyse complÃ¨te du dossier."
+          emptyMessage="Les réserves du comité apparaîtront ici après l'analyse complète du dossier."
         />
       </div>
 
