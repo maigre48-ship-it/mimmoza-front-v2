@@ -617,7 +617,7 @@ const fetchDvfEstimate = fetchDvfViaEdgeFunction;
 
 const ACCENT = "#0ea5e9";
 const ACCENT_DARK = "#0284c7";
-const GRAD_BANNER = "linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)";
+const _GRAD_BANNER = "linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)";
 
 function gradeColor(grade: string): string {
   return ({ A: "#22c55e", B: "#3b82f6", C: "#f59e0b", D: "#ef4444", E: "#991b1b" } as any)[grade] ?? "#94a3b8";
@@ -1887,6 +1887,7 @@ useEffect(() => {
 
   const handleSubmit = useCallback(
     async (draft: SourcingItemDraft) => {
+      const dAny = draft as Record<string, any>;
       const currentDealId = getActiveDealId();
       if (!currentDealId) {
         setToast({ show: true, type: "error", title: "Aucun deal actif", message: "Sélectionnez un deal dans le Pipeline avant d'enregistrer." });
@@ -1940,14 +1941,14 @@ useEffect(() => {
         input: {
           price: parseNumberFR(draft.price), surface: parseNumberFR(draft.surface),
           propertyType: draft.propertyType || "appartement", floor: draft.floor || "1",
-          nbPieces: draft.nbPieces, etatGeneral: draft.etatGeneral, dpe: draft.dpe,
-          ascenseur: draft.ascenseur, balcon: draft.balcon, terrasse: draft.terrasse,
-          cave: draft.cave, parking: draft.parking, jardin: draft.jardin, garage: draft.garage,
-          commerces: (draft as any).commerces, transport: (draft as any).transport,
-          bus: (draft as any).bus, tram: (draft as any).tram, metro: (draft as any).metro, rerTrain: (draft as any).rerTrain,
-          loggia: (draft as any).loggia, calme: (draft as any).calme, lumineux: (draft as any).lumineux,
-          traversant: (draft as any).traversant, visAVisFaible: (draft as any).visAVisFaible,
-          vueDegagee: (draft as any).vueDegagee, rdcSurRue: (draft as any).rdcSurRue, box: (draft as any).box,
+          nbPieces: dAny.nbPieces, etatGeneral: dAny.etatGeneral, dpe: dAny.dpe,
+          ascenseur: dAny.ascenseur, balcon: dAny.balcon, terrasse: dAny.terrasse,
+          cave: dAny.cave, parking: dAny.parking, jardin: dAny.jardin, garage: dAny.garage,
+          commerces: (dAny as any).commerces, transport: (dAny as any).transport,
+          bus: (dAny as any).bus, tram: (dAny as any).tram, metro: (dAny as any).metro, rerTrain: (dAny as any).rerTrain,
+          loggia: (dAny as any).loggia, calme: (dAny as any).calme, lumineux: (dAny as any).lumineux,
+          traversant: (dAny as any).traversant, visAVisFaible: (dAny as any).visAVisFaible,
+          vueDegagee: (dAny as any).vueDegagee, rdcSurRue: (dAny as any).rdcSurRue, box: (dAny as any).box,
         },
         quartier: draft.quartier || {},
         dvf: dvfResult,
@@ -2000,7 +2001,7 @@ useEffect(() => {
       }
 
       if (computed.minimumMet) {
-        try { await analyzeAndComputeScore(apiDraft, false); } catch { /* silent */ }
+        try { await analyzeAndComputeScore(apiDraft); } catch { /* silent */ }
       }
 
       if (computed.minimumMet) {
@@ -2258,7 +2259,7 @@ useEffect(() => {
                 </div>
               </div>
             )}
-            <SourcingForm key={dealId} profileTarget={profileTarget} onSubmit={handleSubmit} onFormChange={handleFormChange} initialFormValues={sourcingInitialFormValues} />
+            <SourcingForm key={dealId} profileTarget={profileTarget} onSubmit={handleSubmit} onFormChange={handleFormChange as (form: any) => void} initialFormValues={sourcingInitialFormValues as any} />
           </div>
 
           {/* ── Colonne droite : SmartScorePanel + résumé ── */}
