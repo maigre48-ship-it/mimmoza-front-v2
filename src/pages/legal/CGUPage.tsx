@@ -48,12 +48,6 @@ const LI: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   </li>
 );
 
-const OL: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <ol className="list-decimal list-inside space-y-1.5 mb-3 ml-2 text-sm text-gray-700">
-    {children}
-  </ol>
-);
-
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Article {

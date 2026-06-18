@@ -36,7 +36,7 @@ export default function JetonsPage() {
 
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [tokens, setTokens] = useState<number>(0);
-  const [email, setEmail] = useState<string>("");
+  const [, setEmail] = useState<string>("");
   const [plan, setPlan] = useState<string>("");
   const [transactions, setTransactions] = useState<TxRow[]>([]);
 

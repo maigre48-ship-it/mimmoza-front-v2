@@ -45,7 +45,6 @@ import { PromoteurStudyService } from "../shared/promoteurStudyService";
 // ─── Design tokens Promoteur ──────────────────────────────────────────────────
 import { HeroGhostButton, HeroPrimaryButton, PromoteurPageHero } from "../shared/components/PromoteurPageHero";
 import {
-  GRAD,
   PROMOTEUR_BUTTON_STYLES,
   PROMOTEUR_COLORS,
   PROMOTEUR_RADIUS,
@@ -53,7 +52,6 @@ import {
 } from "../shared/promoteurDesign.tokens";
 
 // ─── Alias locaux (compatibilité avec le code existant) ───────────────────────
-const GRAD_LOCAL  = GRAD;                         // gradient diagonal
 const ACCENT      = PROMOTEUR_COLORS.violetHover;
 const ACCENT2     = PROMOTEUR_COLORS.violet;
 
