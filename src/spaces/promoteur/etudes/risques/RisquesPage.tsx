@@ -77,7 +77,7 @@ import {
   HeroPrimaryButton,
   PromoteurPageHero,
 } from "../../shared/components/PromoteurPageHero";
-import { ACCENT_PRO, GRAD_PRO } from "../../shared/promoteurDesign.tokens";
+import { ACCENT_PRO } from "../../shared/promoteurDesign.tokens";
 
 // ============================================
 // DEBUG
@@ -1750,13 +1750,11 @@ function extractDossierIdFromUrl(): string | null {
 // ============================================
 // MAIN COMPONENT
 // ============================================
-export function RisquesPage({ onStudyComplete, theme }: {
+export function RisquesPage({ onStudyComplete: _onStudyComplete, theme: _theme }: {
   onStudyComplete?: (data: unknown) => void;
   theme?: { gradient: string; accent: string };
 } = {}) {
-  // Variables locales qui surchargent les constantes module-level
-  const GRAD   = theme?.gradient ?? GRAD_PRO;
-  const ACCENT = theme?.accent   ?? ACCENT_PRO;
+  
   // ── Study persistence ──────────────────────────────────────────────────────
   const [searchParams] = useSearchParams();
   const studyId = searchParams.get("study");
@@ -1772,7 +1770,7 @@ export function RisquesPage({ onStudyComplete, theme }: {
   const [selectedAddress, setSelectedAddress] = useState<AddressSuggestion | null>(null);
   const [parcelId, setParcelId] = useState("");
   const [parcelInfo, setParcelInfo] = useState<ParcelInfo | null>(null);
-  const [isSearchingParcel, setIsSearchingParcel] = useState(false);
+  const [_isSearchingParcel, setIsSearchingParcel] = useState(false);
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
   const [codeInsee, setCodeInsee] = useState("");
