@@ -108,9 +108,6 @@ import {
 
 const DEBUG_TERRAIN_ANCHORING = false;
 
-// ─── V8.8 : exposition tone mapping (ajuste si l'ambiance paraît trop sombre/claire) ─
-const TONE_EXPOSURE = 1.0;
-
 // ─── Offsets Z-fighting ───────────────────────────────────────────────────────
 
 const TERRAIN_CONTOUR_OFFSET = 0.3;
@@ -503,7 +500,6 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
     const ctx = createSceneContext(mount);
     ctx.renderer.shadowMap.enabled = true;
     ctx.renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
-    ctx.renderer.physicallyCorrectLights = false;
 
     ctx.scene.traverse((obj) => {
       if ((obj as THREE.DirectionalLight).isDirectionalLight) {
@@ -822,7 +818,7 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
         ctx.groundGroup.add(dbg);
       }
 
-      const facadeStyleId = (bld.style as Record<string, unknown>).facadeStyleId as string | undefined;
+      const facadeStyleId = (bld.style as unknown as Record<string, unknown>).facadeStyleId as string | undefined;
       if (facadeStyleId && !showWireframe) {
         try {
           const styleDef = getFacadeStyle(facadeStyleId);
@@ -859,25 +855,25 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
             balconyFreq:       resolvedBalconies?.frequency ?? 1,
             facadeStyle:       facadeStyleId,
             hasBanding:        styleDef.features.banding,
-            balconyConfig: balconyConfigResolved ?? (bld.style as Record<string, unknown>).balconyConfig ?? {
+            balconyConfig: (balconyConfigResolved ?? (bld.style as unknown as Record<string, unknown>).balconyConfig ?? {
               enabled:          styleDef.upper.hasBalconies,
               type:             styleDef.upper.balconyType,
               depthM:           styleDef.upper.balconyDepth * proj.zScale,
               thicknessM:       0.12 * proj.zScale,
               guardrailHeightM: 1.02 * proj.zScale,
               frequency:        1,
-            },
-            loggiaConfig: (bld.style as Record<string, unknown>).loggiaConfig ?? {
+            }) as any,
+            loggiaConfig: ((bld.style as unknown as Record<string, unknown>).loggiaConfig ?? {
               enabled:   styleDef.features.loggias,
               depthM:    0.9 * proj.zScale,
               frequency: 2,
-            },
-            shadingConfig: (bld.style as Record<string, unknown>).shadingConfig ?? {
+            }) as any,
+            shadingConfig: ((bld.style as unknown as Record<string, unknown>).shadingConfig ?? {
               enabled:   styleDef.features.shading,
               type:      styleDef.features.shadingType,
               openRatio: 0.35,
               frequency: 1,
-            },
+            }) as any,
           }) as FacadeResult;
           injectFacadeMeshes(facadeGeo, facadeMatsForBuilding, bld.id, ctx.buildingsGroup);
         } catch (err) {
@@ -1016,7 +1012,7 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
             if (treeProb < 1.0 && Math.random() > treeProb) continue;
             const tree = buildTree(treeH, vegetation.treeType ?? "deciduous");
             tree.position.set(tp.x, 0, tp.z);
-            if (sampler) anchorObjectOnTerrain(tree, sampler, [tp], "point", 0);
+            if (sampler) anchorObjectOnTerrain(tree, sampler, [tp], "centroid", 0);
             setShadowsRecursive(tree, true, true);
             ctx.groundGroup.add(tree);
             treePlaced++;
@@ -1027,7 +1023,7 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
           for (const pt of perimPts) {
             const bush = buildBush(0, 0, proj.zScale * 0.3);
             bush.position.set(pt.x, 0, pt.z);
-            if (sampler) anchorObjectOnTerrain(bush, sampler, [pt], "point", 0);
+            if (sampler) anchorObjectOnTerrain(bush, sampler, [pt], "centroid", 0);
             setShadowsRecursive(bush, true, true);
             ctx.groundGroup.add(bush);
           }
@@ -1058,7 +1054,7 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
       for (const obj of placedObjects) {
         let m: THREE.Object3D | null = null;
         if (obj.type === "tree") {
-          m = buildTree(ts * (obj.scale ?? 1), obj.treeType ?? "deciduous");
+          m = buildTree(ts * (obj.scale ?? 1), (obj.treeType ?? "deciduous") as TreeType);
         } else if (obj.type === "bush") {
           m = buildBush(0, 0, ts * 0.5 * (obj.scale ?? 1));
         } else if (obj.type === "portail") {
@@ -1072,7 +1068,7 @@ export const MassingRenderer: React.FC<MassingRendererProps> = ({
         if (m) {
           m.position.set(obj.x, 0, obj.z);
           if (obj.rotationY) m.rotation.y = obj.rotationY;
-          if (sampler) anchorObjectOnTerrain(m, sampler, [{ x: obj.x, z: obj.z }], "point", 0);
+          if (sampler) anchorObjectOnTerrain(m, sampler, [{ x: obj.x, z: obj.z }], "centroid", 0);
           setShadowsRecursive(m, true, true);
           ctx.groundGroup.add(m);
         }
@@ -1348,7 +1344,7 @@ function slopeColor(deg: number): [number, number, number] {
 
 function buildParcelTerrainShape(
   reliefData: ReliefData,
-  proj: ReturnType<typeof computeSceneProjection>,
+  _proj: ReturnType<typeof computeSceneProjection>,
   parcelPts: Pt2D[],
   showSlopeColors: boolean,
   sampler: TerrainSampler,
