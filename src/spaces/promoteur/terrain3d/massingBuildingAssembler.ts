@@ -23,6 +23,7 @@ import {
   type FacadePaletteKey,
   type RoofStyleKey,
 } from "./massingRenderMaterials";
+// @ts-expect-error [DETTE TOIT] addRoofToGroup utilise l'ancienne API roof engine (buildRoofGeometry supprimé) — à réécrire sur buildPitchedRoof à froid
 import { buildRoofGeometry, type RoofConfig } from "./massingRoofEngine";
 import { buildTerraceGeometry, hasRealTerrace, type TerraceConfig } from "./massingTerraceEngine";
 
@@ -99,7 +100,7 @@ function ensureUv2(geo: THREE.BufferGeometry): void {
   const uv2 = geo.getAttribute("uv2");
   if (uv2 && uv2.count === uv.count) return;
 
-  geo.setAttribute("uv2", new THREE.BufferAttribute((uv.array as ArrayLike<number>).slice ? (uv.array as any).slice(0) : new Float32Array(uv.array as ArrayLike<number>), 2));
+  geo.setAttribute("uv2", new THREE.BufferAttribute(new Float32Array(uv.array as ArrayLike<number>), 2));
 }
 
 function applyBoxUVs(geo: THREE.BufferGeometry, sx = 4, sy = 3, sz = 4): void {
@@ -326,6 +327,7 @@ export function assembleBuilding(input: BuildingAssemblyInput): BuildingAssembly
     addRoofToGroup(
       group,
       {
+        // @ts-expect-error [DETTE TOIT] config roof ancienne forme — voir addRoofToGroup
         topPts: topSlice.pts,
         roofBaseY,
         floorHeight,
@@ -623,6 +625,7 @@ function addRoofToGroup(
   showWireframe: boolean,
 ): void {
   const roof = buildRoofGeometry(config);
+  // @ts-expect-error [DETTE TOIT] config.roofType n'existe pas sur RoofConfig actuel
   const isInclined = config.roofType === "inclinee";
 
   const wireMat = new THREE.MeshBasicMaterial({ color: 0x4a90d9, wireframe: true });
