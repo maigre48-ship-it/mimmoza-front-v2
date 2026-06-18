@@ -35,6 +35,9 @@ export interface ParcelInfo {
   lat?: number;
   lon?: number;
   commune_insee?: string;
+  section?: string;
+  numero?: string;
+  surface?: number;
 }
 
 export interface InseeData {
