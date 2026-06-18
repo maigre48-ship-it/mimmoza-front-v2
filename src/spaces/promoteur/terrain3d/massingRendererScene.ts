@@ -134,7 +134,7 @@ async function tryBuildComposer(
     if (ENABLE_SMAA) {
       try {
         const { SMAAPass } = await import("three/addons/postprocessing/SMAAPass.js");
-        composer.addPass(new SMAAPass(w * dpr, h * dpr));
+        composer.addPass(new SMAAPass());
       } catch (e) {
         console.warn("[MassingScene] SMAA indisponible, ignoré :", e);
       }
@@ -408,7 +408,7 @@ export function disposeSceneContext(ctx: SceneContext, mount: HTMLDivElement): v
   disposeGroup(ctx.buildingsGroup);
   disposeGroup(ctx.groundGroup);
   ctx.scene.traverse((obj) => {
-    const light = obj as THREE.Light;
+    const light = obj as THREE.DirectionalLight;
     if ((light as any).isLight && light.shadow?.map) light.shadow.map.dispose();
   });
   ctx.renderer.dispose();
