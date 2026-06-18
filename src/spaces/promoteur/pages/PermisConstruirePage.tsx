@@ -447,7 +447,7 @@ export default function PermisConstruirePage() {
 
     if (searchLat === null || searchLon === null) return null;
 
-    const clampedRayon = Math.max(0.2, Math.min(25, rayonKm));
+    const clampedRayon = Math.max(0.2, Math.min(25, Number(rayonKm)));
     const periodeMois =
       periodePreset === "custom" ? DEFAULT_PERIODE_MOIS : periodePreset;
 
@@ -460,10 +460,10 @@ export default function PermisConstruirePage() {
       periodeEnd: periodePreset === "custom" ? (customEnd || undefined) : undefined,
       typeAutorisation: typeAut,
       typologie,
-      logementsMin: logementsMin ? Number(logementsMin) : null,
-      logementsMax: logementsMax ? Number(logementsMax) : null,
-      surfaceMin: surfaceMin ? Number(surfaceMin) : null,
-      surfaceMax: surfaceMax ? Number(surfaceMax) : null,
+      logementsMin: logementsMin ? Number(logementsMin) : undefined,
+      logementsMax: logementsMax ? Number(logementsMax) : undefined,
+      surfaceMin: surfaceMin ? Number(surfaceMin) : undefined,
+      surfaceMax: surfaceMax ? Number(surfaceMax) : undefined,
       commune: selectedCommune.code,
       sortBy,
       sortOrder,
@@ -989,15 +989,7 @@ export default function PermisConstruirePage() {
               value={
                 typologie === "tous"
                   ? "Toutes"
-                  : formatTypologie(
-                      typologie === "logement_individuel"
-                        ? "individuel"
-                        : typologie === "logement_collectif"
-                        ? "collectif"
-                        : typologie === "logement_mixte"
-                        ? "mixte"
-                        : "activite",
-                    )
+                  : formatTypologie(typologie)
               }
             />
           </div>
