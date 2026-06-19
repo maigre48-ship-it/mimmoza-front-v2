@@ -195,13 +195,13 @@ export const useEditor2DStore = create<Editor2DState & Editor2DActions>((set, ge
   setTool: (tool) => set({ activeTool: tool }),
 
   addBuilding: (b) => {
-    const building: Building2D = {
-      floorsAboveGround:0, groundFloorHeightM:3.0, typicalFloorHeightM:2.8,
-      roofType:'flat', balconies:[], loggias:[], terraces:[], volumes:[],
+    const defaults = {
+      floorsAboveGround: 0, groundFloorHeightM: 3.0, typicalFloorHeightM: 2.8,
+      roofType: 'flat' as const, balconies: [], loggias: [], terraces: [], volumes: [],
       floorPlans: [],
-      kind: 'building',
-      ...b,
+      kind: 'building' as const,
     };
+    const building: Building2D = { ...defaults, ...b };
     const next = [...get().buildings, building];
     save(next, get().parkings);
     set({ buildings: next });
