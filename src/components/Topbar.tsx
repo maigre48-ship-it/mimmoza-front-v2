@@ -72,7 +72,7 @@ export function Topbar({
               return (
                 <button
                   key={s.id}
-                  onClick={() => onChangeSpace(s.id)}
+                  onClick={() => onChangeSpace(s.id as Space)}
                   className={[
                     "flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all",
                     active

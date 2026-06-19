@@ -1979,7 +1979,7 @@ useEffect(() => {
       const savedFormState: FormState = {
         codePostal: draft.location?.codePostal || "", rueProche: draft.location?.rueProche || "",
         ville: draft.location?.ville || "", arrondissement: draft.location?.arrondissement || "",
-        quartier: typeof draft.quartier === "string" ? draft.quartier : draft.quartier?.nom || "",
+        quartier: typeof draft.quartier === "string" ? draft.quartier : (draft.quartier as { nom?: string })?.nom || "",
         propertyType: draft.propertyType || "", price: String(draft.price || ""),
         surface: String(draft.surface || ""), floor: String(draft.floor || ""),
       };

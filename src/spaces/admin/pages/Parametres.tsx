@@ -12,7 +12,7 @@ export default function AdminParametresPage() {
 
   useEffect(() => {
     initAdminStorage();
-    setSettings(getAdminSettings());
+    getAdminSettings().then(setSettings);
   }, []);
 
   if (!settings) return null;
