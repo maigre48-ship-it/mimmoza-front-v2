@@ -36,3 +36,5 @@ tsc-after.txt
 tsc-errors.txt
 risk-map.md
 *.tsbuildinfo
+
+node_modules/
