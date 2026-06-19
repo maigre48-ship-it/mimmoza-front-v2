@@ -81,17 +81,17 @@ export interface Facade2DPalette {
   treeTrunk: string;
   // ─── [V3] Couleurs d'ornements (remplies par buildFacade2DModel) ───
   /** Pans de bois apparents (colombages) */
-  colombageFill: string;
+  colombageFill?: string;
   /** Encadrements de baies (pierre / enduit contrastant) */
-  encadrementFill: string;
+  encadrementFill?: string;
   /** Ferronnerie / fer forgé (garde-corps ouvragés) */
-  ferronnerieFill: string;
+  ferronnerieFill?: string;
   /** Bandeaux & moulures horizontales */
-  bandeauFill: string;
+  bandeauFill?: string;
   /** Parement de brique apparente */
-  briqueFill: string;
+  briqueFill?: string;
   /** Brise-soleil / lames pare-soleil */
-  briseSoleilFill: string;
+  briseSoleilFill?: string;
 }
 
 export interface Facade2DRenderTheme {
