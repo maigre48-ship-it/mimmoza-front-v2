@@ -16,12 +16,13 @@ import type {
 import { SSEParser } from './streamParser';
 
 export class CopilotClientError extends Error {
-  constructor(
-    public readonly code: string,
-    message: string,
-    public readonly status?: number,
-  ) {
+  readonly code: string;
+  readonly status?: number;
+
+  constructor(code: string, message: string, status?: number) {
     super(message);
+    this.code = code;
+    this.status = status;
     this.name = 'CopilotClientError';
   }
 }
@@ -126,14 +127,16 @@ function buildEnrichedContext(
 
   // ── Construction du contexte enrichi ──────────────────────
   const enriched: CopilotMimmozaContext = {
-    vertical: reqCtx.vertical ?? active.vertical ?? 'generique',
-    route: reqCtx.route ?? active.route ?? window.location.pathname,
-
     // Spread du context appelant (study, user, plu…)
     ...reqCtx,
 
     // Champs listing à la racine (priorité sur le spread reqCtx)
     ...listingRootFields,
+
+    // vertical/route calculés AVEC fallback, réaffectés APRÈS le
+    // spread reqCtx pour que le fallback ne soit pas écrasé.
+    vertical: reqCtx.vertical ?? active.vertical ?? 'generique',
+    route: reqCtx.route ?? active.route ?? window.location.pathname,
 
     // Parcel enrichi
     parcel,
