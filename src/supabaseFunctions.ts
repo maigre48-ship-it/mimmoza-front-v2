@@ -6,7 +6,7 @@ import { supabase } from "./supabaseClient";
  * - Ne gÃ¨re plus les URLs ni les headers (Supabase le fait)
  * - RÃ©cupÃ¨re le vrai message d'erreur renvoyÃ© par la fonction (JSON)
  */
-export async function callEdgeFunction
+export async function callEdgeFunction<
   TInput extends Record<string, unknown>,
   TOutput
 >(
