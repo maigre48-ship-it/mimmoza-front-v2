@@ -6,6 +6,7 @@
 // ─── Types de base ──────────────────────────────────────────────────────────
 
 export type RecommendationType = 'GO' | 'GO_CONDITION' | 'NO_GO' | 'ANALYSE_INSUFFISANTE';
+export type ReportType = 'banque' | 'investisseur' | 'technique';
 export type RisqueNiveau = 'CRITIQUE' | 'ELEVE' | 'MODERE' | 'FAIBLE';
 export type RisqueCategorie =
   | 'FINANCIER'

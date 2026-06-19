@@ -88,6 +88,10 @@ const REC_CONFIG: Record<RecommendationType, {
     bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700',
     icon: XCircle, label: '?  NO GO -- Operation non viable en l\'etat',
   },
+  ANALYSE_INSUFFISANTE: {
+    bg: 'bg-slate-50', border: 'border-slate-200', text: 'text-slate-600',
+    icon: AlertCircle, label: 'ANALYSE INSUFFISANTE -- Donnees a completer',
+  },
 };
 
 const RecommendationBanner: React.FC<{ rec: RecommendationType; motif: string }> = ({ rec, motif }) => {
@@ -203,6 +207,7 @@ const ScenarioRow: React.FC<{ scenario: Scenario }> = ({ scenario }) => {
     GO: 'text-emerald-600 bg-emerald-50',
     GO_CONDITION: 'text-amber-600 bg-amber-50',
     NO_GO: 'text-red-600 bg-red-50',
+    ANALYSE_INSUFFISANTE: 'text-slate-600 bg-slate-50',
   };
   const typeStyle: Record<Scenario['type'], string> = {
     OPTIMISTE: 'text-emerald-700',
@@ -297,11 +302,13 @@ const TechniqueSection: React.FC<{ s: PromoteurSynthese }> = ({ s }) => {
     CONFIRME: 'text-emerald-600 bg-emerald-50 border-emerald-200',
     SOUS_RESERVE: 'text-amber-600 bg-amber-50 border-amber-200',
     IMPOSSIBLE: 'text-red-600 bg-red-50 border-red-200',
+    NON_DETERMINABLE: 'text-slate-600 bg-slate-50 border-slate-200',
   };
   const statusLabel: Record<typeof s.technique.faisabiliteTechnique, string> = {
     CONFIRME: '? Confirmee',
     SOUS_RESERVE: '? Sous reserve',
     IMPOSSIBLE: '? Impossible',
+    NON_DETERMINABLE: 'Non determinable',
   };
   return (
     <Section title="Faisabilite technique" icon={Layers} accent>

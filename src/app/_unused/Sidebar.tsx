@@ -1,11 +1,21 @@
-﻿
-export function Sidebar({ title, items, current, onChange }) {
+﻿interface SidebarItem {
+  id: string;
+  label: string;
+}
+
+interface SidebarProps {
+  title: string;
+  items: SidebarItem[];
+  current: string;
+  onChange: (id: string) => void;
+}
+
+export function Sidebar({ title, items, current, onChange }: SidebarProps) {
   return (
     <aside className='w-64 bg-slate-900 text-slate-100 flex flex-col border-r border-slate-800'>
       <div className='p-4 border-b border-slate-800'>
         <h2 className='text-lg font-semibold'>{title}</h2>
       </div>
-
       <nav className='flex-1 p-3 space-y-1'>
         {items.map((item) => (
           <button
@@ -22,11 +32,9 @@ export function Sidebar({ title, items, current, onChange }) {
           </button>
         ))}
       </nav>
-
       <div className='p-4 border-t border-slate-800 text-[11px] text-slate-500'>
         Version Beta<br/>© 2025 Mimmoza
       </div>
     </aside>
   );
 }
-
