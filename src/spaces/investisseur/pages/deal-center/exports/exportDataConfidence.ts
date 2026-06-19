@@ -375,7 +375,7 @@ export async function exportDataConfidencePdf(): Promise<void> {
   const deal = ensureActiveDeal();
   const id   = deal?.id ?? null;
 
-  const dealName = deal?.nom
+  const dealName = deal?.title
     ?? (deal?.address ? deal.address.split(",")[0].trim() : null)
     ?? "Deal sans nom";
 

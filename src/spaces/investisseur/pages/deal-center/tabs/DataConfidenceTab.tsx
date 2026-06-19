@@ -216,18 +216,18 @@ function ConfidenceScoreBlock({
 
 // ─── Métadonnées par source ───────────────────────────────────────────────────
 
-interface SourceMeta {
-  date:       string;
-  fraicheur:  string;
-  completude: string;
-  fiabilite:  string;
-}
+interface SourceDetail {
+          date:       string;
+          fraicheur:  string;
+          completude: string;
+          fiabilite:  string;
+        }
 
 function deriveSourceMeta(
   name: string,
   marcheSaved: MarcheRisquesSaved | undefined,
   rentaSaved:  RentabiliteSaved   | undefined,
-): SourceMeta | null {
+): SourceDetail | null {
   const data = marcheSaved?.data as Record<string, unknown> | undefined;
   const updatedAt = marcheSaved?.updatedAt;
   const dateStr   = updatedAt

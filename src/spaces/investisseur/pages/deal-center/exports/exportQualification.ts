@@ -84,7 +84,7 @@ function extractQualifInput(): QualifInput {
   else recommandation = "A ETUDIER";
 
   return {
-    dealName:  deal?.nom ?? deal?.address ?? "Deal sans nom",
+    dealName:  deal?.title ?? deal?.address ?? "Deal sans nom",
     address:   deal?.address ?? "-",
     smartScore,
     rendement,

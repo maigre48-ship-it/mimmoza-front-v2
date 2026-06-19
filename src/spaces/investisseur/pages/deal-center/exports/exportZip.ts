@@ -84,7 +84,7 @@ export async function exportZip(
   const id       = deal?.id ?? null;
   const renta    = (id ? snap.rentabiliteByDeal[id]?.computed : undefined) as RentabiliteSnapshot | undefined;
   const marche   = (id ? snap.marcheRisquesByDeal[id]?.data : undefined) as any;
-  const dealName = deal?.nom ?? deal?.address ?? "Deal";
+  const dealName = deal?.title ?? deal?.address ?? "Deal";
   const safeName = dealName.replace(/[^a-zA-Z0-9_\-]/g, "_");
   const dateStr  = new Date().toISOString().slice(0, 10);
 
