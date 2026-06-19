@@ -643,7 +643,7 @@ function formatEur(n: number): string {
 }
 
 function computeBudgetEstimation(lots: GeneratedWorkLot[], surface: number): BudgetEstimation {
-  const items: LotBudgetEstimate[] = lots.flatMap((lot) => {
+  const items: LotBudgetEstimate[] = lots.flatMap<LotBudgetEstimate>((lot) => {
     const cfg = LOT_COST_CONFIG[lot.nom];
     if (!cfg) return [];
     if (cfg.calcMode === "per_m2" && surface > 0) {

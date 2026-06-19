@@ -2,11 +2,14 @@
 import { supabase } from "./supabaseClient";
 
 /**
- * Helper générique pour appeler une Edge Function Supabase.
- * - Ne gère plus les URLs ni les headers (Supabase le fait)
- * - Récupère le vrai message d'erreur renvoyé par la fonction (JSON)
+ * Helper gÃ©nÃ©rique pour appeler une Edge Function Supabase.
+ * - Ne gÃ¨re plus les URLs ni les headers (Supabase le fait)
+ * - RÃ©cupÃ¨re le vrai message d'erreur renvoyÃ© par la fonction (JSON)
  */
-export async function callEdgeFunction<TInput, TOutput>(
+export async function callEdgeFunction
+  TInput extends Record<string, unknown>,
+  TOutput
+>(
   name: string,
   body: TInput
 ): Promise<TOutput> {
@@ -16,18 +19,15 @@ export async function callEdgeFunction<TInput, TOutput>(
 
   if (error) {
     console.error(`Erreur Edge Function "${name}" :`, error);
-
     // Supabase renvoie souvent un objet dans error.context.error
     const anyError = error as any;
-
     const backendErrorMessage =
       anyError?.context?.error?.error ?? // { error: "..." }
       anyError?.context?.error?.message ?? // { message: "..." }
       anyError?.context?.error ?? // directement une string
       error.message;
-
     throw new Error(
-      backendErrorMessage || `Échec de la fonction ${name}`
+      backendErrorMessage || `Ã‰chec de la fonction ${name}`
     );
   }
 

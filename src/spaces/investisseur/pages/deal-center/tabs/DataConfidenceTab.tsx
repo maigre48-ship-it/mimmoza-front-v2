@@ -235,8 +235,10 @@ function deriveSourceMeta(
     : null;
 
   if (name === "DVF" && data) {
-    const dvf = (data as Record<string,unknown>)?.core?.dvf as Record<string,unknown> | undefined
-      ?? (data as Record<string,unknown>)?.dvf as Record<string,unknown> | undefined;
+    const core = (data as Record<string, unknown>)?.core as Record<string, unknown> | undefined;
+    const dvf =
+      (core?.dvf as Record<string, unknown> | undefined)
+      ?? ((data as Record<string, unknown>)?.dvf as Record<string, unknown> | undefined);
     const count = typeof dvf?.count === "number" ? dvf.count : null;
     return {
       date:       dateStr ?? "—",
