@@ -108,6 +108,10 @@ export function CadastreMap({
     const selectedIdsSet = new Set(selectedParcelIds);
 
     async function loadGeoJson() {
+      // Re-garde dans la closure : TS ne propage pas le narrowing
+      // du scope parent dans une fonction imbriquée.
+      if (!map) return;
+
       try {
         const res = await fetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
