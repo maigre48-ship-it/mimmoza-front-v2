@@ -65,15 +65,21 @@ export interface InseeData {
   pct_15_29?: number | null;
   pct_25_39?: number | null;
   pct_30_44?: number | null;
+  pct_40_54?: number | null;
   pct_45_59?: number | null;
-
+  pct_55_64?: number | null;
   pct_plus_60?: number | null;
   pct_plus_65?: number | null;
   pct_plus_75?: number | null;
   pct_plus_85?: number | null;
 
   evolution_75_plus_5ans?: number | null;
-}
+    // social / logement
+    taux_pauvrete?: number | null;
+    pct_proprietaires?: number | null;
+    pct_locataires?: number | null;
+    pension_retraite_moyenne?: number | null;
+  }
 
 export interface ServiceProche {
   nom?: string | null;

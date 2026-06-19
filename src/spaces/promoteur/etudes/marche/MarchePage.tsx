@@ -3137,7 +3137,7 @@ export function MarchePage() {
     if (loadState !== "ready" || !study) return;
     if (study.foncier?.commune_insee && !codeInsee) setCodeInsee(study.foncier.commune_insee);
     if (study.foncier?.focus_id && !parcelId) setParcelId(study.foncier.focus_id);
-    if (study.marche?.raw_data && !analysisResult) setAnalysisResult(study.marche.raw_data as MarketStudyApiResponse);
+    if (study.marche?.raw_data && !analysisResult) setAnalysisResult(study.marche.raw_data as unknown as MarketStudyApiResponse);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadState, study]);
 

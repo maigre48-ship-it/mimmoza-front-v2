@@ -17,7 +17,7 @@ import type {
   DemographicSegment,
   ProjectType,
   ProjectTypeConfig,
-} from "../types/market.types";
+} from "../types";
 
 // ============================================
 // SEGMENTS DÉMOGRAPHIQUES

@@ -1,6 +1,13 @@
 // FILE: src/spaces/promoteur/etudes/marche/types/competition.ts
 // À ajouter ou fusionner avec vos types existants
 
+// ProjectType est défini de façon canonique dans market.types.ts.
+// On le ré-exporte ici (et on l'utilise en interne) pour éviter une
+// définition divergente (l'ancienne version locale avait "bureau" au lieu
+// de "bureaux" et omettait residence_etudiante/hotel).
+export type { ProjectType } from "./market.types";
+import type { ProjectType } from "./market.types";
+
 /**
  * Données d'un concurrent (EHPAD/établissement)
  */
@@ -86,8 +93,3 @@ export interface MarketStudyResult {
   realEstate: RealEstateData | null;
   pois: any;
 }
-
-/**
- * Types de projets supportés
- */
-export type ProjectType = "ehpad" | "residence_senior" | "logement" | "commerce" | "bureau";

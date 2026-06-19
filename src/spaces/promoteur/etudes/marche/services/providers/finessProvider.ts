@@ -38,7 +38,7 @@ export const FINESS_CATEGORIES = {
 } as const;
 
 // Catégories par défaut pour recherche EHPAD
-export const DEFAULT_EHPAD_CATEGORIES = [
+export const DEFAULT_EHPAD_CATEGORIES: string[] = [
   FINESS_CATEGORIES.EHPAD,
   FINESS_CATEGORIES.EHPA_AM,
   FINESS_CATEGORIES.EHPA_SANS_AM,

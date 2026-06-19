@@ -47,6 +47,7 @@ export interface ProjectTypeConfig {
   icon: LucideIcon;
   color: string;
   description: string;
+  competitionLabel?: { singular: string; plural: string; unit: string };
   
   // Segments démographiques
   demographicSegments: DemographicSegment[];

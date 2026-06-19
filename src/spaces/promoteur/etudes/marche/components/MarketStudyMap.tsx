@@ -14,7 +14,6 @@ interface MarketStudyMapProps {
 // Vérifier si Leaflet est disponible
 let L: typeof import("leaflet") | null = null;
 try {
-  // @ts-expect-error - Import dynamique
   L = await import("leaflet");
 } catch {
   L = null;

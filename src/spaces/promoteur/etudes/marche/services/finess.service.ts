@@ -945,7 +945,6 @@ export function convertToEhpadData(etablissements: NormalizedEHPADItem[], insee?
     })),
     analyse_concurrence: {
       capacite_totale: capacityAvailable ? totalCapacity : undefined,
-      capacite_disponible: capacityAvailable,
       nb_avec_capacite: nbWithCapacity,
       densite_lits_1000_seniors: densiteLits1000Seniors,
       verdict,
