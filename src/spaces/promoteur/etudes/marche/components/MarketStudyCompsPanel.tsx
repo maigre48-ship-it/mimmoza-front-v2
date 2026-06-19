@@ -1,7 +1,7 @@
 // FILE: src/spaces/promoteur/etudes/marche/components/MarketStudyCompsPanel.tsx
 
 import React, { useMemo, useState } from "react";
-import { formatDistance, formatNumber, formatPrice } from "../hooks/useMarketStudy";
+import { formatDistance, formatNumber, formatPrice } from "../utils/marketFormat";
 import type { DvfTransaction, MarketStudyResponse } from "../types/marketStudy.types";
 
 interface MarketStudyCompsPanelProps {

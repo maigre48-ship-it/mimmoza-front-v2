@@ -4,7 +4,8 @@
 export { MarchePage, default } from "./MarchePage";
 
 // Hook
-export { formatDistance, formatNumber, formatPrice, getTotalPoisCount, hasPartialData, useMarketStudy } from "./hooks/useMarketStudy";
+export { useMarketStudy } from "./hooks/useMarketStudy";
+export { formatDistance, formatNumber, formatPrice } from "./utils/marketFormat";
 
 // API
 export { exportMarketStudyToCsv, exportMarketStudyToJson, fetchMarketStudy } from "./api/marketStudyApi";

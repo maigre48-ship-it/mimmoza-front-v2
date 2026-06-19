@@ -1,7 +1,7 @@
 // FILE: src/spaces/promoteur/etudes/marche/components/MarketStudyInseePanel.tsx
 
 import React, { useState } from "react";
-import { formatNumber } from "../hooks/useMarketStudy";
+import { formatNumber } from "../utils/marketFormat";
 import type { MarketStudyResponse } from "../types/marketStudy.types";
 
 interface MarketStudyInseePanelProps {

@@ -1,7 +1,7 @@
 // FILE: src/spaces/promoteur/etudes/marche/components/MarketStudyKpis.tsx
 
 import React from "react";
-import { formatDistance, formatNumber } from "../hooks/useMarketStudy";
+import { formatDistance, formatNumber, formatPrice } from "../utils/marketFormat";
 import type { MarketStudyResponse, PoiCategory } from "../types/marketStudy.types";
 import { POI_CATEGORY_ICONS, POI_CATEGORY_LABELS } from "../types/marketStudy.types";
 

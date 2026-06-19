@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import type { MarketStudyParams } from "../services";
 import { getMarketStudy } from "../services";
-import type { MarketStudyResult } from "../types";
+import type { MarketStudyResult } from "../types/competition";
 
 interface UseMarketStudyReturn {
   data: MarketStudyResult | null;
@@ -25,7 +25,7 @@ export function useMarketStudy(useMock: boolean = true): UseMarketStudyReturn {
       setData(null);
 
       try {
-        const result = await getMarketStudy({ ...params, useMock });
+        const result = await getMarketStudy(params);
         setData(result);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Erreur lors de l'analyse";

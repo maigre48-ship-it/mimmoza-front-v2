@@ -1,7 +1,7 @@
 // FILE: src/spaces/promoteur/etudes/marche/components/MarketStudyPoisPanel.tsx
 
 import React, { useState } from "react";
-import { formatDistance } from "../hooks/useMarketStudy";
+import { formatDistance, formatNumber, formatPrice } from "../utils/marketFormat";
 import type { MarketStudyResponse, Poi, PoiCategory } from "../types/marketStudy.types";
 import { POI_CATEGORY_ICONS, POI_CATEGORY_LABELS } from "../types/marketStudy.types";
 
