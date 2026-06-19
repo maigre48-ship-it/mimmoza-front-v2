@@ -28,6 +28,7 @@ import {
 // ─── Extended listing type ─────────────────────────────────────────────────────
 
 type ListingExtended = MarketActiveListing & {
+  price_m2?: number | null;
   bedrooms?: number | null;
   land_surface_m2?: number | null;
   parking?: boolean | null;
@@ -610,7 +611,7 @@ export default function VeilleMarchePage() {
   const opportunities = useMemo(() => {
   if (!hasActiveZone) return [];
 
-  return ((data?.opportunities ?? []) as OpportunityItem[]).filter((item) => {
+  return ((data?.opportunities ?? []) as unknown as OpportunityItem[]).filter((item) => {
     if (!item) return false;
 
     // Filtre anti-location

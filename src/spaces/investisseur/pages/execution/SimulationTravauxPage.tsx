@@ -83,7 +83,7 @@ const PRICING_MAP: Map<PricingItemCode, PricingMeta> = (() => {
 })();
 
 function getUnitPrice(code: PricingItemCode, range: TravauxRange): number {
-  return PRICING_MAP.get(code)?.[range] ?? 0;
+  return PRICING_MAP.get(code)?.prices?.[range] ?? 0;
 }
 
 /* ================================================================== */
@@ -122,9 +122,9 @@ function applyTravauxToAnalyse(
   computed: ComputedTravaux
 ): boolean {
   const snap = readMarchandSnapshot();
-  const dealId = snap?.activeDealId ?? snap?.deal?.id;
+  const dealId = snap?.activeDealId ?? null;
   if (!dealId) return false;
-  const existingRenta = snap?.deals?.[dealId]?.rentabilite ?? snap?.rentabilite;
+  const existingRenta = snap?.rentabiliteByDeal?.[dealId];
   const existingInputs = (existingRenta as Record<string, unknown> | undefined)?.inputs ?? {};
   patchRentabiliteForDeal(dealId, {
     inputs: { ...(existingInputs as Record<string, unknown>), travauxEstimes: total, travauxSource: "simulation" as const },
@@ -810,10 +810,6 @@ const SimulationTravauxPage: React.FC<Props> = ({ theme, breadcrumb }) => {
           background: GRAD,
           borderRadius: 24,
           padding: "32px 36px",
-          borderRadius: 32,
-padding: "40px 44px",
-marginBottom: 32,
-boxShadow: "0 20px 60px rgba(15,23,42,0.08)",
           position: "relative",
           overflow: "hidden",
         }}

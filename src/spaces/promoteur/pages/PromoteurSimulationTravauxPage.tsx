@@ -89,7 +89,7 @@ const PRICING_MAP: Map<PricingItemCode, PricingMeta> = (() => {
   return m;
 })();
 
-function getUnitPrice(code: PricingItemCode, range: TravauxRange): number { return PRICING_MAP.get(code)?.[range] ?? 0; }
+function getUnitPrice(code: PricingItemCode, range: TravauxRange): number { return PRICING_MAP.get(code)?.prices?.[range] ?? 0; }
 
 const fmt     = (n: number) => n.toLocaleString("fr-FR", { maximumFractionDigits: 0 });
 const fmtEuro = (n: number) => `${fmt(n)} €`;
@@ -526,7 +526,7 @@ const ZoneResultList: React.FC<{ pieces: PieceTravaux[]; originals: PieceUI[]; r
 /* ================================================================== */
 
 const LotsBreakdown: React.FC<{
-  lots: ComputedLot[]; total: number; bufferPct: number;
+  lots: ComputedLot[]; total: number; bufferPct: number; bufferAmount: number;
   totalWithBuffer: number; costPerM2: number | null; complexityCoef: number;
   simulation: TravauxSimulationV1; computed: ComputedTravaux; sourceMode: "simple" | "expert";
   disabledLots: Set<string>; onToggleLot: (code: string) => void;

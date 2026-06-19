@@ -277,8 +277,8 @@ export default function MarchandExecution() {
 
     if (saved) {
       setGlobal(saved.global ?? { ...DEFAULT_GLOBAL });
-      setTasks(Array.isArray(saved.tasks) ? saved.tasks : [...DEFAULT_TASKS]);
-      setManualPhases(saved.phases ?? [...DEFAULT_MANUAL_PHASES]);
+      setTasks(Array.isArray(saved.tasks) ? (saved.tasks as WorkTask[]) : [...DEFAULT_TASKS]);
+      setManualPhases(Array.isArray(saved.phases) ? (saved.phases as TimelinePhase[]) : [...DEFAULT_MANUAL_PHASES]);
       setPlanningMode(saved.planningMode ?? DEFAULT_PLANNING_MODE);
     } else {
       setGlobal({ ...DEFAULT_GLOBAL });
@@ -555,7 +555,7 @@ export default function MarchandExecution() {
               lineHeight: 1.55,
             }}
           >
-            Travaux, planning, suivi paiements · {activeDeal.label || activeDeal.id}
+            Travaux, planning, suivi paiements · {activeDeal.title || activeDeal.id}
           </div>
         </div>
 

@@ -46,6 +46,7 @@ export type FetchMarketActiveListingsParams = {
   city?: string;
   cities?: string[];
   limit?: number;
+  propertyTypeFilter?: "all" | "apartment" | "house" | "land";
 };
 
 function normalizeText(value?: string | null): string | undefined {
