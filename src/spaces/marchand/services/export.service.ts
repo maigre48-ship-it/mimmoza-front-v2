@@ -123,5 +123,5 @@ export async function exportSnapshotToPdfWithAi(
   }
 
   // ✅ IMPORTANT: opts passés au PDF
-  exportSnapshotToPdf(snap, { aiReport, context });
+  exportSnapshotToPdf(snap, { aiReport, context: context as unknown as Record<string, unknown> });
 }

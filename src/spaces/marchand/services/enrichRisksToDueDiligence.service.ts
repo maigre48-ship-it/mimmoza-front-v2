@@ -257,7 +257,7 @@ export async function enrichRisksToDueDiligence(): Promise<{
         ),
         updatedAt: now,
       },
-    ].map((it): DueDiligenceItem => ({ ...it, status: clampStatus(it.status) }));
+    ].map((it) => ({ ...it, status: clampStatus(it.status) } as DueDiligenceItem));
 
     // 6) Persister store DD
     upsertItemsForDossier(dossierId, itemsDd);
