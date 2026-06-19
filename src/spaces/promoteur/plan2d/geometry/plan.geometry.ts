@@ -1,6 +1,6 @@
 // src/spaces/promoteur/plan2d/plan.geometry.ts
 
-import type { ResizeHandle, Vec2 } from "./plan.types";
+import type { ResizeHandle, Vec2 } from "../plan.types";
 
 // ─── BOUNDING BOX ─────────────────────────────────────────────────────
 

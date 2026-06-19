@@ -7,7 +7,7 @@
 import type {
   TravauxSimulationComputed,
   TravauxSimulationV1,
-} from "../modules/execution/services/travauxSimulation.types";
+} from "../../investisseur/shared/travauxSimulation.types";
 
 import {
   setActiveDealId as setDealContextActiveDealId,

@@ -7,7 +7,7 @@ import type {
   BuildingSide,
   MassingArchitectureStyle,
   Pt2D,
-} from "./massingScene.types";
+} from "../spaces/promoteur/terrain3d/massingScene.types";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES PUBLICS

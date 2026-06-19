@@ -9,7 +9,7 @@ import {
 } from "@/lib/dvfEstimateApi";
 import { supabase } from "@/lib/supabaseClient";
 import { useCallback, useState } from "react";
-import type { MimmozaValuationInput, RiskLevel } from "../../valuation/valuation.types";
+import type { MimmozaValuationInput, RiskLevel } from "../../../valuation/valuation.types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

@@ -26,7 +26,7 @@
 
 import type { FacadeSceneInput } from './buildFacadeSceneInput';
 import type { FootprintPoint } from './extractFootprintFrom2D';
-import type { Facade2DModel } from './facade2d.types';
+import type { Facade2DModel } from '../facade2d/facade2d.types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types publics (compatibles V1/V2)

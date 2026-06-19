@@ -1,13 +1,13 @@
 // buildingBlenderSpec.helpers.ts
 // Fonctions pures de construction / patch du BuildingBlenderSpec
 
-import type { MassingBuildingModel } from '../massingScene.types';
+import type { MassingBuildingModel } from './massingScene.types';
 import type {
   BuildingBlenderSpec,
   BuildingStyle,
   FacadeFamily,
   RoofFamily,
-} from './buildingBlenderSpec.types';
+} from './components/buildingBlenderSpec.types';
 
 // ─── Mappers internes ─────────────────────────────────────────────────────────
 

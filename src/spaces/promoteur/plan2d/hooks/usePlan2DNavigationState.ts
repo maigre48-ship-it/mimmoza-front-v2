@@ -19,7 +19,7 @@
 import type { Feature, MultiPolygon, Polygon } from "geojson";
 import { useMemo } from "react";
 import { useLocation } from "react-router-dom";
-import { normalizeToGeoJSONFeature } from "../getCurrentPromoteurParcelSelection";
+import { normalizeToGeoJSONFeature } from "../../shared/getCurrentPromoteurParcelSelection";
 
 export interface Plan2DNavigationState {
   /** Projet plan complet passé par Implantation2D */

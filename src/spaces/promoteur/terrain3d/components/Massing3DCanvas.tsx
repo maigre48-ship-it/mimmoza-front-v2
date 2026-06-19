@@ -20,7 +20,7 @@ import type { EarthworksKPIs } from "../types/earthworks.types";
 import { Controls3D } from "./Controls3D";
 import type { ReliefData } from "./SceneSvg3D";
 
-import { MassingEditor3D } from "../../massing3d/MassingEditor3D";
+import { MassingEditor3D } from "./MassingEditor3D";
 
 const ACCENT = "#5247b8";
 

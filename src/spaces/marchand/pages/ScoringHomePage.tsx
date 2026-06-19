@@ -21,15 +21,15 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import SmartScorePanel from "../../../components/sourcing/SmartScorePanel";
-import { SourcingForm } from "../forms/SourcingForm";
+import { SourcingForm } from "../../sourcing/forms/SourcingForm";
 
-import { useSmartScore } from "../shared/hooks/useSmartScore";
+import { useSmartScore } from "../../sourcing/shared/hooks/useSmartScore";
 
 import type {
   ProfileTarget,
   PropertyType,
   SourcingItemDraft,
-} from "../types/sourcing.types";
+} from "../../sourcing/types/sourcing.types";
 
 import {
   calculatePricePerSqm,
@@ -37,9 +37,9 @@ import {
   formatPrice,
   formatSurface,
   parseFloor,
-} from "../utils/validators";
+} from "../../sourcing/utils/validators";
 
-import { getPropertyTypeLabel } from "../selectors/propertySelectors";
+import { getPropertyTypeLabel } from "../../sourcing/selectors/propertySelectors";
 
 import {
   getActiveDealId,

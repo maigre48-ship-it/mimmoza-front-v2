@@ -1,6 +1,6 @@
 ﻿// src/spaces/investisseur/components/travaux/LotsBreakdown.tsx
 import React, { useState } from "react";
-import type { ComputedLot } from "../../shared/travauxSimulation.types";
+import type { ComputedLot } from "../../../shared/travauxSimulation.types"
 
 interface LotsBreakdownProps {
   lots: ComputedLot[];

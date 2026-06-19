@@ -1,6 +1,6 @@
 // massingScene.types.ts
 
-import type { BuildingBlenderSpec } from './terrain3d/components/buildingBlenderSpec.types';
+import type { BuildingBlenderSpec } from './components/buildingBlenderSpec.types';
 
 export type FacadeStyle = "beton" | "vitrage" | "brique" | "zinc" | "bois";
 export type RoofStyle = "terrasse" | "vegetalise" | "inclinee";
