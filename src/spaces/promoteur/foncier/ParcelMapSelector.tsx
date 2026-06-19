@@ -555,12 +555,12 @@ function ImperativeParcelLayer({
           renderer: canvasRenderer,
       interactive: true,
       bubblingMouseEvents: false,
-      style: (feature) => {
+      style: (feature: any) => {
         if (!feature) return STYLE_DEFAULT;
         const pid = getParcelIdFromFeature(feature);
         return pid && selectedIdsRef.current.has(pid) ? STYLE_SELECTED : STYLE_DEFAULT;
       },
-      onEachFeature: (feature, layer) => {
+      onEachFeature: (feature: any, layer: any) => {
         const pid = getParcelIdFromFeature(feature);
         if (!pid) return;
         layerByIdRef.current.set(pid, layer as L.Path);
@@ -614,7 +614,7 @@ function ImperativeParcelLayer({
       renderer: canvasRenderer,
       style: STYLE_SELECTED,
       interactive: false,
-    });
+    } as any);
     overlay.addTo(map);
     overlay.bringToFront();
     selectedOverlayRef.current = overlay;

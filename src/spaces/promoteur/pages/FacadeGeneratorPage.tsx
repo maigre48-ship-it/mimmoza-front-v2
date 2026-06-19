@@ -249,7 +249,7 @@ function coercePointLike(v: unknown): Pt2D | null {
 
 function extractRawFootprintFromBuildingRecord(b: unknown): Pt2D[] {
   if (!b || typeof b !== "object") return [];
-  const r = b as Record<string, unknown>;
+  const r = b as unknown as Record<string, unknown>;
   const candidates: unknown[] = [
     r.footprint, r.polygon, r.points, r.outline,
     (r.geometry as Record<string, unknown> | undefined)?.footprint,
@@ -870,7 +870,7 @@ export default function FacadeGeneratorPage() {
     if (Array.isArray(rawFp) && rawFp.length >= 3) { const s = sanitizeFootprintForAi(rawFp.map((p) => ({ x: p.x, y: p.y }))); if (s.length >= 3) return s; }
     const segs = facadeRenderSpec.footprintMeta?.segments;
     if (Array.isArray(segs) && segs.length >= 3) { const s = sanitizeFootprintForAi(segs.map((s2) => ({ x: s2.start.x, y: s2.start.y }))); if (s.length >= 3) return s; }
-    const selected = editor2dBuildings.find((b) => { if (!b || typeof b !== "object") return false; const r = b as Record<string, unknown>; return typeof r.id === "string" && r.id === selectedBuildingId; });
+    const selected = editor2dBuildings.find((b) => { if (!b || typeof b !== "object") return false; const r = b as unknown as Record<string, unknown>; return typeof r.id === "string" && r.id === selectedBuildingId; });
     const localPts = extractRawFootprintFromBuildingRecord(selected as unknown as Record<string, unknown>);
     if (localPts.length >= 3) return sanitizeFootprintForAi(localPts);
     return [];
