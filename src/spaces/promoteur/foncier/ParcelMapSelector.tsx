@@ -552,7 +552,7 @@ function ImperativeParcelLayer({
     }
 
     const layer = L.geoJSON(fc as any, {
-      renderer: canvasRenderer,
+          renderer: canvasRenderer,
       interactive: true,
       bubblingMouseEvents: false,
       style: (feature) => {
@@ -578,7 +578,7 @@ function ImperativeParcelLayer({
           onToggleRef.current(pid, feature, area_m2);
         });
       },
-    });
+    } as any);
 
     layer.addTo(map);
     layerGroupRef.current = layer;

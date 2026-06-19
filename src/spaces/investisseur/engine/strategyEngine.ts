@@ -194,7 +194,7 @@ export function computeIRR(
 
     if (Math.abs(npvMid) < tolerance || (hi - lo) / 2 < tolerance) {
       const result = mid * 100; // retourner en %
-      return safeNum(result, null) as number | null;
+      return safeNum(result, undefined) as number | null;
     }
 
     if (npvMid * npvLo < 0) {
@@ -207,7 +207,7 @@ export function computeIRR(
   }
 
   const result = ((lo + hi) / 2) * 100;
-  return safeNum(result, null) as number | null;
+  return safeNum(result, undefined) as number | null;
 }
 
 // ─── Calcul de scénario complet ─────────────────────────────────────

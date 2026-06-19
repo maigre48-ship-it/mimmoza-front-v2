@@ -115,13 +115,13 @@ const COLUMNS: ColDef[] = [
     key: "score", header: "Score", width: "10%", align: "center",
     render: (s) => s.score
       ? <ScoreChip score={s.score.breakdown.overall} rank={s.score.rank} />
-      : <span style={{ color: T.slate300, fontSize: 10 }}>—</span>,
+      : <span style={{ color: T.slate400, fontSize: 10 }}>—</span>,
   },
   {
     key: "regulatory", header: "Régl.", width: "7%", align: "center",
     render: (s) => {
       const v = s.score?.breakdown.regulatory;
-      if (v === undefined) return <span style={{ color: T.slate300, fontSize: 10 }}>—</span>;
+      if (v === undefined) return <span style={{ color: T.slate400, fontSize: 10 }}>—</span>;
       const c = v >= 75 ? T.green700 : v >= 50 ? T.amber700 : T.red700;
       return <span style={{ fontWeight: 700, color: c, fontSize: 12, fontVariantNumeric: "tabular-nums" }}>{v}</span>;
     },

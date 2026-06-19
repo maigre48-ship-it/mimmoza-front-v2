@@ -861,7 +861,7 @@ export default function FacadeGeneratorPage() {
     const widthM = facadeRenderSpec.widthM;
     const depthM = facadeRenderSpec.footprintMeta?.footprintDepth ?? (facadeSceneInput.footprint?.length >= 3 ? (() => { const pts = facadeSceneInput.footprint as Array<{ x: number; y: number }>; const ys = pts.map((p) => p.y); return Math.max(...ys) - Math.min(...ys); })() : D);
     const uiFallback = configToFacade2DInput(config, undefined, ornaments);
-    const resolved = resolveFacadeProjectInput(extractFromEditor2D(editor2dBuildings), extractFromProjectStore(implMeta), uiFallback);
+    const resolved = resolveFacadeProjectInput(extractFromEditor2D(editor2dBuildings as unknown as Record<string, unknown>[]), extractFromProjectStore(implMeta), uiFallback);
     return { facade2DModel: buildFacade2DModel(configToFacade2DInput(config, { widthM, depthM }, ornaments)), facadeSource: resolved.sourceResolved, facadeRenderSpec, facadeSceneInput, selectedBuildingId };
   }, [config, editor2dBuildings, implMeta, ornaments]);
 
@@ -871,7 +871,7 @@ export default function FacadeGeneratorPage() {
     const segs = facadeRenderSpec.footprintMeta?.segments;
     if (Array.isArray(segs) && segs.length >= 3) { const s = sanitizeFootprintForAi(segs.map((s2) => ({ x: s2.start.x, y: s2.start.y }))); if (s.length >= 3) return s; }
     const selected = editor2dBuildings.find((b) => { if (!b || typeof b !== "object") return false; const r = b as Record<string, unknown>; return typeof r.id === "string" && r.id === selectedBuildingId; });
-    const localPts = extractRawFootprintFromBuildingRecord(selected);
+    const localPts = extractRawFootprintFromBuildingRecord(selected as unknown as Record<string, unknown>);
     if (localPts.length >= 3) return sanitizeFootprintForAi(localPts);
     return [];
   }, [facadeSceneInput.footprint, facadeRenderSpec.footprintMeta, editor2dBuildings, selectedBuildingId]);

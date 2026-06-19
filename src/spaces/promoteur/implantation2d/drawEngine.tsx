@@ -152,7 +152,7 @@ function normalizeToFeature(raw: unknown): Feature<Polygon | MultiPolygon> | nul
   if (data.type === "Polygon" || data.type === "MultiPolygon") {
     return {
       type: "Feature",
-      geometry: data as Polygon | MultiPolygon,
+      geometry: data as unknown as Polygon | MultiPolygon,
       properties: {},
     } as Feature<Polygon | MultiPolygon>;
   }
@@ -979,7 +979,7 @@ export function useDrawEngine({ envelopeFeature, onError }: UseDrawEngineProps):
     (feature: Feature<Polygon | MultiPolygon>): boolean => {
       if (!envelopeFeature) return true;
       try {
-        return turf.booleanWithin(feature as turf.AllGeoJSON, envelopeFeature as turf.AllGeoJSON);
+        return turf.booleanWithin(feature as any, envelopeFeature as any);
       } catch {
         return false;
       }

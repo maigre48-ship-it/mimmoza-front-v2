@@ -147,13 +147,12 @@ export function useUserWeights(
         p_space: space,
         p_project_nature: projectNature,
       })
-      .then(({ data }) => {
+      .then(({ data }: { data: unknown }) => {
         if (data && typeof data === "object") {
           setUserWeights(data as Record<SmartScorePillar, number>);
         }
-      })
-      .catch((e) => console.warn("[useUserWeights] load error:", e))
-      .finally(() => setLoading(false));
+      }, (e: unknown) => console.warn("[useUserWeights] load error:", e))
+      .then(() => setLoading(false), () => setLoading(false));
   }, [userId, space, projectNature]);
 
   const save = useCallback(

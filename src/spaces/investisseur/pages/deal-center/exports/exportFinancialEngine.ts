@@ -38,7 +38,7 @@ export async function exportFinancialEnginePdf(): Promise<void> {
   const deal     = ensureActiveDeal();
   const id       = deal?.id ?? null;
   const renta    = (id ? snap.rentabiliteByDeal[id]?.computed : undefined) as RentabiliteSnapshot | undefined;
-  const dealName = deal?.nom ?? deal?.address ?? "Deal sans nom";
+  const dealName = deal?.title ?? deal?.address ?? "Deal sans nom";
   const base     = (renta as any)?.scenarios?.base;
   const pess     = (renta as any)?.scenarios?.pessimiste;
   const opti     = (renta as any)?.scenarios?.optimiste;
@@ -247,7 +247,7 @@ export async function exportFinancialEngineExcel(): Promise<void> {
   const deal     = ensureActiveDeal();
   const id       = deal?.id ?? null;
   const renta    = (id ? snap.rentabiliteByDeal[id]?.computed : undefined) as RentabiliteSnapshot | undefined;
-  const dealName = deal?.nom ?? deal?.address ?? "Deal sans nom";
+  const dealName = deal?.title ?? deal?.address ?? "Deal sans nom";
   const base     = (renta as any)?.scenarios?.base;
   const pess     = (renta as any)?.scenarios?.pessimiste;
   const opti     = (renta as any)?.scenarios?.optimiste;
