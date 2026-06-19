@@ -52,7 +52,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import * as THREE from "three";
-import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter";
+import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 
 import { buildRectangularSilhouetteDataUrl } from "@/utils/buildRectangularSilhouette";
 import { useLocalBlenderRender } from "../terrain3d/blender/useLocalBlenderRender";

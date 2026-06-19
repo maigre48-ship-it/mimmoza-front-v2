@@ -11,7 +11,7 @@
 // ============================================================================
 
 import * as THREE from 'three';
-import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import {
   type ArchitecturalStyle,
   type ArchMeshGroupResult,
