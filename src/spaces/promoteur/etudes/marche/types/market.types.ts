@@ -79,6 +79,19 @@ export interface InseeData {
     pct_proprietaires?: number | null;
     pct_locataires?: number | null;
     pension_retraite_moyenne?: number | null;
+    // ménages
+    nb_menages?: number | null;
+    taille_moyenne_menage?: number | null;
+    pct_menages_1_personne?: number | null;
+    pct_familles_monoparentales?: number | null;
+    // éducation
+    pct_diplome_superieur?: number | null;
+    pct_sans_diplome?: number | null;
+    // logement
+    pct_logements_vacants?: number | null;
+    pct_residences_secondaires?: number | null;
+    // localisation
+    region?: string | null;
   }
 
 export interface ServiceProche {
@@ -195,16 +208,23 @@ export interface EhpadFacility {
 }
 
 export interface EhpadAnalyseConcurrence {
-  capacite_totale?: number;
-  densite_lits_1000_seniors?: number;
-  verdict?: string;
-}
+    capacite_totale?: number;
+    nb_avec_capacite?: number;
+    densite_lits_1000_seniors?: number;
+    verdict?: string;
+  }
 
 export interface EHPADData {
-  count: number;
-  liste: EhpadFacility[];
-  analyse_concurrence?: EhpadAnalyseConcurrence;
-}
+    count: number;
+    liste?: EhpadFacility[];
+    nearest?: {
+      nom?: string;
+      commune?: string;
+      distance_km?: number;
+      capacite?: number;
+    } | null;
+    analyse_concurrence?: EhpadAnalyseConcurrence;
+  }
 
 // insights affichés en UI
 export interface MarketInsight {
