@@ -117,6 +117,8 @@ export type InvestisseurSnapshot = {
   activeProjectId: string | null;
   projects: Record<string, InvestisseurProject>;
   events: Array<{ at: string; type: string; projectId?: string; message?: string }>;
+  smartscore?: unknown;
+  propertyDraft?: { address?: string; lat?: number; lng?: number; propertyType?: string; zipCode?: string };
 };
 
 export type PendingOpportunityDeal = {

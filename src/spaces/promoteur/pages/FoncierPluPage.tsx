@@ -335,7 +335,7 @@ function ImperativeParcelLayer({ fc, selectedIds, onToggleParcel }: { fc: any; s
         const area = getFeatureArea(feature);
         lyr.bindTooltip(`<div style="font-family:Inter,sans-serif;font-size:12px"><strong>${pid}</strong>${area ? `<br/><b>${area.toLocaleString("fr-FR")} m²</b>` : ""}</div>`, { sticky: true, className: "parcel-tooltip" });
       },
-    });
+    } as any);
     layer.addTo(map); layerRef.current = layer;
     return () => { if (layerRef.current) { map.removeLayer(layerRef.current); layerRef.current = null; } layerByIdRef.current.clear(); };
   }, [map, fc]);

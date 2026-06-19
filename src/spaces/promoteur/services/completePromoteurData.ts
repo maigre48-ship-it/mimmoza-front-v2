@@ -388,7 +388,7 @@ export async function completePromoteurData(params: CompleteParams): Promise<Com
     } else {
       updatedInput.risques = {
         ...(updatedInput.risques ?? {}),
-        risquesIdentifies: existingRisques.length > 0 ? existingRisques : risques.risquesIdentifies,
+        risquesIdentifies: (existingRisques.length > 0 ? existingRisques : risques.risquesIdentifies).map((r: unknown) => typeof r === "string" ? { libelle: r } : r),
         zonageRisque: existingZonage ?? risques.zonageRisque,
       };
       const detail = risques.risquesIdentifies.length > 0

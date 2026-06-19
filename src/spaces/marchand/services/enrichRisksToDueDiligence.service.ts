@@ -204,7 +204,7 @@ export async function enrichRisksToDueDiligence(): Promise<{
 
     const sismiqueStatus: DDStatus = seismicDetected ? "WARNING" : "MISSING";
 
-    const itemsDd: DueDiligenceItem[] = [
+    const itemsDd = [
       {
         id: "risque_inondation",
         category: "risques_externes",
@@ -257,7 +257,7 @@ export async function enrichRisksToDueDiligence(): Promise<{
         ),
         updatedAt: now,
       },
-    ].map((it) => ({ ...it, status: clampStatus(it.status) }));
+    ].map((it): DueDiligenceItem => ({ ...it, status: clampStatus(it.status) }));
 
     // 6) Persister store DD
     upsertItemsForDossier(dossierId, itemsDd);

@@ -72,6 +72,14 @@ export async function enrichSnapshot(
   let risques: any | null = null;
 
   const d = snapshot.propertyDraft;
+  if (!d) {
+    return {
+      market: null,
+      insee: null,
+      risques: null,
+      errors: ["Aucune localisation fournie — enrichissement impossible."],
+    };
+  }
   const hasLocation = !!(d.address || (d.lat && d.lng));
 
   if (!hasLocation) {

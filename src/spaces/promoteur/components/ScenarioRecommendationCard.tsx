@@ -299,7 +299,7 @@ const RecommendationContent: React.FC<{ scenario: ImplantationScenario }> = ({
                                 letterSpacing: "0.05em", textTransform: "uppercase",
                                 marginBottom: 3 }}>
                     {d.label}
-                    <span style={{ fontWeight: 400, color: T.slate300, marginLeft: 3 }}>({d.pct})</span>
+                    <span style={{ fontWeight: 400, color: T.slate400, marginLeft: 3 }}>({d.pct})</span>
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 800, color: c, fontVariantNumeric: "tabular-nums" }}>
                     {d.value}

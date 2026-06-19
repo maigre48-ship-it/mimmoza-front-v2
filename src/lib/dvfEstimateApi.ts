@@ -215,7 +215,7 @@ export async function fetchBestDvfEstimate(
 
 export async function fetchDvfComps(
   supabase: SupabaseClient,
-  params: DvfEstimateParams & { scope: "commune" | "cp"; limit?: number }
+  params: Omit<DvfEstimateParams, "surface_m2"> & { scope: "commune" | "cp"; limit?: number }
 ): Promise<{ success: boolean; data: DvfCompRow[]; error?: string; message?: string }> {
   const {
     commune_insee,
@@ -256,7 +256,7 @@ export async function fetchDvfComps(
 
 export async function fetchDvfCompsNormalized(
   supabase: SupabaseClient,
-  params: DvfEstimateParams & { scope: "commune" | "cp"; limit?: number }
+  params: Omit<DvfEstimateParams, "surface_m2"> & { scope: "commune" | "cp"; limit?: number }
 ): Promise<{ success: boolean; data: DvfComp[]; error?: string; message?: string }> {
   const res = await fetchDvfComps(supabase, params);
 

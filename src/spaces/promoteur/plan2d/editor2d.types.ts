@@ -70,7 +70,7 @@ export interface Parking2D {
 
 // ─── ÉDITEUR ──────────────────────────────────────────────────────────
 
-export type Tool     = 'selection'|'building'|'parking';
+export type Tool     = 'selection'|'building'|'parking'|'cotes';
 export type HandleId =
   | 'resize-nw'|'resize-n'|'resize-ne'|'resize-e'
   | 'resize-se'|'resize-s'|'resize-sw'|'resize-w'|'rotate';

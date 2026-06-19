@@ -455,7 +455,7 @@ export default function PermisConstruirePage() {
       latitude: searchLat,
       longitude: searchLon,
       rayonKm: clampedRayon,
-      periodeMois,
+      periodeMois: Number(periodeMois),
       periodeStart: periodePreset === "custom" ? (customStart || undefined) : undefined,
       periodeEnd: periodePreset === "custom" ? (customEnd || undefined) : undefined,
       typeAutorisation: typeAut,

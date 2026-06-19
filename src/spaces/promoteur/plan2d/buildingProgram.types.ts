@@ -88,6 +88,9 @@ export interface ExportedBuilding {
   id:string; label:string; buildingType?:BuildingType;
   footprint:{ center:{x:number;y:number}; width:number; depth:number; rotationDeg:number; polygonLocal:{x:number;y:number}[] };
   volumes:  ExportedBuildingVolume[];
+  balconies?: Balcon2D[];
+  loggias?: Loggia2D[];
+  terraces?: Terrasse2D[];
   floorPlans?: {
     levelIndex:number; label:string;
     volumes:ExportedBuildingVolume[];
