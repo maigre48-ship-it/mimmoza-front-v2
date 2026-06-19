@@ -135,7 +135,7 @@ export async function exportCommitteeReviewPdf(): Promise<void> {
   const id       = deal?.id ?? null;
   const renta    = (id ? snap.rentabiliteByDeal[id]?.computed : undefined) as RentabiliteSnapshot | undefined;
   const marche   = (id ? snap.marcheRisquesByDeal[id]?.data : undefined) as any;
-  const dealName = deal?.nom ?? deal?.address ?? "Deal sans nom";
+  const dealName = deal?.title ?? deal?.address ?? "Deal sans nom";
 
   const grille        = buildGrilleDecision(deal, renta, marche);
   const verdictGlobal = calcVerdictGlobal(grille);

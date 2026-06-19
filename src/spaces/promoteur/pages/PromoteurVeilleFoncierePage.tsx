@@ -26,8 +26,8 @@ import {
 } from "../../investisseur/services/marketListings";
 
 type ListingExtended = MarketActiveListing & {
-  bedrooms?: number | null;
-  land_surface_m2?: number | null;
+  price_m2?: number | null;
+  bedrooms?: number | null;  land_surface_m2?: number | null;
   parking?: boolean | null;
   garage?: boolean | null;
   balcony?: boolean | null;
@@ -459,7 +459,7 @@ export default function PromoteurVeilleFoncierePage() {
 
   const opportunities = useMemo(() => {
     if (!hasActiveZone) return [];
-    return ((data?.opportunities ?? []) as OpportunityItem[]).filter((item) => {
+    return ((data?.opportunities ?? []) as unknown as OpportunityItem[]).filter((item) => {
       if (!item) return false;
       if (item.price != null && item.price < 10_000) return false;
       const text = normalizeText(

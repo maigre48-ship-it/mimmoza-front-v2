@@ -121,7 +121,7 @@ export function CopilotEmptyState({
   const pathname = buildEffectivePathname();
   const isAnalyseRapide = pathname.startsWith('/analyse-rapide');
 
-  const resolvedMode = mode ?? 'quick';
+  const resolvedMode: 'quick' | 'advanced' = mode === 'advanced' || mode === 'report' ? 'advanced' : 'quick';
 
   const dynamicQuestions = getCopilotQuickQuestions({
     pathname,

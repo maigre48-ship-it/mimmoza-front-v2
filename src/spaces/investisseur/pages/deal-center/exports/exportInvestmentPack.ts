@@ -45,7 +45,7 @@ export async function exportInvestmentPackPdf(): Promise<void> {
   const renta  = castRenta(id ? snap.rentabiliteByDeal[id] : undefined);
   const marche = (id ? snap.marcheRisquesByDeal[id] : undefined) as MarcheRisquesSaved | undefined;
 
-  const dealName   = deal?.nom ?? deal?.address ?? "Deal sans nom";
+  const dealName   = deal?.title ?? deal?.address ?? "Deal sans nom";
   const address    = deal?.address ?? "-";
   const base       = (renta as any)?.scenarios?.base;
   const pessimiste = (renta as any)?.scenarios?.pessimiste;

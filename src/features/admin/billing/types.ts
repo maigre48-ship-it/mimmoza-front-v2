@@ -26,6 +26,7 @@ export type TargetSpace = 'promoteur' | 'financeur' | 'investisseur' | 'autre';
 
 export interface Quote {
   id: string;
+  recipient_user_id?: string;
   quote_number: string;
   organization_id: string | null;
   company_name: string;
@@ -61,6 +62,7 @@ export interface QuoteLine {
 
 export interface Invoice {
   id: string;
+  recipient_user_id?: string;
   invoice_number: string;
   quote_id: string | null;
   organization_id: string | null;

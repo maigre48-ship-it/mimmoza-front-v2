@@ -57,7 +57,7 @@ const PRICING_MAP: Map<PricingItemCode, PricingMeta> = (() => {
 })();
 
 function getUnitPrice(code: PricingItemCode, range: TravauxRange): number {
-  return PRICING_MAP.get(code)?.[range] ?? 0;
+  return PRICING_MAP.get(code)?.prices?.[range] ?? 0;
 }
 
 /* ================================================================== */
@@ -540,7 +540,7 @@ const PieceResultList: React.FC<{ pieces: PieceTravaux[]; range: TravauxRange }>
 /* ================================================================== */
 
 const LotsBreakdown: React.FC<{
-  lots: ComputedLot[]; total: number; bufferPct: number;
+  lots: ComputedLot[]; total: number; bufferPct: number; bufferAmount: number;
   totalWithBuffer: number; costPerM2: number | null; complexityCoef: number;
   disabledLots: Set<string>; onToggleLot: (code: string) => void;
 }> = ({ lots, total, bufferPct, totalWithBuffer, costPerM2, complexityCoef, disabledLots, onToggleLot }) => {
