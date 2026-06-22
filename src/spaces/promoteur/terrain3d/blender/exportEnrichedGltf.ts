@@ -158,9 +158,9 @@ function assignMaterial(
 ): void {
   const c = new THREE.Color(color);
   const mat = new THREE.MeshStandardMaterial({
-    color: c,
-    roughness,
-    metallic,
+      color: c,
+      roughness,
+      metalness: metallic,
     ...(options?.transparent ? { transparent: true, opacity: options.opacity ?? 1 } : {}),
   });
   mesh.material = mat;

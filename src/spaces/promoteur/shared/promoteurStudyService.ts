@@ -220,6 +220,7 @@ export const PromoteurStudyService = {
     foncier_done?:          boolean;
   }): Promise<ServiceResult<PromoteurStudy>> {
     const foncier: PromoteurFoncierData = {
+      prix_foncier: null,
       parcel_ids:    flat.foncier_parcel_ids    ?? [],
       focus_id:      flat.foncier_focus_id      ?? "",
       commune_insee: flat.foncier_commune_insee ?? "",

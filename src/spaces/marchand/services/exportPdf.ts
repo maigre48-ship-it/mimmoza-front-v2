@@ -2142,9 +2142,9 @@ function buildPage1(doc: jsPDF, m: DealMetrics, ai: NormalizedAi, opts?: ExportP
   y += 20;
 
   for (const bs of [
-    { t: "Pourquoi acheter",   its: ai.whyBuy,       c: C.success as const,   p: "+" },
-    { t: "A faire maintenant", its: ai.whatToDo,     c: C.accent  as const,   p: "->" },
-    { t: "Points de vigilance — Kill switches", its: ai.killSwitches, c: C.mutedDark as const, p: "-" },
+    { t: "Pourquoi acheter",   its: ai.whyBuy,       c: C.success,   p: "+" },
+    { t: "A faire maintenant", its: ai.whatToDo,     c: C.accent,   p: "->" },
+    { t: "Points de vigilance — Kill switches", its: ai.killSwitches, c: C.mutedDark, p: "-" },
   ]) {
     if (bs.its.length === 0) continue;
     y = sectionTitle(doc, bs.t, y, { color: bs.c, fontSize: 8.5 });
@@ -2398,8 +2398,8 @@ function buildPage3(doc: jsPDF, m: DealMetrics, ai: NormalizedAi): void {
   y = sectionTitle(doc, "Resultat projete", y);
   roundedBox(doc, M.left, y, CW, 22, { fill: C.bg, border: C.border, radius: 3, lw: 0.2, shadow: true });
   const rows2 = [
-    { l: "Gain potentiel",    v: ai.gainPotentiel,    c: C.success as const },
-    { l: "Perte potentielle", v: ai.pertePotentielle, c: C.warning  as const },
+    { l: "Gain potentiel",    v: ai.gainPotentiel,    c: C.success },
+    { l: "Perte potentielle", v: ai.pertePotentielle, c: C.warning },
   ];
   let ry = y + 6;
   for (const r of rows2) {

@@ -985,11 +985,11 @@ function mergeGeometries(geos: THREE.BufferGeometry[]): THREE.BufferGeometry {
 function makeMaterial(category: string): THREE.MeshStandardMaterial {
   const def = URBAN_MATERIALS[category] ?? { color: '#AAAAAA', roughness: 0.85, metallic: 0.0 };
   return new THREE.MeshStandardMaterial({
-    color: new THREE.Color(def.color),
-    roughness: def.roughness,
-    metallic: def.metallic,
-    side: THREE.DoubleSide,
-  });
+      color: new THREE.Color(def.color),
+      roughness: def.roughness,
+      metalness: def.metallic,
+      side: THREE.DoubleSide,
+    });
 }
 
 function clampNumber(v: number | undefined, min: number, max: number): number {

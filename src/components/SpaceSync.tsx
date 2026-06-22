@@ -8,7 +8,7 @@ import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 
 // ── Type Space — doit rester en phase avec AppShell.tsx ──────────────────────
-type Space =
+export type Space =
   | "none"
   | "promoteur"
   | "agence"

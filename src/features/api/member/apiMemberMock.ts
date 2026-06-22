@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { BillingMode, PlanEnvironment, PlanTier } from './apiPlans';
+export type { PlanEnvironment };
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

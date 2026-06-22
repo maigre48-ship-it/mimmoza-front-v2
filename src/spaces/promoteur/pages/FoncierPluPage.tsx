@@ -952,7 +952,7 @@ export function FoncierPluPage() {
     const rawInseeFromId = extractCommuneInsee(primary.id);
     const validInseeFromId = rawInseeFromId && /^\d{5}$/.test(rawInseeFromId) ? rawInseeFromId : null;
     const insee = validInseeFromId ?? projectInfo.communeInsee ?? "";
-    const foncierPayload: PromoteurFoncierData = { parcel_ids: parcelIds, focus_id: primary.id, commune_insee: insee, surface_m2: totalAreaM2, parcels_raw: selectedParcels.map(p => ({ id: p.id, area_m2: p.area_m2 ?? null, feature: p.feature ? (JSON.stringify(p.feature).length < 50_000 ? p.feature : null) : null } satisfies PromoteurParcelRaw)), done: true };
+    const foncierPayload: PromoteurFoncierData = { prix_foncier: null, parcel_ids: parcelIds, focus_id: primary.id, commune_insee: insee, surface_m2: totalAreaM2, parcels_raw: selectedParcels.map(p => ({ id: p.id, area_m2: p.area_m2 ?? null, feature: p.feature ? (JSON.stringify(p.feature).length < 50_000 ? p.feature : null) : null } satisfies PromoteurParcelRaw)), done: true };
     const result = await patchFoncier(foncierPayload); setIsSaving(false);
     if (!result.ok) { console.error("[FoncierPluPage] Supabase save failed:", result.error); localStorage.setItem(`mimmoza.promoteur.foncier.${studyId}.fallback_v2`, JSON.stringify(foncierPayload)); }
     persistFoncierSelectionForRestore(selectedParcels, primary.id, insee); captureCadastre(studyId);

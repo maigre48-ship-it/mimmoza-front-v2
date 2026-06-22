@@ -403,7 +403,7 @@ function buildTerrainObject(groundMaterial: string | undefined): TerrainObjectSp
 // ─────────────────────────────────────────────────────────────
 
 function buildCameraSpec(
-  input?: BuildSceneRenderSpecInput["camera"],
+  input?: Partial<NonNullable<BuildSceneRenderSpecInput["camera"]>>,
   heroObjectKey?: string,
 ): CameraSpec {
   const composition: CameraCompositionSpec = {
