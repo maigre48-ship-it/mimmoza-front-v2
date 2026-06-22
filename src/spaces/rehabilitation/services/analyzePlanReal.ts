@@ -232,14 +232,14 @@ function normalizeResult(
     .filter((iss): iss is Record<string, unknown> => Boolean(iss) && typeof iss === "object")
     .map((iss, idx) => ({
       id: String(iss.id ?? `ISS-${String(idx + 1).padStart(3, "0")}`),
-      category: String(iss.category ?? "Général"),
+      category: (iss.category ? String(iss.category) : "Structure") as PlanIssue["category"],
       severity: normalizeSeverity(iss.severity),
       evidenceLevel: normalizeEvidenceLevel(iss.evidenceLevel),   // v2
       confidence: normalizeConfidence(iss.confidence),             // v2
       title: String(iss.title ?? "Point de contrôle"),
       description: String(iss.description ?? ""),
-      planZone: iss.planZone ? String(iss.planZone) : undefined,
-      regulatoryRef: iss.regulatoryRef ? String(iss.regulatoryRef) : undefined,
+      planZone: iss.planZone ? String(iss.planZone) : null,
+      regulatoryRef: iss.regulatoryRef ? String(iss.regulatoryRef) : null,
     }));
 
   // ── Recommandations ───────────────────────────────────────────────────────
@@ -262,9 +262,10 @@ function normalizeResult(
         title: String(rec.title ?? "Recommandation"),
         description: String(rec.description ?? ""),
         estimatedCost: costRaw
-          ? { min, max: Math.max(max, min), unit: "€" as const }
-          : undefined,
-      };
+            ? { min, max: Math.max(max, min), unit: "€" as const }
+            : null,
+          relatedIssueIds: [],
+        };
     });
 
   // ── architecturalReading (v2) ─────────────────────────────────────────────
@@ -330,11 +331,12 @@ function normalizeResult(
       : {};
 
   const engineMeta = {
-    version: String(metaRaw.version ?? "v3-spatial-intelligence"),
-    mode: String(metaRaw.mode ?? "real"),
-    model: String(metaRaw.model ?? "gpt-4o"),
-    processingTimeMs,
-  };
+      version: String(metaRaw.version ?? "v3-spatial-intelligence"),
+      mode: "real" as const,
+      model: String(metaRaw.model ?? "gpt-4o"),
+      processingTimeMs,
+      confidence: typeof metaRaw.confidence === "number" ? metaRaw.confidence : null,
+    };
 
   return {
     summary: String(raw.summary ?? "Analyse incomplète."),
