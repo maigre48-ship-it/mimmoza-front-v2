@@ -1,6 +1,6 @@
 // === exportPdf.ts — Investisseur — v4 DARK COVER PREMIUM ===
 import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import autoTable, { type RowInput } from "jspdf-autotable";
 import type { MarchandSnapshotV1 } from "../shared/marchandSnapshot.store";
 import { buildSyntheseInstitutionnellePage } from "./exportPdf.investisseur";
 
@@ -419,7 +419,7 @@ export function scoreCard100(
 
 // ─── Header / Footer ─────────────────────────────────────────────
 function finalizeHF(doc: jsPDF, title?: string, skipCover = true): void {
-  const tot  = doc.internal.getNumberOfPages();
+  const tot  = doc.getNumberOfPages();
   const dTot = skipCover ? tot - 1 : tot;
   for (let i = 1; i <= tot; i++) {
     doc.setPage(i);
@@ -2634,7 +2634,7 @@ function buildLoanComparison(doc: jsPDF, m: DealMetrics): void {
       { content: "15 ans",     styles: { halign: "right" as const } },
       { content: "20 ans",     styles: { halign: "right" as const } },
     ]],
-    body: tableBody,
+    body: tableBody as RowInput[],
     margin: { left: M.left, right: M.right },
     tableWidth: totalW,
     columnStyles: {

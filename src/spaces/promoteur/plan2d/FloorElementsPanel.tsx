@@ -164,7 +164,7 @@ export const FloorElementsPanel: React.FC<FloorElementsPanelProps> = ({ building
         <div style={{ fontSize:10, fontWeight:700, color:T.slate500, letterSpacing:'0.07em', textTransform:'uppercase', marginBottom:2 }}>
           Éléments architecturaux
         </div>
-        <div style={{ fontSize:12, fontWeight:700, color:T.slate800 as any }}>
+        <div style={{ fontSize:12, fontWeight:700, color:T.slate700 as any }}>
           {b.label} — <span style={{ color:T.indigo600 }}>{floorLabel}</span>
         </div>
       </div>

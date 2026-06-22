@@ -82,7 +82,7 @@ function extractSources(
   snap: ReturnType<typeof readMarchandSnapshot>,
   id:   string | null,
 ): DataSource[] {
-  const deal       = snap.dealsById?.[id ?? ""] ?? (snap as any).activeDeal;
+  const deal       = (snap as any).dealsById?.[id ?? ""] ?? (snap as any).activeDeal;
   const renta      = id ? snap.rentabiliteByDeal[id]?.computed : undefined;
   const marche     = id ? (snap.marcheRisquesByDeal[id]?.data as any) : undefined;
   const smartScore = (snap as any).smartScoreByDeal?.[id ?? ""];

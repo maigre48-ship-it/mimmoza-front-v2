@@ -1210,17 +1210,13 @@ export default function AnalysePage() {
         )}
         {activeTab === "synthese_ia" && (
           <SyntheseIAPanel
-            dealLabel={deal.label}
-            isAvailable={true}
-            onGenerate={handleGenerateSyntheseIA}
-            onExportPdf={handleExportPdfFromSynthese}
-            pdfUrl={pdfPreview.url}
-            pdfLoading={pdfPreview.loading}
-            pdfError={pdfPreview.error}
-            onGeneratePdfPreview={generatePdfPreview}
-            onRefreshPdfPreview={refreshPdfPreview}
-            exportContext={{ wikimedia: null }}
-          />
+              dealLabel={deal.label}
+              isAvailable={true}
+              onGenerate={handleGenerateSyntheseIA}
+              onExportPdf={handleExportPdfFromSynthese}
+              pdfUrl={pdfPreview.url}
+              exportContext={{ wikimedia: null }}
+            />
         )}
       </div>
     </div>

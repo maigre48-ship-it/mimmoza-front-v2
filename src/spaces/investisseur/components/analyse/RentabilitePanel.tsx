@@ -250,7 +250,6 @@ function persistRentabiliteToSnapshot(
     patchRentabiliteForDeal(dealId, {
         inputs,
         computed,
-        taxRegime: fiscalRegime,
       });
   } catch (e) {
     console.warn("[RentabilitePanel] snapshot persist failed:", e);

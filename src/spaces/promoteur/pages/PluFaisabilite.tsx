@@ -1897,7 +1897,7 @@ export default function PluFaisabilite(): React.ReactElement {
         <h1 className="page-title">PLU & Faisabilité</h1>
         <p className="page-description">Gérez vos documents PLU et analysez la faisabilité de vos projets immobiliers.</p>
         <div className="env-badge">
-          <span className="env-pill">Supabase: {SUPABASE_URL.includes("127.0.0.1") ? "LOCAL" : "REMOTE"}</span>
+          <span className="env-pill">Supabase: {(SUPABASE_URL ?? "").includes("127.0.0.1") ? "LOCAL" : "REMOTE"}</span>
           <span className="env-pill" style={{ marginLeft: 8 }}>Parser: {AI_EXTRACT_ENDPOINT.includes("localhost") ? "LOCAL" : "REMOTE"}</span>
         </div>
       </header>
