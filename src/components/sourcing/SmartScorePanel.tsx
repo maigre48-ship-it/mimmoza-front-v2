@@ -14,7 +14,23 @@
  */
 
 import { useState } from "react";
-import type { SmartScoreResult } from "../shared/services/banqueSmartscore";
+// Type local : forme "banque" complète telle que consommée par ce panel.
+// (duck-typé au runtime via isFullSmartScore ; volontairement permissif)
+interface SmartScoreResult {
+  score: number;
+  globalScore?: number;
+  grade?: string;
+  verdict?: string;
+  subscores: Array<{ name: string; label: string; rawScore: number; weight: number; hasData: boolean }>;
+  penalties: Array<{ points: number; label: string; reason: string }>;
+  missingData: string[];
+  blockers?: string[];
+  explanations?: string[];
+  scoreHistory?: number[];
+  engineVersion?: string;
+  computedAt?: string;
+  inputHash?: string;
+}
 
 // ════════════════════════════════════════════════════════════════════
 // ViewModel unifié

@@ -8,8 +8,10 @@ import type { CopilotStreamEvent } from '../types/copilot.types';
  */
 export class SSEParser {
   private buffer = '';
-
-  constructor(private readonly onEvent: (event: CopilotStreamEvent) => void) {}
+    private readonly onEvent: (event: CopilotStreamEvent) => void;
+    constructor(onEvent: (event: CopilotStreamEvent) => void) {
+      this.onEvent = onEvent;
+    }
 
   push(chunk: string): void {
     this.buffer += chunk;

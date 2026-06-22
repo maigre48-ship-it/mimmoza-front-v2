@@ -7,4 +7,4 @@ export {
 } from "./EtudesLayout";
 
 // Pages
-export { MarchePage } from "./MarchePage";
+export { MarchePage } from "../marche/MarchePage";
