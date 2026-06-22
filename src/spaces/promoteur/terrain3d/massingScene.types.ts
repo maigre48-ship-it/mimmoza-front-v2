@@ -539,6 +539,11 @@ export type EditorAction =
   | { type: "SET_SCENE"; scene: MassingSceneModel }
   | { type: "ADD_OBJECT"; obj: PlacedObject }
   | { type: "DELETE_OBJECT"; id: string }
+  | { type: "MOVE_BUILDING"; id: string; dx: number; dz: number }
+  | { type: "ROTATE_BUILDING"; id: string; dRad: number }
+  | { type: "UNDO" }
+  | { type: "REDO" }
+  | { type: "REPLACE_SCENE"; scene: MassingSceneModel }
   | { type: "MARK_CLEAN" };
 
 let _idCounter = 0;

@@ -37,7 +37,7 @@ function genId(): string {
 function now(): number { return Date.now(); }
 
 function touchScene(scene: MassingSceneModel): MassingSceneModel {
-  return { ...scene, meta: { ...(scene as any).meta, updatedAt: now() } };
+  return { ...scene, meta: { ...(scene as any).meta, updatedAt: now() } } as MassingSceneModel;
 }
 
 function emptyScene(): MassingSceneModel {
