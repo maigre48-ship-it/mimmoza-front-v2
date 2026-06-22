@@ -237,6 +237,8 @@ const PlanEditorInner: React.FC<PlanEditorInnerProps> = ({ initialProject }) => 
       parcel:       parcelVec2,
       blockingCount: blocking,
       limitedCount:  limited,
+      parkingProvided: providedParkingSpaces,
+      parkingRequired: 0, // pas de programme logements à ce niveau (implantation géométrique)
     });
 
     // Scenario B: +30% footprint — denser programme
@@ -339,6 +341,8 @@ const PlanEditorInner: React.FC<PlanEditorInnerProps> = ({ initialProject }) => 
         parcel:       parcelVec2,
         blockingCount: blocking,
         limitedCount:  limited,
+        parkingProvided: providedParkingSpaces,
+        parkingRequired: 0, // pas de programme logements à ce niveau (implantation géométrique)
       });
       return buildScenarioSummary({
         id:          v.id,

@@ -210,12 +210,18 @@ export function buildScenarioComparison(params: {
 /**
  * Computes approximate scenario metrics from a buildings array + parcel.
  * Suitable for the "current" scenario where real data is available.
+ *
+ * parkingProvided / parkingRequired are supplied by the caller (the editor
+ * holds the parkings + programme); parkingRequired is 0 when no logements
+ * programme is defined at this level (pure geometric implantation).
  */
 export function computeRealScenarioMetrics(params: {
   buildings:   readonly PlanBuilding[];
   parcel:      Vec2[];
   blockingCount: number;
   limitedCount:  number;
+  parkingProvided: number;
+  parkingRequired: number;
 }): ImplantationScenarioMetrics {
   const totalFootprintM2 = computeTotalFootprintArea(params.buildings as PlanBuilding[]);
   const parcelArea       = polygonArea(params.parcel);
@@ -226,6 +232,8 @@ export function computeRealScenarioMetrics(params: {
     buildingCount:  params.buildings.length,
     blockingCount:  params.blockingCount,
     limitedCount:   params.limitedCount,
+    parkingProvided: params.parkingProvided,
+    parkingRequired: params.parkingRequired,
   };
 }
 
@@ -235,6 +243,10 @@ export function computeRealScenarioMetrics(params: {
  *
  * `footprintFactor` > 1 = denser, < 1 = smaller.
  * PLU violation counts are re-derived from the scaled CES.
+ *
+ * Parking values are propagated unchanged from the base scenario — scaling
+ * the footprint does not alter the physical parking supply nor the (absent)
+ * logements programme.
  */
 export function scaleScenarioMetrics(
   base:          ImplantationScenarioMetrics,
@@ -255,5 +267,7 @@ export function scaleScenarioMetrics(
     buildingCount:  Math.max(1, base.buildingCount + buildingCountDelta),
     blockingCount,
     limitedCount,
+    parkingProvided: base.parkingProvided,
+    parkingRequired: base.parkingRequired,
   };
 }
