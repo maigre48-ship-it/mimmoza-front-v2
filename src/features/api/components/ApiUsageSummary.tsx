@@ -1,12 +1,12 @@
 import { Calendar, Settings, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import type { ApiSubscription, ApiUsageStats } from '../member/apiMemberMock';
-import { formatRequests, getUsagePercent } from '../member/apiMemberMock';
+import type { ApiSubscriptionData, ApiUsageData } from '../member/useApiMember';
+import { formatRequests } from '../member/apiMemberMock';
 import { PlanBadge } from './ApiStatusBadge';
 
 interface ApiUsageSummaryProps {
-  subscription: ApiSubscription;
-  usage: ApiUsageStats;
+  subscription: ApiSubscriptionData;
+  usage: ApiUsageData;
   showActions?: boolean;
 }
 
@@ -22,13 +22,12 @@ export default function ApiUsageSummary({
   showActions = true,
 }: ApiUsageSummaryProps) {
   const navigate = useNavigate();
-  const pct = getUsagePercent(usage);
-  const resetDate = new Date(usage.resetDate).toLocaleDateString('fr-FR', {
-    day: 'numeric',
-    month: 'long',
-  });
-  const renewalDate = subscription.nextRenewal
-    ? new Date(subscription.nextRenewal).toLocaleDateString('fr-FR', {
+  const pct =
+    usage.totalRequests > 0
+      ? Math.min(100, Math.round((usage.usedRequests / usage.totalRequests) * 100))
+      : 0;
+  const renewalDate = subscription.currentPeriodEnd
+    ? new Date(subscription.currentPeriodEnd).toLocaleDateString('fr-FR', {
         day: 'numeric',
         month: 'long',
         year: 'numeric',
@@ -65,7 +64,7 @@ export default function ApiUsageSummary({
             </span>
             <span className="font-mono text-xs text-slate-600">
               {formatRequests(usage.usedRequests)}
-              <span className="text-slate-400"> / {formatRequests(usage.quotaRequests)}</span>
+              <span className="text-slate-400"> / {formatRequests(usage.totalRequests)}</span>
             </span>
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
@@ -74,7 +73,6 @@ export default function ApiUsageSummary({
               style={{ width: `${pct}%` }}
             />
           </div>
-          <span className="text-[11px] text-slate-400">Reset le {resetDate}</span>
         </div>
 
         {renewalDate && (
