@@ -121,12 +121,20 @@ export function buildFacade2DModel(input: Facade2DBuildInput): Facade2DModel {
   });
 
   return {
-    stylePresetId: presetId, styleLabel: preset.label,
-    widthM, heightM, levelsCount: totalLevels, levelHeightM, baysCount,
-    baseLevelHeightM, baseKind, roofKind, hasAttic, hasCornice, hasSocle,
-    balconyMode, loggiaMode, rhythm, ambiance, vegetation,
-    levels, theme,
-  };
+      stylePresetId: presetId, styleLabel: preset.label,
+      widthM, heightM, levelsCount: totalLevels, levelHeightM, baysCount,
+      baseLevelHeightM, baseKind, roofKind, hasAttic, hasCornice, hasSocle,
+      balconyMode, loggiaMode, rhythm, ambiance, vegetation,
+      levels, theme,
+      hasColombages: input.hasColombages ?? false,
+      hasShutters: input.hasShutters ?? false,
+      hasEncadrements: input.hasEncadrements ?? false,
+      hasLucarnes: input.hasLucarnes ?? false,
+      hasFerronnerie: input.hasFerronnerie ?? false,
+      hasBandeaux: input.hasBandeaux ?? false,
+      hasBriseSoleil: input.hasBriseSoleil ?? false,
+      hasParementBrique: input.hasParementBrique ?? false,
+    };
 }
 
 // ─── Palette builder ────────────────────────────────────────────────────────

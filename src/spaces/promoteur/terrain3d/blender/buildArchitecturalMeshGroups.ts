@@ -8,6 +8,8 @@ import type * as THREE from 'three';
 export interface ArchitecturalStyle {
   renderIntent?: string;
   glazingOpacity?: number;
+  balconyRailingType?: string;
+  socleFinish?: string;
   [key: string]: unknown;
 }
 
