@@ -6,7 +6,9 @@
 import { supabase } from "@/lib/supabaseClient";
 import type {
   BuildingParams,
+  PlanAnalysisInput,
   PlanAnalysisResult,
+  PlanIssue,
   PlanUpload,
 } from "../shared/planAnalysis.types";
 
@@ -163,7 +165,7 @@ export async function analyzePlanReal(
     );
   }
 
-  return normalizeResult(rawData as Record<string, unknown>, processingTimeMs);
+  return normalizeResult(rawData as Record<string, unknown>, processingTimeMs, building);
 }
 
 // ─── Parsing réponse ──────────────────────────────────────────────────────────
@@ -222,7 +224,8 @@ function extractApiError(
 
 function normalizeResult(
   raw: Record<string, unknown>,
-  processingTimeMs: number
+  processingTimeMs: number,
+  building: BuildingParams
 ): PlanAnalysisResult {
 
   // ── Issues ────────────────────────────────────────────────────────────────
@@ -339,7 +342,10 @@ function normalizeResult(
     };
 
   return {
-    summary: String(raw.summary ?? "Analyse incomplète."),
+      id: crypto.randomUUID(),
+      input: { plan: null, building },
+      complianceScore: { global: 0, pmr: 0, fireSafety: 0, circulation: 0, sanitaryFacilities: 0 },
+      summary: String(raw.summary ?? "Analyse incomplÃ¨te."),
     reliability: normalizeReliability(raw.reliability),             // v2
     riskLevel: normalizeRiskLevel(raw.riskLevel),
     pmrLevel: normalizeComplianceLevel(raw.pmrLevel),
