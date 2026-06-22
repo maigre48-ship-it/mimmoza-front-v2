@@ -207,7 +207,7 @@ function computeLocalScenario(
     margeBrute,
     margePct,
     roiPct,
-    triPct: triPct ?? undefined,
+    triPct: triPct ?? 0,
     cashflowMensuel: f.cashflow,
     rendementBrutPct: 0,
     decision:
@@ -1153,12 +1153,12 @@ export default function FinancialEngineTab() {
         optimiste: computeLocalScenario(financials, 1.03, 0.95),
       },
       stressTests: {
-        reventeMoins5: computeLocalScenario(financials, 0.95, 1),
-        travauxPlus10: computeLocalScenario(financials, 1, 1.1),
-      },
-      updatedAt: new Date().toISOString(),
-    } as RentabiliteSnapshot;
-  }, [inputs, financials]);
+          reventeMoins5: computeLocalScenario(financials, 0.95, 1),
+          travauxPlus10: computeLocalScenario(financials, 1, 1.1),
+        },
+        updatedAt: new Date().toISOString(),
+      };
+    }, [inputs, financials]);
 
   const computeRevente = useMemo(() => {
     if (!financials) return null;

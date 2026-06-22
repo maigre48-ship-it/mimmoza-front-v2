@@ -15,7 +15,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { analyzePlanReal } from "../services/analyzePlanReal";
 import type {
   AnalysisError, AnalysisStatus, BuildingParams, BuildingType, ComplianceLevel,
-  ErpCategory, ErpType, FloorCount, IssueSeverity, PlanAnalysisResult,
+  DetectedSpatialElements, ErpCategory, ErpType, FloorCount, IssueSeverity, PlanAnalysisResult,
   PlanUpload, RecommendationPriority, RiskLevel,
 } from "../shared/planAnalysis.types";
 import {
@@ -103,15 +103,11 @@ function filterSpatialItems(items: string[]): string[] {
 // ─── v8/v9 — Helpers pipeline plan-reader ─────────────────────────────────────
 
 function concatAllResultText(result: PlanAnalysisResult): string {
-  const ar    = result as Record<string, unknown>;
   const parts: string[] = [];
   parts.push(result.summary ?? "");
-
-  const obs = ar.functionalObservations as string[] | undefined;
+  const obs = result.functionalObservations;
   if (obs) parts.push(...obs);
-
-  const archReading = ar.architecturalReading as
-    | { geometry?: string; functional?: string; regulatory?: string; summary?: string } | undefined;
+  const archReading = result.architecturalReading;
   if (archReading) {
     parts.push(
       archReading.geometry ?? "", archReading.functional ?? "",
@@ -119,15 +115,14 @@ function concatAllResultText(result: PlanAnalysisResult): string {
     );
   }
 
-  const spatialInt = ar.spatialIntelligence as
-    | { summary?: string; constraints?: string[]; opportunities?: string[] } | undefined;
+  const spatialInt = result.spatialIntelligence;
   if (spatialInt) {
     parts.push(spatialInt.summary ?? "");
     parts.push(...(spatialInt.constraints ?? []));
     parts.push(...(spatialInt.opportunities ?? []));
   }
 
-  const spatial = ar.detectedSpatialElements as Record<string, string[]> | undefined;
+  const spatial = result.detectedSpatialElements;
   if (spatial) {
     for (const items of Object.values(spatial)) parts.push(...items);
   }
@@ -222,7 +217,7 @@ function priorityConfig(priority: RecommendationPriority) {
 // ─── EvidenceLevel ────────────────────────────────────────────────────────────
 
 function inferEvidenceLevel(issue: PlanAnalysisIssue): EvidenceLevel {
-  const apiLevel = (issue as Record<string, unknown>).evidenceLevel as EvidenceLevel | undefined;
+  const apiLevel = issue.evidenceLevel;
   if (apiLevel && ["detected", "to_confirm", "not_verifiable", "regulatory_assumption"].includes(apiLevel)) {
     return apiLevel;
   }
@@ -251,7 +246,7 @@ function evidenceConfig(level: EvidenceLevel) {
 // ─── Fiabilité ────────────────────────────────────────────────────────────────
 
 function resolveReadingReliability(result: PlanAnalysisResult): ReadingReliability {
-  const api = (result as Record<string, unknown>).reliability as ReadingReliability | undefined;
+  const api = result.reliability;
   if (api && ["forte", "moyenne", "faible"].includes(api)) return api;
   return computeReadingReliability(result.issues);
 }
@@ -762,8 +757,7 @@ const QualitativeKpiGrid: React.FC<{
 // ─── Sections architecturales ─────────────────────────────────────────────────
 
 const ArchitecturalReadingSection: React.FC<{ result: PlanAnalysisResult }> = ({ result }) => {
-  const ar = (result as Record<string, unknown>).architecturalReading as
-    { geometry: string; functional: string; regulatory: string; summary: string } | undefined;
+  const ar = result.architecturalReading;
   if (!ar) return null;
   const scores = [
     { label: "Lecture géométrique",   value: ar.geometry   },
@@ -796,7 +790,7 @@ const ArchitecturalReadingSection: React.FC<{ result: PlanAnalysisResult }> = ({
 };
 
 const SpatialElementsSection: React.FC<{ result: PlanAnalysisResult }> = ({ result }) => {
-  const dse = (result as Record<string, unknown>).detectedSpatialElements as Record<string, string[]> | undefined;
+  const dse = result.detectedSpatialElements;
   if (!dse) return null;
   const populated = Object.entries(dse)
     .map(([key, items]) => ({ key, items: filterSpatialItems(items) }))
@@ -828,7 +822,7 @@ const SpatialElementsSection: React.FC<{ result: PlanAnalysisResult }> = ({ resu
 };
 
 const FunctionalObservationsSection: React.FC<{ result: PlanAnalysisResult }> = ({ result }) => {
-  const obs = (result as Record<string, unknown>).functionalObservations as string[] | undefined;
+  const obs = result.functionalObservations;
   if (!obs || obs.length === 0) return null;
   return (
     <Card className="p-6">
@@ -853,7 +847,7 @@ type SpatialIntelligenceData = {
 };
 
 const SpatialIntelligenceSection: React.FC<{ result: PlanAnalysisResult }> = ({ result }) => {
-  const si = (result as Record<string, unknown>).spatialIntelligence as SpatialIntelligenceData | undefined;
+  const si = result.spatialIntelligence;
   if (!si) return null;
   const scores = [
     { icon: <ArrowRightLeft className="w-4 h-4" />, label: "Qualité des flux",   value: si.flowQuality   },
@@ -1061,8 +1055,8 @@ export const AnalysePlanPage: React.FC = () => {
       setStatus("done");
 
       // ── (1) Store rehabilitation ──────────────────────────────────────────
-      const ar      = analysisResult as Record<string, unknown>;
-      const spatial = (ar.detectedSpatialElements as Record<string, string[]> | undefined) ?? {};
+      const ar = analysisResult as unknown as Record<string, unknown>;
+      const spatial: Partial<DetectedSpatialElements> = analysisResult.detectedSpatialElements ?? {};
 
       // ── v9 — Surface officielle depuis spatialMetrics.totalSurface ────────
       // La Edge Function retourne désormais ce champ quand une annotation
@@ -1451,9 +1445,9 @@ export const AnalysePlanPage: React.FC = () => {
                                   <span className="text-xs font-semibold text-slate-500 bg-white/70 px-2 py-0.5 rounded border border-slate-200/80">{issue.category}</span>
                                   {issue.planZone && <span className="text-xs text-slate-400">{issue.planZone}</span>}
                                   <EvidenceBadge level={evidence} />
-                                  {Boolean((issue as Record<string, unknown>).confidence) && (
+                                  {Boolean(issue.confidence) && (
                                     <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-slate-50 text-slate-500 border-slate-200">
-                                      Confiance {String((issue as Record<string, unknown>).confidence)}
+                                      Confiance {String(issue.confidence)}
                                     </span>
                                   )}
                                 </div>
