@@ -1177,7 +1177,7 @@ export default function AnalysePage() {
 
       <div className="pb-6">
         {activeTab === "rentabilite" && (
-          <RentabilitePanel deal={deal} dealId={canonicalDealId} strategy={strategy} fiscalRegime={fiscalRegime} onStrategyChange={setStrategy} onRegimeChange={setFiscalRegime} travauxFromSnapshot={travauxImpactWithBuffer > 0 ? travauxImpactWithBuffer : undefined} promoteurMarketData={mergedInvestorStudy} />
+          <RentabilitePanel deal={deal as any} dealId={canonicalDealId} strategy={strategy} fiscalRegime={fiscalRegime} onStrategyChange={setStrategy} onRegimeChange={setFiscalRegime} travauxFromSnapshot={travauxImpactWithBuffer > 0 ? travauxImpactWithBuffer : undefined} promoteurMarketData={mergedInvestorStudy} />
         )}
         {activeTab === "due_diligence" && (
           <DueDiligencePanel state={dueDiligence} onUpdate={handleDueDiligenceUpdate} risquesExistants={risquesExistants} />

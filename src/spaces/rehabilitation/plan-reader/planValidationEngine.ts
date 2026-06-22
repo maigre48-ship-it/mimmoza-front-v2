@@ -15,7 +15,6 @@ import {
   isPointInPolygon,
   polygonsOverlap,
 } from './planGeometryNormalizer';
-import { estimateSurface } from './planScaleCalibrator';
 import type { PlanCalibration, PlanGeometry, PlanMetadata, Room, ValidationIssue, ValidationResult } from './types';
 
 export const SURFACE_ECART_MAX = 0.10; // 10 %
@@ -75,12 +74,10 @@ const arbitrateSurface = (
   issues: ValidationIssue[],
 ): SurfaceArbitration => {
   const officielle = metadata.surfaceTotale.value;
-  const surfaceCalibrationDerived = estimateSurface(
-    detectedGeometry.envelopePolygon,
-    calibration.imageWidthPx,
-    calibration.imageHeightPx,
-    calibration.pixelsPerMeter,
-  );
+  // Surface dérivée de la calibration désactivée : envelopePolygon (Point2D[] absolus)
+    // et PlanCalibration ne sont pas convertibles en NormalizedPoint[]/ScaleCalibration
+    // attendus par computePolygonArea_m2 sans recalcul de normalisation (dette documentée).
+    const surfaceCalibrationDerived = null as number | null;
 
   // Cas 1 : surface officielle détectée → elle prime.
   if (officielle && officielle > 0) {
