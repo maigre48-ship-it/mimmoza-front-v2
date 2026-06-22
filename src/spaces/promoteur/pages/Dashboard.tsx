@@ -27,6 +27,7 @@ import {
   Users,
   Zap
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { ApporteurDeal } from "../../apporteur/shared/apporteurDeals.store";
@@ -68,7 +69,7 @@ type PipelineStep = {
   label:       string;
   description: string;
   route:       string;
-  icon:        React.ComponentType<{ className?: string }>;
+  icon: LucideIcon;
   color:       string;
   bg:          string;
   border:      string;
@@ -77,7 +78,7 @@ type PipelineStep = {
 type QuickAction = {
   label: string;
   route: string;
-  icon:  React.ComponentType<{ className?: string }>;
+  icon: LucideIcon;
   tag?:  string;
 };
 
