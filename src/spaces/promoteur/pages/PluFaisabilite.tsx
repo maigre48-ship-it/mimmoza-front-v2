@@ -1571,7 +1571,7 @@ export default function PluFaisabilite(): React.ReactElement {
       if (!res.ok) throw new Error((data?.error as string) || `Erreur ${res.status}`);
       let rawZoneCode: string | null = null;
       if (typeof data?.zone_code === "string" && data.zone_code.trim()) rawZoneCode = data.zone_code;
-      else if (typeof (data?.plu as Record<string, unknown>)?.zone_code === "string") rawZoneCode = (data.plu as Record<string, unknown>).zone_code as string;
+      else if (typeof (data?.plu as Record<string, unknown>)?.zone_code === "string") rawZoneCode = (data?.plu as Record<string, unknown>)?.zone_code as string;
       else if (typeof data?.zone === "string") rawZoneCode = data.zone;
       const zoneCode = normalizeZoneCode(rawZoneCode);
       if (!zoneCode) throw new Error("Zone PLU non trouvée pour cette parcelle.");
