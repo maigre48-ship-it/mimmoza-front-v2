@@ -17,6 +17,7 @@ export interface PromoteurFoncierData {
   focus_id:      string;
   commune_insee: string;
   surface_m2:    number | null;
+  prix_foncier:  number | null;
   parcels_raw:   PromoteurParcelRaw[];
   done:          boolean;
 }
@@ -111,6 +112,7 @@ export interface PromoteurEvaluationData {
 // â”€â”€â”€ Module Bilan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface PromoteurBilanData {
   // RÃ©cap financier
+  prix_foncier:        number | null;
   prix_revient_total:  number | null;
   ca_previsionnel:     number | null;
   marge_nette:         number | null;

@@ -35,7 +35,18 @@ import {
 } from "../plan2d/implantation2d.snapshot";
 import { getSnapshot, patchModule } from "../shared/promoteurSnapshot.store";
 import { usePromoteurStudy } from "../shared/usePromoteurStudy";
-import type { ProgrammationSnapshot } from "./ProgrammationPage";
+type ProgrammationSnapshot = {
+  nbLogements:  number;
+  niveaux:      number;
+  sdpTotale:    number;
+  caTotal:      number;
+  coutTotal:    number;
+  margeBrute:   number;
+  tauxMarge:    number;
+  pluViabilite: "viable" | "conditions" | "non_viable";
+  typologies:   Record<"T1" | "T2" | "T3" | "T4" | "T5", number>;
+  updatedAt:    string;
+};
 
 const GRAD_PRO   = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
 const ACCENT_PRO = "#5247b8";
