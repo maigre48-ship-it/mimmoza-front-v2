@@ -6,7 +6,7 @@
 
 import type {
   TravauxSimulationV1,
-  TravauxSimulationV1,
+  ComputedTravaux,
 } from "../../investisseur/shared/travauxSimulation.types";
 
 import {
@@ -93,8 +93,8 @@ export type ExecutionSaved = {
   planningMode?: "auto" | "manuel";
   stats?: unknown;
   travaux?: {
-    input: TravauxSimulationV1;
-    computed: TravauxSimulationV1;
+      input: TravauxSimulationV1;
+      computed: ComputedTravaux;
     updatedAt: string;
     sourceMode?: "simple" | "expert";
   };
@@ -705,8 +705,8 @@ export function patchMarcheRisquesForDeal(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function patchExecutionTravaux(payload: {
-  input: TravauxSimulationV1;
-  computed: TravauxSimulationV1;
+    input: TravauxSimulationV1;
+    computed: ComputedTravaux;
   updatedAt?: string;
   sourceMode?: "simple" | "expert";
 }): void {
