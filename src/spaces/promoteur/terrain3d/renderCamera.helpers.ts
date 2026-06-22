@@ -10,7 +10,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from "three";
-import type { ResolvedCamera } from "./buildingRenderMapper";
+type ResolvedCamera = {
+  view: "pedestrian" | "street_front" | "parcel_corner" | "aerial_3q";
+  focalLengthMm?: number;
+};
 
 // ═════════════════════════════════════════════════════════════════════════════
 // TYPES

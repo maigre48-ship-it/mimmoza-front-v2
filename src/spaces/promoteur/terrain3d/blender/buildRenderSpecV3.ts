@@ -66,6 +66,7 @@ export interface RenderObject {
     roofType?: string;
     roofColor?: string;
     landscape?: LandscapeSpec;
+    groundMaterial?: string;
   };
 }
 
