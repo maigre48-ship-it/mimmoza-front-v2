@@ -24,7 +24,10 @@ export type FiscalRegime =
   | "sci_is"
   | "sci_ir"
   | "nom_propre"
-  | "defiscalisation";
+  | "defiscalisation"
+  | "nu_micro"
+  | "nu_reel"
+  | "none";
 
 // ─── Macro Rates (ECB / Supabase) ───────────────────────────────────
 
@@ -223,4 +226,4 @@ export interface AnalyseState {
 
 // ─── Onglets Analyse ─────────────────────────────────────────────────
 
-export type AnalyseTab = "rentabilite" | "due_diligence" | "marche_risques" | "synthese_ia";
+export type AnalyseTab = "rentabilite" | "due_diligence" | "marche_risques" | "synthese_ia" | "analyse_predictive";

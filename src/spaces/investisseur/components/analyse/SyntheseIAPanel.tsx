@@ -17,6 +17,7 @@ type GenerateResult = {
 type GenerateReturn = GenerateResult | string | null | undefined;
 
 type SyntheseIAPanelProps = {
+  pdfUrl?: string | null;
   dealLabel?: string;
   isAvailable?: boolean;
 
