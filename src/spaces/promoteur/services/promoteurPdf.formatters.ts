@@ -100,12 +100,14 @@ export const REC_LABELS: Record<RecommendationType, string> = {
   GO:           'GO — OPÉRATION RECOMMANDÉE',
   GO_CONDITION: 'GO CONDITIONNEL — AJUSTEMENTS REQUIS',
   NO_GO:        'NO GO — OPÉRATION NON VIABLE EN L\'ÉTAT',
+  ANALYSE_INSUFFISANTE: 'ANALYSE INSUFFISANTE — DONNÉES À COMPLÉTER',
 };
 
 export const REC_LABELS_SHORT: Record<RecommendationType, string> = {
   GO:           'GO',
   GO_CONDITION: 'GO CONDITIONNEL',
   NO_GO:        'NO GO',
+  ANALYSE_INSUFFISANTE: 'ANALYSE INSUFF.',
 };
 
 // ============================================================================

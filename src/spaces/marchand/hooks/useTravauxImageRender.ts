@@ -362,10 +362,10 @@ export function useTravauxImageRender(): UseTravauxImageRenderReturn {
 
         const effectiveZones: TravauxZone[] = Array.from(
           new Set<TravauxZone>([
-            ...zones,
-            ...(finalConfig.solType || finalConfig.solColor ? ["floor"] : []),
-            ...(finalConfig.murColor ? ["walls"] : []),
-          ])
+              ...zones,
+              ...(finalConfig.solType || finalConfig.solColor ? ["floor" as TravauxZone] : []),
+              ...(finalConfig.murColor ? ["walls" as TravauxZone] : []),
+            ])
         );
 
         const promptObjFinal = buildTravauxImagePrompt({

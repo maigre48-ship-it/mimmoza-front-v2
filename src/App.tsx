@@ -226,7 +226,7 @@ function AppRoot() {
 
   return (
     <>
-      <SpaceSync setCurrentSpace={setCurrentSpace} />
+      <SpaceSync currentSpace={currentSpace} setCurrentSpace={setCurrentSpace} />
 
       <AppShell currentSpace={currentSpace} onChangeSpace={handleChangeSpace}>
         <Routes>

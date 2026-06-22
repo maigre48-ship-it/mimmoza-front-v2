@@ -294,7 +294,7 @@ export function usePlan2DEditor({
       buildingId,
       pointerId:    nativeEvent.pointerId,
       pointerStart: worldPt,
-      initialRect:  { ...building.rect }, // snapshot immuable
+      initialRect:  { cx: building.rect.center.x, cy: building.rect.center.y, width: building.rect.width, depth: building.rect.depth, rotationDeg: building.rect.rotationDeg }, // snapshot immuable (OrientedRect -> BuildingRect)
     };
   }, [tool, svgRef, capturePointer, setSelectedIds]);
 
@@ -330,7 +330,7 @@ export function usePlan2DEditor({
       // pointerStart = position monde de la poignée au départ du drag
       // (légèrement plus précis que la position brute du pointer en cas de hitbox large)
       pointerStart: worldPt,
-      initialRect:  { ...building.rect }, // snapshot immuable
+      initialRect:  { cx: building.rect.center.x, cy: building.rect.center.y, width: building.rect.width, depth: building.rect.depth, rotationDeg: building.rect.rotationDeg }, // snapshot immuable (OrientedRect -> BuildingRect)
     };
   }, [tool, svgRef, capturePointer]);
 

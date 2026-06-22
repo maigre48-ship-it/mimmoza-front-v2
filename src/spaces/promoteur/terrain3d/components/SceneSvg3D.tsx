@@ -31,9 +31,7 @@ export interface ReliefData extends BaseReliefData {
   platformLevel?:  number;
 }
 
-// Re-export explicite — les fichiers qui font `import type { ReliefData } from "./SceneSvg3D"`
-// continuent de fonctionner sans modification.
-export type { ReliefData };
+// Re-export explicite — l'interface est deja exportee via `export interface ReliefData`
 
 export type FacadeStyle = "beton" | "vitrage" | "brique" | "zinc" | "bois";
 export type RoofStyle   = "terrasse" | "vegetalise" | "inclinee";
@@ -523,7 +521,7 @@ export const SceneSvg3D: React.FC<Props> = ({
 
     const sceneGroup = new THREE.Group(); scene.add(sceneGroup);
 
-    let rafId: number;
+    let rafId = 0;
     const loop = () => {
       rafId = requestAnimationFrame(loop);
       controls.update();
