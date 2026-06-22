@@ -31,6 +31,7 @@ import { validatePlan } from "../plan-reader/planValidationEngine";
 import type {
   LayerVisibility,
   ValidationIssue as PipelineValidationIssue,
+  PlanCalibration,
   PlanOverlaySnapshot, RawAIResult,
 } from '../plan-reader/types';
 import { EMPTY_GEOMETRY, confidenceLabel } from '../plan-reader/types';
@@ -1137,12 +1138,21 @@ export const AnalysePlanPage: React.FC = () => {
         ? await imageDimensionsFromDataUrl(dataUrl)
         : { widthPx: 0, heightPx: 0 };
 
-      const calibration = calibratePlan({
+      const pipelineCalibration = calibratePlan({
         widthPx:          dims.widthPx,
         heightPx:         dims.heightPx,
         metadata,
         detectedGeometry: EMPTY_GEOMETRY,
       });
+
+      const calibration: PlanCalibration = {
+        pixelsPerMeter:    pipelineCalibration.pixelsPerMeter,
+        method:            pipelineCalibration.pixelsPerMeter !== null ? "echelle" : null,
+        confidence:        metadata.echelle.confidence,
+        imageWidthPx:      pipelineCalibration.widthPx,
+        imageHeightPx:     pipelineCalibration.heightPx,
+        envelopeSurfaceM2: null,
+      };
 
       const validation = validatePlan({
         metadata,
