@@ -1104,7 +1104,7 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
 
         {effectiveBuildings.map(b=>{
           const sel=selectedIds.includes(b.id), hov=hoveredId===b.id&&!sel;
-          const floors=b.floorsAboveGround??Math.max(0,(b as any).levels-1??0);
+          const floors=b.floorsAboveGround??Math.max(0,((b as any).levels ?? 1)-1);
 
           const activeVols=getEffectiveFloorVolumes(b,activeLevelIndex,liveRects);
           const ghostVols=activeLevelIndex>0&&showGhost?getFloorVolumes(b,activeLevelIndex-1):[];

@@ -83,7 +83,7 @@ function deriveStrengths(
     }
   }
 
-  if (limitedCount === 0 && status !== "BLOQUANT") {
+  if (limitedCount === 0) {
     points.push("Absence de règle en situation limite — schéma stable face aux ajustements de programme courants.");
   }
 

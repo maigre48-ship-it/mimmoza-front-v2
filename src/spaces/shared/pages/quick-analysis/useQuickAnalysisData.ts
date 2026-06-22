@@ -196,12 +196,11 @@ async function fetchDvfData(
         months: 24,
       }),
       fetchDvfCompsNormalized(supabase, {
-        commune_insee: communeInsee,
-        code_postal: codePostal || null,
-        surface_m2: surfaceForQuery,
-        type_local: typeLocal ?? null,
-        months: 24,
-        scope: codePostal ? "cp" : "commune",
+          commune_insee: communeInsee,
+          code_postal: codePostal || null,
+          type_local: typeLocal ?? null,
+          months: 24,
+          scope: codePostal ? "cp" : "commune",
         limit: 10,
       }),
     ]);
@@ -335,7 +334,7 @@ export function useQuickAnalysisData() {
           params.surface ?? null,
           params.typeLocal ?? null
         ).then((r) => {
-          setStatus("dvf", r.dvfComparables.length > 0 ? "ok" : "empty");
+          setStatus("dvf", (r.dvfComparables?.length ?? 0) > 0 ? "ok" : "empty");
           return r;
         }).catch(() => {
           setStatus("dvf", "error");
