@@ -40,7 +40,7 @@ function parseRoute(pathname: string): {
 
 function extractWorksBudget(exec: ExecutionSaved | undefined): number | undefined {
   if (!exec?.travaux?.computed) return undefined;
-  const c = exec.travaux.computed as Record<string, unknown>;
+  const c = exec.travaux.computed as unknown as Record<string, unknown>;
   // Cherche totalTTC, total_ttc ou totalHT selon la version du type
   const v = c['totalTTC'] ?? c['total_ttc'] ?? c['totalHT'] ?? undefined;
   return typeof v === 'number' && isFinite(v) ? v : undefined;

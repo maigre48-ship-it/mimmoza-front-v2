@@ -248,11 +248,10 @@ function persistRentabiliteToSnapshot(
 
   try {
     patchRentabiliteForDeal(dealId, {
-      inputs,
-      computed,
-      taxRegime: fiscalRegime as string,
-      taxConfig: undefined as unknown as Record<string, unknown>,
-    });
+        inputs,
+        computed,
+        taxRegime: fiscalRegime,
+      });
   } catch (e) {
     console.warn("[RentabilitePanel] snapshot persist failed:", e);
   }
@@ -572,10 +571,10 @@ export default function RentabilitePanel({
   const simTravaux = useMemo<number>(() => {
     try {
       const snap = readMarchandSnapshot();
-      const execution = snap.execution as
-        | { travaux?: { computed?: { totalWithBuffer?: number; total?: number } } }
-        | undefined;
-      const computed = execution?.travaux?.computed;
+        const execution = snap.executionByDeal?.[dealId] as
+          | { travaux?: { computed?: { totalWithBuffer?: number; total?: number } } }
+          | undefined;
+        const computed = execution?.travaux?.computed;
       const val = computed?.totalWithBuffer ?? computed?.total ?? 0;
       if (typeof val === "number" && Number.isFinite(val) && val > 0) {
         return val;
