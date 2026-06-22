@@ -109,8 +109,8 @@ export const FloorElementsPanel: React.FC<FloorElementsPanelProps> = ({ building
   const activeFloor = b.floorPlans?.find(fp => fp.levelIndex === activeLevelIndex);
 
   // Les éléments de l'étage actif
-  const balconies: FloorBalcony2D[] = (activeFloor?.balconies as FloorBalcony2D[]) ?? [];
-  const loggias:   FloorLoggia2D[]  = (activeFloor?.loggias   as FloorLoggia2D[])  ?? [];
+  const balconies: FloorBalcony2D[] = (activeFloor?.balconies ?? []).map(b => ({ ...b, levelIndex: activeLevelIndex }));
+  const loggias:   FloorLoggia2D[]  = (activeFloor?.loggias   ?? []).map(l => ({ ...l, levelIndex: activeLevelIndex }));
   const terraces:  FloorTerrace2D[] = (activeFloor?.terraces  as FloorTerrace2D[]) ?? [];
 
   const up = (patch: { balconies?:FloorBalcony2D[]; loggias?:FloorLoggia2D[]; terraces?:FloorTerrace2D[] }) =>

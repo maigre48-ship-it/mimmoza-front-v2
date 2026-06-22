@@ -22,11 +22,11 @@ const LS_SESSION_ADDRESS = "mimmoza.session.address";
 const LS_SELECTED_PARCELS_V1 = "mimmoza.promoteur.selected_parcels_v1";
 
 const AI_EXTRACT_ENDPOINT =
-  ((import.meta as Record<string, unknown>)?.env as Record<string, string> | undefined)?.VITE_PLU_AI_EXTRACT_ENDPOINT?.trim() ||
+  ((import.meta as unknown as Record<string, unknown>)?.env as Record<string, string> | undefined)?.VITE_PLU_AI_EXTRACT_ENDPOINT?.trim() ||
   "http://localhost:3000/api/plu-parse";
 
 const OAP_EXTRACT_ENDPOINT =
-  ((import.meta as Record<string, unknown>)?.env as Record<string, string> | undefined)
+  ((import.meta as unknown as Record<string, unknown>)?.env as Record<string, string> | undefined)
     ?.VITE_OAP_EXTRACT_ENDPOINT?.trim() ||
   "http://localhost:3000/api/oap-parse";
 

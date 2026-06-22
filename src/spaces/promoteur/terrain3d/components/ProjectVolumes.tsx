@@ -127,7 +127,7 @@ export const ProjectVolumes: React.FC<Props> = ({ buildings, parkings, yawDeg = 
             strokeWidth="1.5"
           />
           {/* sides */}
-          {it.sides.map((d, j) => (
+          {it.sides.map((d: string, j: number) => (
             <path
               key={j}
               d={d}

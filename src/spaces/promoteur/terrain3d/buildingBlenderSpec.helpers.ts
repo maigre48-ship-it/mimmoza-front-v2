@@ -30,7 +30,7 @@ function deriveFacadeFamily(style: MassingBuildingModel['style']): FacadeFamily 
   if (tid.startsWith('brick'))    return 'brique';
   if (tid.startsWith('concrete')) return 'beton';
   if (tid.startsWith('wood'))     return 'bois_bardage';
-  const sid = (style as Record<string, unknown>).facadeStyleId as string | undefined ?? '';
+  const sid = (style as unknown as Record<string, unknown>).facadeStyleId as string | undefined ?? '';
   if (sid.includes('brique') || sid.includes('brick')) return 'brique';
   if (sid.includes('pierre') || sid.includes('pierre')) return 'pierre';
   if (sid.includes('glass')  || sid.includes('vitre')) return 'mur_rideau';
@@ -55,7 +55,7 @@ export function ensureBuildingRenderSpec(building: MassingBuildingModel): Buildi
   const ex = building.renderSpec;
   const { levels, transform, style } = building;
   const totalH = levels.groundFloorHeightM + levels.aboveGroundFloors * levels.typicalFloorHeightM;
-  const facadeStyleId = (style as Record<string, unknown>).facadeStyleId as string | undefined;
+  const facadeStyleId = (style as unknown as Record<string, unknown>).facadeStyleId as string | undefined;
 
   return {
     version: 'v1',
