@@ -3,7 +3,7 @@
 // (foncier, marché, PLU, risques) manquantes avant régénération de la synthèse.
 
 import { supabase } from '../../../lib/supabaseClient';
-import type { PromoteurRawInput } from './promoteurSynthese.types';
+import type { PromoteurRawInput, RisqueNiveau, RisqueCategorie } from './promoteurSynthese.types';
 
 export type StepId =
   | 'codepostal'

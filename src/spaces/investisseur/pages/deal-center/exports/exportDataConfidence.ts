@@ -659,7 +659,7 @@ export async function exportDataConfidencePdf(): Promise<void> {
 
   if (critiquesDisplayed.length === 0) {
     // Carte succès
-    floatCard(doc, ML, y, CW, 13, 5, C.green50, C.green500, false);
+    floatCard(doc, ML, y, CW, 13, 5, C.green50, C.green500);
     doc.setFillColor(...C.green600);
     doc.circle(ML + 9, y + 6.5, 3.5, "F");
     doc.setFont("helvetica", "bold");

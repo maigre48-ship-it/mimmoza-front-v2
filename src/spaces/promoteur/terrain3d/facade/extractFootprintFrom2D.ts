@@ -312,15 +312,10 @@ function readBuildingsFromEditor2DStore(): RawBuilding[] {
 }
 
 function readBuildingsFromGetBuildingVolumes(): RawBuilding[] {
-  try {
-    const result: unknown = getBuildingVolumes();
-    const normalized = normalizeBuildingsArray(result);
-    console.log("[MMZ][Footprint] Source getBuildingVolumes() lue", { count: normalized.length, ids: safeIds(normalized) });
-    return normalized;
-  } catch (err) {
-    console.warn("[MMZ][Footprint] getBuildingVolumes() a échoué — source ignorée", err);
+    // getBuildingVolumes(b: Building2D) requiert un building unique ;
+    // cette source globale n'a pas de building source -> neutralisee.
+    // La source editor2d.store.buildings prend le relais.
     return [];
-  }
 }
 
 function getCandidateSources(): CandidateSource[] {

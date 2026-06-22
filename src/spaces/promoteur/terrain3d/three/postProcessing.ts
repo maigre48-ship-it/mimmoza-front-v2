@@ -73,7 +73,7 @@ export function setupPostProcessing(
   }
 
   if (opts.enableSMAA !== false) {
-    composer.addPass(new SMAAPass(width * dpr, height * dpr));
+    composer.addPass(new SMAAPass());
   }
 
   // OutputPass : tone mapping (ACES réglé sur le renderer) + conversion espace colorimétrique
