@@ -38,7 +38,7 @@ async function getPdfBytes(exportFn: () => Promise<void>): Promise<Uint8Array> {
   return new Promise<Uint8Array>((resolve, reject) => {
     // Override temporaire de jsPDF.prototype.save
     const originalSave = jsPDF.prototype.save;
-    jsPDF.prototype.save = function (filename?: string) {
+    jsPDF.prototype.save = function (this: jsPDF, filename?: string) {
       const bytes = this.output("arraybuffer");
       jsPDF.prototype.save = originalSave; // restore immédiatement
       resolve(new Uint8Array(bytes as ArrayBuffer));
