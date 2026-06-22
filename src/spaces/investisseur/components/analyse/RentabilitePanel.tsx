@@ -226,19 +226,19 @@ function persistRentabiliteToSnapshot(
         mensualite: bestResult.mensualite,
         verdict: bestResult.verdict,
         rendementBrutPct:
-          (bestResult as Record<string, unknown>).rendementBrutPct ??
+          (bestResult as unknown as Record<string, unknown>).rendementBrutPct ??
           undefined,
         rendementBrut:
-          (bestResult as Record<string, unknown>).rendementBrutPct ??
+          (bestResult as unknown as Record<string, unknown>).rendementBrutPct ??
           undefined,
         margeBrutePct:
-          (bestResult as Record<string, unknown>).margeBrutePct ?? undefined,
+          (bestResult as unknown as Record<string, unknown>).margeBrutePct ?? undefined,
         coutProjet:
-          (bestResult as Record<string, unknown>).coutProjet ?? undefined,
+          (bestResult as unknown as Record<string, unknown>).coutProjet ?? undefined,
         coutAchat:
-          (bestResult as Record<string, unknown>).coutAchat ?? undefined,
+          (bestResult as unknown as Record<string, unknown>).coutAchat ?? undefined,
         margeBrute:
-          (bestResult as Record<string, unknown>).margeBrute ?? undefined,
+          (bestResult as unknown as Record<string, unknown>).margeBrute ?? undefined,
         rentabiliteLocalScore:
           bestResult.triEquity != null
             ? Math.max(0, Math.min(100, Math.round(bestResult.triEquity * 5)))
