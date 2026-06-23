@@ -70,9 +70,9 @@ export function ApporteurDashboard() {
           <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
             Apporteur · Deals
           </div>
-          <div style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 10, lineHeight: 1.12, letterSpacing: -0.5 }}>
-            Espace Apporteur d'affaire
-          </div>
+          <div className="text-4xl font-semibold tracking-tight" style={{ color: "#fff", marginBottom: 10 }}>
+  Espace Apporteur d'affaire
+</div>
           <div style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>
             Qualifiez et transmettez vos opportunités foncières
           </div>

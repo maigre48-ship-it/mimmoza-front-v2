@@ -1,35 +1,22 @@
 ﻿// src/spaces/promoteur/pages/Dashboard.tsx
-// VERSION 3.4.0 — UI unifiée Promoteur (PromoteurPageHero + tokens)
-//   Seule la couche visuelle du Hero et des boutons a été modifiée.
-//   Toute la logique métier, les états, les callbacks sont intacts.
+// VERSION 3.5.0 — Dashboard simplifie
+//   Retrait : bloc "Lancement rapide", "Parcours metier / Pipeline",
+//             "Actions rapides", et toutes references Kel Foncier.
+//   Conserve : hero + "Nouvelle opportunite", modal de creation,
+//             deals apporteurs (conditionnel), opportunites recentes.
 
 import {
   AlertTriangle,
   ArrowRight,
-  BarChart3,
   Building2,
-  Calculator,
-  ChevronRight,
   Clock,
-  Download,
   Euro,
-  FileSearch,
   FileText,
-  Grid3X3,
-  Landmark,
-  Layers,
-  MapPin,
   Plus,
-  Search,
-  Sparkles,
-  TrendingUp,
   UserCheck,
-  Users,
-  Zap
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import type { ApporteurDeal } from "../../apporteur/shared/apporteurDeals.store";
 import {
   listApporteurDeals,
@@ -44,7 +31,7 @@ import type { PromoteurStudySummary } from "../shared/promoteurStudy.types";
 import { PromoteurStudyService } from "../shared/promoteurStudyService";
 
 // ─── Design tokens Promoteur ──────────────────────────────────────────────────
-import { HeroGhostButton, HeroPrimaryButton, PromoteurPageHero } from "../shared/components/PromoteurPageHero";
+import { HeroPrimaryButton, PromoteurPageHero } from "../shared/components/PromoteurPageHero";
 import {
   PROMOTEUR_BUTTON_STYLES,
   PROMOTEUR_COLORS,
@@ -62,75 +49,7 @@ const LS_QUICK_ADDRESS = "mimmoza.promoteur.quick.address";
 const LS_QUICK_COMMUNE = "mimmoza.promoteur.quick.commune";
 const LS_QUICK_SURFACE = "mimmoza.promoteur.quick.surface";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type PipelineStep = {
-  id:          string;
-  label:       string;
-  description: string;
-  route:       string;
-  icon: LucideIcon;
-  color:       string;
-  bg:          string;
-  border:      string;
-};
-
-type QuickAction = {
-  label: string;
-  route: string;
-  icon: LucideIcon;
-  tag?:  string;
-};
-
 // ─── Data ─────────────────────────────────────────────────────────────────────
-
-const PIPELINE_STEPS: PipelineStep[] = [
-  {
-    id: "opportunite", label: "Opportunité",
-    description: "Identification, import foncier, veille",
-    route: "/promoteur/foncier",
-    icon: MapPin, color: "#7c3aed", bg: "#faf5ff", border: "#e9d5ff",
-  },
-  {
-    id: "preanalyse", label: "Pré-analyse",
-    description: "PLU express, risques bloquants, score",
-    route: "/promoteur/foncier",
-    icon: Search, color: "#4338ca", bg: "#eef2ff", border: "#c7d2fe",
-  },
-  {
-    id: "faisabilite", label: "Faisabilité",
-    description: "Implantation 2D, massing 3D, façades",
-    route: "/promoteur/implantation-2d",
-    icon: Grid3X3, color: "#0369a1", bg: "#f0f9ff", border: "#bae6fd",
-  },
-  {
-    id: "marche", label: "Marché",
-    description: "DVF, prix de sortie, étude de marché",
-    route: "/promoteur/estimation",
-    icon: TrendingUp, color: "#047857", bg: "#ecfdf5", border: "#a7f3d0",
-  },
-  {
-    id: "bilan", label: "Bilan",
-    description: "Promoteur, scénarios, charge foncière",
-    route: "/promoteur/bilan-promoteur",
-    icon: Calculator, color: "#b45309", bg: "#fffbeb", border: "#fde68a",
-  },
-  {
-    id: "comite", label: "Comité",
-    description: "Synthèse, export PDF, recommandation",
-    route: "/promoteur/synthese",
-    icon: Landmark, color: "#be185d", bg: "#fdf2f8", border: "#fbcfe8",
-  },
-];
-
-const QUICK_ACTIONS: QuickAction[] = [
-  { label: "PLU express",        route: "/promoteur/foncier",            icon: Layers,     tag: "Pré-analyse" },
-  { label: "Contacts mairie",    route: "/promoteur/recherche-contacts", icon: Users,      tag: "Opportunité" },
-  { label: "Permis comparables", route: "/promoteur/permis-construire",  icon: FileSearch, tag: "Opportunité" },
-  { label: "DVF & comparables",  route: "/promoteur/estimation",         icon: BarChart3,  tag: "Marché" },
-  { label: "Implantation 2D",    route: "/promoteur/implantation-2d",    icon: Grid3X3,    tag: "Faisabilité" },
-  { label: "Synthèse comité",    route: "/promoteur/synthese",           icon: Sparkles,   tag: "Comité" },
-];
 
 const TYPE_BIEN_OPTIONS = [
   { value: "",          label: "— Choisir —" },
@@ -173,7 +92,6 @@ const TYPE_BIEN_LABEL: Record<ApporteurDeal["typeBien"], string> = {
 };
 
 // ─── Modal Nouvelle Opportunité ───────────────────────────────────────────────
-// (identique à la v3.3.0, aucun changement logique)
 
 function NouvelleOpportuniteModal({
   open,
@@ -389,7 +307,6 @@ function NouvelleOpportuniteModal({
 }
 
 // ─── RecentStudyRow ───────────────────────────────────────────────────────────
-// (identique à v3.3.0)
 
 function RecentStudyRow({
   study, onOpen, onDelete,
@@ -457,7 +374,6 @@ function RecentStudyRow({
 }
 
 // ─── ApporteurDealRow ─────────────────────────────────────────────────────────
-// (identique à v3.3.0)
 
 function ApporteurDealRow({
   deal, onOpen, isOpening,
@@ -525,9 +441,6 @@ export default function Dashboard(): React.ReactElement {
   const [studies,       setStudies]       = useState<PromoteurStudySummary[]>([]);
   const [isLoaded,      setIsLoaded]      = useState(false);
   const [loadError,     setLoadError]     = useState<string | null>(null);
-  const [quickAddress,  setQuickAddress]  = useState("");
-  const [quickCommune,  setQuickCommune]  = useState("");
-  const [quickSurface,  setQuickSurface]  = useState("");
   const [apporteurDeals,setApporteurDeals]= useState<ApporteurDeal[]>([]);
   const [openingDealId, setOpeningDealId] = useState<string | null>(null);
   const [showModal,     setShowModal]     = useState(false);
@@ -610,34 +523,6 @@ export default function Dashboard(): React.ReactElement {
     if (activeId === studyId) { clearActiveStudyId(); clearAllPromoteurSessionKeys(); }
   }, []);
 
-  const handleQuickLaunch = useCallback(async () => {
-    const address = quickAddress.trim();
-    const commune = quickCommune.trim();
-    const surface = quickSurface.trim().replace(/\s/g, "");
-    const title = address ? `Opportunité — ${address}` : commune ? `Opportunité — ${commune}` : `Nouvelle étude — ${formatDateTimeFR(new Date().toISOString())}`;
-
-    const result = await PromoteurStudyService.createStudy(title);
-    if (!result.ok) { alert(`Impossible de créer l'étude : ${result.error}`); return; }
-    const newStudy = result.data;
-    clearAllPromoteurSessionKeys();
-    setActiveStudyId(newStudy.id);
-
-    if (address) localStorage.setItem(LS_QUICK_ADDRESS, address); else localStorage.removeItem(LS_QUICK_ADDRESS);
-    if (commune) localStorage.setItem(LS_QUICK_COMMUNE, commune); else localStorage.removeItem(LS_QUICK_COMMUNE);
-    if (surface !== "") {
-      const sn = parseFloat(surface.replace(",", "."));
-      if (!isNaN(sn) && sn > 0) localStorage.setItem(LS_QUICK_SURFACE, String(Math.round(sn)));
-      else                       localStorage.removeItem(LS_QUICK_SURFACE);
-    } else { localStorage.removeItem(LS_QUICK_SURFACE); }
-
-    const summary: PromoteurStudySummary = {
-      id: newStudy.id, user_id: newStudy.user_id, title: newStudy.title,
-      status: newStudy.status, created_at: newStudy.created_at, updated_at: newStudy.updated_at, foncier: null,
-    };
-    setStudies(prev => [summary, ...prev]);
-    navigate(`/promoteur/foncier?study=${encodeURIComponent(newStudy.id)}`);
-  }, [quickAddress, quickCommune, quickSurface, navigate]);
-
   const openApporteurDeal = useCallback(async (deal: ApporteurDeal) => {
     if (deal.promoteurStudyId) { navigate(`/promoteur/foncier?study=${encodeURIComponent(deal.promoteurStudyId)}`); return; }
     setOpeningDealId(deal.id);
@@ -674,7 +559,7 @@ export default function Dashboard(): React.ReactElement {
 
       <div className="space-y-6">
 
-        {/* ══ 1. HERO v2 — identique à VeilleMarchePage ════════════════════ */}
+        {/* ══ 1. HERO ══════════════════════════════════════════════════════ */}
         <PromoteurPageHero
           badge="Promoteur · Cockpit foncier"
           title="Opportunités"
@@ -691,115 +576,14 @@ export default function Dashboard(): React.ReactElement {
             { label: "Deals apporteurs", value: String(apporteurDeals.length), tone: "emerald" },
           ]}
           actions={
-            <>
-              <HeroPrimaryButton onClick={() => setShowModal(true)}>
-                <Plus style={{ width: 16, height: 16 }} />
-                Nouvelle opportunité
-              </HeroPrimaryButton>
-              <HeroGhostButton title="Bientôt disponible">
-                <Download style={{ width: 15, height: 15 }} />
-                Import Kel Foncier
-              </HeroGhostButton>
-            </>
+            <HeroPrimaryButton onClick={() => setShowModal(true)}>
+              <Plus style={{ width: 16, height: 16 }} />
+              Nouvelle opportunité
+            </HeroPrimaryButton>
           }
         />
 
-        {/* ══ 2. SAISIE RAPIDE ═════════════════════════════════════════════ */}
-        <div className="rounded-2xl border bg-white px-6 py-5"
-          style={{ borderColor: PROMOTEUR_COLORS.violetBorder }}>
-          <div className="mb-4 flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg"
-              style={{ background: PROMOTEUR_COLORS.violetBg }}>
-              <Zap className="h-3.5 w-3.5" style={{ color: ACCENT2 }} />
-            </div>
-            <p className="text-sm font-semibold" style={{ color: PROMOTEUR_COLORS.textPrimary }}>Lancement rapide</p>
-            <span className="ml-1 rounded-full px-2 py-0.5 text-[9px] font-medium uppercase tracking-wide"
-              style={{ background: PROMOTEUR_COLORS.violetBg, color: ACCENT2 }}>
-              Pré-analyse express
-            </span>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="relative sm:col-span-1">
-              <MapPin className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
-                style={{ color: PROMOTEUR_COLORS.violetLight }} />
-              <input type="text" value={quickAddress} onChange={(e) => setQuickAddress(e.target.value)}
-                placeholder="Adresse ou n° parcelle"
-                className="w-full rounded-xl border py-2.5 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-violet-300 focus:ring-2 focus:ring-violet-100 transition-all"
-                style={{ borderColor: PROMOTEUR_COLORS.violetBorder, color: PROMOTEUR_COLORS.textPrimary }} />
-            </div>
-            <div className="relative">
-              <Building2 className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
-                style={{ color: PROMOTEUR_COLORS.violetLight }} />
-              <input type="text" value={quickCommune} onChange={(e) => setQuickCommune(e.target.value)}
-                placeholder="Commune"
-                className="w-full rounded-xl border py-2.5 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-violet-300 focus:ring-2 focus:ring-violet-100 transition-all"
-                style={{ borderColor: PROMOTEUR_COLORS.violetBorder, color: PROMOTEUR_COLORS.textPrimary }} />
-            </div>
-            <div className="relative">
-              <Layers className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
-                style={{ color: PROMOTEUR_COLORS.violetLight }} />
-              <input type="text" value={quickSurface} onChange={(e) => setQuickSurface(e.target.value)}
-                placeholder="Surface terrain (m², optionnel)"
-                className="w-full rounded-xl border py-2.5 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-violet-300 focus:ring-2 focus:ring-violet-100 transition-all"
-                style={{ borderColor: PROMOTEUR_COLORS.violetBorder, color: PROMOTEUR_COLORS.textPrimary }} />
-            </div>
-          </div>
-
-          <div className="mt-3 flex items-center justify-between">
-            <p className="text-[11px]" style={{ color: PROMOTEUR_COLORS.violetLight }}>
-              Ces informations seront pré-remplies dans votre nouvelle étude.
-            </p>
-            <button onClick={handleQuickLaunch}
-              className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all duration-150 hover:brightness-110 active:scale-[0.98]"
-              style={{ background: PROMOTEUR_COLORS.gradMain, color: "white", boxShadow: PROMOTEUR_SHADOWS.button }}>
-              Lancer la pré-analyse
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* ══ 3. PIPELINE ══════════════════════════════════════════════════ */}
-        <div>
-          <div className="mb-4">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.13em]"
-              style={{ color: PROMOTEUR_COLORS.violetLight }}>Parcours métier</p>
-            <p className="mt-0.5 text-sm font-semibold" style={{ color: PROMOTEUR_COLORS.textPrimary }}>
-              Pipeline Opportunité → Comité
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-            {PIPELINE_STEPS.map((step, i) => {
-              const Icon = step.icon;
-              return (
-                <Link key={step.id} to={step.route}
-                  className="group relative flex flex-col gap-3 rounded-xl border p-4 transition-all duration-150 hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(15,10,40,0.08)]"
-                  style={{ background: step.bg, borderColor: step.border }}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg transition-transform duration-150 group-hover:scale-105"
-                      style={{ background: step.color + "18" }}>
-                      <Icon className="h-4 w-4" style={{ color: step.color }} />
-                    </div>
-                    <span className="text-[9px] font-bold tabular-nums" style={{ color: step.color + "80" }}>
-                      {String(i + 1).padStart(2, "0")}
-                    </span>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold leading-tight" style={{ color: PROMOTEUR_COLORS.textPrimary }}>{step.label}</p>
-                    <p className="mt-1 text-[10px] leading-[1.45]" style={{ color: PROMOTEUR_COLORS.violetLight }}>{step.description}</p>
-                  </div>
-                  <div className="flex items-center gap-1 text-[10px] font-medium" style={{ color: step.color }}>
-                    <span>Accéder</span>
-                    <ChevronRight className="h-3 w-3 transition-transform duration-150 group-hover:translate-x-0.5" />
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* ══ 4. OPPORTUNITÉS APPORTEURS ═══════════════════════════════════ */}
+        {/* ══ 2. OPPORTUNITÉS APPORTEURS ═══════════════════════════════════ */}
         {apporteurDeals.length > 0 && (
           <div>
             <div className="mb-3 flex items-center gap-2">
@@ -824,129 +608,78 @@ export default function Dashboard(): React.ReactElement {
           </div>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-5">
-
-          {/* ══ 5. ACTIONS RAPIDES ═══════════════════════════════════════ */}
-          <div className="lg:col-span-2">
-            <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.13em]"
-              style={{ color: PROMOTEUR_COLORS.violetLight }}>Actions rapides</p>
-
-            <div className="overflow-hidden rounded-2xl border bg-white"
-              style={{ borderColor: PROMOTEUR_COLORS.violetBorder }}>
-              {QUICK_ACTIONS.map((action, i) => {
-                const Icon   = action.icon;
-                const isLast = i === QUICK_ACTIONS.length - 1;
-                return (
-                  <Link key={action.label} to={action.route}
-                    className="group flex items-center gap-3 px-4 py-3.5 transition-colors duration-100 hover:bg-violet-50"
-                    style={{ borderBottom: isLast ? "none" : `0.5px solid ${PROMOTEUR_COLORS.borderLight}` }}>
-                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[9px] transition-transform duration-150 group-hover:scale-105"
-                      style={{ background: PROMOTEUR_COLORS.violetBg }}>
-                      <Icon className="h-4 w-4" style={{ color: ACCENT2 }} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold" style={{ color: PROMOTEUR_COLORS.textPrimary }}>{action.label}</p>
-                      {action.tag && <p className="text-[10px]" style={{ color: PROMOTEUR_COLORS.violetLight }}>{action.tag}</p>}
-                    </div>
-                    <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 opacity-0 transition-all duration-150 group-hover:translate-x-0.5 group-hover:opacity-100"
-                      style={{ color: ACCENT2 }} />
-                  </Link>
-                );
-              })}
-            </div>
-
-            <div className="mt-3 flex items-center justify-between rounded-xl border px-4 py-3.5"
-              style={{ borderColor: PROMOTEUR_COLORS.violetBorder, background: PROMOTEUR_COLORS.violetBg }}>
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[9px]"
-                  style={{ background: "#fff" }}>
-                  <Download className="h-4 w-4" style={{ color: ACCENT2 }} />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold" style={{ color: PROMOTEUR_COLORS.textPrimary }}>Import Kel Foncier</p>
-                  <p className="text-[10px]" style={{ color: PROMOTEUR_COLORS.violetLight }}>Connexion bientôt disponible</p>
-                </div>
-              </div>
-              <span className="rounded-full px-2.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+        {/* ══ 3. OPPORTUNITÉS RÉCENTES ═════════════════════════════════════ */}
+        <div>
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.13em]"
+              style={{ color: PROMOTEUR_COLORS.violetLight }}>
+              Opportunités récentes
+              {isLoaded && sortedStudies.length > 0 && (
+                <span className="ml-2 rounded-full px-2 py-0.5 text-[9px] normal-case tracking-normal"
+                  style={{ background: PROMOTEUR_COLORS.violetBg, color: ACCENT }}>
+                  {sortedStudies.length}
+                </span>
+              )}
+            </p>
+            {isLoaded && sortedStudies.length > 0 && (
+              <button onClick={() => setShowModal(true)}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-all hover:brightness-110"
                 style={{ background: PROMOTEUR_COLORS.violetBg, color: ACCENT }}>
-                Bientôt
-              </span>
-            </div>
+                <Plus className="h-3 w-3" />Nouvelle
+              </button>
+            )}
           </div>
 
-          {/* ══ 6. DOSSIERS RÉCENTS ══════════════════════════════════════ */}
-          <div className="lg:col-span-3">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.13em]"
-                style={{ color: PROMOTEUR_COLORS.violetLight }}>
-                Opportunités récentes
-                {isLoaded && sortedStudies.length > 0 && (
-                  <span className="ml-2 rounded-full px-2 py-0.5 text-[9px] normal-case tracking-normal"
-                    style={{ background: PROMOTEUR_COLORS.violetBg, color: ACCENT }}>
-                    {sortedStudies.length}
-                  </span>
-                )}
+          {!isLoaded && (
+            <div className="flex items-center justify-center rounded-2xl border py-10"
+              style={{ borderColor: PROMOTEUR_COLORS.border, background: "white" }}>
+              <p className="text-sm" style={{ color: PROMOTEUR_COLORS.violetLight }}>Chargement des études…</p>
+            </div>
+          )}
+
+          {isLoaded && loadError && (
+            <div className="mb-3 flex items-center gap-2 rounded-xl border px-4 py-3 text-xs"
+              style={{ background: "#fffbeb", borderColor: "#fde68a", color: "#92400e" }}>
+              <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+              Connexion Supabase limitée ({loadError})
+            </div>
+          )}
+
+          {isLoaded && sortedStudies.length === 0 && (
+            <div className="flex flex-col items-center justify-center rounded-2xl border px-8 py-12 text-center"
+              style={{ borderColor: PROMOTEUR_COLORS.violetBorder, background: "white", borderStyle: "dashed" }}>
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl"
+                style={{ background: PROMOTEUR_COLORS.violetBg }}>
+                <FileText className="h-6 w-6" style={{ color: ACCENT2 }} />
+              </div>
+              <p className="mb-1 text-sm font-semibold" style={{ color: PROMOTEUR_COLORS.textPrimary }}>Aucune opportunité active</p>
+              <p className="mb-5 text-xs leading-5" style={{ color: PROMOTEUR_COLORS.violetLight }}>
+                Créez votre première étude foncière pour démarrer le parcours d'analyse.
               </p>
-              {isLoaded && sortedStudies.length > 0 && (
-                <button onClick={() => setShowModal(true)}
-                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-all hover:brightness-110"
-                  style={{ background: PROMOTEUR_COLORS.violetBg, color: ACCENT }}>
-                  <Plus className="h-3 w-3" />Nouvelle
-                </button>
+              <button onClick={() => setShowModal(true)}
+                className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all hover:brightness-110 active:scale-[0.98]"
+                style={{ background: PROMOTEUR_COLORS.gradMain, color: "white", boxShadow: PROMOTEUR_SHADOWS.button }}>
+                <Plus className="h-4 w-4" />Créer une opportunité
+              </button>
+            </div>
+          )}
+
+          {isLoaded && sortedStudies.length > 0 && (
+            <div className="space-y-2">
+              {sortedStudies.slice(0, 6).map((s) => (
+                <RecentStudyRow key={s.id} study={s}
+                  onOpen={() => openStudy(s)}
+                  onDelete={() => deleteStudy(s.id)} />
+              ))}
+              {sortedStudies.length > 6 && (
+                <p className="pt-1 text-center text-[11px]" style={{ color: PROMOTEUR_COLORS.violetLight }}>
+                  + {sortedStudies.length - 6} autres études
+                </p>
               )}
             </div>
-
-            {!isLoaded && (
-              <div className="flex items-center justify-center rounded-2xl border py-10"
-                style={{ borderColor: PROMOTEUR_COLORS.border, background: "white" }}>
-                <p className="text-sm" style={{ color: PROMOTEUR_COLORS.violetLight }}>Chargement des études…</p>
-              </div>
-            )}
-
-            {isLoaded && loadError && (
-              <div className="mb-3 flex items-center gap-2 rounded-xl border px-4 py-3 text-xs"
-                style={{ background: "#fffbeb", borderColor: "#fde68a", color: "#92400e" }}>
-                <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                Connexion Supabase limitée ({loadError})
-              </div>
-            )}
-
-            {isLoaded && sortedStudies.length === 0 && (
-              <div className="flex flex-col items-center justify-center rounded-2xl border px-8 py-12 text-center"
-                style={{ borderColor: PROMOTEUR_COLORS.violetBorder, background: "white", borderStyle: "dashed" }}>
-                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl"
-                  style={{ background: PROMOTEUR_COLORS.violetBg }}>
-                  <FileText className="h-6 w-6" style={{ color: ACCENT2 }} />
-                </div>
-                <p className="mb-1 text-sm font-semibold" style={{ color: PROMOTEUR_COLORS.textPrimary }}>Aucune opportunité active</p>
-                <p className="mb-5 text-xs leading-5" style={{ color: PROMOTEUR_COLORS.violetLight }}>
-                  Créez votre première étude foncière pour démarrer le parcours d'analyse.
-                </p>
-                <button onClick={() => setShowModal(true)}
-                  className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all hover:brightness-110 active:scale-[0.98]"
-                  style={{ background: PROMOTEUR_COLORS.gradMain, color: "white", boxShadow: PROMOTEUR_SHADOWS.button }}>
-                  <Plus className="h-4 w-4" />Créer une opportunité
-                </button>
-              </div>
-            )}
-
-            {isLoaded && sortedStudies.length > 0 && (
-              <div className="space-y-2">
-                {sortedStudies.slice(0, 6).map((s) => (
-                  <RecentStudyRow key={s.id} study={s}
-                    onOpen={() => openStudy(s)}
-                    onDelete={() => deleteStudy(s.id)} />
-                ))}
-                {sortedStudies.length > 6 && (
-                  <p className="pt-1 text-center text-[11px]" style={{ color: PROMOTEUR_COLORS.violetLight }}>
-                    + {sortedStudies.length - 6} autres études
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-
+          )}
         </div>
+
       </div>
     </>
   );
