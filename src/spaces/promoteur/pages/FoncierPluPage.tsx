@@ -1,7 +1,6 @@
 // src/spaces/promoteur/pages/FoncierPluPage.tsx
-// VERSION 9.5.1 — Hero v2 : design identique à VeilleMarchePage
-//   (rounded-[32px], gradient from-[#6f5bd6], badge pill, font-semibold)
-//   Toute la logique métier v9.4.2 est intacte.
+// VERSION 9.6.0 — PLU parsing via extraction texte client (pdfjs) → fin du 546.
+//   Hero v2 + toute la logique métier v9.5.1 intacte. Seul handleUploadAndParse change.
 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -37,6 +36,40 @@ import type {
   PromoteurPluData,
 } from "../shared/promoteurStudy.types";
 import { usePromoteurStudy } from "../shared/usePromoteurStudy";
+
+// ── pdf.js : extraction texte côté client ────────────────────────────────────
+// Si pdfjs-dist absent :  npm i pdfjs-dist
+// pdfjs-dist 5.x / 6.x → worker en .min.mjs. En v3, remplace par .min.js.
+import * as pdfjsLib from "pdfjs-dist";
+// @ts-ignore - import worker Vite (?worker) : bundle le worker en Web Worker
+import PdfJsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?worker";
+
+pdfjsLib.GlobalWorkerOptions.workerPort = new PdfJsWorker();
+
+/**
+ * Extraction du texte d'un PDF côté navigateur (pdf.js).
+ * Déporte tout le coût CPU hors de l'Edge Function → plus de 546.
+ * Retourne le texte concaténé page par page (chaîne vide si PDF sans couche texte).
+ */
+async function extractPdfText(file: File): Promise<string> {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+  const parts: string[] = [];
+  try {
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      parts.push(
+        content.items
+          .map((it: any) => (it && typeof it.str === "string" ? it.str : ""))
+          .join(" "),
+      );
+    }
+  } finally {
+    try { await pdf.destroy(); } catch { /* ignore */ }
+  }
+  return parts.join("\n");
+}
 
 // ── Design tokens Promoteur (v9.5.0) ─────────────────────────────────────────
 import { PromoteurPageHero, StudyIdBadge } from "../shared/components/PromoteurPageHero";
@@ -450,13 +483,39 @@ function PluUploaderPanel({ communeInsee, communeNom, targetZoneCode, onPluParse
 
   const handleUploadAndParse = async () => {
     if (!file) return;
-    setUploading(true); setError(null); setProgress("Préparation du PDF...");
+    setUploading(true); setError(null); setProgress("Extraction du texte du PDF…");
     try {
-      const base64Data = await fileToBase64(file); setProgress("Analyse PLU en cours...");
-      const { data, error } = await supabase.functions.invoke("plu-parser", { body: { commune_insee: communeInsee, commune_nom: communeNom || `Commune ${communeInsee}`, target_zone_code: targetZoneCode, pdf_base64: base64Data, pdf_filename: file.name } });
+      // 1) Chemin prioritaire : extraction texte côté client (pas de CPU serveur → plus de 546).
+      let pdfText = "";
+      try {
+        pdfText = await extractPdfText(file);
+      } catch (e) {
+        console.warn("[PluUploaderPanel] extraction pdfjs échouée, fallback base64:", e);
+      }
+
+      const body: Record<string, any> = {
+        commune_insee: communeInsee,
+        commune_nom: communeNom || `Commune ${communeInsee}`,
+        target_zone_code: targetZoneCode,
+        pdf_filename: file.name,
+      };
+
+      if (pdfText && pdfText.trim().length >= 500) {
+        // Texte exploitable → on n'envoie QUE le texte. plu-parser ne touche plus au PDF.
+        body.pdf_text = pdfText;
+      } else {
+        // PDF probablement scanné / sans couche texte → fallback serveur borné.
+        console.warn("[PluUploaderPanel] texte insuffisant (PDF scanné ?), fallback pdf_base64");
+        body.pdf_base64 = await fileToBase64(file);
+      }
+
+      // 2) Appel plu-parser
+      setProgress("Analyse PLU en cours…");
+      const { data, error } = await supabase.functions.invoke("plu-parser", { body });
       if (error) throw error;
       if (!data?.success) throw new Error(data?.message || "Erreur d'analyse PLU");
       setProgress("Terminé !");
+
       if (data.zones_rulesets?.length > 0) {
         let zoneData = data.zones_rulesets[0];
         if (targetZoneCode) { const matched = data.zones_rulesets.find((z: any) => String(z.zone_code || "").toUpperCase() === String(targetZoneCode || "").toUpperCase()); if (matched) zoneData = matched; }

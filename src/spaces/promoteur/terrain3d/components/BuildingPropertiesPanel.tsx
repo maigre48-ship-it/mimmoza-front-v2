@@ -240,6 +240,16 @@ export const BuildingPropertiesPanel: FC<Props> = ({
 
       <Divider />
 
+      {/* ── Setbacks ── */}
+      <SLabel>Retraits en hauteur (setbacks)</SLabel>
+      <div style={{ display:"flex", gap:4 }}>
+        {[{v:0,l:"Aucun"},{v:1,l:"1 retrait"},{v:2,l:"2 retraits"}].map(({v,l})=>(
+          <button key={v} style={{ ...chip(style.numSetbacks===v), flex:1 }} onClick={()=>up({numSetbacks:v as 0|1|2})}>{l}</button>
+        ))}
+      </div>
+
+      <Divider />
+
       {/* ── Matière façade ── */}
       <SLabel>Matière façade</SLabel>
       <div style={{ display:"flex", gap:4, marginBottom:8, flexWrap:"wrap" }}>
@@ -552,16 +562,6 @@ export const BuildingPropertiesPanel: FC<Props> = ({
         <NumInput value={parseFloat((transform.rotationRad*180/Math.PI).toFixed(1))} min={-180} max={180} step={5} unit="°"
           onChange={v=>onUpdateTransform({rotationRad:v*Math.PI/180})} />
       </Row>
-
-      <Divider />
-
-      {/* ── Setbacks ── */}
-      <SLabel>Retraits en hauteur (setbacks)</SLabel>
-      <div style={{ display:"flex", gap:4 }}>
-        {[{v:0,l:"Aucun"},{v:1,l:"1 retrait"},{v:2,l:"2 retraits"}].map(({v,l})=>(
-          <button key={v} style={{ ...chip(style.numSetbacks===v), flex:1 }} onClick={()=>up({numSetbacks:v as 0|1|2})}>{l}</button>
-        ))}
-      </div>
 
       {/* ── Estimations ── */}
       {building.meta&&(

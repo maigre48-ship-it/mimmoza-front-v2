@@ -1,6 +1,12 @@
-// massingFacadeEngine.ts — V6.5 residential_modern premium
+// massingFacadeEngine.ts — V6.6 — largeur fenêtre absolue (anti-étirement)
 // ═══════════════════════════════════════════════════════════════════════════════
-// V6.5 par rapport à V6.4 :
+// V6.6 par rapport à V6.5 :
+//   - FIX étirement fenêtres : la largeur de baie n'est plus une simple fraction
+//     de la travée (actBayW * widthRatio). On vise désormais une largeur ABSOLUE
+//     par type d'ouverture (targetWinWidthM), bornée par la travée disponible.
+//     → fenêtres de dimensions homogènes sur toutes les façades, qu'elles soient
+//       longues ou courtes. Le rythme (nombre de travées) reste adaptatif.
+// V6.5 :
 //   - EdgeFacadeOverrides + ResolvedEdgeConfig étendus (couleurs, retreat, groundMul)
 //   - constantes MODERN_* pour loggias, balcons, écrans, pergolas
 //   - helpers addModernVerticalScreen / addModernSolidVerticalPanel / addModernAtticPergola
@@ -238,6 +244,22 @@ const MODERN_PANEL_MARGIN = 0.08;
 const MODERN_ATTIC_PERGOLA_DEPTH = 1.55;
 const MODERN_ATTIC_PERGOLA_THICK = 0.045;
 const MODERN_ATTIC_PERGOLA_STEP = 0.28;
+
+// V6.6 — largeurs de fenêtre CIBLES (en m, étage de référence 2.8 m).
+// La fenêtre vise cette largeur absolue puis est bornée par la travée
+// disponible (actBayW * widthRatio). Elle ne s'étire donc plus avec le mur.
+const TARGET_WIN_WIDTH_M: Record<FacadeOpeningType, number> = {
+  window:         1.35,
+  french_window:  1.60,
+  sliding_bay:    2.20,
+  loggia_opening: 1.80,
+  retail_opening: 2.60,
+  none:           1.35,
+};
+
+function targetWinWidthM(t: FacadeOpeningType): number {
+  return TARGET_WIN_WIDTH_M[t] ?? TARGET_WIN_WIDTH_M.window;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HELPERS — exportés pour massingFacadeDetails
@@ -492,7 +514,7 @@ function addModernAtticPergola(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CONSTRUCTEUR PRINCIPAL — V6.5
+// CONSTRUCTEUR PRINCIPAL — V6.6
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export function buildFacadeGeometry(config: FacadeConfig): FacadeResult {
@@ -525,9 +547,13 @@ export function buildFacadeGeometry(config: FacadeConfig): FacadeResult {
     const nz = ux;
 
     const edgeCfg = resolveEdgeConfig(config, edge.overrides);
-    const bayWidth = Math.max(1.1, edgeCfg.bayWidth);
-    const nBays = Math.max(1, Math.floor(len / bayWidth));
+    // V6.7 — entraxe borné à une plage absolue (2.4–4.2 m) : le nombre de
+    // travées suit TOUJOURS la longueur du mur, qu'on reçoive ou non un
+    // bayWidth aberrant/proportionnel en amont. round = rythme plus régulier.
+    const bayWidth = clamp(edgeCfg.bayWidth, 2.4, 4.2);
+    const nBays = Math.max(1, Math.round(len / bayWidth));
     const actBayW = len / nBays;
+    console.log(`[facade] len=${len.toFixed(1)} bayWidth=${bayWidth.toFixed(2)} nBays=${nBays}`);
     const ftScale = edgeCfg.frameThicknessScale;
 
     const pattern = edgeCfg.bayPattern;
@@ -621,7 +647,14 @@ export function buildFacadeGeometry(config: FacadeConfig): FacadeResult {
         const frameT = Math.max(0.02, rules.frameThick * scale);
         const outerFrameT = Math.max(0.028, rules.outerFrameThick * scale);
         const revealDepth = Math.max(setb + 0.02, rules.revealDepth * scale);
-        const winW = Math.max(0.5, actBayW * rules.widthRatio);
+
+        // V6.6 — Largeur fenêtre ABSOLUE (anti-étirement).
+        //   - cible = largeur réelle souhaitée selon le type d'ouverture (× échelle étage)
+        //   - bornée par la travée disponible (actBayW * widthRatio) pour ne jamais déborder
+        //   → fenêtres homogènes quelle que soit la longueur du mur.
+        const bayMaxWinW = actBayW * rules.widthRatio;
+        const targetWinW = targetWinWidthM(rules.openingType) * scale;
+        const winW = Math.max(0.5, Math.min(targetWinW, bayMaxWinW));
 
         const wyBot = floorBaseY + silH;
         const wyTop = wyBot + winH;

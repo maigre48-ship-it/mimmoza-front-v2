@@ -1,217 +1,4 @@
-﻿// src/components/AppShell.tsx
-
-import {
-  AlertTriangle,
-  BarChart3,
-  Building,
-  Building2,
-  Calculator, ChevronRight,
-  ClipboardList,
-  Code2,
-  Cuboid,
-  Eye,
-  FileSearch,
-  FileText,
-  FolderKanban,
-  Grid3X3,
-  Hammer,
-  Home,
-  Layers,
-  LayoutDashboard,
-  Map,
-  Menu,
-  PieChart,
-  Plus,
-  ScanSearch,
-  Search,
-  ShieldAlert,
-  ShieldCheck,
-  Sparkles,
-  Target,
-  TrendingUp,
-  Users,
-  Wand2,
-  X,
-  Zap,
-} from "lucide-react";
-import type { ComponentType, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
-
-import mimmozaLogo from "../assets/mimmoza-logo.png";
-import { getCurrentAdminStatus } from "../lib/admin";
-import { supabase } from "../lib/supabase";
-import { countUnseen } from "../services/opportunity/opportunityWatch.service";
-import { DealUnlockModal } from "../spaces/marchand/components/DealUnlockModal";
-import { unlockDealIfNeeded } from "../spaces/marchand/services/dealUnlock";
-import { ensureActiveDeal, type MarchandDeal } from "../spaces/marchand/shared/marchandSnapshot.store";
-import { extractStudyId, preserveStudyInPath } from "../utils/preserveStudyParam";
-
-// ── Paywall generique (promoteur, extensible) ─────────────────────────────────
-import { ProjectUnlockModal } from "./billing/ProjectUnlockModal";
-import { unlockProject, isProjectUnlocked } from "../lib/billing/projectUnlock";
-import { buildPromoteurParcelKey } from "../lib/billing/parcelKey";
-import { isRouteProtected, getSpacePaywallConfig } from "../lib/billing/paywallConfig";
-
-type Space = "none" | "promoteur" | "agence" | "marchand" | "banque" | "rehabilitation";
-
-type AppShellProps = {
-  currentSpace: Space;
-  onChangeSpace: (space: Space) => void;
-  children: ReactNode;
-};
-
-type NavItem = {
-  label: string;
-  path: string;
-  icon: ComponentType<{ className?: string; style?: React.CSSProperties }>;
-  end?: boolean;
-  tabParam?: string;
-  separatorBefore?: boolean;
-};
-
-type NavSection = {
-  id: string;
-  label: string;
-  items: NavItem[];
-};
-
-type StoredAccount = {
-  email: string;
-  fullName?: string;
-  initials?: string;
-  plan?: "free" | "starter" | "pro";
-  isAuthenticated: boolean;
-};
-
-type PendingUnlockState = {
-  path: string;
-  dealId: string;
-  dealLabel: string;
-};
-
-type PendingProjectUnlock = {
-  path: string;
-  space: "promoteur";   // extensible plus tard (rehabilitation, ...)
-  projectKey: string;
-  label: string;
-};
-
-const AUTH_STORAGE_KEY = "mimmoza.auth.v1";
-
-function MimmozaLogo(props: { className?: string }) {
-  return (
-    <img
-      src={mimmozaLogo}
-      alt="Mimmoza"
-      className={props.className ?? "h-12 w-auto object-contain"}
-      draggable={false}
-    />
-  );
-}
-
-// ── Badge de non-lus de la Veille active ──────────────────────────────────────
-// Auto-suffisant : interroge le compteur d'événements non lus au montage et
-// toutes les 60 s. Silencieux si erreur (ex. utilisateur non connecté).
-function VeilleNavBadge() {
-  const [count, setCount] = useState(0);
-  useEffect(function () {
-    let mounted = true;
-    async function load() {
-      try {
-        const n = await countUnseen();
-        if (mounted) setCount(n);
-      } catch {
-        /* silencieux */
-      }
-    }
-    void load();
-    const id = setInterval(function () { void load(); }, 60000);
-    return function () {
-      mounted = false;
-      clearInterval(id);
-    };
-  }, []);
-  if (count <= 0) return null;
-  return (
-    <span className="ml-1 inline-flex min-w-[1.1rem] items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
-      {count > 99 ? "99+" : count}
-    </span>
-  );
-}
-
-function getSpaceGradient(space: Space): string {
-  if (space === "marchand")       return "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)";
-  if (space === "promoteur")      return "linear-gradient(90deg, #6f5bd6 0%, #8d78df 50%, #b39ddb 100%)";
-  if (space === "agence")         return "linear-gradient(135deg, #16a34a 0%, #4ade80 100%)";
-  if (space === "banque")         return "linear-gradient(90deg, #26a69a 0%, #80cbc4 100%)";
-  if (space === "rehabilitation") return "linear-gradient(90deg, #ea580c 0%, #fb923c 100%)";
-  return "linear-gradient(90deg, #2196f3 0%, #21cbf3 100%)";
-}
-
-function getSpaceAccentColor(space: Space): string {
-  if (space === "marchand")       return "#1a72c4";
-  if (space === "promoteur")      return "#5247b8";
-  if (space === "agence")         return "#16a34a";
-  if (space === "banque")         return "#1a7a50";
-  if (space === "rehabilitation") return "#ea580c";
-  return "#1a72c4";
-}
-
-function buildInitials(fullName: string | undefined, email: string | undefined): string {
-  const trimmed = (fullName ?? "").trim();
-  if (trimmed) {
-    const parts  = trimmed.split(/\s+/).filter(Boolean);
-    const first  = parts[0] ? parts[0][0] : "";
-    const second = parts[1] ? parts[1][0] : "";
-    const initials = (first + second).toUpperCase();
-    if (initials) return initials;
-  }
-  return (email ?? "M").trim().slice(0, 2).toUpperCase();
-}
-
-function readStoredAccount(): StoredAccount | null {
-  try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<StoredAccount>;
-    if (!parsed || !parsed.email || !parsed.isAuthenticated) return null;
-    return {
-      email:           parsed.email,
-      fullName:        parsed.fullName ?? "",
-      initials:        parsed.initials ?? buildInitials(parsed.fullName, parsed.email),
-      plan:            parsed.plan ?? "free",
-      isAuthenticated: true,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function isMarchandPremiumPath(path: string): boolean {
-  if (path.indexOf("/marchand-de-bien/sourcing")    >= 0) return true;
-  if (path.indexOf("/marchand-de-bien/execution")   >= 0) return true;
-  if (path.indexOf("/marchand-de-bien/planning")    >= 0) return true;
-  if (path.indexOf("/marchand-de-bien/analyse")     >= 0) return true;
-  if (path.indexOf("/marchand-de-bien/georisques")  >= 0) return true;
-  if (path.indexOf("/marchand-de-bien/deal-center") >= 0) return true;
-  return false;
-}
-
-function getDealLabel(deal: MarchandDeal): string {
-  const t  = deal.title   ? deal.title.trim()   : "";
-  if (t) return t;
-  const a  = deal.address ? deal.address.trim() : "";
-  if (a) return a;
-  const zc = [deal.zipCode, deal.city].filter(Boolean).join(" ").trim();
-  if (zc) return zc;
-  return deal.id;
-}
-
-function buildNavItemPath(resolvedBase: string, tabParam: string | undefined): string {
-  if (tabParam === undefined) return resolvedBase;
-  const idx            = resolvedBase.indexOf("?");
-  const pathPart       = idx >= 0 ? resolvedBase.slice(0, idx) : resolvedBase;
+﻿  const pathPart       = idx >= 0 ? resolvedBase.slice(0, idx) : resolvedBase;
   const existingSearch = idx >= 0 ? resolvedBase.slice(idx + 1) : "";
   const sp = new URLSearchParams(existingSearch);
   sp.set("tab", tabParam);
@@ -519,9 +306,9 @@ function TopNavigation(props: {
 
   return (
     <>
-      <div className="border-b border-slate-200/70 bg-white/90 backdrop-blur-md overflow-x-hidden">
+      <div className="border-b border-slate-200/70 bg-white/90 backdrop-blur-md">
         <div className="mx-auto max-w-7xl px-4 lg:px-6">
-          <div className="flex h-16 items-center justify-between gap-4 min-w-0">
+          <div className="flex h-16 items-center justify-between gap-4">
             <NavLink
               to="/"
               onClick={() => onChangeSpace("none")}
@@ -530,7 +317,7 @@ function TopNavigation(props: {
               <MimmozaLogo className="h-12 w-auto object-contain" />
             </NavLink>
 
-            <div className="flex min-w-0 flex-1 items-center justify-center">
+            <div className="flex flex-1 items-center justify-center">
               <nav className="flex items-center gap-1.5 overflow-x-auto rounded-2xl border border-slate-200/80 bg-slate-50/80 p-1.5 scrollbar-hide">
                 {SPACES.map(function (space) {
                   const Icon     = space.icon;
@@ -991,13 +778,6 @@ export function AppShell(props: AppShellProps) {
   const [unlockLoading,  setUnlockLoading]  = useState(false);
   const [unlockNoTokens, setUnlockNoTokens] = useState(false);
   const [unlockError,    setUnlockError]    = useState<string | null>(null);
-
-  // ── Paywall projet generique (promoteur) ───────────────────────────────────
-  const [projectUnlock,        setProjectUnlock]        = useState<PendingProjectUnlock | null>(null);
-  const [projectUnlockLoading, setProjectUnlockLoading] = useState(false);
-  const [projectUnlockNoTokens,setProjectUnlockNoTokens]= useState(false);
-  const [projectUnlockError,   setProjectUnlockError]   = useState<string | null>(null);
-
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -1033,60 +813,22 @@ export function AppShell(props: AppShellProps) {
 
   async function handleProtectedNavigate(targetPath: string, closeAfterMobile?: boolean): Promise<void> {
     if (closeAfterMobile) setMobileNavOpen(false);
-
-    // ── Chemin marchand (inchange) ────────────────────────────────────────────
-    if (currentSpace === "marchand" && isMarchandPremiumPath(targetPath)) {
-      const deal = ensureActiveDeal();
-      if (!deal) {
-        navigate("/marchand-de-bien");
-        return;
-      }
-      if (deal.premiumUnlocked) {
-        navigate(targetPath);
-        return;
-      }
-      setUnlockError(null);
-      setUnlockNoTokens(false);
-      setPendingUnlock({ path: targetPath, dealId: deal.id, dealLabel: getDealLabel(deal) });
+    if (currentSpace !== "marchand" || !isMarchandPremiumPath(targetPath)) {
+      navigate(targetPath);
       return;
     }
-
-    // ── Chemin promoteur (1 jeton = 1 parcelle) ───────────────────────────────
-    if (currentSpace === "promoteur" && isRouteProtected("promoteur", targetPath)) {
-      const parcel = buildPromoteurParcelKey();
-      // Pas de parcelle selectionnee -> navigation libre
-      if (!parcel.key) {
-        navigate(targetPath);
-        return;
-      }
-
-      // Deja deverrouille (dans la fenetre de validite) ? -> navigation directe,
-      // SANS re-afficher la modale ni re-debiter. C'est le coeur du fix :
-      // 1 jeton = parcelle debloquee pour TOUTES les pages du vertical, 30 jours.
-      const cfg = getSpacePaywallConfig("promoteur");
-      try {
-        const already = await isProjectUnlocked("promoteur", parcel.key, cfg.validityDays);
-        if (already) {
-          navigate(targetPath);
-          return;
-        }
-      } catch {
-        // En cas d'erreur reseau, on retombe sur la modale (fail-closed cote acces).
-      }
-
-      setProjectUnlockError(null);
-      setProjectUnlockNoTokens(false);
-      setProjectUnlock({
-        path: targetPath,
-        space: "promoteur",
-        projectKey: parcel.key,
-        label: parcel.label,
-      });
+    const deal = ensureActiveDeal();
+    if (!deal) {
+      navigate("/marchand-de-bien");
       return;
     }
-
-    // ── Defaut : navigation libre ─────────────────────────────────────────────
-    navigate(targetPath);
+    if (deal.premiumUnlocked) {
+      navigate(targetPath);
+      return;
+    }
+    setUnlockError(null);
+    setUnlockNoTokens(false);
+    setPendingUnlock({ path: targetPath, dealId: deal.id, dealLabel: getDealLabel(deal) });
   }
 
   async function confirmUnlock() {
@@ -1115,43 +857,6 @@ export function AppShell(props: AppShellProps) {
   function openBilling()       { closeUnlockModal(); navigate("/compte"); }
   function openSubscriptions() { closeUnlockModal(); navigate("/compte?section=abonnements"); }
   function openTokens()        { closeUnlockModal(); navigate("/compte?section=jetons"); }
-
-  // ── Handlers paywall projet generique ───────────────────────────────────────
-  function closeProjectUnlock() {
-    setProjectUnlock(null);
-    setProjectUnlockLoading(false);
-    setProjectUnlockNoTokens(false);
-    setProjectUnlockError(null);
-  }
-
-  async function confirmProjectUnlock() {
-    if (!projectUnlock) return;
-    try {
-      setProjectUnlockLoading(true);
-      setProjectUnlockError(null);
-      setProjectUnlockNoTokens(false);
-      const cfg = getSpacePaywallConfig(projectUnlock.space);
-      const result = await unlockProject(
-        projectUnlock.space,
-        projectUnlock.projectKey,
-        projectUnlock.label,
-        cfg.validityDays
-      );
-      if (!result.ok) {
-        if (result.reason === "NO_TOKENS") { setProjectUnlockNoTokens(true); return; }
-        setProjectUnlockError(result.message);
-        return;
-      }
-      const nextPath = projectUnlock.path;
-      closeProjectUnlock();
-      navigate(nextPath);
-    } catch (error) {
-      console.error("Erreur deverrouillage projet:", error);
-      setProjectUnlockError("Impossible de deverrouiller ce projet pour le moment.");
-    } finally {
-      setProjectUnlockLoading(false);
-    }
-  }
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900">
@@ -1263,20 +968,6 @@ export function AppShell(props: AppShellProps) {
         onOpenBilling={openBilling}
         onOpenSubscriptions={openSubscriptions}
         onOpenTokens={openTokens}
-      />
-
-      <ProjectUnlockModal
-        open={Boolean(projectUnlock)}
-        projectLabel={projectUnlock ? projectUnlock.label : "Projet"}
-        features={projectUnlock ? getSpacePaywallConfig(projectUnlock.space).features : undefined}
-        loading={projectUnlockLoading}
-        noTokens={projectUnlockNoTokens}
-        errorMessage={projectUnlockError}
-        onClose={closeProjectUnlock}
-        onConfirmUnlock={confirmProjectUnlock}
-        onOpenBilling={() => { closeProjectUnlock(); navigate("/compte"); }}
-        onOpenSubscriptions={() => { closeProjectUnlock(); navigate("/compte?section=abonnements"); }}
-        onOpenTokens={() => { closeProjectUnlock(); navigate("/compte?section=jetons"); }}
       />
     </div>
   );

@@ -4,6 +4,11 @@
 // TOUT en fractions de la hauteur d'étage et de la largeur de travée → échelle
 // correcte quelle que soit l'unité de scène.
 //
+// V6 — NOMBRE DE BAIES ADAPTATIF : planEdgeOpenings dérive le nombre de travées
+//   de la LONGUEUR du mur (entraxe cible ~3.5 m). `baysPerEdge` ne plafonne plus
+//   le compte (il sert uniquement de borne haute de sécurité). Corrige le bug
+//   "toujours 4 fenêtres par façade quelle que soit la longueur".
+//
 // V5 — La GRILLE DE TRAVÉES est désormais centralisée dans `planEdgeOpenings`,
 //   consommée À LA FOIS par ce moteur (pose vitres/cadres) ET par l'assembleur
 //   (perçage réel des murs). Source unique → trous et menuiseries strictement
@@ -38,6 +43,9 @@ export type DoorType = "plain" | "glazed" | "transom";
 // Arête en-dessous de laquelle on ne pose AUCUNE ouverture (mur plein).
 // Partagé avec l'assembleur pour que les murs courts soient pleins des deux côtés.
 export const MIN_OPENING_EDGE = 0.8;
+
+// Entraxe cible entre deux baies (m). Le nombre de travées en découle.
+const TARGET_BAY_SPACING_M = 3.5;
 
 // Réglages d'une façade (ou global si appliqué à toutes).
 export interface OpeningStyle {
@@ -110,13 +118,20 @@ export function planEdgeOpenings(
   baysPerEdge: number,
   doorOnEdge: boolean,
 ): EdgeOpeningPlan {
-  const maxBays = Math.max(1, Math.min(baysPerEdge, Math.floor(edgeLen / 1.5)));
+  // V6 — Le nombre de baies suit la LONGUEUR du mur (entraxe cible ~3.5 m).
+  // `baysPerEdge` ne plafonne plus le compte : il ne sert que de borne haute de
+  // sécurité (anti-surcharge sur murs très longs), relevée pour ne pas brider.
+  const idealBays = Math.max(1, Math.round(edgeLen / TARGET_BAY_SPACING_M));
+  const hardCap   = Math.max(baysPerEdge, Math.floor(edgeLen / 1.5));
+  const maxBays   = Math.max(1, Math.min(idealBays, hardCap));
+
   const bayW    = edgeLen / maxBays;
   const winH    = floorH * Math.max(0.2, Math.min(0.8, st.heightRatio));
   const winW    = bayW   * Math.max(0.2, Math.min(0.9, st.widthRatio));
   const doorBay = doorOnEdge ? Math.floor(maxBays / 2) : -1;
   const doorH   = floorH * 0.82;
   const doorW   = Math.min(winW * 1.1, bayW * 0.6);
+
   return { maxBays, bayW, winW, winH, winVCenter: floorH * 0.5, doorBay, doorW, doorH };
 }
 

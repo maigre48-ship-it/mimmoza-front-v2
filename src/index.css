@@ -24,3 +24,7 @@ body {
   html::-webkit-scrollbar { display: none !important; }
   body { overflow: hidden !important; }
 }
+html, body, #root {
+  max-width: 100%;
+  overflow-x: hidden;
+}

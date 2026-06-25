@@ -4,14 +4,18 @@ import AnimatedWaveBackground from "@/components/backgrounds/AnimatedWaveBackgro
 import { supabase } from "@/lib/supabase";
 import {
   ArrowRight,
-  CheckCircle2,
+  Building2,
+  Calculator,
   Eye,
   EyeOff,
+  Grid3X3,
   Lock,
   LogIn,
   Mail,
-  ShieldCheck,
+  ScanSearch,
+  ScrollText,
   Sparkles,
+  TrendingUp,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -140,25 +144,22 @@ export default function ConnexionPage() {
           </p>
 
           <div className="mt-8 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-white/60 bg-white/50 p-4 shadow-sm backdrop-blur-sm">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                Accès sécurisé
+            {[
+              { icon: ScanSearch, color: "text-emerald-500", label: "Analyse fonciere" },
+              { icon: TrendingUp, color: "text-sky-500", label: "Donnees de marche" },
+              { icon: Building2, color: "text-indigo-500", label: "Potentiel constructible" },
+              { icon: Grid3X3, color: "text-violet-500", label: "Faisabilite projet" },
+              { icon: ScrollText, color: "text-amber-500", label: "PLU et reglementation" },
+              { icon: Calculator, color: "text-rose-500", label: "Bilan et rentabilite" },
+            ].map((f) => (
+              <div
+                key={f.label}
+                className="flex items-center gap-2 rounded-2xl border border-white/60 bg-white/50 p-4 text-sm font-semibold text-slate-800 shadow-sm backdrop-blur-sm"
+              >
+                <f.icon className={`h-4 w-4 shrink-0 ${f.color}`} />
+                {f.label}
               </div>
-              <div className="mt-1 text-sm leading-6 text-slate-600">
-                Authentification Supabase Auth avec session JWT persistée.
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-white/60 bg-white/50 p-4 shadow-sm backdrop-blur-sm">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <CheckCircle2 className="h-4 w-4 text-sky-500" />
-                Parcours prêt
-              </div>
-              <div className="mt-1 text-sm leading-6 text-slate-600">
-                Base prête pour abonnement, portail client et monétisation.
-              </div>
-            </div>
+            ))}
           </div>
         </div>
 
