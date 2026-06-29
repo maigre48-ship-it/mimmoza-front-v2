@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+﻿import { supabase } from "@/lib/supabase";
 import {
   ArrowRight,
   CheckCircle2,
@@ -47,7 +47,7 @@ export default function InscriptionPage() {
     }
 
     if (trimmedPassword.length < 6) {
-      setError("Le mot de passe doit contenir au moins 6 caractères.");
+      setError("Le mot de passe doit contenir au moins 6 caractÃ¨res.");
       return;
     }
 
@@ -71,20 +71,20 @@ export default function InscriptionPage() {
       if (signUpError) {
         const msg = signUpError.message.toLowerCase();
         if (msg.includes("already") || msg.includes("registered")) {
-          setError("Un compte existe déjà avec cet email. Connectez-vous.");
+          setError("Un compte existe dÃ©jÃ  avec cet email. Connectez-vous.");
         } else {
-          setError("Impossible de créer le compte. Vérifiez vos informations et réessayez.");
+          setError("Impossible de crÃ©er le compte. VÃ©rifiez vos informations et rÃ©essayez.");
         }
         return;
       }
 
-      // Cas 1 : confirmation email activée → pas de session immédiate
+      // Cas 1 : confirmation email activÃ©e â†’ pas de session immÃ©diate
       if (!data.session) {
         setNeedsConfirmation(true);
         return;
       }
 
-      // Cas 2 : session créée directement → on persiste et on entre dans l'app
+      // Cas 2 : session crÃ©Ã©e directement â†’ on persiste et on entre dans l'app
       const payload: StoredUser = {
         email: trimmedEmail,
         logged: true,
@@ -94,9 +94,9 @@ export default function InscriptionPage() {
       localStorage.setItem("mimmoza.user", JSON.stringify(payload));
       localStorage.setItem("mimmoza-auth", "true");
 
-      navigate("/compte", { replace: true });
+      navigate("/dashboard", { replace: true });
     } catch {
-      setError("Une erreur est survenue. Veuillez réessayer.");
+      setError("Une erreur est survenue. Veuillez rÃ©essayer.");
     } finally {
       setLoading(false);
     }
@@ -119,35 +119,35 @@ export default function InscriptionPage() {
           </div>
 
           <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
-            Créez votre{" "}
+            CrÃ©ez votre{" "}
             <span className="bg-gradient-to-r from-indigo-600 via-sky-500 to-cyan-500 bg-clip-text text-transparent">
               compte Mimmoza
             </span>
           </h1>
 
           <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">
-            Préparez votre accès personnel pour la connexion, les abonnements et
-            la future expérience client premium de la plateforme.
+            PrÃ©parez votre accÃ¨s personnel pour la connexion, les abonnements et
+            la future expÃ©rience client premium de la plateforme.
           </p>
 
           <div className="mt-8 grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                Compte sécurisé
+                Compte sÃ©curisÃ©
               </div>
               <div className="mt-1 text-sm leading-6 text-slate-600">
-                Authentification Supabase Auth avec session JWT persistée.
+                Authentification Supabase Auth avec session JWT persistÃ©e.
               </div>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <CheckCircle2 className="h-4 w-4 text-sky-500" />
-                Base monétisation
+                Base monÃ©tisation
               </div>
               <div className="mt-1 text-sm leading-6 text-slate-600">
-                Parcours prêt pour abonnement, portail client et évolution SaaS.
+                Parcours prÃªt pour abonnement, portail client et Ã©volution SaaS.
               </div>
             </div>
           </div>
@@ -162,10 +162,10 @@ export default function InscriptionPage() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-semibold text-slate-950">
-                    Vérifiez votre email
+                    VÃ©rifiez votre email
                   </h2>
                   <p className="mt-2 text-sm leading-6 text-slate-500">
-                    Un lien de confirmation a été envoyé à{" "}
+                    Un lien de confirmation a Ã©tÃ© envoyÃ© Ã {" "}
                     <span className="font-medium text-slate-700">{email.trim().toLowerCase()}</span>.
                     Cliquez dessus pour activer votre compte, puis connectez-vous.
                   </p>
@@ -174,7 +174,7 @@ export default function InscriptionPage() {
                   to="/connexion"
                   className="mt-2 inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-sky-500 px-5 py-3 text-sm font-medium text-white shadow-md shadow-sky-200/60 transition-all hover:from-indigo-500 hover:to-sky-400"
                 >
-                  Aller à la connexion
+                  Aller Ã  la connexion
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </div>
@@ -191,7 +191,7 @@ export default function InscriptionPage() {
                   </h2>
 
                   <p className="mt-2 text-sm leading-6 text-slate-500">
-                    Renseignez vos informations pour créer votre compte Mimmoza.
+                    Renseignez vos informations pour crÃ©er votre compte Mimmoza.
                   </p>
                 </div>
 
@@ -318,13 +318,13 @@ export default function InscriptionPage() {
                     disabled={loading}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3.5 text-sm font-medium text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <span>{loading ? "Création en cours..." : "Créer mon compte"}</span>
+                    <span>{loading ? "CrÃ©ation en cours..." : "CrÃ©er mon compte"}</span>
                     {!loading && <ArrowRight className="h-4 w-4" />}
                   </button>
                 </div>
 
                 <div className="mt-5 text-sm text-slate-500">
-                  Déjà inscrit ?{" "}
+                  DÃ©jÃ  inscrit ?{" "}
                   <Link
                     to="/connexion"
                     className="font-medium text-sky-700 transition hover:text-sky-800"
@@ -340,3 +340,4 @@ export default function InscriptionPage() {
     </div>
   );
 }
+
