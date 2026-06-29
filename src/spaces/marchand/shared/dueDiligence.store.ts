@@ -10,6 +10,8 @@
  * un status, une value, un commentaire.
  */
 
+import { userStorage } from "@/lib/storage/userScopedStorage";
+
 // ─── Constants ──────────────────────────────────────────────────────
 
 export const LS_DD_KEY = "mimmoza.marchand.duediligence.v1";
@@ -55,7 +57,7 @@ function defaultSnapshot(): DDSnapshot {
 
 export function readDDSnapshot(): DDSnapshot {
   try {
-    const raw = localStorage.getItem(LS_DD_KEY);
+    const raw = userStorage.getItem(LS_DD_KEY);
     if (!raw) return defaultSnapshot();
     const parsed = JSON.parse(raw);
     if (parsed?.version !== 1) return defaultSnapshot();
@@ -67,7 +69,7 @@ export function readDDSnapshot(): DDSnapshot {
 
 export function writeDDSnapshot(snap: DDSnapshot): void {
   snap.updatedAt = nowIso();
-  localStorage.setItem(LS_DD_KEY, JSON.stringify(snap));
+  userStorage.setItem(LS_DD_KEY, JSON.stringify(snap));
   window.dispatchEvent(new CustomEvent(DD_EVENT));
 }
 

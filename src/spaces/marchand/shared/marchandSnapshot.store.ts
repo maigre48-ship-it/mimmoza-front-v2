@@ -4,6 +4,7 @@
  * 100% TypeScript: AUCUN JSX dans ce fichier.
  */
 
+import { userStorage } from "@/lib/storage/userScopedStorage";
 import type {
   TravauxSimulationV1,
   ComputedTravaux,
@@ -325,7 +326,7 @@ function safeParse(json: string | null): MarchandSnapshotV1 | null {
 
 function readRaw(): MarchandSnapshotV1 {
   if (!isBrowser()) return defaultSnapshot();
-  const fromLs = safeParse(localStorage.getItem(LS_MARCHAND_SNAPSHOT_V1));
+  const fromLs = safeParse(userStorage.getItem(LS_MARCHAND_SNAPSHOT_V1));
   return fromLs ?? defaultSnapshot();
 }
 
@@ -339,7 +340,7 @@ function writeSnapshot(next: MarchandSnapshotV1): void {
     updatedAt: nowIso(),
   };
 
-  localStorage.setItem(LS_MARCHAND_SNAPSHOT_V1, JSON.stringify(toWrite));
+  userStorage.setItem(LS_MARCHAND_SNAPSHOT_V1, JSON.stringify(toWrite));
   window.dispatchEvent(new CustomEvent(MARCHAND_SNAPSHOT_EVENT));
 }
 

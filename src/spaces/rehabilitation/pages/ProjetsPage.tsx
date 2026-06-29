@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { userStorage } from "@/lib/storage/userScopedStorage";
+import { setActiveProjectId } from "../lib/rehabScope";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -88,15 +90,14 @@ const PROPERTY_TYPES = [
 
 function loadProjects(): RehabilitationProject[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = userStorage.getItem(STORAGE_KEY);
     return raw ? (JSON.parse(raw) as RehabilitationProject[]) : [];
   } catch {
     return [];
   }
 }
-
 function saveProjects(projects: RehabilitationProject[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+  userStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
 }
 
 function generateId(): string {
@@ -708,11 +709,11 @@ export default function ProjetsPage() {
 
     // Marque le projet actif + preremplit la Vue d'ensemble (cle dediee au projet).
     try {
-      localStorage.setItem("mimmoza.rehab.activeProjectId", id);
+      setActiveProjectId(id);
 
       const overviewKey = `mimmoza_rehab_overview_${id}`;
       // Ne pas ecraser une saisie existante : on initialise seulement si vide.
-      if (!localStorage.getItem(overviewKey)) {
+      if (!userStorage.getItem(overviewKey)) {
         const overview = {
           nomProjet: project.name ?? "",
           adresse: project.address ?? "",
@@ -724,7 +725,7 @@ export default function ProjetsPage() {
           copropriete: "",
           notes: "",
         };
-        localStorage.setItem(overviewKey, JSON.stringify(overview));
+        userStorage.setItem(overviewKey, JSON.stringify(overview));
       }
     } catch {
       /* noop */

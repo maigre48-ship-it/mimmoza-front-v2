@@ -46,6 +46,7 @@ import { DealUnlockModal } from "../spaces/marchand/components/DealUnlockModal";
 import { unlockDealIfNeeded } from "../spaces/marchand/services/dealUnlock";
 import { ensureActiveDeal, type MarchandDeal } from "../spaces/marchand/shared/marchandSnapshot.store";
 import { extractStudyId, preserveStudyInPath } from "../utils/preserveStudyParam";
+import { setCurrentUserId, syncCurrentUserId } from "@/lib/auth/currentUser";
 
 // ── Paywall generique (promoteur, extensible) ─────────────────────────────────
 import { ProjectUnlockModal } from "./billing/ProjectUnlockModal";
@@ -1015,8 +1016,14 @@ export function AppShell(props: AppShellProps) {
       if (!mounted) return;
       setIsAdmin(result.isAdmin);
     }
+    // Synchro initiale du user_id (alimente userScopedStorage).
+    void syncCurrentUserId();
     void refreshAdminStatus();
-    const sub          = supabase.auth.onAuthStateChange(function () { void refreshAdminStatus(); });
+    const sub = supabase.auth.onAuthStateChange(function (_event, session) {
+      // Maintient le store synchrone du user_id a jour (login / logout / refresh).
+      setCurrentUserId(session?.user?.id ?? null);
+      void refreshAdminStatus();
+    });
     const subscription = sub.data.subscription;
     return function () {
       mounted = false;

@@ -6,6 +6,7 @@ import type { ExportContextV1 } from "../types/exportContext.types";
 import { generateExportAiReport } from "./exportAiReport.service";
 import { snapshotToCsv } from "./exportCsv";
 import { exportSnapshotToPdf } from "./exportPdf";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -18,7 +19,7 @@ function getDueDiligenceSafe(
 ): { report: any; computed?: any } | undefined {
   // 1) Lecture via localStorage sur la vraie clé du store DD
   try {
-    const raw = localStorage.getItem(DD_STORE_KEY);
+    const raw = userStorage.getItem(DD_STORE_KEY);
     if (raw) {
       const state = JSON.parse(raw) as Record<string, any>;
       const report = state?.[dossierId];
@@ -32,7 +33,7 @@ function getDueDiligenceSafe(
 
   // 2) Fallback legacy éventuel (si tu avais eu une autre clé)
   try {
-    const legacyRaw = localStorage.getItem(`dd-report-${dossierId}`);
+    const legacyRaw = userStorage.getItem(`dd-report-${dossierId}`);
     if (legacyRaw) {
       const report = JSON.parse(legacyRaw);
       return { report, computed: report?.computed };

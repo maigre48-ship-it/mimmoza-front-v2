@@ -15,6 +15,7 @@ import {
   TRAVAUX_LOT_LABELS,
   TRAVAUX_SOL_TYPE_LABELS,
 } from "../types/rendutravaux.types";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ── Thème ─────────────────────────────────────────────────────────
 
@@ -48,7 +49,7 @@ function readTravauxConfig(): TravauxRenduConfig | null {
       "mimmoza.execution.simulation.v1",
       "mimmoza.travaux.snapshot.v1",
     ]) {
-      const raw = localStorage.getItem(key);
+      const raw = userStorage.getItem(key);
       if (!raw) continue;
 
       const p = JSON.parse(raw);
@@ -707,7 +708,7 @@ const publicUrl = signedUrlData.signedUrl;
         configSnapshot: result.configSnapshot ?? null,
       };
 
-      localStorage.setItem(
+      userStorage.setItem(
         "mimmoza.promoteur.renduTravaux.synthese.v1",
         JSON.stringify(payload)
       );

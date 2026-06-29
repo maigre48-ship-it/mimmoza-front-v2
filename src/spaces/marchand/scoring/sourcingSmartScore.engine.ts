@@ -32,6 +32,8 @@
  * ─────────────────────────────────────────────────────────────────────
  */
 
+import { userStorage } from "@/lib/storage/userScopedStorage";
+
 // ─── Constants ───────────────────────────────────────────────────────
 
 export const SOURCING_SMARTSCORE_KEY = "mimmoza.sourcing.smartscore.v1";
@@ -151,7 +153,7 @@ function clamp(val: number, min: number, max: number): number {
 
 function readFormState(): SourcingFormState {
   try {
-    const raw = localStorage.getItem(SOURCING_SMARTSCORE_KEY);
+    const raw = userStorage.getItem(SOURCING_SMARTSCORE_KEY);
     if (!raw) return {};
     return (JSON.parse(raw) as any)?.formState ?? {};
   } catch {
@@ -161,7 +163,7 @@ function readFormState(): SourcingFormState {
 
 function readDealOverlay(): MarchandDealOverlay | null {
   try {
-    const raw = localStorage.getItem(SOURCING_SMARTSCORE_KEY);
+    const raw = userStorage.getItem(SOURCING_SMARTSCORE_KEY);
     if (!raw) return null;
     return (JSON.parse(raw) as any)?.dealOverlay ?? null;
   } catch {

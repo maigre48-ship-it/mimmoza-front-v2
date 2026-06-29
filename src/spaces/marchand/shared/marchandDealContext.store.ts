@@ -7,6 +7,8 @@
  * pré-remplir leurs formulaires sans importer le snapshot Pipeline complet.
  */
 
+import { userStorage } from "@/lib/storage/userScopedStorage";
+
 const LS_KEY = "mimmoza.marchand.dealContext.v1";
 const NOTIFY_EVENT = "mimmoza:marchand:dealContext";
 
@@ -34,7 +36,7 @@ export interface DealContextSnapshot {
 
 function safeParse(): DealContextSnapshot {
   try {
-    const raw = localStorage.getItem(LS_KEY);
+    const raw = userStorage.getItem(LS_KEY);
     if (!raw) return { activeDealId: null, updatedAt: new Date().toISOString() };
     const parsed = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null) throw new Error("bad shape");
@@ -68,7 +70,7 @@ function safeParse(): DealContextSnapshot {
 
 function persist(snapshot: DealContextSnapshot): void {
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify(snapshot));
+    userStorage.setItem(LS_KEY, JSON.stringify(snapshot));
   } catch {
     /* quota exceeded — silent */
   }

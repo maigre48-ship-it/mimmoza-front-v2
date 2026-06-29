@@ -1,5 +1,6 @@
 // src/spaces/marchand/services/dealUnlock.ts
 
+import { userStorage } from "@/lib/storage/userScopedStorage";
 import { supabase } from "../../../lib/supabase";
 import {
   LS_MARCHAND_SNAPSHOT_V1,
@@ -26,13 +27,13 @@ function createId(prefix: string): string {
 }
 
 function readSnapshot(): MarchandSnapshotV1 {
-  const raw = localStorage.getItem(LS_MARCHAND_SNAPSHOT_V1);
+  const raw = userStorage.getItem(LS_MARCHAND_SNAPSHOT_V1);
   if (!raw) throw new Error("Snapshot Marchand introuvable.");
   return JSON.parse(raw) as MarchandSnapshotV1;
 }
 
 function writeSnapshot(snapshot: MarchandSnapshotV1): void {
-  localStorage.setItem(LS_MARCHAND_SNAPSHOT_V1, JSON.stringify(snapshot));
+  userStorage.setItem(LS_MARCHAND_SNAPSHOT_V1, JSON.stringify(snapshot));
   window.dispatchEvent(new CustomEvent("mimmoza:marchand:snapshot"));
 }
 

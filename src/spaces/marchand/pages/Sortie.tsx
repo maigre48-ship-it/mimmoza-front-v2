@@ -7,6 +7,7 @@ import {
 } from "../shared/marchandSnapshot.store";
 import KpiCard from "../shared/ui/KpiCard";
 import SectionCard from "../shared/ui/SectionCard";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Design tokens — Investisseur
@@ -54,7 +55,7 @@ const pct = (n: number) => `${n.toFixed(1).replace(".", ",")} %`;
 // ─────────────────────────────────────────────────────────────────────────────
 function readJson<T>(key: string): T | null {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = userStorage.getItem(key);
     if (!raw) return null;
     return JSON.parse(raw) as T;
   } catch {
@@ -64,7 +65,7 @@ function readJson<T>(key: string): T | null {
 
 function writeJson(key: string, value: unknown): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    userStorage.setItem(key, JSON.stringify(value));
   } catch {
     // quota exceeded – silent
   }

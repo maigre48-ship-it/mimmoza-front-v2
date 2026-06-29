@@ -1,6 +1,7 @@
 // src/spaces/marchand/pages/Sourcing.tsx
 
 import { useEffect, useMemo, useState } from "react";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 import {
   ensureActiveDeal,
   MARCHAND_SNAPSHOT_EVENT,
@@ -62,7 +63,7 @@ function hydrateSourcingSmartScoreFromDeal(
   if (!deal) return;
 
   const cur = safeJsonParse<Record<string, unknown>>(
-    localStorage.getItem(SOURCING_SMARTSCORE_KEY),
+    userStorage.getItem(SOURCING_SMARTSCORE_KEY),
     {},
   );
 
@@ -120,7 +121,7 @@ function hydrateSourcingSmartScoreFromDeal(
     },
   };
 
-  localStorage.setItem(SOURCING_SMARTSCORE_KEY, JSON.stringify(next));
+  userStorage.setItem(SOURCING_SMARTSCORE_KEY, JSON.stringify(next));
 
   window.dispatchEvent(
     new CustomEvent(SOURCING_SMARTSCORE_EVENT, {
