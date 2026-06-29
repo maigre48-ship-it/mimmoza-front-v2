@@ -21,6 +21,7 @@ import {
   ArrowRight,
   BadgeCheck,
   CheckCircle2,
+  ChevronDown,
   CircleAlert,
   Clock,
   Coins,
@@ -366,6 +367,7 @@ function ProfilPanel({
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteSuccess, setDeleteSuccess] = useState(false);
+  const [rgpdOpen, setRgpdOpen] = useState(false);
 
   const handleDeleteAccount = async () => {
     if (deleteConfirm.trim().toUpperCase() !== "SUPPRIMER") {
@@ -393,13 +395,13 @@ function ProfilPanel({
             }
           }
         } catch {
-          /* lecture localStorage échouée */
+          /* lecture localStorage echouee */
         }
       }
 
       if (!accessToken) {
         setDeleteError(
-          "Session expirée. Déconnectez-vous, reconnectez-vous puis réessayez."
+          "Session expiree. Deconnectez-vous, reconnectez-vous puis reessayez."
         );
         return;
       }
@@ -422,12 +424,12 @@ function ProfilPanel({
       try {
         body = JSON.parse(await resp.text());
       } catch {
-        /* réponse non-JSON */
+        /* reponse non-JSON */
       }
 
       if (!resp.ok || body.success === false) {
         setDeleteError(
-          "Impossible de supprimer le compte pour le moment. Si le problème persiste, contactez support@mimmoza.fr."
+          "Impossible de supprimer le compte pour le moment. Si le probleme persiste, contactez support@mimmoza.fr."
         );
         return;
       }
@@ -437,7 +439,7 @@ function ProfilPanel({
       setTimeout(() => navigate("/", { replace: true }), 1800);
     } catch {
       setDeleteError(
-        "Impossible de supprimer le compte pour le moment. Si le problème persiste, contactez support@mimmoza.fr."
+        "Impossible de supprimer le compte pour le moment. Si le probleme persiste, contactez support@mimmoza.fr."
       );
     } finally {
       setDeleteLoading(false);
@@ -452,15 +454,18 @@ function ProfilPanel({
         </div>
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            VOTRE COMPTE EST BIEN SUPPRIMÉ
+            VOTRE COMPTE EST BIEN SUPPRIME
           </h1>
           <p className="mt-3 text-sm text-slate-500">
-            Vos données personnelles ont été supprimées. Redirection vers l'accueil…
+            Vos donnees personnelles ont ete supprimees. Redirection vers l'accueil...
           </p>
         </div>
       </div>
     );
   }
+
+  const planActive = isPlanActive(data.planCode);
+  const planLabel = getPlanLabel(data.planCode);
 
   return (
     <div className="space-y-5">
@@ -476,7 +481,7 @@ function ProfilPanel({
                   Espace administration
                 </p>
                 <p className="mt-0.5 text-xs font-medium text-violet-600">
-                  Accès administrateur actif
+                  Acces administrateur actif
                 </p>
               </div>
             </div>
@@ -493,51 +498,117 @@ function ProfilPanel({
         </div>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-red-200 bg-white shadow-sm">
-        <div className="border-b border-red-100 bg-red-50 px-6 py-4">
-          <div className="flex items-center gap-2 text-sm font-semibold text-red-700">
-            <Trash2 className="h-4 w-4" />
-            Zone RGPD
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 px-6 py-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <User className="h-4 w-4 text-slate-400" />
+            Informations du compte
           </div>
         </div>
-        <div className="space-y-4 px-6 py-5">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">
-              Supprimer définitivement mon compte
-            </p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              Cette action demande la suppression de votre compte et des données
-              personnelles associées. Elle est irréversible. Les données devant être
-              conservées pour des obligations légales, notamment les factures, peuvent
-              être conservées pendant la durée légale applicable.
-            </p>
-          </div>
-          <label className="block">
-            <span className="mb-2 block text-xs font-medium text-slate-600">
-              Pour confirmer, tapez SUPPRIMER
+        <div className="divide-y divide-slate-100">
+          <div className="flex items-center justify-between gap-4 px-6 py-4">
+            <span className="text-xs font-medium text-slate-500">Nom</span>
+            <span className="text-sm font-medium text-slate-900">
+              {data.fullName || "-"}
             </span>
-            <input
-              value={deleteConfirm}
-              onChange={(e) => setDeleteConfirm(e.target.value)}
-              placeholder="SUPPRIMER"
-              className="w-full rounded-xl border border-red-200 bg-red-50/40 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-red-300 focus:bg-white focus:ring-4 focus:ring-red-100"
-            />
-          </label>
-          {deleteError && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-              {deleteError}
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={handleDeleteAccount}
-            disabled={deleteLoading || deleteConfirm.trim().toUpperCase() !== "SUPPRIMER"}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-red-300"
-          >
-            <Trash2 className="h-4 w-4" />
-            {deleteLoading ? "Suppression en cours..." : "Supprimer mon compte"}
-          </button>
+          </div>
+          <div className="flex items-center justify-between gap-4 px-6 py-4">
+            <span className="text-xs font-medium text-slate-500">Email</span>
+            <span className="flex items-center gap-1.5 text-sm font-medium text-slate-900">
+              <Mail className="h-3.5 w-3.5 text-slate-400" />
+              {data.email || "-"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-4 px-6 py-4">
+            <span className="text-xs font-medium text-slate-500">Formule</span>
+            <span
+              className={[
+                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
+                planActive
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-slate-100 text-slate-600",
+              ].join(" ")}
+            >
+              {planActive ? <BadgeCheck className="h-3.5 w-3.5" /> : null}
+              {planLabel}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-4 px-6 py-4">
+            <span className="text-xs font-medium text-slate-500">Jetons</span>
+            <button
+              type="button"
+              onClick={() => navigate("/compte?tab=jetons")}
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900 transition hover:text-indigo-600"
+            >
+              <Coins className="h-3.5 w-3.5 text-sky-500" />
+              {data.tokens}
+              <ArrowRight className="h-3 w-3 text-slate-400" />
+            </button>
+          </div>
         </div>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <button
+          type="button"
+          onClick={() => setRgpdOpen((v) => !v)}
+          className="flex w-full items-center justify-between gap-4 px-6 py-4 text-left transition hover:bg-slate-50"
+        >
+          <span className="flex items-center gap-2 text-sm font-medium text-slate-600">
+            <Trash2 className="h-4 w-4 text-slate-400" />
+            Parametres avances du compte
+          </span>
+          <ChevronDown
+            className={[
+              "h-4 w-4 text-slate-400 transition-transform",
+              rgpdOpen ? "rotate-180" : "",
+            ].join(" ")}
+          />
+        </button>
+
+        {rgpdOpen && (
+          <div className="border-t border-red-100 bg-red-50/40">
+            <div className="space-y-4 px-6 py-5">
+              <div>
+                <p className="flex items-center gap-2 text-sm font-semibold text-red-700">
+                  <Trash2 className="h-4 w-4" />
+                  Supprimer definitivement mon compte
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Cette action demande la suppression de votre compte et des donnees
+                  personnelles associees. Elle est irreversible. Les donnees devant etre
+                  conservees pour des obligations legales, notamment les factures, peuvent
+                  etre conservees pendant la duree legale applicable.
+                </p>
+              </div>
+              <label className="block">
+                <span className="mb-2 block text-xs font-medium text-slate-600">
+                  Pour confirmer, tapez SUPPRIMER
+                </span>
+                <input
+                  value={deleteConfirm}
+                  onChange={(e) => setDeleteConfirm(e.target.value)}
+                  placeholder="SUPPRIMER"
+                  className="w-full rounded-xl border border-red-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-red-300 focus:ring-4 focus:ring-red-100"
+                />
+              </label>
+              {deleteError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {deleteError}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deleteLoading || deleteConfirm.trim().toUpperCase() !== "SUPPRIMER"}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-red-300"
+              >
+                <Trash2 className="h-4 w-4" />
+                {deleteLoading ? "Suppression en cours..." : "Supprimer mon compte"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
