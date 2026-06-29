@@ -120,3 +120,28 @@ export async function getCreditsBalance(): Promise<number> {
   const credits = (data as { current_credits: number }).current_credits;
   return typeof credits === "number" ? credits : 0;
 }
+export type SpendResult =
+  | { ok: true; newBalance: number }
+  | { ok: false; reason: "NOT_AUTHENTICATED" | "NO_TOKENS" | "ERROR"; message: string };
+
+/** Debite des jetons sur credit_accounts (compteur unifie) + log credit_transactions. */
+export async function spendCredits(
+  amount: number,
+  description?: string,
+  type = "analysis"
+): Promise<SpendResult> {
+  const { data, error } = await supabase.rpc("spend_credits", {
+    p_amount: amount,
+    p_description: description ?? null,
+    p_type: type,
+  });
+
+  if (error) {
+    const msg = (error.message || "").toUpperCase();
+    if (msg.includes("NO_TOKENS")) return { ok: false, reason: "NO_TOKENS", message: "Solde de jetons insuffisant." };
+    if (msg.includes("NOT_AUTHENTICATED")) return { ok: false, reason: "NOT_AUTHENTICATED", message: "Utilisateur non connecte." };
+    return { ok: false, reason: "ERROR", message: error.message };
+  }
+
+  return { ok: true, newBalance: typeof data === "number" ? data : 0 };
+}

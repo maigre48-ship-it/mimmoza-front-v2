@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { getActiveProjectId, scopedKey } from "../lib/rehabScope";
 
 /* ── Thème ── */
 const ACCENT    = "#f97316";
@@ -120,20 +121,26 @@ const SyntheseAuditPage: React.FC = () => {
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
   function loadAll() {
+    // Reset : on repart de zero a chaque chargement pour ne pas garder
+    // les donnees d'un projet precedent si les cles sont vides.
+    setOverview(null);
+    setConformite(null);
+    setTravaux(null);
+    setPlan(null);
     try {
-      const raw1 = localStorage.getItem(LS_OVERVIEW);
+      const raw1 = localStorage.getItem(scopedKey(LS_OVERVIEW));
       if (raw1) setOverview(JSON.parse(raw1));
     } catch { /* silent */ }
     try {
-      const raw2 = localStorage.getItem(LS_CONFORMITE);
+      const raw2 = localStorage.getItem(scopedKey(LS_CONFORMITE));
       if (raw2) setConformite(JSON.parse(raw2));
     } catch { /* silent */ }
     try {
-      const raw3 = localStorage.getItem(LS_TRAVAUX);
+      const raw3 = localStorage.getItem(scopedKey(LS_TRAVAUX));
       if (raw3) setTravaux(JSON.parse(raw3));
     } catch { /* silent */ }
     try {
-      const raw4 = localStorage.getItem(LS_PLAN);
+      const raw4 = localStorage.getItem(scopedKey(LS_PLAN));
       if (raw4) setPlan(JSON.parse(raw4));
     } catch { /* silent */ }
     setLastRefresh(new Date());
@@ -177,6 +184,29 @@ const SyntheseAuditPage: React.FC = () => {
   }
 
   const decision = globalDecision();
+
+  // Aucun projet actif : on n'affiche pas de donnees (evite d'afficher
+  // les residus d'un ancien test). On invite a ouvrir un projet.
+  if (!getActiveProjectId()) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div style={{ textAlign: "center", maxWidth: 420, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 16, padding: "32px 28px" }}>
+          <Building2 size={28} color={ACCENT} style={{ marginBottom: 12 }} />
+          <h2 style={{ fontSize: 18, fontWeight: 800, color: "#1e293b", margin: "0 0 8px" }}>Aucun projet selectionne</h2>
+          <p style={{ fontSize: 13, color: "#64748b", lineHeight: 1.6, margin: "0 0 18px" }}>
+            Ouvrez un projet depuis la liste pour consulter sa synthese d'audit.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate("/rehabilitation/projets")}
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 22px", borderRadius: 12, border: "none", background: ACCENT, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
+          >
+            Aller aux projets <ArrowRight size={16} />
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: "#f1f5f9" }}>

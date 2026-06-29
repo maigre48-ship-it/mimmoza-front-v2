@@ -26,6 +26,7 @@ import {
   Zap,
 } from "lucide-react";
 import type { ComponentType } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 type VerticalCard = {
@@ -129,6 +130,12 @@ const EMPLACEMENT = [
 
 export default function DashboardHomePage() {
   const navigate = useNavigate();
+  const [query, setQuery] = useState("");
+
+  // Lance l'analyse rapide en transmettant l'adresse saisie (evite la double saisie).
+  function launchQuickAnalysis() {
+    navigate("/analyse-rapide", { state: { prefillAddress: query.trim() } });
+  }
 
   function enterVertical(vertical: VerticalCard) {
     try {
@@ -172,19 +179,28 @@ export default function DashboardHomePage() {
                 <MapPinned className="h-5 w-5 shrink-0 text-violet-300" />
                 <input
                   type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") launchQuickAnalysis(); }}
                   placeholder="Entrez une adresse, une parcelle ou une ville..."
                   className="w-full bg-transparent text-white placeholder:text-slate-400 focus:outline-none"
                 />
               </div>
               <button
                 type="button"
-                onClick={() => navigate("/analyse-rapide")}
+                onClick={launchQuickAnalysis}
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-4 font-semibold text-white shadow-lg shadow-violet-900/40 transition-all hover:from-violet-500 hover:to-indigo-500"
               >
                 <Zap className="h-5 w-5" />
                 Analyse rapide
               </button>
             </div>
+
+            {/* Mention cout */}
+            <p className="mt-3 flex items-center gap-1.5 text-sm text-slate-400">
+              <Zap className="h-3.5 w-3.5 text-violet-300" />
+              Une analyse rapide coûte <span className="font-semibold text-violet-200">1 jeton</span>.
+            </p>
 
             {/* Badges */}
             <div className="mt-6 flex flex-wrap gap-2">

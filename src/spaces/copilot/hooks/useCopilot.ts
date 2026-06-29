@@ -18,7 +18,7 @@ export function useCopilot() {
   const { buildContext } = useCopilotContext();
   const { start, cancel } = useCopilotStreaming();
 
-  // ── Sélecteurs (primitives → re-render ciblé) ──
+  // -- Selecteurs (primitives -> re-render cible) --
   const messages = useCopilotStore((s) => s.messages);
   const status = useCopilotStore((s) => s.status);
   const credits = useCopilotStore((s) => s.credits);
@@ -27,21 +27,24 @@ export function useCopilot() {
   const conversations = useCopilotStore((s) => s.conversations);
   const currentConversationId = useCopilotStore((s) => s.currentConversationId);
   const isOpen = useCopilotStore((s) => s.isOpen);
+  const introMode = useCopilotStore((s) => s.introMode);
   const loadingConversations = useCopilotStore((s) => s.loadingConversations);
   const loadingMessages = useCopilotStore((s) => s.loadingMessages);
 
-  // ── Actions store (références stables) ──
+  // -- Actions store (references stables) --
   const setMode = useCopilotStore((s) => s.setMode);
   const setContextHints = useCopilotStore((s) => s.setContextHints);
   const openCopilot = useCopilotStore((s) => s.openCopilot);
   const closeCopilot = useCopilotStore((s) => s.closeCopilot);
   const toggleCopilot = useCopilotStore((s) => s.toggleCopilot);
+  const openIntro = useCopilotStore((s) => s.openIntro);
+  const exitIntro = useCopilotStore((s) => s.exitIntro);
   const refreshCredits = useCopilotStore((s) => s.refreshCredits);
   const loadConversations = useCopilotStore((s) => s.loadConversations);
   const selectConversation = useCopilotStore((s) => s.selectConversation);
   const newConversation = useCopilotStore((s) => s.newConversation);
 
-  // ── Envoi d'un message ──
+  // -- Envoi d'un message --
   const sendMessage = useCallback(async (text: string, options?: SendOptions): Promise<void> => {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -62,18 +65,18 @@ export function useCopilot() {
       context,
     });
 
-    // Conversation nouvellement créée → on rafraîchit la liste (sidebar)
+    // Conversation nouvellement creee -> on rafraichit la liste (sidebar)
     if (wasNew) useCopilotStore.getState().loadConversations();
   }, [buildContext, start]);
 
   return {
-    // état
+    // etat
     messages, status, isStreaming: status === 'streaming',
     credits, error, mode, conversations, currentConversationId,
-    isOpen, loadingConversations, loadingMessages,
+    isOpen, introMode, loadingConversations, loadingMessages,
     // actions
     sendMessage, cancel, setMode, setContextHints,
-    openCopilot, closeCopilot, toggleCopilot,
+    openCopilot, closeCopilot, toggleCopilot, openIntro, exitIntro,
     refreshCredits, loadConversations, selectConversation, newConversation,
   };
 }

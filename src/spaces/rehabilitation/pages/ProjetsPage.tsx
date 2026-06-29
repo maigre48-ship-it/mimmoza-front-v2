@@ -11,6 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -668,6 +669,7 @@ function EmptyState({ onNew }: { onNew: () => void }) {
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 export default function ProjetsPage() {
+  const navigate = useNavigate();
   const [projects, setProjects] = useState<RehabilitationProject[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<RehabilitationProject | null>(
@@ -701,11 +703,34 @@ export default function ProjetsPage() {
   };
 
   const handleOpen = (id: string) => {
-    // TODO: navigate to /rehabilitation/projets/:id when sub-pages exist
-    console.log("Ouvrir projet:", id);
-    alert(
-      `Navigation vers le projet ${id} — sous-pages à venir (Diagnostic, Travaux…)`
-    );
+    const project = projects.find((p) => p.id === id);
+    if (!project) return;
+
+    // Marque le projet actif + preremplit la Vue d'ensemble (cle dediee au projet).
+    try {
+      localStorage.setItem("mimmoza.rehab.activeProjectId", id);
+
+      const overviewKey = `mimmoza_rehab_overview_${id}`;
+      // Ne pas ecraser une saisie existante : on initialise seulement si vide.
+      if (!localStorage.getItem(overviewKey)) {
+        const overview = {
+          nomProjet: project.name ?? "",
+          adresse: project.address ?? "",
+          usageCible: "",
+          surface: project.surfaceM2 != null ? String(project.surfaceM2) : "",
+          anneeConstruction: "",
+          erp: "",
+          dpe: "",
+          copropriete: "",
+          notes: "",
+        };
+        localStorage.setItem(overviewKey, JSON.stringify(overview));
+      }
+    } catch {
+      /* noop */
+    }
+
+    navigate("/rehabilitation/vue-ensemble");
   };
 
   const openNew = () => {

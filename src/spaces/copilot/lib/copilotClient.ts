@@ -2,6 +2,7 @@
 // PATCH V1.1 : buildEnrichedContext inclut activeDeal + pageContext
 // PATCH V1.2 : predictive_snapshot transmis explicitement (LOT 6)
 // PATCH V1.3 : valuation_engine transmis explicitement (LOT 7)
+// PATCH V1.4 : pageSnapshot transmis explicitement (donnees visibles a l'ecran)
 // =============================================================
 
 import { supabase } from '@/lib/supabase';
@@ -64,11 +65,12 @@ function extractText(content: unknown): string {
 }
 
 // =============================================================
-// buildEnrichedContext — V1.3
+// buildEnrichedContext — V1.4
 // ─────────────────────────────────────────────────────────────
 // Injecte les données listing, deal actif, pageContext,
-// le predictive_snapshot (LOT 6 — 17 sources prédictives) ET
-// le valuation_engine (LOT 7 — valorisation + rendements + analyse).
+// le predictive_snapshot (LOT 6 — 17 sources prédictives),
+// le valuation_engine (LOT 7 — valorisation + rendements + analyse)
+// ET le pageSnapshot (donnees visibles a l'ecran de la page courante).
 // =============================================================
 function buildEnrichedContext(
   requestContext: CopilotChatRequest['context'],
@@ -125,6 +127,11 @@ function buildEnrichedContext(
   // depuis contextHints.valuation_engine du copilotStore).
   const valuationEngine = reqCtx.valuation_engine ?? null;
 
+  // ── V1.4 — Snapshot libre de page ─────────────────────────
+  // Donnees visibles a l'ecran de la page courante (ex : valorisation
+  // rehabilitation). Pousse par la page via setActiveCopilotContext.
+  const pageSnapshot = active.pageSnapshot ?? null;
+
   // ── Construction du contexte enrichi ──────────────────────
   const enriched: CopilotMimmozaContext = {
     // Spread du context appelant (study, user, plu…)
@@ -149,6 +156,9 @@ function buildEnrichedContext(
 
     // V1.1 — Page context (espace / mode / onglet)
     ...(pageContext ? { pageContext } : {}),
+
+    // V1.4 — Snapshot libre de la page courante (donnees a l'ecran)
+    ...(pageSnapshot ? { pageSnapshot } : {}),
 
     // V1.2 — Snapshot prédictif : réaffecté APRÈS le spread pour
     // éviter tout écrasement par un champ homonyme dans reqCtx.
@@ -215,18 +225,20 @@ export async function streamCopilotChat(params: {
 }
 
 export async function fetchBalance(): Promise<number> {
-  const { data, error } = await supabase.rpc('copilot_get_balance');
+  // Solde unifie : on lit credit_accounts.current_credits (le meme compteur
+  // que "Mon compte" et l'Analyse rapide), pas l'ancien copilot_credits_balance.
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return 0;
 
-  if (error) {
-    const { data: row } = await supabase
-      .from('copilot_credits_balance')
-      .select('balance')
-      .maybeSingle();
+  const { data, error } = await supabase
+    .from('credit_accounts')
+    .select('current_credits')
+    .eq('user_id', user.id)
+    .maybeSingle();
 
-    return (row?.balance as number) ?? 0;
-  }
-
-  return typeof data === 'number' ? data : 0;
+  if (error || !data) return 0;
+  const credits = (data as { current_credits: number }).current_credits;
+  return typeof credits === 'number' ? credits : 0;
 }
 
 export async function fetchConversations(limit = 50): Promise<CopilotConversation[]> {

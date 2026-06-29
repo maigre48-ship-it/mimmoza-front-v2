@@ -4,31 +4,45 @@ import { useLocation } from 'react-router-dom';
 import { CopilotDrawer } from './components/CopilotDrawer';
 import { CopilotFloatingButton } from './components/CopilotFloatingButton';
 import { useCopilotStore } from './store/copilotStore';
+import { isLandingRoute } from './welcome/copilotWelcome';
 
-// Routes où le Copilot ne doit PAS apparaître :
-//  - pages publiques / avant connexion
-//  - espace compte (compte, abonnement, jetons)
-//  - admin
-//  - opportunités (transversal, sans contexte métier parcelle/deal)
+// Routes ou le Copilot ne doit PAS apparaitre.
+// NB : l'accueil (/dashboard) n'est PLUS masque -> il sert le bot scripte.
 const HIDDEN_PREFIXES = [
-  '/', '/login', '/connexion', '/inscription',
+  '/login', '/connexion', '/inscription',
   '/cgv', '/cgu', '/politique-confidentialite', '/mentions-legales',
   '/admin',
   '/compte', '/account', '/abonnement', '/jetons',
   '/opportunites',
+  '/apporteur',
 ];
 
 function isHidden(pathname: string): boolean {
-  if (pathname === '/') return true;
-  return HIDDEN_PREFIXES.some((p) => p !== '/' && pathname.startsWith(p));
+  return HIDDEN_PREFIXES.some((p) => pathname.startsWith(p));
 }
+
+const WELCOME_KEY = 'mimmoza_copilot_welcome_v1';
 
 export function CopilotRoot() {
   const location = useLocation();
+  const openCopilot = useCopilotStore((s) => s.openCopilot);
   const closeCopilot = useCopilotStore((s) => s.closeCopilot);
 
   useEffect(() => {
-    closeCopilot();
+    const path = location.pathname;
+
+    if (isLandingRoute(path)) {
+      // Auto-ouverture une seule fois (le drawer affichera le bot scripte).
+      let seen = true;
+      try { seen = localStorage.getItem(WELCOME_KEY) === '1'; } catch { /* no-op */ }
+      if (!seen) {
+        openCopilot();
+        try { localStorage.setItem(WELCOME_KEY, '1'); } catch { /* no-op */ }
+      }
+    } else {
+      // Tout changement de route hors accueil ferme le Copilot.
+      closeCopilot();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 

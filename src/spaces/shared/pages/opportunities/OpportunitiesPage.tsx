@@ -1,13 +1,21 @@
 // =============================================================
 // Mimmoza · Page Opportunités (V2)
 // Moteur de chasse aux opportunités à partir des annonces RÉELLES
-// de la veille (v_market_active_listings) + testeur manuel secondaire.
+// de la veille (portal_snapshots) + testeur manuel secondaire.
 // Aucune donnée mockée. Aucune IA. Style Mimmoza (cartes blanches).
+//
+// FACTURATION JETONS :
+//   • Scan simple (lecture portal_snapshots + scoring)  = ACTION_COSTS.scan_opportunites (5)
+//   • + Rafraîchissement Stream Estate (withIngest)     = ACTION_COSTS.refresh_veille   (30)
+//   Débit AVANT le scan/ingestion (Stream Estate facture l'appel). Bloque si solde insuffisant.
+//   Case "Rafraîchir" DÉCOCHÉE par défaut → le scan simple bon marché est le défaut.
 // =============================================================
 
 import React from 'react';
 
 import { getCurrentAdminStatus } from '@/lib/admin';
+import { spendCredits } from '@/lib/billing/projectUnlock';
+import { ACTION_COSTS, opportunityScanCost } from '@/lib/billing/actionCosts';
 import type {
   OpportunityAssetType,
   OpportunityConfidence,
@@ -460,7 +468,8 @@ export default function OpportunitiesPage({ embedded = false }: { embedded?: boo
   const [scanStrategy, setScanStrategy] = React.useState<OpportunityStrategy>('investisseur');
   const [scanCity, setScanCity] = React.useState('');
   const [scanZip, setScanZip] = React.useState('');
-  const [withIngest, setWithIngest] = React.useState(true);
+  // Rafraîchissement Stream Estate DÉCOCHÉ par défaut : le scan simple (5 jetons) est le défaut.
+  const [withIngest, setWithIngest] = React.useState(false);
   const [scanning, setScanning] = React.useState(false);
   const [scanError, setScanError] = React.useState<string | null>(null);
   const [ingestInfo, setIngestInfo] = React.useState<IngestSummary | null>(null);
@@ -481,6 +490,9 @@ export default function OpportunitiesPage({ embedded = false }: { embedded?: boo
   const [showManual, setShowManual] = React.useState(false);
   const [followBusy, setFollowBusy] = React.useState(false);
   const [followMsg, setFollowMsg] = React.useState<string | null>(null);
+
+  // Coût jetons affiché en direct selon l'état de la case rafraîchissement.
+  const currentScanCost = opportunityScanCost(withIngest);
 
   async function handleFollowZone() {
     setFollowMsg(null);
@@ -535,6 +547,24 @@ export default function OpportunitiesPage({ embedded = false }: { embedded?: boo
       return;
     }
 
+    // ── Débit jetons AVANT le scan (et avant l'appel Stream Estate). ──────────
+    // Scan simple = 5. Si rafraîchissement coché = 5 + 30 = 35.
+    // Stream Estate facture l'appel : on encaisse les jetons avant de le déclencher.
+    const zoneSuffix = city ? ` : ${city}` : zipCode ? ` : ${zipCode}` : '';
+    const spendLabel = withIngest
+      ? `Scan Opportunités + rafraîchissement${zoneSuffix}`
+      : `Scan Opportunités${zoneSuffix}`;
+    const spend = await spendCredits(currentScanCost, spendLabel, 'opportunity_scan');
+    if (!spend.ok) {
+      setScanError(
+        spend.reason === 'NO_TOKENS'
+          ? 'Solde de jetons insuffisant. Rechargez pour lancer le scan.'
+          : spend.message,
+      );
+      setScanning(false);
+      return;
+    }
+
     // Statut admin (bypass des quotas veille) — défensif.
     let isAdmin = false;
     try {
@@ -573,7 +603,7 @@ export default function OpportunitiesPage({ embedded = false }: { embedded?: boo
       setHasScanned(true);
     } catch (e) {
       setScanError(
-        "Impossible de récupérer les annonces de veille. Vérifie que la source (v_market_active_listings / fetchMarketActiveListings / refreshMarketZone) est bien branchée.",
+        "Impossible de récupérer les annonces de veille. Vérifie que la source (portal_snapshots / refreshMarketZone) est bien branchée.",
       );
       setScanned([]);
       setScannedCount(0);
@@ -653,7 +683,7 @@ export default function OpportunitiesPage({ embedded = false }: { embedded?: boo
             disabled={scanning}
             className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {scanning ? 'Scan en cours...' : 'Scanner les annonces de veille'}
+            {scanning ? 'Scan en cours...' : `Scanner les annonces de veille (${currentScanCost} jetons)`}
           </button>
           <button
             type="button"
@@ -708,7 +738,7 @@ export default function OpportunitiesPage({ embedded = false }: { embedded?: boo
             onChange={(e) => setWithIngest(e.target.checked)}
             className="h-4 w-4 accent-indigo-600"
           />
-          Rafraîchir la veille (ingestion Stream Estate) avant le scan — consomme un rafraîchissement
+          Rafraîchir la veille (ingestion Stream Estate) avant le scan — coût +{ACTION_COSTS.refresh_veille} jetons
         </label>
 
         {scanError && (

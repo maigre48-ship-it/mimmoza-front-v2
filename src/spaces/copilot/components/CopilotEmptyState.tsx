@@ -197,7 +197,7 @@ export function CopilotEmptyState({
         {isStaticFallback
           ? subtitle
           : isQuick
-            ? 'Questions adaptées à cette page. Réponse rapide, 1 crédit.'
+            ? 'Questions adaptées à cette page. Réponse rapide, 3 crédits.'
             : 'Analyses approfondies pour cette page. 15 crédits.'}
       </div>
 

@@ -1,7 +1,11 @@
 // src/spaces/particulier/pages/AbonnementPage.tsx
 // ─── changelog ────────────────────────────────────────────────────────────────
-// • pricingMap réactif : useState + storage event + visibilitychange
-//   → mise à jour immédiate quand /admin/tarifs enregistre, même onglet
+// • MODELE 2 : section "Jetons" (packs) remplace "Investisseur".
+//   Abonnements d'acces Promoteur/Rehab affichent "N jetons IA/mois inclus".
+// • formatPrice : lit priceHT (number) + kind ("dès" pour access_plan, "Sur devis"
+//   pour custom a 0). applyPricing masque tout planKey absent du pricing.
+// • pricingMap reactif : useState + storage event + visibilitychange
+//   → mise a jour immediate quand /admin/tarifs enregistre, meme onglet
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { PricingEntry } from "@/spaces/admin/pages/Tarifs";
@@ -78,12 +82,12 @@ interface SectionDef {
 }
 
 const C: Record<string, ColorSet> = {
-  sky: {
-    icon: "bg-sky-100 text-sky-500",
-    price: "text-sky-500",
-    cta: "bg-sky-500 hover:bg-sky-400 text-white",
-    accent: "border-sky-200",
-    featuredBg: "bg-sky-50/50",
+  violet: {
+    icon: "bg-violet-100 text-violet-500",
+    price: "text-violet-500",
+    cta: "bg-violet-600 hover:bg-violet-500 text-white",
+    accent: "border-violet-200",
+    featuredBg: "bg-violet-50/50",
   },
   indigo: {
     icon: "bg-indigo-100 text-indigo-500",
@@ -108,20 +112,37 @@ const C: Record<string, ColorSet> = {
   },
 };
 
-// ── Helper : applique le pricing localStorage sur une OfferItem ───────────────
+// ── Helpers pricing ───────────────────────────────────────────────────────────
+
+function formatPrice(entry: PricingEntry): string {
+  if (entry.kind === "custom" || entry.priceHT <= 0) {
+    return entry.priceHT > 0 ? `${entry.priceHT} €` : "Sur devis";
+  }
+  const base = `${entry.priceHT.toLocaleString("fr-FR")} €`;
+  const prefix = entry.kind === "access_plan" ? "dès " : "";
+  return entry.unit ? `${prefix}${base}${entry.unit}` : base;
+}
 
 function applyPricing(
   offer: OfferItem,
   pricingMap: Record<string, PricingEntry>
 ): OfferItem | null {
   const entry = pricingMap[offer.planKey];
-  if (!entry) return offer;
+  if (!entry) return null;            // plan absent du pricing → masque
   if (entry.active === false) return null;
+
+  // Injecte "N jetons IA/mois inclus" pour les abonnements d'acces
+  const tokenFeature =
+    entry.kind === "access_plan" && entry.tokens > 0
+      ? [`${entry.tokens.toLocaleString("fr-FR")} jetons IA/mois inclus`]
+      : [];
+
   return {
     ...offer,
     badge: entry.badge || offer.badge,
     title: entry.title || offer.title,
-    price: entry.unit ? `${entry.price}${entry.unit}` : entry.price,
+    price: formatPrice(entry),
+    features: [...tokenFeature, ...offer.features],
   };
 }
 
@@ -192,7 +213,7 @@ function SectionAccordion({
       <div
         className={[
           "overflow-hidden transition-all duration-300 ease-in-out",
-          isOpen ? "max-h-[900px] opacity-100" : "max-h-0 opacity-0",
+          isOpen ? "max-h-[1200px] opacity-100" : "max-h-0 opacity-0",
         ].join(" ")}
       >
         <div className="border-t border-slate-100 px-5 pb-6 pt-5">
@@ -279,146 +300,115 @@ function buildSections(
       .filter((o): o is OfferItem => o !== null);
   }
 
-  const rawInvestisseur: OfferItem[] = [
+  // ── Jetons (remplace l'ancienne section Investisseur) ─────────────────────
+  const rawJetons: OfferItem[] = [
     {
-      id: "inv-10", badge: "Jetons", title: "10 analyses",
-      price: "9,90€ HT", subtitle: "1 analyse = 1 jeton.",
-      features: ["Découverte plateforme", "Sans engagement", "Usage ponctuel"],
-      ctaLabel: "Acheter", planKey: "tokens-10",
+      id: "jet-100", badge: "Jetons", title: "Pack 100 jetons",
+      price: "", subtitle: "Pour decouvrir.",
+      features: ["Utilisables dans tous les espaces", "Sans engagement", "Ideal premier essai"],
+      ctaLabel: "Acheter", planKey: "jetons-100",
     },
     {
-      id: "inv-20", badge: "Jetons", title: "20 analyses",
-      price: "16,90€ HT", subtitle: "Meilleur prix unitaire.",
-      features: ["Volume intermédiaire", "Sans engagement", "Meilleur tarif/analyse"],
-      ctaLabel: "Acheter", planKey: "tokens-20",
+      id: "jet-500", badge: "Jetons", title: "Pack 500 jetons",
+      price: "", subtitle: "Usage regulier.",
+      features: ["Utilisables partout", "Meilleur prix unitaire", "Sans engagement"],
+      ctaLabel: "Acheter", planKey: "jetons-500",
     },
     {
-      id: "inv-starter", badge: "Abonnement", title: "Starter",
-      price: "39,90€ HT/mois", subtitle: "50 analyses incluses par mois.",
-      features: ["50 analyses/mois", "Recharge possible", "Meilleure conversion"],
-      helper: "La formule à pousser pour convertir les utilisateurs récurrents.",
-      ctaLabel: "Choisir Starter", planKey: "starter", featured: true,
+      id: "jet-1000", badge: "Jetons", title: "Pack 1 000 jetons",
+      price: "", subtitle: "Le meilleur rapport volume / prix.",
+      features: ["Utilisables partout", "Tarif degressif", "Usage soutenu"],
+      helper: "Le pack le plus equilibre pour un usage regulier de Mimmoza.",
+      ctaLabel: "Acheter", planKey: "jetons-1000", featured: true,
     },
     {
-      id: "inv-pro", badge: "Abonnement", title: "Pro",
-      price: "74,99€ HT/mois", subtitle: "200 analyses incluses.",
-      features: ["200 analyses/mois", "Recharge disponible", "Usage intensif"],
-      ctaLabel: "Choisir Pro", planKey: "pro",
+      id: "jet-5000", badge: "Jetons", title: "Pack 5 000 jetons",
+      price: "", subtitle: "Gros volume.",
+      features: ["Utilisables partout", "Tarif degressif", "Equipes actives"],
+      ctaLabel: "Acheter", planKey: "jetons-5000",
+    },
+    {
+      id: "jet-10000", badge: "Jetons", title: "Pack 10 000 jetons",
+      price: "", subtitle: "Volume maximal.",
+      features: ["Utilisables partout", "Meilleur tarif jeton", "Usage intensif"],
+      ctaLabel: "Acheter", planKey: "jetons-10000",
     },
   ];
 
-  const rawRecharges = [
-    { label: "25 analyses", price: "19,90€ HT", key: "recharge-25" },
-    { label: "50 analyses", price: "34,90€ HT", key: "recharge-50" },
-  ]
-    .filter((r) => {
-      const entry = pricingMap[r.key];
-      return !entry || entry.active !== false;
-    })
-    .map((r) => {
-      const entry = pricingMap[r.key];
-      return entry
-        ? {
-            ...r,
-            price: entry.unit ? `${entry.price}${entry.unit}` : entry.price,
-            label: entry.title || r.label,
-          }
-        : r;
-    });
-
   return [
     {
-      id: "investisseur",
-      label: "Investisseur",
-      description: "Accédez aux meilleures opportunités et pilotez vos investissements.",
+      id: "jetons",
+      label: "Jetons IA",
+      description: "Une seule monnaie pour toutes les actions IA : Copilot, analyses, facades.",
       icon: <Coins className="h-5 w-5" />,
-      color: C.sky,
-      summaryPrice: "149€",
-      summaryUnit: "/mois",
-      offers: applyOffers(rawInvestisseur),
-      extras:
-        rawRecharges.length > 0 ? (
-          <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-            <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              Recharges complémentaires
-            </p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {rawRecharges.map((r) => (
-                <div
-                  key={r.key}
-                  className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3"
-                >
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">{r.label}</p>
-                    <p className="text-xs text-slate-500">{r.price}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => savePlan(r.key)}
-                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-                  >
-                    Acheter
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : undefined,
+      color: C.violet,
+      summaryPrice: "4€",
+      summaryUnit: "le pack",
+      offers: applyOffers(rawJetons),
+      extras: (
+        <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4">
+          <p className="text-[11px] leading-4 text-violet-600">
+            <strong className="font-semibold text-violet-800">Bon a savoir.</strong>{" "}
+            Les jetons sont utilisables dans tous les espaces Mimmoza. Les jetons inclus dans un
+            abonnement expirent au bout de 30 jours ; les packs achetes restent acquis.
+          </p>
+        </div>
+      ),
     },
     {
       id: "promoteur",
       label: "Promoteur",
-      description: "De l'identification foncière à la commercialisation de vos projets.",
+      description: "De l'identification fonciere a la commercialisation de vos projets.",
       icon: <Building2 className="h-5 w-5" />,
       color: C.indigo,
-      summaryPrice: "199€",
+      summaryPrice: "149€",
       summaryUnit: "/mois",
       offers: applyOffers([
         {
           id: "pro-starter", badge: "Promoteur", title: "Starter",
-          price: "dès 149€/mois", subtitle: "Pour démarrer les premières études foncières.",
-          features: ["Faisabilité foncière", "Lecture PLU", "Études de marché", "Synthèses de base"],
-          ctaLabel: "Demander une démo", planKey: "promoteur-starter",
+          price: "", subtitle: "Pour demarrer les premieres etudes foncieres.",
+          features: ["Faisabilite fonciere", "Lecture PLU", "Etudes de marche", "Syntheses de base"],
+          ctaLabel: "Demander une demo", planKey: "promoteur-starter",
         },
         {
           id: "pro-pro", badge: "Promoteur", title: "Pro",
-          price: "dès 299€/mois", subtitle: "Pour un usage régulier et des dossiers complets.",
-          features: ["Faisabilité + risques + bilan", "Exports avancés", "Équipe légère", "Montée en charge"],
-          ctaLabel: "Être recontacté", planKey: "promoteur-pro", featured: true,
+          price: "", subtitle: "Pour un usage regulier et des dossiers complets.",
+          features: ["Faisabilite + risques + bilan", "Exports avances", "Equipe legere", "Montee en charge"],
+          ctaLabel: "Etre recontacte", planKey: "promoteur-pro", featured: true,
         },
         {
           id: "pro-enterprise", badge: "Entreprise", title: "Sur devis",
-          price: "Personnalisé", subtitle: "Multi-utilisateurs ou besoins spécifiques.",
-          features: ["Comptes équipe", "Paramétrage métier", "Accompagnement", "Intégrations"],
+          price: "", subtitle: "Multi-utilisateurs ou besoins specifiques.",
+          features: ["Comptes equipe", "Parametrage metier", "Accompagnement", "Integrations"],
           ctaLabel: "Contacter Mimmoza", planKey: "promoteur-enterprise",
         },
       ]),
     },
     {
       id: "rehabilitation",
-      label: "Réhabilitation",
-      description: "Pilotez vos opérations de réhabilitation et améliorez la performance.",
+      label: "Rehabilitation",
+      description: "Pilotez vos operations de rehabilitation et ameliorez la performance.",
       icon: <Wrench className="h-5 w-5" />,
       color: C.teal,
-      summaryPrice: "129€",
+      summaryPrice: "149€",
       summaryUnit: "/mois",
       offers: applyOffers([
         {
-          id: "reh-starter", badge: "Réhabilitation", title: "Starter",
-          price: "dès 149€/mois", subtitle: "Pour démarrer les premiers audits.",
-          features: ["Audit conformité ERP/PMR", "Analyse de plans", "Études de marché", "Synthèses de base"],
-          ctaLabel: "Demander une démo", planKey: "rehabilitation-starter",
+          id: "reh-starter", badge: "Rehabilitation", title: "Starter",
+          price: "", subtitle: "Pour demarrer les premiers audits.",
+          features: ["Audit conformite ERP/PMR", "Analyse de plans", "Etudes de marche", "Syntheses de base"],
+          ctaLabel: "Demander une demo", planKey: "rehabilitation-starter",
         },
         {
-          id: "reh-pro", badge: "Réhabilitation", title: "Pro",
-          price: "dès 299€/mois", subtitle: "Pour des dossiers d'audit complets.",
-          features: ["Audit complet + valorisation", "Exports avancés", "Équipe légère", "Montée en charge"],
-          ctaLabel: "Être recontacté", planKey: "rehabilitation-pro", featured: true,
+          id: "reh-pro", badge: "Rehabilitation", title: "Pro",
+          price: "", subtitle: "Pour des dossiers d'audit complets.",
+          features: ["Audit complet + valorisation", "Exports avances", "Equipe legere", "Montee en charge"],
+          ctaLabel: "Etre recontacte", planKey: "rehabilitation-pro", featured: true,
         },
         {
           id: "reh-enterprise", badge: "Entreprise", title: "Sur devis",
-          price: "Personnalisé", subtitle: "Multi-utilisateurs ou besoins spécifiques.",
-          features: ["Comptes équipe", "Paramétrage", "Accompagnement", "Intégrations"],
+          price: "", subtitle: "Multi-utilisateurs ou besoins specifiques.",
+          features: ["Comptes equipe", "Parametrage", "Accompagnement", "Integrations"],
           ctaLabel: "Contacter Mimmoza", planKey: "rehabilitation-enterprise",
         },
       ]),
@@ -426,28 +416,28 @@ function buildSections(
     {
       id: "apporteur",
       label: "Apporteur d'affaires",
-      description: "Déposez des opportunités et percevez des commissions.",
+      description: "Deposez des opportunites et percevez des commissions.",
       icon: <UserCheck className="h-5 w-5" />,
       color: C.orange,
       summaryPrice: "0€",
       summaryUnit: "/mois",
       offers: applyOffers([
         {
-          id: "app-free", badge: "Apporteur", title: "Accès gratuit",
-          price: "0€", subtitle: "Dépôt sans abonnement requis.",
-          features: ["Accès espace apporteur", "Dépôt illimité", "Suivi des leads", "Sans engagement"],
-          ctaLabel: "Accéder", planKey: "apporteur-free", featured: true,
+          id: "app-free", badge: "Apporteur", title: "Acces gratuit",
+          price: "", subtitle: "Depot sans abonnement requis.",
+          features: ["Acces espace apporteur", "Depot illimite", "Suivi des leads", "Sans engagement"],
+          ctaLabel: "Acceder", planKey: "apporteur-free", featured: true,
         },
         {
-          id: "app-commission", badge: "Commission", title: "Rémunération",
-          price: "À la commission", subtitle: "Rémunéré sur chaque opportunité transformée.",
-          features: ["Commission par contrat", "Versement à transformation", "Dashboard de suivi", "0 frais d'entrée"],
+          id: "app-commission", badge: "Commission", title: "Remuneration",
+          price: "", subtitle: "Remunere sur chaque opportunite transformee.",
+          features: ["Commission par contrat", "Versement a transformation", "Dashboard de suivi", "0 frais d'entree"],
           ctaLabel: "En savoir plus", planKey: "apporteur-commission",
         },
         {
-          id: "app-partenariat", badge: "Réseau", title: "Partenariat",
-          price: "Sur devis", subtitle: "Pour apporteurs à volume régulier.",
-          features: ["Conditions préférentielles", "Accompagnement dédié", "Rapports perf.", "Accord cadre"],
+          id: "app-partenariat", badge: "Reseau", title: "Partenariat",
+          price: "", subtitle: "Pour apporteurs a volume regulier.",
+          features: ["Conditions preferentielles", "Accompagnement dedie", "Rapports perf.", "Accord cadre"],
           ctaLabel: "Contacter Mimmoza", planKey: "apporteur-partenariat",
         },
       ]),
@@ -470,22 +460,17 @@ export default function AbonnementPage() {
     }
   }, []);
 
-  // ── Pricing réactif ────────────────────────────────────────────────────────
-  // Initialisé depuis localStorage, puis mis à jour :
-  //   • visibilitychange → retour sur l'onglet après avoir édité dans /admin/tarifs
-  //   • storage         → changement depuis un autre onglet
+  // ── Pricing reactif ────────────────────────────────────────────────────────
   const [pricingMap, setPricingMap] = useState<Record<string, PricingEntry>>(
     () => readPricingMap()
   );
 
   useEffect(() => {
-    // Retour sur l'onglet (même fenêtre, navigation entre pages)
     function handleVisibility() {
       if (document.visibilityState === "visible") {
         setPricingMap(readPricingMap());
       }
     }
-    // Changement localStorage depuis un autre onglet
     function handleStorage(e: StorageEvent) {
       if (e.key === "mimmoza.pricing") {
         setPricingMap(readPricingMap());
@@ -542,19 +527,19 @@ export default function AbonnementPage() {
         <div className="flex flex-1 flex-col px-8 py-10 lg:px-10 lg:py-12">
           <div className="mb-10">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 shadow-sm">
-              <Sparkles className="h-3.5 w-3.5 text-sky-500" />
+              <Sparkles className="h-3.5 w-3.5 text-violet-500" />
               Offres Mimmoza
             </div>
 
             <h1 className="text-4xl font-semibold tracking-tight text-slate-950 sm:text-[2.6rem]">
               Choisissez votre{" "}
-              <span className="agx bg-gradient-to-r from-indigo-600 via-sky-500 to-cyan-400 bg-clip-text text-transparent">
+              <span className="agx bg-gradient-to-r from-indigo-600 via-violet-500 to-cyan-400 bg-clip-text text-transparent">
                 formule
               </span>
             </h1>
 
             <p className="mt-3 text-base leading-7 text-slate-500">
-              Une tarification adaptée à chaque espace.
+              Des jetons IA pour les actions, des abonnements pour l'acces aux espaces metier.
             </p>
           </div>
 
@@ -577,24 +562,24 @@ export default function AbonnementPage() {
           <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
               {
-                icon: <Zap className="h-4 w-4 text-sky-500" />,
+                icon: <Zap className="h-4 w-4 text-violet-500" />,
                 label: "Sans engagement",
-                sub: "Résiliez à tout moment",
+                sub: "Resiliez a tout moment",
               },
               {
                 icon: <Lock className="h-4 w-4 text-emerald-500" />,
-                label: "Paiement sécurisé",
-                sub: "100% sécurisé",
+                label: "Paiement securise",
+                sub: "100% securise",
               },
               {
                 icon: <HeartHandshake className="h-4 w-4 text-indigo-500" />,
-                label: "Support dédié",
-                sub: "Une équipe à votre écoute",
+                label: "Support dedie",
+                sub: "Une equipe a votre ecoute",
               },
               {
                 icon: <TrendingUp className="h-4 w-4 text-orange-500" />,
-                label: "Évolutif",
-                sub: "Changez de formule à tout moment",
+                label: "Evolutif",
+                sub: "Changez de formule a tout moment",
               },
             ].map((item) => (
               <div

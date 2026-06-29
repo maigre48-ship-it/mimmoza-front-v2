@@ -1,15 +1,23 @@
 // src/spaces/copilot/components/CopilotDrawer.tsx
 import { Plus, Sparkles, X } from 'lucide-react';
 import { useEffect, type CSSProperties } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useCopilot } from '../hooks/useCopilot';
+import { CopilotIntroView } from '../welcome/CopilotIntroView';
+import { isLandingRoute } from '../welcome/copilotWelcome';
 import { CopilotChat } from './CopilotChat';
 import { CopilotCreditsPill } from './CopilotCreditsPill';
 import { COPILOT_THEME as T } from './copilotTheme';
 
 export function CopilotDrawer() {
   const { isOpen, closeCopilot, newConversation, credits, refreshCredits } = useCopilot();
+  const { pathname } = useLocation();
 
-  useEffect(() => { if (isOpen) refreshCredits(); }, [isOpen, refreshCredits]);
+  // Sur l'accueil : bot scripte uniquement, jamais l'IA. Hors accueil : chat normal.
+  const scripted = isLandingRoute(pathname);
+
+  // Pas d'appel reseau en mode scripte (0 credit).
+  useEffect(() => { if (isOpen && !scripted) refreshCredits(); }, [isOpen, scripted, refreshCredits]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && isOpen) closeCopilot(); };
@@ -19,7 +27,7 @@ export function CopilotDrawer() {
 
   return (
     <>
-      {/* Styles d'animation (montés une fois) */}
+      {/* Styles d'animation (montes une fois) */}
       <style>{`
         @keyframes copilot-spin { to { transform: rotate(360deg); } }
         @keyframes copilot-bounce { 0%,80%,100% { transform: scale(0.6); opacity:.4 } 40% { transform: scale(1); opacity:1 } }
@@ -57,19 +65,24 @@ export function CopilotDrawer() {
             </div>
             <div style={{ color: T.text, fontWeight: 700, fontSize: 15 }}>Copilot</div>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <CopilotCreditsPill credits={credits} />
-              <button onClick={newConversation} title="Nouvelle conversation" style={iconBtn()}>
-                <Plus size={17} />
-              </button>
+              {/* En mode scripte : pas de credits ni "nouvelle conversation". */}
+              {!scripted && (
+                <>
+                  <CopilotCreditsPill credits={credits} />
+                  <button onClick={newConversation} title="Nouvelle conversation" style={iconBtn()}>
+                    <Plus size={17} />
+                  </button>
+                </>
+              )}
               <button onClick={closeCopilot} title="Fermer (Esc)" style={iconBtn()}>
                 <X size={17} />
               </button>
             </div>
           </header>
 
-          {/* Chat */}
-          <div style={{ flex: 1, minHeight: 0 }}>
-            <CopilotChat />
+          {/* Corps : bot scripte (accueil) OU chat IA */}
+          <div style={{ flex: 1, minHeight: 0, overflowY: scripted ? 'auto' : undefined }}>
+            {scripted ? <CopilotIntroView /> : <CopilotChat />}
           </div>
         </aside>
       )}

@@ -51,22 +51,6 @@ async function getPdfBytes(exportFn: () => Promise<void>): Promise<Uint8Array> {
   });
 }
 
-async function getExcelBytes(exportFn: () => Promise<void>): Promise<Uint8Array> {
-  return new Promise<Uint8Array>((resolve, reject) => {
-    // Override de XLSX.writeFile pour intercepter les bytes
-    const original = XLSX.writeFile;
-    (XLSX as any).writeFile = function (wb: XLSX.WorkBook, filename: string, opts?: any) {
-      const buf = XLSX.write(wb, { type: "array", bookType: "xlsx", ...opts });
-      (XLSX as any).writeFile = original;
-      resolve(new Uint8Array(buf));
-    };
-
-    exportFn().catch((err) => {
-      (XLSX as any).writeFile = original;
-      reject(err);
-    });
-  });
-}
 
 // ─── Export ZIP principal ─────────────────────────────────────────────────────
 
@@ -149,7 +133,7 @@ export async function exportZip(
     {
       label:    "Modèle Financier (Excel)",
       filename: `ModeleFinancier_${safeName}_${dateStr}.xlsx`,
-      fn:       () => getExcelBytes(exportFinancialEngineExcel),
+      fn:       () => exportFinancialEngineExcel({ returnBytes: true }) as Promise<Uint8Array>,
       active:   hasRenta,
     },
   ];

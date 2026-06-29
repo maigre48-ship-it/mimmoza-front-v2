@@ -1,14 +1,15 @@
 // src/spaces/admin/pages/Tarifs.tsx
 // ─── Gestion des tarifs Mimmoza ───────────────────────────────────────────────
-// • Tableau éditable par espace / offre
-// • Stockage dans localStorage["mimmoza.pricing"]
-// • Tarifs par défaut si clé absente
-// • AbonnementPage lit cette clé pour afficher les prix
-// ─────────────────────────────────────────────────────────────────────────────
+// MODELE 2 : jetons (consommation IA) + abonnements d'acces (Promoteur/Rehab).
+// • Espace unique "jetons" : packs achetables, unite unique partout.
+// • Abonnements d'acces : forfait mensuel + quota de jetons inclus (expire 30j).
+// • priceHT numerique → calcul automatique du €/jeton et de la marge.
+// • Stockage dans localStorage["mimmoza.pricing"].
+// ──────────────────────────────────────────────────────────────────────────────
 
 import {
   BadgeEuro,
-  Bot,
+  Coins,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -22,149 +23,123 @@ import { useEffect, useState } from "react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export type PlanKind = "token_pack" | "access_plan" | "custom";
+
 export type PricingEntry = {
   planKey: string;
-  space: "investisseur" | "promoteur" | "rehabilitation" | "apporteur" | "copilot";
+  space: "jetons" | "promoteur" | "rehabilitation" | "apporteur";
+  kind: PlanKind;
   title: string;
   badge: string;
-  price: string;
-  unit: string;
-  quota: number;
+  priceHT: number;          // 0 = gratuit/sur devis ; sinon prix HT en euros
+  unit: "" | "/mois";
+  tokens: number;           // jetons inclus (pack ou abo) ; 0 si non applicable
   active: boolean;
 };
 
-// ── Tarifs par défaut ─────────────────────────────────────────────────────────
+// Cout reel mesure cote Anthropic (texte), en euros, pour le calcul de marge.
+const COST_PER_TOKEN_EUR = 0.00358 * 0.92; // ≈ 0,0033 €
+
+// ── Tarifs par defaut ─────────────────────────────────────────────────────────
 
 export const DEFAULT_PRICING: PricingEntry[] = [
-  // ── Investisseur ────────────────────────────────────────────────────────
+  // ── Jetons (grille unique de packs) ───────────────────────────────────────
   {
-    planKey: "tokens-10", space: "investisseur",
-    badge: "Jetons", title: "10 analyses",
-    price: "9,90€ HT", unit: "", quota: 10, active: true,
+    planKey: "jetons-100", space: "jetons", kind: "token_pack",
+    badge: "Jetons", title: "Pack 100 jetons",
+    priceHT: 4, unit: "", tokens: 100, active: true,
   },
   {
-    planKey: "tokens-20", space: "investisseur",
-    badge: "Jetons", title: "20 analyses",
-    price: "16,90€ HT", unit: "", quota: 20, active: true,
+    planKey: "jetons-500", space: "jetons", kind: "token_pack",
+    badge: "Jetons", title: "Pack 500 jetons",
+    priceHT: 18, unit: "", tokens: 500, active: true,
   },
   {
-    planKey: "starter", space: "investisseur",
-    badge: "Abonnement", title: "Starter",
-    price: "39,90€ HT", unit: "/mois", quota: 50, active: true,
+    planKey: "jetons-1000", space: "jetons", kind: "token_pack",
+    badge: "Jetons", title: "Pack 1 000 jetons",
+    priceHT: 34, unit: "", tokens: 1000, active: true,
   },
   {
-    planKey: "pro", space: "investisseur",
-    badge: "Abonnement", title: "Pro",
-    price: "74,99€ HT", unit: "/mois", quota: 200, active: true,
+    planKey: "jetons-5000", space: "jetons", kind: "token_pack",
+    badge: "Jetons", title: "Pack 5 000 jetons",
+    priceHT: 160, unit: "", tokens: 5000, active: true,
   },
   {
-    planKey: "recharge-25", space: "investisseur",
-    badge: "Recharge", title: "Recharge 25 analyses",
-    price: "19,90€ HT", unit: "", quota: 25, active: true,
+    planKey: "jetons-10000", space: "jetons", kind: "token_pack",
+    badge: "Jetons", title: "Pack 10 000 jetons",
+    priceHT: 300, unit: "", tokens: 10000, active: true,
   },
+
+  // ── Promoteur (abonnements d'acces + jetons inclus) ───────────────────────
   {
-    planKey: "recharge-50", space: "investisseur",
-    badge: "Recharge", title: "Recharge 50 analyses",
-    price: "34,90€ HT", unit: "", quota: 50, active: true,
-  },
-  // ── Promoteur ───────────────────────────────────────────────────────────
-  {
-    planKey: "promoteur-starter", space: "promoteur",
+    planKey: "promoteur-starter", space: "promoteur", kind: "access_plan",
     badge: "Promoteur", title: "Starter",
-    price: "dès 149€", unit: "/mois", quota: 0, active: true,
+    priceHT: 149, unit: "/mois", tokens: 1500, active: true,
   },
   {
-    planKey: "promoteur-pro", space: "promoteur",
+    planKey: "promoteur-pro", space: "promoteur", kind: "access_plan",
     badge: "Promoteur", title: "Pro",
-    price: "dès 299€", unit: "/mois", quota: 0, active: true,
+    priceHT: 299, unit: "/mois", tokens: 4000, active: true,
   },
   {
-    planKey: "promoteur-enterprise", space: "promoteur",
+    planKey: "promoteur-enterprise", space: "promoteur", kind: "custom",
     badge: "Entreprise", title: "Sur devis",
-    price: "Personnalisé", unit: "", quota: 0, active: true,
+    priceHT: 0, unit: "", tokens: 0, active: true,
   },
-  // ── Réhabilitation ──────────────────────────────────────────────────────
+
+  // ── Rehabilitation (abonnements d'acces + jetons inclus) ──────────────────
   {
-    planKey: "rehabilitation-starter", space: "rehabilitation",
-    badge: "Réhabilitation", title: "Starter",
-    price: "dès 149€", unit: "/mois", quota: 0, active: true,
-  },
-  {
-    planKey: "rehabilitation-pro", space: "rehabilitation",
-    badge: "Réhabilitation", title: "Pro",
-    price: "dès 299€", unit: "/mois", quota: 0, active: true,
+    planKey: "rehabilitation-starter", space: "rehabilitation", kind: "access_plan",
+    badge: "Rehabilitation", title: "Starter",
+    priceHT: 149, unit: "/mois", tokens: 1500, active: true,
   },
   {
-    planKey: "rehabilitation-enterprise", space: "rehabilitation",
+    planKey: "rehabilitation-pro", space: "rehabilitation", kind: "access_plan",
+    badge: "Rehabilitation", title: "Pro",
+    priceHT: 299, unit: "/mois", tokens: 4000, active: true,
+  },
+  {
+    planKey: "rehabilitation-enterprise", space: "rehabilitation", kind: "custom",
     badge: "Entreprise", title: "Sur devis",
-    price: "Personnalisé", unit: "", quota: 0, active: true,
+    priceHT: 0, unit: "", tokens: 0, active: true,
   },
-  // ── Apporteur ───────────────────────────────────────────────────────────
+
+  // ── Apporteur (sans jetons) ───────────────────────────────────────────────
   {
-    planKey: "apporteur-free", space: "apporteur",
-    badge: "Apporteur", title: "Accès gratuit",
-    price: "0€", unit: "", quota: 0, active: true,
-  },
-  {
-    planKey: "apporteur-commission", space: "apporteur",
-    badge: "Commission", title: "Rémunération",
-    price: "À la commission", unit: "", quota: 0, active: true,
+    planKey: "apporteur-free", space: "apporteur", kind: "custom",
+    badge: "Apporteur", title: "Acces gratuit",
+    priceHT: 0, unit: "", tokens: 0, active: true,
   },
   {
-    planKey: "apporteur-partenariat", space: "apporteur",
-    badge: "Réseau", title: "Partenariat",
-    price: "Sur devis", unit: "", quota: 0, active: true,
-  },
-  // ── Copilot — Crédits (base ×12, 0,040 €/crédit) ────────────────────────
-  // Quick = 1 crédit = 0,04 €  |  Avancé = 15 crédits = 0,60 €
-  // Coût réel : 0,00358 $ / crédit  →  ×12 = 0,043 $ ≈ 0,040 €
-  {
-    planKey: "copilot-100", space: "copilot",
-    badge: "Copilot", title: "Pack 100 crédits",
-    price: "4,00€ HT", unit: "", quota: 100, active: true,
+    planKey: "apporteur-commission", space: "apporteur", kind: "custom",
+    badge: "Commission", title: "Remuneration",
+    priceHT: 0, unit: "", tokens: 0, active: true,
   },
   {
-    planKey: "copilot-500", space: "copilot",
-    badge: "Copilot", title: "Pack 500 crédits",
-    price: "18,00€ HT", unit: "", quota: 500, active: true,
-  },
-  {
-    planKey: "copilot-1000", space: "copilot",
-    badge: "Copilot", title: "Pack 1 000 crédits",
-    price: "34,00€ HT", unit: "", quota: 1000, active: true,
-  },
-  {
-    planKey: "copilot-5000", space: "copilot",
-    badge: "Copilot", title: "Pack 5 000 crédits",
-    price: "160,00€ HT", unit: "", quota: 5000, active: true,
-  },
-  {
-    planKey: "copilot-10000", space: "copilot",
-    badge: "Copilot", title: "Pack 10 000 crédits",
-    price: "300,00€ HT", unit: "", quota: 10000, active: true,
+    planKey: "apporteur-partenariat", space: "apporteur", kind: "custom",
+    badge: "Reseau", title: "Partenariat",
+    priceHT: 0, unit: "", tokens: 0, active: true,
   },
 ];
 
 const STORAGE_KEY = "mimmoza.pricing";
 
 const SPACE_LABELS: Record<PricingEntry["space"], string> = {
-  investisseur:   "Investisseur",
+  jetons:         "Jetons",
   promoteur:      "Promoteur",
-  rehabilitation: "Réhabilitation",
+  rehabilitation: "Rehabilitation",
   apporteur:      "Apporteur",
-  copilot:        "Copilot IA",
 };
 
 const SPACE_ORDER: PricingEntry["space"][] = [
-  "copilot", "investisseur", "promoteur", "rehabilitation", "apporteur",
+  "jetons", "promoteur", "rehabilitation", "apporteur",
 ];
 
 const SPACE_COLORS: Record<PricingEntry["space"], string> = {
-  investisseur:   "bg-sky-100 text-sky-700 border-sky-200",
+  jetons:         "bg-violet-100 text-violet-700 border-violet-200",
   promoteur:      "bg-indigo-100 text-indigo-700 border-indigo-200",
   rehabilitation: "bg-teal-100 text-teal-700 border-teal-200",
   apporteur:      "bg-orange-100 text-orange-700 border-orange-200",
-  copilot:        "bg-violet-100 text-violet-700 border-violet-200",
 };
 
 // ── Helpers localStorage ──────────────────────────────────────────────────────
@@ -186,6 +161,23 @@ function savePricingToStorage(entries: PricingEntry[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
 }
 
+// ── Helpers calcul ────────────────────────────────────────────────────────────
+
+function eurPerToken(e: PricingEntry): number | null {
+  if (e.tokens <= 0 || e.priceHT <= 0) return null;
+  return e.priceHT / e.tokens;
+}
+
+function marginPct(e: PricingEntry): number | null {
+  const perToken = eurPerToken(e);
+  if (perToken === null) return null;
+  return ((perToken - COST_PER_TOKEN_EUR) / perToken) * 100;
+}
+
+function fmtEur(n: number): string {
+  return n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+}
+
 // ── Composants ────────────────────────────────────────────────────────────────
 
 function Toast({ message, onDone }: { message: string; onDone: () => void }) {
@@ -201,7 +193,7 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
   );
 }
 
-type EditableField = "title" | "badge" | "price" | "unit" | "quota";
+type EditableField = "title" | "badge" | "priceHT" | "unit" | "tokens";
 
 function EditableCell({
   value, type = "text", onChange, className = "",
@@ -225,20 +217,21 @@ function EditableCell({
   );
 }
 
-// ── Bloc info Copilot ─────────────────────────────────────────────────────────
-
-function CopilotPricingInfo() {
+function JetonsPricingInfo() {
   return (
     <div className="mx-6 mb-4 mt-2 rounded-2xl border border-violet-100 bg-violet-50 px-5 py-4">
       <div className="flex items-start gap-3">
-        <Bot className="mt-0.5 h-4 w-4 shrink-0 text-violet-500" />
+        <Coins className="mt-0.5 h-4 w-4 shrink-0 text-violet-500" />
         <div className="text-xs leading-5 text-violet-700">
-          <strong className="font-semibold text-violet-900">Base tarifaire ×12</strong>
-          {" "}— Coût réel Anthropic : <strong>0,00358 $ / crédit</strong> (mesuré sur 30j).
-          Marge ×12 → <strong>0,040 € / crédit</strong>.
+          <strong className="font-semibold text-violet-900">Unite unique : le jeton.</strong>{" "}
+          Cout reel Anthropic : <strong>0,00358 $ / jeton</strong> (texte, mesure 30j).
+          Le €/jeton et la marge sont calcules automatiquement par ligne.
           <span className="ml-2 text-violet-500">
-            Quick (1 crédit) = 0,04 € · Avancé (15 crédits) = 0,60 € · Report (30 crédits) = 1,20 €
+            Copilot quick = 3 jetons · Analyse rapide = 3 · Copilot avance = 15 · Facade = 10/20/40.
           </span>
+          <div className="mt-1 text-violet-500">
+            Jetons d'abonnement : inclus chaque mois, <strong>expiration a 30 jours</strong>. Packs rachetables en plus.
+          </div>
         </div>
       </div>
     </div>
@@ -263,14 +256,14 @@ export default function AdminTarifsPage() {
   function handleSave() {
     savePricingToStorage(entries);
     setDirty(false);
-    setToast("Tarifs enregistrés — /abonnement est mis à jour.");
+    setToast("Tarifs enregistres — /abonnement est mis a jour.");
   }
 
   function handleReset() {
-    if (!confirm("Remettre tous les tarifs par défaut ?")) return;
+    if (!confirm("Remettre tous les tarifs par defaut ?")) return;
     setEntries(DEFAULT_PRICING);
     savePricingToStorage(DEFAULT_PRICING);
-    setToast("Tarifs réinitialisés.");
+    setToast("Tarifs reinitialises.");
     setDirty(false);
   }
 
@@ -290,7 +283,7 @@ export default function AdminTarifsPage() {
   return (
     <div className="space-y-6">
 
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -302,9 +295,9 @@ export default function AdminTarifsPage() {
               Gestion des tarifs
             </h1>
             <p className="mt-1.5 text-sm text-slate-500">
-              Modifiez les tarifs affichés sur{" "}
+              Modifiez les tarifs affiches sur{" "}
               <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[12px]">/abonnement</code>.
-              Les modifications sont enregistrées dans{" "}
+              Les modifications sont enregistrees dans{" "}
               <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[12px]">localStorage</code>.
             </p>
           </div>
@@ -316,7 +309,7 @@ export default function AdminTarifsPage() {
               className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
             >
               <RotateCcw className="h-4 w-4" />
-              Défauts
+              Defauts
             </button>
             <button
               type="button"
@@ -335,7 +328,7 @@ export default function AdminTarifsPage() {
 
         {dirty && (
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-700">
-            Modifications non enregistrées — cliquez sur "Enregistrer" pour les appliquer.
+            Modifications non enregistrees — cliquez sur "Enregistrer" pour les appliquer.
           </div>
         )}
       </div>
@@ -344,36 +337,30 @@ export default function AdminTarifsPage() {
       {bySpace.map(({ space, items }) => {
         const isOpen   = !collapsed.has(space);
         const colorCls = SPACE_COLORS[space];
-        const isCopilot = space === "copilot";
+        const isJetons = space === "jetons";
 
         return (
           <div
             key={space}
             className={[
               "overflow-hidden rounded-[28px] border bg-white shadow-sm",
-              isCopilot ? "border-violet-200" : "border-slate-200",
+              isJetons ? "border-violet-200" : "border-slate-200",
             ].join(" ")}
           >
-            {/* Section header */}
             <button
               type="button"
               onClick={() => toggleCollapse(space)}
               className={[
                 "flex w-full items-center justify-between px-6 py-4 text-left transition-colors",
-                isCopilot ? "hover:bg-violet-50/40" : "hover:bg-slate-50/60",
+                isJetons ? "hover:bg-violet-50/40" : "hover:bg-slate-50/60",
               ].join(" ")}
             >
               <div className="flex items-center gap-3">
-                {isCopilot && <Bot className="h-4 w-4 text-violet-500" />}
+                {isJetons && <Coins className="h-4 w-4 text-violet-500" />}
                 <span className={`inline-flex items-center rounded-xl border px-3 py-1 text-xs font-semibold ${colorCls}`}>
                   {SPACE_LABELS[space]}
                 </span>
                 <span className="text-sm text-slate-400">{items.length} offre(s)</span>
-                {isCopilot && (
-                  <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-600">
-                    0,040 € / crédit · ×12
-                  </span>
-                )}
               </div>
               {isOpen
                 ? <ChevronDown className="h-4 w-4 text-slate-400" />
@@ -383,113 +370,119 @@ export default function AdminTarifsPage() {
 
             {isOpen && (
               <>
-                {isCopilot && <CopilotPricingInfo />}
+                {isJetons && <JetonsPricingInfo />}
                 <div className="overflow-x-auto border-t border-slate-100">
                   <table className="min-w-full text-sm">
                     <thead className="bg-slate-50 text-left text-xs font-medium text-slate-400">
                       <tr>
-                        <th className="px-4 py-3 w-36">Plan Key</th>
+                        <th className="px-4 py-3 w-40">Plan Key</th>
                         <th className="px-4 py-3 w-28">Badge</th>
                         <th className="px-4 py-3">Titre</th>
-                        <th className="px-4 py-3 w-36">Prix HT</th>
-                        <th className="px-4 py-3 w-28">Unité</th>
-                        <th className="px-4 py-3 w-28">Crédits</th>
+                        <th className="px-4 py-3 w-28">Prix HT €</th>
+                        <th className="px-4 py-3 w-24">Unite</th>
+                        <th className="px-4 py-3 w-36">Jetons</th>
+                        <th className="px-4 py-3 w-32">€/jeton · marge</th>
                         <th className="px-4 py-3 w-24 text-center">Actif</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {items.map((entry, idx) => (
-                        <tr
-                          key={entry.planKey}
-                          className={[
-                            "border-t border-slate-100 align-middle transition-colors",
-                            !entry.active ? "opacity-40" : isCopilot ? "hover:bg-violet-50/30" : "hover:bg-slate-50/40",
-                            idx % 2 === 0 ? "" : "bg-slate-50/30",
-                          ].join(" ")}
-                        >
-                          {/* planKey */}
-                          <td className="px-4 py-2.5">
-                            <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">
-                              {entry.planKey}
-                            </code>
-                          </td>
+                      {items.map((entry, idx) => {
+                        const perToken = eurPerToken(entry);
+                        const margin = marginPct(entry);
+                        return (
+                          <tr
+                            key={entry.planKey}
+                            className={[
+                              "border-t border-slate-100 align-middle transition-colors",
+                              !entry.active ? "opacity-40" : isJetons ? "hover:bg-violet-50/30" : "hover:bg-slate-50/40",
+                              idx % 2 === 0 ? "" : "bg-slate-50/30",
+                            ].join(" ")}
+                          >
+                            <td className="px-4 py-2.5">
+                              <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">
+                                {entry.planKey}
+                              </code>
+                            </td>
 
-                          {/* badge */}
-                          <td className="px-4 py-2.5">
-                            <EditableCell
-                              value={entry.badge}
-                              onChange={(v) => update(entry.planKey, "badge", v)}
-                            />
-                          </td>
+                            <td className="px-4 py-2.5">
+                              <EditableCell
+                                value={entry.badge}
+                                onChange={(v) => update(entry.planKey, "badge", v)}
+                              />
+                            </td>
 
-                          {/* title */}
-                          <td className="px-4 py-2.5">
-                            <EditableCell
-                              value={entry.title}
-                              onChange={(v) => update(entry.planKey, "title", v)}
-                              className="font-medium"
-                            />
-                          </td>
+                            <td className="px-4 py-2.5">
+                              <EditableCell
+                                value={entry.title}
+                                onChange={(v) => update(entry.planKey, "title", v)}
+                                className="font-medium"
+                              />
+                            </td>
 
-                          {/* price */}
-                          <td className="px-4 py-2.5">
-                            <EditableCell
-                              value={entry.price}
-                              onChange={(v) => update(entry.planKey, "price", v)}
-                            />
-                          </td>
-
-                          {/* unit */}
-                          <td className="px-4 py-2.5">
-                            <select
-                              value={entry.unit}
-                              onChange={(e) => update(entry.planKey, "unit", e.target.value)}
-                              className="w-full rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm text-slate-700 outline-none transition hover:border-slate-200 hover:bg-slate-50 focus:border-slate-300 focus:bg-white"
-                            >
-                              <option value="">—</option>
-                              <option value="/mois">/mois</option>
-                              <option value="/an">/an</option>
-                              <option value="/analyse">/analyse</option>
-                              <option value="sur devis">sur devis</option>
-                            </select>
-                          </td>
-
-                          {/* quota / crédits */}
-                          <td className="px-4 py-2.5">
-                            {isCopilot ? (
-                              <div className="flex items-center gap-1.5">
-                                <EditableCell
-                                  type="number"
-                                  value={entry.quota}
-                                  onChange={(v) => update(entry.planKey, "quota", parseInt(v, 10) || 0)}
-                                />
-                                <span className="shrink-0 text-xs text-slate-400">cr.</span>
-                              </div>
-                            ) : (
+                            <td className="px-4 py-2.5">
                               <EditableCell
                                 type="number"
-                                value={entry.quota}
-                                onChange={(v) => update(entry.planKey, "quota", parseInt(v, 10) || 0)}
+                                value={entry.priceHT}
+                                onChange={(v) => update(entry.planKey, "priceHT", parseFloat(v) || 0)}
                               />
-                            )}
-                          </td>
+                            </td>
 
-                          {/* active toggle */}
-                          <td className="px-4 py-2.5 text-center">
-                            <button
-                              type="button"
-                              onClick={() => update(entry.planKey, "active", !entry.active)}
-                              className="inline-flex items-center justify-center rounded-lg p-1 transition hover:bg-slate-100"
-                              title={entry.active ? "Désactiver" : "Activer"}
-                            >
-                              {entry.active
-                                ? <ToggleRight className="h-6 w-6 text-emerald-500" />
-                                : <ToggleLeft  className="h-6 w-6 text-slate-300" />
-                              }
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                            <td className="px-4 py-2.5">
+                              <select
+                                value={entry.unit}
+                                onChange={(e) => update(entry.planKey, "unit", e.target.value)}
+                                className="w-full rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm text-slate-700 outline-none transition hover:border-slate-200 hover:bg-slate-50 focus:border-slate-300 focus:bg-white"
+                              >
+                                <option value="">—</option>
+                                <option value="/mois">/mois</option>
+                              </select>
+                            </td>
+
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="number"
+                                  value={entry.tokens}
+                                  onChange={(e) => update(entry.planKey, "tokens", parseInt(e.target.value, 10) || 0)}
+                                  className="min-w-[72px] flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm text-slate-900 outline-none transition hover:border-slate-200 hover:bg-slate-50 focus:border-slate-300 focus:bg-white focus:ring-2 focus:ring-slate-100"
+                                />
+                                <span className="shrink-0 text-xs text-slate-400">jet.</span>
+                              </div>
+                            </td>
+
+                            <td className="px-4 py-2.5">
+                              {perToken !== null ? (
+                                <div className="flex flex-col">
+                                  <span className="text-xs font-medium text-slate-700">
+                                    {perToken.toLocaleString("fr-FR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} €
+                                  </span>
+                                  {margin !== null && (
+                                    <span className={`text-[10px] font-semibold ${margin >= 80 ? "text-emerald-600" : margin >= 50 ? "text-amber-600" : "text-red-600"}`}>
+                                      marge {margin.toFixed(0)} %
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-slate-300">—</span>
+                              )}
+                            </td>
+
+                            <td className="px-4 py-2.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => update(entry.planKey, "active", !entry.active)}
+                                className="inline-flex items-center justify-center rounded-lg p-1 transition hover:bg-slate-100"
+                                title={entry.active ? "Desactiver" : "Activer"}
+                              >
+                                {entry.active
+                                  ? <ToggleRight className="h-6 w-6 text-emerald-500" />
+                                  : <ToggleLeft  className="h-6 w-6 text-slate-300" />
+                                }
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -499,18 +492,18 @@ export default function AdminTarifsPage() {
         );
       })}
 
-      {/* ── Aide ───────────────────────────────────────────────────────────── */}
+      {/* ── Aide ────────────────────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
         <div className="flex items-start gap-3">
           <Pencil className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
           <div className="text-xs leading-5 text-slate-500">
-            <strong className="font-semibold text-slate-700">Comment ça marche</strong>
-            {" "}— cliquez dans une cellule pour éditer. Le bouton{" "}
-            <strong>Enregistrer</strong> écrit dans{" "}
+            <strong className="font-semibold text-slate-700">Comment ca marche</strong>
+            {" "}— cliquez dans une cellule pour editer. Le bouton{" "}
+            <strong>Enregistrer</strong> ecrit dans{" "}
             <code className="rounded bg-slate-200 px-1">localStorage["mimmoza.pricing"]</code>.
-            La page <code className="rounded bg-slate-200 px-1">/abonnement</code> relit cette clé à chaque affichage.
-            Pour les packs Copilot, le champ <strong>Crédits</strong> correspond au nombre de crédits débloqués.
-            Désactiver une offre la masque sur la page abonnement.
+            La page <code className="rounded bg-slate-200 px-1">/abonnement</code> relit cette cle a chaque affichage.
+            Le champ <strong>Jetons</strong> = jetons inclus (pack ou abonnement). Le <strong>€/jeton</strong> et la marge se calculent seuls.
+            Desactiver une offre la masque sur la page abonnement.
           </div>
         </div>
       </div>

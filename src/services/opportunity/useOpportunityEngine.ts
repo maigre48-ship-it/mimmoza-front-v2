@@ -1,11 +1,17 @@
-// =============================================================
-// Mimmoza · Opportunity Engine — Hook front (V1)
+﻿// =============================================================
+// Mimmoza · Opportunity Engine — Hook front (V2)
 // Gère : formulaire, loading, error, result, reset, submit.
+// V2 : enrichissement zone (localisation GTFS + référence DVF) AVANT scoring,
+//      identique au scanner — débloque les piliers Décote marché & Localisation
+//      dans le testeur manuel. Enrichissement non bloquant (échec => score sur
+//      les seuls champs saisis).
 // =============================================================
 
 import { useCallback, useState } from 'react';
 
 import { computeOpportunity } from './opportunityEngine.service';
+import { resolveLocationForZone } from './opportunityLocation.service';
+import { resolveMarketReference } from './opportunityMarket.service';
 import type {
   OpportunityAssetType,
   OpportunityInput,
@@ -98,12 +104,16 @@ export function useOpportunityEngine(
       return;
     }
 
+    const zip = form.postalCode.trim() || undefined;
+    const city = form.city.trim() || undefined;
+    const typedInsee = form.codeInsee.trim() || undefined;
+
     const input: OpportunityInput = {
       source: 'manual',
       address: form.address.trim() || undefined,
-      city: form.city.trim() || undefined,
-      postalCode: form.postalCode.trim() || undefined,
-      codeInsee: form.codeInsee.trim() || undefined,
+      city,
+      postalCode: zip,
+      codeInsee: typedInsee,
       assetType: form.assetType,
       strategy: form.strategy,
       askingPrice,
@@ -115,6 +125,40 @@ export function useOpportunityEngine(
 
     setLoading(true);
     try {
+      // ── Enrichissement zone (identique au scanner), non bloquant. ─────────
+      // 1) Localisation : géocodage BAN -> lat/lng + INSEE réel + mobilité GTFS.
+      //    Débloque le pilier "Localisation" et fiabilise le contexte PLU.
+      if (zip || city) {
+        try {
+          const loc = await resolveLocationForZone(zip, city);
+          if (loc.latitude != null) input.latitude = loc.latitude;
+          if (loc.longitude != null) input.longitude = loc.longitude;
+          // INSEE résolu prioritaire sur la saisie manuelle (placeholder/erreur).
+          if (loc.codeInsee) input.codeInsee = loc.codeInsee;
+          if (typeof loc.mobilityScore === 'number') input.mobilityScore = loc.mobilityScore;
+        } catch {
+          // silencieux : on garde les champs saisis.
+        }
+      }
+
+      // 2) Référence marché DVF par (zone + type) -> prix/m² médian + échantillon.
+      //    Débloque le pilier "Décote marché".
+      if (zip || city || input.codeInsee) {
+        try {
+          const market = await resolveMarketReference({
+            codeInsee: input.codeInsee ?? null,
+            zip,
+            assetType: form.assetType,
+          });
+          if (market.refPriceM2 != null && market.refPriceM2 > 0) {
+            input.marketRefPriceM2 = market.refPriceM2;
+            input.marketSampleSize = market.sampleSize;
+          }
+        } catch {
+          // silencieux : décote restera "en attente" si DVF indisponible.
+        }
+      }
+
       const r = await computeOpportunity(input);
       setResult(r);
     } catch {

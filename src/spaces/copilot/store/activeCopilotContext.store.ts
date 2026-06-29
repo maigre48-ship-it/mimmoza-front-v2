@@ -1,5 +1,6 @@
 // src/spaces/copilot/store/activeCopilotContext.store.ts
 // PATCH V1.1 : ajout de ActiveDealRef et PageContextRef dans le snapshot
+// PATCH V1.2 : ajout de pageSnapshot (snapshot libre par page)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { create } from 'zustand';
@@ -51,6 +52,9 @@ export interface ActiveCopilotSnapshot {
   // ── V1.1 — Deal actif et contexte de page ───────────────
   activeDeal?: ActiveDealRef;
   pageContext?: PageContextRef;
+  // ── V1.2 — Snapshot libre par page (ex : valorisation rehabilitation) ──
+  // Transmis tel quel au LLM via le spread du contexte. Cle/valeur lisibles.
+  pageSnapshot?: Record<string, string | number | null>;
 }
 
 // ─── Interface store ───────────────────────────────────────────────────────────
@@ -78,6 +82,8 @@ const INITIAL_STATE: ActiveCopilotSnapshot = {
   // V1.1
   activeDeal:             undefined,
   pageContext:            undefined,
+  // V1.2
+  pageSnapshot:           undefined,
 };
 
 export const useActiveCopilotContext = create<ActiveCopilotContextState>(
@@ -94,9 +100,9 @@ export const useActiveCopilotContext = create<ActiveCopilotContextState>(
 
     getActiveCopilotContext(): ActiveCopilotSnapshot {
       const {
-        setActiveCopilotContext,     
-        clearActiveCopilotContext,   
-        getActiveCopilotContext,     
+        setActiveCopilotContext,
+        clearActiveCopilotContext,
+        getActiveCopilotContext,
         ...rest
       } = get();
       return rest;

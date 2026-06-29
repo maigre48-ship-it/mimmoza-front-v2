@@ -1,5 +1,9 @@
 import { AlertTriangle, Calculator, ChevronRight, Euro, Info, TrendingUp } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  setActiveCopilotContext,
+  clearActiveCopilotContext,
+} from "../../copilot/store/activeCopilotContext.store";
 
 type FormData = {
   prixAcquisition: string;
@@ -183,6 +187,60 @@ export default function RehabilitationValorisationPage() {
     const coutTotal = acq + trav + acq * fraisPct;
     return surf > 0 ? coutTotal / surf : 0;
   }, [form.prixAcquisition, form.coutTravaux, form.surfaceApres, form.fraisAnnexes]);
+
+  // ── Injection du contexte Copilot : la page "pousse" ses donnees pour que
+  //    le Copilot les voie (le LLM ne lit jamais le DOM directement).
+  useEffect(() => {
+    const acq  = toNumber(form.prixAcquisition);
+    const trav = toNumber(form.coutTravaux);
+    const surf = toNumber(form.surfaceApres);
+    const prixVouluM2 = toNumber(form.prixSortieVouluM2);
+    const fraisPct = toNumber(form.fraisAnnexes) / 100;
+
+    const coutTotal = acq + trav + acq * fraisPct;
+    const prixSortieMinM2 = surf > 0 ? coutTotal / surf : 0;
+    const valeurSortieVoulu = surf * prixVouluM2;
+    const margeBrute = valeurSortieVoulu - coutTotal;
+    const tauxMarge = coutTotal > 0 ? (margeBrute / coutTotal) * 100 : 0;
+
+    setActiveCopilotContext({
+      vertical: "particulier",
+      route: "/rehabilitation/valorisation",
+      surface: surf > 0 ? surf : undefined,
+      renovation_cost_total: trav > 0 ? trav : undefined,
+      propertyType: "rehabilitation",
+      pageContext: {
+        pathname: "/rehabilitation/valorisation",
+        space: "rehabilitation",
+        mode: "valorisation",
+        tab: "valorisation",
+      },
+      pageSnapshot: {
+        page: "Valorisation apres travaux (Rehabilitation)",
+        prix_acquisition_eur: acq || null,
+        cout_travaux_eur: trav || null,
+        frais_annexes_pct: toNumber(form.fraisAnnexes) || null,
+        cout_total_revient_eur: coutTotal > 0 ? Math.round(coutTotal) : null,
+        surface_apres_travaux_m2: surf || null,
+        prix_sortie_minimal_eur_m2: prixSortieMinM2 > 0 ? Math.round(prixSortieMinM2) : null,
+        prix_sortie_voulu_eur_m2: prixVouluM2 || null,
+        valeur_sortie_voulue_eur: valeurSortieVoulu > 0 ? Math.round(valeurSortieVoulu) : null,
+        marge_brute_eur: coutTotal > 0 ? Math.round(margeBrute) : null,
+        taux_marge_pct: coutTotal > 0 ? Math.round(tauxMarge * 10) / 10 : null,
+      },
+    });
+  }, [
+    form.prixAcquisition,
+    form.coutTravaux,
+    form.surfaceApres,
+    form.prixSortieVouluM2,
+    form.fraisAnnexes,
+  ]);
+
+  // Nettoyage au demontage : le Copilot ne garde pas les chiffres hors de la page.
+  useEffect(() => {
+    return () => clearActiveCopilotContext();
+  }, []);
 
   const isValid =
     form.prixAcquisition !== "" &&

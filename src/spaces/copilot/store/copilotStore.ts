@@ -1,6 +1,7 @@
 // src/spaces/copilot/store/copilotStore.ts
 // PATCH V1.2 : ajout de predictive_snapshot dans ContextHints (LOT 6)
 // PATCH V1.3 : ajout de valuation_engine dans ContextHints (LOT 7)
+// PATCH V1.4 : ajout du mode intro (presentation home, 0 credit, sans appel copilot-chat)
 import { create } from 'zustand';
 import {
   fetchBalance,
@@ -22,25 +23,28 @@ import type {
   Vertical,
 } from '../types/copilot.types';
 
-// ── V1.3 : valuation_engine ajouté ───────────────────────────────────────────
+// -- V1.3 : valuation_engine ajoute --------------------------------------
 interface ContextHints {
   vertical?: Vertical;
   parcel?: ParcelContextRef;
   study?: StudyContextRef;
   listing?: ListingContextRef;
   plu?: PluContextRef;
-  // LOT 6 — snapshot des 17 sources du moteur prédictif Mimmoza.
-  // Injecté par AnalysePredictivePanel via setContextHints({ predictive_snapshot }).
-  // Transmis tel quel dans MimmozaContext → system prompt copilot-chat.
+  // LOT 6 - snapshot des 17 sources du moteur predictif Mimmoza.
+  // Injecte par AnalysePredictivePanel via setContextHints({ predictive_snapshot }).
+  // Transmis tel quel dans MimmozaContext -> system prompt copilot-chat.
   predictive_snapshot?: PredictiveSnapshotContext | null;
-  // LOT 7 — résultat complet du valuation engine Mimmoza.
-  // Injecté par AnalysePage via setContextHints({ valuation_engine }).
-  // Complète le predictive_snapshot avec valorisation, rendements et analyse quali.
+  // LOT 7 - resultat complet du valuation engine Mimmoza.
+  // Injecte par AnalysePage via setContextHints({ valuation_engine }).
+  // Complete le predictive_snapshot avec valorisation, rendements et analyse quali.
   valuation_engine?: ValuationEngineContext | null;
 }
 
 interface CopilotStore {
   isOpen: boolean;
+  // V1.4 - mode presentation (home, premiere visite). Quand true, le drawer
+  // affiche CopilotIntroView au lieu du chat. Aucun appel reseau, 0 credit.
+  introMode: boolean;
   mode: CopilotMode;
 
   contextHints: ContextHints;
@@ -60,6 +64,8 @@ interface CopilotStore {
   openCopilot: () => void;
   closeCopilot: () => void;
   toggleCopilot: () => void;
+  openIntro: () => void;
+  exitIntro: () => void;
   setMode: (mode: CopilotMode) => void;
   setContextHints: (hints: Partial<ContextHints>) => void;
   clearContextHints: () => void;
@@ -81,6 +87,7 @@ const localId = (p: string) => `local-${p}-${crypto.randomUUID()}`;
 
 export const useCopilotStore = create<CopilotStore>((set, get) => ({
   isOpen: false,
+  introMode: false,
   mode: 'quick',
 
   contextHints: {},
@@ -97,9 +104,16 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
   loadingConversations: false,
   loadingMessages: false,
 
-  openCopilot: () => set({ isOpen: true }),
-  closeCopilot: () => set({ isOpen: false }),
-  toggleCopilot: () => set((s) => ({ isOpen: !s.isOpen })),
+  // Ouverture "chat" classique : on sort toujours du mode intro.
+  openCopilot: () => set({ isOpen: true, introMode: false }),
+  closeCopilot: () => set({ isOpen: false, introMode: false }),
+  toggleCopilot: () => set((s) => ({ isOpen: !s.isOpen, introMode: false })),
+
+  // V1.4 : ouvre le drawer en mode presentation (statique).
+  openIntro: () => set({ isOpen: true, introMode: true }),
+  // V1.4 : bascule de l'intro vers le chat normal (bouton "j'ai une question").
+  exitIntro: () => set({ introMode: false }),
+
   setMode: (mode) => set({ mode }),
 
   // V1.3 : Partial<ContextHints> accepte predictive_snapshot ET valuation_engine
@@ -143,8 +157,10 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
     }
   },
 
+  // "+" du header : nouvelle conversation -> on quitte aussi l'intro.
   newConversation: () =>
     set({
+      introMode: false,
       currentConversationId: null,
       messages: [],
       status: 'idle',

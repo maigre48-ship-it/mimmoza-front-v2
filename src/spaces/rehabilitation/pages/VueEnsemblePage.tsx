@@ -9,7 +9,15 @@ import { useNavigate } from "react-router-dom";
 const ACCENT  = "#f97316";
 const GRAD    = "linear-gradient(135deg, #ea580c 0%, #fb923c 100%)";
 
-const LS_KEY  = "mimmoza_rehab_overview";
+// Cle de l'overview, dediee au projet actif (selectionne via "Ouvrir" sur ProjetsPage).
+// Repli sur la cle historique si aucun projet actif (compatibilite ascendante).
+function overviewKey(): string {
+  try {
+    const id = localStorage.getItem("mimmoza.rehab.activeProjectId");
+    if (id) return `mimmoza_rehab_overview_${id}`;
+  } catch { /* noop */ }
+  return "mimmoza_rehab_overview";
+}
 
 /* ── Types ── */
 type ErpStatus  = "oui" | "non" | "a_confirmer" | "";
@@ -104,10 +112,10 @@ const VueEnsemblePage: React.FC = () => {
   const [data,    setData]    = useState<OverviewData>(INITIAL);
   const [saved,   setSaved]   = useState(false);
 
-  /* Charger depuis localStorage */
+  /* Charger depuis localStorage (cle dediee au projet actif) */
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(LS_KEY);
+      const raw = localStorage.getItem(overviewKey());
       if (raw) setData({ ...INITIAL, ...JSON.parse(raw) });
     } catch { /* silent */ }
   }, []);
@@ -119,7 +127,7 @@ const VueEnsemblePage: React.FC = () => {
 
   function handleSave() {
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify({ ...data, savedAt: new Date().toISOString() }));
+      localStorage.setItem(overviewKey(), JSON.stringify({ ...data, savedAt: new Date().toISOString() }));
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch { /* silent */ }

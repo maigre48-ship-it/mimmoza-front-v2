@@ -19,7 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useCallback, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   useValuationEngine,
   type ComparableSale,
@@ -36,6 +36,8 @@ import {
   selectNegative,
   selectPositive,
 } from "../../../../services/explainability";
+import { spendCredits } from "../../../../lib/billing/projectUnlock";
+import { ACTION_COSTS } from "../../../../lib/billing/actionCosts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers d'affichage
@@ -296,6 +298,30 @@ const defaultForm: FormState = {
   propertyType: "appartement",
   expectedRent: "",
 };
+
+// Decoupe une saisie libre ("15 Rue de la Republique, 69002 Lyon") en
+// address / postalCode / city. Tout champ non detecte reste vide.
+function parsePrefillAddress(raw: string): Partial<FormState> {
+  const txt = raw.trim();
+  if (!txt) return {};
+
+  // Code postal francais : 5 chiffres.
+  const cpMatch = txt.match(/\b(\d{5})\b/);
+  if (!cpMatch) {
+    // Pas de CP detecte -> tout dans l'adresse.
+    return { address: txt };
+  }
+
+  const cp = cpMatch[1];
+  const before = txt.slice(0, cpMatch.index).replace(/[,\s]+$/, "").trim();
+  const after = txt.slice((cpMatch.index ?? 0) + cp.length).replace(/^[,\s]+/, "").trim();
+
+  return {
+    address: before,
+    postalCode: cp,
+    city: after, // ce qui suit le CP = ville (vide si absent)
+  };
+}
 const PROPERTY_TYPES: { id: PropertyType; label: string }[] = [
   { id: "appartement", label: "Appartement" }, { id: "maison", label: "Maison" },
   { id: "immeuble", label: "Immeuble" }, { id: "terrain", label: "Terrain" },
@@ -310,8 +336,19 @@ const SNAPSHOT_KEY = "mimmoza.quickAnalysis.snapshot.v6";
 
 const QuickAnalysisPage: React.FC = () => {
   const navigate = useNavigate();
-  const [form, setForm] = useState<FormState>(defaultForm);
+  const routerLocation = useLocation();
+
+  // Prefill depuis la page d'accueil : navigate("/analyse-rapide", { state: { prefillAddress } })
+  const prefillAddress =
+    (routerLocation.state as { prefillAddress?: string } | null)?.prefillAddress ?? "";
+
+  const [form, setForm] = useState<FormState>(() => ({
+    ...defaultForm,
+    ...parsePrefillAddress(prefillAddress),
+  }));
+
   const { state, run, reset } = useValuationEngine();
+  const [tokenError, setTokenError] = useState<string | null>(null);
 
   const setF = useCallback(<K extends keyof FormState>(k: K, v: FormState[K]) => {
     setForm((p) => ({ ...p, [k]: v }));
@@ -321,6 +358,23 @@ const QuickAnalysisPage: React.FC = () => {
 
   const handleRun = useCallback(async () => {
     if (!form.surface || isNaN(+form.surface) || +form.surface <= 0) return;
+
+    // Debit jetons au clic (bloque si solde insuffisant). Cout : ACTION_COSTS.
+      setTokenError(null);
+      const spend = await spendCredits(
+        ACTION_COSTS.analyse_rapide,
+        `Analyse rapide${form.address ? ` : ${form.address}` : ""}`,
+        "quick_analysis",
+    );
+    if (!spend.ok) {
+      setTokenError(
+        spend.reason === "NO_TOKENS"
+          ? "Solde de jetons insuffisant. Rechargez pour lancer une analyse."
+          : spend.message,
+      );
+      return;
+    }
+
     const input: EngineInput = {
       address:      form.address,
       city:         form.city,
@@ -516,7 +570,12 @@ display: "flex",
 
       {error && (
         <div style={{ margin:"14px 28px 0", padding:"10px 14px", background:"#fee2e2", borderRadius:10,
-          border:"1px solid #fca5a5", color:"#991b1b", fontSize:13, fontWeight:600 }}>⚠ {error}</div>
+          border:"1px solid #fca5a5", color:"#991b1b", fontSize:13, fontWeight:600 }}>âš  {error}</div>
+      )}
+
+      {tokenError && (
+        <div style={{ margin:"14px 28px 0", padding:"10px 14px", background:"#fee2e2", borderRadius:10,
+          border:"1px solid #fca5a5", color:"#991b1b", fontSize:13, fontWeight:600 }}>⚠ {tokenError}</div>
       )}
 
       <div style={{ display:"grid", gridTemplateColumns:"272px 1fr 308px", gap:16, padding:"18px 28px 18px", maxWidth:1440, margin:"0 auto" }}>

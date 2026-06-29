@@ -242,7 +242,9 @@ export async function exportFinancialEnginePdf(): Promise<void> {
 
 // â”€â”€â”€ Excel (logique 100% inchangÃ©e) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export async function exportFinancialEngineExcel(): Promise<void> {
+export async function exportFinancialEngineExcel(
+  options?: { returnBytes?: boolean },
+): Promise<void | Uint8Array> {
   const snap     = readMarchandSnapshot();
   const deal     = ensureActiveDeal();
   const id       = deal?.id ?? null;
@@ -319,5 +321,8 @@ export async function exportFinancialEngineExcel(): Promise<void> {
   wsCf["!cols"] = [{ wch: 12 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 20 }];
   XLSX.utils.book_append_sheet(wb, wsCf, "Cashflow 10 ans");
 
+  if (options?.returnBytes) {
+    return new Uint8Array(XLSX.write(wb, { type: "array", bookType: "xlsx" }));
+  }
   XLSX.writeFile(wb, `Mimmoza_ModeleFinancier_${dealName.replace(/[^a-zA-Z0-9]/g, "_")}_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }

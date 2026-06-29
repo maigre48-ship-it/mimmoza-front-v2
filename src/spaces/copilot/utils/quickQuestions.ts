@@ -541,13 +541,13 @@ const ROUTE_QUESTIONS: RouteQuestions[] = [
   {
     prefix: '/rehabilitation/valorisation',
     quick: [
-      { label: '💶 Prix de sortie cohérent ?',           prompt: "Le prix de sortie visé est-il cohérent avec la valorisation Mimmoza du bien ? Donne un verdict rapide." },
-      { label: '📊 Marge suffisante pour valider ?',     prompt: "La marge après travaux est-elle suffisante pour valider l'opération ? Donne un verdict rapide." },
-      { label: '⚖️ Prix de sortie minimal à l\'équilibre', prompt: "Quel prix de sortie minimal faut-il atteindre pour être à l'équilibre sur cette opération ?" },
+      { label: '💶 Prix de sortie cohérent ?',           prompt: "À partir des chiffres saisis sur cette page (prix de revient, prix de sortie minimal, prix de sortie voulu), mon prix de sortie visé est-il cohérent ? Donne un verdict rapide." },
+      { label: '📊 Marge suffisante pour valider ?',     prompt: "À partir de la marge brute et du taux de marge affichés sur cette page, l'opération est-elle suffisamment rentable pour être validée ? Donne un verdict rapide." },
+      { label: '⚖️ Où se situe mon prix de sortie min ?', prompt: "Explique-moi mon prix de sortie minimal affiché à l'écran (à quoi il correspond) et l'écart avec mon prix de sortie voulu." },
     ],
     advanced: [
-      { label: '🔬 Valorisation complète',               prompt: "Calcule la valorisation complète : prix de revient total (acquisition + travaux + frais), prix de sortie minimal et marge nette." },
-      { label: '📈 Compare aux DVF du secteur',          prompt: "Compare ce projet aux transactions DVF récentes dans ce secteur pour valider le prix de sortie envisagé." },
+      { label: '🔬 Lecture complète de ma valorisation', prompt: "À partir des données de cette page (prix d'acquisition, coût travaux, frais annexes, coût de revient, surface, prix de sortie min et voulu, marge brute, taux de marge), fais une lecture complète : où sont les marges de manœuvre pour sécuriser l'opération ?" },
+      { label: '🎯 Comment améliorer ma marge ?',         prompt: "À partir des chiffres affichés sur cette page, quels leviers (prix d'achat, coût travaux, prix de sortie) auraient le plus d'impact pour améliorer ma marge brute ? Raisonne uniquement sur ces données." },
     ],
   },
 
