@@ -1,4 +1,6 @@
 ﻿// src/spaces/investisseur/pages/execution/SimulationTravauxPage.tsx
+// v8: persistance par projet — hydratation au montage + garde anti-clobber
+//     (corrige le retour à 0 au changement d'onglet / opportunité / reconnexion)
 // v7: theme + breadcrumb injectables (même système que RenduTravauxPage)
 
 import {
@@ -10,6 +12,7 @@ import {
   patchRentabiliteForDeal,
   readMarchandSnapshot,
 } from "../../../marchand/shared/marchandSnapshot.store";
+// readMarchandSnapshot est aussi utilisé pour l'hydratation (voir hydrateFromSnapshot).
 import { computeTravauxSimulation } from "../../services/travauxCalculator.service";
 import { TRAVAUX_PRICING_V1 } from "../../services/travauxPricing.config";
 import {
@@ -210,6 +213,48 @@ function pieceUIToTravaux(p: PieceUI): PieceTravaux {
   return { id: p.id, type: p.kind, name: p.name, surfaceM2: p.surfaceM2, items };
 }
 
+/* ------------------------------------------------------------------ */
+/*  Reverse: PieceTravaux (stocké) → PieceUI (UI)                      */
+/*  Reconstruit toggles + quantités depuis les items persistés.       */
+/* ------------------------------------------------------------------ */
+
+function travauxToPieceUI(p: PieceTravaux): PieceUI {
+  const items = Array.isArray(p.items) ? p.items : [];
+  const has = (code: PricingItemCode) => items.some((i) => i.itemCode === code && i.qty > 0);
+  const qty = (code: PricingItemCode) => items.find((i) => i.itemCode === code)?.qty ?? 0;
+
+  const kind = (p.type ?? "sejour") as PieceType;
+  const surfaceM2 = typeof p.surfaceM2 === "number" && p.surfaceM2 > 0 ? p.surfaceM2 : 15;
+  const base = defaultQtys(kind, surfaceM2);
+
+  _counter++;
+  return {
+    id: p.id || `piece_${Date.now()}_${_counter}`,
+    kind,
+    name: p.name || (PIECE_TYPE_OPTIONS.find((o) => o.value === kind)?.label ?? "Pièce"),
+    surfaceM2,
+    peinture: has("mur_peinture_simple"),
+    sol: has("sol_parquet"),
+    elec: has("elec_spots") || has("elec_rj45"),
+    plomb: has("plomb_deplacement_points_eau"),
+    isolTh: has("isol_th_murs"),
+    isolPh: has("isol_ph_murs_mitoyens"),
+    cuisinePack: has("cuisine_pack"),
+    cuisinePose: has("cuisine_pose"),
+    cuisineDepose: has("demol_depose_cuisine"),
+    sdbPack: has("sdb_pack"),
+    sdbSpec: has("sdb_spec_etancheite"),
+    sdbDepose: has("demol_depose_faience_sanitaires"),
+    qtyPeinture: has("mur_peinture_simple") ? qty("mur_peinture_simple") : base.qtyPeinture,
+    qtySol: has("sol_parquet") ? qty("sol_parquet") : base.qtySol,
+    qtySpots: has("elec_spots") ? qty("elec_spots") : base.qtySpots,
+    qtyRj45: has("elec_rj45") ? qty("elec_rj45") : base.qtyRj45,
+    qtyPlombPoints: has("plomb_deplacement_points_eau") ? qty("plomb_deplacement_points_eau") : base.qtyPlombPoints,
+    qtyIsolTh: has("isol_th_murs") ? qty("isol_th_murs") : base.qtyIsolTh,
+    qtyIsolPh: has("isol_ph_murs_mitoyens") ? qty("isol_ph_murs_mitoyens") : base.qtyIsolPh,
+  };
+}
+
 /* ================================================================== */
 /*  Defaults                                                           */
 /* ================================================================== */
@@ -220,6 +265,95 @@ const DEFAULT_OPTIONS: TravauxOptionsSimple = {
   isolationPhonique: "none", demolition: "none", gravats: "none",
   humiditeTraitement: "none", moe: "none",
 };
+
+/* ------------------------------------------------------------------ */
+/*  Hydratation : lit le projet actif et reconstruit l'état complet    */
+/* ------------------------------------------------------------------ */
+
+interface HydratedState {
+  mode: "simple" | "expert";
+  range: TravauxRange;
+  renovationLevel: RenovationLevel;
+  complexity: ChantierComplexity;
+  surface: number;
+  options: TravauxOptionsSimple;
+  piecesUI: PieceUI[];
+}
+
+const VALID_RANGES: TravauxRange[] = ["eco", "standard", "premium"];
+const VALID_LEVELS: RenovationLevel[] = ["refresh", "standard", "heavy", "full"];
+
+function clampComplexity(n: unknown): ChantierComplexity {
+  const v = typeof n === "number" ? Math.round(n) : 1;
+  return (Math.max(0, Math.min(4, v)) as ChantierComplexity);
+}
+
+/** Lit le dernier input travaux stocké, marchand (activeDealId) en priorité,
+ *  investisseur (activeProjectId) en fallback. */
+function readStoredTravauxInput(): TravauxSimulationV1 | undefined {
+  // 1) Snapshot marchand — c'est là que la donnée vit réellement (executionByDeal)
+  try {
+    const ms = readMarchandSnapshot();
+    const dealId = ms?.activeDealId ?? null;
+    if (dealId) {
+      const fromMarchand = ms.executionByDeal?.[dealId]?.travaux?.input as
+        | TravauxSimulationV1
+        | undefined;
+      if (fromMarchand) return fromMarchand;
+    }
+  } catch {
+    /* ignore, on tente l'investisseur */
+  }
+
+  // 2) Fallback snapshot investisseur
+  try {
+    const snap = getInvestisseurSnapshot();
+    const pid = snap.activeProjectId;
+    if (pid) {
+      const fromInvest = snap.projects?.[pid]?.execution?.travaux?.input as
+        | TravauxSimulationV1
+        | undefined;
+      if (fromInvest) return fromInvest;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return undefined;
+}
+
+function hydrateFromSnapshot(): HydratedState | null {
+  try {
+    const input = readStoredTravauxInput();
+    if (!input) return null;
+
+    const mode: "simple" | "expert" = input.mode === "expert" ? "expert" : "simple";
+    const range = VALID_RANGES.includes(input.range) ? input.range : "standard";
+    const renovationLevel = VALID_LEVELS.includes(input.renovationLevel)
+      ? input.renovationLevel
+      : "standard";
+    const complexity = clampComplexity(input.complexity);
+    const options: TravauxOptionsSimple = { ...DEFAULT_OPTIONS, ...(input.options ?? {}) };
+
+    const piecesUI =
+      mode === "expert" && Array.isArray(input.pieces)
+        ? input.pieces.map(travauxToPieceUI)
+        : [];
+
+    const surface =
+      mode === "simple"
+        ? (typeof input.surfaceTotalM2 === "number" ? input.surfaceTotalM2 : 0)
+        : 0;
+
+    // Rien de significatif à restaurer → on laisse le formulaire vide.
+    if (mode === "simple" && surface === 0) return null;
+    if (mode === "expert" && piecesUI.length === 0) return null;
+
+    return { mode, range, renovationLevel, complexity, surface, options, piecesUI };
+  } catch {
+    return null;
+  }
+}
 
 const RANGE_OPTIONS: { value: TravauxRange; label: string; color: string }[] = [
   { value: "eco",      label: "Éco",      color: "bg-emerald-100 text-emerald-700 border-emerald-300" },
@@ -740,13 +874,20 @@ const SimulationTravauxPage: React.FC<Props> = ({ theme, breadcrumb }) => {
   const ACCENT_DARK = t.accentDark;
   const resolvedBreadcrumb = breadcrumb ?? "INVESTISSEUR · EXÉCUTION";
 
-  const [mode, setMode] = useState<"simple" | "expert">("simple");
-  const [range, setRange] = useState<TravauxRange>("standard");
-  const [renovationLevel, setRenovationLevel] = useState<RenovationLevel>("standard");
-  const [complexity, setComplexity] = useState<ChantierComplexity>(1);
-  const [surface, setSurface] = useState(0);
-  const [options, setOptions] = useState<TravauxOptionsSimple>(DEFAULT_OPTIONS);
-  const [piecesUI, setPiecesUI] = useState<PieceUI[]>([]);
+  // ── Hydratation : on lit l'état du projet actif UNE SEULE FOIS au montage ──
+  // (le changement d'onglet/opportunité démonte ce composant ; au remontage on
+  //  restaure depuis le snapshot, sinon le formulaire repartirait à 0.)
+  const hydratedRef = useRef<HydratedState | null | undefined>(undefined);
+  if (hydratedRef.current === undefined) hydratedRef.current = hydrateFromSnapshot();
+  const h = hydratedRef.current;
+
+  const [mode, setMode] = useState<"simple" | "expert">(h?.mode ?? "simple");
+  const [range, setRange] = useState<TravauxRange>(h?.range ?? "standard");
+  const [renovationLevel, setRenovationLevel] = useState<RenovationLevel>(h?.renovationLevel ?? "standard");
+  const [complexity, setComplexity] = useState<ChantierComplexity>(h?.complexity ?? 1);
+  const [surface, setSurface] = useState(h?.surface ?? 0);
+  const [options, setOptions] = useState<TravauxOptionsSimple>(h?.options ?? DEFAULT_OPTIONS);
+  const [piecesUI, setPiecesUI] = useState<PieceUI[]>(h?.piecesUI ?? []);
   const [disabledLots, setDisabledLots] = useState<Set<string>>(new Set());
 
   const handleToggleLot = useCallback((code: string) => {
@@ -772,8 +913,18 @@ const SimulationTravauxPage: React.FC<Props> = ({ theme, breadcrumb }) => {
 
   const result: ComputedTravaux = useMemo(() => computeTravauxSimulation(simulation), [simulation]);
 
+  // ── Persistance debouncée — AVEC garde anti-clobber ───────────────────────
+  // On saute le tout premier run de cet effet (au montage) : sinon, si l'état
+  // courant est vide (pas d'hydratation), on écraserait la donnée stockée du
+  // projet par un formulaire à 0. Le save ne s'enclenche donc qu'à la 1re
+  // modification réelle de l'utilisateur.
+  const isFirstSaveRunRef = useRef(true);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
+    if (isFirstSaveRunRef.current) {
+      isFirstSaveRunRef.current = false;
+      return;
+    }
     if (persistTimerRef.current !== null) clearTimeout(persistTimerRef.current);
     persistTimerRef.current = setTimeout(() => {
       persistTravauxResult(simulation, result);
