@@ -43,6 +43,7 @@ import { usePromoteurStudy } from "../shared/usePromoteurStudy";
 import * as pdfjsLib from "pdfjs-dist";
 // @ts-ignore - import worker Vite (?worker) : bundle le worker en Web Worker
 import PdfJsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?worker";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 pdfjsLib.GlobalWorkerOptions.workerPort = new PdfJsWorker();
 
@@ -333,9 +334,9 @@ function persistFoncierSelectionForRestore(parcels: SelectedParcel[], focusId: s
       if (p.feature) { const serialized = JSON.stringify(p.feature); featureToStore = serialized.length <= MAX_FEATURE_LS_BYTES ? p.feature : null; if (serialized.length > MAX_FEATURE_LS_BYTES) console.debug(`[FoncierPluPage] Feature ${p.id} trop grande pour localStorage (${serialized.length} bytes) â€” stockÃ©e sans gÃ©omÃ©trie`); }
       return { id: p.id, area_m2: p.area_m2 ?? null, commune_insee: commune, feature: featureToStore };
     });
-    localStorage.setItem(LS_FONCIER_SELECTED, JSON.stringify(serializable));
-    localStorage.setItem(LS_FONCIER_FOCUS,    focusId);
-    localStorage.setItem(LS_FONCIER_COMMUNE,  commune);
+    userStorage.setItem(LS_FONCIER_SELECTED, JSON.stringify(serializable));
+    userStorage.setItem(LS_FONCIER_FOCUS,    focusId);
+    userStorage.setItem(LS_FONCIER_COMMUNE,  commune);
     console.debug(`[FoncierPluPage] persistFoncierSelectionForRestore â†’ ${serializable.length} parcelle(s), focus=${focusId}, commune=${commune}`);
   } catch (err) { console.warn("[FoncierPluPage] persistFoncierSelectionForRestore failed:", err); }
 }
@@ -568,7 +569,7 @@ const EMPTY_FIELDS: FieldMap = { hauteur_max: { value: null, unit: "m" }, hauteu
 function resolveRulesetSource(pluData: PluData | null): { rs: any; format: "resolved_v1" | "plu_ruleset_v2" | "legacy" } | null {
   const rs = pluData?.ruleset;
   if (!rs) {
-    try { const raw = localStorage.getItem("mimmoza.plu.resolved_ruleset_v1"); if (raw) { const parsed = JSON.parse(raw); if (parsed?.version === "plu_ruleset_v1") return { rs: parsed, format: "resolved_v1" }; } } catch { /**/ }
+    try { const raw = userStorage.getItem("mimmoza.plu.resolved_ruleset_v1"); if (raw) { const parsed = JSON.parse(raw); if (parsed?.version === "plu_ruleset_v1") return { rs: parsed, format: "resolved_v1" }; } } catch { /**/ }
     return null;
   }
   if (rs.version === "plu_ruleset_v1") return { rs, format: "resolved_v1" };
@@ -908,29 +909,29 @@ export function FoncierPluPage() {
         setIsValidated(f.done); setSearchDone(true);
         const focusId = f.focus_id || parcels[0]?.id;
         if (focusId) persistFoncierSelectionForRestore(parcels, focusId, f.commune_insee);
-        if (focusId) localStorage.setItem("mimmoza.session.parcel_id", focusId);
-        localStorage.setItem("mimmoza.session.parcel_ids", JSON.stringify(f.parcel_ids ?? []));
-        localStorage.setItem("mimmoza.session.commune_insee", f.commune_insee);
-        if (f.surface_m2) localStorage.setItem("mimmoza.session.surface_m2", String(f.surface_m2));
+        if (focusId) userStorage.setItem("mimmoza.session.parcel_id", focusId);
+        userStorage.setItem("mimmoza.session.parcel_ids", JSON.stringify(f.parcel_ids ?? []));
+        userStorage.setItem("mimmoza.session.commune_insee", f.commune_insee);
+        if (f.surface_m2) userStorage.setItem("mimmoza.session.surface_m2", String(f.surface_m2));
         patchModule("foncier", { parcelId: focusId, parcelIds: f.parcel_ids, communeInsee: f.commune_insee, surfaceM2: f.surface_m2 });
         const firstParcel = parcels[0];
         if (firstParcel?.feature) { const bc = getFeatureBoundsCenter(firstParcel.feature); if (bc) { setMapCenter(bc.center); } else { if (validCommuneInsee) geocodeCommuneCenter(validCommuneInsee).then(center => { if (center && mountedRef.current) setMapCenter(center); }); } } else { if (validCommuneInsee) geocodeCommuneCenter(validCommuneInsee).then(center => { if (center && mountedRef.current) setMapCenter(center); }); }
       }
     }
-    if (p?.ruleset) { setPluData({ zone_code: p.zone_code ?? undefined, zone_libelle: p.zone_libelle ?? undefined, ruleset: p.ruleset, found: true }); localStorage.setItem("mimmoza.plu.resolved_ruleset_v1", JSON.stringify(p.ruleset)); }
+    if (p?.ruleset) { setPluData({ zone_code: p.zone_code ?? undefined, zone_libelle: p.zone_libelle ?? undefined, ruleset: p.ruleset, found: true }); userStorage.setItem("mimmoza.plu.resolved_ruleset_v1", JSON.stringify(p.ruleset)); }
   }, [loadState, study]);
 
   useEffect(() => {
     if (loadState !== "ready" || !study) return;
     if (study.foncier?.commune_insee) return;
-    const quickAddress = localStorage.getItem(LS_QUICK_ADDRESS);
-    const quickCommune = localStorage.getItem(LS_QUICK_COMMUNE);
-    const quickSurface = localStorage.getItem(LS_QUICK_SURFACE);
+    const quickAddress = userStorage.getItem(LS_QUICK_ADDRESS);
+    const quickCommune = userStorage.getItem(LS_QUICK_COMMUNE);
+    const quickSurface = userStorage.getItem(LS_QUICK_SURFACE);
     if (!quickAddress && !quickCommune && !quickSurface) return;
     const surfaceNum = quickSurface ? Number(quickSurface) : undefined;
     setProjectInfo(prev => ({ ...prev, address: quickAddress ?? prev.address, communeInsee: quickCommune ?? prev.communeInsee, surfaceM2: surfaceNum && surfaceNum > 0 ? surfaceNum : prev.surfaceM2 }));
     if (quickCommune) geocodeCommuneCenter(quickCommune).then(center => { if (center && mountedRef.current) setMapCenter(center); });
-    localStorage.removeItem(LS_QUICK_ADDRESS); localStorage.removeItem(LS_QUICK_COMMUNE); localStorage.removeItem(LS_QUICK_SURFACE);
+    userStorage.removeItem(LS_QUICK_ADDRESS); userStorage.removeItem(LS_QUICK_COMMUNE); userStorage.removeItem(LS_QUICK_SURFACE);
   }, [loadState, study]);
 
   const hasProject = !!(projectInfo.communeInsee && (selectedParcels.length > 0 || searchDone));
@@ -1014,13 +1015,13 @@ export function FoncierPluPage() {
     const insee = validInseeFromId ?? projectInfo.communeInsee ?? "";
     const foncierPayload: PromoteurFoncierData = { prix_foncier: null, parcel_ids: parcelIds, focus_id: primary.id, commune_insee: insee, surface_m2: totalAreaM2, parcels_raw: selectedParcels.map(p => ({ id: p.id, area_m2: p.area_m2 ?? null, feature: p.feature ? (JSON.stringify(p.feature).length < 50_000 ? p.feature : null) : null } satisfies PromoteurParcelRaw)), done: true };
     const result = await patchFoncier(foncierPayload); setIsSaving(false);
-    if (!result.ok) { console.error("[FoncierPluPage] Supabase save failed:", result.error); localStorage.setItem(`mimmoza.promoteur.foncier.${studyId}.fallback_v2`, JSON.stringify(foncierPayload)); }
+    if (!result.ok) { console.error("[FoncierPluPage] Supabase save failed:", result.error); userStorage.setItem(`mimmoza.promoteur.foncier.${studyId}.fallback_v2`, JSON.stringify(foncierPayload)); }
     persistFoncierSelectionForRestore(selectedParcels, primary.id, insee); captureCadastre(studyId);
     setProjectInfo(prev => ({ ...prev, parcelId: primary.id, parcelIds, communeInsee: insee, surfaceM2: totalAreaM2 || undefined }));
     patchModule("foncier", { parcelId: primary.id, parcelIds, communeInsee: insee, surfaceM2: totalAreaM2 });
-    localStorage.setItem("mimmoza.session.parcel_id", primary.id); localStorage.setItem("mimmoza.session.parcel_ids", JSON.stringify(parcelIds));
-    if (insee) localStorage.setItem("mimmoza.session.commune_insee", insee); if (totalAreaM2) localStorage.setItem("mimmoza.session.surface_m2", String(totalAreaM2));
-    ["mimmoza.plu.ai_extract_result", "mimmoza.plu.detected_zone_code", "mimmoza.plu.selected_zone_code", "mimmoza.plu.selected_document_id", "mimmoza.plu.selected_commune_insee"].forEach(k => localStorage.removeItem(k));
+    userStorage.setItem("mimmoza.session.parcel_id", primary.id); userStorage.setItem("mimmoza.session.parcel_ids", JSON.stringify(parcelIds));
+    if (insee) userStorage.setItem("mimmoza.session.commune_insee", insee); if (totalAreaM2) userStorage.setItem("mimmoza.session.surface_m2", String(totalAreaM2));
+    ["mimmoza.plu.ai_extract_result", "mimmoza.plu.detected_zone_code", "mimmoza.plu.selected_zone_code", "mimmoza.plu.selected_document_id", "mimmoza.plu.selected_commune_insee"].forEach(k => userStorage.removeItem(k));
     setValidationMessage(`âœ“ ${parcelIds.length} parcelle${parcelIds.length > 1 ? "s" : ""} enregistrÃ©e${parcelIds.length > 1 ? "s" : ""} (${formatAreaM2(totalAreaM2)})`);
     setIsValidated(true); setTimeout(() => setValidationMessage(null), 5000);
   }, [selectedParcels, totalAreaM2, studyId, projectInfo.communeInsee, patchFoncier]);
@@ -1028,15 +1029,15 @@ export function FoncierPluPage() {
   const handleReset = useCallback(() => {
     setProjectInfo({}); setSelectedParcels([]); setPluData(null); setMapCenter(null); setIsValidated(false); setSearchDone(false);
     patchModule("plu", null); patchModule("foncier", null);
-    ["mimmoza.session.parcel_id", "mimmoza.session.commune_insee", "mimmoza.session.parcel_ids", "mimmoza.session.surface_m2", "mimmoza.plu.resolved_ruleset_v1", "mimmoza.plu.ai_extract_result", "mimmoza.plu.detected_zone_code", "mimmoza.plu.selected_zone_code", "mimmoza.plu.selected_document_id", "mimmoza.plu.selected_commune_insee", LS_FONCIER_SELECTED, LS_FONCIER_FOCUS, LS_FONCIER_COMMUNE].forEach(k => localStorage.removeItem(k));
+    ["mimmoza.session.parcel_id", "mimmoza.session.commune_insee", "mimmoza.session.parcel_ids", "mimmoza.session.surface_m2", "mimmoza.plu.resolved_ruleset_v1", "mimmoza.plu.ai_extract_result", "mimmoza.plu.detected_zone_code", "mimmoza.plu.selected_zone_code", "mimmoza.plu.selected_document_id", "mimmoza.plu.selected_commune_insee", LS_FONCIER_SELECTED, LS_FONCIER_FOCUS, LS_FONCIER_COMMUNE].forEach(k => userStorage.removeItem(k));
   }, []);
 
   const handlePluParsed = useCallback(async (plu: PluData) => {
     const resolved = legacyRulesetToResolved(plu);
     const pluPayload: PromoteurPluData = { zone_code: plu.zone_code ?? null, zone_libelle: plu.zone_libelle ?? null, ruleset: resolved ?? (plu.ruleset ?? null), source: "upload", done: true };
     if (studyId) await patchPlu(pluPayload);
-    if (resolved) { localStorage.setItem("mimmoza.plu.resolved_ruleset_v1", JSON.stringify(resolved)); patchModule("plu", resolved); } else { localStorage.removeItem("mimmoza.plu.resolved_ruleset_v1"); patchModule("plu", null); }
-    localStorage.removeItem("mimmoza.plu.ai_extract_result"); setPluData(plu);
+    if (resolved) { userStorage.setItem("mimmoza.plu.resolved_ruleset_v1", JSON.stringify(resolved)); patchModule("plu", resolved); } else { userStorage.removeItem("mimmoza.plu.resolved_ruleset_v1"); patchModule("plu", null); }
+    userStorage.removeItem("mimmoza.plu.ai_extract_result"); setPluData(plu);
   }, [studyId, patchPlu]);
 
   // â”€â”€ Loading / Error â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

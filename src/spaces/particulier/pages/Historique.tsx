@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 type HistoryType =
   | "system"
@@ -143,7 +144,7 @@ function safeId() {
 
 function loadHistory(): HistoryEvent[] {
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
+    const raw = userStorage.getItem(HISTORY_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as HistoryEvent[];
     return Array.isArray(parsed) ? parsed : [];
@@ -154,7 +155,7 @@ function loadHistory(): HistoryEvent[] {
 
 function saveHistory(items: HistoryEvent[]) {
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(items));
+    userStorage.setItem(HISTORY_KEY, JSON.stringify(items));
   } catch {
     // ignore
   }

@@ -3,7 +3,8 @@
 
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // -----------------------------------------------------------------------------
 // Types
@@ -75,6 +76,18 @@ const LS_KEY = "mimmoza.promoteur.project.v2";
 function now(): number {
   return Date.now();
 }
+
+// -----------------------------------------------------------------------------
+// Storage isole par utilisateur (prefixe "u:{userId}:" via userStorage).
+// Zustand attend une interface StateStorage (getItem/setItem/removeItem).
+// On delegue a userStorage pour que la cle de persistance soit scopee par
+// compte : deux utilisateurs sur le meme navigateur n'ont jamais le meme projet.
+// -----------------------------------------------------------------------------
+const userScopedStateStorage: StateStorage = {
+  getItem: (name) => userStorage.getItem(name),
+  setItem: (name, value) => userStorage.setItem(name, value),
+  removeItem: (name) => userStorage.removeItem(name),
+};
 
 // -----------------------------------------------------------------------------
 // Store
@@ -156,9 +169,9 @@ export const usePromoteurProjectStore = create<PromoteurProjectState>()(
     {
       name: LS_KEY,
       version: STORE_VERSION,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => userScopedStateStorage),
       migrate: (persistedState, version) => {
-         
+
         const s: any = persistedState;
         if (!s) return persistedState;
 

@@ -4,6 +4,7 @@
 
 import { supabase } from '../../../lib/supabaseClient';
 import type { PromoteurRawInput, RisqueNiveau, RisqueCategorie } from './promoteurSynthese.types';
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 export type StepId =
   | 'codepostal'
@@ -77,7 +78,7 @@ function rereadPluFromLS(): {
   hasData: boolean;
 } {
   try {
-    const raw = localStorage.getItem(LS_PLU_RULESET);
+    const raw = userStorage.getItem(LS_PLU_RULESET);
     if (!raw) return { hasData: false };
     const r = JSON.parse(raw);
     const zone = typeof r.zone_code === 'string' && r.zone_code.trim() ? r.zone_code.trim() : undefined;

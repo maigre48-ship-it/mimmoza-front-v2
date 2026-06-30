@@ -24,6 +24,7 @@ import PredictiveOperationImpactCard from "./PredictiveOperationImpactCard";
 import PredictiveProjectionChart from "./PredictiveProjectionChart";
 import PredictiveScenariosTable from "./PredictiveScenariosTable";
 import PredictiveSummaryCard from "./PredictiveSummaryCard";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -185,12 +186,12 @@ interface V2ManualConfig {
 const V2_CONFIG_PREFIX = "mimmoza_predictive_v2_";
 
 function loadV2Config(dealId: string): V2ManualConfig {
-  try { const raw = localStorage.getItem(V2_CONFIG_PREFIX + dealId); return raw ? JSON.parse(raw) : {}; }
+  try { const raw = userStorage.getItem(V2_CONFIG_PREFIX + dealId); return raw ? JSON.parse(raw) : {}; }
   catch { return {}; }
 }
 
 function saveV2Config(dealId: string, cfg: V2ManualConfig) {
-  try { localStorage.setItem(V2_CONFIG_PREFIX + dealId, JSON.stringify(cfg)); } catch { /* noop */ }
+  try { userStorage.setItem(V2_CONFIG_PREFIX + dealId, JSON.stringify(cfg)); } catch { /* noop */ }
 }
 
 // ── Constants ─────────────────────────────────────────────────────────
@@ -343,7 +344,7 @@ function extractRealInput(
         marchandActiveDealId ? `mimmoza.georisques.${marchandActiveDealId}` : null,
       ].filter(Boolean) as string[];
       for (const k of tryKeys) {
-        const raw = localStorage.getItem(k);
+        const raw = userStorage.getItem(k);
         if (!raw) continue;
         const parsed = JSON.parse(raw);
         if (typeof parsed === "object" && parsed !== null) return parsed as Record<string, unknown>;

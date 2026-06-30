@@ -29,6 +29,7 @@ import {
 } from "../shared/promoteurSnapshot.store";
 import type { PromoteurStudySummary } from "../shared/promoteurStudy.types";
 import { PromoteurStudyService } from "../shared/promoteurStudyService";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ─── Design tokens Promoteur ──────────────────────────────────────────────────
 import { HeroPrimaryButton, PromoteurPageHero } from "../shared/components/PromoteurPageHero";
@@ -492,13 +493,13 @@ export default function Dashboard(): React.ReactElement {
     clearAllPromoteurSessionKeys();
     setActiveStudyId(newStudy.id);
 
-    if (adresse.trim()) localStorage.setItem(LS_QUICK_ADDRESS, adresse.trim());
-    else                localStorage.removeItem(LS_QUICK_ADDRESS);
-    if (commune.trim()) localStorage.setItem(LS_QUICK_COMMUNE, commune.trim());
-    else                localStorage.removeItem(LS_QUICK_COMMUNE);
+    if (adresse.trim()) userStorage.setItem(LS_QUICK_ADDRESS, adresse.trim());
+    else                userStorage.removeItem(LS_QUICK_ADDRESS);
+    if (commune.trim()) userStorage.setItem(LS_QUICK_COMMUNE, commune.trim());
+    else                userStorage.removeItem(LS_QUICK_COMMUNE);
     const surfaceNum = parseFloat(surface.replace(",", "."));
-    if (!isNaN(surfaceNum) && surfaceNum > 0) localStorage.setItem(LS_QUICK_SURFACE, String(Math.round(surfaceNum)));
-    else                                       localStorage.removeItem(LS_QUICK_SURFACE);
+    if (!isNaN(surfaceNum) && surfaceNum > 0) userStorage.setItem(LS_QUICK_SURFACE, String(Math.round(surfaceNum)));
+    else                                       userStorage.removeItem(LS_QUICK_SURFACE);
 
     const summary: PromoteurStudySummary = {
       id: newStudy.id, user_id: newStudy.user_id, title: newStudy.title,
@@ -519,7 +520,7 @@ export default function Dashboard(): React.ReactElement {
     if (!window.confirm("Êtes-vous sûr de vouloir supprimer cette étude ?")) return;
     await PromoteurStudyService.deleteStudy(studyId);
     setStudies(prev => prev.filter(s => s.id !== studyId));
-    const activeId = localStorage.getItem("mimmoza.promoteur.active_study_id");
+    const activeId = userStorage.getItem("mimmoza.promoteur.active_study_id");
     if (activeId === studyId) { clearActiveStudyId(); clearAllPromoteurSessionKeys(); }
   }, []);
 
@@ -534,10 +535,10 @@ export default function Dashboard(): React.ReactElement {
     setActiveStudyId(newStudy.id);
     updateApporteurDeal(deal.id, { promoteurStudyId: newStudy.id });
     setApporteurDeals(prev => prev.map(d => d.id === deal.id ? { ...d, promoteurStudyId: newStudy.id } : d));
-    if (deal.adresse)           localStorage.setItem(LS_QUICK_ADDRESS, deal.adresse);
-    if (deal.commune)           localStorage.setItem(LS_QUICK_COMMUNE, deal.commune);
+    if (deal.adresse)           userStorage.setItem(LS_QUICK_ADDRESS, deal.adresse);
+    if (deal.commune)           userStorage.setItem(LS_QUICK_COMMUNE, deal.commune);
     if (deal.surfaceTerrainM2 != null && deal.surfaceTerrainM2 > 0)
-      localStorage.setItem(LS_QUICK_SURFACE, String(Math.round(deal.surfaceTerrainM2)));
+      userStorage.setItem(LS_QUICK_SURFACE, String(Math.round(deal.surfaceTerrainM2)));
     const summary: PromoteurStudySummary = {
       id: newStudy.id, user_id: newStudy.user_id, title: newStudy.title,
       status: newStudy.status, created_at: newStudy.created_at, updated_at: newStudy.updated_at, foncier: null,

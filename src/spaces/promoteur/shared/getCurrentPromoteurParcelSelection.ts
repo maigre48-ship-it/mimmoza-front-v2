@@ -16,6 +16,7 @@
 import type { Feature, MultiPolygon, Polygon } from "geojson";
 import type { SelectedParcel } from "./hooks/useFoncierSelection";
 import { getSnapshot } from "./promoteurSnapshot.store";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ── localStorage keys ─────────────────────────────────────────────────────────
 const LS_SELECTED = "mimmoza.promoteur.foncier.selected_v1";
@@ -42,7 +43,7 @@ export interface PromoteurParcelSelection {
 
 function safeJSON<T>(key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = userStorage.getItem(key);
     return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
     return fallback;
@@ -165,8 +166,8 @@ function computeLeafletBounds(
 export function getCurrentPromoteurParcelSelection(): PromoteurParcelSelection {
   // ── 1. Source primaire : useFoncierSelection localStorage ─────────────────
   const lsSelected = safeJSON<SelectedParcel[]>(LS_SELECTED, []);
-  const lsFocus    = localStorage.getItem(LS_FOCUS) ?? null;
-  const lsCommune  = localStorage.getItem(LS_COMMUNE) ?? null;
+  const lsFocus    = userStorage.getItem(LS_FOCUS) ?? null;
+  const lsCommune  = userStorage.getItem(LS_COMMUNE) ?? null;
 
   let selectedParcels: SelectedParcel[] = lsSelected;
   let focusParcelId:   string | null    = lsFocus;
@@ -230,9 +231,9 @@ export function getCurrentPromoteurParcelSelection(): PromoteurParcelSelection {
 
     // ── 5. mimmoza.session.* (clés génériques FoncierPluPage) ────────────────
     if (selectedParcels.length === 0) {
-      const sessionParcelId  = localStorage.getItem("mimmoza.session.parcel_id");
+      const sessionParcelId  = userStorage.getItem("mimmoza.session.parcel_id");
       const sessionParcelIds = safeJSON<string[]>("mimmoza.session.parcel_ids", []);
-      const sessionCommune   = localStorage.getItem("mimmoza.session.commune_insee");
+      const sessionCommune   = userStorage.getItem("mimmoza.session.commune_insee");
 
       const ids = sessionParcelIds.length > 0 ? sessionParcelIds : (sessionParcelId ? [sessionParcelId] : []);
       if (ids.length > 0) {

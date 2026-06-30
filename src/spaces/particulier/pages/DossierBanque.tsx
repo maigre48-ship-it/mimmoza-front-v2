@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 type DocCategory =
   | "identite"
@@ -208,7 +209,7 @@ function formatMoney(n: number | null | undefined): string {
 
 function loadJson<T>(key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = userStorage.getItem(key);
     if (!raw) return fallback;
     return JSON.parse(raw) as T;
   } catch {
@@ -218,7 +219,7 @@ function loadJson<T>(key: string, fallback: T): T {
 
 function saveJson<T>(key: string, value: T) {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    userStorage.setItem(key, JSON.stringify(value));
   } catch {
     // ignore
   }

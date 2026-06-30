@@ -14,6 +14,7 @@ import {
 } from "../shared/components/PromoteurPageHero";
 import { ACCENT_PRO } from "../shared/promoteurDesign.tokens";
 import { usePromoteurStudy } from "../shared/usePromoteurStudy";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ─────────────────────────────────────────────
 // Constantes design
@@ -228,7 +229,7 @@ function readMarcheFromLS(): MarcheMarket {
     score_global: null,
   };
   try {
-    const raw = localStorage.getItem(LS_MARKET_STUDY);
+    const raw = userStorage.getItem(LS_MARKET_STUDY);
     if (!raw) return empty;
     const parsed = JSON.parse(raw);
     const market = parsed?.data?.market ?? null;
@@ -309,7 +310,7 @@ function persistAddress(
       communeInsee && communeInsee !== "00000" && communeInsee.trim() !== ""
         ? communeInsee.trim()
         : null;
-    localStorage.setItem(
+    userStorage.setItem(
       LOCALSTORAGE_KEY,
       JSON.stringify({
         address: loc.rueProcheRepere?.trim() ?? "",
@@ -688,7 +689,7 @@ const EvaluationPage: React.FC = () => {
   const handleSaveForSynthesis = useCallback(() => {
     if (!dvfBest) return;
     try {
-      localStorage.setItem(
+      userStorage.setItem(
         LS_EVALUATION,
         JSON.stringify({
           timestamp: new Date().toISOString(),

@@ -2,6 +2,7 @@
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "../../../supabaseClient";
 import ParcelMapSelector from "../foncier/ParcelMapSelector";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ✅ Hook réutilisable pour la sélection foncière
 import { extractCommuneInsee, useFoncierSelection } from "../shared/hooks/useFoncierSelection";
@@ -199,7 +200,7 @@ function updateStudyInDashboard(params: {
   const { studyId, parcelCount, totalSurfaceM2, communeInsee, communeNom } = params;
 
   try {
-    const raw = localStorage.getItem(LS_STUDIES_KEY);
+    const raw = userStorage.getItem(LS_STUDIES_KEY);
     let studies: PromoteurStudy[] = safeParse<PromoteurStudy[]>(raw) ?? [];
 
     const idx = studies.findIndex((s) => s.id === studyId);
@@ -243,7 +244,7 @@ function updateStudyInDashboard(params: {
       studies.push(newStudy);
     }
 
-    localStorage.setItem(LS_STUDIES_KEY, JSON.stringify(studies));
+    userStorage.setItem(LS_STUDIES_KEY, JSON.stringify(studies));
     return true;
   } catch (e) {
     console.error("[Foncier] updateStudyInDashboard failed:", e);
@@ -579,7 +580,7 @@ export default function Foncier(): React.ReactElement {
   // Restauration formulaire depuis localStorage
   // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const saved = safeParse(localStorage.getItem(LS_KEY));
+    const saved = safeParse(userStorage.getItem(LS_KEY));
     if (!saved) return;
     setAddress(String(saved.address ?? ""));
     if (!parcelId) {
@@ -593,7 +594,7 @@ export default function Foncier(): React.ReactElement {
 
   useEffect(() => {
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify({ address, parcelId, showDetails, showMap }));
+      userStorage.setItem(LS_KEY, JSON.stringify({ address, parcelId, showDetails, showMap }));
     } catch {
       // ignore
     }

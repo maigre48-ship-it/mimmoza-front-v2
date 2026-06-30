@@ -20,6 +20,7 @@ import type {
   ComputedTravaux,
   TravauxSimulationV1,
 } from "./travauxSimulation.types";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 export const INVESTISSEUR_SNAPSHOT_KEY = "mimmoza.investisseur.snapshot.v1";
 export const INVESTISSEUR_LEGACY_RENTABILITE_PREFIX =
@@ -293,7 +294,7 @@ async function sha256Hex(input: string): Promise<string> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function getInvestisseurSnapshot(): InvestisseurSnapshot {
-  const raw = localStorage.getItem(INVESTISSEUR_SNAPSHOT_KEY);
+  const raw = userStorage.getItem(INVESTISSEUR_SNAPSHOT_KEY);
   const parsed = safeParseJson<unknown>(raw);
   const snap = ensureSnapshotShape(parsed);
 
@@ -312,7 +313,7 @@ export function getInvestisseurSnapshot(): InvestisseurSnapshot {
 export function saveInvestisseurSnapshot(next: InvestisseurSnapshot): void {
   const safe = ensureSnapshotShape(next);
   safe.updatedAt = nowIso();
-  localStorage.setItem(INVESTISSEUR_SNAPSHOT_KEY, JSON.stringify(safe));
+  userStorage.setItem(INVESTISSEUR_SNAPSHOT_KEY, JSON.stringify(safe));
 }
 
 export function setActiveInvestisseurProjectId(projectId: string | null): void {

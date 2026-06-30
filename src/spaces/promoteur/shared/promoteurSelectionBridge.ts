@@ -16,8 +16,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { usePromoteurProjectStore } from "../store/promoteurProject.store";
+import {
+  userStorage,
+  baseKeyIfOwnedByCurrentUser,
+} from "@/lib/storage/userScopedStorage";
 
-// ── Clés (alignées sur Foncier / Implantation 2D / PluFaisabilite) ────────────
+// ── Clés (alignées sur Foncier / Implantation 2D / PluFaisabilite) ──────────
 
 const LS_SELECTED_PARCELS_V1 = "mimmoza.promoteur.selected_parcels_v1";
 const LS_TERRAIN_SELECTION = "mimmoza_promoteur_terrain_selection_v1";
@@ -29,7 +33,7 @@ function parcelFeatureKey(studyId: string): string {
   return `mimmoza.parcelFeature.${studyId}`;
 }
 
-// ── Types minimaux ────────────────────────────────────────────────────────────
+// ── Types minimaux ──────────────────────────────────────────────────────────
 
 interface AnyFeature {
   type?: string;
@@ -49,13 +53,13 @@ export interface UnifiedSelection {
   address: string | null;
 }
 
-// ── Lecture de la parcelle courante (clé scopée → store) ──────────────────────
+// ── Lecture de la parcelle courante (clé scopée → store) ─────────────────────
 
 function getStudyParcelFeature(studyId: string | null): AnyFeature | null {
   // 1) Handoff scopé par étude : autorité pour CE studyId, survit à la reprise.
   if (studyId) {
     try {
-      const raw = localStorage.getItem(parcelFeatureKey(studyId));
+      const raw = userStorage.getItem(parcelFeatureKey(studyId));
       if (raw) {
         const feat = JSON.parse(raw) as AnyFeature;
         if (feat?.geometry?.type) return feat;
@@ -74,7 +78,7 @@ function getStudyParcelFeature(studyId: string | null): AnyFeature | null {
   return null;
 }
 
-// ── Extraction tolérante id / commune / surface ───────────────────────────────
+// ── Extraction tolérante id / commune / surface ─────────────────────────────
 
 function pickString(...vals: unknown[]): string | null {
   for (const v of vals) {
@@ -117,7 +121,7 @@ function extractParcelInfo(feature: AnyFeature): {
   return { parcelId, communeInsee, surfaceM2 };
 }
 
-// ── Aire géodésique (sphérique) — sans dépendance turf/projection ─────────────
+// ── Aire géodésique (sphérique) — sans dépendance turf/projection ───────────
 
 function toRad(deg: number): number {
   return (deg * Math.PI) / 180;
@@ -168,7 +172,7 @@ function looksLikeWgs84(ring: number[][]): boolean {
   return Math.abs(c[0]) <= 180 && Math.abs(c[1]) <= 90;
 }
 
-// ── Lecture unifiée (utilisable par n'importe quelle page) ────────────────────
+// ── Lecture unifiée (utilisable par n'importe quelle page) ───────────────────
 
 export function readUnifiedSelection(studyId: string | null): UnifiedSelection | null {
   const feature = getStudyParcelFeature(studyId);
@@ -185,17 +189,17 @@ export function readUnifiedSelection(studyId: string | null): UnifiedSelection |
 
 function readExistingAddress(): string | null {
   try {
-    return localStorage.getItem(LS_SESSION_ADDRESS);
+    return userStorage.getItem(LS_SESSION_ADDRESS);
   } catch {
     return null;
   }
 }
 
-// ── Propagation vers les clés de handoff ──────────────────────────────────────
+// ── Propagation vers les clés de handoff ─────────────────────────────────────
 
 function writeJson(key: string, value: unknown): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    userStorage.setItem(key, JSON.stringify(value));
   } catch {
     /* quota / indispo */
   }
@@ -203,7 +207,7 @@ function writeJson(key: string, value: unknown): void {
 function writeStr(key: string, value: string | null): void {
   if (!value) return; // jamais écraser par du vide
   try {
-    localStorage.setItem(key, value);
+    userStorage.setItem(key, value);
   } catch {
     /* indispo */
   }
@@ -211,7 +215,7 @@ function writeStr(key: string, value: string | null): void {
 
 function hasHandoff(): boolean {
   try {
-    return !!localStorage.getItem(LS_SELECTED_PARCELS_V1);
+    return !!userStorage.getItem(LS_SELECTED_PARCELS_V1);
   } catch {
     return false;
   }
@@ -308,7 +312,7 @@ export function collectStudyParcelIds(studyId: string | null): string[] {
   // Clé scopée parcelFeature de l'étude (si elle existe encore).
   if (studyId) {
     try {
-      const raw = localStorage.getItem(`mimmoza.parcelFeature.${studyId}`);
+      const raw = userStorage.getItem(`mimmoza.parcelFeature.${studyId}`);
       if (raw) {
         const feat = JSON.parse(raw) as AnyFeature;
         const info = extractParcelInfo(feat);
@@ -336,17 +340,21 @@ export function purgeStudyScopedKeys(
   let removed = 0;
   const ids = parcelIds.filter(Boolean);
   try {
-    for (const k of Object.keys(localStorage)) {
-      if (!k.startsWith("mimmoza")) continue;
+    for (const physicalKey of Object.keys(localStorage)) {
+      // Ne considère que les clés de l'utilisateur courant ; `base` est la
+      // clé logique sans le préfixe "u:{userId}:" (ou la clé nue si pas de scope).
+      const base = baseKeyIfOwnedByCurrentUser(physicalKey);
+      if (!base || !base.startsWith("mimmoza")) continue;
 
-      const byStudy = studyId ? k.includes(studyId) : false;
+      const byStudy = studyId ? base.includes(studyId) : false;
       const byParcel =
         ids.length > 0 &&
-        k.startsWith("mimmoza:project:") &&
-        ids.some((id) => k.endsWith(id));
+        base.startsWith("mimmoza:project:") &&
+        ids.some((id) => base.endsWith(id));
 
       if (byStudy || byParcel) {
-        localStorage.removeItem(k);
+        // Suppression via la clé PHYSIQUE réellement stockée.
+        localStorage.removeItem(physicalKey);
         removed++;
       }
     }

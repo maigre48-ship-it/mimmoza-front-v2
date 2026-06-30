@@ -13,6 +13,7 @@ import {
   PromoteurPageHero,
 } from "../shared/components/PromoteurPageHero";
 import { ACCENT_PRO, GRAD_PRO } from "../shared/promoteurDesign.tokens";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ---------------------------------------------------------------------------
 // Helpers promoteur
@@ -36,21 +37,21 @@ function createPromoteurStudy(title: string): { id: string; title: string } {
   const id  = generateStudyId();
   const now = new Date().toISOString();
   try {
-    const raw     = localStorage.getItem(PROMOTEUR_STUDIES_KEY);
+    const raw     = userStorage.getItem(PROMOTEUR_STUDIES_KEY);
     const studies = raw ? (JSON.parse(raw) as object[]) : [];
     studies.unshift({ id, title, createdAt: now, updatedAt: now });
-    localStorage.setItem(PROMOTEUR_STUDIES_KEY, JSON.stringify(studies));
+    userStorage.setItem(PROMOTEUR_STUDIES_KEY, JSON.stringify(studies));
   } catch { /* noop */ }
   return { id, title };
 }
 
 function setActiveStudyId(id: string): void {
-  try { localStorage.setItem(PROMOTEUR_ACTIVE_KEY, id); } catch { /* noop */ }
+  try { userStorage.setItem(PROMOTEUR_ACTIVE_KEY, id); } catch { /* noop */ }
 }
 
 function clearPromoteurSessionKeys(): void {
   for (const key of PROMOTEUR_SESSION_KEYS) {
-    try { localStorage.removeItem(key); } catch { /* noop */ }
+    try { userStorage.removeItem(key); } catch { /* noop */ }
   }
 }
 
@@ -169,9 +170,9 @@ export default function NouvelleOpportunitePage() {
       setActiveStudyId(study.id);
       clearPromoteurSessionKeys();
 
-      localStorage.setItem("mimmoza.promoteur.quick.address", form.adresse);
-      localStorage.setItem("mimmoza.promoteur.quick.commune", form.commune);
-      localStorage.setItem("mimmoza.promoteur.quick.surface", form.surface);
+    userStorage.setItem("mimmoza.promoteur.quick.address", form.adresse);
+    userStorage.setItem("mimmoza.promoteur.quick.commune", form.commune);
+    userStorage.setItem("mimmoza.promoteur.quick.surface", form.surface);
 
       if (sourceDeal) {
         updateApporteurDeal(sourceDeal.id, {

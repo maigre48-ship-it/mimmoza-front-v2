@@ -11,6 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { MassingMetrics } from "./massingToBilan";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 export type { MassingMetrics } from "./massingToBilan";
 
@@ -37,7 +38,7 @@ export function writeMassingMetrics(studyId: string | null | undefined, metrics:
   if (!studyId) return;
   const snapshot: MassingMetricsSnapshot = { metrics, updatedAt: new Date().toISOString(), version: 1 };
   try {
-    localStorage.setItem(massingMetricsKey(studyId), JSON.stringify(snapshot));
+    userStorage.setItem(massingMetricsKey(studyId), JSON.stringify(snapshot));
   } catch (e) {
     console.warn("[massingBilanBridge] écriture échouée:", e);
     return;
@@ -51,7 +52,7 @@ export function writeMassingMetrics(studyId: string | null | undefined, metrics:
 export function readMassingMetrics(studyId: string | null | undefined): MassingMetricsSnapshot | null {
   if (!studyId) return null;
   try {
-    const raw = localStorage.getItem(massingMetricsKey(studyId));
+    const raw = userStorage.getItem(massingMetricsKey(studyId));
     if (!raw) return null;
     const snap = JSON.parse(raw) as MassingMetricsSnapshot;
     if (!snap?.metrics?.totaux) return null;
@@ -64,5 +65,5 @@ export function readMassingMetrics(studyId: string | null | undefined): MassingM
 /** Efface le snapshot (ex. reset d'étude). */
 export function clearMassingMetrics(studyId: string | null | undefined): void {
   if (!studyId) return;
-  try { localStorage.removeItem(massingMetricsKey(studyId)); } catch { /* */ }
+  try { userStorage.removeItem(massingMetricsKey(studyId)); } catch { /* */ }
 }

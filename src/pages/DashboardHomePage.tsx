@@ -28,6 +28,7 @@ import {
 import type { ComponentType } from "react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 type VerticalCard = {
   id: "promoteur" | "investisseur" | "apporteur" | "rehabilitation";
@@ -139,7 +140,7 @@ export default function DashboardHomePage() {
 
   function enterVertical(vertical: VerticalCard) {
     try {
-      localStorage.setItem("mimmoza.activeVertical", vertical.id);
+      userStorage.setItem("mimmoza.activeVertical", vertical.id);
     } catch {
       // noop
     }

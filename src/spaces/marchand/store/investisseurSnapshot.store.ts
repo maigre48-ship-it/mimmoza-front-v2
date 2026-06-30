@@ -21,6 +21,7 @@ import {
   setActiveInvestisseurProjectId,
   upsertInvestisseurProject,
 } from "@/spaces/investisseur/shared/investisseurSnapshot.store";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // Réexporte tout (dont les types) depuis le store canonique
 export * from "@/spaces/investisseur/shared/investisseurSnapshot.store";
@@ -55,7 +56,7 @@ export function saveSnapshot(next: any) {
 /** Alias attendu: resetSnapshot() */
 export function resetSnapshot(): void {
   try {
-    localStorage.removeItem(INVESTISSEUR_SNAPSHOT_KEY);
+    userStorage.removeItem(INVESTISSEUR_SNAPSHOT_KEY);
   } catch {
     // ignore
   }

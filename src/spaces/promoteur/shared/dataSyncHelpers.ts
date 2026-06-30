@@ -1,6 +1,8 @@
 ﻿// src/spaces/promoteur/shared/dataSyncHelpers.ts
 // Utilitaires pour la synchronisation des données entre Foncier, PLU et Implantation2D
 
+import { userStorage } from "@/lib/storage/userScopedStorage";
+
 const LS_PLU_RESOLVED_RULESET_V1 = "mimmoza.plu.resolved_ruleset_v1";
 const LS_PLU_AI_EXTRACT_RESULT = "mimmoza.plu.ai_extract_result";
 const LS_PLU_USER_OVERRIDES_V1 = "mimmoza.plu.user_overrides_v1";
@@ -26,15 +28,15 @@ export type ResolvedRulesetWithLinkage = {
 };
 
 function readLS(key: string): string | null {
-  try { return localStorage.getItem(key); } catch { return null; }
+  try { return userStorage.getItem(key); } catch { return null; }
 }
 
 function writeLS(key: string, value: string): void {
-  try { localStorage.setItem(key, value); } catch {}
+  try { userStorage.setItem(key, value); } catch {}
 }
 
 function removeLS(key: string): void {
-  try { localStorage.removeItem(key); } catch {}
+  try { userStorage.removeItem(key); } catch {}
 }
 
 function safeJsonParse<T>(s: string | null): T | null {

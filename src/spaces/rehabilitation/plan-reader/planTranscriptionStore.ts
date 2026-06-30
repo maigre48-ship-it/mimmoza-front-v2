@@ -10,6 +10,7 @@ import type {
   TranscriptionError,
   TranscriptionStatus,
 } from './planTranscription.types';
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ── Clé de stockage ───────────────────────────────────────────────────────────
 
@@ -37,7 +38,7 @@ function createInitialState(): PlanTranscriptionStoreState {
 
 function loadState(): PlanTranscriptionStoreState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = userStorage.getItem(STORAGE_KEY);
     if (!raw) return createInitialState();
     const parsed = JSON.parse(raw) as Partial<PlanTranscriptionStoreState>;
     return {
@@ -52,7 +53,7 @@ function loadState(): PlanTranscriptionStoreState {
 
 function saveState(state: PlanTranscriptionStoreState): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    userStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
     // localStorage peut être indisponible (mode privé strict, quota dépassé)
     console.warn('[planTranscriptionStore] Impossible de persister l\'état.');

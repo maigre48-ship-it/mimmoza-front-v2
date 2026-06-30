@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { scopedKey } from "../lib/rehabScope";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 /* ═══════════════════════════════════════════════════════════════
    TYPES MÉTIER
@@ -789,7 +790,7 @@ export default function RehabilitationConformitePage() {
       totalMax: budgetEstimation.totalMax,
       lots: budgetEstimation.lots.map((l) => ({ nom: l.nom, min: l.min, max: l.max, calcMode: l.calcMode })),
     };
-    try { localStorage.setItem(scopedKey("mimmoza_rehab_budget_import"), JSON.stringify(payload)); } catch (_) { /* silent */ }
+    try { userStorage.setItem(scopedKey("mimmoza_rehab_budget_import"), JSON.stringify(payload)); } catch (_) { /* silent */ }
     setBudgetSaved(true);
     setTimeout(() => setBudgetSaved(false), 3500);
   }

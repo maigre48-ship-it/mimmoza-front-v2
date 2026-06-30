@@ -5,6 +5,7 @@ import type { DvfCompRow } from "../../../lib/dvfEstimateApi";
 import { fetchBestDvfEstimate, fetchDvfComps } from "../../../lib/dvfEstimateApi";
 import { supabase } from "../../../supabaseClient";
 import { usePromoteurStudy } from "../../promoteur/shared/usePromoteurStudy";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ─── Design tokens ───────────────────────────────────────────────────────────
 const GRAD_PRO = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
@@ -248,7 +249,7 @@ function persistAddressToLocalStorage(
       prix: extra?.prix ?? null,
       type_local: extra?.type_local ?? null,
     };
-    localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify(payload));
+    userStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify(payload));
   } catch (e) {
     console.warn("[Estimation] Unable to persist address to localStorage:", e);
   }

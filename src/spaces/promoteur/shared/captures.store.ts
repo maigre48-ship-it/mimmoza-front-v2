@@ -2,6 +2,8 @@
 // Gestion centralisée des captures d'écran du workflow Promoteur.
 // Isolation par studyId : chaque projet a ses propres captures, plus de fuite.
 
+import { userStorage } from "@/lib/storage/userScopedStorage";
+
 export type CaptureSlot = "cadastre" | "impl2d" | "massing3d" | "facadeIA";
 
 export interface PromoteurCaptures {
@@ -22,7 +24,7 @@ function capturesKey(studyId: string | null): string {
 /** Lit toutes les captures de l'étude courante. Retourne {} si rien trouvé. */
 export function readCaptures(studyId: string | null): PromoteurCaptures {
   try {
-    const raw = localStorage.getItem(capturesKey(studyId));
+    const raw = userStorage.getItem(capturesKey(studyId));
     if (!raw) return {};
     return JSON.parse(raw) as PromoteurCaptures;
   } catch { return {}; }
@@ -41,7 +43,7 @@ export function writeCapture(
       [slot]: dataUrl,
       capturedAt: new Date().toISOString(),
     };
-    localStorage.setItem(capturesKey(studyId), JSON.stringify(next));
+    userStorage.setItem(capturesKey(studyId), JSON.stringify(next));
     return true;
   } catch (e) {
     console.warn(`[captures.store] writeCapture(${slot}) échec:`, e);
@@ -51,10 +53,10 @@ export function writeCapture(
 
 /** Supprime toutes les captures de l'étude donnée (utilisé au changement d'étude). */
 export function clearCaptures(studyId: string | null): void {
-  try { localStorage.removeItem(capturesKey(studyId)); } catch { /* ignore */ }
+  try { userStorage.removeItem(capturesKey(studyId)); } catch { /* ignore */ }
 }
 
 /** Nettoie la clé legacy globale v1 (à appeler au changement d'étude). */
 export function clearLegacyCaptures(): void {
-  try { localStorage.removeItem(LEGACY_KEY); } catch { /* ignore */ }
+  try { userStorage.removeItem(LEGACY_KEY); } catch { /* ignore */ }
 }

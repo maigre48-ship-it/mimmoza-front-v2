@@ -64,6 +64,7 @@ import { usePromoteurStudy } from "../../../promoteur/shared/usePromoteurStudy";
 import { useCopilotContext } from "../../../copilot/hooks/useCopilotContext";
 import { readMarchandSnapshot } from "../../../marchand/shared/marchandSnapshot.store";
 import { getInvestisseurSnapshot, upsertInvestisseurProject } from "../../shared/investisseurSnapshot.store";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ─── Design tokens par défaut (Investisseur = bleu) ───────────────────────────
 const GRAD_PRO   = "linear-gradient(90deg, #2196f3 0%, #21cbf3 100%)";
@@ -1215,7 +1216,7 @@ export default function InvestisseurRisquesPanel() {
         const marchandSnap = readMarchandSnapshot();
         const activeDealId = marchandSnap.activeDealId;
         if (activeDealId && result?.data) {
-          localStorage.setItem(`mimmoza.georisques.${activeDealId}`, JSON.stringify(result.data));
+          userStorage.setItem(`mimmoza.georisques.${activeDealId}`, JSON.stringify(result.data));
           console.log("[InvestisseurRisquesPanel] ✓ Géorisques → localStorage mimmoza.georisques." + activeDealId);
         }
       } catch (e) { console.error("[InvestisseurRisquesPanel] Erreur save georisques dedicated key", e); }
@@ -1232,29 +1233,19 @@ export default function InvestisseurRisquesPanel() {
 
       // ── Sauvegarde dans le snapshot Marchand (dueDiligenceByDeal[dealId].state.georisques) ──
       try {
-        const { readMarchandSnapshot: rms, ensureActiveDeal } = await import("../../../marchand/shared/marchandSnapshot.store");
+        const { readMarchandSnapshot: rms, saveMarchandSnapshot, ensureActiveDeal } = await import("../../../marchand/shared/marchandSnapshot.store");
         const activeDeal = ensureActiveDeal();
         if (activeDeal?.id) {
           const snap = rms() as Record<string, unknown>;
-           
+
           const snapAny = snap as any;
           if (!snapAny.dueDiligenceByDeal) snapAny.dueDiligenceByDeal = {};
           if (!snapAny.dueDiligenceByDeal[activeDeal.id]) snapAny.dueDiligenceByDeal[activeDeal.id] = { state: {}, updatedAt: new Date().toISOString() };
           snapAny.dueDiligenceByDeal[activeDeal.id].state.georisques = result?.data ?? null;
           snapAny.updatedAt = new Date().toISOString();
-          for (const key of Object.keys(localStorage)) {
-            try {
-              const raw = localStorage.getItem(key);
-              if (!raw) continue;
-              const parsed = JSON.parse(raw);
-              if (typeof parsed === "object" && parsed !== null && ("marcheRisquesByDeal" in parsed || "dueDiligenceByDeal" in parsed)) {
-                localStorage.setItem(key, JSON.stringify(snap));
-                window.dispatchEvent(new CustomEvent("MARCHAND_SNAPSHOT_EVENT"));
-                break;
-              }
-            } catch { /* clé non-JSON */ }
-          }
-          console.log("[InvestisseurRisquesPanel] ✓ Géorisques sauvegardés pour deal", activeDeal.id);
+          saveMarchandSnapshot(snap as any);
+          window.dispatchEvent(new CustomEvent("MARCHAND_SNAPSHOT_EVENT"));
+          console.log("[InvestisseurRisquesPanel] Georisques sauvegardes pour deal", activeDeal.id);
         }
       } catch (e) { console.error("[InvestisseurRisquesPanel] Erreur sauvegarde georisques", e); }
 

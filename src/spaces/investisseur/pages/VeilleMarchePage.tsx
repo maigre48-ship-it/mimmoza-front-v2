@@ -24,6 +24,7 @@ import {
   fetchMarketActiveListings,
   type MarketActiveListing,
 } from "../services/marketListings";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ─── Extended listing type ─────────────────────────────────────────────────────
 
@@ -217,7 +218,7 @@ function getZoneLockStorageKey(city: string, zipCode: string): string {
 
 function readZoneLock(city: string, zipCode: string): ZoneLock | null {
   try {
-    const raw = localStorage.getItem(getZoneLockStorageKey(city, zipCode));
+    const raw = userStorage.getItem(getZoneLockStorageKey(city, zipCode));
     if (!raw) return null;
     return JSON.parse(raw) as ZoneLock;
   } catch {
@@ -236,7 +237,7 @@ function writeZoneLock(
     filters,
   };
   try {
-    localStorage.setItem(
+    userStorage.setItem(
       getZoneLockStorageKey(city, zipCode),
       JSON.stringify(lock)
     );
@@ -251,7 +252,7 @@ function clearExpiredLock(city: string, zipCode: string): void {
     const existing = readZoneLock(city, zipCode);
     if (!existing) return;
     if (existing.lockDate !== getTodayKey()) {
-      localStorage.removeItem(getZoneLockStorageKey(city, zipCode));
+      userStorage.removeItem(getZoneLockStorageKey(city, zipCode));
     }
   } catch {
     // silently fail

@@ -23,6 +23,7 @@ import type {
 } from "../qualification/qualification.types";
 
 import { getActiveDealId } from "../../marchand/shared/marchandDealContext.store";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 /* ═══════════════════════════════════════════
    TYPES (existant + extension)
@@ -69,7 +70,7 @@ export function readSourcingSnapshot(): SourcingSnapshotV1 {
   if (!key) return emptySnapshot();
 
   try {
-    const raw = localStorage.getItem(key);
+    const raw = userStorage.getItem(key);
     if (!raw) return emptySnapshot();
     const parsed = JSON.parse(raw) as SourcingSnapshotV1;
     if (!parsed || parsed.version !== 1) {
@@ -90,7 +91,7 @@ export function readSourcingSnapshotForDeal(dealId: string | null): SourcingSnap
   if (!key) return emptySnapshot();
 
   try {
-    const raw = localStorage.getItem(key);
+    const raw = userStorage.getItem(key);
     if (!raw) return emptySnapshot();
     const parsed = JSON.parse(raw) as SourcingSnapshotV1;
     if (!parsed || parsed.version !== 1) return emptySnapshot();
@@ -111,7 +112,7 @@ export function writeSourcingSnapshot(next: SourcingSnapshotV1) {
     updatedAt: new Date().toISOString(),
   };
   try {
-    localStorage.setItem(key, JSON.stringify(payload));
+    userStorage.setItem(key, JSON.stringify(payload));
   } catch {
     /* quota exceeded — silent */
   }
@@ -128,7 +129,7 @@ export function clearSourcingSnapshot() {
   const key = scopedKey(LS_KEY_PREFIX, dealId);
   if (!key) return;
   try {
-    localStorage.removeItem(key);
+    userStorage.removeItem(key);
   } catch {
     /* silent */
   }
@@ -155,7 +156,7 @@ export function normalizeSmartScoreFromLS(overrideDealId?: string | null): Sourc
   if (!key) return null;
 
   try {
-    const raw = localStorage.getItem(key);
+    const raw = userStorage.getItem(key);
     if (!raw) return null;
     const data = JSON.parse(raw) as Record<string, any>;
 

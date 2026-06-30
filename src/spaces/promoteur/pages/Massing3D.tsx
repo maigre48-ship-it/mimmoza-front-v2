@@ -19,6 +19,7 @@ import { patchModule } from "../shared/promoteurSnapshot.store";
 import { usePromoteurProjectStore } from "../store/promoteurProject.store";
 import { MassingEditor3D } from "../terrain3d/components/MassingEditor3D";
 import type { MassingSceneModel } from "../terrain3d/massingScene.types";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 function parcelFeatureKey(studyId: string): string {
   return `mimmoza.parcelFeature.${studyId}`;
@@ -183,7 +184,7 @@ export default function Massing3D(): React.ReactElement {
   const parcel = React.useMemo<Feature<Polygon | MultiPolygon> | undefined>(() => {
     if (studyId) {
       try {
-        const raw = localStorage.getItem(parcelFeatureKey(studyId));
+        const raw = userStorage.getItem(parcelFeatureKey(studyId));
         if (raw) {
           const feat = JSON.parse(raw) as Feature<Polygon | MultiPolygon>;
           if (feat?.type === "Feature" && feat?.geometry?.type) {

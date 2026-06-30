@@ -26,6 +26,7 @@ const PROMOTEUR_ACTIVE_STUDY  = "mimmoza.promoteur.active_study_id";
 // ─── Types minimaux attendus ─────────────────────────────────────────
 // On ne ré-importe PAS les types promoteur pour éviter le couplage.
 // On déclare uniquement ce qu'on lit.
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 export interface PromoteurMarketData {
   /** Données DVF (transactions historiques) */
@@ -143,7 +144,7 @@ export function readPromoteurMarketSnapshot(
 
   try {
     // ── Vérifier le studyId actif du promoteur ───────────────────────
-    const activeStudyId = localStorage.getItem(PROMOTEUR_ACTIVE_STUDY);
+    const activeStudyId = userStorage.getItem(PROMOTEUR_ACTIVE_STUDY);
 
     // Si le promoteur a un studyId actif et qu'il ne correspond pas
     // au dealId investisseur, on ignore le snapshot.
@@ -156,7 +157,7 @@ export function readPromoteurMarketSnapshot(
     }
 
     // ── Lire le snapshot ─────────────────────────────────────────────
-    const raw = localStorage.getItem(PROMOTEUR_SNAPSHOT_KEY);
+    const raw = userStorage.getItem(PROMOTEUR_SNAPSHOT_KEY);
     if (!raw) {
       console.debug(
         "[InvestisseurBridge] readPromoteurMarketSnapshot — aucun snapshot promoteur en localStorage",

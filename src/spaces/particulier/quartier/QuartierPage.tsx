@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../supabaseClient";
 import { fetchQuartierSmartscore, type QuartierResponse } from "./quartierApi";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 const LOCALSTORAGE_KEY = "particulier:lastAddress";
 
@@ -21,7 +22,7 @@ type StoredAddress = {
 
 function readAddressFromLocalStorage(): StoredAddress | null {
   try {
-    const raw = localStorage.getItem(LOCALSTORAGE_KEY);
+    const raw = userStorage.getItem(LOCALSTORAGE_KEY);
     if (!raw) return null;
 
     const parsed = JSON.parse(raw);
@@ -53,7 +54,7 @@ function readAddressFromLocalStorage(): StoredAddress | null {
 
 function writeAddressToLocalStorage(addr: StoredAddress): void {
   try {
-    localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify(addr));
+    userStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify(addr));
   } catch {
     // ignore
   }

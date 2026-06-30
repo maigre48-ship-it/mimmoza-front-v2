@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import type { BuildingVolume2D, FloorPlan2D } from './buildingProgram.types';
 import { computeParkingSlots, genId, rectCorners } from './editor2d.geometry';
 import type { Building2D, Editor2DActions, Editor2DState, OrientedRect, Parking2D } from './editor2d.types';
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ─── HELPERS EXPORTÉS ─────────────────────────────────────────────────
 
@@ -156,7 +157,7 @@ interface Persisted { buildings:Building2D[]; parkings:Parking2D[] }
 
 function load(): Persisted {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = userStorage.getItem(STORAGE_KEY);
     if (raw) {
       const data = JSON.parse(raw) as Persisted;
       return {
@@ -171,7 +172,7 @@ function load(): Persisted {
 }
 
 function save(buildings: Building2D[], parkings: Parking2D[]) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ buildings, parkings })); }
+  try { userStorage.setItem(STORAGE_KEY, JSON.stringify({ buildings, parkings })); }
   catch {}
 }
 

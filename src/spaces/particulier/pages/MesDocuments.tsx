@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { logParticulierEvent } from "../../../lib/particulierHistory";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 type DocKind = "note" | "export" | "lien" | "piece";
 type DocCategory = "projet" | "financement" | "identite" | "revenus" | "patrimoine" | "travaux" | "divers";
@@ -190,7 +191,7 @@ function safeId() {
 
 function loadDocs(): LocalDocument[] {
   try {
-    const raw = localStorage.getItem(DOCS_KEY);
+    const raw = userStorage.getItem(DOCS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as LocalDocument[];
     return Array.isArray(parsed) ? parsed : [];
@@ -201,7 +202,7 @@ function loadDocs(): LocalDocument[] {
 
 function saveDocs(items: LocalDocument[]) {
   try {
-    localStorage.setItem(DOCS_KEY, JSON.stringify(items));
+    userStorage.setItem(DOCS_KEY, JSON.stringify(items));
   } catch {
     // ignore
   }

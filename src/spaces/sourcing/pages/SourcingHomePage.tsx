@@ -24,6 +24,7 @@
  * est conservée à l'identique.
  */
 
+import { userStorage } from "@/lib/storage/userScopedStorage";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import SmartScorePanel from "../../../components/sourcing/SmartScorePanel";
 import { SourcingForm } from "../forms/SourcingForm";
@@ -1273,7 +1274,7 @@ const EMPTY_BAG: HydrationBag = { formState: null, localScore: null, lastDraft: 
 function hydrateFromScopedLS(dealId: string): HydrationBag {
   const key = smartscoreKey(dealId);
   try {
-    const raw = localStorage.getItem(key);
+    const raw = userStorage.getItem(key);
     if (!raw) return EMPTY_BAG;
     const saved = JSON.parse(raw);
     if (!saved || typeof saved !== "object") return EMPTY_BAG;
@@ -1301,9 +1302,9 @@ function writeSeedToAllLSKeys(dealId: string, formState: FormState): void {
   });
   try {
     const scopedKey = smartscoreKey(dealId);
-    if (!localStorage.getItem(scopedKey)) localStorage.setItem(scopedKey, payload);
+    if (!userStorage.getItem(scopedKey)) userStorage.setItem(scopedKey, payload);
     for (const legacyKey of LEGACY_LS_KEYS) {
-      try { localStorage.setItem(legacyKey, payload); } catch { /* quota */ }
+      try { userStorage.setItem(legacyKey, payload); } catch { /* quota */ }
     }
   } catch { /* quota */ }
 }
@@ -1321,7 +1322,7 @@ function resolveForDeal(dealId: string): { formState: FormState | null; bag: Hyd
     return { formState: seed, bag };
   }
   for (const legacyKey of LEGACY_LS_KEYS) {
-    try { localStorage.removeItem(legacyKey); } catch { /* ignore */ }
+    try { userStorage.removeItem(legacyKey); } catch { /* ignore */ }
   }
   return { formState: null, bag };
 }
@@ -1331,7 +1332,7 @@ function hydrateCommonFieldsFromDeal(
   activeDealId: string | null,
 ): FormState | null {
   if (!deal || !activeDealId) return null;
-  const cur     = safeParse(localStorage.getItem(SOURCING_KEY));
+  const cur     = safeParse(userStorage.getItem(SOURCING_KEY));
   const form: Record<string, string> = cur.formState || {};
   const srcDealId = cur?.source?.dealId || null;
   const hasUserEdits =
@@ -1353,7 +1354,7 @@ function hydrateCommonFieldsFromDeal(
     source: { type: "investisseur.activeDeal", dealId: activeDealId },
   };
   try {
-    localStorage.setItem(SOURCING_KEY, JSON.stringify(next));
+    userStorage.setItem(SOURCING_KEY, JSON.stringify(next));
     writeSeedToAllLSKeys(activeDealId, nextForm);
   } catch { /* quota */ }
   return nextForm;
@@ -1993,11 +1994,11 @@ useEffect(() => {
       if (computed.minimumMet) {
         try {
           const json = JSON.stringify(payload);
-          localStorage.setItem(key, json);
-          for (const lk of LEGACY_LS_KEYS) { try { localStorage.setItem(lk, json); } catch { /* quota */ } }
+          userStorage.setItem(key, json);
+          for (const lk of LEGACY_LS_KEYS) { try { userStorage.setItem(lk, json); } catch { /* quota */ } }
         } catch { /* quota */ }
       } else {
-        try { localStorage.removeItem(key); } catch { /* ignore */ }
+        try { userStorage.removeItem(key); } catch { /* ignore */ }
       }
 
       if (computed.minimumMet) {

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "../../../lib/supabaseClient";
 import PluUploaderPanel from "../components/PluUploaderPanel";
 import { patchModule, patchPromoteurSnapshot } from "../shared/promoteurSnapshot.store";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ============================================
 // Configuration
@@ -416,7 +417,7 @@ export type ResolvedPluRulesetV1 = {
 function readLS(key: string, fallback = ""): string {
   try {
     if (typeof window === "undefined") return fallback;
-    const v = window.localStorage.getItem(key);
+    const v = userStorage.getItem(key);
     return v ?? fallback;
   } catch { return fallback; }
 }
@@ -424,7 +425,7 @@ function readLS(key: string, fallback = ""): string {
 function writeLS(key: string, value: string): void {
   try {
     if (typeof window === "undefined") return;
-    window.localStorage.setItem(key, value);
+    userStorage.setItem(key, value);
   } catch { /* ignore */ }
 }
 

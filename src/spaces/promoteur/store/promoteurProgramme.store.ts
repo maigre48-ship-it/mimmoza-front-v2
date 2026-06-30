@@ -16,10 +16,11 @@
 //   2) sinon estimation Massing (SDP/RATIO_SDP_PAR_LOGT)
 //   3) sinon 0
 //
-// Persistance : localStorage `mimmoza.programme.{studyId}` + event de synchro
-// inter-onglets. Zustand garde l'état vivant entre les routes du SPA.
+// Persistance : userStorage `mimmoza.programme.{studyId}` (scopé par compte) + event
+// de synchro inter-onglets. Zustand garde l'état vivant entre les routes du SPA.
 
 import { create } from "zustand";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ── Constantes métier ───────────────────────────────────────────────────────
 /** SHAB moyen par logement pour l'ESTIMATION massing (fallback uniquement). */
@@ -85,7 +86,7 @@ export function programmeKey(studyId: string) { return `mimmoza.programme.${stud
 
 function readPersist(studyId: string): ProgrammePersist | null {
   try {
-    const raw = localStorage.getItem(programmeKey(studyId));
+    const raw = userStorage.getItem(programmeKey(studyId));
     if (!raw) return null;
     const p = JSON.parse(raw) as ProgrammePersist;
     if (!p || p.version !== 1) return null;
@@ -105,7 +106,7 @@ function readPersist(studyId: string): ProgrammePersist | null {
 
 function writePersist(studyId: string, env: ProgrammeEnvelope | null, mix: ProgrammeMix) {
   try {
-    localStorage.setItem(programmeKey(studyId), JSON.stringify({ envelope: env, mix, version: 1 } as ProgrammePersist));
+    userStorage.setItem(programmeKey(studyId), JSON.stringify({ envelope: env, mix, version: 1 } as ProgrammePersist));
     window.dispatchEvent(new CustomEvent(PROGRAMME_EVENT, { detail: { studyId } }));
   } catch { /* quota / SSR : silencieux */ }
 }
@@ -116,9 +117,9 @@ interface ProgrammeStore {
   envelope: ProgrammeEnvelope | null;
   mix: ProgrammeMix;
 
-  /** Hydrate depuis localStorage si l'étude change (préserve les édits en mémoire sinon). */
+  /** Hydrate depuis userStorage si l'étude change (préserve les édits en mémoire sinon). */
   loadStudy: (studyId: string | null) => void;
-  /** Recharge depuis localStorage (à appeler sur l'event PROGRAMME_EVENT, cross-onglet). */
+  /** Recharge depuis userStorage (à appeler sur l'event PROGRAMME_EVENT, cross-onglet). */
   reloadFromStorage: () => void;
 
   setEnvelope: (env: ProgrammeEnvelope | null) => void;
@@ -179,7 +180,7 @@ export const usePromoteurProgrammeStore = create<ProgrammeStore>((set, get) => {
 
     clear: () => {
       const { studyId } = get();
-      if (studyId) { try { localStorage.removeItem(programmeKey(studyId)); } catch { /* */ } }
+      if (studyId) { try { userStorage.removeItem(programmeKey(studyId)); } catch { /* */ } }
       set({ envelope: null, mix: DEFAULT_MIX });
     },
   };

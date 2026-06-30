@@ -10,6 +10,7 @@ import { formatMobilityForSnapshot } from '../../../services/mobility/mobilityCl
 import { getInvestisseurSnapshot } from '../../investisseur/shared/investisseurSnapshot.store';
 import { readMarchandSnapshot } from '../../marchand/shared/marchandSnapshot.store';
 import type { PredictiveSnapshotContext } from '../types/copilot.types';
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ── Helpers typés ─────────────────────────────────────────────────────────────
 
@@ -99,7 +100,7 @@ export function buildPredictiveSnapshotForCopilot(
         snap.activeDealId ? `mimmoza.georisques.${snap.activeDealId}` : null,
       ].filter(Boolean) as string[];
       for (const k of geoKeys) {
-        const raw = localStorage.getItem(k);
+        const raw = userStorage.getItem(k);
         if (raw) {
           const parsed = JSON.parse(raw);
           if (isObj(parsed)) { georisquesRaw = parsed; break; }

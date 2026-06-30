@@ -14,6 +14,7 @@ import type {
   SelectedElement,
   ViewportState,
 } from './planOverlay.types';
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ── Clé de stockage ───────────────────────────────────────────────────────────
 
@@ -106,7 +107,7 @@ interface PersistedSlice {
 
 function loadPersistedState(): Partial<PersistedSlice> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = userStorage.getItem(STORAGE_KEY);
     if (!raw) return {};
     return JSON.parse(raw) as Partial<PersistedSlice>;
   } catch {
@@ -120,7 +121,7 @@ function savePersistedState(state: PlanOverlayState): void {
       layers: state.layers,
       displayOptions: state.displayOptions,
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(slice));
+    userStorage.setItem(STORAGE_KEY, JSON.stringify(slice));
   } catch {
     console.warn('[planLayers.store] Impossible de persister les calques.');
   }

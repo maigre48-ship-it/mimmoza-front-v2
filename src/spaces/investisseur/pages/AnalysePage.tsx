@@ -56,6 +56,7 @@ import logoMimmozaUrl from "@/assets/logo-mimmoza-baseline.png";
 import { loadImageDataUrl } from "@/spaces/shared/loadImageDataUrl";
 import { deepMergeInvestorWithPromoteur } from "../services/promoteurMarketStudyBridge";
 import { readPromoteurMarketSnapshot } from "../services/readPromoteurMarketSnapshot";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ─── Design tokens — Investisseur ────────────────────────────────────
 
@@ -164,7 +165,7 @@ const ANALYSE_STORAGE_PREFIX = "mimmoza_analyse_";
 
 function loadAnalyseState(dealId: string): AnalyseState | null {
   try {
-    const raw = localStorage.getItem(`${ANALYSE_STORAGE_PREFIX}${dealId}`);
+    const raw = userStorage.getItem(`${ANALYSE_STORAGE_PREFIX}${dealId}`);
     if (!raw) return null;
     return JSON.parse(raw) as AnalyseState;
   } catch { return null; }
@@ -172,7 +173,7 @@ function loadAnalyseState(dealId: string): AnalyseState | null {
 
 function saveAnalyseState(dealId: string, state: AnalyseState): void {
   try {
-    localStorage.setItem(`${ANALYSE_STORAGE_PREFIX}${dealId}`, JSON.stringify(state));
+    userStorage.setItem(`${ANALYSE_STORAGE_PREFIX}${dealId}`, JSON.stringify(state));
   } catch (e) {
     console.warn("[AnalysePage] Failed to save analyse state:", e);
   }

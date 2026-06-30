@@ -8,6 +8,7 @@
 
 import type { LayerVisibility, PlanCalibration, PlanGeometry, PlanMetadata, PlanOverlaySnapshot, PlanSourceImage, RawAIResult, ValidationResult } from './types';
 import { DEFAULT_LAYER_VISIBILITY, EMPTY_GEOMETRY, emptyCalibration, emptyMetadata, emptyValidation, PLAN_OVERLAY_STORAGE_KEY } from './types';
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ---------------------------------------------------------------------------
 // Helpers safe-storage (SSR / mode privé)
@@ -17,19 +18,19 @@ const isBrowser = typeof window !== 'undefined' && typeof window.localStorage !=
 
 const safeGetItem = (key: string): string | null => {
   if (!isBrowser) return null;
-  try { return window.localStorage.getItem(key); }
+  try { return userStorage.getItem(key); }
   catch { return null; }
 };
 
 const safeSetItem = (key: string, value: string): boolean => {
   if (!isBrowser) return false;
-  try { window.localStorage.setItem(key, value); return true; }
+  try { userStorage.setItem(key, value); return true; }
   catch { return false; }
 };
 
 const safeRemoveItem = (key: string): void => {
   if (!isBrowser) return;
-  try { window.localStorage.removeItem(key); } catch { /* noop */ }
+  try { userStorage.removeItem(key); } catch { /* noop */ }
 };
 
 // ---------------------------------------------------------------------------

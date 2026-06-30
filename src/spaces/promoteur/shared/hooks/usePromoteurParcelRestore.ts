@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { normalizeToGeoJSONFeature } from "../getCurrentPromoteurParcelSelection";
 import { getSnapshot } from "../promoteurSnapshot.store";
 import { useFoncierSelection, type SelectedParcel } from "./useFoncierSelection";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -258,7 +259,7 @@ function computeCenter(
 }
 
 function safeJSON<T>(key: string, fallback: T): T {
-  try { const r = localStorage.getItem(key); return r ? (JSON.parse(r) as T) : fallback; }
+  try { const r = userStorage.getItem(key); return r ? (JSON.parse(r) as T) : fallback; }
   catch { return fallback; }
 }
 
@@ -282,7 +283,7 @@ function readFallbackFromParcelFeature(
 ): FallbackSelection | null {
   if (!studyId) return null;
   try {
-    const raw = localStorage.getItem(`mimmoza.parcelFeature.${studyId}`);
+    const raw = userStorage.getItem(`mimmoza.parcelFeature.${studyId}`);
     if (!raw) return null;
 
     const feat = JSON.parse(raw) as Feature<Polygon | MultiPolygon> | null;
@@ -362,9 +363,9 @@ function readFallbackFromSnapshot(): FallbackSelection | null {
 
 function readFallbackFromSession(): FallbackSelection | null {
   try {
-    const parcelId  = localStorage.getItem("mimmoza.session.parcel_id");
+    const parcelId  = userStorage.getItem("mimmoza.session.parcel_id");
     const parcelIds = safeJSON<string[]>("mimmoza.session.parcel_ids", []);
-    const commune   = localStorage.getItem("mimmoza.session.commune_insee");
+    const commune   = userStorage.getItem("mimmoza.session.commune_insee");
     const ids       = parcelIds.length > 0 ? parcelIds : (parcelId ? [parcelId] : []);
     if (!ids.length) return null;
     return {
@@ -414,7 +415,7 @@ export function usePromoteurParcelRestore({
       const p  = sn.project as Record<string, unknown> | undefined;
       if (p?.commune_insee) return String(p.commune_insee);
     } catch { /* ignore */ }
-    return localStorage.getItem("mimmoza.session.commune_insee") ?? null;
+    return userStorage.getItem("mimmoza.session.commune_insee") ?? null;
   }, [foncierCommune]);
 
   useEffect(() => {

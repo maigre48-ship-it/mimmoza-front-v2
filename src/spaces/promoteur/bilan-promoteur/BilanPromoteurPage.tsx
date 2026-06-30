@@ -40,6 +40,7 @@ import {
 import { usePromoteurProjectStore } from "../store/promoteurProject.store";
 import { MASSING_METRICS_EVENT, readMassingMetrics, type MassingMetrics } from "../terrain3d/massingBilanBridge";
 import { deriveConstructionCosts } from "../terrain3d/massingConstructionCosts";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ── Clés localStorage ─────────────────────────────────────────────────────────
 export const SYNTHESE_RAW_KEY = "mimmoza.promoteur.synthese.rawInput.v1";
@@ -327,7 +328,7 @@ function computeFoncierMaxAdmissible(args: {
 function readTerrassementFromStorage(studyId: string | null): { eur: number; hint: string } {
   if (!studyId) return { eur: 0, hint: "" };
   try {
-    const raw = localStorage.getItem(terrassementKey(studyId)); if (!raw) return { eur: 0, hint: "" };
+    const raw = userStorage.getItem(terrassementKey(studyId)); if (!raw) return { eur: 0, hint: "" };
     const data = JSON.parse(raw); if (!(data?.totalCout > 0)) return { eur: 0, hint: "" };
     const hint = [`Δ ${data.maxDeltaM?.toFixed(1) ?? "?"}m`, `pente ${data.maxSlopeDeg?.toFixed(1) ?? "?"}°`, data.slopeWarning === "fort" ? "⚠ pente forte" : null].filter(Boolean).join(" · ");
     return { eur: Math.round(data.totalCout / 100) * 100, hint };
@@ -400,18 +401,18 @@ export const BilanPromoteurPage: React.FC = () => {
     hydratedRef.current = false;
     if (!studyId) { setAss(DEFAULT_ASSUMPTIONS); setTerrassementHint(""); hydratedRef.current = true; return; }
     try {
-      const rawAss = localStorage.getItem(bilanAssumptionsKey(studyId));
+      const rawAss = userStorage.getItem(bilanAssumptionsKey(studyId));
       if (rawAss) {
         const saved = JSON.parse(rawAss) as Partial<Assumptions>;
         const merged: Assumptions = { ...DEFAULT_ASSUMPTIONS, ...saved };
         if (merged.landPriceEur === null || merged.landPriceEur === undefined) {
-          const rawPrice = localStorage.getItem(bilanLandPriceKey(studyId));
+          const rawPrice = userStorage.getItem(bilanLandPriceKey(studyId));
           const price = rawPrice ? Number(rawPrice) : NaN;
           merged.landPriceEur = Number.isFinite(price) && price > 0 ? price : NaN;
         } else if (!Number.isFinite(merged.landPriceEur)) { merged.landPriceEur = NaN; }
         setAss(merged);
       } else {
-        const rawPrice = localStorage.getItem(bilanLandPriceKey(studyId));
+        const rawPrice = userStorage.getItem(bilanLandPriceKey(studyId));
         const price = rawPrice ? Number(rawPrice) : NaN;
         setAss(Number.isFinite(price) && price > 0 ? { ...DEFAULT_ASSUMPTIONS, landPriceEur: price } : DEFAULT_ASSUMPTIONS);
       }
@@ -424,9 +425,9 @@ export const BilanPromoteurPage: React.FC = () => {
   // ── Bridge simulation travaux → bilan (handoff "consume-once") ─────────────
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(BILAN_TRAVAUX_KEY);
+      const raw = userStorage.getItem(BILAN_TRAVAUX_KEY);
       if (raw) {
-        try { localStorage.removeItem(BILAN_TRAVAUX_KEY); } catch { /* */ }
+        try { userStorage.removeItem(BILAN_TRAVAUX_KEY); } catch { /* */ }
         const payload = JSON.parse(raw) as BilanTravauxBridgePayload;
         if (payload.totalWithBuffer > 0) {
           setAss((prev) => {
@@ -463,9 +464,9 @@ export const BilanPromoteurPage: React.FC = () => {
   useEffect(() => {
     if (!hydratedRef.current || !studyId) return;
     try {
-      localStorage.setItem(bilanAssumptionsKey(studyId), JSON.stringify(ass));
+      userStorage.setItem(bilanAssumptionsKey(studyId), JSON.stringify(ass));
       if (Number.isFinite(ass.landPriceEur) && ass.landPriceEur > 0) {
-        localStorage.setItem(bilanLandPriceKey(studyId), String(ass.landPriceEur));
+        userStorage.setItem(bilanLandPriceKey(studyId), String(ass.landPriceEur));
       }
     } catch (e) { console.warn("[BilanPromoteur] persistance échouée:", e); }
   }, [ass, studyId]);
@@ -475,7 +476,7 @@ export const BilanPromoteurPage: React.FC = () => {
   const activateRehabMode = () => setAss((p) => ({ ...p, rehabMode: true }));
   const clearRehabMode    = () => {
     setAss((p) => ({ ...p, travauxRehabTotal: 0, surfaceRehabM2: 0, rehabMode: false }));
-    try { localStorage.removeItem(BILAN_TRAVAUX_KEY); } catch { /* */ }
+    try { userStorage.removeItem(BILAN_TRAVAUX_KEY); } catch { /* */ }
   };
 
   // ── Commune ───────────────────────────────────────────────────────────────
@@ -553,7 +554,7 @@ export const BilanPromoteurPage: React.FC = () => {
   const regionInfo = useMemo(() => {
     const fsnap = (getSnapshot()?.foncier as { communeInsee?: string } | null) ?? null;
     let sessionInsee: string | undefined;
-    try { sessionInsee = localStorage.getItem("mimmoza.session.commune_insee") ?? undefined; } catch { sessionInsee = undefined; }
+    try { sessionInsee = userStorage.getItem("mimmoza.session.commune_insee") ?? undefined; } catch { sessionInsee = undefined; }
     const insee = study?.foncier?.commune_insee ?? fsnap?.communeInsee ?? sessionInsee ?? undefined;
     const dept = insee ? insee.slice(0, 2) : undefined;
     return { dept, ...regionConstructionFactor(dept) };
@@ -645,7 +646,7 @@ export const BilanPromoteurPage: React.FC = () => {
   const hasRehabData      = ass.travauxRehabTotal > 0;
   const realConflict      = hasConceptionData && hasRehabData;
 
-  const marcheFromLS = useMemo(() => { try { const raw = localStorage.getItem(LS_MARKET_STUDY); if (!raw) return null; const p = JSON.parse(raw); return p?.data?.market ?? null; } catch { return null; } }, []);  
+  const marcheFromLS = useMemo(() => { try { const raw = userStorage.getItem(LS_MARKET_STUDY); if (!raw) return null; const p = JSON.parse(raw); return p?.data?.market ?? null; } catch { return null; } }, []);  
   const risquesFromSnap = useMemo(() => { try { const snap = getSnapshot() as any; return snap?.risks?.data ?? null; } catch { return null; } }, []);  
 
   // ── Computed ──────────────────────────────────────────────────────────────
@@ -1001,8 +1002,8 @@ export const BilanPromoteurPage: React.FC = () => {
   // ── rawInput synthèse ─────────────────────────────────────────────────────
   const synthesisRawInput = useMemo((): PromoteurRawInput => {
     const fsnap = getSnapshot()?.foncier as { communeInsee?: string; surfaceM2?: number; } | null ?? null;
-    const sessionInsee  = (() => { try { return localStorage.getItem("mimmoza.session.commune_insee") ?? undefined; } catch { return undefined; } })();
-    const sessionSurfM2 = (() => { try { const v = localStorage.getItem("mimmoza.session.surface_m2"); return v ? Number(v) : undefined; } catch { return undefined; } })();
+    const sessionInsee  = (() => { try { return userStorage.getItem("mimmoza.session.commune_insee") ?? undefined; } catch { return undefined; } })();
+    const sessionSurfM2 = (() => { try { const v = userStorage.getItem("mimmoza.session.surface_m2"); return v ? Number(v) : undefined; } catch { return undefined; } })();
     const inseeCode = study?.foncier?.commune_insee ?? fsnap?.communeInsee ?? sessionInsee ?? undefined;
     const dept = inseeCode ? inseeCode.slice(0, 2) : undefined;
     const surfTerrain = study?.foncier?.surface_m2 ?? fsnap?.surfaceM2 ?? sessionSurfM2 ?? undefined;
@@ -1028,7 +1029,7 @@ export const BilanPromoteurPage: React.FC = () => {
 
   useEffect(() => {
     if (!(computed.caTotal > 0)) return;
-    try { localStorage.setItem(SYNTHESE_RAW_KEY, JSON.stringify(synthesisRawInput)); } catch (e) { console.warn("[Bilan→Synthese] failed:", e); }
+    try { userStorage.setItem(SYNTHESE_RAW_KEY, JSON.stringify(synthesisRawInput)); } catch (e) { console.warn("[Bilan→Synthese] failed:", e); }
   }, [synthesisRawInput, computed.caTotal]);
 
   useEffect(() => {

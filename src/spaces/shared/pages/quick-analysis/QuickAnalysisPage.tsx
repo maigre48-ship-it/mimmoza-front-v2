@@ -38,6 +38,7 @@ import {
 } from "../../../../services/explainability";
 import { spendCredits } from "../../../../lib/billing/projectUnlock";
 import { ACTION_COSTS } from "../../../../lib/billing/actionCosts";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers d'affichage
@@ -395,7 +396,7 @@ const QuickAnalysisPage: React.FC = () => {
 
   const handleDeepAnalysis = useCallback(() => {
     if (result) {
-      try { localStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ form, result })); } catch { /* noop */ }
+      try { userStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ form, result })); } catch { /* noop */ }
     }
     navigate("/marchand-de-bien/analyse");
   }, [navigate, form, result]);

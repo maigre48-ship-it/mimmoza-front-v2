@@ -58,6 +58,7 @@ import {
   PromoteurPageHero,
   StudyIdBadge,
 } from "./shared/components/PromoteurPageHero";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
@@ -441,7 +442,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId }) =
     }
 
     const key = editorStorageKey(studyId);
-    const raw = localStorage.getItem(key);
+    const raw = userStorage.getItem(key);
 
     if (!raw) {
       useEditor2DStore.setState({ buildings: [], parkings: [], selectedIds: [] });
@@ -487,9 +488,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId }) =
 
     if (studyId) {
       try {
-        localStorage.setItem(
-          editorStorageKey(studyId),
-          JSON.stringify({ buildings: freshBuildings, parkings: freshParkings }),
+        userStorage.setItem(
+            editorStorageKey(studyId),
+            JSON.stringify({ buildings: freshBuildings, parkings: freshParkings }),
         );
       } catch (e) {
         console.error("[Implantation2D] save état brut échoué:", e);
@@ -707,9 +708,9 @@ export const Implantation2DPage: React.FC = () => {
   useEffect(() => {
     if (!studyId || !restore.combinedFeature) return;
     try {
-      localStorage.setItem(
-        parcelFeatureKey(studyId),
-        JSON.stringify(restore.combinedFeature),
+      userStorage.setItem(
+          parcelFeatureKey(studyId),
+          JSON.stringify(restore.combinedFeature),
       );
     } catch (e) {
       console.warn("[Implantation2D] persistance parcelFeature échouée:", e);
@@ -719,9 +720,9 @@ export const Implantation2DPage: React.FC = () => {
   useEffect(() => {
     if (!studyId || parcelleLocal.length < 3) return;
     try {
-      localStorage.setItem(
-        parcelleLocalKey(studyId),
-        JSON.stringify(parcelleLocal),
+      userStorage.setItem(
+          parcelleLocalKey(studyId),
+          JSON.stringify(parcelleLocal),
       );
     } catch (e) {
       console.warn("[Implantation2D] persistance parcelleLocal échouée:", e);

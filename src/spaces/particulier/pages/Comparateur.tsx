@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 type Favorite = {
   id: string;
@@ -190,7 +191,7 @@ function formatPricePerM2(v: number | null): string {
 
 function loadFavorites(): Favorite[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = userStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as Favorite[];
     return Array.isArray(parsed) ? parsed : [];
@@ -201,7 +202,7 @@ function loadFavorites(): Favorite[] {
 
 function loadSelection(): string[] {
   try {
-    const raw = localStorage.getItem(STORAGE_SEL_KEY);
+    const raw = userStorage.getItem(STORAGE_SEL_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as string[];
     return Array.isArray(parsed) ? parsed : [];
@@ -212,7 +213,7 @@ function loadSelection(): string[] {
 
 function saveSelection(ids: string[]) {
   try {
-    localStorage.setItem(STORAGE_SEL_KEY, JSON.stringify(ids));
+    userStorage.setItem(STORAGE_SEL_KEY, JSON.stringify(ids));
   } catch {
     // ignore
   }

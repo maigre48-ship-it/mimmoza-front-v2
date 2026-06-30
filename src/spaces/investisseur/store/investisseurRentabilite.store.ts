@@ -1,6 +1,7 @@
 // src/spaces/investisseur/store/investisseurRentabilite.store.ts
 
 import type { RentabiliteSnapshot } from '../types/rentabilite.types';
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 const PREFIX = 'mimmoza.investisseur.rentabilite.v1.';
 
@@ -43,12 +44,12 @@ function notify(dealId: string, snap: RentabiliteSnapshot | null): void {
 
 export function readRentabiliteSnapshot(dealId: string): RentabiliteSnapshot | null {
   if (!dealId) return null;
-  return safeJsonParse<RentabiliteSnapshot>(localStorage.getItem(lsKey(dealId)));
+  return safeJsonParse<RentabiliteSnapshot>(userStorage.getItem(lsKey(dealId)));
 }
 
 export function writeRentabiliteSnapshot(dealId: string, snap: RentabiliteSnapshot): void {
   if (!dealId) return;
-  localStorage.setItem(lsKey(dealId), JSON.stringify(snap));
+  userStorage.setItem(lsKey(dealId), JSON.stringify(snap));
   notify(dealId, snap);
 }
 
@@ -66,7 +67,7 @@ export function patchRentabiliteSnapshot(
 
 export function clearRentabiliteSnapshot(dealId: string): void {
   if (!dealId) return;
-  localStorage.removeItem(lsKey(dealId));
+  userStorage.removeItem(lsKey(dealId));
   notify(dealId, null);
 }
 

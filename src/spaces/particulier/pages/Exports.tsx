@@ -1,6 +1,7 @@
 ﻿import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { logParticulierEvent } from "../../../lib/particulierHistory";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 type ProjectState = {
   goal?: string;
@@ -166,7 +167,7 @@ const preStyle: React.CSSProperties = {
 
 function loadJson<T>(key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = userStorage.getItem(key);
     if (!raw) return fallback;
     return JSON.parse(raw) as T;
   } catch {

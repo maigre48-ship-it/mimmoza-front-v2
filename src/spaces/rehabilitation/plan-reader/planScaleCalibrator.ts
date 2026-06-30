@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from 'react';
 import type { NormalizedPoint } from './planTranscription.types';
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -62,7 +63,7 @@ function storageKey(planId: string): string {
 
 function loadCalibration(planId: string): ScaleCalibration | null {
   try {
-    const raw = localStorage.getItem(storageKey(planId));
+    const raw = userStorage.getItem(storageKey(planId));
     if (!raw) return null;
     return JSON.parse(raw) as ScaleCalibration;
   } catch {
@@ -72,7 +73,7 @@ function loadCalibration(planId: string): ScaleCalibration | null {
 
 function persistCalibration(cal: ScaleCalibration): void {
   try {
-    localStorage.setItem(storageKey(cal.plan_id), JSON.stringify(cal));
+    userStorage.setItem(storageKey(cal.plan_id), JSON.stringify(cal));
   } catch {
     console.warn('[planScaleCalibrator] localStorage indisponible.');
   }
@@ -80,7 +81,7 @@ function persistCalibration(cal: ScaleCalibration): void {
 
 function removeCalibration(planId: string): void {
   try {
-    localStorage.removeItem(storageKey(planId));
+    userStorage.removeItem(storageKey(planId));
   } catch { /* silent */ }
 }
 

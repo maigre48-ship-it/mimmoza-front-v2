@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import type { WallCorrection } from '../shared/planValidation.types';
 import type { DetectedWall, WallMaterial } from './planTranscription.types';
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ── Clé de stockage ───────────────────────────────────────────────────────────
 
@@ -125,7 +126,7 @@ function createWallRecord(wallId: string): WallValidationRecord {
 
 function loadState(): UserValidationEngineState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = userStorage.getItem(STORAGE_KEY);
     if (!raw) return createInitialState();
     return JSON.parse(raw) as UserValidationEngineState;
   } catch {
@@ -135,7 +136,7 @@ function loadState(): UserValidationEngineState {
 
 function saveState(state: UserValidationEngineState): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    userStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
     console.warn('[planUserValidationEngine] Impossible de persister l\'état.');
   }

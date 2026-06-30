@@ -12,6 +12,7 @@ import { Grid } from "../components/layouts/Grid";
 import { MainLayout } from "../components/layouts/MainLayout";
 import { PageContainer } from "../components/layouts/PageContainer";
 import { StatCard } from "../components/layouts/StatCard";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // IMPORTANT: adapte ce chemin si ton client Supabase est ailleurs
 import { supabase } from "../lib/supabaseClient";
@@ -215,7 +216,7 @@ const MimmozaDashboard: React.FC = () => {
   const [investisseurSmartScore, setInvestisseurSmartScore] = useState<number | null>(null);
 
   useEffect(() => {
-    const saved = safeJsonParse(localStorage.getItem(LS_KEY));
+    const saved = safeJsonParse(userStorage.getItem(LS_KEY));
     if (saved) {
       setAddress(String(saved.address ?? ""));
       setParcelId(String(saved.parcelId ?? ""));
@@ -247,7 +248,7 @@ const MimmozaDashboard: React.FC = () => {
 
   useEffect(() => {
     try {
-      localStorage.setItem(
+      userStorage.setItem(
         LS_KEY,
         JSON.stringify({ address, parcelId, showDetails })
       );

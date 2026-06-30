@@ -14,6 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from "react";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ─── Types exportés ───────────────────────────────────────────────────────────
 
@@ -158,7 +159,7 @@ function serializeProject(project: RehabilitationProject): RehabilitationProject
 
 export function readRehabilitationProject(): RehabilitationProject {
   try {
-    const raw = localStorage.getItem(LS_KEY);
+    const raw = userStorage.getItem(LS_KEY);
     const parsed = raw
       ? (JSON.parse(raw) as RehabilitationProject)
       : createDefaultProject();
@@ -206,7 +207,7 @@ export function saveRehabilitationProject(
 
   // Sauvegarder en localStorage sans l'image
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify(serializeProject(next)));
+    userStorage.setItem(LS_KEY, JSON.stringify(serializeProject(next)));
   } catch (e) {
     console.warn("[rehab store] localStorage quota:", e);
   }
@@ -236,7 +237,7 @@ export function clearRehabilitationProject(): RehabilitationProject {
   clearImageFromSession();
   const next = createDefaultProject();
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify(next));
+    userStorage.setItem(LS_KEY, JSON.stringify(next));
   } catch { /* silencieux */ }
   window.dispatchEvent(new Event("mimmoza:rehabilitation-project-updated"));
   return next;

@@ -60,6 +60,7 @@ import type {
 import { readCaptures } from '../shared/captures.store';
 import { getFacadeImage, getSnapshot } from '../shared/promoteurSnapshot.store';
 import { usePromoteurStudy } from '../shared/usePromoteurStudy';
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // â”€â”€ ClÃ©s localStorage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const SYNTHESE_RAW_KEY      = "mimmoza.promoteur.synthese.rawInput.v1";
@@ -1030,7 +1031,7 @@ export const PromoteurSynthesePage: React.FC<Props> = ({ rawInputOverride, study
   const [completionSteps,  setCompletionSteps]  = useState<CompletionStep[] | null>(null);
   const [autocompleteDone, setAutocompleteDone] = useState<boolean>(() => {
     try {
-      const raw = localStorage.getItem(AUTOCOMPLETE_DONE_KEY);
+      const raw = userStorage.getItem(AUTOCOMPLETE_DONE_KEY);
       if (!raw) return false;
       const parsed = JSON.parse(raw);
       return !!parsed?.timestamp;
@@ -1069,7 +1070,7 @@ export const PromoteurSynthesePage: React.FC<Props> = ({ rawInputOverride, study
   // (scope plus large, 500+ transactions) car filtrÃ©es sur la zone exacte.
   const evaluationDvf = useMemo(() => {
     try {
-      const raw = localStorage.getItem(LS_EVALUATION);
+      const raw = userStorage.getItem(LS_EVALUATION);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (!parsed?.prixM2) return null; // donnÃ©es incomplÃ¨tes
@@ -1111,7 +1112,7 @@ export const PromoteurSynthesePage: React.FC<Props> = ({ rawInputOverride, study
 
     const renduTravauxSynthese = useMemo<RenduTravauxSyntheseUi | null>(() => {
     try {
-      const raw = localStorage.getItem(LS_RENDU_TRAVAUX_SYNTHESE);
+      const raw = userStorage.getItem(LS_RENDU_TRAVAUX_SYNTHESE);
       if (!raw) return null;
 
       const parsed = JSON.parse(raw) as Partial<RenduTravauxSyntheseUi>;
@@ -1147,9 +1148,9 @@ if (!generatedImageUrl) return null;
   const snapshotFoncier = useMemo(() => {
     try {
       const snap = getSnapshot() as any;
-      const communeInsee = snap?.foncier?.communeInsee ?? (() => { try { return localStorage.getItem("mimmoza.session.commune_insee") ?? undefined; } catch { return undefined; } })();
-      const surfaceM2    = snap?.foncier?.surfaceM2    ?? (() => { try { const v = localStorage.getItem("mimmoza.session.surface_m2"); return v ? Number(v) || undefined : undefined; } catch { return undefined; } })();
-      const parcelId     = snap?.foncier?.parcelId     ?? (() => { try { return localStorage.getItem("mimmoza.session.parcel_id") ?? undefined; } catch { return undefined; } })();
+      const communeInsee = snap?.foncier?.communeInsee ?? (() => { try { return userStorage.getItem("mimmoza.session.commune_insee") ?? undefined; } catch { return undefined; } })();
+      const surfaceM2    = snap?.foncier?.surfaceM2    ?? (() => { try { const v = userStorage.getItem("mimmoza.session.surface_m2"); return v ? Number(v) || undefined : undefined; } catch { return undefined; } })();
+      const parcelId     = snap?.foncier?.parcelId     ?? (() => { try { return userStorage.getItem("mimmoza.session.parcel_id") ?? undefined; } catch { return undefined; } })();
       return { communeInsee, surfaceM2, parcelId };
     } catch { return {}; }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1157,7 +1158,7 @@ if (!generatedImageUrl) return null;
 
   const parcelData = useMemo(() => {
     try {
-      const raw = localStorage.getItem(LS_FONCIER_SELECTED);
+      const raw = userStorage.getItem(LS_FONCIER_SELECTED);
       if (!raw) return null;
       const parcels = JSON.parse(raw);
       const feature = parcels?.[0]?.feature ?? parcels?.[0];
@@ -1190,7 +1191,7 @@ if (!generatedImageUrl) return null;
 
   const parcelCenter = useMemo(() => {
     try {
-      const raw = localStorage.getItem(LS_FONCIER_SELECTED);
+      const raw = userStorage.getItem(LS_FONCIER_SELECTED);
       if (!raw) return null;
       const parcels = JSON.parse(raw);
       const feature = parcels?.[0]?.feature ?? parcels?.[0];
@@ -1201,7 +1202,7 @@ if (!generatedImageUrl) return null;
 
   const pluFromLS = useMemo(() => {
     try {
-      const raw = localStorage.getItem(LS_PLU_RULESET);
+      const raw = userStorage.getItem(LS_PLU_RULESET);
       if (!raw) return null;
       const r = JSON.parse(raw);
       const zone        = typeof r.zone_code === 'string' && r.zone_code.trim() ? r.zone_code.trim() : undefined;
@@ -1216,7 +1217,7 @@ if (!generatedImageUrl) return null;
 
   const rawInputFromLS = useMemo((): PromoteurRawInput | null => {
     try {
-      const raw = localStorage.getItem(SYNTHESE_RAW_KEY);
+      const raw = userStorage.getItem(SYNTHESE_RAW_KEY);
       if (!raw) return null;
       return JSON.parse(raw) as PromoteurRawInput;
     } catch { return null; }
@@ -1246,11 +1247,11 @@ if (!generatedImageUrl) return null;
     let landPriceEur: number | undefined = undefined;
     if (studyId) {
       try {
-        const rawAss = localStorage.getItem(`mimmoza.bilan.assumptions.${studyId}`);
+        const rawAss = userStorage.getItem(`mimmoza.bilan.assumptions.${studyId}`);
         if (rawAss) bilanAss = JSON.parse(rawAss);
       } catch { /* ignore */ }
       try {
-        const rawPrice = localStorage.getItem(`mimmoza.bilan.land_price_eur.${studyId}`);
+        const rawPrice = userStorage.getItem(`mimmoza.bilan.land_price_eur.${studyId}`);
         const price = rawPrice ? Number(rawPrice) : NaN;
         if (Number.isFinite(price) && price > 0) landPriceEur = price;
       } catch { /* ignore */ }
@@ -1466,13 +1467,13 @@ if (!generatedImageUrl) return null;
       });
 
       try {
-        localStorage.setItem(SYNTHESE_RAW_KEY, JSON.stringify(result.updatedInput));
+        userStorage.setItem(SYNTHESE_RAW_KEY, JSON.stringify(result.updatedInput));
       } catch (e) {
         console.warn('[PromoteurSynthese] Ã‰chec persistance rawInput:', e);
       }
 
       try {
-        localStorage.setItem(AUTOCOMPLETE_DONE_KEY, JSON.stringify({
+        userStorage.setItem(AUTOCOMPLETE_DONE_KEY, JSON.stringify({
           timestamp: result.completedAt,
           studyId,
           steps: result.steps,

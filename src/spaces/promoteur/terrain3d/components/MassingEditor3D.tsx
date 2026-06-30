@@ -32,6 +32,7 @@ import { BuildingPropertiesPanel } from "./BuildingPropertiesPanel";
 import { MassingRenderer } from "./MassingRenderer";
 import type { ReliefData } from "./SceneSvg3D";
 import { TerrassementPanel, type TerrassementExport } from "./TerrassementPanel";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 const ACCENT = "#5247b8";
 
@@ -66,7 +67,7 @@ interface Plan2DSnapshot {
 
 function readPlan2D(): Plan2DSnapshot {
   try {
-    const raw = localStorage.getItem(PLAN2D_KEY);
+    const raw = userStorage.getItem(PLAN2D_KEY);
     if (!raw) return { buildings: [], parkings: [] };
     const data = JSON.parse(raw) as { buildings?: unknown[]; parkings?: unknown[] };
     return {

@@ -9,6 +9,7 @@ import { computeSceneProjection, getBuildingScenePts } from "../massingGeometry"
 import type { MassingBuildingModel } from "../massingScene.types";
 import { TerrainSampler } from "../services/terrainSampler";
 import type { ReliefData } from "./SceneSvg3D";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 const ACCENT = "#5247b8";
 
@@ -39,14 +40,14 @@ export const DEFAULT_PRICES: TerrassementPrices = {
 
 function loadPrices(): TerrassementPrices {
   try {
-    const raw = localStorage.getItem(PRICES_KEY);
+    const raw = userStorage.getItem(PRICES_KEY);
     if (raw) return { ...DEFAULT_PRICES, ...JSON.parse(raw) };
   } catch { /* ignore */ }
   return { ...DEFAULT_PRICES };
 }
 
 function savePrices(p: TerrassementPrices): void {
-  try { localStorage.setItem(PRICES_KEY, JSON.stringify(p)); } catch { /* ignore */ }
+  try { userStorage.setItem(PRICES_KEY, JSON.stringify(p)); } catch { /* ignore */ }
 }
 
 // ─── Export Bilan ─────────────────────────────────────────────────────────────
@@ -244,7 +245,7 @@ export const TerrassementPanel: FC<Props> = ({
     const key = exportKey(studyId);
 
     if (!metrics?.length) {
-      try { localStorage.removeItem(key); } catch { /* ignore */ }
+      try { userStorage.removeItem(key); } catch { /* ignore */ }
       return;
     }
 
@@ -263,7 +264,7 @@ export const TerrassementPanel: FC<Props> = ({
       updatedAt:     new Date().toISOString(),
     };
 
-    try { localStorage.setItem(key, JSON.stringify(exp)); } catch { /* ignore */ }
+    try { userStorage.setItem(key, JSON.stringify(exp)); } catch { /* ignore */ }
 
     if (onMetricsChange) onMetricsChange(exp);
   }, [metrics, prices, onMetricsChange, studyId]);

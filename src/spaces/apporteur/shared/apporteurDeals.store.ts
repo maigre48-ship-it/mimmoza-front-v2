@@ -2,6 +2,8 @@
 
 const STORAGE_KEY = "mimmoza.apporteur.deals.v1";
 
+import { userStorage } from "@/lib/storage/userScopedStorage";
+
 export type ApporteurDealStatus =
   | "depose"
   | "en_etude"
@@ -33,7 +35,7 @@ export type CreateApporteurDealInput = _ApporteurDealBase & { status?: Apporteur
 
 function readAll(): ApporteurDeal[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = userStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -45,7 +47,7 @@ function readAll(): ApporteurDeal[] {
 
 function writeAll(deals: ApporteurDeal[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(deals));
+    userStorage.setItem(STORAGE_KEY, JSON.stringify(deals));
   } catch {
     console.error("[apporteurDeals.store] Impossible d'écrire dans localStorage");
   }

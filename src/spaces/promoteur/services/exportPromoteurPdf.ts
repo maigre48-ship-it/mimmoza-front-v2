@@ -55,6 +55,7 @@ import type {
   RisqueNiveau,
   Scenario
 } from './promoteurSynthese.types';
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 const { ML, MR, MT, MB, PW, PH, HDR_H, FTR_H } = LAYOUT;
 
@@ -4656,7 +4657,7 @@ function readRenduTravauxSyntheseFromStorage(): RenduTravauxSynthesePdf | null {
   try {
     if (typeof window === 'undefined') return null;
 
-    const raw = window.localStorage.getItem('mimmoza.promoteur.renduTravaux.synthese.v1');
+    const raw = userStorage.getItem('mimmoza.promoteur.renduTravaux.synthese.v1');
     if (!raw) return null;
 
     const parsed = JSON.parse(raw) as Partial<RenduTravauxSynthesePdf>;

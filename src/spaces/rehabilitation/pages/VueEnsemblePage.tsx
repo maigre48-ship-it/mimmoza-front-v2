@@ -4,6 +4,7 @@
 import { ArrowRight, Building2, CheckCheck, Save } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 /* ── Thème ── */
 const ACCENT  = "#f97316";
@@ -13,7 +14,7 @@ const GRAD    = "linear-gradient(135deg, #ea580c 0%, #fb923c 100%)";
 // Repli sur la cle historique si aucun projet actif (compatibilite ascendante).
 function overviewKey(): string {
   try {
-    const id = localStorage.getItem("mimmoza.rehab.activeProjectId");
+    const id = userStorage.getItem("mimmoza.rehab.activeProjectId");
     if (id) return `mimmoza_rehab_overview_${id}`;
   } catch { /* noop */ }
   return "mimmoza_rehab_overview";
@@ -115,7 +116,7 @@ const VueEnsemblePage: React.FC = () => {
   /* Charger depuis localStorage (cle dediee au projet actif) */
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(overviewKey());
+      const raw = userStorage.getItem(overviewKey());
       if (raw) setData({ ...INITIAL, ...JSON.parse(raw) });
     } catch { /* silent */ }
   }, []);
@@ -127,7 +128,7 @@ const VueEnsemblePage: React.FC = () => {
 
   function handleSave() {
     try {
-      localStorage.setItem(overviewKey(), JSON.stringify({ ...data, savedAt: new Date().toISOString() }));
+      userStorage.setItem(overviewKey(), JSON.stringify({ ...data, savedAt: new Date().toISOString() }));
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch { /* silent */ }

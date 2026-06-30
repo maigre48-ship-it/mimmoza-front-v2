@@ -8,6 +8,7 @@
 // ──────────────────────────────────────────────────────────────────────────────
 
 // ── Types ────────────────────────────────────────────────────────────────────
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 export type RateTrend = "hausse" | "baisse" | "stable";
 
@@ -73,7 +74,7 @@ interface CachedAnalysis {
 
 function readCache(): EcbRatesAnalysis | null {
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
+    const raw = userStorage.getItem(CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CachedAnalysis;
     if (!parsed?.data || !parsed?.cachedAt) return null;
@@ -87,7 +88,7 @@ function readCache(): EcbRatesAnalysis | null {
 function writeCache(data: EcbRatesAnalysis): void {
   try {
     const entry: CachedAnalysis = { data, cachedAt: Date.now() };
-    localStorage.setItem(CACHE_KEY, JSON.stringify(entry));
+    userStorage.setItem(CACHE_KEY, JSON.stringify(entry));
   } catch {
     /* quota exceeded — non-bloquant */
   }

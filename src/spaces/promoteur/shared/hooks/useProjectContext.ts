@@ -5,6 +5,7 @@
 // ============================================
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ============================================
 // TYPES
@@ -73,7 +74,7 @@ function createEmptySnapshot(): PromoteurSnapshot {
 
 function loadSnapshot(): PromoteurSnapshot {
   try {
-    const raw = localStorage.getItem(SNAPSHOT_KEY);
+    const raw = userStorage.getItem(SNAPSHOT_KEY);
     if (!raw) return createEmptySnapshot();
     const parsed = JSON.parse(raw);
     // Migration si nécessaire
@@ -95,7 +96,7 @@ function loadSnapshot(): PromoteurSnapshot {
 function saveSnapshot(snapshot: PromoteurSnapshot): boolean {
   try {
     snapshot.updatedAt = new Date().toISOString();
-    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot));
+    userStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot));
     return true;
   } catch {
     return false;

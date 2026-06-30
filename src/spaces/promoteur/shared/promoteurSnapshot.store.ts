@@ -1,5 +1,6 @@
 // src/spaces/promoteur/shared/promoteurSnapshot.store.ts
 
+import { userStorage } from "@/lib/storage/userScopedStorage";
 import type { ReliefData } from "../terrain3d/components/SceneSvg3D";
 
 export type PromoteurSnapshot = Record<string, unknown>;
@@ -64,18 +65,18 @@ function safeParse<T>(raw: string | null, fallback: T): T {
 }
 
 function read(): PromoteurSnapshot {
-  return safeParse<PromoteurSnapshot>(localStorage.getItem(LS_KEY), {});
+  return safeParse<PromoteurSnapshot>(userStorage.getItem(LS_KEY), {});
 }
 
 function write(next: PromoteurSnapshot) {
-  localStorage.setItem(LS_KEY, JSON.stringify(next));
+  userStorage.setItem(LS_KEY, JSON.stringify(next));
 }
 
 // ── Active study ─────────────────────────────────────────────────────────────
 
 export function getActiveStudyId(): string | null {
   try {
-    return localStorage.getItem(ACTIVE_STUDY_KEY);
+    return userStorage.getItem(ACTIVE_STUDY_KEY);
   } catch {
     return null;
   }
@@ -83,13 +84,13 @@ export function getActiveStudyId(): string | null {
 
 export function setActiveStudyId(id: string): void {
   try {
-    localStorage.setItem(ACTIVE_STUDY_KEY, id);
+    userStorage.setItem(ACTIVE_STUDY_KEY, id);
   } catch {}
 }
 
 export function clearActiveStudyId(): void {
   try {
-    localStorage.removeItem(ACTIVE_STUDY_KEY);
+    userStorage.removeItem(ACTIVE_STUDY_KEY);
   } catch {}
 }
 
@@ -163,7 +164,7 @@ export function clearReliefCache(studyId: string | null): void {
 export function clearAllPromoteurSessionKeys(): void {
   GLOBAL_SESSION_KEYS.forEach((key) => {
     try {
-      localStorage.removeItem(key);
+      userStorage.removeItem(key);
     } catch {}
   });
   console.log("[PromoteurSnapshot] Global session keys cleared");
@@ -188,7 +189,7 @@ export function patchModule(moduleKey: string, payload: unknown): PromoteurSnaps
 }
 
 export function resetSnapshot(): void {
-  localStorage.removeItem(LS_KEY);
+  userStorage.removeItem(LS_KEY);
 }
 
 // ── Rétro-compatibilité ──────────────────────────────────────────────────────

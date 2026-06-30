@@ -31,6 +31,7 @@ import {
 import { runMassingEngine } from "../../../services/massing/massingEngine.service";
 import { buildAllGeometries } from "../../../services/massing/massingGeometry.service";
 import { buildMassingReport } from "../../../services/massing/massingReport";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ── Formatage ─────────────────────────────────────────────────────────────────
 
@@ -55,7 +56,7 @@ function pct(n: number | null): string {
 
 function readPersistedSurface(): number | null {
   try {
-    const raw = localStorage.getItem("mimmoza_promoteur_terrain_selection_v1");
+    const raw = userStorage.getItem("mimmoza_promoteur_terrain_selection_v1");
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { surface_totale_m2?: number };
     const s = parsed?.surface_totale_m2;

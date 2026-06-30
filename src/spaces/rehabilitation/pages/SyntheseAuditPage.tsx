@@ -9,6 +9,7 @@ import {
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getActiveProjectId, scopedKey } from "../lib/rehabScope";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 /* ── Thème ── */
 const ACCENT    = "#f97316";
@@ -128,19 +129,19 @@ const SyntheseAuditPage: React.FC = () => {
     setTravaux(null);
     setPlan(null);
     try {
-      const raw1 = localStorage.getItem(scopedKey(LS_OVERVIEW));
+      const raw1 = userStorage.getItem(scopedKey(LS_OVERVIEW));
       if (raw1) setOverview(JSON.parse(raw1));
     } catch { /* silent */ }
     try {
-      const raw2 = localStorage.getItem(scopedKey(LS_CONFORMITE));
+      const raw2 = userStorage.getItem(scopedKey(LS_CONFORMITE));
       if (raw2) setConformite(JSON.parse(raw2));
     } catch { /* silent */ }
     try {
-      const raw3 = localStorage.getItem(scopedKey(LS_TRAVAUX));
+      const raw3 = userStorage.getItem(scopedKey(LS_TRAVAUX));
       if (raw3) setTravaux(JSON.parse(raw3));
     } catch { /* silent */ }
     try {
-      const raw4 = localStorage.getItem(scopedKey(LS_PLAN));
+      const raw4 = userStorage.getItem(scopedKey(LS_PLAN));
       if (raw4) setPlan(JSON.parse(raw4));
     } catch { /* silent */ }
     setLastRefresh(new Date());

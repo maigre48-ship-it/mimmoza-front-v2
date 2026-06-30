@@ -5,6 +5,7 @@ import { CopilotDrawer } from './components/CopilotDrawer';
 import { CopilotFloatingButton } from './components/CopilotFloatingButton';
 import { useCopilotStore } from './store/copilotStore';
 import { isLandingRoute } from './welcome/copilotWelcome';
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // Routes ou le Copilot ne doit PAS apparaitre.
 // NB : l'accueil (/dashboard) n'est PLUS masque -> il sert le bot scripte.
@@ -34,10 +35,10 @@ export function CopilotRoot() {
     if (isLandingRoute(path)) {
       // Auto-ouverture une seule fois (le drawer affichera le bot scripte).
       let seen = true;
-      try { seen = localStorage.getItem(WELCOME_KEY) === '1'; } catch { /* no-op */ }
+      try { seen = userStorage.getItem(WELCOME_KEY) === '1'; } catch { /* no-op */ }
       if (!seen) {
         openCopilot();
-        try { localStorage.setItem(WELCOME_KEY, '1'); } catch { /* no-op */ }
+        try { userStorage.setItem(WELCOME_KEY, '1'); } catch { /* no-op */ }
       }
     } else {
       // Tout changement de route hors accueil ferme le Copilot.

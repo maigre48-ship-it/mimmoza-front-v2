@@ -31,6 +31,7 @@ import {
   PromoteurPageHero,
 } from "../shared/components/PromoteurPageHero";
 import { ACCENT_PRO, GRAD_PRO } from "../shared/promoteurDesign.tokens";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 /* ================================================================== */
 /*  Bridge bilan promoteur                                             */
@@ -60,7 +61,7 @@ function applyTravauxToBilanPromo(
       totalWithBuffer, totalHT, bufferPct, mode, surfaceTotaleM2,
       updatedAt: new Date().toISOString(),
     };
-    localStorage.setItem(BILAN_TRAVAUX_KEY, JSON.stringify(payload));
+    userStorage.setItem(BILAN_TRAVAUX_KEY, JSON.stringify(payload));
     window.dispatchEvent(new CustomEvent<BilanTravauxBridgePayload>(BILAN_TRAVAUX_EVENT, { detail: payload }));
     return true;
   } catch { return false; }

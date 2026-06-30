@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { logParticulierEvent } from "../../../lib/particulierHistory";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 type ProjectState = {
   budgetTotal: number | null;
@@ -195,7 +196,7 @@ function loadProject(): ProjectState {
     loanRatePct: null,
   };
   try {
-    const raw = localStorage.getItem(PROJECT_KEY);
+    const raw = userStorage.getItem(PROJECT_KEY);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw) as any;
     return {
@@ -213,7 +214,7 @@ function loadProject(): ProjectState {
 
 function loadScenarios(): Scenario[] {
   try {
-    const raw = localStorage.getItem(SCENARIOS_KEY);
+    const raw = userStorage.getItem(SCENARIOS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as Scenario[];
     return Array.isArray(parsed) ? parsed : [];
@@ -224,7 +225,7 @@ function loadScenarios(): Scenario[] {
 
 function saveScenarios(items: Scenario[]) {
   try {
-    localStorage.setItem(SCENARIOS_KEY, JSON.stringify(items));
+    userStorage.setItem(SCENARIOS_KEY, JSON.stringify(items));
   } catch {
     // ignore
   }

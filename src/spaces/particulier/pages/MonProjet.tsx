@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 type ProjectGoal = "residence_principale" | "investissement" | "residence_secondaire";
 
@@ -191,7 +192,7 @@ function loadInitial(): ProjectState {
   };
 
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = userStorage.getItem(STORAGE_KEY);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw) as Partial<ProjectState>;
     return { ...fallback, ...parsed };
@@ -202,7 +203,7 @@ function loadInitial(): ProjectState {
 
 function save(state: ProjectState) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    userStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
     // ignore
   }
@@ -522,7 +523,7 @@ export default function MonProjet() {
                 const ok = window.confirm("Réinitialiser le projet (local) ? Cette action ne peut pas être annulée.");
                 if (!ok) return;
                 try {
-                  localStorage.removeItem(STORAGE_KEY);
+                  userStorage.removeItem(STORAGE_KEY);
                 } catch {
                   // ignore
                 }

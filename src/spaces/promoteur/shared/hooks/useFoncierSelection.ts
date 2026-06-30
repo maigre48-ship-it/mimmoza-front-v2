@@ -9,6 +9,7 @@
 //   Idem pour enrichParcels() par cohérence.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 export type SelectedParcel = {
   id: string;
@@ -49,15 +50,15 @@ export function useFoncierSelection(options: UseFoncierSelectionOptions = {}) {
   // ── Hydratation ───────────────────────────────────────────────────────────
   useEffect(() => {
     try {
-      const sel = JSON.parse(localStorage.getItem(LS_SELECTED) || "[]");
+      const sel = JSON.parse(userStorage.getItem(LS_SELECTED) || "[]");
       if (Array.isArray(sel)) setSelectedParcelsState(sel);
     } catch { /* ignore */ }
     try {
-      const focus = localStorage.getItem(LS_FOCUS);
+      const focus = userStorage.getItem(LS_FOCUS);
       if (focus) setFocusParcelIdState(focus);
     } catch { /* ignore */ }
     try {
-      const commune = localStorage.getItem(LS_COMMUNE);
+      const commune = userStorage.getItem(LS_COMMUNE);
       if (commune) setCommuneInseeState(commune);
     } catch { /* ignore */ }
     setIsHydrated(true);
@@ -72,7 +73,7 @@ export function useFoncierSelection(options: UseFoncierSelectionOptions = {}) {
     if (!autoPersist || !isHydrated) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      try { localStorage.setItem(LS_SELECTED, JSON.stringify(selectedParcels)); } catch { /* ignore */ }
+      try { userStorage.setItem(LS_SELECTED, JSON.stringify(selectedParcels)); } catch { /* ignore */ }
     }, debounceMs);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [selectedParcels, autoPersist, isHydrated, debounceMs]);
@@ -80,16 +81,16 @@ export function useFoncierSelection(options: UseFoncierSelectionOptions = {}) {
   useEffect(() => {
     if (!isHydrated) return;
     try {
-      if (focusParcelId) localStorage.setItem(LS_FOCUS, focusParcelId);
-      else localStorage.removeItem(LS_FOCUS);
+      if (focusParcelId) userStorage.setItem(LS_FOCUS, focusParcelId);
+      else userStorage.removeItem(LS_FOCUS);
     } catch { /* ignore */ }
   }, [focusParcelId, isHydrated]);
 
   useEffect(() => {
     if (!isHydrated) return;
     try {
-      if (communeInsee) localStorage.setItem(LS_COMMUNE, communeInsee);
-      else localStorage.removeItem(LS_COMMUNE);
+      if (communeInsee) userStorage.setItem(LS_COMMUNE, communeInsee);
+      else userStorage.removeItem(LS_COMMUNE);
     } catch { /* ignore */ }
   }, [communeInsee, isHydrated]);
 
@@ -193,9 +194,9 @@ export function useFoncierSelection(options: UseFoncierSelectionOptions = {}) {
 
   const persistNow = useCallback(() => {
     try {
-      localStorage.setItem(LS_SELECTED, JSON.stringify(selectedParcels));
-      if (focusParcelId) localStorage.setItem(LS_FOCUS, focusParcelId);
-      if (communeInsee)  localStorage.setItem(LS_COMMUNE, communeInsee);
+      userStorage.setItem(LS_SELECTED, JSON.stringify(selectedParcels));
+      if (focusParcelId) userStorage.setItem(LS_FOCUS, focusParcelId);
+      if (communeInsee)  userStorage.setItem(LS_COMMUNE, communeInsee);
       return true;
     } catch { return false; }
   }, [selectedParcels, focusParcelId, communeInsee]);

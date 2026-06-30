@@ -1,4 +1,6 @@
-﻿export type HistoryType =
+﻿import { userStorage } from "@/lib/storage/userScopedStorage";
+
+export type HistoryType =
   | "system"
   | "projet_update"
   | "favori_add"
@@ -29,7 +31,7 @@ function safeId() {
 
 function loadHistory(): HistoryEvent[] {
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
+    const raw = userStorage.getItem(HISTORY_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as HistoryEvent[];
     return Array.isArray(parsed) ? parsed : [];
@@ -40,7 +42,7 @@ function loadHistory(): HistoryEvent[] {
 
 function saveHistory(items: HistoryEvent[]) {
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(items));
+    userStorage.setItem(HISTORY_KEY, JSON.stringify(items));
   } catch {
     // ignore
   }

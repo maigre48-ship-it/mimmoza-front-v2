@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { logParticulierEvent } from "../../../lib/particulierHistory";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 type Favorite = {
   id: string;
@@ -193,7 +194,7 @@ function formatNum(n: number | null): string {
 
 function loadInitial(): Favorite[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = userStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as Favorite[];
     return Array.isArray(parsed) ? parsed : [];
@@ -204,7 +205,7 @@ function loadInitial(): Favorite[] {
 
 function saveAll(items: Favorite[]) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    userStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   } catch {
     // ignore
   }

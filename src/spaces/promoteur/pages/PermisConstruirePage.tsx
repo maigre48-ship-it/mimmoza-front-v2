@@ -23,6 +23,7 @@ import {
   formatTypologie,
   sortPermis,
 } from "../utils/permisConstruire.format";
+import { userStorage } from "@/lib/storage/userScopedStorage";
 
 /* ------------------------------------------------------------------
  * Lecture de la localisation projet.
@@ -137,7 +138,7 @@ function extractFromParcelFeatureLegacy(raw: string | null) {
 function readProjectLocation(studyId: string | null): ProjectLocation {
   // 1) Source principale : sélection Foncier validée
   try {
-    const raw = localStorage.getItem(LS_FONCIER_SELECTED);
+    const raw = userStorage.getItem(LS_FONCIER_SELECTED);
     const r = extractFromFoncierSelected(raw);
     if (r.lat !== null && r.lon !== null) {
       return { latitude: r.lat, longitude: r.lon, communeInsee: r.commune, studyId };
@@ -152,7 +153,7 @@ function readProjectLocation(studyId: string | null): ProjectLocation {
   // 2) Fallback legacy parcelFeature (ancienne clé)
   if (studyId) {
     try {
-      const raw = localStorage.getItem(`mimmoza.parcelFeature.${studyId}`);
+      const raw = userStorage.getItem(`mimmoza.parcelFeature.${studyId}`);
       const r = extractFromParcelFeatureLegacy(raw);
       if (r.lat !== null && r.lon !== null) {
         return { latitude: r.lat, longitude: r.lon, communeInsee: r.commune, studyId };
@@ -163,7 +164,7 @@ function readProjectLocation(studyId: string | null): ProjectLocation {
   // 3) Fallback legacy parcelleLocal (ancienne clé)
   if (studyId) {
     try {
-      const raw = localStorage.getItem(`mimmoza.parcelleLocal.${studyId}`);
+      const raw = userStorage.getItem(`mimmoza.parcelleLocal.${studyId}`);
       if (raw) {
         const parsed = JSON.parse(raw) as AnyRecord;
         const lat =
@@ -183,8 +184,8 @@ function readProjectLocation(studyId: string | null): ProjectLocation {
   // 4) Dernier recours : INSEE connu dans la session
   try {
     const insee =
-      localStorage.getItem(LS_SESSION_COMMUNE) ||
-      localStorage.getItem(LS_FONCIER_COMMUNE);
+        userStorage.getItem(LS_SESSION_COMMUNE) ||
+        userStorage.getItem(LS_FONCIER_COMMUNE);
     if (insee) {
       return { latitude: null, longitude: null, communeInsee: insee, studyId };
     }
@@ -513,7 +514,7 @@ export default function PermisConstruirePage() {
   useEffect(() => {
     if (!storageKey) return;
     try {
-      const raw = localStorage.getItem(storageKey);
+      const raw = userStorage.getItem(storageKey);
       if (!raw) return;
       const parsed = JSON.parse(raw) as AnyRecord;
       if (Array.isArray(parsed.ids)) {
@@ -546,7 +547,7 @@ export default function PermisConstruirePage() {
       source: "promoteur-permis-construire",
     };
     try {
-      localStorage.setItem(storageKey, JSON.stringify(payload));
+      userStorage.setItem(storageKey, JSON.stringify(payload));
       setSelectionSavedAt(payload.savedAt);
       try {
         window.dispatchEvent(new CustomEvent(SELECTION_EVENT, { detail: payload }));
@@ -558,7 +559,7 @@ export default function PermisConstruirePage() {
     setSelectedIds(new Set());
     if (storageKey) {
       try {
-        localStorage.removeItem(storageKey);
+        userStorage.removeItem(storageKey);
         setSelectionSavedAt(null);
         window.dispatchEvent(new CustomEvent(SELECTION_EVENT, { detail: null }));
       } catch { /* ignore */ }
