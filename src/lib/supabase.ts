@@ -1,39 +1,17 @@
 ﻿// src/lib/supabase.ts
+// Ré-export vers l'instance unique (src/lib/supabaseClient.ts).
+// Ce module ne crée plus son propre client : il pointe sur le singleton
+// global afin d'éviter les multiples GoTrueClient / sessions dédoublées.
 
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "./supabaseClient";
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-if (!supabaseUrl) {
-  throw new Error(
-    "Missing VITE_SUPABASE_URL environment variable"
-  );
-}
-
-if (!supabaseAnonKey) {
-  throw new Error(
-    "Missing VITE_SUPABASE_ANON_KEY environment variable"
-  );
-}
-
-export const supabase = createClient(
-  supabaseUrl,
-  supabaseAnonKey,
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-  }
-);
+export { supabase };
 
 // ─────────────────────────────────────────────────────────────
 // DEV ONLY
-// Expose Supabase client in browser console
-// Remove in production if desired
+// Expose le client dans la console — MÊME instance que le login.
 // ─────────────────────────────────────────────────────────────
-
-// @ts-ignore
-window.supabase = supabase;
+if (import.meta.env.DEV) {
+  // @ts-ignore
+  window.supabase = supabase;
+}

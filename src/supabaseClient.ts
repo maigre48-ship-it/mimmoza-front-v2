@@ -1,6 +1,3 @@
-import { createClient } from "@supabase/supabase-js";
-
-export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-
-export const supabase = createClient(SUPABASE_URL ?? "", SUPABASE_ANON_KEY ?? "");
+// Ré-export vers l'instance unique (src/lib/supabaseClient.ts).
+// Évite les multiples GoTrueClient / sessions dédoublées.
+export { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "./lib/supabaseClient";
