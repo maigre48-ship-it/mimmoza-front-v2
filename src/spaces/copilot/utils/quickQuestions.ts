@@ -332,15 +332,15 @@ const ROUTE_QUESTIONS: RouteQuestions[] = [
   {
     prefix: '/promoteur/simulation-travaux',
     quick: [
-      { label: '💰 Budget au m² dans la moyenne ?',      prompt: "Le budget travaux au m² est-il dans la moyenne du marché pour ce type de programme et cette région ?" },
-      { label: '📦 Postes qui pèsent le plus',          prompt: "Quels postes de construction pèsent le plus sur le coût total et méritent une attention particulière ?" },
-      { label: '📊 Compatible avec la marge cible ?',   prompt: "Ce budget travaux est-il compatible avec la marge promoteur cible ? Donne un verdict rapide." },
+      { label: '💰 Coût au m² réaliste ?',              prompt: "À partir des chiffres de cette page (coût de construction au m² SDP, typologie, gamme, niveaux), ce coût est-il réaliste pour une opération neuve dans ce secteur ? Donne un verdict rapide." },
+      { label: '📦 Postes qui pèsent le plus',          prompt: "À partir de la décomposition affichée sur cette page, quels postes pèsent le plus dans le coût de construction (gros œuvre, clos-couvert, second œuvre, VRD) ?" },
+      { label: '➕ Ce qui n\'est pas compté',           prompt: "Cette estimation est indicative HT. Rappelle-moi ce qui n'est pas inclus (foncier, démolition, désamiantage, fondations spéciales, taxes TA/RAP, assurances, portage) et qu'il faut budgéter en plus." },
     ],
     advanced: [
-      { label: '📋 Analyse complète par corps d\'état',  prompt: "Analyse complète du budget travaux par corps d'état avec benchmarks marché. Quels postes sont sur-estimés ou sous-estimés ?" },
-      { label: '🔢 3 scénarios construction + marge',   prompt: "Simule 3 scénarios de construction (économique / standard / premium) avec pour chacun le coût au m² SDP et l'impact sur le taux de marge." },
-      { label: '🎯 Optimisation pour la marge cible',   prompt: "Quels postes optimiser en priorité pour tenir l'objectif de marge promoteur sans dégrader la qualité livrable ?" },
-      { label: '💶 Coût compatible avec la marge',      prompt: "À titre indicatif, quel niveau de coût de construction au m² SDP resterait compatible avec une marge promoteur saine ?" },
+      { label: '📋 Décomposition par corps d\'état',    prompt: "À partir des chiffres de cette page, décompose le coût de construction par grands postes (gros œuvre, clos-couvert, second œuvre, lots techniques, VRD, honoraires) et commente les ordres de grandeur." },
+      { label: '🎚️ Compare les 3 gammes',              prompt: "Compare l'impact des trois gammes (économique / standard / premium) sur le coût au m² SDP et le total HT pour cette typologie et ces paramètres constructifs. Quel arbitrage recommandes-tu ?" },
+      { label: '🎯 Leviers pour réduire le coût',       prompt: "À partir des paramètres de cette page (typologie, gamme, niveaux, toiture, volets, balcons/terrasses, parking, VRD), quels leviers réduiraient le plus le coût de construction sans dégrader la qualité livrable ?" },
+      { label: '⚠️ Postes à budgéter en plus',          prompt: "Au-delà de cette estimation de construction HT, liste les postes à budgéter avant d'arbitrer l'opération (foncier, taxes, fondations spéciales, aléas, honoraires non inclus, portage) avec des ordres de grandeur indicatifs." },
     ],
   },
 
@@ -624,7 +624,7 @@ export function getCopilotContextLabel(ctx: QuickQuestionsContext): string | nul
     'implantation-2d':     'Implantation 2D',
     'massing-3d':          'Massing 3D',
     'generateur-facades':  'Façades IA',
-    'simulation-travaux':  'Simulation travaux',
+    'simulation-travaux':  'Coût de construction',
     'marche':              'Marché',
     'bilan-promoteur':     'Bilan promoteur',
     'bilan':               'Bilan',
