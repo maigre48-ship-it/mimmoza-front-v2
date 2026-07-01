@@ -1,15 +1,15 @@
 ﻿// src/spaces/promoteur/shared/promoteurStudy.types.ts
 
-// â”€â”€â”€ RÃ©sultat service gÃ©nÃ©rique â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Résultat service générique ───────────────────────────────────────────────
 export type ServiceResult<T> =
   | { ok: true;  data: T }
   | { ok: false; error: string };
 
-// â”€â”€â”€ Module Foncier â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Module Foncier ───────────────────────────────────────────────────────────
 export interface PromoteurParcelRaw {
   id:       string;
   area_m2:  number | null;
-  feature?: Record<string, unknown> | null; // GeoJSON feature sÃ©rialisÃ©
+  feature?: Record<string, unknown> | null; // GeoJSON feature sérialisé
 }
 
 export interface PromoteurFoncierData {
@@ -22,7 +22,7 @@ export interface PromoteurFoncierData {
   done:          boolean;
 }
 
-// â”€â”€â”€ Module PLU â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Module PLU ───────────────────────────────────────────────────────────────
 export interface PromoteurPluData {
   zone_code:    string | null;
   zone_libelle: string | null;
@@ -31,7 +31,7 @@ export interface PromoteurPluData {
   done:         boolean;
 }
 
-// â”€â”€â”€ Module Conception / FaisabilitÃ© â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Module Conception / Faisabilité ─────────────────────────────────────────
 export interface PromoteurConceptionData {
   // Programme
   nb_logements_total:    number | null;
@@ -42,7 +42,7 @@ export interface PromoteurConceptionData {
   shon_total_m2:         number | null;
   shob_total_m2:         number | null;
   // Gabarit retenu
-  ces_retenu:            number | null; // ratio 0â€“1
+  ces_retenu:            number | null; // ratio 0–1
   hauteur_retenue_m:     number | null;
   nb_niveaux:            number | null;
   // Stationnement
@@ -56,7 +56,7 @@ export interface PromoteurConceptionData {
   done:                  boolean;
 }
 
-// â”€â”€â”€ Module MarchÃ© â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Module Marché ────────────────────────────────────────────────────────────
 export interface PromoteurMarcheData {
   prix_m2_median:   number | null;
   prix_m2_neuf:     number | null;
@@ -70,9 +70,9 @@ export interface PromoteurMarcheData {
   done:             boolean;
 }
 
-// â”€â”€â”€ Module Risques â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Module Risques ───────────────────────────────────────────────────────────
 export interface PromoteurRisquesData {
-  score_inondation:    number | null; // 0â€“4
+  score_inondation:    number | null; // 0–4
   score_seisme:        number | null;
   score_retrait_argile: number | null;
   score_radon:         number | null;
@@ -82,11 +82,11 @@ export interface PromoteurRisquesData {
   done:                boolean;
 }
 
-// â”€â”€â”€ Module Ã‰valuation / Programme financier â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Module Évaluation / Programme financier ─────────────────────────────────
 export interface PromoteurEvaluationData {
-  // CoÃ»ts
+  // Coûts
   cout_foncier:             number | null;
-  cout_construction_m2:     number | null; // â‚¬/mÂ² SHON
+  cout_construction_m2:     number | null; // €/m² SHON
   cout_construction_total:  number | null;
   cout_vrd:                 number | null;
   cout_honoraires:          number | null; // % du foncier+construction
@@ -98,20 +98,20 @@ export interface PromoteurEvaluationData {
   prix_vente_m2_libre:      number | null;
   prix_vente_m2_social:     number | null;
   ca_previsionnel:          number | null;
-  // SynthÃ¨se
+  // Synthèse
   marge_brute:              number | null;
   taux_marge_pct:           number | null;
-  bep_m2:                   number | null; // prix de vente min pour Ã©quilibre
-  // HypothÃ¨ses
+  bep_m2:                   number | null; // prix de vente min pour équilibre
+  // Hypothèses
   taux_tva_libre:           number | null; // ex: 20
   taux_tva_social:          number | null; // ex: 5.5
   notes:                    string | null;
   done:                     boolean;
 }
 
-// â”€â”€â”€ Module Bilan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Module Bilan ─────────────────────────────────────────────────────────────
 export interface PromoteurBilanData {
-  // RÃ©cap financier
+  // Récap financier
   prix_foncier:        number | null;
   prix_revient_total:  number | null;
   ca_previsionnel:     number | null;
@@ -122,7 +122,7 @@ export interface PromoteurBilanData {
   credit_promotion:    number | null;
   taux_credit_pct:     number | null;
   duree_mois:          number | null;
-  // RentabilitÃ©
+  // Rentabilité
   roi_pct:             number | null;
   tri_pct:             number | null;
   // Narrative AI
@@ -133,7 +133,7 @@ export interface PromoteurBilanData {
   done:                boolean;
 }
 
-// â”€â”€â”€ Ã‰tude complÃ¨te â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Étude complète ───────────────────────────────────────────────────────────
 export interface PromoteurStudy {
   id:         string;
   user_id:    string;
@@ -150,7 +150,7 @@ export interface PromoteurStudy {
   updated_at: string;
 }
 
-// Patch gÃ©nÃ©rique (titre / statut uniquement â€” pas les modules)
+// Patch générique (titre / statut uniquement — pas les modules)
 export interface PromoteurStudyMetaPatch {
   title?:  string;
   status?: "draft" | "active" | "archived";

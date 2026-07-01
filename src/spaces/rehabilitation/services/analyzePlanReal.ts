@@ -1,7 +1,7 @@
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // analyzePlanReal.ts  v3
 // Service front — Envoi du plan à la Supabase Edge Function Vision
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 import { supabase } from "@/lib/supabaseClient";
 import type {
@@ -12,7 +12,7 @@ import type {
   PlanUpload,
 } from "../shared/planAnalysis.types";
 
-// ─── Types internes ───────────────────────────────────────────────────────────
+// --- Types internes -----------------------------------------------------------
 
 interface AnalyzePlanRealInput {
   plan: PlanUpload | null;
@@ -37,7 +37,7 @@ type ApiErrorBody = {
   debug?: unknown;
 };
 
-// ─── Constantes ──────────────────────────────────────────────────────────────
+// --- Constantes --------------------------------------------------------------
 
 const FUNCTION_NAME = "analyze-rehab-plan";
 const TIMEOUT_MS = 120_000;
@@ -49,7 +49,7 @@ const ACCEPTED_MIME_TYPES = new Set([
   "application/pdf",
 ]);
 
-// ─── Fonction principale ──────────────────────────────────────────────────────
+// --- Fonction principale ------------------------------------------------------
 
 export async function analyzePlanReal(
   input: AnalyzePlanRealInput
@@ -168,7 +168,7 @@ export async function analyzePlanReal(
   return normalizeResult(rawData as Record<string, unknown>, processingTimeMs, building);
 }
 
-// ─── Parsing réponse ──────────────────────────────────────────────────────────
+// --- Parsing réponse ----------------------------------------------------------
 
 async function parseResponseBody(
   response: Response
@@ -220,7 +220,7 @@ function extractApiError(
   return { code: `HTTP_${status}`, message: `Erreur serveur (${status}).` };
 }
 
-// ─── Normalisation du résultat v3 ─────────────────────────────────────────────
+// --- Normalisation du résultat v3 ---------------------------------------------
 
 function normalizeResult(
   raw: Record<string, unknown>,
@@ -228,7 +228,7 @@ function normalizeResult(
   building: BuildingParams
 ): PlanAnalysisResult {
 
-  // ── Issues ────────────────────────────────────────────────────────────────
+  // -- Issues ----------------------------------------------------------------
   const rawIssues = Array.isArray(raw.issues) ? raw.issues : [];
 
   const issues = rawIssues
@@ -245,7 +245,7 @@ function normalizeResult(
       regulatoryRef: iss.regulatoryRef ? String(iss.regulatoryRef) : null,
     }));
 
-  // ── Recommandations ───────────────────────────────────────────────────────
+  // -- Recommandations -------------------------------------------------------
   const rawRecs = Array.isArray(raw.recommendations) ? raw.recommendations : [];
 
   const recommendations = rawRecs
@@ -265,13 +265,13 @@ function normalizeResult(
         title: String(rec.title ?? "Recommandation"),
         description: String(rec.description ?? ""),
         estimatedCost: costRaw
-            ? { min, max: Math.max(max, min), unit: "€" as const }
-            : null,
-          relatedIssueIds: [],
-        };
+          ? { min, max: Math.max(max, min), unit: "€" as const }
+          : null,
+        relatedIssueIds: [],
+      };
     });
 
-  // ── architecturalReading (v2) ─────────────────────────────────────────────
+  // -- architecturalReading (v2) ---------------------------------------------
   const arRaw =
     raw.architecturalReading && typeof raw.architecturalReading === "object"
       ? (raw.architecturalReading as Record<string, unknown>)
@@ -286,7 +286,7 @@ function normalizeResult(
       }
     : undefined;
 
-  // ── detectedSpatialElements (v2) ──────────────────────────────────────────
+  // -- detectedSpatialElements (v2) ------------------------------------------
   const dseRaw =
     raw.detectedSpatialElements && typeof raw.detectedSpatialElements === "object"
       ? (raw.detectedSpatialElements as Record<string, unknown>)
@@ -307,10 +307,10 @@ function normalizeResult(
       }
     : undefined;
 
-  // ── functionalObservations (v2) ───────────────────────────────────────────
+  // -- functionalObservations (v2) -------------------------------------------
   const functionalObservations = normalizeStringArray(raw.functionalObservations);
 
-  // ── spatialIntelligence (v3) ──────────────────────────────────────────────
+  // -- spatialIntelligence (v3) ----------------------------------------------
   const siRaw =
     raw.spatialIntelligence && typeof raw.spatialIntelligence === "object"
       ? (raw.spatialIntelligence as Record<string, unknown>)
@@ -327,7 +327,7 @@ function normalizeResult(
       }
     : undefined;
 
-  // ── engineMeta ────────────────────────────────────────────────────────────
+  // -- engineMeta ------------------------------------------------------------
   const metaRaw =
     raw.engineMeta && typeof raw.engineMeta === "object"
       ? (raw.engineMeta as Record<string, unknown>)
@@ -345,7 +345,7 @@ function normalizeResult(
       id: crypto.randomUUID(),
       input: { plan: null, building },
       complianceScore: { global: 0, pmr: 0, fireSafety: 0, circulation: 0, sanitaryFacilities: 0 },
-      summary: String(raw.summary ?? "Analyse incomplÃ¨te."),
+      summary: String(raw.summary ?? "Analyse incomplète."),
     reliability: normalizeReliability(raw.reliability),             // v2
     riskLevel: normalizeRiskLevel(raw.riskLevel),
     pmrLevel: normalizeComplianceLevel(raw.pmrLevel),
@@ -361,7 +361,7 @@ function normalizeResult(
   };
 }
 
-// ─── Normalizers enum ─────────────────────────────────────────────────────────
+// --- Normalizers enum ---------------------------------------------------------
 
 function normalizeSeverity(v: unknown): "non_conforme" | "a_verifier" | "conforme" {
   if (v === "non_conforme" || v === "a_verifier" || v === "conforme") return v;
@@ -423,7 +423,7 @@ function normalizeStringArray(v: unknown): string[] {
   return v.filter((s) => s != null).map((s) => String(s));
 }
 
-// ─── Helper erreur ────────────────────────────────────────────────────────────
+// --- Helper erreur ------------------------------------------------------------
 
 function makeError(
   code: string,
