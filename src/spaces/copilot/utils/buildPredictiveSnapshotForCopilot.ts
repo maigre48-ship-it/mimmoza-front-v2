@@ -3,6 +3,8 @@
 // Lit le snapshot Marchand (localStorage) + snapshot Investisseur en mémoire.
 // Aucun appel réseau — données déjà calculées par le moteur prédictif Mimmoza.
 // v4.4 — Ajout transport_gtfs (MobilityScore GTFS PostGIS)
+// v4.5 — Anti-fantôme travaux : une simulation VIDE (surface 0 + 0 zone) n'alimente
+//        plus travaux_budget (le Copilot répond qu'aucune simu n'est disponible).
 // =============================================================================
 
 import type { MobilityScore } from '../../../services/mobility/mobility.types';
@@ -131,11 +133,33 @@ export function buildPredictiveSnapshotForCopilot(
     const rentaInputs  = isObj((rentaRaw as any)?.inputs) ? (rentaRaw as any).inputs : null;
 
     // ── Budget travaux (Investisseur snapshot) ───────────────────────────────
-    const investSnap   = getInvestisseurSnapshot();
-    const investPid    = investSnap.activeProjectId;
-    const investTravaux = investPid
-      ? investSnap.projects?.[investPid]?.execution?.travaux?.computed
+    // v4.5 — Anti-fantôme : on IGNORE une simulation travaux vide.
+    // computeTravauxSimulation() renvoie un total non nul même quand rien n'est saisi
+    // (niveau "heavy" + complexité par défaut). Sans ce garde, ce total "par défaut"
+    // (~4 490 €) remontait au Copilot comme un vrai budget travaux. On considère la
+    // simu vide si la surface est nulle ET qu'aucune zone n'est définie (modes simple
+    // et expert). Dans ce cas → travaux_budget retombe sur l'éventuel travaux manuel
+    // de la rentabilité, sinon null → le Copilot dit qu'il n'y a pas de simulation.
+    const investSnap     = getInvestisseurSnapshot();
+    const investPid      = investSnap.activeProjectId;
+    const investTravNode = investPid
+      ? investSnap.projects?.[investPid]?.execution?.travaux
       : null;
+    const investTravInput = isObj((investTravNode as any)?.input)
+      ? ((investTravNode as any).input as Record<string, unknown>)
+      : null;
+    const investSurface = n(
+      investTravInput?.surfaceTotalM2 ?? investTravInput?.surfaceTotaleM2,
+    );
+    const investPieces = Array.isArray((investTravInput as any)?.pieces)
+      ? ((investTravInput as any).pieces as unknown[])
+      : [];
+    const investTravIsEmpty =
+      !investTravNode ||
+      ((investSurface ?? 0) <= 0 && investPieces.length === 0);
+    const investTravaux = investTravIsEmpty
+      ? null
+      : ((investTravNode as any)?.computed ?? null);
     const travauxBudget =
       n(investTravaux?.totalWithBuffer ?? investTravaux?.total) ??
       n(rentaInputs?.travauxUtilises ?? rentaInputs?.travauxEstimes ?? rentaInputs?.travaux);

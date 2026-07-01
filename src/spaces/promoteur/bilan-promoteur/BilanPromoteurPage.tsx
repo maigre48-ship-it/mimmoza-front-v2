@@ -35,6 +35,7 @@ import { usePromoteurStudy } from "../shared/usePromoteurStudy";
 import {
   PROGRAMME_EVENT,
   resolvedNbLogements,
+  sdpProgrammeM2,
   usePromoteurProgrammeStore,
 } from "../store/promoteurProgramme.store";
 import { usePromoteurProjectStore } from "../store/promoteurProject.store";
@@ -613,12 +614,25 @@ export const BilanPromoteurPage: React.FC = () => {
   const totalHeightM = useMemo(() => n(floorsSpec.groundFloorHeightM, 2.8) + Math.max(0, Math.floor(n(floorsSpec.aboveGroundFloors, 0))) * n(floorsSpec.typicalFloorHeightM, 2.7), [floorsSpec]);
   const coefHab      = buildingKind === "INDIVIDUEL" ? 0.9 : 0.82;
 
+  // ── SDP : la Programmation est PRIORITAIRE (intention métier, multi-bâtiments). ──
+  //  Le Massing 3D ne sert plus qu'au repli et au chiffrage détaillé (façade/toiture/menuiseries).
+  const sdpProgrammeValue = useMemo(() => sdpProgrammeM2(programmeMix), [programmeMix]);
+
+  const sdpSource = useMemo<"rehab" | "programmation" | "massing" | "snap2d" | "emprise">(() => {
+    if (ass.rehabMode && ass.surfaceRehabM2 > 0) return "rehab";
+    if (sdpProgrammeValue > 0) return "programmation";
+    if (massing && !ass.rehabMode && massing.totaux.sdpM2 > 0) return "massing";
+    if (footprintBuildingsM2Raw <= 0 && sdpFromSnap > 0) return "snap2d";
+    return "emprise";
+  }, [ass.rehabMode, ass.surfaceRehabM2, sdpProgrammeValue, massing, footprintBuildingsM2Raw, sdpFromSnap]);
+
   const sdpEstimatedM2 = useMemo(() => {
     if (ass.rehabMode && ass.surfaceRehabM2 > 0) return ass.surfaceRehabM2;
+    if (sdpProgrammeValue > 0) return sdpProgrammeValue;                                  // ← Programmation prioritaire
     if (massing && !ass.rehabMode && massing.totaux.sdpM2 > 0) return massing.totaux.sdpM2;
     if (footprintBuildingsM2Raw <= 0 && sdpFromSnap > 0) return sdpFromSnap;
     return footprintBuildingsM2 * levelsCount * 1.0;
-  }, [ass.rehabMode, ass.surfaceRehabM2, massing, footprintBuildingsM2Raw, footprintBuildingsM2, levelsCount, sdpFromSnap]);
+  }, [ass.rehabMode, ass.surfaceRehabM2, sdpProgrammeValue, massing, footprintBuildingsM2Raw, footprintBuildingsM2, levelsCount, sdpFromSnap]);
 
   const habitableEstimatedM2 = useMemo(() => sdpEstimatedM2 * coefHab, [sdpEstimatedM2, coefHab]);
   const surfaceVendableM2    = useMemo(() => habitableEstimatedM2 * n(ass.coefVendable, 1), [habitableEstimatedM2, ass.coefVendable]);
@@ -637,10 +651,13 @@ export const BilanPromoteurPage: React.FC = () => {
 
   // Source de vérité : quand le Massing est connecté et que la typologie donne un total,
   // c'est elle qui fait foi (sinon, le state nbLogements / la programmation).
+  //  Programmation prioritaire aussi sur le nombre de logements (cohérent avec la SDP).
   const nbLogementsEffectif =
-    !!massing && !ass.rehabMode && nbLogementsFromTypologie > 0
-      ? nbLogementsFromTypologie
-      : nbLogements;
+    resolvedLogements.source === "programmation"
+      ? resolvedLogements.value
+      : (!!massing && !ass.rehabMode && nbLogementsFromTypologie > 0
+          ? nbLogementsFromTypologie
+          : nbLogements);
 
   const hasConceptionData = footprintBuildingsM2 > 0 || sdpFromSnap > 0;
   const hasRehabData      = ass.travauxRehabTotal > 0;
@@ -720,7 +737,8 @@ export const BilanPromoteurPage: React.FC = () => {
     if (!n(ass.landPriceEur, 0)) notes.push("Foncier non renseigné : le bilan est incomplet.");
     if (ass.terrassementEur > 0) notes.push(`Terrassement intégré : ${eur(ass.terrassementEur)} HT (${terrassementHint}).`);
     if (pf.useRehab) notes.push(`Mode Réhabilitation — Travaux = ${eur(pf.travauxBase)} · Surface = ${m2(ass.surfaceRehabM2)}.`);
-    if (massing && !ass.rehabMode) notes.push(`Métré piloté par le Massing 3D — SDP ${m2(massing.totaux.sdpM2)} · ${nbLogementsEffectif} logement(s).`);
+    if (sdpSource === "programmation") notes.push(`SDP pilotée par la Programmation — ${m2(sdpEstimatedM2)} (Σ ${programmeMix.batiments.length} bâtiment(s), proxy SHAB + commerce).`);
+    if (massing && !ass.rehabMode) notes.push(`Massing 3D connecté — chiffrage détaillé actif (façade, toiture, menuiseries)${sdpSource === "massing" ? ` · SDP métré ${m2(massing.totaux.sdpM2)}` : ""} · ${nbLogementsEffectif} logement(s).`);
     if (pf.useMassing && ass.autoCosts && derivedCosts) notes.push(`Prix construction auto — ${derivedCosts.basis}.`);
     if (regionInfo.factor !== 1) notes.push(`Coefficient régional ×${regionInfo.factor.toFixed(2)} (${regionInfo.label}) appliqué aux coûts de construction principaux.`);
 
@@ -735,7 +753,7 @@ export const BilanPromoteurPage: React.FC = () => {
       coutParLogement: pfCoutTotal / safeNb,
       margeParLogement: pfMarge / safeNb,
     };
-  }, [ass, sdpEstimatedM2, surfaceVendableM2, nbLogementsEffectif, terrassementHint, massing, derivedCosts, programmeMix, footprintParkingsM2, regionInfo, levelsCount]);
+  }, [ass, sdpEstimatedM2, surfaceVendableM2, nbLogementsEffectif, terrassementHint, massing, derivedCosts, programmeMix, footprintParkingsM2, regionInfo, levelsCount, sdpSource]);
 
   // ── Stress test (sensibilité) ───────────────────────────────────────────────
   const sensitivity = useMemo(() => {
@@ -1114,7 +1132,8 @@ export const BilanPromoteurPage: React.FC = () => {
 
   const lecturePromoteur = useMemo(() => {
     const ins: string[] = [];
-    if (massingLocked) ins.push(`🏗 Métré Massing 3D connecté — SDP ${m2(massing!.totaux.sdpM2)} · ${nbLogementsEffectif} logement(s)`);
+    if (sdpSource === "programmation") ins.push(`📋 SDP pilotée par la Programmation — ${m2(sdpEstimatedM2)} (Σ ${programmeMix.batiments.length} bâtiment(s)). Plus précise que le volume 3D.`);
+    if (massingLocked) ins.push(`🏗 Massing 3D connecté — chiffrage détaillé (façade, toiture, menuiseries).${sdpSource !== "massing" ? ` SDP retenue : Programmation.` : ` SDP métré : ${m2(massing!.totaux.sdpM2)}.`}`);
     if (massingLocked && ass.autoCosts && derivedCosts) ins.push(`⚙️ Prix construction auto — ${derivedCosts.basis}`);
     if (ass.rehabMode) ins.push(`🔧 Mode Réhabilitation — Travaux = ${eur(ass.travauxRehabTotal)} · Surface = ${m2(ass.surfaceRehabM2)}`);
     if (computed.margePct >= 20) ins.push("✅ Marge confortable (≥ 20%)");
@@ -1187,7 +1206,7 @@ export const BilanPromoteurPage: React.FC = () => {
     ins.push(`🚦 Décision finale : ${feasibility.decisionLabel}. ${feasibility.decisionReason}`);
 
     return ins;
-  }, [computed, ass, missingRehab, foncierVide, massingLocked, massing, nbLogementsEffectif, derivedCosts, feasibility, sensitivity, regionInfo, levelsCount]);
+  }, [computed, ass, missingRehab, foncierVide, massingLocked, massing, nbLogementsEffectif, derivedCosts, feasibility, sensitivity, regionInfo, levelsCount, sdpSource, sdpEstimatedM2, programmeMix]);
 
   const handleExportExcel = async () => {
     try {

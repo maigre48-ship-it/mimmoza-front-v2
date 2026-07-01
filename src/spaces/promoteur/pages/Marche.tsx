@@ -1,8 +1,8 @@
-﻿
+
 export default function Marche(): React.ReactElement {
   return (
     <div style={{ padding: 24 }}>
-      <h2 style={{ margin: "0 0 8px", color: "#0f172a" }}>MarchÃ©</h2>
+      <h2 style={{ margin: "0 0 8px", color: "#0f172a" }}>Marché</h2>
       <p style={{ margin: 0, color: "#475569" }}>Page en cours de construction.</p>
     </div>
   );

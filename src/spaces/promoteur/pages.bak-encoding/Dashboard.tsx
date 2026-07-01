@@ -1,4 +1,4 @@
-﻿// src/spaces/promoteur/pages/Dashboard.tsx
+// src/spaces/promoteur/pages/Dashboard.tsx
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../supabaseClient";
 
@@ -40,11 +40,11 @@ function pretty(v: any) {
   }
 }
 
-// Extraction tolÃ©rante (on normalisera ensuite au format strict)
+// Extraction tolérante (on normalisera ensuite au format strict)
 function extractKpis(payload: any) {
-  const zone_code = payload?.plu?.zone_code ?? payload?.zone_code ?? "â€”";
+  const zone_code = payload?.plu?.zone_code ?? payload?.zone_code ?? "—";
   const zone_libelle =
-    payload?.plu?.zone_libelle ?? payload?.zone_libelle ?? "â€”";
+    payload?.plu?.zone_libelle ?? payload?.zone_libelle ?? "—";
 
   const ruleset =
     payload?.plu?.ruleset ??
@@ -127,7 +127,7 @@ export default function Dashboard(): React.ReactElement {
         return;
       }
 
-      // PrioritÃ© parcelle
+      // Priorité parcelle
       if (pid) {
         const { data, error } = await supabase.functions.invoke(
           "plu-from-parcelle",
@@ -155,8 +155,8 @@ export default function Dashboard(): React.ReactElement {
     <div style={{ padding: 24, maxWidth: 980 }}>
       <h2 style={{ margin: "0 0 8px", color: "#0f172a" }}>Tableau de bord</h2>
       <p style={{ margin: "0 0 18px", color: "#475569" }}>
-        Point dâ€™entrÃ©e opÃ©rationnel : adresse/parcelle â†’ zone PLU + rÃ¨gles clÃ©s
-        (indÃ©pendant de lâ€™ingestion).
+        Point d’entrée opérationnel : adresse/parcelle → zone PLU + règles clés
+        (indépendant de l’ingestion).
       </p>
 
       <div
@@ -208,7 +208,7 @@ export default function Dashboard(): React.ReactElement {
               }}
             />
             <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
-              Appelle <code>plu-from-parcelle</code> si renseignÃ©.
+              Appelle <code>plu-from-parcelle</code> si renseigné.
             </div>
           </div>
         </div>
@@ -243,7 +243,7 @@ export default function Dashboard(): React.ReactElement {
               cursor: "pointer",
             }}
           >
-            RÃ©initialiser
+            Réinitialiser
           </button>
 
           <button
@@ -258,7 +258,7 @@ export default function Dashboard(): React.ReactElement {
               cursor: "pointer",
             }}
           >
-            {showDetails ? "Masquer dÃ©tails" : "Afficher dÃ©tails"}
+            {showDetails ? "Masquer détails" : "Afficher détails"}
           </button>
         </div>
 
@@ -287,10 +287,10 @@ export default function Dashboard(): React.ReactElement {
                   Zone PLU
                 </div>
                 <div style={{ marginTop: 6, fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
-                  {kpis?.zone_code ?? "â€”"}
+                  {kpis?.zone_code ?? "—"}
                 </div>
                 <div style={{ marginTop: 4, fontSize: 12, color: "#475569" }}>
-                  {kpis?.zone_libelle ?? "â€”"}
+                  {kpis?.zone_libelle ?? "—"}
                 </div>
               </div>
 
@@ -299,7 +299,7 @@ export default function Dashboard(): React.ReactElement {
                   Reculs (extrait)
                 </div>
                 <pre style={{ marginTop: 8, fontSize: 12, color: "#0f172a", whiteSpace: "pre-wrap" }}>
-                  {kpis?.reculs ? pretty(kpis.reculs) : "â€”"}
+                  {kpis?.reculs ? pretty(kpis.reculs) : "—"}
                 </pre>
               </div>
 
@@ -309,10 +309,10 @@ export default function Dashboard(): React.ReactElement {
                 </div>
                 <pre style={{ marginTop: 8, fontSize: 12, color: "#0f172a", whiteSpace: "pre-wrap" }}>
 {`Hauteur:
-${kpis?.hauteur ? pretty(kpis.hauteur) : "â€”"}
+${kpis?.hauteur ? pretty(kpis.hauteur) : "—"}
 
 Parking:
-${kpis?.parking ? pretty(kpis.parking) : "â€”"}`}
+${kpis?.parking ? pretty(kpis.parking) : "—"}`}
                 </pre>
               </div>
             </div>
@@ -339,8 +339,8 @@ ${kpis?.parking ? pretty(kpis.parking) : "â€”"}`}
       </div>
 
       <p style={{ marginTop: 12, color: "#64748b", fontSize: 12 }}>
-        Prochaine Ã©tape (quand tu me le demanderas) : normaliser la sortie en 3 champs stricts
-        (reculs/hauteur/parking) au lieu dâ€™afficher du JSON extrait.
+        Prochaine étape (quand tu me le demanderas) : normaliser la sortie en 3 champs stricts
+        (reculs/hauteur/parking) au lieu d’afficher du JSON extrait.
       </p>
     </div>
   );

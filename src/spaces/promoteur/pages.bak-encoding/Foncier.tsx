@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../supabaseClient";
 import ParcelMapSelector from "../foncier/ParcelMapSelector";
 
@@ -21,7 +21,7 @@ type PluLookupResult = {
   plu?: any;
 };
 
-/** Structure de la sÃ©lection terrain persistÃ©e */
+/** Structure de la sélection terrain persistée */
 type TerrainSelection = {
   version: "v1";
   updated_at: string;
@@ -62,9 +62,9 @@ function pretty(v: any) {
 }
 
 function extractKpis(payload: any) {
-  const zone_code = payload?.plu?.zone?.zone_code ?? payload?.plu?.zone_code ?? payload?.zone_code ?? "â€”";
+  const zone_code = payload?.plu?.zone?.zone_code ?? payload?.plu?.zone_code ?? payload?.zone_code ?? "—";
   const zone_libelle =
-    payload?.plu?.zone?.zone_libelle ?? payload?.plu?.zone_libelle ?? payload?.zone_libelle ?? "â€”";
+    payload?.plu?.zone?.zone_libelle ?? payload?.plu?.zone_libelle ?? payload?.zone_libelle ?? "—";
 
   const ruleset =
     payload?.plu?.ruleset ??
@@ -102,7 +102,7 @@ async function extractSupabaseErrorMessage(err: any): Promise<string> {
   if (ctx && typeof ctx.text === "function") {
     try {
       const bodyText = await ctx.text();
-      if (!bodyText) return err?.message ?? "Erreur serveur (rÃ©ponse vide).";
+      if (!bodyText) return err?.message ?? "Erreur serveur (réponse vide).";
 
       try {
         const parsed = JSON.parse(bodyText);
@@ -118,7 +118,7 @@ async function extractSupabaseErrorMessage(err: any): Promise<string> {
         return bodyText;
       }
     } catch {
-      return err?.message ?? "Erreur lors de la lecture de la rÃ©ponse.";
+      return err?.message ?? "Erreur lors de la lecture de la réponse.";
     }
   }
 
@@ -175,14 +175,14 @@ function extractCommuneInseeFromAny(payload: any, fallbackParcelId?: string): st
 }
 
 /**
- * Formate une surface en mÂ² avec sÃ©parateur de milliers.
+ * Formate une surface en m² avec séparateur de milliers.
  */
 function formatAreaM2(area: number | null | undefined): string {
-  if (area == null) return "â€”";
-  return area.toLocaleString("fr-FR") + " mÂ²";
+  if (area == null) return "—";
+  return area.toLocaleString("fr-FR") + " m²";
 }
 
-/** Type Ã©tendu pour les parcelles sÃ©lectionnÃ©es avec surface */
+/** Type étendu pour les parcelles sélectionnées avec surface */
 type SelectedParcel = {
   id: string;
   feature?: any;
@@ -190,7 +190,7 @@ type SelectedParcel = {
 };
 
 /**
- * Persiste la sÃ©lection de parcelles dans les clÃ©s de session et handoff.
+ * Persiste la sélection de parcelles dans les clés de session et handoff.
  * Ne fait rien si aucune parcelle ou pas de communeInsee.
  */
 function persistPromoteurSessionAndHandoff(params: {
@@ -201,16 +201,16 @@ function persistPromoteurSessionAndHandoff(params: {
 }): boolean {
   const { parcelIds, focusParcelId, communeInsee, address } = params;
 
-  // Guard: ne jamais Ã©crire une valeur vide
+  // Guard: ne jamais écrire une valeur vide
   if (parcelIds.length === 0 || !communeInsee) {
     return false;
   }
 
-  // DÃ©finir la parcelle principale
+  // Définir la parcelle principale
   const primaryParcelId = focusParcelId || parcelIds[0] || null;
 
   try {
-    // 1) Ã‰crire la clÃ© handoff v1
+    // 1) Écrire la clé handoff v1
     const handoff: SelectedParcelsHandoff = {
       parcel_ids: parcelIds,
       primary_parcel_id: primaryParcelId,
@@ -219,7 +219,7 @@ function persistPromoteurSessionAndHandoff(params: {
     };
     localStorage.setItem(LS_SELECTED_PARCELS_V1, JSON.stringify(handoff));
 
-    // 2) Synchroniser les clÃ©s session existantes (sans Ã©craser avec des vides)
+    // 2) Synchroniser les clés session existantes (sans écraser avec des vides)
     if (primaryParcelId) {
       localStorage.setItem("mimmoza.session.parcel_id", primaryParcelId);
     }
@@ -255,11 +255,11 @@ export default function Foncier(): React.ReactElement {
   const [res, setRes] = useState<PluLookupResult | null>(null);
   const [showDetails, setShowDetails] = useState(false);
 
-  // --- Carte et sÃ©lection multi-parcelles ---
+  // --- Carte et sélection multi-parcelles ---
   const [showMap, setShowMap] = useState(false);
   const [selectedParcels, setSelectedParcels] = useState<SelectedParcel[]>([]);
 
-  // --- Feedback "SÃ©lection enregistrÃ©e" ---
+  // --- Feedback "Sélection enregistrée" ---
   const [savedOk, setSavedOk] = useState(false);
   const savedOkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -286,7 +286,7 @@ export default function Foncier(): React.ReactElement {
     return (res?.parcel_id ?? res?.parcel?.parcel_id ?? parcelId.trim()) || null;
   }, [res, parcelId]);
 
-  // Total cumulÃ© des surfaces
+  // Total cumulé des surfaces
   const totalAreaM2 = useMemo(() => {
     let total = 0;
     let hasAny = false;
@@ -299,9 +299,9 @@ export default function Foncier(): React.ReactElement {
     return hasAny ? total : null;
   }, [selectedParcels]);
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────────────────────────────────────────────
   // Persistance TerrainSelection dans localStorage
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────────────────────────────────────────────
   const saveTerrainSelection = useCallback(() => {
     if (!communeInsee || selectedParcels.length === 0) {
       return false;
@@ -330,13 +330,13 @@ export default function Foncier(): React.ReactElement {
     }
   }, [communeInsee, selectedParcels, totalAreaM2, focusParcelId]);
 
-  // Auto-save Ã  chaque changement de selectedParcels (si communeInsee dÃ©fini)
+  // Auto-save à chaque changement de selectedParcels (si communeInsee défini)
   // + auto-persist handoff v1
   useEffect(() => {
     if (communeInsee && selectedParcels.length > 0) {
       saveTerrainSelection();
 
-      // Ã‰galement persister le handoff v1 pour cross-pages
+      // Également persister le handoff v1 pour cross-pages
       persistPromoteurSessionAndHandoff({
         parcelIds: selectedParcels.map((p) => p.id),
         focusParcelId,
@@ -346,22 +346,22 @@ export default function Foncier(): React.ReactElement {
     }
   }, [selectedParcels, communeInsee, saveTerrainSelection, focusParcelId, address]);
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Bouton "Utiliser cette sÃ©lection"
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Bouton "Utiliser cette sélection"
+  // ─────────────────────────────────────────────────────────────────────────────
   const handleUseSelection = () => {
     const success = saveTerrainSelection();
     if (success) {
-      // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-      // Persistance session + handoff standardisÃ©e pour PLU & FaisabilitÃ© / Implantation 2D
-      // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ─────────────────────────────────────────────────────────────────────────
+      // Persistance session + handoff standardisée pour PLU & Faisabilité / Implantation 2D
+      // ─────────────────────────────────────────────────────────────────────────
       persistPromoteurSessionAndHandoff({
         parcelIds: selectedParcels.map((p) => p.id),
         focusParcelId,
         communeInsee,
         address,
       });
-      // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ─────────────────────────────────────────────────────────────────────────
 
       setSavedOk(true);
 
@@ -386,16 +386,16 @@ export default function Foncier(): React.ReactElement {
     };
   }, []);
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────────────────────────────────────────────
   // AUTO-PERSISTENCE session parcelle (non intrusive)
-  // Ã‰crit dÃ¨s que focusParcelId + communeInsee disponibles, sans UI feedback
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Écrit dès que focusParcelId + communeInsee disponibles, sans UI feedback
+  // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     // Guard clauses
     if (!focusParcelId || !communeInsee) return;
 
     try {
-      // Lire les valeurs actuelles pour Ã©viter des Ã©critures inutiles
+      // Lire les valeurs actuelles pour éviter des écritures inutiles
       const currentParcelId = localStorage.getItem("mimmoza.session.parcel_id");
       const currentCommune = localStorage.getItem("mimmoza.session.commune_insee");
       const currentAddress = localStorage.getItem("mimmoza.session.address");
@@ -419,7 +419,7 @@ export default function Foncier(): React.ReactElement {
         changed = true;
       }
 
-      // Ã‰galement mettre Ã  jour le handoff v1 si on a des parcelles
+      // Également mettre à jour le handoff v1 si on a des parcelles
       if (changed && selectedParcels.length > 0) {
         persistPromoteurSessionAndHandoff({
           parcelIds: selectedParcels.map((p) => p.id),
@@ -442,9 +442,9 @@ export default function Foncier(): React.ReactElement {
     }
   }, [focusParcelId, communeInsee, address, selectedParcels]);
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Restauration des Ã©tats depuis localStorage (formulaire)
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Restauration des états depuis localStorage (formulaire)
+  // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const saved = safeParse(localStorage.getItem(LS_KEY));
     if (!saved) return;
@@ -506,7 +506,7 @@ export default function Foncier(): React.ReactElement {
 
   const handleClearSelection = () => setSelectedParcels([]);
 
-  // Callback pour auto-enrichir les parcelles sÃ©lectionnÃ©es avec leur surface
+  // Callback pour auto-enrichir les parcelles sélectionnées avec leur surface
   const handleAutoEnrichSelected = useCallback((updates: { id: string; area_m2: number | null }[]) => {
     if (updates.length === 0) return;
 
@@ -542,7 +542,7 @@ export default function Foncier(): React.ReactElement {
         return;
       }
 
-      // 1) RÃ©ponse "base" (parcelle + zone) via les fonctions existantes
+      // 1) Réponse "base" (parcelle + zone) via les fonctions existantes
       let base: any = null;
 
       if (pid) {
@@ -552,7 +552,7 @@ export default function Foncier(): React.ReactElement {
           setErr(
             `ID parcelle invalide : "${pid}".\n` +
               `L'identifiant doit commencer par 5 chiffres (code INSEE commune).\n` +
-              `Exemple : 64065000AI0001 â†’ INSEE 64065`
+              `Exemple : 64065000AI0001 → INSEE 64065`
           );
           return;
         }
@@ -575,11 +575,11 @@ export default function Foncier(): React.ReactElement {
       }
 
       if (!base) {
-        setErr("RÃ©ponse vide du backend.");
+        setErr("Réponse vide du backend.");
         return;
       }
 
-      // 2) Enrichissement PLU: rÃ©cupÃ©rer le ruleset via foncier-lookup-v1 (commune + zone)
+      // 2) Enrichissement PLU: récupérer le ruleset via foncier-lookup-v1 (commune + zone)
       const ci = extractCommuneInseeFromAny(base, pid || undefined);
       const zc = extractZoneCodeFromAny(base);
 
@@ -588,7 +588,7 @@ export default function Foncier(): React.ReactElement {
           body: { commune_insee: ci, zone_code: zc },
         });
 
-        // Si Ã§a Ã©choue: on garde "base" (zone affichable)
+        // Si ça échoue: on garde "base" (zone affichable)
         if (!rPlu.error && rPlu.data?.success) {
           const pluData = rPlu.data;
 
@@ -625,7 +625,7 @@ export default function Foncier(): React.ReactElement {
     <div style={{ padding: 24, maxWidth: 1200 }}>
       <h2 style={{ margin: "0 0 8px", color: "#0f172a" }}>Foncier</h2>
       <p style={{ margin: "0 0 18px", color: "#475569" }}>
-        Recherche terrain : adresse ou parcelle â†’ parcelle(s) + zone PLU (prÃ©visualisation).
+        Recherche terrain : adresse ou parcelle → parcelle(s) + zone PLU (prévisualisation).
       </p>
 
       <div style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 16, background: "#ffffff" }}>
@@ -687,7 +687,7 @@ export default function Foncier(): React.ReactElement {
               cursor: "pointer",
             }}
           >
-            RÃ©initialiser
+            Réinitialiser
           </button>
 
           <button
@@ -702,7 +702,7 @@ export default function Foncier(): React.ReactElement {
               cursor: "pointer",
             }}
           >
-            {showDetails ? "Masquer dÃ©tails" : "Afficher dÃ©tails"}
+            {showDetails ? "Masquer détails" : "Afficher détails"}
           </button>
 
           <button
@@ -749,10 +749,10 @@ export default function Foncier(): React.ReactElement {
                   Parcelle / Commune
                 </div>
                 <div style={{ marginTop: 6, fontSize: 13, fontWeight: 800, color: "#0f172a" }}>
-                  {res.parcel_id ?? res.parcel?.parcel_id ?? "â€”"}
+                  {res.parcel_id ?? res.parcel?.parcel_id ?? "—"}
                 </div>
                 <div style={{ marginTop: 4, fontSize: 12, color: "#475569" }}>
-                  {res.commune_nom ?? res.parcel?.nom_com ?? "â€”"} â€” INSEE {res.commune_insee ?? res.parcel?.commune_insee ?? "â€”"}
+                  {res.commune_nom ?? res.parcel?.nom_com ?? "—"} — INSEE {res.commune_insee ?? res.parcel?.commune_insee ?? "—"}
                 </div>
               </div>
 
@@ -761,10 +761,10 @@ export default function Foncier(): React.ReactElement {
                   Zone PLU
                 </div>
                 <div style={{ marginTop: 6, fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
-                  {kpis?.zone_code ?? "â€”"}
+                  {kpis?.zone_code ?? "—"}
                 </div>
                 <div style={{ marginTop: 4, fontSize: 12, color: "#475569" }}>
-                  {kpis?.zone_libelle ?? "â€”"}
+                  {kpis?.zone_libelle ?? "—"}
                 </div>
               </div>
             </div>
@@ -795,7 +795,7 @@ export default function Foncier(): React.ReactElement {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 14 }}>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 8 }}>
-                  Carte cadastrale â€” Cliquez pour sÃ©lectionner/dÃ©sÃ©lectionner
+                  Carte cadastrale — Cliquez pour sélectionner/désélectionner
                 </div>
 
                 <ParcelMapSelector
@@ -822,7 +822,7 @@ export default function Foncier(): React.ReactElement {
                 }}
               >
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span>Parcelles sÃ©lectionnÃ©es ({selectedParcels.length})</span>
+                  <span>Parcelles sélectionnées ({selectedParcels.length})</span>
                   {selectedParcels.length > 0 && (
                     <button
                       onClick={handleClearSelection}
@@ -835,7 +835,7 @@ export default function Foncier(): React.ReactElement {
 
                 {selectedParcels.length === 0 ? (
                   <div style={{ fontSize: 12, color: "#94a3b8", fontStyle: "italic" }}>
-                    Aucune parcelle sÃ©lectionnÃ©e.
+                    Aucune parcelle sélectionnée.
                     <br />
                     Cliquez sur la carte pour en ajouter.
                   </div>
@@ -866,14 +866,14 @@ export default function Foncier(): React.ReactElement {
                           onClick={() => handleRemoveParcel(p.id)}
                           style={{ padding: "2px 8px", borderRadius: 4, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
                         >
-                          âœ•
+                          ✕
                         </button>
                       </div>
                     ))}
                   </div>
                 )}
 
-                {/* Total cumulÃ© */}
+                {/* Total cumulé */}
                 {selectedParcels.length > 0 && (
                   <div
                     style={{
@@ -903,7 +903,7 @@ export default function Foncier(): React.ReactElement {
                   </div>
                 )}
 
-                {/* Bouton "Utiliser cette sÃ©lection" */}
+                {/* Bouton "Utiliser cette sélection" */}
                 <div style={{ marginTop: 14 }}>
                   <button
                     onClick={handleUseSelection}
@@ -921,7 +921,7 @@ export default function Foncier(): React.ReactElement {
                       transition: "background 0.15s",
                     }}
                   >
-                    âœ“ Utiliser cette sÃ©lection
+                    ✓ Utiliser cette sélection
                   </button>
 
                   {/* Message de confirmation */}
@@ -939,7 +939,7 @@ export default function Foncier(): React.ReactElement {
                         textAlign: "center",
                       }}
                     >
-                      âœ“ SÃ©lection enregistrÃ©e â€” vous pouvez aller Ã  PLU & FaisabilitÃ© / Implantation 2D
+                      ✓ Sélection enregistrée — vous pouvez aller à PLU & Faisabilité / Implantation 2D
                     </div>
                   )}
                 </div>
@@ -950,7 +950,7 @@ export default function Foncier(): React.ReactElement {
       </div>
 
       <p style={{ marginTop: 12, color: "#64748b", fontSize: 12 }}>
-        Ã‰tape suivante : consultez "PLU & FaisabilitÃ©" pour les rÃ¨gles dÃ©taillÃ©es ou "Implantation 2D" pour dessiner votre projet.
+        Étape suivante : consultez "PLU & Faisabilité" pour les règles détaillées ou "Implantation 2D" pour dessiner votre projet.
       </p>
     </div>
   );

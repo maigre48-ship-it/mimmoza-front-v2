@@ -322,10 +322,58 @@ function readStoredTravauxInput(): TravauxSimulationV1 | undefined {
   return undefined;
 }
 
+/** Surface de l'opportunité (le bien), pour pré-remplir quand aucune simulation
+ *  n'existe encore. Marchand (deal.surfaceM2) en priorité, investisseur
+ *  (asset.surfaceM2) en fallback. */
+function readOpportunitySurface(): number | null {
+  // 1) Snapshot marchand — surface du deal actif
+  try {
+    const ms = readMarchandSnapshot();
+    const dealId = ms?.activeDealId ?? null;
+    if (dealId && Array.isArray(ms.deals)) {
+      const deal = ms.deals.find((d) => d.id === dealId);
+      const s = deal?.surfaceM2;
+      if (typeof s === "number" && s > 0) return s;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // 2) Fallback snapshot investisseur — surface de l'asset
+  try {
+    const snap = getInvestisseurSnapshot();
+    const pid = snap.activeProjectId;
+    if (pid) {
+      const s = snap.projects?.[pid]?.asset?.surfaceM2;
+      if (typeof s === "number" && s > 0) return s;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return null;
+}
+
 function hydrateFromSnapshot(): HydratedState | null {
   try {
     const input = readStoredTravauxInput();
-    if (!input) return null;
+
+    // ── Aucune simulation stockée : pré-remplir avec la surface de l'opportunité ──
+    if (!input) {
+      const oppSurface = readOpportunitySurface();
+      if (oppSurface != null) {
+        return {
+          mode: "simple",
+          range: "standard",
+          renovationLevel: "standard",
+          complexity: 1,
+          surface: oppSurface,
+          options: DEFAULT_OPTIONS,
+          piecesUI: [],
+        };
+      }
+      return null;
+    }
 
     const mode: "simple" | "expert" = input.mode === "expert" ? "expert" : "simple";
     const range = VALID_RANGES.includes(input.range) ? input.range : "standard";
@@ -345,8 +393,23 @@ function hydrateFromSnapshot(): HydratedState | null {
         ? (typeof input.surfaceTotalM2 === "number" ? input.surfaceTotalM2 : 0)
         : 0;
 
-    // Rien de significatif à restaurer → on laisse le formulaire vide.
-    if (mode === "simple" && surface === 0) return null;
+    // Simulation stockée mais vide (surface 0 / pas de pièces) :
+    // on tente quand même la surface de l'opportunité pour ne pas repartir à 0.
+    if (mode === "simple" && surface === 0) {
+      const oppSurface = readOpportunitySurface();
+      if (oppSurface != null) {
+        return {
+          mode: "simple",
+          range,
+          renovationLevel,
+          complexity,
+          surface: oppSurface,
+          options,
+          piecesUI: [],
+        };
+      }
+      return null;
+    }
     if (mode === "expert" && piecesUI.length === 0) return null;
 
     return { mode, range, renovationLevel, complexity, surface, options, piecesUI };
@@ -704,7 +767,13 @@ const LotsBreakdown: React.FC<{
   const [expandedLot, setExpandedLot] = useState<string | null>(null);
   const activeLots = lots.filter((l) => l.amount > 0);
 
-  const filteredTotal = activeLots.filter((l) => !disabledLots.has(l.code)).reduce((sum, l) => sum + l.amount, 0);
+  // Les montants par lot (l.amount) sont BRUTS, hors coef de complexité.
+  // Le moteur (computed.total / totalWithBuffer) applique ce coef. On le
+  // réintègre ici pour que l'affichage soit cohérent avec ce qui est persisté
+  // et lu par le Copilot (le coef complexité DOIT s'appliquer au total).
+  const coef = complexityCoef > 0 ? complexityCoef : 1;
+  const filteredBase = activeLots.filter((l) => !disabledLots.has(l.code)).reduce((sum, l) => sum + l.amount, 0);
+  const filteredTotal = Math.round(filteredBase * coef);
   const filteredBuffer = Math.round(filteredTotal * bufferPct);
   const filteredTotalWithBuffer = filteredTotal + filteredBuffer;
   const filteredCostPerM2 = costPerM2 !== null && total > 0 ? Math.round((filteredTotal / total) * (costPerM2 ?? 0)) : null;
@@ -765,7 +834,7 @@ const LotsBreakdown: React.FC<{
       <div className="space-y-2">
         {activeLots.map((lot) => {
           const isDisabled = disabledLots.has(lot.code);
-          const pct = filteredTotal > 0 && !isDisabled ? (lot.amount / filteredTotal) * 100 : 0;
+          const pct = filteredBase > 0 && !isDisabled ? (lot.amount / filteredBase) * 100 : 0;
           const isOpen = expandedLot === lot.code && !isDisabled;
           return (
             <div key={lot.code}
@@ -914,11 +983,13 @@ const SimulationTravauxPage: React.FC<Props> = ({ theme, breadcrumb }) => {
   const result: ComputedTravaux = useMemo(() => computeTravauxSimulation(simulation), [simulation]);
 
   // ── Persistance debouncée — AVEC garde anti-clobber ───────────────────────
-  // On saute le tout premier run de cet effet (au montage) : sinon, si l'état
-  // courant est vide (pas d'hydratation), on écraserait la donnée stockée du
-  // projet par un formulaire à 0. Le save ne s'enclenche donc qu'à la 1re
-  // modification réelle de l'utilisateur.
-  const isFirstSaveRunRef = useRef(true);
+  // On saute le 1er run UNIQUEMENT si l'état initial était vide (pas
+  // d'hydratation ni de pré-remplissage) : sinon on écraserait la donnée
+  // stockée par un formulaire à 0.
+  // Si l'état initial vient d'une restauration OU d'un pré-remplissage
+  // opportunité (h ≠ null), on persiste dès le départ → le stockage reflète
+  // immédiatement ce qui est affiché (et le Copilot lit la bonne valeur).
+  const isFirstSaveRunRef = useRef(h == null);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (isFirstSaveRunRef.current) {

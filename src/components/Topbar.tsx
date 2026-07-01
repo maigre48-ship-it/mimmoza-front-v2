@@ -1,4 +1,4 @@
-﻿
+
 import {
   Banknote,
   Brain,
@@ -51,13 +51,13 @@ export function Topbar({
               Mimmoza
             </span>
             <span className="text-xs text-slate-600 -mt-0.5">
-              Lâ€™intelligence immobiliÃ¨re
+              L’intelligence immobilière
             </span>
           </div>
         </button>
 
         <div className="text-xs text-slate-500 hidden sm:block">
-          PLU Engine â€” Prototype local
+          PLU Engine — Prototype local
         </div>
       </div>
 

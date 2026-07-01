@@ -238,7 +238,7 @@ function getPromoteurActiveSection(pathname: string): string | null {
     ["/promoteur/plan-2d",                   "faisabilite"],
     ["/promoteur/massing-3d",                "faisabilite"],
     ["/promoteur/generateur-facades",        "faisabilite"],
-    ["/promoteur/simulation-travaux",        "faisabilite"],
+    ["/promoteur/simulation-travaux",        "programmation"],
     ["/promoteur/estimation",                "marche"],
     ["/promoteur/marche",                    "marche"],
     ["/promoteur/logements-sociaux",         "marche"],
@@ -285,7 +285,7 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
     },
     {
       id: "preanalyse",
-      label: "Pré-analyse",
+      label: "PLU",
       items: [
         { label: "PLU express",       path: "/promoteur/foncier",  icon: Map },
       ],
@@ -294,17 +294,17 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       id: "programmation",
       label: "Programmation",
       items: [
-        { label: "Programme & viabilité", path: "/promoteur/programmation", icon: Layers },
+        { label: "Programme & viabilité", path: "/promoteur/programmation",      icon: Layers },
+        { label: "Coût de construction",  path: "/promoteur/simulation-travaux", icon: Calculator, separatorBefore: true },
       ],
     },
     {
       id: "faisabilite",
       label: "Faisabilité",
       items: [
-        { label: "Implantation 2D",    path: "/promoteur/implantation-2d",    icon: Grid3X3 },
-        { label: "Massing 3D",         path: "/promoteur/massing-3d",         icon: Cuboid },
-        { label: "Façades IA",         path: "/promoteur/generateur-facades", icon: Wand2 },
-        { label: "Simulation travaux", path: "/promoteur/simulation-travaux", icon: Calculator, separatorBefore: true },
+        { label: "Implantation 2D", path: "/promoteur/implantation-2d",    icon: Grid3X3 },
+        { label: "Massing 3D",      path: "/promoteur/massing-3d",         icon: Cuboid },
+        { label: "Façades IA",      path: "/promoteur/generateur-facades", icon: Wand2 },
       ],
     },
     {

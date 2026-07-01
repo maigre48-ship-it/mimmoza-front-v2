@@ -1,8 +1,8 @@
-﻿// src/spaces/investisseur/pages/deal-center/exports/exportInvestmentPack.ts
+// src/spaces/investisseur/pages/deal-center/exports/exportInvestmentPack.ts
 //
-// Export PDF â€“ Investment Pack  v2.0
-// Style premium identique Ã  exportDataConfidence
-// Logique mÃ©tier : 100% inchangÃ©e
+// Export PDF – Investment Pack  v2.0
+// Style premium identique à exportDataConfidence
+// Logique métier : 100% inchangée
 
 import { jsPDF } from "jspdf";
 import {
@@ -36,7 +36,7 @@ function castRenta(saved: RentabiliteSaved | undefined): RentabiliteSnapshot | n
   return saved.computed as RentabiliteSnapshot;
 }
 
-// â”€â”€â”€ GÃ©nÃ©ration PDF â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Génération PDF ───────────────────────────────────────────────────────────
 
 export async function exportInvestmentPackPdf(): Promise<void> {
   const snap   = readMarchandSnapshot();
@@ -59,14 +59,14 @@ export async function exportInvestmentPackPdf(): Promise<void> {
 
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  // PAGE 1 â€” Header + KPIs + Fiche deal
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ════════════════════════════════════════════════════════════════
+  // PAGE 1 — Header + KPIs + Fiche deal
+  // ════════════════════════════════════════════════════════════════
 
   const logoDataUrl = await drawPremiumHeader(doc, TITLE, SUBTITLE, dealName);
   let y = BODY_START;
 
-  // â”€â”€ KPI row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── KPI row ─────────────────────────────────────────────────────
   const KPI_H = 28;
   const KPI_GAP = 3;
   const KPI_W = (CW - KPI_GAP * 3) / 4;
@@ -115,7 +115,7 @@ export async function exportInvestmentPackPdf(): Promise<void> {
 
   y += KPI_H + 7;
 
-  // â”€â”€ Fiche deal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Fiche deal ──────────────────────────────────────────────────
   y = sectionHead(doc, "FICHE DEAL", y);
 
   const FICHE_H = 58;
@@ -133,15 +133,15 @@ export async function exportInvestmentPackPdf(): Promise<void> {
 
   drawPremiumFooter(doc);
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  // PAGE 2 â€” HypothÃ¨ses + ScÃ©narios
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ════════════════════════════════════════════════════════════════
+  // PAGE 2 — Hypothèses + Scénarios
+  // ════════════════════════════════════════════════════════════════
 
   doc.addPage();
   drawPageHeader(doc, TITLE, 2, PAGES, dealName, logoDataUrl);
   y = BODY_START;
 
-  // â”€â”€ HypothÃ¨ses â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Hypothèses ──────────────────────────────────────────────────
   y = sectionHead(doc, "HYPOTHESES FINANCIERES", y);
 
   const HYPO_H = 74;
@@ -159,8 +159,8 @@ export async function exportInvestmentPackPdf(): Promise<void> {
   hy = kvRow(doc, "Apport personnel",    fmtEur((deal as any)?.apport),         hy);
   y += HYPO_H + 7;
 
-  // â”€â”€ ScÃ©narios â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  y = sectionHead(doc, "RESULTATS â€” 3 SCENARIOS", y);
+  // ── Scénarios ───────────────────────────────────────────────────
+  y = sectionHead(doc, "RESULTATS — 3 SCENARIOS", y);
 
   if (!base) {
     y = alertBox(doc, "Aucune donnee de rentabilite disponible. Completer l'onglet Financial Engine.", "warning", y);
@@ -182,15 +182,15 @@ export async function exportInvestmentPackPdf(): Promise<void> {
 
   drawPremiumFooter(doc);
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  // PAGE 3 â€” DVF + Risques
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ════════════════════════════════════════════════════════════════
+  // PAGE 3 — DVF + Risques
+  // ════════════════════════════════════════════════════════════════
 
   doc.addPage();
   drawPageHeader(doc, TITLE, 3, PAGES, dealName, logoDataUrl);
   y = BODY_START;
 
-  // â”€â”€ Comparables DVF â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Comparables DVF ─────────────────────────────────────────────
   y = sectionHead(doc, "COMPARABLES DVF", y);
 
   const comps: Record<string, string>[] = Array.isArray(dvf?.comparables)
@@ -227,7 +227,7 @@ export async function exportInvestmentPackPdf(): Promise<void> {
     y += 3;
   }
 
-  // â”€â”€ Risques â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Risques ─────────────────────────────────────────────────────
   y = sectionHead(doc, "RISQUES SYNTHETIQUES", y);
 
   const risqueItems: Record<string, string>[] = [];
@@ -246,7 +246,7 @@ export async function exportInvestmentPackPdf(): Promise<void> {
       },
     ], risqueItems, y);
   } else {
-    y = alertBox(doc, "Donnees risques non disponibles â€” consulter l'onglet Data Confidence.", "info", y);
+    y = alertBox(doc, "Donnees risques non disponibles — consulter l'onglet Data Confidence.", "info", y);
   }
 
   drawPremiumFooter(doc);

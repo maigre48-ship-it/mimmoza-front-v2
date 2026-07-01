@@ -1,4 +1,4 @@
-﻿// PARTIE 1/3
+// PARTIE 1/3
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "../../../lib/supabaseClient";
@@ -16,24 +16,24 @@ const LS_SELECTED_PLU_DOCUMENT_ID = "mimmoza.plu.selected_document_id";
 const LS_SELECTED_PLU_COMMUNE_INSEE = "mimmoza.plu.selected_commune_insee";
 const LS_SELECTED_PLU_ZONE_CODE = "mimmoza.plu.selected_zone_code";
 
-// Zone dÃ©tectÃ©e depuis parcelle (persistÃ©e pour survivre Ã  F5)
+// Zone détectée depuis parcelle (persistée pour survivre à F5)
 const LS_DETECTED_ZONE_CODE = "mimmoza.plu.detected_zone_code";
 
-// Resolved ruleset (source de vÃ©ritÃ© pour Implantation 2D)
+// Resolved ruleset (source de vérité pour Implantation 2D)
 const LS_PLU_RESOLVED_RULESET_V1 = "mimmoza.plu.resolved_ruleset_v1";
 
-// AI extraction result (persistÃ© pour survivre Ã  F5)
+// AI extraction result (persisté pour survivre à F5)
 const LS_PLU_AI_EXTRACT_RESULT = "mimmoza.plu.ai_extract_result";
 
 // User overrides (corrections manuelles)
 const LS_PLU_USER_OVERRIDES_V1 = "mimmoza.plu.user_overrides_v1";
 
-// Session parcelle partagÃ©e (source de vÃ©ritÃ© cross-pages)
+// Session parcelle partagée (source de vérité cross-pages)
 const LS_SESSION_PARCEL_ID = "mimmoza.session.parcel_id";
 const LS_SESSION_COMMUNE_INSEE = "mimmoza.session.commune_insee";
 const LS_SESSION_ADDRESS = "mimmoza.session.address";
 
-// Handoff depuis Foncier (nouvelle clÃ© potentiellement Ã©crite par Foncier)
+// Handoff depuis Foncier (nouvelle clé potentiellement écrite par Foncier)
 const LS_SELECTED_PARCELS_V1 = "mimmoza.promoteur.selected_parcels_v1";
 
 // AI Extraction endpoint
@@ -454,19 +454,19 @@ function safeString(v: unknown): string | null {
 }
 
 /**
- * Format a number for display, with explicit "Non trouvÃ©" instead of "â€”"
+ * Format a number for display, with explicit "Non trouvé" instead of "—"
  */
 function formatMaybeNumber(v: number | null | undefined, unit?: string): string {
-  if (v === null || v === undefined || Number.isNaN(v)) return "Non trouvÃ©";
+  if (v === null || v === undefined || Number.isNaN(v)) return "Non trouvé";
   if (unit) return `${v} ${unit}`;
   return String(v);
 }
 
 /**
- * Format a boolean for display, with explicit "Non dÃ©terminable" instead of "â€”"
+ * Format a boolean for display, with explicit "Non déterminable" instead of "—"
  */
 function formatBool(v: boolean | null | undefined): string {
-  if (v === null || v === undefined) return "Non dÃ©terminable";
+  if (v === null || v === undefined) return "Non déterminable";
   return v ? "Oui" : "Non";
 }
 
@@ -474,19 +474,19 @@ function formatBool(v: boolean | null | undefined): string {
  * Format a facade rule for display, with explicit text for missing values
  */
 function formatFacade(f?: FacadeRule): string {
-  if (!f) return "Non trouvÃ© (faÃ§ade non extraite)";
-  const val = f.recul_min_m !== null && f.recul_min_m !== undefined ? `${f.recul_min_m} m` : "Non trouvÃ©";
-  const regle = f.regle ?? "Non dÃ©terminable";
-  return `${regle}${f.regle === "FIXED" ? ` ${val}` : f.regle ? ` (min: ${f.min_m ?? "Non trouvÃ©"} m)` : ""}`.trim();
+  if (!f) return "Non trouvé (façade non extraite)";
+  const val = f.recul_min_m !== null && f.recul_min_m !== undefined ? `${f.recul_min_m} m` : "Non trouvé";
+  const regle = f.regle ?? "Non déterminable";
+  return `${regle}${f.regle === "FIXED" ? ` ${val}` : f.regle ? ` (min: ${f.min_m ?? "Non trouvé"} m)` : ""}`.trim();
 }
 
 /**
  * Format a resolved facade rule for display (from resolvedRuleset)
  */
 function formatResolvedFacade(f?: ResolvedFacadeRule): string {
-  if (!f) return "Non trouvÃ© (faÃ§ade non extraite)";
-  if (f.min_m === null) return "Non trouvÃ©";
-  const derivedSuffix = f.derived ? " (dÃ©rivÃ©)" : "";
+  if (!f) return "Non trouvé (façade non extraite)";
+  if (f.min_m === null) return "Non trouvé";
+  const derivedSuffix = f.derived ? " (dérivé)" : "";
   return `${f.min_m} m${derivedSuffix}`;
 }
 
@@ -596,7 +596,7 @@ function isZoneMeaningful(z: PluRulesZoneRow): boolean {
   );
   if (voirieValue !== null) return true;
 
-  // Check limites sÃ©paratives (all fallback sources)
+  // Check limites séparatives (all fallback sources)
   const limitesValue = pickFirstNumber(
     z.retrait_limites_separatives_min_m,
     impl?.recul_limite_separative_min_m,
@@ -620,7 +620,7 @@ function isZoneMeaningful(z: PluRulesZoneRow): boolean {
   );
   if (stationnementLogementValue !== null) return true;
 
-  // Check stationnement / 100mÂ²
+  // Check stationnement / 100m²
   const stationnement100m2Value = pickFirstNumber(
     z.places_par_100m2,
     z.rules?.stationnement?.places_par_100m2
@@ -639,7 +639,7 @@ function isZoneMeaningful(z: PluRulesZoneRow): boolean {
 }
 
 /**
- * Gets the zone libellÃ© with fallback to rules.zone_libelle if main field is null.
+ * Gets the zone libellé with fallback to rules.zone_libelle if main field is null.
  */
 function getZoneLibelle(z: PluRulesZoneRow): string {
   if (z.zone_libelle && z.zone_libelle.trim()) {
@@ -649,7 +649,7 @@ function getZoneLibelle(z: PluRulesZoneRow): string {
   if (z.rules.zone_libelle && z.rules.zone_libelle.trim()) {
     return z.rules.zone_libelle.trim();
   }
-  return "Non trouvÃ©";
+  return "Non trouvé";
 }
 
 /**
@@ -820,12 +820,12 @@ function applyUserOverrides(
     if (val !== null) {
       result.reculs.voirie.min_m = val;
       result.reculs.voirie.type = "FIXED";
-      result.reculs.voirie.note = "CorrigÃ© par l'utilisateur";
+      result.reculs.voirie.note = "Corrigé par l'utilisateur";
       // Also update facade avant if derived
       if (result.reculs.facades.avant.derived || result.reculs.facades.avant.min_m === null) {
         result.reculs.facades.avant.min_m = val;
         result.reculs.facades.avant.type = "DERIVED";
-        result.reculs.facades.avant.note = "DÃ©rivÃ© du recul voirie (utilisateur)";
+        result.reculs.facades.avant.note = "Dérivé du recul voirie (utilisateur)";
         result.reculs.facades.avant.derived = true;
       }
     }
@@ -836,12 +836,12 @@ function applyUserOverrides(
     if (val !== null) {
       result.reculs.limites_separatives.min_m = val;
       result.reculs.limites_separatives.type = "FIXED";
-      result.reculs.limites_separatives.note = "CorrigÃ© par l'utilisateur";
+      result.reculs.limites_separatives.note = "Corrigé par l'utilisateur";
       // Also update facade laterales if derived
       if (result.reculs.facades.laterales.derived || result.reculs.facades.laterales.min_m === null) {
         result.reculs.facades.laterales.min_m = val;
         result.reculs.facades.laterales.type = "DERIVED";
-        result.reculs.facades.laterales.note = "DÃ©rivÃ© du recul limites sÃ©paratives (utilisateur)";
+        result.reculs.facades.laterales.note = "Dérivé du recul limites séparatives (utilisateur)";
         result.reculs.facades.laterales.derived = true;
       }
     }
@@ -852,12 +852,12 @@ function applyUserOverrides(
     if (val !== null) {
       result.reculs.fond_parcelle.min_m = val;
       result.reculs.fond_parcelle.type = "FIXED";
-      result.reculs.fond_parcelle.note = "CorrigÃ© par l'utilisateur";
+      result.reculs.fond_parcelle.note = "Corrigé par l'utilisateur";
       // Also update facade fond if derived
       if (result.reculs.facades.fond.derived || result.reculs.facades.fond.min_m === null) {
         result.reculs.facades.fond.min_m = val;
         result.reculs.facades.fond.type = "DERIVED";
-        result.reculs.facades.fond.note = "DÃ©rivÃ© du recul fond de parcelle (utilisateur)";
+        result.reculs.facades.fond.note = "Dérivé du recul fond de parcelle (utilisateur)";
         result.reculs.facades.fond.derived = true;
       }
     }
@@ -867,7 +867,7 @@ function applyUserOverrides(
     const val = safeBoolean(overrides.reculs.implantation_en_limite_autorisee);
     if (val !== null) {
       result.reculs.implantation_en_limite.autorisee = val;
-      result.reculs.implantation_en_limite.note = "CorrigÃ© par l'utilisateur";
+      result.reculs.implantation_en_limite.note = "Corrigé par l'utilisateur";
     }
   }
 
@@ -876,7 +876,7 @@ function applyUserOverrides(
     const val = toNumber(overrides.ces_max_ratio);
     if (val !== null) {
       result.ces.max_ratio = val;
-      result.ces.note = "CorrigÃ© par l'utilisateur";
+      result.ces.note = "Corrigé par l'utilisateur";
     }
   }
 
@@ -885,7 +885,7 @@ function applyUserOverrides(
     const val = toNumber(overrides.hauteur_max_m);
     if (val !== null) {
       result.hauteur.max_m = val;
-      result.hauteur.note = "CorrigÃ© par l'utilisateur";
+      result.hauteur.note = "Corrigé par l'utilisateur";
     }
   }
 
@@ -894,7 +894,7 @@ function applyUserOverrides(
     const val = toNumber(overrides.stationnement_par_logement);
     if (val !== null) {
       result.stationnement.par_logement = val;
-      result.stationnement.note = "CorrigÃ© par l'utilisateur";
+      result.stationnement.note = "Corrigé par l'utilisateur";
     }
   }
 
@@ -903,7 +903,7 @@ function applyUserOverrides(
     if (val !== null) {
       result.stationnement.par_100m2 = val;
       if (!result.stationnement.note) {
-        result.stationnement.note = "CorrigÃ© par l'utilisateur";
+        result.stationnement.note = "Corrigé par l'utilisateur";
       }
     }
   }
@@ -979,7 +979,7 @@ function resolvePluRulesetV1(z: PluRulesZoneRow): ResolvedPluRulesetV1 {
     safeString(getRulesetValue(ruleset, "reculs", "voirie", "note")) ?? 
     undefined;
 
-  // Limites sÃ©paratives: DB -> implantation -> rules.reculs -> ruleset.reculs
+  // Limites séparatives: DB -> implantation -> rules.reculs -> ruleset.reculs
   const limitesValue = pickFirstNumber(
     z.retrait_limites_separatives_min_m,
     impl?.recul_limite_separative_min_m,
@@ -1016,10 +1016,10 @@ function resolvePluRulesetV1(z: PluRulesZoneRow): ResolvedPluRulesetV1 {
     safeString(getRulesetValue(ruleset, "reculs", "implantation_en_limite", "note")) ?? 
     undefined;
 
-  // ---- Facades: fallback ruleset brut AVANT dÃ©rivation ----
-  // Ordre de prioritÃ©: impl.facades -> ruleset.rules.implantation.facades -> ruleset.implantation.facades -> dÃ©rivation
+  // ---- Facades: fallback ruleset brut AVANT dérivation ----
+  // Ordre de priorité: impl.facades -> ruleset.rules.implantation.facades -> ruleset.implantation.facades -> dérivation
 
-  // Helper pour extraire une faÃ§ade depuis le ruleset brut
+  // Helper pour extraire une façade depuis le ruleset brut
   const extractFacadeFromRuleset = (facadeKey: string): { min_m: number | null; note: string | null } => {
     // Chemin 1: ruleset.rules.implantation.facades.<key>
     const path1MinM = pickFirstNumber(
@@ -1058,10 +1058,10 @@ function resolvePluRulesetV1(z: PluRulesZoneRow): ResolvedPluRulesetV1 {
       facadeAvantMinM = rulesetFacade.min_m;
       facadeAvantNote = rulesetFacade.note ?? undefined;
     } else if (voirieValue !== null) {
-      // 3. DÃ©river du recul voirie
+      // 3. Dériver du recul voirie
       facadeAvantMinM = voirieValue;
       facadeAvantDerived = true;
-      facadeAvantNote = "DÃ©rivÃ© du recul voirie";
+      facadeAvantNote = "Dérivé du recul voirie";
     }
   }
 
@@ -1081,7 +1081,7 @@ function resolvePluRulesetV1(z: PluRulesZoneRow): ResolvedPluRulesetV1 {
     } else if (limitesValue !== null) {
       facadeLateralesMinM = limitesValue;
       facadeLateralesDerived = true;
-      facadeLateralesNote = "DÃ©rivÃ© du recul limites sÃ©paratives";
+      facadeLateralesNote = "Dérivé du recul limites séparatives";
     }
   }
 
@@ -1101,7 +1101,7 @@ function resolvePluRulesetV1(z: PluRulesZoneRow): ResolvedPluRulesetV1 {
     } else if (fondParcelleValue !== null) {
       facadeFondMinM = fondParcelleValue;
       facadeFondDerived = true;
-      facadeFondNote = "DÃ©rivÃ© du recul fond de parcelle";
+      facadeFondNote = "Dérivé du recul fond de parcelle";
     }
   }
 
@@ -1115,21 +1115,21 @@ function resolvePluRulesetV1(z: PluRulesZoneRow): ResolvedPluRulesetV1 {
   let cesNote: string | undefined = undefined;
   
   if (cesPercent === null) {
-    cesNote = "Non trouvÃ© dans le ruleset";
+    cesNote = "Non trouvé dans le ruleset";
   } else if (cesPercent > 100) {
-    // Valeur aberrante > 100% : on considÃ¨re suspect et on garde null
+    // Valeur aberrante > 100% : on considère suspect et on garde null
     cesMaxRatio = null;
-    cesNote = `Valeur suspecte (${cesPercent}%) ignorÃ©e`;
+    cesNote = `Valeur suspecte (${cesPercent}%) ignorée`;
   } else if (cesPercent >= 1 && cesPercent <= 100) {
     // Valeur en pourcentage (1-100) : convertir en ratio
     cesMaxRatio = cesPercent / 100;
   } else if (cesPercent >= 0 && cesPercent < 1) {
-    // DÃ©jÃ  un ratio (0-1) : garder tel quel
+    // Déjà un ratio (0-1) : garder tel quel
     cesMaxRatio = cesPercent;
   } else {
-    // Valeur nÃ©gative ou autre cas invalide
+    // Valeur négative ou autre cas invalide
     cesMaxRatio = null;
-    cesNote = `Valeur invalide (${cesPercent}) ignorÃ©e`;
+    cesNote = `Valeur invalide (${cesPercent}) ignorée`;
   }
 
   // ---- Hauteur: rules.hauteur -> ruleset.hauteur ----
@@ -1138,7 +1138,7 @@ function resolvePluRulesetV1(z: PluRulesZoneRow): ResolvedPluRulesetV1 {
     getRulesetValue(ruleset, "hauteur", "max_m"),
     getRulesetValue(ruleset, "hauteur", "hauteur_max_m")
   );
-  const hauteurNote = hauteurMaxM === null ? "Non trouvÃ© dans le ruleset" : undefined;
+  const hauteurNote = hauteurMaxM === null ? "Non trouvé dans le ruleset" : undefined;
 
   // ---- Stationnement ----
   const stationnementParLogement = pickFirstNumber(
@@ -1155,7 +1155,7 @@ function resolvePluRulesetV1(z: PluRulesZoneRow): ResolvedPluRulesetV1 {
   );
   const stationnementNote = 
     (stationnementParLogement === null && stationnementPar100m2 === null) 
-      ? "Non trouvÃ© dans le ruleset" 
+      ? "Non trouvé dans le ruleset" 
       : undefined;
 
   // ---- Collect all notes ----
@@ -1178,7 +1178,7 @@ function resolvePluRulesetV1(z: PluRulesZoneRow): ResolvedPluRulesetV1 {
   if (hauteurMaxM === null) missingOptional.push("hauteur.max_m");
   if (cesMaxRatio === null) missingOptional.push("ces.max_ratio");
 
-  // completeness.ok = true seulement si les 3 reculs principaux sont prÃ©sents
+  // completeness.ok = true seulement si les 3 reculs principaux sont présents
   const completenessOk = missingBlocking.length === 0;
   
   // Fusion des missing avec marqueur "(optionnel)" pour les non-bloquants
@@ -1375,35 +1375,35 @@ function buildResolvedRulesetFromAi(
         avant: {
           min_m: facadeAvantMinM ?? voirieValue,
           type: facadeAvantMinM !== null ? "FIXED" : voirieValue !== null ? "DERIVED" : "UNKNOWN",
-          note: safeString(aiFacades?.avant?.note) ?? (facadeAvantMinM === null && voirieValue !== null ? "DÃ©rivÃ© du recul voirie" : undefined),
+          note: safeString(aiFacades?.avant?.note) ?? (facadeAvantMinM === null && voirieValue !== null ? "Dérivé du recul voirie" : undefined),
           derived: facadeAvantMinM === null && voirieValue !== null,
         },
         laterales: {
           min_m: facadeLateralesMinM ?? limitesValue,
           type: facadeLateralesMinM !== null ? "FIXED" : limitesValue !== null ? "DERIVED" : "UNKNOWN",
-          note: safeString(aiFacades?.laterales?.note) ?? (facadeLateralesMinM === null && limitesValue !== null ? "DÃ©rivÃ© du recul limites sÃ©paratives" : undefined),
+          note: safeString(aiFacades?.laterales?.note) ?? (facadeLateralesMinM === null && limitesValue !== null ? "Dérivé du recul limites séparatives" : undefined),
           derived: facadeLateralesMinM === null && limitesValue !== null,
         },
         fond: {
           min_m: facadeFondMinM ?? fondParcelleValue,
           type: facadeFondMinM !== null ? "FIXED" : fondParcelleValue !== null ? "DERIVED" : "UNKNOWN",
-          note: safeString(aiFacades?.fond?.note) ?? (facadeFondMinM === null && fondParcelleValue !== null ? "DÃ©rivÃ© du recul fond de parcelle" : undefined),
+          note: safeString(aiFacades?.fond?.note) ?? (facadeFondMinM === null && fondParcelleValue !== null ? "Dérivé du recul fond de parcelle" : undefined),
           derived: facadeFondMinM === null && fondParcelleValue !== null,
         },
       },
     },
     ces: {
       max_ratio: cesMaxRatio,
-      note: safeString(aiData.ces?.note) ?? (cesMaxRatio === null ? "Non trouvÃ© par l'IA" : undefined),
+      note: safeString(aiData.ces?.note) ?? (cesMaxRatio === null ? "Non trouvé par l'IA" : undefined),
     },
     hauteur: {
       max_m: hauteurMaxM,
-      note: (hauteurMaxM === null ? "Non trouvÃ© par l'IA" : undefined),
+      note: (hauteurMaxM === null ? "Non trouvé par l'IA" : undefined),
     },
     stationnement: {
       par_logement: stationnementParLogement,
       par_100m2: stationnementPar100m2,
-      note: safeString(aiData.stationnement?.note) ?? ((stationnementParLogement === null && stationnementPar100m2 === null) ? "Non trouvÃ© par l'IA" : undefined),
+      note: safeString(aiData.stationnement?.note) ?? ((stationnementParLogement === null && stationnementPar100m2 === null) ? "Non trouvé par l'IA" : undefined),
     },
     notes: allNotes,
     completeness: {
@@ -1553,15 +1553,15 @@ function mergeRulesets(
 }// PARTIE 3/3
 
 /**
- * Page PLU & FaisabilitÃ© - Espace Promoteur
+ * Page PLU & Faisabilité - Espace Promoteur
  *
  * Cette page permet aux promoteurs de :
  * - Uploader des documents PLU (PDF)
- * - Lancer l'ingestion des PLU uploadÃ©s
- * - Consulter les analyses de faisabilitÃ©
- * - DÃ©tecter la zone PLU correspondant Ã  une parcelle
- * - Extraire les rÃ¨gles PLU via IA pour une zone spÃ©cifique
- * - Corriger/complÃ©ter manuellement les rÃ¨gles extraites
+ * - Lancer l'ingestion des PLU uploadés
+ * - Consulter les analyses de faisabilité
+ * - Détecter la zone PLU correspondant à une parcelle
+ * - Extraire les règles PLU via IA pour une zone spécifique
+ * - Corriger/compléter manuellement les règles extraites
  */
 export default function PluFaisabilite(): React.ReactElement {
   const navigate = useNavigate();
@@ -1583,13 +1583,13 @@ export default function PluFaisabilite(): React.ReactElement {
   const [rulesStatus, setRulesStatus] = useState<Status>("idle");
   const [rulesError, setRulesError] = useState<string | null>(null);
 
-  // Zone dÃ©tectÃ©e depuis la parcelle - initialisÃ©e depuis LS pour survivre Ã  F5
+  // Zone détectée depuis la parcelle - initialisée depuis LS pour survivre à F5
   const [detectedZoneCode, setDetectedZoneCode] = useState<string | null>(() => {
     const stored = readLS(LS_DETECTED_ZONE_CODE, "");
     return normalizeZoneCode(stored);
   });
 
-  // Zone sÃ©lectionnÃ©e - initialisÃ©e depuis LS avec fallback sur detectedZoneCode
+  // Zone sélectionnée - initialisée depuis LS avec fallback sur detectedZoneCode
   const [selectedZoneCode, setSelectedZoneCode] = useState<string | null>(() => {
     const stored = readLS(LS_SELECTED_PLU_ZONE_CODE, "");
     const normalized = normalizeZoneCode(stored);
@@ -1637,17 +1637,17 @@ export default function PluFaisabilite(): React.ReactElement {
     return readLS(LS_SESSION_COMMUNE_INSEE, "") || null;
   });
 
-  // Ref pour suivre la commune courante (Ã©vite les problÃ¨mes de closure)
+  // Ref pour suivre la commune courante (évite les problèmes de closure)
   const communeInseeRef = useRef(communeInsee);
 
-  // Ref pour Ã©viter de dÃ©clencher auto-detect plusieurs fois
+  // Ref pour éviter de déclencher auto-detect plusieurs fois
   const autoDetectAttemptedRef = useRef(false);
 
   useEffect(() => {
     communeInseeRef.current = communeInsee;
   }, [communeInsee]);
 
-  // Auth: rÃ©cupÃ©rer la session et Ã©couter les changements
+  // Auth: récupérer la session et écouter les changements
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setAccessToken(session?.access_token ?? null);
@@ -1849,7 +1849,7 @@ export default function PluFaisabilite(): React.ReactElement {
           }
         }
       } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : "Erreur lors du chargement des rÃ¨gles.";
+        const msg = e instanceof Error ? e.message : "Erreur lors du chargement des règles.";
         setRulesStatus("error");
         setRulesError(msg);
         setRulesZones([]);
@@ -1858,7 +1858,7 @@ export default function PluFaisabilite(): React.ReactElement {
     [accessToken, buildAuthHeaders, selectedZoneCode, detectedZoneCode]
   );
 
-  // Handler pour dÃ©tecter la zone PLU depuis la parcelle
+  // Handler pour détecter la zone PLU depuis la parcelle
   const handleDetectZonePlu = useCallback(async () => {
     const parcelId = readLS(LS_SESSION_PARCEL_ID, "");
     const parcelCommune = readLS(LS_SESSION_COMMUNE_INSEE, "");
@@ -1868,7 +1868,7 @@ export default function PluFaisabilite(): React.ReactElement {
 
     if (!effectiveParcelId) {
       setDetectError(
-        "Aucune parcelle sÃ©lectionnÃ©e. Veuillez d'abord sÃ©lectionner une parcelle dans Foncier."
+        "Aucune parcelle sélectionnée. Veuillez d'abord sélectionner une parcelle dans Foncier."
       );
       setDetectStatus("error");
       return;
@@ -1959,7 +1959,7 @@ export default function PluFaisabilite(): React.ReactElement {
 
       if (!zoneCode) {
         throw new Error(
-          "Zone PLU non trouvÃ©e pour cette parcelle. La rÃ©ponse de l'API ne contient pas de zone_code valide."
+          "Zone PLU non trouvée pour cette parcelle. La réponse de l'API ne contient pas de zone_code valide."
         );
       }
 
@@ -1975,22 +1975,22 @@ export default function PluFaisabilite(): React.ReactElement {
       setDetectStatus("success");
       setDetectError(null);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Erreur lors de la dÃ©tection de la zone PLU.";
+      const msg = e instanceof Error ? e.message : "Erreur lors de la détection de la zone PLU.";
       setDetectStatus("error");
       setDetectError(msg);
     }
   }, [accessToken, buildAuthHeaders, sessionParcelId, sessionCommuneInsee, rulesZones]);
 
-  // Handler pour extraire les rÃ¨gles PLU via IA
+  // Handler pour extraire les règles PLU via IA
   const handleAiExtractZone = useCallback(async () => {
     if (!selectedDocumentId) {
-      setAiExtractError("Veuillez d'abord sÃ©lectionner un document PLU.");
+      setAiExtractError("Veuillez d'abord sélectionner un document PLU.");
       setAiExtractStatus("error");
       return;
     }
 
     if (!selectedZoneCode) {
-      setAiExtractError("Veuillez d'abord sÃ©lectionner ou dÃ©tecter une zone PLU.");
+      setAiExtractError("Veuillez d'abord sélectionner ou détecter une zone PLU.");
       setAiExtractStatus("error");
       return;
     }
@@ -2037,7 +2037,7 @@ export default function PluFaisabilite(): React.ReactElement {
       }
 
       if (!rawData || !rawData.success) {
-        throw new Error(rawData?.error || "RÃ©ponse invalide de l'API d'extraction IA.");
+        throw new Error(rawData?.error || "Réponse invalide de l'API d'extraction IA.");
       }
 
        
@@ -2144,7 +2144,7 @@ export default function PluFaisabilite(): React.ReactElement {
     }
   }, [selectedDocumentId, selectedZoneCode, aiExtractResult, activeResolvedRuleset]);
 
-  // Synchronisation localStorage (mÃªme onglet + multi-onglets)
+  // Synchronisation localStorage (même onglet + multi-onglets)
   useEffect(() => {
     const syncFromLS = () => {
       const handoffResult = syncSessionFromHandoff();
@@ -2199,7 +2199,7 @@ export default function PluFaisabilite(): React.ReactElement {
     };
   }, [detectedZoneCode]);
 
-  // Chargement des documents quand communeInsee change ET utilisateur authentifiÃ©
+  // Chargement des documents quand communeInsee change ET utilisateur authentifié
   useEffect(() => {
     if (communeInsee && accessToken) {
       fetchDocuments(communeInsee);
@@ -2214,7 +2214,7 @@ export default function PluFaisabilite(): React.ReactElement {
     }
   }, [communeInsee, accessToken, fetchDocuments]);
 
-  // Load rules when selectedDocumentId changes ET utilisateur authentifiÃ©
+  // Load rules when selectedDocumentId changes ET utilisateur authentifié
   useEffect(() => {
     if (!selectedDocumentId || !accessToken) {
       setRulesZones([]);
@@ -2225,7 +2225,7 @@ export default function PluFaisabilite(): React.ReactElement {
     fetchRulesForDocument(selectedDocumentId);
   }, [selectedDocumentId, accessToken, fetchRulesForDocument]);
 
-  // Auto-detect zone PLU une seule fois si conditions rÃ©unies
+  // Auto-detect zone PLU une seule fois si conditions réunies
   useEffect(() => {
     if (autoDetectAttemptedRef.current) return;
     
@@ -2437,38 +2437,38 @@ export default function PluFaisabilite(): React.ReactElement {
 
   const handleLaunchImplantation2D = useCallback(() => {
     if (!selectedDocumentId) {
-      window.alert("Veuillez sÃ©lectionner un document PLU avant de lancer l'Implantation 2D.");
+      window.alert("Veuillez sélectionner un document PLU avant de lancer l'Implantation 2D.");
       return;
     }
 
     if (!communeInsee) {
-      window.alert("Code INSEE de la commune manquant. Veuillez sÃ©lectionner une commune.");
+      window.alert("Code INSEE de la commune manquant. Veuillez sélectionner une commune.");
       return;
     }
 
     if (!selectedZoneCode) {
       window.alert(
-        "Aucune zone PLU sÃ©lectionnÃ©e. Veuillez dÃ©tecter ou sÃ©lectionner une zone avant de continuer."
+        "Aucune zone PLU sélectionnée. Veuillez détecter ou sélectionner une zone avant de continuer."
       );
       return;
     }
 
     if (!resolvedRuleset) {
-      window.alert("Impossible de rÃ©soudre le ruleset pour la zone sÃ©lectionnÃ©e.");
+      window.alert("Impossible de résoudre le ruleset pour la zone sélectionnée.");
       return;
     }
 
     // Non-blocking warning if reculs are missing
     const missingReculs: string[] = [];
     if (resolvedRuleset.reculs.voirie.min_m === null) missingReculs.push("voirie");
-    if (resolvedRuleset.reculs.limites_separatives.min_m === null) missingReculs.push("limites sÃ©paratives");
+    if (resolvedRuleset.reculs.limites_separatives.min_m === null) missingReculs.push("limites séparatives");
     if (resolvedRuleset.reculs.fond_parcelle.min_m === null) missingReculs.push("fond de parcelle");
 
     if (missingReculs.length > 0) {
       const proceed = window.confirm(
-        `âš ï¸ Certains reculs sont manquants : ${missingReculs.join(", ")}.\n\n` +
-        `Vous pouvez les complÃ©ter dans le panneau "Modifier / ComplÃ©ter les rÃ¨gles" avant de continuer.\n\n` +
-        `Voulez-vous continuer quand mÃªme ?`
+        `⚠︝ Certains reculs sont manquants : ${missingReculs.join(", ")}.\n\n` +
+        `Vous pouvez les compléter dans le panneau "Modifier / Compléter les règles" avant de continuer.\n\n` +
+        `Voulez-vous continuer quand même ?`
       );
       if (!proceed) return;
     }
@@ -2562,9 +2562,9 @@ export default function PluFaisabilite(): React.ReactElement {
       <style>{pageStyles}</style>
 
       <header className="page-header">
-        <h1 className="page-title">PLU & FaisabilitÃ©</h1>
+        <h1 className="page-title">PLU & Faisabilité</h1>
         <p className="page-description">
-          GÃ©rez vos documents PLU et analysez la faisabilitÃ© de vos projets immobiliers.
+          Gérez vos documents PLU et analysez la faisabilité de vos projets immobiliers.
         </p>
         <div className="env-badge">
           <span className="env-pill">
@@ -2576,10 +2576,10 @@ export default function PluFaisabilite(): React.ReactElement {
       {!accessToken && (
         <section className="page-section">
           <div className="auth-required-card">
-            <span className="auth-icon">ðŸ”’</span>
+            <span className="auth-icon">🔒</span>
             <h3 className="auth-title">Connexion requise</h3>
             <p className="auth-text">
-              Vous devez Ãªtre connectÃ© pour accÃ©der aux analyses de faisabilitÃ©.
+              Vous devez être connecté pour accéder aux analyses de faisabilité.
             </p>
             <button className="auth-login-btn" onClick={handleGoToLogin}>
               Se connecter
@@ -2595,7 +2595,7 @@ export default function PluFaisabilite(): React.ReactElement {
       <section className="page-section">
         <div className="placeholder-card">
           <div className="section-header">
-            <h3 className="placeholder-title">ðŸ“Š Analyses de faisabilitÃ©</h3>
+            <h3 className="placeholder-title">📊 Analyses de faisabilité</h3>
 
             <div className="analysis-actions">
               <button
@@ -2606,11 +2606,11 @@ export default function PluFaisabilite(): React.ReactElement {
                   !accessToken
                     ? "Connexion requise"
                     : !sessionParcelId && !readLS(LS_SESSION_PARCEL_ID, "")
-                      ? "SÃ©lectionnez une parcelle dans Foncier"
-                      : "DÃ©tecter la zone PLU de la parcelle"
+                      ? "Sélectionnez une parcelle dans Foncier"
+                      : "Détecter la zone PLU de la parcelle"
                 }
               >
-                {detectStatus === "loading" ? "DÃ©tectionâ€¦" : "DÃ©tecter zone PLU"}
+                {detectStatus === "loading" ? "Détection…" : "Détecter zone PLU"}
               </button>
 
               <button
@@ -2619,19 +2619,19 @@ export default function PluFaisabilite(): React.ReactElement {
                 disabled={!canAiExtract || aiExtractStatus === "loading"}
                 title={
                   !selectedDocumentId
-                    ? "SÃ©lectionnez un document PLU"
+                    ? "Sélectionnez un document PLU"
                     : !selectedZoneCode
-                      ? "SÃ©lectionnez ou dÃ©tectez une zone PLU"
-                      : "Extraire les rÃ¨gles PLU via IA pour cette zone"
+                      ? "Sélectionnez ou détectez une zone PLU"
+                      : "Extraire les règles PLU via IA pour cette zone"
                 }
               >
                 {aiExtractStatus === "loading" ? (
                   <>
-                    <span className="ai-spinner">â³</span> Extraction IAâ€¦
+                    <span className="ai-spinner">❳</span> Extraction IA…
                   </>
                 ) : (
                   <>
-                    <span className="ai-icon">ðŸ¤–</span> Extraire rÃ¨gles IA
+                    <span className="ai-icon">🤖</span> Extraire règles IA
                   </>
                 )}
               </button>
@@ -2644,11 +2644,11 @@ export default function PluFaisabilite(): React.ReactElement {
                   !accessToken
                     ? "Connexion requise"
                     : !selectedDocumentId
-                      ? "SÃ©lectionnez un document PLU"
+                      ? "Sélectionnez un document PLU"
                       : !selectedZoneCode
-                        ? "SÃ©lectionnez ou dÃ©tectez une zone PLU"
+                        ? "Sélectionnez ou détectez une zone PLU"
                         : !canLaunchImplantation2D
-                          ? "Chargez les rÃ¨gles du document"
+                          ? "Chargez les règles du document"
                           : "Lancer l'Implantation 2D"
                 }
               >
@@ -2658,7 +2658,7 @@ export default function PluFaisabilite(): React.ReactElement {
           </div>
 
           <p className="placeholder-text">
-            Le document sÃ©lectionnÃ© sera utilisÃ© dans l'Implantation 2D.
+            Le document sélectionné sera utilisé dans l'Implantation 2D.
             {selectedDoc ? (
               <>
                 {" "}
@@ -2675,7 +2675,7 @@ export default function PluFaisabilite(): React.ReactElement {
               </code>
               {(sessionCommuneInsee || readLS(LS_SESSION_COMMUNE_INSEE, "")) && (
                 <>
-                  <span className="session-separator">â€¢</span>
+                  <span className="session-separator">•</span>
                   <span className="session-label">Commune :</span>
                   <code className="session-value">
                     {sessionCommuneInsee || readLS(LS_SESSION_COMMUNE_INSEE, "")}
@@ -2687,11 +2687,11 @@ export default function PluFaisabilite(): React.ReactElement {
 
           {detectedZoneCode && (
             <div className="detected-zone-info">
-              <span className="detected-badge">Zone dÃ©tectÃ©e : {detectedZoneCode}</span>
+              <span className="detected-badge">Zone détectée : {detectedZoneCode}</span>
               {!detectedZoneExists && rulesZones.length > 0 && (
                 <span className="detected-warning">
-                  âš ï¸ La zone dÃ©tectÃ©e ({detectedZoneCode}) n'est pas prÃ©sente dans les rÃ¨gles de ce
-                  document. VÃ©rifiez le document PLU sÃ©lectionnÃ©.
+                  ⚠︝ La zone détectée ({detectedZoneCode}) n'est pas présente dans les règles de ce
+                  document. Vérifiez le document PLU sélectionné.
                 </span>
               )}
             </div>
@@ -2701,10 +2701,10 @@ export default function PluFaisabilite(): React.ReactElement {
           {selectedDocumentId && selectedZoneCode && resolvedRuleset && (
             <div className="user-override-panel">
               <div className="user-override-warning">
-                <span className="warning-icon">âš ï¸</span>
+                <span className="warning-icon">⚠︝</span>
                 <span className="warning-text">
-                  Les rÃ¨gles affichÃ©es proviennent d'une extraction automatisÃ©e et peuvent comporter des erreurs ou des omissions. 
-                  Nous vous invitons Ã  relire attentivement le PLU.
+                  Les règles affichées proviennent d'une extraction automatisée et peuvent comporter des erreurs ou des omissions. 
+                  Nous vous invitons à relire attentivement le PLU.
                 </span>
               </div>
 
@@ -2712,14 +2712,14 @@ export default function PluFaisabilite(): React.ReactElement {
                 className="toggle-edit-btn"
                 onClick={() => setEditPanelOpen(!editPanelOpen)}
               >
-                {editPanelOpen ? "â–¼ Fermer le formulaire" : "âœï¸ Modifier / ComplÃ©ter les rÃ¨gles"}
+                {editPanelOpen ? "▼ Fermer le formulaire" : "✝︝ Modifier / Compléter les règles"}
               </button>
 
               {currentUserOverrides && (
                 <div className="user-override-indicator">
-                  <span className="override-badge">âœ… Corrections utilisateur appliquÃ©es</span>
+                  <span className="override-badge">✅ Corrections utilisateur appliquées</span>
                   <span className="override-time">
-                    ModifiÃ© le {new Date(currentUserOverrides.updated_at).toLocaleString("fr-FR")}
+                    Modifié le {new Date(currentUserOverrides.updated_at).toLocaleString("fr-FR")}
                   </span>
                 </div>
               )}
@@ -2739,7 +2739,7 @@ export default function PluFaisabilite(): React.ReactElement {
                     </div>
 
                     <div className="edit-form-field">
-                      <label className="edit-label">Recul limites sÃ©paratives (m)</label>
+                      <label className="edit-label">Recul limites séparatives (m)</label>
                       <input
                         type="text"
                         className="edit-input"
@@ -2767,7 +2767,7 @@ export default function PluFaisabilite(): React.ReactElement {
                         value={editImplantationEnLimite}
                         onChange={(e) => setEditImplantationEnLimite(e.target.value)}
                       >
-                        <option value="null">Non dÃ©terminable</option>
+                        <option value="null">Non déterminable</option>
                         <option value="true">Oui</option>
                         <option value="false">Non</option>
                       </select>
@@ -2807,7 +2807,7 @@ export default function PluFaisabilite(): React.ReactElement {
                     </div>
 
                     <div className="edit-form-field">
-                      <label className="edit-label">Stationnement / 100mÂ² <span className="optional-tag">optionnel</span></label>
+                      <label className="edit-label">Stationnement / 100m² <span className="optional-tag">optionnel</span></label>
                       <input
                         type="text"
                         className="edit-input"
@@ -2831,11 +2831,11 @@ export default function PluFaisabilite(): React.ReactElement {
 
                   <div className="edit-form-actions">
                     <button className="save-btn" onClick={handleSaveOverrides}>
-                      ðŸ’¾ Enregistrer
+                      💾 Enregistrer
                     </button>
                     {currentUserOverrides && (
                       <button className="reset-btn" onClick={handleResetOverrides}>
-                        ðŸ—‘ï¸ RÃ©initialiser mes corrections
+                        🗑︝ Réinitialiser mes corrections
                       </button>
                     )}
                   </div>
@@ -2847,8 +2847,8 @@ export default function PluFaisabilite(): React.ReactElement {
           {(aiExtractResult || aiExtractStatus === "error") && (
             <div className={`ai-extract-result-card ${aiExtractResult?.data?.completeness_ok ? "ai-extract-result-card--complete" : "ai-extract-result-card--incomplete"}`}>
               <div className="ai-extract-result-header">
-                <span className="ai-extract-result-icon">ðŸ¤–</span>
-                <span className="ai-extract-result-title">RÃ¨gles IA (zone {aiExtractResult?.zone_code || selectedZoneCode})</span>
+                <span className="ai-extract-result-icon">🤖</span>
+                <span className="ai-extract-result-title">Règles IA (zone {aiExtractResult?.zone_code || selectedZoneCode})</span>
                 {aiExtractResult && (
                   <span className="ai-extract-result-time">
                     Extrait le {new Date(aiExtractResult.extracted_at).toLocaleString("fr-FR")}
@@ -2858,7 +2858,7 @@ export default function PluFaisabilite(): React.ReactElement {
 
               {aiExtractStatus === "error" && aiExtractError && (
                 <div className="ai-extract-error">
-                  <span className="ai-extract-error-icon">âŒ</span>
+                  <span className="ai-extract-error-icon">❌</span>
                   <span className="ai-extract-error-text">{aiExtractError}</span>
                 </div>
               )}
@@ -2866,11 +2866,11 @@ export default function PluFaisabilite(): React.ReactElement {
               {aiExtractResult?.data && (
                 <div className="ai-extract-result-content">
                   <div className="ai-extract-result-row">
-                    <span className="ai-extract-result-label">ComplÃ©tude :</span>
+                    <span className="ai-extract-result-label">Complétude :</span>
                     <span className={`ai-extract-result-value ${aiExtractResult.data.completeness_ok && aiExtractResult.data.missing.length === 0 ? "ai-extract-value--ok" : "ai-extract-value--ko"}`}>
                       {aiExtractResult.data.completeness_ok && aiExtractResult.data.missing.length === 0 
-                        ? "âœ… Complet" 
-                        : `âš ï¸ Incomplet (${aiExtractResult.data.missing.length} champ${aiExtractResult.data.missing.length > 1 ? 's' : ''} manquant${aiExtractResult.data.missing.length > 1 ? 's' : ''})`}
+                        ? "✅ Complet" 
+                        : `⚠︝ Incomplet (${aiExtractResult.data.missing.length} champ${aiExtractResult.data.missing.length > 1 ? 's' : ''} manquant${aiExtractResult.data.missing.length > 1 ? 's' : ''})`}
                     </span>
                   </div>
 
@@ -2915,9 +2915,9 @@ export default function PluFaisabilite(): React.ReactElement {
 
           {resolvedRuleset && !resolvedRuleset.completeness.ok && !aiExtractResult && (
             <div className="completeness-warning">
-              <span className="completeness-icon">âš ï¸</span>
+              <span className="completeness-icon">⚠︝</span>
               <div className="completeness-content">
-                <strong>RÃ¨gles incomplÃ¨tes pour la zone {selectedZoneCode}</strong>
+                <strong>Règles incomplètes pour la zone {selectedZoneCode}</strong>
                 <ul className="completeness-list">
                   {resolvedRuleset.completeness.missing.map((m, i) => (
                     <li key={i} className={m.includes("(optionnel)") ? "non-blocking" : "blocking"}>
@@ -2927,7 +2927,7 @@ export default function PluFaisabilite(): React.ReactElement {
                   ))}
                 </ul>
                 <p className="completeness-hint">
-                  ðŸ’¡ Utilisez le bouton Â« Modifier / ComplÃ©ter les rÃ¨gles Â» pour saisir les donnÃ©es manquantes.
+                  💡 Utilisez le bouton « Modifier / Compléter les règles » pour saisir les données manquantes.
                 </p>
               </div>
             </div>
@@ -2937,69 +2937,69 @@ export default function PluFaisabilite(): React.ReactElement {
 
           {!accessToken ? (
             <div className="placeholder-empty">
-              <span className="placeholder-icon">ðŸ”’</span>
-              <span>Connectez-vous pour accÃ©der aux analyses de faisabilitÃ©.</span>
+              <span className="placeholder-icon">🔒</span>
+              <span>Connectez-vous pour accéder aux analyses de faisabilité.</span>
               <button className="auth-login-btn-small" onClick={handleGoToLogin}>
                 Se connecter
               </button>
             </div>
           ) : !communeInsee ? (
             <div className="placeholder-empty">
-              <span className="placeholder-icon">ðŸ“</span>
-              <span>SÃ©lectionnez une commune, puis un document PLU.</span>
+              <span className="placeholder-icon">📝</span>
+              <span>Sélectionnez une commune, puis un document PLU.</span>
             </div>
           ) : docsStatus === "loading" ? (
             <div className="placeholder-empty">
-              <span className="placeholder-icon">â³</span>
-              <span>Chargement des documentsâ€¦</span>
+              <span className="placeholder-icon">❳</span>
+              <span>Chargement des documents…</span>
             </div>
           ) : docsError ? (
             <>
               <p className="error-text">{docsError}</p>
               <div className="placeholder-empty">
-                <span className="placeholder-icon">âš ï¸</span>
+                <span className="placeholder-icon">⚠︝</span>
                 <span>Erreur lors du chargement des documents</span>
               </div>
             </>
           ) : documents.length === 0 ? (
             <div className="placeholder-empty">
-              <span className="placeholder-icon">ðŸ“‚</span>
+              <span className="placeholder-icon">📂</span>
               <span>Aucun document PLU disponible pour cette commune.</span>
             </div>
           ) : !selectedDocumentId ? (
             <div className="placeholder-empty">
-              <span className="placeholder-icon">ðŸ§¾</span>
-              <span>SÃ©lectionnez un document PLU ci-dessus.</span>
+              <span className="placeholder-icon">🧾</span>
+              <span>Sélectionnez un document PLU ci-dessus.</span>
             </div>
           ) : rulesStatus === "loading" ? (
             <div className="placeholder-empty">
-              <span className="placeholder-icon">â³</span>
-              <span>Chargement des rÃ¨glesâ€¦</span>
+              <span className="placeholder-icon">❳</span>
+              <span>Chargement des règles…</span>
             </div>
           ) : rulesError ? (
             <>
               <p className="error-text">{rulesError}</p>
               <div className="placeholder-empty">
-                <span className="placeholder-icon">âš ï¸</span>
-                <span>Erreur lors du chargement des rÃ¨gles</span>
+                <span className="placeholder-icon">⚠︝</span>
+                <span>Erreur lors du chargement des règles</span>
               </div>
             </>
           ) : rulesZones.length === 0 ? (
             <div className="placeholder-empty">
-              <span className="placeholder-icon">ðŸ§©</span>
-              <span>Aucune rÃ¨gle normalisÃ©e trouvÃ©e pour ce document.</span>
+              <span className="placeholder-icon">🧩</span>
+              <span>Aucune règle normalisée trouvée pour ce document.</span>
             </div>
           ) : (
             <>
               <div className="rules-toolbar">
                 <div className="rules-toolbar-left">
                   <span className="rules-count">
-                    {rulesZones.length} zone{rulesZones.length > 1 ? "s" : ""} normalisÃ©e
+                    {rulesZones.length} zone{rulesZones.length > 1 ? "s" : ""} normalisée
                     {rulesZones.length > 1 ? "s" : ""}
                     {meaningfulZonesCount < rulesZones.length && (
                       <span className="rules-count-detail">
                         {" "}
-                        ({meaningfulZonesCount} avec rÃ¨gles exploitables)
+                        ({meaningfulZonesCount} avec règles exploitables)
                       </span>
                     )}
                   </span>
@@ -3030,8 +3030,8 @@ export default function PluFaisabilite(): React.ReactElement {
                         const isDetected = zonesMatch(z.zone_code, detectedZoneCode);
                         return (
                           <option key={`${z.document_id}:${z.zone_code}`} value={z.zone_code}>
-                            {z.zone_code} {libelle !== "Non trouvÃ©" ? `â€” ${libelle}` : ""}
-                            {isDetected ? " â˜…" : ""}
+                            {z.zone_code} {libelle !== "Non trouvé" ? `— ${libelle}` : ""}
+                            {isDetected ? " ★" : ""}
                             {!isMeaningful ? " (vide)" : ""}
                           </option>
                         );
@@ -3080,7 +3080,7 @@ export default function PluFaisabilite(): React.ReactElement {
                       if (resolvedRuleset.ces.max_ratio !== null) {
                         cesDisplay = `${Math.round(resolvedRuleset.ces.max_ratio * 100)} %`;
                       } else {
-                        cesDisplay = "Non trouvÃ©";
+                        cesDisplay = "Non trouvé";
                       }
                       notes = resolvedRuleset.notes;
                       confidenceScore = resolvedRuleset.confidence_score;
@@ -3130,7 +3130,7 @@ export default function PluFaisabilite(): React.ReactElement {
                       hauteurMaxValue = toNumber(z.rules.hauteur?.hauteur_max_m);
 
                       const cesPercent = toNumber(z.rules.emprise?.ces_max_percent);
-                      cesDisplay = cesPercent !== null ? `${cesPercent} %` : "Non trouvÃ©";
+                      cesDisplay = cesPercent !== null ? `${cesPercent} %` : "Non trouvé";
 
                       notes = collectNotes(z.rules.meta?.notes, ruleset, z.rules);
                       confidenceScore = z.confidence_score;
@@ -3156,21 +3156,21 @@ export default function PluFaisabilite(): React.ReactElement {
                             <span className="zone-libelle">{zoneLibelle}</span>
                             {isDetectedZone && (
                               <span className="zone-detected-badge" title="Zone de la parcelle">
-                                â˜… Parcelle
+                                ★ Parcelle
                               </span>
                             )}
                             {hasAiData && (
                               <span className="zone-ai-badge" title="Enrichi par IA">
-                                ðŸ¤– IA
+                                🤖 IA
                               </span>
                             )}
                             {hasUserOverrides && (
-                              <span className="zone-user-badge" title="CorrigÃ© par l'utilisateur">
-                                âœï¸ CorrigÃ©
+                              <span className="zone-user-badge" title="Corrigé par l'utilisateur">
+                                ✝︝ Corrigé
                               </span>
                             )}
                             {isEmptyZone && !hasAiData && !hasUserOverrides && (
-                              <span className="zone-empty-badge" title="Aucune rÃ¨gle exploitable">
+                              <span className="zone-empty-badge" title="Aucune règle exploitable">
                                 Zone vide
                               </span>
                             )}
@@ -3181,16 +3181,16 @@ export default function PluFaisabilite(): React.ReactElement {
                               Confiance : {formatMaybeNumber(confidenceScore, "%")}
                             </span>
                             <span className="source-pill" title="Source de normalisation">
-                              {source || "Non trouvÃ©"}
+                              {source || "Non trouvé"}
                             </span>
                           </div>
                         </div>
 
                         {isEmptyZone && !hasAiData && !hasUserOverrides && (
                           <div className="zone-empty-message">
-                            Aucune rÃ¨gle exploitable extraite pour cette zone dans ce document.
+                            Aucune règle exploitable extraite pour cette zone dans ce document.
                             <br />
-                            <span className="zone-empty-hint">ðŸ’¡ Utilisez Â« Modifier / ComplÃ©ter les rÃ¨gles Â» pour saisir les donnÃ©es manuellement.</span>
+                            <span className="zone-empty-hint">💡 Utilisez « Modifier / Compléter les règles » pour saisir les données manuellement.</span>
                           </div>
                         )}
 
@@ -3201,7 +3201,7 @@ export default function PluFaisabilite(): React.ReactElement {
                           </div>
 
                           <div className="rule-cell">
-                            <div className="rule-label">Limites sÃ©paratives</div>
+                            <div className="rule-label">Limites séparatives</div>
                             <div className="rule-value">{formatMaybeNumber(limitesValue, "m")}</div>
                           </div>
 
@@ -3213,17 +3213,17 @@ export default function PluFaisabilite(): React.ReactElement {
                           </div>
 
                           <div className="rule-cell">
-                            <div className="rule-label">FaÃ§ade avant</div>
+                            <div className="rule-label">Façade avant</div>
                             <div className="rule-value">{facadeAvantDisplay}</div>
                           </div>
 
                           <div className="rule-cell">
-                            <div className="rule-label">FaÃ§ades latÃ©rales</div>
+                            <div className="rule-label">Façades latérales</div>
                             <div className="rule-value">{facadeLateralesDisplay}</div>
                           </div>
 
                           <div className="rule-cell">
-                            <div className="rule-label">FaÃ§ade fond</div>
+                            <div className="rule-label">Façade fond</div>
                             <div className="rule-value">{facadeFondDisplay}</div>
                           </div>
 
@@ -3254,7 +3254,7 @@ export default function PluFaisabilite(): React.ReactElement {
                           </div>
 
                           <div className="rule-cell">
-                            <div className="rule-label">Stationnement / 100mÂ²</div>
+                            <div className="rule-label">Stationnement / 100m²</div>
                             <div className="rule-value">
                               {formatMaybeNumber(stationnement100m2Value, "")}
                             </div>

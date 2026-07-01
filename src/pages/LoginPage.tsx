@@ -1,4 +1,4 @@
-﻿// src/pages/LoginPage.tsx
+// src/pages/LoginPage.tsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
@@ -41,7 +41,7 @@ export default function LoginPage(): React.ReactElement {
     <div style={styles.container}>
       <div style={styles.card}>
         <h1 style={styles.title}>Connexion</h1>
-        <p style={styles.subtitle}>Connectez-vous pour accÃ©der Ã  Mimmoza</p>
+        <p style={styles.subtitle}>Connectez-vous pour accéder à Mimmoza</p>
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.field}>
@@ -69,7 +69,7 @@ export default function LoginPage(): React.ReactElement {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+              placeholder="••••••••"
               required
               disabled={loading}
               style={styles.input}

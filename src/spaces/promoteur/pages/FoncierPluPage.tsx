@@ -1,6 +1,6 @@
-﻿// src/spaces/promoteur/pages/FoncierPluPage.tsx
-// VERSION 9.6.0 â€” PLU parsing via extraction texte client (pdfjs) â†’ fin du 546.
-//   Hero v2 + toute la logique mÃ©tier v9.5.1 intacte. Seul handleUploadAndParse change.
+// src/spaces/promoteur/pages/FoncierPluPage.tsx
+// VERSION 9.6.0 — PLU parsing via extraction texte client (pdfjs) → fin du 546.
+//   Hero v2 + toute la logique métier v9.5.1 intacte. Seul handleUploadAndParse change.
 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -37,9 +37,9 @@ import type {
 } from "../shared/promoteurStudy.types";
 import { usePromoteurStudy } from "../shared/usePromoteurStudy";
 
-// â”€â”€ pdf.js : extraction texte cÃ´tÃ© client â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── pdf.js : extraction texte côté client ────────────────────────────────────
 // Si pdfjs-dist absent :  npm i pdfjs-dist
-// pdfjs-dist 5.x / 6.x â†’ worker en .min.mjs. En v3, remplace par .min.js.
+// pdfjs-dist 5.x / 6.x → worker en .min.mjs. En v3, remplace par .min.js.
 import * as pdfjsLib from "pdfjs-dist";
 // @ts-ignore - import worker Vite (?worker) : bundle le worker en Web Worker
 import PdfJsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?worker";
@@ -48,9 +48,9 @@ import { userStorage } from "@/lib/storage/userScopedStorage";
 pdfjsLib.GlobalWorkerOptions.workerPort = new PdfJsWorker();
 
 /**
- * Extraction du texte d'un PDF cÃ´tÃ© navigateur (pdf.js).
- * DÃ©porte tout le coÃ»t CPU hors de l'Edge Function â†’ plus de 546.
- * Retourne le texte concatÃ©nÃ© page par page (chaÃ®ne vide si PDF sans couche texte).
+ * Extraction du texte d'un PDF côté navigateur (pdf.js).
+ * Déporte tout le coût CPU hors de l'Edge Function → plus de 546.
+ * Retourne le texte concaténé page par page (chaîne vide si PDF sans couche texte).
  */
 async function extractPdfText(file: File): Promise<string> {
   const buf = await file.arrayBuffer();
@@ -73,11 +73,11 @@ async function extractPdfText(file: File): Promise<string> {
   return parts.join("\n");
 }
 
-// â”€â”€ Design tokens Promoteur (v9.5.0) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Design tokens Promoteur (v9.5.0) ─────────────────────────────────────────
 import { PromoteurPageHero, StudyIdBadge } from "../shared/components/PromoteurPageHero";
 import { ACCENT_PRO } from "../shared/promoteurDesign.tokens";
 
-// â”€â”€ ClÃ©s localStorage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Clés localStorage ─────────────────────────────────────────────────────────
 const LS_FONCIER_SELECTED = "mimmoza.promoteur.foncier.selected_v1";
 const LS_FONCIER_FOCUS    = "mimmoza.promoteur.foncier.focus_v1";
 const LS_FONCIER_COMMUNE  = "mimmoza.promoteur.foncier.commune_v1";
@@ -86,14 +86,14 @@ const LS_QUICK_ADDRESS = "mimmoza.promoteur.quick.address";
 const LS_QUICK_COMMUNE = "mimmoza.promoteur.quick.commune";
 const LS_QUICK_SURFACE = "mimmoza.promoteur.quick.surface";
 
-// â”€â”€â”€ Types locaux â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Types locaux ─────────────────────────────────────────────────────────────
 interface SelectedParcel { id: string; feature?: any; area_m2?: number | null; }
 interface PluData { zone_code?: string; zone_libelle?: string; ruleset?: any; raw?: any; found?: boolean; }
 interface ProjectInfo { parcelId?: string; parcelIds?: string[]; communeInsee?: string; surfaceM2?: number; address?: string; addressLat?: number; addressLon?: number; }
 interface AddressSuggestion { label: string; citycode?: string; context?: string; lon: number; lat: number; id: string; }
 type BBox = { minLon: number; minLat: number; maxLon: number; maxLat: number };
 
-// â”€â”€â”€ Types OAP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Types OAP ────────────────────────────────────────────────────────────────
 type OapStatus = "idle" | "loading" | "success" | "error";
 
 type OapApplicabilityStatus =
@@ -139,7 +139,7 @@ function resolveOapApplicability(result: OapExtractResult): OapApplicabilityStat
   return result.has_oap ? "applicable" : "not_found_in_analyzed_documents";
 }
 
-// â”€â”€â”€ OAP helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── OAP helpers ──────────────────────────────────────────────────────────────
 function hasList(items?: string[]): boolean {
   return Array.isArray(items) && items.length > 0;
 }
@@ -182,9 +182,9 @@ const styles = {
   inputLabel:{ fontSize: "12px", fontWeight: 600, color: "#475569", marginBottom: "6px", display: "block" } as React.CSSProperties,
 };
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 // CAPTURE CARTE CADASTRALE
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function captureCadastre(studyId: string | null): Promise<boolean> {
   try {
@@ -227,19 +227,19 @@ const CadastreCaptureButton: React.FC<CadastreCaptureButtonProps> = ({ studyId }
     setTimeout(() => setStatus("idle"), 2500);
   }, [studyId]);
   return (
-    <button onClick={handle} disabled={status === "capturing"} title="Capturer cette carte pour la SynthÃ¨se Promoteur"
+    <button onClick={handle} disabled={status === "capturing"} title="Capturer cette carte pour la Synthèse Promoteur"
       style={{ padding: "4px 10px", background: status === "ok" ? "#f0fdf4" : status === "fail" ? "#fef2f2" : "#f1f5f9", border: "1px solid", borderColor: status === "ok" ? "#bbf7d0" : status === "fail" ? "#fecaca" : "#e2e8f0", borderRadius: 6, fontSize: 11, fontWeight: 600, color: status === "ok" ? "#16a34a" : status === "fail" ? "#dc2626" : "#475569", cursor: status === "capturing" ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 4, transition: "all 0.2s", flexShrink: 0 }}>
-      {status === "capturing" ? "â³" : status === "ok" ? "âœ“" : status === "fail" ? "âš " : "ðŸ“¸"}
-      {status === "capturing" ? "Captureâ€¦" : status === "ok" ? "CapturÃ© !" : status === "fail" ? "Ã‰chec" : "SynthÃ¨se"}
+      {status === "capturing" ? "❳" : status === "ok" ? "✓" : status === "fail" ? "⚠" : "📸"}
+      {status === "capturing" ? "Capture…" : status === "ok" ? "Capturé !" : status === "fail" ? "Échec" : "Synthèse"}
     </button>
   );
 };
 
-// â”€â”€â”€ Utilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Utilities ────────────────────────────────────────────────────────────────
 
 function formatAreaM2(area: number | null | undefined): string {
-  if (area == null) return "â€”";
-  return area.toLocaleString("fr-FR") + " mÂ²";
+  if (area == null) return "—";
+  return area.toLocaleString("fr-FR") + " m²";
 }
 
 function extractCommuneInsee(parcelId: string | null | undefined): string | null {
@@ -331,13 +331,13 @@ function persistFoncierSelectionForRestore(parcels: SelectedParcel[], focusId: s
   try {
     const serializable = parcels.map(p => {
       let featureToStore: any = null;
-      if (p.feature) { const serialized = JSON.stringify(p.feature); featureToStore = serialized.length <= MAX_FEATURE_LS_BYTES ? p.feature : null; if (serialized.length > MAX_FEATURE_LS_BYTES) console.debug(`[FoncierPluPage] Feature ${p.id} trop grande pour localStorage (${serialized.length} bytes) â€” stockÃ©e sans gÃ©omÃ©trie`); }
+      if (p.feature) { const serialized = JSON.stringify(p.feature); featureToStore = serialized.length <= MAX_FEATURE_LS_BYTES ? p.feature : null; if (serialized.length > MAX_FEATURE_LS_BYTES) console.debug(`[FoncierPluPage] Feature ${p.id} trop grande pour localStorage (${serialized.length} bytes) — stockée sans géométrie`); }
       return { id: p.id, area_m2: p.area_m2 ?? null, commune_insee: commune, feature: featureToStore };
     });
     userStorage.setItem(LS_FONCIER_SELECTED, JSON.stringify(serializable));
     userStorage.setItem(LS_FONCIER_FOCUS,    focusId);
     userStorage.setItem(LS_FONCIER_COMMUNE,  commune);
-    console.debug(`[FoncierPluPage] persistFoncierSelectionForRestore â†’ ${serializable.length} parcelle(s), focus=${focusId}, commune=${commune}`);
+    console.debug(`[FoncierPluPage] persistFoncierSelectionForRestore → ${serializable.length} parcelle(s), focus=${focusId}, commune=${commune}`);
   } catch (err) { console.warn("[FoncierPluPage] persistFoncierSelectionForRestore failed:", err); }
 }
 
@@ -368,7 +368,7 @@ function ImperativeParcelLayer({ fc, selectedIds, onToggleParcel }: { fc: any; s
         layerByIdRef.current.set(pid, lyr as L.Path);
         lyr.on({ mouseover: () => (lyr as L.Path).setStyle(selectedIdsRef.current.has(pid) ? STYLE_HOVER_SELECTED : STYLE_HOVER_DEFAULT), mouseout: () => (lyr as L.Path).setStyle(selectedIdsRef.current.has(pid) ? STYLE_SELECTED : STYLE_DEFAULT), click: () => onToggleRef.current(pid, feature, getFeatureArea(feature)) });
         const area = getFeatureArea(feature);
-        lyr.bindTooltip(`<div style="font-family:Inter,sans-serif;font-size:12px"><strong>${pid}</strong>${area ? `<br/><b>${area.toLocaleString("fr-FR")} mÂ²</b>` : ""}</div>`, { sticky: true, className: "parcel-tooltip" });
+        lyr.bindTooltip(`<div style="font-family:Inter,sans-serif;font-size:12px"><strong>${pid}</strong>${area ? `<br/><b>${area.toLocaleString("fr-FR")} m²</b>` : ""}</div>`, { sticky: true, className: "parcel-tooltip" });
       },
     } as any);
     layer.addTo(map); layerRef.current = layer;
@@ -428,7 +428,7 @@ function CadastreMap({ communeInsee, center, selectedIds, selectedParcels, onTog
     let filtered = features;
     for (const sp of selectedParcels) { if (sp.feature?.geometry && !filtered.some((f: any) => getParcelIdFromFeature(f) === sp.id)) filtered = [sp.feature, ...filtered]; }
     const elapsed = Math.round(performance.now() - t0);
-    if (filtered.length === 0) { setError("0 parcelles trouvÃ©es â€” vÃ©rifiez le code commune ou dÃ©placez la carte"); setLoading(false); setFeatureCount(0); return; }
+    if (filtered.length === 0) { setError("0 parcelles trouvées — vérifiez le code commune ou déplacez la carte"); setLoading(false); setFeatureCount(0); return; }
     const result = { type: "FeatureCollection", features: filtered };
     cacheRef.current.set(key, result); setFc(result); setFeatureCount(filtered.length); setFetchMs(elapsed); setLoading(false);
   }, [selectedParcels]);
@@ -445,12 +445,12 @@ function CadastreMap({ communeInsee, center, selectedIds, selectedParcels, onTog
       <div style={{ position: "absolute", top: 10, right: 10, padding: "5px 10px", borderRadius: 6, background: "rgba(15,23,42,0.85)", color: "#e2e8f0", fontSize: 11, fontFamily: "monospace", zIndex: 1000, display: "flex", alignItems: "center", gap: 6 }}>
         {featureCount != null && <span>{featureCount} parcelles</span>}
         {fetchMs      != null && <span style={{ color: fetchMs > 4000 ? "#fca5a5" : "#86efac" }}>{fetchMs}ms</span>}
-        {selectedIds.length > 0 && <span style={{ color: "#86efac" }}>Â· {selectedIds.length} sel.</span>}
+        {selectedIds.length > 0 && <span style={{ color: "#86efac" }}>· {selectedIds.length} sel.</span>}
         <span style={{ background: "#065f46", color: "#a7f3d0", padding: "1px 5px", borderRadius: 4, fontSize: 10, fontWeight: 700 }}>IGN</span>
       </div>
-      {loading && (<div style={{ position: "absolute", top: 10, left: 10, padding: "6px 12px", borderRadius: 8, background: "rgba(15,23,42,0.9)", color: "white", fontSize: 12, fontWeight: 600, zIndex: 1000, display: "flex", alignItems: "center", gap: 6 }}><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />Chargementâ€¦</div>)}
-      {error && !loading && (<div style={{ position: "absolute", bottom: 40, left: 10, right: 10, padding: "8px 12px", borderRadius: 8, background: "rgba(254,243,199,0.95)", border: "1px solid #fde68a", color: "#92400e", fontSize: 12, fontWeight: 600, zIndex: 1000 }}>âš ï¸ {error}</div>)}
-      <div style={{ position: "absolute", bottom: 10, right: 10, padding: "5px 10px", borderRadius: 6, background: "rgba(255,255,255,0.9)", fontSize: 11, color: "#64748b", zIndex: 1000 }}>Cliquez sur une parcelle pour la sÃ©lectionner</div>
+      {loading && (<div style={{ position: "absolute", top: 10, left: 10, padding: "6px 12px", borderRadius: 8, background: "rgba(15,23,42,0.9)", color: "white", fontSize: 12, fontWeight: 600, zIndex: 1000, display: "flex", alignItems: "center", gap: 6 }}><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />Chargement…</div>)}
+      {error && !loading && (<div style={{ position: "absolute", bottom: 40, left: 10, right: 10, padding: "8px 12px", borderRadius: 8, background: "rgba(254,243,199,0.95)", border: "1px solid #fde68a", color: "#92400e", fontSize: 12, fontWeight: 600, zIndex: 1000 }}>⚠︝ {error}</div>)}
+      <div style={{ position: "absolute", bottom: 10, right: 10, padding: "5px 10px", borderRadius: 6, background: "rgba(255,255,255,0.9)", fontSize: 11, color: "#64748b", zIndex: 1000 }}>Cliquez sur une parcelle pour la sélectionner</div>
     </div>
   );
 }
@@ -485,14 +485,14 @@ function PluUploaderPanel({ communeInsee, communeNom, targetZoneCode, onPluParse
 
   const handleUploadAndParse = async () => {
     if (!file) return;
-    setUploading(true); setError(null); setProgress("Extraction du texte du PDFâ€¦");
+    setUploading(true); setError(null); setProgress("Extraction du texte du PDF…");
     try {
-      // 1) Chemin prioritaire : extraction texte cÃ´tÃ© client (pas de CPU serveur â†’ plus de 546).
+      // 1) Chemin prioritaire : extraction texte côté client (pas de CPU serveur → plus de 546).
       let pdfText = "";
       try {
         pdfText = await extractPdfText(file);
       } catch (e) {
-        console.warn("[PluUploaderPanel] extraction pdfjs Ã©chouÃ©e, fallback base64:", e);
+        console.warn("[PluUploaderPanel] extraction pdfjs échouée, fallback base64:", e);
       }
 
       const body: Record<string, any> = {
@@ -503,20 +503,20 @@ function PluUploaderPanel({ communeInsee, communeNom, targetZoneCode, onPluParse
       };
 
       if (pdfText && pdfText.trim().length >= 500) {
-        // Texte exploitable â†’ on n'envoie QUE le texte. plu-parser ne touche plus au PDF.
+        // Texte exploitable → on n'envoie QUE le texte. plu-parser ne touche plus au PDF.
         body.pdf_text = pdfText;
       } else {
-        // PDF probablement scannÃ© / sans couche texte â†’ fallback serveur bornÃ©.
-        console.warn("[PluUploaderPanel] texte insuffisant (PDF scannÃ© ?), fallback pdf_base64");
+        // PDF probablement scanné / sans couche texte → fallback serveur borné.
+        console.warn("[PluUploaderPanel] texte insuffisant (PDF scanné ?), fallback pdf_base64");
         body.pdf_base64 = await fileToBase64(file);
       }
 
       // 2) Appel plu-parser
-      setProgress("Analyse PLU en coursâ€¦");
+      setProgress("Analyse PLU en cours…");
       const { data, error } = await supabase.functions.invoke("plu-parser", { body });
       if (error) throw error;
       if (!data?.success) throw new Error(data?.message || "Erreur d'analyse PLU");
-      setProgress("TerminÃ© !");
+      setProgress("Terminé !");
 
       if (data.zones_rulesets?.length > 0) {
         let zoneData = data.zones_rulesets[0];
@@ -524,7 +524,7 @@ function PluUploaderPanel({ communeInsee, communeNom, targetZoneCode, onPluParse
         const plu: PluData = { zone_code: zoneData.zone_code, zone_libelle: zoneData.zone_libelle, ruleset: zoneData.ruleset, raw: data, found: true };
         try { await supabase.from("plu_parsed").upsert({ commune_insee: communeInsee, zone_code: plu.zone_code, ruleset: plu.ruleset, source_file: file.name, parsed_at: new Date().toISOString() }, { onConflict: "commune_insee,zone_code" }); } catch (dbErr) { console.warn("[PluUploaderPanel] upsert plu_parsed failed:", dbErr); }
         setPluServerStatus("ok"); onPluParsed(plu);
-      } else { throw new Error(data?.message || "Aucune zone PLU trouvÃ©e"); }
+      } else { throw new Error(data?.message || "Aucune zone PLU trouvée"); }
     } catch (err: any) { console.error("[PluUploaderPanel] parse error:", err); setPluServerStatus("down"); setError(err?.message || "Erreur"); }
     finally { setUploading(false); setProgress(""); }
   };
@@ -532,17 +532,17 @@ function PluUploaderPanel({ communeInsee, communeNom, targetZoneCode, onPluParse
   return (
     <div style={{ ...styles.card, marginTop: "16px" }}>
       <div style={styles.cardHeader}>
-        <h3 style={styles.cardTitle}><FileUp size={18} color="#f59e0b" />Importer le rÃ¨glement PLU</h3>
+        <h3 style={styles.cardTitle}><FileUp size={18} color="#f59e0b" />Importer le règlement PLU</h3>
         <span style={{ ...styles.badge, background: pluServerStatus === "ok" ? "#f0fdf4" : pluServerStatus === "down" ? "#fef2f2" : "#f8fafc", color: pluServerStatus === "ok" ? "#16a34a" : pluServerStatus === "down" ? "#dc2626" : "#64748b" }}>
-          {pluServerStatus === "ok" ? "â— Fonction OK" : pluServerStatus === "down" ? "â— Fonction indisponible" : "â— VÃ©rification..."}
+          {pluServerStatus === "ok" ? "◝ Fonction OK" : pluServerStatus === "down" ? "◝ Fonction indisponible" : "◝ Vérification..."}
         </span>
       </div>
       <div style={styles.cardBody}>
-        {pluServerStatus === "down" && (<div style={{ marginBottom: 16, padding: "12px 14px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, fontSize: 12, color: "#991b1b" }}><strong>âš  Fonction Supabase non accessible</strong><br />VÃ©rifiez que la fonction <code>plu-parser</code> est bien dÃ©ployÃ©e.</div>)}
-        <p style={{ fontSize: 13, color: "#64748b", margin: "0 0 16px" }}>Uploadez le PDF du rÃ¨glement pour extraire les rÃ¨gles.</p>
+        {pluServerStatus === "down" && (<div style={{ marginBottom: 16, padding: "12px 14px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, fontSize: 12, color: "#991b1b" }}><strong>⚠ Fonction Supabase non accessible</strong><br />Vérifiez que la fonction <code>plu-parser</code> est bien déployée.</div>)}
+        <p style={{ fontSize: 13, color: "#64748b", margin: "0 0 16px" }}>Uploadez le PDF du règlement pour extraire les règles.</p>
         <div onClick={() => fileInputRef.current?.click()} style={{ padding: 24, border: "2px dashed #cbd5e1", borderRadius: 12, background: file ? "#f0fdf4" : "#f8fafc", cursor: "pointer", textAlign: "center" }}>
           <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" style={{ display: "none" }} onChange={e => { const selected = e.target.files?.[0]; if (selected?.type === "application/pdf" || selected?.name?.toLowerCase().endsWith(".pdf")) { setFile(selected); setError(null); } else { setError("PDF requis"); } }} />
-          {file ? (<div><Check size={32} color="#16a34a" style={{ marginBottom: 8 }} /><p style={{ fontSize: 14, fontWeight: 600, color: "#16a34a", margin: "0 0 4px" }}>{file.name}</p></div>) : (<div><Upload size={32} color="#94a3b8" style={{ marginBottom: 8 }} /><p style={{ fontSize: 14, fontWeight: 600, color: "#475569", margin: "0 0 4px" }}>Cliquez pour sÃ©lectionner</p><p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>PDF du rÃ¨glement PLU</p></div>)}
+          {file ? (<div><Check size={32} color="#16a34a" style={{ marginBottom: 8 }} /><p style={{ fontSize: 14, fontWeight: 600, color: "#16a34a", margin: "0 0 4px" }}>{file.name}</p></div>) : (<div><Upload size={32} color="#94a3b8" style={{ marginBottom: 8 }} /><p style={{ fontSize: 14, fontWeight: 600, color: "#475569", margin: "0 0 4px" }}>Cliquez pour sélectionner</p><p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>PDF du règlement PLU</p></div>)}
         </div>
         {targetZoneCode && (<div style={{ marginTop: 12, padding: "8px 12px", background: "#ede9fe", borderRadius: 8, fontSize: 12, color: ACCENT_PRO }}><strong>Zone cible:</strong> {targetZoneCode}</div>)}
         <button onClick={handleUploadAndParse} disabled={!file || uploading || pluServerStatus === "down"} style={{ ...styles.button, width: "100%", marginTop: 16, background: !file || uploading || pluServerStatus === "down" ? "#e2e8f0" : "#0f172a", color: !file || uploading || pluServerStatus === "down" ? "#94a3b8" : "white", cursor: !file || uploading || pluServerStatus === "down" ? "not-allowed" : "pointer" }}>
@@ -554,7 +554,7 @@ function PluUploaderPanel({ communeInsee, communeNom, targetZoneCode, onPluParse
   );
 }
 
-// â”€â”€â”€ PluInfoCard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── PluInfoCard ──────────────────────────────────────────────────────────────
 
 function ratioToPct(v: number | null | undefined): number | null {
   if (v == null) return null;
@@ -579,7 +579,7 @@ function resolveRulesetSource(pluData: PluData | null): { rs: any; format: "reso
 }
 
 function mapToFields(rs: any, format: "resolved_v1" | "plu_ruleset_v2" | "legacy"): FieldMap {
-  if (format === "resolved_v1") return { hauteur_max: { value: rs.hauteur?.max_m ?? null, unit: "m", note: rs.hauteur?.note }, hauteur_faitage: { value: rs.hauteur?.faitage_m ?? null, unit: "m", note: rs.hauteur?.faitage_note }, ces_max: { value: ratioToPct(rs.ces?.max_ratio), unit: "%", note: rs.ces?.note ?? (rs.ces?.max_ratio == null ? "Pas de rÃ¨gle" : null) }, recul_voie: { value: rs.reculs?.voirie?.min_m ?? null, unit: "m", note: rs.reculs?.voirie?.note }, recul_limites: { value: rs.reculs?.limites_separatives?.min_m ?? null, unit: "m", note: rs.reculs?.limites_separatives?.note }, stationnement: { value: rs.stationnement?.par_logement ?? null, unit: "pl/logt", note: rs.stationnement?.note }, pleine_terre: { value: ratioToPct(rs.pleine_terre?.ratio_min), unit: "%", note: rs.pleine_terre?.note }, cos: { value: rs.cos?.max ?? null, unit: "", note: rs.cos?.note ?? (rs.cos?.max == null ? "Pas de COS" : null) } };
+  if (format === "resolved_v1") return { hauteur_max: { value: rs.hauteur?.max_m ?? null, unit: "m", note: rs.hauteur?.note }, hauteur_faitage: { value: rs.hauteur?.faitage_m ?? null, unit: "m", note: rs.hauteur?.faitage_note }, ces_max: { value: ratioToPct(rs.ces?.max_ratio), unit: "%", note: rs.ces?.note ?? (rs.ces?.max_ratio == null ? "Pas de règle" : null) }, recul_voie: { value: rs.reculs?.voirie?.min_m ?? null, unit: "m", note: rs.reculs?.voirie?.note }, recul_limites: { value: rs.reculs?.limites_separatives?.min_m ?? null, unit: "m", note: rs.reculs?.limites_separatives?.note }, stationnement: { value: rs.stationnement?.par_logement ?? null, unit: "pl/logt", note: rs.stationnement?.note }, pleine_terre: { value: ratioToPct(rs.pleine_terre?.ratio_min), unit: "%", note: rs.pleine_terre?.note }, cos: { value: rs.cos?.max ?? null, unit: "", note: rs.cos?.note ?? (rs.cos?.max == null ? "Pas de COS" : null) } };
   if (format === "plu_ruleset_v2") {
     const egout = rs.hauteurs?.h_max_egout_m ?? rs.hauteur?.max_m ?? null;
     const faitage = rs.hauteurs?.h_max_faitage_m ?? rs.hauteur?.faitage_m ?? null;
@@ -617,13 +617,13 @@ function PluInfoCard({ pluData, loading, communeInsee, communeNom, parcelId, add
       if (!data?.success) throw new Error(data?.message || data?.error || "Erreur analyse OAP");
       const extracted: OapExtractResult | null = data.data ?? null;
       setOapExtract(extracted); onOapExtracted?.(extracted); setOapStatus("success"); setOapError(null);
-      patchModule("plu_oap", { ok: extracted?.has_oap === true, summary: extracted?.has_oap ? `OAP dÃ©tectÃ©e : ${extracted.oap_name || "sans nom"}` : "Aucune OAP dÃ©tectÃ©e", data: extracted });
-    } catch (err: any) { console.error("[OAP] error", err); setOapError(err?.message || "Erreur rÃ©seau"); setOapStatus("error"); }
+      patchModule("plu_oap", { ok: extracted?.has_oap === true, summary: extracted?.has_oap ? `OAP détectée : ${extracted.oap_name || "sans nom"}` : "Aucune OAP détectée", data: extracted });
+    } catch (err: any) { console.error("[OAP] error", err); setOapError(err?.message || "Erreur réseau"); setOapStatus("error"); }
   }, [communeInsee, zoneCode, communeNom, parcelId, address, source, pluData, onOapExtracted]);
 
   if (loading) return (
     <div style={styles.card}>
-      <div style={styles.cardHeader}><h3 style={styles.cardTitle}><FileText size={18} color="#8b5cf6" />RÃ¨gles PLU</h3></div>
+      <div style={styles.cardHeader}><h3 style={styles.cardTitle}><FileText size={18} color="#8b5cf6" />Règles PLU</h3></div>
       <div style={{ ...styles.cardBody, display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
         <Loader2 size={24} color={ACCENT_PRO} style={{ animation: "spin 1s linear infinite" }} />
         <span style={{ marginLeft: 12, color: "#64748b" }}>Chargement PLU...</span>
@@ -632,7 +632,7 @@ function PluInfoCard({ pluData, loading, communeInsee, communeNom, parcelId, add
   );
 
   const cfg: { key: keyof FieldMap; label: string }[] = [
-    { key: "hauteur_max", label: "HAUTEUR MAX (Ã‰GOUT)" }, { key: "hauteur_faitage", label: "HAUTEUR FAÃŽTAGE" },
+    { key: "hauteur_max", label: "HAUTEUR MAX (ÉGOUT)" }, { key: "hauteur_faitage", label: "HAUTEUR FAÎTAGE" },
     { key: "ces_max", label: "EMPRISE AU SOL (CES)" }, { key: "recul_voie", label: "RECUL VOIRIE" },
     { key: "recul_limites", label: "RECUL LIMITES" }, { key: "stationnement", label: "STATIONNEMENT" },
     { key: "pleine_terre", label: "PLEINE TERRE MIN" }, { key: "cos", label: "COS" },
@@ -641,9 +641,9 @@ function PluInfoCard({ pluData, loading, communeInsee, communeNom, parcelId, add
   return (
     <div style={styles.card}>
       <div style={styles.cardHeader}>
-        <h3 style={styles.cardTitle}><FileText size={18} color={ACCENT_PRO} />RÃ¨gles PLU</h3>
+        <h3 style={styles.cardTitle}><FileText size={18} color={ACCENT_PRO} />Règles PLU</h3>
         <div style={{ display: "flex", gap: 8 }}>
-          {hasPlu && (<button onClick={() => setIsEditing(!isEditing)} style={{ padding: "4px 10px", background: isEditing ? "#fef3c7" : "#f1f5f9", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 600, color: isEditing ? "#92400e" : "#64748b", cursor: "pointer" }}>{isEditing ? "âœ“ Terminer" : "âœï¸ Modifier"}</button>)}
+          {hasPlu && (<button onClick={() => setIsEditing(!isEditing)} style={{ padding: "4px 10px", background: isEditing ? "#fef3c7" : "#f1f5f9", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 600, color: isEditing ? "#92400e" : "#64748b", cursor: "pointer" }}>{isEditing ? "✓ Terminer" : "✝︝ Modifier"}</button>)}
           {zoneCode ? <span style={{ ...styles.badge, background: "#ede9fe", color: ACCENT_PRO }}>Zone {zoneCode}</span> : <span style={{ ...styles.badge, background: "#fef3c7", color: "#92400e" }}>Non disponible</span>}
         </div>
       </div>
@@ -652,12 +652,12 @@ function PluInfoCard({ pluData, loading, communeInsee, communeNom, parcelId, add
           <>
             <div style={{ padding: "12px 14px", background: "#f8fafc", borderRadius: 10, marginBottom: 12 }}>
               <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600, textTransform: "uppercase" }}>Zone</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a", marginTop: 2 }}>{zoneCode ?? "â€”"}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a", marginTop: 2 }}>{zoneCode ?? "—"}</div>
               <div style={{ fontSize: 13, color: "#475569", marginTop: 4 }}>{zoneLibelle || "Zone urbaine"}</div>
             </div>
             <div style={{ marginBottom: 14, padding: "10px 12px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, display: "flex", gap: 8, alignItems: "flex-start" }}>
               <AlertTriangle size={14} color="#d97706" style={{ marginTop: 1, flexShrink: 0 }} />
-              <p style={{ fontSize: 11, color: "#92400e", margin: 0, lineHeight: 1.5 }}>Mimmoza peut faire des erreurs. VÃ©rifiez les valeurs avec le document officiel.</p>
+              <p style={{ fontSize: 11, color: "#92400e", margin: 0, lineHeight: 1.5 }}>Mimmoza peut faire des erreurs. Vérifiez les valeurs avec le document officiel.</p>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
               {cfg.map(({ key, label }) => {
@@ -667,11 +667,11 @@ function PluInfoCard({ pluData, loading, communeInsee, communeNom, parcelId, add
                     <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
                     {isEditing ? (
                       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <input type="text" value={f.value ?? ""} onChange={e => { const v = e.target.value === "" ? null : parseFloat(e.target.value.replace(",", ".")); setFields(prev => ({ ...prev, [key]: { ...prev[key], value: v } })); }} placeholder="â€”" style={{ width: 60, padding: "4px 8px", border: "1px solid #cbd5e1", borderRadius: 6, fontSize: 14, fontWeight: 700, textAlign: "center" }} />
+                        <input type="text" value={f.value ?? ""} onChange={e => { const v = e.target.value === "" ? null : parseFloat(e.target.value.replace(",", ".")); setFields(prev => ({ ...prev, [key]: { ...prev[key], value: v } })); }} placeholder="—" style={{ width: 60, padding: "4px 8px", border: "1px solid #cbd5e1", borderRadius: 6, fontSize: 14, fontWeight: 700, textAlign: "center" }} />
                         <span style={{ fontSize: 12, color: "#64748b" }}>{f.unit}</span>
                       </div>
                     ) : (
-                      <div style={{ fontSize: 18, fontWeight: 800, color: hasVal ? "#0f172a" : "#94a3b8" }}>{hasVal ? `${f.value}${f.unit ? " " + f.unit : ""}` : "â€”"}</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: hasVal ? "#0f172a" : "#94a3b8" }}>{hasVal ? `${f.value}${f.unit ? " " + f.unit : ""}` : "—"}</div>
                     )}
                     {f.note && !isEditing && <div style={{ fontSize: 10, color: "#94a3b8", fontStyle: "italic", lineHeight: 1.4, marginTop: 2 }}>{f.note}</div>}
                   </div>
@@ -681,22 +681,22 @@ function PluInfoCard({ pluData, loading, communeInsee, communeNom, parcelId, add
             <div style={{ marginTop: 14, padding: "14px 16px", borderRadius: 12, border: "1px solid #c4b5fd", background: "#faf5ff" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a" }}>OAP â€” Orientations d'amÃ©nagement</div>
-                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>DÃ©tection et extraction des contraintes qualitatives applicables au secteur.</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a" }}>OAP — Orientations d'aménagement</div>
+                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>Détection et extraction des contraintes qualitatives applicables au secteur.</div>
                 </div>
                 <button onClick={handleAnalyzeOap} disabled={oapStatus === "loading" || !communeInsee || !zoneCode} style={{ ...styles.button, padding: "7px 12px", background: oapStatus === "loading" || !communeInsee || !zoneCode ? "#e2e8f0" : ACCENT_PRO, color: oapStatus === "loading" || !communeInsee || !zoneCode ? "#94a3b8" : "white", cursor: oapStatus === "loading" || !communeInsee || !zoneCode ? "not-allowed" : "pointer", fontSize: 12, flexShrink: 0 }}>
-                  {oapStatus === "loading" ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />Analyseâ€¦</> : <><FileSearch size={14} />Analyser l'OAP</>}
+                  {oapStatus === "loading" ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />Analyse…</> : <><FileSearch size={14} />Analyser l'OAP</>}
                 </button>
               </div>
-              {oapStatus === "idle" && (<div style={{ padding: "10px 12px", background: "white", border: "1px dashed #c4b5fd", borderRadius: 10, fontSize: 12, color: "#64748b" }}>Aucune analyse OAP lancÃ©e. Cliquez sur "Analyser l'OAP" pour rechercher une OAP liÃ©e Ã  cette zone / parcelle.</div>)}
+              {oapStatus === "idle" && (<div style={{ padding: "10px 12px", background: "white", border: "1px dashed #c4b5fd", borderRadius: 10, fontSize: 12, color: "#64748b" }}>Aucune analyse OAP lancée. Cliquez sur "Analyser l'OAP" pour rechercher une OAP liée à cette zone / parcelle.</div>)}
               {oapStatus === "error" && (<div style={{ padding: "10px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, fontSize: 12, color: "#991b1b" }}><strong>Erreur OAP :</strong> {oapError || "Erreur inconnue"}</div>)}
               {oapStatus === "success" && oapExtract !== null && !oapExtract.has_oap && (() => {
                 const applicability = resolveOapApplicability(oapExtract);
                 return (
                   <div style={{ padding: "12px 14px", background: "white", border: "1px solid #e2e8f0", borderRadius: 10 }}>
-                    <div style={{ marginBottom: 10 }}><span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: "#fef9c3", color: "#854d0e", border: "1px solid #fde68a" }}>âš  DonnÃ©es OAP insuffisantes</span></div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", marginBottom: 6 }}>Aucune OAP trouvÃ©e dans les documents analysÃ©s.</div>
-                    <p style={{ fontSize: 12, color: "#475569", lineHeight: 1.65, margin: "0 0 10px" }}>Le rÃ¨glement PLU analysÃ© ne contient pas de piÃ¨ce OAP exploitable. Cela ne signifie pas que la parcelle n'est pas concernÃ©e : les orientations d'amÃ©nagement peuvent se trouver dans une piÃ¨ce sÃ©parÃ©e du dossier PLU, notamment la <strong>piÃ¨ce OAP / piÃ¨ce&nbsp;03</strong> ou les <strong>documents graphiques</strong>.</p>
+                    <div style={{ marginBottom: 10 }}><span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: "#fef9c3", color: "#854d0e", border: "1px solid #fde68a" }}>⚠ Données OAP insuffisantes</span></div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", marginBottom: 6 }}>Aucune OAP trouvée dans les documents analysés.</div>
+                    <p style={{ fontSize: 12, color: "#475569", lineHeight: 1.65, margin: "0 0 10px" }}>Le règlement PLU analysé ne contient pas de pièce OAP exploitable. Cela ne signifie pas que la parcelle n'est pas concernée : les orientations d'aménagement peuvent se trouver dans une pièce séparée du dossier PLU, notamment la <strong>pièce OAP / pièce&nbsp;03</strong> ou les <strong>documents graphiques</strong>.</p>
                     <div style={{ padding: "8px 10px", background: "#f8fafc", borderRadius: 8, fontSize: 11, color: "#64748b", fontFamily: "monospace" }}>applicability_status : <strong style={{ color: "#475569" }}>{applicability}</strong></div>
                   </div>
                 );
@@ -704,26 +704,26 @@ function PluInfoCard({ pluData, loading, communeInsee, communeNom, parcelId, add
               {oapStatus === "success" && oapExtract?.has_oap === true && (
                 <div style={{ padding: "12px 14px", background: "white", border: "1px solid #ddd6fe", borderRadius: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                    <span style={{ ...styles.badge, background: "#ede9fe", color: ACCENT_PRO }}>OAP dÃ©tectÃ©e</span>
+                    <span style={{ ...styles.badge, background: "#ede9fe", color: ACCENT_PRO }}>OAP détectée</span>
                     {oapExtract.oap_name && <span style={{ fontSize: 13, fontWeight: 800, color: "#0f172a" }}>{oapExtract.oap_name}</span>}
-                    {oapExtract.oap_type && <span style={{ fontSize: 11, color: "#64748b" }}>Type : {oapExtract.oap_type === "sectorielle" ? "sectorielle" : "thÃ©matique"}</span>}
+                    {oapExtract.oap_type && <span style={{ fontSize: 11, color: "#64748b" }}>Type : {oapExtract.oap_type === "sectorielle" ? "sectorielle" : "thématique"}</span>}
                   </div>
                   {oapExtract.summary && <p style={{ fontSize: 12, color: "#475569", lineHeight: 1.6, margin: "0 0 10px" }}>{oapExtract.summary}</p>}
                   {oapExtract.source_document && <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>Source : <strong>{oapExtract.source_document}</strong></div>}
-                  {oapExtract.source_url && <a href={oapExtract.source_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: ACCENT_PRO, fontWeight: 700, textDecoration: "none" }}>Voir la source â†—</a>}
+                  {oapExtract.source_url && <a href={oapExtract.source_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: ACCENT_PRO, fontWeight: 700, textDecoration: "none" }}>Voir la source ↗</a>}
                   {oapExtract.constraints && (<>
-                    {renderOapList("AccÃ¨s", oapExtract.constraints.access)}
+                    {renderOapList("Accès", oapExtract.constraints.access)}
                     {renderOapList("Voirie", oapExtract.constraints.roads)}
                     {renderOapList("Cheminements doux", oapExtract.constraints.pedestrian_links)}
                     {renderOapList("Espaces verts", oapExtract.constraints.green_spaces)}
                     {renderOapList("Paysage", oapExtract.constraints.landscape)}
                     {renderOapList("Logement social", oapExtract.constraints.social_housing)}
-                    {renderOapList("DensitÃ©", oapExtract.constraints.density)}
-                    {renderOapList("Forme bÃ¢tie", oapExtract.constraints.built_form)}
+                    {renderOapList("Densité", oapExtract.constraints.density)}
+                    {renderOapList("Forme bâtie", oapExtract.constraints.built_form)}
                     {renderOapList("Hauteurs", oapExtract.constraints.heights)}
                     {renderOapList("Stationnement", oapExtract.constraints.parking)}
                     {renderOapList("Phasage", oapExtract.constraints.phasing)}
-                    {renderOapList("Ã‰quipements publics", oapExtract.constraints.public_facilities)}
+                    {renderOapList("Équipements publics", oapExtract.constraints.public_facilities)}
                   </>)}
                   {renderOapList("Impacts promoteur", oapExtract.promoter_impacts)}
                   {renderOapList("Risques permis", oapExtract.permit_risks)}
@@ -738,7 +738,7 @@ function PluInfoCard({ pluData, loading, communeInsee, communeNom, parcelId, add
         ) : (
           <div style={{ textAlign: "center", padding: 20 }}>
             <AlertTriangle size={32} color="#f59e0b" style={{ marginBottom: 12 }} />
-            <p style={{ color: "#64748b", fontSize: 13, margin: 0 }}>PLU non disponible. Importez le rÃ¨glement PDF.</p>
+            <p style={{ color: "#64748b", fontSize: 13, margin: 0 }}>PLU non disponible. Importez le règlement PDF.</p>
           </div>
         )}
       </div>
@@ -788,10 +788,10 @@ function ProjectSelector({ projectInfo, onProjectChange, onSearch, loading }: { 
           <div>
             <label style={styles.inputLabel}>Identifiant de parcelle</label>
             <input type="text" value={parcelInput} onChange={e => setParcelInput(e.target.value.toUpperCase())} placeholder="ex: 64065000AI0001" style={styles.input} />
-            <p style={{ fontSize: 11, color: "#94a3b8", margin: "4px 0 0" }}>Format: code INSEE + section + numÃ©ro</p>
+            <p style={{ fontSize: 11, color: "#94a3b8", margin: "4px 0 0" }}>Format: code INSEE + section + numéro</p>
           </div>
           <div style={{ position: "relative" }}>
-            <label style={styles.inputLabel}>Adresse{selectedAddress && <span style={{ marginLeft: 8, color: "#16a34a", fontSize: 10, background: "#f0fdf4", padding: "2px 6px", borderRadius: 4 }}>âœ“</span>}</label>
+            <label style={styles.inputLabel}>Adresse{selectedAddress && <span style={{ marginLeft: 8, color: "#16a34a", fontSize: 10, background: "#f0fdf4", padding: "2px 6px", borderRadius: 4 }}>✓</span>}</label>
             <div style={{ position: "relative" }}>
               <input ref={addressRef} type="text" value={addressInput} onChange={e => { setAddressInput(e.target.value); setSelectedAddress(null); if (debRef.current) clearTimeout(debRef.current); debRef.current = setTimeout(() => fetchSuggestions(e.target.value), 300); }} onFocus={() => suggestions.length > 0 && setShowSuggestions(true)} placeholder="Tapez une adresse..." style={{ ...styles.input, paddingRight: 36, borderColor: selectedAddress ? "#86efac" : "#e2e8f0" }} />
               <div style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)" }}>
@@ -810,8 +810,8 @@ function ProjectSelector({ projectInfo, onProjectChange, onSearch, loading }: { 
             )}
           </div>
         </div>
-        {!parcelInput && !selectedAddress && !projectInfo.communeInsee && (<div style={{ marginTop: 12, padding: "10px 14px", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, display: "flex", alignItems: "center", gap: 10 }}><Info size={16} color={ACCENT_PRO} /><p style={{ fontSize: 12, color: ACCENT_PRO, margin: 0 }}>Renseignez l'identifiant de parcelle <strong>ou</strong> sÃ©lectionnez une adresse.</p></div>)}
-        {!parcelInput && projectInfo.communeInsee && !selectedAddress && (<div style={{ marginTop: 12, padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, display: "flex", alignItems: "center", gap: 10 }}><Check size={16} color="#16a34a" /><p style={{ fontSize: 12, color: "#166534", margin: 0 }}>Commune prÃ©-remplie : <strong>{projectInfo.communeInsee}</strong> â€” SÃ©lectionnez une parcelle ou lancez la recherche.</p></div>)}
+        {!parcelInput && !selectedAddress && !projectInfo.communeInsee && (<div style={{ marginTop: 12, padding: "10px 14px", background: "#ede9fe", border: "1px solid #c4b5fd", borderRadius: 8, display: "flex", alignItems: "center", gap: 10 }}><Info size={16} color={ACCENT_PRO} /><p style={{ fontSize: 12, color: ACCENT_PRO, margin: 0 }}>Renseignez l'identifiant de parcelle <strong>ou</strong> sélectionnez une adresse.</p></div>)}
+        {!parcelInput && projectInfo.communeInsee && !selectedAddress && (<div style={{ marginTop: 12, padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, display: "flex", alignItems: "center", gap: 10 }}><Check size={16} color="#16a34a" /><p style={{ fontSize: 12, color: "#166534", margin: 0 }}>Commune pré-remplie : <strong>{projectInfo.communeInsee}</strong> — Sélectionnez une parcelle ou lancez la recherche.</p></div>)}
         <button type="submit" disabled={loading || !canSubmit} style={{ ...styles.button, marginTop: 16, background: loading || !canSubmit ? "#e2e8f0" : "#0f172a", color: loading || !canSubmit ? "#94a3b8" : "white", cursor: loading || !canSubmit ? "not-allowed" : "pointer" }}>
           {loading ? <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />Recherche...</> : <><Search size={16} />Rechercher la parcelle</>}
         </button>
@@ -838,11 +838,11 @@ function ParcelsSidebar({ selectedParcels, totalAreaM2, onRemoveParcel, onClearA
       <div style={{ padding: "14px 18px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 8, textTransform: "uppercase" }}>Ajouter une parcelle</div>
         <div style={{ display: "flex", gap: 8 }}>
-          <div style={{ flex: 1 }}><input ref={idRef} type="text" value={manualId} onChange={e => setManualId(e.target.value.toUpperCase())} onKeyDown={e => e.key === "Enter" && (e.preventDefault(), handleAdd())} placeholder="NÂ° parcelle" style={{ ...styles.input, fontSize: 12, padding: "8px 10px" }} /></div>
-          <div style={{ width: 90 }}><input type="text" value={manualArea} onChange={e => setManualArea(e.target.value)} onKeyDown={e => e.key === "Enter" && (e.preventDefault(), handleAdd())} placeholder="mÂ²" style={{ ...styles.input, fontSize: 12, padding: "8px 10px", textAlign: "right" }} /></div>
+          <div style={{ flex: 1 }}><input ref={idRef} type="text" value={manualId} onChange={e => setManualId(e.target.value.toUpperCase())} onKeyDown={e => e.key === "Enter" && (e.preventDefault(), handleAdd())} placeholder="N° parcelle" style={{ ...styles.input, fontSize: 12, padding: "8px 10px" }} /></div>
+          <div style={{ width: 90 }}><input type="text" value={manualArea} onChange={e => setManualArea(e.target.value)} onKeyDown={e => e.key === "Enter" && (e.preventDefault(), handleAdd())} placeholder="m²" style={{ ...styles.input, fontSize: 12, padding: "8px 10px", textAlign: "right" }} /></div>
           <button onClick={handleAdd} disabled={!manualId.trim()} style={{ ...styles.button, padding: "8px 12px", background: manualId.trim() ? ACCENT_PRO : "#e2e8f0", color: manualId.trim() ? "white" : "#94a3b8", cursor: manualId.trim() ? "pointer" : "not-allowed", fontSize: 16, fontWeight: 700, minWidth: 38 }}>+</button>
         </div>
-        <p style={{ fontSize: 10, color: "#94a3b8", margin: "4px 0 0" }}>Ex: 64065000AI0001 â€” la surface est rÃ©cupÃ©rÃ©e automatiquement</p>
+        <p style={{ fontSize: 10, color: "#94a3b8", margin: "4px 0 0" }}>Ex: 64065000AI0001 — la surface est récupérée automatiquement</p>
       </div>
       <div style={{ ...styles.cardBody, maxHeight: 300, overflow: "auto", padding: "12px 18px" }}>
         {selectedParcels.length === 0 ? (
@@ -854,8 +854,8 @@ function ParcelsSidebar({ selectedParcels, totalAreaM2, onRemoveParcel, onClearA
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: "#0f172a", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.id}</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
-                    <input type="text" value={p.area_m2 != null ? String(p.area_m2) : ""} onChange={e => { const v = parseFloat(e.target.value.replace(",", ".")); if (!isNaN(v) && v > 0) onUpdateParcelArea(p.id, Math.round(v)); }} placeholder="â€”" style={{ width: 70, padding: "2px 6px", border: "1px solid #e2e8f0", borderRadius: 4, fontSize: 11, fontWeight: 600, color: "#475569", textAlign: "right", background: "white", outline: "none" }} />
-                    <span style={{ fontSize: 10, color: "#94a3b8" }}>mÂ²</span>
+                    <input type="text" value={p.area_m2 != null ? String(p.area_m2) : ""} onChange={e => { const v = parseFloat(e.target.value.replace(",", ".")); if (!isNaN(v) && v > 0) onUpdateParcelArea(p.id, Math.round(v)); }} placeholder="—" style={{ width: 70, padding: "2px 6px", border: "1px solid #e2e8f0", borderRadius: 4, fontSize: 11, fontWeight: 600, color: "#475569", textAlign: "right", background: "white", outline: "none" }} />
+                    <span style={{ fontSize: 10, color: "#94a3b8" }}>m²</span>
                   </div>
                 </div>
                 <button onClick={() => onRemoveParcel(p.id)} style={{ padding: "4px 6px", background: "white", border: "1px solid #fecaca", borderRadius: 4, color: "#dc2626", cursor: "pointer", display: "flex", alignItems: "center", marginLeft: 8 }}><X size={12} /></button>
@@ -864,10 +864,10 @@ function ParcelsSidebar({ selectedParcels, totalAreaM2, onRemoveParcel, onClearA
           </div>
         )}
       </div>
-      {selectedParcels.length > 0 && (<div style={{ padding: "14px 18px", borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontSize: 13, fontWeight: 600, color: "#334155" }}>Surface totale</span><span style={{ fontSize: 18, fontWeight: 800, color: "#0f172a", background: "#ede9fe", padding: "6px 14px", borderRadius: 8 }}>{totalAreaM2 != null ? formatAreaM2(totalAreaM2) : <span style={{ color: "#94a3b8", fontSize: 13 }}>Renseignez les mÂ²</span>}</span></div>)}
+      {selectedParcels.length > 0 && (<div style={{ padding: "14px 18px", borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontSize: 13, fontWeight: 600, color: "#334155" }}>Surface totale</span><span style={{ fontSize: 18, fontWeight: 800, color: "#0f172a", background: "#ede9fe", padding: "6px 14px", borderRadius: 8 }}>{totalAreaM2 != null ? formatAreaM2(totalAreaM2) : <span style={{ color: "#94a3b8", fontSize: 13 }}>Renseignez les m²</span>}</span></div>)}
       <div style={{ padding: "0 18px 18px" }}>
         <button onClick={handleValidateWithEffect} disabled={!isValid || isSaving} className={justValidated ? "validate-burst" : ""} style={{ ...styles.button, width: "100%", background: isSaving ? "#a78bfa" : isValidated ? "#16a34a" : isValid ? ACCENT_PRO : "#e2e8f0", color: isValid ? "white" : "#94a3b8", cursor: isValid && !isSaving ? "pointer" : "not-allowed", position: "relative", overflow: "hidden", transition: "background 0.3s, transform 0.15s" }}>
-          {isSaving ? <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />Enregistrementâ€¦</> : isValidated ? <><Check size={16} />SÃ©lection validÃ©e</> : <><Check size={16} />Valider la sÃ©lection</>}
+          {isSaving ? <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />Enregistrement…</> : isValidated ? <><Check size={16} />Sélection validée</> : <><Check size={16} />Valider la sélection</>}
         </button>
         {validationMessage && (<div style={{ marginTop: 10, padding: "8px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, display: "flex", alignItems: "center", gap: 8 }}><Check size={14} color="#16a34a" /><span style={{ fontSize: 12, color: "#166534", fontWeight: 500 }}>{validationMessage}</span></div>)}
       </div>
@@ -875,9 +875,9 @@ function ParcelsSidebar({ selectedParcels, totalAreaM2, onRemoveParcel, onClearA
   );
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝
 // MAIN PAGE
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝
 export function FoncierPluPage() {
   const [searchParams] = useSearchParams();
   const studyId = searchParams.get("study");
@@ -1022,7 +1022,7 @@ export function FoncierPluPage() {
     userStorage.setItem("mimmoza.session.parcel_id", primary.id); userStorage.setItem("mimmoza.session.parcel_ids", JSON.stringify(parcelIds));
     if (insee) userStorage.setItem("mimmoza.session.commune_insee", insee); if (totalAreaM2) userStorage.setItem("mimmoza.session.surface_m2", String(totalAreaM2));
     ["mimmoza.plu.ai_extract_result", "mimmoza.plu.detected_zone_code", "mimmoza.plu.selected_zone_code", "mimmoza.plu.selected_document_id", "mimmoza.plu.selected_commune_insee"].forEach(k => userStorage.removeItem(k));
-    setValidationMessage(`âœ“ ${parcelIds.length} parcelle${parcelIds.length > 1 ? "s" : ""} enregistrÃ©e${parcelIds.length > 1 ? "s" : ""} (${formatAreaM2(totalAreaM2)})`);
+    setValidationMessage(`✓ ${parcelIds.length} parcelle${parcelIds.length > 1 ? "s" : ""} enregistrée${parcelIds.length > 1 ? "s" : ""} (${formatAreaM2(totalAreaM2)})`);
     setIsValidated(true); setTimeout(() => setValidationMessage(null), 5000);
   }, [selectedParcels, totalAreaM2, studyId, projectInfo.communeInsee, patchFoncier]);
 
@@ -1040,12 +1040,12 @@ export function FoncierPluPage() {
     userStorage.removeItem("mimmoza.plu.ai_extract_result"); setPluData(plu);
   }, [studyId, patchPlu]);
 
-  // â”€â”€ Loading / Error â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Loading / Error ───────────────────────────────────────────────────────
   if (loadState === "loading") {
     return (
       <div style={{ ...styles.container, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300 }}>
         <Loader2 size={32} color={ACCENT_PRO} style={{ animation: "spin 1s linear infinite" }} />
-        <span style={{ marginLeft: 16, fontSize: 15, color: "#64748b" }}>Chargement de l'Ã©tudeâ€¦</span>
+        <span style={{ marginLeft: 16, fontSize: 15, color: "#64748b" }}>Chargement de l'étude…</span>
       </div>
     );
   }
@@ -1053,20 +1053,20 @@ export function FoncierPluPage() {
     return (
       <div style={{ ...styles.container, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 300 }}>
         <AlertTriangle size={40} color="#f59e0b" />
-        <p style={{ color: "#64748b", marginTop: 16, fontSize: 14 }}>Impossible de charger l'Ã©tude {studyId ? `(${studyId.slice(0, 8)}â€¦)` : ""}.</p>
-        <button onClick={() => window.location.reload()} style={{ ...styles.button, marginTop: 12, background: ACCENT_PRO, color: "white" }}>RÃ©essayer</button>
+        <p style={{ color: "#64748b", marginTop: 16, fontSize: 14 }}>Impossible de charger l'étude {studyId ? `(${studyId.slice(0, 8)}…)` : ""}.</p>
+        <button onClick={() => window.location.reload()} style={{ ...styles.button, marginTop: 12, background: ACCENT_PRO, color: "white" }}>Réessayer</button>
       </div>
     );
   }
 
-  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={styles.container}>
 
-      {/* â•â• Hero â€” sorti du padding du container, pleine largeur â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* ╝╝ Hero — sorti du padding du container, pleine largeur ╝╝╝╝╝╝╝╝╝╝╝╝ */}
       <div style={{ margin: "-24px -24px 20px -24px" }}>
         <PromoteurPageHero
-        badge="Promoteur Â· Foncier & PLU"
+        badge="Promoteur · Foncier & PLU"
         title="Foncier & PLU"
         metaLines={[
           {
@@ -1075,7 +1075,7 @@ export function FoncierPluPage() {
               ? `Parcelle : ${projectInfo.parcelId}`
               : projectInfo.address
               ? projectInfo.address
-              : "SÃ©lectionnez un terrain pour dÃ©marrer",
+              : "Sélectionnez un terrain pour démarrer",
           },
           ...(studyId
             ? [{ text: <StudyIdBadge studyId={studyId} /> }]
@@ -1090,8 +1090,8 @@ export function FoncierPluPage() {
           {
             label: "Surface totale",
             value: totalAreaM2 != null
-              ? `${Math.round(totalAreaM2).toLocaleString("fr-FR")} mÂ²`
-              : "â€”",
+              ? `${Math.round(totalAreaM2).toLocaleString("fr-FR")} m²`
+              : "—",
             tone: "emerald",
           },
         ]}
@@ -1105,8 +1105,8 @@ export function FoncierPluPage() {
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <MapPinned size={20} color={ACCENT_PRO} />
             <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", fontFamily: "monospace" }}>{projectInfo.parcelId || projectInfo.address || "â€”"}</div>
-              <div style={{ fontSize: 12, color: "#64748b" }}>INSEE {projectInfo.communeInsee} â€¢ {formatAreaM2(totalAreaM2)}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", fontFamily: "monospace" }}>{projectInfo.parcelId || projectInfo.address || "—"}</div>
+              <div style={{ fontSize: 12, color: "#64748b" }}>INSEE {projectInfo.communeInsee} • {formatAreaM2(totalAreaM2)}</div>
             </div>
           </div>
           <button onClick={handleReset} style={{ ...styles.button, padding: "8px 14px", background: "#f1f5f9", color: "#475569" }}>
@@ -1136,11 +1136,11 @@ export function FoncierPluPage() {
           <div>
             <ParcelsSidebar selectedParcels={selectedParcels} totalAreaM2={totalAreaM2} onRemoveParcel={handleRemoveParcel} onClearAll={handleClearAll} onValidateSelection={handleValidateSelection} onAddManualParcel={handleAddManualParcel} onUpdateParcelArea={handleUpdateParcelArea} isValid={selectedParcels.length > 0} validationMessage={validationMessage} isValidated={isValidated} isSaving={isSaving} />
             <div style={{ ...styles.card, marginTop: 20 }}>
-              <div style={styles.cardHeader}><h3 style={styles.cardTitle}><Navigation size={18} color="#10b981" />Ã‰tapes suivantes</h3></div>
+              <div style={styles.cardHeader}><h3 style={styles.cardTitle}><Navigation size={18} color="#10b981" />Étapes suivantes</h3></div>
               <div style={styles.cardBody}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <a href={`/promoteur/implantation-2d${studyId ? `?study=${studyId}` : ""}`} style={{ ...styles.button, background: "#f1f5f9", color: "#475569", textDecoration: "none" }}><Layers size={16} />Implantation 2D</a>
-                  <a href={`/promoteur/marche${studyId ? `?study=${studyId}` : ""}`} style={{ ...styles.button, background: "#f1f5f9", color: "#475569", textDecoration: "none" }}><Building2 size={16} />Ã‰tude de marchÃ©</a>
+                  <a href={`/promoteur/marche${studyId ? `?study=${studyId}` : ""}`} style={{ ...styles.button, background: "#f1f5f9", color: "#475569", textDecoration: "none" }}><Building2 size={16} />Étude de marché</a>
                 </div>
               </div>
             </div>

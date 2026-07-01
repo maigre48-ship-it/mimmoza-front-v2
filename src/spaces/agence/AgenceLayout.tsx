@@ -1,4 +1,4 @@
-﻿// src/spaces/agence/AgenceLayout.tsx
+// src/spaces/agence/AgenceLayout.tsx
 
 import {
   FileText,
@@ -15,7 +15,7 @@ export function AgenceLayout() {
       <aside className="space-y-6 border-r border-slate-200 pr-6">
         <div>
           <h2 className="text-xl font-semibold text-slate-900">
-            Agence ImmobiliÃ¨re
+            Agence Immobilière
           </h2>
           <p className="text-xs text-slate-500 mt-1">
             Dossiers, mandats, argumentaires et analyses.
@@ -35,7 +35,7 @@ export function AgenceLayout() {
             Version Beta Mimmoza
           </p>
           <p className="mt-1">
-            Cette section sera connectÃ©e au PLU Engine et au SmartScore pour les
+            Cette section sera connectée au PLU Engine et au SmartScore pour les
             dossiers vendeurs.
           </p>
         </div>
@@ -48,8 +48,8 @@ export function AgenceLayout() {
             Dashboard Agence
           </h1>
           <p className="mt-1 text-slate-600 max-w-2xl">
-            CrÃ©ez des dossiers, structurez vos arguments et rassurez vos
-            acheteurs grÃ¢ce Ã  des analyses factuelles.
+            Créez des dossiers, structurez vos arguments et rassurez vos
+            acheteurs grâce à des analyses factuelles.
           </p>
         </div>
 
@@ -57,10 +57,10 @@ export function AgenceLayout() {
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 space-y-6">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">
-              CrÃ©er un dossier de vente
+              Créer un dossier de vente
             </h2>
             <p className="text-sm text-slate-600">
-              Entrez lâ€™adresse du bien et le prix affichÃ©.
+              Entrez l’adresse du bien et le prix affiché.
             </p>
           </div>
 
@@ -78,7 +78,7 @@ export function AgenceLayout() {
 
             <div>
               <label className="text-sm font-medium text-slate-700">
-                Prix affichÃ© (â‚¬)
+                Prix affiché (€)
               </label>
               <input
                 type="number"
@@ -89,7 +89,7 @@ export function AgenceLayout() {
 
             <div className="flex md:items-end">
               <button className="w-full md:w-auto rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">
-                CrÃ©er le dossier
+                Créer le dossier
               </button>
             </div>
           </form>
