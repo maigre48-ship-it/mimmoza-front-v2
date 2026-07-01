@@ -17,6 +17,7 @@ import {
   Layers3,
   LineChart,
   MapPinned,
+  Play,
   ScanSearch,
   ShieldCheck,
   Sparkles,
@@ -129,6 +130,46 @@ const EMPLACEMENT = [
   { label: "Marché", value: 80, icon: LineChart },
 ];
 
+// ─── Emplacement vidéo (hero) ──────────────────────────────────────────────
+// Autoplay muet en boucle. Dépose le mp4 dans public/videos/intro.mp4.
+// Tant que le fichier n'existe pas, laisse HAS_VIDEO = false (placeholder).
+const HAS_VIDEO = false;
+const HERO_VIDEO_SRC = "/videos/intro.mp4";
+const HERO_VIDEO_POSTER = ""; // ex: "/videos/intro-poster.jpg" (recommandé)
+
+function HeroVideo() {
+  return (
+    <div className="mt-14 overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.04] shadow-2xl shadow-violet-950/40 backdrop-blur">
+      <div className="relative aspect-video w-full">
+        {HAS_VIDEO ? (
+          <video
+            src={HERO_VIDEO_SRC}
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="auto"
+            poster={HERO_VIDEO_POSTER || undefined}
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/20 text-violet-200">
+              <Play className="h-6 w-6" />
+            </div>
+            <p className="text-sm font-medium text-slate-300">
+              Vidéo de présentation — à venir
+            </p>
+            <p className="text-xs text-slate-500">
+              Dépose ton fichier dans <code className="text-slate-400">public/videos/intro.mp4</code>
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardHomePage() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -215,6 +256,9 @@ export default function DashboardHomePage() {
               ))}
             </div>
           </div>
+
+          {/* ───────────────── EMPLACEMENT VIDÉO ───────────────── */}
+          <HeroVideo />
 
           {/* ───────────────── BLOC ANALYSE RAPIDE (mock) ───────────────── */}
           <div className="mt-14 overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.04] shadow-2xl shadow-violet-950/40 backdrop-blur">
