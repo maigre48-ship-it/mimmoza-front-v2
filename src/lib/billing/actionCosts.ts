@@ -15,7 +15,8 @@ export const ACTION_COSTS = {
   facade_medium:      20,
   facade_high:        40,
   scan_opportunites:  5,    // lecture portal_snapshots + scoring (data deja en base)
-  refresh_veille:     30,   // ingestion Stream Estate (~0,50 € reel, marge ~x2)
+  refresh_veille:     30,   // ingestion Stream Estate (~0,50 â‚¬ reel, marge ~x2)
+  rendu_ia:           15,   // rendu IA avant/apres (aligne facade ; cout API a confirmer au branchement)
 } as const;
 
 export type ActionCostKey = keyof typeof ACTION_COSTS;

@@ -16,6 +16,8 @@ import {
   TRAVAUX_SOL_TYPE_LABELS,
 } from "../types/rendutravaux.types";
 import { userStorage } from "@/lib/storage/userScopedStorage";
+import { spendCredits } from "@/lib/billing/projectUnlock";
+import { ACTION_COSTS } from "@/lib/billing/actionCosts";
 
 // ── Thème ─────────────────────────────────────────────────────────
 
@@ -469,38 +471,6 @@ const BeforeAfterSlider: React.FC<{ beforeUrl: string; afterUrl: string; accent:
           ⇔
         </div>
       </div>
-
-      <div
-        style={{
-          position: "absolute",
-          top: 10,
-          left: 12,
-          background: "rgba(0,0,0,.55)",
-          color: "#fff",
-          borderRadius: 6,
-          padding: "3px 10px",
-          fontSize: 11,
-          fontWeight: 700,
-        }}
-      >
-        AVANT
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          top: 10,
-          right: 12,
-          background: `${accent}dd`,
-          color: "#fff",
-          borderRadius: 6,
-          padding: "3px 10px",
-          fontSize: 11,
-          fontWeight: 700,
-        }}
-      >
-        APRÈS IA
-      </div>
     </div>
   );
 };
@@ -638,8 +608,22 @@ export default function RenduTravauxPage({ theme, breadcrumb }: Props) {
   const toggleLot = (lot: TravauxLot) =>
     setSelectedLots((prev) => (prev.includes(lot) ? prev.filter((l) => l !== lot) : [...prev, lot]));
 
+  const [billingError, setBillingError] = useState<string | null>(null);
+
   const handleGenerate = async () => {
     if (!state.selectedImageId) return;
+
+    // Débit jetons AVANT génération (bloque + invite à recharger si solde insuffisant).
+    setBillingError(null);
+    const spend = await spendCredits(ACTION_COSTS.rendu_ia, "Rendu IA", "rendu_ia");
+    if (!spend.ok) {
+      setBillingError(
+        spend.reason === "NO_TOKENS"
+          ? "solde de jetons insuffisant. rechargez pour générer un rendu."
+          : spend.message ?? "erreur lors du débit des jetons.",
+      );
+      return;
+    }
 
     const config: ExtendedTravauxRenduConfig = {
       gamme,
@@ -1107,6 +1091,22 @@ boxShadow: "0 20px 60px rgba(15,23,42,0.08)",
             </div>
           )}
 
+          {billingError && (
+            <div
+              style={{
+                marginBottom: 10,
+                padding: "8px 12px",
+                borderRadius: 8,
+                background: "rgba(220,38,38,.08)",
+                color: "#b91c1c",
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              {billingError}
+            </div>
+          )}
+
           {/* Bouton */}
           <button
             className="rt-btn"
@@ -1145,7 +1145,7 @@ boxShadow: "0 20px 60px rgba(15,23,42,0.08)",
                 Génération…
               </>
             ) : (
-              <>✨ Générer le rendu IA</>
+              <>✨ Générer le rendu IA · {ACTION_COSTS.rendu_ia} jetons</>
             )}
           </button>
 
