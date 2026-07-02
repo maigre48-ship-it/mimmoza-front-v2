@@ -135,6 +135,7 @@ const DEFAULT_PLANNING_MODE: "auto" | "manuel" = "auto";
 const DEFAULT_MANUAL_PHASES: TimelinePhase[] = [];
 
 const HERO_STYLE: React.CSSProperties = {
+  fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
   background: "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)",
   borderRadius: 32,
   padding: "40px 44px",
@@ -165,7 +166,7 @@ function Field({
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>
+      <div style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>
         {label}
       </div>
 
@@ -182,7 +183,7 @@ function Field({
             borderRadius: 12,
             border: "1px solid rgba(15, 23, 42, 0.10)",
             background: "rgba(255,255,255,0.95)",
-            fontWeight: 800,
+            fontWeight: 600,
             color: "#0f172a",
             outline: "none",
           }}
@@ -193,7 +194,7 @@ function Field({
             style={{
               fontSize: 12,
               color: "#64748b",
-              fontWeight: 900,
+              fontWeight: 600,
               whiteSpace: "nowrap",
             }}
           >
@@ -218,7 +219,7 @@ function Select({
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>
+      <div style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>
         {label}
       </div>
 
@@ -231,7 +232,7 @@ function Select({
           borderRadius: 12,
           border: "1px solid rgba(15, 23, 42, 0.10)",
           background: "rgba(255,255,255,0.95)",
-          fontWeight: 800,
+          fontWeight: 600,
           color: "#0f172a",
           outline: "none",
         }}
@@ -462,7 +463,7 @@ export default function MarchandExecution() {
 
   if (!activeDealId || !activeDeal) {
     return (
-      <div>
+      <div style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" }}>
         <div style={HERO_STYLE}>
           <div style={{ position: "relative" }}>
             <div
@@ -488,7 +489,7 @@ export default function MarchandExecution() {
                 letterSpacing: "-0.025em",
               }}
             >
-              Exécution
+              Planning travaux
             </div>
 
             <div
@@ -499,7 +500,7 @@ export default function MarchandExecution() {
                 lineHeight: 1.55,
               }}
             >
-              Travaux, planning, suivi paiements
+              Budget, phases et suivi des paiements
             </div>
           </div>
         </div>
@@ -544,7 +545,7 @@ export default function MarchandExecution() {
               letterSpacing: "-0.025em",
             }}
           >
-            Exécution
+            Planning travaux
           </div>
 
           <div
@@ -555,7 +556,7 @@ export default function MarchandExecution() {
               lineHeight: 1.55,
             }}
           >
-            Travaux, planning, suivi paiements · {activeDeal.title || activeDeal.id}
+            Budget, phases et suivi des paiements · {activeDeal.title || activeDeal.id}
           </div>
         </div>
 
@@ -636,7 +637,7 @@ export default function MarchandExecution() {
                 alignItems: "center",
                 gap: 8,
                 color: "#64748b",
-                fontWeight: 900,
+                fontWeight: 600,
                 fontSize: 12,
               }}
             >
@@ -728,7 +729,7 @@ export default function MarchandExecution() {
                               border: `1px solid ${pill.borderColor}`,
                               background: pill.background,
                               color: pill.color,
-                              fontWeight: 900,
+                              fontWeight: 600,
                               outline: "none",
                             }}
                           >
@@ -739,7 +740,7 @@ export default function MarchandExecution() {
                         </td>
 
                         <td style={{ padding: "0 10px" }}>
-                          <div style={{ fontWeight: 900, color: "#0f172a" }}>
+                          <div style={{ fontWeight: 600, color: "#0f172a" }}>
                             {t.title}
                           </div>
                           <div
@@ -767,7 +768,7 @@ export default function MarchandExecution() {
                               borderRadius: 12,
                               border: "1px solid rgba(15,23,42,0.10)",
                               background: "rgba(255,255,255,0.95)",
-                              fontWeight: 900,
+                              fontWeight: 600,
                               color: "#0f172a",
                               outline: "none",
                             }}
@@ -788,7 +789,7 @@ export default function MarchandExecution() {
                               borderRadius: 12,
                               border: "1px solid rgba(15,23,42,0.10)",
                               background: "rgba(255,255,255,0.95)",
-                              fontWeight: 900,
+                              fontWeight: 600,
                               color: "#0f172a",
                               outline: "none",
                             }}
@@ -796,7 +797,7 @@ export default function MarchandExecution() {
                         </td>
 
                         <td style={{ padding: "0 10px", textAlign: "center" }}>
-                          <div style={{ fontWeight: 900, color: "#0f172a" }}>
+                          <div style={{ fontWeight: 600, color: "#0f172a" }}>
                             {daysLabel}
                           </div>
                           <div
@@ -824,7 +825,7 @@ export default function MarchandExecution() {
                               border: "1px solid rgba(15,23,42,0.10)",
                               background: riskBg,
                               color: riskColor,
-                              fontWeight: 900,
+                              fontWeight: 600,
                               outline: "none",
                             }}
                           >
@@ -871,7 +872,7 @@ export default function MarchandExecution() {
           >
             <div
               style={{
-                fontWeight: 900,
+                fontWeight: 600,
                 color: "#0f172a",
                 fontSize: 13,
                 marginBottom: 10,
@@ -906,7 +907,7 @@ export default function MarchandExecution() {
                   style={{
                     fontSize: 12,
                     color: "#64748b",
-                    fontWeight: 800,
+                    fontWeight: 600,
                     marginBottom: 6,
                   }}
                 >
@@ -925,7 +926,7 @@ export default function MarchandExecution() {
                     borderRadius: 12,
                     border: "1px solid rgba(15, 23, 42, 0.10)",
                     background: "rgba(255,255,255,0.95)",
-                    fontWeight: 800,
+                    fontWeight: 600,
                     color: "#0f172a",
                     outline: "none",
                   }}
@@ -1002,7 +1003,7 @@ export default function MarchandExecution() {
                     borderRadius: 12,
                     border: "1px solid rgba(15, 23, 42, 0.10)",
                     background: "rgba(15, 23, 42, 0.04)",
-                    fontWeight: 900,
+                    fontWeight: 600,
                     cursor: "pointer",
                   }}
                 >
@@ -1018,7 +1019,7 @@ export default function MarchandExecution() {
           <SectionCard title="Paramètres chantier" subtitle="Impact planning & trésorerie">
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>
+                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>
                   Date de début
                 </div>
 
@@ -1034,7 +1035,7 @@ export default function MarchandExecution() {
                     borderRadius: 12,
                     border: "1px solid rgba(15, 23, 42, 0.10)",
                     background: "rgba(255,255,255,0.95)",
-                    fontWeight: 800,
+                    fontWeight: 600,
                     color: "#0f172a",
                     outline: "none",
                   }}
