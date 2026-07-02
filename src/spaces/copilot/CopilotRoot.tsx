@@ -16,6 +16,7 @@ const HIDDEN_PREFIXES = [
   '/compte', '/account', '/abonnement', '/jetons',
   '/opportunites',
   '/apporteur',
+  '/marchand-de-bien/planning',   // Rendu travaux (investisseur)
 ];
 
 // Routes cachees en correspondance EXACTE (evite qu'un prefixe '/' cache tout).
