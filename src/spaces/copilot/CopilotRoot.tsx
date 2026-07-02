@@ -18,7 +18,13 @@ const HIDDEN_PREFIXES = [
   '/apporteur',
 ];
 
+// Routes cachees en correspondance EXACTE (evite qu'un prefixe '/' cache tout).
+const HIDDEN_EXACT = [
+  '/',   // page de connexion montee sur la racine (retire si ce n'est pas le cas)
+];
+
 function isHidden(pathname: string): boolean {
+  if (HIDDEN_EXACT.includes(pathname)) return true;
   return HIDDEN_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
