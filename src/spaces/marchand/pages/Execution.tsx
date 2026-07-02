@@ -19,6 +19,14 @@ import {
   readMarchandSnapshot,
 } from "../shared/marchandSnapshot.store";
 
+import {
+  computePlanning,
+  operationTypeFromRenovLevel,
+  complexityFromSlider,
+  type PhaseId,
+} from "../engine/planningEngine";
+import type { PhaseCategory } from "../shared/ui/TimelinePlanner";
+
 type TaskStatus = "todo" | "doing" | "done";
 
 type WorkTask = {
@@ -348,48 +356,47 @@ export default function MarchandExecution() {
   }, [tasks, global.bufferPct, global.dailyHoldingCost]);
 
   const autoPhases = useMemo((): TimelinePhase[] => {
-    const workEndDay = stats.endDay || 14;
-    const commercialisationStart = Math.max(1, Math.round(workEndDay * 0.6));
-    const commercialisationDuration = workEndDay - commercialisationStart + 10;
+    const sim = activeDealId
+      ? snapshot.executionByDeal[activeDealId]?.input
+      : undefined;
 
-    return [
-      {
-        id: "auto-etude",
-        name: "Étude & chiffrage",
-        category: "etude",
-        startDay: 1,
-        durationDays: 3,
-      },
-      {
-        id: "auto-admin",
-        name: "Admin & planification",
-        category: "admin",
-        startDay: 1,
-        durationDays: 5,
-      },
-      {
-        id: "auto-travaux",
-        name: "Travaux",
-        category: "travaux",
-        startDay: 1,
-        durationDays: workEndDay,
-      },
-      {
-        id: "auto-commercialisation",
-        name: "Commercialisation",
-        category: "commercialisation",
-        startDay: commercialisationStart,
-        durationDays: commercialisationDuration,
-      },
-      {
-        id: "auto-vente",
-        name: "Vente / signature",
-        category: "vente",
-        startDay: workEndDay + 1,
-        durationDays: 7,
-      },
-    ];
-  }, [stats.endDay]);
+    // Pas encore de simulation → surface 0 → planning minimal (pas de crash).
+    const surface = sim && sim.surfaceTotalM2 > 0 ? sim.surfaceTotalM2 : 0;
+
+    const result = computePlanning({
+      surface,
+      operationType: operationTypeFromRenovLevel(
+        (sim?.renovationLevel ?? "standard") as
+          | "refresh"
+          | "standard"
+          | "heavy"
+          | "full",
+      ),
+      complexity: complexityFromSlider(sim?.complexity ?? 1),
+      // v1 : équipes/niveaux/sous-sol/ascenseur non fournis par Simulation → défauts.
+    });
+
+    // Le moteur produit 7 phases → mappées sur les 6 catégories de la frise.
+    const CATEGORY_BY_PHASE: Record<PhaseId, PhaseCategory> = {
+      etudes: "etude",
+      administratif: "admin",
+      consultation: "financement", // "Consultation entreprises" (ambre)
+      travaux: "travaux",
+      reception: "travaux", // réception = fin de chantier
+      commercialisation: "commercialisation",
+      vente: "vente",
+    };
+
+    return result.phases
+      .filter((p) => p.duration > 0)
+      .map((p) => ({
+        id: `auto-${p.id}`,
+        name: p.label,
+        category: CATEGORY_BY_PHASE[p.id],
+        startDay: p.startDay + 1, // la frise démarre à J1, le moteur à J0
+        durationDays: p.duration,
+      }));
+  }, [activeDealId, snapshot.executionByDeal]);
 
   const totalDays = useMemo(() => {
     const activePhases = planningMode === "auto" ? autoPhases : manualPhases;
