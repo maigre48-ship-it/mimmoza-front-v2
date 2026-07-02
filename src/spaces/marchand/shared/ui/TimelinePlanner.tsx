@@ -1,4 +1,4 @@
-import { Copy, Download, Pencil, Plus, Settings2, Trash2, Upload, Zap } from "lucide-react";
+import { Download, Pencil, Plus, Settings2, Trash2, Upload, Zap } from "lucide-react";
 import React, { useMemo, useRef, useState } from "react";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -331,13 +331,15 @@ export default function TimelinePlanner({
 
   // Handlers
   const handleModeToggle = (m: "auto" | "manuel") => {
+    // Passage AUTO → MANUEL : on repart toujours des phases auto fraîches.
+    // (Reclic sur "Manuel" alors qu'on y est déjà : on ne re-copie pas.)
+    if (m === "manuel" && mode === "auto") {
+      const copied = autoPhases.map((p) => ({ ...p, id: mkPhaseId() }));
+      onChange(copied);
+      onModeChange?.("manuel");
+      return;
+    }
     onModeChange?.(m);
-  };
-
-  const handleCopyToManual = () => {
-    const copied = autoPhases.map((p) => ({ ...p, id: mkPhaseId() }));
-    onChange(copied);
-    onModeChange?.("manuel");
   };
 
   const handleUpdatePhase = (id: string, patch: Partial<TimelinePhase>) => {
@@ -469,16 +471,6 @@ export default function TimelinePlanner({
                 Manuel
               </button>
             </div>
-          )}
-
-          {/* Copy to manual (when auto) */}
-          {mode === "auto" && autoPhases.length > 0 && (
-            <ActionButton
-              onClick={handleCopyToManual}
-              icon={<Copy size={14} />}
-              label="Copier vers manuel"
-              variant="primary"
-            />
           )}
 
           {/* Export */}
