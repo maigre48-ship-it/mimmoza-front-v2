@@ -315,7 +315,11 @@ export default function MarchandExecution() {
   const stats = useMemo(() => {
     const totalBudget = tasks.reduce((s, t) => s + (t.budget || 0), 0);
     const buffer = totalBudget * (clamp(global.bufferPct, 0, 100) / 100);
-    const totalBudgetWithBuffer = totalBudget + buffer;
+    // Budget travaux issu de Simulation (déjà bufferisé) — additionné aux tâches.
+    const simBudget = activeDealId
+      ? snapshot.executionByDeal[activeDealId]?.travaux?.computed?.totalWithBuffer ?? 0
+      : 0;
+    const totalBudgetWithBuffer = totalBudget + buffer + simBudget;
     const totalPaid = tasks.reduce((s, t) => s + (t.paid || 0), 0);
     const remaining = Math.max(0, totalBudgetWithBuffer - totalPaid);
     const doneCount = tasks.filter((t) => t.status === "done").length;
@@ -353,7 +357,7 @@ export default function MarchandExecution() {
       holdingCost,
       cashNeededTotal: remaining + holdingCost,
     };
-  }, [tasks, global.bufferPct, global.dailyHoldingCost]);
+  }, [tasks, global.bufferPct, global.dailyHoldingCost, activeDealId, snapshot.executionByDeal]);
 
   const autoPhases = useMemo((): TimelinePhase[] => {
     const sim = activeDealId
@@ -590,13 +594,13 @@ export default function MarchandExecution() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
         <KpiCard
-          label="Budget travaux"
+          label="Budget travaux (HT)"
           value={eur(stats.totalBudgetWithBuffer)}
-          hint={`Buffer: ${eur(stats.buffer)}`}
+          hint={`Buffer: ${eur(stats.buffer)} · montants HT`}
           icon={<Hammer size={18} />}
         />
         <KpiCard
-          label="Payé"
+          label="Payé (HT)"
           value={eur(stats.totalPaid)}
           hint={`Restant: ${eur(stats.remaining)}`}
           icon={<Euro size={18} />}
@@ -608,9 +612,9 @@ export default function MarchandExecution() {
           icon={<CalendarDays size={18} />}
         />
         <KpiCard
-          label="Cash total estimé"
+          label="Cash total estimé (HT)"
           value={eur(stats.cashNeededTotal)}
-          hint="Restant + holding"
+          hint="Restant + holding · HT"
           icon={<Clock size={18} />}
         />
       </div>
@@ -671,10 +675,10 @@ export default function MarchandExecution() {
                     Lot / Tâche
                   </th>
                   <th style={{ textAlign: "right", fontSize: 12, color: "#64748b", padding: "0 10px" }}>
-                    Budget
+                    Budget (HT)
                   </th>
                   <th style={{ textAlign: "right", fontSize: 12, color: "#64748b", padding: "0 10px" }}>
-                    Payé
+                    Payé (HT)
                   </th>
                   <th style={{ textAlign: "center", fontSize: 12, color: "#64748b", padding: "0 10px" }}>
                     Jours
@@ -1080,9 +1084,10 @@ export default function MarchandExecution() {
                 lineHeight: 1.6,
               }}
             >
-              Holding = charges fixes pendant le chantier (assurance, charges copro,
-              intérêts non modélisés ici…). Cash total estimé = restant travaux
-              (incl. buffer) + holding sur la durée planifiée.
+              Tous les montants travaux sont exprimés HT. Holding = charges fixes
+              pendant le chantier (assurance, charges copro, intérêts non modélisés
+              ici…). Cash total estimé = restant travaux (incl. buffer) + holding
+              sur la durée planifiée.
             </div>
           </SectionCard>
 

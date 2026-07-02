@@ -382,7 +382,7 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       label: "Execution",
       items: [
         { label: "Simulation",    path: "/marchand-de-bien/execution/simulation", icon: Calculator },
-        { label: "Travaux",       path: "/marchand-de-bien/execution",            icon: Building, end: true },
+        { label: "Planning travaux", path: "/marchand-de-bien/execution",            icon: Building, end: true },
         { label: "Rendu travaux", path: "/marchand-de-bien/planning",             icon: ClipboardList },
       ],
     },
