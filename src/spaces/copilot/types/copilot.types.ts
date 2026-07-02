@@ -21,7 +21,7 @@ export const ALL_VERTICALS: Vertical[] = [
 export type CopilotMode = 'quick' | 'advanced' | 'report';
 
 export const CREDIT_COST: Record<CopilotMode, number> = {
-  quick: 1,
+  quick: 5,
   advanced: 15,
   report: 30,
 };

@@ -8,7 +8,7 @@
 // Les deux doivent toujours correspondre, sinon affichage != debit reel.
 
 export const ACTION_COSTS = {
-  copilot_quick:      3,
+  copilot_quick:      5,
   copilot_advanced:   15,
   analyse_rapide:     3,
   facade_low:         10,
