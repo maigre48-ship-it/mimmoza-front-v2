@@ -291,6 +291,13 @@ export default function TimelinePlanner({
     return Math.max(maxEnd + 20, 40);
   }, [totalDaysProp, displayPhases]);
 
+  // Durée réelle du projet : de la 1ère phase à la fin de la dernière (sans marge).
+  const projectDuration = useMemo(() => {
+    return displayPhases.length
+      ? Math.max(...displayPhases.map((p) => p.startDay + p.durationDays - 1))
+      : 0;
+  }, [displayPhases]);
+
   // Timeline dimensions
   const dayWidth = unit === "week" ? 16 : 24;
   const tickInterval = unit === "week" ? 7 : 5;
@@ -417,7 +424,7 @@ export default function TimelinePlanner({
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: "#0f172a" }}>{title}</h3>
             <div style={{ fontSize: 12, color: "#94a3b8", fontWeight: 700 }}>
               <Settings2 size={14} style={{ display: "inline", verticalAlign: "middle", marginRight: 4 }} />
-              {totalDays}j
+              {projectDuration}j
             </div>
           </div>
           {subtitle && (

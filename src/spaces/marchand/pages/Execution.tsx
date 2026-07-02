@@ -341,8 +341,6 @@ export default function MarchandExecution() {
               10,
           ) / 10;
 
-    const holdingCost = endDay * Math.max(0, global.dailyHoldingCost);
-
     return {
       totalBudget,
       buffer,
@@ -354,8 +352,6 @@ export default function MarchandExecution() {
       todoCount,
       endDay,
       riskScore,
-      holdingCost,
-      cashNeededTotal: remaining + holdingCost,
     };
   }, [tasks, global.bufferPct, global.dailyHoldingCost, activeDealId, snapshot.executionByDeal]);
 
@@ -410,6 +406,18 @@ export default function MarchandExecution() {
 
     return Math.max(maxPhaseEnd + 10, stats.endDay + 20, 40);
   }, [planningMode, autoPhases, manualPhases, stats.endDay]);
+
+  // Vraie durée du planning affiché (Auto ou Manuel), sans plancher visuel.
+  const planningEndDay = useMemo(() => {
+    const activePhases = planningMode === "auto" ? autoPhases : manualPhases;
+    return activePhases.length
+      ? Math.max(...activePhases.map((p) => p.startDay + p.durationDays - 1))
+      : 0;
+  }, [planningMode, autoPhases, manualPhases]);
+
+  // Holding & cash total basés sur la durée du planning (pas sur les tâches).
+  const holdingCost = planningEndDay * Math.max(0, global.dailyHoldingCost);
+  const cashNeededTotal = stats.remaining + holdingCost;
 
   const addTask = () => {
     const title = (newTask.title || "").trim();
@@ -607,19 +615,62 @@ export default function MarchandExecution() {
         />
         <KpiCard
           label="Durée planifiée"
-          value={`${stats.endDay} j`}
-          hint={`Holding: ${eur(stats.holdingCost)}`}
+          value={`${planningEndDay} j`}
+          hint={`Holding: ${eur(holdingCost)}`}
           icon={<CalendarDays size={18} />}
         />
         <KpiCard
           label="Cash total estimé (HT)"
-          value={eur(stats.cashNeededTotal)}
+          value={eur(cashNeededTotal)}
           hint="Restant + holding · HT"
           icon={<Clock size={18} />}
         />
       </div>
 
       <div style={{ height: 12 }} />
+
+      {/* Lexique : définitions Buffer & Holding (au survol) */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        <span
+          title="Buffer = marge de sécurité ajoutée au budget travaux pour absorber les imprévus (aléas de chantier, dépassements). Exprimé en % du budget."
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "5px 11px",
+            borderRadius: 999,
+            border: "1px solid rgba(15, 23, 42, 0.10)",
+            background: "rgba(15, 23, 42, 0.03)",
+            color: "#475569",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: "help",
+          }}
+        >
+          <AlertTriangle size={13} />
+          Buffer
+        </span>
+
+        <span
+          title="Holding = charges fixes qui courent pendant toute la durée du chantier (assurance, charges de copropriété, intérêts d'emprunt…). Exprimé en €/jour, multiplié par la durée planifiée."
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "5px 11px",
+            borderRadius: 999,
+            border: "1px solid rgba(15, 23, 42, 0.10)",
+            background: "rgba(15, 23, 42, 0.03)",
+            color: "#475569",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: "help",
+          }}
+        >
+          <Clock size={13} />
+          Holding
+        </span>
+      </div>
 
       <TimelinePlanner
         title="Planning projet"
