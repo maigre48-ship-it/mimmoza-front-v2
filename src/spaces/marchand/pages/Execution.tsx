@@ -357,7 +357,7 @@ export default function MarchandExecution() {
 
   const autoPhases = useMemo((): TimelinePhase[] => {
     const sim = activeDealId
-      ? snapshot.executionByDeal[activeDealId]?.input
+      ? snapshot.executionByDeal[activeDealId]?.travaux?.input
       : undefined;
 
     // Pas encore de simulation → surface 0 → planning minimal (pas de crash).

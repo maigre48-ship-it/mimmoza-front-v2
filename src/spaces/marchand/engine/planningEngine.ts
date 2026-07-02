@@ -15,20 +15,22 @@
 // ENUMS
 // ─────────────────────────────────────────────────────────────────────────────
 
-export enum OperationType {
-  Rafraichissement        = "rafraichissement",
-  RehabilitationLegere    = "rehabilitation_legere",
-  RehabilitationLourde    = "rehabilitation_lourde",
-  RestructurationComplete = "restructuration_complete",
-  ConstructionNeuve       = "construction_neuve",
-}
+export const OperationType = {
+  Rafraichissement:        "rafraichissement",
+  RehabilitationLegere:    "rehabilitation_legere",
+  RehabilitationLourde:    "rehabilitation_lourde",
+  RestructurationComplete: "restructuration_complete",
+  ConstructionNeuve:       "construction_neuve",
+} as const;
+export type OperationType = (typeof OperationType)[keyof typeof OperationType];
 
-export enum Complexity {
-  Simple        = "simple",
-  Standard      = "standard",
-  Contraint     = "contraint",
-  TresContraint = "tres_contraint",
-}
+export const Complexity = {
+  Simple:        "simple",
+  Standard:      "standard",
+  Contraint:     "contraint",
+  TresContraint: "tres_contraint",
+} as const;
+export type Complexity = (typeof Complexity)[keyof typeof Complexity];
 
 export type PhaseId =
   | "etudes"
@@ -329,7 +331,7 @@ export function computePlanning(inp: PlanningInputs): PlanningResult {
 
 function buildCriticalPath(phases: PhaseResult[], totalDays: number): PhaseId[] {
   const byId = new Map<PhaseId, PhaseResult>(phases.map((p) => [p.id, p]));
-  let current = phases
+  let current: PhaseResult | undefined = phases
     .filter((p) => p.endDay === totalDays)
     .sort((a, b) => a.startDay - b.startDay)[0];
 
@@ -338,7 +340,7 @@ function buildCriticalPath(phases: PhaseResult[], totalDays: number): PhaseId[] 
   while (current && !seen.has(current.id)) {
     seen.add(current.id);
     path.unshift(current.id);
-    current = current.driver ? byId.get(current.driver) : undefined!;
+    current = current.driver ? byId.get(current.driver) ?? undefined : undefined;
   }
   return path;
 }
@@ -355,15 +357,16 @@ function addDays(d: Date, days: number): Date {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Niveau de rénovation tel qu'affiché dans Simulation → type d'opération. */
+/** RenovationLevel de Simulation ("refresh|standard|heavy|full") → type d'opération. */
 export function operationTypeFromRenovLevel(
-  level: "rafraichissement" | "standard" | "lourde" | "complete" | "neuf",
+  level: "refresh" | "standard" | "heavy" | "full",
 ): OperationType {
   switch (level) {
-    case "rafraichissement": return OperationType.Rafraichissement;
-    case "standard":         return OperationType.RehabilitationLegere;
-    case "lourde":           return OperationType.RehabilitationLourde;
-    case "complete":         return OperationType.RestructurationComplete;
-    case "neuf":             return OperationType.ConstructionNeuve;
+    case "refresh":  return OperationType.Rafraichissement;
+    case "standard": return OperationType.RehabilitationLegere;
+    case "heavy":    return OperationType.RehabilitationLourde;
+    case "full":     return OperationType.RestructurationComplete;
+    default:         return OperationType.RehabilitationLegere;
   }
 }
 
