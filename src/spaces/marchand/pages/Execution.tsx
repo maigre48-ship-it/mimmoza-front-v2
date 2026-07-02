@@ -255,6 +255,67 @@ function Select({
   );
 }
 
+function LexiconBadge({
+  icon,
+  label,
+  definition,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  definition: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span
+      style={{ position: "relative", display: "inline-flex" }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "5px 11px",
+          borderRadius: 999,
+          border: "1px solid rgba(15, 23, 42, 0.10)",
+          background: "rgba(15, 23, 42, 0.03)",
+          color: "#475569",
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: "help",
+        }}
+      >
+        {icon}
+        {label}
+      </span>
+
+      {open && (
+        <span
+          style={{
+            position: "absolute",
+            top: "calc(100% + 8px)",
+            left: 0,
+            zIndex: 20,
+            width: 320,
+            maxWidth: "80vw",
+            padding: "10px 12px",
+            borderRadius: 10,
+            background: "#0f172a",
+            color: "#e2e8f0",
+            fontSize: 12,
+            fontWeight: 500,
+            lineHeight: 1.5,
+            boxShadow: "0 10px 30px rgba(15,23,42,0.25)",
+          }}
+        >
+          {definition}
+        </span>
+      )}
+    </span>
+  );
+}
+
 export default function MarchandExecution() {
   const snapTick = useMarchandSnapshotTick();
   const snapshot = useMemo(() => readMarchandSnapshot(), [snapTick]);
@@ -631,45 +692,16 @@ export default function MarchandExecution() {
 
       {/* Lexique : définitions Buffer & Holding (au survol) */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-        <span
-          title="Buffer = marge de sécurité ajoutée au budget travaux pour absorber les imprévus (aléas de chantier, dépassements). Exprimé en % du budget."
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "5px 11px",
-            borderRadius: 999,
-            border: "1px solid rgba(15, 23, 42, 0.10)",
-            background: "rgba(15, 23, 42, 0.03)",
-            color: "#475569",
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: "help",
-          }}
-        >
-          <AlertTriangle size={13} />
-          Buffer
-        </span>
-
-        <span
-          title="Holding = charges fixes qui courent pendant toute la durée du chantier (assurance, charges de copropriété, intérêts d'emprunt…). Exprimé en €/jour, multiplié par la durée planifiée."
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "5px 11px",
-            borderRadius: 999,
-            border: "1px solid rgba(15, 23, 42, 0.10)",
-            background: "rgba(15, 23, 42, 0.03)",
-            color: "#475569",
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: "help",
-          }}
-        >
-          <Clock size={13} />
-          Holding
-        </span>
+        <LexiconBadge
+          icon={<AlertTriangle size={13} />}
+          label="Buffer"
+          definition="Buffer = marge de sécurité ajoutée au budget travaux pour absorber les imprévus (aléas de chantier, dépassements). Exprimé en % du budget."
+        />
+        <LexiconBadge
+          icon={<Clock size={13} />}
+          label="Holding"
+          definition="Holding = charges fixes qui courent pendant toute la durée du chantier (assurance, charges de copropriété, intérêts d'emprunt…). Exprimé en €/jour, multiplié par la durée planifiée."
+        />
       </div>
 
       <TimelinePlanner
