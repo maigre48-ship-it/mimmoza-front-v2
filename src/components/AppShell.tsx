@@ -171,22 +171,54 @@ function buildInitials(fullName: string | undefined, email: string | undefined):
   return (email ?? "M").trim().slice(0, 2).toUpperCase();
 }
 
-function readStoredAccount(): StoredAccount | null {
-  try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<StoredAccount>;
-    if (!parsed || !parsed.email || !parsed.isAuthenticated) return null;
-    return {
-      email:           parsed.email,
-      fullName:        parsed.fullName ?? "",
-      initials:        parsed.initials ?? buildInitials(parsed.fullName, parsed.email),
-      plan:            parsed.plan ?? "free",
-      isAuthenticated: true,
+// ── Compte synchronise avec l'auth Supabase (remplace le localStorage herite) ──
+type SupabaseUserLike = {
+  email?: string | null;
+  user_metadata?: Record<string, unknown> | null;
+} | null;
+
+function buildAccountFromUser(user: SupabaseUserLike): StoredAccount | null {
+  if (!user) return null;
+  const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
+  const fullName =
+    (typeof meta.full_name === "string" && meta.full_name.trim()) ||
+    (typeof meta.name === "string" && meta.name.trim()) ||
+    [meta.first_name, meta.last_name]
+      .filter((v): v is string => typeof v === "string")
+      .join(" ")
+      .trim() ||
+    "";
+  const email = user.email ?? "";
+  return {
+    email,
+    fullName,
+    initials: buildInitials(fullName, email),
+    plan: "free", // TODO: brancher le vrai plan (organisations.plan_code) si besoin
+    isAuthenticated: true,
+  };
+}
+
+function useSupabaseAccount(): StoredAccount | null {
+  const [account, setAccount] = useState<StoredAccount | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (mounted) setAccount(buildAccountFromUser(data.user as SupabaseUserLike));
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAccount(buildAccountFromUser((session?.user ?? null) as SupabaseUserLike));
+    });
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
     };
-  } catch {
-    return null;
-  }
+  }, []);
+
+  return account;
 }
 
 function isMarchandPremiumPath(path: string): boolean {
@@ -447,7 +479,7 @@ function TopNavigation(props: {
   const location = useLocation();
   const navigate  = useNavigate();
   const studyId   = useMemo(() => extractStudyId(location.search), [location.search]);
-  const account   = useMemo(() => readStoredAccount(), [location.pathname, location.search]);
+  const account = useSupabaseAccount();
 
   function buildPath(targetPath: string): string {
     return preserveStudyInPath(targetPath, location.search);
@@ -763,7 +795,7 @@ function MobileDrawer(props: {
 
   const location = useLocation();
   const navigate  = useNavigate();
-  const account   = useMemo(() => readStoredAccount(), [location.pathname, location.search]);
+  const account = useSupabaseAccount();
 
   function buildPath(tp: string): string {
     return preserveStudyInPath(tp, location.search);
