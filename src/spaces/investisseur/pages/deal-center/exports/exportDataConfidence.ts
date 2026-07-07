@@ -776,7 +776,7 @@ export async function exportDataConfidencePdf(): Promise<void> {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8.5);
   doc.setTextColor(...C.indigo700);
-  doc.text("Analyse Copilot Mimmoza", ML + 17, y + 7);
+  doc.text("Analyse Mimmoza", ML + 17, y + 7);
 
   // Texte analyse
   doc.setFont("helvetica", "normal");

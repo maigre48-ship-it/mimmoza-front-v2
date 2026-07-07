@@ -168,7 +168,7 @@ export async function exportQualificationPdf(): Promise<void> {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(5.5);
   doc.setGState(doc.GState({ opacity: 0.75 }));
-  doc.text("Mimmoza Copilot", k4x + KPI_W / 2, y + KPI_H - 2.5, { align: "center" });
+  doc.text("Analyste Mimmoza", k4x + KPI_W / 2, y + KPI_H - 2.5, { align: "center" });
   doc.setGState(doc.GState({ opacity: 1 }));
 
   y += KPI_H + 7;

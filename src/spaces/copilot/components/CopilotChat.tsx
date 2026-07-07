@@ -39,7 +39,7 @@ export function CopilotChat() {
       />
 
       <div style={{ fontSize: 11, color: T.textMuted, padding: '8px 16px', borderTop: `1px solid ${T.borderSoft}`, lineHeight: 1.4 }}>
-        ⚠️ Mimmoza Copilot peut commettre des erreurs. Les analyses doivent être vérifiées,
+        ⚠️L'Analyste Mimmoza peut commettre des erreurs. Les analyses doivent être vérifiées,
         notamment pour les données juridiques, urbanistiques, fiscales ou financières.
       </div>
     </div>

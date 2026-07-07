@@ -16,7 +16,7 @@ export const COPILOT_HOME = {
   title: 'Bienvenue sur Mimmoza',
   intro:
     "Je suis votre guide. Mimmoza transforme une adresse, une parcelle ou un projet en analyse decisionnelle en moins de 2 minutes. Choisissez une question ci-dessous.",
-  askAILabel: 'Parler au Copilot IA',
+  askAILabel: "Parler à l'Analyste Mimmoza",
   qa: [
     {
       key: 'how',
@@ -45,8 +45,8 @@ export const COPILOT_HOME = {
     },
     {
       key: 'copilot',
-      q: "Le Copilot IA, c'est quoi ?",
-      a: "Une fois une parcelle selectionnee dans un espace metier, le Copilot IA repond a vos questions precises (zone PLU, reculs, hauteur, comparables...) et peut lancer des analyses. Ici, sur l'accueil, il n'y a pas encore de parcelle : je reste donc un guide.",
+      q: "L'Analyste Mimmoza, c'est quoi ?",
+      a: "Une fois une parcelle selectionnee dans un espace metier, l'Analyste Mimmoza repond a vos questions precises (zone PLU, reculs, hauteur, comparables...) et peut lancer des analyses. Ici, sur l'accueil, il n'y a pas encore de parcelle : je reste donc un guide.",
     },
   ] as ScriptedQA[],
 };

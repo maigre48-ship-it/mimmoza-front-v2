@@ -341,7 +341,7 @@ function buildSections(
     {
       id: "jetons",
       label: "Jetons IA",
-      description: "Une seule monnaie pour toutes les actions IA : Copilot, analyses, facades.",
+      description: "Une seule monnaie pour toutes les actions IA : Analyste, analyses, facades.",
       icon: <Coins className="h-5 w-5" />,
       color: C.violet,
       summaryPrice: "4€",
@@ -459,8 +459,8 @@ function buildSections(
 const CALC_ACTIONS: { key: keyof typeof ACTION_COSTS; label: string }[] = [
   { key: "facade_high",      label: "Façades IA (HD)" },
   { key: "facade_medium",    label: "Façades IA (standard)" },
-  { key: "copilot_advanced", label: "Copilot avancé" },
-  { key: "copilot_quick",    label: "Copilot rapide" },
+  { key: "copilot_advanced", label: "Analyste avancé" },
+  { key: "copilot_quick",    label: "Analyste rapide" },
 ];
 
 // Prix dégressif : le €/jeton baisse par palier de volume.
@@ -527,9 +527,9 @@ const ACTION_TABLE: { key: keyof typeof ACTION_COSTS; label: string; desc: strin
   { key: "facade_medium",     label: "Façade IA — standard",         desc: "Rendu avant/après qualité moyenne" },
   { key: "facade_low",        label: "Façade IA — éco",              desc: "Rendu avant/après rapide" },
   { key: "refresh_veille",    label: "Rafraîchissement veille",      desc: "Ingestion de nouvelles annonces" },
-  { key: "copilot_advanced",  label: "Copilot avancé",               desc: "Raisonnement structuré et sourcé" },
+  { key: "copilot_advanced",  label: "Analyste avancé",               desc: "Raisonnement structuré et sourcé" },
   { key: "rendu_ia",          label: "Rendu travaux IA",             desc: "Projection du bien après travaux" },
-  { key: "copilot_quick",     label: "Copilot rapide",               desc: "Réponse concise et directe" },
+  { key: "copilot_quick",     label: "Analyste rapide",               desc: "Réponse concise et directe" },
   { key: "scan_opportunites", label: "Scan Opportunités",            desc: "Lecture et scoring des annonces" },
   { key: "analyse_rapide",    label: "Analyse rapide",               desc: "Estimation express d'un bien" },
 ];

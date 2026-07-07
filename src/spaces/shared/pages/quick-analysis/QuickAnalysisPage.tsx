@@ -18,7 +18,7 @@
 // Principe conservé : zéro fictif. Chaque bloc masqué si données absentes.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   useValuationEngine,
@@ -39,6 +39,12 @@ import {
 import { spendCredits } from "../../../../lib/billing/projectUnlock";
 import { ACTION_COSTS } from "../../../../lib/billing/actionCosts";
 import { userStorage } from "@/lib/storage/userScopedStorage";
+import { useCopilotStore } from "../../../copilot/store/copilotStore";
+import type { ValuationEngineContext } from "../../../copilot/types/copilot.types";
+import {
+  setActiveCopilotContext,
+  clearActiveCopilotContext,
+} from "../../../copilot/store/activeCopilotContext.store";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers d'affichage
@@ -350,12 +356,82 @@ const QuickAnalysisPage: React.FC = () => {
 
   const { state, run, reset } = useValuationEngine();
   const [tokenError, setTokenError] = useState<string | null>(null);
+  const setContextHints = useCopilotStore((s) => s.setContextHints);
 
   const setF = useCallback(<K extends keyof FormState>(k: K, v: FormState[K]) => {
     setForm((p) => ({ ...p, [k]: v }));
   }, []);
 
   const { result, loading, error, location, steps, context } = state;
+
+  // ── Sync du résultat dans les DEUX stores Copilot ──────────────────────────
+  // activeCopilotContext (city/price/surface) est ce que hasActiveListing() teste.
+  // Sans lui, le Copilot réclame "URL, ou prix + surface + ville".
+  useEffect(() => {
+    if (!result || result.estimatedValue <= 0) {
+      setContextHints({ valuation_engine: null });
+      clearActiveCopilotContext();
+      return;
+    }
+
+    const ve: ValuationEngineContext = {
+      estimatedValue:    result.estimatedValue,
+      minEstimatedValue: result.minEstimatedValue,
+      maxEstimatedValue: result.maxEstimatedValue,
+      marketPriceM2:     result.marketPriceM2,
+      valuationBasis:    result.valuationBasis,
+      confidenceScore:   result.confidenceScore,
+      opportunityScore:  result.opportunityScore,
+      marketPosition:    result.marketPosition,
+      securityScore:     result.securityScore,
+      locationScore:     result.locationScore,
+      locationBreakdown: result.locationBreakdown,
+      estimatedRent:     result.estimatedRent ?? undefined,
+      grossYield:        result.grossYield ?? undefined,
+      netYield:          result.netYield ?? undefined,
+      strengths:         result.strengths,
+      weaknesses:        result.weaknesses,
+      warnings:          result.warnings,
+      recommendation:    result.recommendation,
+      meta: {
+        engineVersion:   result.meta.engineVersion,
+        comparablesUsed: result.meta.comparablesUsed,
+      },
+    };
+    setContextHints({ valuation_engine: ve });
+
+    const askingPrice = form.askingPrice ? +form.askingPrice : undefined;
+    setActiveCopilotContext({
+      route:        "/analyse-rapide",
+      vertical:     "investisseur",
+      city:         form.city || undefined,
+      zipCode:      form.postalCode || undefined,
+      price:        askingPrice,
+      surface:      form.surface ? +form.surface : undefined,
+      propertyType: form.propertyType,
+      pageSnapshot: {
+        adresse:            form.address || null,
+        ville:              form.city || null,
+        code_postal:        form.postalCode || null,
+        surface_m2:         form.surface ? +form.surface : null,
+        prix_demande:       askingPrice ?? null,
+        estime_mimmoza:     result.estimatedValue,
+        fourchette_basse:   result.minEstimatedValue ?? null,
+        fourchette_haute:   result.maxEstimatedValue ?? null,
+        marche_local_m2:    result.marketPriceM2 ?? null,
+        position_marche:    result.marketPosition ?? null,
+        score_opportunite:  result.opportunityScore ?? null,
+        score_securite:     result.securityScore ?? null,
+        score_confiance:    result.confidenceScore ?? null,
+        score_localisation: result.locationScore ?? null,
+        comparables_dvf:    result.comparables.length,
+      },
+    });
+  }, [
+    result,
+    form.address, form.city, form.postalCode, form.surface, form.askingPrice, form.propertyType,
+    setContextHints,
+  ]);
 
   const handleRun = useCallback(async () => {
     if (!form.surface || isNaN(+form.surface) || +form.surface <= 0) return;

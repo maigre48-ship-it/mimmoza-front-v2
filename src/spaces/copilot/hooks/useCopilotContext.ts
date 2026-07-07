@@ -28,6 +28,7 @@ const VERTICAL_BY_PREFIX: Array<[string, Vertical]> = [
   ['/apporteur',        'apporteur'],
   ['/banque',           'investisseur'],
   ['/rehabilitation',   'promoteur'],
+  ['/analyse-rapide',   'investisseur'],   // ← analyse rapide (analysistype "investisseur")
   ['/particulier',      'particulier'],
 ];
 

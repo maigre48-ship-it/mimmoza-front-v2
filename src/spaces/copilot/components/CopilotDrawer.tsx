@@ -63,7 +63,7 @@ export function CopilotDrawer() {
             }}>
               <Sparkles size={16} color="white" />
             </div>
-            <div style={{ color: T.text, fontWeight: 700, fontSize: 15 }}>Copilot</div>
+            <div style={{ color: T.text, fontWeight: 700, fontSize: 15 }}>Analyste Mimmoza</div>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
               {/* En mode scripte : pas de credits ni "nouvelle conversation". */}
               {!scripted && (

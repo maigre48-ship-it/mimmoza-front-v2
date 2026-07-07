@@ -5,7 +5,7 @@ import { COPILOT_THEME as T } from './copilotTheme';
 export function CopilotCreditsPill({ credits }: { credits: number | null }) {
   return (
     <div
-      title="Crédits Copilot restants"
+      title="Crédits restants"
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
         padding: '4px 10px', borderRadius: 999,
