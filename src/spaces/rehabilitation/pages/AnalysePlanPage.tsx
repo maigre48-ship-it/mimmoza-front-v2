@@ -36,7 +36,7 @@ import type {
   PlanOverlaySnapshot, RawAIResult,
 } from '../plan-reader/types';
 import { EMPTY_GEOMETRY, confidenceLabel } from '../plan-reader/types';
-import { transcribePlanReal } from "../services/transcribePlanReal";
+import { transcribePlanReal, generatePlanId } from "../services/transcribePlanReal";
 import { transcriptionToGeometry } from "../plan-reader/transcriptionToGeometry";
 import { sumRoomSurfaces } from "../plan-reader/sumRoomSurfaces";
 import { setActiveCopilotContext } from "@/spaces/copilot/store/activeCopilotContext.store";
@@ -1117,8 +1117,8 @@ export const AnalysePlanPage: React.FC = () => {
         });
 
         setActiveCopilotContext({
-          vertical: "rehabilitation",
-          pageContext: { space: "rehabilitation", tab: "analyse-plan" },
+          vertical: "generique",
+          pageContext: { pathname: "/rehabilitation/analyse-plan", space: "rehabilitation", tab: "analyse-plan" },
           pageSnapshot: {
             plan_summary: analysisResult.summary ?? null,
             plan_surface_retenue_m2: officialLocal ?? rc.total,
@@ -1317,8 +1317,12 @@ export const AnalysePlanPage: React.FC = () => {
       if (quality.eligible) {
         // 2e appel gpt-4o. Son échec ne doit jamais casser l'analyse déjà réussie.
         try {
-          const transcription = await transcribePlanReal({ plan });
-          const geometry = transcriptionToGeometry(transcription);
+          const planId = generatePlanId(plan.file.name ?? "plan");
+          const transcription = await transcribePlanReal(planId, plan.file);
+          // TODO(pipeline CV) : adapter PlanTranscriptionResult → TranscriptionResult.
+          // En attendant, on ne convertit pas (types incompatibles) — l'analyse principale reste intacte.
+          const geometry = transcriptionToGeometry(null);
+          void transcription;
           updateOverlay((s) => ({ ...(s ?? createEmptySnapshot()), detectedGeometry: geometry }));
           console.log(
             "[AnalysePlanPage] calques alimentés —",

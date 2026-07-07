@@ -84,7 +84,7 @@ export function getActiveRehabProject(): ActiveRehabProject | null {
     usageCible:        (overview?.usageCible ?? "").trim(),
     surfaceM2,
     anneeConstruction: toNum(overview?.anneeConstruction),
-    erp:               overview?.erp && overview.erp !== "" ? overview.erp : null,
+    erp:               overview?.erp ? overview.erp : null,
   };
 }
 

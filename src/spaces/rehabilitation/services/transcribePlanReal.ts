@@ -1,162 +1,227 @@
-﻿// -----------------------------------------------------------------------------
-// transcribePlanReal.ts  v1
-// Service front — Envoi du plan à la Edge Function `transcribe-rehab-plan`
-// (vectorisation prudente : enveloppe, murs, pièces, ouvertures, zones humides).
-// Renvoie la sortie brute typée, à passer dans transcriptionToGeometry().
-// -----------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
+// transcribePlanReal.ts
+// Service d'appel à la Edge Function Supabase : transcribe-rehab-plan
+// Aucun mock — appel réseau réel uniquement
+// ─────────────────────────────────────────────────────────────────────────────
 
-import { supabase } from "@/lib/supabaseClient";
-import type { PlanUpload } from "../shared/planAnalysis.types";
-import type { TranscriptionResult } from "../plan-reader/transcriptionToGeometry";
+import { supabase } from '../../../lib/supabaseClient';
+import type {
+  PlanTranscriptionResult,
+  TranscribePlanPayload,
+  TranscribePlanRawResponse,
+  TranscriptionError,
+  TranscriptionErrorCode,
+  TranscriptionOptions,
+} from '../plan-reader/planTranscription.types';
+import { DEFAULT_TRANSCRIPTION_OPTIONS } from '../plan-reader/planTranscription.types';
 
-interface TranscribePlanRealInput {
-  plan: PlanUpload | null;
+// ── Constantes ────────────────────────────────────────────────────────────────
+
+const EDGE_FUNCTION_NAME = 'transcribe-rehab-plan' as const;
+const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 Mo
+const SUPPORTED_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+] as const;
+
+type SupportedMimeType = (typeof SUPPORTED_MIME_TYPES)[number];
+
+// ── Validation locale avant envoi ─────────────────────────────────────────────
+
+function validateFile(file: File): TranscriptionError | null {
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    return {
+      code: 'FILE_TOO_LARGE',
+      message: `Le fichier dépasse la limite de ${MAX_FILE_SIZE_BYTES / 1024 / 1024} Mo.`,
+      retryable: false,
+    };
+  }
+
+  if (!SUPPORTED_MIME_TYPES.includes(file.type as SupportedMimeType)) {
+    return {
+      code: 'UNSUPPORTED_FORMAT',
+      message: `Format non supporté : ${file.type}. Formats acceptés : JPEG, PNG, WEBP, PDF.`,
+      retryable: false,
+    };
+  }
+
+  return null;
 }
 
-interface TranscribePlanRealError {
-  code: string;
-  message: string;
-  status?: number;
-  debug?: unknown;
+// ── Conversion File → Base64 ──────────────────────────────────────────────────
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== 'string') {
+        reject(new Error('Résultat FileReader inattendu (non string)'));
+        return;
+      }
+      // Extraire uniquement la partie base64 (sans le préfixe data:...;base64,)
+      const base64 = result.split(',')[1];
+      if (!base64) {
+        reject(new Error('Impossible d\'extraire le contenu base64 du fichier.'));
+        return;
+      }
+      resolve(base64);
+    };
+
+    reader.onerror = () => {
+      reject(new Error('Erreur lors de la lecture du fichier.'));
+    };
+
+    reader.readAsDataURL(file);
+  });
 }
 
-const FUNCTION_NAME = "transcribe-rehab-plan";
-const TIMEOUT_MS = 120_000;
+// ── Mapping erreur réseau/API vers TranscriptionError ─────────────────────────
 
-// La transcription accepte png/jpeg/webp (pas le PDF, comme la fonction).
-const ACCEPTED_MIME_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/jpg",
-  "image/webp",
-]);
+function mapToTranscriptionError(
+  rawError: unknown,
+  httpStatus?: number
+): TranscriptionError {
+  if (httpStatus === 413) {
+    return { code: 'FILE_TOO_LARGE', message: 'Fichier trop volumineux pour le serveur.', retryable: false };
+  }
+  if (httpStatus === 429) {
+    return { code: 'QUOTA_EXCEEDED', message: 'Quota d\'appels API dépassé. Réessayez plus tard.', retryable: true };
+  }
+  if (httpStatus === 503 || httpStatus === 502) {
+    return { code: 'AI_SERVICE_UNAVAILABLE', message: 'Le service d\'analyse IA est temporairement indisponible.', retryable: true };
+  }
+  if (httpStatus === 504) {
+    return { code: 'TIMEOUT', message: 'L\'analyse a pris trop de temps. Réessayez avec un plan plus simple.', retryable: true };
+  }
 
+  if (rawError instanceof Error) {
+    if (rawError.message.toLowerCase().includes('fetch') || rawError.message.toLowerCase().includes('network')) {
+      return { code: 'NETWORK_ERROR', message: 'Erreur réseau. Vérifiez votre connexion.', retryable: true };
+    }
+    return { code: 'UNKNOWN', message: rawError.message, retryable: false };
+  }
+
+  return { code: 'UNKNOWN', message: 'Une erreur inconnue s\'est produite.', retryable: false };
+}
+
+// ── Résultat du service ───────────────────────────────────────────────────────
+
+export type TranscriptionServiceResult =
+  | { success: true; data: PlanTranscriptionResult }
+  | { success: false; error: TranscriptionError };
+
+// ── Service principal ─────────────────────────────────────────────────────────
+
+/**
+ * Envoie un fichier plan (image ou PDF) à la Edge Function Supabase
+ * `transcribe-rehab-plan` et retourne le résultat structuré.
+ *
+ * @param planId    Identifiant unique du plan (généré côté appelant)
+ * @param file      Fichier brut sélectionné par l'utilisateur
+ * @param options   Options de transcription (optionnel, defaults appliqués)
+ */
 export async function transcribePlanReal(
-  input: TranscribePlanRealInput
-): Promise<TranscriptionResult> {
-  const { plan } = input;
-
-  if (!plan?.file) {
-    throw makeError("NO_FILE", "Aucun plan fourni pour la transcription.");
+  planId: string,
+  file: File,
+  options?: Partial<TranscriptionOptions>
+): Promise<TranscriptionServiceResult> {
+  // 1. Validation locale
+  const localError = validateFile(file);
+  if (localError !== null) {
+    return { success: false, error: localError };
   }
 
-  const file = plan.file;
-
-  if (!ACCEPTED_MIME_TYPES.has(file.type)) {
-    throw makeError(
-      "UNSUPPORTED_FORMAT",
-      `Transcription : format non supporté (${file.type || "inconnu"}). Utilisez PNG, JPG ou WEBP.`
-    );
-  }
-  if (file.size <= 0) {
-    throw makeError("EMPTY_FILE", "Le fichier est vide.");
-  }
-
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-
-  if (!supabaseUrl || !supabaseKey) {
-    throw makeError(
-      "SUPABASE_ENV_MISSING",
-      "Variables Supabase manquantes : VITE_SUPABASE_URL ou VITE_SUPABASE_ANON_KEY."
-    );
-  }
-
-  const functionUrl = `${supabaseUrl.replace(/\/$/, "")}/functions/v1/${FUNCTION_NAME}`;
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const accessToken = session?.access_token ?? supabaseKey;
-
-  const formData = new FormData();
-  formData.append("file", file, file.name || "plan");
-
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-  let response: Response;
+  // 2. Conversion base64
+  let imageBase64: string;
   try {
-    response = await fetch(functionUrl, {
-      method: "POST",
-      headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${accessToken}`,
-        // Pas de Content-Type : le browser gère le boundary multipart.
+    imageBase64 = await fileToBase64(file);
+  } catch (conversionError) {
+    return {
+      success: false,
+      error: {
+        code: 'UNKNOWN',
+        message: conversionError instanceof Error
+          ? conversionError.message
+          : 'Impossible de lire le fichier.',
+        retryable: false,
       },
-      body: formData,
-      signal: controller.signal,
-    });
-  } catch (err: unknown) {
-    window.clearTimeout(timeoutId);
-    if (err instanceof Error && err.name === "AbortError") {
-      throw makeError("TIMEOUT", "La transcription a dépassé le délai imparti.");
+    };
+  }
+
+  // 3. Construction du payload
+  const resolvedOptions: TranscriptionOptions = {
+    ...DEFAULT_TRANSCRIPTION_OPTIONS,
+    ...options,
+  };
+
+  const payload: TranscribePlanPayload = {
+    plan_id: planId,
+    image_base64: imageBase64,
+    file_type: file.type as TranscribePlanPayload['file_type'],
+    file_name: file.name,
+    options: resolvedOptions,
+  };
+
+  // 4. Appel Edge Function via Supabase SDK
+  try {
+    const { data, error } = await supabase.functions.invoke<TranscribePlanRawResponse>(
+      EDGE_FUNCTION_NAME,
+      { body: payload }
+    );
+
+    if (error) {
+      // FunctionsHttpError expose status
+      const httpStatus = (error as { status?: number }).status;
+      return {
+        success: false,
+        error: mapToTranscriptionError(error, httpStatus),
+      };
     }
-    throw makeError(
-      "NETWORK_ERROR",
-      "Impossible de joindre le service de transcription.",
-      undefined,
-      err
-    );
-  } finally {
-    window.clearTimeout(timeoutId);
-  }
 
-  const text = await response.text();
-  let body: Record<string, unknown> | null = null;
-  if (text.trim()) {
-    try {
-      body = JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      throw makeError(
-        "PARSE_ERROR",
-        `Réponse transcription illisible. HTTP ${response.status}.`,
-        response.status,
-        text.slice(0, 800)
-      );
+    if (!data) {
+      return {
+        success: false,
+        error: {
+          code: 'UNKNOWN',
+          message: 'La Edge Function n\'a retourné aucune donnée.',
+          retryable: false,
+        },
+      };
     }
+
+    if (!data.success || !data.data) {
+      return {
+        success: false,
+        error: {
+          code: (data.error_code as TranscriptionErrorCode) ?? 'UNKNOWN',
+          message: data.error ?? 'Erreur interne de transcription.',
+          retryable: false,
+        },
+      };
+    }
+
+    return { success: true, data: data.data };
+  } catch (networkError) {
+    return {
+      success: false,
+      error: mapToTranscriptionError(networkError),
+    };
   }
-
-  if (!response.ok || (body && (body as { success?: boolean }).success === false)) {
-    const errObj = (body as { error?: { code?: string; message?: string } } | null)?.error;
-    throw makeError(
-      errObj?.code ?? `HTTP_${response.status}`,
-      errObj?.message ?? `Erreur transcription (${response.status}).`,
-      response.status,
-      body
-    );
-  }
-
-  const rawData =
-    body && typeof body === "object" && "data" in body
-      ? (body.data as unknown)
-      : body;
-
-  if (!rawData || typeof rawData !== "object") {
-    throw makeError(
-      "INVALID_RESPONSE",
-      "La transcription a répondu, mais le format est invalide.",
-      response.status,
-      body
-    );
-  }
-
-  return rawData as TranscriptionResult;
 }
 
-function makeError(
-  code: string,
-  message: string,
-  status?: number,
-  debug?: unknown
-): TranscribePlanRealError & Error {
-  const err = new Error(message) as TranscribePlanRealError & Error;
-  err.code = code;
-  err.message = message;
-  err.status = status;
-  err.debug = debug;
-  if (import.meta.env.DEV && debug !== undefined) {
-    console.warn("[transcribePlanReal]", code, message, debug);
-  }
-  return err;
+// ── Utilitaire : génération d'un plan_id unique ───────────────────────────────
+
+/**
+ * Génère un identifiant de plan unique basé sur le nom du fichier et l'horodatage.
+ * À utiliser côté appelant (hook ou composant) avant d'appeler transcribePlanReal.
+ */
+export function generatePlanId(fileName: string): string {
+  const sanitized = fileName.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40);
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).slice(2, 8);
+  return `plan_${sanitized}_${timestamp}_${random}`;
 }
