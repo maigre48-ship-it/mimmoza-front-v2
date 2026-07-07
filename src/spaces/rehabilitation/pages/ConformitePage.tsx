@@ -20,8 +20,9 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { scopedKey } from "../lib/rehabScope";
+import { getActiveRehabSurface } from "../lib/activeProjectData";
 import { userStorage } from "@/lib/storage/userScopedStorage";
 
 /* ═══════════════════════════════════════════════════════════════
@@ -156,6 +157,8 @@ const USAGES_OPTIONS: { value: UsageProjet; label: string; desc: string }[] = [
   { value: "mixte", label: "Mixte", desc: "Combinaison d'usages" },
   { value: "autre", label: "Autre", desc: "Usage non listé ci-dessus" },
 ];
+
+const CONFORMITE_STORAGE_KEY = "mimmoza_rehab_conformite";
 
 const ERP_TYPES: { val: ErpType; label: string; hasSleeping?: boolean; hasKitchen?: boolean; hasCareActivity?: boolean }[] = [
   { val: "J", label: "J – Structures personnes âgées / handicapées", hasSleeping: true, hasCareActivity: true },
@@ -675,6 +678,47 @@ export default function RehabilitationConformitePage() {
   const [answers, setAnswers] = useState<Record<string, ComplianceAnswer>>({});
   const [findings, setFindings] = useState<ComplianceFinding[] | null>(null);
   const [budgetSaved, setBudgetSaved] = useState(false);
+
+  const [hydrated, setHydrated] = useState(false);
+
+  // Hydratation au montage : restaure l'état conformité sauvegardé pour le
+  // projet actif ; à défaut, pré-remplit la surface depuis le projet.
+  useEffect(() => {
+    try {
+      const raw = userStorage.getItem(scopedKey(CONFORMITE_STORAGE_KEY));
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (saved.usage !== undefined)    setUsage(saved.usage);
+        if (saved.erp)                    setErp(saved.erp);
+        if (saved.answers)                setAnswers(saved.answers);
+        if (saved.findings !== undefined) setFindings(saved.findings);
+        const savedSurface = typeof saved.surface === "string" ? saved.surface : "";
+        if (savedSurface.trim() !== "") {
+          setSurface(savedSurface);
+        } else {
+          const s = getActiveRehabSurface();
+          if (s && s > 0) setSurface(String(s));
+        }
+      } else {
+        const s = getActiveRehabSurface();
+        if (s && s > 0) setSurface(String(s));
+      }
+    } catch { /* silent */ }
+    // Marque l'hydratation terminée AU PROCHAIN cycle, une fois les
+    // setState ci-dessus appliqués → la persistance ne peut plus écraser.
+    setHydrated(true);
+  }, []);
+
+  // Persistance auto (scopée au projet actif) — seulement après hydratation.
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      userStorage.setItem(
+        scopedKey(CONFORMITE_STORAGE_KEY),
+        JSON.stringify({ usage, erp, surface, answers, findings }),
+      );
+    } catch { /* silent */ }
+  }, [hydrated, usage, erp, surface, answers, findings]);
 
   const inferred = useMemo(() => (usage ? inferErpContextFromUsage(usage as UsageProjet) : null), [usage]);
 

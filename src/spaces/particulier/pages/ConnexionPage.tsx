@@ -27,6 +27,8 @@ type StoredUser = {
   plan?: string;
 };
 
+type Mode = "login" | "reset";
+
 export default function ConnexionPage() {
   const navigate = useNavigate();
 
@@ -39,13 +41,21 @@ export default function ConnexionPage() {
     }
   }, []);
 
+  const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState(storedUser.email ?? "");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
+  const [resetInfo, setResetInfo] = useState<string | null>(null);
 
   const firstName = storedUser.fullName?.trim().split(/\s+/)[0] ?? "";
+
+  const switchMode = (next: Mode) => {
+    setMode(next);
+    setLoginError(null);
+    setResetInfo(null);
+  };
 
   const handleLogin = async () => {
     if (!email.trim() || !password) {
@@ -116,8 +126,37 @@ export default function ConnexionPage() {
     }
   };
 
+  const handleResetPassword = async () => {
+    if (!email.trim()) {
+      setLoginError("Veuillez renseigner votre adresse email.");
+      return;
+    }
+
+    setLoginLoading(true);
+    setLoginError(null);
+    setResetInfo(null);
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) {
+        setLoginError("Impossible d'envoyer l'email pour le moment. Veuillez réessayer.");
+      } else {
+        // message neutre : ne jamais révéler si le compte existe
+        setResetInfo(
+          "Si un compte existe pour cette adresse, un email de réinitialisation vient d'être envoyé."
+        );
+      }
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleLogin();
+    if (e.key === "Enter") {
+      mode === "login" ? handleLogin() : handleResetPassword();
+    }
   };
 
   return (
@@ -167,12 +206,14 @@ export default function ConnexionPage() {
           <div className="w-full rounded-3xl border border-white/70 bg-white/75 p-6 shadow-[0_8px_40px_rgba(59,130,246,0.12)] backdrop-blur-md sm:p-8">
             <div className="mb-6">
               <div className="inline-flex items-center gap-2 rounded-full bg-sky-50/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-sky-600">
-                <LogIn className="h-3.5 w-3.5" />
-                Connexion
+                {mode === "login" ? <LogIn className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                {mode === "login" ? "Connexion" : "Réinitialisation"}
               </div>
 
               <h2 className="mt-4 text-2xl font-semibold text-slate-900">
-                {firstName ? (
+                {mode === "reset" ? (
+                  "Mot de passe oublié ?"
+                ) : firstName ? (
                   <>
                     Heureux de vous revoir,{" "}
                     <span className="bg-gradient-to-r from-indigo-600 to-sky-500 bg-clip-text text-transparent">
@@ -185,7 +226,9 @@ export default function ConnexionPage() {
               </h2>
 
               <p className="mt-2 text-sm leading-6 text-slate-500">
-                Connectez-vous pour accéder à votre compte Mimmoza.
+                {mode === "login"
+                  ? "Connectez-vous pour accéder à votre compte Mimmoza."
+                  : "Indiquez votre email : nous vous enverrons un lien pour créer un nouveau mot de passe."}
               </p>
             </div>
 
@@ -208,37 +251,46 @@ export default function ConnexionPage() {
                 </div>
               </label>
 
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">
-                  Mot de passe
-                </span>
+              {mode === "login" && (
+                <label className="block">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-700">Mot de passe</span>
+                    <button
+                      type="button"
+                      onClick={() => switchMode("reset")}
+                      className="text-sm font-medium text-sky-600 transition hover:text-sky-700"
+                    >
+                      Mot de passe oublié ?
+                    </button>
+                  </div>
 
-                <div className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-3 transition-all focus-within:border-sky-300 focus-within:bg-white focus-within:ring-4 focus-within:ring-sky-100/70">
-                  <Lock className="h-4 w-4 shrink-0 text-slate-400" />
+                  <div className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-3 transition-all focus-within:border-sky-300 focus-within:bg-white focus-within:ring-4 focus-within:ring-sky-100/70">
+                    <Lock className="h-4 w-4 shrink-0 text-slate-400" />
 
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Votre mot de passe"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    className="w-full border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400"
-                  />
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Votre mot de passe"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      className="w-full border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                    />
 
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((v) => !v)}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-                    aria-label={showPassword ? "Masquer" : "Afficher"}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </button>
-                </div>
-              </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                      aria-label={showPassword ? "Masquer" : "Afficher"}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </label>
+              )}
 
               {loginError && (
                 <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -246,25 +298,57 @@ export default function ConnexionPage() {
                 </div>
               )}
 
+              {resetInfo && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                  {resetInfo}
+                </div>
+              )}
+
               <button
                 type="button"
-                onClick={handleLogin}
+                onClick={mode === "login" ? handleLogin : handleResetPassword}
                 disabled={loginLoading}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-sky-500 px-5 py-3.5 text-sm font-medium text-white shadow-md shadow-sky-200/60 transition-all hover:from-indigo-500 hover:to-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <span>{loginLoading ? "Connexion en cours..." : "Se connecter"}</span>
+                <span>
+                  {loginLoading
+                    ? "Un instant..."
+                    : mode === "login"
+                    ? "Se connecter"
+                    : "Envoyer le lien de réinitialisation"}
+                </span>
                 {!loginLoading && <ArrowRight className="h-4 w-4" />}
               </button>
             </div>
 
-            <div className="mt-5 text-sm text-slate-500">
-              Pas encore de compte ?{" "}
-              <Link
-                to="/inscription"
-                className="font-medium text-sky-600 transition hover:text-sky-700"
+            {mode === "login" ? (
+              <div className="mt-5 text-sm text-slate-500">
+                Pas encore de compte ?{" "}
+                <Link
+                  to="/inscription"
+                  className="font-medium text-sky-600 transition hover:text-sky-700"
+                >
+                  Créer un compte
+                </Link>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => switchMode("login")}
+                className="mt-5 text-sm font-medium text-sky-600 transition hover:text-sky-700"
               >
-                Créer un compte
-              </Link>
+                ← Retour à la connexion
+              </button>
+            )}
+
+            <div className="mt-4 text-xs text-slate-400">
+              Email oublié ?{" "}
+              <a
+                href="mailto:support@mimmoza.com"
+                className="text-slate-500 transition hover:text-slate-700"
+              >
+                Contactez le support
+              </a>
             </div>
 
             <div className="mt-6 flex flex-wrap justify-center gap-x-4 gap-y-2 border-t border-slate-200 pt-4 text-xs text-slate-500">

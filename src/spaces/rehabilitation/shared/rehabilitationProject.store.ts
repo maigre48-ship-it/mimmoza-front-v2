@@ -37,6 +37,8 @@ export interface RehabilitationAnalysisResult {
   summary?: string;
   detectedSpatialElements?: Record<string, string[]>;
   functionalObservations?: string[];
+  // V1.6 — anomalies persistées pour le Copilot (subset de PlanAnalysisResult.issues)
+  issues?: Array<{ severity?: string; title?: string; category?: string }>;
   spatialIntelligence?: {
     constraints?: string[];
     opportunities?: string[];

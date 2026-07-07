@@ -296,7 +296,7 @@ const SPACES: Array<{
 }> = [
   { id: "marchand",       label: "Espace Investisseur",   shortLabel: "Investisseur",   description: "Opportunites, scoring, rentabilite, execution et sortie",   icon: PieChart,  path: "/marchand-de-bien" },
   { id: "promoteur",      label: "Espace Promoteur",      shortLabel: "Promoteur",      description: "Faisabilite, SDP potentielle et bilan promoteur",           icon: Building2, path: "/promoteur" },
-  { id: "rehabilitation", label: "Espace Réhabilitation", shortLabel: "Réhabilitation", description: "Audit technique, conformité, chiffrage et valorisation",    icon: Hammer,    path: "/rehabilitation" },
+  { id: "rehabilitation", label: "Espace Analyse de plan", shortLabel: "Analyse de plan", description: "Lecture de plan, conformité, chiffrage et valorisation",    icon: ScanSearch, path: "/rehabilitation" },
   { id: "agence",         label: "Espace Apporteur",      shortLabel: "Apporteur",      description: "Déposer un bien et générer des opportunités promoteur",     icon: Users,     path: "/apporteur" },
 ];
 
@@ -449,6 +449,13 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       ],
     },
     {
+      id: "planning-travaux",
+      label: "Planning travaux",
+      items: [
+        { label: "Planning travaux", path: "/rehabilitation/planning-travaux", icon: Building, end: true },
+      ],
+    },
+    {
       id: "synthese-audit",
       label: "Synthèse audit",
       items: [
@@ -564,7 +571,7 @@ function TopNavigation(props: {
             </NavLink>
 
             <div className="flex min-w-0 flex-1 items-center justify-center">
-              <nav className="flex items-center gap-1.5 overflow-x-auto rounded-2xl border border-slate-200/80 bg-slate-50/80 p-1.5 scrollbar-hide">
+              <nav className="flex items-center gap-1 overflow-x-auto rounded-2xl border border-slate-200/80 bg-slate-50/80 p-1 scrollbar-hide">
                 {SPACES.map(function (space) {
                   const Icon     = space.icon;
                   const isActive = currentSpace === space.id;
@@ -576,7 +583,7 @@ function TopNavigation(props: {
                       key={space.id}
                       href={space.path}
                       onClick={handleSpaceClickFactory(space.id, space.path)}
-                      className="group relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all"
+                      className="group relative flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-all"
                       style={anchorStyle}
                     >
                       <Icon className={iconCls} />
@@ -590,7 +597,7 @@ function TopNavigation(props: {
                 <NavLink
                   to="/analyse-rapide"
                   onClick={() => onChangeSpace("none")}
-                  className="group relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all"
+                  className="group relative flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-all"
                   style={function (navArgs) {
                     if (navArgs.isActive) return { background: "linear-gradient(135deg, #6366f1 0%, #818cf8 100%)", color: "white" };
                     return { color: "#64748b" };
@@ -605,7 +612,7 @@ function TopNavigation(props: {
                 <NavLink
                   to="/opportunites"
                   onClick={() => onChangeSpace("none")}
-                  className="group relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all"
+                  className="group relative flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-all"
                   style={function (navArgs) {
                     if (navArgs.isActive) return { background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)", color: "white" };
                     return { color: "#64748b" };
@@ -620,7 +627,7 @@ function TopNavigation(props: {
                 <NavLink
                   to="/api"
                   onClick={() => onChangeSpace("none")}
-                  className="group relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all"
+                  className="group relative flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-all"
                   style={function (navArgs) {
                     if (navArgs.isActive) return { background: "linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%)", color: "white" };
                     return { color: "#64748b" };
@@ -1077,7 +1084,7 @@ export function AppShell(props: AppShellProps) {
     if (currentSpace === "marchand" && isMarchandPremiumPath(targetPath)) {
       const deal = ensureActiveDeal();
       if (!deal) {
-        navigate("/marchand-de-bien");
+        navigate(targetPath);   // pas de deal → on laisse la page gérer son état vide
         return;
       }
       if (deal.premiumUnlocked) {

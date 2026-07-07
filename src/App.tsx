@@ -137,6 +137,7 @@ import { ApporteurDeposerPage } from "./spaces/apporteur/pages/DeposerPage";
 import RehabilitationLayout from "./spaces/rehabilitation/RehabilitationLayout";
 import AnalysePlanPage from "./spaces/rehabilitation/pages/AnalysePlanPage";
 import ConformitePage from "./spaces/rehabilitation/pages/ConformitePage";
+import RehabilitationPlanningTravauxPage from "./spaces/rehabilitation/pages/PlanningTravauxPage";
 import ProjetsPage from "./spaces/rehabilitation/pages/ProjetsPage";
 import RehabilitationRenduTravauxPage from "./spaces/rehabilitation/pages/RenduTravauxPage";
 import SyntheseAuditPage from "./spaces/rehabilitation/pages/SyntheseAuditPage";
@@ -435,9 +436,10 @@ function AppRoot() {
             <Route path="projets"        element={<ProjetsPage />} />
             <Route path="vue-ensemble"   element={<VueEnsemblePage />} />
             <Route path="conformite"     element={<ConformitePage />} />
-            <Route path="analyse-plan"   element={<AnalysePlanPage />} />
-            <Route path="travaux"        element={<RehabilitationTravauxPage />} />
-            <Route path="synthese-audit" element={<SyntheseAuditPage />} />
+            <Route path="analyse-plan"     element={<AnalysePlanPage />} />
+            <Route path="travaux"          element={<RehabilitationTravauxPage />} />
+            <Route path="planning-travaux" element={<RehabilitationPlanningTravauxPage />} />
+            <Route path="synthese-audit"   element={<SyntheseAuditPage />} />
             <Route path="valorisation"   element={<RehabilitationValorisationPage />} />
             <Route path="rendu-travaux"  element={<RehabilitationRenduTravauxPage />} />
 

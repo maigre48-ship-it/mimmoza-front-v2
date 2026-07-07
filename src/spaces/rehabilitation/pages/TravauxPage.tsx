@@ -20,6 +20,8 @@ import type {
   TravauxSimulationV1,
   TriChoice,
 } from "../../investisseur/shared/travauxSimulation.types";
+import { setRehabTravauxSnapshot } from "../shared/rehabTravauxSnapshot.store";
+import { getActiveRehabSurface } from "../lib/activeProjectData";
 
 /* ================================================================== */
 /*  Thème Réhabilitation                                               */
@@ -735,6 +737,12 @@ const TravauxPage: React.FC = () => {
   const [piecesUI,         setPiecesUI]         = useState<PieceUI[]>([]);
   const [disabledLots,     setDisabledLots]     = useState<Set<string>>(new Set());
 
+  // Pré-remplit la surface depuis le projet réhab actif (reste éditable).
+  useEffect(() => {
+    const s = getActiveRehabSurface();
+    if (s && s > 0) setSurface(s);
+  }, []);
+
   const handleToggleLot = useCallback((code: string) => {
     if (code === "__reset__") { setDisabledLots(new Set()); return; }
     setDisabledLots((prev) => {
@@ -769,7 +777,22 @@ const TravauxPage: React.FC = () => {
   useEffect(() => {
     if (persistTimerRef.current !== null) clearTimeout(persistTimerRef.current);
     persistTimerRef.current = setTimeout(() => {
-      // TODO: brancher ici sur le store Réhabilitation si nécessaire
+      setRehabTravauxSnapshot(
+        result.total > 0 && simulation.surfaceTotalM2 > 0
+          ? {
+              budgetHT:        result.total,
+              bufferPct:       result.bufferPct,
+              bufferAmount:    result.bufferAmount,
+              totalWithBuffer: result.totalWithBuffer,
+              costPerM2:       result.costPerM2,
+              surfaceM2:       simulation.surfaceTotalM2,
+              renovationLevel: simulation.renovationLevel,
+              complexity:      simulation.complexity,
+              range:           simulation.range,
+              updatedAt:       simulation.updatedAt,
+            }
+          : null
+      );
       persistTimerRef.current = null;
     }, PERSIST_DEBOUNCE_MS);
     return () => { if (persistTimerRef.current !== null) clearTimeout(persistTimerRef.current); };

@@ -158,7 +158,10 @@ export function useCopilotContext() {
       'generique';
 
     // ── Budget travaux : lecture directe localStorage (indépendant du montage) ─
-    const renovationBudget = readTravauxBudgetFromStorage();
+    // On n'injecte PAS le budget travaux sur la page Analyse de plan (réhab) :
+    // il n'a pas de sens dans ce contexte et polluait les réponses du Copilot.
+    const isRehabPlanPage = route.includes('/rehabilitation/analyse-plan');
+    const renovationBudget = isRehabPlanPage ? null : readTravauxBudgetFromStorage();
 
     // ── predictive_snapshot : override > hints stockés dans le store ───────────
     const basePredictive: PredictiveSnapshotContext | null =

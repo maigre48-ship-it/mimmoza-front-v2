@@ -131,6 +131,7 @@ function buildEnrichedContext(
   // Donnees visibles a l'ecran de la page courante (ex : valorisation
   // rehabilitation). Pousse par la page via setActiveCopilotContext.
   const pageSnapshot = active.pageSnapshot ?? null;
+  console.log("[copilotClient] active.pageSnapshot au moment de l'envoi:", JSON.stringify(active.pageSnapshot));
 
   // ── Construction du contexte enrichi ──────────────────────
   const enriched: CopilotMimmozaContext = {

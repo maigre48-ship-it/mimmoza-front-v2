@@ -49,6 +49,9 @@ const eur = (n: number) =>
     maximumFractionDigits: 0,
   });
 
+const fmtLongDate = (d: Date) =>
+  d.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+
 const clamp = (n: number, min: number, max: number) =>
   Math.max(min, Math.min(max, n));
 
@@ -119,8 +122,15 @@ const normalizeTaskValues = (patch: Partial<WorkTask>): Partial<WorkTask> => {
   return normalized;
 };
 
+function todayISO(): string {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
 const DEFAULT_GLOBAL = {
-  startDate: "2026-02-03",
+  startDate: todayISO(),
   bufferPct: 10,
   dailyHoldingCost: 35,
 };
@@ -346,7 +356,12 @@ export default function MarchandExecution() {
     const saved = snapshot.executionByDeal[activeDealId];
 
     if (saved) {
-      setGlobal(saved.global ?? { ...DEFAULT_GLOBAL });
+      const savedGlobal = saved.global ?? { ...DEFAULT_GLOBAL };
+      // Migration : purge l'ancienne date de démarrage codée en dur.
+      if (!savedGlobal.startDate || savedGlobal.startDate === "2026-02-03") {
+        savedGlobal.startDate = todayISO();
+      }
+      setGlobal(savedGlobal);
       setTasks(Array.isArray(saved.tasks) ? (saved.tasks as WorkTask[]) : [...DEFAULT_TASKS]);
       setManualPhases(Array.isArray(saved.phases) ? (saved.phases as TimelinePhase[]) : [...DEFAULT_MANUAL_PHASES]);
       setPlanningMode(saved.planningMode ?? DEFAULT_PLANNING_MODE);
@@ -476,6 +491,15 @@ export default function MarchandExecution() {
       : 0;
   }, [planningMode, autoPhases, manualPhases]);
 
+  // Date de livraison estimée = date de début + durée du planning affiché.
+  const deliveryDate = useMemo(() => {
+    const base = new Date(global.startDate);
+    if (Number.isNaN(base.getTime())) return null;
+    const d = new Date(base);
+    d.setDate(d.getDate() + Math.max(0, planningEndDay));
+    return d;
+  }, [global.startDate, planningEndDay]);
+
   // Holding & cash total basés sur la durée du planning (pas sur les tâches).
   const holdingCost = planningEndDay * Math.max(0, global.dailyHoldingCost);
   const cashNeededTotal = stats.remaining + holdingCost;
@@ -511,35 +535,6 @@ export default function MarchandExecution() {
   const removeTask = (id: string) => {
     setTasks((prev) => prev.filter((t) => t.id !== id));
   };
-
-  const riskBadge = () => {
-    if (stats.riskScore <= 1.4) {
-      return {
-        text: "Risque faible",
-        bg: "rgba(16,185,129,0.12)",
-        bd: "rgba(16,185,129,0.28)",
-        c: "#065f46",
-      };
-    }
-
-    if (stats.riskScore <= 2.1) {
-      return {
-        text: "Risque moyen",
-        bg: "rgba(245,158,11,0.12)",
-        bd: "rgba(245,158,11,0.28)",
-        c: "#92400e",
-      };
-    }
-
-    return {
-      text: "Risque élevé",
-      bg: "rgba(239,68,68,0.12)",
-      bd: "rgba(239,68,68,0.28)",
-      c: "#991b1b",
-    };
-  };
-
-  const rb = riskBadge();
 
   if (!activeDealId || !activeDeal) {
     return (
@@ -640,25 +635,25 @@ export default function MarchandExecution() {
           </div>
         </div>
 
-        <div
-          style={{
-            padding: "9px 18px",
-            borderRadius: 10,
-            border: "none",
-            background: "rgba(255,255,255,0.18)",
-            color: "#fff",
-            fontWeight: 600,
-            fontSize: 13,
-            cursor: "default",
-            flexShrink: 0,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <AlertTriangle size={15} />
-          {rb.text}
-        </div>
+        {deliveryDate && (
+          <div
+            style={{
+              background: "rgba(255,255,255,0.15)",
+              border: "1px solid rgba(255,255,255,0.25)",
+              borderRadius: 12,
+              padding: "12px 18px",
+              color: "#fff",
+              flexShrink: 0,
+            }}
+          >
+            <div style={{ fontSize: 11, opacity: 0.85, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>
+              Livraison estimée
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>
+              {fmtLongDate(deliveryDate)}
+            </div>
+          </div>
+        )}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>

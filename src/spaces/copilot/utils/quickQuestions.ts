@@ -499,7 +499,7 @@ const ROUTE_QUESTIONS: RouteQuestions[] = [
   {
     prefix: '/rehabilitation/analyse-plan',
     quick: [
-      { label: '📐 Surface cohérente avec le permis ?',  prompt: "À partir de l'analyse de plan disponible, la surface utile est-elle cohérente avec la surface indiquée au permis ou à l'état des lieux ?" },
+      { label: '📐 Surface retenue cohérente ?',         prompt: "À partir de l'analyse de plan disponible, la surface retenue est-elle cohérente avec la somme des pièces détectées et l'usage visé ?" },
       { label: '⚠️ Anomalies relevées sur le plan ?',    prompt: "Quelles anomalies ou incohérences ont été relevées par l'analyse de plan sur ce bâtiment ?" },
       { label: '✅ Plan compatible avec l\'usage visé ?', prompt: "Selon l'analyse de plan, ce bâtiment permet-il l'usage envisagé sans modification majeure de la structure ou des circulations ?" },
     ],

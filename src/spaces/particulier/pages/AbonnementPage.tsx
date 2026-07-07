@@ -8,10 +8,11 @@
 //   → mise a jour immediate quand /admin/tarifs enregistre, meme onglet
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { PricingEntry } from "@/spaces/admin/pages/Tarifs";
+import { ACTION_COSTS } from "@/lib/billing/actionCosts";
 import {
   ArrowRight,
   Building2,
+  Calculator,
   CheckCircle2,
   ChevronDown,
   Coins,
@@ -25,6 +26,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { loadPricing, type PricingEntry } from "@/spaces/admin/pages/Tarifs";
 
 // ── Lecture du pricing depuis localStorage ────────────────────────────────────
 
@@ -346,12 +348,18 @@ function buildSections(
       summaryUnit: "le pack",
       offers: applyOffers(rawJetons),
       extras: (
-        <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4">
-          <p className="text-[11px] leading-4 text-violet-600">
-            <strong className="font-semibold text-violet-800">Bon a savoir.</strong>{" "}
-            Les jetons sont utilisables dans tous les espaces Mimmoza. Les jetons inclus dans un
-            abonnement expirent au bout de 30 jours ; les packs achetes restent acquis.
-          </p>
+        <div className="space-y-4">
+          <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4">
+            <p className="text-[11px] leading-4 text-violet-600">
+              <strong className="font-semibold text-violet-800">Bon a savoir.</strong>{" "}
+              Les jetons sont utilisables dans tous les espaces Mimmoza. Les jetons inclus dans un
+              abonnement expirent au bout de 30 jours ; les packs achetes restent acquis.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <TokenCalculator />
+            <ActionCostTable />
+          </div>
         </div>
       ),
     },
@@ -446,6 +454,110 @@ function buildSections(
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
+
+// ─── Calculateur de jetons ───────────────────────────────────────────────────
+const CALC_ACTIONS: { key: keyof typeof ACTION_COSTS; label: string }[] = [
+  { key: "facade_high",      label: "Façades IA (HD)" },
+  { key: "facade_medium",    label: "Façades IA (standard)" },
+  { key: "copilot_advanced", label: "Copilot avancé" },
+  { key: "copilot_quick",    label: "Copilot rapide" },
+];
+
+// Prix dégressif : le €/jeton baisse par palier de volume.
+function tokenPriceEUR(tokens: number): number {
+  let perToken: number;
+  if (tokens >= 5000)      perToken = 0.030;
+  else if (tokens >= 2000) perToken = 0.034;
+  else if (tokens >= 1000) perToken = 0.036;
+  else if (tokens >= 500)  perToken = 0.040;
+  else                     perToken = 0.045;
+  return Math.round(tokens * perToken);
+}
+
+function TokenCalculator() {
+    const [tokens, setTokens] = useState(1500);
+    const price = tokenPriceEUR(tokens);
+    const perToken = (price / tokens) * 100;
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex items-center gap-2 mb-1">
+        <Calculator className="w-4 h-4 text-violet-600" />
+        <h3 className="text-sm font-semibold text-slate-700">Que puis-je faire avec mes jetons ?</h3>
+      </div>
+      <p className="text-xs text-slate-400 mb-5">Déplacez le curseur pour visualiser la valeur de vos jetons.</p>
+      <div className="flex items-end justify-between mb-3">
+          <div className="flex items-baseline gap-2">
+            <span className="text-4xl font-bold text-slate-900 tabular-nums">{tokens.toLocaleString("fr-FR")}</span>
+            <span className="text-sm text-slate-500">jetons</span>
+          </div>
+          <div className="text-right">
+            <div className="text-2xl font-bold text-violet-600 tabular-nums">{price.toLocaleString("fr-FR")} €</div>
+            <div className="text-[10px] text-slate-400">{perToken.toFixed(1).replace(".", ",")} cts / jeton</div>
+          </div>
+        </div>
+        <input
+          type="range" min={250} max={10000} step={50} value={tokens}
+          onChange={(e) => setTokens(Number(e.target.value))}
+          className="w-full accent-violet-600"
+          aria-label="Nombre de jetons à simuler"
+        />
+        <div className="flex justify-between text-[11px] text-slate-400 mt-1">
+          <span>10 €</span><span>300 €</span>
+        </div>
+      <div className="mt-6 grid grid-cols-2 gap-3">
+        {CALC_ACTIONS.map((a) => {
+          const cost = ACTION_COSTS[a.key];
+          const count = Math.floor(tokens / cost);
+          return (
+            <div key={a.key} className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+              <div className="text-2xl font-bold text-slate-900 tabular-nums">{count.toLocaleString("fr-FR")}</div>
+              <div className="text-xs text-slate-500 leading-tight mt-0.5">{a.label}</div>
+              <div className="text-[10px] text-slate-400 mt-1">{cost} jetons / unité</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Tableau du coût de chaque action ────────────────────────────────────────
+const ACTION_TABLE: { key: keyof typeof ACTION_COSTS; label: string; desc: string }[] = [
+  { key: "facade_high",       label: "Façade IA — haute définition", desc: "Rendu avant/après pleine qualité" },
+  { key: "facade_medium",     label: "Façade IA — standard",         desc: "Rendu avant/après qualité moyenne" },
+  { key: "facade_low",        label: "Façade IA — éco",              desc: "Rendu avant/après rapide" },
+  { key: "refresh_veille",    label: "Rafraîchissement veille",      desc: "Ingestion de nouvelles annonces" },
+  { key: "copilot_advanced",  label: "Copilot avancé",               desc: "Raisonnement structuré et sourcé" },
+  { key: "rendu_ia",          label: "Rendu travaux IA",             desc: "Projection du bien après travaux" },
+  { key: "copilot_quick",     label: "Copilot rapide",               desc: "Réponse concise et directe" },
+  { key: "scan_opportunites", label: "Scan Opportunités",            desc: "Lecture et scoring des annonces" },
+  { key: "analyse_rapide",    label: "Analyse rapide",               desc: "Estimation express d'un bien" },
+];
+
+function ActionCostTable() {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+      <div className="px-5 py-3 bg-slate-50 border-b border-slate-100">
+        <span className="text-xs font-semibold tracking-wider uppercase text-slate-500">Coût par action IA</span>
+      </div>
+      <div className="divide-y divide-slate-50">
+        {ACTION_TABLE.map((a) => (
+          <div key={a.key} className="flex items-center gap-3 px-5 py-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-slate-800">{a.label}</div>
+              <div className="text-xs text-slate-400 truncate">{a.desc}</div>
+            </div>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <Coins className="w-3.5 h-3.5 text-violet-600" />
+              <span className="text-sm font-bold text-slate-900 tabular-nums">{ACTION_COSTS[a.key]}</span>
+              <span className="text-xs text-slate-400">jetons</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function AbonnementPage() {
   const navigate = useNavigate();

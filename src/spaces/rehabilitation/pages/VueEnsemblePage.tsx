@@ -110,8 +110,9 @@ function Field({
 /* ── Page ── */
 const VueEnsemblePage: React.FC = () => {
   const navigate  = useNavigate();
-  const [data,    setData]    = useState<OverviewData>(INITIAL);
-  const [saved,   setSaved]   = useState(false);
+  const [data,     setData]     = useState<OverviewData>(INITIAL);
+  const [saved,    setSaved]    = useState(false);
+  const [hydrated, setHydrated] = useState(false);
 
   /* Charger depuis localStorage (cle dediee au projet actif) */
   useEffect(() => {
@@ -119,7 +120,19 @@ const VueEnsemblePage: React.FC = () => {
       const raw = userStorage.getItem(overviewKey());
       if (raw) setData({ ...INITIAL, ...JSON.parse(raw) });
     } catch { /* silent */ }
+    setHydrated(true);
   }, []);
+
+  /* Autosave : persiste à chaque changement (après hydratation) pour éviter
+     la perte de données si l'utilisateur quitte sans cliquer Enregistrer.
+     Le flag `hydrated` empêche d'écraser le storage avec INITIAL avant que
+     le chargement initial n'ait injecté les vraies données. */
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      userStorage.setItem(overviewKey(), JSON.stringify({ ...data, savedAt: new Date().toISOString() }));
+    } catch { /* silent */ }
+  }, [data, hydrated]);
 
   function update<K extends keyof OverviewData>(key: K, val: OverviewData[K]) {
     setData((prev) => ({ ...prev, [key]: val }));

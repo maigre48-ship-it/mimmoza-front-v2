@@ -149,13 +149,10 @@ const SyntheseAuditPage: React.FC = () => {
 
   useEffect(() => { loadAll(); }, []);
 
-  /* ── Calcul budget total ── */
+  /* ── Enveloppes (deux estimateurs distincts — Option 1, on ne fusionne pas) ── */
   const budgetConformiteMin = conformite?.totalMin ?? 0;
   const budgetConformiteMax = conformite?.totalMax ?? 0;
   const budgetTravaux       = travaux?.totalWithBuffer ?? travaux?.total ?? 0;
-  const budgetTotal         = (budgetConformiteMin > 0 || budgetTravaux > 0)
-    ? (budgetConformiteMin + budgetConformiteMax) / 2 + budgetTravaux
-    : 0;
 
   /* ── Points bloquants depuis lots conformité (heuristique) ── */
   const lotsBloquants = (conformite?.lots ?? []).filter((l) =>
@@ -268,16 +265,24 @@ const SyntheseAuditPage: React.FC = () => {
             </div>
           </div>
 
-          {/* KPIs */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 20 }}>
+          {/* KPIs — deux enveloppes distinctes (pas de total fusionné) */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginTop: 20 }}>
             {[
-              { label: "Budget conformité", value: budgetConformiteMin > 0 ? `${fmt(budgetConformiteMin)} – ${fmt(budgetConformiteMax)}` : "—" },
-              { label: "Budget travaux", value: budgetTravaux > 0 ? fmt(budgetTravaux) : "—" },
-              { label: "Enveloppe estimée", value: budgetTotal > 0 ? fmt(budgetTotal) : "—" },
+              {
+                label: "Enveloppe conformité (indicative)",
+                value: budgetConformiteMin > 0 ? `${fmt(budgetConformiteMin)} – ${fmt(budgetConformiteMax)}` : "—",
+                hint: "Fourchette du risque réglementaire",
+              },
+              {
+                label: "Budget travaux (chantier)",
+                value: budgetTravaux > 0 ? fmt(budgetTravaux) : "—",
+                hint: budgetTravaux > 0 ? "Estimatif détaillé + buffer" : "Lancez la Simulation travaux",
+              },
             ].map((kpi) => (
               <div key={kpi.label} style={{ background: "#fff", borderRadius: 12, padding: "14px 16px", textAlign: "center", border: "1px solid #e2e8f0" }}>
                 <p style={{ fontSize: 10, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, margin: "0 0 6px" }}>{kpi.label}</p>
-                <p style={{ fontSize: 16, fontWeight: 800, color: "#1e293b", margin: 0 }}>{kpi.value}</p>
+                <p style={{ fontSize: 16, fontWeight: 800, color: "#1e293b", margin: "0 0 4px" }}>{kpi.value}</p>
+                <p style={{ fontSize: 10, color: "#cbd5e1", margin: 0 }}>{kpi.hint}</p>
               </div>
             ))}
           </div>
@@ -315,7 +320,7 @@ const SyntheseAuditPage: React.FC = () => {
 
         {/* ── Conformité ── */}
         <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: 24 }}>
-          <SectionTitle icon={<ShieldCheck size={15} />} title="Budget de conformité réglementaire" />
+          <SectionTitle icon={<ShieldCheck size={15} />} title="Enveloppe de mise en conformité (indicative)" />
           {conformite ? (
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, padding: "12px 16px", background: "#fff7ed", borderRadius: 12, border: "1px solid #fed7aa" }}>
@@ -372,7 +377,7 @@ const SyntheseAuditPage: React.FC = () => {
 
         {/* ── Travaux ── */}
         <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: 24 }}>
-          <SectionTitle icon={<Calculator size={15} />} title="Simulation travaux" />
+          <SectionTitle icon={<Calculator size={15} />} title="Simulation travaux (chantier détaillé)" />
           {travaux && (travaux.total ?? 0) > 0 ? (
             <div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 16 }}>
@@ -403,7 +408,7 @@ const SyntheseAuditPage: React.FC = () => {
             </div>
           ) : (
             <EmptyState
-              label="Aucune simulation travaux. Configurez le simulateur."
+              label="Aucune simulation travaux enregistrée. Lancez la Simulation travaux pour alimenter la synthèse."
               action="Aller à Travaux"
               onAction={() => navigate("/rehabilitation/travaux")}
             />

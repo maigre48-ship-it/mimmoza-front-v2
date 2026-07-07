@@ -245,6 +245,16 @@ export interface MimmozaContext {
   predictive_snapshot?: PredictiveSnapshotContext | null;
   // V1.3 — résultat du valuation engine (valorisation + rendements + analyse)
   valuation_engine?: ValuationEngineContext | null;
+  // V1.6 — analyse de plan (Réhabilitation) : summary, pièces, surface, anomalies
+  plan_analysis?: PlanAnalysisContext | null;
+}
+
+export interface PlanAnalysisContext {
+  summary: string | null;
+  surface_retenue_m2: number | null;
+  room_count: number;
+  rooms: Array<{ label: string; surfaceM2: number }>;
+  anomalies: Array<{ severity?: string; title?: string; category?: string }>;
 }
 
 export interface ParcelContextRef {

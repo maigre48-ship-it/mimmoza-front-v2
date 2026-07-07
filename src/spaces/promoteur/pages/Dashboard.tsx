@@ -30,6 +30,7 @@ import {
 import type { PromoteurStudySummary } from "../shared/promoteurStudy.types";
 import { PromoteurStudyService } from "../shared/promoteurStudyService";
 import { userStorage } from "@/lib/storage/userScopedStorage";
+import { supabase } from "@/supabaseClient";
 
 // ─── Design tokens Promoteur ──────────────────────────────────────────────────
 import { HeroPrimaryButton, PromoteurPageHero } from "../shared/components/PromoteurPageHero";

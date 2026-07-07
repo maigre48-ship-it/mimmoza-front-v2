@@ -22,6 +22,7 @@ import {
   useRehabilitationProject,
   type RehabilitationAnalysisResult,
 } from "../shared/rehabilitationProject.store";
+import { getActiveRehabProject } from "../lib/activeProjectData";
 
 import { PlanOverlayViewer } from "../components/PlanOverlayViewer";
 import { extractPlanMetadata } from "../plan-reader/planMetadataExtractor";
@@ -35,6 +36,11 @@ import type {
   PlanOverlaySnapshot, RawAIResult,
 } from '../plan-reader/types';
 import { EMPTY_GEOMETRY, confidenceLabel } from '../plan-reader/types';
+import { transcribePlanReal } from "../services/transcribePlanReal";
+import { transcriptionToGeometry } from "../plan-reader/transcriptionToGeometry";
+import { sumRoomSurfaces } from "../plan-reader/sumRoomSurfaces";
+import { setActiveCopilotContext } from "@/spaces/copilot/store/activeCopilotContext.store";
+import { evaluatePlanQuality, type QualityVerdict } from "../cv/planQualityGate";
 
 // ─── Thème ────────────────────────────────────────────────────────────────────
 
@@ -621,7 +627,7 @@ const SurfaceArbitrationCard: React.FC<{ snapshot: PlanOverlaySnapshot }> = ({ s
         <div className="mt-1 text-2xl font-bold" style={{ color: "#7c2d12" }}>
           {v.surfaceRetenueM2 !== null ? `${v.surfaceRetenueM2.toFixed(1)} m²` : "—"}
         </div>
-        <div className="mt-1 text-[11px]" style={{ color: "#9a3412" }}>Utilisée par la page Création de plan</div>
+        <div className="mt-1 text-[11px]" style={{ color: "#9a3412" }}>Surface retenue pour le projet</div>
       </div>
       <div className="p-4 rounded-xl border border-slate-200 bg-white">
         <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">Surface officielle (plan)</div>
@@ -645,11 +651,26 @@ const SurfaceArbitrationCard: React.FC<{ snapshot: PlanOverlaySnapshot }> = ({ s
   );
 };
 
+const CalquesUnavailableBanner: React.FC<{ message: string }> = ({ message }) => (
+  <div className="flex items-start gap-3 p-4 rounded-xl border border-amber-200 bg-amber-50">
+    <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+    <div className="flex-1">
+      <p className="text-sm font-semibold text-amber-800 mb-1">Calques géométriques indisponibles</p>
+      <p className="text-xs text-amber-700 leading-relaxed">{message}</p>
+      <p className="text-[11px] text-amber-600 mt-1.5">
+        L'analyse réglementaire ci-dessous reste valable — seuls les calques superposés nécessitent un export CAO couleur net (≥ 1500 px).
+      </p>
+    </div>
+  </div>
+);
+
 const PlanOverlayInsightSection: React.FC<{
   snapshot: PlanOverlaySnapshot;
   onToggleLayer: (layer: keyof LayerVisibility) => void;
-}> = ({ snapshot, onToggleLayer }) => {
+  quality: QualityVerdict | null;
+}> = ({ snapshot, onToggleLayer, quality }) => {
   const hasImage = !!snapshot.sourceImage.dataUrl && snapshot.sourceImage.widthPx > 0;
+  const calquesEligible = quality ? quality.eligible : true;
   return (
     <Card className="p-6">
       <SectionTitle icon={<Layers className="w-4 h-4" />} title="Lecture du plan — calques superposés" badge="Pipeline v1" />
@@ -657,7 +678,9 @@ const PlanOverlayInsightSection: React.FC<{
       <div className={snapshot.validation.surfaceIARejetee ? "mt-4" : ""}>
         <SurfaceArbitrationCard snapshot={snapshot} />
       </div>
-      {hasImage ? (
+      {!calquesEligible ? (
+        <CalquesUnavailableBanner message={quality?.message ?? "Calques indisponibles pour ce plan."} />
+      ) : hasImage ? (
         <PlanOverlayViewer snapshot={snapshot} onToggleLayer={onToggleLayer} maxHeight={520} />
       ) : (
         <div className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50">
@@ -947,8 +970,21 @@ export const AnalysePlanPage: React.FC = () => {
   const [loadingStep, setLoadingStep] = useState(0);
   const [result,      setResult]      = useState<PlanAnalysisResult | null>(null);
   const [error,       setError]       = useState<AnalysisError | null>(null);
+  const [planQuality, setPlanQuality] = useState<QualityVerdict | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Pré-remplit les paramètres depuis le projet réhab actif (restent éditables).
+  useEffect(() => {
+    const p = getActiveRehabProject();
+    if (!p) return;
+    setParams((prev) => ({
+      ...prev,
+      estimatedSurface: p.surfaceM2 ?? prev.estimatedSurface,
+      targetUsage:      p.usageCible || prev.targetUsage,
+      isErp:            p.erp === "oui" ? true : prev.isErp,
+    }));
+  }, []);
 
   const { plan: storePlan, updatePlan } = useRehabilitationProject();
   const [overlaySnapshot, updateOverlay] = usePlanOverlaySnapshot();
@@ -977,6 +1013,11 @@ export const AnalysePlanPage: React.FC = () => {
   const handleFile = useCallback((file: File) => {
     if (!ACCEPTED_TYPES.includes(file.type)) return;
     if (plan?.previewUrl) URL.revokeObjectURL(plan.previewUrl);
+    setPlanQuality(null);
+    setResult(null);          // purge l'analyse précédente
+    setError(null);
+    // purge toute surface/géométrie résiduelle d'un plan précédent
+    updateOverlay((s) => ({ ...(s ?? createEmptySnapshot()), detectedGeometry: EMPTY_GEOMETRY }));
     setPlan({ file, previewUrl: URL.createObjectURL(file) });
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -1055,9 +1096,64 @@ export const AnalysePlanPage: React.FC = () => {
       setResult(analysisResult);
       setStatus("done");
 
+      // ── V1.6 — pousse le plan au Copilot via pageSnapshot (canal lu par copilotClient) ──
+      {
+        const rc = sumRoomSurfaces(analysisResult);
+        // Surface officielle recalculée en local (spatialMetrics est déclaré plus bas)
+        const arLocal = analysisResult as unknown as Record<string, unknown>;
+        const sm = arLocal.spatialMetrics as { totalSurface?: number | null } | undefined;
+        const officialLocal =
+          typeof sm?.totalSurface === "number" && sm.totalSurface > 0 ? sm.totalSurface : null;
+
+        const anomalies = (analysisResult.issues ?? [])
+          .filter((i) => i.severity === "non_conforme" || i.severity === "a_verifier")
+          .map((i) => `${i.severity === "non_conforme" ? "❌" : "⚠️"} ${i.title ?? i.category ?? "—"}`)
+          .slice(0, 20);
+
+        console.log("[V1.6] push plan au Copilot:", {
+          surface: officialLocal ?? rc.total,
+          rooms: rc.count,
+          anomalies: anomalies.length,
+        });
+
+        setActiveCopilotContext({
+          vertical: "rehabilitation",
+          pageContext: { space: "rehabilitation", tab: "analyse-plan" },
+          pageSnapshot: {
+            plan_summary: analysisResult.summary ?? null,
+            plan_surface_retenue_m2: officialLocal ?? rc.total,
+            plan_room_count: rc.count,
+            plan_rooms: rc.rooms.length
+              ? rc.rooms.map((r) => `${r.label} (${r.surfaceM2} m²)`).join(", ")
+              : null,
+            plan_anomalies: anomalies.length ? anomalies.join(" | ") : null,
+          },
+        });
+      }
+
       // ── (1) Store rehabilitation ──────────────────────────────────────────
       const ar = analysisResult as unknown as Record<string, unknown>;
-      const spatial: Partial<DetectedSpatialElements> = analysisResult.detectedSpatialElements ?? {};
+      const spatial: Partial<DetectedSpatialElements> =
+        analysisResult.detectedSpatialElements ??
+        (ar.spatialElements as Partial<DetectedSpatialElements>) ??
+        (ar.rooms as Partial<DetectedSpatialElements>) ??
+        {};
+
+      console.log(
+        "[AnalysePlanPage v11] detectedSpatialElements keys:",
+        Object.keys(spatial),
+        "| total items:",
+        Object.values(spatial).reduce((n, v) => n + (Array.isArray(v) ? v.length : 0), 0),
+      );
+      console.log(
+        "[v11] RAW detectedSpatialElements:",
+        JSON.stringify(analysisResult.detectedSpatialElements)?.slice(0, 600) ?? "undefined",
+      );
+      console.log(
+        "[v11] roomSum:",
+        JSON.stringify(sumRoomSurfaces(analysisResult)),
+        "| aiSurfaceFromText will read from summary/obs",
+      );
 
       // ── v9 — Surface officielle depuis spatialMetrics.totalSurface ────────
       // La Edge Function retourne désormais ce champ quand une annotation
@@ -1075,6 +1171,8 @@ export const AnalysePlanPage: React.FC = () => {
         "| source:", spatialMetrics?.surfaceSource ?? "—",
       );
 
+      const roomSum = sumRoomSurfaces(analysisResult);
+
       updatePlan({
         analysisResult: {
           analyzedAt:              analysisResult.analyzedAt,
@@ -1084,6 +1182,12 @@ export const AnalysePlanPage: React.FC = () => {
           summary:                 analysisResult.summary,
           detectedSpatialElements: spatial,
           functionalObservations:  ar.functionalObservations as string[] | undefined,
+          // V1.6 — anomalies (subset) persistées pour le Copilot
+          issues: analysisResult.issues?.map((i) => ({
+            severity: i.severity,
+            title:    i.title,
+            category: i.category,
+          })),
           spatialIntelligence:     ar.spatialIntelligence    as RehabilitationAnalysisResult["spatialIntelligence"],
           architecturalReading:    ar.architecturalReading   as RehabilitationAnalysisResult["architecturalReading"],
         } satisfies RehabilitationAnalysisResult,
@@ -1106,8 +1210,10 @@ export const AnalysePlanPage: React.FC = () => {
             )
           ),
 
-        // ── v9 — priorité : spatialMetrics.totalSurface > estimatedSurface ──
-        detectedSurface:       officialSurface ?? params.estimatedSurface ?? undefined,
+        // ── v10 — priorité : cartouche > somme des pièces (jamais le 78 formulaire) ──
+        detectedSurface:
+          officialSurface ??
+          (roomSum.total && roomSum.total > 0 ? roomSum.total : undefined),
         detectedOpeningsCount: spatial.exits?.length ?? 0,
         detectedWetZonesCount:
           (spatial.sanitarySpaces?.length ?? 0) +
@@ -1126,12 +1232,14 @@ export const AnalysePlanPage: React.FC = () => {
       const metadata          = extractPlanMetadata({ aiText: allText });
       const aiSurfaceFromText = extractAIEstimatedSurface(allText);
 
-      // Priorité surface :
-      //   1. spatialMetrics.totalSurface (officielle, lue dans le plan)
+      // Priorité surface (JAMAIS params.estimatedSurface = le 78 du formulaire) :
+      //   1. spatialMetrics.totalSurface (officielle, lue au cartouche)
       //   2. surface trouvée dans le discours IA ("environ X m²")
-      //   3. saisie utilisateur dans params
+      //   3. somme des pièces détectées
       const aiEstimatedSurface: number | null =
-        officialSurface ?? aiSurfaceFromText ?? params.estimatedSurface ?? null;
+        officialSurface
+        ?? aiSurfaceFromText
+        ?? (roomSum.total && roomSum.total > 0 ? roomSum.total : null);
 
       const dataUrl = storePlan?.imageDataUrl ?? null;
       const dims = dataUrl
@@ -1194,10 +1302,54 @@ export const AnalysePlanPage: React.FC = () => {
         };
       });
 
-      // ── v9 — Override final du store avec la surface la plus fiable ───────
-      // Ordre de priorité :
-      //   officialSurface (lue sur le plan) > surfaceRetenueM2 (validation pipeline)
-      const finalSurface = officialSurface ?? validation.surfaceRetenueM2;
+      // ── (3) Gate qualité → calques (option A) ─────────────────────────────
+      // On n'alimente les calques QUE si le plan respecte le contrat de qualité
+      // (export CAO couleur net ≥ 1500 px). Sinon : bandeau honnête, aucun faux
+      // calque, et on évite l'appel de transcription (économie).
+      const quality = await evaluatePlanQuality(plan.previewUrl);
+      setPlanQuality(quality);
+      console.log(
+        "[AnalysePlanPage] gate qualité —",
+        quality.eligible ? "ÉLIGIBLE" : `REJETÉ (${quality.code})`,
+        quality.metrics,
+      );
+
+      if (quality.eligible) {
+        // 2e appel gpt-4o. Son échec ne doit jamais casser l'analyse déjà réussie.
+        try {
+          const transcription = await transcribePlanReal({ plan });
+          const geometry = transcriptionToGeometry(transcription);
+          updateOverlay((s) => ({ ...(s ?? createEmptySnapshot()), detectedGeometry: geometry }));
+          console.log(
+            "[AnalysePlanPage] calques alimentés —",
+            geometry.walls.length, "murs,",
+            geometry.rooms.length, "pièces,",
+            geometry.openings.length, "ouvertures",
+          );
+        } catch (txErr) {
+          console.warn("[AnalysePlanPage] transcription échouée (calques non alimentés):", txErr);
+        }
+      } else {
+        // Plan hors contrat : on purge toute géométrie parasite.
+        updateOverlay((s) => ({ ...(s ?? createEmptySnapshot()), detectedGeometry: EMPTY_GEOMETRY }));
+      }
+
+      // ── v10 — Surface finale : officielle (cartouche) SINON somme des pièces ─
+      // On n'utilise JAMAIS la "surface estimée IA" comme surface retenue
+      // (source du 78 m² fantôme). Hiérarchie stricte :
+      //   1. officialSurface  → cartouche "Surface totale : X m²"
+      //   2. somme des pièces détectées (surface plancher calculée)
+
+      const finalSurface =
+        officialSurface ??
+        (roomSum.total && roomSum.total > 0 ? roomSum.total : null);
+
+      console.log(
+        "[AnalysePlanPage v10] surface —",
+        "officielle:", officialSurface,
+        "| somme pièces:", roomSum.total, `(${roomSum.count} pièces)`,
+        "| retenue:", finalSurface,
+      );
       if (finalSurface !== null && finalSurface > 0) {
         updatePlan({ detectedSurface: finalSurface });
         console.log("[AnalysePlanPage v9] detectedSurface final:", finalSurface, "m²");
@@ -1403,7 +1555,7 @@ export const AnalysePlanPage: React.FC = () => {
         )}
 
         {showOverlaySection && overlaySnapshot && (
-          <PlanOverlayInsightSection snapshot={overlaySnapshot} onToggleLayer={handleToggleLayer} />
+          <PlanOverlayInsightSection snapshot={overlaySnapshot} onToggleLayer={handleToggleLayer} quality={planQuality} />
         )}
 
         {/* Résultats */}
