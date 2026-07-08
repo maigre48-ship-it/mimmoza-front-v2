@@ -1144,6 +1144,14 @@ export default function AnalysePage() {
     synthese_ia:        "Synthèse IA",
   };
 
+  const tabSubtitles: Record<AnalyseTab, string> = {
+    rentabilite:        "Calculez la rentabilité de votre bien selon votre régime fiscal",
+    due_diligence:      "Passez en revue les points de vigilance juridiques et techniques",
+    marche_risques:     "Analysez le marché local et les risques du secteur",
+    analyse_predictive: "Projetez la valeur de votre bien selon l'horizon de détention",
+    synthese_ia:        "Générez la synthèse et le dossier investisseur complet",
+  };
+
   const fmt = (v: number | undefined | null) => v != null && v > 0 ? v.toLocaleString("fr-FR") : "—";
 
   // ── JSX ──────────────────────────────────────────────────────────
@@ -1166,7 +1174,7 @@ export default function AnalysePage() {
           <div style={{ position: "relative" }}>
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.9)", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>Investisseur · Analyse</div>
             <div style={{ fontSize: 36, fontWeight: 600, color: "#fff", marginBottom: 10, lineHeight: 1.1, letterSpacing: "-0.025em" }}>{tabTitles[activeTab]}</div>
-            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>{[deal.address, deal.zipCode, deal.city].filter(Boolean).join(", ") || "Adresse non renseignée"}</div>
+            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>{tabSubtitles[activeTab]}</div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, background: "rgba(255,255,255,0.18)", borderRadius: 12, padding: "12px 18px", flexShrink: 0 }}>
             <span style={{ fontSize: 30, fontWeight: 600, color: "#fff" }}>{fmt(deal.prixAchat)} €</span>

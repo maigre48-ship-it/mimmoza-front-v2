@@ -857,37 +857,64 @@ export default function MarchandPipeline() {
       </Drawer>
 
       <div className="space-y-8">
-        <div className="relative isolate overflow-hidden rounded-[32px] bg-gradient-to-r from-[#1d6fe8] via-[#0ea5e9] to-[#22d3ee] px-10 py-10 text-white shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
-          <div className="pointer-events-none absolute -right-12 -top-12 h-56 w-56 rounded-full bg-white/[0.06]" />
-          <div className="pointer-events-none absolute -bottom-8 right-40 h-36 w-36 rounded-full bg-white/[0.05]" />
-          <div className="pointer-events-none absolute right-72 top-5 h-1.5 w-1.5 rounded-full bg-white/35" />
-
-          <div className="relative z-10 flex flex-wrap items-start justify-between gap-6">
-            <div className="max-w-2xl">
-              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white/90">
-                <Sparkles className="h-3.5 w-3.5" />
-                Investisseur · Pipeline
-              </div>
-
-              <h1 className="text-4xl font-semibold tracking-tight">Pipeline</h1>
-
-              <div className="mt-4 max-w-md text-sm leading-relaxed text-white/75">
-                Deal flow et statuts — snapshot actif partagé entre toutes les pages
-                Marchand.
-              </div>
+        <div
+          style={{
+            background: "linear-gradient(135deg, #1d6fe8 0%, #0ea5e9 55%, #22d3ee 100%)",
+            borderRadius: 32,
+            padding: "40px 44px",
+            marginBottom: 32,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 24,
+            boxShadow: "0 20px 60px rgba(15,23,42,0.08)",
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
+          <div style={{ position: "relative" }}>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.9)", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
+              Investisseur · Pipeline
             </div>
-
-            <div className="flex flex-col gap-3 pt-3">
-              <button
-                type="button"
-                onClick={handleCreateDeal}
-                className="inline-flex items-center gap-2 rounded-2xl border border-white/30 bg-white px-5 py-3 text-sm font-semibold text-[#1a72c4] shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-              >
-                <Plus className="h-4 w-4" />
-                Nouveau deal
-              </button>
+            <div style={{ fontSize: 36, fontWeight: 600, color: "#fff", marginBottom: 10, lineHeight: 1.1, letterSpacing: "-0.025em" }}>
+              Pipeline
+            </div>
+            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>
+              Créez un dossier par opportunité
             </div>
           </div>
+
+          <button
+            type="button"
+            onClick={handleCreateDeal}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              flexShrink: 0,
+              borderRadius: 16,
+              border: "none",
+              background: "#fff",
+              color: "#1a72c4",
+              fontWeight: 600,
+              fontSize: 14,
+              padding: "12px 20px",
+              cursor: "pointer",
+              boxShadow: "0 2px 8px rgba(15,23,42,0.08)",
+              transition: "transform 0.12s, box-shadow 0.12s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = "translateY(-1px)";
+              e.currentTarget.style.boxShadow = "0 6px 16px rgba(15,23,42,0.12)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "translateY(0)";
+              e.currentTarget.style.boxShadow = "0 2px 8px rgba(15,23,42,0.08)";
+            }}
+          >
+            <Plus className="h-4 w-4" />
+            Nouveau deal
+          </button>
         </div>
 
         <div
