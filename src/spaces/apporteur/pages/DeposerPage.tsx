@@ -1,6 +1,6 @@
 // src/spaces/apporteur/pages/DeposerPage.tsx
 
-import { ArrowLeft, MapPin, Sparkles } from "lucide-react";
+import { AlertCircle, ArrowLeft, MapPin, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createApporteurDeal } from "../shared/apporteurDeals.store";
@@ -9,10 +9,12 @@ type TypeBien = "terrain" | "maison" | "immeuble" | "autre";
 
 type FormState = {
   adresse: string;
+  codePostal: string;
   commune: string;
   typeBien: TypeBien | "";
   apporteurName: string;
   apporteurEmail: string;
+  apporteurPhone: string;
   surface: string;
   prix: string;
   commentaire: string;
@@ -20,10 +22,12 @@ type FormState = {
 
 const INITIAL: FormState = {
   adresse: "",
+  codePostal: "",
   commune: "",
   typeBien: "",
   apporteurName: "",
   apporteurEmail: "",
+  apporteurPhone: "",
   surface: "",
   prix: "",
   commentaire: "",
@@ -36,10 +40,23 @@ const TYPE_OPTIONS: Array<{ value: TypeBien; label: string }> = [
   { value: "autre",    label: "Autre" },
 ];
 
+const INPUT_CLASS =
+  "w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-violet-400 focus:bg-white focus:ring-2 focus:ring-violet-100";
+
+/** Parse un nombre saisi, tolère la virgule décimale. Retourne undefined si vide/invalide. */
+function parseNumber(raw: string): number | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  const n = Number(trimmed.replace(",", "."));
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
 export function ApporteurDeposerPage() {
   const navigate = useNavigate();
   const [form, setForm] = useState<FormState>(INITIAL);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   function handleChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -48,30 +65,47 @@ export function ApporteurDeposerPage() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
-  function handleSubmit(e: React.MouseEvent<HTMLButtonElement>) {
+  async function handleSubmit(e: React.MouseEvent<HTMLButtonElement>) {
     e.preventDefault();
-    if (!form.adresse.trim() || !form.typeBien) return;
+    if (!isValid) return;
+    if (submitting) return;
 
-    createApporteurDeal({
-      adresse: form.adresse.trim(),
-      commune: form.commune.trim() || undefined,
-      typeBien: form.typeBien as TypeBien,
-      apporteurName: form.apporteurName.trim() || undefined,
-      apporteurEmail: form.apporteurEmail.trim() || undefined,
-      surfaceTerrainM2: form.surface ? Number(form.surface) : undefined,
-      prixVendeur: form.prix ? Number(form.prix) : undefined,
-      commentaire: form.commentaire.trim() || undefined,
-    });
+    setSubmitting(true);
+    setSubmitError(null);
 
-    setSubmitted(true);
+    try {
+      await createApporteurDeal({
+        adresse: form.adresse.trim(),
+        codePostal: form.codePostal.trim(),
+        commune: form.commune.trim() || undefined,
+        typeBien: form.typeBien as TypeBien,
+        apporteurName: form.apporteurName.trim() || undefined,
+        apporteurEmail: form.apporteurEmail.trim() || undefined,
+        apporteurPhone: form.apporteurPhone.trim() || undefined,
+        surfaceTerrainM2: parseNumber(form.surface),
+        prixVendeur: parseNumber(form.prix),
+        commentaire: form.commentaire.trim() || undefined,
+      });
+      setSubmitted(true);
+    } catch (err) {
+      setSubmitError(
+        err instanceof Error ? err.message : "Le dépôt a échoué. Veuillez réessayer."
+      );
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function handleReset() {
     setForm(INITIAL);
     setSubmitted(false);
+    setSubmitError(null);
   }
 
-  const isValid = form.adresse.trim() !== "" && form.typeBien !== "";
+  const isValid =
+    form.adresse.trim() !== "" &&
+    form.typeBien !== "" &&
+    /^\d{5}$/.test(form.codePostal.trim());
 
   /* ── Confirmation ── */
   if (submitted) {
@@ -91,7 +125,7 @@ export function ApporteurDeposerPage() {
             <Sparkles className="h-7 w-7 text-emerald-500" />
           </div>
           <div>
-            <p className="text-lg font-semibold text-emerald-800">Bien déposé avec succès !</p>
+            <p className="text-lg font-semibold text-emerald-800">Bien déposé avec succès</p>
             <p className="mt-1 text-sm text-emerald-600">
               L'opportunité est enregistrée et visible dans votre dashboard.
             </p>
@@ -156,7 +190,7 @@ export function ApporteurDeposerPage() {
                 value={form.apporteurName}
                 onChange={handleChange}
                 placeholder="Jean Dupont"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-violet-400 focus:bg-white focus:ring-2 focus:ring-violet-100"
+                className={INPUT_CLASS}
               />
             </div>
             <div className="space-y-1.5">
@@ -167,9 +201,21 @@ export function ApporteurDeposerPage() {
                 value={form.apporteurEmail}
                 onChange={handleChange}
                 placeholder="jean@exemple.fr"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-violet-400 focus:bg-white focus:ring-2 focus:ring-violet-100"
+                className={INPUT_CLASS}
               />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-slate-700">Téléphone</label>
+            <input
+              name="apporteurPhone"
+              type="tel"
+              value={form.apporteurPhone}
+              onChange={handleChange}
+              placeholder="06 00 00 00 00"
+              className={INPUT_CLASS}
+            />
           </div>
 
           <div className="border-t border-slate-100" />
@@ -185,21 +231,38 @@ export function ApporteurDeposerPage() {
               value={form.adresse}
               onChange={handleChange}
               placeholder="12 rue de la Paix"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-violet-400 focus:bg-white focus:ring-2 focus:ring-violet-100"
+              className={INPUT_CLASS}
             />
           </div>
 
-          {/* Commune */}
-          <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-slate-700">Commune</label>
-            <input
-              name="commune"
-              type="text"
-              value={form.commune}
-              onChange={handleChange}
-              placeholder="Paris 75001"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-violet-400 focus:bg-white focus:ring-2 focus:ring-violet-100"
-            />
+          {/* Code postal + Commune */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-slate-700">
+                Code postal <span className="text-violet-500">*</span>
+              </label>
+              <input
+                name="codePostal"
+                type="text"
+                inputMode="numeric"
+                maxLength={5}
+                value={form.codePostal}
+                onChange={handleChange}
+                placeholder="92210"
+                className={INPUT_CLASS}
+              />
+            </div>
+            <div className="col-span-2 space-y-1.5">
+              <label className="block text-sm font-medium text-slate-700">Commune</label>
+              <input
+                name="commune"
+                type="text"
+                value={form.commune}
+                onChange={handleChange}
+                placeholder="Saint-Cloud"
+                className={INPUT_CLASS}
+              />
+            </div>
           </div>
 
           {/* Type */}
@@ -211,7 +274,7 @@ export function ApporteurDeposerPage() {
               name="typeBien"
               value={form.typeBien}
               onChange={handleChange}
-              className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 outline-none transition-all focus:border-violet-400 focus:bg-white focus:ring-2 focus:ring-violet-100"
+              className={`${INPUT_CLASS} appearance-none`}
             >
               <option value="">Sélectionner…</option>
               {TYPE_OPTIONS.map((o) => (
@@ -231,7 +294,7 @@ export function ApporteurDeposerPage() {
                 value={form.surface}
                 onChange={handleChange}
                 placeholder="500"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-violet-400 focus:bg-white focus:ring-2 focus:ring-violet-100"
+                className={INPUT_CLASS}
               />
             </div>
             <div className="space-y-1.5">
@@ -242,8 +305,8 @@ export function ApporteurDeposerPage() {
                 min={0}
                 value={form.prix}
                 onChange={handleChange}
-                placeholder="350 000"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-violet-400 focus:bg-white focus:ring-2 focus:ring-violet-100"
+                placeholder="350000"
+                className={INPUT_CLASS}
               />
             </div>
           </div>
@@ -257,9 +320,20 @@ export function ApporteurDeposerPage() {
               value={form.commentaire}
               onChange={handleChange}
               placeholder="Contraintes particulières, contexte PLU, motivation vendeur…"
-              className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-violet-400 focus:bg-white focus:ring-2 focus:ring-violet-100"
+              className={`${INPUT_CLASS} resize-none`}
             />
           </div>
+
+          {/* Erreur de soumission */}
+          {submitError && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500" />
+              <div>
+                <p className="text-sm font-semibold text-red-800">Le dépôt n'a pas abouti</p>
+                <p className="mt-0.5 text-xs text-red-600">{submitError}</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -270,11 +344,20 @@ export function ApporteurDeposerPage() {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={!isValid}
+            disabled={!isValid || submitting}
             className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.98]"
           >
-            <Sparkles className="h-4 w-4" />
-            Enregistrer l'opportunité
+            {submitting ? (
+              <>
+                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                Enregistrement…
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4" />
+                Enregistrer l'opportunité
+              </>
+            )}
           </button>
         </div>
       </div>

@@ -1,16 +1,17 @@
 // src/spaces/promoteur/pages/OpportunitesApporteursPage.tsx
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
-  listApporteurDeals,
-  updateApporteurDeal,
-  type ApporteurDeal,
+  listDealsOuverts,
+  debloquerDeal,
+  refuserDeal,
+  DeblocageError,
+  type PoolDeal,
   type ApporteurDealStatus,
+  type ApporteurDealTypeBien,
 } from "@/spaces/apporteur/shared/apporteurDeals.store";
-
-const isUnlocked = false;
 
 const STATUS_LABEL: Record<ApporteurDealStatus, string> = {
   depose:             "Déposé",
@@ -28,28 +29,25 @@ const STATUS_COLOR: Record<ApporteurDealStatus, { bg: string; text: string; bord
   refuse:             { bg: "#F9FAFB", text: "#6B7280", border: "#E5E7EB" },
 };
 
-const TYPE_LABEL: Record<ApporteurDeal["typeBien"], string> = {
+const TYPE_LABEL: Record<ApporteurDealTypeBien, string> = {
   terrain:  "Terrain",
   maison:   "Maison",
   immeuble: "Immeuble",
   autre:    "Autre",
 };
 
-function maskPostalCode(cp: string): string {
-  return cp ? cp.slice(0, 2) + "***" : "";
-}
-
-function extractPostalCode(text: string): string {
-  const match = text.match(/\b(\d{5})\b/);
-  return match ? match[1] : "";
-}
-
-function buildMaskedTitle(deal: ApporteurDeal): string {
-  const typeLabel = TYPE_LABEL[deal.typeBien] ?? "Opportunité";
-  const cpSource = deal.commune ?? deal.adresse ?? "";
-  const cp = extractPostalCode(cpSource);
-  if (cp) return `${typeLabel} — ${maskPostalCode(cp)}`;
-  return `Opportunité off-market — ${typeLabel.toLowerCase()}`;
+/**
+ * Titre affiché avant déblocage. Les champs sensibles valent null côté base :
+ * il n'y a rien à flouter, seulement à composer avec ce qui reste.
+ */
+function buildTitle(deal: PoolDeal): string {
+  if (deal.estDebloque && deal.adresse) {
+    return `${deal.adresse}${deal.commune ? `, ${deal.commune}` : ""}`;
+  }
+  const type = TYPE_LABEL[deal.typeBien] ?? "Opportunité";
+  return deal.departement
+    ? `${type} — département ${deal.departement}`
+    : `Opportunité off-market — ${type.toLowerCase()}`;
 }
 
 function formatDate(iso: string): string {
@@ -92,6 +90,19 @@ function LockedBadge() {
   );
 }
 
+function ReservedBadge({ jusquA }: { jusquA?: string }) {
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      padding: "2px 9px", borderRadius: 9999,
+      fontSize: 11, fontWeight: 600,
+      background: "#FEF2F2", color: "#B91C1C", border: "1px solid #FECACA",
+    }}>
+      Réservé{jusquA ? ` jusqu'au ${formatDate(jusquA)}` : ""}
+    </span>
+  );
+}
+
 function Kpi({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -114,72 +125,67 @@ const BUTTON_STYLES: Record<ButtonVariant, React.CSSProperties> = {
   unlock:  { background: "#6D28D9", color: "#fff",    border: "1px solid #6D28D9" },
 };
 
-function ActionButton({ variant, onClick, children }: {
+function ActionButton({ variant, onClick, disabled, children }: {
   variant: ButtonVariant;
   onClick: () => void;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       style={{
         ...BUTTON_STYLES[variant],
         padding: "6px 14px", borderRadius: 6, fontSize: 13,
-        fontWeight: 600, cursor: "pointer", transition: "opacity 0.15s",
+        fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.45 : 1, transition: "opacity 0.15s",
       }}
-      onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.opacity = "0.8")}
-      onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.opacity = "1")}
+      onMouseEnter={(e) => { if (!disabled) (e.currentTarget as HTMLButtonElement).style.opacity = "0.8"; }}
+      onMouseLeave={(e) => { if (!disabled) (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
     >
       {children}
     </button>
   );
 }
 
-function DealCard({ deal, onQualifier, onRefuser }: {
-  deal: ApporteurDeal;
-  onQualifier: (d: ApporteurDeal) => void;
-  onRefuser: (d: ApporteurDeal) => void;
+function DealCard({ deal, busy, onDebloquer, onOuvrir, onRefuser }: {
+  deal: PoolDeal;
+  busy: boolean;
+  onDebloquer: (d: PoolDeal) => void;
+  onOuvrir: (d: PoolDeal) => void;
+  onRefuser: (d: PoolDeal) => void;
 }) {
-  const titleText = isUnlocked
-    ? `${deal.adresse}${deal.commune ? `, ${deal.commune}` : ""}`
-    : buildMaskedTitle(deal);
-
-  const apporteurNode = deal.apporteurName ? (
-    isUnlocked
-      ? <> · Apporteur : <span style={{ fontWeight: 500, color: "#374151" }}>{deal.apporteurName}</span></>
-      : <> · Apporteur : <span style={{ fontWeight: 500, color: "#9CA3AF" }}>masqué</span></>
-  ) : null;
+  const { estDebloque, reserveParAutre } = deal;
 
   return (
     <div style={{
       ...cardStyle,
-      borderColor: isUnlocked ? "#E5E7EB" : "#DDD6FE",
-      borderLeftWidth: isUnlocked ? 1 : 3,
-      borderLeftColor: isUnlocked ? "#E5E7EB" : "#7C3AED",
+      borderColor: estDebloque ? "#E5E7EB" : "#DDD6FE",
+      borderLeftWidth: estDebloque ? 1 : 3,
+      borderLeftColor: estDebloque ? "#E5E7EB" : "#7C3AED",
+      opacity: reserveParAutre ? 0.6 : 1,
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{
             margin: 0, fontWeight: 700, fontSize: 15, color: "#111827",
-            ...(isUnlocked ? {} : {
-              filter: "blur(4px)",
-              userSelect: "none",
-              pointerEvents: "none",
-              overflow: "hidden",
-              whiteSpace: "nowrap",
-              textOverflow: "ellipsis",
-            }),
+            overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis",
           }}>
-            {titleText}
+            {buildTitle(deal)}
           </p>
           <p style={{ margin: "2px 0 0", fontSize: 13, color: "#6B7280" }}>
             {TYPE_LABEL[deal.typeBien]}
-            {apporteurNode}
+            {estDebloque && deal.apporteurName && (
+              <> · Apporteur : <span style={{ fontWeight: 500, color: "#374151" }}>{deal.apporteurName}</span></>
+            )}
           </p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
           <StatusBadge status={deal.status} />
-          {!isUnlocked && <LockedBadge />}
+          {reserveParAutre
+            ? <ReservedBadge jusquA={deal.reserveJusquA} />
+            : !estDebloque && <LockedBadge />}
         </div>
       </div>
 
@@ -190,39 +196,48 @@ function DealCard({ deal, onQualifier, onRefuser }: {
         {deal.prixVendeur !== undefined && (
           <Kpi label="Prix vendeur" value={formatPrix(deal.prixVendeur)} />
         )}
+        {deal.departement && !estDebloque && (
+          <Kpi label="Département" value={deal.departement} />
+        )}
         <Kpi label="Déposé le" value={formatDate(deal.createdAt)} />
       </div>
 
-      {deal.commentaire && (
-        isUnlocked ? (
-          <p style={{
-            margin: "10px 0 0", fontSize: 13, color: "#4B5563",
-            background: "#F9FAFB", borderRadius: 6, padding: "8px 10px",
-            borderLeft: "3px solid #DDD6FE",
-          }}>
-            {deal.commentaire}
-          </p>
-        ) : (
-          <p style={{
-            margin: "10px 0 0", fontSize: 13, color: "#9CA3AF",
-            background: "#F9FAFB", borderRadius: 6, padding: "8px 10px",
-            borderLeft: "3px solid #DDD6FE",
-            fontStyle: "italic",
-          }}>
-            🔒 Commentaire disponible après déblocage
-          </p>
-        )
+      {estDebloque && deal.commentaire && (
+        <p style={{
+          margin: "10px 0 0", fontSize: 13, color: "#4B5563",
+          background: "#F9FAFB", borderRadius: 6, padding: "8px 10px",
+          borderLeft: "3px solid #DDD6FE",
+        }}>
+          {deal.commentaire}
+        </p>
       )}
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-        <ActionButton
-          variant={isUnlocked ? "primary" : "unlock"}
-          onClick={() => onQualifier(deal)}
-        >
-          {isUnlocked ? "Qualifier →" : "🔓 Débloquer"}
-        </ActionButton>
-        {deal.status !== "refuse" && (
-          <ActionButton variant="danger" onClick={() => onRefuser(deal)}>
+      {!estDebloque && (
+        <p style={{
+          margin: "10px 0 0", fontSize: 13, color: "#9CA3AF",
+          background: "#F9FAFB", borderRadius: 6, padding: "8px 10px",
+          borderLeft: "3px solid #DDD6FE", fontStyle: "italic",
+        }}>
+          🔒 Adresse, commentaire et coordonnées de l'apporteur disponibles après déblocage
+        </p>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginTop: 16 }}>
+        {estDebloque ? (
+          <ActionButton variant="primary" disabled={busy} onClick={() => onOuvrir(deal)}>
+            Qualifier →
+          </ActionButton>
+        ) : (
+          <ActionButton
+            variant="unlock"
+            disabled={busy || reserveParAutre}
+            onClick={() => onDebloquer(deal)}
+          >
+            {busy ? "Déblocage…" : `🔓 Débloquer — ${deal.coutDeblocage} jetons`}
+          </ActionButton>
+        )}
+        {deal.status !== "refuse" && !reserveParAutre && (
+          <ActionButton variant="danger" disabled={busy} onClick={() => onRefuser(deal)}>
             Refuser
           </ActionButton>
         )}
@@ -239,7 +254,7 @@ function EmptyState() {
         Aucune opportunité
       </p>
       <p style={{ margin: 0, fontSize: 13, color: "#9CA3AF" }}>
-        Les deals transmis par les apporteurs apparaîtront ici.
+        Les biens déposés par les apporteurs apparaîtront ici.
       </p>
     </div>
   );
@@ -247,22 +262,66 @@ function EmptyState() {
 
 export default function OpportunitesApporteursPage() {
   const navigate = useNavigate();
-  const [deals, setDeals] = useState<ApporteurDeal[]>(() => listApporteurDeals());
-  const refresh = useCallback(() => setDeals(listApporteurDeals()), []);
+  const [deals, setDeals] = useState<PoolDeal[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setErreur(null);
+    try {
+      setDeals(await listDealsOuverts());
+    } catch (err) {
+      setErreur(err instanceof Error ? err.message : "Erreur de chargement");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void refresh(); }, [refresh]);
 
   const visibleDeals = deals
     .filter((d) => d.status !== "refuse")
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  function handleQualifier(deal: ApporteurDeal) {
-    updateApporteurDeal(deal.id, { status: "en_etude" });
-    refresh();
+  const nbDebloques = deals.filter((d) => d.estDebloque).length;
+
+  async function handleDebloquer(deal: PoolDeal) {
+    if (busyId) return;
+    setBusyId(deal.id);
+    setErreur(null);
+    try {
+      const res = await debloquerDeal(deal.id);
+      await refresh();
+      if (!res.dejaDebloque && res.soldeRestant !== undefined) {
+        setErreur(null);
+      }
+      navigate(`/promoteur/opportunites/nouvelle?dealId=${deal.id}`);
+    } catch (err) {
+      // DeblocageError porte un code métier exploitable (crédits, réservation…)
+      setErreur(err instanceof DeblocageError
+        ? err.message
+        : err instanceof Error ? err.message : "Le déblocage a échoué");
+      setBusyId(null);
+    }
+  }
+
+  function handleOuvrir(deal: PoolDeal) {
     navigate(`/promoteur/opportunites/nouvelle?dealId=${deal.id}`);
   }
 
-  function handleRefuser(deal: ApporteurDeal) {
-    updateApporteurDeal(deal.id, { status: "refuse" });
-    refresh();
+  async function handleRefuser(deal: PoolDeal) {
+    if (busyId) return;
+    setBusyId(deal.id);
+    try {
+      await refuserDeal(deal.id);
+      await refresh();
+    } catch (err) {
+      setErreur(err instanceof Error ? err.message : "Impossible de refuser ce deal");
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (
@@ -280,21 +339,35 @@ export default function OpportunitesApporteursPage() {
             <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm">
               {visibleDeals.length} opportunité{visibleDeals.length > 1 ? "s" : ""}
             </span>
-            {!isUnlocked && (
+            {nbDebloques > 0 && (
               <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm">
-                🔒 Mode aperçu
+                {nbDebloques} débloquée{nbDebloques > 1 ? "s" : ""}
               </span>
             )}
           </div>
         </div>
         <p className="mt-3 max-w-2xl text-sm text-slate-200">
-          Deals reçus en attente de qualification
+          Biens off-market déposés par les apporteurs d'affaires
         </p>
       </div>
 
       {/* ── Contenu ── */}
       <div style={{ maxWidth: 860, margin: "0 auto", fontFamily: "inherit" }}>
-        {visibleDeals.length === 0 ? (
+        {erreur && (
+          <div style={{
+            marginBottom: 16, padding: "10px 14px", borderRadius: 8,
+            background: "#FEF2F2", color: "#B91C1C", border: "1px solid #FECACA",
+            fontSize: 13,
+          }}>
+            {erreur}
+          </div>
+        )}
+
+        {loading ? (
+          <div style={emptyStyle}>
+            <p style={{ margin: 0, fontSize: 13, color: "#9CA3AF" }}>Chargement des opportunités…</p>
+          </div>
+        ) : visibleDeals.length === 0 ? (
           <EmptyState />
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -302,7 +375,9 @@ export default function OpportunitesApporteursPage() {
               <DealCard
                 key={deal.id}
                 deal={deal}
-                onQualifier={handleQualifier}
+                busy={busyId === deal.id}
+                onDebloquer={handleDebloquer}
+                onOuvrir={handleOuvrir}
                 onRefuser={handleRefuser}
               />
             ))}

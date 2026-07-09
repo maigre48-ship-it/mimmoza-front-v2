@@ -9,30 +9,40 @@ import { useSearchParams } from "react-router-dom";
 
 export type PrefillResult =
   | { status: "idle" }
+  | { status: "loading" }
   | { status: "not_found" }
+  | { status: "error"; message: string }
   | { status: "loaded"; deal: ApporteurDeal };
 
 /**
  * Lit `?dealId=` dans l'URL et charge le deal apporteur correspondant.
- * Retourne un résultat stable (ne se réexécute pas si l'URL change).
+ * Le pré-remplissage n'est tenté qu'une seule fois.
  */
 export function useApporteurDealPrefill(): PrefillResult {
   const [searchParams] = useSearchParams();
   const dealId = searchParams.get("dealId");
   const [result, setResult] = useState<PrefillResult>({ status: "idle" });
-  // Garantit que le pré-remplissage ne se fait qu'une seule fois
   const done = useRef(false);
 
   useEffect(() => {
     if (done.current || !dealId) return;
     done.current = true;
 
-    const deal = getApporteurDeal(dealId);
-    if (!deal) {
-      setResult({ status: "not_found" });
-    } else {
-      setResult({ status: "loaded", deal });
-    }
+    let cancelled = false;
+    setResult({ status: "loading" });
+
+    getApporteurDeal(dealId)
+      .then((deal) => {
+        if (cancelled) return;
+        setResult(deal ? { status: "loaded", deal } : { status: "not_found" });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : "Erreur inconnue";
+        setResult({ status: "error", message });
+      });
+
+    return () => { cancelled = true; };
   }, [dealId]);
 
   return result;

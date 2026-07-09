@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { ApporteurDeal } from "../../apporteur/shared/apporteurDeals.store";
+import type { ApporteurDeal, ApporteurDealStatus } from "../../apporteur/shared/apporteurDeals.store";
 import {
   listApporteurDeals,
   updateApporteurDeal,
@@ -467,8 +467,20 @@ export default function Dashboard(): React.ReactElement {
   }, []);
 
   useEffect(() => {
-    const all = listApporteurDeals();
-    setApporteurDeals(all.filter(d => d.status === "transmis_promoteur"));
+    let cancelled = false;
+
+    // Deals pris en charge par ce promoteur (le pool est sur /promoteur/opportunites).
+    const PRIS_EN_CHARGE: ApporteurDealStatus[] = ["en_etude", "qualifie", "transmis_promoteur"];
+
+    listApporteurDeals({ status: PRIS_EN_CHARGE, sortBy: "createdAt", sortDir: "desc" })
+      .then(({ deals }) => {
+        if (!cancelled) setApporteurDeals(deals);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) console.error("[Dashboard] Chargement des deals apporteurs échoué:", err);
+      });
+
+    return () => { cancelled = true; };
   }, []);
 
   const sortedStudies = useMemo(
@@ -480,6 +492,14 @@ export default function Dashboard(): React.ReactElement {
   const handleModalCreate = useCallback(async (fields: {
     nom: string; adresse: string; commune: string; surface: string; typeBien: string;
   }) => {
+    // Garde-fou auth : pas de session → on redirige vers la connexion
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setShowModal(false);
+      navigate("/login?redirect=/promoteur");
+      return;
+    }
+
     setIsCreating(true);
     const { nom, adresse, commune, surface } = fields;
     const title = nom.trim()
@@ -534,8 +554,12 @@ export default function Dashboard(): React.ReactElement {
     const newStudy = result.data;
     clearAllPromoteurSessionKeys();
     setActiveStudyId(newStudy.id);
-    updateApporteurDeal(deal.id, { promoteurStudyId: newStudy.id });
-    setApporteurDeals(prev => prev.map(d => d.id === deal.id ? { ...d, promoteurStudyId: newStudy.id } : d));
+    try {
+      await updateApporteurDeal(deal.id, { promoteurStudyId: newStudy.id });
+      setApporteurDeals(prev => prev.map(d => d.id === deal.id ? { ...d, promoteurStudyId: newStudy.id } : d));
+    } catch (err) {
+      console.error("[Dashboard] Liaison étude ↔ deal échouée:", err);
+    }
     if (deal.adresse)           userStorage.setItem(LS_QUICK_ADDRESS, deal.adresse);
     if (deal.commune)           userStorage.setItem(LS_QUICK_COMMUNE, deal.commune);
     if (deal.surfaceTerrainM2 != null && deal.surfaceTerrainM2 > 0)
@@ -597,7 +621,7 @@ export default function Dashboard(): React.ReactElement {
               </p>
               <span className="rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
                 style={{ background: "#f0fdf4", color: "#16a34a" }}>
-                {apporteurDeals.length} transmis
+                {apporteurDeals.length} en cours
               </span>
             </div>
             <div className="space-y-2">

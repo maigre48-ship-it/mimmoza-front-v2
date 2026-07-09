@@ -1,11 +1,13 @@
 // src/spaces/promoteur/pages/NouvelleOpportunitePage.tsx
 
 import {
-  getApporteurDeal,
+  getPoolDeal,
   updateApporteurDeal,
+  debloquerDeal,
   type ApporteurDeal,
+  type PoolDeal,
 } from "@/spaces/apporteur/shared/apporteurDeals.store";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   HeroGhostButton,
@@ -14,12 +16,12 @@ import {
 } from "../shared/components/PromoteurPageHero";
 import { ACCENT_PRO, GRAD_PRO } from "../shared/promoteurDesign.tokens";
 import { userStorage } from "@/lib/storage/userScopedStorage";
+import { PromoteurStudyService } from "../shared/promoteurStudyService";
 
 // ---------------------------------------------------------------------------
 // Helpers promoteur
 // ---------------------------------------------------------------------------
 
-const PROMOTEUR_STUDIES_KEY  = "mimmoza.promoteur.studies.v1";
 const PROMOTEUR_ACTIVE_KEY   = "mimmoza.promoteur.active_study_id";
 const PROMOTEUR_SESSION_KEYS = [
   "mimmoza.promoteur.quick.address",
@@ -28,22 +30,6 @@ const PROMOTEUR_SESSION_KEYS = [
   "mimmoza.promoteur.foncier.draft",
   "mimmoza.promoteur.plu.draft",
 ];
-
-function generateStudyId(): string {
-  return "study_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
-}
-
-function createPromoteurStudy(title: string): { id: string; title: string } {
-  const id  = generateStudyId();
-  const now = new Date().toISOString();
-  try {
-    const raw     = userStorage.getItem(PROMOTEUR_STUDIES_KEY);
-    const studies = raw ? (JSON.parse(raw) as object[]) : [];
-    studies.unshift({ id, title, createdAt: now, updatedAt: now });
-    userStorage.setItem(PROMOTEUR_STUDIES_KEY, JSON.stringify(studies));
-  } catch { /* noop */ }
-  return { id, title };
-}
 
 function setActiveStudyId(id: string): void {
   try { userStorage.setItem(PROMOTEUR_ACTIVE_KEY, id); } catch { /* noop */ }
@@ -87,9 +73,7 @@ const TYPE_BIEN_OPTIONS: { value: TypeBien; label: string }[] = [
   { value: "autre",    label: "Autre" },
 ];
 
-// ---------------------------------------------------------------------------
-// ── PAYWALL FLAG ────────────────────────────────────────────────────────────
-const IS_UNLOCKED_DEFAULT = false;
+// (plus de flag local : le déblocage est décidé en base)
 
 // ---------------------------------------------------------------------------
 // Page
@@ -100,10 +84,11 @@ export default function NouvelleOpportunitePage() {
   const [searchParams] = useSearchParams();
   const dealId         = searchParams.get("dealId");
 
-  const [isUnlocked, setIsUnlocked] = useState<boolean>(IS_UNLOCKED_DEFAULT);
+  const [sourceDeal, setSourceDeal] = useState<PoolDeal | null | undefined>(undefined);
+  const [unlocking, setUnlocking] = useState(false);
 
-  const [sourceDeal, setSourceDeal] = useState<ApporteurDeal | null | undefined>(undefined);
-  const prefillDone = useRef(false);
+  // Un deal sans dealId (création manuelle) est toujours "débloqué".
+  const isUnlocked = !dealId || Boolean(sourceDeal?.estDebloque);
 
   const [form, setForm] = useState<FormState>({
     titre:          "",
@@ -122,39 +107,75 @@ export default function NouvelleOpportunitePage() {
   const [error, setError]           = useState<string | null>(null);
 
   useEffect(() => {
-    if (prefillDone.current) return;
-    prefillDone.current = true;
-
     if (!dealId) { setSourceDeal(null); return; }
-    const deal = getApporteurDeal(dealId);
-    if (!deal)  { setSourceDeal(null); return; }
 
-    setSourceDeal(deal);
-    setForm((prev) => ({
-      ...prev,
-      titre:          `Deal apporteur — ${deal.adresse}`,
-      adresse:        deal.adresse             || prev.adresse,
-      commune:        deal.commune             || prev.commune,
-      surface:        deal.surfaceTerrainM2 != null ? String(deal.surfaceTerrainM2) : prev.surface,
-      prixVendeur:    deal.prixVendeur      != null ? String(deal.prixVendeur)       : prev.prixVendeur,
-      typeBien:       deal.typeBien            || prev.typeBien,
-      apporteurName:  deal.apporteurName       || prev.apporteurName,
-      apporteurEmail: deal.apporteurEmail      || prev.apporteurEmail,
-      apporteurPhone: deal.apporteurPhone      || prev.apporteurPhone,
-      commentaire:    deal.commentaire         || prev.commentaire,
-    }));
+    let cancelled = false;
+
+    getPoolDeal(dealId)
+      .then((deal) => {
+        if (cancelled) return;
+        if (!deal) { setSourceDeal(null); return; }
+
+        setSourceDeal(deal);
+        setForm((prev) => ({
+          ...prev,
+          // adresse, commentaire, apporteur_* valent null tant que non débloqué.
+          titre:          deal.adresse ? `Deal apporteur — ${deal.adresse}` : prev.titre,
+          adresse:        deal.adresse             || prev.adresse,
+          commune:        deal.commune             || prev.commune,
+          surface:        deal.surfaceTerrainM2 != null ? String(deal.surfaceTerrainM2) : prev.surface,
+          prixVendeur:    deal.prixVendeur      != null ? String(deal.prixVendeur)       : prev.prixVendeur,
+          typeBien:       deal.typeBien            || prev.typeBien,
+          apporteurName:  deal.apporteurName       || prev.apporteurName,
+          apporteurEmail: deal.apporteurEmail      || prev.apporteurEmail,
+          apporteurPhone: deal.apporteurPhone      || prev.apporteurPhone,
+          commentaire:    deal.commentaire         || prev.commentaire,
+        }));
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        console.error("[NouvelleOpportunitePage] Chargement du deal échoué:", err);
+        setSourceDeal(null);
+      });
+
+    return () => { cancelled = true; };
   }, [dealId]);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  function handleUnlock() {
-    setIsUnlocked(true);
+  async function handleUnlock() {
+    if (!dealId || unlocking) return;
+    setUnlocking(true);
+    setError(null);
+    try {
+      await debloquerDeal(dealId);
+      // Recharge le deal : la vue renvoie maintenant les champs sensibles.
+      const deal = await getPoolDeal(dealId);
+      if (deal) {
+        setSourceDeal(deal);
+        setForm((prev) => ({
+          ...prev,
+          titre:          deal.adresse ? `Deal apporteur — ${deal.adresse}` : prev.titre,
+          adresse:        deal.adresse        || prev.adresse,
+          commune:        deal.commune        || prev.commune,
+          apporteurName:  deal.apporteurName  || prev.apporteurName,
+          apporteurEmail: deal.apporteurEmail || prev.apporteurEmail,
+          apporteurPhone: deal.apporteurPhone || prev.apporteurPhone,
+          commentaire:    deal.commentaire    || prev.commentaire,
+        }));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Le déblocage a échoué.");
+    } finally {
+      setUnlocking(false);
+    }
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!isUnlocked) { handleUnlock(); return; }
+    if (submitting) return;
 
     if (!form.adresse.trim()) {
       setError("L'adresse est obligatoire.");
@@ -166,16 +187,23 @@ export default function NouvelleOpportunitePage() {
     try {
       const titre = form.titre.trim() || `Étude — ${form.adresse}`;
 
-      const study = createPromoteurStudy(titre);
+      const result = await PromoteurStudyService.createStudy(titre);
+      if (!result.ok) throw new Error(`Création de l'étude impossible : ${result.error}`);
+      const study = result.data;
+
       setActiveStudyId(study.id);
       clearPromoteurSessionKeys();
 
-    userStorage.setItem("mimmoza.promoteur.quick.address", form.adresse);
-    userStorage.setItem("mimmoza.promoteur.quick.commune", form.commune);
-    userStorage.setItem("mimmoza.promoteur.quick.surface", form.surface);
+      userStorage.setItem("mimmoza.promoteur.quick.address", form.adresse);
+      userStorage.setItem("mimmoza.promoteur.quick.commune", form.commune);
+      userStorage.setItem("mimmoza.promoteur.quick.surface", form.surface);
 
       if (sourceDeal) {
-        updateApporteurDeal(sourceDeal.id, {
+        // Idempotent : si le promoteur a déjà payé depuis le pool, cout = 0.
+        // Pose aussi transmis_a, requis par le check constraint.
+        await debloquerDeal(sourceDeal.id);
+
+        await updateApporteurDeal(sourceDeal.id, {
           status:           "qualifie",
           promoteurStudyId: study.id,
         });
@@ -184,7 +212,7 @@ export default function NouvelleOpportunitePage() {
       navigate(`/promoteur/foncier?study=${study.id}`);
     } catch (err) {
       console.error("[NouvelleOpportunitePage] Erreur création étude:", err);
-      setError("Une erreur est survenue. Veuillez réessayer.");
+      setError(err instanceof Error ? err.message : "Une erreur est survenue. Veuillez réessayer.");
       setSubmitting(false);
     }
   }
@@ -227,8 +255,8 @@ export default function NouvelleOpportunitePage() {
                   {submitting ? "Création…" : "Créer l'étude et qualifier →"}
                 </HeroPrimaryButton>
               ) : (
-                <HeroPrimaryButton onClick={handleUnlock}>
-                  🔓 Débloquer l'opportunité
+                <HeroPrimaryButton onClick={handleUnlock} disabled={unlocking}>
+                  {unlocking ? "Déblocage…" : `🔓 Débloquer — ${sourceDeal?.coutDeblocage ?? "?"} jetons`}
                 </HeroPrimaryButton>
               )}
             </>
@@ -467,8 +495,8 @@ export default function NouvelleOpportunitePage() {
               {submitting ? "Création…" : "Créer l'étude et qualifier →"}
             </button>
           ) : (
-            <button onClick={handleUnlock} style={btnUnlockStyle}>
-              🔓 Débloquer l'opportunité
+            <button onClick={handleUnlock} disabled={unlocking} style={btnUnlockStyle}>
+              {unlocking ? "Déblocage…" : `🔓 Débloquer — ${sourceDeal?.coutDeblocage ?? "?"} jetons`}
             </button>
           )}
         </div>
@@ -485,8 +513,8 @@ export default function NouvelleOpportunitePage() {
               Adresse complète · Commentaires · Coordonnées apporteur · Lancement de l'étude
             </p>
           </div>
-          <button onClick={handleUnlock} style={btnUnlockStyle}>
-            🔓 Débloquer — voir le tarif
+          <button onClick={handleUnlock} disabled={unlocking} style={btnUnlockStyle}>
+            {unlocking ? "Déblocage…" : `🔓 Débloquer — ${sourceDeal?.coutDeblocage ?? "?"} jetons`}
           </button>
         </div>
       )}
