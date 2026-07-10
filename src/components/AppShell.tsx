@@ -14,7 +14,6 @@ import {
   FileText,
   FolderKanban,
   Grid3X3,
-  Hammer,
   Home,
   Layers,
   LayoutDashboard,
@@ -97,8 +96,6 @@ type PendingProjectUnlock = {
   projectKey: string;
   label: string;
 };
-
-const AUTH_STORAGE_KEY = "mimmoza.auth.v1";
 
 function MimmozaLogo(props: { className?: string }) {
   return (
@@ -294,10 +291,10 @@ const SPACES: Array<{
   icon: ComponentType<{ className?: string }>;
   path: string;
 }> = [
-  { id: "marchand",       label: "Espace Investisseur",   shortLabel: "Investisseur",   description: "Opportunites, scoring, rentabilite, execution et sortie",   icon: PieChart,  path: "/marchand-de-bien" },
-  { id: "promoteur",      label: "Espace Promoteur",      shortLabel: "Promoteur",      description: "Faisabilite, SDP potentielle et bilan promoteur",           icon: Building2, path: "/promoteur" },
-  { id: "rehabilitation", label: "Espace Analyse de plan", shortLabel: "Analyse de plan", description: "Lecture de plan, conformité, chiffrage et valorisation",    icon: ScanSearch, path: "/rehabilitation" },
-  { id: "agence",         label: "Espace Apporteur",      shortLabel: "Apporteur",      description: "Déposer un bien et générer des opportunités promoteur",     icon: Users,     path: "/apporteur" },
+  { id: "marchand",       label: "Espace Investissement",    shortLabel: "Investissement",    description: "Opportunites, scoring, rentabilite, execution et sortie", icon: PieChart,   path: "/marchand-de-bien" },
+  { id: "promoteur",      label: "Espace Promotion",         shortLabel: "Promotion",         description: "Faisabilite, SDP potentielle et bilan promoteur",         icon: Building2,  path: "/promoteur" },
+  { id: "rehabilitation", label: "Espace Réhabilitation",    shortLabel: "Réhabilitation",    description: "Lecture de plan, conformité, chiffrage et valorisation",  icon: ScanSearch, path: "/rehabilitation" },
+  { id: "agence",         label: "Espace Apport d'affaires", shortLabel: "Apport d'affaires", description: "Déposer un bien et générer des opportunités promoteur",   icon: Users,      path: "/apporteur" },
 ];
 
 // ── SPACE_NAVIGATION ────────────────────────────────────────────────────────
@@ -381,9 +378,9 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       id: "execution",
       label: "Execution",
       items: [
-        { label: "Simulation",    path: "/marchand-de-bien/execution/simulation", icon: Calculator },
+        { label: "Simulation",       path: "/marchand-de-bien/execution/simulation", icon: Calculator },
         { label: "Planning travaux", path: "/marchand-de-bien/execution",            icon: Building, end: true },
-        { label: "Rendu travaux", path: "/marchand-de-bien/planning",             icon: ClipboardList },
+        { label: "Rendu travaux",    path: "/marchand-de-bien/planning",             icon: ClipboardList },
       ],
     },
     {
@@ -555,12 +552,14 @@ function TopNavigation(props: {
     navigate("/compte");
   }
 
-  const subTabBaseCls = "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium whitespace-nowrap transition-all";
+  const subTabBaseCls  = "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium whitespace-nowrap transition-all";
+  const toolTabBaseCls = "group flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium whitespace-nowrap transition-all";
 
   return (
     <>
       <div className="border-b border-slate-200/70 bg-white/90 backdrop-blur-md overflow-x-hidden">
         <div className="mx-auto max-w-7xl px-4 lg:px-6">
+          {/* ── Ligne 1 : logo · espaces métier · compte ──────────────────── */}
           <div className="flex h-16 items-center justify-between gap-4 min-w-0">
             <NavLink
               to="/"
@@ -591,53 +590,6 @@ function TopNavigation(props: {
                     </a>
                   );
                 })}
-
-                <div className="mx-1 h-5 w-px shrink-0 bg-slate-200/80" />
-
-                <NavLink
-                  to="/analyse-rapide"
-                  onClick={() => onChangeSpace("none")}
-                  className="group relative flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-all"
-                  style={function (navArgs) {
-                    if (navArgs.isActive) return { background: "linear-gradient(135deg, #6366f1 0%, #818cf8 100%)", color: "white" };
-                    return { color: "#64748b" };
-                  }}
-                >
-                  {function (navArgs) {
-                    const cls = "h-4 w-4 transition-colors " + (navArgs.isActive ? "text-white" : "text-slate-400 group-hover:text-slate-700");
-                    return (<><Zap className={cls} /><span>Analyse rapide</span></>);
-                  }}
-                </NavLink>
-
-                <NavLink
-                  to="/opportunites"
-                  onClick={() => onChangeSpace("none")}
-                  className="group relative flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-all"
-                  style={function (navArgs) {
-                    if (navArgs.isActive) return { background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)", color: "white" };
-                    return { color: "#64748b" };
-                  }}
-                >
-                  {function (navArgs) {
-                    const cls = "h-4 w-4 transition-colors " + (navArgs.isActive ? "text-white" : "text-slate-400 group-hover:text-slate-700");
-                    return (<><Target className={cls} /><span>Opportunités</span><VeilleNavBadge /></>);
-                  }}
-                </NavLink>
-
-                <NavLink
-                  to="/api"
-                  onClick={() => onChangeSpace("none")}
-                  className="group relative flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-all"
-                  style={function (navArgs) {
-                    if (navArgs.isActive) return { background: "linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%)", color: "white" };
-                    return { color: "#64748b" };
-                  }}
-                >
-                  {function (navArgs) {
-                    const cls = "h-4 w-4 transition-colors " + (navArgs.isActive ? "text-white" : "text-slate-400 group-hover:text-slate-700");
-                    return (<><Code2 className={cls} /><span>API</span></>);
-                  }}
-                </NavLink>
               </nav>
             </div>
 
@@ -677,6 +629,54 @@ function TopNavigation(props: {
                 </div>
               </button>
             </div>
+          </div>
+
+          {/* ── Ligne 2 : outils transverses ─────────────────────────────── */}
+          <div className="flex items-center justify-center gap-1 border-t border-slate-100 py-1.5">
+            <NavLink
+              to="/analyse-rapide"
+              onClick={() => onChangeSpace("none")}
+              className={toolTabBaseCls + " hover:bg-slate-50"}
+              style={function (navArgs) {
+                if (navArgs.isActive) return { background: "linear-gradient(135deg, #6366f1 0%, #818cf8 100%)", color: "white" };
+                return { color: "#64748b" };
+              }}
+            >
+              {function (navArgs) {
+                const cls = "h-3.5 w-3.5 transition-colors " + (navArgs.isActive ? "text-white" : "text-slate-400 group-hover:text-slate-700");
+                return (<><Zap className={cls} /><span>Analyse rapide</span></>);
+              }}
+            </NavLink>
+
+            <NavLink
+              to="/opportunites"
+              onClick={() => onChangeSpace("none")}
+              className={toolTabBaseCls + " hover:bg-slate-50"}
+              style={function (navArgs) {
+                if (navArgs.isActive) return { background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)", color: "white" };
+                return { color: "#64748b" };
+              }}
+            >
+              {function (navArgs) {
+                const cls = "h-3.5 w-3.5 transition-colors " + (navArgs.isActive ? "text-white" : "text-slate-400 group-hover:text-slate-700");
+                return (<><Target className={cls} /><span>Veille marché</span><VeilleNavBadge /></>);
+              }}
+            </NavLink>
+
+            <NavLink
+              to="/api"
+              onClick={() => onChangeSpace("none")}
+              className={toolTabBaseCls + " hover:bg-slate-50"}
+              style={function (navArgs) {
+                if (navArgs.isActive) return { background: "linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%)", color: "white" };
+                return { color: "#64748b" };
+              }}
+            >
+              {function (navArgs) {
+                const cls = "h-3.5 w-3.5 transition-colors " + (navArgs.isActive ? "text-white" : "text-slate-400 group-hover:text-slate-700");
+                return (<><Code2 className={cls} /><span>API</span></>);
+              }}
+            </NavLink>
           </div>
         </div>
       </div>
@@ -982,7 +982,7 @@ function MobileDrawer(props: {
             >
               {function (navArgs) {
                 const cls = "h-4 w-4 " + (navArgs.isActive ? "text-white" : "text-indigo-400");
-                return (<><Target className={cls} /><span className="text-sm font-medium">Opportunités</span><VeilleNavBadge /></>);
+                return (<><Target className={cls} /><span className="text-sm font-medium">Veille marché</span><VeilleNavBadge /></>);
               }}
             </NavLink>
 
@@ -1040,6 +1040,10 @@ export function AppShell(props: AppShellProps) {
 
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Pages qui gerent elles-memes leur header/footer (landing dediee)
+  const isBarePage =
+    location.pathname === "/" || location.pathname.startsWith("/connexion");
 
   const isPublicPage =
     location.pathname === "/" ||
@@ -1201,102 +1205,98 @@ export function AppShell(props: AppShellProps) {
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900">
-      <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur-md supports-[backdrop-filter]:bg-white/80 md:hidden">
-        <div className="flex h-14 items-center justify-between px-4">
-          <NavLink to="/" onClick={() => onChangeSpace("none")} className="flex items-center">
-            <MimmozaLogo className="h-8 w-auto object-contain" />
-          </NavLink>
-          <div className="flex items-center gap-2">
-            {isAdmin && (
+      {!isBarePage && (
+        <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur-md supports-[backdrop-filter]:bg-white/80 md:hidden">
+          <div className="flex h-14 items-center justify-between px-4">
+            <NavLink to="/" onClick={() => onChangeSpace("none")} className="flex items-center">
+              <MimmozaLogo className="h-8 w-auto object-contain" />
+            </NavLink>
+            <div className="flex items-center gap-2">
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => navigate("/admin")}
+                  className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
+                  title="Admin"
+                >
+                  <LayoutDashboard className="h-4 w-4" />
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => navigate("/admin")}
+                onClick={() => setMobileNavOpen((o) => !o)}
                 className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
-                title="Admin"
               >
-                <LayoutDashboard className="h-4 w-4" />
+                {mobileNavOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setMobileNavOpen((o) => !o)}
-              className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
-            >
-              {mobileNavOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-            </button>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
-      <header className="sticky top-0 z-40 hidden md:block">
-        <TopNavigation
+      {!isBarePage && (
+        <header className="sticky top-0 z-40 hidden md:block">
+          <TopNavigation
+            currentSpace={currentSpace}
+            onChangeSpace={onChangeSpace}
+            isAdmin={isAdmin}
+            onProtectedNavigate={handleProtectedNavigate}
+          />
+        </header>
+      )}
+
+      {!isBarePage && (
+        <MobileDrawer
+          isOpen={mobileNavOpen}
+          onClose={() => setMobileNavOpen(false)}
           currentSpace={currentSpace}
           onChangeSpace={onChangeSpace}
           isAdmin={isAdmin}
           onProtectedNavigate={handleProtectedNavigate}
         />
-      </header>
-
-      <MobileDrawer
-        isOpen={mobileNavOpen}
-        onClose={() => setMobileNavOpen(false)}
-        currentSpace={currentSpace}
-        onChangeSpace={onChangeSpace}
-        isAdmin={isAdmin}
-        onProtectedNavigate={handleProtectedNavigate}
-      />
+      )}
 
       <main className="flex-1 overflow-auto">
-  {isPublicPage
-    ? children
-    : <div className="mx-auto max-w-7xl px-4 lg:px-6">{children}</div>
-  }
-</main>
+        {isPublicPage || isBarePage
+          ? children
+          : <div className="mx-auto max-w-7xl px-4 lg:px-6">{children}</div>
+        }
+      </main>
 
-      <footer className="border-t border-slate-200/80 bg-white py-4 px-4">
-  <div className="mx-auto max-w-7xl">
-    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      {!isBarePage && (
+        <footer className="border-t border-slate-200/80 bg-white py-4 px-4">
+          <div className="mx-auto max-w-7xl">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
 
-      <div className="flex items-center gap-2">
-        <MimmozaLogo className="h-5 w-auto object-contain" />
-        <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-        <span className="text-[10px] text-slate-400">
-          Intelligence immobilière
-        </span>
-      </div>
+              <div className="flex items-center gap-2">
+                <MimmozaLogo className="h-5 w-auto object-contain" />
+                <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                <span className="text-[10px] text-slate-400">
+                  Intelligence immobilière
+                </span>
+              </div>
 
-      <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
-        <NavLink
-          to="/mentions-legales"
-          className="hover:text-slate-900 transition-colors"
-        >
-          Mentions légales
-        </NavLink>
+              <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
+                <NavLink to="/mentions-legales" className="hover:text-slate-900 transition-colors">
+                  Mentions légales
+                </NavLink>
 
-        <NavLink
-          to="/cgu"
-          className="hover:text-slate-900 transition-colors"
-        >
-          CGU
-        </NavLink>
+                <NavLink to="/cgu" className="hover:text-slate-900 transition-colors">
+                  CGU
+                </NavLink>
 
-        <NavLink
-          to="/cgv"
-          className="hover:text-slate-900 transition-colors"
-        >
-          CGV
-        </NavLink>
+                <NavLink to="/cgv" className="hover:text-slate-900 transition-colors">
+                  CGV
+                </NavLink>
 
-        <NavLink
-          to="/politique-confidentialite"
-          className="hover:text-slate-900 transition-colors"
-        >
-          Politique de confidentialité
-        </NavLink>
-      </div>
-    </div>
-  </div>
-</footer>
+                <NavLink to="/politique-confidentialite" className="hover:text-slate-900 transition-colors">
+                  Politique de confidentialité
+                </NavLink>
+              </div>
+            </div>
+          </div>
+        </footer>
+      )}
 
       <DealUnlockModal
         open={Boolean(pendingUnlock)}

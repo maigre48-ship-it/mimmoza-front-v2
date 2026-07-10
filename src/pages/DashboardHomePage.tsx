@@ -17,7 +17,6 @@ import {
   Layers3,
   LineChart,
   MapPinned,
-  Play,
   ScanSearch,
   ShieldCheck,
   Sparkles,
@@ -30,6 +29,7 @@ import type { ComponentType } from "react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { userStorage } from "@/lib/storage/userScopedStorage";
+import { ACTION_COSTS } from "@/lib/billing/actionCosts";
 
 type VerticalCard = {
   id: "promoteur" | "investisseur" | "apporteur" | "rehabilitation";
@@ -47,7 +47,7 @@ type VerticalCard = {
 const VERTICALS: VerticalCard[] = [
   {
     id: "investisseur",
-    title: "Investisseur",
+    title: "Investissement",
     badge: "Investissement",
     description: "Rentabilité, sourcing, stratégie patrimoniale et arbitrage.",
     features: ["Rentabilité", "Scoring", "Travaux", "Stratégie de sortie"],
@@ -59,7 +59,7 @@ const VERTICALS: VerticalCard[] = [
   },
   {
     id: "promoteur",
-    title: "Promoteur",
+    title: "Promotion",
     badge: "Cœur produit",
     description: "Analyse foncière, PLU, massing 3D et bilan promoteur complet.",
     features: ["Faisabilité foncière", "Lecture PLU", "Massing 3D", "Bilan promoteur"],
@@ -84,7 +84,7 @@ const VERTICALS: VerticalCard[] = [
   },
   {
     id: "apporteur",
-    title: "Apporteur d'affaire",
+    title: "Apport d'affaires",
     badge: "Mise en relation",
     description:
       "Qualifiez rapidement une opportunité et transmettez-la à un promoteur.",
@@ -129,46 +129,6 @@ const EMPLACEMENT = [
   { label: "Écoles", value: 90, icon: GraduationCap },
   { label: "Marché", value: 80, icon: LineChart },
 ];
-
-// ─── Emplacement vidéo (hero) ──────────────────────────────────────────────
-// Autoplay muet en boucle. Dépose le mp4 dans public/videos/intro.mp4.
-// Tant que le fichier n'existe pas, laisse HAS_VIDEO = false (placeholder).
-const HAS_VIDEO = false;
-const HERO_VIDEO_SRC = "/videos/intro.mp4";
-const HERO_VIDEO_POSTER = ""; // ex: "/videos/intro-poster.jpg" (recommandé)
-
-function HeroVideo() {
-  return (
-    <div className="mt-14 overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.04] shadow-2xl shadow-violet-950/40 backdrop-blur">
-      <div className="relative aspect-video w-full">
-        {HAS_VIDEO ? (
-          <video
-            src={HERO_VIDEO_SRC}
-            autoPlay
-            muted
-            loop
-            playsInline
-            preload="auto"
-            poster={HERO_VIDEO_POSTER || undefined}
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-        ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/20 text-violet-200">
-              <Play className="h-6 w-6" />
-            </div>
-            <p className="text-sm font-medium text-slate-300">
-              Vidéo de présentation — à venir
-            </p>
-            <p className="text-xs text-slate-500">
-              Dépose ton fichier dans <code className="text-slate-400">public/videos/intro.mp4</code>
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 export default function DashboardHomePage() {
   const navigate = useNavigate();
@@ -241,7 +201,7 @@ export default function DashboardHomePage() {
             {/* Mention cout */}
             <p className="mt-3 flex items-center gap-1.5 text-sm text-slate-400">
               <Zap className="h-3.5 w-3.5 text-violet-300" />
-              Une analyse rapide coûte <span className="font-semibold text-violet-200">1 jeton</span>.
+              Une analyse rapide coûte <span className="font-semibold text-violet-200">{ACTION_COSTS.analyse_rapide} jetons</span>.
             </p>
 
             {/* Badges */}
@@ -256,9 +216,6 @@ export default function DashboardHomePage() {
               ))}
             </div>
           </div>
-
-          {/* ───────────────── EMPLACEMENT VIDÉO ───────────────── */}
-          <HeroVideo />
 
           {/* ───────────────── BLOC ANALYSE RAPIDE (mock) ───────────────── */}
           <div className="mt-14 overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.04] shadow-2xl shadow-violet-950/40 backdrop-blur">

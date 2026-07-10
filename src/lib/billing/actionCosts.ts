@@ -10,7 +10,7 @@
 export const ACTION_COSTS = {
   copilot_quick:      5,
   copilot_advanced:   15,
-  analyse_rapide:     3,
+  analyse_rapide:     10,
   facade_low:         10,
   facade_medium:      20,
   facade_high:        40,
