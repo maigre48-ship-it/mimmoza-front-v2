@@ -7,8 +7,6 @@ import {
   BadgeCheck,
   Building2,
   ChartNoAxesCombined,
-  ChevronDown,
-  CircleHelp,
   Clock3,
   Code2,
   Database,
@@ -42,13 +40,6 @@ type StoredUser = {
 type Mode = "login" | "reset";
 type PropertyType = "" | "appartement" | "maison";
 
-const PRO_MENU: { label: string; to: string }[] = [
-  { label: "Investissement", to: "/marchand-de-bien" },
-  { label: "Promotion", to: "/promoteur" },
-  { label: "Réhabilitation", to: "/rehabilitation" },
-  { label: "Apport d'affaires", to: "/apporteur" },
-];
-
 const EXPRESS_BENEFITS = [
   { icon: Search, label: "Analyse rapide et fiable" },
   { icon: Database, label: "Donnees de marche & risques inclus" },
@@ -67,6 +58,99 @@ const TRUST_ITEMS = [
   { icon: BadgeCheck, title: "Données certifiées", subtitle: "DVF, PLU, Cadastre" },
   { icon: ShieldCheck, title: "Sécurisé & confidentiel", subtitle: "Conforme RGPD" },
 ];
+
+/* ------------------------------------------------------------------
+   FOND — 3 calques totalement indépendants
+   1. CALQUE GAUCHE  : /illustrations/photo_immeuble.png
+   2. CALQUE DROIT   : /illustrations/ville_nuit.png
+   3. HALO CENTRAL   : gradients CSS purs
+   Chacun peut être remplacé isolément sans toucher au layout.
+------------------------------------------------------------------ */
+
+// Légère inclinaison (~6°) : quasi imperceptible, les deux univers fusionnent.
+const CLIP_LEFT =
+  "[clip-path:polygon(0%_0%,100%_0%,100%_50%,0%_50%)] lg:[clip-path:polygon(0%_0%,53%_0%,47%_100%,0%_100%)]";
+const CLIP_RIGHT =
+  "[clip-path:polygon(0%_50%,100%_50%,100%_100%,0%_100%)] lg:[clip-path:polygon(53%_0%,100%_0%,100%_100%,47%_100%)]";
+
+function BackgroundLayers() {
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+      {/* ---------- 1. CALQUE GAUCHE — Particuliers : lumière, confiance ---------- */}
+      <div className={`absolute inset-0 ${CLIP_LEFT}`}>
+        {/* Photo immeuble — décalée vers la gauche, agrandie, bien visible */}
+        <div
+          className="absolute inset-0 bg-no-repeat"
+          style={{
+            backgroundImage: "url('/illustrations/photo_immeuble.png')",
+            backgroundSize: "auto 118%",
+            backgroundPosition: "left -140px bottom",
+          }}
+        />
+        {/* Voile blanc progressif : lisibilité absolue des textes */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(115deg, rgba(255,255,255,0.90) 0%, rgba(255,255,255,0.76) 35%, rgba(255,255,255,0.44) 65%, rgba(255,255,255,0.22) 100%)",
+          }}
+        />
+        {/* Très léger halo blanc autour de l'immeuble */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(90% 70% at 22% 88%, rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.14) 45%, rgba(255,255,255,0) 78%)",
+          }}
+        />
+      </div>
+
+      {/* ---------- 2. CALQUE DROIT — Professionnels : technologie, décision ---------- */}
+      <div className={`absolute inset-0 ${CLIP_RIGHT}`}>
+        {/* Ville de nuit — reste bien visible, pas de flou excessif */}
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: "url('/illustrations/ville_nuit.png')" }}
+        />
+        {/* Voile violet très léger */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(150deg, rgba(7,17,38,0.62) 0%, rgba(27,16,66,0.55) 48%, rgba(11,23,56,0.66) 100%)",
+          }}
+        />
+        {/* Rehaut violet derrière la carte de connexion */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(70% 60% at 70% 55%, rgba(139,92,246,0.20) 0%, rgba(139,92,246,0) 70%)",
+          }}
+        />
+      </div>
+
+      {/* ---------- 3. HALO CENTRAL — transition douce entre les deux univers ---------- */}
+      <div
+        className="absolute inset-0 mix-blend-screen"
+        style={{
+          background: [
+            "radial-gradient(38% 90% at 50% 50%, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.18) 42%, rgba(255,255,255,0) 72%)",
+            "radial-gradient(30% 55% at 52% 28%, rgba(167,139,250,0.30) 0%, rgba(167,139,250,0) 70%)",
+            "radial-gradient(32% 55% at 48% 78%, rgba(125,184,255,0.26) 0%, rgba(125,184,255,0) 72%)",
+          ].join(","),
+        }}
+      />
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            "linear-gradient(100deg, rgba(255,255,255,0) 42%, rgba(255,255,255,0.22) 50%, rgba(255,255,255,0) 58%)",
+        }}
+      />
+    </div>
+  );
+}
 
 export default function ConnexionPage() {
   const navigate = useNavigate();
@@ -99,9 +183,6 @@ export default function ConnexionPage() {
   const [expressPropertyType, setExpressPropertyType] = useState<PropertyType>("");
   const [expressError, setExpressError] = useState<string | null>(null);
 
-  const [proMenuOpen, setProMenuOpen] = useState(false);
-  const proMenuRef = useRef<HTMLDivElement | null>(null);
-
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
@@ -124,24 +205,6 @@ export default function ConnexionPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!proMenuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (proMenuRef.current && !proMenuRef.current.contains(e.target as Node)) {
-        setProMenuOpen(false);
-      }
-    };
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setProMenuOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onEsc);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onEsc);
-    };
-  }, [proMenuOpen]);
-
   const firstName = storedUser.fullName?.trim().split(/\s+/)[0] ?? "";
 
   const switchMode = (next: Mode) => {
@@ -150,9 +213,6 @@ export default function ConnexionPage() {
     setResetInfo(null);
   };
 
-  const scrollToPro = () => {
-    proRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
 
   const handleLogin = async () => {
     if (!email.trim() || !password) {
@@ -333,77 +393,6 @@ export default function ConnexionPage() {
             />
           </Link>
 
-          <nav aria-label="Navigation principale" className="hidden items-center gap-1 lg:flex">
-            <Link
-              to="/"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
-            >
-              Accueil
-            </Link>
-
-            <Link
-              to="/connexion"
-              aria-current="page"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-sky-600"
-            >
-              Analyse Express
-            </Link>
-
-            <div ref={proMenuRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setProMenuOpen((o) => !o)}
-                aria-expanded={proMenuOpen}
-                aria-haspopup="true"
-                className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-              >
-                Professionnels
-                <ChevronDown
-                  className={
-                    proMenuOpen
-                      ? "h-3.5 w-3.5 rotate-180 transition-transform"
-                      : "h-3.5 w-3.5 transition-transform"
-                  }
-                  aria-hidden="true"
-                />
-              </button>
-
-              {proMenuOpen ? (
-                <div className="absolute left-0 top-full z-40 mt-2 w-60 overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 shadow-lg shadow-slate-900/5">
-                  {PRO_MENU.map((entry) => (
-                    <Link
-                      key={entry.to}
-                      to={entry.to}
-                      onClick={() => setProMenuOpen(false)}
-                      className="block px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
-                    >
-                      {entry.label}
-                    </Link>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-
-            <Link
-              to="/api"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
-            >
-              API
-            </Link>
-            <Link
-              to="/tarifs"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
-            >
-              Tarifs
-            </Link>
-            <Link
-              to="/a-propos"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
-            >
-              À propos
-            </Link>
-          </nav>
-
           <div className="flex items-center gap-3">
             {isAdmin ? (
               <button
@@ -416,50 +405,26 @@ export default function ConnexionPage() {
                 <span>Admin</span>
               </button>
             ) : null}
-
-            <a
-              href="mailto:support@mimmoza.com"
-              aria-label="Contacter le support"
-              className="hidden h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-400 transition hover:bg-slate-50 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 sm:inline-flex"
-            >
-              <CircleHelp className="h-4 w-4" aria-hidden="true" />
-            </a>
-
-            <button
-              type="button"
-              onClick={scrollToPro}
-              className="inline-flex items-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-            >
-              Se connecter Pro
-            </button>
           </div>
         </div>
       </header>
 
       {/* ZONE PRINCIPALE */}
-      <main className="relative flex-1">
-        {/* Fond d'écran global */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 bg-[length:100%_100%] bg-no-repeat"
-          style={{
-            backgroundImage: "url('/illustrations/Fond_ecran_blanc_violet.png')",
-            left: "4%",
-            right: "0%",
-          }}
-        />
+      <main className="relative flex-1 overflow-hidden">
+        {/* Fond : 3 calques indépendants (gauche / droite / halo) */}
+        <BackgroundLayers />
 
         <div className="relative grid h-full grid-cols-1 lg:grid-cols-2">
         {/* PARTIE EXPRESS */}
         <section
           aria-labelledby="express-title"
-          className="relative overflow-hidden bg-gradient-to-br from-white/70 via-white/50 to-transparent px-5 py-12 sm:px-8 lg:px-12 lg:py-16"
+          className="relative px-5 py-12 sm:px-8 lg:px-12 lg:py-16"
         >
 
           <div className="relative mx-auto flex w-full max-w-xl flex-col">
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-sky-200/80 bg-white/70 px-3.5 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 shadow-sm">
               <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
-              Pour particuliers
+              Pour les particuliers
             </div>
 
             <h1
@@ -682,12 +647,8 @@ export default function ConnexionPage() {
         <section
           ref={proRef}
           aria-labelledby="pro-title"
-          className="relative scroll-mt-16 overflow-hidden px-5 py-12 sm:px-8 lg:px-12 lg:py-16"
+          className="relative scroll-mt-16 px-5 py-12 sm:px-8 lg:px-12 lg:py-16"
         >
-          <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-br from-[#071126]/70 via-[#0b1738]/55 to-[#1b1042]/60" />
-          </div>
-
           <div className="relative mx-auto flex w-full max-w-xl flex-col">
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-violet-400/30 bg-violet-500/10 px-3.5 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-violet-300">
               <Building2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -907,6 +868,9 @@ export default function ConnexionPage() {
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-5 py-5 text-xs text-slate-500 sm:flex-row sm:px-6 lg:px-8">
           <p>&copy; {new Date().getFullYear()} Mimmoza. Tous droits réservés.</p>
           <nav aria-label="Liens légaux" className="flex flex-wrap justify-center gap-x-4 gap-y-2">
+            <Link to="/tarifs" className="transition-colors hover:text-slate-900">
+              Tarifs
+            </Link>
             <Link to="/mentions-legales" className="transition-colors hover:text-slate-900">
               Mentions légales
             </Link>
@@ -919,9 +883,6 @@ export default function ConnexionPage() {
             <Link to="/politique-confidentialite" className="transition-colors hover:text-slate-900">
               Confidentialité
             </Link>
-            <a href="mailto:support@mimmoza.com" className="transition-colors hover:text-slate-900">
-              support@mimmoza.com
-            </a>
           </nav>
         </div>
       </footer>
