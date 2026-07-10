@@ -345,14 +345,20 @@ const QuickAnalysisPage: React.FC = () => {
   const navigate = useNavigate();
   const routerLocation = useLocation();
 
-  // Prefill depuis la page d'accueil : navigate("/analyse-rapide", { state: { prefillAddress } })
-  const prefillAddress =
-    (routerLocation.state as { prefillAddress?: string } | null)?.prefillAddress ?? "";
+  // Prefill :
+  //  - ConnexionPage (analyse express) : state.prefill = FormState partiel, champs déjà découpés
+  //  - Page d'accueil (legacy)         : state.prefillAddress = saisie libre à parser
+  const navState = routerLocation.state as
+    | { prefill?: Partial<FormState>; prefillAddress?: string }
+    | null;
 
-  const [form, setForm] = useState<FormState>(() => ({
-    ...defaultForm,
-    ...parsePrefillAddress(prefillAddress),
-  }));
+  const [form, setForm] = useState<FormState>(() => {
+    if (navState?.prefill) return { ...defaultForm, ...navState.prefill };
+    if (navState?.prefillAddress) {
+      return { ...defaultForm, ...parsePrefillAddress(navState.prefillAddress) };
+    }
+    return defaultForm;
+  });
 
   const { state, run, reset } = useValuationEngine();
   const [tokenError, setTokenError] = useState<string | null>(null);
