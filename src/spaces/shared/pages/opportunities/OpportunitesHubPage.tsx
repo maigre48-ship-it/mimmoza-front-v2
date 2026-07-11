@@ -1,5 +1,5 @@
 // =============================================================
-// Mimmoza · Opportunités (hub unifié)
+// Mimmoza · Veille de marché (hub unifié)
 // Un seul onglet qui réunit le scan ponctuel ET le suivi de zone dans le temps.
 // Bascule interne : "Scanner une zone" / "Mes veilles" (badge de non-lus).
 // Header calé exactement sur les dimensions du hero de QuickAnalysis.
@@ -71,7 +71,7 @@ export default function OpportunitesHubPage() {
               fontWeight: 600,
             }}
           >
-            MIMMOZA · OPPORTUNITÉS
+            MIMMOZA · VEILLE DE MARCHÉ
           </div>
 
           <div
@@ -84,7 +84,7 @@ export default function OpportunitesHubPage() {
               letterSpacing: '-0.025em',
             }}
           >
-            Opportunités
+            Veille de marché
           </div>
 
           <div

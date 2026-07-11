@@ -303,7 +303,7 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
   promoteur: [
     {
       id: "opportunites",
-      label: "Opportunités",
+      label: "Projets",
       items: [
         { label: "Tableau de bord",      path: "/promoteur",                         icon: BarChart3, end: true },
         { label: "Veille foncière",      path: "/promoteur/veille",                  icon: Eye },
@@ -370,7 +370,7 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       id: "acquisition",
       label: "Acquisition",
       items: [
-        { label: "Pipeline",   path: "/marchand-de-bien",          icon: BarChart3, end: true },
+        { label: "Projets",    path: "/marchand-de-bien",          icon: BarChart3, end: true },
         { label: "SmartScore", path: "/marchand-de-bien/sourcing", icon: Search },
       ],
     },

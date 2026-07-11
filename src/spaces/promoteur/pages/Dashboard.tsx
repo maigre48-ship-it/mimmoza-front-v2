@@ -198,7 +198,7 @@ function NouvelleOpportuniteModal({
 
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 18, fontWeight: 700, color: PROMOTEUR_COLORS.textPrimary, lineHeight: 1.25, marginBottom: 3 }}>
-              Nouvelle opportunité
+              Nouveau projet
             </div>
             <div style={{ fontSize: 13, color: PROMOTEUR_COLORS.violetLight }}>
               Promoteur foncier
@@ -231,7 +231,7 @@ function NouvelleOpportuniteModal({
               </span>
             </label>
             <input type="text" value={nom} onChange={(e) => setNom(e.target.value)}
-              placeholder="Ex: Opportunité — 29 rue Georges Mandel"
+              placeholder="Ex: Projet — 29 rue Georges Mandel"
               style={inputStyle} {...focusProps} />
           </div>
 
@@ -297,7 +297,7 @@ function NouvelleOpportuniteModal({
             ) : (
               <>
                 <Plus style={{ width: 15, height: 15 }} />
-                Créer l'opportunité
+                Créer le projet
               </>
             )}
           </button>
@@ -504,9 +504,9 @@ export default function Dashboard(): React.ReactElement {
     const { nom, adresse, commune, surface } = fields;
     const title = nom.trim()
       ? nom.trim()
-      : adresse.trim() ? `Opportunité — ${adresse.trim()}`
-      : commune.trim() ? `Opportunité — ${commune.trim()}`
-      : `Nouvelle étude — ${formatDateTimeFR(new Date().toISOString())}`;
+      : adresse.trim() ? `Projet — ${adresse.trim()}`
+      : commune.trim() ? `Projet — ${commune.trim()}`
+      : `Nouveau projet — ${formatDateTimeFR(new Date().toISOString())}`;
 
     const result = await PromoteurStudyService.createStudy(title);
     if (!result.ok) { alert(`Impossible de créer l'étude : ${result.error}`); setIsCreating(false); return; }
@@ -588,23 +588,23 @@ export default function Dashboard(): React.ReactElement {
         {/* ══ 1. HERO ══════════════════════════════════════════════════════ */}
         <PromoteurPageHero
           badge="Promoteur · Cockpit foncier"
-          title="Opportunités"
+          title="Projets"
           metaLines={[
             {
-              text: "Importez une opportunité, qualifiez-la rapidement, testez la faisabilité et préparez votre comité foncier.",
+              text: "Importez un projet, qualifiez-le rapidement, testez la faisabilité et préparez votre comité foncier.",
             },
             {
               text: `${sortedStudies.length} étude${sortedStudies.length > 1 ? "s" : ""} active${sortedStudies.length > 1 ? "s" : ""}`,
             },
           ]}
           statCards={[
-            { label: "Opportunités", value: String(sortedStudies.length), tone: "indigo" },
+            { label: "Projets", value: String(sortedStudies.length), tone: "indigo" },
             { label: "Deals apporteurs", value: String(apporteurDeals.length), tone: "emerald" },
           ]}
           actions={
             <HeroPrimaryButton onClick={() => setShowModal(true)}>
               <Plus style={{ width: 16, height: 16 }} />
-              Nouvelle opportunité
+              Nouveau projet
             </HeroPrimaryButton>
           }
         />
@@ -639,7 +639,7 @@ export default function Dashboard(): React.ReactElement {
           <div className="mb-3 flex items-center justify-between">
             <p className="text-[10px] font-semibold uppercase tracking-[0.13em]"
               style={{ color: PROMOTEUR_COLORS.violetLight }}>
-              Opportunités récentes
+              Projets récents
               {isLoaded && sortedStudies.length > 0 && (
                 <span className="ml-2 rounded-full px-2 py-0.5 text-[9px] normal-case tracking-normal"
                   style={{ background: PROMOTEUR_COLORS.violetBg, color: ACCENT }}>
@@ -678,14 +678,14 @@ export default function Dashboard(): React.ReactElement {
                 style={{ background: PROMOTEUR_COLORS.violetBg }}>
                 <FileText className="h-6 w-6" style={{ color: ACCENT2 }} />
               </div>
-              <p className="mb-1 text-sm font-semibold" style={{ color: PROMOTEUR_COLORS.textPrimary }}>Aucune opportunité active</p>
+              <p className="mb-1 text-sm font-semibold" style={{ color: PROMOTEUR_COLORS.textPrimary }}>Aucun projet actif</p>
               <p className="mb-5 text-xs leading-5" style={{ color: PROMOTEUR_COLORS.violetLight }}>
                 Créez votre première étude foncière pour démarrer le parcours d'analyse.
               </p>
               <button onClick={() => setShowModal(true)}
                 className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all hover:brightness-110 active:scale-[0.98]"
                 style={{ background: PROMOTEUR_COLORS.gradMain, color: "white", boxShadow: PROMOTEUR_SHADOWS.button }}>
-                <Plus className="h-4 w-4" />Créer une opportunité
+                <Plus className="h-4 w-4" />Créer un projet
               </button>
             </div>
           )}

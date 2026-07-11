@@ -169,7 +169,7 @@ function makeNewDeal(): Deal {
 
   return {
     id,
-    title: `Nouveau deal`,
+    title: `Nouveau projet`,
     address: "",
     zipCode: "",
     city: "",
@@ -270,7 +270,7 @@ function Drawer({
                 marginBottom: 3,
               }}
             >
-              Éditer le deal
+             Éditer le projet
             </div>
             <div style={{ fontSize: 13, color: "#64748B" }}>
               Investisseur › Pipeline
@@ -368,7 +368,7 @@ function Drawer({
                 strokeLinejoin="round"
               />
             </svg>
-            Enregistrer le deal
+            Enregistrer le projet
           </button>
         </div>
       </div>
@@ -678,7 +678,7 @@ export default function MarchandPipeline() {
 
     if (
       window.confirm(
-        `Supprimer ce deal ?\n\n"${dealTitle}"\n\nToutes les données associées seront supprimées.`,
+        `Supprimer ce projet ?\n\n"${dealTitle}"\n\nToutes les données associées seront supprimées.`,
       )
     ) {
       deleteDeal(dealId);
@@ -703,9 +703,9 @@ export default function MarchandPipeline() {
 
   const kpis = [
     {
-      label: "Deals",
+      label: "Projets",
       value: `${totalDeals}`,
-      hint: "Total pipeline",
+      hint: "Total",
       icon: <Workflow size={20} />,
       color: "#2196F3",
       bg: "#EFF6FF",
@@ -874,10 +874,10 @@ export default function MarchandPipeline() {
         >
           <div style={{ position: "relative" }}>
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.9)", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }}>
-              Investisseur · Pipeline
+              Investisseur · Projets
             </div>
             <div style={{ fontSize: 36, fontWeight: 600, color: "#fff", marginBottom: 10, lineHeight: 1.1, letterSpacing: "-0.025em" }}>
-              Pipeline
+              Projets
             </div>
             <div style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", maxWidth: 460, lineHeight: 1.55 }}>
               Créez un dossier par opportunité
@@ -913,7 +913,7 @@ export default function MarchandPipeline() {
             }}
           >
             <Plus className="h-4 w-4" />
-            Nouveau deal
+            Nouveau projet
           </button>
         </div>
 
@@ -1014,10 +1014,10 @@ export default function MarchandPipeline() {
           >
             <div>
               <div style={{ fontSize: 16, fontWeight: 700, color: "#0F172A" }}>
-                Deal flow
+                Vos projets
               </div>
               <div style={{ fontSize: 13, color: "#64748B", marginTop: 3 }}>
-                Sélectionne un deal pour synchroniser toutes les pages.
+                Sélectionnez un projet pour synchroniser toutes les pages.
               </div>
             </div>
 
@@ -1032,7 +1032,7 @@ export default function MarchandPipeline() {
                 fontWeight: 600,
               }}
             >
-              {deals.length} deal{deals.length !== 1 ? "s" : ""}
+              {deals.length} projet{deals.length !== 1 ? "s" : ""}
             </div>
           </div>
 

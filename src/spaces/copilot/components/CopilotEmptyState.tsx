@@ -157,7 +157,7 @@ export function CopilotEmptyState({
           <Sparkles size={24} color="white" />
         </div>
         <div style={{ color: T.text, fontSize: 17, fontWeight: 700, marginBottom: 6 }}>
-          Mimmoza Copilot
+          Analyste Mimmoza
         </div>
         <div style={{ color: T.textMuted, fontSize: 13, marginBottom: 16, maxWidth: 280 }}>
           Mode rapide : questions simples sur la parcelle.
@@ -190,7 +190,7 @@ export function CopilotEmptyState({
       </div>
 
       <div style={{ color: T.text, fontSize: 17, fontWeight: 700, marginBottom: 6 }}>
-        Mimmoza Copilot
+        Analyste Mimmoza
       </div>
 
       <div style={{ color: T.textMuted, fontSize: 13, marginBottom: 16, maxWidth: 280 }}>

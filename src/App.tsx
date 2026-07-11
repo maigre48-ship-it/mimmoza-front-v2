@@ -274,6 +274,7 @@ function AppRoot() {
           <Route path="/billing"  element={<Navigate to="/abonnement" replace />} />
           <Route path="/account"  element={<Navigate to="/compte" replace />} />
           <Route path="/tokens"   element={<Navigate to="/jetons" replace />} />
+          <Route path="/tarifs"   element={<Navigate to="/abonnement" replace />} />
 
           {/* ═══ Paramètres ═══ */}
           <Route path="/parametres/veille" element={<VeilleSettingsPage />} />

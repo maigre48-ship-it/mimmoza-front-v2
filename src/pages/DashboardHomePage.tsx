@@ -1,46 +1,99 @@
 // src/pages/DashboardHomePage.tsx
-// Ancienne HomePage déplacée ici — affichée sur /dashboard (utilisateurs connectés)
-// v4 — HERO moteur de décision + bloc "Analyse Rapide" mocké
-//      Reste de la page inchangé (verticales + section IA + workflow)
+// Tableau de bord utilisateur connecté (/dashboard)
+// v7 — Refonte UI « cockpit » : hero "Reprendre le dernier projet", cartes
+//      métiers compactes, timeline d'activité, hiérarchie visuelle et halos.
+//      Aucune logique, requête ou route modifiée par rapport à la v6.
+//
+//      Projets  : promoteur_studies
+//      Jetons   : credit_accounts.current_credits
+//      Activité : credit_transactions
+//      Veille   : opportunity_watches (via listWatches)
+//
+// Les mappings de colonnes sont défensifs (pick + fallbacks) : si un champ
+// n'existe pas côté base, la ligne dégrade proprement au lieu de crasher.
 
 import {
   Activity,
   ArrowRight,
-  BrainCircuit,
+  Bell,
   Building2,
-  Bus,
-  Gauge,
-  GraduationCap,
+  Eye,
+  FileText,
   Hammer,
   Handshake,
   Landmark,
-  Layers3,
-  LineChart,
-  MapPinned,
+  Loader2,
+  Plus,
   ScanSearch,
-  ShieldCheck,
   Sparkles,
-  Store,
   TrendingUp,
-  Wallet,
   Zap,
 } from "lucide-react";
 import type { ComponentType } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "@/lib/supabaseClient";
+import { listWatches } from "@/services/opportunity/opportunityWatch.service";
 import { userStorage } from "@/lib/storage/userScopedStorage";
 import { ACTION_COSTS } from "@/lib/billing/actionCosts";
+
+/* ─────────────── Helpers de lecture tolérante ─────────────── */
+
+type Row = Record<string, unknown>;
+
+function str(row: Row, keys: string[], fallback = ""): string {
+  for (const k of keys) {
+    const v = row[k];
+    if (typeof v === "string" && v.trim()) return v;
+    if (typeof v === "number") return String(v);
+  }
+  return fallback;
+}
+
+function num(row: Row, keys: string[]): number | null {
+  for (const k of keys) {
+    const v = row[k];
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() && !Number.isNaN(Number(v))) return Number(v);
+  }
+  return null;
+}
+
+/** Lit une valeur numérique dans un objet imbriqué (ex: foncier.surface_m2). */
+function nestedNum(row: Row, parent: string, keys: string[]): number | null {
+  const child = row[parent];
+  if (child && typeof child === "object") return num(child as Row, keys);
+  return null;
+}
+
+function relativeDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const diff = Date.now() - d.getTime();
+  const h = Math.floor(diff / 3_600_000);
+  if (h < 1) return "À l'instant";
+  if (h < 24) return `Il y a ${h} h`;
+  const j = Math.floor(h / 24);
+  if (j === 1) return "Hier";
+  if (j < 30) return `Il y a ${j} j`;
+  return d.toLocaleDateString("fr-FR");
+}
+
+function formatSurface(v: number | null): string {
+  return v == null ? "—" : `${Math.round(v).toLocaleString("fr-FR")} m²`;
+}
+
+/* ─────────────── Cartes métiers ─────────────── */
 
 type VerticalCard = {
   id: "promoteur" | "investisseur" | "apporteur" | "rehabilitation";
   title: string;
-  badge: string;
   description: string;
-  features: string[];
   icon: ComponentType<{ className?: string }>;
-  gradient: string;
-  border: string;
-  button: string;
+  iconBg: string;
+  iconColor: string;
+  linkColor: string;
   route: string;
 };
 
@@ -48,96 +101,234 @@ const VERTICALS: VerticalCard[] = [
   {
     id: "investisseur",
     title: "Investissement",
-    badge: "Investissement",
-    description: "Rentabilité, sourcing, stratégie patrimoniale et arbitrage.",
-    features: ["Rentabilité", "Scoring", "Travaux", "Stratégie de sortie"],
+    description: "Rentabilité, risques et valeur d'une acquisition.",
     icon: Landmark,
-    gradient: "from-blue-500/10 via-blue-500/5 to-transparent",
-    border: "border-blue-200",
-    button: "bg-blue-600 hover:bg-blue-700",
+    iconBg: "bg-blue-50",
+    iconColor: "text-blue-600",
+    linkColor: "text-blue-600 group-hover:text-blue-700",
     route: "/marchand-de-bien",
   },
   {
     id: "promoteur",
     title: "Promotion",
-    badge: "Cœur produit",
-    description: "Analyse foncière, PLU, massing 3D et bilan promoteur complet.",
-    features: ["Faisabilité foncière", "Lecture PLU", "Massing 3D", "Bilan promoteur"],
+    description: "Faisabilité foncière, PLU, massing 3D et bilan.",
     icon: Building2,
-    gradient: "from-violet-500/10 via-violet-500/5 to-transparent",
-    border: "border-violet-200",
-    button: "bg-violet-600 hover:bg-violet-700",
+    iconBg: "bg-violet-50",
+    iconColor: "text-violet-600",
+    linkColor: "text-violet-600 group-hover:text-violet-700",
     route: "/promoteur",
   },
   {
     id: "rehabilitation",
     title: "Réhabilitation",
-    badge: "Bâti existant",
-    description:
-      "Transformez et valorisez un bien existant avec analyse travaux et conformité.",
-    features: ["Estimation travaux", "Rendu IA", "Conformité", "Valorisation après travaux"],
+    description: "Travaux, conformité et valeur après rénovation.",
     icon: Hammer,
-    gradient: "from-amber-500/10 via-amber-500/5 to-transparent",
-    border: "border-amber-200",
-    button: "bg-amber-500 hover:bg-amber-600",
+    iconBg: "bg-amber-50",
+    iconColor: "text-amber-600",
+    linkColor: "text-amber-600 group-hover:text-amber-700",
     route: "/rehabilitation",
   },
   {
     id: "apporteur",
     title: "Apport d'affaires",
-    badge: "Mise en relation",
-    description:
-      "Qualifiez rapidement une opportunité et transmettez-la à un promoteur.",
-    features: ["Qualification", "Pré-analyse", "Partage promoteur", "Synthèse PDF"],
+    description: "Qualifiez une opportunité et transmettez-la.",
     icon: Handshake,
-    gradient: "from-emerald-500/10 via-emerald-500/5 to-transparent",
-    border: "border-emerald-200",
-    button: "bg-emerald-600 hover:bg-emerald-700",
+    iconBg: "bg-emerald-50",
+    iconColor: "text-emerald-600",
+    linkColor: "text-emerald-600 group-hover:text-emerald-700",
     route: "/apporteur",
   },
 ];
 
-// ───────────────── Données mockées (Hero uniquement) ─────────────────
-// Aligné sur la vraie sortie du moteur "Analyse rapide" :
-// Score opportunité, Sécurité du projet, Valeur estimée + fourchette + €/m²,
-// Écart prix/estimation, Fiabilité, sous-scores d'emplacement.
-const HERO_BADGES = ["PLU", "Faisabilité", "Marché", "Travaux", "Rentabilité", "Valorisation"];
+/* ─────────────── Types vue ─────────────── */
 
-const MOCK_ANALYSE = {
-  adresse: "15 Rue de la République, 69002 Lyon",
-  parcelle: "AB123",
-  surface: "520 m²",
-  scoreOpportunite: 82,
-  scoreLabel: "Bonne opportunité",
-  positionnement: "Prix cohérent avec le marché",
-  securite: 96,
-  fiabilite: 67,
-  valeurEstimee: "485 000 €",
-  fourchetteBasse: "461 000 €",
-  fourchetteHaute: "509 000 €",
-  prixDemande: "460 000 €",
-  marcheM2: "6 730 €/m²",
-  ecart: "+25 000 €",
-  ecartPct: "+5,4 %",
-  scoreLocalisation: 83,
+type Project = {
+  id: string;
+  name: string;
+  type: string;
+  surface: string;
+  status: string;
+  updatedAt: string;
 };
 
-// Sous-scores d'emplacement (cf. carte EMPLACEMENT du moteur réel)
-const EMPLACEMENT = [
-  { label: "Transports", value: 78, icon: Bus },
-  { label: "Commerces", value: 85, icon: Store },
-  { label: "Écoles", value: 90, icon: GraduationCap },
-  { label: "Marché", value: 80, icon: LineChart },
-];
+type ActivityItem = {
+  id: string;
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  date: string;
+};
+
+type AlertItem = { id: string; label: string; date: string };
+
+type Tokens = { used: number; total: number | null };
+
+const STATUS_STYLES: Record<string, string> = {
+  "en cours": "bg-violet-50 text-violet-700 border-violet-200",
+  active: "bg-violet-50 text-violet-700 border-violet-200",
+  terminé: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  archived: "bg-slate-100 text-slate-600 border-slate-200",
+  brouillon: "bg-slate-100 text-slate-600 border-slate-200",
+  draft: "bg-slate-100 text-slate-600 border-slate-200",
+};
+
+function statusClass(status: string): string {
+  return STATUS_STYLES[status.toLowerCase()] ?? "bg-slate-100 text-slate-600 border-slate-200";
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  active: "Active",
+  archived: "Archivée",
+  draft: "Brouillon",
+};
+
+function statusLabel(status: string): string {
+  return STATUS_LABELS[status.toLowerCase()] ?? status;
+}
+
+/** Choisit une icône d'activité à partir du libellé de l'action. */
+function activityIcon(action: string): ComponentType<{ className?: string }> {
+  const a = action.toLowerCase();
+  if (a.includes("refund") || a.includes("rembours")) return TrendingUp;
+  if (a.includes("unlock") || a.includes("apporteur")) return Handshake;
+  if (a.includes("copilot")) return Sparkles;
+  if (a.includes("analyse")) return ScanSearch;
+  if (a.includes("facade") || a.includes("façade") || a.includes("rendu")) return Sparkles;
+  if (a.includes("export") || a.includes("bilan") || a.includes("pdf")) return FileText;
+  if (a.includes("score") || a.includes("veille") || a.includes("scan")) return TrendingUp;
+  return Zap;
+}
+
+/* ─────────────── Composant ─────────────── */
 
 export default function DashboardHomePage() {
   const navigate = useNavigate();
-  const [query, setQuery] = useState("");
 
-  // Lance l'analyse rapide en transmettant l'adresse saisie (evite la double saisie).
-  function launchQuickAnalysis() {
-    navigate("/analyse-rapide", { state: { prefillAddress: query.trim() } });
-  }
+  const [firstName, setFirstName] = useState<string>("");
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [tokens, setTokens] = useState<Tokens | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      const { data: auth } = await supabase.auth.getUser();
+      const user = auth?.user;
+      if (!user) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
+
+      // Prénom : metadata > profiles > email
+      const meta = (user.user_metadata ?? {}) as Row;
+      let name = str(meta, ["first_name", "prenom", "full_name", "name"]);
+      if (!name) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (profile) name = str(profile as Row, ["first_name", "prenom", "full_name", "nom"]);
+      }
+      if (!name && user.email) name = user.email.split("@")[0];
+      if (!cancelled) setFirstName(name.split(" ")[0]);
+
+      // ── Projets récents ──
+      const { data: studies } = await supabase
+        .from("promoteur_studies")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("updated_at", { ascending: false })
+        .limit(3);
+
+      if (!cancelled && studies) {
+        setProjects(
+          (studies as Row[]).map((row, i) => ({
+            id: str(row, ["id"], `study-${i}`),
+            name: str(row, ["address", "adresse", "label", "name", "title"], "Projet sans adresse"),
+            type: str(row, ["vertical", "type", "space"], "Promotion"),
+            surface: formatSurface(
+              num(row, ["surface", "surface_terrain", "area", "surface_m2"]) ??
+                nestedNum(row, "foncier", ["surface_m2", "surface"]),
+            ),
+            status: str(row, ["status", "statut", "state"], "En cours"),
+            updatedAt: relativeDate(str(row, ["updated_at", "created_at"]) || null),
+          }))
+        );
+      }
+
+      // ── Solde de jetons ──
+      const { data: account } = await supabase
+        .from("credit_accounts")
+        .select("current_credits")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!cancelled && account) {
+        setTokens({ used: (account as Row).current_credits as number, total: null });
+      }
+
+      // ── Activité récente (mouvements de jetons) ──
+      const { data: tx } = await supabase
+        .from("credit_transactions")
+        .select("id, type, amount, description, created_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(4);
+
+      if (!cancelled && tx) {
+        setActivity(
+          (tx as Row[]).map((row, i) => {
+            const label = str(row, ["description"]) || str(row, ["type"], "Opération");
+            const amount = num(row, ["amount"]);
+            return {
+              id: str(row, ["id"], `tx-${i}`),
+              icon: activityIcon(`${str(row, ["type"])} ${label}`),
+              title: amount != null ? `${label} (${amount > 0 ? "+" : ""}${amount} j)` : label,
+              date: relativeDate(str(row, ["created_at"]) || null),
+            };
+          }),
+        );
+      }
+
+      // ── Veille de marché ──
+      try {
+        const watches = await listWatches();
+        if (!cancelled) {
+          setAlerts(
+            watches.slice(0, 4).map((w, i) => {
+              const row = w as unknown as Row;
+              const label = str(row, ["label", "name", "title"], "Veille sans nom");
+              const city = str(row, ["city", "commune"]);
+              const zip = str(row, ["zip_code", "zipCode", "postal_code"]);
+              const place = [city, zip].filter(Boolean).join(" ");
+              return {
+                id: str(row, ["id"], `watch-${i}`),
+                label: place ? `${label} — ${place}` : label,
+                date: row.active === false ? "En pause" : "Active",
+              };
+            }),
+          );
+        }
+      } catch (e) {
+        console.warn("[Dashboard] veilles indisponibles :", e);
+      }
+
+      if (!cancelled) setLoading(false);
+    }
+
+    load().catch((e) => {
+      console.warn("[Dashboard] chargement partiel :", e);
+      if (!cancelled) setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function enterVertical(vertical: VerticalCard) {
     try {
@@ -148,428 +339,388 @@ export default function DashboardHomePage() {
     navigate(vertical.route);
   }
 
+  const tokenPct =
+    tokens && tokens.total ? Math.min(100, Math.round((tokens.used / tokens.total) * 100)) : 0;
+
+  const lastProject = projects[0] ?? null;
+  const activeWatches = alerts.filter((a) => a.date === "Active").length;
+
   return (
-    <div className="min-h-screen bg-[#f7f8fc]">
-      {/* ───────────────── HERO ───────────────── */}
-      <section className="relative overflow-hidden border-b border-slate-200 bg-gradient-to-br from-[#0b0820] via-[#140a36] to-[#1d0f4d]">
-        {/* halos lumineux */}
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(139,92,246,0.30),transparent_40%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(56,189,248,0.16),transparent_38%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(99,102,241,0.10),transparent_55%)]" />
+    <div className="relative min-h-screen overflow-hidden bg-[#f7f8fc]">
+      {/* Halos d'ambiance très discrets */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-40 -left-32 h-[420px] w-[420px] rounded-full bg-violet-300/20 blur-3xl"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-24 right-0 h-[380px] w-[380px] rounded-full bg-blue-300/15 blur-3xl"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute top-[55%] left-1/3 h-[360px] w-[360px] rounded-full bg-slate-400/10 blur-3xl"
+      />
 
-        <div className="relative mx-auto max-w-7xl px-6 pt-20 pb-14">
-          <div className="max-w-4xl">
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-violet-100 backdrop-blur">
-              <Sparkles className="h-4 w-4" />
-              Intelligence immobilière décisionnelle
-            </div>
-
-            <h1 className="max-w-4xl text-4xl font-black uppercase leading-[1.05] tracking-tight text-white sm:text-6xl">
-              L'intelligence immobilière
-              <span className="block bg-gradient-to-r from-violet-300 via-blue-300 to-cyan-300 bg-clip-text text-transparent">
-                décisionnelle
-              </span>
+      <div className="relative mx-auto max-w-7xl px-6 py-10 lg:py-12">
+        {/* ───────────── HEADER ───────────── */}
+        <header className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-[32px] font-semibold leading-tight tracking-[-0.02em] text-slate-900">
+              Bonjour{firstName ? ` ${firstName}` : ""}
             </h1>
+            <p className="mt-1.5 text-sm text-slate-500">Voici l'état de vos opérations aujourd'hui.</p>
 
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">
-              Analysez un bien, une parcelle ou un projet en moins de 2 minutes.
-            </p>
-
-            {/* Barre de recherche */}
-            <div className="mt-10 flex max-w-2xl flex-col gap-3 sm:flex-row">
-              <div className="flex flex-1 items-center gap-3 rounded-2xl border border-white/10 bg-white/10 px-5 py-4 shadow-lg shadow-violet-950/30 backdrop-blur transition-colors focus-within:border-violet-400/40">
-                <MapPinned className="h-5 w-5 shrink-0 text-violet-300" />
-                <input
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") launchQuickAnalysis(); }}
-                  placeholder="Entrez une adresse, une parcelle ou une ville..."
-                  className="w-full bg-transparent text-white placeholder:text-slate-400 focus:outline-none"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={launchQuickAnalysis}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-4 font-semibold text-white shadow-lg shadow-violet-900/40 transition-all hover:from-violet-500 hover:to-indigo-500"
-              >
-                <Zap className="h-5 w-5" />
-                Analyse rapide
-              </button>
-            </div>
-
-            {/* Mention cout */}
-            <p className="mt-3 flex items-center gap-1.5 text-sm text-slate-400">
-              <Zap className="h-3.5 w-3.5 text-violet-300" />
-              Une analyse rapide coûte <span className="font-semibold text-violet-200">{ACTION_COSTS.analyse_rapide} jetons</span>.
-            </p>
-
-            {/* Badges */}
-            <div className="mt-6 flex flex-wrap gap-2">
-              {HERO_BADGES.map((item) => (
-                <span
-                  key={item}
-                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300"
-                >
-                  {item}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* ───────────────── BLOC ANALYSE RAPIDE (mock) ───────────────── */}
-          <div className="mt-14 overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.04] shadow-2xl shadow-violet-950/40 backdrop-blur">
-            {/* En-tête du dossier */}
-            <div className="flex flex-col gap-4 border-b border-white/10 bg-white/[0.03] px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/20 text-violet-200">
-                  <ScanSearch className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-bold uppercase tracking-[0.2em] text-white">
-                      Analyse rapide
-                    </p>
-                    <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-300">
-                      Exemple
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-slate-300">{MOCK_ANALYSE.adresse}</p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs">
-                <span className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 font-medium text-slate-300">
-                  Parcelle <span className="text-white">{MOCK_ANALYSE.parcelle}</span>
-                </span>
-                <span className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 font-medium text-slate-300">
-                  Surface <span className="text-white">{MOCK_ANALYSE.surface}</span>
-                </span>
-              </div>
-            </div>
-
-            {/* Grille des cartes */}
-            <div className="grid gap-4 p-6 md:grid-cols-2 lg:grid-cols-3">
-              {/* CARTE 1 — Score opportunité + Sécurité du projet */}
-              <div className="flex flex-col rounded-2xl border border-white/10 bg-gradient-to-br from-violet-500/10 to-transparent p-5">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <Gauge className="h-4 w-4 text-violet-300" />
-                  Score opportunité
-                </div>
-                <div className="mt-4 flex items-end gap-1">
-                  <span className="text-5xl font-black text-white">{MOCK_ANALYSE.scoreOpportunite}</span>
-                  <span className="mb-1 text-lg font-semibold text-slate-400">/ 100</span>
-                </div>
-                <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-white/10">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-violet-400 to-cyan-400"
-                    style={{ width: `${MOCK_ANALYSE.scoreOpportunite}%` }}
-                  />
-                </div>
-                <div className="mt-3">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    {MOCK_ANALYSE.scoreLabel}
-                  </span>
-                  <p className="mt-2 text-xs text-slate-400">{MOCK_ANALYSE.positionnement}</p>
-                </div>
-                <div className="mt-auto flex items-center justify-between border-t border-white/10 pt-3 text-sm">
-                  <span className="flex items-center gap-2 text-slate-400">
-                    <ShieldCheck className="h-4 w-4 text-emerald-400" />
-                    Sécurité du projet
-                  </span>
-                  <span className="font-semibold text-emerald-300">{MOCK_ANALYSE.securite}/100</span>
-                </div>
-              </div>
-
-              {/* CARTE 2 — Valeur estimée (moteur Mimmoza) */}
-              <div className="flex flex-col rounded-2xl border border-white/10 bg-gradient-to-br from-blue-500/10 to-transparent p-5">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <Wallet className="h-4 w-4 text-blue-300" />
-                  Valeur estimée — moteur Mimmoza
-                </div>
-                <div className="mt-4">
-                  <span className="text-3xl font-black text-white">{MOCK_ANALYSE.valeurEstimee}</span>
-                  <p className="mt-1 text-xs text-slate-400">
-                    {MOCK_ANALYSE.fourchetteBasse} → {MOCK_ANALYSE.fourchetteHaute}
-                  </p>
-                  <p className="text-xs text-slate-400">Marché : {MOCK_ANALYSE.marcheM2}</p>
-                </div>
-                <div className="mt-4 space-y-2 border-t border-white/10 pt-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Prix demandé</span>
-                    <span className="font-semibold text-slate-200">{MOCK_ANALYSE.prixDemande}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Écart prix / estimation</span>
-                    <span className="inline-flex items-center gap-1 font-semibold text-emerald-300">
-                      <TrendingUp className="h-3.5 w-3.5" />
-                      {MOCK_ANALYSE.ecart} ({MOCK_ANALYSE.ecartPct})
-                    </span>
-                  </div>
-                </div>
-                <div className="mt-auto pt-3">
-                  <div className="mb-1 flex items-center justify-between text-xs text-slate-400">
-                    <span>Fiabilité de l'estimation</span>
-                    <span className="font-semibold text-slate-200">{MOCK_ANALYSE.fiabilite}/100</span>
-                  </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400"
-                      style={{ width: `${MOCK_ANALYSE.fiabilite}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* CARTE 3 — Emplacement (sous-scores) */}
-              <div className="flex flex-col rounded-2xl border border-white/10 bg-gradient-to-br from-cyan-500/10 to-transparent p-5">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <Activity className="h-4 w-4 text-cyan-300" />
-                  Emplacement
-                </div>
-                <div className="mt-4 space-y-3">
-                  {EMPLACEMENT.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <div key={item.label}>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-2 text-slate-400">
-                            <Icon className="h-4 w-4 text-slate-500" />
-                            {item.label}
-                          </span>
-                          <span className="font-semibold text-slate-200">{item.value}</span>
-                        </div>
-                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-blue-400"
-                            style={{ width: `${item.value}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="mt-auto flex items-center justify-between border-t border-white/10 pt-3 text-sm">
-                  <span className="text-slate-400">Score localisation global</span>
-                  <span className="font-semibold text-cyan-300">{MOCK_ANALYSE.scoreLocalisation}/100</span>
-                </div>
-              </div>
-            </div>
-
-            {/* CTA bas du bloc */}
-            <div className="flex justify-center border-t border-white/10 bg-white/[0.02] px-6 py-4">
-              <button
-                type="button"
-                onClick={() => navigate("/analyse-rapide")}
-                className="inline-flex items-center gap-2 text-sm font-semibold text-violet-200 transition-colors hover:text-white"
-              >
-                Voir l'analyse complète
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ───────────────── VERTICALES ───────────────── */}
-      <section className="mx-auto max-w-7xl px-6 py-16">
-        <div className="mb-10">
-          <p className="text-sm font-semibold uppercase tracking-[0.25em] text-slate-400">
-            Choisissez votre profil
-          </p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-900">
-            Une expérience spécialisée par métier
-          </h2>
-          <p className="mt-3 max-w-2xl text-base leading-7 text-slate-500">
-            Chaque verticale dispose de ses propres outils, analyses, workflows et tableaux de bord.
-          </p>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-4">
-          {VERTICALS.map((vertical) => {
-            const Icon = vertical.icon;
-            return (
-              <div
-                key={vertical.id}
-                className={`group relative overflow-hidden rounded-3xl border bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl ${vertical.border}`}
-              >
-                <div className={`absolute inset-0 bg-gradient-to-br ${vertical.gradient}`} />
-
-                <div className="relative flex h-full min-h-[500px] flex-col p-7">
-                  <div className="flex items-start justify-between">
-                    <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-slate-600">
-                      {vertical.badge}
-                    </div>
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
-                      <Icon className="h-6 w-6 text-slate-700" />
-                    </div>
-                  </div>
-
-                  <div className="mt-8">
-                    <h3 className="text-2xl font-bold tracking-tight text-slate-900">
-                      {vertical.title}
-                    </h3>
-                    <p className="mt-4 text-sm leading-7 text-slate-500">{vertical.description}</p>
-                  </div>
-
-                  <div className="mt-6 flex flex-wrap gap-2">
-                    {vertical.features.map((feature) => (
-                      <span
-                        key={feature}
-                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600"
-                      >
-                        {feature}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="mt-auto pt-10">
-                    <button
-                      type="button"
-                      onClick={() => enterVertical(vertical)}
-                      className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold text-white transition-all ${vertical.button}`}
-                    >
-                      Entrer dans l'espace
-                      <ArrowRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* ───────────────── PREMIUM SECTION ───────────────── */}
-      <section className="relative overflow-hidden border-y border-slate-200 bg-white">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(124,111,205,0.08),transparent_30%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(59,130,246,0.06),transparent_35%)]" />
-
-        <div className="relative mx-auto max-w-7xl px-6 py-24">
-          <div className="mx-auto max-w-3xl text-center">
-            <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-700">
-              <BrainCircuit className="h-4 w-4" />
-              Plateforme immobilière augmentée par IA
-            </div>
-            <h2 className="mt-6 text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">
-              Une seule plateforme.
-              <br />
-              <span className="bg-gradient-to-r from-violet-600 via-blue-500 to-cyan-500 bg-clip-text text-transparent">
-                Tous vos workflows immobiliers.
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200/70 bg-violet-50/70 px-3 py-1 text-xs font-medium text-violet-700">
+                <Building2 className="h-3.5 w-3.5" />
+                {projects.length} projet{projects.length > 1 ? "s" : ""} actif
+                {projects.length > 1 ? "s" : ""}
               </span>
-            </h2>
-            <p className="mt-6 text-lg leading-8 text-slate-500">
-              Mimmoza centralise analyse foncière, réglementation, travaux, conformité, marché et
-              valorisation dans une expérience unifiée pensée pour les professionnels.
-            </p>
-          </div>
-
-          <div className="mt-20 grid gap-6 lg:grid-cols-4">
-            <div className="group flex min-h-[310px] flex-col rounded-3xl border border-slate-200 bg-gradient-to-br from-violet-50 to-white p-7 shadow-sm transition-all hover:-translate-y-1 hover:shadow-xl">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-100">
-                <ScanSearch className="h-7 w-7 text-violet-700" />
-              </div>
-              <h3 className="mt-6 text-xl font-bold text-slate-900">Décision en 2 minutes</h3>
-              <p className="mt-4 text-sm leading-7 text-slate-500">
-                Passez d'une adresse à une pré-analyse complète : PLU, risques, marché, potentiel et valorisation.
-              </p>
-              <div className="mt-auto flex flex-wrap gap-2 pt-6">
-                <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-violet-700 shadow-sm">PLU</span>
-                <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-violet-700 shadow-sm">Faisabilité</span>
-              </div>
-            </div>
-
-            <div className="group flex min-h-[310px] flex-col rounded-3xl border border-slate-200 bg-gradient-to-br from-blue-50 to-white p-7 shadow-sm transition-all hover:-translate-y-1 hover:shadow-xl">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-100">
-                <Layers3 className="h-7 w-7 text-blue-700" />
-              </div>
-              <h3 className="mt-6 text-xl font-bold text-slate-900">Vue 360° du projet</h3>
-              <p className="mt-4 text-sm leading-7 text-slate-500">
-                Marché, risques, travaux, réglementation et rentabilité réunis dans un cockpit décisionnel unique.
-              </p>
-              <div className="mt-auto flex flex-wrap gap-2 pt-6">
-                <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-blue-700 shadow-sm">Marché</span>
-                <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-blue-700 shadow-sm">Bilan</span>
-              </div>
-            </div>
-
-            <div className="group flex min-h-[310px] flex-col rounded-3xl border border-slate-200 bg-gradient-to-br from-emerald-50 to-white p-7 shadow-sm transition-all hover:-translate-y-1 hover:shadow-xl">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100">
-                <ShieldCheck className="h-7 w-7 text-emerald-700" />
-              </div>
-              <h3 className="mt-6 text-xl font-bold text-slate-900">Réglementation intégrée</h3>
-              <p className="mt-4 text-sm leading-7 text-slate-500">
-                PLU, OAP, PMR, sécurité incendie et contraintes réglementaires centralisées dans vos analyses.
-              </p>
-              <div className="mt-auto flex flex-wrap gap-2 pt-6">
-                <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-emerald-700 shadow-sm">PMR</span>
-                <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-emerald-700 shadow-sm">Sécurité</span>
-              </div>
-            </div>
-
-            <div className="group flex min-h-[310px] flex-col rounded-3xl border border-slate-200 bg-gradient-to-br from-amber-50 to-white p-7 shadow-sm transition-all hover:-translate-y-1 hover:shadow-xl">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100">
-                <Wallet className="h-7 w-7 text-amber-700" />
-              </div>
-              <h3 className="mt-6 text-xl font-bold text-slate-900">Valorisation d'actifs</h3>
-              <p className="mt-4 text-sm leading-7 text-slate-500">
-                Simulez coûts, potentiel de sortie, rentabilité et création de valeur avant acquisition.
-              </p>
-              <div className="mt-auto flex flex-wrap gap-2 pt-6">
-                <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-amber-700 shadow-sm">Travaux</span>
-                <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-amber-700 shadow-sm">ROI</span>
-              </div>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200/70 bg-blue-50/70 px-3 py-1 text-xs font-medium text-blue-700">
+                <Eye className="h-3.5 w-3.5" />
+                {activeWatches} veille{activeWatches > 1 ? "s" : ""} en cours
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/70 px-3 py-1 text-xs font-medium text-slate-700">
+                <Zap className="h-3.5 w-3.5 text-violet-500" />
+                {tokens ? tokens.used.toLocaleString("fr-FR") : "—"} jetons disponibles
+              </span>
             </div>
           </div>
 
-          <div className="mt-16 overflow-hidden rounded-[2rem] border border-slate-200 bg-slate-950 shadow-2xl">
-            <div className="grid lg:grid-cols-[1.1fr_0.9fr]">
-              <div className="p-8 sm:p-10">
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-300">
-                  Workflow unifié
+          <button
+            type="button"
+            onClick={() => navigate("/analyse-rapide")}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800"
+          >
+            <Plus className="h-4 w-4" />
+            Analyse rapide
+          </button>
+        </header>
+
+        {/* ───────────── HERO : DERNIER PROJET ───────────── */}
+        <section className="mt-8">
+          <div className="group relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-white p-2 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.35)] ring-1 ring-slate-900/[0.02]">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-violet-500/[0.07] blur-2xl"
+            />
+
+            {loading ? (
+              <div className="flex items-center justify-center py-16 text-slate-400">
+                <Loader2 className="h-5 w-5 animate-spin" />
+              </div>
+            ) : !lastProject ? (
+              <div className="relative flex flex-col items-start gap-4 px-6 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                    Premier pas
+                  </p>
+                  <h2 className="mt-2 text-xl font-semibold tracking-[-0.01em] text-slate-900">
+                    Créez votre première opération
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Analysez une parcelle et Mimmoza construit le dossier autour.
+                  </p>
                 </div>
-                <h3 className="mt-6 text-3xl font-black tracking-tight text-white">
-                  Du premier signal au dossier prêt à présenter.
-                </h3>
-                <p className="mt-5 max-w-xl text-sm leading-7 text-slate-400">
-                  Mimmoza structure les données, qualifie les risques, produit les hypothèses économiques
-                  et prépare les restitutions professionnelles pour vos comités, partenaires ou clients.
-                </p>
                 <button
                   type="button"
-                  onClick={() => navigate("/promoteur")}
-                  className="mt-8 inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition-all hover:bg-slate-100"
+                  onClick={() => navigate("/promoteur/nouvelle-opportunite")}
+                  className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-violet-700"
                 >
-                  Explorer le cockpit promoteur
-                  <ArrowRight className="h-4 w-4" />
+                  <Plus className="h-4 w-4" />
+                  Créer un projet
                 </button>
               </div>
-
-              <div className="border-t border-white/10 bg-white/[0.03] p-8 sm:p-10 lg:border-l lg:border-t-0">
-                <div className="space-y-4">
-                  {[
-                    "Analyse adresse & parcelle",
-                    "Contraintes PLU / OAP / risques",
-                    "Scénario travaux ou massing",
-                    "Marché, prix de sortie et rentabilité",
-                    "Synthèse PDF prête à partager",
-                  ].map((step, index) => (
-                    <div
-                      key={step}
-                      className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4"
-                    >
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-sm font-bold text-slate-950">
-                        {index + 1}
-                      </div>
-                      <span className="text-sm font-medium text-slate-200">{step}</span>
-                    </div>
-                  ))}
+            ) : (
+              <button
+                type="button"
+                onClick={() => navigate("/promoteur")}
+                className="relative flex w-full flex-col items-stretch gap-6 rounded-[22px] p-5 text-left transition-colors hover:bg-slate-50/60 sm:flex-row sm:items-center sm:gap-8 sm:p-6"
+              >
+                {/* Miniature */}
+                <div className="relative flex h-28 w-full shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-500/20 via-indigo-500/10 to-slate-100 sm:h-28 sm:w-44">
+                  <div
+                    aria-hidden
+                    className="absolute inset-0 opacity-[0.35] [background-image:linear-gradient(to_right,rgba(100,116,139,.25)_1px,transparent_1px),linear-gradient(to_bottom,rgba(100,116,139,.25)_1px,transparent_1px)] [background-size:16px_16px]"
+                  />
+                  <Building2 className="relative h-9 w-9 text-violet-600/70" />
                 </div>
+
+                {/* Contenu */}
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-violet-600">
+                    Reprendre votre dernier projet
+                  </p>
+                  <h2 className="mt-2 truncate text-2xl font-semibold tracking-[-0.015em] text-slate-900">
+                    {lastProject.name}
+                  </h2>
+                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-slate-500">
+                    <span className="font-medium text-slate-600">{lastProject.type}</span>
+                    <span className="text-slate-300">·</span>
+                    <span>{lastProject.surface}</span>
+                    <span className="text-slate-300">·</span>
+                    <span
+                      className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${statusClass(lastProject.status)}`}
+                    >
+                      {statusLabel(lastProject.status)}
+                    </span>
+                    {lastProject.updatedAt ? (
+                      <>
+                        <span className="text-slate-300">·</span>
+                        <span>Modifié {lastProject.updatedAt.toLowerCase()}</span>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* Action */}
+                <span className="inline-flex shrink-0 items-center gap-2 self-start rounded-xl bg-violet-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-transform group-hover:translate-x-0.5 sm:self-auto">
+                  Continuer
+                  <ArrowRight className="h-4 w-4" />
+                </span>
+              </button>
+            )}
+          </div>
+        </section>
+
+        {/* ───────────── CARTES MÉTIERS ───────────── */}
+        <section className="mt-10">
+          <h2 className="mb-4 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+            Espaces de travail
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {VERTICALS.map((vertical) => {
+              const Icon = vertical.icon;
+              return (
+                <button
+                  key={vertical.id}
+                  type="button"
+                  onClick={() => enterVertical(vertical)}
+                  className="group flex flex-col rounded-2xl border border-slate-200/80 bg-white/80 px-5 py-4 text-left shadow-[0_2px_10px_-6px_rgba(15,23,42,0.2)] backdrop-blur transition-all hover:border-slate-300 hover:bg-white hover:shadow-md"
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${vertical.iconBg}`}
+                    >
+                      <Icon className={`h-6 w-6 ${vertical.iconColor}`} />
+                    </div>
+                    <h3 className="text-[15px] font-semibold text-slate-900">{vertical.title}</h3>
+                  </div>
+                  <p className="mt-3 text-[13px] leading-5 text-slate-500">{vertical.description}</p>
+                  <span
+                    className={`mt-3 inline-flex items-center gap-1 text-[13px] font-semibold ${vertical.linkColor}`}
+                  >
+                    Entrer
+                    <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* ───────────── PROJETS + ACTIVITÉ ───────────── */}
+        <section className="mt-10 grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+          {/* Projets récents — 3ᵉ niveau, ombre plus marquée */}
+          <div className="rounded-2xl border border-slate-200/80 bg-white shadow-[0_12px_32px_-20px_rgba(15,23,42,0.35)]">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              <h2 className="text-sm font-semibold text-slate-900">Vos projets récents</h2>
+              <button
+                type="button"
+                onClick={() => navigate("/promoteur")}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-violet-600 hover:text-violet-700"
+              >
+                Tout voir
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-12 text-slate-400">
+                <Loader2 className="h-5 w-5 animate-spin" />
+              </div>
+            ) : projects.length === 0 ? (
+              <div className="px-6 py-12 text-center">
+                <p className="text-sm text-slate-500">Aucun projet pour le moment.</p>
+                <button
+                  type="button"
+                  onClick={() => navigate("/promoteur/nouvelle-opportunite")}
+                  className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-violet-600 hover:text-violet-700"
+                >
+                  <Plus className="h-4 w-4" />
+                  Créer un projet
+                </button>
+              </div>
+            ) : (
+              <ul className="divide-y divide-slate-100 py-1">
+                {projects.map((project) => (
+                  <li key={project.id}>
+                    <button
+                      type="button"
+                      onClick={() => navigate("/promoteur")}
+                      className="group flex w-full items-center gap-4 px-6 py-3 text-left transition-colors hover:bg-slate-50"
+                    >
+                      <div className="relative flex h-10 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-gradient-to-br from-violet-500/15 to-slate-100">
+                        <div
+                          aria-hidden
+                          className="absolute inset-0 opacity-30 [background-image:linear-gradient(to_right,rgba(100,116,139,.25)_1px,transparent_1px),linear-gradient(to_bottom,rgba(100,116,139,.25)_1px,transparent_1px)] [background-size:10px_10px]"
+                        />
+                        <Building2 className="relative h-4 w-4 text-slate-500" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-900">{project.name}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {project.type} · {project.surface}
+                          {project.updatedAt ? ` · ${project.updatedAt}` : ""}
+                        </p>
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusClass(project.status)}`}
+                      >
+                        {statusLabel(project.status)}
+                      </span>
+                      <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-slate-400" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Activité récente — carte légère, timeline */}
+          <div className="rounded-2xl border border-slate-200/70 bg-white/70 shadow-sm backdrop-blur">
+            <div className="flex items-center gap-2 border-b border-slate-100 px-6 py-4">
+              <Activity className="h-4 w-4 text-slate-400" />
+              <h2 className="text-sm font-semibold text-slate-900">Activité récente</h2>
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-12 text-slate-400">
+                <Loader2 className="h-5 w-5 animate-spin" />
+              </div>
+            ) : activity.length === 0 ? (
+              <p className="px-6 py-12 text-center text-sm text-slate-500">Aucune activité récente.</p>
+            ) : (
+              <ol className="relative px-6 py-5">
+                <div
+                  aria-hidden
+                  className="absolute bottom-8 left-[31px] top-8 w-px bg-slate-200"
+                />
+                {activity.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <li key={item.id} className="relative flex gap-4 pb-5 last:pb-0">
+                      <div className="relative z-10 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white">
+                        <Icon className="h-3 w-3 text-slate-500" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-slate-800">{item.title}</p>
+                        <p className="mt-0.5 text-xs text-slate-400">{item.date}</p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </div>
+        </section>
+
+        {/* ───────────── VEILLE + JETONS ───────────── */}
+        <section className="mt-8 grid gap-6 lg:grid-cols-2">
+          {/* Veille de marché — fond bleu très clair */}
+          <div className="rounded-2xl border border-blue-100 bg-blue-50/40 shadow-sm">
+            <div className="flex items-center justify-between border-b border-blue-100/70 px-6 py-4">
+              <div className="flex items-center gap-2">
+                <Bell className="h-4 w-4 text-blue-500" />
+                <h2 className="text-sm font-semibold text-slate-900">Veille de marché</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate("/opportunites")}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700"
+              >
+                Tout voir
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-12 text-slate-400">
+                <Loader2 className="h-5 w-5 animate-spin" />
+              </div>
+            ) : alerts.length === 0 ? (
+              <p className="px-6 py-12 text-center text-sm text-slate-500">Aucune veille active.</p>
+            ) : (
+              <ul className="divide-y divide-blue-100/70">
+                {alerts.map((alert) => (
+                  <li key={alert.id} className="flex items-center gap-3 px-6 py-3.5">
+                    <Eye className="h-4 w-4 shrink-0 text-blue-500" />
+                    <p className="min-w-0 flex-1 truncate text-sm text-slate-700">{alert.label}</p>
+                    <span
+                      className={`shrink-0 text-xs font-medium ${
+                        alert.date === "Active" ? "text-emerald-600" : "text-slate-400"
+                      }`}
+                    >
+                      {alert.date}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Solde de jetons — fond violet très clair */}
+          <div className="rounded-2xl border border-violet-100 bg-violet-50/50 shadow-sm">
+            <div className="flex items-center gap-2 border-b border-violet-100/70 px-6 py-4">
+              <Zap className="h-4 w-4 text-violet-500" />
+              <h2 className="text-sm font-semibold text-slate-900">Solde de jetons</h2>
+            </div>
+            <div className="px-6 py-6">
+              {loading || !tokens ? (
+                <div className="flex items-center justify-center py-6 text-slate-400">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-end gap-1.5">
+                    <span className="text-4xl font-semibold tracking-[-0.02em] text-slate-900">
+                      {tokens.used.toLocaleString("fr-FR")}
+                    </span>
+                    <span className="mb-1.5 text-sm font-medium text-slate-400">
+                      {tokens.total ? `/ ${tokens.total.toLocaleString("fr-FR")} jetons` : "jetons disponibles"}
+                    </span>
+                  </div>
+                  {tokens.total ? (
+                    <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-white">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500"
+                        style={{ width: `${tokenPct}%` }}
+                      />
+                    </div>
+                  ) : null}
+                </>
+              )}
+
+              <div className="mt-6 flex items-center justify-between text-xs text-slate-500">
+                <span>
+                  Analyse rapide :{" "}
+                  <span className="font-semibold text-slate-700">
+                    {ACTION_COSTS.analyse_rapide} jetons
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => navigate("/jetons")}
+                  className="inline-flex items-center gap-1 font-semibold text-violet-600 hover:text-violet-700"
+                >
+                  Gérer
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
     </div>
   );
 }
