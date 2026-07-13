@@ -1,8 +1,9 @@
 // src/spaces/copilot/components/CopilotDrawer.tsx
-import { Plus, Sparkles, X } from 'lucide-react';
+import { Download, Plus, Sparkles, X } from 'lucide-react';
 import { useEffect, type CSSProperties } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useCopilot } from '../hooks/useCopilot';
+import { exportCopilotConversationToPdf } from '../utils/exportCopilotPdf';
 import { CopilotIntroView } from '../welcome/CopilotIntroView';
 import { isLandingRoute } from '../welcome/copilotWelcome';
 import { CopilotChat } from './CopilotChat';
@@ -10,11 +11,20 @@ import { CopilotCreditsPill } from './CopilotCreditsPill';
 import { COPILOT_THEME as T } from './copilotTheme';
 
 export function CopilotDrawer() {
-  const { isOpen, closeCopilot, newConversation, credits, refreshCredits } = useCopilot();
+  const { isOpen, closeCopilot, newConversation, credits, refreshCredits, messages } = useCopilot();
   const { pathname } = useLocation();
 
   // Sur l'accueil : bot scripte uniquement, jamais l'IA. Hors accueil : chat normal.
   const scripted = isLandingRoute(pathname);
+
+  // Une conversation exportable existe-t-elle ? (au moins un message user/assistant)
+  const hasMessages = messages.some(
+    (m) => (m.role === 'user' || m.role === 'assistant') && m.text.trim(),
+  );
+
+  const handleExport = () => {
+    void exportCopilotConversationToPdf({ messages });
+  };
 
   // Pas d'appel reseau en mode scripte (0 credit).
   useEffect(() => { if (isOpen && !scripted) refreshCredits(); }, [isOpen, scripted, refreshCredits]);
@@ -65,10 +75,18 @@ export function CopilotDrawer() {
             </div>
             <div style={{ color: T.text, fontWeight: 700, fontSize: 15 }}>Analyste Mimmoza</div>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-              {/* En mode scripte : pas de credits ni "nouvelle conversation". */}
+              {/* En mode scripte : pas de credits, export ni "nouvelle conversation". */}
               {!scripted && (
                 <>
                   <CopilotCreditsPill credits={credits} />
+                  <button
+                    onClick={handleExport}
+                    disabled={!hasMessages}
+                    title={hasMessages ? 'Exporter la conversation en PDF' : 'Aucune conversation à exporter'}
+                    style={{ ...iconBtn(), opacity: hasMessages ? 1 : 0.4, cursor: hasMessages ? 'pointer' : 'not-allowed' }}
+                  >
+                    <Download size={16} />
+                  </button>
                   <button onClick={newConversation} title="Nouvelle conversation" style={iconBtn()}>
                     <Plus size={17} />
                   </button>

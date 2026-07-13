@@ -31,7 +31,7 @@ export const COPILOT_HOME = {
     {
       key: 'spaces',
       q: 'Quels sont les espaces disponibles ?',
-      a: "Quatre espaces, chacun avec ses outils : Investisseur (rentabilite, sourcing), Promoteur (faisabilite, massing 3D), Rehabilitation (analyse de plans, travaux) et Apporteur. Choisissez celui qui correspond a votre metier dans le menu du haut.",
+      a: "Quatre espaces, chacun avec ses outils : Investissement (rentabilite, sourcing), Promotion (faisabilite, massing 3D), Rehabilitation (analyse de plans, travaux) et Apport d'affaires (rentrez en contact avec des promoteurs ou des investisseurs). Choisissez celui qui correspond a votre metier dans le menu du haut.",
     },
     {
       key: 'data',

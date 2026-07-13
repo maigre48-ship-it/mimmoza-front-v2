@@ -3,6 +3,7 @@
 // PATCH V1.2 : ajout PredictiveSnapshotContext dans MimmozaContext (LOT 6)
 // PATCH V1.3 : ajout ValuationEngineContext dans MimmozaContext (LOT 7)
 // PATCH V1.4 : ajout TransportGtfsSnapshot + transport_gtfs dans PredictiveSnapshotContext (v4.4)
+// PATCH V1.5 : ajout risk_study dans MimmozaContext (LOT 9 — etude de risques deja calculee)
 // =============================================================
 
 export type Vertical =
@@ -245,6 +246,10 @@ export interface MimmozaContext {
   predictive_snapshot?: PredictiveSnapshotContext | null;
   // V1.3 — résultat du valuation engine (valorisation + rendements + analyse)
   valuation_engine?: ValuationEngineContext | null;
+  // V1.5 — étude de risques déjà calculée (risk-study), poussée par la page Risques.
+  // Forme brute { meta, scores, data, categories, insights }. Injectée dans le
+  // system prompt → le Copilot répond aux questions de risques sans appeler d'outil.
+  risk_study?: Record<string, unknown> | null;
   // V1.6 — analyse de plan (Réhabilitation) : summary, pièces, surface, anomalies
   plan_analysis?: PlanAnalysisContext | null;
 }

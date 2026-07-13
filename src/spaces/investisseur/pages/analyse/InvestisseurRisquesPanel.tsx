@@ -62,6 +62,8 @@ import type { PromoteurRisquesData } from "../../../promoteur/shared/promoteurSt
 import { usePromoteurStudy } from "../../../promoteur/shared/usePromoteurStudy";
 
 import { useCopilotContext } from "../../../copilot/hooks/useCopilotContext";
+// 🆕 COPILOT LOT 9 : injection de l'etude de risques calculee dans le contexte actif
+import { setActiveCopilotContext } from "../../../copilot/store/activeCopilotContext.store";
 import { readMarchandSnapshot } from "../../../marchand/shared/marchandSnapshot.store";
 import { getInvestisseurSnapshot, upsertInvestisseurProject } from "../../shared/investisseurSnapshot.store";
 import { userStorage } from "@/lib/storage/userScopedStorage";
@@ -1120,6 +1122,20 @@ export default function InvestisseurRisquesPanel() {
       study: studyId ? { id: studyId, type: "promoteur" } : undefined,
     });
   }, [latitude, longitude, codeInsee, analysisResult, studyId, parcelId, selectedAddress, address, setContextHints]);
+
+  // 🆕 COPILOT LOT 9 : pousse l'etude de risques calculee dans le contexte du Copilot.
+  // Des qu'un resultat est disponible (analyse fraiche OU hydratation), le Copilot
+  // repond aux questions de risques DIRECTEMENT a partir de ces donnees, sans appeler
+  // d'outil et sans halluciner. On nettoie quand il n'y a plus de resultat.
+  useEffect(() => {
+    if (analysisResult) {
+      setActiveCopilotContext({
+        risk_study: analysisResult as unknown as Record<string, unknown>,
+      });
+    } else {
+      setActiveCopilotContext({ risk_study: undefined });
+    }
+  }, [analysisResult]);
 
   useEffect(() => {
     if (addressTimeoutRef.current) clearTimeout(addressTimeoutRef.current);

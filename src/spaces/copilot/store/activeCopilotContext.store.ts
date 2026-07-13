@@ -1,6 +1,7 @@
 // src/spaces/copilot/store/activeCopilotContext.store.ts
 // PATCH V1.1 : ajout de ActiveDealRef et PageContextRef dans le snapshot
 // PATCH V1.2 : ajout de pageSnapshot (snapshot libre par page)
+// PATCH V1.3 : ajout de risk_study (etude de risques deja calculee — LOT 9)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { create } from 'zustand';
@@ -55,6 +56,11 @@ export interface ActiveCopilotSnapshot {
   // ── V1.2 — Snapshot libre par page (ex : valorisation rehabilitation) ──
   // Transmis tel quel au LLM via le spread du contexte. Cle/valeur lisibles.
   pageSnapshot?: Record<string, string | number | null>;
+  // ── V1.3 — Etude de risques deja calculee (LOT 9) ───────
+  // Resultat brut risk-study (meta/scores/data/categories/insights) pousse par
+  // la page Risques. Injecte dans le system prompt de copilot-chat → le Copilot
+  // repond aux questions de risques SANS appeler d'outil et sans halluciner.
+  risk_study?: Record<string, unknown>;
 }
 
 // ─── Interface store ───────────────────────────────────────────────────────────
@@ -84,6 +90,8 @@ const INITIAL_STATE: ActiveCopilotSnapshot = {
   pageContext:            undefined,
   // V1.2
   pageSnapshot:           undefined,
+  // V1.3
+  risk_study:             undefined,
 };
 
 export const useActiveCopilotContext = create<ActiveCopilotContextState>(

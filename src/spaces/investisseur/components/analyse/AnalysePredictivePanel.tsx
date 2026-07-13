@@ -492,7 +492,7 @@ function V2ManualInputsPanel({
         className="w-full flex items-center justify-between px-5 py-3 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
         <span className="flex items-center gap-2 flex-wrap">
           <span>✏️</span>
-          <span>Enrichissements manuels V2</span>
+          <span>Enrichissements manuels </span>
           {dpeAdeme.status === "loading" && (
             <span className="inline-flex items-center gap-1 text-[10px] text-sky-600 bg-sky-50 ring-1 ring-sky-200 px-2 py-0.5 rounded-full">
               <span className="h-2 w-2 rounded-full border border-sky-400 border-t-transparent animate-spin" />DPE ADEME…
@@ -791,6 +791,41 @@ export default function AnalysePredictivePanel({ deal, travauxEstime }: Props) {
 
   return (
     <div className="space-y-5">
+      {/* Bien analysé — adresse rappelée automatiquement depuis le deal actif */}
+      {(() => {
+        const addressLine = [deal.address, deal.zipCode, deal.city]
+          .map((s) => (s ?? "").trim())
+          .filter(Boolean)
+          .join(" · ");
+        const hasAddress = addressLine.length > 0;
+        return (
+          <div className="rounded-2xl border border-gray-200 bg-white shadow-sm px-5 py-4 flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-lg">📍</div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Bien analysé</div>
+              {hasAddress ? (
+                <>
+                  <div className="text-sm font-semibold text-gray-900 truncate">{addressLine}</div>
+                  <div className="mt-0.5 flex items-center gap-3 flex-wrap text-xs text-gray-500">
+                    {deal.label && <span className="truncate">{deal.label}</span>}
+                    {deal.surfaceM2 > 0 && <span>{deal.surfaceM2} m²</span>}
+                    {deal.prixAchat > 0 && <span>{deal.prixAchat.toLocaleString("fr-FR")} €</span>}
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm text-gray-500">
+                  Aucune adresse renseignée pour ce deal.{" "}
+                  <Link to="/marchand-de-bien/analyse?tab=marche_risques" className="font-medium text-sky-600 hover:text-sky-700 underline">
+                    Lance une étude Marché / Risques
+                  </Link>{" "}
+                  pour l'associer.
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       <V2DebugBadge sourcesCount={snapshot.dataSources.length} />
 
       <div className="rounded-2xl border border-gray-200 bg-white shadow-sm px-5 py-3 flex items-center gap-4 flex-wrap">

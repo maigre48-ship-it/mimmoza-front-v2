@@ -3,6 +3,7 @@
 // PATCH V1.2 : predictive_snapshot transmis explicitement (LOT 6)
 // PATCH V1.3 : valuation_engine transmis explicitement (LOT 7)
 // PATCH V1.4 : pageSnapshot transmis explicitement (donnees visibles a l'ecran)
+// PATCH V1.5 : risk_study transmis explicitement (LOT 9 — etude de risques deja calculee)
 // =============================================================
 
 import { supabase } from '@/lib/supabase';
@@ -65,12 +66,13 @@ function extractText(content: unknown): string {
 }
 
 // =============================================================
-// buildEnrichedContext — V1.4
+// buildEnrichedContext — V1.5
 // ─────────────────────────────────────────────────────────────
 // Injecte les données listing, deal actif, pageContext,
 // le predictive_snapshot (LOT 6 — 17 sources prédictives),
-// le valuation_engine (LOT 7 — valorisation + rendements + analyse)
-// ET le pageSnapshot (donnees visibles a l'ecran de la page courante).
+// le valuation_engine (LOT 7 — valorisation + rendements + analyse),
+// le pageSnapshot (donnees visibles a l'ecran de la page courante)
+// ET le risk_study (LOT 9 — etude de risques deja calculee, page Risques).
 // =============================================================
 function buildEnrichedContext(
   requestContext: CopilotChatRequest['context'],
@@ -133,6 +135,12 @@ function buildEnrichedContext(
   const pageSnapshot = active.pageSnapshot ?? null;
   console.log("[copilotClient] active.pageSnapshot au moment de l'envoi:", JSON.stringify(active.pageSnapshot));
 
+  // ── V1.5 — Étude de risques (LOT 9) ───────────────────────
+  // Résultat risk-study déjà calculé sur la page Risques, poussé par
+  // la page via setActiveCopilotContext. Le Copilot répond aux
+  // questions de risques sans appeler d'outil.
+  const riskStudy = active.risk_study ?? null;
+
   // ── Construction du contexte enrichi ──────────────────────
   const enriched: CopilotMimmozaContext = {
     // Spread du context appelant (study, user, plu…)
@@ -160,6 +168,9 @@ function buildEnrichedContext(
 
     // V1.4 — Snapshot libre de la page courante (donnees a l'ecran)
     ...(pageSnapshot ? { pageSnapshot } : {}),
+
+    // V1.5 — Étude de risques déjà calculée (page Risques)
+    ...(riskStudy ? { risk_study: riskStudy } : {}),
 
     // V1.2 — Snapshot prédictif : réaffecté APRÈS le spread pour
     // éviter tout écrasement par un champ homonyme dans reqCtx.

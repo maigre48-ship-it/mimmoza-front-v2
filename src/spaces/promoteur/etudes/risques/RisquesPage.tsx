@@ -72,6 +72,8 @@ import { usePromoteurStudy } from "../../shared/usePromoteurStudy";
 
 // 🆕 COPILOT : pont vers le store de contexte du Copilot
 import { useCopilotContext } from "../../../copilot/hooks/useCopilotContext";
+// 🆕 COPILOT LOT 9 : injection de l'etude de risques calculee dans le contexte actif
+import { setActiveCopilotContext } from "../../../copilot/store/activeCopilotContext.store";
 import {
   HeroGhostButton,
   HeroPrimaryButton,
@@ -1840,6 +1842,22 @@ export function RisquesPage({ onStudyComplete: _onStudyComplete, theme: _theme }
       study: studyId ? { id: studyId, type: "promoteur" } : undefined,
     });
   }, [latitude, longitude, codeInsee, analysisResult, studyId, parcelId, selectedAddress, address, setContextHints]);
+
+  // 🆕 COPILOT LOT 9 : pousse l'etude de risques calculee dans le contexte du Copilot.
+  // Des qu'un resultat est disponible (analyse fraiche OU hydratation depuis l'etude
+  // persistee), le Copilot repond aux questions de risques DIRECTEMENT a partir de ces
+  // donnees, sans appeler d'outil et sans halluciner a partir du seul nom de commune.
+  // On nettoie quand il n'y a plus de resultat, pour eviter qu'une etude d'une autre
+  // parcelle ne "colle" au contexte.
+  useEffect(() => {
+    if (analysisResult) {
+      setActiveCopilotContext({
+        risk_study: analysisResult as unknown as Record<string, unknown>,
+      });
+    } else {
+      setActiveCopilotContext({ risk_study: undefined });
+    }
+  }, [analysisResult]);
 
   useEffect(() => {
     if (addressTimeoutRef.current) clearTimeout(addressTimeoutRef.current);
