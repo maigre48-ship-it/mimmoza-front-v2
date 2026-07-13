@@ -18,13 +18,14 @@
 // Principe conservé : zéro fictif. Chaque bloc masqué si données absentes.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   useValuationEngine,
   type ComparableSale,
   type EngineInput,
   type MarketPosition,
+  type MimmozaEngineResult,
   type PropertyType,
 } from "./useValuationEngine";
 // Page située dans src/spaces/shared/pages/quick-analysis/ → on remonte 4 niveaux.
@@ -46,6 +47,13 @@ import {
   clearActiveCopilotContext,
 } from "../../../copilot/store/activeCopilotContext.store";
 import { exportQuickAnalysisToPdf } from "./exportQuickAnalysisPdf";
+import {
+  upsertDeal,
+  setActiveDeal,
+  patchRentabiliteForDeal,
+  readMarchandSnapshot,
+  type MarchandDeal,
+} from "../../../marchand/shared/marchandSnapshot.store";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers d'affichage
@@ -361,7 +369,7 @@ const QuickAnalysisPage: React.FC = () => {
     return defaultForm;
   });
 
-  const { state, run, reset } = useValuationEngine();
+  const { state, run, reset, hydrate } = useValuationEngine();
   const [tokenError, setTokenError] = useState<string | null>(null);
   const setContextHints = useCopilotStore((s) => s.setContextHints);
 
@@ -370,6 +378,34 @@ const QuickAnalysisPage: React.FC = () => {
   }, []);
 
   const { result, loading, error, location, steps, context } = state;
+
+  // ── restauration au montage : si une analyse a été faite puis quittée,
+  //    on ré-affiche result + form sans relancer le moteur (aucun jeton débité).
+  //    skippé si un prefill de navigation est présent (nouvelle analyse ciblée).
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+
+    if (navState?.prefill || navState?.prefillAddress) return; // priorité au prefill
+    if (result) return; // déjà un résultat en mémoire
+
+    try {
+      const raw = userStorage.getItem(SNAPSHOT_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as {
+        form?: Partial<FormState>;
+        result?: MimmozaEngineResult;
+      };
+      if (saved.form) setForm((prev) => ({ ...prev, ...saved.form }));
+      if (saved.result && saved.result.estimatedValue > 0) {
+        hydrate(saved.result);
+      }
+    } catch {
+      /* snapshot illisible : on ignore */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Sync du résultat dans les DEUX stores Copilot ──────────────────────────
   // activeCopilotContext (city/price/surface) est ce que hasActiveListing() teste.
@@ -476,12 +512,97 @@ const QuickAnalysisPage: React.FC = () => {
     await run(input);
   }, [form, run]);
 
-  const handleReset = useCallback(() => { setForm(defaultForm); reset(); }, [reset]);
+  const handleReset = useCallback(() => {
+    setForm(defaultForm);
+    reset();
+    try { userStorage.removeItem(SNAPSHOT_KEY); } catch { /* noop */ }
+  }, [reset]);
 
   const handleDeepAnalysis = useCallback(() => {
+    // Snapshot legacy conservé (rétro-compat).
     if (result) {
-      try { userStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ form, result })); } catch { /* noop */ }
+      try {
+        userStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ form, result }));
+      } catch {
+        /* noop */
+      }
     }
+
+    // Sans résultat exploitable : navigation simple.
+    if (!result || result.estimatedValue <= 0) {
+      navigate("/marchand-de-bien/analyse");
+      return;
+    }
+
+    const label =
+      form.address?.trim() ||
+      [form.city, form.postalCode].filter(Boolean).join(" ") ||
+      "Analyse rapide";
+
+    const confirmed = window.confirm(
+      `Créer un projet à partir de cette analyse et l'ouvrir dans Rentabilité ?\n\n${label}`,
+    );
+    if (!confirmed) {
+      navigate("/marchand-de-bien/analyse");
+      return;
+    }
+
+    // Clé canonique anti-doublon (réutilise le même projet si on reclique).
+    const canonicalKey = [
+      form.address?.trim().toLowerCase() || "",
+      form.postalCode?.trim() || "",
+      form.surface?.trim() || "",
+      form.askingPrice?.trim() || "",
+    ].join("|");
+    const tag = `[quickanalysis:${canonicalKey}]`;
+
+    const askingPrice = form.askingPrice ? +form.askingPrice : undefined;
+    const surfaceM2 = form.surface ? +form.surface : undefined;
+    const prixReventeCible =
+      result.estimatedValue > 0 ? Math.round(result.estimatedValue) : undefined;
+    const loyerMensuel =
+      (form.expectedRent ? +form.expectedRent : undefined) ??
+      (result.estimatedRent ?? undefined);
+
+    const nowIso = new Date().toISOString();
+
+    const existing = readMarchandSnapshot().deals.find((d) =>
+      d.note?.includes(tag),
+    );
+    const dealId =
+      existing?.id ??
+      `D-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+    const deal: MarchandDeal = {
+      id: dealId,
+      title: label,
+      address: form.address?.trim() || undefined,
+      zipCode: form.postalCode?.trim() || undefined,
+      city: form.city?.trim() || undefined,
+      country: "FR",
+      prixAchat: askingPrice,
+      surfaceM2,
+      prixReventeCible,
+      note: existing?.note ?? `Source : Analyse rapide\n${tag}`,
+      status: "Nouveau",
+      createdAt: existing?.createdAt ?? nowIso,
+      updatedAt: nowIso,
+    };
+
+    upsertDeal(deal);
+    setActiveDeal(dealId);
+
+    // Pré-remplissage des inputs Rentabilité (lus par loadKeyInputsFromSnapshot).
+    patchRentabiliteForDeal(dealId, {
+      inputs: {
+        prixAchat: askingPrice,
+        surfaceM2,
+        prixReventeEstime: prixReventeCible,
+        prixReventeCible,
+        ...(loyerMensuel ? { loyerMensuel, loyerEstime: loyerMensuel } : {}),
+      },
+    });
+
     navigate("/marchand-de-bien/analyse");
   }, [navigate, form, result]);
 

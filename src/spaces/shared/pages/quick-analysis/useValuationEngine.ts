@@ -431,7 +431,35 @@ export function useValuationEngine() {
     }
   }, [setStep]);
 
+  const hydrate = useCallback(
+    (
+      result: MimmozaEngineResult,
+      location?: EngineState["location"],
+      context?: Partial<EngineContext>,
+    ) => {
+      setState((p) => ({
+        ...p,
+        loading: false,
+        error: null,
+        result,
+        location: location ?? p.location,
+        context: { ...p.context, ...(context ?? {}) },
+        steps: {
+          geocode: location ? "ok" : p.steps.geocode,
+          dvf: "ok",
+          smartscore: "ok",
+          georisques: "ok",
+          plu: p.steps.plu,
+          sitadel: p.steps.sitadel,
+          cadastre: p.steps.cadastre,
+          engine: "ok",
+        },
+      }));
+    },
+    [],
+  );
+
   const reset = useCallback(() => setState(INITIAL), []);
 
-  return { state, run, reset };
+  return { state, run, reset, hydrate };
 }
