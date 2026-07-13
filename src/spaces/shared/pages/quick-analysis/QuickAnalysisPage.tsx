@@ -45,6 +45,7 @@ import {
   setActiveCopilotContext,
   clearActiveCopilotContext,
 } from "../../../copilot/store/activeCopilotContext.store";
+import { exportQuickAnalysisToPdf } from "./exportQuickAnalysisPdf";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers d'affichage
@@ -617,7 +618,7 @@ display: "flex",
         {result && (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button
-              onClick={() => window.print()}
+              onClick={() => { void exportQuickAnalysisToPdf({ form, result }); }}
               style={{
                 border: "1px solid rgba(255,255,255,0.3)",
                 background: "rgba(255,255,255,0.15)",
@@ -629,7 +630,7 @@ display: "flex",
                 cursor: "pointer",
               }}
             >
-              📄 PDF
+              📄 Export PDF
             </button>
 
             <button
