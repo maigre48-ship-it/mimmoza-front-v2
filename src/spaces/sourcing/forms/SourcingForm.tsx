@@ -296,7 +296,7 @@ export const initialFormState: FormState = {
   jardin: '',
   terrasse: '',
   piscine: '',
-  surfaceterrain: '',
+  surfaceTerrain: '',
   stationnement: '',
 
   ascenseurAppart: '',
