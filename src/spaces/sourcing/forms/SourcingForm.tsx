@@ -99,6 +99,8 @@ const styles = {
     fontWeight: '500',
     color: '#444',
     marginBottom: '6px',
+    minHeight: '2.4em',
+    lineHeight: '1.2',
   } as React.CSSProperties,
   required: {
     color: '#e74c3c',
@@ -236,6 +238,7 @@ export interface FormState {
   jardin: Ternary | '';
   terrasse: Ternary | '';
   piscine: Ternary | '';
+  surfaceTerrain: string;
   stationnement: StationnementMaison | '';
 
   ascenseurAppart: Ternary | '';
@@ -293,6 +296,7 @@ export const initialFormState: FormState = {
   jardin: '',
   terrasse: '',
   piscine: '',
+  surfaceterrain: '',
   stationnement: '',
 
   ascenseurAppart: '',
@@ -458,6 +462,8 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
     draft.cave = ternaryToBoolean(form.cave);
     draft.parking = ternaryToBoolean(form.parkingAppart);
     draft.jardin = ternaryToBoolean(form.jardin);
+    draft.piscine = ternaryToBoolean(form.piscine);
+    draft.landSurface = form.surfaceTerrain ? parseFloat(form.surfaceTerrain) : undefined;
     draft.commerces = selectToBoolean(form.proximiteCommerces);
     draft.transport = form.proximiteTransport ? form.proximiteTransport !== 'aucun' : undefined;
 
@@ -914,6 +920,18 @@ export const SourcingForm: React.FC<SourcingFormProps> = ({
                     <option value="">Non renseigné</option>
                     {getTernaryOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                   </select>
+                </div>
+                <div style={styles.fieldSmall}>
+                  <label style={styles.label}>Surface terrain (m²)</label>
+                  <input
+                    type="number"
+                    value={form.surfaceTerrain}
+                    onChange={e => updateField('surfaceTerrain', e.target.value)}
+                    placeholder="450"
+                    min="0"
+                    step="10"
+                    style={styles.input}
+                  />
                 </div>
                 <div style={styles.field}>
                   <label style={styles.label}>Stationnement</label>

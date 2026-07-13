@@ -58,7 +58,7 @@ export interface MimmozaEngineResult {
 
 export interface EngineInput {
   address: string; city: string; postalCode: string;
-  surface: number; landSurface?: number; askingPrice?: number;
+  surface: number; landSurface?: number; hasPool?: boolean; askingPrice?: number;
   propertyType: PropertyType; analysisType: AnalysisType;
   medianRentM2?: number;
   worksAmount?: number; resaleTarget?: number;
@@ -390,6 +390,7 @@ export function useValuationEngine() {
         longitude:    loc.lng,
         surface:      input.surface,
         landSurface:  input.landSurface,
+        hasPool:      input.hasPool,
         askingPrice:  input.askingPrice,
         propertyType: input.propertyType,
         analysisType: input.analysisType,

@@ -870,14 +870,17 @@ function computeExteriorScore(draft: any): { total: number; items: { label: stri
   const loggia   = readBool(draft, "loggia");
   const terrasse = readBool(draft, "terrasse");
   const jardin   = readBool(draft, "jardin");
+  const piscine  = readBool(draft, "piscine");
 
   if (balcon   === true) total += pushBonus(items, "Balcon",   3);
   if (loggia   === true) total += pushBonus(items, "Loggia",   2);
   if (terrasse === true) total += pushBonus(items, "Terrasse", 6);
   if (jardin   === true) total += pushBonus(items, "Jardin",   7);
+  if (piscine  === true) total += pushBonus(items, "Piscine",  8);
 
-  if (total > 10) {
-    const overflow = total - 10;
+  // Plafond relevé à 14 pour laisser de la place à la piscine sur les maisons.
+  if (total > 14) {
+    const overflow = total - 14;
     total -= overflow;
     items.push({ label: "Plafond extérieurs", value: -overflow });
   }
@@ -1004,9 +1007,23 @@ function computeUsageScore(draft: any): { total: number; items: { label: string;
 
   const nbPieces     = Number(readField(draft, "nbPieces")) || 0;
   const propertyType = String(readField(draft, "propertyType") || "").trim();
+  const landSurface  = Number(readField(draft, "landSurface")) || 0;
 
   if (nbPieces >= 4) total += pushBonus(items, `${nbPieces} pièces`, Math.min((nbPieces - 3) * 2, 6));
-  if (propertyType === "maison") total += pushBonus(items, "Maison", 2);
+  if (propertyType === "maison" || propertyType === "house") total += pushBonus(items, "Maison", 2);
+
+  // Terrain : bonus de qualité progressif, réservé aux maisons/immeubles, plafonné.
+  const isHouseOrBuilding =
+    propertyType === "maison" || propertyType === "house" ||
+    propertyType === "immeuble" || propertyType === "building";
+  if (isHouseOrBuilding && landSurface > 0) {
+    let landBonus = 0;
+    if (landSurface >= 1000)      landBonus = 8;
+    else if (landSurface >= 500)  landBonus = 6;
+    else if (landSurface >= 300)  landBonus = 4;
+    else if (landSurface >= 150)  landBonus = 2;
+    if (landBonus > 0) total += pushBonus(items, `Terrain ${landSurface} m²`, landBonus);
+  }
 
   return { total, items };
 }
@@ -1950,6 +1967,7 @@ useEffect(() => {
           loggia: (dAny as any).loggia, calme: (dAny as any).calme, lumineux: (dAny as any).lumineux,
           traversant: (dAny as any).traversant, visAVisFaible: (dAny as any).visAVisFaible,
           vueDegagee: (dAny as any).vueDegagee, rdcSurRue: (dAny as any).rdcSurRue, box: (dAny as any).box,
+          piscine: (dAny as any).piscine, landSurface: (dAny as any).landSurface,
         },
         quartier: draft.quartier || {},
         dvf: dvfResult,

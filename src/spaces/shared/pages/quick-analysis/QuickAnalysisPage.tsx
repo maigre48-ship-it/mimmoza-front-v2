@@ -297,12 +297,12 @@ const ComparableTable: React.FC<{ comps: ComparableSale[]; title: string; hasDis
 
 interface FormState {
   address: string; city: string; postalCode: string;
-  surface: string; askingPrice: string;
+  surface: string; landSurface: string; hasPool: boolean; askingPrice: string;
   propertyType: PropertyType;
   expectedRent: string;
 }
 const defaultForm: FormState = {
-  address: "", city: "", postalCode: "", surface: "", askingPrice: "",
+  address: "", city: "", postalCode: "", surface: "", landSurface: "", hasPool: false, askingPrice: "",
   propertyType: "appartement",
   expectedRent: "",
 };
@@ -468,7 +468,8 @@ const QuickAnalysisPage: React.FC = () => {
       propertyType: form.propertyType,
       analysisType: "investisseur", // profil unique — analyse rapide générique
       medianRentM2: form.expectedRent && form.surface ? +form.expectedRent / +form.surface : undefined,
-      landSurface:  undefined,
+      landSurface:  form.landSurface ? +form.landSurface : undefined,
+      hasPool:      form.hasPool,
       worksAmount:  undefined,
       resaleTarget: undefined,
     };
@@ -705,6 +706,16 @@ display: "flex",
                 <div><Lbl>Surface (m²) *</Lbl><Inp type="number" value={form.surface} placeholder="65" onChange={(e) => setF("surface", e.target.value)} /></div>
                 <div><Lbl>Prix demandé (€)</Lbl><Inp type="number" value={form.askingPrice} placeholder="520000" onChange={(e) => setF("askingPrice", e.target.value)} /></div>
               </div>
+              {(form.propertyType === "maison" || form.propertyType === "immeuble") && (
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:7, alignItems:"end" }}>
+                  <div><Lbl>Surface terrain (m²)</Lbl><Inp type="number" value={form.landSurface} placeholder="450" onChange={(e) => setF("landSurface", e.target.value)} /></div>
+                  <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, color:"#374151", fontWeight:600, padding:"9px 0", cursor:"pointer" }}>
+                    <input type="checkbox" checked={form.hasPool} onChange={(e) => setF("hasPool", e.target.checked)}
+                      style={{ width:16, height:16, accentColor:"#6366f1", cursor:"pointer" }} />
+                    Piscine
+                  </label>
+                </div>
+              )}
               <div><Lbl>Loyer attendu (€/mois) — optionnel</Lbl><Inp type="number" value={form.expectedRent} placeholder="1500" onChange={(e) => setF("expectedRent", e.target.value)} /></div>
             </div>
 
