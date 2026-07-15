@@ -1,0 +1,17 @@
+// src/spaces/admin/pages/agentCommercial/activityLabels.ts
+// Libellés FR des types d'événements du journal d'activité.
+
+const LABELS: Record<string, string> = {
+  prospect_created: "Prospect créé",
+  prospect_updated: "Prospect modifié",
+  prospect_archived: "Prospect archivé",
+  prospect_restored: "Prospect restauré",
+  status_changed: "Changement de statut",
+  exclusion_added: "Ajout à la liste d'exclusion",
+  exclusion_removed: "Retrait de la liste d'exclusion",
+  csv_import: "Import CSV",
+};
+
+export function activityLabel(eventType: string): string {
+  return LABELS[eventType] ?? eventType;
+}

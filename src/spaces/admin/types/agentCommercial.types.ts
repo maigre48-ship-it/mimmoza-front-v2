@@ -65,6 +65,20 @@ export const PROSPECT_STATUS_TONES: Record<ProspectStatus, StatusBadgeTone> = {
 export const PROSPECT_SOURCES = ["manual", "import"] as const;
 export type ProspectSource = (typeof PROSPECT_SOURCES)[number];
 
+export const PROSPECT_SOURCE_LABELS: Record<ProspectSource, string> = {
+  manual: "Saisie manuelle",
+  import: "Import CSV",
+};
+
+// ── Base légale de prospection (RGPD) ────────────────────────────────────────
+export const PROSPECT_LEGAL_BASES = ["interet_legitime", "consentement"] as const;
+export type ProspectLegalBasis = (typeof PROSPECT_LEGAL_BASES)[number];
+
+export const PROSPECT_LEGAL_BASIS_LABELS: Record<ProspectLegalBasis, string> = {
+  interet_legitime: "Intérêt légitime",
+  consentement: "Consentement",
+};
+
 // ── Lignes de tables ─────────────────────────────────────────────────────────
 
 export interface CommercialProspect {
@@ -89,10 +103,37 @@ export interface CommercialProspect {
   next_action: string | null;
   next_action_at: string | null;
   opt_out: boolean;
+  legal_basis: ProspectLegalBasis;
+  archived_at: string | null;
   metadata: Record<string, unknown>;
   created_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// Champs éditables d'un prospect (création manuelle / édition).
+// Tous en snake_case pour un mapping direct vers les colonnes.
+export interface ProspectFormValues {
+  company_name: string;
+  first_name: string | null;
+  last_name: string | null;
+  job_title: string | null;
+  email: string | null;
+  phone: string | null;
+  website: string | null;
+  city: string | null;
+  department: string | null;
+  zone: string | null;
+  company_type: string | null;
+  company_size: string | null;
+  notes: string | null;
+  status: ProspectStatus;
+  score: number | null;
+  next_action: string | null;
+  next_action_at: string | null;
+  last_interaction_at: string | null;
+  legal_basis: ProspectLegalBasis;
+  opt_out: boolean;
 }
 
 export interface CommercialPipelineEvent {

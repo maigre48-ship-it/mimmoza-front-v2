@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
+  Ban,
   BookOpen,
   Clock,
   GitBranch,
@@ -18,6 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
+import { ToastProvider } from "@/components/ui/ToastProvider";
 
 type Tab = {
   label: string;
@@ -29,6 +31,7 @@ type Tab = {
 const TABS: Tab[] = [
   { label: "Vue d'ensemble", to: ".", icon: LayoutDashboard, end: true },
   { label: "Prospects", to: "prospects", icon: Users },
+  { label: "Liste d'exclusion", to: "exclusions", icon: Ban },
   { label: "Messages à valider", to: "messages", icon: MailCheck },
   { label: "Conversations", to: "conversations", icon: MessageSquare },
   { label: "Relances", to: "relances", icon: Clock },
@@ -39,7 +42,8 @@ const TABS: Tab[] = [
 
 export function AgentCommercialLayout() {
   return (
-    <div className="space-y-6">
+    <ToastProvider>
+      <div className="space-y-6">
       {/* En-tête */}
       <header className="rounded-[28px] border border-slate-200 bg-white px-6 py-5 shadow-sm">
         <div className="flex items-center gap-2">
@@ -86,6 +90,7 @@ export function AgentCommercialLayout() {
 
       {/* Contenu de la sous-section */}
       <Outlet />
-    </div>
+      </div>
+    </ToastProvider>
   );
 }

@@ -85,6 +85,9 @@ import {
   AgentCommercialLayout,
   AgentCommercialOverviewPage,
   AgentCommercialProspectsPage,
+  AgentCommercialProspectDetailPage,
+  AgentCommercialProspectsImportPage,
+  AgentCommercialExclusionsPage,
   AgentCommercialMessagesPage,
   AgentCommercialConversationsPage,
   AgentCommercialRelancesPage,
@@ -329,10 +332,13 @@ function AppRoot() {
             <Route path="tarifs"        element={<AdminTarifsPage />} />
             <Route path="parametres"    element={<AdminParametresPage />} />
 
-            {/* Module Agent commercial (squelette phase 2) */}
+            {/* Module Agent commercial */}
             <Route path="agent-commercial" element={<AgentCommercialLayout />}>
-              <Route index                element={<AgentCommercialOverviewPage />} />
-              <Route path="prospects"     element={<AgentCommercialProspectsPage />} />
+              <Route index                    element={<AgentCommercialOverviewPage />} />
+              <Route path="prospects"         element={<AgentCommercialProspectsPage />} />
+              <Route path="prospects/import"  element={<AgentCommercialProspectsImportPage />} />
+              <Route path="prospects/:id"     element={<AgentCommercialProspectDetailPage />} />
+              <Route path="exclusions"        element={<AgentCommercialExclusionsPage />} />
               <Route path="messages"      element={<AgentCommercialMessagesPage />} />
               <Route path="conversations" element={<AgentCommercialConversationsPage />} />
               <Route path="relances"      element={<AgentCommercialRelancesPage />} />
