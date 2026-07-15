@@ -63,29 +63,14 @@ create policy "commercial_prospects_admin_all" on public.commercial_prospects
   using (public.is_current_user_admin())
   with check (public.is_current_user_admin());
 
--- ----------------------------------------------------------------------------
--- OPTIONNEL — maintien automatique de updated_at par trigger. NON ACTIVÉ.
--- Je n'ai pas pu vérifier en base l'existence d'une fonction de trigger
--- réutilisable (ex. public.set_updated_at / extensions.moddatetime). Décision
--- requise (cf. rapport). Deux variantes au choix, à décommenter le cas échéant :
---
---   -- (a) une fonction partagée existe déjà en base :
---   -- create trigger trg_commercial_prospects_updated_at
---   --   before update on public.commercial_prospects
---   --   for each row execute function public.set_updated_at();
---
---   -- (b) aucune fonction partagée — en créer une dédiée au module :
---   -- create or replace function public.commercial_set_updated_at()
---   -- returns trigger language plpgsql as $$
---   -- begin new.updated_at = now(); return new; end $$;
---   -- create trigger trg_commercial_prospects_updated_at
---   --   before update on public.commercial_prospects
---   --   for each row execute function public.commercial_set_updated_at();
---
--- En l'absence de trigger, updated_at sera positionné par la couche service
--- (phase 3) à chaque update.
--- ----------------------------------------------------------------------------
+-- Maintien automatique de updated_at : réutilise la fonction partagée
+-- public.set_updated_at() (déjà présente en base, utilisée par 18 tables du
+-- projet, ex. trg_admin_users_updated_at). Ne PAS créer de fonction dédiée.
+create trigger trg_commercial_prospects_updated_at
+  before update on public.commercial_prospects
+  for each row execute function public.set_updated_at();
 
 -- ROLLBACK
+-- drop trigger if exists trg_commercial_prospects_updated_at on public.commercial_prospects;
 -- drop policy if exists "commercial_prospects_admin_all" on public.commercial_prospects;
 -- drop table if exists public.commercial_prospects;
