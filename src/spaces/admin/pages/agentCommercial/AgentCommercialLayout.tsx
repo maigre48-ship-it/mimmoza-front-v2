@@ -50,16 +50,12 @@ export function AgentCommercialLayout() {
           <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
             Admin Mimmoza
           </span>
-          <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-            Phase 2 · squelette
-          </span>
         </div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">
           Agent commercial
         </h1>
         <p className="mt-1 text-sm leading-6 text-slate-600">
-          Prospection des marchands de biens : prospects, pipeline, messages à
-          valider et relances. Les fonctionnalités arrivent aux phases suivantes.
+          Prospection des marchands de biens : prospects, liste d'exclusion et pipeline.
         </p>
       </header>
 

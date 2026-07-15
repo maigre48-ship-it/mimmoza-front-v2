@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import type {
   CommercialProspect,
   ProspectFormValues,
+  ProspectStatus,
 } from "@/spaces/admin/types/agentCommercial.types";
 import { logActivity } from "./activityLog.service";
 import { recordTransition } from "./pipeline.service";
@@ -191,6 +192,29 @@ export async function saveProspectEdit(
   if (!prev.opt_out && updated.opt_out) {
     await excludeProspectByOptOut(updated);
   }
+
+  return updated;
+}
+
+/**
+ * Change uniquement le statut d'un prospect (pipeline). Réutilise recordTransition
+ * (historisation) et journalise le changement. Retourne le prospect à jour.
+ */
+export async function changeProspectStatus(
+  prospect: CommercialProspect,
+  toStatus: ProspectStatus,
+): Promise<CommercialProspect> {
+  if (toStatus === prospect.status) return prospect;
+
+  const updated = await updateProspect(prospect.id, { status: toStatus });
+
+  void recordTransition(prospect.id, prospect.status, toStatus);
+  void logActivity({
+    event_type: "status_changed",
+    entity: "prospect",
+    entity_id: prospect.id,
+    metadata: { from: prospect.status, to: toStatus },
+  });
 
   return updated;
 }
