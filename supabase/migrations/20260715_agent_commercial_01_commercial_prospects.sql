@@ -1,0 +1,91 @@
+-- ============================================================================
+-- 20260715_agent_commercial_01_commercial_prospects.sql
+-- Module « Agent commercial » — Phase 2 (socle données)
+-- Table des prospects (marchands de biens). Sources : saisie manuelle + import CSV.
+-- À COLLER TEL QUEL dans le SQL Editor du dashboard Supabase (aucun CLI requis).
+-- ============================================================================
+
+create table if not exists public.commercial_prospects (
+  id                  uuid primary key default gen_random_uuid(),
+  company_name        text not null,                         -- raison sociale
+  first_name          text,                                  -- prénom
+  last_name           text,                                  -- nom
+  job_title           text,                                  -- fonction
+  email               text,
+  phone               text,                                  -- téléphone
+  website             text,                                  -- site
+  city                text,                                  -- ville
+  department          text,                                  -- département
+  zone                text,                                  -- zone géographique
+  company_type        text,                                  -- type d'entreprise
+  company_size        text,                                  -- taille
+  source              text not null default 'manual'
+                        check (source in ('manual', 'import')),
+  notes               text,
+  status              text not null default 'a_qualifier'
+                        check (status in (
+                          'a_qualifier', 'a_contacter', 'message_a_valider', 'contacte',
+                          'relance_prevue', 'a_repondu', 'interesse', 'demonstration',
+                          'essai', 'negociation', 'client', 'non_interesse', 'exclu'
+                        )),
+  score               smallint check (score between 0 and 100),
+  last_interaction_at timestamptz,                            -- dernière interaction
+  next_action         text,                                  -- prochaine action (libellé)
+  next_action_at      timestamptz,                           -- échéance de la prochaine action
+  opt_out             boolean not null default false,        -- opposition prospection (RGPD)
+  metadata            jsonb not null default '{}'::jsonb,
+  created_by          uuid references auth.users on delete set null default auth.uid(),
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+
+comment on table  public.commercial_prospects            is 'Agent commercial — prospects (saisie manuelle / import CSV).';
+comment on column public.commercial_prospects.opt_out    is 'Opposition à la prospection (RGPD).';
+comment on column public.commercial_prospects.next_action is 'Libellé de la prochaine action à mener.';
+
+-- Index sur les colonnes filtrées et la FK propriétaire.
+-- NB : index NON unique sur lower(email) — la déduplication « douce » est gérée
+-- côté service en phase 3, pas par une contrainte bloquante ici.
+create index if not exists idx_commercial_prospects_status         on public.commercial_prospects (status);
+create index if not exists idx_commercial_prospects_source         on public.commercial_prospects (source);
+create index if not exists idx_commercial_prospects_department     on public.commercial_prospects (department);
+create index if not exists idx_commercial_prospects_zone           on public.commercial_prospects (zone);
+create index if not exists idx_commercial_prospects_email_lower    on public.commercial_prospects (lower(email));
+create index if not exists idx_commercial_prospects_created_by     on public.commercial_prospects (created_by);
+create index if not exists idx_commercial_prospects_next_action_at on public.commercial_prospects (next_action_at);
+create index if not exists idx_commercial_prospects_created_at     on public.commercial_prospects (created_at desc);
+
+-- RLS : une seule policy admin, calquée sur api_cache_admin_all / listing_duplicates_admin_only.
+alter table public.commercial_prospects enable row level security;
+
+create policy "commercial_prospects_admin_all" on public.commercial_prospects
+  for all to authenticated
+  using (public.is_current_user_admin())
+  with check (public.is_current_user_admin());
+
+-- ----------------------------------------------------------------------------
+-- OPTIONNEL — maintien automatique de updated_at par trigger. NON ACTIVÉ.
+-- Je n'ai pas pu vérifier en base l'existence d'une fonction de trigger
+-- réutilisable (ex. public.set_updated_at / extensions.moddatetime). Décision
+-- requise (cf. rapport). Deux variantes au choix, à décommenter le cas échéant :
+--
+--   -- (a) une fonction partagée existe déjà en base :
+--   -- create trigger trg_commercial_prospects_updated_at
+--   --   before update on public.commercial_prospects
+--   --   for each row execute function public.set_updated_at();
+--
+--   -- (b) aucune fonction partagée — en créer une dédiée au module :
+--   -- create or replace function public.commercial_set_updated_at()
+--   -- returns trigger language plpgsql as $$
+--   -- begin new.updated_at = now(); return new; end $$;
+--   -- create trigger trg_commercial_prospects_updated_at
+--   --   before update on public.commercial_prospects
+--   --   for each row execute function public.commercial_set_updated_at();
+--
+-- En l'absence de trigger, updated_at sera positionné par la couche service
+-- (phase 3) à chaque update.
+-- ----------------------------------------------------------------------------
+
+-- ROLLBACK
+-- drop policy if exists "commercial_prospects_admin_all" on public.commercial_prospects;
+-- drop table if exists public.commercial_prospects;

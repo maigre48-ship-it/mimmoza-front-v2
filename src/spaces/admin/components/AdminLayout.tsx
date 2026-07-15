@@ -9,6 +9,7 @@ import {
   CreditCard,
   FileText,
   LogOut,
+  Megaphone,
   Settings,
   Users
 } from "lucide-react";
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { label: "Devis",        path: "/admin/devis",         icon: ClipboardList },
   { label: "Factures",     path: "/admin/factures",      icon: FileText },
   { label: "Entreprises",  path: "/admin/entreprises",   icon: Building2 },
+  { label: "Agent commercial", path: "/admin/agent-commercial", icon: Megaphone },
   { label: "Tarifs",       path: "/admin/tarifs",        icon: BadgeEuro },
   { label: "Paramètres",   path: "/admin/parametres",    icon: Settings },
 ] as const;

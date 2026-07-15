@@ -81,6 +81,17 @@ import AdminLoginPage from "./spaces/admin/pages/Login";
 import AdminParametresPage from "./spaces/admin/pages/Parametres";
 import AdminTarifsPage from "./spaces/admin/pages/Tarifs";
 import AdminUtilisateursPage from "./spaces/admin/pages/Utilisateurs";
+import {
+  AgentCommercialLayout,
+  AgentCommercialOverviewPage,
+  AgentCommercialProspectsPage,
+  AgentCommercialMessagesPage,
+  AgentCommercialConversationsPage,
+  AgentCommercialRelancesPage,
+  AgentCommercialPipelinePage,
+  AgentCommercialKnowledgePage,
+  AgentCommercialSettingsPage,
+} from "./spaces/admin/pages/agentCommercial";
 
 import MarchandLayout from "./spaces/marchand/MarchandLayout";
 import MarchandExecution from "./spaces/marchand/pages/Execution";
@@ -317,6 +328,18 @@ function AppRoot() {
             <Route path="entreprises"   element={<AdminEntreprisesPage />} />
             <Route path="tarifs"        element={<AdminTarifsPage />} />
             <Route path="parametres"    element={<AdminParametresPage />} />
+
+            {/* Module Agent commercial (squelette phase 2) */}
+            <Route path="agent-commercial" element={<AgentCommercialLayout />}>
+              <Route index                element={<AgentCommercialOverviewPage />} />
+              <Route path="prospects"     element={<AgentCommercialProspectsPage />} />
+              <Route path="messages"      element={<AgentCommercialMessagesPage />} />
+              <Route path="conversations" element={<AgentCommercialConversationsPage />} />
+              <Route path="relances"      element={<AgentCommercialRelancesPage />} />
+              <Route path="pipeline"      element={<AgentCommercialPipelinePage />} />
+              <Route path="connaissances" element={<AgentCommercialKnowledgePage />} />
+              <Route path="parametres"    element={<AgentCommercialSettingsPage />} />
+            </Route>
           </Route>
 
           {/* ═══ Apporteur ═══ */}
