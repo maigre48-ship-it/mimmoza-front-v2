@@ -287,6 +287,18 @@ export const EMAIL_STATUS_TONES: Record<EmailStatus, StatusBadgeTone> = {
   cancelled: "slate",
 };
 
+// ── Intégration Google (état exposé au front, SANS jeton) ────────────────────
+export type IntegrationStatusValue = "connected" | "disconnected" | "error";
+
+export interface CommercialIntegrationStatus {
+  status: IntegrationStatusValue;
+  account_email: string | null;
+  send_as_email: string | null;
+  scopes: string[] | null;
+  last_sync_at: string | null;
+  last_error: string | null;
+}
+
 export interface CommercialEmail {
   id: string;
   prospect_id: string;

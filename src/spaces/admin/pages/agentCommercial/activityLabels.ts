@@ -18,6 +18,8 @@ const LABELS: Record<string, string> = {
   email_updated: "Email modifié",
   email_approved: "Email validé",
   email_rejected: "Email rejeté",
+  gmail_connected: "Google Workspace connecté",
+  gmail_disconnected: "Google Workspace déconnecté",
 };
 
 export function activityLabel(eventType: string): string {
