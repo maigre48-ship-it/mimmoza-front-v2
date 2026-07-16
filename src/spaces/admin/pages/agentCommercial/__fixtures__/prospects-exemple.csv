@@ -3,3 +3,5 @@ Foncière Alpha,Camille,Martin,Gérant,camille.martin@example.com,0600000001,Bor
 Groupe Beta Immobilier,Dominique,Bernard,Directeur,contact@beta.example.com,0600000002,Lyon,69,Auvergne-Rhône-Alpes,Marchand de biens,11-50
 Gamma Patrimoine,,,,gamma@example.com,,Nantes,44,Pays de la Loire,,
 Sans Email SARL,Alex,Petit,Associé,,0600000004,Lille,59,Hauts-de-France,Marchand de biens,1-10
+
+Test Exclusion SARL,Test,Test,Gérant,test@example.com,0600000005,Saint-Cloud,92,Île-de-France,Marchand de biens,1-10

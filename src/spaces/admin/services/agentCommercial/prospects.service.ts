@@ -96,32 +96,44 @@ async function updateProspect(
 
 // ── Effets de bord partagés ──────────────────────────────────────────────────
 
-/** Ajoute le prospect à la liste d'exclusion (par email) suite à un opt-out. */
-async function excludeProspectByOptOut(prospect: CommercialProspect): Promise<void> {
+/**
+ * Applique TOUS les effets d'un opt-out, de façon centralisée :
+ *   1. ajout à la liste d'exclusion (par email), non bloquant ;
+ *   2. bascule du statut vers « exclu » via changeProspectStatus — donc avec
+ *      transition historisée (commercial_pipeline_events) et journalisation
+ *      (commercial_activity_log). No-op si le prospect est déjà « exclu ».
+ * Retourne le prospect à jour (statut « exclu »).
+ */
+async function excludeProspectByOptOut(
+  prospect: CommercialProspect,
+): Promise<CommercialProspect> {
   const email = normalizeEmail(prospect.email);
-  if (!email) {
+  if (email) {
+    try {
+      await createExclusion({
+        email,
+        reason: "Opposition à la prospection (opt-out)",
+        metadata: { prospect_id: prospect.id, via: "opt_out" },
+      });
+      void logActivity({
+        event_type: "exclusion_added",
+        entity: "prospect",
+        entity_id: prospect.id,
+        metadata: { via: "opt_out", email },
+      });
+    } catch (err) {
+      // L'exclusion peut déjà exister : non bloquant.
+      console.warn("[agentCommercial] exclusion opt-out non ajoutée:", err);
+    }
+  } else {
     console.warn(
       "[agentCommercial] opt-out sans email : impossible d'ajouter à la liste d'exclusion",
       prospect.id,
     );
-    return;
   }
-  try {
-    await createExclusion({
-      email,
-      reason: "Opposition à la prospection (opt-out)",
-      metadata: { prospect_id: prospect.id, via: "opt_out" },
-    });
-    void logActivity({
-      event_type: "exclusion_added",
-      entity: "prospect",
-      entity_id: prospect.id,
-      metadata: { via: "opt_out", email },
-    });
-  } catch (err) {
-    // L'exclusion peut déjà exister : non bloquant.
-    console.warn("[agentCommercial] exclusion opt-out non ajoutée:", err);
-  }
+
+  // Un prospect en opt-out doit être « exclu » dans le pipeline.
+  return changeProspectStatus(prospect, "exclu");
 }
 
 // ── Cas d'usage orchestrés ───────────────────────────────────────────────────
@@ -156,7 +168,8 @@ export async function createProspectManual(
     void recordTransition(created.id, null, created.status);
   }
   if (created.opt_out) {
-    await excludeProspectByOptOut(created);
+    // Force le statut « exclu » + ajout à la liste d'exclusion.
+    return excludeProspectByOptOut(created);
   }
 
   return created;
@@ -190,7 +203,8 @@ export async function saveProspectEdit(
   }
 
   if (!prev.opt_out && updated.opt_out) {
-    await excludeProspectByOptOut(updated);
+    // Passage en opt-out : force le statut « exclu » + ajout à la liste d'exclusion.
+    return excludeProspectByOptOut(updated);
   }
 
   return updated;
@@ -217,6 +231,27 @@ export async function changeProspectStatus(
   });
 
   return updated;
+}
+
+/**
+ * Bascule vers « exclu » les prospects ACTIFS dont l'email correspond EXACTEMENT
+ * (suite à un ajout manuel d'exclusion par email). Réutilise changeProspectStatus
+ * (transition historisée + journalisation). Ne touche pas opt_out. Les exclusions
+ * par domaine ne basculent volontairement aucun statut. Retourne le nombre basculé.
+ */
+export async function excludeProspectsByEmail(email: string): Promise<number> {
+  const target = normalizeEmail(email);
+  if (!target) return 0;
+
+  const actives = await listProspects({ scope: "active" });
+  const matches = actives.filter(
+    (p) => normalizeEmail(p.email) === target && p.status !== "exclu",
+  );
+
+  for (const p of matches) {
+    await changeProspectStatus(p, "exclu");
+  }
+  return matches.length;
 }
 
 /** Archivage doux (« Supprimer » côté UI). Réversible. */

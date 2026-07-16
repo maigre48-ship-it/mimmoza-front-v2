@@ -18,6 +18,7 @@ import {
   deleteExclusion,
   listExclusions,
 } from "@/spaces/admin/services/agentCommercial/exclusions.service";
+import { excludeProspectsByEmail } from "@/spaces/admin/services/agentCommercial/prospects.service";
 import { logActivity } from "@/spaces/admin/services/agentCommercial/activityLog.service";
 import { formatDateTime } from "./prospectFormat";
 
@@ -94,8 +95,21 @@ export function AgentCommercialExclusionsPage() {
         entity_id: created.id,
         metadata: { via: "manual", email: created.email, domain: created.domain },
       });
+
+      // Item 2 : une exclusion par email exact bascule le(s) prospect(s) actif(s)
+      // correspondant(s) vers « exclu ». Les exclusions par domaine ne touchent
+      // aucun statut (elles bloqueront la génération/l'envoi en phases 5/6).
+      let flipped = 0;
+      if (created.email) {
+        flipped = await excludeProspectsByEmail(created.email);
+      }
+
       setAdding(false);
-      toast.success("Exclusion ajoutée.");
+      toast.success(
+        flipped > 0
+          ? `Exclusion ajoutée. ${flipped} prospect(s) basculé(s) en « exclu ».`
+          : "Exclusion ajoutée.",
+      );
       await load();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Ajout impossible.");
