@@ -10,6 +10,10 @@ const LABELS: Record<string, string> = {
   exclusion_added: "Ajout à la liste d'exclusion",
   exclusion_removed: "Retrait de la liste d'exclusion",
   csv_import: "Import CSV",
+  knowledge_created: "Entrée de connaissance créée",
+  knowledge_updated: "Entrée de connaissance modifiée",
+  knowledge_deleted: "Entrée de connaissance supprimée",
+  knowledge_reordered: "Réorganisation de la base de connaissances",
 };
 
 export function activityLabel(eventType: string): string {

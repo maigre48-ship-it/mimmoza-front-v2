@@ -167,3 +167,134 @@ export interface CommercialActivityLog {
   metadata: Record<string, unknown>;
   created_at: string;
 }
+
+// ── Base de connaissances ────────────────────────────────────────────────────
+export const KNOWLEDGE_SECTIONS = [
+  "presentation",
+  "metiers_cibles",
+  "problemes",
+  "fonctionnalites",
+  "benefices",
+  "limites",
+  "tarifs",
+  "faq",
+  "objections",
+  "liens",
+  "signature",
+] as const;
+
+export type KnowledgeSection = (typeof KNOWLEDGE_SECTIONS)[number];
+
+export const KNOWLEDGE_SECTION_LABELS: Record<KnowledgeSection, string> = {
+  presentation: "Présentation",
+  metiers_cibles: "Métiers cibles",
+  problemes: "Problèmes adressés",
+  fonctionnalites: "Fonctionnalités",
+  benefices: "Bénéfices",
+  limites: "Limites",
+  tarifs: "Tarifs",
+  faq: "FAQ",
+  objections: "Objections",
+  liens: "Liens",
+  signature: "Signature",
+};
+
+export const KNOWLEDGE_STATUSES = ["brouillon", "valide", "desactive"] as const;
+export type KnowledgeStatus = (typeof KNOWLEDGE_STATUSES)[number];
+
+export const KNOWLEDGE_STATUS_LABELS: Record<KnowledgeStatus, string> = {
+  brouillon: "Brouillon",
+  valide: "Validé",
+  desactive: "Désactivé",
+};
+
+export const KNOWLEDGE_STATUS_TONES: Record<KnowledgeStatus, StatusBadgeTone> = {
+  brouillon: "amber",
+  valide: "emerald",
+  desactive: "slate",
+};
+
+export interface CommercialKnowledgeEntry {
+  id: string;
+  section: KnowledgeSection;
+  title: string;
+  content: string;
+  status: KnowledgeStatus;
+  position: number;
+  metadata: Record<string, unknown>;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeFormValues {
+  section: KnowledgeSection;
+  title: string;
+  content: string;
+  status: KnowledgeStatus;
+}
+
+// ── Emails IA (table préparée en 5A, exploitée en 5B/6) ──────────────────────
+export const EMAIL_KINDS = [
+  "premier_contact",
+  "relance_1",
+  "relance_2",
+  "reponse_question",
+  "proposition_demo",
+  "proposition_essai",
+  "suivi_demo",
+] as const;
+export type EmailKind = (typeof EMAIL_KINDS)[number];
+
+export const EMAIL_KIND_LABELS: Record<EmailKind, string> = {
+  premier_contact: "Premier contact",
+  relance_1: "Relance 1",
+  relance_2: "Relance 2",
+  reponse_question: "Réponse à une question",
+  proposition_demo: "Proposition de démonstration",
+  proposition_essai: "Proposition d'essai",
+  suivi_demo: "Suivi de démonstration",
+};
+
+export const EMAIL_STATUSES = [
+  "draft",
+  "pending_review",
+  "approved",
+  "sent",
+  "failed",
+  "rejected",
+  "cancelled",
+] as const;
+export type EmailStatus = (typeof EMAIL_STATUSES)[number];
+
+export const EMAIL_STATUS_LABELS: Record<EmailStatus, string> = {
+  draft: "Brouillon",
+  pending_review: "À valider",
+  approved: "Approuvé",
+  sent: "Envoyé",
+  failed: "Échec",
+  rejected: "Rejeté",
+  cancelled: "Annulé",
+};
+
+export interface CommercialEmail {
+  id: string;
+  prospect_id: string;
+  kind: EmailKind;
+  subject: string | null;
+  body: string | null;
+  internal_rationale: string | null;
+  recommended_status: string | null;
+  recommended_next_action: string | null;
+  status: EmailStatus;
+  ai_model: string | null;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  generated_by: string | null;
+  reviewed_by: string | null;
+  sent_at: string | null;
+  error: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
