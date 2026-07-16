@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Archive, ArchiveRestore, ArrowLeft, Ban, Pencil } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowLeft, Ban, Mail, Pencil, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import { LoadingState } from "@/components/layouts/LoadingState";
 import { Button } from "@/components/ui/Button";
@@ -12,10 +12,12 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { StatusBadge } from "@/spaces/admin/components/StatusBadge";
 import { useToast } from "@/components/ui/toastContext";
 import {
+  EMAIL_KIND_LABELS,
   PROSPECT_LEGAL_BASIS_LABELS,
   PROSPECT_SOURCE_LABELS,
   PROSPECT_STATUS_LABELS,
   type CommercialActivityLog,
+  type CommercialEmail,
   type CommercialPipelineEvent,
   type CommercialProspect,
   type ProspectFormValues,
@@ -28,8 +30,11 @@ import {
 } from "@/spaces/admin/services/agentCommercial/prospects.service";
 import { listPipelineEvents } from "@/spaces/admin/services/agentCommercial/pipeline.service";
 import { listActivityForEntity } from "@/spaces/admin/services/agentCommercial/activityLog.service";
+import { listEmailsForProspect } from "@/spaces/admin/services/agentCommercial/emails.service";
 import { ProspectFormModal } from "./ProspectFormModal";
 import { ProspectStatusBadge } from "./ProspectStatusBadge";
+import { EmailStatusBadge } from "./EmailStatusBadge";
+import { GenerateEmailModal } from "./GenerateEmailModal";
 import { activityLabel } from "./activityLabels";
 import { formatDate, formatDateTime, prospectContactName, prospectToForm } from "./prospectFormat";
 
@@ -52,10 +57,12 @@ export function AgentCommercialProspectDetailPage() {
   const [prospect, setProspect] = useState<CommercialProspect | null>(null);
   const [events, setEvents] = useState<CommercialPipelineEvent[]>([]);
   const [activity, setActivity] = useState<CommercialActivityLog[]>([]);
+  const [emails, setEmails] = useState<CommercialEmail[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
   const [editing, setEditing] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
 
@@ -70,12 +77,14 @@ export function AgentCommercialProspectDetailPage() {
         return;
       }
       setProspect(p);
-      const [ev, act] = await Promise.all([
+      const [ev, act, em] = await Promise.all([
         listPipelineEvents(id),
         listActivityForEntity("prospect", id),
+        listEmailsForProspect(id),
       ]);
       setEvents(ev);
       setActivity(act);
+      setEmails(em);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Chargement impossible.");
     } finally {
@@ -165,6 +174,20 @@ export function AgentCommercialProspectDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {!isArchived && (
+              <Button
+                leftIcon={<Sparkles className="h-4 w-4" />}
+                onClick={() => setGenerating(true)}
+                disabled={prospect.opt_out || prospect.status === "exclu"}
+                title={
+                  prospect.opt_out || prospect.status === "exclu"
+                    ? "Prospect exclu : génération impossible."
+                    : undefined
+                }
+              >
+                Générer un email
+              </Button>
+            )}
             {!isArchived && (
               <Button variant="secondary" leftIcon={<Pencil className="h-4 w-4" />} onClick={() => setEditing(true)}>
                 Modifier
@@ -260,6 +283,56 @@ export function AgentCommercialProspectDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Emails générés */}
+      <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
+          Emails générés
+        </h3>
+        {emails.length === 0 ? (
+          <p className="flex items-center gap-2 text-sm text-slate-400">
+            <Mail className="h-4 w-4" />
+            Aucun email généré. Utilisez « Générer un email ».
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {emails.map((email) => (
+              <li
+                key={email.id}
+                className="rounded-2xl border border-slate-200 bg-white p-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+                      {EMAIL_KIND_LABELS[email.kind]}
+                    </span>
+                    <EmailStatusBadge status={email.status} />
+                  </div>
+                  <span className="text-xs text-slate-400">{formatDateTime(email.created_at)}</span>
+                </div>
+                <div className="mt-1 text-sm font-medium text-slate-800">
+                  {email.subject ?? "(sans objet)"}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-3 text-xs text-slate-400">
+          La relecture et la validation se font dans l'onglet « Messages à valider ».
+        </p>
+      </div>
+
+      {generating && (
+        <GenerateEmailModal
+          prospectId={prospect.id}
+          onClose={() => setGenerating(false)}
+          onGenerated={() => {
+            setGenerating(false);
+            toast.success("Email généré. À valider dans « Messages à valider ».");
+            void load();
+          }}
+        />
+      )}
 
       {editing && (
         <ProspectFormModal

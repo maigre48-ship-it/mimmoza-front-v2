@@ -277,6 +277,16 @@ export const EMAIL_STATUS_LABELS: Record<EmailStatus, string> = {
   cancelled: "Annulé",
 };
 
+export const EMAIL_STATUS_TONES: Record<EmailStatus, StatusBadgeTone> = {
+  draft: "slate",
+  pending_review: "amber",
+  approved: "emerald",
+  sent: "sky",
+  failed: "rose",
+  rejected: "rose",
+  cancelled: "slate",
+};
+
 export interface CommercialEmail {
   id: string;
   prospect_id: string;

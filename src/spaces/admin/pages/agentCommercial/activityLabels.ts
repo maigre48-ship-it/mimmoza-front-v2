@@ -14,6 +14,10 @@ const LABELS: Record<string, string> = {
   knowledge_updated: "Entrée de connaissance modifiée",
   knowledge_deleted: "Entrée de connaissance supprimée",
   knowledge_reordered: "Réorganisation de la base de connaissances",
+  email_generated: "Email généré par l'IA",
+  email_updated: "Email modifié",
+  email_approved: "Email validé",
+  email_rejected: "Email rejeté",
 };
 
 export function activityLabel(eventType: string): string {
