@@ -14,7 +14,7 @@
 // diff écrit la clé 2D (pas le programme) → aucun PROGRAMME_EVENT → pas de boucle.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { userStorage } from "@/lib/storage/userScopedStorage";
 import type { Building2D, Parking2D } from "../../plan2d/editor2d.types";
 import {
@@ -59,7 +59,21 @@ function write2D(studyId: string, buildings: Building2D[], parkings: Parking2D[]
 // idempotente : elle ne cible que les bâtiments sans clé).
 const migratedStudies = new Set<string>();
 
-export function usePromoteurProgramSync(studyId: string | null): void {
+/**
+ * @returns true quand la synchro a tourné pour ce studyId (ou qu'il n'y en a pas).
+ *
+ * ⚠️ DEEP-LINK — pourquoi ce retour existe : les effets ENFANTS s'exécutent
+ * AVANT les effets parents. Sur un accès direct à /implantation-2d?study=X
+ * (bookmark, lien de l'Analyste), l'hydratation d'Impl2D (useLayoutEffect
+ * enfant) lisait `mimmoza.editor2d.raw.{studyId}` AVANT que ce hook (parent)
+ * n'y écrive → plan masse non synchronisé au premier rendu. Le guard doit donc
+ * retenir l'<Outlet/> tant que ce hook n'a pas fini.
+ */
+export function usePromoteurProgramSync(studyId: string | null): boolean {
+  // Tagué par studyId : passer d'une étude à l'autre repasse par "pas prêt"
+  // au lieu de laisser croire que la nouvelle est déjà synchronisée.
+  const [syncedFor, setSyncedFor] = useState<string | null>(null);
+
   useEffect(() => {
     if (!studyId) return;
     const sid = studyId;
@@ -104,6 +118,13 @@ export function usePromoteurProgramSync(studyId: string | null): void {
 
     // 2. Diff initial + abonnement aux changements de programme.
     runDiff();
+    // TEMPORAIRE — diagnostic régression deep-link.
+    console.log("[programSync] diff OK", {
+      sid,
+      batiments: usePromoteurProgrammeStore.getState().mix.batiments.length,
+      buildings2D: read2D(sid).buildings.length,
+    });
+    setSyncedFor(sid);   // → libère l'<Outlet/> du guard (cf. deep-link).
 
     const onProgramme = (e: Event) => {
       const detail = (e as CustomEvent).detail as { studyId?: string } | undefined;
@@ -113,4 +134,6 @@ export function usePromoteurProgramSync(studyId: string | null): void {
     window.addEventListener(PROGRAMME_EVENT, onProgramme);
     return () => window.removeEventListener(PROGRAMME_EVENT, onProgramme);
   }, [studyId]);
+
+  return studyId == null || syncedFor === studyId;
 }

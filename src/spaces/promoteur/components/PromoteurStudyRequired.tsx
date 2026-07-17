@@ -51,7 +51,9 @@ export default function PromoteurStudyRequired(): React.ReactElement {
   // Synchro Programmation → bâtiments 2D (vivante dès qu'on est dans une étude,
   // quelle que soit la sous-page active). Hook inconditionnel (règles des hooks) ;
   // no-op si studyId absent.
-  usePromoteurProgramSync(studyId);
+  const programSynced = usePromoteurProgramSync(studyId);
+  // TEMPORAIRE — diagnostic régression deep-link.
+  console.log("[guard] programSynced:", programSynced, "studyId:", studyId);
 
   // Résultat du contrôle async, tagué par studyId (évite tout flash de contenu
   // premium quand on passe d'une étude à une autre non encore vérifiée).
@@ -145,6 +147,14 @@ export default function PromoteurStudyRequired(): React.ReactElement {
   }
 
   // ── Déverrouillée ───────────────────────────────────────────────────────────
+  // ⚠️ On retient l'<Outlet/> tant que la synchro programme → 2D n'a pas tourné :
+  // les effets ENFANTS passent AVANT ceux du parent, donc l'hydratation
+  // d'Implantation2DPage lirait la clé 2D avant que la synchro n'y écrive
+  // (deep-link /implantation-2d?study=X). Un tour de rendu, invisible.
+  if (!programSynced) {
+    return <CenteredMessage title="Préparation de l'étude…" />;
+  }
+
   return <Outlet />;
 }
 
