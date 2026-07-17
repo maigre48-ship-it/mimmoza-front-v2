@@ -26,6 +26,8 @@ import { computeParkingSlots, rectCorners } from "./plan2d/editor2d.geometry";
 import { useEditor2DStore } from "./plan2d/editor2d.store";
 import type { Building2D, Point2D } from "./plan2d/editor2d.types";
 import { usePromoteurParcelRestore } from "./shared/hooks/usePromoteurParcelRestore";
+// V6.13 — PLU réel de l'étude (au lieu du placeholder en dur)
+import { usePromoteurStudy } from "./shared/usePromoteurStudy";
 
 import { ParcelDiagnosticsPanel } from "./components/ParcelDiagnosticsPanel";
 import { PluAnalysisPanel } from "./components/PluAnalysisPanel";
@@ -58,6 +60,7 @@ import {
   setActiveCopilotContext,
   clearActiveCopilotContext,
   normalizeStudyId,
+  toActivePluRef,
 } from "../copilot/store/activeCopilotContext.store";
 
 import {
@@ -71,12 +74,117 @@ import { userStorage } from "@/lib/storage/userScopedStorage";
 // CONSTANTES
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ⚠️ Valeurs de repli UNIQUEMENT. Utilisées tant qu'aucun règlement PLU n'a été
+// importé sur la page Foncier. Un diagnostic calculé dessus est indicatif.
 const PLACEHOLDER_PLU_RULES: PluRules = {
   minSetbackMeters:     3,
   maxHeightMeters:      15,
   maxCoverageRatio:     0.60,
   parkingSpacesPerUnit: 1,
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// V6.13 — PLU RÉEL DE L'ÉTUDE
+//   Avant : l'éditeur contrôlait la conformité contre PLACEHOLDER_PLU_RULES,
+//   même quand le règlement était importé → diagnostics faux (ex. 60 % d'emprise
+//   affichés sur une zone SANS règle CES). On lit désormais study.plu.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function pluNum(obj: unknown): number | null {
+  if (obj == null) return null;
+  if (typeof obj === "number") return Number.isFinite(obj) ? obj : null;
+  if (typeof obj === "string") { const n = parseFloat(obj); return isNaN(n) ? null : n; }
+  if (typeof obj !== "object") return null;
+  const o = obj as Record<string, unknown>;
+  for (const k of ["valeur", "m", "metres", "max", "max_m", "min", "min_m", "max_ratio", "ratio_min", "pct", "value"]) {
+    const n = pluNum(o[k]);
+    if (n != null) return n;
+  }
+  return null;
+}
+
+interface StudyPluRules {
+  rules:      PluRules;
+  source:     "study" | "placeholder";
+  zoneCode:   string | null;
+  zoneLibelle: string | null;
+  cesAbsent:  boolean;
+  /** Reculs par type d'arête — alimentent l'enveloppe constructible (canvas). */
+  reculVoirieM:  number | null;
+  reculLimitesM: number | null;
+  reculFondM:    number | null;
+}
+
+/**
+ * Mappe study.plu → PluRules. Repli sur le placeholder si rien d'importé.
+ * ⚠️ « Pas de règle CES » ≠ « emprise 0 % » : on renvoie 1 (100 %, non
+ *    contraignant) et on signale l'absence via cesAbsent.
+ */
+function mapStudyPlu(studyPlu: unknown): StudyPluRules {
+  const fallback: StudyPluRules = {
+    rules: PLACEHOLDER_PLU_RULES, source: "placeholder",
+    zoneCode: null, zoneLibelle: null, cesAbsent: false,
+    reculVoirieM: null, reculLimitesM: null,
+  };
+  if (!studyPlu || typeof studyPlu !== "object") return fallback;
+
+  const p  = studyPlu as Record<string, any>;
+  const rs = (p.ruleset ?? p) as Record<string, any>;
+  // Format réel (plu_ruleset_v1) : zone_code, hauteur (singulier), ces.max_ratio,
+  // reculs.{voirie,limites_separatives}.min_m, stationnement.par_logement.
+  const zoneCode = p.zone_code ?? p.zone ?? p.zone_plu ?? rs.zone_code ?? rs.zone ?? null;
+  if (!zoneCode && !rs.hauteur && !rs.hauteurs && !rs.ces) return fallback;
+
+  const hauteurs = rs.hauteur ?? rs.hauteurs ?? rs.gabarit ?? {};
+  const ces      = rs.ces ?? rs.emprise_sol ?? {};
+  const reculs   = rs.reculs ?? rs.recul ?? {};
+  const stat     = rs.stationnement ?? rs.parking ?? {};
+
+  // hauteur.max_m = égout (10 m) ; faitage_m = faîtage (13 m). L'égout borne
+  // le gabarit constructible → c'est lui qu'on retient.
+  const hEgout   = pluNum(hauteurs.max_m) ?? pluNum(hauteurs.egout) ?? pluNum(hauteurs.egout_m);
+  const hFaitage = pluNum(hauteurs.faitage_m) ?? pluNum(hauteurs.faitage);
+  const hMax     = hEgout ?? hFaitage ?? pluNum(p.hauteur_max_m);
+
+  // ces.max_ratio est un RATIO (0–1), pas un pourcentage. null = pas de règle.
+  const cesRatio  = pluNum(ces.max_ratio) ?? pluNum(ces);
+  const cesAbsent = cesRatio == null || cesRatio <= 0;
+
+  // reculs.facades.{avant,laterales,fond} est plus précis que voirie/limites
+  // quand il est présent ; sinon repli sur le couple générique.
+  const fac = reculs.facades ?? {};
+  const reculVoirie  = pluNum(fac.avant) ?? pluNum(reculs.voirie) ?? pluNum(reculs.voirie_m);
+  const reculLimites = pluNum(fac.laterales) ?? pluNum(reculs.limites_separatives) ?? pluNum(reculs.limites);
+  const reculFond    = pluNum(fac.fond) ?? reculLimites;
+  const reculMin = [reculVoirie, reculLimites, reculFond].filter((v): v is number => v != null);
+
+  const parking = pluNum(stat.par_logement) ?? pluNum(stat) ?? pluNum(p.parking_par_logement);
+
+  return {
+    rules: {
+      // ⚠️ PluMetricSet n'expose qu'une distance MINIMALE globale aux arêtes
+      // (minDistanceToParcelEdgeM) : le moteur ne sait pas distinguer voirie et
+      // limites séparatives. Le contrôle par arête est fait par l'ENVELOPPE
+      // constructible (computeBuildableEnvelope + setbackRules), qui fait
+      // autorité. On prend donc ici le recul le MOINS contraignant : ce garde-fou
+      // grossier ne doit jamais contredire l'enveloppe (avec un max, un bâtiment
+      // à 2 m d'une limite latérale — légal — serait faussement bloqué par une
+      // règle de recul voirie de 3 m).
+      minSetbackMeters:     reculMin.length ? Math.min(...reculMin) : PLACEHOLDER_PLU_RULES.minSetbackMeters,
+      maxHeightMeters:      hMax ?? PLACEHOLDER_PLU_RULES.maxHeightMeters,
+      // Pas de règle CES → 1 (100 %) : non contraignant, jamais 0.
+      maxCoverageRatio:     cesAbsent ? 1 : (cesRatio as number),
+      parkingSpacesPerUnit: parking ?? PLACEHOLDER_PLU_RULES.parkingSpacesPerUnit,
+    },
+    source: "study",
+    zoneCode,
+    zoneLibelle: p.zone_libelle ?? rs.zone_libelle ?? p.description ?? null,
+    cesAbsent,
+    reculVoirieM:  reculVoirie,
+    reculLimitesM: reculLimites,
+    reculFondM:    reculFond,
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CLÉS LOCALSTORAGE
@@ -418,9 +526,13 @@ interface RightSidebarProps {
   parcelleLocal: Point2D[];
   studyId:       string | null;
   parcelId:      string | null;   // V6.12
+  studyPlu:      unknown;         // V6.13 — study.plu brut
 }
 
-const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId, parcelId }) => {
+const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId, parcelId, studyPlu }) => {
+  // V6.13 — Règles PLU effectives : celles de l'étude si importées, sinon repli.
+  const pluRules = useMemo(() => mapStudyPlu(studyPlu), [studyPlu]);
+  console.log("[Impl2D] studyPlu:", studyPlu, "| pluRules:", pluRules);
 
   const allBuildings  = useEditor2DStore(s => s.buildings);
   const storeParkings = useEditor2DStore(s => s.parkings);
@@ -432,6 +544,34 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId, par
   //    Plan2DCanvas destructure du store (setbackRules / parcelFrontEdgeIndex).
   const setbackRules         = useEditor2DStore(s => s.setbackRules);
   const parcelFrontEdgeIndex = useEditor2DStore(s => s.parcelFrontEdgeIndex);
+  const setSetbackRules      = useEditor2DStore(s => s.setSetbackRules);
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // V6.13 — Initialisation des reculs depuis le PLU réel
+  //   Mapping : recul voirie → frontM · recul limites séparatives → sideM + rearM.
+  //   UNE SEULE FOIS par étude : l'utilisateur peut ensuite ajuster librement
+  //   (un architecte dévie sciemment, on ne lui écrase pas sa saisie à chaque
+  //   rendu). Sans ça, l'enveloppe orange restait sur 5/3/3 en dur.
+  // ───────────────────────────────────────────────────────────────────────────
+  const setbacksSeededRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!studyId) return;
+    if (setbacksSeededRef.current === studyId) return;   // déjà initialisé
+    if (pluRules.source !== "study") return;             // pas de PLU importé
+    if (pluRules.reculVoirieM == null && pluRules.reculLimitesM == null) return;
+
+    setbacksSeededRef.current = studyId;
+    setSetbackRules({
+      ...(pluRules.reculVoirieM  != null ? { frontM: pluRules.reculVoirieM } : {}),
+      ...(pluRules.reculLimitesM != null ? { sideM: pluRules.reculLimitesM } : {}),
+      ...(pluRules.reculFondM    != null ? { rearM: pluRules.reculFondM } : {}),
+    });
+    console.debug("[Implantation2D] reculs initialisés depuis le PLU", {
+      studyId, zone: pluRules.zoneCode,
+      voirie: pluRules.reculVoirieM, limites: pluRules.reculLimitesM,
+    });
+  }, [studyId, pluRules, setSetbackRules]);
 
   const storeBuildings = useMemo(
     () => allBuildings.filter(hasValidRdcContent),
@@ -574,8 +714,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId, par
 
   const pluResult = useMemo<PluEngineResult | null>(() => {
     if (parcelVec2.length < 3) return null;
-    return runPluChecks({ parcel: parcelVec2, buildings: planBuildings, rules: PLACEHOLDER_PLU_RULES, providedParkingSpaces });
-  }, [parcelVec2, planBuildings, providedParkingSpaces]);
+    return runPluChecks({ parcel: parcelVec2, buildings: planBuildings, rules: pluRules.rules, providedParkingSpaces });
+  }, [parcelVec2, planBuildings, providedParkingSpaces, pluRules]);
 
   // V6.11 — Enveloppe constructible : MÊME source que le canvas.
   //   pluEnvelope.geometry::computeBuildableEnvelope(parcelleLocal, frontEdgeIndex, setbackRules)
@@ -614,6 +754,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId, par
       surface:  parcelAreaM2 > 0 ? Math.round(parcelAreaM2) : undefined,
       route:    "/promoteur/implantation-2d",
       vertical: "promoteur",
+      // V6.13 — PLU du parser : alimente le tool get_parcel_plu (ctx.plu).
+      // Sans ce champ, le tool répond « règlement non importé » alors que le
+      // PLU est bien en base — et l'Analyste répète cette erreur à l'écran.
+      plu: toActivePluRef(studyPlu),
       pageContext: {
         pathname: "/promoteur/implantation-2d",
         space:    "promoteur",
@@ -641,9 +785,19 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId, par
           emprise_m2: Math.round(b.rect.width * b.rect.depth),
         })),
 
-        // Règles PLU appliquées (placeholder tant que le PLU réel n'est pas branché)
-        regles_plu: PLACEHOLDER_PLU_RULES,
-        regles_plu_source: "placeholder",
+        // Règles PLU réellement appliquées par le moteur de conformité
+        regles_plu: pluRules.rules,
+        regles_plu_source: pluRules.source,
+        plu_zone: pluRules.zoneCode,
+        plu_zone_libelle: pluRules.zoneLibelle,
+        plu_ces_absent: pluRules.cesAbsent,
+        plu_recul_voirie_m: pluRules.reculVoirieM,
+        plu_recul_limites_m: pluRules.reculLimitesM,
+        // L'enveloppe fait autorité sur les reculs (contrôle par arête) ;
+        // regles_plu.minSetbackMeters n'est qu'un garde-fou global.
+        reculs_source: pluRules.source === "study"
+          ? "PLU de l'etude (modifiables par l'utilisateur)"
+          : "valeurs par defaut de l'editeur",
 
         // Résultats moteurs — déjà calculés, l'IA n'a pas à les recalculer
         plu_checks:  pluResult  ?? null,
@@ -658,7 +812,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId, par
   }, [
     studyId, parcelId, parcelleLocal, parcelAreaM2,
     storeBuildings, storeParkings, providedParkingSpaces,
-    buildableEnvelope, setbackRules,
+    buildableEnvelope, setbackRules, pluRules, studyPlu,
     pluResult, parcelDiagnostics, masterScenario,
     nbLogements, surfaceMoyLogementM2,
   ]);
@@ -762,6 +916,9 @@ export const Implantation2DPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate        = useNavigate();
   const studyId         = searchParams.get("study");
+
+  // V6.13 — PLU réel de l'étude (le placeholder ne sert plus que de repli).
+  const { study } = usePromoteurStudy(studyId);
 
   const restore = usePromoteurParcelRestore({ studyId, autoFetchMissingGeometry: true });
   const [forceRenderWithoutGeometry, setForceRenderWithoutGeometry] = useState(false);
@@ -869,6 +1026,7 @@ export const Implantation2DPage: React.FC = () => {
           parcelleLocal={parcelleLocal}
           studyId={studyId}
           parcelId={restore.selectedParcels[0]?.id ?? null}
+          studyPlu={(study as any)?.plu ?? null}
         />
       </div>
     </div>

@@ -3,6 +3,7 @@
 // PATCH V1.2 : ajout de pageSnapshot (snapshot libre par page)
 // PATCH V1.3 : ajout de risk_study (etude de risques deja calculee — LOT 9)
 // PATCH V1.4 : ajout de studyId + implantation_2d (contexte etude promoteur)
+// PATCH V1.5 : ajout de plu (regles extraites par le parser — tool get_parcel_plu)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { create } from 'zustand';
@@ -26,6 +27,18 @@ export interface PageContextRef {
   space?: string;   // 'marchand' | 'investisseur' | 'promoteur' | ...
   mode?: string;    // 'acquisition' | 'execution' | 'analyse' | 'conception'
   tab?: string;     // 'pipeline' | 'simulation' | 'travaux' | 'implantation' | ...
+}
+
+// ─── V1.5 — PLU extrait par le parser ─────────────────────────────────────────
+// Meme contrat que MimmozaContext.plu cote copilot-chat : le tool get_parcel_plu
+// lit ctx.plu et le resume via summarizePluContext. SANS ce champ, le tool repond
+// « reglement non importe » alors que le PLU est bien en base (study.plu).
+export interface ActivePluRef {
+  zone_code?: string;
+  zone_libelle?: string;
+  source?: string;
+  ruleset?: Record<string, unknown> | null;
+  oap?: Record<string, unknown> | null;
 }
 
 // ─── Type snapshot ─────────────────────────────────────────────────────────────
@@ -72,6 +85,10 @@ export interface ActiveCopilotSnapshot {
   // Implantation2DPage. Injecte dans le system prompt → le Copilot repond sur
   // l'implantation reellement dessinee et non sur une parcelle generique.
   implantation_2d?: Record<string, unknown>;
+  // ── V1.5 — PLU extrait par le parser (study.plu) ─────────
+  // Source de verite du tool get_parcel_plu. A pousser par toute page qui
+  // dispose du reglement (Foncier/PLU, Implantation 2D, Programmation…).
+  plu?: ActivePluRef | null;
 }
 
 // ─── Interface store ───────────────────────────────────────────────────────────
@@ -106,6 +123,8 @@ const INITIAL_STATE: ActiveCopilotSnapshot = {
   // V1.4
   studyId:                undefined,
   implantation_2d:        undefined,
+  // V1.5
+  plu:                    undefined,
 };
 
 export const useActiveCopilotContext = create<ActiveCopilotContextState>(
@@ -178,4 +197,34 @@ export function normalizeStudyId(raw: string | null | undefined): string | null 
 /** V1.4 — Retourne true si une etude identifiable est active. */
 export function hasActiveStudy(): boolean {
   return !!getActiveCopilotContext().studyId;
+}
+
+// ─── V1.5 — Helpers PLU ───────────────────────────────────────────────────────
+
+/**
+ * V1.5 — Retourne true si un PLU exploitable est present dans le contexte.
+ * Meme critere que toolParcelPlu cote copilot-chat : zone_code OU ruleset OU oap.
+ */
+export function hasActivePlu(): boolean {
+  const plu = getActiveCopilotContext().plu;
+  return !!(plu && (plu.zone_code || plu.ruleset || plu.oap));
+}
+
+/**
+ * V1.5 — Normalise study.plu (jsonb brut) vers le contrat ActivePluRef.
+ * Evite de dupliquer le mapping dans chaque page qui publie le contexte.
+ */
+export function toActivePluRef(studyPlu: unknown): ActivePluRef | null {
+  if (!studyPlu || typeof studyPlu !== 'object') return null;
+  const p = studyPlu as Record<string, unknown>;
+  const ref: ActivePluRef = {
+    zone_code:    typeof p.zone_code    === 'string' ? p.zone_code    : undefined,
+    zone_libelle: typeof p.zone_libelle === 'string' ? p.zone_libelle : undefined,
+    source:       typeof p.source       === 'string' ? p.source       : 'plu-parser',
+    ruleset:      (p.ruleset as Record<string, unknown> | undefined) ?? null,
+    oap:          (p.oap     as Record<string, unknown> | undefined) ?? null,
+  };
+  // Rien d'exploitable → null (le tool dira franchement « non importe »).
+  if (!ref.zone_code && !ref.ruleset && !ref.oap) return null;
+  return ref;
 }

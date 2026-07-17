@@ -164,6 +164,12 @@ function buildEnrichedContext(
     reqCtx.study ??
     (active.studyId ? { id: active.studyId, type: 'promoteur' } : undefined);
 
+  // ── V1.7 — PLU du parser ──────────────────────────────────
+  // Source du tool get_parcel_plu côté copilot-chat (summarizePluContext).
+  // reqCtx.plu prioritaire si l'appelant l'a renseigné.
+  const plu = reqCtx.plu ?? active.plu ?? null;
+  console.log('[copilotClient] plu transmis:', plu ? `zone ${plu.zone_code}` : null);
+
   // ── Construction du contexte enrichi ──────────────────────
   const enriched: CopilotMimmozaContext = {
     // Spread du context appelant (study, user, plu…)
@@ -200,6 +206,9 @@ function buildEnrichedContext(
 
     // V1.6 — Étude promoteur active (réaffectée après le spread reqCtx)
     ...(study ? { study } : {}),
+
+    // V1.7 — PLU du parser (réaffecté après le spread reqCtx)
+    ...(plu ? { plu } : {}),
 
     // V1.2 — Snapshot prédictif : réaffecté APRÈS le spread pour
     // éviter tout écrasement par un champ homonyme dans reqCtx.
