@@ -7,6 +7,8 @@ import { CreditCard, Lock, Sparkles, Ticket } from "lucide-react";
 type ProjectUnlockModalProps = {
   open: boolean;
   projectLabel: string;
+  /** Message contextuel optionnel (ex. « étude expirée »), affiché en bannière. */
+  notice?: string;
   features?: string[];
   loading: boolean;
   noTokens: boolean;
@@ -23,6 +25,7 @@ const DEFAULT_FEATURES = ["Acces complet au projet", "Navigation libre"];
 export function ProjectUnlockModal({
   open,
   projectLabel,
+  notice,
   features,
   loading,
   noTokens,
@@ -64,6 +67,12 @@ export function ProjectUnlockModal({
             </p>
           </div>
         </div>
+
+        {notice && !noTokens && (
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            {notice}
+          </div>
+        )}
 
         <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-center gap-2 text-sm font-medium text-slate-900">

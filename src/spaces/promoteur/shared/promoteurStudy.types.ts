@@ -20,6 +20,14 @@ export interface PromoteurFoncierData {
   prix_foncier:  number | null;
   parcels_raw:   PromoteurParcelRaw[];
   done:          boolean;
+  // PATCH Modèle A — intention de recherche rattachée à l'étude dès sa création.
+  // `address` = saisie libre initiale ; `commune_label` = commune en texte libre
+  // AFFICHAGE UNIQUEMENT (NE JAMAIS l'utiliser pour pré-remplir `commune_insee`,
+  // qui est un code INSEE et doit venir du lookup). `surface_initiale_m2` = surface
+  // saisie à la création (indice), distincte de `surface_m2` (surface calculée).
+  address?:            string | null;
+  commune_label?:      string | null;
+  surface_initiale_m2?: number | null;
 }
 
 // ─── Module PLU ───────────────────────────────────────────────────────────────

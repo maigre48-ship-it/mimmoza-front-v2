@@ -163,11 +163,18 @@ function computeLeafletBounds(
  *   4. snapshot.project
  *   5. mimmoza.session.* (clés génériques FoncierPluPage)
  */
-export function getCurrentPromoteurParcelSelection(): PromoteurParcelSelection {
+export function getCurrentPromoteurParcelSelection(
+  studyId?: string | null,
+): PromoteurParcelSelection {
+  // PATCH Modèle A — clés SCOPÉES par studyId (cohérent avec useFoncierSelection).
+  // Repli explicite sur l'étude active si studyId non fourni.
+  const sid = studyId ?? userStorage.getItem("mimmoza.promoteur.active_study_id");
+  const scopedKey = (base: string) => (sid ? `${base}.${sid}` : base);
+
   // ── 1. Source primaire : useFoncierSelection localStorage ─────────────────
-  const lsSelected = safeJSON<SelectedParcel[]>(LS_SELECTED, []);
-  const lsFocus    = userStorage.getItem(LS_FOCUS) ?? null;
-  const lsCommune  = userStorage.getItem(LS_COMMUNE) ?? null;
+  const lsSelected = safeJSON<SelectedParcel[]>(scopedKey(LS_SELECTED), []);
+  const lsFocus    = userStorage.getItem(scopedKey(LS_FOCUS)) ?? null;
+  const lsCommune  = userStorage.getItem(scopedKey(LS_COMMUNE)) ?? null;
 
   let selectedParcels: SelectedParcel[] = lsSelected;
   let focusParcelId:   string | null    = lsFocus;

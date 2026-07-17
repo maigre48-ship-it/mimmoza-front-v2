@@ -47,9 +47,8 @@ const ACCENT2     = PROMOTEUR_COLORS.violet;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const LS_QUICK_ADDRESS = "mimmoza.promoteur.quick.address";
-const LS_QUICK_COMMUNE = "mimmoza.promoteur.quick.commune";
-const LS_QUICK_SURFACE = "mimmoza.promoteur.quick.surface";
+// PATCH Modèle A — clés mimmoza.promoteur.quick.* supprimées : adresse / commune /
+// surface initiale vivent dans study.foncier (source canonique).
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -508,19 +507,16 @@ export default function Dashboard(): React.ReactElement {
       : commune.trim() ? `Projet — ${commune.trim()}`
       : `Nouveau projet — ${formatDateTimeFR(new Date().toISOString())}`;
 
-    const result = await PromoteurStudyService.createStudy(title);
+    // PATCH Modèle A — création DÉBITÉE (fin du bypass G1) via le chemin unique.
+    // adresse / commune_label / surface_initiale -> study.foncier (canonique) ;
+    // plus aucun mimmoza.promoteur.quick.*.
+    const surfaceNum = parseFloat(String(surface).replace(",", "."));
+    const surfaceInitiale = !isNaN(surfaceNum) && surfaceNum > 0 ? Math.round(surfaceNum) : null;
+    const result = await PromoteurStudyService.createAndUnlockStudy(title, { address: adresse, communeLabel: commune, surfaceInitialeM2: surfaceInitiale });
     if (!result.ok) { alert(`Impossible de créer l'étude : ${result.error}`); setIsCreating(false); return; }
     const newStudy = result.data;
     clearAllPromoteurSessionKeys();
     setActiveStudyId(newStudy.id);
-
-    if (adresse.trim()) userStorage.setItem(LS_QUICK_ADDRESS, adresse.trim());
-    else                userStorage.removeItem(LS_QUICK_ADDRESS);
-    if (commune.trim()) userStorage.setItem(LS_QUICK_COMMUNE, commune.trim());
-    else                userStorage.removeItem(LS_QUICK_COMMUNE);
-    const surfaceNum = parseFloat(surface.replace(",", "."));
-    if (!isNaN(surfaceNum) && surfaceNum > 0) userStorage.setItem(LS_QUICK_SURFACE, String(Math.round(surfaceNum)));
-    else                                       userStorage.removeItem(LS_QUICK_SURFACE);
 
     const summary: PromoteurStudySummary = {
       id: newStudy.id, user_id: newStudy.user_id, title: newStudy.title,
@@ -549,7 +545,11 @@ export default function Dashboard(): React.ReactElement {
     if (deal.promoteurStudyId) { navigate(`/promoteur/foncier?study=${encodeURIComponent(deal.promoteurStudyId)}`); return; }
     setOpeningDealId(deal.id);
     const title  = `Deal apporteur — ${deal.adresse}`;
-    const result = await PromoteurStudyService.createStudy(title);
+    // PATCH Modèle A — création DÉBITÉE (fin du bypass G2). Le débit du contact
+    // (debloquerDeal) et le débit de l'étude restent DEUX débits distincts.
+    // adresse / commune_label / surface_initiale -> study.foncier (canonique).
+    const surfaceInitiale = deal.surfaceTerrainM2 != null && deal.surfaceTerrainM2 > 0 ? Math.round(deal.surfaceTerrainM2) : null;
+    const result = await PromoteurStudyService.createAndUnlockStudy(title, { address: deal.adresse, communeLabel: deal.commune, surfaceInitialeM2: surfaceInitiale });
     if (!result.ok) { alert(`Impossible de créer l'étude : ${result.error}`); setOpeningDealId(null); return; }
     const newStudy = result.data;
     clearAllPromoteurSessionKeys();
@@ -560,10 +560,6 @@ export default function Dashboard(): React.ReactElement {
     } catch (err) {
       console.error("[Dashboard] Liaison étude ↔ deal échouée:", err);
     }
-    if (deal.adresse)           userStorage.setItem(LS_QUICK_ADDRESS, deal.adresse);
-    if (deal.commune)           userStorage.setItem(LS_QUICK_COMMUNE, deal.commune);
-    if (deal.surfaceTerrainM2 != null && deal.surfaceTerrainM2 > 0)
-      userStorage.setItem(LS_QUICK_SURFACE, String(Math.round(deal.surfaceTerrainM2)));
     const summary: PromoteurStudySummary = {
       id: newStudy.id, user_id: newStudy.user_id, title: newStudy.title,
       status: newStudy.status, created_at: newStudy.created_at, updated_at: newStudy.updated_at, foncier: null,

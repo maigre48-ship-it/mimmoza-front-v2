@@ -40,6 +40,21 @@ export function extractCommuneInsee(payload: any): string | null {
 export function useFoncierSelection(options: UseFoncierSelectionOptions = {}) {
   const { autoPersist = true, debounceMs = 300 } = options;
 
+  // PATCH Modèle A — clés localStorage SCOPÉES par studyId : sans ça, la sélection
+  // de travail (selected/focus/commune) fuit d'un projet au suivant. Les deux
+  // appelants (Foncier, usePromoteurParcelRestore) passent déjà studyId.
+  // Pas de migration des anciennes clés globales : perte acceptée (source de vérité
+  // = promoteur_studies.foncier).
+  const studyId = options.studyId ?? null;
+  const keys = useMemo(
+    () => ({
+      selected: studyId ? `${LS_SELECTED}.${studyId}` : LS_SELECTED,
+      focus:    studyId ? `${LS_FOCUS}.${studyId}`    : LS_FOCUS,
+      commune:  studyId ? `${LS_COMMUNE}.${studyId}`  : LS_COMMUNE,
+    }),
+    [studyId],
+  );
+
   const [selectedParcels, setSelectedParcelsState] = useState<SelectedParcel[]>([]);
   const [focusParcelId, setFocusParcelIdState]     = useState<string | null>(null);
   const [communeInsee, setCommuneInseeState]       = useState<string | null>(null);
@@ -47,22 +62,22 @@ export function useFoncierSelection(options: UseFoncierSelectionOptions = {}) {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Hydratation ───────────────────────────────────────────────────────────
+  // ── Hydratation (ré-exécutée si les clés scopées changent) ────────────────
   useEffect(() => {
     try {
-      const sel = JSON.parse(userStorage.getItem(LS_SELECTED) || "[]");
+      const sel = JSON.parse(userStorage.getItem(keys.selected) || "[]");
       if (Array.isArray(sel)) setSelectedParcelsState(sel);
     } catch { /* ignore */ }
     try {
-      const focus = userStorage.getItem(LS_FOCUS);
+      const focus = userStorage.getItem(keys.focus);
       if (focus) setFocusParcelIdState(focus);
     } catch { /* ignore */ }
     try {
-      const commune = userStorage.getItem(LS_COMMUNE);
+      const commune = userStorage.getItem(keys.commune);
       if (commune) setCommuneInseeState(commune);
     } catch { /* ignore */ }
     setIsHydrated(true);
-  }, []);
+  }, [keys]);
 
   useEffect(() => {
     if (!focusParcelId && options.fallbackParcelId) setFocusParcelIdState(options.fallbackParcelId);
@@ -73,26 +88,26 @@ export function useFoncierSelection(options: UseFoncierSelectionOptions = {}) {
     if (!autoPersist || !isHydrated) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      try { userStorage.setItem(LS_SELECTED, JSON.stringify(selectedParcels)); } catch { /* ignore */ }
+      try { userStorage.setItem(keys.selected, JSON.stringify(selectedParcels)); } catch { /* ignore */ }
     }, debounceMs);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [selectedParcels, autoPersist, isHydrated, debounceMs]);
+  }, [selectedParcels, autoPersist, isHydrated, debounceMs, keys]);
 
   useEffect(() => {
     if (!isHydrated) return;
     try {
-      if (focusParcelId) userStorage.setItem(LS_FOCUS, focusParcelId);
-      else userStorage.removeItem(LS_FOCUS);
+      if (focusParcelId) userStorage.setItem(keys.focus, focusParcelId);
+      else userStorage.removeItem(keys.focus);
     } catch { /* ignore */ }
-  }, [focusParcelId, isHydrated]);
+  }, [focusParcelId, isHydrated, keys]);
 
   useEffect(() => {
     if (!isHydrated) return;
     try {
-      if (communeInsee) userStorage.setItem(LS_COMMUNE, communeInsee);
-      else userStorage.removeItem(LS_COMMUNE);
+      if (communeInsee) userStorage.setItem(keys.commune, communeInsee);
+      else userStorage.removeItem(keys.commune);
     } catch { /* ignore */ }
-  }, [communeInsee, isHydrated]);
+  }, [communeInsee, isHydrated, keys]);
 
   // ── Computed ──────────────────────────────────────────────────────────────
   const totalAreaM2 = useMemo(() => {
@@ -194,12 +209,12 @@ export function useFoncierSelection(options: UseFoncierSelectionOptions = {}) {
 
   const persistNow = useCallback(() => {
     try {
-      userStorage.setItem(LS_SELECTED, JSON.stringify(selectedParcels));
-      if (focusParcelId) userStorage.setItem(LS_FOCUS, focusParcelId);
-      if (communeInsee)  userStorage.setItem(LS_COMMUNE, communeInsee);
+      userStorage.setItem(keys.selected, JSON.stringify(selectedParcels));
+      if (focusParcelId) userStorage.setItem(keys.focus, focusParcelId);
+      if (communeInsee)  userStorage.setItem(keys.commune, communeInsee);
       return true;
     } catch { return false; }
-  }, [selectedParcels, focusParcelId, communeInsee]);
+  }, [selectedParcels, focusParcelId, communeInsee, keys]);
 
   // ── Backward-compat aliases ───────────────────────────────────────────────
   const activeParcelId    = focusParcelId;

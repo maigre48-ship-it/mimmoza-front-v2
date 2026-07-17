@@ -11,6 +11,8 @@
 // VERSION 2.0.1 — fix listStudies (syntaxe foncier->x non supportée par Supabase JS)
 
 import { supabase } from "../../../supabaseClient";
+import { unlockProject } from "@/lib/billing/projectUnlock";
+import { getSpacePaywallConfig } from "@/lib/billing/paywallConfig";
 import type { PromoteurParcelRaw } from "./promoteurStudy.types";
 import type { Implantation2DSnapshot } from "../plan2d/implantation2d.snapshot";
 import type {
@@ -122,6 +124,57 @@ export const PromoteurStudyService = {
     } catch (e: any) {
       return { ok: false, error: e?.message ?? "Erreur réseau" };
     }
+  },
+
+  // ── Création + débit (Modèle A) ────────────────────────────────────────────
+  /**
+   * PATCH Modèle A — UNIQUE chemin de création débitée (1 jeton = 1 étude).
+   * createStudy → unlockProject → rollback deleteStudy si le débit échoue, puis
+   * patchFoncier initial (intention de recherche) NON BLOQUANT.
+   * Appelé par NouvelleOpportunitePage ET les deux entrées du Dashboard
+   * (handleCreate, openApporteurDeal). Ne PAS recréer d'étude ailleurs sans débit.
+   */
+  async createAndUnlockStudy(
+    title: string,
+    opts?: { address?: string | null; communeLabel?: string | null; surfaceInitialeM2?: number | null },
+  ): Promise<ServiceResult<PromoteurStudy>> {
+    const created = await PromoteurStudyService.createStudy(title);
+    if (!created.ok) return created;
+    const study = created.data;
+
+    const validityDays = getSpacePaywallConfig("promoteur").validityDays;
+    const unlock = await unlockProject("promoteur", study.id, title, validityDays);
+    if (!unlock.ok) {
+      // Débit refusé → l'étude ne doit pas survivre : rollback.
+      await PromoteurStudyService.deleteStudy(study.id);
+      return {
+        ok: false,
+        error:
+          unlock.reason === "NO_TOKENS"
+            ? "Solde de jetons insuffisant pour créer cette étude."
+            : unlock.message,
+      };
+    }
+
+    // Intention de recherche rattachée à l'étude (état vierge). NON bloquant :
+    // le jeton est déjà débité, on ne rollback pas pour un patch initial.
+    const patch = await PromoteurStudyService.patchFoncier(study.id, {
+      prix_foncier: null,
+      parcel_ids: [],
+      focus_id: "",
+      commune_insee: "",
+      surface_m2: null,
+      parcels_raw: [],
+      done: false,
+      address: opts?.address ?? null,
+      commune_label: opts?.communeLabel ?? null,
+      surface_initiale_m2: opts?.surfaceInitialeM2 ?? null,
+    });
+    if (!patch.ok) {
+      console.warn("[PromoteurStudyService] patchFoncier initial échoué (non bloquant):", patch.error);
+    }
+
+    return { ok: true, data: study };
   },
 
   // ── Patch méta (titre, statut) ────────────────────────────────────────────

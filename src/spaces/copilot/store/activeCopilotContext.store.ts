@@ -2,6 +2,7 @@
 // PATCH V1.1 : ajout de ActiveDealRef et PageContextRef dans le snapshot
 // PATCH V1.2 : ajout de pageSnapshot (snapshot libre par page)
 // PATCH V1.3 : ajout de risk_study (etude de risques deja calculee — LOT 9)
+// PATCH V1.4 : ajout de studyId + implantation_2d (contexte etude promoteur)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { create } from 'zustand';
@@ -23,8 +24,8 @@ export interface ActiveDealRef {
 export interface PageContextRef {
   pathname: string;
   space?: string;   // 'marchand' | 'investisseur' | 'promoteur' | ...
-  mode?: string;    // 'acquisition' | 'execution' | 'analyse'
-  tab?: string;     // 'pipeline' | 'simulation' | 'travaux' | 'rentabilite' | ...
+  mode?: string;    // 'acquisition' | 'execution' | 'analyse' | 'conception'
+  tab?: string;     // 'pipeline' | 'simulation' | 'travaux' | 'implantation' | ...
 }
 
 // ─── Type snapshot ─────────────────────────────────────────────────────────────
@@ -61,6 +62,16 @@ export interface ActiveCopilotSnapshot {
   // la page Risques. Injecte dans le system prompt de copilot-chat → le Copilot
   // repond aux questions de risques SANS appeler d'outil et sans halluciner.
   risk_study?: Record<string, unknown>;
+  // ── V1.4 — Etude promoteur active ────────────────────────
+  // UUID de l'etude courante (param d'URL ?study=). TOUJOURS valider le format
+  // uuid avant de pousser : un slug non-uuid fait echouer l'insert conversations.
+  // null = etude non identifiable (demo, param absent ou invalide).
+  studyId?: string | null;
+  // ── V1.4 — Snapshot de l'implantation 2D en cours ────────
+  // Etat du canvas (batiments, emprise, surfaces, reculs PLU, cotes) pousse par
+  // Implantation2DPage. Injecte dans le system prompt → le Copilot repond sur
+  // l'implantation reellement dessinee et non sur une parcelle generique.
+  implantation_2d?: Record<string, unknown>;
 }
 
 // ─── Interface store ───────────────────────────────────────────────────────────
@@ -92,6 +103,9 @@ const INITIAL_STATE: ActiveCopilotSnapshot = {
   pageSnapshot:           undefined,
   // V1.3
   risk_study:             undefined,
+  // V1.4
+  studyId:                undefined,
+  implantation_2d:        undefined,
 };
 
 export const useActiveCopilotContext = create<ActiveCopilotContextState>(
@@ -144,4 +158,24 @@ export function hasActiveListing(): boolean {
 export function hasActiveDeal(): boolean {
   const ctx = getActiveCopilotContext();
   return !!(ctx.activeDeal?.id);
+}
+
+// ─── V1.4 — Helpers etude ─────────────────────────────────────────────────────
+
+/** Format uuid v1-v5 canonique. */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Normalise un identifiant d'etude issu d'un param d'URL.
+ * Retourne l'uuid si valide, sinon null — evite l'erreur Postgres
+ * « invalid input syntax for type uuid » a l'insert de la conversation.
+ */
+export function normalizeStudyId(raw: string | null | undefined): string | null {
+  return raw && UUID_RE.test(raw) ? raw : null;
+}
+
+/** V1.4 — Retourne true si une etude identifiable est active. */
+export function hasActiveStudy(): boolean {
+  return !!getActiveCopilotContext().studyId;
 }

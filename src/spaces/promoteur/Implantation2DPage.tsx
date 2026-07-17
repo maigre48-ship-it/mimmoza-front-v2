@@ -53,6 +53,13 @@ import { buildImplantation2DForPromoteurSnapshot } from "./plan2d/implantation2d
 import { writeCapture } from "./shared/captures.store";
 import { patchModule } from "./shared/promoteurSnapshot.store";
 
+// V6.12 — Publication du contexte vers l'Analyste Mimmoza
+import {
+  setActiveCopilotContext,
+  clearActiveCopilotContext,
+  normalizeStudyId,
+} from "../copilot/store/activeCopilotContext.store";
+
 import {
   HeroPrimaryButton,
   PromoteurPageHero,
@@ -410,9 +417,10 @@ const SectionBlock: React.FC<{
 interface RightSidebarProps {
   parcelleLocal: Point2D[];
   studyId:       string | null;
+  parcelId:      string | null;   // V6.12
 }
 
-const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId }) => {
+const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId, parcelId }) => {
 
   const allBuildings  = useEditor2DStore(s => s.buildings);
   const storeParkings = useEditor2DStore(s => s.parkings);
@@ -589,6 +597,72 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId }) =
     return computeParcelDiagnostics({ parcel: parcelVec2, buildings: planBuildings, buildableEnvelope });
   }, [parcelVec2, planBuildings, buildableEnvelope]);
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // V6.12 — Publication du contexte vers l'Analyste Mimmoza
+  //   Le panneau Copilot est monté hors de cette page (layout global) : il ne
+  //   peut rien recevoir par props. Le seul canal est activeCopilotContext.
+  //   Sans cette publication, l'Analyste reçoit une question nue → réponse
+  //   générique, sans parcelle ni PLU. Même mécanisme que RisquesPage/risk_study.
+  //
+  //   ⚠️ Le tableau de deps DOIT contenir l'état vivant du canvas : le snapshot
+  //      doit se rafraîchir à chaque déplacement de bâtiment, pas au mount.
+  // ───────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    setActiveCopilotContext({
+      studyId:  normalizeStudyId(studyId),
+      parcelId: parcelId ?? undefined,
+      surface:  parcelAreaM2 > 0 ? Math.round(parcelAreaM2) : undefined,
+      route:    "/promoteur/implantation-2d",
+      vertical: "promoteur",
+      pageContext: {
+        pathname: "/promoteur/implantation-2d",
+        space:    "promoteur",
+        mode:     "conception",
+        tab:      "implantation",
+      },
+      implantation_2d: {
+        // Parcelle
+        parcelle_surface_m2: Math.round(parcelAreaM2),
+        parcelle_sommets:    parcelleLocal.length,
+        enveloppe_constructible_definie: !!buildableEnvelope,
+        // PATCH — vrais noms de champs de setbackRules (editor2d.store: frontM/sideM/rearM).
+        recul_facade_m: setbackRules?.frontM ?? null,
+        recul_lateral_m: setbackRules?.sideM ?? null,
+        recul_fond_m:   setbackRules?.rearM ?? null,
+
+        // Programme dessiné
+        nb_batiments: storeBuildings.length,
+        nb_parkings_zones: storeParkings.length,
+        places_parking_totales: providedParkingSpaces,
+        batiments: storeBuildings.map(b => ({
+          id:        b.id,
+          nom:       b.label ?? null,
+          niveaux:   1 + (b.floorsAboveGround ?? b.levels ?? 0),
+          emprise_m2: Math.round(b.rect.width * b.rect.depth),
+        })),
+
+        // Règles PLU appliquées (placeholder tant que le PLU réel n'est pas branché)
+        regles_plu: PLACEHOLDER_PLU_RULES,
+        regles_plu_source: "placeholder",
+
+        // Résultats moteurs — déjà calculés, l'IA n'a pas à les recalculer
+        plu_checks:  pluResult  ?? null,
+        diagnostics: parcelDiagnostics ?? null,
+        scenario:    masterScenario ?? null,
+
+        // Programmation saisie
+        nb_logements: nbLogements ?? null,
+        surface_moy_logement_m2: surfaceMoyLogementM2 ?? null,
+      },
+    });
+  }, [
+    studyId, parcelId, parcelleLocal, parcelAreaM2,
+    storeBuildings, storeParkings, providedParkingSpaces,
+    buildableEnvelope, setbackRules,
+    pluResult, parcelDiagnostics, masterScenario,
+    nbLogements, surfaceMoyLogementM2,
+  ]);
+
   return (
     <div style={{
       width: 380, flexShrink: 0, display: "flex", flexDirection: "column",
@@ -729,6 +803,11 @@ export const Implantation2DPage: React.FC = () => {
     }
   }, [parcelleLocal, studyId]);
 
+  // V6.12 — Purge du contexte Copilot en quittant la page.
+  // Sans ça, l'implantation fuit vers les autres routes (Bilan, Marché…) et
+  // l'Analyste répond sur une parcelle qui n'est plus à l'écran.
+  useEffect(() => () => clearActiveCopilotContext(), []);
+
   const studyPath = (base: string) =>
     studyId ? `${base}?study=${encodeURIComponent(studyId)}` : base;
 
@@ -786,7 +865,11 @@ export const Implantation2DPage: React.FC = () => {
             style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
           />
         </div>
-        <RightSidebar parcelleLocal={parcelleLocal} studyId={studyId} />
+        <RightSidebar
+          parcelleLocal={parcelleLocal}
+          studyId={studyId}
+          parcelId={restore.selectedParcels[0]?.id ?? null}
+        />
       </div>
     </div>
   );

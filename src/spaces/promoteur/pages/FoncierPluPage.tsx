@@ -82,9 +82,8 @@ const LS_FONCIER_SELECTED = "mimmoza.promoteur.foncier.selected_v1";
 const LS_FONCIER_FOCUS    = "mimmoza.promoteur.foncier.focus_v1";
 const LS_FONCIER_COMMUNE  = "mimmoza.promoteur.foncier.commune_v1";
 
-const LS_QUICK_ADDRESS = "mimmoza.promoteur.quick.address";
-const LS_QUICK_COMMUNE = "mimmoza.promoteur.quick.commune";
-const LS_QUICK_SURFACE = "mimmoza.promoteur.quick.surface";
+// PATCH Modèle A — clés mimmoza.promoteur.quick.* supprimées : le préremplissage
+// vient de study.foncier (address / surface_initiale_m2), source canonique.
 
 // ─── Types locaux ─────────────────────────────────────────────────────────────
 interface SelectedParcel { id: string; feature?: any; area_m2?: number | null; }
@@ -923,15 +922,20 @@ export function FoncierPluPage() {
 
   useEffect(() => {
     if (loadState !== "ready" || !study) return;
-    if (study.foncier?.commune_insee) return;
-    const quickAddress = userStorage.getItem(LS_QUICK_ADDRESS);
-    const quickCommune = userStorage.getItem(LS_QUICK_COMMUNE);
-    const quickSurface = userStorage.getItem(LS_QUICK_SURFACE);
-    if (!quickAddress && !quickCommune && !quickSurface) return;
-    const surfaceNum = quickSurface ? Number(quickSurface) : undefined;
-    setProjectInfo(prev => ({ ...prev, address: quickAddress ?? prev.address, communeInsee: quickCommune ?? prev.communeInsee, surfaceM2: surfaceNum && surfaceNum > 0 ? surfaceNum : prev.surfaceM2 }));
-    if (quickCommune) geocodeCommuneCenter(quickCommune).then(center => { if (center && mountedRef.current) setMapCenter(center); });
-    userStorage.removeItem(LS_QUICK_ADDRESS); userStorage.removeItem(LS_QUICK_COMMUNE); userStorage.removeItem(LS_QUICK_SURFACE);
+    if (study.foncier?.commune_insee) return; // étude déjà validée
+    // PATCH Modèle A — préremplissage depuis study.foncier (SOURCE CANONIQUE) :
+    // adresse + surface initiale. Plus aucun mimmoza.promoteur.quick.* : commune_label
+    // reste en texte libre (affichage) et n'alimente JAMAIS communeInsee (qui doit
+    // provenir du lookup, pas d'une saisie libre).
+    const f = study.foncier;
+    const address = f?.address ?? null;
+    const surface = f?.surface_initiale_m2 ?? null;
+    if (!address && surface == null) return;
+    setProjectInfo(prev => ({
+      ...prev,
+      address: address ?? prev.address,
+      surfaceM2: (surface != null && surface > 0) ? surface : prev.surfaceM2,
+    }));
   }, [loadState, study]);
 
   const hasProject = !!(projectInfo.communeInsee && (selectedParcels.length > 0 || searchDone));
@@ -962,9 +966,11 @@ export function FoncierPluPage() {
   const fetchPlu = useCallback(async () => {
     if (!projectInfo.parcelId || !projectInfo.communeInsee) return;
     setPluLoading(true);
-    try { const { data, error } = await supabase.functions.invoke("plu-from-parcelle-v2", { body: { parcel_id: projectInfo.parcelId, commune_insee: projectInfo.communeInsee } }); if (error) throw error; setPluData({ zone_code: data?.plu?.zone_code || data?.zone_code, zone_libelle: data?.plu?.zone_libelle || data?.zone_libelle, ruleset: data?.plu?.ruleset || data?.ruleset, raw: data, found: data?.plu?.found ?? data?.success ?? false }); } catch { setPluData({ found: false }); }
+    // PATCH contrôle serveur (Tier 1) — study_id transmis pour le futur
+    // requireUnlocked côté fonction. La fonction actuelle ignore ce champ inconnu.
+    try { const { data, error } = await supabase.functions.invoke("plu-from-parcelle-v2", { body: { parcel_id: projectInfo.parcelId, commune_insee: projectInfo.communeInsee, study_id: studyId ?? undefined } }); if (error) throw error; setPluData({ zone_code: data?.plu?.zone_code || data?.zone_code, zone_libelle: data?.plu?.zone_libelle || data?.zone_libelle, ruleset: data?.plu?.ruleset || data?.ruleset, raw: data, found: data?.plu?.found ?? data?.success ?? false }); } catch { setPluData({ found: false }); }
     finally { setPluLoading(false); }
-  }, [projectInfo.parcelId, projectInfo.communeInsee]);
+  }, [projectInfo.parcelId, projectInfo.communeInsee, studyId]);
 
   const fetchParcelAndCenter = useCallback(async (parcelId: string, communeInsee: string) => {
     try { const { data, error } = await supabase.functions.invoke("cadastre-parcelle-by-id", { body: { parcel_id: parcelId, commune_insee: communeInsee } }); if (error || !data?.feature?.geometry) return null; const bc = getFeatureBoundsCenter(data.feature); return bc ? { feature: data.feature, center: bc.center } : null; } catch { return null; }
@@ -984,12 +990,15 @@ export function FoncierPluPage() {
     setSearchDone(true); setSearchLoading(false);
   }, [projectInfo, fetchPlu, fetchParcelAndCenter]);
 
-  const handleToggleParcel    = useCallback((pid: string, feature?: any, area_m2?: number | null) => { setSelectedParcels(prev => prev.some(p => p.id === pid) ? prev.filter(p => p.id !== pid) : [...prev, { id: pid, feature, area_m2: area_m2 || feature?.properties?.contenance || null }]); setIsValidated(false); }, []);
-  const handleRemoveParcel    = useCallback((pid: string) => { setSelectedParcels(prev => prev.filter(p => p.id !== pid)); setIsValidated(false); }, []);
-  const handleClearAll        = useCallback(() => { setSelectedParcels([]); setIsValidated(false); }, []);
-  const handleUpdateParcelArea = useCallback((id: string, area_m2: number) => { setSelectedParcels(prev => prev.map(p => p.id === id ? { ...p, area_m2 } : p)); setIsValidated(false); }, []);
+  // PATCH Modèle A — parcelle IMMUABLE une fois l'étude validée (done=true) :
+  // toute mutation de la sélection est bloquée. Changer de terrain = nouveau projet.
+  const handleToggleParcel    = useCallback((pid: string, feature?: any, area_m2?: number | null) => { if (isValidated) return; setSelectedParcels(prev => prev.some(p => p.id === pid) ? prev.filter(p => p.id !== pid) : [...prev, { id: pid, feature, area_m2: area_m2 || feature?.properties?.contenance || null }]); setIsValidated(false); }, [isValidated]);
+  const handleRemoveParcel    = useCallback((pid: string) => { if (isValidated) return; setSelectedParcels(prev => prev.filter(p => p.id !== pid)); setIsValidated(false); }, [isValidated]);
+  const handleClearAll        = useCallback(() => { if (isValidated) return; setSelectedParcels([]); setIsValidated(false); }, [isValidated]);
+  const handleUpdateParcelArea = useCallback((id: string, area_m2: number) => { if (isValidated) return; setSelectedParcels(prev => prev.map(p => p.id === id ? { ...p, area_m2 } : p)); setIsValidated(false); }, [isValidated]);
 
   const handleAddManualParcel = useCallback((id: string, area_m2: number | null) => {
+    if (isValidated) return;
     setSelectedParcels(prev => prev.some(p => p.id === id) ? prev : [...prev, { id, area_m2 }]);
     setIsValidated(false);
     if (area_m2 == null || area_m2 === 0) {
@@ -1004,7 +1013,7 @@ export function FoncierPluPage() {
         }
       }
     }
-  }, []);
+  }, [isValidated]);
 
   const handleValidateSelection = useCallback(async () => {
     if (selectedParcels.length === 0 || !studyId) return;
@@ -1109,9 +1118,16 @@ export function FoncierPluPage() {
               <div style={{ fontSize: 12, color: "#64748b" }}>INSEE {projectInfo.communeInsee} • {formatAreaM2(totalAreaM2)}</div>
             </div>
           </div>
-          <button onClick={handleReset} style={{ ...styles.button, padding: "8px 14px", background: "#f1f5f9", color: "#475569" }}>
-            <RefreshCw size={14} />Changer
-          </button>
+          {/* PATCH Modèle A — parcelle immuable : pas de "Changer" une fois validé. */}
+          {isValidated ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, fontSize: 12, fontWeight: 700, color: "#065f46" }}>
+              🔒 Parcelle du projet définie
+            </div>
+          ) : (
+            <button onClick={handleReset} style={{ ...styles.button, padding: "8px 14px", background: "#f1f5f9", color: "#475569" }}>
+              <RefreshCw size={14} />Changer
+            </button>
+          )}
         </div>
       ) : (
         <ProjectSelector projectInfo={projectInfo} onProjectChange={u => setProjectInfo(p => ({ ...p, ...u }))} onSearch={handleSearch} loading={searchLoading} />
@@ -1139,8 +1155,8 @@ export function FoncierPluPage() {
               <div style={styles.cardHeader}><h3 style={styles.cardTitle}><Navigation size={18} color="#10b981" />Étapes suivantes</h3></div>
               <div style={styles.cardBody}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <a href={`/promoteur/implantation-2d${studyId ? `?study=${studyId}` : ""}`} style={{ ...styles.button, background: "#f1f5f9", color: "#475569", textDecoration: "none" }}><Layers size={16} />Implantation 2D</a>
-                  <a href={`/promoteur/marche${studyId ? `?study=${studyId}` : ""}`} style={{ ...styles.button, background: "#f1f5f9", color: "#475569", textDecoration: "none" }}><Building2 size={16} />Étude de marché</a>
+                  {/* �tape suivante du parcours : PLU ? Programmation (cf. ordre AppShell) */}
+                  <a href={`/promoteur/programmation${studyId ? `?study=${studyId}` : ""}`} style={{ ...styles.button, background: "#f1f5f9", color: "#475569", textDecoration: "none" }}><Layers size={16} />Programmation</a>
                 </div>
               </div>
             </div>

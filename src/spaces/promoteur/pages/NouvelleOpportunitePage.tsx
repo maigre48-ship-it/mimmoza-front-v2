@@ -23,10 +23,8 @@ import { PromoteurStudyService } from "../shared/promoteurStudyService";
 // ---------------------------------------------------------------------------
 
 const PROMOTEUR_ACTIVE_KEY   = "mimmoza.promoteur.active_study_id";
+// PATCH Modèle A — clés quick.* retirées (préremplissage via study.foncier).
 const PROMOTEUR_SESSION_KEYS = [
-  "mimmoza.promoteur.quick.address",
-  "mimmoza.promoteur.quick.commune",
-  "mimmoza.promoteur.quick.surface",
   "mimmoza.promoteur.foncier.draft",
   "mimmoza.promoteur.plu.draft",
 ];
@@ -187,16 +185,26 @@ export default function NouvelleOpportunitePage() {
     try {
       const titre = form.titre.trim() || `Étude — ${form.adresse}`;
 
-      const result = await PromoteurStudyService.createStudy(titre);
-      if (!result.ok) throw new Error(`Création de l'étude impossible : ${result.error}`);
-      const study = result.data;
+      // PATCH Modèle A — chemin unique de création débitée (createStudy +
+      // unlockProject + rollback + patchFoncier initial), factorisé dans le service.
+      // adresse / commune_label / surface_initiale vivent dans study.foncier
+      // (source canonique) — plus aucun mimmoza.promoteur.quick.*.
+      const surfaceNum = Number(String(form.surface).replace(",", "."));
+      const surfaceInitiale = Number.isFinite(surfaceNum) && surfaceNum > 0 ? Math.round(surfaceNum) : null;
+      const created = await PromoteurStudyService.createAndUnlockStudy(titre, {
+        address: form.adresse,
+        communeLabel: form.commune,
+        surfaceInitialeM2: surfaceInitiale,
+      });
+      if (!created.ok) {
+        setError(created.error);
+        setSubmitting(false);
+        return; // pas de navigation
+      }
+      const study = created.data;
 
       setActiveStudyId(study.id);
       clearPromoteurSessionKeys();
-
-      userStorage.setItem("mimmoza.promoteur.quick.address", form.adresse);
-      userStorage.setItem("mimmoza.promoteur.quick.commune", form.commune);
-      userStorage.setItem("mimmoza.promoteur.quick.surface", form.surface);
 
       if (sourceDeal) {
         // Idempotent : si le promoteur a déjà payé depuis le pool, cout = 0.

@@ -27,13 +27,20 @@ export const DEFAULT_PAYWALL_CONFIG: Record<ProjectSpace, SpacePaywallConfig> = 
     tokenCost: 1,
     validityDays: 30,
     protectedRoutePrefixes: ["/promoteur/"],
-    // Onglet "Opportunites" laisse libre (cf SPACE_NAVIGATION promoteur)
+    // PATCH Modèle A — SOURCE DE VÉRITÉ = le guard <PromoteurStudyRequired> dans
+    // src/App.tsx. Cette liste DOIT refléter EXACTEMENT les routes /promoteur/*
+    // laissées HORS de ce guard (routes libres). Si tu ajoutes/retires une route
+    // du guard dans App.tsx, mets à jour cette liste (et inversement), sinon
+    // AppShell.handleProtectedNavigate et le guard divergeront.
     freeRoutePrefixes: [
       "/promoteur/veille",
       "/promoteur/nouvelle-opportunite",
+      "/promoteur/opportunites/nouvelle",
       "/promoteur/recherche-contacts",
       "/promoteur/permis-construire",
       "/promoteur/opportunites-apporteurs",
+      "/promoteur/plu-faisabilite", // redirection -> /promoteur/foncier
+      "/promoteur/faisabilite",     // redirection -> /promoteur/foncier
     ],
     features: ["Pre-analyse PLU", "Faisabilite (2D/3D)", "Marche & DVF", "Bilan promoteur", "Synthese comite"],
   },

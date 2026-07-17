@@ -49,9 +49,8 @@ import { setCurrentUserId, syncCurrentUserId } from "@/lib/auth/currentUser";
 
 // ── Paywall generique (promoteur, extensible) ─────────────────────────────────
 import { ProjectUnlockModal } from "./billing/ProjectUnlockModal";
-import { unlockProject, isProjectUnlocked } from "../lib/billing/projectUnlock";
-import { buildPromoteurParcelKey } from "../lib/billing/parcelKey";
-import { isRouteProtected, getSpacePaywallConfig } from "../lib/billing/paywallConfig";
+import { unlockProject } from "../lib/billing/projectUnlock";
+import { getSpacePaywallConfig } from "../lib/billing/paywallConfig";
 
 type Space = "none" | "promoteur" | "agence" | "marchand" | "banque" | "rehabilitation";
 
@@ -95,6 +94,7 @@ type PendingProjectUnlock = {
   space: "promoteur";   // extensible plus tard (rehabilitation, ...)
   projectKey: string;
   label: string;
+  notice?: string;      // message contextuel (ex. « étude expirée »)
 };
 
 function MimmozaLogo(props: { className?: string }) {
@@ -1032,7 +1032,10 @@ export function AppShell(props: AppShellProps) {
   const [unlockNoTokens, setUnlockNoTokens] = useState(false);
   const [unlockError,    setUnlockError]    = useState<string | null>(null);
 
-  // ── Paywall projet generique (promoteur) ───────────────────────────────────
+  // ── Paywall projet generique — DORMANT (cf. handleProtectedNavigate) ────────
+  // Modèle A : le contrôle promoteur est passé dans <PromoteurStudyRequired>.
+  // Cette modale n'a plus AUCUN setter actif ; conservée, réactivable pour un
+  // futur espace. Ce n'est PAS du code mort accidentel.
   const [projectUnlock,        setProjectUnlock]        = useState<PendingProjectUnlock | null>(null);
   const [projectUnlockLoading, setProjectUnlockLoading] = useState(false);
   const [projectUnlockNoTokens,setProjectUnlockNoTokens]= useState(false);
@@ -1101,39 +1104,17 @@ export function AppShell(props: AppShellProps) {
       return;
     }
 
-    // ── Chemin promoteur (1 jeton = 1 parcelle) ───────────────────────────────
-    if (currentSpace === "promoteur" && isRouteProtected("promoteur", targetPath)) {
-      const parcel = buildPromoteurParcelKey();
-      // Pas de parcelle selectionnee -> navigation libre
-      if (!parcel.key) {
-        navigate(targetPath);
-        return;
-      }
-
-      // Deja deverrouille (dans la fenetre de validite) ? -> navigation directe,
-      // SANS re-afficher la modale ni re-debiter. C'est le coeur du fix :
-      // 1 jeton = parcelle debloquee pour TOUTES les pages du vertical, 30 jours.
-      const cfg = getSpacePaywallConfig("promoteur");
-      try {
-        const already = await isProjectUnlocked("promoteur", parcel.key, cfg.validityDays);
-        if (already) {
-          navigate(targetPath);
-          return;
-        }
-      } catch {
-        // En cas d'erreur reseau, on retombe sur la modale (fail-closed cote acces).
-      }
-
-      setProjectUnlockError(null);
-      setProjectUnlockNoTokens(false);
-      setProjectUnlock({
-        path: targetPath,
-        space: "promoteur",
-        projectKey: parcel.key,
-        label: parcel.label,
-      });
-      return;
-    }
+    // ── Chemin promoteur : SUPPRIMÉ (Modèle A) ────────────────────────────────
+    // Le contrôle d'accès promoteur vit désormais UNIQUEMENT dans le guard
+    // <PromoteurStudyRequired> (src/App.tsx), qui teste isProjectUnlocked sur
+    // TOUTES les routes premium et TOUTES les voies de navigation (y compris la
+    // sidebar et les navigate() internes que ce handler ne voyait pas). On évite
+    // ainsi deux sources de vérité divergentes.
+    // NB : l'infra de modale générique ci-dessous (projectUnlock / ProjectUnlockModal
+    // / confirmProjectUnlock) est désormais DORMANTE — AUCUN setter ne l'ouvre, ce
+    // n'est PAS un bug. Conservée volontairement car RÉACTIVABLE pour un futur espace
+    // (ex. rehabilitation, qui a déjà une entrée paywallConfig) : il suffira de
+    // rappeler setProjectUnlock({...}) depuis la branche de cet espace.
 
     // ── Defaut : navigation libre ─────────────────────────────────────────────
     navigate(targetPath);
@@ -1314,6 +1295,7 @@ export function AppShell(props: AppShellProps) {
       <ProjectUnlockModal
         open={Boolean(projectUnlock)}
         projectLabel={projectUnlock ? projectUnlock.label : "Projet"}
+        notice={projectUnlock?.notice}
         features={projectUnlock ? getSpacePaywallConfig(projectUnlock.space).features : undefined}
         loading={projectUnlockLoading}
         noTokens={projectUnlockNoTokens}

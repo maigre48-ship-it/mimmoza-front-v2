@@ -407,26 +407,28 @@ function AppRoot() {
           <Route path="/promoteur" element={<Outlet />}>
             <Route index element={<PromoteurDashboard />} />
 
+            {/* ── Routes LIBRES ──
+                DOIT correspondre EXACTEMENT à paywallConfig.freeRoutePrefixes
+                (promoteur). Toucher ici = toucher paywallConfig.ts. */}
             <Route path="nouvelle-opportunite"    element={<NouvelleOpportunitePage />} />
-
-            {/* Routes libres */}
+            <Route path="opportunites/nouvelle"   element={<NouvelleOpportunitePage />} />
             <Route path="veille"                  element={<PromoteurVeilleFoncierePage />} />
-            <Route path="foncier"                 element={<FoncierPluPage />} />
-            <Route path="plu-faisabilite"         element={<Navigate to="/promoteur/foncier" replace />} />
-            <Route path="faisabilite"             element={<Navigate to="/promoteur/foncier" replace />} />
-            <Route path="marche"                  element={<MarchePage />} />
-            <Route path="risques"                 element={<RisquesPage />} />
             <Route path="permis-construire"       element={<PermisConstruirePage />} />
             <Route path="recherche-contacts"      element={<RechercheContactsPage />} />
             <Route path="opportunites-apporteurs" element={<OpportunitesApporteursPage />} />
-            <Route path="opportunites/nouvelle"   element={<NouvelleOpportunitePage />} />
-            <Route path="programmation"           element={<ProgrammationPage />} />
-            <Route path="logements-sociaux"       element={<BesoinLogementsSociauxPage />} />
-            {/* ── AJOUT : Massing V2 — analyse de capacité (route libre, sans étude requise) ── */}
-            <Route path="massing"                 element={<PromoteurMassingPage />} />
+            <Route path="plu-faisabilite"         element={<Navigate to="/promoteur/foncier" replace />} />
+            <Route path="faisabilite"             element={<Navigate to="/promoteur/foncier" replace />} />
 
-            {/* Routes nécessitant une étude active */}
+            {/* ── Routes PREMIUM — étude déverrouillée requise (Modèle A) ──
+                Guard = source de vérité. Toute route ajoutée ici doit NE PAS
+                figurer dans paywallConfig.freeRoutePrefixes. */}
             <Route element={<PromoteurStudyRequired />}>
+              <Route path="foncier"            element={<FoncierPluPage />} />
+              <Route path="marche"             element={<MarchePage />} />
+              <Route path="risques"            element={<RisquesPage />} />
+              <Route path="programmation"      element={<ProgrammationPage />} />
+              <Route path="logements-sociaux"  element={<BesoinLogementsSociauxPage />} />
+              <Route path="massing"            element={<PromoteurMassingPage />} />
               <Route path="estimation"         element={<EvaluationPage />} />
               <Route path="implantation-2d"    element={<Implantation2DPage />} />
               <Route path="plan-2d"            element={<Navigate to="/promoteur/implantation-2d" replace />} />

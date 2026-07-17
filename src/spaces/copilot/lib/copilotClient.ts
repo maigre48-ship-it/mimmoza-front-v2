@@ -4,6 +4,7 @@
 // PATCH V1.3 : valuation_engine transmis explicitement (LOT 7)
 // PATCH V1.4 : pageSnapshot transmis explicitement (donnees visibles a l'ecran)
 // PATCH V1.5 : risk_study transmis explicitement (LOT 9 — etude de risques deja calculee)
+// PATCH V1.6 : implantation_2d + study (LOT 10 — plan 2D dessine, mapping studyId -> study)
 // =============================================================
 
 import { supabase } from '@/lib/supabase';
@@ -66,13 +67,14 @@ function extractText(content: unknown): string {
 }
 
 // =============================================================
-// buildEnrichedContext — V1.5
+// buildEnrichedContext — V1.6
 // ─────────────────────────────────────────────────────────────
 // Injecte les données listing, deal actif, pageContext,
 // le predictive_snapshot (LOT 6 — 17 sources prédictives),
 // le valuation_engine (LOT 7 — valorisation + rendements + analyse),
-// le pageSnapshot (donnees visibles a l'ecran de la page courante)
-// ET le risk_study (LOT 9 — etude de risques deja calculee, page Risques).
+// le pageSnapshot (donnees visibles a l'ecran de la page courante),
+// le risk_study (LOT 9 — etude de risques deja calculee, page Risques)
+// ET l'implantation_2d + study (LOT 10 — plan 2D dessine, page Implantation2D).
 // =============================================================
 function buildEnrichedContext(
   requestContext: CopilotChatRequest['context'],
@@ -141,6 +143,27 @@ function buildEnrichedContext(
   // questions de risques sans appeler d'outil.
   const riskStudy = active.risk_study ?? null;
 
+  // ── V1.6 — Implantation 2D (LOT 10) ───────────────────────
+  // Plan dessiné sur Implantation2DPage, poussé via setActiveCopilotContext.
+  const implantation2d = active.implantation_2d ?? null;
+  if (implantation2d) {
+    console.log(
+      '[copilotClient] implantation_2d transmise · bâtiments=',
+      (implantation2d as Record<string, unknown>).nb_batiments,
+      '· parcelle_m2=',
+      (implantation2d as Record<string, unknown>).parcelle_surface_m2,
+    );
+  }
+
+  // ── V1.6 — Étude promoteur active ─────────────────────────
+  // MimmozaContext attend study: { id, type } ; le store expose studyId à plat.
+  // reqCtx.study reste prioritaire si l'appelant l'a déjà renseigné.
+  // ⚠️ studyId est normalisé en amont (normalizeStudyId) : un slug non-uuid
+  //    vaut null, ce qui évite l'échec d'insert sur conversations.context_study_id.
+  const study =
+    reqCtx.study ??
+    (active.studyId ? { id: active.studyId, type: 'promoteur' } : undefined);
+
   // ── Construction du contexte enrichi ──────────────────────
   const enriched: CopilotMimmozaContext = {
     // Spread du context appelant (study, user, plu…)
@@ -171,6 +194,12 @@ function buildEnrichedContext(
 
     // V1.5 — Étude de risques déjà calculée (page Risques)
     ...(riskStudy ? { risk_study: riskStudy } : {}),
+
+    // V1.6 — Implantation 2D dessinée (page Implantation2D)
+    ...(implantation2d ? { implantation_2d: implantation2d } : {}),
+
+    // V1.6 — Étude promoteur active (réaffectée après le spread reqCtx)
+    ...(study ? { study } : {}),
 
     // V1.2 — Snapshot prédictif : réaffecté APRÈS le spread pour
     // éviter tout écrasement par un champ homonyme dans reqCtx.
