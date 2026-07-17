@@ -28,6 +28,8 @@ import type { Building2D, Point2D } from "./plan2d/editor2d.types";
 import { usePromoteurParcelRestore } from "./shared/hooks/usePromoteurParcelRestore";
 // V6.13 — PLU réel de l'étude (au lieu du placeholder en dur)
 import { usePromoteurStudy } from "./shared/usePromoteurStudy";
+// V6.14 — Mapper PLU factorisé (partagé avec Programmation, Massing 3D…)
+import { mapPluRuleset } from "./shared/pluRuleset.mapper";
 
 import { ParcelDiagnosticsPanel } from "./components/ParcelDiagnosticsPanel";
 import { PluAnalysisPanel } from "./components/PluAnalysisPanel";
@@ -90,19 +92,6 @@ const PLACEHOLDER_PLU_RULES: PluRules = {
 //   affichés sur une zone SANS règle CES). On lit désormais study.plu.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function pluNum(obj: unknown): number | null {
-  if (obj == null) return null;
-  if (typeof obj === "number") return Number.isFinite(obj) ? obj : null;
-  if (typeof obj === "string") { const n = parseFloat(obj); return isNaN(n) ? null : n; }
-  if (typeof obj !== "object") return null;
-  const o = obj as Record<string, unknown>;
-  for (const k of ["valeur", "m", "metres", "max", "max_m", "min", "min_m", "max_ratio", "ratio_min", "pct", "value"]) {
-    const n = pluNum(o[k]);
-    if (n != null) return n;
-  }
-  return null;
-}
-
 interface StudyPluRules {
   rules:      PluRules;
   source:     "study" | "placeholder";
@@ -116,49 +105,25 @@ interface StudyPluRules {
 }
 
 /**
- * Mappe study.plu → PluRules. Repli sur le placeholder si rien d'importé.
- * ⚠️ « Pas de règle CES » ≠ « emprise 0 % » : on renvoie 1 (100 %, non
- *    contraignant) et on signale l'absence via cesAbsent.
+ * V6.14 — Adaptateur : mapPluRuleset (partagé) → PluRules (moteur de cet éditeur).
+ * Le parsing du ruleset vit désormais dans shared/pluRuleset.mapper.ts, seul
+ * endroit à toucher quand le format du parser évolue. Ici on ne fait plus que
+ * traduire vers le contrat du moteur.
+ * Repli sur le placeholder si aucun règlement n'est importé.
  */
 function mapStudyPlu(studyPlu: unknown): StudyPluRules {
-  const fallback: StudyPluRules = {
-    rules: PLACEHOLDER_PLU_RULES, source: "placeholder",
-    zoneCode: null, zoneLibelle: null, cesAbsent: false,
-    reculVoirieM: null, reculLimitesM: null,
-  };
-  if (!studyPlu || typeof studyPlu !== "object") return fallback;
+  const r = mapPluRuleset(studyPlu);
 
-  const p  = studyPlu as Record<string, any>;
-  const rs = (p.ruleset ?? p) as Record<string, any>;
-  // Format réel (plu_ruleset_v1) : zone_code, hauteur (singulier), ces.max_ratio,
-  // reculs.{voirie,limites_separatives}.min_m, stationnement.par_logement.
-  const zoneCode = p.zone_code ?? p.zone ?? p.zone_plu ?? rs.zone_code ?? rs.zone ?? null;
-  if (!zoneCode && !rs.hauteur && !rs.hauteurs && !rs.ces) return fallback;
+  if (!r.present) {
+    return {
+      rules: PLACEHOLDER_PLU_RULES, source: "placeholder",
+      zoneCode: null, zoneLibelle: null, cesAbsent: false,
+      reculVoirieM: null, reculLimitesM: null, reculFondM: null,
+    };
+  }
 
-  const hauteurs = rs.hauteur ?? rs.hauteurs ?? rs.gabarit ?? {};
-  const ces      = rs.ces ?? rs.emprise_sol ?? {};
-  const reculs   = rs.reculs ?? rs.recul ?? {};
-  const stat     = rs.stationnement ?? rs.parking ?? {};
-
-  // hauteur.max_m = égout (10 m) ; faitage_m = faîtage (13 m). L'égout borne
-  // le gabarit constructible → c'est lui qu'on retient.
-  const hEgout   = pluNum(hauteurs.max_m) ?? pluNum(hauteurs.egout) ?? pluNum(hauteurs.egout_m);
-  const hFaitage = pluNum(hauteurs.faitage_m) ?? pluNum(hauteurs.faitage);
-  const hMax     = hEgout ?? hFaitage ?? pluNum(p.hauteur_max_m);
-
-  // ces.max_ratio est un RATIO (0–1), pas un pourcentage. null = pas de règle.
-  const cesRatio  = pluNum(ces.max_ratio) ?? pluNum(ces);
-  const cesAbsent = cesRatio == null || cesRatio <= 0;
-
-  // reculs.facades.{avant,laterales,fond} est plus précis que voirie/limites
-  // quand il est présent ; sinon repli sur le couple générique.
-  const fac = reculs.facades ?? {};
-  const reculVoirie  = pluNum(fac.avant) ?? pluNum(reculs.voirie) ?? pluNum(reculs.voirie_m);
-  const reculLimites = pluNum(fac.laterales) ?? pluNum(reculs.limites_separatives) ?? pluNum(reculs.limites);
-  const reculFond    = pluNum(fac.fond) ?? reculLimites;
-  const reculMin = [reculVoirie, reculLimites, reculFond].filter((v): v is number => v != null);
-
-  const parking = pluNum(stat.par_logement) ?? pluNum(stat) ?? pluNum(p.parking_par_logement);
+  const reculMin = [r.reculVoirieM, r.reculLimitesM, r.reculFondM]
+    .filter((v): v is number => v != null);
 
   return {
     rules: {
@@ -171,18 +136,24 @@ function mapStudyPlu(studyPlu: unknown): StudyPluRules {
       // à 2 m d'une limite latérale — légal — serait faussement bloqué par une
       // règle de recul voirie de 3 m).
       minSetbackMeters:     reculMin.length ? Math.min(...reculMin) : PLACEHOLDER_PLU_RULES.minSetbackMeters,
-      maxHeightMeters:      hMax ?? PLACEHOLDER_PLU_RULES.maxHeightMeters,
-      // Pas de règle CES → 1 (100 %) : non contraignant, jamais 0.
-      maxCoverageRatio:     cesAbsent ? 1 : (cesRatio as number),
-      parkingSpacesPerUnit: parking ?? PLACEHOLDER_PLU_RULES.parkingSpacesPerUnit,
+      // L'égout borne le gabarit constructible (le faîtage a sa propre limite,
+      // contrôlée côté Massing 3D où la toiture est modélisée).
+      maxHeightMeters:      r.hauteurEgoutM ?? r.hauteurFaitageM ?? r.hauteurMaxM
+                            ?? PLACEHOLDER_PLU_RULES.maxHeightMeters,
+      // Pas de règle CES → undefined : le moteur SKIPPE la règle (tous les
+      // champs de PluRules sont optionnels). Renvoyer 1 affichait « CES max
+      // 100 % », ce qui laisse croire à une règle qui n'existe pas ; renvoyer 0
+      // rendrait tout projet non conforme.
+      maxCoverageRatio:     r.empriseAbsente ? undefined : (r.empriseMaxRatio as number),
+      parkingSpacesPerUnit: r.parkingParLogement,
     },
     source: "study",
-    zoneCode,
-    zoneLibelle: p.zone_libelle ?? rs.zone_libelle ?? p.description ?? null,
-    cesAbsent,
-    reculVoirieM:  reculVoirie,
-    reculLimitesM: reculLimites,
-    reculFondM:    reculFond,
+    zoneCode:    r.zone || null,
+    zoneLibelle: r.description || null,
+    cesAbsent:   r.empriseAbsente,
+    reculVoirieM:  r.reculVoirieM,
+    reculLimitesM: r.reculLimitesM,
+    reculFondM:    r.reculFondM,
   };
 }
 

@@ -237,6 +237,26 @@ function metricStatus(
   return rules.find(r => r.key === ruleKey)?.status ?? null;
 }
 
+/**
+ * Libellé du seuil d'une règle. Distingue trois cas :
+ *   règle absente du ruleset (zone sans CES…) → « pas de règle »
+ *   règle présente sans seuil numérique       → « — »
+ *   règle avec seuil                          → « limite : X »
+ * Sans ça, `?? 0` transformait une règle inexistante en seuil à 0 (le plus
+ * sévère possible), affiché comme si le PLU l'imposait.
+ */
+function ruleLimitLabel(
+  rules: PluRuleResult[],
+  key: string,
+  fmt: (v: number) => string,
+  label = "limite",
+): string {
+  const rule = rules.find(r => r.key === key);
+  if (!rule) return "pas de règle";
+  if (rule.limit == null) return "—";
+  return `${label} : ${fmt(rule.limit)}`;
+}
+
 const KpiGrid: React.FC<{ metrics: PluMetricSet; rules: PluRuleResult[] }> = ({
   metrics,
   rules,
@@ -260,21 +280,24 @@ const KpiGrid: React.FC<{ metrics: PluMetricSet; rules: PluRuleResult[] }> = ({
     {
       label:  "CES",
       value:  fmtPct(metrics.coverageRatio),
-      detail: `limite : ${fmtPct(rules.find(r => r.key === "coverage")?.limit ?? 0)}`,
+      // ⚠️ Une règle ABSENTE du ruleset (zone sans CES) n'apparaît pas dans
+      // `rules` : le moteur la skippe. Le `?? 0` affichait alors « limite : 0 % »
+      // — une règle inexistante devenue le seuil le plus sévère possible.
+      detail: ruleLimitLabel(rules, "coverage", fmtPct),
       status: metricStatus(rules, "coverage"),
       icon:   "%",
     },
     {
       label:  "Hauteur max.",
       value:  fmtM(metrics.estimatedHeightM),
-      detail: `plafond : ${fmtM(rules.find(r => r.key === "height")?.limit ?? 0)}`,
+      detail: ruleLimitLabel(rules, "height", fmtM, "plafond"),
       status: metricStatus(rules, "height"),
       icon:   "↑",
     },
     {
       label:  "Recul min.",
       value:  fmtM(metrics.minDistanceToParcelEdgeM),
-      detail: `seuil : ${fmtM(rules.find(r => r.key === "setback")?.limit ?? 0)}`,
+      detail: ruleLimitLabel(rules, "setback", fmtM, "seuil"),
       status: metricStatus(rules, "setback"),
       icon:   "↔",
     },
