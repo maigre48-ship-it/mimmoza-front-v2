@@ -47,6 +47,17 @@ export interface RunPluChecksParams {
    * Defaults to 0 (worst-case assumption) when omitted.
    */
   providedParkingSpaces?: number;
+  /**
+   * V1.1 — Nombre de logements SAISI. Prioritaire sur l'estimation SDP/60 m².
+   * Omis → estimation (metrics.unitsEstimated = true) et règle stationnement
+   * dégradée en LIMITE plutôt que BLOQUANT.
+   */
+  declaredUnits?: number;
+  /**
+   * V1.2 — Surface moyenne/logement saisie. Affine l'estimation quand
+   * `declaredUnits` est absent ; sans effet sinon.
+   */
+  averageUnitSizeM2?: number;
 }
 
 /**
@@ -77,6 +88,8 @@ export function runPluChecks(params: RunPluChecksParams): PluEngineResult {
     buildings,
     rules,
     providedParkingSpaces = 0,
+    declaredUnits,
+    averageUnitSizeM2,
   } = params;
 
   // ── 1. Metrics ────────────────────────────────────────────────────
@@ -85,6 +98,8 @@ export function runPluChecks(params: RunPluChecksParams): PluEngineResult {
     buildings,
     providedParkingSpaces,
     parkingSpacesPerUnit: rules.parkingSpacesPerUnit,
+    declaredUnits,
+    averageUnitSizeM2,
   });
 
   // ── 2. Rule evaluation ────────────────────────────────────────────

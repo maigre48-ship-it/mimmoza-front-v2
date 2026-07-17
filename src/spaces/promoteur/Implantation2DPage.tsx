@@ -684,8 +684,15 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId, par
 
   const pluResult = useMemo<PluEngineResult | null>(() => {
     if (parcelVec2.length < 3) return null;
-    return runPluChecks({ parcel: parcelVec2, buildings: planBuildings, rules: pluRules.rules, providedParkingSpaces });
-  }, [parcelVec2, planBuildings, providedParkingSpaces, pluRules]);
+    // V6.15 — `nbLogements` (ScenarioFullPanel) fait autorité sur l'estimation
+    // SDP/60 m² du moteur : deux composants affichaient l'inverse sur la même
+    // donnée (« 2 places requises · bloquant » vs « conformité non évaluée »).
+    return runPluChecks({
+      parcel: parcelVec2, buildings: planBuildings, rules: pluRules.rules,
+      providedParkingSpaces, declaredUnits: nbLogements,
+      averageUnitSizeM2: surfaceMoyLogementM2,
+    });
+  }, [parcelVec2, planBuildings, providedParkingSpaces, pluRules, nbLogements, surfaceMoyLogementM2]);
 
   // V6.11 — Enveloppe constructible : MÊME source que le canvas.
   //   pluEnvelope.geometry::computeBuildableEnvelope(parcelleLocal, frontEdgeIndex, setbackRules)

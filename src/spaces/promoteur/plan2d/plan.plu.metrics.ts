@@ -197,8 +197,24 @@ export function computePluMetrics(params: {
   buildings: PlanBuilding[];
   providedParkingSpaces: number;
   parkingSpacesPerUnit?: number;
+  /**
+   * V1.1 — Nombre de logements SAISI par l'utilisateur. Prioritaire sur
+   * l'estimation `computeTotalUnits` (SDP / 60 m²), qui n'est qu'un repli
+   * d'esquisse : sans ça, un simple rectangle de 79 m² déclenchait un
+   * « non conforme » stationnement sur une hypothèse jamais formulée.
+   */
+  declaredUnits?: number;
+  /**
+   * V1.2 — Surface moyenne par logement SAISIE. N'affine que l'ESTIMATION
+   * (ignorée si `declaredUnits` est fourni). Sans elle, le moteur restait sur
+   * ses 60 m² en dur même quand l'utilisateur avait annoncé 45 m²/logement.
+   */
+  averageUnitSizeM2?: number;
 }): PluMetricSet {
-  const { parcel, buildings, providedParkingSpaces, parkingSpacesPerUnit = 0 } = params;
+  const {
+    parcel, buildings, providedParkingSpaces,
+    parkingSpacesPerUnit = 0, declaredUnits, averageUnitSizeM2,
+  } = params;
 
   const parcelAreaM2     = polygonArea(parcel);
   const footprintAreaM2  = computeTotalFootprintArea(buildings);
@@ -206,7 +222,13 @@ export function computePluMetrics(params: {
   const estimatedHeightM = computeMaxHeight(buildings);
   const minDistanceToParcelEdgeM = computeMinSetback(buildings, parcel);
 
-  const totalUnits            = computeTotalUnits(buildings);
+  // Saisie prioritaire ; estimation en repli (annoncée via unitsEstimated).
+  // `averageUnitSizeM2` n'affine que l'estimation : un logement moyen plus petit
+  // = plus de logements sur la même SDP = plus de places requises.
+  const unitsEstimated = declaredUnits == null;
+  const avgUnit        = averageUnitSizeM2 != null && averageUnitSizeM2 > 0
+    ? averageUnitSizeM2 : undefined;
+  const totalUnits     = declaredUnits ?? computeTotalUnits(buildings, avgUnit);
   const requiredParkingSpaces = computeRequiredParking(totalUnits, parkingSpacesPerUnit);
 
   return {
@@ -218,5 +240,7 @@ export function computePluMetrics(params: {
     requiredParkingSpaces,
     providedParkingSpaces,
     totalUnits,
+    unitsEstimated,
+    assumedUnitSizeM2: avgUnit ?? 60,
   };
 }

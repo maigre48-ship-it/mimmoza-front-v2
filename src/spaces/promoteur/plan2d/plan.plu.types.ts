@@ -1,4 +1,6 @@
 // src/spaces/promoteur/plan2d/plan.plu.types.ts
+// PATCH V1.1 : unitsEstimated — distingue logements SAISIS et logements ESTIMÉS
+// PATCH V1.2 : assumedUnitSizeM2 — trace l'hypothèse de surface/logement retenue
 
 // ─── STATUS ───────────────────────────────────────────────────────────
 
@@ -28,6 +30,12 @@ export const PLU_STATUS_WEIGHT: Record<PluRuleStatus, number> = {
  * All fields are optional so the engine gracefully skips rules whose
  * data has not been captured. Future articles can be added here without
  * changing the engine's public API.
+ *
+ * ⚠️ Un champ à `undefined` = LA ZONE N'IMPOSE PAS CETTE RÈGLE (le checker
+ * renvoie null, la règle disparaît du rapport). À ne jamais confondre avec 0,
+ * qui serait le seuil le plus sévère possible : une zone sans CES mappée à 0
+ * rendrait tout projet non conforme, et mappée à 1 afficherait « CES max 100 % »
+ * — une règle inventée. Cf. mapStudyPlu (Implantation2DPage).
  *
  * Extensibility roadmap (add fields here):
  *   frontageMinMeters?      — minimum road frontage (art. 6)
@@ -71,6 +79,23 @@ export interface PluMetricSet {
   providedParkingSpaces: number;
   /** Number of residential units in the project. */
   totalUnits: number;
+  /**
+   * V1.1 — true si `totalUnits` est une ESTIMATION (SDP / assumedUnitSizeM2) et
+   * non une saisie utilisateur.
+   *
+   * ⚠️ Une règle fondée dessus ne doit JAMAIS être BLOQUANTE : on ne bloque pas
+   * un projet sur une hypothèse que l'utilisateur n'a pas formulée. Un simple
+   * rectangle de 79 m² produisait « 1 logement → 2 places requises → BLOQUANT »,
+   * contredit à l'écran par le panneau scénario (« stationnement non évalué »).
+   * Cf. checkParkingRule, qui plafonne à LIMITE quand ce flag est vrai.
+   */
+  unitsEstimated: boolean;
+  /**
+   * V1.2 — Surface moyenne/logement réellement utilisée par l'estimation (m²).
+   * Permet d'annoncer l'hypothèse dans les messages plutôt que de coder « 60 »
+   * en dur dans le libellé. Non significatif si `unitsEstimated` est false.
+   */
+  assumedUnitSizeM2: number;
 }
 
 // ─── RULE RESULT ──────────────────────────────────────────────────────

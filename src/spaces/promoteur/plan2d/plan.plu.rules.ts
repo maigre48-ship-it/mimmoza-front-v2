@@ -170,6 +170,13 @@ export function checkCoverageRule(
  *
  * Returns null when the rule is not defined or when there are no
  * residential units (no parking obligation for pure service buildings).
+ *
+ * ⚠️ V1.1 — `metrics.unitsEstimated` : quand le nombre de logements n'est pas
+ * saisi, il est ESTIMÉ (SDP / 60 m²). Un simple rectangle de 79 m² produisait
+ * alors « 1 logement → 2 places requises → BLOQUANT », donc un « projet non
+ * conforme » fondé sur une hypothèse jamais formulée — et contredit à l'écran
+ * par le panneau scénario (« conformité stationnement non évaluée »).
+ * Sur une estimation, on plafonne donc à LIMITE : on informe, on ne bloque pas.
  */
 export function checkParkingRule(
   metrics: PluMetricSet,
@@ -178,28 +185,37 @@ export function checkParkingRule(
   if (rules.parkingSpacesPerUnit == null) return null;
   if (metrics.requiredParkingSpaces === 0) return null; // no obligation
 
-  const required = metrics.requiredParkingSpaces;
-  const provided = metrics.providedParkingSpaces;
-  const deficit  = required - provided;
+  const required  = metrics.requiredParkingSpaces;
+  const provided  = metrics.providedParkingSpaces;
+  const deficit   = required - provided;
+  const estimated = metrics.unitsEstimated;
 
   let status: PluRuleStatus;
   if (provided < required) {
-    status = "BLOQUANT";
+    // Estimation → jamais bloquant : l'hypothèse n'est pas de l'utilisateur.
+    status = estimated ? "LIMITE" : "BLOQUANT";
   } else if (provided === required) {
     status = "LIMITE"; // meets the exact minimum, no margin
   } else {
     status = "CONFORME";
   }
 
+  // Suffixe rappelant l'origine du besoin quand il est déduit de la SDP.
+  const suffixe = estimated
+    ? ` Besoin estimé sur ${fmtN(metrics.totalUnits)} logement(s) déduit(s) de la surface (${fmtN(metrics.assumedUnitSizeM2)} m²/lgt) — saisissez le nombre de logements pour un contrôle ferme.`
+    : "";
+
   const messages: Record<PluRuleStatus, string> = {
-    CONFORME: `Stationnement conforme — ${fmtN(provided)} places fournies pour ${fmtN(required)} requises.`,
-    LIMITE:   `Stationnement au strict minimum — ${fmtN(provided)} place(s) pour ${fmtN(required)} requises, sans marge.`,
+    CONFORME: `Stationnement conforme — ${fmtN(provided)} places fournies pour ${fmtN(required)} requises.${suffixe}`,
+    LIMITE:   deficit > 0
+      ? `Stationnement à confirmer — ${fmtN(provided)} place(s) fournies, ${fmtN(deficit)} manquante(s) (${fmtN(required)} requises).${suffixe}`
+      : `Stationnement au strict minimum — ${fmtN(provided)} place(s) pour ${fmtN(required)} requises, sans marge.${suffixe}`,
     BLOQUANT: `Stationnement insuffisant — ${fmtN(provided)} place(s) fournies, ${fmtN(deficit)} manquante(s) (${fmtN(required)} requises).`,
   };
 
   return {
     key:     "parking",
-    label:   "Stationnement (Art. 12)",
+    label:   estimated ? "Stationnement (Art. 12) — estimé" : "Stationnement (Art. 12)",
     status,
     message: messages[status],
     value:   provided,
