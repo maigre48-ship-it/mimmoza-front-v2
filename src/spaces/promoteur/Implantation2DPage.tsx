@@ -532,7 +532,6 @@ interface RightSidebarProps {
 const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId, parcelId, studyPlu }) => {
   // V6.13 — Règles PLU effectives : celles de l'étude si importées, sinon repli.
   const pluRules = useMemo(() => mapStudyPlu(studyPlu), [studyPlu]);
-  console.log("[Impl2D] studyPlu:", studyPlu, "| pluRules:", pluRules);
 
   const allBuildings  = useEditor2DStore(s => s.buildings);
   const storeParkings = useEditor2DStore(s => s.parkings);
