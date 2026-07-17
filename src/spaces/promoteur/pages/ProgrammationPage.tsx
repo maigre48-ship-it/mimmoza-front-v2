@@ -13,6 +13,15 @@
 import { CheckCircle, Copy, Loader2, Plus, Target, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+
+// V1.1 — Publication du contexte vers l'Analyste Mimmoza.
+// Le panneau Copilot est monté hors de cette page (layout global) : le seul
+// canal est activeCopilotContext. Sans publication → réponse générique.
+import {
+  setActiveCopilotContext,
+  clearActiveCopilotContext,
+  normalizeStudyId,
+} from "../../copilot/store/activeCopilotContext.store";
 import {
   HeroPrimaryButton,
   PromoteurPageHero,
@@ -526,6 +535,68 @@ export default function ProgrammationPage() {
   const commerceTotal   = commerceProgrammeM2(mix);
   const hauteurEstimeeM = niveauxMaxVal * HAUTEUR_NIVEAU_M;
   const recon = useMemo(() => reconcile(envelope, mix), [envelope, mix]);
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // V1.1 — Publication du contexte vers l'Analyste Mimmoza
+  //   On passe par pageSnapshot (LOT 8) : déjà supporté de bout en bout
+  //   (store → copilotClient → copilot-chat → system prompt), donc aucun
+  //   patch Edge Function nécessaire.
+  //   ⚠️ Les deps contiennent l'état vivant (mix, envelope) : le snapshot doit
+  //      se rafraîchir à chaque saisie, pas seulement au montage.
+  // ───────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    setActiveCopilotContext({
+      studyId:  normalizeStudyId(studyId),
+      parcelId: foncierData?.focus_id ?? foncierData?.parcel_ids?.[0] ?? undefined,
+      surface:  terrain.surfaceM2 > 0 ? Math.round(terrain.surfaceM2) : undefined,
+      city:     terrain.commune || undefined,
+      zipCode:  terrain.codePostal || undefined,
+      route:    "/promoteur/programmation",
+      vertical: "promoteur",
+      pageContext: {
+        pathname: "/promoteur/programmation",
+        space:    "promoteur",
+        mode:     "conception",
+        tab:      "programmation",
+      },
+      pageSnapshot: {
+        // ── Terrain ──
+        parcelle:              foncierData?.focus_id ?? null,
+        adresse:               terrain.adresse || null,
+        commune:               terrain.commune || null,
+        surface_terrain_m2:    Math.round(terrain.surfaceM2) || null,
+        type_de_bien:          terrain.typeBien || null,
+        prix_vendeur_eur:      terrain.prixVendeur || null,
+        // ── Règles PLU appliquées ──
+        plu_disponible:        terrain.pluDisponible ? "oui" : "non — règlement non importé",
+        plu_zone:              plu.zone || null,
+        plu_zone_libelle:      plu.description || null,
+        plu_hauteur_max_m:     plu.hauteurMaxM || null,
+        plu_emprise_max_pct:   plu.empriseMaxPct || null,
+        plu_parking_par_logement: plu.parkingParLogement ?? null,
+        // ── Programme saisi ──
+        nb_batiments:          mix.batiments?.length ?? 0,
+        nb_logements:          nbLogements,
+        shab_logements_m2:     Math.round(sdpLogement) || null,
+        commerce_m2:           Math.round(commerceTotal) || null,
+        emprise_totale_m2:     Math.round(empriseTotale) || null,
+        emprise_pct_terrain:   terrain.surfaceM2 > 0
+          ? Math.round((empriseTotale / terrain.surfaceM2) * 1000) / 10
+          : null,
+        sdp_enveloppe_m2:      sdpGeo > 0 ? Math.round(sdpGeo) : null,
+        sdp_enveloppe_source:  envFromMassing ? "Massing 3D" : "saisie manuelle",
+        taux_remplissage_pct:  recon.sdpGeoM2 > 0 ? Math.round(recon.tauxRemplissage * 100) : null,
+        hauteur_max_projet_m:  hauteurEstimeeM > 0 ? Math.round(hauteurEstimeeM * 10) / 10 : null,
+        nb_parkings:           mix.nbParkings || null,
+        espaces_verts_m2:      mix.espacesVertsM2 || null,
+      },
+    });
+    return () => clearActiveCopilotContext();
+  }, [
+    studyId, foncierData, terrain, plu,
+    mix, envelope, sdpGeo, envFromMassing, recon, hauteurEstimeeM,
+    nbLogements, sdpLogement, commerceTotal, empriseTotale,
+  ]);
 
   // ── Contrôle PLU (réglementaire, NON chiffré) — sur AGRÉGATS ──
   type PluCheck = { critere: string; valeurProjet: string; valeurPLU: string; status: ComplianceStatus };
