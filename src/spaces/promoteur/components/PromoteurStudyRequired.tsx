@@ -21,6 +21,7 @@
 import React, { useEffect, useState } from "react";
 import { Outlet, useNavigate, useSearchParams } from "react-router-dom";
 import { getActiveStudyId } from "../shared/promoteurSnapshot.store";
+import { usePromoteurProgramSync } from "../shared/hooks/usePromoteurProgramSync";
 import { ProjectUnlockModal } from "@/components/billing/ProjectUnlockModal";
 import { isProjectUnlocked, unlockProject } from "@/lib/billing/projectUnlock";
 import { getSpacePaywallConfig } from "@/lib/billing/paywallConfig";
@@ -46,6 +47,11 @@ export default function PromoteurStudyRequired(): React.ReactElement {
 
   // URL prioritaire, fallback active_study_id.
   const studyId = searchParams.get("study") ?? getActiveStudyId();
+
+  // Synchro Programmation → bâtiments 2D (vivante dès qu'on est dans une étude,
+  // quelle que soit la sous-page active). Hook inconditionnel (règles des hooks) ;
+  // no-op si studyId absent.
+  usePromoteurProgramSync(studyId);
 
   // Résultat du contrôle async, tagué par studyId (évite tout flash de contenu
   // premium quand on passe d'une étude à une autre non encore vérifiée).

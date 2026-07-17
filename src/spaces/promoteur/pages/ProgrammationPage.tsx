@@ -28,6 +28,8 @@ import {
 } from "../shared/components/PromoteurPageHero";
 import { getSnapshot, patchModule } from "../shared/promoteurSnapshot.store";
 import { usePromoteurStudy } from "../shared/usePromoteurStudy";
+// V1.4 — Mapper PLU factorisé (partagé avec Implantation 2D, Massing 3D…)
+import { mapPluRuleset } from "../shared/pluRuleset.mapper";
 import {
   aggregatedTypologies,
   commerceProgrammeM2,
@@ -43,9 +45,12 @@ import {
   usePromoteurProgrammeStore,
   weightedSurfaces,
   type ProgrammeBatiment,
-  type Reconciliation,
+  type ProgrammeEnvelope,
   type TypologieKey,
 } from "../store/promoteurProgramme.store";
+// PATCH — SDP géométrique DÉDUITE du programme (Σ emprise × niveaux × 0,82),
+// ne vient plus du Massing 3D.
+import { sdpGeometriqueDerive } from "../plan2d/programSync";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -243,33 +248,43 @@ function SelectInput<T extends string>({ label, value, onChange, options }: {
 
 // ─── Réconciliation enveloppe ↔ programme ──────────────────────────────────────
 
-function ReconcileBanner({ recon }: { recon: Reconciliation }) {
-  const theme: Record<Reconciliation["statut"], { bg: string; border: string; text: string; icon: string }> = {
-    coherent:    { bg: "#F0FDF4", border: "#86EFAC", text: "#15803D", icon: "✅" },
-    sous_rempli: { bg: "#FFFBEB", border: "#FDE68A", text: "#B45309", icon: "🟡" },
-    depassement: { bg: "#FEF2F2", border: "#FECACA", text: "#B91C1C", icon: "⚠️" },
-    vide:        { bg: "#FFFBEB", border: "#FDE68A", text: "#B45309", icon: "📐" },
-    no_envelope: { bg: "#F9FAFB", border: "#E5E7EB", text: "#6B7280", icon: "🏗" },
-  };
-  const t = theme[recon.statut];
-  const showBar = recon.sdpGeoM2 > 0;
-  const pct = Math.min(120, Math.round(recon.tauxRemplissage * 100));
+// Indicateur de RENDEMENT surfacique SHAB/SDP (remplace l'ancienne réconciliation
+// programme↔enveloppe, devenue une donnée à elle-même depuis que la SDP géométrique
+// est DÉDUITE du programme). Bande saine 75–85 % (collectif).
+function RendementBanner({ shab, sdp }: { shab: number; sdp: number }) {
+  const ratio = sdp > 0 ? shab / sdp : 0;
+  const pct = Math.round(ratio * 100);
+  const state: "vide" | "bas" | "ok" | "haut" =
+    sdp <= 0 ? "vide" : ratio < 0.75 ? "bas" : ratio > 0.85 ? "haut" : "ok";
+  const theme = {
+    vide: { bg: "#F9FAFB", border: "#E5E7EB", text: "#6B7280", icon: "📐", msg: "Renseignez l'emprise et les niveaux des bâtiments." },
+    bas:  { bg: "#FFFBEB", border: "#FDE68A", text: "#B45309", icon: "🟡", msg: "Circulations / pertes élevées (rendement sous 75 %)." },
+    ok:   { bg: "#F0FDF4", border: "#86EFAC", text: "#15803D", icon: "✅", msg: "Rendement dans la fourchette courante (75–85 %)." },
+    haut: { bg: "#FFFBEB", border: "#FDE68A", text: "#B45309", icon: "🟡", msg: "SHAB supérieure au ratio courant — vérifiez les surfaces saisies." },
+  }[state];
+  const showBar = sdp > 0;
+  // Barre 0–100 % avec repère de bande saine 75–85 %.
+  const barPct = Math.min(100, pct);
   return (
-    <div style={{ background: t.bg, border: `1.5px solid ${t.border}`, borderRadius: 10, padding: "14px 16px", marginBottom: 14 }}>
+    <div style={{ background: theme.bg, border: `1.5px solid ${theme.border}`, borderRadius: 10, padding: "14px 16px", marginBottom: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: showBar ? 10 : 0 }}>
-        <span style={{ fontSize: 20, flexShrink: 0 }}>{t.icon}</span>
+        <span style={{ fontSize: 20, flexShrink: 0 }}>{theme.icon}</span>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{recon.message}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: theme.text }}>
+            Rendement SHAB / SDP{showBar ? ` : ${pct} %` : ""} — {theme.msg}
+          </div>
         </div>
       </div>
       {showBar && (
         <div>
-          <div style={{ height: 8, borderRadius: 6, background: "rgba(0,0,0,0.06)", overflow: "hidden" }}>
-            <div style={{ width: `${pct}%`, height: "100%", background: t.text, opacity: 0.55, transition: "width 0.25s" }} />
+          <div style={{ position: "relative", height: 8, borderRadius: 6, background: "rgba(0,0,0,0.06)", overflow: "hidden" }}>
+            {/* bande saine 75–85 % */}
+            <div style={{ position: "absolute", left: "75%", width: "10%", height: "100%", background: "rgba(21,128,61,0.18)" }} />
+            <div style={{ width: `${barPct}%`, height: "100%", background: theme.text, opacity: 0.55, transition: "width 0.25s" }} />
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: t.text, marginTop: 4, fontWeight: 600 }}>
-            <span>Programme {Math.round(recon.sdpProgrammeM2)} m²</span>
-            <span>Enveloppe {Math.round(recon.sdpGeoM2)} m²</span>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: theme.text, marginTop: 4, fontWeight: 600 }}>
+            <span>SHAB {Math.round(shab)} m²</span>
+            <span>SDP {Math.round(sdp)} m² (déduit du programme)</span>
           </div>
         </div>
       )}
@@ -413,6 +428,8 @@ export default function ProgrammationPage() {
   const setBatimentTypologie = usePromoteurProgrammeStore((s) => s.setBatimentTypologie);
   const setBatimentSurface   = usePromoteurProgrammeStore((s) => s.setBatimentSurface);
   const patchMix             = usePromoteurProgrammeStore((s) => s.patchMix);
+  const importNotice         = usePromoteurProgrammeStore((s) => s.importNotice);
+  const clearImportNotice    = usePromoteurProgrammeStore((s) => s.clearImportNotice);
 
   useEffect(() => { loadStudy(studyId); }, [studyId, loadStudy]);
 
@@ -448,103 +465,47 @@ export default function ProgrammationPage() {
     };
   }, [foncierData, study]);
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // V1.4 — Lecture du PLU via le mapper factorisé.
+  //   Avant : ~100 lignes de parsing dupliquées avec Implantation2DPage, avec
+  //   des listes de clés DIVERGENTES — un bug corrigé dans l'une réapparaissait
+  //   dans l'autre (ex. `max_m` absent → hauteur max à 0 → « à vérifier » sur
+  //   une règle pourtant lue).
+  //
+  //   Deux bugs corrigés au passage :
+  //     • `empriseMaxPct: numFrom(ces) ?? 0` lisait `ces.max_ratio` (un RATIO
+  //       0–1) et l'affichait tel quel → « 0,6 % » d'emprise max au lieu de 60 %.
+  //     • idem `pleine_terre.ratio_min: 0.35` → « 0,35 % » au lieu de 35 %.
+  //   Invisibles sur une zone sans CES (Ascain UB), faux partout ailleurs.
+  //
+  //   ⚠️ Le contrat local (zone/description/reculVoirie/espaceVertMinPct…) est
+  //   conservé : le reste de la page (FieldRow, pluChecks) est inchangé.
+  // ───────────────────────────────────────────────────────────────────────────
   const plu = useMemo(() => {
-    const fromStudy = (study as any)?.plu;
-    const fromSnap  = getSnapshot()?.plu as any;
-    const p = fromStudy ?? fromSnap ?? null;
-    if (!p) return {
-      zone: "", description: "", hauteurEgoutM: null, hauteurFaitageM: null,
-      hauteurMaxM: 0, empriseMaxPct: 0, empriseNote: null, hauteurEgoutFromNote: null,
-      reculVoirie: null, reculVoirieNote: null, reculLimites: null, reculLimitesNote: null,
-      parkingParLogement: 1, espaceVertMinPct: 0, pleineTerreMinPct: null, pleineTerreNote: null,
-      coefficientOccupSol: null, cosNote: null,
-      extra: [] as Array<{ label: string; value: string | null; note: string | null }>,
-    };
-    const rs = p.ruleset ?? p;
-    function numFrom(obj: any): number | null {
-      if (obj == null) return null;
-      if (typeof obj === "number") return obj;
-      if (typeof obj === "string") { const n = parseFloat(obj); return isNaN(n) ? null : n; }
-      // patch — `max_m` et `ratio_min` manquaient : le format réel du parser
-      // (plu_ruleset_v1) est { hauteur: { max_m, faitage_m }, ces: { max_ratio } }.
-      // sans eux, hauteurmaxm restait à 0 → « à vérifier » sur une règle pourtant lue.
-      for (const k of ["valeur","m","metres","max","max_m","min","min_pct","pct","pourcentage","percent","max_ratio","ratio_min","min_m","valeur_m","distance","ratio","value","v"]) {
-        if (obj[k] != null && typeof obj[k] === "number") return obj[k];
-        if (obj[k] != null && typeof obj[k] === "string") { const n = parseFloat(obj[k]); if (!isNaN(n)) return n; }
-      }
-      return null;
-    }
-    function noteFrom(obj: any): string | null {
-      if (!obj || typeof obj !== "object") return null;
-      return obj.note ?? obj.label ?? obj.description ?? null;
-    }
-    const ces      = rs.ces ?? {};
-    const cos      = rs.cos ?? {};
-    const reculs   = rs.reculs ?? rs.recul ?? {};
-    const hauteurs = rs.hauteurs ?? rs.gabarit ?? rs.hauteur ?? {};
-    const stat     = rs.stationnement ?? rs.parking ?? {};
-    const pt       = rs.pleine_terre ?? rs.espaces_verts ?? rs.espace_vert ?? {};
-    const reculsVoirie  = reculs.voirie ?? reculs.voirie_m ?? null;
-    const reculsLimites = reculs.limites ?? reculs.limites_separatives ?? reculs.limite ?? null;
-    const parkingParLogement = numFrom(stat) ?? numFrom(stat.par_logement) ?? numFrom(p.parking_par_logement) ?? 1;
-    const HANDLED = new Set(["ces","cos","reculs","recul","stationnement","parking","hauteurs","gabarit","hauteur","pleine_terre","espaces_verts","espace_vert"]);
-    const LABELS: Record<string, string> = {
-      hauteurs: "Hauteurs", gabarit: "Gabarit", hauteur: "Hauteur",
-      pleine_terre: "Pleine terre", espaces_verts: "Espaces verts", espace_vert: "Espaces verts",
-      facades: "Façades", toiture: "Toiture", clotures: "Clôtures",
-      plantations: "Plantations", energie: "Énergie", bruit: "Bruit",
-      assainissement: "Assainissement", acces: "Accès / voirie",
-      servitudes: "Servitudes", mixite: "Mixité fonctionnelle",
-    };
-    function flattenEntry(key: string, val: any): Array<{ label: string; value: string | null; note: string | null }> {
-      if (val == null) return [];
-      const baseLabel = LABELS[key] ?? key.replace(/_/g, " ");
-      const directNum = numFrom(val);
-      if (directNum != null) return [{ label: baseLabel, value: String(directNum), note: noteFrom(val) }];
-      if (typeof val !== "object") return [];
-      const subObjs = Object.entries(val).filter(([k]) =>
-        !["note","label","description","unit","done"].includes(k) &&
-        typeof (val as any)[k] === "object" && (val as any)[k] !== null
-      );
-      if (subObjs.length > 0) {
-        return subObjs.flatMap(([subKey, subVal]: [string, any]) => {
-          const subLabel = `${baseLabel} — ${LABELS[subKey] ?? subKey.replace(/_/g, " ")}`;
-          const n = numFrom(subVal); const nt = noteFrom(subVal);
-          if (n == null && nt == null) return [];
-          return [{ label: subLabel, value: n != null ? String(n) : null, note: nt }];
-        });
-      }
-      const n = numFrom(val); const nt = noteFrom(val);
-      if (n == null && nt == null) return [];
-      return [{ label: baseLabel, value: n != null ? String(n) : null, note: nt }];
-    }
-    const extra = Object.entries(rs).filter(([k]) => !HANDLED.has(k)).flatMap(([k, v]) => flattenEntry(k, v)).filter(e => e.value != null || e.note != null);
+    const raw = (study as any)?.plu ?? getSnapshot()?.plu ?? null;
+    const r   = mapPluRuleset(raw);
+
     return {
-      zone: p.zone ?? p.zone_plu ?? rs.zone ?? "",
-      description: p.description ?? p.libelle_zone ?? rs.libelle ?? "",
-      // `hauteur.max_m` = égout dans le format plu_ruleset_v1 (note « 10m égout, 13m faîtage »).
-      hauteurEgoutM: numFrom(hauteurs.egout) ?? numFrom(hauteurs.egout_m) ?? numFrom(hauteurs.egout_max) ?? numFrom(hauteurs.hauteur_egout) ?? numFrom(hauteurs.max_m) ?? numFrom(hauteurs.max) ?? numFrom(p.hauteur_egout_m) ?? null,
-      hauteurFaitageM: numFrom(hauteurs.faitage) ?? numFrom(hauteurs.faitage_m) ?? numFrom(hauteurs.faitage_max) ?? numFrom(p.hauteur_faitage_m) ?? null,
-      hauteurMaxM: numFrom(hauteurs.max) ?? numFrom(p.hauteur_max_m) ?? 0,
-      hauteurEgoutFromNote: (() => {
-        const note = noteFrom(hauteurs);
-        if (!note) return null;
-        const m = note.match(/(\d+(?:[.,]\d+)?)\s*m?\s*[eé]gout/i);
-        return m ? parseFloat(m[1].replace(",", ".")) : null;
-      })(),
-      empriseMaxPct: numFrom(ces) ?? 0,
-      empriseNote: noteFrom(ces),
-      reculVoirie: numFrom(reculsVoirie),
-      reculVoirieNote: noteFrom(reculsVoirie),
-      reculLimites: numFrom(reculsLimites),
-      reculLimitesNote: noteFrom(reculsLimites),
-      parkingParLogement,
-      espaceVertMinPct: numFrom(pt.min) ?? numFrom(pt.min_pct) ?? numFrom(pt.pct) ?? numFrom(pt) ?? 0,
-      pleineTerreMinPct: numFrom(pt.min) ?? numFrom(pt.min_pct) ?? numFrom(pt.pct) ?? numFrom(pt) ?? null,
-      pleineTerreNote: noteFrom(pt) ?? null,
-      coefficientOccupSol: numFrom(cos),
-      cosNote: noteFrom(cos),
-      extra,
+      zone:                 r.zone,
+      description:          r.description,
+      hauteurEgoutM:        r.hauteurEgoutM,
+      hauteurFaitageM:      r.hauteurFaitageM,
+      hauteurMaxM:          r.hauteurMaxM,
+      hauteurEgoutFromNote: r.hauteurEgoutFromNote,
+      // 0 = pas de règle CES (cf. r.empriseAbsente) — jamais « emprise nulle ».
+      empriseMaxPct:        r.empriseMaxPct,
+      empriseNote:          r.empriseNote,
+      reculVoirie:          r.reculVoirieM,
+      reculVoirieNote:      r.reculVoirieNote,
+      reculLimites:         r.reculLimitesM,
+      reculLimitesNote:     r.reculLimitesNote,
+      parkingParLogement:   r.parkingParLogement,
+      espaceVertMinPct:     r.pleineTerreMinPct ?? 0,
+      pleineTerreMinPct:    r.pleineTerreMinPct,
+      pleineTerreNote:      r.pleineTerreNote,
+      coefficientOccupSol:  r.coefficientOccupSol,
+      cosNote:              r.cosNote,
+      extra:                r.extra,
     };
   }, [study]);
 
@@ -556,7 +517,8 @@ export default function ProgrammationPage() {
   // Agrégats (source des contrôles PLU à l'échelle parcelle).
   const empriseTotale = empriseTotaleM2(mix);
   const niveauxMaxVal = maxNiveaux(mix);
-  const sdpGeo        = envelope?.sdpGeoM2 ?? 0;
+  // PATCH — SDP géométrique DÉDUITE du programme (Σ emprise × niveaux × 0,82).
+  const sdpGeo        = useMemo(() => sdpGeometriqueDerive(mix), [mix]);
   const envFromMassing = envelope?.source === "massing";
 
   // ── Dérivés programme ──
@@ -564,7 +526,20 @@ export default function ProgrammationPage() {
   const sdpLogement     = shabProgrammeM2(mix);
   const commerceTotal   = commerceProgrammeM2(mix);
   const hauteurEstimeeM = niveauxMaxVal * HAUTEUR_NIVEAU_M;
-  const recon = useMemo(() => reconcile(envelope, mix), [envelope, mix]);
+  // PATCH — réconciliation calculée sur le SDP géométrique DÉDUIT du programme
+  // (enveloppe synthétique), et non plus sur l'enveloppe Massing. Compare la SDP
+  // des typologies (nb×surf + commerce) à la SDP géométrique (emprise×niveaux).
+  // Le BANDEAU, lui, affiche le rendement SHAB/SDP (RendementBanner).
+  const recon = useMemo(() => {
+    if (sdpGeo <= 0) return reconcile(null, mix);
+    const synthEnv: ProgrammeEnvelope = {
+      empriseSolM2: empriseTotale, niveaux: niveauxMaxVal, sdpGeoM2: sdpGeo,
+      facadeM2: 0, facadeNetteM2: 0, toitureTerrasseM2: 0, toiturePenteM2: 0,
+      balconsM2: 0, nbMenuiseries: 0, nbBatiments: batiments.length,
+      source: "manual", updatedAt: new Date(0).toISOString(),
+    };
+    return reconcile(synthEnv, mix);
+  }, [mix, sdpGeo, empriseTotale, niveauxMaxVal, batiments.length]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // V1.1 — Publication du contexte vers l'Analyste Mimmoza
@@ -614,7 +589,7 @@ export default function ProgrammationPage() {
           ? Math.round((empriseTotale / terrain.surfaceM2) * 1000) / 10
           : null,
         sdp_enveloppe_m2:      sdpGeo > 0 ? Math.round(sdpGeo) : null,
-        sdp_enveloppe_source:  envFromMassing ? "Massing 3D" : "saisie manuelle",
+        sdp_enveloppe_source:  "déduit du programme",
         taux_remplissage_pct:  recon.sdpGeoM2 > 0 ? Math.round(recon.tauxRemplissage * 100) : null,
         hauteur_max_projet_m:  hauteurEstimeeM > 0 ? Math.round(hauteurEstimeeM * 10) / 10 : null,
         nb_parkings:           mix.nbParkings || null,
@@ -741,7 +716,8 @@ export default function ProgrammationPage() {
             { text: "Répartissez vos logements et vérifiez la cohérence avec l'enveloppe et le PLU." },
             ...(batiments.length > 1 ? [{ text: `🏢 Projet multi-bâtiments — ${batiments.length} bâtiments.` }] : []),
             ...(!terrain.pluDisponible ? [{ text: "⚠️ PLU non encore chargé — contrôle réglementaire provisoire." }] : []),
-            ...(envFromMassing ? [{ text: "🏗 Enveloppe synchronisée depuis le Massing 3D." }] : []),
+            // V1.5 — La SDP est désormais DÉDUITE du programme (Programmation =
+            // source de vérité) : le Massing 3D n'alimente plus l'enveloppe.
           ]}
           statCards={[
             { label: batiments.length > 1 ? "Bât. / Logts" : "Logements", value: batiments.length > 1 ? `${batiments.length} / ${nbLogements}` : `${nbLogements}`, tone: "indigo" as const },
@@ -804,7 +780,17 @@ export default function ProgrammationPage() {
             }
           >
             {/* Réconciliation enveloppe ↔ programme (agrégée) */}
-            <ReconcileBanner recon={recon} />
+            {importNotice > 0 && (
+              <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 10, padding: "12px 16px", marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#B45309" }}>
+                  ⚠️ {importNotice} bâtiment{importNotice > 1 ? "s" : ""} importé{importNotice > 1 ? "s" : ""} depuis le plan masse — vérifiez les doublons.
+                </span>
+                <button onClick={clearImportNotice} style={{ flexShrink: 0, padding: "6px 12px", borderRadius: 8, border: "1px solid #FDE68A", background: "white", color: "#B45309", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  Compris
+                </button>
+              </div>
+            )}
+            <RendementBanner shab={sdpLogement} sdp={sdpGeo} />
 
             <SelectInput<TypeProjet> label="Type de projet" value={typeProjet} onChange={(v) => patchMix({ typeProjet: v })} options={TYPE_PROJET_OPTIONS} />
 
@@ -817,7 +803,11 @@ export default function ProgrammationPage() {
                 </div>
                 <span style={{ fontSize: 12, color: "#9CA3AF", minWidth: 38 }}>m²</span>
               </div>
-              <p style={{ margin: "3px 0 0", fontSize: 10, color: "#9CA3AF" }}>{sdpGeo > 0 ? "🏗 mesuré sur le(s) volume(s) 3D" : "dessine le volume en Massing 3D"}</p>
+              <p style={{ margin: "3px 0 0", fontSize: 10, color: "#9CA3AF" }}>
+                {sdpGeo > 0
+                  ? "📐 déduit du programme (Σ emprise × niveaux × 0,82)"
+                  : "renseignez l'emprise et les niveaux ci-dessous"}
+              </p>
             </div>
 
             {/* Bâtiments */}
@@ -863,7 +853,7 @@ export default function ProgrammationPage() {
             <KpiCard label="SHAB logements"    value={`${fmt(Math.round(sdpLogement))} m²`} />
             {showCommerce && <KpiCard label="Surface commerce" value={`${fmt(Math.round(commerceTotal))} m²`} />}
             <KpiCard label="SDP programme"     value={`${fmt(Math.round(sdpProgrammeM2(mix)))} m²`} sub="SHAB + commerce" />
-            <KpiCard label="SDP géométrique"   value={sdpGeo > 0 ? `${fmt(Math.round(sdpGeo))} m²` : "—"} sub={envFromMassing ? "🏗 Massing" : "dessine le volume"} />
+            <KpiCard label="SDP géométrique"   value={sdpGeo > 0 ? `${fmt(Math.round(sdpGeo))} m²` : "—"} sub="déduit du programme" />
             <KpiCard label="Remplissage"       value={recon.sdpGeoM2 > 0 ? `${Math.round(recon.tauxRemplissage * 100)} %` : "—"} accent={recon.statut === "coherent"} />
             <KpiCard label="Hauteur max."      value={`${hauteurEstimeeM.toFixed(1)} m`} sub={`${niveauxMaxVal} niveaux`} />
             <KpiCard label="Emprise au sol"    value={empriseTotale > 0 ? `${fmt(Math.round(empriseTotale))} m²` : "—"} sub={terrain.surfaceM2 > 0 && empriseTotale > 0 ? `${fmtPct((empriseTotale / terrain.surfaceM2) * 100)} du terrain` : undefined} />

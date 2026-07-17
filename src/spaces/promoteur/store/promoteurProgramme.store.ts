@@ -232,10 +232,19 @@ function writePersist(studyId: string, env: ProgrammeEnvelope | null, mix: Progr
 }
 
 // ── Store ───────────────────────────────────────────────────────────────────
+/** Spec d'import (migration d'un bâtiment 2D keyless vers le programme). */
+export interface ImportBatimentSpec {
+  nom: string;
+  niveaux: number;
+  empriseSolM2: number;
+}
+
 interface ProgrammeStore {
   studyId: string | null;
   envelope: ProgrammeEnvelope | null;
   mix: ProgrammeMix;
+  /** Nb de bâtiments importés depuis le plan masse au dernier montage (bandeau UI). */
+  importNotice: number;
 
   /** Hydrate depuis userStorage si l'étude change (préserve les édits en mémoire sinon). */
   loadStudy: (studyId: string | null) => void;
@@ -258,6 +267,12 @@ interface ProgrammeStore {
 
   patchMix: (patch: Partial<Omit<ProgrammeMix, "batiments">>) => void;
   clear: () => void;
+
+  // ── Migration plan masse → programme ──
+  /** Importe des bâtiments entièrement spécifiés (migration 2D keyless). Retourne leurs ids. */
+  importBatiments: (specs: ImportBatimentSpec[]) => string[];
+  /** Efface le bandeau « N bâtiment(s) importé(s) ». */
+  clearImportNotice: () => void;
 }
 
 export const usePromoteurProgrammeStore = create<ProgrammeStore>((set, get) => {
@@ -282,15 +297,17 @@ export const usePromoteurProgrammeStore = create<ProgrammeStore>((set, get) => {
     studyId: null,
     envelope: null,
     mix: DEFAULT_MIX,
+    importNotice: 0,
 
     loadStudy: (studyId) => {
       if (studyId === get().studyId) return; // déjà chargé : on garde la mémoire
-      if (!studyId) { set({ studyId: null, envelope: null, mix: DEFAULT_MIX }); return; }
+      if (!studyId) { set({ studyId: null, envelope: null, mix: DEFAULT_MIX, importNotice: 0 }); return; }
       const saved = readPersist(studyId);
       set({
         studyId,
         envelope: saved?.envelope ?? null,
         mix: saved?.mix ?? DEFAULT_MIX,
+        importNotice: 0,
       });
     },
 
@@ -396,6 +413,34 @@ export const usePromoteurProgrammeStore = create<ProgrammeStore>((set, get) => {
       if (studyId) { try { userStorage.removeItem(programmeKey(studyId)); } catch { /* */ } }
       set({ envelope: null, mix: DEFAULT_MIX });
     },
+
+    // ── Migration plan masse → programme ──
+    importBatiments: (specs) => {
+      if (!specs.length) return [];
+      const ids: string[] = [];
+      set((s) => {
+        const start = s.mix.batiments.length;
+        const added = specs.map((sp, i) => {
+          const base = makeBatiment(start + i, sp.niveaux);
+          const bat: ProgrammeBatiment = {
+            ...base,
+            nom: sp.nom || base.nom,
+            niveaux: Math.max(1, Math.floor(Number(sp.niveaux) || 1)),
+            empriseSolM2: Math.max(0, Number(sp.empriseSolM2) || 0),
+          };
+          ids.push(bat.id);
+          return bat;
+        });
+        return {
+          mix: { ...s.mix, batiments: [...s.mix.batiments, ...added], updatedAt: stamp() },
+          importNotice: s.importNotice + specs.length,
+        };
+      });
+      persist();
+      return ids;
+    },
+
+    clearImportNotice: () => set({ importNotice: 0 }),
   };
 });
 

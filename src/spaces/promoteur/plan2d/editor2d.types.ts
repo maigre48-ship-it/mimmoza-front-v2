@@ -39,6 +39,17 @@ export interface Building2D {
   rect: OrientedRect;
   label: string;
 
+  // ── Lien programme (Modèle « Programmation = source de vérité ») ──────────
+  /** Clé stable vers mix.batiments[].id. null = pas encore apparié (pré-migration). */
+  programmeBatimentId?: string | null;
+  /**
+   * Emprise verrouillée (m²). SOURCE DE VÉRITÉ = mix.batiments[].empriseSolM2 ;
+   * ce champ n'en est qu'une COPIE maintenue par la synchro (programSync), pour
+   * que la contrainte d'aire constante d'editor2d.store reste autonome. NE JAMAIS
+   * l'écrire ailleurs que dans la synchro.
+   */
+  lockedAreaM2?: number | null;
+
   // ── Plans d'étages ────────────────────────────────────────────────
   floorPlans: FloorPlan2D[];
 

@@ -107,6 +107,29 @@ function applyDeltaToVolumes(
   });
 }
 
+// ─── CONTRAINTE D'AIRE CONSTANTE (Programmation = source de vérité) ────────
+// Un bâtiment lié au programme a une emprise fixée (lockedAreaM2). Lors d'un
+// resize, on renormalise width/depth pour conserver cette aire (on déforme le
+// rectangle, on ne change pas son emprise). Garde-fou : ratio d'aspect borné à
+// MAX_ASPECT (sinon une largeur ≈ 0 ferait exploser la profondeur).
+const MAX_ASPECT = 10;
+
+function renormalizeRectToArea(rect: OrientedRect, area: number): OrientedRect {
+  if (area <= 0) return rect;
+  const cur = rect.width * rect.depth;
+  if (cur <= 0.0001) {
+    const s = Math.sqrt(area);
+    return { ...rect, width: s, depth: s };
+  }
+  const k = Math.sqrt(area / cur);
+  let w = rect.width * k;
+  let d = rect.depth * k;
+  const ratio = w / d;
+  if (ratio > MAX_ASPECT)       { w = Math.sqrt(area * MAX_ASPECT); d = Math.sqrt(area / MAX_ASPECT); }
+  else if (ratio < 1 / MAX_ASPECT) { d = Math.sqrt(area * MAX_ASPECT); w = Math.sqrt(area / MAX_ASPECT); }
+  return { ...rect, width: w, depth: d };
+}
+
 // ─── MIGRATION ────────────────────────────────────────────────────────
 
 function migrateBuilding(raw: Building2D & { levels?: number }): Building2D {
@@ -201,6 +224,7 @@ export const useEditor2DStore = create<Editor2DState & Editor2DActions>((set, ge
       roofType: 'flat' as const, balconies: [], loggias: [], terraces: [], volumes: [],
       floorPlans: [],
       kind: 'building' as const,
+      programmeBatimentId: null, lockedAreaM2: null,
     };
     const building: Building2D = { ...defaults, ...b };
     const next = [...get().buildings, building];
@@ -227,6 +251,11 @@ export const useEditor2DStore = create<Editor2DState & Editor2DActions>((set, ge
   //   - Si move/rotate seul → conserver applyDeltaToVolumes (chemin inchangé)
   updateBuildingRect: (id, rect, persist = true) => {
     const old = get().buildings.find(b => b.id === id);
+    // PATCH — bâtiment lié au programme : emprise verrouillée. Tout resize
+    // renormalise width/depth pour conserver lockedAreaM2 (garde-fou aspect 10:1).
+    if (old?.lockedAreaM2 && old.lockedAreaM2 > 0) {
+      rect = renormalizeRectToArea(rect, old.lockedAreaM2);
+    }
     const next = get().buildings.map(b => {
       if (b.id !== id) return b;
 

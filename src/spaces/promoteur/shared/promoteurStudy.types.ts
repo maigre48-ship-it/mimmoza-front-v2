@@ -193,7 +193,7 @@ export interface PromoteurStudyMetaPatch {
 }
 
 // Résumé pour liste d'études (sans modules lourds)
-export type PromoteurStudySummary = Pick
+export type PromoteurStudySummary = Pick<
   PromoteurStudy,
   "id" | "user_id" | "title" | "status" | "created_at" | "updated_at"
 > & {
