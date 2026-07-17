@@ -6,7 +6,8 @@
 // pilotée par la région, la complexité chantier et les choix constructifs
 // (niveaux, toiture, volets, balcons/terrasses, parking).
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
   Building2,
@@ -46,7 +47,10 @@ import {
 import {
   setActiveCopilotContext,
   clearActiveCopilotContext,
+  normalizeStudyId,
 } from "../../copilot/store/activeCopilotContext.store";
+// V1.1 — Reprise de la Programmation (SDP, niveaux, parkings).
+import { getSnapshot } from "../shared/promoteurSnapshot.store";
 
 const PROMOTEUR_GRADIENT =
   "linear-gradient(90deg, #6f5bd6 0%, #8d78df 50%, #b39ddb 100%)";
@@ -65,7 +69,55 @@ function parseNum(v: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// V1.1 — REPRISE DE LA PROGRAMMATION
+//   Cette page était un simulateur isolé (sdp=2000 en dur, aucun studyId) :
+//   l'utilisateur devait ressaisir ce qu'il venait de programmer.
+//   ⚠️ Le SHAB n'est PAS une SDP (il exclut circulations, murs, locaux communs).
+//   Priorité : sdpGeoM2 (Massing 3D, vraie SDP géométrique) → sdpLogement
+//   (SHAB, minorant assumé) → saisie manuelle.
+// ─────────────────────────────────────────────────────────────────────────────
+type ProgSource = "massing" | "programme" | "manuel";
+
+interface ProgReprise {
+  sdp: number;
+  source: ProgSource;
+  niveaux: number | null;
+  parkings: number | null;
+  typologie: Typologie | null;
+}
+
+function lireProgrammation(): ProgReprise | null {
+  const prog = getSnapshot()?.programmation as Record<string, any> | undefined;
+  if (!prog?.validated) return null;
+
+  const sdpGeo   = typeof prog.sdpGeoM2 === "number" ? prog.sdpGeoM2 : 0;
+  const sdpProg  = typeof prog.sdpLogement === "number" ? prog.sdpLogement : 0;
+  const commerce = typeof prog.surfaceCommerce === "number" ? prog.surfaceCommerce : 0;
+
+  const sdp    = sdpGeo > 0 ? sdpGeo : (sdpProg + commerce);
+  const source: ProgSource = sdpGeo > 0 ? "massing" : "programme";
+  if (sdp <= 0) return null;
+
+  // typeProjet (Programmation) → typologie (modèle de coût).
+  const map: Record<string, Typologie> = {
+    collectif: "collectif", mixte: "collectif",
+    maisons_groupees: "maison_individuelle", residence_senior: "collectif",
+  };
+
+  return {
+    sdp: Math.round(sdp),
+    source,
+    niveaux:   typeof prog.niveaux === "number" && prog.niveaux > 0 ? prog.niveaux : null,
+    parkings:  typeof prog.nbParkings === "number" && prog.nbParkings > 0 ? prog.nbParkings : null,
+    typologie: map[String(prog.typeProjet)] ?? null,
+  };
+}
+
 export default function PromoteurSimulationTravauxPage() {
+  const [searchParams] = useSearchParams();
+  const studyId = searchParams.get("study");
+
   const [typologie, setTypologie] = useState<Typologie>("collectif");
   const [gamme, setGamme] = useState<Gamme>("standard");
   const [sdp, setSdp] = useState<number>(2000);
@@ -88,6 +140,36 @@ export default function PromoteurSimulationTravauxPage() {
   const [vrdPct, setVrdPct] = useState<number>(HYPOTHESES_DEFAUT.vrdPct * 100);
   const [honorairesPct, setHonorairesPct] = useState<number>(HYPOTHESES_DEFAUT.honorairesPct * 100);
   const [aleasPct, setAleasPct] = useState<number>(HYPOTHESES_DEFAUT.aleasPct * 100);
+
+  // ── V1.1 — Pré-remplissage depuis la Programmation ────────────────────────
+  //   UNE SEULE FOIS par étude : l'utilisateur peut ensuite chiffrer une
+  //   variante librement (on n'écrase pas sa saisie à chaque rendu).
+  const [reprise, setReprise] = useState<ProgReprise | null>(null);
+  const [devie, setDevie] = useState(false);
+  const seededRef = useRef<string | null>(null);
+
+  const appliquerReprise = (r: ProgReprise) => {
+    setSdp(r.sdp);
+    if (r.niveaux != null)   setNiveaux(r.niveaux);
+    if (r.parkings != null)  setParkingPlaces(r.parkings);
+    if (r.typologie != null) setTypologie(r.typologie);
+    setDevie(false);
+  };
+
+  useEffect(() => {
+    const key = studyId ?? "no-study";
+    if (seededRef.current === key) return;
+    const r = lireProgrammation();
+    if (!r) return;
+    seededRef.current = key;
+    setReprise(r);
+    appliquerReprise(r);
+  }, [studyId]);
+
+  // L'utilisateur a-t-il dévié de la programmation reprise ?
+  useEffect(() => {
+    if (reprise) setDevie(sdp !== reprise.sdp);
+  }, [sdp, reprise]);
 
   const result = useMemo(
     () =>
@@ -136,6 +218,7 @@ export default function PromoteurSimulationTravauxPage() {
       .join(" · ");
 
     setActiveCopilotContext({
+      studyId: normalizeStudyId(studyId),
       vertical: "promoteur",
       route: "/promoteur/simulation-travaux",
       surface: sdp,
@@ -152,6 +235,10 @@ export default function PromoteurSimulationTravauxPage() {
         region: labelOf(REGIONS, region),
         complexite: labelOf(COMPLEXITES, complexite),
         sdp_m2: sdp,
+        sdp_source: reprise
+          ? (reprise.source === "massing" ? "massing 3d (sdp géométrique)" : "programmation (shab + commerce)")
+          : "saisie manuelle",
+        sdp_devie_de_la_programmation: reprise && devie ? `oui — programmation : ${reprise.sdp} m²` : null,
         niveaux_hors_sol: niveaux,
         toiture: labelOf(TOITURES, typeToiture),
         volets: labelOf(VOLETS, typeVolets),
@@ -375,6 +462,34 @@ export default function PromoteurSimulationTravauxPage() {
             <SectionTitle>Surfaces & ouvrages</SectionTitle>
 
             <NumField icon={<Ruler className="h-4 w-4 text-slate-400" />} label="Surface de plancher (m²)" value={sdp} onChange={setSdp} />
+
+            {/* V1.1 — Provenance de la SDP (même logique d'affichage que l'enveloppe côté Programmation) */}
+            {reprise && (
+              <div className="-mt-2 flex items-center justify-between gap-2 text-[11px]">
+                <span className="text-slate-400">
+                  {reprise.source === "massing"
+                    ? "🏗 repris du Massing 3D (SDP géométrique)"
+                    : "📋 repris de la Programmation (SHAB + commerce — hors circulations, minorant)"}
+                  {devie && " · modifié"}
+                </span>
+                {devie && (
+                  <button
+                    type="button"
+                    onClick={() => appliquerReprise(reprise)}
+                    className="shrink-0 rounded-md border border-slate-200 px-2 py-0.5 font-medium text-slate-500 transition-all hover:border-slate-300 hover:bg-slate-50"
+                  >
+                    Réinitialiser
+                  </button>
+                )}
+              </div>
+            )}
+
+            {!reprise && (
+              <div className="-mt-2 text-[11px] text-slate-400">
+                Aucune programmation validée — saisie manuelle. Validez le programme
+                dans l'onglet Programmation pour reprendre la SDP automatiquement.
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <NumField label="Balcons (m²)" value={surfaceBalcons} onChange={setSurfaceBalcons} />

@@ -30,7 +30,7 @@ import type {
   OpeningsConfig, OpeningStyle,
   RoofConfig,
 } from "../massingScene.types";
-import { totalHeightM, totalLevelsCount } from "../massingScene.types";
+import { eaveHeightM, ridgeHeightM, roofRiseM, totalLevelsCount } from "../massingScene.types";
 
 const ACCENT = "#5247b8";
 
@@ -122,7 +122,12 @@ export const BuildingPropertiesPanel: FC<Props> = ({
   onDelete, onDuplicate,
 }) => {
   const { levels, transform, style } = building;
-  const hTotal  = totalHeightM(levels);
+  // V1.1 — Deux hauteurs distinctes : le PLU impose typiquement une limite à
+  // l'égout ET une au faîtage. Afficher une seule « hauteur totale » à l'égout
+  // masquait plusieurs mètres de toiture.
+  const hEave  = eaveHeightM(levels);
+  const hRidge = ridgeHeightM(levels, building.footprint, style.roofConfig);
+  const hRoof  = roofRiseM(building.footprint, style.roofConfig);
   const nLevels = totalLevelsCount(levels);
   const up = (patch: Partial<BuildingStyleOptions>) => onUpdateStyle(patch);
 
@@ -206,7 +211,7 @@ export const BuildingPropertiesPanel: FC<Props> = ({
           <input value={building.name} onChange={e=>onUpdateName(e.target.value)}
             style={{ width:"100%", fontSize:12, fontWeight:700, color:"#0f172a", border:"none", borderBottom:"1px solid #e2e8f0", background:"transparent", paddingBottom:3, outline:"none" }} />
           <div style={{ fontSize:10, color:"#94a3b8", marginTop:2 }}>
-            {hTotal.toFixed(1)} m · {nLevels} niveaux
+            {hRidge.toFixed(1)} m · {nLevels} niveaux
             {building.meta?.footprintM2 ? ` · ${building.meta.footprintM2.toLocaleString("fr-FR")} m² emprise` : ""}
           </div>
         </div>
@@ -233,9 +238,21 @@ export const BuildingPropertiesPanel: FC<Props> = ({
           onChange={v=>onUpdateLevels({typicalFloorHeightM:Math.max(2,v)})} />
       </Row>
 
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"5px 8px", borderRadius:7, background:`rgba(82,71,184,0.06)`, border:`1px solid rgba(82,71,184,0.15)`, marginBottom:4 }}>
-        <span style={{ fontSize:11, color:"#475569" }}>Hauteur totale</span>
-        <span style={{ fontSize:12, fontWeight:700, color:ACCENT }}>{hTotal.toFixed(1)} m</span>
+      {/* V1.1 — Égout et faîtage séparés : ce sont les deux limites du PLU. */}
+      <div style={{ padding:"5px 8px", borderRadius:7, background:`rgba(82,71,184,0.06)`, border:`1px solid rgba(82,71,184,0.15)`, marginBottom:4 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <span style={{ fontSize:11, color:"#475569" }}>Hauteur à l'égout</span>
+          <span style={{ fontSize:12, fontWeight:700, color:ACCENT }}>{hEave.toFixed(1)} m</span>
+        </div>
+        {hRoof > 0.05 && (
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:3, paddingTop:3, borderTop:"1px solid rgba(82,71,184,0.12)" }}>
+            <span style={{ fontSize:11, color:"#475569" }}>
+              Hauteur au faîtage
+              <span style={{ fontSize:9, color:"#94a3b8" }}> · +{hRoof.toFixed(1)} m toiture</span>
+            </span>
+            <span style={{ fontSize:12, fontWeight:700, color:ACCENT }}>{hRidge.toFixed(1)} m</span>
+          </div>
+        )}
       </div>
 
       <Divider />

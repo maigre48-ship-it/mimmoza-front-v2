@@ -1,4 +1,5 @@
 ﻿// src/spaces/promoteur/shared/promoteurStudy.types.ts
+// PATCH V2.2 : ajout de PromoteurPluDerogation + champ plu_derogation (garde-fou PLU)
 
 // ─── Résultat service générique ───────────────────────────────────────────────
 export type ServiceResult<T> =
@@ -141,6 +142,31 @@ export interface PromoteurBilanData {
   done:                boolean;
 }
 
+// ─── V2.2 — Dérogation PLU ────────────────────────────────────────────────────
+// Un promoteur PEUT légitimement sortir du PLU (demande de dérogation, PLU en
+// révision, projet d'intérêt général). On ne l'en empêche pas : on l'oblige à
+// le décider consciemment (modale bloquante à la validation), et on trace la
+// décision pour le comité d'engagement et l'Analyste Mimmoza.
+//
+// null = projet conforme, OU dérogation jamais acceptée.
+// Le champ est remis à null dès que le programme redevient conforme.
+//
+// ⚠️ Migration SQL appliquée le 2026-07-16 :
+//     ALTER TABLE promoteur_studies
+//     ADD COLUMN IF NOT EXISTS plu_derogation jsonb DEFAULT NULL;
+export interface PromoteurPluDerogation {
+  /** ISO — date d'acceptation par l'utilisateur. */
+  accepted_at: string;
+  /**
+   * Clés des règles dérogées AU MOMENT de l'acceptation (ex. ["hauteur"]).
+   * Si une NOUVELLE règle est franchie ensuite, elle n'est pas dans cette liste
+   * → la modale se redéclenche pour celle-là uniquement.
+   */
+  accepted_rules: string[];
+  /** Note libre facultative (motif invoqué, tracé pour le comité). */
+  note?: string | null;
+}
+
 // ─── Étude complète ───────────────────────────────────────────────────────────
 export interface PromoteurStudy {
   id:         string;
@@ -154,6 +180,8 @@ export interface PromoteurStudy {
   risques:    PromoteurRisquesData    | null;
   evaluation: PromoteurEvaluationData | null;
   bilan:      PromoteurBilanData      | null;
+  /** V2.2 — Écart au PLU assumé par l'utilisateur. null = conforme. */
+  plu_derogation?: PromoteurPluDerogation | null;
   created_at: string;
   updated_at: string;
 }
@@ -165,7 +193,7 @@ export interface PromoteurStudyMetaPatch {
 }
 
 // Résumé pour liste d'études (sans modules lourds)
-export type PromoteurStudySummary = Pick<
+export type PromoteurStudySummary = Pick
   PromoteurStudy,
   "id" | "user_id" | "title" | "status" | "created_at" | "updated_at"
 > & {

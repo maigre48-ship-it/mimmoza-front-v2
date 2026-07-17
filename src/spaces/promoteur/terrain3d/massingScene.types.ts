@@ -172,6 +172,95 @@ export function totalLevelsCount(levels: BuildingLevels): number {
   return 1 + levels.aboveGroundFloors;
 }
 
+// ─── V1.1 — HAUTEURS RÉGLEMENTAIRES (égout / faîtage) ────────────────────────
+// totalHeightM() ne connaît que `levels` : c'est la hauteur À L'ÉGOUT (haut de
+// mur). Un PLU impose typiquement DEUX limites (ex. 10 m égout / 13 m faîtage)
+// et une toiture en pente peut ajouter plusieurs mètres — invisibles jusqu'ici
+// dans le panneau, qui affichait l'égout sous le label « Hauteur totale ».
+//
+// ⚠️ Formule alignée sur massingRoofEngine (ridgeY = baseY + halfSpan * tan) :
+//    toute évolution du moteur doit être répercutée ici.
+
+/** Hauteur à l'égout = haut de mur. Alias explicite de totalHeightM. */
+export function eaveHeightM(levels: BuildingLevels): number {
+  return totalHeightM(levels);
+}
+
+/**
+ * Projette un footprint en mètres relatifs à son centroïde.
+ * ⚠️ epsg "4326" = degrés : lon et lat n'ont PAS le même facteur d'échelle
+ * (111 320·cos(lat) vs 110 574 m/deg). Un facteur unique fausserait la portée.
+ * epsg "2154" (Lambert-93) est déjà métrique → passage direct.
+ */
+function footprintToMeters(footprint: BuildingFootprint): [number, number][] {
+  const pts = footprint.points;
+  if (pts.length < 3) return [];
+  if (footprint.epsg !== "4326") return pts.map(([x, y]) => [x, y]);
+
+  const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+  const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  const mPerLon = 111_320 * Math.cos((cy * Math.PI) / 180);
+  const mPerLat = 110_574;
+  return pts.map(([lon, lat]) => [(lon - cx) * mPerLon, (lat - cy) * mPerLat]);
+}
+
+/**
+ * Demi-portée transversale de l'emprise (sens de la pente), en mètres.
+ * Réplique la logique de roofBoxFromFootprint : l'axe de faîtage suit l'arête
+ * la plus longue ; halfSpan est la demi-extension perpendiculaire à cet axe.
+ * `rotate90` bascule le faîtage → la portée devient la demi-longueur.
+ */
+export function roofHalfSpanM(
+  footprint: BuildingFootprint,
+  rotate90 = false,
+): number {
+  const pts = footprintToMeters(footprint);
+  if (pts.length < 3) return 0;
+
+  // Axe de faîtage = direction de l'arête la plus longue.
+  let bestLen = -1, angle = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    const dx = pts[j][0] - pts[i][0];
+    const dz = pts[j][1] - pts[i][1];
+    const len = Math.hypot(dx, dz);
+    if (len > bestLen) { bestLen = len; angle = Math.atan2(dz, dx); }
+  }
+  if (rotate90) angle += Math.PI / 2;
+
+  // Extensions dans le repère du toit (u = faîtage, v = pente).
+  const cA = Math.cos(angle), sA = Math.sin(angle);
+  let vMin = Infinity, vMax = -Infinity;
+  for (const [x, z] of pts) {
+    const v = -x * sA + z * cA;
+    if (v < vMin) vMin = v;
+    if (v > vMax) vMax = v;
+  }
+  return (vMax - vMin) / 2;
+}
+
+/**
+ * Hauteur ajoutée par la toiture (0 pour une terrasse).
+ * gable et hip ont le même faîtage : halfSpan * tan(pente).
+ */
+export function roofRiseM(
+  footprint: BuildingFootprint,
+  roof: RoofConfig | undefined,
+): number {
+  if (!roof || roof.shape === "flat") return 0;
+  const slope = Math.max(5, Math.min(60, roof.slopeDeg ?? 30));
+  const halfSpan = roofHalfSpanM(footprint, roof.rotate90);
+  return halfSpan * Math.tan((slope * Math.PI) / 180);
+}
+
+export function ridgeHeightM(
+  levels: BuildingLevels,
+  footprint: BuildingFootprint,
+  roof: RoofConfig | undefined,
+): number {
+  return eaveHeightM(levels) + roofRiseM(footprint, roof);
+}
+
 export interface SetbackRule {
   fromFloor: number;
   scaleFactor: number;

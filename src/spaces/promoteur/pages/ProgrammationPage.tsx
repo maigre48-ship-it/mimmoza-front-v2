@@ -174,6 +174,22 @@ function NumberInput({ label, value, onChange, unit, min, max, step, disabled, h
   label: string; value: number; onChange: (v: number) => void;
   unit?: string; min?: number; max?: number; step?: number; disabled?: boolean; hint?: string;
 }) {
+  // V1.3 — Saisie libre : le champ était piloté par un `number`, donc impossible
+  // de le vider pour retaper (« 0 » collant, « 058 »…) → on tenait le state en
+  // string pendant la frappe et on ne remonte au parent qu'une valeur valide.
+  const [draft, setDraft] = useState<string>(String(value));
+  const [focused, setFocused] = useState(false);
+
+  // Resynchronise quand le parent change la valeur hors saisie (reset, duplication…).
+  useEffect(() => {
+    if (!focused) setDraft(String(value));
+  }, [value, focused]);
+
+  const commit = (raw: string) => {
+    const n = raw.trim() === "" ? 0 : Number(raw);
+    onChange(Number.isFinite(n) ? n : 0);
+  };
+
   return (
     <div style={{ marginBottom: 10 }}>
       <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 3 }}>
@@ -181,11 +197,21 @@ function NumberInput({ label, value, onChange, unit, min, max, step, disabled, h
       </label>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <input
-          type="number" value={value} min={min ?? 0} max={max} step={step ?? 1} disabled={disabled}
-          onChange={(e) => onChange(Number(e.target.value))}
+          type="number" value={draft} min={min ?? 0} max={max} step={step ?? 1} disabled={disabled}
+          onChange={(e) => { setDraft(e.target.value); commit(e.target.value); }}
           style={{ flex: 1, padding: "6px 10px", borderRadius: 6, border: "1px solid #D1D5DB", fontSize: 13, color: disabled ? "#6B7280" : "#111827", outline: "none", background: disabled ? "#F3F4F6" : "#FAFAFA", fontFamily: "inherit" }}
-          onFocus={(e) => { if (!disabled) e.currentTarget.style.borderColor = "#7C3AED"; }}
-          onBlur={(e)  => (e.currentTarget.style.borderColor = "#D1D5DB")}
+          onFocus={(e) => {
+            setFocused(true);
+            if (!disabled) {
+              e.currentTarget.style.borderColor = "#7C3AED";
+              e.currentTarget.select();   // tout sélectionné : on tape par-dessus
+            }
+          }}
+          onBlur={(e) => {
+            setFocused(false);
+            setDraft(String(value));      // normalise l'affichage (« 058 » → « 58 »)
+            e.currentTarget.style.borderColor = "#D1D5DB";
+          }}
         />
         {unit && <span style={{ fontSize: 12, color: "#9CA3AF", minWidth: 38, textAlign: "left" }}>{unit}</span>}
       </div>
@@ -439,7 +465,10 @@ export default function ProgrammationPage() {
       if (obj == null) return null;
       if (typeof obj === "number") return obj;
       if (typeof obj === "string") { const n = parseFloat(obj); return isNaN(n) ? null : n; }
-      for (const k of ["valeur","m","metres","max","min","min_pct","pct","pourcentage","percent","max_ratio","min_m","valeur_m","distance","ratio","value","v"]) {
+      // patch — `max_m` et `ratio_min` manquaient : le format réel du parser
+      // (plu_ruleset_v1) est { hauteur: { max_m, faitage_m }, ces: { max_ratio } }.
+      // sans eux, hauteurmaxm restait à 0 → « à vérifier » sur une règle pourtant lue.
+      for (const k of ["valeur","m","metres","max","max_m","min","min_pct","pct","pourcentage","percent","max_ratio","ratio_min","min_m","valeur_m","distance","ratio","value","v"]) {
         if (obj[k] != null && typeof obj[k] === "number") return obj[k];
         if (obj[k] != null && typeof obj[k] === "string") { const n = parseFloat(obj[k]); if (!isNaN(n)) return n; }
       }
@@ -493,7 +522,8 @@ export default function ProgrammationPage() {
     return {
       zone: p.zone ?? p.zone_plu ?? rs.zone ?? "",
       description: p.description ?? p.libelle_zone ?? rs.libelle ?? "",
-      hauteurEgoutM: numFrom(hauteurs.egout) ?? numFrom(hauteurs.egout_m) ?? numFrom(hauteurs.egout_max) ?? numFrom(hauteurs.hauteur_egout) ?? numFrom(hauteurs.max) ?? numFrom(p.hauteur_egout_m) ?? null,
+      // `hauteur.max_m` = égout dans le format plu_ruleset_v1 (note « 10m égout, 13m faîtage »).
+      hauteurEgoutM: numFrom(hauteurs.egout) ?? numFrom(hauteurs.egout_m) ?? numFrom(hauteurs.egout_max) ?? numFrom(hauteurs.hauteur_egout) ?? numFrom(hauteurs.max_m) ?? numFrom(hauteurs.max) ?? numFrom(p.hauteur_egout_m) ?? null,
       hauteurFaitageM: numFrom(hauteurs.faitage) ?? numFrom(hauteurs.faitage_m) ?? numFrom(hauteurs.faitage_max) ?? numFrom(p.hauteur_faitage_m) ?? null,
       hauteurMaxM: numFrom(hauteurs.max) ?? numFrom(p.hauteur_max_m) ?? 0,
       hauteurEgoutFromNote: (() => {
