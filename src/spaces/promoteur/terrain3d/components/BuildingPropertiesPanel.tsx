@@ -14,6 +14,7 @@
 // v3 : suppression des sections liées à BuildingBlenderSpec
 
 import React, { useState, type FC } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   DEFAULT_BALCONIES,
   type BalconyConfig, type BalconyMode, type RailingStyle,
@@ -104,6 +105,17 @@ const chip = (active:boolean): React.CSSProperties => ({
   color:active?ACCENT:"#475569", transition:"all .10s",
 });
 
+// ─── Valeur verrouillée (dimensions pilotées ailleurs) ──────────────────────
+const LockedVal: FC<{ text: string }> = ({ text }) => (
+  <span style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "inline-flex", alignItems: "center", gap: 4 }}>
+    <span style={{ fontSize: 10 }}>🔒</span>{text}
+  </span>
+);
+const lockLinkStyle: React.CSSProperties = {
+  display: "inline-block", marginTop: 4, fontSize: 10, fontWeight: 700,
+  color: ACCENT, textDecoration: "underline",
+};
+
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
 interface Props {
@@ -122,6 +134,12 @@ export const BuildingPropertiesPanel: FC<Props> = ({
   onDelete, onDuplicate,
 }) => {
   const { levels, transform, style } = building;
+  // PATCH — liens vers les vraies sources : Programmation (gabarit) / Impl 2D (position).
+  const [searchParams] = useSearchParams();
+  const studyId = searchParams.get("study");
+  const progHref = studyId ? `/promoteur/programmation?study=${encodeURIComponent(studyId)}` : "/promoteur/programmation";
+  const implHref = studyId ? `/promoteur/implantation-2d?study=${encodeURIComponent(studyId)}` : "/promoteur/implantation-2d";
+  void transform; void onUpdateLevels; void onUpdateTransform; // dims/position verrouillées (lecture seule)
   // V1.1 — Deux hauteurs distinctes : le PLU impose typiquement une limite à
   // l'égout ET une au faîtage. Afficher une seule « hauteur totale » à l'égout
   // masquait plusieurs mètres de toiture.
@@ -223,20 +241,12 @@ export const BuildingPropertiesPanel: FC<Props> = ({
 
       <Divider />
 
-      {/* ── Niveaux ── */}
+      {/* ── Niveaux — VERROUILLÉS (source de vérité = Programmation) ── */}
       <SLabel>Niveaux</SLabel>
-      <Row label="Étages (R+N)">
-        <NumInput value={levels.aboveGroundFloors} min={0} max={50}
-          onChange={v=>onUpdateLevels({aboveGroundFloors:Math.max(0,Math.round(v))})} />
-      </Row>
-      <Row label="Hauteur RDC">
-        <NumInput value={levels.groundFloorHeightM} min={2} max={8} step={0.1} unit="m"
-          onChange={v=>onUpdateLevels({groundFloorHeightM:Math.max(2,v)})} />
-      </Row>
-      <Row label="Hauteur étage">
-        <NumInput value={levels.typicalFloorHeightM} min={2} max={6} step={0.1} unit="m"
-          onChange={v=>onUpdateLevels({typicalFloorHeightM:Math.max(2,v)})} />
-      </Row>
+      <Row label="Étages (R+N)"><LockedVal text={`R+${levels.aboveGroundFloors}`} /></Row>
+      <Row label="Hauteur RDC"><LockedVal text={`${levels.groundFloorHeightM} m`} /></Row>
+      <Row label="Hauteur étage"><LockedVal text={`${levels.typicalFloorHeightM} m`} /></Row>
+      <a href={progHref} style={lockLinkStyle}>Modifier le gabarit dans la Programmation →</a>
 
       {/* V1.1 — Égout et faîtage séparés : ce sont les deux limites du PLU. */}
       <div style={{ padding:"5px 8px", borderRadius:7, background:`rgba(82,71,184,0.06)`, border:`1px solid rgba(82,71,184,0.15)`, marginBottom:4 }}>
@@ -571,14 +581,12 @@ export const BuildingPropertiesPanel: FC<Props> = ({
 
       <Divider />
 
-      {/* ── Position ── */}
-      <SLabel>Position (décalage scène)</SLabel>
-      <Row label="Décalage X"><NumInput value={parseFloat(transform.offsetX.toFixed(1))} step={1} unit="u" onChange={v=>onUpdateTransform({offsetX:v})} /></Row>
-      <Row label="Décalage Y"><NumInput value={parseFloat(transform.offsetY.toFixed(1))} step={1} unit="u" onChange={v=>onUpdateTransform({offsetY:v})} /></Row>
-      <Row label="Rotation">
-        <NumInput value={parseFloat((transform.rotationRad*180/Math.PI).toFixed(1))} min={-180} max={180} step={5} unit="°"
-          onChange={v=>onUpdateTransform({rotationRad:v*Math.PI/180})} />
-      </Row>
+      {/* ── Position — définie en Implantation 2D (le 3D illustre, ne positionne pas) ── */}
+      <SLabel>Position</SLabel>
+      <div style={{ fontSize: 11, color: "#64748b", display: "flex", alignItems: "center", gap: 4 }}>
+        <span style={{ fontSize: 10 }}>🔒</span> Position et rotation définies dans l'Implantation 2D.
+      </div>
+      <a href={implHref} style={lockLinkStyle}>Modifier la position dans l'Implantation 2D →</a>
 
       {/* ── Estimations ── */}
       {building.meta&&(

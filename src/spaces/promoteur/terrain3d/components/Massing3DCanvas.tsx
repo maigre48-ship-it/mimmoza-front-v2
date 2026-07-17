@@ -508,10 +508,8 @@ export const Massing3DCanvas: FC<Massing3DCanvasProps> = ({
           ) : (
             <MassingEditor3D
               parcel={parcel}
-              buildings={buildings}
               parkings={parkings}
               reliefData={relief.status === "ready" ? relief.reliefData : null}
-              buildingHeightM={buildingHeightM}
               meta={meta}
               height="100%"
             />

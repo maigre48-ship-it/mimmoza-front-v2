@@ -15,8 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from "react";
-import { userStorage } from "@/lib/storage/userScopedStorage";
-import type { Building2D, Parking2D } from "../../plan2d/editor2d.types";
+import { read2D, write2D } from "../../plan2d/editor2dStorage";
 import {
   defaultAnchor,
   keyBuilding,
@@ -25,35 +24,6 @@ import {
   syncProgramToBuildings,
 } from "../../plan2d/programSync";
 import { PROGRAMME_EVENT, usePromoteurProgrammeStore } from "../../store/promoteurProgramme.store";
-
-// ⚠ Réplique de Implantation2DPage.editorStorageKey — GARDER IDENTIQUE.
-function editor2dKey(studyId: string): string {
-  return `mimmoza.editor2d.raw.${studyId}`;
-}
-
-interface Editor2DPersist {
-  buildings: Building2D[];
-  parkings: Parking2D[];
-}
-
-function read2D(studyId: string): Editor2DPersist {
-  try {
-    const raw = userStorage.getItem(editor2dKey(studyId));
-    if (!raw) return { buildings: [], parkings: [] };
-    const p = JSON.parse(raw) as Editor2DPersist;
-    return { buildings: p.buildings ?? [], parkings: p.parkings ?? [] };
-  } catch {
-    return { buildings: [], parkings: [] };
-  }
-}
-
-function write2D(studyId: string, buildings: Building2D[], parkings: Parking2D[]): void {
-  try {
-    userStorage.setItem(editor2dKey(studyId), JSON.stringify({ buildings, parkings }));
-  } catch {
-    /* quota / SSR : silencieux */
-  }
-}
 
 // Études déjà migrées cette session (la migration est aussi naturellement
 // idempotente : elle ne cible que les bâtiments sans clé).

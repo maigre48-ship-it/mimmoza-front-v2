@@ -28,11 +28,11 @@ import type {
 import { totalHeightM, totalLevelsCount } from "../massingScene.types";
 import { deriveMassingMetrics } from "../massingToBilan";
 import { makeNewBuilding, useMassingEditor } from "../useMassingEditor";
+import { EDITOR2D_EVENT, read2D } from "../../plan2d/editor2dStorage";
 import { BuildingPropertiesPanel } from "./BuildingPropertiesPanel";
 import { MassingRenderer } from "./MassingRenderer";
 import type { ReliefData } from "./SceneSvg3D";
 import { TerrassementPanel, type TerrassementExport } from "./TerrassementPanel";
-import { userStorage } from "@/lib/storage/userScopedStorage";
 
 const ACCENT = "#5247b8";
 
@@ -40,9 +40,7 @@ const M_PER_DEG_LAT = 110_574;
 const M_PER_DEG_LON_EQUATOR = 111_320;
 const mPerDegLon = (lat: number) => M_PER_DEG_LON_EQUATOR * Math.cos(lat * Math.PI / 180);
 
-// ─── Lecture store 2D depuis localStorage ────────────────────────────────────
-
-const PLAN2D_KEY = "mimmoza_plan2d_v1";
+// ─── Lecture store 2D depuis localStorage (clé factorisée : editor2dStorage) ──
 
 interface OrientedRect {
   center: { x: number; y: number };
@@ -52,6 +50,7 @@ interface Building2DRaw {
   id: string; kind?: string; rect: OrientedRect;
   label?: string; floorsAboveGround?: number;
   groundFloorHeightM?: number; typicalFloorHeightM?: number;
+  programmeBatimentId?: string | null;
 }
 interface Parking2DRaw {
   id: string;
@@ -65,17 +64,6 @@ interface Plan2DSnapshot {
   parkings:  Parking2DRaw[];
 }
 
-function readPlan2D(): Plan2DSnapshot {
-  try {
-    const raw = userStorage.getItem(PLAN2D_KEY);
-    if (!raw) return { buildings: [], parkings: [] };
-    const data = JSON.parse(raw) as { buildings?: unknown[]; parkings?: unknown[] };
-    return {
-      buildings: Array.isArray(data.buildings) ? (data.buildings as Building2DRaw[]) : [],
-      parkings:  Array.isArray(data.parkings)  ? (data.parkings  as Parking2DRaw[])  : [],
-    };
-  } catch { return { buildings: [], parkings: [] }; }
-}
 
 function computeRectCorners(rect: OrientedRect): { x: number; y: number }[] {
   const rad = (rect.rotationDeg * Math.PI) / 180;
@@ -182,7 +170,6 @@ function getImpla2DOrigin(
 
 function convertBuildings2D(
   buildings2D: Building2DRaw[],
-  buildingHeightM?: number,
   implaOrigin?: { lon: number; lat: number } | null,
 ): MassingBuildingModel[] {
   const result: MassingBuildingModel[] = [];
@@ -218,6 +205,7 @@ function convertBuildings2D(
     const isGeo = isWgs84Ring(ring);
     const bld = makeNewBuilding({
       name:      b.label ?? `Bâtiment ${idx + 1}`,
+      programmeBatimentId: b.programmeBatimentId ?? null,
       footprint: { points: ring, epsg: isGeo ? "4326" : "2154" },
       levels: {
         aboveGroundFloors:   b.floorsAboveGround   ?? 0,
@@ -226,9 +214,6 @@ function convertBuildings2D(
       },
       visible: true,
     });
-    if (buildingHeightM !== undefined && b.floorsAboveGround === undefined) {
-      bld.levels = { ...bld.levels, aboveGroundFloors: Math.max(1, Math.round(buildingHeightM / 3)) };
-    }
     result.push(bld);
   });
   return result;
@@ -269,13 +254,45 @@ function convertParkings2D(
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
+// ─── DIFF SCÈNE (Modèle : le 3D illustre, ne positionne pas) ────────────────
+// Apparie par programmeBatimentId : met à jour géométrie (footprint) + niveaux
+// depuis le 2D, PRÉSERVE l'habillage 3D posé par l'utilisateur (style,
+// architecture, renderSpec, id). Position = 2D uniquement (footprint + transform).
+function mergeMassingScene(
+  current: MassingBuildingModel[],
+  incoming: MassingBuildingModel[],
+): MassingBuildingModel[] {
+  const byKey = new Map<string, MassingBuildingModel>();
+  for (const b of current) if (b.programmeBatimentId) byKey.set(b.programmeBatimentId, b);
+  return incoming.map((inc) => {
+    const ex = inc.programmeBatimentId ? byKey.get(inc.programmeBatimentId) : undefined;
+    if (!ex) return inc; // nouveau bâtiment → style par défaut
+    return { ...ex, name: inc.name, footprint: inc.footprint, transform: inc.transform, levels: inc.levels };
+  });
+}
+
+// Signature GÉOMÉTRIE + NIVEAUX (jamais le style) → idempotence : l'habillage
+// seul ne relance pas de replaceScene.
+function sceneSig(buildings: MassingBuildingModel[]): string {
+  return buildings
+    .map((b) =>
+      [
+        b.programmeBatimentId ?? b.id,
+        JSON.stringify(b.footprint.points),
+        b.levels.aboveGroundFloors,
+        b.levels.groundFloorHeightM,
+        b.levels.typicalFloorHeightM,
+        b.name,
+      ].join("|"),
+    )
+    .join(";");
+}
+
 export interface MassingEditor3DProps {
   parcel?:                  Feature<Polygon | MultiPolygon>;
-  buildings?:               FeatureCollection<Polygon>;
   parkings?:                FeatureCollection<Polygon>;
   reliefData?:              ReliefData | null;
   meta?:                    Implantation2DMeta;
-  buildingHeightM?:         number;
   showLabels?:              boolean;
   height?:                  string | number;
   className?:               string;
@@ -374,10 +391,9 @@ const SlopeLegend: FC = () => (
 
 export const MassingEditor3D: FC<MassingEditor3DProps> = ({
   parcel,
-  buildings: buildingsProp,
   parkings:  parkingsProp,
   reliefData: reliefDataProp,
-  meta, buildingHeightM,
+  meta,
   showLabels = false,
   height = "640px", className,
   onSceneChange,
@@ -400,26 +416,32 @@ export const MassingEditor3D: FC<MassingEditor3DProps> = ({
   );
   const implaOrigin = useMemo(() => getImpla2DOrigin(parcel), [parcel]);
 
-  const [plan2D, setPlan2D] = useState<Plan2DSnapshot>(() => readPlan2D());
-  const syncedRef = useRef<"none" | "partial" | "full">("none");
-
   const [searchParams] = useSearchParams();
   const studyId = searchParams.get("study");
-  const prevStudyIdRef = useRef<string | null>(null);
+
+  // PATCH — Plan masse 2D lu depuis la clé factorisée PAR ÉTUDE. Re-lu au
+  // changement d'étude ET sur EDITOR2D_EVENT (émis APRÈS écriture de la clé 2D
+  // par la synchro Programmation→2D) → jamais de lecture avant écriture.
+  const [plan2D, setPlan2D] = useState<Plan2DSnapshot>(
+    () => (studyId ? read2D(studyId) : { buildings: [], parkings: [] }),
+  );
 
   useEffect(() => {
-    if (prevStudyIdRef.current !== null && prevStudyIdRef.current !== studyId) {
-      syncedRef.current = "none";
-      setPlan2D(readPlan2D());
-      replaceScene({ version: 1, buildings: [], placedObjects: [] });
-    }
-    prevStudyIdRef.current = studyId;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!studyId) { setPlan2D({ buildings: [], parkings: [] }); return; }
+    const reload = () => setPlan2D(read2D(studyId));
+    reload();
+    const onEvent = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { studyId?: string } | undefined;
+      if (detail?.studyId && detail.studyId !== studyId) return;
+      reload();
+    };
+    window.addEventListener(EDITOR2D_EVENT, onEvent);
+    return () => window.removeEventListener(EDITOR2D_EVENT, onEvent);
   }, [studyId]);
 
   const massingBldFrom2D = useMemo(
-    () => convertBuildings2D(plan2D.buildings, buildingHeightM, implaOrigin),
-    [plan2D.buildings, buildingHeightM, implaOrigin],
+    () => convertBuildings2D(plan2D.buildings, implaOrigin),
+    [plan2D.buildings, implaOrigin],
   );
   const parkingsFrom2D = useMemo(
     () => convertParkings2D(plan2D.parkings, implaOrigin),
@@ -434,42 +456,19 @@ export const MassingEditor3D: FC<MassingEditor3DProps> = ({
     [scene.buildings],
   );
 
+  // PATCH — DIFF par programmeBatimentId (remplace l'ancien replaceScene(tout)).
+  // MAJ géométrie (footprint) + niveaux depuis le 2D ; PRÉSERVE l'habillage 3D
+  // (style, architecture, renderSpec, id). Position = 2D uniquement. Idempotent :
+  // ne remplace que si la géométrie/les niveaux changent (l'habillage seul ne
+  // relance rien — deps = [massingBldFrom2D], qui ne dépend que du plan 2D).
   useEffect(() => {
-    const hasParcel = !!normalizedParcel;
-    if (syncedRef.current === "full") return;
-    if (syncedRef.current === "partial" && !hasParcel) return;
-    if (massingBldFrom2D.length > 0) {
-      replaceScene({ version: 1, buildings: massingBldFrom2D, placedObjects: [] });
-      syncedRef.current = hasParcel ? "full" : "partial";
-      return;
-    }
-    if (buildingsProp?.features?.length && scene.buildings.length === 0) {
-      const newBlds: MassingBuildingModel[] = [];
-      buildingsProp.features.forEach((feat, idx) => {
-        if (feat.geometry.type !== "Polygon") return;
-        const ring  = feat.geometry.coordinates[0] as [number, number][];
-        const isGeo = isWgs84Ring(ring);
-        const bld   = makeNewBuilding({
-          name: `Bâtiment ${idx + 1}`,
-          footprint: { points: ring, epsg: isGeo ? "4326" : "2154" },
-        });
-        if (buildingHeightM) bld.levels = { ...bld.levels, aboveGroundFloors: Math.max(1, Math.round(buildingHeightM / 3)) };
-        newBlds.push(bld);
-      });
-      if (newBlds.length > 0) {
-        replaceScene({ version: 1, buildings: newBlds, placedObjects: [] });
-        syncedRef.current = hasParcel ? "full" : "partial";
-      }
+    const current = scene.buildings;
+    const merged = mergeMassingScene(current, massingBldFrom2D);
+    if (sceneSig(current) !== sceneSig(merged)) {
+      replaceScene({ version: 1, buildings: merged, placedObjects: scene.placedObjects ?? [] });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [massingBldFrom2D, buildingsProp, normalizedParcel]);
-
-  const handleResync = () => {
-    const fresh = readPlan2D();
-    setPlan2D(fresh);
-    const newBlds = convertBuildings2D(fresh.buildings, buildingHeightM, implaOrigin);
-    if (newBlds.length > 0) replaceScene({ version: 1, buildings: newBlds, placedObjects: scene.placedObjects ?? [] });
-  };
+  }, [massingBldFrom2D]);
 
   useEffect(() => { onSceneChange?.(scene); }, [scene, onSceneChange]);
   // ── Bridge Massing → métré : enveloppe du store programme + bridge bilan legacy ──
@@ -586,7 +585,6 @@ export const MassingEditor3D: FC<MassingEditor3DProps> = ({
   const [showTerrain,     setShowTerrain]     = useState(true);
   const [showSlopeColors, setShowSlopeColors] = useState(true);
 
-  const has2DData  = plan2D.buildings.length > 0;
   const hasTerrain = !!(reliefData?.elevations?.length);
 
   const showReliefBadge = reliefStatus === "ready" || reliefStatus === "error";
@@ -680,17 +678,20 @@ export const MassingEditor3D: FC<MassingEditor3DProps> = ({
       <div style={{ width: 290, flexShrink: 0, display: "flex", flexDirection: "column", gap: 8, padding: 10, overflowY: "auto", background: "#f8fafc", borderLeft: "1px solid #e2e8f0" }}>
         <SceneStats buildings={scene.buildings} />
 
-        {has2DData && scene.buildings.length > 0 && (
+        {scene.buildings.length > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8, background: "rgba(82,71,184,0.06)", border: "1px solid rgba(82,71,184,0.2)", fontSize: 10, color: ACCENT }}>
-            <span style={{ flex: 1 }}><strong>{plan2D.buildings.length}</strong> bâtiment{plan2D.buildings.length > 1 ? "s" : ""} depuis l'implantation 2D</span>
-            <button onClick={handleResync} style={{ padding: "3px 8px", borderRadius: 6, cursor: "pointer", border: `1px solid ${ACCENT}`, background: "white", color: ACCENT, fontSize: 10, fontWeight: 600 }}>↺ Re-sync</button>
+            {/* PATCH — synchro auto (plus de bouton « re-sync » : la scène suit le programme). */}
+            <span style={{ flex: 1 }}><strong>{scene.buildings.length}</strong> bâtiment{scene.buildings.length > 1 ? "s" : ""} — géométrie et niveaux synchronisés depuis la Programmation.</span>
           </div>
         )}
 
-        {!has2DData && scene.buildings.length === 0 && (
+        {scene.buildings.length === 0 && (
           <div style={{ background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.3)", borderRadius: 8, padding: "10px 12px", fontSize: 11, color: "#a16207" }}>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>Aucune donnée 2D détectée</div>
-            <div style={{ fontSize: 10, opacity: 0.8 }}>Dessinez des bâtiments dans l'Implantation 2D, puis revenez ici.</div>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>Aucun bâtiment</div>
+            <div style={{ fontSize: 10, opacity: 0.85, marginBottom: 6 }}>Définissez le programme (nom, niveaux, emprise) dans la Programmation : les bâtiments apparaîtront ici automatiquement.</div>
+            <a href={studyId ? `/promoteur/programmation?study=${encodeURIComponent(studyId)}` : "/promoteur/programmation"} style={{ fontSize: 10, fontWeight: 700, color: ACCENT, textDecoration: "underline" }}>
+              → Ouvrir la Programmation
+            </a>
           </div>
         )}
 

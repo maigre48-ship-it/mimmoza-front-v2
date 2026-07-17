@@ -493,6 +493,12 @@ export function totalLevelsFromArchitecture(
 export interface MassingBuildingModel {
   id: string;
   name: string;
+  /**
+   * Clé stable vers mix.batiments[].id (via Building2D.programmeBatimentId).
+   * Permet au diff de MAJ géométrie + niveaux SANS perdre l'habillage (toiture,
+   * façade, ouvertures, balcons, matières) posé par l'utilisateur en 3D.
+   */
+  programmeBatimentId?: string | null;
   footprint: BuildingFootprint;
   transform: BuildingTransform;
   levels: BuildingLevels;

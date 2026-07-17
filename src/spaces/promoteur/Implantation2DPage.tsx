@@ -25,6 +25,7 @@ import { Plan2DToolbar } from "./plan2d/Plan2DToolbar";
 import { computeParkingSlots, rectCorners } from "./plan2d/editor2d.geometry";
 import { useEditor2DStore } from "./plan2d/editor2d.store";
 import type { Building2D, Point2D } from "./plan2d/editor2d.types";
+import { editor2dStorageKey } from "./plan2d/editor2dStorage";
 import { usePromoteurParcelRestore } from "./shared/hooks/usePromoteurParcelRestore";
 // V6.13 — PLU réel de l'étude (au lieu du placeholder en dur)
 import { usePromoteurStudy } from "./shared/usePromoteurStudy";
@@ -161,9 +162,8 @@ function mapStudyPlu(studyPlu: unknown): StudyPluRules {
 // CLÉS LOCALSTORAGE
 // ─────────────────────────────────────────────────────────────────────────────
 
-function editorStorageKey(studyId: string): string {
-  return `mimmoza.editor2d.raw.${studyId}`;
-}
+// PATCH — clé factorisée (définition unique dans plan2d/editor2dStorage).
+const editorStorageKey = editor2dStorageKey;
 function parcelFeatureKey(studyId: string): string {
   return `mimmoza.parcelFeature.${studyId}`;
 }

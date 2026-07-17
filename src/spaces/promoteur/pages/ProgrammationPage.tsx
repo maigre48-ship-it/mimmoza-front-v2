@@ -364,7 +364,9 @@ function BatimentCard({
           onChange={(v) => onPatch({ niveaux: Number(v) })} options={NIVEAUX_OPTIONS} />
         <NumberInput label="Emprise au sol projetée" value={bat.empriseSolM2}
           onChange={(v) => onPatch({ empriseSolM2: Math.max(0, v || 0) })} unit="m²" min={0}
-          hint={`hauteur estimée ${hauteur.toFixed(1)} m`} />
+          hint={bat.empriseSolM2 > 0
+            ? `hauteur estimée ${hauteur.toFixed(1)} m`
+            : "⚠ emprise non renseignée — pas de forme sur le plan masse"} />
       </div>
 
       {/* Typologies du bâtiment */}

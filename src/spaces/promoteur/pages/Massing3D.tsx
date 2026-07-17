@@ -16,10 +16,29 @@ import {
 } from "../shared/components/PromoteurPageHero";
 import { ACCENT_PRO } from "../shared/promoteurDesign.tokens";
 import { patchModule } from "../shared/promoteurSnapshot.store";
+import { usePromoteurStudy } from "../shared/usePromoteurStudy";
 import { usePromoteurProjectStore } from "../store/promoteurProject.store";
 import { MassingEditor3D } from "../terrain3d/components/MassingEditor3D";
 import type { MassingSceneModel } from "../terrain3d/massingScene.types";
+import {
+  eaveHeightM,
+  ridgeHeightM,
+  roofRiseM,
+  totalLevelsCount,
+} from "../terrain3d/massingScene.types";
 import { userStorage } from "@/lib/storage/userScopedStorage";
+
+// v2.5 — Publication du contexte vers l'Analyste Mimmoza.
+// Le panneau Copilot est monté hors de cette page (layout global) : il ne peut
+// rien recevoir par props. Sans publication, l'Analyste répond « aucune parcelle
+// n'est ouverte » alors que la scène 3D est à l'écran. Même mécanisme que
+// Implantation2DPage / ProgrammationPage.
+import {
+  setActiveCopilotContext,
+  clearActiveCopilotContext,
+  normalizeStudyId,
+  toActivePluRef,
+} from "../../copilot/store/activeCopilotContext.store";
 
 function parcelFeatureKey(studyId: string): string {
   return `mimmoza.parcelFeature.${studyId}`;
@@ -175,9 +194,13 @@ export default function Massing3D(): React.ReactElement {
   const [searchParams] = useSearchParams();
   const studyId        = searchParams.get("study");
 
+  // v2.5 — PLU réel de l'étude : alimente le tool get_parcel_plu de l'Analyste.
+  const { study } = usePromoteurStudy(studyId);
+
   const parcelRaw      = usePromoteurProjectStore((s) => s.parcel);
   const parkings       = usePromoteurProjectStore((s) => s.parkings);
-  const buildings      = usePromoteurProjectStore((s) => s.buildings);
+  // PATCH — plus de source « buildings » dégradée (polygones nus) : le Massing lit
+  // désormais le vrai plan masse 2D par-étude (cf. MassingEditor3D).
   const implantation2d = usePromoteurProjectStore((s) => s.implantation2d);
   const lastUpdatedAt  = usePromoteurProjectStore((s) => s.lastUpdatedAt);
 
@@ -222,6 +245,73 @@ export default function Massing3D(): React.ReactElement {
       console.warn("[Massing3D] snapshot error:", e);
     }
   };
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // v2.5 — Contexte Analyste Mimmoza
+  //   Ce que le Massing sait SEUL : les hauteurs réelles (égout / faîtage) et la
+  //   toiture. L'emprise et les niveaux viennent de la Programmation (source de
+  //   vérité) — inutile de les republier ici, ils y sont déjà et une seconde
+  //   valeur ouvrirait la porte aux contradictions.
+  //
+  //   ⚠️ La hauteur au FAÎTAGE est le seul gabarit que cette page modifie : une
+  //   toiture à 2 pentes peut ajouter plusieurs mètres au-dessus de l'égout, et
+  //   le PLU impose typiquement DEUX limites (Ascain UB : 10 m égout / 13 m
+  //   faîtage). C'est cette donnée que l'Analyste doit pouvoir lire.
+  // ───────────────────────────────────────────────────────────────────────────
+  React.useEffect(() => {
+    const bats = scene3D?.buildings ?? [];
+
+    const details = bats.map((b) => {
+      const roof   = b.style?.roofConfig;
+      const hEave  = eaveHeightM(b.levels);
+      const hRidge = ridgeHeightM(b.levels, b.footprint, roof);
+      return {
+        nom:                b.name,
+        niveaux:            totalLevelsCount(b.levels),
+        hauteur_egout_m:    Math.round(hEave * 10) / 10,
+        hauteur_faitage_m:  Math.round(hRidge * 10) / 10,
+        toiture:            roof?.shape ?? "flat",
+        toiture_pente_deg:  roof?.shape && roof.shape !== "flat" ? (roof.slopeDeg ?? 30) : null,
+        emprise_m2:         b.meta?.footprintM2 ?? null,
+      };
+    });
+
+    const maxEgout   = details.reduce((m, d) => Math.max(m, d.hauteur_egout_m), 0);
+    const maxFaitage = details.reduce((m, d) => Math.max(m, d.hauteur_faitage_m), 0);
+
+    setActiveCopilotContext({
+      studyId:  normalizeStudyId(studyId),
+      route:    "/promoteur/massing-3d",
+      vertical: "promoteur",
+      plu:      toActivePluRef((study as { plu?: unknown } | null)?.plu ?? null),
+      pageContext: {
+        pathname: "/promoteur/massing-3d",
+        space:    "promoteur",
+        mode:     "conception",
+        tab:      "massing",
+      },
+      pageSnapshot: {
+        page:              "Massing 3D — volumes bâtis",
+        nb_batiments:      bats.length,
+        hauteur_egout_max_m:   maxEgout   > 0 ? maxEgout   : null,
+        hauteur_faitage_max_m: maxFaitage > 0 ? maxFaitage : null,
+        // Écart égout → faîtage : ce que la toiture ajoute au gabarit.
+        toiture_surhauteur_m: maxFaitage > maxEgout
+          ? Math.round((maxFaitage - maxEgout) * 10) / 10
+          : null,
+        batiments: details.length
+          ? details.map((d) =>
+              `${d.nom} : ${d.niveaux} niv. · égout ${d.hauteur_egout_m} m · faîtage ${d.hauteur_faitage_m} m · toiture ${d.toiture}${d.toiture_pente_deg ? ` ${d.toiture_pente_deg}°` : ""}`,
+            ).join(" | ")
+          : null,
+        source_gabarit: "emprise et niveaux definis dans la Programmation ; hauteurs et toiture editees ici",
+      },
+    });
+  }, [studyId, study, scene3D]);
+
+  // Purge en quittant : sans ça, le volume fuit vers les autres routes et
+  // l'Analyste répond sur une scène qui n'est plus à l'écran.
+  React.useEffect(() => () => clearActiveCopilotContext(), []);
 
   const metaBar = meta?.floorsSpec ? (
     <div style={{ display: "flex", gap: 16, padding: "8px 16px", background: "white", borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 12, color: "#475569", flexShrink: 0, flexWrap: "wrap", alignItems: "center" }}>
@@ -292,10 +382,8 @@ export default function Massing3D(): React.ReactElement {
 
         <MassingEditor3D
           parcel={parcel}
-          buildings={buildings ?? undefined}
           parkings={parkings ?? undefined}
           meta={meta ?? undefined}
-          buildingHeightM={buildingHeightM ?? undefined}
           showLabels={showLabels}
           height="100%"
           onSceneChange={handleSceneChange}

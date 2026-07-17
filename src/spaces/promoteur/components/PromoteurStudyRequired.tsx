@@ -160,11 +160,11 @@ export default function PromoteurStudyRequired(): React.ReactElement {
 
 // ── Écran centré générique (styles inline, cohérent avec l'existant) ──────────
 function CenteredMessage({
-  emoji, title, text, cta, onCta,
+  emoji = "⏳", title, text, cta, onCta,
 }: {
-  emoji: string;
+  emoji?: string;
   title: string;
-  text: string;
+  text?: string;
   cta?: string;
   onCta?: () => void;
 }): React.ReactElement {
@@ -184,7 +184,7 @@ function CenteredMessage({
         <div style={{ fontSize: 20, fontWeight: 700, color: "#2a1f6e", marginBottom: 10 }}>
           {title}
         </div>
-        <div style={{ fontSize: 14, color: "#8a7ec8", lineHeight: 1.6 }}>{text}</div>
+        {text && <div style={{ fontSize: 14, color: "#8a7ec8", lineHeight: 1.6 }}>{text}</div>}
       </div>
       {cta && onCta && (
         <button onClick={onCta} style={{
