@@ -52,8 +52,6 @@ export default function PromoteurStudyRequired(): React.ReactElement {
   // quelle que soit la sous-page active). Hook inconditionnel (règles des hooks) ;
   // no-op si studyId absent.
   const programSynced = usePromoteurProgramSync(studyId);
-  // TEMPORAIRE — diagnostic régression deep-link.
-  console.log("[guard] programSynced:", programSynced, "studyId:", studyId);
 
   // Résultat du contrôle async, tagué par studyId (évite tout flash de contenu
   // premium quand on passe d'une étude à une autre non encore vérifiée).

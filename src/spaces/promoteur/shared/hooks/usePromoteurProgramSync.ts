@@ -88,12 +88,6 @@ export function usePromoteurProgramSync(studyId: string | null): boolean {
 
     // 2. Diff initial + abonnement aux changements de programme.
     runDiff();
-    // TEMPORAIRE — diagnostic régression deep-link.
-    console.log("[programSync] diff OK", {
-      sid,
-      batiments: usePromoteurProgrammeStore.getState().mix.batiments.length,
-      buildings2D: read2D(sid).buildings.length,
-    });
     setSyncedFor(sid);   // → libère l'<Outlet/> du guard (cf. deep-link).
 
     const onProgramme = (e: Event) => {
