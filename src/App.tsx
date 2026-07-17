@@ -6,6 +6,7 @@ import {
   Outlet,
   Route,
   Routes,
+  useLocation,
   useNavigate,
 } from "react-router-dom";
 import { wgs84ToLambert93 } from "./lib/projection";
@@ -162,6 +163,9 @@ import VueEnsemblePage from "./spaces/rehabilitation/pages/VueEnsemblePage";
 /* ── Mimmoza Copilot (global : bouton flottant + drawer) ─────── */
 import { CopilotRoot } from "./spaces/copilot/CopilotRoot";
 
+/* ── MimmozIA (espace plein écran, même moteur que le Copilot) ─ */
+import MimmozIAPage from "./spaces/copilot/MimmozIAPage";
+
 declare global {
   interface Window {
     __mimmozaProjection?: (
@@ -184,6 +188,10 @@ function getSpacePath(space: Space): string {
       return "/apporteur";
     case "marchand":
       return "/marchand-de-bien";
+    case "rehabilitation":
+      return "/rehabilitation";
+    case "mimmozia":
+      return "/mimmozia";
     default:
       return "/dashboard";
   }
@@ -192,6 +200,11 @@ function getSpacePath(space: Space): string {
 function AppRoot() {
   const [currentSpace, setCurrentSpace] = useState<Space>("none");
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Sur /mimmozia, l'IA occupe déjà toute la page : le bouton flottant +
+  // drawer du Copilot ferait doublon à l'écran. On le masque.
+  const hideCopilotLauncher = location.pathname.startsWith("/mimmozia");
 
   const handleChangeSpace = useCallback(
     (space: Space) => {
@@ -259,6 +272,9 @@ function AppRoot() {
           ════════════════════════════════════════════════════════════════ */}
           <Route element={<PrivateRoute />}>
             <Route path="/dashboard" element={<DashboardHomePage />} />
+
+            {/* ═══ MimmozIA — assistant IA global (consomme des jetons) ═══ */}
+            <Route path="/mimmozia" element={<MimmozIAPage />} />
           </Route>
 
           {/* ═══ Légal ═══ */}
@@ -289,6 +305,10 @@ function AppRoot() {
           <Route path="/account"  element={<Navigate to="/compte" replace />} />
           <Route path="/tokens"   element={<Navigate to="/jetons" replace />} />
           <Route path="/tarifs"   element={<Navigate to="/abonnement" replace />} />
+
+          {/* Alias MimmozIA (compat / ancien nommage) */}
+          <Route path="/copilot"  element={<Navigate to="/mimmozia" replace />} />
+          <Route path="/mimmoz-ia" element={<Navigate to="/mimmozia" replace />} />
 
           {/* ═══ Paramètres ═══ */}
           <Route path="/parametres/veille" element={<VeilleSettingsPage />} />
@@ -492,8 +512,9 @@ function AppRoot() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
 
-        {/* ═══ Mimmoza Copilot — global (bouton flottant + drawer) ═══ */}
-        <CopilotRoot />
+        {/* ═══ Mimmoza Copilot — global (bouton flottant + drawer) ═══
+            Masqué sur /mimmozia où l'IA occupe déjà toute la page. */}
+        {!hideCopilotLauncher && <CopilotRoot />}
       </AppShell>
     </>
   );

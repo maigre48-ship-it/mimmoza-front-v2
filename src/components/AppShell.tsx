@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   BarChart3,
+  Bot,
   Building,
   Building2,
   Calculator, ChevronRight,
@@ -52,7 +53,7 @@ import { ProjectUnlockModal } from "./billing/ProjectUnlockModal";
 import { unlockProject } from "../lib/billing/projectUnlock";
 import { getSpacePaywallConfig } from "../lib/billing/paywallConfig";
 
-type Space = "none" | "promoteur" | "agence" | "marchand" | "banque" | "rehabilitation";
+type Space = "none" | "promoteur" | "agence" | "marchand" | "banque" | "rehabilitation" | "mimmozia";
 
 type AppShellProps = {
   currentSpace: Space;
@@ -144,6 +145,7 @@ function getSpaceGradient(space: Space): string {
   if (space === "agence")         return "linear-gradient(135deg, #16a34a 0%, #4ade80 100%)";
   if (space === "banque")         return "linear-gradient(90deg, #26a69a 0%, #80cbc4 100%)";
   if (space === "rehabilitation") return "linear-gradient(90deg, #ea580c 0%, #fb923c 100%)";
+  if (space === "mimmozia")       return "linear-gradient(135deg, #4c1d95 0%, #7c3aed 55%, #d946ef 100%)";
   return "linear-gradient(90deg, #2196f3 0%, #21cbf3 100%)";
 }
 
@@ -153,6 +155,7 @@ function getSpaceAccentColor(space: Space): string {
   if (space === "agence")         return "#16a34a";
   if (space === "banque")         return "#1a7a50";
   if (space === "rehabilitation") return "#ea580c";
+  if (space === "mimmozia")       return "#7c3aed";
   return "#1a72c4";
 }
 
@@ -295,6 +298,7 @@ const SPACES: Array<{
   { id: "promoteur",      label: "Espace Promotion",         shortLabel: "Promotion",         description: "Faisabilite, SDP potentielle et bilan promoteur",         icon: Building2,  path: "/promoteur" },
   { id: "rehabilitation", label: "Espace Réhabilitation",    shortLabel: "Réhabilitation",    description: "Lecture de plan, conformité, chiffrage et valorisation",  icon: ScanSearch, path: "/rehabilitation" },
   { id: "agence",         label: "Espace Apport d'affaires", shortLabel: "Apport d'affaires", description: "Déposer un bien et générer des opportunités promoteur",   icon: Users,      path: "/apporteur" },
+  { id: "mimmozia",       label: "MimmozIA",                 shortLabel: "MimmozIA",          description: "Assistant IA connecté à toutes les sources immo",         icon: Bot,        path: "/mimmozia" },
 ];
 
 // ── SPACE_NAVIGATION ────────────────────────────────────────────────────────
@@ -365,6 +369,8 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       ],
     },
   ],
+  // MimmozIA : chat plein écran, pas de sous-navigation. Tableau vide volontaire.
+  mimmozia: [],
   marchand: [
     {
       id: "acquisition",
@@ -1055,6 +1061,9 @@ export function AppShell(props: AppShellProps) {
     location.pathname.startsWith("/politique-confidentialite") ||
     location.pathname.startsWith("/mentions-legales");
 
+  // MimmozIA : chat plein écran, le conteneur max-w-7xl l'étrangle.
+  const isFullWidthPage = location.pathname.startsWith("/mimmozia");
+
   useEffect(function () {
     let mounted = true;
     async function refreshAdminStatus() {
@@ -1238,13 +1247,13 @@ export function AppShell(props: AppShellProps) {
       )}
 
       <main className="flex-1 overflow-auto">
-        {isPublicPage || isBarePage
+        {isPublicPage || isBarePage || isFullWidthPage
           ? children
           : <div className="mx-auto max-w-7xl px-4 lg:px-6">{children}</div>
         }
       </main>
 
-      {!isBarePage && (
+      {!isBarePage && !isFullWidthPage && (
         <footer className="border-t border-slate-200/80 bg-white py-4 px-4">
           <div className="mx-auto max-w-7xl">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
