@@ -6,13 +6,14 @@ import { CopilotModeSelector } from './CopilotModeSelector';
 import { COPILOT_THEME as T } from './copilotTheme';
 
 export function CopilotInput({
-  mode, onChangeMode, onSend, onCancel, isStreaming,
+  mode, onChangeMode, onSend, onCancel, isStreaming, hideModeSelector,
 }: {
   mode: CopilotMode;
   onChangeMode: (m: CopilotMode) => void;
   onSend: (text: string) => void;
   onCancel: () => void;
   isStreaming: boolean;
+  hideModeSelector?: boolean;
 }) {
   const [value, setValue] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -37,9 +38,11 @@ export function CopilotInput({
 
   return (
     <div style={{ padding: '10px 12px', borderTop: `1px solid ${T.borderSoft}` }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <CopilotModeSelector mode={mode} onChange={onChangeMode} disabled={isStreaming} />
-      </div>
+      {!hideModeSelector && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <CopilotModeSelector mode={mode} onChange={onChangeMode} disabled={isStreaming} />
+        </div>
+      )}
       <div style={{
         display: 'flex', gap: 8, alignItems: 'flex-end',
         background: 'rgb(255 255 255 / 0.04)', border: `1px solid ${T.border}`,

@@ -111,10 +111,12 @@ export function CopilotEmptyState({
   vertical,
   onPick,
   mode,
+  hideQuickQuestions,
 }: {
   vertical: Vertical;
   onPick: (s: string) => void;
   mode?: CopilotMode;
+  hideQuickQuestions?: boolean;
 }) {
   const activeDeal = useActiveCopilotContext(s => s.activeDeal);
 
@@ -204,22 +206,28 @@ export function CopilotEmptyState({
       {contextLabel && <ContextBadge label={`Contexte : ${contextLabel}`} />}
       {showNoDealWarn && <NoDealMessage />}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 320 }}>
-        {isStaticFallback
-          ? (questionsToShow as string[]).map((s) => (
-              <button key={s} onClick={() => onPick(s)}
-                style={btnStyle()} onMouseEnter={hoverOn} onMouseLeave={hoverOff}>
-                {s}
-              </button>
-            ))
-          : (questionsToShow as Array<{ label: string; prompt: string }>).map((q) => (
-              <button key={q.label} onClick={() => onPick(q.prompt)}
-                style={btnStyle()} onMouseEnter={hoverOn} onMouseLeave={hoverOff}>
-                {q.label}
-              </button>
-            ))
-        }
-      </div>
+      {hideQuickQuestions ? (
+        <div style={{ color: T.textMuted, fontSize: 14, marginTop: 4, maxWidth: 320 }}>
+          Qu'est-ce qu'on peut faire pour vous aujourd'hui ?
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 320 }}>
+          {isStaticFallback
+            ? (questionsToShow as string[]).map((s) => (
+                <button key={s} onClick={() => onPick(s)}
+                  style={btnStyle()} onMouseEnter={hoverOn} onMouseLeave={hoverOff}>
+                  {s}
+                </button>
+              ))
+            : (questionsToShow as Array<{ label: string; prompt: string }>).map((q) => (
+                <button key={q.label} onClick={() => onPick(q.prompt)}
+                  style={btnStyle()} onMouseEnter={hoverOn} onMouseLeave={hoverOff}>
+                  {q.label}
+                </button>
+              ))
+          }
+        </div>
+      )}
     </div>
   );
 }

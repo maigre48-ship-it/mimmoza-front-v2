@@ -73,7 +73,7 @@ export default function MimmozIAPage() {
           Le composant est partagé avec le drawer (sombre) : on n'override
           donc PAS le thème global, seulement l'intérieur de cette page. */}
       <div className="mimmozia-light" style={{ flex: 1, minHeight: 0 }}>
-        <CopilotChat />
+        <CopilotChat forceMode="advanced" hideQuickQuestions />
       </div>
 
       <style>{`
