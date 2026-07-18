@@ -7,7 +7,7 @@ import { useCopilot } from './hooks/useCopilot';
 import { COPILOT_THEME as T } from './components/copilotTheme';
 
 export default function MimmozIAPage() {
-  const { refreshCredits, loadConversations } = useCopilot();
+  const { credits, refreshCredits, loadConversations } = useCopilot();
 
   // À l'entrée dans l'espace : on rafraîchit crédits + liste de conversations.
   // Le store étant global, une conversation ouverte dans le drawer flottant
@@ -57,7 +57,7 @@ export default function MimmozIAPage() {
             <Bot size={22} color="#fff" />
           </div>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 16, fontWeight: 600, color: T.textStrong }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>
               MimmozIA
             </div>
             <div style={{ fontSize: 12, color: T.textMuted }}>
@@ -66,7 +66,7 @@ export default function MimmozIAPage() {
           </div>
         </div>
 
-        <CopilotCreditsPill />
+        <CopilotCreditsPill credits={credits} />
       </div>
 
       {/* Corps de chat réutilisé tel quel, forcé en thème clair.
