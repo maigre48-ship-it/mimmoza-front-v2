@@ -273,7 +273,7 @@ export default function ConnexionPage() {
 
       localStorage.setItem("mimmoza-auth", "true");
 
-      navigate("/dashboard", { replace: true });
+      navigate("/accueil", { replace: true });
     } catch {
       setLoginError("Une erreur est survenue. Veuillez réessayer.");
     } finally {

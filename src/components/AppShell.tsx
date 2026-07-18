@@ -294,11 +294,11 @@ const SPACES: Array<{
   icon: ComponentType<{ className?: string }>;
   path: string;
 }> = [
+  { id: "mimmozia",       label: "Espace MimmozIA",          shortLabel: "MimmozIA",          description: "Assistant IA immobilier : PLU, DVF, risques, analyse et rapports", icon: Bot,        path: "/mimmozia" },
   { id: "marchand",       label: "Espace Investissement",    shortLabel: "Investissement",    description: "Opportunites, scoring, rentabilite, execution et sortie", icon: PieChart,   path: "/marchand-de-bien" },
   { id: "promoteur",      label: "Espace Promotion",         shortLabel: "Promotion",         description: "Faisabilite, SDP potentielle et bilan promoteur",         icon: Building2,  path: "/promoteur" },
   { id: "rehabilitation", label: "Espace Réhabilitation",    shortLabel: "Réhabilitation",    description: "Lecture de plan, conformité, chiffrage et valorisation",  icon: ScanSearch, path: "/rehabilitation" },
   { id: "agence",         label: "Espace Apport d'affaires", shortLabel: "Apport d'affaires", description: "Déposer un bien et générer des opportunités promoteur",   icon: Users,      path: "/apporteur" },
-  { id: "mimmozia",       label: "Espace MimmozIA",          shortLabel: "MimmozIA",          description: "Assistant IA immobilier : PLU, DVF, risques, analyse et rapports", icon: Bot,        path: "/mimmozia" },
 ];
 
 // ── SPACE_NAVIGATION ────────────────────────────────────────────────────────

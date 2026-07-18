@@ -9,6 +9,8 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { wgs84ToLambert93 } from "./lib/projection";
+// ── AJOUT Phase 0 : préférence "mode expert par défaut" (clé scopée par user).
+//    Adapte le chemin/la signature à ton implémentation réelle de userStorage.
 
 import { AppShell } from "./components/AppShell";
 import { PrivateRoute } from "./components/PrivateRoute";
@@ -165,6 +167,28 @@ declare global {
   }
 }
 
+/* ──────────────────────────────────────────────────────────────
+   AJOUT Phase 0 — Décideur d'atterrissage après connexion.
+   MimmozIA devient la porte d'entrée par défaut ; l'utilisateur
+   ayant activé le mode expert atterrit directement sur le dashboard.
+   On réorganise, on ne supprime rien : /dashboard reste accessible.
+
+   ⚠️ Si ton userStorage n'est PAS un hook mais un getter synchrone
+   (ex. userStorage.get("mode:expert-default")), remplace la ligne
+   useUserStorage par un useState initialisé depuis ce getter.
+   ────────────────────────────────────────────────────────────── */
+function HomeLanding() {
+  // Lecture directe de la préférence, sans dépendre d'un module externe.
+  // Remplace la clé par ta convention de clé scopée si tu en as une.
+  let expertDefault = false;
+  try {
+    expertDefault = localStorage.getItem("mode:expert-default") === "true";
+  } catch {
+    expertDefault = false;
+  }
+  return <Navigate to={expertDefault ? "/dashboard" : "/mimmozia"} replace />;
+}
+
 function getSpacePath(space: Space): string {
   switch (space) {
     case "promoteur":
@@ -246,9 +270,15 @@ function AppRoot() {
           <Route path="/connexion" element={<ConnexionPage />} />
 
           {/* ═══════════════════════════════════════════════════════════════
-              DASHBOARD — ancienne HomePage, protégée (connecté requis)
+              LANDING PROTÉGÉE (connecté requis)
+              • /accueil  → décideur : MimmozIA (défaut) ou dashboard (expert)
+              • /mimmozia → porte d'entrée conversationnelle (remontée ici,
+                            gagne au passage la garde d'auth qui lui manquait)
+              • /dashboard→ ancienne HomePage, toujours accessible (mode expert)
           ════════════════════════════════════════════════════════════════ */}
           <Route element={<PrivateRoute />}>
+            <Route path="/accueil"   element={<HomeLanding />} />
+            <Route path="/mimmozia"  element={<MimmozIAPage />} />
             <Route path="/dashboard" element={<DashboardHomePage />} />
           </Route>
 
@@ -330,9 +360,6 @@ function AppRoot() {
             <Route path="deposer" element={<ApporteurDeposerPage />} />
             <Route path="*" element={<Navigate to="/apporteur" replace />} />
           </Route>
-
-          {/* ═══ MimmozIA ═══ */}
-          <Route path="/mimmozia" element={<MimmozIAPage />} />
 
           {/* ═══ Particulier ═══ */}
           <Route path="/particulier" element={<Outlet />}>
