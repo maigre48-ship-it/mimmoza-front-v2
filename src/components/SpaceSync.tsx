@@ -14,7 +14,8 @@ export type Space =
   | "agence"
   | "marchand"
   | "banque"
-  | "rehabilitation";
+  | "rehabilitation"
+  | "mimmozia";
 
 interface SpaceSyncProps {
   currentSpace: Space;
@@ -53,6 +54,8 @@ export function SpaceSync({ currentSpace, setCurrentSpace }: SpaceSyncProps): nu
       detected = "marchand";
     } else if (pathname.startsWith("/apporteur")) {
       detected = "agence";
+    } else if (pathname.startsWith("/mimmozia")) {
+      detected = "mimmozia";
     } else if (pathname.startsWith("/banque")) {
       detected = "banque";
     }

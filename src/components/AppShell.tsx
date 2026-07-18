@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   BarChart3,
+  Bot,
   Building,
   Building2,
   Calculator, ChevronRight,
@@ -53,7 +54,7 @@ import { unlockProject, isProjectUnlocked } from "../lib/billing/projectUnlock";
 import { buildPromoteurParcelKey } from "../lib/billing/parcelKey";
 import { isRouteProtected, getSpacePaywallConfig } from "../lib/billing/paywallConfig";
 
-type Space = "none" | "promoteur" | "agence" | "marchand" | "banque" | "rehabilitation";
+type Space = "none" | "promoteur" | "agence" | "marchand" | "banque" | "rehabilitation" | "mimmozia";
 
 type AppShellProps = {
   currentSpace: Space;
@@ -144,6 +145,7 @@ function getSpaceGradient(space: Space): string {
   if (space === "agence")         return "linear-gradient(135deg, #16a34a 0%, #4ade80 100%)";
   if (space === "banque")         return "linear-gradient(90deg, #26a69a 0%, #80cbc4 100%)";
   if (space === "rehabilitation") return "linear-gradient(90deg, #ea580c 0%, #fb923c 100%)";
+  if (space === "mimmozia")       return "linear-gradient(135deg, #6366f1 0%, #a855f7 100%)";
   return "linear-gradient(90deg, #2196f3 0%, #21cbf3 100%)";
 }
 
@@ -153,6 +155,7 @@ function getSpaceAccentColor(space: Space): string {
   if (space === "agence")         return "#16a34a";
   if (space === "banque")         return "#1a7a50";
   if (space === "rehabilitation") return "#ea580c";
+  if (space === "mimmozia")       return "#7c3aed";
   return "#1a72c4";
 }
 
@@ -295,6 +298,7 @@ const SPACES: Array<{
   { id: "promoteur",      label: "Espace Promotion",         shortLabel: "Promotion",         description: "Faisabilite, SDP potentielle et bilan promoteur",         icon: Building2,  path: "/promoteur" },
   { id: "rehabilitation", label: "Espace Réhabilitation",    shortLabel: "Réhabilitation",    description: "Lecture de plan, conformité, chiffrage et valorisation",  icon: ScanSearch, path: "/rehabilitation" },
   { id: "agence",         label: "Espace Apport d'affaires", shortLabel: "Apport d'affaires", description: "Déposer un bien et générer des opportunités promoteur",   icon: Users,      path: "/apporteur" },
+  { id: "mimmozia",       label: "Espace MimmozIA",          shortLabel: "MimmozIA",          description: "Assistant IA immobilier : PLU, DVF, risques, analyse et rapports", icon: Bot,        path: "/mimmozia" },
 ];
 
 // ── SPACE_NAVIGATION ────────────────────────────────────────────────────────
@@ -362,6 +366,15 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       items: [
         { label: "Dashboard",       path: "/apporteur",         icon: BarChart3, end: true },
         { label: "Déposer un bien", path: "/apporteur/deposer", icon: Plus },
+      ],
+    },
+  ],
+  mimmozia: [
+    {
+      id: "assistant",
+      label: "Assistant",
+      items: [
+        { label: "MimmozIA", path: "/mimmozia", icon: Bot, end: true },
       ],
     },
   ],

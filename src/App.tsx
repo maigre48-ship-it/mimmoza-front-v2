@@ -148,6 +148,9 @@ import VueEnsemblePage from "./spaces/rehabilitation/pages/VueEnsemblePage";
 /* ── Mimmoza Copilot (global : bouton flottant + drawer) ─────── */
 import { CopilotRoot } from "./spaces/copilot/CopilotRoot";
 
+/* ── Espace MimmozIA (page chat plein écran) ─────────────────── */
+import MimmozIAPage from "./spaces/copilot/MimmozIAPage";
+
 declare global {
   interface Window {
     __mimmozaProjection?: (
@@ -170,6 +173,8 @@ function getSpacePath(space: Space): string {
       return "/apporteur";
     case "marchand":
       return "/marchand-de-bien";
+    case "mimmozia":
+      return "/mimmozia";
     default:
       return "/dashboard";
   }
@@ -325,6 +330,9 @@ function AppRoot() {
             <Route path="deposer" element={<ApporteurDeposerPage />} />
             <Route path="*" element={<Navigate to="/apporteur" replace />} />
           </Route>
+
+          {/* ═══ MimmozIA ═══ */}
+          <Route path="/mimmozia" element={<MimmozIAPage />} />
 
           {/* ═══ Particulier ═══ */}
           <Route path="/particulier" element={<Outlet />}>
