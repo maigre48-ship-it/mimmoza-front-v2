@@ -54,6 +54,13 @@ import { unlockProject, isProjectUnlocked } from "../lib/billing/projectUnlock";
 import { buildPromoteurParcelKey } from "../lib/billing/parcelKey";
 import { isRouteProtected, getSpacePaywallConfig } from "../lib/billing/paywallConfig";
 
+// ── Abonnements MimmozIA (remplace les onglets d'espaces) ─────────────────────
+import { MimmozIASubscriptionMenu } from "@/spaces/copilot/components/MimmozIASubscriptionMenu";
+import { usePlanAccess } from "@/lib/billing/usePlanAccess";
+import type { PlanId } from "@/lib/billing/planAccess";
+import { useCopilot } from "@/spaces/copilot/hooks/useCopilot";
+import { CopilotCreditsPill } from "@/spaces/copilot/components/CopilotCreditsPill";
+
 type Space = "none" | "promoteur" | "agence" | "marchand" | "banque" | "rehabilitation" | "mimmozia";
 
 type AppShellProps = {
@@ -96,6 +103,14 @@ type PendingProjectUnlock = {
   space: "promoteur";   // extensible plus tard (rehabilitation, ...)
   projectKey: string;
   label: string;
+};
+
+// Libellés d'affichage des formules MimmozIA.
+const PLAN_LABEL: Record<PlanId, string> = {
+  basique: "Basique",
+  avance: "Avancé",
+  pro: "Pro",
+  proplus: "Pro +",
 };
 
 function MimmozaLogo(props: { className?: string }) {
@@ -369,15 +384,9 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       ],
     },
   ],
-  mimmozia: [
-    {
-      id: "assistant",
-      label: "Assistant",
-      items: [
-        { label: "MimmozIA", path: "/mimmozia", icon: Bot, end: true },
-      ],
-    },
-  ],
+  // ── Vidé volontairement : supprime le bandeau "MimmozIA › Assistant … Accueil".
+  //    La page /mimmozia gère elle-même son en-tête + le bouton Mode Expert.
+  mimmozia: [],
   marchand: [
     {
       id: "acquisition",
@@ -498,6 +507,18 @@ function TopNavigation(props: {
   const studyId   = useMemo(() => extractStudyId(location.search), [location.search]);
   const account = useSupabaseAccount();
 
+  // Plan MimmozIA courant (pour le menu d'abonnements + la pastille compte).
+  const { plan } = usePlanAccess();
+  const planLabel = PLAN_LABEL[plan];
+
+  // Solde de crédits (jetons) remonté ici depuis la page MimmozIA.
+  const copilot = useCopilot() as { credits?: unknown; refreshCredits?: () => unknown };
+  const credits = copilot.credits;
+  useEffect(() => {
+    void copilot.refreshCredits?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function buildPath(targetPath: string): string {
     return preserveStudyInPath(targetPath, location.search);
   }
@@ -549,14 +570,6 @@ function TopNavigation(props: {
   const currentSection = spaceSections.find((s) => s.id === activeSection);
   const activeItems    = currentSection ? currentSection.items : [];
 
-  function handleSpaceClickFactory(space: Space, path: string) {
-    return function (e: React.MouseEvent<HTMLAnchorElement>) {
-      e.preventDefault();
-      onChangeSpace(space);
-      navigate(path);
-    };
-  }
-
   const currentSpaceMeta = SPACES.find((s) => s.id === currentSpace);
   const spaceGradient    = getSpaceGradient(currentSpace);
   const spaceAccent      = getSpaceAccentColor(currentSpace);
@@ -566,13 +579,12 @@ function TopNavigation(props: {
   }
 
   const subTabBaseCls  = "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium whitespace-nowrap transition-all";
-  const toolTabBaseCls = "group flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium whitespace-nowrap transition-all";
 
   return (
     <>
       <div className="border-b border-slate-200/70 bg-white/90 backdrop-blur-md overflow-x-hidden">
         <div className="mx-auto max-w-7xl px-4 lg:px-6">
-          {/* ── Ligne 1 : logo · espaces métier · compte ──────────────────── */}
+          {/* ── Ligne 1 : logo · abonnements MimmozIA · compte ────────────── */}
           <div className="flex h-16 items-center justify-between gap-4 min-w-0">
             <NavLink
               to="/"
@@ -583,30 +595,14 @@ function TopNavigation(props: {
             </NavLink>
 
             <div className="flex min-w-0 flex-1 items-center justify-center">
-              <nav className="flex items-center gap-1 overflow-x-auto rounded-2xl border border-slate-200/80 bg-slate-50/80 p-1 scrollbar-hide">
-                {SPACES.map(function (space) {
-                  const Icon     = space.icon;
-                  const isActive = currentSpace === space.id;
-                  const grad     = getSpaceGradient(space.id);
-                  const iconCls  = "h-4 w-4 transition-colors " + (isActive ? "text-white" : "text-slate-400 group-hover:text-slate-700");
-                  const anchorStyle = isActive ? { background: grad, color: "white" } : { color: "#64748b" };
-                  return (
-                    <a
-                      key={space.id}
-                      href={space.path}
-                      onClick={handleSpaceClickFactory(space.id, space.path)}
-                      className="group relative flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-all"
-                      style={anchorStyle}
-                    >
-                      <Icon className={iconCls} />
-                      <span>{space.shortLabel}</span>
-                    </a>
-                  );
-                })}
-              </nav>
+              <MimmozIASubscriptionMenu
+                currentPlan={plan}
+                onSelectPlan={(p) => navigate(`/abonnement?plan=${p}`)}
+              />
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
+              <span className="mzia-credits-pill"><CopilotCreditsPill credits={credits as never} /></span>
               {isAdmin && (
                 <button
                   type="button"
@@ -636,7 +632,7 @@ function TopNavigation(props: {
                   </div>
                   <div className="mt-0.5 text-[10px] text-slate-400">
                     {account && account.isAuthenticated
-                      ? (account.plan === "pro" ? "Abonnement Pro" : account.plan === "starter" ? "Abonnement Starter" : "Compte gratuit")
+                      ? `Abonnement ${planLabel}`
                       : "Connexion / inscription"}
                   </div>
                 </div>
@@ -649,7 +645,7 @@ function TopNavigation(props: {
             <NavLink
               to="/analyse-rapide"
               onClick={() => onChangeSpace("none")}
-              className={toolTabBaseCls + " hover:bg-slate-50"}
+              className="group flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium whitespace-nowrap transition-all hover:bg-slate-50"
               style={function (navArgs) {
                 if (navArgs.isActive) return { background: "linear-gradient(135deg, #6366f1 0%, #818cf8 100%)", color: "white" };
                 return { color: "#64748b" };
@@ -664,7 +660,7 @@ function TopNavigation(props: {
             <NavLink
               to="/opportunites"
               onClick={() => onChangeSpace("none")}
-              className={toolTabBaseCls + " hover:bg-slate-50"}
+              className="group flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium whitespace-nowrap transition-all hover:bg-slate-50"
               style={function (navArgs) {
                 if (navArgs.isActive) return { background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)", color: "white" };
                 return { color: "#64748b" };
@@ -679,7 +675,7 @@ function TopNavigation(props: {
             <NavLink
               to="/api"
               onClick={() => onChangeSpace("none")}
-              className={toolTabBaseCls + " hover:bg-slate-50"}
+              className="group flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium whitespace-nowrap transition-all hover:bg-slate-50"
               style={function (navArgs) {
                 if (navArgs.isActive) return { background: "linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%)", color: "white" };
                 return { color: "#64748b" };
@@ -796,7 +792,7 @@ function TopNavigation(props: {
         </div>
       )}
 
-      <style>{".scrollbar-hide::-webkit-scrollbar{display:none}.scrollbar-hide{-ms-overflow-style:none;scrollbar-width:none}"}</style>
+      <style>{".scrollbar-hide::-webkit-scrollbar{display:none}.scrollbar-hide{-ms-overflow-style:none;scrollbar-width:none}.mzia-credits-pill,.mzia-credits-pill *{color:#475569 !important}"}</style>
     </>
   );
 }
@@ -968,6 +964,21 @@ function MobileDrawer(props: {
 
           <div className="mt-4 border-t border-slate-100 pt-4">
             <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Outils</div>
+
+            <NavLink
+              to="/abonnement"
+              onClick={onClose}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 transition-all"
+              style={function (navArgs) {
+                if (navArgs.isActive) return { background: "linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)", color: "white" };
+                return { color: "#374151" };
+              }}
+            >
+              {function (navArgs) {
+                const cls = "h-4 w-4 " + (navArgs.isActive ? "text-white" : "text-violet-400");
+                return (<><Sparkles className={cls} /><span className="text-sm font-medium">Abonnements</span></>);
+              }}
+            </NavLink>
 
             <NavLink
               to="/analyse-rapide"

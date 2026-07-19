@@ -6,6 +6,7 @@ import {
   Outlet,
   Route,
   Routes,
+  useLocation,
   useNavigate,
 } from "react-router-dom";
 import { wgs84ToLambert93 } from "./lib/projection";
@@ -207,6 +208,7 @@ function getSpacePath(space: Space): string {
 function AppRoot() {
   const [currentSpace, setCurrentSpace] = useState<Space>("none");
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleChangeSpace = useCallback(
     (space: Space) => {
@@ -496,8 +498,9 @@ function AppRoot() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
 
-        {/* ═══ Mimmoza Copilot — global (bouton flottant + drawer) ═══ */}
-        <CopilotRoot />
+        {/* ═══ Mimmoza Copilot — global (bouton flottant + drawer) ═══
+            Masqué sur /mimmozia : la page EST déjà l'assistant (doublon). */}
+        {location.pathname !== "/mimmozia" && <CopilotRoot />}
       </AppShell>
     </>
   );

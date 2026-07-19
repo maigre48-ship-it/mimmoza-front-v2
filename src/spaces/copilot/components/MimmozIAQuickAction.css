@@ -1,0 +1,117 @@
+/* =========================================================================
+   MimmozIAQuickAction — carte d'action autour de l'orbe
+   ========================================================================= */
+
+.mzia-qa {
+  --qa-border: rgba(99, 102, 241, 0.16);
+  --qa-glow: rgba(109, 93, 252, 0.18);
+
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 260px;
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+
+  background: rgba(255, 255, 255, 0.72);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--qa-border);
+  border-radius: 16px;
+  box-shadow: 0 8px 26px rgba(76, 29, 149, 0.06);
+
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms ease, border-color 220ms ease, background 220ms ease;
+}
+
+.mzia-qa:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* liseré discret qui "pointe" vers l'orbe, révélé au survol */
+.mzia-qa::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 26px;
+  height: 1px;
+  background: linear-gradient(90deg, var(--qa-glow), transparent);
+  opacity: 0;
+  transition: opacity 220ms ease, width 220ms ease;
+  pointer-events: none;
+}
+.mzia-qa[data-side='left']::after { right: -26px; transform: translateY(-50%); }
+.mzia-qa[data-side='right']::after {
+  left: -26px;
+  transform: translateY(-50%) scaleX(-1);
+}
+
+.mzia-qa:hover:not(:disabled),
+.mzia-qa:focus-visible {
+  transform: translateY(-4px) scale(1.015);
+  border-color: rgba(109, 93, 252, 0.45);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 14px 34px rgba(76, 29, 149, 0.14),
+    0 0 0 3px rgba(109, 93, 252, 0.08);
+  outline: none;
+}
+.mzia-qa:hover:not(:disabled)::after,
+.mzia-qa:focus-visible::after {
+  opacity: 1;
+  width: 34px;
+}
+
+/* icône dans une pastille dégradée */
+.mzia-qa__icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  color: #fff;
+  background: linear-gradient(135deg, #6d5dfc 0%, #6366f1 55%, #a78bfa 100%);
+  box-shadow: 0 4px 12px rgba(109, 93, 252, 0.3);
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mzia-qa:hover:not(:disabled) .mzia-qa__icon {
+  transform: rotate(-6deg) scale(1.08);
+}
+
+.mzia-qa__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.mzia-qa__title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.2;
+}
+.mzia-qa__subtitle {
+  font-size: 11.5px;
+  color: #64748b;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mzia-qa,
+  .mzia-qa__icon {
+    transition: none;
+  }
+  .mzia-qa:hover:not(:disabled) {
+    transform: none;
+  }
+  .mzia-qa:hover:not(:disabled) .mzia-qa__icon {
+    transform: none;
+  }
+}

@@ -1,0 +1,285 @@
+/* =========================================================================
+   MimmozIAPage — deux états simples : accueil centré / conversation pleine
+   largeur avec orbe compacte flottante. Scoppé sous .mzia-page.
+   ========================================================================= */
+
+.mzia-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 8rem);
+  min-height: 0;
+  color: #0f172a;
+  background: #fbfbff;
+  overflow: hidden;
+}
+.mzia-page::before,
+.mzia-page::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(70px);
+  pointer-events: none;
+  z-index: 0;
+}
+.mzia-page::before { top: -12%; left: -8%; width: 46%; height: 46%;
+  background: radial-gradient(circle, rgba(109, 93, 252, 0.16), transparent 70%); }
+.mzia-page::after { bottom: -14%; right: -6%; width: 42%; height: 42%;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.12), transparent 70%); }
+
+/* ---- Barre supérieure --------------------------------------------------- */
+.mzia-topbar {
+  position: relative; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  background: rgba(255, 255, 255, 0.6);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  flex-shrink: 0;
+}
+.mzia-brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.mzia-brand__mark {
+  display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px;
+  background: linear-gradient(135deg, #4c1d95 0%, #7c3aed 55%, #d946ef 100%);
+  color: #fff; flex-shrink: 0; box-shadow: 0 4px 14px rgba(124, 58, 237, 0.28);
+}
+.mzia-brand__name { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: #0f172a; line-height: 1.1; }
+.mzia-brand__tag { font-size: 11.5px; color: #7c7f96; line-height: 1.1; }
+.mzia-topbar__right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.mzia-live-badge {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 600; color: #0f766e;
+  background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); white-space: nowrap;
+}
+.mzia-live-badge__dot { width: 7px; height: 7px; border-radius: 50%; background: #10b981;
+  animation: mzia-badge-pulse 2.4s ease-out infinite; }
+@keyframes mzia-badge-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
+  70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+.mzia-expert-btn, .mzia-newchat {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 10px;
+  font-size: 12.5px; font-weight: 600; color: #4c1d95; cursor: pointer;
+  background: rgba(109, 93, 252, 0.08); border: 1px solid rgba(109, 93, 252, 0.22);
+  white-space: nowrap; transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+.mzia-expert-btn:hover, .mzia-newchat:hover { background: rgba(109, 93, 252, 0.14); border-color: rgba(109, 93, 252, 0.4); transform: translateY(-1px); }
+.mzia-newchat { border-radius: 999px; }
+
+/* =========================================================================
+   ÉTAT ACCUEIL
+   ========================================================================= */
+.mzia-welcome {
+  position: relative; z-index: 1;
+  flex: 1; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: safe center;
+  gap: clamp(14px, 3vh, 26px);
+  padding: 14px 16px 28px;
+  animation: mzia-fade-in 340ms ease both;
+}
+.mzia-hero { text-align: center; max-width: 640px; }
+.mzia-hero__title { font-size: clamp(24px, 4.4vw, 34px); font-weight: 700; letter-spacing: -0.02em;
+  line-height: 1.12; margin: 0; color: #0f172a; }
+.mzia-hero__title em { font-style: normal;
+  background: linear-gradient(135deg, #6d5dfc, #6366f1 55%, #38bdf8);
+  -webkit-background-clip: text; background-clip: text; color: transparent; }
+.mzia-hero__sub { margin: 12px auto 0; max-width: 520px; font-size: clamp(13px, 1.6vw, 15px);
+  line-height: 1.5; color: #5b5f78; }
+
+.mzia-welcome__stage {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center; justify-items: center;
+  gap: clamp(16px, 3vw, 40px); width: 100%; max-width: 1240px;
+}
+.mzia-welcome__orb { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.mzia-welcome .mzia-orb { --orb-size: 317px; --disc-size: 68%; --logo-size: 94%; width: min(var(--orb-size), 88vw); }
+
+.mzia-qa-col { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 280px; }
+.mzia-qa-col--left { align-items: flex-end; }
+.mzia-qa-col--right { align-items: flex-start; }
+
+/* Les cartes suivent la courbe de l'orbe : le milieu ressort légèrement,
+   le haut et le bas se rapprochent de l'orbe (écart constant avec le cercle).
+   On décale via left (position:relative déjà posé sur .mzia-qa) pour ne pas
+   entrer en conflit avec le transform de survol. */
+.mzia-qa-col--left  > .mzia-qa:nth-child(1),
+.mzia-qa-col--left  > .mzia-qa:nth-child(3) { left: 26px; }
+.mzia-qa-col--left  > .mzia-qa:nth-child(2) { left: -6px; }
+.mzia-qa-col--right > .mzia-qa:nth-child(1),
+.mzia-qa-col--right > .mzia-qa:nth-child(3) { left: -26px; }
+.mzia-qa-col--right > .mzia-qa:nth-child(2) { left: 6px; }
+
+/* Launcher */
+.mzia-launcher { width: 100%; max-width: 680px; }
+.mzia-launcher__field {
+  display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 16px;
+  background: rgba(255, 255, 255, 0.85);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 22px;
+  box-shadow: 0 12px 40px rgba(76, 29, 149, 0.1);
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+.mzia-launcher__field:focus-within {
+  border-color: rgba(109, 93, 252, 0.5);
+  box-shadow: 0 12px 44px rgba(76, 29, 149, 0.16), 0 0 0 4px rgba(109, 93, 252, 0.08);
+}
+.mzia-launcher__input { flex: 1; border: none; outline: none; resize: none; background: transparent;
+  font: inherit; font-size: 15px; line-height: 1.5; color: #0f172a; max-height: 140px; padding: 8px 0; }
+.mzia-launcher__input::placeholder { color: #9aa0b8; }
+.mzia-launcher__tools { display: flex; align-items: center; gap: 4px; padding-bottom: 2px; }
+.mzia-iconbtn { display: grid; place-items: center; width: 38px; height: 38px; border: none;
+  border-radius: 12px; background: transparent; color: #7c7f96; cursor: pointer;
+  transition: background 160ms ease, color 160ms ease; }
+.mzia-iconbtn:hover { background: rgba(99, 102, 241, 0.1); color: #4c1d95; }
+.mzia-iconbtn--rec { color: #d946ef; }
+.mzia-iconbtn--rec.is-active { background: rgba(217, 70, 239, 0.14); animation: mzia-rec 1.2s ease-in-out infinite; }
+@keyframes mzia-rec {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(217, 70, 239, 0.35); }
+  50% { box-shadow: 0 0 0 5px rgba(217, 70, 239, 0); }
+}
+.mzia-send { display: grid; place-items: center; width: 40px; height: 40px; border: none;
+  border-radius: 13px; color: #fff; cursor: pointer;
+  background: linear-gradient(135deg, #6d5dfc, #6366f1 60%, #a78bfa);
+  box-shadow: 0 6px 16px rgba(109, 93, 252, 0.35);
+  transition: transform 160ms ease, opacity 160ms ease; }
+.mzia-send:hover:not(:disabled) { transform: translateY(-1px) scale(1.04); }
+.mzia-send:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+
+.mzia-trust { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; padding: 0 8px; }
+.mzia-trust__item { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: #7c7f96; }
+.mzia-trust__item svg { color: #6d5dfc; opacity: 0.8; }
+
+/* =========================================================================
+   ÉTAT CONVERSATION — chat PLEINE LARGEUR + orbe flottante non bloquante
+   ========================================================================= */
+.mzia-conversation-layout {
+  position: relative;      /* ancre l'orbe absolue */
+  z-index: 1;
+  flex: 1;
+  min-height: 0;           /* laisse le fil scroller, pas la page */
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: mzia-fade-in 320ms ease both;
+}
+
+/* Le contenu du chat prend TOUTE la largeur et toute la hauteur restante. */
+.mzia-chat-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+.mzia-chat-content > * { flex: 1; min-height: 0; } /* CopilotChat remplit (input inclus) */
+
+/* Orbe compacte flottante — n'intercepte AUCUN clic (pointer-events: none). */
+.mzia-chat-orb {
+  position: absolute;
+  top: 16px; right: 20px;
+  z-index: 10;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  width: auto; max-width: 168px;
+  pointer-events: none;
+  animation: mzia-orb-dock 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.mzia-chat-orb > * { pointer-events: none; }
+.mzia-chat-orb .mzia-orb { --orb-size: 112px; } /* 88–124 px */
+/* flux énergétique atténué sur l'orbe compacte (opacité, filaments, flou) */
+.mzia-chat-orb .mzia-orb { --flow-op-mult: 0.55; }
+.mzia-chat-orb .mzia-orb__energy-flow--3 { display: none; }
+.mzia-chat-orb .mzia-orb__energy-flow::before { filter: blur(1.5px) !important; }
+/* halo blanc doux derrière l'orbe → le texte du fil dessous reste lisible */
+.mzia-chat-orb::before {
+  content: '';
+  position: absolute; inset: -14px -18px auto -18px; height: 150px;
+  background: radial-gradient(120px 120px at 78% 30%, rgba(251, 251, 255, 0.92), rgba(251, 251, 255, 0));
+  z-index: -1; pointer-events: none;
+}
+/* particules réduites quand l'orbe est compacte */
+.mzia-chat-orb .mzia-orb__particles .mzia-orb__particle:nth-child(2n) { display: none; }
+
+@keyframes mzia-orb-dock {
+  from { opacity: 0; transform: translate(-10px, 10px) scale(1.25); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Thème clair scoppé au fil de conversation (repris de l'origine). */
+.mzia-chat-content,
+.mzia-chat-content * { color: #0f172a !important; }
+.mzia-chat-content code { background: rgba(15, 23, 42, 0.06) !important; color: #0f172a !important; }
+.mzia-chat-content [style*='border-radius: 14px 14px 4px 14px'] {
+  background: rgba(99, 102, 241, 0.1) !important; border-color: rgba(99, 102, 241, 0.25) !important;
+}
+
+@keyframes mzia-fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* =========================================================================
+   RESPONSIVE
+   ========================================================================= */
+/* Accueil compact : cartes en carrousel horizontal sous l'orbe */
+@media (max-width: 860px) {
+  .mzia-welcome__stage {
+    grid-template-columns: 1fr;
+    grid-auto-rows: min-content;
+    justify-items: stretch;
+    gap: 18px;
+  }
+  .mzia-welcome__orb { order: -1; }
+  .mzia-qa-col {
+    flex-direction: row; flex-wrap: nowrap; align-items: stretch !important;
+    max-width: 100%; width: 100%; overflow-x: auto; padding-bottom: 4px;
+    scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
+  }
+  .mzia-qa-col .mzia-qa { flex: 0 0 220px; scroll-snap-align: start; }
+  .mzia-qa-col > .mzia-qa { left: 0 !important; }
+  .mzia-qa-col .mzia-qa::after { display: none; }
+  .mzia-qa-col::-webkit-scrollbar { height: 0; }
+}
+
+/* Conversation mobile : orbe compacte 72 px, toujours flottante, ne recouvre
+   pas les messages (halo léger), saisie toujours visible. */
+@media (max-width: 640px) {
+  .mzia-chat-orb { top: 10px; right: 12px; max-width: 120px; }
+  .mzia-chat-orb .mzia-orb { --orb-size: 72px; } /* 64–80 px */
+  .mzia-chat-orb .mzia-status-panel { display: none; } /* place réduite : on garde l'orbe seule */
+}
+
+@media (max-width: 380px) {
+  .mzia-topbar { padding: 12px; gap: 8px; }
+  .mzia-brand__tag, .mzia-live-badge { display: none; }
+  .mzia-newchat { font-size: 0; gap: 0; padding: 7px; border-radius: 999px; }
+  .mzia-newchat svg { width: 16px; height: 16px; }
+  .mzia-launcher__input { font-size: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mzia-welcome, .mzia-conversation-layout, .mzia-chat-orb { animation: none; }
+}
+
+/* ---- Contrôles flottants (l'en-tête interne a été retiré) --------------- */
+.mzia-fab {
+  position: absolute;
+  top: 12px;
+  z-index: 6;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; color: #4c1d95; cursor: pointer;
+  background: rgba(255, 255, 255, 0.85);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  border: 1px solid rgba(109, 93, 252, 0.22);
+  box-shadow: 0 4px 14px rgba(76, 29, 149, 0.08);
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+.mzia-fab:hover { background: #fff; border-color: rgba(109, 93, 252, 0.4); transform: translateY(-1px); }
+.mzia-fab--expert  { right: 16px; }  /* accueil : coin haut droit */
+.mzia-fab--newchat { left: 16px; }   /* conversation : coin haut gauche (l'orbe est à droite) */
+
+@media (max-width: 640px) {
+  .mzia-fab { top: 8px; font-size: 11px; padding: 6px 10px; }
+  .mzia-fab--expert { right: 10px; }
+  .mzia-fab--newchat { left: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .mzia-fab { transition: none; } }

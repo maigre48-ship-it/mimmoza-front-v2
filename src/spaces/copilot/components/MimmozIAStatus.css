@@ -1,0 +1,89 @@
+/* =========================================================================
+   MimmozIAStatus — texte d'état + sources sous l'orbe
+   La couleur d'accent suit l'état (miroir de la palette de l'orbe).
+   ========================================================================= */
+.mzia-status-panel {
+  --sp-accent: #8b5cf6;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transition: color 400ms ease;
+}
+.mzia-status-panel[data-state='idle']       { --sp-accent: #8b5cf6; }
+.mzia-status-panel[data-state='listening']  { --sp-accent: #a855f7; }
+.mzia-status-panel[data-state='thinking']   { --sp-accent: #3b82f6; }
+.mzia-status-panel[data-state='searching']  { --sp-accent: #06b6d4; }
+.mzia-status-panel[data-state='responding'] { --sp-accent: #6366f1; }
+.mzia-status-panel[data-state='success']    { --sp-accent: #34c759; }
+.mzia-status-panel[data-state='error']      { --sp-accent: #ef4a63; }
+
+.mzia-status-panel__text {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: #475069;
+  letter-spacing: -0.005em;
+  transition: color 300ms ease;
+}
+.mzia-status-panel[data-state='success'] .mzia-status-panel__text,
+.mzia-status-panel[data-state='error'] .mzia-status-panel__text {
+  color: var(--sp-accent);
+  font-weight: 600;
+}
+
+.mzia-status-panel__tools {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+.mzia-status-panel__tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--sp-accent);
+  background: color-mix(in srgb, var(--sp-accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sp-accent) 26%, transparent);
+  border-radius: 999px;
+  white-space: nowrap;
+  animation: mzia-tool-in 260ms ease both;
+}
+.mzia-status-panel__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sp-accent);
+  box-shadow: 0 0 6px var(--sp-accent);
+  animation: mzia-tool-blink 1.4s ease-in-out infinite;
+}
+@keyframes mzia-tool-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes mzia-tool-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mzia-status-panel__tool,
+  .mzia-status-panel__dot { animation: none; }
+}
+
+/* ---- Mode compact (sous l'orbe pendant la conversation) ---------------- */
+.mzia-status-panel[data-compact] { gap: 4px; }
+.mzia-status-panel[data-compact] .mzia-status-panel__text {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--sp-accent);
+  max-width: 160px;
+  line-height: 1.25;
+}
