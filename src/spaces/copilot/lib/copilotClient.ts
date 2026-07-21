@@ -202,7 +202,7 @@ export async function streamCopilotChat(params: {
   //    profil le vertical (→ module), la ville et le type de bien issus du
   //    contexte enrichi. Fire-and-forget, no-op si apprentissage désactivé.
   try {
-    const ctx = enrichedRequest.context as Record<string, unknown>;
+    const ctx = enrichedRequest.context as unknown as Record<string, unknown>;
     const s = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
     const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
     const vertical = s(ctx.vertical);

@@ -71,6 +71,7 @@ async function isLearningEnabled(): Promise<boolean> {
       .select('learning_enabled')
       .maybeSingle(); // RLS → au plus une ligne (la sienne)
     learningEnabled = data?.learning_enabled ?? true; // pas de ligne = jamais désactivé
+    learningEnabled = learningEnabled === false ? false : true; // neutralise null → true
   } catch {
     learningEnabled = true; // en cas de doute, on n'empêche pas l'apprentissage
   }
