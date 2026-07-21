@@ -1,7 +1,6 @@
 ﻿// src/App.tsx
 
-import { useCallback, useEffect, useState } from "react";
-import {
+import { useCallback, useEffect, useRef, useState } from "react";import {
   Navigate,
   Outlet,
   Route,
@@ -10,6 +9,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { wgs84ToLambert93 } from "./lib/projection";
+import { track } from "@/lib/mimmozia/track";
 // ── AJOUT Phase 0 : préférence "mode expert par défaut" (clé scopée par user).
 //    Adapte le chemin/la signature à ton implémentation réelle de userStorage.
 
@@ -190,6 +190,17 @@ function HomeLanding() {
   return <Navigate to={expertDefault ? "/dashboard" : "/mimmozia"} replace />;
 }
 
+/** Déduit le module actif depuis l'URL pour l'apprentissage MimmozIA (module_open). */
+function moduleFromPath(pathname: string): string | undefined {
+  if (pathname.startsWith("/promoteur")) return "promoteur";
+  if (pathname.startsWith("/particulier")) return "particulier";
+  if (pathname.startsWith("/marchand-de-bien")) return "marchand";
+  if (pathname.startsWith("/apporteur")) return "apporteur";
+  if (pathname.startsWith("/rehabilitation")) return "rehabilitation";
+  if (pathname.startsWith("/assurance")) return "assurance";
+  return undefined;
+}
+
 function getSpacePath(space: Space): string {
   switch (space) {
     case "promoteur":
@@ -209,6 +220,7 @@ function AppRoot() {
   const [currentSpace, setCurrentSpace] = useState<Space>("none");
   const navigate = useNavigate();
   const location = useLocation();
+  const lastModuleRef = useRef<string | null>(null);
 
   const handleChangeSpace = useCallback(
     (space: Space) => {
@@ -217,6 +229,16 @@ function AppRoot() {
     },
     [navigate]
   );
+
+  // ── Apprentissage MimmozIA : trace l'entrée dans un module (une fois par
+  //    module, pas à chaque sous-route). Signal fort pour le profil pressenti.
+  useEffect(() => {
+    const mod = moduleFromPath(location.pathname);
+    if (mod && mod !== lastModuleRef.current) {
+      lastModuleRef.current = mod;
+      void track("module_open", { module: mod });
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;

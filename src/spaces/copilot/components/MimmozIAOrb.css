@@ -1,5 +1,15 @@
 /* =========================================================================
    MimmozIAOrb — orbe vivante en couches, pilotée par --orb-color
+   Passe direction artistique (raffinement) :
+     · halos plus grands / plus diffus / plus discrets, avec dérive d'intensité
+     · disque = verre poli + légère diffraction spectrale au bord (réflexions
+       violet/bleu/vert/rose — jamais sur le logo)
+     · particules vivantes : orbites non-linéaires (accélèrent / ralentissent /
+       marquent une pause) + scintillement (apparition / disparition)
+     · logo suspendu par une ombre portée en deux plans
+     · l'orbe peut s'incliner très légèrement vers la carte survolée (transition
+       transform ajoutée ici, déclenchée depuis MimmozIAPage.css via :has())
+   Aucune fonctionnalité modifiée. Aucun changement d'architecture.
    ========================================================================= */
 
 @property --orb-color {
@@ -27,8 +37,10 @@
   display: grid;
   place-items: center;
   isolation: isolate;
-  /* transition de taille (réduction douce en conversation) + couleur */
+  /* transition de taille (réduction douce en conversation) + couleur + inclinaison
+     douce vers la carte survolée (déclenchée par la page via :has()). */
   transition: width 450ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 620ms cubic-bezier(0.22, 1, 0.36, 1),
     --orb-color 600ms ease;
 }
 
@@ -40,35 +52,40 @@
   pointer-events: none;
 }
 
-/* ---- AURAS -------------------------------------------------------------- */
+/* ---- AURAS (halos) -----------------------------------------------------
+   Plus grands, plus flous, plus discrets : ils ne servent qu'à donner du
+   volume et ne doivent jamais attirer le regard. Le plus interne respire
+   aussi en intensité (variation très légère). */
 .mzia-orb__aura {
   background: radial-gradient(circle at 50% 50%, var(--orb-color) 0%, transparent 68%);
   transition: opacity 500ms ease;
 }
 .mzia-orb__aura--1 {
-  width: 82%; height: 82%;
-  opacity: calc(0.22 * var(--aura-strength));
-  filter: blur(6px);
-  animation: mzia-breathe calc(6s / var(--orb-speed)) ease-in-out infinite;
+  width: 88%; height: 88%;
+  opacity: calc(0.16 * var(--aura-strength));
+  filter: blur(9px);
+  animation: mzia-breathe calc(6.4s / var(--orb-speed)) ease-in-out infinite,
+    mzia-aura-drift calc(7.2s / var(--orb-speed)) ease-in-out infinite;
 }
 .mzia-orb__aura--2 {
-  width: 114%; height: 114%;
-  opacity: calc(0.16 * var(--aura-strength));
-  filter: blur(14px);
-  animation: mzia-wobble calc(12s / var(--orb-speed)) ease-in-out infinite,
-    mzia-spin calc(50s / var(--orb-speed)) linear infinite;
+  width: 122%; height: 122%;
+  opacity: calc(0.11 * var(--aura-strength));
+  filter: blur(20px);
+  animation: mzia-wobble calc(13s / var(--orb-speed)) ease-in-out infinite,
+    mzia-spin calc(60s / var(--orb-speed)) linear infinite;
 }
 .mzia-orb__aura--3 {
-  width: 150%; height: 150%;
-  opacity: calc(0.12 * var(--aura-strength));
-  filter: blur(26px);
-  animation: mzia-breathe-rise calc(9s / var(--orb-speed)) ease-in-out infinite;
+  width: 164%; height: 164%;
+  opacity: calc(0.08 * var(--aura-strength));
+  filter: blur(34px);
+  animation: mzia-breathe-rise calc(10s / var(--orb-speed)) ease-in-out infinite;
 }
 
 /* ---- FLUX ÉNERGÉTIQUE (rubans organiques autour du disque) --------------
    wrapper = respiration d'échelle ; ::before = rotation + morph + pulsation.
    On sépare rotation (transform du ::before) et échelle (transform du wrapper)
-   pour éviter tout conflit de propriété transform. */
+   pour éviter tout conflit de propriété transform. Rotations légèrement
+   ralenties → lecture "champ magnétique" plus calme, moins "anneau". */
 .mzia-orb__energy-flow {
   position: absolute; inset: 0; margin: auto;
   pointer-events: none;
@@ -100,8 +117,8 @@
     color-mix(in srgb, var(--orb-color) 55%, transparent) 292deg,
     transparent 360deg);
   animation:
-    mzia-energy-spin calc(18s / var(--flow-speed)) linear infinite,
-    mzia-energy-morph-a calc(7.5s / var(--flow-speed)) ease-in-out infinite,
+    mzia-energy-spin calc(22s / var(--flow-speed)) linear infinite,
+    mzia-energy-morph-a calc(8.5s / var(--flow-speed)) ease-in-out infinite,
     mzia-flow-pulse calc(6.7s / var(--flow-speed)) ease-in-out infinite;
 }
 
@@ -119,7 +136,7 @@
     color-mix(in srgb, var(--orb-color) 48%, transparent) 256deg,
     transparent 320deg);
   animation:
-    mzia-energy-spin-rev calc(27s / var(--flow-speed)) linear infinite,
+    mzia-energy-spin-rev calc(32s / var(--flow-speed)) linear infinite,
     mzia-energy-morph-b calc(11.8s / var(--flow-speed)) ease-in-out infinite,
     mzia-flow-pulse calc(8.3s / var(--flow-speed)) ease-in-out infinite;
 }
@@ -138,7 +155,7 @@
     color-mix(in srgb, var(--orb-color) 42%, transparent) 300deg,
     transparent 360deg);
   animation:
-    mzia-energy-spin calc(36s / var(--flow-speed)) linear infinite,
+    mzia-energy-spin calc(44s / var(--flow-speed)) linear infinite,
     mzia-energy-morph-a calc(16.4s / var(--flow-speed)) ease-in-out infinite,
     mzia-flow-pulse calc(9.1s / var(--flow-speed)) ease-in-out infinite;
 }
@@ -167,7 +184,16 @@
 /* ---- PARTICULES --------------------------------------------------------
    Chaque particule est une "boîte d'orbite" centrée (taille en % de l'orbe) ;
    le point est dessiné en haut via ::before ; on fait tourner la boîte.
-   Rayon = moitié de --orbit → indépendant des px, donc responsive. */
+   Rayon = moitié de --orbit → indépendant des px, donc responsive.
+
+   Vie des particules (raffinement) :
+   · l'orbite n'est plus uniforme — certaines accélèrent, ralentissent ou
+     marquent une pause au fil du tour (keyframes -a / -b, timing linéaire,
+     variation d'angle intégrée pour un rebouclage sans à-coup) ;
+   · le point scintille — certaines apparaissent puis disparaissent
+     (twinkle / blink), avec des rythmes et décalages désynchronisés.
+   La durée, le sens (reverse) et le délai d'orbite restent pilotés en inline
+   par le composant : on ne surcharge ici que le NOM de l'animation. */
 .mzia-orb__particles { width: 100%; height: 100%; }
 .mzia-orb__particle {
   position: absolute;
@@ -178,6 +204,10 @@
   will-change: transform;
   animation: mzia-orbit calc(var(--dur, 14s) / var(--orb-speed)) linear infinite;
 }
+/* orbites non-linéaires (n'affecte que le nom → durée/délai/sens préservés) */
+.mzia-orb__particle:nth-child(3n)   { animation-name: mzia-orbit-a; }
+.mzia-orb__particle:nth-child(3n+1) { animation-name: mzia-orbit-b; }
+
 .mzia-orb__particle::before {
   content: '';
   position: absolute;
@@ -190,10 +220,48 @@
   box-shadow: 0 0 6px var(--orb-color);
   opacity: var(--pop, 0.6);
   transition: background-color 600ms ease, box-shadow 600ms ease;
+  /* scintillement de base : léger battement d'intensité */
+  animation: mzia-particle-twinkle 7s ease-in-out infinite;
 }
+/* rythmes désynchronisés — certaines disparaissent complètement (blink) */
+.mzia-orb__particle:nth-child(4n)::before   { animation-name: mzia-particle-blink; animation-duration: 6.5s; }
+.mzia-orb__particle:nth-child(4n+2)::before { animation-duration: 9s; }
+.mzia-orb__particle:nth-child(3n+1)::before { animation-duration: 8s; }
+.mzia-orb__particle:nth-child(2n)::before   { animation-delay: -2.1s; }
+.mzia-orb__particle:nth-child(3n)::before   { animation-delay: -4.3s; }
+.mzia-orb__particle:nth-child(5n)::before   { animation-delay: -1.2s; }
+
 @keyframes mzia-orbit {
   from { transform: translate(-50%, -50%) rotate(0deg); }
   to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+/* -a : lente en haut/bas, rapide sur les flancs (rebouclage sans à-coup) */
+@keyframes mzia-orbit-a {
+  0%   { transform: translate(-50%, -50%) rotate(0deg); }
+  20%  { transform: translate(-50%, -50%) rotate(40deg); }
+  50%  { transform: translate(-50%, -50%) rotate(180deg); }
+  80%  { transform: translate(-50%, -50%) rotate(320deg); }
+  100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+/* -b : marque une quasi-pause à mi-parcours puis repart (bords symétriques) */
+@keyframes mzia-orbit-b {
+  0%   { transform: translate(-50%, -50%) rotate(0deg); }
+  30%  { transform: translate(-50%, -50%) rotate(150deg); }
+  45%  { transform: translate(-50%, -50%) rotate(175deg); }
+  55%  { transform: translate(-50%, -50%) rotate(185deg); }
+  70%  { transform: translate(-50%, -50%) rotate(210deg); }
+  100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+@keyframes mzia-particle-twinkle {
+  0%, 100% { opacity: var(--pop, 0.6); }
+  50% { opacity: calc(var(--pop, 0.6) * 0.28); }
+}
+@keyframes mzia-particle-blink {
+  0%   { opacity: 0; }
+  22%  { opacity: var(--pop, 0.6); }
+  52%  { opacity: calc(var(--pop, 0.6) * 0.42); }
+  74%  { opacity: 0; }
+  100% { opacity: 0; }
 }
 
 /* ---- ANNEAUX ------------------------------------------------------------ */
@@ -229,22 +297,46 @@
   position: absolute; inset: 0; margin: auto;
   width: var(--disc-size); height: var(--disc-size);
   border-radius: 50%;
-  overflow: hidden;                 /* clippe reflets & balayage au cercle */
+  overflow: hidden;                 /* clippe reflets, diffraction & balayage */
   display: grid; place-items: center;
   /* blanc très légèrement cassé + profondeur radiale + lumière d'état diffuse */
   background:
     radial-gradient(circle at 50% 116%, color-mix(in srgb, var(--orb-color) 12%, transparent), transparent 55%),
     radial-gradient(circle at 38% 30%, #ffffff 0%, #fdfdff 52%, #f4f3fb 100%);
   box-shadow:
-    0 10px 30px rgba(30, 20, 70, 0.16),                                  /* profondeur */
+    0 12px 34px rgba(30, 20, 70, 0.17),                                 /* profondeur */
     0 0 0 1px rgba(255, 255, 255, 0.9),                                  /* liseré net */
     0 0 30px 2px color-mix(in srgb, var(--orb-color) 22%, transparent),  /* lumière d'état */
     inset 0 1px 2px rgba(255, 255, 255, 0.95),                           /* reflet interne haut */
     inset 0 -7px 16px rgba(30, 20, 70, 0.07);                            /* ombre interne légère */
-  transition: box-shadow 600ms ease, background 600ms ease;
+  transition: box-shadow 700ms ease, background 700ms ease;
   z-index: 2;
   /* micro-respiration ≤ 1 % — le logo (enfant) suit exactement, synchronisé */
   animation: mzia-disc-breathe calc(5.6s / var(--orb-speed)) ease-in-out infinite;
+}
+
+/* Diffraction : fin liseré spectral au bord du verre (violet → bleu → vert →
+   rose), très discret, tourne lentement. Masqué au bord extrême → ne touche
+   jamais le logo. C'est une réflexion sur le verre, pas une couleur du logo. */
+.mzia-orb__disc::after {
+  content: '';
+  position: absolute; inset: 0; border-radius: 50%;
+  pointer-events: none;
+  z-index: 1;                       /* au-dessus de la lentille, SOUS le logo */
+  mix-blend-mode: screen;
+  opacity: 0.45;
+  filter: blur(1.4px);
+  -webkit-mask: radial-gradient(closest-side, transparent 76%, #000 90%, transparent 100%);
+  mask: radial-gradient(closest-side, transparent 76%, #000 90%, transparent 100%);
+  background: conic-gradient(from 0deg,
+    rgba(139, 92, 246, 0) 0deg,
+    rgba(139, 92, 246, 0.55) 44deg,
+    rgba(56, 189, 248, 0.5) 120deg,
+    rgba(125, 220, 109, 0.42) 196deg,
+    rgba(255, 120, 180, 0.5) 272deg,
+    rgba(139, 92, 246, 0.55) 340deg,
+    rgba(139, 92, 246, 0) 360deg);
+  animation: mzia-spin 34s linear infinite;
 }
 
 /* Couche "verre" sous le logo : reflet spéculaire blanc (haut-gauche) +
@@ -258,14 +350,17 @@
   transition: background 600ms ease;
 }
 
-/* Logo : identique (aucun filtre de couleur), agrandi (~+24 %), suspendu par une
-   ombre portée douce et de faible opacité. Jamais de blur/glow/hue sur le dessin. */
+/* Logo : identique (aucun filtre de couleur), agrandi, suspendu par une ombre
+   portée en deux plans (proche + lointaine) → il flotte au-dessus du verre,
+   jamais collé, jamais plat. Jamais de blur/glow/hue sur le dessin. */
 .mzia-orb__logo {
   position: relative; z-index: 2;
   width: var(--logo-size); height: var(--logo-size);
   object-fit: contain;
   user-select: none; -webkit-user-drag: none; pointer-events: none;
-  filter: drop-shadow(0 3px 4px rgba(30, 20, 70, 0.14));
+  filter:
+    drop-shadow(0 4px 6px rgba(30, 20, 70, 0.16))
+    drop-shadow(0 1px 2px rgba(30, 20, 70, 0.09));
 }
 
 /* Balayage lumineux de verre poli, toutes les ~7 s, quasi imperceptible. */
@@ -311,6 +406,10 @@
   0%, 100% { transform: translateY(0) scale(1); }
   50% { transform: translateY(-2%) scale(1.08); }
 }
+@keyframes mzia-aura-drift {
+  0%, 100% { opacity: calc(0.16 * var(--aura-strength)); }
+  50% { opacity: calc(0.205 * var(--aura-strength)); }
+}
 @keyframes mzia-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes mzia-spin-rev { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
 @keyframes mzia-wobble {
@@ -333,10 +432,10 @@
 .mzia-orb[data-state='success']    { --orb-speed: 0.95; --aura-strength: 1.6;  --flow-opacity: 0.18; --flow-speed: 0.95; --flow-scale: 1.03; }
 .mzia-orb[data-state='error']      { --orb-speed: 1;    --aura-strength: 0.55; --flow-opacity: 0.13; --flow-speed: 1;    --flow-scale: 0.96; }
 
-.mzia-orb[data-state='responding'] .mzia-orb__aura--1 { animation-name: mzia-breathe-rise; }
+.mzia-orb[data-state='responding'] .mzia-orb__aura--1 { animation-name: mzia-breathe-rise, mzia-aura-drift; }
 .mzia-orb[data-state='error'] .mzia-orb__disc {
   box-shadow:
-    0 10px 30px rgba(30, 20, 70, 0.16),
+    0 12px 34px rgba(30, 20, 70, 0.17),
     0 0 0 1px rgba(255, 255, 255, 0.9),
     0 0 16px 0 color-mix(in srgb, var(--orb-color) 20%, transparent),
     inset 0 1px 2px rgba(255, 255, 255, 0.95),
@@ -344,7 +443,7 @@
 }
 .mzia-orb[data-state='success'] .mzia-orb__disc {
   box-shadow:
-    0 10px 30px rgba(30, 20, 70, 0.16),
+    0 12px 34px rgba(30, 20, 70, 0.17),
     0 0 0 1px rgba(255, 255, 255, 0.9),
     0 0 40px 5px color-mix(in srgb, var(--orb-color) 34%, transparent),
     inset 0 1px 2px rgba(255, 255, 255, 0.95),
@@ -357,6 +456,9 @@
     animation: none !important;
     transition: --orb-color 400ms ease, box-shadow 400ms ease, width 400ms ease !important;
   }
+  /* les pseudo-éléments ne sont pas couverts par `*` → on les coupe ici */
+  .mzia-orb__particle::before,
+  .mzia-orb__disc::after { animation: none !important; }
   .mzia-orb__aura--3 { animation: mzia-aura-fade 6s ease-in-out infinite !important; }
   @keyframes mzia-aura-fade {
     0%, 100% { opacity: calc(0.1 * var(--aura-strength)); }

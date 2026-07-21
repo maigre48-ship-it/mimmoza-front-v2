@@ -1,6 +1,10 @@
 /* =========================================================================
    MimmozIAPage — deux états simples : accueil centré / conversation pleine
    largeur avec orbe compacte flottante. Scoppé sous .mzia-page.
+   Passe direction artistique (raffinement) :
+     · orbe d'accueil +25 %, logo qui remplit le disque
+     · plus de respiration : le blanc domine, le violet devient un accent diffus
+     · l'orbe s'incline très légèrement vers la carte survolée (:has())
    ========================================================================= */
 
 .mzia-page {
@@ -10,7 +14,7 @@
   height: calc(100vh - 8rem);
   min-height: 0;
   color: #0f172a;
-  background: #fbfbff;
+  background: #fcfcfe;
   overflow: hidden;
 }
 .mzia-page::before,
@@ -18,14 +22,16 @@
   content: '';
   position: absolute;
   border-radius: 50%;
-  filter: blur(70px);
+  filter: blur(88px);
   pointer-events: none;
   z-index: 0;
 }
-.mzia-page::before { top: -12%; left: -8%; width: 46%; height: 46%;
-  background: radial-gradient(circle, rgba(109, 93, 252, 0.16), transparent 70%); }
-.mzia-page::after { bottom: -14%; right: -6%; width: 42%; height: 42%;
-  background: radial-gradient(circle, rgba(56, 189, 248, 0.12), transparent 70%); }
+/* Accents colorés très diffus, poussés dans les coins : présents pour le
+   volume, jamais pour attirer l'œil. Le violet reste un accent, pas un fond. */
+.mzia-page::before { top: -14%; left: -10%; width: 46%; height: 46%;
+  background: radial-gradient(circle, rgba(109, 93, 252, 0.10), transparent 70%); }
+.mzia-page::after { bottom: -16%; right: -8%; width: 42%; height: 42%;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.07), transparent 70%); }
 
 /* ---- Barre supérieure --------------------------------------------------- */
 .mzia-topbar {
@@ -93,7 +99,9 @@
   gap: clamp(16px, 3vw, 40px); width: 100%; max-width: 1240px;
 }
 .mzia-welcome__orb { display: flex; flex-direction: column; align-items: center; gap: 14px; }
-.mzia-welcome .mzia-orb { --orb-size: 317px; --disc-size: 68%; --logo-size: 94%; width: min(var(--orb-size), 88vw); }
+/* Orbe d'accueil : +25 % (317 → 396). Logo porté à 100 % du disque → il le
+   remplit franchement (le composant le suspend déjà par son ombre portée). */
+.mzia-welcome .mzia-orb { --orb-size: 396px; --disc-size: 68%; --logo-size: 100%; width: min(var(--orb-size), 88vw); }
 
 .mzia-qa-col { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 280px; }
 .mzia-qa-col--left { align-items: flex-end; }
@@ -109,6 +117,16 @@
 .mzia-qa-col--right > .mzia-qa:nth-child(1),
 .mzia-qa-col--right > .mzia-qa:nth-child(3) { left: -26px; }
 .mzia-qa-col--right > .mzia-qa:nth-child(2) { left: 6px; }
+
+/* MimmozIA « regarde » la carte survolée : l'orbe s'incline très légèrement
+   vers elle, puis revient (transition transform portée par le composant orbe).
+   Pur CSS via :has() → aucune logique React à ajouter. */
+.mzia-welcome__stage:has(.mzia-qa-col--left .mzia-qa:hover) .mzia-orb {
+  transform: translateX(-6px) scale(1.015);
+}
+.mzia-welcome__stage:has(.mzia-qa-col--right .mzia-qa:hover) .mzia-orb {
+  transform: translateX(6px) scale(1.015);
+}
 
 /* Launcher */
 .mzia-launcher { width: 100%; max-width: 680px; }
@@ -172,34 +190,51 @@
   display: flex;
   flex-direction: column;
   width: 100%;
+  box-sizing: border-box;
+  padding-left: 108px;           /* gouttière pour l'orbe en bas à gauche */
 }
+.mzia-chat-orb .mzia-status-panel__text { max-width: 100px; }
 .mzia-chat-content > * { flex: 1; min-height: 0; } /* CopilotChat remplit (input inclus) */
 
 /* Orbe compacte flottante — n'intercepte AUCUN clic (pointer-events: none). */
 .mzia-chat-orb {
   position: absolute;
-  top: 16px; right: 20px;
+  bottom: 18px; left: 12px;      /* dans la gouttière gauche, au niveau de la saisie */
   z-index: 10;
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
-  width: auto; max-width: 168px;
+  display: flex; flex-direction: column-reverse; align-items: center; gap: 6px;  /* orbe en bas, statut au-dessus */
+  width: auto; max-width: 104px;
   pointer-events: none;
   animation: mzia-orb-dock 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .mzia-chat-orb > * { pointer-events: none; }
-.mzia-chat-orb .mzia-orb { --orb-size: 112px; } /* 88–124 px */
+.mzia-chat-orb .mzia-orb { --orb-size: 80px; }
 /* flux énergétique atténué sur l'orbe compacte (opacité, filaments, flou) */
 .mzia-chat-orb .mzia-orb { --flow-op-mult: 0.55; }
 .mzia-chat-orb .mzia-orb__energy-flow--3 { display: none; }
 .mzia-chat-orb .mzia-orb__energy-flow::before { filter: blur(1.5px) !important; }
 /* halo blanc doux derrière l'orbe → le texte du fil dessous reste lisible */
-.mzia-chat-orb::before {
-  content: '';
-  position: absolute; inset: -14px -18px auto -18px; height: 150px;
-  background: radial-gradient(120px 120px at 78% 30%, rgba(251, 251, 255, 0.92), rgba(251, 251, 255, 0));
-  z-index: -1; pointer-events: none;
-}
+.mzia-chat-orb::before { display: none; }
 /* particules réduites quand l'orbe est compacte */
 .mzia-chat-orb .mzia-orb__particles .mzia-orb__particle:nth-child(2n) { display: none; }
+
+/* L'orbe compacte change de COULEUR selon l'état, mais garde TOUJOURS
+   l'empreinte visuelle de l'état violet (idle). On fige les deux variables
+   d'échelle et le halo de disque qui, sinon, la font paraître plus petite
+   (erreur) ou plus grande (succès). La spécificité [data-state] l'emporte
+   sur les règles d'état définies dans MimmozIAOrb.css. */
+.mzia-chat-orb .mzia-orb[data-state] {
+  --aura-strength: 1;
+  --flow-scale: 1;
+}
+.mzia-chat-orb .mzia-orb[data-state='success'] .mzia-orb__disc,
+.mzia-chat-orb .mzia-orb[data-state='error'] .mzia-orb__disc {
+  box-shadow:
+    0 12px 34px rgba(30, 20, 70, 0.17),
+    0 0 0 1px rgba(255, 255, 255, 0.9),
+    0 0 30px 2px color-mix(in srgb, var(--orb-color) 22%, transparent),
+    inset 0 1px 2px rgba(255, 255, 255, 0.95),
+    inset 0 -7px 16px rgba(30, 20, 70, 0.07);
+}
 
 @keyframes mzia-orb-dock {
   from { opacity: 0; transform: translate(-10px, 10px) scale(1.25); }
@@ -237,14 +272,17 @@
   .mzia-qa-col > .mzia-qa { left: 0 !important; }
   .mzia-qa-col .mzia-qa::after { display: none; }
   .mzia-qa-col::-webkit-scrollbar { height: 0; }
+  /* pas d'inclinaison de l'orbe en carrousel (les colonnes sont réorganisées) */
+  .mzia-welcome__stage:has(.mzia-qa:hover) .mzia-orb { transform: none; }
 }
 
 /* Conversation mobile : orbe compacte 72 px, toujours flottante, ne recouvre
    pas les messages (halo léger), saisie toujours visible. */
 @media (max-width: 640px) {
-  .mzia-chat-orb { top: 10px; right: 12px; max-width: 120px; }
-  .mzia-chat-orb .mzia-orb { --orb-size: 72px; } /* 64–80 px */
-  .mzia-chat-orb .mzia-status-panel { display: none; } /* place réduite : on garde l'orbe seule */
+  .mzia-chat-orb { bottom: 12px; left: 8px; top: auto; right: auto; max-width: 84px; }
+  .mzia-chat-orb .mzia-orb { --orb-size: 60px; }
+  .mzia-chat-orb .mzia-status-panel { display: none; }
+  .mzia-chat-content { padding-left: 74px; } /* place réduite : on garde l'orbe seule */
 }
 
 @media (max-width: 380px) {
@@ -257,6 +295,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .mzia-welcome, .mzia-conversation-layout, .mzia-chat-orb { animation: none; }
+  /* pas d'inclinaison animée de l'orbe au survol */
+  .mzia-welcome__stage:has(.mzia-qa:hover) .mzia-orb { transform: none; }
 }
 
 /* ---- Contrôles flottants (l'en-tête interne a été retiré) --------------- */
@@ -283,3 +323,17 @@
   .mzia-fab--newchat { left: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { .mzia-fab { transition: none; } }
+
+/* ---- Une seule barre de défilement ------------------------------------
+   L'accueil ne scrolle plus dans son propre conteneur : le scroll remonte
+   au <main> de l'app (une seule barre, à droite). overflow-x: clip garde les
+   halos rognés sans réintroduire de barre verticale (contrairement à hidden). */
+.mzia-page.is-welcome {
+  height: auto;
+  min-height: calc(100vh - 8rem);
+  overflow: visible;
+  overflow-x: clip;
+}
+.mzia-page.is-welcome .mzia-welcome {
+  overflow: visible;
+}

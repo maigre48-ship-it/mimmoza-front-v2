@@ -10,6 +10,8 @@ import { useCopilot } from './hooks/useCopilot';
 import { MimmozIAOrb, type MimmozIAOrbState } from './components/MimmozIAOrb';
 import { MimmozIAQuickAction } from './components/MimmozIAQuickAction';
 import { MimmozIAStatus } from './components/MimmozIAStatus';
+import { supabase } from '@/lib/supabaseClient';
+import { track, type MimmoziaEventPayload } from '@/lib/mimmozia/track';
 import './MimmozIAPage.css';
 
 /* =========================================================================
@@ -65,18 +67,64 @@ function deriveActiveTools(a: LooseCopilotApi): string[] {
     .slice(0, 4);
 }
 
+/**
+ * Prénom d'affichage pour l'accueil personnalisé.
+ * Best-effort depuis les métadonnées Supabase (signup standard). Dégrade
+ * proprement vers `undefined` → l'accueil affiche « Bonjour » sans prénom.
+ *
+ * ⚠️ SI ton prénom vit dans une table `profiles` (et non dans user_metadata),
+ *    dis-le-moi : je remplace ce corps par une lecture de `profiles`.
+ */
 function useDisplayFirstName(): string | undefined {
-  // TODO(albé): const { user } = useAuth(); return user?.firstName ?? user?.prenom;
-  return undefined;
+  const [firstName, setFirstName] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const { data: auth } = await supabase.auth.getUser();
+        const uid = auth.user?.id;
+        const pick = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+
+        // Source autoritaire : users_profiles.full_name
+        let raw: string | undefined;
+        if (uid) {
+          const { data: profile } = await supabase
+            .from('users_profiles')
+            .select('full_name')
+            .eq('id', uid)              // ⚠️ si la clé est `user_id`, remplace 'id' par 'user_id'
+            .maybeSingle();
+          raw = pick(profile?.full_name);
+        }
+        // Repli : métadonnées d'inscription
+        if (!raw) {
+          const m = (auth.user?.user_metadata ?? {}) as Record<string, unknown>;
+          raw = pick(m.first_name) ?? pick(m.firstName) ?? pick(m.prenom) ?? pick(m.name);
+        }
+        if (alive) setFirstName(raw ? raw.split(/\s+/)[0] : undefined);
+      } catch {
+        /* silencieux → « Bonjour » */
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+  return firstName;
 }
 
-interface QuickAction { icon: typeof MapPin; title: string; subtitle: string; prompt: string; side: 'left' | 'right'; }
+interface QuickAction {
+  icon: typeof MapPin;
+  title: string;
+  subtitle: string;
+  prompt: string;
+  side: 'left' | 'right';
+  /** Signal (facultatif) versé au profil dès que l'utilisateur clique l'action. */
+  signal?: MimmoziaEventPayload;
+}
 const QUICK_ACTIONS: QuickAction[] = [
   { icon: MapPin, title: 'Analyser une adresse', subtitle: 'Faisabilité, contraintes, potentiel', side: 'left', prompt: 'Analyse cette adresse (faisabilité, contraintes réglementaires et potentiel) : ' },
-  { icon: Home, title: 'Estimer un bien', subtitle: 'Valeur, tendances, comparables', side: 'left', prompt: 'Estime la valeur de ce bien (tendances de marché et comparables DVF) : ' },
-  { icon: TrendingUp, title: 'Calculer une rentabilité', subtitle: 'Cash-flow, TRI, rendement, scénarios', side: 'left', prompt: 'Calcule la rentabilité de cette opération (cash-flow, TRI, rendement et scénarios) : ' },
+  { icon: Home, title: 'Estimer un bien', subtitle: 'Valeur, tendances, comparables', side: 'left', prompt: 'Estime la valeur de ce bien (tendances de marché et comparables DVF) : ', signal: { strategy: 'estimation' } },
+  { icon: TrendingUp, title: 'Calculer une rentabilité', subtitle: 'Cash-flow, TRI, rendement, scénarios', side: 'left', prompt: 'Calcule la rentabilité de cette opération (cash-flow, TRI, rendement et scénarios) : ', signal: { strategy: 'rendement' } },
   { icon: Gauge, title: 'Expliquer un DPE', subtitle: 'Points clés et recommandations', side: 'right', prompt: 'Explique ce DPE : points clés, faiblesses et recommandations de travaux : ' },
-  { icon: LandPlot, title: 'Étudier un terrain', subtitle: 'PLU, règles, constructibilité, réseaux', side: 'right', prompt: 'Étudie ce terrain : règles du PLU, constructibilité, contraintes et réseaux : ' },
+  { icon: LandPlot, title: 'Étudier un terrain', subtitle: 'PLU, règles, constructibilité, réseaux', side: 'right', prompt: 'Étudie ce terrain : règles du PLU, constructibilité, contraintes et réseaux : ', signal: { property_type: 'terrain' } },
   { icon: Sparkles, title: 'Trouver des opportunités', subtitle: 'Biens, terrains, off-market, appels d’offres', side: 'right', prompt: 'Trouve des opportunités immobilières (biens, terrains, off-market, appels d’offres) selon ces critères : ' },
 ];
 const TRUST = [
@@ -122,6 +170,9 @@ export default function MimmozIAPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
+    // 1er geste tracé : MimmozIA commence à apprendre les habitudes (horaires,
+    // fréquence). No-op si l'utilisateur a désactivé l'apprentissage.
+    void track('session_start');
     void copilot.refreshCredits?.();
     void copilot.loadConversations?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -137,6 +188,7 @@ export default function MimmozIAPage() {
   const startWith = useCallback(async (text: string) => {
     const message = text.trim();
     if (!message) return;
+    void track('search', { source: 'mimmozia' });
     setWelcomeOverride(false);
     setOptimistic(true);
     try {
@@ -153,6 +205,7 @@ export default function MimmozIAPage() {
   }, [handleLauncherSend]);
 
   const handleQuickAction = useCallback((qa: QuickAction) => {
+    if (qa.signal) void track('filter_apply', qa.signal);
     setDraft(qa.prompt);
     window.requestAnimationFrame(() => {
       const el = inputRef.current;
@@ -220,10 +273,10 @@ export default function MimmozIAPage() {
             <h1 className="mzia-hero__title">
               {greeting}
               <br />
-              Je suis votre <em>agent immobilier IA</em>.
+              Que souhaitez-vous <em>analyser</em> aujourd’hui&nbsp;?
             </h1>
             <p className="mzia-hero__sub">
-              Posez-moi n’importe quelle question sur un bien, un terrain, un projet ou un marché.
+              Je peux analyser un bien, un terrain, un projet — ou répondre à toutes vos questions immobilières.
             </p>
           </div>
 

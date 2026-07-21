@@ -8,6 +8,7 @@
 
 import { supabase } from '@/lib/supabase';
 import { getActiveCopilotContext } from '../store/activeCopilotContext.store';
+import { track } from '@/lib/mimmozia/track';
 import type {
   ChatMessage,
   CopilotChatRequest,
@@ -196,6 +197,32 @@ export async function streamCopilotChat(params: {
     ...request,
     context: buildEnrichedContext(request.context),
   };
+
+  // ── Signal d'apprentissage MimmozIA : une analyse copilot part. On verse au
+  //    profil le vertical (→ module), la ville et le type de bien issus du
+  //    contexte enrichi. Fire-and-forget, no-op si apprentissage désactivé.
+  try {
+    const ctx = enrichedRequest.context as Record<string, unknown>;
+    const s = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+    const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+    const vertical = s(ctx.vertical);
+    const mod = vertical && vertical !== 'generique' ? vertical : undefined;
+    const city = s(ctx.city);
+    const propertyType = s(ctx.property_type);
+    const zip = s(ctx.zip_code);
+    const surface = n(ctx.surface);
+    const route = s(ctx.route);
+    void track('tool_call', {
+      ...(mod ? { module: mod } : {}),
+      ...(city ? { city } : {}),
+      ...(propertyType ? { property_type: propertyType } : {}),
+      ...(zip ? { zip_code: zip } : {}),
+      ...(surface != null ? { surface } : {}),
+      ...(route ? { route } : {}),
+    });
+  } catch {
+    /* silencieux */
+  }
 
   const res = await fetch(`${functionsBaseUrl()}/copilot-chat`, {
     method: 'POST',

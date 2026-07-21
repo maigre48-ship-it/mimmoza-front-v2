@@ -1,0 +1,134 @@
+/* =========================================================================
+   MimmoziaLearningSettings — panneau "Ce que MimmozIA a appris de vous"
+   Aligné sur l'esthétique mzia- (violet #6d5dfc, blanc, slate #0f172a).
+   Toutes les classes sont préfixées .mls- pour éviter tout conflit.
+   ========================================================================= */
+
+.mls {
+  --mls-violet: #6d5dfc;
+  --mls-ink: #0f172a;
+  --mls-muted: #5b5f78;
+  max-width: 680px;
+  padding: 22px 22px 18px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 8px 30px rgba(76, 29, 149, 0.06);
+  color: var(--mls-ink);
+}
+
+.mls__header { margin-bottom: 18px; }
+.mls__title { display: flex; align-items: center; gap: 9px; color: var(--mls-violet); }
+.mls__title h2 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; color: var(--mls-ink); }
+.mls__intro { margin: 8px 0 0; font-size: 13px; line-height: 1.5; color: var(--mls-muted); }
+.mls__intro strong { color: var(--mls-ink); }
+
+/* ---- Interrupteur ------------------------------------------------------- */
+.mls-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 14px 0; border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+.mls-row__label { font-size: 14px; font-weight: 600; }
+.mls-row__hint { margin-top: 3px; font-size: 12.5px; line-height: 1.45; color: var(--mls-muted); max-width: 440px; }
+
+.mls-switch {
+  flex-shrink: 0;
+  width: 46px; height: 26px; border-radius: 999px; border: none; cursor: pointer;
+  background: rgba(15, 23, 42, 0.16); position: relative;
+  transition: background 200ms ease;
+}
+.mls-switch.is-on { background: var(--mls-violet); }
+.mls-switch:disabled { opacity: 0.55; cursor: default; }
+.mls-switch__knob {
+  position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mls-switch.is-on .mls-switch__knob { transform: translateX(20px); }
+
+/* ---- États (chargement / vide / désactivé) ------------------------------ */
+.mls-state {
+  display: flex; align-items: center; gap: 8px;
+  padding: 16px; margin-top: 4px; border-radius: 12px;
+  font-size: 13px; line-height: 1.5; color: var(--mls-muted);
+  background: rgba(109, 93, 252, 0.05); border: 1px solid rgba(109, 93, 252, 0.12);
+}
+.mls-state--muted { background: rgba(15, 23, 42, 0.03); border-color: rgba(15, 23, 42, 0.07); }
+.mls-state svg { flex-shrink: 0; color: var(--mls-violet); }
+
+/* ---- Corps : profil appris ---------------------------------------------- */
+.mls-body { padding-top: 6px; }
+
+.mls-profile {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 14px; margin-bottom: 14px; border-radius: 12px;
+  background: linear-gradient(135deg, rgba(109, 93, 252, 0.08), rgba(56, 189, 248, 0.06));
+  border: 1px solid rgba(109, 93, 252, 0.16);
+}
+.mls-profile__label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--mls-muted); }
+.mls-profile__value {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 15px; font-weight: 700; color: var(--mls-violet);
+}
+.mls-profile__value--pending { color: var(--mls-muted); font-weight: 600; font-style: italic; }
+.mls-profile__conf {
+  font-size: 11px; font-weight: 600; color: var(--mls-muted);
+  padding: 2px 8px; border-radius: 999px; background: rgba(15, 23, 42, 0.05);
+}
+
+.mls-group { margin-bottom: 12px; }
+.mls-group__head {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+  font-size: 12.5px; font-weight: 600; color: var(--mls-muted);
+}
+.mls-group__head svg { color: var(--mls-violet); opacity: 0.85; }
+.mls-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mls-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px; font-size: 12.5px; color: var(--mls-ink);
+  background: rgba(109, 93, 252, 0.07); border: 1px solid rgba(109, 93, 252, 0.16);
+}
+.mls-chip__count {
+  font-size: 11px; font-weight: 700; color: var(--mls-violet);
+  min-width: 16px; text-align: center;
+}
+
+.mls-metrics { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 6px 0 10px; }
+.mls-metric { font-size: 12.5px; color: var(--mls-muted); }
+.mls-metric strong { color: var(--mls-ink); font-weight: 700; }
+
+.mls-count { font-size: 11.5px; color: #9aa0b8; }
+
+/* ---- Effacement --------------------------------------------------------- */
+.mls__footer { margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(15, 23, 42, 0.06); }
+
+.mls-purge {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 13px; border-radius: 10px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  color: #b42318; background: rgba(217, 45, 32, 0.06); border: 1px solid rgba(217, 45, 32, 0.2);
+  transition: background 160ms ease, border-color 160ms ease;
+}
+.mls-purge:hover:not(:disabled) { background: rgba(217, 45, 32, 0.1); border-color: rgba(217, 45, 32, 0.35); }
+.mls-purge:disabled { opacity: 0.5; cursor: default; }
+
+.mls-confirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.mls-confirm > span { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: var(--mls-ink); }
+.mls-confirm > span svg { color: #b42318; }
+.mls-confirm__actions { display: flex; gap: 8px; }
+.mls-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 10px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  border: 1px solid transparent; transition: opacity 160ms ease, background 160ms ease;
+}
+.mls-btn:disabled { opacity: 0.6; cursor: default; }
+.mls-btn--ghost { color: var(--mls-muted); background: rgba(15, 23, 42, 0.04); border-color: rgba(15, 23, 42, 0.1); }
+.mls-btn--ghost:hover:not(:disabled) { background: rgba(15, 23, 42, 0.07); }
+.mls-btn--danger { color: #fff; background: #d92d20; }
+.mls-btn--danger:hover:not(:disabled) { background: #b42318; }
+
+.mls-spin { animation: mls-spin 0.9s linear infinite; }
+@keyframes mls-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .mls-switch__knob, .mls-spin { transition: none; animation: none; }
+}
