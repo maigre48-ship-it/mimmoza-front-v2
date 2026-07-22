@@ -1,10 +1,10 @@
 // src/spaces/copilot/utils/exportCopilotPdf.ts
 // ─────────────────────────────────────────────────────────────────────────────
-// Export PDF de la conversation "Analyste Mimmoza".
+// Export PDF de la conversation "MimmozIA".
 // Méthode : fenêtre d'impression (window.open + document.write + print()).
 // Aucune dépendance externe.
 //
-// v2 : les réponses de l'Analyste sont en Markdown (## titres, **gras**,
+// v2 : les réponses de MimmozIA sont en Markdown (## titres, **gras**,
 //      listes, tableaux |a|b|). On les convertit en HTML propre avant impression,
 //      sinon les marqueurs Markdown s'affichent bruts dans le PDF.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -214,7 +214,7 @@ export async function exportCopilotConversationToPdf(params: {
   }
 
   printWindow.document.write(
-    '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Analyste Mimmoza</title></head>' +
+    '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>MimmozIA</title></head>' +
     '<body style="font-family:Arial,sans-serif;color:#64748b;padding:40px;">Préparation du rapport…</body></html>',
   );
   printWindow.document.close();
@@ -225,12 +225,12 @@ export async function exportCopilotConversationToPdf(params: {
     .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.text.trim())
     .map((m) => {
       const isUser = m.role === 'user';
-      const who = isUser ? 'Vous' : 'Analyste Mimmoza';
+      const who = isUser ? 'Vous' : 'MimmozIA';
       const date = formatDate(m.createdAt);
       const nameColor = isUser ? '#6d28d9' : '#0f172a';
 
       // Question utilisateur : bulle simple (texte brut échappé, sans Markdown).
-      // Réponse Analyste : rendu Markdown complet.
+      // Réponse MimmozIA : rendu Markdown complet.
       const bodyHtml = isUser
         ? `<p style="margin:0;">${escapeHtml(m.text.trim()).replace(/\n/g, '<br>')}</p>`
         : markdownToHtml(m.text);
@@ -259,7 +259,7 @@ export async function exportCopilotConversationToPdf(params: {
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Analyste Mimmoza — Conversation</title>
+  <title>MimmozIA — Conversation</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family:'Segoe UI',Arial,sans-serif; background:#ffffff; color:#1e293b; padding:40px; line-height:1.6; }
@@ -276,7 +276,7 @@ export async function exportCopilotConversationToPdf(params: {
       ${logo
         ? `<img src="${logo}" alt="Mimmoza" style="height:44px;display:block;margin-bottom:8px;">`
         : `<div style="font-size:22px;font-weight:800;color:#4f46e5;margin-bottom:8px;">Mimmoza</div>`}
-      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">Rapport de l'Analyste Mimmoza</div>
+      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">Rapport MimmozIA</div>
     </div>
     <div style="text-align:right;font-size:11px;color:#94a3b8;">
       <div>Généré le ${generatedAt}</div>

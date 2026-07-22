@@ -1,5 +1,5 @@
 // src/spaces/copilot/components/CopilotDrawer.tsx
-import { Download, Plus, Sparkles, X } from 'lucide-react';
+import { Download, Plus, X } from 'lucide-react';
 import { useEffect, type CSSProperties } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useCopilot } from '../hooks/useCopilot';
@@ -8,6 +8,7 @@ import { CopilotIntroView } from '../welcome/CopilotIntroView';
 import { isLandingRoute } from '../welcome/copilotWelcome';
 import { CopilotChat } from './CopilotChat';
 import { CopilotCreditsPill } from './CopilotCreditsPill';
+import { MimmozIAOrb } from './MimmozIAOrb';
 import { COPILOT_THEME as T } from './copilotTheme';
 
 export function CopilotDrawer() {
@@ -48,7 +49,7 @@ export function CopilotDrawer() {
       {isOpen && (
         <div
           onClick={closeCopilot}
-          style={{ position: 'fixed', inset: 0, zIndex: 9998, background: 'rgb(0 0 0 / 0.4)', backdropFilter: 'blur(2px)' }}
+          style={{ position: 'fixed', inset: 0, zIndex: 9998, background: 'rgb(15 23 42 / 0.28)', backdropFilter: 'blur(2px)' }}
         />
       )}
 
@@ -58,7 +59,7 @@ export function CopilotDrawer() {
           position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: 9999,
           width: 'min(440px, 100vw)', display: 'flex', flexDirection: 'column',
           background: T.bg, borderLeft: `1px solid ${T.border}`,
-          boxShadow: '-12px 0 48px rgb(0 0 0 / 0.5)',
+          boxShadow: '-12px 0 48px rgb(76 29 149 / 0.14)',
           animation: 'copilot-slide-in .26s cubic-bezier(.22,1,.36,1)',
         }}>
           {/* Header */}
@@ -67,13 +68,12 @@ export function CopilotDrawer() {
             padding: '14px 16px', borderBottom: `1px solid ${T.borderSoft}`,
           }}>
             <div style={{
-              height: 30, width: 30, borderRadius: 9,
+              height: 32, width: 32, flexShrink: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: `linear-gradient(135deg, ${T.accent}, rgb(79 70 229))`,
             }}>
-              <Sparkles size={16} color="white" />
+              <MimmozIAOrb state="idle" size={30} />
             </div>
-            <div style={{ color: T.text, fontWeight: 700, fontSize: 15 }}>Analyste Mimmoza</div>
+            <div style={{ color: T.text, fontWeight: 700, fontSize: 15 }}>MimmozIA</div>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
               {/* En mode scripte : pas de credits, export ni "nouvelle conversation". */}
               {!scripted && (

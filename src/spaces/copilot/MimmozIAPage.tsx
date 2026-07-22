@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MapPin, Home, TrendingUp, Gauge, LandPlot, Sparkles,
   Paperclip, ImagePlus, Mic, ArrowUp,
-  ShieldCheck, Lock, BrainCircuit, GitBranch, Plus,
+  ShieldCheck, Lock, BrainCircuit, GitBranch, Plus, Menu,
 } from 'lucide-react';
 
 import { CopilotChat } from './components/CopilotChat';
@@ -10,9 +10,11 @@ import { useCopilot } from './hooks/useCopilot';
 import { MimmozIAOrb, type MimmozIAOrbState } from './components/MimmozIAOrb';
 import { MimmozIAQuickAction } from './components/MimmozIAQuickAction';
 import { MimmozIAStatus } from './components/MimmozIAStatus';
+import { MimmozIASidebar } from './MimmozIASidebar';
 import { supabase } from '@/lib/supabaseClient';
 import { track, type MimmoziaEventPayload } from '@/lib/mimmozia/track';
 import './MimmozIAPage.css';
+import { useMimmozIAProfile } from '@/lib/mimmozia/useMimmozIAProfile';
 
 /* =========================================================================
    ⚠️  POINTS D'INTÉGRATION (à vérifier une fois dans useCopilot.ts).
@@ -69,11 +71,7 @@ function deriveActiveTools(a: LooseCopilotApi): string[] {
 
 /**
  * Prénom d'affichage pour l'accueil personnalisé.
- * Best-effort depuis les métadonnées Supabase (signup standard). Dégrade
- * proprement vers `undefined` → l'accueil affiche « Bonjour » sans prénom.
- *
- * ⚠️ SI ton prénom vit dans une table `profiles` (et non dans user_metadata),
- *    dis-le-moi : je remplace ce corps par une lecture de `profiles`.
+ * Source autoritaire : users_profiles.full_name ; repli user_metadata.
  */
 function useDisplayFirstName(): string | undefined {
   const [firstName, setFirstName] = useState<string | undefined>(undefined);
@@ -85,17 +83,15 @@ function useDisplayFirstName(): string | undefined {
         const uid = auth.user?.id;
         const pick = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
 
-        // Source autoritaire : users_profiles.full_name
         let raw: string | undefined;
         if (uid) {
           const { data: profile } = await supabase
             .from('users_profiles')
             .select('full_name')
-            .eq('id', uid)              // ⚠️ si la clé est `user_id`, remplace 'id' par 'user_id'
+            .eq('id', uid)
             .maybeSingle();
           raw = pick(profile?.full_name);
         }
-        // Repli : métadonnées d'inscription
         if (!raw) {
           const m = (auth.user?.user_metadata ?? {}) as Record<string, unknown>;
           raw = pick(m.first_name) ?? pick(m.firstName) ?? pick(m.prenom) ?? pick(m.name);
@@ -116,7 +112,6 @@ interface QuickAction {
   subtitle: string;
   prompt: string;
   side: 'left' | 'right';
-  /** Signal (facultatif) versé au profil dès que l'utilisateur clique l'action. */
   signal?: MimmoziaEventPayload;
 }
 const QUICK_ACTIONS: QuickAction[] = [
@@ -134,10 +129,26 @@ const TRUST = [
   { icon: GitBranch, label: 'Sources et hypothèses traçables' },
 ];
 
+const SIDEBAR_KEY = 'mzia.sidebar.collapsed';
+
 export default function MimmozIAPage() {
   const copilot = useCopilot() as unknown as LooseCopilotApi;
   const firstName = useDisplayFirstName();
+  const { tagline } = useMimmozIAProfile();
   const send = useMemo(() => pickSend(copilot), [copilot]);
+
+  // --- Sidebar : repli (persistant) + drawer mobile ---
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(SIDEBAR_KEY) === '1'; } catch { return false; }
+  });
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const toggleCollapsed = useCallback(() => {
+    setSidebarCollapsed((c) => {
+      const next = !c;
+      try { localStorage.setItem(SIDEBAR_KEY, next ? '1' : '0'); } catch { /* noop */ }
+      return next;
+    });
+  }, []);
 
   // --- Détection du mode conversation (store d'abord, filet local) ---
   const storeActive = hasActiveConversation(copilot);
@@ -170,8 +181,6 @@ export default function MimmozIAPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    // 1er geste tracé : MimmozIA commence à apprendre les habitudes (horaires,
-    // fréquence). No-op si l'utilisateur a désactivé l'apprentissage.
     void track('session_start');
     void copilot.refreshCredits?.();
     void copilot.loadConversations?.();
@@ -220,6 +229,12 @@ export default function MimmozIAPage() {
     setDraft('');
   }, [copilot]);
 
+  // Sélection d'une conversation depuis la sidebar → bascule en mode chat.
+  const handleOpenConversation = useCallback(() => {
+    setWelcomeOverride(false);
+    setOptimistic(true);
+  }, []);
+
   const recognitionRef = useRef<any>(null);
   const toggleDictation = useCallback(() => {
     const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -241,9 +256,36 @@ export default function MimmozIAPage() {
 
   const greeting = firstName ? `Bonjour ${firstName}` : 'Bonjour';
 
+  const pageClass = [
+    'mzia-page',
+    conversationActive ? 'is-chatting' : 'is-welcome',
+    'has-sidebar',
+    sidebarCollapsed ? 'sidebar-collapsed' : '',
+    mobileOpen ? 'mobile-open' : '',
+  ].filter(Boolean).join(' ');
+
   return (
-    <div className={`mzia-page ${conversationActive ? 'is-chatting' : 'is-welcome'}`}>
-      {/* En-tête interne retiré. Seul le bouton "Nouvelle conversation" subsiste en conversation. */}
+    <div className={pageClass}>
+      {/* ============ MENU LATÉRAL ============ */}
+      <button
+        type="button"
+        className="mzia-side__mobiletoggle"
+        onClick={() => setMobileOpen(true)}
+        title="Ouvrir le menu"
+      >
+        <Menu size={18} />
+      </button>
+      <div className="mzia-side__overlay" onClick={() => setMobileOpen(false)} />
+      <MimmozIASidebar
+        copilot={copilot}
+        onNewConversation={handleNewConversation}
+        onOpenConversation={handleOpenConversation}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={toggleCollapsed}
+        onCloseMobile={() => setMobileOpen(false)}
+      />
+
+      {/* Bouton "Nouvelle conversation" flottant conservé en conversation */}
       {conversationActive && (
         <button
           type="button"

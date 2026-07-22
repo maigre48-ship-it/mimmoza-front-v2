@@ -1,0 +1,364 @@
+/* =========================================================================
+   MimmozIASidebar.css — menu latéral MimmozIA
+   Thème clair harmonisé avec la page (violet #6d5dfc, slate).
+   Largeurs : déployé 288px / réduit 64px.
+   ========================================================================= */
+
+.mzia-side {
+  --mz-accent: #6d5dfc;
+  --mz-accent-soft: rgba(109, 93, 252, 0.10);
+  --mz-accent-softer: rgba(109, 93, 252, 0.06);
+  --mz-text: #1e293b;
+  --mz-text-dim: #64748b;
+  --mz-border: rgba(15, 23, 42, 0.08);
+  --mz-hover: rgba(15, 23, 42, 0.04);
+
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 288px;
+  display: flex;
+  flex-direction: column;
+  background: #fbfbfe;
+  border-right: 1px solid var(--mz-border);
+  z-index: 40;
+  font-size: 14px;
+  color: var(--mz-text);
+  transition: width 0.22s ease;
+}
+.mzia-side.is-collapsed { width: 64px; }
+
+/* ------------------------------ En-tête -------------------------------- */
+.mzia-side__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 12px;
+  min-height: 56px;
+}
+.mzia-side__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.mzia-side__collapse {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--mz-text-dim);
+  cursor: pointer;
+}
+.mzia-side__collapse:hover { background: var(--mz-hover); color: var(--mz-text); }
+
+/* ----------------------- Nouvelle conversation ------------------------- */
+.mzia-side__new {
+  margin: 0 12px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 12px;
+  background: var(--mz-accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 6px 18px -8px rgba(109, 93, 252, 0.7);
+  transition: filter 0.15s ease, transform 0.1s ease;
+}
+.mzia-side__new:hover { filter: brightness(1.05); }
+.mzia-side__new:active { transform: translateY(1px); }
+.is-collapsed .mzia-side__new { padding: 10px; margin: 0 auto 10px; width: 40px; }
+
+/* ------------------------------- Rail ---------------------------------- */
+.mzia-side__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+}
+.mzia-rail__btn {
+  display: grid; place-items: center;
+  width: 40px; height: 40px;
+  border: none; border-radius: 10px;
+  background: transparent; color: var(--mz-text-dim);
+  cursor: pointer;
+}
+.mzia-rail__btn:hover { background: var(--mz-accent-soft); color: var(--mz-accent); }
+
+/* ----------------------------- Recherche ------------------------------- */
+.mzia-side__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--mz-hover);
+  color: var(--mz-text-dim);
+}
+.mzia-side__search input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: var(--mz-text);
+}
+
+/* ------------------------------ Scroll --------------------------------- */
+.mzia-side__scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px 12px;
+  scrollbar-width: thin;
+}
+.mzia-side__scroll::-webkit-scrollbar { width: 8px; }
+.mzia-side__scroll::-webkit-scrollbar-thumb { background: rgba(15,23,42,0.12); border-radius: 8px; }
+
+.mzia-side__sectionhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 8px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--mz-text-dim);
+}
+.mzia-side__sectionhead--tight { padding-top: 16px; }
+.mzia-side__addproj {
+  display: grid; place-items: center;
+  width: 24px; height: 24px;
+  border: none; border-radius: 6px;
+  background: transparent; color: var(--mz-text-dim); cursor: pointer;
+}
+.mzia-side__addproj:hover { background: var(--mz-accent-soft); color: var(--mz-accent); }
+
+.mzia-side__hint {
+  padding: 4px 8px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--mz-text-dim);
+}
+.mzia-side__hint--nested { padding-left: 22px; }
+
+/* ------------------------------ Projet --------------------------------- */
+.mzia-proj { margin-bottom: 2px; }
+.mzia-proj__row { display: flex; align-items: center; }
+.mzia-proj__toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: none; border-radius: 8px;
+  background: transparent; color: var(--mz-text);
+  cursor: pointer; font-size: 13.5px; text-align: left;
+}
+.mzia-proj__toggle:hover { background: var(--mz-hover); }
+.mzia-proj__chevron { color: var(--mz-text-dim); transition: transform 0.15s ease; flex-shrink: 0; }
+.mzia-proj__chevron.is-open { transform: rotate(90deg); }
+.mzia-proj__dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.mzia-proj__name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mzia-proj__count { font-size: 11px; color: var(--mz-text-dim); }
+.mzia-proj__del {
+  display: grid; place-items: center;
+  width: 26px; height: 26px;
+  border: none; border-radius: 6px;
+  background: transparent; color: var(--mz-text-dim);
+  cursor: pointer; opacity: 0; transition: opacity 0.12s ease;
+}
+.mzia-proj__row:hover .mzia-proj__del { opacity: 1; }
+.mzia-proj__del:hover { color: #ef4444; background: rgba(239,68,68,0.08); }
+.mzia-proj__items { padding-left: 14px; }
+
+/* --------------------------- Conversation ------------------------------ */
+.mzia-conv {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+}
+.mzia-conv:hover { background: var(--mz-hover); }
+.mzia-conv.is-active { background: var(--mz-accent-soft); }
+.mzia-conv.is-active .mzia-conv__title { color: var(--mz-accent); font-weight: 600; }
+.mzia-conv__main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: none; background: transparent;
+  color: var(--mz-text); cursor: pointer;
+  font-size: 13.5px; text-align: left; overflow: hidden;
+}
+.mzia-conv__main svg { color: var(--mz-text-dim); flex-shrink: 0; }
+.mzia-conv__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mzia-conv__menu {
+  display: grid; place-items: center;
+  width: 28px; height: 28px; margin-right: 4px;
+  border: none; border-radius: 6px;
+  background: transparent; color: var(--mz-text-dim);
+  cursor: pointer; opacity: 0; transition: opacity 0.12s ease;
+}
+.mzia-conv:hover .mzia-conv__menu { opacity: 1; }
+.mzia-conv__menu:hover { background: rgba(15,23,42,0.06); color: var(--mz-text); }
+
+.mzia-conv__dropdown {
+  position: absolute;
+  right: 6px; top: 100%;
+  z-index: 50;
+  min-width: 180px;
+  margin-top: 4px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--mz-border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px -12px rgba(15,23,42,0.3);
+}
+.mzia-dropdown__label { padding: 4px 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--mz-text-dim); }
+.mzia-dropdown__empty { padding: 4px 8px 8px; font-size: 12px; color: var(--mz-text-dim); }
+.mzia-dropdown__item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 8px; border: none; border-radius: 7px;
+  background: transparent; color: var(--mz-text);
+  font-size: 13px; text-align: left; cursor: pointer;
+}
+.mzia-dropdown__item:hover { background: var(--mz-hover); }
+.mzia-dropdown__item.is-current { color: var(--mz-accent); font-weight: 600; }
+.mzia-dropdown__item--muted { color: var(--mz-text-dim); }
+
+/* ------------------------------ Pied ----------------------------------- */
+.mzia-side__foot {
+  border-top: 1px solid var(--mz-border);
+  padding: 8px;
+}
+.mzia-foot__btn {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 9px 10px;
+  border: none; border-radius: 9px;
+  background: transparent; color: var(--mz-text);
+  font-size: 13.5px; cursor: pointer;
+}
+.mzia-foot__btn:hover { background: var(--mz-hover); }
+.mzia-foot__user {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; margin-top: 2px;
+}
+.mzia-foot__avatar {
+  display: grid; place-items: center;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--mz-accent); color: #fff;
+  font-size: 12px; font-weight: 700; flex-shrink: 0;
+}
+.mzia-foot__email {
+  font-size: 12px; color: var(--mz-text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* --------------------------- Paramètres -------------------------------- */
+.mzia-settings {
+  margin: 4px 8px;
+  padding: 12px;
+  border: 1px solid var(--mz-border);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 28px -14px rgba(15,23,42,0.25);
+}
+.mzia-settings__head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--mz-text-dim);
+  margin-bottom: 10px;
+}
+.mzia-settings__head span { display: flex; align-items: center; gap: 6px; }
+.mzia-settings__close {
+  border: none; background: transparent; color: var(--mz-text-dim);
+  font-size: 18px; line-height: 1; cursor: pointer;
+}
+.mzia-settings__row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 6px 0;
+}
+.mzia-settings__row span { display: flex; flex-direction: column; font-size: 13px; }
+.mzia-settings__row small { font-size: 11px; color: var(--mz-text-dim); margin-top: 2px; }
+
+.mzia-toggle {
+  position: relative; width: 40px; height: 22px; flex-shrink: 0;
+  border: none; border-radius: 999px; background: #cbd5e1; cursor: pointer;
+  transition: background 0.18s ease;
+}
+.mzia-toggle.is-on { background: var(--mz-accent); }
+.mzia-toggle__knob {
+  position: absolute; top: 2px; left: 2px;
+  width: 18px; height: 18px; border-radius: 50%; background: #fff;
+  transition: transform 0.18s ease;
+}
+.mzia-toggle.is-on .mzia-toggle__knob { transform: translateX(18px); }
+
+.mzia-settings__danger {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; margin-top: 8px; padding: 9px 10px;
+  border: 1px solid rgba(239,68,68,0.2); border-radius: 9px;
+  background: rgba(239,68,68,0.05); color: #dc2626;
+  font-size: 13px; cursor: pointer;
+}
+.mzia-settings__danger:hover:not(:disabled) { background: rgba(239,68,68,0.1); }
+.mzia-settings__danger:disabled { opacity: 0.6; cursor: default; }
+.mzia-settings__msg { font-size: 12px; color: var(--mz-text-dim); margin-top: 6px; }
+.mzia-settings__link {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 8px; padding: 8px 10px; border-radius: 9px;
+  font-size: 13px; color: var(--mz-text-dim); text-decoration: none;
+}
+.mzia-settings__link:hover { background: var(--mz-hover); color: var(--mz-text); }
+
+/* ============================ Intégration page ========================== */
+/* Décale le contenu de la page pour laisser la place au menu.             */
+.mzia-page.has-sidebar { padding-left: 288px; transition: padding-left 0.22s ease; }
+.mzia-page.has-sidebar.sidebar-collapsed { padding-left: 64px; }
+
+/* Hamburger + overlay mobile */
+.mzia-side__mobiletoggle {
+  display: none;
+  position: fixed; top: 14px; left: 14px; z-index: 45;
+  width: 40px; height: 40px;
+  border: 1px solid var(--mz-border, rgba(15,23,42,0.08)); border-radius: 10px;
+  background: #fff; color: #1e293b; cursor: pointer;
+  place-items: center;
+  box-shadow: 0 4px 14px -6px rgba(15,23,42,0.25);
+}
+.mzia-side__overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 39;
+  background: rgba(15,23,42,0.35);
+}
+
+@media (max-width: 860px) {
+  .mzia-page.has-sidebar,
+  .mzia-page.has-sidebar.sidebar-collapsed { padding-left: 0; }
+
+  .mzia-side {
+    transform: translateX(-100%);
+    transition: transform 0.24s ease;
+    box-shadow: 0 0 40px -10px rgba(15,23,42,0.3);
+  }
+  .mzia-side.is-collapsed { width: 288px; } /* pas de rail réduit sur mobile */
+  .mzia-page.mobile-open .mzia-side { transform: translateX(0); }
+  .mzia-page.mobile-open .mzia-side__overlay { display: block; }
+  .mzia-side__mobiletoggle { display: grid; }
+  /* On masque le bouton de repli sur mobile : le drawer se ferme via l'overlay */
+  .mzia-side__collapse { display: none; }
+}

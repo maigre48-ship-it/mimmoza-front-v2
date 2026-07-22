@@ -1,13 +1,14 @@
 // src/spaces/copilot/components/CopilotEmptyState.tsx
 // V1.4 — questions spécifiques pour /analyse-rapide + mode Avancé masqué sur cette page
 
-import { MapPin, Sparkles } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 import { useActiveCopilotContext } from '../store/activeCopilotContext.store';
 import type { CopilotMode, Vertical } from '../types/copilot.types';
 import {
   getCopilotContextLabel,
   getCopilotQuickQuestions,
 } from '../utils/quickQuestions';
+import { MimmozIAOrb } from './MimmozIAOrb';
 import { COPILOT_THEME as T } from './copilotTheme';
 
 const SUGGESTIONS_QUICK: Record<Vertical, string[]> = {
@@ -78,7 +79,7 @@ function ContextBadge({ label }: { label: string }) {
     <div style={{
       display: 'flex', alignItems: 'center', gap: 6,
       padding: '5px 10px', borderRadius: 8,
-      background: 'rgb(255 255 255 / 0.05)',
+      background: T.accentSoft,
       border: `1px solid ${T.borderSoft}`,
       marginBottom: 18, maxWidth: 300,
     }}>
@@ -97,9 +98,9 @@ function NoDealMessage() {
   return (
     <div style={{
       padding: '10px 14px', borderRadius: 11, marginBottom: 16,
-      background: 'rgb(251 191 36 / 0.08)',
-      border: '1px solid rgb(251 191 36 / 0.25)',
-      color: 'rgb(251 191 36 / 0.9)',
+      background: 'rgb(251 191 36 / 0.12)',
+      border: '1px solid rgb(217 119 6 / 0.30)',
+      color: 'rgb(146 64 14)',
       fontSize: 12, lineHeight: 1.5, maxWidth: 300,
     }}>
       ⚠️ Aucun deal sélectionné. Retourne dans le pipeline pour choisir un deal actif.
@@ -150,16 +151,11 @@ export function CopilotEmptyState({
         justifyContent: 'center', height: '100%',
         padding: 24, textAlign: 'center',
       }}>
-        <div style={{
-          height: 52, width: 52, borderRadius: 16, marginBottom: 16,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: `linear-gradient(135deg, ${T.accent}, rgb(79 70 229))`,
-          boxShadow: `0 8px 28px ${T.accentGlow}`,
-        }}>
-          <Sparkles size={24} color="white" />
+        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <MimmozIAOrb state="idle" size={88} />
         </div>
         <div style={{ color: T.text, fontSize: 17, fontWeight: 700, marginBottom: 6 }}>
-          Analyste Mimmoza
+          MimmozIA
         </div>
         <div style={{ color: T.textMuted, fontSize: 13, marginBottom: 16, maxWidth: 280 }}>
           Mode rapide : questions simples sur la parcelle.
@@ -182,17 +178,12 @@ export function CopilotEmptyState({
       justifyContent: 'center', height: '100%',
       padding: 24, textAlign: 'center',
     }}>
-      <div style={{
-        height: 52, width: 52, borderRadius: 16, marginBottom: 16,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: `linear-gradient(135deg, ${T.accent}, rgb(79 70 229))`,
-        boxShadow: `0 8px 28px ${T.accentGlow}`,
-      }}>
-        <Sparkles size={24} color="white" />
+      <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <MimmozIAOrb state="idle" size={88} />
       </div>
 
       <div style={{ color: T.text, fontSize: 17, fontWeight: 700, marginBottom: 6 }}>
-        Analyste Mimmoza
+        MimmozIA
       </div>
 
       <div style={{ color: T.textMuted, fontSize: 13, marginBottom: 16, maxWidth: 280 }}>
@@ -235,7 +226,7 @@ export function CopilotEmptyState({
 function btnStyle(): React.CSSProperties {
   return {
     padding: '10px 14px', borderRadius: 11, textAlign: 'left',
-    background: 'rgb(255 255 255 / 0.04)', border: `1px solid ${T.borderSoft}`,
+    background: 'rgb(109 93 252 / 0.05)', border: `1px solid ${T.borderSoft}`,
     color: T.text, fontSize: 13, cursor: 'pointer', transition: 'all .15s',
   };
 }
@@ -246,6 +237,6 @@ function hoverOn(e: React.MouseEvent<HTMLButtonElement>) {
 }
 
 function hoverOff(e: React.MouseEvent<HTMLButtonElement>) {
-  e.currentTarget.style.background = 'rgb(255 255 255 / 0.04)';
+  e.currentTarget.style.background = 'rgb(109 93 252 / 0.05)';
   e.currentTarget.style.borderColor = T.borderSoft;
 }
