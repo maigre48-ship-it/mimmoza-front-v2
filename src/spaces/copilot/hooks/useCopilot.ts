@@ -7,6 +7,7 @@ import type {
 } from '../types/copilot.types';
 import { useCopilotContext } from './useCopilotContext';
 import { useCopilotStreaming } from './useCopilotStreaming';
+import { track } from '@/lib/mimmozia/track';
 
 interface SendOptions {
   vertical?: Vertical;
@@ -51,6 +52,18 @@ export function useCopilot() {
 
     const st = useCopilotStore.getState();
     if (st.status === 'streaming') return; // garde anti double-envoi
+
+    // — Apprentissage (fire-and-forget, opt-out aware). Centralisé ici pour
+    //   couvrir TOUTES les surfaces copilot (page MimmozIA + drawer global).
+    void track('search', options?.vertical ? { module: options.vertical } : {});
+    if (options?.parcel) {
+      // ⚠️ champs de ParcelContextRef supposés — à confirmer (insee / city).
+      const p = options.parcel as unknown as Record<string, unknown>;
+      void track('property_view', {
+        insee: (p.insee ?? p.code_insee ?? p.commune_insee) as string | undefined,
+        city: (p.city ?? p.commune ?? p.ville) as string | undefined,
+      });
+    }
 
     const context = buildContext(options);
     const wasNew = !st.currentConversationId;
