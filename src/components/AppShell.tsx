@@ -18,6 +18,7 @@ import {
   Home,
   Layers,
   LayoutDashboard,
+  Lock,
   Map,
   Menu,
   PieChart,
@@ -57,7 +58,7 @@ import { isRouteProtected, getSpacePaywallConfig } from "../lib/billing/paywallC
 // ── Abonnements MimmozIA (remplace les onglets d'espaces) ─────────────────────
 import { MimmozIASubscriptionMenu } from "@/spaces/copilot/components/MimmozIASubscriptionMenu";
 import { usePlanAccess } from "@/lib/billing/usePlanAccess";
-import type { PlanId } from "@/lib/billing/planAccess";
+import { MODULE_LABEL, isModuleSpace, type ModuleSpace, type PlanId } from "@/lib/billing/planAccess";
 import { useCopilot } from "@/spaces/copilot/hooks/useCopilot";
 import { CopilotCreditsPill } from "@/spaces/copilot/components/CopilotCreditsPill";
 
@@ -492,6 +493,82 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
   ],
 };
 
+// ─── SpaceTabs ────────────────────────────────────────────────────────────────
+// Réintroduit les onglets d'espaces disparus lors du passage au menu
+// d'abonnements. Chaque onglet est filtré par la formule courante :
+//   • Apport d'affaires : toujours ouvert
+//   • Pro   : 1 module métier au choix (le premier clic fixe le choix)
+//   • Pro + : les 3 modules métier
+// Les modules non inclus restent VISIBLES (cadenassés) : meilleur levier
+// d'upsell, et ça évite l'effet "l'app a perdu des fonctionnalités".
+function SpaceTabs(props: {
+  currentSpace: Space;
+  onChangeSpace: (space: Space) => void;
+}) {
+  const { currentSpace, onChangeSpace } = props;
+  const navigate = useNavigate();
+  const { access, selectModule } = usePlanAccess();
+
+  // MimmozIA n'est pas un onglet ici : c'est déjà la page d'accueil par défaut.
+  const tabs = SPACES.filter(function (s) { return s.id !== "mimmozia"; });
+
+  function handleClick(spaceId: Space) {
+    const acc = access(spaceId);
+
+    if (acc.unlocked) { onChangeSpace(spaceId); return; }
+
+    if (acc.selectable) {
+      if (!isModuleSpace(spaceId)) return;
+      const ok = window.confirm(
+        "Votre formule Pro inclut un seul module métier.\n\n" +
+        "Activer « " + MODULE_LABEL[spaceId as ModuleSpace] + " » ?\n\n" +
+        "Vous pourrez changer de module depuis votre abonnement."
+      );
+      if (!ok) return;
+      selectModule(spaceId as ModuleSpace);
+      onChangeSpace(spaceId);
+      return;
+    }
+
+    navigate("/abonnement?plan=proplus");
+  }
+
+  return (
+    <div className="flex items-center justify-center gap-1 border-t border-slate-100 py-1.5 overflow-x-auto scrollbar-hide">
+      {tabs.map(function (space) {
+        const Icon   = space.icon;
+        const acc    = access(space.id);
+        const active = currentSpace === space.id;
+
+        const style = active
+          ? { background: getSpaceGradient(space.id), color: "white" }
+          : { color: acc.unlocked ? "#475569" : "#94a3b8" };
+
+        const title = acc.unlocked
+          ? space.description
+          : acc.selectable
+            ? "Formule Pro : 1 module métier au choix — cliquez pour activer celui-ci"
+            : "Disponible avec la formule Pro +";
+
+        return (
+          <button
+            key={space.id}
+            type="button"
+            onClick={function () { handleClick(space.id); }}
+            title={title}
+            className="group flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium whitespace-nowrap transition-all hover:bg-slate-50"
+            style={style}
+          >
+            <Icon className={"h-3.5 w-3.5 " + (active ? "text-white" : "")} />
+            <span>{space.shortLabel}</span>
+            {!acc.unlocked && !active && <Lock className="h-3 w-3 opacity-60" />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── TopNavigation ────────────────────────────────────────────────────────────
 
 function TopNavigation(props: {
@@ -587,8 +664,12 @@ function TopNavigation(props: {
           {/* ── Ligne 1 : logo · abonnements MimmozIA · compte ────────────── */}
           <div className="flex h-16 items-center justify-between gap-4 min-w-0">
             <NavLink
-              to="/"
-              onClick={() => onChangeSpace("none")}
+              to="/mimmozia"
+              onClick={(e) => {
+                e.preventDefault();          // coupe la navigation du NavLink
+                onChangeSpace("none");       // reset visuel de l'espace
+                navigate("/mimmozia");       // navigation unique, maîtrisée
+              }}
               className="flex shrink-0 items-center px-2 py-1.5"
             >
               <MimmozaLogo className="h-12 w-auto object-contain" />
@@ -640,7 +721,10 @@ function TopNavigation(props: {
             </div>
           </div>
 
-          {/* ── Ligne 2 : outils transverses ─────────────────────────────── */}
+          {/* ── Ligne 2 : espaces métier (filtrés par formule) ───────────── */}
+          <SpaceTabs currentSpace={currentSpace} onChangeSpace={onChangeSpace} />
+
+          {/* ── Ligne 3 : outils transverses ─────────────────────────────── */}
           <div className="flex items-center justify-center gap-1 border-t border-slate-100 py-1.5">
             <NavLink
               to="/analyse-rapide"
@@ -724,7 +808,7 @@ function TopNavigation(props: {
               </div>
               <button
                 type="button"
-                onClick={() => { onChangeSpace("none"); navigate("/"); }}
+                onClick={() => { onChangeSpace("none"); navigate("/accueil"); }}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
               >
                 <Home className="h-3.5 w-3.5" />
@@ -761,30 +845,47 @@ function TopNavigation(props: {
               <div className={spaceSections.length > 1 ? "border-t border-slate-100 py-2" : "py-2"}>
                 <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
                   {activeItems.map(function (item, idx) {
-                    const Icon         = item.icon;
-                    const active       = isActivePath(item.path, item.end, item.tabParam);
-                    const resolvedBase = resolvePath(item.path);
-                    const resolvedPath = buildNavItemPath(resolvedBase, item.tabParam);
-                    const itemKey      = item.path + "-" + (item.tabParam ? item.tabParam : "default") + "-" + idx;
-                    const linkStyle    = active ? { background: spaceGradient, color: "white" } : { color: "#64748b" };
-                    const iconColor    = active ? "white" : "#94a3b8";
-                    return (
-                      <span key={itemKey} className="flex items-center gap-2">
-                        {item.separatorBefore && (
-                          <span aria-hidden="true" className="mx-1 h-6 w-px shrink-0 self-center bg-slate-300/80" />
-                        )}
-                        <a
-                          href={resolvedPath}
-                          onClick={function (e) { e.preventDefault(); void onProtectedNavigate(resolvedPath); }}
-                          className={subTabBaseCls}
-                          style={linkStyle}
-                        >
-                          <Icon className="h-4 w-4" style={{ color: iconColor }} />
-                          <span>{item.label}</span>
-                        </a>
-                      </span>
-                    );
-                  })}
+  const Icon = item.icon;
+  const active = isActivePath(item.path, item.end, item.tabParam);
+  const resolvedBase = resolvePath(item.path);
+  const resolvedPath = buildNavItemPath(resolvedBase, item.tabParam);
+  const itemKey =
+    item.path +
+    "-" +
+    (item.tabParam ? item.tabParam : "default") +
+    "-" +
+    idx;
+
+  const linkStyle = active
+    ? { background: spaceGradient, color: "white" }
+    : { color: "#64748b" };
+
+  const iconColor = active ? "white" : "#94a3b8";
+
+  return (
+    <span key={itemKey} className="flex items-center gap-2">
+      {item.separatorBefore && (
+        <span
+          aria-hidden="true"
+          className="mx-1 h-6 w-px shrink-0 self-center bg-slate-300/80"
+        />
+      )}
+
+      <a
+        href={resolvedPath}
+        onClick={function (e) {
+          e.preventDefault();
+          void onProtectedNavigate(resolvedPath);
+        }}
+        className={subTabBaseCls}
+        style={linkStyle}
+      >
+        <Icon className="h-4 w-4" style={{ color: iconColor }} />
+        <span>{item.label}</span>
+      </a>
+    </span>
+  );
+})}
                 </div>
               </div>
             )}
@@ -812,6 +913,7 @@ function MobileDrawer(props: {
   const location = useLocation();
   const navigate  = useNavigate();
   const account = useSupabaseAccount();
+  const { access } = usePlanAccess();
 
   function buildPath(tp: string): string {
     return preserveStudyInPath(tp, location.search);
@@ -957,7 +1059,11 @@ function MobileDrawer(props: {
                   <Icon className="h-4 w-4 text-slate-400" />
                   <span className="text-sm font-medium">{space.label}</span>
                 </span>
-                <span className="ml-7 mt-0.5 text-[11px] text-slate-400">{space.description}</span>
+                <span className="ml-7 mt-0.5 text-[11px] text-slate-400">
+                  {access(space.id).unlocked
+                    ? space.description
+                    : "Non inclus dans votre formule"}
+                </span>
               </button>
             );
           })}
@@ -1028,7 +1134,7 @@ function MobileDrawer(props: {
 
           <div className="mt-4 border-t border-slate-100 pt-4">
             <NavLink
-              to="/"
+              to="/accueil"
               onClick={() => { onChangeSpace("none"); onClose(); }}
               className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-600 hover:bg-slate-50"
             >
@@ -1232,7 +1338,15 @@ export function AppShell(props: AppShellProps) {
       {!isBarePage && (
         <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur-md supports-[backdrop-filter]:bg-white/80 md:hidden">
           <div className="flex h-14 items-center justify-between px-4">
-            <NavLink to="/" onClick={() => onChangeSpace("none")} className="flex items-center">
+            <NavLink
+              to="/mimmozia"
+              onClick={(e) => {
+                e.preventDefault();
+                onChangeSpace("none");
+                navigate("/mimmozia");
+              }}
+              className="flex items-center"
+            >
               <MimmozaLogo className="h-8 w-auto object-contain" />
             </NavLink>
             <div className="flex items-center gap-2">

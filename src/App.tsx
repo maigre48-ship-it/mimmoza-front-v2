@@ -211,6 +211,8 @@ function getSpacePath(space: Space): string {
       return "/marchand-de-bien";
     case "mimmozia":
       return "/mimmozia";
+    case "rehabilitation":
+      return "/rehabilitation";
     default:
       return "/dashboard";
   }
@@ -225,6 +227,10 @@ function AppRoot() {
   const handleChangeSpace = useCallback(
     (space: Space) => {
       setCurrentSpace(space);
+      // "none" = simple sortie d'un espace métier (clic logo, retour accueil).
+      // On ne navigue PAS : le lien appelant gère lui-même sa destination,
+      // sinon on déclenche une navigation parasite vers /dashboard.
+      if (space === "none") return;
       navigate(getSpacePath(space));
     },
     [navigate]
