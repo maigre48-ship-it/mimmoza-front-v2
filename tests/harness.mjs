@@ -152,7 +152,7 @@ const FUNCTION_TESTS = [
     slug: 'etude-parcelle-v1',
     payload: { cadastral_ref: IDU },
     checks: (j) => [
-      ...baseContract(j),
+      ...contratEtudeStatus(j),
       ...contratEtudeV4(j),
       ...invariantsEtude(j),
       ...(GOLDEN ? [
@@ -169,7 +169,7 @@ const FUNCTION_TESTS = [
     slug: 'etude-parcelle-v1',
     payload: { code_insee: INSEE },
     checks: (j) => {
-      const errs = [...baseContract(j), ...contratEtudeV4(j), ...invariantsEtude(j)];
+      const errs = [...contratEtudeStatus(j), ...contratEtudeV4(j), ...invariantsEtude(j)];
       if (j?.stats?.precision !== 'centre_commune') {
         errs.push(`precision attendue 'centre_commune', reçue '${j?.stats?.precision}'`);
       }
@@ -197,7 +197,7 @@ const FUNCTION_TESTS = [
     slug: 'etude-parcelle-v1',
     payload: { cadastral_ref: '64065000ZZ9999' },
     checks: (j) => {
-      const errs = [...baseContract(j), ...contratEtudeV4(j), ...invariantsEtude(j)];
+      const errs = [...contratEtudeStatus(j), ...contratEtudeV4(j), ...invariantsEtude(j)];
       if (j?.stats?.precision === 'parcelle') {
         errs.push("precision='parcelle' sur un IDU inexistant : le cadastre a été considéré comme résolu à tort");
       }
@@ -278,6 +278,334 @@ function baseContract(j) {
 }
 const mustMatch = (s, re, label) => (re.test(String(s)) ? [] : [`attendu ${label} (motif ${re})`]);
 const num = (v, label) => (typeof v === 'number' && !Number.isNaN(v) ? [] : [`${label} manquant ou non numérique`]);
+
+/* ───────────────── Assertions étude de parcelle v4 ─────────────────────── */
+
+const SCOPES = ['parcel', 'nearby', 'municipality', 'intermunicipality', 'department', 'national'];
+const STATUSES = ['confirmed', 'estimated', 'unavailable', 'contradictory', 'not_applicable'];
+
+/** Retrouve un DataEvidence par son id. */
+function evEtude(j, id) {
+  return (j?.stats?.evidences ?? []).find((e) => e?.id === id);
+}
+/** Retrouve une contradiction par son id. */
+function contraEtude(j, id) {
+  return (j?.stats?.coherence?.contradictions ?? []).find((c) => c?.id === id);
+}
+
+/**
+ * INVARIANTS STRUCTURELS — vrais pour toute étude, quelle que soit la commune.
+ * Couvre : compatibilité ascendante v3, présence des quatre couches v4, et les
+ * règles de portée NON NÉGOCIABLES (une donnée communale ne peut jamais être
+ * portée 'parcel').
+ */
+function contratEtudeV4(j) {
+  const e = [];
+  const s = j?.stats;
+  if (!s || typeof s !== 'object') return ['stats absent — les couches v4 ne peuvent pas être vérifiées'];
+
+  // ── Compatibilité ascendante : aucun champ v3 ne doit avoir disparu ──
+  for (const champ of ['parcelle', 'precision', 'sources_ok', 'sources_sans_donnee',
+    'sources_indisponibles', 'duree_ms', 'avertissements', 'note_methode']) {
+    if (s[champ] === undefined) e.push(`RÉGRESSION v3 : stats.${champ} a disparu`);
+  }
+  for (const champ of ['idu', 'code_insee', 'commune', 'surface_m2', 'lat', 'lon']) {
+    if (s.parcelle && s.parcelle[champ] === undefined) e.push(`RÉGRESSION v3 : stats.parcelle.${champ} a disparu`);
+  }
+  if (!Array.isArray(j?.items)) e.push('RÉGRESSION v3 : items n\'est pas un tableau');
+  for (const it of j?.items ?? []) {
+    for (const champ of ['cle', 'label', 'status', 'summary', 'stats', 'duree_ms']) {
+      if (it[champ] === undefined) e.push(`RÉGRESSION v3 : items[${it.cle}].${champ} a disparu`);
+    }
+  }
+
+  // ── Couche 1 : qualification ──
+  if (!Array.isArray(s.evidences) || !s.evidences.length) {
+    e.push('stats.evidences absent ou vide');
+  } else {
+    for (const ev of s.evidences) {
+      if (!ev.id) { e.push('une evidence sans id'); continue; }
+      if (!STATUSES.includes(ev.status)) e.push(`evidence '${ev.id}' : status invalide '${ev.status}'`);
+      if (!SCOPES.includes(ev.scope)) e.push(`evidence '${ev.id}' : scope invalide '${ev.scope}'`);
+      if (typeof ev.confidence !== 'number' || ev.confidence < 0 || ev.confidence > 100) {
+        e.push(`evidence '${ev.id}' : confidence hors bornes (${ev.confidence})`);
+      }
+      if (typeof ev.source !== 'string' || !ev.source.trim()) e.push(`evidence '${ev.id}' : source non renseignée`);
+      if (ev.value === undefined) e.push(`evidence '${ev.id}' : champ value absent (doit valoir null si inconnu)`);
+      // Une donnée absente ne doit jamais porter de confiance résiduelle.
+      if ((ev.status === 'unavailable' || ev.status === 'not_applicable') && ev.confidence !== 0) {
+        e.push(`evidence '${ev.id}' : status '${ev.status}' mais confidence ${ev.confidence} (doit être 0)`);
+      }
+    }
+  }
+
+  // ── RÈGLES DE PORTÉE NON NÉGOCIABLES ──
+  for (const id of ['assainissement', 'loyers_reference', 'zonage_abc', 'fiscalite_tfb']) {
+    const ev = evEtude(j, id);
+    if (ev && ev.scope !== 'municipality') {
+      e.push(`PORTÉE VIOLÉE : '${id}' doit être 'municipality', reçu '${ev.scope}'`);
+    }
+  }
+  for (const ev of s.evidences ?? []) {
+    if (ev.id?.startsWith('risque_') && ev.scope !== 'municipality') {
+      e.push(`PORTÉE VIOLÉE : '${ev.id}' (Géorisques) doit être 'municipality', reçu '${ev.scope}'`);
+    }
+  }
+  // Servitudes et bruit : 'parcel' EXIGE une intersection démontrée.
+  for (const id of ['servitudes', 'classement_sonore']) {
+    const ev = evEtude(j, id);
+    if (ev && ev.scope === 'parcel' && ev.value?.intersection_demontree !== true) {
+      e.push(`PORTÉE VIOLÉE : '${id}' porté 'parcel' sans intersection démontrée`);
+    }
+  }
+  // Le monument à proximité ne devient 'parcel' qu'avec intersection démontrée.
+  const mon = evEtude(j, 'monument_historique');
+  if (mon && mon.scope === 'parcel' && mon.value?.intersection_demontree !== true) {
+    e.push("PORTÉE VIOLÉE : 'monument_historique' porté 'parcel' sans intersection démontrée");
+  }
+
+  // ── Couche 2 : cohérence ──
+  if (!s.coherence || !Array.isArray(s.coherence.contradictions)) {
+    e.push('stats.coherence.contradictions absent');
+  } else {
+    for (const c of s.coherence.contradictions) {
+      if (!['bloquante', 'importante'].includes(c.gravite)) e.push(`contradiction '${c.id}' : gravité invalide '${c.gravite}'`);
+      if (!c.verification || !c.organisme) e.push(`contradiction '${c.id}' : document opposable ou organisme manquant`);
+      // Toute contradiction doit remonter dans les avertissements (exigence).
+      if (!(s.avertissements ?? []).includes(c.message)) {
+        e.push(`contradiction '${c.id}' absente de stats.avertissements`);
+      }
+    }
+  }
+
+  // ── Couche 3 : verdict — trois indicateurs SÉPARÉS ──
+  const v = s.verdict;
+  if (!v) e.push('stats.verdict absent');
+  else {
+    if (!['favorable', 'intermediaire', 'defavorable'].includes(v.potentiel?.niveau)) {
+      e.push(`verdict.potentiel.niveau invalide : '${v.potentiel?.niveau}'`);
+    }
+    if (!['faible', 'modere', 'eleve', 'bloquant', 'indetermine'].includes(v.risque?.niveau)) {
+      e.push(`verdict.risque.niveau invalide : '${v.risque?.niveau}'`);
+    }
+    if (typeof v.fiabilite?.score !== 'number' || v.fiabilite.score < 0 || v.fiabilite.score > 100) {
+      e.push(`verdict.fiabilite.score hors bornes : ${v.fiabilite?.score}`);
+    }
+    if (!['poursuivre', 'poursuivre_sous_conditions', 'suspendre', 'ecarter'].includes(v.recommandation?.valeur)) {
+      e.push(`verdict.recommandation.valeur invalide : '${v.recommandation?.valeur}'`);
+    }
+    // Aucun score global unique ne doit réapparaître.
+    if (v.score_global !== undefined) e.push('un score global unique est réapparu dans le verdict (interdit)');
+    // Les formules doivent être exposées pour que MimmozIA puisse les restituer.
+    for (const k of ['potentiel', 'risque', 'fiabilite', 'recommandation']) {
+      if (!v[k]?.formule) e.push(`verdict.${k}.formule non exposée`);
+    }
+    for (const k of ['potentiel', 'risque', 'fiabilite']) {
+      if (!Array.isArray(v[k]?.facteurs)) e.push(`verdict.${k}.facteurs non exposés`);
+    }
+    // CONSTRUCTIBILITÉ : toujours indéterminable tant que le PLU n'est pas là.
+    if (v.constructibilite?.statut !== 'indeterminable') {
+      e.push(`constructibilité '${v.constructibilite?.statut}' : doit valoir 'indeterminable' sans règlement PLU`);
+    }
+  }
+
+  // ── Couche 4 : plan d'action ──
+  if (!Array.isArray(s.plan_action) || !s.plan_action.length) {
+    e.push('stats.plan_action absent ou vide');
+  } else {
+    let rangPrec = -1;
+    const rang = { bloquante: 0, importante: 1, recommandee: 2 };
+    for (const a of s.plan_action) {
+      if (!(a.priorite in rang)) { e.push(`action : priorité invalide '${a.priorite}'`); continue; }
+      if (rang[a.priorite] < rangPrec) e.push('plan_action non trié par priorité décroissante');
+      rangPrec = rang[a.priorite];
+      for (const champ of ['action', 'motif', 'organisme', 'document']) {
+        if (!a[champ] || !String(a[champ]).trim()) e.push(`action '${a.action}' : champ ${champ} vide`);
+      }
+      // Aucune action générique : le motif doit référencer un constat de l'étude.
+      if (!/constat de cette étude|contradiction détectée/i.test(String(a.motif))) {
+        e.push(`action '${a.action}' : motif non rattaché à un constat de cette étude`);
+      }
+    }
+  }
+
+  // ── Traçabilité ──
+  if (!Array.isArray(s.tableau_sources) || !s.tableau_sources.length) {
+    e.push('stats.tableau_sources absent ou vide');
+  } else {
+    for (const l of s.tableau_sources) {
+      for (const champ of ['donnee', 'organisme', 'jeu_de_donnees', 'portee', 'statut']) {
+        if (l[champ] === undefined || l[champ] === null || l[champ] === '') e.push(`tableau_sources : champ ${champ} vide (${l.donnee})`);
+      }
+      if (!SCOPES.includes(l.portee)) e.push(`tableau_sources '${l.donnee}' : portée invalide '${l.portee}'`);
+    }
+  }
+
+  return e;
+}
+
+/**
+ * INVARIANTS CONDITIONNELS — chacun correspond à un scénario métier du cahier
+ * des charges. Ils se taisent quand leur déclencheur est absent de la réponse
+ * du jour, et échouent quand il est présent et que la règle est violée.
+ */
+function invariantsEtude(j) {
+  const e = [];
+  const s = j?.stats ?? {};
+  const v = s.verdict ?? {};
+  const ko = (s.sources_indisponibles ?? []).map((x) => x.cle);
+  const okc = s.sources_ok ?? [];
+
+  // ── Scénario : risque d'inondation détecté ──
+  const inond = evEtude(j, 'risque_inondation');
+  if (inond?.value?.zone_inondable === true) {
+    if (!['eleve', 'bloquant'].includes(v.risque?.niveau)) {
+      e.push(`zone inondable détectée mais risque='${v.risque?.niveau}' (attendu 'eleve' ou 'bloquant')`);
+    }
+    if (inond.value.ppri === true && v.risque?.niveau !== 'bloquant') {
+      e.push("zone inondable AVEC PPRI mais risque ≠ 'bloquant' (la règle bloquante est absorbante)");
+    }
+    // Un score de sécurité élevé ne doit jamais avoir masqué l'aléa.
+    const sec = evEtude(j, 'score_securite');
+    if (typeof sec?.value === 'number' && sec.value >= 70 && !contraEtude(j, 'inondable_vs_score')) {
+      e.push('zone inondable + score de sécurité ≥ 70 sans contradiction déclarée (masquage possible)');
+    }
+  }
+
+  // ── Scénario : données PPR / PPRI contradictoires ──
+  if (contraEtude(j, 'ppr_vs_ppri')) {
+    const ppr = evEtude(j, 'risque_ppr');
+    if (ppr && ppr.status !== 'contradictory' && ppr.status !== 'unavailable') {
+      e.push(`contradiction PPR/PPRI détectée mais evidence risque_ppr en '${ppr.status}' (attendu 'contradictory')`);
+    }
+    if (!(s.plan_action ?? []).some((a) => /lever la contradiction/i.test(a.action) && a.priorite === 'bloquante')) {
+      e.push('contradiction PPR/PPRI sans action de vérification bloquante correspondante');
+    }
+  }
+
+  // ── Scénario : servitude réellement intersectante ──
+  const serv = evEtude(j, 'servitudes');
+  if (serv?.value?.intersection_demontree === true) {
+    if (serv.scope !== 'parcel') e.push("servitude intersectante démontrée mais scope ≠ 'parcel'");
+    if (v.risque?.niveau !== 'bloquant') e.push("servitude intersectante démontrée mais risque ≠ 'bloquant'");
+  }
+
+  // ── Scénario : monument UNIQUEMENT à proximité ──
+  const mon = evEtude(j, 'monument_historique');
+  if (mon && mon.value?.intersection_demontree !== true) {
+    if (!contraEtude(j, 'monument_proximite')) {
+      e.push('monument signalé sans intersection démontrée, mais aucune réserve de proximité déclarée');
+    }
+    if (!/proximit/i.test(String(mon.warning ?? ''))) {
+      e.push("monument à proximité : la réserve ne dit pas explicitement qu'il n'y a pas d'intersection");
+    }
+  }
+
+  // ── Scénario : assainissement collectif communal, non confirmé à la parcelle ──
+  const assain = evEtude(j, 'assainissement');
+  if (assain && assain.status !== 'unavailable') {
+    if (assain.scope !== 'municipality') e.push("assainissement porté ailleurs qu'en 'municipality'");
+    if (!/ne vaut PAS raccordement|raccordabilité/i.test(String(assain.warning ?? ''))) {
+      e.push('assainissement sans réserve interdisant la lecture « parcelle raccordable »');
+    }
+    if (!(s.plan_action ?? []).some((a) => /raccordement au droit de la parcelle|filière d'assainissement non collectif/i.test(a.action))) {
+      e.push('assainissement connu mais aucune action de vérification de la desserte à la parcelle');
+    }
+  }
+
+  // ── Scénario : comparables DVF avec valeurs extrêmes / catégories mêlées ──
+  const q = s.qualite_dvf;
+  if (q) {
+    if (typeof q.extremes_ecartes !== 'number' || q.extremes_ecartes < 0) e.push('qualite_dvf.extremes_ecartes invalide');
+    if (q.extremes_ecartes > 0 && !q.reserves?.some((r) => /extrême/i.test(r))) {
+      e.push('valeurs extrêmes écartées sans réserve correspondante');
+    }
+    if (q.echantillon_heterogene && !q.reserves?.some((r) => /catégories/i.test(r))) {
+      e.push('échantillon multi-catégories sans réserve correspondante');
+    }
+    const dvf = evEtude(j, 'dvf_prix_m2');
+    if (dvf && (q.echantillon_heterogene || (q.nb_comparables ?? 0) < 5) && dvf.status === 'confirmed') {
+      e.push("échantillon DVF hétérogène ou insuffisant mais evidence dvf_prix_m2 en 'confirmed'");
+    }
+  }
+
+  // ── Scénario : règlement PLU absent → constructibilité indéterminable ──
+  const plu = evEtude(j, 'reglement_plu');
+  if (!plu) e.push("l'absence de règlement PLU n'est pas déclarée comme donnée manquante");
+  else if (plu.status !== 'unavailable') e.push(`reglement_plu en '${plu.status}' : doit rester 'unavailable'`);
+  if (!(s.plan_action ?? []).some((a) => /règlement PLU opposable/i.test(a.action) && a.priorite === 'bloquante')) {
+    e.push("PLU absent mais aucune action bloquante « consulter le règlement PLU opposable »");
+  }
+
+  // ── Scénario : échec partiel d'une API — le rapport sort quand même ──
+  if (ko.length && okc.length && j?.status !== 'ok') {
+    e.push(`échec partiel (${ko.length} source(s) ko) mais status='${j?.status}' au lieu de 'ok'`);
+  }
+  if (ko.length && !(s.avertissements ?? []).some((a) => /absence de donnée ne vaut pas absence de contrainte/i.test(a))) {
+    e.push("sources indisponibles sans l'avertissement « l'absence de donnée ne vaut pas absence de contrainte »");
+  }
+
+  // ── Scénario : timeout d'une source lente ──
+  for (const x of s.sources_indisponibles ?? []) {
+    if (/timeout/i.test(String(x.motif ?? ''))) {
+      if (!(s.plan_action ?? []).some((a) => new RegExp(x.cle, 'i').test(a.motif) || /source indisponible/i.test(a.motif))) {
+        e.push(`source '${x.cle}' en timeout sans action de repli dans le plan`);
+      }
+    }
+  }
+
+  // ── Règle : source risques absente ⇒ risque JAMAIS 'faible' ──
+  if (ko.includes('risques')) {
+    if (v.risque?.niveau !== 'indetermine') {
+      e.push(`source risques indisponible mais risque='${v.risque?.niveau}' (attendu 'indetermine')`);
+    }
+    if (v.recommandation?.valeur !== 'suspendre') {
+      e.push(`risque indéterminé mais recommandation='${v.recommandation?.valeur}' (attendu 'suspendre')`);
+    }
+  }
+
+  // ── Règle : bloquant absorbant, et pas de « favorable » sur données trouées ──
+  if (v.risque?.niveau === 'bloquant' && !['suspendre', 'ecarter'].includes(v.recommandation?.valeur)) {
+    e.push(`risque bloquant mais recommandation='${v.recommandation?.valeur}'`);
+  }
+  if (typeof v.fiabilite?.score === 'number' && v.fiabilite.score < 40 && v.potentiel?.niveau === 'favorable') {
+    e.push(`potentiel 'favorable' avec une fiabilité de ${v.fiabilite.score}/100 (plafonnement non appliqué)`);
+  }
+
+  // ── Règle : aucune capacité constructive ne doit être AVANCÉE ──
+  // On exclut verdict.constructibilite : c'est le bloc qui EXPLIQUE pourquoi
+  // aucune capacité n'est calculable, il cite donc légitimement ces termes.
+  const { constructibilite: _ignore, ...verdictSansConstructibilite } = v;
+  if (/surface de plancher|capacité constructive|emprise au sol maximale|\bCOS\b/i.test(JSON.stringify(verdictSansConstructibilite))) {
+    e.push('le verdict avance une capacité constructive alors que le PLU est absent');
+  }
+
+  return e;
+}
+
+/**
+ * Statut de sortie attendu. 'error' n'est légitime QUE si aucune source n'a
+ * produit de donnée — c'est la dégradation totale prévue par le contrat v3
+ * (l'étude sort quand même son verdict et son plan d'action). Si au moins une
+ * source répond et que le statut reste 'error', c'est une régression.
+ */
+function contratEtudeStatus(j) {
+  const s = j?.stats ?? {};
+  const err = [];
+  if (typeof j?.summary !== 'string' || !j.summary.trim()) err.push('summary absent ou vide');
+  // Le verdict doit être lisible dans le summary : c'est la seule partie que
+  // le LLM lit à coup sûr quand le payload est tronqué.
+  else if (!/Verdict — potentiel .+ risque .+ fiabilité des données/i.test(j.summary)) {
+    err.push('summary sans le verdict à trois indicateurs');
+  }
+  const nbExploitables = (s.sources_ok ?? []).length + (s.sources_sans_donnee ?? []).length;
+  if (['ok', 'no_data'].includes(j?.status)) return err;
+  if (j?.status === 'error' && nbExploitables === 0) {
+    console.log(`      ℹ ${(s.sources_indisponibles ?? []).length} source(s) indisponible(s) → status 'error' (dégradation totale, verdict tout de même produit)`);
+    return [];
+  }
+  return [`status '${j?.status}' avec ${nbExploitables} source(s) exploitable(s)`];
+}
 
 /* ─────────────────────────── Infra d'exécution ─────────────────────────── */
 
