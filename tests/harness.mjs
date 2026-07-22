@@ -127,6 +127,105 @@ const FUNCTION_TESTS = [
   },
   // Sources non testées volontairement : ppr-detail-v1 (parkée, dormante),
   // bruit-classement-v1 (décision en attente). Les ajouter ici le jour où.
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ÉTUDE DE PARCELLE v4 — qualification, cohérence, verdict, plan d'action
+  // --------------------------------------------------------------------------
+  // Quatre scénarios de LOCALISATION, chacun contrôlé par les mêmes invariants
+  // structurels (contratEtudeV4) plus ses assertions propres.
+  //
+  // ⚠️ Les scénarios de DONNÉE (inondation, PPR/PPRI contradictoires, servitude
+  // intersectante, monument à proximité, DVF extrêmes, timeout, échec partiel)
+  // ne peuvent pas être FORCÉS depuis l'extérieur : ils dépendent de ce que les
+  // API amont renvoient le jour du run, et le harnais n'a pas de couche de
+  // simulation. Ils sont donc exprimés en INVARIANTS CONDITIONNELS dans
+  // invariantsEtude() : « si la donnée X apparaît, alors la règle Y doit tenir ».
+  // C'est ce qu'on veut réellement vérifier en non-régression — la règle, pas la
+  // présence fortuite d'un aléa sur la commune étalon. Chaque invariant se tait
+  // quand son déclencheur est absent, et échoue bruyamment quand il est présent
+  // et que la règle est violée.
+  //   → lancer ciblé : node tests/harness.mjs --only etude
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    // Cas 1 — parcelle localisée à la parcelle (IDU valide).
+    id: 'etude-parcelle',
+    slug: 'etude-parcelle-v1',
+    payload: { cadastral_ref: IDU },
+    checks: (j) => [
+      ...baseContract(j),
+      ...contratEtudeV4(j),
+      ...invariantsEtude(j),
+      ...(GOLDEN ? [
+        mustMatch(String(j?.stats?.precision ?? ''), /^parcelle$/, "precision='parcelle' (IDU résolu au cadastre)"),
+        num(j?.stats?.parcelle?.surface_m2, 'contenance cadastrale'),
+      ] : []),
+    ],
+  },
+  {
+    // Cas 2 — parcelle NON localisée : repli centre commune, et surtout les
+    // sources `needs: 'geo'` ne doivent PAS avoir été interrogées (sinon les
+    // servitudes du centre-bourg passeraient pour parcellaires).
+    id: 'etude-commune',
+    slug: 'etude-parcelle-v1',
+    payload: { code_insee: INSEE },
+    checks: (j) => {
+      const errs = [...baseContract(j), ...contratEtudeV4(j), ...invariantsEtude(j)];
+      if (j?.stats?.precision !== 'centre_commune') {
+        errs.push(`precision attendue 'centre_commune', reçue '${j?.stats?.precision}'`);
+      }
+      // GARDE DE PRÉCISION — la régression la plus dangereuse du lot.
+      const ko = (j?.stats?.sources_indisponibles ?? []).map((s) => s.cle);
+      for (const geo of ['servitudes', 'bruit']) {
+        if (!ko.includes(geo)) {
+          errs.push(`GARDE DE PRÉCISION ROMPUE : source geo '${geo}' interrogée sans localisation parcellaire`);
+        }
+      }
+      // Les données géométriques ne doivent jamais être portées 'parcel' ici.
+      for (const id of ['altitude', 'pente', 'potentiel_solaire']) {
+        const e = evEtude(j, id);
+        if (e && e.scope === 'parcel') errs.push(`'${id}' porté 'parcel' alors que precision='centre_commune'`);
+        if (e && e.status === 'confirmed') errs.push(`'${id}' déclaré 'confirmed' alors que mesuré au centre commune`);
+      }
+      return errs;
+    },
+  },
+  {
+    // Cas 3 — référence cadastrale invalide (section/numéro inexistants). Le
+    // code INSEE reste dérivable des 5 premiers caractères → repli commune
+    // attendu, jamais une erreur ni une surface inventée.
+    id: 'etude-idu-invalide',
+    slug: 'etude-parcelle-v1',
+    payload: { cadastral_ref: '64065000ZZ9999' },
+    checks: (j) => {
+      const errs = [...baseContract(j), ...contratEtudeV4(j), ...invariantsEtude(j)];
+      if (j?.stats?.precision === 'parcelle') {
+        errs.push("precision='parcelle' sur un IDU inexistant : le cadastre a été considéré comme résolu à tort");
+      }
+      if (j?.stats?.parcelle?.surface_m2 != null) {
+        errs.push('une contenance est renvoyée pour une parcelle inexistante (valeur inventée)');
+      }
+      const surf = evEtude(j, 'surface_cadastrale');
+      if (surf && surf.status !== 'unavailable') {
+        errs.push(`surface_cadastrale devrait être 'unavailable', reçue '${surf.status}'`);
+      }
+      return errs;
+    },
+  },
+  {
+    // Cas 4 — aucune localisation exploitable. Contrat de sortie spécifique :
+    // status 'no_localization', stats null, HTTP 200 quand même.
+    id: 'etude-sans-localisation',
+    slug: 'etude-parcelle-v1',
+    payload: {},
+    checks: (j) => {
+      const errs = [];
+      if (j?.status !== 'no_localization') errs.push(`status attendu 'no_localization', reçu '${j?.status}'`);
+      if (typeof j?.summary !== 'string' || !j.summary.trim()) errs.push('summary absent ou vide');
+      if (j?.stats !== null) errs.push('stats devrait être null sans localisation');
+      if (!Array.isArray(j?.items) || j.items.length) errs.push('items devrait être un tableau vide');
+      return errs;
+    },
+  },
 ];
 
 // ── Étage B : bout-en-bout copilot (mode quick = ton onglet réel) ──────────
