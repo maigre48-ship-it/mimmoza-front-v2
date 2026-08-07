@@ -371,9 +371,17 @@ async function prefetchMarcheRisquesIfNeeded(
     if (res.ok) {
       const data: MarketStudyResult = res.data;
       const s = data.scores;
+      // ⚠️ Correctif B — `?? undefined` : `MarcheRisquesSaved` exprime l'absence par
+      //   `undefined` (champs optionnels), le back par `null`. La traduction est
+      //   fidèle ; un `?? 0` aurait réintroduit le défaut qu'on vient de supprimer.
       patchMarcheRisquesForDeal(dealId, {
-        data, scoreGlobal: s?.global,
-        breakdown: { demande: s?.demande, offre: s?.offre, accessibilite: s?.accessibilite, environnement: s?.environnement },
+        data, scoreGlobal: s?.global ?? undefined,
+        breakdown: {
+          demande: s?.demande ?? undefined,
+          offre: s?.offre ?? undefined,
+          accessibilite: s?.accessibilite ?? undefined,
+          environnement: s?.environnement ?? undefined,
+        },
         updatedAt: new Date().toISOString(),
       });
       console.log("[AnalysePage] Prefetch Marché/Risques OK.");

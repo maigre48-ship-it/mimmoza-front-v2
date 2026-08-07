@@ -107,16 +107,31 @@ export const MarketStudyKpis: React.FC<MarketStudyKpisProps> = ({
                   : "N/A"
               }
             />
-            {data.insee.taux_chomage !== undefined && (
+            {/* Correctif B — `taux_chomage` ne porte plus que la MESURE et peut
+                valoir null : le garde `!== undefined` laissait alors passer un
+                null et plantait sur `.toFixed`. L'estimation départementale vit
+                dans `taux_chomage_estime` et n'est affichée que nommée. */}
+            {data.insee.taux_chomage != null ? (
               <KpiCard
                 label="Chômage"
                 value={`${data.insee.taux_chomage.toFixed(1)}%`}
               />
-            )}
-            {data.insee.revenu_median !== undefined && (
+            ) : data.insee.taux_chomage_estime != null ? (
+              <KpiCard
+                label="Chômage"
+                value={`${data.insee.taux_chomage_estime.toFixed(1)}%`}
+                sublabel="Estimation départementale"
+              />
+            ) : null}
+            {data.insee.revenu_median != null && (
               <KpiCard
                 label="Revenu médian"
                 value={`${formatNumber(data.insee.revenu_median)} €`}
+                sublabel={
+                  data.insee.revenu_median_source === "dept_fallback"
+                    ? "Estimation départementale"
+                    : undefined
+                }
               />
             )}
           </div>

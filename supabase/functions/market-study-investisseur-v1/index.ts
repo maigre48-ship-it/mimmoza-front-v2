@@ -1,5 +1,238 @@
 // ============================================================================
-// MARKET STUDY INVESTISSEUR V1 - VERSION 1.3.8
+// MARKET STUDY INVESTISSEUR V1 - VERSION 1.5.1
+// ============================================================================
+// CHANGEMENTS v1.5.1 — deux défauts révélés par la première étude en réel
+// MARQUEUR DE VERSION : constante `ROAD_SCORE_METHOD`
+//
+// 1. FIX — `nearest_stop_m` ne porte plus une distance de gare.
+//    v1.5.0 y rangeait, en régime routier, la distance à la gare TER la plus
+//    proche. L'écran et le Copilot l'ont fidèlement affichée sous le libellé du
+//    champ : « Arrêt le plus proche : ~4 700 m » — pour la gare de
+//    Saint-Jean-de-Luz, à 4,7 km, qu'on ne rejoint pas à pied. Le champ disait
+//    « arrêt », le contenu était une gare. C'est le défaut du pilier
+//    « environnement » qui mesurait des équipements : le nom lu à la place du
+//    contenu. Le champ vaut désormais `null` en régime routier ; la distance à
+//    la gare vit dans `rail.nearest_station_km`, dont le nom est exact.
+//
+// 2. FIX — la recette du score voyage avec le score.
+//    v1.5.0 exposait la méthode de calcul des MINUTES (`estimation_method`)
+//    mais rien sur la composition du SCORE. Interrogé sur le 83/100 d'Ascain,
+//    le Copilot a comblé : « il mesure la facilité d'accès à un bassin
+//    d'emplois et de services en voiture, via la grille zonage INSEE ». Deux
+//    inventions — aucune donnée de bassin d'emploi n'entre dans ce calcul (le
+//    critère a été écarté faute de centroïdes communaux), et la grille INSEE ne
+//    mesure rien, elle choisit le régime.
+//    Leçon déjà rencontrée trois fois cette semaine : un signal d'honnêteté ne
+//    sert à rien s'il n'est pas relayé. Ici il n'existait même pas.
+//    → `ROAD_SCORE_METHOD` / `TRANSIT_SCORE_METHOD` énoncent le barème, la
+//      source unique, et surtout ce que le score NE mesure PAS. Exposés dans
+//      `meta.perimetres.accessibilite_score_methode` et dans `scoring_details`.
+//
+// ============================================================================
+// MARKET STUDY INVESTISSEUR V1 - VERSION 1.5.0
+// ============================================================================
+// CHANGEMENTS v1.5.0 — l'accessibilité à deux régimes
+// MARQUEUR DE VERSION : constante `ROAD_REGIME_SCORE_CAP`
+//
+// Le problème. Depuis v1.4.0, Ascain ressortait avec un pilier accessibilité
+// ÉCARTÉ : Overpass ne trouvait aucun arrêt dans le rayon d'1 km, et l'on
+// refusait — à raison — de transformer ce vide en 0/100. Le verdict restait
+// pourtant faux : la commune est desservie par le réseau Txik Txak, la gare TER
+// de Saint-Jean-de-Luz est à 6,5 km et la gare TGV de Bayonne à 19,5 km.
+//
+// La cause n'était pas le seuil mais l'UNITÉ DE MESURE. Un rayon d'1 km mesure
+// la marche vers un arrêt : c'est le bon critère dans une ville dense, et un
+// critère sans objet dans une ceinture urbaine, où l'on rejoint une gare en
+// voiture. Un seul barème, celui de la ville, était appliqué au territoire
+// entier — et hors des villes il ne mesurait rien, ce qui se lisait « pas de
+// donnée » alors que la donnée existait, ailleurs.
+//
+// La correction. Deux régimes, choisis sur `niveau_7` de la grille de densité
+// INSEE — les sept niveaux, pas un binaire :
+//   • niveau_7 1-3 → régime TRANSPORTS EN COMMUN. Barème inchangé.
+//   • niveau_7 4-7 → régime ROUTIER. Gare TER/TGV la plus proche, distance
+//     convertie en minutes de voiture ESTIMÉES, densité du réseau TER à 20 km.
+//
+// ⚠️ `niveau_7` n'est pas `niveau_3`. Ascain est URBAINE au sens niveau_3 = 2 et
+//    relève du régime ROUTIER au sens niveau_7 = 4. Les deux prédicats répondent
+//    à deux questions distinctes ; les confondre est la faute corrigée sur
+//    `isRural` dans smartscore v4.6, qui faisait un libellé et une politique de
+//    rayons avec la même variable.
+//
+// ⚠️ Source. `mobility_stops` en mode 'ter' (2 628) et 'tgv' (145) couvre la
+//    France entière — vérifié : lat 42,43-51,02, lon -4,39-8,18. Le mode
+//    'metro' (53 967) et la table `gtfs_stops` (119 428) sont en revanche
+//    bornés à lat 47,96-49,46 / lon 1,15-3,56, c'est-à-dire l'Île-de-France
+//    seule. Les utiliser hors IdF renverrait zéro, et ce zéro se lirait comme
+//    une absence de desserte. Ne pas s'en servir ici.
+//
+// ⚠️ Les minutes sont une ESTIMATION, jamais une mesure : distance à vol
+//    d'oiseau × 1,30 ÷ 55 km/h. Le champ `estimated: true` et
+//    `estimation_method` accompagnent le chiffre partout où il circule.
+//
+// ⚠️ Plafond. Le régime routier est plafonné à 85/100. Sans ce plafond Ascain
+//    sortait à 100 — le score d'une adresse parisienne — par cumul des bonus
+//    TGV et densité TER. Deux régimes qui ne mesurent pas la même chose ne
+//    peuvent pas partager la même échelle haute.
+//
+// ⚠️ Les bonus/malus du barème urbain (« Pas de transport lourd », -20 sur
+//    bureaux) sont désormais conditionnés au régime. En régime routier,
+//    `has_metro_train` et `has_tram` valent false par construction : appliquer
+//    ce bloc aurait infligé un malus de -20 à une commune dont on venait
+//    justement de mesurer l'accessibilité autrement.
+//
+// Non fait, et volontairement : le second critère « pôle d'emploi le plus
+// proche » supposait des centroïdes communaux. Il n'en existe aucun en base —
+// `v_commune_population` et `epci_communes` n'ont pas de coordonnées, `dvf_geo`
+// est vide. Le seul substitut, le centroïde des équipements BPE, ne couvre que
+// 23 441 communes sur 34 871, et manque précisément les petites communes
+// rurales que ce régime vise. On aurait reconstruit le défaut qu'on corrige :
+// une source lacunaire produisant quand même une valeur. Le critère retenu à la
+// place — qualité du nœud ferroviaire, gare TGV et densité TER — s'appuie sur
+// la même source complète. Le chargement des 34 875 centroïdes reste ouvert.
+//
+// ============================================================================
+// MARKET STUDY INVESTISSEUR V1 - VERSION 1.4.4
+// ============================================================================
+// CHANGEMENTS v1.4.4 — le périmètre de chaque source, et non un rayon global
+//
+// Dernier maillon de la même série. `meta.radius_km` était exposé seul, et se
+// lisait naturellement comme le rayon de toute l'étude : « les scores demande,
+// offre et environnement sont calculés sur un rayon de 5 km autour de la
+// parcelle ». Faux — les trois sont COMMUNAUX (INSEE, DVF filtré commune, BPE
+// filtré depcom). En réalité `radius_km` ne gouverne QUE fetchEhpadConcurrence :
+// pour un projet logement, il ne sert strictement à rien.
+//   → `meta.perimetres` énumère ce que chaque source couvre réellement, et dit
+//     explicitement à quoi `radius_km` s'applique — ou qu'il ne s'applique à
+//     rien. Relayé au Copilot par copilot-chat.
+//
+// ============================================================================
+// MARKET STUDY INVESTISSEUR V1 - VERSION 1.4.3
+// ============================================================================
+// CHANGEMENTS v1.4.3 — le pilier « environnement » ne mesure pas l'environnement
+//
+// Observé sur Ascain : le Copilot a conclu « un environnement qui score
+// fortement (80/100), ce qui reflète un cadre favorable ». Or ce pilier vaut
+// `bpe.score` majoré de bonus d'ÉQUIPEMENT : 65 + 10 (≥3 écoles) + 5
+// (≥5 commerces) = 80. Il ne dit rien du cadre de vie, du paysage, du bruit ni
+// des risques. Le nom a été lu à la place du contenu — et c'est notre faute,
+// pas celle du modèle.
+//   → Un `lexique_scores` est transmis au Copilot par copilot-chat, qui nomme
+//     ce que chaque pilier mesure réellement.
+//
+// - FIX ASYMÉTRIE : les bonus d'équipement ne sont plus accordés sur un extrait
+//   BPE partiel. Une catégorie absente ne pénalise jamais (aucun malus n'existe
+//   dans ce calcul) tandis qu'une catégorie présente accorde un bonus : sur un
+//   extrait incomplet, le score ne pouvait donc QUE monter, précisément là où
+//   la donnée est la moins fiable. Ascain cumulait les deux défauts — extrait de
+//   18 lignes, confiance « faible », et +10 pour « ≥ 3 écoles » accordé sur les
+//   3 seules lignes C108 que contenait l'extrait.
+//
+// ============================================================================
+// MARKET STUDY INVESTISSEUR V1 - VERSION 1.4.2
+// ============================================================================
+// CHANGEMENTS v1.4.2 — les décomptes BPE et leurs zéros
+//
+// Observé sur Ascain : « Total équipements dans le rayon : 18 · Pharmacies 0 ·
+// Supermarchés 0 ». Deux erreurs de lecture, aucune inventée par le modèle :
+//   • le BPE est filtré sur `depcom`, donc sur la COMMUNE — jamais sur un rayon.
+//     `radius_km` ne s'applique qu'au transport ;
+//   • l'extrait ne contient que 18 lignes (A206, B202×3, B206, B207×9, C108×3,
+//     D307) et aucun code D301. « 0 pharmacie » traduit une lacune de la source,
+//     pas une commune sans pharmacie — invraisemblable à 4 658 habitants.
+// `bpe_quality` calculait déjà `full_coverage` et `zero_categories` : personne
+// ne les lisait. On y ajoute le périmètre et un avertissement explicite sur les
+// zéros, désormais relayés au Copilot par copilot-chat.
+//
+// ============================================================================
+// MARKET STUDY INVESTISSEUR V1 - VERSION 1.4.1
+// ============================================================================
+// CHANGEMENTS v1.4.1 — géolocalisation de la parcelle (fix « Indisponible »)
+//
+// Symptôme : sur 64065000AI0002, deux réponses « 400 Impossible de
+// géolocaliser » avant que le copilote ne réussisse au 3e essai. Cause :
+// geocodeParcel → geocodeInseeCode → geo.api.gouv.fr, service injoignable
+// depuis l'infra Supabase. Le contournement existait dans risk-study v1.0.3,
+// il n'avait jamais été porté ici. Le succès final venait d'un géocodage par
+// NOM de commune via la BAN — donc de coordonnées de CENTRE-BOURG : le
+// « rayon d'analyse de 5 km » n'était pas centré sur le terrain, sans que rien
+// ne le signale.
+// - `geocodeParcel` interroge désormais Apicarto IGN (service cadastral
+//   officiel, sans clé) et calcule le centroïde de la géométrie réelle.
+//   Vérifié : 64065000AI0002 → 43,3480 / −1,6210, contenance 2 283 m².
+// - La parcelle est testée en PREMIER dans resolveCoordinates (elle était en
+//   4e position, après un géocodage par ville moins précis).
+// - Repli commune conservé, mais ANNONCÉ dans le label (« position approchée :
+//   centre de la commune »).
+// - `resolveCommune` accepte un INSEE connu et bascule sur un repli hors-ligne
+//   (département + libellé lu dans insee_grille_densite) si geo.api se tait.
+// ⚠️ `cadastre_parcelles` en base ne couvre que l'Île-de-France (75, 77, 78,
+//    91-95, 3,7 M parcelles) : aucune résolution locale possible hors IdF, d'où
+//    la dépendance à Apicarto.
+//
+// CHANGEMENTS v1.4.0 — périmètre DVF et urbanité déterministe
+//
+// 1. FIX CRITIQUE — DVF interrogeait le DÉPARTEMENT, pas la commune.
+//    `fetchDvfFromSupabase(dept, _communeNom)` — le nom de commune était
+//    préfixé d'un underscore, donc volontairement inutilisé. Les trois requêtes
+//    filtraient sur `.eq("code_departement", dept)` avec `.limit(500)`.
+//    Conséquences, toutes présentées à l'utilisateur comme des faits locaux :
+//      • la médiane départementale passait pour le prix du marché de la parcelle ;
+//      • « 500 transactions » était le PLAFOND de la requête, pas un décompte,
+//        et valait donc 500 pour toutes les communes de France ;
+//      • la « fourchette » min–max reflétait les bornes de filtrage du code
+//        (500 / 25 000 €/m²) autant que le marché.
+//    Mesure sur Ascain (INSEE 64065) : l'étude affichait 4 184 €/m², soit
+//    exactement la médiane des 500 dernières mutations du 64. Le marché communal
+//    réel est de 5 902 €/m² sur 95 ventes → sous-évaluation de 29 %.
+//    → Filtre communal via `code_commune`. ⚠️ Cette colonne est stockée SANS
+//      zéro de tête ('65' pour Ascain, pas '065') : cf. dvfCodeCommuneFromInsee.
+//    → Repli départemental conservé sous 10 ventes communales, mais DÉCLARÉ
+//      (`perimetre`, `perimetre_label`) — jamais un chiffre départemental
+//      déguisé en local.
+//    → `nb_transactions_plafonne` expose la troncature.
+//
+// 2. FIX SCORING — les seuils du pilier offre étaient faussés par le point 1.
+//    `nb_transactions > 50` était vrai en permanence (500) : le bonus de +15
+//    « marché liquide » était acquis d'office et le malus des marchés atones
+//    jamais déclenché. Le seuil `prix_m2_median > 5000` s'évaluait sur une
+//    médiane départementale — Ascain ratait le bonus avec 4 184 alors que la
+//    commune vaut 5 902. Ces deux règles ne s'appliquent plus qu'en périmètre
+//    communal : au niveau départemental, le volume ne dit rien du marché local.
+//
+// 3. FIX — `is_urban` ne dépend plus d'Overpass ni de la population.
+//    v1.3.7 décidait de l'urbanité selon le SUCCÈS d'un appel Overpass, avec
+//    repli sur un seuil de 50 000 habitants. Mêmes entrées, verdict différent
+//    selon la santé d'un serveur tiers — défaut déjà corrigé côté
+//    market-study-promoteur-v1 (v1.3.24), jamais porté ici.
+//    Faux négatif observé : Ascain, 4 658 hab., déclarée « zone non-urbaine »
+//    alors que la grille INSEE la classe niveau_3 = 2, niveau_7 = 4
+//    « Ceintures urbaines ». Elle n'est PAS rurale au sens INSEE.
+//    → Lecture de `insee_grille_densite` (34 875 communes, millésime 2026),
+//      déjà en base depuis le 05/08/2026. niveau_3 ∈ {1,2} = urbain.
+//    → Overpass ne sert plus qu'à mesurer la DESSERTE. Son indisponibilité
+//      donne `coverage: 'error'` sans altérer le verdict d'urbanité.
+//    → `is_urban_source` distingue 'insee' (déterministe) de 'population'
+//      (repli heuristique, à ne pas présenter comme un fait).
+//
+// 4. FIX — l'exclusion du pilier accessibilité a maintenant DEUX motifs.
+//    Corriger le point 3 seul aurait aggravé la situation : Ascain devenant
+//    urbaine, le pilier serait entré dans le calcul avec le score 0 d'un
+//    Overpass n'ayant trouvé aucun arrêt — alors que la commune est desservie
+//    par Txik Txak et que la gare TER de Saint-Jean-de-Luz est à 5,9 km. On
+//    aurait troqué un faux « non applicable » contre un faux « 0/100 », ce qui
+//    est pire : le zéro entre dans la moyenne, l'exclusion non.
+//    → Le pilier n'est évalué que si une desserte a été RÉELLEMENT mesurée
+//      (coverage 'ok' ET au moins un arrêt). Sinon il est écarté avec un motif
+//      distinct : « non applicable » (rural INSEE) vs « non mesuré » (source
+//      muette, ou aucun arrêt référencé dans OSM).
+//    ⚠️ Reste à faire : la métrique d'accessibilité à deux régimes (niveaux
+//      INSEE 1-3 → transports en commun ; 4-7 → minutes de voiture jusqu'à la
+//      gare / au pôle d'emploi / à l'échangeur). Un promoteur à Ascain ne vend
+//      pas « à 300 m du tram », il vend « 20 minutes de Saint-Jean-de-Luz ».
+//
+// ============================================================================
+// VERSION 1.3.8
 // ============================================================================
 // CHANGEMENTS v1.3.8:
 // - FEATURE DVF : calcul de evolution_prix_pct par comparaison de deux périodes
@@ -38,13 +271,38 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 type ProjectType = 'logement' | 'commerce' | 'bureaux' | 'hotel' | 'residence_etudiante' | 'ehpad';
 type Coverage = 'ok' | 'no_data' | 'partial' | 'error';
 
-const VERSION = "1.3.8";
+const VERSION = "1.5.1";
 const GEO_API_BASE = "https://geo.api.gouv.fr";
 const OVERPASS_API_URL = "https://overpass-api.de/api/interpreter";
 const BAN_API_URL = "https://api-adresse.data.gouv.fr";
 
 // v1.3.7 : seuil de population pour qualifier une commune d'urbaine
 const URBAN_POP_THRESHOLD = 50_000;
+
+// ── v1.5.0 — Paramètres du régime d'accessibilité ROUTIER ───────────────────
+// Ces quatre constantes gouvernent une ESTIMATION, jamais une mesure. Elles
+// sont nommées, exposées dans la réponse et commentées pour que le chiffre
+// affiché soit auditable : personne ne doit avoir à deviner d'où sortent les
+// minutes annoncées.
+//
+// Facteur de sinuosité : rapport moyen entre la distance routière réelle et la
+// distance à vol d'oiseau. 1,30 est la valeur usuelle en France hors montagne.
+const ROAD_DETOUR_FACTOR = 1.30;
+// Vitesse moyenne porte-à-porte hors agglomération dense, feux et traversées
+// de bourgs compris. Volontairement prudente.
+const ROAD_AVG_SPEED_KMH = 55;
+// Rayon de recherche des gares. 60 km : au-delà, une gare ne structure plus
+// l'accessibilité quotidienne d'un logement.
+const RAIL_SEARCH_RADIUS_KM = 60;
+// Rayon de comptage de la densité du réseau TER.
+const RAIL_DENSITY_RADIUS_KM = 20;
+// ⚠️ Plafond du régime routier. Les deux régimes ne mesurent PAS la même chose :
+// être à 9 minutes de voiture d'un TER n'équivaut pas à être à 300 m d'un métro.
+// Sans ce plafond, Ascain sortait à 100/100 — soit le score d'une adresse
+// parisienne — ce qui est exactement la forme d'inflation que la chaîne
+// s'emploie à supprimer. Le régime routier plafonne donc sous le régime
+// transports en commun, et le libellé dit lequel a été appliqué.
+const ROAD_REGIME_SCORE_CAP = 85;
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -375,12 +633,93 @@ async function geocodeInseeCode(codeInsee: string): Promise<GeocodedLocation | n
   } catch { return null; }
 }
 
+// ── v1.4.1 — Résolution de parcelle par Apicarto IGN ────────────────────────
+// AVANT : geocodeParcel extrayait l'INSEE des 5 premiers caractères puis
+// appelait geocodeInseeCode → geo.api.gouv.fr, service injoignable depuis
+// l'infra Supabase (contournement déjà posé dans risk-study v1.0.3, jamais
+// porté ici). Résultat observé sur 64065000AI0002 : deux réponses
+// « 400 Impossible de géolocaliser » avant que le copilote ne se rabatte sur un
+// géocodage par NOM de commune via la BAN.
+// Deux défauts en un :
+//   1. l'étude échouait alors que l'identifiant portait toute l'information ;
+//   2. quand elle finissait par passer, les coordonnées étaient celles du
+//      CENTRE-BOURG — le « rayon d'analyse de 5 km » n'était donc pas centré
+//      sur la parcelle. Silencieux, et invisible dans la réponse.
+// Apicarto est le service cadastral officiel de l'IGN, sans clé, et renvoie la
+// géométrie réelle. Note : `cadastre_parcelles` en base ne couvre que
+// l'Île-de-France (75, 77, 78, 91-95) — aucune résolution locale possible ici.
+const APICARTO_CADASTRE_URL = "https://apicarto.ign.fr/api/cadastre/parcelle";
+
+// Centroïde d'une géométrie GeoJSON (Polygon / MultiPolygon), sans dépendance.
+// Moyenne des sommets de l'anneau extérieur : suffisant pour centrer un rayon
+// de plusieurs kilomètres sur une parcelle de quelques milliers de m².
+function centroidFromGeoJson(geometry: unknown): { lat: number; lon: number } | null {
+  const g = geometry as { type?: string; coordinates?: unknown };
+  if (!g?.coordinates) return null;
+  const rings: number[][][] = g.type === 'MultiPolygon'
+    ? (g.coordinates as number[][][][]).map((poly) => poly[0])
+    : g.type === 'Polygon'
+      ? [(g.coordinates as number[][][])[0]]
+      : [];
+  let sumLat = 0, sumLon = 0, n = 0;
+  for (const ring of rings) {
+    for (const pt of ring ?? []) {
+      const [lon, lat] = pt;
+      if (Number.isFinite(lat) && Number.isFinite(lon)) { sumLat += lat; sumLon += lon; n++; }
+    }
+  }
+  return n > 0 ? { lat: sumLat / n, lon: sumLon / n } : null;
+}
+
+// Découpe un IDU à 14 caractères : INSEE(5) + com_abs(3) + section(2) + numéro(4).
+function parseParcelId(parcelId: string): { codeInsee: string; section: string; numero: string } | null {
+  const clean = parcelId.replace(/\s/g, '').toUpperCase();
+  if (clean.length < 14) return null;
+  return {
+    codeInsee: clean.substring(0, 5),
+    section: clean.substring(8, 10),
+    numero: clean.substring(10, 14),
+  };
+}
+
 async function geocodeParcel(parcelId: string): Promise<GeocodedLocation | null> {
   try {
-    const cleanId = parcelId.replace(/\s/g, '').toUpperCase();
-    const codeInsee = cleanId.substring(0, 5);
+    const parts = parseParcelId(parcelId);
+    if (!parts) return null;
+    const { codeInsee, section, numero } = parts;
+
+    // 1. Apicarto IGN — géométrie réelle de la parcelle (source privilégiée).
+    try {
+      const url = `${APICARTO_CADASTRE_URL}?code_insee=${codeInsee}`
+        + `&section=${encodeURIComponent(section)}&numero=${encodeURIComponent(numero)}`;
+      const res = await safeFetch(url, { timeoutMs: 10000 });
+      if (res && res.ok) {
+        const data = await res.json();
+        const feature = data?.features?.[0];
+        const c = feature ? centroidFromGeoJson(feature.geometry) : null;
+        if (c) {
+          const nom = feature?.properties?.nom_com ?? codeInsee;
+          console.log(`[Parcelle] ${parcelId} résolue par Apicarto → ${c.lat.toFixed(5)}, ${c.lon.toFixed(5)} (${nom})`);
+          return {
+            lat: c.lat, lon: c.lon, source: 'parcel',
+            label: `Parcelle ${parcelId} — ${nom}`,
+          };
+        }
+      }
+      console.warn(`[Parcelle] Apicarto sans résultat pour ${parcelId} → repli commune`);
+    } catch (e) {
+      console.warn(`[Parcelle] Apicarto en échec pour ${parcelId}:`, e);
+    }
+
+    // 2. Repli : centre de la commune via geo.api. Dégradé — ce n'est PAS la
+    //    parcelle, donc le repli est explicite dans le label.
     const communeGeo = await geocodeInseeCode(codeInsee);
-    if (communeGeo) return { ...communeGeo, source: 'parcel', label: `Parcelle ${parcelId}` };
+    if (communeGeo) {
+      return {
+        ...communeGeo, source: 'parcel',
+        label: `Parcelle ${parcelId} (position approchée : centre de la commune)`,
+      };
+    }
     return null;
   } catch { return null; }
 }
@@ -393,16 +732,21 @@ async function resolveCoordinates(payload: {
   if (typeof payload.lat === 'number' && typeof payload.lon === 'number' && !isNaN(payload.lat) && !isNaN(payload.lon)) {
     return { lat: payload.lat, lon: payload.lon, source: 'coordinates' };
   }
+  // v1.4.1 — La parcelle passe AVANT l'adresse et la ville : c'est la donnée la
+  // plus précise dont on dispose. Elle était testée en 4e position, après un
+  // géocodage par nom de commune qui renvoie un centre-bourg — l'étude pouvait
+  // donc être centrée à des kilomètres du terrain alors que l'identifiant
+  // cadastral exact était fourni.
+  if (payload.parcel_id && payload.parcel_id.length >= 10) {
+    const result = await geocodeParcel(payload.parcel_id);
+    if (result) return result;
+  }
   if (payload.address && payload.address.trim().length > 3) {
     const result = await geocodeAddress(payload.address);
     if (result) return result;
   }
   if (payload.zipCode && payload.city) {
     const result = await geocodeAddress(`${payload.city}, ${payload.zipCode}`);
-    if (result) return result;
-  }
-  if (payload.parcel_id && payload.parcel_id.length >= 10) {
-    const result = await geocodeParcel(payload.parcel_id);
     if (result) return result;
   }
   const inseeCode = payload.commune_insee || payload.code_insee;
@@ -425,22 +769,60 @@ interface CommuneInfo {
   population: number | null;
 }
 
-async function resolveCommune(lat: number, lon: number): Promise<CommuneInfo | null> {
+// v1.4.1 — Repli hors-ligne quand geo.api ne répond pas. Si un code INSEE est
+// connu (fourni dans le payload ou extrait de l'identifiant de parcelle), on
+// construit la commune sans réseau : le département (2 premiers chiffres) suffit
+// aux fallbacks internes, et le libellé vient de insee_grille_densite, déjà en
+// base. Même philosophie que risk-study v1.0.3 — ne pas laisser un service tiers
+// injoignable faire échouer toute l'étude.
+async function resolveCommuneOffline(codeInsee: string): Promise<CommuneInfo> {
+  let nom: string | null = null;
+  try {
+    const supabase = getSupabaseClient();
+    const { data } = await supabase
+      .from("insee_grille_densite")
+      .select("libelle")
+      .eq("code_insee", codeInsee)
+      .maybeSingle();
+    nom = data?.libelle ?? null;
+  } catch { /* le nom reste null : cosmétique, non bloquant */ }
+
+  console.warn(`[Commune] geo.api injoignable → repli hors-ligne INSEE ${codeInsee}${nom ? ` (${nom})` : ''}`);
+  return {
+    code_insee: codeInsee,
+    nom,
+    departement: codeInsee.substring(0, 2),
+    region: null,
+    population: null,
+  };
+}
+
+async function resolveCommune(
+  lat: number, lon: number,
+  codeInseeConnu?: string | null,
+): Promise<CommuneInfo | null> {
   try {
     const url = `${GEO_API_BASE}/communes?lat=${lat}&lon=${lon}&fields=code,nom,departement,region,population&limit=1`;
     const res = await safeFetch(url, { timeoutMs: 8000 });
-    if (!res || !res.ok) return null;
-    const data = await res.json();
-    if (!data?.length) return null;
-    const c = data[0];
-    return {
-      code_insee: c.code,
-      nom: c.nom,
-      departement: c.departement?.code || null,
-      region: c.region?.nom || null,
-      population: c.population ?? null,
-    };
-  } catch { return null; }
+    if (res && res.ok) {
+      const data = await res.json();
+      if (data?.length) {
+        const c = data[0];
+        return {
+          code_insee: c.code,
+          nom: c.nom,
+          departement: c.departement?.code || null,
+          region: c.region?.nom || null,
+          population: c.population ?? null,
+        };
+      }
+    }
+  } catch { /* on tombe sur le repli ci-dessous */ }
+
+  if (codeInseeConnu && /^(\d{5}|2[AB]\d{3})$/.test(codeInseeConnu)) {
+    return await resolveCommuneOffline(codeInseeConnu);
+  }
+  return null;
 }
 
 // ============================================================================
@@ -463,13 +845,40 @@ interface DvfData {
     prix_m2: number | null;
   }>;
   coverage: Coverage;
+  // v1.4.0 — Périmètre réellement interrogé, et sincérité du décompte.
+  // Sans ces trois champs, une médiane départementale se lisait comme locale
+  // et un plafond de requête comme un nombre de ventes.
+  perimetre: 'commune' | 'departement' | null;
+  perimetre_label: string | null;
+  nb_transactions_plafonne: boolean;
 }
 
-async function fetchDvfFromSupabase(dept: string | null, _communeNom: string | null): Promise<DvfData> {
+// v1.4.0 — La table `dvf` stocke `code_commune` SANS zéro de tête ('65' pour
+// Ascain, et non '065'). La clé INSEE complète est donc
+// code_departement || lpad(code_commune, 3, '0') → '64' + '065' = '64065'.
+// Inversement, depuis un INSEE à 5 chiffres, le code commune DVF est le suffixe
+// à 3 chiffres débarrassé de ses zéros de tête.
+function dvfCodeCommuneFromInsee(insee: string): string | null {
+  if (!/^\d{5}$/.test(insee) && !/^(2A|2B)\d{3}$/.test(insee)) return null;
+  return String(Number(insee.slice(-3)));
+}
+
+// Nombre de ventes communales en dessous duquel une médiane n'est pas
+// statistiquement exploitable : on bascule alors sur le département, mais en
+// le DISANT (perimetre: 'departement').
+const DVF_MIN_VENTES_COMMUNE = 10;
+const DVF_LIMIT = 500;
+
+async function fetchDvfFromSupabase(
+  dept: string | null,
+  _communeNom: string | null,
+  communeInsee?: string | null,
+): Promise<DvfData> {
   const empty: DvfData = {
     nb_transactions: 0, prix_m2_median: null, prix_m2_moyen: null,
     prix_m2_min: null, prix_m2_max: null, evolution_prix_pct: null,
-    transactions: [], coverage: "no_data"
+    transactions: [], coverage: "no_data",
+    perimetre: null, perimetre_label: null, nb_transactions_plafonne: false,
   };
 
   if (!dept) return empty;
@@ -486,40 +895,61 @@ async function fetchDvfFromSupabase(dept: string | null, _communeNom: string | n
     const dateRecenteStr  = dateRecente.toISOString().split("T")[0];
     const dateAncienneStr = dateAncienne.toISOString().split("T")[0];
 
+    // ── v1.4.0 : détermination du périmètre ──────────────────────────────────
+    // AVANT : toutes les requêtes filtraient sur `.eq("code_departement", dept)`
+    // avec `.limit(500)`. Résultat : la médiane des 500 dernières mutations du
+    // DÉPARTEMENT était présentée comme le prix du marché local, et « 500 »
+    // comme un nombre de transactions. Sur Ascain (64065) cela donnait
+    // 4 184 €/m² / « 500 transactions » là où la commune vaut réellement
+    // 5 902 €/m² sur 95 ventes — une sous-évaluation de 29 % du marché local,
+    // qui pilotait en plus le score d'offre (seuils 50 ventes et 5 000 €/m²).
+    const codeCommuneDvf = communeInsee ? dvfCodeCommuneFromInsee(communeInsee) : null;
+
+    // Applique le périmètre choisi à une requête. Le filtre départemental est
+    // conservé même en mode commune : `code_commune` n'est unique qu'à
+    // l'intérieur d'un département.
+    const scope = <T>(q: T, mode: 'commune' | 'departement'): T => {
+      const qq = (q as any).eq("code_departement", dept);
+      return (mode === 'commune' && codeCommuneDvf
+        ? qq.eq("code_commune", codeCommuneDvf)
+        : qq) as T;
+    };
+
+    const baseSelect = (cols: string) =>
+      supabase.from("dvf").select(cols)
+        .not("prix_m2", "is", null)
+        .gte("prix_m2", 500)
+        .lte("prix_m2", 25000);
+
+    // Sonde communale : y a-t-il assez de ventes pour une médiane locale ?
+    let mode: 'commune' | 'departement' = 'departement';
+    if (codeCommuneDvf) {
+      const sonde = await scope(baseSelect("prix_m2"), 'commune').limit(DVF_LIMIT);
+      if (!sonde.error && (sonde.data?.length ?? 0) >= DVF_MIN_VENTES_COMMUNE) {
+        mode = 'commune';
+      } else {
+        console.warn(
+          `[DVF] commune ${communeInsee} : ${sonde.data?.length ?? 0} vente(s) exploitable(s)` +
+          ` (< ${DVF_MIN_VENTES_COMMUNE}) → repli DÉCLARÉ sur le département ${dept}`
+        );
+      }
+    }
+
     const [resAll, resRecent, resOld] = await Promise.all([
       // Toutes transactions — stats globales + liste des 20 dernières
-      supabase
-        .from("dvf")
-        .select("date_mutation, valeur_fonciere, surface_reelle_bati, type_local, commune, prix_m2")
-        .eq("code_departement", dept)
-        .not("prix_m2", "is", null)
-        .gte("prix_m2", 500)
-        .lte("prix_m2", 25000)
-        .order("date_mutation", { ascending: false })
-        .limit(500),
+      scope(
+        baseSelect("date_mutation, valeur_fonciere, surface_reelle_bati, type_local, commune, prix_m2"),
+        mode,
+      ).order("date_mutation", { ascending: false }).limit(DVF_LIMIT),
 
       // Période récente : 0-12 mois
-      supabase
-        .from("dvf")
-        .select("prix_m2")
-        .eq("code_departement", dept)
-        .not("prix_m2", "is", null)
-        .gte("prix_m2", 500)
-        .lte("prix_m2", 25000)
-        .gte("date_mutation", dateRecenteStr)
-        .limit(500),
+      scope(baseSelect("prix_m2"), mode).gte("date_mutation", dateRecenteStr).limit(DVF_LIMIT),
 
       // Période ancienne : 12-24 mois
-      supabase
-        .from("dvf")
-        .select("prix_m2")
-        .eq("code_departement", dept)
-        .not("prix_m2", "is", null)
-        .gte("prix_m2", 500)
-        .lte("prix_m2", 25000)
+      scope(baseSelect("prix_m2"), mode)
         .gte("date_mutation", dateAncienneStr)
         .lt("date_mutation", dateRecenteStr)
-        .limit(500),
+        .limit(DVF_LIMIT),
     ]);
 
     if (resAll.error || !resAll.data?.length) return empty;
@@ -581,7 +1011,16 @@ async function fetchDvfFromSupabase(dept: string | null, _communeNom: string | n
         commune: String(d.commune ?? ""),
         prix_m2: safeNum(d.prix_m2),
       })),
-      coverage: "ok"
+      coverage: "ok",
+      // Le périmètre est exposé pour que ni l'écran ni le copilote ne puissent
+      // présenter une médiane départementale comme locale.
+      perimetre: mode,
+      perimetre_label: mode === 'commune'
+        ? `commune ${communeInsee}`
+        : `département ${dept} (repli : pas assez de ventes communales)`,
+      // `nb_transactions` est le nombre de lignes RENVOYÉES. S'il touche le
+      // plafond, c'est une borne inférieure, pas un décompte.
+      nb_transactions_plafonne: data.length >= DVF_LIMIT,
     };
   } catch (e) {
     console.error("[DVF] Error:", e);
@@ -751,6 +1190,22 @@ async function fetchFilosofiData(codeInsee: string): Promise<FilosofiResult> {
 // INSEE DATA
 // ============================================================================
 
+/** Provenance d'un champ. 'mesure' = valeur communale issue d'une source ;
+ *  'estimation_dept' = modèle départemental ; 'heuristique_densite' = formule
+ *  appliquée à la densité ; 'absente' = rien. Seul 'mesure' autorise à
+ *  appliquer un seuil de score ou à présenter le chiffre comme un fait. */
+type QualiteChamp = 'mesure' | 'estimation_dept' | 'heuristique_densite' | 'absente';
+
+/** Estimations démographiques, délibérément séparées des mesures. */
+interface DemographieEstimee {
+  /** Département dont le modèle a été appliqué, ou 'default' si non couvert. */
+  departement_modele: string;
+  pct_moins_15: number; pct_15_29: number; pct_30_44: number;
+  pct_45_59: number; pct_60_74: number; pct_75_plus: number;
+  pct_etudiants: number; pct_actifs: number; pct_proprietaires: number;
+  pct_logements_vacants: number; pct_locataires: number;
+}
+
 interface InseeData {
   code_commune: string; commune_nom: string; departement: string; region: string;
   population: number; densite: number;
@@ -762,7 +1217,26 @@ interface InseeData {
   pct_30_44: number | null; pct_45_59: number | null; pct_60_74: number | null;
   pct_75_plus: number | null; pct_etudiants: number | null; pct_actifs: number | null;
   pct_logements_vacants: number | null; pct_locataires: number | null;
+
+  // ── Correctif B ────────────────────────────────────────────────────────
+  // Les onze champs pct_* ci-dessus étaient typés `number | null` mais ne
+  // pouvaient JAMAIS valoir null : aucune requête ne les alimentait, ils
+  // sortaient d'une table de 13 départements (DEMOGRAPHICS_DEPT) et de deux
+  // formules de densité, puis étaient scorés par des seuils et affichés comme
+  // des mesures. Ils valent désormais null tant qu'aucune source ne les
+  // fournit, et l'estimation est isolée ci-dessous.
+  //
+  // Règle : un consommateur qui veut afficher une estimation doit aller la
+  // CHERCHER dans `demographie_estimee`. Il ne peut donc plus le faire sans
+  // savoir qu'il affiche une estimation. C'est le seul garde-fou qui tienne
+  // dans la durée — un simple drapeau à côté de la valeur finit par être ignoré.
+  demographie_estimee: DemographieEstimee | null;
+  taux_chomage_estime: number | null;
+  taux_chomage_source: 'socioeco' | 'dept_fallback' | 'none';
+
   economic_data_quality: Record<string, unknown> | null;
+  /** Provenance champ par champ, exposée hors mode debug. */
+  insee_data_quality: Record<string, QualiteChamp> | null;
   revenu_median_uc: number | null; revenu_moyen: number | null; niveau_vie_median: number | null;
   part_cadres: number | null; part_professions_intermediaires: number | null;
   part_employes: number | null; part_ouvriers: number | null; part_actifs_occupes: number | null;
@@ -794,6 +1268,11 @@ const SOCIOECO_FIELD_CANDIDATES: Record<string, string[]> = {
   taxe_fonciere_moyenne: ['taxe_fonciere_moyenne', 'tf_moyenne', 'taxe_fonciere_moy', 'tf_moy', 'taxe_fonciere_eur', 'montant_tf_moyen'],
   taxe_fonciere_evolution_3y: ['taxe_fonciere_evolution_3y', 'tf_evol_3y', 'taxe_fonciere_evol', 'delta_tf_3y', 'evolution_tf_3y'],
   evolution_population_5y: ['evolution_population_5y', 'evol_pop_5y', 'variation_pop_5y', 'pop_evol_5y', 'tx_evol_pop_5y', 'evolution_pop', 'pop_evolution', 'delta_pop_5y'],
+  // Correctif B — la colonne `pct_proprietaires` EXISTE dans
+  // insee_socioeco_communes, mais n'était déclarée nulle part ici : elle n'était
+  // donc jamais lue, et le code écrivait 58 en dur à la place. Une mesure
+  // disponible remplacée par une constante, faute d'une ligne de configuration.
+  pct_proprietaires: ['pct_proprietaires', 'part_proprietaires_pct', 'part_proprietaires', 'proprietaires_pct', 'taux_proprietaires'],
 };
 
 function pickFirstNumeric(row: Record<string, unknown> | null | undefined, candidateKeys: string[]): number | null {
@@ -820,7 +1299,9 @@ interface SocioEcoExtended {
   taux_pauvrete: number | null; taux_chomage: number | null; part_menages_imposes: number | null;
   pension_retraite_moyenne: number | null; evolution_revenu_5y: number | null;
   evolution_chomage_5y: number | null; taxe_fonciere_moyenne: number | null;
-  taxe_fonciere_evolution_3y: number | null; _fields_found: string[];
+  taxe_fonciere_evolution_3y: number | null;
+  pct_proprietaires: number | null;
+  _fields_found: string[];
 }
 
 async function fetchSocioEcoExtended(codeInsee: string): Promise<SocioEcoExtended> {
@@ -830,12 +1311,29 @@ async function fetchSocioEcoExtended(codeInsee: string): Promise<SocioEcoExtende
     part_employes: null, part_ouvriers: null, part_actifs_occupes: null,
     taux_pauvrete: null, taux_chomage: null, part_menages_imposes: null,
     pension_retraite_moyenne: null, evolution_revenu_5y: null, evolution_chomage_5y: null,
-    taxe_fonciere_moyenne: null, taxe_fonciere_evolution_3y: null, _fields_found: [],
+    taxe_fonciere_moyenne: null, taxe_fonciere_evolution_3y: null,
+    pct_proprietaires: null, _fields_found: [],
   };
   if (!codeInsee) return empty;
   try {
     const supabase = getSupabaseClient();
-    const { data, error } = await supabase.from("insee_socioeco_communes").select("*").eq("code_commune", codeInsee).limit(1).maybeSingle();
+    // Correctif B — la requête était `.eq(code).limit(1).maybeSingle()` SANS
+    // tri. Or la table contient des doublons par commune (plusieurs millésimes,
+    // plusieurs sources) : Postgres rendait donc l'une ou l'autre ligne selon
+    // l'ordre physique, et deux appels identiques pouvaient répondre deux
+    // chiffres différents. Constaté sur Ascain (64065), qui porte à la fois une
+    // ligne FiLoSoFi 2021 (revenu 31 160 €) et une ligne de test (25 000 €).
+    //
+    // On trie donc par millésime décroissant, et on ÉCARTE les sources de test :
+    // une donnée de fixture n'a rien à faire dans une étude remise à un client.
+    const { data, error } = await supabase
+      .from("insee_socioeco_communes")
+      .select("*")
+      .eq("code_commune", codeInsee)
+      .not("source", "in", '("TEST_ONLY","TEST","FIXTURE","DEMO")')
+      .order("annee", { ascending: false })
+      .limit(1)
+      .maybeSingle();
     if (error || !data) return empty;
     const row = data as Record<string, unknown>;
     const found: string[] = [];
@@ -847,7 +1345,9 @@ async function fetchSocioEcoExtended(codeInsee: string): Promise<SocioEcoExtende
       taux_pauvrete: pf('taux_pauvrete'), taux_chomage: pf('taux_chomage'), part_menages_imposes: pf('part_menages_imposes'),
       pension_retraite_moyenne: pf('pension_retraite_moyenne'), evolution_revenu_5y: pf('evolution_revenu_5y'),
       evolution_chomage_5y: pf('evolution_chomage_5y'), taxe_fonciere_moyenne: pf('taxe_fonciere_moyenne'),
-      taxe_fonciere_evolution_3y: pf('taxe_fonciere_evolution_3y'), _fields_found: found,
+      taxe_fonciere_evolution_3y: pf('taxe_fonciere_evolution_3y'),
+      pct_proprietaires: pf('pct_proprietaires'),
+      _fields_found: found,
     };
     console.log(`[SocioEco] ${codeInsee} — ${found.length} champs trouvés`);
     return result;
@@ -865,6 +1365,86 @@ async function fetchPopulationEvolution(codeInsee: string): Promise<{ evolution_
     if (socioRow) { const v = pickFirstNumeric(socioRow as Record<string, unknown>, ['evolution_population_5y', 'evol_pop_5y', 'variation_pop_5y']); if (v !== null) return { evolution_population_5y: v }; }
     return empty;
   } catch (e) { console.warn("[PopEvol] Exception:", e); return empty; }
+}
+
+// ── Correctif B : structure d'âge MESURÉE ────────────────────────────────────
+// La table insee_demographie_communes est dérivée du fichier INSEE RP « POP2 »
+// (population par sexe, âge quinquennal et catégorie), déjà présent en base
+// dans insee_pop2_raw. Elle couvre 34 848 communes et les 45 arrondissements
+// municipaux, soit 67,8 M d'habitants — la France entière.
+//
+// Ces six parts remplacent le modèle départemental de 13 lignes qui les
+// fabriquait. Sur Ascain, l'écart n'est pas cosmétique : 12,6 % de 75 ans et
+// plus mesurés contre 10 modélisés, 14,6 % de moins de 15 ans contre 18.
+interface DemographieMesuree {
+  pct_moins_15: number | null; pct_15_29: number | null; pct_30_44: number | null;
+  pct_45_59: number | null; pct_60_74: number | null; pct_75_plus: number | null;
+  population: number | null;
+}
+
+async function fetchDemographieMesuree(codeInsee: string): Promise<DemographieMesuree | null> {
+  if (!codeInsee) return null;
+  try {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from("insee_demographie_communes")
+      .select("population,pct_moins_15,pct_15_29,pct_30_44,pct_45_59,pct_60_74,pct_75_plus")
+      .eq("code_commune", codeInsee)
+      .maybeSingle();
+    if (error || !data) return null;
+    const n = (v: unknown): number | null => {
+      const x = typeof v === 'number' ? v : v == null ? NaN : Number(v);
+      return Number.isFinite(x) ? x : null;
+    };
+    return {
+      population: n((data as Record<string, unknown>).population),
+      pct_moins_15: n((data as Record<string, unknown>).pct_moins_15),
+      pct_15_29: n((data as Record<string, unknown>).pct_15_29),
+      pct_30_44: n((data as Record<string, unknown>).pct_30_44),
+      pct_45_59: n((data as Record<string, unknown>).pct_45_59),
+      pct_60_74: n((data as Record<string, unknown>).pct_60_74),
+      pct_75_plus: n((data as Record<string, unknown>).pct_75_plus),
+    };
+  } catch (e) { console.warn("[Demographie] Exception:", e); return null; }
+}
+
+// ── Correctif B : logement et emploi MESURÉS ─────────────────────────────────
+// Table insee_logement_emploi_communes, dérivée des fichiers INSEE RP « base-cc »
+// déposés dans insee_rp_staging. Elle apporte les quatre derniers champs que le
+// modèle départemental fabriquait encore : vacance, locataires, propriétaires,
+// chômage. Tant que le staging est vide, elle rend simplement null — et
+// l'estimation reste nommée dans demographie_estimee, comme avant.
+interface LogementEmploiMesure {
+  pct_logements_vacants: number | null;
+  pct_locataires: number | null;
+  pct_proprietaires: number | null;
+  taux_chomage_pct: number | null;
+  millesime: number | null;
+}
+
+async function fetchLogementEmploi(codeInsee: string): Promise<LogementEmploiMesure | null> {
+  if (!codeInsee) return null;
+  try {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from("insee_logement_emploi_communes")
+      .select("pct_logements_vacants,pct_locataires,pct_proprietaires,taux_chomage_pct,millesime")
+      .eq("code_commune", codeInsee)
+      .maybeSingle();
+    if (error || !data) return null;
+    const r = data as Record<string, unknown>;
+    const n = (v: unknown): number | null => {
+      const x = typeof v === 'number' ? v : v == null ? NaN : Number(v);
+      return Number.isFinite(x) ? x : null;
+    };
+    return {
+      pct_logements_vacants: n(r.pct_logements_vacants),
+      pct_locataires: n(r.pct_locataires),
+      pct_proprietaires: n(r.pct_proprietaires),
+      taux_chomage_pct: n(r.taux_chomage_pct),
+      millesime: n(r.millesime),
+    };
+  } catch (e) { console.warn("[LogementEmploi] Exception:", e); return null; }
 }
 
 async function fetchInseeData(codeInsee: string, communeNom: string | null, dept: string | null): Promise<InseeData | null> {
@@ -898,6 +1478,11 @@ async function fetchInseeData(codeInsee: string, communeNom: string | null, dept
     let pensionRetraiteMoyenne: number | null = null;
     let revenuMedianSource: InseeData['revenu_median_source'] = revenuMedian !== null ? 'filosofi' : 'none';
 
+    const [demoMesuree, logEmploi] = await Promise.all([
+      fetchDemographieMesuree(codeInsee),
+      fetchLogementEmploi(codeInsee),
+    ]);
+
     const [socioEco, popEvol] = await Promise.all([
       fetchSocioEcoExtended(codeInsee).catch(() => ({
         revenu_moyen: null, niveau_vie_median: null, revenu_median_uc: null,
@@ -926,7 +1511,46 @@ async function fetchInseeData(codeInsee: string, communeNom: string | null, dept
     const warnings: string[] = [...filosofi.warnings];
     if (revenuMedianSource === 'dept_fallback') warnings.push(`Revenu médian estimé (département ${deptCode}) — données FiLoSoFi et socioeco absentes pour ${codeInsee}.`);
 
-    const tauxChomage = socioEco.taux_chomage ?? TAUX_CHOMAGE_DEPT[deptCode] ?? TAUX_CHOMAGE_DEPT["default"] ?? null;
+    // Correctif B — le chômage avait un chemin de mesure (insee_socioeco_communes)
+    // MAIS retombait silencieusement sur la table départementale, qui ne couvre
+    // que 12 départements : 90 sur 101 recevaient donc 7,5 %, présenté comme un
+    // relevé. La mesure et l'estimation sont désormais deux champs distincts.
+    // Le RP est prioritaire sur insee_socioeco_communes : c'est le recensement,
+    // et la colonne socioéco n'est renseignée que pour 1 commune sur 34 930.
+    const tauxChomage = logEmploi?.taux_chomage_pct ?? socioEco.taux_chomage;
+    const tauxChomageEstime = TAUX_CHOMAGE_DEPT[deptCode] ?? TAUX_CHOMAGE_DEPT["default"] ?? null;
+    const tauxChomageSource: InseeData['taux_chomage_source'] =
+      tauxChomage != null ? 'socioeco' : tauxChomageEstime != null ? 'dept_fallback' : 'none';
+    if (logEmploi?.taux_chomage_pct != null) {
+      console.log(`[Chomage] ${codeInsee} — mesure RP ${logEmploi.taux_chomage_pct}% (millesime ${logEmploi.millesime ?? 'n/c'})`);
+    }
+    if (!demoMesuree) {
+      warnings.push(
+        `Structure d'âge non mesurée pour ${codeInsee} : commune absente du fichier ` +
+        `INSEE RP. Les parts par tranche d'âge sont des estimations départementales.`,
+      );
+    }
+    if (tauxChomageSource === 'dept_fallback') {
+      warnings.push(
+        `Taux de chômage non mesuré pour ${codeInsee} : seule une estimation départementale ` +
+        `(${deptCode}) est disponible. Ne pas la présenter comme un relevé communal.`,
+      );
+    }
+
+    // Estimations démographiques, isolées des mesures. Aucun de ces champs n'est
+    // aujourd'hui alimenté par une source communale : le modèle départemental et
+    // les formules de densité sont tout ce dont on dispose. Les exposer ici, et
+    // non dans les champs pct_*, oblige tout consommateur à les nommer.
+    const demographieEstimee: DemographieEstimee = {
+      departement_modele: DEMOGRAPHICS_DEPT[deptCode] ? deptCode : 'default',
+      pct_moins_15: demoData.pct_moins_15, pct_15_29: demoData.pct_15_29,
+      pct_30_44: demoData.pct_30_44, pct_45_59: demoData.pct_45_59,
+      pct_60_74: demoData.pct_60_74, pct_75_plus: pct75Adjusted,
+      pct_etudiants: pctEtudiantsAdjusted, pct_actifs: demoData.pct_actifs,
+      pct_proprietaires: 58,
+      pct_logements_vacants: densite < 200 ? 12 : densite < 1000 ? 8 : 5,
+      pct_locataires: densite > 3000 ? 55 : densite > 1000 ? 45 : 35,
+    };
     const coverage: Coverage = (revenuMedianSource === 'filosofi' || revenuMedianSource === 'socioeco') ? 'ok' : 'partial';
 
     const ff = socioEco._fields_found;
@@ -939,16 +1563,36 @@ async function fetchInseeData(codeInsee: string, communeNom: string | null, dept
 
     return {
       code_commune: codeInsee, commune_nom: geoData.nom || communeNom || "",
-      departement: deptCode, region: geoData.region?.nom || "", population: geoData.population ?? 0, densite,
+      // Repli de population sur le fichier POP2 quand geo.api n'a pas répondu :
+      // c'est une mesure, pas un modèle. Le 0 final reste le signal « inconnu ».
+      departement: deptCode, region: geoData.region?.nom || "",
+      population: geoData.population ?? demoMesuree?.population ?? 0, densite,
       revenu_median: revenuMedian, revenu_median_source: revenuMedianSource,
       incomeMedianUcEur: filosofi.incomeMedianUcEur ?? revenuMedian, incomeMedianUcYear: filosofi.incomeMedianUcYear,
       taux_pauvrete: tauxPauvrete, part_menages_imposes: partMenagesImposes,
       pension_retraite_moyenne: pensionRetraiteMoyenne, taux_chomage: tauxChomage,
-      pct_proprietaires: 58, pct_moins_15: demoData.pct_moins_15, pct_15_29: demoData.pct_15_29,
-      pct_30_44: demoData.pct_30_44, pct_45_59: demoData.pct_45_59, pct_60_74: demoData.pct_60_74,
-      pct_75_plus: pct75Adjusted, pct_etudiants: pctEtudiantsAdjusted, pct_actifs: demoData.pct_actifs,
-      pct_logements_vacants: densite < 200 ? 12 : densite < 1000 ? 8 : 5,
-      pct_locataires: densite > 3000 ? 55 : densite > 1000 ? 45 : 35,
+      // Correctif B — null tant qu'aucune source communale ne les fournit.
+      // Les valeurs du modèle départemental sont dans `demographie_estimee`.
+      // pct_proprietaires : RP d'abord, colonne socioéco en second.
+      pct_proprietaires: logEmploi?.pct_proprietaires ?? socioEco.pct_proprietaires,
+      // Les six tranches d'âge sont désormais MESURÉES (INSEE RP / POP2).
+      pct_moins_15: demoMesuree?.pct_moins_15 ?? null,
+      pct_15_29: demoMesuree?.pct_15_29 ?? null,
+      pct_30_44: demoMesuree?.pct_30_44 ?? null,
+      pct_45_59: demoMesuree?.pct_45_59 ?? null,
+      pct_60_74: demoMesuree?.pct_60_74 ?? null,
+      pct_75_plus: demoMesuree?.pct_75_plus ?? null,
+      // Vacance et locataires : mesurés dès que le fichier RP « logement » est
+      // déposé dans insee_rp_staging, null tant qu'il ne l'est pas.
+      pct_logements_vacants: logEmploi?.pct_logements_vacants ?? null,
+      pct_locataires: logEmploi?.pct_locataires ?? null,
+      // Ces deux-là n'ont toujours aucune source : pct_etudiants relève du
+      // fichier « formation », pct_actifs du fichier « population active »
+      // (dont on ne dérive pour l'instant que le taux d'activité, qui n'est PAS
+      // la même chose — ne pas les confondre au motif qu'ils se ressemblent).
+      pct_etudiants: null, pct_actifs: null,
+      demographie_estimee: demographieEstimee,
+      taux_chomage_estime: tauxChomageEstime, taux_chomage_source: tauxChomageSource,
       revenu_median_uc: socioEco.revenu_median_uc, revenu_moyen: socioEco.revenu_moyen,
       niveau_vie_median: socioEco.niveau_vie_median ?? revenuMedian,
       part_cadres: socioEco.part_cadres, part_professions_intermediaires: socioEco.part_professions_intermediaires,
@@ -967,6 +1611,33 @@ async function fetchInseeData(codeInsee: string, communeNom: string | null, dept
         evolution_data: (socioEco.evolution_revenu_5y != null || socioEco.evolution_chomage_5y != null) ? 'real' : 'missing',
         socioeco_profile: socioProfile, fields_found_count: totalFound,
       },
+      // Correctif B — provenance champ par champ, exposée HORS mode debug :
+      // economic_data_quality ne couvrait que 6 indicateurs et n'était visible
+      // qu'avec `debug: true`, donc jamais en production, c'est-à-dire jamais
+      // là où quelqu'un décide sur ces chiffres.
+      insee_data_quality: {
+        population: geoData.population != null ? 'mesure' : 'absente',
+        densite: geoData.surface != null && geoData.population != null ? 'mesure' : 'absente',
+        revenu_median: revenuMedianSource === 'dept_fallback' ? 'estimation_dept'
+          : revenuMedianSource === 'none' ? 'absente' : 'mesure',
+        taux_chomage: tauxChomageSource === 'socioeco' ? 'mesure'
+          : tauxChomageSource === 'dept_fallback' ? 'estimation_dept' : 'absente',
+        taux_pauvrete: tauxPauvrete != null ? 'mesure' : 'absente',
+        part_menages_imposes: partMenagesImposes != null ? 'mesure' : 'absente',
+        pension_retraite_moyenne: pensionRetraiteMoyenne != null ? 'mesure' : 'absente',
+        // Structure d'âge : mesurée dès que la commune est au fichier POP2.
+        pct_moins_15: demoMesuree?.pct_moins_15 != null ? 'mesure' : 'estimation_dept',
+        pct_15_29: demoMesuree?.pct_15_29 != null ? 'mesure' : 'estimation_dept',
+        pct_30_44: demoMesuree?.pct_30_44 != null ? 'mesure' : 'estimation_dept',
+        pct_45_59: demoMesuree?.pct_45_59 != null ? 'mesure' : 'estimation_dept',
+        pct_60_74: demoMesuree?.pct_60_74 != null ? 'mesure' : 'estimation_dept',
+        pct_75_plus: demoMesuree?.pct_75_plus != null ? 'mesure' : 'heuristique_densite',
+        pct_proprietaires: (logEmploi?.pct_proprietaires ?? socioEco.pct_proprietaires) != null ? 'mesure' : 'estimation_dept',
+        pct_logements_vacants: logEmploi?.pct_logements_vacants != null ? 'mesure' : 'heuristique_densite',
+        pct_locataires: logEmploi?.pct_locataires != null ? 'mesure' : 'heuristique_densite',
+        // Sans source communale à ce jour.
+        pct_actifs: 'estimation_dept', pct_etudiants: 'heuristique_densite',
+      },
       revenu_source: revenuMedianSource !== 'none' ? 'filosofi' : 'none',
       coverage, warnings,
     };
@@ -974,8 +1645,63 @@ async function fetchInseeData(codeInsee: string, communeNom: string | null, dept
 }
 
 // ============================================================================
-// TRANSPORT DATA — v1.3.7 : is_urban + population param
+// TRANSPORT DATA — v1.5.0 : deux régimes d'accessibilité
 // ============================================================================
+//
+// ── Pourquoi deux régimes ───────────────────────────────────────────────────
+// v1.4.0 avait corrigé l'urbanité (grille INSEE) mais laissait le pilier
+// accessibilité ÉCARTÉ pour Ascain : Overpass ne trouvait aucun arrêt à moins
+// d'1 km, et l'on refusait à juste titre de transformer ce vide en 0/100.
+// Le résultat restait faux dans l'autre sens — une commune desservie par le
+// réseau Txik Txak, à 6,5 km de la gare TER de Saint-Jean-de-Luz et à 19,5 km
+// de la gare TGV de Bayonne, ressortait « accessibilité non mesurée ».
+//
+// Le défaut de fond : un seul barème, celui de la ville dense, appliqué à tout
+// le territoire. Un rayon de 1 km autour du point mesure la marche vers un
+// arrêt — pertinent niveau_7 1 à 3, sans objet niveau_7 4 à 7, où l'on ne se
+// déplace pas à pied vers un arrêt mais en voiture vers une gare ou un pôle.
+// Un promoteur à Ascain ne vend pas « à 300 m du tram », il vend « 20 minutes
+// de Saint-Jean-de-Luz ». Deux marchés, deux unités de mesure.
+//
+// Régime lu sur `niveau_7` de la grille de densité INSEE (7 niveaux) :
+//   1-3 (grands centres, centres intermédiaires, petites villes)
+//        → régime TRANSPORTS EN COMMUN : arrêts OSM dans 1 km, barème inchangé
+//   4-7 (ceintures urbaines, bourgs, rural)
+//        → régime ROUTIER : gare TER/TGV la plus proche, en minutes estimées
+//
+// ⚠️ Ce n'est PAS le binaire `is_urban` (niveau_3) : Ascain est urbaine au sens
+// niveau_3 = 2 tout en relevant du régime routier au sens niveau_7 = 4. Les
+// deux prédicats répondent à deux questions différentes et ne doivent pas être
+// confondus — c'est la leçon du `isRural` de smartscore v4.6, qui faisait deux
+// métiers à la fois.
+
+type AccessRegime = 'transports_commun' | 'routier';
+
+/**
+ * Accessibilité ferroviaire — source `mobility_stops` (2 628 gares TER,
+ * 145 gares TGV, couverture France entière vérifiée : lat 42,43-51,02,
+ * lon -4,39-8,18).
+ *
+ * ⚠️ NE PAS utiliser `mobility_stops` en mode 'metro' (53 967 lignes) ni
+ * `gtfs_stops` (119 428) pour cet usage : les deux sont bornés à
+ * lat 47,96-49,46 / lon 1,15-3,56, c'est-à-dire l'Île-de-France seule. Hors
+ * IdF ils renvoient zéro, et ce zéro se lirait comme « aucune desserte ».
+ */
+interface RailAccess {
+  nearest_station_km: number | null;
+  nearest_station_name: string | null;
+  nearest_station_mode: 'ter' | 'tgv' | null;
+  nearest_tgv_km: number | null;
+  nearest_tgv_name: string | null;
+  ter_stations_nearby: number | null;
+  /** Minutes de voiture ESTIMÉES, jamais mesurées. Voir `estimation_method`. */
+  drive_minutes_estimated: number | null;
+  /** Toujours `true` : ce champ existe pour qu'aucun consommateur ne puisse
+   *  présenter ces minutes comme un temps de trajet mesuré. */
+  estimated: true;
+  estimation_method: string;
+  coverage: Coverage;
+}
 
 interface TransportData {
   score: number;
@@ -985,22 +1711,286 @@ interface TransportData {
   has_tram: boolean;
   // v1.3.7 : false = commune non-urbaine, pilier accessibilité exclu du score global
   is_urban: boolean;
+  // v1.4.0 : d'où vient le verdict d'urbanité — 'insee' (déterministe) ou
+  // 'population' (heuristique de repli, à ne pas présenter comme un fait).
+  is_urban_source?: 'insee' | 'population' | null;
+  is_urban_label?: string | null;
+  // ── v1.5.0 ────────────────────────────────────────────────────────────────
+  /** Régime appliqué, et pourquoi. À relayer jusqu'au Copilot : un score
+   *  d'accessibilité ne veut pas dire la même chose selon le régime. */
+  regime: AccessRegime;
+  regime_source: 'insee_niveau_7' | 'repli';
+  regime_label: string;
+  niveau_7: number | null;
+  /** Renseigné uniquement en régime routier. */
+  rail: RailAccess | null;
   coverage: Coverage;
 }
 
+/** Régime déduit de niveau_7. `null` = grille INSEE muette pour cette commune. */
+function regimeFromNiveau7(niveau7: number | null): AccessRegime | null {
+  if (niveau7 == null) return null;
+  return niveau7 <= 3 ? 'transports_commun' : 'routier';
+}
+
+/** Minutes de voiture estimées à partir d'une distance à vol d'oiseau. */
+function estimateDriveMinutes(km: number | null): number | null {
+  if (km == null || !Number.isFinite(km)) return null;
+  return Math.round((km * ROAD_DETOUR_FACTOR / ROAD_AVG_SPEED_KMH) * 60);
+}
+
+const ROAD_ESTIMATION_METHOD =
+  `distance à vol d'oiseau × ${ROAD_DETOUR_FACTOR} (sinuosité) ÷ ${ROAD_AVG_SPEED_KMH} km/h ` +
+  `(vitesse moyenne porte-à-porte) — estimation, pas un temps de trajet mesuré`;
+
+// ── v1.5.1 — Dire de quoi le score est fait ─────────────────────────────────
+// v1.5.0 exposait la méthode de calcul des MINUTES, mais rien sur la
+// composition du SCORE. Interrogé sur le 83/100 d'Ascain, le Copilot a comblé
+// le vide en inventant : « il mesure la facilité d'accès à un bassin d'emplois
+// et de services en voiture, via la grille zonage INSEE ». Deux inventions —
+// aucune donnée de bassin d'emploi n'entre dans ce calcul (le critère a été
+// écarté faute de centroïdes communaux), et la grille INSEE ne mesure rien,
+// elle choisit le régime. Un modèle à qui l'on donne un chiffre sans sa recette
+// écrira une recette. On la lui donne.
+const ROAD_SCORE_METHOD =
+  `Barème par paliers sur les minutes de voiture ESTIMÉES jusqu'à la gare TER/TGV la plus proche `
+  + `(≤10 min : 70 ; ≤20 : 58 ; ≤30 : 45 ; ≤45 : 32 ; au-delà : 20), `
+  + `puis +8 si une gare TGV est à moins de 30 min estimées, +5 s'il y a au moins 3 gares TER `
+  + `dans ${RAIL_DENSITY_RADIUS_KM} km. Plafonné à ${ROAD_REGIME_SCORE_CAP}/100. `
+  + `Source unique : gares TER et TGV de la table mobility_stops. `
+  + `Ce score ne mesure NI la desserte en transports en commun (bus, car, fréquences : aucune donnée), `
+  + `NI l'accès à un bassin d'emploi (aucune donnée de pôle d'emploi n'entre dans le calcul). `
+  + `La grille de densité INSEE ne participe PAS au score : elle sert uniquement à choisir le régime.`;
+
+const TRANSIT_SCORE_METHOD =
+  `Barème par paliers sur la distance à pied jusqu'à l'arrêt le plus proche référencé dans `
+  + `OpenStreetMap, dans un rayon de 1 km (<300 m : 90 ; <500 : 75 ; <800 : 60 ; au-delà : 45), `
+  + `puis +10 si métro ou train, +5 si tramway. Source unique : Overpass / OpenStreetMap. `
+  + `Ce score ne mesure ni les fréquences, ni les horaires, ni les destinations desservies.`;
+
+/**
+ * Gares TER/TGV autour du point. Une seule requête, filtrée par boîte
+ * englobante côté base, distances calculées en JS (haversine) — la table n'a
+ * pas d'index géographique exploitable via PostgREST.
+ */
+async function fetchRailAccess(lat: number, lon: number): Promise<RailAccess> {
+  const empty: RailAccess = {
+    nearest_station_km: null, nearest_station_name: null, nearest_station_mode: null,
+    nearest_tgv_km: null, nearest_tgv_name: null, ter_stations_nearby: null,
+    drive_minutes_estimated: null, estimated: true,
+    estimation_method: ROAD_ESTIMATION_METHOD,
+    coverage: "no_data",
+  };
+
+  try {
+    const supabase = getSupabaseClient();
+    // 1° de latitude ≈ 111 km ; la longitude se resserre avec le cosinus.
+    const dLat = RAIL_SEARCH_RADIUS_KM / 111;
+    const dLon = RAIL_SEARCH_RADIUS_KM / (111 * Math.max(0.2, Math.cos(lat * Math.PI / 180)));
+
+    const { data, error } = await supabase
+      .from("mobility_stops")
+      .select("stop_name, lat, lon, mode")
+      .in("mode", ["ter", "tgv"])
+      .gte("lat", lat - dLat).lte("lat", lat + dLat)
+      .gte("lon", lon - dLon).lte("lon", lon + dLon)
+      // ⚠️ La limite tronque AVANT le tri par distance, qui se fait en JS. Un
+      // plafond bas ferait manquer la gare la plus proche là où elles sont
+      // nombreuses. 3 000 dépasse le total national (2 628 TER + 145 TGV) :
+      // aucune boîte englobante ne peut l'atteindre. C'est la même erreur que
+      // le `limit 500` de DVF présenté comme un décompte — ici on la neutralise.
+      .limit(3000);
+
+    if (error) {
+      // Base muette : on ne sait rien de la desserte ferroviaire. Surtout pas
+      // « il n'y a pas de gare ».
+      console.error("[Rail] Erreur mobility_stops:", error.message);
+      return { ...empty, coverage: "error" };
+    }
+    if (!data) return { ...empty, coverage: "error" };
+
+    const stations = data
+      .map((s: Record<string, unknown>) => ({
+        name: String(s.stop_name ?? "Gare"),
+        mode: String(s.mode) === "tgv" ? "tgv" as const : "ter" as const,
+        km: haversine(lat, lon, Number(s.lat), Number(s.lon)) / 1000,
+      }))
+      .filter((s) => Number.isFinite(s.km) && s.km <= RAIL_SEARCH_RADIUS_KM)
+      .sort((a, b) => a.km - b.km);
+
+    if (stations.length === 0) {
+      // La requête a abouti et il n'y a réellement aucune gare dans 60 km.
+      // C'est une information de desserte, pas une lacune de source.
+      return { ...empty, ter_stations_nearby: 0, coverage: "ok" };
+    }
+
+    const nearest = stations[0];
+    const tgv = stations.find((s) => s.mode === "tgv") ?? null;
+    const terNearby = stations.filter(
+      (s) => s.mode === "ter" && s.km <= RAIL_DENSITY_RADIUS_KM,
+    ).length;
+
+    return {
+      nearest_station_km: Math.round(nearest.km * 10) / 10,
+      nearest_station_name: nearest.name,
+      nearest_station_mode: nearest.mode,
+      nearest_tgv_km: tgv ? Math.round(tgv.km * 10) / 10 : null,
+      nearest_tgv_name: tgv ? tgv.name : null,
+      ter_stations_nearby: terNearby,
+      drive_minutes_estimated: estimateDriveMinutes(nearest.km),
+      estimated: true,
+      estimation_method: ROAD_ESTIMATION_METHOD,
+      coverage: "ok",
+    };
+  } catch (e) {
+    console.error("[Rail] Error:", e);
+    return { ...empty, coverage: "error" };
+  }
+}
+
+/**
+ * Barème du régime routier. Plafonné à ROAD_REGIME_SCORE_CAP : il ne doit
+ * jamais atteindre la note d'une adresse desservie à pied par un transport
+ * lourd, sous peine de rendre les deux régimes incomparables.
+ */
+function scoreRoadRegime(rail: RailAccess): number | null {
+  const min = rail.drive_minutes_estimated;
+  if (min == null) {
+    // Requête aboutie mais aucune gare dans 60 km : c'est mesuré, et c'est
+    // une accessibilité ferroviaire nulle — pas une absence de mesure.
+    return rail.coverage === "ok" ? 15 : null;
+  }
+  let score =
+    min <= 10 ? 70 :
+    min <= 20 ? 58 :
+    min <= 30 ? 45 :
+    min <= 45 ? 32 : 20;
+
+  if (rail.nearest_tgv_km != null) {
+    const tgvMin = estimateDriveMinutes(rail.nearest_tgv_km);
+    if (tgvMin != null && tgvMin <= 30) score += 8;
+  }
+  if ((rail.ter_stations_nearby ?? 0) >= 3) score += 5;
+
+  return Math.max(0, Math.min(ROAD_REGIME_SCORE_CAP, score));
+}
+
+// ── v1.4.0 — Urbanité déterminée par la grille de densité INSEE ─────────────
+// AVANT : `is_urban` dépendait du SUCCÈS d'un appel Overpass, avec repli sur un
+// seuil de population de 50 000. Deux conséquences :
+//   1. non déterminisme — mêmes entrées, verdict différent selon la santé d'un
+//      serveur tiers (défaut déjà corrigé sur market-study-promoteur-v1 v1.3.24) ;
+//   2. faux négatifs massifs — Ascain (4 658 hab.) était déclarée « zone
+//      non-urbaine » alors que la grille INSEE la classe niveau_7 = 4,
+//      « Ceintures urbaines ». Elle n'est PAS rurale au sens INSEE.
+// La table `insee_grille_densite` (34 875 communes, millésime 01/01/2026) est
+// déjà en base. On la lit : niveau_3 ∈ {1,2} = urbain, 3 = rural.
+// v1.5.0 : `niveau_7` était déjà lu dans le `.select` mais jeté — seul
+// `libelle_niveau_7` servait, comme étiquette. C'est lui qui porte le régime
+// d'accessibilité ; on le renvoie désormais.
+async function fetchIsUrbanFromInsee(codeInsee: string | null): Promise<{
+  is_urban: boolean | null; label: string | null; niveau_7: number | null;
+}> {
+  if (!codeInsee) return { is_urban: null, label: null, niveau_7: null };
+  try {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from("insee_grille_densite")
+      .select("niveau_3, niveau_7, libelle_niveau_7")
+      .eq("code_insee", codeInsee)
+      .maybeSingle();
+
+    if (error || !data || data.niveau_3 == null) {
+      console.warn(`[Urbanite] ${codeInsee} absent de insee_grille_densite`);
+      return { is_urban: null, label: null, niveau_7: null };
+    }
+    return {
+      is_urban: data.niveau_3 === 1 || data.niveau_3 === 2,
+      label: data.libelle_niveau_7 ?? null,
+      niveau_7: data.niveau_7 == null ? null : Number(data.niveau_7),
+    };
+  } catch (e) {
+    console.error("[Urbanite] Error:", e);
+    return { is_urban: null, label: null, niveau_7: null };
+  }
+}
+
 // v1.3.7 : population en paramètre pour détecter le contexte urbain/rural
+// v1.4.0 : codeInsee en paramètre — l'urbanité ne dépend plus d'Overpass.
 async function fetchTransport(
   lat: number, lon: number,
   dept: string | null,
   population: number | null = null,
+  codeInsee: string | null = null,
 ): Promise<TransportData> {
-  // Zone non-urbaine par défaut (score 0 = exclu du calcul dans computeDifferentiatedScores)
+  // Verdict d'urbanité calculé AVANT tout appel réseau, donc identique à
+  // chaque exécution. Overpass ne sert plus qu'à compter les arrêts.
+  const urbain = await fetchIsUrbanFromInsee(codeInsee);
+  const isUrbanDeterministe = urbain.is_urban;
+  const urbanSource: 'insee' | 'population' = isUrbanDeterministe !== null ? 'insee' : 'population';
+  const isUrban = isUrbanDeterministe !== null
+    ? isUrbanDeterministe
+    : (population ?? 0) >= URBAN_POP_THRESHOLD;
+  const urbanLabel = urbanSource === 'insee'
+    ? urbain.label
+    : `estimation par population (${population ?? 'inconnue'} hab.) — commune absente de la grille INSEE`;
+
+  // ── v1.5.0 — Choix du régime, AVANT tout appel réseau ──────────────────────
+  // Repli quand la grille est muette : régime ROUTIER. Ce n'est pas arbitraire —
+  // le régime routier s'appuie sur une source complète (gares TER/TGV, France
+  // entière), là où le régime transports en commun dépend d'Overpass, dont le
+  // silence est indiscernable d'une absence de desserte. À défaut de savoir,
+  // on choisit le régime qui sait répondre.
+  const regimeInsee = regimeFromNiveau7(urbain.niveau_7);
+  const regime: AccessRegime = regimeInsee ?? 'routier';
+  const regimeSource: 'insee_niveau_7' | 'repli' = regimeInsee ? 'insee_niveau_7' : 'repli';
+  const regimeLabel = regimeInsee
+    ? (regime === 'transports_commun'
+        ? `desserte à pied — grille INSEE niveau ${urbain.niveau_7} (${urbain.label ?? 'non libellé'})`
+        : `accessibilité routière — grille INSEE niveau ${urbain.niveau_7} (${urbain.label ?? 'non libellé'})`)
+    : `accessibilité routière — régime de repli, commune absente de la grille de densité INSEE`;
+
+  // v1.4.0 : `is_urban` ne retombe plus sur `false` par défaut — il porte le
+  // verdict INSEE, indépendant du succès d'Overpass.
   const emptyTransport: TransportData = {
     score: 0, stops: [], nearest_stop_m: null,
     has_metro_train: false, has_tram: false,
-    is_urban: false,
+    is_urban: isUrban,
+    is_urban_source: urbanSource,
+    is_urban_label: urbanLabel,
+    regime, regime_source: regimeSource, regime_label: regimeLabel,
+    niveau_7: urbain.niveau_7,
+    rail: null,
     coverage: "no_data",
   };
+
+  // ── Régime ROUTIER (niveau_7 4-7) ─────────────────────────────────────────
+  // On ne demande RIEN à Overpass : chercher des arrêts à pied dans un rayon
+  // d'1 km autour d'un bourg n'a pas de sens et c'est ce vide qui écartait le
+  // pilier. On mesure ce qui structure réellement l'accessibilité ici.
+  if (regime === 'routier') {
+    const rail = await fetchRailAccess(lat, lon);
+    const railScore = scoreRoadRegime(rail);
+    return {
+      ...emptyTransport,
+      rail,
+      score: railScore ?? 0,
+      // `has_metro_train` décrit une desserte À PIED : en régime routier elle
+      // reste false, sinon les bonus du barème urbain s'appliqueraient à une
+      // gare située à 20 minutes de voiture.
+      has_metro_train: false,
+      has_tram: false,
+      // ⚠️ v1.5.1 — `nearest_stop_m` reste NULL en régime routier.
+      // v1.5.0 y rangeait la distance à la gare, et l'écran comme le Copilot
+      // l'ont affichée sous le libellé « Arrêt le plus proche : 4 700 m » : le
+      // champ dit « arrêt » (de bus, à pied), le contenu était une gare (en
+      // voiture). Même défaut que le pilier « environnement » qui mesurait des
+      // équipements — le nom lu à la place du contenu. La distance à la gare a
+      // son propre champ, `rail.nearest_station_km`, qui ne ment pas.
+      nearest_stop_m: null,
+      coverage: rail.coverage === 'ok' ? 'ok' : rail.coverage,
+    };
+  }
 
   try {
     const radius = 1000;
@@ -1014,20 +2004,23 @@ async function fetchTransport(
     });
 
     if (!res || !res.ok) {
-      // Erreur réseau : urbanité déterminée par la population
-      const isUrban = (population ?? 0) >= URBAN_POP_THRESHOLD;
-      return { ...emptyTransport, is_urban: isUrban };
+      // v1.4.0 : Overpass indisponible → on ne sait rien de la DESSERTE, mais
+      // l'urbanité reste connue (grille INSEE). Plus de verdict au hasard.
+      console.warn(`[Transport] Overpass indisponible — desserte non mesurée (urbanité : ${urbanSource})`);
+      return { ...emptyTransport, coverage: "error" };
     }
 
     const data = await res.json();
 
     if (!data?.elements?.length) {
-      // Aucun arrêt dans le rayon 1 km → rural si petite commune
-      const isUrban = (population ?? 0) >= URBAN_POP_THRESHOLD;
-      return { ...emptyTransport, is_urban: isUrban };
+      // Aucun arrêt dans le rayon de 1 km. C'est une vraie information de
+      // desserte — mais elle ne dit rien de l'urbanité, qui vient de l'INSEE.
+      return { ...emptyTransport, coverage: "ok" };
     }
 
-    // Des arrêts trouvés → contexte urbain confirmé
+    // Des arrêts trouvés. v1.4.0 : cela renseigne la DESSERTE, pas l'urbanité —
+    // qui reste celle de la grille INSEE. Un hameau peut avoir un arrêt de car,
+    // une ceinture urbaine peut n'en avoir aucun dans OSM.
     const stops: Array<{ name: string; type: string; distance_m: number }> = [];
     let hasMetroTrain = false;
     let hasTram = false;
@@ -1056,10 +2049,17 @@ async function fetchTransport(
     if (hasMetroTrain) score = Math.min(100, score + 10);
     if (hasTram) score = Math.min(100, score + 5);
 
-    return { score, stops: stops.slice(0, 15), nearest_stop_m: nearest, has_metro_train: hasMetroTrain, has_tram: hasTram, is_urban: true, coverage: "ok" };
-  } catch {
-    const isUrban = (population ?? 0) >= URBAN_POP_THRESHOLD;
-    return { ...emptyTransport, is_urban: isUrban };
+    return {
+      score, stops: stops.slice(0, 15), nearest_stop_m: nearest,
+      has_metro_train: hasMetroTrain, has_tram: hasTram,
+      is_urban: isUrban, is_urban_source: urbanSource, is_urban_label: urbanLabel,
+      regime, regime_source: regimeSource, regime_label: regimeLabel,
+      niveau_7: urbain.niveau_7, rail: null,
+      coverage: "ok",
+    };
+  } catch (e) {
+    console.error("[Transport] Error:", e);
+    return { ...emptyTransport, coverage: "error" };
   }
 }
 
@@ -1215,6 +2215,20 @@ function processBpeRecords(records: Array<Record<string, string>>, lat: number, 
       source: isApiSource ? "api_datagouv" : source === "supabase" ? "supabase" : "none",
       raw_count: records.length, full_coverage: fullCoverage, zero_categories: zeroCats,
       suspected_partial_categories: fullCoverage ? [] : zeroCats, confidence,
+      // v1.4.2 — Deux précisions qui manquaient et faisaient lire les décomptes
+      // de travers :
+      //   • le périmètre est la COMMUNE (filtre depcom), jamais un rayon ;
+      //   • un compteur à 0 sur un extrait partiel n'est pas un constat.
+      // Sur Ascain, l'extrait ne contient que 18 lignes et aucun code D301 :
+      // « 0 pharmacie » traduit une lacune de source, pas une commune sans
+      // pharmacie. Ces champs sont relayés au Copilot par copilot-chat.
+      perimetre: "commune (filtre depcom) — PAS un rayon en km",
+      avertissement_zeros:
+        (fullCoverage
+          ? "Extrait BPE complet : un compteur à 0 peut être lu comme une absence réelle."
+          : `Extrait BPE PARTIEL (${records.length} equipement(s) recenses). Un compteur a 0 (pharmacie, supermarche...) traduit `
+            + `probablement une lacune de la source, PAS une absence sur le terrain. Ne presente aucun zero comme un constat : `
+            + `dis que l'equipement n'est pas recense dans l'extrait disponible.`),
     },
   };
 }
@@ -1268,40 +2282,94 @@ async function fetchEhpadConcurrence(lat: number, lon: number, radiusKm: number,
 // ============================================================================
 // SPECIFIC DATA COMPUTATION
 // ============================================================================
+//
+// Correctif B — convention de nommage des blocs `specific`.
+// Un champ nu (`pct_75_plus`) porte une MESURE ou `null`. Une estimation vit
+// toujours dans un champ suffixé `_estime`, accompagné d'un `_source`. Aucun
+// consommateur ne peut donc afficher une estimation sans l'avoir nommée.
+// Les anciens `?? 10` / `?? 18` / `?? 5` mélangeaient les deux dans le même
+// champ — c'est ainsi que « 7,5 % de chômage » s'est retrouvé dans un PDF client.
+
+type SourceChamp = 'mesure' | 'estimation_dept' | 'heuristique_densite' | 'absente';
+
+/** Valeur de travail : la mesure si elle existe, sinon l'estimation. Sert aux
+ *  CALCULS internes (une population active estimée vaut mieux que rien), jamais
+ *  à l'affichage direct — l'appelant expose toujours le triplet complet. */
+function champDemo(
+  insee: InseeData | null,
+  cle: keyof DemographieEstimee & keyof InseeData,
+): { valeur: number | null; estime: number | null; source: SourceChamp; calcul: number | null } {
+  const mesure = (insee?.[cle] ?? null) as number | null;
+  const estime = (insee?.demographie_estimee?.[cle] ?? null) as number | null;
+  const source: SourceChamp = mesure != null
+    ? 'mesure'
+    : estime != null
+      ? ((insee?.insee_data_quality?.[cle] as SourceChamp | undefined) ?? 'estimation_dept')
+      : 'absente';
+  return { valeur: mesure, estime, source, calcul: mesure ?? estime };
+}
 
 function computeEhpadSpecific(insee: InseeData | null, bpe: BpeData | null, concurrence: Awaited<ReturnType<typeof fetchEhpadConcurrence>>) {
-  const population = insee?.population ?? 50000; const pct75 = insee?.pct_75_plus ?? 10;
-  const pop75 = Math.round(population * (pct75 / 100));
-  const densiteLits = pop75 > 0 ? Math.round((concurrence.total_lits / pop75) * 1000 * 10) / 10 : null;
+  const population = insee?.population && insee.population > 0 ? insee.population : null;
+  const c75 = champDemo(insee, 'pct_75_plus');
+  const pct75 = c75.calcul;
+  // Plus de `population ?? 50000` : une population inconnue ne devient pas une
+  // ville moyenne. Sans population ni part des 75+, il n'y a pas de pop75.
+  const pop75 = population != null && pct75 != null ? Math.round(population * (pct75 / 100)) : null;
+  const densiteLits = pop75 != null && pop75 > 0 ? Math.round((concurrence.total_lits / pop75) * 1000 * 10) / 10 : null;
   let tauxEquipement: "sous_equipe" | "equilibre" | "sur_equipe" = "equilibre";
   let potentiel: "fort" | "moyen" | "faible" = "moyen";
   if (densiteLits !== null) { if (densiteLits < 80) { tauxEquipement = "sous_equipe"; potentiel = "fort"; } else if (densiteLits > 150) { tauxEquipement = "sur_equipe"; potentiel = "faible"; } }
   const coutMensuelEstime = concurrence.prix_stats?.prix_hebergement_moyen && concurrence.tarifs_gir?.tarif_gir_1_2_moyen ? Math.round((concurrence.prix_stats.prix_hebergement_moyen + concurrence.tarifs_gir.tarif_gir_1_2_moyen) * 30.5) : null;
-  return { concurrence, demographie_senior: { population_75_plus: pop75, pct_75_plus: pct75 }, offre_sante: { pharmacies: bpe?.nb_pharmacies ?? 0 }, indicateurs_marche: { densite_lits_1000_seniors: densiteLits, taux_equipement_zone: tauxEquipement, potentiel_marche: potentiel }, analyse_prix: concurrence.prix_stats ? { ...concurrence.prix_stats, ...concurrence.tarifs_gir, cout_mensuel_moyen_gir_1_2: coutMensuelEstime, interpretation: concurrence.prix_stats.prix_hebergement_median ? (concurrence.prix_stats.prix_hebergement_median < 70 ? "Prix compétitifs" : concurrence.prix_stats.prix_hebergement_median < 90 ? "Prix dans la moyenne" : "Prix élevés") : null } : null };
+  return { concurrence, demographie_senior: { population_75_plus: pop75, population_75_plus_source: c75.source, pct_75_plus: c75.valeur, pct_75_plus_estime: c75.estime, pct_75_plus_source: c75.source }, offre_sante: { pharmacies: bpe?.nb_pharmacies ?? 0 }, indicateurs_marche: { densite_lits_1000_seniors: densiteLits, taux_equipement_zone: tauxEquipement, potentiel_marche: potentiel }, analyse_prix: concurrence.prix_stats ? { ...concurrence.prix_stats, ...concurrence.tarifs_gir, cout_mensuel_moyen_gir_1_2: coutMensuelEstime, interpretation: concurrence.prix_stats.prix_hebergement_median ? (concurrence.prix_stats.prix_hebergement_median < 70 ? "Prix compétitifs" : concurrence.prix_stats.prix_hebergement_median < 90 ? "Prix dans la moyenne" : "Prix élevés") : null } : null };
 }
 
 function computeLogementSpecific(insee: InseeData | null, dvf: DvfData | null, bpe: BpeData | null) {
-  const population = insee?.population ?? 50000;
-  return { demographie: { menages_total: Math.round(population / 2.2), pct_logements_vacants: insee?.pct_logements_vacants ?? 5, pct_moins_15: insee?.pct_moins_15 ?? 18, pct_familles: (insee?.pct_30_44 ?? 19) + (insee?.pct_moins_15 ?? 18) }, marche_immobilier: { prix_m2_ancien: dvf?.prix_m2_median ?? null, prix_m2_neuf: dvf?.prix_m2_median ? Math.round(dvf.prix_m2_median * 1.2) : null, evolution_prix_pct: dvf?.evolution_prix_pct ?? null }, cadre_vie: { nb_ecoles: bpe?.nb_ecoles ?? 0, nb_commerces: bpe?.commerces?.count ?? 0, nb_sante: bpe?.sante?.count ?? 0 }, indicateurs_marche: { tension_locative: (insee?.densite ?? 0) > 3000 ? "forte" : (insee?.densite ?? 0) > 1000 ? "moyenne" : "faible", attractivite_familiale: (bpe?.nb_ecoles ?? 0) >= 3 ? "forte" : "moyenne" } };
+  const population = insee?.population && insee.population > 0 ? insee.population : null;
+  const cVac = champDemo(insee, 'pct_logements_vacants');
+  const cM15 = champDemo(insee, 'pct_moins_15');
+  const c3044 = champDemo(insee, 'pct_30_44');
+  // ⚠️ pct_logements_vacants valait `?? 8` au scoring et `?? 5` ici : le chiffre
+  // affiché et le chiffre noté n'étaient pas le même nombre. Il n'y a plus qu'une
+  // seule valeur, et elle porte sa provenance.
+  // pct_familles suit la même règle que les autres : champ nu = mesure ou null.
+  // Le construire depuis `.calcul` en aurait fait une somme de deux estimations
+  // servie dans un champ nu — le « simple drapeau à côté de la valeur » que
+  // cette correction cherche précisément à ne plus faire. Son consommateur
+  // (AnalysePredictivePanel) note un score dessus : il doit voir l'absence.
+  const pctFamillesMesure = cM15.valeur != null && c3044.valeur != null ? c3044.valeur + cM15.valeur : null;
+  const pctFamillesEstime = cM15.estime != null && c3044.estime != null ? c3044.estime + cM15.estime : null;
+  return { demographie: { menages_total: population != null ? Math.round(population / 2.2) : null, pct_logements_vacants: cVac.valeur, pct_logements_vacants_estime: cVac.estime, pct_logements_vacants_source: cVac.source, pct_moins_15: cM15.valeur, pct_moins_15_estime: cM15.estime, pct_moins_15_source: cM15.source, pct_familles: pctFamillesMesure, pct_familles_estime: pctFamillesEstime, pct_familles_source: (cM15.source === 'mesure' && c3044.source === 'mesure' ? 'mesure' : cM15.source) as SourceChamp }, marche_immobilier: { prix_m2_ancien: dvf?.prix_m2_median ?? null, prix_m2_neuf: dvf?.prix_m2_median ? Math.round(dvf.prix_m2_median * 1.2) : null, evolution_prix_pct: dvf?.evolution_prix_pct ?? null }, cadre_vie: { nb_ecoles: bpe?.nb_ecoles ?? 0, nb_commerces: bpe?.commerces?.count ?? 0, nb_sante: bpe?.sante?.count ?? 0 }, indicateurs_marche: { tension_locative: insee?.densite ? (insee.densite > 3000 ? "forte" : insee.densite > 1000 ? "moyenne" : "faible") : null, attractivite_familiale: (bpe?.nb_ecoles ?? 0) >= 3 ? "forte" : "moyenne" } };
 }
 
 function computeCommerceSpecific(insee: InseeData | null, bpe: BpeData | null, transport: TransportData | null) {
-  const revenuMedian = insee?.revenu_median ?? null; const revenuForCalc = revenuMedian ?? 21500;
-  return { zone_chalandise: { population: insee?.population ?? 0, revenu_median: revenuMedian, pouvoir_achat: revenuForCalc > 25000 ? "élevé" : revenuForCalc > 20000 ? "moyen" : "faible", pouvoir_achat_indice: Math.round((revenuForCalc / 21500) * 100) }, concurrence: { commerces_total: bpe?.commerces?.count ?? 0, supermarches: bpe?.nb_supermarches ?? 0 }, flux_pietons: { score_flux: transport?.score ?? 50, proximite_metro: transport?.has_metro_train ?? false, proximite_tram: transport?.has_tram ?? false }, indicateurs_marche: { dynamisme_zone: (transport?.score ?? 0) > 70 ? "fort" : "moyen", saturation_commerciale: (bpe?.commerces?.count ?? 0) > 30 ? "élevée" : "normale" } };
+  // Le revenu médian porte déjà sa provenance depuis v1.3 : on la relaie au
+  // lieu de la diluer dans un `?? 21500` qui rendait l'indice de pouvoir
+  // d'achat toujours calculable, donc toujours affichable, donc toujours cru.
+  const revenuMedian = insee?.revenu_median ?? null;
+  const revenuEstime = insee?.revenu_median_source === 'dept_fallback';
+  const revenuMesure = revenuMedian != null && !revenuEstime ? revenuMedian : null;
+  return { zone_chalandise: { population: insee?.population && insee.population > 0 ? insee.population : null, revenu_median: revenuMesure, revenu_median_estime: revenuEstime ? revenuMedian : null, revenu_median_source: insee?.revenu_median_source ?? 'none', pouvoir_achat: revenuMedian == null ? null : revenuMedian > 25000 ? "élevé" : revenuMedian > 20000 ? "moyen" : "faible", pouvoir_achat_indice: revenuMedian == null ? null : Math.round((revenuMedian / 21500) * 100) }, concurrence: { commerces_total: bpe?.commerces?.count ?? 0, supermarches: bpe?.nb_supermarches ?? 0 }, flux_pietons: { score_flux: transport?.score ?? 50, proximite_metro: transport?.has_metro_train ?? false, proximite_tram: transport?.has_tram ?? false }, indicateurs_marche: { dynamisme_zone: (transport?.score ?? 0) > 70 ? "fort" : "moyen", saturation_commerciale: (bpe?.commerces?.count ?? 0) > 30 ? "élevée" : "normale" } };
 }
 
 function computeBureauxSpecific(insee: InseeData | null, transport: TransportData | null) {
-  const population = insee?.population ?? 50000; const pctActifs = insee?.pct_actifs ?? 45;
-  return { accessibilite: { score_transport: transport?.score ?? 50, metro_train: transport?.has_metro_train ?? false, tram: transport?.has_tram ?? false }, bassin_emploi: { population_active_estimee: Math.round(population * (pctActifs / 100)), pct_actifs: pctActifs, taux_chomage: insee?.taux_chomage ?? 7.5 }, indicateurs_marche: { attractivite_entreprises: (transport?.score ?? 0) > 75 ? "forte" : "moyenne", accessibilite_critique: transport?.has_metro_train ?? false } };
+  const population = insee?.population && insee.population > 0 ? insee.population : null;
+  const cAct = champDemo(insee, 'pct_actifs');
+  return { accessibilite: { score_transport: transport?.score ?? 50, metro_train: transport?.has_metro_train ?? false, tram: transport?.has_tram ?? false }, bassin_emploi: { population_active_estimee: population != null && cAct.calcul != null ? Math.round(population * (cAct.calcul / 100)) : null, population_active_source: cAct.source, pct_actifs: cAct.valeur, pct_actifs_estime: cAct.estime, pct_actifs_source: cAct.source, taux_chomage: insee?.taux_chomage_source === 'socioeco' ? insee.taux_chomage : null, taux_chomage_estime: insee?.taux_chomage_source === 'dept_fallback' ? insee.taux_chomage_estime : null, taux_chomage_source: insee?.taux_chomage_source ?? 'none' }, indicateurs_marche: { attractivite_entreprises: (transport?.score ?? 0) > 75 ? "forte" : "moyenne", accessibilite_critique: transport?.has_metro_train ?? false } };
 }
 
 function computeEtudiantSpecific(insee: InseeData | null, bpe: BpeData | null, transport: TransportData | null) {
-  const population = insee?.population ?? 50000; const pctEtudiants = insee?.pct_etudiants ?? 6; const hasUniv = (bpe?.nb_universites ?? 0) >= 1;
-  return { population_etudiante: { estimee: Math.round(population * (pctEtudiants / 100)), pct_etudiants: pctEtudiants, pct_15_29: insee?.pct_15_29 ?? 16, presence_universitaire: hasUniv, nb_etablissements_superieurs: bpe?.nb_universites ?? 0 }, accessibilite: { score_transport: transport?.score ?? 50, metro_train: transport?.has_metro_train ?? false }, cadre_vie: { nb_bibliotheques: bpe?.loisirs?.count ?? 0, nb_loisirs: bpe?.loisirs?.count ?? 0 }, indicateurs_marche: { potentiel_marche: hasUniv || pctEtudiants > 8 ? "fort" : pctEtudiants > 5 ? "moyen" : "faible", marche_locatif: (insee?.pct_locataires ?? 0) > 50 ? "actif" : "modéré" } };
+  const population = insee?.population && insee.population > 0 ? insee.population : null;
+  const cEtu = champDemo(insee, 'pct_etudiants');
+  const c1529 = champDemo(insee, 'pct_15_29');
+  const cLoc = champDemo(insee, 'pct_locataires');
+  const hasUniv = (bpe?.nb_universites ?? 0) >= 1;
+  const pctEtu = cEtu.calcul;
+  return { population_etudiante: { estimee: population != null && pctEtu != null ? Math.round(population * (pctEtu / 100)) : null, estimee_source: cEtu.source, pct_etudiants: cEtu.valeur, pct_etudiants_estime: cEtu.estime, pct_etudiants_source: cEtu.source, pct_15_29: c1529.valeur, pct_15_29_estime: c1529.estime, pct_15_29_source: c1529.source, presence_universitaire: hasUniv, nb_etablissements_superieurs: bpe?.nb_universites ?? 0 }, accessibilite: { score_transport: transport?.score ?? 50, metro_train: transport?.has_metro_train ?? false }, cadre_vie: { nb_bibliotheques: bpe?.loisirs?.count ?? 0, nb_loisirs: bpe?.loisirs?.count ?? 0 }, indicateurs_marche: { potentiel_marche: hasUniv ? "fort" : pctEtu == null ? null : pctEtu > 8 ? "fort" : pctEtu > 5 ? "moyen" : "faible", marche_locatif: cLoc.calcul == null ? null : cLoc.calcul > 50 ? "actif" : "modéré", marche_locatif_source: cLoc.source } };
 }
 
 function computeHotelSpecific(insee: InseeData | null, bpe: BpeData | null, transport: TransportData | null) {
-  return { accessibilite: { score_transport: transport?.score ?? 50, metro_train: transport?.has_metro_train ?? false, tram: transport?.has_tram ?? false }, attractivite: { population: insee?.population ?? 0, densite: insee?.densite ?? 0, nb_loisirs: bpe?.loisirs?.count ?? 0, zone_touristique: (bpe?.loisirs?.count ?? 0) >= 5 }, indicateurs_marche: { potentiel: (transport?.score ?? 0) > 60 && (bpe?.loisirs?.count ?? 0) >= 3 ? "fort" : "moyen" } };
+  return { accessibilite: { score_transport: transport?.score ?? 50, metro_train: transport?.has_metro_train ?? false, tram: transport?.has_tram ?? false }, attractivite: { population: insee?.population && insee.population > 0 ? insee.population : null, densite: insee?.densite && insee.densite > 0 ? insee.densite : null, nb_loisirs: bpe?.loisirs?.count ?? 0, zone_touristique: (bpe?.loisirs?.count ?? 0) >= 5 }, indicateurs_marche: { potentiel: (transport?.score ?? 0) > 60 && (bpe?.loisirs?.count ?? 0) >= 3 ? "fort" : "moyen" } };
 }
 
 // ============================================================================
@@ -1314,6 +2382,12 @@ interface ScoringResult {
   demande: number; offre: number; accessibilite: number; environnement: number; global: number;
   adjustments: ScoreAdjustment[]; explanation: string;
   transport_exclu: boolean;
+  /** Correctif B — sur combien de MESURES le pilier demande repose réellement.
+   *  Sans cela, 50/100 est indécidable : tout mesuré et compensé, ou rien reçu. */
+  demande_confiance: 'forte' | 'moyenne' | 'faible' | 'sans_objet';
+  demande_champs_mesures: number;
+  demande_champs_attendus: number;
+  demande_champs_manquants: string[];
 }
 
 function computeDifferentiatedScores(
@@ -1326,45 +2400,126 @@ function computeDifferentiatedScores(
   let demande = 50, offre = 50, accessibilite = 50, environnement = 50;
 
   // ── Demande ──────────────────────────────────────────────────────────────
+  // Correctif B — un seuil ne s'applique qu'à une MESURE.
+  //
+  // Les valeurs démographiques n'étaient jamais nulles : fetchInseeData les
+  // fabriquait à partir d'un modèle départemental de 13 lignes et de deux
+  // formules de densité. Les `?? 10`, `?? 45`, `?? 7.5` écrits ici étaient donc
+  // du code mort, et chaque seuil s'appliquait en réalité à une constante — en
+  // produisant un ajustement affirmatif (« Zone familiale », « Chômage élevé »)
+  // indiscernable d'un constat de terrain. Un « Demande 50/100 » pouvait alors
+  // vouloir dire « tout est mesuré et se compense » aussi bien que « rien n'a
+  // répondu », sans qu'aucun lecteur puisse trancher.
+  //
+  // Règle retenue : une donnée absente ne déclenche NI bonus NI malus, elle est
+  // comptée comme non mesurée, et la confiance du pilier en rend compte. C'est
+  // la discipline déjà appliquée à BPE partiel et au régime d'accessibilité.
+  const demandeChamps: Array<{ libelle: string; mesure: boolean }> = [];
+  /** Enregistre le champ et ne renvoie une valeur QUE si elle est mesurée. */
+  const exigeMesure = (libelle: string, valeur: number | null | undefined): number | null => {
+    const v = typeof valeur === 'number' && Number.isFinite(valeur) ? valeur : null;
+    demandeChamps.push({ libelle, mesure: v !== null });
+    return v;
+  };
+  // Population et densité viennent de geo.api ; un 0 y signale un échec de
+  // récupération, pas une commune vide — aucune commune française n'a 0 habitant.
+  const popMesuree = insee?.population && insee.population > 0 ? insee.population : null;
+  const densiteMesuree = insee?.densite && insee.densite > 0 ? insee.densite : null;
+
   if (projectType === "ehpad") {
-    const pct75 = insee?.pct_75_plus ?? 10;
-    if (pct75 > 14) { demande += 25; adjustments.push({ label: "Pop. 75+ élevée", value: 25, type: 'bonus' }); }
-    else if (pct75 > 11) { demande += 15; adjustments.push({ label: "Pop. 75+ correcte", value: 15, type: 'bonus' }); }
-    else if (pct75 < 8) { demande -= 15; adjustments.push({ label: "Pop. 75+ faible", value: -15, type: 'malus' }); }
+    const pct75 = exigeMesure("part des 75 ans et plus", insee?.pct_75_plus);
+    if (pct75 != null) {
+      if (pct75 > 14) { demande += 25; adjustments.push({ label: "Pop. 75+ élevée", value: 25, type: 'bonus' }); }
+      else if (pct75 > 11) { demande += 15; adjustments.push({ label: "Pop. 75+ correcte", value: 15, type: 'bonus' }); }
+      else if (pct75 < 8) { demande -= 15; adjustments.push({ label: "Pop. 75+ faible", value: -15, type: 'malus' }); }
+    }
+    // Le potentiel marché vient de la concurrence EHPAD relevée sur le terrain
+    // (Overpass + tarifs CNSA), pas d'un modèle : il reste évalué tel quel.
     const ind = specific?.indicateurs_marche as { potentiel_marche?: string } | undefined;
     if (ind?.potentiel_marche === "fort") { demande += 15; adjustments.push({ label: "Fort potentiel marché", value: 15, type: 'bonus' }); }
     else if (ind?.potentiel_marche === "faible") { demande -= 20; adjustments.push({ label: "Faible potentiel", value: -20, type: 'malus' }); }
   } else if (projectType === "residence_etudiante") {
-    const pctEtudiants = insee?.pct_etudiants ?? 6; const pct1529 = insee?.pct_15_29 ?? 16;
-    if (pctEtudiants > 10) { demande += 30; adjustments.push({ label: "Zone très étudiante", value: 30, type: 'bonus' }); }
-    else if (pctEtudiants > 7) { demande += 20; adjustments.push({ label: "Zone étudiante", value: 20, type: 'bonus' }); }
-    else if (pctEtudiants < 4) { demande -= 15; adjustments.push({ label: "Peu d'étudiants", value: -15, type: 'malus' }); }
-    if (pct1529 > 22) { demande += 10; adjustments.push({ label: "Pop. jeune élevée", value: 10, type: 'bonus' }); }
+    const pctEtudiants = exigeMesure("part des étudiants", insee?.pct_etudiants);
+    const pct1529 = exigeMesure("part des 15-29 ans", insee?.pct_15_29);
+    if (pctEtudiants != null) {
+      if (pctEtudiants > 10) { demande += 30; adjustments.push({ label: "Zone très étudiante", value: 30, type: 'bonus' }); }
+      else if (pctEtudiants > 7) { demande += 20; adjustments.push({ label: "Zone étudiante", value: 20, type: 'bonus' }); }
+      else if (pctEtudiants < 4) { demande -= 15; adjustments.push({ label: "Peu d'étudiants", value: -15, type: 'malus' }); }
+    }
+    if (pct1529 != null && pct1529 > 22) { demande += 10; adjustments.push({ label: "Pop. jeune élevée", value: 10, type: 'bonus' }); }
+    // Relevé BPE, donc mesuré : conservé.
     const hasUniv = (specific?.population_etudiante as { presence_universitaire?: boolean } | undefined)?.presence_universitaire;
     if (hasUniv) { demande += 15; adjustments.push({ label: "Présence universitaire", value: 15, type: 'bonus' }); }
   } else if (projectType === "commerce") {
-    const revenu = insee?.revenu_median ?? 21500; const densite = insee?.densite ?? 0;
-    if (revenu > 26000) { demande += 20; adjustments.push({ label: "Haut pouvoir d'achat", value: 20, type: 'bonus' }); }
-    else if (revenu > 23000) { demande += 10; adjustments.push({ label: "Bon pouvoir d'achat", value: 10, type: 'bonus' }); }
-    else if (revenu < 19000) { demande -= 15; adjustments.push({ label: "Pouvoir d'achat faible", value: -15, type: 'malus' }); }
-    if (densite > 3000) { demande += 15; adjustments.push({ label: "Zone très dense", value: 15, type: 'bonus' }); }
-    else if (densite > 1000) { demande += 8; }
-    else if (densite < 300) { demande -= 10; adjustments.push({ label: "Zone peu dense", value: -10, type: 'malus' }); }
+    // revenu_median a un vrai chemin de mesure ; on n'accepte PAS le repli
+    // départemental ici, sans quoi le seuil noterait un modèle.
+    const revenu = exigeMesure(
+      "revenu médian",
+      insee?.revenu_median_source === 'dept_fallback' ? null : insee?.revenu_median,
+    );
+    const densite = exigeMesure("densité", densiteMesuree);
+    if (revenu != null) {
+      if (revenu > 26000) { demande += 20; adjustments.push({ label: "Haut pouvoir d'achat", value: 20, type: 'bonus' }); }
+      else if (revenu > 23000) { demande += 10; adjustments.push({ label: "Bon pouvoir d'achat", value: 10, type: 'bonus' }); }
+      else if (revenu < 19000) { demande -= 15; adjustments.push({ label: "Pouvoir d'achat faible", value: -15, type: 'malus' }); }
+    }
+    if (densite != null) {
+      if (densite > 3000) { demande += 15; adjustments.push({ label: "Zone très dense", value: 15, type: 'bonus' }); }
+      else if (densite > 1000) { demande += 8; }
+      else if (densite < 300) { demande -= 10; adjustments.push({ label: "Zone peu dense", value: -10, type: 'malus' }); }
+    }
   } else if (projectType === "bureaux") {
-    if ((insee?.pct_actifs ?? 45) > 50) { demande += 15; adjustments.push({ label: "Fort bassin d'actifs", value: 15, type: 'bonus' }); }
-    else if ((insee?.pct_actifs ?? 45) < 40) { demande -= 10; adjustments.push({ label: "Bassin d'actifs limité", value: -10, type: 'malus' }); }
-    if ((insee?.taux_chomage ?? 7.5) > 10) { demande -= 10; adjustments.push({ label: "Chômage élevé", value: -10, type: 'malus' }); }
+    const pctActifs = exigeMesure("part des actifs", insee?.pct_actifs);
+    const chomage = exigeMesure(
+      "taux de chômage",
+      insee?.taux_chomage_source === 'socioeco' ? insee?.taux_chomage : null,
+    );
+    if (pctActifs != null) {
+      if (pctActifs > 50) { demande += 15; adjustments.push({ label: "Fort bassin d'actifs", value: 15, type: 'bonus' }); }
+      else if (pctActifs < 40) { demande -= 10; adjustments.push({ label: "Bassin d'actifs limité", value: -10, type: 'malus' }); }
+    }
+    if (chomage != null && chomage > 10) { demande -= 10; adjustments.push({ label: "Chômage élevé", value: -10, type: 'malus' }); }
   } else if (projectType === "logement") {
-    const pop = insee?.population ?? 0;
-    if (pop > 100000) { demande += 15; adjustments.push({ label: "Grande agglomération", value: 15, type: 'bonus' }); }
-    else if (pop > 30000) { demande += 8; }
-    if ((insee?.pct_moins_15 ?? 18) > 20) { demande += 10; adjustments.push({ label: "Zone familiale", value: 10, type: 'bonus' }); }
-    const tv = insee?.pct_logements_vacants ?? 8;
-    if (tv > 12) { demande -= 15; adjustments.push({ label: "Vacance élevée", value: -15, type: 'malus' }); }
-    else if (tv < 5) { demande += 10; adjustments.push({ label: "Tension locative", value: 10, type: 'bonus' }); }
+    const pop = exigeMesure("population", popMesuree);
+    const pctMoins15 = exigeMesure("part des moins de 15 ans", insee?.pct_moins_15);
+    const tv = exigeMesure("part de logements vacants", insee?.pct_logements_vacants);
+    if (pop != null) {
+      if (pop > 100000) { demande += 15; adjustments.push({ label: "Grande agglomération", value: 15, type: 'bonus' }); }
+      else if (pop > 30000) { demande += 8; }
+    }
+    if (pctMoins15 != null && pctMoins15 > 20) { demande += 10; adjustments.push({ label: "Zone familiale", value: 10, type: 'bonus' }); }
+    if (tv != null) {
+      if (tv > 12) { demande -= 15; adjustments.push({ label: "Vacance élevée", value: -15, type: 'malus' }); }
+      else if (tv < 5) { demande += 10; adjustments.push({ label: "Tension locative", value: 10, type: 'bonus' }); }
+    }
   } else if (projectType === "hotel") {
+    // Relevé BPE : mesuré.
     if ((bpe?.loisirs?.count ?? 0) >= 5) { demande += 15; adjustments.push({ label: "Zone touristique", value: 15, type: 'bonus' }); }
-    if ((insee?.densite ?? 0) > 2000) { demande += 10; }
+    const densiteH = exigeMesure("densité", densiteMesuree);
+    if (densiteH != null && densiteH > 2000) { demande += 10; }
+  }
+
+  // Confiance du pilier demande — sur le modèle de bpe_quality.confidence.
+  // `attendus === 0` signifie qu'aucun champ INSEE n'entre dans ce type de
+  // projet (cas hôtel sans densité) : la confiance n'est alors pas 'faible'
+  // par défaut, elle n'a simplement pas d'objet.
+  const demandeMesures = demandeChamps.filter((c) => c.mesure).length;
+  const demandeAttendus = demandeChamps.length;
+  const demandeConfiance: 'forte' | 'moyenne' | 'faible' | 'sans_objet' =
+    demandeAttendus === 0 ? 'sans_objet'
+      : demandeMesures === demandeAttendus ? 'forte'
+      : demandeMesures >= Math.ceil(demandeAttendus / 2) ? 'moyenne'
+      : 'faible';
+  const demandeManquants = demandeChamps.filter((c) => !c.mesure).map((c) => c.libelle);
+  if (demandeManquants.length > 0) {
+    // value: 0 — cet ajustement ne pèse pas sur le score, il le QUALIFIE.
+    // Même convention que « Bonus d'équipement non appliqués : extrait BPE partiel ».
+    adjustments.push({
+      label: demandeMesures === 0
+        ? `Demande non étayée : aucune donnée communale mesurée (${demandeManquants.join(', ')}). Le 50/100 est une valeur par défaut, pas un constat.`
+        : `Demande partiellement étayée : ${demandeManquants.join(', ')} non mesuré${demandeManquants.length > 1 ? 's' : ''} pour cette commune — aucun seuil n'a été appliqué dessus.`,
+      value: 0, type: 'malus',
+    });
   }
 
   // ── Offre ────────────────────────────────────────────────────────────────
@@ -1378,17 +2533,46 @@ function computeDifferentiatedScores(
     if (nb > 30) { offre -= 15; adjustments.push({ label: "Forte concurrence commerciale", value: -15, type: 'malus' }); }
     else if (nb > 5 && nb < 20) { offre += 10; adjustments.push({ label: "Zone commerciale équilibrée", value: 10, type: 'bonus' }); }
   } else {
-    if (dvf && dvf.nb_transactions > 50) offre += 15;
-    else if (dvf && dvf.nb_transactions < 10) offre -= 10;
-    if (dvf?.prix_m2_median) {
+    // v1.4.0 — Ces deux seuils étaient faussés par le périmètre départemental.
+    // `nb_transactions` valait 500 (le plafond) pour TOUTES les communes de
+    // France : le bonus « marché liquide » de +15 était donc acquis d'office, et
+    // le malus des marchés atones jamais déclenché. Le seuil de prix, lui, était
+    // évalué sur une médiane départementale — Ascain ratait le bonus « > 5 000 »
+    // avec 4 184 alors que la commune vaut 5 902.
+    // On ne juge la liquidité que sur un périmètre COMMUNAL : au niveau
+    // départemental, le volume ne dit rien du marché local.
+    if (dvf?.perimetre === 'commune') {
+      if (dvf.nb_transactions > 50) offre += 15;
+      else if (dvf.nb_transactions < 10) offre -= 10;
+    }
+    if (dvf?.prix_m2_median && dvf.perimetre === 'commune') {
       if (dvf.prix_m2_median > 5000) offre += 10;
       else if (dvf.prix_m2_median < 2000) offre -= 10;
     }
   }
 
   // ── Environnement ────────────────────────────────────────────────────────
+  // ⚠️ v1.4.3 — CE PILIER MESURE LES ÉQUIPEMENTS, PAS L'ENVIRONNEMENT.
+  // Il vaut le score BPE, majoré de bonus d'équipement. Son nom induit en
+  // erreur : sur Ascain, un 80/100 a été lu par le Copilot comme « un cadre
+  // favorable », alors qu'il ne dit rien du cadre de vie, du bruit, des risques
+  // ni de la qualité paysagère. Le libellé exposé le précise désormais.
   environnement = bpe?.score ?? 50;
-  if (projectType === "logement") {
+
+  // Les bonus ne sont accordés que sur un extrait BPE COMPLET.
+  // Asymétrie corrigée : sur un extrait partiel, une catégorie absente ne
+  // pénalise jamais (aucun malus n'existe) tandis qu'une catégorie présente
+  // accorde un bonus. Le score ne pouvait donc que monter, précisément là où la
+  // donnée est la moins fiable. Ascain : extrait de 18 lignes, confiance
+  // « faible », et pourtant +10 pour « ≥ 3 écoles » — les 3 seules lignes C108
+  // que contient l'extrait.
+  const bpeComplet = (bpe?.bpe_quality as Record<string, unknown> | null)?.full_coverage === true;
+  if (!bpeComplet) {
+    adjustments.push({
+      label: "Bonus d'équipement non appliqués : extrait BPE partiel",
+      value: 0, type: 'malus',
+    });
+  } else if (projectType === "logement") {
     if ((bpe?.nb_ecoles ?? 0) >= 3) { environnement += 10; adjustments.push({ label: "Écoles à proximité", value: 10, type: 'bonus' }); }
     if ((bpe?.commerces?.count ?? 0) >= 5) environnement += 5;
   } else if (projectType === "ehpad") {
@@ -1398,18 +2582,48 @@ function computeDifferentiatedScores(
     if ((bpe?.loisirs?.count ?? 0) >= 3) { environnement += 10; adjustments.push({ label: "Loisirs à proximité", value: 10, type: 'bonus' }); }
   }
 
-  // ── Accessibilité / Transport (v1.3.7) ───────────────────────────────────
-  // Si la commune n'est pas urbaine, on exclut complètement le pilier accessibilité
-  // et on redistribue son poids proportionnellement sur demande, offre, environnement.
-  const isUrban = transport?.is_urban === true;
-
+  // ── Accessibilité / Transport (v1.5.0) ───────────────────────────────────
+  // Le pilier n'est plus écarté sur un critère d'urbanité mais sur un critère
+  // de MESURE, propre au régime appliqué. Son poids n'est redistribué que si
+  // rien n'a pu être mesuré dans le régime retenu.
   demande       = Math.max(0, Math.min(100, demande));
   offre         = Math.max(0, Math.min(100, offre));
   environnement = Math.max(0, Math.min(100, environnement));
 
-  if (!isUrban) {
-    accessibilite = 0; // valeur sentinelle
-    adjustments.push({ label: "Transport non évalué (zone non-urbaine)", value: 0, type: 'bonus' });
+  // ── v1.4.0 — Deux motifs distincts d'exclusion du pilier accessibilité ────
+  // Corriger `is_urban` (point 3) ne suffit pas : Ascain devient urbaine, donc
+  // le pilier rentrerait dans le calcul avec le score 0 renvoyé par un Overpass
+  // qui n'a trouvé aucun arrêt — alors que la commune est desservie par Txik
+  // Txak et que la gare TER de Saint-Jean-de-Luz est à 5,9 km. On échangerait
+  // un faux « non applicable » contre un faux « 0/100 », ce qui est PIRE :
+  // le zéro entre dans la moyenne, l'exclusion non.
+  // Règle retenue, cohérente avec « pas de donnée ⇒ pas de pilier » :
+  // on n'évalue l'accessibilité que si une desserte a été RÉELLEMENT mesurée.
+  // ── v1.5.0 — La mesure dépend du régime ───────────────────────────────────
+  // La règle « pas de donnée ⇒ pas de pilier » ne change pas ; ce qui change,
+  // c'est CE QU'ON CHERCHE À MESURER. v1.4.0 écartait l'accessibilité d'Ascain
+  // faute d'arrêt à pied dans 1 km — un critère sans objet pour une ceinture
+  // urbaine. En régime routier, la desserte est mesurée dès que la base des
+  // gares a répondu ; `!isUrban` n'entre plus dans l'exclusion, parce qu'une
+  // commune rurale a désormais un barème qui lui correspond au lieu d'être
+  // déclarée hors sujet.
+  const regime = transport?.regime ?? 'transports_commun';
+
+  const dessertMesuree = regime === 'routier'
+    ? (transport?.rail?.coverage === 'ok')
+    : (transport?.coverage === 'ok' && (transport?.stops?.length ?? 0) > 0);
+
+  const transportExclu = !dessertMesuree;
+
+  const motifExclusion = regime === 'routier'
+    ? "non mesuré — la base des gares TER/TGV n'a pas répondu"
+    : transport?.coverage !== 'ok'
+      ? "non mesuré — source de desserte (Overpass) indisponible"
+      : "non mesuré — aucun arrêt référencé dans OpenStreetMap à moins d'1 km ; l'absence de référencement ne vaut pas absence de desserte";
+
+  if (transportExclu) {
+    accessibilite = 0; // valeur sentinelle — NE PAS afficher comme une note
+    adjustments.push({ label: `Accessibilité écartée du score : ${motifExclusion}`, value: 0, type: 'bonus' });
 
     const totalOther = weights.demande + weights.offre + weights.environnement;
     const wd = weights.demande / totalOther;
@@ -1423,22 +2637,41 @@ function computeDifferentiatedScores(
     return {
       demande, offre, accessibilite, environnement, global, adjustments,
       transport_exclu: true,
-      explanation: `Pondération ${projectType} (transport non applicable) : demande ${Math.round(wd * 100)}%, offre ${Math.round(wo * 100)}%, environnement ${Math.round(we * 100)}%`,
+      demande_confiance: demandeConfiance, demande_champs_mesures: demandeMesures,
+      demande_champs_attendus: demandeAttendus, demande_champs_manquants: demandeManquants,
+      // Le motif est explicite : « non applicable » (fait établi) et « non
+      // mesuré » (lacune de source) ne doivent plus se lire de la même façon.
+      explanation: `Pondération ${projectType} — accessibilité écartée (${motifExclusion}) : demande ${Math.round(wd * 100)}%, offre ${Math.round(wo * 100)}%, environnement ${Math.round(we * 100)}%`,
     };
   }
 
-  // Zone urbaine : calcul normal
   accessibilite = transport?.score ?? 50;
 
-  if (projectType === "bureaux") {
-    if (transport?.has_metro_train) { accessibilite += 15; adjustments.push({ label: "Métro/train à proximité", value: 15, type: 'bonus' }); }
-    else if (!transport?.has_metro_train && !transport?.has_tram) { accessibilite -= 20; adjustments.push({ label: "Pas de transport lourd", value: -20, type: 'malus' }); }
-  } else if (projectType === "residence_etudiante") {
-    if (transport?.has_metro_train) { accessibilite += 10; adjustments.push({ label: "Transports en commun", value: 10, type: 'bonus' }); }
-    if ((transport?.score ?? 0) < 40) { accessibilite -= 15; adjustments.push({ label: "Accessibilité insuffisante", value: -15, type: 'malus' }); }
-  } else if (projectType === "logement" || projectType === "commerce") {
-    if (transport?.has_metro_train) accessibilite += 10;
-    if (transport?.has_tram) accessibilite += 5;
+  // ⚠️ v1.5.0 — Ces bonus et malus sont ceux du régime TRANSPORTS EN COMMUN.
+  // `has_metro_train` et `has_tram` y décrivent une desserte À PIED. En régime
+  // routier ils valent false par construction : appliquer ce bloc y ferait
+  // tomber un malus « Pas de transport lourd » de -20 sur une commune dont on
+  // vient précisément de mesurer l'accessibilité autrement. Le barème routier
+  // est déjà complet et plafonné dans `scoreRoadRegime` — on n'y touche plus.
+  if (regime === 'transports_commun') {
+    if (projectType === "bureaux") {
+      if (transport?.has_metro_train) { accessibilite += 15; adjustments.push({ label: "Métro/train à proximité", value: 15, type: 'bonus' }); }
+      else if (!transport?.has_metro_train && !transport?.has_tram) { accessibilite -= 20; adjustments.push({ label: "Pas de transport lourd", value: -20, type: 'malus' }); }
+    } else if (projectType === "residence_etudiante") {
+      if (transport?.has_metro_train) { accessibilite += 10; adjustments.push({ label: "Transports en commun", value: 10, type: 'bonus' }); }
+      if ((transport?.score ?? 0) < 40) { accessibilite -= 15; adjustments.push({ label: "Accessibilité insuffisante", value: -15, type: 'malus' }); }
+    } else if (projectType === "logement" || projectType === "commerce") {
+      if (transport?.has_metro_train) accessibilite += 10;
+      if (transport?.has_tram) accessibilite += 5;
+    }
+  } else {
+    const rail = transport?.rail ?? null;
+    adjustments.push({
+      label: rail?.drive_minutes_estimated != null
+        ? `Accessibilité routière : ${rail.nearest_station_name} à ${rail.nearest_station_km} km, soit ~${rail.drive_minutes_estimated} min estimées`
+        : `Accessibilité routière : aucune gare TER/TGV à moins de ${RAIL_SEARCH_RADIUS_KM} km`,
+      value: 0, type: 'bonus',
+    });
   }
 
   accessibilite = Math.max(0, Math.min(100, accessibilite));
@@ -1448,7 +2681,12 @@ function computeDifferentiatedScores(
     accessibilite * weights.accessibilite + environnement * weights.environnement,
   )));
 
-  return { demande, offre, accessibilite, environnement, global, adjustments, transport_exclu: false, explanation: `Pondération ${projectType}: ${Object.entries(weights).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}: ${Math.round(v * 100)}%`).join(', ')}` };
+  return {
+    demande, offre, accessibilite, environnement, global, adjustments, transport_exclu: false,
+    demande_confiance: demandeConfiance, demande_champs_mesures: demandeMesures,
+    demande_champs_attendus: demandeAttendus, demande_champs_manquants: demandeManquants,
+    explanation: `Pondération ${projectType}: ${Object.entries(weights).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}: ${Math.round(v * 100)}%`).join(', ')}`,
+  };
 }
 
 // ============================================================================
@@ -1462,12 +2700,35 @@ function generateInsights(dvf: DvfData | null, transport: TransportData | null, 
   else if (scores.global >= 55) insights.push({ type: "positive", category: "global", message: "Contexte de marché favorable" });
   else if (scores.global < 40) insights.push({ type: "warning", category: "global", message: "Contexte de marché défavorable - Analyse approfondie recommandée" });
   if (dvf && dvf.nb_transactions > 0) insights.push({ type: "neutral", category: "dvf", message: `${dvf.nb_transactions} transactions DVF - Prix médian : ${dvf.prix_m2_median?.toLocaleString("fr-FR") ?? "N/A"} €/m²` });
-  if (transport?.is_urban) {
+  // ── v1.5.0 — L'insight suit le régime, pas `is_urban` ─────────────────────
+  // Cette branche testait `is_urban` et écrivait « Zone non-urbaine — critère
+  // transport non applicable ». Deux erreurs désormais : le critère EST
+  // applicable en régime routier, et le verdict aurait contredit le score que
+  // la même exécution venait de calculer. Un insight qui dément le score est
+  // pire qu'un insight absent : c'est lui que le Copilot recopie en prose.
+  if (transport?.regime === 'routier') {
+    const rail = transport.rail;
+    if (rail?.drive_minutes_estimated != null) {
+      const tgv = rail.nearest_tgv_km != null
+        ? `, gare TGV de ${rail.nearest_tgv_name} à ${rail.nearest_tgv_km} km`
+        : "";
+      insights.push({
+        type: rail.drive_minutes_estimated <= 20 ? "positive" : "neutral",
+        category: "transport",
+        message: `Accessibilité routière : ${rail.nearest_station_name} à ${rail.nearest_station_km} km, `
+          + `soit environ ${rail.drive_minutes_estimated} min de voiture (estimation)${tgv}`,
+      });
+    } else if (rail?.coverage === 'ok') {
+      insights.push({ type: "warning", category: "transport", message: `Aucune gare TER ou TGV à moins de ${RAIL_SEARCH_RADIUS_KM} km` });
+    } else {
+      insights.push({ type: "neutral", category: "transport", message: "Accessibilité non mesurée — la base des gares n'a pas répondu" });
+    }
+  } else if (transport?.coverage === 'ok') {
     if (transport.has_metro_train) insights.push({ type: "positive", category: "transport", message: "Excellente desserte transport (métro/train)" });
     else if (transport.has_tram) insights.push({ type: "positive", category: "transport", message: "Bonne desserte transport (tramway)" });
     else if ((transport.score ?? 0) < 40) insights.push({ type: "warning", category: "transport", message: "Accessibilité transport limitée" });
   } else {
-    insights.push({ type: "neutral", category: "transport", message: "Zone non-urbaine — critère transport non applicable" });
+    insights.push({ type: "neutral", category: "transport", message: "Accessibilité non mesurée — source de desserte indisponible" });
   }
   if (bpe && bpe.total_equipements > 0) {
     if (bpe.sante.count >= 3) insights.push({ type: "positive", category: "services", message: `${bpe.sante.count} établissements de santé à proximité` });
@@ -1518,8 +2779,19 @@ serve(async (req: Request): Promise<Response> => {
     const config = PROJECT_CONFIG[projectType];
     const radiusKm = Math.min(Math.max(Number(payload.radius_km) || config.defaultRadiusKm, 1), config.maxRadiusKm);
 
+    // v1.4.1 — INSEE déjà connu ? (payload direct, ou extrait de l'IDU de la
+    // parcelle) On le transmet pour permettre le repli hors-ligne si geo.api
+    // ne répond pas — sinon l'étude échouait alors que tout était résoluble.
+    const inseeConnu =
+      (payload.commune_insee as string | undefined)
+      ?? (payload.code_insee as string | undefined)
+      ?? (typeof payload.parcel_id === 'string'
+            ? parseParcelId(payload.parcel_id)?.codeInsee
+            : undefined)
+      ?? null;
+
     const t1 = Date.now();
-    const commune = await resolveCommune(lat, lon);
+    const commune = await resolveCommune(lat, lon, inseeConnu);
     timings.commune = Date.now() - t1;
 
     const codeInsee = commune?.code_insee ?? null;
@@ -1530,13 +2802,19 @@ serve(async (req: Request): Promise<Response> => {
     const communePopulation = commune?.population ?? null;
 
     const [dvf, insee, transport, bpe] = await Promise.all([
-      (async () => { const t = Date.now(); const r = await fetchDvfFromSupabase(dept, communeNom); timings.dvf = Date.now() - t; return r; })()
-        .catch((e) => { console.error("[DVF] crash:", e); return { nb_transactions: 0, prix_m2_median: null, prix_m2_moyen: null, prix_m2_min: null, prix_m2_max: null, evolution_prix_pct: null, transactions: [], coverage: "error" as Coverage } as DvfData; }),
+      // v1.4.0 : codeInsee transmis en 3e argument → périmètre COMMUNAL.
+      (async () => { const t = Date.now(); const r = await fetchDvfFromSupabase(dept, communeNom, codeInsee); timings.dvf = Date.now() - t; return r; })()
+        .catch((e) => { console.error("[DVF] crash:", e); return { nb_transactions: 0, prix_m2_median: null, prix_m2_moyen: null, prix_m2_min: null, prix_m2_max: null, evolution_prix_pct: null, transactions: [], coverage: "error" as Coverage, perimetre: null, perimetre_label: null, nb_transactions_plafonne: false } as DvfData; }),
       (async () => { const t = Date.now(); const r = codeInsee ? await fetchInseeData(codeInsee, communeNom, dept) : null; timings.insee = Date.now() - t; return r; })()
         .catch((e) => { console.error("[INSEE] crash:", e); return null; }),
       // v1.3.7 : communePopulation passé en 4e argument
-      (async () => { const t = Date.now(); const r = await fetchTransport(lat, lon, dept, communePopulation); timings.transport = Date.now() - t; return r; })()
-        .catch((e) => { console.error("[Transport] crash:", e); return { score: 0, stops: [], nearest_stop_m: null, has_metro_train: false, has_tram: false, is_urban: false, coverage: "error" as Coverage } as TransportData; }),
+      // v1.4.0 : codeInsee en 5e — urbanité lue dans la grille INSEE.
+      (async () => { const t = Date.now(); const r = await fetchTransport(lat, lon, dept, communePopulation, codeInsee); timings.transport = Date.now() - t; return r; })()
+        // v1.5.0 : le `as TransportData` masquait l'absence des nouveaux champs.
+        // On les renseigne sincèrement — regime_source 'repli' et rail null
+        // disent que rien n'a été mesuré, au lieu de laisser des `undefined`
+        // que les consommateurs auraient interprétés comme un régime urbain.
+        .catch((e) => { console.error("[Transport] crash:", e); return { score: 0, stops: [], nearest_stop_m: null, has_metro_train: false, has_tram: false, is_urban: false, is_urban_source: null, is_urban_label: null, regime: 'transports_commun' as const, regime_source: 'repli' as const, regime_label: "régime indéterminé — la mesure de desserte a échoué", niveau_7: null, rail: null, coverage: "error" as Coverage } as TransportData; }),
       (async () => { const t = Date.now(); const r = await fetchBpeFromSupabase(lat, lon, codeInsee, dept); timings.bpe = Date.now() - t; return r; })()
         .catch((e) => { console.error("[BPE] crash:", e); return { total_equipements: 0, score: 30, commerces: { count: 0, details: [] }, sante: { count: 0, details: [] }, services: { count: 0, details: [] }, education: { count: 0, details: [] }, loisirs: { count: 0, details: [] }, nb_ecoles: 0, nb_pharmacies: 0, nb_supermarches: 0, nb_universites: 0, coverage: "error" as Coverage, bpe_quality: null } as BpeData; }),
     ]);
@@ -1579,7 +2857,53 @@ serve(async (req: Request): Promise<Response> => {
 
     return jsonResponse({
       success: true, version: VERSION,
-      meta: { lat, lon, location_source: location.source, location_label: location.label ?? null, commune_insee: codeInsee, commune_nom: communeNom, departement: dept, project_type: projectType, project_type_label: config.label, radius_km: radiusKm, generated_at: new Date().toISOString() },
+      meta: {
+        lat, lon, location_source: location.source, location_label: location.label ?? null,
+        commune_insee: codeInsee, commune_nom: communeNom, departement: dept,
+        project_type: projectType, project_type_label: config.label,
+        radius_km: radiusKm,
+        generated_at: new Date().toISOString(),
+        // ⚠️ v1.4.4 — PÉRIMÈTRE RÉEL DE CHAQUE SOURCE.
+        // `radius_km` était exposé seul, et se lisait comme le rayon de toute
+        // l'étude : « les scores demande, offre et environnement sont calculés
+        // sur un rayon de 5 km autour de la parcelle ». C'est faux — les trois
+        // sont COMMUNAUX. En réalité `radius_km` ne gouverne QUE la recherche de
+        // concurrence EHPAD (fetchEhpadConcurrence) ; pour un projet logement il
+        // ne sert à rien. Ce bloc dit ce que chaque chiffre couvre vraiment.
+        perimetres: {
+          dvf: dvf?.perimetre_label ?? "commune",
+          insee: "commune (code INSEE)",
+          bpe: "commune (filtre depcom) — PAS un rayon",
+          // v1.5.0 : le périmètre du pilier accessibilité dépend du régime.
+          // L'annoncer en dur à « 1 km » était faux dès qu'on sortait de la
+          // ville dense, et c'est le genre de libellé que le Copilot recopie.
+          transport: transport?.regime === 'routier'
+            ? `rayon de ${RAIL_SEARCH_RADIUS_KM} km autour du point (gares TER/TGV, base mobility_stops)`
+            : "rayon de 1 km autour du point (arrêts OpenStreetMap via Overpass)",
+          accessibilite_regime: transport?.regime ?? null,
+          accessibilite_regime_motif: transport?.regime_label ?? null,
+          // v1.5.1 : la recette du score voyage avec le score. Sans elle, le
+          // modèle en invente une — constaté sur Ascain.
+          accessibilite_score_methode: transport?.regime === 'routier'
+            ? ROAD_SCORE_METHOD
+            : TRANSIT_SCORE_METHOD,
+          ...(transport?.regime === 'routier' ? {
+            accessibilite_avertissement:
+              "Les minutes de trajet sont ESTIMEES a partir de la distance a vol d'oiseau "
+              + `(${ROAD_ESTIMATION_METHOD}). Ne les presente jamais comme un temps de trajet mesure, `
+              + "et ne les compare pas a un score d'accessibilite obtenu en regime transports en commun : "
+              + `le regime routier plafonne a ${ROAD_REGIME_SCORE_CAP}/100, les deux echelles ne sont pas equivalentes. `
+              + "N'ecris pas non plus que ce score reflete une desserte en bus ou un acces a un bassin d'emploi : "
+              + "ni l'un ni l'autre n'est mesure ici.",
+          } : {}),
+          radius_km_s_applique_a: projectType === "ehpad"
+            ? "recherche de concurrence EHPAD uniquement"
+            : "AUCUNE source pour ce type de projet — ne l'annonce pas comme un rayon d'analyse",
+          avertissement:
+            "N'ecris JAMAIS que les scores demande / offre / environnement sont calcules sur un rayon en km : "
+            + "ils sont communaux. Cite le perimetre reel de chaque source tel qu'indique ci-dessus.",
+        },
+      },
       core: { dvf, insee, transport, bpe },
       specific,
       scores: {
@@ -1588,8 +2912,27 @@ serve(async (req: Request): Promise<Response> => {
         ...(scores.transport_exclu ? {} : { accessibilite: scores.accessibilite }),
         environnement: scores.environnement, global: scores.global,
         transport_exclu: scores.transport_exclu,
+        // Correctif B — exposé À CÔTÉ du score, pas dans un bloc de debug :
+        // c'est ce qui permet de distinguer un 50 compensé d'un 50 par défaut.
+        demande_confiance: scores.demande_confiance,
+        demande_champs_mesures: scores.demande_champs_mesures,
+        demande_champs_attendus: scores.demande_champs_attendus,
+        demande_champs_manquants: scores.demande_champs_manquants,
       },
-      scoring_details: { weights: config.weights, adjustments: scores.adjustments, explanation: scores.explanation, transport_exclu: scores.transport_exclu },
+      scoring_details: {
+        weights: config.weights, adjustments: scores.adjustments,
+        explanation: scores.explanation, transport_exclu: scores.transport_exclu,
+        // v1.5.0 : le régime et son détail voyagent avec le score. Un 83/100
+        // d'accessibilité routière et un 83/100 de desserte à pied ne disent
+        // pas la même chose ; sans ce bloc, rien ne permet de les distinguer.
+        accessibilite_regime: transport?.regime ?? null,
+        accessibilite_regime_source: transport?.regime_source ?? null,
+        accessibilite_regime_label: transport?.regime_label ?? null,
+        accessibilite_score_methode: transport?.regime === 'routier'
+          ? ROAD_SCORE_METHOD
+          : TRANSIT_SCORE_METHOD,
+        accessibilite_detail: transport?.rail ?? null,
+      },
       insights,
       warnings: allWarnings.length > 0 ? allWarnings : null,
       debug: debugPayload,

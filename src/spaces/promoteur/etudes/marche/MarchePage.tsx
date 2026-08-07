@@ -47,6 +47,7 @@ import {
   Grid3X3,
   Heart,
   Home,
+  Info,
   Loader2,
   MapPin,
   MapPinned,
@@ -65,7 +66,10 @@ import {
 } from "lucide-react";
 import type { ErrorInfo, ReactNode} from "react";
 import React, { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+
+import { hashInputs, isAgentRun, setStepStatus } from "../../shared/promoteurChain";
+import { useAutorun } from "../../shared/useAutorun";
+import { usePromoteurStudyId } from "../../shared/usePromoteurStudyId";
 
 import type { LucideIcon } from "lucide-react";
 
@@ -136,6 +140,28 @@ interface DvfData {
   coverage: string;
 }
 
+/** Provenance d'un champ INSEE, telle que renvoyée par `insee.insee_data_quality`.
+ *  Seul `'mesure'` autorise à présenter le chiffre comme un relevé. */
+type QualiteChampInsee = "mesure" | "estimation_dept" | "heuristique_densite" | "absente";
+
+/** Estimations démographiques — modèle départemental + formules de densité.
+ *  Délibérément séparées des mesures par l'edge function (« correctif B ») :
+ *  aller les chercher ici oblige l'appelant à savoir qu'il affiche une estimation. */
+interface DemographieEstimee {
+  departement_modele: string;
+  pct_moins_15: number;
+  pct_15_29: number;
+  pct_30_44: number;
+  pct_45_59: number;
+  pct_60_74: number;
+  pct_75_plus: number;
+  pct_etudiants: number;
+  pct_actifs: number;
+  pct_proprietaires: number;
+  pct_logements_vacants: number;
+  pct_locataires: number;
+}
+
 interface InseeData {
   code_commune: string;
   commune_nom: string;
@@ -145,25 +171,36 @@ interface InseeData {
   densite: number;
   revenu_median: number | null;
   revenu_median_source?: "filosofi" | "socioeco" | "dept_fallback" | "none";
-  taux_chomage: number;
-  pct_proprietaires: number;
-  pct_moins_15?: number;
-  pct_15_29?: number;
-  pct_30_44?: number;
-  pct_45_59?: number;
-  pct_60_74?: number;
-  pct_plus_60?: number;
-  pct_plus_65?: number;
-  pct_plus_75?: number;
-  menages_total?: number;
-  taille_moyenne_menage?: number;
-  pct_familles_monoparentales?: number;
-  pct_personnes_seules?: number;
-  pct_retraites?: number;
-  pct_etudiants?: number;
-  pct_actifs?: number;
-  pct_logements_vacants?: number;
-  pct_locataires?: number;
+  // ─── Correctif B (market-study v1.5.x) ────────────────────────────────────
+  // Un champ nu porte une MESURE ou `null`. Les onze parts démographiques
+  // n'ont aujourd'hui AUCUNE source communale : elles valent donc null, et
+  // les estimations vivent dans `demographie_estimee`. Idem pour le chômage,
+  // dont l'estimation départementale est isolée dans `taux_chomage_estime`.
+  // Ne jamais afficher un champ de `demographie_estimee` sans le nommer.
+  taux_chomage: number | null;
+  taux_chomage_estime?: number | null;
+  taux_chomage_source?: "socioeco" | "dept_fallback" | "none";
+  demographie_estimee?: DemographieEstimee | null;
+  insee_data_quality?: Record<string, QualiteChampInsee> | null;
+  pct_proprietaires: number | null;
+  pct_moins_15?: number | null;
+  pct_15_29?: number | null;
+  pct_30_44?: number | null;
+  pct_45_59?: number | null;
+  pct_60_74?: number | null;
+  pct_75_plus?: number | null;
+  pct_plus_60?: number | null;
+  pct_plus_65?: number | null;
+  pct_plus_75?: number | null;
+  menages_total?: number | null;
+  taille_moyenne_menage?: number | null;
+  pct_familles_monoparentales?: number | null;
+  pct_personnes_seules?: number | null;
+  pct_retraites?: number | null;
+  pct_etudiants?: number | null;
+  pct_actifs?: number | null;
+  pct_logements_vacants?: number | null;
+  pct_locataires?: number | null;
   taux_pauvrete?: number | null;
   part_menages_imposes?: number | null;
   pension_retraite_moyenne?: number | null;
@@ -189,6 +226,27 @@ interface TransportStop {
   distance_m: number;
 }
 
+// Enrichissement GTFS ajouté par enrichWithMobilityGtfs() (correctif du
+// 05/08/2026 sur le `.then()` détaché). Le champ était écrit dans l'objet
+// transport sans jamais être déclaré ici : l'erreur n'était pas visible faute
+// de typecheck. Optionnel — l'enrichissement est non bloquant et peut échouer.
+interface MobilityGtfsSnapshot {
+  total: number;
+  pillars: {
+    rail: number | null;
+    urban: number | null;
+    employment: number | null;
+    multimodal: number | null;
+  };
+  nearest_stop_m: number | null;
+  top_stops: Array<{ mode: string; distance_m: number; [k: string]: unknown }>;
+  has_metro_train: boolean;
+  has_tram: boolean;
+  is_urban: boolean;
+  label: string;
+  summary: string;
+}
+
 interface TransportData {
   score: number;
   stops: TransportStop[];
@@ -197,6 +255,7 @@ interface TransportData {
   has_tram: boolean;
   is_urban?: boolean;
   coverage: string;
+  mobility_gtfs?: MobilityGtfsSnapshot;
 }
 
 interface BpeDetail {
@@ -277,9 +336,15 @@ interface AnalysePrix extends PrixStats, TarifsGir {
 
 interface EhpadSpecific {
   concurrence: EhpadConcurrence;
+  // Correctif B — convention des blocs `specific` : un champ nu porte une
+  // MESURE ou null, l'estimation vit dans le champ `_estime` et sa provenance
+  // dans le `_source` correspondant.
   demographie_senior: {
-    population_75_plus: number;
-    pct_75_plus: number;
+    population_75_plus: number | null;
+    population_75_plus_source?: QualiteChampInsee;
+    pct_75_plus: number | null;
+    pct_75_plus_estime?: number | null;
+    pct_75_plus_source?: QualiteChampInsee;
   };
   offre_sante: {
     pharmacies: number;
@@ -327,6 +392,13 @@ interface MarketStudyApiResponse {
     global: number;
     /** v1.3.19/1.3.7 : true si commune non-urbaine, transport ignoré */
     transport_exclu?: boolean;
+    /** Correctif B — sur combien de MESURES le pilier demande repose vraiment.
+     *  Sans cela, « Demande 50/100 » est indécidable : tout mesuré et compensé,
+     *  ou rien reçu. */
+    demande_confiance?: "forte" | "moyenne" | "faible" | "sans_objet";
+    demande_champs_mesures?: number;
+    demande_champs_attendus?: number;
+    demande_champs_manquants?: string[];
   };
   scoring_details?: {
     transport_exclu?: boolean;
@@ -475,6 +547,14 @@ const getScoreColor = (score: number | null | undefined): string => {
   return "#ef4444";
 };
 
+/** Correctif B — libellés de `scores.demande_confiance`. */
+const DEMANDE_CONFIANCE_LABEL: Record<"forte" | "moyenne" | "faible" | "sans_objet", string> = {
+  forte: "forte",
+  moyenne: "moyenne",
+  faible: "faible",
+  sans_objet: "sans objet (aucun indicateur applicable)",
+};
+
 const getVerdictConfig = (score: number | null | undefined) => {
   if (score == null) return { label: "—", color: "#64748b", bg: "#f1f5f9", icon: Minus };
   if (score >= 70) return { label: "GO", color: "#059669", bg: "#dcfce7", icon: CheckCircle };
@@ -493,109 +573,349 @@ interface ProjectScoreWeights {
   environnement: number;
 }
 
+// ---------------------------------------------------------------------------
+// Correctif C — « non évaluable » : le troisième état des règles de scoring.
+//
+// POURQUOI. Ces règles s'écrivaient avec un repli choisi non pas comme une
+// moyenne plausible, mais pour NEUTRALISER le seuil : `?? 0` devant un `>`,
+// `?? 100` devant un `<`. Absence de donnée = absence de malus, à tous les
+// coups. Ce n'était pas une précaution, c'était un biais haussier structurel :
+// une commune sans données ne pouvait mécaniquement jamais recevoir une
+// mauvaise note. Et le code affirmait le contraire de ce qu'il faisait — un
+// lecteur y lisait « vacance nulle », « chômage nul », alors qu'il n'y avait
+// rien de mesuré du tout.
+//
+// Depuis le correctif B côté back (les onze `insee.pct_*` valent `null` quand
+// rien n'est mesuré), ces conditions retombaient sur `false` — le bon
+// comportement, mais par accident et sous une écriture mensongère.
+//
+// On introduit donc explicitement l'absence :
+//   true  → la règle s'applique et la donnée la vérifie
+//   false → la règle s'applique et la donnée ne la vérifie pas
+//   null  → NON ÉVALUABLE : la donnée nécessaire n'a pas été mesurée.
+// Une règle non évaluable ne compte pas dans le score, et n'est pas non plus
+// avalée en silence : elle est remontée dans `regles_non_evaluables` pour que
+// l'affichage puisse dire sur quoi le score ne s'est pas prononcé — même
+// convention que `demande_confiance` / `demande_champs_manquants` côté back.
+// ---------------------------------------------------------------------------
+type EvaluationRegle = boolean | null;
+
+/** Ne rend un nombre que si c'en est un. Toute autre valeur = non mesurée. */
+const mesureNum = (v: number | null | undefined): number | null =>
+  typeof v === "number" && !Number.isNaN(v) ? v : null;
+
+// Comparateurs « absence-safe » : ils propagent `null` au lieu d'inventer un
+// repli. Un seuil ne peut pas être franchi par une donnée qui n'existe pas.
+const superieurA = (v: number | null | undefined, seuil: number): EvaluationRegle => {
+  const n = mesureNum(v);
+  return n == null ? null : n > seuil;
+};
+const auMoins = (v: number | null | undefined, seuil: number): EvaluationRegle => {
+  const n = mesureNum(v);
+  return n == null ? null : n >= seuil;
+};
+const inferieurA = (v: number | null | undefined, seuil: number): EvaluationRegle => {
+  const n = mesureNum(v);
+  return n == null ? null : n < seuil;
+};
+const strictementEntre = (v: number | null | undefined, min: number, max: number): EvaluationRegle => {
+  const n = mesureNum(v);
+  return n == null ? null : n > min && n < max;
+};
+/** Égalité catégorielle : un libellé absent ne vaut pas « différent ». */
+const vaut = <T,>(v: T | null | undefined, attendu: T): EvaluationRegle =>
+  v == null ? null : v === attendu;
+
+/**
+ * Lecture d'un champ INSEE POUR LE SCORING : la mesure, et rien d'autre.
+ * On ne score jamais sur `demographie_estimee` : une estimation
+ * départementale plaquée sur une commune donnerait le même bonus/malus à
+ * toutes les communes du département — exactement la fabrication que le
+ * correctif B a supprimée côté back. L'affichage, lui, a le droit de montrer
+ * l'estimation, parce qu'il la nomme (cf. `lireChampDemo`).
+ */
+const inseeMesure = (d: MarketStudyApiResponse, cle: keyof InseeData): number | null =>
+  mesureNum(d.core?.insee?.[cle] as number | null | undefined);
+
+/** Revenu médian : le repli départemental (`dept_fallback`) est une
+ *  estimation, pas un relevé communal. Non évaluable pour le scoring. */
+const inseeRevenuMedian = (d: MarketStudyApiResponse): number | null => {
+  const insee = d.core?.insee;
+  if (!insee || insee.revenu_median_source === "dept_fallback" || insee.revenu_median_source === "none") return null;
+  return mesureNum(insee.revenu_median);
+};
+
+/** Densité : une densité nulle ou absente n'est pas « zone déserte », c'est
+ *  une population ou une surface non renseignée. */
+const inseeDensite = (d: MarketStudyApiResponse): number | null => {
+  const n = mesureNum(d.core?.insee?.densite);
+  return n != null && n > 0 ? n : null;
+};
+
+type CategorieBpe = "commerces" | "sante" | "services" | "education" | "loisirs" | "sport";
+
+/** Comptage BPE. Base absente ou non couverte ⇒ non mesuré. En revanche, si
+ *  la base a répondu, une catégorie vide est un VRAI zéro : l'équipement
+ *  n'existe pas, ce qui est une information. */
+const bpeCompte = (d: MarketStudyApiResponse, categorie: CategorieBpe): number | null => {
+  const bpe = d.core?.bpe;
+  if (!bpe || bpe.coverage === "no_data") return null;
+  if (mesureNum(bpe.total_equipements) == null) return null;
+  return mesureNum(bpe[categorie]?.count) ?? 0;
+};
+
+type ChampDvf = "nb_transactions" | "evolution_prix_pct" | "prix_m2_median";
+
+/** DVF : `coverage: "no_data"` = aucune mutation remontée sur le secteur.
+ *  Zéro transaction *observé* et zéro transaction *non consulté* ne se lisent
+ *  pas pareil — le second ne peut pas fonder un « marché peu liquide ». */
+const dvfMesure = (d: MarketStudyApiResponse, cle: ChampDvf): number | null => {
+  const dvf = d.core?.dvf;
+  if (!dvf || dvf.coverage === "no_data") return null;
+  return mesureNum(dvf[cle]);
+};
+
+/**
+ * Transport mesuré ? Même règle que `calculateDifferentiatedScores` (source
+ * unique, ci-dessous) : un score de 0 sans le moindre arrêt remonté signale
+ * une base incomplète sur le secteur, pas un désert de transports. Et un
+ * `has_metro_train === false` issu d'une base muette ne dit pas « pas de
+ * métro », il dit « on ne sait pas ».
+ */
+const lireTransport = (
+  d: MarketStudyApiResponse
+): { mesure: boolean; score: number | null; hasMetroTrain: boolean | null; hasTram: boolean | null } => {
+  const t = d.core?.transport as TransportData | undefined;
+  const gtfs = t?.mobility_gtfs;
+  const gtfsMesure = mesureNum(gtfs?.total) != null && (gtfs?.top_stops?.length ?? 0) > 0;
+  const backendMesure =
+    t?.coverage === "ok" && (t?.stops?.length ?? 0) > 0 && mesureNum(t?.score) != null;
+
+  if (!gtfsMesure && !backendMesure) {
+    return { mesure: false, score: null, hasMetroTrain: null, hasTram: null };
+  }
+  const source = gtfsMesure ? gtfs! : t!;
+  return {
+    mesure: true,
+    score: gtfsMesure ? (gtfs!.total as number) : (t!.score as number),
+    hasMetroTrain: source.has_metro_train === true,
+    hasTram: source.has_tram === true,
+  };
+};
+
+// --- Accès aux blocs EHPAD, même règle -------------------------------------
+/** Part des 75+ : champ nu = mesure ou null (convention correctif B). Une
+ *  valeur estimée vit dans `pct_75_plus_estime` et ne score pas. */
+const ehpadPct75 = (d: MarketStudyApiResponse): number | null => {
+  const demo = (d.specific as EhpadSpecific)?.demographie_senior;
+  if (!demo) return null;
+  if (demo.pct_75_plus_source != null && demo.pct_75_plus_source !== "mesure") return null;
+  return mesureNum(demo.pct_75_plus);
+};
+
+/** `taux_equipement_zone` et `potentiel_marche` retombent côté back sur
+ *  "equilibre"/"moyen" quand `densite_lits_1000_seniors` est nulle : ce sont
+ *  des valeurs par défaut, pas des constats. On ne les évalue que si la
+ *  densité de lits a réellement été calculée. */
+const ehpadIndicateurs = (d: MarketStudyApiResponse): EhpadSpecific["indicateurs_marche"] | null => {
+  const ind = (d.specific as EhpadSpecific)?.indicateurs_marche;
+  if (!ind || mesureNum(ind.densite_lits_1000_seniors) == null) return null;
+  return ind;
+};
+
+const ehpadConcurrenceCount = (d: MarketStudyApiResponse): number | null => {
+  const c = (d.specific as EhpadSpecific)?.concurrence;
+  if (!c || c.coverage === "no_data") return null;
+  return mesureNum(c.count);
+};
+
+const ehpadPharmacies = (d: MarketStudyApiResponse): number | null =>
+  mesureNum((d.specific as EhpadSpecific)?.offre_sante?.pharmacies);
+
+/**
+ * Une règle de scoring. `donnee` nomme ce qu'il faut avoir mesuré pour
+ * pouvoir trancher : c'est ce libellé qui est affiché quand la règle sort du
+ * calcul, pour que « non évaluée » ne soit pas un trou muet.
+ */
+interface ScoringRule {
+  condition: (data: MarketStudyApiResponse) => EvaluationRegle;
+  label: string;
+  donnee: string;
+}
+
 interface ProjectScoringConfig {
   weights: ProjectScoreWeights;
-  bonusFactors: {
-    condition: (data: MarketStudyApiResponse) => boolean;
-    bonus: number;
-    label: string;
-  }[];
-  penaltyFactors: {
-    condition: (data: MarketStudyApiResponse) => boolean;
-    penalty: number;
-    label: string;
-  }[];
+  bonusFactors: (ScoringRule & { bonus: number })[];
+  penaltyFactors: (ScoringRule & { penalty: number })[];
+}
+
+/** Règle écartée du calcul faute de mesure — remontée à l'affichage. */
+interface RegleNonEvaluable {
+  label: string;
+  donnee: string;
+  sens: "bonus" | "malus";
 }
 
 const PROJECT_SCORING_CONFIG: Record<string, ProjectScoringConfig> = {
   logement: {
     weights: { demande: 0.30, offre: 0.25, accessibilite: 0.25, environnement: 0.20 },
     bonusFactors: [
-      { condition: (d) => (d.core.insee?.pct_moins_15 ?? 0) > 20, bonus: 8, label: "Zone familiale" },
-      { condition: (d) => (d.core.dvf?.evolution_prix_pct ?? 0) > 5, bonus: 5, label: "Marché dynamique" },
-      { condition: (d) => (d.core.bpe?.education?.count ?? 0) >= 3, bonus: 5, label: "Écoles à proximité" },
-      { condition: (d) => d.core.transport?.has_metro_train === true, bonus: 7, label: "Transport lourd" },
-      { condition: (d) => (d.core.insee?.pct_logements_vacants ?? 100) < 8, bonus: 5, label: "Tension locative" },
+      { condition: (d) => superieurA(inseeMesure(d, "pct_moins_15"), 20), bonus: 8, label: "Zone familiale", donnee: "part des moins de 15 ans" },
+      { condition: (d) => superieurA(dvfMesure(d, "evolution_prix_pct"), 5), bonus: 5, label: "Marché dynamique", donnee: "évolution des prix DVF" },
+      { condition: (d) => auMoins(bpeCompte(d, "education"), 3), bonus: 5, label: "Écoles à proximité", donnee: "équipements d'enseignement (BPE)" },
+      { condition: (d) => lireTransport(d).hasMetroTrain, bonus: 7, label: "Transport lourd", donnee: "desserte en transports" },
+      { condition: (d) => inferieurA(inseeMesure(d, "pct_logements_vacants"), 8), bonus: 5, label: "Tension locative", donnee: "part de logements vacants" },
     ],
     penaltyFactors: [
-      { condition: (d) => (d.core.insee?.taux_chomage ?? 0) > 12, penalty: 8, label: "Chômage élevé" },
-      { condition: (d) => (d.core.dvf?.nb_transactions ?? 0) < 10, penalty: 5, label: "Marché peu liquide" },
-      { condition: (d) => (d.core.insee?.pct_logements_vacants ?? 0) > 15, penalty: 10, label: "Vacance élevée" },
+      { condition: (d) => superieurA(inseeMesure(d, "taux_chomage"), 12), penalty: 8, label: "Chômage élevé", donnee: "taux de chômage" },
+      { condition: (d) => inferieurA(dvfMesure(d, "nb_transactions"), 10), penalty: 5, label: "Marché peu liquide", donnee: "transactions DVF" },
+      { condition: (d) => superieurA(inseeMesure(d, "pct_logements_vacants"), 15), penalty: 10, label: "Vacance élevée", donnee: "part de logements vacants" },
     ],
   },
   ehpad: {
     weights: { demande: 0.40, offre: 0.30, accessibilite: 0.15, environnement: 0.15 },
     bonusFactors: [
-      { condition: (d) => ((d.specific as EhpadSpecific)?.demographie_senior?.pct_75_plus ?? 0) > 12, bonus: 12, label: "Pop. senior élevée" },
-      { condition: (d) => ((d.specific as EhpadSpecific)?.indicateurs_marche?.taux_equipement_zone === "sous_equipe"), bonus: 15, label: "Zone sous-équipée" },
-      { condition: (d) => (d.core.bpe?.sante?.count ?? 0) >= 3, bonus: 8, label: "Services santé" },
-      { condition: (d) => ((d.specific as EhpadSpecific)?.indicateurs_marche?.potentiel_marche === "fort"), bonus: 10, label: "Fort potentiel" },
-      { condition: (d) => ((d.specific as EhpadSpecific)?.offre_sante?.pharmacies ?? 0) >= 2, bonus: 5, label: "Pharmacies proches" },
+      { condition: (d) => superieurA(ehpadPct75(d), 12), bonus: 12, label: "Pop. senior élevée", donnee: "part des 75 ans et plus" },
+      { condition: (d) => vaut(ehpadIndicateurs(d)?.taux_equipement_zone, "sous_equipe"), bonus: 15, label: "Zone sous-équipée", donnee: "densité de lits pour 1 000 seniors" },
+      { condition: (d) => auMoins(bpeCompte(d, "sante"), 3), bonus: 8, label: "Services santé", donnee: "équipements de santé (BPE)" },
+      { condition: (d) => vaut(ehpadIndicateurs(d)?.potentiel_marche, "fort"), bonus: 10, label: "Fort potentiel", donnee: "densité de lits pour 1 000 seniors" },
+      { condition: (d) => auMoins(ehpadPharmacies(d), 2), bonus: 5, label: "Pharmacies proches", donnee: "pharmacies recensées" },
     ],
     penaltyFactors: [
-      { condition: (d) => ((d.specific as EhpadSpecific)?.indicateurs_marche?.taux_equipement_zone === "sur_equipe"), penalty: 15, label: "Zone sur-équipée" },
-      { condition: (d) => ((d.specific as EhpadSpecific)?.concurrence?.count ?? 0) > 10, penalty: 10, label: "Forte concurrence" },
-      { condition: (d) => ((d.specific as EhpadSpecific)?.demographie_senior?.pct_75_plus ?? 100) < 8, penalty: 8, label: "Pop. senior faible" },
+      { condition: (d) => vaut(ehpadIndicateurs(d)?.taux_equipement_zone, "sur_equipe"), penalty: 15, label: "Zone sur-équipée", donnee: "densité de lits pour 1 000 seniors" },
+      { condition: (d) => superieurA(ehpadConcurrenceCount(d), 10), penalty: 10, label: "Forte concurrence", donnee: "recensement des EHPAD concurrents" },
+      { condition: (d) => inferieurA(ehpadPct75(d), 8), penalty: 8, label: "Pop. senior faible", donnee: "part des 75 ans et plus" },
     ],
   },
   residence_etudiante: {
     weights: { demande: 0.35, offre: 0.20, accessibilite: 0.30, environnement: 0.15 },
     bonusFactors: [
-      { condition: (d) => (d.core.insee?.pct_15_29 ?? 0) > 20, bonus: 12, label: "Pop. jeune élevée" },
-      { condition: (d) => (d.core.insee?.pct_etudiants ?? 0) > 10, bonus: 15, label: "Zone étudiante" },
-      { condition: (d) => d.core.transport?.has_metro_train === true, bonus: 10, label: "Transport lourd" },
-      { condition: (d) => (d.core.bpe?.education?.count ?? 0) >= 2, bonus: 8, label: "Établissements scolaires" },
-      { condition: (d) => (d.core.insee?.pct_locataires ?? 0) > 50, bonus: 5, label: "Marché locatif actif" },
+      { condition: (d) => superieurA(inseeMesure(d, "pct_15_29"), 20), bonus: 12, label: "Pop. jeune élevée", donnee: "part des 15-29 ans" },
+      { condition: (d) => superieurA(inseeMesure(d, "pct_etudiants"), 10), bonus: 15, label: "Zone étudiante", donnee: "part des étudiants" },
+      { condition: (d) => lireTransport(d).hasMetroTrain, bonus: 10, label: "Transport lourd", donnee: "desserte en transports" },
+      { condition: (d) => auMoins(bpeCompte(d, "education"), 2), bonus: 8, label: "Établissements scolaires", donnee: "équipements d'enseignement (BPE)" },
+      { condition: (d) => superieurA(inseeMesure(d, "pct_locataires"), 50), bonus: 5, label: "Marché locatif actif", donnee: "part de locataires" },
     ],
     penaltyFactors: [
-      { condition: (d) => (d.core.transport?.score ?? 50) < 40, penalty: 12, label: "Accessibilité faible" },
-      { condition: (d) => (d.core.insee?.pct_15_29 ?? 0) < 12, penalty: 10, label: "Pop. jeune faible" },
+      // Le `?? 50` d'origine plaçait la commune juste au-dessus du seuil : sans
+      // donnée de transport, jamais de malus d'accessibilité.
+      { condition: (d) => inferieurA(lireTransport(d).score, 40), penalty: 12, label: "Accessibilité faible", donnee: "desserte en transports" },
+      { condition: (d) => inferieurA(inseeMesure(d, "pct_15_29"), 12), penalty: 10, label: "Pop. jeune faible", donnee: "part des 15-29 ans" },
     ],
   },
   bureaux: {
     weights: { demande: 0.25, offre: 0.20, accessibilite: 0.40, environnement: 0.15 },
     bonusFactors: [
-      { condition: (d) => d.core.transport?.has_metro_train === true, bonus: 15, label: "Transport lourd" },
-      { condition: (d) => (d.core.transport?.score ?? 0) >= 70, bonus: 10, label: "Excellente desserte" },
-      { condition: (d) => (d.core.insee?.pct_actifs ?? 0) > 45, bonus: 8, label: "Bassin d'actifs" },
-      { condition: (d) => (d.core.bpe?.services?.count ?? 0) >= 5, bonus: 5, label: "Services aux entreprises" },
-      { condition: (d) => (d.core.insee?.revenu_median ?? 0) > 28000, bonus: 7, label: "Zone CSP+" },
+      { condition: (d) => lireTransport(d).hasMetroTrain, bonus: 15, label: "Transport lourd", donnee: "desserte en transports" },
+      { condition: (d) => auMoins(lireTransport(d).score, 70), bonus: 10, label: "Excellente desserte", donnee: "desserte en transports" },
+      { condition: (d) => superieurA(inseeMesure(d, "pct_actifs"), 45), bonus: 8, label: "Bassin d'actifs", donnee: "part d'actifs" },
+      { condition: (d) => auMoins(bpeCompte(d, "services"), 5), bonus: 5, label: "Services aux entreprises", donnee: "services (BPE)" },
+      { condition: (d) => superieurA(inseeRevenuMedian(d), 28000), bonus: 7, label: "Zone CSP+", donnee: "revenu médian communal" },
     ],
     penaltyFactors: [
-      { condition: (d) => (d.core.transport?.score ?? 50) < 50, penalty: 15, label: "Accessibilité insuffisante" },
-      { condition: (d) => (d.core.insee?.taux_chomage ?? 0) > 10, penalty: 5, label: "Bassin économique fragile" },
-      { condition: (d) => !d.core.transport?.has_metro_train && !d.core.transport?.has_tram, penalty: 8, label: "Pas de transport lourd" },
+      { condition: (d) => inferieurA(lireTransport(d).score, 50), penalty: 15, label: "Accessibilité insuffisante", donnee: "desserte en transports" },
+      { condition: (d) => superieurA(inseeMesure(d, "taux_chomage"), 10), penalty: 5, label: "Bassin économique fragile", donnee: "taux de chômage" },
+      {
+        // Sans relevé de transport, « pas de transport lourd » n'est pas un
+        // constat : c'est une base muette. La négation d'une absence n'est pas
+        // une présence.
+        condition: (d) => {
+          const t = lireTransport(d);
+          if (!t.mesure) return null;
+          return !t.hasMetroTrain && !t.hasTram;
+        },
+        penalty: 8, label: "Pas de transport lourd", donnee: "desserte en transports",
+      },
     ],
   },
   commerce: {
     weights: { demande: 0.35, offre: 0.15, accessibilite: 0.25, environnement: 0.25 },
     bonusFactors: [
-      { condition: (d) => (d.core.insee?.revenu_median ?? 0) > 25000, bonus: 10, label: "Pouvoir d'achat élevé" },
-      { condition: (d) => (d.core.insee?.densite ?? 0) > 1000, bonus: 8, label: "Zone dense" },
-      { condition: (d) => (d.core.transport?.score ?? 0) >= 60, bonus: 7, label: "Bonne accessibilité" },
-      { condition: (d) => (d.core.bpe?.commerces?.count ?? 0) > 5 && (d.core.bpe?.commerces?.count ?? 0) < 20, bonus: 8, label: "Zone commerciale équilibrée" },
-      { condition: (d) => (d.core.insee?.pct_30_44 ?? 0) > 20, bonus: 5, label: "Pop. active consommatrice" },
+      { condition: (d) => superieurA(inseeRevenuMedian(d), 25000), bonus: 10, label: "Pouvoir d'achat élevé", donnee: "revenu médian communal" },
+      { condition: (d) => superieurA(inseeDensite(d), 1000), bonus: 8, label: "Zone dense", donnee: "densité de population" },
+      { condition: (d) => auMoins(lireTransport(d).score, 60), bonus: 7, label: "Bonne accessibilité", donnee: "desserte en transports" },
+      { condition: (d) => strictementEntre(bpeCompte(d, "commerces"), 5, 20), bonus: 8, label: "Zone commerciale équilibrée", donnee: "commerces (BPE)" },
+      { condition: (d) => superieurA(inseeMesure(d, "pct_30_44"), 20), bonus: 5, label: "Pop. active consommatrice", donnee: "part des 30-44 ans" },
     ],
     penaltyFactors: [
-      { condition: (d) => (d.core.bpe?.commerces?.count ?? 0) > 30, penalty: 10, label: "Forte concurrence commerciale" },
-      { condition: (d) => (d.core.insee?.revenu_median ?? 100000) < 18000, penalty: 12, label: "Pouvoir d'achat faible" },
-      { condition: (d) => (d.core.insee?.densite ?? 0) < 200, penalty: 8, label: "Zone peu dense" },
+      { condition: (d) => superieurA(bpeCompte(d, "commerces"), 30), penalty: 10, label: "Forte concurrence commerciale", donnee: "commerces (BPE)" },
+      // `?? 100000` : un revenu non mesuré était présumé confortable.
+      { condition: (d) => inferieurA(inseeRevenuMedian(d), 18000), penalty: 12, label: "Pouvoir d'achat faible", donnee: "revenu médian communal" },
+      { condition: (d) => inferieurA(inseeDensite(d), 200), penalty: 8, label: "Zone peu dense", donnee: "densité de population" },
     ],
   },
   hotel: {
     weights: { demande: 0.30, offre: 0.25, accessibilite: 0.30, environnement: 0.15 },
     bonusFactors: [
-      { condition: (d) => d.core.transport?.has_metro_train === true, bonus: 12, label: "Accès transport" },
-      { condition: (d) => (d.core.bpe?.loisirs?.count ?? 0) >= 3, bonus: 8, label: "Zone touristique" },
-      { condition: (d) => (d.core.insee?.densite ?? 0) > 500, bonus: 5, label: "Zone urbaine" },
-      { condition: (d) => (d.core.bpe?.services?.count ?? 0) >= 5, bonus: 5, label: "Services disponibles" },
+      { condition: (d) => lireTransport(d).hasMetroTrain, bonus: 12, label: "Accès transport", donnee: "desserte en transports" },
+      { condition: (d) => auMoins(bpeCompte(d, "loisirs"), 3), bonus: 8, label: "Zone touristique", donnee: "équipements de loisirs (BPE)" },
+      { condition: (d) => superieurA(inseeDensite(d), 500), bonus: 5, label: "Zone urbaine", donnee: "densité de population" },
+      { condition: (d) => auMoins(bpeCompte(d, "services"), 5), bonus: 5, label: "Services disponibles", donnee: "services (BPE)" },
     ],
     penaltyFactors: [
-      { condition: (d) => (d.core.transport?.score ?? 50) < 40, penalty: 15, label: "Accessibilité insuffisante" },
-      { condition: (d) => (d.core.insee?.densite ?? 0) < 100, penalty: 10, label: "Zone isolée" },
+      { condition: (d) => inferieurA(lireTransport(d).score, 40), penalty: 15, label: "Accessibilité insuffisante", donnee: "desserte en transports" },
+      { condition: (d) => inferieurA(inseeDensite(d), 100), penalty: 10, label: "Zone isolée", donnee: "densité de population" },
     ],
   },
 };
+
+// ============================================
+// v4.4.1 — enrichissement GTFS
+// Construit UNE SEULE fois le résultat enrichi. L'affichage et la persistance
+// doivent lire le même objet : sinon la base garde le score brut du backend
+// pendant que l'écran affiche le score recalculé avec le GTFS.
+// ============================================
+async function enrichWithMobilityGtfs(
+  result: MarketStudyApiResponse
+): Promise<MarketStudyApiResponse> {
+  const gtfsLat = result.meta?.lat;
+  const gtfsLon = result.meta?.lon;
+  if (!gtfsLat || !gtfsLon) return result;
+
+  let mobility: Awaited<ReturnType<typeof fetchMobilityScoreSafe>> = null;
+  try {
+    mobility = await fetchMobilityScoreSafe(gtfsLat, gtfsLon, 500);
+  } catch {
+    return result; // non-bloquant : on retombe sur le score backend
+  }
+  if (!mobility) return result;
+
+  return {
+    ...result,
+    core: {
+      ...result.core,
+      transport: {
+        ...result.core.transport,
+        mobility_gtfs: {
+          total: mobility.total,
+          pillars: {
+            rail:       mobility.pillars.rail.score       ?? null,
+            urban:      mobility.pillars.urban.score      ?? null,
+            employment: mobility.pillars.employment.score ?? null,
+            multimodal: mobility.pillars.multimodal.score ?? null,
+          },
+          nearest_stop_m: mobility.top_stops[0]?.distance_m ?? null,
+          top_stops:      mobility.top_stops ?? [],
+          has_metro_train:
+            (mobility as any).has_metro_train ??
+            mobility.top_stops.some(s => ['metro', 'rer', 'train', 'ter', 'tgv'].includes(s.mode.toLowerCase())),
+          has_tram:
+            (mobility as any).has_tram ??
+            mobility.top_stops.some(s => s.mode.toLowerCase() === 'tram'),
+          is_urban:
+            (mobility as any).is_urban ??
+            (mobility.total > 0 && (mobility.pillars.urban.score ?? 0) > 0),
+          label:
+            mobility.total >= 80 ? 'Très bien desservi'
+            : mobility.total >= 60 ? 'Bien desservi'
+            : mobility.total >= 40 ? 'Desservi'
+            : 'Peu desservi',
+          summary: '',
+        },
+      },
+    },
+  };
+}
 
 // ============================================
 // v2.8.1 — calculateDifferentiatedScores
@@ -608,66 +928,147 @@ const calculateDifferentiatedScores = (
   scores: {
     demande: number;
     offre: number;
-    accessibilite: number;
-    environnement: number;
+    // null = pilier non retenu (non applicable ou non mesuré). Volontairement
+    // pas 0 : un zéro serait lu comme une mesure, et affiché comme telle.
+    accessibilite: number | null;
+    environnement: number | null;
     global: number;
     transport_exclu: boolean;
+    transport_non_mesure: boolean;
+    environnement_non_mesure: boolean;
+    // Correctif B — relayés tels quels depuis l'edge function : ils disent sur
+    // combien de MESURES le pilier demande repose. Un 50/100 sans eux ne se
+    // distingue pas d'un 50/100 par défaut.
+    demande_confiance: "forte" | "moyenne" | "faible" | "sans_objet" | null;
+    demande_champs_mesures: number | null;
+    demande_champs_attendus: number | null;
+    demande_champs_manquants: string[];
   };
   adjustments: { label: string; value: number }[];
+  /** Correctif C — règles écartées du calcul faute de donnée mesurée. Elles ne
+   *  pèsent rien sur le score, mais elles ne disparaissent pas : l'affichage
+   *  doit pouvoir dire sur quoi la note ne s'est pas prononcée. */
+  reglesNonEvaluables: RegleNonEvaluable[];
   explanation: string;
 } => {
    const config = PROJECT_SCORING_CONFIG[projectType] || PROJECT_SCORING_CONFIG.logement;
   const baseScores = data.scores;
 
-  // GTFS prioritaire : mesure réelle du point > forfait département du backend.
-  const gtfsTotal = (data.core?.transport as { mobility_gtfs?: { total?: number } } | undefined)?.mobility_gtfs?.total;
-  const accessibiliteEffective =
-    typeof gtfsTotal === "number" ? gtfsTotal : (baseScores.accessibilite ?? 50);
+  // -------------------------------------------------------------------------
+  // v2.9 — RÈGLE : pas de donnée ⇒ pas d'affichage, pas de pilier.
+  //
+  // Un pilier noté 0 affirme « très mal desservi ». Une absence de donnée
+  // n'affirme rien. Les confondre produit un chiffre faux, et un chiffre faux
+  // décrédibilise ceux qui l'entourent. Tant que la couverture GTFS est
+  // incomplète hors Île-de-France, l'absence de mesure est le cas courant,
+  // pas l'exception : on l'assume explicitement plutôt que de la noter zéro.
+  // -------------------------------------------------------------------------
+  // Une seule lecture du transport pour le pilier ET pour les règles de
+  // bonus/malus (`lireTransport`, ci-dessus) : deux définitions de « mesuré »
+  // finiraient par diverger.
+  const transport = lireTransport(data);
+  const transportMesure = transport.mesure;
 
-  // v2.8.1 : détecter si le backend a exclu le transport (zone non-urbaine)
-  const transportExclu = !!(baseScores.transport_exclu ?? data.scoring_details?.transport_exclu);
+  const accessibiliteEffective = transport.score ?? 0; // 0 inutilisé : pilier exclu ci-dessous
 
-  let weightedBase: number;
+  // Exclusion si le backend l'a décidé (zone non-urbaine) OU si personne
+  // n'a su mesurer quoi que ce soit.
+  const transportExclu =
+    !!(baseScores.transport_exclu ?? data.scoring_details?.transport_exclu) ||
+    !transportMesure;
 
-  if (transportExclu) {
-    // Redistribuer les poids sans accessibilite — même logique que le backend v1.3.19/1.3.7
-    const totalOther = config.weights.demande + config.weights.offre + config.weights.environnement;
-    weightedBase =
-      baseScores.demande       * (config.weights.demande       / totalOther) +
-      baseScores.offre         * (config.weights.offre         / totalOther) +
-      baseScores.environnement * (config.weights.environnement / totalOther);
-  } else {
-    // Calcul normal — accessibilite = GTFS si dispo, sinon backend
-    weightedBase =
-      baseScores.demande           * config.weights.demande +
-      baseScores.offre             * config.weights.offre +
-      accessibiliteEffective       * config.weights.accessibilite +
-      baseScores.environnement     * config.weights.environnement;
-  }
+  // -------------------------------------------------------------------------
+  // Même règle appliquée à l'environnement. La table BPE ne couvre que 23 520
+  // des 34 875 communes françaises ; les autres tombaient sur un repli à
+  // 30/100 qui se lit « commune peu équipée » alors qu'il signifie « aucune
+  // donnée ». Un total d'équipements à zéro n'existe pas dans la réalité —
+  // même le plus petit village a une mairie. C'est donc une lacune de source.
+  // -------------------------------------------------------------------------
+  const bpeRaw = data.core?.bpe as
+    | { total_equipements?: number; coverage?: string }
+    | undefined;
+
+  const environnementMesure =
+    (bpeRaw?.total_equipements ?? 0) > 0 && bpeRaw?.coverage !== "no_data";
+
+  // -------------------------------------------------------------------------
+  // Poids RÉELLEMENT appliqués. Chaque pilier non mesuré sort de la table, et
+  // les poids restants sont renormalisés à 100 %. Une seule table alimente le
+  // calcul ET le libellé affiché : le lecteur doit pouvoir refaire l'opération
+  // de tête avec les pourcentages qu'il a sous les yeux.
+  // -------------------------------------------------------------------------
+  type Pilier = 'demande' | 'offre' | 'accessibilite' | 'environnement';
+
+  const piliersRetenus: Pilier[] = [
+    'demande',
+    'offre',
+    ...(transportExclu ? [] : ['accessibilite' as Pilier]),
+    ...(environnementMesure ? ['environnement' as Pilier] : []),
+  ];
+
+  const sommePoids = piliersRetenus.reduce((s, p) => s + config.weights[p], 0);
+
+  const effectiveWeights: Partial<Record<Pilier, number>> = Object.fromEntries(
+    piliersRetenus.map((p) => [p, config.weights[p] / sommePoids])
+  );
+
+  const valeurPilier: Record<Pilier, number> = {
+    demande:       baseScores.demande,
+    offre:         baseScores.offre,
+    accessibilite: accessibiliteEffective,
+    environnement: baseScores.environnement,
+  };
+
+  let weightedBase = piliersRetenus.reduce(
+    (somme, p) => somme + valeurPilier[p] * (effectiveWeights[p] ?? 0),
+    0
+  );
 
   const adjustments: { label: string; value: number }[] = [];
+  const reglesNonEvaluables: RegleNonEvaluable[] = [];
 
-  for (const bonus of config.bonusFactors) {
-    try {
-      if (bonus.condition(data)) {
-        weightedBase += bonus.bonus;
-        adjustments.push({ label: `✅ ${bonus.label}`, value: bonus.bonus });
+  // -------------------------------------------------------------------------
+  // Correctif C — trois cas, pas deux.
+  //   true  → la règle s'applique, on ajuste le score
+  //   false → la règle s'applique, on n'ajuste rien : c'est une DÉCISION
+  //   null  → la donnée manque : la règle est retirée du calcul ET nommée.
+  // L'ancienne écriture ne connaissait que deux cas parce que le repli
+  // (`?? 0`, `?? 100`) transformait toute absence en `false` silencieux. Un
+  // bien sans données ne pouvait donc jamais écoper d'un malus : biais
+  // haussier systématique, et invisible.
+  // -------------------------------------------------------------------------
+  const appliquerRegles = (
+    regles: ScoringRule[],
+    sens: "bonus" | "malus",
+    onVrai: (regle: ScoringRule) => void,
+  ) => {
+    for (const regle of regles) {
+      let verdict: EvaluationRegle;
+      try {
+        verdict = regle.condition(data);
+      } catch {
+        // Une exception ne vaut pas « faux » : on ne sait pas, donc on le dit.
+        verdict = null;
       }
-    } catch {
-      // Condition non évaluable, ignorer
+      if (verdict === null) {
+        reglesNonEvaluables.push({ label: regle.label, donnee: regle.donnee, sens });
+        continue;
+      }
+      if (verdict) onVrai(regle);
     }
-  }
+  };
 
-  for (const penalty of config.penaltyFactors) {
-    try {
-      if (penalty.condition(data)) {
-        weightedBase -= penalty.penalty;
-        adjustments.push({ label: `⚠️ ${penalty.label}`, value: -penalty.penalty });
-      }
-    } catch {
-      // Condition non évaluable, ignorer
-    }
-  }
+  appliquerRegles(config.bonusFactors, "bonus", (regle) => {
+    const bonus = (regle as ScoringRule & { bonus: number }).bonus;
+    weightedBase += bonus;
+    adjustments.push({ label: `✅ ${regle.label}`, value: bonus });
+  });
+
+  appliquerRegles(config.penaltyFactors, "malus", (regle) => {
+    const penalty = (regle as ScoringRule & { penalty: number }).penalty;
+    weightedBase -= penalty;
+    adjustments.push({ label: `⚠️ ${regle.label}`, value: -penalty });
+  });
 
   const finalScore = Math.max(0, Math.min(100, Math.round(weightedBase)));
 
@@ -678,23 +1079,50 @@ const calculateDifferentiatedScores = (
     offre:        clamp(baseScores.offre        * (1 + (config.weights.offre        - 0.25) * 0.5)),
     // accessibilite : 0 (sentinelle masquée dans l'UI) si transport exclu, sinon calcul normal
     accessibilite: transportExclu
-      ? 0
+      ? null
       : clamp(accessibiliteEffective * (1 + (config.weights.accessibilite - 0.25) * 0.5)),
-    environnement: clamp(baseScores.environnement * (1 + (config.weights.environnement - 0.25) * 0.5)),
+    environnement: environnementMesure
+      ? clamp(baseScores.environnement * (1 + (config.weights.environnement - 0.25) * 0.5))
+      : null,
     global:        finalScore,
     transport_exclu: transportExclu,
+    // Distingue les deux raisons d'exclure : « non applicable » (zone non
+    // urbaine, décision du backend) et « non mesuré » (aucune donnée). L'UI
+    // ne doit pas dire la même chose dans les deux cas.
+    transport_non_mesure: !transportMesure,
+    environnement_non_mesure: !environnementMesure,
+    demande_confiance: baseScores.demande_confiance ?? null,
+    demande_champs_mesures: baseScores.demande_champs_mesures ?? null,
+    demande_champs_attendus: baseScores.demande_champs_attendus ?? null,
+    demande_champs_manquants: baseScores.demande_champs_manquants ?? [],
   };
 
-  const weightsStr = Object.entries(config.weights)
+  const weightsStr = Object.entries(effectiveWeights)
+    .filter((e): e is [string, number] => typeof e[1] === 'number')
     .sort((a, b) => b[1] - a[1])
     .map(([k, v]) => `${k}: ${Math.round(v * 100)}%`)
     .join(', ');
 
+  // Motif d'exclusion, pilier par pilier. On nomme la raison plutôt que de
+  // laisser le lecteur deviner pourquoi un critère a disparu du calcul.
+  const motifs: string[] = [];
+  if (transportExclu) {
+    motifs.push(
+      transportMesure
+        ? "transport non applicable (zone non-urbaine)"
+        : "transport non mesuré, aucune donnée sur ce secteur"
+    );
+  }
+  if (!environnementMesure) {
+    motifs.push("environnement non mesuré, aucun équipement référencé");
+  }
+
   return {
     scores: adjustedScores,
     adjustments,
-    explanation: transportExclu
-      ? `Pondération ${projectType} (transport non applicable) : ${weightsStr}`
+    reglesNonEvaluables,
+    explanation: motifs.length
+      ? `Pondération ${projectType} (${motifs.join(" · ")}) : ${weightsStr}`
       : `Pondération ${projectType}: ${weightsStr}`,
   };
 };
@@ -1107,6 +1535,61 @@ const DvfCard: React.FC<{ dvf: DvfData | null }> = ({ dvf }) => {
 };
 
 // ============================================
+// CORRECTIF B — lecture d'un champ démographique INSEE
+// ============================================
+// Un champ nu porte une mesure ou `null` ; l'estimation vit dans
+// `demographie_estimee`. Ce helper est le SEUL point de lecture : il rend
+// impossible d'afficher une estimation sans récupérer en même temps le libellé
+// qui la nomme. Le motif visuel est celui déjà utilisé pour le revenu médian
+// (pastille ambre + note « (estimation dépt.) »).
+type ChampDemo = Exclude<keyof DemographieEstimee, "departement_modele">;
+
+interface ValeurInsee {
+  /** Valeur à afficher (mesure si elle existe, sinon estimation), ou null. */
+  valeur: number | null;
+  /** true si `valeur` provient de `demographie_estimee` et non d'un relevé. */
+  estimee: boolean;
+  /** Libellé à faire figurer À CÔTÉ du chiffre. null si c'est une mesure. */
+  note: string | null;
+}
+
+const NOTE_ABSENTE: ValeurInsee = { valeur: null, estimee: false, note: null };
+
+const lireChampDemo = (insee: InseeData | null, cle: ChampDemo): ValeurInsee => {
+  if (!insee) return NOTE_ABSENTE;
+  const mesure = insee[cle as keyof InseeData] as number | null | undefined;
+  if (mesure != null && !isNaN(mesure)) return { valeur: mesure, estimee: false, note: null };
+  const estime = insee.demographie_estimee?.[cle];
+  if (estime == null) return NOTE_ABSENTE;
+  const qualite = insee.insee_data_quality?.[cle];
+  return {
+    valeur: estime,
+    estimee: true,
+    note: qualite === "heuristique_densite"
+      ? "(estimation — non mesuré sur la commune)"
+      : "(estimation dépt.)",
+  };
+};
+
+/** Chômage : la mesure vit dans `taux_chomage`, l'estimation départementale
+ *  dans `taux_chomage_estime`. Les deux ne sont plus jamais le même champ. */
+const lireTauxChomage = (insee: InseeData | null): ValeurInsee => {
+  if (!insee) return NOTE_ABSENTE;
+  if (insee.taux_chomage != null && !isNaN(insee.taux_chomage)) {
+    return { valeur: insee.taux_chomage, estimee: false, note: null };
+  }
+  if (insee.taux_chomage_estime != null && !isNaN(insee.taux_chomage_estime)) {
+    return { valeur: insee.taux_chomage_estime, estimee: true, note: "(estimation dépt.)" };
+  }
+  return NOTE_ABSENTE;
+};
+
+/** Décoration commune à toutes les valeurs estimées — strictement le motif du
+ *  revenu médian, pour qu'un lecteur n'ait qu'un seul code visuel à apprendre. */
+const decorEstimation = (v: ValeurInsee) =>
+  v.estimee ? { note: v.note ?? "(estimation)", noteColor: "#d97706", bgColor: "#fffbeb" } : {};
+
+// ============================================
 // DEMOGRAPHIE CARD - v2.6
 // ============================================
 const DemographieCard: React.FC<{
@@ -1172,50 +1655,144 @@ const DemographieCard: React.FC<{
       }),
     });
 
+    // Correctif B — la mesure et l'estimation ne sont plus le même champ.
+    // Si aucune des deux n'existe, la ligne est tout de même affichée avec
+    // « non mesuré » : le chômage est attendu par le lecteur, le faire
+    // disparaître silencieusement laisserait croire qu'on ne l'a pas cherché.
+    const chomage = lireTauxChomage(insee);
     stats.push({
       icon: Activity,
       label: "Taux chômage",
-      value: formatPercent(insee.taux_chomage),
-      color: insee.taux_chomage > 10 ? "#ef4444" : "#f59e0b",
+      value: chomage.valeur != null ? formatPercent(chomage.valeur) : "non mesuré",
+      color: chomage.valeur == null ? "#94a3b8"
+        : chomage.estimee ? "#d97706"
+        : chomage.valeur > 10 ? "#ef4444" : "#f59e0b",
+      ...decorEstimation(chomage),
     });
 
+    /** Ajoute une part démographique. Les parts sont facultatives : quand ni
+     *  mesure ni estimation n'existent, la ligne est omise — c'est la
+     *  convention déjà appliquée ici à toutes les parts (`if (insee.pct_…)`). */
+    const pushPart = (
+      icon: LucideIcon,
+      label: string,
+      cle: ChampDemo,
+      color: string,
+      extra: Partial<StatItem> = {},
+    ) => {
+      const v = lireChampDemo(insee, cle);
+      if (v.valeur == null) return;
+      stats.push({
+        icon, label, value: formatPercent(v.valeur),
+        color: v.estimee ? "#d97706" : color,
+        ...extra,
+        ...decorEstimation(v),
+      });
+    };
+
     if (isEhpadOrSenior) {
-      const pop75 = ehpadSpecific?.demographie_senior?.population_75_plus || Math.round(insee.population * 0.1);
-      const pct75 = ehpadSpecific?.demographie_senior?.pct_75_plus || 10;
-      stats.unshift({ icon: Heart, label: "Population 75+ ans", value: formatNumber(pop75), color: "#ec4899", highlight: true, bgColor: "#fdf2f8" });
-      stats.push({ icon: UserCheck, label: "% 75+ ans", value: formatPercent(pct75), color: "#ec4899", highlight: true, bgColor: "#fdf2f8" });
-      if (insee.pct_plus_60) stats.push({ icon: Users, label: "% 60+ ans", value: formatPercent(insee.pct_plus_60), color: "#8b5cf6" });
-      if (insee.pct_retraites) stats.push({ icon: Home, label: "% Retraités", value: formatPercent(insee.pct_retraites), color: "#6366f1" });
-      if (insee.pct_personnes_seules) stats.push({ icon: UserCheck, label: "% Personnes seules", value: formatPercent(insee.pct_personnes_seules), color: "#f59e0b" });
+      // Plus de `|| Math.round(population * 0.1)` ni de `|| 10` : une valeur
+      // fabriquée à la volée était strictement indiscernable d'un relevé.
+      const pop75 = ehpadSpecific?.demographie_senior?.population_75_plus ?? null;
+      const senior75 = lireChampDemo(insee, "pct_75_plus");
+      const pop75Estimee = senior75.estimee || ehpadSpecific?.demographie_senior?.population_75_plus_source !== "mesure";
+      stats.unshift({
+        icon: Heart, label: "Population 75+ ans",
+        value: pop75 != null ? formatNumber(pop75) : "non mesuré",
+        color: pop75 == null ? "#94a3b8" : pop75Estimee ? "#d97706" : "#ec4899",
+        highlight: true, bgColor: "#fdf2f8",
+        ...(pop75 != null && pop75Estimee
+          ? { note: "(estimation — dérivée d'une part estimée)", noteColor: "#d97706", bgColor: "#fffbeb" }
+          : {}),
+      });
+      stats.push({
+        icon: UserCheck, label: "% 75+ ans",
+        value: senior75.valeur != null ? formatPercent(senior75.valeur) : "non mesuré",
+        color: senior75.valeur == null ? "#94a3b8" : senior75.estimee ? "#d97706" : "#ec4899",
+        highlight: true, bgColor: "#fdf2f8",
+        ...decorEstimation(senior75),
+      });
+      // ⚠️ Correctif B — gardes en `!= null` et non en truthy : `if (insee.pct_x)`
+      //   fait disparaître la ligne quand la valeur MESURÉE vaut 0 (0 % de retraités,
+      //   0 % de familles monoparentales — plausible sur une très petite commune).
+      //   C'est le symétrique du défaut principal : au lieu d'inventer une valeur,
+      //   on efface une mesure. Dans les deux cas le lecteur ne peut plus faire
+      //   la différence entre « zéro » et « on ne sait pas ».
+      if (insee.pct_plus_60 != null) stats.push({ icon: Users, label: "% 60+ ans", value: formatPercent(insee.pct_plus_60), color: "#8b5cf6" });
+      if (insee.pct_retraites != null) stats.push({ icon: Home, label: "% Retraités", value: formatPercent(insee.pct_retraites), color: "#6366f1" });
+      if (insee.pct_personnes_seules != null) stats.push({ icon: UserCheck, label: "% Personnes seules", value: formatPercent(insee.pct_personnes_seules), color: "#f59e0b" });
     } else if (isEtudiant) {
-      if (insee.pct_15_29) stats.unshift({ icon: GraduationCap, label: "% 15-29 ans", value: formatPercent(insee.pct_15_29), color: "#8b5cf6", highlight: true, bgColor: "#f5f3ff" });
-      if (insee.pct_etudiants) stats.push({ icon: School, label: "% Étudiants", value: formatPercent(insee.pct_etudiants), color: "#6366f1", highlight: true, bgColor: "#eef2ff" });
-      stats.push({ icon: Home, label: "% Locataires", value: formatPercent(insee.pct_locataires || (100 - (insee.pct_proprietaires || 58))), color: "#3b82f6", highlight: true });
-      if (insee.pct_personnes_seules) stats.push({ icon: UserCheck, label: "% Personnes seules", value: formatPercent(insee.pct_personnes_seules), color: "#f59e0b" });
+      const jeunes = lireChampDemo(insee, "pct_15_29");
+      if (jeunes.valeur != null) {
+        stats.unshift({
+          icon: GraduationCap, label: "% 15-29 ans", value: formatPercent(jeunes.valeur),
+          color: jeunes.estimee ? "#d97706" : "#8b5cf6",
+          highlight: true, bgColor: "#f5f3ff",
+          ...decorEstimation(jeunes),
+        });
+      }
+      pushPart(School, "% Étudiants", "pct_etudiants", "#6366f1", { highlight: true, bgColor: "#eef2ff" });
+      // Le complément à 100 des propriétaires ne mesurait rien non plus : il
+      // reposait sur un `|| 58` codé en dur. On lit la même source que le reste.
+      pushPart(Home, "% Locataires", "pct_locataires", "#3b82f6", { highlight: true });
+      if (insee.pct_personnes_seules != null) stats.push({ icon: UserCheck, label: "% Personnes seules", value: formatPercent(insee.pct_personnes_seules), color: "#f59e0b" });
     } else if (isLogement) {
-      stats.push({ icon: Home, label: "% Propriétaires", value: formatPercent(insee.pct_proprietaires), color: "#3b82f6" });
-      if (insee.menages_total) stats.push({ icon: Users, label: "Ménages", value: formatNumber(insee.menages_total), color: "#6366f1" });
-      if (insee.taille_moyenne_menage) stats.push({ icon: Baby, label: "Taille moyenne ménage", value: formatNumber(insee.taille_moyenne_menage, 1), color: "#8b5cf6" });
-      if (insee.pct_moins_15) stats.push({ icon: Baby, label: "% Moins de 15 ans", value: formatPercent(insee.pct_moins_15), color: "#ec4899" });
-      if (insee.pct_familles_monoparentales) stats.push({ icon: Users, label: "% Familles mono.", value: formatPercent(insee.pct_familles_monoparentales), color: "#f59e0b" });
-      if (insee.pct_logements_vacants) stats.push({ icon: Building2, label: "% Logements vacants", value: formatPercent(insee.pct_logements_vacants), color: "#64748b" });
+      pushPart(Home, "% Propriétaires", "pct_proprietaires", "#3b82f6");
+      if (insee.menages_total != null) stats.push({ icon: Users, label: "Ménages", value: formatNumber(insee.menages_total), color: "#6366f1" });
+      if (insee.taille_moyenne_menage != null) stats.push({ icon: Baby, label: "Taille moyenne ménage", value: formatNumber(insee.taille_moyenne_menage, 1), color: "#8b5cf6" });
+      pushPart(Baby, "% Moins de 15 ans", "pct_moins_15", "#ec4899");
+      if (insee.pct_familles_monoparentales != null) stats.push({ icon: Users, label: "% Familles mono.", value: formatPercent(insee.pct_familles_monoparentales), color: "#f59e0b" });
+      pushPart(Building2, "% Logements vacants", "pct_logements_vacants", "#64748b");
     } else if (isCommerce) {
-      stats.push({ icon: PiggyBank, label: "Pouvoir d'achat", value: (insee.revenu_median ?? 0) > 25000 ? "Élevé" : (insee.revenu_median ?? 0) > 20000 ? "Moyen" : "Faible", color: (insee.revenu_median ?? 0) > 25000 ? "#10b981" : "#f59e0b" });
-      if (insee.pct_actifs) stats.push({ icon: Briefcase, label: "% Actifs", value: formatPercent(insee.pct_actifs), color: "#3b82f6" });
-      if (insee.pct_30_44) stats.push({ icon: Users, label: "% 30-44 ans", value: formatPercent(insee.pct_30_44), color: "#6366f1" });
+      stats.push({
+        icon: PiggyBank, label: "Pouvoir d'achat",
+        value: insee.revenu_median == null ? "non mesuré"
+          : insee.revenu_median > 25000 ? "Élevé" : insee.revenu_median > 20000 ? "Moyen" : "Faible",
+        color: insee.revenu_median == null ? "#94a3b8"
+          : isDeptFallback ? "#d97706"
+          : insee.revenu_median > 25000 ? "#10b981" : "#f59e0b",
+        ...(insee.revenu_median != null && isDeptFallback
+          ? { note: "(estimation dépt.)", noteColor: "#d97706", bgColor: "#fffbeb" }
+          : {}),
+      });
+      pushPart(Briefcase, "% Actifs", "pct_actifs", "#3b82f6");
+      pushPart(Users, "% 30-44 ans", "pct_30_44", "#6366f1");
     } else if (isBureaux) {
-      if (insee.pct_actifs) stats.unshift({ icon: Briefcase, label: "% Actifs", value: formatPercent(insee.pct_actifs), color: "#3b82f6", highlight: true, bgColor: "#dbeafe" });
-      stats.push({ icon: Activity, label: "Bassin d'emploi", value: formatNumber(Math.round(insee.population * 0.45)), color: "#6366f1" });
-      if (insee.pct_30_44) stats.push({ icon: Users, label: "% 30-44 ans", value: formatPercent(insee.pct_30_44), color: "#8b5cf6" });
+      const actifs = lireChampDemo(insee, "pct_actifs");
+      if (actifs.valeur != null) {
+        stats.unshift({
+          icon: Briefcase, label: "% Actifs", value: formatPercent(actifs.valeur),
+          color: actifs.estimee ? "#d97706" : "#3b82f6",
+          highlight: true, bgColor: "#dbeafe",
+          ...decorEstimation(actifs),
+        });
+      }
+      // `population * 0.45` n'a jamais été un bassin d'emploi mesuré : le taux
+      // vient de la part d'actifs, elle-même estimée. On le dit.
+      stats.push({
+        icon: Activity, label: "Bassin d'emploi",
+        value: actifs.valeur != null && insee.population > 0
+          ? formatNumber(Math.round(insee.population * (actifs.valeur / 100)))
+          : "non mesuré",
+        color: actifs.valeur == null ? "#94a3b8" : actifs.estimee ? "#d97706" : "#6366f1",
+        ...(actifs.valeur != null && actifs.estimee
+          ? { note: "(estimation — dérivée d'une part estimée)", noteColor: "#d97706", bgColor: "#fffbeb" }
+          : {}),
+      });
+      pushPart(Users, "% 30-44 ans", "pct_30_44", "#8b5cf6");
     } else {
-      stats.push({ icon: Home, label: "% Propriétaires", value: formatPercent(insee.pct_proprietaires), color: "#3b82f6" });
+      pushPart(Home, "% Propriétaires", "pct_proprietaires", "#3b82f6");
     }
 
     stats.push({
       icon: AlertTriangle,
       label: "Taux de pauvreté",
       value: formatPercent(insee.taux_pauvrete),
-      color: (insee.taux_pauvrete ?? 0) > 20 ? "#ef4444" : (insee.taux_pauvrete ?? 0) > 14 ? "#f59e0b" : "#10b981",
+      // `?? 0` colorait en VERT un taux de pauvreté non mesuré : l'absence de
+      // donnée y devenait un bon signal. Gris = on ne sait pas.
+      color: insee.taux_pauvrete == null ? "#94a3b8"
+        : insee.taux_pauvrete > 20 ? "#ef4444"
+        : insee.taux_pauvrete > 14 ? "#f59e0b" : "#10b981",
     });
     stats.push({
       icon: Banknote,
@@ -1420,8 +1997,11 @@ function getEconomicStrengthScore(insee: InseeData | null): EconomicStrengthScor
     signals.push({ value: cad, weight: 1.5 });
     if (insee.part_cadres > 25) notes.push(`forte proportion de cadres (${formatPercent(insee.part_cadres)})`);
   }
-  if (insee.part_actifs_occupes != null || insee.pct_actifs != null) {
-    const actifs = insee.part_actifs_occupes ?? insee.pct_actifs ?? 0;
+  // Le `?? 0` final était inatteignable (le `if` garantit une des deux
+  // mesures) mais il laissait croire qu'un repli à zéro était acceptable ici.
+  // La convention du fichier est la même partout : pas de mesure, pas de signal.
+  const actifs = mesureNum(insee.part_actifs_occupes) ?? mesureNum(insee.pct_actifs);
+  if (actifs != null) {
     const act = Math.min(100, Math.max(0, (actifs / 60) * 100));
     signals.push({ value: act, weight: 1 });
   }
@@ -1487,43 +2067,138 @@ function getPricingRiskScore(insee: InseeData | null, dvf: DvfData | null, proje
 function getBuyerTargetProfile(insee: InseeData | null, dvf: DvfData | null, projectType: string): BuyerTargetProfile {
   if (!insee) return { target: "Non déterminable", confidence: "faible", explanation: "Données INSEE manquantes." };
 
-  const revenu    = insee.revenu_median ?? 0;
-  const pctJeunes = insee.pct_15_29 ?? 0;
-  const pctEtu    = insee.pct_etudiants ?? 0;
-  const pctSenior = insee.pct_plus_75 ?? (insee.pct_plus_60 != null && insee.pct_60_74 != null ? Math.max(0, insee.pct_plus_60 - insee.pct_60_74) : 0);
-  const pctProp   = insee.pct_proprietaires ?? 0;
-  const pctLoc    = insee.pct_locataires ?? Math.max(0, 100 - pctProp);
-  const chomage   = insee.taux_chomage ?? 0;
-  const vacance   = insee.pct_logements_vacants ?? 0;
-  const densite   = insee.densite ?? 0;
-  const cadres    = insee.part_cadres ?? 0;
-  const prixM2    = dvf?.prix_m2_median ?? 0;
-  const ratio     = revenu > 0 && prixM2 > 0 ? (prixM2 * 60) / revenu : null;
+  // ---------------------------------------------------------------------------
+  // Correctif C — suppression des `?? 0` sur les indicateurs INSEE.
+  //
+  // POURQUOI c'était nocif. Ces replis ne servaient pas de valeur par défaut
+  // plausible : ils neutralisaient les seuils. Un chômage non mesuré valait 0
+  // et ne déclenchait jamais « marché sous contrainte » ; une vacance non
+  // mesurée valait 0 et validait au contraire « vacance faible » — donc un
+  // profil investisseur, sur du vide. Pire encore, les valeurs retombaient
+  // ensuite dans des phrases AFFICHÉES : « Chômage 0.0% », « vacance faible
+  // (0.0%) ». Un chiffre inventé lu par l'utilisateur comme un relevé, ce qui
+  // est plus grave qu'une absence assumée.
+  //
+  // Depuis le correctif B, les onze `pct_*` valent `null` : ces phrases
+  // seraient toutes sorties à « 0.0% ». On garde donc les valeurs nullables,
+  // on n'active un profil que si ses indicateurs sont MESURÉS, et aucune
+  // phrase n'est construite avec un chiffre absent.
+  // ---------------------------------------------------------------------------
+  const revenu    = mesureNum(insee.revenu_median);
+  const pctJeunes = mesureNum(insee.pct_15_29);
+  const pctEtu    = mesureNum(insee.pct_etudiants);
+  const pctSenior = mesureNum(insee.pct_plus_75)
+    ?? (insee.pct_plus_60 != null && insee.pct_60_74 != null
+          ? Math.max(0, insee.pct_plus_60 - insee.pct_60_74)
+          : null);
+  const pctProp   = mesureNum(insee.pct_proprietaires);
+  // Le complément à 100 n'est calculable que si la part de propriétaires l'est.
+  const pctLoc    = mesureNum(insee.pct_locataires)
+    ?? (pctProp != null ? Math.max(0, 100 - pctProp) : null);
+  const chomage   = mesureNum(insee.taux_chomage);
+  const vacance   = mesureNum(insee.pct_logements_vacants);
+  const densite   = mesureNum(insee.densite);
+  const cadres    = mesureNum(insee.part_cadres);
+  const prixM2    = mesureNum(dvf?.prix_m2_median);
+  const ratio     = revenu != null && revenu > 0 && prixM2 != null && prixM2 > 0
+    ? (prixM2 * 60) / revenu
+    : null;
+
+  /** Un seuil n'est franchi que par une donnée qui existe. `null` ⇒ false,
+   *  mais un false explicite : la branche ne se déclenche pas sur du vide. */
+  const plusDe = (v: number | null, seuil: number) => v != null && v > seuil;
+  const moinsDe = (v: number | null, seuil: number) => v != null && v < seuil;
 
   if (projectType === "ehpad") {
-    return { target: "Marché senior", confidence: pctSenior > 12 ? "forte" : "moyenne", explanation: `Part 75+ (${pctSenior > 0 ? pctSenior.toFixed(1) + "%" : "n/d"}), pension moy. ${insee.pension_retraite_moyenne != null ? formatPrice(insee.pension_retraite_moyenne) + "/an" : "n/d"}.` };
+    return {
+      target: "Marché senior",
+      // Sans part 75+ mesurée, la cible reste le produit ; c'est la confiance
+      // qui tombe, pas le libellé.
+      confidence: pctSenior == null ? "faible" : pctSenior > 12 ? "forte" : "moyenne",
+      explanation: `Part 75+ ${pctSenior != null ? formatPercent(pctSenior) : "non mesurée"}, pension moy. ${insee.pension_retraite_moyenne != null ? formatPrice(insee.pension_retraite_moyenne) + "/an" : "non mesurée"}.`,
+    };
   }
   if (projectType === "residence_etudiante") {
-    return { target: "Marché étudiant / locatif jeune", confidence: (pctJeunes > 20 && pctEtu > 8) ? "forte" : "moyenne", explanation: `${pctJeunes.toFixed(0)}% de 15-29 ans, ${pctEtu.toFixed(1)}% d'étudiants, ${pctLoc.toFixed(0)}% de locataires.` };
+    // Chaque fragment de phrase n'existe que si son chiffre existe.
+    const fragments = [
+      pctJeunes != null ? `${pctJeunes.toFixed(0)}% de 15-29 ans` : null,
+      pctEtu    != null ? `${pctEtu.toFixed(1)}% d'étudiants`     : null,
+      pctLoc    != null ? `${pctLoc.toFixed(0)}% de locataires`   : null,
+    ].filter((f): f is string => f != null);
+    return {
+      target: "Marché étudiant / locatif jeune",
+      confidence: pctJeunes == null && pctEtu == null
+        ? "faible"
+        : (plusDe(pctJeunes, 20) && plusDe(pctEtu, 8)) ? "forte" : "moyenne",
+      explanation: fragments.length > 0
+        ? fragments.join(", ") + "."
+        : "Démographie jeune non mesurée sur cette commune.",
+    };
   }
   if (projectType === "bureaux") {
-    return { target: "Marché tertiaire / entreprises", confidence: cadres > 20 ? "forte" : "moyenne", explanation: `${cadres > 0 ? cadres.toFixed(0) + "% de cadres, " : ""}bassin d'actifs ${densite > 1000 ? "dense" : "intermédiaire"}.` };
+    const bassin = densite == null
+      ? "bassin d'actifs non mesuré"
+      : `bassin d'actifs ${densite > 1000 ? "dense" : "intermédiaire"}`;
+    return {
+      target: "Marché tertiaire / entreprises",
+      confidence: cadres == null ? "faible" : cadres > 20 ? "forte" : "moyenne",
+      explanation: `${cadres != null ? `${cadres.toFixed(0)}% de cadres, ` : ""}${bassin}.`,
+    };
   }
 
-  if (cadres > 25 || revenu > 38000 || (ratio != null && ratio > 9)) {
-    return { target: "Marché patrimonial / CSP+", confidence: cadres > 25 ? "forte" : "moyenne", explanation: `Revenu ${formatPrice(revenu)}/an${cadres > 0 ? `, ${cadres.toFixed(0)}% cadres` : ""}, profil aisé.` };
+  // Aucun indicateur de profil mesuré : on ne devine pas une cible.
+  const indicateursMesures = [revenu, pctProp, pctLoc, chomage, vacance, densite, cadres, ratio]
+    .filter((v) => v != null).length;
+  if (indicateursMesures === 0) {
+    return {
+      target: "Non déterminable",
+      confidence: "faible",
+      explanation: "Aucun indicateur socio-économique mesuré sur cette commune.",
+    };
   }
-  if (pctLoc > 55 && vacance < 7) {
-    return { target: "Marché investisseur", confidence: "forte", explanation: `${pctLoc.toFixed(0)}% de locataires, vacance faible (${vacance.toFixed(1)}%) — rendement locatif défendable.` };
+
+  if (plusDe(cadres, 25) || plusDe(revenu, 38000) || plusDe(ratio, 9)) {
+    return {
+      target: "Marché patrimonial / CSP+",
+      confidence: plusDe(cadres, 25) ? "forte" : "moyenne",
+      explanation: `${revenu != null ? `Revenu ${formatPrice(revenu)}/an` : "Revenu non mesuré"}${cadres != null ? `, ${cadres.toFixed(0)}% cadres` : ""}, profil aisé.`,
+    };
   }
-  if (chomage > 11 || (ratio != null && ratio > 7)) {
-    return { target: "Marché sous contrainte de solvabilité", confidence: "moyenne", explanation: `Chômage ${chomage.toFixed(1)}%${ratio != null ? `, effort d'achat ~${ratio.toFixed(1)} ans` : ""} — solvabilité à sécuriser.` };
+  // Exige DEUX mesures : un « rendement locatif défendable » déduit d'une
+  // vacance inconnue était la conclusion la plus flatteuse tirée du néant.
+  if (plusDe(pctLoc, 55) && moinsDe(vacance, 7)) {
+    return {
+      target: "Marché investisseur",
+      confidence: "forte",
+      explanation: `${pctLoc!.toFixed(0)}% de locataires, vacance faible (${formatPercent(vacance!)}) — rendement locatif défendable.`,
+    };
   }
-  if (pctProp > 60 && vacance < 10) {
-    const mixte = pctLoc > 35;
-    return { target: mixte ? "Marché mixte occupants / investisseurs" : "Marché familial d'occupation", confidence: "moyenne", explanation: `${pctProp.toFixed(0)}% propriétaires, zone résidentielle ${mixte ? "mixte" : "stable"}.` };
+  if (plusDe(chomage, 11) || plusDe(ratio, 7)) {
+    const motifs = [
+      chomage != null ? `chômage ${formatPercent(chomage)}` : null,
+      ratio   != null ? `effort d'achat ~${ratio.toFixed(1)} ans` : null,
+    ].filter((m): m is string => m != null);
+    return {
+      target: "Marché sous contrainte de solvabilité",
+      confidence: "moyenne",
+      explanation: `${motifs.join(", ")} — solvabilité à sécuriser.`,
+    };
   }
-  return { target: "Marché mixte", confidence: "faible", explanation: "Profil composite — positionner selon le produit et la gamme de prix." };
+  if (plusDe(pctProp, 60) && moinsDe(vacance, 10)) {
+    const mixte = plusDe(pctLoc, 35);
+    return {
+      target: mixte ? "Marché mixte occupants / investisseurs" : "Marché familial d'occupation",
+      confidence: "moyenne",
+      explanation: `${pctProp!.toFixed(0)}% propriétaires, zone résidentielle ${mixte ? "mixte" : "stable"}.`,
+    };
+  }
+  return {
+    target: "Marché mixte",
+    confidence: "faible",
+    explanation: indicateursMesures < 3
+      ? "Profil composite — peu d'indicateurs mesurés sur cette commune."
+      : "Profil composite — positionner selon le produit et la gamme de prix.",
+  };
 }
 
 function getEconomicMomentumV2(insee: InseeData | null): EconomicMomentumV2 {
@@ -1618,9 +2293,14 @@ function buildEconomicNarrativeV2(p: NarrativeParamsV2): string[] {
     }
   } else if (projectType === "residence_etudiante") {
     const pctEtu = insee?.pct_etudiants;
-    const pctLoc = insee?.pct_locataires ?? (100 - (insee?.pct_proprietaires ?? 0));
+    // `?? (100 - (… ?? 0))` faisait sortir 100 % de locataires quand RIEN
+    // n'était mesuré, et ajoutait donc l'argument flatteur « profil très
+    // locatif » à une commune sur laquelle on ne savait rien.
+    const propMesure = mesureNum(insee?.pct_proprietaires);
+    const pctLoc = mesureNum(insee?.pct_locataires)
+      ?? (propMesure != null ? 100 - propMesure : null);
     if (pctEtu != null) {
-      phrases.push(`La part étudiante (${pctEtu.toFixed(1)}%) ${pctEtu > 10 ? "est un signal fort" : "reste modérée"} : la profondeur locative jeune${pctLoc > 55 ? " et le profil très locatif de la zone" : ""} soutiennent la logique de résidence étudiante.`);
+      phrases.push(`La part étudiante (${pctEtu.toFixed(1)}%) ${pctEtu > 10 ? "est un signal fort" : "reste modérée"} : la profondeur locative jeune${pctLoc != null && pctLoc > 55 ? " et le profil très locatif de la zone" : ""} soutiennent la logique de résidence étudiante.`);
     }
   } else if (projectType === "ehpad") {
     const pension = insee?.pension_retraite_moyenne;
@@ -1851,16 +2531,32 @@ const EconomicDecisionCard: React.FC<EconomicDecisionCardProps> = ({ insee, dvf,
 const AgePyramidChart: React.FC<{ insee: InseeData | null }> = ({ insee }) => {
   if (!insee) return null;
 
-  const slices = [
-    { label: "< 15 ans",  pct: insee.pct_moins_15, color: "#3b82f6" },
-    { label: "15-29 ans", pct: insee.pct_15_29,    color: "#06b6d4" },
-    { label: "30-44 ans", pct: insee.pct_30_44,    color: "#10b981" },
-    { label: "45-59 ans", pct: insee.pct_45_59,    color: "#f59e0b" },
-    { label: "60-74 ans", pct: insee.pct_60_74,    color: "#f97316" },
-    { label: "75+ ans",   pct: insee.pct_plus_75 ?? ((insee.pct_plus_60 != null && insee.pct_60_74 != null) ? Math.max(0, insee.pct_plus_60 - insee.pct_60_74) : undefined), color: "#ef4444" },
-  ].filter((s): s is { label: string; pct: number; color: string } => s.pct != null && !isNaN(s.pct));
+  // Correctif B — les tranches d'âge n'ont aucune source communale : elles
+  // sortent du modèle départemental exposé dans `demographie_estimee`. Elles
+  // restent affichées (le graphique porte une information utile), mais le bloc
+  // ne peut plus se signer « Source INSEE » : il est titré et légendé comme
+  // une estimation dès qu'une seule tranche en est une.
+  const tranches: Array<{ label: string; cle: ChampDemo; color: string }> = [
+    { label: "< 15 ans",  cle: "pct_moins_15", color: "#3b82f6" },
+    { label: "15-29 ans", cle: "pct_15_29",    color: "#06b6d4" },
+    { label: "30-44 ans", cle: "pct_30_44",    color: "#10b981" },
+    { label: "45-59 ans", cle: "pct_45_59",    color: "#f59e0b" },
+    { label: "60-74 ans", cle: "pct_60_74",    color: "#f97316" },
+    { label: "75+ ans",   cle: "pct_75_plus",  color: "#ef4444" },
+  ];
+
+  const slices = tranches
+    .map(t => {
+      const v = lireChampDemo(insee, t.cle);
+      return { label: t.label, pct: v.valeur, color: t.color, estimee: v.estimee };
+    })
+    .filter((s): s is { label: string; pct: number; color: string; estimee: boolean } =>
+      s.pct != null && !isNaN(s.pct));
 
   if (slices.length === 0) return null;
+
+  const pyramideEstimee = slices.some(s => s.estimee);
+  const deptModele = insee.demographie_estimee?.departement_modele ?? null;
 
   const maxPct = Math.max(...slices.map(s => s.pct));
   const scale  = Math.max(maxPct, 25);
@@ -1874,6 +2570,11 @@ const AgePyramidChart: React.FC<{ insee: InseeData | null }> = ({ insee }) => {
       <div style={styles.cardTitle}>
         <Users size={16} color="#6366f1" />
         Pyramide des âges
+        {pyramideEstimee && (
+          <span style={{ ...styles.badge, background: "#fffbeb", color: "#d97706", marginLeft: "8px" }}>
+            Estimation
+          </span>
+        )}
         <span style={{ ...styles.badge, background: "#eef2ff", color: "#4f46e5", marginLeft: "auto" }}>
           {slices.length} tranches
         </span>
@@ -1901,15 +2602,28 @@ const AgePyramidChart: React.FC<{ insee: InseeData | null }> = ({ insee }) => {
             <span style={{ fontSize: "11px", color: "#475569" }}>{s.label}</span>
           </div>
         ))}
-        <span style={{ marginLeft: "auto", fontSize: "10px", color: "#94a3b8", fontStyle: "italic" }}>Source INSEE</span>
+        <span style={{ marginLeft: "auto", fontSize: "10px", color: pyramideEstimee ? "#d97706" : "#94a3b8", fontStyle: "italic" }}>
+          {pyramideEstimee
+            ? `Estimation — modèle départemental${deptModele && deptModele !== "default" ? ` (${deptModele})` : ""}, non mesuré sur la commune`
+            : "Source INSEE"}
+        </span>
       </div>
     </div>
   );
 };
 
+// ⚠️ Correctif B — `score` accepte désormais `null`.
+//   Les piliers GTFS (`pillars.rail`, `.bus`…) sont typés `number | null` dans
+//   `MobilityGtfsSnapshot` et ne sont filtrés que par `.filter(p => p.score != null)`,
+//   qui n'est PAS un prédicat de type et ne rétrécit donc rien. Aujourd'hui l'erreur
+//   est masquée par le `(transport as any)` du calcul de `gtfs` — cast DEVENU INUTILE
+//   depuis que `mobility_gtfs` est déclaré sur `TransportData`. Le jour où quelqu'un
+//   nettoiera ce cast, geste parfaitement anodin en apparence, le build tombait sur
+//   `number | null` non assignable à `number`. Le trou est refermé ici par avance,
+//   et la barre distingue au passage une absence d'un zéro.
 const PillarRow: React.FC<{
   label: string;
-  score: number;
+  score: number | null;
   color: string;
   tooltip: string;
 }> = ({ label, score, color, tooltip }) => {
@@ -1925,15 +2639,24 @@ const PillarRow: React.FC<{
           <span style={{ fontSize: "12px", color: "#64748b" }}>{label}</span>
           <span style={{ fontSize: "11px", color: "#cbd5e1" }}>ⓘ</span>
         </div>
-        <div style={{ flex: 1, height: "8px", background: "#f1f5f9", borderRadius: "4px", overflow: "hidden" }}>
-          <div style={{
-            width: `${Math.max(0, Math.min(100, score))}%`,
-            height: "100%", background: color, borderRadius: "4px",
-            transition: "width 0.7s ease-out"
-          }} />
+        <div style={{
+          flex: 1, height: "8px", background: "#f1f5f9", borderRadius: "4px", overflow: "hidden",
+          ...(score == null ? { border: "1px dashed #cbd5e1" } : {}),
+        }}>
+          {score != null && (
+            <div style={{
+              width: `${Math.max(0, Math.min(100, score))}%`,
+              height: "100%", background: color, borderRadius: "4px",
+              transition: "width 0.7s ease-out"
+            }} />
+          )}
         </div>
-        <span style={{ fontSize: "13px", fontWeight: 700, color, width: "32px", textAlign: "right", flexShrink: 0 }}>
-          {score}
+        <span style={{
+          fontSize: "13px", fontWeight: score == null ? 500 : 700,
+          color: score == null ? "#94a3b8" : color,
+          width: "32px", textAlign: "right", flexShrink: 0,
+        }}>
+          {score == null ? "—" : score}
         </span>
       </div>
       {hovered && (
@@ -1992,6 +2715,13 @@ const TransportCard: React.FC<{ transport: TransportData | null }> = ({ transpor
     ? transport.stops.filter((s: TransportStop) => !s.name.includes("(estimation)"))
     : [];
 
+  // v2.9 — Aucune source n'a trouvé d'arrêt : la couverture GTFS reste très
+  // partielle hors Île-de-France. On ne peut donc rien affirmer sur la
+  // desserte de ce secteur — surtout pas un 0/100, qui se lirait comme
+  // « pas de transports » alors qu'il signifie « pas de données ».
+  const nbArretsGtfs = gtfs?.top_stops?.length ?? 0;
+  const donneeTransportAbsente = realStops.length === 0 && nbArretsGtfs === 0;
+
   return (
     <div style={styles.card}>
       <div style={styles.cardTitle}>
@@ -2018,7 +2748,18 @@ const TransportCard: React.FC<{ transport: TransportData | null }> = ({ transpor
         )}
       </div>
 
-      {transport.is_urban === false ? (
+      {donneeTransportAbsente ? (
+        <div style={{ padding: "24px", textAlign: "center", background: "#f8fafc", borderRadius: "12px", color: "#64748b" }}>
+          <Bus size={36} style={{ opacity: 0.4, marginBottom: "12px" }} />
+          <p style={{ fontSize: "14px", fontWeight: 500 }}>Donnée transport non disponible</p>
+          <p style={{ fontSize: "13px", marginTop: "8px", lineHeight: 1.6, maxWidth: "460px", margin: "8px auto 0" }}>
+            Aucun arrêt référencé sur ce secteur dans les sources ouvertes dont nous
+            disposons. Cela ne signifie pas qu'il n'y a pas de desserte : la couverture
+            nationale des données de transport reste partielle. Le critère est donc
+            retiré du calcul du score, et non noté zéro.
+          </p>
+        </div>
+      ) : transport.is_urban === false ? (
         <div style={{ padding: "24px", textAlign: "center", background: "#f8fafc", borderRadius: "12px", color: "#64748b" }}>
           <Bus size={36} style={{ opacity: 0.4, marginBottom: "12px" }} />
           <p style={{ fontSize: "14px", fontWeight: 500 }}>Zone non-urbaine</p>
@@ -2061,8 +2802,12 @@ const TransportCard: React.FC<{ transport: TransportData | null }> = ({ transpor
                 <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748b" }}>
                   Détail par pilier (GTFS · rayon 1 km)
                 </div>
+                {/* Le libellé « base nationale » était faux : la base ne couvre
+                    aujourd'hui que le ferroviaire (TER/TGV) partout, et l'urbain
+                    en Île-de-France seulement. On annonce une couverture
+                    partielle tant que la réimport GTFS n'est pas faite. */}
                 <span style={{ fontSize: "11px", color: "#94a3b8", fontStyle: "italic" }}>
-                  56 000 arrêts · base nationale
+                  Sources ouvertes · couverture partielle
                 </span>
               </div>
               {[
@@ -2430,10 +3175,24 @@ const EhpadCompetitionCard: React.FC<{ specific: EhpadSpecific }> = ({ specific 
           <div style={{ fontSize: "28px", fontWeight: 800, color: "#1e293b" }}>{formatNumber(total_lits)}</div>
           <div style={{ fontSize: "11px", color: "#64748b" }}>Lits totaux</div>
         </div>
-        <div style={{ padding: "16px", background: "#eef2ff", borderRadius: "12px", textAlign: "center" }}>
-          <Users size={20} color="#4338ca" style={{ marginBottom: "8px" }} />
-          <div style={{ fontSize: "28px", fontWeight: 800, color: "#4338ca" }}>{formatNumber(demographie_senior.population_75_plus)}</div>
-          <div style={{ fontSize: "11px", color: "#6366f1" }}>Pop. 75+ ans</div>
+        {/* Correctif B — cette population est dérivée d'une PART estimée tant
+            que `population_75_plus_source` ne vaut pas 'mesure'. */}
+        <div style={{
+          padding: "16px", textAlign: "center", borderRadius: "12px",
+          background: demographie_senior.population_75_plus_source === "mesure" ? "#eef2ff" : "#fffbeb",
+        }}>
+          <Users size={20} color={demographie_senior.population_75_plus_source === "mesure" ? "#4338ca" : "#d97706"} style={{ marginBottom: "8px" }} />
+          <div style={{ fontSize: "28px", fontWeight: 800, color: demographie_senior.population_75_plus_source === "mesure" ? "#4338ca" : "#d97706" }}>
+            {formatNumber(demographie_senior.population_75_plus)}
+          </div>
+          <div style={{ fontSize: "11px", color: demographie_senior.population_75_plus_source === "mesure" ? "#6366f1" : "#b45309" }}>
+            Pop. 75+ ans
+          </div>
+          {demographie_senior.population_75_plus_source !== "mesure" && (
+            <div style={{ fontSize: "10px", color: "#d97706", fontStyle: "italic", marginTop: "3px" }}>
+              (estimation dépt.)
+            </div>
+          )}
         </div>
         <div style={{ padding: "16px", background: "#f0fdf4", borderRadius: "12px", textAlign: "center" }}>
           <Activity size={20} color="#15803d" style={{ marginBottom: "8px" }} />
@@ -2518,10 +3277,13 @@ const EhpadCompetitionCard: React.FC<{ specific: EhpadSpecific }> = ({ specific 
 // ============================================
 const ScoreAdjustmentsCard: React.FC<{
   adjustments: { label: string; value: number }[];
+  reglesNonEvaluables: RegleNonEvaluable[];
   explanation: string;
   projectType: string;
-}> = ({ adjustments, explanation, projectType }) => {
-  if (adjustments.length === 0) return null;
+}> = ({ adjustments, reglesNonEvaluables, explanation, projectType }) => {
+  // La carte reste utile même sans aucun ajustement : « rien n'a joué » et
+  // « rien n'a pu être évalué » sont deux situations différentes.
+  if (adjustments.length === 0 && reglesNonEvaluables.length === 0) return null;
 
   return (
     <div style={{ ...styles.card, background: "#f8fafc", marginBottom: "24px" }}>
@@ -2545,6 +3307,29 @@ const ScoreAdjustmentsCard: React.FC<{
           </div>
         ))}
       </div>
+
+      {/* Correctif C — les règles retirées du calcul faute de mesure. Même
+          convention que « Demande — fiabilité … » : on nomme ce qui manque,
+          plutôt que de laisser croire que le critère a été jugé et écarté. */}
+      {reglesNonEvaluables.length > 0 && (
+        <div style={{ marginTop: "14px", paddingTop: "12px", borderTop: "1px dashed #cbd5e1" }}>
+          <div style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", marginBottom: "8px" }}>
+            Non évalué — {reglesNonEvaluables.length} critère
+            {reglesNonEvaluables.length > 1 ? "s" : ""} sans donnée mesurée.
+            Ces critères sont retirés du calcul, ni bonus ni malus.
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+            {reglesNonEvaluables.map((r, i) => (
+              <div key={i} style={{
+                padding: "8px 12px", background: "#f1f5f9", border: "1px dashed #cbd5e1",
+                borderRadius: "8px", fontSize: "12px", fontWeight: 500, color: "#64748b",
+              }}>
+                {r.sens === "bonus" ? "＋" : "－"} {r.label} — {r.donnee} non mesuré
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -2559,7 +3344,7 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
   const isEhpad = meta.project_type === "ehpad";
   const ehpadSpecific = isEhpad ? (specific as EhpadSpecific) : null;
 
-  const { scores, adjustments, explanation } = useMemo(
+  const { scores, adjustments, reglesNonEvaluables, explanation } = useMemo(
     () => calculateDifferentiatedScores(data, meta.project_type),
     [data, meta.project_type]
   );
@@ -2600,6 +3385,15 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
         <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:6px;">${label}</div>
         <div style="font-size:22px;font-weight:800;color:${color};">${value}</div>
       </div>`;
+    // Correctif B — variante de kpiBox portant la provenance SOUS le chiffre.
+    // Le PDF est remis à un client : une estimation doit se lire sans avoir à
+    // chercher une légende ailleurs dans le document. Cadre ambre + mention.
+    const kpiBoxEstime = (label: string, value: string, note: string) =>
+      `<div style="background:#fffbeb;border-radius:10px;padding:14px;text-align:center;border:1px solid #fcd34d;">
+        <div style="font-size:10px;color:#92400e;font-weight:600;text-transform:uppercase;margin-bottom:6px;">${label}</div>
+        <div style="font-size:22px;font-weight:800;color:#d97706;">${value}</div>
+        <div style="font-size:9px;color:#b45309;font-style:italic;margin-top:4px;line-height:1.3;">${note}</div>
+      </div>`;
     const sectionTitle = (icon: string, title: string) =>
       `<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;padding-bottom:10px;border-bottom:2px solid #e2e8f0;">
         <span style="font-size:18px;">${icon}</span>
@@ -2626,6 +3420,24 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
     const revenu = insee?.revenu_median;
     const prixM2 = dvf?.prix_m2_median;
     const ratio = revenu && prixM2 && revenu > 0 ? ((prixM2 * 60) / revenu).toFixed(1) : null;
+
+    // ─── Correctif B — provenance des chiffres INSEE dans le PDF ─────────────
+    // Ce document est remis à un client. Un chiffre estimé y était jusqu'ici
+    // typographié exactement comme un relevé (« Taux chômage 7,5 % »), sans
+    // aucune mention : c'est ainsi qu'une constante départementale est devenue
+    // un fait dans un rapport signé. Chaque estimation porte désormais sa
+    // mention à côté du chiffre, pas dans une légende de bas de page.
+    const revenuEstimePdf = insee?.revenu_median_source === 'dept_fallback';
+    const chomagePdf = lireTauxChomage(insee ?? null);
+    const demoEstimeePdf = insee?.demographie_estimee ?? null;
+    const avertissementInseePdf = (revenuEstimePdf || chomagePdf.estimee || demoEstimeePdf)
+      ? `<p style="margin-top:14px;padding:10px 12px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;font-size:11px;color:#92400e;line-height:1.5;">
+          <strong>Provenance des données.</strong> Les valeurs encadrées en ambre sont des <strong>estimations</strong>
+          issues d'un modèle départemental, et non des relevés communaux : elles ne doivent pas être citées comme
+          des mesures INSEE de la commune. Les parts démographiques (tranches d'âge, étudiants, locataires,
+          propriétaires, logements vacants) ne font aujourd'hui l'objet d'aucune mesure communale dans cette étude.
+        </p>`
+      : '';
 
     const txRows = (dvf?.transactions || []).slice(0, 15).map((tx) =>
       `<tr style="border-bottom:1px solid #f1f5f9;">
@@ -2667,7 +3479,9 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
         ${kpiBox('EHPAD zone', String(ehpadS.concurrence?.count ?? '—'), '#be185d')}
         ${kpiBox('Lits totaux', fmtN(ehpadS.concurrence?.total_lits), '#1e293b')}
-        ${kpiBox('Pop. 75+ ans', fmtN(ehpadS.demographie_senior?.population_75_plus), '#4338ca')}
+        ${ehpadS.demographie_senior?.population_75_plus_source === 'mesure'
+          ? kpiBox('Pop. 75+ ans', fmtN(ehpadS.demographie_senior?.population_75_plus), '#4338ca')
+          : kpiBoxEstime('Pop. 75+ ans', fmtN(ehpadS.demographie_senior?.population_75_plus), "Estimation — la part des 75+ n'est pas mesurée à la commune")}
         ${kpiBox('Lits/1000 seniors', String(ehpadS.indicateurs_marche?.densite_lits_1000_seniors ?? '—'), '#15803d')}
       </div>
       ${ehpadS.analyse_prix ? `
@@ -2682,12 +3496,34 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
     `)}` : '';
 
     // v2.8.1 : sous-scores PDF — masquer accessibilité si transport exclu
-    const sousScoresPdf = [
+    // Les sous-scores sont nullables depuis la règle « pas de donnée ⇒ pas de
+    // note » (05/08/2026) : un pilier non mesuré vaut null, jamais 0. Sans ce
+    // filtrage, le PDF comparait `null >= 70` (faux, donc rouge) et imprimait
+    // « null » avec une barre à `width: null%` — un pilier non mesuré se serait
+    // affiché comme le pire score possible. On l'écarte du bloc, exactement
+    // comme il est écarté du calcul.
+    const sousScoresPdf: Array<{ label: string; v: number }> = [
       { label: 'Demande',       v: scores.demande },
       { label: 'Offre',         v: scores.offre },
       ...(!scores.transport_exclu ? [{ label: 'Accessibilité', v: scores.accessibilite }] : []),
-      { label: 'Environnement', v: scores.environnement },
-    ];
+      ...(!scores.environnement_non_mesure ? [{ label: 'Environnement', v: scores.environnement }] : []),
+    ].filter((s): s is { label: string; v: number } => typeof s.v === 'number');
+
+    // Correctif B — la note « Demande » sans sa base de mesure est indécidable.
+    // On l'imprime juste sous les barres, dans le même bloc que le score.
+    const confianceDemandePdf = scores.demande_confiance
+      ? `<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.18);font-size:10px;opacity:0.75;line-height:1.5;">
+          Demande — fiabilité ${DEMANDE_CONFIANCE_LABEL[scores.demande_confiance]}${
+            scores.demande_champs_attendus != null
+              ? ` (${scores.demande_champs_mesures ?? 0}/${scores.demande_champs_attendus} indicateurs mesurés)`
+              : ''
+          }${
+            scores.demande_champs_manquants.length > 0
+              ? `. Non mesuré : ${scores.demande_champs_manquants.join(', ')}.`
+              : ''
+          }
+        </div>`
+      : '';
 
     const htmlContent = `<!DOCTYPE html>
 <html lang="fr">
@@ -2714,7 +3550,7 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
         <div style="padding:6px 14px;background:${verdict.bg};color:${verdict.color};border-radius:8px;font-weight:700;font-size:13px;display:inline-block;">${verdict.label}</div>
       </div>
       <div style="background:rgba(255,255,255,0.08);border-radius:14px;padding:20px;">
-        <div style="font-size:11px;opacity:0.65;font-weight:600;text-transform:uppercase;margin-bottom:14px;">Sous-scores (${meta.project_type}${scores.transport_exclu ? ' — transport non applicable' : ''})</div>
+        <div style="font-size:11px;opacity:0.65;font-weight:600;text-transform:uppercase;margin-bottom:14px;">Sous-scores (${meta.project_type}${scores.transport_exclu ? (scores.transport_non_mesure ? ' — transport non mesuré, faute de données' : ' — transport non applicable') : ''})</div>
         ${sousScoresPdf.map(s => {
           const c = s.v >= 70 ? '#10b981' : s.v >= 50 ? '#f59e0b' : s.v >= 35 ? '#f97316' : '#ef4444';
           return `<div style="margin-bottom:10px;display:flex;align-items:center;gap:12px;">
@@ -2725,6 +3561,7 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
             <span style="font-size:13px;font-weight:700;color:${c};min-width:24px;">${s.v}</span>
           </div>`;
         }).join('')}
+        ${confianceDemandePdf}
       </div>
       <div style="background:rgba(255,255,255,0.08);border-radius:14px;padding:20px;min-width:180px;">
         <div style="font-size:11px;opacity:0.65;font-weight:600;text-transform:uppercase;margin-bottom:14px;">Données clés</div>
@@ -2770,10 +3607,17 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
       ${kpiBox('Population', fmtN(insee?.population), '#4338ca')}
       ${kpiBox('Densité', fmtN(insee?.densite) + ' hab/km²', '#15803d')}
-      ${kpiBox('Revenu médian', revenu != null ? fmtP(revenu) + '/an' : '—', '#10b981')}
-      ${kpiBox('Taux chômage', fmtPct(insee?.taux_chomage), (insee?.taux_chomage ?? 0) > 10 ? '#ef4444' : '#f59e0b')}
+      ${revenuEstimePdf
+        ? kpiBoxEstime('Revenu médian', revenu != null ? fmtP(revenu) + '/an' : '—', `Estimation départementale (${meta.departement}) — non mesuré sur la commune`)
+        : kpiBox('Revenu médian', revenu != null ? fmtP(revenu) + '/an' : '—', '#10b981')}
+      ${chomagePdf.valeur == null
+        ? kpiBox('Taux chômage', 'non mesuré', '#94a3b8')
+        : chomagePdf.estimee
+          ? kpiBoxEstime('Taux chômage', fmtPct(chomagePdf.valeur), `Estimation départementale (${meta.departement}) — non mesuré sur la commune`)
+          : kpiBox('Taux chômage', fmtPct(chomagePdf.valeur), chomagePdf.valeur > 10 ? '#ef4444' : '#f59e0b')}
     </div>
-    ${ratio ? `<p style="font-size:13px;color:#64748b;">Ratio prix/revenu : <strong style="color:#5247b8;">~${ratio} ans de revenus pour 60 m²</strong></p>` : ''}
+    ${ratio ? `<p style="font-size:13px;color:#64748b;">Ratio prix/revenu : <strong style="color:#5247b8;">~${ratio} ans de revenus pour 60 m²${revenuEstimePdf ? ' (revenu estimé au niveau départemental)' : ''}</strong></p>` : ''}
+    ${avertissementInseePdf}
   `)}
 
   ${section(`
@@ -2893,7 +3737,42 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
                 Sous-scores ({meta.project_type})
                 {scores.transport_exclu && (
                   <div style={{ fontSize: "10px", opacity: 0.65, fontWeight: 400, marginTop: "3px" }}>
-                    Transport non applicable (zone non-urbaine)
+                    {scores.transport_non_mesure
+                      ? "Transport non mesuré — aucune donnée disponible sur ce secteur. Le pilier est retiré du calcul plutôt que noté zéro."
+                      : "Transport non applicable (zone non-urbaine)"}
+                  </div>
+                )}
+                {scores.environnement_non_mesure && (
+                  <div style={{ fontSize: "10px", opacity: 0.65, fontWeight: 400, marginTop: "3px" }}>
+                    Environnement non mesuré — aucun équipement référencé pour cette commune.
+                    Le pilier est retiré du calcul plutôt que noté par défaut.
+                  </div>
+                )}
+                {/* Correctif B — sur quoi repose « Demande ». Un 50/100 doit
+                    pouvoir se lire : tout mesuré et compensé, ou rien reçu. */}
+                {scores.demande_confiance && (
+                  <div style={{ fontSize: "10px", opacity: 0.65, fontWeight: 400, marginTop: "3px" }}>
+                    Demande — fiabilité {DEMANDE_CONFIANCE_LABEL[scores.demande_confiance]}
+                    {scores.demande_champs_attendus != null && (
+                      <> ({scores.demande_champs_mesures ?? 0}/{scores.demande_champs_attendus} indicateur
+                      {(scores.demande_champs_attendus ?? 0) > 1 ? "s" : ""} mesuré
+                      {(scores.demande_champs_mesures ?? 0) > 1 ? "s" : ""})</>
+                    )}
+                    {scores.demande_champs_manquants.length > 0 && (
+                      <>. Non mesuré : {scores.demande_champs_manquants.join(", ")}.</>
+                    )}
+                  </div>
+                )}
+                {/* Correctif C — même logique appliquée aux bonus/malus du
+                    scoring front : ces critères n'ont ni joué en faveur ni
+                    en défaveur, faute de mesure. Le dire ici évite de lire
+                    l'absence de malus comme un bon point. */}
+                {reglesNonEvaluables.length > 0 && (
+                  <div style={{ fontSize: "10px", opacity: 0.65, fontWeight: 400, marginTop: "3px" }}>
+                    Ajustements — {reglesNonEvaluables.length} critère
+                    {reglesNonEvaluables.length > 1 ? "s" : ""} non évaluable
+                    {reglesNonEvaluables.length > 1 ? "s" : ""} :{" "}
+                    {[...new Set(reglesNonEvaluables.map((r) => r.donnee))].join(", ")}.
                   </div>
                 )}
               </div>
@@ -2906,7 +3785,11 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
                     ? [{ label: "Accessibilité", score: scores.accessibilite, key: "accessibilite" as const }]
                     : []
                   ),
-                  { label: "Environnement", score: scores.environnement, key: "environnement" },
+                  // Même règle : un pilier non mesuré n'est pas affiché.
+                  ...(!scores.environnement_non_mesure
+                    ? [{ label: "Environnement", score: scores.environnement, key: "environnement" as const }]
+                    : []
+                  ),
                 ] as const
               ).map((item, i) => (
                 <div key={i} style={{ marginBottom: "10px" }}>
@@ -2930,9 +3813,30 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
           </div>
         </div>
 
+        {/* Portée de la note — ce que le score mesure, et ce qu'il ne mesure pas.
+            Placé juste sous le score : c'est là que le lecteur en a besoin. */}
+        <div style={{
+          display: "flex", gap: "10px", alignItems: "flex-start",
+          background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "12px",
+          padding: "14px 16px", marginBottom: "24px",
+        }}>
+          <Info size={16} color="#64748b" style={{ flexShrink: 0, marginTop: "1px" }} />
+          <p style={{ margin: 0, fontSize: "12px", lineHeight: 1.6, color: "#475569" }}>
+            <strong style={{ color: "#334155" }}>Portée de cette note.</strong>{" "}
+            Le score est calculé à partir de données publiques à l'échelle de la commune
+            ou du secteur (INSEE, DVF, BPE, données de transport). Il décrit un
+            <strong> contexte de marché</strong> — pas la qualité propre d'un bien, d'un
+            terrain ou d'un projet. Le cadre de vie, la vue, l'exposition, la qualité du
+            bâti ou l'attrait d'un village n'entrent pas dans ce calcul et peuvent
+            justifier une valeur très supérieure à ce que le contexte laisse attendre.
+            Un pilier dont la donnée est absente est retiré du calcul, jamais noté zéro.
+          </p>
+        </div>
+
         {/* Score Adjustments Card */}
         <ScoreAdjustmentsCard
           adjustments={adjustments}
+          reglesNonEvaluables={reglesNonEvaluables}
           explanation={explanation}
           projectType={meta.project_type_label}
         />
@@ -3099,8 +4003,7 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
 // COMPOSANT PRINCIPAL - MarchePage v2.8.2
 // ============================================
 export function MarchePage() {
-  const [searchParams] = useSearchParams();
-  const studyId = searchParams.get("study");
+  const studyId = usePromoteurStudyId();
 
   const { study, loadState, patchMarche } = usePromoteurStudy(studyId);
 
@@ -3285,67 +4188,58 @@ export function MarchePage() {
 
       const typedResult = result as MarketStudyApiResponse;
       if (!mountedRef.current) return;
-      setAnalysisResult(typedResult);
 
-// v4.4 — enrichissement GTFS côté frontend
-try {
-  const lat = typedResult.meta?.lat;
-  const lon = typedResult.meta?.lon;
-  if (lat && lon) {
-    fetchMobilityScoreSafe(lat, lon, 500).then((mobility) => {
-      if (!mountedRef.current || !mobility) return;
-      setAnalysisResult(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          core: {
-            ...prev.core,
-            transport: {
-              ...prev.core.transport,
-              mobility_gtfs: {
-                total:           mobility.total,
-                pillars: {
-                  rail:       mobility.pillars.rail.score       ?? null,
-                  urban:      mobility.pillars.urban.score      ?? null,
-                  employment: mobility.pillars.employment.score ?? null,
-                  multimodal: mobility.pillars.multimodal.score ?? null,
-                },
-                nearest_stop_m:  mobility.top_stops[0]?.distance_m ?? null,
-                top_stops:       mobility.top_stops ?? [],
-                has_metro_train: (mobility as any).has_metro_train ?? mobility.top_stops.some(s => ['metro','rer','train','ter','tgv'].includes(s.mode.toLowerCase())),
-has_tram:        (mobility as any).has_tram        ?? mobility.top_stops.some(s => s.mode.toLowerCase() === 'tram'),
-is_urban:        (mobility as any).is_urban        ?? (mobility.total > 0 && (mobility.pillars.urban.score ?? 0) > 0),
-label:           mobility.total >= 80 ? 'Très bien desservi' : mobility.total >= 60 ? 'Bien desservi' : mobility.total >= 40 ? 'Desservi' : 'Peu desservi',
-summary:         '',
-              },
-            },
-          },
-        };
-      });
-    });
-  }
-} catch { /* non-bloquant */ }
+      // v4.4.1 — on attend l'enrichissement GTFS avant d'afficher et de persister.
+      // Une seule source de vérité : `enriched` alimente à la fois l'écran,
+      // le score envoyé en base et le résumé lu par le copilote.
+      const enriched = await enrichWithMobilityGtfs(typedResult);
+      if (!mountedRef.current) return;
+      setAnalysisResult(enriched);
 
-      const { scores } = calculateDifferentiatedScores(typedResult, projectNature);
+      const { scores } = calculateDifferentiatedScores(enriched, projectNature);
 
       const marchePayload: PromoteurMarcheData = {
-        prix_m2_median:   typedResult.core.dvf?.prix_m2_median ?? null,
+        prix_m2_median:   enriched.core.dvf?.prix_m2_median ?? null,
         prix_m2_neuf:     null,
-        prix_m2_ancien:   typedResult.core.dvf?.prix_m2_median ?? null,
+        prix_m2_ancien:   enriched.core.dvf?.prix_m2_median ?? null,
         tension_marche:   scores.global >= 70 ? "forte" : scores.global >= 50 ? "moyenne" : "faible",
-        taux_vacance_pct: typedResult.core.insee?.pct_logements_vacants ?? null,
+        taux_vacance_pct: enriched.core.insee?.pct_logements_vacants ?? null,
         zone_pinel:       null,
         score_marche:     scores.global,
         smart_scores:     { demande: scores.demande, offre: scores.offre, accessibilite: scores.accessibilite, environnement: scores.environnement },
-        raw_data: typedResult as unknown as Record<string, unknown>,
+        raw_data: enriched as unknown as Record<string, unknown>,
         done: true,
       };
 
-      if (studyId) patchMarche(marchePayload).catch(e => console.error("[MarchePage] patchMarche failed:", e));
+      if (studyId) {
+        const saved = await patchMarche(marchePayload).catch(e => {
+          console.error("[MarchePage] patchMarche failed:", e);
+          return { ok: false as const, error: String(e) };
+        });
+
+        // Chaîne d'opération : le marché alimente le bilan. On n'enregistre
+        // l'étape que si l'écriture de l'étude a réussi — sinon la chaîne
+        // déclarerait prêt un résultat qui n'existe nulle part.
+        if (saved.ok) {
+          await setStepStatus({
+            studyId, step: "marche", status: "ready",
+            producedBy: isAgentRun() ? "agent" : "user",
+            inputsHash: hashInputs({ lat, lon, codeInsee, radius, projectNature, parcelId: parcelId?.trim() || null }),
+            summary: {
+              score_marche: scores.global,
+              prix_m2_median: enriched.core.dvf?.prix_m2_median ?? null,
+              tension_marche: marchePayload.tension_marche,
+              commune: enriched.meta?.commune_nom ?? null,
+            },
+          });
+        }
+      }
 
       try {
-        patchProjectInfo({ address: selectedAddress?.label || address || undefined, city: typedResult?.meta?.commune_nom || undefined, projectType: projectNature, lat: typedResult?.meta?.lat, lon: typedResult?.meta?.lon });
-        patchModule("market", { ok: true, summary: `Score: ${typedResult?.scores?.global}/100 - ${typedResult?.meta?.commune_nom}`, data: typedResult });
+        patchProjectInfo({ address: selectedAddress?.label || address || undefined, city: enriched?.meta?.commune_nom || undefined, projectType: projectNature, lat: enriched?.meta?.lat, lon: enriched?.meta?.lon });
+        // scores.global (recalculé avec le GTFS), pas enriched.scores.global (brut backend) :
+        // le copilote doit citer le même chiffre que l'écran et que la base.
+        patchModule("market", { ok: true, summary: `Score: ${scores.global}/100 - ${enriched?.meta?.commune_nom}`, data: enriched });
       } catch (snapshotErr) { log('❌', 'Snapshot error', snapshotErr); }
 
       setTimeout(() => { if (mountedRef.current) resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, 100);
@@ -3358,10 +4252,24 @@ summary:         '',
       }
       const errorMessage = err instanceof Error ? err.message : "Une erreur est survenue";
       if (mountedRef.current) setError(errorMessage);
+      if (studyId) {
+        await setStepStatus({ studyId, step: "marche", status: "error", producedBy: isAgentRun() ? "agent" : "user", error: errorMessage }).catch(() => { /* non-bloquant */ });
+      }
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
-  }, [latitude, longitude, codeInsee, parcelInfo, radius, projectNature, selectedAddress, address, studyId, patchMarche]);
+  }, [latitude, longitude, codeInsee, parcelId, parcelInfo, radius, projectNature, selectedAddress, address, studyId, patchMarche]);
+
+  // Le copilote a ouvert cette page pour lancer l'étape : on attend qu'une
+  // localisation soit disponible (elle vient du foncier de l'étude, en async),
+  // puis on déclenche exactement le même calcul que le bouton.
+  useAutorun({
+    step: "marche",
+    studyId,
+    ready: Boolean((latitude && longitude) || codeInsee || parcelInfo),
+    skip: isLoading || Boolean(analysisResult),
+    run: handleSubmit,
+  });
 
   const studyInsee = study?.foncier?.commune_insee ?? null;
 

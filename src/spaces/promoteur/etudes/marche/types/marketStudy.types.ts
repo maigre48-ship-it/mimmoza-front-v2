@@ -58,15 +58,46 @@ export interface ContextInfo {
 // ─────────────────────────────────────────────────────────────
 // INSEE
 // ─────────────────────────────────────────────────────────────
+/** Provenance d'un champ INSEE. Seul `'mesure'` autorise à présenter le
+ *  chiffre comme un relevé communal (« correctif B » market-study). */
+export type QualiteChampInsee = "mesure" | "estimation_dept" | "heuristique_densite" | "absente";
+
+/** Modèle départemental + formules de densité. Isolé des mesures : y accéder
+ *  oblige l'appelant à savoir qu'il affiche une estimation. */
+export interface DemographieEstimee {
+  departement_modele: string;
+  pct_moins_15: number;
+  pct_15_29: number;
+  pct_30_44: number;
+  pct_45_59: number;
+  pct_60_74: number;
+  pct_75_plus: number;
+  pct_etudiants: number;
+  pct_actifs: number;
+  pct_proprietaires: number;
+  pct_logements_vacants: number;
+  pct_locataires: number;
+}
+
 export interface InseeData {
   insee_partial: boolean;
-  population?: number;
-  population_year?: number;
-  densite_hab_km2?: number;
-  taux_chomage?: number;
-  taux_pauvrete?: number;
-  pct_proprietaires?: number;
-  revenu_median?: number;
+  population?: number | null;
+  population_year?: number | null;
+  densite_hab_km2?: number | null;
+  // ─── Correctif B ─────────────────────────────────────────────────────
+  // Ces champs peuvent désormais valoir `null` : ils ne portent QUE la mesure.
+  // Le test `=== undefined` qui les gardait n'était jamais vrai (la valeur
+  // était toujours un nombre fabriqué) — le rendu « N/A » était inatteignable.
+  // Tout test de présence doit donc être `== null`.
+  taux_chomage?: number | null;
+  taux_chomage_estime?: number | null;
+  taux_chomage_source?: "socioeco" | "dept_fallback" | "none";
+  taux_pauvrete?: number | null;
+  pct_proprietaires?: number | null;
+  revenu_median?: number | null;
+  revenu_median_source?: "filosofi" | "socioeco" | "dept_fallback" | "none";
+  demographie_estimee?: DemographieEstimee | null;
+  insee_data_quality?: Record<string, QualiteChampInsee> | null;
   pyramide_ages?: {
     "0-14"?: number;
     "15-29"?: number;

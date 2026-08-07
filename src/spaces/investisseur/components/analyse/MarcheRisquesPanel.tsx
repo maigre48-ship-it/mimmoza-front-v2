@@ -71,6 +71,15 @@ function fmtEur(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return "—";
   return v.toLocaleString("fr-FR", { maximumFractionDigits: 0 }) + " €";
 }
+/**
+ * ⚠️ Correctif B — booléen à TROIS états. `x ? "✅ Oui" : "❌ Non"` rendait
+ *   `undefined` et `null` comme « ❌ Non », c'est-à-dire comme un constat
+ *   d'absence vérifié. Ce n'en est pas un : personne n'a regardé.
+ */
+function ouiNonNonMesure(v: boolean | null | undefined): string {
+  if (v == null) return "— (non mesuré)";
+  return v ? "✅ Oui" : "❌ Non";
+}
 function fmtDate(d: string | null | undefined): string {
   if (!d) return "—";
   try { return new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }); }
@@ -83,16 +92,63 @@ function isEstimationStop(name: string | null | undefined): boolean {
   return name.includes("(estimation)") || name.includes("estimation");
 }
 
-function ScoreBar({ label, value }: { label: string; value: number }) {
-  const color = value >= 70 ? "bg-emerald-500" : value >= 50 ? "bg-amber-400" : "bg-red-400";
+/**
+ * ⚠️ Correctif B — un pilier NON MESURÉ n'est pas un pilier à zéro.
+ *   L'appel était `value={scores.accessibilite ?? 0}` : une absence de donnée
+ *   était peinte en « 0/100, barre rouge », soit la note la plus défavorable
+ *   possible, tirée du néant. C'est le symétrique exact du biais haussier
+ *   corrigé côté promoteur (`?? 0` devant un seuil `>`), et c'est le fil rouge
+ *   des deux correctifs : une valeur absente ne doit jamais prendre l'apparence
+ *   d'une valeur mesurée. La barre reste donc vide et la valeur affiche « — ».
+ */
+function ScoreBar({ label, value }: { label: string; value: number | null | undefined }) {
+  const mesure = typeof value === "number" && Number.isFinite(value);
+  if (!mesure) {
+    return (
+      <div className="flex items-center gap-3" title="Pilier non mesuré : aucune donnée disponible, ce n'est pas une note de 0.">
+        <span className="text-xs text-gray-500 w-28 shrink-0">{label}</span>
+        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden border border-dashed border-gray-300" />
+        <span className="text-xs font-medium text-gray-400 w-10 text-right">—</span>
+      </div>
+    );
+  }
+  const v = value as number;
+  const color = v >= 70 ? "bg-emerald-500" : v >= 50 ? "bg-amber-400" : "bg-red-400";
   return (
     <div className="flex items-center gap-3">
       <span className="text-xs text-gray-500 w-28 shrink-0">{label}</span>
       <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${Math.min(value, 100)}%` }} />
+        <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${Math.max(0, Math.min(v, 100))}%` }} />
       </div>
-      <span className="text-sm font-semibold text-gray-700 w-10 text-right">{value}</span>
+      <span className="text-sm font-semibold text-gray-700 w-10 text-right">{v}</span>
     </div>
+  );
+}
+
+/** Correctif B — sur quoi repose la note « Demande ». Sans cette ligne, un
+ *  50/100 ne se distingue pas d'un 50/100 obtenu faute de toute donnée. */
+const DEMANDE_CONFIANCE_LABEL: Record<string, string> = {
+  forte: "fiabilité forte",
+  moyenne: "fiabilité moyenne",
+  faible: "fiabilité faible",
+  sans_objet: "sans objet (aucun indicateur applicable)",
+};
+
+function DemandeConfiance({ scores }: { scores: Record<string, any> }) {
+  const conf = scores?.demande_confiance as string | undefined;
+  if (!conf) return null;
+  const manquants: string[] = Array.isArray(scores?.demande_champs_manquants) ? scores.demande_champs_manquants : [];
+  const mesures = scores?.demande_champs_mesures;
+  const attendus = scores?.demande_champs_attendus;
+  const faible = conf === "faible" || conf === "sans_objet";
+  return (
+    <p className={`text-[10px] leading-snug pl-[7.75rem] -mt-1 ${faible ? "text-amber-600" : "text-gray-400"}`}>
+      Demande — {DEMANDE_CONFIANCE_LABEL[conf] ?? conf}
+      {/* ⚠️ `mesures ?? 0` affichait « 0/6 indicateurs mesurés » quand le décompte
+          lui-même était absent — une affirmation chiffrée fabriquée. */}
+      {typeof attendus === "number" && typeof mesures === "number" ? ` (${mesures}/${attendus} indicateurs mesurés)` : ""}
+      {manquants.length > 0 ? `. Non mesuré : ${manquants.join(", ")}.` : ""}
+    </p>
   );
 }
 
@@ -116,6 +172,51 @@ function Card({ title, icon, children, coverage }: { title: string; icon: string
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (<div className="flex items-center justify-between py-1"><span className="text-xs text-gray-500">{label}</span><span className="text-sm font-medium text-gray-800">{value}</span></div>);
+}
+
+// ─── Correctif B : mesure ≠ estimation ────────────────────────────────
+// L'edge function ne renvoie plus une valeur unique mélangeant relevé communal
+// et modèle départemental. Un champ nu porte la mesure ou null ; l'estimation
+// vit dans un champ dédié. Cette Stat est le seul endroit où une estimation
+// peut être rendue, et elle porte alors la pastille ambre — même code visuel
+// que la note « (estimation dépt.) » de la page Promoteur.
+
+/** Stat avec pastille de provenance. `estimee` ⇒ pastille ambre obligatoire. */
+function StatSource({ label, value, estimee, note }: {
+  label: string; value: string; estimee: boolean; note?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between py-1">
+      <span className="text-xs text-gray-500">{label}</span>
+      <span className="flex items-center gap-1.5">
+        {estimee && (
+          <span
+            className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-medium"
+            title={note ?? "Valeur estimée à partir d'un modèle départemental — non mesurée sur la commune."}
+          >
+            estimation dépt.
+          </span>
+        )}
+        <span className={`text-sm font-medium ${estimee ? "text-amber-700" : "text-gray-800"}`}>{value}</span>
+      </span>
+    </div>
+  );
+}
+
+/** Taux de chômage : `taux_chomage` = mesure ou null, `taux_chomage_estime` =
+ *  repli départemental. Les deux ne sont plus jamais le même champ. */
+function ChomageStat({ insee }: { insee: any }) {
+  const mesure = insee?.taux_chomage;
+  if (mesure != null && Number.isFinite(mesure)) {
+    return <StatSource label="Taux chômage" value={fmtPct(mesure)} estimee={false} />;
+  }
+  const estime = insee?.taux_chomage_estime;
+  if (estime != null && Number.isFinite(estime)) {
+    return <StatSource label="Taux chômage" value={fmtPct(estime)} estimee />;
+  }
+  // Ni mesure ni estimation : « — », convention de toutes les autres Stat de
+  // cette carte (fmtNum / fmtPct rendent « — » sur null).
+  return <StatSource label="Taux chômage" value="—" estimee={false} />;
 }
 
 // ─── v3.6 FIX: ajout `part_menages_imposes` (nom exact edge function) ──
@@ -291,7 +392,7 @@ function BpeServicesWidget({ bpe }: { bpe: any }) {
       <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
         🏪 Services &amp; Équipements
         <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">
-          BPE · {bpe.total_equipements ?? 0} total
+          BPE · {fmtNum(bpe.total_equipements)} total
         </span>
       </h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -366,8 +467,17 @@ function ResultsView({ data, showDetails }: { data: MarketStudyResult; showDetai
   const meta = data.meta ?? ({} as Record<string, any>);
   const dvf = core.dvf ?? null; const insee = core.insee ?? null;
   const transport = core.transport ?? null; const bpe = core.bpe ?? null;
-  const globalScore = typeof scores.global === "number" && Number.isFinite(scores.global) ? scores.global : 0;
-  const bpeCoverage: string | undefined = bpe?.coverage ?? (bpe && (bpe.total_equipements > 0 || bpe.score > 0 || (bpe.score_v2 ?? 0) > 0) ? "ok" : undefined);
+  // ⚠️ Correctif B — `: 0` rendait un score global absent en « 0/100 » rouge vif.
+  const globalScore: number | null =
+    typeof scores.global === "number" && Number.isFinite(scores.global) ? scores.global : null;
+  // ⚠️ `bpe.total_equipements > 0` sur un champ absent donne `undefined > 0` → false,
+  //   et le badge disparaissait en silence. On exige une MESURE avant de conclure.
+  const mesureBpePositive = (v: unknown): boolean => typeof v === "number" && Number.isFinite(v) && v > 0;
+  const bpeCoverage: string | undefined =
+    bpe?.coverage ??
+    (bpe && (mesureBpePositive(bpe.total_equipements) || mesureBpePositive(bpe.score) || mesureBpePositive(bpe.score_v2))
+      ? "ok"
+      : undefined);
 
   // v3.8: stops réels (hors placeholder estimation)
   const realStops = (transport?.stops ?? []).filter((s: any) => !isEstimationStop(s.name));
@@ -381,9 +491,11 @@ function ResultsView({ data, showDetails }: { data: MarketStudyResult; showDetai
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         <div className="flex items-center justify-between mb-4">
           <div><h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">🎯 Score global</h2><p className="text-xs text-gray-400 mt-0.5">{meta.commune_nom ?? "—"} · {meta.project_type_label ?? "—"} · rayon {meta.radius_km ?? "?"} km</p></div>
-          <div className="text-right"><div className={`text-4xl font-black ${globalScore >= 70 ? "text-emerald-600" : globalScore >= 50 ? "text-amber-500" : "text-red-500"}`}>{globalScore}<span className="text-lg font-normal text-gray-400">/100</span></div></div>
+          <div className="text-right">{globalScore == null ? (<div className="text-2xl font-bold text-gray-300" title="Score global non calculable : données insuffisantes.">—<span className="text-lg font-normal text-gray-300">/100</span></div>) : (<div className={`text-4xl font-black ${globalScore >= 70 ? "text-emerald-600" : globalScore >= 50 ? "text-amber-500" : "text-red-500"}`}>{globalScore}<span className="text-lg font-normal text-gray-400">/100</span></div>)}</div>
         </div>
-        <div className="space-y-2"><ScoreBar label="Demande" value={scores.demande ?? 0} /><ScoreBar label="Offre" value={scores.offre ?? 0} /><ScoreBar label="Accessibilité" value={scores.accessibilite ?? 0} /><ScoreBar label="Environnement" value={scores.environnement ?? 0} /></div>
+        {/* ⚠️ Correctif B — plus de `?? 0` : ScoreBar distingue lui-même « non mesuré » de « 0 ». */}
+        <div className="space-y-2"><ScoreBar label="Demande" value={scores.demande} /><DemandeConfiance scores={scores} /><ScoreBar label="Offre" value={scores.offre} /><ScoreBar label="Accessibilité" value={scores.accessibilite} /><ScoreBar label="Environnement" value={scores.environnement} /></div>
+        {scores.transport_exclu === true && (<p className="text-[10px] leading-snug pl-[7.75rem] mt-1 text-gray-400">Accessibilité — zone non-urbaine : le transport est exclu du calcul, ce n'est pas une note basse.</p>)}
         {scoring_details?.adjustments?.length > 0 && (<div className="mt-3 flex flex-wrap gap-1.5">{scoring_details.adjustments.map((adj: any, i: number) => (<span key={i} className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${adj.type === "bonus" ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>{adj.type === "bonus" ? "+" : ""}{adj.value} {adj.label}</span>))}</div>)}
       </div>
 
@@ -393,7 +505,7 @@ function ResultsView({ data, showDetails }: { data: MarketStudyResult; showDetai
           {dvf && dvf.nb_transactions > 0 ? (<><Stat label="Transactions" value={fmtNum(dvf.nb_transactions)} /><Stat label="Prix médian /m²" value={fmtNum(dvf.prix_m2_median, " €")} /><Stat label="Prix moyen /m²" value={fmtNum(dvf.prix_m2_moyen, " €")} /><Stat label="Min /m²" value={fmtNum(dvf.prix_m2_min, " €")} /><Stat label="Max /m²" value={fmtNum(dvf.prix_m2_max, " €")} /><Stat label="Évolution" value={fmtPct(dvf.evolution_prix_pct)} /></>) : <p className="text-xs text-gray-400 italic">Aucune transaction</p>}
         </Card>
         <Card title="INSEE — Socio-démographie" icon="👥" coverage={insee?.coverage}>
-          {insee ? (<><Stat label="Population" value={fmtNum(insee.population)} /><Stat label="Densité" value={fmtNum(insee.densite, " hab/km²")} /><Stat label={`Revenu médian${insee.incomeMedianUcYear ? ` (${insee.incomeMedianUcYear})` : ""}`} value={fmtNum(insee.revenu_median, " €/UC/an")} /><Stat label="Taux pauvreté" value={fmtPct(insee.taux_pauvrete)} /><Stat label="Taux chômage" value={fmtPct(insee.taux_chomage)} /><MenagesImposesStat insee={insee} />{insee.revenu_source && (<p className="text-[10px] text-gray-400 mt-1">Source: {insee.revenu_source}</p>)}</>) : <p className="text-xs text-gray-400 italic">Données INSEE indisponibles</p>}
+          {insee ? (<><Stat label="Population" value={fmtNum(insee.population)} /><Stat label="Densité" value={fmtNum(insee.densite, " hab/km²")} /><StatSource label={`Revenu médian${insee.incomeMedianUcYear ? ` (${insee.incomeMedianUcYear})` : ""}`} value={fmtNum(insee.revenu_median, " €/UC/an")} estimee={insee.revenu_median != null && insee.revenu_median_source === "dept_fallback"} /><Stat label="Taux pauvreté" value={fmtPct(insee.taux_pauvrete)} /><ChomageStat insee={insee} /><MenagesImposesStat insee={insee} />{insee.demographie_estimee && (<p className="text-[10px] text-amber-600 mt-1.5 leading-snug">Les parts démographiques (tranches d'âge, étudiants, locataires, propriétaires, logements vacants) ne sont pas mesurées à la commune : seules des estimations départementales existent. Elles ne figurent pas dans cette carte.</p>)}{insee.revenu_source && (<p className="text-[10px] text-gray-400 mt-1">Source: {insee.revenu_source}</p>)}</>) : <p className="text-xs text-gray-400 italic">Données INSEE indisponibles</p>}
         </Card>
         <Card
   title="Transport"
@@ -410,14 +522,22 @@ function ResultsView({ data, showDetails }: { data: MarketStudyResult; showDetai
         <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 border border-amber-100">
           🌾 Zone non-urbaine — transport non évalué au scoring.
         </p>
+        {/* ⚠️ Correctif B — ces trois lignes affichaient « ❌ Non », « ❌ Non », « 0 »
+            EN DUR. « Zone non-urbaine » veut dire « transport exclu du scoring »,
+            pas « aucun transport » : c'étaient trois faits inventés, présentés
+            avec la même autorité qu'un relevé. On n'affirme plus rien ici. */}
         <Stat label="Score transport" value="— (exclu)" />
-        <Stat label="Métro / Train" value="❌ Non" />
-        <Stat label="Tramway" value="❌ Non" />
-        <Stat label="Arrêts détectés" value="0" />
+        <Stat label="Métro / Train" value={ouiNonNonMesure(transport.has_metro_train)} />
+        <Stat label="Tramway" value={ouiNonNonMesure(transport.has_tram)} />
+        {/* Arrêts RÉELS uniquement : `transport.stops` inclut les placeholders
+            « (estimation) » du repli statique, les compter reviendrait à afficher
+            un relevé fabriqué. Tout le reste du fichier les filtre déjà. */}
+        <Stat label="Arrêts détectés" value={transport.stops == null ? "—" : fmtNum(realStopsCount)} />
       </div>
     ) : (
       <>
-        <Stat label="Score transport" value={`${transport.score ?? 0}/100`} />
+        {/* ⚠️ `transport.score ?? 0` affichait « 0/100 » pour un score non mesuré. */}
+        <Stat label="Score transport" value={typeof transport.score === "number" && Number.isFinite(transport.score) ? `${transport.score}/100` : "—"} />
         <div className="flex items-center justify-between py-1">
           <span className="text-xs text-gray-500">Arrêt le plus proche</span>
           <span className="text-sm font-medium text-gray-800 text-right max-w-[55%] truncate">
@@ -428,9 +548,15 @@ function ResultsView({ data, showDetails }: { data: MarketStudyResult; showDetai
               : "—"}
           </span>
         </div>
-        <Stat label="Métro / Train" value={transport.has_metro_train ? "✅ Oui" : "❌ Non"} />
-        <Stat label="Tramway" value={transport.has_tram ? "✅ Oui" : "❌ Non"} />
-        <Stat label="Arrêts (10min à pied)" value={realStopsCount > 0 ? fmtNum(realStopsCount) : fmtNum(transport.stops?.length ?? 0)} />
+        {/* ⚠️ Correctif B — `x ? "Oui" : "Non"` faisait passer une ABSENCE de mesure
+            pour une négation constatée. La négation d'une absence n'est pas une
+            présence, et son affirmation n'est pas une mesure. */}
+        <Stat label="Métro / Train" value={ouiNonNonMesure(transport.has_metro_train)} />
+        <Stat label="Tramway" value={ouiNonNonMesure(transport.has_tram)} />
+        {/* Idem : ne jamais retomber sur `transport.stops.length`, qui compte les
+            placeholders « (estimation) ». 0 arrêt réel est un fait ; l'absence de
+            relevé en est un autre. */}
+        <Stat label="Arrêts (10min à pied)" value={transport.stops == null ? "—" : fmtNum(realStopsCount)} />
         {realModes.length > 1 && (
           <div className="mt-1.5 flex flex-wrap gap-1">
             {realModes.slice(0, 4).map((m, i) => (
@@ -443,7 +569,11 @@ function ResultsView({ data, showDetails }: { data: MarketStudyResult; showDetai
   ) : <p className="text-xs text-gray-400 italic">Données transport indisponibles</p>}
 </Card>
         <Card title="BPE — Équipements" icon="🏪" coverage={bpeCoverage}>
-          {bpe && (bpe.total_equipements > 0 || bpe.score > 0 || (bpe.score_v2 ?? 0) > 0) ? (<><Stat label="Total équipements" value={fmtNum(bpe.total_equipements)} /><Stat label="Score BPE" value={`${bpe.score_v2 ?? bpe.score ?? 0}/100`} /><div className="border-t border-gray-100 mt-2 pt-2"><Stat label="Écoles" value={fmtNum(bpe.nb_ecoles)} /><Stat label="Pharmacies" value={fmtNum(bpe.nb_pharmacies)} /><Stat label="Supermarchés" value={fmtNum(bpe.nb_supermarches)} /><Stat label="Universités / Sup." value={fmtNum(bpe.nb_universites)} /></div><div className="border-t border-gray-100 mt-2 pt-2"><Stat label="Commerces" value={fmtNum(bpe.commerces?.count)} /><Stat label="Santé" value={fmtNum(bpe.sante?.count)} /><Stat label="Éducation" value={fmtNum(bpe.education?.count)} /><Stat label="Loisirs" value={fmtNum(bpe.loisirs?.count)} /></div></>) : <p className="text-xs text-gray-400 italic">Aucun équipement</p>}
+          {/* ⚠️ Correctif B — le garde `bpe.total_equipements > 0` sur un champ ABSENT
+              donne `undefined > 0` → false → « Aucun équipement », affirmation fausse
+              quand c'est le relevé entier qui manque. Et `score_v2 ?? score ?? 0`
+              affichait « 0/100 » pour un score non calculé. */}
+          {bpe && (mesureBpePositive(bpe.total_equipements) || mesureBpePositive(bpe.score) || mesureBpePositive(bpe.score_v2)) ? (<><Stat label="Total équipements" value={fmtNum(bpe.total_equipements)} /><Stat label="Score BPE" value={(() => { const s = bpe.score_v2 ?? bpe.score; return typeof s === "number" && Number.isFinite(s) ? `${s}/100` : "—"; })()} /><div className="border-t border-gray-100 mt-2 pt-2"><Stat label="Écoles" value={fmtNum(bpe.nb_ecoles)} /><Stat label="Pharmacies" value={fmtNum(bpe.nb_pharmacies)} /><Stat label="Supermarchés" value={fmtNum(bpe.nb_supermarches)} /><Stat label="Universités / Sup." value={fmtNum(bpe.nb_universites)} /></div><div className="border-t border-gray-100 mt-2 pt-2"><Stat label="Commerces" value={fmtNum(bpe.commerces?.count)} /><Stat label="Santé" value={fmtNum(bpe.sante?.count)} /><Stat label="Éducation" value={fmtNum(bpe.education?.count)} /><Stat label="Loisirs" value={fmtNum(bpe.loisirs?.count)} /></div></>) : <p className="text-xs text-gray-400 italic">Aucun équipement</p>}
         </Card>
       </div>
 
@@ -551,7 +681,13 @@ export default function MarcheRisquesPanel({ dealId, dealInputs, promoteurMarket
 
   const persistSuccess = useCallback((data: MarketStudyResult) => {
     if (!dealId) return;
-    try { const s = data.scores; patchMarcheRisquesForDeal(dealId, { data, scoreGlobal: s?.global, breakdown: { demande: s?.demande, offre: s?.offre, accessibilite: s?.accessibilite, environnement: s?.environnement }, updatedAt: new Date().toISOString() }); }
+    // ⚠️ Correctif B — `?? undefined` : dans le vocabulaire de `MarcheRisquesSaved`,
+    //   l'absence s'exprime par `undefined` (champs optionnels), pas par `null`.
+    //   Traduire l'un en l'autre est fidèle — les deux disent « pas de valeur » —
+    //   là où un `?? 0` aurait réintroduit le défaut qu'on vient de supprimer.
+    //   Même convention qu'à `RisquesPage.tsx` (`scores?.global ?? undefined`),
+    //   sur ce même champ de ce même store.
+    try { const s = data.scores; patchMarcheRisquesForDeal(dealId, { data, scoreGlobal: s?.global ?? undefined, breakdown: { demande: s?.demande ?? undefined, offre: s?.offre ?? undefined, accessibilite: s?.accessibilite ?? undefined, environnement: s?.environnement ?? undefined }, updatedAt: new Date().toISOString() }); }
     catch (e) { console.warn("[MarcheRisques] snapshot persist failed:", e); }
   }, [dealId]);
 

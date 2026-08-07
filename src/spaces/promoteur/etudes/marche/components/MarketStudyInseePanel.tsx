@@ -36,6 +36,24 @@ export const MarketStudyInseePanel: React.FC<MarketStudyInseePanelProps> = ({
 
   const insee = data.insee;
 
+  // ─── Correctif B : mesure, estimation, ou rien ───────────────────────────
+  // Un champ nu porte la mesure ou `null` ; l'estimation vit dans un champ
+  // dédié. On la lit ici explicitement, ce qui rend impossible de l'afficher
+  // sans la nommer. Quand ni l'une ni l'autre n'existe, la carte affiche
+  // « N/A » en grisé — c'est déjà la convention de ce composant pour tous ses
+  // autres champs absents (prop `unavailable`).
+  const chomage = insee.taux_chomage != null
+    ? { valeur: insee.taux_chomage, estimee: false }
+    : insee.taux_chomage_estime != null
+      ? { valeur: insee.taux_chomage_estime, estimee: true }
+      : { valeur: null as number | null, estimee: false };
+
+  const proprietaires = insee.pct_proprietaires != null
+    ? { valeur: insee.pct_proprietaires, estimee: false }
+    : insee.demographie_estimee?.pct_proprietaires != null
+      ? { valeur: insee.demographie_estimee.pct_proprietaires, estimee: true }
+      : { valeur: null as number | null, estimee: false };
+
   return (
     <div className="bg-white rounded-lg shadow">
       {/* Header */}
@@ -71,7 +89,7 @@ export const MarketStudyInseePanel: React.FC<MarketStudyInseePanelProps> = ({
             <DataCard
               label="Population"
               value={
-                insee.population !== undefined
+                insee.population != null
                   ? formatNumber(insee.population)
                   : "N/A"
               }
@@ -81,65 +99,93 @@ export const MarketStudyInseePanel: React.FC<MarketStudyInseePanelProps> = ({
                   : undefined
               }
               icon="👤"
+              unavailable={insee.population == null}
             />
 
             {/* Densité */}
             <DataCard
               label="Densité"
               value={
-                insee.densite_hab_km2 !== undefined
+                insee.densite_hab_km2 != null
                   ? `${formatNumber(insee.densite_hab_km2)} hab/km²`
                   : "N/A"
               }
               icon="📊"
+              unavailable={insee.densite_hab_km2 == null}
             />
 
-            {/* Taux de chômage */}
-            <DataCard
-              label="Taux de chômage"
-              value={
-                insee.taux_chomage !== undefined
-                  ? `${insee.taux_chomage.toFixed(1)}%`
-                  : "N/A"
-              }
-              icon="📉"
-              unavailable={insee.taux_chomage === undefined}
-            />
+            {/* Taux de chômage — correctif B.
+                `taux_chomage` ne porte plus que la MESURE communale ; le repli
+                départemental vit dans `taux_chomage_estime`. Le test de garde
+                était `=== undefined`, jamais vrai tant que la valeur était
+                fabriquée : le « N/A » était inatteignable. Il est ici `== null`,
+                et l'estimation, si elle existe, est affichée nommée. */}
+            {chomage.valeur != null ? (
+              <DataCard
+                label="Taux de chômage"
+                value={`${chomage.valeur.toFixed(1)}%`}
+                icon="📉"
+                estimation={chomage.estimee}
+                sublabel={chomage.estimee ? "Estimation départementale" : undefined}
+              />
+            ) : (
+              <DataCard
+                label="Taux de chômage"
+                value="N/A"
+                icon="📉"
+                unavailable
+                sublabel="Non mesuré sur cette commune"
+              />
+            )}
 
             {/* Taux de pauvreté */}
             <DataCard
               label="Taux de pauvreté"
               value={
-                insee.taux_pauvrete !== undefined
+                insee.taux_pauvrete != null
                   ? `${insee.taux_pauvrete.toFixed(1)}%`
                   : "N/A"
               }
               icon="💰"
-              unavailable={insee.taux_pauvrete === undefined}
+              unavailable={insee.taux_pauvrete == null}
             />
 
-            {/* % Propriétaires */}
-            <DataCard
-              label="Propriétaires"
-              value={
-                insee.pct_proprietaires !== undefined
-                  ? `${insee.pct_proprietaires.toFixed(1)}%`
-                  : "N/A"
-              }
-              icon="🏠"
-              unavailable={insee.pct_proprietaires === undefined}
-            />
+            {/* % Propriétaires — aucune source communale : seule une estimation
+                départementale existe (insee.demographie_estimee). */}
+            {proprietaires.valeur != null ? (
+              <DataCard
+                label="Propriétaires"
+                value={`${proprietaires.valeur.toFixed(1)}%`}
+                icon="🏠"
+                estimation={proprietaires.estimee}
+                sublabel={proprietaires.estimee ? "Estimation départementale" : undefined}
+              />
+            ) : (
+              <DataCard
+                label="Propriétaires"
+                value="N/A"
+                icon="🏠"
+                unavailable
+                sublabel="Non mesuré sur cette commune"
+              />
+            )}
 
             {/* Revenu médian */}
             <DataCard
               label="Revenu médian"
               value={
-                insee.revenu_median !== undefined
+                insee.revenu_median != null
                   ? `${formatNumber(insee.revenu_median)} €/an`
                   : "N/A"
               }
               icon="💶"
-              unavailable={insee.revenu_median === undefined}
+              unavailable={insee.revenu_median == null}
+              estimation={insee.revenu_median != null && insee.revenu_median_source === "dept_fallback"}
+              sublabel={
+                insee.revenu_median != null && insee.revenu_median_source === "dept_fallback"
+                  ? "Estimation départementale"
+                  : undefined
+              }
             />
           </div>
 
@@ -157,6 +203,12 @@ export const MarketStudyInseePanel: React.FC<MarketStudyInseePanelProps> = ({
           <div className="text-xs text-gray-500 pt-2 border-t border-gray-100">
             Sources : geo.api.gouv.fr
             {!insee.insee_partial && ", api.insee.fr"}
+            {insee.demographie_estimee && (
+              <span className="block mt-1 text-amber-700">
+                Les cartes marquées « estimation » proviennent d'un modèle
+                départemental et ne sont pas mesurées sur cette commune.
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -171,6 +223,10 @@ interface DataCardProps {
   sublabel?: string;
   icon: string;
   unavailable?: boolean;
+  /** Correctif B — la valeur affichée est une ESTIMATION, pas un relevé.
+   *  Fond ambre + pastille : même code visuel que la note « (estimation dépt.) »
+   *  de la page Promoteur, pour qu'il n'y ait qu'un signal à apprendre. */
+  estimation?: boolean;
 }
 
 const DataCard: React.FC<DataCardProps> = ({
@@ -179,24 +235,39 @@ const DataCard: React.FC<DataCardProps> = ({
   sublabel,
   icon,
   unavailable,
+  estimation,
 }) => (
   <div
     className={`p-3 rounded-lg ${
-      unavailable ? "bg-gray-50 opacity-60" : "bg-blue-50"
+      unavailable ? "bg-gray-50 opacity-60"
+        : estimation ? "bg-amber-50 border border-amber-200"
+        : "bg-blue-50"
     }`}
   >
     <div className="flex items-center gap-2 mb-1">
       <span>{icon}</span>
       <span className="text-xs text-gray-600">{label}</span>
+      {estimation && !unavailable && (
+        <span
+          className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-medium"
+          title="Valeur estimée à partir d'un modèle départemental — non mesurée sur cette commune."
+        >
+          estimation
+        </span>
+      )}
     </div>
     <div
       className={`text-lg font-bold ${
-        unavailable ? "text-gray-400" : "text-blue-900"
+        unavailable ? "text-gray-400" : estimation ? "text-amber-800" : "text-blue-900"
       }`}
     >
       {value}
     </div>
-    {sublabel && <div className="text-xs text-gray-500">{sublabel}</div>}
+    {sublabel && (
+      <div className={`text-xs ${estimation && !unavailable ? "text-amber-700 italic" : "text-gray-500"}`}>
+        {sublabel}
+      </div>
+    )}
   </div>
 );
 

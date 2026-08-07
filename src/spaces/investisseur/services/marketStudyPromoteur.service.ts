@@ -111,6 +111,27 @@ export interface DvfData {
   coverage: string;
 }
 
+/** Provenance d'un champ INSEE. Seul `'mesure'` autorise à présenter le
+ *  chiffre comme un relevé communal. */
+export type QualiteChampInsee = "mesure" | "estimation_dept" | "heuristique_densite" | "absente";
+
+/** Modèle départemental + formules de densité. Isolé des mesures : y accéder
+ *  oblige l'appelant à savoir qu'il manipule une estimation. */
+export interface DemographieEstimee {
+  departement_modele: string;
+  pct_moins_15: number;
+  pct_15_29: number;
+  pct_30_44: number;
+  pct_45_59: number;
+  pct_60_74: number;
+  pct_75_plus: number;
+  pct_etudiants: number;
+  pct_actifs: number;
+  pct_proprietaires: number;
+  pct_logements_vacants: number;
+  pct_locataires: number;
+}
+
 export interface InseeData {
   code_commune: string;
   commune_nom: string;
@@ -123,7 +144,19 @@ export interface InseeData {
   incomeMedianUcYear: number | null;
   taux_pauvrete: number | null;
   part_menages_imposes: number | null;
+  // ─── Correctif B (market-study) ────────────────────────────────────────
+  // `taux_chomage` ne porte plus QUE la mesure communale (insee_socioeco_communes)
+  // ou null. Le repli départemental vit dans `taux_chomage_estime`, sa provenance
+  // dans `taux_chomage_source`. Ne jamais les rendre dans le même champ d'affichage.
   taux_chomage: number | null;
+  taux_chomage_estime: number | null;
+  taux_chomage_source: "socioeco" | "dept_fallback" | "none";
+  revenu_median_source?: "filosofi" | "socioeco" | "dept_fallback" | "none";
+  /** Estimations démographiques — aucune source communale ne les alimente.
+   *  Les onze `pct_*` nus ci-dessous valent donc null. */
+  demographie_estimee: DemographieEstimee | null;
+  /** Provenance champ par champ, exposée hors mode debug. */
+  insee_data_quality: Record<string, QualiteChampInsee> | null;
   pct_moins_15: number | null;
   pct_15_29: number | null;
   pct_30_44: number | null;
@@ -166,11 +199,24 @@ export interface BpeData {
 }
 
 export interface Scores {
-  demande: number;
-  offre: number;
-  accessibilite: number;
-  environnement: number;
-  global: number;
+  // ⚠️ Correctif B — `number | null` et non `number`. Le back renvoie `null` pour
+  //   un pilier qu'aucune donnée ne permet de noter (transport exclu en zone
+  //   non-urbaine, demande sans indicateur mesuré). Tant que ce type mentait, la
+  //   branche « non mesuré » des composants était du code mort POUR LE
+  //   TYPECHECKER : elle fonctionnait à l'exécution mais rien n'empêchait un
+  //   futur `scores.demande + 10` de passer la compilation.
+  demande: number | null;
+  offre: number | null;
+  accessibilite: number | null;
+  environnement: number | null;
+  global: number | null;
+  transport_exclu?: boolean;
+  // Correctif B — base de mesure du pilier demande. Sans ces champs, un
+  // « 50/100 » ne se distingue pas d'un 50/100 obtenu faute de toute donnée.
+  demande_confiance?: "forte" | "moyenne" | "faible" | "sans_objet";
+  demande_champs_mesures?: number;
+  demande_champs_attendus?: number;
+  demande_champs_manquants?: string[];
 }
 
 export interface ScoringDetails {
