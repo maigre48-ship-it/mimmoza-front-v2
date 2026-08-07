@@ -1,10 +1,18 @@
 // ============================================
-// RisquesPage.tsx - VERSION 1.3.0
+// RisquesPage.tsx - VERSION 1.3.1
 // ============================================
 // Étude de risques pour une parcelle/adresse
 // Sources: Géorisques API, données gouvernementales
 // + 🆕 Banque scoring via banque-risques-v1
 //   → Refactoré : utilise <BanqueRiskScoreCard />
+//
+// ── v1.3.1 · MUTUALISATION DES HELPERS ──────────────────────────────────────
+// Les helpers d'affichage (couleurs, libellés, verdicts, formats) sont
+// désormais importés de `@/spaces/shared/risques` au lieu d'être définis ici.
+// Ils étaient recopiés à l'identique dans InvestisseurRisquesPanel, et seule
+// cette page avait reçu les correctifs de nullabilité de risk-study v1.1.0 :
+// pendant ce temps la copie affichait un score non mesuré en rouge vif.
+// MARQUEUR DE VERSION : import de `@/spaces/shared/risques`
 // ============================================
 
 import {
@@ -37,9 +45,12 @@ import {
 } from "lucide-react";
 import type { ErrorInfo, ReactNode} from "react";
 import React, { Component, useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 
 import type { LucideIcon } from "lucide-react";
+
+import { hashInputs, isAgentRun, setStepStatus } from "../../shared/promoteurChain";
+import { useAutorun } from "../../shared/useAutorun";
+import { usePromoteurStudyId } from "../../shared/usePromoteurStudyId";
 
 // Services partagés depuis le module marché
 import { searchAddress } from "../marche/services/address.service";
@@ -81,6 +92,22 @@ import {
 } from "../../shared/components/PromoteurPageHero";
 import { ACCENT_PRO } from "../../shared/promoteurDesign.tokens";
 
+// ─── Socle partagé de l'étude de risques (voir en-tête v1.3.1) ──────────────
+// Même exemplaire que celui consommé par InvestisseurRisquesPanel.
+// (les helpers de mesure — isMeasured, formatSourceCount, scoreBarWidth… —
+// entreront ici lors de la bascule des cartes locales sur celles du socle)
+import {
+  formatDistance,
+  formatNumber,
+  getBankGradeColor,
+  getRiskBg,
+  getRiskColor,
+  getRiskLabel,
+  getScoreColor,
+  getVerdictConfig,
+  niveauAleaToDb,
+} from "@/spaces/shared/risques";
+
 // ============================================
 // DEBUG
 // ============================================
@@ -96,12 +123,23 @@ const log = (prefix: string, message: string, data?: unknown) => {
 type RiskLevel = 'tres_fort' | 'fort' | 'moyen' | 'faible' | 'nul' | 'inconnu';
 type InsightType = 'critical' | 'warning' | 'positive' | 'info';
 
+// Aligné sur risk-study v1.1.0 : les scores de SÉCURITÉ sont nullables.
+// `null` = catégorie NON MESURÉE (aucune source publique n'a répondu). Ne jamais
+// l'afficher comme une note, ni le traiter comme rassurant : l'absence de donnée
+// n'est pas l'absence de risque.
 interface RiskScores {
-  global: number;
-  naturels: number;
-  technologiques: number;
-  pollution: number;
-  geotechniques: number;
+  global: number | null;
+  naturels: number | null;
+  technologiques: number | null;
+  pollution: number | null;
+  geotechniques: number | null;
+  // Indicateur de confiance (v1.1.0)
+  criteres_mesures?: number;
+  criteres_total?: number;
+  categories_mesurees?: string[];
+  categories_non_mesurees?: string[];
+  poids_effectifs?: Record<string, number>;
+  coverage?: 'ok' | 'partial' | 'no_data' | 'error';
 }
 
 interface RiskItem {
@@ -112,8 +150,11 @@ interface RiskItem {
 
 interface RiskCategory {
   name: string;
-  score: number;
+  score: number | null;
   level: RiskLevel;
+  coverage?: 'ok' | 'partial' | 'no_data' | 'error';
+  criteres_mesures?: number;
+  criteres_total?: number;
   risks: RiskItem[];
 }
 
@@ -211,11 +252,13 @@ interface ArgilesData {
   coverage: string;
 }
 
+// risk-study v1.1.0 : `null` = GASPAR n'a pas répondu, on ne sait pas.
+// À ne jamais rendre par « hors zone » / « pas de PPRI ».
 interface InondationData {
-  zone_inondable: boolean;
+  zone_inondable: boolean | null;
   type_zone: string | null;
   tri: string | null;
-  ppri: boolean;
+  ppri: boolean | null;
   risk_level: RiskLevel;
   coverage: string;
 }
@@ -327,76 +370,16 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 // HELPERS
 // ============================================
 
-const formatNumber = (n: number | null | undefined, decimals = 0): string => {
-  if (n == null || isNaN(n)) return "—";
-  return new Intl.NumberFormat("fr-FR", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(n);
-};
-
-const formatDistance = (m: number | null | undefined): string => {
-  if (m == null) return "—";
-  if (m < 1000) return `${m} m`;
-  return `${(m / 1000).toFixed(1)} km`;
-};
-
-const getRiskColor = (level: RiskLevel): string => {
-  switch (level) {
-    case 'tres_fort': return "#991b1b";
-    case 'fort': return "#dc2626";
-    case 'moyen': return "#f59e0b";
-    case 'faible': return "#22c55e";
-    case 'nul': return "#10b981";
-    default: return "#94a3b8";
-  }
-};
-
-const getRiskBg = (level: RiskLevel): string => {
-  switch (level) {
-    case 'tres_fort': return "#fef2f2";
-    case 'fort': return "#fee2e2";
-    case 'moyen': return "#fef3c7";
-    case 'faible': return "#dcfce7";
-    case 'nul': return "#ecfdf5";
-    default: return "#f1f5f9";
-  }
-};
-
-const getRiskLabel = (level: RiskLevel): string => {
-  switch (level) {
-    case 'tres_fort': return "Très fort";
-    case 'fort': return "Fort";
-    case 'moyen': return "Moyen";
-    case 'faible': return "Faible";
-    case 'nul': return "Nul";
-    default: return "Inconnu";
-  }
-};
-
-const getScoreColor = (score: number): string => {
-  if (score >= 80) return "#10b981";
-  if (score >= 60) return "#22c55e";
-  if (score >= 40) return "#f59e0b";
-  return "#dc2626";
-};
-
-const getVerdictConfig = (score: number) => {
-  if (score >= 80) return { label: "ZONE SÛRE", color: "#047857", bg: "#ecfdf5", icon: ShieldCheck };
-  if (score >= 60) return { label: "RISQUE FAIBLE", color: "#059669", bg: "#dcfce7", icon: Shield };
-  if (score >= 40) return { label: "VIGILANCE", color: "#d97706", bg: "#fef3c7", icon: ShieldAlert };
-  return { label: "RISQUE ÉLEVÉ", color: "#991b1b", bg: "#fee2e2", icon: ShieldOff };
-};
-
-const getBankGradeColor = (grade: BankRiskScoringGrade): string => {
-  switch (grade) {
-    case "A": return "#047857";
-    case "B": return "#059669";
-    case "C": return "#d97706";
-    case "D": return "#dc2626";
-    case "E": return "#991b1b";
-  }
-};
+// ─── v1.3.1 · MUTUALISATION ─────────────────────────────────────────────────
+// Ces helpers vivaient ici en exemplaire local, et étaient recopiés à
+// l'identique dans InvestisseurRisquesPanel. Les correctifs de nullabilité de
+// v1.1.0 n'ont été appliqués qu'ici ; la copie a continué pendant ce temps à
+// colorer en ROUGE VIF un score simplement non mesuré. Le socle
+// `@/spaces/shared/risques` supprime ce chemin de divergence : une correction
+// faite là s'applique aux deux écrans.
+// Les imports (formatNumber, formatDistance, getRiskColor, getRiskBg,
+// getRiskLabel, getScoreColor, getVerdictConfig, getBankGradeColor) sont en
+// tête de fichier.
 
 // ============================================
 // STYLES
@@ -481,10 +464,12 @@ const styles = {
 // ============================================
 // RISK GAUGE
 // ============================================
-const RiskGauge: React.FC<{ score: number; size?: number }> = ({ score, size = 160 }) => {
+const RiskGauge: React.FC<{ score: number | null; size?: number }> = ({ score, size = 160 }) => {
   const radius = (size - 20) / 2;
   const circumference = 2 * Math.PI * radius;
-  const progress = (score / 100) * circumference;
+  // Non mesuré : arc vide et « — » au centre, plutôt qu'un « null » ou un 0
+  // qui se lirait comme un risque maximal.
+  const progress = score == null ? 0 : (score / 100) * circumference;
   const color = getScoreColor(score);
   const verdict = getVerdictConfig(score);
   const VerdictIcon = verdict.icon;
@@ -507,8 +492,10 @@ const RiskGauge: React.FC<{ score: number; size?: number }> = ({ score, size = 1
           display: "flex", flexDirection: "column",
           alignItems: "center", justifyContent: "center",
         }}>
-          <span style={{ fontSize: size * 0.25, fontWeight: 800, color }}>{score}</span>
-          <span style={{ fontSize: size * 0.08, color: "#94a3b8", fontWeight: 500 }}>/ 100</span>
+          <span style={{ fontSize: size * 0.25, fontWeight: 800, color }}>{score ?? "—"}</span>
+          <span style={{ fontSize: size * 0.08, color: "#94a3b8", fontWeight: 500 }}>
+            {score == null ? "non mesuré" : "/ 100"}
+          </span>
         </div>
       </div>
       <div style={{
@@ -528,14 +515,20 @@ const RiskGauge: React.FC<{ score: number; size?: number }> = ({ score, size = 1
 // ============================================
 // CATEGORY SCORE BAR
 // ============================================
-const CategoryScoreBar: React.FC<{ 
-  name: string; 
-  score: number; 
+const CategoryScoreBar: React.FC<{
+  name: string;
+  score: number | null;
   level: RiskLevel;
   icon: LucideIcon;
-}> = ({ name, score, level, icon: Icon }) => {
+  criteresMesures?: number;
+  criteresTotal?: number;
+}> = ({ name, score, level, icon: Icon, criteresMesures, criteresTotal }) => {
   const color = getRiskColor(level);
-  
+  // Non mesuré : barre vide, « non mesuré » à la place du chiffre.
+  const nonMesure = score == null;
+  const partiel = !nonMesure && criteresTotal != null && criteresMesures != null
+    && criteresMesures < criteresTotal;
+
   return (
     <div style={{ marginBottom: "16px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
@@ -554,13 +547,24 @@ const CategoryScoreBar: React.FC<{
           }}>
             {getRiskLabel(level)}
           </span>
-          <span style={{ fontSize: "14px", fontWeight: 700, color }}>{score}</span>
+          {partiel && (
+            <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 500 }}>
+              {criteresMesures}/{criteresTotal} critères
+            </span>
+          )}
+          <span style={{
+            fontSize: nonMesure ? "11px" : "14px",
+            fontWeight: 700,
+            color: nonMesure ? "#94a3b8" : color,
+          }}>
+            {nonMesure ? "non mesuré" : score}
+          </span>
         </div>
       </div>
       <div style={{ height: "8px", background: "#f1f5f9", borderRadius: "4px", overflow: "hidden" }}>
-        <div style={{ 
-          width: `${score}%`, 
-          height: "100%", 
+        <div style={{
+          width: nonMesure ? "0%" : `${score}%`,
+          height: "100%",
           background: color,
           borderRadius: "4px",
           transition: "width 0.8s ease-out"
@@ -931,7 +935,10 @@ const NaturalRisksCard: React.FC<{
       name: "Inondation", 
       icon: Droplets, 
       level: inondation.risk_level,
-      detail: inondation.ppri ? "PPRI actif" : "Hors zone PPRI"
+      // `ppri === null` = GASPAR muet. Ne pas écrire « Hors zone PPRI », qui
+      // affirmerait une absence de risque qu'on n'a pas vérifiée.
+      detail: inondation.ppri == null ? "PPRI non vérifié"
+        : inondation.ppri ? "PPRI actif" : "Hors zone PPRI"
     },
     { 
       name: "Séisme", 
@@ -1295,8 +1302,16 @@ const RiskStudyResults: React.FC<{
         <p style="font-size:13px;color:#1e293b;margin:3px 0 0 0;line-height:1.5;">${msg}</p></div>
       </div>`;
     };
-    const bar = (score: number, level: RiskLevel) => {
+    // score null = catégorie non mesurée : barre vide et mention explicite,
+    // pour que le rapport imprimé ne laisse pas croire à une note.
+    const bar = (score: number | null, level: RiskLevel) => {
       const c = getRiskColor(level);
+      if (score == null) {
+        return `<div style="display:flex;align-items:center;gap:10px;">
+          <div style="flex:1;height:8px;background:#e2e8f0;border-radius:4px;"></div>
+          <span style="font-size:11px;font-weight:600;color:#94a3b8;min-width:70px;">non mesuré</span>
+        </div>`;
+      }
       return `<div style="display:flex;align-items:center;gap:10px;">
         <div style="flex:1;height:8px;background:#e2e8f0;border-radius:4px;">
           <div style="width:${score}%;height:100%;background:${c};border-radius:4px;"></div>
@@ -1357,8 +1372,8 @@ const RiskStudyResults: React.FC<{
     <div style="display:grid;grid-template-columns:160px 1fr auto;gap:32px;align-items:center;">
       <!-- Score -->
       <div style="text-align:center;background:rgba(255,255,255,0.1);border-radius:14px;padding:20px;">
-        <div style="font-size:56px;font-weight:800;color:${scoreColor};line-height:1;">${scores.global}</div>
-        <div style="font-size:12px;opacity:0.6;margin-bottom:8px;">/100</div>
+        <div style="font-size:56px;font-weight:800;color:${scoreColor};line-height:1;">${scores.global ?? '—'}</div>
+        <div style="font-size:12px;opacity:0.6;margin-bottom:8px;">${scores.global == null ? 'non mesuré' : '/100'}</div>
         <div style="padding:6px 14px;background:${verdict.bg};color:${verdict.color};border-radius:8px;font-weight:700;font-size:13px;display:inline-block;">${verdict.label}</div>
       </div>
 
@@ -1409,7 +1424,7 @@ const RiskStudyResults: React.FC<{
   ${section(`
     ${sectionTitle('🌊', 'Risques Naturels')}
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
-      ${kpiBox('Inondation', getRiskLabel(riskData.inondation.risk_level), getRiskColor(riskData.inondation.risk_level), riskData.inondation.ppri ? 'PPRI actif' : 'Hors PPRI')}
+      ${kpiBox('Inondation', getRiskLabel(riskData.inondation.risk_level), getRiskColor(riskData.inondation.risk_level), riskData.inondation.ppri == null ? 'PPRI non vérifié' : riskData.inondation.ppri ? 'PPRI actif' : 'Hors PPRI')}
       ${kpiBox('Séisme', `Zone ${riskData.seisme.zone ?? '—'}`, getRiskColor(riskData.seisme.risk_level), riskData.seisme.libelle)}
       ${kpiBox('Feux de forêt', getRiskLabel(riskData.feux_foret.risk_level), getRiskColor(riskData.feux_foret.risk_level), riskData.feux_foret.zone_risque ? 'Zone exposée' : 'Hors zone')}
       ${kpiBox('Argiles (RGA)', getRiskLabel(riskData.argiles.risk_level), getRiskColor(riskData.argiles.risk_level), riskData.argiles.niveau_alea || 'Non évalué')}
@@ -1572,14 +1587,42 @@ const RiskStudyResults: React.FC<{
                 Scores par catégorie
               </div>
               {categories.map((cat, i) => (
-                <CategoryScoreBar 
-                  key={i} 
-                  name={cat.name} 
-                  score={cat.score} 
+                <CategoryScoreBar
+                  key={i}
+                  name={cat.name}
+                  score={cat.score}
                   level={cat.level}
                   icon={categoryIcons[cat.name] || Shield}
+                  criteresMesures={cat.criteres_mesures}
+                  criteresTotal={cat.criteres_total}
                 />
               ))}
+            </div>
+          </div>
+
+          {/* Indicateur de confiance + portée (risk-study v1.1.0).
+              À force d'écarter les catégories non mesurées, un score peut ne
+              reposer que sur une partie des critères. Rien ne l'indiquait à
+              l'écran : c'était le dernier angle mort de la chaîne. */}
+          <div style={{
+            marginTop: "24px", paddingTop: "18px",
+            borderTop: "1px solid rgba(255,255,255,0.15)",
+            fontSize: "12px", lineHeight: 1.6, opacity: 0.85,
+          }}>
+            {scores.criteres_total != null && (
+              <div style={{ marginBottom: "6px", fontWeight: 600 }}>
+                Note établie sur {scores.criteres_mesures ?? 0} critère(s) mesuré(s) sur {scores.criteres_total}.
+                {scores.categories_non_mesurees && scores.categories_non_mesurees.length > 0 && (
+                  <> Non mesuré, donc exclu du score global : {scores.categories_non_mesurees.join(", ")}.</>
+                )}
+              </div>
+            )}
+            <div>
+              Une source publique muette ne vaut pas absence de risque : les critères non
+              mesurés sont écartés du calcul, jamais comptés comme favorables, et les poids
+              sont renormalisés sur les seules catégories mesurées. Cette étude décrit
+              l'exposition de la <strong>commune et de son environnement</strong> — elle ne
+              se substitue pas à une étude de sol ni à un diagnostic sur la parcelle.
             </div>
           </div>
         </div>
@@ -1684,7 +1727,13 @@ const RiskStudyResults: React.FC<{
         <div style={{ display: "flex", justifyContent: "center", gap: "16px", marginTop: "32px" }}>
           <button
             onClick={() => {
-              patchModule("risks", { ok: true, validated: true, summary: `Score sécurité: ${scores.global}/100 - ${meta.commune_nom}`, data });
+              patchModule("risks", {
+                ok: true, validated: true,
+                summary: scores.global == null
+                  ? `Score sécurité: non mesuré - ${meta.commune_nom}`
+                  : `Score sécurité: ${scores.global}/100 - ${meta.commune_nom}`,
+                data,
+              });
               setSynthesisSaved(true);
               setTimeout(() => setSynthesisSaved(false), 3000);
             }}
@@ -1758,8 +1807,7 @@ export function RisquesPage({ onStudyComplete: _onStudyComplete, theme: _theme }
 } = {}) {
   
   // ── Study persistence ──────────────────────────────────────────────────────
-  const [searchParams] = useSearchParams();
-  const studyId = searchParams.get("study");
+  const studyId = usePromoteurStudyId();
   const { study, loadState, patchRisques } = usePromoteurStudy(studyId);
 
   // 🆕 COPILOT : accès au store de contexte
@@ -2060,25 +2108,45 @@ export function RisquesPage({ onStudyComplete: _onStudyComplete, theme: _theme }
 
       // ── Persistance étude ────────────────────────────────────────────────
       if (studyId) {
+        // v1.1.0 — Un aléa 'inconnu' (source muette) tombait dans le `: 1`
+        // terminal, c'est-à-dire la MEILLEURE valeur de l'échelle : l'absence de
+        // mesure était persistée comme un risque minimal. On persiste null.
+        // v1.3.1 : la conversion vit dans le socle partagé, pour que ce panel et
+        // InvestisseurRisquesPanel écrivent la MÊME échelle dans la même colonne.
+        const sisCount = result.data?.sis?.count;
+
         const risquesPayload: PromoteurRisquesData = {
-          score_inondation:
-            result.data?.inondation?.risk_level === "fort" ? 3
-            : result.data?.inondation?.risk_level === "moyen" ? 2
-            : 1,
+          score_inondation: niveauAleaToDb(result.data?.inondation?.risk_level),
           score_seisme: result.data?.seisme?.zone ?? null,
-          score_retrait_argile:
-            result.data?.argiles?.risk_level === "fort" ? 3
-            : result.data?.argiles?.risk_level === "moyen" ? 2
-            : 1,
+          score_retrait_argile: niveauAleaToDb(result.data?.argiles?.risk_level),
           score_radon: result.data?.radon?.classe_potentiel ?? null,
-          pollution_sols: (result.data?.sis?.count ?? 0) > 0,
+          // `sisCount` absent = SIS non interrogé, pas « aucun site pollué ».
+          pollution_sols: sisCount == null ? false : sisCount > 0,
           score_global: result.scores?.global ?? null,
           raw_georisques: result as unknown as Record<string, unknown>,
           done: true,
         };
-        patchRisques(risquesPayload).catch(e =>
-          console.error("[RisquesPage] patchRisques failed:", e)
-        );
+        const saved = await patchRisques(risquesPayload).catch(e => {
+          console.error("[RisquesPage] patchRisques failed:", e);
+          return { ok: false as const, error: String(e) };
+        });
+
+        // Chaîne d'opération : les risques alimentent la synthèse. Étape
+        // enregistrée seulement si l'étude a bien été écrite.
+        if (saved.ok) {
+          await setStepStatus({
+            studyId, step: "risques", status: "ready",
+            producedBy: isAgentRun() ? "agent" : "user",
+            inputsHash: hashInputs({ lat, lon, codeInsee, radius, parcelId: parcelId?.trim() || null }),
+            summary: {
+              score_global: result.scores?.global ?? null,
+              score_inondation: risquesPayload.score_inondation,
+              score_radon: result.data?.radon?.classe_potentiel ?? null,
+              pollution_sols: risquesPayload.pollution_sols,
+              commune: result?.meta?.commune_nom ?? null,
+            },
+          });
+        }
       }
 
       const dossierId = extractDossierIdFromUrl();
@@ -2097,9 +2165,15 @@ export function RisquesPage({ onStudyComplete: _onStudyComplete, theme: _theme }
           lon: result?.meta?.lon,
         });
 
+        // Libellé aligné sur le chemin manuel (bouton « valider la synthèse ») :
+        // la valeur exposée est un score de SÉCURITÉ (100 = zone sûre). L'ancien
+        // « Score risque » inversait le sens dans le snapshot lu par le copilote.
+        // `null` = non mesuré (risk-study v1.1.0), jamais affiché comme une note.
         patchModule("risks", {
           ok: true,
-          summary: `Score risque: ${result?.scores?.global}/100 - ${result?.meta?.commune_nom}`,
+          summary: result?.scores?.global == null
+            ? `Score sécurité: non mesuré - ${result?.meta?.commune_nom}`
+            : `Score sécurité: ${result.scores.global}/100 - ${result?.meta?.commune_nom}`,
           data: result,
         });
 
@@ -2139,10 +2213,23 @@ export function RisquesPage({ onStudyComplete: _onStudyComplete, theme: _theme }
       const errorMessage = err instanceof Error ? err.message : "Une erreur est survenue";
       log('❌', 'Submit error', errorMessage);
       if (mountedRef.current) setError(errorMessage);
+      if (studyId) {
+        await setStepStatus({ studyId, step: "risques", status: "error", producedBy: isAgentRun() ? "agent" : "user", error: errorMessage }).catch(() => { /* non-bloquant */ });
+      }
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
-  }, [latitude, longitude, codeInsee, parcelInfo, radius, selectedAddress, address, fetchBankScoring, studyId, patchRisques]);
+  }, [latitude, longitude, codeInsee, parcelId, parcelInfo, radius, selectedAddress, address, fetchBankScoring, studyId, patchRisques]);
+
+  // Autorun copilote : même déclencheur que le bouton, une fois la
+  // localisation résolue depuis le foncier de l'étude.
+  useAutorun({
+    step: "risques",
+    studyId,
+    ready: Boolean((latitude && longitude) || codeInsee || parcelInfo),
+    skip: isLoading || Boolean(analysisResult),
+    run: handleSubmit,
+  });
 
   // ── Derived display values ─────────────────────────────────────────────────
   const bannerInseeLabel = study?.foncier?.commune_insee
@@ -2165,7 +2252,9 @@ export function RisquesPage({ onStudyComplete: _onStudyComplete, theme: _theme }
     statCards={analysisResult ? [
       {
         label: "Score sécurité",
-        value: `${analysisResult.scores.global}/100`,
+        value: analysisResult.scores.global == null
+          ? "non mesuré"
+          : `${analysisResult.scores.global}/100`,
         tone: "indigo" as const,
       },
       {
@@ -2179,7 +2268,13 @@ export function RisquesPage({ onStudyComplete: _onStudyComplete, theme: _theme }
         {analysisResult && (
           <HeroPrimaryButton
             onClick={() => {
-              patchModule("risks", { ok: true, validated: true, summary: `Score sécurité: ${analysisResult.scores.global}/100 - ${analysisResult.meta.commune_nom}`, data: analysisResult });
+              patchModule("risks", {
+                ok: true, validated: true,
+                summary: analysisResult.scores.global == null
+                  ? `Score sécurité: non mesuré - ${analysisResult.meta.commune_nom}`
+                  : `Score sécurité: ${analysisResult.scores.global}/100 - ${analysisResult.meta.commune_nom}`,
+                data: analysisResult,
+              });
               setSynthesisSaved(true);
               setTimeout(() => setSynthesisSaved(false), 3000);
             }}

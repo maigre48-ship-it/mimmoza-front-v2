@@ -12,11 +12,13 @@
 
 import { CheckCircle, Copy, Loader2, Plus, Target, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import {
   HeroPrimaryButton,
   PromoteurPageHero,
 } from "../shared/components/PromoteurPageHero";
+import { hashInputs, isAgentRun, setStepStatus } from "../shared/promoteurChain";
+import { useAutorun } from "../shared/useAutorun";
+import { usePromoteurStudyId } from "../shared/usePromoteurStudyId";
 import { getSnapshot, patchModule } from "../shared/promoteurSnapshot.store";
 import { usePromoteurStudy } from "../shared/usePromoteurStudy";
 import {
@@ -363,8 +365,7 @@ function BatimentCard({
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 export default function ProgrammationPage() {
-  const [searchParams] = useSearchParams();
-  const studyId = searchParams.get("study");
+  const studyId = usePromoteurStudyId();
   const { study, loadState } = usePromoteurStudy(studyId);
 
   // ── Store programme (source de vérité) ──
@@ -589,7 +590,7 @@ export default function ProgrammationPage() {
 
   // ── Snapshot synthèse (sans argent — l'argent est au Bilan) ──
   const [validated, setValidated] = useState(false);
-  const handleSaveForBilan = () => {
+  const handleSaveForBilan = async () => {
     setValidated(true);
     setTimeout(() => setValidated(false), 2600);
     patchModule("programmation", {
@@ -616,7 +617,50 @@ export default function ProgrammationPage() {
       summary: `${batiments.length} bât. · ${nbLogements} logement(s) · ${Math.round(sdpLogement)} m² SHAB · ${viabilite}`,
       updatedAt: new Date().toISOString(),
     } as any);
+
+    // Chaîne d'opération : la programmation débloque le bilan. Un programme
+    // vide (aucun bâtiment, aucun logement) ne débloque rien — sinon le bilan
+    // se lancerait sur du néant et sortirait des chiffres qui ne veulent rien
+    // dire. C'est la seule écriture serveur de cette page.
+    if (studyId) {
+      const utile = batiments.length > 0 && nbLogements > 0;
+      await setStepStatus({
+        studyId,
+        step: "programmation",
+        status: utile ? "ready" : "empty",
+        producedBy: isAgentRun() ? "agent" : "user",
+        inputsHash: hashInputs({
+          batiments: batiments.map((b) => ({
+            id: b.id, niveaux: b.niveaux, empriseSolM2: b.empriseSolM2,
+            typologies: b.typologies, surfaces: b.surfaces, commerceM2: b.commerceM2,
+          })),
+          nbParkings: mix.nbParkings,
+          espacesVertsM2: mix.espacesVertsM2,
+          terrainSurfaceM2: terrain.surfaceM2,
+          typeProjet,
+        }),
+        summary: {
+          nb_batiments: batiments.length,
+          nb_logements: nbLogements,
+          sdp_logement_m2: Math.round(sdpLogement),
+          taux_remplissage: recon.tauxRemplissage,
+          viabilite,
+        },
+      });
+    }
   };
+
+  // Autorun copilote : ici l'« exécution » de l'étape est la validation du
+  // programme — tout le reste est dérivé en continu. On ne valide que si le
+  // programme reconstitué depuis l'enveloppe tient debout ; valider un
+  // programme vide reviendrait à débloquer le bilan sur du néant.
+  useAutorun({
+    step: "programmation",
+    studyId,
+    ready: batiments.length > 0 && nbLogements > 0,
+    skip: validated,
+    run: handleSaveForBilan,
+  });
 
   if (loadState === "loading") {
     return (

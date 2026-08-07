@@ -16,7 +16,7 @@
 
 import type { Feature, MultiPolygon, Polygon } from "geojson";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 import { BuildingInspectorPanel } from "./plan2d/BuildingInspectorPanel";
 import { FloorElementsPanel } from "./plan2d/FloorElementsPanel";
@@ -26,6 +26,8 @@ import { computeParkingSlots, rectCorners } from "./plan2d/editor2d.geometry";
 import { useEditor2DStore } from "./plan2d/editor2d.store";
 import type { Building2D, Point2D } from "./plan2d/editor2d.types";
 import { usePromoteurParcelRestore } from "./shared/hooks/usePromoteurParcelRestore";
+import { hashInputs, setStepStatus } from "./shared/promoteurChain";
+import { usePromoteurStudyId } from "./shared/usePromoteurStudyId";
 
 import { ParcelDiagnosticsPanel } from "./components/ParcelDiagnosticsPanel";
 import { PluAnalysisPanel } from "./components/PluAnalysisPanel";
@@ -74,6 +76,16 @@ const PLACEHOLDER_PLU_RULES: PluRules = {
 // ─────────────────────────────────────────────────────────────────────────────
 // CLÉS LOCALSTORAGE
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Le copilote a-t-il ouvert cette page pour exécuter l'étape lui-même ?
+ *  Sert uniquement à tracer la provenance du résultat (vous / l'agent). */
+function isAgentRun(): boolean {
+  try {
+    return new URLSearchParams(window.location.search).get("autorun") === "1";
+  } catch {
+    return false;
+  }
+}
 
 function editorStorageKey(studyId: string): string {
   return `mimmoza.editor2d.raw.${studyId}`;
@@ -508,7 +520,28 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId }) =
           .from("promoteur_studies")
           .update({ implantation2d: snap })
           .eq("id", studyId);
-        if (error) console.error("[Implantation2D] Supabase persist error:", error.message);
+        if (error) {
+          console.error("[Implantation2D] Supabase persist error:", error.message);
+          return;
+        }
+
+        // Chaîne d'opération : l'enveloppe vient d'être produite. Le hash des
+        // entrées évite de re-marquer périmé l'aval (programmation, bilan) à
+        // chaque auto-save qui ne change rien — sinon tout clignoterait en
+        // permanence et le signal « périmé » perdrait tout sens.
+        if (freshStoreBuildings.length > 0) {
+          await setStepStatus({
+            studyId,
+            step: "enveloppe",
+            status: "ready",
+            producedBy: isAgentRun() ? "agent" : "user",
+            inputsHash: hashInputs(snap),
+            summary: {
+              nb_batiments: freshStoreBuildings.length,
+              nb_parkings: freshParkings.length,
+            },
+          });
+        }
       }, 1_500);
     }
 
@@ -685,9 +718,8 @@ const CaptureButton: React.FC<CaptureButtonProps> = ({ studyId }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const Implantation2DPage: React.FC = () => {
-  const [searchParams] = useSearchParams();
   const navigate        = useNavigate();
-  const studyId         = searchParams.get("study");
+  const studyId         = usePromoteurStudyId();
 
   const restore = usePromoteurParcelRestore({ studyId, autoFetchMissingGeometry: true });
   const [forceRenderWithoutGeometry, setForceRenderWithoutGeometry] = useState(false);

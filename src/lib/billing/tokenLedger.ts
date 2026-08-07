@@ -78,8 +78,26 @@ export async function writeLedgerEntry(
 }
 
 // ─── Crédit ───────────────────────────────────────────────────────────────────
+//
+// ⚠️ Les trois fonctions qui suivent ne marchent PLUS depuis le navigateur, et
+// c'est voulu.
+//
+// `apply_token_ledger_entry` est une fonction SECURITY DEFINER : elle tourne
+// avec les droits du propriétaire de la base. Elle acceptait `p_user_id` sans
+// jamais vérifier que l'appelant était bien cet utilisateur, et elle était
+// exécutable par `anon`. Autrement dit, la clé publique du bundle suffisait à
+// se créditer des jetons — ou à en créditer n'importe qui.
+//
+// Depuis le 2026-08-04, la règle est : depuis une session utilisateur, on ne
+// peut que se débiter soi-même. Créditer, ou toucher au compte d'un tiers,
+// exige le `service_role` — donc une Edge Function ou un webhook Stripe.
+//
+// Ces trois helpers sont exportés mais appelés nulle part. Quand vous les
+// brancherez, ce sera côté serveur, pas ici. Un appel depuis le front lèvera
+// « INTERDIT: un credit ne part pas du client ».
+// Voir supabase/security/2026-08-04_billing_definer_functions.sql
 
-/** Crédite des jetons suite à un achat de pack. */
+/** Crédite des jetons suite à un achat de pack. À appeler depuis un webhook. */
 export async function creditTokensForPackPurchase(params: {
   userId: string;
   amount: number;

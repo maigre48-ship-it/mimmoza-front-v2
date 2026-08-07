@@ -91,20 +91,47 @@ async function fetchGeorisques(
       },
     });
 
-    if (error || !data) return null;
+    if (error || !data || data.success === false) return null;
 
-    // Normaliser la réponse vers notre type GeorisquesInput
-    const risks = data?.risks ?? data?.georisques ?? data ?? {};
+    // ── FIX — la réponse n'était PAS lue au bon endroit ──────────────────────
+    // L'ancien code faisait `data?.risks ?? data?.georisques ?? data` puis
+    // cherchait `risks.inondation`, `risks.argile`, `risks.ppr`… Or risk-study-v1
+    // ne renvoie aucune de ces clés : les aléas sont sous `data.data.*`
+    // (inondation, argiles, gaspar, sis…). Les quatre drapeaux étaient donc
+    // TOUJOURS false, flagCount valait 0, et globalRiskLevel sortait à "low".
+    //
+    // Ce "low" n'était pas cosmétique : il accordait +8 au score d'opportunité
+    // (valuationOpportunity.ts) et +5 à la confiance (valuationConfidence.ts).
+    // Une lecture qui échouait produisait donc un bonus de valorisation.
+    const d = (data.data ?? {}) as Record<string, any>;
+    const scores = (data.scores ?? {}) as Record<string, any>;
+
+    // risk-study v1.1.1 : `scores.global` est un score de SÉCURITÉ (100 = sûr)
+    // et vaut null quand aucun critère n'a pu être mesuré. Dans ce cas on ne
+    // renvoie RIEN : le moteur traitera Géorisques comme absent (sources.
+    // georisques = false, aucun bonus) au lieu de recevoir un risque faible.
+    const securite: number | null =
+      typeof scores.global === "number" ? scores.global : null;
+    if (securite === null) {
+      console.warn("[QuickAnalysis] risk-study n'a mesuré aucun critère → Géorisques traité comme absent");
+      return null;
+    }
+
+    // Chaque aléa n'est retenu que s'il est POSITIVEMENT établi. Un niveau
+    // 'inconnu' ou un compteur absent ne lève pas le drapeau — mais ne le
+    // transforme pas non plus en « pas de risque ».
+    const alea = (v: unknown) => v === "moyen" || v === "fort" || v === "tres_fort";
     const flags = {
-      flood: !!(risks.inondation ?? risks.flood ?? risks.AZI),
-      clay: !!(risks.argile ?? risks.clay ?? risks.retrait_gonflement),
-      ppr: !!(risks.ppr ?? risks.PPR),
-      pollutedSoil: !!(risks.basias ?? risks.polluted_soil ?? risks.sol_pollue),
+      flood: d.inondation?.zone_inondable === true,
+      clay: alea(d.argiles?.risk_level),
+      ppr: (d.gaspar?.ppr_count ?? 0) > 0,
+      pollutedSoil: d.sis?.risk_level !== "inconnu" && (d.sis?.count ?? 0) > 0,
     };
 
-    const flagCount = Object.values(flags).filter(Boolean).length;
+    // Niveau global dérivé du score de sécurité réellement calculé, plutôt que
+    // d'un décompte de drapeaux qui ignorait la gravité de chaque aléa.
     const globalRiskLevel: RiskLevel =
-      flagCount >= 2 ? "high" : flagCount === 1 ? "medium" : "low";
+      securite >= 75 ? "low" : securite >= 50 ? "medium" : "high";
 
     return {
       globalRiskLevel,

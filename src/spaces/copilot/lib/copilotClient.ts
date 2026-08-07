@@ -10,6 +10,8 @@ import { supabase } from '@/lib/supabase';
 import { getActiveCopilotContext } from '../store/activeCopilotContext.store';
 import { track } from '@/lib/mimmozia/track';
 import type {
+  ActionRun,
+  ActiveToolCall,
   ChatMessage,
   CopilotChatRequest,
   CopilotConversation,
@@ -17,6 +19,8 @@ import type {
   CopilotStreamEvent,
 } from '../types/copilot.types';
 import { SSEParser } from './streamParser';
+import { getChainState } from '@/spaces/promoteur/shared/promoteurChain';
+import { getActiveStudyId } from '../actions/copilotActions';
 
 export class CopilotClientError extends Error {
   readonly code: string;
@@ -185,6 +189,42 @@ function buildEnrichedContext(
   return enriched;
 }
 
+// =============================================================
+// Chaîne d'opération promoteur
+// ─────────────────────────────────────────────────────────────
+// Sans cet état, le copilote ne peut pas piloter : il ignore où en est le
+// projet, ce qui est périmé et ce qui est lançable. On l'injecte dans le
+// contexte plutôt que d'ajouter un outil — c'est une lecture systématique,
+// pas une décision du modèle, et ça évite un aller-retour.
+// =============================================================
+async function withPromoteurChain(
+  ctx: CopilotMimmozaContext,
+): Promise<CopilotMimmozaContext> {
+  const studyId = getActiveStudyId();
+  if (!studyId) return ctx;
+  try {
+    const chain = await getChainState(studyId);
+    if (!chain.length) return ctx;
+    return {
+      ...ctx,
+      promoteur_chain: {
+        study_id: studyId,
+        steps: chain.map((s) => ({
+          step: s.step,
+          label: s.label,
+          route: s.route,
+          status: s.status,
+          produced_by: s.producedBy,
+          blocked_by: s.blockedBy,
+          runnable: s.runnable,
+        })),
+      },
+    } as CopilotMimmozaContext;
+  } catch {
+    return ctx;  // le chat doit répondre même si la chaîne est indisponible
+  }
+}
+
 export async function streamCopilotChat(params: {
   request: CopilotChatRequest;
   signal?: AbortSignal;
@@ -195,7 +235,7 @@ export async function streamCopilotChat(params: {
 
   const enrichedRequest: CopilotChatRequest = {
     ...request,
-    context: buildEnrichedContext(request.context),
+    context: await withPromoteurChain(buildEnrichedContext(request.context)),
   };
 
   // ── Signal d'apprentissage MimmozIA : une analyse copilot part. On verse au
@@ -280,10 +320,22 @@ export async function fetchBalance(): Promise<number> {
   return typeof credits === 'number' ? credits : 0;
 }
 
-export async function fetchConversations(limit = 50): Promise<CopilotConversation[]> {
+/**
+ * Liste des conversations.
+ *
+ * La limite était à 50 pour 177 conversations non archivées : les plus
+ * anciennes n'apparaissaient tout simplement pas dans la barre latérale, sans
+ * message ni bouton « voir plus ». Un historique tronqué en silence est pire
+ * qu'un historique paginé.
+ *
+ * On monte à 500 et on cesse de faire `select('*')` — les colonnes de contexte
+ * (`context_parcel_id`, `context_route`, `context_study_id`) ne servent pas à
+ * la liste. Le gain sur la charge compense largement les lignes en plus.
+ */
+export async function fetchConversations(limit = 500): Promise<CopilotConversation[]> {
   const { data, error } = await supabase
     .from('copilot_conversations')
-    .select('*')
+    .select('id, title, vertical, pinned, archived, last_message_at, created_at, updated_at')
     .eq('archived', false)
     .order('last_message_at', { ascending: false, nullsFirst: false })
     .limit(limit);
@@ -295,27 +347,104 @@ export async function fetchConversations(limit = 50): Promise<CopilotConversatio
   return (data ?? []) as CopilotConversation[];
 }
 
-export async function fetchMessages(conversationId: string): Promise<ChatMessage[]> {
+/**
+ * Appels d'outils d'une conversation, regroupés par message.
+ *
+ * Une seule requête pour toute la conversation : le N+1 par message ferait
+ * autant d'allers-retours qu'il y a de réponses.
+ *
+ * Note sur l'ordre : l'Edge Function insère ces lignes en lot, donc elles
+ * partagent le même `created_at` à la microseconde près et l'ordre au sein d'un
+ * message n'est pas restituable. C'est sans conséquence ici — les cartes d'un
+ * même message sont indépendantes — mais ça le deviendrait le jour où on
+ * voudrait rejouer un enchaînement.
+ */
+async function fetchToolCalls(conversationId: string): Promise<Map<string, ActiveToolCall[]>> {
   const { data, error } = await supabase
-    .from('copilot_messages')
-    .select('id, role, content, mode, created_at')
+    .from('copilot_tool_calls')
+    .select('id, message_id, tool_name, tool_input, tool_output, status, error, duration_ms')
     .eq('conversation_id', conversationId)
-    .in('role', ['user', 'assistant'])
     .order('created_at', { ascending: true });
 
+  const byMessage = new Map<string, ActiveToolCall[]>();
+  // L'historique reste lisible sans ses cartes d'outils : on n'empêche pas la
+  // conversation de s'ouvrir pour autant.
+  if (error || !data) {
+    if (error) console.warn('[copilot] tool calls non relus:', error.message);
+    return byMessage;
+  }
+
+  for (const row of data as Record<string, unknown>[]) {
+    const messageId = String(row.message_id);
+    const list = byMessage.get(messageId) ?? [];
+    list.push({
+      id: String(row.id),
+      name: String(row.tool_name),
+      input: row.tool_input ?? undefined,
+      output: row.tool_output ?? undefined,
+      status: String(row.status),
+      durationMs: typeof row.duration_ms === 'number' ? row.duration_ms : undefined,
+      error: typeof row.error === 'string' ? row.error : undefined,
+    });
+    byMessage.set(messageId, list);
+  }
+  return byMessage;
+}
+
+/** Trace des actions exécutées dans cette conversation, dans l'ordre. */
+export async function fetchActionRuns(conversationId: string): Promise<ActionRun[]> {
+  const { data, error } = await supabase
+    .from('copilot_action_runs')
+    .select('message_id, action_kind, params, outcome, decided_by, message, study_id, navigated_to, created_at')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: true });
+
+  if (error || !data) {
+    if (error) console.warn('[copilot] action runs non relus:', error.message);
+    return [];
+  }
+
+  return (data as Record<string, unknown>[]).map((row) => ({
+    messageId: String(row.message_id),
+    actionKind: String(row.action_kind),
+    params: (row.params ?? {}) as Record<string, unknown>,
+    outcome: row.outcome as ActionRun['outcome'],
+    decidedBy: row.decided_by === 'auto' ? 'auto' : 'user',
+    message: typeof row.message === 'string' ? row.message : undefined,
+    studyId: typeof row.study_id === 'string' ? row.study_id : undefined,
+    navigatedTo: typeof row.navigated_to === 'string' ? row.navigated_to : undefined,
+    createdAt: String(row.created_at),
+  }));
+}
+
+export async function fetchMessages(conversationId: string): Promise<ChatMessage[]> {
+  const [messagesRes, toolCallsByMessage] = await Promise.all([
+    supabase
+      .from('copilot_messages')
+      .select('id, role, content, mode, created_at')
+      .eq('conversation_id', conversationId)
+      .in('role', ['user', 'assistant'])
+      .order('created_at', { ascending: true }),
+    fetchToolCalls(conversationId),
+  ]);
+
+  const { data, error } = messagesRes;
   if (error) {
     throw new CopilotClientError('FETCH_MESSAGES', error.message);
   }
 
   return (data ?? []).map(
-    (row: Record<string, unknown>): ChatMessage => ({
-      id: String(row.id),
-      role: row.role as 'user' | 'assistant',
-      text: extractText(row.content),
-      toolCalls: [],
-      mode: (row.mode as ChatMessage['mode']) ?? undefined,
-      status: 'complete',
-      createdAt: String(row.created_at),
-    }),
+    (row: Record<string, unknown>): ChatMessage => {
+      const id = String(row.id);
+      return {
+        id,
+        role: row.role as 'user' | 'assistant',
+        text: extractText(row.content),
+        toolCalls: toolCallsByMessage.get(id) ?? [],
+        mode: (row.mode as ChatMessage['mode']) ?? undefined,
+        status: 'complete',
+        createdAt: String(row.created_at),
+      };
+    },
   );
 }

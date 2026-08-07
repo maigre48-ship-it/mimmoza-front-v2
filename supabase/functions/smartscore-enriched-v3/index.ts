@@ -1,4 +1,95 @@
 // FILE: supabase/functions/smartscore-enriched-v3/index.ts
+// VERSION v4.7 - Géorisques et permis réellement branchés
+// CHANGELOG v4.7:
+//    La v4.5 avait cessé d'inventer (stubs → null) ; la v4.7 remplit les deux
+//    trous ainsi créés avec de vraies sources. Les deux fonctions edge
+//    existaient déjà en production, personne ne les appelait depuis ici.
+//
+//    - NEW: callEdgeFunction() — appel d'une autre fonction edge, centralisé.
+//      L'URL et les en-têtes étaient reconstruits dans chaque appelant. Renvoie
+//      null sur toute erreur, jamais un objet vide qui passerait pour valide.
+//    - NEW: computeGeorisquesScore branché sur risk-study-v1.
+//      ⚠️ `scores.global` de risk-study est un score de SÉCURITÉ (100 = sûr),
+//      même sens que les autres composants du pilier : aucune inversion. Il vaut
+//      null quand rien n'a été mesuré (v1.1.1) — ce null est propagé, pas
+//      converti en note. La couverture (criteres_mesures/total) remonte avec le
+//      score : un pilier bâti sur 4 critères sur 9 doit pouvoir se dire.
+//    - NEW: fetchPermisProches branché sur promoteur-permis-construire
+//      (rayon 5 km, 24 mois, communes voisines incluses).
+//      ⚠️ Le contrat expose `nombreLogements` là où computeCompetitionScore lit
+//      `nb_logements` : sans mappage, tous les permis auraient compté pour 0
+//      logement et la concurrence serait sortie « très faible » quel que soit le
+//      volume — exactement la panne silencieuse des hooks d'analyse rapide.
+//      La distinction null (source muette → pilier écarté) / [] (source
+//      interrogée, aucun permis) est préservée.
+//
+// VERSION v4.6 - Urbanité et rayons de recherche issus de la grille INSEE
+// CHANGELOG v4.6:
+//    `isRural` valait `!isInGrandeAgglomeration(insee)` : la négation d'une liste
+//    blanche de 14 départements et de quelques centaines de codes INSEE. Ce
+//    n'était pas un calcul mais une omission — Ascain, Bayonne (51 000 hab.) et
+//    Pau sortaient « rurales » parce que le 64 n'avait pas été saisi dans un Set.
+//
+//    ⚠️ Le point délicat : ce prédicat binaire faisait DEUX métiers.
+//      1. un libellé de classification (zone_type, pondérations, score de bruit) ;
+//      2. une politique de RAYONS de recherche — 500 m urbain / 20 km rural.
+//    Corriger le seul libellé aurait fait passer Ascain de 20 km à 500 m : les
+//    services essentiels d'une ceinture urbaine de 4 658 habitants auraient
+//    disparu du calcul. Le mot réparé, la donnée cassée.
+//
+//    - NEW: resolveZoneProfile() lit `insee_grille_densite` (34 875 communes,
+//      millésime 2026). Libellé depuis niveau_3 (1-2 urbain, 3 rural), rayons
+//      GRADUÉS sur niveau_7 — les sept niveaux de la grille. L'ancien binaire
+//      n'offrait que 500 m ou 20 km, un facteur 40 sans rien entre les deux.
+//    - NEW: repli sur la liste en dur à l'identique si la commune est absente de
+//      la table (DOM récents, fusions, code non résolu), avec `source` exposée.
+//    - FIX: fetchTransportScore décidait aussi de l'applicabilité sur cette
+//      liste. Toute commune hors des 14 départements était « Hors grande
+//      agglomération — critère non évalué », y compris dotée d'un vrai réseau.
+//    - FIX: le libellé « Non applicable » devient « Non évalué » avec motif :
+//      un fait sur la commune et une lacune de source ne se lisent pas pareil.
+//    - NEW: bloc `zone_profile` exposé (niveaux, libellé officiel, rayons
+//      réellement appliqués, source) pour que l'écran et le Copilot citent la
+//      classification INSEE au lieu de l'inférer de la densité.
+//
+// VERSION v4.5 - Fin des valeurs fabriquées : « pas de donnée ⇒ pas de note »
+// CHANGELOG v4.5:
+//    Deux piliers du SmartScore étaient alimentés par des STUBS qui renvoyaient
+//    des valeurs en dur, sans qu'aucune source ne soit interrogée. Rien ne les
+//    distinguait d'une mesure. Depuis l'ajout de la conclusion obligatoire dans
+//    copilot-chat, le modèle les reprend et les interprète avec assurance —
+//    d'où la correction.
+//
+//    - FIX: computeGeorisquesScore renvoyait `{ score: 70, risks_count: 0 }` en
+//      dur, pesant 0,40 du pilier environnement. Un « 0 risque » inventé entrait
+//      donc dans le score affiché. → renvoie null (composant écarté).
+//      À BRANCHER sur risk-study-v1 (honnête depuis v1.1.1).
+//    - FIX: fetchPermisProches renvoyait `[]`, lu comme « aucun permis » →
+//      score 70 et libellé « Pas de concurrence identifiee ». Un pilier de poids
+//      0,10 reposait sur une donnée jamais collectée. → renvoie null.
+//      À BRANCHER sur promoteur-permis-construire.
+//    - FIX: computeEnvironmentScore renvoie null si AUCUN composant mesuré.
+//      Écarter le seul Géorisques aurait sinon fait REMONTER le score : le
+//      pilier retombait sur la seule estimation de bruit (85 en « rural »).
+//      Une estimation ne porte plus un pilier à elle seule.
+//    - FIX: estimateNoiseScore porte un drapeau `estimated` et le dit dans son
+//      libellé — ce score n'est jamais mesuré, il est déduit de la desserte ou
+//      forcé à 85 selon un classement rural écrit en dur.
+//    - FIX: computeSmartScoreV4 renvoie `score: null` au lieu de 50 quand aucun
+//      pilier n'est disponible. Un 50 pouvait signifier « moyen » OU « rien n'a
+//      répondu ».
+//    - FIX: `Math.min(score, max_score_cap)` gardé contre le null, qui aurait
+//      été coercé en 0 — le pire score possible là où l'on veut « non calculable ».
+//    - NEW: bloc `confidence` { piliers_mesures, piliers_total, piliers_ecartes }
+//      exposé, et réserve accolée au verdict quand des piliers manquent.
+//
+//    ⚠️ RESTE À FAIRE : `isRural` est toujours la négation d'une liste blanche de
+//    14 départements écrite en dur (isInGrandeAgglomeration), et non une
+//    propriété de la commune. Ascain, Bayonne et Pau en sortent « rurales ». Ce
+//    prédicat pilote les rayons de recherche (500 m urbain / 20 km rural), deux
+//    pondérations et le score de bruit. La table `insee_grille_densite`
+//    (34 875 communes) contient l'information et n'est lue nulle part ici.
+//
 // VERSION v4.4 - Transport GTFS PostGIS (transport-score-gtfs-v1) en priorité
 // CHANGELOG v4.4:
 //    - NEW: MobilityGtfsResult type + extractMobilityFromGtfsResponse helper
@@ -59,7 +150,7 @@ function computeRuralAccessibilityScore(servicesRuraux: any, _es: any): RuralAcc
   check("pharmacie_proche",3,15); check("supermarche_proche",5,20); check("medecin_proche",5,20); check("poste_proche",3,15); check("banque_proche",5,15); check("station_service_proche",5,20);
   return { score: items.length > 0 ? Math.round(items.reduce((a, b) => a + b, 0) / items.length) : 50, details };
 }
-function computeSmartScoreV4(input: { essentialServicesScore: number | null; ruralAccessibilityScore: number | null; transportScore: number | null; transportApplicable: boolean; ecolesScore: number | null; commoditesScore: number | null; santeScore: number | null; marketCompositeScore: number | null; environmentScore: number | null; demographicScore: number | null; competitionScore: number | null; priceOpportunityScore: number | null; isRural: boolean; projectNature: string; }): { score: number; verdict: string; pillar_scores: Record<string, number | null>; weights: Record<string, number> } {
+function computeSmartScoreV4(input: { essentialServicesScore: number | null; ruralAccessibilityScore: number | null; transportScore: number | null; transportApplicable: boolean; ecolesScore: number | null; commoditesScore: number | null; santeScore: number | null; marketCompositeScore: number | null; environmentScore: number | null; demographicScore: number | null; competitionScore: number | null; priceOpportunityScore: number | null; isRural: boolean; projectNature: string; }): { score: number | null; verdict: string; pillar_scores: Record<string, number | null>; weights: Record<string, number>; confidence: { piliers_mesures: number; piliers_total: number; piliers_ecartes: string[] } } {
   const w: Record<string, number> = {}; const p: Record<string, number | null> = {};
   w.market = 0.15; p.market = input.marketCompositeScore;
   if (input.priceOpportunityScore != null) { w.price_opportunity = 0.20; p.price_opportunity = input.priceOpportunityScore; }
@@ -75,14 +166,48 @@ function computeSmartScoreV4(input: { essentialServicesScore: number | null; rur
   if (totalW > 0) for (const k of Object.keys(w)) w[k] = w[k] / totalW;
   let sum = 0, wSum = 0;
   for (const k of Object.keys(w)) { const val = p[k]; if (val != null) { sum += w[k] * val; wSum += w[k]; } }
-  const score = wSum > 0 ? Math.round(sum / wSum) : 50;
+
+  // v4.5 — Indicateur de confiance. Le score global était déjà renormalisé sur
+  // les piliers disponibles (bon réflexe), mais RIEN n'indiquait combien de
+  // piliers l'avaient produit : un SmartScore assis sur 2 piliers sur 10 se
+  // lisait exactement comme un score complet.
+  const piliersRetenus = Object.keys(w).filter((k) => p[k] != null);
+  const piliersEcartes = Object.keys(p).filter((k) => p[k] == null);
+
+  // AVANT : `wSum > 0 ? … : 50`. Un 50/100 pouvait donc signifier « moyen » OU
+  // « aucune source n'a répondu », sans distinction possible en aval.
+  if (wSum <= 0) {
+    console.warn("[SmartScore V4] aucun pilier disponible -> score null (et non 50)");
+    return {
+      score: null,
+      verdict: "Score non calculable : aucune source n'a repondu. Ne pas interpreter comme un potentiel moyen.",
+      pillar_scores: p, weights: w,
+      confidence: { piliers_mesures: 0, piliers_total: Object.keys(p).length, piliers_ecartes: piliersEcartes },
+    };
+  }
+
+  const score = Math.round(sum / wSum);
   let verdict: string;
   if (score >= 75) verdict = "Excellent potentiel (V4). Emplacement tres favorable.";
   else if (score >= 60) verdict = "Bon potentiel (V4). Conditions favorables.";
   else if (score >= 45) verdict = "Potentiel modere (V4). Points d'attention identifies.";
   else if (score >= 30) verdict = "Potentiel limite (V4). Vigilance requise.";
   else verdict = "Potentiel faible (V4). Analyse approfondie necessaire.";
-  return { score, verdict, pillar_scores: p, weights: w };
+
+  // La réserve est accolée au verdict : c'est la chaîne que le LLM reprend.
+  if (piliersEcartes.length > 0) {
+    verdict += ` Etabli sur ${piliersRetenus.length} pilier(s) sur ${Object.keys(p).length}`
+      + ` (non mesure : ${piliersEcartes.join(", ")}) - a interpreter avec prudence.`;
+  }
+
+  return {
+    score, verdict, pillar_scores: p, weights: w,
+    confidence: {
+      piliers_mesures: piliersRetenus.length,
+      piliers_total: Object.keys(p).length,
+      piliers_ecartes: piliersEcartes,
+    },
+  };
 }
 type PriceTrendResult = { score: number; trend: string; evolution_pct: number | null };
 type LiquidityResult = { score: number; label: string; transactions_count: number };
@@ -112,27 +237,125 @@ function computeMarketComposite(pr: { priceTrend: PriceTrendResult | null; liqui
   if (pr.rentalTension) { sum += pr.rentalTension.score * 0.20; w += 0.20; }
   return { score: w > 0 ? Math.round(sum / w) : 50, components: { price_trend: pr.priceTrend?.score ?? null, liquidity: pr.liquidity?.score ?? null, rental_tension: pr.rentalTension?.score ?? null } };
 }
-type GeorisquesScoreResult = { score: number; risks_count: number; main_risks: string[] };
+// v4.7 : `coverage` remonte la couverture déclarée par risk-study, pour que le
+// pilier environnement puisse distinguer « mesuré » de « partiellement mesuré ».
+type GeorisquesScoreResult = { score: number; risks_count: number; main_risks: string[]; coverage?: string; criteres_mesures?: number | null; criteres_total?: number | null };
 type DpeQuartierResult = { score: number; dpe_moyen: string | null; label: string };
 type AirQualityResult = { score: number; index: number | null; label: string };
-type NoiseScoreResult = { score: number; label: string };
-type EnvironmentScoreResult = { score: number; components: { georisques: number | null; dpe: number | null; air: number | null; noise: number | null } };
-async function computeGeorisquesScore(_c: string): Promise<GeorisquesScoreResult | null> { return { score: 70, risks_count: 0, main_risks: [] }; }
+// v4.5 : `estimated` distingue une ESTIMATION d'une MESURE. Sans ce drapeau,
+// rien ne permettait en aval de savoir qu'un score de bruit n'avait jamais été
+// mesuré — il pesait comme une donnée réelle.
+type NoiseScoreResult = { score: number; label: string; estimated?: boolean };
+type EnvironmentScoreResult = { score: number | null; components: { georisques: number | null; dpe: number | null; air: number | null; noise: number | null } };
+// ── v4.7 — Appel d'une autre fonction edge ──────────────────────────────────
+// Centralisé : l'URL et les en-têtes étaient reconstruits dans chaque fonction
+// appelante. Renvoie null sur toute erreur — jamais un objet vide qui se
+// confondrait avec une réponse valide.
+// ⚠️ Résolution PARESSEUSE, et non un `const` de module : `supabaseUrl` et
+// `serviceKey` sont déclarés bien plus bas dans ce fichier (~l. 537). Un const
+// initialisé ici les lirait dans leur zone morte temporelle et lèverait un
+// ReferenceError au CHARGEMENT du module — la fonction entière ne démarrerait
+// plus. On lit donc l'environnement au moment de l'appel.
+function functionsBaseUrl(): string {
+  return Deno.env.get("FUNCTIONS_URL")
+    ?? (supabaseUrl ? supabaseUrl + "/functions/v1" : "");
+}
+
+async function callEdgeFunction(
+  slug: string, body: Record<string, unknown>, timeoutMs = 12000,
+): Promise<any | null> {
+  const base = functionsBaseUrl();
+  if (!base) return null;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (serviceKey) { headers["Authorization"] = "Bearer " + serviceKey; headers["apikey"] = serviceKey; }
+  try {
+    const resp = await fetch(`${base}/${slug}`, {
+      method: "POST", headers, body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!resp.ok) { console.warn(`[${slug}] HTTP ${resp.status}`); return null; }
+    return await resp.json();
+  } catch (e) {
+    console.warn(`[${slug}] indisponible:`, e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+// ── v4.7 — Géorisques BRANCHÉ sur risk-study-v1 ─────────────────────────────
+// Historique : cette fonction retournait `{ score: 70, risks_count: 0 }` EN DUR
+// sans jamais interroger quoi que ce soit, tout en pesant 0,40 du pilier
+// environnement. La v4.5 l'a mise à null pour cesser d'inventer ; la v4.7 la
+// branche pour de bon.
+//
+// ⚠️ Conventions à ne pas confondre : `scores.global` de risk-study est un score
+// de SÉCURITÉ (100 = zone sûre), même sens que les autres composants du pilier
+// environnement — il s'utilise donc directement, sans inversion. Et il vaut
+// `null` quand aucun critère n'a pu être mesuré (v1.1.1) : on propage ce null
+// au lieu de le convertir en note.
+async function computeGeorisquesScore(communeInsee: string): Promise<GeorisquesScoreResult | null> {
+  if (!communeInsee) return null;
+
+  const raw = await callEdgeFunction("risk-study-v1", { commune_insee: communeInsee });
+  if (!raw || raw.success === false) {
+    console.warn("[Georisques] risk-study-v1 indisponible → composant ecarte du pilier environnement");
+    return null;
+  }
+
+  const scores = (raw.scores ?? {}) as Record<string, any>;
+  const securite = typeof scores.global === "number" ? scores.global : null;
+  if (securite === null) {
+    console.warn("[Georisques] risk-study n'a mesure aucun critere → composant ecarte");
+    return null;
+  }
+
+  // Catégories réellement exposées à un risque. `inconnu` est écarté : non
+  // mesuré n'est ni un risque, ni une absence de risque.
+  const categories = Array.isArray(raw.categories) ? raw.categories : [];
+  const exposees = categories.filter((c: any) =>
+    c?.level && c.level !== "nul" && c.level !== "inconnu");
+
+  return {
+    score: securite,
+    risks_count: exposees.length,
+    main_risks: exposees.map((c: any) => String(c.name ?? "")).filter(Boolean).slice(0, 5),
+    coverage: typeof scores.coverage === "string" ? scores.coverage : undefined,
+    criteres_mesures: typeof scores.criteres_mesures === "number" ? scores.criteres_mesures : null,
+    criteres_total: typeof scores.criteres_total === "number" ? scores.criteres_total : null,
+  };
+}
 async function fetchDpeQuartier(_c: string, _lat: number, _lon: number): Promise<DpeQuartierResult | null> { return null; }
 async function fetchAirQuality(_lat: number, _lon: number): Promise<AirQualityResult | null> { return null; }
+// v4.5 — Le bruit n'est jamais MESURÉ ici : c'est une estimation déduite du score
+// de transport, et une valeur en dur (85, « Calme ») dès que la commune est
+// classée rurale — classement lui-même issu d'une liste de départements écrite
+// en dur (cf. isInGrandeAgglomeration). Le libellé l'annonce désormais, et le
+// drapeau `estimated` empêche cette estimation de porter seule tout le pilier.
 function estimateNoiseScore(ts: number | null, rural: boolean): NoiseScoreResult {
-  if (rural) return { score: 85, label: "Calme (zone rurale)" };
-  if (ts == null) return { score: 60, label: "Bruit moyen estime" };
+  if (rural) return { score: 85, label: "Calme (estimation, zone classee rurale - non mesure)", estimated: true };
+  if (ts == null) return { score: 60, label: "Bruit moyen estime (non mesure)", estimated: true };
   const s = Math.max(20, Math.min(90, Math.round(80 - (ts - 50) * 0.3)));
-  return { score: s, label: s >= 70 ? "Relativement calme" : s >= 50 ? "Bruit modere" : "Zone potentiellement bruyante" };
+  return { score: s, label: (s >= 70 ? "Relativement calme" : s >= 50 ? "Bruit modere" : "Zone potentiellement bruyante") + " (estimation d'apres la desserte)", estimated: true };
 }
-function computeEnvironmentScore(pr: { georisques: GeorisquesScoreResult | null; dpe: DpeQuartierResult | null; air: AirQualityResult | null; noise: NoiseScoreResult | null }): EnvironmentScoreResult {
+
+// v4.5 — Renvoie null quand AUCUN composant mesuré n'est disponible.
+// AVANT : `w > 0 ? … : 50` — un pilier sans aucune donnée sortait à 50/100, et
+// surtout, avec les stubs Géorisques/DPE/air désactivés, le pilier retombait sur
+// la seule estimation de bruit (85 en rural). Le score d'environnement aurait
+// donc AUGMENTÉ en perdant sa principale composante : une estimation isolée ne
+// doit pas porter un pilier à elle seule.
+function computeEnvironmentScore(pr: { georisques: GeorisquesScoreResult | null; dpe: DpeQuartierResult | null; air: AirQualityResult | null; noise: NoiseScoreResult | null }): EnvironmentScoreResult | null {
   let sum = 0, w = 0;
-  if (pr.georisques) { sum += pr.georisques.score * 0.40; w += 0.40; }
-  if (pr.noise) { sum += pr.noise.score * 0.25; w += 0.25; }
-  if (pr.air) { sum += pr.air.score * 0.20; w += 0.20; }
-  if (pr.dpe) { sum += pr.dpe.score * 0.15; w += 0.15; }
-  return { score: w > 0 ? Math.round(sum / w) : 50, components: { georisques: pr.georisques?.score ?? null, dpe: pr.dpe?.score ?? null, air: pr.air?.score ?? null, noise: pr.noise?.score ?? null } };
+  let measured = 0;
+  if (pr.georisques) { sum += pr.georisques.score * 0.40; w += 0.40; measured++; }
+  if (pr.noise) { sum += pr.noise.score * 0.25; w += 0.25; if (!pr.noise.estimated) measured++; }
+  if (pr.air) { sum += pr.air.score * 0.20; w += 0.20; measured++; }
+  if (pr.dpe) { sum += pr.dpe.score * 0.15; w += 0.15; measured++; }
+
+  if (measured === 0) {
+    console.warn("[SmartScore V4] environnement : aucun composant mesure (Georisques/DPE/air non branches) -> pilier ecarte");
+    return null;
+  }
+  return { score: w > 0 ? Math.round(sum / w) : null, components: { georisques: pr.georisques?.score ?? null, dpe: pr.dpe?.score ?? null, air: pr.air?.score ?? null, noise: pr.noise?.score ?? null } };
 }
 type PopulationTrendResult = { trend: string; annual_pct: number | null };
 type DemographicScoreResult = { score: number; populationTrend: PopulationTrendResult | null; details: { population_score: number | null; age_adequacy_score: number | null; income_score: number | null } };
@@ -147,9 +370,67 @@ async function computeDemographicScore(_c: string, insee: any, projNature: strin
   return { score: Math.round(popScore * 0.30 + ageScore * 0.35 + incScore * 0.35), populationTrend: { trend: "unknown", annual_pct: null }, details: { population_score: popScore, age_adequacy_score: ageScore, income_score: incScore } };
 }
 type CompetitionScoreResult = { score: number; permis_count: number; logements_autorises: number; label: string; details: any[] };
-async function fetchPermisProches(_c: string, _lat: number, _lon: number): Promise<any[] | null> { return []; }
+// ── v4.7 — Permis BRANCHÉS sur promoteur-permis-construire ──────────────────
+// Historique : retournait `[]` en dur, que computeCompetitionScore lisait comme
+// « aucun permis à proximité » → 70/100 et « Pas de concurrence identifiee ». Un
+// pilier de poids 0,10 reposait sur une donnée jamais collectée.
+//
+// Distinction préservée, et c'est tout l'intérêt :
+//   `null` → la source n'a pas répondu, le pilier est ÉCARTÉ ;
+//   `[]`   → la source a répondu, aucun permis dans le rayon : information réelle.
+//
+// ⚠️ Le contrat expose `nombreLogements` alors que computeCompetitionScore lit
+// `nb_logements`. Sans ce mappage, tous les permis compteraient pour 0 logement
+// et la concurrence sortirait « très faible » quel qu'en soit le volume — le
+// même genre de panne silencieuse que celle des hooks d'analyse rapide.
+const PERMIS_RAYON_KM = 5;
+const PERMIS_PERIODE_MOIS = 24;
+
+async function fetchPermisProches(_c: string, lat: number, lon: number): Promise<any[] | null> {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    console.warn("[Permis] coordonnees absentes → concurrence non mesuree");
+    return null;
+  }
+
+  const raw = await callEdgeFunction("promoteur-permis-construire", {
+    latitude: lat,
+    longitude: lon,
+    radiusKm: PERMIS_RAYON_KM,
+    periodMonths: PERMIS_PERIODE_MOIS,
+    typeAutorisation: "all",
+    typologie: "all",
+    commune: null,      // le rayon capte aussi les communes voisines
+    limit: 100,         // borne maxLimit de la fonction
+    offset: 0,
+    sortBy: "date",
+    sortOrder: "desc",
+  });
+
+  if (!raw || !Array.isArray(raw.items)) {
+    console.warn("[Permis] promoteur-permis-construire indisponible → concurrence non mesuree");
+    return null;
+  }
+
+  return raw.items.map((it: any) => ({
+    nb_logements: typeof it.nombreLogements === "number" ? it.nombreLogements : 0,
+    date: it.dateDepot ?? null,
+    distance_km: typeof it.distanceKm === "number" ? Math.round(it.distanceKm * 100) / 100 : null,
+    type: it.typeAutorisation ?? null,
+    nature: it.natureProjet ?? null,
+    commune: it.commune ?? null,
+  }));
+}
 function computeCompetitionScore(permis: any[], _projNature: string): CompetitionScoreResult {
-  if (!permis || permis.length === 0) return { score: 70, permis_count: 0, logements_autorises: 0, label: "Pas de concurrence identifiee", details: [] };
+  // Tableau vide = la source a répondu, aucun permis dans le périmètre. C'est
+  // une information réelle, distincte du `null` renvoyé par fetchPermisProches
+  // quand la source n'a pas été interrogée du tout.
+  if (!permis || permis.length === 0) {
+    return {
+      score: 70, permis_count: 0, logements_autorises: 0,
+      label: `Aucun permis recense dans un rayon de ${PERMIS_RAYON_KM} km sur ${PERMIS_PERIODE_MOIS} mois (source interrogee)`,
+      details: [],
+    };
+  }
   const totalLog = permis.reduce((s: number, p: any) => s + (p.nb_logements ?? 0), 0);
   let score: number, label: string;
   if (totalLog >= 500) { score = 20; label = "Forte concurrence"; } else if (totalLog >= 200) { score = 35; label = "Concurrence significative"; }
@@ -319,6 +600,101 @@ function isInGrandeAgglomeration(communeInsee: string | null): boolean {
   if (COMMUNES_METROPOLES.has(communeInsee)) return true;
   const dep = communeInsee.slice(0, 2);
   return DEPARTEMENTS_GRANDES_AGGLOS.has(dep);
+}
+
+// ============================================================================
+// v4.6 — PROFIL DE ZONE : grille de densité INSEE
+// ============================================================================
+// `isRural` valait `!isInGrandeAgglomeration(insee)` : la négation d'une liste
+// blanche de 14 départements et de quelques centaines de codes INSEE. Ce n'était
+// pas un calcul mais une omission — Ascain, Bayonne (51 000 hab.) et Pau
+// sortaient « rurales » parce que le 64 n'avait pas été saisi dans un Set.
+//
+// ⚠️ Le point délicat : ce prédicat binaire faisait DEUX métiers à la fois.
+//   1. un libellé de classification (zone_type, pondérations, score de bruit) ;
+//   2. une politique de RAYONS de recherche — 500 m en urbain, 20 km en rural.
+// Corriger le seul libellé aurait fait passer Ascain d'un rayon de 20 km à
+// 500 m : les services essentiels d'une ceinture urbaine de 4 658 habitants
+// auraient disparu du calcul. On aurait réparé le mot et cassé la donnée.
+//
+// Les deux usages sont donc séparés. Le libellé vient de `niveau_3` (1-2 =
+// urbain, 3 = rural), les rayons d'une échelle GRADUÉE sur `niveau_7`, les sept
+// niveaux de la grille — un rayon binaire ne convient à aucun des deux extrêmes.
+type ZoneProfile = {
+  isRural: boolean;
+  zoneType: 'rural' | 'urbain';
+  niveau_3: number | null;
+  niveau_7: number | null;
+  libelle_niveau_7: string | null;
+  /** 'insee' = déterministe ; 'fallback' = liste en dur, commune absente de la table. */
+  source: 'insee' | 'fallback';
+  bpeRadius: number;
+  essentialServicesRadius: number;
+  ehpadRadius: number;
+};
+
+/**
+ * Rayons par niveau de la grille de densité INSEE (millésime 2026) :
+ *   1 Grands centres urbains          2 Centres urbains intermédiaires
+ *   3 Petites villes                  4 Ceintures urbaines
+ *   5 Bourgs ruraux                   6 Rural à habitat dispersé
+ *   7 Rural à habitat très dispersé
+ * L'ancien binaire n'offrait que 500 m ou 20 km : un facteur 40 entre deux
+ * catégories voisines, et rien entre les deux.
+ */
+const RAYONS_PAR_NIVEAU_7: Record<number, { bpe: number; essentiels: number; ehpad: number }> = {
+  1: { bpe: 500,  essentiels: 500,   ehpad: 5000 },
+  2: { bpe: 700,  essentiels: 1000,  ehpad: 5000 },
+  3: { bpe: 1200, essentiels: 2500,  ehpad: 8000 },
+  4: { bpe: 2000, essentiels: 5000,  ehpad: 12000 },
+  5: { bpe: 3000, essentiels: 10000, ehpad: 20000 },
+  6: { bpe: 3000, essentiels: 20000, ehpad: 20000 },
+  7: { bpe: 3000, essentiels: 20000, ehpad: 20000 },
+};
+
+async function resolveZoneProfile(communeInsee: string | null): Promise<ZoneProfile> {
+  // Repli : comportement historique à l'identique, pour ne rien changer aux
+  // communes absentes de la table (DOM récents, fusions, code non résolu).
+  const fallback = (): ZoneProfile => {
+    const isRural = !isInGrandeAgglomeration(communeInsee);
+    console.warn(`[Zone] ${communeInsee ?? 'INSEE inconnu'} absent de insee_grille_densite -> repli liste en dur (${isRural ? 'rural' : 'urbain'})`);
+    return {
+      isRural, zoneType: isRural ? 'rural' : 'urbain',
+      niveau_3: null, niveau_7: null, libelle_niveau_7: null, source: 'fallback',
+      bpeRadius: isRural ? RAYON_RURAL_MIN_M : RAYON_URBAIN_M,
+      essentialServicesRadius: isRural ? RAYON_RURAL_MAX_M : RAYON_URBAIN_M,
+      ehpadRadius: isRural ? RAYON_RURAL_MAX_M : 5000,
+    };
+  };
+
+  if (!communeInsee || !supabase) return fallback();
+
+  try {
+    const { data, error } = await supabase
+      .from('insee_grille_densite')
+      .select('niveau_3, niveau_7, libelle_niveau_7')
+      .eq('code_insee', communeInsee)
+      .maybeSingle();
+
+    if (error || !data || data.niveau_3 == null) return fallback();
+
+    const n7 = typeof data.niveau_7 === 'number' ? data.niveau_7 : null;
+    const rayons = (n7 != null && RAYONS_PAR_NIVEAU_7[n7]) || RAYONS_PAR_NIVEAU_7[4];
+    const isRural = data.niveau_3 === 3;
+
+    return {
+      isRural, zoneType: isRural ? 'rural' : 'urbain',
+      niveau_3: data.niveau_3, niveau_7: n7,
+      libelle_niveau_7: data.libelle_niveau_7 ?? null,
+      source: 'insee',
+      bpeRadius: rayons.bpe,
+      essentialServicesRadius: rayons.essentiels,
+      ehpadRadius: rayons.ehpad,
+    };
+  } catch (e) {
+    console.error('[Zone] erreur lecture insee_grille_densite:', e);
+    return fallback();
+  }
 }
 
 // ----------------------------------------------------
@@ -1052,11 +1428,18 @@ async function fetchTransportScore(
   lat: number,
   lon: number,
   communeInsee: string | null,
+  // v4.6 : profil de zone déjà résolu par l'appelant. Optionnel pour ne pas
+  // casser d'éventuels appels existants — on retombe alors sur la liste en dur.
+  zone?: ZoneProfile,
 ): Promise<{
   score: number | null; label: string | null; summary: string | null;
   coverage: Coverage; applicable: boolean; mobility?: MobilityGtfsResult;
 }> {
-  const isInMetro = isInGrandeAgglomeration(communeInsee);
+  // v4.6 — L'applicabilité du transport se décidait aussi sur la liste des
+  // 14 départements : toute commune hors de cette liste était déclarée
+  // « Hors grande agglomération — critère non évalué », y compris une petite
+  // ville dotée d'un vrai réseau. On s'appuie désormais sur la grille INSEE.
+  const isInMetro = zone ? !zone.isRural : isInGrandeAgglomeration(communeInsee);
   const functionsUrl = Deno.env.get("FUNCTIONS_URL") ?? (supabaseUrl ? supabaseUrl + "/functions/v1" : "");
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (serviceKey) { headers["Authorization"] = "Bearer " + serviceKey; headers["apikey"] = serviceKey; }
@@ -1083,9 +1466,18 @@ async function fetchTransportScore(
     } catch (e) { console.warn("[Transport GTFS] indisponible"); }
   }
 
-  // Hors métro ET GTFS vide → non applicable
+  // Zone peu dense ET GTFS muet → le pilier est écarté.
+  // v4.6 : le motif est explicite. « Non applicable » et « non mesuré » ne se
+  // lisent pas de la même façon : le premier est un fait sur la commune, le
+  // second l'aveu que la source de desserte n'a rien renvoyé.
   if (!isInMetro) {
-    return { score: null, label: "Non applicable", summary: "Hors grande agglomération — critère non évalué", coverage: "ok", applicable: false };
+    const niveau = zone?.libelle_niveau_7 ? ` (${zone.libelle_niveau_7}, grille de densité INSEE)` : '';
+    return {
+      score: null, label: "Non évalué",
+      summary: `Commune peu dense${niveau} et aucune desserte remontée par le GTFS — critère écarté du score. `
+        + `L'absence de desserte référencée ne vaut pas absence de desserte.`,
+      coverage: "ok", applicable: false,
+    };
   }
 
   // ── Tentative 2 : ancien transport-score (OSM Overpass) ───────────────────
@@ -1382,11 +1774,19 @@ async function computeSmartScoreV4Block(params: {
   const energyRenovationEstimate = estimateEnergyRenovationCost({ dpeLabel: dpe_label, surfaceM2: surface_m2_bien, projectNature });
   const energyBusinessImpact = computeEnergyBusinessImpact({ dpeLabel: dpe_label, prix: prix_bien, surfaceM2: surface_m2_bien, monthlyRent: monthly_rent_target, nightlyRate: nightly_rate_target, renovationCostTotalEur: energyRenovationEstimate.estimated_cost_total_eur });
   const scoreBeforeDpeAdjustment = smartScoreV4.score; let adjustedScore = scoreBeforeDpeAdjustment;
-  if (dpeConstraint.max_score_cap != null) adjustedScore = Math.min(scoreBeforeDpeAdjustment, dpeConstraint.max_score_cap);
+  // v4.5 — `score` peut désormais valoir null (aucun pilier mesuré). Sans ce
+  // garde-fou, `Math.min(null, cap)` coerce null en 0 et produirait le PIRE
+  // score possible là où l'on voulait dire « non calculable ».
+  if (dpeConstraint.max_score_cap != null && scoreBeforeDpeAdjustment != null) {
+    adjustedScore = Math.min(scoreBeforeDpeAdjustment, dpeConstraint.max_score_cap);
+  }
   if (debug) console.log("[SmartScore V4] result", { score: adjustedScore });
   return {
     score: adjustedScore, score_before_dpe_adjustment: scoreBeforeDpeAdjustment, verdict: smartScoreV4.verdict,
     pillar_scores: { ...smartScoreV4.pillar_scores, dpe: dpeScore }, weights: smartScoreV4.weights,
+    // v4.5 — exposé pour que l'écran et le Copilot puissent dire sur combien de
+    // piliers le score repose, au lieu de le présenter comme complet.
+    confidence: smartScoreV4.confidence,
     dpe: { label: dpe_label ?? null, score: dpeScore, constraint: dpeConstraint },
     energy_renovation: energyRenovationEstimate, energy_business_impact: energyBusinessImpact,
     environment: { score: environmentResult?.score ?? null, georisques: georisquesScore, dpe: dpeResult, air: airResult, noise: noiseResult },
@@ -1403,15 +1803,17 @@ async function computeSmartScoreV4Block(params: {
 async function handleMarketStudy(payload: MarketStudyPayload): Promise<Response> {
   const { parcel_id, commune_insee, project_nature, radius_km = 2, horizon_months = 24, targets, dpe_label = null, debug = false } = payload;
   const { point, error } = await resolveAnalysisPoint(payload);
-  if (!point) return json({ success: false, error: error ?? "Impossible de resoudre le point d'analyse.", mode: "market_study", version: "v4.4" }, 400);
+  if (!point) return json({ success: false, error: error ?? "Impossible de resoudre le point d'analyse.", mode: "market_study", version: "v4.7" }, 400);
   const communeInseeFinal = point.commune_insee ?? commune_insee?.toString() ?? null;
-  const isRural = !isInGrandeAgglomeration(communeInseeFinal);
-  const zoneType: "rural" | "urbain" = isRural ? "rural" : "urbain";
-  console.log("[Market Study] Zone: " + zoneType.toUpperCase());
-  const bpeRadius = isRural ? RAYON_RURAL_MIN_M : RAYON_URBAIN_M;
-  const essentialServicesRadius = isRural ? RAYON_RURAL_MAX_M : RAYON_URBAIN_M;
+  // v4.6 : profil de zone lu dans la grille de densité INSEE (cf. resolveZoneProfile).
+  const zone = await resolveZoneProfile(communeInseeFinal);
+  const isRural = zone.isRural;
+  const zoneType = zone.zoneType;
+  console.log(`[Market Study] Zone: ${zoneType.toUpperCase()} · niveau_7=${zone.niveau_7 ?? 'n.c.'} (${zone.libelle_niveau_7 ?? 'repli liste en dur'}) · source=${zone.source} · rayons bpe=${zone.bpeRadius}m essentiels=${zone.essentialServicesRadius}m`);
+  const bpeRadius = zone.bpeRadius;
+  const essentialServicesRadius = zone.essentialServicesRadius;
   const [transportResult, bpeResult, ecolesResult, inseeResult, _essRawMS] = await Promise.all([
-    fetchTransportScore(point.lat, point.lon, communeInseeFinal),
+    fetchTransportScore(point.lat, point.lon, communeInseeFinal, zone),
     fetchBpeStats(point.lat, point.lon, bpeRadius, communeInseeFinal, debug),
     fetchEcolesStats(point.lat, point.lon),
     fetchInseeStatsHybrid(communeInseeFinal, debug),
@@ -1451,7 +1853,8 @@ async function handleMarketStudy(payload: MarketStudyPayload): Promise<Response>
   let healthResult: { data: HealthFicheEnriched | null; coverage: Coverage } = { data: null, coverage: "not_covered" };
   if (communeInseeFinal) { const rawHealth = await fetchHealthFicheForCommune(communeInseeFinal); const enrichedHealth = await enrichHealthData(point.lat, point.lon, rawHealth.data, bpeResult.details?.sante_details ?? null, bpeResult.details?.medecins_proches ?? undefined); healthResult = { data: enrichedHealth, coverage: rawHealth.coverage }; }
   const healthSummary = healthResult.data;
-  const ehpadRadius = isRural ? RAYON_RURAL_MAX_M : 5000;
+  // v4.6 : rayon gradué sur le niveau INSEE (cf. RAYONS_PAR_NIVEAU_7).
+  const ehpadRadius = zone.ehpadRadius;
   const ehpad = await finessEhpadNearby(supabase!, { lat: point.lat, lon: point.lon, radius_m: ehpadRadius, ttl_seconds: 86400, debug });
   const dvfTypeLocal = mapProjectNatureToDvfType(project_nature);
   let dvfCoverage: Coverage = "not_covered", dvfReason: string | null = null, dvfStats: DvfMarketStats | null = null, comps: MarketComp[] = [], dvfSource = "csv";
@@ -1498,7 +1901,19 @@ async function handleMarketStudy(payload: MarketStudyPayload): Promise<Response>
   const totalEtablissementsSeniors = (ehpad.coverage === "ok" ? ehpad.count : 0) + residencesSeniors.length;
   kpis.push({ label: "Etablissements seniors", value: totalEtablissementsSeniors > 0 ? totalEtablissementsSeniors : null, description: isRural ? String(ehpad.count || 0) + " EHPAD + " + String(residencesSeniors.length) + " residences (rayon " + String(ehpadRadius / 1000) + "km)" : "FINESS: " + coverageLabel(ehpad.coverage) });
   const output: any = {
-    success: true, version: "v4.4", orchestrator: "smartscore-enriched-v3", mode: "market_study", zone_type: zoneType,
+    success: true, version: "v4.7", orchestrator: "smartscore-enriched-v3", mode: "market_study", zone_type: zoneType,
+    // v4.6 — Classification officielle + rayons réellement appliqués. Sans ce
+    // bloc, le Copilot écrivait « commune rurale » sans savoir d'où ça venait,
+    // et rien n'indiquait sur quel périmètre les services avaient été cherchés.
+    zone_profile: {
+      zone_type: zoneType,
+      niveau_3: zone.niveau_3,
+      niveau_7: zone.niveau_7,
+      libelle_niveau_7: zone.libelle_niveau_7,
+      source: zone.source === 'insee' ? 'grille de densite INSEE (millesime 2026)' : 'liste d agglomerations en dur (commune absente de la grille)',
+      rayons_m: { bpe: zone.bpeRadius, services_essentiels: zone.essentialServicesRadius, ehpad: zone.ehpadRadius },
+      avertissement: "N'ecris « commune rurale » que si zone_type vaut 'rural'. Si libelle_niveau_7 est renseigne, cite cette categorie officielle telle quelle (ex. « Ceintures urbaines »). Une faible densite ou une faible population ne suffisent pas a qualifier une commune de rurale. Precise le rayon de recherche quand tu commentes les equipements ou services.",
+    },
     input: { parcel_id: parcel_id ?? null, commune_insee: commune_insee?.toString() ?? null, project_nature, radius_km, horizon_months, targets: targets ?? null, dpe_label: dpe_label ?? null, resolved_point: point, dvf_type_local: dvfTypeLocal },
     smartscore_v4: smartscoreV4Block,
     market: {
@@ -1515,7 +1930,7 @@ async function handleMarketStudy(payload: MarketStudyPayload): Promise<Response>
       kpis, insights, comps,
     },
   };
-  console.info("[smartscore-enriched-v3] market_study completed", { version: "v4.4", zone_type: zoneType, dvf_source: dvfSource, score_v3: indices.global_score, score_v4: smartscoreV4Block.score });
+  console.info("[smartscore-enriched-v3] market_study completed", { version: "v4.7", zone_type: zoneType, dvf_source: dvfSource, score_v3: indices.global_score, score_v4: smartscoreV4Block.score });
   return json(output, 200);
 }
 
@@ -1524,20 +1939,22 @@ async function handleMarketStudy(payload: MarketStudyPayload): Promise<Response>
 // ============================================================================
 async function handleStandard(payload: StandardPayload): Promise<Response> {
   const { address, cp, ville, surface, prix, travaux, userCriteria, meloId, type_local, dep_code, commune_code, parcel_id, commune_insee, transports, radius_km = 2, horizon_months = 24, dpe_label = null, debug = false } = payload;
-  if (!supabase) return json({ success: false, error: "INTERNAL_ERROR", mode: "standard", version: "v4.4" }, 500);
+  if (!supabase) return json({ success: false, error: "INTERNAL_ERROR", mode: "standard", version: "v4.7" }, 500);
   const { set: inc, full: includeFull } = resolveInclude((payload as any).include);
   if (debug) console.log("[Standard] include:", inc, "full:", includeFull);
   const { point, error: pointError } = await resolveStandardPoint(payload);
-  if (!point) return json({ success: false, error: pointError ?? "Impossible de resoudre le point d'analyse.", mode: "standard", version: "v4.4" }, 400);
+  if (!point) return json({ success: false, error: pointError ?? "Impossible de resoudre le point d'analyse.", mode: "standard", version: "v4.7" }, 400);
   const communeInseeFinal = point.commune_insee ?? commune_insee?.toString() ?? commune_code ?? null;
-  const isRural = !isInGrandeAgglomeration(communeInseeFinal);
-  const zoneType: "rural" | "urbain" = isRural ? "rural" : "urbain";
-  console.log("[Standard] Zone: " + zoneType.toUpperCase());
-  const bpeRadius = isRural ? RAYON_RURAL_MIN_M : RAYON_URBAIN_M;
-  const essentialServicesRadius = isRural ? RAYON_RURAL_MAX_M : RAYON_URBAIN_M;
+  // v4.6 : profil de zone lu dans la grille de densité INSEE (cf. resolveZoneProfile).
+  const zone = await resolveZoneProfile(communeInseeFinal);
+  const isRural = zone.isRural;
+  const zoneType = zone.zoneType;
+  console.log(`[Standard] Zone: ${zoneType.toUpperCase()} · niveau_7=${zone.niveau_7 ?? 'n.c.'} (${zone.libelle_niveau_7 ?? 'repli liste en dur'}) · source=${zone.source} · rayons bpe=${zone.bpeRadius}m essentiels=${zone.essentialServicesRadius}m`);
+  const bpeRadius = zone.bpeRadius;
+  const essentialServicesRadius = zone.essentialServicesRadius;
   const [transportResult, bpeResult, ecolesResult, inseeResult, _essRawStd] = await Promise.all([
     inc.transport
-      ? fetchTransportScore(point.lat, point.lon, communeInseeFinal)
+      ? fetchTransportScore(point.lat, point.lon, communeInseeFinal, zone)
       : Promise.resolve({ score: null, label: null, summary: null, coverage: "not_covered" as Coverage, applicable: false, mobility: undefined }),
     inc.bpe
       ? fetchBpeStats(point.lat, point.lon, bpeRadius, communeInseeFinal, debug)
@@ -1597,7 +2014,8 @@ async function handleStandard(payload: StandardPayload): Promise<Response> {
     if (dvfApi.coverage === "ok" || dvfApi.coverage === "no_data") { dvfStats = { transactions_count: dvfApi.kpis.n, transactions_count_previous: 0, price_median_eur_m2: dvfApi.kpis.median_price_m2, price_mean_eur_m2: dvfApi.kpis.avg_price_m2, price_q1_eur_m2: dvfApi.kpis.q1_price_m2, price_q3_eur_m2: dvfApi.kpis.q3_price_m2, evolution_pct: null, volume_total_eur: null, surface_mean_m2: null }; comps = dvfApi.comps; }
     if ((dvfApi.coverage === "not_covered" || dvfApi.coverage === "error" || dvfApi.coverage === "no_data") && dvfApi.kpis.n === 0) { const r = await fetchDvfMarketStatsRpc(point, radius_km, horizon_months, dvfTypeLocal); if (r.stats && r.stats.transactions_count > 0) { dvfStats = r.stats; comps = r.comps; dvfCoverage = "ok"; dvfReason = "RPC fallback OK"; dvfSource = "rpc"; } else if (r.error) { dvfCoverage = dvfApi.coverage === "no_data" ? "no_data" : "error"; dvfReason = r.error; } }
   }
-  const ehpadRadius = isRural ? RAYON_RURAL_MAX_M : 5000;
+  // v4.6 : rayon gradué sur le niveau INSEE (cf. RAYONS_PAR_NIVEAU_7).
+  const ehpadRadius = zone.ehpadRadius;
   const ehpad = inc.sante
     ? await finessEhpadNearby(supabase, { lat: point.lat, lon: point.lon, radius_m: ehpadRadius, ttl_seconds: 86400, debug })
     : { coverage: "not_covered" as Coverage, source: "skipped", count: 0, radius_m: ehpadRadius, nearest: null, reason: "non demandé" };
@@ -1612,7 +2030,7 @@ async function handleStandard(payload: StandardPayload): Promise<Response> {
   const coverage: CoverageMap = { dvf: dvfCoverage, transport: transportResult.coverage, ecoles: ecolesResult.coverage, bpe: bpeResult.coverage, sante: healthResult.coverage, insee: inseeResult.coverage, ehpad: ehpad.coverage };
   const verdictStd = generateStandardVerdict(smartScore, coverage, transportResult.applicable);
   const fullOutput: any = {
-    success: true, version: "v4.4", orchestrator: "smartscore-enriched-v3", mode: "standard", zone_type: zoneType,
+    success: true, version: "v4.7", orchestrator: "smartscore-enriched-v3", mode: "standard", zone_type: zoneType,
     input: { address: address ?? null, cp: cp ?? null, ville: ville ?? null, surface: surface ?? null, prix: prix ?? null, travaux: travaux ?? null, type_local: type_local ?? null, dep_code: dep_code ?? null, commune_code: commune_code ?? null, parcel_id: parcel_id ?? null, commune_insee: commune_insee?.toString() ?? commune_code ?? null, meloId: meloId ?? null, radius_km, horizon_months, transports_provided: transports != null, userCriteria: userCriteria ?? null, dpe_label: dpe_label ?? null },
     resolved_point: point,
     smartscore: { score: smartScore, verdict: verdictStd, components: { transport: components.transport_score, ecoles: components.ecoles_score, commodites: components.commodites_score, marche: components.marche_score, sante: components.sante_score }, coverage, transport_applicable: transportResult.applicable },
@@ -1629,14 +2047,14 @@ async function handleStandard(payload: StandardPayload): Promise<Response> {
     },
   };
 
-  console.info("[smartscore-enriched-v3] standard completed", { version: "v4.4", zone_type: zoneType, dvf_source: dvfSource, score_v3: smartScore, score_v4: smartscoreV4Block.score, include_full: includeFull });
+  console.info("[smartscore-enriched-v3] standard completed", { version: "v4.7", zone_type: zoneType, dvf_source: dvfSource, score_v3: smartScore, score_v4: smartscoreV4Block.score, include_full: includeFull });
 
   if (includeFull) {
     return json(fullOutput, 200);
   }
 
   const targeted: any = {
-    success: true, version: "v4.4", orchestrator: "smartscore-enriched-v3", mode: "standard", zone_type: zoneType,
+    success: true, version: "v4.7", orchestrator: "smartscore-enriched-v3", mode: "standard", zone_type: zoneType,
     resolved_point: point,
     included: ALL_INCLUDE_KEYS.filter((k) => inc[k]),
   };
@@ -1714,6 +2132,6 @@ serve(async (req: Request): Promise<Response> => {
     return await handleStandard(payload as StandardPayload);
   } catch (err) {
     console.error("[enriched-v3 v4.4] Internal error");
-    return json({ success: false, error: "Internal error", version: "v4.4" }, 500);
+    return json({ success: false, error: "Internal error", version: "v4.7" }, 500);
   }
 });

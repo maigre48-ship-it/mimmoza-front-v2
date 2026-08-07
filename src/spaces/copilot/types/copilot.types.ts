@@ -4,6 +4,7 @@
 // PATCH V1.3 : ajout ValuationEngineContext dans MimmozaContext (LOT 7)
 // PATCH V1.4 : ajout TransportGtfsSnapshot + transport_gtfs dans PredictiveSnapshotContext (v4.4)
 // PATCH V1.5 : ajout risk_study dans MimmozaContext (LOT 9 — etude de risques deja calculee)
+// PATCH V1.7 : ajout CopilotAttachment + attachments dans CopilotChatRequest (pieces jointes)
 // =============================================================
 
 export type Vertical =
@@ -20,6 +21,11 @@ export const ALL_VERTICALS: Vertical[] = [
 ];
 
 export type CopilotMode = 'quick' | 'advanced' | 'report';
+
+/** Niveau de modèle demandé. Doit rester aligné sur TIER_RATES et PLAN_POLICY
+ *  dans supabase/functions/copilot-chat/index.ts — le serveur revalide toute
+ *  valeur reçue via resolveTier(plan, tier). */
+export type ModelTier = 'haiku' | 'sonnet' | 'opus';
 
 export const CREDIT_COST: Record<CopilotMode, number> = {
   quick: 5,
@@ -434,10 +440,31 @@ export interface CopilotCreditState {
   next_reset?: string;
 }
 
+/** V1.7 — Pièce jointe d'un message (images + PDF).
+ *  Le fichier est encodé en base64 côté front et transmis dans la requête ;
+ *  il n'est PAS persisté. copilot-chat le convertit en bloc image/document
+ *  Anthropic pour le tour courant uniquement — l'historique relu depuis
+ *  copilot_messages est du texte, donc le modèle ne « revoit » pas le fichier
+ *  aux tours suivants.
+ *  Types acceptés (revalidés serveur) : image/png, image/jpeg, image/gif,
+ *  image/webp, application/pdf. */
+export interface CopilotAttachment {
+  /** MIME type du fichier. */
+  mediaType: string;
+  /** Contenu en base64, SANS le préfixe `data:…;base64,`. */
+  data: string;
+  /** Nom d'origine, pour l'affichage des pastilles côté UI. */
+  name?: string;
+}
+
 export interface CopilotChatRequest {
   conversation_id?: string;
   message: string;
   mode: CopilotMode;
+  /** Niveau de modèle demandé. Revalidé par resolveTier côté serveur. */
+  tier?: ModelTier;
+  /** V1.7 — Pièces jointes du message courant. Max 5, ~4,5 Mo cumulés. */
+  attachments?: CopilotAttachment[];
   context: MimmozaContext;
 }
 
@@ -488,6 +515,27 @@ export interface ActiveToolCall {
   status: 'running' | 'success' | 'error' | string;
   durationMs?: number;
   error?: string;
+}
+
+/**
+ * Ce qu'une action est devenue. `copilot_tool_calls` n'enregistre que la
+ * proposition du modèle ; sans cette trace, recharger une conversation
+ * afficherait « action proposée » sur une opération déjà créée — et en mode
+ * autonome, la carte se relancerait toute seule.
+ */
+export type ActionOutcome = 'done' | 'failed' | 'refused';
+
+export interface ActionRun {
+  messageId: string;
+  actionKind: string;
+  params: Record<string, unknown>;
+  outcome: ActionOutcome;
+  /** L'utilisateur a confirmé, ou le mode autonome a tranché. */
+  decidedBy: 'user' | 'auto';
+  message?: string;
+  studyId?: string;
+  navigatedTo?: string;
+  createdAt: string;
 }
 
 export interface ChatMessage {

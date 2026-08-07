@@ -28,11 +28,35 @@ export interface MimmozIAProfile {
   eventCount?: number;
 }
 
-// Lecture tolérante d'un "top" (tableau ['Bordeaux',...] ou chaîne "Bordeaux,Pau").
+/** Normalise une entrée de "top" en libellé lisible.
+ *  v_user_profile renvoie du jsonb agrégé : [{ value: 'Saint-Cloud', count: 8 }].
+ *  Sans ce déballage, String(entry) produit "[object Object]" dans la tagline. */
+function labelOf(entry: unknown): string | undefined {
+  if (entry == null) return undefined;
+  if (typeof entry === 'string') return entry.trim() || undefined;
+  if (typeof entry === 'number') return String(entry);
+  if (typeof entry === 'object') {
+    const o = entry as Record<string, unknown>;
+    for (const k of ['value', 'label', 'name', 'city', 'code', 'key']) {
+      const v = o[k];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+      if (typeof v === 'number') return String(v);
+    }
+  }
+  return undefined;
+}
+
+// Lecture tolérante d'un "top" (tableau ['Bordeaux',...], [{value,count}] ou chaîne "Bordeaux,Pau").
 function firstOf(row: Record<string, unknown>, keys: string[]): string | undefined {
   for (const k of keys) {
     const v = row[k];
-    if (Array.isArray(v) && v.length > 0 && v[0] != null) return String(v[0]);
+    if (Array.isArray(v)) {
+      for (const entry of v) {
+        const label = labelOf(entry);
+        if (label) return label;
+      }
+      continue;
+    }
     if (typeof v === 'string' && v.trim()) return v.split(',')[0].trim();
   }
   return undefined;

@@ -35,6 +35,8 @@ interface Conversation {
   id: string;
   title?: string;
   messages?: any[];
+  last_message_at?: string | null;
+  lastMessageAt?: string | null;
   created_at?: string;
   updated_at?: string;
   createdAt?: string;
@@ -101,9 +103,35 @@ function convTitle(c: Conversation): string {
 }
 
 function convDate(c: Conversation): number {
-  const d = c.updated_at ?? c.updatedAt ?? c.created_at ?? c.createdAt;
+  // `last_message_at` d'abord : c'est la clé sur laquelle le serveur trie déjà.
+  // Sans elle, le tri client et le tri serveur pouvaient diverger.
+  const d =
+    c.last_message_at ?? c.lastMessageAt ??
+    c.updated_at ?? c.updatedAt ?? c.created_at ?? c.createdAt;
   const t = d ? Date.parse(d) : NaN;
   return Number.isNaN(t) ? 0 : t;
+}
+
+/**
+ * Date affichée dans la liste. Relative sur la semaine écoulée — « hier » se
+ * repère plus vite qu'une date — puis absolue au-delà.
+ */
+function convDateLabel(c: Conversation): string {
+  const t = convDate(c);
+  if (!t) return '';
+
+  const jours = Math.floor((Date.now() - t) / 86_400_000);
+  if (jours <= 0) return "aujourd'hui";
+  if (jours === 1) return 'hier';
+  if (jours < 7) return `il y a ${jours} j`;
+
+  const d = new Date(t);
+  const memeAnnee = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+    ...(memeAnnee ? {} : { year: 'numeric' }),
+  });
 }
 
 /* ----------------------- Persistance projets (v1) ----------------------- */
@@ -183,7 +211,14 @@ export function MimmozIASidebar({
   }, []);
 
   // --- Charge la liste des conversations (filet, la page l'appelle déjà) ---
-  useEffect(() => { void copilot.loadConversations?.(); }, [copilot]);
+ // --- Charge la liste des conversations UNE fois au montage.
+  // ⚠️ NE JAMAIS mettre `copilot` en dépendance : useCopilot() renvoie un
+  // littéral d'objet, donc une nouvelle référence à CHAQUE rendu. L'effet
+  // se relançait sans fin, saturait le pool de connexions du navigateur
+  // (net::ERR_INSUFFICIENT_RESOURCES) et faisait échouer toutes les autres
+  // requêtes — dont le flux SSE de copilot-chat.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { void copilot.loadConversations?.(); }, []);
 
   // --- Charge les projets une fois l'uid connu ---
   useEffect(() => { setStore(loadProjects(uid)); }, [uid]);
@@ -423,9 +458,19 @@ function ConversationRow({ conv, active, projects, currentProject, menuOpen, onT
 
   return (
     <div className={`mzia-conv ${active ? 'is-active' : ''}`} ref={ref}>
-      <button type="button" className="mzia-conv__main" onClick={onSelect} title={convTitle(conv)}>
+      <button
+        type="button"
+        className="mzia-conv__main"
+        onClick={onSelect}
+        title={`${convTitle(conv)}\n${convDateLabel(conv)}`}
+      >
         <MessageSquare size={14} />
-        <span className="mzia-conv__title">{convTitle(conv)}</span>
+        <span className="mzia-conv__text">
+          <span className="mzia-conv__title">{convTitle(conv)}</span>
+          {convDateLabel(conv) && (
+            <span className="mzia-conv__date">{convDateLabel(conv)}</span>
+          )}
+        </span>
       </button>
       <button type="button" className="mzia-conv__menu" onClick={onToggleMenu} title="Options">
         <MoreHorizontal size={15} />

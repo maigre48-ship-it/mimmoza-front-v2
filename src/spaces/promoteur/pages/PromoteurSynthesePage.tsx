@@ -38,12 +38,14 @@ import {
   XCircle,
 } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import type { Implantation2DSnapshot } from '../plan2d/implantation2d.snapshot';
 import {
   totalEmpriseM2 as snapTotalEmprise,
   totalSdpM2 as snapTotalSdp,
 } from '../plan2d/implantation2d.snapshot';
+import { hashInputs, isAgentRun, setStepStatus } from '../shared/promoteurChain';
+import { useAutorun } from '../shared/useAutorun';
+import { usePromoteurStudyId } from '../shared/usePromoteurStudyId';
 import { completePromoteurData, type CompletionStep } from '../services/completePromoteurData';
 import { exportPromoteurPdf } from '../services/exportPromoteurPdf';
 import { generatePromoteurSynthese } from '../services/generatePromoteurSynthese';
@@ -1038,8 +1040,7 @@ export const PromoteurSynthesePage: React.FC<Props> = ({ rawInputOverride, study
     } catch { return false; }
   });
 
-  const [searchParams] = useSearchParams();
-  const studyId = searchParams.get("study");
+  const studyId = usePromoteurStudyId();
 
   const { study } = usePromoteurStudy(studyId);
 
@@ -1426,6 +1427,30 @@ if (!generatedImageUrl) return null;
       await new Promise<void>(r => setTimeout(r, 60));
       const result = generatePromoteurSynthese(effectiveRawInput);
       setSynthese(result);
+
+      // Chaîne d'opération : la synthèse est le terminus. On l'enregistre dès
+      // qu'elle est calculée, sans attendre le PDF — l'export est un livrable,
+      // pas le résultat. En revanche une synthèse qui conclut à des données
+      // insuffisantes n'est pas un résultat : l'étape reste `empty`, sinon la
+      // chaîne afficherait « terminé » sur un dossier incomplet.
+      if (studyId) {
+        const insuffisant = result.executiveSummary.recommendation === 'ANALYSE_INSUFFISANTE';
+        await setStepStatus({
+          studyId,
+          step: 'synthese',
+          status: insuffisant ? 'empty' : 'ready',
+          producedBy: isAgentRun() ? 'agent' : 'user',
+          inputsHash: hashInputs(effectiveRawInput),
+          summary: {
+            recommendation: result.executiveSummary.recommendation,
+            score_global: result.executiveSummary.scores.global,
+            ca_total: Math.round(result.executiveSummary.caTotal),
+            marge_nette: Math.round(result.executiveSummary.margeNette),
+            resultat_net: Math.round(result.executiveSummary.resultatNet),
+          },
+        }).catch((e) => console.warn('[PromoteurSynthese] setStepStatus failed:', e));
+      }
+
       await new Promise<void>(r => setTimeout(r, 40));
       const pdfResult = await exportPromoteurPdf(result, buildExportOptions());
       if (!pdfResult.success) {
@@ -1436,7 +1461,18 @@ if (!generatedImageUrl) return null;
       console.error('[PromoteurSynthese] handleGenerate crash:', e);
       setError(e instanceof Error ? e.message : 'Erreur lors de la génération');
     } finally { setLoading(false); }
-  }, [effectiveRawInput, buildExportOptions]);
+  }, [effectiveRawInput, buildExportOptions, studyId]);
+
+  // Autorun copilote : la synthèse a besoin du bilan en amont. `effectiveRawInput`
+  // se remplit de façon asynchrone (étude + localStorage) ; tant qu'il n'y a pas
+  // de chiffre d'affaires, générer ne produirait qu'un « analyse insuffisante ».
+  useAutorun({
+    step: 'synthese',
+    studyId,
+    ready: Number(effectiveRawInput.bilan?.chiffreAffaires ?? 0) > 0,
+    skip: loading || Boolean(synthese),
+    run: handleGenerate,
+  });
 
   const handleRegenerate = useCallback(async () => {
     if (!synthese) return;

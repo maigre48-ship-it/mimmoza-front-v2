@@ -215,14 +215,38 @@ async function fetchRisk(communeInsee: string, lat: number, lng: number) {
     const { data, error } = await supabase.functions.invoke("risk-study-v1", {
       body: { commune_insee: communeInsee, lat, lon: lng },
     });
-    if (error || !data) return null;
-    const r = data?.risks ?? data?.georisques ?? data ?? {};
+    if (error || !data || data.success === false) return null;
+
+    // ── FIX — même défaut de lecture que dans useQuickAnalysisData ───────────
+    // `data?.risks ?? data?.georisques ?? data` puis `r.inondation`, `r.argile`,
+    // `r.technologique`… Aucune de ces clés n'existe dans le contrat de
+    // risk-study-v1 : les aléas sont sous `data.data.*`. Tous les drapeaux
+    // sortaient donc à false et `globalRiskLevel` à undefined, sans que rien ne
+    // signale que la lecture avait échoué.
+    const d = (data.data ?? {}) as Record<string, any>;
+    const scores = (data.scores ?? {}) as Record<string, any>;
+
+    // Score de SÉCURITÉ (100 = sûr), null si aucun critère mesuré → on renvoie
+    // null pour que le moteur traite la source comme absente, plutôt que comme
+    // un secteur sans risque.
+    const securite: number | null =
+      typeof scores.global === "number" ? scores.global : null;
+    if (securite === null) {
+      console.warn("[ValuationEngine] risk-study n'a mesuré aucun critère → risques traités comme absents");
+      return null;
+    }
+
+    const niveauArgiles = d.argiles?.risk_level;
     return {
-      floodRisk:         !!(r.inondation ?? r.flood ?? r.AZI),
-      clayShrinkSwell:   r.argile === "fort" ? "fort" as const
-                         : r.argile === "moyen" ? "moyen" as const : undefined,
-      technologicalRisk: !!(r.technologique ?? r.seveso),
-      globalRiskLevel:   r.niveau_global ?? r.global_risk_level ?? undefined,
+      floodRisk:         d.inondation?.zone_inondable === true,
+      clayShrinkSwell:   niveauArgiles === "fort" || niveauArgiles === "tres_fort" ? "fort" as const
+                         : niveauArgiles === "moyen" ? "moyen" as const : undefined,
+      // SEVESO seuil haut ou bas dans le périmètre. `icpe.risk_level === 'inconnu'`
+      // signifie que la source n'a pas répondu : on ne conclut pas à l'absence.
+      technologicalRisk: d.icpe?.risk_level !== "inconnu"
+                         && ((d.icpe?.seveso_haut_count ?? 0) > 0 || (d.icpe?.seveso_bas_count ?? 0) > 0),
+      globalRiskLevel:   securite >= 75 ? "low" as const
+                         : securite >= 50 ? "medium" as const : "high" as const,
     };
   } catch {
     return null;

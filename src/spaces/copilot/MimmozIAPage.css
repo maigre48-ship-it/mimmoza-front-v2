@@ -93,6 +93,25 @@
 .mzia-hero__sub { margin: 12px auto 0; max-width: 520px; font-size: clamp(13px, 1.6vw, 15px);
   line-height: 1.5; color: #5b5f78; }
 
+/* Alertes non lues, juste sous la ligne de profil. Discret : ne s'affiche
+   que s'il y a réellement quelque chose à signaler (le composant rend null). */
+.mzia-alertes { margin: 14px auto 0; max-width: 560px; text-align: left;
+  border: 1px solid #e6e3f2; border-radius: 12px; background: #fbfaff;
+  padding: 10px 12px; }
+.mzia-alertes__head { display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; letter-spacing: .01em; color: #6d5bd0; }
+.mzia-alertes__list { list-style: none; margin: 6px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 4px; }
+.mzia-alertes__item > a,
+.mzia-alertes__item > span { display: flex; align-items: center; gap: 7px;
+  font-size: 13px; line-height: 1.4; color: #3f4160; text-decoration: none; }
+.mzia-alertes__item > a:hover { color: #4a3bb8; }
+.mzia-alertes__icon { flex: 0 0 auto; color: #8a86a8; }
+.mzia-alertes__text { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.mzia-alertes__text strong { font-weight: 600; }
+.mzia-alertes__text em { font-style: normal; color: #7b7e99; }
+
 .mzia-welcome__stage {
   display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center; justify-items: center;
@@ -131,7 +150,8 @@
 /* Launcher */
 .mzia-launcher { width: 100%; max-width: 680px; }
 .mzia-launcher__field {
-  display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 16px;
+  display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px;
+  padding: 8px 8px 8px 16px;
   background: rgba(255, 255, 255, 0.85);
   -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
   border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 22px;
@@ -152,10 +172,44 @@
 .mzia-iconbtn:hover { background: rgba(99, 102, 241, 0.1); color: #4c1d95; }
 .mzia-iconbtn--rec { color: #d946ef; }
 .mzia-iconbtn--rec.is-active { background: rgba(217, 70, 239, 0.14); animation: mzia-rec 1.2s ease-in-out infinite; }
+.mzia-iconbtn:disabled { opacity: 0.35; cursor: not-allowed; }
+.mzia-iconbtn:disabled:hover { background: transparent; color: #7c7f96; }
 @keyframes mzia-rec {
   0%, 100% { box-shadow: 0 0 0 0 rgba(217, 70, 239, 0.35); }
   50% { box-shadow: 0 0 0 5px rgba(217, 70, 239, 0); }
 }
+
+/* ---- Pièces jointes : rangée de pastilles au-dessus de la saisie -------- */
+/* flex: 0 0 100% force le retour à la ligne dans .mzia-launcher__field ;
+   order: -1 la place AVANT le textarea quel que soit l'ordre du JSX. */
+.mzia-attachments {
+  flex: 0 0 100%; order: -1;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 2px 0 0;
+}
+.mzia-chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 220px;
+  padding: 4px 6px 4px 9px; border-radius: 999px;
+  font-size: 12px; font-weight: 500; line-height: 1.3;
+  color: #4c3fd6; background: rgba(109, 93, 252, 0.08);
+  border: 1px solid rgba(109, 93, 252, 0.2);
+  animation: mzia-chip-in 200ms ease both;
+}
+.mzia-chip svg { flex-shrink: 0; opacity: 0.75; }
+.mzia-chip__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mzia-chip__x {
+  display: inline-flex; place-items: center; padding: 2px; margin-left: 1px;
+  border: 0; border-radius: 50%; background: transparent;
+  color: inherit; opacity: 0.55; cursor: pointer;
+  transition: opacity 140ms ease, background 140ms ease;
+}
+.mzia-chip__x:hover { opacity: 1; background: rgba(109, 93, 252, 0.16); }
+.mzia-attachments__err { font-size: 11.5px; color: #b91c1c; line-height: 1.3; }
+@keyframes mzia-chip-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .mzia-chip { animation: none; } }
 .mzia-send { display: grid; place-items: center; width: 40px; height: 40px; border: none;
   border-radius: 13px; color: #fff; cursor: pointer;
   background: linear-gradient(135deg, #6d5dfc, #6366f1 60%, #a78bfa);
@@ -336,4 +390,70 @@
 }
 .mzia-page.is-welcome .mzia-welcome {
   overflow: visible;
+}
+/* ============ Sélecteur de niveau d'analyse ============ */
+.mzia-model { position: relative; display: inline-flex; align-items: center; margin-right: 4px; }
+
+.mzia-model__trigger,
+.mzia-model--locked {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 10px;
+  border: 1px solid rgba(124, 92, 246, .22);
+  border-radius: 999px;
+  background: rgba(124, 92, 246, .06);
+  color: #5b45c4;
+  font-size: 12.5px; font-weight: 600; line-height: 1;
+  cursor: pointer; white-space: nowrap;
+  transition: background .15s ease, border-color .15s ease;
+}
+.mzia-model__trigger:hover:not(:disabled) {
+  background: rgba(124, 92, 246, .12);
+  border-color: rgba(124, 92, 246, .38);
+}
+.mzia-model__trigger:disabled { opacity: .5; cursor: not-allowed; }
+
+.mzia-model--locked { cursor: default; opacity: .78; }
+.mzia-model__lock { opacity: .6; }
+
+/* --- Menu --- */
+.mzia-model__scrim { position: fixed; inset: 0; z-index: 40; }
+.mzia-model__menu {
+  position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 41;
+  width: 320px; padding: 6px;
+  background: #fff;
+  border: 1px solid rgba(20, 16, 48, .08);
+  border-radius: 14px;
+  box-shadow: 0 18px 44px rgba(35, 24, 88, .16);
+}
+.mzia-model__menu ul { list-style: none; margin: 0; padding: 0; }
+
+.mzia-model__opt {
+  display: flex; flex-direction: column; gap: 3px;
+  width: 100%; padding: 10px 12px;
+  border: 0; border-radius: 10px; background: transparent;
+  text-align: left; cursor: pointer;
+  transition: background .12s ease;
+}
+.mzia-model__opt:hover:not(:disabled) { background: rgba(124, 92, 246, .07); }
+.mzia-model__opt.is-active { background: rgba(124, 92, 246, .1); }
+.mzia-model__opt.is-locked { cursor: not-allowed; opacity: .55; }
+
+.mzia-model__optHead {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13.5px; font-weight: 650; color: #241a52;
+}
+.mzia-model__optPitch { font-size: 12px; color: #6b6785; line-height: 1.35; }
+.mzia-model__optCost {
+  font-size: 11px; font-weight: 600; color: #8a7fb8;
+  letter-spacing: .01em;
+}
+
+.mzia-model__note {
+  margin: 4px 4px 2px; padding-top: 8px;
+  border-top: 1px solid rgba(20, 16, 48, .07);
+  font-size: 10.5px; color: #8f8aa8; line-height: 1.4;
+}
+
+@media (max-width: 640px) {
+  .mzia-model__menu { width: min(320px, calc(100vw - 32px)); }
 }

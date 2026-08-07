@@ -287,8 +287,14 @@ function GeorisquesBlock({ deal, marcheSaved, onAnalysed }: {
 }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error,     setError]     = useState<string | null>(null);
-  const hasGeorisques = !!(marcheSaved?.data as Record<string, unknown>)?.scores;
-  const score         = marcheSaved?.scoreGlobal ?? null;
+  // risk-study v1.1.0 : l'objet `scores` existe TOUJOURS, y compris entièrement
+  // null quand aucune source n'a répondu. Tester sa seule présence affichait un
+  // statut vert « analysé » et le texte « Score sécurité : null/100 ». On exige
+  // désormais une note réellement calculée.
+  const score         = typeof marcheSaved?.scoreGlobal === "number" ? marcheSaved.scoreGlobal : null;
+  const hasScoresObj  = !!(marcheSaved?.data as Record<string, unknown>)?.scores;
+  const hasGeorisques = score != null;
+  const analyseSansNote = hasScoresObj && score == null;
   const updatedAt     = marcheSaved?.updatedAt
     ? new Date(marcheSaved.updatedAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" })
     : null;
@@ -310,7 +316,11 @@ function GeorisquesBlock({ deal, marcheSaved, onAnalysed }: {
           <div>
             <h3 className="text-sm font-semibold text-gray-900 print:text-black">Analyse Géorisques</h3>
             <p className="mt-0.5 text-xs text-gray-500">
-              {hasGeorisques ? `Score sécurité : ${score}/100 · Mis à jour ${updatedAt ?? "—"}` : "Risques naturels, technologiques, pollution et géotechniques."}
+              {hasGeorisques
+                ? `Score sécurité : ${score}/100 · Mis à jour ${updatedAt ?? "—"}`
+                : analyseSansNote
+                  ? `Analyse lancée, aucun critère mesuré — sources Géorisques indisponibles. À relancer${updatedAt ? ` (dernier essai ${updatedAt})` : ""}.`
+                  : "Risques naturels, technologiques, pollution et géotechniques."}
             </p>
           </div>
         </div>

@@ -1,6 +1,50 @@
 // ============================================================================
-// RISK STUDY V1 - VERSION 1.0.3
+// RISK STUDY V1 - VERSION 1.1.1
 // ============================================================================
+// CHANGEMENTS v1.1.1 — le trou laissé par v1.1.0 :
+// - v1.1.0 corrigeait l'AGRÉGATION mais pas ce que les SOURCES déclarent.
+//   `fetchIcpe`, `fetchSis`, `fetchCavites`, `fetchMouvementsTerrain`
+//   renvoyaient toutes un `empty` unique avec `risk_level: 'nul'` — donc
+//   « mesuré, aucun risque » — que l'API ait répondu zéro OU qu'elle n'ait pas
+//   répondu du tout. Comme `aggregateRisk` ne lit que `risk_level` et jamais
+//   `coverage`, une source muette était comptée comme un critère mesuré à
+//   risque nul, soit 100/100 de sécurité. Symptôme observé sur la parcelle
+//   64065000AI0002 : « technologiques 100/100 », « pollution 100/100 » et
+//   « géotechniques 100/100 » — cette dernière alors même que l'aléa argiles
+//   était explicitement inconnu.
+//   → Chaque fetch distingue maintenant `indisponible` (risk_level 'inconnu',
+//     coverage 'error') de `aucun` (risk_level 'nul', coverage 'ok').
+// - Même correctif sur la branche SANS COORDONNÉES du handler : les quatre
+//   couches bbox n'étaient pas interrogées mais se déclaraient 'nul'. Trois
+//   critères sur neuf étaient offerts au score sans qu'une requête soit partie.
+//   C'est le scénario le plus fréquent (geo.api injoignable depuis Supabase).
+// - Troncature de pagination signalée : `count` est plafonné par `page_size`.
+//   « 100 installations ICPE » était en réalité « au moins 100 » — le plafond
+//   présenté comme un décompte. Drapeau `truncated` + libellés « 100+ ».
+// - Libellés de détail : « 0 cavités » / « 0 événements recensés » ne sont plus
+//   écrits pour une source muette, mais « Non mesuré (source indisponible) ».
+//
+// CHANGEMENTS v1.1.0 — règle « pas de donnée ⇒ pas de note » :
+// - FIX CRITIQUE de scoring : une catégorie dont AUCUN critère n'était mesuré
+//   (toutes les sources en 'inconnu' — API Géorisques muette, timeout, 404)
+//   retombait sur `: 0` risque, soit 100/100 de SÉCURITÉ. La fonction certifiait
+//   donc qu'un terrain était sûr précisément quand elle n'en savait rien.
+//   → Les sous-scores valent désormais `null` (jamais 0) quand rien n'est mesuré.
+// - Pondération renormalisée : les quatre poids (0,35 / 0,25 / 0,20 / 0,20) ne
+//   s'appliquent plus qu'aux catégories réellement mesurées, et leur somme est
+//   ramenée à 1. Une catégorie absente n'est plus comptée comme « sans risque ».
+//   Même correctif que celui posé sur market-study-promoteur-v1 (piliers retenus).
+// - `coverage` — jusqu'ici calculé par chaque fetch* puis lu nulle part — est
+//   remonté par catégorie ET au niveau global, et distingue « non mesuré » de
+//   « mesuré, risque nul ».
+// - Indicateur de confiance : `criteres_mesures` / `criteres_total` exposés au
+//   front et au Copilot, pour qu'une note assise sur 2 critères sur 9 se lise
+//   comme telle.
+// - `zone_inondable` / `zone_risque` passent à `boolean | null` : en l'absence de
+//   réponse GASPAR, le contrat ne dit plus `false` (« hors zone ») mais `null`
+//   (« non mesuré »). C'était la source du « Inondation : hors zone » affirmé
+//   sans donnée dans le bloc Copilot.
+//
 // CHANGEMENTS v1.0.3 :
 // - FIX CRITIQUE réseau : geo.api.gouv.fr est devenu injoignable/throttlé depuis
 //   l'infra Supabase (les 3 branches de resolveCommune échouaient en cascade,
@@ -33,7 +77,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 // TYPES & CONSTANTS
 // ============================================================================
 
-const VERSION = "1.0.3";
+const VERSION = "1.1.1";
 const GEORISQUES_API = "https://www.georisques.gouv.fr/api/v1";
 const GEO_API_BASE = "https://geo.api.gouv.fr";
 const BAN_API_URL = "https://api-adresse.data.gouv.fr";
@@ -66,13 +110,38 @@ function getRiskScore(level: RiskLevel): number {
   }
 }
 
-function scoreToLevel(score: number): RiskLevel {
+// v1.1.0 : accepte null — « non mesuré » n'est PAS « risque nul ».
+function scoreToLevel(score: number | null): RiskLevel {
+  if (score === null || !Number.isFinite(score) || score < 0) return 'inconnu';
   if (score >= 80) return 'tres_fort';
   if (score >= 60) return 'fort';
   if (score >= 40) return 'moyen';
   if (score >= 20) return 'faible';
-  if (score >= 0) return 'nul';
-  return 'inconnu';
+  return 'nul';
+}
+
+// v1.1.0 — Agrège les critères d'une catégorie en ne retenant que ceux qui ont
+// été RÉELLEMENT mesurés. Renvoie null si aucun ne l'a été : c'est ce null qui
+// remplace l'ancien `: 0` (lequel se traduisait en 100/100 de sécurité).
+function aggregateRisk(
+  risks: Array<{ level: RiskLevel }>,
+): { score: number | null; mesures: number; total: number; coverage: Coverage } {
+  const scores = risks.map(r => getRiskScore(r.level)).filter(s => s >= 0);
+  const total = risks.length;
+  if (scores.length === 0) {
+    return { score: null, mesures: 0, total, coverage: 'no_data' };
+  }
+  return {
+    score: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
+    mesures: scores.length,
+    total,
+    coverage: scores.length === total ? 'ok' : 'partial',
+  };
+}
+
+// Inverse un score de risque en score de sécurité, en préservant null.
+function toSecurity(riskScore: number | null): number | null {
+  return riskScore === null ? null : 100 - riskScore;
 }
 
 function maxRiskLevel(levels: RiskLevel[]): RiskLevel {
@@ -258,17 +327,32 @@ interface GasparData {
   ppr_count: number;
   ppr_list: Array<{ code: string; libelle: string; etat: string }>;
   coverage: Coverage;
+  // v1.1.1 : décomptes plafonnés par la pagination (cf. GASPAR_*_PAGE_SIZE).
+  catnat_truncated?: boolean;
+  ppr_truncated?: boolean;
 }
 
+const GASPAR_CATNAT_PAGE_SIZE = 100;
+const GASPAR_PPR_PAGE_SIZE = 50;
+
 async function fetchGaspar(codeInsee: string): Promise<GasparData> {
-  const empty: GasparData = { catnat_count: 0, catnat_events: [], ppr_count: 0, ppr_list: [], coverage: 'no_data' };
+  const empty: GasparData = { catnat_count: 0, catnat_events: [], ppr_count: 0, ppr_list: [], coverage: 'error' };
+
+  // v1.1.0 — On distingue « l'API a répondu, il n'y a rien à signaler » de
+  // « l'API n'a pas répondu ». L'ancien `catnat.length > 0 || ppr.length > 0
+  // ? 'ok' : 'no_data'` confondait les deux : une commune réellement épargnée
+  // était marquée non couverte, et une API muette passait pour une commune
+  // épargnée. C'est cette confusion qui remontait en « hors zone » affirmé.
+  let catnatOk = false;
+  let pprOk = false;
 
   try {
-    const catnatUrl = `${GEORISQUES_API}/gaspar/catnat?code_insee=${codeInsee}&page=1&page_size=100`;
+    const catnatUrl = `${GEORISQUES_API}/gaspar/catnat?code_insee=${codeInsee}&page=1&page_size=${GASPAR_CATNAT_PAGE_SIZE}`;
     const catnatRes = await fetch(catnatUrl, { signal: AbortSignal.timeout(10000) });
 
     let catnatEvents: CatnatEvent[] = [];
     if (catnatRes.ok) {
+      catnatOk = true;
       const catnatData = await catnatRes.json();
       if (catnatData?.data) {
         catnatEvents = catnatData.data.map((e: Record<string, unknown>) => ({
@@ -281,11 +365,12 @@ async function fetchGaspar(codeInsee: string): Promise<GasparData> {
       }
     }
 
-    const pprUrl = `${GEORISQUES_API}/gaspar/ppr?code_insee=${codeInsee}&page=1&page_size=50`;
+    const pprUrl = `${GEORISQUES_API}/gaspar/ppr?code_insee=${codeInsee}&page=1&page_size=${GASPAR_PPR_PAGE_SIZE}`;
     const pprRes = await fetch(pprUrl, { signal: AbortSignal.timeout(10000) });
 
     let pprList: Array<{ code: string; libelle: string; etat: string }> = [];
     if (pprRes.ok) {
+      pprOk = true;
       const pprData = await pprRes.json();
       if (pprData?.data) {
         pprList = pprData.data.map((p: Record<string, unknown>) => ({
@@ -301,7 +386,11 @@ async function fetchGaspar(codeInsee: string): Promise<GasparData> {
       catnat_events: catnatEvents.slice(0, 20),
       ppr_count: pprList.length,
       ppr_list: pprList,
-      coverage: catnatEvents.length > 0 || pprList.length > 0 ? 'ok' : 'no_data',
+      // 'ok' dès que les deux endpoints ont répondu, y compris avec 0 résultat :
+      // « aucun arrêté CatNat, aucun PPR » est une information, pas une lacune.
+      coverage: catnatOk && pprOk ? 'ok' : (catnatOk || pprOk ? 'partial' : 'error'),
+      catnat_truncated: catnatEvents.length >= GASPAR_CATNAT_PAGE_SIZE,
+      ppr_truncated: pprList.length >= GASPAR_PPR_PAGE_SIZE,
     };
   } catch (e) {
     console.error("[GASPAR] Error:", e);
@@ -329,7 +418,13 @@ async function fetchRadon(codeInsee: string): Promise<RadonData> {
     if (!data?.data?.length) return empty;
 
     const radon = data.data[0];
-    const classe = radon.classe_potentiel;
+    // v1.1.1 — FIX : Géorisques renvoie `classe_potentiel` en CHAÎNE ("1"), pas
+    // en nombre. Les comparaisons strictes `classe === 1` échouaient donc
+    // toujours : `libelle` restait « Inconnu » et `risk_level` 'inconnu', alors
+    // que `classe_potentiel` était bien exposé au front. Le radon était ainsi
+    // silencieusement NON MESURÉ, ce qui vidait toute la catégorie Pollution
+    // (observé sur 64065000AI0002 : « Classe : 1, libellé non précisé »).
+    const classe = radon.classe_potentiel == null ? null : Number(radon.classe_potentiel);
 
     let libelle = "Inconnu";
     let riskLevel: RiskLevel = 'inconnu';
@@ -337,8 +432,19 @@ async function fetchRadon(codeInsee: string): Promise<RadonData> {
     if (classe === 1) { libelle = "Faible"; riskLevel = 'faible'; }
     else if (classe === 2) { libelle = "Moyen"; riskLevel = 'moyen'; }
     else if (classe === 3) { libelle = "Élevé"; riskLevel = 'fort'; }
+    else if (classe !== null && Number.isFinite(classe)) {
+      // Classe hors 1-3 : on ne l'invente pas, mais on trace au lieu de la taire.
+      console.warn(`[RADON] classe_potentiel inattendue: ${radon.classe_potentiel}`);
+    }
 
-    return { classe_potentiel: classe, libelle, risk_level: riskLevel, coverage: 'ok' };
+    // Si la classe est illisible, on ne prétend pas avoir mesuré : coverage
+    // 'partial' et risk_level 'inconnu' écartent proprement le critère.
+    return {
+      classe_potentiel: classe,
+      libelle,
+      risk_level: riskLevel,
+      coverage: riskLevel === 'inconnu' ? 'partial' : 'ok',
+    };
   } catch (e) {
     console.error("[RADON] Error:", e);
     return empty;
@@ -364,24 +470,42 @@ interface IcpeData {
   installations: Installation[];
   risk_level: RiskLevel;
   coverage: Coverage;
+  // v1.1.1 : `count` est plafonné par page_size. Sans ce drapeau, « 100 ICPE »
+  // se lit comme un décompte exact alors que c'est une borne inférieure.
+  truncated?: boolean;
 }
 
+// v1.1.1 — `ICPE_PAGE_SIZE` etc. : le décompte renvoyé par Géorisques est
+// paginé. On expose la limite pour pouvoir dire « au moins N » plutôt que « N ».
+const ICPE_PAGE_SIZE = 100;
+
 async function fetchIcpe(lat: number, lon: number, radiusKm: number = 5): Promise<IcpeData> {
-  const empty: IcpeData = {
+  // v1.1.1 — DEUX situations à ne plus confondre :
+  //   « l'API n'a pas répondu »  → risk_level 'inconnu', critère NON mesuré
+  //   « l'API a répondu : zéro » → risk_level 'nul',     critère mesuré
+  // L'ancien `empty` unique déclarait 'nul' dans les deux cas. Comme
+  // aggregateRisk ne lit que `risk_level`, un échec réseau était compté comme
+  // un critère mesuré à risque nul, donc 100/100 de sécurité. C'est ce qui
+  // faisait afficher « technologiques 100/100 ✅ Nul » sur une source muette.
+  const indisponible: IcpeData = {
     count: 0, seveso_haut_count: 0, seveso_bas_count: 0,
-    installations: [], risk_level: 'nul', coverage: 'no_data'
+    installations: [], risk_level: 'inconnu', coverage: 'error'
+  };
+  const aucune: IcpeData = {
+    count: 0, seveso_haut_count: 0, seveso_bas_count: 0,
+    installations: [], risk_level: 'nul', coverage: 'ok'
   };
 
   try {
     const delta = radiusKm / 111;
     const bbox = `${lon - delta},${lat - delta},${lon + delta},${lat + delta}`;
-    const url = `${GEORISQUES_API}/installations_classees?bbox=${bbox}&page=1&page_size=100`;
+    const url = `${GEORISQUES_API}/installations_classees?bbox=${bbox}&page=1&page_size=${ICPE_PAGE_SIZE}`;
 
     const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
-    if (!res.ok) return empty;
+    if (!res.ok) return indisponible;
 
     const data = await res.json();
-    if (!data?.data?.length) return empty;
+    if (!data?.data?.length) return aucune;
 
     const installations: Installation[] = data.data.map((i: Record<string, unknown>) => {
       let distance_m: number | null = null;
@@ -435,10 +559,12 @@ async function fetchIcpe(lat: number, lon: number, radiusKm: number = 5): Promis
       installations: installations.slice(0, 20),
       risk_level: riskLevel,
       coverage: 'ok',
+      // Décompte plafonné : on ne peut affirmer « 100 ICPE », seulement « ≥ 100 ».
+      truncated: installations.length >= ICPE_PAGE_SIZE,
     };
   } catch (e) {
     console.error("[ICPE] Error:", e);
-    return empty;
+    return indisponible;
   }
 }
 
@@ -454,18 +580,23 @@ interface SisData {
   }>;
   risk_level: RiskLevel;
   coverage: Coverage;
+  truncated?: boolean;
 }
 
+const SIS_PAGE_SIZE = 50;
+
 async function fetchSis(lat: number, lon: number, codeInsee: string): Promise<SisData> {
-  const empty: SisData = { count: 0, sites: [], risk_level: 'nul', coverage: 'no_data' };
+  // v1.1.1 — cf. fetchIcpe : « API muette » ≠ « aucun site pollué ».
+  const indisponible: SisData = { count: 0, sites: [], risk_level: 'inconnu', coverage: 'error' };
+  const aucun: SisData = { count: 0, sites: [], risk_level: 'nul', coverage: 'ok' };
 
   try {
-    const url = `${GEORISQUES_API}/sis?code_insee=${codeInsee}&page=1&page_size=50`;
+    const url = `${GEORISQUES_API}/sis?code_insee=${codeInsee}&page=1&page_size=${SIS_PAGE_SIZE}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    if (!res.ok) return empty;
+    if (!res.ok) return indisponible;
 
     const data = await res.json();
-    if (!data?.data?.length) return empty;
+    if (!data?.data?.length) return aucun;
 
     const sites = data.data.map((s: Record<string, unknown>) => ({
       id: s.id_sis || s.numero || "",
@@ -480,10 +611,11 @@ async function fetchSis(lat: number, lon: number, codeInsee: string): Promise<Si
       sites: sites.slice(0, 15),
       risk_level: sites.length > 3 ? 'fort' : sites.length > 0 ? 'moyen' : 'nul',
       coverage: 'ok',
+      truncated: sites.length >= SIS_PAGE_SIZE,
     };
   } catch (e) {
     console.error("[SIS] Error:", e);
-    return empty;
+    return indisponible;
   }
 }
 
@@ -499,21 +631,26 @@ interface CaviteData {
   }>;
   risk_level: RiskLevel;
   coverage: Coverage;
+  truncated?: boolean;
 }
 
+const CAVITES_PAGE_SIZE = 100;
+
 async function fetchCavites(lat: number, lon: number, radiusKm: number = 3): Promise<CaviteData> {
-  const empty: CaviteData = { count: 0, cavites: [], risk_level: 'nul', coverage: 'no_data' };
+  // v1.1.1 — cf. fetchIcpe : « API muette » ≠ « aucune cavité recensée ».
+  const indisponible: CaviteData = { count: 0, cavites: [], risk_level: 'inconnu', coverage: 'error' };
+  const aucune: CaviteData = { count: 0, cavites: [], risk_level: 'nul', coverage: 'ok' };
 
   try {
     const delta = radiusKm / 111;
     const bbox = `${lon - delta},${lat - delta},${lon + delta},${lat + delta}`;
-    const url = `${GEORISQUES_API}/cavites?bbox=${bbox}&page=1&page_size=100`;
+    const url = `${GEORISQUES_API}/cavites?bbox=${bbox}&page=1&page_size=${CAVITES_PAGE_SIZE}`;
 
     const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    if (!res.ok) return empty;
+    if (!res.ok) return indisponible;
 
     const data = await res.json();
-    if (!data?.data?.length) return empty;
+    if (!data?.data?.length) return aucune;
 
     const cavites = data.data.map((c: Record<string, unknown>) => {
       let distance_m: number | null = null;
@@ -555,10 +692,11 @@ async function fetchCavites(lat: number, lon: number, radiusKm: number = 3): Pro
       cavites: cavites.slice(0, 15),
       risk_level: riskLevel,
       coverage: 'ok',
+      truncated: cavites.length >= CAVITES_PAGE_SIZE,
     };
   } catch (e) {
     console.error("[CAVITES] Error:", e);
-    return empty;
+    return indisponible;
   }
 }
 
@@ -574,21 +712,26 @@ interface MvtData {
   }>;
   risk_level: RiskLevel;
   coverage: Coverage;
+  truncated?: boolean;
 }
 
+const MVT_PAGE_SIZE = 100;
+
 async function fetchMouvementsTerrain(lat: number, lon: number, radiusKm: number = 3): Promise<MvtData> {
-  const empty: MvtData = { count: 0, mouvements: [], risk_level: 'nul', coverage: 'no_data' };
+  // v1.1.1 — cf. fetchIcpe : « API muette » ≠ « aucun mouvement recensé ».
+  const indisponible: MvtData = { count: 0, mouvements: [], risk_level: 'inconnu', coverage: 'error' };
+  const aucun: MvtData = { count: 0, mouvements: [], risk_level: 'nul', coverage: 'ok' };
 
   try {
     const delta = radiusKm / 111;
     const bbox = `${lon - delta},${lat - delta},${lon + delta},${lat + delta}`;
-    const url = `${GEORISQUES_API}/mvt?bbox=${bbox}&page=1&page_size=100`;
+    const url = `${GEORISQUES_API}/mvt?bbox=${bbox}&page=1&page_size=${MVT_PAGE_SIZE}`;
 
     const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    if (!res.ok) return empty;
+    if (!res.ok) return indisponible;
 
     const data = await res.json();
-    if (!data?.data?.length) return empty;
+    if (!data?.data?.length) return aucun;
 
     const mouvements = data.data.map((m: Record<string, unknown>) => {
       let distance_m: number | null = null;
@@ -629,10 +772,11 @@ async function fetchMouvementsTerrain(lat: number, lon: number, radiusKm: number
       mouvements: mouvements.slice(0, 15),
       risk_level: riskLevel,
       coverage: 'ok',
+      truncated: mouvements.length >= MVT_PAGE_SIZE,
     };
   } catch (e) {
     console.error("[MVT] Error:", e);
-    return empty;
+    return indisponible;
   }
 }
 
@@ -671,20 +815,32 @@ async function fetchArgiles(lat: number, lon: number): Promise<ArgilesData> {
 }
 
 // --- INONDATIONS ---
+// v1.1.0 : zone_inondable et ppri passent à `boolean | null`. `null` = GASPAR
+// n'a pas répondu, on ne sait pas. Le `false` d'origine était lu en aval comme
+// « hors zone » et présenté au promoteur comme un fait établi.
 interface InondationData {
-  zone_inondable: boolean;
+  zone_inondable: boolean | null;
   type_zone: string | null;
   tri: string | null;
-  ppri: boolean;
+  ppri: boolean | null;
   risk_level: RiskLevel;
   coverage: Coverage;
 }
 
 async function fetchInondations(codeInsee: string, gasparData: GasparData): Promise<InondationData> {
   const empty: InondationData = {
-    zone_inondable: false, type_zone: null, tri: null,
-    ppri: false, risk_level: 'inconnu', coverage: 'no_data'
+    zone_inondable: null, type_zone: null, tri: null,
+    ppri: null, risk_level: 'inconnu', coverage: 'no_data'
   };
+
+  // L'inondation est entièrement dérivée de GASPAR : si GASPAR est muet, cette
+  // sous-analyse ne peut RIEN conclure. Sans ce garde-fou, l'absence d'arrêté
+  // CatNat (parce que l'API a échoué) produisait risk_level 'nul' + coverage
+  // 'ok' — c'est-à-dire un « aucun risque d'inondation » certifié à tort.
+  if (gasparData.coverage === 'error' || gasparData.coverage === 'no_data') {
+    console.warn("[INONDATION] GASPAR non couvert → inondation non mesurée");
+    return empty;
+  }
 
   try {
     const ppri = gasparData.ppr_list.some(p =>
@@ -708,7 +864,8 @@ async function fetchInondations(codeInsee: string, gasparData: GasparData): Prom
       tri: null,
       ppri,
       risk_level: riskLevel,
-      coverage: 'ok',
+      // Hérite de la couverture GASPAR : 'partial' ne doit pas se présenter en 'ok'.
+      coverage: gasparData.coverage === 'ok' ? 'ok' : 'partial',
     };
   } catch (e) {
     console.error("[INONDATION] Error:", e);
@@ -738,7 +895,18 @@ const SEISME_ZONES: Record<string, number> = {
 };
 
 function fetchSeisme(dept: string): SeismeData {
-  const zone = SEISME_ZONES[dept] || 1;
+  // v1.1.0 — même correctif que les feux de forêt : un département non résolu
+  // tombait sur `|| 1` (« Très faible », risque 'nul', coverage 'ok'), c'est-à-dire
+  // la valeur la plus rassurante de l'échelle, comptée comme mesurée.
+  const deptValide = /^(?:\d{2}|2A|2B)$/.test(dept ?? '');
+  if (!deptValide) {
+    console.warn(`[SEISME] Département non résolu ("${dept}") → sismicité non mesurée`);
+    return { zone: null, libelle: "Non mesuré", risk_level: 'inconnu', coverage: 'no_data' };
+  }
+
+  // Un département valide absent de la table est en zone 1 (sismicité très
+  // faible) : c'est une information réelle du zonage réglementaire, pas un défaut.
+  const zone = SEISME_ZONES[dept] ?? 1;
   const libelles: Record<number, string> = { 1: "Très faible", 2: "Faible", 3: "Modéré", 4: "Moyen", 5: "Fort" };
   const riskLevels: Record<number, RiskLevel> = { 1: 'nul', 2: 'faible', 3: 'moyen', 4: 'fort', 5: 'tres_fort' };
   return {
@@ -751,8 +919,8 @@ function fetchSeisme(dept: string): SeismeData {
 
 // --- FEUX DE FORÊT ---
 interface FeuxForetData {
-  zone_risque: boolean;
-  obligation_debroussaillement: boolean;
+  zone_risque: boolean | null;
+  obligation_debroussaillement: boolean | null;
   risk_level: RiskLevel;
   coverage: Coverage;
 }
@@ -767,6 +935,22 @@ const FEUX_FORET_DEPTS = new Set([
 ]);
 
 function fetchFeuxForet(dept: string): FeuxForetData {
+  // v1.1.0 — Le département est la SEULE entrée de cette évaluation. S'il n'a pas
+  // pu être résolu (geo.api injoignable, INSEE absent), l'ancien code répondait
+  // `zone_risque: false` + `coverage: 'ok'` : un département inconnu était compté
+  // comme un critère MESURÉ à risque nul. Il gonflait donc le score de sécurité
+  // et surestimait `criteres_mesures`.
+  const deptValide = /^(?:\d{2}|2A|2B)$/.test(dept ?? '');
+  if (!deptValide) {
+    console.warn(`[FEUX] Département non résolu ("${dept}") → feux de forêt non mesurés`);
+    return {
+      zone_risque: null,
+      obligation_debroussaillement: null,
+      risk_level: 'inconnu',
+      coverage: 'no_data',
+    };
+  }
+
   const isRiskZone = FEUX_FORET_DEPTS.has(dept);
   return {
     zone_risque: isRiskZone,
@@ -781,18 +965,36 @@ function fetchFeuxForet(dept: string): FeuxForetData {
 // v1.0.2 : scores de sécurité — 100 = zone sûre, 0 = risque maximal
 // ============================================================================
 
+// v1.1.0 : les sous-scores sont nullables. `null` = catégorie NON MESURÉE
+// (aucune source n'a répondu), à ne jamais confondre avec 0 (risque maximal)
+// ni avec 100 (zone sûre). Le front et le Copilot doivent afficher
+// « non mesuré » et non une note.
 interface RiskScores {
-  global: number;
-  naturels: number;
-  technologiques: number;
-  pollution: number;
-  geotechniques: number;
+  global: number | null;
+  naturels: number | null;
+  technologiques: number | null;
+  pollution: number | null;
+  geotechniques: number | null;
+  // ── Indicateur de confiance (v1.1.0) ──────────────────────────────────────
+  // Combien de critères élémentaires ont réellement été mesurés, et sur quelles
+  // catégories le score global a été calculé après renormalisation des poids.
+  criteres_mesures: number;
+  criteres_total: number;
+  categories_mesurees: string[];
+  categories_non_mesurees: string[];
+  poids_effectifs: Record<string, number>;
+  coverage: Coverage;
 }
 
 interface RiskCategory {
   name: string;
-  score: number;
+  // null = non mesuré. Score de SÉCURITÉ quand renseigné (100 = sûr).
+  score: number | null;
   level: RiskLevel;
+  coverage: Coverage;
+  // Traçabilité : 2 critères mesurés sur 4 ne vaut pas 4 sur 4.
+  criteres_mesures: number;
+  criteres_total: number;
   risks: Array<{ name: string; level: RiskLevel; detail: string }>;
 }
 
@@ -811,62 +1013,151 @@ function computeRiskScores(
 
   // --- Risques Naturels ---
   const naturelRisks = [
-    { name: "Inondation", level: inondation.risk_level, detail: inondation.ppri ? "PPRI actif" : `${gaspar.catnat_events.filter(e => e.libelle_risque?.toLowerCase().includes('inondation')).length} événements` },
-    { name: "Séisme", level: seisme.risk_level, detail: `Zone ${seisme.zone} - ${seisme.libelle}` },
-    { name: "Feux de forêt", level: feuxForet.risk_level, detail: feuxForet.zone_risque ? "Zone à risque" : "Hors zone" },
-    { name: "Mouvements de terrain", level: mvt.risk_level, detail: `${mvt.count} événements recensés` },
+    {
+      name: "Inondation",
+      level: inondation.risk_level,
+      // v1.1.0 : ne pas afficher « 0 événement » quand GASPAR n'a pas répondu.
+      detail: inondation.coverage === 'no_data' || inondation.coverage === 'error'
+        ? "Non mesuré (GASPAR indisponible)"
+        : inondation.ppri
+          ? "PPRI actif"
+          : `${gaspar.catnat_events.filter(e => e.libelle_risque?.toLowerCase().includes('inondation')).length} événements`,
+    },
+    {
+      name: "Séisme",
+      level: seisme.risk_level,
+      detail: seisme.zone == null ? "Non mesuré (département non résolu)" : `Zone ${seisme.zone} - ${seisme.libelle}`,
+    },
+    {
+      name: "Feux de forêt",
+      level: feuxForet.risk_level,
+      detail: feuxForet.zone_risque == null
+        ? "Non mesuré (département non résolu)"
+        : feuxForet.zone_risque ? "Zone à risque" : "Hors zone",
+    },
+    {
+      name: "Mouvements de terrain",
+      level: mvt.risk_level,
+      detail: mvt.risk_level === 'inconnu'
+        ? "Non mesuré (source indisponible)"
+        : `${mvt.count}${mvt.truncated ? '+' : ''} événements recensés`,
+    },
   ];
-  const naturelScores = naturelRisks.map(r => getRiskScore(r.level)).filter(s => s >= 0);
-  const naturelRiskScore = naturelScores.length > 0 ? Math.round(naturelScores.reduce((a, b) => a + b, 0) / naturelScores.length) : 0;
+  const nat = aggregateRisk(naturelRisks);
 
   // --- Risques Technologiques ---
   const technoRisks = [
-    { name: "SEVESO / ICPE", level: icpe.risk_level, detail: `${icpe.seveso_haut_count} seuil haut, ${icpe.seveso_bas_count} seuil bas` },
+    {
+      name: "SEVESO / ICPE",
+      level: icpe.risk_level,
+      // v1.1.1 : `icpe.count` est plafonné par page_size. « 100 installations »
+      // n'est pas un décompte mais une borne — on écrit « 100+ ».
+      detail: icpe.risk_level === 'inconnu'
+        ? "Non mesuré (source indisponible)"
+        : `${icpe.count}${icpe.truncated ? '+' : ''} ICPE · ${icpe.seveso_haut_count} seuil haut, ${icpe.seveso_bas_count} seuil bas`,
+    },
   ];
-  const technoScores = technoRisks.map(r => getRiskScore(r.level)).filter(s => s >= 0);
-  const technoRiskScore = technoScores.length > 0 ? Math.round(technoScores.reduce((a, b) => a + b, 0) / technoScores.length) : 0;
+  const tech = aggregateRisk(technoRisks);
 
   // --- Pollution ---
   const pollutionRisks = [
-    { name: "Sites pollués (SIS)", level: sis.risk_level, detail: `${sis.count} sites identifiés` },
-    { name: "Radon", level: radon.risk_level, detail: `Classe ${radon.classe_potentiel} - ${radon.libelle}` },
+    {
+      name: "Sites pollués (SIS)",
+      level: sis.risk_level,
+      detail: sis.risk_level === 'inconnu'
+        ? "Non mesuré (source indisponible)"
+        : `${sis.count}${sis.truncated ? '+' : ''} sites identifiés`,
+    },
+    {
+      name: "Radon",
+      level: radon.risk_level,
+      detail: radon.classe_potentiel == null
+        ? "Non mesuré (source indisponible)"
+        : `Classe ${radon.classe_potentiel} - ${radon.libelle}`,
+    },
   ];
-  const pollutionScores = pollutionRisks.map(r => getRiskScore(r.level)).filter(s => s >= 0);
-  const pollutionRiskScore = pollutionScores.length > 0 ? Math.round(pollutionScores.reduce((a, b) => a + b, 0) / pollutionScores.length) : 0;
+  const poll = aggregateRisk(pollutionRisks);
 
   // --- Risques Géotechniques ---
   const geoRisks = [
-    { name: "Argiles (RGA)", level: argiles.risk_level, detail: argiles.niveau_alea || "Non évalué" },
-    { name: "Cavités souterraines", level: cavites.risk_level, detail: `${cavites.count} cavités` },
+    {
+      name: "Argiles (RGA)",
+      level: argiles.risk_level,
+      detail: argiles.niveau_alea || "Non mesuré (source indisponible)",
+    },
+    {
+      name: "Cavités souterraines",
+      level: cavites.risk_level,
+      detail: cavites.risk_level === 'inconnu'
+        ? "Non mesuré (source indisponible)"
+        : `${cavites.count}${cavites.truncated ? '+' : ''} cavités`,
+    },
   ];
-  const geoScores = geoRisks.map(r => getRiskScore(r.level)).filter(s => s >= 0);
-  const geoRiskScore = geoScores.length > 0 ? Math.round(geoScores.reduce((a, b) => a + b, 0) / geoScores.length) : 0;
+  const geo = aggregateRisk(geoRisks);
 
-  // --- Score Global de risque brut (pondéré) ---
-  const weights = { naturels: 0.35, technologiques: 0.25, pollution: 0.20, geotechniques: 0.20 };
-  const globalRiskScore = Math.round(
-    naturelRiskScore * weights.naturels +
-    technoRiskScore * weights.technologiques +
-    pollutionRiskScore * weights.pollution +
-    geoRiskScore * weights.geotechniques
-  );
-
-  // Catégories avec scores de SÉCURITÉ (inversés)
-  const categories: RiskCategory[] = [
-    { name: "Risques Naturels", score: 100 - naturelRiskScore, level: scoreToLevel(naturelRiskScore), risks: naturelRisks },
-    { name: "Risques Technologiques", score: 100 - technoRiskScore, level: scoreToLevel(technoRiskScore), risks: technoRisks },
-    { name: "Pollution", score: 100 - pollutionRiskScore, level: scoreToLevel(pollutionRiskScore), risks: pollutionRisks },
-    { name: "Risques Géotechniques", score: 100 - geoRiskScore, level: scoreToLevel(geoRiskScore), risks: geoRisks },
+  // --- Score Global de risque brut (pondéré, RENORMALISÉ) --------------------
+  // v1.1.0 : règle « pas de donnée ⇒ pas de pilier ». Une catégorie non mesurée
+  // est ÉCARTÉE du calcul, elle n'entre plus avec un score de 0 (qui la faisait
+  // passer pour « sans risque » et remontait artificiellement la sécurité).
+  // Les poids des catégories retenues sont ramenés à une somme de 1.
+  const weights: Record<string, number> = {
+    naturels: 0.35, technologiques: 0.25, pollution: 0.20, geotechniques: 0.20,
+  };
+  const piliers = [
+    { key: 'naturels',       nom: "Risques Naturels",        agg: nat,  risks: naturelRisks },
+    { key: 'technologiques', nom: "Risques Technologiques",  agg: tech, risks: technoRisks },
+    { key: 'pollution',      nom: "Pollution",               agg: poll, risks: pollutionRisks },
+    { key: 'geotechniques',  nom: "Risques Géotechniques",   agg: geo,  risks: geoRisks },
   ];
 
-  // Scores de SÉCURITÉ exposés au frontend : 100 = zone sûre, 0 = risque maximal
+  const retenus = piliers.filter(p => p.agg.score !== null);
+  const sommePoids = retenus.reduce((s, p) => s + weights[p.key], 0);
+
+  const globalRiskScore = sommePoids > 0
+    ? Math.round(retenus.reduce((s, p) => s + (p.agg.score as number) * weights[p.key], 0) / sommePoids)
+    : null;
+
+  // Poids réellement appliqués, pour que l'écran n'annonce jamais une
+  // pondération qu'il n'a pas utilisée (cf. correctif « libellé mensonger »).
+  const poidsEffectifs: Record<string, number> = {};
+  for (const p of retenus) {
+    poidsEffectifs[p.key] = Math.round((weights[p.key] / sommePoids) * 1000) / 1000;
+  }
+
+  const criteresMesures = piliers.reduce((s, p) => s + p.agg.mesures, 0);
+  const criteresTotal = piliers.reduce((s, p) => s + p.agg.total, 0);
+
+  const globalCoverage: Coverage =
+    retenus.length === 0 ? 'no_data'
+    : retenus.length === piliers.length && criteresMesures === criteresTotal ? 'ok'
+    : 'partial';
+
+  // Catégories avec scores de SÉCURITÉ (inversés), null préservé
+  const categories: RiskCategory[] = piliers.map(p => ({
+    name: p.nom,
+    score: toSecurity(p.agg.score),
+    level: scoreToLevel(p.agg.score),
+    coverage: p.agg.coverage,
+    criteres_mesures: p.agg.mesures,
+    criteres_total: p.agg.total,
+    risks: p.risks,
+  }));
+
+  // Scores de SÉCURITÉ exposés au frontend : 100 = zone sûre, 0 = risque maximal,
+  // null = non mesuré (ne PAS afficher de note, ne PAS lire comme rassurant).
   return {
     scores: {
-      global:         100 - globalRiskScore,
-      naturels:       100 - naturelRiskScore,
-      technologiques: 100 - technoRiskScore,
-      pollution:      100 - pollutionRiskScore,
-      geotechniques:  100 - geoRiskScore,
+      global:         toSecurity(globalRiskScore),
+      naturels:       toSecurity(nat.score),
+      technologiques: toSecurity(tech.score),
+      pollution:      toSecurity(poll.score),
+      geotechniques:  toSecurity(geo.score),
+      criteres_mesures: criteresMesures,
+      criteres_total: criteresTotal,
+      categories_mesurees: retenus.map(p => p.nom),
+      categories_non_mesurees: piliers.filter(p => p.agg.score === null).map(p => p.nom),
+      poids_effectifs: poidsEffectifs,
+      coverage: globalCoverage,
     },
     categories,
   };
@@ -896,6 +1187,27 @@ function generateInsights(
   scores: RiskScores
 ): Insight[] {
   const insights: Insight[] = [];
+
+  // v1.1.0 — Garde-fou null AVANT toute comparaison. En JS, `null <= 40` est
+  // vrai (null coerce en 0) : sans ce retour anticipé, une étude entièrement
+  // non mesurée aurait annoncé « Niveau de risque global ÉLEVÉ (null/100) ».
+  if (scores.global === null) {
+    insights.push({
+      type: 'warning',
+      category: 'global',
+      message: "Aucun critère de risque n'a pu être mesuré (sources Géorisques indisponibles). Aucune note n'est produite : l'absence de donnée ne vaut ni absence de risque, ni risque élevé.",
+    });
+    return insights;
+  }
+
+  // Confiance : une note assise sur une partie des critères doit le dire.
+  if (scores.coverage !== 'ok') {
+    insights.push({
+      type: 'warning',
+      category: 'confiance',
+      message: `Score calculé sur ${scores.criteres_mesures} critère(s) sur ${scores.criteres_total}${scores.categories_non_mesurees.length ? ` — non mesuré : ${scores.categories_non_mesurees.join(', ')}` : ''}. À interpréter avec prudence.`,
+    });
+  }
 
   // Global assessment — scores.global est maintenant un score de SÉCURITÉ
   // (100 = très sûr → positif, bas = risqué → critique)
@@ -969,7 +1281,10 @@ function generateInsights(
     insights.push({ type: 'info', category: 'reglementation', message: `${gaspar.ppr_count} Plan(s) de Prévention des Risques applicable(s)` });
   }
 
-  if (scores.global >= 80 && icpe.seveso_haut_count === 0 && sis.count === 0) {
+  // v1.1.0 — Ce constat rassurant n'est émis que si TOUT a été mesuré. Auparavant
+  // il pouvait sortir sur une étude à trous, où le 80+ venait des catégories
+  // manquantes notées 0 de risque.
+  if (scores.coverage === 'ok' && scores.global >= 80 && icpe.seveso_haut_count === 0 && sis.count === 0) {
     insights.push({ type: 'positive', category: 'global', message: "Aucun risque majeur identifié sur cette zone" });
   }
 
@@ -1060,10 +1375,15 @@ serve(async (req: Request): Promise<Response> => {
           fetchMouvementsTerrain(lat, lon, radiusKm),
           fetchArgiles(lat, lon),
         ])
+      // v1.1.1 — Sans coordonnées, ces quatre couches bbox ne sont PAS
+      // interrogées. Elles déclaraient pourtant `risk_level: 'nul'`, donc
+      // « mesuré, aucun risque » : trois critères sur neuf étaient offerts au
+      // score de sécurité sans qu'aucune requête ne soit partie. C'est le
+      // scénario le plus courant (geo.api injoignable depuis Supabase).
       : [
-          { count: 0, seveso_haut_count: 0, seveso_bas_count: 0, installations: [], risk_level: 'nul' as RiskLevel, coverage: 'no_data' as Coverage },
-          { count: 0, cavites: [], risk_level: 'nul' as RiskLevel, coverage: 'no_data' as Coverage },
-          { count: 0, mouvements: [], risk_level: 'nul' as RiskLevel, coverage: 'no_data' as Coverage },
+          { count: 0, seveso_haut_count: 0, seveso_bas_count: 0, installations: [], risk_level: 'inconnu' as RiskLevel, coverage: 'no_data' as Coverage },
+          { count: 0, cavites: [], risk_level: 'inconnu' as RiskLevel, coverage: 'no_data' as Coverage },
+          { count: 0, mouvements: [], risk_level: 'inconnu' as RiskLevel, coverage: 'no_data' as Coverage },
           { niveau_alea: null, risk_level: 'inconnu' as RiskLevel, coverage: 'no_data' as Coverage },
         ];
     timings.api_calls = Date.now() - t2;

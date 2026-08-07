@@ -1394,7 +1394,12 @@ export function AppShell(props: AppShellProps) {
         />
       )}
 
-      <main className="flex-1 overflow-auto">
+      {/* Une seule barre de défilement : c'est la fenêtre qui scrolle.
+          `overflow-auto` ici créait un second conteneur scrollable imbriqué
+          dans un shell en `min-h-screen` (donc lui-même plus haut que le
+          viewport) — d'où les deux barres. Laisser le scroll à la fenêtre
+          garde aussi les en-têtes `sticky` et `window.scrollTo` fonctionnels. */}
+      <main className="flex-1 min-h-0 overflow-x-clip">
         {isPublicPage || isBarePage
           ? children
           : <div className="mx-auto max-w-7xl px-4 lg:px-6">{children}</div>

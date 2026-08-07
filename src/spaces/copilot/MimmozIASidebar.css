@@ -1,17 +1,35 @@
 /* =========================================================================
    MimmozIASidebar.css — menu latéral MimmozIA
-   Thème clair harmonisé avec la page (violet #6d5dfc, slate).
+   Thème SOMBRE (accent violet #6d5dfc conservé).
    Largeurs : déployé 288px / réduit 64px.
+
+   ⚠️ Toutes les couleurs passent par les variables ci-dessous. Le fond était
+   auparavant codé en dur (#fbfbfe), comme les sous-surfaces (#fff sur le menu
+   contextuel, le panneau de réglages et le bouton mobile) : la bascule en
+   sombre demandait donc de retoucher chaque règle. Les variables
+   `--mz-surface*` évitent que ça se reproduise — pour ajuster la teinte, un
+   seul bloc à modifier.
    ========================================================================= */
 
 .mzia-side {
   --mz-accent: #6d5dfc;
-  --mz-accent-soft: rgba(109, 93, 252, 0.10);
-  --mz-accent-softer: rgba(109, 93, 252, 0.06);
-  --mz-text: #1e293b;
-  --mz-text-dim: #64748b;
-  --mz-border: rgba(15, 23, 42, 0.08);
-  --mz-hover: rgba(15, 23, 42, 0.04);
+  /* Sur fond sombre, un violet en 10 % d'opacité devient invisible : les
+     variantes douces sont remontées, et l'accent TEXTE est éclairci pour
+     rester lisible (le #6d5dfc plein ne passe pas le contraste sur du noir). */
+  --mz-accent-soft: rgba(109, 93, 252, 0.22);
+  --mz-accent-softer: rgba(109, 93, 252, 0.12);
+  --mz-accent-text: #b3a7ff;
+
+  /* Surfaces : le menu, puis les éléments qui flottent au-dessus. */
+  --mz-surface: #0f0f11;
+  --mz-surface-raised: #1b1b1f;
+
+  --mz-text: #ececf1;
+  --mz-text-dim: #9a9aa6;
+  --mz-border: rgba(255, 255, 255, 0.09);
+  --mz-hover: rgba(255, 255, 255, 0.06);
+  --mz-hover-strong: rgba(255, 255, 255, 0.11);
+  --mz-danger: #f87171;
 
   position: fixed;
   top: 0;
@@ -20,12 +38,14 @@
   width: 288px;
   display: flex;
   flex-direction: column;
-  background: #fbfbfe;
+  background: var(--mz-surface);
   border-right: 1px solid var(--mz-border);
   z-index: 40;
   font-size: 14px;
   color: var(--mz-text);
   transition: width 0.22s ease;
+  /* Le texte clair sur fond sombre paraît plus gras : on compense. */
+  -webkit-font-smoothing: antialiased;
 }
 .mzia-side.is-collapsed { width: 64px; }
 
@@ -124,7 +144,10 @@
   scrollbar-width: thin;
 }
 .mzia-side__scroll::-webkit-scrollbar { width: 8px; }
-.mzia-side__scroll::-webkit-scrollbar-thumb { background: rgba(15,23,42,0.12); border-radius: 8px; }
+/* Sur fond sombre, un pouce de barre de défilement en slate translucide
+   disparaît : on inverse en blanc translucide. */
+.mzia-side__scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 8px; }
+.mzia-side__scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
 
 .mzia-side__sectionhead {
   display: flex;
@@ -181,7 +204,7 @@
   cursor: pointer; opacity: 0; transition: opacity 0.12s ease;
 }
 .mzia-proj__row:hover .mzia-proj__del { opacity: 1; }
-.mzia-proj__del:hover { color: #ef4444; background: rgba(239,68,68,0.08); }
+.mzia-proj__del:hover { color: var(--mz-danger); background: rgba(239,68,68,0.16); }
 .mzia-proj__items { padding-left: 14px; }
 
 /* --------------------------- Conversation ------------------------------ */
@@ -193,7 +216,8 @@
 }
 .mzia-conv:hover { background: var(--mz-hover); }
 .mzia-conv.is-active { background: var(--mz-accent-soft); }
-.mzia-conv.is-active .mzia-conv__title { color: var(--mz-accent); font-weight: 600; }
+/* Accent ÉCLAIRCI : le violet plein est illisible sur fond sombre. */
+.mzia-conv.is-active .mzia-conv__title { color: var(--mz-accent-text); font-weight: 600; }
 .mzia-conv__main {
   flex: 1;
   display: flex;
@@ -205,7 +229,11 @@
   font-size: 13.5px; text-align: left; overflow: hidden;
 }
 .mzia-conv__main svg { color: var(--mz-text-dim); flex-shrink: 0; }
+/* Titre et date empilés : la date doit se lire sans manger la largeur du titre,
+   déjà tronqué dans une barre latérale étroite. */
+.mzia-conv__text { display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
 .mzia-conv__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mzia-conv__date { font-size: 11px; color: var(--mz-text-dim); line-height: 1.2; }
 .mzia-conv__menu {
   display: grid; place-items: center;
   width: 28px; height: 28px; margin-right: 4px;
@@ -214,7 +242,7 @@
   cursor: pointer; opacity: 0; transition: opacity 0.12s ease;
 }
 .mzia-conv:hover .mzia-conv__menu { opacity: 1; }
-.mzia-conv__menu:hover { background: rgba(15,23,42,0.06); color: var(--mz-text); }
+.mzia-conv__menu:hover { background: var(--mz-hover-strong); color: var(--mz-text); }
 
 .mzia-conv__dropdown {
   position: absolute;
@@ -223,10 +251,13 @@
   min-width: 180px;
   margin-top: 4px;
   padding: 6px;
-  background: #fff;
+  /* Était #fff : un rectangle blanc au milieu du menu sombre. */
+  background: var(--mz-surface-raised);
   border: 1px solid var(--mz-border);
   border-radius: 10px;
-  box-shadow: 0 12px 32px -12px rgba(15,23,42,0.3);
+  /* Une ombre portée ne détache rien sur fond sombre : c'est la surface plus
+     claire qui fait le relief, l'ombre ne sert qu'à asseoir le contour. */
+  box-shadow: 0 12px 32px -12px rgba(0,0,0,0.7);
 }
 .mzia-dropdown__label { padding: 4px 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--mz-text-dim); }
 .mzia-dropdown__empty { padding: 4px 8px 8px; font-size: 12px; color: var(--mz-text-dim); }
@@ -237,7 +268,7 @@
   font-size: 13px; text-align: left; cursor: pointer;
 }
 .mzia-dropdown__item:hover { background: var(--mz-hover); }
-.mzia-dropdown__item.is-current { color: var(--mz-accent); font-weight: 600; }
+.mzia-dropdown__item.is-current { color: var(--mz-accent-text); font-weight: 600; }
 .mzia-dropdown__item--muted { color: var(--mz-text-dim); }
 
 /* ------------------------------ Pied ----------------------------------- */
@@ -274,8 +305,9 @@
   padding: 12px;
   border: 1px solid var(--mz-border);
   border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 8px 28px -14px rgba(15,23,42,0.25);
+  /* Était #fff. */
+  background: var(--mz-surface-raised);
+  box-shadow: 0 8px 28px -14px rgba(0,0,0,0.6);
 }
 .mzia-settings__head {
   display: flex; align-items: center; justify-content: space-between;
@@ -297,7 +329,9 @@
 
 .mzia-toggle {
   position: relative; width: 40px; height: 22px; flex-shrink: 0;
-  border: none; border-radius: 999px; background: #cbd5e1; cursor: pointer;
+  /* Position « off » : le gris clair #cbd5e1 ressortait plus que la position
+     « on », inversant la lecture de l'interrupteur. */
+  border: none; border-radius: 999px; background: #3c3c44; cursor: pointer;
   transition: background 0.18s ease;
 }
 .mzia-toggle.is-on { background: var(--mz-accent); }
@@ -311,11 +345,12 @@
 .mzia-settings__danger {
   display: flex; align-items: center; gap: 8px;
   width: 100%; margin-top: 8px; padding: 9px 10px;
-  border: 1px solid rgba(239,68,68,0.2); border-radius: 9px;
-  background: rgba(239,68,68,0.05); color: #dc2626;
+  border: 1px solid rgba(239,68,68,0.32); border-radius: 9px;
+  /* #dc2626 sur fond sombre est trop peu contrasté : on éclaircit le rouge. */
+  background: rgba(239,68,68,0.12); color: var(--mz-danger);
   font-size: 13px; cursor: pointer;
 }
-.mzia-settings__danger:hover:not(:disabled) { background: rgba(239,68,68,0.1); }
+.mzia-settings__danger:hover:not(:disabled) { background: rgba(239,68,68,0.2); }
 .mzia-settings__danger:disabled { opacity: 0.6; cursor: default; }
 .mzia-settings__msg { font-size: 12px; color: var(--mz-text-dim); margin-top: 6px; }
 .mzia-settings__link {
@@ -331,14 +366,18 @@
 .mzia-page.has-sidebar.sidebar-collapsed { padding-left: 64px; }
 
 /* Hamburger + overlay mobile */
+/* ⚠️ Ce bouton est rendu HORS de `.mzia-side` : les variables --mz-* scopées
+   sur le menu ne l'atteignent pas. Ses couleurs sont donc écrites en clair
+   (mêmes valeurs que --mz-surface-raised / --mz-text). Il flotte au-dessus du
+   contenu de la page, pas du menu — un fond sombre y reste lisible. */
 .mzia-side__mobiletoggle {
   display: none;
   position: fixed; top: 14px; left: 14px; z-index: 45;
   width: 40px; height: 40px;
-  border: 1px solid var(--mz-border, rgba(15,23,42,0.08)); border-radius: 10px;
-  background: #fff; color: #1e293b; cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.14); border-radius: 10px;
+  background: #1b1b1f; color: #ececf1; cursor: pointer;
   place-items: center;
-  box-shadow: 0 4px 14px -6px rgba(15,23,42,0.25);
+  box-shadow: 0 4px 14px -6px rgba(0,0,0,0.55);
 }
 .mzia-side__overlay {
   display: none;

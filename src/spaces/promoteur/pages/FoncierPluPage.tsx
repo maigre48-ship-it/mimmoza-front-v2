@@ -25,11 +25,21 @@ import {
 } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
-import { useSearchParams } from "react-router-dom";
 import { supabase } from "../../../supabaseClient";
 import { useCopilotStore } from "../../copilot/store/copilotStore";
 import { writeCapture } from "../shared/captures.store";
 import { patchModule } from "../shared/promoteurSnapshot.store";
+import { hashInputs, setStepStatus } from "../shared/promoteurChain";
+import { usePromoteurStudyId } from "../shared/usePromoteurStudyId";
+
+/** Le copilote a-t-il ouvert cette page pour exécuter l'étape lui-même ? */
+function isAgentRun(): boolean {
+  try {
+    return new URLSearchParams(window.location.search).get("autorun") === "1";
+  } catch {
+    return false;
+  }
+}
 import type {
   PromoteurFoncierData,
   PromoteurParcelRaw,
@@ -879,8 +889,7 @@ function ParcelsSidebar({ selectedParcels, totalAreaM2, onRemoveParcel, onClearA
 // MAIN PAGE
 // ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝
 export function FoncierPluPage() {
-  const [searchParams] = useSearchParams();
-  const studyId = searchParams.get("study");
+  const studyId = usePromoteurStudyId();
   const { study, loadState, patchFoncier, patchPlu } = usePromoteurStudy(studyId);
 
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
@@ -1007,7 +1016,17 @@ export function FoncierPluPage() {
   }, []);
 
   const handleValidateSelection = useCallback(async () => {
-    if (selectedParcels.length === 0 || !studyId) return;
+    // Ce retour anticipé était muet. Sans étude dans l'URL (`?study=…`), le
+    // bouton ne faisait donc rien du tout, sans le moindre signe — cas
+    // réellement rencontré au premier test de la chaîne.
+    if (selectedParcels.length === 0 || !studyId) {
+      if (!studyId) {
+        console.warn("[FoncierPluPage] Validation ignorée : aucune étude active (?study= absent de l'URL).");
+        setValidationMessage("Aucune étude active — ouvrez cette page depuis une opération.");
+        setTimeout(() => setValidationMessage(null), 6000);
+      }
+      return;
+    }
     setIsSaving(true);
     const parcelIds = selectedParcels.map(p => p.id); const primary = selectedParcels[0];
     const rawInseeFromId = extractCommuneInsee(primary.id);
@@ -1024,6 +1043,17 @@ export function FoncierPluPage() {
     ["mimmoza.plu.ai_extract_result", "mimmoza.plu.detected_zone_code", "mimmoza.plu.selected_zone_code", "mimmoza.plu.selected_document_id", "mimmoza.plu.selected_commune_insee"].forEach(k => userStorage.removeItem(k));
     setValidationMessage(`✓ ${parcelIds.length} parcelle${parcelIds.length > 1 ? "s" : ""} enregistrée${parcelIds.length > 1 ? "s" : ""} (${formatAreaM2(totalAreaM2)})`);
     setIsValidated(true); setTimeout(() => setValidationMessage(null), 5000);
+
+    // Chaîne d'opération : le foncier est posé. Toute étape aval déjà calculée
+    // sur une autre emprise devient périmée — le trigger s'en charge.
+    if (result.ok) {
+      await setStepStatus({
+        studyId, step: "foncier", status: "ready",
+        producedBy: isAgentRun() ? "agent" : "user",
+        inputsHash: hashInputs({ parcelIds, insee, totalAreaM2 }),
+        summary: { commune_insee: insee, parcel_ids: parcelIds, surface_m2: totalAreaM2 },
+      });
+    }
   }, [selectedParcels, totalAreaM2, studyId, projectInfo.communeInsee, patchFoncier]);
 
   const handleReset = useCallback(() => {
@@ -1038,6 +1068,17 @@ export function FoncierPluPage() {
     if (studyId) await patchPlu(pluPayload);
     if (resolved) { userStorage.setItem("mimmoza.plu.resolved_ruleset_v1", JSON.stringify(resolved)); patchModule("plu", resolved); } else { userStorage.removeItem("mimmoza.plu.resolved_ruleset_v1"); patchModule("plu", null); }
     userStorage.removeItem("mimmoza.plu.ai_extract_result"); setPluData(plu);
+
+    // Le PLU n'est « prêt » que si une zone est réellement identifiée : sans
+    // zone, l'enveloppe ne peut rien calculer et doit rester bloquée.
+    if (studyId && plu.zone_code) {
+      await setStepStatus({
+        studyId, step: "plu", status: "ready",
+        producedBy: isAgentRun() ? "agent" : "user",
+        inputsHash: hashInputs({ zone: plu.zone_code, ruleset: resolved ?? plu.ruleset ?? null }),
+        summary: { zone_code: plu.zone_code, zone_libelle: plu.zone_libelle ?? null },
+      });
+    }
   }, [studyId, patchPlu]);
 
   // ── Loading / Error ───────────────────────────────────────────────────────

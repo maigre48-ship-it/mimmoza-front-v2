@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MapPin, Home, TrendingUp, Gauge, LandPlot, Sparkles,
-  Paperclip, ImagePlus, Mic, ArrowUp,
+  Paperclip, Mic, ArrowUp, X,
   ShieldCheck, Lock, BrainCircuit, GitBranch, Plus, Menu,
 } from 'lucide-react';
 
@@ -11,19 +11,63 @@ import { MimmozIAOrb, type MimmozIAOrbState } from './components/MimmozIAOrb';
 import { MimmozIAQuickAction } from './components/MimmozIAQuickAction';
 import { MimmozIAStatus } from './components/MimmozIAStatus';
 import { MimmozIASidebar } from './MimmozIASidebar';
+import { MimmozIAModelPicker, type ModelTier, type Plan as PickerPlan } from './components/MimmozIAModelPicker';
+import { usePlanAccess } from '@/lib/billing/usePlanAccess';
 import { supabase } from '@/lib/supabaseClient';
 import { track, type MimmoziaEventPayload } from '@/lib/mimmozia/track';
 import './MimmozIAPage.css';
 import { useMimmozIAProfile } from '@/lib/mimmozia/useMimmozIAProfile';
+import AlertesAccueil from '@/components/AlertesAccueil';
 
 /* =========================================================================
    ⚠️  POINTS D'INTÉGRATION (à vérifier une fois dans useCopilot.ts).
    Chaque helper s'adapte au runtime aux noms les plus probables.
    ========================================================================= */
-type SendFn = (text: string) => unknown | Promise<unknown>;
+
+/** V1.7 — Pièce jointe. Type défini LOCALEMENT pour que cette page compile
+ *  sans dépendre du patch copilot.types.ts. Quand ce dernier sera en place,
+ *  remplacer par : import type { CopilotAttachment } from './types/copilot.types'; */
+interface CopilotAttachment {
+  mediaType: string;   // image/png|jpeg|gif|webp ou application/pdf
+  data: string;        // base64 SANS le prefixe data:
+  name?: string;
+}
+
+type SendFn = (
+  text: string,
+  options?: { attachments?: CopilotAttachment[] },
+) => unknown | Promise<unknown>;
+
+/** Pièce jointe côté UI : le base64 + de quoi afficher une pastille. */
+interface UiAttachment extends CopilotAttachment {
+  id: string;
+  name: string;
+  size: number;
+}
+
+const ACCEPT_FILES = 'image/png,image/jpeg,image/gif,image/webp,application/pdf';
+const MAX_FILE_BYTES = 3 * 1024 * 1024;   // 3 Mo par fichier
+const MAX_TOTAL_BYTES = 4 * 1024 * 1024;  // 4 Mo cumulés (le base64 gonfle de 33 %)
+
+/** Lit un fichier en base64 SANS le préfixe `data:…;base64,`. */
+function readAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const res = String(r.result);
+      const comma = res.indexOf(',');
+      resolve(comma >= 0 ? res.slice(comma + 1) : res);
+    };
+    r.onerror = () => reject(new Error('lecture impossible'));
+    r.readAsDataURL(file);
+  });
+}
 
 interface LooseCopilotApi {
   credits?: unknown;
+  /** Niveau de modèle courant + son setter (store copilot, V1.5). */
+  tier?: ModelTier;
+  setTier?: (t: ModelTier) => void;
   refreshCredits?: () => unknown;
   loadConversations?: () => unknown;
   sendMessage?: SendFn; send?: SendFn; submitMessage?: SendFn; ask?: SendFn; createMessage?: SendFn;
@@ -172,6 +216,13 @@ export default function MimmozIAPage() {
   }, [busy, live]);
 
   const [recording, setRecording] = useState(false);
+  /** La dictée n'existe que si le navigateur expose SpeechRecognition (Chrome,
+   *  Edge, Safari récents — PAS Firefox) ET que la page est en HTTPS. */
+  const dictationSupported = useMemo(
+    () => typeof window !== 'undefined' &&
+      Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition),
+    [],
+  );
   const orbState: MimmozIAOrbState = successFlash ? 'success'
     : live !== 'idle' ? live
     : recording ? 'listening' : 'idle';
@@ -179,6 +230,61 @@ export default function MimmozIAPage() {
 
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // --- V1.7 : pièces jointes (images + PDF) --------------------------------
+  const [attachments, setAttachments] = useState<UiAttachment[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFiles = useCallback(async (files: FileList | null) => {
+    if (!files?.length) return;
+    setAttachError(null);
+    const accepted: UiAttachment[] = [];
+    let total = attachments.reduce((s, a) => s + a.size, 0);
+
+    for (const file of Array.from(files)) {
+      if (file.size > MAX_FILE_BYTES) {
+        setAttachError(`« ${file.name} » dépasse 3 Mo.`);
+        continue;
+      }
+      if (total + file.size > MAX_TOTAL_BYTES) {
+        setAttachError('Taille cumulée des pièces jointes dépassée (4 Mo).');
+        break;
+      }
+      try {
+        accepted.push({
+          id: `${file.name}-${file.lastModified}-${file.size}`,
+          name: file.name,
+          size: file.size,
+          mediaType: file.type,
+          data: await readAsBase64(file),
+        });
+        total += file.size;
+      } catch {
+        setAttachError(`Lecture impossible : ${file.name}`);
+      }
+    }
+    if (accepted.length) {
+      setAttachments((prev) => [
+        ...prev,
+        ...accepted.filter((a) => !prev.some((p) => p.id === a.id)),
+      ]);
+    }
+  }, [attachments]);
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }, []);
+
+  // --- Niveau d'analyse (V1.5) : la valeur vit dans le store copilot, le plan
+  //     décide des niveaux sélectionnables. copilot-chat revérifie de toute
+  //     façon via resolveTier : cette UI est un confort, pas la sécurité.
+  const { plan: planId } = usePlanAccess();
+  const plan: PickerPlan =
+    planId === 'pro' || planId === 'proplus' ? 'pro'
+    : planId === 'avance' ? 'advanced'
+    : 'basic';                                   // basique + tout inconnu
+  const tier: ModelTier = copilot.tier ?? 'sonnet';
 
   useEffect(() => {
     void track('session_start');
@@ -200,13 +306,16 @@ export default function MimmozIAPage() {
     void track('search', { source: 'mimmozia' });
     setWelcomeOverride(false);
     setOptimistic(true);
+    const files = attachments.map(({ mediaType, data, name }) => ({ mediaType, data, name }));
     try {
-      if (send) await send(message);
+      if (send) await send(message, files.length ? { attachments: files } : undefined);
       else console.warn('[MimmozIA] Aucune fonction d’envoi détectée — voir INTEGRATION.md.');
+      setAttachments([]);
+      setAttachError(null);
     } catch (err) {
       console.error('[MimmozIA] Échec de l’envoi :', err);
     }
-  }, [send]);
+  }, [send, attachments]);
 
   const handleLauncherSend = useCallback(() => { void startWith(draft); setDraft(''); }, [draft, startWith]);
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -227,6 +336,7 @@ export default function MimmozIAPage() {
     setOptimistic(false);
     setWelcomeOverride(true);
     setDraft('');
+    setAttachments([]);
   }, [copilot]);
 
   // Sélection d'une conversation depuis la sidebar → bascule en mode chat.
@@ -238,19 +348,38 @@ export default function MimmozIAPage() {
   const recognitionRef = useRef<any>(null);
   const toggleDictation = useCallback(() => {
     const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return;
+    if (!SR) {
+      setAttachError('Dictée non prise en charge par ce navigateur (essayez Chrome ou Edge).');
+      return;
+    }
     if (recording) { recognitionRef.current?.stop(); return; }
     const rec = new SR();
     rec.lang = 'fr-FR'; rec.interimResults = true; rec.continuous = false;
-    rec.onstart = () => setRecording(true);
+    rec.onstart = () => { setAttachError(null); setRecording(true); };
     rec.onresult = (e: any) => {
       let tr = '';
       for (let i = e.resultIndex; i < e.results.length; i++) tr += e.results[i][0].transcript;
       setDraft((prev) => (prev ? `${prev} ${tr}` : tr));
     };
     rec.onend = () => setRecording(false);
+    // Sans onerror, une permission micro refusée échoue en silence et l'orbe
+    // reste bloquée en 'listening'.
+    rec.onerror = (e: any) => {
+      console.warn('[MimmozIA] dictée :', e?.error);
+      setRecording(false);
+      if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') {
+        setAttachError('Accès au micro refusé. Autorisez-le dans les réglages du navigateur.');
+      } else if (e?.error === 'network') {
+        setAttachError('Reconnaissance vocale indisponible (service distant injoignable).');
+      }
+    };
     recognitionRef.current = rec;
-    rec.start();
+    try {
+      rec.start();
+    } catch (err) {
+      console.warn('[MimmozIA] démarrage dictée impossible :', err);
+      setRecording(false);
+    }
   }, [recording]);
   useEffect(() => () => recognitionRef.current?.stop?.(), []);
 
@@ -318,8 +447,11 @@ export default function MimmozIAPage() {
               Que souhaitez-vous <em>analyser</em> aujourd’hui&nbsp;?
             </h1>
             <p className="mzia-hero__sub">
-              Je peux analyser un bien, un terrain, un projet — ou répondre à toutes vos questions immobilières.
+              {tagline
+                ? `${tagline} Que voulez-vous étudier aujourd’hui\u00A0?`
+                : 'Je peux analyser un bien, un terrain, un projet — ou répondre à toutes vos questions immobilières.'}
             </p>
+            <AlertesAccueil />
           </div>
 
           <div className="mzia-welcome__stage">
@@ -345,15 +477,42 @@ export default function MimmozIAPage() {
 
           <div className="mzia-launcher">
             <div className="mzia-launcher__field">
+              {(attachments.length > 0 || attachError) && (
+                <div className="mzia-attachments">
+                  {attachments.map((a) => (
+                    <span key={a.id} className="mzia-chip" title={a.name}>
+                      <Paperclip size={13} />
+                      <span className="mzia-chip__name">{a.name}</span>
+                      <button type="button" className="mzia-chip__x"
+                        onClick={() => removeAttachment(a.id)} title="Retirer">
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                  {attachError && <span className="mzia-attachments__err">{attachError}</span>}
+                </div>
+              )}
+
               <textarea ref={inputRef} className="mzia-launcher__input" rows={1}
                 placeholder="Écrivez ou dictez votre message…" value={draft}
                 onChange={(e) => setDraft(e.target.value)} onKeyDown={handleKeyDown} />
+
+              {/* Sélecteur de fichiers : caché, déclenché par le trombone.
+                  On remet value='' après coup pour pouvoir rechoisir le même fichier. */}
+              <input ref={fileInputRef} type="file" hidden multiple accept={ACCEPT_FILES}
+                onChange={(e) => { void handleFiles(e.target.files); e.target.value = ''; }} />
+
               <div className="mzia-launcher__tools">
-                <button type="button" className="mzia-iconbtn" title="Joindre un fichier"
-                  onClick={() => setOptimistic(true)}><Paperclip size={18} /></button>
-                <button type="button" className="mzia-iconbtn" title="Ajouter une photo"
-                  onClick={() => setOptimistic(true)}><ImagePlus size={18} /></button>
-                <button type="button" title="Dicter"
+                <MimmozIAModelPicker
+                  plan={plan}
+                  value={tier}
+                  onChange={(t) => copilot.setTier?.(t)}
+                  disabled={busy}
+                />
+                <button type="button" className="mzia-iconbtn" title="Joindre un fichier (image ou PDF)"
+                  onClick={() => fileInputRef.current?.click()}><Paperclip size={18} /></button>
+                <button type="button" disabled={!dictationSupported}
+                  title={dictationSupported ? 'Dicter' : 'Dictée non prise en charge par ce navigateur'}
                   className={`mzia-iconbtn mzia-iconbtn--rec${recording ? ' is-active' : ''}`}
                   onClick={toggleDictation}><Mic size={18} /></button>
                 <button type="button" className="mzia-send" title="Envoyer"

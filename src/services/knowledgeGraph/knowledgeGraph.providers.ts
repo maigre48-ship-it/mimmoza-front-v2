@@ -209,12 +209,26 @@ export function createMimmozaProviders(): KnowledgeGraphProviders {
           const name = str(rk, "name");
           const level = str(rk, "level");
           if (!name) continue;
-          if (level === "fort" || level === "moyen" || level === "faible") {
+          // 'tres_fort' était absent de ce filtre : le risque MAXIMAL de
+          // risk-study disparaissait purement et simplement du knowledge graph,
+          // alors que 'fort' et 'moyen' y entraient. On le mappe sur 'fort',
+          // seule valeur haute admise par RiskData.severity.
+          // 'inconnu' et 'nul' restent volontairement écartés — mais pour des
+          // raisons opposées : rien à signaler vs rien de mesuré.
+          const severity: "faible" | "moyen" | "fort" | null =
+            level === "tres_fort" || level === "fort" ? "fort"
+            : level === "moyen" ? "moyen"
+            : level === "faible" ? "faible"
+            : null;
+          if (severity) {
             out.push({
               riskKey: parcelKey + ":" + name,
               riskType: name,
-              severity: level,
-              metadata: { detail: str(rk, "detail") ?? null },
+              severity,
+              metadata: {
+                detail: str(rk, "detail") ?? null,
+                niveau_source: level ?? null,
+              },
             });
           }
         }

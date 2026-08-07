@@ -1,15 +1,26 @@
 /* =========================================================================
    MimmozIAOrb — orbe vivante en couches, pilotée par --orb-color
-   Passe direction artistique (raffinement) :
-     · halos plus grands / plus diffus / plus discrets, avec dérive d'intensité
-     · disque = verre poli + légère diffraction spectrale au bord (réflexions
-       violet/bleu/vert/rose — jamais sur le logo)
-     · particules vivantes : orbites non-linéaires (accélèrent / ralentissent /
-       marquent une pause) + scintillement (apparition / disparition)
-     · logo suspendu par une ombre portée en deux plans
-     · l'orbe peut s'incliner très légèrement vers la carte survolée (transition
-       transform ajoutée ici, déclenchée depuis MimmozIAPage.css via :has())
-   Aucune fonctionnalité modifiée. Aucun changement d'architecture.
+   Passe direction artistique (raffinement), puis PASSE NETTETÉ HiDPI :
+     · le flou (filter: blur) est désormais réservé aux SEULS halos extérieurs
+       (auras) — plus aucun blur sur les flux, la diffraction, les anneaux,
+       le disque ou le logo ;
+     · anneaux reconstruits au pixel près : masque radial calé en px avec un
+       feather sub-pixel (~0.6px) → contours parfaitement nets à toutes les
+       tailles et sur Retina, contraste relevé ;
+     · le disque ne "respire" plus en scale — un scale fractionnaire forçait
+       le navigateur à ré-échantillonner le logo (rendu flou). Le disque est
+       promu sur sa propre couche (translateZ(0)) pour une rasterisation à la
+       densité native de l'écran ;
+     · halos réduits (opacités et étendue) et l'aura interne est évidée au
+       centre (masque annulaire) → plus aucun voile laiteux sur le verre ;
+     · verre : liseré double (blanc + cheveu coloré) pour la définition,
+       lueur d'état resserrée, blancs du reflet adoucis — transparence de
+       verre conservée, sans effet brouillard ;
+     · logo : uniquement une double ombre portée légère (drop-shadow), aucun
+       filtre de flou/teinte — le fichier doit être un SVG (ou un PNG ≥
+       2048×2048 servi en @2x), voir MimmozIAOrb.tsx.
+   Aucune fonctionnalité modifiée. Aucun changement d'architecture ni de
+   dimensions : mêmes tailles, mêmes couches, même composition.
    ========================================================================= */
 
 @property --orb-color {
@@ -53,39 +64,43 @@
 }
 
 /* ---- AURAS (halos) -----------------------------------------------------
-   Plus grands, plus flous, plus discrets : ils ne servent qu'à donner du
-   volume et ne doivent jamais attirer le regard. Le plus interne respire
-   aussi en intensité (variation très légère). */
+   SEULES couches autorisées à porter un filter: blur() : ce sont les halos
+   lumineux extérieurs. Opacités abaissées et dégradés resserrés pour
+   supprimer l'effet brouillard ; l'aura interne est évidée au centre par un
+   masque annulaire → le halo n'empiète jamais sur le disque de verre. */
 .mzia-orb__aura {
-  background: radial-gradient(circle at 50% 50%, var(--orb-color) 0%, transparent 68%);
+  background: radial-gradient(circle at 50% 50%, var(--orb-color) 0%, transparent 64%);
   transition: opacity 500ms ease;
 }
 .mzia-orb__aura--1 {
   width: 88%; height: 88%;
-  opacity: calc(0.16 * var(--aura-strength));
+  opacity: calc(0.11 * var(--aura-strength));
   filter: blur(9px);
+  /* annulaire : halo autour du disque, jamais dessus */
+  -webkit-mask: radial-gradient(closest-side, transparent 56%, #000 74%);
+  mask: radial-gradient(closest-side, transparent 56%, #000 74%);
   animation: mzia-breathe calc(6.4s / var(--orb-speed)) ease-in-out infinite,
     mzia-aura-drift calc(7.2s / var(--orb-speed)) ease-in-out infinite;
 }
 .mzia-orb__aura--2 {
   width: 122%; height: 122%;
-  opacity: calc(0.11 * var(--aura-strength));
+  opacity: calc(0.07 * var(--aura-strength));
   filter: blur(20px);
   animation: mzia-wobble calc(13s / var(--orb-speed)) ease-in-out infinite,
     mzia-spin calc(60s / var(--orb-speed)) linear infinite;
 }
 .mzia-orb__aura--3 {
   width: 164%; height: 164%;
-  opacity: calc(0.08 * var(--aura-strength));
+  opacity: calc(0.05 * var(--aura-strength));
   filter: blur(34px);
   animation: mzia-breathe-rise calc(10s / var(--orb-speed)) ease-in-out infinite;
 }
 
 /* ---- FLUX ÉNERGÉTIQUE (rubans organiques autour du disque) --------------
    wrapper = respiration d'échelle ; ::before = rotation + morph + pulsation.
-   On sépare rotation (transform du ::before) et échelle (transform du wrapper)
-   pour éviter tout conflit de propriété transform. Rotations légèrement
-   ralenties → lecture "champ magnétique" plus calme, moins "anneau". */
+   NETTETÉ : plus aucun filter: blur() ici — la douceur vient uniquement du
+   feather du masque radial et des dégradés coniques (intensités abaissées).
+   Les rubans restent lisibles mais ne diffusent plus de voile. */
 .mzia-orb__energy-flow {
   position: absolute; inset: 0; margin: auto;
   pointer-events: none;
@@ -107,14 +122,13 @@
 .mzia-orb__energy-flow--1 { width: 106%; height: 98%; }
 .mzia-orb__energy-flow--1::before {
   border-radius: 52% 48% 55% 45% / 47% 56% 44% 53%;
-  filter: blur(2px);
   background: conic-gradient(from 20deg,
     transparent 0deg,
-    color-mix(in srgb, var(--orb-color) 60%, transparent) 34deg,
+    color-mix(in srgb, var(--orb-color) 52%, transparent) 34deg,
     transparent 68deg,
-    color-mix(in srgb, var(--orb-color) 40%, transparent) 142deg,
+    color-mix(in srgb, var(--orb-color) 34%, transparent) 142deg,
     transparent 205deg,
-    color-mix(in srgb, var(--orb-color) 55%, transparent) 292deg,
+    color-mix(in srgb, var(--orb-color) 48%, transparent) 292deg,
     transparent 360deg);
   animation:
     mzia-energy-spin calc(22s / var(--flow-speed)) linear infinite,
@@ -122,18 +136,17 @@
     mzia-flow-pulse calc(6.7s / var(--flow-speed)) ease-in-out infinite;
 }
 
-/* Filament 2 — sens inverse, plus flou */
+/* Filament 2 — sens inverse */
 .mzia-orb__energy-flow--2 { width: 100%; height: 110%; }
 .mzia-orb__energy-flow--2::before {
   border-radius: 46% 54% 48% 52% / 55% 45% 56% 44%;
-  filter: blur(3px);
   background: conic-gradient(from 140deg,
     transparent 0deg,
-    color-mix(in srgb, var(--orb-color) 50%, transparent) 24deg,
+    color-mix(in srgb, var(--orb-color) 44%, transparent) 24deg,
     transparent 66deg,
-    color-mix(in srgb, var(--orb-color) 35%, transparent) 128deg,
+    color-mix(in srgb, var(--orb-color) 30%, transparent) 128deg,
     transparent 196deg,
-    color-mix(in srgb, var(--orb-color) 48%, transparent) 256deg,
+    color-mix(in srgb, var(--orb-color) 42%, transparent) 256deg,
     transparent 320deg);
   animation:
     mzia-energy-spin-rev calc(32s / var(--flow-speed)) linear infinite,
@@ -141,18 +154,17 @@
     mzia-flow-pulse calc(8.3s / var(--flow-speed)) ease-in-out infinite;
 }
 
-/* Filament 3 — le plus large et le plus diffus */
+/* Filament 3 — le plus large */
 .mzia-orb__energy-flow--3 { width: 114%; height: 104%; }
 .mzia-orb__energy-flow--3::before {
   border-radius: 55% 45% 51% 49% / 45% 54% 46% 55%;
-  filter: blur(4px);
   background: conic-gradient(from 260deg,
     transparent 0deg,
-    color-mix(in srgb, var(--orb-color) 45%, transparent) 30deg,
+    color-mix(in srgb, var(--orb-color) 40%, transparent) 30deg,
     transparent 74deg,
-    color-mix(in srgb, var(--orb-color) 32%, transparent) 150deg,
+    color-mix(in srgb, var(--orb-color) 28%, transparent) 150deg,
     transparent 214deg,
-    color-mix(in srgb, var(--orb-color) 42%, transparent) 300deg,
+    color-mix(in srgb, var(--orb-color) 38%, transparent) 300deg,
     transparent 360deg);
   animation:
     mzia-energy-spin calc(44s / var(--flow-speed)) linear infinite,
@@ -186,14 +198,11 @@
    le point est dessiné en haut via ::before ; on fait tourner la boîte.
    Rayon = moitié de --orbit → indépendant des px, donc responsive.
 
-   Vie des particules (raffinement) :
-   · l'orbite n'est plus uniforme — certaines accélèrent, ralentissent ou
-     marquent une pause au fil du tour (keyframes -a / -b, timing linéaire,
-     variation d'angle intégrée pour un rebouclage sans à-coup) ;
-   · le point scintille — certaines apparaissent puis disparaissent
-     (twinkle / blink), avec des rythmes et décalages désynchronisés.
-   La durée, le sens (reverse) et le délai d'orbite restent pilotés en inline
-   par le composant : on ne surcharge ici que le NOM de l'animation. */
+   Vie des particules :
+   · orbites non uniformes (keyframes -a / -b) ;
+   · scintillement désynchronisé (twinkle / blink).
+   Le point lui-même reste net : le halo du point est un box-shadow diffus
+   (autorisé — c'est une lueur, pas un flou du dessin). */
 .mzia-orb__particles { width: 100%; height: 100%; }
 .mzia-orb__particle {
   position: absolute;
@@ -217,7 +226,7 @@
   margin-left: calc(var(--psize, 4px) / -2);
   border-radius: 50%;
   background: var(--orb-color);
-  box-shadow: 0 0 6px var(--orb-color);
+  box-shadow: 0 0 5px var(--orb-color);
   opacity: var(--pop, 0.6);
   transition: background-color 600ms ease, box-shadow 600ms ease;
   /* scintillement de base : léger battement d'intensité */
@@ -264,70 +273,92 @@
   100% { opacity: 0; }
 }
 
-/* ---- ANNEAUX ------------------------------------------------------------ */
+/* ---- ANNEAUX ------------------------------------------------------------
+   NETTETÉ : anneaux reconstruits au pixel près. Le masque radial est calé en
+   px (indépendant du diamètre) avec un feather de 0.6px de chaque côté =
+   simple anti-aliasing → contour parfaitement net à toutes les tailles et
+   sur Retina, sans aucun flou. Contraste relevé (opacité + stops coniques
+   resserrés autour du segment blanc). */
 .mzia-orb__ring {
   background: conic-gradient(
     from 0deg,
     transparent 0deg,
-    var(--orb-color) 70deg,
-    #ffffff 130deg,
-    transparent 210deg,
-    var(--orb-color) 300deg,
-    transparent 360deg
+    var(--orb-color) 62deg,
+    #ffffff 118deg,
+    var(--orb-color) 168deg,
+    transparent 218deg,
+    var(--orb-color) 296deg,
+    transparent 352deg
   );
   transition: background 600ms ease;
 }
 .mzia-orb__ring--outer {
   width: 92%; height: 92%;
-  -webkit-mask: radial-gradient(closest-side, transparent 79%, #000 81%);
-  mask: radial-gradient(closest-side, transparent 79%, #000 81%);
-  opacity: 0.6;
+  /* anneau de ~2px, bords anti-aliasés à 0.6px */
+  -webkit-mask: radial-gradient(closest-side,
+    transparent calc(100% - 3.2px), #000 calc(100% - 2.6px),
+    #000 calc(100% - 0.6px), transparent 100%);
+  mask: radial-gradient(closest-side,
+    transparent calc(100% - 3.2px), #000 calc(100% - 2.6px),
+    #000 calc(100% - 0.6px), transparent 100%);
+  opacity: 0.9;
   animation: mzia-spin calc(30s / var(--orb-speed)) linear infinite;
 }
 .mzia-orb__ring--inner {
   width: 72%; height: 72%;
-  -webkit-mask: radial-gradient(closest-side, transparent 82%, #000 84%);
-  mask: radial-gradient(closest-side, transparent 82%, #000 84%);
-  opacity: 0.62;
+  /* anneau de ~1.5px, bords anti-aliasés à 0.6px */
+  -webkit-mask: radial-gradient(closest-side,
+    transparent calc(100% - 2.7px), #000 calc(100% - 2.1px),
+    #000 calc(100% - 0.6px), transparent 100%);
+  mask: radial-gradient(closest-side,
+    transparent calc(100% - 2.7px), #000 calc(100% - 2.1px),
+    #000 calc(100% - 0.6px), transparent 100%);
+  opacity: 0.85;
   animation: mzia-spin-rev calc(19s / var(--orb-speed)) linear infinite;
 }
 
-/* ---- DISQUE = LENTILLE DE VERRE + LOGO ENCAPSULÉ ----------------------- */
+/* ---- DISQUE = LENTILLE DE VERRE + LOGO ENCAPSULÉ -----------------------
+   NETTETÉ : plus AUCUNE animation de scale sur le disque (le scale
+   fractionnaire ré-échantillonnait le logo → flou perceptible). Le disque
+   est promu sur sa propre couche de composition (translateZ(0)) pour être
+   rasterisé à la densité native de l'écran (Retina inclus). Liseré double
+   (blanc net + cheveu coloré 0.5px) pour la définition ; lueur d'état
+   resserrée ; verre légèrement translucide, jamais laiteux. */
 .mzia-orb__disc {
   position: absolute; inset: 0; margin: auto;
   width: var(--disc-size); height: var(--disc-size);
   border-radius: 50%;
   overflow: hidden;                 /* clippe reflets, diffraction & balayage */
   display: grid; place-items: center;
-  /* blanc très légèrement cassé + profondeur radiale + lumière d'état diffuse */
+  transform: translateZ(0);         /* couche propre → rasterisation nette */
+  /* verre très légèrement translucide + profondeur radiale + lumière d'état diffuse */
   background:
-    radial-gradient(circle at 50% 116%, color-mix(in srgb, var(--orb-color) 12%, transparent), transparent 55%),
-    radial-gradient(circle at 38% 30%, #ffffff 0%, #fdfdff 52%, #f4f3fb 100%);
+    radial-gradient(circle at 50% 116%, color-mix(in srgb, var(--orb-color) 9%, transparent), transparent 52%),
+    radial-gradient(circle at 38% 30%, rgba(255, 255, 255, 0.97) 0%, rgba(252, 252, 255, 0.95) 52%, rgba(244, 243, 251, 0.98) 100%);
   box-shadow:
-    0 12px 34px rgba(30, 20, 70, 0.17),                                 /* profondeur */
-    0 0 0 1px rgba(255, 255, 255, 0.9),                                  /* liseré net */
-    0 0 30px 2px color-mix(in srgb, var(--orb-color) 22%, transparent),  /* lumière d'état */
-    inset 0 1px 2px rgba(255, 255, 255, 0.95),                           /* reflet interne haut */
-    inset 0 -7px 16px rgba(30, 20, 70, 0.07);                            /* ombre interne légère */
+    0 10px 28px rgba(30, 20, 70, 0.16),                                  /* profondeur */
+    0 0 0 1px rgba(255, 255, 255, 0.95),                                 /* liseré blanc net */
+    0 0 0 1.5px color-mix(in srgb, var(--orb-color) 22%, transparent),   /* cheveu coloré 0.5px */
+    0 0 18px 0 color-mix(in srgb, var(--orb-color) 15%, transparent),    /* lumière d'état resserrée */
+    inset 0 1px 1px rgba(255, 255, 255, 0.95),                           /* reflet interne haut */
+    inset 0 -6px 14px rgba(30, 20, 70, 0.06);                            /* ombre interne légère */
   transition: box-shadow 700ms ease, background 700ms ease;
   z-index: 2;
-  /* micro-respiration ≤ 1 % — le logo (enfant) suit exactement, synchronisé */
-  animation: mzia-disc-breathe calc(5.6s / var(--orb-speed)) ease-in-out infinite;
 }
 
 /* Diffraction : fin liseré spectral au bord du verre (violet → bleu → vert →
-   rose), très discret, tourne lentement. Masqué au bord extrême → ne touche
-   jamais le logo. C'est une réflexion sur le verre, pas une couleur du logo. */
+   rose), très discret, tourne lentement. NETTETÉ : plus de blur — la
+   douceur vient du feather du masque, la bande est resserrée sur l'extrême
+   bord et ne touche jamais le logo. */
 .mzia-orb__disc::after {
   content: '';
   position: absolute; inset: 0; border-radius: 50%;
   pointer-events: none;
   z-index: 1;                       /* au-dessus de la lentille, SOUS le logo */
   mix-blend-mode: screen;
-  opacity: 0.45;
-  filter: blur(1.4px);
-  -webkit-mask: radial-gradient(closest-side, transparent 76%, #000 90%, transparent 100%);
-  mask: radial-gradient(closest-side, transparent 76%, #000 90%, transparent 100%);
+  opacity: 0.34;
+  -webkit-mask: radial-gradient(closest-side, transparent 80%, #000 92%, transparent 100%);
+  mask: radial-gradient(closest-side, transparent 80%, #000 92%, transparent 100%);
   background: conic-gradient(from 0deg,
     rgba(139, 92, 246, 0) 0deg,
     rgba(139, 92, 246, 0.55) 44deg,
@@ -340,27 +371,29 @@
 }
 
 /* Couche "verre" sous le logo : reflet spéculaire blanc (haut-gauche) +
-   réflexion colorée par l'état (bas-droite). La couleur ne touche que le verre. */
+   réflexion colorée par l'état (bas-droite). Blancs adoucis pour éviter
+   l'effet laiteux — la couleur ne touche que le verre, jamais le logo. */
 .mzia-orb__lens {
   position: absolute; inset: 0; border-radius: 50%; pointer-events: none; z-index: 1;
   background:
-    radial-gradient(120% 14% at 50% 1%, rgba(255, 255, 255, 0.9), transparent 62%),
-    radial-gradient(62% 46% at 30% 22%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 62%),
-    radial-gradient(70% 60% at 76% 84%, color-mix(in srgb, var(--orb-color) 30%, transparent), transparent 66%);
+    radial-gradient(120% 14% at 50% 1%, rgba(255, 255, 255, 0.75), transparent 60%),
+    radial-gradient(62% 46% at 30% 22%, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0) 60%),
+    radial-gradient(70% 60% at 76% 84%, color-mix(in srgb, var(--orb-color) 24%, transparent), transparent 64%);
   transition: background 600ms ease;
 }
 
-/* Logo : identique (aucun filtre de couleur), agrandi, suspendu par une ombre
-   portée en deux plans (proche + lointaine) → il flotte au-dessus du verre,
-   jamais collé, jamais plat. Jamais de blur/glow/hue sur le dessin. */
+/* Logo : identique (aucun filtre de couleur ni de flou), suspendu par une
+   double ombre portée LÉGÈRE (proche + lointaine). Le fichier doit être un
+   SVG — ou à défaut un PNG ≥ 2048×2048 servi via srcSet @2x (voir .tsx) —
+   pour rester parfaitement net sur Retina/HiDPI. */
 .mzia-orb__logo {
   position: relative; z-index: 2;
   width: var(--logo-size); height: var(--logo-size);
   object-fit: contain;
   user-select: none; -webkit-user-drag: none; pointer-events: none;
   filter:
-    drop-shadow(0 4px 6px rgba(30, 20, 70, 0.16))
-    drop-shadow(0 1px 2px rgba(30, 20, 70, 0.09));
+    drop-shadow(0 3px 5px rgba(30, 20, 70, 0.14))
+    drop-shadow(0 1px 1.5px rgba(30, 20, 70, 0.08));
 }
 
 /* Balayage lumineux de verre poli, toutes les ~7 s, quasi imperceptible. */
@@ -372,20 +405,79 @@
   content: '';
   position: absolute; top: -25%; left: 0;
   width: 42%; height: 150%;
-  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.5), transparent);
   transform: translateX(-180%) rotate(8deg);
   opacity: 0;
   animation: mzia-sweep 7s ease-in-out infinite;
-}
-@keyframes mzia-disc-breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.01); }
 }
 @keyframes mzia-sweep {
   0% { transform: translateX(-180%) rotate(8deg); opacity: 0; }
   6% { opacity: 0.4; }
   15% { transform: translateX(320%) rotate(8deg); opacity: 0; }
   100% { transform: translateX(320%) rotate(8deg); opacity: 0; }
+}
+
+/* =========================================================================
+   VARIANTE 'image' — orbe sombre fournie en fichier
+   =========================================================================
+   L'image contient déjà la sphère, l'anneau lumineux et le logo. Toute la
+   fabrication CSS du « verre blanc » doit donc être neutralisée, sinon elle se
+   superpose : liseré blanc, reflets internes, diffraction spectrale et ombre
+   portée claire dessineraient un halo laiteux autour d'une sphère noire.
+   En revanche les couches d'ÉTAT (auras, ondes, particules, anneaux) sont
+   conservées telles quelles — c'est le retour visuel du Copilot.
+   ========================================================================= */
+
+.mzia-orb[data-variant='image'] .mzia-orb__disc {
+  /* Le disque n'est plus qu'un cadre de positionnement. */
+  background: none;
+  overflow: visible;   /* l'image porte son propre halo, ne pas le clipper */
+  /* Seule la lumière d'état est gardée, en glow diffus derrière la sphère. */
+  box-shadow: 0 0 32px 2px color-mix(in srgb, var(--orb-color) 20%, transparent);
+  transition: box-shadow 700ms ease;
+}
+
+/* Diffraction spectrale : pensée pour un bord de verre, illisible ici. */
+.mzia-orb[data-variant='image'] .mzia-orb__disc::after { content: none; }
+
+/* Échelle de l'image dans le disque. La sphère n'occupe qu'environ 56 % de la
+   largeur du PNG (le reste est du vide) : sans agrandissement, elle paraît
+   perdue au centre des anneaux animés. Un seul curseur à ajuster ici. */
+.mzia-orb[data-variant='image'] { --orb-image-scale: 172%; }
+
+.mzia-orb[data-variant='image'] .mzia-orb__logo {
+  width: var(--orb-image-scale);
+  height: var(--orb-image-scale);
+
+  /* ⚠️ CONTOURNEMENT — le damier de transparence est INCRUSTÉ dans les pixels
+     du PNG (fichier exporté à plat, alpha perdu). Aucun navigateur n'affiche
+     de damier pour de la transparence : ce qu'on voit est bien de l'image.
+     Ce masque circulaire découpe la sphère et son halo, ce qui élimine le
+     carré ; il subsiste un mince liseré de damier au bord du dégradé.
+     CORRECTIF RÉEL : réexporter orbe-mimmozia-noir.png en PNG-24 avec canal
+     alpha (ne pas aplatir l'arrière-plan). Ce masque pourra alors être retiré,
+     ou conservé sans effet visible. */
+  -webkit-mask: radial-gradient(closest-side, #000 62%, rgba(0,0,0,0.6) 70%, transparent 76%);
+  mask: radial-gradient(closest-side, #000 62%, rgba(0,0,0,0.6) 70%, transparent 76%);
+
+  /* Les ombres portées servaient à « suspendre » un logo plat au-dessus du
+     verre. Sur une sphère déjà ombrée, elles salissent le bord. */
+  filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.35));
+}
+
+/* Balayage de verre poli : trop marqué sur du sombre, on l'atténue sans le
+   supprimer — il garde l'orbe « vivante » entre deux états. */
+.mzia-orb[data-variant='image'] .mzia-orb__sweep::before {
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.16), transparent);
+}
+
+/* Les états success/error redéfinissent le box-shadow du verre blanc plus bas
+   dans ce fichier : on les neutralise ici aussi, glow d'état uniquement. */
+.mzia-orb[data-variant='image'][data-state='error'] .mzia-orb__disc {
+  box-shadow: 0 0 26px 1px color-mix(in srgb, var(--orb-color) 22%, transparent);
+}
+.mzia-orb[data-variant='image'][data-state='success'] .mzia-orb__disc {
+  box-shadow: 0 0 40px 4px color-mix(in srgb, var(--orb-color) 28%, transparent);
 }
 
 /* ---- PULSATIONS (searching) -------------------------------------------- */
@@ -407,8 +499,8 @@
   50% { transform: translateY(-2%) scale(1.08); }
 }
 @keyframes mzia-aura-drift {
-  0%, 100% { opacity: calc(0.16 * var(--aura-strength)); }
-  50% { opacity: calc(0.205 * var(--aura-strength)); }
+  0%, 100% { opacity: calc(0.11 * var(--aura-strength)); }
+  50% { opacity: calc(0.145 * var(--aura-strength)); }
 }
 @keyframes mzia-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes mzia-spin-rev { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
@@ -435,19 +527,21 @@
 .mzia-orb[data-state='responding'] .mzia-orb__aura--1 { animation-name: mzia-breathe-rise, mzia-aura-drift; }
 .mzia-orb[data-state='error'] .mzia-orb__disc {
   box-shadow:
-    0 12px 34px rgba(30, 20, 70, 0.17),
-    0 0 0 1px rgba(255, 255, 255, 0.9),
-    0 0 16px 0 color-mix(in srgb, var(--orb-color) 20%, transparent),
-    inset 0 1px 2px rgba(255, 255, 255, 0.95),
-    inset 0 -7px 16px rgba(30, 20, 70, 0.07);
+    0 10px 28px rgba(30, 20, 70, 0.16),
+    0 0 0 1px rgba(255, 255, 255, 0.95),
+    0 0 0 1.5px color-mix(in srgb, var(--orb-color) 22%, transparent),
+    0 0 12px 0 color-mix(in srgb, var(--orb-color) 13%, transparent),
+    inset 0 1px 1px rgba(255, 255, 255, 0.95),
+    inset 0 -6px 14px rgba(30, 20, 70, 0.06);
 }
 .mzia-orb[data-state='success'] .mzia-orb__disc {
   box-shadow:
-    0 12px 34px rgba(30, 20, 70, 0.17),
-    0 0 0 1px rgba(255, 255, 255, 0.9),
-    0 0 40px 5px color-mix(in srgb, var(--orb-color) 34%, transparent),
-    inset 0 1px 2px rgba(255, 255, 255, 0.95),
-    inset 0 -7px 16px rgba(30, 20, 70, 0.07);
+    0 10px 28px rgba(30, 20, 70, 0.16),
+    0 0 0 1px rgba(255, 255, 255, 0.95),
+    0 0 0 1.5px color-mix(in srgb, var(--orb-color) 26%, transparent),
+    0 0 26px 2px color-mix(in srgb, var(--orb-color) 22%, transparent),
+    inset 0 1px 1px rgba(255, 255, 255, 0.95),
+    inset 0 -6px 14px rgba(30, 20, 70, 0.06);
 }
 
 /* ---- Mouvement réduit --------------------------------------------------- */
@@ -458,11 +552,12 @@
   }
   /* les pseudo-éléments ne sont pas couverts par `*` → on les coupe ici */
   .mzia-orb__particle::before,
-  .mzia-orb__disc::after { animation: none !important; }
+  .mzia-orb__disc::after,
+  .mzia-orb__sweep::before { animation: none !important; }
   .mzia-orb__aura--3 { animation: mzia-aura-fade 6s ease-in-out infinite !important; }
   @keyframes mzia-aura-fade {
-    0%, 100% { opacity: calc(0.1 * var(--aura-strength)); }
-    50% { opacity: calc(0.16 * var(--aura-strength)); }
+    0%, 100% { opacity: calc(0.07 * var(--aura-strength)); }
+    50% { opacity: calc(0.11 * var(--aura-strength)); }
   }
   /* le flux reste présent, seule son opacité varie très légèrement */
   .mzia-orb__energy-flow::before {

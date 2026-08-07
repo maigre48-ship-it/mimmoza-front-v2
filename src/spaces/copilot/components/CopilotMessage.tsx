@@ -1,6 +1,9 @@
 // src/spaces/copilot/components/CopilotMessage.tsx
 import type { ChatMessage } from '../types/copilot.types';
 import { CopilotToolCallCard } from './CopilotToolCallCard';
+import { CopilotActionCard } from './CopilotActionCard';
+import { isActionTool, readAction, sameAction } from '../actions/copilotActions';
+import { useCopilotStore } from '../store/copilotStore';
 import { COPILOT_THEME as T } from './copilotTheme';
 
 // Rendu markdown minimal (gras, titres, listes) sans dépendance externe.
@@ -19,6 +22,7 @@ function renderLight(text: string): string {
 
 export function CopilotMessage({ message }: { message: ChatMessage }) {
   const isUser = message.role === 'user';
+  const actionRuns = useCopilotStore((s) => s.actionRuns);
 
   if (isUser) {
     return (
@@ -38,7 +42,28 @@ export function CopilotMessage({ message }: { message: ChatMessage }) {
     <div style={{ margin: '10px 0' }}>
       {message.toolCalls.length > 0 && (
         <div style={{ marginBottom: 8 }}>
-          {message.toolCalls.map((tc) => <CopilotToolCallCard key={tc.id} call={tc} />)}
+          {message.toolCalls.map((tc) => {
+            // Un outil d'action ne raconte pas ce qu'il a lu : il propose de
+            // faire quelque chose. Tant qu'il tourne, on garde la carte
+            // technique ; dès qu'il a répondu, on rend la carte d'action.
+            if (isActionTool(tc.name) && tc.status !== 'running') {
+              const action = readAction(tc.output);
+              if (action) {
+                // Si cette action a déjà été tranchée, la carte affiche le
+                // résultat au lieu de reproposer — et ne se relance pas.
+                const past = actionRuns.find((r) => sameAction(r, message.id, action));
+                return (
+                  <CopilotActionCard
+                    key={tc.id}
+                    action={action}
+                    messageId={message.id}
+                    run={past}
+                  />
+                );
+              }
+            }
+            return <CopilotToolCallCard key={tc.id} call={tc} />;
+          })}
         </div>
       )}
       {message.text && (

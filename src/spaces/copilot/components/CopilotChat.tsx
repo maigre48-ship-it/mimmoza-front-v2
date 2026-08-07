@@ -16,9 +16,13 @@ export function CopilotChat({
   hideQuickQuestions?: boolean;
 } = {}) {
   const { messages, sendMessage, cancel, isStreaming, mode, setMode, loadingMessages } = useCopilot();
-  const { buildContext } = useCopilotContext();
+  // `vertical` est désormais une valeur mémorisée exposée par le hook.
+  // AVANT : `buildContext().vertical` était évalué à chaque rendu — donc à
+  // chaque paquet de tokens pendant le streaming — pour lire un seul champ.
+  // Chaque appel parcourait tout le localStorage deux fois, désérialisait deux
+  // snapshots et imprimait douze lignes de trace. Voir useCopilotContext.
+  const { vertical } = useCopilotContext();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const vertical = buildContext().vertical;
 
   // Mode effectif : si forceMode est fourni (ex. MimmozIA en "advanced"),
   // il prime sur le mode global du store — sans jamais écrire dans le store,
@@ -27,11 +31,16 @@ export function CopilotChat({
 
   // Si le mode est forcé, on envoie toujours dans ce mode (setMode reste global,
   // donc on passe par un sendMessage qui garantit le bon mode à l'appel).
-  const handleSend = (text: string) => {
+  // V1.8 : `options` relaie les pièces jointes du composeur. Sans ce paramètre,
+  // les fichiers joints étaient silencieusement perdus à l'envoi.
+  const handleSend = (
+    text: string,
+    options?: Parameters<typeof sendMessage>[1],
+  ) => {
     if (forceMode && mode !== forceMode) {
       setMode(forceMode);
     }
-    sendMessage(text);
+    sendMessage(text, options);
   };
 
   useEffect(() => {
@@ -67,7 +76,7 @@ export function CopilotChat({
       <CopilotInput
         mode={effectiveMode}
         onChangeMode={setMode}
-        onSend={(t) => handleSend(t)}
+        onSend={(t, options) => handleSend(t, options)}
         onCancel={cancel}
         isStreaming={isStreaming}
         hideModeSelector={Boolean(forceMode)}

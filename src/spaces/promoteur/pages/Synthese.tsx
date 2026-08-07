@@ -2,16 +2,15 @@
 // v2 — Hero v2 : PromoteurPageHero (design unifié Promoteur)
 
 import React from "react";
-import { useSearchParams } from "react-router-dom";
 import { PromoteurPageHero } from "../shared/components/PromoteurPageHero";
 import { usePromoteurStudy } from "../shared/usePromoteurStudy";
+import { usePromoteurStudyId } from "../shared/usePromoteurStudyId";
 import { PromoteurSynthesePage } from "./PromoteurSynthesePage";
 
 // ---- Page -------------------------------------------------------------------
 
 const PromoteurSynthese: React.FC = () => {
-  const [searchParams] = useSearchParams();
-  const studyId = searchParams.get("study");
+  const studyId = usePromoteurStudyId();
   const { study, loadState } = usePromoteurStudy(studyId);
 
   if (loadState === "loading") {

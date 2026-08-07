@@ -7,7 +7,7 @@
 //                sans dépendre du montage du simulateur ni d'un alias d'import.
 // =============================================================================
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useCopilotStore } from '../store/copilotStore';
 import type {
   MimmozaContext,
@@ -38,6 +38,24 @@ function inferVerticalFromRoute(route: string): Vertical | undefined {
   }
   return undefined;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Journalisation de mise au point (opt-in explicite)                 */
+/* ------------------------------------------------------------------ */
+// Ces traces étaient conditionnées à `import.meta.env.DEV`, donc actives en
+// permanence en développement. Or buildContext est appelé à chaque envoi ET
+// (jusqu'au correctif de CopilotChat) à chaque rendu : la console recevait des
+// dizaines de blocs de douze lignes par message, rendant illisible tout le
+// reste. On passe en opt-in : dans la console, `localStorage.setItem(
+// 'mimmoza.copilot.debug', '1')` puis rechargement.
+const CONTEXT_DEBUG = (() => {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem('mimmoza.copilot.debug') === '1';
+  } catch {
+    return false;
+  }
+})();
 
 /* ------------------------------------------------------------------ */
 /*  Budget travaux : lecture directe localStorage (zéro dépendance)    */
@@ -179,8 +197,8 @@ export function useCopilotContext() {
       };
     }
 
-    // ── DEBUG LOT 6/7 — à supprimer après validation ──────────────────────────
-    if (import.meta.env.DEV) {
+    // ── DEBUG LOT 6/7 — activé via localStorage 'mimmoza.copilot.debug' = '1'
+    if (CONTEXT_DEBUG) {
       console.log('[COPILOT DEBUG] buildContext appelé');
       console.log('[COPILOT DEBUG] contextHints.predictive_snapshot:', contextHints.predictive_snapshot);
       console.log('[COPILOT DEBUG] sources_count:', contextHints.predictive_snapshot?.sources_count);
@@ -209,7 +227,7 @@ export function useCopilotContext() {
           : contextHints.valuation_engine ?? null,
     };
 
-    if (import.meta.env.DEV) {
+    if (CONTEXT_DEBUG) {
       console.log('[COPILOT DEBUG] ctx.predictive_snapshot présent:', !!ctx.predictive_snapshot);
       console.log('[COPILOT DEBUG] ctx.predictive_snapshot.travaux_budget:', ctx.predictive_snapshot?.travaux_budget);
       console.log('[COPILOT DEBUG] ctx.valuation_engine présent:', !!ctx.valuation_engine);
@@ -218,5 +236,29 @@ export function useCopilotContext() {
     return ctx;
   }, [contextHints]);
 
-  return { buildContext, contextHints, setContextHints };
+  /**
+   * Verticale seule, mémorisée.
+   *
+   * `CopilotChat` faisait `buildContext().vertical` DANS SON CORPS DE RENDU pour
+   * lire ce seul champ. À chaque rendu — donc à chaque paquet de tokens pendant
+   * le streaming — cela déclenchait : deux parcours complets du localStorage
+   * (findStorageKey boucle sur toutes les clés, une fois par suffixe), deux
+   * JSON.parse de snapshots entiers, la construction de l'objet contexte, et
+   * douze console.log. D'où les ~60 blocs identiques observés en console pour
+   * une seule réponse.
+   *
+   * Cette valeur ne dépend que de la verticale annoncée par le store et de la
+   * route : aucune lecture de localStorage, aucune allocation d'objet.
+   *
+   * ⚠️ La route est lue via window.location et n'est pas réactive : un
+   * changement de route sans remontage ne la recalculera pas. C'est sans effet
+   * ici (le passage d'un espace à l'autre remonte l'arbre), mais à savoir si ce
+   * hook est réutilisé ailleurs — il faudrait alors passer par useLocation().
+   */
+  const vertical = useMemo<Vertical>(() => {
+    const route = typeof window !== 'undefined' ? window.location.pathname : '/';
+    return contextHints.vertical ?? inferVerticalFromRoute(route) ?? 'generique';
+  }, [contextHints.vertical]);
+
+  return { buildContext, vertical, contextHints, setContextHints };
 }

@@ -24,7 +24,15 @@ body {
   html::-webkit-scrollbar { display: none !important; }
   body { overflow: hidden !important; }
 }
+/* Une seule barre de défilement.
+   `overflow-x: hidden` sur html ET body faisait des DEUX des conteneurs de
+   défilement : dès qu'un axe passe à une valeur non-`visible`, l'autre axe
+   bascule de `visible` à `auto`. Chacun affichait donc sa propre barre
+   verticale. `clip` bride le débordement horizontal sans créer de conteneur
+   scrollable — une seule barre, celle de la fenêtre. */
 html, body, #root {
   max-width: 100%;
-  overflow-x: hidden;
+}
+html {
+  overflow-x: clip;
 }

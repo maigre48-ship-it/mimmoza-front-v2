@@ -54,7 +54,10 @@ function deriveSourceStatuses(
   const hasMarche   = !!marcheSaved?.data;
   const hasRenta    = !!rentaSaved?.computed;
 
-  const hasGeorisques = !!(marcheSaved?.data as Record<string, unknown>)?.scores;
+  // L'objet `scores` de risk-study existe même quand tous ses champs sont null
+  // (v1.1.0). Une étude lancée sans qu'aucune source réponde n'est pas « ok ».
+  const georisquesScores = (marcheSaved?.data as Record<string, unknown>)?.scores as Record<string, unknown> | undefined;
+  const hasGeorisques = typeof georisquesScores?.global === "number";
   return {
     DVF:        hasMarche      ? "ok" : "waiting",
     PLU:        "waiting",
@@ -260,11 +263,19 @@ function deriveSourceMeta(
   if (name === "Géorisques" && data) {
     const scores = (data as Record<string,unknown>)?.scores as Record<string,unknown> | undefined;
     const global  = typeof scores?.global === "number" ? scores.global : null;
+    // risk-study v1.1.0 — `global === null` = aucun critère mesuré. Annoncer
+    // « Complète » / fiabilité « Haute » dans ce cas était le pire libellé
+    // possible : l'écran certifiait la qualité d'une donnée absente.
+    const mesures = typeof scores?.criteres_mesures === "number" ? scores.criteres_mesures : null;
+    const total   = typeof scores?.criteres_total === "number" ? scores.criteres_total : null;
+    const partiel = mesures != null && total != null && mesures < total;
     return {
       date:       dateStr ?? "—",
-      fraicheur:  "Élevée",
-      completude: "Complète",
-      fiabilite:  global != null ? `${global}/100` : "Haute",
+      fraicheur:  global == null ? "—" : "Élevée",
+      completude: global == null
+        ? "Aucun critère mesuré"
+        : partiel ? `Partielle (${mesures}/${total} critères)` : "Complète",
+      fiabilite:  global != null ? `${global}/100` : "Non mesurée",
     };
   }
 

@@ -3,13 +3,59 @@ import { AlertTriangle, Check, Info, Loader2, Wrench } from 'lucide-react';
 import type { ActiveToolCall } from '../types/copilot.types';
 import { COPILOT_THEME as T } from './copilotTheme';
 
+// Libellés lisibles. La table ne couvrait que 6 outils sur les 34 réellement
+// appelés : une conversation mélangeait « Comparables DVF » et
+// `get_monuments_historiques`, ce qui donnait l'impression que certains outils
+// étaient moins finis que d'autres. Liste établie sur les noms présents en base.
+//
+// Un nom absent d'ici s'affiche brut — c'est le repli voulu, pas une panne :
+// mieux vaut un nom technique qu'une carte anonyme.
 const TOOL_LABELS: Record<string, string> = {
-  get_parcel_summary:       'Résumé parcelle',
-  get_parcel_plu:           'Règles PLU',
-  get_dvf_comparables:      'Comparables DVF',
-  get_risks_georisques:     'Risques Géorisques',
-  compute_smartscore:       'SmartScore',
-  get_quick_market_insight: 'Analyse marché',
+  // Parcelle et urbanisme
+  get_parcel_summary:              'Résumé parcelle',
+  get_etude_parcelle:              'Étude parcelle',
+  get_parcel_plu:                  'Règles PLU',
+  get_zonage_plu:                  'Zonage PLU',
+  get_zonage_abc:                  'Zonage ABC',
+  get_prescriptions_urbanisme:     'Prescriptions d’urbanisme',
+  get_servitudes:                  'Servitudes',
+  get_monuments_historiques:       'Monuments historiques',
+  get_altimetrie:                  'Altimétrie',
+  get_assainissement:              'Assainissement',
+  get_classement_sonore:           'Classement sonore',
+
+  // Marché et valeur
+  get_quick_market_insight:        'Analyse marché',
+  get_etude_marche:                'Étude de marché',
+  get_dvf_comparables:             'Comparables DVF',
+  get_loyers_reference:            'Loyers de référence',
+  get_taxes_locales:               'Fiscalité locale',
+  recherche_biens:                 'Recherche de biens',
+
+  // Risques et bâti
+  get_risks_georisques:            'Risques Géorisques',
+  get_ppr_detail:                  'Détail PPR',
+  get_dpe_ademe:                   'DPE ADEME',
+  get_batiment_bdnb:               'Bâtiment BDNB',
+  get_sitadel:                     'Permis Sitadel',
+
+  // Coûts
+  get_couts_construction:          'Coûts de construction',
+  get_couts_renovation:            'Coûts de rénovation',
+
+  // Scoring
+  compute_smartscore:              'SmartScore',
+
+  // Veille et watchlists
+  creer_zone_veille:               'Création zone de veille',
+  desactiver_zone_veille:          'Désactivation zone de veille',
+  lister_zones_veille:             'Zones de veille',
+  creer_watchlist:                 'Création watchlist',
+  lister_watchlists:               'Watchlists',
+  creer_veille_appels_offres:      'Création veille appels d’offres',
+  lister_veilles_appels_offres:    'Veilles appels d’offres',
+  lister_nouveautes_appels_offres: 'Nouveaux appels d’offres',
+  get_appels_offres:               'Appels d’offres',
 };
 
 function statusVisual(status: string) {

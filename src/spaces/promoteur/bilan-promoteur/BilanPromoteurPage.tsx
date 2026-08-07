@@ -15,7 +15,6 @@
 import * as turf from "@turf/turf";
 import type { Feature, FeatureCollection, Geometry } from "geojson";
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { PromoteurSynthesePage } from "../pages/PromoteurSynthesePage";
 import type { Implantation2DSnapshot } from "../plan2d/implantation2d.snapshot";
 import {
@@ -30,6 +29,8 @@ import {
   PromoteurPageHero,
 } from "../shared/components/PromoteurPageHero";
 import { ACCENT_PRO } from "../shared/promoteurDesign.tokens";
+import { hashInputs, isAgentRun, setStepStatus } from "../shared/promoteurChain";
+import { usePromoteurStudyId } from "../shared/usePromoteurStudyId";
 import { getSnapshot, patchModule } from "../shared/promoteurSnapshot.store";
 import { usePromoteurStudy } from "../shared/usePromoteurStudy";
 import {
@@ -371,8 +372,7 @@ const RehabBanner: React.FC<{ rehabTotal: number; surfaceM2: number; onClear: ()
 export const BilanPromoteurPage: React.FC = () => {
   const buildings = usePromoteurProjectStore((s) => s.buildings);
   const parkings  = usePromoteurProjectStore((s) => s.parkings);
-  const [searchParams] = useSearchParams();
-  const studyId = searchParams.get("study");
+  const studyId = usePromoteurStudyId();
   const { study, loadState, patchBilan } = usePromoteurStudy(studyId);
 
   const prevStudyIdRef = useRef<string | null>(null);
@@ -867,10 +867,20 @@ export const BilanPromoteurPage: React.FC = () => {
     let scoreRisque: number; let riskInsufficient = false;
     const cats = (risquesFromSnap?.categories ?? []) as Array<{ level?: string }>;
     const globalRisk = risquesFromSnap?.scores?.global;
-    if (Array.isArray(cats) && cats.length > 0) {
-      const flagged = cats.filter((c) => c.level && c.level !== "nul" && c.level !== "inconnu");
+    // risk-study v1.1.0 — une catégorie non mesurée sort avec level 'inconnu'.
+    // L'ancien test `cats.length > 0` suffisait à entrer dans cette branche : si
+    // les quatre catégories étaient 'inconnu', `flagged` était vide et le score
+    // valait 100/100 — soit « aucun risque » certifié sur zéro donnée, propagé
+    // au score de faisabilité (·0,2) sans même lever riskInsufficient.
+    // On exige désormais au moins UNE catégorie réellement mesurée.
+    const catsMesurees = cats.filter((c) => c.level && c.level !== "inconnu");
+    if (catsMesurees.length > 0) {
+      const flagged = catsMesurees.filter((c) => c.level !== "nul");
       const fort = flagged.filter((c) => c.level === "fort" || c.level === "élevé" || c.level === "tres_fort").length;
       scoreRisque = Math.round(clamp(100 - flagged.length * 12 - fort * 10, 0, 100));
+      // Note partielle : signalée comme insuffisante si la moitié ou plus des
+      // catégories manque, pour ne pas la présenter comme un constat ferme.
+      if (catsMesurees.length * 2 <= cats.length) riskInsufficient = true;
     } else if (typeof globalRisk === "number") {
       scoreRisque = Math.round(clamp(globalRisk, 0, 100));
     } else { scoreRisque = 50; riskInsufficient = true; }
@@ -1103,6 +1113,57 @@ export const BilanPromoteurPage: React.FC = () => {
       }
     } catch (err) { console.warn("[BilanPromoteurPage] Erreur persistance:", err); }
   }, [computed, ass, surfaceVendableM2, footprintBuildingsM2, footprintParkingsM2, sdpEstimatedM2, habitableEstimatedM2, buildingKind, floorsSpec, nbLogementsEffectif, levelsCount, totalHeightM, sensitivity, feasibility, regionInfo, studyId, patchBilan, terrassementHint, massing]);
+
+  // ── Chaîne d'opération : l'étape `bilan` ──────────────────────────────────
+  // Cette page n'a pas de bouton « calculer » : le bilan se recalcule à chaque
+  // frappe dans les hypothèses. On ne peut donc pas écrire l'étape à chaque
+  // rendu — la synthèse en aval clignoterait entre `ready` et `stale`.
+  // D'où le double garde-fou : une temporisation de 1,5 s, et un hash des
+  // entrées qui coupe court quand rien n'a réellement changé.
+  const bilanStepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bilanStepHashRef  = useRef<string | null>(null);
+
+  const bilanStepInputs = useMemo(() => ({
+    ass, surfaceVendableM2, sdpEstimatedM2, habitableEstimatedM2,
+    footprintBuildingsM2, footprintParkingsM2,
+    nbLogementsEffectif, levelsCount, totalHeightM, buildingKind, floorsSpec,
+  }), [ass, surfaceVendableM2, sdpEstimatedM2, habitableEstimatedM2, footprintBuildingsM2, footprintParkingsM2, nbLogementsEffectif, levelsCount, totalHeightM, buildingKind, floorsSpec]);
+
+  useEffect(() => {
+    if (!studyId) return;
+    if (!(surfaceVendableM2 > 0 && computed.caTotal > 0)) return;
+
+    // On annule d'abord, on décide ensuite : si l'utilisateur modifie une
+    // valeur puis revient à la précédente en moins de 1,5 s, le hash redevient
+    // celui déjà enregistré — mais un minuteur reste armé sur l'état
+    // intermédiaire et écrirait un résumé qui ne correspond à rien.
+    if (bilanStepTimerRef.current) clearTimeout(bilanStepTimerRef.current);
+
+    const hash = hashInputs(bilanStepInputs);
+    if (bilanStepHashRef.current === hash) return;
+
+    bilanStepTimerRef.current = setTimeout(async () => {
+      bilanStepHashRef.current = hash;
+      await setStepStatus({
+        studyId,
+        step: "bilan",
+        status: "ready",
+        producedBy: isAgentRun() ? "agent" : "user",
+        inputsHash: hash,
+        summary: {
+          ca_total: Math.round(computed.caTotal),
+          cout_total: Math.round(computed.coutTotal),
+          marge_nette: Math.round(computed.marge),
+          marge_pct: Number(computed.margePct.toFixed(1)),
+          tri_pct: Number.isFinite(feasibility.triPromoteurPct) ? Number(feasibility.triPromoteurPct.toFixed(1)) : null,
+          score_global: feasibility.scoreGlobal,
+          decision: feasibility.decisionPromoteur,
+        },
+      });
+    }, 1_500);
+
+    return () => { if (bilanStepTimerRef.current) clearTimeout(bilanStepTimerRef.current); };
+  }, [studyId, bilanStepInputs, computed, feasibility, surfaceVendableM2]);
 
   // ── UI ────────────────────────────────────────────────────────────────────
   const grouped = useMemo(() => { const map = new Map<string, Line[]>(); for (const l of computed.lines) { if (!map.has(l.section)) map.set(l.section, []); map.get(l.section)!.push(l); } return map; }, [computed.lines]);

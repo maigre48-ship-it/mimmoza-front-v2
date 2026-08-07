@@ -5,7 +5,11 @@ import { useCopilot } from '../hooks/useCopilot';
 // Visuel FIXE de l'orbe (exporte dans /public). Bien plus net qu'une orbe
 // "live" reduite a ~50px, dont les couches (halos, particules, anneaux)
 // disparaissent en petit. Remplace le chemin par ton fichier reel.
-const ORB_SRC = '/Orbe/orbe-mimmozia.png';
+// Orbe sombre (même visuel que l'orbe centrale de MimmozIA, cf. MimmozIAOrb).
+// ⚠️ Le damier de transparence est incrusté dans ce PNG (export à plat) : d'où
+// le masque circulaire appliqué côté CSS. À retirer une fois le fichier
+// réexporté en PNG-24 avec canal alpha.
+const ORB_SRC = '/Orbe/orbe-mimmozia-noir.png';
 
 export function CopilotFloatingButton() {
   const { toggleCopilot, isOpen } = useCopilot();
