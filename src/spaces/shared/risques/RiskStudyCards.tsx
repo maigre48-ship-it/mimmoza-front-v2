@@ -65,6 +65,7 @@ import type {
   MvtData,
   RadonData,
   RiskLevel,
+  RiskScores,
   SeismeData,
   SisData,
 } from "./riskStudy.types";
@@ -185,12 +186,23 @@ export const CategoryScoreBar: React.FC<{
 
   return (
     <div style={{ marginBottom: "16px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <Icon size={16} color={color} />
-          <span style={{ fontSize: "13px", fontWeight: 600, color: "#1e293b" }}>{name}</span>
+      {/* Le décompte de critères vivait sur cette ligne, entre le badge et le
+          score. Dans un panneau étroit — le cas normal, c'est une colonne
+          latérale — les trois éléments se chevauchaient et devenaient
+          illisibles, d'autant que « Risques Géotechniques » et « non mesuré »
+          sont les deux libellés les plus longs et tombent ensemble. Il est
+          descendu sous la barre, où il a la largeur pour lui. */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+          <Icon size={16} color={color} style={{ flexShrink: 0 }} />
+          <span style={{
+            fontSize: "13px", fontWeight: 600, color: "#1e293b",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>
+            {name}
+          </span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0, whiteSpace: "nowrap" }}>
           <span style={{
             fontSize: "11px", padding: "2px 8px",
             background: getRiskBg(level), color,
@@ -198,11 +210,6 @@ export const CategoryScoreBar: React.FC<{
           }}>
             {getRiskLabel(level)}
           </span>
-          {partiel && (
-            <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 500 }}>
-              {criteresMesures}/{criteresTotal} critères
-            </span>
-          )}
           <span style={{
             fontSize: nonMesure ? "11px" : "14px",
             fontWeight: 700,
@@ -223,9 +230,52 @@ export const CategoryScoreBar: React.FC<{
           transition: "width 0.8s ease-out",
         }} />
       </div>
+      {partiel && (
+        <div style={{ fontSize: "10px", color: "#64748b", fontWeight: 500, marginTop: "4px" }}>
+          {criteresMesures}/{criteresTotal} critères mesurés
+        </div>
+      )}
     </div>
   );
 };
+
+// ============================================
+// PROVENANCE DU SCORE
+// ============================================
+/**
+ * Sur quoi la note repose, et ce qu'elle ne dit pas.
+ *
+ * Ce pavé n'existait que sur l'écran promoteur ; l'investisseur ne voyait que
+ * le décompte de critères, sans la phrase qui explique pourquoi une catégorie
+ * absente ne pénalise ni ne flatte le score. Le raisonnement qui rend la note
+ * honnête faisait donc défaut à celui qui investit.
+ *
+ * Destiné à un fond sombre (les deux hero sont en dégradé) : il hérite de la
+ * couleur du texte parent plutôt que d'en imposer une.
+ */
+export const ScoreProvenanceNote: React.FC<{ scores: RiskScores }> = ({ scores }) => (
+  <div style={{
+    marginTop: "24px", paddingTop: "18px",
+    borderTop: "1px solid rgba(255,255,255,0.15)",
+    fontSize: "12px", lineHeight: 1.6, opacity: 0.85,
+  }}>
+    {scores.criteres_total != null && (
+      <div style={{ marginBottom: "6px", fontWeight: 600 }}>
+        Note établie sur {scores.criteres_mesures ?? 0} critère(s) mesuré(s) sur {scores.criteres_total}.
+        {scores.categories_non_mesurees && scores.categories_non_mesurees.length > 0 && (
+          <> Non mesuré, donc exclu du score global : {scores.categories_non_mesurees.join(", ")}.</>
+        )}
+      </div>
+    )}
+    <div>
+      Une source publique muette ne vaut pas absence de risque : les critères non
+      mesurés sont écartés du calcul, jamais comptés comme favorables, et les poids
+      sont renormalisés sur les seules catégories mesurées. Cette étude décrit
+      l'exposition de la <strong>commune et de son environnement</strong> — elle ne
+      se substitue pas à une étude de sol ni à un diagnostic sur la parcelle.
+    </div>
+  </div>
+);
 
 // ============================================
 // INSIGHT CARD

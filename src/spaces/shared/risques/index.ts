@@ -10,17 +10,27 @@
 
 // ── État de la mutualisation ────────────────────────────────────────────────
 //   InvestisseurRisquesPanel v1.4.0 : types + helpers + cartes → socle. ✅
-//   RisquesPage v1.3.1          : helpers + niveauAleaToDb → socle. ✅
-//                                 types et cartes encore locaux. ⏳
-// RESTE À FAIRE : supprimer de RisquesPage ses interfaces locales et ses neuf
-// composants de présentation au profit de ceux d'ici. Tant que ce n'est pas
-// fait, `RiskStudyCards.tsx` et RisquesPage contiennent deux rendus jumeaux —
-// le socle ne protège de la divergence que les écrans qui le consomment.
-// Les cartes du socle vont plus loin que celles de RisquesPage sur trois
-// points, à reporter lors de la bascule : couverture GASPAR testée AVANT les
-// décomptes, décomptes de sources muettes rendus « — », et « Zone null - » /
-// « Classe null » supprimés.
+//   RisquesPage v1.4.0              : types + helpers + cartes → socle. ✅
+//
+// Les deux écrans consomment désormais le même exemplaire. RisquesPage a perdu
+// ses 21 interfaces locales et ses neuf cartes jumelles (2584 → ~1660 lignes),
+// et gagné au passage trois correctifs que seul le socle portait :
+//   • « Zone null - » (séisme) et « Classe null - » (radon) ne s'impriment plus ;
+//   • la couverture GASPAR est testée AVANT les décomptes ;
+//   • un décompte issu d'une source muette se rend « — », pas « 0 ».
+// Sa garde `pollution_sols` a été alignée sur celle d'Investisseur : « aucun
+// site pollué » n'est affirmé que si la base SIS a répondu.
+//
+// ── Reste à trancher ────────────────────────────────────────────────────────
+// Les deux écrans écrivent dans le même `patchModule("risks")` avec des
+// libellés différents : RisquesPage compose « Score sécurité: X/100 - Commune »
+// à la main, le socle expose `summarizeGlobalScore` qui rend « Étude de
+// risques : X/100 de sécurité », sans la commune. Unifier suppose de choisir
+// lequel des deux fait foi — arbitrage laissé ouvert, `summarizeGlobalScore`
+// n'est donc pas encore consommé par RisquesPage.
 
 export * from "./riskStudy.types";
 export * from "./riskDisplay";
 export * from "./RiskStudyCards";
+export * from "./RiskErrorBoundary";
+export * from "./riskReport";

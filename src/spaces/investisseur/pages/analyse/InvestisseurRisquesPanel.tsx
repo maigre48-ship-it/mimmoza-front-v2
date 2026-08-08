@@ -30,16 +30,12 @@ import {
   Activity,
   AlertOctagon,
   AlertTriangle,
-  Atom,
   Bug,
   CheckCircle,
-  ChevronDown, ChevronUp,
-  CircleDot, Compass,
+  Compass,
   Download,
-  Droplets,
   Factory,
   FileText,
-  Flame,
   Grid3X3,
   Info,
   Landmark,
@@ -48,14 +44,10 @@ import {
   MapPin,
   Mountain,
   Shield, ShieldAlert,
-  ShieldCheck,
-  ShieldOff,
-  Skull,
   Target,
   X
 } from "lucide-react";
-import type { ErrorInfo, ReactNode} from "react";
-import React, { Component, useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import type { LucideIcon } from "lucide-react";
@@ -92,25 +84,18 @@ import {
   InsightCard,
   NaturalRisksCard,
   PollutionCard,
+  RiskErrorBoundary,
+  openRiskReport,
   RiskGauge,
-  formatSourceCount,
-  getBankGradeColor,
-  getRiskBg,
-  getRiskColor,
-  getRiskLabel,
-  getScoreColor,
-  getVerdictConfig,
+  ScoreProvenanceNote,
+  extractDossierIdFromUrl,
   isLevelMeasured,
   isMeasured,
   niveauAleaToDb,
-  scoreBarWidth,
   summarizeGlobalScore,
 } from "@/spaces/shared/risques";
 
 import type {
-  Insight,
-  InsightType,
-  RiskLevel,
   RiskStudyApiResponse,
 } from "@/spaces/shared/risques";
 
@@ -134,40 +119,6 @@ const log = (prefix: string, message: string, data?: unknown) => {
 // `tsc` validait donc un rendu qui, à l'exécution, recevait `null` partout —
 // c'est exactement pourquoi le compilateur n'a jamais signalé les régressions.
 // La source unique est `@/spaces/shared/risques/riskStudy.types`.
-
-// ============================================
-// ERROR BOUNDARY
-// ============================================
-
-interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
-interface ErrorBoundaryProps { children: ReactNode; componentName?: string; }
-
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
-    return { hasError: true, error };
-  }
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error(`ErrorBoundary caught error in ${this.props.componentName}:`, error, errorInfo);
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{ padding: "40px", textAlign: "center", background: "#fef2f2", borderRadius: "12px", border: "1px solid #fecaca", margin: "20px" }}>
-          <AlertTriangle size={48} color="#dc2626" style={{ marginBottom: "16px" }} />
-          <h3 style={{ color: "#991b1b", marginBottom: "8px" }}>Erreur dans {this.props.componentName || 'un composant'}</h3>
-          <button onClick={() => this.setState({ hasError: false, error: null })} style={{ padding: "10px 20px", background: "#dc2626", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" }}>
-            Réessayer
-          </button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
 
 // ============================================
 // HELPERS
@@ -266,83 +217,17 @@ const RiskStudyResults: React.FC<{
   // d'une API muette étaient publiés comme des constats.
   const gasparMesure  = isMeasured(riskData.gaspar.coverage);
   const icpeMesure    = isLevelMeasured(riskData.icpe.risk_level) && isMeasured(riskData.icpe.coverage);
-  const sisMesure     = isLevelMeasured(riskData.sis.risk_level) && isMeasured(riskData.sis.coverage);
-  const cavitesMesure = isLevelMeasured(riskData.cavites.risk_level) && isMeasured(riskData.cavites.coverage);
-  const mvtMesure     = isLevelMeasured(riskData.mouvements_terrain.risk_level) && isMeasured(riskData.mouvements_terrain.coverage);
-
+  // -- Rapport PDF ---------------------------------------------------------
+  // v1.4.1 - Ce panel composait sa propre maquette, differente de celle du
+  // promoteur pour le meme document. Les deux viennent maintenant du socle ;
+  // seul l'accent de couleur et le libelle d'espace les distinguent.
   const handleGeneratePdf = useCallback(() => {
-    const verdict = getVerdictConfig(scores.global);
-    const scoreColor = getScoreColor(scores.global);
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) { alert('Autorisez les popups pour générer le PDF'); return; }
-    const fmtN =(n: number | null | undefined, d = 0) => n == null || isNaN(n) ? '—' : new Intl.NumberFormat('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
-    const fmtDist = (m: number | null | undefined) => m == null ? '—' : m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`;
-    const riskBadge = (level: RiskLevel) => { const c = getRiskColor(level); const b = getRiskBg(level); return `<span style="padding:3px 10px;background:${b};color:${c};border-radius:6px;font-size:11px;font-weight:600;">${getRiskLabel(level)}</span>`; };
-    const sectionTitle = (icon: string, title: string) => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;padding-bottom:10px;border-bottom:2px solid #e2e8f0;"><span style="font-size:18px;">${icon}</span><span style="font-size:17px;font-weight:700;color:#1e293b;">${title}</span></div>`;
-    const section = (content: string) => `<div style="background:white;border-radius:14px;padding:24px;margin-bottom:20px;border:1px solid #e2e8f0;page-break-inside:avoid;">${content}</div>`;
-    const kpiBox = (label: string, value: string, color = '#1e293b', sub = '') => `<div style="background:#f8fafc;border-radius:10px;padding:14px;text-align:center;border:1px solid #e2e8f0;"><div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:6px;">${label}</div><div style="font-size:22px;font-weight:800;color:${color};">${value}</div>${sub ? `<div style="font-size:10px;color:#94a3b8;margin-top:3px;">${sub}</div>` : ''}</div>`;
-    // Une section dont la source est muette le dit, au lieu d'imprimer des zéros.
-    const nonMesureRow = (source: string) => `<div style="padding:12px 14px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;color:#475569;">Non mesuré : ${source} n'a pas répondu lors de la génération de ce rapport. L'absence de donnée n'est pas une absence de risque.</div>`;
-    const insightRow = (type: InsightType, cat: string, msg: string) => { const cfg: Record<InsightType, {bg:string;border:string;dot:string}> = { critical:{bg:'#fef2f2',border:'#fecaca',dot:'#dc2626'}, warning:{bg:'#fef3c7',border:'#fcd34d',dot:'#f59e0b'}, positive:{bg:'#ecfdf5',border:'#a7f3d0',dot:'#10b981'}, info:{bg:'#f0f9ff',border:'#bae6fd',dot:'#0ea5e9'} }; const c = cfg[type]; return `<div style="padding:12px 14px;background:${c.bg};border:1px solid ${c.border};border-radius:8px;margin-bottom:8px;display:flex;gap:10px;align-items:flex-start;"><span style="width:8px;height:8px;border-radius:50%;background:${c.dot};margin-top:5px;flex-shrink:0;display:inline-block;"></span><div><span style="font-size:9px;font-weight:600;color:#64748b;text-transform:uppercase;">${cat}</span><p style="font-size:13px;color:#1e293b;margin:3px 0 0 0;line-height:1.5;">${msg}</p></div></div>`; };
-    // Une catégorie non mesurée : barre vide et mention explicite. L'ancienne
-    // version interpolait `null` et produisait `width:"null%"` — déclaration CSS
-    // invalide, ignorée par le moteur d'impression — puis affichait « null »
-    // comme s'il s'agissait d'une note.
-    const bar = (score: number | null, level: RiskLevel) => {
-      const c = getRiskColor(level);
-      if (score == null) {
-        return `<div style="display:flex;align-items:center;gap:10px;"><div style="flex:1;height:8px;background:#e2e8f0;border-radius:4px;"></div><span style="font-size:11px;font-weight:600;color:#94a3b8;min-width:70px;">non mesuré</span></div>`;
-      }
-      return `<div style="display:flex;align-items:center;gap:10px;"><div style="flex:1;height:8px;background:#e2e8f0;border-radius:4px;"><div style="width:${scoreBarWidth(score)};height:100%;background:${c};border-radius:4px;"></div></div><span style="font-size:13px;font-weight:700;color:${c};min-width:24px;">${score}</span></div>`;
-    };
-    const bankSection = bankScoring ? section(`${sectionTitle('🏦', 'Scoring Banque — Risques')}<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">${kpiBox('Score', String(bankScoring.score), getBankGradeColor(bankScoring.grade))}${kpiBox('Grade', bankScoring.grade, getBankGradeColor(bankScoring.grade))}${kpiBox('Niveau', bankScoring.level_label, '#1e293b')}${kpiBox('Confiance', Math.round(bankScoring.confidence * 100) + '%', '#6366f1')}</div>${bankScoring.rationale.slice(0, 3).map(r => insightRow('info', 'Banque', r)).join('')}`) : '';
-    const catnatRows = riskData.gaspar.catnat_events.slice(0, 10).map((e, i) => `<tr style="background:${i%2===0?'#f8fafc':'white'};"><td style="padding:8px 10px;font-size:12px;color:#1e293b;">${e.libelle_risque || '—'}</td><td style="padding:8px 10px;font-size:12px;color:#64748b;">${e.date_debut || '—'}</td><td style="padding:8px 10px;font-size:12px;color:#64748b;">${e.date_fin || '—'}</td></tr>`).join('');
-    const icpeRows = riskData.icpe.installations.slice(0, 10).map((inst, i) => `<tr style="background:${inst.seveso ? '#fef2f2' : i%2===0?'#f8fafc':'white'};"><td style="padding:8px 10px;font-size:12px;font-weight:600;color:#1e293b;">${inst.nom}</td><td style="padding:8px 10px;font-size:12px;color:#64748b;">${inst.activite || '—'}</td><td style="padding:8px 10px;font-size:12px;color:${inst.seveso ? '#dc2626' : '#64748b'};font-weight:${inst.seveso ? 600 : 400};">${inst.seveso || '—'}</td><td style="padding:8px 10px;font-size:12px;color:#64748b;">${fmtDist(inst.distance_m)}</td></tr>`).join('');
-    const htmlContent = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Étude de Risques — ${meta.commune_nom}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',Arial,sans-serif;background:#f8fafc;padding:40px;color:#1e293b;line-height:1.6}@media print{body{padding:20px;background:white}@page{margin:15mm}}table{width:100%;border-collapse:collapse}th{background:#f1f5f9;padding:10px 12px;font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;text-align:left}</style></head><body>
-    <div style="background:${headerGradient};border-radius:16px;padding:36px 40px;margin-bottom:28px;color:white;">
-      <div style="font-size:12px;opacity:0.6;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.08em;">Mimmoza · Étude de Risques</div>
-      <h1 style="font-size:32px;font-weight:800;margin-bottom:6px;">${meta.commune_nom}</h1>
-      <p style="font-size:14px;opacity:0.75;margin-bottom:28px;">${meta.region} · Département ${meta.departement} · Rayon ${meta.radius_km} km · v${data.version}</p>
-      <div style="display:grid;grid-template-columns:160px 1fr auto;gap:32px;align-items:center;">
-        <div style="text-align:center;background:rgba(255,255,255,0.1);border-radius:14px;padding:20px;">
-          <!-- « null » s'imprimait ici en 56 px, en tête du rapport remis au client. -->
-          <div style="font-size:56px;font-weight:800;color:${scoreColor};line-height:1;">${scores.global ?? '—'}</div>
-          <div style="font-size:12px;opacity:0.6;margin-bottom:8px;">${scores.global == null ? 'non mesuré' : '/100'}</div>
-          <div style="padding:6px 14px;background:${verdict.bg};color:${verdict.color};border-radius:8px;font-weight:700;font-size:13px;display:inline-block;">${verdict.label}</div>
-        </div>
-        <div style="background:rgba(255,255,255,0.08);border-radius:14px;padding:20px;">
-          <div style="font-size:11px;opacity:0.65;font-weight:600;text-transform:uppercase;margin-bottom:14px;">Scores par catégorie</div>
-          ${categories.map(cat => `<div style="margin-bottom:12px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;"><span style="font-size:12px;opacity:0.85;">${cat.name}</span>${riskBadge(cat.level)}</div>${bar(cat.score, cat.level)}</div>`).join('')}
-        </div>
-        <div style="background:rgba(255,255,255,0.08);border-radius:14px;padding:20px;min-width:180px;">
-          <div style="font-size:11px;opacity:0.65;font-weight:600;text-transform:uppercase;margin-bottom:14px;">Données clés</div>
-          ${/* Un « 0 » ne se publie que si la source a répondu : sinon « — ».
-                Ces six chiffres sont ceux que le lecteur retient du rapport. */[
-            {label:'Arrêtés CATNAT',   value: gasparMesure ? String(riskData.gaspar.catnat_count) : '—'},
-            {label:'PPR applicables',  value: gasparMesure ? String(riskData.gaspar.ppr_count) : '—'},
-            {label:'Sites SEVESO',     value: icpeMesure ? String(riskData.icpe.seveso_haut_count+riskData.icpe.seveso_bas_count) : '—'},
-            {label:'Sites pollués SIS',value: formatSourceCount(riskData.sis.count, riskData.sis.risk_level, riskData.sis.coverage)},
-            {label:'Zone sismique',    value: String(riskData.seisme.zone??'—')},
-            {label:'Classe radon',     value: String(riskData.radon.classe_potentiel??'—')},
-          ].map(k=>`<div style="margin-bottom:8px;"><div style="font-size:10px;opacity:0.6;">${k.label}</div><div style="font-size:15px;font-weight:700;">${k.value}</div></div>`).join('')}
-        </div>
-      </div>
-    </div>
-    ${bankSection}
-    ${(criticalInsights.length > 0 || warningInsights.length > 0 || positiveInsights.length > 0) ? section(`<div style="display:grid;grid-template-columns:repeat(${[criticalInsights,warningInsights,positiveInsights].filter(a=>a.length>0).length},1fr);gap:24px;">${criticalInsights.length > 0 ? `<div>${sectionTitle('🚨','Alertes critiques')}${criticalInsights.map(i=>insightRow(i.type,i.category,i.message)).join('')}</div>` : ''}${warningInsights.length > 0 ? `<div>${sectionTitle('⚠️','Points de vigilance')}${warningInsights.map(i=>insightRow(i.type,i.category,i.message)).join('')}</div>` : ''}${positiveInsights.length > 0 ? `<div>${sectionTitle('✅','Points positifs')}${positiveInsights.map(i=>insightRow(i.type,i.category,i.message)).join('')}</div>` : ''}</div>`) : ''}
-    ${section(`${sectionTitle('🌊','Risques Naturels')}<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">${kpiBox('Inondation',getRiskLabel(riskData.inondation.risk_level),getRiskColor(riskData.inondation.risk_level),riskData.inondation.ppri==null?'PPRI non vérifié':riskData.inondation.ppri?'PPRI actif':'Hors PPRI')}${kpiBox('Séisme',riskData.seisme.zone==null?'Non déterminée':`Zone ${riskData.seisme.zone}`,getRiskColor(riskData.seisme.risk_level),riskData.seisme.libelle)}${kpiBox('Feux de forêt',getRiskLabel(riskData.feux_foret.risk_level),getRiskColor(riskData.feux_foret.risk_level),riskData.feux_foret.zone_risque==null?'Exposition non vérifiée':riskData.feux_foret.zone_risque?'Zone exposée':'Hors zone')}${kpiBox('Argiles (RGA)',getRiskLabel(riskData.argiles.risk_level),getRiskColor(riskData.argiles.risk_level),riskData.argiles.niveau_alea||'Non évalué')}</div>`)}
-    ${section(`${sectionTitle('☢️','Pollution & Qualité des Sols')}<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">${kpiBox('Sites pollués (SIS)',formatSourceCount(riskData.sis.count,riskData.sis.risk_level,riskData.sis.coverage),!sisMesure?'#94a3b8':riskData.sis.count>0?'#dc2626':'#10b981',sisMesure?'':'Base SIS indisponible')}${kpiBox('Radon — Classe',String(riskData.radon.classe_potentiel??'—'),getRiskColor(riskData.radon.risk_level),riskData.radon.classe_potentiel==null?'Non renseigné pour cette commune':riskData.radon.libelle)}${kpiBox('Niveau risque pollution',getRiskLabel(riskData.sis.risk_level),getRiskColor(riskData.sis.risk_level))}</div>${sisMesure&&riskData.sis.count>0?`<div style="margin-top:16px;"><div style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:10px;">Sites SIS identifiés</div>${riskData.sis.sites.map(s=>`<div style="padding:10px 14px;background:#fef2f2;border-radius:8px;margin-bottom:8px;border-left:4px solid #dc2626;"><div style="font-size:13px;font-weight:600;color:#991b1b;">${s.nom}</div><div style="font-size:11px;color:#b91c1c;margin-top:2px;">${s.adresse||s.commune}${s.superficie_m2?` · ${fmtN(s.superficie_m2)} m²`:''}</div></div>`).join('')}</div>`:''}${!sisMesure?nonMesureRow('la base SIS'):''}`)}
-    ${section(`${sectionTitle('🪨','Risques Géotechniques')}<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px;">${kpiBox('Cavités souterraines',formatSourceCount(riskData.cavites.count,riskData.cavites.risk_level,riskData.cavites.coverage),getRiskColor(riskData.cavites.risk_level),!cavitesMesure?'Base cavités indisponible':riskData.cavites.cavites[0]?.distance_m?`Plus proche: ${fmtDist(riskData.cavites.cavites[0].distance_m)}`:'Dans le secteur')}${kpiBox('Mouvements de terrain',formatSourceCount(riskData.mouvements_terrain.count,riskData.mouvements_terrain.risk_level,riskData.mouvements_terrain.coverage),getRiskColor(riskData.mouvements_terrain.risk_level),mvtMesure?'événements recensés':'Base indisponible')}</div>${(!cavitesMesure||!mvtMesure)?nonMesureRow(!cavitesMesure&&!mvtMesure?'les bases cavités et mouvements de terrain':!cavitesMesure?'la base cavités':'la base mouvements de terrain'):''}`)}
-    ${section(`${sectionTitle('📋','Catastrophes Naturelles — CATNAT / GASPAR')}${gasparMesure?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:${riskData.gaspar.catnat_count>0?'20px':'0'};">${kpiBox('Arrêtés CATNAT',String(riskData.gaspar.catnat_count),riskData.gaspar.catnat_count>5?'#dc2626':riskData.gaspar.catnat_count>0?'#f59e0b':'#10b981')}${kpiBox('PPR applicables',String(riskData.gaspar.ppr_count),riskData.gaspar.ppr_count>0?'#d97706':'#10b981')}</div>${catnatRows?`<table><thead><tr><th>Type de risque</th><th>Début</th><th>Fin</th></tr></thead><tbody>${catnatRows}</tbody></table>`:''}`:nonMesureRow('la base GASPAR')}`)}
-    ${section(`${sectionTitle('🏭','Installations Industrielles — ICPE / SEVESO')}${icpeMesure?`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:${riskData.icpe.count>0?'20px':'0'};">${kpiBox('SEVESO Seuil Haut',String(riskData.icpe.seveso_haut_count),riskData.icpe.seveso_haut_count>0?'#991b1b':'#10b981')}${kpiBox('SEVESO Seuil Bas',String(riskData.icpe.seveso_bas_count),riskData.icpe.seveso_bas_count>0?'#d97706':'#10b981')}${kpiBox('ICPE total',String(riskData.icpe.count),'#64748b')}</div>${icpeRows?`<table><thead><tr><th>Nom</th><th>Activité</th><th>SEVESO</th><th>Distance</th></tr></thead><tbody>${icpeRows}</tbody></table>`:''}`:nonMesureRow('le registre ICPE')}`)}
-    ${infoInsights.length > 0 ? section(`${sectionTitle('ℹ️','Informations complémentaires')}${infoInsights.map(i=>insightRow(i.type,i.category,i.message)).join('')}`) : ''}
-    <div style="text-align:center;padding-top:24px;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:11px;"><p>Rapport généré le ${new Date().toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p><p style="margin-top:4px;">Mimmoza · Plateforme d'analyse immobilière intelligente · Sources : Géorisques, GASPAR, BRGM, ICPE</p></div>
-    </body></html>`;
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-    printWindow.onload = () => { setTimeout(() => { printWindow.print(); }, 300); };
-  }, [meta, scores, categories, criticalInsights, warningInsights, positiveInsights, infoInsights, riskData, bankScoring, data, headerGradient, accentColor,
-      gasparMesure, icpeMesure, sisMesure, cavitesMesure, mvtMesure]);
+    openRiskReport({
+      meta, scores, categories, data: riskData, insights,
+      version: data.version, bankScoring,
+      accent: ACCENT_PRO, espace: "Espace investisseur",
+    });
+  }, [meta, scores, categories, riskData, insights, data.version, bankScoring]);
 
   const categoryIcons: Record<string, LucideIcon> = {
     "Risques Naturels": Mountain,
@@ -352,7 +237,7 @@ const RiskStudyResults: React.FC<{
   };
 
   return (
-    <ErrorBoundary componentName="RiskStudyResults">
+    <RiskErrorBoundary componentName="RiskStudyResults">
       <div>
         {isBankScoringLoading && <BanqueRiskScoreCard scoring={{ score: 0, grade: "C", level_label: "", confidence: 0, rationale: [], items: [] }} isLoading />}
         {!isBankScoringLoading && bankScoring && <BanqueRiskScoreCard scoring={bankScoring} />}
@@ -409,17 +294,12 @@ const RiskStudyResults: React.FC<{
                   criteresTotal={cat.criteres_total}
                 />
               ))}
-              {/* Portée de l'étude : combien de critères ont réellement répondu.
-                  Sans ce compteur, un score partiel se lit comme un score complet. */}
-              {scores.criteres_total != null && (
-                <div style={{ fontSize: "11px", opacity: 0.75, marginTop: "10px", paddingTop: "10px", borderTop: "1px solid rgba(255,255,255,0.2)" }}>
-                  {scores.criteres_mesures ?? 0} critère(s) mesuré(s) sur {scores.criteres_total}
-                  {Array.isArray(scores.categories_non_mesurees) && scores.categories_non_mesurees.length > 0
-                    && ` — non mesuré : ${scores.categories_non_mesurees.join(", ")}`}
-                </div>
-              )}
             </div>
           </div>
+          {/* v1.4.1 — Cet écran n'affichait que le décompte de critères, sans la
+              phrase qui explique pourquoi une catégorie absente ne pénalise ni
+              ne flatte la note. Le pavé complet du socle remplace les deux. */}
+          <ScoreProvenanceNote scores={scores} />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "24px", marginBottom: "24px" }}>
@@ -519,20 +399,15 @@ const RiskStudyResults: React.FC<{
           </button>
         </div>
       </div>
-    </ErrorBoundary>
+    </RiskErrorBoundary>
   );
 };
 
 // ============================================
 // HELPERS
 // ============================================
-
-function extractDossierIdFromUrl(): string | null {
-  try {
-    const match = window.location.pathname.match(/\/banque\/risque\/([^/]+)/);
-    return match ? match[1] : null;
-  } catch { return null; }
-}
+// v1.4.1 — `extractDossierIdFromUrl` était dupliqué verbatim avec RisquesPage ;
+// il vit désormais dans `@/spaces/shared/risques`.
 
 // ============================================
 // MAIN COMPONENT
@@ -827,7 +702,7 @@ export default function InvestisseurRisquesPanel() {
   };
 
   return (
-    <ErrorBoundary componentName="RisquesPage">
+    <RiskErrorBoundary componentName="RisquesPage">
       <div style={styles.container}>
 
         <div style={{
@@ -1085,6 +960,6 @@ export default function InvestisseurRisquesPanel() {
           button:hover:not(:disabled) { transform: translateY(-1px); }
         `}</style>
       </div>
-    </ErrorBoundary>
+    </RiskErrorBoundary>
   );
 }

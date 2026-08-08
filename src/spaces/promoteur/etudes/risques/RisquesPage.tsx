@@ -1,5 +1,5 @@
 // ============================================
-// RisquesPage.tsx - VERSION 1.3.1
+// RisquesPage.tsx - VERSION 1.4.0
 // ============================================
 // Étude de risques pour une parcelle/adresse
 // Sources: Géorisques API, données gouvernementales
@@ -12,23 +12,32 @@
 // Ils étaient recopiés à l'identique dans InvestisseurRisquesPanel, et seule
 // cette page avait reçu les correctifs de nullabilité de risk-study v1.1.0 :
 // pendant ce temps la copie affichait un score non mesuré en rouge vif.
-// MARQUEUR DE VERSION : import de `@/spaces/shared/risques`
+//
+// ── v1.4.0 · FIN DE LA MUTUALISATION ────────────────────────────────────────
+// Les 21 interfaces locales et les 9 cartes de présentation sont supprimées au
+// profit du socle : 2584 → 1580 lignes. Trois défauts disparaissent avec elles,
+// que seules les cartes partagées corrigeaient — « Zone null - » (séisme),
+// « Classe null - » (radon), et « Hors zone » affiché quand `zone_risque` est
+// absent. Ce dernier était invisible pour tsc : le type local déclarait
+// `zone_risque: boolean` non nullable, donc le compilateur validait un ternaire
+// qui affirmait une absence de risque sur une donnée manquante.
+// L'ErrorBoundary et `extractDossierIdFromUrl`, dupliqués verbatim, rejoignent
+// eux aussi le socle.
+// La garde `pollution_sols` s'aligne sur celle d'Investisseur : « aucun site
+// pollué » n'est écrit en base que si la base SIS a effectivement répondu.
+// MARQUEUR DE VERSION : import de `RiskErrorBoundary`
 // ============================================
 
 import {
   Activity,
   AlertOctagon,
   AlertTriangle,
-  Atom,
   Bug,
   CheckCircle,
-  ChevronDown, ChevronUp,
-  CircleDot, Compass,
+Compass,
   Download,
-  Droplets,
   Factory,
   FileText,
-  Flame,
   Grid3X3,
   Info,
   Landmark,
@@ -37,14 +46,10 @@ import {
   MapPin,
   Mountain,
   Shield, ShieldAlert,
-  ShieldCheck,
-  ShieldOff,
-  Skull,
   Target,
   X
 } from "lucide-react";
-import type { ErrorInfo, ReactNode} from "react";
-import React, { Component, useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import type { LucideIcon } from "lucide-react";
 
@@ -92,20 +97,27 @@ import {
 } from "../../shared/components/PromoteurPageHero";
 import { ACCENT_PRO } from "../../shared/promoteurDesign.tokens";
 
-// ─── Socle partagé de l'étude de risques (voir en-tête v1.3.1) ──────────────
+// ─── Socle partagé de l'étude de risques (voir en-tête v1.4.0) ──────────────
 // Même exemplaire que celui consommé par InvestisseurRisquesPanel.
-// (les helpers de mesure — isMeasured, formatSourceCount, scoreBarWidth… —
-// entreront ici lors de la bascule des cartes locales sur celles du socle)
 import {
-  formatDistance,
-  formatNumber,
-  getBankGradeColor,
-  getRiskBg,
-  getRiskColor,
-  getRiskLabel,
-  getScoreColor,
-  getVerdictConfig,
+  CategoryScoreBar,
+  CatnatCard,
+  extractDossierIdFromUrl,
+  GeotechCard,
+  IcpeCard,
+  InsightCard,
+  isLevelMeasured,
+  isMeasured,
+  NaturalRisksCard,
   niveauAleaToDb,
+  PollutionCard,
+  RiskErrorBoundary,
+  openRiskReport,
+  RiskGauge,
+  ScoreProvenanceNote,
+} from "@/spaces/shared/risques";
+import type {
+  RiskStudyApiResponse,
 } from "@/spaces/shared/risques";
 
 // ============================================
@@ -119,252 +131,12 @@ const log = (prefix: string, message: string, data?: unknown) => {
 // ============================================================================
 // TYPES
 // ============================================================================
-
-type RiskLevel = 'tres_fort' | 'fort' | 'moyen' | 'faible' | 'nul' | 'inconnu';
-type InsightType = 'critical' | 'warning' | 'positive' | 'info';
-
-// Aligné sur risk-study v1.1.0 : les scores de SÉCURITÉ sont nullables.
-// `null` = catégorie NON MESURÉE (aucune source publique n'a répondu). Ne jamais
-// l'afficher comme une note, ni le traiter comme rassurant : l'absence de donnée
-// n'est pas l'absence de risque.
-interface RiskScores {
-  global: number | null;
-  naturels: number | null;
-  technologiques: number | null;
-  pollution: number | null;
-  geotechniques: number | null;
-  // Indicateur de confiance (v1.1.0)
-  criteres_mesures?: number;
-  criteres_total?: number;
-  categories_mesurees?: string[];
-  categories_non_mesurees?: string[];
-  poids_effectifs?: Record<string, number>;
-  coverage?: 'ok' | 'partial' | 'no_data' | 'error';
-}
-
-interface RiskItem {
-  name: string;
-  level: RiskLevel;
-  detail: string;
-}
-
-interface RiskCategory {
-  name: string;
-  score: number | null;
-  level: RiskLevel;
-  coverage?: 'ok' | 'partial' | 'no_data' | 'error';
-  criteres_mesures?: number;
-  criteres_total?: number;
-  risks: RiskItem[];
-}
-
-interface Insight {
-  type: InsightType;
-  category: string;
-  message: string;
-}
-
-interface CatnatEvent {
-  code_national_catnat: string;
-  date_debut: string;
-  date_fin: string;
-  date_publication_jo: string;
-  libelle_risque: string;
-}
-
-interface GasparData {
-  catnat_count: number;
-  catnat_events: CatnatEvent[];
-  ppr_count: number;
-  ppr_list: Array<{ code: string; libelle: string; etat: string }>;
-  coverage: string;
-}
-
-interface RadonData {
-  classe_potentiel: number | null;
-  libelle: string;
-  risk_level: RiskLevel;
-  coverage: string;
-}
-
-interface Installation {
-  nom: string;
-  raison_sociale: string;
-  adresse: string;
-  commune: string;
-  regime: string;
-  seveso: string | null;
-  distance_m: number | null;
-  activite: string;
-}
-
-interface IcpeData {
-  count: number;
-  seveso_haut_count: number;
-  seveso_bas_count: number;
-  installations: Installation[];
-  risk_level: RiskLevel;
-  coverage: string;
-}
-
-interface SisData {
-  count: number;
-  sites: Array<{
-    id: string;
-    nom: string;
-    adresse: string;
-    commune: string;
-    superficie_m2: number | null;
-  }>;
-  risk_level: RiskLevel;
-  coverage: string;
-}
-
-interface CaviteData {
-  count: number;
-  cavites: Array<{
-    id: string;
-    type: string;
-    nom: string;
-    profondeur_m: number | null;
-    distance_m: number | null;
-  }>;
-  risk_level: RiskLevel;
-  coverage: string;
-}
-
-interface MvtData {
-  count: number;
-  mouvements: Array<{
-    id: string;
-    type: string;
-    date: string;
-    precision: string;
-    distance_m: number | null;
-  }>;
-  risk_level: RiskLevel;
-  coverage: string;
-}
-
-interface ArgilesData {
-  niveau_alea: string | null;
-  risk_level: RiskLevel;
-  coverage: string;
-}
-
-// risk-study v1.1.0 : `null` = GASPAR n'a pas répondu, on ne sait pas.
-// À ne jamais rendre par « hors zone » / « pas de PPRI ».
-interface InondationData {
-  zone_inondable: boolean | null;
-  type_zone: string | null;
-  tri: string | null;
-  ppri: boolean | null;
-  risk_level: RiskLevel;
-  coverage: string;
-}
-
-interface SeismeData {
-  zone: number | null;
-  libelle: string;
-  risk_level: RiskLevel;
-  coverage: string;
-}
-
-interface FeuxForetData {
-  zone_risque: boolean;
-  obligation_debroussaillement: boolean;
-  risk_level: RiskLevel;
-  coverage: string;
-}
-
-interface RiskStudyApiResponse {
-  success: boolean;
-  version: string;
-  meta: {
-    lat: number;
-    lon: number;
-    location_source?: string;
-    location_label?: string;
-    commune_insee: string;
-    commune_nom: string;
-    departement: string;
-    region: string;
-    radius_km: number;
-    generated_at: string;
-  };
-  scores: RiskScores;
-  categories: RiskCategory[];
-  data: {
-    gaspar: GasparData;
-    radon: RadonData;
-    icpe: IcpeData;
-    sis: SisData;
-    cavites: CaviteData;
-    mouvements_terrain: MvtData;
-    argiles: ArgilesData;
-    inondation: InondationData;
-    seisme: SeismeData;
-    feux_foret: FeuxForetData;
-  };
-  insights: Insight[];
-  debug?: {
-    timings: Record<string, number>;
-  };
-}
-
-// ============================================
-// ERROR BOUNDARY
-// ============================================
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error: Error | null;
-}
-
-interface ErrorBoundaryProps {
-  children: ReactNode;
-  componentName?: string;
-}
-
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-
-  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error(`ErrorBoundary caught error in ${this.props.componentName}:`, error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{
-          padding: "40px", textAlign: "center", background: "#fef2f2",
-          borderRadius: "12px", border: "1px solid #fecaca", margin: "20px"
-        }}>
-          <AlertTriangle size={48} color="#dc2626" style={{ marginBottom: "16px" }} />
-          <h3 style={{ color: "#991b1b", marginBottom: "8px" }}>
-            Erreur dans {this.props.componentName || 'un composant'}
-          </h3>
-          <button
-            onClick={() => this.setState({ hasError: false, error: null })}
-            style={{
-              padding: "10px 20px", background: "#dc2626", color: "white",
-              border: "none", borderRadius: "8px", cursor: "pointer"
-            }}
-          >
-            Réessayer
-          </button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
+// v1.4.0 — Les 21 interfaces qui vivaient ici ont été supprimées au profit de
+// `@/spaces/shared/risques/riskStudy.types.ts`, source unique partagée avec
+// InvestisseurRisquesPanel. Elles n'étaient pas de simples doublons : la copie
+// locale déclarait `FeuxForetData.zone_risque: boolean` NON nullable, ce qui
+// faisait valider par tsc un `zone_risque ? … : "Hors zone"` affirmant une
+// absence de risque sur une donnée absente. Un contrat faux ne protège de rien.
 
 // ============================================
 // HELPERS
@@ -461,788 +233,19 @@ const styles = {
   } as React.CSSProperties,
 };
 
-// ============================================
-// RISK GAUGE
-// ============================================
-const RiskGauge: React.FC<{ score: number | null; size?: number }> = ({ score, size = 160 }) => {
-  const radius = (size - 20) / 2;
-  const circumference = 2 * Math.PI * radius;
-  // Non mesuré : arc vide et « — » au centre, plutôt qu'un « null » ou un 0
-  // qui se lirait comme un risque maximal.
-  const progress = score == null ? 0 : (score / 100) * circumference;
-  const color = getScoreColor(score);
-  const verdict = getVerdictConfig(score);
-  const VerdictIcon = verdict.icon;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px" }}>
-      <div style={{ position: "relative", width: size, height: size }}>
-        <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-          <circle cx={size/2} cy={size/2} r={radius} fill="none" stroke="#fee2e2" strokeWidth="12" />
-          <circle
-            cx={size/2} cy={size/2} r={radius}
-            fill="none" stroke={color} strokeWidth="12" strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={circumference - progress}
-            style={{ transition: "stroke-dashoffset 1s ease-out" }}
-          />
-        </svg>
-        <div style={{
-          position: "absolute", inset: 0,
-          display: "flex", flexDirection: "column",
-          alignItems: "center", justifyContent: "center",
-        }}>
-          <span style={{ fontSize: size * 0.25, fontWeight: 800, color }}>{score ?? "—"}</span>
-          <span style={{ fontSize: size * 0.08, color: "#94a3b8", fontWeight: 500 }}>
-            {score == null ? "non mesuré" : "/ 100"}
-          </span>
-        </div>
-      </div>
-      <div style={{
-        ...styles.badge,
-        background: verdict.bg,
-        color: verdict.color,
-        padding: "8px 16px",
-        fontSize: "13px",
-      }}>
-        <VerdictIcon size={16} />
-        {verdict.label}
-      </div>
-    </div>
-  );
-};
-
-// ============================================
-// CATEGORY SCORE BAR
-// ============================================
-const CategoryScoreBar: React.FC<{
-  name: string;
-  score: number | null;
-  level: RiskLevel;
-  icon: LucideIcon;
-  criteresMesures?: number;
-  criteresTotal?: number;
-}> = ({ name, score, level, icon: Icon, criteresMesures, criteresTotal }) => {
-  const color = getRiskColor(level);
-  // Non mesuré : barre vide, « non mesuré » à la place du chiffre.
-  const nonMesure = score == null;
-  const partiel = !nonMesure && criteresTotal != null && criteresMesures != null
-    && criteresMesures < criteresTotal;
-
-  return (
-    <div style={{ marginBottom: "16px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <Icon size={16} color={color} />
-          <span style={{ fontSize: "13px", fontWeight: 600, color: "#1e293b" }}>{name}</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ 
-            fontSize: "11px", 
-            padding: "2px 8px", 
-            background: getRiskBg(level), 
-            color: color,
-            borderRadius: "4px",
-            fontWeight: 600
-          }}>
-            {getRiskLabel(level)}
-          </span>
-          {partiel && (
-            <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 500 }}>
-              {criteresMesures}/{criteresTotal} critères
-            </span>
-          )}
-          <span style={{
-            fontSize: nonMesure ? "11px" : "14px",
-            fontWeight: 700,
-            color: nonMesure ? "#94a3b8" : color,
-          }}>
-            {nonMesure ? "non mesuré" : score}
-          </span>
-        </div>
-      </div>
-      <div style={{ height: "8px", background: "#f1f5f9", borderRadius: "4px", overflow: "hidden" }}>
-        <div style={{
-          width: nonMesure ? "0%" : `${score}%`,
-          height: "100%",
-          background: color,
-          borderRadius: "4px",
-          transition: "width 0.8s ease-out"
-        }} />
-      </div>
-    </div>
-  );
-};
-
-// ============================================
-// INSIGHT CARD
-// ============================================
-const InsightCard: React.FC<{ insight: Insight }> = ({ insight }) => {
-  const configs: Record<InsightType, { bg: string; border: string; color: string; icon: LucideIcon }> = {
-    critical: { bg: "#fef2f2", border: "#fecaca", color: "#991b1b", icon: AlertOctagon },
-    warning: { bg: "#fef3c7", border: "#fcd34d", color: "#92400e", icon: AlertTriangle },
-    positive: { bg: "#ecfdf5", border: "#a7f3d0", color: "#065f46", icon: CheckCircle },
-    info: { bg: "#f0f9ff", border: "#bae6fd", color: "#0369a1", icon: Info },
-  };
-  
-  const config = configs[insight.type];
-  const Icon = config.icon;
-  
-  return (
-    <div style={{ 
-      padding: "14px 16px", 
-      background: config.bg, 
-      border: `1px solid ${config.border}`, 
-      borderRadius: "10px",
-      marginBottom: "10px",
-      display: "flex",
-      alignItems: "flex-start",
-      gap: "12px"
-    }}>
-      <Icon size={18} color={config.color} style={{ flexShrink: 0, marginTop: "2px" }} />
-      <div style={{ flex: 1 }}>
-        <span style={{ 
-          fontSize: "10px", 
-          fontWeight: 600, 
-          color: config.color, 
-          textTransform: "uppercase",
-          opacity: 0.8
-        }}>
-          {insight.category}
-        </span>
-        <p style={{ fontSize: "13px", color: "#1e293b", margin: "4px 0 0 0", lineHeight: 1.5 }}>
-          {insight.message}
-        </p>
-      </div>
-    </div>
-  );
-};
-
-// ============================================
-// RISK DETAIL CARD
-// ============================================
-const RiskDetailCard: React.FC<{
-  title: string;
-  icon: LucideIcon;
-  level: RiskLevel;
-  children: ReactNode;
-  defaultOpen?: boolean;
-}> = ({ title, icon: Icon, level, children, defaultOpen = false }) => {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
-  const color = getRiskColor(level);
-  
-  return (
-    <div style={{ 
-      ...styles.card, 
-      borderLeft: `4px solid ${color}`,
-      marginBottom: "16px"
-    }}>
-      <div 
-        style={{ 
-          display: "flex", 
-          alignItems: "center", 
-          justifyContent: "space-between",
-          cursor: "pointer"
-        }}
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <div style={{
-            width: "40px", height: "40px", borderRadius: "10px",
-            background: getRiskBg(level),
-            display: "flex", alignItems: "center", justifyContent: "center"
-          }}>
-            <Icon size={20} color={color} />
-          </div>
-          <div>
-            <h3 style={{ fontSize: "15px", fontWeight: 700, color: "#1e293b", margin: 0 }}>{title}</h3>
-            <span style={{ 
-              fontSize: "12px", 
-              color: color, 
-              fontWeight: 600 
-            }}>
-              Risque {getRiskLabel(level).toLowerCase()}
-            </span>
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <span style={{
-            ...styles.badge,
-            background: getRiskBg(level),
-            color: color
-          }}>
-            {getRiskLabel(level)}
-          </span>
-          {isOpen ? <ChevronUp size={20} color="#64748b" /> : <ChevronDown size={20} color="#64748b" />}
-        </div>
-      </div>
-      
-      {isOpen && (
-        <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid #f1f5f9" }}>
-          {children}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ============================================
-// GASPAR / CATNAT CARD
-// ============================================
-const CatnatCard: React.FC<{ gaspar: GasparData }> = ({ gaspar }) => {
-  const [showAll, setShowAll] = useState(false);
-  
-  if (gaspar.catnat_count === 0 && gaspar.ppr_count === 0) {
-    return (
-      <RiskDetailCard title="Catastrophes Naturelles (CATNAT)" icon={AlertTriangle} level="nul">
-        <p style={{ color: "#64748b", fontSize: "14px" }}>
-          Aucun arrêté de catastrophe naturelle recensé sur cette commune.
-        </p>
-      </RiskDetailCard>
-    );
-  }
-
-  const level: RiskLevel = gaspar.catnat_count > 10 ? 'fort' : gaspar.catnat_count > 5 ? 'moyen' : 'faible';
-
-  const eventsByType: Record<string, CatnatEvent[]> = {};
-  gaspar.catnat_events.forEach(e => {
-    const type = e.libelle_risque || "Autre";
-    if (!eventsByType[type]) eventsByType[type] = [];
-    eventsByType[type].push(e);
-  });
-
-  return (
-    <RiskDetailCard title="Catastrophes Naturelles (CATNAT)" icon={AlertTriangle} level={level} defaultOpen>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
-        <div style={{ padding: "16px", background: "#fef2f2", borderRadius: "12px", textAlign: "center" }}>
-          <AlertTriangle size={24} color="#dc2626" style={{ marginBottom: "8px" }} />
-          <div style={{ fontSize: "32px", fontWeight: 800, color: "#dc2626" }}>{gaspar.catnat_count}</div>
-          <div style={{ fontSize: "12px", color: "#991b1b" }}>Arrêtés CATNAT</div>
-        </div>
-        <div style={{ padding: "16px", background: "#fef3c7", borderRadius: "12px", textAlign: "center" }}>
-          <FileText size={24} color="#d97706" style={{ marginBottom: "8px" }} />
-          <div style={{ fontSize: "32px", fontWeight: 800, color: "#d97706" }}>{gaspar.ppr_count}</div>
-          <div style={{ fontSize: "12px", color: "#92400e" }}>PPR applicables</div>
-        </div>
-      </div>
-
-      <div style={{ marginBottom: "16px" }}>
-        <h4 style={{ fontSize: "13px", fontWeight: 600, color: "#64748b", marginBottom: "10px" }}>
-          Répartition par type de risque
-        </h4>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-          {Object.entries(eventsByType).map(([type, events]) => (
-            <span 
-              key={type}
-              style={{
-                ...styles.badge,
-                background: "#fee2e2",
-                color: "#991b1b",
-                padding: "6px 12px"
-              }}
-            >
-              {type}: {events.length}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {gaspar.catnat_events.length > 0 && (
-        <div>
-          <h4 style={{ fontSize: "13px", fontWeight: 600, color: "#64748b", marginBottom: "10px" }}>
-            Derniers événements
-          </h4>
-          <div style={{ maxHeight: showAll ? "none" : "200px", overflow: "hidden" }}>
-            {gaspar.catnat_events.slice(0, showAll ? undefined : 5).map((event, i) => (
-              <div 
-                key={i}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  padding: "10px 12px",
-                  background: i % 2 === 0 ? "#f8fafc" : "white",
-                  borderRadius: "6px",
-                  marginBottom: "4px"
-                }}
-              >
-                <span style={{ fontSize: "13px", color: "#1e293b" }}>{event.libelle_risque}</span>
-                <span style={{ fontSize: "12px", color: "#64748b" }}>
-                  {event.date_debut || "—"}
-                </span>
-              </div>
-            ))}
-          </div>
-          {gaspar.catnat_events.length > 5 && (
-            <button
-              onClick={() => setShowAll(!showAll)}
-              style={{
-                width: "100%",
-                padding: "10px",
-                marginTop: "8px",
-                background: "#f1f5f9",
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
-                fontSize: "13px",
-                color: "#475569"
-              }}
-            >
-              {showAll ? "Voir moins" : `Voir les ${gaspar.catnat_events.length - 5} autres`}
-            </button>
-          )}
-        </div>
-      )}
-
-      {gaspar.ppr_list.length > 0 && (
-        <div style={{ marginTop: "20px" }}>
-          <h4 style={{ fontSize: "13px", fontWeight: 600, color: "#64748b", marginBottom: "10px" }}>
-            Plans de Prévention des Risques
-          </h4>
-          {gaspar.ppr_list.map((ppr, i) => (
-            <div 
-              key={i}
-              style={{
-                padding: "12px",
-                background: "#fef3c7",
-                borderRadius: "8px",
-                marginBottom: "8px",
-                borderLeft: "4px solid #f59e0b"
-              }}
-            >
-              <div style={{ fontSize: "13px", fontWeight: 600, color: "#92400e" }}>{ppr.libelle}</div>
-              <div style={{ fontSize: "11px", color: "#b45309", marginTop: "4px" }}>
-                État: {ppr.etat || "Inconnu"} • Code: {ppr.code}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </RiskDetailCard>
-  );
-};
-
-// ============================================
-// ICPE / SEVESO CARD
-// ============================================
-const IcpeCard: React.FC<{ icpe: IcpeData }> = ({ icpe }) => {
-  const [showAll, setShowAll] = useState(false);
-
-  return (
-    <RiskDetailCard 
-      title="Installations Industrielles (ICPE/SEVESO)" 
-      icon={Factory} 
-      level={icpe.risk_level}
-      defaultOpen={icpe.seveso_haut_count > 0 || icpe.seveso_bas_count > 0}
-    >
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginBottom: "20px" }}>
-        <div style={{ padding: "16px", background: "#fef2f2", borderRadius: "12px", textAlign: "center" }}>
-          <Skull size={20} color="#991b1b" style={{ marginBottom: "8px" }} />
-          <div style={{ fontSize: "28px", fontWeight: 800, color: "#991b1b" }}>{icpe.seveso_haut_count}</div>
-          <div style={{ fontSize: "11px", color: "#991b1b" }}>SEVESO Seuil Haut</div>
-        </div>
-        <div style={{ padding: "16px", background: "#fef3c7", borderRadius: "12px", textAlign: "center" }}>
-          <AlertTriangle size={20} color="#d97706" style={{ marginBottom: "8px" }} />
-          <div style={{ fontSize: "28px", fontWeight: 800, color: "#d97706" }}>{icpe.seveso_bas_count}</div>
-          <div style={{ fontSize: "11px", color: "#92400e" }}>SEVESO Seuil Bas</div>
-        </div>
-        <div style={{ padding: "16px", background: "#f1f5f9", borderRadius: "12px", textAlign: "center" }}>
-          <Factory size={20} color="#64748b" style={{ marginBottom: "8px" }} />
-          <div style={{ fontSize: "28px", fontWeight: 800, color: "#1e293b" }}>{icpe.count}</div>
-          <div style={{ fontSize: "11px", color: "#64748b" }}>ICPE total</div>
-        </div>
-      </div>
-
-      {icpe.installations.length > 0 && (
-        <div>
-          <h4 style={{ fontSize: "13px", fontWeight: 600, color: "#64748b", marginBottom: "10px" }}>
-            Installations à proximité
-          </h4>
-          <div style={{ maxHeight: showAll ? "400px" : "200px", overflowY: "auto" }}>
-            {icpe.installations.slice(0, showAll ? undefined : 5).map((inst, i) => (
-              <div 
-                key={i}
-                style={{
-                  padding: "12px",
-                  background: inst.seveso ? (inst.seveso.toLowerCase().includes('haut') ? "#fef2f2" : "#fef3c7") : "#f8fafc",
-                  borderRadius: "8px",
-                  marginBottom: "8px",
-                  borderLeft: `4px solid ${inst.seveso ? (inst.seveso.toLowerCase().includes('haut') ? "#dc2626" : "#f59e0b") : "#e2e8f0"}`
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: "14px", fontWeight: 600, color: "#1e293b" }}>{inst.nom}</div>
-                    <div style={{ fontSize: "12px", color: "#64748b", marginTop: "4px" }}>{inst.activite}</div>
-                    {inst.seveso && (
-                      <span style={{
-                        ...styles.badge,
-                        background: inst.seveso.toLowerCase().includes('haut') ? "#fee2e2" : "#fef3c7",
-                        color: inst.seveso.toLowerCase().includes('haut') ? "#991b1b" : "#92400e",
-                        marginTop: "6px"
-                      }}>
-                        {inst.seveso}
-                      </span>
-                    )}
-                  </div>
-                  {inst.distance_m !== null && (
-                    <span style={{ 
-                      fontSize: "13px", 
-                      fontWeight: 600, 
-                      color: inst.distance_m < 1000 ? "#dc2626" : "#64748b"
-                    }}>
-                      {formatDistance(inst.distance_m)}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-          {icpe.installations.length > 5 && (
-            <button
-              onClick={() => setShowAll(!showAll)}
-              style={{
-                width: "100%",
-                padding: "10px",
-                marginTop: "8px",
-                background: "#f1f5f9",
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
-                fontSize: "13px",
-                color: "#475569"
-              }}
-            >
-              {showAll ? "Voir moins" : `Voir les ${icpe.installations.length - 5} autres`}
-            </button>
-          )}
-        </div>
-      )}
-    </RiskDetailCard>
-  );
-};
-
-// ============================================
-// NATURAL RISKS SUMMARY CARD
-// ============================================
-const NaturalRisksCard: React.FC<{
-  inondation: InondationData;
-  seisme: SeismeData;
-  feuxForet: FeuxForetData;
-  argiles: ArgilesData;
-}> = ({ inondation, seisme, feuxForet, argiles }) => {
-  const risks = [
-    { 
-      name: "Inondation", 
-      icon: Droplets, 
-      level: inondation.risk_level,
-      // `ppri === null` = GASPAR muet. Ne pas écrire « Hors zone PPRI », qui
-      // affirmerait une absence de risque qu'on n'a pas vérifiée.
-      detail: inondation.ppri == null ? "PPRI non vérifié"
-        : inondation.ppri ? "PPRI actif" : "Hors zone PPRI"
-    },
-    { 
-      name: "Séisme", 
-      icon: Activity, 
-      level: seisme.risk_level,
-      detail: `Zone ${seisme.zone} - ${seisme.libelle}`
-    },
-    { 
-      name: "Feux de forêt", 
-      icon: Flame, 
-      level: feuxForet.risk_level,
-      detail: feuxForet.zone_risque ? "Zone exposée" : "Hors zone"
-    },
-    { 
-      name: "Argiles (RGA)", 
-      icon: Layers, 
-      level: argiles.risk_level,
-      detail: argiles.niveau_alea || "Non évalué"
-    },
-  ];
-
-  return (
-    <div style={styles.card}>
-      <div style={styles.cardTitle}>
-        <Mountain size={20} color="#f59e0b" />
-        Risques Naturels
-      </div>
-      
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-        {risks.map((risk, i) => {
-          const Icon = risk.icon;
-          const color = getRiskColor(risk.level);
-          
-          return (
-            <div 
-              key={i}
-              style={{
-                padding: "16px",
-                background: getRiskBg(risk.level),
-                borderRadius: "12px",
-                borderLeft: `4px solid ${color}`
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-                <Icon size={18} color={color} />
-                <span style={{ fontSize: "14px", fontWeight: 600, color: "#1e293b" }}>{risk.name}</span>
-              </div>
-              <div style={{ fontSize: "12px", color: color, fontWeight: 600, marginBottom: "4px" }}>
-                {getRiskLabel(risk.level)}
-              </div>
-              <div style={{ fontSize: "11px", color: "#64748b" }}>{risk.detail}</div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
-
-// ============================================
-// GEOTECHNICAL RISKS CARD
-// ============================================
-const GeotechCard: React.FC<{
-  cavites: CaviteData;
-  mvt: MvtData;
-}> = ({ cavites, mvt }) => {
-  const [showCavites, setShowCavites] = useState(false);
-  const [showMvt, setShowMvt] = useState(false);
-
-  return (
-    <div style={styles.card}>
-      <div style={styles.cardTitle}>
-        <Layers size={20} color="#8b5cf6" />
-        Risques Géotechniques
-      </div>
-      
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
-        <div style={{ 
-          padding: "16px", 
-          background: getRiskBg(cavites.risk_level), 
-          borderRadius: "12px",
-          borderLeft: `4px solid ${getRiskColor(cavites.risk_level)}`
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-            <CircleDot size={18} color={getRiskColor(cavites.risk_level)} />
-            <span style={{ fontSize: "14px", fontWeight: 600, color: "#1e293b" }}>Cavités souterraines</span>
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 800, color: getRiskColor(cavites.risk_level) }}>
-            {cavites.count}
-          </div>
-          <div style={{ fontSize: "11px", color: "#64748b" }}>
-            {cavites.cavites[0]?.distance_m ? `La plus proche: ${formatDistance(cavites.cavites[0].distance_m)}` : "Dans le secteur"}
-          </div>
-        </div>
-        
-        <div style={{ 
-          padding: "16px", 
-          background: getRiskBg(mvt.risk_level), 
-          borderRadius: "12px",
-          borderLeft: `4px solid ${getRiskColor(mvt.risk_level)}`
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-            <Mountain size={18} color={getRiskColor(mvt.risk_level)} />
-            <span style={{ fontSize: "14px", fontWeight: 600, color: "#1e293b" }}>Mouvements de terrain</span>
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 800, color: getRiskColor(mvt.risk_level) }}>
-            {mvt.count}
-          </div>
-          <div style={{ fontSize: "11px", color: "#64748b" }}>événements recensés</div>
-        </div>
-      </div>
-
-      {cavites.count > 0 && (
-        <div style={{ marginBottom: "16px" }}>
-          <button
-            onClick={() => setShowCavites(!showCavites)}
-            style={{
-              width: "100%",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "12px 16px",
-              background: "#f8fafc",
-              border: "1px solid #e2e8f0",
-              borderRadius: "8px",
-              cursor: "pointer"
-            }}
-          >
-            <span style={{ fontSize: "13px", fontWeight: 600, color: "#475569" }}>
-              Détail des {cavites.count} cavités
-            </span>
-            {showCavites ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-          </button>
-          {showCavites && (
-            <div style={{ marginTop: "8px", maxHeight: "200px", overflowY: "auto" }}>
-              {cavites.cavites.map((c, i) => (
-                <div key={i} style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  padding: "10px 12px",
-                  background: i % 2 === 0 ? "#f8fafc" : "white",
-                  borderRadius: "6px"
-                }}>
-                  <div>
-                    <span style={{ fontSize: "13px", color: "#1e293b" }}>{c.type}</span>
-                    {c.nom && <span style={{ fontSize: "11px", color: "#64748b", marginLeft: "8px" }}>{c.nom}</span>}
-                  </div>
-                  <span style={{ fontSize: "12px", fontWeight: 600, color: "#64748b" }}>
-                    {formatDistance(c.distance_m)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {mvt.count > 0 && (
-        <div>
-          <button
-            onClick={() => setShowMvt(!showMvt)}
-            style={{
-              width: "100%",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "12px 16px",
-              background: "#f8fafc",
-              border: "1px solid #e2e8f0",
-              borderRadius: "8px",
-              cursor: "pointer"
-            }}
-          >
-            <span style={{ fontSize: "13px", fontWeight: 600, color: "#475569" }}>
-              Détail des {mvt.count} mouvements
-            </span>
-            {showMvt ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-          </button>
-          {showMvt && (
-            <div style={{ marginTop: "8px", maxHeight: "200px", overflowY: "auto" }}>
-              {mvt.mouvements.map((m, i) => (
-                <div key={i} style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  padding: "10px 12px",
-                  background: i % 2 === 0 ? "#f8fafc" : "white",
-                  borderRadius: "6px"
-                }}>
-                  <div>
-                    <span style={{ fontSize: "13px", color: "#1e293b" }}>{m.type}</span>
-                    {m.date && <span style={{ fontSize: "11px", color: "#64748b", marginLeft: "8px" }}>{m.date}</span>}
-                  </div>
-                  <span style={{ fontSize: "12px", fontWeight: 600, color: "#64748b" }}>
-                    {formatDistance(m.distance_m)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ============================================
-// POLLUTION CARD
-// ============================================
-const PollutionCard: React.FC<{
-  sis: SisData;
-  radon: RadonData;
-}> = ({ sis, radon }) => {
-  const [showSites, setShowSites] = useState(false);
-
-  return (
-    <div style={styles.card}>
-      <div style={styles.cardTitle}>
-        <Bug size={20} color="#dc2626" />
-        Pollution & Qualité des Sols
-      </div>
-      
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
-        <div style={{ 
-          padding: "16px", 
-          background: getRiskBg(sis.risk_level), 
-          borderRadius: "12px",
-          borderLeft: `4px solid ${getRiskColor(sis.risk_level)}`
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-            <Skull size={18} color={getRiskColor(sis.risk_level)} />
-            <span style={{ fontSize: "14px", fontWeight: 600, color: "#1e293b" }}>Sites pollués (SIS)</span>
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 800, color: getRiskColor(sis.risk_level) }}>
-            {sis.count}
-          </div>
-          <div style={{ fontSize: "11px", color: "#64748b" }}>
-            Secteurs d'Information sur les Sols
-          </div>
-        </div>
-        
-        <div style={{ 
-          padding: "16px", 
-          background: getRiskBg(radon.risk_level), 
-          borderRadius: "12px",
-          borderLeft: `4px solid ${getRiskColor(radon.risk_level)}`
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-            <Atom size={18} color={getRiskColor(radon.risk_level)} />
-            <span style={{ fontSize: "14px", fontWeight: 600, color: "#1e293b" }}>Radon</span>
-          </div>
-          <div style={{ fontSize: "28px", fontWeight: 800, color: getRiskColor(radon.risk_level) }}>
-            {radon.classe_potentiel ?? "—"}
-          </div>
-          <div style={{ fontSize: "11px", color: "#64748b" }}>
-            Classe {radon.classe_potentiel} - {radon.libelle}
-          </div>
-        </div>
-      </div>
-
-      {sis.count > 0 && (
-        <div>
-          <button
-            onClick={() => setShowSites(!showSites)}
-            style={{
-              width: "100%",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "12px 16px",
-              background: "#fef2f2",
-              border: "1px solid #fecaca",
-              borderRadius: "8px",
-              cursor: "pointer"
-            }}
-          >
-            <span style={{ fontSize: "13px", fontWeight: 600, color: "#991b1b" }}>
-              ⚠️ {sis.count} site(s) pollué(s) identifié(s)
-            </span>
-            {showSites ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-          </button>
-          {showSites && (
-            <div style={{ marginTop: "8px" }}>
-              {sis.sites.map((site, i) => (
-                <div key={i} style={{
-                  padding: "12px",
-                  background: "#fef2f2",
-                  borderRadius: "8px",
-                  marginBottom: "8px",
-                  borderLeft: "4px solid #dc2626"
-                }}>
-                  <div style={{ fontSize: "14px", fontWeight: 600, color: "#991b1b" }}>{site.nom}</div>
-                  <div style={{ fontSize: "12px", color: "#b91c1c", marginTop: "4px" }}>
-                    {site.adresse || site.commune}
-                    {site.superficie_m2 && ` • ${formatNumber(site.superficie_m2)} m²`}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
+// ============================================================================
+// COMPOSANTS DE PRÉSENTATION
+// ============================================================================
+// v1.4.0 — Les neuf cartes qui vivaient ici (RiskGauge, CategoryScoreBar,
+// InsightCard, RiskDetailCard, CatnatCard, IcpeCard, NaturalRisksCard,
+// GeotechCard, PollutionCard) ont été remplacées par celles du socle.
+// Signatures de props identiques : le JSX appelant est inchangé.
+//
+// Trois corrections arrivent avec la bascule, absentes des versions locales :
+//   • « Zone null - » et « Classe null - » ne s'impriment plus (séisme, radon) ;
+//   • la couverture GASPAR est testée AVANT les décomptes, au lieu d'être
+//     déduite d'un « 0 » qui pouvait venir d'une API muette ;
+//   • un décompte issu d'une source non mesurée se rend « — », pas « 0 ».
 
 // ============================================
 // RESULTS COMPONENT
@@ -1260,264 +263,17 @@ const RiskStudyResults: React.FC<{
   const infoInsights = insights.filter(i => i.type === 'info');
   const [synthesisSaved, setSynthesisSaved] = useState(false);
 
+  // -- Rapport PDF ---------------------------------------------------------
+  // v1.4.1 - Le document etait compose ici, en HTML, et un second exemplaire
+  // divergent vivait dans InvestisseurRisquesPanel. Il vient desormais du
+  // socle : une seule maquette, un seul endroit ou la corriger.
   const handleGeneratePdf = useCallback(() => {
-    const verdict = getVerdictConfig(scores.global);
-    const scoreColor = getScoreColor(scores.global);
-
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) { alert('Autorisez les popups pour générer le PDF'); return; }
-
-    const fmtN = (n: number | null | undefined, d = 0) =>
-      n == null || isNaN(n) ? '—' : new Intl.NumberFormat('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
-    const fmtDist = (m: number | null | undefined) =>
-      m == null ? '—' : m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`;
-    const riskBadge = (level: RiskLevel) => {
-      const c = getRiskColor(level); const b = getRiskBg(level);
-      return `<span style="padding:3px 10px;background:${b};color:${c};border-radius:6px;font-size:11px;font-weight:600;">${getRiskLabel(level)}</span>`;
-    };
-    const sectionTitle = (icon: string, title: string) =>
-      `<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;padding-bottom:10px;border-bottom:2px solid #e2e8f0;">
-        <span style="font-size:18px;">${icon}</span>
-        <span style="font-size:17px;font-weight:700;color:#1e293b;">${title}</span>
-      </div>`;
-    const section = (content: string) =>
-      `<div style="background:white;border-radius:14px;padding:24px;margin-bottom:20px;border:1px solid #e2e8f0;page-break-inside:avoid;">${content}</div>`;
-    const kpiBox = (label: string, value: string, color = '#1e293b', sub = '') =>
-      `<div style="background:#f8fafc;border-radius:10px;padding:14px;text-align:center;border:1px solid #e2e8f0;">
-        <div style="font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:6px;">${label}</div>
-        <div style="font-size:22px;font-weight:800;color:${color};">${value}</div>
-        ${sub ? `<div style="font-size:10px;color:#94a3b8;margin-top:3px;">${sub}</div>` : ''}
-      </div>`;
-    const insightRow = (type: InsightType, cat: string, msg: string) => {
-      const cfg: Record<InsightType, {bg:string;border:string;dot:string}> = {
-        critical: {bg:'#fef2f2',border:'#fecaca',dot:'#dc2626'},
-        warning:  {bg:'#fef3c7',border:'#fcd34d',dot:'#f59e0b'},
-        positive: {bg:'#ecfdf5',border:'#a7f3d0',dot:'#10b981'},
-        info:     {bg:'#f0f9ff',border:'#bae6fd',dot:'#0ea5e9'},
-      };
-      const c = cfg[type];
-      return `<div style="padding:12px 14px;background:${c.bg};border:1px solid ${c.border};border-radius:8px;margin-bottom:8px;display:flex;gap:10px;align-items:flex-start;">
-        <span style="width:8px;height:8px;border-radius:50%;background:${c.dot};margin-top:5px;flex-shrink:0;display:inline-block;"></span>
-        <div><span style="font-size:9px;font-weight:600;color:#64748b;text-transform:uppercase;">${cat}</span>
-        <p style="font-size:13px;color:#1e293b;margin:3px 0 0 0;line-height:1.5;">${msg}</p></div>
-      </div>`;
-    };
-    // score null = catégorie non mesurée : barre vide et mention explicite,
-    // pour que le rapport imprimé ne laisse pas croire à une note.
-    const bar = (score: number | null, level: RiskLevel) => {
-      const c = getRiskColor(level);
-      if (score == null) {
-        return `<div style="display:flex;align-items:center;gap:10px;">
-          <div style="flex:1;height:8px;background:#e2e8f0;border-radius:4px;"></div>
-          <span style="font-size:11px;font-weight:600;color:#94a3b8;min-width:70px;">non mesuré</span>
-        </div>`;
-      }
-      return `<div style="display:flex;align-items:center;gap:10px;">
-        <div style="flex:1;height:8px;background:#e2e8f0;border-radius:4px;">
-          <div style="width:${score}%;height:100%;background:${c};border-radius:4px;"></div>
-        </div>
-        <span style="font-size:13px;font-weight:700;color:${c};min-width:24px;">${score}</span>
-      </div>`;
-    };
-
-    const bankSection = bankScoring ? section(`
-      ${sectionTitle('🏦', 'Scoring Banque — Risques')}
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">
-        ${kpiBox('Score', String(bankScoring.score), getBankGradeColor(bankScoring.grade))}
-        ${kpiBox('Grade', bankScoring.grade, getBankGradeColor(bankScoring.grade))}
-        ${kpiBox('Niveau', bankScoring.level_label, '#1e293b')}
-        ${kpiBox('Confiance', Math.round(bankScoring.confidence * 100) + '%', '#6366f1')}
-      </div>
-      ${bankScoring.rationale.slice(0, 3).map(r => insightRow('info', 'Banque', r)).join('')}
-    `) : '';
-
-    const catnatRows = riskData.gaspar.catnat_events.slice(0, 10).map((e, i) =>
-      `<tr style="background:${i%2===0?'#f8fafc':'white'};">
-        <td style="padding:8px 10px;font-size:12px;color:#1e293b;">${e.libelle_risque || '—'}</td>
-        <td style="padding:8px 10px;font-size:12px;color:#64748b;">${e.date_debut || '—'}</td>
-        <td style="padding:8px 10px;font-size:12px;color:#64748b;">${e.date_fin || '—'}</td>
-      </tr>`
-    ).join('');
-
-    const icpeRows = riskData.icpe.installations.slice(0, 10).map((inst, i) =>
-      `<tr style="background:${inst.seveso ? '#fef2f2' : i%2===0?'#f8fafc':'white'};">
-        <td style="padding:8px 10px;font-size:12px;font-weight:600;color:#1e293b;">${inst.nom}</td>
-        <td style="padding:8px 10px;font-size:12px;color:#64748b;">${inst.activite || '—'}</td>
-        <td style="padding:8px 10px;font-size:12px;color:${inst.seveso ? '#dc2626' : '#64748b'};font-weight:${inst.seveso ? 600 : 400};">${inst.seveso || '—'}</td>
-        <td style="padding:8px 10px;font-size:12px;color:#64748b;">${fmtDist(inst.distance_m)}</td>
-      </tr>`
-    ).join('');
-
-    const htmlContent = `<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8">
-  <title>Étude de Risques — ${meta.commune_nom}</title>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family:'Segoe UI',Arial,sans-serif; background:#f8fafc; padding:40px; color:#1e293b; line-height:1.6; }
-    @media print { body { padding:20px; background:white; } @page { margin:15mm; } }
-    table { width:100%; border-collapse:collapse; }
-    th { background:#f1f5f9; padding:10px 12px; font-size:11px; font-weight:600; color:#64748b; text-transform:uppercase; text-align:left; }
-  </style>
-</head>
-<body>
-
-  <!-- HEADER violet Mimmoza -->
-  <div style="background:linear-gradient(135deg,#1e293b 0%,#5247b8 60%,#1e293b 100%);border-radius:16px;padding:36px 40px;margin-bottom:28px;color:white;">
-    <div style="font-size:12px;opacity:0.6;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.08em;">Mimmoza · Étude de Risques</div>
-    <h1 style="font-size:32px;font-weight:800;margin-bottom:6px;">${meta.commune_nom}</h1>
-    <p style="font-size:14px;opacity:0.75;margin-bottom:28px;">${meta.region} · Département ${meta.departement} · Rayon ${meta.radius_km} km · v${data.version}</p>
-
-    <div style="display:grid;grid-template-columns:160px 1fr auto;gap:32px;align-items:center;">
-      <!-- Score -->
-      <div style="text-align:center;background:rgba(255,255,255,0.1);border-radius:14px;padding:20px;">
-        <div style="font-size:56px;font-weight:800;color:${scoreColor};line-height:1;">${scores.global ?? '—'}</div>
-        <div style="font-size:12px;opacity:0.6;margin-bottom:8px;">${scores.global == null ? 'non mesuré' : '/100'}</div>
-        <div style="padding:6px 14px;background:${verdict.bg};color:${verdict.color};border-radius:8px;font-weight:700;font-size:13px;display:inline-block;">${verdict.label}</div>
-      </div>
-
-      <!-- Sous-scores -->
-      <div style="background:rgba(255,255,255,0.08);border-radius:14px;padding:20px;">
-        <div style="font-size:11px;opacity:0.65;font-weight:600;text-transform:uppercase;margin-bottom:14px;">Scores par catégorie</div>
-        ${categories.map(cat => `
-          <div style="margin-bottom:12px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
-              <span style="font-size:12px;opacity:0.85;">${cat.name}</span>
-              ${riskBadge(cat.level)}
-            </div>
-            ${bar(cat.score, cat.level)}
-          </div>`).join('')}
-      </div>
-
-      <!-- KPIs clés -->
-      <div style="background:rgba(255,255,255,0.08);border-radius:14px;padding:20px;min-width:180px;">
-        <div style="font-size:11px;opacity:0.65;font-weight:600;text-transform:uppercase;margin-bottom:14px;">Données clés</div>
-        ${[
-          {label:'Arrêtés CATNAT', value: String(riskData.gaspar.catnat_count)},
-          {label:'PPR applicables', value: String(riskData.gaspar.ppr_count)},
-          {label:'Sites SEVESO', value: String(riskData.icpe.seveso_haut_count + riskData.icpe.seveso_bas_count)},
-          {label:'Sites pollués SIS', value: String(riskData.sis.count)},
-          {label:'Zone sismique', value: String(riskData.seisme.zone ?? '—')},
-          {label:'Classe radon', value: String(riskData.radon.classe_potentiel ?? '—')},
-        ].map(k => `
-          <div style="margin-bottom:8px;">
-            <div style="font-size:10px;opacity:0.6;">${k.label}</div>
-            <div style="font-size:15px;font-weight:700;">${k.value}</div>
-          </div>`).join('')}
-      </div>
-    </div>
-  </div>
-
-  ${bankSection}
-
-  <!-- INSIGHTS -->
-  ${(criticalInsights.length > 0 || warningInsights.length > 0 || positiveInsights.length > 0) ? section(`
-    <div style="display:grid;grid-template-columns:repeat(${[criticalInsights,warningInsights,positiveInsights].filter(a=>a.length>0).length},1fr);gap:24px;">
-      ${criticalInsights.length > 0 ? `<div>${sectionTitle('🚨','Alertes critiques')}${criticalInsights.map(i=>insightRow(i.type,i.category,i.message)).join('')}</div>` : ''}
-      ${warningInsights.length > 0 ? `<div>${sectionTitle('⚠️','Points de vigilance')}${warningInsights.map(i=>insightRow(i.type,i.category,i.message)).join('')}</div>` : ''}
-      ${positiveInsights.length > 0 ? `<div>${sectionTitle('✅','Points positifs')}${positiveInsights.map(i=>insightRow(i.type,i.category,i.message)).join('')}</div>` : ''}
-    </div>
-  `) : ''}
-
-  <!-- RISQUES NATURELS -->
-  ${section(`
-    ${sectionTitle('🌊', 'Risques Naturels')}
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
-      ${kpiBox('Inondation', getRiskLabel(riskData.inondation.risk_level), getRiskColor(riskData.inondation.risk_level), riskData.inondation.ppri == null ? 'PPRI non vérifié' : riskData.inondation.ppri ? 'PPRI actif' : 'Hors PPRI')}
-      ${kpiBox('Séisme', `Zone ${riskData.seisme.zone ?? '—'}`, getRiskColor(riskData.seisme.risk_level), riskData.seisme.libelle)}
-      ${kpiBox('Feux de forêt', getRiskLabel(riskData.feux_foret.risk_level), getRiskColor(riskData.feux_foret.risk_level), riskData.feux_foret.zone_risque ? 'Zone exposée' : 'Hors zone')}
-      ${kpiBox('Argiles (RGA)', getRiskLabel(riskData.argiles.risk_level), getRiskColor(riskData.argiles.risk_level), riskData.argiles.niveau_alea || 'Non évalué')}
-    </div>
-  `)}
-
-  <!-- POLLUTION & SOLS -->
-  ${section(`
-    ${sectionTitle('☢️', 'Pollution & Qualité des Sols')}
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
-      ${kpiBox('Sites pollués (SIS)', String(riskData.sis.count), riskData.sis.count > 0 ? '#dc2626' : '#10b981')}
-      ${kpiBox('Radon — Classe', String(riskData.radon.classe_potentiel ?? '—'), getRiskColor(riskData.radon.risk_level), riskData.radon.libelle)}
-      ${kpiBox('Niveau risque pollution', getRiskLabel(riskData.sis.risk_level), getRiskColor(riskData.sis.risk_level))}
-    </div>
-    ${riskData.sis.count > 0 ? `
-    <div style="margin-top:16px;">
-      <div style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:10px;">Sites SIS identifiés</div>
-      ${riskData.sis.sites.map(s => `
-        <div style="padding:10px 14px;background:#fef2f2;border-radius:8px;margin-bottom:8px;border-left:4px solid #dc2626;">
-          <div style="font-size:13px;font-weight:600;color:#991b1b;">${s.nom}</div>
-          <div style="font-size:11px;color:#b91c1c;margin-top:2px;">${s.adresse || s.commune}${s.superficie_m2 ? ` · ${fmtN(s.superficie_m2)} m²` : ''}</div>
-        </div>`).join('')}
-    </div>` : ''}
-  `)}
-
-  <!-- GÉOTECHNIQUE -->
-  ${section(`
-    ${sectionTitle('🪨', 'Risques Géotechniques')}
-    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px;">
-      ${kpiBox('Cavités souterraines', String(riskData.cavites.count), getRiskColor(riskData.cavites.risk_level), riskData.cavites.cavites[0]?.distance_m ? `Plus proche: ${fmtDist(riskData.cavites.cavites[0].distance_m)}` : 'Dans le secteur')}
-      ${kpiBox('Mouvements de terrain', String(riskData.mouvements_terrain.count), getRiskColor(riskData.mouvements_terrain.risk_level), 'événements recensés')}
-    </div>
-    ${riskData.cavites.count > 0 ? `
-    <div style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:8px;">Cavités détaillées</div>
-    ${riskData.cavites.cavites.slice(0,5).map((c,i) => `
-      <div style="display:flex;justify-content:space-between;padding:8px 10px;background:${i%2===0?'#f8fafc':'white'};border-radius:6px;margin-bottom:4px;font-size:12px;">
-        <span style="color:#1e293b;">${c.type}${c.nom ? ' — ' + c.nom : ''}</span>
-        <span style="color:#64748b;font-weight:600;">${fmtDist(c.distance_m)}</span>
-      </div>`).join('')}` : ''}
-  `)}
-
-  <!-- CATNAT -->
-  ${section(`
-    ${sectionTitle('📋', 'Catastrophes Naturelles — CATNAT / GASPAR')}
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:${riskData.gaspar.catnat_count > 0 ? '20px' : '0'};">
-      ${kpiBox('Arrêtés CATNAT', String(riskData.gaspar.catnat_count), riskData.gaspar.catnat_count > 5 ? '#dc2626' : riskData.gaspar.catnat_count > 0 ? '#f59e0b' : '#10b981')}
-      ${kpiBox('PPR applicables', String(riskData.gaspar.ppr_count), riskData.gaspar.ppr_count > 0 ? '#d97706' : '#10b981')}
-    </div>
-    ${catnatRows ? `
-    <table><thead><tr><th>Type de risque</th><th>Début</th><th>Fin</th></tr></thead>
-    <tbody>${catnatRows}</tbody></table>` : ''}
-    ${riskData.gaspar.ppr_list.length > 0 ? `
-    <div style="margin-top:16px;">
-      <div style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;margin-bottom:8px;">Plans de Prévention des Risques</div>
-      ${riskData.gaspar.ppr_list.map(p => `
-        <div style="padding:10px 14px;background:#fef3c7;border-radius:8px;margin-bottom:6px;border-left:4px solid #f59e0b;">
-          <div style="font-size:13px;font-weight:600;color:#92400e;">${p.libelle}</div>
-          <div style="font-size:11px;color:#b45309;margin-top:2px;">État: ${p.etat || 'Inconnu'} · Code: ${p.code}</div>
-        </div>`).join('')}
-    </div>` : ''}
-  `)}
-
-  <!-- ICPE / SEVESO -->
-  ${section(`
-    ${sectionTitle('🏭', 'Installations Industrielles — ICPE / SEVESO')}
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:${riskData.icpe.count > 0 ? '20px' : '0'};">
-      ${kpiBox('SEVESO Seuil Haut', String(riskData.icpe.seveso_haut_count), riskData.icpe.seveso_haut_count > 0 ? '#991b1b' : '#10b981')}
-      ${kpiBox('SEVESO Seuil Bas', String(riskData.icpe.seveso_bas_count), riskData.icpe.seveso_bas_count > 0 ? '#d97706' : '#10b981')}
-      ${kpiBox('ICPE total', String(riskData.icpe.count), '#64748b')}
-    </div>
-    ${icpeRows ? `
-    <table><thead><tr><th>Nom</th><th>Activité</th><th>SEVESO</th><th>Distance</th></tr></thead>
-    <tbody>${icpeRows}</tbody></table>` : ''}
-  `)}
-
-  ${infoInsights.length > 0 ? section(`
-    ${sectionTitle('ℹ️', 'Informations complémentaires')}
-    ${infoInsights.map(i => insightRow(i.type, i.category, i.message)).join('')}
-  `) : ''}
-
-  <!-- FOOTER -->
-  <div style="text-align:center;padding-top:24px;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:11px;">
-    <p>Rapport généré le ${new Date().toLocaleDateString('fr-FR', {day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p>
-    <p style="margin-top:4px;">Mimmoza · Plateforme d'analyse immobilière intelligente · Sources : Géorisques, GASPAR, BRGM, ICPE</p>
-  </div>
-
-</body>
-</html>`;
-
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-    printWindow.onload = () => { setTimeout(() => { printWindow.print(); }, 300); };
-  }, [meta, scores, categories, criticalInsights, warningInsights, positiveInsights, infoInsights, riskData, bankScoring, data]);
+    openRiskReport({
+      meta, scores, categories, data: riskData, insights,
+      version: data.version, bankScoring,
+      accent: ACCENT_PRO, espace: "Espace promoteur",
+    });
+  }, [meta, scores, categories, riskData, insights, data.version, bankScoring]);
 
   const categoryIcons: Record<string, LucideIcon> = {
     "Risques Naturels": Mountain,
@@ -1527,7 +283,7 @@ const RiskStudyResults: React.FC<{
   };
 
   return (
-    <ErrorBoundary componentName="RiskStudyResults">
+    <RiskErrorBoundary componentName="RiskStudyResults">
       <div>
         {/* 🆕 Banque scoring */}
         {isBankScoringLoading && (
@@ -1604,27 +360,7 @@ const RiskStudyResults: React.FC<{
               À force d'écarter les catégories non mesurées, un score peut ne
               reposer que sur une partie des critères. Rien ne l'indiquait à
               l'écran : c'était le dernier angle mort de la chaîne. */}
-          <div style={{
-            marginTop: "24px", paddingTop: "18px",
-            borderTop: "1px solid rgba(255,255,255,0.15)",
-            fontSize: "12px", lineHeight: 1.6, opacity: 0.85,
-          }}>
-            {scores.criteres_total != null && (
-              <div style={{ marginBottom: "6px", fontWeight: 600 }}>
-                Note établie sur {scores.criteres_mesures ?? 0} critère(s) mesuré(s) sur {scores.criteres_total}.
-                {scores.categories_non_mesurees && scores.categories_non_mesurees.length > 0 && (
-                  <> Non mesuré, donc exclu du score global : {scores.categories_non_mesurees.join(", ")}.</>
-                )}
-              </div>
-            )}
-            <div>
-              Une source publique muette ne vaut pas absence de risque : les critères non
-              mesurés sont écartés du calcul, jamais comptés comme favorables, et les poids
-              sont renormalisés sur les seules catégories mesurées. Cette étude décrit
-              l'exposition de la <strong>commune et de son environnement</strong> — elle ne
-              se substitue pas à une étude de sol ni à un diagnostic sur la parcelle.
-            </div>
-          </div>
+          <ScoreProvenanceNote scores={scores} />
         </div>
         
         {/* Insights */}
@@ -1782,21 +518,9 @@ const RiskStudyResults: React.FC<{
           </button>
         </div>
       </div>
-    </ErrorBoundary>
+    </RiskErrorBoundary>
   );
 };
-
-// ============================================
-// 🆕 Banque scoring – extract dossierId from URL
-// ============================================
-function extractDossierIdFromUrl(): string | null {
-  try {
-    const match = window.location.pathname.match(/\/banque\/risque\/([^/]+)/);
-    return match ? match[1] : null;
-  } catch {
-    return null;
-  }
-}
 
 // ============================================
 // MAIN COMPONENT
@@ -2114,14 +838,20 @@ export function RisquesPage({ onStudyComplete: _onStudyComplete, theme: _theme }
         // v1.3.1 : la conversion vit dans le socle partagé, pour que ce panel et
         // InvestisseurRisquesPanel écrivent la MÊME échelle dans la même colonne.
         const sisCount = result.data?.sis?.count;
+        // v1.4.0 — La garde `sisCount == null` était trop faible : une base SIS
+        // muette qui renvoie `count: 0` passait pour « aucun site pollué ». On
+        // exige que la source se soit déclarée mesurée (coverage ET risk_level),
+        // comme le fait déjà InvestisseurRisquesPanel.
+        const sisMesureDb = isLevelMeasured(result.data?.sis?.risk_level)
+          && isMeasured(result.data?.sis?.coverage);
 
         const risquesPayload: PromoteurRisquesData = {
           score_inondation: niveauAleaToDb(result.data?.inondation?.risk_level),
           score_seisme: result.data?.seisme?.zone ?? null,
           score_retrait_argile: niveauAleaToDb(result.data?.argiles?.risk_level),
           score_radon: result.data?.radon?.classe_potentiel ?? null,
-          // `sisCount` absent = SIS non interrogé, pas « aucun site pollué ».
-          pollution_sols: sisCount == null ? false : sisCount > 0,
+          // « pas de site pollué » n'est affirmable que si la base a répondu.
+          pollution_sols: sisMesureDb ? (sisCount ?? 0) > 0 : false,
           score_global: result.scores?.global ?? null,
           raw_georisques: result as unknown as Record<string, unknown>,
           done: true,
@@ -2237,7 +967,7 @@ export function RisquesPage({ onStudyComplete: _onStudyComplete, theme: _theme }
     : null;
 
   return (
-    <ErrorBoundary componentName="RisquesPage">
+    <RiskErrorBoundary componentName="RisquesPage">
       <div style={styles.container}>
 
         {/* ── Bannière dégradé Promoteur › Études ── */}
@@ -2578,7 +1308,7 @@ export function RisquesPage({ onStudyComplete: _onStudyComplete, theme: _theme }
           }
         `}</style>
       </div>
-    </ErrorBoundary>
+    </RiskErrorBoundary>
   );
 }
 

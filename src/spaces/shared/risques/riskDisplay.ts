@@ -183,6 +183,21 @@ export const niveauAleaToDb = (level: RiskLevel | null | undefined): number | nu
   }
 };
 
+// ─── Navigation ─────────────────────────────────────────────────────────────
+
+/**
+ * Identifiant de dossier banque lu dans l'URL (`/banque/risque/:id`).
+ * Était dupliqué verbatim dans les deux écrans.
+ */
+export const extractDossierIdFromUrl = (): string | null => {
+  try {
+    const match = window.location.pathname.match(/\/banque\/risque\/([^/]+)/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+};
+
 /** Phrase de synthèse d'un score global, sans jamais inventer de note. */
 export const summarizeGlobalScore = (score: number | null | undefined): string =>
   score == null || isNaN(score)
