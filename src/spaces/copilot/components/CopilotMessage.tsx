@@ -5,24 +5,33 @@ import { CopilotActionCard } from './CopilotActionCard';
 import { isActionTool, readAction, sameAction } from '../actions/copilotActions';
 import { useCopilotStore } from '../store/copilotStore';
 import { COPILOT_THEME as T } from './copilotTheme';
+import { Download } from 'lucide-react';
+import { useState } from 'react';
+import { exportCopilotResponseToPdf, markdownToSafeHtml } from '../utils/exportCopilotPdf';
+import './CopilotMessage.css';
 
-// Rendu markdown minimal (gras, titres, listes) sans dépendance externe.
-function renderLight(text: string): string {
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  let html = esc(text);
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  html = html.replace(/`(.+?)`/g, '<code style="background:rgb(255 255 255/0.08);padding:1px 5px;border-radius:4px;font-size:12px">$1</code>');
-  html = html.replace(/^### (.+)$/gm, '<div style="font-weight:700;margin:10px 0 4px;font-size:14px">$1</div>');
-  html = html.replace(/^## (.+)$/gm, '<div style="font-weight:700;margin:12px 0 6px;font-size:15px">$1</div>');
-  html = html.replace(/^[-•] (.+)$/gm, '<div style="padding-left:14px;position:relative">• $1</div>');
-  html = html.replace(/\n/g, '<br/>');
-  return html;
-}
-
-export function CopilotMessage({ message }: { message: ChatMessage }) {
+export function CopilotMessage({ message, question }: { message: ChatMessage; question?: string | null }) {
   const isUser = message.role === 'user';
   const actionRuns = useCopilotStore((s) => s.actionRuns);
+  const messages = useCopilotStore((s) => s.messages);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const linkedQuestion = question ?? (() => {
+    const index = messages.findIndex((item) => item.id === message.id);
+    for (let i = index - 1; i >= 0; i--) if (messages[i].role === 'user') return messages[i].text;
+    return null;
+  })();
+
+  const handleResponseExport = async () => {
+    setExporting(true); setExportError(null);
+    try {
+      const result = await exportCopilotResponseToPdf({ response: message, question: linkedQuestion });
+      if (result === 'popup_blocked') setExportError('Autorisez les fenêtres contextuelles pour exporter le PDF.');
+    } catch {
+      setExportError('Le rapport PDF n’a pas pu être préparé.');
+    } finally { setExporting(false); }
+  };
 
   if (isUser) {
     return (
@@ -68,9 +77,18 @@ export function CopilotMessage({ message }: { message: ChatMessage }) {
       )}
       {message.text && (
         <div
+          className="copilot-message-markdown"
           style={{ color: T.text, fontSize: 14, lineHeight: 1.6 }}
-          dangerouslySetInnerHTML={{ __html: renderLight(message.text) }}
+          dangerouslySetInnerHTML={{ __html: markdownToSafeHtml(message.text) }}
         />
+      )}
+      {message.status === 'complete' && message.text.trim() && (
+        <div className="copilot-message-actions">
+          <button type="button" onClick={() => void handleResponseExport()} disabled={exporting} aria-label="Exporter cette réponse en PDF" aria-busy={exporting}>
+            <Download size={14} aria-hidden="true" /> {exporting ? 'Préparation…' : 'Exporter en PDF'}
+          </button>
+          {exportError && <span role="status">{exportError}</span>}
+        </div>
       )}
       {message.status === 'streaming' && !message.text && message.toolCalls.length === 0 && (
         <div style={{ display: 'inline-flex', gap: 4, padding: '4px 0' }}>

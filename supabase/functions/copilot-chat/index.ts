@@ -28,6 +28,11 @@
 // =============================================================
 
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { selectToolNames } from '../_shared/copilot-routing/selector.ts';
+import { createContextSnapshot, mergeContexts, type ContextSnapshot } from '../_shared/copilot-context/snapshot.ts';
+import { geographicGroundingPolicy } from '../_shared/copilot-grounding/geographic.ts';
+import { unsupportedInferencePolicy } from '../_shared/copilot-grounding/inferences.ts';
+import { renderParcelStudyReport } from '../_shared/copilot-reporting/parcel-study.ts';
 
 // =============================================================
 // SECTION 1 — Configuration
@@ -1778,8 +1783,9 @@ function summarizeZonageDedicated(
 /**
  * Taxes locales (taxes-locales-v1) : réponse déjà compacte { status, summary, stats, items }.
  * On mappe le statut et on transmet les notes métier : TH résidence principale supprimée
- * (le taux TH ne vaut que pour résidences secondaires / logements vacants), majoration THRS
- * possible en zone tendue. Le LLM ne doit pas présenter la TH comme due sur une résidence principale.
+ * (avec des régimes distincts pour résidences secondaires et logements vacants), majoration THRS
+ * possible dans son propre champ. Le LLM ne doit ni présenter la TH comme due sur une résidence
+ * principale, ni étendre la majoration THRS aux logements vacants.
  */
 function summarizeTaxesDedicated(
   raw: unknown,
@@ -1974,15 +1980,26 @@ function summarizeEtudeParcelle(
       status: 'ok',
       data: {
         summary,
+        ancrage: root.stats?.ancrage ?? null,
+        portees: root.stats?.portees ?? null,
+        interdictions_de_conclusion: root.stats?.interdictions_de_conclusion ?? [],
+        interdictions_analyse: root.stats?.interdictions_analyse ?? [],
         precision: root.stats?.precision ?? null,
         parcelle: root.stats?.parcelle ?? null,
         avertissements: root.stats?.avertissements ?? [],
         sources_indisponibles: root.stats?.sources_indisponibles ?? [],
+        evidences: root.stats?.evidences ?? [],
+        verdict: root.stats?.verdict ?? null,
+        plan_action: root.stats?.plan_action ?? [],
         donnees: items.map((i: any) => ({
           domaine: i.label ?? i.cle,
           statut: i.status,
           resume: i.summary ?? null,
           chiffres: i.stats ?? null,
+          portee: i.portee ?? null,
+          organisme: i.organisme ?? null,
+          jeu_de_donnees: i.jeu_de_donnees ?? null,
+          millesime: i.millesime ?? null,
           motif_indisponibilite: i.motif ?? undefined,
         })),
       },
@@ -2986,8 +3003,10 @@ const TOOLS: ToolDef[] = [
       "Donne les taux de fiscalité directe locale VOTÉS d'une commune (source DGFiP, data.economie.gouv) : " +
       "taxe foncière sur les propriétés bâties (TFB) — la plus utile en immobilier —, taxe foncière " +
       "non bâtie (TFNB), taxe d'habitation (TH), majoration THRS et TEOM. ⚠️ La TH sur la résidence " +
-      "principale est SUPPRIMÉE depuis 2023 : le taux TH ne concerne que les résidences secondaires " +
-      "(THRS) et les logements vacants (THLV). Utile pour estimer les charges d'un investisseur, le " +
+      "principale est SUPPRIMÉE depuis 2023. La THRS et sa majoration éventuelle concernent les " +
+      "résidences secondaires ; les logements vacants relèvent de régimes distincts (THLV/TLV selon " +
+      "leur champ). Ne présente jamais la majoration THRS comme applicable aux logements vacants sans " +
+      "champ explicite fourni par la source. Utile pour estimer les charges d'un investisseur, le " +
       "coût de portage d'un marchand, ou comparer la pression fiscale entre communes. N'invente jamais " +
       "un taux : si la commune n'est pas trouvée, signale-le.",
     input_schema: {
@@ -3695,7 +3714,19 @@ const TOOLS: ToolDef[] = [
       "pas un texte mais un écran : l'utilisateur veut voir, saisir ou vérifier quelque chose. Ne " +
       "l'utilise pas pour illustrer un propos — uniquement quand ouvrir la page est l'action " +
       "attendue. La route doit venir de `promoteur_chain.steps[].route` ou être une route connue de " +
-      "l'application. Rien n'est écrit : l'utilisateur confirme avant que la page s'ouvre.",
+      "l'application. La route peut inclure des query params (`?tab=`, `?study=`, `?highlight=`). " +
+      "Routes connues utiles : étude de marché promoteur → '/promoteur/marche' (ajoute '?study=<id>' " +
+      "si une opération est active dans `promoteur_chain`, et '&highlight=pdf' si l'utilisateur veut " +
+      "le rapport PDF — la page propose un bouton « Générer le rapport PDF ») ; étude de marché " +
+      "marchand de bien → '/marchand-de-bien/analyse?tab=marche_risques' ; étude de risques " +
+      "promoteur → '/promoteur/risques' ; DVF & comparables → '/promoteur/estimation' ; " +
+      "foncier / PLU / faisabilité → '/promoteur/foncier'. Si l'utilisateur demande à OUVRIR une " +
+      "page ou un onglet (« ouvre l'étude de marché », « ouvre l'onglet PLU »), propose cette " +
+      "action immédiatement — même sans parcelle ni étude en contexte : la page s'occupe de la " +
+      "saisie. Ne demande pas d'adresse ou de parcelle avant d'ouvrir. Si " +
+      "l'utilisateur demande à VOIR une étude en détail (ex. « je veux voir l'étude de marché »), " +
+      "utilise cette action plutôt que de résumer. Rien n'est écrit : l'utilisateur confirme avant " +
+      "que la page s'ouvre.",
     input_schema: {
       type: 'object',
       properties: {
@@ -3872,10 +3903,20 @@ function toolActionOuvrirPage(input: Record<string, unknown>, ctx: MimmozaContex
   if (!route.startsWith('/')) {
     return { status: 'error', source: 'copilot', message: 'Route interne invalide.' };
   }
-  const known = readChain(ctx).steps.find((s) => s.route === route);
+  const path = route.split('?')[0];
+  const known = readChain(ctx).steps.find((s) => s.route === route || s.route?.split('?')[0] === path);
+  const FRIENDLY: Record<string, string> = {
+    '/promoteur/marche': "l'étude de marché",
+    '/marchand-de-bien/marche': "l'étude de marché",
+    '/marchand-de-bien/analyse': "l'analyse",
+    '/promoteur/risques': "l'étude de risques",
+    '/promoteur/estimation': 'DVF & comparables',
+    '/promoteur/foncier': 'le foncier / PLU',
+  };
+  const friendly = route.includes('tab=marche_risques') ? "l'étude de marché" : FRIENDLY[path];
   return proposal({
     kind: 'open_page',
-    label: known?.label ? `Ouvrir ${known.label}` : 'Ouvrir la page',
+    label: known?.label ? `Ouvrir ${known.label}` : friendly ? `Ouvrir ${friendly}` : 'Ouvrir la page',
     summary: raison || `Ouvrir ${route}`,
     params: { route },
   });
@@ -7065,6 +7106,10 @@ function buildSystemPrompt(ctx: MimmozaContext, mode: CopilotMode): string {
       "---",
     ].join('\n') : "",
     "",
+    geographicGroundingPolicy(),
+    "",
+    unsupportedInferencePolicy(),
+    "",
     "RÈGLES IMPÉRATIVES :",
     "1. Tu n'inventes jamais de donnée. Si une information n'a pas été obtenue via un outil ou le snapshot, dis-le explicitement.",
     "2. Toute affirmation factuelle (chiffre, zone PLU, prix) doit indiquer sa source entre crochets, ex: [source: market-study v1].",
@@ -7105,6 +7150,7 @@ function buildSystemPrompt(ctx: MimmozaContext, mode: CopilotMode): string {
     "4sexdecies. Le contexte peut contenir un DEAL ACTIF, un snapshot prédictif ou des données de page portant sur un bien précis. Tu ne les utilises QUE si la question porte sur ce bien, sur « cette page » ou sur « mon projet ». Tu n'introduis JAMAIS de toi-même un bien, un prix, une estimation, une décote ou un budget que l'utilisateur n'a pas évoqué dans la conversation en cours : une question générale sur une ville, un secteur ou une réglementation reçoit une réponse générale. Si un rapprochement avec le deal actif te paraît utile, tu le PROPOSES en une phrase (« souhaitez-vous que je rapproche cela de votre projet en cours ? ») au lieu d'en dérouler les chiffres.",
     "4quindecies-a. En mode rapide, get_etude_parcelle se suffit à lui-même : après l'avoir appelé, tu n'appelles AUCUN autre outil (ni PLU, ni risques, ni DVF) et tu rédiges directement le rapport. Le budget d'itérations est limité : un outil supplémentaire consomme le tour de synthèse et l'utilisateur ne reçoit alors aucun rapport. Si le PLU ou les risques manquent, tu le signales en partie 5 comme point à vérifier, sans chercher à les récupérer.",
     "4quindecies. Quand tu réponds à partir de get_etude_parcelle, tu ne listes PAS les données brutes : tu rédiges un RAPPORT structuré en cinq parties — (1) Identité de la parcelle ; (2) Contraintes réglementaires (zonage, servitudes) ; (3) Aptitude physique du terrain (pente, altitude, assainissement, solaire) ; (4) Potentiel économique (loyers, zone ABC, fiscalité) ; (5) VERDICT ET POINTS DE VIGILANCE. La partie 5 est la plus importante : elle hiérarchise ce qui bloque, ce qui coûte cher et ce qui reste à vérifier. Tu t'appuies UNIQUEMENT sur les données du bundle, tu cites la source de chaque chiffre, et tu consacres un paragraphe explicite aux sources indisponibles et à ce qu'elles empêchent de conclure. Termine par « À faire valider par un professionnel. » INTERDICTIONS ABSOLUES dans ce rapport : ne JAMAIS nommer ni décrire une couleur de zone d'un PPR (rouge, bleue, orange…) — ce zonage réglementaire n'est dans aucune donnée, renvoie au règlement du PPR en mairie ; ne JAMAIS déduire une caractéristique géographique non fournie (proximité du littoral, d'un cours d'eau, nature de l'aléa) à partir d'une altitude ou d'un nom de commune ; ne JAMAIS introduire un étalon de comparaison absent des données (moyenne nationale, moyenne départementale, ordre de grandeur « habituel ») ; ne JAMAIS qualifier un chiffre de modéré, élevé, favorable, attractif ou pénalisant sans référence chiffrée issue du bundle — présente le taux brut et son effet concret (« TFB 31,75 % : à intégrer au coût de portage »), sans jugement de valeur.",
+    "4quindecies-bis. CALCULS DU RAPPORT PARCELLAIRE — si la réponse repose sur get_etude_parcelle et que la question n'est pas explicitement financière, tu ne calcules AUCUN rendement, ratio, dispersion ou indicateur nouveau en combinant loyer, DVF ou autres champs. Cette restriction est propre au rapport parcellaire : elle ne désactive pas la synthèse d'investissement lorsqu'elle est explicitement demandée. Tu transportes et respectes intégralement interdictions_analyse.",
     "4septdecies. Pour toute question de COÛT ou de BUDGET de construction neuve, appelle get_couts_construction — n'avance JAMAIS un €/m² de mémoire, et ne déduis JAMAIS un coût de construction d'un prix DVF (le DVF porte sur des ventes de biens EXISTANTS, pas sur un coût de construction : les deux ne sont pas comparables). Présente le montant comme un ordre de grandeur issu du barème Mimmoza, cite la source, rappelle les postes non inclus (foncier, honoraires, VRD, taxes d'urbanisme, aléas) et la nécessité d'un devis. Si l'outil signale que la typologie n'est pas couverte (EHPAD, clinique, hôtel, école), dis-le franchement et renvoie vers un économiste de la construction : n'utilise JAMAIS 'tertiaire' comme approximation.",
     "4octodecies. COÛT DES TRAVAUX DE RÉNOVATION (bien EXISTANT, distinct de la construction neuve de la règle 4septdecies). Si un budget travaux Mimmoza est déjà fourni (contexte renovation_* ou snapshot travaux_budget), utilise-le EN PRIORITÉ [source: simulation Mimmoza]. SINON, dès que l'utilisateur fournit des photos (ou décrit l'état) d'un bien PRÉCIS qu'il envisage d'acheter, d'estimer ou de rénover, tu estimes le coût des travaux DE TA PROPRE INITIATIVE — sans attendre une demande explicite de budget : une question sur le prix, l'opportunité, la qualité ou un simple « qu'en penses-tu ? » suffit à le déclencher. Et si un prix d'achat est connu, tu enchaînes dans le MÊME message la synthèse d'investissement de la règle 4novodecies (prix de revient + lecture des 3 angles). Cela ne s'applique qu'à un bien précis soumis par l'utilisateur, jamais à une question de marché générale (cf. règle 4sexdecies). Pour le chiffrage lui-même, tu appelles TOUJOURS get_couts_renovation : tu lis l'état sur les photos, tu en déduis les postes à reprendre et leurs quantités (surface, nombre d'ouvertures, nombre de pièces…), tu les transmets à l'outil qui applique les ratios et renvoie la décomposition chiffrée, que tu restitues SANS la recalculer. MODE DE CHIFFRAGE — RÈGLE STRICTE : dès que tu peux nommer NE SERAIT-CE QU'UN poste depuis les photos ou la description (cuisine, salle de bains, sols, peinture, électricité, menuiseries…), tu chiffres OBLIGATOIREMENT poste par poste (paramètre `postes`). Le paramètre `niveau_global` (rafraichissement/partielle/moyenne/lourde/complete) est un forfait grossier de DERNIER RECOURS, réservé au SEUL cas où l'état du bien est totalement illisible et qu'aucun poste n'est identifiable : il ne doit JAMAIS servir de raccourci quand tu as déjà identifié des postes. Chiffrer en `niveau_global` un bien dont tu viens de décrire les postes est une ERREUR (le forfait surestime massivement). Tu choisis aussi la `gamme` (economique/standard/premium) en cohérence avec le bien et tu l'ANNONCES explicitement dans ta réponse (« chiffrage en gamme premium »), pour que l'hypothèse soit traçable. Tu ne réponds JAMAIS « à chiffrer » ni « budget à anticiper » sans montant, et tu ne demandes JAMAIS son budget à l'utilisateur — c'est toi qui l'estimes via l'outil. Donnée absente (surface d'une pièce, gamme) → hypothèse explicite notée [H] transmise en quantité/paramètre à l'outil, et tu chiffres quand même. Présente la sortie sous forme de tableau poste par poste + TOTAL (fourchette) + ratio €/m² implicite (contrôle de cohérence) + 3 scénarios (indispensable / recommandé / valorisation max) si pertinent. Présente les montants comme des ordres de grandeur à confirmer par devis et cite [source: barème rénovation Mimmoza]. Postes non visibles sur photo (structure, réseaux enterrés, humidité, amiante <1997, plomb <1949, assainissement) : signale-les « à confirmer par visite/diagnostic » (l'aléa de l'outil les couvre), mais ne t'en sers JAMAIS comme prétexte pour ne pas chiffrer. Réserves regroupées en un seul bloc final. Termine par « À faire valider par un professionnel. »",
         "4novodecies. SYNTHÈSE INVESTISSEMENT — enchaînement OBLIGATOIRE. Dès que tu disposes À LA FOIS d'une estimation de valeur (comparables DVF/outil ou valeur saisie) ET d'un coût travaux (barème rénovation ou budget Mimmoza), tu ne t'arrêtes PAS au chiffrage : tu enchaînes sur une synthèse d'investissement chiffrée. (a) PRIX DE REVIENT = prix d'achat + travaux + frais d'acquisition ; les frais de notaire dans l'ancien (~7-8 %) sont un ordre de grandeur réglementaire standard que tu peux appliquer en l'annonçant. Si l'utilisateur n'a pas donné le prix d'achat, pose une hypothèse [H] (par défaut le bas de ta fourchette de valeur) pour illustrer le calcul, et marque-la comme hypothèse. (b) Positionne ce prix de revient face à la valeur de marché APRÈS travaux (comparables) et déduis, CHIFFRÉES : la marge brute sous l'angle marchand (valeur de revente − prix de revient, en € et en %) et/ou le rendement locatif si un loyer est disponible. Pour le loyer, appelle get_loyers_reference — ne l'invente JAMAIS. Si un calcul de rentabilité Mimmoza est déjà fourni (snapshot rentabilite / loyer_median_zone), utilise-le EN PRIORITÉ [source: module Rentabilité Mimmoza]. (c) ORDRE IMPÉRATIF : tu livres TOUJOURS le prix de revient EN PREMIER dès qu'il est calculable — il ne dépend d'AUCUN angle, ne le retarde donc jamais derrière une question. Tu ne demandes PAS son angle à l'utilisateur avant de produire la synthèse : tu enchaînes directement une lecture COURTE des trois angles à partir des données disponibles — résidence (paie-t-il le juste prix ? prix de revient face à la valeur de marché), locatif (rendement brut ≈ loyer annuel / prix de revient ; appelle get_loyers_reference pour le loyer, ne l'invente jamais), marchand (marge = valeur de revente − prix de revient, en € et en %). PUIS seulement tu proposes d'approfondir l'angle qui l'intéresse. Tu ne bloques JAMAIS toute la synthèse sur le choix de l'angle. (d) Le prix d'achat est le seul intrant réellement bloquant : s'il manque, réclame-le en UNE phrase ; s'il est connu, tu n'as plus aucune raison de t'arrêter — tu produis la synthèse complète. Termine par « À faire valider par un professionnel. »",
@@ -7178,15 +7224,21 @@ async function buildMessages(
 
   // Blocs image/document AVANT le texte (recommandation Anthropic).
   if (attachments?.length) {
+    const lastMessage = msgs.at(-1);
+    const persistedText = lastMessage?.role === 'user' && typeof lastMessage.content === 'string'
+      ? lastMessage.content
+      : '';
+    if (persistedText) msgs.pop();
     const blocks: unknown[] = attachments.map((a) =>
       a.mediaType === 'application/pdf'
         ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: a.data } }
         : { type: 'image', source: { type: 'base64', media_type: a.mediaType, data: a.data } },
     );
-    blocks.push({ type: 'text', text: newUserMessage });
+    const currentText = newUserMessage.trim() || persistedText;
+    if (currentText) blocks.push({ type: 'text', text: currentText });
     msgs.push({ role: 'user', content: blocks });
     console.log('[copilot] pieces jointes recues :', attachments.length);
-  } else {
+  } else if (newUserMessage.trim()) {
     msgs.push({ role: 'user', content: newUserMessage });
   }
   return msgs;
@@ -7438,7 +7490,12 @@ async function runOrchestrator(params: {
   const auth = params.auth ?? null;
   const model = TIER_MODEL_ID[tier];   // ⬅️ le modèle suit le plan, pas le mode
   const system = buildSystemPrompt(ctx, mode);
-  const tools = toolsForMode(mode);
+  const availableTools = toolsForMode(mode);
+  const lastUserMessage = [...params.messages].reverse().find((message) => message.role === 'user');
+  const userText = lastUserMessage ? extractText(lastUserMessage.content) : '';
+  const selection = selectToolNames(userText, availableTools.map((tool) => tool.name));
+  const selectedNames = new Set(selection.toolNames);
+  const tools = availableTools.filter((tool) => selectedNames.has(tool.name));
   const maxIter = MAX_TOOL_ITERATIONS[mode];
 
   const messages = [...params.messages];
@@ -7503,6 +7560,22 @@ async function runOrchestrator(params: {
           tool_use_id: tu.id,
           content: JSON.stringify(output),
         });
+        if (tu.name === 'get_etude_parcelle' && isOk) {
+          const deterministicReport = renderParcelStudyReport(output);
+          if (deterministicReport) {
+            // La narration pré-outil a déjà pu être streamée, mais elle n'est
+            // ni persistée ni complétée par une synthèse libre du modèle.
+            sse.send({ type: 'token', delta: `\n\n${deterministicReport}` });
+            return {
+              finalText: deterministicReport,
+              toolCallsLog,
+              totalInputTokens: totalIn,
+              totalOutputTokens: totalOut,
+              model,
+              finishReason: 'deterministic_report',
+            };
+          }
+        }
       } catch (e) {
         const durationMs = Date.now() - started;
         const msg = e instanceof Error ? e.message : 'tool error';
@@ -7599,11 +7672,24 @@ async function ensureConversation(params: {
 
 async function saveUserMessage(p: {
   conversationId: string; userId: string; text: string; mode: CopilotMode;
+  contextSnapshot: ContextSnapshot;
 }): Promise<void> {
   await getAdmin().from('copilot_messages').insert({
     conversation_id: p.conversationId, user_id: p.userId, role: 'user',
     content: [{ type: 'text', text: p.text }], mode: p.mode, credits_cost: 0,
+    context_snapshot: p.contextSnapshot,
   });
+}
+
+async function loadLatestUserContext(conversationId: string): Promise<unknown> {
+  const { data, error } = await getAdmin().from('copilot_messages')
+    .select('context_snapshot').eq('conversation_id', conversationId).eq('role', 'user')
+    .not('context_snapshot', 'is', null).order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (error) {
+    console.warn('[copilot] lecture dernier contexte impossible:', error.message);
+    return null;
+  }
+  return (data?.context_snapshot as ContextSnapshot | null)?.context ?? null;
 }
 
 async function saveAssistantMessage(p: {
@@ -7705,6 +7791,7 @@ Deno.serve(async (req: Request) => {
   let tier: ModelTier;
   let plan: Plan;
   let reserved: number;          // montant RÉELLEMENT réservé (pire cas)
+  let effectiveContext: MimmozaContext;
 
   try {
     userId = await requireUserId(req);
@@ -7714,6 +7801,10 @@ Deno.serve(async (req: Request) => {
       conversationId: payload.conversation_id,
       userId, ctx: payload.context, firstMessage: payload.message,
     });
+
+    const persistedContext = await loadLatestUserContext(conversationId);
+    effectiveContext = mergeContexts(persistedContext, payload.context) as unknown as MimmozaContext;
+    const contextSnapshot = await createContextSnapshot(effectiveContext);
 
     // ── Plan lu CÔTÉ SERVEUR (jamais depuis le client) ──────────
     plan = await getUserPlan(userId);
@@ -7732,7 +7823,7 @@ Deno.serve(async (req: Request) => {
     remainingBalance = reservation.remainingBalance;
 
     await saveUserMessage({
-      conversationId, userId, text: payload.message, mode,
+      conversationId, userId, text: payload.message, mode, contextSnapshot,
     });
   } catch (err) {
     const e = err instanceof CopilotError ? err : new CopilotError('INTERNAL_ERROR', String(err));
@@ -7752,10 +7843,10 @@ Deno.serve(async (req: Request) => {
     sse.send({ type: 'reservation', reserved_credits: reserved, remaining: remainingBalance });
     sse.send({ type: 'conversation', conversation_id: conversationId });
 
-    const messages = await buildMessages(conversationId, payload.message, mode, payload.attachments);
+    const messages = await buildMessages(conversationId, '', mode, payload.attachments);
 
     const result = await runOrchestrator({
-      mode, tier, ctx: payload.context, messages, sse,   // ⬅️ tier ajouté
+      mode, tier, ctx: effectiveContext, messages, sse,   // ⬅️ tier ajouté
       // userId vient de requireUserId() (JWT vérifié) ; l'en-tête est réutilisé
       // tel quel pour que les écritures passent par le client UTILISATEUR.
       auth: { userId, authHeader: req.headers.get('Authorization') ?? '' },

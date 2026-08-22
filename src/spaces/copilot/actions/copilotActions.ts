@@ -215,9 +215,17 @@ const num = (v: unknown): number | undefined =>
 export async function executeAction(action: CopilotAction): Promise<ActionResult> {
   switch (action.kind) {
     case 'open_page': {
-      const route = str(action.params.route);
+      let route = str(action.params.route);
       if (!route || !route.startsWith('/')) {
         return { ok: false, message: 'Route invalide.' };
+      }
+      // Les pages promoteur sont liées à une opération : si le modèle n'a pas
+      // fourni `?study=`, on injecte l'opération active pour ouvrir la bonne étude.
+      if (route.startsWith('/promoteur/') && !route.includes('study=')) {
+        const active = getActiveStudyId();
+        if (active) {
+          route += `${route.includes('?') ? '&' : '?'}study=${encodeURIComponent(active)}`;
+        }
       }
       return { ok: true, message: 'Page ouverte.', navigateTo: route };
     }

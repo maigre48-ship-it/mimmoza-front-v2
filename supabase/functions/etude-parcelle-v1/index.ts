@@ -96,6 +96,9 @@
 // conservés à l'identique. La v4 n'AJOUTE que des champs.
 // =============================================================
 
+import { deriveGeographicAnchor, groundingProhibitions, type GeographicAnchor } from '../_shared/copilot-grounding/anchor.ts';
+import { unsupportedInferenceProhibitions } from '../_shared/copilot-grounding/inferences.ts';
+
 const CADASTRE_URL = 'https://apicarto.ign.fr/api/cadastre/parcelle';
 const GEO_API = 'https://geo.api.gouv.fr/communes';
 
@@ -108,7 +111,8 @@ interface Resolved {
   lat?: number;
   lon?: number;
   surface_m2?: number;
-  precision: 'parcelle' | 'centre_commune' | 'aucune';
+  precision: 'parcelle' | 'point' | 'centre_commune' | 'aucune';
+  anchor: GeographicAnchor;
 }
 
 // Les `stats` des fonctions sources n'ont AUCUN schéma commun et leur code ne
@@ -143,7 +147,7 @@ interface Adapted {
  *   national          — barème ou référence nationale
  */
 type DataScope =
-  | 'parcel' | 'nearby' | 'municipality'
+  | 'parcel' | 'point' | 'nearby' | 'municipality'
   | 'intermunicipality' | 'department' | 'national';
 
 /**
@@ -198,7 +202,7 @@ const SOCLE_STATUS: Record<DataStatus, number> = {
   confirmed: 85, estimated: 50, contradictory: 20, unavailable: 0, not_applicable: 0,
 };
 const MALUS_PORTEE: Record<DataScope, number> = {
-  parcel: 0, nearby: 10, municipality: 15, intermunicipality: 20, department: 25, national: 30,
+  parcel: 0, point: 5, nearby: 10, municipality: 15, intermunicipality: 20, department: 25, national: 30,
 };
 
 function anneeDe(sourceDate?: string): number | null {
@@ -285,8 +289,8 @@ function adaptRisques(j: Brut): Adapted {
   const summary = rienMesure
     ? `Aucun critère de risque n'a pu être mesuré (sources Géorisques indisponibles). Score de sécurité global : non mesuré. Ne pas en conclure que la parcelle est sans risque — l'analyse est à relancer.`
     : faits.length
-      ? `Risques identifiés : ${faits.join(' · ')}. Score de sécurité global ${scoreLabel}.${confiance}`
-      : `Aucun aléa majeur remonté par Géorisques sur les critères effectivement mesurés. Score de sécurité global ${scoreLabel}.${confiance}`;
+      ? `Signaux de risque recensés à l'échelle communale : ${faits.join(' · ')}. Ils ne prouvent aucune exposition de la parcelle sans intersection réglementaire explicite. Score de sécurité global ${scoreLabel}.${confiance}`
+      : `Aucun aléa majeur remonté par Géorisques à l'échelle communale sur les critères effectivement mesurés. Cela ne prouve pas l'absence de risque à la parcelle. Score de sécurité global ${scoreLabel}.${confiance}`;
 
   return {
     status: 'ok',
@@ -399,7 +403,7 @@ const SOURCES: SourceDef[] = [
     body: (r) => ({ code_insee: r.insee }) },
   { cle: 'altimetrie', env: 'COPILOT_FN_ALTIMETRIE', needs: 'commune', label: 'Altitude et pente',
     organisme: 'IGN', dataset: 'RGE ALTI (modèle numérique de terrain)',
-    scope: (r) => (r.precision === 'parcelle' ? 'parcel' : 'municipality'),
+    scope: (r) => (r.anchor.claim_permissions.point_measurements ? 'point' : 'municipality'),
     body: (r) => ({ lat: r.lat, lon: r.lon, cadastral_ref: r.idu, code_insee: r.insee }) },
   { cle: 'servitudes', env: 'COPILOT_FN_SERVITUDES', needs: 'geo', label: "Servitudes d'utilité publique",
     organisme: "Géoportail de l'urbanisme (GPU)", dataset: "Servitudes d'utilité publique",
@@ -407,7 +411,7 @@ const SOURCES: SourceDef[] = [
     body: (r) => ({ lat: r.lat, lon: r.lon, cadastral_ref: r.idu }) },
   { cle: 'solaire', env: 'COPILOT_FN_SOLAIRE', needs: 'commune', label: 'Potentiel solaire',
     organisme: 'Commission européenne / JRC', dataset: 'PVGIS (irradiation solaire)',
-    scope: (r) => (r.precision === 'parcelle' ? 'parcel' : 'municipality'),
+    scope: (r) => (r.anchor.claim_permissions.point_measurements ? 'point' : 'municipality'),
     body: (r) => ({ lat: r.lat, lon: r.lon, code_insee: r.insee }) },
   { cle: 'contexte', env: 'COPILOT_FN_CONTEXTE', needs: 'commune', label: 'Contexte territorial (Wikipédia)',
     organisme: 'Wikipédia', dataset: 'Article de commune',
@@ -735,8 +739,8 @@ async function callSource(def: SourceDef, r: Resolved, baseUrl: string, key: str
   // ⚠️ GARDE DE PRÉCISION : lat/lon peuvent provenir du centroïde COMMUNE.
   // Interroger le GPU au centre-bourg renverrait des servitudes / secteurs de
   // bruit qui ne concernent PAS la parcelle : faux positif inacceptable.
-  if (def.needs === 'geo' && (r.lat == null || r.lon == null || r.precision !== 'parcelle')) {
-    return { ...base, status: 'ko', motif: 'exige une localisation à la parcelle (non résolue)', duree_ms: 0 };
+  if (def.needs === 'geo' && (r.lat == null || r.lon == null || r.anchor.anchor_type === 'municipality_centroid')) {
+    return { ...base, status: 'ko', motif: 'exige un point précis ou une parcelle cadastrale (non résolu)', duree_ms: 0 };
   }
   if (def.needs === 'commune' && !r.insee && r.lat == null) {
     return { ...base, status: 'ko', motif: 'aucune commune identifiée', duree_ms: 0 };
@@ -846,11 +850,12 @@ function qualifier(items: SourceResult[], r: Resolved): Qualification {
   {
     const cle = 'altimetrie';
     const st = statsOf(cle);
-    const parcellaire = r.precision === 'parcelle';
-    const scope: DataScope = parcellaire ? 'parcel' : 'municipality';
+    const mesurePonctuelle = r.anchor.claim_permissions.point_measurements;
+    const scope: DataScope = mesurePonctuelle ? 'point' : 'municipality';
     const alt = pluckNum(st, ['altitude_m', 'altitude', 'altitude_moyenne', 'elevation_m', 'elevation', 'z']);
     const pente = pluckNum(st, ['pente_pct', 'pente_moyenne_pct', 'slope_pct', 'pente', 'pente_moyenne', 'slope']);
-    const reserve = parcellaire ? undefined
+    const reserve = mesurePonctuelle
+      ? "Mesure au point d'adresse ou aux coordonnées fournies. Elle ne décrit pas la géométrie complète d'une parcelle et ne permet aucune conclusion sur le terrassement."
       : "Parcelle non localisée : valeur mesurée au centre de la commune, INDICATIVE. Ne décrit pas le relief du terrain.";
 
     const grandeurs: Array<[string, string, number | undefined, string]> = [
@@ -862,7 +867,7 @@ function qualifier(items: SourceResult[], r: Resolved): Qualification {
         : val == null
           ? evidence({ id, label, value: null, status: 'unavailable', scope, source: sourceOf(cle), sourceDate: dateOf(cle),
               warning: "Donnée non disponible — vérification requise. La source a répondu mais ne fournit pas cette grandeur." })
-          : evidence({ id, label, value: val, unit, status: parcellaire ? 'confirmed' : 'estimated', scope,
+          : evidence({ id, label, value: val, unit, status: mesurePonctuelle ? 'confirmed' : 'estimated', scope,
               source: sourceOf(cle), sourceDate: dateOf(cle), warning: reserve }));
     }
   }
@@ -936,14 +941,14 @@ function qualifier(items: SourceResult[], r: Resolved): Qualification {
     if (!okOf(cle)) {
       evidences.push(indisponible('risques', 'Risques naturels et technologiques', cle, portee));
     } else {
-      const push = (id: string, label: string, value: unknown, present: boolean, warn = reserveCommunale) => {
+      const push = (id: string, label: string, value: unknown, present: boolean, warn = reserveCommunale, warnWhenAbsent = false) => {
         evidences.push(evidence({
           id, label, value: value ?? null,
           status: value == null ? 'unavailable' : 'confirmed',
           scope: portee, source: src, sourceDate: sd,
           warning: value == null
             ? "Donnée non disponible — vérification requise."
-            : (present ? warn : undefined),
+            : (present || warnWhenAbsent ? warn : undefined),
         }));
       };
       const inond = st?.inondation ?? {};
@@ -953,12 +958,12 @@ function qualifier(items: SourceResult[], r: Resolved): Qualification {
         status: inond.zone_inondable == null ? 'unavailable' : 'confirmed',
         scope: portee, source: src, sourceDate: sd,
         warning: inond.zone_inondable === true
-          ? "Zone inondable identifiée. Contrainte potentiellement bloquante : le règlement du PPRI (ou du PPRN valant PPRI) prime sur le PLU et peut interdire toute construction nouvelle."
+          ? "Signal d'inondation fourni à l'échelle communale. Il ne prouve pas que l'adresse ou la parcelle est exposée. Les règles d'un PPRI (ou d'un PPRN valant PPRI) ne peuvent être appliquées au terrain qu'après vérification de son intersection avec le zonage réglementaire opposable."
           : inond.zone_inondable == null ? "Donnée non disponible — vérification requise." : reserveCommunale,
       }));
       push('risque_argiles', 'Retrait-gonflement des argiles', st?.argiles_alea, Boolean(st?.argiles_alea),
         /fort|moyen/i.test(String(st?.argiles_alea ?? ''))
-          ? "Aléa moyen ou fort : étude géotechnique préalable G1 obligatoire à la vente du terrain (loi ELAN), étude G2 avant construction."
+          ? "Aléa moyen ou fort : vérifier le champ d'application juridique selon la zone et le projet, notamment pour la vente d'un terrain constructible et les maisons individuelles. Faire déterminer la mission géotechnique adaptée par un professionnel."
           : reserveCommunale);
       push('risque_sismique', 'Sismicité', st?.seisme_zone, st?.seisme_zone != null,
         Number(st?.seisme_zone) >= 4 ? "Zone de sismicité 4 ou 5 : règles parasismiques renforcées applicables à la construction." : reserveCommunale);
@@ -968,12 +973,15 @@ function qualifier(items: SourceResult[], r: Resolved): Qualification {
       push('risque_mouvements_terrain', 'Mouvements de terrain', st?.mouvements_terrain_count, Number(st?.mouvements_terrain_count) > 0);
       push('risque_icpe', 'Installations classées (ICPE)', st?.icpe_count, Number(st?.icpe_count) > 0);
       push('risque_seveso', 'Sites SEVESO seuil haut', st?.seveso_haut_count, Number(st?.seveso_haut_count) > 0,
-        Number(st?.seveso_haut_count) > 0 ? "SEVESO seuil haut : un PPRT peut interdire ou contraindre fortement la constructibilité. Contrainte potentiellement bloquante." : reserveCommunale);
+        Number(st?.seveso_haut_count) > 0 ? "Comptage à l'échelle communale : la présence ou proximité d'un site SEVESO ne prouve pas l'inclusion de l'adresse dans un PPRT. Vérifier son zonage." : reserveCommunale);
       push('risque_sis', 'Sites et sols pollués (SIS)', st?.sis_count, Number(st?.sis_count) > 0,
-        Number(st?.sis_count) > 0 ? "Secteur d'information sur les sols : étude de sols et attestation de prise en compte de la pollution exigibles au permis." : reserveCommunale);
+        Number(st?.sis_count) > 0 ? "Comptage à l'échelle communale : il ne prouve pas que l'adresse ou la parcelle se situe dans un SIS. Vérifier la fiche et le périmètre." : reserveCommunale);
       push('risque_feux_foret', 'Feux de forêt', st?.feux_foret, st?.feux_foret === true);
       push('risque_catnat', 'Arrêtés de catastrophe naturelle', st?.catnat_count, Number(st?.catnat_count) > 0);
-      push('risque_ppr', 'Plans de prévention des risques (PPR)', st?.ppr_count, Number(st?.ppr_count) > 0);
+      push('risque_ppr', 'Plans de prévention des risques (PPR)', st?.ppr_count, Number(st?.ppr_count) > 0,
+        Number(st?.ppr_count) === 0
+          ? "Aucun PPR n'est recensé dans cette réponse de la source. Ce résultat ne prouve pas l'absence de PPR applicable : vérifier les documents officiels de la préfecture et le zonage réglementaire."
+          : reserveCommunale, Number(st?.ppr_count) === 0);
 
       // Score de sécurité : porté explicitement avec sa convention, parce que
       // c'est exactement l'inversion qui a fait lire « 78/100 » comme un risque.
@@ -1005,10 +1013,12 @@ function qualifier(items: SourceResult[], r: Resolved): Qualification {
       : evidence({
           id: 'assainissement', label: 'Assainissement',
           value: { mode, operateur: pluckStr(statsOf(cle), ['operateur', 'exploitant', 'gestionnaire', 'delegataire']) ?? null },
-          status: mode ? 'confirmed' : 'estimated',
+          status: mode ? 'confirmed' : 'unavailable',
           scope: 'municipality',
           source: sourceOf(cle), sourceDate: dateOf(cle),
-          warning: "Donnée COMMUNALE. L'existence d'un service d'assainissement dans la commune ne vaut PAS raccordement, ni raccordabilité, au droit de la parcelle. Seuls le zonage d'assainissement et l'avis du gestionnaire de réseau l'établissent.",
+          warning: mode
+            ? "Donnée COMMUNALE. L'existence d'un service d'assainissement dans la commune ne vaut PAS raccordement, ni raccordabilité, au droit de la parcelle. Seuls le zonage d'assainissement et l'avis du gestionnaire de réseau l'établissent."
+            : "Mode d'assainissement non fourni par la source — vérifier le zonage d'assainissement et consulter le gestionnaire de réseau.",
         }));
   }
 
@@ -1024,9 +1034,11 @@ function qualifier(items: SourceResult[], r: Resolved): Qualification {
       ? indisponible('zonage_abc', 'Zonage ABC (tension locative)', cle, 'municipality')
       : evidence({
           id: 'zonage_abc', label: 'Zonage ABC (tension locative)',
-          value: zone, status: zone ? 'confirmed' : 'estimated', scope: 'municipality',
+          value: zone, status: zone ? 'confirmed' : 'unavailable', scope: 'municipality',
           source: sourceOf(cle), sourceDate: dateOf(cle),
-          warning: "Zonage COMMUNAL de tension du marché locatif. Il ne qualifie ni la parcelle ni un droit à construire.",
+          warning: zone
+            ? "Zonage COMMUNAL de tension du marché locatif. Il ne qualifie ni la parcelle ni un droit à construire."
+            : "Classement ABC non fourni par la source — vérifier le classement officiel de la commune.",
         }));
   }
 
@@ -1039,9 +1051,11 @@ function qualifier(items: SourceResult[], r: Resolved): Qualification {
       : evidence({
           id: 'fiscalite_tfb', label: 'Taux de taxe foncière sur le bâti',
           value: tfb ?? null, unit: '%',
-          status: tfb != null ? 'confirmed' : 'estimated', scope: 'municipality',
+          status: tfb != null ? 'confirmed' : 'unavailable', scope: 'municipality',
           source: sourceOf(cle), sourceDate: dateOf(cle),
-          warning: "Taux COMMUNAL de l'exercice publié. Il évolue chaque année par délibération et ne préjuge pas de la base d'imposition du bien.",
+          warning: tfb != null
+            ? "Taux COMMUNAL de l'exercice publié. Il évolue chaque année par délibération et ne préjuge pas de la base d'imposition du bien."
+            : "Taux de taxe foncière non fourni par la source — consulter la délibération fiscale de l'exercice concerné.",
         }));
   }
 
@@ -1058,9 +1072,11 @@ function qualifier(items: SourceResult[], r: Resolved): Qualification {
           id: 'loyers_reference', label: 'Loyer de référence',
           value: { median_appartement: appt ?? null, median_maison: maison ?? null, retenu: med ?? null },
           unit: '€/m²/mois',
-          status: med != null ? 'confirmed' : 'estimated', scope: 'municipality',
+          status: med != null ? 'confirmed' : 'unavailable', scope: 'municipality',
           source: sourceOf(cle), sourceDate: dateOf(cle),
-          warning: "Indicateur COMMUNAL modélisé (moyenne). Il ne remplace pas une étude de loyers de marché sur le segment visé.",
+          warning: med != null
+            ? "Indicateur COMMUNAL modélisé (moyenne). Il ne remplace pas une étude de loyers de marché sur le segment visé."
+            : "Aucune valeur de loyer exploitable n'a été fournie par la source.",
         }));
   }
 
@@ -1127,19 +1143,21 @@ function qualifier(items: SourceResult[], r: Resolved): Qualification {
   // ── 11. Potentiel solaire ──────────────────────────────────
   {
     const cle = 'solaire';
-    const parcellaire = r.precision === 'parcelle';
-    const scope: DataScope = parcellaire ? 'parcel' : 'municipality';
+    const mesurePonctuelle = r.anchor.claim_permissions.point_measurements;
+    const scope: DataScope = mesurePonctuelle ? 'point' : 'municipality';
     const irr = pluckNum(statsOf(cle), ['irradiation_kwh_m2_an', 'irradiation', 'kwh_m2_an', 'productible_kwh_kwc']);
     evidences.push(!okOf(cle)
       ? indisponible('potentiel_solaire', 'Potentiel solaire', cle, scope)
       : evidence({
           id: 'potentiel_solaire', label: 'Potentiel solaire',
           value: irr ?? null, unit: 'kWh/m²/an',
-          status: irr == null ? 'unavailable' : parcellaire ? 'confirmed' : 'estimated',
+          status: irr == null ? 'unavailable' : mesurePonctuelle ? 'confirmed' : 'estimated',
           scope, source: sourceOf(cle), sourceDate: dateOf(cle),
-          warning: parcellaire
-            ? "Irradiation théorique du site : ne tient compte ni des masques bâtis ou végétaux, ni de l'orientation réelle des toitures."
-            : "Parcelle non localisée : irradiation calculée au centre de la commune, INDICATIVE.",
+          warning: irr == null
+            ? "Valeur d'irradiation non fournie par la source."
+            : mesurePonctuelle
+              ? "Irradiation théorique au point : ne décrit pas la parcelle et ne tient compte ni des masques bâtis ou végétaux, ni de l'orientation réelle des toitures."
+              : "Parcelle non localisée : irradiation calculée au centre de la commune, INDICATIVE.",
         }));
   }
 
@@ -1269,7 +1287,7 @@ function detecterContradictions(
   }
 
   // ── Règle E — géométrie en repli commune lue au parcellaire ─
-  if (r.precision !== 'parcelle') {
+  if (!r.anchor.cadastral_resolved) {
     const geo: Array<['altimetrie' | 'solaire', string]> = [['altimetrie', 'pente'], ['solaire', 'potentiel_solaire']];
     for (const [cle, evId] of geo) {
       const it = byCle.get(cle);
@@ -1277,7 +1295,7 @@ function detecterContradictions(
       if (!FORMULATION_PARCELLAIRE.test(it.summary)) continue;
       out.push({
         id: `precision_${cle}`, gravite: 'importante',
-        message: `Données contradictoires — vérification du document opposable requise : « ${it.label} » est mesurée au centre de la commune (précision « ${r.precision} ») mais sa formulation la présente comme parcellaire.`,
+        message: `Données contradictoires — vérification du document opposable requise : « ${it.label} » repose sur l'ancrage « ${r.anchor.anchor_type} » mais sa formulation la présente comme parcellaire.`,
         donnees: [evId],
         verification: 'Relevé topographique du terrain',
         organisme: 'Géomètre-expert',
@@ -1331,7 +1349,13 @@ interface Facteur { nom: string; valeur: unknown; effet: number | string; explic
 
 interface Verdict {
   potentiel: { niveau: 'favorable' | 'intermediaire' | 'defavorable'; score: number; facteurs: Facteur[]; formule: string };
-  risque: { niveau: 'faible' | 'modere' | 'eleve' | 'bloquant' | 'indetermine'; facteurs: Facteur[]; bloquants: string[]; formule: string };
+  risque: {
+    niveau: 'faible' | 'modere' | 'eleve' | 'bloquant' | 'indetermine';
+    scope: 'parcel' | 'municipality' | 'mixed';
+    niveau_decisionnel: 'etabli' | 'indetermine';
+    indicateurs_communaux: string[];
+    facteurs: Facteur[]; bloquants: string[]; formule: string;
+  };
   fiabilite: { score: number; facteurs: Facteur[]; formule: string };
   recommandation: { valeur: 'poursuivre' | 'poursuivre_sous_conditions' | 'suspendre' | 'ecarter'; motif: string; formule: string };
   constructibilite: { statut: 'indeterminable'; motif: string; condition_levee: string };
@@ -1388,14 +1412,13 @@ function calculerVerdict(
   {
     const pente = ev('pente');
     const p = typeof pente?.value === 'number' ? pente.value : null;
-    const mesuree = p != null && pente?.status === 'confirmed';
-    const e = !mesuree ? 0 : p <= 10 ? 1 : p <= 20 ? 0 : -1;
+    // La pente seule, quelle que soit sa portée, ne permet aucun verdict de
+    // faisabilité ou de coût : une topographie et le projet sont nécessaires.
+    const e = 0;
     sPot += e;
     fPot.push({ nom: 'pente_exploitable', valeur: p, effet: e,
-      explication: !mesuree ? 'Pente non mesurée à la parcelle : facteur neutre.'
-        : p <= 10 ? `Pente de ${p} % : terrain aisément aménageable.`
-        : p <= 20 ? `Pente de ${p} % : terrassement significatif à prévoir.`
-        : `Pente de ${p} % : surcoût de terrassement et de fondations important.` });
+      explication: p == null ? 'Pente non mesurée : facteur neutre.'
+        : `Pente mesurée à ${p} % : facteur neutre. Cette mesure seule ne permet aucun verdict sur l'aménagement, le terrassement, les fondations ou leurs coûts.` });
   }
   const nbComps = q.dvf?.nb_comparables ?? null;
   {
@@ -1406,20 +1429,8 @@ function calculerVerdict(
         : nbComps === 0 ? 'Aucune mutation comparable sur 24 mois dans un rayon de 2 km : marché illiquide.'
         : `${nbComps} mutation(s) comparable(s) sur 24 mois : mesure de la liquidité du marché local, pas du niveau de prix.` });
   }
-  {
-    // Rendement locatif brut indicatif = loyer €/m²/mois × 12 ÷ prix €/m².
-    // Calculé UNIQUEMENT si les deux termes sont réellement disponibles.
-    // Hors charges, hors fiscalité, hors vacance : c'est un ordre de grandeur.
-    const loyer = (val('loyers_reference') as Brut)?.retenu ?? null;
-    const prix = q.dvf?.prix_m2_median_robuste ?? null;
-    const rdt = loyer && prix ? (loyer * 12) / prix * 100 : null;
-    const e = rdt == null ? 0 : rdt >= 7 ? 2 : rdt >= 5 ? 1 : rdt >= 3 ? 0 : -1;
-    sPot += e;
-    fPot.push({ nom: 'rendement_brut_indicatif', valeur: rdt != null ? Math.round(rdt * 10) / 10 : null, effet: e,
-      explication: rdt == null
-        ? 'Rendement incalculable : loyer de référence ou prix DVF manquant. Facteur neutre.'
-        : `Rendement brut indicatif de ${Math.round(rdt * 10) / 10} % (loyer communal médian × 12 ÷ prix DVF médian robuste). Hors charges, fiscalité et vacance ; croise deux portées différentes (communale et voisinage).` });
-  }
+  // Aucun rendement n'est calculé dans une étude parcellaire : croiser un
+  // loyer communal et un prix DVF de voisinage créerait un indicateur nouveau.
 
   // ─────────────────────────────────────────────────────────
   // RISQUE — dérivé des aléas NOMMÉS et des servitudes intersectantes.
@@ -1442,12 +1453,16 @@ function calculerVerdict(
   const moderes: string[] = [];
   const sR = st('risques');
 
+  const risquesParcellaires = ev('risque_inondation')?.scope === 'parcel';
   const inondable = sR?.inondation?.zone_inondable === true;
   const ppri = sR?.inondation?.ppri === true;
-  if (inondable && ppri) bloquants.push('Zone inondable couverte par un PPRI');
-  else if (inondable) eleves.push('Zone inondable sans PPRI identifié');
-  if (inondable) fRis.push({ nom: 'inondation', valeur: { zone_inondable: true, ppri: sR?.inondation?.ppri ?? null }, effet: ppri ? 'bloquant' : 'élevé',
-    explication: ppri ? "Le règlement du PPRI prime sur le PLU et peut interdire toute construction nouvelle." : "Zone inondable sans PPRI identifié : l'aléa existe, son opposabilité reste à établir." });
+  if (inondable && risquesParcellaires && ppri) bloquants.push('Intersection parcellaire démontrée avec une zone inondable couverte par un PPRI');
+  else if (inondable && risquesParcellaires) eleves.push('Intersection parcellaire démontrée avec une zone inondable');
+  else if (inondable) moderes.push("Signal d'inondation communal à vérifier sur le zonage");
+  if (inondable) fRis.push({ nom: 'inondation', valeur: { zone_inondable: true, ppri: sR?.inondation?.ppri ?? null, portee: risquesParcellaires ? 'parcel' : 'municipality' }, effet: risquesParcellaires ? (ppri ? 'bloquant' : 'élevé') : 'indicateur communal',
+    explication: risquesParcellaires
+      ? (ppri ? "Une intersection parcellaire explicite avec le PPRI est démontrée ; son règlement prime sur le PLU." : "Une intersection parcellaire explicite est démontrée ; l'opposabilité reste à établir.")
+      : "Signal fourni à l'échelle communale : il ne prouve pas que l'adresse ou la parcelle est en zone inondable. Vérifier le zonage réglementaire." });
 
   const servIntersect = ev('servitudes')?.scope === 'parcel'
     && (val('servitudes') as Brut)?.intersection_demontree === true;
@@ -1459,14 +1474,14 @@ function calculerVerdict(
 
   const seveso = num(sR?.seveso_haut_count) ?? 0;
   if (seveso > 0) {
-    bloquants.push(`${seveso} site(s) SEVESO seuil haut`);
-    fRis.push({ nom: 'seveso_seuil_haut', valeur: seveso, effet: 'bloquant',
-      explication: "Un PPRT peut interdire la construction ou imposer des prescriptions lourdes." });
+    moderes.push(`${seveso} site(s) SEVESO seuil haut recensé(s) à l'échelle communale`);
+    fRis.push({ nom: 'seveso_seuil_haut', valeur: seveso, effet: 'indicateur communal',
+      explication: "Le recensement communal ou la proximité d'un site ne démontre ni inclusion dans un PPRT ni contrainte sur la parcelle. Vérifier le zonage du PPRT." });
   }
 
   const argiles = String(sR?.argiles_alea ?? '');
-  if (/fort/i.test(argiles)) { eleves.push('Retrait-gonflement des argiles : aléa fort'); fRis.push({ nom: 'argiles', valeur: argiles, effet: 'élevé', explication: "Aléa fort : étude géotechnique G1 obligatoire à la vente (loi ELAN), G2 avant construction, surcoût de fondations probable." }); }
-  else if (/moyen/i.test(argiles)) { moderes.push('Retrait-gonflement des argiles : aléa moyen'); fRis.push({ nom: 'argiles', valeur: argiles, effet: 'modéré', explication: "Aléa moyen : étude géotechnique G1 obligatoire à la vente (loi ELAN)." }); }
+  if (/fort/i.test(argiles)) { eleves.push('Retrait-gonflement des argiles : aléa fort'); fRis.push({ nom: 'argiles', valeur: argiles, effet: 'élevé', explication: "Aléa fort : vérifier le champ d'application juridique selon la zone et le projet, notamment pour la vente de terrains constructibles et les maisons individuelles ; faire déterminer la mission géotechnique adaptée." }); }
+  else if (/moyen/i.test(argiles)) { moderes.push('Retrait-gonflement des argiles : aléa moyen'); fRis.push({ nom: 'argiles', valeur: argiles, effet: 'modéré', explication: "Aléa moyen : vérifier le champ d'application juridique selon la zone et le projet ; faire déterminer la mission géotechnique adaptée." }); }
 
   const seisme = num(sR?.seisme_zone) ?? null;
   if (seisme != null && seisme >= 4) { eleves.push(`Sismicité zone ${seisme}`); fRis.push({ nom: 'sismicite', valeur: seisme, effet: 'élevé', explication: 'Règles parasismiques renforcées applicables.' }); }
@@ -1482,7 +1497,7 @@ function calculerVerdict(
   ];
   for (const [champ, libelle, expl] of comptages) {
     const n = num(sR?.[champ]) ?? 0;
-    if (n > 0) { eleves.push(`${n} ${libelle}`); fRis.push({ nom: champ, valeur: n, effet: 'élevé', explication: expl }); }
+    if (n > 0) { moderes.push(`${n} ${libelle} recensé(s) à l'échelle communale`); fRis.push({ nom: champ, valeur: n, effet: 'indicateur communal', explication: `${expl} Ce comptage communal ne prouve pas que la parcelle est concernée.` }); }
   }
   const icpe = num(sR?.icpe_count) ?? 0;
   if (icpe > 0 && seveso === 0) { moderes.push(`${icpe} installation(s) classée(s)`); fRis.push({ nom: 'icpe', valeur: icpe, effet: 'modéré', explication: "Installations classées recensées sur la commune : vérifier les distances d'éloignement." }); }
@@ -1494,9 +1509,17 @@ function calculerVerdict(
   if (bruitIntersect) { eleves.push('Secteur affecté par le bruit intersectant la parcelle'); fRis.push({ nom: 'classement_sonore', valeur: (val('classement_sonore') as Brut)?.categorie ?? true, effet: 'élevé', explication: 'Isolement acoustique renforcé obligatoire pour les constructions nouvelles.' }); }
 
   const risqueEvaluable = ok('risques');
+  const facteursParcellaires = new Set(['servitude_intersectante', 'classement_sonore']);
+  if (risquesParcellaires) facteursParcellaires.add('inondation');
+  const indicateursCommunaux = [...new Set(fRis
+    .filter((facteur) => !facteursParcellaires.has(facteur.nom))
+    .map((facteur) => facteur.nom))];
+  const preuveRisqueParcellaire = risquesParcellaires || servIntersect || bruitIntersect;
+  const ancrageNonResolueSansPreuveParcellaire = r.precision !== 'parcelle' && !preuveRisqueParcellaire;
   const niveauRisque: Verdict['risque']['niveau'] =
     bloquants.length ? 'bloquant'
       : !risqueEvaluable ? 'indetermine'
+      : ancrageNonResolueSansPreuveParcellaire ? 'indetermine'
       : eleves.length ? 'eleve'
       : moderes.length ? 'modere'
       : 'faible';
@@ -1520,7 +1543,7 @@ function calculerVerdict(
   const qualifiables = q.evidences.filter((e) => e.status !== 'not_applicable');
   const confirmees = qualifiables.filter((e) => e.status === 'confirmed');
   const partConfirmee = qualifiables.length ? (confirmees.length / qualifiables.length) * 100 : 0;
-  const facteurPrecision = r.precision === 'parcelle' ? 1 : r.precision === 'centre_commune' ? 0.75 : 0.5;
+  const facteurPrecision = r.precision === 'parcelle' ? 1 : r.precision === 'point' ? 0.9 : r.precision === 'centre_commune' ? 0.75 : 0.5;
   const nbKo = items.filter((i) => i.status === 'ko').length;
   const malusSurface = r.surface_m2 == null ? 8 : 0;
   const fiabilite = Math.max(0, Math.min(100, Math.round(
@@ -1532,6 +1555,7 @@ function calculerVerdict(
       explication: `${confirmees.length} donnée(s) confirmée(s) sur ${qualifiables.length} qualifiable(s).` },
     { nom: 'precision_localisation', valeur: r.precision, effet: `× ${facteurPrecision}`,
       explication: r.precision === 'parcelle' ? 'Parcelle résolue au cadastre : aucune pénalité.'
+        : r.precision === 'point' ? "Adresse ou coordonnées précises, mais parcelle cadastrale non résolue : les mesures ponctuelles ne valent pas intersection ni géométrie parcellaire."
         : r.precision === 'centre_commune' ? 'Repli sur le centre de la commune : les données géométriques ne décrivent pas le terrain.'
         : 'Aucune localisation exploitable.' },
     { nom: 'sources_indisponibles', valeur: nbKo, effet: -nbKo * 6, explication: `${nbKo} source(s) n'ont pas répondu (−6 chacune).` },
@@ -1566,7 +1590,9 @@ function calculerVerdict(
     motifReco = `Contrainte potentiellement bloquante identifiée : ${bloquants.join(' ; ')}. Aucun engagement avant levée documentaire.`;
   } else if (niveauRisque === 'indetermine') {
     reco = 'suspendre';
-    motifReco = "Le niveau de risque n'a pas pu être établi (source Géorisques indisponible). Aucun engagement sans état des risques.";
+    motifReco = risqueEvaluable
+      ? "Le niveau de risque à la parcelle n'a pas pu être établi : l'ancrage cadastral n'est pas résolu et les signaux disponibles sont communaux. Aucun engagement sans vérification du zonage à l'adresse ou à la parcelle."
+      : "Le niveau de risque n'a pas pu être établi (source Géorisques indisponible). Aucun engagement sans état des risques.";
   } else if (fiabilite < 30) {
     reco = 'suspendre';
     motifReco = `Fiabilité des données trop faible (${fiabilite}/100) pour fonder une décision.`;
@@ -1588,11 +1614,15 @@ function calculerVerdict(
   return {
     potentiel: {
       niveau: niveauPot, score: sPot, facteurs: fPot,
-      formule: 'Somme de 5 facteurs entiers (tension_zonage, assainissement_collectif, pente_exploitable, liquidite_marche, rendement_brut_indicatif). ≥ +3 favorable · 0 à +2 intermédiaire · < 0 défavorable. Une donnée inconnue vaut 0 (neutre), jamais un signal positif. Plafonné à « intermédiaire » si fiabilité < 40.',
+      formule: 'Somme de 4 facteurs entiers (tension_zonage, assainissement_collectif, pente_exploitable toujours neutre, liquidite_marche). Aucun rendement n’est calculé dans cette étude parcellaire. ≥ +3 favorable · 0 à +2 intermédiaire · < 0 défavorable. Une donnée inconnue vaut 0 (neutre), jamais un signal positif. Plafonné à « intermédiaire » si fiabilité < 40.',
     },
     risque: {
-      niveau: niveauRisque, facteurs: fRis, bloquants,
-      formule: "Déclencheurs nommés, du plus grave au plus faible. BLOQUANT est absorbant : inondable avec PPRI, servitude intersectante démontrée ou SEVESO seuil haut forcent « bloquant », qu'aucun signal positif ni score de sécurité ne peut compenser. Source risques indisponible → « indéterminé », jamais « faible ».",
+      niveau: niveauRisque,
+      scope: preuveRisqueParcellaire ? (indicateursCommunaux.length ? 'mixed' : 'parcel') : 'municipality',
+      niveau_decisionnel: niveauRisque === 'indetermine' ? 'indetermine' : 'etabli',
+      indicateurs_communaux: indicateursCommunaux,
+      facteurs: fRis, bloquants,
+      formule: "Déclencheurs nommés, du plus grave au plus faible. BLOQUANT exige une intersection parcellaire explicite (PPRI ou servitude). Les comptages et signaux communaux, dont SEVESO, SIS et CATNAT, restent des indicateurs à vérifier et ne prouvent aucune exposition de la parcelle. Source risques indisponible → « indéterminé », jamais « faible ».",
     },
     fiabilite: {
       score: fiabilite, facteurs: fFia,
@@ -1657,11 +1687,11 @@ function construirePlanAction(
   }
 
   // ── Déclenché par : précision de localisation dégradée ──
-  if (r.precision !== 'parcelle') {
+  if (!r.anchor.cadastral_resolved) {
     add({
       priorite: 'bloquante',
       action: "Faire confirmer l'identifiant cadastral exact de la parcelle (IDU)",
-      motif: `Constat de cette étude : la parcelle n'a pas été résolue au cadastre (précision « ${r.precision} »). Toutes les données géométriques valent pour le centre de la commune, et les sources strictement parcellaires n'ont pas été interrogées.`,
+      motif: `Constat de cette étude : la parcelle n'a pas été résolue au cadastre (ancrage « ${r.anchor.anchor_type} »). Les mesures au point ne démontrent ni la géométrie ni une intersection parcellaire.`,
       organisme: 'DGFiP — service du cadastre',
       document: 'Relevé de propriété et extrait de plan cadastral',
     });
@@ -1680,9 +1710,9 @@ function construirePlanAction(
   const sR = st('risques');
   if (sR?.inondation?.zone_inondable === true) {
     add({
-      priorite: sR?.inondation?.ppri === true ? 'bloquante' : 'importante',
+      priorite: 'importante',
       action: "Obtenir le règlement du PPRI et le zonage réglementaire à la parcelle, ainsi que l'état des risques",
-      motif: `Constat de cette étude : zone inondable identifiée${sR?.inondation?.ppri === true ? ' et couverte par un PPRI, dont le règlement prime sur le PLU' : ", sans PPRI identifié — l'opposabilité reste à établir"}.`,
+      motif: `Constat de cette étude : signal d'inondation à l'échelle communale${sR?.inondation?.ppri === true ? ' avec existence déclarée d’un PPRI' : ''}. Aucune intersection avec la parcelle n'est démontrée.`,
       organisme: 'Préfecture / DDTM — Géorisques (ERRIAL)',
       document: 'Règlement et zonage du PPRI, état des risques et pollutions (ERP)',
     });
@@ -1691,10 +1721,10 @@ function construirePlanAction(
     const fort = /fort/i.test(String(sR?.argiles_alea));
     add({
       priorite: fort ? 'bloquante' : 'importante',
-      action: `Faire réaliser une étude géotechnique préalable G1${fort ? ', puis une étude G2 avant conception' : ''}`,
-      motif: `Constat de cette étude : aléa retrait-gonflement des argiles « ${sR.argiles_alea} ». L'étude G1 est une obligation légale à la vente d'un terrain constructible en aléa moyen ou fort (loi ELAN).`,
+      action: `Vérifier le champ réglementaire et faire déterminer la mission géotechnique adaptée${fort ? ' au projet et à sa conception' : ''}`,
+      motif: `Constat de cette étude : aléa retrait-gonflement des argiles « ${sR.argiles_alea} ». Les obligations dépendent notamment de la zone d'exposition, de la nature de la vente et du projet ; cette étude ne permet pas d'affirmer une obligation générale G1 ou G2.`,
       organisme: "Bureau d'études géotechniques",
-      document: 'Étude géotechnique préalable G1 (norme NF P94-500)' + (fort ? ' puis étude de conception G2' : ''),
+      document: 'Mission géotechnique adaptée à déterminer selon la norme NF P94-500 et le champ juridique applicable',
     });
   }
   const geotech: Array<[string, string, string]> = [
@@ -1722,9 +1752,9 @@ function construirePlanAction(
   }
   if ((num(sR?.seveso_haut_count) ?? 0) > 0) {
     add({
-      priorite: 'bloquante',
+      priorite: 'importante',
       action: "Vérifier l'existence et le zonage d'un plan de prévention des risques technologiques (PPRT)",
-      motif: `Constat de cette étude : ${sR.seveso_haut_count} site(s) SEVESO seuil haut. Un PPRT peut interdire la construction.`,
+      motif: `Constat de cette étude : ${sR.seveso_haut_count} site(s) SEVESO seuil haut recensé(s) à l'échelle communale. Cela ne prouve pas que l'adresse est incluse dans un PPRT.`,
       organisme: 'Préfecture / DREAL',
       document: 'Règlement et zonage du PPRT',
     });
@@ -1825,7 +1855,7 @@ function construirePlanAction(
   // ── Déclenché par : pente mesurée forte, ou pente non mesurée ──
   const pente = ev('pente');
   const pv = typeof pente?.value === 'number' ? pente.value : null;
-  if (pv != null && pente?.status === 'confirmed' && pv > 15) {
+  if (pv != null && pente?.status === 'confirmed' && pente?.scope === 'parcel' && pv > 15) {
     add({
       priorite: 'importante',
       action: 'Faire réaliser un relevé topographique du terrain',
@@ -1833,7 +1863,7 @@ function construirePlanAction(
       organisme: 'Géomètre-expert',
       document: 'Plan topographique coté et profil en long',
     });
-  } else if (pente && pente.status !== 'confirmed') {
+  } else if (pente && (pente.status !== 'confirmed' || pente.scope !== 'parcel')) {
     add({
       priorite: 'recommandee',
       action: 'Faire réaliser un relevé topographique du terrain',
@@ -1920,7 +1950,7 @@ function construireTableauSources(items: SourceResult[], r: Resolved): LigneSour
     organisme: 'DGFiP / IGN',
     jeu_de_donnees: 'API Carto — parcellaire cadastral',
     millesime: null,
-    portee: 'parcel',
+    portee: r.anchor.cadastral_resolved ? 'parcel' : 'nearby',
     statut: r.surface_m2 != null ? 'ok' : 'ko',
     motif: r.surface_m2 != null ? null : 'parcelle non résolue au cadastre',
     duree_ms: 0,
@@ -1930,7 +1960,7 @@ function construireTableauSources(items: SourceResult[], r: Resolved): LigneSour
     organisme: "Commune / Géoportail de l'urbanisme",
     jeu_de_donnees: 'Non collecté par cette fonction (extraction côté application)',
     millesime: null,
-    portee: 'parcel',
+    portee: r.anchor.cadastral_resolved ? 'parcel' : 'nearby',
     statut: 'ko',
     motif: "hors de portée d'une Edge Function — voir page Foncier",
     duree_ms: 0,
@@ -1955,7 +1985,10 @@ Deno.serve(async (req: Request) => {
   let commune = normStr(body.commune);
   let surface_m2 = num(body.surface_m2);
   const zip = normStr(body.zip_code) ?? normStr(body.code_postal);
+  const hasAddress = Boolean(normStr(body.address) ?? normStr(body.adresse));
   let precision: Resolved['precision'] = 'aucune';
+  let cadastralResolved = false;
+  let coordinatesFromMunicipality = false;
 
   // 1) INSEE dérivé de l'IDU (tout identifiant cadastral commence par lui).
   if (!insee && idu) {
@@ -1971,9 +2004,10 @@ Deno.serve(async (req: Request) => {
       surface_m2 = surface_m2 ?? p.surface_m2;
       commune = commune ?? p.commune;
       precision = 'parcelle';
+      cadastralResolved = true;
     }
   }
-  if (precision === 'aucune' && lat != null && lon != null) precision = 'parcelle';
+  if (precision === 'aucune' && lat != null && lon != null) precision = 'point';
 
   // 3) Repli commune (INSEE / nom / code postal) — précision dégradée.
   if (!insee || lat == null || lon == null) {
@@ -1981,7 +2015,9 @@ Deno.serve(async (req: Request) => {
     insee = insee ?? g.insee;
     commune = commune ?? g.nom;
     if (lat == null || lon == null) {
-      if (g.lat != null && g.lon != null) { lat = g.lat; lon = g.lon; precision = 'centre_commune'; }
+      if (g.lat != null && g.lon != null) {
+        lat = g.lat; lon = g.lon; precision = 'centre_commune'; coordinatesFromMunicipality = true;
+      }
     }
   }
 
@@ -1993,7 +2029,15 @@ Deno.serve(async (req: Request) => {
     }, 200);
   }
 
-  const resolved: Resolved = { idu, insee, commune, lat, lon, surface_m2, precision };
+  const anchor = deriveGeographicAnchor({
+    cadastralResolved,
+    hasCoordinates: lat != null && lon != null,
+    coordinatesFromCadastre: cadastralResolved,
+    coordinatesFromMunicipality,
+    hasAddress,
+    hasCadastralSurface: cadastralResolved && surface_m2 != null,
+  });
+  const resolved: Resolved = { idu, insee, commune, lat, lon, surface_m2, precision, anchor };
   const baseUrl = Deno.env.get('SUPABASE_URL');
   if (!baseUrl) return json({ status: 'error', summary: 'Missing SUPABASE_URL env', stats: null, items: [] }, 200);
 
@@ -2042,6 +2086,9 @@ Deno.serve(async (req: Request) => {
   if (surface_m2 == null) {
     avertissements.push("Surface cadastrale non résolue : tout raisonnement en emprise au sol ou en prix au m² de terrain est impossible.");
   }
+  if (!anchor.cadastral_resolved && precision === 'point') {
+    avertissements.push("Localisation précise au point, mais parcelle cadastrale non résolue : aucune identité, surface, emprise ou intersection parcellaire ne peut être affirmée.");
+  }
   if (ko.length) {
     avertissements.push(`Sources indisponibles pour cette étude : ${ko.map((k) => k.label).join(', ')}. L'absence de donnée ne vaut pas absence de contrainte.`);
   }
@@ -2052,7 +2099,9 @@ Deno.serve(async (req: Request) => {
     avertissements.push(`Contrainte potentiellement BLOQUANTE : ${verdict.risque.bloquants.join(' ; ')}. Aucune donnée favorable ne la compense.`);
   }
   if (verdict.risque.niveau === 'indetermine') {
-    avertissements.push("Le niveau de risque n'a pas pu être établi : la source Géorisques n'a pas répondu. Ne pas conclure à l'absence de risque.");
+    avertissements.push(ok.some((source) => source.cle === 'risques')
+      ? "Le niveau de risque à la parcelle n'a pas pu être établi : les signaux disponibles sont communaux et aucune intersection parcellaire n'est démontrée."
+      : "Le niveau de risque n'a pas pu être établi : la source Géorisques n'a pas répondu. Ne pas conclure à l'absence de risque.");
   }
 
   return json({
@@ -2061,7 +2110,7 @@ Deno.serve(async (req: Request) => {
       `Étude de parcelle${commune ? ` — ${commune}` : ''}${idu ? ` (${idu})` : ''}` +
       `${surface_m2 != null ? `, ${surface_m2.toLocaleString('fr-FR')} m²` : ''} : ` +
       `${ok.length} source(s) exploitables, ${vides.length} sans donnée, ${ko.length} indisponible(s). ` +
-      `Précision de localisation : ${precision}. ` +
+      `Ancrage géographique : ${anchor.anchor_type} (précision historique : ${precision}, cadastre résolu : ${anchor.cadastral_resolved ? 'oui' : 'non'}). ` +
       // ── v4 : le verdict entre dans le summary, que le LLM lit toujours ──
       `Verdict — potentiel ${verdict.potentiel.niveau}, risque ${verdict.risque.niveau}, ` +
       `fiabilité des données ${verdict.fiabilite.score}/100. ` +
@@ -2078,6 +2127,13 @@ Deno.serve(async (req: Request) => {
         lon: lon ?? null,
       },
       precision,
+      ancrage: anchor,
+      portees: {
+        principe: "Chaque donnée conserve sa portée réelle ; point, nearby et municipality ne signifient jamais parcel.",
+        par_source: Object.fromEntries(items.map((i) => [i.cle, i.portee ?? null])),
+      },
+      interdictions_de_conclusion: groundingProhibitions(anchor),
+      interdictions_analyse: unsupportedInferenceProhibitions(),
       sources_ok: ok.map((i) => i.cle),
       sources_sans_donnee: vides.map((i) => i.cle),
       sources_indisponibles: ko.map((i) => ({ cle: i.cle, motif: i.motif })),
@@ -2101,6 +2157,7 @@ Deno.serve(async (req: Request) => {
       lexique: {
         scope: {
           parcel: 'mesurée ou démontrée au droit de la parcelle',
+          point: "mesurée au point d'adresse ou aux coordonnées — ne décrit ni la surface ni la géométrie de la parcelle",
           nearby: 'dans un voisinage (rayon de comparables, périmètre) — pas sur la parcelle',
           municipality: 'vaut pour toute la commune — ne dit rien de la parcelle',
           intermunicipality: "vaut pour l'intercommunalité",

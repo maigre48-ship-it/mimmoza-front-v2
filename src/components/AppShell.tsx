@@ -61,6 +61,7 @@ import { usePlanAccess } from "@/lib/billing/usePlanAccess";
 import { MODULE_LABEL, isModuleSpace, type ModuleSpace, type PlanId } from "@/lib/billing/planAccess";
 import { useCopilot } from "@/spaces/copilot/hooks/useCopilot";
 import { CopilotCreditsPill } from "@/spaces/copilot/components/CopilotCreditsPill";
+import { useCopilotStore } from "@/spaces/copilot/store/copilotStore";
 
 type Space = "none" | "promoteur" | "agence" | "marchand" | "banque" | "rehabilitation" | "mimmozia";
 
@@ -667,10 +668,11 @@ function TopNavigation(props: {
               to="/mimmozia"
               onClick={(e) => {
                 e.preventDefault();          // coupe la navigation du NavLink
+                if (location.pathname === "/mimmozia") useCopilotStore.getState().newConversation();
                 onChangeSpace("none");       // reset visuel de l'espace
                 navigate("/mimmozia");       // navigation unique, maîtrisée
               }}
-              className="flex shrink-0 items-center px-2 py-1.5"
+              className="mzia-shell-logo flex shrink-0 items-center px-2 py-1.5"
             >
               <MimmozaLogo className="h-12 w-auto object-contain" />
             </NavLink>
@@ -1342,6 +1344,7 @@ export function AppShell(props: AppShellProps) {
               to="/mimmozia"
               onClick={(e) => {
                 e.preventDefault();
+                if (location.pathname === "/mimmozia") useCopilotStore.getState().newConversation();
                 onChangeSpace("none");
                 navigate("/mimmozia");
               }}
@@ -1407,7 +1410,7 @@ export function AppShell(props: AppShellProps) {
       </main>
 
       {!isBarePage && (
-        <footer className="border-t border-slate-200/80 bg-white py-4 px-4">
+        <footer className="mzia-shell-footer mt-auto shrink-0 border-t border-slate-200/80 bg-white py-4 px-4">
           <div className="mx-auto max-w-7xl">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
 

@@ -457,3 +457,16 @@
 @media (max-width: 640px) {
   .mzia-model__menu { width: min(320px, calc(100vw - 32px)); }
 }
+
+/* Sur desktop, le footer global MimmozIA mesure 53 px et reste ancré au bord
+   inférieur. On retire sa hauteur de la page pour qu'il ne recouvre rien. */
+@media (min-width: 861px) {
+  .mzia-page { height: calc(100dvh - 8rem - 53px); }
+  body:has(.mzia-page) .mzia-shell-footer {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 35;
+  }
+}

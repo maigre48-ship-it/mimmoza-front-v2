@@ -18,6 +18,7 @@ import { track, type MimmoziaEventPayload } from '@/lib/mimmozia/track';
 import './MimmozIAPage.css';
 import { useMimmozIAProfile } from '@/lib/mimmozia/useMimmozIAProfile';
 import AlertesAccueil from '@/components/AlertesAccueil';
+import { useCopilotStore } from './store/copilotStore';
 
 /* =========================================================================
    ⚠️  POINTS D'INTÉGRATION (à vérifier une fois dans useCopilot.ts).
@@ -86,9 +87,6 @@ interface LooseCopilotApi {
 
 const pickSend = (a: LooseCopilotApi): SendFn | undefined =>
   a.sendMessage ?? a.send ?? a.submitMessage ?? a.ask ?? a.createMessage;
-const pickNew = (a: LooseCopilotApi): (() => unknown) | undefined =>
-  a.newConversation ?? a.startNewConversation ?? a.resetConversation ?? a.clearConversation;
-
 /** Vrai si la conversation active contient ≥1 message (couvre la reprise d'historique). */
 function hasActiveConversation(a: LooseCopilotApi): boolean {
   if (Array.isArray(a.currentConversation?.messages) && a.currentConversation!.messages!.length > 0) return true;
@@ -177,6 +175,7 @@ const SIDEBAR_KEY = 'mzia.sidebar.collapsed';
 
 export default function MimmozIAPage() {
   const copilot = useCopilot() as unknown as LooseCopilotApi;
+  const mimmoziaView = useCopilotStore((state) => state.mimmoziaView);
   const firstName = useDisplayFirstName();
   const { tagline } = useMimmozIAProfile();
   const send = useMemo(() => pickSend(copilot), [copilot]);
@@ -194,11 +193,9 @@ export default function MimmozIAPage() {
     });
   }, []);
 
-  // --- Détection du mode conversation (store d'abord, filet local) ---
-  const storeActive = hasActiveConversation(copilot);
-  const [optimistic, setOptimistic] = useState(false);
-  const [welcomeOverride, setWelcomeOverride] = useState(false);
-  const conversationActive = !welcomeOverride && (storeActive || optimistic);
+  // Le store est l'unique source de vérité : le bouton + et le logo peuvent
+  // ainsi déclencher exactement le même retour à l'accueil.
+  const conversationActive = mimmoziaView === 'conversation' && hasActiveConversation(copilot);
 
   // --- État de l'orbe = miroir de l'état réel du Copilot ---
   const live = deriveLiveState(copilot);
@@ -304,8 +301,6 @@ export default function MimmozIAPage() {
     const message = text.trim();
     if (!message) return;
     void track('search', { source: 'mimmozia' });
-    setWelcomeOverride(false);
-    setOptimistic(true);
     const files = attachments.map(({ mediaType, data, name }) => ({ mediaType, data, name }));
     try {
       if (send) await send(message, files.length ? { attachments: files } : undefined);
@@ -332,17 +327,9 @@ export default function MimmozIAPage() {
   }, []);
 
   const handleNewConversation = useCallback(() => {
-    pickNew(copilot)?.();
-    setOptimistic(false);
-    setWelcomeOverride(true);
+    useCopilotStore.getState().newConversation();
     setDraft('');
     setAttachments([]);
-  }, [copilot]);
-
-  // Sélection d'une conversation depuis la sidebar → bascule en mode chat.
-  const handleOpenConversation = useCallback(() => {
-    setWelcomeOverride(false);
-    setOptimistic(true);
   }, []);
 
   const recognitionRef = useRef<any>(null);
@@ -408,7 +395,6 @@ export default function MimmozIAPage() {
       <MimmozIASidebar
         copilot={copilot}
         onNewConversation={handleNewConversation}
-        onOpenConversation={handleOpenConversation}
         collapsed={sidebarCollapsed}
         onToggleCollapsed={toggleCollapsed}
         onCloseMobile={() => setMobileOpen(false)}

@@ -39,7 +39,7 @@ function renderInline(escaped: string): string {
   // italique *…* (évite de manger les ** déjà traités)
   s = s.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
   // liens [texte](url)
-  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" style="color:#4f46e5;text-decoration:underline;">$1</a>');
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#4f46e5;text-decoration:underline;">$1</a>');
   return s;
 }
 
@@ -63,7 +63,7 @@ function splitRow(line: string): string[] {
 
 // ── Rendu Markdown bloc → HTML ───────────────────────────────────────────────
 // Gère : titres #/##/###, listes -/*/1., tableaux, règles ---, paragraphes.
-function markdownToHtml(raw: string): string {
+export function markdownToSafeHtml(raw: string): string {
   const lines = escapeHtml(raw.replace(/\r\n/g, '\n')).split('\n');
   const out: string[] = [];
   let i = 0;
@@ -98,10 +98,19 @@ function markdownToHtml(raw: string): string {
       const level = h[1].length;
       const size = level === 1 ? 17 : level === 2 ? 15 : 13;
       const mt = level <= 2 ? 14 : 10;
-      out.push(
-        `<div style="font-size:${size}px;font-weight:700;color:#0f172a;margin:${mt}px 0 6px 0;">${renderInline(h[2])}</div>`,
-      );
+      out.push(`<h${level} style="font-size:${size}px;font-weight:700;color:#0f172a;margin:${mt}px 0 6px 0;">${renderInline(h[2])}</h${level}>`);
       i++;
+      continue;
+    }
+
+    // Citation / avertissement Markdown.
+    if (/^&gt;\s?/.test(trimmed)) {
+      const quote: string[] = [];
+      while (i < lines.length && /^&gt;\s?/.test(lines[i].trim())) {
+        quote.push(lines[i].trim().replace(/^&gt;\s?/, ''));
+        i++;
+      }
+      out.push(`<blockquote style="margin:10px 0;padding:9px 12px;border-left:3px solid #7c3aed;background:#f5f3ff;color:#475569;">${renderInline(quote.join('<br>'))}</blockquote>`);
       continue;
     }
 
@@ -126,9 +135,7 @@ function markdownToHtml(raw: string): string {
             '</tr>',
         )
         .join('');
-      out.push(
-        `<table style="border-collapse:collapse;width:100%;margin:8px 0;page-break-inside:avoid;">${thead}${tbody}</table>`,
-      );
+      out.push(`<div class="copilot-markdown-table-wrap" style="width:100%;overflow-x:auto;"><table style="border-collapse:collapse;width:100%;margin:8px 0;page-break-inside:avoid;">${thead}${tbody}</table></div>`);
       continue;
     }
 
@@ -161,6 +168,7 @@ function markdownToHtml(raw: string): string {
       lines[i].trim() !== '' &&
       !/^-{3,}$/.test(lines[i].trim()) &&
       !/^#{1,6}\s+/.test(lines[i].trim()) &&
+      !/^&gt;\s?/.test(lines[i].trim()) &&
       !/^[-*]\s+/.test(lines[i].trim()) &&
       !/^\d+\.\s+/.test(lines[i].trim()) &&
       !(isTableRow(lines[i]) && i + 1 < lines.length && isTableSeparator(lines[i + 1]))
@@ -233,7 +241,7 @@ export async function exportCopilotConversationToPdf(params: {
       // Réponse MimmozIA : rendu Markdown complet.
       const bodyHtml = isUser
         ? `<p style="margin:0;">${escapeHtml(m.text.trim()).replace(/\n/g, '<br>')}</p>`
-        : markdownToHtml(m.text);
+        : markdownToSafeHtml(m.text);
 
       const bubbleStyle = isUser
         ? 'max-width:80%;background:#f5f3ff;border:1px solid #ddd6fe;'
@@ -300,4 +308,56 @@ export async function exportCopilotConversationToPdf(params: {
   printWindow.onload = () => {
     setTimeout(() => { printWindow.print(); }, 300);
   };
+}
+
+export type ResponsePdfResult = 'opened' | 'popup_blocked';
+
+interface ResponsePdfParams {
+  response: ExportableMessage;
+  question?: string | null;
+  contextLabel?: string | null;
+}
+
+/** Construction pure et testable du document imprimable d'une réponse. */
+export function buildCopilotResponsePrintHtml(
+  params: ResponsePdfParams,
+  options: { logo?: string | null; generatedAt?: string } = {},
+): string {
+  const logo = options.logo ?? null;
+  const generatedAt = options.generatedAt ?? new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const responseDate = formatDate(params.response.createdAt);
+  const question = params.question?.trim();
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport MimmozIA — Analyse immobilière</title><style>
+    *{box-sizing:border-box} body{margin:0;font-family:'Segoe UI',Arial,sans-serif;color:#1e293b;line-height:1.55;background:#fff}
+    main{max-width:190mm;margin:0 auto;padding:14mm} h1,h2,h3,h4,h5,h6{break-after:avoid;page-break-after:avoid} table,blockquote,li{break-inside:avoid;page-break-inside:avoid}
+    strong{color:#0f172a} a{color:#4f46e5} .question{margin:18px 0;padding:12px 15px;border-radius:10px;background:#f5f3ff;border:1px solid #ddd6fe}
+    .report-end{position:static;break-inside:avoid;page-break-inside:avoid;margin-top:18mm;border-top:1px solid #e2e8f0;padding-top:4mm;font-size:9px;color:#94a3b8;text-align:center}
+    @page{size:A4;margin:12mm} @media print{main{padding:0}.copilot-markdown-table-wrap{overflow:visible!important} a{color:#1e293b;text-decoration:none}}
+  </style></head><body><main>
+    <header style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:14px;border-bottom:2px solid #e2e8f0;">
+      <div>${logo ? `<img src="${logo}" alt="Mimmoza" style="height:44px;display:block;">` : '<div style="font-size:22px;font-weight:800;color:#4f46e5;">Mimmoza</div>'}<div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin-top:6px;">Rapport MimmozIA</div></div>
+      <div style="font-size:10px;color:#64748b;text-align:right;">Généré le ${generatedAt}${responseDate ? `<br>Réponse du ${responseDate}` : ''}${params.contextLabel ? `<br><strong>${escapeHtml(params.contextLabel)}</strong>` : ''}</div>
+    </header>
+    <h1 style="font-size:20px;margin:22px 0 10px;color:#0f172a;">Analyse MimmozIA</h1>
+    ${question ? `<section class="question" aria-label="Question associée"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6d28d9;font-weight:700;margin-bottom:5px;">Question</div><div>${escapeHtml(question).replace(/\n/g, '<br>')}</div></section>` : ''}
+    <article style="font-size:12px;">${markdownToSafeHtml(params.response.text)}</article>
+    <footer class="report-end">Mimmoza · Plateforme d’analyse immobilière · À faire valider par un professionnel.</footer>
+  </main></body></html>`;
+}
+
+/** Exporte une seule réponse assistant, indépendamment de la conversation. */
+export async function exportCopilotResponseToPdf(params: ResponsePdfParams): Promise<ResponsePdfResult> {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) return 'popup_blocked';
+
+  printWindow.document.write('<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport MimmozIA — Analyse immobilière</title></head><body style="font-family:Arial,sans-serif;color:#64748b;padding:40px;">Préparation du rapport…</body></html>');
+  printWindow.document.close();
+
+  const logo = await loadLogoBase64();
+  const html = buildCopilotResponsePrintHtml(params, { logo });
+
+  printWindow.document.open(); printWindow.document.write(html); printWindow.document.close();
+  try { printWindow.history.replaceState(null, 'Rapport MimmozIA', '/mimmozia-rapport'); } catch { /* en-tête natif contrôlé par le navigateur */ }
+  printWindow.onload = () => setTimeout(() => printWindow.print(), 300);
+  return 'opened';
 }

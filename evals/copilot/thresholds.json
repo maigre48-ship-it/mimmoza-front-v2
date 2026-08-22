@@ -1,0 +1,11 @@
+{
+  "intent_accuracy_min": 0.95,
+  "required_tool_recall_min": 0.98,
+  "forbidden_tool_violations_max": 0,
+  "fallback_rate_max": 0.15,
+  "source_citation_rate_min": 0.9,
+  "limits_rate_min": 0.85,
+  "uncited_number_rate_max": 0.1,
+  "geographic_overclaim_count_max": 0,
+  "unsupported_inference_count_max": 0
+}

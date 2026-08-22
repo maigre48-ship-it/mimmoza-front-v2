@@ -68,6 +68,7 @@ interface ContextHints {
 }
 
 interface CopilotStore {
+  mimmoziaView: 'welcome' | 'conversation';
   isOpen: boolean;
   // V1.4 - mode presentation (home, premiere visite). Quand true, le drawer
   // affiche CopilotIntroView au lieu du chat. Aucun appel reseau, 0 credit.
@@ -120,7 +121,12 @@ interface CopilotStore {
 
 const localId = (p: string) => `local-${p}-${crypto.randomUUID()}`;
 
+// Invalide les chargements de conversation devenus obsolètes (sélection A,
+// puis accueil/nouvelle conversation avant la réponse réseau de A).
+let conversationSelectionVersion = 0;
+
 export const useCopilotStore = create<CopilotStore>((set, get) => ({
+  mimmoziaView: 'welcome',
   isOpen: false,
   introMode: false,
   mode: 'quick',
@@ -191,7 +197,8 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
   },
 
   selectConversation: async (id) => {
-    set({ loadingMessages: true, currentConversationId: id, actionRuns: [] });
+    const selectionVersion = ++conversationSelectionVersion;
+    set({ mimmoziaView: 'conversation', loadingMessages: true, currentConversationId: id, actionRuns: [] });
     try {
       // Les deux ensemble : afficher les cartes d'action sans leur trace, même
       // un instant, ferait apparaître « action proposée » sur des choses déjà
@@ -200,11 +207,13 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
         fetchMessages(id),
         fetchActionRuns(id),
       ]);
-      set({ messages, actionRuns });
+      if (selectionVersion === conversationSelectionVersion && get().currentConversationId === id) {
+        set({ messages, actionRuns });
+      }
     } catch (e) {
       console.error('[copilot] selectConversation', e);
     } finally {
-      set({ loadingMessages: false });
+      if (selectionVersion === conversationSelectionVersion) set({ loadingMessages: false });
     }
   },
 
@@ -239,8 +248,10 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
   // "+" du header : nouvelle conversation -> on quitte aussi l'intro.
   // NB : le tier n'est PAS reinitialise — c'est une preference utilisateur,
   // pas un etat de conversation.
-  newConversation: () =>
+  newConversation: () => {
+    conversationSelectionVersion++;
     set({
+      mimmoziaView: 'welcome',
       introMode: false,
       currentConversationId: null,
       messages: [],
@@ -248,10 +259,13 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
       status: 'idle',
       streamingId: null,
       error: null,
-    }),
+      loadingMessages: false,
+    });
+  },
 
   pushUserMessage: (text, mode) =>
     set((s) => ({
+      mimmoziaView: 'conversation',
       messages: [
         ...s.messages,
         {
@@ -439,6 +453,7 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
 
   reset: () =>
     set({
+      mimmoziaView: 'welcome',
       conversations: [],
       currentConversationId: null,
       messages: [],

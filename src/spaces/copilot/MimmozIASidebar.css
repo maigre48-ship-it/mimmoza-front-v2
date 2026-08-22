@@ -365,6 +365,18 @@
 .mzia-page.has-sidebar { padding-left: 288px; transition: padding-left 0.22s ease; }
 .mzia-page.has-sidebar.sidebar-collapsed { padding-left: 64px; }
 
+/* L'en-tête est rendu hors de `.mzia-page` : seul son logo accompagne le volet
+   et conserve la même marge courte dans ses deux largeurs (écart : 224 px). */
+.mzia-shell-logo {
+  transition: transform 0.22s ease;
+}
+body:has(.mzia-page.has-sidebar.sidebar-collapsed) .mzia-shell-logo {
+  transform: translateX(-152px);
+}
+body:has(.mzia-page.has-sidebar:not(.sidebar-collapsed)) .mzia-shell-logo {
+  transform: translateX(72px);
+}
+
 /* Hamburger + overlay mobile */
 /* ⚠️ Ce bouton est rendu HORS de `.mzia-side` : les variables --mz-* scopées
    sur le menu ne l'atteignent pas. Ses couleurs sont donc écrites en clair
@@ -386,6 +398,8 @@
 }
 
 @media (max-width: 860px) {
+  .mzia-shell-logo { transform: none !important; }
+
   .mzia-page.has-sidebar,
   .mzia-page.has-sidebar.sidebar-collapsed { padding-left: 0; }
 

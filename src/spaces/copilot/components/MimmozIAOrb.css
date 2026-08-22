@@ -449,16 +449,8 @@
   width: var(--orb-image-scale);
   height: var(--orb-image-scale);
 
-  /* ⚠️ CONTOURNEMENT — le damier de transparence est INCRUSTÉ dans les pixels
-     du PNG (fichier exporté à plat, alpha perdu). Aucun navigateur n'affiche
-     de damier pour de la transparence : ce qu'on voit est bien de l'image.
-     Ce masque circulaire découpe la sphère et son halo, ce qui élimine le
-     carré ; il subsiste un mince liseré de damier au bord du dégradé.
-     CORRECTIF RÉEL : réexporter orbe-mimmozia-noir.png en PNG-24 avec canal
-     alpha (ne pas aplatir l'arrière-plan). Ce masque pourra alors être retiré,
-     ou conservé sans effet visible. */
-  -webkit-mask: radial-gradient(closest-side, #000 62%, rgba(0,0,0,0.6) 70%, transparent 76%);
-  mask: radial-gradient(closest-side, #000 62%, rgba(0,0,0,0.6) 70%, transparent 76%);
+  /* Le PNG possède désormais un vrai canal alpha. Aucun masque additionnel :
+     il rognerait le bord réel de la sphère et ses reflets latéraux. */
 
   /* Les ombres portées servaient à « suspendre » un logo plat au-dessus du
      verre. Sur une sphère déjà ombrée, elles salissent le bord. */

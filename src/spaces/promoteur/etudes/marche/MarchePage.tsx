@@ -3351,6 +3351,20 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
 
   const [synthesisSaved, setSynthesisSaved] = useState(false);
 
+  // Mise en avant du bouton PDF quand on arrive depuis le copilot (?highlight=pdf)
+  const pdfButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [highlightPdf, setHighlightPdf] = useState(
+    () => new URLSearchParams(window.location.search).get("highlight") === "pdf"
+  );
+  useEffect(() => {
+    if (!highlightPdf) return;
+    const t = setTimeout(() => {
+      pdfButtonRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 400);
+    const off = setTimeout(() => setHighlightPdf(false), 6000);
+    return () => { clearTimeout(t); clearTimeout(off); };
+  }, [highlightPdf]);
+
   const positiveInsights = insights.filter(i => i.type === "positive");
   const warningInsights = insights.filter(i => i.type === "warning" || i.type === "negative");
   const neutralInsights = insights.filter(i => i.type === "neutral");
@@ -3971,9 +3985,21 @@ const MarketStudyResults: React.FC<{ data: MarketStudyApiResponse }> = ({ data }
             {synthesisSaved ? "✓ Enregistré dans la synthèse" : "Utiliser pour la synthèse"}
           </button>
           <button
+            ref={pdfButtonRef}
             onClick={handleGeneratePdf}
-            style={{ display: "flex", alignItems: "center", gap: "8px", padding: "14px 28px", background: "#1e293b", color: "white", border: "none", borderRadius: "12px", fontSize: "14px", fontWeight: 600, cursor: "pointer" }}
+            style={{
+              display: "flex", alignItems: "center", gap: "8px", padding: "14px 28px",
+              background: "#1e293b", color: "white", border: "none", borderRadius: "12px",
+              fontSize: "14px", fontWeight: 600, cursor: "pointer",
+              ...(highlightPdf ? {
+                boxShadow: `0 0 0 3px ${ACCENT_PRO}66, 0 0 18px ${ACCENT_PRO}99`,
+                animation: "mzPdfPulse 1.2s ease-in-out infinite",
+              } : {}),
+            }}
           >
+            {highlightPdf && (
+              <style>{`@keyframes mzPdfPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.04); } }`}</style>
+            )}
             <FileText size={18} />
             Générer le rapport PDF
           </button>
