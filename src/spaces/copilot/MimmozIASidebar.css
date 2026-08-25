@@ -384,8 +384,8 @@ body:has(.mzia-page.has-sidebar:not(.sidebar-collapsed)) .mzia-shell-logo {
    contenu de la page, pas du menu — un fond sombre y reste lisible. */
 .mzia-side__mobiletoggle {
   display: none;
-  position: fixed; top: 14px; left: 14px; z-index: 45;
-  width: 40px; height: 40px;
+  position: absolute; top: 10px; left: 10px; z-index: 38;
+  width: 44px; height: 44px;
   border: 1px solid rgba(255,255,255,0.14); border-radius: 10px;
   background: #1b1b1f; color: #ececf1; cursor: pointer;
   place-items: center;
@@ -395,6 +395,8 @@ body:has(.mzia-page.has-sidebar:not(.sidebar-collapsed)) .mzia-shell-logo {
   display: none;
   position: fixed; inset: 0; z-index: 39;
   background: rgba(15,23,42,0.35);
+  border: 0;
+  padding: 0;
 }
 
 @media (max-width: 860px) {
@@ -404,14 +406,27 @@ body:has(.mzia-page.has-sidebar:not(.sidebar-collapsed)) .mzia-shell-logo {
   .mzia-page.has-sidebar.sidebar-collapsed { padding-left: 0; }
 
   .mzia-side {
+    width: min(288px, calc(100vw - 48px));
+    height: 100dvh;
     transform: translateX(-100%);
     transition: transform 0.24s ease;
     box-shadow: 0 0 40px -10px rgba(15,23,42,0.3);
   }
-  .mzia-side.is-collapsed { width: 288px; } /* pas de rail réduit sur mobile */
+  .mzia-side.is-collapsed { width: min(288px, calc(100vw - 48px)); } /* pas de rail réduit sur mobile */
   .mzia-page.mobile-open .mzia-side { transform: translateX(0); }
   .mzia-page.mobile-open .mzia-side__overlay { display: block; }
   .mzia-side__mobiletoggle { display: grid; }
   /* On masque le bouton de repli sur mobile : le drawer se ferme via l'overlay */
   .mzia-side__collapse { display: none; }
+
+  .mzia-side__new,
+  .mzia-rail__btn,
+  .mzia-foot__btn,
+  .mzia-conv__main { min-height: 44px; }
+  .mzia-side__addproj,
+  .mzia-proj__del,
+  .mzia-conv__menu,
+  .mzia-settings__close { min-width: 44px; min-height: 44px; }
+  .mzia-proj__del,
+  .mzia-conv__menu { opacity: 1; }
 }

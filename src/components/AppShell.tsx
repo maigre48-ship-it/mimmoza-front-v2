@@ -1348,7 +1348,7 @@ export function AppShell(props: AppShellProps) {
                 onChangeSpace("none");
                 navigate("/mimmozia");
               }}
-              className="flex items-center"
+              className="flex min-h-11 items-center"
             >
               <MimmozaLogo className="h-8 w-auto object-contain" />
             </NavLink>
@@ -1357,7 +1357,7 @@ export function AppShell(props: AppShellProps) {
                 <button
                   type="button"
                   onClick={() => navigate("/admin")}
-                  className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
                   title="Admin"
                 >
                   <LayoutDashboard className="h-4 w-4" />
@@ -1366,7 +1366,9 @@ export function AppShell(props: AppShellProps) {
               <button
                 type="button"
                 onClick={() => setMobileNavOpen((o) => !o)}
-                className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
+                aria-label={mobileNavOpen ? "Fermer la navigation" : "Ouvrir la navigation"}
+                aria-expanded={mobileNavOpen}
               >
                 {mobileNavOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
               </button>

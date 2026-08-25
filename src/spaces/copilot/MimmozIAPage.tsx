@@ -185,6 +185,19 @@ export default function MimmozIAPage() {
     try { return localStorage.getItem(SIDEBAR_KEY) === '1'; } catch { return false; }
   });
   const [mobileOpen, setMobileOpen] = useState(false);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileOpen(false);
+    };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [mobileOpen]);
   const toggleCollapsed = useCallback(() => {
     setSidebarCollapsed((c) => {
       const next = !c;
@@ -388,10 +401,18 @@ export default function MimmozIAPage() {
         className="mzia-side__mobiletoggle"
         onClick={() => setMobileOpen(true)}
         title="Ouvrir le menu"
+        aria-label="Ouvrir les conversations et projets"
+        aria-controls="mzia-conversation-sidebar"
+        aria-expanded={mobileOpen}
       >
         <Menu size={18} />
       </button>
-      <div className="mzia-side__overlay" onClick={() => setMobileOpen(false)} />
+      <button
+        type="button"
+        className="mzia-side__overlay"
+        onClick={() => setMobileOpen(false)}
+        aria-label="Fermer le menu"
+      />
       <MimmozIASidebar
         copilot={copilot}
         onNewConversation={handleNewConversation}

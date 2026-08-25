@@ -60,8 +60,8 @@ export function CopilotChat({
   const empty = messages.length === 0 && !loadingMessages;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', minHeight: 0 }}>
+    <div className="copilot-chat">
+      <div ref={scrollRef} className="copilot-chat__messages">
         {empty ? (
           <CopilotEmptyState
             vertical={vertical}
@@ -81,7 +81,7 @@ export function CopilotChat({
         isStreaming={isStreaming}
         hideModeSelector={Boolean(forceMode)}
       />
-      <div style={{ fontSize: 11, color: T.textMuted, padding: '8px 16px', borderTop: `1px solid ${T.borderSoft}`, lineHeight: 1.4 }}>
+      <div className="copilot-chat__disclaimer" style={{ color: T.textMuted, borderTop: `1px solid ${T.borderSoft}` }}>
         ⚠️ MimmozIA peut commettre des erreurs. Les analyses doivent être vérifiées,
         notamment pour les données juridiques, urbanistiques, fiscales ou financières.
       </div>

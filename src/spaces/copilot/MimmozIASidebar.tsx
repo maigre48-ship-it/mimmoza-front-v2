@@ -292,7 +292,7 @@ export function MimmozIASidebar({
   /* ------------------------------ Rendu -------------------------------- */
 
   return (
-    <aside className={`mzia-side ${collapsed ? 'is-collapsed' : ''}`}>
+    <aside id="mzia-conversation-sidebar" className={`mzia-side ${collapsed ? 'is-collapsed' : ''}`} aria-label="Conversations MimmozIA">
       {/* En-tête */}
       <div className="mzia-side__head">
         {!collapsed && (

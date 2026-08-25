@@ -54,7 +54,7 @@ export function CopilotInput({
   };
 
   return (
-    <div style={{ padding: '10px 12px', borderTop: `1px solid ${T.borderSoft}` }}>
+    <div className="copilot-composer" style={{ borderTop: `1px solid ${T.borderSoft}` }}>
       {!hideModeSelector && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <CopilotModeSelector mode={mode} onChange={onChangeMode} disabled={isStreaming} />
@@ -112,7 +112,7 @@ export function CopilotInput({
         onChange={(e) => { void tools.handleFiles(e.target.files); e.target.value = ''; }}
       />
 
-      <div style={{
+      <div className="copilot-composer__field" style={{
         display: 'flex', gap: 8, alignItems: 'flex-end',
         background: 'rgb(255 255 255 / 0.04)', border: `1px solid ${T.border}`,
         borderRadius: 14, padding: 8,
@@ -125,7 +125,7 @@ export function CopilotInput({
           placeholder="Écrivez ou dictez votre message…"
           rows={1}
           style={{
-            flex: 1, resize: 'none', border: 'none', outline: 'none',
+            flex: 1, minWidth: 0, resize: 'none', border: 'none', outline: 'none',
             background: 'transparent', color: T.text, fontSize: 14,
             lineHeight: 1.5, fontFamily: 'inherit', maxHeight: 140,
           }}
@@ -133,6 +133,7 @@ export function CopilotInput({
 
         <button
           type="button"
+          className="copilot-composer__tool"
           onClick={tools.openFilePicker}
           disabled={isStreaming}
           title="Joindre un fichier (image ou PDF)"
@@ -143,6 +144,7 @@ export function CopilotInput({
 
         <button
           type="button"
+          className="copilot-composer__tool"
           onClick={tools.toggleDictation}
           disabled={!tools.dictationSupported || isStreaming}
           title={tools.dictationSupported ? 'Dicter' : 'Dictée non prise en charge par ce navigateur'}
@@ -159,11 +161,11 @@ export function CopilotInput({
         </button>
 
         {isStreaming ? (
-          <button onClick={onCancel} title="Arrêter" style={btnStyle('rgb(248 113 113)')}>
+          <button className="copilot-composer__tool" onClick={onCancel} title="Arrêter" style={btnStyle('rgb(248 113 113)')}>
             <Square size={16} fill="currentColor" />
           </button>
         ) : (
-          <button onClick={submit} disabled={!value.trim()} title="Envoyer (Entrée)"
+          <button className="copilot-composer__tool" onClick={submit} disabled={!value.trim()} title="Envoyer (Entrée)"
             style={{ ...btnStyle(T.accent), opacity: value.trim() ? 1 : 0.4 }}>
             <Send size={16} />
           </button>

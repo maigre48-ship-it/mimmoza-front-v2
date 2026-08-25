@@ -16,6 +16,7 @@
   color: #0f172a;
   background: #fcfcfe;
   overflow: hidden;
+  min-width: 0;
 }
 .mzia-page::before,
 .mzia-page::after {
@@ -310,6 +311,19 @@
    ========================================================================= */
 /* Accueil compact : cartes en carrousel horizontal sous l'orbe */
 @media (max-width: 860px) {
+  .mzia-page {
+    width: 100%;
+    height: calc(100dvh - 3.5rem);
+    min-height: 0;
+    overflow-x: clip;
+  }
+  .mzia-page.is-welcome {
+    height: auto;
+    min-height: calc(100dvh - 3.5rem);
+  }
+  .mzia-welcome { padding: 66px 12px 24px; }
+  .mzia-hero { width:100%; }
+  .mzia-welcome .mzia-orb { --orb-size: min(320px, 82vw); }
   .mzia-welcome__stage {
     grid-template-columns: 1fr;
     grid-auto-rows: min-content;
@@ -333,10 +347,16 @@
 /* Conversation mobile : orbe compacte 72 px, toujours flottante, ne recouvre
    pas les messages (halo léger), saisie toujours visible. */
 @media (max-width: 640px) {
-  .mzia-chat-orb { bottom: 12px; left: 8px; top: auto; right: auto; max-width: 84px; }
-  .mzia-chat-orb .mzia-orb { --orb-size: 60px; }
-  .mzia-chat-orb .mzia-status-panel { display: none; }
-  .mzia-chat-content { padding-left: 74px; } /* place réduite : on garde l'orbe seule */
+  .mzia-chat-orb { display:none; }
+  .mzia-chat-content { padding-left:0;min-width:0; }
+  .mzia-fab--newchat { left:64px;min-height:44px; }
+  .mzia-launcher__field { padding:8px; }
+  .mzia-launcher__input { flex-basis:100%;min-width:0;font-size:16px; }
+  .mzia-launcher__tools { width:100%;justify-content:flex-end; }
+  .mzia-iconbtn,.mzia-send { width:44px;height:44px; }
+  .mzia-model__trigger,.mzia-model--locked { min-height:44px; }
+  .mzia-chip__x { min-width:44px;min-height:44px;justify-content:center; }
+  .mzia-trust { gap:8px 12px; }
 }
 
 @media (max-width: 380px) {
@@ -469,4 +489,11 @@
     left: 0;
     z-index: 35;
   }
+}
+
+/* La règle d'accueil générale ci-dessus est déclarée après le premier bloc
+   responsive : on réaffirme ici la hauteur mobile pour qu'elle ne reprenne
+   pas le calcul desktop historique en 100vh. */
+@media (max-width: 860px) {
+  .mzia-page.is-welcome { min-height: calc(100dvh - 3.5rem); }
 }
