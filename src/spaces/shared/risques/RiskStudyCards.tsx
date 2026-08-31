@@ -195,8 +195,12 @@ export const CategoryScoreBar: React.FC<{
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
           <Icon size={16} color={color} style={{ flexShrink: 0 }} />
+          {/* `color: inherit` et non une teinte fixe : ce composant est monté
+              aussi bien sur une carte blanche que dans le panneau sombre du
+              hero. Une couleur en dur y devient invisible d'un côté ou de
+              l'autre. */}
           <span style={{
-            fontSize: "13px", fontWeight: 600, color: "#1e293b",
+            fontSize: "13px", fontWeight: 600, color: "inherit",
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           }}>
             {name}
@@ -231,7 +235,10 @@ export const CategoryScoreBar: React.FC<{
         }} />
       </div>
       {partiel && (
-        <div style={{ fontSize: "10px", color: "#64748b", fontWeight: 500, marginTop: "4px" }}>
+        // Même raison : `#64748b` sur le panneau violet du hero donnait un gris
+        // ardoise sur fond sombre, à la limite du lisible. On hérite de la
+        // couleur du parent et on l'atténue.
+        <div style={{ fontSize: "10px", color: "inherit", opacity: 0.7, fontWeight: 500, marginTop: "4px" }}>
           {criteresMesures}/{criteresTotal} critères mesurés
         </div>
       )}

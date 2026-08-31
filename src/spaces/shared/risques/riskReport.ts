@@ -84,10 +84,19 @@ const MUTED = "#64748b";
 const FAINT = "#94a3b8";
 const RULE = "#e2e8f0";
 
-/** Bloc insécable : une carte coupée en deux par un saut de page est illisible. */
-const block = (content: string, extra = ""): string =>
+/**
+ * Bloc de section. Insécable par défaut : une carte de synthèse coupée en deux
+ * par un saut de page est illisible.
+ *
+ * `breakable` lève cette contrainte pour les sections à long tableau. Sans elle,
+ * un tableau de douze lignes qui ne tient pas dans le bas de page repousse toute
+ * la section à la suivante et laisse une demi-page blanche. On laisse alors la
+ * coupure se faire à l'intérieur du tableau, ligne par ligne.
+ */
+const block = (content: string, extra = "", breakable = false): string =>
   `<section style="background:white;border:1px solid ${RULE};border-radius:14px;
-    padding:26px 28px;margin-bottom:18px;page-break-inside:avoid;${extra}">${content}</section>`;
+    padding:26px 28px;margin-bottom:18px;
+    page-break-inside:${breakable ? "auto" : "avoid"};${extra}">${content}</section>`;
 
 const h2 = (num: string, title: string, sub = ""): string => `
   <div style="display:flex;align-items:baseline;gap:12px;padding-bottom:12px;
@@ -108,15 +117,22 @@ const kpi = (
   color = INK,
   sub = "",
   unmeasured = false,
-): string => `
+): string => {
+  // Le corps de 21 px est dimensionné pour un chiffre. Une valeur textuelle
+  // longue — « Risques Géotechniques », « Commune · 5 km » — y devient un titre
+  // criard qui déborde sur deux lignes et écrase la hiérarchie de la page.
+  const taille = unmeasured ? "13px" : String(value).length > 13 ? "14px" : "21px";
+  const graisse = unmeasured ? 600 : String(value).length > 13 ? 700 : 800;
+  return `
   <div style="background:${unmeasured ? "#f8fafc" : "#fbfcfe"};border:1px solid ${RULE};
               border-radius:10px;padding:14px 16px;">
     <div style="font-size:9.5px;color:${MUTED};font-weight:700;text-transform:uppercase;
                 letter-spacing:0.07em;margin-bottom:7px;">${esc(label)}</div>
-    <div style="font-size:${unmeasured ? "13px" : "21px"};font-weight:${unmeasured ? 600 : 800};
-                color:${unmeasured ? FAINT : color};line-height:1.15;">${esc(value)}</div>
+    <div style="font-size:${taille};font-weight:${graisse};
+                color:${unmeasured ? FAINT : color};line-height:1.25;">${esc(value)}</div>
     ${sub ? `<div style="font-size:10.5px;color:${FAINT};margin-top:4px;">${esc(sub)}</div>` : ""}
   </div>`;
+};
 
 const grid = (cols: number, cells: string, gap = "12px"): string =>
   `<div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:${gap};">${cells}</div>`;
@@ -216,8 +232,15 @@ export const buildRiskReportHtml = (p: RiskReportParams): string => {
   const infos = by("info");
 
   // Décomptes : « — » dès que la source ne s'est pas déclarée mesurée.
-  const nCatnat = formatSourceCount(data.gaspar?.catnat_count, undefined, data.gaspar?.coverage);
-  const nPpr = formatSourceCount(data.gaspar?.ppr_count, undefined, data.gaspar?.coverage);
+  //
+  // GASPAR ne porte pas de `risk_level` : sa fiabilité tient au seul `coverage`.
+  // Passer `undefined` à `formatSourceCount` faisait échouer son premier test
+  // (`!isLevelMeasured(undefined)`) et retournait « — » quoi qu'il arrive — le
+  // rapport affichait donc « Arrêtés CATNAT : — » au-dessus d'un tableau qui en
+  // listait douze. On teste ici la seule chose qui existe pour cette source.
+  const gasparMesure = isMeasured(data.gaspar?.coverage);
+  const nCatnat = gasparMesure ? formatNumber(data.gaspar?.catnat_count) : "—";
+  const nPpr = gasparMesure ? formatNumber(data.gaspar?.ppr_count) : "—";
   const icpeMesure = isLevelMeasured(data.icpe?.risk_level) && isMeasured(data.icpe?.coverage);
   const sisMesure = isLevelMeasured(data.sis?.risk_level) && isMeasured(data.sis?.coverage);
   const nSis = formatSourceCount(data.sis?.count, data.sis?.risk_level, data.sis?.coverage);
@@ -265,6 +288,11 @@ export const buildRiskReportHtml = (p: RiskReportParams): string => {
     background:#f1f5f9; color:${INK}; line-height:1.55;
     font-size:13px; padding:36px;
   }
+
+  /* Une ligne de tableau coupée en deux par un saut de page est illisible, et
+     un en-tête de colonne laissé seul en bas de feuille l'est tout autant. */
+  tr { page-break-inside: avoid; }
+  thead { display: table-header-group; }
   .sheet { max-width:900px; margin:0 auto; padding-bottom:46px; }
   table { width:100%; border-collapse:collapse; border-radius:8px; overflow:hidden; }
   h1,h2,h3 { line-height:1.25; }
@@ -433,8 +461,8 @@ export const buildRiskReportHtml = (p: RiskReportParams): string => {
   ${block(`
     ${h2("B", "Catastrophes naturelles reconnues", "GASPAR")}
     ${grid(2, [
-      kpi("Arrêtés CATNAT", nCatnat, INK, "sur l'historique de la commune", nCatnat === "—"),
-      kpi("Plans de prévention (PPR)", nPpr, INK, "applicables sur la commune", nPpr === "—"),
+      kpi("Arrêtés CATNAT", nCatnat, INK, "sur l'historique de la commune", !gasparMesure),
+      kpi("Plans de prévention (PPR)", nPpr, INK, "applicables sur la commune", !gasparMesure),
     ].join(""))}
     ${data.gaspar?.truncated ? `<div style="margin-top:12px;padding:9px 13px;background:#fffbeb;
       border:1px solid #fcd34d;border-radius:8px;font-size:11px;color:#92400e;">
@@ -453,7 +481,7 @@ export const buildRiskReportHtml = (p: RiskReportParams): string => {
           <div style="font-size:10.5px;color:#b45309;margin-top:2px;">État : ${esc(p.etat || "inconnu")} · Code ${esc(p.code)}</div>
         </div>`).join("")}
     </div>` : ""}
-  `)}
+  `, "", true)}
 
   <!-- ══ ICPE / SEVESO ════════════════════════════════════════════════════ -->
   ${block(`
@@ -473,10 +501,17 @@ export const buildRiskReportHtml = (p: RiskReportParams): string => {
       border-radius:8px;font-size:11px;color:${MUTED};">
       La base ICPE n'a pas répondu : l'absence d'installation recensée ci-dessus ne peut pas
       être interprétée comme une absence d'installation.</div>` : ""}
+    ${data.icpe?.truncated ? `<div style="margin-top:12px;padding:9px 13px;background:#fffbeb;
+      border:1px solid #fcd34d;border-radius:8px;font-size:11px;color:#92400e;">
+      Décompte tronqué par la pagination de la source : ce nombre est un plafond de requête,
+      pas un décompte exhaustif des installations du secteur.</div>` : ""}
     ${icpeRows ? `<div style="margin-top:16px;">
       <table>${tableHead(["Installation", "Activité", "SEVESO", "Distance"])}<tbody>${icpeRows}</tbody></table>
+      <div style="font-size:10px;color:${FAINT};margin-top:8px;">
+        Installations les plus proches du point de référence, par ordre de distance croissante.
+      </div>
     </div>` : ""}
-  `)}
+  `, "", true)}
 
   <!-- ══ POLLUTION ════════════════════════════════════════════════════════ -->
   ${block(`
