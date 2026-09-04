@@ -121,6 +121,40 @@ interface CopilotStore {
 
 const localId = (p: string) => `local-${p}-${crypto.randomUUID()}`;
 
+/**
+ * Traduit une erreur technique en message affichable.
+ *
+ * Le message brut du serveur remontait tel quel jusqu'au bandeau : l'utilisateur
+ * lisait « Anthropic API 529 : {"type":"error",...} » ou « Timeout Anthropic
+ * (60000ms dépassés) » — incompréhensible, et sans indication de ce qu'il peut
+ * faire. Les cas connus sont reformulés ; le détail technique reste dans la
+ * console pour le diagnostic.
+ */
+function messageErreurLisible(brut: string | undefined | null): string {
+  const e = (brut ?? '').toString();
+  if (e) console.warn('[copilot] erreur technique :', e);
+  if (!e) return "Une erreur est survenue. Réessayez dans un instant.";
+
+  const bas = e.toLowerCase();
+
+  if (bas.includes('insufficient_credits') || bas.includes('credits')) {
+    return "Vous n'avez plus assez de jetons pour cette demande.";
+  }
+  if (bas.includes('timeout') || bas.includes('aborted')) {
+    return "La réponse a mis trop de temps à arriver. Reformulez plus simplement, ou réessayez.";
+  }
+  if (bas.includes('529') || bas.includes('overloaded') || bas.includes('rate')) {
+    return "Le service est momentanément saturé. Réessayez dans quelques secondes.";
+  }
+  if (bas.includes('401') || bas.includes('unauthorized') || bas.includes('jwt')) {
+    return "Votre session a expiré. Reconnectez-vous puis relancez la demande.";
+  }
+  if (bas.includes('network') || bas.includes('failed to fetch')) {
+    return "Connexion interrompue. Vérifiez votre réseau et réessayez.";
+  }
+  return "Une erreur est survenue. Réessayez dans un instant.";
+}
+
 // Invalide les chargements de conversation devenus obsolètes (sélection A,
 // puis accueil/nouvelle conversation avant la réponse réseau de A).
 let conversationSelectionVersion = 0;
@@ -403,22 +437,24 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
         }));
         break;
 
-      case 'error':
+      case 'error': {
+        const messageUtilisateur = messageErreurLisible(event.error);
         set((s) => ({
           messages: s.messages.map((m) =>
             m.id === s.streamingId
-              ? { ...m, status: 'error', error: event.error }
+              ? { ...m, status: 'error', error: messageUtilisateur }
               : m,
           ),
           streamingId: null,
           status: 'error',
-          error: event.error,
+          error: messageUtilisateur,
           credits:
             s.credits != null && event.refunded_credits
               ? s.credits + event.refunded_credits
               : s.credits,
         }));
         break;
+      }
     }
   },
 

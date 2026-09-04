@@ -13,6 +13,7 @@
 import type { BuildingVolume2D } from './buildingProgram.types';
 import { computeParkingSlots, genId } from './editor2d.geometry';
 import type { Building2D, Parking2D } from './editor2d.types';
+import { IMPLANTATION_HEIGHT_FALLBACK, totalBuildingHeightM } from '../shared/buildingMetrics';
 import type {
   ImplantationScenarioFull,
   ScenarioFinancialAssumptions,
@@ -66,8 +67,13 @@ function buildingTotalFloorsM2(b: Building2D): number {
 }
 
 function buildingMaxHeightM(b: Building2D): number {
-  return (b.groundFloorHeightM ?? 3.0) +
-         (b.floorsAboveGround ?? b.levels ?? 0) * (b.typicalFloorHeightM ?? 2.8);
+  // Même source que masterScenario et le snapshot d'implantation.
+  return totalBuildingHeightM(
+    b.floorsAboveGround ?? b.levels ?? 0,
+    b.groundFloorHeightM,
+    b.typicalFloorHeightM,
+    IMPLANTATION_HEIGHT_FALLBACK,
+  );
 }
 
 // ─── CALCUL PLACES PARKING ────────────────────────────────────────────

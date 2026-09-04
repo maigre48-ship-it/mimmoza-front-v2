@@ -286,6 +286,12 @@ export function buildPredictiveSnapshotForCopilot(
         marge_brute:        n(rentaComp.margeBrute),
         marge_brute_pct:    n(rentaComp.margeBrutePct),
         prix_revente_cible: n(rentaComp.prixReventeCible),
+        // Ajoutés : le TRI et le coût de projet étaient calculés et persistés
+        // mais jamais transmis au copilote, qui ne pouvait donc répondre qu'à
+        // moitié à « est-ce que ce deal tient ? ».
+        tri_pct:            n(rentaComp.triEquity),
+        cout_projet:        n(rentaComp.coutProjet),
+        cout_achat:         n(rentaComp.coutAchat),
       } : null,
 
       dpe:               opts.dpe        ?? null,

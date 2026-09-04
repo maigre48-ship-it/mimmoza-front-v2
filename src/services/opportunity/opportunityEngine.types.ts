@@ -60,6 +60,16 @@ export interface OpportunityInput {
   marketRefPriceM2?: number | null;
   /** Nombre de ventes DVF de la référence. */
   marketSampleSize?: number | null;
+  /**
+   * Loyer de référence ANIL/DHUP en €/m²/mois, à la maille de la commune.
+   *
+   * Source réelle : table `loyers_reference` (~34 900 communes), exposée par
+   * l'edge function `loyers-reference-v1`. Quand ce champ est renseigné, il
+   * prime sur le barème départemental de repli codé en dur dans le moteur —
+   * lequel ne couvre que 42 départements sur ~101 et retombe sinon sur une
+   * moyenne nationale, la Creuse au tarif de Rouen.
+   */
+  loyerReferenceEurM2Mois?: number | null;
   createdAt?: string;
 }
 

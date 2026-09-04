@@ -71,7 +71,7 @@ import { usePromoteurStudy } from "../../../promoteur/shared/usePromoteurStudy";
 import { useCopilotContext } from "../../../copilot/hooks/useCopilotContext";
 // 🆕 COPILOT LOT 9 : injection de l'etude de risques calculee dans le contexte actif
 import { setActiveCopilotContext } from "../../../copilot/store/activeCopilotContext.store";
-import { readMarchandSnapshot } from "../../../marchand/shared/marchandSnapshot.store";
+import { MARCHAND_SNAPSHOT_EVENT, readMarchandSnapshot } from "../../../marchand/shared/marchandSnapshot.store";
 import { getInvestisseurSnapshot, upsertInvestisseurProject } from "../../shared/investisseurSnapshot.store";
 import { userStorage } from "@/lib/storage/userScopedStorage";
 
@@ -637,7 +637,12 @@ export default function InvestisseurRisquesPanel() {
           snapAny.dueDiligenceByDeal[activeDeal.id].state.georisques = result?.data ?? null;
           snapAny.updatedAt = new Date().toISOString();
           saveMarchandSnapshot(snap as any);
-          window.dispatchEvent(new CustomEvent("MARCHAND_SNAPSHOT_EVENT"));
+          // ⚠️ L'événement était émis sous le NOM DE LA CONSTANTE
+          // ("MARCHAND_SNAPSHOT_EVENT") au lieu de sa VALEUR
+          // ("mimmoza:marchand:snapshot") : aucun des écouteurs ne se
+          // déclenchait, et les écrans branchés sur le snapshot marchand
+          // restaient sur d'anciennes valeurs après une étude de risques.
+          window.dispatchEvent(new CustomEvent(MARCHAND_SNAPSHOT_EVENT));
           console.log("[InvestisseurRisquesPanel] Georisques sauvegardes pour deal", activeDeal.id);
         }
       } catch (e) { console.error("[InvestisseurRisquesPanel] Erreur sauvegarde georisques", e); }

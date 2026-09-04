@@ -1,0 +1,53 @@
+# robots.txt — Mimmoza
+#
+# ─── Pourquoi ce fichier existe ──────────────────────────────────────────────
+# Mimmoza réutilise les données DVF (Demandes de Valeurs Foncières) publiées par
+# la DGFiP. L'article R. 112 A-3 du livre des procédures fiscales impose que
+# cette réutilisation « ne doit pas permettre l'indexation des données depuis
+# les moteurs de recherche externes », ni la ré-identification indirecte des
+# personnes concernées.
+#
+# Toutes les routes ci-dessous affichent, directement ou indirectement, des
+# transactions ou des prix issus de DVF. Elles doivent rester hors des moteurs.
+#
+# ⚠️ Ce fichier ne suffit pas à lui seul : robots.txt empêche le CRAWL, pas
+# l'indexation d'une URL découverte par un lien externe. Il est doublé par une
+# balise <meta name="robots" content="noindex"> injectée sur ces mêmes routes
+# (voir src/components/RobotsPolicy.tsx). Les deux sont nécessaires.
+#
+# ⚠️ Aujourd'hui, ce qui protège réellement le site est le middleware Vercel de
+# Basic Auth (middleware.ts), qui renvoie 401 sur toutes les routes. Le jour où
+# il sera retiré pour la mise en production publique, ce fichier et la balise
+# noindex deviendront la seule barrière. Ne pas les retirer en même temps.
+
+User-agent: *
+
+# ── Espaces métier affichant des comparables et des prix DVF ──
+Disallow: /promoteur/
+Disallow: /marchand-de-bien/
+Disallow: /particulier/
+Disallow: /assurance/
+Disallow: /apporteur/
+Disallow: /rehabilitation/
+Disallow: /investisseur/
+
+# ── Pages transverses portant des estimations ou des comparables ──
+Disallow: /analyse-rapide
+Disallow: /mimmozia
+Disallow: /dashboard
+Disallow: /accueil
+Disallow: /opportunites
+Disallow: /veille/
+Disallow: /parametres/
+
+# ── Espace d'administration ──
+Disallow: /admin/
+
+# ── API et compte ──
+Disallow: /api/
+Disallow: /compte
+Disallow: /abonnement
+Disallow: /jetons
+
+# Les pages de connexion, d'inscription et les mentions légales restent
+# indexables : elles ne portent aucune donnée DVF.

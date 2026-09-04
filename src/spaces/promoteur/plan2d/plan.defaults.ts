@@ -1,6 +1,11 @@
 // src/spaces/promoteur/plan2d/plan.defaults.ts
 
 import type { PlanProject } from "./plan.types";
+import {
+  PLAN_GROUND_FLOOR_HEIGHT_M,
+  PLAN_TYPICAL_FLOOR_HEIGHT_M,
+  SURFACE_MOYENNE_LOGEMENT_M2,
+} from "../shared/buildingMetrics";
 
 export const DEFAULT_PLAN_PROJECT: PlanProject = {
   id: "plan-default",
@@ -18,13 +23,15 @@ export const DEFAULT_PLAN_PROJECT: PlanProject = {
   program: {
     buildingKind: "COLLECTIF",
     nbLogements: 10,
-    surfaceMoyLogementM2: 60,
+    surfaceMoyLogementM2: SURFACE_MOYENNE_LOGEMENT_M2,
   },
 
+  // Mêmes hauteurs que la création d'un bâtiment (usePlanEditor.addBuilding)
+  // et que le contrôle de conformité PLU — les trois divergeaient.
   floorsSpec: {
     aboveGroundFloors: 2,
-    groundFloorHeightM: 3,
-    typicalFloorHeightM: 2.7,
+    groundFloorHeightM: PLAN_GROUND_FLOOR_HEIGHT_M,
+    typicalFloorHeightM: PLAN_TYPICAL_FLOOR_HEIGHT_M,
   },
 
   buildings: [],

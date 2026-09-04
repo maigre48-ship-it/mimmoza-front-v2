@@ -5,6 +5,10 @@ import type { BuildingVolume2D, FloorPlan2D } from './buildingProgram.types';
 import { computeParkingSlots, genId, rectCorners } from './editor2d.geometry';
 import type { Building2D, Editor2DActions, Editor2DState, OrientedRect, Parking2D } from './editor2d.types';
 import { userStorage } from "@/lib/storage/userScopedStorage";
+import {
+  IMPLANTATION_GROUND_FLOOR_HEIGHT_M,
+  IMPLANTATION_TYPICAL_FLOOR_HEIGHT_M,
+} from '../shared/buildingMetrics';
 
 // ─── HELPERS EXPORTÉS ─────────────────────────────────────────────────
 
@@ -139,8 +143,8 @@ function migrateBuilding(raw: Building2D & { levels?: number }): Building2D {
     ...raw,
     kind: raw.kind ?? 'building',
     floorsAboveGround,
-    groundFloorHeightM:  raw.groundFloorHeightM  ?? 3.0,
-    typicalFloorHeightM: raw.typicalFloorHeightM ?? 2.8,
+    groundFloorHeightM:  raw.groundFloorHeightM  ?? IMPLANTATION_GROUND_FLOOR_HEIGHT_M,
+    typicalFloorHeightM: raw.typicalFloorHeightM ?? IMPLANTATION_TYPICAL_FLOOR_HEIGHT_M,
     roofType:  raw.roofType  ?? 'flat',
     balconies: raw.balconies ?? [],
     loggias:   raw.loggias   ?? [],
@@ -197,7 +201,9 @@ export const useEditor2DStore = create<Editor2DState & Editor2DActions>((set, ge
 
   addBuilding: (b) => {
     const defaults = {
-      floorsAboveGround: 0, groundFloorHeightM: 3.0, typicalFloorHeightM: 2.8,
+      floorsAboveGround: 0,
+      groundFloorHeightM: IMPLANTATION_GROUND_FLOOR_HEIGHT_M,
+      typicalFloorHeightM: IMPLANTATION_TYPICAL_FLOOR_HEIGHT_M,
       roofType: 'flat' as const, balconies: [], loggias: [], terraces: [], volumes: [],
       floorPlans: [],
       kind: 'building' as const,

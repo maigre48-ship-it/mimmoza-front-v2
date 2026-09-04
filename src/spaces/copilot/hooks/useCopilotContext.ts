@@ -9,6 +9,7 @@
 
 import { useCallback, useMemo } from 'react';
 import { useCopilotStore } from '../store/copilotStore';
+import { userStorage } from '@/lib/storage/userScopedStorage';
 import type {
   MimmozaContext,
   ParcelContextRef,
@@ -61,24 +62,25 @@ const CONTEXT_DEBUG = (() => {
 /*  Budget travaux : lecture directe localStorage (zéro dépendance)    */
 /* ------------------------------------------------------------------ */
 
-// Trouve la clé localStorage qui se termine par un suffixe donné
-// (les clés sont préfixées par "u:<userId>:" via userScopedStorage).
-function findStorageKey(suffix: string): string | null {
+/**
+ * Lit un snapshot JSON appartenant à l'UTILISATEUR COURANT.
+ *
+ * ⚠️ FUITE ENTRE COMPTES CORRIGÉE ICI. La version précédente balayait tout le
+ * localStorage à la recherche d'une clé se terminant par le suffixe demandé
+ * (`k.endsWith(suffix)`), sans jamais vérifier le préfixe `u:<userId>:` posé
+ * par userScopedStorage. Sur un navigateur partagé — poste d'agence, poste
+ * familial, session de démonstration — la première clé rencontrée pouvait
+ * appartenir à un AUTRE compte, et son contenu partait alors dans le contexte
+ * envoyé au copilote : budget travaux, prix d'achat, marges d'un tiers.
+ *
+ * `userStorage.getItem` applique le préfixe de l'utilisateur courant et ne
+ * peut structurellement pas lire les clés d'un autre. Bénéfice annexe : la
+ * lecture passe d'un parcours complet du localStorage (une fois par suffixe,
+ * à chaque rendu pendant le streaming) à un accès direct.
+ */
+function readScopedJson(baseKey: string): unknown {
   try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.endsWith(suffix)) return k;
-    }
-  } catch {
-    /* ignore */
-  }
-  return null;
-}
-
-function readJson(key: string | null): unknown {
-  if (!key) return null;
-  try {
-    const raw = localStorage.getItem(key);
+    const raw = userStorage.getItem(baseKey);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -98,7 +100,7 @@ function asPositiveInt(v: unknown): number | null {
 function readTravauxBudgetFromStorage(): number | null {
   // 1) Snapshot marchand
   try {
-    const ms = readJson(findStorageKey('mimmoza.marchand.snapshot.v1')) as
+    const ms = readScopedJson('mimmoza.marchand.snapshot.v1') as
       | {
           activeDealId?: string | null;
           executionByDeal?: Record<
@@ -120,7 +122,7 @@ function readTravauxBudgetFromStorage(): number | null {
 
   // 2) Snapshot investisseur (fallback)
   try {
-    const snap = readJson(findStorageKey('mimmoza.investisseur.snapshot.v1')) as
+    const snap = readScopedJson('mimmoza.investisseur.snapshot.v1') as
       | {
           activeProjectId?: string | null;
           projects?: Record<
@@ -242,7 +244,7 @@ export function useCopilotContext() {
    * `CopilotChat` faisait `buildContext().vertical` DANS SON CORPS DE RENDU pour
    * lire ce seul champ. À chaque rendu — donc à chaque paquet de tokens pendant
    * le streaming — cela déclenchait : deux parcours complets du localStorage
-   * (findStorageKey boucle sur toutes les clés, une fois par suffixe), deux
+   * (readScopedJson lit désormais en direct, mais l'appel restait par rendu), deux
    * JSON.parse de snapshots entiers, la construction de l'objet contexte, et
    * douze console.log. D'où les ~60 blocs identiques observés en console pour
    * une seule réponse.

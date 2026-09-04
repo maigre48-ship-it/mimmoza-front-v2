@@ -119,6 +119,7 @@ import * as turf from "https://esm.sh/@turf/turf@6.5.0";
 
 import { finessEhpadNearby } from "../_shared/providers/finess.ts";
 import { servicesProximiteV1 } from "../_shared/providers/services_proximite.ts";
+import { estVente, statsPrixM2 } from "../_shared/dvf/stats.ts";
 import { weightedAverage } from "../_shared/providers/scoring.ts";
 import type { Coverage } from "../_shared/providers/types.ts";
 
@@ -1040,6 +1041,11 @@ async function dvfMarketKpis(params: { lat: number; lon: number; radius_m?: numb
   const transactions: Array<{ price_m2: number; valeur: number; surface: number; record: any }> = [];
   const seenMutations = new Set<string>();
   for (const row of allRows) {
+    // Filtre `nature_mutation` ALIGNÉ sur dvf-comparables-v1, qui l'appliquait
+    // déjà : sans lui, VEFA et adjudications entraient dans la médiane et les
+    // deux fonctions répondaient un prix différent pour le même bien (5 à 15 %
+    // d'écart en secteur de promotion neuve). Voir _shared/dvf/stats.ts.
+    if (!estVente(row.nature_mutation)) continue;
     const dateMutation = row.date_mutation || ""; if (dateMutation < dateLimitStr) continue;
     const idMutation = row.id_mutation || ""; if (seenMutations.has(idMutation)) continue;
     const valeur = parseFloat(row.valeur_fonciere || "0"); const surface = parseFloat(row.surface_reelle_bati || "0");
@@ -1053,9 +1059,12 @@ async function dvfMarketKpis(params: { lat: number; lon: number; radius_m?: numb
     transactions.push({ price_m2: Math.round(valeur/surface), valeur, surface, record: { id: idMutation, date_mutation: dateMutation, adresse: [row.adresse_numero, row.adresse_suffixe, row.adresse_nom_voie].filter(Boolean).join(" ") || null, type_local: rowTypeLocal, latitude: tLat||null, longitude: tLon||null, distance_m, nom_commune: row.nom_commune || nomCommune || null } });
   }
   transactions.sort((a, b) => (b.record.date_mutation || "").localeCompare(a.record.date_mutation || ""));
-  const prices = transactions.map(t => t.price_m2).sort((a, b) => a - b); const n = prices.length;
-  let median_price_m2: number | null = null, avg_price_m2: number | null = null, q1_price_m2: number | null = null, q3_price_m2: number | null = null;
-  if (n > 0) { median_price_m2 = prices[Math.floor(n/2)]; avg_price_m2 = Math.round(prices.reduce((a,b)=>a+b,0)/n); q1_price_m2 = prices[Math.floor(n*0.25)]; q3_price_m2 = prices[Math.floor(n*0.75)]; }
+  // Médiane et quartiles INTERPOLÉS, bornes de plausibilité appliquées.
+  // prices[Math.floor(n/2)] retournait la valeur haute du couple central sur un
+  // échantillon pair, et rien n'écartait les mutations aberrantes.
+  const p = statsPrixM2(transactions.map(t => t.price_m2));
+  const n = p.n;
+  const median_price_m2 = p.median, avg_price_m2 = p.mean, q1_price_m2 = p.q1, q3_price_m2 = p.q3;
   const comps: MarketComp[] = transactions.slice(0,20).map((t,idx) => ({ id: t.record.id||String(idx), address: t.record.adresse??undefined, price_m2: t.price_m2, surface_m2: t.surface, date: t.record.date_mutation??undefined, type_local: t.record.type_local??undefined, distance_m: t.record.distance_m, commune: t.record.nom_commune??nomCommune??undefined }));
   const result: DvfApiResult = { provider: "dvf", source: "csv:" + csvSources.join(","), coverage: n > 0 ? "ok" : "no_data", kpis: { n, median_price_m2, avg_price_m2, q1_price_m2, q3_price_m2 }, comps };
   await saveToCache(cacheKey, "dvf", result, ttl_seconds);
@@ -2033,6 +2042,17 @@ async function handleStandard(payload: StandardPayload): Promise<Response> {
     success: true, version: "v4.7", orchestrator: "smartscore-enriched-v3", mode: "standard", zone_type: zoneType,
     input: { address: address ?? null, cp: cp ?? null, ville: ville ?? null, surface: surface ?? null, prix: prix ?? null, travaux: travaux ?? null, type_local: type_local ?? null, dep_code: dep_code ?? null, commune_code: commune_code ?? null, parcel_id: parcel_id ?? null, commune_insee: commune_insee?.toString() ?? commune_code ?? null, meloId: meloId ?? null, radius_km, horizon_months, transports_provided: transports != null, userCriteria: userCriteria ?? null, dpe_label: dpe_label ?? null },
     resolved_point: point,
+    // ⚠️ DEUX SCORES SONT RENVOYÉS — `smartscore_v4` FAIT FOI.
+    //
+    // `smartscore` (ci-dessous) est la version v3, conservée pour les clients
+    // qui la lisent encore : 5 piliers (transport, écoles, commodités, marché,
+    // santé). `smartscore_v4` en ajoute quatre — opportunité prix,
+    // environnement, démographie, concurrence — qui pèsent 40 % du total.
+    // Les deux nombres diffèrent donc structurellement pour un même bien.
+    //
+    // Tous les consommateurs front lisent `smartscore_v4` en priorité et ne
+    // retombent sur `smartscore` qu'à défaut. Ne branchez PAS un nouvel écran
+    // sur `smartscore` : il sera retiré quand plus rien ne le lira.
     smartscore: { score: smartScore, verdict: verdictStd, components: { transport: components.transport_score, ecoles: components.ecoles_score, commodites: components.commodites_score, marche: components.marche_score, sante: components.sante_score }, coverage, transport_applicable: transportResult.applicable },
     smartscore_v4: smartscoreV4Block,
     market_like: {

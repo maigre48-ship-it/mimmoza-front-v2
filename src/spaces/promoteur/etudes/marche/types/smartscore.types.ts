@@ -1,5 +1,7 @@
 // src/spaces/promoteur/etudes/marche/types/smartscore.types.ts
 
+import { CONDITIONS_SCORE, GO_SCORE } from "@/lib/scoring/decisionThresholds";
+
 export type ProjectNature =
   | "logement"
   | "residence_etudiante"
@@ -55,8 +57,13 @@ export interface VerdictThresholds {
   // otherwise NO_GO
 }
 
+// Seuils alignés sur le barème partagé (lib/scoring/decisionThresholds) :
+// ce module exigeait 75 pour un GO là où le sourcing et les opportunités en
+// demandaient 65 — un score de 68 était « GO » d'un côté et « avec réserves »
+// de l'autre. Le niveau « deepen », propre à l'étude de marché promoteur, est
+// conservé : il n'a pas d'équivalent ailleurs.
 export const DEFAULT_THRESHOLDS: VerdictThresholds = {
-  go: 75,
-  go_with_reserves: 60,
-  deepen: 45,
+  go: GO_SCORE,
+  go_with_reserves: CONDITIONS_SCORE + 10,
+  deepen: CONDITIONS_SCORE,
 };

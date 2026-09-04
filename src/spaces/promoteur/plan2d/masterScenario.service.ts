@@ -33,6 +33,13 @@ import type {
   MasterScenarioScores,
 } from './plan.master.types';
 import { DEFAULT_MASTER_ECONOMIC_ASSUMPTIONS } from './plan.master.types';
+import {
+  IMPLANTATION_GROUND_FLOOR_HEIGHT_M,
+  IMPLANTATION_HEIGHT_FALLBACK,
+  IMPLANTATION_TYPICAL_FLOOR_HEIGHT_M,
+  nombreLogements,
+  totalBuildingHeightM,
+} from '../shared/buildingMetrics';
 
 // ─── SEUILS PLU ───────────────────────────────────────────────────────
 
@@ -60,8 +67,12 @@ function buildingTotalFloorsM2(b: Building2D): number {
 }
 
 function buildingMaxHeightM(b: Building2D): number {
-  return (b.groundFloorHeightM ?? 3.0) +
-         (b.floorsAboveGround ?? b.levels ?? 0) * (b.typicalFloorHeightM ?? 2.8);
+  return totalBuildingHeightM(
+    b.floorsAboveGround ?? b.levels ?? 0,
+    b.groundFloorHeightM,
+    b.typicalFloorHeightM,
+    IMPLANTATION_HEIGHT_FALLBACK,
+  );
 }
 
 // ─── PARKING ──────────────────────────────────────────────────────────
@@ -196,7 +207,7 @@ function computeEconomics(
   const sdpEstimatedM2 = metrics.buildingsFootprintM2 * levels;
   const saleableAreaM2 = sdpEstimatedM2 * (assumptions.floorEfficiencyPct / 100);
   const estimatedLots  = program.nbLogements ??
-    Math.max(1, Math.floor(saleableAreaM2 / Math.max(1, assumptions.averageLotSizeM2)));
+    Math.max(1, nombreLogements(saleableAreaM2, assumptions.averageLotSizeM2));
   const revenueEur          = saleableAreaM2 * assumptions.salePricePerM2;
   const constructionCostEur = sdpEstimatedM2 * assumptions.constructionCostPerM2;
   const landCostEur         = assumptions.landCostTotal;
@@ -368,11 +379,11 @@ export function buildMasterScenario(params: BuildMasterScenarioParams): MasterSc
     ? Math.round(buildings.reduce((s, b) => s + (b.floorsAboveGround ?? b.levels ?? 0), 0) / n)
     : 0;
   const dominantGFH = n > 0
-    ? buildings.reduce((s, b) => s + (b.groundFloorHeightM ?? 3.0), 0) / n
-    : 3.0;
+    ? buildings.reduce((s, b) => s + (b.groundFloorHeightM ?? IMPLANTATION_GROUND_FLOOR_HEIGHT_M), 0) / n
+    : IMPLANTATION_GROUND_FLOOR_HEIGHT_M;
   const dominantTFH = n > 0
-    ? buildings.reduce((s, b) => s + (b.typicalFloorHeightM ?? 2.8), 0) / n
-    : 2.8;
+    ? buildings.reduce((s, b) => s + (b.typicalFloorHeightM ?? IMPLANTATION_TYPICAL_FLOOR_HEIGHT_M), 0) / n
+    : IMPLANTATION_TYPICAL_FLOOR_HEIGHT_M;
 
   const program: MasterScenarioProgram = {
     buildingKind,

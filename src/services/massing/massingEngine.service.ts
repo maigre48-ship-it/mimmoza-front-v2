@@ -17,15 +17,25 @@ import type {
   ScenarioName,
 } from "./massing.types";
 import { pluToMassingConstraints } from "./pluMassingAdapter";
+import {
+  IMPLANTATION_GROUND_FLOOR_HEIGHT_M,
+  IMPLANTATION_TYPICAL_FLOOR_HEIGHT_M,
+  nombreLogements,
+  SURFACE_MOYENNE_LOGEMENT_M2,
+} from "../../spaces/promoteur/shared/buildingMetrics";
+import { SHAB_SDP_COLLECTIF } from "../../spaces/promoteur/shared/surfaceCoefficients";
 
 // ── Configuration par défaut ──────────────────────────────────────────────────
 // Valeurs d'usage promoteur collectif. À surcharger via configOverride.
 
 export const DEFAULT_MASSING_CONFIG: MassingConfig = {
-  groundFloorHeightM: 3.3,
-  typicalFloorHeightM: 2.8,
-  coefVendable: 0.82,
-  avgUnitSizeM2: 62,
+  // Hauteurs alignées sur celles de l'éditeur d'implantation 2D : elles
+  // valaient 3,3 / 2,8 ici contre 3,0 / 2,8 là-bas, ce qui décalait la
+  // hauteur estimée d'un R+3 de 30 cm entre l'analyse de capacité et le plan.
+  groundFloorHeightM: IMPLANTATION_GROUND_FLOOR_HEIGHT_M,
+  typicalFloorHeightM: IMPLANTATION_TYPICAL_FLOOR_HEIGHT_M,
+  coefVendable: SHAB_SDP_COLLECTIF,
+  avgUnitSizeM2: SURFACE_MOYENNE_LOGEMENT_M2,
   scenarioFactors: {
     prudent: 0.7,
     central: 0.85,
@@ -107,8 +117,7 @@ function buildScenario(
 
   const sdpM2 = round2(footprintM2 * levels);
   const saleableAreaM2 = round2(sdpM2 * config.coefVendable);
-  const estimatedUnits =
-    config.avgUnitSizeM2 > 0 ? Math.floor(saleableAreaM2 / config.avgUnitSizeM2) : 0;
+  const estimatedUnits = nombreLogements(saleableAreaM2, config.avgUnitSizeM2);
 
   const { parking, note: parkingNote } = computeParking(
     estimatedUnits,

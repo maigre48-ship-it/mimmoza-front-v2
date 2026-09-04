@@ -2,6 +2,7 @@
 
 import type { PluMetricSet } from "./plan.plu.types";
 import type { PlanBuilding, Vec2 } from "./plan.types";
+import { PLAN_HEIGHT_FALLBACK, totalBuildingHeightM } from "../shared/buildingMetrics";
 
 // ─── POLYGON AREA (Shoelace / Gauss) ─────────────────────────────────
 
@@ -94,10 +95,19 @@ export function estimateBuildingHeight(b: PlanBuilding): number {
   const floors = b.levels ?? 0;
   if (floors <= 0) return 0;
 
-  const ground  = b.groundFloorHeightM   ?? 3.5;
-  const typical = b.typicalFloorHeightM  ?? 3.0;
-
-  return ground + Math.max(0, floors - 1) * typical;
+  // ⚠️ Les replis valaient 3,5 / 3,0 alors que l'éditeur crée les bâtiments à
+  // 2,8 / 2,7. Un bâtiment aux hauteurs non renseignées — donnée ancienne,
+  // import, projet migré — était donc MESURÉ 1,6 m plus haut qu'il n'avait été
+  // SAISI, et c'est cette fonction qui teste la règle de hauteur du PLU : un
+  // R+3 réel à 10,90 m ressortait à 12,50 m, donc non conforme face à une
+  // limite de 12 m. Les replis viennent désormais de la même source que la
+  // création (shared/buildingMetrics.ts).
+  return totalBuildingHeightM(
+    floors - 1,
+    b.groundFloorHeightM,
+    b.typicalFloorHeightM,
+    PLAN_HEIGHT_FALLBACK,
+  );
 }
 
 /**

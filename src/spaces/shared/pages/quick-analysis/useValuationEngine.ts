@@ -3,6 +3,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { supabase } from "@/lib/supabaseClient";
+import { prixM2Plausible } from "@/lib/dvf/plausibility";
+import { choisirPrixReference } from "@/lib/dvf/referencePrice";
 import { useCallback, useState } from "react";
 
 export type AnalysisType = "investisseur" | "rehabilitateur" | "promoteur";
@@ -167,7 +169,11 @@ function dvfMedianPriceM2(sales: RawDvfSale[]): number | null {
   const pm2 = sales
     .filter((s) => s.surface > 0 && s.price > 0)
     .map((s) => s.price / s.surface)
-    .filter((v) => isFinite(v) && v > 300 && v < 40000)
+    // Mêmes bornes que les fonctions serveur (voir lib/dvf/plausibility).
+    // Elles valaient 300–40 000 ici contre 500–25 000 côté serveur : une
+    // dépendance vendue avec sa surface bâtie entrait dans cette médiane et
+    // pas dans celle de l'étude de marché, pour le même bien.
+    .filter((v) => prixM2Plausible(v))
     .sort((a, b) => a - b);
   if (pm2.length === 0) return null;
   const mid = Math.floor(pm2.length / 2);
@@ -386,12 +392,37 @@ export function useValuationEngine() {
         .catch(() => { setStep("cadastre", "error"); return null; }),
     ]);
 
+    // Arbitrage partagé (voir lib/dvf/referencePrice) : périmètre le plus
+    // étroit d'abord, puis mesure directe avant score dérivé.
+    //
+    // Cet écran privilégiait le SmartScore sur DVF, alors que
+    // `SmartScore.localPricePerSqm` est lui-même CALCULÉ à partir de DVF :
+    // préférer le score, c'était préférer la donnée retraitée à sa source. Et
+    // deux autres écrans du même parcours appliquaient encore deux autres
+    // ordres, si bien que le €/m² de référence changeait selon l'onglet.
     const ssPrice = ssResult?.localPricePerSqm ?? null;
     const dvfPrice = dvfMedianPriceM2(dvfSales);
-    let marketReferenceM2: number | null = null;
-    let marketReferenceSource: string | null = null;
-    if (ssPrice && ssPrice > 0) { marketReferenceM2 = Math.round(ssPrice); marketReferenceSource = "SmartScore"; }
-    else if (dvfPrice && dvfPrice > 0) { marketReferenceM2 = dvfPrice; marketReferenceSource = "DVF commune/CP"; }
+    const reference = choisirPrixReference([
+      {
+        prixM2: dvfPrice,
+        perimetre: 'commune',
+        nature: 'dvf_mesure',
+        nbVentes: dvfSales.length,
+        label: 'DVF commune/CP',
+      },
+      {
+        prixM2: ssPrice,
+        perimetre: 'commune',
+        nature: 'score_derive',
+        label: 'SmartScore',
+      },
+    ]);
+    const marketReferenceM2 = reference?.prixM2 ?? null;
+    const marketReferenceSource = reference
+      ? reference.echantillonFaible
+        ? `${reference.label} (échantillon réduit)`
+        : reference.label
+      : null;
 
     setState((p) => ({ ...p, context: {
       plu: pluCtx, sitadel: sitadelCtx, cadastre: cadastreCtx,

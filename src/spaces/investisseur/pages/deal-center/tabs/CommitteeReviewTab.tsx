@@ -28,6 +28,7 @@ import {
 } from "../../../../marchand/shared/marchandSnapshot.store";
 
 import type { RentabiliteSnapshot } from "../../../types/rentabilite.types";
+import { CONDITIONS_SCORE, GO_SCORE } from "@/lib/scoring/decisionThresholds";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -112,8 +113,10 @@ type Decision = "GO" | "GO_SOUS_CONDITIONS" | "NO_GO" | null;
 function deriveDecision(score: number | null, base: ReturnType<typeof castComputed>): Decision {
   if (score == null) return null;
   const rentaDecision = base?.scenarios?.base?.decision;
-  if (rentaDecision === "NO_GO" || score < 40) return "NO_GO";
-  if (score >= 70 && rentaDecision === "GO")  return "GO";
+  // Seuils partagés (lib/scoring/decisionThresholds) : ce comité exigeait 70
+  // là où le sourcing recommandait dès 65.
+  if (rentaDecision === "NO_GO" || score < CONDITIONS_SCORE) return "NO_GO";
+  if (score >= GO_SCORE && rentaDecision === "GO")           return "GO";
   return "GO_SOUS_CONDITIONS";
 }
 

@@ -37,7 +37,7 @@ import {
   TrendingUp,
   XCircle,
 } from 'lucide-react';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Implantation2DSnapshot } from '../plan2d/implantation2d.snapshot';
 import {
   totalEmpriseM2 as snapTotalEmprise,
@@ -64,8 +64,15 @@ import { getFacadeImage, getSnapshot } from '../shared/promoteurSnapshot.store';
 import { usePromoteurStudy } from '../shared/usePromoteurStudy';
 import { userStorage } from "@/lib/storage/userScopedStorage";
 
+import {
+  readSyntheseRawInput,
+  writeSyntheseRawInput,
+} from '../shared/syntheseRawInput.store';
+
 // ── Clés localStorage ─────────────────────────────────────────────────────────
-const SYNTHESE_RAW_KEY      = "mimmoza.promoteur.synthese.rawInput.v1";
+// La clé du snapshot Bilan → Synthèse est gérée par syntheseRawInput.store :
+// elle est scopée par étude et sa lecture refuse un snapshot venant d'une
+// autre opération.
 const LS_FONCIER_SELECTED   = "mimmoza.promoteur.foncier.selected_v1";
 const LS_PLU_RULESET        = "mimmoza.plu.resolved_ruleset_v1";
 const AUTOCOMPLETE_DONE_KEY = "mimmoza.promoteur.synthese.autocomplete_done_v1";
@@ -1031,16 +1038,27 @@ export const PromoteurSynthesePage: React.FC<Props> = ({ rawInputOverride, study
 
   const [completing,       setCompleting]       = useState(false);
   const [completionSteps,  setCompletionSteps]  = useState<CompletionStep[] | null>(null);
-  const [autocompleteDone, setAutocompleteDone] = useState<boolean>(() => {
-    try {
-      const raw = userStorage.getItem(AUTOCOMPLETE_DONE_KEY);
-      if (!raw) return false;
-      const parsed = JSON.parse(raw);
-      return !!parsed?.timestamp;
-    } catch { return false; }
-  });
+  const [autocompleteDone, setAutocompleteDone] = useState<boolean>(false);
 
   const studyId = usePromoteurStudyId();
+
+  // Le drapeau « autocomplétion déjà faite » est stocké sous une clé globale
+  // mais porte son `studyId` : il n'est donc valable que pour l'étude qui l'a
+  // écrit. Sans cette vérification, autocompléter l'étude A faisait croire à
+  // l'étude B qu'elle était déjà complétée. Il est relu à chaque changement
+  // d'étude, ce qu'un initialiseur de useState ne pouvait pas faire — studyId
+  // n'existe pas encore à ce moment-là.
+  useEffect(() => {
+    try {
+      const raw = userStorage.getItem(AUTOCOMPLETE_DONE_KEY);
+      if (!raw) { setAutocompleteDone(false); return; }
+      const parsed = JSON.parse(raw) as { timestamp?: unknown; studyId?: unknown };
+      const memeEtude = (parsed?.studyId ?? null) === (studyId ?? null);
+      setAutocompleteDone(!!parsed?.timestamp && memeEtude);
+    } catch {
+      setAutocompleteDone(false);
+    }
+  }, [studyId]);
 
   const { study } = usePromoteurStudy(studyId);
 
@@ -1216,14 +1234,13 @@ if (!generatedImageUrl) return null;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [completionSteps]);
 
-  const rawInputFromLS = useMemo((): PromoteurRawInput | null => {
-    try {
-      const raw = userStorage.getItem(SYNTHESE_RAW_KEY);
-      if (!raw) return null;
-      return JSON.parse(raw) as PromoteurRawInput;
-    } catch { return null; }
+  // Snapshot écrit par le Bilan. `readSyntheseRawInput` retourne null plutôt
+  // que les chiffres d'une autre étude : dans ce cas la page se rabat sur
+  // `rawInputFromStudy`, qui recalcule depuis les clés scopées par studyId.
+  const rawInputFromLS = useMemo(
+    (): PromoteurRawInput | null => readSyntheseRawInput<PromoteurRawInput>(studyId),
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completionSteps]);
+  [completionSteps, studyId]);
 
   // ── [FIX] rawInputFromStudy — reconstruit depuis Supabase + localStorage bilan ─
   // Fallback critique quand mimmoza.promoteur.synthese.rawInput.v1 est vide.
@@ -1502,11 +1519,9 @@ if (!generatedImageUrl) return null;
         onProgress: (steps) => setCompletionSteps(steps),
       });
 
-      try {
-        userStorage.setItem(SYNTHESE_RAW_KEY, JSON.stringify(result.updatedInput));
-      } catch (e) {
-        console.warn('[PromoteurSynthese] Échec persistance rawInput:', e);
-      }
+      // Réécrit sous la clé de l'étude courante, avec le même estampillage que
+      // le Bilan — sinon l'autocomplétion d'une étude repolluait la clé globale.
+      writeSyntheseRawInput(studyId, result.updatedInput);
 
       try {
         userStorage.setItem(AUTOCOMPLETE_DONE_KEY, JSON.stringify({

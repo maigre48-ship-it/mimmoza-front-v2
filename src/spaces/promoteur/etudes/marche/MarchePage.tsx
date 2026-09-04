@@ -106,6 +106,7 @@ import { fetchMobilityScoreSafe } from '@/services/mobility/mobilityClient';
 import ScoreTooltip, { SCORE_TOOLTIPS } from "../../../../components/ui/ScoreTooltip";
 import type { PromoteurMarcheData } from "../../shared/promoteurStudy.types";
 import { usePromoteurStudy } from "../../shared/usePromoteurStudy";
+import { CONDITIONS_SCORE, GO_SCORE, GRADE_D_SCORE } from "@/lib/scoring/decisionThresholds";
 
 // ============================================
 // DEBUG FLAGS
@@ -557,9 +558,10 @@ const DEMANDE_CONFIANCE_LABEL: Record<"forte" | "moyenne" | "faible" | "sans_obj
 
 const getVerdictConfig = (score: number | null | undefined) => {
   if (score == null) return { label: "—", color: "#64748b", bg: "#f1f5f9", icon: Minus };
-  if (score >= 70) return { label: "GO", color: "#059669", bg: "#dcfce7", icon: CheckCircle };
-  if (score >= 50) return { label: "GO avec réserves", color: "#d97706", bg: "#fef3c7", icon: AlertTriangle };
-  if (score >= 35) return { label: "À approfondir", color: "#ea580c", bg: "#ffedd5", icon: Eye };
+  // Seuils partagés (lib/scoring/decisionThresholds) : ce verdict exigeait 70.
+  if (score >= GO_SCORE)         return { label: "GO", color: "#059669", bg: "#dcfce7", icon: CheckCircle };
+  if (score >= CONDITIONS_SCORE) return { label: "GO avec réserves", color: "#d97706", bg: "#fef3c7", icon: AlertTriangle };
+  if (score >= GRADE_D_SCORE)    return { label: "À approfondir", color: "#ea580c", bg: "#ffedd5", icon: Eye };
   return { label: "NO GO", color: "#dc2626", bg: "#fee2e2", icon: X };
 };
 

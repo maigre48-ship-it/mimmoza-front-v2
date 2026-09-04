@@ -11,6 +11,10 @@
 import { useCallback, useMemo, useState } from "react";
 import { translatePolygon } from "../geometry/plan.geometry";
 import type { PlanBuilding, PlanParking, PlanProject, Vec2 } from "../plan.types";
+import {
+  PLAN_GROUND_FLOOR_HEIGHT_M,
+  PLAN_TYPICAL_FLOOR_HEIGHT_M,
+} from "../../shared/buildingMetrics";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -111,8 +115,8 @@ export function usePlanEditor(initialProject: PlanProject) {
       polygon,
       rotationDeg:        0,
       levels:             2,
-      groundFloorHeightM: 2.8,
-      typicalFloorHeightM: 2.7,
+      groundFloorHeightM: PLAN_GROUND_FLOOR_HEIGHT_M,
+      typicalFloorHeightM: PLAN_TYPICAL_FLOOR_HEIGHT_M,
       usage:              "logement",
       name:               `Bâtiment`,
     };

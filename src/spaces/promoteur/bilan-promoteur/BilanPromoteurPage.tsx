@@ -42,10 +42,21 @@ import {
 import { usePromoteurProjectStore } from "../store/promoteurProject.store";
 import { MASSING_METRICS_EVENT, readMassingMetrics, type MassingMetrics } from "../terrain3d/massingBilanBridge";
 import { deriveConstructionCosts } from "../terrain3d/massingConstructionCosts";
+import { shabSdpCoef } from "../shared/surfaceCoefficients";
+import { writeSyntheseRawInput } from "../shared/syntheseRawInput.store";
+import { CONDITIONS_SCORE, GO_SCORE } from "@/lib/scoring/decisionThresholds";
+import {
+  ASCENSEUR_COUT_MIN_EUR,
+  COUT_BATIMENT_REF_EUR_M2_SDP,
+  TAXE_AMENAGEMENT_EUR_M2_SDP,
+} from "../shared/constructionCostRefs";
 import { userStorage } from "@/lib/storage/userScopedStorage";
 
 // ── Clés localStorage ─────────────────────────────────────────────────────────
-export const SYNTHESE_RAW_KEY = "mimmoza.promoteur.synthese.rawInput.v1";
+// La clé du snapshot Bilan → Synthèse vit désormais dans son propre module :
+// elle est scopée par étude, et sa lecture refuse un snapshot appartenant à
+// une autre opération (voir shared/syntheseRawInput.store.ts).
+export { SYNTHESE_RAW_KEY } from "../shared/syntheseRawInput.store";
 const LS_MARKET_STUDY         = "synthesis_market_study";
 
 /** Bridge depuis PromoteurSimulationTravauxPage */
@@ -181,10 +192,10 @@ type Line = { section: string; label: string; valueEur: number; kind?: "subtotal
 
 const DEFAULT_ASSUMPTIONS: Assumptions = {
   salePriceEurM2Hab: 5200, commercialisationPct: 100, coefVendable: 1.0, landPriceEur: NaN,
-  notaryFeesPct: 7.5, acquisitionTaxesPct: 0, worksCostEurM2Sdp: 1800, vrdPct: 6, extPct: 3,
+  notaryFeesPct: 7.5, acquisitionTaxesPct: 0, worksCostEurM2Sdp: COUT_BATIMENT_REF_EUR_M2_SDP, vrdPct: 6, extPct: 3,
   contingencyPct: 3, surveyorEur: 6000, geotechEur: 12000, moePct: 10, betPct: 3,
   spsCtOpcEur: 15000, insuranceDoPct: 2, miscEur: 8000, marketingPctCa: 2, marketingFixedEur: 0,
-  financingRatePct: 4, financingFeesEur: 8000, taxeAmenagementEurM2Sdp: 80,
+  financingRatePct: 4, financingFeesEur: 8000, taxeAmenagementEurM2Sdp: TAXE_AMENAGEMENT_EUR_M2_SDP,
   terrassementEur: 0,
   structureCostEurM2Sdp: 1100, facadeCostEurM2: 180, roofTerrasseCostEurM2: 180,
   roofPenteCostEurM2: 220, balconyCostEurM2: 600, windowUnitCostEur: 650,
@@ -195,7 +206,7 @@ const DEFAULT_ASSUMPTIONS: Assumptions = {
   rehabMode: false,
   surfaceRehabM2: 0,
   targetMarginPct: 18,
-  nbAscenseurs: 0, ascenseurBaseCostEur: 70000,
+  nbAscenseurs: 0, ascenseurBaseCostEur: ASCENSEUR_COUT_MIN_EUR,
   nbSousSols: 0, surfaceSousSolM2: 0, coutSousSolEurM2: 1100,
   dureeAcquisitionMois: 3, dureePermisMois: 6, dureePurgeMois: 3, dureeTravauxMois: 18, dureeCommercialisationMois: 24,
   margeSecuriteFoncierPct: 15,
@@ -612,7 +623,9 @@ export const BilanPromoteurPage: React.FC = () => {
   const sdpFromSnap          = snap2d ? snapTotalSdp(snap2d) : 0;
   const levelsCount  = useMemo(() => 1 + Math.max(0, Math.floor(n(floorsSpec.aboveGroundFloors, 0))), [floorsSpec.aboveGroundFloors]);
   const totalHeightM = useMemo(() => n(floorsSpec.groundFloorHeightM, 2.8) + Math.max(0, Math.floor(n(floorsSpec.aboveGroundFloors, 0))) * n(floorsSpec.typicalFloorHeightM, 2.7), [floorsSpec]);
-  const coefHab      = buildingKind === "INDIVIDUEL" ? 0.9 : 0.82;
+  // Même source que le métré Massing 3D (terrain3d/massingToBilan.ts), pour que
+  // le KPI « SHAB est. » et le CA de cette page portent sur la même surface.
+  const coefHab      = shabSdpCoef(buildingKind === "INDIVIDUEL" ? "INDIVIDUEL" : "COLLECTIF");
 
   // ── SDP : la Programmation est PRIORITAIRE (intention métier, multi-bâtiments). ──
   //  Le Massing 3D ne sert plus qu'au repli et au chiffrage détaillé (façade/toiture/menuiseries).
@@ -976,8 +989,10 @@ export const BilanPromoteurPage: React.FC = () => {
     const goEligible = mPct >= 8 && tri >= 8 && foncierOk;
     if (noGoForce) decisionPromoteur = "NO_GO";
     else if (condForce) decisionPromoteur = "GO_CONDITIONS";
-    else if (decisionScore >= 70 && goEligible) decisionPromoteur = "GO";
-    else if (decisionScore >= 40) decisionPromoteur = "GO_CONDITIONS";
+    // Seuils partagés (lib/scoring/decisionThresholds) : ce bilan exigeait 70
+    // pour un GO là où le sourcing recommandait dès 65.
+    else if (decisionScore >= GO_SCORE && goEligible) decisionPromoteur = "GO";
+    else if (decisionScore >= CONDITIONS_SCORE) decisionPromoteur = "GO_CONDITIONS";
     else decisionPromoteur = "NO_GO";
     const decisionLabel = decisionPromoteur === "GO" ? "GO" : decisionPromoteur === "GO_CONDITIONS" ? "GO SOUS CONDITIONS" : "NO GO";
     const decisionColor = decisionPromoteur === "GO" ? "#16a34a" : decisionPromoteur === "GO_CONDITIONS" ? "#ea580c" : "#dc2626";
@@ -1057,8 +1072,10 @@ export const BilanPromoteurPage: React.FC = () => {
 
   useEffect(() => {
     if (!(computed.caTotal > 0)) return;
-    try { userStorage.setItem(SYNTHESE_RAW_KEY, JSON.stringify(synthesisRawInput)); } catch (e) { console.warn("[Bilan→Synthese] failed:", e); }
-  }, [synthesisRawInput, computed.caTotal]);
+    // Le snapshot part estampillé de son `studyId` : sans cela, la Synthèse
+    // d'une étude affichait les chiffres de la dernière étude ouverte.
+    writeSyntheseRawInput(studyId, synthesisRawInput);
+  }, [synthesisRawInput, computed.caTotal, studyId]);
 
   useEffect(() => {
     try {

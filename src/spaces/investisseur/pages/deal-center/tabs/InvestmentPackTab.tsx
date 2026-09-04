@@ -52,6 +52,9 @@ import {
 } from "../../../../marchand/shared/marchandSnapshot.store";
 
 import type { RentabiliteInput, RentabiliteResult, RentabiliteSnapshot } from "../../../types/rentabilite.types";
+import { DEFAULT_FRAIS_NOTAIRE_PCT } from "../../../types/rentabilite.types";
+import { rendementBrutPct } from "../../../engine/rendementBrut";
+import { triAnnualisePct } from "../../../engine/conventionsFinancieres";
 
 // ─── Types internes ───────────────────────────────────────────────────────────
 
@@ -91,6 +94,10 @@ interface ScenarioFinancials {
   apport:          number;
   dureeAnnees:     number;
   cashflow:        number;
+  /** Loyer mensuel saisi, nécessaire au rendement brut. */
+  loyerMensuel:    number;
+  /** Rendement brut persisté par le panneau Rentabilité, s'il en a produit un. */
+  rendementBrutPct: number | null;
 }
 
 // Comparable DVF normalisé (V6)
@@ -106,22 +113,8 @@ interface NormalizedComp {
 
 // ─── Moteur de scénario local (V5 — INCHANGÉ) ─────────────────────────────────
 
-function computeTriAnnualise(
-  apport: number,
-  margeBrute: number,
-  dureeAnnees: number,
-): number | null {
-  if (apport <= 0 || dureeAnnees <= 0) return null;
-
-  const fluxFinal = apport + margeBrute;
-
-  // Si les fonds propres sont entièrement détruits, le TRI n'est pas calculable.
-  if (fluxFinal <= 0) return null;
-
-  const multiple = fluxFinal / apport;
-
-  return (Math.pow(multiple, 1 / dureeAnnees) - 1) * 100;
-}
+// `computeTriAnnualise` vivait ici en copie littérale de celle de
+// FinancialEngineTab. Les deux sont remplacées par engine/conventionsFinancieres.
 
 function computeLocalScenario(
   f: ScenarioFinancials,
@@ -134,7 +127,7 @@ function computeLocalScenario(
   const margeBrute = prixReventeScenario - coutTotalScenario;
   const margePct   = coutTotalScenario > 0 ? (margeBrute / coutTotalScenario) * 100 : 0;
   const roiPct     = f.apport > 0 ? (margeBrute / f.apport) * 100 : 0;
-  const triPct     = computeTriAnnualise(f.apport, margeBrute, f.dureeAnnees);
+  const triPct     = triAnnualisePct(f.apport, margeBrute, f.dureeAnnees);
   return {
     fraisNotaire:    f.fraisNotaire,
     coutTotal:       coutTotalScenario,
@@ -143,7 +136,13 @@ function computeLocalScenario(
     roiPct,
     triPct: triPct ?? undefined,
     cashflowMensuel: f.cashflow,
-    rendementBrutPct: 0,
+    // Valait 0 en dur : un rendement absent s'affichait comme un rendement nul.
+    // Priorité à la valeur persistée par le panneau Rentabilité, sinon même
+    // convention de calcul (loyer annuel / prix + travaux).
+    rendementBrutPct:
+      f.rendementBrutPct ??
+      rendementBrutPct(f.loyerMensuel, f.prixAchat, travauxScenario) ??
+      0,
     decision: margePct >= 15 ? "GO" : margePct >= 8 ? "GO_AVEC_RESERVES" : "NO_GO",
     reasons: [],
   } as RentabiliteResult;
@@ -154,6 +153,16 @@ function computeLocalScenario(
 function extractRawInputs(saved: RentabiliteSaved | undefined): StrategyInputs | null {
   if (!saved?.inputs) return null;
   return saved.inputs as StrategyInputs;
+}
+
+/**
+ * Résultats persistés par le panneau Rentabilité. Cet onglet ne lisait que les
+ * `inputs` et recalculait tout localement, ce qui lui faisait perdre le
+ * rendement brut déjà calculé en amont.
+ */
+function extractComputed(saved: RentabiliteSaved | undefined): Record<string, unknown> | null {
+  const computed = (saved as { computed?: unknown } | undefined)?.computed;
+  return computed && typeof computed === "object" ? (computed as Record<string, unknown>) : null;
 }
 
 // ─── Helpers format ───────────────────────────────────────────────────────────
@@ -1320,6 +1329,7 @@ export default function InvestmentPackTab() {
 
   // ── Raw inputs depuis le store (V5 — INCHANGÉ) ─────────────────────────────
   const rawInputs = useMemo(() => extractRawInputs(rentaSaved), [rentaSaved]);
+  const computed  = useMemo(() => extractComputed(rentaSaved),  [rentaSaved]);
 
   // ── RentabiliteInput normalisé (V5 — INCHANGÉ) ─────────────────────────────
   const inputs = useMemo((): RentabiliteInput | null => {
@@ -1327,7 +1337,9 @@ export default function InvestmentPackTab() {
     return {
       strategy:              (rawInputs.strategy as "revente" | "location") ?? "revente",
       prixAchat:             deal?.prixAchat ?? rawInputs.prixAchat ?? 0,
-      fraisNotairePct:       (rawInputs.fraisNotairePct as number) ?? 0,
+      // Aligné sur le repli du calcul (voir plus bas) : sans cela la fiche
+      // affichait 0 % alors que le coût total intégrait 8 %.
+      fraisNotairePct:       (rawInputs.fraisNotairePct as number) ?? DEFAULT_FRAIS_NOTAIRE_PCT,
       budgetTravaux:         rawInputs.travauxUtilises ?? rawInputs.travauxEstimes ?? 0,
       fraisDivers:           (rawInputs.fraisDivers as number) ?? 0,
       dureeMois:             rawInputs.dureeMois            ?? 24,
@@ -1335,6 +1347,9 @@ export default function InvestmentPackTab() {
       prixReventeCible:      deal?.prixReventeCible ?? rawInputs.prixReventeCible ?? rawInputs.prixReventeEstime ?? 0,
       loyerMensuel:          rawInputs.loyerMensuel         ?? 0,
       chargesMensuelles:     rawInputs.chargesMensuelles    ?? 0,
+      // Volontairement à zéro, et non oublié : le panneau Rentabilité ne saisit
+      // pas la taxe foncière séparément, il la fait entrer dans les charges
+      // mensuelles. La compter ici la déduirait deux fois du cash-flow.
       taxeFoncieresAnnuelle: 0,
       tmiPct:                rawInputs.tmiPct               ?? 30,
       taxFlatPct:            rawInputs.pfuPct               ?? 30,
@@ -1348,7 +1363,7 @@ export default function InvestmentPackTab() {
     if (!rawInputs) return null;
 
     const prixAchat       = deal?.prixAchat ?? rawInputs.prixAchat ?? 0;
-    const fraisNotairePct = (rawInputs.fraisNotairePct as number) ?? 8;
+    const fraisNotairePct = (rawInputs.fraisNotairePct as number) ?? DEFAULT_FRAIS_NOTAIRE_PCT;
     const fraisNotaire    = prixAchat * (fraisNotairePct / 100);
     const fraisDivers     = (rawInputs.fraisDivers as number) ?? 0;
     const travauxBase     = rawInputs.travauxUtilises ?? rawInputs.travauxEstimes ?? 0;
@@ -1372,8 +1387,13 @@ export default function InvestmentPackTab() {
       ? (rawInputs.loyerMensuel ?? 0) - (rawInputs.chargesMensuelles ?? 0)
       : 0;
 
-    return { prixAchat, fraisNotaire, fraisDivers, travauxBase, fraisFinanciers, reventeBase, apport, dureeAnnees, cashflow };
-  }, [rawInputs, deal]);
+    return {
+      prixAchat, fraisNotaire, fraisDivers, travauxBase, fraisFinanciers,
+      reventeBase, apport, dureeAnnees, cashflow,
+      loyerMensuel: (rawInputs.loyerMensuel as number) ?? 0,
+      rendementBrutPct: (computed?.rendementBrutPct as number) ?? null,
+    };
+  }, [rawInputs, deal, computed]);
 
   // ── Snapshot reconstruit localement (V5 — INCHANGÉ) ────────────────────────
   const snapshot = useMemo((): RentabiliteSnapshot | null => {

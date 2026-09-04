@@ -22,15 +22,22 @@ import type {
   ScenarioEconomics,
   ScenarioName,
 } from "./massing.types";
+import {
+  COUT_BATIMENT_REF_EUR_M2_SDP,
+  TAXE_AMENAGEMENT_EUR_M2_SDP,
+} from "../../spaces/promoteur/shared/constructionCostRefs";
 
 // Hypothèses par défaut — valeurs d'ordre de grandeur, TOUTES éditables côté UI.
 // Elles ne constituent pas des données de marché : ce sont des paramètres promoteur.
 export const DEFAULT_HYPOTHESES: EconomicsHypotheses = {
   prixSortieM2: 0, // à renseigner / injecter depuis le Valuation Engine
-  coutConstructionM2: 2200,
+  // Alignés sur les références partagées : ce module retenait 2 200 €/m² SDP
+  // et 120 €/m² de taxe d'aménagement, contre 1 800 et 80 dans le Bilan
+  // promoteur, pour les mêmes assiettes.
+  coutConstructionM2: COUT_BATIMENT_REF_EUR_M2_SDP,
   coutVrdM2: 90,
   honorairesPct: 0.06,
-  taxesM2Sdp: 120,
+  taxesM2Sdp: TAXE_AMENAGEMENT_EUR_M2_SDP,
   fraisFinanciersPct: 0.03,
   margeCiblePct: 0.15,
   foncierTotal: null,

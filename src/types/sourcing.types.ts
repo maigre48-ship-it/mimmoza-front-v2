@@ -2,6 +2,14 @@
  * Sourcing Module - Frontend Types
  */
 
+import {
+  GO_SCORE,
+  GRADE_A_SCORE,
+  GRADE_C_SCORE,
+  GRADE_D_SCORE,
+  scoreGrade,
+} from '@/lib/scoring/decisionThresholds';
+
 export type ProfileTarget = 'mdb' | 'promoteur' | 'particulier';
 export type PropertyType = 'appartement' | 'maison' | 'terrain' | 'immeuble' | 'local_commercial' | 'bureau';
 export type FloorType = 'rdc' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10+' | 'dernier' | 'n/a';
@@ -66,14 +74,24 @@ export const SUB_SCORE_LABELS: Record<SubScoreKey, { label: string; icon: string
   dealStructure: { label: 'Structure', icon: '🏠', description: 'Cohérence du bien' },
 };
 
-export const SCORE_THRESHOLDS = { excellent: 80, good: 65, average: 50, poor: 35 };
+// Barème partagé — voir lib/scoring/decisionThresholds. Les quatre bornes
+// coïncidaient déjà avec l'échelle A/B/C/D/E ; elles y sont rapatriées pour
+// qu'un changement de seuil se propage partout d'un coup.
+export const SCORE_THRESHOLDS = {
+  excellent: GRADE_A_SCORE,
+  good:      GO_SCORE,
+  average:   GRADE_C_SCORE,
+  poor:      GRADE_D_SCORE,
+};
 
 export function getScoreLevel(score: number): 'excellent' | 'good' | 'average' | 'poor' | 'bad' {
-  if (score >= 80) return 'excellent';
-  if (score >= 65) return 'good';
-  if (score >= 50) return 'average';
-  if (score >= 35) return 'poor';
-  return 'bad';
+  switch (scoreGrade(score)) {
+    case 'A': return 'excellent';
+    case 'B': return 'good';
+    case 'C': return 'average';
+    case 'D': return 'poor';
+    default:  return 'bad';
+  }
 }
 
 export function getScoreColor(score: number): string {

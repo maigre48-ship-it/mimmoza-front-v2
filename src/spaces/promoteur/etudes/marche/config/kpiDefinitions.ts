@@ -247,7 +247,15 @@ export const KPI_DEFINITIONS: Record<string, KpiDefinition> = {
     id: "loyer_prime",
     label: "Loyer prime",
     unit: "€/m²/an",
-    calculate: (data) => data.realEstate?.prices?.median ?? null,
+    // ⚠️ Ce KPI retournait `realEstate.prices.median`, c'est-à-dire le getter
+    // IDENTIQUE à `prix_median_m2` : un prix de VENTE au m² (2 000 à 8 000 €)
+    // affiché sous l'étiquette « €/m²/an » de LOYER, dont l'ordre de grandeur
+    // réel en bureaux est 150 à 600. Facteur ×10 sur un KPI de décision.
+    // Aucune source de loyer de bureaux n'existe aujourd'hui dans `data` :
+    // tant qu'elle n'est pas branchée, le KPI s'affiche « — » plutôt que faux.
+    // Pour le brancher : alimenter `data.realEstate.primeRent` depuis une
+    // source de loyers tertiaires, puis remplacer la ligne ci-dessous.
+    calculate: (data) => data.realEstate?.primeRent ?? null,
     format: "currency",
     decimals: 0,
     icon: "Euro",

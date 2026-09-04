@@ -5,6 +5,7 @@
 import { supabase } from '../../../lib/supabaseClient';
 import type { PromoteurRawInput, RisqueNiveau, RisqueCategorie } from './promoteurSynthese.types';
 import { userStorage } from "@/lib/storage/userScopedStorage";
+import { COEF_NEUF_SUR_ANCIEN, estimerPrixNeufM2 } from '../shared/prixNeuf';
 
 export type StepId =
   | 'codepostal'
@@ -339,11 +340,13 @@ export async function completePromoteurData(params: CompleteParams): Promise<Com
         detail: `Déjà renseigné : ${updatedInput.marche.prixNeufM2.toLocaleString('fr-FR')} €/m²`,
       });
     } else if (prixMedian) {
-      const prixNeuf = Math.round(prixMedian * 1.2);
+      // Même coefficient que la page Évaluation (voir shared/prixNeuf).
+      const estimation = estimerPrixNeufM2(null, prixMedian);
+      const prixNeuf = estimation?.prixM2 ?? Math.round(prixMedian * COEF_NEUF_SUR_ANCIEN);
       updatedInput.marche = { ...(updatedInput.marche ?? {}), prixNeufM2: prixNeuf };
       steps = updateStep(steps, 'market_neuf', {
         status: 'success',
-        detail: `${prixNeuf.toLocaleString('fr-FR')} €/m² (estimé +20% sur ancien)`,
+        detail: `${prixNeuf.toLocaleString('fr-FR')} €/m² — ${estimation?.label ?? 'estimé sur ancien'}`,
       });
     } else {
       steps = updateStep(steps, 'market_neuf', { status: 'skipped', detail: 'Base DVF insuffisante' });

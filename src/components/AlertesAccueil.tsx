@@ -1,13 +1,29 @@
 // ============================================================================
 // AlertesAccueil — bandeau d'alertes non lues sur la page d'accueil MimmozIA.
 //
-// Agrège deux flux de veille de l'utilisateur courant (RLS : chacun ne voit
-// que ses lignes) :
-//   • opportunity_watch_events  → nouveaux biens / baisses de prix   (seen)
-//   • ao_watch_events           → nouveaux appels d'offres BOAMP     (is_read)
+// UNE SEULE SOURCE : l'edge function `alertes-accueil-v1`.
+// ---------------------------------------------------------------------------
+// Ce composant interrogeait auparavant les tables directement, et il ne lisait
+// PAS les mêmes que le copilote :
+//
+//   accueil (avant) : opportunity_watch_events  ← table à 0 ligne, tous comptes
+//   copilote        : watch_zones, user_watchlists, ao_watches
+//
+// D'où l'incohérence vécue en production : l'accueil annonçait une alerte que
+// le chat ne voyait pas, et réciproquement. Deux écrans du même produit
+// répondaient différemment à la même question, parce qu'ils ne regardaient pas
+// le même endroit.
+//
+// `alertes-accueil-v1` réunit les deux gisements réellement alimentés —
+// ao_watch_events (produits par ao-watch-run-v1) et market_opportunities
+// croisées aux user_watchlists actives — en lisant les MÊMES tables que le
+// copilote. Toute règle de filtrage (veille parente active, avis expirés,
+// péremption des données de marché) vit désormais à UN seul endroit.
 //
 // Principe : discret par défaut. Aucune alerte, chargement ou erreur ⇒ le
 // composant ne rend rien du tout (pas de squelette, pas de message vide).
+// L'EXCEPTION est l'avertissement de fraîcheur : quand le moteur de marché
+// est à l'arrêt, se taire ferait passer une panne pour « rien à signaler ».
 // ============================================================================
 
 import { useEffect, useState } from 'react';
@@ -27,72 +43,55 @@ export interface AlerteAccueilItem {
   createdAt?: string;
 }
 
-interface OpportunityWatchEventRow {
-  id: string;
-  event_type: string | null;
-  title: string | null;
-  url: string | null;
-  price: number | null;
-  price_delta_pct: number | null;
-  score: number | null;
-  created_at: string | null;
+/** Forme renvoyée par `alertes-accueil-v1` (voir l'en-tête de cette fonction). */
+interface ReponseAlertes {
+  status?: string;
+  appels_offres?: Array<{
+    id?: string; titre?: string | null; sous_titre?: string | null;
+    url?: string | null; jours_restants?: number | null;
+    urgent?: boolean; detecte_le?: string | null;
+  }>;
+  immobilier?: Array<{
+    id?: string; titre?: string | null; sous_titre?: string | null;
+    url?: string | null; score?: number | null; niveau?: string | null;
+    calcule_le?: string | null;
+  }>;
+  fraicheur?: { avertissement?: string | null };
 }
 
-interface AoWatchEventRow {
-  id: string;
-  objet: string | null;
-  acheteur: string | null;
-  url: string | null;
-  jours_restants: number | null;
-  created_at: string | null;
-}
-
-const EUR = new Intl.NumberFormat('fr-FR', {
-  style: 'currency',
-  currency: 'EUR',
-  maximumFractionDigits: 0,
-});
-
-function mapOpportunity(row: OpportunityWatchEventRow): AlerteAccueilItem {
-  const isDrop =
-    row.event_type === 'price_drop' ||
-    (typeof row.price_delta_pct === 'number' && row.price_delta_pct < 0);
-
+function mapAo(r: NonNullable<ReponseAlertes['appels_offres']>[number]): AlerteAccueilItem {
   const bits: string[] = [];
-  if (typeof row.price === 'number') bits.push(EUR.format(row.price));
-  if (isDrop && typeof row.price_delta_pct === 'number') {
-    bits.push(`${row.price_delta_pct.toFixed(1).replace('.', ',')} %`);
+  if (r.sous_titre?.trim()) bits.push(r.sous_titre.trim());
+  if (typeof r.jours_restants === 'number') {
+    bits.push(r.jours_restants <= 0 ? 'clôture imminente' : `${r.jours_restants} j restants`);
   }
-  if (typeof row.score === 'number') bits.push(`score ${row.score}`);
-
   return {
-    id: `opp-${row.id}`,
-    kind: isDrop ? 'baisse' : 'opportunite',
-    title: row.title?.trim() || (isDrop ? 'Baisse de prix détectée' : 'Nouvelle opportunité'),
+    id: `ao-${r.id ?? Math.random().toString(36).slice(2)}`,
+    kind: 'appel_offres',
+    title: r.titre?.trim() || 'Nouvel appel d’offres',
     detail: bits.join(' · ') || undefined,
-    url: row.url ?? undefined,
-    createdAt: row.created_at ?? undefined,
+    url: r.url ?? undefined,
+    createdAt: r.detecte_le ?? undefined,
   };
 }
 
-function mapAo(row: AoWatchEventRow): AlerteAccueilItem {
+function mapImmo(r: NonNullable<ReponseAlertes['immobilier']>[number]): AlerteAccueilItem {
   const bits: string[] = [];
-  if (row.acheteur?.trim()) bits.push(row.acheteur.trim());
-  if (typeof row.jours_restants === 'number') {
-    bits.push(
-      row.jours_restants <= 0
-        ? 'clôture imminente'
-        : `${row.jours_restants} j restants`,
-    );
-  }
+  if (r.sous_titre?.trim()) bits.push(r.sous_titre.trim());
+  if (typeof r.score === 'number') bits.push(`score ${Math.round(r.score)}`);
+
+  // `niveau` traduit la qualité de l'opportunité côté serveur. On s'en sert
+  // pour choisir l'icône, sans réinterpréter le score nous-mêmes : le calcul
+  // appartient au moteur, pas au bandeau.
+  const estBaisse = typeof r.niveau === 'string' && /baisse|drop|price/i.test(r.niveau);
 
   return {
-    id: `ao-${row.id}`,
-    kind: 'appel_offres',
-    title: row.objet?.trim() || 'Nouvel appel d’offres',
+    id: `immo-${r.id ?? Math.random().toString(36).slice(2)}`,
+    kind: estBaisse ? 'baisse' : 'opportunite',
+    title: r.titre?.trim() || 'Nouvelle opportunité',
     detail: bits.join(' · ') || undefined,
-    url: row.url ?? undefined,
-    createdAt: row.created_at ?? undefined,
+    url: r.url ?? undefined,
+    createdAt: r.calcule_le ?? undefined,
   };
 }
 
@@ -111,6 +110,7 @@ const KIND_LABEL: Record<AlerteKind, string> = {
 /** Charge les alertes non lues de l'utilisateur courant. */
 export function useAlertesAccueil(limit = MAX_ITEMS) {
   const [items, setItems] = useState<AlerteAccueilItem[]>([]);
+  const [avertissement, setAvertissement] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -124,59 +124,75 @@ export function useAlertesAccueil(limit = MAX_ITEMS) {
           return;
         }
 
-        const [opps, aos] = await Promise.all([
-          supabase
-            .from('opportunity_watch_events')
-            .select('id, event_type, title, url, price, price_delta_pct, score, created_at')
-            .eq('seen', false)
-            .order('created_at', { ascending: false })
-            .limit(limit),
-          supabase
-            .from('ao_watch_events')
-            .select('id, objet, acheteur, url, jours_restants, created_at')
-            .eq('is_read', false)
-            .order('created_at', { ascending: false })
-            .limit(limit),
-        ]);
+        // Un SEUL appel. Les règles de filtrage (veille parente active, avis
+        // expirés, croisement watchlists × opportunités, péremption) vivent
+        // dans la fonction, donc au même endroit que pour le copilote.
+        const { data, error } = await supabase.functions.invoke<ReponseAlertes>(
+          'alertes-accueil-v1',
+          { body: { limite: limit } },
+        );
 
         if (!alive) return;
 
+        // Un échec ne doit pas se confondre avec « aucune alerte » : on le
+        // trace. C'est précisément ce silence qui avait masqué une requête
+        // rejetée pendant des semaines.
+        if (error) {
+          console.error('[AlertesAccueil] alertes-accueil-v1 :', error.message);
+          setItems([]); setAvertissement(null); setLoading(false);
+          return;
+        }
+
         const merged: AlerteAccueilItem[] = [
-          ...((opps.data ?? []) as OpportunityWatchEventRow[]).map(mapOpportunity),
-          ...((aos.data ?? []) as AoWatchEventRow[]).map(mapAo),
+          ...(data?.appels_offres ?? []).map(mapAo),
+          ...(data?.immobilier ?? []).map(mapImmo),
         ]
           .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
           .slice(0, limit);
 
         setItems(merged);
+        setAvertissement(data?.fraicheur?.avertissement ?? null);
         setLoading(false);
-      } catch {
-        if (alive) { setItems([]); setLoading(false); }
+      } catch (e) {
+        console.error('[AlertesAccueil]', e);
+        if (alive) { setItems([]); setAvertissement(null); setLoading(false); }
       }
     })();
 
     return () => { alive = false; };
   }, [limit]);
 
-  return { items, loading };
+  return { items, avertissement, loading };
 }
 
 export default function AlertesAccueil({ limit = MAX_ITEMS }: { limit?: number }) {
-  const { items, loading } = useAlertesAccueil(limit);
+  const { items, avertissement, loading } = useAlertesAccueil(limit);
 
-  // Discrétion : rien à dire ⇒ rien à afficher.
-  if (loading || items.length === 0) return null;
+  // Discrétion : rien à dire ⇒ rien à afficher. MAIS un avertissement de
+  // fraîcheur doit passer même sans alerte : « aucune opportunité » et « le
+  // moteur d'opportunités est à l'arrêt » se ressemblent à l'écran, et se
+  // taire ferait passer la seconde pour la première.
+  if (loading || (items.length === 0 && !avertissement)) return null;
 
   return (
     <div className="mzia-alertes" role="status" aria-live="polite">
-      <div className="mzia-alertes__head">
-        <AlertCircle size={14} aria-hidden />
-        <span>
-          {items.length === 1
-            ? '1 alerte non lue'
-            : `${items.length} alertes non lues`}
-        </span>
-      </div>
+      {items.length > 0 && (
+        <div className="mzia-alertes__head">
+          <AlertCircle size={14} aria-hidden />
+          <span>
+            {items.length === 1
+              ? '1 alerte non lue'
+              : `${items.length} alertes non lues`}
+          </span>
+        </div>
+      )}
+
+      {avertissement && (
+        <div className="mzia-alertes__head" style={{ opacity: 0.75 }}>
+          <AlertCircle size={14} aria-hidden />
+          <span>{avertissement}</span>
+        </div>
+      )}
 
       <ul className="mzia-alertes__list">
         {items.map((item) => {

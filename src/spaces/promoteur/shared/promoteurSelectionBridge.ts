@@ -16,6 +16,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { usePromoteurProjectStore } from "../store/promoteurProject.store";
+import { patchModule } from "./promoteurSnapshot.store";
 import {
   userStorage,
   baseKeyIfOwnedByCurrentUser,
@@ -28,6 +29,7 @@ const LS_TERRAIN_SELECTION = "mimmoza_promoteur_terrain_selection_v1";
 const LS_SESSION_PARCEL_ID = "mimmoza.session.parcel_id";
 const LS_SESSION_COMMUNE_INSEE = "mimmoza.session.commune_insee";
 const LS_SESSION_ADDRESS = "mimmoza.session.address";
+const LS_SESSION_SURFACE_M2 = "mimmoza.session.surface_m2";
 
 function parcelFeatureKey(studyId: string): string {
   return `mimmoza.parcelFeature.${studyId}`;
@@ -271,6 +273,29 @@ export function propagateSelectionFromStudy(
   // 3) clés de session (lues par PluFaisabilite, usePromoteurParcelRestore…)
   writeStr(LS_SESSION_PARCEL_ID, sel.primaryParcelId);
   writeStr(LS_SESSION_COMMUNE_INSEE, sel.communeInsee);
+
+  // 4) surface de session + snapshot foncier.
+  //
+  // ⚠️ CES DEUX ÉCRITURES MANQUAIENT. La surface de parcelle vit sous cinq
+  // clés concurrentes ; cette fonction en reconstruisait trois à la reprise
+  // d'une étude, mais pas `mimmoza.session.surface_m2` ni
+  // `snapshot.v1 → foncier.surfaceM2` — précisément celles que lisent le Bilan
+  // promoteur (BilanPromoteurPage:1049) et la Synthèse
+  // (PromoteurSynthesePage:1171). Après une reprise d'étude, Massing 3D
+  // affichait donc la surface géodésique pendant que le Bilan et la Synthèse
+  // affichaient l'ancienne valeur, ou rien du tout.
+  if (sel.surfaceM2 != null && sel.surfaceM2 > 0) {
+    writeStr(LS_SESSION_SURFACE_M2, String(Math.round(sel.surfaceM2)));
+    try {
+      patchModule("foncier", {
+        surfaceM2: sel.surfaceM2,
+        communeInsee: sel.communeInsee ?? undefined,
+        parcelId: sel.primaryParcelId ?? undefined,
+      });
+    } catch {
+      /* le snapshot est un confort : son échec ne doit pas casser la reprise */
+    }
+  }
 
   // Notifie les pages qui écoutent l'event `storage` (synchro live).
   try {

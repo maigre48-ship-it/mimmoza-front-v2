@@ -7,8 +7,10 @@ import {
   Building2,
   ClipboardList,
   CreditCard,
+  Database,
   FileText,
   LogOut,
+  Megaphone,
   Settings,
   Users
 } from "lucide-react";
@@ -24,7 +26,12 @@ const NAV_ITEMS = [
   { label: "Devis",        path: "/admin/devis",         icon: ClipboardList },
   { label: "Factures",     path: "/admin/factures",      icon: FileText },
   { label: "Entreprises",  path: "/admin/entreprises",   icon: Building2 },
+  // Le module a ses propres sous-onglets (prospects, pipeline, base de
+  // connaissance…) : ce lien mène à sa vue d'ensemble, qui les distribue.
+  { label: "Agent commercial", path: "/admin/agent-commercial", icon: Megaphone },
   { label: "Tarifs",       path: "/admin/tarifs",        icon: BadgeEuro },
+  // Fraîcheur des jeux de données publics dont dépendent les analyses.
+  { label: "Fraîcheur des données", path: "/admin/fraicheur-donnees", icon: Database },
   { label: "Paramètres",   path: "/admin/parametres",    icon: Settings },
 ] as const;
 

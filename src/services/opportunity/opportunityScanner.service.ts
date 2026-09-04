@@ -35,6 +35,7 @@ import {
   resolveMarketReference,
   type MarketReference,
 } from './opportunityMarket.service';
+import { fetchLoyerReference, loyerEurM2Mois } from '@/lib/loyers/loyersReference.service';
 
 /** Annonce de veille telle que lue depuis `portal_snapshots` (mappée). */
 export interface WatchListing {
@@ -311,7 +312,13 @@ export function listingMatchesCriteria(listing: WatchListing, criteria?: ScanCri
 export async function scanSingleListing(
   listing: WatchListing,
   strategy: OpportunityStrategy,
-  options?: { resolvePlu?: boolean; location?: LocationContext; market?: MarketReference },
+  options?: {
+    resolvePlu?: boolean;
+    location?: LocationContext;
+    market?: MarketReference;
+    /** Loyer ANIL/DHUP de la commune, en €/m²/mois. */
+    loyerReferenceEurM2Mois?: number | null;
+  },
 ): Promise<ScannedOpportunity> {
   const input = normalizeListingToOpportunityInput(listing, strategy);
 
@@ -328,6 +335,12 @@ export async function scanSingleListing(
   if (options?.market) {
     input.marketRefPriceM2 = options.market.refPriceM2;
     input.marketSampleSize = options.market.sampleSize;
+  }
+
+  // Loyer de référence ANIL (résolu par zone, en amont). Absent → le moteur
+  // retombe sur son barème de repli et le signale.
+  if (options?.loyerReferenceEurM2Mois != null) {
+    input.loyerReferenceEurM2Mois = options.loyerReferenceEurM2Mois;
   }
 
   const result = await computeOpportunity(input, { resolvePlu: options?.resolvePlu ?? false });
@@ -416,6 +429,23 @@ export async function scanOpportunities(
     for (const [k, ref] of resolvedMarket) marketByKey.set(k, ref);
   }
 
+  // Loyer de référence ANIL/DHUP, résolu UNE FOIS PAR ZONE comme la référence
+  // DVF ci-dessus. Sans lui, le moteur retombe sur son barème départemental de
+  // repli (42 départements sur ~101) puis sur une moyenne nationale — alors que
+  // la table `loyers_reference` couvre ~34 900 communes et que le copilote,
+  // lui, la lisait déjà. Un échec de résolution n'est pas bloquant : le moteur
+  // reprend son repli et le DÉCLARE dans ses signaux.
+  const loyerByZone = new Map<string, number | null>();
+  await Promise.all(
+    [...locByZone.entries()].map(async ([zoneKey, loc]) => {
+      const ref = await fetchLoyerReference({
+        codeInsee: loc?.codeInsee ?? null,
+        codePostal: zoneKey || null,
+      });
+      loyerByZone.set(zoneKey, loyerEurM2Mois(ref));
+    }),
+  );
+
   const resolvePlu = params?.resolvePlu ?? false;
   const scored = await Promise.all(
     matching.map((listing) => {
@@ -423,7 +453,10 @@ export async function scanOpportunities(
       const location = locByZone.get(zoneKey);
       const marketKey = `${zoneKey}|${inferAssetTypeFromListing(listing)}`;
       const market = marketByKey.get(marketKey);
-      return scanSingleListing(listing, strategy, { resolvePlu, location, market });
+      const loyerReferenceEurM2Mois = loyerByZone.get(zoneKey) ?? null;
+      return scanSingleListing(listing, strategy, {
+        resolvePlu, location, market, loyerReferenceEurM2Mois,
+      });
     }),
   );
 

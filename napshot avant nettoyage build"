@@ -1,0 +1,53 @@
+warning: in the working copy of 'node_modules/.vite/deps/_metadata.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'node_modules/.vite/deps/react-leaflet.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/dvfEstimateApi.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/supabaseClient.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/ApiPage.tsx', LF will be replaced by CRLF the next time Git touches it
+ node_modules/.tmp/tsconfig.app.tsbuildinfo         |    2 [32m+[m[31m-[m
+ node_modules/.vite/deps/_metadata.json             |  123 [32m+[m[31m-[m
+ node_modules/.vite/deps/react-leaflet.js           |    6 [32m+[m[31m-[m
+ src/App.tsx                                        |   24 [32m+[m[31m-[m
+ src/components/AppShell.tsx                        |  118 [32m+[m[31m-[m
+ .../admin/billing/services/invoices.service.ts     |   61 [32m+[m
+ .../admin/billing/services/quotes.service.ts       |  122 [32m+[m[31m-[m
+ src/features/api/member/apiPlans.ts                |   28 [32m+[m[31m-[m
+ src/lib/apiKeys.ts                                 |   26 [32m+[m[31m-[m
+ src/lib/dvfEstimateApi.ts                          |   55 [32m+[m[31m-[m
+ src/lib/supabaseClient.ts                          |    5 [32m+[m[31m-[m
+ src/pages/ApiBillingPage.tsx                       |   14 [32m+[m[31m-[m
+ src/pages/ApiDeveloperDashboardPage.tsx            |    4 [32m+[m[31m-[m
+ src/pages/ApiPage.tsx                              |   79 [32m+[m[31m-[m
+ src/pages/ApiPlaygroundPage.tsx                    |   41 [32m+[m[31m-[m
+ src/pages/admin/FacturesPage.tsx                   |    2 [32m+[m[31m-[m
+ src/spaces/admin/pages/Devis.tsx                   |  180 [32m+[m[31m-[m
+ src/spaces/admin/pages/Factures.tsx                |   99 [32m+[m[31m-[m
+ src/spaces/copilot/CopilotRoot.tsx                 |   10 [32m+[m[31m-[m
+ src/spaces/copilot/lib/copilotClient.ts            |  102 [32m+[m[31m-[m
+ src/spaces/copilot/utils/quickQuestions.ts         |  120 [32m+[m[31m-[m
+ src/spaces/marchand/hooks/useTravauxImageRender.ts |   74 [31m-[m
+ src/spaces/marchand/pages/RenduTravauxPage.tsx     |   13 [32m+[m[31m-[m
+ src/spaces/particulier/pages/ComptePage.tsx        |  870 [32m++++++++[m[31m--[m
+ src/spaces/particulier/pages/ConnexionPage.tsx     |  119 [32m+[m[31m-[m
+ src/spaces/particulier/pages/InscriptionPage.tsx   |  362 [32m++[m[31m--[m
+ src/spaces/promoteur/Implantation2DPage.tsx        |   44 [32m+[m[31m-[m
+ .../bilan-promoteur/BilanPromoteurPage.tsx         | 1012 [32m+++++++++++[m[31m-[m
+ src/spaces/promoteur/pages/FacadeGeneratorPage.tsx |  392 [32m++++[m[31m-[m
+ src/spaces/promoteur/pages/ProgrammationPage.tsx   |  421 [32m+++[m[31m--[m
+ .../plan2d/IMPLANTATION2D_MODIFICATIONS.ts         |  228 [31m---[m
+ .../shared/hooks/usePromoteurParcelRestore.ts      |   97 [32m+[m[31m-[m
+ .../promoteur/shared/promoteurStudy.types.ts       |   46 [32m+[m[31m-[m
+ .../components/BuildingPropertiesPanel.tsx         |  433 [32m++++[m[31m-[m
+ .../terrain3d/components/MassingEditor3D.tsx       |   52 [32m+[m
+ .../terrain3d/components/MassingRenderer.tsx       |   67 [32m+[m[31m-[m
+ .../promoteur/terrain3d/facade2d/facade2d.types.ts |   57 [32m+[m[31m-[m
+ .../terrain3d/massingBuildingAssemblerV1.ts        |  586 [32m++++++[m[31m-[m
+ src/spaces/promoteur/terrain3d/massingGeometry.ts  |   50 [32m+[m[31m-[m
+ .../promoteur/terrain3d/massingRendererScene.ts    |  247 [32m++[m[31m-[m
+ .../promoteur/terrain3d/massingRoofEngine.ts       | 1037 [32m++++[m[31m--------[m
+ .../promoteur/terrain3d/massingScene.types.ts      |   80 [32m+[m
+ .../rehabilitation/pages/CreationPlanPage.tsx      | 1741 [31m--------------------[m
+ .../pages/quick-analysis/QuickAnalysisPage.tsx     |  231 [32m+[m[31m--[m
+ .../pages/quick-analysis/useValuationEngine.ts     |   31 [32m+[m[31m-[m
+ supabase/.temp/cli-latest                          |    2 [32m+[m[31m-[m
+ .../functions/smartscore-enriched-v3/index_v4.ts   | 1706 [31m-------------------[m
+ 47 files changed, 5459 insertions(+), 5760 deletions(-)

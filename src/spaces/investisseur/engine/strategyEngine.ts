@@ -44,7 +44,10 @@ function safeNum(v: unknown, defaultVal = 0): number {
 // - LMNP Micro: base imposable = (loyers encaissés) * 50% (abattement 50%)
 // - LMNP Réel: base imposable = loyers encaissés - charges - intérêts - assurance
 //   (PAS de déduction du remboursement de capital)
-// - Défiscalisation: traité comme LMNP Réel (v1.1 neutre)
+// - Micro-foncier (nu_micro): abattement 30%
+// - Dispositifs (Jeanbrun, Denormandie, Loc'Avantages): régime réel foncier.
+//   Leur avantage fiscal propre est calculé par @shared/dispositifs, pas ici :
+//   un amortissement et une réduction d'impôt ne s'imputent pas au même endroit.
 const DEFAULT_TAX_RATE_PCT = 30;
 
 function clampPct(v: number): number {
@@ -71,8 +74,17 @@ function computeTaxLocationV11(opts: {
   if (opts.regime === "lmnp_micro") {
     // Micro-BIC: abattement 50% sur recettes
     base = loyers * 0.5;
+  } else if (opts.regime === "nu_micro") {
+    // Micro-foncier: abattement 30% sur recettes
+    base = loyers * 0.7;
   } else {
-    // lmnp_reel / defiscalisation (v1.1): résultat fiscal simplifié
+    // Réel — LMNP réel, location nue au réel, et TOUS les dispositifs
+    // d'investissement locatif, qui supposent le régime réel foncier.
+    //
+    // Noter que cette base ne tient pas compte de l'amortissement Jeanbrun :
+    // celui-ci est calculé à part, par le moteur des dispositifs, et affiché
+    // comme un gain distinct. Le mélanger ici masquerait sa nature et son
+    // plafond annuel par foyer fiscal.
     base = loyers - charges - interets - assurance;
     base = Math.max(0, base);
   }
@@ -648,6 +660,26 @@ export function mapSnapshotToDealInputs(snapshot: any): DealInputs {
     vacanceLocativePct: safeNum(p.vacanceLocativePct, 5),
     prixReventeEstime: safeNum(p.prixReventeEstime, price),
     surfaceM2: surface,
-    dpeNote: p.dpeNote ?? p.dpe ?? "D",
+    // DPE inconnu → null, et surtout PAS "D".
+    //
+    // L'ancien repli `?? "D"` fabriquait une classe : la chaîne prédictive
+    // l'appliquait ensuite comme une donnée mesurée (-3 % de décote,
+    // `hasDpe: true`), et le bien apparaissait diagnostiqué alors que
+    // personne n'avait jamais fourni sa classe. `resolveDpeAdjustment`
+    // sait traiter l'absence — on la lui transmet telle quelle.
+    dpeNote: normaliserClasseDpe(p.dpeNote ?? p.dpe),
   };
+}
+
+/**
+ * Ramène une saisie libre à une classe A→G, ou `null`.
+ *
+ * Tolère « DPE F », « f », « F — passoire » : les formulaires stockent des
+ * libellés, pas seulement la lettre. Tout ce qui n'est pas une classe
+ * reconnaissable devient `null` plutôt qu'une lettre approchée.
+ */
+function normaliserClasseDpe(valeur: unknown): string | null {
+  if (typeof valeur !== "string") return null;
+  const lettre = valeur.trim().toUpperCase().match(/\b([A-G])\b/)?.[1];
+  return lettre ?? null;
 }

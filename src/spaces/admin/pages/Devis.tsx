@@ -13,8 +13,8 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ClientPicker, type ClientOption } from '../../../features/admin/billing/components/ClientPicker';
 import { exportQuotePdf } from '../../../features/admin/billing/exportBillingPdf';
 import {
@@ -182,6 +182,13 @@ function SendQuoteModal({
 
 const DevisPage: React.FC = () => {
   const navigate = useNavigate();
+
+  // `?highlight=<id>` : on arrive ici depuis la fiche utilisateur, juste après
+  // avoir créé un devis. La ligne concernée est signalée et amenée à l'écran.
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get('highlight');
+  const highlightRowRef = useRef<HTMLTableRowElement | null>(null);
+
   const [quotes, setQuotes] = useState<QuoteRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -206,6 +213,11 @@ const DevisPage: React.FC = () => {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!highlightId || loading) return;
+    highlightRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [highlightId, loading, quotes]);
 
   const parsedLines = form.lines.map((l) => ({
     quantity: parseFloat(l.quantity) || 0,
@@ -529,7 +541,15 @@ const DevisPage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {quotes.map((q) => (
-                  <tr key={q.id} className="hover:bg-gray-50/60 transition-colors">
+                  <tr
+                    key={q.id}
+                    ref={q.id === highlightId ? highlightRowRef : undefined}
+                    className={`transition-colors ${
+                      q.id === highlightId
+                        ? 'bg-indigo-50/70 ring-2 ring-inset ring-indigo-300'
+                        : 'hover:bg-gray-50/60'
+                    }`}
+                  >
                     <td className="px-4 py-3 font-mono text-xs font-medium text-indigo-700">
                       {q.quote_number}
                     </td>

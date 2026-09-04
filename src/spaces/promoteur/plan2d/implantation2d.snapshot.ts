@@ -13,6 +13,13 @@
 
 import { rectCorners } from "./editor2d.geometry";
 import type { Building2D } from "./editor2d.types";
+import {
+  IMPLANTATION_GROUND_FLOOR_HEIGHT_M,
+  IMPLANTATION_HEIGHT_FALLBACK,
+  IMPLANTATION_TYPICAL_FLOOR_HEIGHT_M,
+  totalBuildingHeightM,
+} from "../shared/buildingMetrics";
+import { SHAB_SDP_COLLECTIF } from "../shared/surfaceCoefficients";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES EXPORTÉS
@@ -50,7 +57,8 @@ export interface Implantation2DSnapshot {
 const COEFF_SDP_EMPRISE_UTILISE = 0.90;
 
 /** Ratio vendable / SDP (couloirs communs, cage d'escalier, locaux techniques). */
-const RATIO_VENDABLE_SDP = 0.82;
+// Même coefficient que le Bilan promoteur et le métré Massing 3D.
+const RATIO_VENDABLE_SDP = SHAB_SDP_COLLECTIF;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS PRIVÉS
@@ -94,10 +102,12 @@ function computeSdpM2(b: Building2D): number {
  * Calcule la hauteur totale du bâtiment (RDC + étages, hors toiture).
  */
 function computeTotalHeightM(b: Building2D): number {
-  const rdcH     = b.groundFloorHeightM  ?? 3.0;
-  const typicalH = b.typicalFloorHeightM ?? 2.8;
-  const nFloors  = b.floorsAboveGround   ?? b.levels ?? 0;
-  return rdcH + typicalH * nFloors;
+  return totalBuildingHeightM(
+    b.floorsAboveGround ?? b.levels ?? 0,
+    b.groundFloorHeightM,
+    b.typicalFloorHeightM,
+    IMPLANTATION_HEIGHT_FALLBACK,
+  );
 }
 
 /**
@@ -124,8 +134,8 @@ export function buildImplantation2DForPromoteurSnapshot(
   const mapped: Implantation2DBuilding[] = buildings.map(b => {
     const emprise    = b.rect.width * b.rect.depth;
     const nLevels    = 1 + (b.floorsAboveGround ?? b.levels ?? 0);
-    const rdcH       = b.groundFloorHeightM  ?? 3.0;
-    const typicalH   = b.typicalFloorHeightM ?? 2.8;
+    const rdcH       = b.groundFloorHeightM  ?? IMPLANTATION_GROUND_FLOOR_HEIGHT_M;
+    const typicalH   = b.typicalFloorHeightM ?? IMPLANTATION_TYPICAL_FLOOR_HEIGHT_M;
     const sdpM2      = computeSdpM2(b);
     const vendableM2 = sdpM2 * RATIO_VENDABLE_SDP;
     const totalH     = computeTotalHeightM(b);

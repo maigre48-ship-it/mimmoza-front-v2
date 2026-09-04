@@ -6,6 +6,8 @@
 
 import type { ResolvePluContextResult } from '../plu/pluEngine.types';
 import { resolvePluContext } from '../plu/pluRegistry.service';
+import { CONDITIONS_SCORE, GO_SCORE } from '@/lib/scoring/decisionThresholds';
+import { rendementNetIndicatifPct } from '@/spaces/investisseur/engine/conventionsFinancieres';
 import type {
   OpportunityConfidence,
   OpportunityInput,
@@ -385,16 +387,31 @@ export function computeRentabilityScore(input: OpportunityInput): PillarComputat
     };
   }
 
+  // Ordre de priorité du loyer de référence :
+  //   1. ANIL/DHUP à la maille COMMUNE, si l'appelant l'a renseigné. C'est la
+  //      vraie source (table `loyers_reference`, ~34 900 communes, exposée par
+  //      l'edge function `loyers-reference-v1`). Elle n'était jusqu'ici lue que
+  //      par le serveur : aucun fichier de src/ ne l'appelait.
+  //   2. Barème départemental de repli, ci-dessous — 42 départements sur ~101.
+  //   3. Moyenne nationale, qui met la Creuse au tarif de Rouen.
+  // Les niveaux 2 et 3 sont des ordres de grandeur, et le disent (voir
+  // `sourceNote` plus bas).
   const dept = (input.postalCode ?? '').trim().slice(0, 2);
+  const loyerAnil = typeof input.loyerReferenceEurM2Mois === 'number'
+    && Number.isFinite(input.loyerReferenceEurM2Mois)
+    && input.loyerReferenceEurM2Mois > 0
+      ? input.loyerReferenceEurM2Mois
+      : undefined;
   const deptRent = dept ? LOYER_MEDIAN_PAR_DEPT[dept] : undefined;
-  const loyerM2 = deptRent ?? LOYER_MEDIAN_NATIONAL;
-  const source = deptRent != null ? 'departement' : 'national';
+  const loyerM2 = loyerAnil ?? deptRent ?? LOYER_MEDIAN_NATIONAL;
+  const source: 'anil' | 'departement' | 'national' =
+    loyerAnil != null ? 'anil' : deptRent != null ? 'departement' : 'national';
 
   const loyerMensuel = Math.round(loyerM2 * area);
   const loyerAnnuel = loyerMensuel * 12;
   const grossYield = Math.round((loyerAnnuel / price) * 1000) / 10; // %
   // Rendement net indicatif (charges, taxe foncière, vacance ~ -25 %).
-  const netYieldIndic = Math.round(grossYield * 0.75 * 10) / 10;
+  const netYieldIndic = Math.round((rendementNetIndicatifPct(grossYield) ?? 0) * 10) / 10;
 
   let score: number;
   if (grossYield >= 8) score = 95;
@@ -408,7 +425,11 @@ export function computeRentabilityScore(input: OpportunityInput): PillarComputat
   signals.push({
     code: 'RENT_ESTIMATE',
     label: `Loyer estimé ~${fmtEur(loyerMensuel)}/mois`,
-    detail: `${loyerM2.toFixed(1)} €/m²/mois (barème ${source})`,
+    detail: `${loyerM2.toFixed(1)} €/m²/mois (${
+      source === 'anil' ? 'loyer de référence ANIL, maille commune'
+      : source === 'departement' ? 'barème départemental indicatif'
+      : 'barème national indicatif'
+    })`,
     severity: 'info',
   });
   signals.push({
@@ -419,9 +440,11 @@ export function computeRentabilityScore(input: OpportunityInput): PillarComputat
   });
 
   const sourceNote =
-    source === 'national'
-      ? ' (loyer au barème national, département non couvert)'
-      : ' (loyer au barème départemental)';
+    source === 'anil'
+      ? ' (loyer de référence ANIL de la commune)'
+      : source === 'national'
+        ? ' (loyer au barème national indicatif, département non couvert)'
+        : ' (loyer au barème départemental indicatif)';
 
   return {
     score: clamp(score, 0, 100),
@@ -740,9 +763,10 @@ export function buildOpportunityRecommendation(result: OpportunityResult): Oppor
   const { scoreTotal, confidence, riskFlags, input } = result;
 
   let action: OpportunityRecommendationAction;
-  if (scoreTotal >= 65 && confidence !== 'low') action = 'GO';
-  else if (scoreTotal >= 50) action = confidence === 'low' ? 'WATCH' : 'GO_CONDITIONAL';
-  else if (scoreTotal >= 35) action = 'WATCH';
+  // Seuils partagés (lib/scoring/decisionThresholds). La bande intermédiaire
+  // démarrait ici à 50 contre 40 sur les écrans de sourcing.
+  if (scoreTotal >= GO_SCORE && confidence !== 'low') action = 'GO';
+  else if (scoreTotal >= CONDITIONS_SCORE) action = confidence === 'low' ? 'WATCH' : 'GO_CONDITIONAL';
   else action = 'PASS';
 
   const rationale: string[] = [

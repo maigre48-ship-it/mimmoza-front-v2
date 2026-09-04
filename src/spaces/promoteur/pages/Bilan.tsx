@@ -232,6 +232,19 @@ export default function Bilan(): React.ReactElement {
   const handleGenerateNarrative = useCallback(async () => {
     if (!studyId) return;
     setIsGenerating(true);
+
+    // ⚠️ `promoteur-bilan-narrative-v1` N'EST PAS DÉPLOYÉE (vérifié le
+    // 29/08/2026 sur les 143 fonctions en ligne ; aucune source dans le dépôt
+    // non plus). L'appel échouait donc systématiquement — et comme
+    // `patchBilan` se trouvait DANS le même `try`, APRÈS l'appel, l'échec de
+    // la narration emportait avec lui TOUTE la persistance du bilan : coût de
+    // revient, CA, marge, TRI, ROI n'étaient jamais enregistrés. L'utilisateur
+    // cliquait « Générer », rien ne se passait, et son bilan était perdu.
+    //
+    // La narration est désormais OPTIONNELLE et isolée ; l'enregistrement des
+    // chiffres a lieu dans tous les cas. Voir lib/supabase/edgeFunctions.
+    let narrative = "";
+    let narrationEchouee = false;
     try {
       const { data, error } = await supabase.functions.invoke("promoteur-bilan-narrative-v1", {
         body: {
@@ -240,11 +253,17 @@ export default function Bilan(): React.ReactElement {
         },
       });
       if (error) throw error;
-      const narrative = data?.narrative ?? "";
+      narrative = data?.narrative ?? "";
       if (mountedRef.current) {
         setAiNarrative(narrative);
         setAiGeneratedAt(new Date().toISOString());
       }
+    } catch (e: any) {
+      narrationEchouee = true;
+      console.warn("[Bilan] narration indisponible :", e?.message);
+    }
+
+    try {
       await patchBilan({
         prix_revient_total:   coutRef,
         ca_previsionnel:      caRef,
@@ -262,8 +281,14 @@ export default function Bilan(): React.ReactElement {
         notes:                notes || null,
         done:                 true,
       });
+      if (narrationEchouee && mountedRef.current) {
+        setAiNarrative(
+          "La synthèse rédigée n'est pas disponible pour le moment. " +
+          "Les chiffres du bilan ci-dessus ont bien été enregistrés.",
+        );
+      }
     } catch (e: any) {
-      console.error("[Bilan] AI narrative failed:", e?.message);
+      console.error("[Bilan] enregistrement du bilan impossible :", e?.message);
     } finally {
       if (mountedRef.current) setIsGenerating(false);
     }

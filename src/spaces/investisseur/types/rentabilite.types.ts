@@ -112,10 +112,21 @@ export interface RentabiliteFormStrings {
   apport: string;
 }
 
+/**
+ * Taux de frais d'acquisition retenu par défaut dans l'ancien, en pourcentage
+ * du prix d'achat.
+ *
+ * Constante partagée pour une raison précise : le Deal Center affichait
+ * `?? 0` dans l'objet rendu à l'écran et calculait avec `?? 8`, si bien que
+ * l'utilisateur lisait « 0,00 % » pendant que le coût total en intégrait 8 %.
+ * Tout repli sur ce taux doit passer par cette constante.
+ */
+export const DEFAULT_FRAIS_NOTAIRE_PCT = 8;
+
 export const DEFAULT_FORM: RentabiliteFormStrings = {
   strategy: "revente",
   prixAchat: "",
-  fraisNotairePct: "8",
+  fraisNotairePct: String(DEFAULT_FRAIS_NOTAIRE_PCT),
   budgetTravaux: "",
   fraisDivers: "",
   dureeMois: "12",

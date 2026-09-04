@@ -67,6 +67,9 @@ import {
   generateDefaultScenarios,
 } from "../../engine/strategyEngine";
 import { fetchRiskFreeRate } from "../../services/macroRates.service";
+import { rendementBrutPct } from "../../engine/rendementBrut";
+import { DispositifFiscalCard } from "./DispositifFiscalCard";
+import { estDispositif } from "../../types/strategy.types";
 import type {
   DealInputs,
   Financement,
@@ -125,6 +128,11 @@ function VerdictBadge({ verdict }: { verdict: string }) {
 
 // ─── Régimes fiscaux ─────────────────────────────────────────────────
 
+// L'ancienne entrée « Défiscalisation » a été retirée de la saisie : c'était un
+// fourre-tout, calculé comme un LMNP réel sans que l'utilisateur en soit
+// averti, et rattaché à la location meublée alors que tous les dispositifs
+// exigent une location nue. Les quatre dispositifs réels la remplacent.
+// La valeur reste acceptée en lecture pour les analyses déjà enregistrées.
 const FISCAL_REGIMES: { value: FiscalRegime; label: string }[] = [
   { value: "lmnp_reel", label: "LMNP Réel" },
   { value: "lmnp_micro", label: "LMNP Micro" },
@@ -132,7 +140,10 @@ const FISCAL_REGIMES: { value: FiscalRegime; label: string }[] = [
   { value: "sci_is", label: "SCI IS" },
   { value: "sci_ir", label: "SCI IR" },
   { value: "nom_propre", label: "Nom propre" },
-  { value: "defiscalisation", label: "Défiscalisation" },
+  { value: "jeanbrun_neuf", label: "Jeanbrun neuf" },
+  { value: "jeanbrun_ancien", label: "Jeanbrun ancien" },
+  { value: "denormandie", label: "Denormandie" },
+  { value: "loc_avantages", label: "Loc'Avantages" },
 ];
 
 // ─── Snapshot persistence helper (debounced) ─────────────────────────
@@ -217,6 +228,16 @@ function persistRentabiliteToSnapshot(
     fraisCourtierEur: fraisCourtierEur || undefined,
   };
 
+  // ⚠️ Ces six champs étaient lus sur `bestResult` via un cast en
+  // Record<string, unknown>. Or `ScenarioResults` ne les contient PAS : le cast
+  // masquait l'erreur et la valeur persistée valait toujours `undefined`. D'où
+  // les « — » du Deal Center et les lignes vides des exports PDF. Ils sont
+  // désormais calculés ici, à partir des données réellement en portée.
+  const prixReventePersiste =
+    prixReventeEstime || deal.prixReventeEstime || deal.prixAchat || 0;
+  const margeBrute = prixReventePersiste - coutTotal;
+  const margeBrutePct = coutTotal > 0 ? (margeBrute / coutTotal) * 100 : undefined;
+
   const computed: Record<string, unknown> = bestResult
     ? {
         triEquity: bestResult.triEquity,
@@ -225,20 +246,16 @@ function persistRentabiliteToSnapshot(
         multipleCapital: bestResult.multipleCapital,
         mensualite: bestResult.mensualite,
         verdict: bestResult.verdict,
+        // Même convention que l'encart « Rendement brut indicatif » affiché
+        // plus bas dans ce panneau : loyer annuel / (prix + travaux).
         rendementBrutPct:
-          (bestResult as unknown as Record<string, unknown>).rendementBrutPct ??
-          undefined,
+          rendementBrutPct(loyerMensuel, deal.prixAchat, travauxCanonical) ?? undefined,
         rendementBrut:
-          (bestResult as unknown as Record<string, unknown>).rendementBrutPct ??
-          undefined,
-        margeBrutePct:
-          (bestResult as unknown as Record<string, unknown>).margeBrutePct ?? undefined,
-        coutProjet:
-          (bestResult as unknown as Record<string, unknown>).coutProjet ?? undefined,
-        coutAchat:
-          (bestResult as unknown as Record<string, unknown>).coutAchat ?? undefined,
-        margeBrute:
-          (bestResult as unknown as Record<string, unknown>).margeBrute ?? undefined,
+          rendementBrutPct(loyerMensuel, deal.prixAchat, travauxCanonical) ?? undefined,
+        margeBrutePct,
+        coutProjet: coutTotal > 0 ? coutTotal : undefined,
+        coutAchat: deal.prixAchat > 0 ? deal.prixAchat : undefined,
+        margeBrute: coutTotal > 0 ? margeBrute : undefined,
         rentabiliteLocalScore:
           bestResult.triEquity != null
             ? Math.max(0, Math.min(100, Math.round(bestResult.triEquity * 5)))
@@ -399,14 +416,20 @@ function computeFiscalKpis(
       break;
     case "lmnp_reel":
     case "defiscalisation":
+    case "jeanbrun_neuf":
+    case "jeanbrun_ancien":
+    case "denormandie":
+    case "loc_avantages":
       baseImposable = Math.max(
         0,
         loyerAnnuel - chargesAnnuelles - interetsAssuranceAnnuels,
       );
       regimeLabel =
         fiscalRegime === "defiscalisation"
-          ? "Défiscalisation (traité réel v1)"
-          : "LMNP Réel (charges déduites)";
+          ? "Ancien régime « Défiscalisation » (calculé au réel — choisissez un dispositif)"
+          : fiscalRegime === "lmnp_reel"
+            ? "LMNP Réel (charges déduites)"
+            : "Location nue au réel — l'avantage du dispositif est calculé à part";
       break;
     case "lmp":
       baseImposable = Math.max(
@@ -1159,10 +1182,7 @@ export default function RentabilitePanel({
           {loyerMensuel > 0 && deal.prixAchat > 0 && (
             <span className="px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-700 font-medium">
               Rendement brut indicatif :{" "}
-              {(
-                ((loyerMensuel * 12) / (deal.prixAchat + travauxEffective)) *
-                100
-              ).toFixed(1)}{" "}
+              {(rendementBrutPct(loyerMensuel, deal.prixAchat, travauxEffective) ?? 0).toFixed(1)}{" "}
               %
             </span>
           )}
@@ -1783,6 +1803,20 @@ export default function RentabilitePanel({
       {/* ══════════════════════════════════════════════════════════════
           v6: TABLEAUX COMPARATIFS PÉDAGOGIQUES EN BAS DE PAGE
           ══════════════════════════════════════════════════════════════ */}
+
+      {/* Chiffrage du dispositif sélectionné. La carte ne s'affiche que pour
+          les quatre dispositifs réels : elle se retire d'elle-même pour les
+          régimes classiques et pour l'ancienne valeur « defiscalisation ». */}
+      {strategy === "location" && estDispositif(fiscalRegime) && (
+        <DispositifFiscalCard
+          regime={fiscalRegime}
+          prixAcquisition={deal.prixAchat}
+          travaux={travauxEffective}
+          surfaceM2={deal.surfaceM2}
+          loyerMensuel={loyerMensuel}
+          tmiPct={tmiPct}
+        />
+      )}
 
       {strategy === "location" && (
         <LocationFiscalComparisonTable fiscalRegime={fiscalRegime} />

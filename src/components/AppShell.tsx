@@ -12,6 +12,7 @@ import {
   Cuboid,
   Eye,
   FileSearch,
+  Landmark,
   FileText,
   FolderKanban,
   Grid3X3,
@@ -62,6 +63,7 @@ import { MODULE_LABEL, isModuleSpace, type ModuleSpace, type PlanId } from "@/li
 import { useCopilot } from "@/spaces/copilot/hooks/useCopilot";
 import { CopilotCreditsPill } from "@/spaces/copilot/components/CopilotCreditsPill";
 import { useCopilotStore } from "@/spaces/copilot/store/copilotStore";
+import { syncPlanFromServer } from "@/lib/billing/syncPlanFromServer";
 
 type Space = "none" | "promoteur" | "agence" | "marchand" | "banque" | "rehabilitation" | "mimmozia";
 
@@ -222,11 +224,18 @@ function useSupabaseAccount(): StoredAccount | null {
     let mounted = true;
 
     supabase.auth.getUser().then(({ data }) => {
-      if (mounted) setAccount(buildAccountFromUser(data.user as SupabaseUserLike));
+      if (!mounted) return;
+      setAccount(buildAccountFromUser(data.user as SupabaseUserLike));
+      // Aligne le cache local du plan sur `billing_profiles`, qui fait foi.
+      // Sans cela, un abonnement fraîchement payé restait bridé côté chat et
+      // un abonnement expiré continuait d'afficher des fonctions refusées par
+      // le serveur. Échec silencieux : le cache reste inchangé (voir le module).
+      if (data.user?.id) void syncPlanFromServer(data.user.id);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setAccount(buildAccountFromUser((session?.user ?? null) as SupabaseUserLike));
+      if (session?.user?.id) void syncPlanFromServer(session.user.id);
     });
 
     return () => {
@@ -275,6 +284,7 @@ function getPromoteurActiveSection(pathname: string): string | null {
     ["/promoteur/veille",                    "opportunites"],
     ["/promoteur/nouvelle-opportunite",      "opportunites"],
     ["/promoteur/recherche-contacts",        "opportunites"],
+    ["/promoteur/proprietaires",             "opportunites"],
     ["/promoteur/permis-construire",         "opportunites"],
     ["/promoteur/opportunites-apporteurs",   "opportunites"],
     ["/promoteur/foncier",                   "preanalyse"],
@@ -329,6 +339,7 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
         { label: "Tableau de bord",      path: "/promoteur",                         icon: BarChart3, end: true },
         { label: "Veille foncière",      path: "/promoteur/veille",                  icon: Eye },
         { label: "Contacts mairie",      path: "/promoteur/recherche-contacts",      icon: Users,     separatorBefore: true },
+        { label: "Propriétaires",        path: "/promoteur/proprietaires",           icon: Landmark },
         { label: "Permis comparables",   path: "/promoteur/permis-construire",       icon: FileSearch },
         { label: "Deals apporteurs",     path: "/promoteur/opportunites-apporteurs", icon: Building2, separatorBefore: true },
       ],

@@ -37,6 +37,20 @@ export interface ActiveCopilotSnapshot {
   surface?: number;
   propertyType?: string;
   parcelId?: string;
+  /**
+   * Code INSEE de la commune du bien.
+   *
+   * Le type serveur `MimmozaContext.parcel` prévoyait déjà `code_insee`,
+   * `lat` et `lng`, mais rien côté front ne les remplissait : chaque outil
+   * géolocalisé devait re-résoudre l'INSEE depuis le nom de commune ou le code
+   * postal, ce qui consomme un tour de boucle quand la résolution échoue et
+   * peut désigner la mauvaise commune en cas d'homonymie.
+   */
+  codeInsee?: string;
+  /** Latitude du bien, en degrés décimaux (WGS84). */
+  latitude?: number;
+  /** Longitude du bien, en degrés décimaux (WGS84). */
+  longitude?: number;
   route?: string;
   vertical?:
     | 'investisseur'

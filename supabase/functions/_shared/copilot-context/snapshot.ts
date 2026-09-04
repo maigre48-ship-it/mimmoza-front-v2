@@ -71,11 +71,56 @@ function mergeObjects(persisted: Record<string, JsonValue>, current: Record<stri
   return merged;
 }
 
+/**
+ * Champs ATTACHÉS À UN BIEN PRÉCIS, purgés dès que le client annonce une
+ * nouvelle route sans les fournir.
+ *
+ * Le problème corrigé : seul `pageContext` était purgé au changement de route.
+ * `parcel`, `activeDeal`, `risk_study`, `pageSnapshot`, `implantation_2d`,
+ * `predictive_snapshot` et `valuation_engine` ne sont envoyés par le front que
+ * lorsqu'ils existent (spread conditionnel côté client) : leur absence n'était
+ * donc jamais interprétée comme « il n'y en a plus », et la fusion les
+ * reconduisait indéfiniment. Un « autour de mon projet » posé vingt messages
+ * plus tard pouvait porter sur une parcelle abandonnée depuis longtemps — sans
+ * qu'aucun écran ne le signale.
+ *
+ * `study` et `promoteur_chain` ne sont PAS dans cette liste : ils décrivent
+ * l'opération promoteur active, qui survit légitimement à un changement de
+ * page à l'intérieur de la chaîne d'études.
+ */
+const CHAMPS_LIES_AU_BIEN = [
+  'parcel',
+  'activeDeal',
+  'risk_study',
+  'pageSnapshot',
+  'implantation_2d',
+  'predictive_snapshot',
+  'valuation_engine',
+  'listing_id',
+  'listing_url',
+] as const;
+
 export function mergeContexts(persisted: unknown, current: unknown): Record<string, JsonValue> {
   const previous = sanitizeContext(persisted);
   const incoming = sanitizeContext(current);
   const merged = mergeObjects(previous, incoming);
-  if (Object.prototype.hasOwnProperty.call(incoming, 'route') && !Object.prototype.hasOwnProperty.call(incoming, 'pageContext')) delete merged.pageContext;
+
+  const aRoute = Object.prototype.hasOwnProperty.call(incoming, 'route');
+  const has = (o: Record<string, JsonValue>, k: string) => Object.prototype.hasOwnProperty.call(o, k);
+
+  if (aRoute) {
+    if (!has(incoming, 'pageContext')) delete merged.pageContext;
+
+    // Le client vient de décrire où il se trouve. Tout ce qui décrit un BIEN et
+    // qu'il n'a pas redonné n'est plus d'actualité : on ne le reconduit pas.
+    const routeChangee = previous.route !== incoming.route;
+    if (routeChangee) {
+      for (const champ of CHAMPS_LIES_AU_BIEN) {
+        if (!has(incoming, champ)) delete merged[champ];
+      }
+    }
+  }
+
   return sanitizeContext(merged);
 }
 

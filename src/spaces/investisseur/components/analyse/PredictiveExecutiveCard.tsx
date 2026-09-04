@@ -84,7 +84,7 @@ export default function PredictiveExecutiveCard({ snapshot }: Props) {
         </div>
         <div className="flex items-center gap-2 text-sm text-gray-600">
           <span className="h-2 w-2 rounded-full bg-amber-500" />
-          Risque : {market.riskScore}/100
+          Sécurité : {market.securityScore}/100
         </div>
       </div>
     </div>

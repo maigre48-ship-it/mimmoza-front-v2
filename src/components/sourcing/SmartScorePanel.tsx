@@ -14,6 +14,7 @@
  */
 
 import { useState } from "react";
+import { decisionLevel, scoreGrade } from "@/lib/scoring/decisionThresholds";
 // Type local : forme "banque" complète telle que consommée par ce panel.
 // (duck-typé au runtime via isFullSmartScore ; volontairement permissif)
 interface SmartScoreResult {
@@ -59,18 +60,18 @@ function clamp(val: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, val));
 }
 
+// Grades et verdict viennent du barème partagé (lib/scoring/decisionThresholds),
+// pour qu'un même score ne soit plus « GO » ici et « WATCH » côté marchand.
 function computeGrade(score: number): "A" | "B" | "C" | "D" | "E" {
-  if (score >= 80) return "A";
-  if (score >= 65) return "B";
-  if (score >= 50) return "C";
-  if (score >= 35) return "D";
-  return "E";
+  return scoreGrade(score);
 }
 
 function computeVerdict(score: number): string {
-  if (score >= 65) return "GO";
-  if (score >= 40) return "GO SOUS CONDITIONS";
-  return "NO GO";
+  switch (decisionLevel(score)) {
+    case "go":         return "GO";
+    case "conditions": return "GO SOUS CONDITIONS";
+    default:           return "NO GO";
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════

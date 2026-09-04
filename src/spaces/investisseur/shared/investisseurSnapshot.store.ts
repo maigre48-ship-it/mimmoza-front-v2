@@ -20,7 +20,7 @@ import type {
   ComputedTravaux,
   TravauxSimulationV1,
 } from "./travauxSimulation.types";
-import { userStorage } from "@/lib/storage/userScopedStorage";
+import { baseKeyIfOwnedByCurrentUser, userStorage } from "@/lib/storage/userScopedStorage";
 
 export const INVESTISSEUR_SNAPSHOT_KEY = "mimmoza.investisseur.snapshot.v1";
 export const INVESTISSEUR_LEGACY_RENTABILITE_PREFIX =
@@ -550,10 +550,25 @@ function migrateLegacyRentabiliteKeysIntoSnapshot(
   snap: InvestisseurSnapshot
 ): { didMigrate: boolean; snapshot: InvestisseurSnapshot } {
   try {
-    const keys: string[] = [];
+    // ⚠️ Cette migration ne s'était JAMAIS déclenchée pour un utilisateur
+    // connecté. Elle comparait `k.startsWith(PREFIX)` sur les clés PHYSIQUES du
+    // localStorage, alors que celles-ci portent le préfixe `u:<userId>:` posé
+    // par userScopedStorage : le test échouait systématiquement, et la boucle
+    // rebalayait tout le localStorage à chaque lecture du snapshot sans jamais
+    // rien migrer. On repasse par la clé de base.
+    //
+    // Les clés NUES antérieures au scoping ne sont volontairement pas migrées :
+    // leur propriétaire ne peut pas être établi, et importer les chiffres d'un
+    // tiers dans le snapshot de l'utilisateur courant serait pire que de perdre
+    // une donnée héritée.
+    const keys: Array<{ physical: string; base: string }> = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k && k.startsWith(INVESTISSEUR_LEGACY_RENTABILITE_PREFIX)) keys.push(k);
+      if (!k) continue;
+      const base = baseKeyIfOwnedByCurrentUser(k);
+      if (base && base.startsWith(INVESTISSEUR_LEGACY_RENTABILITE_PREFIX)) {
+        keys.push({ physical: k, base });
+      }
     }
     if (keys.length === 0) return { didMigrate: false, snapshot: snap };
 
@@ -565,10 +580,10 @@ function migrateLegacyRentabiliteKeysIntoSnapshot(
     let did = false;
 
     for (const k of keys) {
-      const projectId = k.substring(INVESTISSEUR_LEGACY_RENTABILITE_PREFIX.length);
+      const projectId = k.base.substring(INVESTISSEUR_LEGACY_RENTABILITE_PREFIX.length);
       if (!projectId) continue;
 
-      const raw = localStorage.getItem(k);
+      const raw = localStorage.getItem(k.physical);
       const legacy = safeParseJson<Record<string, unknown>>(raw);
       if (!legacy || !isObject(legacy)) continue;
 

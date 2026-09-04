@@ -4,6 +4,22 @@
     <meta charset="UTF-8" />
     <title>Mimmoza - Front local</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!--
+      Politique d'indexation — valeur par défaut VOLONTAIREMENT restrictive.
+
+      Mimmoza réutilise les données DVF de la DGFiP, dont l'article R. 112 A-3
+      du livre des procédures fiscales interdit l'indexation par les moteurs de
+      recherche externes.
+
+      Le défaut est donc « noindex », et c'est le composant RobotsPolicy
+      (src/components/RobotsPolicy.tsx) qui l'ASSOUPLIT sur les rares pages
+      publiques sans donnée DVF. Le sens de la bascule compte : si le
+      JavaScript ne s'exécute pas, l'état qui subsiste est l'état sûr.
+      L'inverse — indexable par défaut, restreint par le JS — laisserait fuiter
+      les pages en cas d'échec de rendu.
+    -->
+    <meta name="robots" content="noindex, nofollow" />
   </head>
   <body>
     <div id="root"></div>

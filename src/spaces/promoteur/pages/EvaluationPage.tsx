@@ -15,6 +15,7 @@ import {
 import { ACCENT_PRO } from "../shared/promoteurDesign.tokens";
 import { usePromoteurStudy } from "../shared/usePromoteurStudy";
 import { userStorage } from "@/lib/storage/userScopedStorage";
+import { estimerPrixNeufM2 } from "../shared/prixNeuf";
 
 // ─────────────────────────────────────────────
 // Constantes design
@@ -548,16 +549,23 @@ const EvaluationPage: React.FC = () => {
   const prixSortie = useMemo(() => {
     const surface = Number(carac.surfaceM2 || 0);
     if (surface <= 0) return null;
-    const prixRef =
-      marche.prix_m2_median_neuf ??
-      (marche.prix_m2_median ? Math.round(marche.prix_m2_median * 1.2) : null) ??
-      (dvfBest?.prixM2 ? Math.round(dvfBest.prixM2 * 1.2) : null);
-    if (!prixRef) return null;
-    const source = marche.prix_m2_median_neuf
-      ? "Étude marché (prix neuf)"
+    // ⚠️ `prix_m2_median_neuf` est alimenté par `market.prices.median_eur_m2`,
+    // c'est-à-dire une médiane DVF de l'ANCIEN — comme les deux autres
+    // branches. Il était pourtant affiché tel quel là où les autres étaient
+    // majorées de 20 % : 20 % d'écart sur la même donnée, sous un libellé
+    // « Étude marché (prix neuf) » faux. Le coefficient s'applique désormais
+    // uniformément (voir shared/prixNeuf).
+    const medianeAncien =
+      marche.prix_m2_median_neuf ?? marche.prix_m2_median ?? dvfBest?.prixM2 ?? null;
+    const estimation = estimerPrixNeufM2(null, medianeAncien);
+    if (!estimation) return null;
+    const prixRef = estimation.prixM2;
+    const origine = marche.prix_m2_median_neuf
+      ? "étude marché"
       : marche.prix_m2_median
-      ? "DVF étude marché +20%"
-      : "DVF local +20%";
+      ? "DVF étude marché"
+      : "DVF local";
+    const source = `${estimation.label} (${origine})`;
     return {
       prixM2Ref: prixRef,
       prixBas: Math.round(prixRef * 0.95 * surface),
@@ -1435,11 +1443,21 @@ const EvaluationPage: React.FC = () => {
                 </div>
                 <div style={S.kpiCard}>
                   <div style={S.kpiLabel}>Prix marché neuf</div>
-                  {marche.prix_m2_median_neuf != null ? (
-                    <div style={{ fontSize: 20, fontWeight: 900, color: ACCENT_PRO }}>{fmtN(marche.prix_m2_median_neuf)}<span style={{ fontSize: 11, fontWeight: 500 }}> €/m²</span></div>
-                  ) : marche.prix_m2_median != null ? (
-                    <div style={{ fontSize: 20, fontWeight: 900, color: ACCENT_PRO }}>{fmtN(Math.round(marche.prix_m2_median * 1.2))}<span style={{ fontSize: 11, fontWeight: 500 }}> €/m²</span></div>
-                  ) : <div style={{ fontSize: 13, color: "#94a3b8" }}>—</div>}
+                  {(() => {
+                    // Même estimation que le prix de sortie : les deux branches
+                    // partaient d'une médiane de l'ancien mais une seule était
+                    // majorée, d'où deux « prix neuf » à 20 % d'écart.
+                    const est = estimerPrixNeufM2(
+                      null,
+                      marche.prix_m2_median_neuf ?? marche.prix_m2_median,
+                    );
+                    return est ? (
+                      <>
+                        <div style={{ fontSize: 20, fontWeight: 900, color: ACCENT_PRO }}>{fmtN(est.prixM2)}<span style={{ fontSize: 11, fontWeight: 500 }}> €/m²</span></div>
+                        <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>{est.label}</div>
+                      </>
+                    ) : <div style={{ fontSize: 13, color: "#94a3b8" }}>—</div>;
+                  })()}
                 </div>
               </div>
             </div>

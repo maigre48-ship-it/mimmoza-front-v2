@@ -18,6 +18,7 @@ import {
 import { userStorage } from "@/lib/storage/userScopedStorage";
 import { spendCredits } from "@/lib/billing/projectUnlock";
 import { ACTION_COSTS } from "@/lib/billing/actionCosts";
+import { readMarchandSnapshot } from "../shared/marchandSnapshot.store";
 
 // ── Thème ─────────────────────────────────────────────────────────
 
@@ -44,7 +45,47 @@ type ExtendedTravauxRenduConfig = TravauxRenduConfig & {
   mobilier?: string;
 };
 
+/**
+ * Configuration de travaux à pré-remplir dans le rendu.
+ *
+ * ⚠️ Les trois clés lues ci-dessous ne sont ÉCRITES NULLE PART dans le code :
+ * `mimmoza.simulateur.travaux.v1`, `mimmoza.execution.simulation.v1` et
+ * `mimmoza.travaux.snapshot.v1` n'ont aucun `setItem` correspondant. Cette
+ * fonction retournait donc toujours `null`, et la page partait systématiquement
+ * de zéro pendant que le copilote, lui, affichait le vrai budget travaux.
+ *
+ * La donnée vit en réalité dans le snapshot marchand, sous
+ * `executionByDeal[dealId].travaux` — c'est là que l'écrit la page Simulation
+ * travaux et là que la lisent le panneau Rentabilité et l'analyse. On lit donc
+ * cette source EN PREMIER, et on conserve les trois clés historiques en repli
+ * au cas où un déploiement ancien en aurait laissé.
+ */
 function readTravauxConfig(): TravauxRenduConfig | null {
+  try {
+    const snap = readMarchandSnapshot();
+    const dealId = snap?.activeDealId ?? null;
+    const travaux = dealId
+      ? (snap?.executionByDeal?.[dealId] as
+          | { travaux?: Record<string, unknown> }
+          | undefined)?.travaux
+      : undefined;
+    if (travaux) {
+      const t = travaux as Record<string, any>;
+      const sim = (t.simulation ?? t.input ?? t) as Record<string, any>;
+      const c: Partial<TravauxRenduConfig> = {
+        gamme: sim.gamme ?? sim.range ?? sim.grade ?? undefined,
+        niveau: sim.niveau ?? sim.level ?? sim.renovationLevel ?? undefined,
+        lots: sim.lots ?? sim.selectedLots ?? sim.workPackages ?? [],
+        solType: sim.solType ?? undefined,
+        solColor: sim.solColor ?? sim.couleurSol ?? undefined,
+        murColor: sim.murColor ?? sim.couleurMurs ?? undefined,
+      };
+      if (c.gamme && c.niveau) return c as TravauxRenduConfig;
+    }
+  } catch {
+    // le snapshot est un confort : on continue sur les clés historiques
+  }
+
   try {
     for (const key of [
       "mimmoza.simulateur.travaux.v1",

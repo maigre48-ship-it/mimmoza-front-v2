@@ -4,6 +4,16 @@
  * Service pour récupérer les données marché (DVF) et risques (Géorisques)
  * via l'Edge Function "market-risk-v1".
  *
+ * ⚠️ ÉTAT AU 29/08/2026 — `market-risk-v1` N'EST PAS DÉPLOYÉE. Aucune fonction
+ * de ce nom ne figure parmi les 143 en ligne, et le dépôt n'en contient pas la
+ * source. Chaque appel échoue donc, et ce service retourne systématiquement sa
+ * réponse d'erreur : le panneau affiche son repli, ce qui est le comportement
+ * correct — mais la fonctionnalité, elle, est absente.
+ *
+ * → Déployer la fonction, ou rebrancher ce service sur `risk-study-v1` et
+ *   `market-study-investisseur-v1`, qui sont en ligne et couvrent les deux
+ *   moitiés du besoin. Voir lib/supabase/edgeFunctions.
+ *
  * Si la fonction n'existe pas ou échoue, retourne un objet MarketRiskResponse
  * avec error rempli (le panel affiche un fallback propre).
  * ─────────────────────────────────────────────────────────────────────

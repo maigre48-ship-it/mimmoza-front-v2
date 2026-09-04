@@ -4,10 +4,11 @@
 //   mimmoza.user pour l'utilisateur courant (cas admin se créditant lui-même).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Ban, CheckCircle, Loader2, Plus, RefreshCw, Search, X } from "lucide-react";
+import { Ban, CheckCircle, History, Loader2, Plus, RefreshCw, Search, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../lib/supabase";
 import { StatusBadge } from "../components/StatusBadge";
+import { UserHistoryModal } from "../components/UserHistoryModal";
 
 type LiveAdminUserRow = {
   userId: string;
@@ -391,6 +392,7 @@ export default function AdminUtilisateursPage() {
 
   const [creditsTarget, setCreditsTarget] = useState<LiveAdminUserRow | null>(null);
   const [blockTarget, setBlockTarget]     = useState<LiveAdminUserRow | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<LiveAdminUserRow | null>(null);
 
   async function loadUsers(): Promise<void> {
     setState("loading");
@@ -614,6 +616,16 @@ export default function AdminUtilisateursPage() {
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
+                              onClick={() => setHistoryTarget(user)}
+                              title="Historique, devis et factures"
+                              className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                            >
+                              <History className="h-3.5 w-3.5 text-slate-500" />
+                              Historique
+                            </button>
+
+                            <button
+                              type="button"
                               onClick={() => setCreditsTarget(user)}
                               title="Ajouter des jetons"
                               className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
@@ -667,6 +679,18 @@ export default function AdminUtilisateursPage() {
           user={creditsTarget}
           onClose={() => setCreditsTarget(null)}
           onSuccess={handleCreditsSuccess}
+        />
+      )}
+
+      {historyTarget && (
+        <UserHistoryModal
+          user={{
+            userId:         historyTarget.userId,
+            email:          historyTarget.email,
+            planCodes:      historyTarget.planCodes,
+            currentCredits: historyTarget.currentCredits,
+          }}
+          onClose={() => setHistoryTarget(null)}
         />
       )}
 

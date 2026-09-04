@@ -389,18 +389,31 @@ export function computeTravauxSimulation(sim: TravauxSimulationV1): ComputedTrav
       .find((l) => l.code === "honoraires")
       ?.items.find((i) => i.code === "honoraires_moe_pct")?.prices?.[sim.range];
     const pct = typeof moePct === "number" ? moePct : (sim.range === "eco" ? 0.07 : sim.range === "premium" ? 0.12 : 0.09);
-    const moeAmount = total * pct;
+
+    // ⚠️ CORRECTIF — le coefficient de complexité s'appliquait DEUX FOIS à la
+    // MOE dans la branche `if (meta)` : les honoraires étaient calculés sur
+    // `total` (déjà multiplié par le coef), puis la somme des lots était
+    // remultipliée par ce même coef. En « très complexe », la MOE portait donc
+    // 1,25² = 1,56 au lieu de 1,25 — et la branche de repli, elle, ne
+    // l'appliquait qu'une fois. Deux chemins du même fichier, deux totaux.
+    //
+    // La MOE est désormais calculée sur la base HT avant complexité, comme
+    // tous les autres lots, et le coefficient est appliqué une seule fois à
+    // l'ensemble. Effet de bord souhaitable : la ligne MOE affichée dans le
+    // détail est maintenant homogène avec les autres lignes, qui étaient
+    // toutes hors complexité.
+    const moeAmount = baseTotal * pct;
 
     const meta = PRICING_INDEX.get("honoraires_moe_pct");
     if (meta) {
       const lotsMap = new Map<LotCode, ComputedLot>();
       for (const l of lots) lotsMap.set(l.code, l);
-      addLine(lotsMap, meta.lot.code, meta.lot.label, "honoraires_moe_pct", meta.label, meta.unit, pct, total, moeAmount);
+      addLine(lotsMap, meta.lot.code, meta.lot.label, "honoraires_moe_pct", meta.label, meta.unit, pct, baseTotal, moeAmount);
       const updatedLots = Array.from(lotsMap.values());
       total = updatedLots.reduce((acc, l) => acc + safeNumber(l.amount, 0), 0) * complexityCoef;
       return finalizeComputed(sim, mode, surface, total, bufferPct, complexityCoef, updatedLots);
     }
-    total += moeAmount;
+    total = (baseTotal + moeAmount) * complexityCoef;
   }
 
   return finalizeComputed(sim, mode, surface, total, bufferPct, complexityCoef, lots);

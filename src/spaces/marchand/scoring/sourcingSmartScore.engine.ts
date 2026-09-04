@@ -33,6 +33,7 @@
  */
 
 import { userStorage } from "@/lib/storage/userScopedStorage";
+import { decisionLevel } from "@/lib/scoring/decisionThresholds";
 
 // ─── Constants ───────────────────────────────────────────────────────
 
@@ -596,10 +597,15 @@ function gradeFromScore(score: number): string {
   return "À éviter";
 }
 
+// Barème partagé — voir lib/scoring/decisionThresholds. Ce moteur exigeait 70
+// pour un GO là où le sourcing en demandait 65 : un même score de 68 était
+// « GO » sur un écran et « WATCH » sur l'autre.
 function verdictFromScore(score: number): "GO" | "WATCH" | "NO_GO" {
-  if (score >= 70) return "GO";
-  if (score >= 50) return "WATCH";
-  return "NO_GO";
+  switch (decisionLevel(score)) {
+    case "go":         return "GO";
+    case "conditions": return "WATCH";
+    default:           return "NO_GO";
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════

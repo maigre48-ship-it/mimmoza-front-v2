@@ -105,8 +105,30 @@ function buildEnrichedContext(
     (v) => v !== undefined && v !== null && v !== '',
   );
 
-  const parcel =
-    reqCtx.parcel ?? (active.parcelId ? { id: active.parcelId } : undefined);
+  // Le serveur attend `code_insee`, `lat` et `lng` sur la parcelle : ils
+  // évitent aux outils géolocalisés de re-résoudre la commune à chaque appel,
+  // et lèvent les homonymies. Ils n'étaient jamais transmis.
+  // `id` est obligatoire dans ParcelContextRef : sans référence cadastrale il
+  // n'y a pas de parcelle à décrire, et les coordonnées seules n'en font pas une.
+  const parcelFromActive = active.parcelId
+    ? {
+        id: active.parcelId,
+        ...(active.codeInsee ? { code_insee: active.codeInsee } : {}),
+        ...(active.latitude != null ? { lat: active.latitude } : {}),
+        ...(active.longitude != null ? { lng: active.longitude } : {}),
+      }
+    : undefined;
+
+  // Si la page a fourni sa propre parcelle, on la complète des champs
+  // géographiques du contexte actif qu'elle n'aurait pas renseignés.
+  const parcel = reqCtx.parcel
+    ? {
+        ...reqCtx.parcel,
+        ...(reqCtx.parcel.code_insee == null && active.codeInsee ? { code_insee: active.codeInsee } : {}),
+        ...(reqCtx.parcel.lat == null && active.latitude != null ? { lat: active.latitude } : {}),
+        ...(reqCtx.parcel.lng == null && active.longitude != null ? { lng: active.longitude } : {}),
+      }
+    : parcelFromActive;
 
   const listingRootFields = hasListingData
     ? {

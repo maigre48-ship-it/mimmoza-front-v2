@@ -1,6 +1,7 @@
 // FILE: src/spaces/promoteur/etudes/marche/services/providers/dvfProvider.ts
 
 import type { RealEstateData } from "../../types/competition";
+import { prixM2Plausible } from "@/lib/dvf/plausibility";
 
 export interface DvfProviderParams {
   lat: number;
@@ -62,14 +63,33 @@ export function calculatePriceStatistics(
 } | null {
   if (!transactions.length) return null;
 
-  const prices = transactions.map((t) => t.pricePerSqm).sort((a, b) => a - b);
+  // Médiane et quartiles INTERPOLÉS, bornes de plausibilité appliquées.
+  // `prices[Math.floor(n/2)]` retournait la valeur haute du couple central sur
+  // un échantillon pair, et rien n'écartait les mutations aberrantes — mêmes
+  // défauts que les fonctions serveur, corrigés de la même façon.
+  // Voir lib/dvf/plausibility et supabase/functions/_shared/dvf/stats.ts.
+  const prices = transactions
+    .map((t) => t.pricePerSqm)
+    .filter(prixM2Plausible)
+    .sort((a, b) => a - b);
   const n = prices.length;
+  if (n === 0) return null;
+
+  const quantile = (p: number): number => {
+    if (n === 1) return prices[0];
+    const position = (n - 1) * p;
+    const bas = Math.floor(position);
+    const haut = Math.ceil(position);
+    return bas === haut
+      ? prices[bas]
+      : prices[bas] + (prices[haut] - prices[bas]) * (position - bas);
+  };
 
   return {
-    median: prices[Math.floor(n / 2)],
+    median: quantile(0.5),
     mean: prices.reduce((a, b) => a + b, 0) / n,
-    q1: prices[Math.floor(n * 0.25)],
-    q3: prices[Math.floor(n * 0.75)],
+    q1: quantile(0.25),
+    q3: quantile(0.75),
     min: prices[0],
     max: prices[n - 1],
   };

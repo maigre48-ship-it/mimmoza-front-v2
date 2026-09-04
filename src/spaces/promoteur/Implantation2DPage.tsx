@@ -61,6 +61,10 @@ import {
   StudyIdBadge,
 } from "./shared/components/PromoteurPageHero";
 import { userStorage } from "@/lib/storage/userScopedStorage";
+import {
+  IMPLANTATION_GROUND_FLOOR_HEIGHT_M,
+  IMPLANTATION_TYPICAL_FLOOR_HEIGHT_M,
+} from './shared/buildingMetrics';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
@@ -188,8 +192,8 @@ function building2DToPlanBuilding(b: Building2D): PlanBuilding {
     polygon,
     rotationDeg:         b.rect.rotationDeg,
     levels:              1 + (b.floorsAboveGround ?? b.levels ?? 0),
-    groundFloorHeightM:  b.groundFloorHeightM  ?? 3.0,
-    typicalFloorHeightM: b.typicalFloorHeightM ?? 2.8,
+    groundFloorHeightM:  b.groundFloorHeightM  ?? IMPLANTATION_GROUND_FLOOR_HEIGHT_M,
+    typicalFloorHeightM: b.typicalFloorHeightM ?? IMPLANTATION_TYPICAL_FLOOR_HEIGHT_M,
     usage:               "logement" as const,
     name:                b.label,
   };

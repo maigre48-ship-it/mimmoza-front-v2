@@ -172,6 +172,12 @@ export interface PredictiveSnapshotContext {
     marge_brute?:        number | null;
     marge_brute_pct?:    number | null;
     prix_revente_cible?: number | null;
+    /** TRI equity en %, tel que persisté par le panneau Rentabilité. */
+    tri_pct?: number | null;
+    /** Coût de projet : prix d'achat + travaux + frais. */
+    cout_projet?: number | null;
+    /** Coût d'acquisition seul. */
+    cout_achat?: number | null;
   } | null;
   // ── Sources individuelles ─────────────────────────────────────
   dpe?:               string | null;   // "A"–"G"

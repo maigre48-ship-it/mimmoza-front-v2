@@ -869,6 +869,32 @@ function dvfCodeCommuneFromInsee(insee: string): string | null {
 const DVF_MIN_VENTES_COMMUNE = 10;
 const DVF_LIMIT = 500;
 
+// ── Fenêtre temporelle de la requête principale ─────────────────────────────
+//
+// ⚠️ Cette requête — celle qui produit `prix_m2_median`, `prix_m2_moyen`, les
+// bornes min/max et la liste des dernières mutations — n'avait AUCUN filtre de
+// date. Elle prenait les 500 mutations les plus récentes, tout simplement.
+//
+// La période réellement couverte variait donc avec le VOLUME de la commune :
+// six mois dans une métropole, dix ans dans un village. La même étiquette
+// « prix médian » recouvrait un marché actuel ici et une moyenne décennale
+// là — sans que rien ne le signale, et alors que les trois requêtes dérivées
+// (12 mois, 12-24 mois, absorption) étaient, elles, correctement fenêtrées.
+//
+// 24 mois est la fenêtre déjà retenue partout ailleurs dans le produit
+// (dvfEstimateApi, page Estimation, page Évaluation). Sous
+// DVF_MIN_VENTES_FENETRE ventes, on élargit à tout l'historique plutôt que de
+// ne rien afficher — mais on le DÉCLARE (`fenetre_mois`, `fenetre_elargie`),
+// comme on déclare déjà le repli départemental.
+const DVF_FENETRE_MOIS = 24;
+const DVF_MIN_VENTES_FENETRE = 10;
+
+function dateIlYAMois(mois: number): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - mois);
+  return d.toISOString().split("T")[0];
+}
+
 async function fetchDvfFromSupabase(
   dept: string | null,
   _communeNom: string | null,
@@ -940,7 +966,10 @@ async function fetchDvfFromSupabase(
       scope(
         baseSelect("date_mutation, valeur_fonciere, surface_reelle_bati, type_local, commune, prix_m2"),
         mode,
-      ).order("date_mutation", { ascending: false }).limit(DVF_LIMIT),
+      )
+        .gte("date_mutation", dateIlYAMois(DVF_FENETRE_MOIS))
+        .order("date_mutation", { ascending: false })
+        .limit(DVF_LIMIT),
 
       // Période récente : 0-12 mois
       scope(baseSelect("prix_m2"), mode).gte("date_mutation", dateRecenteStr).limit(DVF_LIMIT),
@@ -952,8 +981,28 @@ async function fetchDvfFromSupabase(
         .limit(DVF_LIMIT),
     ]);
 
-    if (resAll.error || !resAll.data?.length) return empty;
-    const data = resAll.data;
+    // Élargissement DÉCLARÉ : sous DVF_MIN_VENTES_FENETRE ventes sur 24 mois,
+    // une médiane n'a pas de sens. On reprend tout l'historique plutôt que de
+    // renvoyer un vide, et on l'annonce dans la réponse.
+    let fenetreElargie = false;
+    let resPrincipal = resAll;
+    if (!resAll.error && (resAll.data?.length ?? 0) < DVF_MIN_VENTES_FENETRE) {
+      const resLarge = await scope(
+        baseSelect("date_mutation, valeur_fonciere, surface_reelle_bati, type_local, commune, prix_m2"),
+        mode,
+      ).order("date_mutation", { ascending: false }).limit(DVF_LIMIT);
+      if (!resLarge.error && (resLarge.data?.length ?? 0) > (resAll.data?.length ?? 0)) {
+        resPrincipal = resLarge;
+        fenetreElargie = true;
+        console.warn(
+          `[DVF] ${resAll.data?.length ?? 0} vente(s) sur ${DVF_FENETRE_MOIS} mois ` +
+          `(< ${DVF_MIN_VENTES_FENETRE}) → fenêtre élargie à tout l'historique, DÉCLARÉE`
+        );
+      }
+    }
+
+    if (resPrincipal.error || !resPrincipal.data?.length) return empty;
+    const data = resPrincipal.data;
 
     // Stats globales
     const prixM2Values = data
@@ -1021,6 +1070,14 @@ async function fetchDvfFromSupabase(
       // `nb_transactions` est le nombre de lignes RENVOYÉES. S'il touche le
       // plafond, c'est une borne inférieure, pas un décompte.
       nb_transactions_plafonne: data.length >= DVF_LIMIT,
+      // Période réellement couverte par la médiane. Sans cela, le même
+      // libellé « prix médian » recouvrait 6 mois de métropole ou 10 ans de
+      // village, selon le volume de la commune.
+      fenetre_mois: fenetreElargie ? null : DVF_FENETRE_MOIS,
+      fenetre_elargie: fenetreElargie,
+      fenetre_label: fenetreElargie
+        ? "tout l'historique disponible (moins de 10 ventes sur 24 mois)"
+        : `${DVF_FENETRE_MOIS} derniers mois`,
     };
   } catch (e) {
     console.error("[DVF] Error:", e);

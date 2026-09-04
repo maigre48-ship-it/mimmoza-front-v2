@@ -205,6 +205,30 @@ export default function ConnexionPage() {
     };
   }, []);
 
+  // ── Session déjà ouverte → on ne redemande pas de se connecter ──────────
+  //
+  // Le parcours de connexion mène bien à /accueil (donc MimmozIA). Mais cette
+  // page est aussi la route "/" : un utilisateur dont la session Supabase est
+  // encore valide et qui rouvre l'application retombait sur le formulaire de
+  // connexion, alors qu'il était déjà identifié. On le renvoie vers le même
+  // décideur d'atterrissage que la connexion normale.
+  //
+  // On ne lit PAS un flag local : on interroge Supabase, seule source de
+  // vérité sur l'existence d'une session. Après une déconnexion, getSession()
+  // renvoie null, donc aucun rebond ne peut piéger l'utilisateur sur cette
+  // page — c'est le point à préserver si ce bloc est modifié.
+  useEffect(() => {
+    let annule = false;
+    void supabase.auth.getSession().then(({ data }) => {
+      if (!annule && data.session) {
+        navigate("/accueil", { replace: true });
+      }
+    });
+    return () => {
+      annule = true;
+    };
+  }, [navigate]);
+
   const firstName = storedUser.fullName?.trim().split(/\s+/)[0] ?? "";
 
   const switchMode = (next: Mode) => {

@@ -5,10 +5,13 @@ import type {
   FinancialBridgeResult,
 } from "./plan.financialBridge.types";
 import type { ImplantationScenario } from "./plan.scenarios.types";
+import { nombreLogements, SURFACE_MOYENNE_LOGEMENT_M2 } from "../shared/buildingMetrics";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────
 
-const DEFAULT_AVERAGE_UNIT_SIZE_M2 = 60;
+// Aligné sur la constante partagée : ce fichier retenait 60 m², le scénario
+// maître 62 et le métré Massing 55, pour la même estimation.
+const DEFAULT_AVERAGE_UNIT_SIZE_M2 = SURFACE_MOYENNE_LOGEMENT_M2;
 const DEFAULT_FALLBACK_LEVELS       = 4;    // R+3
 const MIN_VIABLE_MARGIN_PCT         = 0.08; // 8 % = warning threshold
 const MIN_VIABLE_SALEABLE_M2        = 100;  // below = warn
@@ -152,7 +155,7 @@ export function computeFinancialBridge(params: {
   const footprintM2          = scenario.metrics.totalFootprintM2;
   const floorAreaM2          = footprintM2 * weightedLevels;
   const saleableAreaM2       = floorAreaM2 * Math.min(1, Math.max(0, floorEfficiencyRatio));
-  const unitCount            = Math.max(0, Math.floor(saleableAreaM2 / Math.max(1, averageUnitSizeM2)));
+  const unitCount            = nombreLogements(saleableAreaM2, averageUnitSizeM2);
 
   // ── Financial ───────────────────────────────────────────────────
   const revenue              = saleableAreaM2 * Math.max(0, salePricePerM2);

@@ -17,6 +17,18 @@
 
 export type StrategyType = "revente" | "location";
 
+/**
+ * Régime fiscal, ou dispositif d'investissement locatif.
+ *
+ * `defiscalisation` est CONSERVÉ pour les snapshots enregistrés avant
+ * septembre 2026 : c'était un fourre-tout, calculé comme un LMNP réel sans que
+ * rien ne le signale à l'utilisateur. Il n'est plus proposé à la saisie ; les
+ * quatre dispositifs réels le remplacent.
+ *
+ * Tous les dispositifs supposent une location NUE au régime réel — et non une
+ * location meublée. Les rattacher au LMNP, comme le faisait l'ancien
+ * fourre-tout, était une erreur de nature.
+ */
 export type FiscalRegime =
   | "lmnp_reel"
   | "lmnp_micro"
@@ -27,7 +39,23 @@ export type FiscalRegime =
   | "defiscalisation"
   | "nu_micro"
   | "nu_reel"
+  | "jeanbrun_neuf"
+  | "jeanbrun_ancien"
+  | "denormandie"
+  | "loc_avantages"
   | "none";
+
+/** Les quatre dispositifs ouverts aux nouveaux investisseurs. */
+export const DISPOSITIFS_OUVERTS = [
+  "jeanbrun_neuf",
+  "jeanbrun_ancien",
+  "denormandie",
+  "loc_avantages",
+] as const;
+
+export function estDispositif(regime: FiscalRegime): boolean {
+  return (DISPOSITIFS_OUVERTS as readonly string[]).includes(regime);
+}
 
 // ─── Macro Rates (ECB / Supabase) ───────────────────────────────────
 
@@ -135,7 +163,16 @@ export interface DealInputs {
   vacanceLocativePct: number; // % de vacance estimée
   prixReventeEstime: number;  // estimation revente (avant inflation)
   surfaceM2: number;
-  dpeNote: string;
+  /**
+   * Classe énergétique A→G, ou `null` quand elle n'est pas connue.
+   *
+   * `null` est une valeur ATTENDUE, pas un cas dégradé à combler : la chaîne
+   * prédictive sait déjà la traiter (resolveDpeAdjustment renvoie alors un
+   * facteur nul, `hasDpe: false` et le libellé « DPE non renseigné »).
+   * Ne remplace jamais l'absence par une classe par défaut — une valeur
+   * inventée porte une décote et se présente ensuite comme mesurée.
+   */
+  dpeNote: string | null;
 }
 
 // ─── Due Diligence ───────────────────────────────────────────────────

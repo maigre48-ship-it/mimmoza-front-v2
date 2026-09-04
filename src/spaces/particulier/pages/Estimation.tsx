@@ -31,6 +31,16 @@ type EstimationResult = {
   prixM2: number;
   confiance: "Faible" | "Moyenne" | "Élevée";
   notes: string[];
+  /**
+   * D'où vient le chiffre affiché.
+   *  - "dvf"       : transactions réelles (DVF)
+   *  - "indicatif" : barème forfaitaire, sans aucune donnée de marché locale
+   *
+   * Sans ce champ, les deux s'affichaient à l'identique : quand DVF ne
+   * répondait pas, l'utilisateur lisait un prix issu d'une base fictive de
+   * 3 600 €/m² identique partout en France, présenté comme une estimation.
+   */
+  source: "dvf" | "indicatif";
 };
 
 type DvfUi = {
@@ -155,7 +165,12 @@ function computeEstimation(i: EstimationInputs): EstimationResult {
   const pieces = clamp(Number(i.pieces || 0), 1, 20);
   const annee = clamp(Number(i.annee || 0), 1800, new Date().getFullYear());
 
-  // Base €/m² fictive (à remplacer par DVF / modèles)
+  // ⚠️ Base forfaitaire, IDENTIQUE PARTOUT EN FRANCE : elle ne tient compte ni
+  // de la commune, ni du quartier, ni du marché local. L'écart réel va d'environ
+  // −70 % à Paris 3e à +80 % dans une préfecture rurale. Elle ne sert qu'à
+  // garder l'écran utilisable quand DVF ne répond pas, et le résultat est
+  // marqué `source: "indicatif"` pour que l'interface le signale sans ambiguïté.
+  // Ne jamais présenter ce chiffre comme une estimation de marché.
   let basePm2 = 3600;
 
   // Ajustements simples
@@ -194,20 +209,18 @@ function computeEstimation(i: EstimationInputs): EstimationResult {
   const prixBas = Math.round(prixCible * (1 - spread));
   const prixHaut = Math.round(prixCible * (1 + spread));
 
-  // Confiance
-  let score = 100;
-  if (!i.ville.trim() || !i.codePostal.trim()) score -= 20;
-  if (!i.adresse.trim()) score -= 10;
-  if (surface < 20) score -= 5;
-  if (i.etat === "a_renover") score -= 10;
-  score = clamp(score, 0, 100);
-
-  const confiance: EstimationResult["confiance"] =
-    score >= 80 ? "Élevée" : score >= 60 ? "Moyenne" : "Faible";
-
+  // Le niveau de confiance était calculé à partir de la complétude du
+  // formulaire et pouvait atteindre « Élevée » — sur un barème forfaitaire
+  // sans aucune donnée de marché. Un formulaire bien rempli ne rend pas un
+  // forfait fiable : la confiance est désormais « Faible » par construction
+  // (voir la valeur de retour).
   const notes: string[] = [];
-  notes.push("Cette estimation est indicative et sert de base UI (mode hors-ligne).");
-  notes.push("Branchements recommandés : DVF (transactions), comparables, et scoring quartier.");
+  notes.push(
+    "Aucune transaction DVF n'a pu être récupérée : ce montant provient d'un barème forfaitaire " +
+      "identique sur tout le territoire, sans donnée de marché locale. Ne l'utilisez pas comme " +
+      "une estimation de la valeur du bien."
+  );
+  notes.push("Renseignez le code postal et la surface, puis relancez « Calculer (DVF) » pour une estimation réelle.");
   if (i.etat === "a_renover") notes.push("Travaux importants : la dispersion de prix est plus élevée.");
   if (!i.ville.trim() || !i.codePostal.trim()) notes.push("Ville / code postal manquants : confiance réduite.");
 
@@ -216,8 +229,10 @@ function computeEstimation(i: EstimationInputs): EstimationResult {
     prixCible,
     prixHaut,
     prixM2: Math.round(prixCible / surface),
-    confiance,
+    // Un forfait sans marché local ne mérite jamais mieux que « Faible ».
+    confiance: "Faible",
     notes,
+    source: "indicatif",
   };
 }
 
@@ -332,9 +347,14 @@ const Estimation: React.FC = () => {
       prixBas: dvfBest.prixBas,
       prixCible: dvfBest.prixCible,
       prixHaut: dvfBest.prixHaut,
+      // Le repli sur le prix au m² forfaitaire est signalé : sans cela, une
+      // ligne « Prix / m² » issue du barème se glissait dans un résultat DVF.
       prixM2: dvfBest.prixM2 ?? offlineResult.prixM2,
       confiance: dvfBest.confiance,
-      notes,
+      notes: dvfBest.prixM2 == null
+        ? [...notes, "Prix au m² non disponible dans DVF : la valeur affichée provient du barème indicatif."]
+        : notes,
+      source: "dvf",
     };
   }, [dvfBest, offlineResult, inputs.codePostal, inputs.surfaceM2]);
 
@@ -767,6 +787,27 @@ const Estimation: React.FC = () => {
             </div>
           ) : (
             <>
+              {displayedResult.source === "indicatif" && (
+                <div
+                  role="status"
+                  style={{
+                    marginBottom: 16,
+                    padding: "12px 14px",
+                    borderRadius: 8,
+                    border: "1px solid #f59e0b",
+                    background: "#fffbeb",
+                    color: "#78350f",
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <strong>Montant indicatif, pas une estimation.</strong> Aucune transaction DVF
+                  n&apos;a pu être récupérée pour ce bien. Les chiffres ci-dessous proviennent
+                  d&apos;un barème forfaitaire identique sur tout le territoire, qui ne tient
+                  compte ni de la commune ni du marché local.
+                </div>
+              )}
+
               <div style={kpiRowStyle}>
                 <Kpi label="Fourchette basse" value={formatEUR(displayedResult.prixBas)} />
                 <Kpi label="Prix cible"       value={formatEUR(displayedResult.prixCible)} />

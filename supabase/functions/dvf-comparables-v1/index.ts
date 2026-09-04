@@ -272,16 +272,22 @@ async function fetchDvfLive(params: {
     });
   }
 
-  const prices = txns.map((t) => t.price_m2).sort((a, b) => a - b);
-  const n = prices.length;
+  // Médiane et quartiles INTERPOLÉS, bornes de plausibilité appliquées.
+  // Le calcul précédent — prices[Math.floor(n/2)] — retournait la valeur HAUTE
+  // du couple central sur un échantillon pair : sur 4 ventes à 3 000 / 3 200 /
+  // 3 800 / 4 000 €/m², il annonçait 3 800 au lieu de 3 500. Et aucune borne
+  // n'écartait les mutations aberrantes (dépendance vendue avec sa surface
+  // bâtie, coquille de saisie). Voir _shared/dvf/stats.ts.
+  const p = statsPrixM2(txns.map((t) => t.price_m2));
+  const n = p.n;
   const stats: DvfStats = {
     transactions_count: n,
-    price_median_eur_m2: n > 0 ? prices[Math.floor(n / 2)] : null,
-    price_mean_eur_m2: n > 0 ? Math.round(prices.reduce((a, b) => a + b, 0) / n) : null,
-    price_q1_eur_m2: n > 0 ? prices[Math.floor(n * 0.25)] : null,
-    price_q3_eur_m2: n > 0 ? prices[Math.floor(n * 0.75)] : null,
+    price_median_eur_m2: p.median,
+    price_mean_eur_m2: p.mean,
+    price_q1_eur_m2: p.q1,
+    price_q3_eur_m2: p.q3,
     evolution_pct: null,
-    surface_mean_m2: n > 0 ? Math.round(txns.reduce((a, t) => a + t.surface, 0) / n) : null,
+    surface_mean_m2: txns.length > 0 ? Math.round(txns.reduce((a, t) => a + t.surface, 0) / txns.length) : null,
   };
 
   // Comparables : les plus proches (ou les plus récents si pas de distance), top 8.

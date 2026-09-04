@@ -14,9 +14,13 @@ const HIDDEN_PREFIXES = [
   '/cgv', '/cgu', '/politique-confidentialite', '/mentions-legales',
   '/admin',
   '/compte', '/account', '/abonnement', '/jetons',
-  '/opportunites',
-  '/apporteur',
   '/marchand-de-bien/planning',   // Rendu travaux (investisseur)
+  // '/opportunites' et '/apporteur' RETIRÉS de cette liste : ce sont deux
+  // espaces métier complets — opportunités détectées, dépôt et pool d'affaires
+  // — où l'utilisateur a autant besoin du copilote qu'ailleurs. Les masquer
+  // n'avait aucune justification fonctionnelle, contrairement aux pages de
+  // compte, de facturation et d'administration ci-dessus, qui ne portent
+  // aucune donnée immobilière.
 ];
 
 // Routes cachees en correspondance EXACTE (evite qu'un prefixe '/' cache tout).

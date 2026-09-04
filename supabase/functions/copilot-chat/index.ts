@@ -29,10 +29,28 @@
 
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { selectToolNames } from '../_shared/copilot-routing/selector.ts';
+import { isKnownRoute, routeCatalogue, routeLabel, suggestRoutes } from '../_shared/copilot-routing/routes.ts';
 import { createContextSnapshot, mergeContexts, type ContextSnapshot } from '../_shared/copilot-context/snapshot.ts';
 import { geographicGroundingPolicy } from '../_shared/copilot-grounding/geographic.ts';
 import { unsupportedInferencePolicy } from '../_shared/copilot-grounding/inferences.ts';
 import { renderParcelStudyReport } from '../_shared/copilot-reporting/parcel-study.ts';
+// Moteur prédictif — MÊME code que la page Analyse prédictive du front, qui le
+// réexporte depuis ici. Deux copies auraient produit deux projections
+// différentes pour le même bien selon qu'on la demande à l'écran ou au chat.
+import { computePredictiveSnapshot } from '../_shared/predictive/engine.ts';
+import type { PredictiveEngineInput } from '../_shared/predictive/types.ts';
+import { fetchEcbRatesAnalysis } from '../_shared/predictive/ecb.ts';
+import {
+  calculerDenormandie,
+  calculerJeanbrunAncien,
+  calculerJeanbrunNeuf,
+  calculerLocAvantages,
+  FICHES_DISPOSITIFS,
+  listerDispositifsClos,
+  trouverDispositifClos,
+} from '../_shared/dispositifs/engine.ts';
+import { MILLESIME_BAREMES } from '../_shared/dispositifs/baremes.ts';
+import type { DispositifCode, NiveauLoyer } from '../_shared/dispositifs/types.ts';
 
 // =============================================================
 // SECTION 1 — Configuration
@@ -60,7 +78,14 @@ const MODEL_BY_MODE: Record<CopilotMode, string> = {
 };
 
 // Plafond global défini dans tes secrets (garde-fou absolu).
-const GLOBAL_MAX_TOKENS = Number(Deno.env.get('ANTHROPIC_MAX_TOKENS')) || 8000;
+//
+// ⚠️ Le repli valait 8 000, soit la MOITIÉ des 16 000 que MAX_OUTPUT_TOKENS
+// vise juste en dessous — et comme il est appliqué via Math.min, il écrasait
+// silencieusement les trois modes tant que le secret ANTHROPIC_MAX_TOKENS
+// n'était pas posé. Les rapports d'étude étaient donc coupés en deux sans
+// qu'aucun message ne l'indique. Le repli est aligné sur la cible ; le secret
+// reste prioritaire pour le cas où il faudrait redescendre.
+const GLOBAL_MAX_TOKENS = Number(Deno.env.get('ANTHROPIC_MAX_TOKENS')) || 16000;
 
 // Budget de sortie par mode — PLAFOND de génération, pas une cible.
 // Généreux volontairement : à 2500 le rapport d'étude (get_etude_parcelle) était
@@ -141,6 +166,8 @@ const INTERNAL_FUNCTIONS = {
   contexte: Deno.env.get('COPILOT_FN_CONTEXTE') ?? null,          // contexte-commune-v1 (contexte éditorial Wikidata/Wikipédia)
   gpu: Deno.env.get('COPILOT_FN_GPU') ?? null,                    // gpu-parcelle-v1 (zonage PLU + prescriptions, API Carto GPU)
   appels_offres: Deno.env.get('COPILOT_FN_APPELS_OFFRES') ?? null, // appels-offres-v1 (avis BOAMP ouverts)
+  contacts: Deno.env.get('COPILOT_FN_CONTACTS') ?? null,          // recherche-contacts-mairies-v1 (mairies + maires par rayon)
+  metrics_zone: Deno.env.get('COPILOT_FN_METRICS_ZONE') ?? null,  // market-metrics-zone-v1 (état du marché d'une zone surveillée)
 } as const;
 
 // Timeout dédié aux appels de fonctions internes (séparé du LLM).
@@ -449,7 +476,7 @@ interface MimmozaContext {
     bpe?: { score?: number | null; total_equipements?: number | null; commerces_count?: number | null; sante_count?: number | null; education_count?: number | null; loisirs_count?: number | null } | null;
     transport?: { score?: number | null; has_metro_train?: boolean; has_tram?: boolean; nearest_stop_m?: number | null; is_urban?: boolean } | null;
     georisques?: { nb_risques?: number | null; inondation?: boolean | null; sismique?: number | null; retrait_gonflement?: boolean | null; radon?: number | null; cavites?: boolean | null } | null;
-    rentabilite?: { rendement_brut?: number | null; rendement_net?: number | null; cashflow_mensuel?: number | null; marge_brute?: number | null; marge_brute_pct?: number | null; prix_revente_cible?: number | null } | null;
+    rentabilite?: { rendement_brut?: number | null; rendement_net?: number | null; cashflow_mensuel?: number | null; marge_brute?: number | null; marge_brute_pct?: number | null; prix_revente_cible?: number | null; tri_pct?: number | null; cout_projet?: number | null; cout_achat?: number | null } | null;
     dpe?: string | null;
     dpe_source?: string | null;
     plu_zone?: string | null;
@@ -529,7 +556,15 @@ interface ToolDef {
 }
 
 // ─── Résultats normalisés renvoyés au LLM ────────────────────
-type ToolStatus = 'ok' | 'not_configured' | 'not_found' | 'partial' | 'error';
+// `confirmation_requise` : l'aperçu d'un verbe en deux temps. RIEN n'a été
+// écrit ; il faut rappeler l'outil avec `confirmer: true`.
+//
+// ⚠️ Ce statut existe parce que les six aperçus renvoyaient `ok`. Pour le
+// modèle, `ok` est un succès : il annonçait donc à l'utilisateur que la veille
+// était désactivée alors qu'aucune écriture n'avait eu lieu, et le second appel
+// n'arrivait jamais. Une promesse tenue pour un fait est le pire mode d'échec
+// d'un assistant — l'utilisateur croit son action faite et n'y revient pas.
+type ToolStatus = 'ok' | 'confirmation_requise' | 'not_configured' | 'not_found' | 'partial' | 'error';
 
 interface ToolResult {
   status: ToolStatus;
@@ -3216,6 +3251,36 @@ const TOOLS: ToolDef[] = [
         zip_code:      { type: 'string', description: 'Code postal (repli).' },
         rayon_km:      { type: 'number', description: 'Rayon de recherche en km (défaut 3 à la parcelle, 5 à la commune ; max 25).' },
         periode_mois:  { type: 'number', description: 'Profondeur en mois (défaut 24, max 120).' },
+        type_autorisation: {
+          type: 'string',
+          description:
+            "Filtre sur la nature de l'autorisation : 'all' (défaut, tout), ou une liste séparée par des " +
+            "virgules parmi PC (permis de construire), DP (déclaration préalable), PA (permis d'aménager), " +
+            "PD (permis de démolir). Ex. 'PC' pour ne voir que les permis de construire, 'PA,PD' pour " +
+            "repérer les divisions foncières et les démolitions.",
+        },
+        typologie: {
+          type: 'string',
+          enum: ['all', 'logement', 'individuel', 'collectif', 'mixte', 'activite'],
+          description:
+            "Filtre sur la nature du programme (défaut 'all'). 'collectif' isole les immeubles, " +
+            "'individuel' les maisons, 'mixte' les deux. ⚠️ 'activite' est très incomplet : le dataset " +
+            "Sit@del-logements ne couvre pas les projets non résidentiels — un résultat vide ne prouve " +
+            "donc PAS l'absence de projet commercial, dis-le explicitement.",
+        },
+        logements_min: { type: 'number', description: "Ne garder que les permis créant AU MOINS ce nombre de logements. Sert à isoler les grosses opérations (ex. 30 pour repérer un collectif d'envergure)." },
+        logements_max: { type: 'number', description: 'Ne garder que les permis créant AU PLUS ce nombre de logements.' },
+        surface_min:   { type: 'number', description: 'Surface de plancher minimale du projet, en m².' },
+        surface_max:   { type: 'number', description: 'Surface de plancher maximale du projet, en m².' },
+        trier_par: {
+          type: 'string',
+          enum: ['date', 'distance', 'logements', 'surface'],
+          description:
+            "Critère de tri des permis analysés (défaut 'date', du plus récent au plus ancien). " +
+            "'logements' ou 'surface' font remonter les plus gros projets, 'distance' les plus proches. " +
+            "⚠️ Le tri décide QUELS permis sont analysés en détail quand le rayon en contient plus de 100 : " +
+            "pour chercher le plus gros projet voisin, trie par 'logements', pas par 'date'.",
+        },
       },
     },
     available_in_modes: ['quick', 'advanced', 'report'],
@@ -3314,6 +3379,262 @@ const TOOLS: ToolDef[] = [
         code_insee: { type: 'string', pattern: PATTERN_INSEE, description: DESC_CODE_INSEE },
         commune:    { type: 'string', description: 'Nom de la commune (repli).' },
         zip_code:   { type: 'string', description: 'Code postal (repli).' },
+      },
+    },
+    available_in_modes: ['quick', 'advanced', 'report'],
+  },
+  {
+    name: 'get_analyse_predictive',
+    description:
+      "PROJECTION DE VALEUR d'un bien à 6, 12, 18 et 24 mois (36 et 60 si l'horizon le justifie), " +
+      "avec TROIS scénarios — prudent, central, optimiste —, un régime de marché (correction, " +
+      "plateau, reprise, hausse), des scores de pression, de liquidité et de sécurité, et la " +
+      "liste des facteurs qui poussent la valeur vers le haut ou vers le bas. " +
+      "UTILISE CET OUTIL dès qu'on te demande où va le marché, ce que vaudra un bien, s'il faut " +
+      "acheter maintenant ou attendre, ou quelle plus-value espérer : « ça va monter ? », " +
+      "« je revends dans 2 ans, j'y gagne ? », « le marché est-il en train de se retourner ? ». " +
+      "Le calcul intègre les transactions DVF locales et les TAUX DIRECTEURS BCE, récupérés en " +
+      "direct — la pression crédit est le premier déterminant du marché résidentiel. " +
+      "⚠️ SURFACE et PRIX D'ACQUISITION sont OBLIGATOIRES : sans eux l'outil refuse, et il a " +
+      "raison — une projection sans le bien, c'est une moyenne de quartier déguisée. " +
+      "Demande-les plutôt que de les inventer. " +
+      "⚠️ Enrichis le résultat en passant `dpe` et `loyer_median_m2` si tu les as déjà obtenus " +
+      "par get_dpe_ademe et get_loyers_reference dans cet échange : chaque entrée manquante " +
+      "abaisse confidenceScore, que tu DOIS citer. " +
+      "⚠️ RESTITUTION : présente TOUJOURS les trois scénarios, jamais le seul central. Annoncer " +
+      "« +7,2 % à 24 mois » sans fourchette est une fausse précision sur un exercice qui n'en " +
+      "permet aucune. Dis que c'est une projection de modèle, pas une estimation contractuelle, " +
+      "et relaie le champ entrees_manquantes s'il n'est pas vide.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        surface_m2:       { type: 'number', description: 'Surface du bien en m². OBLIGATOIRE.' },
+        prix_acquisition: { type: 'number', description: "Prix d'acquisition en €. OBLIGATOIRE." },
+        type_bien: {
+          type: 'string',
+          enum: ['appartement', 'maison', 'immeuble', 'terrain', 'commerce'],
+          description: "Nature du bien (défaut : appartement).",
+        },
+        code_postal: { type: 'string', description: 'Code postal. À défaut, déduit du contexte.' },
+        commune:     { type: 'string', description: 'Nom de la commune (repli de localisation).' },
+        code_insee:  { type: 'string', description: 'Code INSEE (repli de localisation).' },
+        travaux_estime: { type: 'number', description: 'Budget travaux en €, s\'il y en a.' },
+        frais_annexes:  { type: 'number', description: 'Frais de notaire, agence, etc. en €.' },
+        horizon_mois:   { type: 'number', description: "Durée de détention envisagée en mois (défaut 12). À 36 ou plus, les horizons longs s'activent." },
+        dpe: {
+          type: 'string',
+          description: "Classe énergétique A→G du bien, si tu l'as obtenue par get_dpe_ademe ou fournie par l'utilisateur. Ne l'invente pas.",
+        },
+        loyer_median_m2: {
+          type: 'number',
+          description: "Loyer de référence en €/m²/mois, si tu l'as obtenu par get_loyers_reference.",
+        },
+      },
+      required: ['surface_m2', 'prix_acquisition'],
+    },
+  },
+  {
+    name: 'get_proprietaire_parcelle',
+    description:
+      "PROPRIÉTAIRE PERSONNE MORALE d'une parcelle : dénomination, SIREN, forme juridique. " +
+      "Fonctionne dans les deux sens — « qui détient cette parcelle ? » à partir d'une " +
+      "référence cadastrale, et « que détient cette société ? » à partir d'un SIREN ou " +
+      "d'une dénomination. " +
+      "UTILISE CET OUTIL dès qu'on cherche à identifier ou contacter le détenteur d'un " +
+      "terrain : « à qui appartient ce terrain ? », « qui est le propriétaire ? », " +
+      "« comment joindre le propriétaire ? », « quel foncier détient cette SCI ? ». " +
+      "⚠️ PÉRIMÈTRE STRICTEMENT LIMITÉ AUX PERSONNES MORALES — sociétés, SCI, foncières, " +
+      "collectivités, associations. AUCUNE personne physique n'y figure, et il n'existe " +
+      "aucun moyen légal pour Mimmoza d'en obtenir : l'identité des propriétaires " +
+      "particuliers relève des fichiers fonciers, réservés aux acteurs publics et interdits " +
+      "de démarchage commercial. " +
+      "⚠️ UNE ABSENCE DE RÉSULTAT NE PROUVE RIEN. Ne conclus JAMAIS « c'est donc un " +
+      "particulier » : le fichier exclut aussi les sociétés unipersonnelles et les " +
+      "entrepreneurs individuels, et le département n'a peut-être pas été importé. " +
+      "Relaie le champ `avertissement` tel quel. " +
+      "⚠️ RESTITUTION : cite l'attribution DGFiP et le millésime. Quand `siren_exploitable` " +
+      "vaut false, dis que l'identifiant n'est pas utilisable — la DGFiP attribue des " +
+      "numéros fictifs qui ne correspondent à aucune entreprise.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        cadastral_ref: {
+          type: 'string',
+          description: "IDU cadastral de 14 caractères. La voie la plus fiable.",
+        },
+        code_insee: {
+          type: 'string',
+          pattern: PATTERN_INSEE,
+          description: "Code INSEE de la commune, à combiner avec section et numero.",
+        },
+        section: { type: 'string', description: "Section cadastrale, ex. « AY »." },
+        numero:  { type: 'string', description: "Numéro de plan de la parcelle, ex. « 102 »." },
+        prefixe: { type: 'string', description: "Préfixe cadastral, souvent « 000 »." },
+        siren: {
+          type: 'string',
+          description:
+            "Recherche inverse : SIREN à 9 chiffres d'une société, pour lister le foncier " +
+            "qu'elle détient.",
+        },
+        denomination: {
+          type: 'string',
+          description:
+            "Recherche inverse par nom de société, quand le SIREN est inconnu. Recherche " +
+            "partielle, insensible à la casse.",
+        },
+      },
+    },
+    available_in_modes: ['advanced', 'report'],
+  },
+  {
+    name: 'get_dispositif_fiscal',
+    description:
+      "DISPOSITIFS DE DÉFISCALISATION IMMOBILIÈRE : explique un dispositif et/ou chiffre " +
+      "l'avantage fiscal d'une opération. Trois dispositifs sont ouverts aux nouveaux " +
+      "investisseurs au 1er septembre 2026 : " +
+      "JEANBRUN NEUF et JEANBRUN ANCIEN (amortissement créé par la loi de finances 2026, " +
+      "successeur du Pinel), DENORMANDIE (réduction d'impôt, ancien à rénover) et " +
+      "LOC'AVANTAGES (réduction d'impôt, conventionnement Anah). " +
+      "UTILISE CET OUTIL dès qu'on te parle de défiscalisation, de Jeanbrun, de Denormandie, " +
+      "de Loc'Avantages, de Pinel, d'amortissement locatif, de plafonds de loyer ou de " +
+      "ressources : « je peux défiscaliser ? », « le Pinel existe encore ? », « ça donne quoi " +
+      "en Jeanbrun ? », « quel loyer maximum en zone B1 ? ». " +
+      "⚠️ TU NE CALCULES JAMAIS toi-même un avantage fiscal, un taux d'amortissement ou un " +
+      "plafond de loyer : tous les barèmes changent chaque année et tes valeurs seraient " +
+      "périmées. Appelle l'outil, même pour une question qui te semble simple. " +
+      "MODE EXPLICATION : sans `prix_acquisition`, l'outil renvoie la fiche du dispositif — " +
+      "mécanique, conditions, date limite, pièges courants. Utilise-le pour répondre à " +
+      "« comment ça marche ? ». " +
+      "MODE CALCUL : avec `prix_acquisition`, il chiffre l'avantage année par année. " +
+      "DISPOSITIF CLOS : passe le nom au paramètre `dispositif` (« pinel », « censi-bouvard »…) " +
+      "et l'outil répond qu'il est fermé, depuis quand, et par quoi il est remplacé. " +
+      "⚠️ RESTITUTION : relaie TOUJOURS le champ `constats`. Un constat « bloquant » signifie " +
+      "que l'investisseur n'a PAS droit au dispositif — ne présente jamais le chiffre sans le " +
+      "motif. Cite le millésime des barèmes et termine par la mention de validation " +
+      "professionnelle : la fiscalité n'est pas un domaine où l'à-peu-près est acceptable.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        dispositif: {
+          type: 'string',
+          description:
+            "Dispositif visé. Ouverts : jeanbrun_neuf, jeanbrun_ancien, denormandie, " +
+            "loc_avantages. Tu peux aussi passer le nom d'un dispositif clos (pinel, " +
+            "censi-bouvard, scellier, cosse, duflot, borloo…) pour savoir s'il existe encore. " +
+            "Omets ce paramètre pour obtenir la liste de tout ce qui est ouvert.",
+        },
+        prix_acquisition: {
+          type: 'number',
+          description:
+            "Prix d'acquisition NET DE FRAIS en € (prix + frais de notaire). Sa présence " +
+            "bascule l'outil en mode calcul. Ne l'invente pas : demande-le.",
+        },
+        travaux: {
+          type: 'number',
+          description:
+            "Montant des travaux facturés par une entreprise, en €. Indispensable au " +
+            "Jeanbrun ancien et au Denormandie, qui imposent tous deux un seuil de travaux.",
+        },
+        surface_m2:     { type: 'number', description: 'Surface habitable en m².' },
+        surface_annexes_m2: {
+          type: 'number',
+          description: "Surface des annexes en m² (balcon, cave…). Sert à la surface fiscale de Loc'Avantages.",
+        },
+        zone: {
+          type: 'string',
+          enum: ['Abis', 'A', 'B1', 'B2', 'C'],
+          description: "Zone A/B/C. Si tu ne l'as pas, appelle d'abord get_zonage_abc.",
+        },
+        code_insee: { type: 'string', description: "Code INSEE, requis pour le plafond de loyer communal Loc'Avantages." },
+        niveau_loyer: {
+          type: 'string',
+          enum: ['intermediaire', 'social', 'tres_social'],
+          description: 'Niveau de loyer conventionné (défaut : intermédiaire). Détermine le taux.',
+        },
+        tmi: {
+          type: 'number',
+          enum: [0, 11, 30, 41, 45],
+          description: "Taux marginal d'imposition en %. Défaut 30. Décisif pour un amortissement.",
+        },
+        loyer_mensuel: { type: 'number', description: 'Loyer mensuel hors charges envisagé en €, pour vérifier le plafond.' },
+        duree_engagement: {
+          type: 'number',
+          enum: [6, 9],
+          description: "Denormandie uniquement : durée de l'engagement initial. Il n'existe pas d'engagement de 12 ans.",
+        },
+        prorogations: {
+          type: 'number',
+          enum: [0, 1, 2],
+          description: 'Denormandie : périodes triennales de prorogation envisagées.',
+        },
+        intermediation_locative: {
+          type: 'boolean',
+          description: "Loc'Avantages : passage par un organisme agréé. Ouvre les taux majorés et, seul, le niveau très social.",
+        },
+        habitat_collectif: { type: 'boolean', description: "Le logement est-il dans un immeuble collectif ? Exigé par le Jeanbrun." },
+        dpe_apres_travaux: { type: 'string', description: 'Classe DPE après travaux (A→G). Le Jeanbrun ancien exige A ou B.' },
+        date_acquisition: { type: 'string', description: "Date d'acquisition au format AAAA-MM-JJ, pour contrôler les fenêtres." },
+      },
+    },
+  },
+  {
+    name: 'get_bilan_promoteur',
+    description:
+      "BILAN FINANCIER de l'opération promoteur en cours : prix de revient total, chiffre " +
+      "d'affaires prévisionnel, marge nette en euros et en pourcentage du CA, prix du foncier, " +
+      "fonds propres, crédit de promotion et sa durée, ROI et TRI. " +
+      "UTILISE CET OUTIL dès que la question porte sur l'équilibre financier de l'opération : " +
+      "« quelle marge ? », « est-ce que ça passe ? », « quel est mon prix de revient ? », " +
+      "« combien je peux payer le terrain ? ». " +
+      "⚠️ CET OUTIL NE CALCULE RIEN — il LIT le bilan tel que la page l'a enregistré. Si aucun " +
+      "bilan n'a encore été produit pour l'opération, il te le dit : propose alors " +
+      "action_lancer_etape('bilan') plutôt que d'estimer toi-même. N'invente jamais une marge : " +
+      "un chiffre d'affaires prévisionnel faux se propage dans toute la décision d'achat. " +
+      "⚠️ CONVENTION DE MARGE : le taux de marge promoteur est calculé en pourcentage du CHIFFRE " +
+      "D'AFFAIRES, pas du coût de revient. 15 % ici correspondent à environ 17,6 % dans la " +
+      "convention marchand de biens : ne compare jamais les deux directement.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        study_id: {
+          type: 'string',
+          description:
+            "Identifiant de l'opération. Omets-le pour utiliser l'opération active du contexte " +
+            '`promoteur_chain.study_id`, ce qui est le cas normal.',
+        },
+      },
+    },
+    available_in_modes: ['quick', 'advanced', 'report'],
+  },
+  {
+    name: 'get_contacts_mairies',
+    description:
+      "CONTACTS DES MAIRIES d'un secteur, avec les MAIRES en exercice : nom et prénom du maire, " +
+      "email de la mairie, téléphone, adresse postale, code INSEE, code postal et distance au " +
+      "point de recherche. Un rayon en kilomètres autour d'une commune permet de balayer tout un " +
+      "bassin (« les mairies dans un rayon de 10 km autour du projet »). " +
+      "UTILISE CET OUTIL dès que l'utilisateur veut savoir QUI contacter, où écrire ou téléphoner : " +
+      "prise de rendez-vous en mairie, sollicitation du service urbanisme, prospection foncière " +
+      "auprès des communes d'un secteur, recherche d'un élu. " +
+      "⚠️ N'INVENTE JAMAIS un nom de maire, une adresse email ni un numéro de téléphone : ce sont " +
+      "des données nominatives, une erreur envoie l'utilisateur vers le mauvais interlocuteur. Si " +
+      "l'outil ne renvoie pas le champ, dis qu'il n'est pas disponible. " +
+      "Les mairies sans email renvoient emailMairie à null — signale-le plutôt que de le combler. " +
+      "Pour l'envoi groupé d'emails et l'export, propose la page '/promoteur/recherche-contacts' " +
+      "via action_ouvrir_page. Cite [source: annuaire des mairies / RNE].",
+    input_schema: {
+      type: 'object',
+      properties: {
+        code_insee: { type: 'string', pattern: PATTERN_INSEE, description: DESC_CODE_INSEE },
+        commune:    { type: 'string', description: 'Nom de la commune de référence (repli).' },
+        zip_code:   { type: 'string', description: 'Code postal (repli).' },
+        rayon_km:   {
+          type: 'number',
+          description:
+            "Rayon de recherche en km autour de la commune de référence (1 à 50). " +
+            "Omets-le ou mets 0 pour n'obtenir que la commune elle-même.",
+        },
+        limite: { type: 'number', description: 'Nombre maximum de mairies retournées (défaut 40, max 100).' },
       },
     },
     available_in_modes: ['quick', 'advanced', 'report'],
@@ -3468,6 +3789,69 @@ const TOOLS: ToolDef[] = [
         confirmer:    { type: 'boolean' },
       },
       required: ['libelle'],
+    },
+    available_in_modes: ['quick', 'advanced', 'report'],
+  },
+  {
+    name: 'get_veille_marche',
+    description:
+      "ÉTAT DU MARCHÉ SUR UNE ZONE SURVEILLÉE : nombre d'annonces actives, nouvelles annonces " +
+      "des 7 derniers jours, prix médian au m², délai médian de vente, et deux signaux de " +
+      "synthèse (liquidité, tension). Peut aussi renvoyer un échantillon d'annonces avec leur " +
+      "lien. " +
+      "UTILISE CET OUTIL pour « quoi de neuf sur ma veille ? », « comment évolue le marché à " +
+      "X ? », « combien d'annonces en ce moment ? », « le marché se tend ou se détend ? ». " +
+      "⚠️ NE CONFONDS PAS avec lister_nouveautes_appels_offres, qui concerne les MARCHÉS PUBLICS. " +
+      "Ici il s'agit de la veille IMMOBILIÈRE : des annonces de biens à vendre ou à louer. " +
+      "⚠️ Ces chiffres décrivent les ANNONCES en ligne, pas les ventes réalisées : un prix " +
+      "médian d'annonces est un prix DEMANDÉ, supérieur au prix de transaction. Pour du prix de " +
+      "vente réel, c'est get_dvf_comparables. Dis-le si tu compares les deux. " +
+      "Si la zone n'a jamais été alimentée, l'outil renvoie zéro annonce : propose alors " +
+      "creer_zone_veille, ou l'ouverture de '/veille/marche' via action_ouvrir_page.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        code_postal: { type: 'string', description: "Code postal de la zone (le plus fiable)." },
+        commune:     { type: 'string', description: "Nom de commune, si le code postal est inconnu." },
+        mode: {
+          type: 'string',
+          enum: ['all', 'sale', 'rent'],
+          description: "Ventes, locations, ou les deux. Par défaut : ventes.",
+        },
+        avec_annonces: {
+          type: 'boolean',
+          description: "Joindre un échantillon d'annonces avec leur lien (défaut : non).",
+        },
+      },
+    },
+    available_in_modes: ['quick', 'advanced', 'report'],
+  },
+  {
+    name: 'modifier_veille_appels_offres',
+    description:
+      "ACTION — MODIFIE une veille APPELS D'OFFRES existante : son libellé, ses départements, " +
+      "ses catégories ou son texte de recherche. À utiliser pour « ajoute le 40 à ma veille », " +
+      "« renomme-la », « enlève la catégorie travaux », « change les mots-clés ». " +
+      "Sert aussi à RÉACTIVER une veille désactivée : passe `actif: true`. " +
+      "Ne transmets QUE les champs à changer : ceux que tu omets restent inchangés. " +
+      "⚠️ Les listes sont REMPLACÉES, pas fusionnées. Pour ajouter un département à une veille " +
+      "qui en a déjà, appelle d'abord lister_veilles_appels_offres, lis la liste actuelle, et " +
+      "renvoie la liste COMPLÈTE — sinon tu effaces silencieusement les autres. " +
+      "Protocole en deux temps : premier appel sans `confirmer` = aperçu de l'avant/après, " +
+      "aucune modification ; second appel avec `confirmer: true` après accord explicite. " +
+      "Obtiens l'identifiant via lister_veilles_appels_offres — ne l'invente JAMAIS.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        veille_id:    { type: 'string', description: "UUID de la veille, via lister_veilles_appels_offres." },
+        libelle:      { type: 'string', description: "Nouveau nom de la veille." },
+        departements: { type: 'array', items: { type: 'string' }, description: "Liste COMPLÈTE des codes département (remplace l'ancienne)." },
+        categories:   { type: 'array', items: { type: 'string', enum: ['foncier', 'travaux', 'moe'] }, description: "Liste COMPLÈTE des catégories (remplace l'ancienne)." },
+        texte:        { type: 'string', description: "Nouveaux mots-clés recherchés dans l'objet de l'avis." },
+        actif:        { type: 'boolean', description: "true pour RÉACTIVER une veille désactivée, false pour la désactiver." },
+        confirmer:    { type: 'boolean' },
+      },
+      required: ['veille_id'],
     },
     available_in_modes: ['quick', 'advanced', 'report'],
   },
@@ -3713,20 +4097,18 @@ const TOOLS: ToolDef[] = [
       "ACTION — propose d'OUVRIR une page de l'application. À utiliser quand la réponse utile n'est " +
       "pas un texte mais un écran : l'utilisateur veut voir, saisir ou vérifier quelque chose. Ne " +
       "l'utilise pas pour illustrer un propos — uniquement quand ouvrir la page est l'action " +
-      "attendue. La route doit venir de `promoteur_chain.steps[].route` ou être une route connue de " +
-      "l'application. La route peut inclure des query params (`?tab=`, `?study=`, `?highlight=`). " +
-      "Routes connues utiles : étude de marché promoteur → '/promoteur/marche' (ajoute '?study=<id>' " +
-      "si une opération est active dans `promoteur_chain`, et '&highlight=pdf' si l'utilisateur veut " +
-      "le rapport PDF — la page propose un bouton « Générer le rapport PDF ») ; étude de marché " +
-      "marchand de bien → '/marchand-de-bien/analyse?tab=marche_risques' ; étude de risques " +
-      "promoteur → '/promoteur/risques' ; DVF & comparables → '/promoteur/estimation' ; " +
-      "foncier / PLU / faisabilité → '/promoteur/foncier'. Si l'utilisateur demande à OUVRIR une " +
-      "page ou un onglet (« ouvre l'étude de marché », « ouvre l'onglet PLU »), propose cette " +
-      "action immédiatement — même sans parcelle ni étude en contexte : la page s'occupe de la " +
-      "saisie. Ne demande pas d'adresse ou de parcelle avant d'ouvrir. Si " +
-      "l'utilisateur demande à VOIR une étude en détail (ex. « je veux voir l'étude de marché »), " +
-      "utilise cette action plutôt que de résumer. Rien n'est écrit : l'utilisateur confirme avant " +
-      "que la page s'ouvre.",
+      "attendue. Si l'utilisateur demande à OUVRIR une page ou un onglet (« ouvre l'étude de " +
+      "marché », « ouvre l'onglet PLU »), propose cette action immédiatement — même sans parcelle " +
+      "ni étude en contexte : la page s'occupe de la saisie. Ne demande pas d'adresse ou de " +
+      "parcelle avant d'ouvrir. Si l'utilisateur demande à VOIR une étude en détail, utilise cette " +
+      "action plutôt que de résumer. Rien n'est écrit : l'utilisateur confirme avant que la page " +
+      "s'ouvre.\n\n" +
+      "La route doit être EXACTEMENT l'un des chemins ci-dessous, ou venir de " +
+      "`promoteur_chain.steps[].route`. N'invente jamais de chemin : toute route absente de cette " +
+      "liste est rejetée. Tu peux ajouter des query params (`?study=<id>` quand une opération est " +
+      "active dans `promoteur_chain`, `?tab=`, `&highlight=pdf` pour mettre en avant la génération " +
+      "du rapport PDF).\n\n" +
+      routeCatalogue(),
     input_schema: {
       type: 'object',
       properties: {
@@ -3763,7 +4145,9 @@ const TOOLS: ToolDef[] = [
     name: 'action_lancer_etape',
     description:
       "ACTION — propose de LANCER une étape de la chaîne promoteur (enveloppe, programmation, bilan, " +
-      "synthèse…). N'appelle JAMAIS cet outil sur une étape dont `runnable` est false dans " +
+      "synthèse…). ⚠️ Cet outil ne couvre QUE la chaîne promoteur : pour les espaces marchand de " +
+      "bien, particulier, réhabilitation et assurance, il n'existe pas de chaîne d'étapes — utilise " +
+      "`action_ouvrir_page` avec la route correspondante. N'appelle JAMAIS cet outil sur une étape dont `runnable` est false dans " +
       "`promoteur_chain` : explique d'abord ce qui la bloque et propose l'étape amont. Utilise-le " +
       "aussi pour relancer une étape passée en `stale` après modification d'une étape amont. " +
       "⚠️ Le calcul est fait par la PAGE de l'étape, pas par toi : n'annonce jamais un résultat " +
@@ -3808,6 +4192,8 @@ async function executeTool(
     case 'creer_veille_appels_offres':   return await toolCreerVeilleAo(input, ctx, auth);
     case 'lister_veilles_appels_offres': return await toolListerVeillesAo(input, ctx, auth);
     case 'lister_nouveautes_appels_offres': return await toolNouveautesAo(input, ctx, auth);
+    case 'get_veille_marche':              return await toolVeilleMarche(input, ctx);
+    case 'modifier_veille_appels_offres':   return await toolModifierVeilleAo(input, ctx, auth);
     case 'desactiver_veille_appels_offres': return await toolDesactiverVeilleAo(input, ctx, auth);
     case 'marquer_nouveautes_lues':         return await toolMarquerNouveautesLues(input, ctx, auth);
     case 'lister_zones_veille':      return await toolListerZonesVeille(input, ctx, auth);
@@ -3841,6 +4227,11 @@ async function executeTool(
     case 'get_equipements_proches':  return await toolEquipementsProches(input, ctx);
     case 'get_logement_social':      return await toolLogementSocial(input, ctx);
     case 'get_contexte_commune':     return await toolContexteCommune(input, ctx);
+    case 'get_contacts_mairies':     return await toolContactsMairies(input, ctx);
+    case 'get_bilan_promoteur':      return await toolBilanPromoteur(input, ctx);
+    case 'get_analyse_predictive':   return await toolAnalysePredictive(input, ctx);
+    case 'get_dispositif_fiscal':    return await toolDispositifFiscal(input, ctx);
+    case 'get_proprietaire_parcelle': return await toolProprietaireParcelle(input, ctx);
     case 'get_zonage_plu':           return await toolZonagePlu(input, ctx);
     case 'get_prescriptions_urbanisme': return await toolPrescriptionsUrbanisme(input, ctx);
     case 'action_ouvrir_page':       return toolActionOuvrirPage(input, ctx);
@@ -3905,18 +4296,27 @@ function toolActionOuvrirPage(input: Record<string, unknown>, ctx: MimmozaContex
   }
   const path = route.split('?')[0];
   const known = readChain(ctx).steps.find((s) => s.route === route || s.route?.split('?')[0] === path);
-  const FRIENDLY: Record<string, string> = {
-    '/promoteur/marche': "l'étude de marché",
-    '/marchand-de-bien/marche': "l'étude de marché",
-    '/marchand-de-bien/analyse': "l'analyse",
-    '/promoteur/risques': "l'étude de risques",
-    '/promoteur/estimation': 'DVF & comparables',
-    '/promoteur/foncier': 'le foncier / PLU',
-  };
-  const friendly = route.includes('tab=marche_risques') ? "l'étude de marché" : FRIENDLY[path];
+
+  // La route doit exister. Sans cette garde, le modèle invente des chemins et
+  // l'utilisateur atterrit sur la redirection catch-all de App.tsx.
+  // Les routes de la chaîne promoteur sont admises telles quelles : elles
+  // viennent du contexte, pas du modèle.
+  if (!known && !isKnownRoute(route)) {
+    const proches = suggestRoutes(route);
+    const piste = proches.length
+      ? ` Routes proches : ${proches.map((r) => `${r.path} (${r.label})`).join(', ')}.`
+      : '';
+    return {
+      status: 'error',
+      source: 'copilot',
+      message: `La route « ${route} » n'existe pas dans l'application.${piste}`,
+    };
+  }
+
+  const label = known?.label ?? routeLabel(path);
   return proposal({
     kind: 'open_page',
-    label: known?.label ? `Ouvrir ${known.label}` : friendly ? `Ouvrir ${friendly}` : 'Ouvrir la page',
+    label: label && label !== path ? `Ouvrir ${label}` : 'Ouvrir la page',
     summary: raison || `Ouvrir ${route}`,
     params: { route },
   });
@@ -5186,19 +5586,54 @@ async function toolSitadel(input: Record<string, unknown>, ctx: MimmozaContext):
     // ⚠️ Contrat promoteur-permis-construire : latitude/longitude OBLIGATOIRES.
     //    commune=null volontaire → le rayon capte aussi les permis des communes
     //    voisines (le « projet à côté »), non bridé par la limite administrative.
+    // Filtres : la fonction cible les applique côté serveur, AVANT le plafond de
+    // 100 permis. Les figer en dur (ce qui était le cas) obligeait le modèle à
+    // trier lui-même 100 permis triés par date — donc à rater le plus gros
+    // projet du secteur dès que le rayon en contenait davantage. Les valeurs par
+    // défaut ci-dessous reproduisent exactement l'ancien comportement.
+    const trierPar = str(input.trier_par);
+    const sortBy = trierPar === 'distance' || trierPar === 'logements' || trierPar === 'surface'
+      ? trierPar
+      : 'date';
+
     const body = {
       latitude: lat,
       longitude: lon,
       radiusKm: rayonKm,
       periodMonths,
-      typeAutorisation: 'all',
-      typologie: 'all',
+      typeAutorisation: str(input.type_autorisation) ?? 'all',
+      typologie: str(input.typologie) ?? 'all',
+      logementsMin: num(input.logements_min) ?? null,
+      logementsMax: num(input.logements_max) ?? null,
+      surfaceMin: num(input.surface_min) ?? null,
+      surfaceMax: num(input.surface_max) ?? null,
       commune: null,
       limit: 100,   // borne maxLimit de promoteur-permis-construire
       offset: 0,
-      sortBy: 'date',
-      sortOrder: 'desc',
+      sortBy,
+      // Distance : le plus proche d'abord. Tout le reste : le plus grand ou le
+      // plus récent d'abord — c'est ce qu'on cherche dans chacun de ces tris.
+      sortOrder: sortBy === 'distance' ? 'asc' : 'desc',
     };
+    // Un filtre appliqué voyage AVEC la donnée, comme l'échelle géographique :
+    // sans cela le modèle présente un sous-ensemble comme le total du secteur.
+    const filtres: Record<string, unknown> = {};
+    if (body.typeAutorisation !== 'all') filtres.type_autorisation = body.typeAutorisation;
+    if (body.typologie !== 'all')        filtres.typologie = body.typologie;
+    if (body.logementsMin != null)       filtres.logements_min = body.logementsMin;
+    if (body.logementsMax != null)       filtres.logements_max = body.logementsMax;
+    if (body.surfaceMin != null)         filtres.surface_min = body.surfaceMin;
+    if (body.surfaceMax != null)         filtres.surface_max = body.surfaceMax;
+    if (Object.keys(filtres).length > 0) {
+      perimetre.filtres = filtres;
+      perimetre.avertissement_filtres =
+        `⚠️ Ces chiffres ne portent PAS sur tous les permis du rayon : un filtre a été appliqué ` +
+        `(${Object.entries(filtres).map(([k, v]) => `${k}=${v}`).join(', ')}). Annonce ce filtre, et ne ` +
+        `présente jamais ces totaux comme l'activité complète du secteur. Pour le total, rappelle ` +
+        `l'outil sans filtre.`;
+    }
+    if (sortBy !== 'date') perimetre.tri = sortBy;
+
     const raw = await callInternalFunction(INTERNAL_FUNCTIONS.sitadel, body);
     const s = summarizeSitadel(raw, { rayonKm, periodMonths, precision });
     // Le périmètre voyage AVEC la donnée : le modèle ne peut plus l'ignorer.
@@ -5362,6 +5797,824 @@ async function toolLogementSocial(
     );
   } catch (e) {
     return avecAjustement({ status: 'error', source: INTERNAL_FUNCTIONS.sru, message: errMsg(e) }, insee);
+  }
+}
+
+// ─── get_bilan_promoteur ────────────────────────────────────────────────────
+//
+// Choix d'architecture, et pourquoi il compte
+// -------------------------------------------
+// Cet outil LIT le bilan persisté ; il ne le RECALCULE pas. La tentation était
+// de porter `computeProForma` (BilanPromoteurPage.tsx) côté serveur pour que
+// le chat puisse répondre sans que la page ait tourné. C'est précisément ce
+// qu'il ne fallait pas faire : l'audit de cette session a passé l'essentiel de
+// son temps à réconcilier des calculs dupliqués — SHAB à deux coefficients,
+// quatre hauteurs de bâtiment, quatre diviseurs de logements, deux barèmes de
+// coûts. Ajouter une seconde implémentation du bilan aurait recréé le problème
+// à l'endroit le plus coûteux : les euros.
+//
+// Le chat lit donc la même source que l'écran. S'ils divergent un jour, c'est
+// qu'il y a un bug de persistance, pas deux moteurs — une erreur trouvable.
+//
+// Conséquence assumée : sans bilan enregistré, l'outil ne répond pas un chiffre
+// mais un statut, et le modèle propose de lancer l'étape.
+
+interface BilanPersiste {
+  prix_foncier: number | null;
+  prix_revient_total: number | null;
+  ca_previsionnel: number | null;
+  marge_nette: number | null;
+  taux_marge_nette_pct: number | null;
+  fonds_propres: number | null;
+  credit_promotion: number | null;
+  taux_credit_pct: number | null;
+  duree_mois: number | null;
+  roi_pct: number | null;
+  tri_pct: number | null;
+  notes: string | null;
+  done: boolean;
+}
+
+// ─── get_analyse_predictive ───────────────────────────────────────────────────
+//
+// Projection de valeur à 6 / 12 / 18 / 24 mois, avec scénarios prudent, central
+// et optimiste, régime de marché et facteurs explicatifs.
+//
+// Ce que cet outil change
+// -----------------------
+// Le moteur prédictif existait déjà, mais uniquement dans le front : le chat en
+// recevait un instantané SEULEMENT quand l'utilisateur se trouvait sur la page
+// qui l'avait calculé. Depuis l'accueil, « quelle tendance à Saint-Cloud ? »
+// n'avait aucune réponse possible. Le copilote pouvait lire une prédiction, pas
+// en produire une.
+//
+// Il appelle maintenant le MÊME moteur, importé depuis _shared/predictive/.
+//
+// Ce qu'il va chercher lui-même, et pourquoi
+// ------------------------------------------
+// DVF et taux BCE sont les deux entrées portantes : la première ancre le prix
+// au marché local constaté, la seconde donne la pression crédit, qui est LE
+// déterminant macro de l'immobilier. Elles sont récupérées en parallèle.
+//
+// Les enrichissements (DPE, géorisques, loyers, PLU) ne sont PAS refetchés :
+// le modèle les a souvent déjà obtenus dans le même échange via les outils
+// dédiés, et les repasser en paramètres évite d'empiler les appels réseau.
+// Chaque entrée absente dégrade la confiance, elle n'est jamais inventée.
+// ── Dispositifs fiscaux d'investissement locatif ─────────────────────────────
+//
+// L'outil a deux modes. Sans prix d'acquisition, il explique ; avec, il chiffre.
+// Il répond aussi sur les dispositifs fermés, parce que « le Pinel existe-t-il
+// encore ? » est une vraie question d'investisseur, et que se taire dessus
+// laisserait le modèle y répondre de mémoire — avec des barèmes de 2024.
+
+// ── Propriétaire personne morale d'une parcelle ──────────────────────────────
+//
+// Ne renvoie QUE des personnes morales : sociétés, SCI, foncières,
+// collectivités, associations. C'est une limite de droit, pas de données.
+//
+// L'identité des propriétaires personnes physiques figure dans les fichiers
+// fonciers (MAJIC), dont l'accès est réservé aux acteurs publics
+// (BOI-CAD-DIFF-20-20-10-30 § 30) et dont l'acte d'engagement interdit
+// expressément tout démarchage commercial. Le fichier des personnes morales,
+// lui, est publié en Licence Ouverte 2.0.
+//
+// Piège à ne jamais laisser passer : l'ABSENCE de résultat ne signifie pas que
+// le bien appartient à un particulier. Le fichier source exclut aussi les
+// sociétés unipersonnelles et les entrepreneurs individuels.
+
+async function toolProprietaireParcelle(
+  input: Record<string, unknown>,
+  ctx: MimmozaContext,
+): Promise<ToolResult> {
+  const SOURCE = 'DGFiP — Fichiers des parcelles des personnes morales (Licence Ouverte 2.0)';
+
+  const admin = getAdmin();
+  const siren = str(input.siren)?.replace(/\s/gu, '');
+  const denomination = str(input.denomination);
+
+  // ── Recherche inverse : que détient cette société ? ──
+  if (siren || denomination) {
+    let requete = admin
+      .from('proprietaires_personnes_morales')
+      .select('idu, code_insee, commune_nom, section, numero_parcelle, denomination, siren, forme_juridique, nom_voie, numero_voirie, millesime')
+      .order('code_insee', { ascending: true })
+      .limit(200);
+
+    if (siren) {
+      if (!/^[0-9]{9}$/.test(siren)) {
+        return {
+          status: 'error',
+          source: SOURCE,
+          message: `« ${siren} » n'est pas un SIREN valide : neuf chiffres attendus.`,
+        };
+      }
+      requete = requete.eq('siren', siren);
+    } else {
+      requete = requete.ilike('denomination', `%${denomination}%`);
+    }
+
+    const { data, error } = await requete;
+    if (error) {
+      console.error('[proprietaire_parcelle] recherche inverse:', error);
+      return { status: 'error', source: SOURCE, message: error.message };
+    }
+    if (!data || data.length === 0) {
+      return {
+        status: 'not_found',
+        source: SOURCE,
+        data: { recherche: siren ?? denomination, parcelles: [] },
+        message:
+          `Aucune parcelle trouvée pour « ${siren ?? denomination} » dans les départements importés. ` +
+          `Cela peut vouloir dire que la société ne détient rien, ou simplement que son ` +
+          `département n'a pas encore été chargé.`,
+      };
+    }
+
+    return {
+      status: 'ok',
+      source: SOURCE,
+      data: {
+        recherche: siren ?? denomination,
+        nombre_parcelles: data.length,
+        tronque: data.length === 200,
+        parcelles: data,
+        attribution: 'Source : DGFiP — Fichiers des parcelles des personnes morales',
+      },
+    };
+  }
+
+  // ── Recherche directe : qui détient cette parcelle ? ──
+  let idu = str(input.cadastral_ref)?.replace(/\s/gu, '').toUpperCase() ?? null;
+
+  if (!idu) {
+    const insee = str(input.code_insee);
+    const section = str(input.section);
+    const numero = str(input.numero);
+    if (insee && section && numero) {
+      const prefixe = (str(input.prefixe) ?? '').padStart(3, '0');
+      idu = `${insee}${prefixe}${section.padStart(2, '0')}${numero.padStart(4, '0')}`;
+    }
+  }
+
+  // Repli sur la parcelle du contexte de page, si le modèle n'a rien fourni.
+  if (!idu && ctx.parcel?.cadastral_ref) {
+    idu = ctx.parcel.cadastral_ref.replace(/\s/gu, '').toUpperCase();
+  }
+
+  if (!idu || idu.length !== 14) {
+    return {
+      status: 'not_found',
+      source: SOURCE,
+      message:
+        "Référence cadastrale manquante ou mal formée : il faut un IDU de 14 caractères, " +
+        "ou le triplet code INSEE + section + numéro. Demande-le plutôt que de le deviner.",
+    };
+  }
+
+  const { data, error } = await admin
+    .from('proprietaires_personnes_morales')
+    .select('denomination, siren, forme_juridique, forme_juridique_code, code_droit, nom_voie, numero_voirie, commune_nom, code_insee, section, numero_parcelle, millesime')
+    .eq('idu', idu)
+    .order('millesime', { ascending: false });
+
+  if (error) {
+    console.error('[proprietaire_parcelle] lecture:', error);
+    return { status: 'error', source: SOURCE, message: error.message };
+  }
+
+  const AVERTISSEMENT_ABSENCE =
+    "⚠️ Une absence de résultat ne signifie PAS que le bien appartient à un particulier. " +
+    "Ce fichier ne recense que les personnes morales, et il exclut par construction les " +
+    "sociétés unipersonnelles et les entrepreneurs individuels. Il se peut aussi que le " +
+    "département n'ait pas encore été importé. Ne conclus rien sur l'identité du propriétaire.";
+
+  if (!data || data.length === 0) {
+    return {
+      status: 'not_found',
+      source: SOURCE,
+      data: {
+        idu,
+        proprietaires: [],
+        avertissement: AVERTISSEMENT_ABSENCE,
+        recours_legal:
+          "Pour connaître le propriétaire d'une parcelle précise, quel qu'il soit, la voie " +
+          "légale est la demande de relevé de propriété (formulaire 6815-EM-SD) auprès du " +
+          "centre des impôts fonciers. Elle est gratuite mais ponctuelle : cinq demandes par " +
+          "semaine et dix par mois au maximum.",
+      },
+      message: `Aucune personne morale enregistrée sur la parcelle ${idu}. ${AVERTISSEMENT_ABSENCE}`,
+    };
+  }
+
+  // Ne garder que le millésime le plus récent : les précédents restent en base
+  // pour l'historique, mais les mélanger donnerait de faux copropriétaires.
+  const millesimeRecent = data[0].millesime;
+  const courants = data.filter((r) => r.millesime === millesimeRecent);
+  const millesimesAnterieurs = [...new Set(data.map((r) => r.millesime))].filter(
+    (m) => m !== millesimeRecent,
+  );
+
+  return {
+    status: 'ok',
+    source: SOURCE,
+    data: {
+      idu,
+      millesime: millesimeRecent,
+      nombre_titulaires: courants.length,
+      proprietaires: courants.map((r) => ({
+        denomination: r.denomination,
+        siren: r.siren,
+        siren_exploitable: r.siren !== null,
+        forme_juridique: r.forme_juridique,
+        code_droit: r.code_droit,
+        adresse_du_bien: [r.numero_voirie, r.nom_voie].filter(Boolean).join(' ') || null,
+        commune: r.commune_nom,
+      })),
+      millesimes_anterieurs_disponibles: millesimesAnterieurs,
+      note_siren:
+        courants.some((r) => r.siren === null)
+          ? "Certains titulaires n'ont pas de SIREN exploitable : la DGFiP leur attribue un " +
+            "identifiant fictif, qui ne correspond à aucune entreprise réelle. Il a été écarté."
+          : null,
+      note_pluralite:
+        courants.length > 1
+          ? "Plusieurs titulaires de droits sur cette parcelle : indivision, usufruit ou " +
+            "nue-propriété. Le code droit précise la nature de chacun."
+          : null,
+      attribution:
+        `Source : DGFiP — Fichiers des parcelles des personnes morales, situation au ` +
+        `1er janvier ${millesimeRecent}.`,
+    },
+  };
+}
+
+async function toolDispositifFiscal(
+  input: Record<string, unknown>,
+  ctx: MimmozaContext,
+): Promise<ToolResult> {
+  const SOURCE = 'Dispositifs fiscaux Mimmoza (BOFiP / Legifrance)';
+
+  const demande = str(input.dispositif)?.toLowerCase().replace(/[\s'-]/gu, '_') ?? '';
+  const prix = num(input.prix_acquisition);
+
+  // — Dispositif clos : on le dit, on ne calcule pas —
+  if (demande) {
+    const clos = trouverDispositifClos(demande.replace(/_/gu, ' '));
+    if (clos) {
+      return {
+        ok: true,
+        source: SOURCE,
+        data: {
+          statut: 'dispositif_clos',
+          nom: clos.nom,
+          ferme_depuis: clos.finPourNouveauxInvestisseurs,
+          remplace_par: clos.remplacePar,
+          precision: clos.precision,
+          dispositifs_ouverts: Object.values(FICHES_DISPOSITIFS).map((f) => ({
+            code: f.code,
+            libelle: f.libelle,
+            mecanique: f.mecanique,
+          })),
+          message:
+            `${clos.nom} n'est plus ouvert aux nouveaux investissements depuis le ` +
+            `${clos.finPourNouveauxInvestisseurs}. ${clos.precision}`,
+        },
+      };
+    }
+  }
+
+  const codesOuverts: DispositifCode[] = [
+    'jeanbrun_neuf', 'jeanbrun_ancien', 'denormandie', 'loc_avantages',
+  ];
+  const code = codesOuverts.find((c) => c === demande);
+
+  // — Aucun dispositif nommé : on liste ce qui est ouvert —
+  if (!code) {
+    if (demande) {
+      return {
+        ok: true,
+        source: SOURCE,
+        data: {
+          statut: 'dispositif_inconnu',
+          demande,
+          message:
+            `« ${demande} » ne correspond à aucun dispositif connu, ouvert ou clos. ` +
+            `Ne suppose pas qu'il existe : demande à l'utilisateur de préciser.`,
+          dispositifs_ouverts: Object.values(FICHES_DISPOSITIFS),
+        },
+      };
+    }
+    return {
+      ok: true,
+      source: SOURCE,
+      data: {
+        statut: 'liste',
+        millesime_baremes: MILLESIME_BAREMES,
+        dispositifs_ouverts: Object.values(FICHES_DISPOSITIFS),
+        dispositifs_clos: listerDispositifsClos(),
+      },
+    };
+  }
+
+  const fiche = FICHES_DISPOSITIFS[code];
+
+  // — Mode explication —
+  if (prix === null || prix <= 0) {
+    return {
+      ok: true,
+      source: SOURCE,
+      data: {
+        statut: 'explication',
+        fiche,
+        millesime_baremes: MILLESIME_BAREMES,
+        message:
+          "Fiche du dispositif, sans chiffrage. Pour calculer l'avantage, rappelle cet " +
+          "outil avec le prix d'acquisition net de frais.",
+      },
+    };
+  }
+
+  // — Mode calcul —
+  const niveauLoyerBrut = str(input.niveau_loyer);
+  const niveauLoyer: NiveauLoyer =
+    niveauLoyerBrut === 'social' || niveauLoyerBrut === 'tres_social'
+      ? niveauLoyerBrut
+      : 'intermediaire';
+
+  const zoneBrute = str(input.zone);
+  const zone = (['Abis', 'A', 'B1', 'B2', 'C'] as const).find((z) => z === zoneBrute);
+
+  const logement = {
+    prixAcquisitionNetFraisEur: prix,
+    travauxEur: num(input.travaux) ?? undefined,
+    surfaceHabitableM2: num(input.surface_m2) ?? undefined,
+    surfaceAnnexesM2: num(input.surface_annexes_m2) ?? undefined,
+    zone,
+    codeInsee: str(input.code_insee) ?? undefined,
+    loyerMensuelHcEur: num(input.loyer_mensuel) ?? undefined,
+    habitatCollectif: typeof input.habitat_collectif === 'boolean' ? input.habitat_collectif : undefined,
+    dpeApresTravaux: str(input.dpe_apres_travaux) ?? undefined,
+    dateAcquisition: str(input.date_acquisition) ?? undefined,
+  };
+
+  const tmiBrut = num(input.tmi);
+  const situation = {
+    tmiPct: tmiBrut !== null && [0, 11, 30, 41, 45].includes(tmiBrut) ? tmiBrut : 30,
+  };
+  const tmiParDefaut = tmiBrut === null;
+
+  let resultat;
+  if (code === 'jeanbrun_neuf') {
+    resultat = calculerJeanbrunNeuf({ logement, situation, niveauLoyer });
+  } else if (code === 'jeanbrun_ancien') {
+    resultat = calculerJeanbrunAncien({ logement, situation, niveauLoyer });
+  } else if (code === 'denormandie') {
+    const duree = num(input.duree_engagement);
+    const prorog = num(input.prorogations);
+    resultat = calculerDenormandie({
+      logement,
+      situation,
+      dureeEngagementAns: duree === 6 ? 6 : 9,
+      prorogationsTriennales: prorog === 1 ? 1 : prorog === 2 ? 2 : 0,
+    });
+  } else {
+    // Loc'Avantages : le plafond de loyer est communal. On tente de le lire ;
+    // son absence produit un avertissement du moteur, jamais un plafond inventé.
+    let plafondCommunal: number | undefined;
+    if (logement.codeInsee) {
+      // Barème public de référence : lecture par le client admin, comme les
+      // autres tables de référentiel. `ctx` est le contexte de page envoyé par
+      // le front, il ne porte aucun accès base.
+      const { data, error } = await getAdmin()
+        .from('plafonds_loyer_locavantages')
+        .select('plafond_intermediaire, plafond_social, plafond_tres_social')
+        .eq('code_insee', logement.codeInsee)
+        .eq('millesime', MILLESIME_BAREMES)
+        .maybeSingle();
+      if (error) console.error('[dispositif_fiscal] plafond communal illisible:', error);
+      if (data) {
+        plafondCommunal =
+          niveauLoyer === 'social' ? Number(data.plafond_social)
+            : niveauLoyer === 'tres_social' ? Number(data.plafond_tres_social)
+              : Number(data.plafond_intermediaire);
+      }
+    }
+    resultat = calculerLocAvantages({
+      logement,
+      situation,
+      niveauLoyer,
+      intermediationLocative: input.intermediation_locative === true,
+      plafondLoyerCommunalEurM2: plafondCommunal,
+      revenusBrutsAnnuelsEur: logement.loyerMensuelHcEur
+        ? logement.loyerMensuelHcEur * 12
+        : undefined,
+    });
+  }
+
+  const bloquants = resultat.constats.filter((c) => c.niveau === 'bloquant');
+
+  return {
+    ok: true,
+    source: SOURCE,
+    data: {
+      statut: 'calcul',
+      fiche,
+      resultat,
+      // Remonté à part pour que le modèle ne puisse pas le manquer.
+      eligible: resultat.eligible,
+      motifs_de_refus: bloquants.map((c) => c.message),
+      tmi_par_defaut: tmiParDefaut,
+      avertissement_tmi: tmiParDefaut
+        ? "TMI non fournie : 30 % retenu par défaut. Sur un amortissement, le gain varie " +
+          "du simple au double entre 11 % et 45 % — demande-la avant de présenter le chiffre " +
+          'comme celui de l\'utilisateur.'
+        : null,
+      mention_obligatoire: 'À faire valider par un professionnel.',
+    },
+  };
+}
+
+async function toolAnalysePredictive(
+  input: Record<string, unknown>,
+  ctx: MimmozaContext,
+): Promise<ToolResult> {
+  const SOURCE = 'Analyse prédictive Mimmoza';
+
+  const surfaceM2 = num(input.surface_m2);
+  const acquisitionPrice = num(input.prix_acquisition);
+
+  // Ces deux valeurs ne se devinent pas : sans elles il n'y a pas de projection,
+  // seulement une moyenne de quartier déguisée en prédiction.
+  if (surfaceM2 == null || surfaceM2 <= 0 || acquisitionPrice == null || acquisitionPrice <= 0) {
+    return {
+      status: 'empty', source: SOURCE,
+      message:
+        "Il manque la SURFACE (m²) et le PRIX D'ACQUISITION (€) — sans eux, aucune " +
+        "projection n'est possible. Demande-les à l'utilisateur. Ne les estime PAS " +
+        "toi-même à partir du marché local : ce serait projeter une moyenne de " +
+        "quartier en la présentant comme l'analyse de SON bien.",
+    };
+  }
+
+  const ref = readChain(ctx);
+  const insee = await resolveCommune({
+    code_insee: str(input.code_insee) ?? ref.code_insee,
+    commune: str(input.commune) ?? ref.commune,
+    zip_code: str(input.code_postal) ?? ref.zip_code,
+  });
+
+  const codePostal = str(input.code_postal) ?? insee.cp ?? ref.zip_code ?? '';
+  const typeBienBrut = str(input.type_bien) ?? 'appartement';
+  const typeBien = (['appartement', 'maison', 'immeuble', 'terrain', 'commerce'] as const)
+    .includes(typeBienBrut as never)
+    ? (typeBienBrut as PredictiveEngineInput['typeBien'])
+    : 'appartement';
+
+  // DVF et BCE en parallèle : deux réseaux indépendants, aucune raison de les
+  // enchaîner. Chacun échoue seul, sans emporter l'autre.
+  const [dvfRes, ecbRes] = await Promise.allSettled([
+    (async () => {
+      if (!INTERNAL_FUNCTIONS.dvf && !INTERNAL_FUNCTIONS.smartscore) return null;
+      return await toolDvfComparables(
+        { commune: insee.nom ?? undefined, code_insee: insee.code ?? undefined,
+          zip_code: codePostal || undefined },
+        ctx,
+      );
+    })(),
+    fetchEcbRatesAnalysis(),
+  ]);
+
+  const dvfOut = dvfRes.status === 'fulfilled' ? dvfRes.value : null;
+  const dvfData = (dvfOut?.status === 'ok' ? dvfOut.data : null) as Record<string, unknown> | null;
+  const ecb = ecbRes.status === 'fulfilled' ? ecbRes.value : null;
+
+  const prixM2Median = num((dvfData as any)?.prix_m2_median ?? (dvfData as any)?.prixM2Median);
+  const nbTransactions = num((dvfData as any)?.nb_ventes ?? (dvfData as any)?.nbTransactions);
+
+  const moteurInput: PredictiveEngineInput = {
+    surfaceM2,
+    acquisitionPrice,
+    codePostal,
+    typeBien,
+    travauxEstime: num(input.travaux_estime) ?? 0,
+    fraisAnnexes: num(input.frais_annexes) ?? 0,
+    horizonDetention: num(input.horizon_mois) ?? undefined,
+    dvf: prixM2Median != null
+      ? { prixM2Median, nbTransactions: nbTransactions ?? undefined }
+      : undefined,
+    dpe: str(input.dpe)?.trim().toUpperCase().match(/\b([A-G])\b/)?.[1],
+    loyerMedianZone: num(input.loyer_median_m2) ?? undefined,
+    tauxBcePct: ecb?.refinancingRate,
+    ecbAnalysis: ecb ?? undefined,
+  } as PredictiveEngineInput;
+
+  try {
+    const snapshot = computePredictiveSnapshot(moteurInput);
+
+    // Le périmètre voyage AVEC la projection : ce qui a nourri le calcul, et ce
+    // qui manquait. Sans cela, une projection appuyée sur zéro transaction DVF
+    // ressemble exactement à une projection appuyée sur soixante.
+    const entrees = {
+      dvf_disponible: prixM2Median != null,
+      dvf_nb_transactions: nbTransactions ?? 0,
+      taux_bce: ecb ? `${ecb.refinancingRate} % (${ecb.source === 'ecb' ? 'relevé BCE' : 'valeur de repli'})` : 'indisponible',
+      dpe_fourni: moteurInput.dpe ?? null,
+      loyer_fourni: moteurInput.loyerMedianZone ?? null,
+    };
+
+    const manquants: string[] = [];
+    if (prixM2Median == null) manquants.push('DVF (aucun comparable)');
+    if (!moteurInput.dpe) manquants.push('DPE');
+    if (moteurInput.loyerMedianZone == null) manquants.push('loyer de référence');
+    if (ecb?.source === 'fallback') manquants.push('taux BCE réels (repli utilisé)');
+
+    return {
+      status: 'ok', source: SOURCE,
+      data: { projection: snapshot, entrees, entrees_manquantes: manquants },
+      message:
+        `Projection calculée sur ${entrees.dvf_nb_transactions} transaction(s) DVF. ` +
+        (manquants.length
+          ? `⚠️ Entrées manquantes : ${manquants.join(', ')}. ANNONCE-LES : une projection ` +
+            `sans DVF ni DPE repose sur des hypothèses de marché, pas sur ce bien. ` +
+            `Le champ confidenceScore le reflète — cite-le. `
+          : '') +
+        `Présente les trois scénarios, jamais le seul central : donner un chiffre unique ` +
+        `pour une projection à 24 mois est une fausse précision. Rappelle que c'est une ` +
+        `projection de modèle, pas une estimation contractuelle.`,
+    };
+  } catch (e) {
+    return { status: 'error', source: SOURCE, message: errMsg(e) };
+  }
+}
+
+async function toolBilanPromoteur(
+  input: Record<string, unknown>,
+  ctx: MimmozaContext,
+): Promise<ToolResult> {
+  const studyId = str(input.study_id) ?? readChain(ctx).study_id ?? null;
+  if (!studyId) {
+    return {
+      status: 'empty',
+      source: 'Bilan promoteur',
+      message:
+        "Aucune opération promoteur active. Demande à l'utilisateur laquelle il vise, ou " +
+        "propose action_creer_operation s'il n'en a pas encore.",
+    };
+  }
+
+  try {
+    const { data, error } = await getAdmin()
+      .from('promoteur_studies')
+      .select('id, title, bilan, foncier, updated_at')
+      .eq('id', studyId)
+      .maybeSingle();
+
+    if (error) {
+      return { status: 'error', source: 'Bilan promoteur', message: error.message };
+    }
+    if (!data) {
+      return {
+        status: 'not_found',
+        source: 'Bilan promoteur',
+        message: `Aucune opération ne porte l'identifiant ${studyId}.`,
+      };
+    }
+
+    const bilan = (data.bilan ?? null) as BilanPersiste | null;
+    const caRenseigne = typeof bilan?.ca_previsionnel === 'number' && bilan.ca_previsionnel > 0;
+
+    if (!bilan || !caRenseigne) {
+      return {
+        status: 'empty',
+        source: 'Bilan promoteur',
+        data: { study_id: data.id, titre: data.title ?? null },
+        message:
+          `L'opération « ${data.title ?? studyId} » n'a pas encore de bilan enregistré. ` +
+          "N'estime AUCUN chiffre toi-même : propose action_lancer_etape('bilan') pour que la " +
+          'page le produise.',
+      };
+    }
+
+    const communeInsee = (data.foncier as Record<string, unknown> | null)?.commune_insee ?? null;
+
+    return {
+      status: 'ok',
+      source: 'Bilan promoteur (Mimmoza)',
+      data: {
+        study_id: data.id,
+        titre: data.title ?? null,
+        commune_insee: communeInsee,
+        enregistre_le: data.updated_at ?? null,
+        // Le drapeau `done` distingue un bilan validé d'un brouillon en cours.
+        bilan_finalise: bilan.done === true,
+        prix_foncier_eur: bilan.prix_foncier,
+        prix_revient_total_eur: bilan.prix_revient_total,
+        ca_previsionnel_eur: bilan.ca_previsionnel,
+        marge_nette_eur: bilan.marge_nette,
+        taux_marge_nette_pct: bilan.taux_marge_nette_pct,
+        convention_marge: 'marge / chiffre d\'affaires (convention promoteur)',
+        fonds_propres_eur: bilan.fonds_propres,
+        credit_promotion_eur: bilan.credit_promotion,
+        taux_credit_pct: bilan.taux_credit_pct,
+        duree_operation_mois: bilan.duree_mois,
+        roi_pct: bilan.roi_pct,
+        tri_pct: bilan.tri_pct,
+        notes: bilan.notes,
+      },
+      message: bilan.done === true
+        ? undefined
+        : 'Bilan encore à l\'état de brouillon : les chiffres peuvent changer.',
+    };
+  } catch (e) {
+    return { status: 'error', source: 'Bilan promoteur', message: errMsg(e) };
+  }
+}
+
+// ─── get_contacts_mairies (branché sur recherche-contacts-mairies-v1 via COPILOT_FN_CONTACTS) ──
+//
+// Miroir serveur de src/spaces/promoteur/services/rechercheContacts.service.ts.
+// Deux temps, comme côté front :
+//   1. la fonction interne renvoie les mairies du secteur ;
+//   2. les maires manquants sont complétés depuis public.maires_rne.
+// L'étape 2 ne remplace jamais une valeur déjà fournie par la fonction : elle
+// ne comble que les cellules vides, exactement comme enrichRowsWithMaires().
+
+interface MairieRow {
+  code_insee: string | null;
+  commune: string;
+  code_postal: string | null;
+  maire: string | null;
+  email: string | null;
+  telephone: string | null;
+  adresse: string | null;
+  distance_km: number | null;
+}
+
+/** Les clés varient selon la source ; on accepte les trois graphies connues. */
+function pickField(r: Record<string, unknown>, ...keys: string[]): string | null {
+  for (const k of keys) {
+    const v = r[k];
+    if (typeof v === 'string' && v.trim().length > 0) return v.trim();
+  }
+  return null;
+}
+
+function normalizeMairieRows(raw: unknown): MairieRow[] {
+  const container = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : {};
+  const list = Array.isArray(container.rows) ? container.rows
+    : Array.isArray(container.results) ? container.results
+    : Array.isArray(container.data) ? container.data
+    : Array.isArray(raw) ? raw
+    : [];
+
+  const out: MairieRow[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const r = item as Record<string, unknown>;
+    const commune = pickField(r, 'commune', 'nom_commune', 'nomCommune', 'ville');
+    if (!commune) continue;
+
+    const civilite = pickField(r, 'civiliteMaire', 'civilite_maire', 'civilite');
+    const prenom   = pickField(r, 'prenomMaire', 'prenom_maire', 'prenom');
+    const nom      = pickField(r, 'nomMaire', 'nom_maire', 'nom');
+    const maire    = [civilite, prenom, nom].filter(Boolean).join(' ') || null;
+
+    out.push({
+      code_insee:  pickField(r, 'codeInsee', 'code_insee', 'insee', 'codeCommune', 'code_commune'),
+      commune,
+      code_postal: pickField(r, 'codePostal', 'code_postal', 'cp'),
+      maire,
+      email:       pickField(r, 'emailMairie', 'email_mairie', 'email'),
+      telephone:   pickField(r, 'telephoneMairie', 'telephone_mairie', 'telephone', 'tel'),
+      adresse:     pickField(r, 'adresseMairie', 'adresse_mairie', 'adresse'),
+      distance_km: num(r.distanceKm) ?? num(r.distance_km) ?? null,
+    });
+  }
+  return out;
+}
+
+/** Complète les maires manquants depuis public.maires_rne. Jamais bloquant. */
+async function enrichirMaires(rows: MairieRow[]): Promise<MairieRow[]> {
+  const manquants = rows.filter((r) => !r.maire && r.code_insee);
+  if (manquants.length === 0) return rows;
+
+  const codes = [...new Set(manquants.map((r) => r.code_insee as string))];
+  try {
+    const { data, error } = await getAdmin()
+      .from('maires_rne')
+      .select('code_insee, civilite, prenom, nom')
+      .in('code_insee', codes);
+    if (error || !Array.isArray(data)) return rows;
+
+    const parInsee = new Map<string, string>();
+    for (const item of data as Array<Record<string, unknown>>) {
+      const code = typeof item.code_insee === 'string' ? item.code_insee : null;
+      if (!code) continue;
+      const label = [item.civilite, item.prenom, item.nom]
+        .map((v) => (typeof v === 'string' && v.trim().length > 0 ? v.trim() : null))
+        .filter(Boolean)
+        .join(' ');
+      if (label) parInsee.set(code, label);
+    }
+
+    return rows.map((r) =>
+      !r.maire && r.code_insee && parInsee.has(r.code_insee)
+        ? { ...r, maire: parInsee.get(r.code_insee) ?? null }
+        : r,
+    );
+  } catch {
+    // L'absence de maire n'invalide pas les coordonnées de la mairie.
+    return rows;
+  }
+}
+
+async function toolContactsMairies(
+  input: Record<string, unknown>,
+  ctx: MimmozaContext,
+): Promise<ToolResult> {
+  if (!INTERNAL_FUNCTIONS.contacts) {
+    return {
+      status: 'not_configured', source: 'Contacts mairies',
+      message:
+        "Le service Contacts mairies n'est pas encore branché (COPILOT_FN_CONTACTS non défini). " +
+        "Signale-le sans inventer de nom d'élu ni de coordonnées ; propose la page " +
+        "'/promoteur/recherche-contacts' via action_ouvrir_page.",
+    };
+  }
+
+  // Même garde que les autres outils communaux : le code INSEE n'est jamais lu
+  // brut depuis l'input, il est vérifié au référentiel.
+  const ref = resolveParcelRef(input, ctx);
+  const insee = await resoudreInseeFiable(input, ctx, ref);
+  if (!insee.code) return echecInsee(insee, 'Contacts mairies');
+
+  const rayonDemande = num(input.rayon_km) ?? 0;
+  const rayonKm = rayonDemande > 0 ? Math.min(50, Math.max(1, rayonDemande)) : null;
+  const limite = Math.min(100, Math.max(1, num(input.limite) ?? 40));
+
+  try {
+    // ⚠️ `recherche-contacts-mairies-v1` ne comprend PAS un code INSEE.
+    // Son résolveur (searchCommunes) ne connaît que trois formes : un code
+    // postal à 5 chiffres, un code de département, ou un NOM de commune.
+    // On lui envoyait `insee.code` — « 64065 » pour Ascain — qu'il prenait
+    // pour un code postal ; le vrai code postal étant 64310, la recherche ne
+    // renvoyait rien et l'outil répondait « aucune mairie trouvée » sur une
+    // commune parfaitement couverte.
+    //
+    // On envoie donc ce que la fonction sait lire, dans l'ordre de précision
+    // décroissante pour le PIVOT du rayon : le nom de commune d'abord — un
+    // code postal en couvre souvent plusieurs (64310 = Ascain, Saint-Pée et
+    // Sare), et le pivot déterminerait alors mal le centre du rayon.
+    const requete = insee.nom ?? insee.cp ?? insee.code;
+    const raw = await callInternalFunction(INTERNAL_FUNCTIONS.contacts, {
+      query: requete,
+      radiusKm: rayonKm,
+    });
+
+    const rows = await enrichirMaires(normalizeMairieRows(raw));
+    if (rows.length === 0) {
+      return avecAjustement({
+        status: 'empty', source: INTERNAL_FUNCTIONS.contacts,
+        // La requête réellement envoyée est nommée : un « aucun résultat » qui
+        // ne dit pas CE QUI a été cherché rend le diagnostic impossible — c'est
+        // ce qui a masqué le fait qu'on envoyait un code INSEE là où la
+        // fonction attend un nom de commune ou un code postal.
+        data: { requete_envoyee: requete, rayon_km: rayonKm },
+        message: rayonKm
+          ? `Aucune mairie trouvée dans un rayon de ${rayonKm} km autour de « ${requete} ».`
+          : `Aucune coordonnée de mairie disponible pour « ${requete} ».`,
+      }, insee);
+    }
+
+    const tries = [...rows].sort((a, b) => (a.distance_km ?? 0) - (b.distance_km ?? 0));
+    const retenues = tries.slice(0, limite);
+    const sansEmail = retenues.filter((r) => !r.email).length;
+    const sansMaire = retenues.filter((r) => !r.maire).length;
+
+    return avecAjustement({
+      status: 'ok',
+      source: INTERNAL_FUNCTIONS.contacts,
+      data: {
+        commune_centre: insee.nom ?? insee.code,
+        code_insee_centre: insee.code,
+        rayon_km: rayonKm,
+        total_trouve: rows.length,
+        nombre_retourne: retenues.length,
+        mairies: retenues,
+        // Signalé explicitement pour que le modèle décrive les trous au lieu
+        // de les combler : ce sont des données nominatives.
+        mairies_sans_email: sansEmail,
+        mairies_sans_maire_connu: sansMaire,
+      },
+      message: rows.length > retenues.length
+        ? `${rows.length} mairies trouvées, ${retenues.length} retournées (les plus proches).`
+        : undefined,
+    }, insee);
+  } catch (e) {
+    return avecAjustement(
+      { status: 'error', source: INTERNAL_FUNCTIONS.contacts, message: errMsg(e) },
+      insee,
+    );
   }
 }
 
@@ -5605,7 +6858,7 @@ async function toolCreerZoneVeille(
   // ── Temps 1 : APERÇU, aucune écriture ────────────────────────
   if (input.confirmer !== true) {
     return avecAjustement({
-      status: 'ok', source: SOURCE,
+      status: 'confirmation_requise', source: SOURCE,
       data: {
         confirmation_requise: true,
         action: 'création d\'une zone de veille',
@@ -5621,6 +6874,7 @@ async function toolCreerZoneVeille(
           "que le centre est celui de la commune, propose-lui d'ouvrir la parcelle ou de préciser " +
           "un point. Rappelle UNIQUEMENT après son accord explicite, avec confirmer: true.",
       },
+      message: "RIEN N'A ÉTÉ MODIFIÉ. Ceci est un APERÇU. Présente-le à l'utilisateur, attends son accord, puis RAPPELLE CE MÊME OUTIL avec confirmer: true. N'annonce jamais l'action comme faite tant que tu n'as pas reçu une réponse portant le statut ok.",
     }, insee);
   }
 
@@ -5756,7 +7010,7 @@ async function toolCreerWatchlist(
 
   if (input.confirmer !== true) {
     return {
-      status: 'ok', source: SOURCE,
+      status: 'confirmation_requise', source: SOURCE,
       data: {
         confirmation_requise: true,
         action: `création de ${lignes.length} watchlist(s) de biens`,
@@ -5773,6 +7027,7 @@ async function toolCreerWatchlist(
             : '') +
           " Rappelle ensuite avec confirmer: true.",
       },
+      message: "RIEN N'A ÉTÉ MODIFIÉ. Ceci est un APERÇU. Présente-le à l'utilisateur, attends son accord, puis RAPPELLE CE MÊME OUTIL avec confirmer: true. N'annonce jamais l'action comme faite tant que tu n'as pas reçu une réponse portant le statut ok.",
     };
   }
 
@@ -5799,6 +7054,54 @@ async function toolCreerWatchlist(
   }
 }
 
+/**
+ * Compte les éléments DÉSACTIVÉS d'une famille de veille, et en nomme quelques-uns.
+ *
+ * Pourquoi les trois listings en ont besoin
+ * -----------------------------------------
+ * Un listing qui ne trouve aucun élément ACTIF répondait « aucun ». Le modèle
+ * en concluait « vous n'avez rien », et l'utilisateur — qui se souvient
+ * parfaitement d'avoir créé cette veille — en déduisait qu'elle avait été
+ * supprimée. Il la recréait alors en double, ou pire, croyait le produit
+ * défaillant. Or l'élément est là, simplement éteint : c'est un fait
+ * vérifiable, et il tient en une requête.
+ *
+ * Renvoie `null` quand il n'y a rien de désactivé non plus, pour que l'appelant
+ * distingue « rien du tout » de « rien d'actif ».
+ */
+async function compterInactives(
+  db: ReturnType<typeof getUserClient>,
+  table: string,
+  colonneLibelle: string,
+  colonneActif = 'is_active',
+): Promise<{ inactives: number; exemples: string[] } | null> {
+  try {
+    const { data } = await db.from(table)
+      .select(colonneLibelle).eq(colonneActif, false)
+      .order('created_at', { ascending: false }).limit(5);
+    const lignes = data ?? [];
+    if (lignes.length === 0) return null;
+    return {
+      inactives: lignes.length,
+      exemples: lignes
+        .map((r) => String((r as Record<string, unknown>)[colonneLibelle] ?? '').trim())
+        .filter(Boolean),
+    };
+  } catch {
+    // Le décompte est un confort : son échec ne doit pas casser le listing.
+    return null;
+  }
+}
+
+/** Message uniforme quand rien n'est actif mais que des éléments existent, éteints. */
+function messageInactives(famille: string, off: { inactives: number; exemples: string[] }, outilReactivation: string): string {
+  const noms = off.exemples.length ? ` : ${off.exemples.join(', ')}` : '';
+  return `Aucune ${famille} ACTIVE, mais ${off.inactives} DÉSACTIVÉE(S) existe(nt)${noms}. ` +
+    `DIS-LE à l'utilisateur et nomme-les — n'écris jamais « vous n'avez rien », ce serait faux ` +
+    `par omission et il la recréerait en double. N'évoque ni une suppression, ni un autre compte, ` +
+    `ce serait faux. Propose de la réactiver (${outilReactivation}) ou d'en créer une nouvelle.`;
+}
+
 async function toolListerWatchlists(
   input: Record<string, unknown>, _ctx: MimmozaContext, auth: AuthCtx | null,
 ): Promise<ToolResult> {
@@ -5814,10 +7117,23 @@ async function toolListerWatchlists(
     if (error) throw new Error(error.message);
     const w = data ?? [];
     if (w.length === 0) {
+      const rappelFamilles =
+        " Cela ne dit RIEN des zones de veille ni des veilles appels d'offres, qui ont leurs propres outils.";
+      const off = input.inclure_inactives !== true
+        ? await compterInactives(db, 'user_watchlists', 'name')
+        : null;
+      if (off) {
+        return {
+          status: 'not_found', source: SOURCE,
+          data: { actives: 0, inactives: off.inactives, watchlists_inactives: off.exemples },
+          message: messageInactives('watchlist de biens', off, 'creer_watchlist ou la page Watchlists') + rappelFamilles,
+        };
+      }
       return {
         status: 'not_found', source: SOURCE,
+        data: { actives: 0, inactives: 0 },
         message: "Aucune watchlist de biens" + (input.inclure_inactives === true ? '' : ' active') +
-                 ". Cela ne dit RIEN des zones de veille ni des veilles appels d'offres, qui ont leurs propres outils.",
+                 ", et aucune désactivée non plus." + rappelFamilles,
       };
     }
     const dernier = await dernierRapprochementWatchlist(db);
@@ -5862,9 +7178,10 @@ async function toolDesactiverWatchlist(
 
   if (input.confirmer !== true) {
     return {
-      status: 'ok', source: SOURCE,
+      status: 'confirmation_requise', source: SOURCE,
       data: { confirmation_requise: true, action: 'désactivation d\'une watchlist', watchlist: wl,
               note: "RIEN N'A ÉTÉ MODIFIÉ. Fais valider, puis rappelle avec confirmer: true." },
+      message: "RIEN N'A ÉTÉ MODIFIÉ. Ceci est un APERÇU. Présente-le à l'utilisateur, attends son accord, puis RAPPELLE CE MÊME OUTIL avec confirmer: true. N'annonce jamais l'action comme faite tant que tu n'as pas reçu une réponse portant le statut ok.",
     };
   }
 
@@ -5932,7 +7249,7 @@ async function toolCreerVeilleAo(
 
   if (input.confirmer !== true) {
     return {
-      status: 'ok', source: SOURCE,
+      status: 'confirmation_requise', source: SOURCE,
       data: {
         confirmation_requise: true,
         action: 'création d\'une veille APPELS D\'OFFRES (marchés publics, pas immobilier)',
@@ -5945,6 +7262,7 @@ async function toolCreerVeilleAo(
           "voulait bien une veille APPELS D'OFFRES et non une veille IMMOBILIÈRE : les deux se " +
           "demandent avec les mêmes mots. Rappelle ensuite avec confirmer: true.",
       },
+      message: "RIEN N'A ÉTÉ MODIFIÉ. Ceci est un APERÇU. Présente-le à l'utilisateur, attends son accord, puis RAPPELLE CE MÊME OUTIL avec confirmer: true. N'annonce jamais l'action comme faite tant que tu n'as pas reçu une réponse portant le statut ok.",
     };
   }
 
@@ -5962,6 +7280,223 @@ async function toolCreerVeilleAo(
       status: 'error', source: SOURCE,
       message: `Création refusée par la base : ${errMsg(e)}. La veille n'a PAS été créée — dis-le clairement.`,
     };
+  }
+}
+
+// ─── get_veille_marche (branché sur market-metrics-zone-v1) ─────────────────
+//
+// Le manque comblé : le chat savait CRÉER une zone de veille mais jamais la
+// consulter. « Quoi de neuf sur mon secteur ? » n'avait aucune réponse
+// possible, alors que trois fonctions déployées calculent ces métriques et que
+// la page /veille/marche les affiche. Créer sans pouvoir lire était
+// l'asymétrie la plus visible du produit.
+//
+// Contrat vérifié dans market-metrics-zone-v1 avant d'écrire l'appel :
+// `{ zip_code, city, transaction_mode, include_samples, sample_limit }`.
+// C'est le code postal qui identifie une zone, PAS le code INSEE — la leçon
+// de recherche-contacts-mairies-v1.
+
+async function toolVeilleMarche(
+  input: Record<string, unknown>,
+  ctx: MimmozaContext,
+): Promise<ToolResult> {
+  const SOURCE = 'Veille marché Mimmoza';
+  if (!INTERNAL_FUNCTIONS.metrics_zone) {
+    return {
+      status: 'not_configured', source: SOURCE,
+      message:
+        "Le service Veille marché n'est pas branché (COPILOT_FN_METRICS_ZONE non défini). " +
+        "Signale-le sans inventer de chiffres ; propose la page '/veille/marche' via action_ouvrir_page.",
+    };
+  }
+
+  const cp = str(input.code_postal) ?? ctx.parcel?.code_postal ?? (ctx as any).zip_code ?? null;
+  const commune = str(input.commune) ?? ctx.parcel?.commune ?? (ctx as any).city ?? null;
+  if (!cp && !commune) {
+    return {
+      status: 'not_found', source: SOURCE,
+      message: "Aucune zone identifiable. Demande à l'utilisateur le code postal ou la commune.",
+    };
+  }
+
+  const mode = str(input.mode);
+  const transactionMode = mode === 'rent' || mode === 'all' ? mode : 'sale';
+  const avecAnnonces = input.avec_annonces === true;
+
+  try {
+    const raw = await callInternalFunction(INTERNAL_FUNCTIONS.metrics_zone, {
+      ...(cp ? { zip_code: cp } : {}),
+      ...(commune ? { city: commune } : {}),
+      transaction_mode: transactionMode,
+      dry_run: true,          // lecture seule : on ne réécrit pas les métriques
+      include_samples: avecAnnonces,
+      sample_limit: avecAnnonces ? 10 : 0,
+    });
+
+    const r = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : {};
+    const m = (r.metrics && typeof r.metrics === 'object') ? r.metrics as Record<string, unknown> : null;
+    if (!m) {
+      return { status: 'empty', source: SOURCE,
+               data: { zone_demandee: cp ?? commune },
+               message: `Aucune métrique disponible pour « ${cp ?? commune} ».` };
+    }
+
+    const actives = num(m.active_listings) ?? 0;
+    if (actives === 0) {
+      return {
+        status: 'empty', source: SOURCE,
+        data: { zone_demandee: cp ?? commune, zone_key: m.zone_key ?? null },
+        message:
+          `Aucune annonce active sur « ${cp ?? commune} ». Soit la zone n'a jamais été alimentée, ` +
+          `soit le marché y est à l'arrêt — ne tranche pas sans le dire. Propose creer_zone_veille ` +
+          `si l'utilisateur n'a pas encore de veille sur ce secteur.`,
+      };
+    }
+
+    return {
+      status: 'ok',
+      source: `${SOURCE} (annonces en ligne)`,
+      data: {
+        zone: { code_postal: cp, commune, cle: m.zone_key ?? null },
+        mode: transactionMode,
+        annonces_actives: actives,
+        nouvelles_7j: num(m.new_listings_7d) ?? 0,
+        // ⚠️ Prix DEMANDÉ, pas prix de transaction : à ne pas confondre avec DVF.
+        prix_median_m2_demande: num(m.median_price_m2),
+        delai_median_vente_jours: num(m.median_days_on_market),
+        signal_liquidite: m.liquidity_signal ?? null,
+        signal_tension: m.tension_signal ?? null,
+        calcule_le: m.computed_at ?? null,
+        ...(avecAnnonces && Array.isArray(r.samples) ? { annonces: r.samples } : {}),
+      },
+      message:
+        "Le prix médian ci-dessus est un prix DEMANDÉ en annonce, pas un prix de vente réalisé. " +
+        "Si tu le compares à une médiane DVF, dis-le explicitement.",
+    };
+  } catch (e) {
+    return { status: 'error', source: SOURCE, message: errMsg(e) };
+  }
+}
+
+// ─── modifier_veille_appels_offres ──────────────────────────────────────────
+//
+// Même protocole en deux temps que la désactivation. Deux précautions propres
+// à la modification :
+//
+//   • Les listes (départements, catégories) sont REMPLACÉES, pas fusionnées.
+//     L'aperçu montre donc l'avant ET l'après, pour que l'utilisateur voie ce
+//     qu'il perd. Sans cela, « ajoute le 40 » effacerait le 64 en silence.
+//   • On refuse de vider la portée : une veille sans département ni texte ne
+//     remonterait plus rien, tout en restant affichée comme active.
+
+async function toolModifierVeilleAo(
+  input: Record<string, unknown>, _ctx: MimmozaContext, auth: AuthCtx | null,
+): Promise<ToolResult> {
+  const SOURCE = 'Veilles appels d\'offres Mimmoza';
+  if (!auth?.userId || !auth.authHeader) return refuseSansIdentite(SOURCE);
+
+  const id = str(input.veille_id);
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!id || !UUID_RE.test(id)) {
+    return {
+      status: 'not_found', source: SOURCE,
+      message: "Identifiant de veille absent ou invalide. Appelle lister_veilles_appels_offres pour l'obtenir — ne l'invente pas.",
+    };
+  }
+
+  const db = getUserClient(auth.authHeader);
+  let veille: Record<string, unknown> | null = null;
+  try {
+    const { data, error } = await db.from('ao_watches')
+      .select('id, label, departements, categories, texte, is_active').eq('id', id).maybeSingle();
+    if (error) throw new Error(error.message);
+    veille = data ?? null;
+  } catch (e) {
+    return { status: 'error', source: SOURCE, message: errMsg(e) };
+  }
+  if (!veille) {
+    return {
+      status: 'not_found', source: SOURCE,
+      message: `Aucune veille appels d'offres accessible sous l'identifiant ${id}. Ne prétends pas l'avoir modifiée.`,
+    };
+  }
+
+  // Champs effectivement fournis. Les autres ne sont pas touchés.
+  const listeStr = (v: unknown): string[] | undefined =>
+    Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : undefined;
+
+  const patch: Record<string, unknown> = {};
+  const libelle = str(input.libelle);
+  if (libelle) patch.label = libelle;
+  const deps = listeStr(input.departements);
+  if (deps) patch.departements = deps;
+  const cats = listeStr(input.categories);
+  if (cats) patch.categories = cats;
+  if (typeof input.texte === 'string') patch.texte = input.texte.trim();
+  // Réactivation : c'est le seul moyen de rallumer une veille depuis le chat.
+  // `desactiver_veille_appels_offres` ne sait qu'éteindre, si bien qu'une
+  // veille coupée était définitivement hors de portée du copilote.
+  if (typeof input.actif === 'boolean') patch.is_active = input.actif;
+
+  if (Object.keys(patch).length === 0) {
+    return {
+      status: 'not_found', source: SOURCE,
+      message: "Aucun champ à modifier n'a été fourni. Précise ce que l'utilisateur veut changer : libellé, départements, catégories ou texte.",
+    };
+  }
+
+  // Portée résultante : on refuse de rendre la veille muette.
+  const depsApres = (patch.departements ?? veille.departements ?? []) as string[];
+  const texteApres = (patch.texte ?? veille.texte ?? '') as string;
+  if ((!Array.isArray(depsApres) || depsApres.length === 0) && !String(texteApres).trim()) {
+    return {
+      status: 'not_found', source: SOURCE,
+      message:
+        "Cette modification laisserait la veille SANS PORTÉE — ni département, ni texte de " +
+        "recherche. Elle ne remonterait plus aucun avis tout en restant affichée comme active. " +
+        "Demande à l'utilisateur de conserver au moins un département ou des mots-clés.",
+    };
+  }
+
+  if (input.confirmer !== true) {
+    return {
+      status: 'confirmation_requise', source: SOURCE,
+      data: {
+        confirmation_requise: true,
+        action: "modification d'une veille APPELS D'OFFRES",
+        avant: {
+          libelle: veille.label, departements: veille.departements,
+          categories: veille.categories, texte: veille.texte,
+          active: veille.is_active,
+        },
+        apres: {
+          libelle: patch.label ?? veille.label,
+          departements: patch.departements ?? veille.departements,
+          categories: patch.categories ?? veille.categories,
+          texte: patch.texte ?? veille.texte,
+          active: patch.is_active ?? veille.is_active,
+        },
+        note: "Les listes sont REMPLACÉES, pas fusionnées : montre l'avant/après à l'utilisateur.",
+      },
+      message:
+        "RIEN N'A ÉTÉ MODIFIÉ. Ceci est un APERÇU. Présente l'avant/après à l'utilisateur, " +
+        "attends son accord, puis RAPPELLE CE MÊME OUTIL avec confirmer: true. " +
+        "N'annonce jamais la modification comme faite tant que tu n'as pas reçu une réponse " +
+        "portant le statut ok.",
+    };
+  }
+
+  try {
+    patch.updated_at = new Date().toISOString();
+    const { data, error } = await db.from('ao_watches')
+      .update(patch).eq('id', id)
+      .select('id, label, departements, categories, texte, is_active').single();
+    if (error) throw new Error(error.message);
+    console.log('[verbe] veille AO modifiee', id);
+    return { status: 'ok', source: SOURCE, data: { modifiee: true, veille_id: id, veille: data } };
+  } catch (e) {
+    return { status: 'error', source: SOURCE,
+             message: `Modification refusée : ${errMsg(e)}. La veille est INCHANGÉE.` };
   }
 }
 
@@ -6003,12 +7538,13 @@ async function toolDesactiverVeilleAo(
 
   if (input.confirmer !== true) {
     return {
-      status: 'ok', source: SOURCE,
+      status: 'confirmation_requise', source: SOURCE,
       data: {
         confirmation_requise: true,
         action: 'désactivation d\'une veille APPELS D\'OFFRES', veille,
         note: "RIEN N'A ÉTÉ MODIFIÉ. Fais valider, puis rappelle avec confirmer: true. Réversible : la veille n'est pas supprimée.",
       },
+      message: "RIEN N'A ÉTÉ MODIFIÉ. Ceci est un APERÇU. Présente-le à l'utilisateur, attends son accord, puis RAPPELLE CE MÊME OUTIL avec confirmer: true. N'annonce jamais l'action comme faite tant que tu n'as pas reçu une réponse portant le statut ok.",
     };
   }
 
@@ -6034,8 +7570,13 @@ async function toolNouveautesAo(
 
   try {
     const db = getUserClient(auth.authHeader);
+    // ⚠️ Jointure INTERNE sur la veille parente ACTIVE. Sans elle, les
+    // nouveautés d'une veille éteinte continuaient de remonter — la même
+    // incohérence que l'accueil, qui affichait une alerte pour une veille
+    // désactivée depuis une semaine.
     let q = db.from('ao_watch_events')
-      .select('id, avis_id, objet, acheteur, url, departements, zone_incertaine, date_limite, is_read, created_at, ao_watches(label)')
+      .select('id, avis_id, objet, acheteur, url, departements, zone_incertaine, date_limite, is_read, created_at, ao_watches!inner(label, is_active)')
+      .eq('ao_watches.is_active', true)
       .order('date_limite', { ascending: true, nullsFirst: false })
       .limit(limite);
     if (input.inclure_lues !== true) q = q.eq('is_read', false);
@@ -6140,10 +7681,32 @@ async function toolListerVeillesAo(
     if (error) throw new Error(error.message);
     const v = data ?? [];
     if (v.length === 0) {
+      // ⚠️ Ne pas s'arrêter à « aucune veille active ». Une veille DÉSACTIVÉE
+      // reste une veille : la passer sous silence poussait le modèle à
+      // spéculer — « elle a peut-être été supprimée, ou rattachée à un autre
+      // compte » — alors que la réponse exacte était à un compte de distance.
+      // Une hypothèse inquiétante à la place d'un fait vérifiable est le pire
+      // service qu'on puisse rendre.
+      const off = input.inclure_inactives !== true
+        ? await compterInactives(db, 'ao_watches', 'label')
+        : null;
+
+      if (off) {
+        return {
+          status: 'not_found', source: SOURCE,
+          data: { actives: 0, inactives: off.inactives, veilles_inactives: off.exemples },
+          message: messageInactives(
+            "veille appels d'offres", off,
+            'modifier_veille_appels_offres avec actif: true',
+          ),
+        };
+      }
+
       return {
         status: 'not_found', source: SOURCE,
+        data: { actives: 0, inactives: 0 },
         message: "Aucune veille appels d'offres" + (input.inclure_inactives === true ? '' : ' active') +
-                 ". Propose d'en créer une, sans le faire de ta propre initiative.",
+                 ", et aucune désactivée non plus. Propose d'en créer une, sans le faire de ta propre initiative.",
       };
     }
     return { status: 'ok', source: SOURCE, data: { total: v.length, veilles: v } };
@@ -6169,10 +7732,22 @@ async function toolListerZonesVeille(
 
     const zones = data ?? [];
     if (zones.length === 0) {
+      const off = input.inclure_inactives !== true
+        ? await compterInactives(db, 'watch_zones', 'label')
+        : null;
+      if (off) {
+        return {
+          status: 'not_found', source: SOURCE,
+          data: { actives: 0, inactives: off.inactives, zones_inactives: off.exemples },
+          message: messageInactives('zone de veille', off, 'creer_zone_veille'),
+        };
+      }
       return {
         status: 'not_found', source: SOURCE,
+        data: { actives: 0, inactives: 0 },
         message: "L'utilisateur n'a aucune zone de veille" +
-          (input.inclure_inactives === true ? '.' : ' active.') +
+          (input.inclure_inactives === true ? '' : ' active') +
+          ", et aucune désactivée non plus." +
           " Propose-lui d'en créer une avec creer_zone_veille, sans le faire de ta propre initiative.",
       };
     }
@@ -6223,11 +7798,12 @@ async function toolDesactiverZoneVeille(
 
   if (input.confirmer !== true) {
     return {
-      status: 'ok', source: SOURCE,
+      status: 'confirmation_requise', source: SOURCE,
       data: {
         confirmation_requise: true, action: 'désactivation d\'une zone de veille', zone,
         note: "RIEN N'A ÉTÉ MODIFIÉ. Fais valider par l'utilisateur, puis rappelle avec confirmer: true. La désactivation est réversible : la zone n'est pas supprimée.",
       },
+      message: "RIEN N'A ÉTÉ MODIFIÉ. Ceci est un APERÇU. Présente-le à l'utilisateur, attends son accord, puis RAPPELLE CE MÊME OUTIL avec confirmer: true. N'annonce jamais l'action comme faite tant que tu n'as pas reçu une réponse portant le statut ok.",
     };
   }
 
@@ -6677,6 +8253,14 @@ function buildPredictiveSnapshotBlock(ps: NonNullable<MimmozaContext['predictive
     if (ps.rentabilite.marge_brute != null)        lines.push(`- Marge brute : ${ps.rentabilite.marge_brute.toLocaleString('fr-FR')} €`);
     if (ps.rentabilite.marge_brute_pct != null)    lines.push(`- Marge brute % : ${ps.rentabilite.marge_brute_pct}%`);
     if (ps.rentabilite.prix_revente_cible != null) lines.push(`- Prix revente cible : ${ps.rentabilite.prix_revente_cible.toLocaleString('fr-FR')} €`);
+    if (ps.rentabilite.tri_pct != null)            lines.push(`- TRI : ${ps.rentabilite.tri_pct}%`);
+    if (ps.rentabilite.cout_projet != null)        lines.push(`- Coût de projet : ${ps.rentabilite.cout_projet.toLocaleString('fr-FR')} €`);
+    if (ps.rentabilite.cout_achat != null)         lines.push(`- Coût d'acquisition : ${ps.rentabilite.cout_achat.toLocaleString('fr-FR')} €`);
+    // La convention est rappelée à chaque fois : côté marchand la marge se
+    // rapporte au COÛT DE REVIENT, côté promoteur au CHIFFRE D'AFFAIRES. Sans
+    // ce rappel, le modèle compare des taux qui ne sont pas homogènes.
+    if (ps.rentabilite.marge_brute_pct != null)
+      lines.push("- Convention : marge rapportée au coût de revient (convention marchand de biens). 15 % ici ≈ 13 % en convention promoteur.");
     lines.push('');
   }
 
@@ -7065,8 +8649,30 @@ function buildSystemPrompt(ctx: MimmozaContext, mode: CopilotMode): string {
   // Chaîne d'opération promoteur : où en est le projet, ce qui est lançable.
   const chainBlock = buildPromoteurChainBlock(ctx);
 
+  // ⚠️ RÈGLE DE PRÉSÉANCE — indispensable.
+  //
+  // Les règles numérotées plus bas nomment une dizaine d'outils à l'impératif
+  // (« tu appelles TOUJOURS get_couts_renovation »), alors qu'elles sont
+  // rédigées SANS SAVOIR quels outils ont survécu au filtrage par mode et par
+  // intention. En mode `quick`, huit outils sont absents ; le sélecteur peut
+  // en retirer d'autres. Le modèle recevait donc des ordres portant sur des
+  // outils qu'il n'avait pas — d'où des tentatives d'appel en échec, ou des
+  // réponses qui s'excusaient de ne pas pouvoir faire ce que le prompt exigeait.
+  //
+  // Cette phrase est placée EN TÊTE, avant toute règle, pour lever
+  // l'ambiguïté une fois pour toutes.
+  const preseanceOutils =
+    "RÈGLE DE PRÉSÉANCE — la liste d'outils qui t'est fournie dans cette requête " +
+    "fait AUTORITÉ sur toutes les règles ci-dessous. Plusieurs règles nomment un " +
+    "outil à l'impératif : elles s'appliquent UNIQUEMENT si cet outil figure dans " +
+    "ta liste. S'il en est absent, tu ne tentes pas de l'appeler, tu n'inventes " +
+    "pas son résultat, et tu ne t'excuses pas : tu réponds avec ce dont tu " +
+    "disposes, et tu signales en une phrase quelle information n'a pas pu être " +
+    "vérifiée. Un outil absent n'est jamais une raison de ne pas répondre.";
+
   return [
     "Tu es Mimmoza Copilot, l'assistant IA intégré à la plateforme Mimmoza (intelligence immobilière et foncière française).",
+    preseanceOutils,
     verticalLine[ctx.vertical],
     `Contexte : route ${ctx.route}. ${parcelLine}`,
     chainBlock,
@@ -7124,6 +8730,29 @@ function buildSystemPrompt(ctx: MimmozaContext, mode: CopilotMode): string {
     "4tervicies. PORTÉE D\'UN OUTIL — un outil ne voit QUE son domaine. Une réponse vide signifie « rien dans CE périmètre », jamais « cet objet n\'existe pas ». Tu ne conclus JAMAIS qu\'une chose n\'a pas été enregistrée, a échoué ou n\'existe pas en te fondant sur un outil qui couvre un AUTRE domaine — et surtout pas après avoir toi-même annoncé une création réussie : si tu ne retrouves pas ce que tu viens de créer, c\'est que tu interroges le mauvais outil. Dans ce cas, cherche l\'outil du bon domaine ou dis que tu ne peux pas vérifier, mais n\'annonce pas à l\'utilisateur que son enregistrement a disparu. Chaque famille d\'objets a ses propres verbes : veilles immobilières (creer/lister/desactiver_zone_veille) et veilles appels d\'offres (creer/lister/desactiver_veille_appels_offres) sont deux familles SÉPARÉES.",
     "4duovicies. DEUX VEILLES DISTINCTES — chez Mimmoza, « surveille tel secteur » est AMBIGU : cela peut désigner une veille IMMOBILIÈRE (biens, marché, opportunités d\'achat) ou une veille APPELS D\'OFFRES (marchés publics, cessions de terrains publics, concessions d\'aménagement). Les deux se formulent avec les mêmes mots et n\'ont rien à voir. Tant que l\'utilisateur n\'a pas levé l\'ambiguïté, tu NE CRÉES RIEN et tu lui POSES la question en une phrase. Ne devine pas depuis le métier de l\'utilisateur ni depuis la page où il se trouve : un promoteur suit les deux.",
     "4unvicies. IDENTIFIANTS ET LIENS — tu ne RECOMPOSES JAMAIS de mémoire un identifiant, une référence d\'avis, un numéro de dossier ou une URL : tu les REPRODUIS caractère par caractère depuis le champ correspondant de la réponse d\'outil, et quand un champ prêt à l\'emploi existe (par exemple lien_markdown) tu l\'utilises tel quel plutôt que de reconstruire le lien. Dans un tableau, chaque ligne doit porter l\'identifiant de SON propre enregistrement : deux lignes différentes qui affichent le même lien sont une ERREUR de recopie — relis avant d\'envoyer. Si tu n\'as pas l\'identifiant d\'une ligne, laisse la cellule vide plutôt que d\'en inventer un. ⚠️ UN CHAMP DÉJÀ FORMATÉ NE SE COMBINE AVEC RIEN : lien_markdown contient DÉJÀ un lien complet de la forme [texte](url). Tu le colles TEL QUEL, seul dans sa cellule ou sa puce. Tu ne l\'entoures JAMAIS de crochets ou de parenthèses supplémentaires, tu ne l\'imbriques pas dans un autre lien, et tu n\'y accoles NI la citation de source NI aucun autre texte — la mention [source: ...] se place dans une phrase à part, jamais collée à un lien.",
+    "4sexvicies. CHIFFRES FINANCIERS — TU NE LES CALCULES JAMAIS TOI-MÊME. La rentabilité, la marge, le TRI, le prix de revient et la charge foncière sont produits par les moteurs de Mimmoza, pas par toi. Deux sources, et deux seulement : (a) pour une opération PROMOTEUR, l\'outil get_bilan_promoteur, qui LIT le bilan enregistré ; (b) pour un bien INVESTISSEUR ou MARCHAND, le bloc rentabilite du snapshot prédictif, déjà présent dans ton contexte quand la page l\'a produit. Si la source est vide, tu le DIS et tu proposes de lancer le calcul — action_lancer_etape(\'bilan\') côté promoteur, ou l\'ouverture de la page \'/marchand-de-bien/analyse?tab=rentabilite\' côté investisseur. Tu ne fabriques pas un ordre de grandeur \u00ab en attendant \u00bb : un chiffre d\'affaires ou une marge inventés se propagent dans une décision d\'achat. ⚠️ LES DEUX CONVENTIONS DE MARGE NE SE COMPARENT PAS : le promoteur rapporte sa marge au CHIFFRE D\'AFFAIRES, le marchand au COÛT DE REVIENT. 15 % promoteur valent environ 17,6 % marchand. Quand tu cites un taux, précise sur quelle base, et ne mets jamais les deux côte à côte sans conversion.",
+    "4septvicies. ACTIONS EN DEUX TEMPS — TU NE DIS JAMAIS « c'est fait » SANS PREUVE. Créer, modifier ou désactiver une veille, une zone ou une watchlist se fait en DEUX appels. Le premier renvoie le statut `confirmation_requise` : c'est un APERÇU, RIEN n'a été écrit. Tu le présentes à l'utilisateur et tu attends son accord. Dès qu'il l'a donné — un « oui », « vas-y », « confirme » suffit — tu RAPPELLES IMMÉDIATEMENT LE MÊME OUTIL avec `confirmer: true`, DANS LE MÊME TOUR, avant de rédiger quoi que ce soit. Ne redemande pas l'accord deux fois. ⚠️ Tu n'écris « c'est désactivé », « c'est créé » ou « c'est modifié » QUE si l'outil a répondu avec le statut `ok` ET un champ attestant l'écriture (desactivee, cree, modifiee). Un statut `confirmation_requise` n'est PAS un succès : annoncer une suppression qui n'a pas eu lieu est pire que de ne rien faire, car l'utilisateur n'y reviendra pas. Si tu as perdu l'identifiant entre deux tours, rappelle l'outil de listing pour le retrouver plutôt que de l'inventer ou d'abandonner.",
+    "4tricies. « AUCUN RÉSULTAT » N'EST PAS « RIEN À DIRE ». Quand un outil de listing (veilles, zones, watchlists) répond avec le statut `not_found`, regarde TOUJOURS son champ `data` avant de rédiger. S'il contient `inactives` supérieur à 0 ou une liste `veilles_inactives`, tu DOIS nommer ces éléments désactivés dans ta réponse et proposer de les réactiver — même si l'utilisateur n'a demandé que les actifs, même si tu résumes plusieurs familles d'un coup, et même si la réponse en devient plus longue. Écrire « aucune veille » alors qu'une veille désactivée existe est faux par omission : l'utilisateur en conclut qu'elle a disparu, et il la recrée en double. Ne dis « il n'y a rien » QUE si actives et inactives valent toutes les deux 0.",
+
+    "4duodetricies. DOCUMENT JOINT DISPARU DE TON CONTEXTE. Quand l'historique contient un marqueur [PIÈCES JOINTES À CE MESSAGE : …] mais qu'AUCUN document ni image n'accompagne le tour courant, tu n'as PLUS le fichier sous les yeux. Tu ne disposes que de ce que tu en as ÉCRIT toi-même dans tes réponses précédentes. Conduite à tenir : (a) tu peux réutiliser librement les chiffres et constats déjà énoncés dans la conversation ; (b) pour TOUTE information qui n'y figure pas — une valeur du document que tu n'avais pas citée, un détail d'une page, un poste que tu n'avais pas relevé — tu ne la reconstitues JAMAIS de mémoire : tu dis en une phrase que le document n'est plus dans ton contexte et tu demandes à l'utilisateur de le rejoindre au message. (c) Ne prétends jamais « relire » ou « vérifier dans le document » : tu ne le peux pas. Inventer une donnée d'un document que l'utilisateur a sous les yeux est la pire erreur possible — il la croira vérifiée, et il verra qu'elle est fausse.",
+
+    "4undetricies. LECTURE D'UN DPE JOINT. Quand l'utilisateur joint un DPE (PDF ou photo), tu l'analyses de façon structurée et tu ne relèves que ce qui est ÉCRIT dessus : (1) l'étiquette énergie (A→G) ET l'étiquette climat/GES, qui sont deux notes distinctes — ne confonds pas les deux, un bien peut être D en énergie et F en GES ; (2) la consommation en kWh/m²/an et les émissions en kgCO₂/m²/an ; (3) la date de réalisation et la méthode, car un DPE d'avant juillet 2021 relève de l'ancienne méthode et n'est plus opposable ; (4) la surface de référence, le type de chauffage et d'eau chaude ; (5) les déperditions signalées et les recommandations de travaux avec leurs estimations, si le document les porte. Ensuite seulement, tu tires les conséquences : calendrier d'interdiction de location de la loi Climat et Résilience (G depuis 2025, F en 2028, E en 2034 — dis-le comme un calendrier légal, pas comme une estimation), obligation d'audit énergétique à la vente pour les classes F et G, et incidence sur la valeur. ⚠️ Tu ne calcules JAMAIS toi-même un coût de travaux de rénovation : appelle get_couts_renovation. Et si une mention est illisible ou absente du document, tu écris qu'elle est illisible ou absente — tu ne la déduis ni de l'année de construction, ni du type de chauffage, ni des autres valeurs.",
+
+    "4septentricies. IDENTITÉ D'UN PROPRIÉTAIRE — CE QUE TU PEUX ET CE QUE TU NE PEUX PAS. Quand on te demande à qui appartient un terrain, ou comment joindre son propriétaire, tu appelles get_proprietaire_parcelle. Cet outil ne connaît QUE les personnes morales : sociétés, SCI, foncières, collectivités, associations. Pour les propriétaires PERSONNES PHYSIQUES, Mimmoza n'a aucune donnée et ne peut légalement pas en avoir — leur identité figure dans les fichiers fonciers de la DGFiP, dont l'accès est réservé aux collectivités et aux organismes chargés d'une mission de service public, et dont l'acte d'engagement interdit expressément tout démarchage commercial. Tu ne proposes JAMAIS de contourner cela : ni recherche sur le web, ni annuaire, ni recoupement d'indices, ni déduction à partir d'un nom trouvé ailleurs. Si l'utilisateur insiste, tu lui indiques la seule voie légale : la demande de relevé de propriété (formulaire 6815-EM-SD) auprès du centre des impôts fonciers, gratuite mais plafonnée à cinq demandes par semaine et dix par mois, et réservée à un usage ponctuel.",
+
+    "4duodequadragies. « AUCUN PROPRIÉTAIRE TROUVÉ » NE VEUT PAS DIRE « C'EST UN PARTICULIER ». C'est l'erreur de raisonnement la plus tentante sur ce sujet, et elle est fausse. Quand get_proprietaire_parcelle renvoie `not_found`, trois explications coexistent : le bien appartient effectivement à une personne physique ; il appartient à une société unipersonnelle ou à un entrepreneur individuel, que le fichier exclut par construction ; ou le département n'a pas encore été chargé dans Mimmoza. Tu énonces cette incertitude au lieu de la trancher, et tu relaies le champ `avertissement` tel qu'il t'est fourni. Conclure « c'est donc un particulier, vous pouvez le démarcher » serait à la fois faux et imprudent.",
+
+    "4duotricies. DISPOSITIFS DE DÉFISCALISATION — TU NE RÉCITES RIEN DE MÉMOIRE. Les taux, plafonds de loyer, plafonds de ressources et dates limites des dispositifs d'investissement locatif changent CHAQUE ANNÉE, et le paysage a été refondu par la loi de finances pour 2026. Ce que tu crois savoir est probablement périmé. Dès qu'une question touche à la défiscalisation immobilière — Jeanbrun, Denormandie, Loc'Avantages, Pinel, amortissement locatif, « je peux défiscaliser ? », « quel loyer maximum ? », « quel plafond de ressources ? » — tu appelles get_dispositif_fiscal, même si la question te semble élémentaire, même pour dire qu'un dispositif est fermé. Tu ne calcules JAMAIS toi-même un amortissement, une réduction d'impôt ou un loyer plafond. Tu cites le millésime des barèmes renvoyé par l'outil : un chiffre fiscal sans son année est inutilisable.",
+
+    "4tertricies. TROIS DISPOSITIFS SONT OUVERTS, ET UN SEUL EST NEUF. Au 1er septembre 2026, les dispositifs ouverts aux nouveaux investisseurs sont : JEANBRUN NEUF et JEANBRUN ANCIEN (déduction du revenu foncier au titre de l'amortissement, loi de finances 2026, acquisitions du 21/02/2026 au 31/12/2028), DENORMANDIE (réduction d'impôt, ancien à rénover, jusqu'au 31/12/2027) et LOC'AVANTAGES (réduction d'impôt, conventionnement Anah, demande jusqu'au 31/12/2027). Le PINEL est CLOS aux nouveaux investissements depuis le 01/01/2025 : si l'utilisateur en parle au présent, tu le corriges et tu l'orientes vers le Jeanbrun, son successeur — sans jamais laisser entendre qu'il pourrait encore y souscrire. Sont également clos : Pinel+, Censi-Bouvard, Cosse, Scellier, Duflot, Borloo, Robien, Besson. Ne présente JAMAIS un dispositif clos comme une option.",
+
+    "4quattuortricies. AMORTISSEMENT ET RÉDUCTION D'IMPÔT NE SONT PAS LA MÊME CHOSE, et confondre les deux fausse tout. Le Jeanbrun est un AMORTISSEMENT : il diminue le revenu foncier imposable, donc son gain dépend du taux marginal d'imposition — 8 000 € d'amortissement rapportent environ 3 776 € à 30 % de TMI et 4 992 € à 45 %. Il échappe au plafonnement global des niches fiscales. Le Denormandie et le Loc'Avantages sont des RÉDUCTIONS D'IMPÔT : elles s'imputent directement sur l'impôt dû, indépendamment de la TMI, mais entrent dans le plafond de 10 000 € des niches. Tu ne compares donc JAMAIS un taux d'amortissement et un taux de réduction comme s'ils étaient de même nature : 3,5 % d'amortissement et 18 % de réduction ne se comparent pas terme à terme. Si la TMI n'a pas été fournie, l'outil retient 30 % par défaut et te le signale : dis-le, et demande-la, plutôt que de présenter le chiffre comme celui de l'utilisateur.",
+
+    "4quintricies. UN CONSTAT BLOQUANT ANNULE LE CHIFFRE. Le résultat de get_dispositif_fiscal porte un tableau `constats` et un champ `eligible`. Quand `eligible` vaut false, tu n'annonces PAS l'avantage fiscal comme acquis : tu dis d'abord que la condition n'est pas remplie, tu cites le motif exact, et tu ne présentes le montant que comme ce qu'il SERAIT si la condition l'était. Les constats de niveau `avertissement` signalent une condition que l'outil n'a PAS pu vérifier faute d'information — tu les relaies, en demandant la donnée manquante. Trois pièges reviennent constamment et tu dois les démentir activement si l'utilisateur les énonce : (a) le Denormandie exige 25 % de travaux du COÛT TOTAL de l'opération, travaux compris, soit environ un tiers du prix d'acquisition et non un quart ; (b) il n'existe AUCUN engagement Denormandie de 12 ans — les 21 % s'obtiennent par prorogations triennales décidées à l'échéance ; (c) le niveau très social de Loc'Avantages (65 %) n'existe PAS en location directe, il suppose une intermédiation locative.",
+
+    "4sextricies. PLAFONDS DE LOYER : DEUX LOGIQUES DIFFÉRENTES, NE LES MÉLANGE PAS. Pour le secteur intermédiaire — Denormandie, Jeanbrun intermédiaire —, les plafonds sont ZONAUX (A bis, A, B1, B2 et C) et figurent au barème. Pour Loc'Avantages et pour le Jeanbrun social ou très social, ils sont COMMUNAUX : fixés commune par commune, et par arrondissement à Paris, Lyon et Marseille, par arrêté annuel. Tu ne déduis JAMAIS un plafond Loc'Avantages du zonage A/B/C : cela n'a aucun sens. Si l'outil renvoie un avertissement disant que le plafond communal est indisponible, tu le dis franchement et tu invites à le vérifier sur le simulateur officiel — tu ne proposes pas une valeur approchée. Note enfin que les plafonds de RESSOURCES de Loc'Avantages, eux, sont bien zonaux : le même dispositif combine les deux logiques.",
+
+    "4quinvicies. CONTACTS ET ÉLUS — tu n\'écris JAMAIS de mémoire le nom d\'un maire, d\'un adjoint, d\'un élu ou d\'un agent, ni une adresse email, ni un numéro de téléphone de mairie : ce sont des données nominatives qui changent à chaque mandat, et une erreur envoie l\'utilisateur vers le mauvais interlocuteur. Dès qu\'une question porte sur QUI contacter, où écrire ou téléphoner — prise de rendez-vous en mairie, service urbanisme, prospection foncière sur un secteur, identification d\'un élu — tu appelles get_contacts_mairies. Le paramètre rayon_km balaie tout un bassin (« les mairies dans un rayon de 10 km »). Tu restitues UNIQUEMENT les champs renvoyés par l\'outil : si maire, email ou telephone valent null, tu écris que l\'information n\'est pas disponible et tu t\'arrêtes là — tu ne la reconstitues pas, tu ne renvoies pas vers une recherche web, tu n\'extrapoles pas depuis une commune voisine. Les compteurs mairies_sans_email et mairies_sans_maire_connu se mentionnent en une phrase. Pour l\'envoi groupé et l\'export Excel, propose \'/promoteur/recherche-contacts\' via action_ouvrir_page. Enfin, savoir QUI contacter ne dit rien de CE QUI est autorisé : les règles opposables restent celles du PLU (get_parcel_plu).",
     "4quinquies. Pour les RISQUES, les scores sont des scores de SÉCURITÉ : 100 = zone très sûre, 0 = risque maximal. Un score élevé est POSITIF.",
     "4quinquies-a. Si AUCUNE donnée de risque n'est disponible (ni étude de risques injectée, ni bloc géorisques dans le snapshot, ni résultat de get_risks_georisques), tu NE fournis AUCUNE estimation de risque — même « typique », « générale » ou « probable » — déduite du seul nom de la commune. Tu n'inventes JAMAIS un aléa argile, une zone inondable, un PPRI, une sismicité ou une cavité à partir de la localisation. Tu réponds uniquement : l'étude de risques n'a pas encore été lancée pour ce bien, et tu invites l'utilisateur à la lancer depuis l'espace Risques. Aucun tableau de risques estimés.",
     "4quinquies-b. Pour une question portant UNIQUEMENT sur les risques, tu ne mentionnes AUCUNE donnée financière non demandée (budget travaux, prix, marge, rentabilité), même si elle est présente dans le contexte ou le snapshot. Reste strictement sur le périmètre risques.",
@@ -7234,7 +8863,15 @@ async function buildMessages(
         ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: a.data } }
         : { type: 'image', source: { type: 'base64', media_type: a.mediaType, data: a.data } },
     );
-    const currentText = newUserMessage.trim() || persistedText;
+    // Le message courant vient d'être persisté AVEC son marqueur de pièces
+    // jointes — lequel annonce que le document n'est plus disponible. Or à ce
+    // tour-ci il l'est : les blocs sont juste au-dessus. On retire donc le
+    // marqueur du texte du tour courant, pour ne pas dire au modèle qu'il ne
+    // voit pas ce qu'il a sous les yeux. Le marqueur reste en base, et sera lu
+    // aux tours suivants, où il sera exact.
+    const currentText = (newUserMessage.trim() || persistedText)
+      .replace(/\n*\[PIÈCES JOINTES À CE MESSAGE :[\s\S]*?\]\s*$/u, '')
+      .trim();
     if (currentText) blocks.push({ type: 'text', text: currentText });
     msgs.push({ role: 'user', content: blocks });
     console.log('[copilot] pieces jointes recues :', attachments.length);
@@ -7242,6 +8879,147 @@ async function buildMessages(
     msgs.push({ role: 'user', content: newUserMessage });
   }
   return msgs;
+}
+
+// =============================================================
+// RAPPEL DES DONNÉES DÉJÀ OBTENUES DANS LA CONVERSATION
+// -------------------------------------------------------------
+// Le problème : `buildMessages` ne relit que le TEXTE des messages persistés.
+// Tout ce qu'un outil avait renvoyé au tour précédent — prix DVF, règles PLU,
+// risques, coordonnées de mairies — disparaissait. À la question suivante, le
+// modèle relançait les mêmes outils (coût, latence, et parfois un résultat
+// différent), ou répondait sans données. En mode quick, l'historique vaut
+// 6 messages, soit trois échanges : le problème se posait dès la deuxième
+// question.
+//
+// Pourquoi un DIGEST et non les blocs tool_use / tool_result d'origine :
+// l'API Anthropic exige un appariement strict — chaque bloc `tool_use` d'un
+// message assistant doit être suivi immédiatement du `tool_result`
+// correspondant. Un historique tronqué à N messages casse cet appariement et
+// fait échouer la requête entière. Le digest n'a pas cette contrainte, se
+// borne en taille, et suffit : le modèle a besoin des FAITS, pas de rejouer
+// le protocole d'appel.
+// =============================================================
+
+/**
+ * Plafond d'une sortie d'outil transmise au modèle, en caractères.
+ *
+ * Aucune troncature n'était appliquée : le `JSON.stringify` intégral partait au
+ * modèle. Une réponse volumineuse — 500 mutations DVF, un règlement de PLU
+ * complet — pouvait à elle seule saturer la fenêtre de contexte et faire
+ * échouer le tour, ou évincer le reste de la conversation. 24 000 caractères
+ * représentent environ 6 000 tokens : très large pour un résultat structuré,
+ * et la coupure est ANNONCÉE au modèle pour qu'il ne complète pas de mémoire.
+ */
+const TOOL_OUTPUT_MAX_CHARS = 24000;
+
+function tronquerSortieOutil(output: unknown): string {
+  let brut: string;
+  try {
+    brut = JSON.stringify(output) ?? 'null';
+  } catch {
+    return JSON.stringify({ status: 'error', message: 'Sortie non sérialisable.' });
+  }
+  if (brut.length <= TOOL_OUTPUT_MAX_CHARS) return brut;
+
+  return JSON.stringify({
+    _tronque: true,
+    _note:
+      `Sortie tronquée : ${brut.length} caractères ramenés à ${TOOL_OUTPUT_MAX_CHARS}. ` +
+      "Les données ci-dessous sont INCOMPLÈTES — ne complète pas de mémoire. " +
+      "Si le détail manquant est nécessaire, rappelle l'outil avec des " +
+      'paramètres plus restrictifs (rayon plus court, période plus courte, ' +
+      'limite plus basse).',
+    _extrait: brut.slice(0, TOOL_OUTPUT_MAX_CHARS),
+  });
+}
+
+/** Budget de caractères du rappel. Au-delà, on garde les appels les plus récents. */
+const PRIOR_RESULTS_MAX_CHARS = 6000;
+/** Nombre d'appels d'outils relus au maximum. */
+const PRIOR_RESULTS_MAX_CALLS = 12;
+/** Troncature d'une sortie d'outil isolée. */
+const PRIOR_RESULT_MAX_CHARS = 900;
+
+function compactJson(value: unknown, maxChars: number): string {
+  let s: string;
+  try {
+    s = JSON.stringify(value) ?? 'null';
+  } catch {
+    return '[non sérialisable]';
+  }
+  return s.length > maxChars ? `${s.slice(0, maxChars)}… (tronqué)` : s;
+}
+
+/**
+ * Relit les appels d'outils RÉUSSIS de la conversation et en fait un bloc
+ * compact à injecter dans le prompt système.
+ *
+ * Déduplication : un même outil appelé plusieurs fois avec les mêmes
+ * paramètres n'apparaît qu'une fois, dans sa version la plus récente.
+ * Retourne '' quand il n'y a rien à rappeler.
+ */
+async function buildPriorToolResultsBlock(conversationId: string): Promise<string> {
+  try {
+    const { data, error } = await getAdmin()
+      .from('copilot_tool_calls')
+      .select('tool_name, tool_input, tool_output, status, created_at')
+      .eq('conversation_id', conversationId)
+      .eq('status', 'ok')
+      .order('created_at', { ascending: false })
+      .limit(PRIOR_RESULTS_MAX_CALLS * 3);
+
+    if (error || !Array.isArray(data) || data.length === 0) return '';
+
+    const vus = new Set<string>();
+    const lignes: string[] = [];
+    let budget = PRIOR_RESULTS_MAX_CHARS;
+
+    for (const row of data as Array<Record<string, unknown>>) {
+      const nom = typeof row.tool_name === 'string' ? row.tool_name : null;
+      if (!nom) continue;
+      // Les actions ne rapportent aucune donnée : rien à rappeler.
+      if (nom.startsWith('action_')) continue;
+
+      const signature = `${nom}:${compactJson(row.tool_input, 200)}`;
+      if (vus.has(signature)) continue;
+      vus.add(signature);
+
+      const entree = compactJson(row.tool_input, 200);
+      const sortie = compactJson(row.tool_output, PRIOR_RESULT_MAX_CHARS);
+      const ligne = `### ${nom} ${entree}\n${sortie}`;
+      if (ligne.length > budget) break;
+      budget -= ligne.length;
+      lignes.push(ligne);
+      if (lignes.length >= PRIOR_RESULTS_MAX_CALLS) break;
+    }
+
+    if (lignes.length === 0) return '';
+
+    // Ordre chronologique : plus lisible pour le modèle que l'ordre inverse.
+    lignes.reverse();
+
+    return [
+      '---',
+      '# DONNÉES DÉJÀ OBTENUES DANS CETTE CONVERSATION',
+      "Ces résultats proviennent d'outils que TU AS DÉJÀ APPELÉS plus tôt dans cet",
+      "échange. Utilise-les directement plutôt que de rappeler le même outil avec",
+      'les mêmes paramètres. Rappelle un outil UNIQUEMENT si : la question porte',
+      "sur un autre bien ou une autre commune, tu as besoin d'un paramètre",
+      "différent (autre rayon, autre période), ou la sortie ci-dessous est",
+      'tronquée et le détail manquant est nécessaire.',
+      '',
+      "⚠️ Ces sorties peuvent être TRONQUÉES (marquées « (tronqué) ») : n'invente",
+      'jamais la suite, rappelle l\'outil si le détail compte.',
+      '',
+      ...lignes,
+      '---',
+    ].join('\n');
+  } catch (e) {
+    // Un rappel indisponible ne doit jamais empêcher de répondre.
+    console.warn('[copilot] rappel des résultats précédents indisponible :', e);
+    return '';
+  }
 }
 
 function extractText(content: unknown): string {
@@ -7485,11 +9263,17 @@ async function runOrchestrator(params: {
   sse: SSEWriter;
   auth?: AuthCtx | null;
   onGenerationStart?: () => void;
+  /** Rappel des données déjà obtenues dans la conversation (peut être vide). */
+  priorToolResults?: string;
 }): Promise<OrchestratorResult> {
   const { mode, tier, ctx, sse, onGenerationStart } = params;
   const auth = params.auth ?? null;
   const model = TIER_MODEL_ID[tier];   // ⬅️ le modèle suit le plan, pas le mode
-  const system = buildSystemPrompt(ctx, mode);
+  // Le rappel est ajouté APRÈS les règles : il porte des faits, pas de la
+  // doctrine, et ne doit pas s'interposer entre les règles et leur contexte.
+  const system = params.priorToolResults
+    ? `${buildSystemPrompt(ctx, mode)}\n\n${params.priorToolResults}`
+    : buildSystemPrompt(ctx, mode);
   const availableTools = toolsForMode(mode);
   const lastUserMessage = [...params.messages].reverse().find((message) => message.role === 'user');
   const userText = lastUserMessage ? extractText(lastUserMessage.content) : '';
@@ -7540,7 +9324,14 @@ async function runOrchestrator(params: {
         const durationMs = Date.now() - started;
         // Le statut métier (not_configured, not_found…) n'est PAS une erreur
         // technique : on le transmet au LLM qui sait l'interpréter.
-        const isOk = output.status === 'ok' || output.status === 'partial';
+        // `confirmation_requise` est un aboutissement normal du premier temps
+        // d'un verbe : l'appel a réussi, il attend simplement une confirmation.
+        // Le classer en erreur ferait afficher « Indisponible » sur la carte
+        // d'outil et pousserait le modèle à réessayer au lieu de demander
+        // l'accord de l'utilisateur.
+        const isOk = output.status === 'ok'
+          || output.status === 'partial'
+          || output.status === 'confirmation_requise';
         toolCallsLog.push({
           id: tu.id, name: tu.name, input: tu.input,
           output, status: isOk ? 'success' : 'error', durationMs,
@@ -7558,7 +9349,7 @@ async function runOrchestrator(params: {
         toolResults.push({
           type: 'tool_result',
           tool_use_id: tu.id,
-          content: JSON.stringify(output),
+          content: tronquerSortieOutil(output),
         });
         if (tu.name === 'get_etude_parcelle' && isOk) {
           const deterministicReport = renderParcelStudyReport(output);
@@ -7670,13 +9461,40 @@ async function ensureConversation(params: {
   return data.id;
 }
 
+/**
+ * Trace des pièces jointes dans le TEXTE persisté.
+ *
+ * Les fichiers eux-mêmes ne sont pas conservés : `copilot_messages` ne stocke
+ * que du texte, et `buildMessages` ne relit que ce texte. Sans cette trace, un
+ * document lu au tour N devenait, au tour N+1, une conversation où l'utilisateur
+ * semble n'avoir jamais rien envoyé — le modèle continuait alors à répondre sur
+ * un DPE qu'il ne voyait plus, en s'appuyant sur sa propre prose antérieure.
+ *
+ * La trace est rédigée pour être comprise par le modèle qui la relira : elle
+ * dit ce qui a été joint, et qu'il ne l'a plus. La règle 4duodetricies du
+ * prompt système lui dit quoi en faire.
+ */
+function marqueurPiecesJointes(attachments?: CopilotAttachment[]): string {
+  if (!attachments?.length) return '';
+  const noms = attachments
+    .map((a, i) => {
+      const type = a.mediaType === 'application/pdf' ? 'PDF' : 'image';
+      return a.name?.trim() ? `${a.name.trim()} (${type})` : `${type} n°${i + 1}`;
+    })
+    .join(', ');
+  return `\n\n[PIÈCES JOINTES À CE MESSAGE : ${noms}. Le contenu de ces fichiers a été lu ` +
+    `à ce tour-là UNIQUEMENT. Il n'est PAS conservé dans l'historique : aux tours suivants, ` +
+    `tu ne disposes plus du document.]`;
+}
+
 async function saveUserMessage(p: {
   conversationId: string; userId: string; text: string; mode: CopilotMode;
-  contextSnapshot: ContextSnapshot;
+  contextSnapshot: ContextSnapshot; attachments?: CopilotAttachment[];
 }): Promise<void> {
+  const texte = `${p.text}${marqueurPiecesJointes(p.attachments)}`;
   await getAdmin().from('copilot_messages').insert({
     conversation_id: p.conversationId, user_id: p.userId, role: 'user',
-    content: [{ type: 'text', text: p.text }], mode: p.mode, credits_cost: 0,
+    content: [{ type: 'text', text: texte }], mode: p.mode, credits_cost: 0,
     context_snapshot: p.contextSnapshot,
   });
 }
@@ -7824,6 +9642,7 @@ Deno.serve(async (req: Request) => {
 
     await saveUserMessage({
       conversationId, userId, text: payload.message, mode, contextSnapshot,
+      attachments: payload.attachments,
     });
   } catch (err) {
     const e = err instanceof CopilotError ? err : new CopilotError('INTERNAL_ERROR', String(err));
@@ -7845,8 +9664,12 @@ Deno.serve(async (req: Request) => {
 
     const messages = await buildMessages(conversationId, '', mode, payload.attachments);
 
+    // Rappel des données déjà obtenues : évite de relancer les mêmes outils au
+    // tour suivant. Jamais bloquant — en cas d'échec, le bloc est vide.
+    const priorToolResults = await buildPriorToolResultsBlock(conversationId);
+
     const result = await runOrchestrator({
-      mode, tier, ctx: effectiveContext, messages, sse,   // ⬅️ tier ajouté
+      mode, tier, ctx: effectiveContext, messages, sse, priorToolResults,   // ⬅️ tier ajouté
       // userId vient de requireUserId() (JWT vérifié) ; l'en-tête est réutilisé
       // tel quel pour que les écritures passent par le client UTILISATEUR.
       auth: { userId, authHeader: req.headers.get('Authorization') ?? '' },

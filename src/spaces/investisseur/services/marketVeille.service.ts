@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { EDGE } from "@/lib/supabase/edgeFunctions";
 
 export type MarketRefreshParams = {
   zipCode?: string;
@@ -297,7 +298,10 @@ export async function runMarketDedupe(
     delete_stale_canonical: false,
   };
 
-  const { data, error } = await supabase.functions.invoke("market-dedupe-v3", {
+  // ⚠️ Appelait "market-dedupe-v3", qui n'a jamais été déployé : seule la v1
+  // est en ligne. La déduplication ne tournait donc pas et les doublons
+  // d'annonces restaient dans la veille. Voir lib/supabase/edgeFunctions.
+  const { data, error } = await supabase.functions.invoke(EDGE.MARKET_DEDUPE, {
     body: payload,
   });
 

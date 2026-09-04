@@ -32,6 +32,10 @@ export const DEFAULT_PAYWALL_CONFIG: Record<ProjectSpace, SpacePaywallConfig> = 
       "/promoteur/veille",
       "/promoteur/nouvelle-opportunite",
       "/promoteur/recherche-contacts",
+      // Recherche de propriétaires : outil de prospection, au même titre que
+      // les contacts mairie et les permis comparables. Il s'utilise AVANT
+      // qu'une parcelle soit choisie, donc avant qu'un jeton ait un sens.
+      "/promoteur/proprietaires",
       "/promoteur/permis-construire",
       "/promoteur/opportunites-apporteurs",
     ],

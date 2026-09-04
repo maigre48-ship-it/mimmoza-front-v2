@@ -21,6 +21,11 @@ import {
   totalHeightM,
   totalLevelsCount,
 } from "./massingScene.types";
+import { SHAB_SDP_COLLECTIF } from "../shared/surfaceCoefficients";
+import {
+  IMPLANTATION_TYPICAL_FLOOR_HEIGHT_M,
+  nombreLogements,
+} from "../shared/buildingMetrics";
 
 // ─── Coefficients d'estimation (ajustables) ───────────────────────────────────
 
@@ -28,10 +33,19 @@ import {
 const SETBACK_SDP_LOSS = 0.04;
 /** Réduction d'emprise du dernier niveau (toiture) par retrait. */
 const SETBACK_ROOF_LOSS = 0.10;
-/** SHAB / SDP (circulations, murs, gaines). */
-const COEF_SHAB_SDP = 0.88;
-/** Taille moyenne d'un logement (m² SHAB) pour l'estimation du nombre de lots. */
-const TAILLE_MOY_LOGEMENT_M2 = 55;
+/**
+ * SHAB / SDP (circulations, murs, gaines).
+ *
+ * Valait 0,88 en local alors que le Bilan promoteur facturait le CA sur 0,82 :
+ * le KPI « SHAB est. » et le chiffre d'affaires de la même page ne parlaient
+ * pas de la même surface. Le coefficient vient désormais de la constante
+ * partagée, sur la valeur du calcul financier.
+ *
+ * Le métré Massing ne connaît pas la nature du bâti (elle est saisie dans le
+ * Bilan) : il retient donc le cas COLLECTIF, qui est celui de l'immense
+ * majorité des opérations modélisées en 3D.
+ */
+const COEF_SHAB_SDP = SHAB_SDP_COLLECTIF;
 /** Répartition typologique par défaut (somme = 1). */
 const TYPO_MIX = { T1: 0.15, T2: 0.40, T3: 0.35, T4: 0.10 };
 /** Taux de vitrage par défaut si non déductible des ouvertures. */
@@ -170,7 +184,11 @@ function deriveBuilding(b: MassingBuildingModel): BatimentMetrics {
   const nbMenuiseries = nbFenetres + nbPortes;
 
   // Logements.
-  const nbLogements = Math.max(0, Math.round(shab / TAILLE_MOY_LOGEMENT_M2));
+  // Comptait sur la SHAB avec Math.round et une taille de 55 m², là où les
+  // trois autres moteurs comptent sur la surface VENDABLE avec Math.floor.
+  // Résultat : 48 logements ici contre 39 à 41 ailleurs, pour 3 000 m² de SDP.
+  // On passe sur la même base et le même arrondi que les autres.
+  const nbLogements = nombreLogements(shab);
 
   return {
     id:   b.id,
@@ -199,7 +217,7 @@ function balconyAreaM2(b: MassingBuildingModel, niveaux: number, perimetre: numb
   const etages    = Math.max(0, niveaux - fromFloor);
   if (etages <= 0) return 0;
 
-  const depthM = (bc.depthFrac ?? 0.4) * (b.levels.typicalFloorHeightM ?? 2.8);
+  const depthM = (bc.depthFrac ?? 0.4) * (b.levels.typicalFloorHeightM ?? IMPLANTATION_TYPICAL_FLOOR_HEIGHT_M);
 
   // Périmètre concerné : toutes les arêtes, ou sous-ensemble si edges fourni.
   // (approximation : on prend le périmètre total ; un sous-ensemble réduirait

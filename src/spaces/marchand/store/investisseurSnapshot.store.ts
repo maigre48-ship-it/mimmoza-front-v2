@@ -91,18 +91,28 @@ export function addEvent(e: { type: string; dealId?: string; message?: string })
  * "Enriched" = données enrichies (marché/risques/geo/etc.)
  * On mappe vers le project canonique via upsertInvestisseurProject().
  */
+/**
+ * Champs recopiés tels quels vers le projet canonique.
+ *
+ * ⚠️ La liste ne comptait que sept entrées et perdait SILENCIEUSEMENT
+ * `execution`, `ai` et `label` : une écriture passant par ce proxy les
+ * effaçait du snapshot, alors même que ce proxy est le seul à émettre
+ * l'événement que le tableau de bord écoute. Les champs absents de la liste
+ * sont désormais recopiés eux aussi.
+ */
+const CHAMPS_CANONIQUES = [
+  "market", "risks", "asset", "acquisition", "financing", "operation", "kpis",
+  "execution", "ai", "label",
+] as const;
+
 export function updateEnriched(dealId: string, enriched: any) {
   const patch: any = {};
 
   if (enriched && typeof enriched === "object") {
     // Canonique
-    if ("market" in enriched) patch.market = (enriched as any).market;
-    if ("risks" in enriched) patch.risks = (enriched as any).risks;
-    if ("asset" in enriched) patch.asset = (enriched as any).asset;
-    if ("acquisition" in enriched) patch.acquisition = (enriched as any).acquisition;
-    if ("financing" in enriched) patch.financing = (enriched as any).financing;
-    if ("operation" in enriched) patch.operation = (enriched as any).operation;
-    if ("kpis" in enriched) patch.kpis = (enriched as any).kpis;
+    for (const champ of CHAMPS_CANONIQUES) {
+      if (champ in enriched) patch[champ] = (enriched as any)[champ];
+    }
 
     // Fallbacks legacy fréquents
     if (!patch.market && ((enriched as any).marketContext || (enriched as any).marketStudy || (enriched as any).study)) {

@@ -20,6 +20,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_prescriptions_urbanisme:     'Prescriptions d’urbanisme',
   get_servitudes:                  'Servitudes',
   get_monuments_historiques:       'Monuments historiques',
+  get_proprietaire_parcelle:       'Propriétaire (personne morale)',
   get_altimetrie:                  'Altimétrie',
   get_assainissement:              'Assainissement',
   get_classement_sonore:           'Classement sonore',
@@ -58,17 +59,28 @@ const TOOL_LABELS: Record<string, string> = {
   get_appels_offres:               'Appels d’offres',
 };
 
+// Le libellé doit distinguer TROIS situations que l'ancien vocabulaire
+// confondait — « Non disponible » pour not_found, « Indisponible » pour error :
+// deux mots quasi identiques pour des cas opposés.
+//
+//   • not_found  : l'outil a parfaitement fonctionné et la réponse est « zéro ».
+//                  « Aucune veille active » est une INFORMATION, pas une panne.
+//                  L'afficher comme une indisponibilité faisait douter de la
+//                  réponse alors qu'elle était juste — et poussait à redemander.
+//   • error      : l'outil a échoué. Là, il y a bien quelque chose de cassé.
+//   • not_configured : l'outil n'est pas raccordé sur cet environnement.
 function statusVisual(status: string) {
   if (status === 'running')
-    return { icon: Loader2,        color: T.accent,               spin: true,  text: 'En cours…'     };
+    return { icon: Loader2,        color: T.accent,               spin: true,  text: 'En cours…'      };
   if (status === 'success')
     return { icon: Check,          color: 'rgb(74 222 128)',       spin: false, text: 'Terminé'        };
   if (status === 'not_configured')
     return { icon: Info,           color: 'rgb(148 163 184)',      spin: false, text: 'Non connecté'   };
   if (status === 'not_found')
-    return { icon: Info,           color: 'rgb(148 163 184)',      spin: false, text: 'Non disponible' };
+    // Coche, pas icône d'information : la recherche a abouti.
+    return { icon: Check,          color: 'rgb(148 163 184)',      spin: false, text: 'Aucun résultat' };
   if (status === 'error')
-    return { icon: AlertTriangle,  color: 'rgb(251 191 36)',       spin: false, text: 'Indisponible'   };
+    return { icon: AlertTriangle,  color: 'rgb(251 191 36)',       spin: false, text: 'Échec'          };
   // fallback
   return   { icon: Info,           color: 'rgb(148 163 184)',      spin: false, text: status           };
 }

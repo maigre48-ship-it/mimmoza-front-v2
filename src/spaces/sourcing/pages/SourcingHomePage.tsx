@@ -62,6 +62,7 @@ import {
 
 // ── DVF via Edge Function smartscore-enriched-v3 (v6.5) ──
 import { supabase } from "../../../lib/supabaseClient";
+import { decisionLevel, scoreGrade } from "@/lib/scoring/decisionThresholds";
 
 // ============================================
 // UTILITAIRE PRIVÉ 1 — Géocodage BAN multi-stratégie
@@ -225,6 +226,19 @@ interface DpeUxData {
   cashflowDragMonthly: number | null;
   exploitabilityRisk: "low" | "moderate" | "high" | "critical" | null;
   investmentSummary: string | null;
+  /**
+   * D'où vient ce bloc.
+   *
+   * `"backend"` : calculé par smartscore-enriched-v3 (score, travaux, impact
+   * rentabilité — des grandeurs mesurées).
+   *
+   * `"local"` : reconstitué à partir de la SEULE lettre saisie dans le
+   * formulaire, faute de réponse du backend. On peut alors énoncer la
+   * contrainte réglementaire (elle découle de la lettre, c'est du droit,
+   * pas une estimation) mais AUCUN chiffre : pas de score, pas de coût de
+   * travaux, pas d'impact sur le rendement. À afficher comme tel.
+   */
+  source: "backend" | "local" | null;
 }
 
 const EMPTY_DPE_UX: DpeUxData = {
@@ -234,7 +248,7 @@ const EMPTY_DPE_UX: DpeUxData = {
   renovationNeeded: false, renovationCostTotal: null, renovationCostPerM2: null,
   renovationScenario: null, renovationConfidence: null, renovationDescription: null,
   rentabilityPenaltyScore: null, yieldDragPct: null, cashflowDragMonthly: null,
-  exploitabilityRisk: null, investmentSummary: null,
+  exploitabilityRisk: null, investmentSummary: null, source: null,
 };
 
 function extractSmartScoreV4Block(obj: any): any | null {
@@ -290,6 +304,8 @@ function extractDpeUxData(v4: any): DpeUxData {
       ? expRisk : null;
 
   return {
+    // Ce bloc vient du backend enrichi : ses chiffres sont calculés.
+    source: "backend",
     label: dpe?.label ?? null,
     score: typeof dpe?.score === "number" ? dpe.score : null,
     isBlocking: constraint?.is_blocking === true,
@@ -1095,18 +1111,17 @@ function clamp(val: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, val));
 }
 
+// Barème partagé — voir lib/scoring/decisionThresholds.
 function gradeFromScore(s: number): "A" | "B" | "C" | "D" | "E" {
-  if (s >= 80) return "A";
-  if (s >= 65) return "B";
-  if (s >= 50) return "C";
-  if (s >= 35) return "D";
-  return "E";
+  return scoreGrade(s);
 }
 
 function verdictFromScore(s: number): "GO" | "GO_AVEC_RESERVES" | "NO_GO" {
-  if (s >= 65) return "GO";
-  if (s >= 40) return "GO_AVEC_RESERVES";
-  return "NO_GO";
+  switch (decisionLevel(s)) {
+    case "go":         return "GO";
+    case "conditions": return "GO_AVEC_RESERVES";
+    default:           return "NO_GO";
+  }
 }
 
 function computeSmartScoreFromDraft(draft: any): LocalSmartScoreResult {
@@ -1541,6 +1556,26 @@ const EnergyDpeInsightsCard: React.FC<{ dpeUx: DpeUxData }> = ({ dpeUx }) => {
         <span style={{ fontSize: 18 }}>⚡</span>
         <span style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>Diagnostic énergie & DPE du bien</span>
       </div>
+
+      {/* Repli local : la lettre saisie suffit à énoncer la contrainte
+          réglementaire, mais aucun chiffre n'a été calculé. On le dit, plutôt
+          que de laisser croire à une carte incomplète ou, pire, d'afficher
+          des estimations déduites de la seule lettre. */}
+      {dpeUx.source === "local" && (
+        <div style={{
+          display: "flex", gap: 8, alignItems: "flex-start",
+          background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10,
+          padding: "10px 12px", marginBottom: 16, fontSize: 12, color: "#92400e",
+        }}>
+          <span aria-hidden="true">ⓘ</span>
+          <span>
+            Analyse énergétique non disponible : seule la classe DPE saisie a pu être exploitée.
+            L'obligation réglementaire ci-dessous découle de cette classe. En revanche, le score,
+            le coût des travaux et l'impact sur la rentabilité n'ont pas été calculés — ils
+            dépendent de la surface, du bâti et du marché local. Relance l'analyse pour les obtenir.
+          </span>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
 
@@ -2045,13 +2080,25 @@ useEffect(() => {
     // 3. If backend returned real DPE data, use it
     if (backendDpe && backendDpe.label != null) {
       console.log("[DPE UX] Using backend V4 DPE data:", backendDpe.label);
-      return backendDpe;
+      return { ...backendDpe, source: "backend" };
     }
 
     // 4. Fallback: build minimal DPE UX from local form DPE value
     if (localDpeLabel && /^[A-G]$/.test(localDpeLabel)) {
       console.log("[DPE UX] Fallback: using local DPE label:", localDpeLabel);
-      const localScore = ({ A: 95, B: 90, C: 80, D: 65, E: 50, F: 25, G: 5 } as Record<string, number>)[localDpeLabel] ?? null;
+      // PAS de score fabriqué ici.
+      //
+      // Ce repli disposait d'un barème codé en dur (A:95 … G:5) dont le
+      // résultat s'affichait exactement comme un score calculé par le
+      // backend — même encart, même « /100 ». Or une lettre seule ne
+      // permet de calculer ni score de bien, ni coût de travaux, ni
+      // impact sur le rendement : ces grandeurs dépendent de la surface,
+      // du bâti, du marché local. Le score reste donc `null`, et la carte
+      // affiche « — » plutôt qu'un chiffre inventé.
+      //
+      // Ce qui est légitime de dériver de la seule lettre : la contrainte
+      // réglementaire ci-dessous. Elle relève du droit (loi Climat et
+      // Résilience), pas d'une estimation.
       const isBlocking = localDpeLabel === "F" || localDpeLabel === "G";
       const severity: DpeUxData["severity"] = localDpeLabel === "G" ? "critical" : localDpeLabel === "F" ? "warning" : localDpeLabel === "E" ? "warning" : "none";
       const constraintTitles: Record<string, string> = {
@@ -2068,7 +2115,8 @@ useEffect(() => {
       return {
         ...(backendDpe ?? EMPTY_DPE_UX),
         label: localDpeLabel,
-        score: backendDpe?.score ?? localScore,
+        score: backendDpe?.score ?? null,
+        source: "local",
         isBlocking: backendDpe?.isBlocking ?? isBlocking,
         severity: (backendDpe && backendDpe.severity !== "none") ? backendDpe.severity : severity,
         title: backendDpe?.title ?? constraintTitles[localDpeLabel] ?? null,

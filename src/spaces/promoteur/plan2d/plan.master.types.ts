@@ -11,6 +11,8 @@
 // dans masterScenario.service.ts.
 
 import type { Building2D, Parking2D, Point2D } from './editor2d.types';
+import { SURFACE_MOYENNE_LOGEMENT_M2 } from '../shared/buildingMetrics';
+import { SHAB_SDP_COLLECTIF } from '../shared/surfaceCoefficients';
 
 // ─── HYPOTHÈSES ÉCONOMIQUES ───────────────────────────────────────────
 
@@ -26,8 +28,11 @@ export interface MasterEconomicAssumptions {
 export const DEFAULT_MASTER_ECONOMIC_ASSUMPTIONS: MasterEconomicAssumptions = {
   salePricePerM2:        5500,
   constructionCostPerM2: 2200,
-  floorEfficiencyPct:    83,
-  averageLotSizeM2:      62,
+  // Alignés sur les constantes partagées : le rendement SDP → vendable valait
+  // 83 % ici et 82 % dans le Bilan, la taille de lot 62 m² ici et 55 ou 60 m²
+  // ailleurs. Sur 3 000 m² de SDP, l'écart atteignait 8 logements.
+  floorEfficiencyPct:    SHAB_SDP_COLLECTIF * 100,
+  averageLotSizeM2:      SURFACE_MOYENNE_LOGEMENT_M2,
   estimatedLevels:       4,
   landCostTotal:         0,
 };

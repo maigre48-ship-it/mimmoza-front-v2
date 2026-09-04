@@ -15,6 +15,7 @@ import { track } from "@/lib/mimmozia/track";
 
 import { AppShell } from "./components/AppShell";
 import { PrivateRoute } from "./components/PrivateRoute";
+import { RobotsPolicy } from "./components/RobotsPolicy";
 import { SpaceSync, type Space } from "./components/SpaceSync";
 
 import ApiDeveloperDashboardPage from "./pages/ApiDeveloperDashboardPage";
@@ -81,9 +82,24 @@ import AdminEntreprisesPage from "./spaces/admin/pages/Entreprises";
 import AdminFacturesPage from "./spaces/admin/pages/Factures";
 import AdminJetonsPage from "./spaces/admin/pages/Jetons";
 import AdminLoginPage from "./spaces/admin/pages/Login";
+import AdminFraicheurDonneesPage from "./spaces/admin/pages/FraicheurDonnees";
 import AdminParametresPage from "./spaces/admin/pages/Parametres";
 import AdminTarifsPage from "./spaces/admin/pages/Tarifs";
 import AdminUtilisateursPage from "./spaces/admin/pages/Utilisateurs";
+import {
+  AgentCommercialLayout,
+  AgentCommercialOverviewPage,
+  AgentCommercialProspectsPage,
+  AgentCommercialProspectDetailPage,
+  AgentCommercialProspectsImportPage,
+  AgentCommercialExclusionsPage,
+  AgentCommercialMessagesPage,
+  AgentCommercialConversationsPage,
+  AgentCommercialRelancesPage,
+  AgentCommercialPipelinePage,
+  AgentCommercialKnowledgePage,
+  AgentCommercialSettingsPage,
+} from "./spaces/admin/pages/agentCommercial";
 
 import MarchandLayout from "./spaces/marchand/MarchandLayout";
 import MarchandExecution from "./spaces/marchand/pages/Execution";
@@ -111,6 +127,7 @@ import PromoteurMassingPage from "./spaces/promoteur/pages/MassingPage"; // ─�
 import NouvelleOpportunitePage from "./spaces/promoteur/pages/NouvelleOpportunitePage";
 import OpportunitesApporteursPage from "./spaces/promoteur/pages/OpportunitesApporteursPage";
 import PermisConstruirePage from "./spaces/promoteur/pages/PermisConstruirePage";
+import ProprietairesParcellesPage from "./spaces/promoteur/pages/ProprietairesParcellesPage";
 import ProgrammationPage from "./spaces/promoteur/pages/ProgrammationPage";
 import PromoteurSimulationTravauxPage from "./spaces/promoteur/pages/PromoteurSimulationTravauxPage";
 import PromoteurVeilleFoncierePage from "./spaces/promoteur/pages/PromoteurVeilleFoncierePage";
@@ -153,6 +170,7 @@ import { CopilotRoot } from "./spaces/copilot/CopilotRoot";
 
 /* ── Espace MimmozIA (page chat plein écran) ─────────────────── */
 import MimmozIAPage from "./spaces/copilot/MimmozIAPage";
+import { CopilotSpaceOutlet } from './spaces/copilot/components/CopilotSpaceOutlet';
 
 declare global {
   interface Window {
@@ -174,13 +192,19 @@ declare global {
    ayant activé le mode expert atterrit directement sur le dashboard.
    On réorganise, on ne supprime rien : /dashboard reste accessible.
 
-   ⚠️ Si ton userStorage n'est PAS un hook mais un getter synchrone
-   (ex. userStorage.get("mode:expert-default")), remplace la ligne
-   useUserStorage par un useState initialisé depuis ce getter.
+   ⚠️ ÉTAT RÉEL de la clé "mode:expert-default" : elle est LUE ici et
+   n'est ÉCRITE nulle part dans le dépôt (vérifié). La branche experte
+   est donc inatteignable en pratique, et tout le monde atterrit sur
+   /mimmozia — ce qui est le comportement voulu aujourd'hui.
+
+   Si un jour un réglage vient l'écrire, deux précautions :
+   • utiliser userScopedStorage (clé préfixée par l'identifiant du
+     compte), pas localStorage brut : une clé globale se partage entre
+     deux comptes sur le même navigateur, c'est la classe de fuite déjà
+     corrigée ailleurs dans l'application ;
+   • ne pas oublier de la nettoyer à la déconnexion.
    ────────────────────────────────────────────────────────────── */
 function HomeLanding() {
-  // Lecture directe de la préférence, sans dépendre d'un module externe.
-  // Remplace la clé par ta convention de clé scopée si tu en as une.
   let expertDefault = false;
   try {
     expertDefault = localStorage.getItem("mode:expert-default") === "true";
@@ -286,6 +310,11 @@ function AppRoot() {
 
   return (
     <>
+      {/* Consigne d'indexation par route. Le défaut « noindex » vient
+          d'index.html ; ce composant ne l'assouplit que sur les pages
+          publiques sans donnée DVF (cf. R. 112 A-3 du LPF). */}
+      <RobotsPolicy />
+
       <SpaceSync currentSpace={currentSpace} setCurrentSpace={setCurrentSpace} />
 
       <AppShell currentSpace={currentSpace} onChangeSpace={handleChangeSpace}>
@@ -381,18 +410,40 @@ function AppRoot() {
             <Route path="factures"      element={<AdminFacturesPage />} />
             <Route path="entreprises"   element={<AdminEntreprisesPage />} />
             <Route path="tarifs"        element={<AdminTarifsPage />} />
+            <Route path="fraicheur-donnees" element={<AdminFraicheurDonneesPage />} />
             <Route path="parametres"    element={<AdminParametresPage />} />
+
+            {/* ── Module Agent commercial ──────────────────────────────────
+                Récupéré de la branche feat/agent-commercial, jamais fusionnée :
+                les 5 edge functions et les tables commercial_* étaient bien en
+                production, mais l'interface n'était sur aucune route de main.
+                Le module était donc invisible alors que ses données existaient
+                (base de connaissance, prospects, e-mails, journal d'activité).
+                ─────────────────────────────────────────────────────────────── */}
+            <Route path="agent-commercial" element={<AgentCommercialLayout />}>
+              <Route index                    element={<AgentCommercialOverviewPage />} />
+              <Route path="prospects"         element={<AgentCommercialProspectsPage />} />
+              <Route path="prospects/import"  element={<AgentCommercialProspectsImportPage />} />
+              <Route path="prospects/:id"     element={<AgentCommercialProspectDetailPage />} />
+              <Route path="exclusions"        element={<AgentCommercialExclusionsPage />} />
+              <Route path="messages"          element={<AgentCommercialMessagesPage />} />
+              <Route path="conversations"     element={<AgentCommercialConversationsPage />} />
+              <Route path="relances"          element={<AgentCommercialRelancesPage />} />
+              <Route path="pipeline"          element={<AgentCommercialPipelinePage />} />
+              <Route path="connaissances"     element={<AgentCommercialKnowledgePage />} />
+              <Route path="parametres"        element={<AgentCommercialSettingsPage />} />
+            </Route>
           </Route>
 
           {/* ═══ Apporteur ═══ */}
-          <Route path="/apporteur" element={<Outlet />}>
+          <Route path="/apporteur" element={<CopilotSpaceOutlet vertical="apporteur" />}>
             <Route index element={<ApporteurDashboard />} />
             <Route path="deposer" element={<ApporteurDeposerPage />} />
             <Route path="*" element={<Navigate to="/apporteur" replace />} />
           </Route>
 
           {/* ═══ Particulier ═══ */}
-          <Route path="/particulier" element={<Outlet />}>
+          <Route path="/particulier" element={<CopilotSpaceOutlet vertical="particulier" />}>
             <Route index element={<ParticulierDashboard />} />
             <Route path="projet"      element={<ParticulierMonProjet />} />
             <Route path="favoris"     element={<ParticulierFavoris />} />
@@ -440,7 +491,7 @@ function AppRoot() {
           </Route>
 
           {/* ═══ Promoteur ═══ */}
-          <Route path="/promoteur" element={<Outlet />}>
+          <Route path="/promoteur" element={<CopilotSpaceOutlet vertical="promoteur" />}>
             <Route index element={<PromoteurDashboard />} />
 
             <Route path="nouvelle-opportunite"    element={<NouvelleOpportunitePage />} />
@@ -454,6 +505,7 @@ function AppRoot() {
             <Route path="risques"                 element={<RisquesPage />} />
             <Route path="permis-construire"       element={<PermisConstruirePage />} />
             <Route path="recherche-contacts"      element={<RechercheContactsPage />} />
+            <Route path="proprietaires"           element={<ProprietairesParcellesPage />} />
             <Route path="opportunites-apporteurs" element={<OpportunitesApporteursPage />} />
             <Route path="opportunites/nouvelle"   element={<NouvelleOpportunitePage />} />
             <Route path="programmation"           element={<ProgrammationPage />} />
@@ -481,7 +533,7 @@ function AppRoot() {
           {/* ═══ Assurance ═══
               (autrefois monté sous /banque/assurance ; remonté ici en
               autonome suite à la mise hors-build de l'espace banque) */}
-          <Route path="/assurance" element={<Outlet />}>
+          <Route path="/assurance" element={<CopilotSpaceOutlet vertical="generique" />}>
             <Route index element={<AssuranceDashboard />} />
             <Route path="souscription" element={<AssuranceSouscription />} />
             <Route path="exposition"   element={<AssuranceExposition />} />
