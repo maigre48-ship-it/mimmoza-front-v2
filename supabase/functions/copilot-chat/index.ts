@@ -3432,6 +3432,11 @@ const TOOLS: ToolDef[] = [
       },
       required: ['surface_m2', 'prix_acquisition'],
     },
+    // Sans cette ligne, toolsForMode lit `.includes` sur undefined et TOUTE
+    // conversation échoue, quel que soit le sujet. Le champ est pourtant
+    // déclaré obligatoire dans ToolDef : c'est `npx tsc` qui ne voit pas ce
+    // fichier, exclu du tsconfig du front puisqu'il s'exécute sous Deno.
+    available_in_modes: ['advanced', 'report'],
   },
   {
     name: 'get_proprietaire_parcelle',
@@ -3576,6 +3581,9 @@ const TOOLS: ToolDef[] = [
         date_acquisition: { type: 'string', description: "Date d'acquisition au format AAAA-MM-JJ, pour contrôler les fenêtres." },
       },
     },
+    // Même omission que sur get_analyse_predictive : sans ce champ, aucune
+    // conversation ne démarre.
+    available_in_modes: ['advanced', 'report'],
   },
   {
     name: 'get_bilan_promoteur',
@@ -4164,8 +4172,31 @@ const TOOLS: ToolDef[] = [
   },
 ];
 
+/**
+ * Outils disponibles pour un mode donné.
+ *
+ * Le filtre est volontairement défensif. `available_in_modes` est déclaré
+ * obligatoire dans ToolDef, mais rien ne le vérifie à la compilation : ce
+ * fichier tourne sous Deno et n'est pas couvert par le tsconfig du front. Deux
+ * outils ont été ajoutés sans ce champ, et `undefined.includes(mode)` faisait
+ * échouer TOUTE conversation, quel que soit le sujet — un oubli d'une ligne
+ * rendait le copilote entièrement muet.
+ *
+ * Un outil mal déclaré est désormais écarté et signalé, plutôt que d'emporter
+ * le reste avec lui : perdre un outil est un incident, perdre le chat en est
+ * un autre.
+ */
 function toolsForMode(mode: CopilotMode): ToolDef[] {
-  return TOOLS.filter((t) => t.available_in_modes.includes(mode));
+  return TOOLS.filter((t) => {
+    if (!Array.isArray(t.available_in_modes)) {
+      console.error(
+        `[copilot-chat] outil « ${t?.name ?? '?'} » sans available_in_modes : ignoré. ` +
+          'Ajoute le champ dans sa déclaration.',
+      );
+      return false;
+    }
+    return t.available_in_modes.includes(mode);
+  });
 }
 
 // =============================================================
