@@ -44,3 +44,88 @@
 .mzia-dossier-selected li{display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(148,163,184,.2);padding:5px 0}
 .mzia-dossier-error{color:#fca5a5}
 @media(max-width:700px){.mzia-dossier{padding:13px}.mzia-dossier-head{display:block}.mzia-dossier-badge{display:inline-block;margin-top:8px}.mzia-dossier-highlights{grid-template-columns:1fr}.mzia-dossier-map{height:290px}.mzia-dossier-actions button{flex:1}}
+
+/* Les couleurs décrivent la portée et l'état des données, jamais un droit à bâtir. */
+.mzia-dossier-highlight--detected{border-left:3px solid #f59e0b!important}
+.mzia-dossier-highlight--selected{border-left:3px solid #10b981!important}
+.mzia-dossier-highlight--zone{border-left:3px solid #818cf8!important}
+.mzia-dossier-signals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}
+.mzia-dossier-signal{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border-radius:10px;line-height:1.4}
+.mzia-dossier-signal strong{font-size:12px}
+.mzia-dossier-signal span{font-size:11px}
+.mzia-dossier-signal--warning{background:rgba(180,83,9,.18);border:1px solid rgba(245,158,11,.45);color:#fde68a}
+.mzia-dossier-signal--missing{background:rgba(185,28,28,.17);border:1px solid rgba(248,113,113,.4);color:#fecaca}
+.mzia-dossier-section-heading{display:flex;align-items:end;justify-content:space-between;gap:12px;margin:2px 0 12px}
+.mzia-dossier-section-heading h4{margin:3px 0 0;font-size:15px;color:#fff;line-height:1.3}
+.mzia-dossier-map-wrap{border-top:1px solid rgba(148,163,184,.26);padding-top:16px}
+.mzia-dossier-map-count{font-size:11px;color:#cbd5e1;white-space:nowrap}
+.mzia-dossier-map-loading{min-height:150px;display:grid;place-items:center;color:#cbd5e1}
+.mzia-dossier-map-toolbar{flex-wrap:wrap}
+.mzia-dossier-map-toggles{display:flex;flex-wrap:wrap;gap:8px}
+.mzia-dossier-map-toggles label{display:flex;align-items:center;gap:5px;padding:5px 8px;background:rgba(15,23,42,.45);border:1px solid rgba(148,163,184,.35);border-radius:7px;color:#e2e8f0;font-size:11px;cursor:pointer}
+.mzia-dossier-map-toggles label:has(input:disabled){opacity:.55;cursor:not-allowed}
+.mzia-dossier-map-toggles input{accent-color:#a78bfa}
+.mzia-dossier-map{height:410px;border:1px solid rgba(148,163,184,.55);background:#e2e8f0}
+.mzia-dossier-map .leaflet-container{font:12px Arial,sans-serif}
+.mzia-dossier-map-legend{display:flex;flex-wrap:wrap;gap:8px 14px;margin:10px 0 4px;color:#cbd5e1;font-size:11px}
+.mzia-dossier-map-legend span{display:inline-flex;align-items:center;gap:6px}
+.mzia-map-dot{display:inline-block;width:11px;height:11px;border-radius:3px;border:2px solid currentColor}
+.mzia-map-dot--point{border-radius:50%;background:#dc2626;border-color:#fff}
+.mzia-map-dot--detected{background:#f59e0b;border-color:#b45309}
+.mzia-map-dot--selected{background:#10b981;border-color:#047857}
+.mzia-map-dot--prescription{background:#fb923c;border-color:#c2410c;border-style:dashed}
+.mzia-dossier-simulation{padding-top:16px}
+.mzia-dossier-simulation .mzia-dossier-inputs{margin:4px 0 16px}
+.mzia-dossier-tax-chart{display:grid;gap:9px;margin:14px 0 16px;padding:13px;border:1px solid rgba(129,140,248,.35);background:rgba(15,23,42,.42);border-radius:10px}
+.mzia-dossier-tax-row{display:grid;grid-template-columns:100px minmax(80px,1fr) 112px;align-items:center;gap:10px}
+.mzia-dossier-tax-label{color:#e2e8f0;font-weight:650}
+.mzia-dossier-tax-label small{display:block;color:#a5b4fc;font-size:10px;font-weight:400}
+.mzia-dossier-tax-track{height:16px;overflow:hidden;border-radius:99px;background:#334155}
+.mzia-dossier-tax-fill{display:block;height:100%;background:linear-gradient(90deg,#818cf8,#c4b5fd);border-radius:99px}
+.mzia-dossier-tax-fill--reference{background:linear-gradient(90deg,#4f46e5,#818cf8)}
+.mzia-dossier-tax-row strong{text-align:right;color:#fff;font-size:12px;white-space:nowrap}
+.mzia-dossier-tax-row strong small{font-weight:400;color:#cbd5e1}
+.mzia-dossier-calculation{margin:5px 0 12px}
+.mzia-dossier-calculation summary{cursor:pointer;color:#c4b5fd}
+.mzia-dossier-evidence-overview{border-top:1px solid rgba(148,163,184,.26);padding:16px 0 9px}
+.mzia-dossier-evidence-bar{display:flex;width:100%;height:13px;overflow:hidden;border-radius:99px;background:#334155}
+.mzia-dossier-evidence-bar--confirmed{background:#10b981}
+.mzia-dossier-evidence-bar--estimated{background:#f59e0b}
+.mzia-dossier-evidence-bar--unavailable{background:#f87171}
+.mzia-dossier-evidence-legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin:9px 0;color:#e2e8f0;font-size:11px}
+.mzia-dossier-evidence-legend span{display:inline-flex;align-items:center;gap:6px}
+.mzia-dossier-evidence-legend i{display:inline-block;width:9px;height:9px;border-radius:50%}
+.mzia-evidence-dot--confirmed{background:#10b981}.mzia-evidence-dot--estimated{background:#f59e0b}.mzia-evidence-dot--unavailable{background:#f87171}
+@media(max-width:700px){.mzia-dossier-signals{grid-template-columns:1fr}.mzia-dossier-map{height:340px}.mzia-dossier-tax-row{grid-template-columns:66px minmax(50px,1fr) 92px;gap:6px}.mzia-dossier-tax-chart{padding:10px}.mzia-dossier-tax-row strong{font-size:11px}}
+
+
+/* Le tchat force une typographie sombre ; le dossier adopte donc un fond clair. */
+.mzia-dossier{background:linear-gradient(150deg,#fff,#f8faff);border-color:#c7d2fe;color:#0f172a;box-shadow:0 10px 32px rgba(59,61,105,.07)}
+.mzia-dossier h3,.mzia-dossier .mzia-dossier-section-heading h4,.mzia-dossier-highlights strong{color:#111827}
+.mzia-dossier-eyebrow{color:#5b45c4}
+.mzia-dossier-status,.mzia-dossier-follow p{color:#334155}
+.mzia-dossier-highlights>div{background:#f8fafc;border-color:#e2e8f0}
+.mzia-dossier-highlights span,.mzia-dossier-highlights small,.mzia-dossier-map-count{color:#475569}
+.mzia-dossier-badge--pending{background:#ede9fe;color:#5b21b6}
+.mzia-dossier-badge--attention{background:#fef3c7;color:#92400e}
+.mzia-dossier-badge--ready{background:#d1fae5;color:#065f46}
+.mzia-dossier-signal--warning{background:#fffbeb;color:#78350f;border-color:#fcd34d}
+.mzia-dossier-signal--missing{background:#fef2f2;color:#991b1b;border-color:#fca5a5}
+.mzia-dossier-map-toggles label{background:#fff;color:#334155;border-color:#cbd5e1}
+.mzia-dossier-map-legend,.mzia-dossier-calculation summary{color:#334155}
+.mzia-dossier-tax-chart{background:#f8fafc;border-color:#c7d2fe}
+.mzia-dossier-tax-label,.mzia-dossier-tax-row strong,.mzia-dossier-evidence-legend{color:#1e293b}
+.mzia-dossier-tax-label small,.mzia-dossier-tax-row strong small{color:#64748b}
+.mzia-dossier-tax-track,.mzia-dossier-evidence-bar{background:#e2e8f0}
+.mzia-dossier-inputs label,.mzia-dossier th{color:#334155}
+.mzia-dossier-inputs input{background:#fff;color:#0f172a;border-color:#94a3b8}
+.mzia-dossier-block,.mzia-dossier-follow,.mzia-dossier-evidence-overview,.mzia-dossier-map-wrap{border-color:#e2e8f0}
+.mzia-dossier-block summary{color:#4338ca}
+.mzia-dossier td small,.mzia-dossier-help,.mzia-dossier-source,.mzia-dossier-follow small{color:#475569}
+.mzia-dossier a{color:#4338ca}
+.mzia-dossier-warning{color:#92400e}
+.mzia-dossier button{background:#4338ca;border-color:#4338ca;color:#fff}
+.mzia-dossier button:hover{background:#3730a3}
+.mzia-dossier-notice{color:#047857}
+.mzia-chat-content .mzia-dossier button{color:#fff!important}
+.mzia-chat-content .mzia-dossier a{color:#4338ca!important}

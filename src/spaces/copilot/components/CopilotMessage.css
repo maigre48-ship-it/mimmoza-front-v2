@@ -46,3 +46,8 @@
   .copilot-composer__tool { width:44px !important;height:44px !important; }
   .copilot-message-actions button { min-height:44px;padding:8px 10px; }
 }
+
+.copilot-message-source-report{margin:16px 0;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;color:#334155;font-size:12px}
+.copilot-message-source-report summary{cursor:pointer;font-weight:650;color:#4338ca}
+.copilot-message-source-report>.copilot-message-markdown{margin-top:10px;max-height:520px;overflow:auto;font-size:12px;line-height:1.5}
+@media print{.copilot-message-source-report{display:block}.copilot-message-source-report>.copilot-message-markdown{max-height:none;overflow:visible}}

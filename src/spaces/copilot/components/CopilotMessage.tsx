@@ -36,8 +36,15 @@ export function CopilotMessage({ message, question, conversationId, onSend }: {
   // Recalculé à chaque paquet de tokens pendant le streaming : c'est ce qui
   // permet au graphique d'apparaître dès que son bloc se referme, sans attendre
   // la fin de la réponse.
-  const segments = useMemo(() => decouperSegments(message.text), [message.text]);
   const dossier = useMemo(() => buildParcelDossier(message.toolCalls, message.createdAt), [message.toolCalls, message.createdAt]);
+  const { visibleText, factualReport } = useMemo(() => {
+    if (!dossier || message.status !== 'complete') return { visibleText: message.text, factualReport: '' };
+    const match = /(^|\n)#{1,3}\s+Ce qu['’]il faut retenir\b/im.exec(message.text);
+    if (!match || match.index < 100) return { visibleText: message.text, factualReport: '' };
+    const splitAt = match.index + match[1].length;
+    return { visibleText: message.text.slice(splitAt), factualReport: message.text.slice(0, splitAt).trim() };
+  }, [dossier, message.status, message.text]);
+  const segments = useMemo(() => decouperSegments(visibleText), [visibleText]);
 
   const linkedQuestion = question ?? (() => {
     const index = messages.findIndex((item) => item.id === message.id);
@@ -122,6 +129,10 @@ export function CopilotMessage({ message, question, conversationId, onSend }: {
           />
         ),
       )}
+      {factualReport && <details className="copilot-message-source-report">
+        <summary>Ouvrir le rapport factuel complet et les sources</summary>
+        <div className="copilot-message-markdown" dangerouslySetInnerHTML={{ __html: markdownToSafeHtml(factualReport) }} />
+      </details>}
       {message.status === 'complete' && message.text.trim() && (
         <div className="copilot-message-actions">
           <button type="button" onClick={() => void handleResponseExport()} disabled={exporting} aria-label="Exporter cette réponse en PDF" aria-busy={exporting}>
