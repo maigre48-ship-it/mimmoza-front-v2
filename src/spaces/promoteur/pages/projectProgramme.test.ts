@@ -18,3 +18,11 @@ test('le plafond doit signaler une hauteur dépassée et la cible hôtelière re
   assert.equal(programmeKind('Clinique'), 'clinic');
   assert.match(targetProposal('hotel', null).title, /à établir/);
 });
+
+test('la résidence en France ne devient jamais une preuve de séjour de loisirs', () => {
+  const hotel = { nonResidentSharePct: 21.9, frequencyYear: 2025, months: [] } as Parameters<typeof targetProposal>[1];
+  const proposal = targetProposal('hotel', hotel);
+  assert.match(proposal.title, /motif du séjour inconnu/);
+  assert.doesNotMatch(proposal.title, /loisirs/);
+  assert.match(proposal.reasons[0], /loisirs, affaires ou autre/);
+});

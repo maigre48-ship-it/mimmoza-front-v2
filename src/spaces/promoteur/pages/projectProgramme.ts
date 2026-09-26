@@ -56,12 +56,12 @@ export function targetProposal(kind: ProgrammeKind, hotel: HotelEvidence | null)
     const resident = share == null ? null : Math.round((100 - share) * 10) / 10;
     const peak = hotel?.months.reduce((best, month) => month.nights != null && (best == null || month.nights > best.nights!) ? month : best, null as typeof hotel.months[number] | null);
     return {
-      title: resident != null ? 'Piste prioritaire : clientèle de loisirs résidente, à confirmer localement' : 'Clientèle cible à établir avant de choisir le standing',
+      title: resident != null ? 'Signal départemental : résidents en France ; motif du séjour inconnu' : 'Clientèle cible à établir avant de choisir le standing',
       reasons: resident != null ? [
-        `${resident} % des nuitées hôtelières du département proviennent de résidents français (${hotel?.frequencyYear}). Cela rend cette clientèle pertinente à tester ; cela ne décrit pas Ascain seul.`,
+        `${resident} % des nuitées hôtelières du département proviennent de personnes résidant en France (${hotel?.frequencyYear}). Leur motif (loisirs, affaires ou autre) n’est pas mesuré ici, ni leur présence à Ascain.`,
         peak?.nights != null ? `Le pic départemental de fréquentation est en ${peak.month}. Il impose de tester le modèle hors saison et les charges fixes.` : 'La saisonnalité locale reste à mesurer.',
       ] : ['La répartition de clientèle par origine n’est pas encore disponible ; aucune cible dominante ne peut être prouvée.'],
-      programme: ['Tester un mix de chambres standard et familiales à partir des réservations comparables.', 'Tester petit déjeuner, accueil flexible et services de séjour selon enquêtes clients et coût d’exploitation.', 'Dimensionner la restauration, le parking et les espaces communs seulement après étude d’usage et règles ERP/PLU.'],
+      programme: ['Tester plusieurs mixes de chambres seulement après mesure des profils et réservations comparables.', 'Tester petit déjeuner, accueil flexible et services de séjour selon enquêtes clients et coût d’exploitation.', 'Dimensionner la restauration, le parking et les espaces communs seulement après étude d’usage et règles ERP/PLU.'],
       alternatives: ['Clientèle affaires en semaine : à mesurer avec entreprises, nuitées semaine et comptes locaux.', 'Clientèle internationale/premium : à tester avec tarifs et taux d’occupation d’hôtels comparables du bassin.'],
       decisiveChecks: ['Occupation et ADR de 5 à 10 hôtels comparables par saison.', 'Origine, durée de séjour et motif des voyages à l’échelle du bassin.', 'Entretiens exploitants avec programme, prix, coûts et conditions d’implantation.'],
     };
