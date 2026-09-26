@@ -80,7 +80,7 @@ export function useCopilot() {
     const wasNew = !st.currentConversationId;
 
     st.pushUserMessage(trimmed, st.mode);
-    st.beginAssistantMessage(st.mode);
+    const requestId = st.beginAssistantMessage(st.mode);
 
     await start({
       conversation_id: st.currentConversationId ?? undefined,
@@ -92,7 +92,7 @@ export function useCopilot() {
       // V1.6 : pieces jointes du message courant uniquement.
       ...(options?.attachments?.length ? { attachments: options.attachments } : {}),
       context,
-    });
+    }, requestId);
 
     // Conversation nouvellement creee -> on rafraichit la liste (sidebar)
     if (wasNew) useCopilotStore.getState().loadConversations();

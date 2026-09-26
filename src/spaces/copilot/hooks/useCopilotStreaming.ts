@@ -48,7 +48,7 @@ function maybeTrackToolCall(event: unknown): void {
 export function useCopilotStreaming() {
   const abortRef = useRef<AbortController | null>(null);
 
-  const start = useCallback(async (request: CopilotChatRequest): Promise<void> => {
+  const start = useCallback(async (request: CopilotChatRequest, requestId: string): Promise<void> => {
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
@@ -58,9 +58,10 @@ export function useCopilotStreaming() {
         request,
         signal: ac.signal,
         onEvent: (event) => {
-          // Apprentissage : n'altère jamais le pipeline de streaming.
+          // Un ancien flux peut encore livrer des événements après son annulation.
+          if (ac.signal.aborted || useCopilotStore.getState().activeRequestId !== requestId) return;
           try { maybeTrackToolCall(event); } catch { /* silencieux par conception */ }
-          useCopilotStore.getState().handleStreamEvent(event);
+          useCopilotStore.getState().handleStreamEvent(event, requestId);
         },
       });
     } catch (err) {
@@ -68,7 +69,7 @@ export function useCopilotStreaming() {
       const message = err instanceof CopilotClientError
         ? err.message
         : err instanceof Error ? err.message : 'Erreur inconnue';
-      useCopilotStore.getState().failStreaming(message);
+      useCopilotStore.getState().failStreaming(message, requestId);
     } finally {
       if (abortRef.current === ac) abortRef.current = null;
     }

@@ -89,6 +89,7 @@ interface CopilotStore {
 
   status: CopilotStatus;
   streamingId: string | null;
+  activeRequestId: string | null;
   error: string | null;
 
   loadingConversations: boolean;
@@ -113,8 +114,8 @@ interface CopilotStore {
 
   pushUserMessage: (text: string, mode: CopilotMode) => void;
   beginAssistantMessage: (mode: CopilotMode) => string;
-  handleStreamEvent: (event: CopilotStreamEvent) => void;
-  failStreaming: (message: string) => void;
+  handleStreamEvent: (event: CopilotStreamEvent, requestId: string) => void;
+  failStreaming: (message: string, requestId: string) => void;
   cancelStreaming: () => void;
   reset: () => void;
 }
@@ -176,6 +177,7 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
 
   status: 'idle',
   streamingId: null,
+  activeRequestId: null,
   error: null,
 
   loadingConversations: false,
@@ -232,7 +234,7 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
 
   selectConversation: async (id) => {
     const selectionVersion = ++conversationSelectionVersion;
-    set({ mimmoziaView: 'conversation', loadingMessages: true, currentConversationId: id, actionRuns: [] });
+    set({ mimmoziaView: 'conversation', loadingMessages: true, currentConversationId: id, actionRuns: [], activeRequestId: null, streamingId: null, status: 'idle' });
     try {
       // Les deux ensemble : afficher les cartes d'action sans leur trace, même
       // un instant, ferait apparaître « action proposée » sur des choses déjà
@@ -292,6 +294,7 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
       actionRuns: [],
       status: 'idle',
       streamingId: null,
+      activeRequestId: null,
       error: null,
       loadingMessages: false,
     });
@@ -331,6 +334,7 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
         },
       ],
       streamingId: id,
+      activeRequestId: id,
       status: 'streaming',
       error: null,
     }));
@@ -338,7 +342,8 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
     return id;
   },
 
-  handleStreamEvent: (event) => {
+  handleStreamEvent: (event, requestId) => {
+    if (get().activeRequestId !== requestId) return;
     const sid = get().streamingId;
 
     const mapStreaming = (fn: (m: ChatMessage) => ChatMessage) =>
@@ -444,6 +449,7 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
               : m,
           ),
           streamingId: null,
+          activeRequestId: null,
           status: 'idle',
         }));
 
@@ -482,6 +488,7 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
               )
             : s.actionRuns,
           streamingId: null,
+          activeRequestId: null,
           status: 'error',
           error: messageUtilisateur,
           credits:
@@ -515,7 +522,8 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
     }
   },
 
-  failStreaming: (message) =>
+  failStreaming: (message, requestId) => {
+    if (get().activeRequestId !== requestId) return;
     set((s) => ({
       messages: s.messages.map((m) =>
         m.id === s.streamingId
@@ -523,9 +531,11 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
           : m,
       ),
       streamingId: null,
+      activeRequestId: null,
       status: 'error',
       error: message,
-    })),
+    }));
+  },
 
   cancelStreaming: () =>
     set((s) => ({
@@ -541,6 +551,7 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
           : m,
       ),
       streamingId: null,
+      activeRequestId: null,
       status: 'idle',
     })),
 
@@ -553,6 +564,7 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
       actionRuns: [],
       status: 'idle',
       streamingId: null,
+      activeRequestId: null,
       error: null,
     }),
 }));
