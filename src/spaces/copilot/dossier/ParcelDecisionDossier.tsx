@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 import type { DossierParcel, ParcelDossier } from './parcelDossier';
 import { evidenceScopeLabel, evidenceStatusLabel, formatEvidenceValue } from './parcelDossier';
 import { decisionStatus, selectedArea, taxScenarios } from './dossierCalculations';
+import { buildParcelStrategyPrompt } from './parcelStrategy';
 import { loadDossierEvents, loadParcelDossier, saveParcelDossier, type DossierEvent } from './dossierRepository';
 import { printParcelDossier } from './exportParcelDossier';
 import { supabase } from '@/lib/supabaseClient';
@@ -124,9 +125,14 @@ export function ParcelDecisionDossier({ dossier, conversationId, messageId, onAn
     } finally { setSaving(false); }
   };
 
+  const analyzeStrategy = () => {
+    const prompt = buildParcelStrategyPrompt(dossier, selected);
+    if (prompt) onAnalyze?.(prompt);
+  };
+
   const analyzeConfirmed = () => {
     if (!selected.length || !onAnalyze) return;
-    onAnalyze(`J’ai confirmé que le bien comprend les parcelles cadastrales ${selected.map((p) => p.id).join(', ')}. Reprends l’analyse parcelle par parcelle : vérifie pour chacune le zonage, les prescriptions, les servitudes et le risque d’inondation ; distingue les constats au point d’adresse des conclusions sur les parcelles sélectionnées. La surface cadastrale cumulée est ${area == null ? 'inconnue' : `${area} m²`}. Signale les règles écrites ou documents manquants avant tout verdict de constructibilité.`);
+    onAnalyze(`J’ai sélectionné comme périmètre de travail les parcelles cadastrales ${selected.map((p) => p.id).join(', ')}. Reprends l’analyse parcelle par parcelle : vérifie pour chacune le zonage, les prescriptions, les servitudes et le risque d’inondation ; distingue les constats au point d’adresse des conclusions sur les parcelles sélectionnées. La sélection ne prouve pas l’unité foncière ni la propriété. La surface cadastrale cumulée est ${area == null ? 'inconnue' : `${area} m²`}. Signale les règles écrites ou documents manquants avant tout verdict de constructibilité.`);
   };
 
   return <section className="mzia-dossier" aria-label="Dossier parcellaire Mimmoza">
@@ -181,8 +187,20 @@ export function ParcelDecisionDossier({ dossier, conversationId, messageId, onAn
       </div>
     </section>
 
+    <section className="mzia-dossier-strategy" aria-labelledby="mzia-dossier-strategy-heading">
+      <div className="mzia-dossier-section-heading"><div><span className="mzia-dossier-eyebrow">3 · Préparer la sortie</span><h4 id="mzia-dossier-strategy-heading">Du terrain au projet vendable</h4></div></div>
+      <p>Une stratégie de cession commence par la demande locale, puis confronte plusieurs produits aux droits à bâtir et aux risques du terrain.</p>
+      <div className="mzia-dossier-strategy-steps">
+        <div><strong>Marché</strong><span>Transactions, profondeur de la demande et limites des données.</span></div>
+        <div><strong>Produit</strong><span>Deux ou trois options à tester, avec les conditions qui peuvent les écarter.</span></div>
+        <div><strong>Contrepartie</strong><span>Profil d’acquéreur, stade de cession et pièces à lui présenter.</span></div>
+      </div>
+      <button type="button" onClick={analyzeStrategy} disabled={!selected.length || !onAnalyze}>Étudier le marché et préparer la cession</button>
+      <small>{selected.length ? `Analyse demandée sur ${selected.length} parcelle${selected.length > 1 ? 's' : ''} sélectionnée${selected.length > 1 ? 's' : ''}. Les droits à construire restent à vérifier.` : 'Sélectionnez d’abord le périmètre du projet sur la carte.'}</small>
+    </section>
+
     <section className="mzia-dossier-evidence-overview" aria-label="Disponibilité des données du dossier">
-      <div className="mzia-dossier-section-heading"><div><span className="mzia-dossier-eyebrow">3 · Mesurer les limites</span><h4>Disponibilité des {dossier.evidences.length} données</h4></div></div>
+      <div className="mzia-dossier-section-heading"><div><span className="mzia-dossier-eyebrow">4 · Mesurer les limites</span><h4>Disponibilité des {dossier.evidences.length} données</h4></div></div>
       <div className="mzia-dossier-evidence-bar" role="img" aria-label={`${evidenceCounts.confirmed} données confirmées, ${evidenceCounts.estimated} estimées et ${evidenceCounts.unavailable} indisponibles`}>
         {evidenceCounts.confirmed > 0 && <span className="mzia-dossier-evidence-bar--confirmed" style={{ width: `${evidenceCounts.confirmed / evidenceTotal * 100}%` }} />}
         {evidenceCounts.estimated > 0 && <span className="mzia-dossier-evidence-bar--estimated" style={{ width: `${evidenceCounts.estimated / evidenceTotal * 100}%` }} />}

@@ -129,3 +129,13 @@
 .mzia-dossier-notice{color:#047857}
 .mzia-chat-content .mzia-dossier button{color:#fff!important}
 .mzia-chat-content .mzia-dossier a{color:#4338ca!important}
+
+.mzia-dossier-strategy{margin:18px 0 4px;padding:18px;border:1px solid #c7d2fe;border-radius:14px;background:linear-gradient(135deg,#f5f3ff,#eef2ff);color:#1e293b}
+.mzia-dossier-strategy p{margin:0 0 14px;color:#475569;font-size:13px;line-height:1.5}
+.mzia-dossier-strategy-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.mzia-dossier-strategy-steps div{display:flex;flex-direction:column;gap:4px;padding:11px;border:1px solid #ddd6fe;border-radius:10px;background:#fff}
+.mzia-dossier-strategy-steps strong{color:#4338ca;font-size:12px}
+.mzia-dossier-strategy-steps span,.mzia-dossier-strategy small{color:#475569;font-size:11px;line-height:1.45}
+.mzia-dossier-strategy small{display:block;margin-top:9px}
+.mzia-dossier-strategy button:disabled{opacity:.55;cursor:not-allowed}
+@media(max-width:700px){.mzia-dossier-strategy-steps{grid-template-columns:1fr}}
