@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { calculateHotelEconomics, parseHotelCapacity, parseHotelMonths } from './hotelMarket.ts';
+import { calculateHotelEconomics, parseHotelAnnual, parseHotelCapacity, parseHotelMonths } from './hotelMarket.ts';
 
 test('offre hôtelière : sépare établissements, chambres et classement', () => {
   const rows = [
@@ -31,4 +31,12 @@ test('modèle hôtelier : impossible sans prix et coûts explicites', () => {
   assert.equal(result.revenue, 985500);
   assert.equal(result.operatingResult, 322700);
   assert.ok((result.breakEvenOccupancy ?? 0) > 33 && (result.breakEvenOccupancy ?? 0) < 34);
+});
+
+test('bilan annuel : lit les nuitées et la part de clientèle non résidente sans les confondre', () => {
+  const rows = [
+    { dimensions: { ACTIVITY: 'I551', FREQ: 'A', TOUR_MEASURE: 'NIGHT_SPENT', TOUR_RESID: '_T' }, attributes: { UNIT_MULT: '3' }, measures: { OBS_VALUE_NIVEAU: { value: 2790 } } },
+    { dimensions: { ACTIVITY: 'I551', FREQ: 'A', TOUR_MEASURE: 'PT_NIGHTSPENT_NON_RESIDENT' }, attributes: { UNIT_MULT: '0' }, measures: { OBS_VALUE_NIVEAU: { value: 21.9 } } },
+  ];
+  assert.deepEqual(parseHotelAnnual(rows), { nights: 2790000, nonResidentSharePct: 21.9 });
 });

@@ -1,0 +1,40 @@
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import type { HotelEvidence } from './hotelMarket';
+import { calculateIndicativeCapacity, programmeKind, targetProposal, type PluEnvelope } from './projectProgramme';
+
+const fmt = (n: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(n);
+const labelFor = (kind: string) => kind === 'hotel' ? 'chambres' : kind === 'housing' || kind === 'student' ? 'logements' : kind === 'ehpad' ? 'places' : 'unités de programme';
+
+export function ProgrammeProposalSection({ programme, hotel, terrainM2, pluEnvelope, studyQuery, insee }: {
+  programme: string; hotel: HotelEvidence | null; terrainM2: string;
+  pluEnvelope: PluEnvelope | null; studyQuery: string; insee: string;
+}) {
+  const kind = programmeKind(programme);
+  const target = targetProposal(kind, hotel);
+  const plu = useMemo(() => pluEnvelope ?? { cesRatio: null, heightM: null, parkingPerHousing: null, notes: ['Règlement PLU non structuré dans ce dossier.'] }, [pluEnvelope]);
+  const [floors, setFloors] = useState('2');
+  const [floorHeight, setFloorHeight] = useState('3.2');
+  const [unitArea, setUnitArea] = useState('');
+  const [efficiency, setEfficiency] = useState('70');
+  const capacity = calculateIndicativeCapacity(kind, plu, {
+    terrainM2: Number(terrainM2.replace(',', '.')), floors: Number(floors), floorHeightM: Number(floorHeight),
+    grossM2PerUnit: Number(unitArea), siteEfficiencyPct: Number(efficiency),
+  });
+  const fld = (title: string, value: string, set: (value: string) => void, suffix: string) => <label className="text-sm text-slate-700">{title}<div className="mt-1 flex items-center rounded-xl border border-slate-300"><input type="number" min="0" step="any" value={value} onChange={(event) => set(event.target.value)} className="w-full min-w-0 rounded-xl px-3 py-2" /><span className="pr-3 text-xs text-slate-500">{suffix}</span></div></label>;
+  return <section className="space-y-5" aria-labelledby="programme-proposal-title">
+    <div className="rounded-3xl border border-indigo-200 bg-indigo-50 p-5 sm:p-7"><p className="text-xs font-bold uppercase tracking-widest text-indigo-700">Programme proposé · conditionnel</p><h2 id="programme-proposal-title" className="mt-1 text-xl font-semibold text-slate-950">{target.title}</h2><p className="mt-2 text-sm text-indigo-950">Cette piste répond aux données disponibles. Elle devient un choix de programme seulement après les vérifications ci-dessous et la comparaison économique des variantes.</p>
+      <h3 className="mt-5 font-semibold">Pourquoi cette cible ?</h3><ul className="mt-2 list-inside list-disc space-y-2 text-sm">{target.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+      <h3 className="mt-5 font-semibold">Programme et services à tester</h3><ul className="mt-2 list-inside list-disc space-y-2 text-sm">{target.programme.map((item) => <li key={item}>{item}</li>)}</ul>
+      <p className="mt-4 text-sm"><strong>Autres cibles :</strong> {target.alternatives.join(' · ')}</p>
+    </div>
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><p className="text-xs font-bold uppercase tracking-widest text-indigo-600">Gabarit et capacité</p><h3 className="mt-1 text-xl font-semibold">Tester un volume, puis le nombre de {labelFor(kind)}</h3><p className="mt-2 text-sm text-slate-600">Le calcul part de la surface déclarée, de l’emprise PLU structurée et de vos hypothèses. C’est un plafond géométrique partiel, à réduire après les reculs, la pleine terre, les circulations, les locaux techniques et les contraintes réglementaires.</p>
+      <div className="mt-5 grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-slate-50 p-3 text-sm">Terrain : <strong>{terrainM2 ? `${terrainM2} m² déclarés` : 'surface absente'}</strong></div><div className="rounded-xl bg-slate-50 p-3 text-sm">Emprise PLU : <strong>{plu.cesRatio == null ? 'non structurée' : `${fmt(plu.cesRatio * 100)} % max.`}</strong></div><div className="rounded-xl bg-slate-50 p-3 text-sm">Hauteur PLU : <strong>{plu.heightM == null ? 'non structurée' : `${fmt(plu.heightM)} m max.`}</strong></div></div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{fld('Niveaux hypothétiques', floors, setFloors, 'niv.')}{fld('Hauteur par niveau', floorHeight, setFloorHeight, 'm')}{fld(`Surface brute par ${(kind === 'hotel' ? 'chambre' : kind === 'housing' || kind === 'student' ? 'logement' : kind === 'ehpad' ? 'place' : 'unité de programme')}`, unitArea, setUnitArea, 'm²')}{fld('Part d’emprise réellement mobilisée', efficiency, setEfficiency, '%')}</div>
+      {capacity ? <div className="mt-5 rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-950"><strong>Plafond théorique : {capacity.indicativeUnits} {labelFor(kind)}</strong> · emprise utilisée {fmt(capacity.footprintCeilingM2)} m² · surface brute {fmt(capacity.grossCeilingM2)} m². Hauteur hypothétique : {fmt(Number(floors) * Number(floorHeight))} m, {capacity.heightTest === 'above' ? 'au-dessus de la hauteur structurée' : capacity.heightTest === 'within' ? 'sous la hauteur structurée, autres règles non vérifiées' : 'sans règle de hauteur exploitable'}.{capacity.parkingMinimum != null && ` Parking logement théorique : au moins ${capacity.parkingMinimum} places selon le ratio enregistré.`}</div> : <p className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-950">Renseignez une surface de terrain, une emprise maximale issue du PLU et une surface brute par unité pour obtenir un plafond théorique. Aucun nombre de {labelFor(kind)} n’est déduit sans ces données.</p>}
+      <ul className="mt-4 list-inside list-disc space-y-1 text-xs text-slate-600">{plu.notes.map((note) => <li key={note}>{note}</li>)}</ul><Link to={`/promoteur/programmation${studyQuery}`} className="mt-4 inline-block text-sm font-semibold text-indigo-700 underline">Ouvrir la programmation détaillée</Link>
+    </div>
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><h3 className="text-lg font-semibold">Preuves à obtenir pour trancher</h3><ol className="mt-3 list-inside list-decimal space-y-2 text-sm text-slate-700">{target.decisiveChecks.map((item) => <li key={item}>{item}</li>)}</ol><p className="mt-4 text-sm text-slate-600">La couleur, les matériaux, les façades et l’implantation seront proposés après vérification du règlement, de l’environnement bâti et des attentes de la cible retenue.</p></div>
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><h3 className="text-lg font-semibold">Sources à croiser pour approfondir l’étude</h3><ul className="mt-3 list-inside list-disc space-y-2 text-sm text-slate-700">{insee && <li><a className="text-indigo-700 underline" href={`https://www.insee.fr/fr/statistiques/2011101?geo=COM-${encodeURIComponent(insee)}`} target="_blank" rel="noopener noreferrer">INSEE · dossier complet de la commune</a> : emploi, revenus, ménages et entreprises ; contexte à analyser selon l’usage.</li>}<li><a className="text-indigo-700 underline" href="https://www.data.gouv.fr/datasets/datatourisme-la-plateforme-nationale-des-donnees-touristiques" target="_blank" rel="noopener noreferrer">DATAtourisme</a> : points d’intérêt et offre touristique à géolocaliser ; pas une mesure des nuitées.</li><li><a className="text-indigo-700 underline" href="https://www.geoportail-urbanisme.gouv.fr/" target="_blank" rel="noopener noreferrer">Géoportail de l’urbanisme</a> : plans, prescriptions et règlement opposables à la parcelle.</li>{(kind === 'ehpad' || kind === 'clinic') && <li><a className="text-indigo-700 underline" href="https://www.data.gouv.fr/datasets/finess-extraction-du-fichier-des-etablissements" target="_blank" rel="noopener noreferrer">FINESS</a> : établissements sanitaires et médico-sociaux, à croiser avec capacités et autorisations.</li>}</ul><p className="mt-3 text-xs text-slate-500">Ces liens sont des sources à instruire ; seuls les chiffres effectivement collectés et datés ci-dessus entrent dans la proposition.</p></div>
+  </section>;
+}

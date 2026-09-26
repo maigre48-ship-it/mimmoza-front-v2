@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { userStorage } from '@/lib/storage/userScopedStorage';
 import { programmeBrief } from '@/spaces/copilot/dossier/parcelStrategy';
 import { HotelDossierSection } from './HotelDossierSection';
+import { ProgrammeProposalSection } from './ProgrammeProposalSection';
+import { extractPluEnvelope, type PluEnvelope } from './projectProgramme';
 import './StrategieProjetPage.css';
 import { fetchHotelEvidence, type HotelEvidence } from './hotelMarket';
 import { PromoteurPageHero } from '../shared/components/PromoteurPageHero';
@@ -38,6 +40,7 @@ type Scenario = {
   surfaceM2: string;
   pluZone?: string | null;
   pluSource?: string | null;
+  pluEnvelope?: PluEnvelope | null;
   date: string;
   market: MarketResult | null;
   marketError: string | null;
@@ -197,7 +200,7 @@ export default function StrategieProjetPage() {
 
     const next: Scenario = {
       id: crypto.randomUUID(), programme: brief.label, parcelId: parcel, address: address.trim(), insee: cityCode,
-      surfaceM2: surfaceM2.trim(), pluZone: study?.plu?.zone_code ?? null, pluSource: study?.plu?.source ?? null, date: new Date().toISOString(), market, marketError, candidates, operatorError, hotelEvidence, hotelError,
+      surfaceM2: surfaceM2.trim(), pluZone: study?.plu?.zone_code ?? null, pluSource: study?.plu?.source ?? null, pluEnvelope: study?.plu?.ruleset ? extractPluEnvelope(study.plu.ruleset) : null, date: new Date().toISOString(), market, marketError, candidates, operatorError, hotelEvidence, hotelError,
     };
     save([next, ...scenarios].slice(0, 3));
     setBusy(false);
@@ -209,7 +212,7 @@ export default function StrategieProjetPage() {
   })), [scenarios]);
 
   return <div className="mx-auto max-w-7xl space-y-6 px-4 pb-14 pt-6 sm:px-6">
-    <PromoteurPageHero badge="PROMOTEUR · STRATÉGIE DE PROJET" title="Quel projet pour ce terrain ?" metaLines={[{ icon: <MapPin size={16} />, text: study?.title || 'Étude libre ou parcelle de l’étude active' }]} statCards={[{ label: 'Scénarios', value: String(scenarios.length) }, { label: 'Méthode', value: '3 étapes', tone: 'emerald' }]} />
+    <PromoteurPageHero badge="PROMOTEUR · STRATÉGIE DE PROJET" title="Quel projet pour ce terrain ?" metaLines={[{ icon: <MapPin size={16} />, text: study?.title || 'Étude libre ou parcelle de l’étude active' }]} statCards={[{ label: 'Scénarios', value: String(scenarios.length) }, { label: 'Dossier', value: 'Sourcé', tone: 'emerald' }]} />
 
     <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-5 text-sm text-indigo-950">
       Ce dossier distingue les faits mesurés, les hypothèses à tester et les décisions à confirmer. Les données de marché générales ne valent pas preuve de demande pour le programme choisi.
@@ -226,7 +229,7 @@ export default function StrategieProjetPage() {
       </div>
       <label className="mt-5 block text-sm font-medium text-slate-700">Programme à étudier<input value={programme} onChange={(event) => setProgramme(event.target.value)} list="strategy-programmes" maxLength={120} placeholder="Hôtel, clinique, supermarché… ou votre propre idée" className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 font-normal" /></label>
       <datalist id="strategy-programmes">{IDEAS.map((idea) => <option key={idea} value={idea} />)}</datalist>
-      {brief && <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-950"><strong>Couverture actuelle :</strong> {brief.marketCaveat}<br /><strong>À documenter :</strong> {brief.criticalData}.</div>}
+      {brief && <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-950"><strong>Couverture actuelle :</strong> {brief.marketType === 'hotel' ? 'Offre communale et fréquentation départementale INSEE disponibles. Occupation et prix locaux à relever.' : brief.marketCaveat}<br /><strong>À documenter :</strong> {brief.criticalData}.</div>}
       {formError && <p role="alert" className="mt-4 text-sm text-rose-700">{formError}</p>}
       <button type="button" disabled={busy} onClick={() => void analyze()} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-5 py-3 font-semibold text-white disabled:opacity-60">{busy ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}{busy ? 'Analyse en cours…' : 'Analyser ce programme'}</button>
     </section>
@@ -249,6 +252,7 @@ export default function StrategieProjetPage() {
         <p className="mt-2">Population communale : {number(latest.market?.core?.insee?.population)} · Transactions DVF : {number(latest.market?.core?.dvf?.nb_transactions)} ({latest.market?.core?.dvf?.perimetre_label || 'périmètre à vérifier'}).</p>
         <p className="mt-2 text-slate-500">Ces indicateurs ne mesurent pas la demande pour {latest.programme.toLowerCase()}. {latest.marketError || programmeBrief(latest.programme)?.marketCaveat}</p>
       </div>}
+      <ProgrammeProposalSection programme={latest.programme} hotel={latest.hotelEvidence ?? null} terrainM2={latest.surfaceM2} pluEnvelope={latest.pluEnvelope ?? null} studyQuery={studyQuery} insee={latest.insee || latest.market?.meta?.commune_insee || ''} />
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><h3 className="font-semibold text-slate-900">Ce qu’il reste à prouver</h3><p className="mt-3 text-sm text-slate-700">{programmeBrief(latest.programme)?.criticalData || 'Demande, offre concurrente et règles propres au programme.'}</p><ul className="mt-4 list-inside list-disc space-y-2 text-sm text-slate-700"><li>Règlement écrit, plans PLU et contraintes applicables à chaque parcelle.</li><li>Accès, stationnement, risques, servitudes et obligations propres à l’exploitation.</li><li>Coûts, recettes et seuils de décision documentés par des sources adaptées.</li></ul><div className="mt-5 flex flex-wrap gap-3"><Link to={`/promoteur/foncier${studyQuery}`} className="inline-flex items-center gap-1 text-sm font-semibold text-indigo-700">Vérifier le foncier <ArrowRight size={15} /></Link><Link to={`/promoteur/marche${studyQuery}`} className="inline-flex items-center gap-1 text-sm font-semibold text-indigo-700">Ouvrir l’étude de marché <ArrowRight size={15} /></Link></div></div>
         <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><h3 className="font-semibold text-slate-900">Exploitants à qualifier</h3><p className="mt-2 text-sm text-slate-500">Registre Sirene via l’API Recherche d’entreprises. Une présence dans le département ne prouve ni intérêt, ni capacité à reprendre le projet.</p>{latest.operatorError && <p className="mt-3 text-sm text-amber-800">{latest.operatorError}</p>}{latest.candidates.length ? <ul className="mt-4 max-h-80 space-y-3 overflow-auto">{latest.candidates.map((candidate) => <li key={candidate.siren} className="rounded-xl border border-slate-200 p-3"><a href={candidate.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-indigo-700">{candidate.nom}<ExternalLink size={14} /></a><p className="mt-1 text-xs text-slate-600">SIREN {candidate.siren} · NAF {candidate.activite}{candidate.commune ? ` · ${candidate.commune}` : ''}</p></li>)}</ul> : <p className="mt-4 text-sm text-slate-600">{programmeBrief(latest.programme)?.operatorNaf ? 'Aucune entreprise présentable avec les données disponibles.' : 'Définir d’abord la catégorie d’exploitant et son activité pour rechercher des sociétés précises.'}</p>}</div>

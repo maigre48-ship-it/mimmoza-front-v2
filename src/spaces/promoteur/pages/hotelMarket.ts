@@ -14,6 +14,10 @@ export type HotelEvidence = {
   frequencyYear: number | null;
   capacity: HotelCapacity[];
   months: HotelMonth[];
+  annualNights: number | null;
+  previousAnnualNights: number | null;
+  nonResidentSharePct: number | null;
+  annualUrl: string | null;
   capacityUrl: string | null;
   frequencyUrl: string | null;
   missing: string[];
@@ -69,7 +73,14 @@ export function parseHotelMonths(observations: Observation[], year: number): Hot
   });
 }
 
-/** Ne classe aucun programme : collecte seulement l'offre communale et la demande départementale. */
+export function parseHotelAnnual(observations: Observation[]): { nights: number | null; nonResidentSharePct: number | null } {
+  const nights = observations.find((item) => item.dimensions?.ACTIVITY === 'I551' && item.dimensions?.FREQ === 'A' && item.dimensions?.TOUR_MEASURE === 'NIGHT_SPENT' && item.dimensions?.TOUR_RESID === '_T');
+  const share = observations.find((item) => item.dimensions?.ACTIVITY === 'I551' && item.dimensions?.FREQ === 'A' && item.dimensions?.TOUR_MEASURE === 'PT_NIGHTSPENT_NON_RESIDENT');
+  const n = nights ? observationValue(nights) : null;
+  return { nights: n == null || nights?.attributes?.UNIT_MULT !== '3' ? null : n * 1000, nonResidentSharePct: share?.attributes?.UNIT_MULT === '0' ? observationValue(share) : null };
+}
+
+/** Offre communale et fréquentation départementale : aucun classement de programme. */
 export async function fetchHotelEvidence(insee: string): Promise<HotelEvidence> {
   if (!/^(?:\d{5}|2[AB]\d{3})$/.test(insee)) throw new Error('Code INSEE vérifié requis pour l’étude hôtelière.');
   const department = departmentFromInsee(insee);
@@ -80,6 +91,10 @@ export async function fetchHotelEvidence(insee: string): Promise<HotelEvidence> 
   let frequencyYear: number | null = null;
   let capacityUrl: string | null = null;
   let frequencyUrl: string | null = null;
+  let annualUrl: string | null = null;
+  let annualNights: number | null = null;
+  let previousAnnualNights: number | null = null;
+  let nonResidentSharePct: number | null = null;
   const missing: string[] = [];
 
   for (const year of [currentYear, currentYear - 1]) {
@@ -114,7 +129,26 @@ export async function fetchHotelEvidence(insee: string): Promise<HotelEvidence> 
     } catch { /* millésime indisponible */ }
   }
   if (!frequencyYear) missing.push('Fréquentation hôtelière mensuelle départementale INSEE indisponible.');
-  return { communeInsee: insee, department, capacityYear, frequencyYear, capacity, months, capacityUrl, frequencyUrl, missing, fetchedAt: new Date().toISOString() };
+  if (frequencyYear) {
+    const annual = async (year: number) => {
+      const url = new URL('https://api.insee.fr/melodi/data/DS_TOUR_FREQ');
+      url.searchParams.set('GEO', `DEP-${department}`);
+      url.searchParams.set('ACTIVITY', 'I551');
+      url.searchParams.set('FREQ', 'A');
+      url.searchParams.set('TIME_PERIOD', String(year));
+      url.searchParams.set('maxResult', '100');
+      return { data: parseHotelAnnual(await readMelodi(url)), url: url.toString() };
+    };
+    try {
+      const current = await annual(frequencyYear);
+      annualNights = current.data.nights;
+      nonResidentSharePct = current.data.nonResidentSharePct;
+      annualUrl = current.url;
+      const prior = await annual(frequencyYear - 1);
+      previousAnnualNights = prior.data.nights;
+    } catch { missing.push('Comparaison annuelle ou origine des nuitées indisponible.'); }
+  }
+  return { communeInsee: insee, department, capacityYear, frequencyYear, capacity, months, annualNights, previousAnnualNights, nonResidentSharePct, annualUrl, capacityUrl, frequencyUrl, missing, fetchedAt: new Date().toISOString() };
 }
 
 export type HotelAssumptions = { rooms: string; adr: string; occupancy: string; variableCost: string; fixedCosts: string; investment: string };
