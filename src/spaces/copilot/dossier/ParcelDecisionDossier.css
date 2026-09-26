@@ -139,3 +139,10 @@
 .mzia-dossier-strategy small{display:block;margin-top:9px}
 .mzia-dossier-strategy button:disabled{opacity:.55;cursor:not-allowed}
 @media(max-width:700px){.mzia-dossier-strategy-steps{grid-template-columns:1fr}}
+
+.mzia-dossier-programme-label{display:block;margin-bottom:5px;color:#334155;font-size:12px;font-weight:650}
+.mzia-dossier-programme-label span{font-weight:400;color:#64748b}
+.mzia-dossier-programme-input{width:100%;box-sizing:border-box;margin:0 0 14px;padding:10px 12px;border:1px solid #a5b4fc;border-radius:8px;background:#fff;color:#0f172a;font:inherit;font-size:13px}
+.mzia-dossier-programme-input:focus{outline:2px solid #818cf8;outline-offset:1px}
+
+.mzia-dossier-strategy .mzia-dossier-programme-caveat{margin:-5px 0 14px;padding:8px 10px;border-left:3px solid #d97706;background:#fffbeb;color:#78350f;font-size:11px}

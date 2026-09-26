@@ -82,6 +82,19 @@ const CORE_TOOLS: readonly string[] = [
 
 const RULES: IntentRule[] = [
   {
+    intent: 'project_strategy',
+    patterns: [
+      /strategie de projet/, /cession/, /programme a instruire/, /programmes plausibles/,
+      /exploitant/, /acquereur/, /type de projet/, /quel projet/, /quel batiment/,
+    ],
+    tools: [
+      'get_etude_parcelle', 'get_parcel_summary', 'get_parcel_plu', 'get_zonage_plu',
+      'get_prescriptions_urbanisme', 'get_servitudes', 'get_ppr_detail',
+      'get_etude_marche', 'get_etablissements_proches', 'get_operateurs_candidats',
+      'get_couts_construction', 'get_bilan_promoteur', 'get_sitadel',
+    ],
+  },
+  {
     intent: 'parcel_analysis',
     patterns: [
       /etude complete/, /analyse (?:complete|globale|de la parcelle)/, /parcelle/,

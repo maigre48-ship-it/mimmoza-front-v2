@@ -2273,6 +2273,14 @@ function summarizeMarketStudy(
       } : null,
       constats: Array.isArray(r.insights) ? r.insights.slice(0, 10).map((i: any) => ({ type: i.type, categorie: i.category, message: i.message })) : [],
       avertissements: r.warnings ?? [],
+      adequation_programme: (() => {
+        const type = (r.meta as Record<string, unknown> | undefined)?.project_type;
+        if (type === 'hotel') return { niveau: 'pre_diagnostic', manquent: ['nuitées par saison', 'occupation par catégorie', 'ADR/RevPAR', 'parc hôtelier par étoiles', 'clientèles', 'coûts d’exploitation'], avertissement: 'Le score hôtel mesure surtout des proxys de population, équipements et transports. Il ne valide aucun classement ni nombre de chambres.' };
+        if (type === 'ehpad') return { niveau: 'pre_diagnostic', manquent: ['besoins de dépendance', 'places autorisées', 'occupation', 'tarifs', 'autorisations'], avertissement: 'Les proxys communaux ne valident pas une ouverture d’EHPAD.' };
+        if (type === 'commerce') return { niveau: 'pre_diagnostic', manquent: ['zone de chalandise', 'dépenses par catégorie', 'flux réels', 'loyers commerciaux'], avertissement: 'Le score commerce ne prédit pas le chiffre d’affaires ni la faisabilité d’une enseigne.' };
+        if (type === 'bureaux') return { niveau: 'pre_diagnostic', manquent: ['stock', 'vacance', 'loyers', 'demande placée'], avertissement: 'Le score bureaux ne mesure pas l’absorption locative.' };
+        return null;
+      })(),
       source: 'market-study Mimmoza (DVF, INSEE, BPE, Overpass)',
     },
   };
@@ -3478,6 +3486,31 @@ const TOOLS: ToolDef[] = [
     available_in_modes: ['quick', 'advanced', 'report'],
   },
   {
+    name: 'get_operateurs_candidats',
+    description:
+      "REPERAGE D'EXPLOITANTS POTENTIELS via le registre public des entreprises (API Recherche d'entreprises DINUM). " +
+      "Filtre les entreprises actives par activité NAF et département du terrain, puis renvoie nom, SIREN, activité, " +
+      "nombre d'établissements ouverts et preuve géographique, avec lien officiel. Le code NAF doit être vérifié pour " +
+      "le programme envisagé. Exemples NAF rév.2 : hôtel 55.10Z, EHPAD 87.10A, clinique 86.10Z, supermarché 47.11D. " +
+      "Pour le logement, distingue promoteur, bailleur, gestionnaire et investisseur avant de choisir une activité. " +
+      "ATTENTION : ce sont des entreprises du secteur présentes dans le département, PAS des acheteurs identifiés, " +
+      "ni des prospects qualifiés, ni une preuve d'appétence pour la parcelle. N'invente ni contact ni décision d'investir. " +
+      "Si la commune du terrain n'est pas vérifiée, l'outil refuse la recherche. Cite la source et la date.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        parcel_id: { type: 'string', description: 'Parcelle du projet, pour résoudre et vérifier son département.' },
+        code_insee: { type: 'string', description: 'Code INSEE de la commune, vérifié avant la recherche.' },
+        commune: { type: 'string', description: 'Nom de la commune, pour validation.' },
+        code_naf: { type: 'string', description: 'Code NAF rév.2 précis du type d exploitant cherché, ex. 55.10Z. Ne pas deviner.' },
+        programme: { type: 'string', description: 'Programme ou type d exploitant, pour contextualiser la liste.' },
+        limite: { type: 'number', description: 'Nombre de sociétés (max 10).' },
+      },
+      required: ['code_naf', 'programme'],
+    },
+    available_in_modes: ['quick', 'advanced', 'report'],
+  },
+  {
     name: 'get_equipements_proches',
     description:
       "ÉQUIPEMENTS ET SERVICES autour d'un point (Base Permanente des Équipements de l'INSEE) : " +
@@ -4409,6 +4442,7 @@ async function executeTool(
     case 'get_sitadel':              return await toolSitadel(input, ctx);
     case 'get_appels_offres':        return await toolAppelsOffres(input, ctx);
     case 'get_etablissements_proches': return await toolEtablissementsProches(input, ctx);
+    case 'get_operateurs_candidats': return await toolOperateursCandidats(input, ctx);
     case 'get_equipements_proches':  return await toolEquipementsProches(input, ctx);
     case 'get_logement_social':      return await toolLogementSocial(input, ctx);
     case 'get_contexte_commune':     return await toolContexteCommune(input, ctx);
@@ -6115,6 +6149,67 @@ async function toolEtablissementsProches(
     );
   } catch (e) {
     return avecAjustement({ status: 'error', source: INTERNAL_FUNCTIONS.sirene, message: errMsg(e) }, insee);
+  }
+}
+
+// ─── Candidats par activité et territoire : registre officiel, pas intérêt prouvé ───
+async function toolOperateursCandidats(
+  input: Record<string, unknown>,
+  ctx: MimmozaContext,
+): Promise<ToolResult> {
+  const naf = str(input.code_naf)?.toUpperCase();
+  const programme = str(input.programme)?.slice(0, 120);
+  if (!naf || !/^\d{2}\.\d{2}[A-Z]$/.test(naf) || !programme) {
+    return { status: 'error', source: 'API Recherche d’entreprises (DINUM)', message: 'Programme et code NAF rév.2 précis requis.' };
+  }
+
+  const insee = await resoudreInseeFiable(input, ctx, resolveParcelRef(input, ctx));
+  if (!insee.code || insee.origine === 'non_verifie' || insee.origine === 'aucun') {
+    return { status: 'not_found', source: 'API Recherche d’entreprises (DINUM)', message: 'Département du terrain non vérifié. Aucun candidat géographique ne peut être proposé.' };
+  }
+  const departement = insee.code.startsWith('97') || insee.code.startsWith('98')
+    ? insee.code.slice(0, 3) : insee.code.slice(0, 2);
+  const limite = Math.min(10, Math.max(1, Math.trunc(num(input.limite) ?? 8)));
+  const url = new URL('https://recherche-entreprises.api.gouv.fr/search');
+  url.searchParams.set('activite_principale', naf);
+  url.searchParams.set('departement', departement);
+  url.searchParams.set('etat_administratif', 'A');
+  url.searchParams.set('per_page', String(limite));
+
+  try {
+    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+    if (!response.ok) throw new Error(`Recherche d'entreprises HTTP ${response.status}`);
+    const raw = await response.json() as Record<string, any>;
+    const results = Array.isArray(raw.results) ? raw.results : [];
+    const candidats = results.filter((r: any) => r?.etat_administratif === 'A' && /^\d{9}$/.test(String(r.siren ?? '')))
+      .map((r: any) => {
+        const local = Array.isArray(r.matching_etablissements) ? r.matching_etablissements
+          .find((e: any) => e?.etat_administratif === 'A' && typeof e?.commune === 'string' && e.commune.startsWith(departement)) : null;
+        return {
+          nom: String(r.nom_complet ?? r.nom_raison_sociale ?? '').slice(0, 160),
+          siren: String(r.siren),
+          activite_principale: r.activite_principale ?? null,
+          nombre_etablissements_ouverts: Number.isFinite(r.nombre_etablissements_ouverts) ? r.nombre_etablissements_ouverts : null,
+          implantation_departementale: local ? {
+            commune: local.libelle_commune ?? null,
+            adresse: local.adresse ?? null,
+            activite_etablissement: local.activite_principale ?? null,
+          } : null,
+          fiche_officielle: `https://annuaire-entreprises.data.gouv.fr/entreprise/${r.siren}`,
+        };
+      });
+    return avecAjustement({
+      status: candidats.length ? 'ok' : 'not_found',
+      source: 'API Recherche d’entreprises (DINUM) / Sirene',
+      data: {
+        programme, code_naf_recherche: naf, commune_terrain: insee.nom ?? null, departement,
+        consulté_le: new Date().toISOString(), total_resultats_api: raw.total_results ?? null,
+        candidats,
+        avertissement: 'Entreprises actives repérées par activité et présence départementale ; ni sélection qualitative, ni intérêt commercial, ni capacité d’investissement confirmés. Le code NAF de l’établissement local peut différer de celui de la société. Vérifier activité réelle, stratégie, zone d’implantation et décideur avant toute prise de contact.',
+      },
+    }, insee);
+  } catch (error) {
+    return avecAjustement({ status: 'error', source: 'API Recherche d’entreprises (DINUM)', message: errMsg(error) }, insee);
   }
 }
 
@@ -9280,6 +9375,8 @@ function buildSystemPrompt(ctx: MimmozaContext, mode: CopilotMode): string {
     "4quindecies-bis. CALCULS DU RAPPORT PARCELLAIRE — si la réponse repose sur get_etude_parcelle et que la question n'est pas explicitement financière, tu ne calcules AUCUN rendement, ratio, dispersion ou indicateur nouveau en combinant loyer, DVF ou autres champs. Cette restriction est propre au rapport parcellaire : elle ne désactive pas la synthèse d'investissement lorsqu'elle est explicitement demandée. Tu transportes et respectes intégralement interdictions_analyse.",
     "4quindecies-quater. DEUX PRIX AU M² NE SONT PAS INTERCHANGEABLES. Plusieurs prix au m² coexistent souvent dans ton contexte : celui des mutations proches de la parcelle (DVF, portée « proximité », petit échantillon) et celui de la commune entière (étude de marché, portée « commune », grand échantillon). Ils diffèrent, et c'est NORMAL — ils ne mesurent pas la même chose. INTERDICTION d'en citer un dans une phrase et l'autre dans la suivante sans le dire : c'est la faute qui décrédibilise le plus vite une analyse, parce que le lecteur voit deux chiffres contradictoires sans savoir lequel croire. Quand deux prix coexistent, tu les nommes TOUS LES DEUX dans la même phrase, chacun avec sa portée, la taille de son échantillon et sa source — « 6 052 €/m² sur 8 mutations au voisinage immédiat [source: DVF], contre 6 672 €/m² sur 244 mutations à l'échelle de la commune [source: étude de marché] » — puis tu dis EXPLICITEMENT lequel tu retiens et pourquoi : le prix de voisinage prime pour situer ce terrain-là, le prix communal prime pour juger de la profondeur et de la liquidité du marché. Si les deux valeurs s'écartent visiblement, tu dis d'où vient l'écart avec les motifs déjà présents dans les sorties d'outil (échantillon mélangeant plusieurs catégories de biens, secteur hétérogène, effectif trop faible, valeurs extrêmes écartées) au lieu de le laisser passer — sans calculer toi-même le pourcentage d'écart ni aucun indicateur de dispersion, que la règle 4quindecies-bis interdit. La règle vaut à l'identique pour les loyers, les surfaces et les scores : jamais deux valeurs de portées différentes présentées comme une seule vérité.",
     "4sexdecies-bis. STRATÉGIE DE PROJET ET DE CESSION. Si l'utilisateur cherche quel projet réaliser, à qui le vendre ou comment céder une opération, mène une étude de marché avant de recommander un produit : appelle get_etude_marche sur la parcelle connue (parcel_id) et lis les portées, dates, échantillons et données manquantes. Distingue demande pour des logements, commerces ou autres usages : un score global ou une médiane DVF tous biens confondus ne valide pas une typologie. Si tu compares un autre usage couvert par l'outil, appelle-le avec son project_type ; sinon marque ce marché non étudié. Propose deux ou trois scénarios conditionnels, y compris la cession en l'état si les droits ne sont pas établis. Pour chacun, relie produit, clientèle finale, comparables mesurés, contraintes, conditions d'abandon et catégorie d'acquéreur adaptée. Sépare les quatre objets de vente : foncier en l'état, promesse conditionnelle, projet autorisé, opération achevée. Indique les pièces et autorisations à réunir et le risque que porte encore le vendeur. N'invente ni nom d'acheteur, ni prix de cession, ni marge, ni capacité constructive. Si PLU ou PPRI opposable manque, aucun scénario bâti ne peut être dit faisable : il reste une piste à instruire. Termine par un scénario prioritaire conditionnel, un repli et les prochaines vérifications ordonnées.",
+    "4sexdecies-quater. REPÉRAGE DES EXPLOITANTS. Pour un programme défini et un code NAF rév.2 vérifié, appelle get_operateurs_candidats sur la parcelle : restitue quelques entreprises avec nom, SIREN, fiche officielle, activité et implantation. Ne dis jamais qu’elles souhaitent acquérir ou exploiter ce projet. Pour un programme sans code NAF fiable, décris les catégories d’opérateurs et les critères de recherche sans inventer de noms. Une recherche dans un département ne démontre ni présence dans la commune ni couverture commerciale effective. Sépare repérage public et qualification humaine (stratégie, cahier des charges, décisionnaire, intérêt exprimé).",
+    "4sexdecies-ter. PROGRAMMES IMMOBILIERS — l’hôtel n’est qu’un exemple. Le même raisonnement vaut pour logement, EHPAD, clinique, supermarché, bureaux ou tout autre bâtiment. Identifie d’abord le programme demandé et ses données de demande propres. get_etude_marche couvre logement, commerce, bureaux, hôtel, résidence étudiante et EHPAD à titre de pré-diagnostic ; il ne couvre pas une clinique et ne réalise pas une zone de chalandise de supermarché. N’utilise jamais son repli logement comme preuve pour une activité non couverte. Les établissements Sirene proches décrivent l’offre existante, pas des exploitants intéressés par ce terrain. Pour chaque scénario, relie cible finale, services/fonctions, contraintes PLU/risques/ERP, économie et profil d’exploitant. Une intention d’architecture ou de couleurs est une hypothèse de conception tant que le règlement écrit, le plan et les prescriptions patrimoniales opposables ne sont pas vérifiés à la parcelle. Ne cite un exploitant NOMMÉ qu’avec une source vérifiable (nom, activité, statut et localisation) et ne déduis jamais son intérêt commercial de sa seule présence dans un registre. Sépare clairement ce qui est automatisé, les données manquantes et les vérifications humaines nécessaires.",
     "4septdecies. Pour toute question de COÛT ou de BUDGET de construction neuve, appelle get_couts_construction — n'avance JAMAIS un €/m² de mémoire, et ne déduis JAMAIS un coût de construction d'un prix DVF (le DVF porte sur des ventes de biens EXISTANTS, pas sur un coût de construction : les deux ne sont pas comparables). Présente le montant comme un ordre de grandeur issu du barème Mimmoza, cite la source, rappelle les postes non inclus (foncier, honoraires, VRD, taxes d'urbanisme, aléas) et la nécessité d'un devis. Si l'outil signale que la typologie n'est pas couverte (EHPAD, clinique, hôtel, école), dis-le franchement et renvoie vers un économiste de la construction : n'utilise JAMAIS 'tertiaire' comme approximation.",
     "4octodecies. COÛT DES TRAVAUX DE RÉNOVATION (bien EXISTANT, distinct de la construction neuve de la règle 4septdecies). Si un budget travaux Mimmoza est déjà fourni (contexte renovation_* ou snapshot travaux_budget), utilise-le EN PRIORITÉ [source: simulation Mimmoza]. SINON, dès que l'utilisateur fournit des photos (ou décrit l'état) d'un bien PRÉCIS qu'il envisage d'acheter, d'estimer ou de rénover, tu estimes le coût des travaux DE TA PROPRE INITIATIVE — sans attendre une demande explicite de budget : une question sur le prix, l'opportunité, la qualité ou un simple « qu'en penses-tu ? » suffit à le déclencher. Et si un prix d'achat est connu, tu enchaînes dans le MÊME message la synthèse d'investissement de la règle 4novodecies (prix de revient + lecture des 3 angles). Cela ne s'applique qu'à un bien précis soumis par l'utilisateur, jamais à une question de marché générale (cf. règle 4sexdecies). Pour le chiffrage lui-même, tu appelles TOUJOURS get_couts_renovation : tu lis l'état sur les photos, tu en déduis les postes à reprendre et leurs quantités (surface, nombre d'ouvertures, nombre de pièces…), tu les transmets à l'outil qui applique les ratios et renvoie la décomposition chiffrée, que tu restitues SANS la recalculer. MODE DE CHIFFRAGE — RÈGLE STRICTE : dès que tu peux nommer NE SERAIT-CE QU'UN poste depuis les photos ou la description (cuisine, salle de bains, sols, peinture, électricité, menuiseries…), tu chiffres OBLIGATOIREMENT poste par poste (paramètre `postes`). Le paramètre `niveau_global` (rafraichissement/partielle/moyenne/lourde/complete) est un forfait grossier de DERNIER RECOURS, réservé au SEUL cas où l'état du bien est totalement illisible et qu'aucun poste n'est identifiable : il ne doit JAMAIS servir de raccourci quand tu as déjà identifié des postes. Chiffrer en `niveau_global` un bien dont tu viens de décrire les postes est une ERREUR (le forfait surestime massivement). Tu choisis aussi la `gamme` (economique/standard/premium) en cohérence avec le bien et tu l'ANNONCES explicitement dans ta réponse (« chiffrage en gamme premium »), pour que l'hypothèse soit traçable. Tu ne réponds JAMAIS « à chiffrer » ni « budget à anticiper » sans montant, et tu ne demandes JAMAIS son budget à l'utilisateur — c'est toi qui l'estimes via l'outil. Donnée absente (surface d'une pièce, gamme) → hypothèse explicite notée [H] transmise en quantité/paramètre à l'outil, et tu chiffres quand même. Présente la sortie sous forme de tableau poste par poste + TOTAL (fourchette) + ratio €/m² implicite (contrôle de cohérence) + 3 scénarios (indispensable / recommandé / valorisation max) si pertinent. Présente les montants comme des ordres de grandeur à confirmer par devis et cite [source: barème rénovation Mimmoza]. Postes non visibles sur photo (structure, réseaux enterrés, humidité, amiante <1997, plomb <1949, assainissement) : signale-les « à confirmer par visite/diagnostic » (l'aléa de l'outil les couvre), mais ne t'en sers JAMAIS comme prétexte pour ne pas chiffrer. Réserves regroupées en un seul bloc final. Termine par « À faire valider par un professionnel. »",
         "4novodecies. SYNTHÈSE INVESTISSEMENT — enchaînement OBLIGATOIRE. Dès que tu disposes À LA FOIS d'une estimation de valeur (comparables DVF/outil ou valeur saisie) ET d'un coût travaux (barème rénovation ou budget Mimmoza), tu ne t'arrêtes PAS au chiffrage : tu enchaînes sur une synthèse d'investissement chiffrée. (a) PRIX DE REVIENT = prix d'achat + travaux + frais d'acquisition ; les frais de notaire dans l'ancien (~7-8 %) sont un ordre de grandeur réglementaire standard que tu peux appliquer en l'annonçant. Si l'utilisateur n'a pas donné le prix d'achat, pose une hypothèse [H] (par défaut le bas de ta fourchette de valeur) pour illustrer le calcul, et marque-la comme hypothèse. (b) Positionne ce prix de revient face à la valeur de marché APRÈS travaux (comparables) et déduis, CHIFFRÉES : la marge brute sous l'angle marchand (valeur de revente − prix de revient, en € et en %) et/ou le rendement locatif si un loyer est disponible. Pour le loyer, appelle get_loyers_reference — ne l'invente JAMAIS. Si un calcul de rentabilité Mimmoza est déjà fourni (snapshot rentabilite / loyer_median_zone), utilise-le EN PRIORITÉ [source: module Rentabilité Mimmoza]. (c) ORDRE IMPÉRATIF : tu livres TOUJOURS le prix de revient EN PREMIER dès qu'il est calculable — il ne dépend d'AUCUN angle, ne le retarde donc jamais derrière une question. Tu ne demandes PAS son angle à l'utilisateur avant de produire la synthèse : tu enchaînes directement une lecture COURTE des trois angles à partir des données disponibles — résidence (paie-t-il le juste prix ? prix de revient face à la valeur de marché), locatif (rendement brut ≈ loyer annuel / prix de revient ; appelle get_loyers_reference pour le loyer, ne l'invente jamais), marchand (marge = valeur de revente − prix de revient, en € et en %). PUIS seulement tu proposes d'approfondir l'angle qui l'intéresse. Tu ne bloques JAMAIS toute la synthèse sur le choix de l'angle. (d) Le prix d'achat est le seul intrant réellement bloquant : s'il manque, réclame-le en UNE phrase ; s'il est connu, tu n'as plus aucune raison de t'arrêter — tu produis la synthèse complète. Termine par « À faire valider par un professionnel. »",

@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 import type { DossierParcel, ParcelDossier } from './parcelDossier';
 import { evidenceScopeLabel, evidenceStatusLabel, formatEvidenceValue } from './parcelDossier';
 import { decisionStatus, selectedArea, taxScenarios } from './dossierCalculations';
-import { buildParcelStrategyPrompt } from './parcelStrategy';
+import { buildParcelStrategyPrompt, programmeBrief } from './parcelStrategy';
 import { loadDossierEvents, loadParcelDossier, saveParcelDossier, type DossierEvent } from './dossierRepository';
 import { printParcelDossier } from './exportParcelDossier';
 import { supabase } from '@/lib/supabaseClient';
@@ -23,6 +23,7 @@ interface LocalState {
   selected: DossierParcel[];
   builtSurfaceM2: number | null;
   cadastralRentPerM2: number;
+  programmeIntent: string;
 }
 
 function localKey(conversationId: string, messageId: string) {
@@ -37,6 +38,7 @@ function readLocal(key: string): LocalState | null {
       selected: Array.isArray(raw.selected) ? raw.selected.filter((p: DossierParcel) => typeof p?.id === 'string') : [],
       builtSurfaceM2: typeof raw.builtSurfaceM2 === 'number' && raw.builtSurfaceM2 > 0 ? raw.builtSurfaceM2 : null,
       cadastralRentPerM2: typeof raw.cadastralRentPerM2 === 'number' && raw.cadastralRentPerM2 > 0 ? raw.cadastralRentPerM2 : 100,
+      programmeIntent: typeof raw.programmeIntent === 'string' ? raw.programmeIntent.slice(0, 120) : '',
     };
   } catch { return null; }
 }
@@ -47,6 +49,7 @@ export function ParcelDecisionDossier({ dossier, conversationId, messageId, onAn
   const [selected, setSelected] = useState<DossierParcel[]>(initial?.selected ?? []);
   const [builtSurfaceM2, setBuiltSurfaceM2] = useState<number | null>(initial?.builtSurfaceM2 ?? null);
   const [cadastralRentPerM2, setCadastralRentPerM2] = useState(initial?.cadastralRentPerM2 ?? 100);
+  const [programmeIntent, setProgrammeIntent] = useState(initial?.programmeIntent ?? '');
   const [mapFeatures, setMapFeatures] = useState<CadastreFeature[]>([]);
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
@@ -54,6 +57,7 @@ export function ParcelDecisionDossier({ dossier, conversationId, messageId, onAn
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
   const [events, setEvents] = useState<DossierEvent[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  const programme = programmeBrief(programmeIntent);
   const status = decisionStatus(dossier, selected);
   const area = selectedArea(selected);
   const scenarios = taxScenarios(builtSurfaceM2, cadastralRentPerM2, dossier.taxRate);
@@ -85,9 +89,9 @@ export function ParcelDecisionDossier({ dossier, conversationId, messageId, onAn
   }, [conversationId, messageId]);
 
   useEffect(() => {
-    try { localStorage.setItem(key, JSON.stringify({ selected, builtSurfaceM2, cadastralRentPerM2 })); }
+    try { localStorage.setItem(key, JSON.stringify({ selected, builtSurfaceM2, cadastralRentPerM2, programmeIntent })); }
     catch { /* navigation privée */ }
-  }, [key, selected, builtSurfaceM2, cadastralRentPerM2]);
+  }, [key, selected, builtSurfaceM2, cadastralRentPerM2, programmeIntent]);
 
   const snapshot = () => ({
     zone: dossier.zone, prescriptions: dossier.prescriptions, servitudes: dossier.servitudes,
@@ -126,7 +130,7 @@ export function ParcelDecisionDossier({ dossier, conversationId, messageId, onAn
   };
 
   const analyzeStrategy = () => {
-    const prompt = buildParcelStrategyPrompt(dossier, selected);
+    const prompt = buildParcelStrategyPrompt(dossier, selected, programmeIntent);
     if (prompt) onAnalyze?.(prompt);
   };
 
@@ -189,13 +193,17 @@ export function ParcelDecisionDossier({ dossier, conversationId, messageId, onAn
 
     <section className="mzia-dossier-strategy" aria-labelledby="mzia-dossier-strategy-heading">
       <div className="mzia-dossier-section-heading"><div><span className="mzia-dossier-eyebrow">3 · Préparer la sortie</span><h4 id="mzia-dossier-strategy-heading">Du terrain au projet vendable</h4></div></div>
-      <p>Une stratégie de cession commence par la demande locale, puis confronte plusieurs produits aux droits à bâtir et aux risques du terrain.</p>
+      <p>Comparez librement des usages ou indiquez un programme précis. L’analyse confronte la demande, les contraintes, le modèle d’exploitation et les opérateurs possibles.</p>
+      <label className="mzia-dossier-programme-label" htmlFor="mzia-dossier-programme">Programme envisagé <span>(facultatif)</span></label>
+      <input id="mzia-dossier-programme" className="mzia-dossier-programme-input" list="mzia-dossier-programmes" value={programmeIntent} maxLength={120} placeholder="Ex. hôtel, EHPAD, clinique, supermarché, logements…" onChange={(event) => setProgrammeIntent(event.target.value)} />
+      <datalist id="mzia-dossier-programmes"><option value="Logements" /><option value="Hôtel" /><option value="EHPAD" /><option value="Clinique" /><option value="Supermarché" /><option value="Bureaux" /><option value="Résidence étudiante" /></datalist>
+      {programme && <p className="mzia-dossier-programme-caveat">{programme.marketCaveat}</p>}
       <div className="mzia-dossier-strategy-steps">
         <div><strong>Marché</strong><span>Transactions, profondeur de la demande et limites des données.</span></div>
-        <div><strong>Produit</strong><span>Deux ou trois options à tester, avec les conditions qui peuvent les écarter.</span></div>
-        <div><strong>Contrepartie</strong><span>Profil d’acquéreur, stade de cession et pièces à lui présenter.</span></div>
+        <div><strong>Programme</strong><span>Cible, services, architecture et variantes à tester selon les règles du site.</span></div>
+        <div><strong>Opérateur</strong><span>Critères des exploitants ou acquéreurs, stade de cession et pièces à présenter.</span></div>
       </div>
-      <button type="button" onClick={analyzeStrategy} disabled={!selected.length || !onAnalyze}>Étudier le marché et préparer la cession</button>
+      <button type="button" onClick={analyzeStrategy} disabled={!selected.length || !onAnalyze}>Étudier les programmes et préparer la cession</button>
       <small>{selected.length ? `Analyse demandée sur ${selected.length} parcelle${selected.length > 1 ? 's' : ''} sélectionnée${selected.length > 1 ? 's' : ''}. Les droits à construire restent à vérifier.` : 'Sélectionnez d’abord le périmètre du projet sur la carte.'}</small>
     </section>
 
