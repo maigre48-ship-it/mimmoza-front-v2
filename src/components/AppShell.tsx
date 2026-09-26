@@ -293,6 +293,7 @@ function getPromoteurActiveSection(pathname: string): string | null {
     // ── L'étude de risques vit désormais UNIQUEMENT dans l'onglet Marché ──
     ["/promoteur/risques",                   "marche"],
     ["/promoteur/programmation",             "programmation"],
+    ["/promoteur/strategie-projet",          "programmation"],
     ["/promoteur/implantation-2d",           "faisabilite"],
     ["/promoteur/plan-2d",                   "faisabilite"],
     ["/promoteur/massing-3d",                "faisabilite"],
@@ -356,6 +357,7 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       label: "Programmation",
       items: [
         { label: "Programme & viabilité", path: "/promoteur/programmation",      icon: Layers },
+        { label: "Stratégie de projet", path: "/promoteur/strategie-projet", icon: Target },
         { label: "Coût de construction",  path: "/promoteur/simulation-travaux", icon: Calculator, separatorBefore: true },
       ],
     },

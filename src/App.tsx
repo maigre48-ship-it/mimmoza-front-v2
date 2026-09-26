@@ -129,6 +129,7 @@ import OpportunitesApporteursPage from "./spaces/promoteur/pages/OpportunitesApp
 import PermisConstruirePage from "./spaces/promoteur/pages/PermisConstruirePage";
 import ProprietairesParcellesPage from "./spaces/promoteur/pages/ProprietairesParcellesPage";
 import ProgrammationPage from "./spaces/promoteur/pages/ProgrammationPage";
+import StrategieProjetPage from './spaces/promoteur/pages/StrategieProjetPage';
 import PromoteurSimulationTravauxPage from "./spaces/promoteur/pages/PromoteurSimulationTravauxPage";
 import PromoteurVeilleFoncierePage from "./spaces/promoteur/pages/PromoteurVeilleFoncierePage";
 import RechercheContactsPage from "./spaces/promoteur/pages/RechercheContactsPage";
@@ -509,6 +510,7 @@ function AppRoot() {
             <Route path="opportunites-apporteurs" element={<OpportunitesApporteursPage />} />
             <Route path="opportunites/nouvelle"   element={<NouvelleOpportunitePage />} />
             <Route path="programmation"           element={<ProgrammationPage />} />
+            <Route path="strategie-projet"        element={<StrategieProjetPage />} />
             <Route path="logements-sociaux"       element={<BesoinLogementsSociauxPage />} />
             {/* ── AJOUT : Massing V2 — analyse de capacité (route libre, sans étude requise) ── */}
             <Route path="massing"                 element={<PromoteurMassingPage />} />
