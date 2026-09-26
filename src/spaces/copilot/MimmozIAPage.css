@@ -299,6 +299,15 @@
 /* Thème clair scoppé au fil de conversation (repris de l'origine). */
 .mzia-chat-content,
 .mzia-chat-content * { color: #0f172a !important; }
+/* …sauf ce qui doit rester identifiable comme actionnable. Le sélecteur ULTRA
+   large ci-dessus (`.mzia-chat-content *`) écrasait la couleur du sélecteur de
+   niveau et du lien de montée en gamme, désormais rendus DANS le fil : le lien
+   ne se distinguait plus que par son soulignement, et le picker perdait son
+   violet en passant de l'accueil à la conversation. */
+.mzia-chat-content .copilot-message-upgrade a { color: #4f46e5 !important; }
+.mzia-chat-content .copilot-message-upgrade strong { color: #4338ca !important; }
+.mzia-chat-content .mzia-model__trigger,
+.mzia-chat-content .mzia-model--locked { color: #5b45c4 !important; }
 .mzia-chat-content code { background: rgba(15, 23, 42, 0.06) !important; color: #0f172a !important; }
 .mzia-chat-content [style*='border-radius: 14px 14px 4px 14px'] {
   background: rgba(99, 102, 241, 0.1) !important; border-color: rgba(99, 102, 241, 0.25) !important;

@@ -1,2 +1,5 @@
 [functions.cadastre-geojson-proxy]
 verify_jwt = false
+
+[functions.parcel-dossier-watch-v1]
+verify_jwt = false

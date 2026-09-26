@@ -429,12 +429,31 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
         set((s) => ({
           messages: s.messages.map((m) =>
             m.id === s.streamingId || m.id === event.message_id
-              ? { ...m, id: event.message_id, status: 'complete' }
+              ? {
+                  ...m,
+                  id: event.message_id,
+                  status: 'complete',
+                  // Régime réellement appliqué. Le serveur le dérive du plan et
+                  // ignore ce que le client a demandé : c'est la seule source
+                  // fiable pour savoir dans quel niveau la réponse a été
+                  // produite. Un serveur antérieur ne l'envoie pas — on laisse
+                  // alors les champs vides plutôt que de supposer.
+                  ...(event.mode ? { effectiveMode: event.mode } : {}),
+                  ...(event.tier ? { effectiveTier: event.tier } : {}),
+                }
               : m,
           ),
           streamingId: null,
           status: 'idle',
         }));
+
+        // Le solde affiché est celui d'APRÈS la réservation (event `reservation`
+        // → `remaining`), jamais celui d'après le règlement. Il était donc faux
+        // en permanence : trop bas quand le trop-réservé est rendu, et désormais
+        // trop HAUT quand un dépassement est prélevé — l'utilisateur pouvait voir
+        // un solde positif alors qu'il est passé sous zéro, puis se prendre un
+        // refus incompréhensible au message suivant.
+        void get().refreshCredits?.();
         break;
 
       case 'error': {
@@ -442,9 +461,26 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
         set((s) => ({
           messages: s.messages.map((m) =>
             m.id === s.streamingId
-              ? { ...m, status: 'error', error: messageUtilisateur }
+              ? {
+                  ...m,
+                  // Le serveur a pu persister le texte partiel et nous renvoyer
+                  // son identifiant réel. On l'adopte : sans lui, le message
+                  // restait sous un id local, et les actions exécutées pendant
+                  // le tour n'étaient jamais tracées — elles se reproposaient au
+                  // rechargement, voire se relançaient en mode autonome.
+                  ...(event.message_id ? { id: event.message_id } : {}),
+                  status: 'error',
+                  error: messageUtilisateur,
+                }
               : m,
           ),
+          // Les traces d'actions portaient l'id local : on les rattache au même
+          // identifiant, comme le fait `message_start` sur le chemin nominal.
+          actionRuns: event.message_id
+            ? s.actionRuns.map((r) =>
+                r.messageId === s.streamingId ? { ...r, messageId: event.message_id! } : r,
+              )
+            : s.actionRuns,
           streamingId: null,
           status: 'error',
           error: messageUtilisateur,
@@ -453,6 +489,27 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
               ? s.credits + event.refunded_credits
               : s.credits,
         }));
+
+        // Écriture des traces, comme le fait `message_start` sur le chemin
+        // nominal. Les rattacher en mémoire ne suffit pas : `rememberActionRun`
+        // n'écrit rien tant que l'identifiant est local, or `message_start`
+        // n'arrive jamais quand le tour est interrompu. Sans ce bloc, une action
+        // déjà EXÉCUTÉE se reproposerait au rechargement — et se relancerait
+        // toute seule en mode autonome.
+        if (event.message_id) {
+          const conversationId = get().currentConversationId;
+          if (conversationId) {
+            for (const r of get().actionRuns) {
+              if (r.messageId !== event.message_id) continue;
+              void persistActionRun(r, conversationId);
+            }
+          }
+        }
+
+        // Même raison que sur le chemin nominal : une interruption donne lieu à
+        // un règlement (facturé) ou à un remboursement, et le solde local ne
+        // reflète ni l'un ni l'autre.
+        void get().refreshCredits?.();
         break;
       }
     }

@@ -1,5 +1,5 @@
 // src/spaces/copilot/components/CopilotChat.tsx
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { useCopilot } from '../hooks/useCopilot';
 import { useCopilotContext } from '../hooks/useCopilotContext';
 import { CopilotEmptyState } from './CopilotEmptyState';
@@ -11,11 +11,14 @@ import type { CopilotMode } from '../types/copilot.types';
 export function CopilotChat({
   forceMode,
   hideQuickQuestions,
+  composerToolbar,
 }: {
   forceMode?: CopilotMode;
   hideQuickQuestions?: boolean;
+  /** Contrôles de l'écran hôte affichés au-dessus du composeur (cf. CopilotInput). */
+  composerToolbar?: ReactNode;
 } = {}) {
-  const { messages, sendMessage, cancel, isStreaming, mode, setMode, loadingMessages } = useCopilot();
+  const { messages, sendMessage, cancel, isStreaming, mode, setMode, loadingMessages, currentConversationId } = useCopilot();
   // `vertical` est désormais une valeur mémorisée exposée par le hook.
   // AVANT : `buildContext().vertical` était évalué à chaque rendu — donc à
   // chaque paquet de tokens pendant le streaming — pour lire un seul champ.
@@ -70,7 +73,7 @@ export function CopilotChat({
             hideQuickQuestions={hideQuickQuestions}
           />
         ) : (
-          messages.map((m) => <CopilotMessage key={m.id} message={m} />)
+          messages.map((m) => <CopilotMessage key={m.id} message={m} conversationId={currentConversationId} onSend={handleSend} />)
         )}
       </div>
       <CopilotInput
@@ -80,6 +83,7 @@ export function CopilotChat({
         onCancel={cancel}
         isStreaming={isStreaming}
         hideModeSelector={Boolean(forceMode)}
+        toolbar={composerToolbar}
       />
       <div className="copilot-chat__disclaimer" style={{ color: T.textMuted, borderTop: `1px solid ${T.borderSoft}` }}>
         ⚠️ MimmozIA peut commettre des erreurs. Les analyses doivent être vérifiées,

@@ -881,40 +881,32 @@ interface SeismeData {
   coverage: Coverage;
 }
 
-const SEISME_ZONES: Record<string, number> = {
-  "04": 4, "05": 4, "06": 4, "38": 4, "73": 4, "74": 4,
-  "64": 4, "65": 4, "66": 4, "09": 4,
-  "01": 3, "07": 3, "26": 3, "42": 3, "43": 3, "63": 3, "69": 3,
-  "11": 3, "30": 3, "34": 3, "48": 3, "81": 3, "82": 3,
-  "31": 3, "32": 3, "40": 3, "47": 3,
-  "67": 3, "68": 3, "90": 3, "25": 3, "39": 3, "70": 3, "71": 3,
-  "2A": 3, "2B": 3,
-  "02": 2, "08": 2, "10": 2, "21": 2, "51": 2, "52": 2, "54": 2, "55": 2, "57": 2, "88": 2,
-  "03": 2, "15": 2, "18": 2, "19": 2, "23": 2, "24": 2, "33": 2, "46": 2, "87": 2,
-  "12": 2, "13": 2, "83": 2, "84": 2,
-};
-
-function fetchSeisme(dept: string): SeismeData {
-  // v1.1.0 — même correctif que les feux de forêt : un département non résolu
-  // tombait sur `|| 1` (« Très faible », risque 'nul', coverage 'ok'), c'est-à-dire
-  // la valeur la plus rassurante de l'échelle, comptée comme mesurée.
-  const deptValide = /^(?:\d{2}|2A|2B)$/.test(dept ?? '');
-  if (!deptValide) {
-    console.warn(`[SEISME] Département non résolu ("${dept}") → sismicité non mesurée`);
-    return { zone: null, libelle: "Non mesuré", risk_level: 'inconnu', coverage: 'no_data' };
-  }
-
-  // Un département valide absent de la table est en zone 1 (sismicité très
-  // faible) : c'est une information réelle du zonage réglementaire, pas un défaut.
-  const zone = SEISME_ZONES[dept] ?? 1;
-  const libelles: Record<number, string> = { 1: "Très faible", 2: "Faible", 3: "Modéré", 4: "Moyen", 5: "Fort" };
-  const riskLevels: Record<number, RiskLevel> = { 1: 'nul', 2: 'faible', 3: 'moyen', 4: 'fort', 5: 'tres_fort' };
-  return {
-    zone,
-    libelle: libelles[zone] || "Inconnu",
-    risk_level: riskLevels[zone] || 'inconnu',
-    coverage: 'ok',
+async function fetchSeisme(codeInsee: string): Promise<SeismeData> {
+  const empty: SeismeData = {
+    zone: null, libelle: 'Non mesuré', risk_level: 'inconnu', coverage: 'no_data',
   };
+  if (!/^(?:\d{5}|2[AB]\d{3})$/.test(codeInsee)) return empty;
+
+  try {
+    // Le zonage réglementaire est communal. Une valeur déduite du département
+    // classait à tort Ascain en zone 4 alors que Géorisques indique la zone 3.
+    const res = await fetch(`${GEORISQUES_API}/zonage_sismique?code_insee=${codeInsee}`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return empty;
+    const data = await res.json();
+    const row = Array.isArray(data?.data)
+      ? data.data.find((item: any) => String(item?.code_insee) === codeInsee)
+      : null;
+    const zone = Number(row?.code_zone);
+    if (!Number.isInteger(zone) || zone < 1 || zone > 5) return empty;
+    const libelles: Record<number, string> = { 1: 'Très faible', 2: 'Faible', 3: 'Modéré', 4: 'Moyen', 5: 'Fort' };
+    const riskLevels: Record<number, RiskLevel> = { 1: 'nul', 2: 'faible', 3: 'moyen', 4: 'fort', 5: 'tres_fort' };
+    return { zone, libelle: libelles[zone], risk_level: riskLevels[zone], coverage: 'ok' };
+  } catch (error) {
+    console.warn('[SEISME] Zonage communal indisponible', error);
+    return empty;
+  }
 }
 
 // --- FEUX DE FORÊT ---
@@ -1362,10 +1354,11 @@ serve(async (req: Request): Promise<Response> => {
     // n'en a pas (geo.api KO + pas de coords payload), elles renvoient vide
     // proprement sans planter — on les saute pour éviter des bbox NaN.
     const t2 = Date.now();
-    const [gaspar, radon, sis] = await Promise.all([
+    const [gaspar, radon, sis, seisme] = await Promise.all([
       fetchGaspar(codeInsee),
       fetchRadon(codeInsee),
       fetchSis(NaN, NaN, codeInsee),
+      fetchSeisme(codeInsee),
     ]);
 
     const [icpe, cavites, mvt, argiles] = hasCoords
@@ -1390,7 +1383,6 @@ serve(async (req: Request): Promise<Response> => {
 
     // ── Données dérivées (synchrones) ─────────────────────────────────────────
     const inondation = await fetchInondations(codeInsee, gaspar);
-    const seisme = fetchSeisme(dept);
     const feuxForet = fetchFeuxForet(dept);
 
     // ── Scoring & insights ────────────────────────────────────────────────────

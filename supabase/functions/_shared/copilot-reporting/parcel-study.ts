@@ -177,6 +177,56 @@ export function renderParcelStudyReport(toolOutput: unknown): string | null {
     ...(warnings.length ? warnings.map((warning) => `- ${warning}`) : ['- Aucun avertissement fourni.']),
     '', 'À faire valider par un professionnel.',
   ].join('\n');
-  const report = [perimeter, ...sections, conclusion].join('\n\n');
+  const urbanisme = record(data.urbanisme_point);
+  const couches = Array.isArray(urbanisme?.couches) ? urbanisme.couches.map(record).filter((c): c is UnknownRecord => Boolean(c)) : [];
+  const zone = couches.find((c) => text(c.couche) === 'zone-urba');
+  const prescriptions = couches.find((c) => text(c.couche) === 'prescription-surf');
+  const servitudes = couches.find((c) => text(c.couche) === 'assiette-sup-s');
+  const renderLayer = (layer: UnknownRecord | undefined, label: string) => {
+    if (!layer || text(layer.statut) !== 'interrogee') return `- **${label}** : donnée indisponible`;
+    const elements = Array.isArray(layer.elements) ? layer.elements.map(record).filter((e): e is UnknownRecord => Boolean(e)) : [];
+    if (!elements.length) return `- **${label}** : aucun élément renvoyé au point (non exhaustif)`;
+    return `- **${label}** : ${elements.map((e) => neutralizeForbidden(text(e.libelle) ?? text(e.nom) ?? text(e.libelle_long) ?? 'libellé absent')).join(' ; ')}`;
+  };
+  const urbanismeReport = couches.length ? [
+    '## Vérification d’urbanisme au point d’adresse',
+    renderLayer(zone, 'Zone GPU'),
+    renderLayer(prescriptions, 'Prescriptions surfaciques GPU'),
+    renderLayer(servitudes, 'Assiettes de servitudes GPU'),
+    '- Portée : point d’adresse uniquement ; une adresse peut couvrir plusieurs parcelles.',
+    '- Le règlement écrit du PLU et le zonage réglementaire détaillé du PPRI restent à lire avant de conclure sur un projet.',
+    '- Source : Géoportail de l’urbanisme via API Carto IGN.',
+  ].join('\n') : null;
+  const fiscalEvidence = evidences.map(record).find((item) => text(item?.id) === 'fiscalite_tfb');
+  const fiscalRate = typeof fiscalEvidence?.value === 'number' ? fiscalEvidence.value : null;
+  const fiscalYear = text(fiscalEvidence?.sourceDate);
+  // Illustration volontairement paramétrée, sans transformer la surface bâtie
+  // en base fiscale réelle. La valeur locative du bien n'est pas dans le bundle.
+  const illustrativeVlcPerM2 = 100;
+  const userSurface = typeof data.surface_batiment_m2 === 'number'
+    && data.surface_batiment_m2 > 0 && data.surface_batiment_m2 <= 100000
+    ? data.surface_batiment_m2 : null;
+  const exampleSurfaces = userSurface != null ? [userSurface] : [80, 120, 160];
+  const fiscalReport = fiscalRate != null && fiscalRate >= 0 && fiscalRate <= 100 ? [
+    '## Illustration de taxe foncière selon la surface du bâtiment',
+    `Taux global de taxe foncière bâtie publié pour la commune : ${scalar(fiscalRate)} %${fiscalYear ? ` (exercice ${fiscalYear})` : ''}.`,
+    'Hypothèse pédagogique : surface pondérée fiscale égale à la surface du bâtiment et valeur locative cadastrale annuelle de 100 €/m². La base imposable bâtie est ici prise à 50 % de cette valeur locative.',
+    '| Surface supposée | Valeur locative supposée | Base imposable supposée | Taxe bâtie illustrative |',
+    '| ---: | ---: | ---: | ---: |',
+    ...exampleSurfaces.map((surface) => {
+      const vlc = surface * illustrativeVlcPerM2;
+      const base = vlc * 0.5;
+      const taxe = base * fiscalRate / 100;
+      const eur = (value: number) => `${Math.round(value).toLocaleString('fr-FR')} €`;
+      return `| ${surface} m² | ${eur(vlc)} | ${eur(base)} | ${eur(taxe)}/an |`;
+    }),
+    'Ces montants ne sont pas une estimation du bien : catégorie cadastrale, surface pondérée réelle, annexes, exonérations et éventuelle TEOM peuvent modifier la facture. L’avis de taxe foncière ou la fiche d’évaluation cadastrale permet de chiffrer le bâtiment concerné.',
+    'Source du taux : DGFiP, fiscalité locale des particuliers. Méthode de calcul : impots.gouv.fr.',
+  ].join('\n') : [
+    '## Taxe foncière selon la surface du bâtiment',
+    'Le taux communal n’a pas été fourni par le service fiscal. Aucun montant en euros n’est calculable avec la seule surface du bâtiment.',
+    'À partir de l’avis fiscal : taxe bâtie = base imposable cadastrale × taux applicable ; la base bâtie correspond en principe à 50 % de la valeur locative cadastrale. La TEOM peut s’ajouter.',
+  ].join('\n');
+  const report = [perimeter, ...sections, urbanismeReport, fiscalReport, conclusion].filter(Boolean).join('\n\n');
   return report;
 }

@@ -6,16 +6,38 @@ import { isActionTool, readAction, sameAction } from '../actions/copilotActions'
 import { useCopilotStore } from '../store/copilotStore';
 import { COPILOT_THEME as T } from './copilotTheme';
 import { Download } from 'lucide-react';
-import { useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { exportCopilotResponseToPdf, markdownToSafeHtml } from '../utils/exportCopilotPdf';
+import { decouperSegments } from '../charts/copilotChart.types';
+import { buildParcelDossier } from '../dossier/parcelDossier';
 import './CopilotMessage.css';
 
-export function CopilotMessage({ message, question }: { message: ChatMessage; question?: string | null }) {
+// recharts pèse plusieurs centaines de Ko et n'est utilisé QUE par les
+// graphiques, réservés au mode `report` (offre Pro). Un import statique
+// l'aurait fait entrer dans le chunk du chat pour tout le monde, y compris les
+// comptes qui n'en verront jamais un seul.
+const CopilotChart = lazy(() =>
+  import('../charts/CopilotChart').then((m) => ({ default: m.CopilotChart })),
+);
+const ParcelDecisionDossier = lazy(() =>
+  import('../dossier/ParcelDecisionDossier').then((m) => ({ default: m.ParcelDecisionDossier })),
+);
+
+export function CopilotMessage({ message, question, conversationId, onSend }: {
+  message: ChatMessage; question?: string | null; conversationId?: string | null; onSend?: (text: string) => void;
+}) {
   const isUser = message.role === 'user';
   const actionRuns = useCopilotStore((s) => s.actionRuns);
   const messages = useCopilotStore((s) => s.messages);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+
+  // Recalculé à chaque paquet de tokens pendant le streaming : c'est ce qui
+  // permet au graphique d'apparaître dès que son bloc se referme, sans attendre
+  // la fin de la réponse.
+  const segments = useMemo(() => decouperSegments(message.text), [message.text]);
+  const dossier = useMemo(() => buildParcelDossier(message.toolCalls, message.createdAt), [message.toolCalls, message.createdAt]);
 
   const linkedQuestion = question ?? (() => {
     const index = messages.findIndex((item) => item.id === message.id);
@@ -75,12 +97,30 @@ export function CopilotMessage({ message, question }: { message: ChatMessage; qu
           })}
         </div>
       )}
-      {message.text && (
-        <div
-          className="copilot-message-markdown"
-          style={{ color: T.text, fontSize: 14, lineHeight: 1.6 }}
-          dangerouslySetInnerHTML={{ __html: markdownToSafeHtml(message.text) }}
-        />
+      {message.status === 'complete' && dossier && conversationId && (
+        <Suspense fallback={<div>Préparation du dossier…</div>}>
+          <ParcelDecisionDossier dossier={dossier} conversationId={conversationId} messageId={message.id} onAnalyze={onSend} />
+        </Suspense>
+      )}
+      {/* Texte et graphiques sont entrelacés : le modèle place ses blocs
+          ```mimmoza-chart là où ils éclairent son propos, pas tous à la fin.
+          Pendant le streaming, un bloc encore ouvert est masqué — son JSON est
+          tronqué, donc invalide, et le laisser défiler serait illisible. */}
+      {message.text && segments.map((seg, i) =>
+        seg.kind === 'chart' ? (
+          // Réserve de hauteur pendant le chargement du module : sans elle, le
+          // fil sauterait au moment où recharts arrive.
+          <Suspense key={`c${i}`} fallback={<div style={{ height: 240 }} />}>
+            <CopilotChart spec={seg.spec} />
+          </Suspense>
+        ) : (
+          <div
+            key={`m${i}`}
+            className="copilot-message-markdown"
+            style={{ color: T.text, fontSize: 14, lineHeight: 1.6 }}
+            dangerouslySetInnerHTML={{ __html: markdownToSafeHtml(seg.text) }}
+          />
+        ),
       )}
       {message.status === 'complete' && message.text.trim() && (
         <div className="copilot-message-actions">
@@ -88,6 +128,25 @@ export function CopilotMessage({ message, question }: { message: ChatMessage; qu
             <Download size={14} aria-hidden="true" /> {exporting ? 'Préparation…' : 'Exporter en PDF'}
           </button>
           {exportError && <span role="status">{exportError}</span>}
+        </div>
+      )}
+      {/* Le mode `quick` n'existe que sur l'offre Basique (PLAN_POLICY côté
+          serveur) : la mention est donc toujours pertinente quand il s'affiche.
+          Elle est rendue à partir du mode RÉELLEMENT appliqué renvoyé par le
+          serveur, jamais du niveau demandé — le serveur écrase la demande selon
+          le plan, et afficher le niveau demandé reviendrait à annoncer une
+          profondeur d'analyse qui n'a pas eu lieu. Les messages relus depuis la
+          base n'ont pas ce champ : aucune mention n'est alors affichée, plutôt
+          qu'une mention devinée. */}
+      {message.status === 'complete' && message.effectiveMode === 'quick' && message.text.trim() && (
+        <div className="copilot-message-upgrade">
+          <span aria-hidden="true">⚡</span>
+          <span>
+            Réponse produite au niveau <strong>Standard</strong>. Le niveau{' '}
+            <strong>Approfondi</strong> croise davantage de sources — comparables DVF,
+            risques, DPE, score de marché — et développe l'analyse.{' '}
+            <Link to="/abonnement">Voir les niveaux</Link>
+          </span>
         </div>
       )}
       {message.status === 'streaming' && !message.text && message.toolCalls.length === 0 && (

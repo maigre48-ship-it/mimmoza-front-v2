@@ -34,6 +34,7 @@ import { createContextSnapshot, mergeContexts, type ContextSnapshot } from '../_
 import { geographicGroundingPolicy } from '../_shared/copilot-grounding/geographic.ts';
 import { unsupportedInferencePolicy } from '../_shared/copilot-grounding/inferences.ts';
 import { renderParcelStudyReport } from '../_shared/copilot-reporting/parcel-study.ts';
+import { reparerEncodageProfond } from '../_shared/texte/reparerEncodage.ts';
 // Moteur prédictif — MÊME code que la page Analyse prédictive du front, qui le
 // réexporte depuis ici. Deux copies auraient produit deux projections
 // différentes pour le même bien selon qu'on la demande à l'écran ou au chat.
@@ -91,17 +92,62 @@ const GLOBAL_MAX_TOKENS = Number(Deno.env.get('ANTHROPIC_MAX_TOKENS')) || 16000;
 // Généreux volontairement : à 2500 le rapport d'étude (get_etude_parcelle) était
 // coupé AVANT le verdict et les points de vigilance, soit sa partie la plus utile.
 // Aucun impact économique : le débit est calculé sur l'usage effectif (debitJetons).
-// ⚠️ Borné par GLOBAL_MAX_TOKENS → monter aussi le secret ANTHROPIC_MAX_TOKENS,
-//    sinon ces valeurs sont écrasées par l'ancien plafond.
+// (Le secret ANTHROPIC_MAX_TOKENS ne peut plus BRIDER ces valeurs — voir plus bas.)
 // ⚠️ 32000 en report était intenable : une Edge Function n'a pas le temps de
 // streamer autant avant d'être coupée (« network error » côté client, et ni
 // settle ni refund ne s'exécutent → réservation orpheline). 16000 reste très
 // large pour un rapport complet.
+//
+// ⚠️ Le `Math.min(…, GLOBAL_MAX_TOKENS)` a été RETIRÉ.
+//
+// Il faisait de l'ancien secret `ANTHROPIC_MAX_TOKENS` un plafond silencieux sur
+// tous les modes. Constat en production : 13 réponses terminées en
+// `finish_reason = 'max_tokens'`, avec des sorties bloquées vers 2 800-3 900
+// tokens alors que le code demandait 16 000 — le secret, hérité d'une ancienne
+// configuration, écrasait les valeurs par mode. C'était une deuxième cause de
+// troncature, indépendante du timeout, et invisible depuis le code.
+//
+// Le secret reste un LEVIER, pas un carcan : il n'agit que s'il est plus GÉNÉREUX
+// que la valeur du mode. Pour brider volontairement, baisser les valeurs ci-dessous.
+//
+// Aucun risque de dérive économique : le débit est calculé sur l'usage effectif
+// (debitJetons) et le règlement n'est plus plafonné par la réservation
+// (migration 20260908_facturation_reelle_copilot).
 const MAX_OUTPUT_TOKENS: Record<CopilotMode, number> = {
-  quick: Math.min(16000, GLOBAL_MAX_TOKENS),
-  advanced: Math.min(16000, GLOBAL_MAX_TOKENS),
-  report: Math.min(16000, GLOBAL_MAX_TOKENS),
+  quick: Math.max(8000, GLOBAL_MAX_TOKENS),
+  advanced: Math.max(12000, GLOBAL_MAX_TOKENS),
+  report: Math.max(16000, GLOBAL_MAX_TOKENS),
 };
+
+/**
+ * Plafond DUR de `max_tokens`, par modèle, indépendant de tout secret.
+ *
+ * Sans lui, `Math.max(…, GLOBAL_MAX_TOKENS)` laissait le secret pousser la
+ * demande aussi haut qu'il voulait. Deux façons de tout casser :
+ *   · au-delà du plafond du modèle, l'API Anthropic répond 400 sur CHAQUE appel
+ *     — panne totale du copilote, causée par une simple variable d'environnement ;
+ *   · même en dessous, une demande démesurée reproduit le problème déjà constaté
+ *     et documenté plus haut (génération trop longue pour l'Edge Function, coupée
+ *     côté client, réservation orpheline).
+ *
+ * Ce plafond est appliqué AU POINT D'APPEL, car il dépend du tier — que
+ * MAX_OUTPUT_TOKENS, indexé par mode, ne connaît pas.
+ */
+// 16 000 et non le plafond des modèles : la contrainte qui mord ici n'est pas
+// l'API mais l'Edge Function. Le commentaire plus haut le documente déjà —
+// 32 000 en report « était intenable », la génération n'avait pas le temps de
+// partir avant la coupure, et ni settle ni refund ne s'exécutaient. Ce plafond
+// borne donc le risque plateforme autant que le risque API.
+const MODEL_MAX_OUTPUT_TOKENS: Record<ModelTier, number> = {
+  haiku: 16_000,
+  sonnet: 16_000,
+  opus: 16_000,
+};
+
+/** Budget de sortie effectivement demandé à l'API, borné par le modèle. */
+function budgetSortie(mode: CopilotMode, tier: ModelTier): number {
+  return Math.min(MAX_OUTPUT_TOKENS[mode], MODEL_MAX_OUTPUT_TOKENS[tier]);
+}
 
 // Gate de réservation : une ATTENTE réaliste de sortie, PAS le plafond absolu.
 // Sans cette séparation, relever MAX_OUTPUT_TOKENS gonfle mécaniquement la
@@ -112,8 +158,38 @@ const GATE_OUTPUT_TOKENS: Record<CopilotMode, number> = {
   quick: 3000, advanced: 4000, report: 8000,
 };
 
-// Timeout par appel LLM (ton secret existant), fallback 60s.
+// Silence maximal toléré sur un flux LLM avant abandon. Ce n'est PAS une durée
+// totale : le minuteur est réarmé à chaque événement de progression (cf.
+// streamLLMTurn). Une génération longue mais vivante n'est jamais interrompue.
 const LLM_TIMEOUT_MS = Number(Deno.env.get('ANTHROPIC_TIMEOUT_MS')) || 60000;
+
+/**
+ * Durée maximale d'une invocation, tous tours confondus.
+ *
+ * Indispensable depuis que LLM_TIMEOUT_MS ne borne plus la durée totale : sans
+ * elle, sept tours de génération plus N appels d'outils à 25 s peuvent dépasser
+ * le wall clock de la plateforme. Or un isolate tué par la plateforme n'exécute
+ * NI le catch NI le finally : ni settle, ni refund, ni persistance — l'utilisateur
+ * perd son texte ET conserve une réservation orpheline. Mieux vaut s'arrêter
+ * nous-mêmes, proprement, un peu avant.
+ *
+ * ⚠️ Doit rester NETTEMENT sous le wall clock réel des Edge Functions du plan
+ * Supabase utilisé (150 s par défaut chez Supabase, davantage sur certains
+ * plans). Une valeur supérieure à cette limite rend la garde inopérante : la
+ * plateforme tue l'isolate avant qu'elle ne se déclenche. Ajuster par secret
+ * `COPILOT_DEADLINE_MS` si votre plan autorise plus.
+ *
+ * Le compteur part de `startedAt`, c'est-à-dire APRÈS le préambule (JWT,
+ * conversation, plan, réservation) : ce préambule n'est pas dans le budget.
+ */
+const DEADLINE_MS = Number(Deno.env.get('COPILOT_DEADLINE_MS')) || 120_000;
+
+/**
+ * Temps réservé, à l'intérieur de l'échéance, pour la passe de synthèse finale.
+ * La boucle d'outils s'arrête donc `DEADLINE_MS - RESERVE_SYNTHESE_MS` après le
+ * départ, ce qui laisse au modèle de quoi rédiger sa conclusion.
+ */
+const RESERVE_SYNTHESE_MS = Number(Deno.env.get('COPILOT_RESERVE_SYNTHESE_MS')) || 35_000;
 
 // Nombre max d'allers-retours tool-calling par mode (garde-fou latence + coût).
 // ⚠️ Chaque itération = 1 appel LLM + N appels d'outils (jusqu'à ~20 s pour les
@@ -185,7 +261,52 @@ const UUID_V4_RE =
 const JETON_VALUE_EUR = 0.10;
 const MARGIN = 3;
 const USD_TO_EUR = 0.95;
-const ASSUMED_MAX_INPUT_TOKENS = 60_000;
+/**
+ * Entrée supposée pour le calcul de la RÉSERVATION, par mode.
+ *
+ * Pourquoi ce n'est plus un nombre unique.
+ *
+ * Ce n'est PLUS un sujet de facturation : depuis la migration
+ * 20260908_facturation_reelle_copilot, `copilot_settle_credits` ne plafonne plus
+ * le débit au montant réservé — un dépassement est désormais prélevé. La
+ * réservation n'est donc plus qu'une EMPREINTE : elle détermine ce qui est
+ * immobilisé pendant la réponse, et le seuil d'INSUFFICIENT_CREDITS. C'est
+ * néanmoins toujours une empreinte qui doit être réaliste, pour deux raisons :
+ * une empreinte trop basse laisse un utilisateur engager une requête qu'il ne
+ * peut pas payer et le fait passer en solde négatif ; trop haute, elle bloque
+ * inutilement son solde.
+ *
+ * (Avant cette migration, le plafond faisait de l'écart un manque à gagner sec :
+ * 41 réponses en mode `report` ont été sous-facturées sur 90 jours.)
+ *
+ * L'hypothèse unique de 60 000 tokens était très en dessous de la réalité du
+ * mode `report`, où les sorties d'outils s'accumulent dans `messages` et sont
+ * RENVOYÉES À CHAQUE TOUR — l'entrée cumulée croît de façon quadratique avec le
+ * nombre d'itérations. Mesuré sur 90 jours de production : 52 000 tokens
+ * d'entrée en moyenne en `report`, jusqu'à 145 000 au maximum, soit 41 messages
+ * au-dessus du plafond de réservation, donc sous-facturés.
+ *
+ * La marge de 3× absorbait encore l'écart. Mais deux évolutions récentes
+ * poussent l'entrée à la hausse : le bloc de rappel des outils déjà appelés,
+ * jusqu'ici toujours vide à cause d'un filtre erroné, et le timeout devenu
+ * inactif-seulement, qui laisse les générations longues aller à leur terme au
+ * lieu d'être tuées à 60 s. Le point de bascule était à ~300 000 tokens
+ * d'entrée : il valait mieux relever l'hypothèse avant de l'atteindre.
+ *
+ * Le mode `quick` est au contraire abaissé : il consomme 3 000 à 17 000 tokens,
+ * et sur-réserver bloquerait inutilement le solde des comptes Basique.
+ *
+ * ⚠️ Effet de bord assumé : la réservation `report` passe de 9 à 18 jetons
+ * (sonnet) et de 15 à 29 (opus). C'est immobilisé le temps de la réponse, puis
+ * la différence est RENDUE par le settle. Un utilisateur au solde très bas peut
+ * donc recevoir INSUFFICIENT_CREDITS là où il passait avant. Pour revenir en
+ * arrière, il suffit de remettre 60_000 partout.
+ */
+const ASSUMED_MAX_INPUT_TOKENS: Record<CopilotMode, number> = {
+  quick: 30_000,
+  advanced: 60_000,
+  report: 160_000,
+};
 
 const TIER_RATES = {
   haiku:  { in: 1, out: 5  },
@@ -273,7 +394,7 @@ function debitJetons(tier: ModelTier, inputTokens: number, outputTokens: number)
 }
 
 function worstCaseJetons(tier: ModelTier, mode: CopilotMode): number {
-  return debitJetons(tier, ASSUMED_MAX_INPUT_TOKENS, GATE_OUTPUT_TOKENS[mode]);
+  return debitJetons(tier, ASSUMED_MAX_INPUT_TOKENS[mode], GATE_OUTPUT_TOKENS[mode]);
 }
 
 // =============================================================
@@ -2677,6 +2798,7 @@ const TOOLS: ToolDef[] = [
         lng: { type: 'number' },
         code_insee: { type: 'string', description: 'Repli commune si pas de parcelle.' },
         commune: { type: 'string', description: 'Repli commune.' },
+        surface_batiment_m2: { type: 'number', description: 'Surface du bâtiment fournie explicitement par l’utilisateur, pour illustrer la taxe foncière. Ne jamais la déduire de la contenance cadastrale.' },
       },
     },
     available_in_modes: ['quick', 'advanced', 'report'],
@@ -2757,6 +2879,37 @@ const TOOLS: ToolDef[] = [
         parcel_id: { type: 'string' },
         cadastral_ref: { type: 'string' },
       },
+    },
+    available_in_modes: ['quick', 'advanced', 'report'],
+  },
+  {
+    name: 'get_parcelle_depuis_adresse',
+    description:
+      "RÉSOUT UNE ADRESSE POSTALE EN PARCELLE CADASTRALE. Géocode l'adresse via la Base " +
+      "Adresse Nationale puis identifie la parcelle qui contient ce point (API Carto IGN). " +
+      "Renvoie l'identifiant cadastral IDU (14 caractères), la section, le numéro, la " +
+      "contenance et les coordonnées exactes. " +
+      "⚠️ À APPELER EN PREMIER, AVANT TOUT AUTRE OUTIL, dès que l'utilisateur désigne un bien " +
+      "par une ADRESSE plutôt que par une référence cadastrale — même s'il ne demande pas " +
+      "explicitement la parcelle. Sans cette résolution, les autres outils retombent sur le " +
+      "CENTRE DE LA COMMUNE : les servitudes et le classement sonore ne sont pas interrogés, " +
+      "la pente et le potentiel solaire décrivent le centre-bourg, et le verdict de risque " +
+      "reste communal donc indéterminé. " +
+      "Repasse ensuite le champ `a_utiliser_ensuite.cadastral_ref` (et les coordonnées) aux " +
+      "outils suivants, notamment get_etude_parcelle. " +
+      "Statuts : `ok` (parcelle trouvée), `partial` (adresse localisée mais pas de parcelle — " +
+      "domaine public, voie, secteur non cadastré : les coordonnées restent utilisables), " +
+      "`not_found` (adresse inconnue : demande une orthographe ou une commune). " +
+      "Le champ `avertissement` précise la portée de la parcelle repérée : répète-le. " +
+      "Même au numéro exact, le point peut tomber sur une parcelle d'accès et l'adresse peut couvrir plusieurs parcelles.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        adresse: { type: 'string', description: "Adresse complète : numéro, voie, et si possible commune." },
+        commune: { type: 'string', description: 'Commune, pour lever une homonymie de voie.' },
+        code_postal: { type: 'string', description: 'Code postal, encore plus discriminant.' },
+      },
+      required: ['adresse'],
     },
     available_in_modes: ['quick', 'advanced', 'report'],
   },
@@ -4229,6 +4382,7 @@ async function executeTool(
     case 'marquer_nouveautes_lues':         return await toolMarquerNouveautesLues(input, ctx, auth);
     case 'lister_zones_veille':      return await toolListerZonesVeille(input, ctx, auth);
     case 'desactiver_zone_veille':   return await toolDesactiverZoneVeille(input, ctx, auth);
+    case 'get_parcelle_depuis_adresse': return await toolParcelleDepuisAdresse(input, ctx);
     case 'get_parcel_summary':       return await toolParcelSummary(input, ctx);
     case 'get_parcel_plu':           return await toolParcelPlu(input, ctx);
     case 'get_dvf_comparables':      return await toolDvfComparables(input, ctx);
@@ -5163,6 +5317,170 @@ async function toolAssainissement(input: Record<string, unknown>, ctx: MimmozaCo
 // ─── get_altimetrie (branché sur altimetrie-v1 via COPILOT_FN_ALTIMETRIE) ──
 // Altitude + pente estimée (RGE Alti). lat/lng pour la parcelle ; sinon repli
 // centre commune (précision dégradée, signalée par la fonction).
+// =============================================================
+// ADRESSE → PARCELLE CADASTRALE
+// -------------------------------------------------------------
+// Le chaînon manquant. Aucun outil ne savait transformer « 6 parc de la
+// Bérengère, Saint-Cloud » en référence cadastrale : `get_etude_parcelle`
+// accepte une parcelle, des coordonnées ou une commune, jamais une adresse. Le
+// modèle retombait donc sur le centre-bourg, et l'étude sortait dégradée —
+// servitudes non interrogées, pente mesurée au centre de la ville, fiabilité à
+// 10/100, verdict « suspendre » faute d'ancrage.
+//
+// Deux appels publics suffisent, sans clé et sans nouvelle Edge Function :
+//   1. la Base Adresse Nationale géocode l'adresse ;
+//   2. l'API Carto de l'IGN rend la parcelle qui contient ce point.
+// =============================================================
+
+const BAN_SEARCH = 'https://api-adresse.data.gouv.fr/search/';
+const APICARTO_CADASTRE = 'https://apicarto.ign.fr/api/cadastre/parcelle';
+
+async function toolParcelleDepuisAdresse(
+  input: Record<string, unknown>,
+  ctx: MimmozaContext,
+): Promise<ToolResult> {
+  const adresse = str(input.adresse) ?? str(input.address) ?? str(input.query);
+  if (!adresse) {
+    return {
+      status: 'not_found', source: 'BAN / cadastre',
+      message: "Aucune adresse fournie. Demande l'adresse complète (numéro, voie, commune).",
+    };
+  }
+  // Le code postal ou la commune du contexte lèvent l'ambiguïté entre deux voies
+  // homonymes — il en existe dans plusieurs communes pour beaucoup de noms.
+  const cpExplicite = str(input.code_postal);
+  const communeExplicite = str(input.commune);
+  // Le contexte de page ne sert que de REPLI, et jamais de filtre strict :
+  // l'utilisateur peut demander une adresse dans une autre commune que celle de
+  // l'écran ouvert. Filtrer sur le code postal du contexte renverrait alors zéro
+  // résultat, et l'outil conclurait à tort que l'adresse n'existe pas.
+  const cp = cpExplicite ?? str((ctx as any).zip_code);
+  const commune = communeExplicite ?? str((ctx as any).city);
+
+  try {
+    const q = new URL(BAN_SEARCH);
+    q.searchParams.set('q', [adresse, commune, cp].filter(Boolean).join(' '));
+    q.searchParams.set('limit', '1');
+    q.searchParams.set('autocomplete', '0');
+    // Filtre dur uniquement si l'utilisateur a lui-même donné le code postal.
+    if (cpExplicite) q.searchParams.set('postcode', cpExplicite);
+
+    const rBan = await fetch(q.toString(), { signal: AbortSignal.timeout(8000) });
+    if (!rBan.ok) throw new Error(`BAN HTTP ${rBan.status}`);
+    const ban = await rBan.json();
+
+    const f = Array.isArray(ban?.features) ? ban.features[0] : null;
+    if (!f) {
+      return {
+        status: 'not_found', source: 'Base Adresse Nationale',
+        message: `Adresse introuvable : « ${adresse}${commune ? `, ${commune}` : ''} ». ` +
+          "Vérifie l'orthographe de la voie et la commune.",
+      };
+    }
+
+    const p = f.properties ?? {};
+    const [lon, lat] = f.geometry?.coordinates ?? [null, null];
+    // `housenumber` = numéro exact ; `street` = la voie sans le numéro ;
+    // `municipality` = on n'a que la commune, ce qui ne vaut pas mieux qu'avant.
+    const precision: string = String(p.type ?? 'inconnu');
+    const score = typeof p.score === 'number' ? Math.round(p.score * 100) : null;
+
+    if (lat == null || lon == null) {
+      return {
+        status: 'not_found', source: 'Base Adresse Nationale',
+        message: "L'adresse a été trouvée mais sans coordonnées exploitables.",
+      };
+    }
+
+    const adresseResolue = {
+      libelle: p.label ?? adresse,
+      precision,
+      score_confiance: score,
+      code_insee: p.citycode ?? null,
+      commune: p.city ?? null,
+      code_postal: p.postcode ?? null,
+      lat, lon,
+    };
+
+    // Une géolocalisation au niveau « municipality » ne permet PAS de désigner
+    // une parcelle : on s'arrête là plutôt que de rendre celle du centre-ville.
+    if (precision === 'municipality') {
+      return {
+        status: 'partial', source: 'Base Adresse Nationale',
+        message:
+          "Seule la commune a pu être localisée : la voie n'a pas été reconnue. " +
+          "Aucune parcelle ne peut être désignée — demande une adresse plus précise.",
+        data: { adresse: adresseResolue, parcelle: null },
+      };
+    }
+
+    // 2) La parcelle qui contient ce point.
+    const geom = encodeURIComponent(JSON.stringify({ type: 'Point', coordinates: [lon, lat] }));
+    const rCad = await fetch(`${APICARTO_CADASTRE}?geom=${geom}`, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!rCad.ok) throw new Error(`API Carto cadastre HTTP ${rCad.status}`);
+    const fc = await rCad.json();
+    const parc = Array.isArray(fc?.features) ? fc.features[0] : null;
+
+    if (!parc) {
+      return {
+        status: 'partial', source: 'BAN / cadastre',
+        message:
+          `Adresse localisée (${adresseResolue.libelle}) mais aucune parcelle cadastrale à ce point — ` +
+          "c'est le cas sur le domaine public, une voie ou un secteur non cadastré. " +
+          "Les coordonnées restent exploitables pour les risques et le marché.",
+        data: { adresse: adresseResolue, parcelle: null },
+      };
+    }
+
+    const pp = parc.properties ?? {};
+    const parcelle = {
+      // L'IDU sur 14 caractères est l'identifiant que les autres outils attendent.
+      idu: pp.idu ?? null,
+      // Parenthèses OBLIGATOIRES : mélanger `??` et `&&` sans elles est une
+      // erreur de SYNTAXE en JS, pas une subtilité de précédence — le module
+      // entier refuse alors de se charger. Et elles doivent englober tout le
+      // ternaire : `(a ?? b) && c ? … : …` compilerait mais serait faux.
+      code_insee: pp.code_insee ?? (pp.code_dep && pp.code_com ? `${pp.code_dep}${pp.code_com}` : null),
+      section: pp.section ?? null,
+      numero: pp.numero ?? null,
+      prefixe: pp.com_abs ?? pp.prefixe ?? null,
+      contenance_m2: typeof pp.contenance === 'number' ? pp.contenance : null,
+    };
+
+    return {
+      status: 'ok', source: 'Base Adresse Nationale + API Carto cadastre (IGN)',
+      data: {
+        adresse: adresseResolue,
+        parcelle,
+        // Ce que l'appelant doit repasser aux outils suivants.
+        a_utiliser_ensuite: {
+          cadastral_ref: parcelle.idu,
+          lat, lng: lon,
+          code_insee: parcelle.code_insee ?? adresseResolue.code_insee,
+        },
+        perimetre: 'parcelle_contenant_le_point_adresse',
+        unite_fonciere_confirmee: false,
+        avertissement: (precision === 'housenumber'
+          ? "La parcelle retournée contient le point d'adresse, mais une adresse peut désigner plusieurs parcelles et le point peut tomber sur un accès. Ne traite pas sa contenance comme la surface totale du bien."
+          : "Géocodage au niveau de la VOIE et non du numéro : la parcelle retournée contient le point de la rue, pas nécessairement le bien.") +
+          (parcelle.contenance_m2 != null && parcelle.contenance_m2 < 100
+            ? " Parcelle de moins de 100 m² : vérifier en priorité les références cadastrales du bien avant toute conclusion sur la constructibilité ou la valeur."
+            : ''),
+      },
+    };
+  } catch (e) {
+    const motif = e instanceof Error ? e.message : String(e);
+    console.error('[adresse→parcelle] échec :', motif);
+    return {
+      status: 'error', source: 'BAN / cadastre',
+      message: `Résolution de l'adresse impossible : ${motif}`,
+    };
+  }
+}
+
 async function toolAltimetrie(input: Record<string, unknown>, ctx: MimmozaContext): Promise<ToolResult> {
   console.log('[altimetrie-tool] input=', JSON.stringify(input),
               '| parcel=', JSON.stringify(ctx.parcel),
@@ -5248,6 +5566,41 @@ async function toolClassementSonore(input: Record<string, unknown>, ctx: Mimmoza
   }
 }
 
+// Vérification GPU au point : la zone et les prescriptions sont indépendantes de
+// la collecte du règlement écrit par etude-parcelle-v1. Chaque couche conserve
+// son état propre ; une réponse vide ou en échec ne prouve aucune absence.
+async function urbanismeAuPoint(lat: number, lon: number): Promise<Record<string, unknown>> {
+  const geom = encodeURIComponent(JSON.stringify({ type: 'Point', coordinates: [lon, lat] }));
+  const couches = ['zone-urba', 'prescription-surf', 'assiette-sup-s'] as const;
+  const results = await Promise.all(couches.map(async (couche) => {
+    try {
+      const response = await fetch(`https://apicarto.ign.fr/api/gpu/${couche}?geom=${geom}`, {
+        headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(6500),
+      });
+      if (!response.ok) return { couche, statut: 'indisponible', elements: [] };
+      const json = reparerEncodageProfond(await response.json());
+      const features = Array.isArray(json?.features) ? json.features : [];
+      return {
+        couche, statut: 'interrogee',
+        elements: features.slice(0, 15).map((f: any) => ({
+          libelle: str(f?.properties?.libelle) ?? null,
+          libelle_long: str(f?.properties?.libelong) ?? null,
+          type_zone: str(f?.properties?.typezone) ?? null,
+          nom: str(f?.properties?.nomsuplitt) ?? str(f?.properties?.nomass) ?? str(f?.properties?.nom) ?? null,
+        })),
+      };
+    } catch {
+      return { couche, statut: 'indisponible', elements: [] };
+    }
+  }));
+  return {
+    portee: 'point_adresse_uniquement',
+    source: 'Géoportail de l’urbanisme via API Carto IGN',
+    couches: results,
+    avertissement: "Ces intersections concernent le point d'adresse, pas forcément toute l'unité foncière. Le règlement écrit et le zonage PPRI détaillé restent à vérifier.",
+  };
+}
+
 // ─── get_etude_parcelle (branché sur etude-parcelle-v1 via COPILOT_FN_ETUDE) ──
 // Un seul appel → 7 sources en parallèle côté serveur. Contourne la limite
 // MAX_TOOL_ITERATIONS.quick = 2 qui interdit d'enchaîner les outils en mode rapide.
@@ -5284,10 +5637,20 @@ async function toolEtudeParcelle(input: Record<string, unknown>, ctx: MimmozaCon
       commune: insee.nom ?? undefined,
       zip_code: insee.cp ?? undefined,
     };
-    const raw = await callInternalFunction(INTERNAL_FUNCTIONS.etude, body);
+    const [raw, urbanisme] = await Promise.all([
+      callInternalFunction(INTERNAL_FUNCTIONS.etude, body),
+      lat != null && lng != null ? urbanismeAuPoint(lat, lng) : Promise.resolve(null),
+    ]);
     const s = summarizeEtudeParcelle(raw);
+    const surfaceBatiment = num(input.surface_batiment_m2);
+    const data = s.data ? {
+      ...s.data,
+      ...(urbanisme ? { urbanisme_point: urbanisme } : {}),
+      ...(surfaceBatiment != null && surfaceBatiment > 0 && surfaceBatiment <= 100000
+        ? { surface_batiment_m2: surfaceBatiment } : {}),
+    } : undefined;
     return avecAjustement(
-      { status: s.status, source: INTERNAL_FUNCTIONS.etude, data: s.data, message: s.message },
+      { status: s.status, source: INTERNAL_FUNCTIONS.etude, data, message: s.message },
       insee,
     );
   } catch (e) {
@@ -8808,15 +9171,188 @@ function buildSystemPrompt(ctx: MimmozaContext, mode: CopilotMode): string {
     "4quaterdecies-bis. RÈGLE SYMÉTRIQUE, dans l'autre sens : tu ne traduis JAMAIS un nom de commune en code INSEE de mémoire non plus — tu te trompes tout autant, et cette erreur-là est invisible car elle part directement en requête. Ne renseigne un paramètre code_insee ou commune_insee QUE si le code figure explicitement dans le message de l'utilisateur ou dans le contexte fourni. Sinon, laisse le champ VIDE et renseigne le nom de commune : le serveur résout le code lui-même au référentiel officiel. Un code que tu aurais reconstitué est vérifié puis écarté, et ce n'est pas un service que tu rends : tu fais perdre un tour.",
     "4quaterdecies-ter. Si la réponse d'un outil contient un champ « _ajustement » (ou « _insee »), c'est que la commune retenue n'est pas celle qui avait été demandée. Tu dois RELAYER cet écart à l'utilisateur, en clair et avant les chiffres — jamais le passer sous silence, jamais présenter le résultat comme s'il portait sur la commune initialement visée.",
     "4sexdecies. Le contexte peut contenir un DEAL ACTIF, un snapshot prédictif ou des données de page portant sur un bien précis. Tu ne les utilises QUE si la question porte sur ce bien, sur « cette page » ou sur « mon projet ». Tu n'introduis JAMAIS de toi-même un bien, un prix, une estimation, une décote ou un budget que l'utilisateur n'a pas évoqué dans la conversation en cours : une question générale sur une ville, un secteur ou une réglementation reçoit une réponse générale. Si un rapprochement avec le deal actif te paraît utile, tu le PROPOSES en une phrase (« souhaitez-vous que je rapproche cela de votre projet en cours ? ») au lieu d'en dérouler les chiffres.",
+    "4quindecies-0. UNE ADRESSE SE RÉSOUT EN PARCELLE AVANT TOUTE ANALYSE. Dès que l'utilisateur désigne un bien par une adresse postale (« 6 parc de la Bérengère à Saint-Cloud ») plutôt que par une référence cadastrale, tu appelles get_parcelle_depuis_adresse EN PREMIER, avant get_etude_parcelle et avant tout autre outil — même s'il ne demande pas la parcelle, même s'il demande « juste une analyse ». Tu repasses ensuite `a_utiliser_ensuite.cadastral_ref` et les coordonnées aux outils suivants. ⚠️ Ne PAS le faire dégrade silencieusement toute l'étude : sans ancrage parcellaire, les servitudes et le classement sonore ne sont pas interrogés du tout, la pente et le potentiel solaire décrivent le centre de la commune, et le verdict de risque reste « indéterminé ». Une étude au centre-bourg présentée comme l'analyse d'une adresse est une erreur grave. La parcelle qui contient le point d'adresse n'est pas forcément toute l'unité foncière : sa contenance ne vaut pas surface totale du bien, surtout si elle est très petite. Distingue toujours les données au point, à la parcelle et à la commune ; ne conclus pas à une dent creuse ni à la constructibilité sur cette seule base. Si la résolution renvoie `partial` (adresse trouvée, pas de parcelle) tu continues avec les coordonnées en le signalant ; si elle renvoie `not_found`, tu demandes une adresse plus précise au lieu de te rabattre sur la commune.",
+    [
+      "# SYNTHÈSE APRÈS UN RAPPORT PARCELLAIRE — règle 4quindecies-ter",
+      "",
+      "Quand un rapport factuel t'est présenté comme DÉJÀ AFFICHÉ, l'utilisateur a sous les yeux",
+      "une fiche de données : chaque valeur avec son statut, sa portée, sa source, son indice de",
+      "confiance et son avertissement. C'est exhaustif et c'est illisible — tout y est, rien n'y",
+      "est dit. Ton travail commence là où celui du gabarit s'arrête.",
+      "",
+      mode === 'report'
+        ? "LONGUEUR — aucun plafond. L'utilisateur paie une analyse Expert : tu écris ce que la matière justifie, et rien de plus. Le critère n'est pas le nombre de mots mais la DENSITÉ : chaque paragraphe apporte un fait, une conséquence ou une action que le précédent n'apportait pas. Un paragraphe qui reformule est un paragraphe à supprimer, même si tu as de la place. À l'inverse, ne t'arrête pas court quand une contrainte mérite d'être déroulée jusqu'à son coût ou sa procédure : c'est précisément ce qui est payé."
+        : "LONGUEUR — 350 à 600 mots. Au-delà, tu resserres : c'est le format Approfondi.",
+      "",
+      "Structure, dans les deux cas :",
+      "",
+      "## Ce qu'il faut retenir",
+      "Trois à cinq phrases. Ce que les données établissent au point d'adresse ; ne présente",
+      "la taille de la parcelle repérée comme celle de toute la propriété que si son périmètre est confirmé. Nomme le fait dominant qui change",
+      "une décision. Tu cites les chiffres qui portent, pas tous les chiffres.",
+      "",
+      "## Ce qui pèse sur la décision",
+      "Deux à quatre points — jusqu'à six en mode Expert si la matière le justifie —,",
+      "HIÉRARCHISÉS du plus lourd au plus léger, chacun avec sa conséquence concrète et",
+      "chiffrée quand c'est possible.",
+      "Un aléa argile fort engage des fondations spéciales ; une sismicité de zone 1",
+      "n'engage rien — ne les mets pas sur le même plan. Un score communal n'est pas un constat",
+      "parcellaire : dis-le une fois, pas douze.",
+      "",
+      "⚠️ FORMAT DE CES POINTS — n'utilise PAS de liste numérotée markdown (« 1. », « 2. » en",
+      "début de ligne). Chaque point est un PARAGRAPHE qui porte son rang et son titre en gras,",
+      "sur la même ligne que le texte qui suit :",
+      "",
+      "**1. Signal d'inondation à lever en priorité.** Un signal communal est relevé alors que…",
+      "",
+      "**2. Aléa retrait-gonflement des argiles fort.** Pour une construction neuve, l'exposition…",
+      "",
+      "Raison : une liste ordonnée dont les items sont séparés par des paragraphes se rend",
+      "« 1. 1. 1. » à l'écran — chaque item redémarre sa propre liste. Le rang en gras est le",
+      "seul format qui tienne à l'affichage.",
+      "",
+      "## Ce que ces données ne permettent pas de trancher",
+      "Nommément, et ce qu'il faudrait pour lever le doute : quelle source, quel interlocuteur,",
+      "quel document. « PLU non collecté » n'est pas une information utile ; « la constructibilité",
+      "reste inconnue tant que le règlement écrit de la zone identifiée au GPU et l'assiette foncière ne sont pas vérifiés » l'est.",
+      "L'interlocuteur que tu nommes doit découler des données ou de l'organisation",
+      "administrative sans hypothèse : le service urbanisme de la commune, la préfecture ou la",
+      "DDT du département, le gestionnaire de réseau. Jamais une autorité spécialisée déduite",
+      "d'une supposition sur la nature d'une contrainte.",
+      "",
+      "## La prochaine action",
+      "UNE seule, celle qui débloque le plus. Concrète et exécutable aujourd'hui.",
+      "",
+      mode === 'report'
+        ? [
+            "GRAPHIQUE — mode Expert, facultatif mais souvent utile ici. Le rapport factuel",
+            "n'en contient aucun, et deux formes méritent presque toujours d'être tracées :",
+            "· la CONFRONTATION DES PRIX au m² quand plusieurs portées coexistent (voisinage",
+            "  immédiat / commune) — un `bar` de deux à quatre barres, dont le titre nomme la",
+            "  portée ; c'est le complément visuel de la règle 4quindecies-quater ;",
+            "· la RÉPARTITION des mutations comparables par catégorie de bien (maison /",
+            "  appartement) quand elle explique l'hétérogénéité du marché — un `donut`.",
+            "Tu insères le bloc `mimmoza-chart` là où il éclaire ton propos (le plus souvent",
+            "dans « Ce qu'il faut retenir » ou dans le point de hiérarchie concerné), jamais à",
+            "la fin. UN graphique au maximum dans une synthèse, et uniquement si chacune de ses",
+            "valeurs figure déjà dans le rapport affiché ou dans une sortie d'outil.",
+            "⚠️ Les compteurs de risques (ICPE, arrêtés de catastrophe naturelle, cavités,",
+            "mouvements de terrain) ne se tracent PAS ensemble : ce sont des unités différentes",
+            "sur un même axe, ce qu'interdit le bloc GRAPHIQUES.",
+            "",
+          ].join('\n')
+        : "",
+      "INTERDICTIONS :",
+      "· ne répète AUCUN tableau, AUCUNE liste de statuts, portées, sources ou confiances ;",
+      "· n'invente aucun chiffre absent du rapport, et n'en recalcule aucun (règle 4quindecies-bis) ;",
+      "· ne cite jamais deux prix au m² de portées différentes sans les réconcilier explicitement",
+      "  (règle 4quindecies-quater) ;",
+      "· ne qualifie pas un chiffre de « favorable » ou « pénalisant » sans point de comparaison",
+      "  présent dans le rapport ;",
+      "· ne conclus rien sur la constructibilité tant que le règlement PLU est absent ;",
+      "· ne présente jamais un indicateur communal comme une caractéristique de la parcelle ;",
+      "· ⚠️ n'invente AUCUNE caractéristique géographique ou physique du site. Les interdictions",
+      "  de la règle 4quindecies s'appliquent ICI AUSSI, intégralement. Une donnée absente",
+      "  reste absente : « classement sonore non disponible » ne t'autorise pas à écrire",
+      "  « la parcelle est à proximité de voies importantes » — tu ne sais pas ce qui la borde.",
+      "  Pas de cours d'eau, de littoral, d'axe routier, de voie ferrée, de relief ou de",
+      "  voisinage déduits d'une altitude, d'un nom de rue, d'un nom de commune ou d'un manque ;",
+      "· ⚠️ n'invente AUCUN régime réglementaire ni AUCUN interlocuteur que les données ne",
+      "  nomment pas. Une servitude recensée à proximité se cite telle que la source la",
+      "  libelle, sans lui prêter un régime qu'elle n'a pas : ne transforme pas un équipement",
+      "  en monument historique, n'invoque ni périmètre délimité des abords, ni avis de",
+      "  l'Architecte des Bâtiments de France, ni UDAP, ni site patrimonial remarquable tant",
+      "  qu'une source ne les a pas nommés. Renvoyer au service urbanisme de la commune est",
+      "  toujours licite ; désigner une autorité spécialisée sur une hypothèse ne l'est pas.",
+      "",
+      "Ces quatre sections TIENNENT LIEU de conclusion : n'ajoute pas de section « ## Conclusion »",
+      "en plus, elle répéterait mot pour mot ce que tu viens d'écrire.",
+      "",
+      "Termine par « À faire valider par un professionnel. »",
+    ].join('\n'),
+    "",
     "4quindecies-a. En mode rapide, get_etude_parcelle se suffit à lui-même : après l'avoir appelé, tu n'appelles AUCUN autre outil (ni PLU, ni risques, ni DVF) et tu rédiges directement le rapport. Le budget d'itérations est limité : un outil supplémentaire consomme le tour de synthèse et l'utilisateur ne reçoit alors aucun rapport. Si le PLU ou les risques manquent, tu le signales en partie 5 comme point à vérifier, sans chercher à les récupérer.",
-    "4quindecies. Quand tu réponds à partir de get_etude_parcelle, tu ne listes PAS les données brutes : tu rédiges un RAPPORT structuré en cinq parties — (1) Identité de la parcelle ; (2) Contraintes réglementaires (zonage, servitudes) ; (3) Aptitude physique du terrain (pente, altitude, assainissement, solaire) ; (4) Potentiel économique (loyers, zone ABC, fiscalité) ; (5) VERDICT ET POINTS DE VIGILANCE. La partie 5 est la plus importante : elle hiérarchise ce qui bloque, ce qui coûte cher et ce qui reste à vérifier. Tu t'appuies UNIQUEMENT sur les données du bundle, tu cites la source de chaque chiffre, et tu consacres un paragraphe explicite aux sources indisponibles et à ce qu'elles empêchent de conclure. Termine par « À faire valider par un professionnel. » INTERDICTIONS ABSOLUES dans ce rapport : ne JAMAIS nommer ni décrire une couleur de zone d'un PPR (rouge, bleue, orange…) — ce zonage réglementaire n'est dans aucune donnée, renvoie au règlement du PPR en mairie ; ne JAMAIS déduire une caractéristique géographique non fournie (proximité du littoral, d'un cours d'eau, nature de l'aléa) à partir d'une altitude ou d'un nom de commune ; ne JAMAIS introduire un étalon de comparaison absent des données (moyenne nationale, moyenne départementale, ordre de grandeur « habituel ») ; ne JAMAIS qualifier un chiffre de modéré, élevé, favorable, attractif ou pénalisant sans référence chiffrée issue du bundle — présente le taux brut et son effet concret (« TFB 31,75 % : à intégrer au coût de portage »), sans jugement de valeur.",
+    mode === 'quick'
+      ? ""
+      : "4quindecies-quinquies. ENCHAÎNEMENT OBLIGATOIRE — modes Approfondi et Expert. Après get_etude_parcelle, vérifie d'abord le zonage et les prescriptions au point inclus dans `urbanisme_point` ; ne dis pas que le zonage est inconnu si une zone y figure. Appelle get_etude_marche seulement si l'utilisateur demande une valeur, une analyse de marché ou un investissement, et uniquement après avoir établi le périmètre foncier. Si le résultat figure déjà dans le contexte, réutilise-le. Les chiffres DVF de voisinage et ceux de la commune ont des portées différentes et ne suffisent jamais à valoriser une propriété dont l'assiette foncière est inconnue.",
+    "4octovicies. VOCABULAIRE D'URBANISME — n'emploie JAMAIS une notion abrogée : elle date instantanément l'analyse aux yeux d'un professionnel et fait douter du reste. Le COS (coefficient d'occupation des sols) a été supprimé par la loi ALUR du 24 mars 2014 : la densité admissible s'exprime aujourd'hui par l'emprise au sol, la hauteur, les reculs et, le cas échéant, la surface de plancher — ne demande jamais « le COS » ni ne l'annonce comme une règle à consulter. La SHON et la SHOB ont été remplacées par la « surface de plancher » depuis le 1er mars 2012. Les POS sont caducs et remplacés par les PLU ou PLUi : ne renvoie jamais un utilisateur vers un POS. Si une source citée emploie elle-même l'un de ces termes, tu le reprends entre guillemets en signalant qu'il s'agit d'un document antérieur, sans le présenter comme le droit en vigueur.",
+    "4quindecies. ⚠️ CETTE RÈGLE NE S'APPLIQUE QUE SI AUCUN rapport factuel ne t'a été présenté comme DÉJÀ AFFICHÉ. Dans le cas contraire, la règle 4quindecies-ter prime et tu écris uniquement la synthèse. Quand tu réponds à partir de get_etude_parcelle, tu ne listes PAS les données brutes : tu rédiges un RAPPORT structuré en cinq parties — (1) Identité de la parcelle ; (2) Contraintes réglementaires (zonage, servitudes) ; (3) Aptitude physique du terrain (pente, altitude, assainissement, solaire) ; (4) Potentiel économique (loyers, zone ABC, fiscalité) ; (5) VERDICT ET POINTS DE VIGILANCE. La partie 5 est la plus importante : elle hiérarchise ce qui bloque, ce qui coûte cher et ce qui reste à vérifier. Tu t'appuies UNIQUEMENT sur les données du bundle, tu cites la source de chaque chiffre, et tu consacres un paragraphe explicite aux sources indisponibles et à ce qu'elles empêchent de conclure. Termine par « À faire valider par un professionnel. » INTERDICTIONS ABSOLUES dans ce rapport : ne JAMAIS nommer ni décrire une couleur de zone d'un PPR (rouge, bleue, orange…) — ce zonage réglementaire n'est dans aucune donnée, renvoie au règlement du PPR en mairie ; ne JAMAIS déduire une caractéristique géographique non fournie (proximité du littoral, d'un cours d'eau, nature de l'aléa) à partir d'une altitude ou d'un nom de commune ; ne JAMAIS introduire un étalon de comparaison absent des données (moyenne nationale, moyenne départementale, ordre de grandeur « habituel ») ; ne JAMAIS qualifier un chiffre de modéré, élevé, favorable, attractif ou pénalisant sans référence chiffrée issue du bundle — présente le taux brut et son effet concret (« TFB 31,75 % : à intégrer au coût de portage »), sans jugement de valeur.",
     "4quindecies-bis. CALCULS DU RAPPORT PARCELLAIRE — si la réponse repose sur get_etude_parcelle et que la question n'est pas explicitement financière, tu ne calcules AUCUN rendement, ratio, dispersion ou indicateur nouveau en combinant loyer, DVF ou autres champs. Cette restriction est propre au rapport parcellaire : elle ne désactive pas la synthèse d'investissement lorsqu'elle est explicitement demandée. Tu transportes et respectes intégralement interdictions_analyse.",
+    "4quindecies-quater. DEUX PRIX AU M² NE SONT PAS INTERCHANGEABLES. Plusieurs prix au m² coexistent souvent dans ton contexte : celui des mutations proches de la parcelle (DVF, portée « proximité », petit échantillon) et celui de la commune entière (étude de marché, portée « commune », grand échantillon). Ils diffèrent, et c'est NORMAL — ils ne mesurent pas la même chose. INTERDICTION d'en citer un dans une phrase et l'autre dans la suivante sans le dire : c'est la faute qui décrédibilise le plus vite une analyse, parce que le lecteur voit deux chiffres contradictoires sans savoir lequel croire. Quand deux prix coexistent, tu les nommes TOUS LES DEUX dans la même phrase, chacun avec sa portée, la taille de son échantillon et sa source — « 6 052 €/m² sur 8 mutations au voisinage immédiat [source: DVF], contre 6 672 €/m² sur 244 mutations à l'échelle de la commune [source: étude de marché] » — puis tu dis EXPLICITEMENT lequel tu retiens et pourquoi : le prix de voisinage prime pour situer ce terrain-là, le prix communal prime pour juger de la profondeur et de la liquidité du marché. Si les deux valeurs s'écartent visiblement, tu dis d'où vient l'écart avec les motifs déjà présents dans les sorties d'outil (échantillon mélangeant plusieurs catégories de biens, secteur hétérogène, effectif trop faible, valeurs extrêmes écartées) au lieu de le laisser passer — sans calculer toi-même le pourcentage d'écart ni aucun indicateur de dispersion, que la règle 4quindecies-bis interdit. La règle vaut à l'identique pour les loyers, les surfaces et les scores : jamais deux valeurs de portées différentes présentées comme une seule vérité.",
     "4septdecies. Pour toute question de COÛT ou de BUDGET de construction neuve, appelle get_couts_construction — n'avance JAMAIS un €/m² de mémoire, et ne déduis JAMAIS un coût de construction d'un prix DVF (le DVF porte sur des ventes de biens EXISTANTS, pas sur un coût de construction : les deux ne sont pas comparables). Présente le montant comme un ordre de grandeur issu du barème Mimmoza, cite la source, rappelle les postes non inclus (foncier, honoraires, VRD, taxes d'urbanisme, aléas) et la nécessité d'un devis. Si l'outil signale que la typologie n'est pas couverte (EHPAD, clinique, hôtel, école), dis-le franchement et renvoie vers un économiste de la construction : n'utilise JAMAIS 'tertiaire' comme approximation.",
     "4octodecies. COÛT DES TRAVAUX DE RÉNOVATION (bien EXISTANT, distinct de la construction neuve de la règle 4septdecies). Si un budget travaux Mimmoza est déjà fourni (contexte renovation_* ou snapshot travaux_budget), utilise-le EN PRIORITÉ [source: simulation Mimmoza]. SINON, dès que l'utilisateur fournit des photos (ou décrit l'état) d'un bien PRÉCIS qu'il envisage d'acheter, d'estimer ou de rénover, tu estimes le coût des travaux DE TA PROPRE INITIATIVE — sans attendre une demande explicite de budget : une question sur le prix, l'opportunité, la qualité ou un simple « qu'en penses-tu ? » suffit à le déclencher. Et si un prix d'achat est connu, tu enchaînes dans le MÊME message la synthèse d'investissement de la règle 4novodecies (prix de revient + lecture des 3 angles). Cela ne s'applique qu'à un bien précis soumis par l'utilisateur, jamais à une question de marché générale (cf. règle 4sexdecies). Pour le chiffrage lui-même, tu appelles TOUJOURS get_couts_renovation : tu lis l'état sur les photos, tu en déduis les postes à reprendre et leurs quantités (surface, nombre d'ouvertures, nombre de pièces…), tu les transmets à l'outil qui applique les ratios et renvoie la décomposition chiffrée, que tu restitues SANS la recalculer. MODE DE CHIFFRAGE — RÈGLE STRICTE : dès que tu peux nommer NE SERAIT-CE QU'UN poste depuis les photos ou la description (cuisine, salle de bains, sols, peinture, électricité, menuiseries…), tu chiffres OBLIGATOIREMENT poste par poste (paramètre `postes`). Le paramètre `niveau_global` (rafraichissement/partielle/moyenne/lourde/complete) est un forfait grossier de DERNIER RECOURS, réservé au SEUL cas où l'état du bien est totalement illisible et qu'aucun poste n'est identifiable : il ne doit JAMAIS servir de raccourci quand tu as déjà identifié des postes. Chiffrer en `niveau_global` un bien dont tu viens de décrire les postes est une ERREUR (le forfait surestime massivement). Tu choisis aussi la `gamme` (economique/standard/premium) en cohérence avec le bien et tu l'ANNONCES explicitement dans ta réponse (« chiffrage en gamme premium »), pour que l'hypothèse soit traçable. Tu ne réponds JAMAIS « à chiffrer » ni « budget à anticiper » sans montant, et tu ne demandes JAMAIS son budget à l'utilisateur — c'est toi qui l'estimes via l'outil. Donnée absente (surface d'une pièce, gamme) → hypothèse explicite notée [H] transmise en quantité/paramètre à l'outil, et tu chiffres quand même. Présente la sortie sous forme de tableau poste par poste + TOTAL (fourchette) + ratio €/m² implicite (contrôle de cohérence) + 3 scénarios (indispensable / recommandé / valorisation max) si pertinent. Présente les montants comme des ordres de grandeur à confirmer par devis et cite [source: barème rénovation Mimmoza]. Postes non visibles sur photo (structure, réseaux enterrés, humidité, amiante <1997, plomb <1949, assainissement) : signale-les « à confirmer par visite/diagnostic » (l'aléa de l'outil les couvre), mais ne t'en sers JAMAIS comme prétexte pour ne pas chiffrer. Réserves regroupées en un seul bloc final. Termine par « À faire valider par un professionnel. »",
         "4novodecies. SYNTHÈSE INVESTISSEMENT — enchaînement OBLIGATOIRE. Dès que tu disposes À LA FOIS d'une estimation de valeur (comparables DVF/outil ou valeur saisie) ET d'un coût travaux (barème rénovation ou budget Mimmoza), tu ne t'arrêtes PAS au chiffrage : tu enchaînes sur une synthèse d'investissement chiffrée. (a) PRIX DE REVIENT = prix d'achat + travaux + frais d'acquisition ; les frais de notaire dans l'ancien (~7-8 %) sont un ordre de grandeur réglementaire standard que tu peux appliquer en l'annonçant. Si l'utilisateur n'a pas donné le prix d'achat, pose une hypothèse [H] (par défaut le bas de ta fourchette de valeur) pour illustrer le calcul, et marque-la comme hypothèse. (b) Positionne ce prix de revient face à la valeur de marché APRÈS travaux (comparables) et déduis, CHIFFRÉES : la marge brute sous l'angle marchand (valeur de revente − prix de revient, en € et en %) et/ou le rendement locatif si un loyer est disponible. Pour le loyer, appelle get_loyers_reference — ne l'invente JAMAIS. Si un calcul de rentabilité Mimmoza est déjà fourni (snapshot rentabilite / loyer_median_zone), utilise-le EN PRIORITÉ [source: module Rentabilité Mimmoza]. (c) ORDRE IMPÉRATIF : tu livres TOUJOURS le prix de revient EN PREMIER dès qu'il est calculable — il ne dépend d'AUCUN angle, ne le retarde donc jamais derrière une question. Tu ne demandes PAS son angle à l'utilisateur avant de produire la synthèse : tu enchaînes directement une lecture COURTE des trois angles à partir des données disponibles — résidence (paie-t-il le juste prix ? prix de revient face à la valeur de marché), locatif (rendement brut ≈ loyer annuel / prix de revient ; appelle get_loyers_reference pour le loyer, ne l'invente jamais), marchand (marge = valeur de revente − prix de revient, en € et en %). PUIS seulement tu proposes d'approfondir l'angle qui l'intéresse. Tu ne bloques JAMAIS toute la synthèse sur le choix de l'angle. (d) Le prix d'achat est le seul intrant réellement bloquant : s'il manque, réclame-le en UNE phrase ; s'il est connu, tu n'as plus aucune raison de t'arrêter — tu produis la synthèse complète. Termine par « À faire valider par un professionnel. »",
         mode === "quick"
-      ? "5. Mode rapide : réponse concise et directe (quelques phrases). Pas de digression. EXCEPTION : une réponse construite sur get_etude_parcelle est un rapport complet en 5 parties (règle 4quindecies) — la concision ne s'y applique pas, et tu ne sacrifies JAMAIS la partie 5 (verdict et points de vigilance), qui est la plus importante."
-      : "5. Mode avancé : raisonnement structuré, factuel et sourcé. Pas de digression. EXCEPTION : une réponse construite sur get_etude_parcelle est un rapport complet en 5 parties (règle 4quindecies) — la concision ne s'y applique pas, et tu ne sacrifies JAMAIS la partie 5 (verdict et points de vigilance), qui est la plus importante.",
+      ? "5. Mode rapide : adapte la longueur à la demande. Une question simple reçoit une réponse directe ; une question complexe mérite une analyse complète avec conclusion motivée, faits déterminants, conséquences concrètes, limites des données et prochaine action utile. Réponds à tous les points demandés et ne t'arrête pas après quelques phrases par principe. Évite seulement les répétitions. Pour get_etude_parcelle, applique la règle 4quindecies-ter si le rapport factuel est déjà affiché : rédige uniquement la synthèse, sans répéter les tableaux."
+      : "5. Modes Approfondi et Expert : commence par une réponse claire à la question, puis développe l'analyse autant que les faits le justifient. Hiérarchise les facteurs, explique leur effet sur la décision, examine les scénarios ou objections pertinents, distingue les faits des hypothèses et termine par une action utile. Traite chaque sous-question ; une réponse courte n'est adaptée que si la demande est simple. Pour get_etude_parcelle, applique la règle 4quindecies-ter si le rapport factuel est déjà affiché : rédige uniquement la synthèse, sans répéter les tableaux.",
+    "",
+    // ── GRAPHIQUES — mode report uniquement ──────────────────────────────────
+    //
+    // Réservé au mode `report` (offre Pro) : c'est le seul où la réponse est
+    // assez développée pour qu'un graphique ajoute quelque chose. En `quick`,
+    // la consigne est la concision — un graphique y serait hors sujet, et le
+    // budget de sortie n'est pas fait pour ça.
+    mode === 'report'
+      ? [
+          "# GRAPHIQUES",
+          "",
+          "Tu peux illustrer une réponse par un graphique, en insérant un bloc de code",
+          "balisé `mimmoza-chart` contenant UNIQUEMENT du JSON, à l'endroit du texte où",
+          "il éclaire ton propos — pas tous à la fin.",
+          "",
+          "```mimmoza-chart",
+          '{"type":"bar","title":"Prix médian au m²","unit":"€/m²","source":"DVF via market-study",',
+          ' "data":[{"label":"Saint-Cloud","value":6672},{"label":"Ce bien","value":10526}]}',
+          "```",
+          "",
+          "Types disponibles : `bar` (comparer des grandeurs), `line` (une évolution dans le",
+          "temps), `pie` et `donut` (une répartition dont les parts font un tout).",
+          "Multi-séries : ajoute d'autres clés numériques aux points et liste-les dans",
+          '`series`, par exemple `{"label":"T1","2024":6200,"2025":6672}` avec',
+          '`"series":["2024","2025"]`.',
+          "",
+          "SEUIL D'ADMISSION — à vérifier AVANT d'écrire le bloc.",
+          "",
+          "Un graphique n'a de sens que s'il montre une FORME que la lecture ne donne pas :",
+          "un écart, un classement, un déséquilibre, une progression. En dessous de ce",
+          "seuil, une phrase est supérieure — plus courte, plus précise, et elle porte la",
+          "nuance qu'un dessin perd.",
+          "",
+          "Tu n'as PAS le droit de tracer :",
+          "· une série d'UN SEUL point — c'est un chiffre, écris-le (« pente de 5,3 % ») ;",
+          "· deux ou trois valeurs proches — « 26,39 €/m² en appartement contre 23,73 en",
+          "  maison » se lit mieux que deux barres presque égales ;",
+          "· des grandeurs d'unités différentes sur un même axe (des % à côté d'euros) ;",
+          "· ce que tu viens déjà de présenter en tableau — choisis l'un OU l'autre.",
+          "",
+          "Tu DEVRAIS tracer, en revanche, quand tu as sous la main :",
+          "· une DISTRIBUTION — répartition des DPE d'un secteur, des permis par type, des",
+          "  logements par typologie : `donut` si les parts font un tout, `bar` sinon ;",
+          "· un CLASSEMENT d'au moins quatre éléments — scores par catégorie, équipements",
+          "  par famille, communes comparées ;",
+          "· une SÉRIE DE SCORES sur une même échelle — les indicateurs de risque notés sur",
+          "  100 en sont l'exemple type : sept ou huit barres montrent d'un coup où se situe",
+          "  la faiblesse, ce qu'un tableau de onze lignes noie ;",
+          "· une PROGRESSION dans le temps, en `line`.",
+          "",
+          "RÈGLES — elles priment sur l'envie d'illustrer :",
+          "1. CHAQUE valeur d'un graphique doit DÉJÀ figurer dans ta réponse ou dans une",
+          "   sortie d'outil. Un graphique ne présente pas un chiffre que le texte ne dit",
+          "   pas, et n'en invente aucun pour « compléter » une série. Si une donnée manque,",
+          "   le graphique a un point de moins — il ne se complète pas.",
+          "2. Le champ `source` est OBLIGATOIRE et reprend la source citée pour ces chiffres.",
+          "   Un graphique est une affirmation factuelle : sans source, il viole la règle 2.",
+          "3. Un graphique ne remplace JAMAIS le texte. Il l'accompagne, et ton analyse doit",
+          "   rester compréhensible sans lui — l'export PDF le rend sous forme de tableau.",
+          "4. Deux graphiques par réponse au maximum.",
+          "5. N'utilise `pie` ou `donut` que si les parts forment RÉELLEMENT un tout (100 %).",
+          "   Des prix au m² de communes différentes ne sont pas une répartition : c'est",
+          "   `bar`. Minimum trois parts, sinon dis le pourcentage en toutes lettres.",
+          "6. Un score inversé se trace tel quel, sans le retourner : les scores de sécurité",
+          "   valent 100 pour une zone sûre. Dis-le en titre (« Scores de sécurité — 100 =",
+          "   zone sûre ») plutôt que de convertir les valeurs.",
+        ].join('\n')
+      : "",
     "",
     // ── CONCLUSION OBLIGATOIRE SUR LES ÉTUDES ────────────────────────────────
     // Les études (marché, risques, parcelle) produisent beaucoup de tableaux et
@@ -8827,6 +9363,8 @@ function buildSystemPrompt(ctx: MimmozaContext, mode: CopilotMode): string {
       "# CONCLUSION OBLIGATOIRE — étude de marché, de risques ou de parcelle",
       "",
       "Dès que ta réponse présente une étude (marché, risques, parcelle, faisabilité), tu TERMINES par une section « ## Conclusion » rédigée en PROSE — pas en tableau, pas en liste à puces. 5 à 10 phrases, dans cet ordre :",
+      "",
+      "⚠️ UNE SEULE EXCEPTION : quand tu rédiges la synthèse qui suit un rapport parcellaire déjà affiché (règle 4quindecies-ter), ses quatre sections TIENNENT LIEU de conclusion — elles disent déjà le chiffre qui compte, ce qui pèse, ce qu'on ne peut pas trancher et la prochaine action. N'ajoute alors AUCUNE section « ## Conclusion » : elle ferait doublon mot pour mot.",
       "",
       "1. **Ce que dit le marché / le site, en une phrase tranchée.** Le chiffre qui compte et ce qu'il implique concrètement pour ce projet. Pas de reformulation des tableaux.",
       "2. **Les deux ou trois éléments qui pèsent vraiment** sur la décision, et pourquoi. Tu hiérarchises : tout n'a pas le même poids. Un aléa sismique de zone 4 engage des coûts de structure ; une pharmacie manquante non.",
@@ -8863,7 +9401,26 @@ async function buildMessages(
   mode: CopilotMode,
   attachments?: CopilotAttachment[],
 ): Promise<AnthropicMessage[]> {
-  const limit = MAX_HISTORY_MESSAGES[mode];
+  // Le message courant est-il DÉJÀ en base au moment de cette lecture ?
+  //
+  // Historiquement, `saveUserMessage` était attendu avant cet appel : le message
+  // du tour figurait donc dans l'historique relu, et `newUserMessage` valait ''.
+  // L'insertion se trouvait ainsi sur le chemin critique, entre la requête de
+  // l'utilisateur et le premier token.
+  //
+  // Désormais l'appelant peut passer le message en clair et lancer l'insertion
+  // en parallèle de l'appel LLM. Dans ce mode, l'historique s'arrête au tour
+  // précédent : le dernier message utilisateur qu'il contient est un ANCIEN
+  // message, qu'il ne faut ni retirer ni confondre avec celui du tour courant.
+  const courantDejaPersiste = !newUserMessage.trim();
+
+  // La fenêtre d'historique doit rester de même taille dans les deux modes :
+  // quand le message courant n'est pas encore en base, il ne consomme pas une
+  // ligne du SELECT, on retire donc une place pour ne pas élargir le contexte
+  // envoyé au modèle (et la facture qui va avec).
+  const limit = courantDejaPersiste
+    ? MAX_HISTORY_MESSAGES[mode]
+    : Math.max(1, MAX_HISTORY_MESSAGES[mode] - 1);
   const { data: history } = await getAdmin()
     .from('copilot_messages')
     .select('role, content')
@@ -8885,9 +9442,14 @@ async function buildMessages(
   // Blocs image/document AVANT le texte (recommandation Anthropic).
   if (attachments?.length) {
     const lastMessage = msgs.at(-1);
-    const persistedText = lastMessage?.role === 'user' && typeof lastMessage.content === 'string'
-      ? lastMessage.content
-      : '';
+    // On ne retire le dernier message que s'il EST le message courant, c'est-à-dire
+    // uniquement dans le mode où celui-ci a déjà été persisté. Sinon on amputerait
+    // l'historique d'un vrai message du tour précédent.
+    const persistedText = courantDejaPersiste
+      && lastMessage?.role === 'user'
+      && typeof lastMessage.content === 'string'
+        ? lastMessage.content
+        : '';
     if (persistedText) msgs.pop();
     const blocks: unknown[] = attachments.map((a) =>
       a.mediaType === 'application/pdf'
@@ -8996,7 +9558,14 @@ async function buildPriorToolResultsBlock(conversationId: string): Promise<strin
       .from('copilot_tool_calls')
       .select('tool_name, tool_input, tool_output, status, created_at')
       .eq('conversation_id', conversationId)
-      .eq('status', 'ok')
+      // `copilot_tool_calls.status` est écrit par saveAssistantMessage avec les
+      // valeurs 'success' | 'error' (cf. OrchestratorResult.toolCallsLog), jamais
+      // 'ok' — qui est le statut d'une SORTIE d'outil, pas d'un APPEL. Le filtre
+      // portait sur 'ok' : il n'a donc jamais rien retourné, et ce bloc de rappel
+      // est resté vide depuis son introduction. Conséquence : le modèle relançait
+      // à chaque tour des outils dont il avait déjà le résultat.
+      // 'ok' est conservé dans le IN pour les lignes historiques éventuelles.
+      .in('status', ['success', 'ok'])
       .order('created_at', { ascending: false })
       .limit(PRIOR_RESULTS_MAX_CALLS * 3);
 
@@ -9075,14 +9644,35 @@ type StreamEvent =
   | { type: 'token'; delta: string }
   | { type: 'tool_use_start'; call: { id: string; name: string; input: unknown } }
   | { type: 'tool_use_end'; call: { id: string; name: string; output: unknown; duration_ms: number; status: string; error?: string } }
-  | { type: 'done'; message_id: string; final_credits: number }
-  | { type: 'error'; error: string; refunded_credits?: number };
+  // `mode` et `tier` sont le mode et le niveau RÉELLEMENT appliqués : le serveur
+  // les dérive du plan (PLAN_POLICY) et écrase ce que le client a demandé. Sans
+  // les renvoyer, le front ne peut pas savoir dans quel régime la réponse a été
+  // produite — il affichait donc le niveau demandé, pas celui qui a servi.
+  | { type: 'done'; message_id: string; final_credits: number; mode: CopilotMode; tier: ModelTier }
+  // `message_id` n'est présent que si une réponse PARTIELLE a été persistée :
+  // sans lui, le front laissait le message sous son identifiant local, et les
+  // actions déjà exécutées pendant le tour n'étaient jamais tracées — au
+  // rechargement elles se reproposaient, voire se relançaient en mode autonome.
+  | { type: 'error'; error: string; refunded_credits?: number; message_id?: string };
 
 class SSEWriter {
   private encoder = new TextEncoder();
   private closed = false;
+  /**
+   * Tout le texte réellement envoyé au client, accumulé au fil des événements
+   * `token`.
+   *
+   * Raison d'être : quand la génération échoue APRÈS avoir commencé, le texte
+   * déjà écrit n'existait plus nulle part côté serveur — l'orchestrateur lève,
+   * son `finalText` local part avec la pile, et le message persisté valait
+   * « [réponse interrompue] ». L'utilisateur voyait dix sections d'analyse à
+   * l'écran, était facturé pour elles, et les perdait toutes au rechargement.
+   * Ce tampon est la seule copie serveur de ce qu'il a vu.
+   */
+  private texteEmis = '';
   constructor(private controller: ReadableStreamDefaultController<Uint8Array>) {}
   send(event: StreamEvent) {
+    if (event.type === 'token') this.texteEmis += event.delta;
     if (this.closed) return;
     try {
       this.controller.enqueue(this.encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
@@ -9090,6 +9680,8 @@ class SSEWriter {
       this.closed = true; // client déconnecté : on cesse d'écrire sans throw
     }
   }
+  /** Texte diffusé jusqu'ici. Sert à sauver une réponse interrompue. */
+  get texteDiffuse() { return this.texteEmis; }
   get isClosed() { return this.closed; }
   close() {
     this.closed = true;
@@ -9116,7 +9708,15 @@ async function streamLLMTurn(params: {
   tools: ToolDef[];
   maxTokens: number;
   onToken: (delta: string) => void;
-  onGenerationStart?: () => void;   // NEW
+  /**
+   * Appelé au `message_start` d'Anthropic, avec l'entrée FACTURÉE de ce tour.
+   *
+   * Transmettre cette valeur immédiatement est ce qui permet de facturer juste
+   * une réponse interrompue : elle est connue dès le premier octet, alors que le
+   * décompte de sortie n'arrive qu'à la fin. Sans elle, l'entrée du tour en
+   * cours partait avec la pile et le règlement retombait sur le montant réservé.
+   */
+  onGenerationStart?: (inputTokens: number) => void;
 }): Promise<LLMTurnResult> {
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
   if (!apiKey) throw new CopilotError('LLM_ERROR', 'ANTHROPIC_API_KEY manquant');
@@ -9138,8 +9738,24 @@ async function streamLLMTurn(params: {
       : {}),
   };
 
+  // ── Timeout d'INACTIVITÉ, et non de durée totale ─────────────
+  //
+  // Le minuteur était armé une seule fois avant le fetch et jamais réarmé : il
+  // avortait la requête 60 s après son DÉBUT, y compris un flux en train de
+  // livrer des tokens. Sur une synthèse longue — dix sections après onze appels
+  // d'outils — la génération était tuée EN COURS D'ÉCRITURE, alors que rien
+  // n'était bloqué. L'utilisateur voyait sa réponse s'arrêter au milieu d'une
+  // phrase et lisait « la réponse a mis trop de temps à arriver ».
+  //
+  // Ce qu'il faut détecter, c'est un flux MUET, pas un flux long. Le minuteur
+  // est donc réarmé à chaque paquet reçu : une génération qui progresse n'est
+  // jamais interrompue, une génération réellement figée l'est toujours.
   const ac = new AbortController();
-  const timeoutId = setTimeout(() => ac.abort(), LLM_TIMEOUT_MS);
+  let timeoutId = setTimeout(() => ac.abort(), LLM_TIMEOUT_MS);
+  const relancerMinuteur = () => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => ac.abort(), LLM_TIMEOUT_MS);
+  };
 
   let res: Response;
   try {
@@ -9201,11 +9817,20 @@ async function streamLLMTurn(params: {
         let evt: Record<string, unknown>;
         try { evt = JSON.parse(payload); } catch { continue; }
 
+        // Réarmement sur une PROGRESSION, jamais sur un simple octet.
+        //
+        // Réarmer après `reader.read()` aurait désarmé le garde-fou : Anthropic
+        // émet des `ping` périodiques pour tenir la connexion ouverte, et un
+        // modèle bloqué qui ping repousse alors l'échéance indéfiniment. Le seul
+        // cas resté couvert aurait été la coupure réseau totale — pas le flux
+        // figé, qui est précisément ce qu'on veut détecter.
+        if (evt.type !== 'ping') relancerMinuteur();
+
         switch (evt.type) {
           case 'message_start': {
   const usage = (evt.message as { usage?: { input_tokens?: number } })?.usage;
   inputTokens = usage?.input_tokens ?? 0;
-  params.onGenerationStart?.();   // NEW : pivot de non-remboursement
+  params.onGenerationStart?.(inputTokens);   // pivot de non-remboursement + usage
   break;
 }
           case 'content_block_start': {
@@ -9296,6 +9921,27 @@ async function runOrchestrator(params: {
   onGenerationStart?: () => void;
   /** Rappel des données déjà obtenues dans la conversation (peut être vide). */
   priorToolResults?: string;
+  /**
+   * Instant (ms epoch) au-delà duquel on cesse d'engager de nouveaux tours
+   * d'outils. Permet de rendre la main avant que la plateforme ne tue l'isolate.
+   */
+  deadlineAt?: number;
+  /**
+   * Journal d'outils partagé avec l'appelant. Fourni, il est alimenté au fil de
+   * l'eau : le handler peut alors persister les appels d'outils même si le tour
+   * est interrompu avant le retour de cette fonction.
+   */
+  toolCallsSink?: OrchestratorResult['toolCallsLog'];
+  /**
+   * Compteur d'usage partagé, mis à jour après CHAQUE tour.
+   *
+   * Sans lui, une interruption faisait perdre la consommation réelle avec la
+   * pile : le règlement partait sans montant, donc au montant réservé. Depuis
+   * que le plafond de règlement a sauté, facturer la réservation sur une réponse
+   * tronquée serait un surcoût pour l'utilisateur — et l'inverse du principe
+   * « on facture ce qui a été consommé ».
+   */
+  usageSink?: { inputTokens: number; outputTokens: number; turns: number };
 }): Promise<OrchestratorResult> {
   const { mode, tier, ctx, sse, onGenerationStart } = params;
   const auth = params.auth ?? null;
@@ -9314,24 +9960,71 @@ async function runOrchestrator(params: {
   const maxIter = MAX_TOOL_ITERATIONS[mode];
 
   const messages = [...params.messages];
-  const toolCallsLog: OrchestratorResult['toolCallsLog'] = [];
+  // Le journal d'outils peut être fourni par l'appelant : ainsi, si le tour est
+  // interrompu, le handler garde la trace des outils déjà exécutés au lieu de la
+  // perdre avec la pile. Sans cela, le texte partiel persisté citait des données
+  // dont plus aucune ligne n'existait en base pour le tour suivant.
+  const toolCallsLog: OrchestratorResult['toolCallsLog'] = params.toolCallsSink ?? [];
   let finalText = '';
   let totalIn = 0;
   let totalOut = 0;
   let finishReason = 'end_turn';
+  let rapportParcellaireAffiche = false;
+
+  // Échéance globale. Dépassée, on cesse d'appeler des outils : on sort de la
+  // boucle vers la passe de synthèse finale, qui rédige avec ce qu'on a déjà.
+  //
+  // La marge est retranchée pour que cette passe finale ait le temps de
+  // s'exécuter : s'arrêter pile à l'échéance ne laisserait rien pour rédiger,
+  // et on se ferait tuer par la plateforme pendant la synthèse — c'est-à-dire
+  // exactement le scénario qu'on cherche à éviter.
+  const echeance = params.deadlineAt != null
+    ? params.deadlineAt - RESERVE_SYNTHESE_MS
+    : Number.POSITIVE_INFINITY;
+
+  // Publication de l'usage vers l'appelant, à deux moments :
+  //   · avec `entreeDuTour`, au message_start du tour courant — l'entrée est
+  //     connue dès le premier octet, et c'est précisément ce qui rend une
+  //     interruption facturable au réel plutôt qu'au montant réservé ;
+  //   · sans argument, après un tour achevé, pour figer les totaux exacts.
+  let toursAcheves = 0;
+  const publierUsage = (entreeDuTour?: number) => {
+    if (!params.usageSink) return;
+    const enCours = entreeDuTour ?? 0;
+    params.usageSink.inputTokens = totalIn + enCours;
+    params.usageSink.outputTokens = totalOut;
+    params.usageSink.turns = toursAcheves + (entreeDuTour != null ? 1 : 0);
+  };
+
+  // Enveloppe passée à streamLLMTurn : publie l'usage ET relaie le pivot de
+  // non-remboursement à l'appelant.
+  const demarrageGeneration = (entree: number) => {
+    publierUsage(entree);
+    onGenerationStart?.();
+  };
 
   for (let iter = 0; iter < maxIter; iter++) {
+    if (Date.now() > echeance) {
+      console.warn('[copilot] échéance globale atteinte, arrêt des outils au tour', iter);
+      finishReason = 'deadline';
+      break;
+    }
+
     const turn = await streamLLMTurn({
-      model, system, messages, tools,
-      maxTokens: MAX_OUTPUT_TOKENS[mode],
+      model, system, messages,
+      tools: mode === 'quick' && rapportParcellaireAffiche ? [] : tools,
+      maxTokens: budgetSortie(mode, tier),
       onToken: (delta) => sse.send({ type: 'token', delta }),
-      onGenerationStart,   // NEW
+      onGenerationStart: demarrageGeneration,
     });
 
     totalIn += turn.inputTokens;
     totalOut += turn.outputTokens;
     finalText += turn.textBlocks.join('\n');
     finishReason = turn.stopReason;
+
+    toursAcheves = iter + 1;
+    publierUsage();
 
     if (turn.stopReason !== 'tool_use' || turn.toolUses.length === 0) {
       break;
@@ -9377,27 +10070,86 @@ async function runOrchestrator(params: {
             error: isOk ? undefined : output.message,
           },
         });
+        // ── Rapport parcellaire : les FAITS d'abord, l'analyse ensuite ──────
+        //
+        // Ce bloc court-circuitait entièrement le modèle : le gabarit
+        // déterministe était diffusé puis `return` immédiat. L'utilisateur
+        // recevait donc une fiche de données — chaque valeur suivie de son
+        // statut, sa portée, sa source, son indice de confiance et son
+        // avertissement — sans verdict, sans hiérarchie et sans conclusion.
+        // D'où l'impression, justifiée, de « ne rien savoir en sortie » : tout
+        // y était, rien n'était dit.
+        //
+        // Le gabarit reste la base factuelle : c'est lui qui garantit la
+        // traçabilité et interdit l'invention. Mais il est désormais suivi
+        // d'une SYNTHÈSE écrite par le modèle. On ne retourne plus ici : la
+        // boucle continue, et le tour suivant produit l'analyse.
+        //
+        // Le rapport factuel est suivi d'une analyse dans tous les modes.
+        // En rapide, le tour suivant utilise ces faits sans autre outil.
+        let contenuResultat = tronquerSortieOutil(output);
+
+        if (tu.name === 'get_etude_parcelle' && isOk) {
+          const rapportFactuel = renderParcelStudyReport(output);
+          if (rapportFactuel) {
+            // Saut de ligne FINAL indispensable : le gabarit se termine sans
+            // retour, et la synthèse du tour suivant est concaténée sans
+            // séparateur. Sans lui on obtient « …professionnel.## Ce qu'il faut
+            // retenir » — le titre n'étant plus en début de ligne, il ne serait
+            // pas rendu comme titre.
+            sse.send({ type: 'token', delta: `\n\n${rapportFactuel}\n\n` });
+            finalText += (finalText ? '\n\n' : '') + rapportFactuel + '\n\n';
+
+            rapportParcellaireAffiche = true;
+
+            // Le modèle reçoit le rapport DÉJÀ AFFICHÉ, avec pour seule
+            // consigne d'écrire ce qui manque. Sans cette précision il
+            // reprendrait les tableaux depuis le début.
+            // `interdictions_analyse` n'est PAS restituée par le gabarit : en
+            // remplaçant le JSON de l'outil par le rapport rendu, on la ferait
+            // disparaître du contexte, et la règle 4quindecies-bis (« tu
+            // transportes et respectes intégralement interdictions_analyse »)
+            // deviendrait inapplicable. On la rattache explicitement.
+            const interdictions = (output as { data?: Record<string, unknown> })
+              ?.data?.interdictions_analyse;
+            const blocInterdictions = interdictions
+              ? `\n\n[INTERDICTIONS D'ANALYSE — à respecter intégralement]\n${
+                  tronquerSortieOutil(interdictions)
+                }`
+              : '';
+
+            contenuResultat =
+              "[RAPPORT FACTUEL DÉJÀ AFFICHÉ À L'UTILISATEUR — ne le répète pas, ne le résume pas]\n\n" +
+              rapportFactuel +
+              blocInterdictions +
+              "\n\n[À TOI MAINTENANT] " +
+              (mode === 'quick'
+                ? ""
+                : "Lis d'abord le zonage et les prescriptions au point dans le rapport. " +
+                  "N'appelle get_etude_marche que si la demande porte sur la valeur ou l'investissement " +
+                  "et si l'assiette foncière est suffisamment établie. " +
+                  "Puis : ") +
+              "Écris UNIQUEMENT la synthèse qui suit ce rapport, en " +
+              "commençant directement par « ## Ce qu'il faut retenir ». Ne redonne aucun tableau, " +
+              "aucune liste de statuts ni de sources : ils sont déjà à l'écran. Applique la règle " +
+              "4quindecies-ter. Ces quatre sections TIENNENT LIEU de conclusion : n'ajoute pas de " +
+              "section « ## Conclusion » supplémentaire.";
+
+            // Le rapport n'est plus plafonné par TOOL_OUTPUT_MAX_CHARS puisqu'il
+            // ne passe plus par tronquerSortieOutil. On borne ici, sinon un
+            // rapport atypiquement long saturerait la fenêtre de contexte.
+            if (contenuResultat.length > TOOL_OUTPUT_MAX_CHARS * 2) {
+              contenuResultat = contenuResultat.slice(0, TOOL_OUTPUT_MAX_CHARS * 2) +
+                "\n\n[…rapport tronqué pour la synthèse — l'utilisateur voit la version complète]";
+            }
+          }
+        }
+
         toolResults.push({
           type: 'tool_result',
           tool_use_id: tu.id,
-          content: tronquerSortieOutil(output),
+          content: contenuResultat,
         });
-        if (tu.name === 'get_etude_parcelle' && isOk) {
-          const deterministicReport = renderParcelStudyReport(output);
-          if (deterministicReport) {
-            // La narration pré-outil a déjà pu être streamée, mais elle n'est
-            // ni persistée ni complétée par une synthèse libre du modèle.
-            sse.send({ type: 'token', delta: `\n\n${deterministicReport}` });
-            return {
-              finalText: deterministicReport,
-              toolCallsLog,
-              totalInputTokens: totalIn,
-              totalOutputTokens: totalOut,
-              model,
-              finishReason: 'deterministic_report',
-            };
-          }
-        }
       } catch (e) {
         const durationMs = Date.now() - started;
         const msg = e instanceof Error ? e.message : 'tool error';
@@ -9425,16 +10177,30 @@ async function runOrchestrator(params: {
   // un outil (plafond d'itérations atteint), on force une dernière passe SANS
   // outils pour produire la réponse finale — sinon l'utilisateur ne voit que la
   // narration d'avant-outil (cas quick mode + 2 outils enchaînés).
-  if (finishReason === 'tool_use') {
+  //
+  // `deadline` relève du même cas, et c'est la raison d'être de la marge
+  // réservée plus haut : les outils du dernier tour ont été exécutés et payés,
+  // leurs résultats sont dans `messages`. Sans cette passe, ils seraient
+  // simplement jetés et l'utilisateur recevrait la narration d'avant-outil
+  // présentée comme une réponse aboutie.
+  if (finishReason === 'tool_use' || finishReason === 'deadline') {
     const finalTurn = await streamLLMTurn({
       model, system, messages, tools: [],
-      maxTokens: MAX_OUTPUT_TOKENS[mode],
+      maxTokens: budgetSortie(mode, tier),
       onToken: (delta) => sse.send({ type: 'token', delta }),
+      // Cette passe manquait au compteur d'usage. C'est pourtant la plus longue
+      // et la plus lourde en entrée — tous les résultats d'outils y sont
+      // accumulés — donc celle qui a le plus de chances d'être interrompue.
+      // Sans elle, une interruption ici sous-facturait tout ce tour.
+      onGenerationStart: demarrageGeneration,
     });
     totalIn += finalTurn.inputTokens;
     totalOut += finalTurn.outputTokens;
     finalText += (finalText ? '\n' : '') + finalTurn.textBlocks.join('\n');
     finishReason = finalTurn.stopReason;
+
+    toursAcheves += 1;
+    publierUsage();
   }
 
   return {
@@ -9523,11 +10289,17 @@ async function saveUserMessage(p: {
   contextSnapshot: ContextSnapshot; attachments?: CopilotAttachment[];
 }): Promise<void> {
   const texte = `${p.text}${marqueurPiecesJointes(p.attachments)}`;
-  await getAdmin().from('copilot_messages').insert({
+  const { error } = await getAdmin().from('copilot_messages').insert({
     conversation_id: p.conversationId, user_id: p.userId, role: 'user',
     content: [{ type: 'text', text: texte }], mode: p.mode, credits_cost: 0,
     context_snapshot: p.contextSnapshot,
   });
+  // supabase-js ne lève PAS sur erreur SQL : il retourne { error }. Sans cette
+  // vérification, un refus RLS ou une contrainte violée passait totalement
+  // inaperçu — l'appelant croyait avoir écrit. Depuis que cette insertion n'est
+  // plus sur le chemin critique, le silence produirait un message assistant
+  // orphelin (une réponse sans question) et un contexte dégradé au tour suivant.
+  if (error) throw new CopilotError('INTERNAL_ERROR', `Sauvegarde message utilisateur : ${error.message}`);
 }
 
 async function loadLatestUserContext(conversationId: string): Promise<unknown> {
@@ -9641,22 +10413,42 @@ Deno.serve(async (req: Request) => {
   let plan: Plan;
   let reserved: number;          // montant RÉELLEMENT réservé (pire cas)
   let effectiveContext: MimmozaContext;
+  let contextSnapshot: ContextSnapshot;
 
   try {
+    // ── Étape 1 : JWT, PUIS corps de requête ────────────────────
+    // Volontairement séquentiel. Les paralléliser ferait désérialiser plusieurs
+    // Mo de base64 pour un appelant non authentifié — les plafonds de
+    // `validateRequest` n'agissant qu'après —, soit une amplification DoS
+    // gratuite. Le gain aurait de toute façon été nul sur le cas qui compte :
+    // un message texte, dont la lecture du corps est locale et instantanée.
     userId = await requireUserId(req);
     payload = validateRequest(await req.json());
 
-    conversationId = await ensureConversation({
-      conversationId: payload.conversation_id,
-      userId, ctx: payload.context, firstMessage: payload.message,
-    });
-
-    const persistedContext = await loadLatestUserContext(conversationId);
-    effectiveContext = mergeContexts(persistedContext, payload.context) as unknown as MimmozaContext;
-    const contextSnapshot = await createContextSnapshot(effectiveContext);
+    // ── Étape 2 : conversation+contexte ∥ plan ──────────────────
+    // `ensureConversation` puis `loadLatestUserContext` restent enchaînés (le
+    // second a besoin de l'id du premier). `getUserPlan` ne dépend que de
+    // `userId` : il n'a aucune raison d'attendre son tour derrière eux.
+    const chaineConversation = (async () => {
+      const id = await ensureConversation({
+        conversationId: payload.conversation_id,
+        userId, ctx: payload.context, firstMessage: payload.message,
+      });
+      return { id, persistedContext: await loadLatestUserContext(id) };
+    })();
 
     // ── Plan lu CÔTÉ SERVEUR (jamais depuis le client) ──────────
-    plan = await getUserPlan(userId);
+    const [conversation, planLu] = await Promise.all([
+      chaineConversation,
+      getUserPlan(userId),
+    ]);
+
+    conversationId = conversation.id;
+    effectiveContext = mergeContexts(conversation.persistedContext, payload.context) as unknown as MimmozaContext;
+    // Purement local (sanitisation + SHA-256) : aucun aller-retour réseau.
+    contextSnapshot = await createContextSnapshot(effectiveContext);
+
+    plan = planLu;
     mode = PLAN_POLICY[plan].mode;
     const requestedTier = (payload as any).tier as ModelTier | undefined;
     tier = resolveTier(plan, plan === 'pro' ? requestedTier : undefined);
@@ -9671,10 +10463,10 @@ Deno.serve(async (req: Request) => {
     reservationId = reservation.reservationId;
     remainingBalance = reservation.remainingBalance;
 
-    await saveUserMessage({
-      conversationId, userId, text: payload.message, mode, contextSnapshot,
-      attachments: payload.attachments,
-    });
+    // `saveUserMessage` n'est plus ici : son insertion ne conditionne plus la
+    // construction de l'historique (le message est passé en clair à
+    // `buildMessages`). Elle est lancée plus bas, une fois les lectures faites,
+    // et court en parallèle de l'appel LLM au lieu de le précéder.
   } catch (err) {
     const e = err instanceof CopilotError ? err : new CopilotError('INTERNAL_ERROR', String(err));
     return new Response(JSON.stringify(e.toJSON()), {
@@ -9688,16 +10480,55 @@ Deno.serve(async (req: Request) => {
   const sse = new SSEWriter(controller);
   let billable = false;   // NEW : la génération a démarré → plus de refund
   let settled  = false;   // NEW : évite double settle/refund
+  // Insertion du message utilisateur, lancée sans être attendue (voir plus bas).
+  // On conserve la promesse pour la joindre AVANT d'écrire le message assistant :
+  // l'ordre user → assistant en base doit rester garanti.
+  let messageUtilisateurEcrit: Promise<void> = Promise.resolve();
+  // L'insertion n'est lancée qu'après les lectures d'historique. Si le tour
+  // échoue avant ce point, la question de l'utilisateur n'aurait jamais été
+  // écrite : ce drapeau permet de la rattraper dans le chemin d'erreur.
+  let messageUtilisateurLance = false;
+  // Journal d'outils partagé avec l'orchestrateur : il survit à une interruption,
+  // là où le journal interne partait avec la pile.
+  const outilsExecutes: OrchestratorResult['toolCallsLog'] = [];
+  // Identifiant du message assistant, dès qu'il a été écrit — quel que soit le
+  // chemin. Empêche la double insertion : si `saveAssistantMessage` réussit puis
+  // que `settleCredits` lève, on retombe dans le catch avec `settled` encore
+  // faux, et on réécrivait alors le message ET toutes ses lignes d'outils.
+  let messageAssistantId: string | undefined;
+  // Usage réel publié au fil des tours, pour facturer juste même si le tour
+  // se termine mal.
+  const usageReel = { inputTokens: 0, outputTokens: 0, turns: 0 };
 
   try {
     sse.send({ type: 'reservation', reserved_credits: reserved, remaining: remainingBalance });
     sse.send({ type: 'conversation', conversation_id: conversationId });
 
-    const messages = await buildMessages(conversationId, '', mode, payload.attachments);
+    // Deux lectures indépendantes (historique des messages, rappel des outils
+    // déjà appelés) : elles portent sur des tables différentes et ne se
+    // conditionnent pas. En série, on payait deux allers-retours Postgres.
+    //
+    // `payload.message` est passé en clair : le message du tour n'a pas besoin
+    // d'être déjà en base pour figurer dans ce qui part au modèle.
+    const [messages, priorToolResults] = await Promise.all([
+      buildMessages(conversationId, payload.message, mode, payload.attachments),
+      // Jamais bloquant — en cas d'échec, le bloc est vide.
+      buildPriorToolResultsBlock(conversationId),
+    ]);
 
-    // Rappel des données déjà obtenues : évite de relancer les mêmes outils au
-    // tour suivant. Jamais bloquant — en cas d'échec, le bloc est vide.
-    const priorToolResults = await buildPriorToolResultsBlock(conversationId);
+    // L'insertion part APRÈS que les lectures ci-dessus soient terminées : le
+    // message courant ne peut donc pas apparaître deux fois (une fois relu de
+    // l'historique, une fois ajouté en clair). Elle n'est pas attendue : elle
+    // s'exécute pendant que le modèle génère.
+    messageUtilisateurLance = true;
+    messageUtilisateurEcrit = saveUserMessage({
+      conversationId, userId, text: payload.message, mode, contextSnapshot,
+      attachments: payload.attachments,
+    }).catch((e) => {
+      // Un échec ici ne justifie pas de perdre la réponse en cours : on trace,
+      // et seul l'historique du tour suivant sera incomplet.
+      console.error('[copilot] saveUserMessage failed', e);
+    });
 
     const result = await runOrchestrator({
       mode, tier, ctx: effectiveContext, messages, sse, priorToolResults,   // ⬅️ tier ajouté
@@ -9705,13 +10536,20 @@ Deno.serve(async (req: Request) => {
       // tel quel pour que les écritures passent par le client UTILISATEUR.
       auth: { userId, authHeader: req.headers.get('Authorization') ?? '' },
       onGenerationStart: () => { billable = true; },
+      deadlineAt: startedAt + DEADLINE_MS,
+      toolCallsSink: outilsExecutes,
+      usageSink: usageReel,
     });
 
     const latencyMs = Date.now() - startedAt;
     // ── Débit RÉEL calculé sur l'usage renvoyé par l'API ────────
     const debit = debitJetons(tier, result.totalInputTokens, result.totalOutputTokens);
 
-    const messageId = await saveAssistantMessage({
+    // Le message utilisateur a eu toute la durée de la génération pour s'écrire :
+    // ce join est en pratique déjà résolu. Il garantit l'ordre user → assistant.
+    await messageUtilisateurEcrit;
+
+    const messageId = messageAssistantId = await saveAssistantMessage({
       conversationId, userId, result, mode, latencyMs, creditsCost: debit,
     });
 
@@ -9729,7 +10567,7 @@ Deno.serve(async (req: Request) => {
     settled = true;   // NEW
 
     sse.send({ type: 'message_start', message_id: messageId });
-    sse.send({ type: 'done', message_id: messageId, final_credits: debit });
+    sse.send({ type: 'done', message_id: messageId, final_credits: debit, mode, tier });
 
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'erreur interne';
@@ -9737,35 +10575,115 @@ Deno.serve(async (req: Request) => {
 
     if (billable && !settled) {
       // NEW : génération déjà commencée → on FACTURE, pas de refund.
+      // L'identifiant doit rester lisible par le `sse.send` qui suit, pour que
+      // le front rattache la réponse partielle.
+      let messageIdInterrompu: string | undefined = messageAssistantId;
       try {
-        const messageId = await saveAssistantMessage({
+        await messageUtilisateurEcrit;   // même garantie d'ordre sur ce chemin
+
+        // On persiste ce qui a RÉELLEMENT été écrit, pas un marqueur.
+        //
+        // L'utilisateur a vu ce texte et il est facturé pour lui : l'écraser
+        // par « [réponse interrompue] » le lui faisait perdre au rechargement,
+        // et privait le tour suivant de tout l'historique de l'analyse. Une
+        // réponse tronquée reste utilisable ; une réponse effacée, non.
+        const texteProduit = sse.texteDiffuse.trim();
+        const finalText = texteProduit
+          ? `${texteProduit}\n\n_[Réponse interrompue avant la fin — la suite n'a pas pu être générée.]_`
+          : '[réponse interrompue]';
+
+        // Débit au plus près du réel, jamais en dessous.
+        //
+        // L'ENTRÉE est exacte : elle inclut le tour en cours, publiée dès son
+        // message_start. La SORTIE du tour interrompu n'a pas été rapportée par
+        // l'API, on la déduit du texte réellement diffusé — à 3 caractères par
+        // token, alors que le français tourne plutôt autour de 3,5 à 4 : c'est
+        // volontairement haut, pour ne jamais sous-facturer.
+        //
+        // Si rien n'a été mesuré (échec avant tout message_start), on laisse le
+        // montant indéfini : la RPC retombe alors sur le montant réservé.
+        const sortieEstimee = Math.max(
+          usageReel.outputTokens,
+          Math.ceil(sse.texteDiffuse.length / 3),
+        );
+        const debitInterrompu = usageReel.inputTokens > 0
+          ? debitJetons(tier, usageReel.inputTokens, sortieEstimee)
+          : undefined;
+
+        // Si le message a DÉJÀ été écrit (échec survenu après l'insertion, par
+        // exemple dans settleCredits), on le réutilise au lieu d'en créer un
+        // second — ce qui dupliquerait aussi toutes ses lignes copilot_tool_calls.
+        const messageId = messageAssistantId ?? await saveAssistantMessage({
           conversationId, userId, mode,
           latencyMs: Date.now() - startedAt,
+          // Sans cela, le message persisté portait le forfait legacy
+          // CREDIT_COST[mode] au lieu du montant réellement débité.
+          creditsCost: debitInterrompu,
           result: {
-            finalText: '[réponse interrompue]',
-            toolCallsLog: [],
-            totalInputTokens: 0,
-            totalOutputTokens: 0,
+            finalText,
+            // Les outils déjà exécutés sont conservés : c'est ce qui permet au
+            // tour suivant de retrouver les données citées par le texte partiel.
+            toolCallsLog: outilsExecutes,
+            // Les vraies valeurs, pas des zéros : un message portant un coût non
+            // nul mais une consommation à zéro rendait toute analyse d'usage
+            // fausse sur ce chemin.
+            totalInputTokens: usageReel.inputTokens,
+            totalOutputTokens: sortieEstimee,
             model: TIER_MODEL_ID[tier],
             finishReason: 'interrupted',
           },
         });
+        messageAssistantId = messageIdInterrompu = messageId;
+
         await settleCredits({
           userId, reservationId, messageId, mode,
-          metadata: { interrupted: true },
+          finalAmount: debitInterrompu,
+          metadata: {
+            interrupted: true,
+            inputTokens: usageReel.inputTokens,
+            outputTokens: sortieEstimee,
+            turns: usageReel.turns,
+            sortieEstimee: true,
+            model: TIER_MODEL_ID[tier], tier, plan,
+          },
         });
         settled = true;
       } catch (e) {
         console.error('[credits] settle-after-interrupt failed', e);
       }
-      sse.send({ type: 'error', error: msg });   // NEW : aucun refunded_credits
+      // `message_id` rattache la réponse partielle qu'on vient de persister.
+      sse.send({ type: 'error', error: msg, message_id: messageIdInterrompu });   // aucun refunded_credits
 
     } else if (!settled) {
       // Échec AVANT toute génération → remboursable (429, timeout, clé API…).
+      // L'échec a pu survenir avant même le lancement de l'insertion (typiquement
+      // dans `buildMessages`). La question de l'utilisateur serait alors perdue :
+      // il verrait une erreur ET son message disparaître au rechargement. On la
+      // rattrape ici, au mieux — sans jamais masquer l'erreur d'origine.
+      if (!messageUtilisateurLance) {
+        messageUtilisateurLance = true;
+        messageUtilisateurEcrit = saveUserMessage({
+          conversationId, userId, text: payload.message, mode, contextSnapshot,
+          attachments: payload.attachments,
+        }).catch((e) => console.error('[copilot] saveUserMessage (rattrapage) failed', e));
+      }
       const refunded = await refundCredits({ userId, reservationId, reason: 'failed before generation' });
       sse.send({ type: 'error', error: msg, refunded_credits: refunded });
     }
   } finally {
+        // L'insertion du message utilisateur ne doit pas être coupée par la fin
+        // de l'invocation. Sur les chemins d'erreur, rien ne l'a encore jointe.
+        // La promesse est déjà "catchée" : ce join ne peut pas relancer.
+        //
+        // Plafonné : un insert resté pendu (PostgREST lent, connexion perdue)
+        // empêcherait sinon la fermeture du flux, et le client attendrait
+        // indéfiniment une réponse qu'il a pourtant déjà reçue en entier.
+        let minuteur: number | undefined;
+        await Promise.race([
+          messageUtilisateurEcrit,
+          new Promise<void>((resolve) => { minuteur = setTimeout(resolve, 5000); }),
+        ]);
+        clearTimeout(minuteur);   // sinon le timer maintient l'isolate en vie 5 s
         sse.close();
       }
     },

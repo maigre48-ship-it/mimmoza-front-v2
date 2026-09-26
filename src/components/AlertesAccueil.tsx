@@ -27,12 +27,12 @@
 // ============================================================================
 
 import { useEffect, useState } from 'react';
-import { AlertCircle, ArrowUpRight, Bell, Gavel, TrendingDown } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, Bell, Gavel, TrendingDown, MapPinned } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 
 const MAX_ITEMS = 3;
 
-type AlerteKind = 'opportunite' | 'baisse' | 'appel_offres';
+type AlerteKind = 'opportunite' | 'baisse' | 'appel_offres' | 'dossier_parcellaire';
 
 export interface AlerteAccueilItem {
   id: string;
@@ -55,6 +55,10 @@ interface ReponseAlertes {
     id?: string; titre?: string | null; sous_titre?: string | null;
     url?: string | null; score?: number | null; niveau?: string | null;
     calcule_le?: string | null;
+  }>;
+  dossiers_parcellaires?: Array<{
+    id?: string; titre?: string | null; sous_titre?: string | null;
+    conversation_id?: string | null; detecte_le?: string | null;
   }>;
   fraicheur?: { avertissement?: string | null };
 }
@@ -95,16 +99,29 @@ function mapImmo(r: NonNullable<ReponseAlertes['immobilier']>[number]): AlerteAc
   };
 }
 
+function mapDossier(r: NonNullable<ReponseAlertes['dossiers_parcellaires']>[number]): AlerteAccueilItem {
+  return {
+    id: `dossier-${r.id ?? Math.random().toString(36).slice(2)}`,
+    kind: 'dossier_parcellaire',
+    title: r.titre?.trim() || 'Changement dans un dossier parcellaire',
+    detail: r.sous_titre?.trim() || undefined,
+    url: r.conversation_id ? `/mimmozia?conversation=${encodeURIComponent(r.conversation_id)}` : undefined,
+    createdAt: r.detecte_le ?? undefined,
+  };
+}
+
 const ICONS: Record<AlerteKind, typeof Bell> = {
   opportunite: Bell,
   baisse: TrendingDown,
   appel_offres: Gavel,
+  dossier_parcellaire: MapPinned,
 };
 
 const KIND_LABEL: Record<AlerteKind, string> = {
   opportunite: 'Opportunité',
   baisse: 'Baisse de prix',
   appel_offres: 'Appel d’offres',
+  dossier_parcellaire: 'Dossier parcellaire',
 };
 
 /** Charge les alertes non lues de l'utilisateur courant. */
@@ -146,6 +163,7 @@ export function useAlertesAccueil(limit = MAX_ITEMS) {
         const merged: AlerteAccueilItem[] = [
           ...(data?.appels_offres ?? []).map(mapAo),
           ...(data?.immobilier ?? []).map(mapImmo),
+          ...(data?.dossiers_parcellaires ?? []).map(mapDossier),
         ]
           .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
           .slice(0, limit);

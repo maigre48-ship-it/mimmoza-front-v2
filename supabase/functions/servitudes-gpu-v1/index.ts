@@ -21,12 +21,20 @@
 //    porte cet avertissement ; le LLM ne doit jamais conclure « aucune servitude »
 //    de façon absolue.
 //
-// Autonome (éditée dans le Dashboard, aucun import _shared, aucune clé requise).
+// Aucune clé requise.
+//
+// ⚠️ N'est PLUS autonome : importe `_shared/texte/reparerEncodage.ts` pour
+// réparer le double encodage des libellés servis par l'API Carto. Elle doit
+// donc être déployée par la CLI (`supabase functions deploy`), qui embarque le
+// module partagé dans le bundle — une édition depuis le Dashboard casserait
+// l'import.
 //
 // Contrat de sortie (aligné dpe/merimee/bdnb/loyers) :
 //   { status, summary, stats, items }
 //   status ∈ 'ok' | 'no_data' | 'no_localization' | 'error'  (toujours HTTP 200)
 // =============================================================
+
+import { reparerEncodageProfond } from '../_shared/texte/reparerEncodage.ts';
 
 const APICARTO_BASE = 'https://apicarto.ign.fr/api';
 const ASSIETTE_LAYERS = ['assiette-sup-s', 'assiette-sup-l', 'assiette-sup-p'] as const;
@@ -84,17 +92,37 @@ function normStr(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v.trim() : undefined;
 }
 
-async function fetchJson(url: string): Promise<any | null> {
-  try {
-    const r = await fetch(url, {
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-    if (!r.ok) return null;
-    return await r.json();
-  } catch {
-    return null; // timeout / réseau → null, géré par l'appelant
-  }
+/**
+ * Appelle l'API Carto. LÈVE en cas de panne — c'est délibéré.
+ *
+ * Avant, cette fonction avalait timeouts, erreurs réseau et statuts non-2xx en
+ * retournant `null`. Aucune promesse ne rejetait donc jamais, et le test
+ * `settled.every(s => s.status === 'rejected')` du handler était structurellement
+ * mort : une panne TOTALE de l'API Carto ressortait en « Aucune servitude
+ * publiée sur l'emprise ».
+ *
+ * C'est le pire message possible sur ce sujet. Dire à quelqu'un qu'un terrain
+ * n'est grevé d'aucune servitude alors qu'on n'a pas pu regarder, c'est produire
+ * une affirmation rassurante à partir d'une absence d'information — exactement
+ * ce que le reste de la plateforme s'interdit.
+ *
+ * L'appelant décide quoi faire du rejet : le handler distingue désormais « rien
+ * trouvé » de « rien vu ».
+ */
+async function fetchJson(url: string): Promise<any> {
+  const r = await fetch(url, {
+    headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!r.ok) throw new Error(`API Carto HTTP ${r.status}`);
+  // Réparation du double encodage à la FRONTIÈRE, une seule fois.
+  //
+  // L'API Carto renvoie des libellés déjà abîmés — « HÃ´pital de la Reine »
+  // observé sur Saint-Cloud. Ce n'est pas notre décodage qui est fautif : c'est
+  // le texte source, où des octets UTF-8 ont été relus en CP1252 puis
+  // ré-encodés. On le remet d'aplomb ici plutôt qu'à l'affichage, pour que la
+  // donnée soit propre partout où elle circule ensuite (résumé, cache, prompt).
+  return reparerEncodageProfond(await r.json());
 }
 
 /** Lecture insensible à la casse d'une propriété (CNIG mélange MAJ/min selon les lots). */
@@ -113,14 +141,24 @@ function prop(props: Record<string, any> | undefined, names: string[]): any {
 // Géométrie : polygone parcelle (cadastre) avec repli point
 // =============================================================
 
-/** Récupère le polygone de la parcelle contenant le point via le module cadastre. */
+/**
+ * Récupère le polygone de la parcelle contenant le point via le module cadastre.
+ *
+ * Ici l'échec N'EST PAS bloquant : le handler retombe sur un tampon autour du
+ * point. On absorbe donc le rejet de `fetchJson`, contrairement aux couches SUP
+ * où l'échec doit remonter.
+ */
 async function fetchParcelGeometry(lon: number, lat: number): Promise<any | null> {
   const point = { type: 'Point', coordinates: [lon, lat] };
   const url = `${APICARTO_BASE}/cadastre/parcelle?geom=${encodeURIComponent(JSON.stringify(point))}`;
-  const fc = await fetchJson(url);
-  const feat = Array.isArray(fc?.features) ? fc.features[0] : null;
-  const geom = feat?.geometry;
-  if (geom && (geom.type === 'Polygon' || geom.type === 'MultiPolygon')) return geom;
+  try {
+    const fc = await fetchJson(url);
+    const feat = Array.isArray(fc?.features) ? fc.features[0] : null;
+    const geom = feat?.geometry;
+    if (geom && (geom.type === 'Polygon' || geom.type === 'MultiPolygon')) return geom;
+  } catch (e) {
+    console.warn('[servitudes] géométrie parcellaire indisponible, repli point :', e);
+  }
   return null;
 }
 
@@ -172,14 +210,34 @@ Deno.serve(async (req: Request) => {
 
     // 2) Interrogation parallèle des 3 assiettes SUP.
     const settled = await Promise.allSettled(ASSIETTE_LAYERS.map((l) => queryGpuLayer(l, geom)));
-    const allFailed = settled.every((s) => s.status === 'rejected');
-    if (allFailed) {
+    const echecs = settled.filter((s) => s.status === 'rejected') as PromiseRejectedResult[];
+
+    // Aucune couche lue : on ne sait RIEN. Ce test était jusqu'ici inatteignable
+    // — fetchJson absorbait tout — et la panne totale se présentait comme une
+    // absence de servitude.
+    if (echecs.length === ASSIETTE_LAYERS.length) {
+      const motifs = echecs.map((e) => String(e.reason)).join(' · ');
+      console.error('[servitudes] toutes les couches SUP en échec :', motifs);
       return json({
         status: 'error',
-        summary: "L'API Carto (GPU) est momentanément injoignable pour les servitudes. Réessaie plus tard.",
+        summary:
+          "L'API Carto (GPU) est momentanément injoignable : aucune couche de servitudes n'a pu être " +
+          "consultée. Ce résultat ne signifie PAS que la parcelle est libre de servitude — il signifie " +
+          `qu'aucune vérification n'a pu être faite. Réessayez plus tard. (${motifs})`,
         stats: null,
         items: [],
       }, 200);
+    }
+
+    // Échec PARTIEL : on a vu une partie des couches seulement. On continue,
+    // mais l'utilisateur doit savoir que l'inventaire est incomplet — une
+    // servitude peut se trouver précisément dans la couche non lue.
+    const couchesManquees = echecs.length;
+    if (couchesManquees > 0) {
+      console.warn(
+        `[servitudes] ${couchesManquees}/${ASSIETTE_LAYERS.length} couche(s) SUP en échec :`,
+        echecs.map((e) => String(e.reason)).join(' · '),
+      );
     }
 
     const features = settled.flatMap((s) => (s.status === 'fulfilled' ? s.value : []));
@@ -209,8 +267,17 @@ Deno.serve(async (req: Request) => {
       if (items.length >= MAX_ITEMS) break;
     }
 
+    // L'inventaire est-il complet ? Une couche non lue peut contenir précisément
+    // la servitude qui compte : le dire est aussi important que le résultat.
+    const mentionIncomplet = couchesManquees > 0
+      ? ` ⚠️ INVENTAIRE INCOMPLET : ${couchesManquees} des ${ASSIETTE_LAYERS.length} couches de servitudes ` +
+        `${couchesManquees > 1 ? "n'ont pas pu être consultées" : "n'a pas pu être consultée"}. ` +
+        `Le décompte ci-dessous est donc un MINIMUM.`
+      : '';
+
     const avertissement =
-      "Le Géoportail de l'Urbanisme n'est pas exhaustif : une absence de résultat ne garantit pas l'absence de servitude sur la parcelle.";
+      "Le Géoportail de l'Urbanisme n'est pas exhaustif : une absence de résultat ne garantit pas l'absence de servitude sur la parcelle."
+      + mentionIncomplet;
     const source = "Géoportail de l'Urbanisme (SUP) via API Carto IGN";
 
     if (items.length === 0) {
@@ -218,7 +285,11 @@ Deno.serve(async (req: Request) => {
         status: 'no_data',
         summary:
           `Aucune servitude d'utilité publique publiée sur l'emprise interrogée (${geomKind}). ⚠️ ${avertissement}`,
-        stats: { nb_servitudes: 0, geometrie_utilisee: geomKind, avertissement, source },
+        stats: {
+          nb_servitudes: 0, geometrie_utilisee: geomKind, avertissement, source,
+          couches_interrogees: ASSIETTE_LAYERS.length - couchesManquees,
+          couches_totales: ASSIETTE_LAYERS.length,
+        },
         items: [],
       }, 200);
     }
@@ -245,6 +316,8 @@ Deno.serve(async (req: Request) => {
         categories,
         avertissement,
         source,
+        couches_interrogees: ASSIETTE_LAYERS.length - couchesManquees,
+        couches_totales: ASSIETTE_LAYERS.length,
       },
       items: items.slice(0, MAX_ITEMS),
     }, 200);

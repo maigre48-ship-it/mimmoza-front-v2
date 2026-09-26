@@ -5,14 +5,14 @@
 //   le relais et le trombone comme le micro disparaissaient. La logique est
 //   désormais partagée via useComposerTools (voir le hook pour le détail).
 import { Send, Square, Paperclip, Mic, X } from 'lucide-react';
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import type { CopilotMode } from '../types/copilot.types';
 import { CopilotModeSelector } from './CopilotModeSelector';
 import { COPILOT_THEME as T } from './copilotTheme';
 import { useComposerTools, ACCEPT_FILES, type CopilotAttachment } from '../hooks/useComposerTools';
 
 export function CopilotInput({
-  mode, onChangeMode, onSend, onCancel, isStreaming, hideModeSelector,
+  mode, onChangeMode, onSend, onCancel, isStreaming, hideModeSelector, toolbar,
 }: {
   mode: CopilotMode;
   onChangeMode: (m: CopilotMode) => void;
@@ -24,6 +24,19 @@ export function CopilotInput({
   onCancel: () => void;
   isStreaming: boolean;
   hideModeSelector?: boolean;
+  /**
+   * Contrôles propres à l'écran hôte, rendus au-dessus du champ de saisie.
+   *
+   * Sert au sélecteur de niveau d'analyse (MimmozIAModelPicker) : il ne vivait
+   * que dans l'écran d'accueil de MimmozIA, et disparaissait dès le premier
+   * message — le seul moyen de changer de niveau était d'ouvrir une nouvelle
+   * conversation, alors que le `tier` est relu du store à CHAQUE envoi et
+   * qu'aucun verrou ne l'interdisait en cours d'échange.
+   *
+   * Le composeur ne connaît pas ce qu'il affiche : l'écran hôte fournit le
+   * nœud, ce qui évite d'importer ici la notion de plan ou de tier.
+   */
+  toolbar?: ReactNode;
 }) {
   const [value, setValue] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -55,9 +68,19 @@ export function CopilotInput({
 
   return (
     <div className="copilot-composer" style={{ borderTop: `1px solid ${T.borderSoft}` }}>
-      {!hideModeSelector && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <CopilotModeSelector mode={mode} onChange={onChangeMode} disabled={isStreaming} />
+      {(!hideModeSelector || toolbar) && (
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          gap: 8, flexWrap: 'wrap', marginBottom: 8,
+        }}>
+          {!hideModeSelector && (
+            <CopilotModeSelector mode={mode} onChange={onChangeMode} disabled={isStreaming} />
+          )}
+          {/* `marginLeft: auto` plutôt que `space-between` : sans lui, un toolbar
+              seul (cas de MimmozIA, où le sélecteur de mode est masqué) se colle
+              à gauche, alors qu'il est aligné à droite sur l'écran d'accueil.
+              Le contrôle sautait d'un bord à l'autre au premier message. */}
+          {toolbar && <div style={{ marginLeft: 'auto' }}>{toolbar}</div>}
         </div>
       )}
 

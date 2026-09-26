@@ -1,0 +1,70 @@
+/* Graphique du copilot — encadré discret dans le fil de conversation.
+   Il accompagne un texte, il ne le domine pas. */
+
+.copilot-chart {
+  margin: 12px 0;
+  padding: 12px 14px 10px;
+  border: 1px solid rgb(15 23 42 / .09);
+  border-radius: 12px;
+  background: #fff;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.copilot-chart__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e2233;
+  margin-bottom: 10px;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+
+/* Hauteur fixe : ResponsiveContainer a besoin d'un parent mesurable, et une
+   hauteur qui suit le contenu ferait sauter le fil pendant le streaming. */
+.copilot-chart__canvas {
+  position: relative;
+  width: 100%;
+  height: 240px;
+}
+
+/* Total au centre de l'anneau. `pointer-events: none` pour ne pas voler les
+   survols destinés aux parts. */
+.copilot-chart__total {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  gap: 1px;
+}
+.copilot-chart__total-value { font-size: 17px; font-weight: 700; color: #1e2233; }
+.copilot-chart__total-unit  { font-size: 10.5px; color: #6b7185; }
+
+.copilot-chart__foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgb(15 23 42 / .06);
+  font-size: 10.5px;
+  color: #737a8c;
+}
+.copilot-chart__source { font-style: italic; }
+
+@media (max-width: 640px) {
+  .copilot-chart { padding: 10px 10px 8px; }
+  .copilot-chart__canvas { height: 210px; }
+}
+
+/* À l'impression, recharts produit du SVG : il s'imprime correctement.
+   On retire seulement l'ombre et on évite une coupure au milieu du dessin. */
+@media print {
+  .copilot-chart { break-inside: avoid; box-shadow: none; }
+}

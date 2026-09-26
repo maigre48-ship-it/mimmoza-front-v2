@@ -1,0 +1,46 @@
+.mzia-dossier{margin:16px 0 20px;padding:18px;border:1px solid rgba(139,92,246,.3);border-radius:16px;background:linear-gradient(140deg,rgba(77,50,132,.17),rgba(15,23,42,.38));color:#e5e7eb;font-size:13px}
+.mzia-dossier-head{display:flex;justify-content:space-between;align-items:start;gap:12px}
+.mzia-dossier-eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#c4b5fd;font-weight:750}
+.mzia-dossier h3{margin:5px 0 0;font-size:18px;color:#fff;line-height:1.3}
+.mzia-dossier-badge{border-radius:999px;padding:5px 10px;font-size:11px;font-weight:700;white-space:nowrap}
+.mzia-dossier-badge--pending{background:#3b3151;color:#e9d5ff}
+.mzia-dossier-badge--attention{background:#5b3917;color:#fde68a}
+.mzia-dossier-badge--ready{background:#064e3b;color:#a7f3d0}
+.mzia-dossier-status{color:#cbd5e1;line-height:1.55;margin:10px 0 16px}
+.mzia-dossier-highlights{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.mzia-dossier-highlights>div{border:1px solid rgba(148,163,184,.23);background:rgba(15,23,42,.3);border-radius:10px;padding:10px;min-width:0}
+.mzia-dossier-highlights span,.mzia-dossier-highlights small{display:block;color:#aab6c8;font-size:11px}
+.mzia-dossier-highlights strong{display:block;color:#fff;font-size:14px;margin:4px 0;overflow-wrap:anywhere}
+.mzia-dossier-actions{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 10px}
+.mzia-dossier button{border:1px solid #7c6bb6;border-radius:8px;padding:7px 10px;background:#423374;color:#fff;font:inherit;cursor:pointer}
+.mzia-dossier button:hover{background:#574591}
+.mzia-dossier button:disabled{opacity:.5;cursor:not-allowed}
+.mzia-dossier-analyze{margin:6px 0 13px;background:#065f46!important;border-color:#10b981!important}
+.mzia-dossier-block{border-top:1px solid rgba(148,163,184,.26);padding:11px 0}
+.mzia-dossier-block summary{cursor:pointer;color:#e9d5ff;font-weight:700}
+.mzia-dossier-block-content{padding:10px 0 2px;line-height:1.5}
+.mzia-dossier-block-content p{margin:8px 0}
+.mzia-dossier-warning{color:#fcd34d}
+.mzia-dossier-inputs{display:flex;flex-wrap:wrap;gap:12px}
+.mzia-dossier-inputs label{display:flex;flex-direction:column;gap:5px;min-width:170px;flex:1;color:#cbd5e1}
+.mzia-dossier-inputs input{width:100%;box-sizing:border-box;border:1px solid #64748b;border-radius:7px;background:#0f172a;color:#fff;padding:8px;font:inherit}
+.mzia-dossier table{width:100%;border-collapse:collapse;margin:10px 0;font-size:12px}
+.mzia-dossier th,.mzia-dossier td{padding:8px;border-bottom:1px solid rgba(148,163,184,.25);text-align:left;vertical-align:top}
+.mzia-dossier th{color:#c4b5fd;font-weight:700}
+.mzia-dossier td small{display:block;color:#9ca3af;margin-top:4px}
+.mzia-dossier-evidence-scroll{overflow:auto;max-height:430px}
+.mzia-dossier-evidence-scroll table{min-width:650px}
+.mzia-dossier a{color:#b9a7ff;text-decoration:underline}
+.mzia-dossier-help,.mzia-dossier-source{font-size:11px;color:#aab6c8;line-height:1.5}
+.mzia-dossier-follow{border-top:1px solid rgba(148,163,184,.26);padding-top:12px}
+.mzia-dossier-follow p{margin:6px 0 10px;color:#cbd5e1}
+.mzia-dossier-follow button{margin-right:8px}
+.mzia-dossier-follow small{display:block;color:#aab6c8;margin-top:7px}
+.mzia-dossier-notice{margin:10px 0;color:#a7f3d0}
+.mzia-dossier-map-wrap{margin:12px 0}
+.mzia-dossier-map-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px;color:#cbd5e1}
+.mzia-dossier-map{height:340px;overflow:hidden;border-radius:10px}
+.mzia-dossier-selected{list-style:none;padding:0;margin:8px 0}
+.mzia-dossier-selected li{display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(148,163,184,.2);padding:5px 0}
+.mzia-dossier-error{color:#fca5a5}
+@media(max-width:700px){.mzia-dossier{padding:13px}.mzia-dossier-head{display:block}.mzia-dossier-badge{display:inline-block;margin-top:8px}.mzia-dossier-highlights{grid-template-columns:1fr}.mzia-dossier-map{height:290px}.mzia-dossier-actions button{flex:1}}

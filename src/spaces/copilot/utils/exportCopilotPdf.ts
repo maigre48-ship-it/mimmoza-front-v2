@@ -9,6 +9,8 @@
 //      sinon les marqueurs Markdown s'affichent bruts dans le PDF.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { graphiquesEnTableaux } from '../charts/copilotChart.types';
+
 const LOGO_URL = '/Logo/Logo_mimmoza_base_line_redecoupe.png';
 
 export interface ExportableMessage {
@@ -64,7 +66,12 @@ function splitRow(line: string): string[] {
 // ── Rendu Markdown bloc → HTML ───────────────────────────────────────────────
 // Gère : titres #/##/###, listes -/*/1., tableaux, règles ---, paragraphes.
 export function markdownToSafeHtml(raw: string): string {
-  const lines = escapeHtml(raw.replace(/\r\n/g, '\n')).split('\n');
+  // Les blocs ```mimmoza-chart sont rendus par React dans le fil de
+  // conversation, ce que l'export ne peut pas faire : il produit du HTML
+  // statique. Sans cette conversion, leur JSON s'imprimerait tel quel au milieu
+  // du rapport. On le remplace par le tableau des mêmes chiffres — dans un
+  // document, ce sont les valeurs qui comptent, pas le dessin.
+  const lines = escapeHtml(graphiquesEnTableaux(raw).replace(/\r\n/g, '\n')).split('\n');
   const out: string[] = [];
   let i = 0;
 

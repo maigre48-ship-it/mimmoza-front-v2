@@ -71,6 +71,7 @@ interface LooseCopilotApi {
   setTier?: (t: ModelTier) => void;
   refreshCredits?: () => unknown;
   loadConversations?: () => unknown;
+  selectConversation?: (id: string) => unknown;
   sendMessage?: SendFn; send?: SendFn; submitMessage?: SendFn; ask?: SendFn; createMessage?: SendFn;
   newConversation?: () => unknown; startNewConversation?: () => unknown;
   resetConversation?: () => unknown; clearConversation?: () => unknown;
@@ -300,6 +301,11 @@ export default function MimmozIAPage() {
     void track('session_start');
     void copilot.refreshCredits?.();
     void copilot.loadConversations?.();
+    const linkedConversation = new URLSearchParams(window.location.search).get('conversation');
+    if (linkedConversation && /^[0-9a-f-]{36}$/i.test(linkedConversation)) {
+      void copilot.selectConversation?.(linkedConversation);
+      window.history.replaceState(window.history.state, '', '/mimmozia');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -441,7 +447,33 @@ export default function MimmozIAPage() {
             <MimmozIAStatus state={orbState} compact />
           </div>
           <div className="mzia-chat-content">
-            <CopilotChat forceMode="advanced" hideQuickQuestions />
+            <CopilotChat
+              forceMode="advanced"
+              hideQuickQuestions
+              /* Le sélecteur de niveau ne vivait que dans la branche « accueil »
+                 ci-dessous : dès le premier message la vue basculait ici et le
+                 contrôle disparaissait, obligeant à ouvrir une nouvelle
+                 conversation pour changer de niveau. Le `tier` étant relu du
+                 store à chaque envoi, le remonter dans le composeur suffit :
+                 le changement s'applique dès le message suivant.
+
+                 Rendu UNIQUEMENT quand le plan offre un vrai choix : hors Pro,
+                 MimmozIAModelPicker se réduit à un badge verrouillé, qui ferait
+                 doublon avec la mention « Réponse produite au niveau Standard »
+                 affichée sous chaque réponse. Sur l'écran d'accueil le badge
+                 garde son sens — il annonce le niveau avant le premier envoi —
+                 mais en cours de conversation il n'apporte rien. */
+              composerToolbar={
+                plan === 'pro' ? (
+                  <MimmozIAModelPicker
+                    plan={plan}
+                    value={tier}
+                    onChange={(t) => copilot.setTier?.(t)}
+                    disabled={busy}
+                  />
+                ) : undefined
+              }
+            />
           </div>
         </div>
       ) : (

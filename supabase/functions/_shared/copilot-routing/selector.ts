@@ -71,6 +71,13 @@ const MIN_SCORE_TO_RESTRICT = 2;
 const CORE_TOOLS: readonly string[] = [
   'get_parcel_summary',
   'get_contexte_commune',
+  // Résolution adresse → parcelle. Doit être joignable QUELLE QUE SOIT
+  // l'intention : le prompt demande de l'appeler EN PREMIER dès qu'un bien est
+  // désigné par une adresse, or cela arrive aussi bien sur une question de PLU
+  // que de marché, de risques ou de rentabilité. Le laisser hors du socle le
+  // rendait invisible dès qu'une règle lexicale gagnait — c'est-à-dire dans les
+  // formulations les PLUS précises, exactement celles où il sert le plus.
+  'get_parcelle_depuis_adresse',
 ];
 
 const RULES: IntentRule[] = [
@@ -81,10 +88,19 @@ const RULES: IntentRule[] = [
       /terrain/, /adresse/, /cadastr/, /fiche (?:terrain|parcelle)/,
     ],
     tools: [
+      // En tête : sans ancrage parcellaire, tous les outils qui suivent
+      // retombent sur le centre de la commune.
+      'get_parcelle_depuis_adresse',
       'get_etude_parcelle', 'get_parcel_summary', 'get_parcel_plu', 'get_zonage_plu',
       'get_prescriptions_urbanisme', 'get_servitudes', 'get_risks_georisques', 'get_ppr_detail',
       'get_altimetrie', 'get_assainissement', 'get_classement_sonore', 'get_potentiel_solaire',
       'get_monuments_historiques', 'get_batiment_bdnb', 'get_dvf_comparables', 'get_taxes_locales',
+      // L'étude parcellaire ne rapporte qu'une médiane DVF de voisinage sur
+      // quelques mutations, donnée pour « estimated » à 30/100. La règle
+      // 4quindecies-quinquies impose de la confronter au marché communal en
+      // modes Approfondi et Expert : sans cet outil dans la sélection, cette
+      // consigne serait inapplicable — le modèle ne verrait pas l'outil.
+      'get_etude_marche',
       // Savoir à qui appartient un terrain fait partie de son analyse : sans
       // cela, « analyse cette parcelle » écartait l'outil propriétaire, qui
       // n'était joignable que par l'intention rentabilité locative — un

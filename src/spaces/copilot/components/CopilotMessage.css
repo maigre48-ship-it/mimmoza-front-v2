@@ -21,6 +21,22 @@
 .copilot-message-actions button:disabled { cursor:wait;opacity:.6; }
 .copilot-message-actions span { color:#b45309;font-size:11px; }
 @media print { .copilot-message-actions { display:none; } }
+
+/* Mention de montée en gamme, sous une réponse produite au niveau Standard.
+   Volontairement discrète : c'est une note de bas de réponse, pas une bannière
+   commerciale — elle ne doit pas concurrencer la réponse qu'elle commente. */
+.copilot-message-upgrade {
+  display:flex;align-items:flex-start;gap:7px;
+  margin-top:8px;padding:7px 10px;
+  border:1px solid rgb(109 93 252 / .18);border-radius:8px;
+  background:rgb(109 93 252 / .05);
+  color:#5b5f78;font-size:11.5px;line-height:1.45;
+}
+.copilot-message-upgrade strong { color:#4338ca;font-weight:600; }
+.copilot-message-upgrade a { color:#4f46e5;text-decoration:underline;text-underline-offset:2px;white-space:nowrap; }
+.copilot-message-upgrade a:hover,
+.copilot-message-upgrade a:focus-visible { color:#3730a3; }
+@media print { .copilot-message-upgrade { display:none; } }
 @media (max-width:640px) {
   .copilot-chat__messages { padding:56px 12px 12px; }
   .copilot-chat__disclaimer { padding:6px 12px;font-size:10px; }

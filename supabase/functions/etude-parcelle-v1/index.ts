@@ -1045,7 +1045,7 @@ function qualifier(items: SourceResult[], r: Resolved): Qualification {
   // ── 7. Fiscalité locale ────────────────────────────────────
   {
     const cle = 'taxes';
-    const tfb = pluckNum(statsOf(cle), ['taux_tfb', 'tfb', 'taux_foncier_bati', 'taux_taxe_fonciere_bati', 'taux_tf', 'taux_fb']);
+    const tfb = pluckNum(statsOf(cle), ['taxe_fonciere_batie_pct', 'taux_global_tfb', 'taux_tfb', 'tfb', 'taux_foncier_bati', 'taux_taxe_fonciere_bati', 'taux_tf', 'taux_fb']);
     evidences.push(!okOf(cle)
       ? indisponible('fiscalite_tfb', 'Taux de taxe foncière sur le bâti', cle, 'municipality')
       : evidence({

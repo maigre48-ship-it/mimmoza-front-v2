@@ -481,8 +481,13 @@ export type CopilotStreamEvent =
   | { type: 'token'; delta: string }
   | { type: 'tool_use_start'; call: { id: string; name: string; input: unknown } }
   | { type: 'tool_use_end'; call: { id: string; name: string; output: unknown; duration_ms: number; status: string; error?: string } }
-  | { type: 'done'; message_id: string; final_credits: number }
-  | { type: 'error'; error: string; refunded_credits?: number };
+  // `mode` et `tier` sont ceux RÉELLEMENT appliqués par le serveur, qui les
+  // dérive du plan et écrase la demande du client. Optionnels : un serveur
+  // antérieur à cette évolution ne les envoie pas.
+  | { type: 'done'; message_id: string; final_credits: number; mode?: CopilotMode; tier?: ModelTier }
+  // `message_id` n'est présent que si une réponse PARTIELLE a été persistée
+  // côté serveur : le texte déjà écrit a été sauvegardé malgré l'interruption.
+  | { type: 'error'; error: string; refunded_credits?: number; message_id?: string };
 
 export interface ToolDefinition {
   name: string;
@@ -550,6 +555,15 @@ export interface ChatMessage {
   text: string;
   toolCalls: ActiveToolCall[];
   mode?: CopilotMode;
+  /**
+   * Mode et niveau RÉELLEMENT appliqués, renvoyés par le serveur à la fin du
+   * flux. À ne pas confondre avec `mode` ci-dessus, qui est celui DEMANDÉ :
+   * le serveur écrase la demande selon le plan, et l'écart entre les deux est
+   * précisément ce qui permet de dire à l'utilisateur qu'un niveau supérieur
+   * existe. Absents sur les messages relus depuis la base.
+   */
+  effectiveMode?: CopilotMode;
+  effectiveTier?: ModelTier;
   status: ChatMessageStatus;
   error?: string;
   createdAt: string;

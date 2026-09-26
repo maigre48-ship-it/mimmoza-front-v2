@@ -71,3 +71,52 @@ test('neutralise un mot interdit dans un avertissement sans abandonner le rappor
   assert.doesNotMatch(report, /dispersion/i);
   assert.match(report, /information non restituée/i);
 });
+
+test('affiche le zonage et les contraintes GPU au point sans extrapoler à la propriété', () => {
+  const report = renderParcelStudyReport(fixture({ urbanisme_point: {
+    portee: 'point_adresse_uniquement',
+    couches: [
+      { couche: 'zone-urba', statut: 'interrogee', elements: [{ libelle: 'UC' }] },
+      { couche: 'prescription-surf', statut: 'interrogee', elements: [{ libelle: 'Indice I de la zone inondable' }] },
+      { couche: 'assiette-sup-s', statut: 'interrogee', elements: [{ libelle: 'PPRI Ascain' }] },
+    ],
+  } }));
+  assert.ok(report);
+  assert.match(report, /Zone GPU\*\* : UC/);
+  assert.match(report, /Indice I de la zone inondable/);
+  assert.match(report, /PPRI Ascain/);
+  assert.match(report, /point d’adresse uniquement/);
+  assert.match(report, /une adresse peut couvrir plusieurs parcelles/);
+});
+
+test('illustre la taxe foncière par surfaces avec taux sourcé et base supposée', () => {
+  const base = fixture();
+  const evidences = [...base.data.evidences];
+  const i = evidences.findIndex((item) => item.id === 'fiscalite_tfb');
+  evidences[i] = { ...evidences[i], value: 31.75, status: 'confirmed', sourceDate: '2025' };
+  const report = renderParcelStudyReport(fixture({ evidences }));
+  assert.ok(report);
+  assert.match(report, /31\.75 % \(exercice 2025\)/);
+  assert.match(report, /80 m².*1[\s\u00a0\u202f]270 €\/an/);
+  assert.match(report, /120 m².*1[\s\u00a0\u202f]905 €\/an/);
+  assert.match(report, /160 m².*2[\s\u00a0\u202f]540 €\/an/);
+  assert.match(report, /Ces montants ne sont pas une estimation du bien/);
+});
+
+test('ne chiffre pas la taxe si le taux fiscal est absent', () => {
+  const report = renderParcelStudyReport(fixture());
+  assert.ok(report);
+  assert.match(report, /Aucun montant en euros n’est calculable/);
+  assert.doesNotMatch(report, /Taxe bâtie illustrative/);
+});
+
+test('adapte l’illustration à une surface de bâtiment fournie', () => {
+  const base = fixture();
+  const evidences = [...base.data.evidences];
+  const i = evidences.findIndex((item) => item.id === 'fiscalite_tfb');
+  evidences[i] = { ...evidences[i], value: 31.75, status: 'confirmed' };
+  const report = renderParcelStudyReport(fixture({ evidences, surface_batiment_m2: 100 }));
+  assert.ok(report);
+  assert.match(report, /100 m².*1[\s\u00a0\u202f]588 €\/an/);
+  assert.doesNotMatch(report, /80 m².*€\/an/);
+});

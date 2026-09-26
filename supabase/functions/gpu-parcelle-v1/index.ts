@@ -1,3 +1,5 @@
+import { reparerEncodageProfond } from '../_shared/texte/reparerEncodage.ts';
+
 // supabase/functions/gpu-parcelle-v1/index.ts
 // Mimmoza — Urbanisme réglementaire au point, via API Carto GPU (IGN, TOKEN-FREE)
 // -----------------------------------------------------------------------------
@@ -105,7 +107,11 @@ async function couche(nom: Couche, lon: number, lat: number): Promise<any[] | nu
       console.error('[gpu]', nom, 'HTTP', r.status);
       return null;
     }
-    const fc = await r.json();
+    // Même source que servitudes-gpu-v1, mêmes libellés doublement encodés
+    // (« HÃ´pital » pour « Hôpital »). On répare à la frontière : les libellés
+    // de zone et les prescriptions d'urbanisme partent ensuite vers le prompt
+    // du copilot et vers l'affichage.
+    const fc = reparerEncodageProfond(await r.json());
     return Array.isArray(fc?.features) ? fc.features : [];
   } catch (e) {
     console.error('[gpu]', nom, 'fail', e instanceof Error ? e.message : String(e));

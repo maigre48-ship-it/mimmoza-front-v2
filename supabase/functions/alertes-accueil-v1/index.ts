@@ -162,15 +162,36 @@ Deno.serve(async (req: Request) => {
     erreurs.push(`immobilier : ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  // Dossiers parcellaires suivis : événements visibles uniquement par leur propriétaire.
+  let dossiers: Record<string, unknown>[] = [];
+  try {
+    const { data, error } = await db.from('copilot_parcel_dossier_events')
+      .select('id, dossier_id, changes, created_at, copilot_parcel_dossiers!inner(conversation_id, watch_enabled)')
+      .eq('copilot_parcel_dossiers.watch_enabled', true)
+      .eq('is_read', false)
+      .order('created_at', { ascending: false }).limit(limite);
+    if (error) throw new Error(error.message);
+    dossiers = (data ?? []).map((row: any) => ({
+      type: 'dossier_parcellaire', id: row.id, dossier_id: row.dossier_id,
+      titre: 'Changement détecté sur un dossier parcellaire',
+      sous_titre: Array.isArray(row.changes) ? row.changes.map((change: any) => String(change.field)).join(', ') : null,
+      conversation_id: row.copilot_parcel_dossiers?.conversation_id ?? null,
+      detecte_le: row.created_at,
+    }));
+  } catch (e) {
+    erreurs.push(`dossiers parcellaires : ${e instanceof Error ? e.message : String(e)}`);
+  }
+
   const ageImmo = joursDepuis(fraicheurImmo);
   const immoPerime = ageImmo != null && ageImmo > PEREMPTION_JOURS;
-  const total = ao.length + immo.length;
+  const total = ao.length + immo.length + dossiers.length;
 
   return json({
     status: erreurs.length ? 'partial' : 'ok',
     total,
     appels_offres: ao,
     immobilier: immo,
+    dossiers_parcellaires: dossiers,
     fraicheur: {
       immobilier_calcule_le: fraicheurImmo,
       immobilier_age_jours: ageImmo,
@@ -187,6 +208,6 @@ Deno.serve(async (req: Request) => {
     summary:
       total === 0
         ? "Aucune alerte." + (immoPerime ? ' ⚠️ Données de marché périmées.' : '')
-        : `${ao.length} appel(s) d'offres et ${immo.length} opportunité(s) immobilière(s).`,
+        : `${ao.length} appel(s) d'offres, ${immo.length} opportunité(s) immobilière(s) et ${dossiers.length} changement(s) de dossier.`,
   });
 });
