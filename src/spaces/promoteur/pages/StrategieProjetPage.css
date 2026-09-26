@@ -13,7 +13,11 @@
   }
   #strategy-dossier button,
   #strategy-dossier input,
-  #strategy-dossier label:has(input) { display: none !important; }
+  #strategy-dossier select,
+  #strategy-dossier textarea,
+  #strategy-dossier label:has(input),
+  #strategy-dossier label:has(select),
+  #strategy-dossier label:has(textarea) { display: none !important; }
   #strategy-dossier .rounded-3xl,
   #strategy-dossier .rounded-2xl { break-inside: avoid; box-shadow: none !important; }
   #strategy-dossier .overflow-auto { max-height: none !important; overflow: visible !important; }

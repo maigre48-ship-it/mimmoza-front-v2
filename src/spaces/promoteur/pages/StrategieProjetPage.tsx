@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowRight, Building2, ExternalLink, Loader2, MapPin, Search, ShieldAlert } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { userStorage } from '@/lib/storage/userScopedStorage';
 import { programmeBrief } from '@/spaces/copilot/dossier/parcelStrategy';
 import { HotelDossierSection } from './HotelDossierSection';
+import { DecisionDossierSection } from './DecisionDossierSection';
 import { ProgrammeProposalSection } from './ProgrammeProposalSection';
 import { extractPluEnvelope, type PluEnvelope } from './projectProgramme';
 import './StrategieProjetPage.css';
@@ -206,10 +207,6 @@ export default function StrategieProjetPage() {
     setBusy(false);
   };
 
-  const comparison = useMemo(() => scenarios.map((item) => ({
-    ...item,
-    brief: programmeBrief(item.programme),
-  })), [scenarios]);
 
   return <div className="mx-auto max-w-7xl space-y-6 px-4 pb-14 pt-6 sm:px-6">
     <PromoteurPageHero badge="PROMOTEUR · STRATÉGIE DE PROJET" title="Quel projet pour ce terrain ?" metaLines={[{ icon: <MapPin size={16} />, text: study?.title || 'Étude libre ou parcelle de l’étude active' }]} statCards={[{ label: 'Scénarios', value: String(scenarios.length) }, { label: 'Dossier', value: 'Sourcé', tone: 'emerald' }]} />
@@ -257,9 +254,9 @@ export default function StrategieProjetPage() {
         <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><h3 className="font-semibold text-slate-900">Ce qu’il reste à prouver</h3><p className="mt-3 text-sm text-slate-700">{programmeBrief(latest.programme)?.criticalData || 'Demande, offre concurrente et règles propres au programme.'}</p><ul className="mt-4 list-inside list-disc space-y-2 text-sm text-slate-700"><li>Règlement écrit, plans PLU et contraintes applicables à chaque parcelle.</li><li>Accès, stationnement, risques, servitudes et obligations propres à l’exploitation.</li><li>Coûts, recettes et seuils de décision documentés par des sources adaptées.</li></ul><div className="mt-5 flex flex-wrap gap-3"><Link to={`/promoteur/foncier${studyQuery}`} className="inline-flex items-center gap-1 text-sm font-semibold text-indigo-700">Vérifier le foncier <ArrowRight size={15} /></Link><Link to={`/promoteur/marche${studyQuery}`} className="inline-flex items-center gap-1 text-sm font-semibold text-indigo-700">Ouvrir l’étude de marché <ArrowRight size={15} /></Link></div></div>
         <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><h3 className="font-semibold text-slate-900">Exploitants à qualifier</h3><p className="mt-2 text-sm text-slate-500">Registre Sirene via l’API Recherche d’entreprises. Une présence dans le département ne prouve ni intérêt, ni capacité à reprendre le projet.</p>{latest.operatorError && <p className="mt-3 text-sm text-amber-800">{latest.operatorError}</p>}{latest.candidates.length ? <ul className="mt-4 max-h-80 space-y-3 overflow-auto">{latest.candidates.map((candidate) => <li key={candidate.siren} className="rounded-xl border border-slate-200 p-3"><a href={candidate.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-indigo-700">{candidate.nom}<ExternalLink size={14} /></a><p className="mt-1 text-xs text-slate-600">SIREN {candidate.siren} · NAF {candidate.activite}{candidate.commune ? ` · ${candidate.commune}` : ''}</p></li>)}</ul> : <p className="mt-4 text-sm text-slate-600">{programmeBrief(latest.programme)?.operatorNaf ? 'Aucune entreprise présentable avec les données disponibles.' : 'Définir d’abord la catégorie d’exploitant et son activité pour rechercher des sociétés précises.'}</p>}</div>
       </div>
+      <DecisionDossierSection scenarios={scenarios} studyId={studyId} onRemoveScenario={(id) => save(scenarios.filter((item) => item.id !== id))} />
       <p className="flex items-start gap-2 rounded-xl bg-slate-100 p-4 text-sm text-slate-700"><ShieldAlert className="mt-0.5 shrink-0" size={18} />L’architecture, les matériaux, les couleurs et les services restent des hypothèses de conception tant que les règles opposables et la demande propre au programme ne sont pas établies.</p>
     </section>}
 
-    {comparison.length > 1 && <section className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-widest text-indigo-600">03 · Comparer</p><h2 className="mt-1 text-xl font-semibold">Scénarios étudiés</h2></div><button type="button" onClick={() => save([])} className="text-xs text-slate-500 underline">Effacer</button></div><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-b text-slate-500"><th className="pb-2">Terrain</th><th className="pb-2">Programme</th><th className="pb-2">Étude spécialisée</th><th className="pb-2">Preuves sectorielles</th><th className="pb-2">Entreprises repérées</th></tr></thead><tbody>{comparison.map((item) => <tr key={item.id} className="border-b border-slate-100"><td className="py-3 text-slate-600">{item.address || item.parcelId || item.insee}</td><td className="py-3 font-medium">{item.programme}</td><td>{item.market ? 'Pré-diagnostic' : 'Non mesurée'}</td><td>{item.hotelEvidence?.capacityYear ? 'Capacité et fréquentation INSEE' : 'À compléter'}</td><td>{item.brief?.operatorNaf ? number(item.candidates.length) : 'Activité à définir'}</td></tr>)}</tbody></table></div><p className="mt-3 text-xs text-slate-500">Comparer les programmes exige leurs données de demande, leurs contraintes et une économie propres. Une absence de chiffres ne vaut pas absence de marché.</p></section>}
   </div>;
 }
