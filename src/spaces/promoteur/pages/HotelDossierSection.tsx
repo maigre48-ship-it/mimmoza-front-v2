@@ -1,0 +1,69 @@
+import { useEffect, useMemo, useState } from 'react';
+import { ExternalLink, Printer } from 'lucide-react';
+import { userStorage } from '@/lib/storage/userScopedStorage';
+import { calculateHotelEconomics, type HotelAssumptions, type HotelEvidence } from './hotelMarket';
+
+const EMPTY: HotelAssumptions = { rooms: '', adr: '', occupancy: '', variableCost: '', fixedCosts: '', investment: '' };
+const formatNumber = (value: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value);
+const formatEuro = (value: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(value);
+const RANK_LABEL: Record<string, string> = { NC: 'Non classés', '1': '1 étoile', '2': '2 étoiles', '3': '3 étoiles', '4': '4 étoiles', '5': '5 étoiles' };
+const MONTH_NAMES = ['Jan.', 'Fév.', 'Mar.', 'Avr.', 'Mai', 'Juin', 'Juil.', 'Août', 'Sep.', 'Oct.', 'Nov.', 'Déc.'];
+
+function Fact({ label, value, scope, source }: { label: string; value: string; scope: string; source: string }) {
+  return <div className="rounded-2xl border border-slate-200 bg-white p-4"><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</p><p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p><p className="mt-1 text-xs text-slate-600">{scope} · {source}</p></div>;
+}
+
+export function HotelDossierSection({ evidence, scenarioId }: { evidence: HotelEvidence | null; scenarioId: string }) {
+  const storageKey = `mimmoza.promoteur.hotel-assumptions.${scenarioId}`;
+  const [assumptions, setAssumptions] = useState<HotelAssumptions>(EMPTY);
+  useEffect(() => {
+    try {
+      const parsed = JSON.parse(userStorage.getItem(storageKey) ?? 'null');
+      setAssumptions(parsed && typeof parsed === 'object' ? { ...EMPTY, ...parsed } : EMPTY);
+    } catch { setAssumptions(EMPTY); }
+  }, [storageKey]);
+  const patch = (field: keyof HotelAssumptions, value: string) => {
+    const next = { ...assumptions, [field]: value };
+    setAssumptions(next);
+    userStorage.setItem(storageKey, JSON.stringify(next));
+  };
+  const economics = useMemo(() => calculateHotelEconomics(assumptions), [assumptions]);
+  const total = evidence?.capacity.find((row) => row.ranking === '_T');
+  const ranked = evidence?.capacity.filter((row) => row.ranking !== '_T' && (row.hotels ?? 0) > 0) ?? [];
+  const months = evidence?.months ?? [];
+  const completeMonths = months.filter((month) => month.nights != null && month.occupancyPct != null);
+  const annualNights = completeMonths.length === 12 ? completeMonths.reduce((sum, month) => sum + (month.nights ?? 0), 0) : null;
+  const maxNights = Math.max(1, ...months.map((month) => month.nights ?? 0));
+  const peak = completeMonths.length === 12 ? completeMonths.reduce((best, month) => (month.nights ?? 0) > (best.nights ?? 0) ? month : best) : null;
+  const trough = completeMonths.length === 12 ? completeMonths.reduce((best, month) => (month.nights ?? 0) < (best.nights ?? 0) ? month : best) : null;
+  const variants = economics ? [-10, 0, 10].map((delta) => {
+    const occupancy = Math.min(100, Math.max(0, Number(assumptions.occupancy) + delta));
+    return { occupancy, result: calculateHotelEconomics({ ...assumptions, occupancy: String(occupancy) }) };
+  }) : [];
+
+  return <section aria-labelledby="hotel-dossier-title" className="space-y-5">
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-widest text-indigo-600">03 · Données sectorielles</p><h2 id="hotel-dossier-title" className="mt-1 text-2xl font-semibold text-slate-900">Dossier hôtelier</h2><p className="mt-1 text-sm text-slate-600">Offre mesurée à la commune ; fréquentation mesurée au département. Ces périmètres ne sont pas interchangeables.</p></div><button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"><Printer size={16} /> Imprimer le dossier</button></div>
+
+    {!evidence && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950">Les données hôtelières INSEE n’étaient pas encore collectées pour cette analyse. Relancez l’étude pour constituer ce chapitre.</div>}
+    {evidence && <>
+      <div className="grid gap-3 sm:grid-cols-3"><Fact label="Hôtels" value={total?.hotels == null ? '—' : formatNumber(total.hotels)} scope={`Commune ${evidence.communeInsee} · ${evidence.capacityYear ?? 'année inconnue'}`} source="INSEE Melodi" /><Fact label="Chambres" value={total?.rooms == null ? '—' : formatNumber(total.rooms)} scope={`Commune ${evidence.communeInsee} · ${evidence.capacityYear ?? 'année inconnue'}`} source="INSEE Melodi" /><Fact label="Nuitées hôtelières" value={annualNights == null ? '—' : formatNumber(annualNights)} scope={`Somme des 12 mois arrondis · département ${evidence.department} · ${evidence.frequencyYear ?? 'année inconnue'}`} source="INSEE Melodi" /></div>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><h3 className="text-lg font-semibold text-slate-900">Parc hôtelier par classement</h3><p className="mt-1 text-xs text-slate-500">Hôtels et chambres de la commune, {evidence.capacityYear ?? 'millésime indisponible'}.</p>{ranked.length ? <div className="mt-5 space-y-3">{ranked.map((row) => <div key={row.ranking} className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2 text-sm"><span>{RANK_LABEL[row.ranking] ?? row.ranking}</span><strong>{row.hotels ?? '—'} hôtel{row.hotels === 1 ? '' : 's'} · {row.rooms ?? '—'} chambres</strong></div>)}</div> : <p className="mt-5 text-sm text-slate-600">Répartition indisponible.</p>}<p className="mt-4 text-xs text-slate-500">Une catégorie absente à la commune ne prouve pas qu’un nouvel hôtel de cette catégorie trouvera sa clientèle. Le bassin concurrentiel dépasse la commune.</p></div>
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><h3 className="text-lg font-semibold text-slate-900">Saisonnalité de la demande</h3><p className="mt-1 text-xs text-slate-500">Nuitées dans les hôtels du département {evidence.department}, {evidence.frequencyYear ?? 'année indisponible'}.</p>{completeMonths.length >= 10 ? <div className="mt-5 min-w-0 overflow-x-auto"><div className="flex min-w-[430px] items-end gap-2" role="img" aria-label="Graphique des nuitées hôtelières mensuelles départementales">{months.map((month, index) => <div key={month.month} className="flex min-w-0 flex-1 flex-col items-center"><span className="mb-1 text-[10px] text-slate-500">{month.nights == null ? '—' : `${formatNumber(month.nights / 1000)}k`}</span><div className="flex h-32 w-full items-end rounded bg-slate-50"><div className="w-full rounded-t bg-indigo-500" style={{ height: `${Math.max(2, (month.nights ?? 0) / maxNights * 100)}%` }} /></div><span className="mt-1 text-[10px] text-slate-600">{MONTH_NAMES[index]}</span><span className="text-[10px] font-semibold text-indigo-700">{month.occupancyPct == null ? '—' : `${formatNumber(month.occupancyPct)} %`}</span></div>)}</div><p className="mt-3 text-xs text-slate-500">Barres : nuitées (en milliers) · sous chaque mois : taux d’occupation hôtelier départemental.</p></div> : <p className="mt-5 text-sm text-slate-600">Série mensuelle insuffisante pour conclure sur la saisonnalité.</p>}{peak && trough && <p className="mt-4 text-sm text-slate-700">Le mois le plus fréquenté est {MONTH_NAMES[Number(peak.month.slice(-2)) - 1]} ({formatNumber(peak.nights ?? 0)} nuitées) ; le moins fréquenté est {MONTH_NAMES[Number(trough.month.slice(-2)) - 1]} ({formatNumber(trough.nights ?? 0)}). C’est un signal départemental, pas le remplissage attendu du projet.</p>}</div>
+      </div>
+      {evidence.missing.length > 0 && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">{evidence.missing.join(' ')}</div>}
+      <p className="text-xs text-slate-500">Consulté le {new Date(evidence.fetchedAt).toLocaleDateString('fr-FR')}. {evidence.capacityUrl && <a className="inline-flex items-center gap-1 text-indigo-700 underline" href={evidence.capacityUrl} target="_blank" rel="noopener noreferrer">Capacités INSEE <ExternalLink size={12} /></a>} {evidence.frequencyUrl && <a className="inline-flex items-center gap-1 text-indigo-700 underline" href={evidence.frequencyUrl} target="_blank" rel="noopener noreferrer">Fréquentation INSEE <ExternalLink size={12} /></a>}</p>
+    </>}
+
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><p className="text-xs font-bold uppercase tracking-widest text-indigo-600">04 · Tester l’économie</p><h3 className="mt-1 text-xl font-semibold text-slate-900">Hypothèses d’exploitation</h3><p className="mt-2 text-sm text-slate-600">Renseignez vos hypothèses issues d’un programme, de comparables tarifaires et de devis. Aucune valeur n’est proposée automatiquement pour l’ADR, les charges ou le nombre de chambres.</p><div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{([
+      ['rooms', 'Chambres prévues', 'Nombre'], ['adr', 'Prix moyen par chambre occupée (ADR)', '€ / nuit'],
+      ['occupancy', 'Occupation annuelle visée', '%'], ['variableCost', 'Coût variable par chambre occupée', '€ / nuit'],
+      ['fixedCosts', 'Charges fixes annuelles', '€ / an'], ['investment', 'Investissement total tout compris', '€ · facultatif'],
+    ] as const).map(([field, label, unit]) => <label key={field} className="text-sm font-medium text-slate-700">{label}<div className="relative mt-1"><input type="number" min="0" step="any" value={assumptions[field]} onChange={(event) => patch(field, event.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 pr-20 font-normal" /><span className="absolute right-3 top-3 text-xs text-slate-500">{unit}</span></div></label>)}</div>
+      {economics && <p className="mt-4 rounded-xl bg-indigo-50 p-3 text-sm text-indigo-950">Hypothèses saisies : {assumptions.rooms} chambres · ADR {assumptions.adr} €/nuit · occupation {assumptions.occupancy} % · coût variable {assumptions.variableCost} €/nuit · charges fixes {formatEuro(Number(assumptions.fixedCosts))}/an{assumptions.investment ? ` · investissement ${formatEuro(Number(assumptions.investment))}` : ""}.</p>}
+      {economics ? <div className="mt-6"><div className="grid gap-3 sm:grid-cols-3"><Fact label="Nuitées vendues" value={formatNumber(economics.roomNights)} scope="Chambres × 365 × occupation saisie" source="hypothèse" /><Fact label="CA chambres" value={formatEuro(economics.revenue)} scope="Nuitées vendues × ADR saisi" source="hypothèse" /><Fact label="Résultat d’exploitation simplifié" value={formatEuro(economics.operatingResult)} scope="CA chambres − coûts variables − charges fixes" source="hypothèse" /></div><p className="mt-4 text-sm text-slate-700">Seuil d’occupation pour couvrir les charges saisies : <strong>{economics.breakEvenOccupancy == null ? 'non calculable (coût variable supérieur au prix)' : `${formatNumber(economics.breakEvenOccupancy)} %`}</strong>{economics.investmentYield != null ? ` · Résultat simplifié / investissement saisi : ${formatNumber(economics.investmentYield)} %` : ''}. Ce calcul ne comprend ni restauration, ni impôts, ni service de dette, ni renouvellement du mobilier, sauf si vous les avez intégrés aux charges.</p><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[430px] text-left text-sm"><thead><tr className="border-b text-slate-500"><th className="pb-2">Occupation testée</th><th className="pb-2">CA chambres</th><th className="pb-2">Résultat simplifié</th></tr></thead><tbody>{variants.map(({ occupancy, result }) => <tr key={occupancy} className="border-b border-slate-100"><td className="py-2">{formatNumber(occupancy)} %</td><td>{result ? formatEuro(result.revenue) : '—'}</td><td className={result && result.operatingResult < 0 ? 'font-semibold text-rose-700' : ''}>{result ? formatEuro(result.operatingResult) : '—'}</td></tr>)}</tbody></table></div><p className="mt-2 text-xs text-slate-500">Sensibilité : ± 10 points d’occupation autour de votre hypothèse, bornée entre 0 et 100 %.</p></div> : <p className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Complétez chambres, ADR, occupation, coût variable et charges fixes pour obtenir une simulation. Sans ces éléments, aucune rentabilité sérieuse ne peut être calculée.</p>}
+    </div>
+
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><p className="text-xs font-bold uppercase tracking-widest text-indigo-600">05 · Décider</p><h3 className="mt-1 text-xl font-semibold text-slate-900">Conditions avant recommandation</h3><ol className="mt-4 list-inside list-decimal space-y-3 text-sm text-slate-700"><li>Vérifier la capacité réelle du terrain : PLU écrit, PPRI, accès, stationnement, ERP, patrimoine et raccordements.</li><li>Mesurer l’offre concurrente au bassin de destination, ses catégories, tarifs publics, services et positionnement.</li><li>Obtenir des données locales d’occupation, d’ADR et de clientèle par saison ; les séries départementales ne suffisent pas.</li><li>Faire établir un programme de chambres et services, un coût de construction et un budget d’exploitation par un professionnel.</li><li>Soumettre un dossier chiffré aux exploitants repérés et enregistrer leurs critères, réponses et éventuelles lettres d’intérêt.</li></ol><p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-950">Avis actuel : potentiel commercial et faisabilité non déterminés tant que ces cinq points ne sont pas documentés.</p></div>
+  </section>;
+}

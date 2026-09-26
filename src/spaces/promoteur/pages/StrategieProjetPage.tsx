@@ -4,6 +4,9 @@ import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { userStorage } from '@/lib/storage/userScopedStorage';
 import { programmeBrief } from '@/spaces/copilot/dossier/parcelStrategy';
+import { HotelDossierSection } from './HotelDossierSection';
+import './StrategieProjetPage.css';
+import { fetchHotelEvidence, type HotelEvidence } from './hotelMarket';
 import { PromoteurPageHero } from '../shared/components/PromoteurPageHero';
 import { readUnifiedSelection } from '../shared/promoteurSelectionBridge';
 import { usePromoteurStudy } from '../shared/usePromoteurStudy';
@@ -14,7 +17,6 @@ type MarketResult = {
   error?: string;
   meta?: { commune_nom?: string; commune_insee?: string; departement?: string; generated_at?: string; perimetres?: Record<string, string> };
   core?: { dvf?: { nb_transactions?: number; prix_m2_median?: number; perimetre_label?: string }; insee?: { population?: number; revenu_median?: number } };
-  scores?: { global?: number; demande?: number; offre?: number; demande_confiance?: string; demande_champs_mesures?: number; demande_champs_attendus?: number };
   warnings?: string[];
 };
 
@@ -34,11 +36,15 @@ type Scenario = {
   address: string;
   insee: string;
   surfaceM2: string;
+  pluZone?: string | null;
+  pluSource?: string | null;
   date: string;
   market: MarketResult | null;
   marketError: string | null;
   candidates: Candidate[];
   operatorError: string | null;
+  hotelEvidence?: HotelEvidence | null;
+  hotelError?: string | null;
 };
 
 const IDEAS = ['Logements', 'Hôtel', 'EHPAD', 'Clinique', 'Supermarché', 'Bureaux', 'Résidence étudiante'];
@@ -141,6 +147,8 @@ export default function StrategieProjetPage() {
     let marketError: string | null = null;
     let operatorError: string | null = null;
     let candidates: Candidate[] = [];
+    let hotelEvidence: HotelEvidence | null = null;
+    let hotelError: string | null = null;
 
     if (brief.marketType) {
       try {
@@ -165,19 +173,21 @@ export default function StrategieProjetPage() {
               population: data.core.insee.population, revenu_median: data.core.insee.revenu_median,
             } : undefined,
           },
-          scores: data.scores ? {
-            global: data.scores.global, demande: data.scores.demande, offre: data.scores.offre,
-            demande_confiance: data.scores.demande_confiance,
-            demande_champs_mesures: data.scores.demande_champs_mesures,
-            demande_champs_attendus: data.scores.demande_champs_attendus,
-          } : undefined,
           warnings: data.warnings?.slice(0, 5),
         };
       } catch (error) { marketError = error instanceof Error ? error.message : 'Étude de marché indisponible.'; }
     }
 
+    const verified = await verifyInsee(market?.meta?.commune_insee || cityCode);
+    if (brief.marketType === 'hotel') {
+      if (!verified) hotelError = 'Code INSEE vérifié requis pour collecter les données hôtelières.';
+      else {
+        try { hotelEvidence = await fetchHotelEvidence(verified.code); }
+        catch (error) { hotelError = error instanceof Error ? error.message : 'Données hôtelières indisponibles.'; }
+      }
+    }
+
     if (brief.operatorNaf) {
-      const verified = await verifyInsee(cityCode || market?.meta?.commune_insee || '');
       if (!verified) operatorError = 'La commune doit être vérifiée par un code INSEE ou une référence cadastrale avant la recherche d’entreprises.';
       else {
         try { candidates = await findCandidates(brief.operatorNaf, verified.code); }
@@ -187,7 +197,7 @@ export default function StrategieProjetPage() {
 
     const next: Scenario = {
       id: crypto.randomUUID(), programme: brief.label, parcelId: parcel, address: address.trim(), insee: cityCode,
-      surfaceM2: surfaceM2.trim(), date: new Date().toISOString(), market, marketError, candidates, operatorError,
+      surfaceM2: surfaceM2.trim(), pluZone: study?.plu?.zone_code ?? null, pluSource: study?.plu?.source ?? null, date: new Date().toISOString(), market, marketError, candidates, operatorError, hotelEvidence, hotelError,
     };
     save([next, ...scenarios].slice(0, 3));
     setBusy(false);
@@ -196,14 +206,13 @@ export default function StrategieProjetPage() {
   const comparison = useMemo(() => scenarios.map((item) => ({
     ...item,
     brief: programmeBrief(item.programme),
-    score: item.market?.scores?.global,
   })), [scenarios]);
 
   return <div className="mx-auto max-w-7xl space-y-6 px-4 pb-14 pt-6 sm:px-6">
     <PromoteurPageHero badge="PROMOTEUR · STRATÉGIE DE PROJET" title="Quel projet pour ce terrain ?" metaLines={[{ icon: <MapPin size={16} />, text: study?.title || 'Étude libre ou parcelle de l’étude active' }]} statCards={[{ label: 'Scénarios', value: String(scenarios.length) }, { label: 'Méthode', value: '3 étapes', tone: 'emerald' }]} />
 
     <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-5 text-sm text-indigo-950">
-      Cette page rassemble les premiers éléments de marché et des entreprises à qualifier. Une capacité à bâtir, un chiffre d’affaires ou l’intérêt d’un exploitant exigent encore des preuves propres au projet.
+      Ce dossier distingue les faits mesurés, les hypothèses à tester et les décisions à confirmer. Les données de marché générales ne valent pas preuve de demande pour le programme choisi.
     </div>
 
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7" aria-labelledby="strategy-input-title">
@@ -222,15 +231,24 @@ export default function StrategieProjetPage() {
       <button type="button" disabled={busy} onClick={() => void analyze()} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-5 py-3 font-semibold text-white disabled:opacity-60">{busy ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}{busy ? 'Analyse en cours…' : 'Analyser ce programme'}</button>
     </section>
 
-    {latest && <section aria-labelledby="strategy-result-title" className="space-y-5">
+    {latest && <section id="strategy-dossier" aria-labelledby="strategy-result-title" className="space-y-5">
       <div><p className="text-xs font-bold uppercase tracking-widest text-indigo-600">02 · Examiner</p><h2 id="strategy-result-title" className="mt-1 text-2xl font-semibold text-slate-900">{latest.programme}</h2><p className="text-sm text-slate-500">Analyse du {new Date(latest.date).toLocaleDateString('fr-FR')} · {latest.address || latest.parcelId || latest.insee}</p></div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <InfoCard label="Marché spécifique" value={latest.market ? 'Pré-diagnostic' : 'Non mesuré'} detail={latest.market ? `Source : étude Mimmoza · ${latest.market.meta?.commune_nom || 'commune à vérifier'}` : latest.marketError || 'Aucun modèle fiable pour cet usage.'} />
-        <InfoCard label="Population" value={number(latest.market?.core?.insee?.population)} detail="Commune · INSEE selon la disponibilité de l’étude" />
-        <InfoCard label="Transactions DVF" value={number(latest.market?.core?.dvf?.nb_transactions)} detail={latest.market?.core?.dvf?.perimetre_label || 'Périmètre non documenté'} />
-        <InfoCard label="Entreprises repérées" value={String(latest.candidates.length)} detail="Activité déclarée et présence départementale, intérêt non confirmé" />
+        <InfoCard label="Terrain étudié" value={latest.parcelId || latest.insee || 'Adresse'} detail={latest.surfaceM2 ? `${latest.surfaceM2} m² cadastraux déclarés · capacité non déduite` : 'Surface cadastrale non fournie'} />
+        <InfoCard label="Données sectorielles" value={latest.hotelEvidence?.capacityYear ? 'INSEE documenté' : latest.market ? 'Partielles' : 'Non collectées'} detail={latest.hotelEvidence?.capacityYear ? `Capacité communale ${latest.hotelEvidence.capacityYear}` : latest.hotelError || latest.marketError || 'Vérifications propres au programme requises'} />
+        <InfoCard label="Périmètre de marché" value={latest.market?.meta?.commune_nom || 'À confirmer'} detail="Le périmètre de chaque mesure figure dans le dossier" />
+        <InfoCard label="Entreprises repérées" value={String(latest.candidates.length)} detail="Activité et implantation vérifiées ; intérêt non confirmé" />
       </div>
-      {latest.market?.scores && <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><h3 className="font-semibold text-slate-900">Indices de contexte</h3><p className="mt-1 text-sm text-slate-500">Scores du modèle, sur 100. Ils ne prédisent ni la demande pour un bâtiment précis ni sa rentabilité.</p><div className="mt-4 grid gap-4 sm:grid-cols-3">{([['Demande', latest.market.scores.demande], ['Offre / liquidité', latest.market.scores.offre], ['Synthèse indicative', latest.market.scores.global]] as const).map(([label, value]) => <div key={label}><div className="flex justify-between text-sm"><span>{label}</span><strong>{number(value)}/100</strong></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-indigo-500" style={{ width: `${Math.min(100, Math.max(0, value ?? 0))}%` }} /></div></div>)}</div><p className="mt-4 text-xs text-slate-500">Confiance de la demande : {latest.market.scores.demande_confiance || 'non indiquée'} · Champs mesurés : {number(latest.market.scores.demande_champs_mesures)} / {number(latest.market.scores.demande_champs_attendus)}</p></div>}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700"><strong>Cadre foncier :</strong> {latest.pluZone ? `zone PLU ${latest.pluZone} (origine : ${latest.pluSource || 'étude active'})` : 'zone PLU non documentée dans ce dossier'}. Le zonage seul ne prouve pas l’autorisation du programme ; vérifier le règlement opposable, les servitudes et les risques sur la parcelle.</div>
+      {programmeBrief(latest.programme)?.marketType === 'hotel' && <>
+        {latest.hotelError && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{latest.hotelError}</p>}
+        <HotelDossierSection evidence={latest.hotelEvidence ?? null} scenarioId={latest.id} />
+      </>}
+      {programmeBrief(latest.programme)?.marketType !== 'hotel' && <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-700">
+        <h3 className="font-semibold text-slate-900">Contexte transversal disponible</h3>
+        <p className="mt-2">Population communale : {number(latest.market?.core?.insee?.population)} · Transactions DVF : {number(latest.market?.core?.dvf?.nb_transactions)} ({latest.market?.core?.dvf?.perimetre_label || 'périmètre à vérifier'}).</p>
+        <p className="mt-2 text-slate-500">Ces indicateurs ne mesurent pas la demande pour {latest.programme.toLowerCase()}. {latest.marketError || programmeBrief(latest.programme)?.marketCaveat}</p>
+      </div>}
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><h3 className="font-semibold text-slate-900">Ce qu’il reste à prouver</h3><p className="mt-3 text-sm text-slate-700">{programmeBrief(latest.programme)?.criticalData || 'Demande, offre concurrente et règles propres au programme.'}</p><ul className="mt-4 list-inside list-disc space-y-2 text-sm text-slate-700"><li>Règlement écrit, plans PLU et contraintes applicables à chaque parcelle.</li><li>Accès, stationnement, risques, servitudes et obligations propres à l’exploitation.</li><li>Coûts, recettes et seuils de décision documentés par des sources adaptées.</li></ul><div className="mt-5 flex flex-wrap gap-3"><Link to={`/promoteur/foncier${studyQuery}`} className="inline-flex items-center gap-1 text-sm font-semibold text-indigo-700">Vérifier le foncier <ArrowRight size={15} /></Link><Link to={`/promoteur/marche${studyQuery}`} className="inline-flex items-center gap-1 text-sm font-semibold text-indigo-700">Ouvrir l’étude de marché <ArrowRight size={15} /></Link></div></div>
         <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><h3 className="font-semibold text-slate-900">Exploitants à qualifier</h3><p className="mt-2 text-sm text-slate-500">Registre Sirene via l’API Recherche d’entreprises. Une présence dans le département ne prouve ni intérêt, ni capacité à reprendre le projet.</p>{latest.operatorError && <p className="mt-3 text-sm text-amber-800">{latest.operatorError}</p>}{latest.candidates.length ? <ul className="mt-4 max-h-80 space-y-3 overflow-auto">{latest.candidates.map((candidate) => <li key={candidate.siren} className="rounded-xl border border-slate-200 p-3"><a href={candidate.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-indigo-700">{candidate.nom}<ExternalLink size={14} /></a><p className="mt-1 text-xs text-slate-600">SIREN {candidate.siren} · NAF {candidate.activite}{candidate.commune ? ` · ${candidate.commune}` : ''}</p></li>)}</ul> : <p className="mt-4 text-sm text-slate-600">{programmeBrief(latest.programme)?.operatorNaf ? 'Aucune entreprise présentable avec les données disponibles.' : 'Définir d’abord la catégorie d’exploitant et son activité pour rechercher des sociétés précises.'}</p>}</div>
@@ -238,6 +256,6 @@ export default function StrategieProjetPage() {
       <p className="flex items-start gap-2 rounded-xl bg-slate-100 p-4 text-sm text-slate-700"><ShieldAlert className="mt-0.5 shrink-0" size={18} />L’architecture, les matériaux, les couleurs et les services restent des hypothèses de conception tant que les règles opposables et la demande propre au programme ne sont pas établies.</p>
     </section>}
 
-    {comparison.length > 1 && <section className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-widest text-indigo-600">03 · Comparer</p><h2 className="mt-1 text-xl font-semibold">Scénarios étudiés</h2></div><button type="button" onClick={() => save([])} className="text-xs text-slate-500 underline">Effacer</button></div><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-b text-slate-500"><th className="pb-2">Terrain</th><th className="pb-2">Programme</th><th className="pb-2">Étude spécialisée</th><th className="pb-2">Indice indicatif</th><th className="pb-2">Entreprises repérées</th></tr></thead><tbody>{comparison.map((item) => <tr key={item.id} className="border-b border-slate-100"><td className="py-3 text-slate-600">{item.address || item.parcelId || item.insee}</td><td className="py-3 font-medium">{item.programme}</td><td>{item.market ? 'Pré-diagnostic' : 'Non mesurée'}</td><td>{item.score == null ? '—' : `${number(item.score)}/100`}</td><td>{item.brief?.operatorNaf ? number(item.candidates.length) : 'Activité à définir'}</td></tr>)}</tbody></table></div><p className="mt-3 text-xs text-slate-500">Les scores de modèles différents ne permettent pas, à eux seuls, de classer les programmes.</p></section>}
+    {comparison.length > 1 && <section className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-widest text-indigo-600">03 · Comparer</p><h2 className="mt-1 text-xl font-semibold">Scénarios étudiés</h2></div><button type="button" onClick={() => save([])} className="text-xs text-slate-500 underline">Effacer</button></div><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-b text-slate-500"><th className="pb-2">Terrain</th><th className="pb-2">Programme</th><th className="pb-2">Étude spécialisée</th><th className="pb-2">Preuves sectorielles</th><th className="pb-2">Entreprises repérées</th></tr></thead><tbody>{comparison.map((item) => <tr key={item.id} className="border-b border-slate-100"><td className="py-3 text-slate-600">{item.address || item.parcelId || item.insee}</td><td className="py-3 font-medium">{item.programme}</td><td>{item.market ? 'Pré-diagnostic' : 'Non mesurée'}</td><td>{item.hotelEvidence?.capacityYear ? 'Capacité et fréquentation INSEE' : 'À compléter'}</td><td>{item.brief?.operatorNaf ? number(item.candidates.length) : 'Activité à définir'}</td></tr>)}</tbody></table></div><p className="mt-3 text-xs text-slate-500">Comparer les programmes exige leurs données de demande, leurs contraintes et une économie propres. Une absence de chiffres ne vaut pas absence de marché.</p></section>}
   </div>;
 }
