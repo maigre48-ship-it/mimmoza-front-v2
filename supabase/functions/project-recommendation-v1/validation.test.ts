@@ -27,6 +27,10 @@ test('la sortie IA doit citer un fait existant et un secteur admissible', () => 
   const otherPacket = sanitizePacket({ ...rawPacket(), sectors: rawPacket().sectors.map((sector) =>
     sector.key === 'hotel' ? { ...sector, facts: [{ id: 'hotel:1', label: 'Nuitées', value: '100', scope: 'Département', source: 'INSEE', direct: true }] } : sector) })!;
   assert.equal(validateAiResult({ ...valid, evidenceIds: ['hotel:1'] }, otherPacket), null);
+  const housingWithContext = sanitizePacket({ ...rawPacket(), sectors: rawPacket().sectors.map((sector) => sector.key === 'logement'
+    ? { ...sector, facts: [...sector.facts, { id: 'logement:2', label: 'Prix médian', value: '4300', scope: 'Commune', source: 'DVF', direct: false }] }
+    : sector) })!;
+  assert.equal(validateAiResult({ ...valid, evidenceIds: ['logement:2'] }, housingWithContext), null);
 });
 
 test('aucune priorité est une réponse valide quand les marchés ne sont pas comparables', () => {

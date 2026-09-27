@@ -57,8 +57,10 @@ export function validateAiResult(raw: unknown, packet: Packet): AiResult | null 
   const allFacts = new Set(packet.sectors.flatMap((sector) => sector.facts.map((fact) => fact.id)));
   const evidenceIds = Array.isArray(result.evidenceIds) ? result.evidenceIds.filter((id): id is string => typeof id === 'string' && allFacts.has(id)).slice(0, 6) : [];
   const conditions = Array.isArray(result.conditions) ? result.conditions.map((value: unknown) => bounded(value, 280)).filter(Boolean).slice(0, 5) : [];
-  if (result.status === 'piste_prioritaire' && (!projectKey || !packet.sectors.find((sector) => sector.key === projectKey)?.eligible
-    || !bounded(result.target, 350) || !bounded(result.programme, 500) || !evidenceIds.some((id) => id.startsWith(projectKey + ':')) || conditions.length === 0)) return null;
+  const selected = packet.sectors.find((sector) => sector.key === projectKey);
+  if (result.status === 'piste_prioritaire' && (!selected?.eligible
+    || !bounded(result.target, 350) || !bounded(result.programme, 500)
+    || !evidenceIds.some((id) => selected.facts.some((fact) => fact.id === id && fact.direct)) || conditions.length === 0)) return null;
   const alternatives = Array.isArray(result.alternatives) ? result.alternatives.flatMap((rawAlt) => {
     const alt = record(rawAlt);
     return alt && keys.has(String(alt.key)) && alt.key !== projectKey && bounded(alt.reason, 280)

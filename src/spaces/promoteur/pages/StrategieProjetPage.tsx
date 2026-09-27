@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { userStorage } from '@/lib/storage/userScopedStorage';
 import { programmeBrief } from '@/spaces/copilot/dossier/parcelStrategy';
 import { HotelDossierSection } from './HotelDossierSection';
+import { MarketDepthSection } from './MarketDepthSection';
 import { DecisionDossierSection } from './DecisionDossierSection';
 import { OperatorShortlistSection } from './OperatorShortlistSection';
 import type { OperatorCandidate } from './operatorShortlist';
@@ -379,7 +380,8 @@ export default function StrategieProjetPage() {
         {latest.hotelError && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{latest.hotelError}</p>}
         <HotelDossierSection evidence={latest.hotelEvidence ?? null} scenarioId={latest.id} />
       </>}
-      {latestType !== 'hotel' && <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-700">
+      {latestType !== 'hotel' && latestSector && <MarketDepthSection snapshot={{ key: latestSector, market: latest.market, error: latest.marketError, bpe: latest.bpe }} />}
+      {latestType !== 'hotel' && !latestSector && <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-700">
         <h3 className="font-semibold text-slate-900">Étude sectorielle · {latest.programme}</h3>
         {latestReading?.facts.length ? <ul className="mt-3 space-y-2">{latestReading.facts.map((fact) => <li key={fact.label}><strong>{fact.label} : {fact.value}</strong> · {fact.scope} · {fact.sourceUrl ? <a href={fact.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-700 underline">{fact.source}</a> : fact.source}{fact.direct ? '' : ' · contexte seulement'}</li>)}</ul> : <p className="mt-2">Aucun indicateur sectoriel mesuré exploitable dans la réponse collectée.</p>}
         <p className="mt-3 text-slate-600">{latest.marketError || programmeBrief(latest.programme)?.marketCaveat} Les indicateurs de contexte ne démontrent ni la demande locale ni le chiffre d’affaires du futur bâtiment.</p>

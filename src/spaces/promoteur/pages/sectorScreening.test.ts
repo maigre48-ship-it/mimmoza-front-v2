@@ -61,3 +61,23 @@ test('l’EHPAD conserve le libellé large de la BPE et le périmètre communal'
   assert.equal(ehpad.facts[0].scope, 'Commune 64065 · 2025');
   assert.equal(ehpad.status, 'insuffisant');
 });
+
+test('population senior, revenu et part étudiante restent du contexte, pas une demande captée', () => {
+  const common = { meta: { commune_insee: '64065' } };
+  const senior = readSector({ key: 'ehpad', error: null, market: { ...common, specific: { demographie_senior: { population_75_plus_source: 'mesure', population_75_plus: 510 } } } });
+  const retail = readSector({ key: 'commerce', error: null, market: { ...common, specific: { zone_chalandise: { population: 4658, revenu_median: 24000, revenu_median_source: 'mesure' } } } });
+  const student = readSector({ key: 'residence_etudiante', error: null, market: { ...common, specific: { population_etudiante: { pct_etudiants_source: 'mesure', pct_etudiants: 8 } } } });
+  for (const reading of [senior, retail, student]) {
+    assert.equal(reading.status, 'insuffisant');
+    assert.ok(reading.facts.length > 0);
+    assert.ok(reading.facts.every((fact) => !fact.direct));
+  }
+});
+
+test('les prix DVF enrichissent le logement sans être pris pour des ventes supplémentaires', () => {
+  const reading = readSector({ key: 'logement', error: null, market: { meta: { commune_insee: '64065' },
+    core: { dvf: { coverage: 'ok', nb_transactions: 34, prix_m2_median: 4300, perimetre_label: 'Commune 64065' } } } });
+  assert.deepEqual(reading.facts.map((fact) => fact.label), ['Transactions DVF', 'Prix médian DVF']);
+  assert.equal(reading.facts[0].direct, true);
+  assert.equal(reading.facts[1].direct, false);
+});
