@@ -1,5 +1,7 @@
 import type { HotelEvidence } from './hotelMarket.ts';
 import { BPE_TYPES, type BpeMarket } from './bpeMarket.ts';
+import type { MarketSupply } from './marketSupply.ts';
+import type { FinessSupply } from './finessSupply.ts';
 
 export type SectorKey = 'logement' | 'hotel' | 'ehpad' | 'commerce' | 'bureaux' | 'residence_etudiante' | 'clinique';
 export type MarketResult = {
@@ -16,7 +18,7 @@ export type MarketResult = {
   specific?: Record<string, unknown> | null;
   warnings?: string[];
 };
-export type SectorSnapshot = { key: SectorKey; market: MarketResult | null; error: string | null; hotel?: HotelEvidence | null; bpe?: BpeMarket | null };
+export type SectorSnapshot = { key: SectorKey; market: MarketResult | null; error: string | null; hotel?: HotelEvidence | null; bpe?: BpeMarket | null; supply?: MarketSupply | null; finess?: FinessSupply | null };
 export type SectorFact = { label: string; value: string; scope: string; source: string; sourceUrl?: string; direct: boolean };
 export type SectorReading = {
   key: SectorKey; label: string; target: string; programme: string;
@@ -82,6 +84,15 @@ export function readSector(snapshot: SectorSnapshot): SectorReading {
       push('Transactions DVF', measured(dvf.nb_transactions), '', dvfScope, 'DVF via étude Mimmoza');
       push('Prix médian DVF', positive(dvf.prix_m2_median), ' €/m²', dvfScope, 'DVF via étude Mimmoza', false);
     }
+    const pipeline = snapshot.supply?.pipeline;
+    if (pipeline?.communeInsee === commune) facts.push({ label: 'Logements autorisés', value: fmt(pipeline.authorisedHomes),
+      scope: `Commune ${commune} · exercices ${pipeline.years.join(', ')}`, source: 'Sitadel / SDES', sourceUrl: pipeline.sourceUrl, direct: false });
+    const social = snapshot.supply?.social;
+    if (social?.communeInsee === commune) facts.push({ label: 'Parc locatif social', value: fmt(social.homes),
+      scope: `Commune ${commune} · RPLS ${social.year}`, source: 'RPLS / SDES', sourceUrl: social.sourceUrl, direct: false });
+    if (social?.communeInsee === commune && social.waitingApplications != null) facts.push({ label: 'Demandes de logement social en attente',
+      value: fmt(social.waitingApplications), scope: `Commune ${commune} · indicateur SNE de l’étude sociale`,
+      source: 'SNE via étude Mimmoza', direct: false });
   } else if (key === 'hotel') {
     const hotel = snapshot.hotel;
     push('Hôtels existants', measured(hotel?.capacity.find((row) => row.ranking === '_T')?.hotels), '', `${communeScope} · ${hotel?.capacityYear ?? 'année inconnue'}`, 'INSEE Melodi', false);
@@ -98,6 +109,9 @@ export function readSector(snapshot: SectorSnapshot): SectorReading {
     if (!bpe && competition.coverage === 'ok' && measured(competition.count)) push('Établissements repérés', measured(competition.count), '', 'Bassin de concurrence de l’étude', 'OpenStreetMap via étude Mimmoza', false);
     pushBpe('D401');
     pushBpe('D402');
+    if (snapshot.finess?.status === 'ok' && snapshot.finess.communeInsee === commune) facts.push({ label: 'EHPAD actifs FINESS',
+      value: fmt(snapshot.finess.items.length), scope: `Commune ${commune} · consulté ${snapshot.finess.fetchedAt?.slice(0, 10) ?? 'date inconnue'}`,
+      source: 'Annuaire Santé / FINESS', sourceUrl: snapshot.finess.sourceUrl, direct: false });
   } else if (key === 'commerce') {
     const zone = nested(spec, 'zone_chalandise');
     push('Population communale', positive(zone.population), '', communeScope, 'INSEE via étude Mimmoza', false);

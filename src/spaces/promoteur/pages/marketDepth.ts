@@ -14,9 +14,9 @@ const GUIDE: Record<SectorKey, [string, string, string]> = {
 };
 
 const GROUPS: Record<SectorKey, [string[], string[], string[]]> = {
-  logement: [['Transactions DVF', 'Habitants de moins de 15 ans'], ['Logements vacants'], ['Prix médian DVF']],
+  logement: [['Transactions DVF', 'Habitants de moins de 15 ans', 'Demandes de logement social en attente'], ['Logements vacants', 'Logements autorisés', 'Parc locatif social'], ['Prix médian DVF']],
   hotel: [['Nuitées hôtelières', 'Évolution des nuitées sur un an', 'Nuitées non résidentes'], ['Hôtels existants', 'Chambres existantes'], []],
-  ehpad: [['Habitants de 75 ans ou plus'], ['Établissements repérés', 'Hébergements pour personnes âgées', 'Services de soins à domicile pour personnes âgées'], []],
+  ehpad: [['Habitants de 75 ans ou plus'], ['Établissements repérés', 'Hébergements pour personnes âgées', 'Services de soins à domicile pour personnes âgées', 'EHPAD actifs FINESS'], []],
   commerce: [['Population communale', 'Revenu médian'], ['Supermarchés recensés', 'Hypermarchés et grands magasins', 'Supermarchés et magasins multi-commerces', 'Supérettes', 'Épiceries'], []],
   bureaux: [['Population active', 'Population communale'], [], []],
   residence_etudiante: [['Étudiants parmi les habitants', 'Habitants de 15 à 29 ans'], ['Établissements supérieurs recensés', 'Résidences universitaires CROUS', 'UFR', 'Instituts universitaires'], []],

@@ -14,6 +14,9 @@ import { extractPluEnvelope, type PluEnvelope } from './projectProgramme';
 import './StrategieProjetPage.css';
 import { fetchHotelEvidence, type HotelEvidence } from './hotelMarket';
 import { fetchBpeMarket, type BpeMarket } from './bpeMarket';
+import type { MarketSupply } from './marketSupply';
+import { fetchMarketSupply } from './marketSupplyFetch';
+import { fetchFinessSupply, type FinessSupply } from './finessSupply';
 import { readSector, SCREENING_SECTORS, type MarketResult, type SectorKey, type SectorSnapshot } from './sectorScreening';
 import { acceptAiRecommendation, buildRecommendationPacket, recommendProjectLocally, type ProjectRecommendation } from './projectRecommendation';
 import { PromoteurPageHero } from '../shared/components/PromoteurPageHero';
@@ -43,6 +46,8 @@ type Scenario = {
   hotelError?: string | null;
   bpe?: BpeMarket | null;
   bpeError?: string | null;
+  supply?: MarketSupply | null;
+  finess?: FinessSupply | null;
 };
 
 const IDEAS = ['Logements', 'Hôtel', 'EHPAD', 'Clinique', 'Supermarché', 'Bureaux', 'Résidence étudiante'];
@@ -144,7 +149,7 @@ export default function StrategieProjetPage() {
   const recommendationFacts = recommendationPacket?.sectors.flatMap((sector) => sector.facts).filter((fact) => screening?.recommendation?.evidenceIds.includes(fact.id)) ?? [];
   const latestType = latest ? programmeBrief(latest.programme)?.marketType : null;
   const latestSector = latestType && SCREENING_SECTORS.some((sector) => sector.key === latestType) ? latestType as SectorKey : latest?.programme.toLowerCase().includes('clinique') ? 'clinique' : null;
-  const latestReading = latest && latestSector ? readSector({ key: latestSector, market: latest.market, error: latest.marketError, hotel: latest.hotelEvidence, bpe: latest.bpe }) : null;
+  const latestReading = latest && latestSector ? readSector({ key: latestSector, market: latest.market, error: latest.marketError, hotel: latest.hotelEvidence, bpe: latest.bpe, supply: latest.supply, finess: latest.finess }) : null;
 
   useEffect(() => {
     try {
@@ -198,6 +203,8 @@ export default function StrategieProjetPage() {
     let hotelError: string | null = null;
     let bpe: BpeMarket | null = null;
     let bpeError: string | null = null;
+    let supply: MarketSupply | null = null;
+    let finess: FinessSupply | null = null;
 
     if (cachedMarket) market = cachedMarket;
     else if (chosenBrief.marketType) {
@@ -215,6 +222,14 @@ export default function StrategieProjetPage() {
       try { bpe = await fetchBpeMarket(verified.code); }
       catch (error) { bpeError = error instanceof Error ? error.message : 'BPE indisponible.'; }
     } else bpeError = 'Code INSEE vérifié requis pour collecter la BPE 2025.';
+    if (chosenBrief.marketType === 'logement' && verified) {
+      supply = screeningIsCurrent ? screening?.snapshots.find((item) => item.key === 'logement')?.supply ?? null : null;
+      if (!supply) supply = await fetchMarketSupply(verified.code);
+    }
+    if (chosenBrief.marketType === 'ehpad' && verified) {
+      finess = screeningIsCurrent ? screening?.snapshots.find((item) => item.key === 'ehpad')?.finess ?? null : null;
+      if (!finess) finess = await fetchFinessSupply(verified.code);
+    }
     if (chosenBrief.marketType === 'hotel') {
       if (!verified) hotelError = 'Code INSEE vérifié requis pour collecter les données hôtelières.';
       else {
@@ -233,7 +248,7 @@ export default function StrategieProjetPage() {
 
     const next: Scenario = {
       id: crypto.randomUUID(), programme: chosenBrief.label, parcelId: parcel, address: address.trim(), insee: verified?.code ?? cityCode,
-      surfaceM2: surfaceM2.trim(), pluZone: study?.plu?.zone_code ?? null, pluSource: study?.plu?.source ?? null, pluEnvelope: study?.plu?.ruleset ? extractPluEnvelope(study.plu.ruleset) : null, date: new Date().toISOString(), market, marketError, candidates, operatorError, operatorSearch, codeEpci: verified?.codeEpci ?? null, codeRegion: verified?.codeRegion ?? null, hotelEvidence, hotelError, bpe, bpeError,
+      surfaceM2: surfaceM2.trim(), pluZone: study?.plu?.zone_code ?? null, pluSource: study?.plu?.source ?? null, pluEnvelope: study?.plu?.ruleset ? extractPluEnvelope(study.plu.ruleset) : null, date: new Date().toISOString(), market, marketError, candidates, operatorError, operatorSearch, codeEpci: verified?.codeEpci ?? null, codeRegion: verified?.codeRegion ?? null, hotelEvidence, hotelError, bpe, bpeError, supply, finess,
     };
     save([next, ...scenarios].slice(0, 3));
     setBusy(false);
@@ -284,6 +299,10 @@ export default function StrategieProjetPage() {
           const reason = error instanceof Error ? error.message : 'BPE indisponible.';
           for (const item of snapshots) item.error = [item.error, reason].filter(Boolean).join(' · ');
         }
+        const housing = snapshots.find((item) => item.key === 'logement');
+        if (housing) housing.supply = await fetchMarketSupply(verified.code);
+        const ehpad = snapshots.find((item) => item.key === 'ehpad');
+        if (ehpad) ehpad.finess = await fetchFinessSupply(verified.code);
       }
       if (hotel?.market && verified) {
         try { hotel.hotel = { ...await fetchHotelEvidence(verified.code, verified.codeRegion), codeEpci: verified.codeEpci }; }
@@ -380,7 +399,7 @@ export default function StrategieProjetPage() {
         {latest.hotelError && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{latest.hotelError}</p>}
         <HotelDossierSection evidence={latest.hotelEvidence ?? null} scenarioId={latest.id} />
       </>}
-      {latestType !== 'hotel' && latestSector && <MarketDepthSection snapshot={{ key: latestSector, market: latest.market, error: latest.marketError, bpe: latest.bpe }} />}
+      {latestType !== 'hotel' && latestSector && <MarketDepthSection snapshot={{ key: latestSector, market: latest.market, error: latest.marketError, bpe: latest.bpe, supply: latest.supply, finess: latest.finess }} />}
       {latestType !== 'hotel' && !latestSector && <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-700">
         <h3 className="font-semibold text-slate-900">Étude sectorielle · {latest.programme}</h3>
         {latestReading?.facts.length ? <ul className="mt-3 space-y-2">{latestReading.facts.map((fact) => <li key={fact.label}><strong>{fact.label} : {fact.value}</strong> · {fact.scope} · {fact.sourceUrl ? <a href={fact.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-700 underline">{fact.source}</a> : fact.source}{fact.direct ? '' : ' · contexte seulement'}</li>)}</ul> : <p className="mt-2">Aucun indicateur sectoriel mesuré exploitable dans la réponse collectée.</p>}
