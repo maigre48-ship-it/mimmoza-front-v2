@@ -14,6 +14,7 @@ import './StrategieProjetPage.css';
 import { fetchHotelEvidence, type HotelEvidence } from './hotelMarket';
 import { fetchBpeMarket, type BpeMarket } from './bpeMarket';
 import { readSector, SCREENING_SECTORS, type MarketResult, type SectorKey, type SectorSnapshot } from './sectorScreening';
+import { buildRecommendationPacket, recommendProjectLocally, type ProjectRecommendation } from './projectRecommendation';
 import { PromoteurPageHero } from '../shared/components/PromoteurPageHero';
 import { readUnifiedSelection } from '../shared/promoteurSelectionBridge';
 import { usePromoteurStudy } from '../shared/usePromoteurStudy';
@@ -123,7 +124,7 @@ export default function StrategieProjetPage() {
   const [surfaceM2, setSurfaceM2] = useState('');
   const [programme, setProgramme] = useState('');
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
-  const [screening, setScreening] = useState<{ site: string; date: string; snapshots: SectorSnapshot[] } | null>(null);
+  const [screening, setScreening] = useState<{ site: string; date: string; snapshots: SectorSnapshot[]; recommendation?: ProjectRecommendation | null } | null>(null);
   const [screeningError, setScreeningError] = useState<string | null>(null);
   const [screeningProgress, setScreeningProgress] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -134,6 +135,12 @@ export default function StrategieProjetPage() {
   const studyQuery = studyId ? `?study=${encodeURIComponent(studyId)}` : '';
   const currentSite = [parcelId.trim().toUpperCase(), address.trim(), insee.trim().toUpperCase() || inseeFromParcel(parcelId.trim().toUpperCase()) || '', surfaceM2.trim()].join('|');
   const screeningIsCurrent = screening?.site === currentSite;
+  const recommendationPacket = screening?.recommendation ? buildRecommendationPacket({
+    parcelId: parcelId.trim().toUpperCase(), communeInsee: screening.snapshots.find((item) => item.market?.meta?.commune_insee || item.bpe?.communeInsee)?.market?.meta?.commune_insee
+      || screening.snapshots.find((item) => item.bpe?.communeInsee)?.bpe?.communeInsee || insee.trim().toUpperCase(),
+    terrainM2: Number(surfaceM2.trim().replace(',', '.')), pluZone: study?.plu?.zone_code ?? null, dataDate: screening.date, snapshots: screening.snapshots,
+  }) : null;
+  const recommendationFacts = recommendationPacket?.sectors.flatMap((sector) => sector.facts).filter((fact) => screening?.recommendation?.evidenceIds.includes(fact.id)) ?? [];
   const latestType = latest ? programmeBrief(latest.programme)?.marketType : null;
   const latestSector = latestType && SCREENING_SECTORS.some((sector) => sector.key === latestType) ? latestType as SectorKey : latest?.programme.toLowerCase().includes('clinique') ? 'clinique' : null;
   const latestReading = latest && latestSector ? readSector({ key: latestSector, market: latest.market, error: latest.marketError, hotel: latest.hotelEvidence, bpe: latest.bpe }) : null;
@@ -282,7 +289,11 @@ export default function StrategieProjetPage() {
         catch { hotel.error = 'Séries hôtelières INSEE indisponibles ; seul le contexte transversal a été collecté.'; }
       }
       if (!snapshots.some((item) => item.market || item.bpe)) setScreeningError('Aucune étude sectorielle vérifiée n’a pu être collectée pour ce terrain. Vérifiez la localisation et réessayez.');
-      const next = { site: [parcel, address.trim(), cityCode, surfaceM2.trim()].join('|'), date: new Date().toISOString(), snapshots };
+      const date = new Date().toISOString();
+      const packet = verified ? buildRecommendationPacket({ parcelId: parcel, communeInsee: verified.code,
+        terrainM2: Number(surfaceM2.trim().replace(',', '.')), pluZone: study?.plu?.zone_code ?? null, dataDate: date, snapshots }) : null;
+      const next = { site: [parcel, address.trim(), cityCode, surfaceM2.trim()].join('|'), date, snapshots,
+        recommendation: packet ? recommendProjectLocally(packet) : null };
       setScreening(next);
       userStorage.setItem(screeningKey(studyId), JSON.stringify(next));
     } finally { setBusy(false); }
@@ -320,6 +331,16 @@ export default function StrategieProjetPage() {
       <p className="mt-2 text-sm text-slate-600">Études du {new Date(screening.date).toLocaleDateString('fr-FR')}. Chaque chiffre ci-dessous porte son périmètre. Les données ne sont pas comparables entre usages comme un score unique : aucune rentabilité ni constructibilité n’est déduite.</p>
       <p className="mt-2 text-sm text-slate-700"><strong>Foncier :</strong> {study?.plu?.zone_code ? `zone relevée ${study.plu.zone_code} ; règlement et destinations à confirmer sur les pièces opposables` : 'zone et destinations autorisées non vérifiées dans l’étude active'}.</p>
       {!screeningIsCurrent && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-950">Le terrain ou sa surface a changé depuis cette présélection. Relancez l’exploration avant de sélectionner une piste.</p>}
+      {screeningIsCurrent && screening.recommendation && <div className={`mt-5 rounded-2xl border p-5 ${screening.recommendation.status === 'piste_prioritaire' ? 'border-indigo-300 bg-indigo-50' : 'border-amber-300 bg-amber-50'}`}>
+        <p className="text-xs font-bold uppercase tracking-widest text-indigo-700">Priorité d’instruction · analyse locale</p>
+        <h3 className="mt-1 text-xl font-semibold text-slate-900">{screening.recommendation.projectKey ? `${SCREENING_SECTORS.find((sector) => sector.key === screening.recommendation?.projectKey)?.label} à étudier en premier` : 'Aucune priorité fiable à ce stade'}</h3>
+        <p className="mt-2 text-sm text-slate-800">{screening.recommendation.rationale}</p>
+        {screening.recommendation.projectKey && <><p className="mt-3 text-sm"><strong>Cible à tester :</strong> {screening.recommendation.target}</p><p className="mt-1 text-sm"><strong>Programme initial :</strong> {screening.recommendation.programme}</p></>}
+        {recommendationFacts.length > 0 && <ul className="mt-3 space-y-1 text-xs text-slate-700">{recommendationFacts.map((fact) => <li key={fact.id}>{fact.label} : {fact.value} · {fact.scope} · {fact.sourceUrl ? <a href={fact.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-700 underline">{fact.source}</a> : fact.source}</li>)}</ul>}
+        {screening.recommendation.alternatives.length > 0 && <div className="mt-3 text-sm text-slate-700"><strong>Autres pistes :</strong><ul className="mt-1 list-inside list-disc space-y-1">{screening.recommendation.alternatives.map((alternative) => <li key={alternative.key}>{SCREENING_SECTORS.find((sector) => sector.key === alternative.key)?.label ?? alternative.key} : {alternative.reason}</li>)}</ul></div>}
+        {screening.recommendation.conditions.length > 0 && <p className="mt-3 text-xs text-slate-700"><strong>Pour confirmer ou changer ce choix :</strong> {screening.recommendation.conditions.join(' · ')}.</p>}
+        {screening.recommendation.projectKey && <button type="button" disabled={busy} onClick={() => { const picked = screening.snapshots.find((item) => item.key === screening.recommendation?.projectKey); if (picked) { setProgramme(SCREENING_SECTORS.find((sector) => sector.key === picked.key)?.label ?? picked.key); void analyze(SCREENING_SECTORS.find((sector) => sector.key === picked.key)?.label ?? picked.key, picked.market); } }} className="mt-4 rounded-xl bg-indigo-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Ouvrir le dossier de cette piste</button>}
+      </div>}
       <div className="mt-5 grid gap-4 lg:grid-cols-2">{screening.snapshots.map((snapshot) => {
         const reading = readSector(snapshot);
         return <article key={snapshot.key} className="rounded-2xl border border-slate-200 p-4">
