@@ -8,6 +8,7 @@ export type OperatorCandidate = {
   localActivite?: string | null;
   localSiret?: string | null;
   epci?: string | null;
+  openEstablishments?: number | null;
   url: string;
 };
 

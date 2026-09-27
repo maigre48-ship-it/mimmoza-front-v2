@@ -101,6 +101,7 @@ async function findCandidates(naf: string, insee: string, epci: string | null): 
       localActivite: local?.activite_principale ? String(local.activite_principale) : null,
       localSiret: local?.siret ? String(local.siret) : null,
       epci: local?.epci ? String(local.epci) : null,
+      openEstablishments: typeof item.nombre_etablissements_ouverts === 'number' && Number.isFinite(item.nombre_etablissements_ouverts) ? item.nombre_etablissements_ouverts : null,
       url: `https://annuaire-entreprises.data.gouv.fr/entreprise/${siren}`,
     }];
   });
