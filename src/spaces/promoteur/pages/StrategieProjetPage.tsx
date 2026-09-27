@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, Building2, ExternalLink, Loader2, MapPin, Search, ShieldAlert } from 'lucide-react';
+import { ArrowRight, Building2, Loader2, MapPin, Search, ShieldAlert } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { userStorage } from '@/lib/storage/userScopedStorage';
 import { programmeBrief } from '@/spaces/copilot/dossier/parcelStrategy';
 import { HotelDossierSection } from './HotelDossierSection';
 import { DecisionDossierSection } from './DecisionDossierSection';
+import { OperatorShortlistSection } from './OperatorShortlistSection';
+import type { OperatorCandidate } from './operatorShortlist';
 import { ProgrammeProposalSection } from './ProgrammeProposalSection';
 import { extractPluEnvelope, type PluEnvelope } from './projectProgramme';
 import './StrategieProjetPage.css';
@@ -23,15 +25,6 @@ type MarketResult = {
   warnings?: string[];
 };
 
-type Candidate = {
-  siren: string;
-  nom: string;
-  activite: string;
-  commune: string | null;
-  adresse: string | null;
-  url: string;
-};
-
 type Scenario = {
   id: string;
   programme: string;
@@ -45,8 +38,10 @@ type Scenario = {
   date: string;
   market: MarketResult | null;
   marketError: string | null;
-  candidates: Candidate[];
+  candidates: OperatorCandidate[];
   operatorError: string | null;
+  operatorSearch?: { examined: number; total: number | null };
+  codeEpci?: string | null;
   hotelEvidence?: HotelEvidence | null;
   hotelError?: string | null;
 };
@@ -60,39 +55,56 @@ function inseeFromParcel(id: string): string | null {
   return match?.[1] ?? null;
 }
 
-async function verifyInsee(code: string): Promise<{ code: string; nom: string } | null> {
+async function verifyInsee(code: string): Promise<{ code: string; nom: string; codeEpci: string | null } | null> {
   if (!/^(?:\d{5}|2[AB]\d{3})$/.test(code)) return null;
   try {
-    const response = await fetch(`https://geo.api.gouv.fr/communes/${encodeURIComponent(code)}?fields=nom,code`, { signal: AbortSignal.timeout(8000) });
+    const response = await fetch(`https://geo.api.gouv.fr/communes/${encodeURIComponent(code)}?fields=nom,code,codeEpci`, { signal: AbortSignal.timeout(8000) });
     if (!response.ok) return null;
-    const data = await response.json() as { code?: string; nom?: string };
-    return data.code === code && data.nom ? { code, nom: data.nom } : null;
+    const data = await response.json() as { code?: string; nom?: string; codeEpci?: string };
+    return data.code === code && data.nom ? { code, nom: data.nom, codeEpci: data.codeEpci ?? null } : null;
   } catch { return null; }
 }
 
-async function findCandidates(naf: string, insee: string): Promise<Candidate[]> {
+async function findCandidates(naf: string, insee: string, epci: string | null): Promise<{ candidates: OperatorCandidate[]; examined: number; total: number | null }> {
   const department = /^9[78]/.test(insee) ? insee.slice(0, 3) : insee.slice(0, 2);
-  const url = new URL('https://recherche-entreprises.api.gouv.fr/search');
-  url.searchParams.set('activite_principale', naf);
-  url.searchParams.set('departement', department);
-  url.searchParams.set('etat_administratif', 'A');
-  url.searchParams.set('per_page', '8');
-  const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
-  if (!response.ok) throw new Error('Le registre des entreprises est momentanément indisponible.');
-  const data = await response.json() as { results?: Array<Record<string, unknown>> };
-  return (data.results ?? []).filter((item) => item.etat_administratif === 'A' && /^\d{9}$/.test(String(item.siren ?? ''))).map((item) => {
-    const local = (Array.isArray(item.matching_etablissements) ? item.matching_etablissements : [])
-      .find((entry) => typeof entry === 'object' && entry !== null && (entry as Record<string, unknown>).etat_administratif === 'A' && String((entry as Record<string, unknown>).commune ?? '').startsWith(department)) as Record<string, unknown> | undefined;
+  const page = async (index: number) => {
+    const url = new URL('https://recherche-entreprises.api.gouv.fr/search');
+    url.searchParams.set('activite_principale', naf);
+    url.searchParams.set('departement', department);
+    url.searchParams.set('etat_administratif', 'A');
+    url.searchParams.set('per_page', '25');
+    url.searchParams.set('page', String(index));
+    const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw new Error('Le registre des entreprises est momentanément indisponible.');
+    return await response.json() as { results?: Array<Record<string, unknown>>; total_results?: number };
+  };
+  const first = await page(1);
+  const total = typeof first.total_results === 'number' ? first.total_results : null;
+  const extra = await Promise.allSettled(Array.from({ length: Math.min(3, Math.max(0, Math.ceil((total ?? 25) / 25) - 1)) }, (_, i) => page(i + 2)));
+  const results = [...(first.results ?? []), ...extra.flatMap((entry) => entry.status === 'fulfilled' ? entry.value.results ?? [] : [])];
+  const candidates = results.filter((item) => item.etat_administratif === 'A' && /^\d{9}$/.test(String(item.siren ?? ''))).flatMap((item) => {
+    const locals = (Array.isArray(item.matching_etablissements) ? item.matching_etablissements : [])
+      .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null && (entry as Record<string, unknown>).etat_administratif === 'A' && String((entry as Record<string, unknown>).commune ?? '').startsWith(department));
+    const local = locals.sort((a, b) =>
+      Number(b.commune === insee) - Number(a.commune === insee)
+      || Number(b.epci === epci && epci != null) - Number(a.epci === epci && epci != null)
+      || Number(b.activite_principale === naf) - Number(a.activite_principale === naf))[0];
+    if (!local || (item.activite_principale !== naf && !locals.some((entry) => entry.activite_principale === naf))) return [];
     const siren = String(item.siren);
-    return {
+    return [{
       siren,
       nom: String(item.nom_complet ?? item.nom_raison_sociale ?? siren),
       activite: String(item.activite_principale ?? naf),
       commune: local?.libelle_commune ? String(local.libelle_commune) : null,
       adresse: local?.adresse ? String(local.adresse) : null,
+      communeInsee: local?.commune ? String(local.commune) : null,
+      localActivite: local?.activite_principale ? String(local.activite_principale) : null,
+      localSiret: local?.siret ? String(local.siret) : null,
+      epci: local?.epci ? String(local.epci) : null,
       url: `https://annuaire-entreprises.data.gouv.fr/entreprise/${siren}`,
-    };
-  }).filter((item) => item.commune);
+    }];
+  });
+  return { candidates, examined: results.length, total };
 }
 
 function InfoCard({ label, value, detail }: { label: string; value: string; detail: string }) {
@@ -150,7 +162,8 @@ export default function StrategieProjetPage() {
     let market: MarketResult | null = null;
     let marketError: string | null = null;
     let operatorError: string | null = null;
-    let candidates: Candidate[] = [];
+    let candidates: OperatorCandidate[] = [];
+    let operatorSearch: Scenario['operatorSearch'];
     let hotelEvidence: HotelEvidence | null = null;
     let hotelError: string | null = null;
 
@@ -186,7 +199,7 @@ export default function StrategieProjetPage() {
     if (brief.marketType === 'hotel') {
       if (!verified) hotelError = 'Code INSEE vérifié requis pour collecter les données hôtelières.';
       else {
-        try { hotelEvidence = await fetchHotelEvidence(verified.code); }
+        try { hotelEvidence = { ...await fetchHotelEvidence(verified.code), codeEpci: verified.codeEpci }; }
         catch (error) { hotelError = error instanceof Error ? error.message : 'Données hôtelières indisponibles.'; }
       }
     }
@@ -194,14 +207,14 @@ export default function StrategieProjetPage() {
     if (brief.operatorNaf) {
       if (!verified) operatorError = 'La commune doit être vérifiée par un code INSEE ou une référence cadastrale avant la recherche d’entreprises.';
       else {
-        try { candidates = await findCandidates(brief.operatorNaf, verified.code); }
+        try { const found = await findCandidates(brief.operatorNaf, verified.code, verified.codeEpci); candidates = found.candidates; operatorSearch = { examined: found.examined, total: found.total }; }
         catch (error) { operatorError = error instanceof Error ? error.message : 'Recherche d’entreprises indisponible.'; }
       }
     }
 
     const next: Scenario = {
-      id: crypto.randomUUID(), programme: brief.label, parcelId: parcel, address: address.trim(), insee: cityCode,
-      surfaceM2: surfaceM2.trim(), pluZone: study?.plu?.zone_code ?? null, pluSource: study?.plu?.source ?? null, pluEnvelope: study?.plu?.ruleset ? extractPluEnvelope(study.plu.ruleset) : null, date: new Date().toISOString(), market, marketError, candidates, operatorError, hotelEvidence, hotelError,
+      id: crypto.randomUUID(), programme: brief.label, parcelId: parcel, address: address.trim(), insee: verified?.code ?? cityCode,
+      surfaceM2: surfaceM2.trim(), pluZone: study?.plu?.zone_code ?? null, pluSource: study?.plu?.source ?? null, pluEnvelope: study?.plu?.ruleset ? extractPluEnvelope(study.plu.ruleset) : null, date: new Date().toISOString(), market, marketError, candidates, operatorError, operatorSearch, codeEpci: verified?.codeEpci ?? null, hotelEvidence, hotelError,
     };
     save([next, ...scenarios].slice(0, 3));
     setBusy(false);
@@ -226,7 +239,7 @@ export default function StrategieProjetPage() {
       </div>
       <label className="mt-5 block text-sm font-medium text-slate-700">Programme à étudier<input value={programme} onChange={(event) => setProgramme(event.target.value)} list="strategy-programmes" maxLength={120} placeholder="Hôtel, clinique, supermarché… ou votre propre idée" className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 font-normal" /></label>
       <datalist id="strategy-programmes">{IDEAS.map((idea) => <option key={idea} value={idea} />)}</datalist>
-      {brief && <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-950"><strong>Couverture actuelle :</strong> {brief.marketType === 'hotel' ? 'Offre communale et fréquentation départementale INSEE disponibles. Occupation et prix locaux à relever.' : brief.marketCaveat}<br /><strong>À documenter :</strong> {brief.criticalData}.</div>}
+      {brief && <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-950"><strong>Couverture actuelle :</strong> {brief.marketType === 'hotel' ? 'Offre communale et bassin proche INSEE ; fréquentation départementale. Baromètres d’occupation et de prix disponibles pour les communes du Pays basque couvertes par l’ADT64.' : brief.marketCaveat}<br /><strong>À documenter :</strong> {brief.criticalData}.</div>}
       {formError && <p role="alert" className="mt-4 text-sm text-rose-700">{formError}</p>}
       <button type="button" disabled={busy} onClick={() => void analyze()} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-5 py-3 font-semibold text-white disabled:opacity-60">{busy ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}{busy ? 'Analyse en cours…' : 'Analyser ce programme'}</button>
     </section>
@@ -237,7 +250,7 @@ export default function StrategieProjetPage() {
         <InfoCard label="Terrain étudié" value={latest.parcelId || latest.insee || 'Adresse'} detail={latest.surfaceM2 ? `${latest.surfaceM2} m² cadastraux déclarés · capacité non déduite` : 'Surface cadastrale non fournie'} />
         <InfoCard label="Données sectorielles" value={latest.hotelEvidence?.capacityYear ? 'INSEE documenté' : latest.market ? 'Partielles' : 'Non collectées'} detail={latest.hotelEvidence?.capacityYear ? `Capacité communale ${latest.hotelEvidence.capacityYear}` : latest.hotelError || latest.marketError || 'Vérifications propres au programme requises'} />
         <InfoCard label="Périmètre de marché" value={latest.market?.meta?.commune_nom || 'À confirmer'} detail="Le périmètre de chaque mesure figure dans le dossier" />
-        <InfoCard label="Entreprises repérées" value={String(latest.candidates.length)} detail="Activité et implantation vérifiées ; intérêt non confirmé" />
+        <InfoCard label="Interlocuteurs proposés" value={String(Math.min(8, latest.candidates.length))} detail="Activité et implantation repérées ; intérêt non confirmé" />
       </div>
       <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700"><strong>Cadre foncier :</strong> {latest.pluZone ? `zone PLU ${latest.pluZone} (origine : ${latest.pluSource || 'étude active'})` : 'zone PLU non documentée dans ce dossier'}. Le zonage seul ne prouve pas l’autorisation du programme ; vérifier le règlement opposable, les servitudes et les risques sur la parcelle.</div>
       {programmeBrief(latest.programme)?.marketType === 'hotel' && <>
@@ -252,7 +265,7 @@ export default function StrategieProjetPage() {
       <ProgrammeProposalSection programme={latest.programme} hotel={latest.hotelEvidence ?? null} terrainM2={latest.surfaceM2} pluEnvelope={latest.pluEnvelope ?? null} studyQuery={studyQuery} insee={latest.insee || latest.market?.meta?.commune_insee || ''} />
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><h3 className="font-semibold text-slate-900">Ce qu’il reste à prouver</h3><p className="mt-3 text-sm text-slate-700">{programmeBrief(latest.programme)?.criticalData || 'Demande, offre concurrente et règles propres au programme.'}</p><ul className="mt-4 list-inside list-disc space-y-2 text-sm text-slate-700"><li>Règlement écrit, plans PLU et contraintes applicables à chaque parcelle.</li><li>Accès, stationnement, risques, servitudes et obligations propres à l’exploitation.</li><li>Coûts, recettes et seuils de décision documentés par des sources adaptées.</li></ul><div className="mt-5 flex flex-wrap gap-3"><Link to={`/promoteur/foncier${studyQuery}`} className="inline-flex items-center gap-1 text-sm font-semibold text-indigo-700">Vérifier le foncier <ArrowRight size={15} /></Link><Link to={`/promoteur/marche${studyQuery}`} className="inline-flex items-center gap-1 text-sm font-semibold text-indigo-700">Ouvrir l’étude de marché <ArrowRight size={15} /></Link></div></div>
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7"><h3 className="font-semibold text-slate-900">Exploitants à qualifier</h3><p className="mt-2 text-sm text-slate-500">Registre Sirene via l’API Recherche d’entreprises. Une présence dans le département ne prouve ni intérêt, ni capacité à reprendre le projet.</p>{latest.operatorError && <p className="mt-3 text-sm text-amber-800">{latest.operatorError}</p>}{latest.candidates.length ? <ul className="mt-4 max-h-80 space-y-3 overflow-auto">{latest.candidates.map((candidate) => <li key={candidate.siren} className="rounded-xl border border-slate-200 p-3"><a href={candidate.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-indigo-700">{candidate.nom}<ExternalLink size={14} /></a><p className="mt-1 text-xs text-slate-600">SIREN {candidate.siren} · NAF {candidate.activite}{candidate.commune ? ` · ${candidate.commune}` : ''}</p></li>)}</ul> : <p className="mt-4 text-sm text-slate-600">{programmeBrief(latest.programme)?.operatorNaf ? 'Aucune entreprise présentable avec les données disponibles.' : 'Définir d’abord la catégorie d’exploitant et son activité pour rechercher des sociétés précises.'}</p>}</div>
+        <OperatorShortlistSection key={latest.id} candidates={latest.candidates} scenarioId={latest.id} insee={latest.insee} epci={latest.codeEpci ?? null} naf={programmeBrief(latest.programme)?.operatorNaf ?? null} error={latest.operatorError} examined={latest.operatorSearch?.examined} total={latest.operatorSearch?.total ?? undefined} />
       </div>
       <DecisionDossierSection scenarios={scenarios} studyId={studyId} onRemoveScenario={(id) => save(scenarios.filter((item) => item.id !== id))} />
       <p className="flex items-start gap-2 rounded-xl bg-slate-100 p-4 text-sm text-slate-700"><ShieldAlert className="mt-0.5 shrink-0" size={18} />L’architecture, les matériaux, les couleurs et les services restent des hypothèses de conception tant que les règles opposables et la demande propre au programme ne sont pas établies.</p>

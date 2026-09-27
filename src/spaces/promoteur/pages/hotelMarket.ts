@@ -11,6 +11,7 @@ export type HotelCapacity = { ranking: string; hotels: number | null; rooms: num
 export type HotelMonth = { month: string; nights: number | null; occupancyPct: number | null };
 export type HotelEvidence = {
   communeInsee: string;
+  codeEpci?: string | null;
   department: string;
   capacityYear: number | null;
   frequencyYear: number | null;

@@ -26,3 +26,11 @@ test('la résidence en France ne devient jamais une preuve de séjour de loisirs
   assert.doesNotMatch(proposal.title, /loisirs/);
   assert.match(proposal.reasons[0], /loisirs, affaires ou autre/);
 });
+
+test('la piste loisirs du Pays basque reste une hypothèse de destination', () => {
+  const hotel = { codeEpci: '200067106', nonResidentSharePct: 21.9, frequencyYear: 2025, months: [] } as Parameters<typeof targetProposal>[1];
+  const proposal = targetProposal('hotel', hotel);
+  assert.match(proposal.title, /à tester/);
+  assert.match(proposal.reasons[0], /non une part de marché acquise/);
+  assert.match(proposal.reasons[2], /ne mesure pas le motif/);
+});
