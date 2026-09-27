@@ -9,9 +9,18 @@ type Observation = {
 
 export type HotelCapacity = { ranking: string; hotels: number | null; rooms: number | null };
 export type HotelMonth = { month: string; nights: number | null; occupancyPct: number | null };
+export type HotelRegionalDemand = {
+  regionCode: string;
+  year: number;
+  totalNights: number;
+  rankings: { ranking: 'NC' | '1T2' | '3' | '4T5'; nights: number }[];
+  sourceUrl: string;
+};
 export type HotelEvidence = {
   communeInsee: string;
   codeEpci?: string | null;
+  codeRegion?: string | null;
+  regionalDemand?: HotelRegionalDemand | null;
   department: string;
   capacityYear: number | null;
   frequencyYear: number | null;
@@ -84,8 +93,28 @@ export function parseHotelAnnual(observations: Observation[]): { nights: number 
   return { nights: n == null || nights?.attributes?.UNIT_MULT !== '3' ? null : n * 1000, nonResidentSharePct: share?.attributes?.UNIT_MULT === '0' ? observationValue(share) : null };
 }
 
+/** Les catégories NC, 1-2, 3 et 4-5 sont disjointes ; C est un sous-total à exclure. */
+export function parseRegionalHotelDemand(observations: Observation[], regionCode: string, year: number, sourceUrl: string): HotelRegionalDemand | null {
+  const rows = observations.filter((item) => item.dimensions?.ACTIVITY === 'I551'
+    && item.dimensions?.FREQ === 'A' && item.dimensions?.TIME_PERIOD === String(year)
+    && item.dimensions?.TOUR_RESID === '_T' && item.dimensions?.TOUR_MEASURE === 'NIGHT_SPENT');
+  const nights = (ranking: string): number | null => {
+    const item = rows.find((row) => row.dimensions?.UNIT_LOC_RANKING === ranking
+      && (row.dimensions?.GEO === `REG-${regionCode}` || /^\d{4}-REG-\d{2}$/.test(row.dimensions?.GEO ?? '') && row.dimensions?.GEO?.endsWith(`REG-${regionCode}`)));
+    const value = item ? observationValue(item) : null;
+    return value == null || item?.attributes?.UNIT_MULT !== '3' ? null : value * 1000;
+  };
+  const totalNights = nights('_T');
+  if (totalNights == null || totalNights <= 0) return null;
+  const rankings = (['NC', '1T2', '3', '4T5'] as const).flatMap((ranking) => {
+    const value = nights(ranking);
+    return value == null ? [] : [{ ranking, nights: value }];
+  });
+  return { regionCode, year, totalNights, rankings, sourceUrl };
+}
+
 /** Offre communale et fréquentation départementale : aucun classement de programme. */
-export async function fetchHotelEvidence(insee: string): Promise<HotelEvidence> {
+export async function fetchHotelEvidence(insee: string, codeRegion?: string | null): Promise<HotelEvidence> {
   if (!/^(?:\d{5}|2[AB]\d{3})$/.test(insee)) throw new Error('Code INSEE vérifié requis pour l’étude hôtelière.');
   const department = departmentFromInsee(insee);
   const currentYear = new Date().getFullYear();
@@ -99,6 +128,7 @@ export async function fetchHotelEvidence(insee: string): Promise<HotelEvidence> 
   let annualNights: number | null = null;
   let previousAnnualNights: number | null = null;
   let nonResidentSharePct: number | null = null;
+  let regionalDemand: HotelRegionalDemand | null = null;
   const missing: string[] = [];
 
   for (const year of [currentYear, currentYear - 1]) {
@@ -152,6 +182,22 @@ export async function fetchHotelEvidence(insee: string): Promise<HotelEvidence> 
       previousAnnualNights = prior.data.nights;
     } catch { missing.push('Comparaison annuelle ou origine des nuitées indisponible.'); }
   }
+  if (codeRegion && /^(?:\d{2})$/.test(codeRegion)) {
+    for (const year of [...new Set([frequencyYear, currentYear - 1, currentYear - 2].filter((value): value is number => value != null))]) {
+      const url = new URL('https://api.insee.fr/melodi/data/DS_TOUR_FREQ');
+      url.searchParams.set('GEO', `REG-${codeRegion}`);
+      url.searchParams.set('ACTIVITY', 'I551');
+      url.searchParams.set('FREQ', 'A');
+      url.searchParams.set('TOUR_RESID', '_T');
+      url.searchParams.set('TIME_PERIOD', String(year));
+      url.searchParams.set('maxResult', '100');
+      try {
+        regionalDemand = parseRegionalHotelDemand(await readMelodi(url), codeRegion, year, url.toString());
+        if (regionalDemand) break;
+      } catch { /* source ou millésime indisponible */ }
+    }
+    if (!regionalDemand) missing.push('Répartition régionale des nuitées par classement indisponible.');
+  }
   let basin: HotelBasin | null = null;
   if (capacityYear) {
     try {
@@ -159,7 +205,7 @@ export async function fetchHotelEvidence(insee: string): Promise<HotelEvidence> 
       if (basin.measuredCommunes < basin.selectedCommunes) missing.push(`Offre locale partielle : ${basin.measuredCommunes} communes sur ${basin.selectedCommunes} renseignées.`);
     } catch { missing.push('Offre hôtelière des communes proches indisponible.'); }
   }
-  return { communeInsee: insee, department, capacityYear, frequencyYear, capacity, months, annualNights, previousAnnualNights, nonResidentSharePct, annualUrl, capacityUrl, frequencyUrl, basin, missing, fetchedAt: new Date().toISOString() };
+  return { communeInsee: insee, codeRegion, department, capacityYear, frequencyYear, capacity, months, annualNights, previousAnnualNights, nonResidentSharePct, annualUrl, capacityUrl, frequencyUrl, regionalDemand, basin, missing, fetchedAt: new Date().toISOString() };
 }
 
 export type HotelAssumptions = { rooms: string; adr: string; occupancy: string; variableCost: string; fixedCosts: string; investment: string };

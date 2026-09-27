@@ -34,3 +34,10 @@ test('la piste loisirs du Pays basque reste une hypothèse de destination', () =
   assert.match(proposal.reasons[0], /non une part de marché acquise/);
   assert.match(proposal.reasons[2], /ne mesure pas le motif/);
 });
+
+test('la part d’affaires départementale éclaire la cible sans attribuer la demande au terrain', () => {
+  const hotel = { codeRegion: '84', department: '42', nonResidentSharePct: 22, frequencyYear: 2025, months: [] } as Parameters<typeof targetProposal>[1];
+  const proposal = targetProposal('hotel', hotel);
+  assert.match(proposal.reasons[1], /56 % des nuitées hôtelières/);
+  assert.match(proposal.reasons[1], /sans conclure pour ce terrain/);
+});

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { calculateHotelEconomics, parseHotelAnnual, parseHotelCapacity, parseHotelMonths } from './hotelMarket.ts';
+import { calculateHotelEconomics, parseHotelAnnual, parseHotelCapacity, parseHotelMonths, parseRegionalHotelDemand } from './hotelMarket.ts';
+import { hotelTerritorialSignals } from './hotelTerritorialSignals.ts';
 
 test('offre hôtelière : sépare établissements, chambres et classement', () => {
   const rows = [
@@ -39,4 +40,18 @@ test('bilan annuel : lit les nuitées et la part de clientèle non résidente sa
     { dimensions: { ACTIVITY: 'I551', FREQ: 'A', TOUR_MEASURE: 'PT_NIGHTSPENT_NON_RESIDENT' }, attributes: { UNIT_MULT: '0' }, measures: { OBS_VALUE_NIVEAU: { value: 21.9 } } },
   ];
   assert.deepEqual(parseHotelAnnual(rows), { nights: 2790000, nonResidentSharePct: 21.9 });
+});
+
+test('ventilation régionale : ignore le sous-total classé et respecte géographie, année et unité', () => {
+  const row = (ranking: string, value: number, geo = '2026-REG-75', unit = '3') => ({ dimensions: { ACTIVITY: 'I551', FREQ: 'A', TIME_PERIOD: '2025', TOUR_RESID: '_T', TOUR_MEASURE: 'NIGHT_SPENT', GEO: geo, UNIT_LOC_RANKING: ranking }, attributes: { UNIT_MULT: unit }, measures: { OBS_VALUE_NIVEAU: { value } } });
+  const parsed = parseRegionalHotelDemand([row('_T', 100), row('C', 85), row('NC', 15), row('1T2', 20), row('3', 40), row('4T5', 25), row('_T', 999, 'REG-84')], '75', 2025, 'https://example.test');
+  assert.equal(parsed?.totalNights, 100000);
+  assert.deepEqual(parsed?.rankings.map((item) => item.nights), [15000, 20000, 40000, 25000]);
+  assert.equal(parseRegionalHotelDemand([row('_T', 100, 'REG-75', '0')], '75', 2025, 'https://example.test'), null);
+});
+
+test('observatoires territoriaux : une donnée départementale ne fuit pas vers une autre région', () => {
+  assert.equal(hotelTerritorialSignals('84', '69')[0].value, '28 %');
+  assert.equal(hotelTerritorialSignals('75', '69').length, 0);
+  assert.equal(hotelTerritorialSignals('53', '35')[0].perimeter, 'Bretagne');
 });

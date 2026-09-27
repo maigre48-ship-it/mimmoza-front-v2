@@ -1,4 +1,5 @@
 import type { HotelEvidence } from './hotelMarket';
+import { hotelTerritorialSignals } from './hotelTerritorialSignals.ts';
 
 export type ProgrammeKind = 'hotel' | 'housing' | 'ehpad' | 'clinic' | 'retail' | 'office' | 'student' | 'other';
 export type PluEnvelope = { cesRatio: number | null; heightM: number | null; parkingPerHousing: number | null; notes: string[] };
@@ -56,6 +57,8 @@ export function targetProposal(kind: ProgrammeKind, hotel: HotelEvidence | null)
     const resident = share == null ? null : Math.round((100 - share) * 10) / 10;
     const peak = hotel?.months.reduce((best, month) => month.nights != null && (best == null || month.nights > best.nights!) ? month : best, null as typeof hotel.months[number] | null);
     const basque = hotel?.codeEpci === '200067106';
+    const businessSignal = hotelTerritorialSignals(hotel?.codeRegion, hotel?.department ?? '')
+      .find((signal) => signal.label === 'Nuitées d’affaires');
     return {
       title: basque ? 'Piste prioritaire à tester : séjours de loisirs au Pays basque' : resident != null ? 'Signal départemental : résidents en France ; motif du séjour inconnu' : 'Clientèle cible à établir avant de choisir le standing',
       reasons: basque ? [
@@ -63,7 +66,8 @@ export function targetProposal(kind: ProgrammeKind, hotel: HotelEvidence | null)
         'Les baromètres hôteliers ADT64 publient occupation et prix par mois sur un échantillon d’établissements. Ils permettent de tester plusieurs saisons, sans valider le prix ou le remplissage du projet.',
         resident != null ? `${resident} % des nuitées hôtelières du département proviennent de résidents en France (${hotel?.frequencyYear}) ; cette statistique ne mesure pas le motif de séjour au Pays basque.` : 'L’origine des nuitées départementales n’est pas disponible.',
       ] : resident != null ? [
-        `${resident} % des nuitées hôtelières du département proviennent de personnes résidant en France (${hotel?.frequencyYear}). Leur motif (loisirs, affaires ou autre) n’est pas mesuré ici, ni leur présence à Ascain.`,
+        `${resident} % des nuitées hôtelières du département proviennent de personnes résidant en France (${hotel?.frequencyYear}). Leur motif (loisirs, affaires ou autre) n’est pas mesuré ici, ni leur présence sur la parcelle étudiée.`,
+        ...(businessSignal ? [`${businessSignal.value} des nuitées hôtelières sont liées aux affaires (${businessSignal.perimeter}, ${businessSignal.year}, ${businessSignal.source}). Ce signal justifie de tester une offre semaine et des comptes entreprises, sans conclure pour ce terrain.`] : []),
         peak?.nights != null ? `Le pic départemental de fréquentation est en ${peak.month}. Il impose de tester le modèle hors saison et les charges fixes.` : 'La saisonnalité locale reste à mesurer.',
       ] : ['La répartition de clientèle par origine n’est pas encore disponible ; aucune cible dominante ne peut être prouvée.'],
       programme: ['Tester plusieurs mixes de chambres seulement après mesure des profils et réservations comparables.', 'Tester petit déjeuner, accueil flexible et services de séjour selon enquêtes clients et coût d’exploitation.', 'Dimensionner la restauration, le parking et les espaces communs seulement après étude d’usage et règles ERP/PLU.'],

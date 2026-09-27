@@ -42,6 +42,7 @@ type Scenario = {
   operatorError: string | null;
   operatorSearch?: { examined: number; total: number | null };
   codeEpci?: string | null;
+  codeRegion?: string | null;
   hotelEvidence?: HotelEvidence | null;
   hotelError?: string | null;
 };
@@ -55,13 +56,13 @@ function inseeFromParcel(id: string): string | null {
   return match?.[1] ?? null;
 }
 
-async function verifyInsee(code: string): Promise<{ code: string; nom: string; codeEpci: string | null } | null> {
+async function verifyInsee(code: string): Promise<{ code: string; nom: string; codeEpci: string | null; codeRegion: string | null } | null> {
   if (!/^(?:\d{5}|2[AB]\d{3})$/.test(code)) return null;
   try {
-    const response = await fetch(`https://geo.api.gouv.fr/communes/${encodeURIComponent(code)}?fields=nom,code,codeEpci`, { signal: AbortSignal.timeout(8000) });
+    const response = await fetch(`https://geo.api.gouv.fr/communes/${encodeURIComponent(code)}?fields=nom,code,codeEpci,codeRegion`, { signal: AbortSignal.timeout(8000) });
     if (!response.ok) return null;
-    const data = await response.json() as { code?: string; nom?: string; codeEpci?: string };
-    return data.code === code && data.nom ? { code, nom: data.nom, codeEpci: data.codeEpci ?? null } : null;
+    const data = await response.json() as { code?: string; nom?: string; codeEpci?: string; codeRegion?: string };
+    return data.code === code && data.nom ? { code, nom: data.nom, codeEpci: data.codeEpci ?? null, codeRegion: data.codeRegion ?? null } : null;
   } catch { return null; }
 }
 
@@ -200,7 +201,7 @@ export default function StrategieProjetPage() {
     if (brief.marketType === 'hotel') {
       if (!verified) hotelError = 'Code INSEE vérifié requis pour collecter les données hôtelières.';
       else {
-        try { hotelEvidence = { ...await fetchHotelEvidence(verified.code), codeEpci: verified.codeEpci }; }
+        try { hotelEvidence = { ...await fetchHotelEvidence(verified.code, verified.codeRegion), codeEpci: verified.codeEpci }; }
         catch (error) { hotelError = error instanceof Error ? error.message : 'Données hôtelières indisponibles.'; }
       }
     }
@@ -215,7 +216,7 @@ export default function StrategieProjetPage() {
 
     const next: Scenario = {
       id: crypto.randomUUID(), programme: brief.label, parcelId: parcel, address: address.trim(), insee: verified?.code ?? cityCode,
-      surfaceM2: surfaceM2.trim(), pluZone: study?.plu?.zone_code ?? null, pluSource: study?.plu?.source ?? null, pluEnvelope: study?.plu?.ruleset ? extractPluEnvelope(study.plu.ruleset) : null, date: new Date().toISOString(), market, marketError, candidates, operatorError, operatorSearch, codeEpci: verified?.codeEpci ?? null, hotelEvidence, hotelError,
+      surfaceM2: surfaceM2.trim(), pluZone: study?.plu?.zone_code ?? null, pluSource: study?.plu?.source ?? null, pluEnvelope: study?.plu?.ruleset ? extractPluEnvelope(study.plu.ruleset) : null, date: new Date().toISOString(), market, marketError, candidates, operatorError, operatorSearch, codeEpci: verified?.codeEpci ?? null, codeRegion: verified?.codeRegion ?? null, hotelEvidence, hotelError,
     };
     save([next, ...scenarios].slice(0, 3));
     setBusy(false);
