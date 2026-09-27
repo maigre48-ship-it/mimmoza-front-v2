@@ -12,6 +12,7 @@ import { ProgrammeProposalSection } from './ProgrammeProposalSection';
 import { extractPluEnvelope, type PluEnvelope } from './projectProgramme';
 import './StrategieProjetPage.css';
 import { fetchHotelEvidence, type HotelEvidence } from './hotelMarket';
+import { fetchBpeMarket, type BpeMarket } from './bpeMarket';
 import { readSector, SCREENING_SECTORS, type MarketResult, type SectorKey, type SectorSnapshot } from './sectorScreening';
 import { PromoteurPageHero } from '../shared/components/PromoteurPageHero';
 import { readUnifiedSelection } from '../shared/promoteurSelectionBridge';
@@ -38,6 +39,8 @@ type Scenario = {
   codeRegion?: string | null;
   hotelEvidence?: HotelEvidence | null;
   hotelError?: string | null;
+  bpe?: BpeMarket | null;
+  bpeError?: string | null;
 };
 
 const IDEAS = ['Logements', 'Hôtel', 'EHPAD', 'Clinique', 'Supermarché', 'Bureaux', 'Résidence étudiante'];
@@ -133,7 +136,7 @@ export default function StrategieProjetPage() {
   const screeningIsCurrent = screening?.site === currentSite;
   const latestType = latest ? programmeBrief(latest.programme)?.marketType : null;
   const latestSector = latestType && SCREENING_SECTORS.some((sector) => sector.key === latestType) ? latestType as SectorKey : latest?.programme.toLowerCase().includes('clinique') ? 'clinique' : null;
-  const latestReading = latest && latestSector ? readSector({ key: latestSector, market: latest.market, error: latest.marketError, hotel: latest.hotelEvidence }) : null;
+  const latestReading = latest && latestSector ? readSector({ key: latestSector, market: latest.market, error: latest.marketError, hotel: latest.hotelEvidence, bpe: latest.bpe }) : null;
 
   useEffect(() => {
     try {
@@ -176,6 +179,7 @@ export default function StrategieProjetPage() {
     const cityCode = insee.trim().toUpperCase() || inseeFromParcel(parcel)
       || (screeningIsCurrent ? screening?.snapshots.find((item) => item.market?.meta?.commune_insee)?.market?.meta?.commune_insee : null) || '';
     if (!parcel && !address.trim() && !cityCode) { setFormError('Indiquez une parcelle, une adresse ou un code INSEE.'); return; }
+    if (inseeFromParcel(parcel) && cityCode && inseeFromParcel(parcel) !== cityCode) { setFormError('La référence cadastrale et le code INSEE désignent deux communes différentes. Corrigez la localisation.'); return; }
     setBusy(true); setFormError(null);
     let market: MarketResult | null = null;
     let marketError: string | null = null;
@@ -184,6 +188,8 @@ export default function StrategieProjetPage() {
     let operatorSearch: Scenario['operatorSearch'];
     let hotelEvidence: HotelEvidence | null = null;
     let hotelError: string | null = null;
+    let bpe: BpeMarket | null = null;
+    let bpeError: string | null = null;
 
     if (cachedMarket) market = cachedMarket;
     else if (chosenBrief.marketType) {
@@ -197,6 +203,10 @@ export default function StrategieProjetPage() {
     }
 
     const verified = await verifyInsee(market?.meta?.commune_insee || cityCode);
+    if (verified) {
+      try { bpe = await fetchBpeMarket(verified.code); }
+      catch (error) { bpeError = error instanceof Error ? error.message : 'BPE indisponible.'; }
+    } else bpeError = 'Code INSEE vérifié requis pour collecter la BPE 2025.';
     if (chosenBrief.marketType === 'hotel') {
       if (!verified) hotelError = 'Code INSEE vérifié requis pour collecter les données hôtelières.';
       else {
@@ -215,7 +225,7 @@ export default function StrategieProjetPage() {
 
     const next: Scenario = {
       id: crypto.randomUUID(), programme: chosenBrief.label, parcelId: parcel, address: address.trim(), insee: verified?.code ?? cityCode,
-      surfaceM2: surfaceM2.trim(), pluZone: study?.plu?.zone_code ?? null, pluSource: study?.plu?.source ?? null, pluEnvelope: study?.plu?.ruleset ? extractPluEnvelope(study.plu.ruleset) : null, date: new Date().toISOString(), market, marketError, candidates, operatorError, operatorSearch, codeEpci: verified?.codeEpci ?? null, codeRegion: verified?.codeRegion ?? null, hotelEvidence, hotelError,
+      surfaceM2: surfaceM2.trim(), pluZone: study?.plu?.zone_code ?? null, pluSource: study?.plu?.source ?? null, pluEnvelope: study?.plu?.ruleset ? extractPluEnvelope(study.plu.ruleset) : null, date: new Date().toISOString(), market, marketError, candidates, operatorError, operatorSearch, codeEpci: verified?.codeEpci ?? null, codeRegion: verified?.codeRegion ?? null, hotelEvidence, hotelError, bpe, bpeError,
     };
     save([next, ...scenarios].slice(0, 3));
     setBusy(false);
@@ -225,6 +235,7 @@ export default function StrategieProjetPage() {
     const parcel = parcelId.trim().toUpperCase();
     const cityCode = insee.trim().toUpperCase() || inseeFromParcel(parcel) || '';
     if (!parcel && !address.trim() && !cityCode) { setFormError('Indiquez une parcelle, une adresse ou un code INSEE.'); return; }
+    if (inseeFromParcel(parcel) && cityCode && inseeFromParcel(parcel) !== cityCode) { setFormError('La référence cadastrale et le code INSEE désignent deux communes différentes. Corrigez la localisation.'); return; }
     if (!Number.isFinite(Number(surfaceM2.trim().replace(',', '.'))) || Number(surfaceM2.trim().replace(',', '.')) <= 0) {
       setFormError('Indiquez la surface positive du terrain pour comparer les projets.'); return;
     }
@@ -257,11 +268,20 @@ export default function StrategieProjetPage() {
       }
       const hotel = snapshots.find((item) => item.key === 'hotel');
       const verified = await verifyInsee(resolvedCode);
+      if (verified) {
+        try {
+          const bpe = await fetchBpeMarket(verified.code);
+          for (const item of snapshots) item.bpe = bpe;
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : 'BPE indisponible.';
+          for (const item of snapshots) item.error = [item.error, reason].filter(Boolean).join(' · ');
+        }
+      }
       if (hotel?.market && verified) {
         try { hotel.hotel = { ...await fetchHotelEvidence(verified.code, verified.codeRegion), codeEpci: verified.codeEpci }; }
         catch { hotel.error = 'Séries hôtelières INSEE indisponibles ; seul le contexte transversal a été collecté.'; }
       }
-      if (!snapshots.some((item) => item.market)) setScreeningError('Aucune étude sectorielle vérifiée n’a pu être collectée pour ce terrain. Vérifiez la localisation et réessayez.');
+      if (!snapshots.some((item) => item.market || item.bpe)) setScreeningError('Aucune étude sectorielle vérifiée n’a pu être collectée pour ce terrain. Vérifiez la localisation et réessayez.');
       const next = { site: [parcel, address.trim(), cityCode, surfaceM2.trim()].join('|'), date: new Date().toISOString(), snapshots };
       setScreening(next);
       userStorage.setItem(screeningKey(studyId), JSON.stringify(next));
@@ -285,7 +305,7 @@ export default function StrategieProjetPage() {
         <label className="text-sm font-medium text-slate-700">Code INSEE de la commune<input value={insee} onChange={(event) => setInsee(event.target.value)} placeholder="Ex. 64065" maxLength={5} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 font-normal" /></label>
         <label className="text-sm font-medium text-slate-700">Surface du terrain (m²)<input value={surfaceM2} onChange={(event) => setSurfaceM2(event.target.value)} inputMode="decimal" placeholder="Facultatif — surface cadastrale" className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 font-normal" /></label>
       </div>
-      <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4"><h3 className="font-semibold text-indigo-950">Partir du terrain, sans choisir un programme</h3><p className="mt-1 text-sm text-indigo-900">Mimmoza lance les études disponibles pour six usages et présente aussi les données manquantes pour une clinique. La présélection propose des cibles à tester ; le choix final exige la faisabilité et les bilans.</p><button type="button" disabled={busy} onClick={() => void screenSite()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-5 py-3 font-semibold text-white disabled:opacity-60">{busy ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}{busy ? `Études en cours · ${screeningProgress}/7` : 'Explorer les projets possibles'}</button></div>
+      <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4"><h3 className="font-semibold text-indigo-950">Partir du terrain, sans choisir un programme</h3><p className="mt-1 text-sm text-indigo-900">Mimmoza croise les études disponibles pour six usages avec les dénombrements officiels BPE 2025. Pour la clinique, la BPE décrit l’offre de soins existante, sans mesurer les besoins par spécialité ni les autorisations. Le choix final exige la faisabilité et les bilans.</p><button type="button" disabled={busy} onClick={() => void screenSite()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-5 py-3 font-semibold text-white disabled:opacity-60">{busy ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}{busy ? `Études en cours · ${screeningProgress}/7` : 'Explorer les projets possibles'}</button></div>
       <label className="mt-5 block text-sm font-medium text-slate-700">Ou étudier directement un programme<input value={programme} onChange={(event) => setProgramme(event.target.value)} list="strategy-programmes" maxLength={120} placeholder="Hôtel, clinique, supermarché… ou votre propre idée" className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 font-normal" /></label>
       <datalist id="strategy-programmes">{IDEAS.map((idea) => <option key={idea} value={idea} />)}</datalist>
       {brief && <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-950"><strong>Couverture actuelle :</strong> {brief.marketType === 'hotel' ? 'Offre communale et bassin proche INSEE, fréquentation départementale et éclairages régionaux sur tout le territoire. Occupation et prix locaux disponibles pour les communes du Pays basque couvertes par l’ADT64.' : brief.marketCaveat}<br /><strong>À documenter :</strong> {brief.criticalData}.</div>}
@@ -318,7 +338,7 @@ export default function StrategieProjetPage() {
       <div><p className="text-xs font-bold uppercase tracking-widest text-indigo-600">02 · Examiner</p><h2 id="strategy-result-title" className="mt-1 text-2xl font-semibold text-slate-900">{latest.programme}</h2><p className="text-sm text-slate-500">Analyse du {new Date(latest.date).toLocaleDateString('fr-FR')} · {latest.address || latest.parcelId || latest.insee}</p></div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <InfoCard label="Terrain étudié" value={latest.parcelId || latest.insee || 'Adresse'} detail={latest.surfaceM2 ? `${latest.surfaceM2} m² cadastraux déclarés · capacité non déduite` : 'Surface cadastrale non fournie'} />
-        <InfoCard label="Données sectorielles" value={latest.hotelEvidence?.capacityYear ? 'INSEE documenté' : latest.market ? 'Partielles' : 'Non collectées'} detail={latest.hotelEvidence?.capacityYear ? `Capacité communale ${latest.hotelEvidence.capacityYear}` : latest.hotelError || latest.marketError || 'Vérifications propres au programme requises'} />
+        <InfoCard label="Données sectorielles" value={latest.hotelEvidence?.capacityYear ? 'INSEE documenté' : latest.market || latest.bpe ? 'Partielles' : 'Non collectées'} detail={latest.hotelEvidence?.capacityYear ? `Capacité communale ${latest.hotelEvidence.capacityYear}` : latest.bpe ? `Offre BPE ${latest.bpe.year} · demande du projet à vérifier` : latest.bpeError || latest.hotelError || latest.marketError || 'Vérifications propres au programme requises'} />
         <InfoCard label="Périmètre de marché" value={latest.market?.meta?.commune_nom || 'À confirmer'} detail="Le périmètre de chaque mesure figure dans le dossier" />
         <InfoCard label="Interlocuteurs proposés" value={String(Math.min(8, latest.candidates.length))} detail="Activité et implantation repérées ; intérêt non confirmé" />
       </div>

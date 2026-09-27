@@ -41,3 +41,23 @@ test('l’EHPAD ne traite pas des lits estimés comme une capacité FINESS certi
   assert.equal(result.facts[1].direct, false);
   assert.equal(result.facts.some((fact) => /Lits/.test(fact.label)), false);
 });
+
+test('la clinique affiche une offre BPE datée sans prétendre mesurer la demande ni les autorisations', () => {
+  const clinic = readSector({ key: 'clinique', market: null, error: null, bpe: {
+    year: 2025, communeInsee: '64065', department: '64', commune: {}, departmentCounts: { D101: 22, D102: 9 },
+    communeUrl: 'https://api.insee.fr/melodi/data/DS_BPE?GEO=COM-64065', departmentUrl: 'https://api.insee.fr/melodi/data/DS_BPE?GEO=DEP-64', fetchedAt: '2026-09-27',
+  } });
+  assert.deepEqual(clinic.facts.map((fact) => fact.value), ['22', '9']);
+  assert.ok(clinic.facts.every((fact) => fact.scope.includes('Département 64 · 2025') && !fact.direct));
+  assert.equal(clinic.status, 'insuffisant');
+});
+
+test('l’EHPAD conserve le libellé large de la BPE et le périmètre communal', () => {
+  const ehpad = readSector({ key: 'ehpad', market: null, error: null, bpe: {
+    year: 2025, communeInsee: '64065', department: '64', commune: { D401: 1 }, departmentCounts: { D401: 134 },
+    communeUrl: 'https://api.insee.fr/melodi/data/DS_BPE?GEO=COM-64065', departmentUrl: 'https://api.insee.fr/melodi/data/DS_BPE?GEO=DEP-64', fetchedAt: '2026-09-27',
+  } });
+  assert.equal(ehpad.facts[0].label, 'Hébergements pour personnes âgées');
+  assert.equal(ehpad.facts[0].scope, 'Commune 64065 · 2025');
+  assert.equal(ehpad.status, 'insuffisant');
+});

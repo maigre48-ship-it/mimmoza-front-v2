@@ -1,4 +1,5 @@
 import type { HotelEvidence } from './hotelMarket.ts';
+import { BPE_TYPES, type BpeMarket } from './bpeMarket.ts';
 
 export type SectorKey = 'logement' | 'hotel' | 'ehpad' | 'commerce' | 'bureaux' | 'residence_etudiante' | 'clinique';
 export type MarketResult = {
@@ -13,7 +14,7 @@ export type MarketResult = {
   specific?: Record<string, unknown> | null;
   warnings?: string[];
 };
-export type SectorSnapshot = { key: SectorKey; market: MarketResult | null; error: string | null; hotel?: HotelEvidence | null };
+export type SectorSnapshot = { key: SectorKey; market: MarketResult | null; error: string | null; hotel?: HotelEvidence | null; bpe?: BpeMarket | null };
 export type SectorFact = { label: string; value: string; scope: string; source: string; sourceUrl?: string; direct: boolean };
 export type SectorReading = {
   key: SectorKey; label: string; target: string; programme: string;
@@ -58,8 +59,17 @@ export function readSector(snapshot: SectorSnapshot): SectorReading {
   const spec = market?.specific;
   const insee = market?.core?.insee;
   const dvf = market?.core?.dvf;
-  const commune = market?.meta?.commune_insee ?? 'non vérifiée';
+  const commune = market?.meta?.commune_insee ?? snapshot.bpe?.communeInsee ?? 'non vérifiée';
   const communeScope = `Commune ${commune}`;
+  const bpe = snapshot.bpe?.communeInsee === commune ? snapshot.bpe : null;
+  const pushBpe = (type: keyof typeof BPE_TYPES) => {
+    if (!bpe) return;
+    const local = bpe.commune[type];
+    const count = local ?? bpe.departmentCounts[type];
+    if (count == null) return;
+    facts.push({ label: BPE_TYPES[type], value: fmt(count), scope: local != null ? `Commune ${commune} · ${bpe.year}` : `Département ${bpe.department} · ${bpe.year}`,
+      source: 'INSEE BPE', sourceUrl: local != null ? bpe.communeUrl : bpe.departmentUrl, direct: false });
+  };
   if (key === 'logement') {
     const demo = nested(spec, 'demographie');
     if (demo.pct_logements_vacants_source === 'mesure') push('Logements vacants', measured(demo.pct_logements_vacants), ' %', communeScope, 'INSEE via étude Mimmoza');
@@ -72,14 +82,19 @@ export function readSector(snapshot: SectorSnapshot): SectorReading {
     const senior = nested(spec, 'demographie_senior');
     if (senior.population_75_plus_source === 'mesure') push('Habitants de 75 ans ou plus', measured(senior.population_75_plus), '', communeScope, 'INSEE via étude Mimmoza');
     const competition = nested(spec, 'concurrence');
-    if (competition.coverage === 'ok' && measured(competition.count)) push('Établissements repérés', measured(competition.count), '', 'Bassin de concurrence de l’étude', 'OpenStreetMap via étude Mimmoza', false);
+    if (!bpe && competition.coverage === 'ok' && measured(competition.count)) push('Établissements repérés', measured(competition.count), '', 'Bassin de concurrence de l’étude', 'OpenStreetMap via étude Mimmoza', false);
+    pushBpe('D401');
+    pushBpe('D402');
   } else if (key === 'commerce') {
     const zone = nested(spec, 'zone_chalandise');
     push('Population communale', positive(zone.population), '', communeScope, 'INSEE via étude Mimmoza');
     if (zone.revenu_median_source !== 'dept_fallback') push('Revenu médian', measured(zone.revenu_median), ' €', communeScope, 'INSEE via étude Mimmoza');
     const shops = measured(nested(spec, 'concurrence').supermarches);
-    if (market?.core?.bpe?.coverage === 'ok' && (shops !== 0 || market.core.bpe.bpe_quality?.full_coverage))
-      push('Supermarchés recensés', shops, '', communeScope, 'BPE via étude Mimmoza');
+    if (!bpe && market?.core?.bpe?.coverage === 'ok' && (shops !== 0 || market.core.bpe.bpe_quality?.full_coverage))
+      push('Supermarchés recensés', shops, '', communeScope, 'BPE via étude Mimmoza', false);
+    pushBpe('B105');
+    pushBpe('B201');
+    pushBpe('B202');
   } else if (key === 'bureaux') {
     const employment = nested(spec, 'bassin_emploi');
     if (employment.pct_actifs_source === 'mesure') push('Population active', measured(employment.pct_actifs), ' %', communeScope, 'INSEE via étude Mimmoza');
@@ -88,8 +103,16 @@ export function readSector(snapshot: SectorSnapshot): SectorReading {
     const students = nested(spec, 'population_etudiante');
     if (students.pct_etudiants_source === 'mesure') push('Étudiants parmi les habitants', measured(students.pct_etudiants), ' %', communeScope, 'INSEE via étude Mimmoza');
     const campuses = measured(students.nb_etablissements_superieurs);
-    if (market?.core?.bpe?.coverage === 'ok' && (campuses !== 0 || market.core.bpe.bpe_quality?.full_coverage))
+    if (!bpe && market?.core?.bpe?.coverage === 'ok' && (campuses !== 0 || market.core.bpe.bpe_quality?.full_coverage))
       push('Établissements supérieurs recensés', campuses, '', communeScope, 'BPE via étude Mimmoza');
+    pushBpe('C701');
+    pushBpe('C501');
+    pushBpe('C502');
+  } else if (key === 'clinique') {
+    pushBpe('D101');
+    pushBpe('D102');
+    pushBpe('D103');
+    pushBpe('D104');
   }
   return {
     key, label: SCREENING_SECTORS.find((sector) => sector.key === key)?.label ?? key,
