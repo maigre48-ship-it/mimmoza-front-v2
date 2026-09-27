@@ -1,3 +1,6 @@
+import type { OperatingInputs } from './operatingModel.ts';
+import { calculateOperatingModel } from './operatingModel.ts';
+
 export const GATE_KEYS = ['foncier', 'demande', 'concurrence', 'economie', 'operateur'] as const;
 export type GateKey = typeof GATE_KEYS[number];
 export type GateVerdict = 'inconnu' | 'favorable' | 'defavorable';
@@ -12,6 +15,7 @@ export type DecisionRecord = {
   downsideExitValue: string;
   durationMonths: string;
   requiredAnnualReturnPct: string;
+  operating?: OperatingInputs;
   gates: Record<GateKey, GateEvidence>;
 };
 export type ScenarioDecision = { id: string; parcelId: string; programme: string; record: DecisionRecord };
@@ -22,6 +26,7 @@ export type DecisionAssessment = {
   baseMarginPct: number | null;
   downsideMarginPct: number | null;
   downsideAnnualReturnPct: number | null;
+  prudentOperatingSurplus: number | null;
 };
 export type ComparativeDecision = {
   status: 'a_documenter' | 'aucun_viable' | 'priorite_conditionnelle';
@@ -74,12 +79,16 @@ export function assessScenario(record: DecisionRecord): DecisionAssessment {
   if (months == null) missing.push('Durée du projet');
   if (threshold == null) missing.push('Rentabilité annuelle minimale exigée');
   if (base != null && downside != null && downside > base) missing.push('La valeur prudente doit rester inférieure ou égale à la valeur centrale');
+  const operatingStarted = !!record.operating && Object.entries(record.operating).some(([key, value]) => key !== 'period' && String(value).trim() !== '');
+  const operating = operatingStarted && record.operating ? calculateOperatingModel(record.units, record.operating) : null;
+  if (operatingStarted && !operating) missing.push('Hypothèses d’exploitation complètes et cohérentes');
+  if (operating && operating.prudent.operatingSurplus <= 0) adverse.push('L’exploitation prudente ne couvre pas ses charges annuelles.');
   const baseMarginPct = cost != null && base != null ? (base / cost - 1) * 100 : null;
   const downsideMarginPct = cost != null && downside != null ? (downside / cost - 1) * 100 : null;
   const downsideAnnualReturnPct = cost != null && downside != null && months != null ? (Math.pow(downside / cost, 12 / months) - 1) * 100 : null;
   if (!missing.length && !adverse.length && downsideAnnualReturnPct != null && threshold != null && downsideAnnualReturnPct < threshold)
     adverse.push(`Scénario prudent : ${downsideAnnualReturnPct.toFixed(1)} %/an, sous le seuil exigé de ${threshold.toFixed(1)} %/an.`);
-  return { status: adverse.length ? 'a_ecarter' : missing.length ? 'a_documenter' : 'qualifie', missing, adverse, baseMarginPct, downsideMarginPct, downsideAnnualReturnPct };
+  return { status: adverse.length ? 'a_ecarter' : missing.length ? 'a_documenter' : 'qualifie', missing, adverse, baseMarginPct, downsideMarginPct, downsideAnnualReturnPct, prudentOperatingSurplus: operating?.prudent.operatingSurplus ?? null };
 }
 
 /** Ne classe que des variantes du même terrain, avec des preuves complètes. */

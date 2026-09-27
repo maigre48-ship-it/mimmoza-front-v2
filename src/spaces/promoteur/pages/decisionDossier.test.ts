@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { assessScenario, compareScenarios, emptyDecisionRecord, GATE_KEYS, type DecisionRecord } from './decisionDossier.ts';
+import { emptyOperatingInputs } from './operatingModel.ts';
 
 function complete(cost: string, base: string, downside: string): DecisionRecord {
   const record = emptyDecisionRecord();
@@ -57,4 +58,23 @@ test('deux variantes identiques ne constituent pas une vraie comparaison de cibl
     { id: 'b', parcelId: '64065000AI0002', programme: 'Hôtel', record: { ...a } },
   ]);
   assert.equal(result.status, 'a_documenter');
+});
+
+test('une exploitation prudente déficitaire écarte un scénario chiffré', () => {
+  const record = complete('1000000', '1400000', '1200000');
+  record.operating = {
+    period: 'jour', unitRevenue: '80', occupancyPct: '65', prudentOccupancyPct: '45',
+    prudentPriceCutPct: '10', ancillaryRevenueYear: '0', variableCostPerUnit: '30',
+    fixedCostsYear: '700000', maintenanceYear: '20000',
+  };
+  const result = assessScenario(record);
+  assert.equal(result.status, 'a_ecarter');
+  assert.ok(result.prudentOperatingSurplus! < 0);
+  assert.ok(result.adverse.some((line) => line.includes('exploitation prudente')));
+});
+
+test('une exploitation commencée mais incomplète ne qualifie pas le projet', () => {
+  const record = complete('1000000', '1400000', '1200000');
+  record.operating = { ...emptyOperatingInputs(), unitRevenue: '80' };
+  assert.equal(assessScenario(record).status, 'a_documenter');
 });
