@@ -1,4 +1,5 @@
 import { readSector, SCREENING_SECTORS, type SectorKey, type SectorSnapshot } from './sectorScreening.ts';
+import { validateAiResult } from '../../../../supabase/functions/project-recommendation-v1/validation.ts';
 
 export type RecommendationFact = { id: string; label: string; value: string; scope: string; source: string; sourceUrl?: string; direct: boolean };
 export type RecommendationSector = { key: SectorKey; label: string; eligible: boolean; targetHypothesis: string; programmeHint: string; facts: RecommendationFact[]; missing: string[] };
@@ -20,6 +21,16 @@ export type ProjectRecommendation = {
 };
 
 const keys = new Set<SectorKey>(SCREENING_SECTORS.map((sector) => sector.key));
+
+export function acceptAiRecommendation(raw: unknown, packet: RecommendationPacket): ProjectRecommendation | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const response = raw as Record<string, unknown>;
+  const validated = validateAiResult(response.recommendation, packet);
+  if (!validated) return null;
+  const item = response.recommendation as Record<string, unknown>;
+  return { ...validated, generatedAt: typeof item.generatedAt === 'string' && !Number.isNaN(Date.parse(item.generatedAt)) ? item.generatedAt : new Date().toISOString(),
+    model: typeof item.model === 'string' && item.model.length <= 100 ? item.model : 'IA' };
+}
 
 export function buildRecommendationPacket(input: {
   parcelId: string; communeInsee: string; terrainM2: number; pluZone: string | null;

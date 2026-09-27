@@ -14,7 +14,7 @@ import './StrategieProjetPage.css';
 import { fetchHotelEvidence, type HotelEvidence } from './hotelMarket';
 import { fetchBpeMarket, type BpeMarket } from './bpeMarket';
 import { readSector, SCREENING_SECTORS, type MarketResult, type SectorKey, type SectorSnapshot } from './sectorScreening';
-import { buildRecommendationPacket, recommendProjectLocally, type ProjectRecommendation } from './projectRecommendation';
+import { acceptAiRecommendation, buildRecommendationPacket, recommendProjectLocally, type ProjectRecommendation } from './projectRecommendation';
 import { PromoteurPageHero } from '../shared/components/PromoteurPageHero';
 import { readUnifiedSelection } from '../shared/promoteurSelectionBridge';
 import { usePromoteurStudy } from '../shared/usePromoteurStudy';
@@ -124,7 +124,7 @@ export default function StrategieProjetPage() {
   const [surfaceM2, setSurfaceM2] = useState('');
   const [programme, setProgramme] = useState('');
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
-  const [screening, setScreening] = useState<{ site: string; date: string; snapshots: SectorSnapshot[]; recommendation?: ProjectRecommendation | null } | null>(null);
+  const [screening, setScreening] = useState<{ site: string; date: string; snapshots: SectorSnapshot[]; recommendation?: ProjectRecommendation | null; recommendationError?: string | null } | null>(null);
   const [screeningError, setScreeningError] = useState<string | null>(null);
   const [screeningProgress, setScreeningProgress] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -292,8 +292,18 @@ export default function StrategieProjetPage() {
       const date = new Date().toISOString();
       const packet = verified ? buildRecommendationPacket({ parcelId: parcel, communeInsee: verified.code,
         terrainM2: Number(surfaceM2.trim().replace(',', '.')), pluZone: study?.plu?.zone_code ?? null, dataDate: date, snapshots }) : null;
-      const next = { site: [parcel, address.trim(), cityCode, surfaceM2.trim()].join('|'), date, snapshots,
-        recommendation: packet ? recommendProjectLocally(packet) : null };
+      let recommendation = packet ? recommendProjectLocally(packet) : null;
+      let recommendationError: string | null = null;
+      if (packet) {
+        try {
+          const { data, error } = await supabase.functions.invoke<{ recommendation?: unknown; error?: string }>('project-recommendation-v1', { body: { packet } });
+          if (error || !data?.recommendation) throw new Error(data?.error || error?.message || 'Synthèse IA indisponible.');
+          const accepted = acceptAiRecommendation(data, packet);
+          if (!accepted) throw new Error('La synthèse IA ne respecte pas les preuves du dossier.');
+          recommendation = accepted;
+        } catch (error) { recommendationError = error instanceof Error ? error.message : 'Synthèse IA indisponible.'; }
+      }
+      const next = { site: [parcel, address.trim(), cityCode, surfaceM2.trim()].join('|'), date, snapshots, recommendation, recommendationError };
       setScreening(next);
       userStorage.setItem(screeningKey(studyId), JSON.stringify(next));
     } finally { setBusy(false); }
@@ -316,7 +326,7 @@ export default function StrategieProjetPage() {
         <label className="text-sm font-medium text-slate-700">Code INSEE de la commune<input value={insee} onChange={(event) => setInsee(event.target.value)} placeholder="Ex. 64065" maxLength={5} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 font-normal" /></label>
         <label className="text-sm font-medium text-slate-700">Surface du terrain (m²)<input value={surfaceM2} onChange={(event) => setSurfaceM2(event.target.value)} inputMode="decimal" placeholder="Facultatif — surface cadastrale" className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 font-normal" /></label>
       </div>
-      <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4"><h3 className="font-semibold text-indigo-950">Partir du terrain, sans choisir un programme</h3><p className="mt-1 text-sm text-indigo-900">Mimmoza croise les études disponibles pour six usages avec les dénombrements officiels BPE 2025. Pour la clinique, la BPE décrit l’offre de soins existante, sans mesurer les besoins par spécialité ni les autorisations. Le choix final exige la faisabilité et les bilans.</p><button type="button" disabled={busy} onClick={() => void screenSite()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-5 py-3 font-semibold text-white disabled:opacity-60">{busy ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}{busy ? `Études en cours · ${screeningProgress}/7` : 'Explorer les projets possibles'}</button></div>
+      <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4"><h3 className="font-semibold text-indigo-950">Partir du terrain, sans choisir un programme</h3><p className="mt-1 text-sm text-indigo-900">Mimmoza croise les études disponibles pour six usages avec les dénombrements officiels BPE 2025. Pour la clinique, la BPE décrit l’offre de soins existante, sans mesurer les besoins par spécialité ni les autorisations. Le choix final exige la faisabilité et les bilans.</p><p className="mt-2 text-xs text-indigo-800">En lançant l’exploration, la référence cadastrale, la commune, la surface et les indicateurs sourcés du dossier sont transmis à Anthropic pour rédiger la recommandation IA. Si ce service ne répond pas, l’analyse locale reste affichée.</p><button type="button" disabled={busy} onClick={() => void screenSite()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-5 py-3 font-semibold text-white disabled:opacity-60">{busy ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}{busy ? screeningProgress >= 7 ? 'Synthèse IA en cours…' : `Études en cours · ${screeningProgress}/7` : 'Explorer les projets possibles avec l’IA'}</button></div>
       <label className="mt-5 block text-sm font-medium text-slate-700">Ou étudier directement un programme<input value={programme} onChange={(event) => setProgramme(event.target.value)} list="strategy-programmes" maxLength={120} placeholder="Hôtel, clinique, supermarché… ou votre propre idée" className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 font-normal" /></label>
       <datalist id="strategy-programmes">{IDEAS.map((idea) => <option key={idea} value={idea} />)}</datalist>
       {brief && <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-950"><strong>Couverture actuelle :</strong> {brief.marketType === 'hotel' ? 'Offre communale et bassin proche INSEE, fréquentation départementale et éclairages régionaux sur tout le territoire. Occupation et prix locaux disponibles pour les communes du Pays basque couvertes par l’ADT64.' : brief.marketCaveat}<br /><strong>À documenter :</strong> {brief.criticalData}.</div>}
@@ -332,13 +342,14 @@ export default function StrategieProjetPage() {
       <p className="mt-2 text-sm text-slate-700"><strong>Foncier :</strong> {study?.plu?.zone_code ? `zone relevée ${study.plu.zone_code} ; règlement et destinations à confirmer sur les pièces opposables` : 'zone et destinations autorisées non vérifiées dans l’étude active'}.</p>
       {!screeningIsCurrent && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-950">Le terrain ou sa surface a changé depuis cette présélection. Relancez l’exploration avant de sélectionner une piste.</p>}
       {screeningIsCurrent && screening.recommendation && <div className={`mt-5 rounded-2xl border p-5 ${screening.recommendation.status === 'piste_prioritaire' ? 'border-indigo-300 bg-indigo-50' : 'border-amber-300 bg-amber-50'}`}>
-        <p className="text-xs font-bold uppercase tracking-widest text-indigo-700">Priorité d’instruction · analyse locale</p>
+        <p className="text-xs font-bold uppercase tracking-widest text-indigo-700">Priorité d’instruction · {['analyse locale des faits', 'règle de prudence'].includes(screening.recommendation.model) ? 'analyse locale' : 'synthèse IA'}</p>
         <h3 className="mt-1 text-xl font-semibold text-slate-900">{screening.recommendation.projectKey ? `${SCREENING_SECTORS.find((sector) => sector.key === screening.recommendation?.projectKey)?.label} à étudier en premier` : 'Aucune priorité fiable à ce stade'}</h3>
         <p className="mt-2 text-sm text-slate-800">{screening.recommendation.rationale}</p>
         {screening.recommendation.projectKey && <><p className="mt-3 text-sm"><strong>Cible à tester :</strong> {screening.recommendation.target}</p><p className="mt-1 text-sm"><strong>Programme initial :</strong> {screening.recommendation.programme}</p></>}
         {recommendationFacts.length > 0 && <ul className="mt-3 space-y-1 text-xs text-slate-700">{recommendationFacts.map((fact) => <li key={fact.id}>{fact.label} : {fact.value} · {fact.scope} · {fact.sourceUrl ? <a href={fact.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-700 underline">{fact.source}</a> : fact.source}</li>)}</ul>}
         {screening.recommendation.alternatives.length > 0 && <div className="mt-3 text-sm text-slate-700"><strong>Autres pistes :</strong><ul className="mt-1 list-inside list-disc space-y-1">{screening.recommendation.alternatives.map((alternative) => <li key={alternative.key}>{SCREENING_SECTORS.find((sector) => sector.key === alternative.key)?.label ?? alternative.key} : {alternative.reason}</li>)}</ul></div>}
         {screening.recommendation.conditions.length > 0 && <p className="mt-3 text-xs text-slate-700"><strong>Pour confirmer ou changer ce choix :</strong> {screening.recommendation.conditions.join(' · ')}.</p>}
+        {screening.recommendationError && <p className="mt-3 rounded-lg bg-amber-100 p-2 text-xs text-amber-900">La synthèse IA n’a pas abouti : {screening.recommendationError} La priorité ci-dessus provient de l’analyse locale.</p>}
         {screening.recommendation.projectKey && <button type="button" disabled={busy} onClick={() => { const picked = screening.snapshots.find((item) => item.key === screening.recommendation?.projectKey); if (picked) { setProgramme(SCREENING_SECTORS.find((sector) => sector.key === picked.key)?.label ?? picked.key); void analyze(SCREENING_SECTORS.find((sector) => sector.key === picked.key)?.label ?? picked.key, picked.market); } }} className="mt-4 rounded-xl bg-indigo-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Ouvrir le dossier de cette piste</button>}
       </div>}
       <div className="mt-5 grid gap-4 lg:grid-cols-2">{screening.snapshots.map((snapshot) => {
