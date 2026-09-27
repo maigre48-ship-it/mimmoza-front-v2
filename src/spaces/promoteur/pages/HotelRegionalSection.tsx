@@ -14,7 +14,7 @@ const number = (value: number) => new Intl.NumberFormat('fr-FR', { maximumFracti
 export function HotelRegionalSection({ evidence }: { evidence: HotelEvidence }) {
   const regionCode = evidence.codeRegion;
   const demand = evidence.regionalDemand;
-  const signals = hotelTerritorialSignals(regionCode, evidence.department);
+  const signals = hotelTerritorialSignals(regionCode, evidence.department, evidence.communeInsee);
   if (!regionCode) return null;
   const region = REGION_NAMES[regionCode] ?? `région ${regionCode}`;
   return <section className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7">
@@ -28,7 +28,7 @@ export function HotelRegionalSection({ evidence }: { evidence: HotelEvidence }) 
       })}</div> : <p className="mt-3 text-sm text-amber-800">La ventilation par classement est incomplète dans la source pour ce millésime.</p>}
       <p className="mt-3 text-xs text-slate-500">Nuitées, et non chambres vendues ou taux d’occupation. Le regroupement « classés » de l’INSEE recoupe les catégories affichées et n’est pas additionné.</p>
     </> : <p className="mt-4 text-sm text-slate-600">La série annuelle par classement n’est pas disponible pour cette région ou ce millésime.</p>}
-    {signals.length > 0 && <div className="mt-6 border-t border-slate-200 pt-5"><h4 className="font-semibold text-slate-900">Éclairage de l’observatoire territorial</h4><div className="mt-3 grid gap-3 sm:grid-cols-2">{signals.map((signal) => <div key={signal.label} className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{signal.label}</p><p className="mt-1 text-xl font-semibold text-slate-900">{signal.value}</p><p className="text-xs text-slate-600">{signal.perimeter} · {signal.year} · <a className="text-indigo-700 underline" href={signal.sourceUrl} target="_blank" rel="noopener noreferrer">{signal.source}</a></p><p className="mt-2 text-xs text-slate-600">{signal.implication}</p></div>)}</div></div>}
+    {signals.length > 0 && <div className="mt-6 border-t border-slate-200 pt-5"><h4 className="font-semibold text-slate-900">Éclairage de l’observatoire territorial</h4><div className="mt-3 grid gap-3 sm:grid-cols-2">{signals.map((signal) => <div key={signal.label} className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{signal.label}</p><p className="mt-1 text-xl font-semibold text-slate-900">{signal.value}</p><p className="text-xs text-slate-600">{signal.perimeter} · {signal.period ?? signal.year} · <a className="text-indigo-700 underline" href={signal.sourceUrl} target="_blank" rel="noopener noreferrer">{signal.source}</a>{signal.updatesUrl && <> · <a className="text-indigo-700 underline" href={signal.updatesUrl} target="_blank" rel="noopener noreferrer">Baromètres récents</a></>}</p><p className="mt-2 text-xs text-slate-600">{signal.implication}</p></div>)}</div></div>}
     <p className="mt-5 rounded-xl bg-amber-50 p-3 text-xs text-amber-950">Une part régionale de nuitées élevée ne suffit pas à choisir une catégorie d’hôtel. Il faut comparer les établissements du bassin, leurs prix, leurs services et leur occupation, puis vérifier l’intérêt d’exploitants.</p>
   </section>;
 }

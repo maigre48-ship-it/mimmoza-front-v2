@@ -55,3 +55,21 @@ test('observatoires territoriaux : une donnée départementale ne fuit pas vers 
   assert.equal(hotelTerritorialSignals('75', '69').length, 0);
   assert.equal(hotelTerritorialSignals('53', '35')[0].perimeter, 'Bretagne');
 });
+
+test('Paris et la Côte d’Azur gardent leur périmètre et leur période propres', () => {
+  const paris = hotelTerritorialSignals('11', '75', '75056');
+  assert.equal(paris[1].value, '80,9 %');
+  assert.equal(paris[1].period, 'juillet–août 2026');
+  assert.equal(hotelTerritorialSignals('11', '92', '92012').length, 1);
+  const nice = hotelTerritorialSignals('93', '06', '06088');
+  assert.equal(nice[2].perimeter, 'Destination Alpes-Maritimes et Monaco');
+  assert.equal(nice[3].period, 'juin–septembre 2025');
+  assert.equal(nice[1].value, '157 €');
+  assert.equal(hotelTerritorialSignals('93', '13', '13055').length, 2);
+});
+
+test('les signaux internationaux gardent leur dénominateur', () => {
+  assert.match(hotelTerritorialSignals('44', '67')[0].implication, /nuitées étrangères/);
+  assert.match(hotelTerritorialSignals('75', '64')[0].implication, /ne mesure pas l’occupation/);
+  assert.equal(hotelTerritorialSignals('76', '31')[0].label, 'Nuitées d’affaires');
+});
