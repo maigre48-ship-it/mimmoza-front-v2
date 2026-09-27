@@ -73,3 +73,29 @@ test('les signaux internationaux gardent leur dénominateur', () => {
   assert.match(hotelTerritorialSignals('75', '64')[0].implication, /ne mesure pas l’occupation/);
   assert.equal(hotelTerritorialSignals('76', '31')[0].label, 'Nuitées d’affaires');
 });
+
+test('les dix régions ajoutées ont une source et respectent leur département', () => {
+  const territories = [
+    ['24', '37'], ['27', '21'], ['32', '59'], ['52', '44'], ['94', '2A'],
+    ['01', '971'], ['02', '972'], ['03', '973'], ['04', '974'], ['06', '976'],
+  ];
+  for (const [region, department] of territories) {
+    const signals = hotelTerritorialSignals(region, department);
+    assert.ok(signals.length > 0, `Aucun signal pour ${region}`);
+    assert.ok(signals.every((signal) => signal.year === 2025 && signal.sourceUrl.startsWith('https://www.insee.fr/')));
+    assert.equal(hotelTerritorialSignals(region, '69').length, 0);
+  }
+  assert.equal(hotelTerritorialSignals('94', '2B').length, 2);
+  assert.equal(hotelTerritorialSignals('04', '976').length, 0);
+});
+
+test('les séries ultramarines affichent clairement leur période et leur champ', () => {
+  const guyane = hotelTerritorialSignals('03', '973');
+  assert.equal(guyane[0].period, 'octobre–décembre 2025');
+  assert.match(guyane[0].implication, /seul quatrième trimestre/);
+  const reunion = hotelTerritorialSignals('04', '974');
+  assert.match(reunion[0].label, /autres hébergements collectifs/);
+  const mayotte = hotelTerritorialSignals('06', '976');
+  assert.equal(mayotte[0].period, 'février–décembre 2025');
+  assert.match(mayotte[1].implication, /Chido/);
+});
