@@ -1,3 +1,5 @@
+import { fetchHotelBasin, type HotelBasin } from './hotelBasin.ts';
+
 /** Observations officielles INSEE Melodi. Les unités et les géographies restent explicites. */
 type Observation = {
   dimensions?: Record<string, string>;
@@ -20,6 +22,7 @@ export type HotelEvidence = {
   annualUrl: string | null;
   capacityUrl: string | null;
   frequencyUrl: string | null;
+  basin?: HotelBasin | null;
   missing: string[];
   fetchedAt: string;
 };
@@ -148,7 +151,14 @@ export async function fetchHotelEvidence(insee: string): Promise<HotelEvidence> 
       previousAnnualNights = prior.data.nights;
     } catch { missing.push('Comparaison annuelle ou origine des nuitées indisponible.'); }
   }
-  return { communeInsee: insee, department, capacityYear, frequencyYear, capacity, months, annualNights, previousAnnualNights, nonResidentSharePct, annualUrl, capacityUrl, frequencyUrl, missing, fetchedAt: new Date().toISOString() };
+  let basin: HotelBasin | null = null;
+  if (capacityYear) {
+    try {
+      basin = await fetchHotelBasin(insee, capacityYear);
+      if (basin.measuredCommunes < basin.selectedCommunes) missing.push(`Offre locale partielle : ${basin.measuredCommunes} communes sur ${basin.selectedCommunes} renseignées.`);
+    } catch { missing.push('Offre hôtelière des communes proches indisponible.'); }
+  }
+  return { communeInsee: insee, department, capacityYear, frequencyYear, capacity, months, annualNights, previousAnnualNights, nonResidentSharePct, annualUrl, capacityUrl, frequencyUrl, basin, missing, fetchedAt: new Date().toISOString() };
 }
 
 export type HotelAssumptions = { rooms: string; adr: string; occupancy: string; variableCost: string; fixedCosts: string; investment: string };
