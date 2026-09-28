@@ -22,6 +22,7 @@ import {
   Lock,
   Map,
   Menu,
+  Palette,
   PieChart,
   Plus,
   ScanSearch,
@@ -294,6 +295,7 @@ function getPromoteurActiveSection(pathname: string): string | null {
     ["/promoteur/risques",                   "marche"],
     ["/promoteur/programmation",             "programmation"],
     ["/promoteur/strategie-projet",          "programmation"],
+    ["/promoteur/style-tendances",            "programmation"],
     ["/promoteur/implantation-2d",           "faisabilite"],
     ["/promoteur/plan-2d",                   "faisabilite"],
     ["/promoteur/massing-3d",                "faisabilite"],
@@ -358,6 +360,7 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       items: [
         { label: "Programme & viabilité", path: "/promoteur/programmation",      icon: Layers },
         { label: "Stratégie de projet", path: "/promoteur/strategie-projet", icon: Target },
+        { label: "Style & tendances", path: "/promoteur/style-tendances", icon: Palette },
         { label: "Coût de construction",  path: "/promoteur/simulation-travaux", icon: Calculator, separatorBefore: true },
       ],
     },

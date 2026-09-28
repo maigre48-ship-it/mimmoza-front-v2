@@ -44,6 +44,7 @@ export const PROMOTEUR_SIDEBAR: NavSection[] = [
     items: [
       { label: "Implantation 2D", to: "/promoteur/implantation-2d" },
       { label: "Massing 3D", to: "/promoteur/massing-3d" },
+      { label: "Style & tendances", to: "/promoteur/style-tendances" },
     ],
   },
   {
