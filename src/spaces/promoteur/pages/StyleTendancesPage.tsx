@@ -20,6 +20,17 @@ const empty = (): Draft => ({ selectedScenarioId: '', programme: '', target: '',
   mode: 'auto', questions: [], answers: {}, questionContext: '' });
 const familyLabel: Record<StyleFamily, string> = { durable: 'Durable', contemporain: 'Contemporain', expressif: 'Expressif' };
 const inputClass = 'mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900';
+const invokeMessage = async (error: { message?: string; context?: unknown } | null, responseError?: string): Promise<string> => {
+  if (responseError) return responseError;
+  const context = error?.context;
+  if (context && typeof context === 'object' && 'json' in context && typeof context.json === 'function') {
+    try {
+      const body = await (context as Response).json() as { error?: unknown };
+      if (typeof body.error === 'string' && body.error.trim()) return body.error;
+    } catch { /* réponse non JSON */ }
+  }
+  return error?.message || 'Analyse IA indisponible.';
+};
 
 export default function StyleTendancesPage() {
   const studyId = usePromoteurStudyId();
@@ -116,7 +127,7 @@ export default function StyleTendancesPage() {
     try {
       const { data, error: invokeError } = await supabase.functions.invoke<{ questions?: unknown; error?: string }>('design-direction-v1',
         { body: { action: 'questions', packet } });
-      if (invokeError || !data?.questions) throw new Error(data?.error || invokeError?.message || 'Questions indisponibles.');
+      if (invokeError || !data?.questions) throw new Error(await invokeMessage(invokeError, data?.error));
       const questions = validateDesignQuestions({ questions: data.questions });
       if (!questions) throw new Error('Les questions reçues sont incomplètes. Réessayez.');
       if (context(draftRef.current) !== requestContext || draftRef.current.mode !== 'auto') throw new Error('Le projet a changé. Relancez les questions.');
@@ -141,7 +152,7 @@ export default function StyleTendancesPage() {
     setGenerating(true); setError('');
     try {
       const { data, error: invokeError } = await supabase.functions.invoke<{ result?: unknown; error?: string }>('design-direction-v1', { body: { action: 'directions', packet } });
-      if (invokeError || !data?.result) throw new Error(data?.error || invokeError?.message || 'Analyse IA indisponible.');
+      if (invokeError || !data?.result) throw new Error(await invokeMessage(invokeError, data?.error));
       const generated = validateGeneratedDesign(data.result, packet);
       if (!generated) throw new Error('Le brief reçu ne respecte pas les références choisies. Réessayez.');
       const current = draftRef.current;

@@ -39,10 +39,15 @@ Si des réponses au questionnaire sont fournies, fais découler chaque propositi
 La recommandation esthétique est une piste à tester avec la cible et l'exploitant, non une décision définitive.`;
     const response = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: AbortSignal.timeout(55000),
       headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model, max_tokens: questionMode ? 1400 : 4400, temperature: 0.2,
+      body: JSON.stringify({ model, max_tokens: questionMode ? 1400 : 4400,
         system: questionMode ? questionSystem : directionSystem,
         messages: [{ role: 'user', content: `${questionMode ? 'Contexte pour les questions' : 'Dossier de conception'} JSON :\n${JSON.stringify(questionMode ? questionPacket : packet)}` }] }) });
-    if (!response.ok) return json({ error: 'Le moteur IA ne répond pas. Réessayez.' }, 502);
+    if (!response.ok) {
+      console.error('design-direction-v1: Anthropic request failed', { status: response.status, model });
+      return json({ error: response.status === 429 ? 'Le moteur IA est temporairement saturé. Réessayez dans quelques instants.'
+        : response.status === 401 || response.status === 403 ? 'La connexion au moteur IA doit être vérifiée par l’équipe Mimmoza.'
+          : 'Le moteur IA ne répond pas. Réessayez.' }, 502);
+    }
     const reply = await response.json() as { content?: { type?: string; text?: string }[]; model?: string };
     const clean = (reply.content?.filter((part) => part.type === 'text').map((part) => part.text ?? '').join('\n') ?? '')
       .trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
