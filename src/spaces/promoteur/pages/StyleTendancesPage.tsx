@@ -8,9 +8,10 @@ import { usePromoteurStudyId } from '../shared/usePromoteurStudyId';
 import { usePromoteurStudy } from '../shared/usePromoteurStudy';
 import { buildDesignBrief, designBriefText, EDITORIAL_SOURCES, type DesignBrief, type DesignSource, type StyleFamily } from './designDirections';
 import type { DecisionRecord } from './decisionDossier';
+import { buildDesignStrategyContext, strategyPrefill, type DesignStrategyScenario } from './designStrategyContext';
 import { QUESTION_IDS, sanitizeDesignPacket, sanitizeQuestionPacket, validateDesignQuestions, validateGeneratedDesign, type DesignQuestion, type QuestionId } from '../../../../supabase/functions/design-direction-v1/validation.ts';
 
-type Scenario = { id: string; programme: string; parcelId?: string; address?: string; insee?: string };
+type Scenario = DesignStrategyScenario;
 type Draft = { selectedScenarioId: string; programme: string; target: string; location: string; priority: string; horizonYears: number;
   selectedSourceIds: string[]; customSources: DesignSource[]; brief: DesignBrief | null;
   mode: 'auto' | 'libre'; questions: DesignQuestion[]; answers: Partial<Record<QuestionId, string>>; questionContext: string };
@@ -38,6 +39,7 @@ export default function StyleTendancesPage() {
   const [draft, setDraft] = useState<Draft>(empty);
   const draftRef = useRef(draft);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
+  const [decisions, setDecisions] = useState<Record<string, DecisionRecord>>({});
   const [sourceTitle, setSourceTitle] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
   const [sourceNote, setSourceNote] = useState('');
@@ -47,6 +49,11 @@ export default function StyleTendancesPage() {
   const [generating, setGenerating] = useState(false);
   const [asking, setAsking] = useState(false);
   const sources = useMemo(() => [...EDITORIAL_SOURCES, ...draft.customSources], [draft.customSources]);
+  const linkedScenario = useMemo(() => scenarios.find((scenario) => scenario.id === draft.selectedScenarioId) ?? null,
+    [scenarios, draft.selectedScenarioId]);
+  const strategy = useMemo(() => linkedScenario ? buildDesignStrategyContext(linkedScenario, decisions[linkedScenario.id],
+    { zone: study?.plu?.zone_code, source: study?.plu?.source }) : null,
+    [linkedScenario, decisions, study?.plu?.zone_code, study?.plu?.source]);
   const suffix = studyId ? `?study=${encodeURIComponent(studyId)}` : '';
   useEffect(() => { draftRef.current = draft; }, [draft]);
 
@@ -65,18 +72,25 @@ export default function StyleTendancesPage() {
       const found = JSON.parse(userStorage.getItem(`mimmoza.promoteur.strategie-projet.${studyId ?? 'hors-etude'}`) ?? '[]') as Scenario[];
       const available = Array.isArray(found) ? found.slice(0, 3) : [];
       setScenarios(available);
-      if (!restored && available[0]) {
-        let target = '';
-        try {
-          const decisions = JSON.parse(userStorage.getItem(`mimmoza.promoteur.decision.${studyId ?? 'hors-etude'}`) ?? '{}') as Record<string, DecisionRecord>;
-          target = decisions[available[0].id]?.target ?? '';
-        } catch { /* cible à préciser */ }
-        restored = { ...empty(), selectedScenarioId: available[0].id, programme: available[0].programme,
-          target, location: available[0].address || available[0].parcelId || available[0].insee || '' };
+      let records: Record<string, DecisionRecord> = {};
+      try {
+        const parsed = JSON.parse(userStorage.getItem(`mimmoza.promoteur.decision.${studyId ?? 'hors-etude'}`) ?? '{}');
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) records = parsed;
+      } catch { /* dossier non encore renseigné */ }
+      setDecisions(records);
+      const selected = available.find((scenario) => scenario.id === restored?.selectedScenarioId) ?? (!restored ? available[0] : null);
+      if (selected) {
+        const prefill = strategyPrefill(selected, records[selected.id]);
+        const currentStrategy = buildDesignStrategyContext(selected, records[selected.id],
+          { zone: study?.plu?.zone_code, source: study?.plu?.source });
+        const changed = restored && (restored.programme !== prefill.programme || restored.target !== prefill.target || restored.location !== prefill.location
+          || (restored.brief && JSON.stringify(restored.brief.strategy ?? null) !== JSON.stringify(currentStrategy)));
+        restored = { ...(restored ?? empty()), selectedScenarioId: selected.id, ...prefill,
+          ...(changed ? { questions: [], answers: {}, questionContext: '', brief: null } : {}) };
       }
-    } catch { setScenarios([]); }
+    } catch { setScenarios([]); setDecisions({}); }
     setDraft(restored ?? empty());
-  }, [studyId]);
+  }, [studyId, study?.plu?.zone_code, study?.plu?.source]);
 
   const patch = (change: Partial<Draft>) => {
     const next = { ...draftRef.current, ...change };
@@ -85,13 +99,7 @@ export default function StyleTendancesPage() {
   const chooseScenario = (id: string) => {
     const scenario = scenarios.find((item) => item.id === id);
     if (!scenario) { patch({ selectedScenarioId: '' }); return; }
-    let target = '';
-    try {
-      const records = JSON.parse(userStorage.getItem(`mimmoza.promoteur.decision.${studyId ?? 'hors-etude'}`) ?? '{}') as Record<string, DecisionRecord>;
-      target = records?.[id]?.target ?? '';
-    } catch { /* la cible reste à préciser */ }
-    patch({ selectedScenarioId: id, programme: scenario.programme, target: target || draft.target,
-      location: scenario.address || scenario.parcelId || scenario.insee || draft.location, brief: null, questions: [], answers: {}, questionContext: '' });
+    patch({ selectedScenarioId: id, ...strategyPrefill(scenario, decisions[id]), brief: null, questions: [], answers: {}, questionContext: '' });
   };
   const addSource = () => {
     let url: URL;
@@ -112,15 +120,17 @@ export default function StyleTendancesPage() {
     const selected = sources.filter((source) => draft.selectedSourceIds.includes(source.id));
     if (!selected.length) { setError('Choisissez au moins une référence commentée.'); return; }
     patch({ brief: buildDesignBrief({ programme: draft.programme.trim(), target: draft.target.trim(), location: draft.location.trim(),
-      priority: draft.priority, horizonYears: draft.horizonYears, sources: selected }) });
+      priority: draft.priority, horizonYears: draft.horizonYears, sources: selected, strategy: strategy ?? undefined }) });
     setError('');
   };
   const context = (value: Draft) => JSON.stringify({ programme: value.programme.trim(), target: value.target.trim(), location: value.location.trim(),
-    priority: value.priority, horizonYears: value.horizonYears, pluZone: study?.plu?.zone_code ?? null });
+    priority: value.priority, horizonYears: value.horizonYears, pluZone: strategy?.pluZone ?? null,
+    strategy: value.selectedScenarioId ? strategy : null });
   const askQuestions = async () => {
     const current = draftRef.current;
     const packet = sanitizeQuestionPacket({ programme: current.programme, target: current.target, location: current.location,
-      priority: current.priority, horizonYears: current.horizonYears, pluZone: study?.plu?.zone_code ?? null });
+      priority: current.priority, horizonYears: current.horizonYears, pluZone: strategy?.pluZone ?? null,
+      ...(strategy ? { strategy } : {}) });
     if (!packet) { setError('Indiquez au moins le programme et le lieu du projet.'); return; }
     const requestContext = context(current);
     setAsking(true); setError('');
@@ -144,7 +154,8 @@ export default function StyleTendancesPage() {
     const selected = sources.filter((source) => current.selectedSourceIds.includes(source.id));
     const target = current.target.trim() || (auto ? current.answers.audience?.trim() : '');
     const packet = sanitizeDesignPacket({ programme: current.programme.trim(), target, location: current.location.trim(),
-      priority: current.priority, horizonYears: current.horizonYears, pluZone: study?.plu?.zone_code ?? null,
+      priority: current.priority, horizonYears: current.horizonYears, pluZone: strategy?.pluZone ?? null,
+      ...(strategy ? { strategy } : {}),
       ...(auto ? { answers: current.answers } : {}),
       signals: selected.map(({ id, title, url, observation, scope, year, family }) => ({ id, title, url, observation, scope, year, family })) });
     if (!packet) { setError('Précisez le projet et gardez au moins une référence commentée valide.'); return; }
@@ -163,7 +174,7 @@ export default function StyleTendancesPage() {
         priority: packet.priority, directions: generated.directions, selectedFamily: null, adjustments: '',
         generatedAt: typeof result.generatedAt === 'string' ? result.generatedAt : new Date().toISOString(), method: 'ai',
         model: typeof result.model === 'string' ? result.model : 'IA', recommendedFamily: generated.recommendedFamily,
-        rationale: generated.rationale, checks: generated.checks,
+        rationale: generated.rationale, checks: generated.checks, strategy: packet.strategy,
         questionnaire: auto ? current.questions.map((question) => ({ question: question.question, answer: current.answers[question.id] ?? '' })) : undefined } });
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Analyse IA indisponible.'); }
     finally { setGenerating(false); }
@@ -194,12 +205,20 @@ export default function StyleTendancesPage() {
           {scenarios.map((scenario) => <option value={scenario.id} key={scenario.id}>{scenario.programme} · {scenario.address || scenario.parcelId || scenario.insee || 'terrain à préciser'}</option>)}</select></label>}
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <label className="text-sm font-medium">Programme<input value={draft.programme} onChange={(event) => patch({ programme: event.target.value, selectedScenarioId: '', brief: null })} placeholder="Hôtel, EHPAD, logements…" className={inputClass} /></label>
-        <label className="text-sm font-medium">Cible à tester {draft.mode === 'auto' && <span className="font-normal text-slate-500">· facultatif, Mimmoza vous la demandera</span>}<input value={draft.target} onChange={(event) => patch({ target: event.target.value, brief: null })} placeholder="Clientèle, résidents, utilisateurs…" className={inputClass} /></label>
-        <label className="text-sm font-medium">Lieu ou parcelle<input value={draft.location} onChange={(event) => patch({ location: event.target.value, brief: null })} placeholder="Commune, adresse ou référence cadastrale" className={inputClass} /></label>
+        <label className="text-sm font-medium">Cible à tester {draft.mode === 'auto' && <span className="font-normal text-slate-500">· facultatif, Mimmoza vous la demandera</span>}<input value={draft.target} onChange={(event) => patch({ target: event.target.value, selectedScenarioId: '', brief: null })} placeholder="Clientèle, résidents, utilisateurs…" className={inputClass} /></label>
+        <label className="text-sm font-medium">Lieu ou parcelle<input value={draft.location} onChange={(event) => patch({ location: event.target.value, selectedScenarioId: '', brief: null })} placeholder="Commune, adresse ou référence cadastrale" className={inputClass} /></label>
         <label className="text-sm font-medium">Horizon de conception<select value={draft.horizonYears} onChange={(event) => patch({ horizonYears: Number(event.target.value), brief: null })} className={inputClass}><option value={10}>10 ans</option><option value={15}>15 ans</option><option value={20}>20 ans</option><option value={30}>30 ans</option></select></label>
         <label className="text-sm font-medium md:col-span-2">Priorité du projet<select value={draft.priority} onChange={(event) => patch({ priority: event.target.value, brief: null })} className={inputClass}><option>Durabilité et entretien simple</option><option>Confort et accessibilité</option><option>Identité forte et différenciation</option><option>Souplesse d’usage et évolution future</option></select></label>
       </div>
-      {study?.plu?.zone_code && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-950">Zone PLU relevée : {study.plu.zone_code}. Les couleurs, matériaux, façades, enseignes et destinations restent à vérifier dans les règles opposables.</p>}
+      {linkedScenario && strategy && <div className="mt-5 rounded-2xl border border-sky-200 bg-sky-50 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold text-sky-950">Repris de Stratégie de projet</h3><span className="text-xs text-sky-800">{linkedScenario.date ? `Étude du ${new Date(linkedScenario.date).toLocaleDateString('fr-FR')}` : 'Date de l’étude non indiquée'}</span></div>
+        <p className="mt-2 text-sm text-sky-950"><strong>Cible retenue :</strong> {draft.target || 'à préciser dans les questions'}{strategy.programmeDetail ? ` · Programme : ${strategy.programmeDetail}` : ''}</p>
+        {(strategy.units || strategy.grossAreaM2) && <p className="mt-1 text-xs text-sky-800">Hypothèses saisies dans le dossier de décision : {strategy.units ? `${strategy.units} unités` : ''}{strategy.units && strategy.grossAreaM2 ? ' · ' : ''}{strategy.grossAreaM2 ? `${strategy.grossAreaM2} m² de surface brute` : ''}.</p>}
+        <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-sky-800">Signaux locaux utiles au programme · contexte, pas preuve de préférence esthétique</p>
+        {strategy.facts.length ? <ul className="mt-2 grid gap-2 md:grid-cols-2">{strategy.facts.map((fact) => <li key={`${fact.label}-${fact.scope}`} className="rounded-xl bg-white p-3 text-sm text-slate-800"><strong>{fact.label} : {fact.value}</strong><span className="mt-1 block text-xs text-slate-600">{fact.scope} · {fact.source}</span><a href={fact.url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 underline">Source <ExternalLink size={12} /></a></li>)}</ul>
+          : <p className="mt-2 text-sm text-sky-900">Aucune mesure locale avec source directe n’est encore disponible pour ce scénario. Vous pouvez continuer ; Mimmoza signalera cette limite.</p>}
+      </div>}
+      {strategy?.pluZone && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-950">Zone PLU relevée : {strategy.pluZone}. {strategy.envelope && <span>Indications extraites du dossier : {strategy.envelope.cesRatio != null ? `emprise ${Math.round(strategy.envelope.cesRatio * 100)} % ; ` : ''}{strategy.envelope.heightM != null ? `hauteur ${strategy.envelope.heightM} m ; ` : ''}{strategy.envelope.parkingPerHousing != null ? `stationnement ${strategy.envelope.parkingPerHousing} place(s)/logement ; ` : ''}</span>}Ces valeurs ne valident pas un projet : couleurs, matériaux, façades, enseignes, reculs et destinations restent à vérifier dans les pièces opposables. {strategy.pluSource && <a href={strategy.pluSource} target="_blank" rel="noopener noreferrer" className="font-semibold underline">Voir la source enregistrée.</a>} <a href="https://www.geoportail-urbanisme.gouv.fr/" target="_blank" rel="noopener noreferrer" className="font-semibold underline">Consulter le Géoportail de l’urbanisme.</a></p>}
       <Link to={`/promoteur/strategie-projet${suffix}`} className="mt-4 inline-block text-sm font-semibold text-indigo-700 underline">Revoir la cible et le marché dans Stratégie de projet</Link>
     </section>
 
@@ -227,7 +246,7 @@ export default function StyleTendancesPage() {
       </div>}
       {draft.questions.length > 0 && draft.questionContext !== context(draft) && <p className="mt-4 text-sm text-amber-800">Le projet a changé. Relancez les questions pour obtenir des propositions cohérentes.</p>}
       {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
-      <p className="mt-3 text-xs text-indigo-800">Le contexte du projet et vos réponses sont transmis à Anthropic pour préparer les questions et les directions.</p>
+      <p className="mt-3 text-xs text-indigo-800">Le contexte du projet, les éléments repris de Stratégie de projet et vos réponses sont transmis à Anthropic pour préparer les questions et les directions.</p>
     </section>}
 
     <section className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7">
@@ -242,17 +261,18 @@ export default function StyleTendancesPage() {
             <a href={source.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 underline">Voir la source <ExternalLink size={12} /></a>
             {source.id.startsWith('user-') && <button type="button" onClick={() => patch({ customSources: draft.customSources.filter((item) => item.id !== source.id), selectedSourceIds: draft.selectedSourceIds.filter((id) => id !== source.id), brief: null })} className="ml-4 text-xs text-rose-700 underline">Retirer</button>}
           </div></div></article>)}</div>
-      <div className="mt-6 rounded-2xl border border-indigo-200 bg-indigo-50 p-4"><h3 className="font-semibold text-indigo-950">Ajouter une référence de magazine, portfolio ou réseau social</h3>
+      <details key={draft.mode} open={draft.mode === 'libre'} className="mt-6 rounded-2xl border border-indigo-200 bg-indigo-50 p-4"><summary className="cursor-pointer font-semibold text-indigo-950">Ajouter une référence personnelle · facultatif</summary>
+        <p className="mt-2 text-xs text-indigo-800">Magazine, portfolio ou réseau social : décrivez ce que vous retenez du lien. Mimmoza ne lit pas son contenu automatiquement.</p>
         <div className="mt-3 grid gap-3 md:grid-cols-2"><label className="text-xs font-medium">Titre<input value={sourceTitle} onChange={(event) => setSourceTitle(event.target.value)} maxLength={150} className={inputClass} /></label>
           <label className="text-xs font-medium">Lien HTTPS<input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://…" className={inputClass} /></label>
           <label className="text-xs font-medium">Direction concernée<select value={sourceFamily} onChange={(event) => setSourceFamily(event.target.value as StyleFamily)} className={inputClass}><option value="durable">Durable</option><option value="contemporain">Contemporain</option><option value="expressif">Expressif</option></select></label>
           <label className="text-xs font-medium md:col-span-2">Ce que montre cette référence<textarea value={sourceNote} onChange={(event) => setSourceNote(event.target.value)} rows={2} maxLength={650} placeholder="Ex. matériaux, ambiance, lumière, détails que l’on souhaite tester…" className={inputClass} /></label></div>
-        <button type="button" onClick={addSource} className="mt-3 inline-flex items-center gap-2 rounded-xl border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-800"><Plus size={16} /> Ajouter cette observation</button></div>
+        <button type="button" onClick={addSource} className="mt-3 inline-flex items-center gap-2 rounded-xl border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-800"><Plus size={16} /> Ajouter cette observation</button></details>
       {draft.mode === 'libre' && error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
       {draft.mode === 'libre' && <div className="mt-5 flex flex-wrap gap-3"><button type="button" onClick={() => void createAiBrief()} disabled={generating} className="inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-5 py-3 font-semibold text-white disabled:opacity-60"><Sparkles size={18} /> {generating ? 'Analyse IA en cours…' : 'Analyser avec l’IA'}</button>
         <button type="button" onClick={createBrief} disabled={generating} className="rounded-xl border border-indigo-300 px-5 py-3 font-semibold text-indigo-800 disabled:opacity-60">Comparer sans IA</button></div>
       }
-      <p className="mt-2 text-xs text-slate-500">En lançant l’analyse IA, le lieu, le programme, la cible et les références sélectionnées sont envoyés à Anthropic pour produire le brief. Aucun nouvel enregistrement DVF n’est créé.</p>
+      <p className="mt-2 text-xs text-slate-500">En lançant l’analyse IA, le lieu, le programme, la cible, les faits sourcés repris de Stratégie de projet et les références sélectionnées sont envoyés à Anthropic. Aucun nouvel enregistrement DVF n’est créé.</p>
     </section>
 
     {draft.brief && <section className="space-y-5" aria-label="Directions de conception">
@@ -278,6 +298,6 @@ export default function StyleTendancesPage() {
         {studyId && <Link to={`/promoteur/generateur-facades${suffix}`} className="ml-4 inline-block text-sm font-semibold text-indigo-800 underline">Ouvrir Façades IA</Link>}
       </div>}
     </section>}
-    <p className="text-xs text-slate-500">Les références et le brief sont enregistrés dans ce navigateur pour ce compte. Lors d’une analyse IA, le projet et les observations sélectionnées sont transmis à Anthropic. Cette page ne collecte aucune image depuis Instagram ou les magazines et n’ajoute aucune donnée DVF.</p>
+    <p className="text-xs text-slate-500">Les références et le brief sont enregistrés dans ce navigateur pour ce compte. Lors d’une analyse IA, le projet, les éléments de Stratégie de projet et les observations sélectionnées sont transmis à Anthropic. Cette page ne collecte aucune image depuis Instagram ou les magazines et n’ajoute aucune donnée DVF.</p>
   </div>;
 }

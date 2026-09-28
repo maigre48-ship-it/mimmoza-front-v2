@@ -1,10 +1,14 @@
 export type DesignSignal = { id: string; title: string; url: string; observation: string; scope: string; year: string; family: 'durable' | 'contemporain' | 'expressif' };
+export type DesignFact = { label: string; value: string; scope: string; source: string; url: string };
+export type StrategyContext = { programmeDetail: string | null; units: string | null; grossAreaM2: string | null;
+  facts: DesignFact[]; pluZone: string | null; pluSource: string | null;
+  envelope: { cesRatio: number | null; heightM: number | null; parkingPerHousing: number | null } | null };
 export type DesignPacket = { programme: string; target: string; location: string; pluZone: string | null;
-  horizonYears: number; priority: string; signals: DesignSignal[]; answers?: Record<QuestionId, string> };
+  horizonYears: number; priority: string; signals: DesignSignal[]; answers?: Record<QuestionId, string>; strategy?: StrategyContext };
 export const QUESTION_IDS = ['audience', 'atmosphere', 'operation', 'identity'] as const;
 export type QuestionId = typeof QUESTION_IDS[number];
 export type QuestionPacket = { programme: string; target: string | null; location: string; pluZone: string | null;
-  horizonYears: number; priority: string };
+  horizonYears: number; priority: string; strategy?: StrategyContext };
 export type DesignQuestion = { id: QuestionId; question: string; why: string; options: string[] };
 export type GeneratedDirection = { family: DesignSignal['family']; title: string; intent: string;
   palette: { name: string; hex: string; use: string }[]; materials: string[]; architecture: string[]; interiors: string[];
@@ -17,6 +21,42 @@ const str = (value: unknown, min: number, max: number): string | null => typeof 
 const strings = (value: unknown, min: number, max: number, maxLength = 250): string[] | null => Array.isArray(value) && value.length >= min
   && value.length <= max && value.every((item) => str(item, 2, maxLength)) ? value.map((item) => item.trim()) : null;
 const families = new Set(['durable', 'contemporain', 'expressif']);
+const https = (value: unknown, max = 400): string | null => {
+  const url = str(value, 10, max);
+  if (!url) return null;
+  try { return new URL(url).protocol === 'https:' ? url : null; } catch { return null; }
+};
+
+export function sanitizeStrategyContext(value: unknown): StrategyContext | null {
+  if (value == null) return null;
+  const raw = obj(value);
+  if (!raw || !Array.isArray(raw.facts) || raw.facts.length > 8) return null;
+  const facts: DesignFact[] = [];
+  for (const candidate of raw.facts) {
+    const fact = obj(candidate);
+    const label = str(fact?.label, 3, 100), measuredValue = str(fact?.value, 1, 100);
+    const scope = str(fact?.scope, 3, 150), source = str(fact?.source, 3, 100), url = https(fact?.url);
+    if (!label || !measuredValue || !scope || !source || !url) return null;
+    facts.push({ label, value: measuredValue, scope, source, url });
+  }
+  if (raw.programmeDetail != null && !str(raw.programmeDetail, 3, 600)) return null;
+  if (raw.units != null && !/^\d{1,5}$/.test(String(raw.units))) return null;
+  if (raw.grossAreaM2 != null && !/^\d{1,8}(?:[.,]\d{1,2})?$/.test(String(raw.grossAreaM2))) return null;
+  if (raw.pluSource != null && !https(raw.pluSource)) return null;
+  let envelope: StrategyContext['envelope'] = null;
+  if (raw.envelope != null) {
+    const values = obj(raw.envelope);
+    if (!values) return null;
+    const cesRatio = values.cesRatio, heightM = values.heightM, parkingPerHousing = values.parkingPerHousing;
+    if (cesRatio != null && (typeof cesRatio !== 'number' || !Number.isFinite(cesRatio) || cesRatio <= 0 || cesRatio > 1)) return null;
+    if (heightM != null && (typeof heightM !== 'number' || !Number.isFinite(heightM) || heightM <= 0 || heightM > 300)) return null;
+    if (parkingPerHousing != null && (typeof parkingPerHousing !== 'number' || !Number.isFinite(parkingPerHousing) || parkingPerHousing < 0 || parkingPerHousing > 20)) return null;
+    envelope = { cesRatio: cesRatio as number | null, heightM: heightM as number | null, parkingPerHousing: parkingPerHousing as number | null };
+  }
+  return { programmeDetail: str(raw.programmeDetail, 3, 600), units: raw.units == null ? null : String(raw.units),
+    grossAreaM2: raw.grossAreaM2 == null ? null : String(raw.grossAreaM2), facts,
+    pluZone: str(raw.pluZone, 1, 40), pluSource: https(raw.pluSource), envelope };
+}
 
 export function sanitizeQuestionPacket(value: unknown): QuestionPacket | null {
   const raw = obj(value);
@@ -24,7 +64,9 @@ export function sanitizeQuestionPacket(value: unknown): QuestionPacket | null {
   const horizonYears = raw?.horizonYears;
   if (!programme || !location || !priority || typeof horizonYears !== 'number' || !Number.isInteger(horizonYears) || horizonYears < 5 || horizonYears > 30) return null;
   if (raw?.target != null && raw.target !== '' && !str(raw.target, 3, 240)) return null;
-  return { programme, target: str(raw?.target, 3, 240), location, priority, horizonYears, pluZone: str(raw?.pluZone, 1, 40) };
+  const strategy = sanitizeStrategyContext(raw?.strategy);
+  if (raw?.strategy != null && !strategy) return null;
+  return { programme, target: str(raw?.target, 3, 240), location, priority, horizonYears, pluZone: str(raw?.pluZone, 1, 40), ...(strategy ? { strategy } : {}) };
 }
 
 export function validateDesignQuestions(value: unknown): DesignQuestion[] | null {
@@ -66,7 +108,10 @@ export function sanitizeDesignPacket(value: unknown): DesignPacket | null {
     if (entries.some(([, answer]) => !answer)) return null;
     answers = Object.fromEntries(entries) as Record<QuestionId, string>;
   }
-  return { programme, target, location, priority, horizonYears, pluZone: str(raw?.pluZone, 1, 40), signals, ...(answers ? { answers } : {}) };
+  const strategy = sanitizeStrategyContext(raw.strategy);
+  if (raw.strategy != null && !strategy) return null;
+  return { programme, target, location, priority, horizonYears, pluZone: str(raw?.pluZone, 1, 40), signals,
+    ...(answers ? { answers } : {}), ...(strategy ? { strategy } : {}) };
 }
 
 export function validateGeneratedDesign(value: unknown, packet: DesignPacket): GeneratedDesign | null {

@@ -48,3 +48,16 @@ test('les quatre réponses utilisateur doivent être fournies au brief Auto', ()
   assert.deepEqual(sanitizeDesignPacket({ ...packet, answers })?.answers, answers);
   assert.equal(sanitizeDesignPacket({ ...packet, answers: { ...answers, identity: '' } }), null);
 });
+
+test('les faits de stratégie transmis à l’IA exigent source, périmètre et HTTPS', () => {
+  const strategy = { programmeDetail: 'Dix-huit logements pour ménages permanents', units: '18', grossAreaM2: '1500',
+    facts: [{ label: 'Logements vacants', value: '8 %', scope: 'Commune 64065 · 2025', source: 'INSEE', url: 'https://www.insee.fr/fr/statistiques' }],
+    pluZone: 'UA', pluSource: null, envelope: { cesRatio: 0.35, heightM: 12, parkingPerHousing: 1 } };
+  assert.equal(sanitizeQuestionPacket({ programme: 'Logements', location: 'Ascain', horizonYears: 15, priority: 'Durabilité', strategy })?.strategy?.facts.length, 1);
+  assert.equal(sanitizeDesignPacket({ ...packet, strategy })?.strategy?.units, '18');
+  assert.equal(sanitizeDesignPacket({ ...packet, strategy })?.strategy?.envelope?.heightM, 12);
+  assert.equal(sanitizeDesignPacket({ ...packet, strategy: { ...strategy, facts: [{ ...strategy.facts[0], url: 'http://example.org' }] } }), null);
+  assert.equal(sanitizeQuestionPacket({ programme: 'Logements', location: 'Ascain', horizonYears: 15, priority: 'Durabilité',
+    strategy: { ...strategy, units: '-5' } }), null);
+  assert.equal(sanitizeDesignPacket({ ...packet, strategy: { ...strategy, envelope: { ...strategy.envelope, cesRatio: 1.5 } } }), null);
+});

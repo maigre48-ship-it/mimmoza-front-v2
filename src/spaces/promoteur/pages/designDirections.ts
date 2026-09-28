@@ -1,4 +1,5 @@
 import { programmeKind, type ProgrammeKind } from './projectProgramme.ts';
+import type { StrategyContext } from '../../../../supabase/functions/design-direction-v1/validation.ts';
 
 export type StyleFamily = 'durable' | 'contemporain' | 'expressif';
 export type DesignSource = { id: string; title: string; url: string; year: string; scope: string; observation: string; family: StyleFamily };
@@ -8,7 +9,7 @@ export type DesignDirection = { family: StyleFamily; title: string; intent: stri
 export type DesignBrief = { programme: string; target: string; location: string; horizonYears: number; priority: string;
   directions: DesignDirection[]; selectedFamily: StyleFamily | null; adjustments: string; generatedAt: string;
   method?: 'local' | 'ai'; model?: string; recommendedFamily?: StyleFamily; rationale?: string; checks?: string[];
-  questionnaire?: { question: string; answer: string }[] };
+  questionnaire?: { question: string; answer: string }[]; strategy?: StrategyContext };
 
 export const EDITORIAL_SOURCES: DesignSource[] = [
   { id: 'houzz-2026', title: 'Houzz · Prévisions habitat 2026', year: '2026', scope: 'États-Unis · habitat', family: 'durable',
@@ -47,7 +48,7 @@ const FAMILIES: Record<StyleFamily, Omit<DesignDirection, 'family' | 'architectu
 
 /** Trois hypothèses locales de conception, sans prétendre lire ou prédire les contenus liés. */
 export function buildDesignBrief(input: { programme: string; target: string; location: string; horizonYears: number; priority: string;
-  sources: DesignSource[]; generatedAt?: string }): DesignBrief {
+  sources: DesignSource[]; generatedAt?: string; strategy?: StrategyContext }): DesignBrief {
   const kind = programmeKind(input.programme), needs = KIND[kind];
   const directions = (['durable', 'contemporain', 'expressif'] as StyleFamily[]).map((family): DesignDirection => {
     const base = FAMILIES[family];
@@ -61,7 +62,7 @@ export function buildDesignBrief(input: { programme: string; target: string; loc
     };
   });
   return { programme: input.programme, target: input.target, location: input.location, horizonYears: input.horizonYears,
-    priority: input.priority, directions, selectedFamily: null, adjustments: '', generatedAt: input.generatedAt ?? new Date().toISOString(), method: 'local' };
+    priority: input.priority, directions, selectedFamily: null, adjustments: '', generatedAt: input.generatedAt ?? new Date().toISOString(), method: 'local', strategy: input.strategy };
 }
 
 export function designBriefText(brief: DesignBrief, sources: DesignSource[]): string {
@@ -75,6 +76,14 @@ export function designBriefText(brief: DesignBrief, sources: DesignSource[]): st
     `Points de vigilance : ${chosen.vigilance}`, brief.questionnaire?.length ? `Réponses du porteur : ${brief.questionnaire.map((item) => `${item.question} ${item.answer}`).join(' ; ')}.` : '',
     brief.rationale ? `Lecture de l’IA : ${brief.rationale}` : '',
     brief.checks?.length ? `À vérifier : ${brief.checks.join(' ; ')}.` : '', brief.adjustments ? `Ajustements du porteur : ${brief.adjustments}` : '',
+    brief.strategy?.programmeDetail ? `Programme repris du dossier de décision : ${brief.strategy.programmeDetail}.` : '',
+    brief.strategy?.facts.length ? `Contexte de marché (ces mesures ne prouvent pas les goûts de la cible) : ${brief.strategy.facts.map((fact) => `${fact.label} ${fact.value} · ${fact.scope} · ${fact.source} · ${fact.url}`).join(' ; ')}.` : '',
+    brief.strategy?.pluZone ? `Zone PLU relevée : ${brief.strategy.pluZone}${brief.strategy.pluSource ? ` · source enregistrée : ${brief.strategy.pluSource}` : ''}. Règlement opposable à vérifier.` : '',
+    brief.strategy?.envelope ? `Indications de gabarit extraites du dossier (non validées) : ${[
+      brief.strategy.envelope.cesRatio != null ? `emprise ${Math.round(brief.strategy.envelope.cesRatio * 100)} %` : '',
+      brief.strategy.envelope.heightM != null ? `hauteur ${brief.strategy.envelope.heightM} m` : '',
+      brief.strategy.envelope.parkingPerHousing != null ? `stationnement ${brief.strategy.envelope.parkingPerHousing} place(s)/logement` : '',
+    ].filter(Boolean).join(' ; ')}.` : '',
     `Références d’inspiration (elles ne prouvent pas une demande locale) : ${linked.map((source) => `${source.title} · ${source.scope} · ${source.url}`).join(' ; ') || 'aucune'}.`,
     'À vérifier : règlement PLU opposable, contraintes du site, faisabilité technique, entretien, budget et avis des utilisateurs/exploitants.'].filter(Boolean).join('\n\n');
 }
