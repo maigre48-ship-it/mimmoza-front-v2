@@ -68,6 +68,7 @@ export function DecisionDossierSection({ scenarios, studyId, linkedParcelId, lin
     const all = { ...records, [latest.id]: next };
     setRecords(all);
     userStorage.setItem(key, JSON.stringify(all));
+    window.dispatchEvent(new Event('mimmoza:strategy-decision-updated'));
   };
   const field = (name: keyof Omit<DecisionRecord, 'gates' | 'operating'>, label: string, unit?: string) => <label className="text-sm font-medium text-slate-700">{label}<div className="mt-1 flex items-center rounded-xl border border-slate-300"><input type={unit ? 'number' : 'text'} min={unit ? '0' : undefined} step={unit ? 'any' : undefined} value={record[name] ?? ''} onChange={(event) => update({ ...record, [name]: event.target.value })} className="w-full min-w-0 rounded-xl px-3 py-2.5 font-normal" />{unit && <span className="pr-3 text-xs text-slate-500">{unit}</span>}</div></label>;
   const patchGate = (gate: GateKey, patch: Partial<DecisionRecord['gates'][GateKey]>) => update({ ...record, gates: { ...record.gates,

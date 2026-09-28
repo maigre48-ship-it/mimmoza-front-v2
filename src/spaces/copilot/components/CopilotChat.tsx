@@ -2,6 +2,8 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useCopilot } from '../hooks/useCopilot';
 import { useCopilotContext } from '../hooks/useCopilotContext';
+import { getCopilotQuickQuestions } from '../utils/quickQuestions';
+import { useLocation } from 'react-router-dom';
 import { CopilotEmptyState } from './CopilotEmptyState';
 import { CopilotInput } from './CopilotInput';
 import { CopilotMessage } from './CopilotMessage';
@@ -25,6 +27,7 @@ export function CopilotChat({
   // Chaque appel parcourait tout le localStorage deux fois, désérialisait deux
   // snapshots et imprimait douze lignes de trace. Voir useCopilotContext.
   const { vertical } = useCopilotContext();
+  const { pathname } = useLocation();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Mode effectif : si forceMode est fourni (ex. MimmozIA en "advanced"),
@@ -61,6 +64,8 @@ export function CopilotChat({
   }, [forceMode]);
 
   const empty = messages.length === 0 && !loadingMessages;
+  const strategyQuestions = pathname === '/promoteur/strategie-projet'
+    ? getCopilotQuickQuestions({ pathname, mode: effectiveMode === 'quick' ? 'quick' : 'advanced' }) : null;
 
   return (
     <div className="copilot-chat">
@@ -76,6 +81,11 @@ export function CopilotChat({
           messages.map((m) => <CopilotMessage key={m.id} message={m} conversationId={currentConversationId} onSend={handleSend} />)
         )}
       </div>
+      {!empty && strategyQuestions && <div aria-label="Questions pour cette étude" style={{ display: 'flex', gap: 6, overflowX: 'auto', padding: '9px 12px', borderTop: `1px solid ${T.borderSoft}` }}>
+        {strategyQuestions.map((question) => <button key={question.label} type="button" onClick={() => handleSend(question.prompt)} disabled={isStreaming}
+          style={{ flexShrink: 0, border: `1px solid ${T.border}`, borderRadius: 999, background: T.accentSoft,
+            color: T.text, padding: '6px 10px', fontSize: 11, cursor: isStreaming ? 'not-allowed' : 'pointer', opacity: isStreaming ? 0.5 : 1 }}>{question.label}</button>)}
+      </div>}
       <CopilotInput
         mode={effectiveMode}
         onChangeMode={setMode}

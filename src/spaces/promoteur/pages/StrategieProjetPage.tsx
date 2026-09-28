@@ -3,6 +3,7 @@ import { ArrowRight, Building2, Loader2, MapPin, Search, ShieldAlert } from 'luc
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { userStorage } from '@/lib/storage/userScopedStorage';
+import { getActiveCopilotContext, setActiveCopilotContext } from '@/spaces/copilot/store/activeCopilotContext.store';
 import { programmeBrief } from '@/spaces/copilot/dossier/parcelStrategy';
 import { HotelDossierSection } from './HotelDossierSection';
 import { MarketDepthSection } from './MarketDepthSection';
@@ -23,6 +24,9 @@ import { PromoteurPageHero } from '../shared/components/PromoteurPageHero';
 import { readUnifiedSelection } from '../shared/promoteurSelectionBridge';
 import { usePromoteurStudy } from '../shared/usePromoteurStudy';
 import { usePromoteurStudyId } from '../shared/usePromoteurStudyId';
+import { buildStrategyCopilotSnapshot } from './strategyCopilotSnapshot';
+import type { DecisionRecord } from './decisionDossier';
+import type { OperatorFollowUp } from './operatorFollowup';
 
 type Scenario = {
   id: string;
@@ -136,6 +140,7 @@ export default function StrategieProjetPage() {
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [hydratedStudy, setHydratedStudy] = useState<string | null>(null);
+  const [decisionVersion, setDecisionVersion] = useState(0);
   const brief = programmeBrief(programme);
   const latest = scenarios[0] ?? null;
   const studyQuery = studyId ? `?study=${encodeURIComponent(studyId)}` : '';
@@ -150,6 +155,38 @@ export default function StrategieProjetPage() {
   const latestType = latest ? programmeBrief(latest.programme)?.marketType : null;
   const latestSector = latestType && SCREENING_SECTORS.some((sector) => sector.key === latestType) ? latestType as SectorKey : latest?.programme.toLowerCase().includes('clinique') ? 'clinique' : null;
   const latestReading = latest && latestSector ? readSector({ key: latestSector, market: latest.market, error: latest.marketError, hotel: latest.hotelEvidence, bpe: latest.bpe, supply: latest.supply, finess: latest.finess }) : null;
+
+  useEffect(() => {
+    const onDecisionChange = () => setDecisionVersion((version) => version + 1);
+    window.addEventListener('mimmoza:strategy-decision-updated', onDecisionChange);
+    window.addEventListener('mimmoza:operator-followup', onDecisionChange);
+    return () => {
+      window.removeEventListener('mimmoza:strategy-decision-updated', onDecisionChange);
+      window.removeEventListener('mimmoza:operator-followup', onDecisionChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    let decisions: Record<string, DecisionRecord> = {};
+    try {
+      const parsed = JSON.parse(userStorage.getItem(`mimmoza.promoteur.decision.${studyId ?? 'hors-etude'}`) ?? '{}');
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) decisions = parsed;
+    } catch { /* dossier non encore renseigné */ }
+    const operatorFollowups: Record<string, Record<string, OperatorFollowUp>> = {};
+    for (const scenario of scenarios) {
+      try {
+        const parsed = JSON.parse(userStorage.getItem(`mimmoza.promoteur.operator-followup.${scenario.id}`) ?? '{}');
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) operatorFollowups[scenario.id] = parsed;
+      } catch { /* suivi non encore renseigné */ }
+    }
+    const pageSnapshot = buildStrategyCopilotSnapshot({ parcelId, address, insee, surfaceM2,
+      pluZone: study?.plu?.zone_code, screening, screeningIsCurrent, scenarios, decisions, operatorFollowups });
+    setActiveCopilotContext({ pageSnapshot, parcelId: parcelId.trim().toUpperCase() || undefined,
+      codeInsee: insee.trim().toUpperCase() || inseeFromParcel(parcelId) || undefined });
+    return () => {
+      if (getActiveCopilotContext().pageSnapshot === pageSnapshot) setActiveCopilotContext({ pageSnapshot: undefined, parcelId: undefined, codeInsee: undefined });
+    };
+  }, [parcelId, address, insee, surfaceM2, study?.plu?.zone_code, screening, screeningIsCurrent, scenarios, studyId, decisionVersion]);
 
   useEffect(() => {
     try {
