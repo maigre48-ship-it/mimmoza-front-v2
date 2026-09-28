@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Check, Copy, ExternalLink, Palette, Plus, Sparkles } from 'lucide-react';
+import { Check, Copy, Download, ExternalLink, Palette, Plus, Sparkles } from 'lucide-react';
 import { userStorage } from '@/lib/storage/userScopedStorage';
 import { supabase } from '@/lib/supabaseClient';
 import { PromoteurPageHero } from '../shared/components/PromoteurPageHero';
 import { usePromoteurStudyId } from '../shared/usePromoteurStudyId';
 import { usePromoteurStudy } from '../shared/usePromoteurStudy';
-import { buildDesignBrief, designBriefText, EDITORIAL_SOURCES, type DesignBrief, type DesignSource, type StyleFamily } from './designDirections';
+import { buildDesignBrief, designBriefText, DESIGN_CRITERIA, EDITORIAL_SOURCES, emptyDesignReview, type DesignBrief, type DesignCriterion, type DesignReview, type DesignSource, type DesignVerdict, type StyleFamily } from './designDirections';
+import { DesignConceptBoard } from './DesignConceptBoard';
+import { buildStudioHandoff, CRITERION_LABELS, criterionReading, designDossierHtml, documentedCriteria, VERDICT_LABELS } from './designDecisionDossier';
 import type { DecisionRecord } from './decisionDossier';
 import { buildDesignStrategyContext, strategyPrefill, type DesignStrategyScenario } from './designStrategyContext';
 import { QUESTION_IDS, sanitizeDesignPacket, sanitizeQuestionPacket, validateDesignQuestions, validateGeneratedDesign, type DesignQuestion, type QuestionId } from '../../../../supabase/functions/design-direction-v1/validation.ts';
@@ -171,7 +173,7 @@ export default function StyleTendancesPage() {
         throw new Error('Le projet a changé pendant l’analyse. Relancez-la avec les nouveaux éléments.');
       const result = data.result as { generatedAt?: string; model?: string };
       patch({ brief: { programme: packet.programme, target: packet.target, location: packet.location, horizonYears: packet.horizonYears,
-        priority: packet.priority, directions: generated.directions, selectedFamily: null, adjustments: '',
+        priority: packet.priority, directions: generated.directions, selectedFamily: null, adjustments: '', review: emptyDesignReview(),
         generatedAt: typeof result.generatedAt === 'string' ? result.generatedAt : new Date().toISOString(), method: 'ai',
         model: typeof result.model === 'string' ? result.model : 'IA', recommendedFamily: generated.recommendedFamily,
         rationale: generated.rationale, checks: generated.checks, strategy: packet.strategy,
@@ -183,6 +185,42 @@ export default function StyleTendancesPage() {
     if (!draft.brief?.selectedFamily) return;
     try { await navigator.clipboard.writeText(designBriefText(draft.brief, sources)); setCopied(true); }
     catch { setError('La copie a échoué. Vérifiez les autorisations du navigateur.'); }
+  };
+  const updateReview = (change: Partial<DesignReview>) => {
+    const brief = draftRef.current.brief;
+    if (!brief) return;
+    patch({ brief: { ...brief, review: { ...emptyDesignReview(), ...brief.review, ...change } } });
+  };
+  const updateCriterion = (criterion: DesignCriterion, field: 'verdict' | 'evidence', value: string) => {
+    const brief = draftRef.current.brief;
+    const family = brief?.selectedFamily;
+    if (!family) return;
+    const review = { ...emptyDesignReview(), ...brief.review };
+    const existing = review.criteria[family]?.[criterion] ?? { verdict: 'a_documenter' as DesignVerdict, evidence: '' };
+    updateReview({ criteria: { ...review.criteria, [family]: { ...review.criteria[family], [criterion]: { ...existing, [field]: value } } } });
+  };
+  const download = (name: string, body: string, mime: string) => {
+    const url = URL.createObjectURL(new Blob([body], { type: mime }));
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = name; anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const exportDossier = () => {
+    if (!draft.brief?.selectedFamily) return;
+    const slug = draft.brief.programme.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 45) || 'projet';
+    download(`mimmoza-dossier-conception-${slug}.html`, designDossierHtml(draft.brief, sources), 'text/html;charset=utf-8');
+  };
+  const exportStudio = () => {
+    if (!draft.brief) return;
+    const handoff = buildStudioHandoff(draft.brief, studyId);
+    if (!handoff) return;
+    download('mimmoza-brief-visuel.json', JSON.stringify(handoff, null, 2), 'application/json;charset=utf-8');
+  };
+  const copyVisualPrompt = async () => {
+    if (!draft.brief) return;
+    const handoff = buildStudioHandoff(draft.brief, studyId);
+    if (!handoff) return;
+    try { await navigator.clipboard.writeText(handoff.prompt); setCopied(true); }
+    catch { setError('La copie du brief visuel a échoué.'); }
   };
 
   return <div className="mx-auto max-w-7xl space-y-6 px-4 pb-14 pt-6 sm:px-6">
@@ -281,8 +319,9 @@ export default function StyleTendancesPage() {
         {draft.brief.questionnaire?.length ? <div className="mt-3 rounded-xl border border-indigo-100 bg-white p-4 text-sm"><strong>Vos choix pris en compte</strong><ul className="mt-2 list-disc space-y-1 pl-5">{draft.brief.questionnaire.map((item) => <li key={item.question}>{item.question} <strong>{item.answer}</strong></li>)}</ul></div> : null}
         {draft.brief.method === 'ai' && <div className="mt-3 rounded-xl bg-indigo-50 p-4 text-sm text-indigo-950"><strong>Direction suggérée à tester :</strong> {draft.brief.directions.find((direction) => direction.family === draft.brief?.recommendedFamily)?.title}. {draft.brief.rationale}<p className="mt-2 text-xs"><strong>Vérifications :</strong> {draft.brief.checks?.join(' · ')}</p></div>}</div>
       <div className="grid gap-4 xl:grid-cols-3">{draft.brief.directions.map((direction) => <article key={direction.family} className={`rounded-3xl border bg-white p-5 ${draft.brief?.selectedFamily === direction.family ? 'border-indigo-500 ring-2 ring-indigo-100' : 'border-slate-200'}`}>
-        <div className="flex gap-2">{direction.palette.map((color) => <div key={color.hex} title={`${color.name} · ${color.use}`} style={{ backgroundColor: color.hex }} className="h-12 flex-1 rounded-lg border border-black/10" />)}</div>
-        <p className="mt-4 text-xs font-bold uppercase tracking-wide text-indigo-600">{familyLabel[direction.family]}{draft.brief?.recommendedFamily === direction.family ? ' · piste suggérée' : ''}</p><h3 className="mt-1 text-lg font-semibold">{direction.title}</h3><p className="mt-2 text-sm text-slate-700">{direction.intent}</p>
+        <DesignConceptBoard direction={direction} programme={draft.brief!.programme} />
+        <div className="mt-3 flex gap-2">{direction.palette.map((color) => <div key={color.hex} title={`${color.name} · ${color.use}`} className="min-w-0 flex-1 text-center text-[11px] text-slate-600"><div style={{ backgroundColor: color.hex }} className="h-6 rounded-md border border-black/10" />{color.name}</div>)}</div>
+        <p className="mt-4 text-xs font-bold uppercase tracking-wide text-indigo-600">{familyLabel[direction.family]}{draft.brief?.recommendedFamily === direction.family ? ' · piste suggérée' : ''}</p><h3 className="mt-1 text-lg font-semibold">{direction.title}</h3><p className="mt-2 text-sm text-slate-700">{direction.intent}</p><p className="mt-3 rounded-xl bg-sky-50 p-3 text-sm text-sky-950"><strong>Pour la cible :</strong> {direction.audienceFit || `Hypothèse à tester auprès de ${draft.brief!.target}.`}</p>
         <div className="mt-4 space-y-3 text-sm"><div><strong>Architecture</strong><ul className="mt-1 list-disc space-y-1 pl-5 text-slate-700">{direction.architecture.map((item) => <li key={item}>{item}</li>)}</ul></div>
           <div><strong>Intérieurs</strong><ul className="mt-1 list-disc space-y-1 pl-5 text-slate-700">{direction.interiors.map((item) => <li key={item}>{item}</li>)}</ul></div>
           <p><strong>Matériaux :</strong> {direction.materials.join(' · ')}</p><p><strong>Ce qui dure :</strong> {direction.lasting.join(' ')}</p><p><strong>Ce qui évolue :</strong> {direction.adaptable.join(' ')}</p>
@@ -291,11 +330,20 @@ export default function StyleTendancesPage() {
         <button type="button" onClick={() => patch({ brief: { ...draft.brief!, selectedFamily: direction.family } })} className={`mt-4 inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold ${draft.brief?.selectedFamily === direction.family ? 'bg-indigo-700 text-white' : 'border border-indigo-300 text-indigo-700'}`}>
           {draft.brief?.selectedFamily === direction.family ? <><Check size={16} /> Direction choisie</> : 'Choisir cette direction'}</button>
       </article>)}</div>
+      <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white p-5"><h3 className="text-lg font-semibold">Comparer les conséquences concrètes</h3><p className="mt-1 text-sm text-slate-600">Chaque case distingue ce que la piste propose et la vérification nécessaire. Aucun score global n’est calculé.</p>
+        <table className="mt-4 min-w-[850px] w-full border-collapse text-left text-sm"><thead><tr className="bg-slate-50"><th className="w-40 p-3">Critère</th>{draft.brief.directions.map((direction) => <th key={direction.family} className="p-3">{direction.title}</th>)}</tr></thead><tbody>{DESIGN_CRITERIA.map((criterion) => <tr key={criterion} className="border-t border-slate-200"><th className="p-3 align-top text-slate-800">{CRITERION_LABELS[criterion]}</th>{draft.brief!.directions.map((direction) => { const reading = criterionReading(draft.brief!, direction, criterion); return <td key={direction.family} className="p-3 align-top"><p className="text-slate-800">{reading.proposal}</p><p className="mt-2 text-xs text-amber-800"><strong>À vérifier :</strong> {reading.toVerify}</p></td>; })}</tr>)}</tbody></table>
+      </div>
       {draft.brief.selectedFamily && <div className="rounded-3xl border border-indigo-200 bg-indigo-50 p-5 sm:p-7"><h3 className="text-lg font-semibold text-indigo-950">Brief prêt pour l’architecte et les visuels</h3>
-        <p className="mt-2 text-sm text-indigo-900">Ajoutez vos ajustements avant de copier le brief. La proposition doit ensuite être confrontée au PLU, à un budget, à l’exploitant et aux futurs utilisateurs.</p>
+        <p className="mt-2 text-sm text-indigo-900">Documentez pourquoi cette piste convient au projet. Même renseigné, cet arbitrage reste provisoire avant validation du PLU, du budget et des usages.</p>
+        <label className="mt-4 block text-sm font-medium">Pourquoi cette direction ?<textarea value={draft.brief.review?.selectionReason ?? ''} onChange={(event) => updateReview({ selectionReason: event.target.value.slice(0, 1200) })} rows={2} className={inputClass} placeholder="Ce qu'elle apporte à la cible, et les compromis acceptés" /></label>
+        <h4 className="mt-5 font-semibold">Pièces et avis pour la piste retenue · {documentedCriteria(draft.brief)}/5 documentés</h4>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">{DESIGN_CRITERIA.map((criterion) => { const entry = draft.brief!.review?.criteria?.[draft.brief!.selectedFamily!]?.[criterion]; return <div key={criterion} className="rounded-xl bg-white p-3"><label className="text-sm font-semibold">{CRITERION_LABELS[criterion]}<select value={entry?.verdict ?? 'a_documenter'} onChange={(event) => updateCriterion(criterion, 'verdict', event.target.value)} className={inputClass}>{Object.entries(VERDICT_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="mt-2 block text-xs text-slate-700">Pièce, avis ou constat daté<textarea value={entry?.evidence ?? ''} onChange={(event) => updateCriterion(criterion, 'evidence', event.target.value.slice(0, 650))} rows={2} className={inputClass} placeholder="Source et conclusion ; ne pas marquer favorable sans pièce" /></label></div>; })}</div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2"><label className="text-sm font-medium">Entretien annuel estimé (€) <input type="number" min="0" value={draft.brief.review?.maintenance?.[draft.brief.selectedFamily]?.annualEur ?? ''} onChange={(event) => { const review = { ...emptyDesignReview(), ...draft.brief!.review }; const family = draft.brief!.selectedFamily!; updateReview({ maintenance: { ...review.maintenance, [family]: { ...review.maintenance[family], annualEur: event.target.value, source: review.maintenance[family]?.source ?? '' } } }); }} className={inputClass} placeholder="Seulement si chiffrage disponible" /></label><label className="text-sm font-medium">Source du chiffrage<input value={draft.brief.review?.maintenance?.[draft.brief.selectedFamily]?.source ?? ''} onChange={(event) => { const review = { ...emptyDesignReview(), ...draft.brief!.review }; const family = draft.brief!.selectedFamily!; updateReview({ maintenance: { ...review.maintenance, [family]: { ...review.maintenance[family], annualEur: review.maintenance[family]?.annualEur ?? '', source: event.target.value.slice(0, 350) } } }); }} className={inputClass} placeholder="Devis, exploitation comparable, date…" /></label></div>
+        {(['architectNotes', 'operatorNotes', 'userTestNotes'] as const).map((field) => <label key={field} className="mt-4 block text-sm font-medium">{{ architectNotes: 'Points à soumettre à l’architecte', operatorNotes: 'Points à soumettre à l’exploitant', userTestNotes: 'Retour de la cible à recueillir' }[field]}<textarea value={draft.brief!.review?.[field] ?? ''} onChange={(event) => updateReview({ [field]: event.target.value.slice(0, 1200) })} rows={2} className={inputClass} /></label>)}
         <label className="mt-4 block text-sm font-medium">Ajustements du porteur<textarea value={draft.brief.adjustments} onChange={(event) => patch({ brief: { ...draft.brief!, adjustments: event.target.value.slice(0, 1000) } })} rows={3} className={inputClass} placeholder="Matériaux locaux, contraintes d’entretien, ambiance recherchée…" /></label>
-        <button type="button" onClick={() => void copyBrief()} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-4 py-2.5 text-sm font-semibold text-white"><Copy size={16} /> {copied ? 'Brief copié' : 'Copier le brief'}</button>
-        {studyId && <Link to={`/promoteur/generateur-facades${suffix}`} className="ml-4 inline-block text-sm font-semibold text-indigo-800 underline">Ouvrir Façades IA</Link>}
+        <div className="mt-5 flex flex-wrap items-center gap-3"><button type="button" onClick={exportDossier} className="inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-4 py-2.5 text-sm font-semibold text-white"><Download size={16} /> Télécharger le dossier imprimable</button><button type="button" onClick={exportStudio} className="inline-flex items-center gap-2 rounded-xl border border-indigo-300 px-4 py-2.5 text-sm font-semibold text-indigo-800"><Download size={16} /> Brief visuel JSON</button><button type="button" onClick={() => void copyVisualPrompt()} className="inline-flex items-center gap-2 rounded-xl border border-indigo-300 px-4 py-2.5 text-sm font-semibold text-indigo-800"><Copy size={16} /> Copier les consignes visuelles</button><button type="button" onClick={() => void copyBrief()} className="inline-flex items-center gap-2 rounded-xl border border-indigo-300 px-4 py-2.5 text-sm font-semibold text-indigo-800"><Copy size={16} /> Copier le brief complet</button></div>
+        <p className="mt-3 text-xs text-indigo-900">Le dossier HTML s’ouvre dans un navigateur et s’imprime en PDF. Le fichier JSON prépare les consignes pour Mimmoza Studio ; la maquette 3D n’est pas créée automatiquement.</p>
+        {studyId && <Link to={`/promoteur/generateur-facades${suffix}`} className="mt-3 inline-block text-sm font-semibold text-indigo-800 underline">Ouvrir Façades IA pour tester un visuel (génération facturée séparément)</Link>}
       </div>}
     </section>}
     <p className="text-xs text-slate-500">Les références et le brief sont enregistrés dans ce navigateur pour ce compte. Lors d’une analyse IA, le projet, les éléments de Stratégie de projet et les observations sélectionnées sont transmis à Anthropic. Cette page ne collecte aucune image depuis Instagram ou les magazines et n’ajoute aucune donnée DVF.</p>

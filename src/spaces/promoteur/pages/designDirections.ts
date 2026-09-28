@@ -2,14 +2,21 @@ import { programmeKind, type ProgrammeKind } from './projectProgramme.ts';
 import type { StrategyContext } from '../../../../supabase/functions/design-direction-v1/validation.ts';
 
 export type StyleFamily = 'durable' | 'contemporain' | 'expressif';
+export const DESIGN_CRITERIA = ['cible', 'reglement', 'confort', 'entretien', 'evolution'] as const;
+export type DesignCriterion = typeof DESIGN_CRITERIA[number];
+export type DesignVerdict = 'a_documenter' | 'favorable' | 'defavorable';
+export type DesignReview = { criteria: Partial<Record<StyleFamily, Partial<Record<DesignCriterion, { verdict: DesignVerdict; evidence: string }>>>>;
+  maintenance: Partial<Record<StyleFamily, { annualEur: string; source: string }>>;
+  selectionReason: string; architectNotes: string; operatorNotes: string; userTestNotes: string };
+export const emptyDesignReview = (): DesignReview => ({ criteria: {}, maintenance: {}, selectionReason: '', architectNotes: '', operatorNotes: '', userTestNotes: '' });
 export type DesignSource = { id: string; title: string; url: string; year: string; scope: string; observation: string; family: StyleFamily };
 export type DesignDirection = { family: StyleFamily; title: string; intent: string; palette: { name: string; hex: string; use: string }[];
   materials: string[]; architecture: string[]; interiors: string[]; lasting: string[]; adaptable: string[];
-  vigilance: string; sourceIds: string[] };
+  vigilance: string; sourceIds: string[]; audienceFit?: string };
 export type DesignBrief = { programme: string; target: string; location: string; horizonYears: number; priority: string;
   directions: DesignDirection[]; selectedFamily: StyleFamily | null; adjustments: string; generatedAt: string;
   method?: 'local' | 'ai'; model?: string; recommendedFamily?: StyleFamily; rationale?: string; checks?: string[];
-  questionnaire?: { question: string; answer: string }[]; strategy?: StrategyContext };
+  questionnaire?: { question: string; answer: string }[]; strategy?: StrategyContext; review?: DesignReview };
 
 export const EDITORIAL_SOURCES: DesignSource[] = [
   { id: 'houzz-2026', title: 'Houzz · Prévisions habitat 2026', year: '2026', scope: 'États-Unis · habitat', family: 'durable',
@@ -58,11 +65,13 @@ export function buildDesignBrief(input: { programme: string; target: string; loc
       lasting: [needs.lasting, `Priorité du porteur : ${input.priority}.`],
       adaptable: [needs.adaptable, 'Séparer éléments pérennes et décors remplaçables.'],
       vigilance: needs.vigilance,
+      audienceFit: `La piste ${base.title.toLowerCase()} est à confronter à la cible « ${input.target} » ; les données disponibles ne mesurent pas encore ses préférences esthétiques.`,
       sourceIds: input.sources.filter((source) => source.family === family || source.id === 'levels-eu').map((source) => source.id),
     };
   });
   return { programme: input.programme, target: input.target, location: input.location, horizonYears: input.horizonYears,
-    priority: input.priority, directions, selectedFamily: null, adjustments: '', generatedAt: input.generatedAt ?? new Date().toISOString(), method: 'local', strategy: input.strategy };
+    priority: input.priority, directions, selectedFamily: null, adjustments: '', generatedAt: input.generatedAt ?? new Date().toISOString(), method: 'local', strategy: input.strategy,
+    review: emptyDesignReview() };
 }
 
 export function designBriefText(brief: DesignBrief, sources: DesignSource[]): string {
@@ -70,10 +79,15 @@ export function designBriefText(brief: DesignBrief, sources: DesignSource[]): st
   if (!chosen) return 'Choisir une direction avant de créer le brief.';
   const linked = sources.filter((source) => chosen.sourceIds.includes(source.id));
   return [`BRIEF ARCHITECTURAL · ${brief.programme}`, `Lieu : ${brief.location}. Cible à tester : ${brief.target}. Horizon visé : ${brief.horizonYears} ans.`,
-    `Direction choisie : ${chosen.title}. ${chosen.intent}`, `Palette : ${chosen.palette.map((color) => `${color.name} ${color.hex} (${color.use})`).join(' ; ')}.`,
+    `Direction choisie : ${chosen.title}. ${chosen.intent}`, chosen.audienceFit ? `Adéquation à la cible à tester : ${chosen.audienceFit}` : '',
+    brief.review?.selectionReason ? `Motif du choix : ${brief.review.selectionReason}` : '',
+    `Palette : ${chosen.palette.map((color) => `${color.name} ${color.hex} (${color.use})`).join(' ; ')}.`,
     `Matériaux : ${chosen.materials.join(' ; ')}.`, `Architecture : ${chosen.architecture.join(' ; ')}.`, `Intérieurs : ${chosen.interiors.join(' ; ')}.`,
     `Choix pérennes : ${chosen.lasting.join(' ; ')}.`, `Éléments adaptables : ${chosen.adaptable.join(' ; ')}.`,
     `Points de vigilance : ${chosen.vigilance}`, brief.questionnaire?.length ? `Réponses du porteur : ${brief.questionnaire.map((item) => `${item.question} ${item.answer}`).join(' ; ')}.` : '',
+    brief.review?.architectNotes ? `À transmettre à l’architecte : ${brief.review.architectNotes}` : '',
+    brief.review?.operatorNotes ? `À transmettre à l’exploitant : ${brief.review.operatorNotes}` : '',
+    brief.review?.userTestNotes ? `À tester auprès de la cible : ${brief.review.userTestNotes}` : '',
     brief.rationale ? `Lecture de l’IA : ${brief.rationale}` : '',
     brief.checks?.length ? `À vérifier : ${brief.checks.join(' ; ')}.` : '', brief.adjustments ? `Ajustements du porteur : ${brief.adjustments}` : '',
     brief.strategy?.programmeDetail ? `Programme repris du dossier de décision : ${brief.strategy.programmeDetail}.` : '',

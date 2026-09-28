@@ -12,7 +12,7 @@ export type QuestionPacket = { programme: string; target: string | null; locatio
 export type DesignQuestion = { id: QuestionId; question: string; why: string; options: string[] };
 export type GeneratedDirection = { family: DesignSignal['family']; title: string; intent: string;
   palette: { name: string; hex: string; use: string }[]; materials: string[]; architecture: string[]; interiors: string[];
-  lasting: string[]; adaptable: string[]; vigilance: string; sourceIds: string[] };
+  lasting: string[]; adaptable: string[]; vigilance: string; sourceIds: string[]; audienceFit?: string };
 export type GeneratedDesign = { directions: GeneratedDirection[]; recommendedFamily: DesignSignal['family'];
   rationale: string; checks: string[]; generatedAt?: string; model?: string };
 
@@ -125,6 +125,7 @@ export function validateGeneratedDesign(value: unknown, packet: DesignPacket): G
     if (!families.has(family) || foundFamilies.has(family)) return null;
     foundFamilies.add(family);
     const title = str(direction?.title, 3, 100), intent = str(direction?.intent, 15, 400);
+    const audienceFit = str(direction?.audienceFit, 20, 400);
     const materials = strings(direction?.materials, 2, 5, 140), architecture = strings(direction?.architecture, 2, 4);
     const interiors = strings(direction?.interiors, 2, 4), lasting = strings(direction?.lasting, 2, 4);
     const adaptable = strings(direction?.adaptable, 2, 4), vigilance = str(direction?.vigilance, 15, 400);
@@ -136,7 +137,8 @@ export function validateGeneratedDesign(value: unknown, packet: DesignPacket): G
     const colors = palette.map(obj);
     if (colors.some((color) => !str(color?.name, 2, 60) || !str(color?.use, 4, 120) || typeof color?.hex !== 'string' || !/^#[0-9A-Fa-f]{6}$/.test(color.hex))) return null;
     directions.push({ family: family as DesignSignal['family'], title, intent, materials, architecture, interiors, lasting,
-      adaptable, vigilance, sourceIds, palette: colors.map((color) => ({ name: String(color!.name), hex: String(color!.hex).toUpperCase(), use: String(color!.use) })) });
+      adaptable, vigilance, sourceIds, ...(audienceFit ? { audienceFit } : {}),
+      palette: colors.map((color) => ({ name: String(color!.name), hex: String(color!.hex).toUpperCase(), use: String(color!.use) })) });
   }
   const rationale = str(raw.rationale, 20, 600), checks = strings(raw.checks, 3, 6, 250);
   if (!rationale || !checks) return null;
