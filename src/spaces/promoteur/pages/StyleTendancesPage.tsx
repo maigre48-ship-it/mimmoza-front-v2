@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, Copy, ExternalLink, Palette, Plus, Sparkles } from 'lucide-react';
 import { userStorage } from '@/lib/storage/userScopedStorage';
+import { supabase } from '@/lib/supabaseClient';
 import { PromoteurPageHero } from '../shared/components/PromoteurPageHero';
 import { usePromoteurStudyId } from '../shared/usePromoteurStudyId';
 import { usePromoteurStudy } from '../shared/usePromoteurStudy';
 import { buildDesignBrief, designBriefText, EDITORIAL_SOURCES, type DesignBrief, type DesignSource, type StyleFamily } from './designDirections';
 import type { DecisionRecord } from './decisionDossier';
+import { sanitizeDesignPacket, validateGeneratedDesign } from '../../../../supabase/functions/design-direction-v1/validation.ts';
 
 type Scenario = { id: string; programme: string; parcelId?: string; address?: string; insee?: string };
 type Draft = { selectedScenarioId: string; programme: string; target: string; location: string; priority: string; horizonYears: number;
@@ -21,6 +23,7 @@ export default function StyleTendancesPage() {
   const studyId = usePromoteurStudyId();
   const { study } = usePromoteurStudy(studyId);
   const [draft, setDraft] = useState<Draft>(empty);
+  const draftRef = useRef(draft);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [sourceTitle, setSourceTitle] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
@@ -28,8 +31,10 @@ export default function StyleTendancesPage() {
   const [sourceFamily, setSourceFamily] = useState<StyleFamily>('contemporain');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const sources = useMemo(() => [...EDITORIAL_SOURCES, ...draft.customSources], [draft.customSources]);
   const suffix = studyId ? `?study=${encodeURIComponent(studyId)}` : '';
+  useEffect(() => { draftRef.current = draft; }, [draft]);
 
   useEffect(() => {
     let restored: Draft | null = null;
@@ -57,8 +62,8 @@ export default function StyleTendancesPage() {
   }, [studyId]);
 
   const patch = (change: Partial<Draft>) => {
-    const next = { ...draft, ...change };
-    setDraft(next); userStorage.setItem(key(studyId), JSON.stringify(next)); setCopied(false);
+    const next = { ...draftRef.current, ...change };
+    draftRef.current = next; setDraft(next); userStorage.setItem(key(studyId), JSON.stringify(next)); setCopied(false);
   };
   const chooseScenario = (id: string) => {
     const scenario = scenarios.find((item) => item.id === id);
@@ -93,6 +98,33 @@ export default function StyleTendancesPage() {
       priority: draft.priority, horizonYears: draft.horizonYears, sources: selected }) });
     setError('');
   };
+  const createAiBrief = async () => {
+    const selected = sources.filter((source) => draft.selectedSourceIds.includes(source.id));
+    const packet = sanitizeDesignPacket({ programme: draft.programme.trim(), target: draft.target.trim(), location: draft.location.trim(),
+      priority: draft.priority, horizonYears: draft.horizonYears, pluZone: study?.plu?.zone_code ?? null,
+      signals: selected.map(({ id, title, url, observation, scope, year, family }) => ({ id, title, url, observation, scope, year, family })) });
+    if (!packet) { setError('Précisez le projet et choisissez au moins une référence commentée valide.'); return; }
+    const requestState = JSON.stringify({ programme: draft.programme, target: draft.target, location: draft.location,
+      priority: draft.priority, horizonYears: draft.horizonYears, selectedSourceIds: draft.selectedSourceIds });
+    setGenerating(true); setError('');
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke<{ result?: unknown; error?: string }>('design-direction-v1', { body: { packet } });
+      if (invokeError || !data?.result) throw new Error(data?.error || invokeError?.message || 'Analyse IA indisponible.');
+      const generated = validateGeneratedDesign(data.result, packet);
+      if (!generated) throw new Error('Le brief reçu ne respecte pas les références choisies. Réessayez.');
+      const current = draftRef.current;
+      if (requestState !== JSON.stringify({ programme: current.programme, target: current.target, location: current.location,
+        priority: current.priority, horizonYears: current.horizonYears, selectedSourceIds: current.selectedSourceIds }))
+        throw new Error('Le projet a changé pendant l’analyse. Relancez-la avec les nouveaux éléments.');
+      const result = data.result as { generatedAt?: string; model?: string };
+      patch({ brief: { programme: packet.programme, target: packet.target, location: packet.location, horizonYears: packet.horizonYears,
+        priority: packet.priority, directions: generated.directions, selectedFamily: null, adjustments: '',
+        generatedAt: typeof result.generatedAt === 'string' ? result.generatedAt : new Date().toISOString(), method: 'ai',
+        model: typeof result.model === 'string' ? result.model : 'IA', recommendedFamily: generated.recommendedFamily,
+        rationale: generated.rationale, checks: generated.checks } });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Analyse IA indisponible.'); }
+    finally { setGenerating(false); }
+  };
   const copyBrief = async () => {
     if (!draft.brief?.selectedFamily) return;
     try { await navigator.clipboard.writeText(designBriefText(draft.brief, sources)); setCopied(true); }
@@ -125,7 +157,7 @@ export default function StyleTendancesPage() {
     <section className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7">
       <p className="text-xs font-bold uppercase tracking-widest text-indigo-600">02 · Références</p>
       <h2 className="mt-1 text-xl font-semibold">Signaux et inspirations à examiner</h2>
-      <p className="mt-2 text-sm text-slate-600">Chaque signal indique son périmètre. Les liens de magazines ou d’Instagram ajoutés ci-dessous ne sont pas lus automatiquement : décrivez précisément ce que vous souhaitez en retenir. Aucun média n’est copié ni stocké.</p>
+      <p className="mt-2 text-sm text-slate-600">Chaque signal indique son périmètre. Les liens de magazines ou d’Instagram ajoutés ci-dessous ne sont pas lus automatiquement : décrivez précisément ce que vous souhaitez en retenir. L’IA analyse ces observations, pas les images derrière les liens. Aucun média n’est copié ni stocké.</p>
       <div className="mt-5 grid gap-3 md:grid-cols-2">{sources.map((source) => <article key={source.id} className="rounded-2xl border border-slate-200 p-4">
         <div className="flex items-start gap-3"><input type="checkbox" checked={draft.selectedSourceIds.includes(source.id)} onChange={(event) => patch({ selectedSourceIds: event.target.checked ? [...draft.selectedSourceIds, source.id] : draft.selectedSourceIds.filter((id) => id !== source.id), brief: null })} className="mt-1 h-4 w-4" aria-label={`Inclure ${source.title}`} />
           <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{source.title}</strong><span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{familyLabel[source.family]}</span></div>
@@ -140,15 +172,18 @@ export default function StyleTendancesPage() {
           <label className="text-xs font-medium md:col-span-2">Ce que montre cette référence<textarea value={sourceNote} onChange={(event) => setSourceNote(event.target.value)} rows={2} maxLength={650} placeholder="Ex. matériaux, ambiance, lumière, détails que l’on souhaite tester…" className={inputClass} /></label></div>
         <button type="button" onClick={addSource} className="mt-3 inline-flex items-center gap-2 rounded-xl border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-800"><Plus size={16} /> Ajouter cette observation</button></div>
       {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
-      <button type="button" onClick={createBrief} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-5 py-3 font-semibold text-white"><Sparkles size={18} /> Comparer trois directions</button>
+      <div className="mt-5 flex flex-wrap gap-3"><button type="button" onClick={() => void createAiBrief()} disabled={generating} className="inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-5 py-3 font-semibold text-white disabled:opacity-60"><Sparkles size={18} /> {generating ? 'Analyse IA en cours…' : 'Analyser avec l’IA'}</button>
+        <button type="button" onClick={createBrief} disabled={generating} className="rounded-xl border border-indigo-300 px-5 py-3 font-semibold text-indigo-800 disabled:opacity-60">Comparer sans IA</button></div>
+      <p className="mt-2 text-xs text-slate-500">En lançant l’analyse IA, le lieu, le programme, la cible et les références sélectionnées sont envoyés à Anthropic pour produire le brief. Aucun nouvel enregistrement DVF n’est créé.</p>
     </section>
 
     {draft.brief && <section className="space-y-5" aria-label="Directions de conception">
       <div><p className="text-xs font-bold uppercase tracking-widest text-indigo-600">03 · Comparer et choisir</p><h2 className="mt-1 text-2xl font-semibold">Trois directions pour {draft.brief.programme}</h2>
-        <p className="mt-2 text-sm text-slate-600">Propositions structurées à partir du type de bâtiment et des observations sélectionnées. Les palettes sont des hypothèses, pas une prédiction des goûts à {draft.brief.horizonYears} ans.</p></div>
+        <p className="mt-2 text-sm text-slate-600">{draft.brief.method === 'ai' ? 'Analyse IA des observations sélectionnées' : 'Propositions locales structurées'} · Les palettes sont des hypothèses, pas une prédiction des goûts à {draft.brief.horizonYears} ans.</p>
+        {draft.brief.method === 'ai' && <div className="mt-3 rounded-xl bg-indigo-50 p-4 text-sm text-indigo-950"><strong>Direction suggérée à tester :</strong> {draft.brief.directions.find((direction) => direction.family === draft.brief?.recommendedFamily)?.title}. {draft.brief.rationale}<p className="mt-2 text-xs"><strong>Vérifications :</strong> {draft.brief.checks?.join(' · ')}</p></div>}</div>
       <div className="grid gap-4 xl:grid-cols-3">{draft.brief.directions.map((direction) => <article key={direction.family} className={`rounded-3xl border bg-white p-5 ${draft.brief?.selectedFamily === direction.family ? 'border-indigo-500 ring-2 ring-indigo-100' : 'border-slate-200'}`}>
         <div className="flex gap-2">{direction.palette.map((color) => <div key={color.hex} title={`${color.name} · ${color.use}`} style={{ backgroundColor: color.hex }} className="h-12 flex-1 rounded-lg border border-black/10" />)}</div>
-        <p className="mt-4 text-xs font-bold uppercase tracking-wide text-indigo-600">{familyLabel[direction.family]}</p><h3 className="mt-1 text-lg font-semibold">{direction.title}</h3><p className="mt-2 text-sm text-slate-700">{direction.intent}</p>
+        <p className="mt-4 text-xs font-bold uppercase tracking-wide text-indigo-600">{familyLabel[direction.family]}{draft.brief?.recommendedFamily === direction.family ? ' · piste suggérée' : ''}</p><h3 className="mt-1 text-lg font-semibold">{direction.title}</h3><p className="mt-2 text-sm text-slate-700">{direction.intent}</p>
         <div className="mt-4 space-y-3 text-sm"><div><strong>Architecture</strong><ul className="mt-1 list-disc space-y-1 pl-5 text-slate-700">{direction.architecture.map((item) => <li key={item}>{item}</li>)}</ul></div>
           <div><strong>Intérieurs</strong><ul className="mt-1 list-disc space-y-1 pl-5 text-slate-700">{direction.interiors.map((item) => <li key={item}>{item}</li>)}</ul></div>
           <p><strong>Matériaux :</strong> {direction.materials.join(' · ')}</p><p><strong>Ce qui dure :</strong> {direction.lasting.join(' ')}</p><p><strong>Ce qui évolue :</strong> {direction.adaptable.join(' ')}</p>
@@ -164,6 +199,6 @@ export default function StyleTendancesPage() {
         {studyId && <Link to={`/promoteur/generateur-facades${suffix}`} className="ml-4 inline-block text-sm font-semibold text-indigo-800 underline">Ouvrir Façades IA</Link>}
       </div>}
     </section>}
-    <p className="text-xs text-slate-500">Les références et le brief sont enregistrés uniquement dans ce navigateur pour ce compte. Cette page ne collecte aucune image depuis Instagram ou les magazines et n’ajoute aucune donnée DVF.</p>
+    <p className="text-xs text-slate-500">Les références et le brief sont enregistrés dans ce navigateur pour ce compte. Lors d’une analyse IA, le projet et les observations sélectionnées sont transmis à Anthropic. Cette page ne collecte aucune image depuis Instagram ou les magazines et n’ajoute aucune donnée DVF.</p>
   </div>;
 }
