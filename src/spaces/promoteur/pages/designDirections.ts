@@ -7,7 +7,8 @@ export type DesignDirection = { family: StyleFamily; title: string; intent: stri
   vigilance: string; sourceIds: string[] };
 export type DesignBrief = { programme: string; target: string; location: string; horizonYears: number; priority: string;
   directions: DesignDirection[]; selectedFamily: StyleFamily | null; adjustments: string; generatedAt: string;
-  method?: 'local' | 'ai'; model?: string; recommendedFamily?: StyleFamily; rationale?: string; checks?: string[] };
+  method?: 'local' | 'ai'; model?: string; recommendedFamily?: StyleFamily; rationale?: string; checks?: string[];
+  questionnaire?: { question: string; answer: string }[] };
 
 export const EDITORIAL_SOURCES: DesignSource[] = [
   { id: 'houzz-2026', title: 'Houzz · Prévisions habitat 2026', year: '2026', scope: 'États-Unis · habitat', family: 'durable',
@@ -71,7 +72,8 @@ export function designBriefText(brief: DesignBrief, sources: DesignSource[]): st
     `Direction choisie : ${chosen.title}. ${chosen.intent}`, `Palette : ${chosen.palette.map((color) => `${color.name} ${color.hex} (${color.use})`).join(' ; ')}.`,
     `Matériaux : ${chosen.materials.join(' ; ')}.`, `Architecture : ${chosen.architecture.join(' ; ')}.`, `Intérieurs : ${chosen.interiors.join(' ; ')}.`,
     `Choix pérennes : ${chosen.lasting.join(' ; ')}.`, `Éléments adaptables : ${chosen.adaptable.join(' ; ')}.`,
-    `Points de vigilance : ${chosen.vigilance}`, brief.rationale ? `Lecture de l’IA : ${brief.rationale}` : '',
+    `Points de vigilance : ${chosen.vigilance}`, brief.questionnaire?.length ? `Réponses du porteur : ${brief.questionnaire.map((item) => `${item.question} ${item.answer}`).join(' ; ')}.` : '',
+    brief.rationale ? `Lecture de l’IA : ${brief.rationale}` : '',
     brief.checks?.length ? `À vérifier : ${brief.checks.join(' ; ')}.` : '', brief.adjustments ? `Ajustements du porteur : ${brief.adjustments}` : '',
     `Références d’inspiration (elles ne prouvent pas une demande locale) : ${linked.map((source) => `${source.title} · ${source.scope} · ${source.url}`).join(' ; ') || 'aucune'}.`,
     'À vérifier : règlement PLU opposable, contraintes du site, faisabilité technique, entretien, budget et avis des utilisateurs/exploitants.'].filter(Boolean).join('\n\n');

@@ -1,6 +1,11 @@
 export type DesignSignal = { id: string; title: string; url: string; observation: string; scope: string; year: string; family: 'durable' | 'contemporain' | 'expressif' };
 export type DesignPacket = { programme: string; target: string; location: string; pluZone: string | null;
-  horizonYears: number; priority: string; signals: DesignSignal[] };
+  horizonYears: number; priority: string; signals: DesignSignal[]; answers?: Record<QuestionId, string> };
+export const QUESTION_IDS = ['audience', 'atmosphere', 'operation', 'identity'] as const;
+export type QuestionId = typeof QUESTION_IDS[number];
+export type QuestionPacket = { programme: string; target: string | null; location: string; pluZone: string | null;
+  horizonYears: number; priority: string };
+export type DesignQuestion = { id: QuestionId; question: string; why: string; options: string[] };
 export type GeneratedDirection = { family: DesignSignal['family']; title: string; intent: string;
   palette: { name: string; hex: string; use: string }[]; materials: string[]; architecture: string[]; interiors: string[];
   lasting: string[]; adaptable: string[]; vigilance: string; sourceIds: string[] };
@@ -12,6 +17,29 @@ const str = (value: unknown, min: number, max: number): string | null => typeof 
 const strings = (value: unknown, min: number, max: number, maxLength = 250): string[] | null => Array.isArray(value) && value.length >= min
   && value.length <= max && value.every((item) => str(item, 2, maxLength)) ? value.map((item) => item.trim()) : null;
 const families = new Set(['durable', 'contemporain', 'expressif']);
+
+export function sanitizeQuestionPacket(value: unknown): QuestionPacket | null {
+  const raw = obj(value);
+  const programme = str(raw?.programme, 3, 120), location = str(raw?.location, 2, 180), priority = str(raw?.priority, 3, 150);
+  const horizonYears = raw?.horizonYears;
+  if (!programme || !location || !priority || typeof horizonYears !== 'number' || !Number.isInteger(horizonYears) || horizonYears < 5 || horizonYears > 30) return null;
+  if (raw?.target != null && raw.target !== '' && !str(raw.target, 3, 240)) return null;
+  return { programme, target: str(raw?.target, 3, 240), location, priority, horizonYears, pluZone: str(raw?.pluZone, 1, 40) };
+}
+
+export function validateDesignQuestions(value: unknown): DesignQuestion[] | null {
+  const raw = obj(value);
+  if (!Array.isArray(raw?.questions) || raw.questions.length !== QUESTION_IDS.length) return null;
+  const questions: DesignQuestion[] = [];
+  for (const id of QUESTION_IDS) {
+    const item = obj(raw.questions.find((candidate: unknown) => obj(candidate)?.id === id));
+    const question = str(item?.question, 12, 220), why = str(item?.why, 8, 220);
+    const options = strings(item?.options, 3, 3, 100);
+    if (!question || !why || !options || new Set(options.map((option) => option.toLowerCase())).size !== 3) return null;
+    questions.push({ id, question, why, options });
+  }
+  return questions;
+}
 
 export function sanitizeDesignPacket(value: unknown): DesignPacket | null {
   const raw = obj(value);
@@ -30,7 +58,15 @@ export function sanitizeDesignPacket(value: unknown): DesignPacket | null {
     if (signals.some((signal) => signal.id === id)) return null;
     signals.push({ id, title, url, observation, scope, year, family: item!.family as DesignSignal['family'] });
   }
-  return { programme, target, location, priority, horizonYears, pluZone: str(raw?.pluZone, 1, 40), signals };
+  let answers: Record<QuestionId, string> | undefined;
+  if (raw.answers != null) {
+    const received = obj(raw.answers);
+    if (!received || Object.keys(received).length !== QUESTION_IDS.length) return null;
+    const entries = QUESTION_IDS.map((id) => [id, str(received[id], 2, 240)] as const);
+    if (entries.some(([, answer]) => !answer)) return null;
+    answers = Object.fromEntries(entries) as Record<QuestionId, string>;
+  }
+  return { programme, target, location, priority, horizonYears, pluZone: str(raw?.pluZone, 1, 40), signals, ...(answers ? { answers } : {}) };
 }
 
 export function validateGeneratedDesign(value: unknown, packet: DesignPacket): GeneratedDesign | null {
