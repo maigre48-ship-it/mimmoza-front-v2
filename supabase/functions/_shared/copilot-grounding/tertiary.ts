@@ -1,0 +1,21 @@
+export const MARKET_PROGRAMMES = ['logement', 'commerce', 'bureaux', 'hotel', 'residence_etudiante', 'ehpad'] as const;
+export function supportedMarketProgramme(input: unknown): typeof MARKET_PROGRAMMES[number] | null {
+  if (input == null || input === '') return 'logement';
+  if (typeof input !== 'string') return null;
+  const key = input.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().replace(/[\s-]+/g, '_');
+  const aliases: Record<string, typeof MARKET_PROGRAMMES[number]> = { bureau:'bureaux', office:'bureaux', commerces:'commerce', retail:'commerce', hotellerie:'hotel', residence_senior:'ehpad', senior:'ehpad', rss:'ehpad', retraite:'ehpad', etudiant:'residence_etudiante', logements:'logement', residentiel:'logement' };
+  return MARKET_PROGRAMMES.find(p => p === key) ?? aliases[key] ?? null;
+}
+
+export function tertiaryGroundingPolicy(): string {
+  return [
+    '# STRATÉGIE TERTIAIRE — PREUVES AVANT RECOMMANDATION',
+    'Pour bureaux, commerces ou locaux d’activité, les scores génériques sont des indices de contexte, jamais un classement de programmes ni une preuve de demande, de vacance ou de liquidité tertiaire. Un compteur demande_champs_mesures/attendus est une couverture de données, pas un score sur 100. Un score neutralisé faute de données ne décrit pas une demande moyenne.',
+    'get_etude_marche ne couvre pas les locaux d’activité, ateliers, industrie ou entrepôts. Aucun repli logement ne peut les évaluer : signale marché spécialisé non mesuré et complète par recherche Internet si disponible. Ne les appelle pas avec un type inventé.',
+    'Pour choisir un programme tertiaire, recherche des sources locales datées sur loyers bureaux/commerces/activité, stock, vacance, demande placée, transactions et besoins des entreprises (observatoires, CCI, INSEE/Sirene, agences spécialisées). Indique territoire, période, échantillon, loyers demandés ou signés, HT/HC et unité. Si la recherche échoue, donne une comparaison conditionnelle sans gagnant démontré. Les entreprises recensées ne sont pas des utilisateurs intéressés.',
+    'Les loyers ANIL résidentiels, la médiane DVF tous biens et le zonage ABC/B1 ne prouvent ni loyers, ni demande, ni risque de commercialisation tertiaire. Ne déduis pas une demande artisanale forte, une saturation commerciale ou une vacance faible de ces proxies ou du seul nombre de commerces. La diversification de lots est une hypothèse de gestion, pas une preuve de demande.',
+    'Une surface de terrain et un nom de commune ne permettent pas de vérifier le PLU, les accès, les risques ou une capacité à bâtir. Demande adresse ou parcelle pour ces vérifications ; distingue scénario illustratif et capacité autorisée. Ne convertis pas automatiquement 3000 m² de terrain en SDP ou surface locative. Un coût calculé sur une SDP proposée reste un exemple déclaré. Sans réglementation locale vérifiée, ne prétends pas qu’un PLUi est opposable ni qu’une zone UI/UE autorise le programme.',
+    'Contrôle la cohérence des sources avant la conclusion : un revenu ou un taux de pauvreté absent, estimé ou contredit par un avertissement FiLoSoFi ne peut figurer dans données vérifiées sans une nouvelle source explicite. Ne complète jamais un chiffre absent de mémoire. Ne transforme pas un taux fiscal en montant ; conserve les bases imposables et parts comme données à fournir.',
+    'Structure la conclusion avec : décision provisoire (ou impossible à trancher), preuves pour/contre chaque programme, utilisateurs cibles à qualifier et pourquoi, critères qui changeraient le choix, données bloquantes et prochaines actions. Aucun programme gagnant chiffré sans preuves comparables de marché et faisabilité. Identifie les hypothèses au niveau de chaque ligne, pas seulement en réserve finale.',
+  ].join('\n');
+}

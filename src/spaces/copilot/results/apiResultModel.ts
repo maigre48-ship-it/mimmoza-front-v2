@@ -108,10 +108,20 @@ export function buildApiResult(call: ActiveToolCall, options: { tableLimit?: num
     }
     case 'get_etude_marche': {
       const dvf = record(d.marche_dvf), demo = record(d.demographie_insee);
+      const programme = text(at(d, 'commune.project_type_label'));
+      if (programme) model.title = `Étude de marché · ${programme}`;
       metric('Prix médian DVF', dvf.prix_m2_median, '€/m²', text(dvf.perimetre_label) ?? 'Périmètre à vérifier');
       metric(dvf.nb_transactions_plafonne === true ? 'Transactions · au moins' : 'Transactions DVF', dvf.nb_transactions);
       metric('Population', demo.population, 'habitants'); metric('Équipements recensés', at(d, 'equipements_bpe.total_equipements'));
-      bars('Indices du modèle · pas une prévision de rentabilité', d.scores, '/100', 100);
+      const scores = record(d.scores);
+      const indices = Object.fromEntries(['demande', 'offre', 'environnement', 'accessibilite', 'global'].filter(k => number(scores[k]) !== null).map(k => [k, scores[k]]));
+      bars('Indices de contexte · ne classent pas les programmes', indices, '/100', 100);
+      if (number(scores.demande_champs_mesures) !== null || number(scores.demande_champs_attendus) !== null) {
+        metric('Champs de demande mesurés', scores.demande_champs_mesures);
+        metric('Champs de demande attendus', scores.demande_champs_attendus);
+      }
+      if (scores.demande_champs_mesures === 0) note('Aucun champ de demande mesuré : cet indice ne constitue pas une mesure de la demande locale.');
+      note('DVF tous biens et loyers résidentiels ne prouvent pas un prix ni un loyer tertiaire.');
       note('Les indices décrivent le contexte mesuré. Ils ne prouvent ni la demande propre au programme ni son chiffre d’affaires.');
       if (dvf.perimetre === 'departement') note('DVF à l’échelle du département : aucune médiane communale calculable.');
       if (demo.coverage === 'none' || demo.coverage === 'unavailable') note('Données démographiques non mesurées.');

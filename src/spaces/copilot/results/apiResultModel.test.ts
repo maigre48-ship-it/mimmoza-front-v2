@@ -4,6 +4,15 @@ import { buildApiResult, formatApiValue, safeSourceUrl } from './apiResultModel'
 import type { ActiveToolCall } from '../types/copilot.types';
 const result = (name: string, data: unknown, status = 'ok', callStatus = 'success') => buildApiResult({ id: 'test', name, status: callStatus, output: { status, source: 'Source de test', data } })!;
 
+test('les compteurs de couverture ne sont jamais tracés comme des scores sur 100', () => {
+  const m = result('get_etude_marche', { commune:{project_type_label:'Bureaux'}, scores:{demande:50, offre:65, global:68, demande_champs_mesures:0, demande_champs_attendus:2} });
+  assert.equal(m.title, 'Étude de marché · Bureaux');
+  assert.deepEqual(m.charts[0].items.map(i => i.value), [50,65,68]);
+  assert.equal(m.metrics.find(v => v.label === 'Champs de demande mesurés')?.value, '0');
+  assert.equal(m.metrics.find(v => v.label === 'Champs de demande attendus')?.value, '2');
+  assert.match(m.notes.join(' '), /Aucun champ de demande mesuré/);
+});
+
 test('une valeur absente ne devient pas un zéro ; zéro et faux restent mesurés', () => {
   assert.equal(formatApiValue(null), 'Non renseigné');
   assert.equal(formatApiValue(0, '%'), '0 %');

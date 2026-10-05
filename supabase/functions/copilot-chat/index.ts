@@ -35,6 +35,7 @@ import { isKnownRoute, routeCatalogue, routeLabel, suggestRoutes } from '../_sha
 import { createContextSnapshot, mergeContexts, type ContextSnapshot } from '../_shared/copilot-context/snapshot.ts';
 import { geographicGroundingPolicy } from '../_shared/copilot-grounding/geographic.ts';
 import { unsupportedInferencePolicy } from '../_shared/copilot-grounding/inferences.ts';
+import { MARKET_PROGRAMMES, supportedMarketProgramme, tertiaryGroundingPolicy } from '../_shared/copilot-grounding/tertiary.ts';
 import { renderParcelStudyReport } from '../_shared/copilot-reporting/parcel-study.ts';
 import { reparerEncodageProfond } from '../_shared/texte/reparerEncodage.ts';
 // Moteur prédictif — MÊME code que la page Analyse prédictive du front, qui le
@@ -2851,7 +2852,7 @@ const TOOLS: ToolDef[] = [
         zip_code: { type: 'string' },
         lat: { type: 'number' },
         lng: { type: 'number' },
-        project_type: { type: 'string', description: "Type de projet étudié (défaut « logement »)." },
+        project_type: { type: 'string', enum: [...MARKET_PROGRAMMES], description: "Programme couvert uniquement. Locaux d’activité, entrepôts, industrie et clinique non couverts : recherche web spécialisée nécessaire, aucun repli logement." },
         rayon_km: { type: 'number', description: "Rayon d'analyse en km (défaut 5). Ne s'applique PAS au bloc DVF, filtré sur la commune." },
       },
     },
@@ -5705,6 +5706,11 @@ async function toolEtudeParcelle(input: Record<string, unknown>, ctx: MimmozaCon
 // ─── get_etude_marche (branché sur market-study-investisseur-v1) ──
 // ⚠️ CONTRAT : la fonction attend "lon" (pas "lng") et "zipCode" en camelCase.
 async function toolEtudeMarche(input: Record<string, unknown>, ctx: MimmozaContext): Promise<ToolResult> {
+  const programme = supportedMarketProgramme(input.project_type);
+  if (!programme) return {
+    status: 'not_configured', source: 'Étude de marché',
+    message: 'Programme hors couverture du moteur. Aucun score ni étude logement n’est substitué. Recherche des preuves locales spécialisées avec les outils web ; sans ces preuves, le meilleur programme reste indéterminé.',
+  };
   if (!INTERNAL_FUNCTIONS.market) {
     return {
       status: 'not_configured', source: 'Étude de marché',
@@ -5743,7 +5749,7 @@ async function toolEtudeMarche(input: Record<string, unknown>, ctx: MimmozaConte
 
   try {
     const body: Record<string, unknown> = {
-      project_type: str(input.project_type) ?? 'logement',
+      project_type: programme,
       radius_km: num(input.rayon_km) ?? 5,
     };
     // ⚠️ ORDRE DE PRÉCISION. market-study v1.4.1 essaie la parcelle EN PREMIER
@@ -9214,6 +9220,7 @@ function buildSystemPrompt(ctx: MimmozaContext, mode: CopilotMode): string {
     geographicGroundingPolicy(),
     "",
     unsupportedInferencePolicy(),
+    tertiaryGroundingPolicy(),
     "",
     "RÈGLES IMPÉRATIVES :",
     "1. Tu n'inventes jamais de donnée. Si une information n'a pas été obtenue via un outil ou le snapshot, dis-le explicitement.",
