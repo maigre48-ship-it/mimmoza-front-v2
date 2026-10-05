@@ -53,6 +53,23 @@ test('la cible est résolue sur CA, avec leviers et conditions distincts', () =>
   const revenue = levers.surface_cible_a_prix_et_couts_constants_m2! * 4000;
   assert.ok((revenue - 1_750_000) / revenue >= 0.2);
 });
+test('la synthèse compte les quatre résultats positifs même si la cible est manquée', () => {
+  const data = calculated(input);
+  assert.equal(data.synthese_scenarios.nombre_resultats_positifs, 4);
+  assert.equal(data.synthese_scenarios.nombre_resultats_negatifs, 0);
+  assert.equal(data.synthese_scenarios.nombre_cibles_atteintes, 0);
+  assert.equal(data.synthese_scenarios.scenario_minimum.resultat_eur, 60_000);
+  assert.equal(data.synthese_scenarios.part_travaux_dans_couts_pct, 51.43);
+  assert.equal(data.scenarios[1].baisse_resultat_base_pct, 40);
+  assert.match(data.synthese_scenarios.interpretation, /priorité nécessite marché/);
+});
+test('la synthèse distingue résultat nul, déficit et cible absente', () => {
+  const data = calculated({ ...input, recettes_eur: 1_750_000, marge_cible_pct: undefined });
+  assert.equal(data.synthese_scenarios.nombre_resultats_nuls, 1);
+  assert.equal(data.synthese_scenarios.nombre_resultats_negatifs, 3);
+  assert.equal('nombre_cibles_atteintes' in data.synthese_scenarios, false);
+  assert.equal('baisse_resultat_base_pct' in data.scenarios[0], false);
+});
 test('une cible déjà atteinte ne demande ni économies ni hausse des recettes', () => {
   const levers = calculated({ ...input, marge_cible_pct: 10 }).leviers_marge_cible!;
   assert.equal(levers.cible_atteinte, true);

@@ -66,6 +66,8 @@ export function calculateChatBilan(input: Record<string, unknown>) {
   const scenario = (label: string, revenueFactor: number, worksFactor: number) => {
     const result = compute(revenueFactor, worksFactor);
     return { label, recettes_eur: round(result.caTotal), cout_total_eur: round(result.coutTotal), resultat_eur: round(result.marge), marge_sur_ca_pct: round(result.margePct),
+      ecart_resultat_base_eur: round(result.marge - pf.marge),
+      ...(pf.marge > 0 ? { baisse_resultat_base_pct: round((pf.marge - result.marge) / pf.marge * 100) } : {}),
       ...(equity && equity > 0 ? { resultat_sur_fonds_propres_pct: round(result.marge / equity * 100) } : {}),
       ...(area ? { prix_vente_m2_eur: round(result.caTotal / area) } : {}),
       ...(target !== undefined ? { cible_atteinte: result.margePct >= target } : {}) };
@@ -88,6 +90,18 @@ export function calculateChatBilan(input: Record<string, unknown>) {
     } : {}),
     reserve: 'Leviers alternatifs. Une hausse des recettes est calculée à coûts constants ; une économie à recettes constantes. La surface cible est uniquement mathématique : sans validation PLU, programme et coûts des m² supplémentaires, ce n’est pas une recommandation de construction.',
   } : undefined;
+  const scenarios = [scenario('Base déclarée', 1, 1), scenario('Ventes −5 %', 0.95, 1), scenario('Travaux +10 %', 1, 1.1), scenario('Ventes −5 % et travaux +10 %', 0.95, 1.1)];
+  const worst = scenarios.reduce((lowest, item) => item.resultat_eur < lowest.resultat_eur ? item : lowest);
+  const summary = {
+    nombre_scenarios: scenarios.length,
+    nombre_resultats_positifs: scenarios.filter((item) => item.resultat_eur > 0).length,
+    nombre_resultats_nuls: scenarios.filter((item) => item.resultat_eur === 0).length,
+    nombre_resultats_negatifs: scenarios.filter((item) => item.resultat_eur < 0).length,
+    ...(target !== undefined ? { nombre_cibles_atteintes: scenarios.filter((item) => item.cible_atteinte).length } : {}),
+    scenario_minimum: { label: worst.label, resultat_eur: worst.resultat_eur, marge_sur_ca_pct: worst.marge_sur_ca_pct },
+    part_travaux_dans_couts_pct: pf.coutTotal > 0 ? round(amounts.travaux_eur / pf.coutTotal * 100) : null,
+    interpretation: 'Décrire le signe des quatre résultats et leur écart à la cible. Un résultat positif sous la cible reste positif. Quantifier la réserve de résultat ; ne pas la qualifier de quasi nulle sans seuil défini. La pondération d’un coût ne prouve pas sa probabilité de dépassement. Les leviers de prix et de coûts sont des possibilités arithmétiques ; leur priorité nécessite marché, devis et calendrier.',
+  };
   return {
     status: 'ok' as const, source,
     message: 'Restituer uniquement les chiffres calculés ici, y compris leviers et ratios des scénarios. Aucun calcul supplémentaire de mémoire. Les économies se lisent à recettes constantes, les recettes cibles à coûts constants : ce sont des options distinctes. La surface cible mathématique ne prouve pas la constructibilité et doit garder sa réserve. Un ratio sur fonds propres non annualisé ne permet pas de juger une rémunération du risque suffisante ou insuffisante sans durée et exigences de l’utilisateur. Résultat avant fiscalité, pas une validation de faisabilité ni un bénéfice net fiscal.',
@@ -104,7 +118,7 @@ export function calculateChatBilan(input: Record<string, unknown>) {
       ...(equity && equity > 0 ? { fonds_propres_eur: equity, resultat_sur_fonds_propres_pct: round(pf.marge / equity * 100) } : {}),
       ...(target !== undefined ? { marge_cible_pct: target, ecart_cible_points: round(pf.margePct - target), recettes_pour_marge_cible_eur: round(pf.coutTotal / (1 - target / 100)) } : {}),
       ...(targetLevers ? { leviers_marge_cible: targetLevers } : {}),
-      scenarios: [scenario('Base déclarée', 1, 1), scenario('Ventes −5 %', 0.95, 1), scenario('Travaux +10 %', 1, 1.1), scenario('Ventes −5 % et travaux +10 %', 0.95, 1.1)],
+      scenarios, synthese_scenarios: summary,
       hypotheses: input.hypotheses ?? [],
       reserves: [
         'Montants déclarés : vérifier que chaque coût est complet et compté une seule fois. Le zéro est une exclusion explicite, pas une donnée manquante.',
