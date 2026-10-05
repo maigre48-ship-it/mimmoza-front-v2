@@ -11,6 +11,7 @@ import { COPILOT_THEME as T } from './copilotTheme';
 // Un nom absent d'ici s'affiche brut — c'est le repli voulu, pas une panne :
 // mieux vaut un nom technique qu'une carte anonyme.
 const TOOL_LABELS: Record<string, string> = {
+  calculer_bilan_financier:       'Calcul du bilan financier',
   web_search:                     'Recherche sur Internet',
   web_fetch:                      'Vérification d’une source',
   // Parcelle et urbanisme

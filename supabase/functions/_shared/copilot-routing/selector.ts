@@ -69,6 +69,9 @@ const MIN_SCORE_TO_RESTRICT = 2;
  * sans lesquelles le chat ne peut plus ouvrir une page ni lancer une étape.
  */
 const CORE_TOOLS: readonly string[] = [
+  // Les réponses chiffrées à un bilan poursuivent souvent une étude PLU/marché.
+  // Conserver le calcul dans tous les routages pour les variantes du même projet.
+  'calculer_bilan_financier',
   'get_parcel_summary',
   'get_contexte_commune',
   // Résolution adresse → parcelle. Doit être joignable QUELLE QUE SOIT

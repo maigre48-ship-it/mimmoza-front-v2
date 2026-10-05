@@ -1,6 +1,7 @@
 // src/spaces/copilot/components/CopilotMessage.tsx
 import type { ChatMessage } from '../types/copilot.types';
 import { CopilotToolCallCard, CopilotWebResearchCard } from './CopilotToolCallCard';
+import { CopilotFinancialCard } from './CopilotFinancialCard';
 import { CopilotActionCard } from './CopilotActionCard';
 import { isActionTool, readAction, sameAction } from '../actions/copilotActions';
 import { useCopilotStore } from '../store/copilotStore';
@@ -81,6 +82,7 @@ export function CopilotMessage({ message, question, conversationId, onSend }: {
       {message.toolCalls.length > 0 && (
         <div style={{ marginBottom: 8 }}>
           {message.toolCalls.map((tc) => {
+            if (tc.name === 'calculer_bilan_financier') return <CopilotFinancialCard key={tc.id} call={tc} onSend={onSend} />;
             // Un outil d'action ne raconte pas ce qu'il a lu : il propose de
             // faire quelque chose. Tant qu'il tourne, on garde la carte
             // technique ; dès qu'il a répondu, on rend la carte d'action.

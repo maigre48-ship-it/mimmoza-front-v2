@@ -29,6 +29,7 @@
 
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { selectToolNames } from '../_shared/copilot-routing/selector.ts';
+import { calculateChatBilan, CHAT_BILAN_SCHEMA } from '../_shared/finance/chatBilan.ts';
 import { anthropicWebTools, citationDocumentSources, citationLinks, isWebToolUnavailable, successfulWebSearches, webResultSummary, WEB_LIMITS, type WebToolBudget } from './webTools.ts';
 import { isKnownRoute, routeCatalogue, routeLabel, suggestRoutes } from '../_shared/copilot-routing/routes.ts';
 import { createContextSnapshot, mergeContexts, type ContextSnapshot } from '../_shared/copilot-context/snapshot.ts';
@@ -3774,6 +3775,12 @@ const TOOLS: ToolDef[] = [
     available_in_modes: ['advanced', 'report'],
   },
   {
+    name: 'calculer_bilan_financier',
+    description: "CALCULE un bilan de promotion / achat-travaux-revente directement dans le tchat, sans ouvrir de page, à partir des montants fournis ou expressément acceptés par l’utilisateur. Utilise le moteur financier partagé avec la page Bilan. Recettes de VENTE totales, dix postes de coûts, base HT ou TTC confirmée. Réutilise les chiffres déjà donnés dans l’échange ; lors d’une variante, conserve les autres données du dernier bilan du même projet. Ne transforme jamais un montant absent en zéro. L’outil retourne les données manquantes, ou le coût total, le solde avant fiscalité, la marge sur CA, le seuil d’équilibre et des sensibilités. Les chiffres issus des outils de coûts ou du marché restent des hypothèses à faire accepter. Ne remplace pas un business plan d’EXPLOITATION hôtelière, EHPAD ou locative par un bilan de vente ; clarifie si l’utilisateur souhaite vendre le bâtiment ou l’exploiter. Ne persiste pas de bilan dans l’opération et ne valide pas sa faisabilité.",
+    input_schema: CHAT_BILAN_SCHEMA,
+    available_in_modes: ['quick', 'advanced', 'report'],
+  },
+  {
     name: 'get_bilan_promoteur',
     description:
       "BILAN FINANCIER de l'opération promoteur en cours : prix de revient total, chiffre " +
@@ -3784,7 +3791,7 @@ const TOOLS: ToolDef[] = [
       "« combien je peux payer le terrain ? ». " +
       "⚠️ CET OUTIL NE CALCULE RIEN — il LIT le bilan tel que la page l'a enregistré. Si aucun " +
       "bilan n'a encore été produit pour l'opération, il te le dit : propose alors " +
-      "action_lancer_etape('bilan') plutôt que d'estimer toi-même. N'invente jamais une marge : " +
+      "calculer_bilan_financier pour le construire dans le tchat à partir des chiffres fournis. N'invente jamais une marge : " +
       "un chiffre d'affaires prévisionnel faux se propage dans toute la décision d'achat. " +
       "⚠️ CONVENTION DE MARGE : le taux de marge promoteur est calculé en pourcentage du CHIFFRE " +
       "D'AFFAIRES, pas du coût de revient. 15 % ici correspondent à environ 17,6 % dans la " +
@@ -4450,6 +4457,7 @@ async function executeTool(
     case 'get_contexte_commune':     return await toolContexteCommune(input, ctx);
     case 'get_contacts_mairies':     return await toolContactsMairies(input, ctx);
     case 'get_bilan_promoteur':      return await toolBilanPromoteur(input, ctx);
+    case 'calculer_bilan_financier': return calculateChatBilan(input);
     case 'get_analyse_predictive':   return await toolAnalysePredictive(input, ctx);
     case 'get_dispositif_fiscal':    return await toolDispositifFiscal(input, ctx);
     case 'get_proprietaire_parcelle': return await toolProprietaireParcelle(input, ctx);
@@ -6881,8 +6889,8 @@ async function toolBilanPromoteur(
         data: { study_id: data.id, titre: data.title ?? null },
         message:
           `L'opération « ${data.title ?? studyId} » n'a pas encore de bilan enregistré. ` +
-          "N'estime AUCUN chiffre toi-même : propose action_lancer_etape('bilan') pour que la " +
-          'page le produise.',
+          'Propose de construire le bilan dans le tchat via calculer_bilan_financier à partir des montants fournis. ' +
+          'La page Bilan reste accessible pour la saisie détaillée.',
       };
     }
 
@@ -9221,7 +9229,7 @@ function buildSystemPrompt(ctx: MimmozaContext, mode: CopilotMode): string {
     "4tervicies. PORTÉE D\'UN OUTIL — un outil ne voit QUE son domaine. Une réponse vide signifie « rien dans CE périmètre », jamais « cet objet n\'existe pas ». Tu ne conclus JAMAIS qu\'une chose n\'a pas été enregistrée, a échoué ou n\'existe pas en te fondant sur un outil qui couvre un AUTRE domaine — et surtout pas après avoir toi-même annoncé une création réussie : si tu ne retrouves pas ce que tu viens de créer, c\'est que tu interroges le mauvais outil. Dans ce cas, cherche l\'outil du bon domaine ou dis que tu ne peux pas vérifier, mais n\'annonce pas à l\'utilisateur que son enregistrement a disparu. Chaque famille d\'objets a ses propres verbes : veilles immobilières (creer/lister/desactiver_zone_veille) et veilles appels d\'offres (creer/lister/desactiver_veille_appels_offres) sont deux familles SÉPARÉES.",
     "4duovicies. DEUX VEILLES DISTINCTES — chez Mimmoza, « surveille tel secteur » est AMBIGU : cela peut désigner une veille IMMOBILIÈRE (biens, marché, opportunités d\'achat) ou une veille APPELS D\'OFFRES (marchés publics, cessions de terrains publics, concessions d\'aménagement). Les deux se formulent avec les mêmes mots et n\'ont rien à voir. Tant que l\'utilisateur n\'a pas levé l\'ambiguïté, tu NE CRÉES RIEN et tu lui POSES la question en une phrase. Ne devine pas depuis le métier de l\'utilisateur ni depuis la page où il se trouve : un promoteur suit les deux.",
     "4unvicies. IDENTIFIANTS ET LIENS — tu ne RECOMPOSES JAMAIS de mémoire un identifiant, une référence d\'avis, un numéro de dossier ou une URL : tu les REPRODUIS caractère par caractère depuis le champ correspondant de la réponse d\'outil, et quand un champ prêt à l\'emploi existe (par exemple lien_markdown) tu l\'utilises tel quel plutôt que de reconstruire le lien. Dans un tableau, chaque ligne doit porter l\'identifiant de SON propre enregistrement : deux lignes différentes qui affichent le même lien sont une ERREUR de recopie — relis avant d\'envoyer. Si tu n\'as pas l\'identifiant d\'une ligne, laisse la cellule vide plutôt que d\'en inventer un. ⚠️ UN CHAMP DÉJÀ FORMATÉ NE SE COMBINE AVEC RIEN : lien_markdown contient DÉJÀ un lien complet de la forme [texte](url). Tu le colles TEL QUEL, seul dans sa cellule ou sa puce. Tu ne l\'entoures JAMAIS de crochets ou de parenthèses supplémentaires, tu ne l\'imbriques pas dans un autre lien, et tu n\'y accoles NI la citation de source NI aucun autre texte — la mention [source: ...] se place dans une phrase à part, jamais collée à un lien.",
-    "4sexvicies. CHIFFRES FINANCIERS — TU NE LES CALCULES JAMAIS TOI-MÊME. La rentabilité, la marge, le TRI, le prix de revient et la charge foncière sont produits par les moteurs de Mimmoza, pas par toi. Deux sources, et deux seulement : (a) pour une opération PROMOTEUR, l\'outil get_bilan_promoteur, qui LIT le bilan enregistré ; (b) pour un bien INVESTISSEUR ou MARCHAND, le bloc rentabilite du snapshot prédictif, déjà présent dans ton contexte quand la page l\'a produit. Si la source est vide, tu le DIS et tu proposes de lancer le calcul — action_lancer_etape(\'bilan\') côté promoteur, ou l\'ouverture de la page \'/marchand-de-bien/analyse?tab=rentabilite\' côté investisseur. Tu ne fabriques pas un ordre de grandeur \u00ab en attendant \u00bb : un chiffre d\'affaires ou une marge inventés se propagent dans une décision d\'achat. ⚠️ LES DEUX CONVENTIONS DE MARGE NE SE COMPARENT PAS : le promoteur rapporte sa marge au CHIFFRE D\'AFFAIRES, le marchand au COÛT DE REVIENT. 15 % promoteur valent environ 17,6 % marchand. Quand tu cites un taux, précise sur quelle base, et ne mets jamais les deux côte à côte sans conversion.",
+    "4sexvicies. CHIFFRES FINANCIERS — Tu ne calcules jamais mentalement la marge, le prix de revient, la rentabilité ou le TRI. Tu peux lire le bilan enregistré via get_bilan_promoteur, CONSTRUIRE un bilan de promotion ou achat-travaux-revente dans le tchat avec calculer_bilan_financier, ou lire le bloc rentabilite du snapshot investisseur/marchand. Pour un nouveau bilan, ne force pas à ouvrir une page : clarifie vente immobilière ou exploitation, demande en une liste courte les montants manquants et la base HT/TTC. Réutilise les valeurs du même projet dans cet échange. Coûts à couvrir : acquisition, frais acquisition, travaux/VRD/équipements, honoraires, assurances, taxes, commercialisation, financement, aléas, autres. Regroupe les questions et autorise zéro ou exclusion explicite ; ne suppose jamais zéro. Un total toutes dépenses comprises ne doit jamais être additionné une seconde fois à ses sous-postes. Les ratios issus des API restent des hypothèses à faire accepter avant calcul. Restitue les résultats du moteur, les postes, la base, le solde avant fiscalité, la marge sur CA, le seuil et les sensibilités. Ne qualifie jamais ce solde de bénéfice net fiscal. Pour modifier un chiffre, rappelle les autres hypothèses et relance cet outil. Pour un hôtel ou un bâtiment à exploiter, distingue bilan de construction/vente et business plan annuel ; ne traite pas une recette annuelle comme un prix de cession. Ne produis ni TRI ni calendrier de trésorerie sans flux datés. Le ratio résultat/fonds propres est non annualisé et ne prouve pas que le financement suffit. Les conventions de marge promoteur (sur CA) et marchand (sur coût) sont distinctes : nomme toujours le dénominateur.",
     "4septvicies. ACTIONS EN DEUX TEMPS — TU NE DIS JAMAIS « c'est fait » SANS PREUVE. Créer, modifier ou désactiver une veille, une zone ou une watchlist se fait en DEUX appels. Le premier renvoie le statut `confirmation_requise` : c'est un APERÇU, RIEN n'a été écrit. Tu le présentes à l'utilisateur et tu attends son accord. Dès qu'il l'a donné — un « oui », « vas-y », « confirme » suffit — tu RAPPELLES IMMÉDIATEMENT LE MÊME OUTIL avec `confirmer: true`, DANS LE MÊME TOUR, avant de rédiger quoi que ce soit. Ne redemande pas l'accord deux fois. ⚠️ Tu n'écris « c'est désactivé », « c'est créé » ou « c'est modifié » QUE si l'outil a répondu avec le statut `ok` ET un champ attestant l'écriture (desactivee, cree, modifiee). Un statut `confirmation_requise` n'est PAS un succès : annoncer une suppression qui n'a pas eu lieu est pire que de ne rien faire, car l'utilisateur n'y reviendra pas. Si tu as perdu l'identifiant entre deux tours, rappelle l'outil de listing pour le retrouver plutôt que de l'inventer ou d'abandonner.",
     "4tricies. « AUCUN RÉSULTAT » N'EST PAS « RIEN À DIRE ». Quand un outil de listing (veilles, zones, watchlists) répond avec le statut `not_found`, regarde TOUJOURS son champ `data` avant de rédiger. S'il contient `inactives` supérieur à 0 ou une liste `veilles_inactives`, tu DOIS nommer ces éléments désactivés dans ta réponse et proposer de les réactiver — même si l'utilisateur n'a demandé que les actifs, même si tu résumes plusieurs familles d'un coup, et même si la réponse en devient plus longue. Écrire « aucune veille » alors qu'une veille désactivée existe est faux par omission : l'utilisateur en conclut qu'elle a disparu, et il la recrée en double. Ne dis « il n'y a rien » QUE si actives et inactives valent toutes les deux 0.",
 
