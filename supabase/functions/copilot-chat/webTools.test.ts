@@ -45,3 +45,14 @@ test('si la console Anthropic désactive le web, le chat peut reprendre sans cet
   assert.equal(isWebToolUnavailable(500, 'web search unavailable'), false);
   assert.equal(isWebToolUnavailable(400, 'invalid_request_error: invalid model'), false);
 });
+
+test('un échec de lecture reste distinct des sources obtenues par la recherche', () => {
+  const search = webResultSummary({ type: 'web_search_tool_result', content: [{ url: 'https://insee.fr/etude', title: 'INSEE' }] });
+  const fetch = webResultSummary({ type: 'web_fetch_tool_result', content: { type: 'web_fetch_tool_result_error', error_code: 'url_not_accessible' } });
+  assert.equal(search.status, 'success');
+  assert.equal(search.sources.length, 1);
+  assert.equal(fetch.status, 'error');
+  assert.equal(fetch.error, 'url_not_accessible');
+  assert.deepEqual(webResultSummary({ content: { type: 'web_fetch_result', url: 'https://insee.fr/etude', content: { type: 'document', title: 'Publication INSEE' } } }).sources,
+    [{ title: 'Publication INSEE', url: 'https://insee.fr/etude' }]);
+});

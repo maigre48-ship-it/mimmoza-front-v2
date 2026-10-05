@@ -76,9 +76,10 @@ export function webResultSummary(block: Record<string, unknown>): { status: 'suc
   const sources = Array.isArray(content) ? content : content && typeof content === 'object' ? [content] : [];
   return { status: 'success', sources: sources.flatMap((item) => {
     if (!item || typeof item !== 'object') return [];
-    const source = item as { title?: unknown; url?: unknown };
+    const source = item as { title?: unknown; url?: unknown; content?: { title?: unknown } };
     const url = safeUrl(source.url);
-    return url ? [{ title: typeof source.title === 'string' ? source.title.slice(0, 120) : new URL(url).hostname, url }] : [];
+    const title = source.title ?? source.content?.title;
+    return url ? [{ title: typeof title === 'string' ? title.slice(0, 120) : new URL(url).hostname, url }] : [];
   }).slice(0, 5) };
 }
 

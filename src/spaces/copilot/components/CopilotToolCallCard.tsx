@@ -89,10 +89,20 @@ function statusVisual(status: string) {
 
 export function CopilotToolCallCard({ call }: { call: ActiveToolCall }) {
   const v = statusVisual(call.status);
+  const isWeb = call.name === 'web_search' || call.name === 'web_fetch';
+  const isFetch = call.name === 'web_fetch';
+  const output = call.output as { sources?: { title: string; url: string }[] } | undefined;
+  const sources = isWeb && Array.isArray(output?.sources) ? output.sources : [];
+  const webError = isWeb && call.status === 'error';
+  const errorText = call.error === 'max_uses_exceeded' ? 'Limite de consultations atteinte.'
+    : call.error === 'too_many_requests' ? 'Service temporairement saturé.'
+    : isFetch ? 'Cette page n’a pas pu être lue. Les sources déjà trouvées par la recherche restent disponibles ; leur contenu intégral n’est pas confirmé par cette lecture.'
+    : 'Cet appel de recherche n’a pas abouti. Les autres recherches et les outils métier conservent leurs résultats.';
   const Icon = v.icon;
   const label = TOOL_LABELS[call.name] ?? call.name;
 
   return (
+    <div>
     <div style={{
       display: 'flex', alignItems: 'center', gap: 8,
       padding: '7px 11px', margin: '4px 0', borderRadius: 10,
@@ -103,11 +113,19 @@ export function CopilotToolCallCard({ call }: { call: ActiveToolCall }) {
       <span style={{ color: T.text, fontWeight: 600 }}>{label}</span>
       <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, color: v.color }}>
         <Icon size={13} style={v.spin ? { animation: 'copilot-spin 1s linear infinite' } : undefined} />
-        {v.text}
+        {webError ? (isFetch ? 'Lecture indisponible' : 'Recherche indisponible') : v.text}
         {call.durationMs
           ? <span style={{ opacity: 0.5, fontSize: 11 }}>· {(call.durationMs / 1000).toFixed(1)}s</span>
           : null}
       </span>
+    </div>
+    {webError && <p role="status" style={{ margin: '4px 11px 8px', fontSize: 12, color: T.textMuted }}>{errorText}</p>}
+    {sources.length > 0 && <div style={{ margin: '4px 11px 8px', fontSize: 12, color: T.textMuted }}>
+      {isFetch ? 'Page lue :' : 'Sources trouvées :'}{' '}
+      {sources.filter((source) => /^https?:\/\//i.test(source.url)).map((source, index) => <span key={source.url}>
+        {index > 0 ? ' · ' : ''}<a href={source.url} target="_blank" rel="noopener noreferrer" style={{ color: T.accent }}>{source.title}</a>
+      </span>)}
+    </div>}
     </div>
   );
 }
