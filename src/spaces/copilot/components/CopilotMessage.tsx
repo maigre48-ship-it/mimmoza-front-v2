@@ -14,6 +14,8 @@ import { exportCopilotResponseToPdf, markdownToSafeHtml } from '../utils/exportC
 import { decouperSegments } from '../charts/copilotChart.types';
 import { buildParcelDossier } from '../dossier/parcelDossier';
 import './CopilotMessage.css';
+import { isGeoCall } from '../maps/thematicMapModel';
+const CopilotThematicMaps = lazy(() => import('../maps/CopilotThematicMaps').then(m => ({ default: m.CopilotThematicMaps })));
 
 // recharts pèse plusieurs centaines de Ko et n'est utilisé QUE par les
 // graphiques, réservés au mode `report` (offre Pro). Un import statique
@@ -117,6 +119,7 @@ export function CopilotMessage({ message, question, conversationId, onSend }: {
           })}
         </div>
       )}
+      {message.status === 'complete' && message.toolCalls.some(isGeoCall) && <Suspense fallback={<div>Préparation des cartes thématiques…</div>}><CopilotThematicMaps calls={message.toolCalls} onSend={onSend} /></Suspense>}
       {message.status === 'complete' && dossier && conversationId && (
         <Suspense fallback={<div>Préparation du dossier…</div>}>
           <ParcelDecisionDossier dossier={dossier} conversationId={conversationId} messageId={message.id} onAnalyze={onSend} />
