@@ -12,7 +12,7 @@ import { COPILOT_THEME as T } from './copilotTheme';
 // mieux vaut un nom technique qu'une carte anonyme.
 const TOOL_LABELS: Record<string, string> = {
   web_search:                     'Recherche sur Internet',
-  web_fetch:                      'Lecture d’une source web',
+  web_fetch:                      'Vérification d’une source',
   // Parcelle et urbanisme
   get_parcel_summary:              'Résumé parcelle',
   get_etude_parcelle:              'Étude parcelle',
@@ -113,7 +113,7 @@ export function CopilotToolCallCard({ call }: { call: ActiveToolCall }) {
       <span style={{ color: T.text, fontWeight: 600 }}>{label}</span>
       <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, color: v.color }}>
         <Icon size={13} style={v.spin ? { animation: 'copilot-spin 1s linear infinite' } : undefined} />
-        {webError ? (isFetch ? 'Lecture indisponible' : 'Recherche indisponible') : v.text}
+        {webError ? (isFetch ? 'Vérification partielle' : 'Recherche indisponible') : v.text}
         {call.durationMs
           ? <span style={{ opacity: 0.5, fontSize: 11 }}>· {(call.durationMs / 1000).toFixed(1)}s</span>
           : null}
@@ -128,4 +128,46 @@ export function CopilotToolCallCard({ call }: { call: ActiveToolCall }) {
     </div>}
     </div>
   );
+}
+
+/** Une page inaccessible ne doit pas masquer le résultat global des recherches. */
+export function CopilotWebResearchCard({ calls }: { calls: ActiveToolCall[] }) {
+  const running = calls.some((call) => call.status === 'running');
+  const sources = new Map<string, string>();
+  for (const call of calls) {
+    const output = call.output as { sources?: { title: string; url: string }[] } | undefined;
+    if (call.status !== 'success' || !Array.isArray(output?.sources)) continue;
+    for (const source of output.sources) {
+      if (/^https?:\/\//i.test(source.url)) sources.set(source.url, source.title);
+    }
+  }
+  const hasResults = sources.size > 0;
+  const partial = calls.some((call) => call.status === 'error');
+  const successful = calls.some((call) => call.status === 'success');
+  const Icon = running ? Loader2 : hasResults || successful ? Check : Info;
+  const status = running ? (hasResults ? 'Sources trouvées · vérification en cours' : 'En cours…')
+    : hasResults ? 'Sources trouvées' : successful ? 'Aucun résultat' : 'Recherche indisponible';
+
+  return <div style={{ padding: '10px 11px', margin: '4px 0', borderRadius: 10,
+    border: `1px solid ${T.borderSoft}`, background: 'rgb(255 255 255 / 0.03)', fontSize: 12.5, color: T.textMuted }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+      <span style={{ color: T.text, fontWeight: 600 }}>Recherche sur Internet</span>
+      <span role="status" style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5,
+        color: running ? T.accent : hasResults ? 'rgb(74 222 128)' : T.textMuted }}>
+        <Icon size={13} style={running ? { animation: 'copilot-spin 1s linear infinite' } : undefined} />{status}
+      </span>
+    </div>
+    {hasResults && <div style={{ marginTop: 7 }}>
+      {[...sources].map(([url, title], index) => <span key={url}>
+        {index > 0 ? ' · ' : ''}<a href={url} target="_blank" rel="noopener noreferrer" style={{ color: T.accent }}>{title}</a>
+      </span>)}
+    </div>}
+    {!running && partial && hasResults && <p style={{ margin: '7px 0 0' }}>
+      Vérification partielle : certaines consultations n’ont pas abouti. Les sources trouvées restent disponibles ; tous les documents n’ont pas pu être vérifiés intégralement.
+    </p>}
+    <details style={{ marginTop: 7 }}>
+      <summary style={{ cursor: 'pointer' }}>Détail des consultations</summary>
+      {calls.map((call) => <CopilotToolCallCard key={call.id} call={call} />)}
+    </details>
+  </div>;
 }

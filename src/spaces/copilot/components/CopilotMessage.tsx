@@ -1,6 +1,6 @@
 // src/spaces/copilot/components/CopilotMessage.tsx
 import type { ChatMessage } from '../types/copilot.types';
-import { CopilotToolCallCard } from './CopilotToolCallCard';
+import { CopilotToolCallCard, CopilotWebResearchCard } from './CopilotToolCallCard';
 import { CopilotActionCard } from './CopilotActionCard';
 import { isActionTool, readAction, sameAction } from '../actions/copilotActions';
 import { useCopilotStore } from '../store/copilotStore';
@@ -99,6 +99,10 @@ export function CopilotMessage({ message, question, conversationId, onSend }: {
                   />
                 );
               }
+            }
+            if (tc.name === 'web_search' || tc.name === 'web_fetch') {
+              const webCalls = message.toolCalls.filter((call) => call.name === 'web_search' || call.name === 'web_fetch');
+              return tc.id === webCalls[0]?.id ? <CopilotWebResearchCard key={tc.id} calls={webCalls} /> : null;
             }
             return <CopilotToolCallCard key={tc.id} call={tc} />;
           })}
