@@ -32,7 +32,9 @@ export function decisionStatus(dossier: ParcelDossier, selected: DossierParcel[]
 } {
   if (!selected.length) return {
     label: 'Périmètre à confirmer', level: 'pending',
-    detail: 'Le point d’adresse repère une parcelle, mais ne définit pas toute la propriété. Sélectionnez ses parcelles sur la carte.',
+    detail: dossier.detectedParcel
+      ? 'La parcelle repérée au point ne définit pas toute la propriété. Sélectionnez les parcelles du projet sur la carte.'
+      : 'Aucune parcelle n’a été résolue au point de recherche. Vérifiez l’adresse et sélectionnez les parcelles qui composent le projet sur la carte.',
   };
   if (!dossier.zone) return {
     label: 'Zonage à vérifier', level: 'attention',

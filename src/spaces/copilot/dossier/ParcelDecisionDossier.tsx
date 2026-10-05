@@ -195,7 +195,7 @@ export function ParcelDecisionDossier({ dossier, conversationId, messageId, onAn
       <div className="mzia-dossier-section-heading"><div><span className="mzia-dossier-eyebrow">3 · Préparer la sortie</span><h4 id="mzia-dossier-strategy-heading">Du terrain au projet vendable</h4></div></div>
       <p>Comparez librement des usages ou indiquez un programme précis. L’analyse confronte la demande, les contraintes, le modèle d’exploitation et les opérateurs possibles.</p>
       <label className="mzia-dossier-programme-label" htmlFor="mzia-dossier-programme">Programme envisagé <span>(facultatif)</span></label>
-      <input id="mzia-dossier-programme" className="mzia-dossier-programme-input" list="mzia-dossier-programmes" value={programmeIntent} maxLength={120} placeholder="Ex. hôtel, EHPAD, clinique, supermarché, logements…" onChange={(event) => setProgrammeIntent(event.target.value)} />
+      <input id="mzia-dossier-programme" className="mzia-dossier-programme-input" list="mzia-dossier-programmes" value={programmeIntent} maxLength={120} placeholder="Ex. bureaux, commerces, locaux d’activité…" onChange={(event) => setProgrammeIntent(event.target.value)} />
       <datalist id="mzia-dossier-programmes"><option value="Logements" /><option value="Hôtel" /><option value="EHPAD" /><option value="Clinique" /><option value="Supermarché" /><option value="Bureaux" /><option value="Résidence étudiante" /></datalist>
       {programme && <p className="mzia-dossier-programme-caveat">{programme.marketCaveat}</p>}
       <div className="mzia-dossier-strategy-steps">

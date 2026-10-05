@@ -89,6 +89,7 @@ export function buildApiResult(call: ActiveToolCall, options: { tableLimit?: num
   for (const item of Array.isArray(d.avertissements) ? d.avertissements : []) note(item);
   if (model.scope === 'centre_commune') { model.scope = 'Centre de commune'; note('Recherche centrée sur la commune, pas sur une parcelle précisément localisée.'); }
   if (model.scope === 'parcelle') model.scope = 'Parcelle localisée';
+  if (model.scope === 'point') { model.scope = 'Point de recherche · parcelle non confirmée'; note('Des coordonnées ne confirment ni le numéro d’adresse ni l’assiette cadastrale du projet.'); }
   const location = text(first(d, 'adresse.libelle', 'commune.commune_nom', 'commune_terrain', 'commune_centre', 'commune_nom', 'nom_commune', 'stats.commune_nom', 'batiment_principal.adresse', 'zone.commune', 'criteres.ville')) ?? text(d.commune);
   if (location) model.scope = [location, model.scope].filter(Boolean).join(' · ');
   if (number(d.rayon_km) !== null) model.scope = [model.scope, `Rayon de recherche ${formatApiValue(d.rayon_km, 'km')}`].filter(Boolean).join(' · ');
@@ -179,7 +180,7 @@ export function buildApiResult(call: ActiveToolCall, options: { tableLimit?: num
       note('Un service communal ne confirme pas le raccordement ni la capacité du réseau pour cette parcelle.'); break;
     case 'get_parcel_plu': case 'get_zonage_plu': {
       const zone = record(d.zone_principale), rules = record(d.regles);
-      metric('Zone', d.zone_code ?? first(zone, 'libelle', 'code', 'zone_code')); metric('Hauteur maximale', rules.hauteur_max_m, 'm');
+      metric('Zone au point', d.zone_code ?? text(d.zone_principale) ?? first(zone, 'libelle', 'code', 'zone_code')); metric('Hauteur maximale', rules.hauteur_max_m, 'm');
       const ratio = number(rules.emprise_sol_max_ratio); metric('Emprise maximale', ratio !== null && ratio >= 0 && ratio <= 1 ? ratio * 100 : null, '%');
       metric('Recul sur voie', rules.recul_voirie_m, 'm'); metric('Recul séparatif', rules.recul_limites_m, 'm'); metric('Stationnement', rules.stationnement_par_logement, 'place(s)/logement');
       table('Zones intersectées', d.zones, [['Zone', ['libelle', 'code']], ['Désignation', ['libelle_long', 'nom']], ['Type', ['type_zone', 'typezone']]]);
@@ -191,7 +192,7 @@ export function buildApiResult(call: ActiveToolCall, options: { tableLimit?: num
       metric('Référence cadastrale', first(d, 'cadastral_ref', 'parcel_id') ?? p.idu); metric('Surface cadastrale', first(d, 'surface_m2', 'surface') ?? first(p, 'contenance_m2', 'surface_m2'), 'm²');
       metric('Commune', a.commune ?? first(p, 'commune_nom', 'commune') ?? first(d, 'commune.commune_nom', 'commune')); metric('Zone', d.plu_zone);
       table('Sources de l’étude', d.donnees, [['Domaine', ['domaine']], ['Résultat', ['resume']], ['Disponibilité', ['statut']], ['Organisme', ['organisme']]]);
-      note('La parcelle détectée au point d’adresse ne confirme pas le périmètre de toute la propriété.'); break;
+      note(p.idu || d.parcel_id || d.cadastral_ref ? 'La parcelle détectée au point d’adresse ne confirme pas le périmètre de toute la propriété.' : 'Point de recherche sans parcelle résolue : ni référence cadastrale ni surface du bien confirmées.'); break;
     }
     case 'get_couts_construction':
       metric('Budget de référence', s.cout_total_ht, '€ HT'); metric('Coût unitaire', s.cout_m2_sdp_ht, '€/m² SDP HT'); metric('Surface SDP', s.surface_sdp_m2, 'm²');

@@ -4,6 +4,16 @@ import { buildApiResult, formatApiValue, safeSourceUrl } from './apiResultModel'
 import type { ActiveToolCall } from '../types/copilot.types';
 const result = (name: string, data: unknown, status = 'ok', callStatus = 'success') => buildApiResult({ id: 'test', name, status: callStatus, output: { status, source: 'Source de test', data } })!;
 
+test('des coordonnées et une zone textuelle ne fabriquent pas une parcelle ni une règle', () => {
+  const sirene = result('get_etablissements_proches', {precision:'point',analyses:67});
+  assert.match(sirene.scope!, /parcelle non confirmée/);
+  const gpu = result('get_zonage_plu', {zone_principale:'SPR',zones:[]});
+  assert.equal(gpu.metrics.find(m=>m.label==='Zone au point')?.value,'SPR');
+  assert.match(gpu.notes.join(' '),/ne sont pas connues/);
+  const parcel = result('get_parcelle_depuis_adresse',{adresse:{commune:'Bayonne'},parcelle:null},'partial');
+  assert.match(parcel.notes.join(' '), /sans parcelle résolue/);
+});
+
 test('les compteurs de couverture ne sont jamais tracés comme des scores sur 100', () => {
   const m = result('get_etude_marche', { commune:{project_type_label:'Bureaux'}, scores:{demande:50, offre:65, global:68, demande_champs_mesures:0, demande_champs_attendus:2} });
   assert.equal(m.title, 'Étude de marché · Bureaux');

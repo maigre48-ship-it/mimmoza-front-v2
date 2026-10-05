@@ -36,6 +36,7 @@ import { createContextSnapshot, mergeContexts, type ContextSnapshot } from '../_
 import { geographicGroundingPolicy } from '../_shared/copilot-grounding/geographic.ts';
 import { unsupportedInferencePolicy } from '../_shared/copilot-grounding/inferences.ts';
 import { MARKET_PROGRAMMES, supportedMarketProgramme, tertiaryGroundingPolicy } from '../_shared/copilot-grounding/tertiary.ts';
+import { gpuEvidenceSummary, GPU_EVIDENCE_WARNING } from '../_shared/copilot-grounding/urbanism.ts';
 import { renderParcelStudyReport } from '../_shared/copilot-reporting/parcel-study.ts';
 import { reparerEncodageProfond } from '../_shared/texte/reparerEncodage.ts';
 // Moteur prédictif — MÊME code que la page Analyse prédictive du front, qui le
@@ -2384,7 +2385,7 @@ function summarizeCoutsRenovation(
  */
 function summarizeSitadel(
   raw: unknown,
-  meta?: { rayonKm?: number; periodMonths?: number; precision?: 'parcelle' | 'centre_commune' },
+  meta?: { rayonKm?: number; periodMonths?: number; precision?: 'parcelle' | 'point' | 'centre_commune' },
 ): { status: ToolStatus; data?: Record<string, unknown>; message?: string } {
   const root = raw as Record<string, any>;
   if (!root || typeof root !== 'object') {
@@ -2459,7 +2460,7 @@ function summarizeSitadel(
         "Permis géolocalisés à la date de dépôt en mairie ; les tout derniers mois peuvent être incomplets. " +
         (meta?.precision === 'centre_commune'
           ? "Recherche centrée sur le centre de la commune (aucune parcelle localisée) : le rayon peut couvrir plusieurs communes."
-          : "Recherche centrée sur la parcelle : les permis listés sont ceux du voisinage réel dans le rayon."),
+          : "Recherche autour du point fourni : les permis sont dans le rayon, sans preuve de recoupement avec le terrain. Coordonnées seules ne confirment pas une parcelle. Ces permis de logement ne mesurent pas la demande tertiaire."),
     },
   };
 }
@@ -2471,7 +2472,7 @@ function summarizeSitadel(
  */
 function summarizeSirene(
   raw: unknown,
-  meta?: { rayonKm?: number; precision?: 'parcelle' | 'centre_commune' },
+  meta?: { rayonKm?: number; precision?: 'parcelle' | 'point' | 'centre_commune' },
 ): { status: ToolStatus; data?: Record<string, unknown>; message?: string } {
   const root = raw as Record<string, any>;
   if (!root || typeof root !== 'object') {
@@ -2512,7 +2513,7 @@ function summarizeSirene(
         "et le code NAF ne préjuge pas de l'usage réel du local. " +
         (meta?.precision === 'centre_commune'
           ? "Recherche centrée sur le centre de la commune (aucune parcelle localisée) : les distances sont relatives à ce centre."
-          : "Recherche centrée sur la parcelle : les distances sont celles du voisinage réel."),
+          : "Recherche autour du point fourni : les distances sont relatives à ce point et ne prouvent ni parcelle, ni demande locative. Les entreprises présentes ne sont pas des utilisateurs intéressés."),
     },
   };
 }
@@ -2525,7 +2526,7 @@ function summarizeSirene(
  */
 function summarizeBpe(
   raw: unknown,
-  meta?: { rayonM?: number; precision?: 'parcelle' | 'centre_commune' },
+  meta?: { rayonM?: number; precision?: 'parcelle' | 'point' | 'centre_commune' },
 ): { status: ToolStatus; data?: Record<string, unknown>; message?: string } {
   const root = raw as Record<string, any>;
   if (!root || typeof root !== 'object') {
@@ -2733,11 +2734,11 @@ function summarizeGpu(
   const stats = (root.stats ?? {}) as Record<string, any>;
   const items = (root.items ?? {}) as Record<string, any>;
   const commun = {
-    summary: str(root.summary) ?? null,
+    summary: gpuEvidenceSummary(stats, vue),
     commune: stats.commune ?? null,
     couches_en_echec: stats.couches_en_echec ?? [],
     source: str(root.source) ?? "Géoportail de l'urbanisme via API Carto (IGN)",
-    avertissement: str(root.avertissement) ?? null,
+    avertissement: GPU_EVIDENCE_WARNING,
   };
 
   if (vue === 'zonage') {
@@ -5474,8 +5475,8 @@ async function toolParcelleDepuisAdresse(
         status: 'partial', source: 'BAN / cadastre',
         message:
           `Adresse localisée (${adresseResolue.libelle}) mais aucune parcelle cadastrale à ce point — ` +
-          "c'est le cas sur le domaine public, une voie ou un secteur non cadastré. " +
-          "Les coordonnées restent exploitables pour les risques et le marché.",
+          "Le point peut être décalé ou situé sur une voie ; cela ne confirme pas un domaine public ni les limites du bien. " +
+          "Le numéro et la référence cadastrale restent à vérifier. Les coordonnées servent seulement à une consultation indicative des risques et du marché.",
         data: { adresse: adresseResolue, parcelle: null },
       };
     }
@@ -5948,8 +5949,8 @@ async function toolSitadel(input: Record<string, unknown>, ctx: MimmozaContext):
   // 1) Coordonnées : parcelle du contexte → IDU cadastre → centroïde commune.
   let lat = num(input.lat) ?? ref.lat;
   let lon = num(input.lng) ?? ref.lng;
-  let precision: 'parcelle' | 'centre_commune' =
-    lat != null && lon != null ? 'parcelle' : 'centre_commune';
+  let precision: 'parcelle' | 'point' | 'centre_commune' =
+    lat != null && lon != null ? 'point' : 'centre_commune';
 
   // Correctif A : remplace la cascade locale code/CP/nom → geo.api du repli 1b,
   // qui ne s'activait qu'à défaut de coordonnées et retenait le code proposé
@@ -5999,7 +6000,7 @@ async function toolSitadel(input: Record<string, unknown>, ctx: MimmozaContext):
   // Périmètre effectif de la réponse, à ANNONCER : c'est le garde-fou contre une
   // analyse lue comme parcellaire alors qu'elle est communale.
   const perimetre: Record<string, unknown> = {
-    echelle: precision === 'parcelle' ? 'autour de la parcelle' : 'centre de la commune',
+    echelle: precision === 'centre_commune' ? 'centre de la commune' : precision === 'parcelle' ? 'autour de la parcelle résolue' : 'autour du point fourni',
     precision,
   };
   if (iduEchec) {
@@ -6023,7 +6024,7 @@ async function toolSitadel(input: Record<string, unknown>, ctx: MimmozaContext):
   }
 
   // 2) Paramètres de recherche (bornés comme l'exige promoteur-permis-construire).
-  const rayonKm = Math.min(25, Math.max(0.5, num(input.rayon_km) ?? (precision === 'parcelle' ? 3 : 5)));
+  const rayonKm = Math.min(25, Math.max(0.5, num(input.rayon_km) ?? (precision === 'centre_commune' ? 5 : 3)));
   const periodMonths = Math.min(120, Math.max(1, Math.trunc(num(input.periode_mois) ?? 24)));
 
   try {
@@ -6113,8 +6114,8 @@ async function toolEtablissementsProches(
   // 1) Coordonnées : parcelle du contexte → IDU cadastre → centroïde commune.
   let lat = num(input.lat) ?? ref.lat;
   let lon = num(input.lng) ?? ref.lng;
-  let precision: 'parcelle' | 'centre_commune' =
-    lat != null && lon != null ? 'parcelle' : 'centre_commune';
+  let precision: 'parcelle' | 'point' | 'centre_commune' =
+    lat != null && lon != null ? 'point' : 'centre_commune';
 
   // Correctif A : remplace la cascade locale code/CP/nom → geo.api, qui retenait
   // le code proposé sans jamais vérifier qu'il désignait la commune nommée.
@@ -6144,7 +6145,7 @@ async function toolEtablissementsProches(
   }
 
   // 2) Paramètres bornés comme l'exige etablissements-sirene-v1 (radius 0.1–10 km, limit ≤ 30).
-  const rayonKm = Math.min(10, Math.max(0.1, num(input.rayon_km) ?? (precision === 'parcelle' ? 1 : 2)));
+  const rayonKm = Math.min(10, Math.max(0.1, num(input.rayon_km) ?? (precision === 'centre_commune' ? 2 : 1)));
   const limite = Math.min(30, Math.max(1, Math.trunc(num(input.limite) ?? 15)));
   const section = str(input.section_naf)?.toUpperCase().slice(0, 1);
 
@@ -6254,7 +6255,7 @@ async function toolEquipementsProches(
   console.log('[bpe] precision=', loc.precision, '| lat=', lat, '| lon=', lon);
 
   const rayonM = Math.min(20000, Math.max(200,
-    num(input.rayon_m) ?? (loc.precision === 'parcelle' ? 1500 : 3000)));
+    num(input.rayon_m) ?? (loc.precision === 'centre_commune' ? 3000 : 1500)));
 
   try {
     const raw = await callInternalFunction(INTERNAL_FUNCTIONS.bpe, {
@@ -7169,13 +7170,13 @@ async function toolContexteCommune(
 async function resolvePointForTool(
   input: Record<string, unknown>,
   ctx: MimmozaContext,
-): Promise<{ lat: number | null; lon: number | null; precision: 'parcelle' | 'centre_commune'; insee: ResolutionInsee }> {
+): Promise<{ lat: number | null; lon: number | null; precision: 'parcelle' | 'point' | 'centre_commune'; insee: ResolutionInsee }> {
   const ref = resolveParcelRef(input, ctx);
 
   let lat = num(input.lat) ?? ref.lat;
   let lon = num(input.lng) ?? ref.lng;
-  let precision: 'parcelle' | 'centre_commune' =
-    lat != null && lon != null ? 'parcelle' : 'centre_commune';
+  let precision: 'parcelle' | 'point' | 'centre_commune' =
+    lat != null && lon != null ? 'point' : 'centre_commune';
 
   // Correctif A : remplace la cascade locale code/CP/nom → geo.api, qui prenait
   // le code proposé sans jamais le confronter au nom de commune.
