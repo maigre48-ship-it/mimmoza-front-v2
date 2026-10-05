@@ -45,9 +45,14 @@ export function programmeBrief(intent: string): ProgrammeBrief | null {
     criticalData: 'effectifs étudiants, mobilité, lits existants, loyers, taux d’occupation et proximité des campus',
     marketCaveat: 'Les parts étudiantes estimées ne constituent pas un relevé communal de demande locative.',
   };
+  if (/locaux d.activite|local d.activite|atelier|entrepot|parc d.activite/.test(key)) return {
+    label, marketType: null, sectionNaf: null, operatorNaf: null,
+    criticalData: 'demande d’implantation par métier et taille de lot, loyers signés, vacance, hauteur libre, charge au sol, puissance électrique, desserte et accès poids lourds',
+    marketCaveat: 'Le marché des locaux d’activité exige ses propres comparables et besoins utilisateurs. Aucun modèle spécialisé n’est branché ; un score bureaux ou commerce ne constitue pas un substitut.',
+  };
   if (/bureau|tertiaire/.test(key)) return {
     label, marketType: 'bureaux', sectionNaf: null, operatorNaf: null,
-    criticalData: 'emplois, stocks de bureaux, vacance, loyers, transactions utilisateurs et demande placée',
+    criticalData: 'demande placée par taille, offre immédiate, vacance, loyers signés HT HC/an, franchises, qualité des plateaux et précommercialisation utilisateurs',
     marketCaveat: 'Le mode bureaux ne fournit pas à lui seul les loyers et la vacance du marché tertiaire.',
   };
   if (/logement|habitation|residentiel/.test(key)) return {

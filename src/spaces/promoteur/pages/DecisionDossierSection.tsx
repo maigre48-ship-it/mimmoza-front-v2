@@ -23,6 +23,7 @@ const SECTOR_HINTS: Record<string, [string, string]> = {
   clinic: ['Besoin de soins par spécialité et stratégie de l’ARS.', 'FINESS, capacités, spécialités et temps d’accès.'],
   retail: ['Zone de chalandise, dépenses captables et flux mesurés.', 'Enseignes, surfaces, prix et autorisations commerciales.'],
   office: ['Demande placée, utilisateurs et loyers du bassin.', 'Vacance, surfaces disponibles et transactions utilisateurs.'],
+  activity: ['Besoins d’implantation et d’extension par métier, surface et exigences techniques.', 'Locaux disponibles, loyers signés et projets concurrents du bassin.'],
   student: ['Effectifs, mobilité et loyers accessibles près des campus.', 'Lits concurrents, loyers et occupation annuelle.'],
   other: ['Demande propre à l’usage, avec périmètre et période.', 'Offre comparable et projets concurrents du bassin.'],
 };

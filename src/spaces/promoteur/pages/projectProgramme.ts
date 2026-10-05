@@ -1,7 +1,7 @@
 import type { HotelEvidence } from './hotelMarket';
 import { hotelTerritorialSignals } from './hotelTerritorialSignals.ts';
 
-export type ProgrammeKind = 'hotel' | 'housing' | 'ehpad' | 'clinic' | 'retail' | 'office' | 'student' | 'other';
+export type ProgrammeKind = 'hotel' | 'housing' | 'ehpad' | 'clinic' | 'retail' | 'office' | 'activity' | 'student' | 'other';
 export type PluEnvelope = { cesRatio: number | null; heightM: number | null; parkingPerHousing: number | null; notes: string[] };
 export type CapacityInput = { terrainM2: number; floors: number; floorHeightM: number; grossM2PerUnit: number; siteEfficiencyPct: number };
 export type CapacityResult = { footprintCeilingM2: number; grossCeilingM2: number; indicativeUnits: number; heightTest: 'within' | 'above' | 'unknown'; parkingMinimum: number | null } | null;
@@ -45,6 +45,7 @@ export function programmeKind(label: string): ProgrammeKind {
   if (/clinique|hopital|sante/.test(key)) return 'clinic';
   if (/supermarche|commerce|magasin/.test(key)) return 'retail';
   if (/etudiant/.test(key)) return 'student';
+  if (/locaux d.activite|local d.activite|atelier|entrepot|parc d.activite/.test(key)) return 'activity';
   if (/bureau|tertiaire/.test(key)) return 'office';
   if (/logement|habitation|residence/.test(key)) return 'housing';
   return 'other';
@@ -76,6 +77,7 @@ export function targetProposal(kind: ProgrammeKind, hotel: HotelEvidence | null)
     };
   }
   const catalog: Record<Exclude<ProgrammeKind, 'hotel'>, TargetProposal> = {
+    activity: { title:'Entreprises et artisans à qualifier par métier', reasons:['Une présence d’entreprises ne prouve pas une demande d’implantation ni un besoin de bâtiment.'], programme:['Tester des lots divisibles avec hauteur libre, charge au sol et puissance électrique adaptées.', 'Vérifier accès poids lourds, manœuvres, logistique, part de bureaux et contraintes propres aux activités.'], alternatives:['Ateliers artisanaux','Locaux mixtes activité/bureaux','Stockage et distribution'], decisiveChecks:['Demandes d’implantation et cahiers des charges utilisateurs','Loyers signés, offres disponibles et projets concurrents','Précommercialisation, coût complet et valeur de sortie'] },
     housing: { title: 'Cible résidentielle à sélectionner par typologie et solvabilité', reasons: ['Les transactions DVF agrégées ne suffisent pas à départager primo-accédants, familles et seniors.'], programme: ['Comparer T1/T2, T3 et familiaux selon ménages, revenus, loyers et ventes comparables.', 'Dimensionner stationnement et espaces extérieurs selon règlement et demande vérifiée.'], alternatives: ['Accession libre', 'Locatif', 'Résidence services'], decisiveChecks: ['Ventes et loyers comparables par surface/typologie', 'Structure des ménages et projets concurrents', 'Prix de sortie et coût complet'] },
     ehpad: { title: 'Cible dépendance à définir avec les autorités et exploitants', reasons: ['La population âgée ne prouve ni le besoin en lits médicalisés ni l’autorisation.'], programme: ['Tester capacité, unités de vie, soins, locaux du personnel et logistique avec exploitant.', 'Vérifier accessibilité, ERP, accès secours et fonctionnement 24 h/24.'], alternatives: ['Résidence autonomie', 'Accueil temporaire'], decisiveChecks: ['FINESS et places autorisées du bassin', 'Schéma autonomie départemental et ARS', 'Occupation, personnel et tarifs locaux'] },
     clinic: { title: 'Spécialité médicale à établir avant le programme bâti', reasons: ['Un besoin de soins ne se déduit pas de la population seule.'], programme: ['Définir plateaux techniques, parcours patients et flux propres à la spécialité.', 'Séparer logistique, soins, visiteurs et accès secours.'], alternatives: ['Centre de santé', 'Maison médicale'], decisiveChecks: ['FINESS et offre par spécialité', 'PRS et autorisations ARS', 'Praticiens partenaires et bassin de recrutement'] },

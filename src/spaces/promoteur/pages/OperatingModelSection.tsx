@@ -5,7 +5,7 @@ const money = (value: number) => `${new Intl.NumberFormat('fr-FR', { maximumFrac
 const pct = (value: number) => `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)} %`;
 const UNIT_LABELS = {
   hotel: 'chambre disponible', ehpad: 'place disponible', clinic: 'unité de service', retail: 'unité de vente',
-  office: 'lot disponible', student: 'logement disponible', housing: 'logement disponible', other: 'unité disponible',
+  office: 'lot disponible', activity: 'lot d’activité disponible', student: 'logement disponible', housing: 'logement disponible', other: 'unité disponible',
 } as const;
 
 export function OperatingModelSection({ programme, units, totalCost, value, onChange }: {

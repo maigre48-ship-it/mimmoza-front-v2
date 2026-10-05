@@ -110,8 +110,8 @@ const VERTICALS: VerticalCard[] = [
   },
   {
     id: "promoteur",
-    title: "Promotion",
-    description: "Faisabilité foncière, PLU, massing 3D et bilan.",
+    title: "Projets tertiaires",
+    description: "Bureaux, commerces, locaux d’activité : marché, utilisateurs, faisabilité et économie du projet.",
     icon: Building2,
     iconBg: "bg-violet-50",
     iconColor: "text-violet-600",

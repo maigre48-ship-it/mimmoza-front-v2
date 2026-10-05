@@ -359,7 +359,7 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       label: "Programmation",
       items: [
         { label: "Programme & viabilité", path: "/promoteur/programmation",      icon: Layers },
-        { label: "Stratégie de projet", path: "/promoteur/strategie-projet", icon: Target },
+        { label: "Stratégie tertiaire", path: "/promoteur/strategie-projet", icon: Target },
         { label: "Style & tendances", path: "/promoteur/style-tendances", icon: Palette },
         { label: "Coût de construction",  path: "/promoteur/simulation-travaux", icon: Calculator, separatorBefore: true },
       ],

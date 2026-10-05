@@ -235,7 +235,7 @@ const ROUTE_QUESTIONS: RouteQuestions[] = [
   {
     prefix: '/promoteur/strategie-projet',
     quick: [
-      { label: 'Quels projets sont possibles ici ?', prompt: "À partir du dossier Stratégie de projet actuellement ouvert, quels usages ont été explorés sur ce terrain ? Résume les pistes, les faits disponibles et les principales inconnues. Ne transforme pas un indicateur de contexte en preuve de demande ou de constructibilité." },
+      { label: 'Bureaux, commerces ou activité ?', prompt: "À partir du dossier ouvert, compare les pistes bureaux, commerces et locaux d’activité sur ce terrain : besoins utilisateurs, marché local, contraintes techniques et sortie. Respecte le périmètre de comparaison choisi et signale les données manquantes. Un score de contexte ne prouve ni demande ni constructibilité." },
       { label: 'Quelle cible étudier en priorité ?', prompt: "Pour la piste étudiée dans le dossier Stratégie de projet, quelle clientèle ou quel utilisateur faut-il tester en priorité, et pourquoi ? Distingue ce que les données montrent de ce qui reste à vérifier." },
       { label: 'Que manque-t-il pour décider ?', prompt: "Dans le dossier Stratégie de projet ouvert, quelles sont les trois vérifications les plus utiles à faire ensuite pour pouvoir choisir un programme ? Cite les données déjà connues et les preuves manquantes." },
     ],
@@ -243,7 +243,7 @@ const ROUTE_QUESTIONS: RouteQuestions[] = [
       { label: 'Synthétiser les projets possibles', prompt: "Synthétise le dossier Stratégie de projet actuellement ouvert : terrain, PLU connu, études par usage, recommandation et autres pistes, scénarios enregistrés. Compare les options sans inventer de chiffres. Sépare faits sourcés, hypothèses et pièces manquantes, puis propose les prochaines actions concrètes." },
       { label: 'Comparer les scénarios', prompt: "Compare les scénarios du dossier Stratégie de projet sur la même parcelle : cible, programme, capacité, marché et décision documentée. Si moins de deux scénarios ou des pièces manquent, explique précisément ce qui empêche de conclure." },
       { label: 'Qui serait la meilleure cible ?', prompt: "Pour chaque piste crédible du dossier Stratégie de projet, formule une cible précise et les raisons de la tester. Appuie-toi sur les données sectorielles disponibles et signale celles qui manquent pour confirmer la demande locale." },
-      { label: 'Programme et exploitants à tester', prompt: "À partir de l'étude en cours, quel programme concret et quels types d'exploitants, bailleurs ou acquéreurs faut-il qualifier ? Sépare les partenaires simplement repérés de ceux dont l'intérêt est documenté, et indique les conditions PLU et économiques à vérifier." },
+      { label: 'Quels utilisateurs ou investisseurs viser ?', prompt: "À partir de l’étude tertiaire en cours, quels utilisateurs, enseignes ou investisseurs qualifier, avec quels lots, loyers et conditions de sortie ? Utilise le cadrage déclaré et les sources du dossier. Sépare acteurs repérés, besoins vérifiés et intérêt écrit. Indique les conditions PLU, techniques et économiques à confirmer." },
     ],
   },
 

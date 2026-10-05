@@ -47,11 +47,11 @@ const EXPRESS_BENEFITS = [
 ];
 
 const PRO_BENEFITS = [
-  { icon: ChartNoAxesCombined, label: "Tableaux de bord avances" },
-  { icon: Building2, label: "Etudes de faisabilite & scenarios" },
-  { icon: Search, label: "Veille marche & opportunites" },
-  { icon: FileText, label: "Rapports detailles & exports" },
-  { icon: Code2, label: "API & integrations" },
+  { icon: Building2, label: "Bureaux, commerces et locaux d’activité" },
+  { icon: Search, label: "Marché, utilisateurs et concurrence" },
+  { icon: ChartNoAxesCombined, label: "Programme, loyers et stratégie de sortie" },
+  { icon: FileText, label: "Dossiers sourcés et exports professionnels" },
+  { icon: Code2, label: "PLU, risques et outils connectés" },
 ];
 
 const TRUST_ITEMS = [
@@ -683,14 +683,14 @@ export default function ConnexionPage() {
               id="pro-title"
               className="mt-6 text-3xl font-semibold leading-tight tracking-tight text-white sm:text-4xl"
             >
-              Développez vos opérations
+              Développez vos projets
               <br />
-              <span className="text-violet-400">immobilières.</span>
+              <span className="text-violet-400">d’immobilier d’entreprise.</span>
             </h2>
 
             <p className="mt-5 max-w-lg text-base leading-7 text-slate-300">
-              Une plateforme complète pour investisseurs, promoteurs,
-              <br className="hidden sm:block" /> marchands de biens et financeurs.
+              Bureaux, commerces et locaux d’activité : du terrain au programme,
+              <br className="hidden sm:block" /> puis au bon utilisateur ou investisseur.
             </p>
 
             <ul className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">

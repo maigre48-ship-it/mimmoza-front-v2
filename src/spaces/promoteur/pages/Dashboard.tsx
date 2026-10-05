@@ -587,11 +587,11 @@ export default function Dashboard(): React.ReactElement {
 
         {/* ══ 1. HERO ══════════════════════════════════════════════════════ */}
         <PromoteurPageHero
-          badge="Promoteur · Cockpit foncier"
-          title="Projets"
+          badge="Promoteur · Immobilier d’entreprise"
+          title="Projets tertiaires"
           metaLines={[
             {
-              text: "Importez un projet, qualifiez-le rapidement, testez la faisabilité et préparez votre comité foncier.",
+              text: "Bureaux, commerces et locaux d’activité : identifiez les utilisateurs, testez le programme et préparez la sortie du projet.",
             },
             {
               text: `${sortedStudies.length} étude${sortedStudies.length > 1 ? "s" : ""} active${sortedStudies.length > 1 ? "s" : ""}`,
@@ -609,6 +609,7 @@ export default function Dashboard(): React.ReactElement {
           }
         />
 
+        <div className="rounded-2xl border border-violet-200 bg-violet-50 p-5"><h2 className="font-semibold text-violet-950">Du terrain au bon utilisateur</h2><p className="mt-2 text-sm text-violet-900">Ciblez un marché d’entreprise, dimensionnez les lots, testez l’économie locative et préparez un dossier pour utilisateurs ou investisseurs.</p><button type="button" onClick={() => navigate('/promoteur/strategie-projet')} className="mt-4 rounded-xl bg-violet-700 px-4 py-2 text-sm font-semibold text-white">Étudier un projet tertiaire</button></div>
         {/* ══ 2. OPPORTUNITÉS APPORTEURS ═══════════════════════════════════ */}
         {apporteurDeals.length > 0 && (
           <div>

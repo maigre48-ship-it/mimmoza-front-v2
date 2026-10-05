@@ -27,7 +27,7 @@ export type SectorReading = {
 
 export const SCREENING_SECTORS: { key: SectorKey; label: string }[] = [
   { key: 'logement', label: 'Logements' }, { key: 'hotel', label: 'Hôtel' },
-  { key: 'ehpad', label: 'EHPAD' }, { key: 'commerce', label: 'Supermarché' },
+  { key: 'ehpad', label: 'EHPAD' }, { key: 'commerce', label: 'Commerces' },
   { key: 'bureaux', label: 'Bureaux' }, { key: 'residence_etudiante', label: 'Résidence étudiante' },
   { key: 'clinique', label: 'Clinique' },
 ];
@@ -36,7 +36,7 @@ const DETAILS: Record<SectorKey, { target: string; programme: string; missing: s
   logement: { target: 'Ménages du bassin, par taille et solvabilité à vérifier', programme: 'Comparer accession, locatif et typologies de logements.', missing: ['Ventes et loyers par typologie dans le bassin', 'Programmes concurrents et rythme d’absorption'] },
   hotel: { target: 'Séjours de loisirs et/ou d’affaires à départager localement', programme: 'Comparer classement, nombre de chambres et services selon la saison.', missing: ['Occupation et ADR d’hôtels comparables par saison', 'Motifs, provenance et durée des séjours du bassin'] },
   ehpad: { target: 'Personnes âgées dépendantes du bassin et prescripteurs à qualifier', programme: 'Étudier des places médicalisées seulement avec un exploitant et les autorisations.', missing: ['Places autorisées et projets du bassin', 'Listes d’attente, tarifs et autorisation ARS/département'] },
-  commerce: { target: 'Ménages de la zone de chalandise à délimiter', programme: 'Comparer commerce de proximité et grande surface selon flux et accès.', missing: ['Dépenses alimentaires captables et flux réels', 'Enseignes concurrentes, accès et autorisation commerciale'] },
+  commerce: { target: 'Enseignes et commerçants, selon le format et la chalandise à vérifier', programme: 'Comparer cellules commerciales et formats d’enseigne selon flux, visibilité, accès et logistique.', missing: ['Chalandise et dépenses propres à l’activité, flux réels', 'Loyers, cellules vacantes, concurrence et besoins d’enseigne'] },
   bureaux: { target: 'Entreprises utilisatrices ou investisseurs tertiaires à identifier', programme: 'Tester plateaux divisibles et services selon utilisateurs.', missing: ['Demande placée et vacance de bureaux', 'Loyers et engagements d’utilisateurs du bassin'] },
   residence_etudiante: { target: 'Étudiants mobiles des campus accessibles à mesurer', programme: 'Tester studios et services selon les loyers accessibles.', missing: ['Effectifs et mobilité par campus', 'Lits concurrents, loyers et taux d’occupation'] },
   clinique: { target: 'Patients d’une spécialité à définir avec un opérateur', programme: 'Définir la spécialité, les plateaux techniques et les flux patients.', missing: ['Besoins de soins par spécialité', 'FINESS, capacités, autorisations et stratégie ARS'] },

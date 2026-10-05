@@ -27,6 +27,7 @@ import { usePromoteurStudyId } from '../shared/usePromoteurStudyId';
 import { buildStrategyCopilotSnapshot } from './strategyCopilotSnapshot';
 import type { DecisionRecord } from './decisionDossier';
 import type { OperatorFollowUp } from './operatorFollowup';
+import { TertiaryStrategySection } from './TertiaryStrategySection';
 
 type Scenario = {
   id: string;
@@ -54,7 +55,7 @@ type Scenario = {
   finess?: FinessSupply | null;
 };
 
-const IDEAS = ['Logements', 'Hôtel', 'EHPAD', 'Clinique', 'Supermarché', 'Bureaux', 'Résidence étudiante'];
+const IDEAS = ['Bureaux', 'Commerces', 'Locaux d’activité', 'Logements', 'Hôtel', 'EHPAD', 'Clinique', 'Résidence étudiante'];
 const scenarioKey = (studyId: string | null) => `mimmoza.promoteur.strategie-projet.${studyId ?? 'hors-etude'}`;
 const screeningKey = (studyId: string | null) => `mimmoza.promoteur.preselection.${studyId ?? 'hors-etude'}`;
 
@@ -132,7 +133,11 @@ export default function StrategieProjetPage() {
   const [address, setAddress] = useState('');
   const [insee, setInsee] = useState('');
   const [surfaceM2, setSurfaceM2] = useState('');
-  const [programme, setProgramme] = useState('');
+  const [programme, setProgramme] = useState('Bureaux');
+  const [focus, setFocus] = useState<'tertiaire' | 'all'>('tertiaire');
+  const [tertiaryBrief, setTertiaryBrief] = useState('');
+  const sectorsToExplore = focus === 'tertiaire' ? SCREENING_SECTORS.filter(s => s.key === 'bureaux' || s.key === 'commerce') : SCREENING_SECTORS;
+  const activeScreeningKey = `${screeningKey(studyId)}.${focus}`;
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [screening, setScreening] = useState<{ site: string; date: string; snapshots: SectorSnapshot[]; recommendation?: ProjectRecommendation | null; recommendationError?: string | null } | null>(null);
   const [screeningError, setScreeningError] = useState<string | null>(null);
@@ -181,12 +186,15 @@ export default function StrategieProjetPage() {
     }
     const pageSnapshot = buildStrategyCopilotSnapshot({ parcelId, address, insee, surfaceM2,
       pluZone: study?.plu?.zone_code, screening, screeningIsCurrent, scenarios, decisions, operatorFollowups });
+    pageSnapshot.programme_en_cours = programme;
+    pageSnapshot.perimetre_prioritaire = focus === 'tertiaire' ? 'Bureaux, commerces et locaux d’activité' : 'Comparaison étendue aux autres programmes';
+    pageSnapshot.cadrage_tertiaire_declare = tertiaryBrief.slice(0,6000);
     setActiveCopilotContext({ pageSnapshot, parcelId: parcelId.trim().toUpperCase() || undefined,
       codeInsee: insee.trim().toUpperCase() || inseeFromParcel(parcelId) || undefined });
     return () => {
       if (getActiveCopilotContext().pageSnapshot === pageSnapshot) setActiveCopilotContext({ pageSnapshot: undefined, parcelId: undefined, codeInsee: undefined });
     };
-  }, [parcelId, address, insee, surfaceM2, study?.plu?.zone_code, screening, screeningIsCurrent, scenarios, studyId, decisionVersion]);
+  }, [parcelId, address, insee, surfaceM2, study?.plu?.zone_code, screening, screeningIsCurrent, scenarios, studyId, decisionVersion, programme, focus, tertiaryBrief]);
 
   useEffect(() => {
     try {
@@ -198,11 +206,11 @@ export default function StrategieProjetPage() {
 
   useEffect(() => {
     try {
-      const parsed = JSON.parse(userStorage.getItem(screeningKey(studyId)) ?? 'null');
+      const parsed = JSON.parse(userStorage.getItem(activeScreeningKey) ?? (focus === 'all' ? userStorage.getItem(screeningKey(studyId)) : null) ?? 'null');
       setScreening(parsed && typeof parsed === 'object' && typeof parsed.site === 'string' && Array.isArray(parsed.snapshots)
         && parsed.snapshots.every((item: SectorSnapshot) => SCREENING_SECTORS.some((sector) => sector.key === item?.key)) ? parsed : null);
     } catch { setScreening(null); }
-  }, [studyId]);
+  }, [activeScreeningKey, focus, studyId]);
 
   useEffect(() => {
     if (!studyId || hydratedStudy === studyId) return;
@@ -313,8 +321,8 @@ export default function StrategieProjetPage() {
     };
     try {
       const snapshots: SectorSnapshot[] = [];
-      for (let index = 0; index < SCREENING_SECTORS.length; index += 2) {
-        const batch = await Promise.all(SCREENING_SECTORS.slice(index, index + 2).map((sector) => run(sector.key)));
+      for (let index = 0; index < sectorsToExplore.length; index += 2) {
+        const batch = await Promise.all(sectorsToExplore.slice(index, index + 2).map((sector) => run(sector.key)));
         snapshots.push(...batch);
         setScreeningProgress(snapshots.length);
       }
@@ -362,18 +370,19 @@ export default function StrategieProjetPage() {
       }
       const next = { site: [parcel, address.trim(), cityCode, surfaceM2.trim()].join('|'), date, snapshots, recommendation, recommendationError };
       setScreening(next);
-      userStorage.setItem(screeningKey(studyId), JSON.stringify(next));
+      userStorage.setItem(activeScreeningKey, JSON.stringify(next));
     } finally { setBusy(false); }
   };
 
 
   return <div className="mx-auto max-w-7xl space-y-6 px-4 pb-14 pt-6 sm:px-6">
-    <PromoteurPageHero badge="PROMOTEUR · STRATÉGIE DE PROJET" title="Quel projet pour ce terrain ?" metaLines={[{ icon: <MapPin size={16} />, text: study?.title || 'Étude libre ou parcelle de l’étude active' }]} statCards={[{ label: 'Scénarios', value: String(scenarios.length) }, { label: 'Dossier', value: 'Sourcé', tone: 'emerald' }]} />
+    <PromoteurPageHero badge="PROMOTEUR · IMMOBILIER D’ENTREPRISE" title="Quel projet tertiaire pour ce terrain ?" metaLines={[{ icon: <MapPin size={16} />, text: study?.title || 'Bureaux, commerces et locaux d’activité · étude libre ou terrain actif' }]} statCards={[{ label: 'Scénarios', value: String(scenarios.length) }, { label: 'Dossier', value: 'Sourcé', tone: 'emerald' }]} />
 
     <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-5 text-sm text-indigo-950">
-      Ce dossier distingue les faits mesurés, les hypothèses à tester et les décisions à confirmer. Les données de marché générales ne valent pas preuve de demande pour le programme choisi.
+      Définissez le bon produit pour une entreprise utilisatrice, puis vérifiez son marché, son programme technique et sa sortie : vente à utilisateur, location ou cession à un investisseur. Chaque décision distingue faits mesurés, hypothèses et preuves à obtenir.
     </div>
 
+    <TertiaryStrategySection programme={programme} onProgramme={setProgramme} location={[address.trim(), parcelId.trim(), insee.trim()].filter(Boolean).join(' · ')} terrainSurface={surfaceM2} studyId={studyId} onBriefChange={setTertiaryBrief} />
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7" aria-labelledby="strategy-input-title">
       <div className="mb-5 flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-widest text-indigo-600">01 · Cadrer</p><h2 id="strategy-input-title" className="mt-1 text-2xl font-semibold text-slate-900">Terrain et programme</h2></div><Building2 className="text-indigo-500" /></div>
       {studyId && <p className="mb-4 text-sm text-slate-600">Les données de l’étude active sont reprises automatiquement. Vous pouvez les corriger avant l’analyse.{study?.plu?.zone_code ? ` Zone PLU relevée : ${study.plu.zone_code} (règlement et périmètre à vérifier).` : ""}</p>}
@@ -383,8 +392,8 @@ export default function StrategieProjetPage() {
         <label className="text-sm font-medium text-slate-700">Code INSEE de la commune<input value={insee} onChange={(event) => setInsee(event.target.value)} placeholder="Ex. 64065" maxLength={5} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 font-normal" /></label>
         <label className="text-sm font-medium text-slate-700">Surface du terrain (m²)<input value={surfaceM2} onChange={(event) => setSurfaceM2(event.target.value)} inputMode="decimal" placeholder="Facultatif — surface cadastrale" className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 font-normal" /></label>
       </div>
-      <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4"><h3 className="font-semibold text-indigo-950">Partir du terrain, sans choisir un programme</h3><p className="mt-1 text-sm text-indigo-900">Mimmoza croise les études disponibles pour six usages avec les dénombrements officiels BPE 2025. Pour la clinique, la BPE décrit l’offre de soins existante, sans mesurer les besoins par spécialité ni les autorisations. Le choix final exige la faisabilité et les bilans.</p><p className="mt-2 text-xs text-indigo-800">En lançant l’exploration, la référence cadastrale, la commune, la surface et les indicateurs sourcés du dossier sont transmis à Anthropic pour rédiger la recommandation IA. Si ce service ne répond pas, l’analyse locale reste affichée.</p><button type="button" disabled={busy} onClick={() => void screenSite()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-5 py-3 font-semibold text-white disabled:opacity-60">{busy ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}{busy ? screeningProgress >= 7 ? 'Synthèse IA en cours…' : `Études en cours · ${screeningProgress}/7` : 'Explorer les projets possibles avec l’IA'}</button></div>
-      <label className="mt-5 block text-sm font-medium text-slate-700">Ou étudier directement un programme<input value={programme} onChange={(event) => setProgramme(event.target.value)} list="strategy-programmes" maxLength={120} placeholder="Hôtel, clinique, supermarché… ou votre propre idée" className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 font-normal" /></label>
+      <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4"><h3 className="font-semibold text-indigo-950">Comparer les marchés à instruire</h3><label className="mt-3 block text-sm font-medium">Périmètre de comparaison<select value={focus} disabled={busy} onChange={e => setFocus(e.target.value as 'tertiaire' | 'all')} className="mt-2 block w-full min-w-0 rounded-lg border border-indigo-200 p-2 sm:w-auto"><option value="tertiaire">Bureaux et commerces · priorité tertiaire</option><option value="all">Autres programmes · comparaison étendue</option></select></label><p className="mt-2 text-sm text-indigo-900">{focus === 'tertiaire' ? 'Les pré-diagnostics bureaux et commerces apportent du contexte. Pour les locaux d’activité, utilisez le dossier IA ci-dessus : le connecteur spécialisé n’est pas encore disponible. Loyers signés, vacance, demande placée et besoins utilisateurs restent à documenter pour arbitrer.' : 'Comparaison étendue aux autres programmes disponibles. Les dénombrements BPE décrivent l’offre, sans démontrer la demande propre au projet.'}</p><p className="mt-2 text-xs text-indigo-800">En lançant l’exploration, la référence cadastrale, la commune, la surface et les indicateurs sourcés du dossier sont transmis à Anthropic pour rédiger la recommandation IA. Si ce service ne répond pas, l’analyse locale reste affichée.</p><button type="button" disabled={busy} onClick={() => void screenSite()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-5 py-3 font-semibold text-white disabled:opacity-60">{busy ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}{busy ? screeningProgress >= sectorsToExplore.length ? 'Synthèse IA en cours…' : `Études en cours · ${screeningProgress}/${sectorsToExplore.length}` : 'Comparer les marchés disponibles avec l’IA'}</button></div>
+      <label className="mt-5 block text-sm font-medium text-slate-700">Ou étudier directement un programme<input value={programme} onChange={(event) => setProgramme(event.target.value)} list="strategy-programmes" maxLength={120} placeholder="Bureaux divisibles, commerces, locaux d’activité…" className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 font-normal" /></label>
       <datalist id="strategy-programmes">{IDEAS.map((idea) => <option key={idea} value={idea} />)}</datalist>
       {brief && <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-950"><strong>Couverture actuelle :</strong> {brief.marketType === 'hotel' ? 'Offre communale et bassin proche INSEE, fréquentation départementale et éclairages régionaux sur tout le territoire. Occupation et prix locaux disponibles pour les communes du Pays basque couvertes par l’ADT64.' : brief.marketCaveat}<br /><strong>À documenter :</strong> {brief.criticalData}.</div>}
       {formError && <p role="alert" className="mt-4 text-sm text-rose-700">{formError}</p>}
