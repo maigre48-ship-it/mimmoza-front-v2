@@ -15,6 +15,7 @@ import { decouperSegments } from '../charts/copilotChart.types';
 import { buildParcelDossier } from '../dossier/parcelDossier';
 import './CopilotMessage.css';
 import { isGeoCall } from '../maps/thematicMapModel';
+import { CopilotRenderBoundary } from './CopilotRenderBoundary';
 const CopilotThematicMaps = lazy(() => import('../maps/CopilotThematicMaps').then(m => ({ default: m.CopilotThematicMaps })));
 
 // recharts pèse plusieurs centaines de Ko et n'est utilisé QUE par les
@@ -28,9 +29,19 @@ const ParcelDecisionDossier = lazy(() =>
   import('../dossier/ParcelDecisionDossier').then((m) => ({ default: m.ParcelDecisionDossier })),
 );
 
-export function CopilotMessage({ message, question, conversationId, onSend }: {
+type MessageProps = {
   message: ChatMessage; question?: string | null; conversationId?: string | null; onSend?: (text: string) => void;
-}) {
+};
+
+export function CopilotMessage(props: MessageProps) {
+  return <CopilotRenderBoundary key={props.message.id} label="Réponse" fallback={<div role="status" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', padding: 12 }}>
+    <p>Un élément de cette réponse n’a pas pu être affiché. Voici le texte reçu :</p>
+    {props.message.text || 'La réponse est en cours de réception…'}
+    {props.message.error && <p>{props.message.error}</p>}
+  </div>}><CopilotMessageContent {...props} /></CopilotRenderBoundary>;
+}
+
+function CopilotMessageContent({ message, question, conversationId, onSend }: MessageProps) {
   const isUser = message.role === 'user';
   const actionRuns = useCopilotStore((s) => s.actionRuns);
   const messages = useCopilotStore((s) => s.messages);
@@ -90,7 +101,7 @@ export function CopilotMessage({ message, question, conversationId, onSend }: {
     <div style={{ margin: '10px 0' }}>
       {message.toolCalls.length > 0 && (
         <div style={{ marginBottom: 8 }}>
-          {message.toolCalls.map((tc) => {
+          {message.toolCalls.map((tc) => <CopilotRenderBoundary key={tc.id} label="Résultat d’outil">{(() => {
             if (tc.name === 'calculer_bilan_financier') return <CopilotFinancialCard key={tc.id} call={tc} onSend={onSend} />;
             // Un outil d'action ne raconte pas ce qu'il a lu : il propose de
             // faire quelque chose. Tant qu'il tourne, on garde la carte
@@ -116,14 +127,14 @@ export function CopilotMessage({ message, question, conversationId, onSend }: {
               return tc.id === webCalls[0]?.id ? <CopilotWebResearchCard key={tc.id} calls={webCalls} /> : null;
             }
             return <CopilotApiResultCard key={tc.id} call={tc} />;
-          })}
+          })()}</CopilotRenderBoundary>)}
         </div>
       )}
-      {message.status === 'complete' && message.toolCalls.some(isGeoCall) && <Suspense fallback={<div>Préparation des cartes thématiques…</div>}><CopilotThematicMaps calls={message.toolCalls} onSend={onSend} /></Suspense>}
+      {message.status === 'complete' && message.toolCalls.some(isGeoCall) && <CopilotRenderBoundary label="Cartes thématiques"><Suspense fallback={<div>Préparation des cartes thématiques…</div>}><CopilotThematicMaps calls={message.toolCalls} onSend={onSend} /></Suspense></CopilotRenderBoundary>}
       {message.status === 'complete' && dossier && conversationId && (
-        <Suspense fallback={<div>Préparation du dossier…</div>}>
+        <CopilotRenderBoundary label="Dossier de parcelle"><Suspense fallback={<div>Préparation du dossier…</div>}>
           <ParcelDecisionDossier dossier={dossier} conversationId={conversationId} messageId={message.id} onAnalyze={onSend} />
-        </Suspense>
+        </Suspense></CopilotRenderBoundary>
       )}
       {/* Texte et graphiques sont entrelacés : le modèle place ses blocs
           ```mimmoza-chart là où ils éclairent son propos, pas tous à la fin.
@@ -133,9 +144,9 @@ export function CopilotMessage({ message, question, conversationId, onSend }: {
         seg.kind === 'chart' ? (
           // Réserve de hauteur pendant le chargement du module : sans elle, le
           // fil sauterait au moment où recharts arrive.
-          <Suspense key={`c${i}`} fallback={<div style={{ height: 240 }} />}>
+          <CopilotRenderBoundary key={`c${i}`} label="Graphique" fallback={<div role="status"><p>Le graphique ne peut pas être affiché. Ses données restent disponibles :</p><div style={{ overflowX: 'auto' }}><table><caption>{seg.spec.title}</caption><thead><tr><th>Libellé</th>{(seg.spec.series ?? ['value']).map(s => <th key={s}>{s === 'value' ? 'Valeur' : s}{seg.spec.unit ? ` (${seg.spec.unit})` : ''}</th>)}</tr></thead><tbody>{seg.spec.data.map((p, index) => <tr key={index}><td>{p.label}</td>{(seg.spec.series ?? ['value']).map(s => <td key={s}>{p[s] ?? '—'}</td>)}</tr>)}</tbody></table></div>{seg.spec.source && <p>Source : {seg.spec.source}</p>}</div>}><Suspense fallback={<div style={{ height: 240 }} />}>
             <CopilotChart spec={seg.spec} />
-          </Suspense>
+          </Suspense></CopilotRenderBoundary>
         ) : (
           <div
             key={`m${i}`}

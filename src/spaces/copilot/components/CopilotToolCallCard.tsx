@@ -3,6 +3,20 @@ import { AlertTriangle, Check, Info, Loader2, Wrench } from 'lucide-react';
 import type { ActiveToolCall } from '../types/copilot.types';
 import { COPILOT_THEME as T } from './copilotTheme';
 
+function readWebSources(output: unknown): { title: string; url: string }[] {
+  if (!output || typeof output !== 'object') return [];
+  const raw = (output as Record<string, unknown>).sources;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item) => {
+    if (!item || typeof item !== 'object' || typeof item.url !== 'string') return [];
+    try {
+      const url = new URL(item.url);
+      if (!['http:', 'https:'].includes(url.protocol)) return [];
+      return [{ url: url.href, title: typeof item.title === 'string' && item.title.trim() ? item.title : url.hostname }];
+    } catch { return []; }
+  });
+}
+
 // Libellés lisibles. La table ne couvrait que 6 outils sur les 34 réellement
 // appelés : une conversation mélangeait « Comparables DVF » et
 // `get_monuments_historiques`, ce qui donnait l'impression que certains outils
@@ -92,8 +106,7 @@ export function CopilotToolCallCard({ call }: { call: ActiveToolCall }) {
   const v = statusVisual(call.status);
   const isWeb = call.name === 'web_search' || call.name === 'web_fetch';
   const isFetch = call.name === 'web_fetch';
-  const output = call.output as { sources?: { title: string; url: string }[] } | undefined;
-  const sources = isWeb && Array.isArray(output?.sources) ? output.sources : [];
+  const sources = isWeb ? readWebSources(call.output) : [];
   const webError = isWeb && call.status === 'error';
   const errorText = call.error === 'max_uses_exceeded' ? 'Limite de consultations atteinte.'
     : call.error === 'too_many_requests' ? 'Service temporairement saturé.'
@@ -136,9 +149,8 @@ export function CopilotWebResearchCard({ calls }: { calls: ActiveToolCall[] }) {
   const running = calls.some((call) => call.status === 'running');
   const sources = new Map<string, string>();
   for (const call of calls) {
-    const output = call.output as { sources?: { title: string; url: string }[] } | undefined;
-    if (call.status !== 'success' || !Array.isArray(output?.sources)) continue;
-    for (const source of output.sources) {
+    if (call.status !== 'success') continue;
+    for (const source of readWebSources(call.output)) {
       if (/^https?:\/\//i.test(source.url)) sources.set(source.url, source.title);
     }
   }
