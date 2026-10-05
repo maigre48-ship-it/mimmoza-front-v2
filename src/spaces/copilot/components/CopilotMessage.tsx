@@ -32,7 +32,7 @@ export function CopilotMessage({ message, question, conversationId, onSend }: {
   const isUser = message.role === 'user';
   const actionRuns = useCopilotStore((s) => s.actionRuns);
   const messages = useCopilotStore((s) => s.messages);
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<'pdf' | 'xlsx' | 'docx' | 'pptx' | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
 
   // Recalculé à chaque paquet de tokens pendant le streaming : c'est ce qui
@@ -54,14 +54,20 @@ export function CopilotMessage({ message, question, conversationId, onSend }: {
     return null;
   })();
 
-  const handleResponseExport = async () => {
-    setExporting(true); setExportError(null);
+  const handleResponseExport = async (format: 'pdf' | 'xlsx' | 'docx' | 'pptx') => {
+    if (exporting) return;
+    setExporting(format); setExportError(null);
     try {
-      const result = await exportCopilotResponseToPdf({ response: message, question: linkedQuestion });
-      if (result === 'popup_blocked') setExportError('Autorisez les fenêtres contextuelles pour exporter le PDF.');
+      if (format === 'pdf') {
+        const result = await exportCopilotResponseToPdf({ response: message, question: linkedQuestion });
+        if (result === 'popup_blocked') setExportError('Autorisez les fenêtres contextuelles pour exporter le PDF.');
+      } else {
+        const { exportCopilotOffice } = await import('../exports/exportCopilotOffice');
+        await exportCopilotOffice(format, { response: message, question: linkedQuestion });
+      }
     } catch {
-      setExportError('Le rapport PDF n’a pas pu être préparé.');
-    } finally { setExporting(false); }
+      setExportError('Le fichier n’a pas pu être préparé. Réessayez dans quelques instants.');
+    } finally { setExporting(null); }
   };
 
   if (isUser) {
@@ -140,12 +146,13 @@ export function CopilotMessage({ message, question, conversationId, onSend }: {
         <summary>Ouvrir le rapport factuel complet et les sources</summary>
         <div className="copilot-message-markdown" dangerouslySetInnerHTML={{ __html: markdownToSafeHtml(factualReport) }} />
       </details>}
-      {message.status === 'complete' && message.text.trim() && (
-        <div className="copilot-message-actions">
-          <button type="button" onClick={() => void handleResponseExport()} disabled={exporting} aria-label="Exporter cette réponse en PDF" aria-busy={exporting}>
-            <Download size={14} aria-hidden="true" /> {exporting ? 'Préparation…' : 'Exporter en PDF'}
-          </button>
-          {exportError && <span role="status">{exportError}</span>}
+      {message.status === 'complete' && (message.text.trim() || message.toolCalls.length > 0) && (
+        <div className="copilot-message-actions" aria-busy={exporting !== null} aria-label="Exporter cette réponse">
+          <span className="copilot-message-export-label">Exporter</span>
+          {([{ format: 'pdf', label: 'PDF' }, { format: 'xlsx', label: 'Excel' }, { format: 'docx', label: 'Word' }, { format: 'pptx', label: 'PowerPoint' }] as const).map(({ format, label }) => <button key={format} type="button" onClick={() => void handleResponseExport(format)} disabled={exporting !== null} aria-label={`Exporter cette réponse en ${label}`} title={`Télécharger cette réponse en ${label}`}>
+            <Download size={14} aria-hidden="true" /> {exporting === format ? 'Préparation…' : label}
+          </button>)}
+          {exportError && <span role="alert">{exportError}</span>}
         </div>
       )}
       {/* Le mode `quick` n'existe que sur l'offre Basique (PLAN_POLICY côté

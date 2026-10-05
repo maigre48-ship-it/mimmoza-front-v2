@@ -2,9 +2,9 @@ import type { ActiveToolCall } from '../types/copilot.types';
 
 type RecordData = Record<string, unknown>;
 export type ApiFamily = 'parcel' | 'urbanism' | 'market' | 'risk' | 'energy' | 'building' | 'cost' | 'context' | 'business' | 'finance';
-export type ApiMetric = { label: string; value: string; unit?: string; note?: string };
+export type ApiMetric = { label: string; value: string; numericValue?: number; unit?: string; note?: string };
 export type ApiBars = { title: string; unit: string; max?: number; items: { label: string; value: number; tone?: string }[] };
-export type ApiTable = { title: string; columns: string[]; rows: string[][]; total?: number; links?: (string | null)[] };
+export type ApiTable = { title: string; columns: string[]; rows: string[][]; values?: (string | number | boolean | null)[][]; units?: string[]; total?: number; links?: (string | null)[] };
 export type ApiResultModel = {
   family: ApiFamily; title: string; state: 'running' | 'ready' | 'partial' | 'empty' | 'error';
   summary: string | null; source: string | null; scope: string | null; date: string | null; dateLabel: string; url: string | null;
@@ -51,7 +51,7 @@ const sourceName = (v: unknown) => {
 };
 
 /** Adaptateurs de lecture : jamais de nouvelle requête, de valeur IA ou de défaut à zéro. */
-export function buildApiResult(call: ActiveToolCall): ApiResultModel | null {
+export function buildApiResult(call: ActiveToolCall, options: { tableLimit?: number } = {}): ApiResultModel | null {
   const profile = PROFILES[call.name];
   if (!profile) return null;
   const out = record(call.output), d = record(out.data), s = record(d.stats);
@@ -69,16 +69,21 @@ export function buildApiResult(call: ActiveToolCall): ApiResultModel | null {
   };
   if (model.date === 'Non renseigné') model.date = null;
   const note = (value: unknown) => { const t = text(value); if (t && !model.notes.includes(t)) model.notes.push(t); };
-  const metric = (label: string, value: unknown, unit = '', hint?: string) => model.metrics.push({ label, value: formatApiValue(value, unit), ...(number(value) !== null && unit ? { unit } : {}), ...(hint ? { note: hint } : {}) });
+  const metric = (label: string, value: unknown, unit = '', hint?: string) => model.metrics.push({ label, value: formatApiValue(value, unit), ...(number(value) !== null ? { numericValue: value as number, ...(unit ? { unit } : {}) } : {}), ...(hint ? { note: hint } : {}) });
   const bars = (title: string, values: unknown, unit = '', max?: number) => {
     const items = Object.entries(record(values)).flatMap(([key, raw]) => { const value = number(raw); return value !== null && value >= 0 && (max === undefined || value <= max) ? [{ label: labelOf(key), value }] : []; });
     if (items.length) model.charts.push({ title, unit, max, items });
   };
   const table = (title: string, items: unknown, columns: [string, string[], string?][], linkPaths?: string[]) => {
     if (!Array.isArray(items) || !items.length) return;
-    const rows = items.slice(0, 8).map((item) => columns.map(([, paths, unit]) => formatApiValue(first(item, ...paths), unit)));
-    model.tables.push({ title, columns: columns.map(([label]) => label), rows, total: items.length,
-      ...(linkPaths ? { links: items.slice(0, 8).map((item) => safeSourceUrl(first(item, ...linkPaths))) } : {}) });
+    const selected = items.slice(0, Math.max(1, options.tableLimit ?? 8));
+    const rows = selected.map((item) => columns.map(([, paths, unit]) => formatApiValue(first(item, ...paths), unit)));
+    const values = selected.map((item) => columns.map(([, paths]) => {
+      const raw = first(item, ...paths);
+      return number(raw) !== null || typeof raw === 'boolean' ? raw as number | boolean : raw == null ? null : formatApiValue(raw);
+    }));
+    model.tables.push({ title, columns: columns.map(([label]) => label), rows, values, units: columns.map(([, , unit]) => unit ?? ''), total: items.length,
+      ...(linkPaths ? { links: selected.map((item) => safeSourceUrl(first(item, ...linkPaths))) } : {}) });
   };
   [d.avertissement, s.avertissement, s.note, d.note, d.note_regles, d.note_repli, d.adequation_programme && record(d.adequation_programme).avertissement].forEach(note);
   for (const item of Array.isArray(d.avertissements) ? d.avertissements : []) note(item);

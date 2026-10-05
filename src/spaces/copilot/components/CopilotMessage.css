@@ -14,12 +14,13 @@
 .copilot-message-markdown ol { padding-left: 1.25rem !important; }
 .copilot-message-markdown table { display:block;width:100%;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch; }
 .copilot-message-markdown blockquote { border-radius: 0 8px 8px 0; }
-.copilot-message-actions { display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:7px;border-top:1px solid rgb(15 23 42 / .07); }
+.copilot-message-actions { display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin-top:8px;padding-top:7px;border-top:1px solid rgb(15 23 42 / .07); }
 .copilot-message-actions button { display:inline-flex;align-items:center;gap:5px;border:0;background:transparent;color:#5b5f78;font:inherit;font-size:12px;padding:4px 6px;border-radius:6px;cursor:pointer; }
 .copilot-message-actions button:hover:not(:disabled),
 .copilot-message-actions button:focus-visible { color:#4f46e5;background:rgb(109 93 252 / .08);outline:2px solid transparent; }
 .copilot-message-actions button:disabled { cursor:wait;opacity:.6; }
 .copilot-message-actions span { color:#b45309;font-size:11px; }
+.copilot-message-actions .copilot-message-export-label { color:#64748b;font-size:11px; }
 @media print { .copilot-message-actions { display:none; } }
 
 /* Mention de montée en gamme, sous une réponse produite au niveau Standard.
