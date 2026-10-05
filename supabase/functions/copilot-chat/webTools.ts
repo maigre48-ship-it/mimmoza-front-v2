@@ -14,7 +14,8 @@ export function anthropicWebTools(budget: WebToolBudget): Record<string, unknown
   return tools;
 }
 
-type Citation = { type?: string; url?: string; title?: string };
+type Citation = { type?: string; url?: string; title?: string; document_index?: number; document_title?: string };
+export type CitationDocumentSource = { url?: string; title?: string };
 const safeUrl = (raw: unknown): string | null => {
   if (typeof raw !== 'string') return null;
   try { const url = new URL(raw); return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : null; }
@@ -22,19 +23,41 @@ const safeUrl = (raw: unknown): string | null => {
 };
 
 /** Ajout au flux texte : les citations structurées Anthropic ne doivent pas se perdre au streaming. */
-export function citationLinks(citations: unknown): string {
+export function citationLinks(citations: unknown, documents: CitationDocumentSource[] = []): string {
   if (!Array.isArray(citations)) return '';
   const seen = new Set<string>();
   const links: string[] = [];
   for (const item of citations as Citation[]) {
-    const url = safeUrl(item?.url);
+    const document = typeof item?.document_index === 'number' ? documents[item.document_index] : undefined;
+    const url = safeUrl(item?.url ?? document?.url);
     if (!url || seen.has(url)) continue;
     seen.add(url);
-    const title = (typeof item?.title === 'string' && item.title.trim() ? item.title.trim() : new URL(url).hostname)
+    const rawTitle = item?.title ?? item?.document_title ?? document?.title;
+    const title = (typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle.trim() : new URL(url).hostname)
       .replace(/[\[\]<>\n\r]/g, '').slice(0, 90);
     links.push(`[${title}](${url.replace(/[()]/g, (part) => encodeURIComponent(part))})`);
   }
   return links.length ? ` (Sources : ${links.join(' · ')})` : '';
+}
+
+/** L'index d'une citation de page tient aussi compte des documents joints sans URL. */
+export function citationDocumentSources(contents: unknown[]): CitationDocumentSource[] {
+  const documents: CitationDocumentSource[] = [];
+  const visit = (value: unknown, origin?: string) => {
+    if (Array.isArray(value)) { value.forEach((item) => visit(item, origin)); return; }
+    if (!value || typeof value !== 'object') return;
+    const block = value as Record<string, unknown>;
+    if (block.type === 'document') {
+      const source = block.source as { url?: unknown } | undefined;
+      const url = safeUrl(origin ?? source?.url);
+      documents.push({ ...(url ? { url } : {}), ...(typeof block.title === 'string' ? { title: block.title } : {}) });
+      return;
+    }
+    if (block.type === 'web_fetch_result') { visit(block.content, safeUrl(block.url) ?? undefined); return; }
+    if (Array.isArray(block.content) || block.type === 'web_fetch_tool_result' || block.type === 'tool_result') visit(block.content, origin);
+  };
+  visit(contents);
+  return documents;
 }
 
 export function successfulWebSearches(block: { type?: unknown; content?: unknown }): number {

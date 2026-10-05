@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { anthropicWebTools, citationLinks, isWebToolUnavailable, successfulWebSearches, webResultSummary, WEB_LIMITS } from './webTools.ts';
+import { anthropicWebTools, citationDocumentSources, citationLinks, isWebToolUnavailable, successfulWebSearches, webResultSummary, WEB_LIMITS } from './webTools.ts';
 
 test('la recherche et la lecture web complètent les outils métier avec des limites', () => {
   const tools = anthropicWebTools(WEB_LIMITS.quick);
@@ -18,6 +18,17 @@ test('les citations structurées deviennent des liens lisibles et sûrs', () => 
   ]);
   assert.match(text, /\[Population INSEE\]\(https:\/\/www.insee.fr\/fr\/statistiques\/123\)/);
   assert.doesNotMatch(text, /javascript|Doublon/);
+});
+
+test('les citations de pages lues gardent le bon index après un PDF joint', () => {
+  const documents = citationDocumentSources([
+    [{ type: 'document', source: { type: 'base64', data: 'pdf' } }],
+    [{ type: 'web_fetch_tool_result', content: { type: 'web_fetch_result', url: 'https://insee.fr/etude',
+      content: { type: 'document', title: 'Étude INSEE', source: { type: 'text', data: 'texte' } } } }],
+  ]);
+  assert.equal(documents.length, 2);
+  assert.match(citationLinks([{ type: 'char_location', document_index: 1, document_title: 'Étude INSEE' }], documents), /https:\/\/insee.fr\/etude/);
+  assert.equal(citationLinks([{ type: 'page_location', document_index: 0 }], documents), '');
 });
 
 test('un échec de recherche ne compte pas comme recherche facturée', () => {

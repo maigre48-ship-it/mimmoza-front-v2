@@ -29,7 +29,7 @@
 
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { selectToolNames } from '../_shared/copilot-routing/selector.ts';
-import { anthropicWebTools, citationLinks, isWebToolUnavailable, successfulWebSearches, webResultSummary, WEB_LIMITS, type WebToolBudget } from './webTools.ts';
+import { anthropicWebTools, citationDocumentSources, citationLinks, isWebToolUnavailable, successfulWebSearches, webResultSummary, WEB_LIMITS, type WebToolBudget } from './webTools.ts';
 import { isKnownRoute, routeCatalogue, routeLabel, suggestRoutes } from '../_shared/copilot-routing/routes.ts';
 import { createContextSnapshot, mergeContexts, type ContextSnapshot } from '../_shared/copilot-context/snapshot.ts';
 import { geographicGroundingPolicy } from '../_shared/copilot-grounding/geographic.ts';
@@ -9904,6 +9904,7 @@ async function streamLLMTurn(params: {
 
   const textBlocks: string[] = [];
   const contentBlocks: Record<string, unknown>[] = [];
+  const citationDocuments = citationDocumentSources(params.messages.map((message) => message.content));
   const toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
   const partialBlocks: Record<number, {
     type: string; raw: Record<string, unknown>; text?: string; id?: string; name?: string; partialJson?: string; citations?: unknown[];
@@ -9968,6 +9969,7 @@ async function streamLLMTurn(params: {
               // Les résultats des outils serveur arrivent complets dans cet événement.
               // On les garde intacts pour le tour suivant (encrypted_content inclus).
               contentBlocks.push(block);
+              if (block.type === 'web_fetch_tool_result') citationDocuments.push(...citationDocumentSources([block]));
               webSearches += successfulWebSearches(block);
               if (block.type === 'web_fetch_tool_result') webFetches += 1;
               params.onWebResult?.(webSearches, webFetches);
@@ -9998,7 +10000,7 @@ async function streamLLMTurn(params: {
             const pb = partialBlocks[idx];
             if (!pb) break;
             if (pb.type === 'text') {
-              const cited = citationLinks(pb.citations);
+              const cited = citationLinks(pb.citations, citationDocuments);
               if (pb.text || cited) textBlocks.push((pb.text ?? '') + cited);
               if (cited) params.onToken(cited);
               contentBlocks.push({ ...pb.raw, text: pb.text ?? '', ...(pb.citations?.length ? { citations: pb.citations } : {}) });
