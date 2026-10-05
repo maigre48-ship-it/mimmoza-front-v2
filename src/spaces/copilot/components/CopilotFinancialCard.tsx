@@ -8,6 +8,14 @@ type Bilan = {
   recettes_eur: number; cout_total_eur: number; resultat_eur: number; marge_sur_ca_pct: number;
   seuil_equilibre_recettes_eur: number; prix_equilibre_m2_eur?: number;
   resultat_sur_fonds_propres_pct?: number; marge_cible_pct?: number; ecart_cible_points?: number;
+  leviers_marge_cible?: {
+    cible_atteinte: boolean;
+    economies_necessaires_a_recettes_constantes_eur: number;
+    recettes_cibles_a_couts_constants_eur: number;
+    prix_vente_cible_a_surface_et_couts_constants_m2_eur?: number;
+    surface_cible_a_prix_et_couts_constants_m2?: number;
+    reserve: string;
+  };
   scenarios: { label: string; recettes_eur: number; cout_total_eur: number; resultat_eur: number; marge_sur_ca_pct: number }[];
   hypotheses: string[]; reserves: string[];
 };
@@ -51,6 +59,19 @@ export function CopilotFinancialCard({ call, onSend }: { call: ActiveToolCall; o
           <td style={cell}>{euros(scenario.resultat_eur)}</td><td style={cell}>{percent(scenario.marge_sur_ca_pct)}</td></tr>)}</tbody>
       </table>
     </div>
+    {data.leviers_marge_cible && <div style={{ marginTop: 12 }}>
+      <strong>{data.leviers_marge_cible.cible_atteinte ? 'Marge cible atteinte' : 'Leviers pour atteindre la marge cible'}</strong>
+      {!data.leviers_marge_cible.cible_atteinte && <ul style={{ paddingLeft: 20 }}>
+        <li>À recettes constantes : économiser {euros(data.leviers_marge_cible.economies_necessaires_a_recettes_constantes_eur)}.</li>
+        <li>À coûts constants : atteindre {euros(data.leviers_marge_cible.recettes_cibles_a_couts_constants_eur)} de recettes
+          {data.leviers_marge_cible.prix_vente_cible_a_surface_et_couts_constants_m2_eur !== undefined
+            ? `, soit ${euros(data.leviers_marge_cible.prix_vente_cible_a_surface_et_couts_constants_m2_eur)}/m² à surface constante.` : '.'}</li>
+      </ul>}
+      <details style={{ marginTop: 7 }}><summary style={{ cursor: 'pointer' }}>Conditions et seuil de surface théorique</summary>
+        {data.leviers_marge_cible.surface_cible_a_prix_et_couts_constants_m2 !== undefined && <p>Surface vendable théorique à prix et coûts constants : {new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(data.leviers_marge_cible.surface_cible_a_prix_et_couts_constants_m2)} m².</p>}
+        <p style={{ color: T.textMuted }}>{data.leviers_marge_cible.reserve}</p>
+      </details>
+    </div>}
     <details style={{ marginTop: 10 }}><summary style={{ cursor: 'pointer' }}>Hypothèses et périmètre du calcul</summary>
       <ul style={{ paddingLeft: 20, color: T.textMuted }}>{[...data.hypotheses, ...data.reserves].map((text, index) => <li key={index}>{text}</li>)}</ul>
     </details>

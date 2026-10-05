@@ -33,6 +33,36 @@ test('les stress portent sur ventes et travaux, sans modifier les autres coûts'
   assert.equal(scenarios[1].resultat_eur, 150_000);
   assert.equal(scenarios[2].resultat_eur, 160_000);
   assert.equal(scenarios[3].resultat_eur, 60_000);
+  assert.equal(scenarios[3].resultat_sur_fonds_propres_pct, 20);
+  assert.equal(scenarios[1].prix_vente_m2_eur, 3800);
+  assert.equal(scenarios[3].cible_atteinte, false);
+});
+test('la cible est résolue sur CA, avec leviers et conditions distincts', () => {
+  const levers = calculated(input).leviers_marge_cible!;
+  assert.equal(levers.resultat_cible_a_recettes_constantes_eur, 400_000);
+  assert.equal(levers.cout_max_a_recettes_constantes_eur, 1_600_000);
+  assert.equal(levers.economies_necessaires_a_recettes_constantes_eur, 150_000);
+  assert.equal(levers.recettes_cibles_a_couts_constants_eur, 2_187_500);
+  assert.equal(levers.hausse_recettes_necessaire_eur, 187_500);
+  assert.equal(levers.prix_vente_cible_a_surface_et_couts_constants_m2_eur, 4375);
+  assert.equal(levers.surface_cible_a_prix_et_couts_constants_m2, 546.88);
+  assert.equal(levers.surface_supplementaire_a_prix_et_couts_constants_m2, 46.88);
+  assert.equal(levers.cible_atteinte, false);
+  assert.match(levers.reserve, /sans validation PLU/);
+  // Le seuil arrondi vers le haut doit réellement atteindre 20 % sur CA.
+  const revenue = levers.surface_cible_a_prix_et_couts_constants_m2! * 4000;
+  assert.ok((revenue - 1_750_000) / revenue >= 0.2);
+});
+test('une cible déjà atteinte ne demande ni économies ni hausse des recettes', () => {
+  const levers = calculated({ ...input, marge_cible_pct: 10 }).leviers_marge_cible!;
+  assert.equal(levers.cible_atteinte, true);
+  assert.equal(levers.economies_necessaires_a_recettes_constantes_eur, 0);
+  assert.equal(levers.hausse_recettes_necessaire_eur, 0);
+});
+test('sans surface connue le moteur ne propose pas de m² et sans cible aucun levier', () => {
+  const levers = calculated({ ...input, surface_vendable_m2: undefined }).leviers_marge_cible!;
+  assert.equal('surface_cible_a_prix_et_couts_constants_m2' in levers, false);
+  assert.equal('leviers_marge_cible' in calculated({ ...input, marge_cible_pct: undefined }), false);
 });
 test('un coût absent bloque la marge, tandis qu’un zéro déclaré est accepté', () => {
   const result = calculateChatBilan({ ...input, assurances_eur: undefined });

@@ -65,11 +65,32 @@ export function calculateChatBilan(input: Record<string, unknown>) {
   const pf = compute();
   const scenario = (label: string, revenueFactor: number, worksFactor: number) => {
     const result = compute(revenueFactor, worksFactor);
-    return { label, recettes_eur: round(result.caTotal), cout_total_eur: round(result.coutTotal), resultat_eur: round(result.marge), marge_sur_ca_pct: round(result.margePct) };
+    return { label, recettes_eur: round(result.caTotal), cout_total_eur: round(result.coutTotal), resultat_eur: round(result.marge), marge_sur_ca_pct: round(result.margePct),
+      ...(equity && equity > 0 ? { resultat_sur_fonds_propres_pct: round(result.marge / equity * 100) } : {}),
+      ...(area ? { prix_vente_m2_eur: round(result.caTotal / area) } : {}),
+      ...(target !== undefined ? { cible_atteinte: result.margePct >= target } : {}) };
   };
+  const targetRevenue = target !== undefined ? pf.coutTotal / (1 - target / 100) : undefined;
+  const targetLevers = target !== undefined && targetRevenue !== undefined ? {
+    cible_atteinte: pf.margePct >= target,
+    resultat_cible_a_recettes_constantes_eur: round(pf.caTotal * target / 100),
+    cout_max_a_recettes_constantes_eur: round(pf.caTotal * (1 - target / 100)),
+    economies_necessaires_a_recettes_constantes_eur: round(Math.max(0, pf.coutTotal - pf.caTotal * (1 - target / 100))),
+    recettes_cibles_a_couts_constants_eur: round(targetRevenue),
+    hausse_recettes_necessaire_eur: round(Math.max(0, targetRevenue - pf.caTotal)),
+    hausse_recettes_necessaire_pct: round(Math.max(0, (targetRevenue / pf.caTotal - 1) * 100)),
+    ...(area ? {
+      prix_vente_cible_a_surface_et_couts_constants_m2_eur: round(targetRevenue / area),
+      hausse_prix_necessaire_m2_eur: round(Math.max(0, (targetRevenue - pf.caTotal) / area)),
+      // Arrondi supérieur : le seuil affiché ne doit pas rester sous la cible.
+      surface_cible_a_prix_et_couts_constants_m2: Math.ceil(targetRevenue / (pf.caTotal / area) * 100) / 100,
+      surface_supplementaire_a_prix_et_couts_constants_m2: Math.ceil(Math.max(0, targetRevenue / (pf.caTotal / area) - area) * 100) / 100,
+    } : {}),
+    reserve: 'Leviers alternatifs. Une hausse des recettes est calculée à coûts constants ; une économie à recettes constantes. La surface cible est uniquement mathématique : sans validation PLU, programme et coûts des m² supplémentaires, ce n’est pas une recommandation de construction.',
+  } : undefined;
   return {
     status: 'ok' as const, source,
-    message: 'Restituer ces calculs sans les recalculer. Résultat prévisionnel sur les montants déclarés, pas une validation de faisabilité ni un bénéfice net fiscal. Ne pas confondre vente immobilière et exploitation annuelle.',
+    message: 'Restituer uniquement les chiffres calculés ici, y compris leviers et ratios des scénarios. Aucun calcul supplémentaire de mémoire. Les économies se lisent à recettes constantes, les recettes cibles à coûts constants : ce sont des options distinctes. La surface cible mathématique ne prouve pas la constructibilité et doit garder sa réserve. Un ratio sur fonds propres non annualisé ne permet pas de juger une rémunération du risque suffisante ou insuffisante sans durée et exigences de l’utilisateur. Résultat avant fiscalité, pas une validation de faisabilité ni un bénéfice net fiscal.',
     data: {
       kind: 'chat_bilan_vente_v1', titre: typeof input.titre === 'string' ? input.titre : 'Bilan prévisionnel',
       chiffres_entree: { ...amounts, recettes_eur: ca, base_montants: input.base_montants,
@@ -82,6 +103,7 @@ export function calculateChatBilan(input: Record<string, unknown>) {
       ...(area ? { surface_vendable_m2: area, prix_equilibre_m2_eur: round(pf.coutTotal / area) } : {}),
       ...(equity && equity > 0 ? { fonds_propres_eur: equity, resultat_sur_fonds_propres_pct: round(pf.marge / equity * 100) } : {}),
       ...(target !== undefined ? { marge_cible_pct: target, ecart_cible_points: round(pf.margePct - target), recettes_pour_marge_cible_eur: round(pf.coutTotal / (1 - target / 100)) } : {}),
+      ...(targetLevers ? { leviers_marge_cible: targetLevers } : {}),
       scenarios: [scenario('Base déclarée', 1, 1), scenario('Ventes −5 %', 0.95, 1), scenario('Travaux +10 %', 1, 1.1), scenario('Ventes −5 % et travaux +10 %', 0.95, 1.1)],
       hypotheses: input.hypotheses ?? [],
       reserves: [
