@@ -16,6 +16,7 @@ import { buildParcelDossier } from '../dossier/parcelDossier';
 import './CopilotMessage.css';
 import { isGeoCall } from '../maps/thematicMapModel';
 import { CopilotRenderBoundary } from './CopilotRenderBoundary';
+import { tertiaryReview } from '../results/tertiaryReview';
 const CopilotThematicMaps = lazy(() => import('../maps/CopilotThematicMaps').then(m => ({ default: m.CopilotThematicMaps })));
 
 // recharts pèse plusieurs centaines de Ko et n'est utilisé QUE par les
@@ -66,6 +67,7 @@ function CopilotMessageContent({ message, question, conversationId, onSend }: Me
     for (let i = index - 1; i >= 0; i--) if (messages[i].role === 'user') return messages[i].text;
     return null;
   })();
+  const decisionLimits = tertiaryReview(linkedQuestion, message.toolCalls);
 
   const handleResponseExport = async (format: 'pdf' | 'xlsx' | 'docx' | 'pptx') => {
     if (exporting) return;
@@ -99,6 +101,11 @@ function CopilotMessageContent({ message, question, conversationId, onSend }: Me
 
   return (
     <div style={{ margin: '10px 0' }}>
+      {decisionLimits.length > 0 && <aside role="status" style={{ padding: 12, marginBottom: 12, background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, color: '#9a3412', fontSize: 13 }}>
+        <strong>Comparaison exploratoire · décision à confirmer</strong>
+        <ul>{decisionLimits.map(reason => <li key={reason}>{reason}</li>)}</ul>
+        <p>Ce contrôle porte sur les résultats d’outils de cette réponse. Une pièce fournie ou un contexte antérieur peut apporter des preuves complémentaires.</p>
+      </aside>}
       {message.toolCalls.length > 0 && (
         <div style={{ marginBottom: 8 }}>
           {message.toolCalls.map((tc) => <CopilotRenderBoundary key={tc.id} label="Résultat d’outil">{(() => {
