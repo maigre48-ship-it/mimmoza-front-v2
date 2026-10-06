@@ -37,6 +37,7 @@ import { geographicGroundingPolicy } from '../_shared/copilot-grounding/geograph
 import { unsupportedInferencePolicy } from '../_shared/copilot-grounding/inferences.ts';
 import { MARKET_PROGRAMMES, supportedMarketProgramme, tertiaryGroundingPolicy } from '../_shared/copilot-grounding/tertiary.ts';
 import { gpuEvidenceSummary, GPU_EVIDENCE_WARNING } from '../_shared/copilot-grounding/urbanism.ts';
+import { FOLLOWUP_SCHEMA, parseFollowup, followupIndicators } from '../_shared/project-followup/model.ts';
 import { renderParcelStudyReport } from '../_shared/copilot-reporting/parcel-study.ts';
 import { reparerEncodageProfond } from '../_shared/texte/reparerEncodage.ts';
 // Moteur prédictif — MÊME code que la page Analyse prédictive du front, qui le
@@ -4325,6 +4326,16 @@ const TOOLS: ToolDef[] = [
     available_in_modes: ['quick', 'advanced', 'report'],
   },
   {
+    name:'get_suivi_projet',
+    description:'Consulte le suivi enregistré par l’acheteur dans le dossier actuellement choisi. Utilise pour avancement, pièces manquantes, blocages, responsables, échéances, relances. Aucune écriture, aucun envoi. Si dossier absent, invite à choisir ou créer un dossier dans Suivi de projet. N’invente ni avancement ni contact.',
+    input_schema:{type:'object',properties:{}},available_in_modes:['quick','advanced','report'],
+  },
+  {
+    name:'proposer_suivi_projet',
+    description:'Propose un suivi complet à vérifier et enregistrer par l’acheteur. N’écrit rien. Commence par get_suivi_projet et conserve les tâches existantes (id, statut, dates et responsables) sauf changement explicitement demandé. Faits déclarés ou pièces vérifiées uniquement ; dates/contacts inconnus vides, pas de délais légaux inventés. La proposition remplace le suivi après confirmation et vérification dans le panneau. N’annonce jamais que le dossier est sauvegardé.',
+    input_schema:FOLLOWUP_SCHEMA,available_in_modes:['quick','advanced','report'],
+  },
+  {
     name: 'action_creer_operation',
     description:
       "ACTION — propose de CRÉER une opération promoteur (étude) et d'y poser le foncier. À utiliser " +
@@ -4413,6 +4424,8 @@ async function executeTool(
   auth: AuthCtx | null = null,
 ): Promise<ToolResult> {
   switch (name) {
+    case 'get_suivi_projet': return await toolSuiviProjet(ctx, auth);
+    case 'proposer_suivi_projet': return await toolSuiviProjet(ctx, auth, input);
     case 'creer_zone_veille':        return await toolCreerZoneVeille(input, ctx, auth);
     case 'creer_watchlist':          return await toolCreerWatchlist(input, ctx, auth);
     case 'lister_watchlists':        return await toolListerWatchlists(input, ctx, auth);
@@ -4517,6 +4530,22 @@ function readChain(ctx: MimmozaContext): { study_id?: string; steps: ChainStepCt
 
 function proposal(action: Record<string, unknown>): ToolResult {
   return { status: 'ok', source: 'copilot', data: { action } };
+}
+
+async function toolSuiviProjet(ctx:MimmozaContext,auth:AuthCtx|null,proposalInput?:Record<string,unknown>):Promise<ToolResult>{
+  if(!auth)return {status:'error',source:'Suivi de projet',message:'Session requise.'};
+  const binding=(ctx as unknown as {project_followup?:Record<string,unknown>|null}).project_followup;
+  const key=str(binding?.project_key);
+  if(!key)return {status:'not_found',source:'Suivi de projet',message:'Choisissez ou créez un dossier dans le panneau Suivi de projet avant toute lecture ou enregistrement.'};
+  const db=getUserClient(auth.authHeader);
+  const {data,error}=await db.from('project_followups').select('project_key,title,payload,revision,updated_at').eq('user_id',auth.userId).eq('project_key',key).maybeSingle();
+  if(error)return {status:'error',source:'Suivi de projet',message:'Le suivi enregistré n’a pas pu être lu. Ne conclus pas qu’il est vide.'};
+  if(proposalInput){const parsed=parseFollowup(proposalInput);if(!parsed)return {status:'error',source:'Suivi de projet',message:'Proposition invalide : vérifier tâches, statuts, identifiants et dates.'};
+    if((data?.revision??0)!==(binding?.revision??0))return {status:'error',source:'Suivi de projet',message:'Le dossier a changé depuis le début de cet échange. Rechargez le suivi avant de proposer une mise à jour.'};
+    return {status:'ok',source:'Proposition IA · non enregistrée',data:{project_key:key,title:data?.title??str(binding?.title)??'Dossier',revision:data?.revision??0,payload:parsed},message:'Proposition uniquement : l’acheteur doit examiner puis enregistrer dans le panneau Suivi de projet.'};
+  }
+  const payload=parseFollowup(data?.payload);const today=new Intl.DateTimeFormat('fr-CA',{timeZone:'Europe/Paris'}).format(new Date());
+  return {status:data?'ok':'not_found',source:'Suivi déclaré par l’acheteur',data:data?{...data,payload,indicateurs:payload?followupIndicators(payload,today):null,date_reference:today}:undefined,message:data?'Une tâche terminée ne vaut pas autorisation ou validation juridique. Les échéances sont déclarées. Aucun message de relance envoyé.':'Dossier choisi, mais aucun suivi enregistré. Proposez un premier cadrage à partir des faits déclarés.'};
 }
 
 function toolActionOuvrirPage(input: Record<string, unknown>, ctx: MimmozaContext): ToolResult {
@@ -9221,6 +9250,7 @@ function buildSystemPrompt(ctx: MimmozaContext, mode: CopilotMode): string {
     geographicGroundingPolicy(),
     "",
     unsupportedInferencePolicy(),
+    'SUIVI DE PROJET : utilise get_suivi_projet pour répondre où en est un projet, ce qui manque et qui relancer. Distingue suivi déclaré, résultats d’études et recommandations. Pas de pourcentage global de réalisation inventé, pas de complétion juridique déduite de cases cochées. Classe actions par blocage et échéance déclarée ; si responsable absent, demande qui est chargé du sujet. Relancer signifie préparer un brouillon à copier, jamais envoyer un message ni prendre contact. Pour modifier le dossier, utilise proposer_suivi_projet, conserve les tâches existantes et rappelle que l’acheteur doit examiner et enregistrer. Ne prétends pas que cette proposition a été sauvegardée. Le suivi du dossier choisi prime sur un ancien suivi dans l’historique.',
     tertiaryGroundingPolicy(),
     "",
     "RÈGLES IMPÉRATIVES :",
@@ -10666,6 +10696,7 @@ Deno.serve(async (req: Request) => {
 
     conversationId = conversation.id;
     effectiveContext = mergeContexts(conversation.persistedContext, payload.context) as unknown as MimmozaContext;
+    (effectiveContext as unknown as Record<string,unknown>).project_followup = (payload.context as unknown as Record<string,unknown>).project_followup ?? null;
     // Purement local (sanitisation + SHA-256) : aucun aller-retour réseau.
     contextSnapshot = await createContextSnapshot(effectiveContext);
 

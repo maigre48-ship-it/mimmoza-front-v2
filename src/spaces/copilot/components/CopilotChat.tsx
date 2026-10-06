@@ -9,6 +9,7 @@ import { CopilotInput } from './CopilotInput';
 import { CopilotMessage } from './CopilotMessage';
 import { COPILOT_THEME as T } from './copilotTheme';
 import type { CopilotMode } from '../types/copilot.types';
+import { FollowupPanel } from '../followup/FollowupPanel';
 
 export function CopilotChat({
   forceMode,
@@ -69,6 +70,7 @@ export function CopilotChat({
 
   return (
     <div className="copilot-chat">
+      <FollowupPanel conversationId={currentConversationId} onSend={handleSend} isStreaming={isStreaming} />
       <div ref={scrollRef} className="copilot-chat__messages">
         {empty ? (
           <CopilotEmptyState

@@ -222,10 +222,12 @@ export function MimmozIASidebar({
 
   // --- Charge les projets une fois l'uid connu ---
   useEffect(() => { setStore(loadProjects(uid)); }, [uid]);
+  useEffect(() => { const refresh=()=>setStore(loadProjects(uid));window.addEventListener('mzia-projects-changed',refresh);return()=>window.removeEventListener('mzia-projects-changed',refresh); }, [uid]);
 
   const mutate = useCallback((next: ProjectStore) => {
     setStore(next);
     saveProjects(uid, next);
+    window.dispatchEvent(new Event('mzia-projects-changed'));
   }, [uid]);
 
   /* ----------------------------- Actions ------------------------------- */

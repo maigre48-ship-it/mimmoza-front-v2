@@ -9,6 +9,7 @@
 import { supabase } from '@/lib/supabase';
 import { getActiveCopilotContext } from '../store/activeCopilotContext.store';
 import { track } from '@/lib/mimmozia/track';
+import { followupContext } from '../followup/followupRepository';
 import type {
   ActionRun,
   ActiveToolCall,
@@ -255,9 +256,11 @@ export async function streamCopilotChat(params: {
   const { request, signal, onEvent } = params;
   const headers = await getAuthHeaders();
 
+  let projectFollowup: Record<string,unknown>|null = null;
+  try { projectFollowup = await followupContext(request.conversation_id ?? null); } catch { projectFollowup = { unavailable:true }; }
   const enrichedRequest: CopilotChatRequest = {
     ...request,
-    context: await withPromoteurChain(buildEnrichedContext(request.context)),
+    context: { ...await withPromoteurChain(buildEnrichedContext(request.context)), project_followup: projectFollowup } as CopilotMimmozaContext,
   };
 
   // ── Signal d'apprentissage MimmozIA : une analyse copilot part. On verse au

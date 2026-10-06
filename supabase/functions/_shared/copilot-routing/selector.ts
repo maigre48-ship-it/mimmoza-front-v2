@@ -29,6 +29,7 @@
 // =============================================================================
 
 export type CopilotIntent =
+  | 'project_strategy'
   | 'parcel_analysis'
   | 'plu_feasibility'
   | 'risks'
@@ -72,6 +73,7 @@ const CORE_TOOLS: readonly string[] = [
   // Les réponses chiffrées à un bilan poursuivent souvent une étude PLU/marché.
   // Conserver le calcul dans tous les routages pour les variantes du même projet.
   'calculer_bilan_financier',
+  'get_suivi_projet', 'proposer_suivi_projet',
   'get_parcel_summary',
   'get_contexte_commune',
   // Résolution adresse → parcelle. Doit être joignable QUELLE QUE SOIT

@@ -17,3 +17,12 @@ Deno.test('couvre les principales familles métier', () => {
 
 Deno.test('une demande ambiguë conserve tous les outils du mode', () => { const result = selectToolNames('Peux-tu regarder cela ?', AVAILABLE); assertEquals(result.isFallback, true); assertEquals(result.toolNames, AVAILABLE) });
 Deno.test('ne renvoie jamais un outil indisponible', () => { const result = selectToolNames('Analyse complète de la parcelle', ['get_parcel_plu', 'action_ouvrir_page']); assertEquals(result.toolNames, ['get_parcel_plu', 'action_ouvrir_page']) });
+
+Deno.test('conserve le suivi lors d’une analyse PLU ou marché', () => {
+  const available = [...AVAILABLE, 'get_suivi_projet', 'proposer_suivi_projet'];
+  for (const message of ['Quelle est la faisabilité PLU et la hauteur autorisée ?', 'Fais une étude de marché immobilier']) {
+    const result = selectToolNames(message, available);
+    assert(result.toolNames.includes('get_suivi_projet'));
+    assert(result.toolNames.includes('proposer_suivi_projet'));
+  }
+});

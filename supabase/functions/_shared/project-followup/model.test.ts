@@ -1,0 +1,7 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {emptyFollowup,parseFollowup,followupIndicators,validDate} from './model.ts';
+const task=(id:string,status='a_faire',dueDate='2026-10-05')=>({id,title:'Obtenir le devis VRD',status,owner:'Géomètre',dueDate,lastContactDate:'',blocking:true,notes:''});
+test('les retards excluent les tâches terminées et ne transforment pas une date absente en retard',()=>{const f=parseFollowup({...emptyFollowup(),tasks:[task('1'),task('2','termine'),task('3','attente',''),task('4','attente','2026-10-06')]})!;const r=followupIndicators(f,'2026-10-06');assert.equal(r.overdue.length,1);assert.equal(r.open,3);assert.equal(r.done,1);assert.equal(r.blocked,3);assert.equal(r.contacts.length,2);});
+test('statuts inconnus, tâches dupliquées et dates inexistantes sont refusés',()=>{assert.equal(parseFollowup({...emptyFollowup(),tasks:[task('1','validé')]}),null);assert.equal(parseFollowup({...emptyFollowup(),tasks:[task('1'),task('1')]}),null);assert.equal(validDate('2026-02-30'),'');assert.equal(parseFollowup({...emptyFollowup(),tasks:[task('1','attente','2026-02-30')]}),null);});
+test('une proposition conserve les identifiants, ignore les champs arbitraires et ne fabrique pas de contacts',()=>{const f=parseFollowup({...emptyFollowup(),tasks:[{...task('stable'),owner:'',user_id:'fake'}]})!;assert.equal(f.tasks[0].id,'stable');assert.equal(f.tasks[0].owner,'');assert.equal('user_id' in f.tasks[0],false);assert.equal(f.version,1);});
