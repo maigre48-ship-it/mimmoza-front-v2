@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MapPin, Home, TrendingUp, Gauge, LandPlot, Sparkles,
-  Paperclip, Mic, ArrowUp, X,
+  Paperclip, Mic, ArrowUp, X, Box,
   ShieldCheck, Lock, BrainCircuit, GitBranch, Plus, Menu,
 } from 'lucide-react';
 
@@ -19,6 +19,14 @@ import './MimmozIAPage.css';
 import { useMimmozIAProfile } from '@/lib/mimmozia/useMimmozIAProfile';
 import AlertesAccueil from '@/components/AlertesAccueil';
 import { useCopilotStore } from './store/copilotStore';
+import { PreparationStudio3D } from './studio3d/PreparationStudio3D';
+import { demandePrevisualisation } from './studio3d/intentionPrevisualisation';
+
+/** CH2 — pièce jointe base64 du tchat → File (pour l'envoyer au Studio 3D). */
+async function versFichier(a: { mediaType: string; data: string; name?: string }): Promise<File> {
+  const blob = await (await fetch(`data:${a.mediaType};base64,${a.data}`)).blob();
+  return new File([blob], a.name ?? 'piece-jointe', { type: a.mediaType });
+}
 
 /* =========================================================================
    ⚠️  POINTS D'INTÉGRATION (à vérifier une fois dans useCopilot.ts).
@@ -316,9 +324,26 @@ export default function MimmozIAPage() {
     el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
   }, [draft]);
 
+  // CH2 — préparation de la prévisualisation 3D (parcelles, photos, plans, 360°).
+  const [prepa3d, setPrepa3d] = useState<{ ouvert: boolean; brief?: string; fichiers?: File[] }>({ ouvert: false });
+  const ouvrirPrepa3d = useCallback(async (brief?: string, pj?: { mediaType: string; data: string; name?: string }[]) => {
+    const fichiers = pj && pj.length > 0 ? await Promise.all(pj.map(versFichier)) : undefined;
+    setPrepa3d({ ouvert: true, brief, fichiers });
+  }, []);
+  const intercepter = useCallback((text: string, options?: { attachments?: { mediaType: string; data: string; name?: string }[] }) => {
+    if (!demandePrevisualisation(text)) return false;
+    void ouvrirPrepa3d(text, options?.attachments);
+    return true;
+  }, [ouvrirPrepa3d]);
+
   const startWith = useCallback(async (text: string) => {
     const message = text.trim();
     if (!message) return;
+    if (demandePrevisualisation(message)) {
+      void ouvrirPrepa3d(message, attachments.map(({ mediaType, data, name }) => ({ mediaType, data, name })));
+      setAttachments([]);
+      return;
+    }
     void track('search', { source: 'mimmozia' });
     const files = attachments.map(({ mediaType, data, name }) => ({ mediaType, data, name }));
     try {
@@ -329,7 +354,7 @@ export default function MimmozIAPage() {
     } catch (err) {
       console.error('[MimmozIA] Échec de l’envoi :', err);
     }
-  }, [send, attachments]);
+  }, [send, attachments, ouvrirPrepa3d]);
 
   const handleLauncherSend = useCallback(() => { void startWith(draft); setDraft(''); }, [draft, startWith]);
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -401,6 +426,12 @@ export default function MimmozIAPage() {
 
   return (
     <div className={pageClass}>
+      <PreparationStudio3D
+        ouvert={prepa3d.ouvert}
+        briefInitial={prepa3d.brief}
+        fichiersInitiaux={prepa3d.fichiers}
+        onFermer={() => setPrepa3d({ ouvert: false })}
+      />
       {/* ============ MENU LATÉRAL ============ */}
       <button
         type="button"
@@ -450,6 +481,7 @@ export default function MimmozIAPage() {
             <CopilotChat
               forceMode="advanced"
               hideQuickQuestions
+              onIntercept={intercepter}
               /* Le sélecteur de niveau ne vivait que dans la branche « accueil »
                  ci-dessous : dès le premier message la vue basculait ici et le
                  contrôle disparaissait, obligeant à ouvrir une nouvelle
@@ -464,14 +496,18 @@ export default function MimmozIAPage() {
                  garde son sens — il annonce le niveau avant le premier envoi —
                  mais en cours de conversation il n'apporte rien. */
               composerToolbar={
-                plan === 'pro' ? (
-                  <MimmozIAModelPicker
-                    plan={plan}
-                    value={tier}
-                    onChange={(t) => copilot.setTier?.(t)}
-                    disabled={busy}
-                  />
-                ) : undefined
+                <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+                  <button type="button" className="mzia-iconbtn" title="Prévisualisation 3D (parcelle, photos, plans)"
+                    onClick={() => void ouvrirPrepa3d()}><Box size={18} /></button>
+                  {plan === 'pro' && (
+                    <MimmozIAModelPicker
+                      plan={plan}
+                      value={tier}
+                      onChange={(t) => copilot.setTier?.(t)}
+                      disabled={busy}
+                    />
+                  )}
+                </span>
               }
             />
           </div>
@@ -550,6 +586,10 @@ export default function MimmozIAPage() {
                 />
                 <button type="button" className="mzia-iconbtn" title="Joindre un fichier (image ou PDF)"
                   onClick={() => fileInputRef.current?.click()}><Paperclip size={18} /></button>
+                <button type="button" className="mzia-iconbtn" title="Prévisualisation 3D (parcelle, photos, plans)"
+                  onClick={() => void ouvrirPrepa3d(draft.trim() || undefined, attachments.map(({ mediaType, data, name }) => ({ mediaType, data, name })))}>
+                  <Box size={18} />
+                </button>
                 <button type="button" disabled={!dictationSupported}
                   title={dictationSupported ? 'Dicter' : 'Dictée non prise en charge par ce navigateur'}
                   className={`mzia-iconbtn mzia-iconbtn--rec${recording ? ' is-active' : ''}`}

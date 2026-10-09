@@ -15,11 +15,14 @@ export function CopilotChat({
   forceMode,
   hideQuickQuestions,
   composerToolbar,
+  onIntercept,
 }: {
   forceMode?: CopilotMode;
   hideQuickQuestions?: boolean;
   /** Contrôles de l'écran hôte affichés au-dessus du composeur (cf. CopilotInput). */
   composerToolbar?: ReactNode;
+  /** CH2 — l'écran hôte peut prendre en charge un message (ex. « génère la prévisualisation ») : true = ne pas l'envoyer. */
+  onIntercept?: (text: string, options?: { attachments?: { mediaType: string; data: string; name?: string }[] }) => boolean;
 } = {}) {
   const { messages, sendMessage, cancel, isStreaming, mode, setMode, loadingMessages, currentConversationId } = useCopilot();
   // `vertical` est désormais une valeur mémorisée exposée par le hook.
@@ -44,6 +47,7 @@ export function CopilotChat({
     text: string,
     options?: Parameters<typeof sendMessage>[1],
   ) => {
+    if (onIntercept?.(text, options as never)) return;
     if (forceMode && mode !== forceMode) {
       setMode(forceMode);
     }
