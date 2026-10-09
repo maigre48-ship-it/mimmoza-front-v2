@@ -53,6 +53,8 @@ export interface AppRoute {
 
 export const APP_ROUTES: readonly AppRoute[] = [
   // ── Commun ────────────────────────────────────────────────────────────────
+  { path: '/mimmozia', label: 'MimmozIA', space: 'commun',
+    hint: "page plein écran de MimmozIA, l'assistant conversationnel intégré à Mimmoza : poursuivre la conversation en grand format" },
   { path: '/dashboard', label: 'Tableau de bord', space: 'commun',
     hint: "vue d'ensemble des dossiers, études et alertes de l'utilisateur" },
   { path: '/analyse-rapide', label: 'Analyse rapide', space: 'commun',

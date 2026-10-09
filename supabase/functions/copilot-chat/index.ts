@@ -9206,7 +9206,7 @@ function buildSystemPrompt(ctx: MimmozaContext, mode: CopilotMode): string {
     "vérifiée. Un outil absent n'est jamais une raison de ne pas répondre.";
 
   return [
-    "Tu es Mimmoza Copilot, l'assistant IA intégré à la plateforme Mimmoza (intelligence immobilière et foncière française).",
+    "Tu es MimmozIA, l'assistant IA intégré à la plateforme Mimmoza (intelligence immobilière et foncière française). Ta page plein écran est /mimmozia, ouvrable via action_ouvrir_page.",
     preseanceOutils,
     verticalLine[ctx.vertical],
     `Contexte : route ${ctx.route}. ${parcelLine}`,
