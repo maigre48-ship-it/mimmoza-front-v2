@@ -1,0 +1,33 @@
+{
+  "id": "/mimmozia",
+  "name": "Mimmoza",
+  "short_name": "Mimmoza",
+  "description": "Mimmoza, l'assistant d'analyse immobilière.",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "/mimmozia",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#7c3aed",
+  "icons": [
+    {
+      "src": "/icons/mimmoza-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/mimmoza-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/mimmoza-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

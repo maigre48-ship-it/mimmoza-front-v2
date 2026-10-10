@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Mimmoza - Hors ligne</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#7c3aed" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background-color: #f9fafb;
+        color: #0f172a;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        text-align: center;
+      }
+      main {
+        max-width: 360px;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 1.375rem;
+        font-weight: 600;
+      }
+      p {
+        margin: 0 0 24px;
+        color: #475569;
+        line-height: 1.5;
+      }
+      button {
+        padding: 12px 24px;
+        border: 0;
+        border-radius: 9999px;
+        background-color: #7c3aed;
+        color: #ffffff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:focus-visible {
+        outline: 3px solid #c4b5fd;
+        outline-offset: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Vous êtes hors ligne</h1>
+      <p>
+        Mimmoza a besoin d'une connexion internet. Vérifiez votre réseau, puis
+        réessayez.
+      </p>
+      <button type="button" id="retry">Réessayer</button>
+    </main>
+    <script>
+      // Cette page est servie a l'adresse demandee : recharger relance donc
+      // la navigation d'origine.
+      function retry() {
+        window.location.reload();
+      }
+      document.getElementById("retry").addEventListener("click", retry);
+      window.addEventListener("online", retry);
+    </script>
+  </body>
+</html>

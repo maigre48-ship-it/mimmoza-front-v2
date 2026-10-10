@@ -19,3 +19,14 @@ createRoot(rootEl).render(
     </BrowserRouter>
   </StrictMode>
 );
+
+// PWA : service worker en production uniquement (en dev il perturberait le HMR).
+// Enregistre apres le chargement et sans jamais propager d'erreur : un echec
+// ici ne doit pas empecher l'application de demarrer.
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {
+      // Navigation privee, stockage bloque... : l'app fonctionne sans.
+    });
+  });
+}
