@@ -7,8 +7,9 @@ const STATUS_TEXT: Record<MimmozIAOrbState, string> = {
   listening: 'Je vous écoute…',
   thinking: 'Je réfléchis à votre demande…',
   searching: 'Je consulte les sources utiles…',
-  responding: 'Je prépare votre réponse…',
+  responding: 'Je vous réponds…',
   success: 'Analyse terminée',
+  negative: 'Conclusion défavorable',
   error: 'Une difficulté est survenue',
 };
 
@@ -20,6 +21,7 @@ const STATUS_TEXT_COMPACT: Record<MimmozIAOrbState, string> = {
   searching: 'Je consulte les sources…',
   responding: 'Je vous réponds…',
   success: 'Terminé',
+  negative: 'Défavorable',
   error: 'Erreur',
 };
 

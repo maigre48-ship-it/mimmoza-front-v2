@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import './MimmozIAOrb.css';
 
 /** États visuels de l'orbe MimmozIA. */
@@ -9,6 +9,7 @@ export type MimmozIAOrbState =
   | 'searching'
   | 'responding'
   | 'success'
+  | 'negative'
   | 'error';
 
 /** Palette d'états — une seule couleur pilote toute l'orbe via --orb-color. */
@@ -16,10 +17,11 @@ export const ORB_COLORS: Record<MimmozIAOrbState, string> = {
   idle: '#8b5cf6',
   listening: '#a855f7',
   thinking: '#3b82f6',
-  searching: '#06b6d4',
-  responding: '#6366f1',
-  success: '#7ddc6d',
-  error: '#ff6b81',
+  searching: '#3b82f6',
+  responding: '#34c759',
+  success: '#34c759',
+  negative: '#ef4444',
+  error: '#ef4444',
 };
 
 /**
@@ -29,6 +31,7 @@ export const ORB_COLORS: Record<MimmozIAOrbState, string> = {
  */
 const TRANSIENT_STATES: ReadonlySet<MimmozIAOrbState> = new Set<MimmozIAOrbState>([
   'success',
+  'negative',
   'error',
 ]);
 
@@ -120,6 +123,12 @@ function useHeldOrbState(state: MimmozIAOrbState, holdMs: number): MimmozIAOrbSt
       return;
     }
     const now = Date.now();
+    // Une nouvelle demande doit redevenir bleue sans attendre la fin du flash précédent.
+    if (state === 'thinking' || state === 'searching' || state === 'responding' || state === 'listening') {
+      heldUntilRef.current = 0;
+      setDisplayed(state);
+      return;
+    }
     if (TRANSIENT_STATES.has(state)) {
       heldUntilRef.current = now + holdMs;
       setDisplayed(state);
@@ -168,6 +177,7 @@ export function MimmozIAOrb({
 }: MimmozIAOrbProps) {
   const displayState = useHeldOrbState(state, transientHoldMs);
   const isImageVariant = variant === 'image';
+  const coreClipId = useId().replace(/:/g, '');
 
   const particles = useMemo(
     () =>
@@ -202,7 +212,10 @@ export function MimmozIAOrb({
   const resolvedLogo = logoCandidates[Math.min(logoIndex, logoCandidates.length - 1)];
   const isLastCandidate = logoIndex >= logoCandidates.length - 1;
 
-  const style: React.CSSProperties = { ['--orb-color' as string]: ORB_COLORS[displayState] };
+  // L'image embarque la sphère : les ondes restent violettes, seul le M change.
+  const style: React.CSSProperties = {
+    ['--orb-color' as string]: isImageVariant ? ORB_COLORS.idle : ORB_COLORS[displayState],
+  };
   if (size != null) (style as Record<string, string>)['--orb-size'] = `${size}px`;
 
   return (
@@ -263,6 +276,22 @@ export function MimmozIAOrb({
             if (!isLastCandidate) setLogoIndex((i) => i + 1);
           }}
         />
+        {isImageVariant && (
+          <svg className="mzia-orb__core-tint" viewBox="0 0 1254 1254" aria-hidden="true" focusable="false">
+            <defs>
+              <clipPath id={coreClipId}>
+                {/* Cinq faces du M original : la sphère noire reste hors de la découpe. */}
+                <path d="M293 365 L400 300 L624 452 L854 300 L952 363 L623 583 Z" />
+                <path d="M293 365 L623 583 L623 713 L424 580 L424 875 L295 789 Z" />
+                <path d="M623 583 L952 363 L949 788 L820 877 L820 580 L623 713 Z" />
+                <path d="M514 714 L624 790 L624 1002 L514 933 Z" />
+                <path d="M624 790 L724 714 L724 934 L624 1002 Z" />
+              </clipPath>
+            </defs>
+            <image href={resolvedLogo} width="1254" height="1254" clipPath={`url(#${coreClipId})`}
+              className="mzia-orb__core-tint-image" />
+          </svg>
+        )}
         <span className="mzia-orb__sweep" aria-hidden />
       </span>
     </div>

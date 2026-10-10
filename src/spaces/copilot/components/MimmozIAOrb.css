@@ -560,3 +560,26 @@
     50% { opacity: calc(var(--flow-opacity) * var(--flow-op-mult, 1) * 1.1); }
   }
 }
+
+/* Le M est une surcouche découpée dans la même image. La sphère et les ondes
+   gardent leur couleur d'origine ; seul le cœur suit le statut du tchat. */
+.mzia-orb[data-variant='image'] { --orb-core-hue: 0deg; }
+.mzia-orb[data-variant='image'][data-state='thinking'],
+.mzia-orb[data-variant='image'][data-state='searching'] { --orb-core-hue: -42deg; }
+.mzia-orb[data-variant='image'][data-state='responding'],
+.mzia-orb[data-variant='image'][data-state='success'] { --orb-core-hue: -135deg; }
+.mzia-orb[data-variant='image'][data-state='negative'],
+.mzia-orb[data-variant='image'][data-state='error'] { --orb-core-hue: 105deg; }
+.mzia-orb[data-variant='image'] .mzia-orb__core-tint {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: var(--orb-image-scale); height: var(--orb-image-scale);
+  transform: translate(-50%, -50%);
+  overflow: visible;
+  pointer-events: none;
+  z-index: 2;
+}
+.mzia-orb[data-variant='image'] .mzia-orb__core-tint-image {
+  filter: hue-rotate(var(--orb-core-hue));
+  transition: filter 500ms ease;
+}

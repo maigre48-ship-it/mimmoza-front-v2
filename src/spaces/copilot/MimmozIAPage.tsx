@@ -8,6 +8,7 @@ import {
 import { CopilotChat } from './components/CopilotChat';
 import { useCopilot } from './hooks/useCopilot';
 import { MimmozIAOrb, type MimmozIAOrbState } from './components/MimmozIAOrb';
+import { phaseReponseEnFlux, reponseClairementNegative } from './components/orbResponseOutcome';
 import { MimmozIAQuickAction } from './components/MimmozIAQuickAction';
 import { MimmozIAStatus } from './components/MimmozIAStatus';
 import { MimmozIASidebar } from './MimmozIASidebar';
@@ -105,7 +106,8 @@ function hasActiveConversation(a: LooseCopilotApi): boolean {
 
 function deriveLiveState(a: LooseCopilotApi): MimmozIAOrbState {
   if (a.error || a.lastError) return 'error';
-  if (a.isStreaming || a.streaming || a.status === 'streaming' || a.status === 'responding') return 'responding';
+  if (a.isStreaming || a.streaming || a.status === 'streaming' || a.status === 'responding')
+    return phaseReponseEnFlux((a.messages ?? []) as { role?: string; text?: string }[]);
   if (a.isSearching || a.toolRunning || a.status === 'tool' || a.phase === 'search') return 'searching';
   if (a.isLoading || a.loading || a.isThinking || a.status === 'thinking' || a.status === 'pending') return 'thinking';
   return 'idle';
@@ -223,16 +225,19 @@ export default function MimmozIAPage() {
   const live = deriveLiveState(copilot);
   const busy = live === 'thinking' || live === 'searching' || live === 'responding';
   const prevBusy = useRef(false);
-  const [successFlash, setSuccessFlash] = useState(false);
+  const [completionFlash, setCompletionFlash] = useState<'success' | 'negative' | null>(null);
+  const dernierTexteAssistant = [...(Array.isArray(copilot.messages) ? copilot.messages : [])]
+    .reverse().find((message) => (message as { role?: string }).role === 'assistant') as { text?: string } | undefined;
+  const conclusionNegative = reponseClairementNegative(dernierTexteAssistant?.text ?? '');
   useEffect(() => {
     if (prevBusy.current && !busy && live !== 'error') {
-      setSuccessFlash(true);
-      const t = window.setTimeout(() => setSuccessFlash(false), 850);
+      setCompletionFlash(conclusionNegative ? 'negative' : 'success');
+      const t = window.setTimeout(() => setCompletionFlash(null), 850);
       prevBusy.current = busy;
       return () => window.clearTimeout(t);
     }
     prevBusy.current = busy;
-  }, [busy, live]);
+  }, [busy, live, conclusionNegative]);
 
   const [recording, setRecording] = useState(false);
   /** La dictée n'existe que si le navigateur expose SpeechRecognition (Chrome,
@@ -242,9 +247,8 @@ export default function MimmozIAPage() {
       Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition),
     [],
   );
-  const orbState: MimmozIAOrbState = successFlash ? 'success'
-    : live !== 'idle' ? live
-    : recording ? 'listening' : 'idle';
+  const orbState: MimmozIAOrbState = live !== 'idle' ? live
+    : completionFlash ?? (recording ? 'listening' : 'idle');
   const activeTools = deriveActiveTools(copilot);
 
   const [draft, setDraft] = useState('');

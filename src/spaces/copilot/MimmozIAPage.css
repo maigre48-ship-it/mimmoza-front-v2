@@ -356,7 +356,16 @@
 /* Conversation mobile : orbe compacte 72 px, toujours flottante, ne recouvre
    pas les messages (halo léger), saisie toujours visible. */
 @media (max-width: 640px) {
-  .mzia-chat-orb { display:none; }
+  .mzia-chat-orb {
+    display: flex;
+    top: 48px;
+    right: 8px;
+    bottom: auto;
+    left: auto;
+    max-width: 64px;
+  }
+  .mzia-chat-orb .mzia-orb { --orb-size: 56px; }
+  .mzia-chat-orb .mzia-status-panel { display: none; }
   .mzia-chat-content { padding-left:0;min-width:0; }
   .mzia-fab--newchat { left:64px;min-height:44px; }
   .mzia-launcher__field { padding:8px; }

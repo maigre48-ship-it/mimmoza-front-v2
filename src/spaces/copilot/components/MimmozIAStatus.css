@@ -14,9 +14,10 @@
 .mzia-status-panel[data-state='idle']       { --sp-accent: #8b5cf6; }
 .mzia-status-panel[data-state='listening']  { --sp-accent: #a855f7; }
 .mzia-status-panel[data-state='thinking']   { --sp-accent: #3b82f6; }
-.mzia-status-panel[data-state='searching']  { --sp-accent: #06b6d4; }
-.mzia-status-panel[data-state='responding'] { --sp-accent: #6366f1; }
+.mzia-status-panel[data-state='searching']  { --sp-accent: #3b82f6; }
+.mzia-status-panel[data-state='responding'] { --sp-accent: #34c759; }
 .mzia-status-panel[data-state='success']    { --sp-accent: #34c759; }
+.mzia-status-panel[data-state='negative']   { --sp-accent: #ef4444; }
 .mzia-status-panel[data-state='error']      { --sp-accent: #ef4a63; }
 
 .mzia-status-panel__text {
@@ -28,6 +29,7 @@
   transition: color 300ms ease;
 }
 .mzia-status-panel[data-state='success'] .mzia-status-panel__text,
+.mzia-status-panel[data-state='negative'] .mzia-status-panel__text,
 .mzia-status-panel[data-state='error'] .mzia-status-panel__text {
   color: var(--sp-accent);
   font-weight: 600;
