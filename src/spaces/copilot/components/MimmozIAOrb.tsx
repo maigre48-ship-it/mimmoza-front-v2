@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import './MimmozIAOrb.css';
 
 /** États visuels de l'orbe MimmozIA. */
@@ -177,7 +177,6 @@ export function MimmozIAOrb({
 }: MimmozIAOrbProps) {
   const displayState = useHeldOrbState(state, transientHoldMs);
   const isImageVariant = variant === 'image';
-  const coreClipId = useId().replace(/:/g, '');
 
   const particles = useMemo(
     () =>
@@ -212,10 +211,8 @@ export function MimmozIAOrb({
   const resolvedLogo = logoCandidates[Math.min(logoIndex, logoCandidates.length - 1)];
   const isLastCandidate = logoIndex >= logoCandidates.length - 1;
 
-  // L'image embarque la sphère : les ondes restent violettes, seul le M change.
-  const style: React.CSSProperties = {
-    ['--orb-color' as string]: isImageVariant ? ORB_COLORS.idle : ORB_COLORS[displayState],
-  };
+  // Le logo de l'image reste intact ; la couleur pilote les ondes autour.
+  const style: React.CSSProperties = { ['--orb-color' as string]: ORB_COLORS[displayState] };
   if (size != null) (style as Record<string, string>)['--orb-size'] = `${size}px`;
 
   return (
@@ -276,22 +273,6 @@ export function MimmozIAOrb({
             if (!isLastCandidate) setLogoIndex((i) => i + 1);
           }}
         />
-        {isImageVariant && (
-          <svg className="mzia-orb__core-tint" viewBox="0 0 1254 1254" aria-hidden="true" focusable="false">
-            <defs>
-              <clipPath id={coreClipId}>
-                {/* Cinq faces du M original : la sphère noire reste hors de la découpe. */}
-                <path d="M293 365 L400 300 L624 452 L854 300 L952 363 L623 583 Z" />
-                <path d="M293 365 L623 583 L623 713 L424 580 L424 875 L295 789 Z" />
-                <path d="M623 583 L952 363 L949 788 L820 877 L820 580 L623 713 Z" />
-                <path d="M514 714 L624 790 L624 1002 L514 933 Z" />
-                <path d="M624 790 L724 714 L724 934 L624 1002 Z" />
-              </clipPath>
-            </defs>
-            <image href={resolvedLogo} width="1254" height="1254" clipPath={`url(#${coreClipId})`}
-              className="mzia-orb__core-tint-image" />
-          </svg>
-        )}
         <span className="mzia-orb__sweep" aria-hidden />
       </span>
     </div>
