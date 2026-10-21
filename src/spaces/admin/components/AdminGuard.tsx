@@ -1,10 +1,13 @@
 ﻿// src/spaces/admin/components/AdminGuard.tsx
 // ─── Accès admin ──────────────────────────────────────────────────────────────
-// Stratégie double :
-//   1. Vérification rapide localStorage (synchrone) → accès immédiat pour les
-//      emails admin connus, sans attendre Supabase.
-//   2. Fallback async via requireAdmin() (Supabase) si la vérification locale
-//      ne suffit pas.
+// Vérification UNIQUEMENT côté Supabase : requireAdmin() (session + RPC
+// is_current_user_admin).
+//
+// Audit du 21/10/2026 : la vérification « rapide » sur
+// localStorage["mimmoza.user"] (email + logged) a été retirée — il suffisait
+// d'écrire ces deux champs depuis la console pour afficher l'interface
+// d'administration. Les données restent protégées par la RLS, mais l'écran ne
+// doit pas s'ouvrir sur une simple valeur locale.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Loader2, ShieldAlert } from "lucide-react";
@@ -12,44 +15,18 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { requireAdmin } from "../services/adminAccess";
 
-// ── Liste des emails administrateurs (temporaire, avant Supabase Auth complet) ─
-const ADMIN_EMAILS: string[] = ["maigre48@gmail.com"];
-
 type GuardState = "loading" | "allowed" | "denied-auth" | "denied-admin";
 
 type Props = {
   children: ReactNode;
 };
 
-// ── Vérification locale synchrone ─────────────────────────────────────────────
-function checkLocalAdmin(): boolean {
-  try {
-    const raw = localStorage.getItem("mimmoza.user");
-    if (!raw) return false;
-    const user = JSON.parse(raw) as { email?: string; logged?: boolean };
-    if (!user?.logged) return false;
-    const email = (user.email ?? "").trim().toLowerCase();
-    return ADMIN_EMAILS.includes(email);
-  } catch {
-    return false;
-  }
-}
-
 export function AdminGuard({ children }: Props) {
   const location = useLocation();
 
-  // Vérification locale synchrone avant le premier rendu
-  const localAdmin = checkLocalAdmin();
-
-  // Si l'admin est reconnu localement, on autorise immédiatement sans loader
-  const [state, setState] = useState<GuardState>(
-    localAdmin ? "allowed" : "loading"
-  );
+  const [state, setState] = useState<GuardState>("loading");
 
   useEffect(() => {
-    // Si déjà autorisé localement, pas besoin de l'appel async
-    if (localAdmin) return;
-
     let mounted = true;
 
     async function check() {
@@ -80,7 +57,7 @@ export function AdminGuard({ children }: Props) {
     return () => {
       mounted = false;
     };
-  }, [localAdmin]);
+  }, []);
 
   // ── Loader ─────────────────────────────────────────────────────────────────
   if (state === "loading") {

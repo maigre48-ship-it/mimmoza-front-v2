@@ -15,6 +15,7 @@ import { track } from "@/lib/mimmozia/track";
 
 import { AppShell } from "./components/AppShell";
 import { PrivateRoute } from "./components/PrivateRoute";
+import { RequirePlan } from "./components/billing/RequirePlan";
 import { RobotsPolicy } from "./components/RobotsPolicy";
 import { BandeauCookies } from "./components/BandeauCookies";
 import { SpaceSync, type Space } from "./components/SpaceSync";
@@ -370,9 +371,12 @@ function AppRoot() {
 
           {/* ═══ Compte / Auth ═══ */}
           <Route path="/inscription" element={<InscriptionPage />} />
-          <Route path="/compte"      element={<ComptePage />} />
-          <Route path="/abonnement"  element={<AbonnementPage />} />
-          <Route path="/jetons"      element={<JetonsPage />} />
+          {/* Audit 21/10/2026 : espaces connectés protégés par la session Supabase */}
+          <Route element={<PrivateRoute />}>
+            <Route path="/compte"      element={<ComptePage />} />
+            <Route path="/abonnement"  element={<AbonnementPage />} />
+            <Route path="/jetons"      element={<JetonsPage />} />
+          </Route>
 
           {/* Redirections d'alias */}
           <Route path="/signup"   element={<Navigate to="/inscription" replace />} />
@@ -384,25 +388,32 @@ function AppRoot() {
           <Route path="/tarifs"   element={<TarifsPage />} />
 
           {/* ═══ Paramètres ═══ */}
-          <Route path="/parametres/veille" element={<VeilleSettingsPage />} />
+          <Route element={<PrivateRoute />}>
+            <Route path="/parametres/veille" element={<VeilleSettingsPage />} />
 
-          {/* ═══ Veille → fusionnée dans Opportunités ═══ */}
-          <Route path="/veille"        element={<Navigate to="/opportunites" replace />} />
-          {/* Anciennes pages conservées (réversible) */}
-          <Route path="/veille/legacy" element={<VeillePage />} />
-          <Route path="/veille/marche" element={<VeilleMarchePage />} />
+            {/* ═══ Veille → fusionnée dans Opportunités ═══ */}
+            <Route path="/veille"        element={<Navigate to="/opportunites" replace />} />
+            {/* Anciennes pages conservées (réversible) */}
+            <Route path="/veille/legacy" element={<VeillePage />} />
+            <Route path="/veille/marche" element={<VeilleMarchePage />} />
+          </Route>
 
-          {/* ═══ Analyse rapide ═══ */}
+          {/* ═══ Analyse rapide ═══ — PUBLIQUE : produit d'appel gratuit.
+              Le visiteur non connecté est invité à créer un compte au lancement. */}
           <Route path="/analyse-rapide" element={<QuickAnalysisPage />} />
 
-          {/* ═══ Opportunités (transversal) — scan + suivi dans le temps ═══ */}
-          <Route path="/opportunites" element={<OpportunitesHubPage />} />
+          <Route element={<PrivateRoute />}>
+            {/* ═══ Opportunités (transversal) — scan + suivi dans le temps ═══ */}
+            <Route path="/opportunites" element={<OpportunitesHubPage />} />
+          </Route>
 
-          {/* ═══ API ═══ */}
+          {/* ═══ API ═══ (/api : présentation publique) */}
           <Route path="/api"            element={<ApiPage />} />
-          <Route path="/api/keys"       element={<ApiKeysPage />} />
-          <Route path="/api/playground" element={<ApiPlaygroundPage />} />
-          <Route path="/api/developer"  element={<ApiDeveloperDashboardPage />} />
+          <Route element={<PrivateRoute />}>
+            <Route path="/api/keys"       element={<ApiKeysPage />} />
+            <Route path="/api/playground" element={<ApiPlaygroundPage />} />
+            <Route path="/api/developer"  element={<ApiDeveloperDashboardPage />} />
+          </Route>
 
           {/* ═══ Admin ═══ */}
           <Route path="/admin/login" element={<AdminLoginPage />} />
@@ -451,7 +462,14 @@ function AppRoot() {
             </Route>
           </Route>
 
-          {/* ═══ Apporteur ═══ */}
+          {/* ═══════════════════════════════════════════════════════════════
+              ESPACES MÉTIER — session Supabase obligatoire (PrivateRoute) ;
+              modules payants (Marchand de biens, Promotion, Réhabilitation)
+              soumis en plus à la formule LUE EN BASE (RequirePlan).
+          ════════════════════════════════════════════════════════════════ */}
+          <Route element={<PrivateRoute />}>
+
+          {/* ═══ Apporteur ═══ (inclus dans toutes les formules) */}
           <Route path="/apporteur" element={<CopilotSpaceOutlet vertical="apporteur" />}>
             <Route index element={<ApporteurDashboard />} />
             <Route path="deposer" element={<ApporteurDeposerPage />} />
@@ -482,6 +500,7 @@ function AppRoot() {
             <Route path="*"           element={<Navigate to="/particulier" replace />} />
           </Route>
 
+          <Route element={<RequirePlan />}>
           {/* ═══ Marchand-de-bien ═══ */}
           <Route path="/marchand-de-bien" element={<MarchandLayout />}>
             <Route index element={<MarchandPipeline />} />
@@ -547,6 +566,7 @@ function AppRoot() {
 
             <Route path="*" element={<Navigate to="/promoteur" replace />} />
           </Route>
+          </Route>{/* fin RequirePlan (Marchand de biens, Promotion) */}
 
           {/* ═══ Assurance ═══
               (autrefois monté sous /banque/assurance ; remonté ici en
@@ -566,6 +586,7 @@ function AppRoot() {
           </Route>
 
           {/* ═══ Réhabilitation ═══ */}
+          <Route element={<RequirePlan />}>
           <Route path="/rehabilitation" element={<RehabilitationLayout />}>
             <Route index element={<Navigate to="/rehabilitation/projets" replace />} />
 
@@ -584,6 +605,9 @@ function AppRoot() {
             <Route path="analyse" element={<Navigate to="/rehabilitation/vue-ensemble" replace />} />
             <Route path="*"       element={<Navigate to="/rehabilitation/projets" replace />} />
           </Route>
+          </Route>{/* fin RequirePlan (Réhabilitation) */}
+
+          </Route>{/* fin PrivateRoute (espaces métier) */}
 
           {/* ═══ Compatibility redirects ═══ */}
           {/* ⚠️ Banque hors-build : toute ancienne route /banque/* → accueil */}
