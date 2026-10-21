@@ -83,11 +83,11 @@ export const FORMULES: readonly Formule[] = [
     jetonsMensuels: 0,
     analysesRapidesMois: 3,
     messagesMimmoMois: 10,
-    exportsPdf: false,
+    exportsPdf: true,
     points: [
       "3 analyses rapides par mois",
       "Mimmo : 10 messages par mois",
-      "Sans export",
+      "Export PDF des analyses",
     ],
   },
   {
@@ -105,7 +105,7 @@ export const FORMULES: readonly Formule[] = [
     points: [
       "1 utilisateur",
       "1 module métier au choix",
-      "100 analyses par mois",
+      "100 analyses rapides par mois",
       "200 jetons par mois",
       "Exports PDF",
     ],
@@ -119,7 +119,7 @@ export const FORMULES: readonly Formule[] = [
     utilisateurs: 1,
     modules: "tous",
     jetonsMensuels: 800,
-    analysesRapidesMois: null,
+    analysesRapidesMois: 300,
     messagesMimmoMois: null,
     exportsPdf: true,
     miseEnAvant: true,
@@ -127,6 +127,7 @@ export const FORMULES: readonly Formule[] = [
       "Les 3 modules : Promotion, Marchand de biens, Réhabilitation",
       "Veille foncière",
       "Bilan promoteur",
+      "300 analyses rapides par mois",
       "800 jetons par mois",
       "Exports PDF",
     ],
@@ -140,12 +141,13 @@ export const FORMULES: readonly Formule[] = [
     utilisateurs: 5,
     modules: "tous",
     jetonsMensuels: 2500,
-    analysesRapidesMois: null,
+    analysesRapidesMois: 1000,
     messagesMimmoMois: null,
     exportsPdf: true,
     points: [
       "5 utilisateurs",
       "Tout le contenu Pro",
+      "1 000 analyses rapides par mois",
       "2 500 jetons partagés par mois",
       "Agent commercial",
       "API : 10 000 crédits inclus",
@@ -183,6 +185,23 @@ export const JETONS_INCLUS_PAR_FORMULE: Record<PlanId, number> = {
 
 /** Quota d'analyses rapides GRATUITES par mois, pour tout compte (serveur : consume_free_quick_analysis). */
 export const ANALYSES_RAPIDES_GRATUITES_MOIS = 3;
+
+/**
+ * Analyses rapides incluses chaque mois, par formule — PLAFONDS APPLIQUÉS PAR LE SERVEUR
+ * (consume_free_quick_analysis, migration 20261021_plafonds_formules.sql). Au-delà : 10 jetons.
+ */
+export const ANALYSES_RAPIDES_INCLUSES_PAR_FORMULE: Record<PlanId, number> = {
+  basique: 3,
+  avance: 100,
+  pro: 300,
+  proplus: 1000,
+};
+
+/**
+ * Messages Mimmo offerts chaque mois en Découverte — plafond appliqué par copilot-chat
+ * (consume_copilot_free_message). Au-delà : les jetons du compte, s'il en a.
+ */
+export const MESSAGES_MIMMO_DECOUVERTE_MOIS = 10;
 
 // ── Achats à l'unité ─────────────────────────────────────────────────────────
 

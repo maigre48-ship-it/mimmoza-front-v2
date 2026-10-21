@@ -329,6 +329,9 @@ const TIER_MODEL_ID: Record<ModelTier, string> = {
 
 type Plan = 'basic' | 'advanced' | 'pro';
 
+/** Messages Mimmo offerts par mois en Découverte (= MESSAGES_MIMMO_DECOUVERTE_MOIS, src/lib/billing/grille.ts). */
+const MESSAGES_MIMMO_DECOUVERTE_MOIS = 10;
+
 const PLAN_POLICY: Record<Plan, {
   tiers: ModelTier[];
   defaultTier: ModelTier;
@@ -527,11 +530,15 @@ async function settleCredits(p: {
   userId: string; reservationId: string; messageId: string;
   mode: CopilotMode; finalAmount?: number; metadata?: Record<string, unknown>;
 }): Promise<void> {
-  const { error } = await getAdmin().rpc('copilot_settle_credits', {
+  // Message offert (Découverte) : rien n'a été réservé, rien n'est débité.
+  if (!p.reservationId) {
+    p = { ...p, finalAmount: 0 };
+  }
+  const { error } = p.reservationId ? await getAdmin().rpc('copilot_settle_credits', {
     p_user_id: p.userId, p_reservation_id: p.reservationId,
     p_message_id: p.messageId, p_metadata: p.metadata ?? null,
     p_final_amount: p.finalAmount ?? null,      // ⬅️ NULL = ancien comportement
-  });
+  }) : { error: null };
   if (error) console.error('[credits] settle failed', error.message);
   try {
     const today = new Date().toISOString().slice(0, 10);
@@ -553,6 +560,7 @@ async function settleCredits(p: {
 async function refundCredits(p: {
   userId: string; reservationId: string; reason?: string;
 }): Promise<number> {
+  if (!p.reservationId) return 0;   // message offert : rien à rembourser
   const { data, error } = await getAdmin().rpc('copilot_refund_credits', {
     p_user_id: p.userId, p_reservation_id: p.reservationId,
     p_reason: p.reason ?? 'refund',
@@ -10726,15 +10734,33 @@ Deno.serve(async (req: Request) => {
     const requestedTier = (payload as any).tier as ModelTier | undefined;
     tier = resolveTier(plan, plan === 'pro' ? requestedTier : undefined);
 
-    reserved = worstCaseJetons(tier, mode);
-    const reservation = await reserveCredits({
-      userId,
-      amount: reserved,                       // ⬅️ gate = pire cas
-      reason: `copilot ${plan}/${tier}`,
-      conversationId,
-    });
-    reservationId = reservation.reservationId;
-    remainingBalance = reservation.remainingBalance;
+    // ── Découverte : 10 messages offerts par mois (plafond serveur, 21/10/2026) ──
+    // Dans le quota : aucun jeton réservé (reservationId vide → settle/refund
+    // ne débitent rien). Au-delà : réservation classique sur les jetons du compte.
+    let messageOffert = false;
+    if (plan === 'basic') {
+      const { data: q, error: qErr } = await getAdmin().rpc('consume_copilot_free_message', {
+        p_user_id: userId, p_quota: MESSAGES_MIMMO_DECOUVERTE_MOIS,
+      });
+      if (qErr) console.error('[copilot] quota Découverte indisponible', qErr.message);
+      messageOffert = Boolean((q as { accorde?: boolean } | null)?.accorde);
+    }
+
+    if (messageOffert) {
+      reserved = 0;
+      reservationId = '';
+      remainingBalance = 0;
+    } else {
+      reserved = worstCaseJetons(tier, mode);
+      const reservation = await reserveCredits({
+        userId,
+        amount: reserved,                       // ⬅️ gate = pire cas
+        reason: `copilot ${plan}/${tier}`,
+        conversationId,
+      });
+      reservationId = reservation.reservationId;
+      remainingBalance = reservation.remainingBalance;
+    }
 
     // `saveUserMessage` n'est plus ici : son insertion ne conditionne plus la
     // construction de l'historique (le message est passé en clair à

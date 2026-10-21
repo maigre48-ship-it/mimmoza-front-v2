@@ -5,7 +5,7 @@
 // =============================================================================
 //
 // Ordre de consommation :
-//   1. consume_free_quick_analysis() — 3 analyses offertes par mois et par compte ;
+//   1. consume_free_quick_analysis() — analyses incluses par mois selon la formule (3 / 100 / 300 / 1 000) ;
 //   2. debit_quick_analysis()        — 10 jetons, montant fixé par le serveur ;
 //   3. REPLI si la migration n'est pas encore appliquée (RPC absentes) :
 //      spend_credits(10) comme avant, sans ticket (donc sans remboursement).
@@ -16,7 +16,6 @@
 
 import { supabase } from "@/lib/supabase";
 import { ACTION_COSTS } from "./actionCosts";
-import { ANALYSES_RAPIDES_GRATUITES_MOIS } from "./grille";
 import { spendCredits } from "./projectUnlock";
 
 export type ReservationAnalyse =
@@ -55,8 +54,8 @@ function erreurConnue(message: string): ReservationAnalyse {
       ok: false,
       reason: "NO_TOKENS",
       message:
-        `Vos ${ANALYSES_RAPIDES_GRATUITES_MOIS} analyses gratuites du mois sont utilisées et votre solde de jetons ` +
-        "est insuffisant. Rechargez des jetons ou choisissez une formule pour continuer.",
+        "Les analyses rapides incluses dans votre formule ce mois-ci sont utilisées et votre solde de jetons " +
+        "est insuffisant. Rechargez des jetons ou choisissez une formule supérieure pour continuer.",
     };
   }
   return { ok: false, reason: "ERROR", message };
