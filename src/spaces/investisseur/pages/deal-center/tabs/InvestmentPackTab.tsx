@@ -15,6 +15,7 @@
 //
 // Style identique à AnalysePage.tsx.
 
+import { FOND_PLAN_IGN_ATTRIBUTION_TEXTE, FOND_PLAN_IGN_URL, FOND_PLAN_IGN_ZOOM_NATIF_MAX } from '@/lib/cartes/fondPlanIgn';
 import {
   AlertTriangle,
   Award,
@@ -999,11 +1000,13 @@ function CarteLocalisation({
           style: {
             version: 8,
             sources: {
+              // Fond Plan IGN (Géoplateforme) — src/lib/cartes/fondPlanIgn.ts
               osm: {
                 type: "raster",
-                tiles: ["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"],
+                tiles: [FOND_PLAN_IGN_URL],
                 tileSize: 256,
-                attribution: "© OpenStreetMap",
+                maxzoom: FOND_PLAN_IGN_ZOOM_NATIF_MAX,
+                attribution: FOND_PLAN_IGN_ATTRIBUTION_TEXTE,
               },
             },
             layers: [{ id: "osm", type: "raster", source: "osm" }],

@@ -133,11 +133,22 @@ function featureCentroid(feature: any): { lat: number; lon: number } | null {
   } catch { return null; }
 }
 
+// Audit du 21/10/2026 : l'ancien appel Geoapify partait SANS clé d'API (donc
+// en échec, ou facturé sur un compte tiers). Remplacé par le service public
+// WMS de la Géoplateforme IGN (Plan IGN v2, sans clé), centré sur la parcelle
+// (~400 m × 230 m). En cas d'échec de chargement, VisuelSlot affiche déjà le
+// bouton « Aller sur Foncier » (onError).
 function buildStaticMapUrl(lat: number, lon: number): string {
+  const demiHauteurM = 115;
+  const demiLargeurM = 200;
+  const dLat = demiHauteurM / 111_320;
+  const dLon = demiLargeurM / (111_320 * Math.cos((lat * Math.PI) / 180));
+  // WMS 1.3.0 en EPSG:4326 : l'ordre des axes de la BBOX est lat,lon.
+  const bbox = [lat - dLat, lon - dLon, lat + dLat, lon + dLon].map((v) => v.toFixed(6)).join(',');
   return (
-    `https://maps.geoapify.com/v1/staticmap?style=osm-bright` +
-    `&width=480&height=280&center=lonlat:${lon.toFixed(5)},${lat.toFixed(5)}&zoom=17` +
-    `&marker=lonlat:${lon.toFixed(5)},${lat.toFixed(5)};color:%235247b8;size:medium`
+    'https://data.geopf.fr/wms-r/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap' +
+    '&LAYERS=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLES=&CRS=EPSG:4326' +
+    `&BBOX=${bbox}&WIDTH=480&HEIGHT=280&FORMAT=image/png`
   );
 }
 

@@ -1,3 +1,4 @@
+import { FOND_PLAN_IGN_ATTRIBUTION, FOND_PLAN_IGN_URL, FOND_PLAN_IGN_ZOOM_NATIF_MAX } from '@/lib/cartes/fondPlanIgn';
 import { useEffect, useMemo, useState } from 'react';
 import { CircleMarker, GeoJSON, MapContainer, TileLayer, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -113,7 +114,7 @@ export function DossierParcelMap({ point, detectedId, selected, onChange, onFeat
     {error && <p role="status" className="mzia-dossier-error">{error}</p>}
     <div className="mzia-dossier-map">
       <MapContainer center={[point.lat, point.lon]} zoom={18} scrollWheelZoom={false} style={{ height: '100%', width: '100%' }}>
-        <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <TileLayer attribution={FOND_PLAN_IGN_ATTRIBUTION} url={FOND_PLAN_IGN_URL} maxNativeZoom={FOND_PLAN_IGN_ZOOM_NATIF_MAX} />
         {showZone && zone.features.length > 0 && <GeoJSON key={`zone-${point.lat}-${point.lon}`} data={collection(zone.features)} style={{ color: '#6366f1', weight: 2, fillColor: '#818cf8', fillOpacity: 0.14 }} onEachFeature={(feature, layer) => layer.bindTooltip(`Zone PLU : ${labelOf(feature as GpuFeature)}`)} />}
         {showPrescriptions && prescriptions.features.length > 0 && <GeoJSON key={`prescriptions-${point.lat}-${point.lon}`} data={collection(prescriptions.features)} style={{ color: '#c2410c', weight: 2, dashArray: '5 5', fillColor: '#fb923c', fillOpacity: 0.21 }} onEachFeature={(feature, layer) => layer.bindTooltip(`Prescription GPU : ${labelOf(feature as GpuFeature)}`)} />}
         {features.length > 0 && <GeoJSON key={`${radiusM}:${selected.map((item) => item.id).join(',')}`} data={collection(features)}

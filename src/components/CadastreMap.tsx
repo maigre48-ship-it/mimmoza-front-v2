@@ -1,3 +1,4 @@
+import { FOND_PLAN_IGN_ATTRIBUTION, FOND_PLAN_IGN_URL, FOND_PLAN_IGN_ZOOM_NATIF_MAX } from '@/lib/cartes/fondPlanIgn';
 import type {
   GeoJSON,
   Map as LeafletMap,
@@ -64,9 +65,11 @@ export function CadastreMap({
     const map = L.map(containerRef.current).setView(initialCenter, initialZoom);
     mapRef.current = map;
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    // Fond Plan IGN (Géoplateforme) — src/lib/cartes/fondPlanIgn.ts
+    L.tileLayer(FOND_PLAN_IGN_URL, {
       maxZoom: 20,
-      attribution: "© OpenStreetMap contributors",
+      maxNativeZoom: FOND_PLAN_IGN_ZOOM_NATIF_MAX,
+      attribution: FOND_PLAN_IGN_ATTRIBUTION,
     }).addTo(map);
 
     return () => {

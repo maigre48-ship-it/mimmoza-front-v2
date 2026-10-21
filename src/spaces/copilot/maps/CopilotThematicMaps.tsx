@@ -1,3 +1,4 @@
+import { FOND_PLAN_IGN_ATTRIBUTION, FOND_PLAN_IGN_URL, FOND_PLAN_IGN_ZOOM_NATIF_MAX } from '@/lib/cartes/fondPlanIgn';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Circle, CircleMarker, GeoJSON, MapContainer, Pane, ScaleControl, TileLayer, Tooltip, WMSTileLayer, useMap } from 'react-leaflet';
 import type { FeatureCollection, Feature } from 'geojson';
@@ -69,7 +70,7 @@ export function CopilotThematicMaps({ calls, onSend }: { calls: ActiveToolCall[]
       {layers.length > 0 && <div className="copilot-map-toggles">{layers.map(l => <label key={l.id}><input type="checkbox" disabled={l.error} checked={visibleGpu.includes(l.id)} onChange={() => setVisibleGpu(prev => prev.includes(l.id) ? prev.filter(id => id !== l.id) : [...prev,l.id])} /><i style={{background:l.color}} />{l.label}</label>)}</div>}
       <div className="copilot-map-canvas"><MapContainer center={[point.lat,point.lon]} zoom={14} scrollWheelZoom={false} style={{ width:'100%', height:'100%' }}>
         <MapViewport point={point} radius={radius} />
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' eventHandlers={{ tileerror: () => setBaseError(true) }} />
+        <TileLayer url={FOND_PLAN_IGN_URL} maxNativeZoom={FOND_PLAN_IGN_ZOOM_NATIF_MAX} attribution={FOND_PLAN_IGN_ATTRIBUTION} eventHandlers={{ tileerror: () => setBaseError(true) }} />
         {selected.map(id => <OfficialLayer key={`${id}:${point.lat}:${point.lon}`} id={id} opacity={opacity} onState={onLayerState} />)}
         {layers.filter(l => visibleGpu.includes(l.id) && !l.error && l.features.length > 0).map(l => <GeoJSON key={`${themeId}:${l.id}:${point.lat}:${point.lon}:${radius}`} data={{ type:'FeatureCollection', features:l.features } as FeatureCollection} style={{ color:l.color, weight:2, fillColor:l.color, fillOpacity:opacity * .35 }} onEachFeature={(f,layer) => { const tip = document.createElement('span'); tip.textContent = `${l.label} : ${featureLabel(f.properties)}`; layer.bindTooltip(tip); }} />)}
         <Pane name="study-reference" style={{ zIndex:620 }}>

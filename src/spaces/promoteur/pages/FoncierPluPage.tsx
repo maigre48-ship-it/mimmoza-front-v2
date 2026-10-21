@@ -2,6 +2,7 @@
 // VERSION 9.6.0 — PLU parsing via extraction texte client (pdfjs) → fin du 546.
 //   Hero v2 + toute la logique métier v9.5.1 intacte. Seul handleUploadAndParse change.
 
+import { FOND_PLAN_IGN_ATTRIBUTION, FOND_PLAN_IGN_URL, FOND_PLAN_IGN_ZOOM_NATIF_MAX } from "@/lib/cartes/fondPlanIgn";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
@@ -458,7 +459,7 @@ function CadastreMap({ communeInsee, center, selectedIds, selectedParcels, onTog
   return (
     <div id="cadastre-map-capture-target" style={{ position: "relative", height: heightPx, overflow: "hidden", borderRadius: "0 0 14px 14px" }}>
       <MapContainer center={center} zoom={DEFAULT_ZOOM} style={{ height: "100%", width: "100%" }} scrollWheelZoom preferCanvas>
-        <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <TileLayer attribution={FOND_PLAN_IGN_ATTRIBUTION} url={FOND_PLAN_IGN_URL} maxNativeZoom={FOND_PLAN_IGN_ZOOM_NATIF_MAX} />
         <MapCenterHandler center={center} />
         {fc && <ImperativeParcelLayer fc={fc} selectedIds={selectedIds} onToggleParcel={onToggleParcel} />}
       </MapContainer>

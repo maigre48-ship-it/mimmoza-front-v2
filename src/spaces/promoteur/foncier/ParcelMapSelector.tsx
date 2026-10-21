@@ -2,6 +2,7 @@
 // Detects Lambert 93 (EPSG:2154) coords and reprojects to WGS84 (EPSG:4326).
 // Detects lat/lon swap and corrects it. Logs diagnostics once per fetch.
 
+import { FOND_PLAN_IGN_ATTRIBUTION, FOND_PLAN_IGN_URL, FOND_PLAN_IGN_ZOOM_NATIF_MAX } from "@/lib/cartes/fondPlanIgn";
 import turfArea from "@turf/area";
 import type { Feature, FeatureCollection, Position } from "geojson";
 import L from "leaflet";
@@ -1225,7 +1226,7 @@ export default function ParcelMapSelector({
         scrollWheelZoom
         preferCanvas
       >
-        <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <TileLayer attribution={FOND_PLAN_IGN_ATTRIBUTION} url={FOND_PLAN_IGN_URL} maxNativeZoom={FOND_PLAN_IGN_ZOOM_NATIF_MAX} />
 
         <MapInvalidateSizeHandler />
 

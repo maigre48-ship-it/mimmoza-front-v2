@@ -1,5 +1,6 @@
 // FILE: src/spaces/promoteur/etudes/marche/components/MarketStudyMap.tsx
 
+import { FOND_PLAN_IGN_ATTRIBUTION, FOND_PLAN_IGN_URL, FOND_PLAN_IGN_ZOOM_NATIF_MAX } from "@/lib/cartes/fondPlanIgn";
 import React, { useEffect, useRef, useState } from "react";
 import type { MarketStudyResponse, Poi, PoiCategory } from "../types/marketStudy.types";
 import { POI_CATEGORY_ICONS, POI_CATEGORY_LABELS } from "../types/marketStudy.types";
@@ -51,11 +52,10 @@ export const MarketStudyMap: React.FC<MarketStudyMapProps> = ({
         13
       );
 
-      // Ajouter le layer OpenStreetMap
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        maxZoom: 19,
+      // Fond Plan IGN (Géoplateforme) — src/lib/cartes/fondPlanIgn.ts
+      L.tileLayer(FOND_PLAN_IGN_URL, {
+        attribution: FOND_PLAN_IGN_ATTRIBUTION,
+        maxZoom: FOND_PLAN_IGN_ZOOM_NATIF_MAX,
       }).addTo(map);
 
       // Marqueur central (position de l'étude)
