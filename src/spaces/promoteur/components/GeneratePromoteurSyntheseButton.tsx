@@ -67,7 +67,7 @@ export const GeneratePromoteurSyntheseButton: React.FC<Props> = ({
       // Reset after a moment
       setTimeout(() => setPhase('idle'), 3000);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erreur lors de la generation';
+      const message = err instanceof Error ? err.message : 'Erreur lors de la génération';
       onError?.(message);
       setPhase('idle');
     }

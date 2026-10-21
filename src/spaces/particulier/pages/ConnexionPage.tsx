@@ -49,21 +49,32 @@ type PropertyType = "" | "appartement" | "maison";
 
 const EXPRESS_BENEFITS = [
   { icon: Search, label: "Analyse rapide et fiable" },
-  { icon: Database, label: "Donnees de marche & risques inclus" },
-  { icon: FileText, label: "Rapport PDF immediat" },
+  { icon: Database, label: "Données de marché et risques inclus" },
+  { icon: FileText, label: "Rapport PDF immédiat" },
 ];
 
+// Cibles : promoteurs résidentiels, marchands de biens, investisseurs,
+// apporteurs d'affaires (audit du 21/10/2026).
 const PRO_BENEFITS = [
-  { icon: Building2, label: "Bureaux, commerces et locaux d’activité" },
-  { icon: Search, label: "Marché, utilisateurs et concurrence" },
-  { icon: ChartNoAxesCombined, label: "Programme, loyers et stratégie de sortie" },
-  { icon: FileText, label: "Dossiers sourcés et exports professionnels" },
-  { icon: Code2, label: "PLU, risques et outils connectés" },
+  { icon: Search, label: "Recherche foncière et potentiel constructible" },
+  { icon: Code2, label: "PLU, risques et servitudes sourcés" },
+  { icon: ChartNoAxesCombined, label: "Bilan promoteur et marchand de biens" },
+  { icon: Building2, label: "Veille d'opportunités et apporteurs d'affaires" },
+  { icon: FileText, label: "Passage au Studio 3D en un clic" },
 ];
 
-const TRUST_ITEMS = [
-  { icon: BadgeCheck, title: "Données certifiées", subtitle: "DVF, PLU, Cadastre" },
-  { icon: ShieldCheck, title: "Sécurisé & confidentiel", subtitle: "Conforme RGPD" },
+// Formulations exactes (audit du 21/10/2026) : les données sont publiques et
+// officielles, pas « certifiées » ; l'hébergement n'est pas exclusivement
+// européen (Vercel et fournisseurs d'IA aux États-Unis, base Supabase en UE),
+// donc pas de mention « Conforme RGPD » ni « hébergées en Europe ».
+const TRUST_ITEMS: { icon: typeof BadgeCheck; title: string; subtitle: string; lien?: string }[] = [
+  { icon: BadgeCheck, title: "Données publiques officielles", subtitle: "DVF, PLU, cadastre" },
+  {
+    icon: ShieldCheck,
+    title: "Confidentialité",
+    subtitle: "Voir notre politique",
+    lien: "/politique-confidentialite",
+  },
 ];
 
 /* ------------------------------------------------------------------
@@ -688,14 +699,14 @@ export default function ConnexionPage() {
               id="pro-title"
               className="mt-6 text-3xl font-semibold leading-tight tracking-tight text-white sm:text-4xl"
             >
-              Développez vos projets
+              Trouvez, analysez
               <br />
-              <span className="text-violet-400">d’immobilier d’entreprise.</span>
+              <span className="text-violet-400">et montez vos opérations.</span>
             </h2>
 
             <p className="mt-5 max-w-lg text-base leading-7 text-slate-300">
-              Bureaux, commerces et locaux d’activité : du terrain au programme,
-              <br className="hidden sm:block" /> puis au bon utilisateur ou investisseur.
+              Foncier, PLU, marché, bilan promoteur et 3D : de la parcelle au permis,
+              <br className="hidden sm:block" /> avec Mimmo, votre copilote IA.
             </p>
 
             <ul className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
@@ -847,7 +858,7 @@ export default function ConnexionPage() {
                     to="/inscription"
                     className="font-medium text-violet-300 transition hover:text-violet-200"
                   >
-                    Créer un compte Pro
+                    Créer un compte gratuit
                   </Link>
                 </div>
               ) : (
@@ -885,7 +896,13 @@ export default function ConnexionPage() {
               </span>
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-slate-900">{item.title}</p>
-                <p className="mt-0.5 text-xs text-slate-500">{item.subtitle}</p>
+                {item.lien ? (
+                  <Link to={item.lien} className="mt-0.5 block text-xs text-slate-500 underline hover:text-slate-800">
+                    {item.subtitle}
+                  </Link>
+                ) : (
+                  <p className="mt-0.5 text-xs text-slate-500">{item.subtitle}</p>
+                )}
               </div>
             </div>
           ))}

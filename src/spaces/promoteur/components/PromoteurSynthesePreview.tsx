@@ -63,7 +63,7 @@ const EmptyState: React.FC = () => (
       <FileText className="h-7 w-7 text-violet-300" />
     </div>
     <div className="text-center">
-      <p className="text-sm font-semibold text-slate-600">Aucune synthese generee</p>
+      <p className="text-sm font-semibold text-slate-600">Aucune synthèse générée</p>
       <p className="text-xs text-slate-400 mt-1 max-w-xs">
         Selectionnez un type de rapport et cliquez sur "Generer la synthese" pour obtenir votre dossier.
       </p>
@@ -78,7 +78,7 @@ const REC_CONFIG: Record<RecommendationType, {
 }> = {
   GO: {
     bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700',
-    icon: CheckCircle2, label: '?  GO -- Operation recommandee',
+    icon: CheckCircle2, label: '?  GO -- Opération recommandée',
   },
   GO_CONDITION: {
     bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700',
@@ -86,11 +86,11 @@ const REC_CONFIG: Record<RecommendationType, {
   },
   NO_GO: {
     bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700',
-    icon: XCircle, label: '?  NO GO -- Operation non viable en l\'etat',
+    icon: XCircle, label: '?  NO GO -- Opération non viable en l\'état',
   },
   ANALYSE_INSUFFISANTE: {
     bg: 'bg-slate-50', border: 'border-slate-200', text: 'text-slate-600',
-    icon: AlertCircle, label: 'ANALYSE INSUFFISANTE -- Donnees a completer',
+    icon: AlertCircle, label: 'ANALYSE INSUFFISANTE -- Données à compléter',
   },
 };
 
@@ -276,7 +276,7 @@ const RisquesSection: React.FC<{ risques: RisqueItem[]; max?: number }> = ({ ris
 );
 
 const MarcheSection: React.FC<{ s: PromoteurSynthese }> = ({ s }) => (
-  <Section title="Marche" icon={BarChart3}>
+  <Section title="Marché" icon={BarChart3}>
     <div className="space-y-2">
       {[
         ['Zone', s.marche.zoneMarche.replace('_', ' ')],
@@ -397,11 +397,11 @@ const ScenarioSection: React.FC<{ scenarios: Scenario[] }> = ({ scenarios }) => 
 const SyntheseIASection: React.FC<{ s: PromoteurSynthese }> = ({ s }) => {
   if (!s.syntheseIA) return null;
   return (
-    <Section title="Synthese analytique" icon={FileText} accent>
+    <Section title="Synthèse analytique" icon={FileText} accent>
       <div className="space-y-3">
         {[
-          { title: 'Resume', text: s.syntheseIA.texteExecutif },
-          { title: 'Marche', text: s.syntheseIA.analyseMarche },
+          { title: 'Résumé', text: s.syntheseIA.texteExecutif },
+          { title: 'Marché', text: s.syntheseIA.analyseMarche },
           { title: 'Technique', text: s.syntheseIA.analyseTechnique },
           { title: 'Financier', text: s.syntheseIA.analyseFinanciere },
           { title: 'Risques', text: s.syntheseIA.analyseRisques },
@@ -549,7 +549,7 @@ export const PromoteurSynthesePreview: React.FC<Props> = ({
         <div className="space-y-2">
           <ScoreBar label="Foncier" score={es.scores.foncier} />
           <ScoreBar label="Technique / PLU" score={es.scores.technique} />
-          <ScoreBar label="Marche" score={es.scores.marche} />
+          <ScoreBar label="Marché" score={es.scores.marche} />
           <ScoreBar label="Financier" score={es.scores.financier} />
           <ScoreBar label="Risque (inverse)" score={es.scores.risque} invert />
           <div className="pt-2 border-t border-slate-100">

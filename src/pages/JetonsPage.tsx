@@ -109,13 +109,13 @@ export default function JetonsPage() {
     return (
       <div className="mx-auto max-w-lg px-6 py-16 text-center">
         <p className="text-sm text-rose-600">
-          {"Impossible de charger votre solde. Verifiez votre connexion."}
+          {"Impossible de charger votre solde. Vérifiez votre connexion."}
         </p>
         <button
           onClick={() => window.location.reload()}
           className="mt-4 rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
         >
-          Reessayer
+          Réessayer
         </button>
       </div>
     );
@@ -137,7 +137,7 @@ export default function JetonsPage() {
           </div>
 
           <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
-            {"Gerez vos "}
+            {"Gérez vos "}
             <span className="bg-gradient-to-r from-indigo-600 via-sky-500 to-cyan-500 bg-clip-text text-transparent">
               {"jetons d'analyse"}
             </span>
@@ -225,7 +225,7 @@ export default function JetonsPage() {
             {/* Historique */}
             <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
               <h2 className="text-xl font-semibold text-slate-950">
-                {"Historique recent"}
+                {"Historique récent"}
               </h2>
 
               {transactions.length === 0 ? (

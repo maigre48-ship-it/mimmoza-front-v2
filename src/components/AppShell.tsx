@@ -319,7 +319,7 @@ const SPACES: Array<{
   path: string;
 }> = [
   { id: "mimmozia",       label: "Espace Mimmo",          shortLabel: "Mimmo",          description: "Assistant IA immobilier : PLU, DVF, risques, analyse et rapports", icon: Bot,        path: "/mimmozia" },
-  { id: "marchand",       label: "Espace Investissement",    shortLabel: "Investissement",    description: "Opportunites, scoring, rentabilite, execution et sortie", icon: PieChart,   path: "/marchand-de-bien" },
+  { id: "marchand",       label: "Espace Investissement",    shortLabel: "Investissement",    description: "Opportunités, scoring, rentabilité, exécution et sortie", icon: PieChart,   path: "/marchand-de-bien" },
   { id: "promoteur",      label: "Espace Promotion",         shortLabel: "Promotion",         description: "Faisabilite, SDP potentielle et bilan promoteur",         icon: Building2,  path: "/promoteur" },
   { id: "rehabilitation", label: "Espace Réhabilitation",    shortLabel: "Réhabilitation",    description: "Lecture de plan, conformité, chiffrage et valorisation",  icon: ScanSearch, path: "/rehabilitation" },
   { id: "agence",         label: "Espace Apport d'affaires", shortLabel: "Apport d'affaires", description: "Déposer un bien et générer des opportunités promoteur",   icon: Users,      path: "/apporteur" },
@@ -421,12 +421,12 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
       id: "analyse",
       label: "Analyse",
       items: [
-        { label: "Rentabilite",        path: "/marchand-de-bien/analyse",    icon: PieChart,   end: true, tabParam: "rentabilite"        },
+        { label: "Rentabilité",        path: "/marchand-de-bien/analyse",    icon: PieChart,   end: true, tabParam: "rentabilite"        },
         { label: "Due Diligence",      path: "/marchand-de-bien/analyse",    icon: FileText,              tabParam: "due_diligence"      },
         { label: "Étude de marché",    path: "/marchand-de-bien/analyse",    icon: BarChart3,             tabParam: "marche_risques"     },
         { label: "Étude de risques",   path: "/marchand-de-bien/georisques", icon: ShieldAlert             },
         { label: "Analyse predictive", path: "/marchand-de-bien/analyse",    icon: TrendingUp,            tabParam: "analyse_predictive" },
-        { label: "Synthese IA",        path: "/marchand-de-bien/analyse",    icon: Sparkles,              tabParam: "synthese_ia"        },
+        { label: "Synthèse IA",        path: "/marchand-de-bien/analyse",    icon: Sparkles,              tabParam: "synthese_ia"        },
       ],
     },
     {

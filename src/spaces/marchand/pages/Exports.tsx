@@ -89,7 +89,7 @@ export default function Exports() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           <SectionCard
             title="Export PDF"
-            subtitle="Dossier marchand complet avec synthese IA."
+            subtitle="Dossier marchand complet avec synthèse IA."
           >
             <button
               type="button"
@@ -121,7 +121,7 @@ export default function Exports() {
 
           <SectionCard
             title="Export CSV"
-            subtitle="Donnees exploitables (Excel, Google Sheets, etc.)."
+            subtitle="Données exploitables (Excel, Google Sheets, etc.)."
           >
             <button
               type="button"
