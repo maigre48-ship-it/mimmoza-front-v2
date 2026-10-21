@@ -337,10 +337,12 @@ function AppRoot() {
       <AppShell currentSpace={currentSpace} onChangeSpace={handleChangeSpace}>
         <Routes>
           {/* ═══════════════════════════════════════════════════════════════
-              PUBLIC — "/" = page d'accueil vitrine pour un visiteur ;
-              un utilisateur déjà connecté est renvoyé vers /accueil.
+              PUBLIC — "/" = page d'entrée (analyse express + connexion).
+              "/decouvrir" = présentation détaillée de Mimmoza (vitrine) ;
+              un utilisateur déjà connecté y est renvoyé vers /accueil.
           ════════════════════════════════════════════════════════════════ */}
-          <Route path="/" element={<VitrinePage />} />
+          <Route path="/" element={<ConnexionPage />} />
+          <Route path="/decouvrir" element={<VitrinePage />} />
 
           {/* ── Alias publics de connexion (conservés pour compatibilité) ── */}
           <Route path="/login"     element={<ConnexionPage />} />

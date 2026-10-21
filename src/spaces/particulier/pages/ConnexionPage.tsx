@@ -48,9 +48,9 @@ type Mode = "login" | "reset";
 type PropertyType = "" | "appartement" | "maison";
 
 const EXPRESS_BENEFITS = [
-  { icon: Search, label: "Analyse rapide et fiable" },
-  { icon: Database, label: "Données de marché et risques inclus" },
-  { icon: FileText, label: "Rapport PDF immédiat" },
+  { icon: Search, label: "Prix comparé aux ventes récentes du secteur" },
+  { icon: Database, label: "Risques, urbanisme et servitudes vérifiés" },
+  { icon: FileText, label: "Rapport PDF sourcé, prêt à partager" },
 ];
 
 // Cibles : promoteurs résidentiels, marchands de biens, investisseurs,
@@ -60,7 +60,7 @@ const PRO_BENEFITS = [
   { icon: Code2, label: "PLU, risques et servitudes sourcés" },
   { icon: ChartNoAxesCombined, label: "Bilan promoteur et marchand de biens" },
   { icon: Building2, label: "Veille d'opportunités et apporteurs d'affaires" },
-  { icon: FileText, label: "Passage au Studio 3D en un clic" },
+  { icon: FileText, label: "Maquette 3D du projet dans Studio" },
 ];
 
 // Formulations exactes (audit du 21/10/2026) : les données sont publiques et
@@ -442,6 +442,12 @@ export default function ConnexionPage() {
           </Link>
 
           <div className="flex items-center gap-3">
+            <Link
+              to="/decouvrir"
+              className="rounded-full px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+            >
+              Découvrir Mimmoza
+            </Link>
             {isAdmin ? (
               <button
                 type="button"
@@ -487,7 +493,7 @@ export default function ConnexionPage() {
             </h1>
 
             <p className="mt-5 max-w-lg text-base leading-7 text-slate-600">
-              Analysez un appartement ou une maison en moins de 2 minutes.
+              Avant de faire une offre, vérifiez le prix, les risques et l’urbanisme d’une maison ou d’un appartement.
               <br className="hidden sm:block" /> Compte gratuit : 3 analyses offertes par mois.
             </p>
 
@@ -678,7 +684,7 @@ export default function ConnexionPage() {
 
             <div className="mt-4 flex items-center justify-center gap-2 text-xs text-slate-500">
               <Clock3 className="h-3.5 w-3.5 text-sky-600" aria-hidden="true" />
-              Résultat en moins de 2 minutes, sans carte bancaire
+              Résultat en quelques minutes, sans carte bancaire
             </div>
           </div>
         </section>
@@ -705,8 +711,8 @@ export default function ConnexionPage() {
             </h2>
 
             <p className="mt-5 max-w-lg text-base leading-7 text-slate-300">
-              Foncier, PLU, marché, bilan promoteur et 3D : de la parcelle au permis,
-              <br className="hidden sm:block" /> avec Mimmo, votre copilote IA.
+              De la parcelle au permis : foncier, PLU, risques, marché, bilan et maquette 3D,
+              <br className="hidden sm:block" /> réunis par Mimmo, votre copilote IA. Chaque donnée est sourcée.
             </p>
 
             <ul className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">

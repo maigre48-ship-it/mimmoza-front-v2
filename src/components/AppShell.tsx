@@ -1185,10 +1185,11 @@ export function AppShell(props: AppShellProps) {
 
   // Pages qui gerent elles-memes leur header/footer (landing dediee)
   const isBarePage =
-    location.pathname === "/" || location.pathname.startsWith("/connexion");
+    location.pathname === "/" || location.pathname === "/decouvrir" || location.pathname.startsWith("/connexion");
 
   const isPublicPage =
     location.pathname === "/" ||
+    location.pathname === "/decouvrir" ||
     location.pathname.startsWith("/cgv") ||
     location.pathname.startsWith("/cgu") ||
     location.pathname.startsWith("/politique-confidentialite") ||

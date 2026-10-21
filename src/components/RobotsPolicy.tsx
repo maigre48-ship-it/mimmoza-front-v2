@@ -39,6 +39,7 @@ import { useLocation } from "react-router-dom";
  */
 const ROUTES_INDEXABLES = new Set<string>([
   "/",
+  "/decouvrir",
   "/login",
   "/connexion",
   "/inscription",
