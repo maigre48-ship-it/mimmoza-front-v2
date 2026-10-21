@@ -421,3 +421,103 @@ export function titreDepuisQuestion(question?: string | null): string | null {
       : mot.replace(/^(d['’]|l['’])?(\p{L})/u, (_x, pre = '', l: string) => (pre ?? '') + l.toLocaleUpperCase('fr-FR')),
   ).join('');
 }
+
+// ── Version tabulaire (exports Word, Excel, PowerPoint) ─────────────────────
+export interface BlocTabulaire {
+  titre: string;
+  colonnes: string[];
+  lignes: string[][];
+  /** Notes numérotées appelées dans la colonne Valeur (« ¹ »). */
+  notes: string[];
+  /** Paragraphes libres, déjà en texte brut. */
+  texte: string[];
+  /** Tableaux Markdown présents dans la section (ex. illustration fiscale). */
+  tableaux: { colonnes: string[]; lignes: string[][] }[];
+}
+export interface EtudeTabulaire {
+  chiffresCles: ChiffreCle[];
+  blocs: BlocTabulaire[];
+  sources: string[];
+}
+
+const EXPOSANTS = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'];
+const exposant = (n: number) => String(n).split('').map((c) => EXPOSANTS[Number(c)]).join('');
+const sansMarkdown = (s: string) => s.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1');
+
+function resteEnTexte(lignes: string[]): { texte: string[]; tableaux: BlocTabulaire['tableaux'] } {
+  const texte: string[] = [];
+  const tableaux: BlocTabulaire['tableaux'] = [];
+  const propres = lignes.map((l) => nettoyerIdentifiant(l)).filter((l) => l.trim() && !/^\s*À faire valider par un professionnel\.?\s*$/i.test(l));
+  for (let i = 0; i < propres.length; i++) {
+    const l = propres[i].trim();
+    if (l.startsWith('|') && i + 1 < propres.length && /^\|?[\s:|-]+\|?$/.test(propres[i + 1].trim())) {
+      const cells = (x: string) => x.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => sansMarkdown(c.trim()));
+      const t = { colonnes: cells(l), lignes: [] as string[][] };
+      i += 2;
+      while (i < propres.length && propres[i].trim().startsWith('|')) { t.lignes.push(cells(propres[i])); i++; }
+      i--;
+      tableaux.push(t);
+      continue;
+    }
+    const puce = /^[-*]\s+(.*)$/.exec(l);
+    const contenu = puce ? puce[1].replace(/^([^:]{2,60} : )(.*)$/, (_m, a: string, b: string) => a + nettoyerAvertissement(b)) : l;
+    texte.push((puce ? '• ' : '') + sansMarkdown(contenu));
+  }
+  return { texte, tableaux };
+}
+
+/** Rapport factuel du moteur → blocs tabulaires lisibles par un client. */
+export function etudeEnTableaux(factuel: string): EtudeTabulaire {
+  const sections = lireSections(factuel);
+  const reg = new Registre();
+  const chiffresCles = structurerRapportFactuel(factuel, () => '').chiffresCles;
+  const blocs: BlocTabulaire[] = [];
+  for (const s of sections) {
+    const titre = /Verdict/i.test(s.titre) ? 'Verdict du moteur et limites' : s.titre.replace(/^\d+\.\s*/, '');
+    const { texte, tableaux } = resteEnTexte(s.reste);
+    const avecStatut = s.preuves.filter((p) => p.statut);
+    const sansStatut = s.preuves.filter((p) => !p.statut);
+    if (avecStatut.length) {
+      const notes: string[] = [];
+      const lignes = avecStatut.map((p) => {
+        const na = p.statut === 'unavailable' || /^non disponible$/i.test(p.valeur);
+        let n = 0;
+        if (p.avertissement) {
+          const propre = nettoyerAvertissement(p.avertissement);
+          if (propre) { n = notes.indexOf(propre) + 1 || (notes.push(propre), notes.length); }
+        }
+        const c = p.confiance;
+        const fiab = na ? 'Non disponible'
+          : `${c == null ? '' : c >= 70 ? 'Bonne' : c >= 45 ? 'Moyenne' : 'Faible'}${c != null ? ` (${c}/100)` : ''}${p.statut ? ` — ${STATUTS[p.statut] ?? p.statut}` : ''}`;
+        const src = p.source ? reg.numeroSource(nettoyerIdentifiant(p.source), p.dateSource) : 0;
+        return [
+          sansMarkdown(nettoyerIdentifiant(p.label)),
+          (na ? '—' : humaniserValeur(p.valeur, p.label)) + (n ? exposant(n) : ''),
+          p.portee ? (PORTEES[p.portee] ?? majuscule(p.portee)) : '—',
+          fiab,
+          src ? `[${src}]` : '',
+        ];
+      });
+      blocs.push({ titre, colonnes: ['Donnée', 'Valeur', 'Échelle', 'Fiabilité', 'Source'], lignes, notes: notes.map((t, i) => `${exposant(i + 1)} ${t}`), texte: [], tableaux: [] });
+    }
+    if (sansStatut.length) {
+      const lignes = sansStatut.map((p) => {
+        const k = /Verdict/i.test(s.titre)
+          ? majuscule(p.label.replace(LIBELLE_VERDICT, '').replace(/^Motif du moteur$/, 'Motif').trim())
+          : sansMarkdown(nettoyerIdentifiant(p.label));
+        return [k, humaniserValeur(p.valeur, p.label)];
+      });
+      blocs.push({ titre: avecStatut.length ? `${titre} — compléments` : titre, colonnes: ['Élément', 'Valeur'], lignes, notes: [], texte: [], tableaux: [] });
+    }
+    if (texte.length || tableaux.length) {
+      const dernier = blocs[blocs.length - 1];
+      if (dernier && dernier.titre.startsWith(titre)) { dernier.texte.push(...texte); dernier.tableaux.push(...tableaux); }
+      else blocs.push({ titre, colonnes: [], lignes: [], notes: [], texte, tableaux });
+    }
+  }
+  return {
+    chiffresCles,
+    blocs,
+    sources: reg.sources.map((s, i) => `[${i + 1}] ${s.libelle}${s.date ? ` — millésime ${s.date}` : ''}`),
+  };
+}

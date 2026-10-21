@@ -1,12 +1,17 @@
 import type { ChatMessage } from '../types/copilot.types';
 import { buildApiResult, record, number, safeSourceUrl } from '../results/apiResultModel.ts';
 import { decouperSegments } from '../charts/copilotChart.types.ts';
+import { decouperReponse, etudeEnTableaux, nettoyerSynthese, titreDepuisQuestion } from '../utils/rapportAnalyse.ts';
 
 export type ExportCell = string | number | boolean | null;
-export type ReportTable = { title: string; columns: string[]; rows: ExportCell[][] };
+export type ReportTable = { title: string; columns: string[]; rows: ExportCell[][];
+  /** Largeurs relatives imposées (sinon calculées d'après le contenu). */
+  widths?: number[] };
 export type ReportChart = { title: string; unit: string; type: 'bar' | 'line' | 'pie' | 'donut'; series: string[]; rows: { label: string; values: (number | null)[] }[]; source?: string };
 export type ReportBlock = { kind: 'heading'; text: string } | { kind: 'paragraph'; text: string } | { kind: 'table'; table: ReportTable } | { kind: 'chart'; chart: ReportChart };
-export type ReportSection = { title: string; status: string; source: string; scope: string; date: string; url: string | null; summary: string; tables: ReportTable[]; charts: ReportChart[]; notes: string[] };
+export type ReportSection = { title: string; status: string; source: string; scope: string; date: string; url: string | null; summary: string; tables: ReportTable[]; charts: ReportChart[]; notes: string[];
+  /** Section de l'annexe d'une étude de parcelle : rendu compact, sans métadonnées d'API. */
+  annexe?: boolean };
 export type ResponseReport = { title: string; question: string; responseDate: string; exportDate: string; narrative: ReportBlock[]; sections: ReportSection[]; notice: string };
 const str = (v: unknown) => typeof v === 'string' ? v : '';
 export const plainText = (value: string) => value.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1 ($2)').replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, '$1$2').replace(/`([^`]+)`/g, '$1').replace(/\*([^*\n]+)\*/g, '$1').replace(/\\\|/g, '|');
@@ -46,7 +51,22 @@ const STATES = { running: 'Recherche en cours', ready: 'Résultats disponibles',
 export function buildResponseReport(params: { response: ChatMessage; question?: string | null }, exportedAt = new Date().toISOString()): ResponseReport {
   const report: ResponseReport = { title: 'Analyse immobilière Mimmoza', question: params.question ?? '', responseDate: params.response.createdAt, exportDate: exportedAt,
     narrative: parseReportText(params.response.text), sections: [], notice: 'Cet export reprend la réponse et les résultats disponibles à sa date. Les données ne se mettent pas à jour automatiquement. Les valeurs absentes restent non renseignées. Les chiffres fournis par les API sont distingués du texte de l’IA.' };
+  // Étude de parcelle : synthèse rédigée en tête, rapport du moteur en annexe
+  // traduite (mêmes règles que le PDF), préambule de travail écarté.
+  const etude = decouperReponse(params.response.text);
+  const annexe: ReportSection[] = [];
+  if (etude) {
+    const tab = etudeEnTableaux(etude.factuel), adresse = titreDepuisQuestion(params.question);
+    report.title = adresse ? `Analyse foncière — ${adresse}` : 'Rapport d’analyse foncière';
+    report.notice = 'Rapport établi automatiquement à partir de sources publiques, à la date de la réponse. Il ne remplace ni un certificat d’urbanisme, ni l’avis d’un professionnel.';
+    report.narrative = parseReportText(nettoyerSynthese(etude.synthese));
+    if (tab.chiffresCles.length) report.narrative.unshift({ kind: 'table', table: { title: 'Chiffres clés', columns: ['Indicateur', 'Valeur'], rows: tab.chiffresCles.map((c) => [c.k, c.v]), widths: [40, 60] } });
+    for (const b of tab.blocs) annexe.push({ title: b.titre, status: '', source: '', scope: '', date: '', url: null, summary: b.texte.join('\n'), annexe: true, charts: [], notes: b.notes,
+      tables: [...(b.lignes.length ? [{ title: b.titre, columns: b.colonnes, rows: b.lignes, widths: b.colonnes.length === 5 ? [24, 36, 12, 20, 8] : [32, 68] }] : []), ...b.tableaux.map((t) => ({ title: 'Illustration', columns: t.colonnes, rows: t.lignes }))] });
+    if (tab.sources.length) annexe.push({ title: 'Sources', status: '', source: '', scope: '', date: '', url: null, summary: tab.sources.join('\n'), annexe: true, tables: [], charts: [], notes: [] });
+  }
   for (const call of params.response.toolCalls) {
+    if (etude && call.name === 'get_etude_parcelle') continue;
     const model = buildApiResult(call, { tableLimit: Number.MAX_SAFE_INTEGER });
     if (!model) continue;
     const tables: ReportTable[] = [];
@@ -89,6 +109,7 @@ export function buildResponseReport(params: { response: ChatMessage; question?: 
     report.sections.push({title:'Recherche sur Internet',status:sources.size?'Sources trouvées':'Aucune source exploitable',source:'Recherche web Anthropic',scope:'Pages consultées pour cette réponse',date:`Date du résultat : ${report.responseDate}`,url:null,summary:'',
       tables:sources.size?[{title:'Sources web',columns:['Titre','URL'],rows:[...sources].map(([url,title])=>[title,url])}]:[],charts:[],notes:webCalls.some(c=>c.status==='error')?['Vérification partielle : certaines consultations n’ont pas abouti. Une source trouvée ne confirme pas la lecture de tout son contenu.']:[]});
   }
+  report.sections.unshift(...annexe);
   return report;
 }
 

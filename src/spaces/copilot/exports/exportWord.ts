@@ -9,13 +9,13 @@ const paragraph = (text: string, small = false) => new Paragraph({ children:[new
 const linkParagraph = (url: string) => new Paragraph({ children: [new ExternalHyperlink({link:url,children:[new TextRun({text:url,style:'Hyperlink'})]})],spacing:{after:120} });
 
 function wordTable(table: ReportTable): Table {
-  const weights=table.columns.map((col,i)=>Math.max(10,Math.min(45,Math.max(col.length,...table.rows.map(row=>cellText(row[i]??null).length)))));
+  const weights=table.widths?.length===table.columns.length?table.widths:table.columns.map((col,i)=>Math.max(10,Math.min(45,Math.max(col.length,...table.rows.map(row=>cellText(row[i]??null).length)))));
   const widths=weights.map(w=>Math.round(WIDTH*w/weights.reduce((a,b)=>a+b,0)));
   const border={style:BorderStyle.SINGLE,size:4,color:'D9D9D9'};
   const rows=[table.columns,...table.rows.map(row=>table.columns.map((_,i)=>cellText(row[i]??null)))];
   return new Table({width:{size:WIDTH,type:WidthType.DXA},columnWidths:widths,layout:TableLayoutType.FIXED,borders:{top:border,bottom:border,left:border,right:border,insideHorizontal:border,insideVertical:border},
     rows:rows.map((row,r)=>new TableRow({tableHeader:r===0,children:row.map((text,c)=>new TableCell({width:{size:widths[c],type:WidthType.DXA},margins:{top:70,bottom:70,left:120,right:120},shading:{fill:r===0?'233451':r%2?'FFFFFF':'F5F7FA'},
-      children:[new Paragraph({alignment:/^[\d\s.,%€+−-]+$/.test(text)?AlignmentType.RIGHT:AlignmentType.LEFT,keepNext:rows.length<=6&&r<rows.length-1,spacing:{after:0,line:260},children:[safeSourceUrl(text)?new ExternalHyperlink({link:safeSourceUrl(text)!,children:[new TextRun({text,size:19,style:'Hyperlink'})]}):new TextRun({text,bold:r===0,color:r===0?'FFFFFF':'172238',size:19})]})]}))}))});
+      children:[new Paragraph({alignment:!table.widths&&/^[\d\s.,%€+−-]+$/.test(text)?AlignmentType.RIGHT:AlignmentType.LEFT,keepNext:rows.length<=6&&r<rows.length-1,spacing:{after:0,line:260},children:[safeSourceUrl(text)?new ExternalHyperlink({link:safeSourceUrl(text)!,children:[new TextRun({text,size:19,style:'Hyperlink'})]}):new TextRun({text,bold:r===0,color:r===0?'FFFFFF':'172238',size:19})]})]}))}))});
 }
 
 export function buildWordReport(report: ResponseReport, images: ChartImage[] = []): Document {
@@ -26,14 +26,23 @@ export function buildWordReport(report: ResponseReport, images: ChartImage[] = [
     for(const image of images.filter(i=>i.id===id))children.push(new Paragraph({children:[new ImageRun({type:'png',data:image.data,transformation:{width:600,height:Math.round(600*image.height/image.width)}})],spacing:{after:160}}));
     children.push(wordTable(chartTable(chart)),paragraph(`Source : ${chart.source??'Source non précisée'}`,true));
   };
-  if(report.narrative.length)children.push(heading('Réponse de Mimmoza',HeadingLevel.HEADING_1));
+  if(report.narrative.length)children.push(heading(report.sections.some(s=>s.annexe)?'Synthèse':'Réponse de Mimmoza',HeadingLevel.HEADING_1));
   report.narrative.forEach((block,i)=>{
     if(block.kind==='heading')children.push(heading(block.text));
     else if(block.kind==='paragraph')children.push(paragraph(block.text));
     else if(block.kind==='table')children.push(wordTable(block.table));
     else appendChart(`n-${i}`,block.chart);
   });
+  let annexeOuverte=false;
   report.sections.forEach((section,s)=>{
+    if(section.annexe){
+      if(!annexeOuverte){annexeOuverte=true;children.push(new Paragraph({text:'Annexe — Données détaillées et sources',heading:HeadingLevel.HEADING_1,pageBreakBefore:true,keepNext:true,spacing:{after:160}}));}
+      children.push(heading(section.title));
+      section.tables.forEach(table=>{if(table.title!==section.title)children.push(paragraph(table.title,true));children.push(wordTable(table));});
+      section.notes.forEach(note=>children.push(paragraph(note,true)));
+      section.summary.split('\n').filter(Boolean).forEach(line=>children.push(paragraph(line,true)));
+      return;
+    }
     children.push(new Paragraph({text:section.title,heading:HeadingLevel.HEADING_1,pageBreakBefore:true,keepNext:true,spacing:{after:160}}),paragraph(section.status,true),paragraph(`Source : ${section.source}`,true),paragraph(`Périmètre : ${section.scope}`,true),paragraph(section.date,true));
     if(section.url)children.push(linkParagraph(section.url));
     if(section.summary)children.push(paragraph(section.summary));

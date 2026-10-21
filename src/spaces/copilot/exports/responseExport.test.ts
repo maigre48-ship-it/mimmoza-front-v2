@@ -65,3 +65,19 @@ test('PPTX valide : graphiques natifs et pagination conservant le dernier compar
   const content=(await Promise.all(slides.map(n=>zip.file(n)!.async('string')))).join(' ');
   assert.match(content,/Comparable fictif 12/);assert.match(content,/Données partielles/);assert.match(content,/Non renseigné/);assert.ok(slides.length>5);
 });
+
+test('étude de parcelle : Word, Excel et PowerPoint reprennent le rapport traduit, sans valeur brute du moteur',async()=>{
+  const {REPONSE_ETUDE,QUESTION_ETUDE}=await import('../utils/__fixtures__/etudeParcelle.fixture.ts');
+  const r=buildResponseReport({response:{id:'e',role:'assistant',status:'complete',createdAt:'2026-10-21T14:03:00Z',text:REPONSE_ETUDE,toolCalls:[]},question:QUESTION_ETUDE},'2026-10-21T14:05:00Z');
+  assert.equal(r.title,'Analyse foncière — 32 Chemin de Behereko Errota, Ascain');
+  assert.equal(r.narrative[0].kind,'table');
+  assert.ok(r.sections.every(s=>s.annexe));
+  const brut=/cadastral_parcel|confirmed|estimated|municipality|nearby|count : 1|Je commence par|Ne pas écrire|no_data|poursuivre_sous_conditions|Plan_de_prevention/;
+  const docx=await (await JSZip.loadAsync(await Packer.toBuffer(buildWordReport(r)))).file('word/document.xml')!.async('string');
+  assert.doesNotMatch(docx,brut);assert.match(docx,/Annexe — Données détaillées et sources/);assert.match(docx,/Poursuivre sous conditions/);
+  const pptx=await JSZip.loadAsync(await buildPowerPointReport(r).write({outputType:'arraybuffer'}) as ArrayBuffer);
+  const slides=(await Promise.all(Object.keys(pptx.files).filter(n=>/^ppt\/slides\/slide\d+\.xml$/.test(n)).map(n=>pptx.file(n)!.async('string')))).join(' ');
+  assert.doesNotMatch(slides,brut);assert.match(slides,/Rapport d’analyse foncière/);
+  const wb=buildExcelReport(r);assert.ok(wb.getWorksheet('Données détaillées'));
+  let texte='';wb.eachSheet(ws=>ws.eachRow(row=>row.eachCell(c=>{texte+=` ${String(c.value)}`;})));assert.doesNotMatch(texte,brut);
+});

@@ -1,5 +1,5 @@
 import pptxgen from 'pptxgenjs';
-import { paginateSlideText, cellText, chartTable, type ResponseReport, type ReportChart, type ReportTable } from './responseExportModel.ts';
+import { paginateSlideText, cellText, chartTable, type ResponseReport, type ReportChart, type ReportTable, type ExportCell } from './responseExportModel.ts';
 import { safeSourceUrl } from '../results/apiResultModel.ts';
 
 export function buildPowerPointReport(report:ResponseReport):pptxgen{
@@ -43,8 +43,58 @@ export function buildPowerPointReport(report:ResponseReport):pptxgen{
         {x:.7,y:1.45,w:11.9,h:4.75,catAxisLabelFontSize:13,valAxisLabelFontSize:12,showLegend:chart.series.length>1,legendPos:'b',legendFontSize:14,dataLabelFormatCode:'#,##0.##',dataLabelPosition:'outEnd',dataLabelColor:'172238',chartColors:rows.every(r=>energyColors[r.label])?rows.map(r=>energyColors[r.label]):['5B55BA','237B87','B07723'],barDir:'bar',valAxisTitle:chart.unit,showValAxisTitle:!!chart.unit,showValue:false,showTitle:false});
     }
   };
+  const etude=report.sections.some(s=>s.annexe);
+  // Tableau d'annexe compact : petite police, largeurs fixes, pagination par hauteur estimée.
+  const annexTableSlides=(title:string,table:ReportTable,notes:string[])=>{
+    const total=table.widths?.reduce((a,b)=>a+b,0)??table.columns.length,colW=table.columns.map((_,i)=>12.02*(table.widths?.[i]??1)/total);
+    const hauteur=(row:ExportCell[])=>Math.max(...row.map((v,i)=>Math.ceil(cellText(v??null).length/Math.max(8,colW[i]*13))))*.19+.14;
+    const pages:ExportCell[][][]=[];let cur:ExportCell[][]=[],h=0;
+    for(const row of table.rows){const rh=hauteur(row);if(cur.length&&h+rh>(notes.length?3.7:4.6)){pages.push(cur);cur=[];h=0;}cur.push(row);h+=rh;}
+    if(cur.length)pages.push(cur);
+    pages.forEach((rows,p)=>{
+      const s=slide(`${title}${pages.length>1?` (${p+1}/${pages.length})`:''}`,'voir la diapositive Sources','',notes.join('\n'));
+      s.addTable([table.columns.map(text=>({text,options:{bold:true,color:'FFFFFF',fill:{color:'233451'}}})),...rows.map(r=>table.columns.map((_,i)=>({text:cellText(r[i]??null)})))],
+        {x:.65,y:1.3,w:12.02,colW,fontFace:'Aptos',fontSize:11,color:'172238',border:{type:'solid',color:'D9D9D9',pt:.5},margin:4,fill:{color:'F7F9FC'},valign:'top',autoPage:false});
+      if(p===pages.length-1&&notes.length)s.addText(notes.join('\n'),{x:.65,y:5.3,w:12.02,h:1.1,fontSize:9,color:'59647A',valign:'bottom',fit:'shrink'});
+    });
+  };
+  if(etude){
+    const cover=slide(report.title,'Mimmoza','',report.notice);
+    cover.addText('Rapport d’analyse foncière',{x:.7,y:1.85,w:11.8,h:.7,fontSize:30,color:'5B55BA'});
+    cover.addText(`Établi le ${new Date(report.exportDate).toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'})}${report.question?`\n\nDemande : ${report.question}`:''}`,{x:.7,y:2.9,w:11.8,h:1.8,fontSize:16,color:'59647A',valign:'top',fit:'shrink'});
+    cover.addText(report.notice,{x:.7,y:5.2,w:11.8,h:.8,fontSize:11,color:'94A3B8',valign:'bottom'});
+    let narrativeTitle='Synthèse',paragraphs:string[]=[];
+    const flush=()=>{if(paragraphs.length)textSlides(narrativeTitle,paragraphs.join('\n\n'));paragraphs=[];};
+    for(const block of report.narrative){
+      if(block.kind==='table'&&block.table.title==='Chiffres clés'){
+        const s=slide('Chiffres clés','Mimmoza');
+        block.table.rows.slice(0,8).forEach((r,i)=>{const x=.65+(i%4)*3.03,y=1.45+Math.floor(i/4)*2.2;
+          s.addShape(deck.ShapeType.roundRect,{x,y,w:2.85,h:1.95,fill:{color:'F7F6FE'},line:{color:'E5E7F0',width:1},rectRadius:.08});
+          s.addText(String(r[0]).toUpperCase(),{x:x+.2,y:y+.2,w:2.45,h:.4,fontSize:11,bold:true,color:'64748B'});
+          s.addText(cellText(r[1]??null),{x:x+.2,y:y+.65,w:2.45,h:1.1,fontSize:20,bold:true,color:'172238',valign:'top',fit:'shrink'});});
+        continue;
+      }
+      if(block.kind==='heading'){flush();narrativeTitle=block.text;}else if(block.kind==='paragraph')paragraphs.push(block.text);else{flush();if(block.kind==='table')tableSlides(narrativeTitle,block.table);else chartSlides(block.chart,block.chart.source);}
+    }flush();
+    const intro=slide('Annexe — Données détaillées et sources','Mimmoza');
+    intro.addText('Données collectées automatiquement auprès des sources publiques citées. L’échelle indique à quoi la donnée s’applique (parcelle, abords, commune) ; la fiabilité reflète la qualité de la source et la précision de la correspondance avec le bien.',{x:.7,y:1.6,w:11.8,h:2,fontSize:18,color:'26354C',valign:'top'});
+    for(const section of report.sections){
+      if(!section.annexe)continue;
+      const texte=section.summary.split('\n').filter(Boolean);
+      if(section.title==='Sources'){textSlides('Sources',texte.join('\n'));continue;}
+      section.tables.forEach((t,i)=>annexTableSlides(t.title===section.title?section.title:`${section.title} — ${t.title}`,t,i===section.tables.length-1&&!texte.length?section.notes:[]));
+      const reste=[...(texte.length?section.notes:[]),...texte];
+      if(reste.length)textSlides(`${section.title} — compléments`,reste.join('\n'));
+    }
+    for(const section of report.sections.filter(s=>!s.annexe)){
+      textSlides(section.title,[section.status,section.date,section.summary,...section.notes].filter(Boolean).join('\n\n'),section.source,section.scope);
+      for(const table of section.tables)tableSlides(`${section.title} — ${table.title}`,table,section.source,section.scope);
+      section.charts.forEach(chart=>chartSlides(chart,section.source,section.scope));
+    }
+    return deck;
+  }
   const cover=slide(report.title,'Mimmoza','',report.notice);
-  cover.addText('Réponse et résultats des API',{x:.7,y:1.85,w:11.8,h:.7,fontSize:30,color:'5B55BA'});
+  cover.addText(report.sections.some(s=>s.annexe)?'Rapport d’analyse foncière':'Réponse et résultats des API',{x:.7,y:1.85,w:11.8,h:.7,fontSize:30,color:'5B55BA'});
   cover.addText(`Réponse du ${new Date(report.responseDate).toLocaleString('fr-FR')}\nExport du ${new Date(report.exportDate).toLocaleString('fr-FR')}`,{x:.7,y:3,w:11.8,h:1,fontSize:20,color:'59647A'});
   if(report.question)textSlides('Question de départ',report.question);
   textSlides('Périmètre de l’export',report.notice);
@@ -52,6 +102,12 @@ export function buildPowerPointReport(report:ResponseReport):pptxgen{
   const flushNarrative=()=>{if(paragraphs.length)textSlides(narrativeTitle,paragraphs.join('\n\n'));paragraphs=[];};
   for(const block of report.narrative){if(block.kind==='heading'){flushNarrative();narrativeTitle=block.text;}else if(block.kind==='paragraph')paragraphs.push(block.text);else{flushNarrative();if(block.kind==='table')tableSlides(narrativeTitle,block.table);else chartSlides(block.chart,block.chart.source);}}flushNarrative();
   for(const section of report.sections){
+    if(section.annexe){
+      for(const table of section.tables)tableSlides(table.title===section.title?section.title:`${section.title} — ${table.title}`,table,'voir la diapositive Sources');
+      const texte=[...section.notes,...section.summary.split('\n').filter(Boolean)].join('\n');
+      if(texte)textSlides(section.title==='Sources'?'Sources':`${section.title} — notes`,texte);
+      continue;
+    }
     textSlides(section.title,[section.status,section.date,section.summary,...section.notes].filter(Boolean).join('\n\n'),section.source,section.scope);
     for(const table of section.tables)tableSlides(`${section.title} — ${table.title}`,table,section.source,section.scope);
     section.charts.forEach(chart=>chartSlides(chart,section.source,section.scope));

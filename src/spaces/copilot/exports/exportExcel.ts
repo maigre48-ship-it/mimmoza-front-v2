@@ -28,7 +28,7 @@ export function buildExcelReport(report: ResponseReport, images: ChartImage[] = 
     }
   };
   const table = (ws:ExcelJS.Worksheet,t:ReportTable) => {
-    line(ws,t.title,true);
+    if(t.title)line(ws,t.title,true);
     const head=ws.addRow(t.columns);head.height=34;head.eachCell(c=>{c.font={name:'Aptos',size:11,bold:true,color:{argb:'FFFFFFFF'}};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF233451'}};c.alignment={wrapText:true,vertical:'middle'};});
     for(const values of t.rows){const row=ws.addRow(values.map(v=>v??null));
       values.forEach((v,c)=>{const cell=row.getCell(c+1);writeCell(cell,v);cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:row.number%2?'FFFFFFFF':'FFF5F7FA'}};cell.border={bottom:{style:'hair',color:{argb:'FFD9D9D9'}}};});
@@ -43,9 +43,18 @@ export function buildExcelReport(report: ResponseReport, images: ChartImage[] = 
   const summary=sheet('Synthèse',maxNarrative);
   line(summary,report.title,true);line(summary,`Réponse : ${report.responseDate} — Export : ${report.exportDate}`);line(summary,report.notice);line(summary,'Les cellules numériques sont modifiables. Les cellules vides signalent une donnée non renseignée ; ce classeur conserve les résultats exportés, sans recalculer les hypothèses.');
   if(report.question){line(summary,'Question de départ',true);line(summary,report.question);}
-  line(summary,'Réponse de Mimmoza',true);
+  line(summary,report.sections.some(s=>s.annexe)?'Synthèse':'Réponse de Mimmoza',true);
   report.narrative.forEach((b,i)=>{if(b.kind==='paragraph'||b.kind==='heading')line(summary,b.text,b.kind==='heading');else if(b.kind==='table')table(summary,b.table);else{table(summary,chartTable(b.chart));if(b.chart.source)line(summary,`Source : ${b.chart.source}`);addImages(summary,`n-${i}`);}});
+  let annexeWs:ExcelJS.Worksheet|null=null;
   for(const [s,section]of report.sections.entries()){
+    if(section.annexe){
+      if(!annexeWs){annexeWs=sheet('Données détaillées',5);line(annexeWs,'Annexe — Données détaillées et sources',true);}
+      line(annexeWs,section.title,true);
+      section.tables.forEach(t=>table(annexeWs!,t.title===section.title?{...t,title:''}:t));
+      section.notes.forEach(n=>line(annexeWs!,n));
+      section.summary.split('\n').filter(Boolean).forEach(l=>line(annexeWs!,l));
+      continue;
+    }
     const ws=sheet(section.title,Math.max(4,...section.tables.map(t=>t.columns.length),...section.charts.map(c=>c.series.length+1)));
     line(ws,section.title,true);line(ws,section.status);line(ws,`Source : ${section.source}`);line(ws,`Périmètre : ${section.scope}`);line(ws,section.date);if(section.url)line(ws,section.url);if(section.summary)line(ws,section.summary);
     section.tables.forEach(t=>table(ws,t));section.charts.forEach((c,i)=>{table(ws,chartTable(c));addImages(ws,`s-${s}-${i}`);});

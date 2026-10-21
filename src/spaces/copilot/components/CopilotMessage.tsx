@@ -11,6 +11,7 @@ import { Download } from 'lucide-react';
 import { lazy, Suspense, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { exportCopilotResponseToPdf, markdownToSafeHtml } from '../utils/exportCopilotPdf';
+import { structurerRapportFactuel } from '../utils/rapportAnalyse';
 import { decouperSegments } from '../charts/copilotChart.types';
 import { buildParcelDossier } from '../dossier/parcelDossier';
 import './CopilotMessage.css';
@@ -168,7 +169,7 @@ function CopilotMessageContent({ message, question, conversationId, onSend }: Me
       )}
       {factualReport && <details className="copilot-message-source-report">
         <summary>Ouvrir le rapport factuel complet et les sources</summary>
-        <div className="copilot-message-markdown" dangerouslySetInnerHTML={{ __html: markdownToSafeHtml(factualReport) }} />
+        <div className="copilot-message-markdown copilot-rapport" dangerouslySetInnerHTML={{ __html: structurerRapportFactuel(factualReport, markdownToSafeHtml).annexeHtml }} />
       </details>}
       {message.status === 'complete' && (message.text.trim() || message.toolCalls.length > 0) && (
         <div className="copilot-message-actions" aria-busy={exporting !== null} aria-label="Exporter cette réponse">
