@@ -29,6 +29,7 @@ import JetonsPage from "./pages/JetonsPage";
 import TarifsPage from "./pages/TarifsPage";
 import BientotDisponiblePage from "./pages/BientotDisponiblePage";
 import NotFoundPage from "./pages/NotFoundPage";
+import VitrinePage from "./pages/vitrine/VitrinePage";
 import { ESPACES_VISIBLES } from "./lib/espacesEnPreparation";
 
 /* ── Pages légales ───────────────────────────────────────────── */
@@ -336,9 +337,10 @@ function AppRoot() {
       <AppShell currentSpace={currentSpace} onChangeSpace={handleChangeSpace}>
         <Routes>
           {/* ═══════════════════════════════════════════════════════════════
-              PUBLIC — "/" est désormais la page de connexion / espace compte
+              PUBLIC — "/" = page d'accueil vitrine pour un visiteur ;
+              un utilisateur déjà connecté est renvoyé vers /accueil.
           ════════════════════════════════════════════════════════════════ */}
-          <Route path="/" element={<ConnexionPage />} />
+          <Route path="/" element={<VitrinePage />} />
 
           {/* ── Alias publics de connexion (conservés pour compatibilité) ── */}
           <Route path="/login"     element={<ConnexionPage />} />

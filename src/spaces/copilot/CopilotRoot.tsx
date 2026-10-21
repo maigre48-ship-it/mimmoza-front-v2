@@ -25,7 +25,7 @@ const HIDDEN_PREFIXES = [
 
 // Routes cachees en correspondance EXACTE (evite qu'un prefixe '/' cache tout).
 const HIDDEN_EXACT = [
-  '/',   // page de connexion montee sur la racine (retire si ce n'est pas le cas)
+  '/',   // page d'accueil vitrine (visiteurs non connectes)
 ];
 
 function isHidden(pathname: string): boolean {
