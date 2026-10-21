@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildTertiaryBrief,calculateTertiaryRental,emptyRentalInputs,TERTIARY_PROGRAMMES } from './tertiaryStrategy';
-import { programmeKind, targetProposal } from './projectProgramme';
-import { programmeBrief } from '../../copilot/dossier/parcelStrategy';
+import { buildTertiaryBrief,calculateTertiaryRental,emptyRentalInputs,TERTIARY_PROGRAMMES } from './tertiaryStrategy.ts';
+import { programmeKind, targetProposal } from './projectProgramme.ts';
+import { programmeBrief } from '../../copilot/dossier/parcelStrategy.ts';
 const inputs={surfaceM2:'1000',rentAnnualM2:'150',vacancyPct:'10',annualOwnerCosts:'15000',totalInvestment:'2000000',exitYieldPct:'6'};
 test('économie tertiaire en loyers annuels : revenu net, rendement et capitalisation',()=>{
   const r=calculateTertiaryRental(inputs)!;assert.equal(r.gross,150000);assert.equal(r.effective,135000);assert.equal(r.net,120000);assert.equal(r.netYieldPct,6);assert.equal(r.valuation,2000000);assert.deepEqual(r.sensitivities.map(s=>s.net),[106500,105000]);

@@ -1,6 +1,6 @@
 import { Document, Paragraph, TextRun, Table, TableRow, TableCell, HeadingLevel, WidthType, TableLayoutType, BorderStyle, AlignmentType, ExternalHyperlink, ImageRun, Footer, PageNumber, Packer } from 'docx';
-import { cellText, chartTable, type ResponseReport, type ReportTable, type ReportBlock } from './responseExportModel';
-import { safeSourceUrl } from '../results/apiResultModel';
+import { cellText, chartTable, type ResponseReport, type ReportTable, type ReportBlock } from './responseExportModel.ts';
+import { safeSourceUrl } from '../results/apiResultModel.ts';
 import type { ChartImage } from './reportCharts';
 
 const WIDTH = 9360;

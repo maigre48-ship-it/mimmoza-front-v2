@@ -1,5 +1,5 @@
 import type { ActiveToolCall } from '../types/copilot.types';
-import { record, number } from '../results/apiResultModel';
+import { record, number } from '../results/apiResultModel.ts';
 export type MapAnchor = { lat: number; lon: number; label: string; precision: string };
 export const WMS_URL = 'https://georisques.gouv.fr/services';
 export function legendUrl(layer: string) { return `${WMS_URL}?${new URLSearchParams({ service:'WMS', version:'1.3.0', request:'GetLegendGraphic', sld_version:'1.1.0', layer, format:'image/png', style:['CAVITE_LOCALISEE','MVT_LOCALISE'].includes(layer) ? 'inspire_common:DEFAULT' : 'default' })}`; }

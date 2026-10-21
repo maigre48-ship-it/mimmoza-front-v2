@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mapAnchors, noiseProperties, searchPolygon, validGeometry } from './thematicMapModel';
+import { mapAnchors, noiseProperties, searchPolygon, validGeometry } from './thematicMapModel.ts';
 import type { ActiveToolCall } from '../types/copilot.types';
 const call = (data: unknown, status = 'success', input?: unknown): ActiveToolCall => ({ id:'x', name:'get_etude_parcelle', status, output:{ status:'ok', data }, input });
 test('les coordonnées proposées par IA et les erreurs ne centrent pas la carte', () => {

@@ -9,7 +9,7 @@
 //      sinon les marqueurs Markdown s'affichent bruts dans le PDF.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { graphiquesEnTableaux } from '../charts/copilotChart.types';
+import { graphiquesEnTableaux } from '../charts/copilotChart.types.ts';
 
 const LOGO_URL = '/Logo/Logo_mimmoza_base_line_redecoupe.png';
 

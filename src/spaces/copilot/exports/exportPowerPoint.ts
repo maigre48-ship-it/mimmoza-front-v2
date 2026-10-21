@@ -1,6 +1,6 @@
 import pptxgen from 'pptxgenjs';
-import { paginateSlideText, cellText, chartTable, type ResponseReport, type ReportChart, type ReportTable } from './responseExportModel';
-import { safeSourceUrl } from '../results/apiResultModel';
+import { paginateSlideText, cellText, chartTable, type ResponseReport, type ReportChart, type ReportTable } from './responseExportModel.ts';
+import { safeSourceUrl } from '../results/apiResultModel.ts';
 
 export function buildPowerPointReport(report:ResponseReport):pptxgen{
   const deck=new pptxgen();deck.layout='LAYOUT_WIDE';deck.author='Mimmoza';deck.subject='Analyse immobilière';deck.title=report.title;deck.company='Mimmoza';deck.theme={headFontFace:'Aptos Display',bodyFontFace:'Aptos'};

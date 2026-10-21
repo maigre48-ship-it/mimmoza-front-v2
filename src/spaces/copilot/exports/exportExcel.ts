@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
-import { cellText, chartTable, splitReportText, type ResponseReport, type ReportTable, type ExportCell } from './responseExportModel';
-import { safeSourceUrl } from '../results/apiResultModel';
+import { cellText, chartTable, splitReportText, type ResponseReport, type ReportTable, type ExportCell } from './responseExportModel.ts';
+import { safeSourceUrl } from '../results/apiResultModel.ts';
 import type { ChartImage } from './reportCharts';
 
 export function buildExcelReport(report: ResponseReport, images: ChartImage[] = []): ExcelJS.Workbook {

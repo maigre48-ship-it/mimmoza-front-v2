@@ -1,5 +1,5 @@
 import type { ChatMessage } from '../types/copilot.types';
-import { calculateChatBilan } from '../../../../supabase/functions/_shared/finance/chatBilan';
+import { calculateChatBilan } from '../../../../supabase/functions/_shared/finance/chatBilan.ts';
 
 export function exportTestResponse():ChatMessage{
   const bilan=calculateChatBilan({titre:'Opération fictive pour validation',base_montants:'HT',recettes_eur:2000000,surface_vendable_m2:500,foncier_eur:400000,frais_acquisition_eur:30000,travaux_eur:900000,honoraires_eur:200000,assurances_eur:20000,taxes_eur:50000,commercialisation_eur:40000,financement_eur:60000,aleas_eur:50000,autres_couts_eur:0,fonds_propres_eur:300000,marge_cible_pct:20});

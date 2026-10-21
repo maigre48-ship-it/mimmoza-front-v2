@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { tertiaryReview } from './tertiaryReview';
+import { tertiaryReview } from './tertiaryReview.ts';
 import type { ActiveToolCall } from '../types/copilot.types';
 const call = (name: string, data: unknown): ActiveToolCall => ({id:name, name, input:{}, status:'success', output:{status:'ok',data}});
 test('la comparaison sans PLU reste non validée même après une recherche web', () => {

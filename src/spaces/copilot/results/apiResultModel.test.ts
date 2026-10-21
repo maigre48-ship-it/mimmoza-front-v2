@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildApiResult, formatApiValue, safeSourceUrl } from './apiResultModel';
+import { buildApiResult, formatApiValue, safeSourceUrl } from './apiResultModel.ts';
 import type { ActiveToolCall } from '../types/copilot.types';
 const result = (name: string, data: unknown, status = 'ok', callStatus = 'success') => buildApiResult({ id: 'test', name, status: callStatus, output: { status, source: 'Source de test', data } })!;
 

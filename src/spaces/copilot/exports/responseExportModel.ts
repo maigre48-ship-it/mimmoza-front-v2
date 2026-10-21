@@ -1,6 +1,6 @@
 import type { ChatMessage } from '../types/copilot.types';
-import { buildApiResult, record, number, safeSourceUrl } from '../results/apiResultModel';
-import { decouperSegments } from '../charts/copilotChart.types';
+import { buildApiResult, record, number, safeSourceUrl } from '../results/apiResultModel.ts';
+import { decouperSegments } from '../charts/copilotChart.types.ts';
 
 export type ExportCell = string | number | boolean | null;
 export type ReportTable = { title: string; columns: string[]; rows: ExportCell[][] };

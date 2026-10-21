@@ -1,5 +1,5 @@
 import type { ActiveToolCall } from '../types/copilot.types';
-import { record } from './apiResultModel';
+import { record } from './apiResultModel.ts';
 
 /** Evidence checks independent of the generated recommendation. */
 export function tertiaryReview(question: string | null | undefined, calls: ActiveToolCall[]): string[] {

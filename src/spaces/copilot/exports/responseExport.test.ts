@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import JSZip from 'jszip';
 import {Packer} from 'docx';
-import {buildResponseReport,parseReportText,splitReportText,paginateSlideText} from './responseExportModel';
-import {buildExcelReport} from './exportExcel';
-import {buildWordReport} from './exportWord';
-import {buildPowerPointReport} from './exportPowerPoint';
-import {exportTestResponse} from './responseExport.fixture';
+import {buildResponseReport,parseReportText,splitReportText,paginateSlideText} from './responseExportModel.ts';
+import {buildExcelReport} from './exportExcel.ts';
+import {buildWordReport} from './exportWord.ts';
+import {buildPowerPointReport} from './exportPowerPoint.ts';
+import {exportTestResponse} from './responseExport.fixture.ts';
 const report=()=>buildResponseReport({response:exportTestResponse(),question:'Analyse cette opération fictive.'},'2026-10-05T10:30:00Z');
 
 test('export complet des lignes API, types numériques et valeurs manquantes sans zéro ajouté',()=>{
