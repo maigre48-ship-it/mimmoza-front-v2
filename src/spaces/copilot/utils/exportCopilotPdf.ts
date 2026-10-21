@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { graphiquesEnTableaux } from '../charts/copilotChart.types.ts';
+import { decouperReponse, nettoyerSynthese, structurerRapportFactuel, titreDepuisQuestion } from './rapportAnalyse.ts';
 
 const LOGO_URL = '/Logo/Logo_mimmoza_base_line_redecoupe.png';
 
@@ -325,31 +326,119 @@ interface ResponsePdfParams {
   contextLabel?: string | null;
 }
 
+/** Feuille de style du rapport imprimé (A4, marges répétées à chaque page). */
+const RAPPORT_CSS = `
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#fff}
+body{font-family:'Segoe UI',Inter,Arial,sans-serif;color:#1e293b;line-height:1.5;font-size:10.5pt;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+@page{size:A4;margin:0}
+table.page{width:100%;border-collapse:collapse}
+table.page>thead>tr>td,table.page>tfoot>tr>td,table.page>tbody>tr>td{padding:0 16mm}
+.page-top{height:12mm}
+.page-bottom{height:14mm;width:178mm;max-width:100%;margin:0 auto;display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid #e2e8f0;font-size:7.5pt;color:#94a3b8}
+.page-bottom span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+main{max-width:178mm;margin:0 auto}
+h1,h2,h3,h4{break-after:avoid;page-break-after:avoid;color:#0f172a}
+table.data,blockquote,li,dl.kv>div,.tile{break-inside:avoid;page-break-inside:avoid}
+a{color:#1e293b;text-decoration:none}
+strong{color:#0f172a}
+.entete{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;padding-bottom:10px;border-bottom:3px solid #5b4bd6}
+.entete .meta{text-align:right;font-size:8.5pt;color:#64748b}
+.entete .meta .type{font-size:8pt;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#5b4bd6;margin-bottom:3px}
+.titre{margin:20px 0 4px;font-size:21pt;line-height:1.2;font-weight:700;letter-spacing:-.01em}
+.sous-titre{font-size:10pt;color:#64748b;margin:0 0 14px}
+.demande{margin:0 0 16px;padding:9px 13px;border-left:3px solid #a99ff0;background:#f7f6fe;font-size:9.5pt;color:#334155}
+.demande b{display:block;font-size:7.5pt;letter-spacing:.1em;text-transform:uppercase;color:#5b4bd6;margin-bottom:2px}
+.cles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:0 0 20px}
+.tile{border:1px solid #e5e7f0;border-radius:8px;padding:8px 10px;background:#fbfbfe}
+.tile .k{font-size:7.5pt;letter-spacing:.06em;text-transform:uppercase;color:#64748b}
+.tile .v{font-size:10.5pt;font-weight:700;color:#0f172a;margin-top:2px}
+.tile.ok{border-color:#bfe5cf;background:#f3fbf6}.tile.ok .v{color:#17663d}
+.tile.mid{border-color:#f6dcae;background:#fffaf0}.tile.mid .v{color:#8a5300}
+.tile.low{border-color:#f5c2c2;background:#fff6f6}.tile.low .v{color:#9b1c1c}
+.rubrique{font-size:8pt;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#5b4bd6;margin:18px 0 4px;padding-bottom:4px;border-bottom:1px solid #e5e7f0}
+.synthese h1,.synthese h2{font-size:13pt!important;margin:16px 0 6px!important;color:#0f172a!important}
+.synthese h3{font-size:11pt!important}
+.synthese p,.synthese li{font-size:10.5pt}
+.synthese hr{display:none}
+.annexe{break-before:page;page-break-before:always}
+.annexe h2{font-size:15pt;margin:0 0 4px}
+.annexe .intro{font-size:9pt;color:#64748b;margin:0 0 10px}
+.annexe h3{font-size:11pt;margin:18px 0 6px;padding-left:8px;border-left:3px solid #5b4bd6}
+table.data{width:100%;border-collapse:collapse;table-layout:fixed;font-size:8.8pt;margin:4px 0}
+table.data th{background:#f3f2fc;color:#3b2f7a;text-align:left;font-weight:700;padding:5px 7px;font-size:7.5pt;letter-spacing:.05em;text-transform:uppercase;border-bottom:1px solid #d9d6f2}
+table.data td{padding:6px 7px;border-bottom:1px solid #eceef3;vertical-align:top;overflow-wrap:anywhere}
+table.data td.lbl{font-weight:600;color:#0f172a}
+table.data td.src{color:#5b4bd6;font-weight:600;text-align:center}
+table.data tr.na td{color:#94a3b8}
+table.data tr.na td.lbl{color:#64748b}
+.badge{display:inline-block;padding:1px 7px;border-radius:999px;font-size:7.5pt;font-weight:700;white-space:nowrap}
+.badge-ok{background:#e7f6ee;color:#17663d}.badge-mid{background:#fff4e0;color:#8a5300}
+.badge-low{background:#fdecec;color:#9b1c1c}.badge-na{background:#f1f5f9;color:#64748b}
+.sub{font-size:7.5pt;color:#64748b;margin-top:2px}
+sup.note{color:#5b4bd6;font-weight:700;margin-left:2px;font-size:7pt}
+ol.notes{margin:4px 0 10px 16px;padding:0;font-size:8pt;color:#475569}
+ol.notes li{margin:1px 0}
+ol.sources{margin:4px 0 0 18px;padding:0;font-size:8.5pt;color:#334155}
+dl.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 18px;margin:6px 0 10px}
+dl.kv dt{font-size:7.5pt;letter-spacing:.05em;text-transform:uppercase;color:#64748b}
+dl.kv dd{margin:1px 0 0;font-weight:600;color:#0f172a;font-size:9.5pt}
+.para{font-size:9.5pt;margin:4px 0 6px}
+.report-end{position:static;break-inside:avoid;page-break-inside:avoid;margin-top:14mm;border-top:1px solid #e2e8f0;padding-top:4mm;font-size:8pt;color:#94a3b8;text-align:center}
+@media screen{body{background:#eef0f4}table.page{max-width:210mm;margin:0 auto;background:#fff;box-shadow:0 2px 18px rgba(15,23,42,.08)}}
+@media print{.copilot-markdown-table-wrap{overflow:visible!important}}
+`;
+
 /** Construction pure et testable du document imprimable d'une réponse. */
 export function buildCopilotResponsePrintHtml(
   params: ResponsePdfParams,
   options: { logo?: string | null; generatedAt?: string } = {},
 ): string {
   const logo = options.logo ?? null;
-  const generatedAt = options.generatedAt ?? new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  const responseDate = formatDate(params.response.createdAt);
+  const generatedAt = options.generatedAt ?? new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
   const question = params.question?.trim();
-  return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport Mimmoza — Analyse immobilière</title><style>
-    *{box-sizing:border-box} body{margin:0;font-family:'Segoe UI',Arial,sans-serif;color:#1e293b;line-height:1.55;background:#fff}
-    main{max-width:190mm;margin:0 auto;padding:14mm} h1,h2,h3,h4,h5,h6{break-after:avoid;page-break-after:avoid} table,blockquote,li{break-inside:avoid;page-break-inside:avoid}
-    strong{color:#0f172a} a{color:#4f46e5} .question{margin:18px 0;padding:12px 15px;border-radius:10px;background:#f5f3ff;border:1px solid #ddd6fe}
-    .report-end{position:static;break-inside:avoid;page-break-inside:avoid;margin-top:18mm;border-top:1px solid #e2e8f0;padding-top:4mm;font-size:9px;color:#94a3b8;text-align:center}
-    @page{size:A4;margin:12mm} @media print{main{padding:0}.copilot-markdown-table-wrap{overflow:visible!important} a{color:#1e293b;text-decoration:none}}
-  </style></head><body><main>
-    <header style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:14px;border-bottom:2px solid #e2e8f0;">
-      <div>${logo ? `<img src="${logo}" alt="Mimmoza" style="height:44px;display:block;">` : '<div style="font-size:22px;font-weight:800;color:#4f46e5;">Mimmoza</div>'}<div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin-top:6px;">Rapport Mimmoza</div></div>
-      <div style="font-size:10px;color:#64748b;text-align:right;">Généré le ${generatedAt}${responseDate ? `<br>Réponse du ${responseDate}` : ''}${params.contextLabel ? `<br><strong>${escapeHtml(params.contextLabel)}</strong>` : ''}</div>
+  const decoupage = decouperReponse(params.response.text);
+  const etude = decoupage ? structurerRapportFactuel(decoupage.factuel, markdownToSafeHtml) : null;
+  const adresse = titreDepuisQuestion(question);
+  const typeDoc = etude ? 'Rapport d’analyse foncière' : 'Note d’analyse';
+
+  const commune = etude?.chiffresCles.find((c) => c.k === 'Commune')?.v;
+  const parcelle = etude?.chiffresCles.find((c) => c.k === 'Parcelle')?.v;
+  const sousTitre = [commune, parcelle ? `parcelle ${parcelle}` : null, `établi le ${generatedAt}`].filter(Boolean).join(' · ');
+
+  const clesHtml = etude?.chiffresCles.length
+    ? `<div class="cles">${etude.chiffresCles.map((c) =>
+      `<div class="tile${c.ton ? ` ${c.ton}` : ''}"><div class="k">${escapeHtml(c.k)}</div><div class="v">${escapeHtml(c.v)}</div></div>`).join('')}</div>`
+    : '';
+
+  const corps = decoupage && etude
+    ? `${clesHtml}
+       <div class="rubrique">Synthèse</div>
+       <section class="synthese">${markdownToSafeHtml(nettoyerSynthese(decoupage.synthese) || 'Synthèse non fournie.')}</section>
+       <section class="annexe">
+         <h2>Annexe — Données détaillées et sources</h2>
+         <p class="intro">Données collectées automatiquement auprès des sources publiques citées. L’échelle indique à quoi la donnée s’applique (parcelle, abords, commune) ; la fiabilité reflète la qualité de la source et la précision de la correspondance avec le bien.</p>
+         ${etude.annexeHtml}
+       </section>`
+    : `<section class="synthese">${markdownToSafeHtml(params.response.text)}</section>`;
+
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport Mimmoza — Analyse immobilière</title><style>${RAPPORT_CSS}</style></head><body>
+<table class="page">
+  <thead><tr><td><div class="page-top"></div></td></tr></thead>
+  <tfoot><tr><td><div class="page-bottom"><span>Mimmoza · ${escapeHtml(typeDoc)}${adresse ? ` · ${escapeHtml(adresse)}` : ''}</span><span>À faire valider par un professionnel</span></div></td></tr></tfoot>
+  <tbody><tr><td><main>
+    <header class="entete">
+      <div>${logo ? `<img src="${logo}" alt="Mimmoza" style="height:40px;display:block;">` : '<div style="font-size:22px;font-weight:800;color:#5b4bd6;">Mimmoza</div>'}</div>
+      <div class="meta"><div class="type">${escapeHtml(typeDoc)}</div>${escapeHtml(generatedAt)}${params.contextLabel ? `<br><strong>${escapeHtml(params.contextLabel)}</strong>` : ''}</div>
     </header>
-    <h1 style="font-size:20px;margin:22px 0 10px;color:#0f172a;">Analyse Mimmoza</h1>
-    ${question ? `<section class="question" aria-label="Question associée"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6d28d9;font-weight:700;margin-bottom:5px;">Question</div><div>${escapeHtml(question).replace(/\n/g, '<br>')}</div></section>` : ''}
-    <article style="font-size:12px;">${markdownToSafeHtml(params.response.text)}</article>
-    <footer class="report-end">Mimmoza · Plateforme d’analyse immobilière · À faire valider par un professionnel.</footer>
-  </main></body></html>`;
+    <h1 class="titre">${escapeHtml(adresse ?? 'Analyse Mimmoza')}</h1>
+    <p class="sous-titre">${escapeHtml(sousTitre)}</p>
+    ${question ? `<div class="demande"><b>Demande</b>${escapeHtml(question).replace(/\n/g, '<br>')}</div>` : ''}
+    ${corps}
+    <footer class="report-end">Mimmoza · Plateforme d’analyse immobilière<br>Rapport établi automatiquement à partir de sources publiques. Il ne remplace ni un certificat d’urbanisme, ni l’avis d’un professionnel.</footer>
+  </main></td></tr></tbody>
+</table>
+</body></html>`;
 }
 
 /** Exporte une seule réponse assistant, indépendamment de la conversation. */
@@ -364,7 +453,6 @@ export async function exportCopilotResponseToPdf(params: ResponsePdfParams): Pro
   const html = buildCopilotResponsePrintHtml(params, { logo });
 
   printWindow.document.open(); printWindow.document.write(html); printWindow.document.close();
-  try { printWindow.history.replaceState(null, 'Rapport Mimmoza', '/mimmoza-rapport'); } catch { /* en-tête natif contrôlé par le navigateur */ }
   printWindow.onload = () => setTimeout(() => printWindow.print(), 300);
   return 'opened';
 }
