@@ -255,13 +255,110 @@ export const PACKS_API: readonly PackApi[] = [
 
 // ── Studio 3D (application liée) ─────────────────────────────────────────────
 
+// Grille issue de l'audit « MimmozIA Studio — Audit et grille tarifaire » du
+// 21/10/2026. Chaque prix reste bénéficiaire même si le client consomme 100 %
+// de ce qui est inclus (coût complet = GPU + streaming + IA + temps de contrôle
+// valorisé 60 €/h, 3 % de frais de paiement retenus). Les remises (annuel −10 %,
+// abonné Pro/Équipe −15 %) NE SE CUMULENT PAS : cumulées, la marge au pire cas
+// de l'offre Entreprise tomberait à 23 % ; seule, la plus forte la laisse ≥ 30 %.
+//
+// Le Studio est vendu en SERVICE ACCOMPAGNÉ (rendus réalisés et contrôlés par
+// Mimmoza) tant que les comptes clients et le rendu cloud ne sont pas en place :
+// aucune souscription en libre-service, demande par e-mail.
+
+export interface OffreStudio {
+  code: string;
+  libelle: string;
+  /** Prix HT ; pour un abonnement, prix mensuel. */
+  prixHT: number;
+  /** « à partir de » (offre sur mesure). */
+  aPartirDe?: boolean;
+  detail?: string;
+  inclus?: readonly string[];
+}
+
 export const STUDIO_3D = {
   libelle: "MimmozIA Studio 3D",
+  accroche: "Maquette 3D, images, film et visite virtuelle de vos programmes",
   prixMensuelDesHT: 390,
-  /** Remise accordée aux abonnés de ces formules. */
+  /** Remise accordée aux abonnés de ces formules de la plateforme. */
   remisePct: 15,
   formulesRemisees: ["pro", "proplus"] as PlanId[],
+  /** Abonnements : engagement de 12 mois. */
+  engagementMois: 12,
+  /** Remise maximale en cas de paiement annuel d'avance (non cumulable avec remisePct). */
+  remiseAnnuellePct: 10,
+  remisesCumulables: false,
+  abonnements: [
+    {
+      code: "studio_essentiel",
+      libelle: "Essentiel",
+      prixHT: 390,
+      inclus: ["2 projets actifs", "Mimmo : 500 messages par mois", "5 images 4K par mois"],
+    },
+    {
+      code: "studio_pro",
+      libelle: "Pro",
+      prixHT: 1190,
+      inclus: [
+        "5 projets actifs",
+        "Mimmo : 1 500 messages par mois",
+        "15 images 4K par mois",
+        "1 film 60 s par trimestre",
+        "1 visite virtuelle active, 30 h par mois",
+      ],
+    },
+    {
+      code: "studio_entreprise",
+      libelle: "Entreprise",
+      prixHT: 2990,
+      aPartirDe: true,
+      inclus: [
+        "12 projets actifs",
+        "Mimmo : 4 000 messages par mois",
+        "40 images 4K par mois",
+        "1 film 60 s par mois",
+        "2 visites virtuelles actives, 100 h par mois",
+      ],
+    },
+  ] as readonly OffreStudio[],
+  aLActe: [
+    { code: "image_4k", libelle: "Image 4K", prixHT: 149, detail: "1 vue extérieure ou intérieure" },
+    { code: "pack_5_images", libelle: "Pack 5 images 4K", prixHT: 590, detail: "Extérieur et intérieur" },
+    { code: "film_60s", libelle: "Film 60 s 4K", prixHT: 1490, detail: "Storyboard, musique libre de droits, 1 reprise" },
+    { code: "visite_6_mois", libelle: "Visite virtuelle 6 mois", prixHT: 1490, detail: "100 h de visite incluses" },
+    {
+      code: "pack_lancement",
+      libelle: "Pack lancement commercial",
+      prixHT: 3290,
+      detail: "5 images 4K + film 60 s + visite virtuelle 6 mois",
+    },
+  ] as readonly OffreStudio[],
+  /** Au-delà des quotas (abonnés) ou de la visite (à l'acte). */
+  depassements: [
+    { code: "image_sup", libelle: "Image 4K supplémentaire (abonnés)", prixHT: 49 },
+    { code: "film_sup", libelle: "Film 60 s supplémentaire (abonnés)", prixHT: 990 },
+    { code: "visite_sup", libelle: "Visite supplémentaire 6 mois, 50 h (abonnés)", prixHT: 690 },
+    { code: "heure_visite_abonne", libelle: "Heure de visite au-delà (abonnés)", prixHT: 5 },
+    { code: "heure_visite", libelle: "Heure de visite au-delà (à l'acte)", prixHT: 6 },
+  ] as readonly OffreStudio[],
+  offrePilote: {
+    libelle: "Offre pilote",
+    remisePct: 40,
+    nbClients: 3,
+    /** Pack lancement à −40 % : 3 290 € → 1 974 €. */
+    prixHT: 1974,
+  },
 } as const;
+
+/** Lien mailto prérempli pour une demande Studio 3D (devis, pilote, démo). */
+export function mailtoDemandeStudio(offre: string): string {
+  const sujet = `MimmozIA Studio 3D — ${offre}`;
+  const corps =
+    `Bonjour,\n\nJe souhaite échanger sur l'offre « ${offre} » de MimmozIA Studio 3D.\n\n` +
+    `Société : \nProgramme concerné (adresse, nombre de logements) : \nÉchéance souhaitée : \n\nMerci.`;
+  return `mailto:${CONTACT_ACCES}?subject=${encodeURIComponent(sujet)}&body=${encodeURIComponent(corps)}`;
+}
 
 // ── Modules métier ───────────────────────────────────────────────────────────
 

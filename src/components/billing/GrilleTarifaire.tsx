@@ -25,6 +25,7 @@ import {
   type Formule,
 } from "@/lib/billing/grille";
 import type { PlanId } from "@/lib/billing/planAccess";
+import { GrilleStudio3D } from "./GrilleStudio3D";
 
 type Periodicite = "mensuel" | "annuel";
 
@@ -200,8 +201,13 @@ export function GrilleTarifaire({ formuleActuelle, enAvant, publique = false }: 
           <p className="mt-1 text-xs text-slate-500">
             −{STUDIO_3D.remisePct} % pour les abonnés Pro et Équipe
           </p>
+          <a href="#studio-3d" className="mt-2 inline-block text-xs font-semibold text-violet-700 hover:underline">
+            Voir les tarifs du Studio 3D
+          </a>
         </div>
       </div>
+
+      <GrilleStudio3D />
 
       <p className="mt-6 text-[11px] leading-4 text-slate-400">
         Prix hors taxes. Les actions IA consomment des jetons (1 jeton = 0,10 € HT) ; chaque formule payante
