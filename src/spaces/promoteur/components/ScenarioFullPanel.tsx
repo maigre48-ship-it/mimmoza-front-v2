@@ -33,17 +33,19 @@ const T = {
 
 // ─── HELPERS STATUT ───────────────────────────────────────────────────
 
+// L1b : le statut du scénario maître repose sur des seuils indicatifs
+// internes (CES 50 %, hauteur 15 m), pas sur le PLU : jamais « Conforme ».
 function statusColor(s: MasterConformityStatus): string {
-  return s === 'CONFORME' ? T.green.main : s === 'LIMITE' ? T.amber.main : T.red.main;
+  return s === 'CONFORME' ? T.violet.main : s === 'LIMITE' ? T.amber.main : T.red.main;
 }
 function statusBg(s: MasterConformityStatus): string {
-  return s === 'CONFORME' ? T.green.light : s === 'LIMITE' ? T.amber.light : T.red.light;
+  return s === 'CONFORME' ? T.violet.light : s === 'LIMITE' ? T.amber.light : T.red.light;
 }
 function statusBorder(s: MasterConformityStatus): string {
-  return s === 'CONFORME' ? T.green.border : s === 'LIMITE' ? T.amber.border : T.red.border;
+  return s === 'CONFORME' ? T.violet.border : s === 'LIMITE' ? T.amber.border : T.red.border;
 }
 function statusLabel(s: MasterConformityStatus): string {
-  return s === 'CONFORME' ? 'Conforme' : s === 'LIMITE' ? 'Limite' : 'Bloquant';
+  return s === 'CONFORME' ? 'Dans les seuils indicatifs' : s === 'LIMITE' ? 'Proche des seuils indicatifs' : 'Hors seuils indicatifs';
 }
 function scoreColor(n: number): string {
   return n >= 75 ? T.green.main : n >= 50 ? T.amber.main : T.red.main;
@@ -305,7 +307,7 @@ const ScenarioDisplay: React.FC<{ scenario: MasterScenario }> = ({ scenario }) =
           borderRadius: 8, borderLeft: `3px solid ${accent}`,
         }}>
           <div style={{ fontSize: 9, fontWeight: 700, color: T.slate500, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>
-            Conformité PLU
+            Seuils indicatifs internes (non réglementaires)
           </div>
           {conformity.messages.map((msg, i) => (
             <div key={i} style={{ fontSize: 10.5, color: T.slate700, lineHeight: 1.5, marginBottom: i < conformity.messages.length - 1 ? 3 : 0 }}>

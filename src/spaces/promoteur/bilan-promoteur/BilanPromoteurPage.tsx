@@ -41,7 +41,12 @@ import {
   usePromoteurProgrammeStore,
 } from "../store/promoteurProgramme.store";
 import { usePromoteurProjectStore } from "../store/promoteurProject.store";
-import { MASSING_METRICS_EVENT, readMassingMetrics, type MassingMetrics } from "../terrain3d/massingBilanBridge";
+import { MASSING_METRICS_EVENT, readMassingMetrics, writeMassingMetrics, type MassingMetrics } from "../terrain3d/massingBilanBridge";
+import { clearPendingStudioBim, linkStudioBim, publishStudioBimPrices, readPendingStudioBim, readStudioBimLink, type PendingStudioBim, type StudioBimLink } from "./studioBimBridge";
+import { BandeauSynchroModele } from "./BandeauSynchroModele";
+import { metreV2Present, publierResumeBilan } from "./canalMetreStudio";
+import { calculerSyntheseBilan, ecartProgrammationModele, logementsDuMassing, resoudreSurfaces, type ResumeBilan } from "./metreStudio";
+import { useSynchroModeleStudio } from "./useSynchroModeleStudio";
 import { deriveConstructionCosts } from "../terrain3d/massingConstructionCosts";
 import { shabSdpCoef } from "../shared/surfaceCoefficients";
 import { writeSyntheseRawInput } from "../shared/syntheseRawInput.store";
@@ -233,6 +238,31 @@ export const BilanPromoteurPage: React.FC = () => {
   const [ass,              setAss]              = useState<Assumptions>(DEFAULT_ASSUMPTIONS);
   const hydratedRef = useRef(false);
   const [massing, setMassing] = useState<MassingMetrics | null>(null);
+  const [pendingStudioBim, setPendingStudioBim] = useState<PendingStudioBim | null>(() => readPendingStudioBim());
+  const [studioBimLink, setStudioBimLink] = useState<StudioBimLink | null>(() => readStudioBimLink());
+  // R5 — abonnement au métré v2 de Studio : chaque modification du modèle recalcule le bilan, sans clic.
+  const synchro = useSynchroModeleStudio(studyId);
+
+  useEffect(() => {
+    const refresh = () => {
+      const link = readStudioBimLink();
+      const pending = readPendingStudioBim();
+      setStudioBimLink(link);
+      if (studyId && link?.studyId === studyId && pending?.projectId === link.projectId) {
+        const current = readMassingMetrics(studyId);
+        // Le métré v2 (logements, typologie, sources) remplace l'ancien instantané v1 du même modèle.
+        if (!metreV2Present(studyId, link.projectId) && (!current || Date.parse(pending.updatedAt) > Date.parse(current.updatedAt))) {
+          writeMassingMetrics(studyId, pending.metrics);
+          setMassing(pending.metrics);
+        }
+        setPendingStudioBim(null);
+      } else setPendingStudioBim(pending);
+    };
+    refresh();
+    window.addEventListener('focus', refresh);
+    window.addEventListener('storage', refresh);
+    return () => { window.removeEventListener('focus', refresh); window.removeEventListener('storage', refresh); };
+  }, [studyId]);
 
   // ── Hydratation ────────────────────────────────────────────────────────────
   useLayoutEffect(() => {
@@ -447,56 +477,32 @@ export const BilanPromoteurPage: React.FC = () => {
   // ── Surfaces ──────────────────────────────────────────────────────────────
   const footprintBuildingsM2 = footprintBuildingsM2Raw > 0 ? footprintBuildingsM2Raw : (snap2d ? snapTotalEmprise(snap2d) : 0);
   const sdpFromSnap          = snap2d ? snapTotalSdp(snap2d) : 0;
-  const levelsCount  = useMemo(() => 1 + Math.max(0, Math.floor(n(floorsSpec.aboveGroundFloors, 0))), [floorsSpec.aboveGroundFloors]);
+  const levelsSaisis = useMemo(() => 1 + Math.max(0, Math.floor(n(floorsSpec.aboveGroundFloors, 0))), [floorsSpec.aboveGroundFloors]);
   const totalHeightM = useMemo(() => n(floorsSpec.groundFloorHeightM, 2.8) + Math.max(0, Math.floor(n(floorsSpec.aboveGroundFloors, 0))) * n(floorsSpec.typicalFloorHeightM, 2.7), [floorsSpec]);
   // Même source que le métré Massing 3D (terrain3d/massingToBilan.ts), pour que
   // le KPI « SHAB est. » et le CA de cette page portent sur la même surface.
   const coefHab      = shabSdpCoef(buildingKind === "INDIVIDUEL" ? "INDIVIDUEL" : "COLLECTIF");
 
-  // ── SDP : la Programmation est PRIORITAIRE (intention métier, multi-bâtiments). ──
-  //  Le Massing 3D ne sert plus qu'au repli et au chiffrage détaillé (façade/toiture/menuiseries).
+  // ── R5 — SDP, logements, niveaux : LE MODÈLE FAIT FOI quand il existe (Studio 3D ou Massing 3D). ──
+  //  Ordre : réhabilitation > modèle > Programmation > implantation 2D > emprise × niveaux.
+  //  La Programmation reste l'objectif : l'écart avec le modèle est signalé, jamais écrasé.
   const sdpProgrammeValue = useMemo(() => sdpProgrammeM2(programmeMix), [programmeMix]);
-
-  const sdpSource = useMemo<"rehab" | "programmation" | "massing" | "snap2d" | "emprise">(() => {
-    if (ass.rehabMode && ass.surfaceRehabM2 > 0) return "rehab";
-    if (sdpProgrammeValue > 0) return "programmation";
-    if (massing && !ass.rehabMode && massing.totaux.sdpM2 > 0) return "massing";
-    if (footprintBuildingsM2Raw <= 0 && sdpFromSnap > 0) return "snap2d";
-    return "emprise";
-  }, [ass.rehabMode, ass.surfaceRehabM2, sdpProgrammeValue, massing, footprintBuildingsM2Raw, sdpFromSnap]);
-
-  const sdpEstimatedM2 = useMemo(() => {
-    if (ass.rehabMode && ass.surfaceRehabM2 > 0) return ass.surfaceRehabM2;
-    if (sdpProgrammeValue > 0) return sdpProgrammeValue;                                  // ← Programmation prioritaire
-    if (massing && !ass.rehabMode && massing.totaux.sdpM2 > 0) return massing.totaux.sdpM2;
-    if (footprintBuildingsM2Raw <= 0 && sdpFromSnap > 0) return sdpFromSnap;
-    return footprintBuildingsM2 * levelsCount * 1.0;
-  }, [ass.rehabMode, ass.surfaceRehabM2, sdpProgrammeValue, massing, footprintBuildingsM2Raw, footprintBuildingsM2, levelsCount, sdpFromSnap]);
+  const logementsProgramme = resolvedLogements.source === "programmation" ? resolvedLogements.value : 0;
+  const surfaces = useMemo(() => resoudreSurfaces({
+    rehabMode: ass.rehabMode, surfaceRehabM2: ass.surfaceRehabM2, sdpProgrammeM2: sdpProgrammeValue, massing,
+    footprintBuildingsM2Raw, footprintBuildingsM2, sdpFromSnap, niveauxSaisis: levelsSaisis,
+    logementsProgramme, logementsSaisis: nbLogements,
+  }), [ass.rehabMode, ass.surfaceRehabM2, sdpProgrammeValue, massing, footprintBuildingsM2Raw, footprintBuildingsM2, sdpFromSnap, levelsSaisis, logementsProgramme, nbLogements]);
+  const sdpSource      = surfaces.sdpSource;
+  const sdpEstimatedM2 = surfaces.sdpM2;
+  const levelsCount    = surfaces.levelsCount;
 
   const habitableEstimatedM2 = useMemo(() => sdpEstimatedM2 * coefHab, [sdpEstimatedM2, coefHab]);
   const surfaceVendableM2    = useMemo(() => habitableEstimatedM2 * n(ass.coefVendable, 1), [habitableEstimatedM2, ass.coefVendable]);
 
-  // Nb de logements issu de la typologie Massing 3D (somme T1..T5).
-  const nbLogementsFromTypologie = useMemo(() => {
-    if (!massing?.typologie) return 0;
-    return (
-      Number(massing.typologie.T1 ?? 0) +
-      Number(massing.typologie.T2 ?? 0) +
-      Number(massing.typologie.T3 ?? 0) +
-      Number(massing.typologie.T4 ?? 0) +
-      Number((massing.typologie as any).T5 ?? 0)
-    );
-  }, [massing]);
-
-  // Source de vérité : quand le Massing est connecté et que la typologie donne un total,
-  // c'est elle qui fait foi (sinon, le state nbLogements / la programmation).
-  //  Programmation prioritaire aussi sur le nombre de logements (cohérent avec la SDP).
-  const nbLogementsEffectif =
-    resolvedLogements.source === "programmation"
-      ? resolvedLogements.value
-      : (!!massing && !ass.rehabMode && nbLogementsFromTypologie > 0
-          ? nbLogementsFromTypologie
-          : nbLogements);
+  // Nb de logements issu de la typologie du modèle (somme T1..T5) ; le modèle fait foi.
+  const nbLogementsFromTypologie = useMemo(() => logementsDuMassing(massing), [massing]);
+  const nbLogementsEffectif = surfaces.logements;
 
   const hasConceptionData = footprintBuildingsM2 > 0 || sdpFromSnap > 0;
   const hasRehabData      = ass.travauxRehabTotal > 0;
@@ -507,10 +513,12 @@ export const BilanPromoteurPage: React.FC = () => {
 
   // ── Computed ──────────────────────────────────────────────────────────────
   const computed = useMemo(() => {
-    const pf = computeProForma(ass, sdpEstimatedM2, surfaceVendableM2, massing, 1, regionInfo.factor, levelsCount);
-    const pfCoutTotal    = pf.coutTotal + ass.terrassementEur;
-    const pfMarge        = pf.caTotal - pfCoutTotal;
-    const pfMargePct     = pf.caTotal > 0 ? (pfMarge / pf.caTotal) * 100 : 0;
+    // Moteur unique (computeProForma) via la synthèse pure partagée avec le canal temps réel.
+    const synthese = calculerSyntheseBilan({ ass, sdpM2: sdpEstimatedM2, surfaceVendableM2, massing, regionFactor: regionInfo.factor, levelsCount, parkingCost: 0 });
+    const pf = synthese.pf;
+    const pfCoutTotal    = synthese.coutTotal;
+    const pfMarge        = synthese.marge;
+    const pfMargePct     = synthese.margePct;
     const pfCoutRevM2Hab = surfaceVendableM2 > 0 ? pfCoutTotal / surfaceVendableM2 : 0;
     const pfCoutRevM2Sdp = sdpEstimatedM2    > 0 ? pfCoutTotal / sdpEstimatedM2    : 0;
     const nbParkingsEff = programmeMix.nbParkings > 0
@@ -577,6 +585,7 @@ export const BilanPromoteurPage: React.FC = () => {
     if (ass.terrassementEur > 0) notes.push(`Terrassement intégré : ${eur(ass.terrassementEur)} HT (${terrassementHint}).`);
     if (pf.useRehab) notes.push(`Mode Réhabilitation — Travaux = ${eur(pf.travauxBase)} · Surface = ${m2(ass.surfaceRehabM2)}.`);
     if (sdpSource === "programmation") notes.push(`SDP pilotée par la Programmation — ${m2(sdpEstimatedM2)} (Σ ${programmeMix.batiments.length} bâtiment(s), proxy SHAB + commerce).`);
+    if (sdpSource === "massing" && sdpProgrammeValue > 0) notes.push(`SDP pilotée par le modèle 3D — ${m2(sdpEstimatedM2)} ; la Programmation (${m2(sdpProgrammeValue)}) reste l'objectif affiché.`);
     if (massing && !ass.rehabMode) notes.push(`Massing 3D connecté — chiffrage détaillé actif (façade, toiture, menuiseries)${sdpSource === "massing" ? ` · SDP métré ${m2(massing.totaux.sdpM2)}` : ""} · ${nbLogementsEffectif} logement(s).`);
     if (pf.useMassing && ass.autoCosts && derivedCosts) notes.push(`Prix construction auto — ${derivedCosts.basis}.`);
     if (regionInfo.factor !== 1) notes.push(`Coefficient régional ×${regionInfo.factor.toFixed(2)} (${regionInfo.label}) appliqué aux coûts de construction principaux.`);
@@ -592,7 +601,41 @@ export const BilanPromoteurPage: React.FC = () => {
       coutParLogement: pfCoutTotal / safeNb,
       margeParLogement: pfMarge / safeNb,
     };
-  }, [ass, sdpEstimatedM2, surfaceVendableM2, nbLogementsEffectif, terrassementHint, massing, derivedCosts, programmeMix, footprintParkingsM2, regionInfo, levelsCount, sdpSource]);
+  }, [ass, sdpEstimatedM2, surfaceVendableM2, nbLogementsEffectif, terrassementHint, massing, derivedCosts, programmeMix, footprintParkingsM2, regionInfo, levelsCount, sdpSource, sdpProgrammeValue]);
+
+  // Les montants affichés dans Studio viennent du calcul effectif de ce Bilan.
+  useEffect(() => {
+    if (!studyId || !studioBimLink || studioBimLink.studyId !== studyId || !massing) return;
+    const saved = readMassingMetrics(studyId);
+    if (!saved || saved.metrics.totaux.sdpM2 !== massing.totaux.sdpM2) return;
+    const lines = computed.lines.filter(line => line.section === 'C) TRAVAUX' && !line.kind
+      && !line.label.includes('Prix moyen')).map(line => ({
+      label: line.label, valueEur: line.valueEur, hint: line.hint ?? '',
+    }));
+    try { publishStudioBimPrices(studioBimLink, computed.totalTravaux, lines); } catch { /* affichage local du Bilan intact */ }
+  }, [studyId, studioBimLink, massing, computed]);
+
+  // ── R5 — synchronisation avec le modèle : origine, écart à la Programmation, résumé pour Studio ──
+  const modeleActif = sdpSource === "massing";
+  const origineModele: "studio" | "massing" | null = !modeleActif ? null
+    : synchro.metre && massing && Math.abs(massing.totaux.sdpM2 - synchro.metre.totaux.sdpM2.valeur) < 0.5 ? "studio" : "massing";
+  const ecartModele = useMemo(() => (modeleActif ? ecartProgrammationModele(
+    { sdpProgrammeM2: sdpProgrammeValue, logementsProgramme },
+    { sdpModeleM2: massing?.totaux.sdpM2 ?? 0, logementsModele: nbLogementsFromTypologie },
+  ) : null), [modeleActif, sdpProgrammeValue, logementsProgramme, massing, nbLogementsFromTypologie]);
+  useEffect(() => {
+    if (!studyId) return;
+    const resume: ResumeBilan = {
+      format: "mimmoza-bilan-resume", version: 1, etudeId: studyId,
+      architectureId: synchro.metre?.architectureId ?? null,
+      empreinteMetre: origineModele === "studio" ? synchro.metre?.empreinte ?? null : null,
+      sourceSurfaces: origineModele === "studio" ? "modele-studio" : sdpSource,
+      caTotal: computed.caTotal, coutTotal: computed.coutTotal, marge: computed.marge, margePct: computed.margePct,
+      sdpM2: sdpEstimatedM2, logements: nbLogementsEffectif, calculeLe: new Date().toISOString(),
+      urlBilan: `/promoteur/bilan-promoteur?study=${encodeURIComponent(studyId)}`,
+    };
+    publierResumeBilan(resume);
+  }, [studyId, synchro.metre, origineModele, sdpSource, computed.caTotal, computed.coutTotal, computed.marge, computed.margePct, sdpEstimatedM2, nbLogementsEffectif]);
 
   // ── Stress test (sensibilité) ───────────────────────────────────────────────
   const sensitivity = useMemo(() => {
@@ -1181,6 +1224,33 @@ export const BilanPromoteurPage: React.FC = () => {
 
         {activeTab === "synthese" ? <PromoteurSynthesePage rawInputOverride={synthesisRawInput} /> : (
           <>
+            {synchro.enAttente && studyId && <div data-testid="metre-studio-en-attente" style={{ marginBottom: 16, padding: "14px 18px", background: "#effaff", border: "1px solid #67d6e8", borderRadius: 12, color: "#0f172a" }}>
+              <strong>Modèle 3D reçu de Studio</strong>
+              <p style={{ margin: "6px 0", fontSize: 13 }}>{synchro.enAttente.nom} · {synchro.enAttente.totaux.nbBatiments} bâtiment(s) · {Math.round(synchro.enAttente.totaux.sdpM2.valeur).toLocaleString("fr-FR")} m² de plancher · {synchro.enAttente.totaux.logements.valeur} logement(s) estimé(s) · émis le {new Date(synchro.enAttente.emisLe).toLocaleString("fr-FR")}.</p>
+              <p style={{ margin: "6px 0 10px", fontSize: 12 }}>Reliez-le à l’étude active ({studyId}) : le modèle fera foi (surface de plancher, logements, niveaux) et le bilan se recalculera à chaque modification. Vos hypothèses de prix et de coûts sont conservées.</p>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button type="button" onClick={() => { const m = synchro.enAttente!; synchro.relier(m); setStudioBimLink({ projectId: m.architectureId, studyId }); clearPendingStudioBim(); setPendingStudioBim(null); }}>Relier ce modèle à l’étude (temps réel)</button>
+                <button type="button" onClick={synchro.ignorer}>Ignorer</button>
+              </div>
+            </div>}
+            {pendingStudioBim && studyId && !(synchro.enAttente && synchro.enAttente.architectureId === pendingStudioBim.projectId) && <div style={{ marginBottom: 16, padding: "14px 18px", background: "#effaff", border: "1px solid #67d6e8", borderRadius: 12, color: "#0f172a" }}>
+              <strong>Métré BIM reçu de Studio</strong>
+              <p style={{ margin: "6px 0", fontSize: 13 }}>{pendingStudioBim.projectName} · {pendingStudioBim.metrics.totaux.nbBatiments} bâtiment(s) · {pendingStudioBim.metrics.totaux.sdpM2.toLocaleString("fr-FR")} m² de plancher.</p>
+              <p style={{ margin: "6px 0 10px", fontSize: 12 }}>Confirmez l’import dans l’étude active ({studyId}). Les prix unitaires et le bilan seront recalculés ici ; les logements restent ceux de la programmation.</p>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button type="button" onClick={() => {
+                  const link = { projectId: pendingStudioBim.projectId, studyId };
+                  linkStudioBim(link.projectId, link.studyId);
+                  setStudioBimLink(link);
+                  writeMassingMetrics(studyId, pendingStudioBim.metrics);
+                  setMassing(pendingStudioBim.metrics);
+                  clearPendingStudioBim(); setPendingStudioBim(null);
+                }}>Importer et relier ce projet au bilan</button>
+                <button type="button" onClick={() => { clearPendingStudioBim(); setPendingStudioBim(null); }}>Ignorer</button>
+              </div>
+            </div>}
+            {studioBimLink?.studyId === studyId && <p style={{ marginBottom: 16, fontSize: 12, color: '#065f46' }}>Studio 3D relié à cette étude : les changements de la maquette actualisent le métré, et les prix du Bilan sont renvoyés dans Studio.</p>}
+            <BandeauSynchroModele modeleActif={modeleActif} origine={origineModele} majLe={synchro.majModeleLe} metre={origineModele === "studio" ? synchro.metre : null} ecart={ecartModele} programmationPresente={sdpProgrammeValue > 0} />
             {realConflict && <ConflictBanner rehabTotal={ass.travauxRehabTotal} onUseNeuf={activateNeufMode} onUseRehab={activateRehabMode} />}
             {!realConflict && ass.rehabMode && ass.travauxRehabTotal > 0 && <RehabBanner rehabTotal={ass.travauxRehabTotal} surfaceM2={ass.surfaceRehabM2} onClear={clearRehabMode} />}
 
@@ -1407,10 +1477,10 @@ export const BilanPromoteurPage: React.FC = () => {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   {[
                     { label: "Type bâtiment",    node: <select style={inputStyle} value={buildingKind} onChange={(e) => setBuildingKind(e.target.value as BuildingKind)}><option value="COLLECTIF">Collectif</option><option value="INDIVIDUEL">Individuel</option></select> },
-                    { label: "Étages (R+N)",      node: <input style={inputStyle} type="number" min={0} max={40} value={floorsSpec.aboveGroundFloors} onChange={(e) => setFloorsSpec((f) => ({ ...f, aboveGroundFloors: Math.max(0, Number(e.target.value) || 0) }))} /> },
+                    { label: surfaces.niveauxSource === "modele" ? `Étages (R+N) 🔒 modèle : R+${Math.max(0, levelsCount - 1)}` : "Étages (R+N)", node: <input style={inputStyle} type="number" min={0} max={40} value={floorsSpec.aboveGroundFloors} onChange={(e) => setFloorsSpec((f) => ({ ...f, aboveGroundFloors: Math.max(0, Number(e.target.value) || 0) }))} /> },
                     { label: "Hauteur RDC (m)",   node: <input style={inputStyle} type="number" step="0.1" value={floorsSpec.groundFloorHeightM} onChange={(e) => setFloorsSpec((f) => ({ ...f, groundFloorHeightM: Number(e.target.value) || 2.8 }))} /> },
                     { label: "Hauteur étage (m)", node: <input style={inputStyle} type="number" step="0.1" value={floorsSpec.typicalFloorHeightM} onChange={(e) => setFloorsSpec((f) => ({ ...f, typicalFloorHeightM: Number(e.target.value) || 2.7 }))} /> },
-                    { label: resolvedLogements.source === "programmation" ? "Nb logements 🔒 programmation"
+                    { label: surfaces.logementsSource === "modele" ? `Nb logements 🔒 modèle : ${nbLogementsEffectif}` : resolvedLogements.source === "programmation" ? "Nb logements 🔒 programmation"
                            : massingLocked ? "Nb logements 🔒 massing estimé"
                            : "Nb logements",
                       node: <input style={resolvedLogements.source !== "none" ? inputLocked : inputStyle} type="number" min={1} max={500} disabled={resolvedLogements.source !== "none"} value={nbLogements} onChange={(e) => setNbLogements(Math.max(1, Math.min(500, Number(e.target.value) || 1)))} /> },

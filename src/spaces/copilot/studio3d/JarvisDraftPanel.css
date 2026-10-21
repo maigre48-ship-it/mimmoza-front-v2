@@ -1,0 +1,140 @@
+.jarvis-dossier {
+  box-sizing: border-box;
+  min-height: 100%;
+  padding: 22px 20px 26px;
+  background: radial-gradient(circle at 90% 0%, rgba(23, 200, 239, .14), transparent 35%), linear-gradient(155deg, #0b1b2e, #08111e 72%);
+  border-left: 1px solid rgba(66, 207, 238, .3);
+  color: #e6f7ff !important;
+  font-size: 13px;
+  box-shadow: -16px 0 36px rgba(6, 15, 28, .1);
+}
+.jarvis-dossier * { color: inherit !important; box-sizing: border-box; }
+.jarvis-dossier__eyebrow { display:flex; align-items:center; gap:7px; color:#5de0f4 !important; font: 700 10px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing:.17em; }
+.jarvis-dossier__eyebrow span { margin-left:auto; opacity:.6; }
+.jarvis-dossier__heading { display:flex; gap:8px; justify-content:space-between; align-items:flex-start; padding:18px 0 20px; border-bottom:1px solid rgba(126,210,232,.18); }
+.jarvis-dossier h2 { margin:0; font-size:24px; letter-spacing:-.04em; line-height:1.05; font-weight:650; }
+.jarvis-dossier__heading p,.jarvis-dossier--empty p { margin:7px 0 0; color:#90aec1 !important; font-size:12px; line-height:1.5; }
+.jarvis-dossier__status { white-space:nowrap; border:1px solid rgba(245,188,70,.55); color:#f8ca73 !important; background:rgba(245,188,70,.08); border-radius:4px; padding:4px 6px; font:700 9px ui-monospace,monospace; letter-spacing:.07em; }
+.jarvis-dossier__status.is-validated { border-color:#54dbbe; color:#7bf0d2 !important; background:rgba(84,219,190,.1); }
+.jarvis-dossier__fields { margin:4px 0 14px; }
+.jarvis-dossier__massing { margin:14px 0 18px; padding:8px; border:1px solid rgba(96,215,239,.3); border-radius:10px; background:#0a1a2b; }
+.jarvis-dossier__proposal { margin:10px 0 -5px; padding:8px; border-left:2px solid #72dcf0; color:#a3ecf7 !important; font-size:11px; }
+.jarvis-dossier__massing figcaption { display:flex; justify-content:space-between; gap:8px; padding:4px 4px 9px; font-size:12px; }
+.jarvis-dossier__massing figcaption span { color:#72dcf0 !important; font:700 10px ui-monospace,monospace; text-transform:uppercase; }
+.jarvis-dossier__massing figcaption button { margin-left:auto; padding:3px 7px; }
+.jarvis-dossier__massing.is-expanded { position:fixed; z-index:12000; inset:3vh 3vw; margin:0; padding:15px; display:flex; flex-direction:column; box-shadow:0 0 0 100vmax rgba(2,8,17,.84), 0 20px 60px #020915; }
+.jarvis-dossier__massing.is-expanded .jarvis-dossier__massing-canvas,
+.jarvis-dossier__massing.is-expanded .jarvis-dossier__massing-fallback { height:auto; flex:1; min-height:200px; }
+.jarvis-dossier__massing.is-expanded .jarvis-dossier__massing-facts { flex:none; max-height:20vh; overflow:auto; }
+.jarvis-dossier__massing-canvas,.jarvis-dossier__massing-fallback { height:190px; border-radius:7px; overflow:hidden; background:#091827; }
+.jarvis-dossier__massing-canvas canvas { display:block; width:100%; height:100%; touch-action:none; }
+.jarvis-dossier__massing-fallback { display:grid; place-items:center; padding:12px; color:#a5c1d1 !important; text-align:center; font-size:12px; }
+.jarvis-dossier__massing-facts { display:flex; flex-wrap:wrap; gap:5px; margin:9px 1px; }
+.jarvis-dossier__massing-facts span { padding:4px 6px; border:1px solid rgba(96,215,239,.25); border-radius:4px; color:#a3ecf7 !important; font:700 10px ui-monospace,monospace; }
+.jarvis-dossier__massing small { padding:0 3px 3px; font-size:10px; }
+.jarvis-dossier__field { padding:11px 0; border-bottom:1px solid rgba(126,210,232,.12); }
+.jarvis-dossier__field dt { color:#73d8e9 !important; font-size:10px; text-transform:uppercase; letter-spacing:.1em; font-weight:700; }
+.jarvis-dossier__field dt span { color:#506e86 !important; font-family:ui-monospace,monospace; margin-right:6px; }
+.jarvis-dossier__field dd { margin:5px 0 0; overflow-wrap:anywhere; line-height:1.42; }
+.jarvis-dossier__field dd.is-missing { color:#7995a9 !important; font-style:italic; }
+.jarvis-dossier__form { display:grid; gap:11px; padding:14px 0; }
+.jarvis-dossier__form label { display:grid; gap:5px; font-size:11px; color:#7fdcf0 !important; font-weight:700; }
+.jarvis-dossier__form textarea { width:100%; min-height:38px; resize:vertical; border:1px solid #35647c; border-radius:6px; background:#10283c; color:#effbff !important; padding:8px; font-family:inherit; font-size:13px; font-weight:400; line-height:1.4; }
+.jarvis-dossier__form textarea:focus-visible { outline:2px solid #49d9ee; outline-offset:1px; }
+.jarvis-dossier__actions { display:flex; flex-wrap:wrap; gap:7px; margin:12px 0; }
+.jarvis-dossier button { cursor:pointer; border:1px solid #35647c; border-radius:6px; background:#173047; padding:8px 10px; font-family:inherit; font-size:11px; font-weight:600; line-height:1.3; }
+.jarvis-dossier button:hover { border-color:#61dceb; background:#1b4057; }
+.jarvis-dossier button:disabled { opacity:.45; cursor:not-allowed; }
+.jarvis-dossier button.is-primary,.jarvis-dossier__launch { background:#33cde2 !important; color:#07202c !important; border-color:#33cde2 !important; }
+.jarvis-dossier__launch { display:flex; align-items:center; justify-content:space-between; gap:9px; width:100%; margin:16px 0 10px; padding:12px !important; font-size:12px !important; box-shadow:0 0 22px rgba(42,216,239,.2); }
+.jarvis-dossier__file-count { display:flex; align-items:center; gap:6px; color:#8eb1c5 !important; font-size:11px; margin:8px 0; }
+.jarvis-dossier small { display:block; color:#7794a8 !important; line-height:1.45; }
+.jarvis-dossier p[role=status] { color:#ffd98d !important; }
+.jarvis-legacy-reply { margin:12px 0; padding:16px; border:1px solid #77cfe2; border-radius:12px; background:#eefcff; color:#123847; font-size:14px; line-height:1.5; }
+.jarvis-legacy-reply p { margin:5px 0 10px; }
+.jarvis-legacy-reply details { font-size:12px; color:#4b6470; }
+.jarvis-legacy-reply summary { cursor:pointer; }
+.jarvis-legacy-reply details div { margin-top:10px; max-height:220px; overflow:auto; }
+.jarvis-dossier--empty { display:flex; flex-direction:column; }
+.jarvis-dossier--empty h2 { margin-top:30px; }
+.jarvis-dossier__signal { margin-top:auto; border-top:1px solid rgba(126,210,232,.18); padding-top:14px; color:#7aa1b8 !important; font:700 10px ui-monospace,monospace; letter-spacing:.1em; }
+.jarvis-dossier__signal span { display:inline-block; width:6px; height:6px; border-radius:50%; background:#35d8eb; box-shadow:0 0 10px #35d8eb; margin-right:7px; }
+.jarvis-dossier__mobile-toggle { display:none; }
+@media(max-width:900px) {
+  .jarvis-dossier { min-height:0; padding:11px 14px; border-left:0; border-bottom:1px solid rgba(66,207,238,.3); }
+  .jarvis-dossier__heading { padding:6px 0; border:0; align-items:center; }
+  .jarvis-dossier h2 { font-size:17px; }
+  .jarvis-dossier__heading p { display:none; }
+  .jarvis-dossier__eyebrow,.jarvis-dossier__signal { display:none; }
+  .jarvis-dossier__mobile-toggle { display:block; }
+  .jarvis-dossier__mobile-toggle button { width:100%; text-align:left; padding:4px 0; background:transparent; border:0; color:#6de0ef !important; }
+  .jarvis-dossier__body:not(.is-expanded) { display:none; }
+  .jarvis-dossier__body.is-expanded { max-height:45vh; overflow-y:auto; }
+  .jarvis-dossier--empty { display:block; }
+  .jarvis-dossier--empty h2 { margin-top:7px; }
+}
+
+/* R2 — question minimale « Où se trouve le terrain ? » et lien « préparer en détail ». */
+.jarvis-dossier__parcelle { margin: 10px 0; padding: 10px; border: 1px solid rgba(81, 221, 237, .45); border-radius: 12px; background: rgba(81, 221, 237, .06); display: grid; gap: 8px; }
+.jarvis-dossier__parcelle-title { display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.jarvis-dossier__parcelle input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(148, 163, 184, .5); background: transparent; color: inherit; }
+.jarvis-dossier__suggestions { display: grid; border: 1px solid rgba(148, 163, 184, .35); border-radius: 8px; overflow: hidden; }
+.jarvis-dossier__suggestions button { text-align: left; padding: 7px 10px; background: transparent; border: 0; border-bottom: 1px solid rgba(148, 163, 184, .2); color: inherit; cursor: pointer; }
+.jarvis-dossier__parcelle-found { margin: 0; }
+.jarvis-dossier__parcelle-error { margin: 0; color: #f59e0b; }
+.jarvis-dossier__link { background: none; border: 0; padding: 0; color: #51dded; text-decoration: underline; cursor: pointer; font: inherit; }
+
+
+/* Dossier de projet clair. Les commandes et la scène 3D gardent leurs fonctions. */
+.jarvis-dossier {
+  background:#fff;
+  border-left:1px solid #e5e1f0;
+  color:#30334f !important;
+  box-shadow:-10px 0 24px rgba(45,38,96,.04);
+}
+.jarvis-dossier__eyebrow { color:#7656d8 !important; }
+.jarvis-dossier__eyebrow span { color:#7b839b !important; opacity:1; }
+.jarvis-dossier__heading { border-bottom-color:#e8e5f0; }
+.jarvis-dossier h2 { color:#282659 !important; }
+.jarvis-dossier__heading p,.jarvis-dossier--empty p { color:#737b94 !important; }
+.jarvis-dossier__status { border-color:#e6c980; background:#fff9e8; color:#8a6519 !important; }
+.jarvis-dossier__status.is-validated { border-color:#9cdbbb; background:#eaf8ef; color:#23724f !important; }
+.jarvis-dossier__massing { border-color:#e0dcef; background:#f1f2f8; }
+.jarvis-dossier__massing figcaption span { color:#6c56c5 !important; }
+.jarvis-dossier__massing-canvas,.jarvis-dossier__massing-fallback { background:#f1f2f8; }
+.jarvis-dossier__massing-fallback { color:#6d748c !important; }
+.jarvis-dossier__massing-facts span { border-color:#dcd5ef; background:#f7f4ff; color:#5c4caf !important; }
+.jarvis-dossier__proposal { border-left-color:#39bd89; background:#f2fbf6; color:#356951 !important; }
+.jarvis-dossier__field { border-bottom-color:#ece9f3; }
+.jarvis-dossier__field dt { color:#6751be !important; }
+.jarvis-dossier__field dt span { color:#a4a6b7 !important; }
+.jarvis-dossier__field dd.is-missing { color:#9399ac !important; }
+.jarvis-dossier__form label { color:#5b4ab2 !important; }
+.jarvis-dossier__form textarea { border-color:#d9d4e9; background:#fff; color:#30334f !important; }
+.jarvis-dossier__form textarea:focus-visible { outline-color:#7456e8; }
+.jarvis-dossier button { border-color:#dcd6ee; background:#f6f3ff; color:#5745a8 !important; }
+.jarvis-dossier button:hover { border-color:#a994e8; background:#eee8ff; }
+.jarvis-dossier button.is-primary,.jarvis-dossier__launch {
+  background:linear-gradient(105deg,#6851e9,#8958eb) !important;
+  border-color:#7456e8 !important;
+  color:#fff !important;
+}
+.jarvis-dossier__launch { box-shadow:0 8px 20px rgba(100,74,205,.14); }
+.jarvis-dossier__launch:hover { filter:brightness(1.06); }
+.jarvis-dossier__file-count,.jarvis-dossier small { color:#737b94 !important; }
+.jarvis-dossier p[role=status] { color:#88621c !important; }
+.jarvis-dossier__signal { border-top-color:#e8e5f0; color:#78809a !important; }
+.jarvis-dossier__signal span { background:#2ab975; box-shadow:none; }
+.jarvis-dossier__parcelle { border-color:#cdebdc; background:#f2faf6; }
+.jarvis-dossier__parcelle input { border-color:#d7d4e5; background:#fff; }
+.jarvis-dossier__suggestions { border-color:#ddd8ec; background:#fff; }
+.jarvis-dossier__suggestions button { border-bottom-color:#ede9f4; }
+.jarvis-dossier__link { color:#654ec8 !important; }
+.jarvis-dossier__mobile-toggle button { color:#624cbe !important; }
+@media(max-width:900px) { .jarvis-dossier { border-left:0; border-bottom:1px solid #e5e1f0; } }
+
+.jarvis-dossier .jarvis-dossier__launch *,
+.jarvis-dossier button.is-primary * { color:#fff !important; }
+
+.jarvis-dossier button.jarvis-dossier__launch,
+.jarvis-dossier button.is-primary { color:#fff !important; }

@@ -31,6 +31,7 @@ function functionsBaseUrl(): string {
 export async function generateEmail(
   prospectId: string,
   kind: EmailKind,
+  incomingMessage?: string,
 ): Promise<GeneratedEmailResult> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
@@ -46,7 +47,7 @@ export async function generateEmail(
   const res = await fetch(`${functionsBaseUrl()}/agent-commercial-generate`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ prospect_id: prospectId, kind }),
+    body: JSON.stringify({ prospect_id: prospectId, kind, incoming_message: incomingMessage }),
   });
 
   const json = (await res.json().catch(() => null)) as

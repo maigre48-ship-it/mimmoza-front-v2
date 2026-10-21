@@ -6,7 +6,7 @@ Deno.test('/mimmozia est une route connue de l’espace commun', () => {
   assert(isKnownRoute('/mimmozia/'));
   const route = findRoute('/mimmozia');
   assertEquals(route?.space, 'commun');
-  assertEquals(routeLabel('/mimmozia'), 'MimmozIA');
+  assertEquals(routeLabel('/mimmozia'), 'Mimmo');
   assert(route?.hint.includes('assistant'));
   assert(!route?.requiresStudy);
 });
@@ -15,7 +15,7 @@ Deno.test('le catalogue propose /mimmozia avec son hint', () => {
   const catalogue = routeCatalogue();
   const line = catalogue.split('\n').find((l) => l.trim().startsWith('/mimmozia '));
   assert(line, 'ligne /mimmozia absente du catalogue');
-  assert(line.includes('MimmozIA'));
+  assert(line.includes('Mimmo'));
   assert(!line.includes('[exige une étude active]'));
 });
 

@@ -1,5 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  authentifier,
+  debiter,
+  reponseErreurFacturation,
+  TARIFS,
+  verifierSolde,
+} from "../_shared/billing/featureBilling.ts";
 
 const HANDLER_VERSION = "stream-estate-ingest-v1-geo-smart-v8";
 
@@ -755,6 +762,41 @@ function buildStartUrl(startPage: number, params: Required<RequestBody>): string
   return url.toString();
 }
 
+/**
+ * Vrai si l'appel porte la clé de service, c'est-à-dire s'il vient d'une autre
+ * Edge Function et non d'un navigateur.
+ *
+ * On compare le jeton porteur aux clés de service connues plutôt que de décoder
+ * le JWT : c'est une comparaison de chaînes, sans dépendance ni surface
+ * d'erreur. `SUPABASE_SECRET_KEYS` est lu en premier — ce projet est sur JWT
+ * Signing Keys, où la legacy `SUPABASE_SERVICE_ROLE_KEY` peut être désactivée.
+ */
+function estAppelInterne(req: Request): boolean {
+  const brut = req.headers.get("Authorization") ?? "";
+  const jeton = brut.startsWith("Bearer ") ? brut.slice(7).trim() : brut.trim();
+  if (!jeton) return false;
+
+  const clesConnues: string[] = [];
+  const dictionnaire = Deno.env.get("SUPABASE_SECRET_KEYS");
+  if (dictionnaire) {
+    try {
+      const parsed = JSON.parse(dictionnaire);
+      if (typeof parsed === "string") clesConnues.push(parsed);
+      else if (parsed && typeof parsed === "object") {
+        for (const v of Object.values(parsed)) if (typeof v === "string") clesConnues.push(v);
+      }
+    } catch {
+      clesConnues.push(dictionnaire);
+    }
+  }
+  for (const nom of ["SUPABASE_SERVICE_ROLE_KEY", "SERVICE_ROLE_KEY"]) {
+    const v = Deno.env.get(nom);
+    if (v) clesConnues.push(v);
+  }
+
+  return clesConnues.some((cle) => cle === jeton);
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 200, headers: corsHeaders });
@@ -765,6 +807,35 @@ serve(async (req) => {
       JSON.stringify({ ok: false, error: "Method not allowed", handler_version: HANDLER_VERSION }),
       { status: 405, headers: corsHeaders }
     );
+  }
+
+  // ── Contrôle d'appelant et facturation ────────────────────────────────────
+  //
+  // Cette fonction consomme le quota Stream Estate, facturé — environ 0,50 € par
+  // run. Elle n'avait aucun contrôle d'appelant : n'importe qui pouvait la
+  // déclencher en boucle, gratuitement.
+  //
+  // Elle a DEUX appelants légitimes, de nature différente :
+  //   · `opportunity-watch-run` — traitement de fond, en service_role, sans
+  //     utilisateur à débiter : on le laisse passer sans facturer ;
+  //   · le navigateur, via `marketRefresh.ts` — avec un JWT utilisateur : on
+  //     l'authentifie et on lui facture les 30 jetons ici, plutôt que dans la
+  //     page, où le prélèvement était contournable en appelant directement.
+  //
+  // Le débit front correspondant a été retiré des deux écrans concernés, sans
+  // quoi le rafraîchissement serait facturé deux fois.
+  const appelInterne = estAppelInterne(req);
+  let userIdIngestion: string | null = null;
+
+  if (!appelInterne) {
+    try {
+      userIdIngestion = await authentifier(req);
+      await verifierSolde(userIdIngestion, TARIFS.refresh_veille);
+    } catch (e) {
+      const reponse = reponseErreurFacturation(e, corsHeaders);
+      if (reponse) return reponse;
+      throw e;
+    }
   }
 
   try {
@@ -1085,6 +1156,24 @@ serve(async (req) => {
     }
 
     console.log(`[stream-estate-ingest-v1] upserted=${upserted}/${preparedRows.length}`);
+
+    // Ingestion réellement effectuée : on facture l'utilisateur qui l'a
+    // déclenchée. Les appels internes (traitement de fond) ne débitent personne,
+    // et un `dry_run` sort plus haut sans consommer le quota Stream Estate.
+    if (userIdIngestion) {
+      try {
+        await debiter({
+          userId: userIdIngestion,
+          montant: TARIFS.refresh_veille,
+          type: "refresh_veille",
+          description: "Rafraîchissement veille marché (ingestion Stream Estate)",
+        });
+      } catch (e) {
+        const reponse = reponseErreurFacturation(e, corsHeaders);
+        if (reponse) return reponse;
+        throw e;
+      }
+    }
 
     return new Response(
       JSON.stringify({ ok: true, dry_run: false, upserted, ...summary }),

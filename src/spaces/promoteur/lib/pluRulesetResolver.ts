@@ -1,4 +1,15 @@
 // src/spaces/promoteur/lib/pluRulesetResolver.ts
+//
+// L2 — le ruleset résolu peut porter la provenance par valeur (format additif
+// `provenance_version: "plu_provenance_v1"`, voir ./pluProvenance.ts). Ce
+// résolveur la RECOPIE telle quelle quand la ligne source la fournit
+// (`ruleset` déjà résolu, ou `rules._provenance_v1` / `ruleset._provenance_v1`
+// écrits par plu-parser ≥ 3.2.0) ; il n'en invente jamais. Sans provenance, le
+// contrôle d'implantation traite les valeurs comme « à vérifier ».
+// NB : ce module n'est importé nulle part aujourd'hui (PluFaisabilite.tsx
+// embarque sa propre copie et n'est pas routée) ; il reste la référence.
+
+import { PROVENANCE_VERSION } from "./pluProvenance.ts";
 
 export type RuleType = "FIXED" | "H_OVER_2" | "H_OVER_2_MIN" | "UNKNOWN";
 
@@ -63,7 +74,36 @@ export type ResolvedPluRulesetV1 = {
     ok: boolean;
     missing: string[];
   };
+
+  /** L2 — provenance par valeur (optionnelle, additive). */
+  provenance_version?: typeof PROVENANCE_VERSION;
+  document?: Record<string, unknown> | null;
+  provenance?: Record<string, unknown>;
 };
+
+/** L2 — provenance déjà présente dans la ligne source (jamais inventée). */
+function provenanceSource(z: PluRulesZoneRowLike): Pick<ResolvedPluRulesetV1, "provenance_version" | "document" | "provenance"> {
+  const rs = z.ruleset as Record<string, unknown> | null | undefined;
+  if (rs && typeof rs === "object" && rs.provenance_version === PROVENANCE_VERSION && rs.provenance && typeof rs.provenance === "object") {
+    return { provenance_version: PROVENANCE_VERSION, document: (rs.document as Record<string, unknown> | null) ?? null, provenance: rs.provenance as Record<string, unknown> };
+  }
+  const p = (z.rules?._provenance_v1 ?? (rs as Record<string, any> | null | undefined)?._provenance_v1) as { document?: unknown; valeurs?: unknown } | undefined;
+  if (p && typeof p === "object" && p.valeurs && typeof p.valeurs === "object") {
+    // clés du parseur → clés du ruleset résolu
+    const v = p.valeurs as Record<string, unknown>;
+    const map: Record<string, string> = {
+      "reculs.voirie.min_m": "reculs.voirie.min_m",
+      "reculs.limites_separatives.min_m": "reculs.limites_separatives.min_m",
+      "reculs.fond_parcelle.min_m": "reculs.fond_parcelle.min_m",
+      "hauteur.hauteur_max_m": "hauteur.max_m",
+      "stationnement.places_par_logement": "stationnement.par_logement",
+    };
+    const provenance: Record<string, unknown> = {};
+    for (const [src, dst] of Object.entries(map)) if (v[src]) provenance[dst] = v[src];
+    return { provenance_version: PROVENANCE_VERSION, document: (p.document as Record<string, unknown> | null) ?? null, provenance };
+  }
+  return {};
+}
 
 // -------------------------------------------
 // Helpers (indépendants du fichier page)
@@ -278,5 +318,6 @@ export function resolvePluRulesetV1(z: PluRulesZoneRowLike): ResolvedPluRulesetV
       ok: missing.length === 0,
       missing,
     },
+    ...provenanceSource(z),
   };
 }

@@ -16,7 +16,6 @@ import {
   TRAVAUX_SOL_TYPE_LABELS,
 } from "../types/rendutravaux.types";
 import { userStorage } from "@/lib/storage/userScopedStorage";
-import { spendCredits } from "@/lib/billing/projectUnlock";
 import { ACTION_COSTS } from "@/lib/billing/actionCosts";
 import { readMarchandSnapshot } from "../shared/marchandSnapshot.store";
 
@@ -654,17 +653,18 @@ export default function RenduTravauxPage({ theme, breadcrumb }: Props) {
   const handleGenerate = async () => {
     if (!state.selectedImageId) return;
 
-    // Débit jetons AVANT génération (bloque + invite à recharger si solde insuffisant).
+    // Le débit n'est PLUS fait ici.
+    //
+    // Il vivait dans le navigateur, donc contournable : l'Edge Function
+    // `rendu-travaux-v1` ne lisait aucun en-tête d'authentification et générait
+    // des images gratuitement pour qui l'appelait directement. Le prélèvement a
+    // lieu désormais côté serveur, APRÈS livraison de l'image — ce qui corrige
+    // aussi le cas où le hook retombait sur une image de démonstration sans
+    // erreur, alors que les 15 jetons avaient déjà été pris.
+    //
+    // Le solde insuffisant remonte maintenant en 402 depuis la fonction ; c'est
+    // `generateRendu` qui en porte le message.
     setBillingError(null);
-    const spend = await spendCredits(ACTION_COSTS.rendu_ia, "Rendu IA", "rendu_ia");
-    if (!spend.ok) {
-      setBillingError(
-        spend.reason === "NO_TOKENS"
-          ? "solde de jetons insuffisant. rechargez pour générer un rendu."
-          : spend.message ?? "erreur lors du débit des jetons.",
-      );
-      return;
-    }
 
     const config: ExtendedTravauxRenduConfig = {
       gamme,

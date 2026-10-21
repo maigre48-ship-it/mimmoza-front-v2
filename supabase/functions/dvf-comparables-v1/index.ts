@@ -18,6 +18,14 @@
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// ⚠️ CET IMPORT MANQUAIT — c'est LA cause de la panne DVF.
+//
+// `statsPrixM2` est appelée plus bas sans avoir jamais été importée : à
+// l'exécution, ReferenceError, attrapé par le catch de getDvfComparables et
+// transformé en « Erreur lors de la lecture des données DVF (geo-dvf) ». Le
+// message accusait la source de données alors que le fichier ne compilait
+// simplement pas — et le motif réel n'était nulle part.
+import { statsPrixM2 } from "../_shared/dvf/stats.ts";
 
 // ── CORS inline ─────────────────────────────────────────────────────────────────
 const corsHeaders = {
@@ -29,6 +37,8 @@ const corsHeaders = {
 const DVF_CSV_BASE = "https://files.data.gouv.fr/geo-dvf/latest/csv";
 const GEO_API_BASE = "https://geo.api.gouv.fr";
 const CACHE_TTL_SECONDS = 7 * 24 * 3600; // 7 jours (le DVF bouge rarement)
+/** Doit rester constant : il fait partie de la clé unique d'api_cache. */
+const CACHE_PROVIDER = "dvf-live";
 
 // ── Client Supabase (uniquement pour le cache ; optionnel) ───────────────────────
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("REST_URL") ?? "";
@@ -163,34 +173,69 @@ async function resolveDvfCode(communeCode: string, lat: number | null, lon: numb
   return communeCode;
 }
 
-// ── Cache (table api_cache, comme smartscore-enriched-v3) ───────────────────────
+// ── Cache (table api_cache) ─────────────────────────────────────────────────────
+//
+// ⚠️ Ce cache n'a JAMAIS fonctionné. Le schéma réel d'`api_cache` est :
+//   id, provider, cache_key, request (jsonb NOT NULL), response (jsonb),
+//   status, fetched_at, ttl_seconds, expires_at
+//
+// La lecture demandait `select=data` — colonne inexistante — d'où un HTTP 400 à
+// chaque appel, visible dans les journaux :
+//   GET | 400 | /rest/v1/api_cache?select=data&cache_key=eq.dvfc:92064:24:2:all
+//
+// L'écriture était tout aussi cassée : `data` et `hit_count` n'existent pas, et
+// `request` (NOT NULL) n'était pas fournie.
+//
+// Conséquence : chaque appel retéléchargeait plusieurs Mo de CSV geo-dvf. Le
+// commentaire d'en-tête promettait « seul le résultat compact est mis en cache »
+// — c'était vrai en intention, faux en pratique.
 async function getFromCache(key: string): Promise<any | null> {
   if (!supabase) return null;
   try {
+    // `provider` fait partie de la clé : l'index unique porte sur
+    // (provider, cache_key), pas sur cache_key seul. Filtrer sur la seule clé
+    // pourrait ramener la ligne d'un autre fournisseur et faire échouer
+    // maybeSingle() en PGRST116.
     const { data, error } = await supabase
       .from("api_cache")
-      .select("data")
+      .select("response")
+      .eq("provider", CACHE_PROVIDER)
       .eq("cache_key", key)
       .gt("expires_at", new Date().toISOString())
-      .single();
-    if (!error && data?.data) return data.data;
-  } catch { /* */ }
-  return null;
+      .maybeSingle();
+    if (error) {
+      console.error("[dvf] lecture du cache impossible :", error.message);
+      return null;
+    }
+    return data?.response ?? null;
+  } catch (e) {
+    console.error("[dvf] lecture du cache : exception", e);
+    return null;
+  }
 }
-async function saveToCache(key: string, data: any): Promise<void> {
+async function saveToCache(key: string, payload: any): Promise<void> {
   if (!supabase) return;
   try {
-    await supabase.from("api_cache").upsert(
+    const { error } = await supabase.from("api_cache").upsert(
       {
         cache_key: key,
-        provider: "dvf-live",
-        data,
+        provider: CACHE_PROVIDER,
+        request: { cache_key: key },   // colonne NOT NULL : on y trace la clé
+        response: payload,
+        status: 200,
+        fetched_at: new Date().toISOString(),
+        ttl_seconds: CACHE_TTL_SECONDS,
         expires_at: new Date(Date.now() + CACHE_TTL_SECONDS * 1000).toISOString(),
-        hit_count: 0,
       },
-      { onConflict: "cache_key" },
+      // L'index unique de la table est api_cache_provider_key_uq (provider,
+      // cache_key). Viser `cache_key` seul produirait un 42P10 : « no unique or
+      // exclusion constraint matching the ON CONFLICT specification ».
+      { onConflict: "provider,cache_key" },
     );
-  } catch { /* */ }
+    if (error) console.error("[dvf] écriture du cache impossible :", error.message);
+  } catch (e) {
+    console.error("[dvf] écriture du cache : exception", e);
+  }
 }
 
 // ── Lecture DVF live (CSV geo-dvf par commune) ──────────────────────────────────
@@ -217,6 +262,10 @@ async function fetchDvfLive(params: {
   for (let y = currentYear; y >= startYear; y--) years.push(y);
 
   let allRows: Array<Record<string, string>> = [];
+  const anneesLues: number[] = [];
+  const anneesVides: number[] = [];      // 404 : millésime sans aucune vente
+  const anneesEchouees: string[] = [];   // panne réelle
+
   for (const year of years) {
     const url = `${DVF_CSV_BASE}/${year}/communes/${dep}/${dvfCode}.csv`;
     try {
@@ -224,8 +273,36 @@ async function fetchDvfLive(params: {
       if (resp.ok) {
         const txt = await resp.text();
         allRows = allRows.concat(parseCSV(txt));
+        anneesLues.push(year);
+      } else if (resp.status === 404) {
+        // 404 = ABSENCE LÉGITIME, pas une panne.
+        //
+        // geo-dvf ne publie aucun fichier pour une commune sans mutation cette
+        // année-là : sur un département rural, plusieurs dizaines de communes
+        // sont dans ce cas. L'année en cours est également absente tant que le
+        // millésime n'est pas publié. Traiter ces 404 comme une erreur
+        // transformerait « aucune vente » en « source injoignable ».
+        anneesVides.push(year);
+      } else {
+        anneesEchouees.push(`${year}:HTTP ${resp.status}`);
       }
-    } catch { /* année manquante → on ignore */ }
+    } catch (e) {
+      anneesEchouees.push(`${year}:${e instanceof Error ? e.name : "erreur"}`);
+    }
+  }
+
+  console.log(
+    `[dvf] ${dvfCode} — lues : ${anneesLues.join(", ") || "aucune"}` +
+    `${anneesVides.length ? ` · sans donnée : ${anneesVides.join(", ")}` : ""}` +
+    `${anneesEchouees.length ? ` · ÉCHECS : ${anneesEchouees.join(", ")}` : ""}` +
+    ` · lignes : ${allRows.length}`,
+  );
+
+  // On ne lève QUE sur une panne avérée : rien lu ET au moins un échec qui n'est
+  // pas un 404. Si tout est en 404, la commune n'a simplement pas de vente sur
+  // la période — le flux continue et ressortira en « aucune transaction ».
+  if (anneesLues.length === 0 && anneesEchouees.length > 0) {
+    throw new Error(`source geo-dvf injoignable pour ${dvfCode} (${anneesEchouees.join(", ")})`);
   }
 
   const seen = new Set<string>();
@@ -373,10 +450,17 @@ async function getDvfComparables(input: {
       await saveToCache(cacheKey, { stats, comps });
     }
   } catch (e) {
+    // Le motif réel était perdu : il partait dans `error`, que les appelants
+    // n'affichent pas (l'étude de parcelle ne restitue que `summary`). Résultat,
+    // une panne DVF se lisait « Erreur lors de la lecture des données DVF » sans
+    // qu'aucun journal ne dise pourquoi. On le trace ET on le met dans le
+    // résumé, qui est le seul champ que l'utilisateur verra.
+    const motif = e instanceof Error ? e.message : String(e);
+    console.error("[dvf] échec de lecture :", motif, { params });
     return {
       status: "error" as DvfStatus,
-      summary: "Erreur lors de la lecture des données DVF (geo-dvf).",
-      stats: null, comps: [] as DvfComp[], params, error: String(e),
+      summary: `Erreur lors de la lecture des données DVF (geo-dvf) : ${motif}`,
+      stats: null, comps: [] as DvfComp[], params, error: motif,
     };
   }
 

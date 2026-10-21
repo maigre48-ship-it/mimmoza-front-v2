@@ -115,10 +115,10 @@ export default function MimmoziaLearningSettings() {
       <header className="mls__header">
         <div className="mls__title">
           <Sparkles size={18} />
-          <h2>Ce que MimmozIA a appris de vous</h2>
+          <h2>Ce que Mimmo a appris de vous</h2>
         </div>
         <p className="mls__intro">
-          MimmozIA observe votre usage pour anticiper vos besoins. Ces observations
+          Mimmo observe votre usage pour anticiper vos besoins. Ces observations
           restent <strong>privées</strong> et ne servent qu'à personnaliser votre expérience.
         </p>
       </header>
@@ -129,8 +129,8 @@ export default function MimmoziaLearningSettings() {
           <div className="mls-row__label">Apprentissage des habitudes</div>
           <div className="mls-row__hint">
             {enabled
-              ? 'Activé — MimmozIA affine votre profil au fil de vos analyses.'
-              : 'Désactivé — MimmozIA n\u2019observe plus rien. Vos données passées restent masquées (réactivez pour les retrouver, ou effacez-les ci-dessous).'}
+              ? 'Activé — Mimmo affine votre profil au fil de vos analyses.'
+              : 'Désactivé — Mimmo n\u2019observe plus rien. Vos données passées restent masquées (réactivez pour les retrouver, ou effacez-les ci-dessous).'}
           </div>
         </div>
         <button
@@ -157,7 +157,7 @@ export default function MimmoziaLearningSettings() {
       ) : !hasData ? (
         <div className="mls-state mls-state--muted">
           <Info size={16} />
-          Pas encore assez d'observations. Continuez à utiliser MimmozIA — votre profil
+          Pas encore assez d'observations. Continuez à utiliser Mimmo — votre profil
           apparaîtra ici dès qu'elle en saura assez pour être utile.
         </div>
       ) : (
@@ -215,7 +215,7 @@ export default function MimmoziaLearningSettings() {
             onClick={() => setConfirmPurge(true)}
             disabled={busy || loading}
           >
-            <Trash2 size={15} />Effacer ce que MimmozIA a appris
+            <Trash2 size={15} />Effacer ce que Mimmo a appris
           </button>
         ) : (
           <div className="mls-confirm">

@@ -9206,7 +9206,8 @@ function buildSystemPrompt(ctx: MimmozaContext, mode: CopilotMode): string {
     "vérifiée. Un outil absent n'est jamais une raison de ne pas répondre.";
 
   return [
-    "Tu es MimmozIA, l'assistant IA intégré à la plateforme Mimmoza (intelligence immobilière et foncière française). Ta page plein écran est /mimmozia, ouvrable via action_ouvrir_page.",
+    "Tu es Mimmo, l'assistant de Mimmoza, la plateforme d'intelligence immobilière et foncière française. Présente-toi toujours sous le nom de Mimmo. Ta page plein écran est /mimmozia, ouvrable via action_ouvrir_page.",
+    "PRÉPARATION 3D DANS /mimmozia : si l'utilisateur veut préparer, créer ou modifier une maquette, une prévisualisation ou un projet 3D, discute avec lui avant toute ouverture de Studio. Pose au plus deux questions utiles à la fois. Réutilise les réponses et la fiche 3D du tour précédent. Ne déduis jamais une dimension, une adresse, un nombre d'étages ou une contrainte absente. Les pièces jointes du tour courant sont visibles ; aux tours suivants, conserve seulement leurs noms et les faits déjà explicitement relevés, sans prétendre relire leurs contenus. À la fin de chaque réponse liée à CE projet 3D, ajoute un bloc JSON valide délimité par ```mimmoza-3d et ``` avec exactement ces clés : version (1), objectif, localisation, programme, dimensions, style, contraintes (chaîne ou null), questions (tableau de questions encore ouvertes), pieces (tableau des noms de pièces communiquées). Recopie les valeurs connues de la fiche précédente et ne change que ce que l'utilisateur corrige. Ce bloc alimente le dossier visible dans le chat ; écris d'abord une réponse naturelle et ne présente pas le JSON comme du texte à lire. Ne prétends jamais avoir envoyé la demande au Studio.",
     preseanceOutils,
     verticalLine[ctx.vertical],
     `Contexte : route ${ctx.route}. ${parcelLine}`,
@@ -9682,6 +9683,25 @@ const PRIOR_RESULTS_MAX_CHARS = 6000;
 const PRIOR_RESULTS_MAX_CALLS = 12;
 /** Troncature d'une sortie d'outil isolée. */
 const PRIOR_RESULT_MAX_CHARS = 900;
+
+async function buildSavedStudioDraftBlock(conversationId: string, userId: string): Promise<string> {
+  try {
+    const { data, error } = await getAdmin().from('copilot_studio3d_drafts')
+      .select('payload,status,updated_at')
+      .eq('conversation_id', conversationId).eq('user_id', userId).maybeSingle();
+    if (error || !data) return '';
+    return [
+      '---',
+      '# FICHE 3D ENREGISTRÉE PAR L’UTILISATEUR',
+      data.status === 'validated'
+        ? 'Cette fiche a été validée par l’utilisateur. Reprends ses champs comme état courant du projet ; ne la modifie pas en base et demande une nouvelle validation si l’utilisateur change le projet.'
+        : 'Cette fiche contient les corrections enregistrées par l’utilisateur. Utilise-les dans la discussion ; elles restent à valider.',
+      'Les champs vides ou null restent inconnus. Les noms des pièces ne donnent pas accès à leur contenu.',
+      compactJson(data.payload, 12000),
+      '---',
+    ].join('\n');
+  } catch { return ''; } // La conversation reste utilisable si la migration manque.
+}
 
 function compactJson(value: unknown, maxChars: number): string {
   let s: string;
@@ -10762,10 +10782,11 @@ Deno.serve(async (req: Request) => {
     //
     // `payload.message` est passé en clair : le message du tour n'a pas besoin
     // d'être déjà en base pour figurer dans ce qui part au modèle.
-    const [messages, priorToolResults] = await Promise.all([
+    const [messages, priorToolResults, savedStudioDraft] = await Promise.all([
       buildMessages(conversationId, payload.message, mode, payload.attachments),
       // Jamais bloquant — en cas d'échec, le bloc est vide.
       buildPriorToolResultsBlock(conversationId),
+      buildSavedStudioDraftBlock(conversationId, userId),
     ]);
 
     // L'insertion part APRÈS que les lectures ci-dessus soient terminées : le
@@ -10783,7 +10804,8 @@ Deno.serve(async (req: Request) => {
     });
 
     const result = await runOrchestrator({
-      mode, tier, ctx: effectiveContext, messages, sse, priorToolResults,   // ⬅️ tier ajouté
+      mode, tier, ctx: effectiveContext, messages, sse,
+      priorToolResults: [priorToolResults, savedStudioDraft].filter(Boolean).join('\n\n'),
       // userId vient de requireUserId() (JWT vérifié) ; l'en-tête est réutilisé
       // tel quel pour que les écritures passent par le client UTILISATEUR.
       auth: { userId, authHeader: req.headers.get('Authorization') ?? '' },

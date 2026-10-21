@@ -6,51 +6,40 @@
 // jamais le navigateur (elle n'est pas envoyée au serveur). Le studio fusionne
 // les parcelles contiguës et pose le terrain à la forme exacte de l'unité foncière.
 
+// L3 — poignée de main initiée par Mimmoza : canal de retour entre origines différentes, sans opener.
+import { poigneeDeMainDepuisAdresse } from "./echangeStudio/transportStudio.ts";
+
 export interface ParcelleStudio {
   id: string;
   feature?: unknown;
 }
 
-/** Serveur Vite local du studio, valable uniquement quand Mimmoza tourne lui-même en local. */
-export const STUDIO_3D_URL_LOCALE = "http://localhost:5173";
+// R1 — l'adresse de Studio a UN SEUL point de configuration : src/lib/studioConfig.ts.
+// Ce module en garde les anciens noms (tests et appelants existants), sans aucune adresse en dur.
+import {
+  ErreurStudio3D, estHoteLocal, resoudreUrlStudio, STUDIO_URL_CONFIGUREE, STUDIO_URL_LOCALE_DEFAUT, urlStudio,
+} from "../../../lib/studioConfig.ts";
+export { ErreurStudio3D, estHoteLocal };
+
+/** Studio quand aucune page n'est connue : le front local, même origine (proxy Vite 5173 → 5174). */
+export const STUDIO_3D_URL_LOCALE = STUDIO_URL_LOCALE_DEFAUT;
 
 /** Adresse configurée (VITE_MIMMOZIA_STUDIO_URL), brute, éventuellement absente. */
-const STUDIO_3D_URL_CONFIGUREE: string | undefined =
-  (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_MIMMOZIA_STUDIO_URL;
+const STUDIO_3D_URL_CONFIGUREE: string | undefined = STUDIO_URL_CONFIGUREE;
 
-/** Adresse du studio : variable d'environnement, sinon le serveur Vite local par défaut. */
+/** Adresse du studio : variable d'environnement, sinon le front local sous /studio/. */
 export const STUDIO_3D_URL: string = STUDIO_3D_URL_CONFIGUREE ?? STUDIO_3D_URL_LOCALE;
 
-/** PUB-A — hôte de poste local (localhost, *.localhost, 127.x, ::1, 0.0.0.0). */
-export function estHoteLocal(hote: string): boolean {
-  const h = hote.trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
-  return h === "localhost" || h.endsWith(".localhost") || h === "::1" || h === "0.0.0.0" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
-}
-
 /**
- * PUB-A — adresse du studio selon l'hôte de la page Mimmoza (null = hors navigateur, traité comme local).
- * En local : adresse configurée sinon serveur Vite local. Sur un domaine public : adresse https publique
- * obligatoire, sinon ErreurStudio3D (jamais d'onglet vers localhost).
+ * PUB-A / R1 — adresse du studio selon l'hôte de la page Mimmoza (null = hors navigateur, traité comme local).
+ * Sans configuration : même origine, sous /studio/ (http://localhost:5173/studio/ en local, https://<hôte>/studio/
+ * sinon). Adresse configurée sur un domaine public : https obligatoire, jamais un poste local (ErreurStudio3D).
+ * Préférez urlStudio3D() (origine réelle de la page, port compris) ; cette forme ne connaît que l'hôte.
  */
 export function resoudreUrlStudio3D(configuree: string | null | undefined, hotePage: string | null | undefined): string {
-  const pageLocale = !hotePage || estHoteLocal(hotePage);
-  const brute = (configuree ?? "").trim();
-  const prefixe = "Studio 3D indisponible sur ce domaine public : ";
-  if (!brute) {
-    if (pageLocale) return STUDIO_3D_URL_LOCALE;
-    throw new ErreurStudio3D(`${prefixe}aucune adresse de studio n'est configurée (VITE_MIMMOZIA_STUDIO_URL).`);
-  }
-  let url: URL | null = null;
-  try { url = new URL(brute); } catch { /* adresse invalide, signalée ci-dessous */ }
-  if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) {
-    throw new ErreurStudio3D(`${pageLocale ? "Studio 3D indisponible : " : prefixe}adresse de studio invalide (« ${brute} »).`);
-  }
-  if (!pageLocale) {
-    if (estHoteLocal(url.hostname)) throw new ErreurStudio3D(`${prefixe}l'adresse de studio configurée pointe vers un poste local (${url.host}).`);
-    if (url.protocol !== "https:") throw new ErreurStudio3D(`${prefixe}l'adresse de studio doit être en https (${url.host}).`);
-  }
-  url.hash = "";
-  return url.href;
+  if (!hotePage) return resoudreUrlStudio(configuree, null);
+  const origine = estHoteLocal(hotePage) ? new URL(STUDIO_3D_URL_LOCALE).origin : `https://${hotePage}`;
+  return resoudreUrlStudio(configuree, { origin: origine, hostname: hotePage });
 }
 
 function hotePageCourante(): string | null {
@@ -59,7 +48,7 @@ function hotePageCourante(): string | null {
 
 /** PUB-A — adresse du studio pour la page courante ; lève ErreurStudio3D si elle est inutilisable. */
 export function urlStudio3D(): string {
-  return resoudreUrlStudio3D(STUDIO_3D_URL_CONFIGUREE, hotePageCourante());
+  return urlStudio();
 }
 
 /** PUB-A — pose l'ancre de transfert sur l'adresse du studio (chemin et paramètres conservés). */
@@ -86,15 +75,20 @@ export interface PanoramaStudio { url: string; nom: string }
 
 /** CH2 — ce que le tchat Mimmoza envoie en plus : description, photos de façade, plans (adresses signées). */
 export interface ExtrasStudio {
+  implantation?: { lon: number; lat: number; orientationDeg: number; entryOffsetM: number };
+  accesses?: readonly { kind: 'pieton' | 'vehicule'; lon: number; lat: number }[];
+  bridgeSessionId?: string;
+  conversationId?: string;
+  openerOrigin?: string;
   brief?: string | null;
+  commandeArchitecture?: string | null;
+  compositionArchitecture?: readonly { name: string; commande: string; centreZ: number }[];
+  volumeAiles?: readonly { name: string; largeurM: number; profondeurM: number; niveaux: number; retraitM: number; x: number; z: number; fromLevelIndex?: number }[];
   facades?: readonly PanoramaStudio[];
   plans?: readonly PanoramaStudio[];
 }
 
-/** CAD04 — erreur destinée à l'utilisateur (message affichable tel quel). */
-export class ErreurStudio3D extends Error {
-  constructor(message: string) { super(message); this.name = "ErreurStudio3D"; }
-}
+/** CAD04 — ErreurStudio3D : définie dans src/lib/studioConfig.ts (R1), ré-exportée ci-dessus. */
 
 type Position = [number, number];
 type PolygoneCoords = Position[][];
@@ -220,20 +214,34 @@ export function adresseStudio3D(parcelles: readonly ParcelleStudio[], communeIns
   // CAD04 : aucune parcelle sélectionnée n'est écartée en silence.
   verifierGeometries(parcelles);
   const brief = (extras.brief ?? "").trim().slice(0, 2000);
+  const commandeArchitecture = (extras.commandeArchitecture ?? "").trim().slice(0, 1000);
+  // R2 — composition de N bâtiments (2 à 8, borne du contrat v2), plus seulement 2.
+  if ((extras.compositionArchitecture ?? []).length > 8) throw new ErreurStudio3D("Composition de plus de 8 bâtiments : Studio en accepte 8 au plus.");
+  const compositionArchitecture = (extras.compositionArchitecture ?? []).slice(0, 8)
+    .filter(item => item.commande.trim() && Number.isFinite(item.centreZ))
+    .map(item => ({ name: item.name.slice(0, 60), commande: item.commande.trim().slice(0, 1000), centreZ: Math.max(-200, Math.min(200, item.centreZ)) }));
+  const volumeAiles = (extras.volumeAiles ?? []).slice(0, 12);
   const facades = (extras.facades ?? []).slice(0, 4);
   const plans = (extras.plans ?? []).slice(0, 6);
   // CH2 : sans parcelle, la prévisualisation reste possible à partir d'une description, de photos ou de plans.
-  if (parcelles.length === 0 && !brief && facades.length === 0 && plans.length === 0) return null;
+  if (parcelles.length === 0 && !brief && !commandeArchitecture && compositionArchitecture.length === 0 && facades.length === 0 && plans.length === 0) return null;
   const charge = {
     version: 1,
     source: "mimmoza-front-v2",
+    ...(extras.bridgeSessionId && extras.conversationId && extras.openerOrigin
+      ? { bridgeSessionId: extras.bridgeSessionId, conversationId: extras.conversationId, openerOrigin: extras.openerOrigin } : {}),
     communeInsee: communeInsee ?? null,
     adresse: adresse ?? null,
     pointAdresse: point && Number.isFinite(point.lat) && Number.isFinite(point.lon) ? { lat: point.lat, lon: point.lon } : null,
     parcels: parcelles.map((p) => ({ id: p.id, feature: p.feature })),
     ...(terrain && parcelles.length > 0 ? { terrainData: terrain } : {}),
+    ...(terrain && parcelles.length === 1 && extras.implantation ? { implantation: extras.implantation } : {}),
+    ...(terrain && parcelles.length === 1 && extras.implantation && extras.accesses?.length ? { accesses: extras.accesses.slice(0, 2) } : {}),
     ...(panoramas.length > 0 ? { panoramas: panoramas.slice(0, 10) } : {}),
     ...(brief ? { brief } : {}),
+    ...(commandeArchitecture ? { commandeArchitecture } : {}),
+    ...(compositionArchitecture.length >= 2 ? { compositionArchitecture } : {}),
+    ...(volumeAiles.length >= 2 ? { volumeAiles } : {}),
     ...(facades.length > 0 ? { facades } : {}),
     ...(plans.length > 0 ? { plans } : {}),
   };
@@ -261,7 +269,12 @@ export async function ouvrirOngletStudio3D(
     if (hote && !estHoteLocal(hote) && estHoteLocal(new URL(url).hostname)) {
       throw new ErreurStudio3D("Studio 3D indisponible sur ce domaine public : l'adresse de studio pointe vers un poste local.");
     }
-    if (onglet) { onglet.opener = null; onglet.location.href = url; } else { window.location.href = url; }
+    if (onglet) {
+      onglet.opener = null;
+      onglet.location.href = url;
+      // L3 — l'onglet n'a plus d'opener : Mimmoza lui envoie « bonjour », Studio répond à cette fenêtre.
+      poigneeDeMainDepuisAdresse(onglet, url);
+    } else { window.location.href = url; }
   } catch (e) {
     onglet?.close();
     throw e;

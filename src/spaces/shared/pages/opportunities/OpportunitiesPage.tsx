@@ -6,7 +6,9 @@
 //
 // FACTURATION JETONS :
 //   • Scan simple (lecture portal_snapshots + scoring)  = ACTION_COSTS.scan_opportunites (5)
+//     → débité ICI (aucun coût API, pas d'Edge Function à protéger)
 //   • + Rafraîchissement Stream Estate (withIngest)     = ACTION_COSTS.refresh_veille   (30)
+//     → débité par l'Edge Function stream-estate-ingest-v1, après ingestion réelle
 //   Débit AVANT le scan/ingestion (Stream Estate facture l'appel). Bloque si solde insuffisant.
 //   Case "Rafraîchir" DÉCOCHÉE par défaut → le scan simple bon marché est le défaut.
 // =============================================================
@@ -547,14 +549,20 @@ export default function OpportunitiesPage({ embedded = false }: { embedded?: boo
       return;
     }
 
-    // ── Débit jetons AVANT le scan (et avant l'appel Stream Estate). ──────────
-    // Scan simple = 5. Si rafraîchissement coché = 5 + 30 = 35.
-    // Stream Estate facture l'appel : on encaisse les jetons avant de le déclencher.
+    // ── Débit jetons du SCAN seulement ───────────────────────────────────────
+    // Le scan lui-même (lecture de portal_snapshots + scoring) vaut 5 jetons et
+    // reste facturé ici : il ne coûte rien en API et n'a pas d'Edge Function
+    // dédiée à protéger.
+    //
+    // Les 30 jetons du rafraîchissement, en revanche, ne sont PLUS prélevés ici :
+    // `stream-estate-ingest-v1` les débite elle-même, après l'ingestion
+    // réellement effectuée. C'est ce qui rend le prélèvement incontournable — un
+    // débit navigateur se sautait en appelant la fonction directement — et ce
+    // qui évite de facturer un rafraîchissement que la politique de fraîcheur
+    // décide finalement de sauter.
     const zoneSuffix = city ? ` : ${city}` : zipCode ? ` : ${zipCode}` : '';
-    const spendLabel = withIngest
-      ? `Scan Opportunités + rafraîchissement${zoneSuffix}`
-      : `Scan Opportunités${zoneSuffix}`;
-    const spend = await spendCredits(currentScanCost, spendLabel, 'opportunity_scan');
+    const spendLabel = `Scan Opportunités${zoneSuffix}`;
+    const spend = await spendCredits(ACTION_COSTS.scan_opportunites, spendLabel, 'opportunity_scan');
     if (!spend.ok) {
       setScanError(
         spend.reason === 'NO_TOKENS'

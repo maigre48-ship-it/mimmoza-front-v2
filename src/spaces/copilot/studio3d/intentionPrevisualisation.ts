@@ -19,7 +19,8 @@ export function demandePrevisualisation(texte: string): boolean {
   const t = sansAccents(texte).replace(/[’`]/g, "'");
   if (QUESTION_EXPLICATIVE.test(t)) return false;
   if (OUVERTURE_STUDIO.test(t)) return true;
-  const verbe = /\b(genere|generer|generez|lance|lancer|lancez|cree|creer|creez|fais|faire|faites|ouvre|ouvrir|prepare|preparer|montre|montrer|realise|realiser|je veux|j'aimerais|peux-tu|pouvez-vous)\b/.test(t);
-  const objet = /\b(previsualisation|previsu|preview|maquette 3d|modele 3d|studio 3d|vue 3d|en 3d|rendu 3d|mimmozia studio|mimmoza studio)\b/.test(t);
+  // R2 — « génère la 3D », « voir en 3D », « passe en 3D » : la phrase du parcours en un geste.
+  const verbe = /\b(genere|generer|generez|lance|lancer|lancez|cree|creer|creez|fais|faire|faites|ouvre|ouvrir|prepare|preparer|montre|montrer|realise|realiser|voir|vois|visualise|visualiser|passe|passer|je veux|j'aimerais|peux-tu|pouvez-vous)\b/.test(t);
+  const objet = /\b(previsualisation|previsu|preview|maquette 3d|modele 3d|studio 3d|vue 3d|en 3d|rendu 3d|la 3d|une 3d|mimmozia studio|mimmoza studio)\b/.test(t);
   return verbe && objet;
 }

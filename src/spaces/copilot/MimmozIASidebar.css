@@ -371,10 +371,10 @@
   transition: transform 0.22s ease;
 }
 body:has(.mzia-page.has-sidebar.sidebar-collapsed) .mzia-shell-logo {
-  transform: translateX(-152px);
+  transform: translateX(0);
 }
 body:has(.mzia-page.has-sidebar:not(.sidebar-collapsed)) .mzia-shell-logo {
-  transform: translateX(72px);
+  transform: translateX(190px);
 }
 
 /* Hamburger + overlay mobile */
@@ -430,3 +430,8 @@ body:has(.mzia-page.has-sidebar:not(.sidebar-collapsed)) .mzia-shell-logo {
   .mzia-proj__del,
   .mzia-conv__menu { opacity: 1; }
 }
+
+/* Une seconde ligne visible aide à distinguer les conversations homonymes. */
+.mzia-conv__title { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; white-space:normal; overflow:hidden; line-height:1.3; }
+.mzia-conv__text { gap:3px; }
+.mzia-conv__main { padding-top:9px; padding-bottom:9px; }

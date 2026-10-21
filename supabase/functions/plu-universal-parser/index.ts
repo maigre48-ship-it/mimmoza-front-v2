@@ -97,10 +97,26 @@ ${texteReglement}
         { role: "user", content: userPrompt },
       ],
       temperature: 0.1,
+      // Sans plafond explicite, la sortie n'était bornée que par le modèle. Le
+      // résultat attendu est un objet JSON de règles d'urbanisme : 4 000 tokens
+      // sont très larges, et l'API échoue proprement plutôt que de facturer une
+      // génération partie en boucle.
+      max_tokens: 4000,
+      // Le prompt exige déjà du JSON ; on le fait garantir par l'API plutôt que
+      // d'espérer, ce qui évite un JSON.parse en échec après un appel payé.
+      response_format: { type: "json_object" },
     }),
   });
 
   if (!response.ok) {
+    // Le statut et le corps étaient jetés : toute panne API remontait en
+    // « INTERNAL_ERROR » opaque. Or `response_format: json_object` échoue en 400
+    // si le mot « json » disparaît des prompts — un diagnostic impossible à
+    // poser sans cette trace.
+    const detail = await response.text().catch(() => "");
+    console.error(
+      `[plu-universal-parser] OpenAI ${response.status} : ${detail.slice(0, 400)}`,
+    );
     throw new Error("OPENAI_CALL_FAILED");
   }
 
@@ -198,12 +214,33 @@ serve(async (req) => {
         return jsonResponse({ success: false, error: "NO_CHUNKS_FOUND" }, 404);
       }
 
-      const texteReglement = chunks
+      // Le règlement entier partait au modèle sans aucune borne : un PLU de
+      // plusieurs centaines de pages produisait un prompt d'entrée illimité,
+      // facturé au caractère près et sans plafond possible. On tronque.
+      //
+      // 120 000 caractères ≈ 30 000 tokens : très large pour les articles d'une
+      // zone, et les chunks sont déjà filtrés sur `zone_code`. La coupure est
+      // ANNONCÉE au modèle pour qu'il ne complète pas de mémoire — une règle
+      // d'urbanisme inventée vaut moins que l'absence de règle.
+      const MAX_REGLEMENT_CHARS = 120_000;
+      const texteComplet = chunks
         .map(
           (c: any) =>
             `[PAGE ${c.page_number} - ${c.section_label ?? ""}]\n${c.raw_text}`,
         )
         .join("\n\n");
+
+      const tronque = texteComplet.length > MAX_REGLEMENT_CHARS;
+      if (tronque) {
+        console.warn(
+          `[plu-universal-parser] règlement tronqué : ${texteComplet.length} → ${MAX_REGLEMENT_CHARS} caractères`,
+        );
+      }
+      const texteReglement = tronque
+        ? texteComplet.slice(0, MAX_REGLEMENT_CHARS) +
+          "\n\n[TEXTE TRONQUÉ — la suite du règlement n'a pas été transmise. " +
+          "Ne complète AUCUNE règle absente de ce qui précède : laisse le champ null.]"
+        : texteComplet;
 
       const llmJson = await callLLM(texteReglement, {
         commune_insee,

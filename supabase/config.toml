@@ -3,3 +3,12 @@ verify_jwt = false
 
 [functions.parcel-dossier-watch-v1]
 verify_jwt = false
+
+[functions.agent-commercial-generate]
+verify_jwt = false
+
+[functions.agent-communication-campaign]
+verify_jwt = false
+
+[functions.admin-society-agents]
+verify_jwt = false

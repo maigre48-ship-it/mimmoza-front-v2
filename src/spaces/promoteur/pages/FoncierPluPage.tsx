@@ -28,6 +28,9 @@ import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import { supabase } from "../../../supabaseClient";
 import { useCopilotStore } from "../../copilot/store/copilotStore";
 import { writeCapture } from "../shared/captures.store";
+import { ouvrirStudio3DAvecPanoramas } from "../shared/ouvrirStudio3D";
+import { adressesSignees, type Panorama360 } from "../shared/environnement360";
+import { Environnement360Panel } from "../foncier/Environnement360Panel";
 import { patchModule } from "../shared/promoteurSnapshot.store";
 import { hashInputs, setStepStatus } from "../shared/promoteurChain";
 import { usePromoteurStudyId } from "../shared/usePromoteurStudyId";
@@ -46,6 +49,8 @@ import type {
   PromoteurPluData,
 } from "../shared/promoteurStudy.types";
 import { usePromoteurStudy } from "../shared/usePromoteurStudy";
+// L2 — provenance PLU par valeur (document, article, extrait, page, méthode, confiance)
+import { debutsPages, enrichirRulesetResolu } from "../lib/pluProvenance";
 
 // ── pdf.js : extraction texte côté client ────────────────────────────────────
 // Si pdfjs-dist absent :  npm i pdfjs-dist
@@ -63,6 +68,11 @@ pdfjsLib.GlobalWorkerOptions.workerPort = new PdfJsWorker();
  * Retourne le texte concaténé page par page (chaîne vide si PDF sans couche texte).
  */
 async function extractPdfText(file: File): Promise<string> {
+  return (await extractPdfTextPages(file)).join("\n");
+}
+
+/** L2 — même extraction, page par page (le texte envoyé reste `pages.join("\n")`). */
+async function extractPdfTextPages(file: File): Promise<string[]> {
   const buf = await file.arrayBuffer();
   const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buf) });
   const pdf = await loadingTask.promise;
@@ -80,7 +90,7 @@ async function extractPdfText(file: File): Promise<string> {
   } finally {
     try { pdf.cleanup(); await loadingTask.destroy(); } catch { /* ignore */ }
   }
-  return parts.join("\n");
+  return parts;
 }
 
 // ── Design tokens Promoteur (v9.5.0) ─────────────────────────────────────────
@@ -465,7 +475,7 @@ function CadastreMap({ communeInsee, center, selectedIds, selectedParcels, onTog
   );
 }
 
-function PluUploaderPanel({ communeInsee, communeNom, targetZoneCode, onPluParsed }: { communeInsee: string; communeNom?: string; targetZoneCode?: string; onPluParsed: (pluData: PluData) => void; }) {
+function PluUploaderPanel({ communeInsee, communeNom, targetZoneCode, onPluParsed, pointParcelle }: { communeInsee: string; communeNom?: string; targetZoneCode?: string; onPluParsed: (pluData: PluData) => void; /** L2 — [lat, lon] de la parcelle : document opposable lu au GPU par plu-parser. */ pointParcelle?: [number, number] | null; }) {
   const [file, setFile]                       = useState<File | null>(null);
   const [uploading, setUploading]             = useState(false);
   const [progress, setProgress]               = useState<string>("");
@@ -499,8 +509,11 @@ function PluUploaderPanel({ communeInsee, communeNom, targetZoneCode, onPluParse
     try {
       // 1) Chemin prioritaire : extraction texte côté client (pas de CPU serveur → plus de 546).
       let pdfText = "";
+      let pdfPages: string[] = [];
       try {
-        pdfText = await extractPdfText(file);
+        // L2 : texte identique (pages jointes par "\n"), débuts de pages transmis à part.
+        pdfPages = await extractPdfTextPages(file);
+        pdfText = pdfPages.join("\n");
       } catch (e) {
         console.warn("[PluUploaderPanel] extraction pdfjs échouée, fallback base64:", e);
       }
@@ -511,10 +524,16 @@ function PluUploaderPanel({ communeInsee, communeNom, targetZoneCode, onPluParse
         target_zone_code: targetZoneCode,
         pdf_filename: file.name,
       };
+      // L2 — champs additifs (ignorés par plu-parser < 3.2.0)
+      if (pointParcelle && Number.isFinite(pointParcelle[0]) && Number.isFinite(pointParcelle[1])) {
+        body.parcel_lat = pointParcelle[0];
+        body.parcel_lon = pointParcelle[1];
+      }
 
       if (pdfText && pdfText.trim().length >= 500) {
         // Texte exploitable → on n'envoie QUE le texte. plu-parser ne touche plus au PDF.
         body.pdf_text = pdfText;
+        if (pdfPages.length > 0) body.pdf_page_offsets = debutsPages(pdfPages, "\n");
       } else {
         // PDF probablement scanné / sans couche texte → fallback serveur borné.
         console.warn("[PluUploaderPanel] texte insuffisant (PDF scanné ?), fallback pdf_base64");
@@ -830,8 +849,13 @@ function ProjectSelector({ projectInfo, onProjectChange, onSearch, loading }: { 
   );
 }
 
-function ParcelsSidebar({ selectedParcels, totalAreaM2, onRemoveParcel, onClearAll, onValidateSelection, onAddManualParcel, onUpdateParcelArea, isValid, validationMessage, isValidated, isSaving }: { selectedParcels: SelectedParcel[]; totalAreaM2: number | null; onRemoveParcel: (id: string) => void; onClearAll: () => void; onValidateSelection: () => void; onAddManualParcel: (id: string, area_m2: number | null) => void; onUpdateParcelArea: (id: string, area_m2: number) => void; isValid: boolean; validationMessage?: string | null; isValidated: boolean; isSaving: boolean; }) {
-  const [manualId,      setManualId]      = useState("");
+function ParcelsSidebar({ studyId, adresseProjet, selectedParcels, totalAreaM2, onRemoveParcel, onClearAll, onValidateSelection, onAddManualParcel, onUpdateParcelArea, isValid, validationMessage, isValidated, isSaving }: { studyId?: string | null; adresseProjet?: { insee?: string; libelle?: string; lat?: number; lon?: number }; selectedParcels: SelectedParcel[]; totalAreaM2: number | null; onRemoveParcel: (id: string) => void; onClearAll: () => void; onValidateSelection: () => void; onAddManualParcel: (id: string, area_m2: number | null) => void; onUpdateParcelArea: (id: string, area_m2: number) => void; isValid: boolean; validationMessage?: string | null; isValidated: boolean; isSaving: boolean; }) {
+  // ENV1 — photos 360° de l'étude (rechargées par le panneau Environnement 360°).
+  const [panoramas360, setPanoramas360] = useState<Panorama360[]>([]);
+  // CAD04 — préparation du Studio 3D (relief mesuré) : en cours / message d'échec.
+  const [studioEnCours, setStudioEnCours] = useState(false);
+  const [studioErreur,  setStudioErreur]  = useState<string | null>(null);
+  const [manualId,     setManualId]      = useState("");
   const [manualArea,    setManualArea]    = useState("");
   const [justValidated, setJustValidated] = useState(false);
   const idRef = useRef<HTMLInputElement>(null);
@@ -879,6 +903,29 @@ function ParcelsSidebar({ selectedParcels, totalAreaM2, onRemoveParcel, onClearA
         <button onClick={handleValidateWithEffect} disabled={!isValid || isSaving} className={justValidated ? "validate-burst" : ""} style={{ ...styles.button, width: "100%", background: isSaving ? "#a78bfa" : isValidated ? "#16a34a" : isValid ? ACCENT_PRO : "#e2e8f0", color: isValid ? "white" : "#94a3b8", cursor: isValid && !isSaving ? "pointer" : "not-allowed", position: "relative", overflow: "hidden", transition: "background 0.3s, transform 0.15s" }}>
           {isSaving ? <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />Enregistrement…</> : isValidated ? <><Check size={16} />Sélection validée</> : <><Check size={16} />Valider la sélection</>}
         </button>
+        {/* ENV1 — photos 360° prises autour de la parcelle (fond de la scène 3D). */}
+        <Environnement360Panel studyId={studyId ?? null} onChange={setPanoramas360} />
+        {/* PA1 — la parcelle choisie devient le terrain de la scène 3D (studio local). */}
+        {selectedParcels.some(p => p.feature) && (
+          <button
+            type="button"
+            disabled={studioEnCours}
+            onClick={() => {
+              const point = adresseProjet?.lat !== undefined && adresseProjet?.lon !== undefined ? { lat: adresseProjet.lat, lon: adresseProjet.lon } : null;
+              setStudioErreur(null);
+              setStudioEnCours(true);
+              // ENV1 — les photos 360° de l'étude partent avec les parcelles (adresses signées 1 h) ; CAD04 — avec le relief mesuré.
+              void ouvrirStudio3DAvecPanoramas(selectedParcels, () => adressesSignees(panoramas360), adresseProjet?.insee, adresseProjet?.libelle, point)
+                .catch((e) => setStudioErreur(e instanceof Error ? e.message : String(e)))
+                .finally(() => setStudioEnCours(false));
+            }}
+            style={{ ...styles.button, width: "100%", marginTop: 10, background: "#0f172a", color: "white", cursor: studioEnCours ? "wait" : "pointer" }}
+            title="Ouvre Mimmoza Studio avec le terrain à la forme exacte de la sélection"
+          >
+            {studioEnCours ? <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />Mesure du relief…</> : <><Layers size={16} />Ouvrir dans le Studio 3D</>}
+          </button>
+        )}
+        {studioErreur && (<div role="alert" style={{ marginTop: 10, padding: "8px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, fontSize: 12, color: "#991b1b" }}>{studioErreur}</div>)}
         {validationMessage && (<div style={{ marginTop: 10, padding: "8px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, display: "flex", alignItems: "center", gap: 8 }}><Check size={14} color="#16a34a" /><span style={{ fontSize: 12, color: "#166534", fontWeight: 500 }}>{validationMessage}</span></div>)}
       </div>
     </div>
@@ -1063,7 +1110,9 @@ export function FoncierPluPage() {
   }, []);
 
   const handlePluParsed = useCallback(async (plu: PluData) => {
-    const resolved = legacyRulesetToResolved(plu);
+    // L2 — le ruleset résolu garde la provenance par valeur renvoyée par plu-parser ≥ 3.2.0
+    // (document, article, extrait, page, méthode, confiance) ; ancien format inchangé sinon.
+    const resolved = enrichirRulesetResolu(legacyRulesetToResolved(plu) as Record<string, unknown> | null, plu.raw, plu.zone_code, projectInfo.communeInsee);
     const pluPayload: PromoteurPluData = { zone_code: plu.zone_code ?? null, zone_libelle: plu.zone_libelle ?? null, ruleset: resolved ?? (plu.ruleset ?? null), source: "upload", done: true };
     if (studyId) await patchPlu(pluPayload);
     if (resolved) { userStorage.setItem("mimmoza.plu.resolved_ruleset_v1", JSON.stringify(resolved)); patchModule("plu", resolved); } else { userStorage.removeItem("mimmoza.plu.resolved_ruleset_v1"); patchModule("plu", null); }
@@ -1079,7 +1128,7 @@ export function FoncierPluPage() {
         summary: { zone_code: plu.zone_code, zone_libelle: plu.zone_libelle ?? null },
       });
     }
-  }, [studyId, patchPlu]);
+  }, [studyId, patchPlu, projectInfo.communeInsee]);
 
   // ── Loading / Error ───────────────────────────────────────────────────────
   if (loadState === "loading") {
@@ -1172,10 +1221,10 @@ export function FoncierPluPage() {
               <CadastreMap communeInsee={projectInfo.communeInsee!} center={mapCenter ?? [46.603354, 1.888334]} selectedIds={selectedParcels.map(p => p.id)} selectedParcels={parcelMapSelectedParcels} onToggleParcel={handleToggleParcel} heightPx={400} />
             </div>
             <PluInfoCard pluData={pluData} loading={pluLoading} communeInsee={projectInfo.communeInsee} communeNom={projectInfo.address} parcelId={projectInfo.parcelId} address={projectInfo.address} studyId={studyId} onOapExtracted={setOapData} />
-            {projectInfo.communeInsee && (<PluUploaderPanel communeInsee={projectInfo.communeInsee} communeNom={projectInfo.address} targetZoneCode={pluData?.zone_code} onPluParsed={handlePluParsed} />)}
+            {projectInfo.communeInsee && (<PluUploaderPanel communeInsee={projectInfo.communeInsee} communeNom={projectInfo.address} targetZoneCode={pluData?.zone_code} onPluParsed={handlePluParsed} pointParcelle={(() => { const f = selectedParcels.find(p => p.id === projectInfo.parcelId) ?? selectedParcels[0]; return (f?.feature ? getFeatureBoundsCenter(f.feature)?.center : null) ?? (projectInfo.addressLat != null && projectInfo.addressLon != null ? [projectInfo.addressLat, projectInfo.addressLon] as [number, number] : null); })()} />)}
           </div>
           <div>
-            <ParcelsSidebar selectedParcels={selectedParcels} totalAreaM2={totalAreaM2} onRemoveParcel={handleRemoveParcel} onClearAll={handleClearAll} onValidateSelection={handleValidateSelection} onAddManualParcel={handleAddManualParcel} onUpdateParcelArea={handleUpdateParcelArea} isValid={selectedParcels.length > 0} validationMessage={validationMessage} isValidated={isValidated} isSaving={isSaving} />
+            <ParcelsSidebar studyId={studyId} adresseProjet={{ insee: projectInfo.communeInsee, libelle: projectInfo.address, lat: projectInfo.addressLat, lon: projectInfo.addressLon }} selectedParcels={selectedParcels} totalAreaM2={totalAreaM2} onRemoveParcel={handleRemoveParcel} onClearAll={handleClearAll} onValidateSelection={handleValidateSelection} onAddManualParcel={handleAddManualParcel} onUpdateParcelArea={handleUpdateParcelArea} isValid={selectedParcels.length > 0} validationMessage={validationMessage} isValidated={isValidated} isSaving={isSaving} />
             <div style={{ ...styles.card, marginTop: 20 }}>
               <div style={styles.cardHeader}><h3 style={styles.cardTitle}><Navigation size={18} color="#10b981" />Étapes suivantes</h3></div>
               <div style={styles.cardBody}>

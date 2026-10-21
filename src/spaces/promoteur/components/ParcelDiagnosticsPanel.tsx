@@ -255,7 +255,7 @@ const DiagnosticsContent: React.FC<{ diagnostics: ParcelDiagnostics }> = ({
         />
         {d.buildableEnvelopeAreaM2 !== undefined && (
           <MetricRow
-            label="Enveloppe constructible"
+            label="Enveloppe de dessin (valeurs par défaut)"
             value={fmtArea(d.buildableEnvelopeAreaM2)}
           />
         )}
@@ -267,7 +267,7 @@ const DiagnosticsContent: React.FC<{ diagnostics: ParcelDiagnostics }> = ({
           />
         )}
         <MetricRow
-          label="Bâtiments conformes / total"
+          label="Dans l'enveloppe dessinée / total"
           value={envelopeLabel}
           accent={envelopeAccent}
         />

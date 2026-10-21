@@ -324,7 +324,7 @@ const SPACES: Array<{
   icon: ComponentType<{ className?: string }>;
   path: string;
 }> = [
-  { id: "mimmozia",       label: "Espace MimmozIA",          shortLabel: "MimmozIA",          description: "Assistant IA immobilier : PLU, DVF, risques, analyse et rapports", icon: Bot,        path: "/mimmozia" },
+  { id: "mimmozia",       label: "Espace Mimmo",          shortLabel: "Mimmo",          description: "Assistant IA immobilier : PLU, DVF, risques, analyse et rapports", icon: Bot,        path: "/mimmozia" },
   { id: "marchand",       label: "Espace Investissement",    shortLabel: "Investissement",    description: "Opportunites, scoring, rentabilite, execution et sortie", icon: PieChart,   path: "/marchand-de-bien" },
   { id: "promoteur",      label: "Espace Promotion",         shortLabel: "Promotion",         description: "Faisabilite, SDP potentielle et bilan promoteur",         icon: Building2,  path: "/promoteur" },
   { id: "rehabilitation", label: "Espace Réhabilitation",    shortLabel: "Réhabilitation",    description: "Lecture de plan, conformité, chiffrage et valorisation",  icon: ScanSearch, path: "/rehabilitation" },
@@ -1420,8 +1420,8 @@ export function AppShell(props: AppShellProps) {
           dans un shell en `min-h-screen` (donc lui-même plus haut que le
           viewport) — d'où les deux barres. Laisser le scroll à la fenêtre
           garde aussi les en-têtes `sticky` et `window.scrollTo` fonctionnels. */}
-      <main className="flex-1 min-h-0 overflow-x-clip">
-        {isPublicPage || isBarePage
+      <main className={location.pathname === '/mimmozia' ? 'flex-1 min-h-0' : 'flex-1 min-h-0 overflow-x-clip'}>
+        {isPublicPage || isBarePage || location.pathname === '/mimmozia'
           ? children
           : <div className="mx-auto max-w-7xl px-4 lg:px-6">{children}</div>
         }

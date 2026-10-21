@@ -86,6 +86,7 @@ import AdminFraicheurDonneesPage from "./spaces/admin/pages/FraicheurDonnees";
 import AdminParametresPage from "./spaces/admin/pages/Parametres";
 import AdminTarifsPage from "./spaces/admin/pages/Tarifs";
 import AdminUtilisateursPage from "./spaces/admin/pages/Utilisateurs";
+import SocietyAgentsPage from "./spaces/admin/pages/SocietyAgentsPage";
 import {
   AgentCommercialLayout,
   AgentCommercialOverviewPage,
@@ -100,6 +101,8 @@ import {
   AgentCommercialKnowledgePage,
   AgentCommercialSettingsPage,
 } from "./spaces/admin/pages/agentCommercial";
+import { AgentCommercialRepliesPage } from "./spaces/admin/pages/agentCommercial/RepliesPage";
+import { AgentCommercialCampaignsPage } from "./spaces/admin/pages/agentCommercial/CampaignsPage";
 
 import MarchandLayout from "./spaces/marchand/MarchandLayout";
 import MarchandExecution from "./spaces/marchand/pages/Execution";
@@ -172,6 +175,8 @@ import { CopilotRoot } from "./spaces/copilot/CopilotRoot";
 
 /* ── Espace MimmozIA (page chat plein écran) ─────────────────── */
 import MimmozIAPage from "./spaces/copilot/MimmozIAPage";
+// R1 — /studio/* est servi par MimmozIA Studio (même origine), jamais par le routeur React.
+import StudioHorsApplication from "./components/StudioHorsApplication";
 import { CopilotSpaceOutlet } from './spaces/copilot/components/CopilotSpaceOutlet';
 
 declare global {
@@ -410,6 +415,7 @@ function AppRoot() {
             <Route path="copilot"       element={<AdminCopilotPage />} />
             <Route path="devis"         element={<AdminDevisPage />} />
             <Route path="factures"      element={<AdminFacturesPage />} />
+            <Route path="agents-gestion" element={<SocietyAgentsPage />} />
             <Route path="entreprises"   element={<AdminEntreprisesPage />} />
             <Route path="tarifs"        element={<AdminTarifsPage />} />
             <Route path="fraicheur-donnees" element={<AdminFraicheurDonneesPage />} />
@@ -429,6 +435,8 @@ function AppRoot() {
               <Route path="prospects/:id"     element={<AgentCommercialProspectDetailPage />} />
               <Route path="exclusions"        element={<AgentCommercialExclusionsPage />} />
               <Route path="messages"          element={<AgentCommercialMessagesPage />} />
+              <Route path="reponses"          element={<AgentCommercialRepliesPage />} />
+              <Route path="campagnes"         element={<AgentCommercialCampaignsPage />} />
               <Route path="conversations"     element={<AgentCommercialConversationsPage />} />
               <Route path="relances"          element={<AgentCommercialRelancesPage />} />
               <Route path="pipeline"          element={<AgentCommercialPipelinePage />} />
@@ -577,6 +585,9 @@ function AppRoot() {
           <Route path="/audit/*"     element={<Navigate to="/" replace />} />
           <Route path="/agence"      element={<Navigate to="/apporteur" replace />} />
           <Route path="/marchand"    element={<Navigate to="/marchand-de-bien" replace />} />
+
+          {/* R1 — MimmozIA Studio (servi sous /studio/ par le serveur) : jamais la connexion */}
+          <Route path="/studio/*" element={<StudioHorsApplication />} />
 
           {/* Catch-all → page de connexion */}
           <Route path="*" element={<Navigate to="/" replace />} />

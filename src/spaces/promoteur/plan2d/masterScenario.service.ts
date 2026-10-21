@@ -41,7 +41,10 @@ import {
   totalBuildingHeightM,
 } from '../shared/buildingMetrics';
 
-// ─── SEUILS PLU ───────────────────────────────────────────────────────
+// ─── SEUILS INDICATIFS INTERNES (NON RÉGLEMENTAIRES) ─────────────────
+// L1b : ces valeurs ne viennent d'aucun PLU. Elles servent au score
+// économique et ne doivent jamais être présentées comme une conformité.
+// Le contrôle sourcé des retraits est dans ../implantation/.
 
 const CES_MAX      = 0.50;
 const CES_WARN     = 0.46;
@@ -161,11 +164,11 @@ function computeConformity(
   const messages: string[] = [];
 
   if (isConforme && metrics.buildingCount > 0) {
-    messages.push('Implantation conforme aux règles PLU paramétrées.');
+    messages.push(`Dans les seuils indicatifs internes (CES ${(CES_MAX * 100).toFixed(0)} %, hauteur ${HEIGHT_MAX_M} m) — valeurs non réglementaires, pas une conformité PLU.`);
   }
   if (!cesOk) {
     messages.push(
-      `CES de ${(metrics.coverageRatio * 100).toFixed(1)} % dépasse le seuil PLU de ${(CES_MAX * 100).toFixed(0)} %.`,
+      `CES de ${(metrics.coverageRatio * 100).toFixed(1)} % dépasse le seuil indicatif de ${(CES_MAX * 100).toFixed(0)} % (non réglementaire).`,
     );
   } else if (metrics.coverageRatio > CES_WARN) {
     messages.push(
@@ -174,7 +177,7 @@ function computeConformity(
   }
   if (!heightOk) {
     messages.push(
-      `Hauteur maximale de ${metrics.maxHeightM.toFixed(1)} m dépasse le seuil de ${HEIGHT_MAX_M} m.`,
+      `Hauteur maximale de ${metrics.maxHeightM.toFixed(1)} m dépasse le seuil indicatif de ${HEIGHT_MAX_M} m (non réglementaire).`,
     );
   }
   if (nbLogements === undefined) {
@@ -188,7 +191,7 @@ function computeConformity(
     );
   } else {
     messages.push(
-      `Stationnement conforme : ${metrics.parkingProvided}/${metrics.parkingRequired} ` +
+      `Stationnement couvert (ratio indicatif) : ${metrics.parkingProvided}/${metrics.parkingRequired} ` +
       `place${metrics.parkingRequired > 1 ? 's' : ''}.`,
     );
   }
@@ -263,7 +266,7 @@ function computeNarrative(
     summary = 'Aucun bâtiment dessiné — dessinez au moins un bâtiment pour évaluer ce scénario.';
   } else if (conformity.isConforme) {
     summary =
-      `Implantation conforme. ${metrics.buildingCount} bâtiment${metrics.buildingCount > 1 ? 's' : ''}, ` +
+      `Dans les seuils indicatifs. ${metrics.buildingCount} bâtiment${metrics.buildingCount > 1 ? 's' : ''}, ` +
       `CES à ${(metrics.coverageRatio * 100).toFixed(1)} %, ` +
       `hauteur max ${metrics.maxHeightM.toFixed(1)} m.`;
   } else {
@@ -272,7 +275,7 @@ function computeNarrative(
     );
     summary = issues.length > 0
       ? `Implantation à corriger : ${issues[0]}`
-      : 'Implantation non conforme — voir points de vigilance.';
+      : 'Hors seuils indicatifs — voir points de vigilance.';
   }
 
   if (metrics.buildingCount > 0) {
@@ -280,12 +283,12 @@ function computeNarrative(
       strengths.push(
         metrics.coverageRatio <= CES_WARN
           ? `CES à ${(metrics.coverageRatio * 100).toFixed(1)} % — marge de densification disponible.`
-          : `CES à ${(metrics.coverageRatio * 100).toFixed(1)} % — conforme au PLU.`,
+          : `CES à ${(metrics.coverageRatio * 100).toFixed(1)} % — sous le seuil indicatif (non réglementaire).`,
       );
     }
     if (conformity.parkingOk && program.nbLogements !== undefined) {
       strengths.push(
-        `Stationnement conforme (${metrics.parkingProvided}/${metrics.parkingRequired} places).`,
+        `Stationnement couvert, ratio indicatif (${metrics.parkingProvided}/${metrics.parkingRequired} places).`,
       );
     }
     if (conformity.heightOk && metrics.maxHeightM > 0) {
@@ -295,7 +298,7 @@ function computeNarrative(
       strengths.push('Plan masse simple — lecture claire et défense facilitée.');
     }
     if (conformity.isConforme) {
-      strengths.push('Implantation défendable en pré-instruction PLU.');
+      strengths.push('Seuils indicatifs tenus — à confirmer par le contrôle sourcé des règles PLU.');
     }
   }
 

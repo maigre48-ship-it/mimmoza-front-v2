@@ -111,14 +111,23 @@ describe("PUB-A — résolution de l'adresse du studio", () => {
     expect(resoudreUrlStudio3D("http://localhost:5174", "localhost")).toBe("http://localhost:5174/");
     expect(() => resoudreUrlStudio3D("pas une url", "localhost")).toThrow(ErreurStudio3D);
   });
-  it("sur un domaine public, refuse une adresse absente, invalide, locale ou non https", () => {
-    expect(() => resoudreUrlStudio3D(undefined, "app.mimmoza.fr")).toThrow(/aucune adresse de studio/);
-    expect(() => resoudreUrlStudio3D("", "app.mimmoza.fr")).toThrow(ErreurStudio3D);
+  it("sur un domaine public, refuse une adresse invalide, locale ou non https", () => {
+    // R1 — adresse absente : Studio est servi à la même origine, sous /studio/ (plus d'erreur).
+    expect(resoudreUrlStudio3D(undefined, "app.mimmoza.fr")).toBe("https://app.mimmoza.fr/studio/");
+    expect(resoudreUrlStudio3D("", "app.mimmoza.fr")).toBe("https://app.mimmoza.fr/studio/");
     expect(() => resoudreUrlStudio3D("studio.mimmoza.fr", "app.mimmoza.fr")).toThrow(/invalide/);
     expect(() => resoudreUrlStudio3D("ftp://studio.mimmoza.fr", "app.mimmoza.fr")).toThrow(/invalide/);
     expect(() => resoudreUrlStudio3D("http://localhost:5173", "app.mimmoza.fr")).toThrow(/poste local/);
     expect(() => resoudreUrlStudio3D("https://127.0.0.1:5173", "app.mimmoza.fr")).toThrow(/poste local/);
     expect(() => resoudreUrlStudio3D("http://studio.mimmoza.fr", "app.mimmoza.fr")).toThrow(/https/);
+  });
+  it("ouvre le Studio intégré au déploiement Mimmoza", () => {
+    expect(resoudreUrlStudio3D(undefined, "mimmoza.vercel.app")).toBe("https://mimmoza.vercel.app/studio/");
+    expect(adresseAvecTransfert(resoudreUrlStudio3D(undefined, "mimmoza.vercel.app"), "parcelles=x"))
+      .toBe("https://mimmoza.vercel.app/studio/#parcelles=x");
+    // R1 — un chemin configuré reste sur l'origine de la page.
+    expect(resoudreUrlStudio3D("/studio/", "app.mimmoza.fr")).toBe("https://app.mimmoza.fr/studio/");
+    expect(resoudreUrlStudio3D("/studio/", "localhost")).toBe("http://localhost:5173/studio/");
   });
   it("accepte une adresse https publique et conserve l'ancre de transfert", () => {
     const base = resoudreUrlStudio3D("https://studio.mimmoza.fr/app#ancien", "app.mimmoza.fr");
@@ -126,7 +135,7 @@ describe("PUB-A — résolution de l'adresse du studio", () => {
     const url = adresseAvecTransfert(base, "parcelles=eyJhIjoxfQ-_");
     expect(url).toBe("https://studio.mimmoza.fr/app/#parcelles=eyJhIjoxfQ-_");
     expect(decoder(adresseAvecTransfert("https://studio.mimmoza.fr", "parcelles=eyJhIjoxfQ"))).toEqual({ a: 1 });
-    expect(adresseAvecTransfert(STUDIO_3D_URL_LOCALE, "parcelles=x")).toBe("http://localhost:5173/#parcelles=x");
+    expect(adresseAvecTransfert(STUDIO_3D_URL_LOCALE, "parcelles=x")).toBe("http://localhost:5173/studio/#parcelles=x");
   });
 });
 
@@ -137,7 +146,8 @@ describe("PUB-A — garde avant onglet, relief et signatures", () => {
     const open = vi.fn();
     vi.stubGlobal("window", { open, location: { href: "", hostname: "app.mimmoza.fr" } });
     const preparer = vi.fn(async () => "https://studio.mimmoza.fr/#parcelles=x");
-    const verifier = () => resoudreUrlStudio3D(undefined, "app.mimmoza.fr");
+    // R1 — « mal configuré » = adresse non https (l'absence d'adresse vaut désormais /studio/ en même origine).
+    const verifier = () => resoudreUrlStudio3D("http://studio.mimmoza.fr", "app.mimmoza.fr");
     await expect(ouvrirOngletStudio3D(preparer, verifier, () => "app.mimmoza.fr")).rejects.toThrow(ErreurStudio3D);
     expect(open).not.toHaveBeenCalled();
     expect(preparer).not.toHaveBeenCalled();

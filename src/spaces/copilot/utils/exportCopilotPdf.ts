@@ -229,7 +229,7 @@ export async function exportCopilotConversationToPdf(params: {
   }
 
   printWindow.document.write(
-    '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>MimmozIA</title></head>' +
+    '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Mimmoza</title></head>' +
     '<body style="font-family:Arial,sans-serif;color:#64748b;padding:40px;">Préparation du rapport…</body></html>',
   );
   printWindow.document.close();
@@ -240,7 +240,7 @@ export async function exportCopilotConversationToPdf(params: {
     .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.text.trim())
     .map((m) => {
       const isUser = m.role === 'user';
-      const who = isUser ? 'Vous' : 'MimmozIA';
+      const who = isUser ? 'Vous' : 'Mimmo';
       const date = formatDate(m.createdAt);
       const nameColor = isUser ? '#6d28d9' : '#0f172a';
 
@@ -274,7 +274,7 @@ export async function exportCopilotConversationToPdf(params: {
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>MimmozIA — Conversation</title>
+  <title>Mimmoza — Conversation</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family:'Segoe UI',Arial,sans-serif; background:#ffffff; color:#1e293b; padding:40px; line-height:1.6; }
@@ -291,7 +291,7 @@ export async function exportCopilotConversationToPdf(params: {
       ${logo
         ? `<img src="${logo}" alt="Mimmoza" style="height:44px;display:block;margin-bottom:8px;">`
         : `<div style="font-size:22px;font-weight:800;color:#4f46e5;margin-bottom:8px;">Mimmoza</div>`}
-      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">Rapport MimmozIA</div>
+      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">Rapport Mimmoza</div>
     </div>
     <div style="text-align:right;font-size:11px;color:#94a3b8;">
       <div>Généré le ${generatedAt}</div>
@@ -334,7 +334,7 @@ export function buildCopilotResponsePrintHtml(
   const generatedAt = options.generatedAt ?? new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const responseDate = formatDate(params.response.createdAt);
   const question = params.question?.trim();
-  return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport MimmozIA — Analyse immobilière</title><style>
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport Mimmoza — Analyse immobilière</title><style>
     *{box-sizing:border-box} body{margin:0;font-family:'Segoe UI',Arial,sans-serif;color:#1e293b;line-height:1.55;background:#fff}
     main{max-width:190mm;margin:0 auto;padding:14mm} h1,h2,h3,h4,h5,h6{break-after:avoid;page-break-after:avoid} table,blockquote,li{break-inside:avoid;page-break-inside:avoid}
     strong{color:#0f172a} a{color:#4f46e5} .question{margin:18px 0;padding:12px 15px;border-radius:10px;background:#f5f3ff;border:1px solid #ddd6fe}
@@ -342,10 +342,10 @@ export function buildCopilotResponsePrintHtml(
     @page{size:A4;margin:12mm} @media print{main{padding:0}.copilot-markdown-table-wrap{overflow:visible!important} a{color:#1e293b;text-decoration:none}}
   </style></head><body><main>
     <header style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:14px;border-bottom:2px solid #e2e8f0;">
-      <div>${logo ? `<img src="${logo}" alt="Mimmoza" style="height:44px;display:block;">` : '<div style="font-size:22px;font-weight:800;color:#4f46e5;">Mimmoza</div>'}<div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin-top:6px;">Rapport MimmozIA</div></div>
+      <div>${logo ? `<img src="${logo}" alt="Mimmoza" style="height:44px;display:block;">` : '<div style="font-size:22px;font-weight:800;color:#4f46e5;">Mimmoza</div>'}<div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin-top:6px;">Rapport Mimmoza</div></div>
       <div style="font-size:10px;color:#64748b;text-align:right;">Généré le ${generatedAt}${responseDate ? `<br>Réponse du ${responseDate}` : ''}${params.contextLabel ? `<br><strong>${escapeHtml(params.contextLabel)}</strong>` : ''}</div>
     </header>
-    <h1 style="font-size:20px;margin:22px 0 10px;color:#0f172a;">Analyse MimmozIA</h1>
+    <h1 style="font-size:20px;margin:22px 0 10px;color:#0f172a;">Analyse Mimmoza</h1>
     ${question ? `<section class="question" aria-label="Question associée"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6d28d9;font-weight:700;margin-bottom:5px;">Question</div><div>${escapeHtml(question).replace(/\n/g, '<br>')}</div></section>` : ''}
     <article style="font-size:12px;">${markdownToSafeHtml(params.response.text)}</article>
     <footer class="report-end">Mimmoza · Plateforme d’analyse immobilière · À faire valider par un professionnel.</footer>
@@ -357,14 +357,14 @@ export async function exportCopilotResponseToPdf(params: ResponsePdfParams): Pro
   const printWindow = window.open('', '_blank');
   if (!printWindow) return 'popup_blocked';
 
-  printWindow.document.write('<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport MimmozIA — Analyse immobilière</title></head><body style="font-family:Arial,sans-serif;color:#64748b;padding:40px;">Préparation du rapport…</body></html>');
+  printWindow.document.write('<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport Mimmoza — Analyse immobilière</title></head><body style="font-family:Arial,sans-serif;color:#64748b;padding:40px;">Préparation du rapport…</body></html>');
   printWindow.document.close();
 
   const logo = await loadLogoBase64();
   const html = buildCopilotResponsePrintHtml(params, { logo });
 
   printWindow.document.open(); printWindow.document.write(html); printWindow.document.close();
-  try { printWindow.history.replaceState(null, 'Rapport MimmozIA', '/mimmozia-rapport'); } catch { /* en-tête natif contrôlé par le navigateur */ }
+  try { printWindow.history.replaceState(null, 'Rapport Mimmoza', '/mimmoza-rapport'); } catch { /* en-tête natif contrôlé par le navigateur */ }
   printWindow.onload = () => setTimeout(() => printWindow.print(), 300);
   return 'opened';
 }

@@ -17,6 +17,14 @@ export const ACTION_COSTS = {
   scan_opportunites:  5,    // lecture portal_snapshots + scoring (data deja en base)
   refresh_veille:     30,   // ingestion Stream Estate (~0,50 â‚¬ reel, marge ~x2)
   rendu_ia:           15,   // rendu IA avant/apres (aligne facade ; cout API a confirmer au branchement)
+
+  // Tarifs debites cote SERVEUR (supabase/functions/_shared/billing/featureBilling.ts).
+  // Ils figurent ici pour que l'interface puisse les AFFICHER : sans cela,
+  // l'utilisateur etait debite sans avoir jamais vu le prix.
+  // ⚠️ Doivent rester identiques a TARIFS dans featureBilling.ts.
+  rehab_analyse_plan:  3,   // gpt-4o vision, image detail high (~0,05 € reel)
+  rehab_transcription: 5,   // gpt-4o vision, 16 000 tokens de sortie (~0,16 € reel)
+  export_rapport_ia:  10,   // Anthropic sonnet, jusqu'a 8 600 tokens (~0,25 € reel)
 } as const;
 
 export type ActionCostKey = keyof typeof ACTION_COSTS;

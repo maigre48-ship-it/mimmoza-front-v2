@@ -13,6 +13,8 @@ import {
   GitBranch,
   LayoutDashboard,
   MailCheck,
+  Mail,
+  Megaphone,
   MessageSquare,
   Settings,
   Users,
@@ -33,6 +35,8 @@ const TABS: Tab[] = [
   { label: "Prospects", to: "prospects", icon: Users },
   { label: "Liste d'exclusion", to: "exclusions", icon: Ban },
   { label: "Messages à valider", to: "messages", icon: MailCheck },
+  { label: "Réponses aux mails", to: "reponses", icon: Mail },
+  { label: "Campagnes", to: "campagnes", icon: Megaphone },
   { label: "Conversations", to: "conversations", icon: MessageSquare },
   { label: "Relances", to: "relances", icon: Clock },
   { label: "Pipeline", to: "pipeline", icon: GitBranch },
@@ -55,7 +59,7 @@ export function AgentCommercialLayout() {
           Agent commercial
         </h1>
         <p className="mt-1 text-sm leading-6 text-slate-600">
-          Prospection des marchands de biens : prospects, liste d'exclusion et pipeline.
+          Prospection et communication : réponses aux mails, campagnes et suivi des contacts.
         </p>
       </header>
 

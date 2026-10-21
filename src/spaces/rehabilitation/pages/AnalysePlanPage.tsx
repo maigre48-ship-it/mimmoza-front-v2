@@ -36,7 +36,9 @@ import type {
   PlanOverlaySnapshot, RawAIResult,
 } from '../plan-reader/types';
 import { EMPTY_GEOMETRY, confidenceLabel } from '../plan-reader/types';
-import { transcribePlanReal, generatePlanId } from "../services/transcribePlanReal";
+// `transcribePlanReal` / `generatePlanId` : import retiré avec la désactivation
+// du second appel gpt-4o (voir handleAnalyze). À rétablir en même temps que lui.
+import { ACTION_COSTS } from "@/lib/billing/actionCosts";
 import { transcriptionToGeometry } from "../plan-reader/transcriptionToGeometry";
 import { sumRoomSurfaces } from "../plan-reader/sumRoomSurfaces";
 import { setActiveCopilotContext } from "@/spaces/copilot/store/activeCopilotContext.store";
@@ -1315,24 +1317,21 @@ export const AnalysePlanPage: React.FC = () => {
       );
 
       if (quality.eligible) {
-        // 2e appel gpt-4o. Son échec ne doit jamais casser l'analyse déjà réussie.
-        try {
-          const planId = generatePlanId(plan.file.name ?? "plan");
-          const transcription = await transcribePlanReal(planId, plan.file);
-          // TODO(pipeline CV) : adapter PlanTranscriptionResult → TranscriptionResult.
-          // En attendant, on ne convertit pas (types incompatibles) — l'analyse principale reste intacte.
-          const geometry = transcriptionToGeometry(null);
-          void transcription;
-          updateOverlay((s) => ({ ...(s ?? createEmptySnapshot()), detectedGeometry: geometry }));
-          console.log(
-            "[AnalysePlanPage] calques alimentés —",
-            geometry.walls.length, "murs,",
-            geometry.rooms.length, "pièces,",
-            geometry.openings.length, "ouvertures",
-          );
-        } catch (txErr) {
-          console.warn("[AnalysePlanPage] transcription échouée (calques non alimentés):", txErr);
-        }
+        // ⚠️ APPEL DE TRANSCRIPTION DÉSACTIVÉ — volontairement.
+        //
+        // Il lançait un SECOND appel gpt-4o vision (`transcribePlanReal`), dont
+        // le résultat était immédiatement jeté : `transcriptionToGeometry(null)`
+        // puis `void transcription`, faute d'adaptateur
+        // PlanTranscriptionResult → TranscriptionResult (TODO pipeline CV).
+        //
+        // Tant que c'était gratuit, cela ne coûtait « que » ~0,16 € d'API par
+        // analyse. Depuis que `transcribe-rehab-plan` est facturée 5 jetons,
+        // chaque clic sur « Analyser » en prélevait 8 au total (3 + 5) dont 5
+        // pour un résultat mis à la poubelle.
+        //
+        // À réactiver le jour où l'adaptateur existe — pas avant.
+        const geometry = transcriptionToGeometry(null);
+        updateOverlay((s) => ({ ...(s ?? createEmptySnapshot()), detectedGeometry: geometry }));
       } else {
         // Plan hors contrat : on purge toute géométrie parasite.
         updateOverlay((s) => ({ ...(s ?? createEmptySnapshot()), detectedGeometry: EMPTY_GEOMETRY }));
@@ -1537,7 +1536,7 @@ export const AnalysePlanPage: React.FC = () => {
             }}>
             {status === "analyzing"
               ? <><Loader2 className="w-4 h-4 animate-spin" />Analyse en cours…</>
-              : <><Zap className="w-4 h-4" />Analyser le plan</>}
+              : <><Zap className="w-4 h-4" />Analyser le plan · {ACTION_COSTS.rehab_analyse_plan} jetons</>}
           </button>
         </div>
 

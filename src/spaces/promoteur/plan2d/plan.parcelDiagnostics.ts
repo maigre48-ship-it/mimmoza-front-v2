@@ -75,19 +75,19 @@ function deriveSummary(
     return "Aucun bâtiment positionné — débutez l'implantation sur le plan masse.";
   }
   if (!hasEnvelope) {
-    return `${buildingCount} bâtiment${buildingCount > 1 ? "s" : ""} positionné${buildingCount > 1 ? "s" : ""} — enveloppe constructible non définie.`;
+    return `${buildingCount} bâtiment${buildingCount > 1 ? "s" : ""} positionné${buildingCount > 1 ? "s" : ""} — enveloppe de dessin non définie (valeurs par défaut).`;
   }
   if (buildingsOutsideEnvelopeCount === buildingCount) {
-    return "Révision nécessaire — aucun bâtiment ne respecte l'enveloppe constructible.";
+    return "Aucun bâtiment dans l'enveloppe dessinée (reculs de dessin, non réglementaires).";
   }
   if (buildingsOutsideEnvelopeCount > 0) {
     return (
       `Implantation partielle — ` +
-      `${buildingsInsideEnvelopeCount} conforme${buildingsInsideEnvelopeCount > 1 ? "s" : ""}, ` +
+      `${buildingsInsideEnvelopeCount} dans l'enveloppe dessinée, ` +
       `${buildingsOutsideEnvelopeCount} hors enveloppe.`
     );
   }
-  return "Implantation conforme — tous les bâtiments respectent l'enveloppe constructible.";
+  return "Tous les bâtiments sont dans l'enveloppe dessinée (reculs de dessin, non réglementaires).";
 }
 
 // ─── VIGILANCE DERIVATION ─────────────────────────────────────────────
@@ -110,7 +110,7 @@ function deriveVigilance(params: {
   if (params.buildingsOutsideEnvelopeCount > 0) {
     const n = params.buildingsOutsideEnvelopeCount;
     points.push(
-      `${n} bâtiment${n > 1 ? "s" : ""} hors enveloppe constructible — recul ou gabarit à corriger.`,
+      `${n} bâtiment${n > 1 ? "s" : ""} hors enveloppe de dessin (valeurs par défaut, non réglementaires).`,
     );
   }
 
@@ -140,7 +140,7 @@ function deriveVigilance(params: {
 
   if (params.envelopeUsageRatio !== undefined && params.envelopeUsageRatio > 0.85) {
     points.push(
-      `L'emprise occupe ${(params.envelopeUsageRatio * 100).toFixed(0)} % de l'enveloppe constructible — marge très réduite.`,
+      `L'emprise occupe ${(params.envelopeUsageRatio * 100).toFixed(0)} % de l'enveloppe de dessin (valeurs par défaut) — marge très réduite.`,
     );
   }
 

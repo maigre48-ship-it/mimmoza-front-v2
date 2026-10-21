@@ -14,6 +14,13 @@
 //   ⚠️  Pas de size param fixe
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import {
+  authentifier,
+  debiter,
+  reponseErreurFacturation,
+  TARIFS,
+  verifierSolde,
+} from "../_shared/billing/featureBilling.ts";
 
 // ── CORS ──────────────────────────────────────────────────────────
 
@@ -189,6 +196,24 @@ serve(async (req: Request): Promise<Response> => {
       return json({ success: false, error: e instanceof Error ? e.message : String(e) }, 400);
     }
 
+    // ── Identité et solde ───────────────────────────────────────────────────
+    // Cette fonction ne lisait AUCUN en-tête d'authentification : ni client
+    // Supabase, ni getUser, ni solde. La génération d'image GPT y était donc
+    // ouverte à quiconque connaissait son URL. Le front débitait bien 15 jetons,
+    // mais depuis le navigateur — donc contournable en appelant directement.
+    //
+    // Le débit vit désormais ici, après l'image livrée. Le débit front a été
+    // retiré en conséquence, pour ne pas facturer deux fois.
+    let userId: string;
+    try {
+      userId = await authentifier(req);
+      await verifierSolde(userId, TARIFS.rendu_ia);
+    } catch (e) {
+      const reponse = reponseErreurFacturation(e, corsHeaders);
+      if (reponse) return reponse;
+      throw e;
+    }
+
     const { imageBase64, durationMs } = await callGptImageEdit({
       imageBlob: inputs.imageBlob,
       maskBlob:  inputs.maskBlob,
@@ -201,6 +226,20 @@ serve(async (req: Request): Promise<Response> => {
       totalMs:        Date.now() - t0,
       b64Kb:          Math.round(imageBase64.length / 1024),
     });
+
+    // Image livrée : on facture. Une panne OpenAI a déjà levé plus haut.
+    try {
+      await debiter({
+        userId,
+        montant: TARIFS.rendu_ia,
+        type: "rendu_ia",
+        description: "Rendu IA travaux avant/après",
+      });
+    } catch (e) {
+      const reponse = reponseErreurFacturation(e, corsHeaders);
+      if (reponse) return reponse;
+      throw e;
+    }
 
     return json({
       success:      true,

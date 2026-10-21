@@ -5,6 +5,13 @@
 // Runtime Supabase Edge Function / Deno
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import {
+  authentifier,
+  debiter,
+  reponseErreurFacturation,
+  TARIFS,
+  verifierSolde,
+} from "../_shared/billing/featureBilling.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -239,6 +246,22 @@ serve(async (req) => {
     return jsonError("METHOD_NOT_ALLOWED", "POST requis.", undefined, 405);
   }
 
+  // ── Identité et solde ─────────────────────────────────────────────────────
+  // Cette fonction demande jusqu'à 16 000 tokens de sortie à gpt-4o vision —
+  // l'appel texte le plus cher de la plateforme. Elle n'avait aucun contrôle
+  // d'appelant ni de solde : un appel direct la rendait gratuite et illimitée.
+  // Le débit intervient après la transcription, pour ne pas facturer les
+  // échecs de lecture de fichier ou d'API.
+  let userId: string;
+  try {
+    userId = await authentifier(req);
+    await verifierSolde(userId, TARIFS.rehab_transcription);
+  } catch (e) {
+    const reponse = reponseErreurFacturation(e, CORS);
+    if (reponse) return reponse;
+    throw e;
+  }
+
   const contentType = req.headers.get("content-type") ?? "";
 
   let formData: FormData;
@@ -458,6 +481,22 @@ serve(async (req) => {
       },
       502,
     );
+  }
+
+  // ── Débit ─────────────────────────────────────────────────────────────────
+  // Transcription valide et structurée : on facture. Une sortie tronquée, un
+  // JSON cassé ou une panne OpenAI n'ont rien coûté à l'utilisateur.
+  try {
+    await debiter({
+      userId,
+      montant: TARIFS.rehab_transcription,
+      type: "rehab_transcription",
+      description: "Retranscription IA d'un plan de réhabilitation",
+    });
+  } catch (e) {
+    const reponse = reponseErreurFacturation(e, CORS);
+    if (reponse) return reponse;
+    throw e;
   }
 
   // Diagnostic : combien d'éléments extraits ?

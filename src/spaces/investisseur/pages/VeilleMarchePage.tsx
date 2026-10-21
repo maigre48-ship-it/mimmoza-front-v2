@@ -1,3 +1,4 @@
+import { ACTION_COSTS } from "@/lib/billing/actionCosts";
 import {
   ArrowRight,
   Building2,
@@ -944,8 +945,12 @@ if (!isLand && item.price_m2 != null && item.price_m2 < 200) {
       return;
     }
 
+    // Le coût est annoncé AVANT le débit. L'ingestion Stream Estate est
+    // facturée par l'Edge Function : sans cette mention, l'utilisateur était
+    // prélevé de 30 jetons sans avoir jamais vu le tarif.
     const confirmed = window.confirm(
       "Vous êtes sur le point de lancer votre unique actualisation quotidienne pour cette zone.\n\n" +
+        `Coût : ${ACTION_COSTS.refresh_veille} jetons.\n\n` +
         "Après validation, vos filtres seront verrouillés jusqu'à demain et vous ne pourrez plus modifier cette veille aujourd'hui.\n\n" +
         "Voulez-vous continuer ?"
     );

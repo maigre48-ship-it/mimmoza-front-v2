@@ -193,6 +193,15 @@ export function useMarketVeille(params: UseMarketVeilleParams): UseMarketVeilleR
       try {
         const withIngest = options?.withIngest ?? true;
 
+        // L'ingestion Stream Estate (~0,50 € par run) est facturée 30 jetons
+        // DANS l'Edge Function `stream-estate-ingest-v1`, après l'ingestion
+        // réellement effectuée. Rien n'est prélevé ici : le faire aussi
+        // facturerait deux fois, et un débit navigateur restait de toute façon
+        // contournable en appelant la fonction directement.
+        //
+        // L'exemption des administrateurs est portée par le garde serveur
+        // (estAdministrateur), donc valable sur les deux écrans à la fois.
+
         if (isAdmin) {
           console.log(
             "[useMarketVeille] admin bypass active — refresh sans quota ni blocage",

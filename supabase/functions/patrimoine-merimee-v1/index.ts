@@ -1,3 +1,5 @@
+import { reparerEncodageProfond } from '../_shared/texte/reparerEncodage.ts';
+
 // supabase/functions/patrimoine-merimee-v1/index.ts
 // =============================================================
 // Patrimoine Mérimée v1 — Monuments Historiques (abords 500 m)
@@ -124,7 +126,10 @@ async function fetchOds(qs: URLSearchParams): Promise<Record<string, unknown>[]>
       signal: ac.signal,
     });
     if (!res.ok) throw new Error(`ODS HTTP ${res.status}`);
-    const data = await res.json();
+    // La base Mérimée est notoirement affectée par le double encodage sur les
+    // noms d'édifices — et ce sont précisément des noms propres, que personne
+    // ne peut deviner une fois abîmés (« Ã‰glise Saint-Ã‰tienne »).
+    const data = reparerEncodageProfond(await res.json());
     const results = data?.results;
     return Array.isArray(results) ? results : [];
   } finally {

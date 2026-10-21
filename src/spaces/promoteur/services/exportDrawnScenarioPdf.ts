@@ -3,7 +3,12 @@
 // Export PDF du scénario dessiné (MasterScenario).
 //
 // Structure :
-//   Page 1 — Identité + Statut + Métriques + Conformité
+//   Page 1 — Identité + Statut (seuils indicatifs) + Métriques + Contrôle sourcé
+//
+// L1b R2 : plus aucun « Conforme » fondé sur les seuils internes (CES 50 %,
+// hauteur 15 m). Le statut est libellé « seuils indicatifs, non réglementaires »
+// et le PDF reprend les verdicts du contrôle sourcé (respecté / non respecté /
+// à vérifier) quand il est fourni.
 //   Page 2 — Économie + Narrative + Disclaimer
 //
 // Entrée  : MasterScenario  (source de vérité unique)
@@ -11,6 +16,13 @@
 
 import jsPDF from 'jspdf';
 import type { MasterConformityStatus, MasterScenario } from '../plan2d/plan.master.types';
+import type { ControleImplantation } from '../implantation/implantationCheck';
+import {
+  TITRE_CONTROLE_SOURCE,
+  TITRE_SEUILS_INDICATIFS,
+  libelleSeuilsIndicatifs,
+  lignesControlePdf,
+} from '../implantation/libellesSeuils';
 
 // ─── PALETTE ──────────────────────────────────────────────────────────
 
@@ -66,11 +78,12 @@ const GAP = {
 // ─── COULEURS DE STATUT ───────────────────────────────────────────────
 
 function statusColor(s: MasterConformityStatus): RGB {
-  return s === 'CONFORME' ? C.green : s === 'LIMITE' ? C.amber : C.red;
+  // L1b R2 : jamais de vert « conforme » sur des seuils internes.
+  return s === 'CONFORME' ? C.primary : s === 'LIMITE' ? C.amber : C.red;
 }
 
 function statusLabel(s: MasterConformityStatus): string {
-  return s === 'CONFORME' ? 'Conforme' : s === 'LIMITE' ? 'Limite' : 'Bloquant';
+  return libelleSeuilsIndicatifs(s);
 }
 
 function scoreColor(n: number): RGB {
@@ -263,7 +276,7 @@ function buildStatusCard(doc: Doc, s: MasterScenario): void {
   const topPad    = 5;
   const bottomPad = 5;
 
-  const statusW  = 32;
+  const statusW  = 48;
   const scoreW   = 20;
   const summaryW = innerW - statusW - scoreW - 8;
 
@@ -286,7 +299,7 @@ function buildStatusCard(doc: Doc, s: MasterScenario): void {
   doc.at(
     statusLabel(s.conformity.status).toUpperCase(),
     MX + 4 + statusW / 2, innerY + 5.5,
-    { size: 7, color: C.white, bold: true, align: 'center' },
+    { size: 6, color: C.white, bold: true, align: 'center' },
   );
 
   // Score sous le badge
@@ -382,12 +395,12 @@ function buildConformity(doc: Doc, s: MasterScenario): void {
     doc.textHeight(m, { size: 8, maxW: innerW }),
   );
   const totalMsgH = msgBlocks.reduce((a, h) => a + h + GAP.listItem, 0);
-  const titleH    = doc.textHeight('Conformité PLU', { size: 10, bold: true });
+  const titleH    = doc.textHeight(TITRE_SEUILS_INDICATIFS, { size: 10, bold: true });
   const boxH      = titleH + GAP.afterSectionTitle + totalMsgH + 6;
 
   doc.guard(boxH + GAP.safetyPad);
 
-  doc.text('Conformité PLU', { size: 10, color: C.primary, bold: true });
+  doc.text(TITRE_SEUILS_INDICATIFS, { size: 10, color: C.primary, bold: true });
   doc.skip(GAP.afterSectionTitle);
 
   const boxY = doc.y;
@@ -401,6 +414,28 @@ function buildConformity(doc: Doc, s: MasterScenario): void {
   });
 
   doc.y = boxY + boxH + GAP.betweenSections;
+}
+
+// ─── SECTION D2 : CONTRÔLE SOURCÉ (L1b R2) ────────────────────────────
+
+function buildControleSource(doc: Doc, controle: ControleImplantation | null | undefined): void {
+  const lignes = lignesControlePdf(controle);
+  const couleur = (v: string | null): RGB =>
+    v === 'respecte' ? C.green : v === 'non-respecte' ? C.red : v === 'a-verifier' ? C.amber : C.s700;
+  const titleH = doc.textHeight(TITRE_CONTROLE_SOURCE, { size: 10, bold: true, maxW: CW });
+  doc.guard(titleH + GAP.afterSectionTitle + 12);
+  doc.text(TITRE_CONTROLE_SOURCE, { size: 10, color: C.primary, bold: true, maxW: CW });
+  doc.skip(GAP.afterSectionTitle);
+  for (const l of lignes) {
+    const x = MX + 3 + l.niveau * 4;
+    const maxW = CW - 3 - l.niveau * 4;
+    const size = l.niveau === 2 ? 7.5 : 8.5;
+    const h = doc.textHeight(l.texte, { size, maxW });
+    doc.guard(h + GAP.listItem);
+    doc.text(l.texte, { size, color: couleur(l.verdict), bold: l.niveau < 2, x, maxW });
+    doc.skip(GAP.listItem);
+  }
+  doc.skip(GAP.betweenSections);
 }
 
 // ─── SECTION E : ÉCONOMIE ─────────────────────────────────────────────
@@ -547,7 +582,7 @@ function buildNarrative(doc: Doc, s: MasterScenario): void {
 function buildScores(doc: Doc, s: MasterScenario): void {
   const { scores } = s;
   const items = [
-    { label: 'Réglementaire (40 %)', value: scores.regulatory,     color: scoreColor(scores.regulatory) },
+    { label: 'Seuils indicatifs (40 %)', value: scores.regulatory,     color: scoreColor(scores.regulatory) },
     { label: 'Efficience foncière (35 %)', value: scores.landEfficiency, color: scoreColor(scores.landEfficiency) },
     { label: 'Simplicité (25 %)',    value: scores.simplicity,     color: scoreColor(scores.simplicity) },
     { label: 'Score global',         value: scores.overall,        color: scoreColor(scores.overall) },
@@ -598,7 +633,7 @@ function buildDisclaimer(doc: Doc): void {
   const body  =
     "Ce document constitue une analyse de faisabilité préliminaire générée automatiquement par Mimmoza. " +
     "Il ne constitue pas un avis réglementaire, juridique ou financier et ne saurait engager la responsabilité d'aucune partie. " +
-    "Les métriques sont calculées sur la base du plan masse dessiné et des paramètres PLU configurés. " +
+    "Les métriques sont calculées sur la base du plan masse dessiné et de seuils indicatifs internes, non réglementaires ; seuls les retraits aux limites font l'objet d'un contrôle sourcé, qui n'est pas une attestation de conformité. " +
     "Les conclusions présentées doivent être confirmées par une lecture détaillée du PLU applicable et l'avis de professionnels qualifiés.";
 
   const innerW = CW - 6;
@@ -622,19 +657,21 @@ function buildDisclaimer(doc: Doc): void {
 export interface ExportDrawnScenarioPdfParams {
   scenario:      MasterScenario;
   projectTitle?: string;
+  /** L1b R2 — résultat du contrôle sourcé des retraits (verdicts repris tels quels). */
+  controle?:     ControleImplantation | null;
 }
 
 /**
  * Génère et télécharge le PDF d'analyse du scénario dessiné.
  *
  * Structure :
- *   Page 1 — En-tête · Statut · Métriques · Conformité
+ *   Page 1 — En-tête · Statut (seuils indicatifs) · Métriques · Contrôle sourcé
  *   Page 2 — Économie · Scores · Narrative · Disclaimer
  *
  * Effet de bord pur : déclenche le téléchargement navigateur.
  */
 export function exportDrawnScenarioPdf(params: ExportDrawnScenarioPdfParams): void {
-  const { scenario, projectTitle } = params;
+  const { scenario, projectTitle, controle } = params;
 
   if (scenario.metrics.buildingCount === 0) {
     console.warn('[Mimmoza] exportDrawnScenarioPdf : aucun bâtiment — export ignoré.');
@@ -648,6 +685,7 @@ export function exportDrawnScenarioPdf(params: ExportDrawnScenarioPdfParams): vo
   buildStatusCard(doc, scenario);
   buildMetricsGrid(doc, scenario);
   buildConformity(doc, scenario);
+  buildControleSource(doc, controle);
 
   // ── Page 2 ──────────────────────────────────────────────────────────
   doc.addPage();

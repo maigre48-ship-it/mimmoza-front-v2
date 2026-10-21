@@ -55,6 +55,8 @@ import * as THREE from "three";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 
 import { buildRectangularSilhouetteDataUrl } from "@/utils/buildRectangularSilhouette";
+import { facadeCost } from "@/lib/billing/actionCosts";
+import { getCreditsBalance } from "@/lib/billing/projectUnlock";
 import { useLocalBlenderRender } from "../terrain3d/blender/useLocalBlenderRender";
 import { buildFacadeAiPrompt } from "../terrain3d/facade/buildFacadeAiPrompt";
 import { buildFacadeRenderSpec } from "../terrain3d/facade/buildFacadeRenderSpec";
@@ -935,8 +937,36 @@ export default function FacadeGeneratorPage() {
     });
   };
 
+  // La génération de façade appelle gpt-image en 1536x1024 qualité « high » :
+  // c'est l'appel le plus cher de la plateforme. Le tarif existait déjà dans
+  // ACTION_COSTS (facade_low/medium/high) mais n'était branché nulle part — la
+  // fonctionnalité était donc entièrement gratuite, y compris via l'interface.
+  const FACADE_QUALITY = "high" as const;
+  const coutFacade = facadeCost(FACADE_QUALITY);
+
   const handleGenerateFacadeSketch = async () => {
+    // Verrou de réentrance. Quatre des boutons qui appellent ce handler n'ont
+    // pas de `disabled={generating}`, et la lecture du solde ci-dessous précède
+    // `setGenerating(true)` : sans ce garde, deux clics rapides lancent deux
+    // générations, donc deux débits de 40 jetons pour une seule image voulue.
+    if (generating) return;
     if (floorsExceedPlu && !pluOverrideConfirmed) { setShowPluWarningBanner(true); return; }
+
+    // Solde vérifié AVANT, débit APRÈS le rendu réussi.
+    //
+    // Ailleurs dans l'application le jeton est prélevé avant l'appel coûteux et
+    // n'est jamais rendu si celui-ci échoue : l'utilisateur paie une erreur.
+    // Ici on inverse — on refuse d'engager la génération sans solde suffisant,
+    // et on ne débite qu'une image réellement livrée. La seule fenêtre de perte
+    // est un solde qui changerait entre les deux, bornée à un rendu.
+    const solde = await getCreditsBalance();
+    if (solde < coutFacade) {
+      setRenderError(
+        `Génération indisponible : ${coutFacade} jetons requis, ${solde} disponible${solde > 1 ? "s" : ""}.`,
+      );
+      return;
+    }
+
     setGenerating(true); setRenderError(null); setShowPluWarningBanner(false); setPreviewTab("contexte");
     try {
       const effectiveWidthM = facadeRenderSpec.widthM;
@@ -977,8 +1007,12 @@ export default function FacadeGeneratorPage() {
         ...(styleDef ? { facadeStyleId: styleDef.id, facadeStyleFamily: styleDef.family } : {}),
         ...(activeOrnaments.length ? { ornaments: activeOrnaments } : {}),
         ...(pluOverrideConfirmed && pluMaxFloorsIndicative !== null ? { pluContext: { maxFloorsIndicative: pluMaxFloorsIndicative, notes: [`Dépassement PLU confirmé : ${config.nbEtages} étages demandés, plafond indicatif ${pluMaxFloorsIndicative}.`, "Rendu à titre indicatif uniquement."] } } : {}),
-        size: "1536x1024", quality: "high", outputFormat: "png", background: "opaque",
+        size: "1536x1024", quality: FACADE_QUALITY, outputFormat: "png", background: "opaque",
       } as Parameters<typeof requestFacadeAiRender>[0]);
+
+      // Le débit n'est PLUS fait ici : il a lieu dans l'Edge Function
+      // `facade-ai-render`, après la livraison de l'image. Le prélever aussi
+      // depuis le navigateur facturerait deux fois la même génération.
       setImageUrl(result.imageUrl); setLastPromptUsed(result.promptUsed);
       void persistImageAsync(result.imageUrl);
     } catch (e) {

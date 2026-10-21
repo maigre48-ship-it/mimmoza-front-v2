@@ -294,13 +294,13 @@ export function MimmozIASidebar({
   /* ------------------------------ Rendu -------------------------------- */
 
   return (
-    <aside id="mzia-conversation-sidebar" className={`mzia-side ${collapsed ? 'is-collapsed' : ''}`} aria-label="Conversations MimmozIA">
+    <aside id="mzia-conversation-sidebar" className={`mzia-side ${collapsed ? 'is-collapsed' : ''}`} aria-label="Conversations Mimmo">
       {/* En-tête */}
       <div className="mzia-side__head">
         {!collapsed && (
           <div className="mzia-side__brand">
             <MimmozIAOrb state="idle" size={26} />
-            <span>MimmozIA</span>
+            <span>Mimmo</span>
           </div>
         )}
         <button
@@ -530,7 +530,7 @@ function SettingsPanel({ uid, onClose }: { uid: string | null; onClose: () => vo
   }, [learning]);
 
   const purge = useCallback(async () => {
-    if (!window.confirm('Effacer tout ce que MimmozIA a appris sur vous ? Cette action est irréversible.')) return;
+    if (!window.confirm('Effacer tout ce que Mimmo a appris sur vous ? Cette action est irréversible.')) return;
     setBusy(true); setMsg(null);
     try {
       await purgeMyAiMemory();
@@ -552,7 +552,7 @@ function SettingsPanel({ uid, onClose }: { uid: string | null; onClose: () => vo
       <label className="mzia-settings__row">
         <span>
           Apprentissage des habitudes
-          <small>MimmozIA personnalise l’accueil et les suggestions.</small>
+          <small>Mimmo personnalise l’accueil et les suggestions.</small>
         </span>
         <button
           type="button"

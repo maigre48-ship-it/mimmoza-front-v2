@@ -6,6 +6,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import {
+  authentifier,
+  debiter,
+  reponseErreurFacturation,
+  TARIFS,
+  verifierSolde,
+} from "../_shared/billing/featureBilling.ts";
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
 
@@ -344,6 +351,24 @@ serve(async (req) => {
     return jsonError("METHOD_NOT_ALLOWED", "POST requis.", undefined, 405);
   }
 
+  // ── Identité et solde ─────────────────────────────────────────────────────
+  // Avant : l'en-tête Authorization n'était lu que pour un console.log, et
+  // aucun jeton n'était prélevé nulle part. Un appel direct à cette fonction
+  // donnait donc un accès illimité et gratuit à gpt-4o vision.
+  //
+  // Le solde est vérifié ici, le débit intervient après la réponse d'OpenAI :
+  // les nombreux retours d'erreur ci-dessous (format, taille, lecture) ne
+  // doivent rien coûter à l'utilisateur.
+  let userId: string;
+  try {
+    userId = await authentifier(req);
+    await verifierSolde(userId, TARIFS.rehab_analyse_plan);
+  } catch (e) {
+    const reponse = reponseErreurFacturation(e, CORS);
+    if (reponse) return reponse;
+    throw e;
+  }
+
   // ── FormData ──────────────────────────────────────────────────────────────
   let formData: FormData;
   try {
@@ -538,6 +563,24 @@ serve(async (req) => {
       { receivedKeys: Object.keys(analysisData) },
       502,
     );
+  }
+
+  // ── Débit ─────────────────────────────────────────────────────────────────
+  // Placé APRÈS la validation de structure : un JSON IA sans `summary` ni
+  // `reliability` repart en 502 et ne doit rien coûter. Tous les échecs
+  // précédents (réseau, quota OpenAI, JSON illisible) sont gratuits eux aussi —
+  // l'utilisateur n'a rien reçu d'exploitable.
+  try {
+    await debiter({
+      userId,
+      montant: TARIFS.rehab_analyse_plan,
+      type: "rehab_analyse_plan",
+      description: "Analyse IA d'un plan de réhabilitation",
+    });
+  } catch (e) {
+    const reponse = reponseErreurFacturation(e, CORS);
+    if (reponse) return reponse;
+    throw e;
   }
 
   // ── Garde-fou serveur : surface totale jamais ≤ plus grande pièce ─────────

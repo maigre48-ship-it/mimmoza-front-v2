@@ -2139,7 +2139,7 @@ Deno.serve(async (req: Request) => {
       sources_indisponibles: ko.map((i) => ({ cle: i.cle, motif: i.motif })),
       duree_ms: dureeTotale,
       avertissements,
-      note_methode: "Collecte brute multi-sources, puis qualification, contrôle de cohérence et verdict DÉTERMINISTES calculés dans la fonction. MimmozIA rédige à partir de ces éléments : elle ne recalcule aucun verdict, n'arbitre aucune contradiction et n'extrapole aucune donnée absente. Chaque donnée porte sa portée géographique (scope) : une donnée « municipality » ne doit JAMAIS être formulée au droit de la parcelle.",
+      note_methode: "Collecte brute multi-sources, puis qualification, contrôle de cohérence et verdict DÉTERMINISTES calculés dans la fonction. Mimmo rédige à partir de ces éléments : il ne recalcule aucun verdict, n'arbitre aucune contradiction et n'extrapole aucune donnée absente. Chaque donnée porte sa portée géographique (scope) : une donnée « municipality » ne doit JAMAIS être formulée au droit de la parcelle.",
 
       // ── v4 : ajouts ────────────────────────────────────────
       evidences: qualification.evidences,

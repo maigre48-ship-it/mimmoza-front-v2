@@ -491,10 +491,28 @@ async function invokeFunction<T = unknown>(
   });
 
   if (error) {
+    // supabase-js ne met PAS le corps de la réponse dans `error.message` sur un
+    // statut non-2xx : on n'obtient que « Edge Function returned a non-2xx
+    // status code », la vraie réponse étant dans `error.context` (un Response).
+    // Sans cette lecture, un refus pour solde insuffisant (402) s'affichait à
+    // l'utilisateur comme une panne technique — désormais que l'ingestion est
+    // facturée côté serveur, c'est un cas normal et fréquent.
+    let messageLisible = error.message;
+    const contexte = (error as { context?: Response }).context;
+    if (contexte && typeof contexte.json === "function") {
+      try {
+        const corps = await contexte.json();
+        if (typeof corps?.message === "string") messageLisible = corps.message;
+        else if (typeof corps?.error === "string") messageLisible = corps.error;
+      } catch {
+        // corps illisible : on garde le message générique
+      }
+    }
+
     return {
       ok: false,
       body: {
-        message: error.message,
+        message: messageLisible,
         name: error.name,
         context: error.context,
       },

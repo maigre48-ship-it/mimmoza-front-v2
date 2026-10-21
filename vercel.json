@@ -1,5 +1,10 @@
 {
+  "redirects": [
+    { "source": "/studio", "destination": "/studio/", "permanent": false }
+  ],
   "rewrites": [
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    { "source": "/studio/", "destination": "https://mimmozia-studio.vercel.app/studio/" },
+    { "source": "/studio/:chemin*", "destination": "https://mimmozia-studio.vercel.app/studio/:chemin*" },
+    { "source": "/((?!api/|studio/).*)", "destination": "/index.html" }
   ]
 }

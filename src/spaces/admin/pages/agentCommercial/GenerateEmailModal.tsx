@@ -24,14 +24,19 @@ export function GenerateEmailModal({
   onGenerated: () => void;
 }) {
   const [kind, setKind] = useState<EmailKind>("premier_contact");
+  const [incomingMessage, setIncomingMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function handleGenerate() {
     setError(null);
+    if (kind === "reponse_question" && !incomingMessage.trim()) {
+      setError("Collez le mail reçu avant de générer une réponse.");
+      return;
+    }
     setBusy(true);
     try {
-      await generateEmail(prospectId, kind);
+      await generateEmail(prospectId, kind, incomingMessage.trim() || undefined);
       onGenerated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Génération impossible.");
@@ -72,6 +77,23 @@ export function GenerateEmailModal({
           ))}
         </Select>
       </Field>
+      {kind === "reponse_question" && (
+        <div className="mt-4">
+          <label htmlFor="incoming-message" className="block text-sm font-medium text-slate-700">
+            Mail reçu du prospect
+          </label>
+          <textarea
+            id="incoming-message"
+            value={incomingMessage}
+            onChange={(event) => setIncomingMessage(event.target.value)}
+            rows={8}
+            maxLength={12000}
+            className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
+            placeholder="Collez ici le message auquel répondre. Retirez les informations sensibles inutiles."
+          />
+          <p className="mt-1 text-xs text-slate-500">La réponse sera enregistrée comme brouillon à valider.</p>
+        </div>
+      )}
       <p className="mt-3 text-xs text-slate-400">
         Le message généré apparaîtra dans « Messages à valider » au statut « À valider ».
       </p>

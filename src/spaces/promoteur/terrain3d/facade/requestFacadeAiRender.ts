@@ -33,6 +33,20 @@ export async function requestFacadeAiRender(
   });
 
   if (error) {
+    // supabase-js ne met PAS le corps de la réponse dans `error.message` sur un
+    // statut non-2xx : on n'obtient que « Edge Function returned a non-2xx
+    // status code », et la vraie réponse est dans `error.context`. Sans cette
+    // lecture, un refus pour solde insuffisant (402) s'affichait à
+    // l'utilisateur comme une panne technique.
+    const contexte = (error as { context?: Response }).context;
+    if (contexte && typeof contexte.json === "function") {
+      try {
+        const corps = await contexte.json();
+        if (corps?.message) throw new Error(corps.message);
+      } catch (e) {
+        if (e instanceof Error && e.message && !e.message.includes("JSON")) throw e;
+      }
+    }
     throw new Error(error.message || "Facade AI render failed");
   }
 

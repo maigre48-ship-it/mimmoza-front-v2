@@ -578,9 +578,11 @@ function findMergeGroups(
 
 export interface Plan2DCanvasProps {
   parcellePolygon:Point2D[]; height?:number; className?:string; style?:React.CSSProperties;
+  /** L1b — calque SVG supplémentaire (cotes du contrôle d'implantation), dessiné au-dessus du plan. */
+  overlayControle?:(zoom:number)=>React.ReactNode;
 }
 
-export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanvasProps){
+export function Plan2DCanvas({parcellePolygon,height,className,style,overlayControle}:Plan2DCanvasProps){
   const wrapperRef=useRef<HTMLDivElement>(null!);
   const svgRef=useRef<SVGSVGElement>(null!);
   const [size,setSize]=useState({w:800,h:height??560});
@@ -960,7 +962,7 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
           whiteSpace:'nowrap', display:'flex', alignItems:'center', gap:8,
         }}>
           <span>📍</span>
-          Cliquez sur <strong style={{margin:'0 3px'}}>Façade terrain</strong> pour définir les retraits PLU
+          Cliquez sur <strong style={{margin:'0 3px'}}>Façade terrain</strong> pour classer les limites (voirie / séparatives / fond)
         </div>
       )}
 
@@ -980,7 +982,8 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
         </button>
         {parcelFrontEdgeIndex!==null&&(
           <div style={{background:'rgba(255,255,255,0.97)',border:'1px solid #fde68a',borderRadius:10,padding:'8px 10px',fontSize:11,boxShadow:'0 2px 8px rgba(0,0,0,0.08)',backdropFilter:'blur(6px)'}}>
-            <div style={{fontSize:9,fontWeight:700,color:'#92400e',letterSpacing:'0.06em',textTransform:'uppercase',marginBottom:5}}>Reculs PLU (m)</div>
+            <div style={{fontSize:9,fontWeight:700,color:'#92400e',letterSpacing:'0.06em',textTransform:'uppercase',marginBottom:5}}>Reculs de dessin (m)</div>
+            <div style={{fontSize:9,color:'#a16207',marginBottom:5,maxWidth:150,lineHeight:1.35}}>Valeurs par défaut, non réglementaires : servent au dessin, jamais à un verdict.</div>
             {([
               {label:'Avant', key:'frontM' as const, val:setbackRules.frontM},
               {label:'Latér.',key:'sideM'  as const, val:setbackRules.sideM},
@@ -996,7 +999,7 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
             ))}
             {buildableEnvelope && buildableEnvelope.length >= 3 ? (
               <div style={{marginTop:5,fontSize:9.5,color:'#92400e',background:'#fef3c7',borderRadius:5,padding:'3px 6px',textAlign:'center'}}>
-                ✓ Enveloppe constructible active
+                ✓ Enveloppe de dessin active
               </div>
             ) : (
               <div style={{marginTop:5,fontSize:9.5,color:'#dc2626',background:'#fee2e2',borderRadius:5,padding:'3px 6px',textAlign:'center'}}>
@@ -1210,7 +1213,7 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
             : !partlyInZone
               ? 'Zone de retrait'
               : !fullyInZone
-                ? 'Hors emprise PLU'
+                ? 'Hors enveloppe de dessin (valeurs par défaut)'
                 : null;
 
           return (<g pointerEvents="none">
@@ -1231,6 +1234,7 @@ export function Plan2DCanvas({parcellePolygon,height,className,style}:Plan2DCanv
         <SelectionOverlayV2 buildings={effectiveBuildings} parkings={effectiveParkings} selectedIds={selectedIds} liveRects={liveRects} hoveredHandle={hoveredHandle} zoom={approxZoom}/>
 
         {cotesVisible&&<DimensionOverlay parcellePolygon={parcellePolygon} buildings={effectiveBuildings} parkings={effectiveParkings} selectedIds={selectedIds} zoom={approxZoom}/>}
+        {overlayControle?.(approxZoom)}
       </svg>
     </div>
   );

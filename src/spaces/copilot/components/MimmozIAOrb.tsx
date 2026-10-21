@@ -9,6 +9,7 @@ export type MimmozIAOrbState =
   | 'searching'
   | 'responding'
   | 'success'
+  | 'negative'
   | 'error';
 
 /** Palette d'états — une seule couleur pilote toute l'orbe via --orb-color. */
@@ -16,10 +17,11 @@ export const ORB_COLORS: Record<MimmozIAOrbState, string> = {
   idle: '#8b5cf6',
   listening: '#a855f7',
   thinking: '#3b82f6',
-  searching: '#06b6d4',
-  responding: '#6366f1',
-  success: '#7ddc6d',
-  error: '#ff6b81',
+  searching: '#3b82f6',
+  responding: '#34c759',
+  success: '#34c759',
+  negative: '#ef4444',
+  error: '#ef4444',
 };
 
 /**
@@ -29,6 +31,7 @@ export const ORB_COLORS: Record<MimmozIAOrbState, string> = {
  */
 const TRANSIENT_STATES: ReadonlySet<MimmozIAOrbState> = new Set<MimmozIAOrbState>([
   'success',
+  'negative',
   'error',
 ]);
 
@@ -120,6 +123,12 @@ function useHeldOrbState(state: MimmozIAOrbState, holdMs: number): MimmozIAOrbSt
       return;
     }
     const now = Date.now();
+    // Une nouvelle demande doit redevenir bleue sans attendre la fin du flash précédent.
+    if (state === 'thinking' || state === 'searching' || state === 'responding' || state === 'listening') {
+      heldUntilRef.current = 0;
+      setDisplayed(state);
+      return;
+    }
     if (TRANSIENT_STATES.has(state)) {
       heldUntilRef.current = now + holdMs;
       setDisplayed(state);
@@ -202,6 +211,7 @@ export function MimmozIAOrb({
   const resolvedLogo = logoCandidates[Math.min(logoIndex, logoCandidates.length - 1)];
   const isLastCandidate = logoIndex >= logoCandidates.length - 1;
 
+  // Le logo de l'image reste intact ; la couleur pilote les ondes autour.
   const style: React.CSSProperties = { ['--orb-color' as string]: ORB_COLORS[displayState] };
   if (size != null) (style as Record<string, string>)['--orb-size'] = `${size}px`;
 
@@ -212,7 +222,7 @@ export function MimmozIAOrb({
       data-variant={variant}
       style={style}
       role="img"
-      aria-label="MimmozIA, agent immobilier IA"
+      aria-label="Mimmo, agent immobilier IA"
     >
       <span className="mzia-orb__aura mzia-orb__aura--3" aria-hidden />
       <span className="mzia-orb__aura mzia-orb__aura--2" aria-hidden />

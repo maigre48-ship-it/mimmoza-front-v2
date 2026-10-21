@@ -73,7 +73,7 @@ export function CopilotDrawer() {
             }}>
               <MimmozIAOrb state="idle" size={30} />
             </div>
-            <div style={{ color: T.text, fontWeight: 700, fontSize: 15 }}>MimmozIA</div>
+            <div style={{ color: T.text, fontWeight: 700, fontSize: 15 }}>Mimmo</div>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
               {/* En mode scripte : pas de credits, export ni "nouvelle conversation". */}
               {!scripted && (

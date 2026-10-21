@@ -18,10 +18,10 @@ interface Plan {
 }
 
 const PLANS: Plan[] = [
-  { id: "basique", name: "Basique", tagline: "Pour démarrer", model: "MimmozIA · Haiku", modules: "none" },
-  { id: "avance", name: "Avancé", tagline: "Analyses approfondies", model: "MimmozIA · Sonnet", modules: "none" },
-  { id: "pro", name: "Pro", tagline: "1 métier au choix", model: "MimmozIA · Sonnet / Opus", modules: "one", highlight: true },
-  { id: "proplus", name: "Pro +", tagline: "Tous les métiers", model: "MimmozIA · Sonnet / Opus", modules: "all" },
+  { id: "basique", name: "Basique", tagline: "Pour démarrer", model: "Mimmo · Haiku", modules: "none" },
+  { id: "avance", name: "Avancé", tagline: "Analyses approfondies", model: "Mimmo · Sonnet", modules: "none" },
+  { id: "pro", name: "Pro", tagline: "1 métier au choix", model: "Mimmo · Sonnet / Opus", modules: "one", highlight: true },
+  { id: "proplus", name: "Pro +", tagline: "Tous les métiers", model: "Mimmo · Sonnet / Opus", modules: "all" },
 ];
 
 const MODULES = [
@@ -160,7 +160,7 @@ export function MimmozIASubscriptionMenu({ currentPlan, onSelectPlan, className 
         onClick={() => setOpen((v) => !v)}
       >
         <Sparkles size={15} />
-        <span>{currentName ? `MimmozIA ${currentName}` : "Abonnements MimmozIA"}</span>
+        <span>{currentName ? `Mimmoza ${currentName}` : "Abonnements Mimmoza"}</span>
         <ChevronDown size={15} className={`mzia-sub__chev${open ? " is-open" : ""}`} />
       </button>
       {panel}

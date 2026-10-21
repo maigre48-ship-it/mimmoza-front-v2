@@ -38,3 +38,5 @@ risk-map.md
 *.tsbuildinfo
 
 node_modules/
+.vercel
+.env*

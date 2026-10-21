@@ -86,67 +86,51 @@ export async function unlockDealIfNeeded(dealId: string): Promise<UnlockDealResu
     };
   }
 
-  // 4. Lire le solde dans credit_accounts
-  const { data: account, error: accountError } = await supabase
-    .from("credit_accounts")
-    .select("id, current_credits")
-    .eq("user_id", user.id)
-    .maybeSingle();
+  // 4. Débiter le jeton — par la RPC, jamais en écriture directe.
+  //
+  // Ce qui se passait avant : le solde était lu, puis `credit_accounts` était
+  // mis à jour DEPUIS LE NAVIGATEUR, puis la ligne de transaction était insérée.
+  // Or `credit_accounts` n'a AUCUNE policy RLS d'UPDATE pour le propriétaire —
+  // seulement pour les admins. L'update était donc rejeté sans lever d'erreur
+  // (supabase-js ne signale pas « 0 ligne modifiée »), tandis que l'insert dans
+  // `credit_transactions`, lui, passait grâce à `credit_transactions_insert_own`.
+  //
+  // Résultat constaté en production : le grand livre affichait un débit qui
+  // n'avait jamais eu lieu, et l'utilisateur obtenait le déblocage gratuitement.
+  // Trois comptes présentaient un écart solde/journal exactement égal à leurs
+  // `deal_unlock`. Seul le compte admin fonctionnait, sa policy l'autorisant.
+  //
+  // `spend_credits` est SECURITY DEFINER : elle verrouille la ligne (`for
+  // update`), vérifie le solde, débite et journalise dans la MÊME transaction.
+  // Plus de lecture-puis-écriture, plus de course, plus de rollback manuel.
+  const dealLabel = getDealLabel(deal);
+  const { error: spendError } = await supabase.rpc("spend_credits", {
+    p_amount: 1,
+    p_description: `Deverrouillage deal investisseur : ${dealLabel}`,
+    p_type: "deal_unlock",
+  });
 
-  if (accountError) {
-    return {
-      ok: false,
-      reason: "ERROR",
-      message: accountError.message,
-    };
+  if (spendError) {
+    // La RPC lève NO_TOKENS (solde insuffisant), NO_ACCOUNT (pas de compte) ou
+    // NOT_AUTHENTICATED. Seul le premier a un message dédié ; les autres sont
+    // des anomalies et remontent tels quels pour ne pas masquer la cause.
+    // Comparaison en majuscules, comme spendCredits() dans projectUnlock.ts :
+    // robuste si le libellé SQL est un jour reformulé.
+    const brut = spendError.message ?? "";
+    if (brut.toUpperCase().includes("NO_TOKENS")) {
+      return {
+        ok: false,
+        reason: "NO_TOKENS",
+        message: "Vous n'avez plus de jetons disponibles.",
+      };
+    }
+    return { ok: false, reason: "ERROR", message: brut };
   }
 
-  const currentCredits = account?.current_credits ?? 0;
-
-  if (currentCredits <= 0) {
-    return {
-      ok: false,
-      reason: "NO_TOKENS",
-      message: "Vous n'avez plus de jetons disponibles.",
-    };
-  }
-
-  // 5. Déduire 1 jeton dans credit_accounts
-  const { error: updateError } = await supabase
-    .from("credit_accounts")
-    .update({ current_credits: currentCredits - 1 })
-    .eq("id", account!.id);
-
-  if (updateError) {
-    return { ok: false, reason: "ERROR", message: updateError.message };
-  }
-
-  // 6. Enregistrer la transaction dans credit_transactions
   const ledgerId = createId("tok_deal_unlock");
   const nowIso = new Date().toISOString();
-  const dealLabel = getDealLabel(deal);
 
-  const { error: txError } = await supabase
-    .from("credit_transactions")
-    .insert({
-      user_id:     user.id,
-      amount:      -1,
-      type:        "deal_unlock",
-      description: `Deverrouillage deal investisseur : ${dealLabel}`,
-      created_at:  nowIso,
-    });
-
-  if (txError) {
-    // Rollback : restituer le jeton
-    await supabase
-      .from("credit_accounts")
-      .update({ current_credits: currentCredits })
-      .eq("id", account!.id);
-
-    return { ok: false, reason: "ERROR", message: txError.message };
-  }
-
-  // 7. Mettre à jour le snapshot local
+  // 5. Mettre à jour le snapshot local
   deal.premiumUnlocked = true;
   deal.premiumUnlockedAt = nowIso;
   deal.premiumUnlockLedgerId = ledgerId;

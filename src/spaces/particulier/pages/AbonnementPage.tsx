@@ -55,24 +55,24 @@ interface Tier {
 
 const TIERS: Tier[] = [
   {
-    id: "basique", name: "Basique", model: "MimmozIA · Haiku", tagline: "Pour démarrer",
+    id: "basique", name: "Basique", model: "Mimmo · Haiku", tagline: "Pour démarrer",
     modules: "none",
-    features: ["Assistant MimmozIA (Haiku)", "PLU, DVF, risques, DPE", "Rapports essentiels"],
+    features: ["Assistant Mimmo (Haiku)", "PLU, DVF, risques, DPE", "Rapports essentiels"],
   },
   {
-    id: "avance", name: "Avancé", model: "MimmozIA · Sonnet", tagline: "Analyses approfondies",
+    id: "avance", name: "Avancé", model: "Mimmo · Sonnet", tagline: "Analyses approfondies",
     modules: "none",
-    features: ["Assistant MimmozIA (Sonnet)", "Analyses avancées et sourcées", "Rapports détaillés"],
+    features: ["Assistant Mimmo (Sonnet)", "Analyses avancées et sourcées", "Rapports détaillés"],
   },
   {
-    id: "pro", name: "Pro", model: "MimmozIA · Sonnet / Opus", tagline: "1 métier au choix",
+    id: "pro", name: "Pro", model: "Mimmo · Sonnet / Opus", tagline: "1 métier au choix",
     modules: "one", featured: true,
-    features: ["Assistant MimmozIA (Sonnet / Opus)", "1 module métier au choix", "Exports avancés"],
+    features: ["Assistant Mimmo (Sonnet / Opus)", "1 module métier au choix", "Exports avancés"],
   },
   {
-    id: "proplus", name: "Pro +", model: "MimmozIA · Sonnet / Opus", tagline: "Tous les métiers",
+    id: "proplus", name: "Pro +", model: "Mimmo · Sonnet / Opus", tagline: "Tous les métiers",
     modules: "all",
-    features: ["Assistant MimmozIA (Sonnet / Opus)", "Les 3 modules métier inclus", "Exports avancés"],
+    features: ["Assistant Mimmo (Sonnet / Opus)", "Les 3 modules métier inclus", "Exports avancés"],
   },
 ];
 
@@ -145,7 +145,7 @@ export default function AbonnementPage() {
           <div className="mb-8">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 shadow-sm">
               <Sparkles className="h-3.5 w-3.5 text-violet-500" />
-              Abonnements MimmozIA
+              Abonnements Mimmoza
             </div>
             <h1 className="text-4xl font-semibold tracking-tight text-slate-950 sm:text-[2.6rem]">
               Choisissez votre{" "}
@@ -154,7 +154,7 @@ export default function AbonnementPage() {
               </span>
             </h1>
             <p className="mt-3 text-base leading-7 text-slate-500">
-              MimmozIA pour tous, avec les modules métier selon votre formule. Apport d'affaires, Analyse rapide et Veille marché inclus partout.
+              Mimmo pour tous, avec les modules métier selon votre formule. Apport d'affaires, Analyse rapide et Veille marché inclus partout.
             </p>
           </div>
 

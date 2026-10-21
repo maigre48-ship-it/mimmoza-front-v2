@@ -3,6 +3,13 @@
 // via Anthropic Claude, basee uniquement sur un objet JSON "context".
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import {
+  authentifier,
+  debiter,
+  reponseErreurFacturation,
+  TARIFS,
+  verifierSolde,
+} from "../_shared/billing/featureBilling.ts";
 
 // --- Constants ---------------------------------------------------------------
 
@@ -3180,6 +3187,25 @@ serve(async (req: Request): Promise<Response> => {
     const skipClaude = Boolean(body?.skipClaude);
     const apiKey = skipClaude ? "" : requireEnv("ANTHROPIC_API_KEY");
 
+    // ── Identité et solde ───────────────────────────────────────────────────
+    // Cette fonction produit jusqu'à 8 600 tokens de sortie Anthropic sur une
+    // entrée non bornée (le contexte complet est sérialisé), sans qu'aucun
+    // jeton ne soit prélevé nulle part et sans vérification de l'appelant.
+    //
+    // `skipClaude` court-circuite tout appel au modèle : dans ce cas la
+    // fonction ne coûte rien et n'est donc pas facturée.
+    let userId: string | null = null;
+    if (!skipClaude) {
+      try {
+        userId = await authentifier(req);
+        await verifierSolde(userId, TARIFS.export_rapport_ia);
+      } catch (e) {
+        const reponse = reponseErreurFacturation(e, corsHeaders);
+        if (reponse) return reponse;
+        throw e;
+      }
+    }
+
     let model = "";
     if (!skipClaude) {
       const forced = Deno.env.get("ANTHROPIC_MODEL")?.trim() || "";
@@ -3387,6 +3413,24 @@ serve(async (req: Request): Promise<Response> => {
       `short_len=${wikimediaBlock?.place?.context?.short?.length ?? 0}`,
       `long_len=${wikimediaBlock?.place?.context?.long?.length ?? 0}`,
     );
+
+    // ── Débit ───────────────────────────────────────────────────────────────
+    // Rapport produit et parsé : on facture ici. Les échecs de parsing plus
+    // haut retournent en 502 sans rien prélever — l'utilisateur n'a rien reçu.
+    if (userId) {
+      try {
+        await debiter({
+          userId,
+          montant: TARIFS.export_rapport_ia,
+          type: "export_rapport_ia",
+          description: "Export de rapport d'analyse IA",
+        });
+      } catch (e) {
+        const reponse = reponseErreurFacturation(e, corsHeaders);
+        if (reponse) return reponse;
+        throw e;
+      }
+    }
 
     return jsonResponse({
       ok: true,

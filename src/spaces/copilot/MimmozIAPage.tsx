@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MapPin, Home, TrendingUp, Gauge, LandPlot, Sparkles,
   Paperclip, Mic, ArrowUp, X, Box,
@@ -8,6 +8,7 @@ import {
 import { CopilotChat } from './components/CopilotChat';
 import { useCopilot } from './hooks/useCopilot';
 import { MimmozIAOrb, type MimmozIAOrbState } from './components/MimmozIAOrb';
+import { phaseReponseEnFlux, reponseClairementNegative } from './components/orbResponseOutcome';
 import { MimmozIAQuickAction } from './components/MimmozIAQuickAction';
 import { MimmozIAStatus } from './components/MimmozIAStatus';
 import { MimmozIASidebar } from './MimmozIASidebar';
@@ -20,7 +21,24 @@ import { useMimmozIAProfile } from '@/lib/mimmozia/useMimmozIAProfile';
 import AlertesAccueil from '@/components/AlertesAccueil';
 import { useCopilotStore } from './store/copilotStore';
 import { PreparationStudio3D } from './studio3d/PreparationStudio3D';
+import { draftBrief, is3DPreparationRequest, latestJarvisDraft, studioCommand, studioComposition, studioSegmentedVolume, type JarvisDraft, type JarvisStudioBuilding, type JarvisSegment } from './studio3d/jarvisDraft';
+import { listJarvisTransferFiles, retainJarvisFiles, type JarvisStoredFile } from './studio3d/jarvisFiles';
+import { STUDIO_BRIDGE_CHANNEL, activeStudioSession, readStudioVolumeMessage, rememberStudioSession, saveStudioVolume } from './studio3d/studioBridge';
+import type { ConfirmedTerrain } from './studio3d/terrainCadastre';
+import { urlStudio3D } from '@/spaces/promoteur/shared/ouvrirStudio3D';
+// R2 — chat → Studio en un clic, dans la page (panneau même origine), sans perte.
+import { StudioIntegre, type DemandeStudioIntegre } from './studio3d/StudioIntegre';
+import { adresseStudioIntegre, construireProjetChat, etudeDuChat, prochaineRevision, projetIdChat } from './studio3d/projetChat';
+import { getActiveStudyId } from '@/spaces/promoteur/shared/promoteurSnapshot.store';
+import { memoriserRelief, prechargerRelief, reliefAvecDelai, reliefEnCache } from './studio3d/reliefCache';
+import { parcelleRetenue, retenirParcelle } from './studio3d/parcelleConfirmee';
+import { parcelId } from './studio3d/parcelFromGps';
 import { demandePrevisualisation } from './studio3d/intentionPrevisualisation';
+import type { IssueOuvertureStudio } from './studio3d/JarvisDraftPanel';
+import { signerTransferts } from './studio3d/transfertStudio';
+import { adressesSignees, televerserPanorama } from '@/spaces/promoteur/shared/environnement360';
+import { empreinteProjet } from '@/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2';
+import { urlStudio } from '@/lib/studioConfig';
 
 /** CH2 — pièce jointe base64 du tchat → File (pour l'envoyer au Studio 3D). */
 async function versFichier(a: { mediaType: string; data: string; name?: string }): Promise<File> {
@@ -105,7 +123,8 @@ function hasActiveConversation(a: LooseCopilotApi): boolean {
 
 function deriveLiveState(a: LooseCopilotApi): MimmozIAOrbState {
   if (a.error || a.lastError) return 'error';
-  if (a.isStreaming || a.streaming || a.status === 'streaming' || a.status === 'responding') return 'responding';
+  if (a.isStreaming || a.streaming || a.status === 'streaming' || a.status === 'responding')
+    return phaseReponseEnFlux((a.messages ?? []) as { role?: string; text?: string }[]);
   if (a.isSearching || a.toolRunning || a.status === 'tool' || a.phase === 'search') return 'searching';
   if (a.isLoading || a.loading || a.isThinking || a.status === 'thinking' || a.status === 'pending') return 'thinking';
   return 'idle';
@@ -173,6 +192,8 @@ const QUICK_ACTIONS: QuickAction[] = [
   { icon: LandPlot, title: 'Étudier un terrain', subtitle: 'PLU, règles, constructibilité, réseaux', side: 'right', prompt: 'Étudie ce terrain : règles du PLU, constructibilité, contraintes et réseaux : ', signal: { property_type: 'terrain' } },
   { icon: Sparkles, title: 'Trouver des opportunités', subtitle: 'Biens, terrains, off-market, appels d’offres', side: 'right', prompt: 'Trouve des opportunités immobilières (biens, terrains, off-market, appels d’offres) selon ces critères : ' },
 ];
+const StudioHeroBuilding3D = lazy(() => import('./studio3d/StudioHeroBuilding3D').then(module => ({ default: module.StudioHeroBuilding3D })));
+
 const TRUST = [
   { icon: ShieldCheck, label: 'Données publiques vérifiées' },
   { icon: Lock, label: 'Analyses sécurisées' },
@@ -223,16 +244,19 @@ export default function MimmozIAPage() {
   const live = deriveLiveState(copilot);
   const busy = live === 'thinking' || live === 'searching' || live === 'responding';
   const prevBusy = useRef(false);
-  const [successFlash, setSuccessFlash] = useState(false);
+  const [completionFlash, setCompletionFlash] = useState<'success' | 'negative' | null>(null);
+  const dernierTexteAssistant = [...(Array.isArray(copilot.messages) ? copilot.messages : [])]
+    .reverse().find((message) => (message as { role?: string }).role === 'assistant') as { text?: string } | undefined;
+  const conclusionNegative = reponseClairementNegative(dernierTexteAssistant?.text ?? '');
   useEffect(() => {
     if (prevBusy.current && !busy && live !== 'error') {
-      setSuccessFlash(true);
-      const t = window.setTimeout(() => setSuccessFlash(false), 850);
+      setCompletionFlash(conclusionNegative ? 'negative' : 'success');
+      const t = window.setTimeout(() => setCompletionFlash(null), 850);
       prevBusy.current = busy;
       return () => window.clearTimeout(t);
     }
     prevBusy.current = busy;
-  }, [busy, live]);
+  }, [busy, live, conclusionNegative]);
 
   const [recording, setRecording] = useState(false);
   /** La dictée n'existe que si le navigateur expose SpeechRecognition (Chrome,
@@ -242,9 +266,8 @@ export default function MimmozIAPage() {
       Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition),
     [],
   );
-  const orbState: MimmozIAOrbState = successFlash ? 'success'
-    : live !== 'idle' ? live
-    : recording ? 'listening' : 'idle';
+  const orbState: MimmozIAOrbState = live !== 'idle' ? live
+    : completionFlash ?? (recording ? 'listening' : 'idle');
   const activeTools = deriveActiveTools(copilot);
 
   const [draft, setDraft] = useState('');
@@ -312,7 +335,9 @@ export default function MimmozIAPage() {
     const linkedConversation = new URLSearchParams(window.location.search).get('conversation');
     if (linkedConversation && /^[0-9a-f-]{36}$/i.test(linkedConversation)) {
       void copilot.selectConversation?.(linkedConversation);
-      window.history.replaceState(window.history.state, '', '/mimmozia');
+      const url = new URL(window.location.href);
+      url.searchParams.delete('conversation');
+      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -325,36 +350,177 @@ export default function MimmozIAPage() {
   }, [draft]);
 
   // CH2 — préparation de la prévisualisation 3D (parcelles, photos, plans, 360°).
-  const [prepa3d, setPrepa3d] = useState<{ ouvert: boolean; brief?: string; fichiers?: File[] }>({ ouvert: false });
+  const [prepa3d, setPrepa3d] = useState<{ ouvert: boolean; key?: string; brief?: string; adresse?: string; fichiers?: File[]; conserves?: JarvisStoredFile[]; commande?: string | null; composition?: JarvisStudioBuilding[] | null; volumeAiles?: JarvisSegment[] | null; terrain?: ConfirmedTerrain }>({ ouvert: false });
+  const activeStudioSessionRef = useRef<string | null>(null);
+  useEffect(() => {
+    const accept = (value: unknown) => {
+      const message = readStudioVolumeMessage(value);
+      if (!message || message.conversationId !== useCopilotStore.getState().currentConversationId) return;
+      const sessionId = activeStudioSession(message.conversationId) ?? activeStudioSessionRef.current;
+      if (message.bridgeSessionId !== sessionId) return;
+      saveStudioVolume(message);
+      window.dispatchEvent(new CustomEvent('mzia-studio-volume', { detail: message }));
+    };
+    const onStudioVolume = (event: MessageEvent) => {
+      try { if (event.origin !== new URL(urlStudio3D()).origin) return; }
+      catch { return; }
+      accept(event.data);
+    };
+    const channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(STUDIO_BRIDGE_CHANNEL) : null;
+    if (channel) channel.onmessage = event => accept(event.data);
+    const onStorage = (event: StorageEvent) => {
+      const id = useCopilotStore.getState().currentConversationId;
+      if (id && event.key === `mzia.studio.volume.${id}` && event.newValue) {
+        try { accept(JSON.parse(event.newValue)); } catch { /* stockage malformé */ }
+      }
+    };
+    window.addEventListener('message', onStudioVolume);
+    window.addEventListener('storage', onStorage);
+    return () => { window.removeEventListener('message', onStudioVolume); window.removeEventListener('storage', onStorage); channel?.close(); };
+  }, []);
   const ouvrirPrepa3d = useCallback(async (brief?: string, pj?: { mediaType: string; data: string; name?: string }[]) => {
     const fichiers = pj && pj.length > 0 ? await Promise.all(pj.map(versFichier)) : undefined;
-    setPrepa3d({ ouvert: true, brief, fichiers });
+    setPrepa3d({ ouvert: true, key: crypto.randomUUID(), brief, fichiers });
   }, []);
-  const intercepter = useCallback((text: string, options?: { attachments?: { mediaType: string; data: string; name?: string }[] }) => {
+  const ouvrirFicheStudio = useCallback(async (fiche: JarvisDraft, conversationId: string, terrain?: ConfirmedTerrain) => {
+    const conserves = await listJarvisTransferFiles(conversationId).catch(() => [] as JarvisStoredFile[]);
+    const composition = studioComposition(fiche);
+    setPrepa3d({ ouvert: true, key: crypto.randomUUID(), brief: draftBrief(fiche), adresse: fiche.localisation ?? undefined, conserves, commande: composition ? null : studioCommand(fiche), composition, volumeAiles: studioSegmentedVolume(fiche), terrain });
+  }, []);
+  /*
+   * R2 — « VOIR EN 3D » EN UN CLIC.
+   * Parcelle confirmée (parcours photo/GPS, question minimale, ou retenue pour
+   * cette conversation) → projet v2 (identifiant commun `mzchat-<conversation>`)
+   * → Studio dans un panneau de la page, qui crée tout de suite le bâtiment ;
+   * le relief vient du cache ou suit en tâche de fond (25 s au plus).
+   */
+  const [studio3d, setStudio3d] = useState<{ demande: DemandeStudioIntegre | null; ouvert: boolean; empreinte: string | null; conversationId: string | null }>({ demande: null, ouvert: false, empreinte: null, conversationId: null });
+  const studio3dRef = useRef(studio3d);
+  studio3dRef.current = studio3d;
+  const voirEn3D = useCallback(async (fiche: JarvisDraft, conversationId: string, terrainArg?: ConfirmedTerrain & { adresse?: string | null }): Promise<IssueOuvertureStudio> => {
+    if (terrainArg) retenirParcelle(conversationId, terrainArg);
+    const retenue = terrainArg ?? parcelleRetenue(conversationId);
+    if (!retenue) {
+      window.dispatchEvent(new CustomEvent('mzia-3d-parcelle-requise', { detail: conversationId }));
+      return 'parcelle-requise';
+    }
+    const parcelles = [{ id: parcelId(retenue.parcel), feature: retenue.parcel }];
+    const insee = typeof retenue.parcel.properties.code_insee === 'string' ? retenue.parcel.properties.code_insee : null;
+    if (terrainArg?.terrainData) await memoriserRelief(parcelles, terrainArg.terrainData);
+    const reliefConnu = terrainArg?.terrainData ?? await reliefEnCache(parcelles);
+    // Pièces du dossier : les PDF partent comme plans ; les images attendent d'être classées (mode détaillé).
+    const conserves = await listJarvisTransferFiles(conversationId).catch(() => [] as JarvisStoredFile[]);
+    const plans = await signerTransferts(conserves.filter(f => f.kind === 'pdf')).catch(() => []);
+    const panoramas = terrainArg?.panorama
+      ? await televerserPanorama(`chat-${crypto.randomUUID()}`, terrainArg.panorama).then(p => adressesSignees([p])).catch(() => [])
+      : [];
+    const composition = studioComposition(fiche);
+    const sessionId = crypto.randomUUID();
+    const pageSansAncre = new URL(window.location.href);
+    pageSansAncre.hash = '';
+    pageSansAncre.searchParams.set('conversation', conversationId);
+    const stockageLocal = (() => { try { return localStorage; } catch { return null; } })();
+    // R4/R5 — étude du projet (figée par conversation) : Studio relie son métré au bilan sans clic.
+    const etudeId = etudeDuChat(conversationId, getActiveStudyId(), stockageLocal);
+    const construit = construireProjetChat({
+      conversationId, etudeId, sessionId, origine: window.location.origin, retourUrl: pageSansAncre.href,
+      revision: 0, horodatage: new Date().toISOString(),
+      parcelles, communeInsee: insee, adresse: retenue.adresse ?? fiche.localisation,
+      pointAdresse: retenue.point, relief: reliefConnu ?? null,
+      implantation: retenue.implantation ?? null, accesses: retenue.accesses,
+      brief: draftBrief(fiche), commandeArchitecture: composition ? null : studioCommand(fiche),
+      compositionArchitecture: composition, volumeAiles: studioSegmentedVolume(fiche), plans, panoramas,
+    });
+    if (!construit.ok) throw new Error(`Transfert vers Studio impossible : ${construit.erreur}.`);
+    // Même contenu qu'à l'ouverture précédente, Studio encore chargé : on le remontre, sans renvoi.
+    const empreinte = empreinteProjet(construit.projet);
+    const avant = studio3dRef.current;
+    if (avant.demande && avant.conversationId === conversationId && avant.empreinte === empreinte) {
+      setStudio3d({ ...avant, ouvert: true });
+      return;
+    }
+    const projet = { ...construit.projet, revision: prochaineRevision(conversationId, stockageLocal) };
+    activeStudioSessionRef.current = sessionId;
+    rememberStudioSession(conversationId, sessionId);
+    // R1 — point unique de l'adresse de Studio (même origine : <origine>/studio/).
+    const url = adresseStudioIntegre(urlStudio(), projetIdChat(conversationId), sessionId, etudeId);
+    setStudio3d({
+      demande: {
+        cle: sessionId, url, sessionId, projet,
+        relief: reliefConnu ? { etat: 'inclus', source: terrainArg?.terrainData ? 'mesure' : 'cache' }
+          : { etat: 'differe', promesse: reliefAvecDelai(parcelles, insee), relancer: () => reliefAvecDelai(parcelles, insee) },
+        implantation: reliefConnu ? null : retenue.implantation ?? null,
+        imagesNonEnvoyees: conserves.filter(f => f.kind === 'image').length,
+      },
+      ouvert: true, empreinte, conversationId,
+    });
+  }, []);
+  const fermerStudio3d = useCallback((vers: 'projet' | 'bilan') => {
+    setStudio3d(s => ({ ...s, ouvert: false }));
+    // R4/R5 — point d'accroche du bilan en temps réel (même fenêtre, même origine).
+    if (vers === 'bilan') {
+      const projet = studio3dRef.current.demande?.projet;
+      window.dispatchEvent(new CustomEvent('mimmoza:studio-bilan', { detail: { projetId: projet?.projetId ?? null, etudeId: projet?.etudeId ?? null } }));
+      // Étude rattachée : le Bilan promoteur (R5) suit le modèle en temps réel ; sinon on reste sur le projet.
+      if (projet?.etudeId) window.location.assign(`/promoteur/bilan-promoteur?study=${encodeURIComponent(projet.etudeId)}`);
+    }
+  }, []);
+  // Parcelle déjà retenue pour la conversation : le relief se précharge, « Voir en 3D » n'attendra pas.
+  useEffect(() => {
+    const id = copilot.currentConversationId;
+    const retenue = id ? parcelleRetenue(id) : null;
+    if (!retenue) return;
+    const insee = typeof retenue.parcel.properties.code_insee === 'string' ? retenue.parcel.properties.code_insee : null;
+    prechargerRelief([{ id: parcelId(retenue.parcel), feature: retenue.parcel }], insee);
+  }, [copilot.currentConversationId]);
+  // R2 — « génère la 3D » (ou « voir en 3D », « ouvre Studio ») : même geste que le bouton, si une fiche existe.
+  const intercepter3d = useCallback((text: string) => {
     if (!demandePrevisualisation(text)) return false;
-    void ouvrirPrepa3d(text, options?.attachments);
+    const state = useCopilotStore.getState();
+    const fiche = latestJarvisDraft(state.messages);
+    if (!fiche || !state.currentConversationId) return false;
+    void voirEn3D(fiche, state.currentConversationId).catch(error => setAttachError(error instanceof Error ? error.message : 'Ouverture de Studio impossible.'));
     return true;
-  }, [ouvrirPrepa3d]);
+  }, [voirEn3D]);
+  const boutonStudio3d = useCallback(() => {
+    const state = useCopilotStore.getState();
+    const fiche = latestJarvisDraft(state.messages);
+    if (fiche && state.currentConversationId) {
+      void voirEn3D(fiche, state.currentConversationId).catch(error => setAttachError(error instanceof Error ? error.message : 'Ouverture de Studio impossible.'));
+      return;
+    }
+    void ouvrirPrepa3d();
+  }, [voirEn3D, ouvrirPrepa3d]);
+  const conserverPieces3d = useCallback(async (text: string, options?: { attachments?: { mediaType: string; data: string; name?: string }[] }) => {
+    const files = options?.attachments ?? [];
+    if (files.length === 0) return;
+    const state = useCopilotStore.getState();
+    if (!is3DPreparationRequest(text) && !latestJarvisDraft(state.messages)) return;
+    if (state.status === 'error' || !state.currentConversationId) return;
+    try {
+      await retainJarvisFiles(state.currentConversationId, files);
+    } catch (error) {
+      setAttachError(error instanceof Error ? `Le dossier 3D n'a pas conservé les pièces jointes : ${error.message}` : 'Enregistrement des pièces jointes impossible.');
+    }
+  }, []);
 
   const startWith = useCallback(async (text: string) => {
     const message = text.trim();
     if (!message) return;
-    if (demandePrevisualisation(message)) {
-      void ouvrirPrepa3d(message, attachments.map(({ mediaType, data, name }) => ({ mediaType, data, name })));
-      setAttachments([]);
-      return;
-    }
     void track('search', { source: 'mimmozia' });
     const files = attachments.map(({ mediaType, data, name }) => ({ mediaType, data, name }));
     try {
-      if (send) await send(message, files.length ? { attachments: files } : undefined);
+      setAttachError(null);
+      if (send) {
+        await send(message, files.length ? { attachments: files } : undefined);
+        await conserverPieces3d(message, { attachments: files });
+      }
       else console.warn('[MimmozIA] Aucune fonction d’envoi détectée — voir INTEGRATION.md.');
       setAttachments([]);
-      setAttachError(null);
     } catch (err) {
       console.error('[MimmozIA] Échec de l’envoi :', err);
     }
-  }, [send, attachments, ouvrirPrepa3d]);
+  }, [send, attachments, conserverPieces3d]);
 
   const handleLauncherSend = useCallback(() => { void startWith(draft); setDraft(''); }, [draft, startWith]);
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -426,10 +592,24 @@ export default function MimmozIAPage() {
 
   return (
     <div className={pageClass}>
+      <StudioIntegre demande={studio3d.demande} ouvert={studio3d.ouvert} onFermer={fermerStudio3d} />
       <PreparationStudio3D
+        key={prepa3d.key ?? 'initial'}
         ouvert={prepa3d.ouvert}
         briefInitial={prepa3d.brief}
+        adresseInitiale={prepa3d.adresse}
         fichiersInitiaux={prepa3d.fichiers}
+        fichiersConserves={prepa3d.conserves}
+        commandeArchitecture={prepa3d.commande}
+        compositionArchitecture={prepa3d.composition}
+        volumeAiles={prepa3d.volumeAiles}
+        terrainInitial={prepa3d.terrain}
+        bridgeSessionId={prepa3d.key}
+        conversationId={copilot.currentConversationId}
+        onStudioStarted={sessionId => {
+          activeStudioSessionRef.current = sessionId;
+          if (copilot.currentConversationId) rememberStudioSession(copilot.currentConversationId, sessionId);
+        }}
         onFermer={() => setPrepa3d({ ouvert: false })}
       />
       {/* ============ MENU LATÉRAL ============ */}
@@ -478,10 +658,15 @@ export default function MimmozIAPage() {
             <MimmozIAStatus state={orbState} compact />
           </div>
           <div className="mzia-chat-content">
+            {attachError && <p role="alert" className="mzia-attachments__err">{attachError}</p>}
             <CopilotChat
               forceMode="advanced"
               hideQuickQuestions
-              onIntercept={intercepter}
+              showStudioDraft
+              onOpenStudioDraft={voirEn3D}
+              onPrepareStudioDetailed={ouvrirFicheStudio}
+              onIntercept={intercepter3d}
+              onMessageSent={conserverPieces3d}
               /* Le sélecteur de niveau ne vivait que dans la branche « accueil »
                  ci-dessous : dès le premier message la vue basculait ici et le
                  contrôle disparaissait, obligeant à ouvrir une nouvelle
@@ -497,8 +682,8 @@ export default function MimmozIAPage() {
                  mais en cours de conversation il n'apporte rien. */
               composerToolbar={
                 <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-                  <button type="button" className="mzia-iconbtn" title="Prévisualisation 3D (parcelle, photos, plans)"
-                    onClick={() => void ouvrirPrepa3d()}><Box size={18} /></button>
+                  <button type="button" className="mzia-iconbtn" title="Voir en 3D (Studio dans cette page)"
+                    onClick={boutonStudio3d}><Box size={18} /></button>
                   {plan === 'pro' && (
                     <MimmozIAModelPicker
                       plan={plan}
@@ -515,39 +700,40 @@ export default function MimmozIAPage() {
       ) : (
         /* ============ ÉTAT ACCUEIL : orbe centrale + cartes + saisie ============ */
         <main className="mzia-welcome">
-          <div className="mzia-hero">
-            <h1 className="mzia-hero__title">
-              {greeting}
-              <br />
-              Que souhaitez-vous <em>analyser</em> aujourd’hui&nbsp;?
-            </h1>
-            <p className="mzia-hero__sub">
-              {tagline
-                ? `${tagline} Que voulez-vous étudier aujourd’hui\u00A0?`
-                : 'Je peux analyser un bien, un terrain, un projet — ou répondre à toutes vos questions immobilières.'}
-            </p>
-            <AlertesAccueil />
+          <div className="mzia-home-intro">
+            <h1>{greeting}, que souhaitez-vous créer aujourd’hui&nbsp;?</h1>
+            <p>{tagline || 'Imaginez, analysez et donnez forme à vos projets immobiliers.'}</p>
           </div>
 
-          <div className="mzia-welcome__stage">
-            <div className="mzia-qa-col mzia-qa-col--left">
-              {QUICK_ACTIONS.filter((q) => q.side === 'left').map((qa) => (
-                <MimmozIAQuickAction key={qa.title} icon={qa.icon} title={qa.title}
-                  subtitle={qa.subtitle} side="left" onClick={() => handleQuickAction(qa)} />
-              ))}
+          <section className="mzia-studio-hero" aria-label="Mimmoza Studio 3D">
+            <div className="mzia-studio-hero__copy">
+              <span className="mzia-studio-hero__eyebrow"><Box size={15} /> MIMMOZA STUDIO · 3D</span>
+              <h2>Donnez vie à vos projets en 3D.</h2>
+              <p>Décrivez un bâtiment à Mimmo, puis explorez et ajustez sa maquette dans Studio.</p>
+              <div className="mzia-studio-hero__actions">
+                <button type="button" className="mzia-studio-hero__primary" onClick={() => handleQuickAction({
+                  icon: Box, title: 'Créer une maquette 3D', subtitle: '', side: 'left',
+                  prompt: 'Prépare une maquette 3D d’un immeuble collectif R+5 de 30 m sur 14 m, avec 12 logements.',
+                })}>Demander une maquette 3D</button>
+                <button type="button" className="mzia-studio-hero__secondary" onClick={() => void ouvrirPrepa3d()}>Ouvrir l’atelier 3D</button>
+              </div>
             </div>
+            <div className="mzia-studio-hero__art">
+              <Suspense fallback={<img src="/illustrations/mimmoza-studio-building.webp" alt="Immeuble contemporain en trois dimensions" />}>
+                <StudioHeroBuilding3D />
+              </Suspense>
+              <span className="mzia-studio-hero__caption">GLISSEZ POUR TOURNER</span>
+            </div>
+          </section>
 
-            <div className="mzia-welcome__orb">
-              <MimmozIAOrb state={orbState} />
-              <MimmozIAStatus state={orbState} tools={activeTools} />
-            </div>
+          <AlertesAccueil />
 
-            <div className="mzia-qa-col mzia-qa-col--right">
-              {QUICK_ACTIONS.filter((q) => q.side === 'right').map((qa) => (
-                <MimmozIAQuickAction key={qa.title} icon={qa.icon} title={qa.title}
-                  subtitle={qa.subtitle} side="right" onClick={() => handleQuickAction(qa)} />
-              ))}
-            </div>
+          <div className="mzia-home-actions-heading">OU COMMENCEZ PAR UNE ANALYSE</div>
+          <div className="mzia-home-actions">
+            {QUICK_ACTIONS.map((qa) => (
+              <MimmozIAQuickAction key={qa.title} icon={qa.icon} title={qa.title}
+                subtitle={qa.subtitle} side={qa.side} onClick={() => handleQuickAction(qa)} />
+            ))}
           </div>
 
           <div className="mzia-launcher">

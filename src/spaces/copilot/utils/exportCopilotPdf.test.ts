@@ -30,7 +30,7 @@ test('le rapport imprimable possède un titre et un pied final non superposé', 
     question: 'Quelle analyse ?',
   }, { generatedAt: '21 août 2026' });
 
-  assert.match(html, /<title>Rapport MimmozIA — Analyse immobilière<\/title>/);
+  assert.match(html, /<title>Rapport Mimmoza — Analyse immobilière<\/title>/);
   assert.match(html, /<footer class="report-end">/);
   assert.match(html, /\.report-end\{position:static/);
   assert.doesNotMatch(html, /position:fixed/);

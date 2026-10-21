@@ -11,6 +11,7 @@ import {
   FileText,
   LogOut,
   Megaphone,
+  Sparkles,
   Settings,
   Users
 } from "lucide-react";
@@ -29,6 +30,7 @@ const NAV_ITEMS = [
   // Le module a ses propres sous-onglets (prospects, pipeline, base de
   // connaissance…) : ce lien mène à sa vue d'ensemble, qui les distribue.
   { label: "Agent commercial", path: "/admin/agent-commercial", icon: Megaphone },
+  { label: "Agents de gestion", path: "/admin/agents-gestion", icon: Sparkles },
   { label: "Tarifs",       path: "/admin/tarifs",        icon: BadgeEuro },
   // Fraîcheur des jeux de données publics dont dépendent les analyses.
   { label: "Fraîcheur des données", path: "/admin/fraicheur-donnees", icon: Database },

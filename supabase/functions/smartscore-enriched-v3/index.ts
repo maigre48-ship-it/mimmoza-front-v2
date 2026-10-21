@@ -775,20 +775,55 @@ function normalizeTextForSearch(text: string | null | undefined): string {
 // ----------------------------------------------------
 // CACHE UNIVERSEL
 // ----------------------------------------------------
-async function getFromCache(cacheKey: string): Promise<any | null> {
+// ⚠️ Ce cache n'a JAMAIS fonctionné, et il a servi de modèle à d'autres.
+//
+// Le schéma réel d'`api_cache` est : id, provider, cache_key, request (jsonb
+// NOT NULL), response (jsonb), status, fetched_at, ttl_seconds, expires_at.
+// Il n'existe ni colonne `data`, ni `hit_count`. Trois défauts se cumulaient :
+//   · `select("data")` → HTTP 400 à chaque lecture, visible dans les journaux ;
+//   · `.single()` → erreur PGRST116 sur zéro ligne, c'est-à-dire sur un simple
+//     défaut de cache, cas parfaitement normal ;
+//   · l'upsert visait `onConflict: "cache_key"` alors que l'index unique porte
+//     sur (provider, cache_key) → 42P10.
+//
+// Les erreurs partaient dans un `console.warn` sans message : la panne était
+// invisible et chaque appel repayait l'intégralité des requêtes externes.
+async function getFromCache(cacheKey: string, provider?: string): Promise<any | null> {
   if (!supabase) return null;
   try {
-    const { data, error } = await supabase.from("api_cache").select("data").eq("cache_key", cacheKey).gt("expires_at", new Date().toISOString()).single();
-    if (!error && data?.data) { supabase.from("api_cache").update({ hit_count: (data as any).hit_count ? (data as any).hit_count + 1 : 1 }).eq("cache_key", cacheKey).then(() => {}); return data.data; }
-  } catch (e) { console.warn("Cache read error:"); }
-  return null;
+    let q = supabase
+      .from("api_cache")
+      .select("response")
+      .eq("cache_key", cacheKey)
+      .gt("expires_at", new Date().toISOString());
+    if (provider) q = q.eq("provider", provider);
+
+    const { data, error } = await q.maybeSingle();
+    if (error) { console.warn("[cache] lecture impossible :", error.message); return null; }
+    return data?.response ?? null;
+  } catch (e) {
+    console.warn("[cache] lecture : exception", e);
+    return null;
+  }
 }
 async function saveToCache(cacheKey: string, provider: string, data: any, ttlSeconds: number): Promise<void> {
   if (!supabase) return;
   try {
-    const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
-    await supabase.from("api_cache").upsert({ cache_key: cacheKey, provider, data, expires_at: expiresAt, hit_count: 0 }, { onConflict: "cache_key" });
-  } catch (e) { console.warn("Cache write error:"); }
+    const { error } = await supabase.from("api_cache").upsert(
+      {
+        cache_key: cacheKey,
+        provider,
+        request: { cache_key: cacheKey },   // colonne NOT NULL
+        response: data,
+        status: 200,
+        fetched_at: new Date().toISOString(),
+        ttl_seconds: ttlSeconds,
+        expires_at: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
+      },
+      { onConflict: "provider,cache_key" },
+    );
+    if (error) console.warn("[cache] écriture impossible :", error.message);
+  } catch (e) { console.warn("[cache] écriture : exception", e); }
 }
 
 // ----------------------------------------------------

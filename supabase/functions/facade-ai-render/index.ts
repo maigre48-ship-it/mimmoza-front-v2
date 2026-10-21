@@ -2,6 +2,23 @@
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  debiter,
+  reponseErreurFacturation,
+  verifierSolde,
+} from "../_shared/billing/featureBilling.ts";
+
+/**
+ * Tarif en jetons selon la qualité demandée, aligné sur ACTION_COSTS côté front
+ * (facade_low / facade_medium / facade_high).
+ *
+ * La qualité vient du corps de requête, ce qui est légitime : elle détermine
+ * aussi le coût réel chez OpenAI. Une valeur inconnue retombe sur le tarif le
+ * plus élevé — le client ne doit jamais pouvoir baisser son prix en envoyant
+ * n'importe quoi.
+ */
+const TARIF_FACADE: Record<string, number> = { low: 10, medium: 20, high: 40 };
+const tarifFacade = (q: string): number => TARIF_FACADE[q] ?? 40;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -573,6 +590,26 @@ serve(async (req: Request) => {
       return json({ error: "transparent background requires png or webp outputFormat" }, 400);
     }
 
+    // ── Solde ────────────────────────────────────────────────────────────────
+    // L'identité était vérifiée, le SOLDE jamais : cette fonction — l'appel le
+    // plus cher de la plateforme, gpt-image en 1536x1024 qualité high — était
+    // gratuite et illimitée pour tout compte authentifié. Le tarif est décidé
+    // ici, à partir de la qualité, et le débit intervient après l'image livrée.
+    const coutJetons = tarifFacade(quality);
+    const debitFacade = {
+      userId: user.id,
+      montant: coutJetons,
+      type: "facade_ia",
+      description: `Génération de façade IA (${quality})`,
+    };
+    try {
+      await verifierSolde(user.id, coutJetons);
+    } catch (e) {
+      const reponse = reponseErreurFacturation(e, corsHeaders);
+      if (reponse) return reponse;
+      throw e;
+    }
+
     const normalizedBaseImage = body.baseImageDataUrl ?? body.referenceImageDataUrl ?? null;
 
     // ── Mode edit ────────────────────────────────────────────────────────────
@@ -612,11 +649,21 @@ serve(async (req: Request) => {
         return json({ error: "Edit response missing image data", details: data, promptUsed: editPrompt }, 500);
       }
 
+      // Image livrée : on facture.
+      try {
+        await debiter(debitFacade);
+      } catch (e) {
+        const reponse = reponseErreurFacturation(e, corsHeaders);
+        if (reponse) return reponse;
+        throw e;
+      }
+
       return json({
         ok: true,
         imageUrl:   `data:${getMimeType(outputFormat)};base64,${b64}`,
         promptUsed: first?.revised_prompt ?? editPrompt,
         mode: "edit",
+        creditsSpent: coutJetons,
         meta: buildMeta(body, user.id, size, quality, outputFormat, background),
       });
     }
@@ -654,11 +701,21 @@ serve(async (req: Request) => {
       return json({ error: "Generation response missing image data", details: openaiJson, promptUsed: finalPrompt }, 500);
     }
 
+    // Image livrée : on facture.
+    try {
+      await debiter(debitFacade);
+    } catch (e) {
+      const reponse = reponseErreurFacturation(e, corsHeaders);
+      if (reponse) return reponse;
+      throw e;
+    }
+
     return json({
       ok: true,
       imageUrl:   `data:${getMimeType(outputFormat)};base64,${b64}`,
       promptUsed: first?.revised_prompt ?? finalPrompt,
       mode: "generation",
+      creditsSpent: coutJetons,
       meta: buildMeta(body, user.id, size, quality, outputFormat, background),
     });
 

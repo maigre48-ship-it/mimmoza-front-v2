@@ -1,4 +1,12 @@
 ﻿// src/spaces/promoteur/Implantation2DPage.tsx
+// V6.12 — L1b : contrôle d'implantation sourcé.
+//   PLACEHOLDER_PLU_RULES (recul 3 m, hauteur 15 m, CES 0,60, 1 pl/logt) est
+//   supprimé : le panneau « Analyse PLU » qui en tirait un « CONFORME » fictif
+//   est remplacé par « Contrôle d'implantation Mimmoza » (./implantation/),
+//   qui lit le ruleset réel `mimmoza.plu.resolved_ruleset_v1` (userStorage),
+//   mesure chaque bâtiment × chaque limite et ne conclut qu'avec une règle
+//   sourcée et validée par une personne nommée. Les reculs 5/3/3 du store ne
+//   servent plus qu'au dessin de l'enveloppe.
 // V6.11 — Source UNIQUE pour l'enveloppe constructible.
 //   Le diagnostic parcellaire (RightSidebar) calculait l'enveloppe avec
 //   plan.buildableEnvelope (clipping par demi-plans → CONVEXE) et sans
@@ -30,7 +38,6 @@ import { hashInputs, setStepStatus } from "./shared/promoteurChain";
 import { usePromoteurStudyId } from "./shared/usePromoteurStudyId";
 
 import { ParcelDiagnosticsPanel } from "./components/ParcelDiagnosticsPanel";
-import { PluAnalysisPanel } from "./components/PluAnalysisPanel";
 import { ScenarioFullPanel } from "./components/ScenarioFullPanel";
 
 import { buildMasterScenario } from "./plan2d/masterScenario.service";
@@ -42,10 +49,8 @@ import { DEFAULT_MASTER_ECONOMIC_ASSUMPTIONS } from "./plan2d/plan.master.types"
 import { exportDrawnScenarioPdf } from "./services/exportDrawnScenarioPdf";
 
 import type { ParcelDiagnostics } from "./plan2d/plan.parcelDiagnostics";
-import type { PluEngineResult, PluRules } from "./plan2d/plan.plu.types";
 import type { PlanBuilding, Vec2 } from "./plan2d/plan.types";
 
-import { runPluChecks } from "./plan2d/plan.plu.engine";
 // V6.11 — MÊME moteur que le canvas (offset concave), au lieu de plan.buildableEnvelope (convexe).
 import { computeParcelDiagnostics } from "./plan2d/plan.parcelDiagnostics";
 import { computeBuildableEnvelope } from "./plan2d/pluEnvelope.geometry";
@@ -65,17 +70,18 @@ import {
   IMPLANTATION_GROUND_FLOOR_HEIGHT_M,
   IMPLANTATION_TYPICAL_FLOOR_HEIGHT_M,
 } from './shared/buildingMetrics';
+import { ControleImplantationPanel } from "./implantation/ControleImplantationPanel";
+import { CotesControleOverlay } from "./implantation/CotesControleOverlay";
+import { useControleImplantation, type EtatControle } from "./implantation/useControleImplantation";
+// L3 — aller-retour Implantation 2D ⇄ Studio 3D (contrat mimmoza-projet-v2).
+import { EchangeStudioPanel } from "./shared/echangeStudio/EchangeStudioPanel";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PLACEHOLDER_PLU_RULES: PluRules = {
-  minSetbackMeters:     3,
-  maxHeightMeters:      15,
-  maxCoverageRatio:     0.60,
-  parkingSpacesPerUnit: 1,
-};
+// L1b : PLACEHOLDER_PLU_RULES supprimé — aucune règle fictive ne produit de verdict.
+// Les retraits viennent du ruleset PLU réel (voir ./implantation/rulesetReculs.ts).
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CLÉS LOCALSTORAGE
@@ -426,9 +432,11 @@ const SectionBlock: React.FC<{
 interface RightSidebarProps {
   parcelleLocal: Point2D[];
   studyId:       string | null;
+  controleEtat:  EtatControle;
+  onOuvrirFoncier: () => void;
 }
 
-const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId }) => {
+const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId, controleEtat, onOuvrirFoncier }) => {
 
   const allBuildings  = useEditor2DStore(s => s.buildings);
   const storeParkings = useEditor2DStore(s => s.parkings);
@@ -440,6 +448,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId }) =
   //    Plan2DCanvas destructure du store (setbackRules / parcelFrontEdgeIndex).
   const setbackRules         = useEditor2DStore(s => s.setbackRules);
   const parcelFrontEdgeIndex = useEditor2DStore(s => s.parcelFrontEdgeIndex);
+  const setSetbackRules      = useEditor2DStore(s => s.setSetbackRules);
 
   const storeBuildings = useMemo(
     () => allBuildings.filter(hasValidRdcContent),
@@ -592,19 +601,15 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId }) =
 
   const handleExportPdf = useCallback(() => {
     if (!masterScenario) return;
-    try { exportDrawnScenarioPdf({ scenario: masterScenario }); }
+    try { exportDrawnScenarioPdf({ scenario: masterScenario, controle: controleEtat.controle }); }
     catch (err) { alert(`Erreur export PDF : ${err instanceof Error ? err.message : String(err)}`); }
-  }, [masterScenario]);
+  }, [masterScenario, controleEtat.controle]);
 
   const selectedBuildingId = useMemo<string | null>(() => {
     if (selectedIds.length !== 1) return null;
     return allBuildings.some(b => b.id === selectedIds[0]) ? selectedIds[0] : null;
   }, [selectedIds, allBuildings]);
 
-  const pluResult = useMemo<PluEngineResult | null>(() => {
-    if (parcelVec2.length < 3) return null;
-    return runPluChecks({ parcel: parcelVec2, buildings: planBuildings, rules: PLACEHOLDER_PLU_RULES, providedParkingSpaces });
-  }, [parcelVec2, planBuildings, providedParkingSpaces]);
 
   // V6.11 — Enveloppe constructible : MÊME source que le canvas.
   //   pluEnvelope.geometry::computeBuildableEnvelope(parcelleLocal, frontEdgeIndex, setbackRules)
@@ -651,8 +656,18 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId }) =
       <SectionBlock label="Diagnostic parcellaire" color="#334155">
         <div style={{ padding: "8px 14px" }}><ParcelDiagnosticsPanel diagnostics={parcelDiagnostics} /></div>
       </SectionBlock>
-      <SectionBlock label="Analyse PLU" color="#334155">
-        <div style={{ padding: "8px 14px" }}><PluAnalysisPanel result={pluResult} /></div>
+      <SectionBlock label="Contrôle d'implantation Mimmoza" color="#4f46e5">
+        <ControleImplantationPanel
+          etat={controleEtat}
+          onOuvrirFoncier={onOuvrirFoncier}
+          reculsDessin={setbackRules}
+          onAppliquerAuDessin={setSetbackRules}
+          autres={{
+            hauteurMaxMesureeM: masterScenario ? masterScenario.metrics.maxHeightM : null,
+            cesMesure:          parcelAreaM2 > 0 ? (masterScenario?.metrics.coverageRatio ?? 0) : null,
+            placesFournies:     providedParkingSpaces,
+          }}
+        />
       </SectionBlock>
       <SectionBlock label="Analyse d'implantation" color="#4f46e5" defaultOpen={!selectedBuildingId}>
         <ScenarioFullPanel
@@ -741,6 +756,23 @@ export const Implantation2DPage: React.FC = () => {
     return featureToPoint2D(normalizedCombinedFeature);
   }, [normalizedCombinedFeature]);
 
+  // L1b — contrôle d'implantation sourcé (hook appelé avant tout retour anticipé).
+  const controleEtat = useControleImplantation({
+    parcelleLocal,
+    featureLocale: normalizedCombinedFeature,
+    studyId,
+    communeInsee: restore.communeInsee ?? null,
+  });
+
+  // L3 — parcelles avec leur géométrie cadastrale (WGS 84) pour l'échange avec Studio.
+  const parcellesStudio = useMemo(
+    () => restore.selectedParcels.map((p) => ({
+      id: p.id,
+      feature: p.feature ?? restore.parcelFeatures.find((f) => f.properties?.id === p.id || f.properties?.idu === p.id) ?? null,
+    })),
+    [restore.selectedParcels, restore.parcelFeatures],
+  );
+
   useEffect(() => {
     if (!studyId || !restore.combinedFeature) return;
     try {
@@ -803,7 +835,20 @@ export const Implantation2DPage: React.FC = () => {
           badge="Promoteur · Conception"
           title="Implantation 2D"
           metaLines={studyId ? [{ text: <StudyIdBadge studyId={studyId} /> }] : undefined}
-          actions={<CaptureButton studyId={studyId} />}
+          actions={
+            <>
+              <EchangeStudioPanel
+                studyId={studyId}
+                combinedFeature={restore.combinedFeature}
+                parcelles={parcellesStudio}
+                communeInsee={restore.communeInsee ?? null}
+                parcelleLocal={parcelleLocal}
+                featureLocale={normalizedCombinedFeature}
+                controleEtat={controleEtat}
+              />
+              <CaptureButton studyId={studyId} />
+            </>
+          }
         />
       </div>
 
@@ -820,9 +865,17 @@ export const Implantation2DPage: React.FC = () => {
           <Plan2DCanvas
             parcellePolygon={parcelleLocal}
             style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+            overlayControle={controleEtat.cotesVisibles
+              ? (zoom) => <CotesControleOverlay controle={controleEtat.controle} zoom={zoom} />
+              : undefined}
           />
         </div>
-        <RightSidebar parcelleLocal={parcelleLocal} studyId={studyId} />
+        <RightSidebar
+          parcelleLocal={parcelleLocal}
+          studyId={studyId}
+          controleEtat={controleEtat}
+          onOuvrirFoncier={() => navigate(studyPath("/promoteur/foncier"))}
+        />
       </div>
     </div>
   );

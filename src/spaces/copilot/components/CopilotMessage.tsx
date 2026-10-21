@@ -18,6 +18,7 @@ import { isGeoCall } from '../maps/thematicMapModel';
 import { CopilotRenderBoundary } from './CopilotRenderBoundary';
 import { tertiaryReview } from '../results/tertiaryReview';
 import { FollowupProposalCard } from '../followup/FollowupProposalCard';
+import { withoutJarvisDraft } from '../studio3d/jarvisDraft';
 const CopilotThematicMaps = lazy(() => import('../maps/CopilotThematicMaps').then(m => ({ default: m.CopilotThematicMaps })));
 
 // recharts pèse plusieurs centaines de Ko et n'est utilisé QUE par les
@@ -61,7 +62,7 @@ function CopilotMessageContent({ message, question, conversationId, onSend }: Me
     const splitAt = match.index + match[1].length;
     return { visibleText: message.text.slice(splitAt), factualReport: message.text.slice(0, splitAt).trim() };
   }, [dossier, message.status, message.text]);
-  const segments = useMemo(() => decouperSegments(visibleText), [visibleText]);
+  const segments = useMemo(() => decouperSegments(withoutJarvisDraft(visibleText)), [visibleText]);
 
   const linkedQuestion = question ?? (() => {
     const index = messages.findIndex((item) => item.id === message.id);
