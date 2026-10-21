@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 /** Immeuble de démonstration de l'accueil. Aucun projet utilisateur n'est simulé ici. */
 export function StudioHeroBuilding3D() {
@@ -19,12 +20,15 @@ export function StudioHeroBuilding3D() {
       return;
     }
 
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.32;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Scène et soleil immobiles (seule la caméra tourne) : l'ombre est calculée
+    // une fois, pas à chaque image.
+    renderer.shadowMap.autoUpdate = false;
     element.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
@@ -40,7 +44,11 @@ export function StudioHeroBuilding3D() {
     controls.maxPolarAngle = 1.43;
     controls.autoRotate = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     controls.autoRotateSpeed = 0.55;
-    controls.addEventListener('start', () => { controls.autoRotate = false; });
+    const rotationAuto = controls.autoRotate;
+    let reprise = 0;
+    controls.addEventListener('start', () => { controls.autoRotate = false; window.clearTimeout(reprise); });
+    // Après une manipulation, la rotation reprend doucement d'elle-même.
+    controls.addEventListener('end', () => { reprise = window.setTimeout(() => { controls.autoRotate = rotationAuto; }, 2500); });
     controls.update();
 
     scene.add(new THREE.HemisphereLight('#fffdf3', '#7869b3', 1.8));
@@ -158,6 +166,31 @@ export function StudioHeroBuilding3D() {
       for (let i = 0; i < 5; i++) shrub(building, x + (i % 2 ? 0.27 : -0.24), 1.55 + (i % 3) * 0.2, 3.55 + (i - 2) * 0.19, 1.45, i);
     }
 
+    // ~700 petites boîtes = ~1 400 appels de dessin par image (ombres comprises) :
+    // c'est ce qui faisait saccader la rotation sur les GPU intégrés. On fusionne
+    // toutes les pièces d'un même matériau en un seul maillage (≈ 12 appels).
+    building.updateMatrixWorld(true);
+    const parMateriau = new Map<THREE.Material, THREE.BufferGeometry[]>();
+    building.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const geometrie = (object.geometry.index ? object.geometry.toNonIndexed() : object.geometry.clone()).applyMatrix4(object.matrixWorld);
+      object.geometry.dispose();
+      const liste = parMateriau.get(object.material as THREE.Material) ?? [];
+      liste.push(geometrie);
+      parMateriau.set(object.material as THREE.Material, liste);
+    });
+    building.clear();
+    for (const [materiau, geometries] of parMateriau) {
+      const fusion = mergeGeometries(geometries, false);
+      geometries.forEach((g) => g.dispose());
+      if (!fusion) continue;
+      const mesh = new THREE.Mesh(fusion, materiau);
+      mesh.castShadow = true;
+      mesh.receiveShadow = materiau !== glass;
+      building.add(mesh);
+    }
+    renderer.shadowMap.needsUpdate = true;
+
     let compact = false;
     const resize = () => {
       const width = Math.max(1, element.clientWidth);
@@ -181,16 +214,21 @@ export function StudioHeroBuilding3D() {
     let visible = true;
     const visibility = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; });
     visibility.observe(element);
+    // Rotation calée sur le temps écoulé, pas sur le nombre d'images : une image
+    // en retard ne ralentit plus le mouvement, elle est rattrapée.
+    const horloge = new THREE.Clock();
     const animate = () => {
       frame = requestAnimationFrame(animate);
-      if (!visible) return;
-      controls.update();
+      const delta = Math.min(horloge.getDelta(), 0.1);
+      if (!visible || document.hidden) return;
+      controls.update(delta);
       renderer.render(scene, camera);
     };
     animate();
 
     return () => {
       cancelAnimationFrame(frame);
+      window.clearTimeout(reprise);
       observer.disconnect();
       visibility.disconnect();
       controls.dispose();
