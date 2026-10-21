@@ -222,13 +222,10 @@ export type TopClientRow = {
 };
 
 export async function getTopClientsByRevenue(limit = 10): Promise<TopClientRow[]> {
-  // Vue SQL recommandée — voir billing_schema.sql
-  // Fallback : agrégat JS si la vue n'existe pas encore
-  const { data, error } = await supabase
-    .from("admin_top_clients")
-    .select("*")
-    .order("total_paid_cents", { ascending: false })
-    .limit(limit);
+  // Audit du 21/10/2026 : la vue admin_top_clients n'est plus lisible
+  // directement (migration 20261021_vues_security_invoker.sql) ; on passe par
+  // la fonction admin_top_clients_list(), réservée aux administrateurs.
+  const { data, error } = await supabase.rpc("admin_top_clients_list", { p_limit: limit });
 
   if (error) {
     // Fallback sans vue SQL
