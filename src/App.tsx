@@ -28,6 +28,7 @@ import DashboardHomePage from "./pages/DashboardHomePage";
 import JetonsPage from "./pages/JetonsPage";
 import TarifsPage from "./pages/TarifsPage";
 import BientotDisponiblePage from "./pages/BientotDisponiblePage";
+import NotFoundPage from "./pages/NotFoundPage";
 import { ESPACES_VISIBLES } from "./lib/espacesEnPreparation";
 
 /* ── Pages légales ───────────────────────────────────────────── */
@@ -643,8 +644,8 @@ function AppRoot() {
           {/* R1 — MimmozIA Studio (servi sous /studio/ par le serveur) : jamais la connexion */}
           <Route path="/studio/*" element={<StudioHorsApplication />} />
 
-          {/* Catch-all → page de connexion */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          {/* Catch-all → vraie page 404 (plus de renvoi silencieux vers la connexion) */}
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
 
         {/* ═══ Mimmoza Copilot — global (bouton flottant + drawer) ═══
