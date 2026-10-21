@@ -6,6 +6,10 @@
 // dans supabase/functions/copilot-chat/index.ts. Si tu changes
 // copilot_quick ou copilot_advanced ici, change AUSSI CREDIT_COST la-bas.
 // Les deux doivent toujours correspondre, sinon affichage != debit reel.
+//
+// Valeur d'un jeton : 0,10 € HT partout (src/lib/billing/grille.ts →
+// JETON_VALEUR_EUR, identique a JETON_VALUE_EUR de pricingPolicy.ts et du
+// copilot-chat). Les couts ci-dessous sont en JETONS, jamais en euros.
 
 export const ACTION_COSTS = {
   copilot_quick:      5,

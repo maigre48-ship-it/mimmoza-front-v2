@@ -1,4 +1,21 @@
 import type { PlanCode, TokenPackCode } from "./billing.types";
+import { PACKS_JETONS, formule, type Formule } from "./grille";
+
+// ─── Alignement sur la grille unique (audit du 21/10/2026) ───────────────────
+//
+// Les codes serveur historiques (free / starter / pro / promoteur_* /
+// financeur_pro / enterprise) sont conservés : ils peuvent figurer dans
+// billing_profiles.plan_code. Leurs PRIX et JETONS INCLUS sont désormais lus
+// dans grille.ts, via la même correspondance que syncPlanFromServer :
+//   free → Découverte · starter, promoteur_starter → Indépendant ·
+//   pro → Pro · promoteur_pro, financeur_pro, enterprise → Équipe.
+function prixGrille(f: Formule) {
+  return {
+    monthly_price_cents: Math.round(f.prixMensuelHT * 100),
+    annual_price_cents: f.prixMensuelAnnuelHT == null ? null : Math.round(f.prixMensuelAnnuelHT * 12 * 100),
+    included_tokens: f.jetonsMensuels,
+  };
+}
 
 // ─── Configuration des plans ──────────────────────────────────────────────────
 //
@@ -26,38 +43,27 @@ export type PlanCatalogEntry = {
 export const PLAN_CATALOG: Readonly<Record<PlanCode, PlanCatalogEntry>> = {
   free: {
     code: "free",
-    label: "Gratuit",
+    label: "Découverte",
     description: "Découvrez Mimmoza sans engagement",
-    monthly_price_cents: 0,
-    annual_price_cents: null,
+    ...prixGrille(formule("basique")),
     currency: "eur",
     stripe_monthly_price_id: null,
     stripe_annual_price_id: null,
-    included_tokens: 2,
     features: [
-      "Accès veille (lecture seule)",
-      "2 analyses offertes",
-      "Sourcing limité",
+      ...formule("basique").points,
     ],
     is_active: true,
   },
 
   starter: {
     code: "starter",
-    label: "Starter",
+    label: "Indépendant",
     description: "Pour les investisseurs qui démarrent",
-    monthly_price_cents: 4900,
-    annual_price_cents: 49900,
+    ...prixGrille(formule("avance")),
     currency: "eur",
     stripe_monthly_price_id: "price_starter_monthly_REPLACE",
     stripe_annual_price_id: "price_starter_annual_REPLACE",
-    included_tokens: 10,
-    features: [
-      "Veille marché 3 zones",
-      "5 analyses IA / jour",
-      "Pipeline Kanban",
-      "Export limité",
-    ],
+    features: [...formule("avance").points],
     is_active: true,
   },
 
@@ -65,76 +71,47 @@ export const PLAN_CATALOG: Readonly<Record<PlanCode, PlanCatalogEntry>> = {
     code: "pro",
     label: "Pro",
     description: "Pour les marchands de biens actifs",
-    monthly_price_cents: 9900,
-    annual_price_cents: 99900,
+    ...prixGrille(formule("pro")),
     currency: "eur",
     stripe_monthly_price_id: "price_pro_monthly_REPLACE",
     stripe_annual_price_id: "price_pro_annual_REPLACE",
-    included_tokens: 25,
-    features: [
-      "Veille illimitée",
-      "Analyses illimitées",
-      "Deal unlock inclus",
-      "Export PDF illimité",
-      "Opportunités IA",
-    ],
+    features: [...formule("pro").points],
     is_active: true,
   },
 
   promoteur_starter: {
     code: "promoteur_starter",
-    label: "Promoteur Starter",
+    label: "Indépendant (ancien code Promoteur Starter)",
     description: "Pour les promoteurs en phase d'exploration",
-    monthly_price_cents: 7900,
-    annual_price_cents: 79900,
+    ...prixGrille(formule("avance")),
     currency: "eur",
     stripe_monthly_price_id: "price_promo_starter_monthly_REPLACE",
     stripe_annual_price_id: "price_promo_starter_annual_REPLACE",
-    included_tokens: 15,
-    features: [
-      "PLU & Faisabilité",
-      "Implantation 2D",
-      "Étude de marché",
-      "10 exports / mois",
-    ],
+    features: [...formule("avance").points],
     is_active: true,
   },
 
   promoteur_pro: {
     code: "promoteur_pro",
-    label: "Promoteur Pro",
+    label: "Équipe (ancien code Promoteur Pro)",
     description: "Pour les promoteurs avec volume d'opérations",
-    monthly_price_cents: 14900,
-    annual_price_cents: 149900,
+    ...prixGrille(formule("proplus")),
     currency: "eur",
     stripe_monthly_price_id: "price_promo_pro_monthly_REPLACE",
     stripe_annual_price_id: "price_promo_pro_annual_REPLACE",
-    included_tokens: 50,
-    features: [
-      "Tout Promoteur Starter",
-      "Exports illimités",
-      "Multi-parcelles",
-      "API IGN avancée",
-    ],
+    features: [...formule("proplus").points],
     is_active: true,
   },
 
   financeur_pro: {
     code: "financeur_pro",
-    label: "Financeur Pro",
+    label: "Équipe (ancien code Financeur Pro)",
     description: "Pour les banques et assurances",
-    monthly_price_cents: 19900,
-    annual_price_cents: 199900,
+    ...prixGrille(formule("proplus")),
     currency: "eur",
     stripe_monthly_price_id: "price_financeur_pro_monthly_REPLACE",
     stripe_annual_price_id: "price_financeur_pro_annual_REPLACE",
-    included_tokens: 100,
-    features: [
-      "Espace Comité Bancaire",
-      "SmartScore 9 piliers",
-      "Rapports comité",
-      "Stress tests",
-    ],
+    features: [...formule("proplus").points],
     is_active: true,
   },
 
@@ -144,17 +121,11 @@ export const PLAN_CATALOG: Readonly<Record<PlanCode, PlanCatalogEntry>> = {
     description: "Pour les grands comptes — sur mesure",
     monthly_price_cents: 0, // prix sur devis
     annual_price_cents: null,
+    included_tokens: formule("proplus").jetonsMensuels,
     currency: "eur",
     stripe_monthly_price_id: null, // géré manuellement via Stripe
     stripe_annual_price_id: null,
-    included_tokens: 999,
-    features: [
-      "Accès total",
-      "Jetons illimités",
-      "SLA dédié",
-      "Onboarding personnalisé",
-      "Multi-utilisateurs",
-    ],
+    features: [...formule("proplus").points],
     is_active: true,
   },
 } as const;
@@ -177,55 +148,25 @@ export type TokenPackCatalogEntry = {
 
 export const TOKEN_PACK_CATALOG: Readonly<
   Record<TokenPackCode, TokenPackCatalogEntry>
-> = {
-  tokens_10: {
-    code: "tokens_10",
-    label: "Pack 10 jetons",
-    tokens: 10,
-    price_cents: 990,
-    currency: "eur",
-    stripe_price_id: "price_tokens_10_REPLACE",
-    price_per_token_cents: 99,
-    savings_pct: null,
-    is_active: true,
-  },
-
-  tokens_20: {
-    code: "tokens_20",
-    label: "Pack 20 jetons",
-    tokens: 20,
-    price_cents: 1790,
-    currency: "eur",
-    stripe_price_id: "price_tokens_20_REPLACE",
-    price_per_token_cents: 90,
-    savings_pct: 9,
-    is_active: true,
-  },
-
-  tokens_50: {
-    code: "tokens_50",
-    label: "Pack 50 jetons",
-    tokens: 50,
-    price_cents: 3990,
-    currency: "eur",
-    stripe_price_id: "price_tokens_50_REPLACE",
-    price_per_token_cents: 80,
-    savings_pct: 19,
-    is_active: true,
-  },
-
-  tokens_100: {
-    code: "tokens_100",
-    label: "Pack 100 jetons",
-    tokens: 100,
-    price_cents: 6900,
-    currency: "eur",
-    stripe_price_id: "price_tokens_100_REPLACE",
-    price_per_token_cents: 69,
-    savings_pct: 30,
-    is_active: true,
-  },
-} as const;
+> = Object.fromEntries(
+  PACKS_JETONS.map((p) => {
+    const base = PACKS_JETONS[0].prixHT / PACKS_JETONS[0].jetons;
+    const parJeton = p.prixHT / p.jetons;
+    const entry: TokenPackCatalogEntry = {
+      code: p.code,
+      label: `Pack ${p.jetons.toLocaleString("fr-FR")} jetons`,
+      tokens: p.jetons,
+      price_cents: Math.round(p.prixHT * 100),
+      currency: "eur",
+      // Stripe non branché : à renseigner à l'ouverture du paiement en ligne.
+      stripe_price_id: null,
+      price_per_token_cents: Math.round(parJeton * 100 * 10) / 10,
+      savings_pct: parJeton < base ? Math.round((1 - parJeton / base) * 100) : null,
+      is_active: true,
+    };
+    return [p.code, entry];
+  }),
+) as Record<TokenPackCode, TokenPackCatalogEntry>;
 
 // ─── Listes dérivées ──────────────────────────────────────────────────────────
 

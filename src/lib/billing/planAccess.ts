@@ -19,31 +19,40 @@ export const MODULE_SPACES: ModuleSpace[] = ["marchand", "promoteur", "rehabilit
 /** Toujours accessibles, quel que soit le plan (MimmozIA + Apport d'affaires). */
 const ALWAYS_ALLOWED: Space[] = ["mimmozia", "agence", "none"];
 
-/** Nombre de modules inclus par formule (pour l'affichage / la validation). */
+/**
+ * Nombre de modules inclus par formule — grille du 21/10/2026 (grille.ts) :
+ *   Découverte (basique) 0 · Indépendant (avance) 1 au choix ·
+ *   Pro (pro) les 3 · Équipe (proplus) les 3.
+ * Valeurs recopiées (et non importées) pour garder ce fichier PUR et sans
+ * dépendance circulaire avec grille.ts, qui importe ses types d'ici.
+ */
 export const PLAN_MODULE_COUNT: Record<PlanId, number> = {
   basique: 0,
-  avance: 0,
-  pro: 1,
+  avance: 1,
+  pro: 3,
   proplus: 3,
 };
 
+/** La formule qui inclut UN module au choix (les autres : 0 ou tous). */
+export const PLAN_MODULE_AU_CHOIX: PlanId = "avance";
+
 /** Libellés d'affichage (source unique — AppShell peut importer d'ici). */
 export const PLAN_LABEL: Record<PlanId, string> = {
-  basique: "Basique",
-  avance: "Avancé",
+  basique: "Découverte",
+  avance: "Indépendant",
   pro: "Pro",
-  proplus: "Pro +",
+  proplus: "Équipe",
 };
 
 /** Libellés courts des modules, pour les dialogues de choix. */
 export const MODULE_LABEL: Record<ModuleSpace, string> = {
-  marchand: "Investissement",
+  marchand: "Marchand de biens",
   promoteur: "Promotion",
   rehabilitation: "Réhabilitation",
 };
 
 /**
- * Comportement d'un Pro qui n'a PAS encore choisi son module :
+ * Comportement d'un abonné Indépendant (1 module au choix) qui n'a PAS encore choisi son module :
  *   'choose' → aucun module tant qu'il n'a pas choisi (strict)
  *   'all'    → voit les 3 en attendant                (souple)
  *
@@ -58,7 +67,7 @@ export const PRO_WITHOUT_SELECTION: "choose" | "all" = "choose";
 export type SpaceAccess = {
   /** Accessible tel quel : on navigue directement. */
   unlocked: boolean;
-  /** Plan Pro sans module choisi : le clic doit proposer d'activer celui-ci. */
+  /** Formule Indépendant sans module choisi : le clic doit proposer d'activer celui-ci. */
   selectable: boolean;
   /** Hors formule : le clic doit renvoyer vers l'abonnement. */
   requiresUpgrade: boolean;
@@ -83,9 +92,9 @@ export function isModuleSpace(space: string): space is ModuleSpace {
  * @param selectedModules module(s) choisi(s) par l'utilisateur (utile pour "pro")
  */
 export function allowedModules(plan: PlanId, selectedModules: ModuleSpace[] = []): ModuleSpace[] {
-  if (plan === "proplus") return [...MODULE_SPACES];
+  if (plan === "proplus" || plan === "pro") return [...MODULE_SPACES];
 
-  if (plan === "pro") {
+  if (plan === PLAN_MODULE_AU_CHOIX) {
     const clean = selectedModules.filter((m) => MODULE_SPACES.includes(m));
     // Pas encore de choix : selon le mode, on n'ouvre rien ou on ouvre tout.
     if (clean.length === 0) return PRO_WITHOUT_SELECTION === "all" ? [...MODULE_SPACES] : [];
@@ -93,7 +102,7 @@ export function allowedModules(plan: PlanId, selectedModules: ModuleSpace[] = []
     return clean.slice(0, 1);
   }
 
-  return []; // basique, avance : aucun module métier
+  return []; // basique (Découverte) : aucun module métier
 }
 
 /** Décide si un espace est accessible. Les non-modules restent libres. */
@@ -122,7 +131,7 @@ export function canAccessPath(
 
 /**
  * État d'accès détaillé — ce dont l'UI a besoin pour distinguer trois cas :
- * ouvert / à activer (Pro sans choix) / à upgrader (Pro sur un autre module,
+ * ouvert / à activer (Indépendant sans choix) / à upgrader (Indépendant sur un autre module,
  * ou Basique-Avancé). C'est ce que consomment les onglets d'espaces.
  */
 export function getSpaceAccess(
@@ -135,7 +144,7 @@ export function getSpaceAccess(
   }
   // À ce stade l'espace est forcément un module gaté et non autorisé.
   const noChoiceYet =
-    plan === "pro" &&
+    plan === PLAN_MODULE_AU_CHOIX &&
     selectedModules.filter((m) => MODULE_SPACES.includes(m)).length === 0;
 
   if (noChoiceYet) return { unlocked: false, selectable: true, requiresUpgrade: false };
@@ -144,7 +153,7 @@ export function getSpaceAccess(
 
 /** Nombre de modules restant à choisir (0 si formule sans choix à faire). */
 export function remainingModuleChoices(plan: PlanId, selectedModules: ModuleSpace[] = []): number {
-  if (plan !== "pro") return 0;
+  if (plan !== PLAN_MODULE_AU_CHOIX) return 0;
   const clean = selectedModules.filter((m) => MODULE_SPACES.includes(m));
-  return Math.max(0, PLAN_MODULE_COUNT.pro - clean.length);
+  return Math.max(0, PLAN_MODULE_COUNT[PLAN_MODULE_AU_CHOIX] - clean.length);
 }

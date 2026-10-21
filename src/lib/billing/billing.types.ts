@@ -13,11 +13,12 @@ export type PlanCode =
 
 // ─── Packs de jetons ──────────────────────────────────────────────────────────
 
+// Packs de la grille du 21/10/2026 (src/lib/billing/grille.ts) :
+// 100 jetons = 10 € HT · 500 = 45 € HT · 2 000 = 160 € HT.
 export type TokenPackCode =
-  | "tokens_10"
-  | "tokens_20"
-  | "tokens_50"
-  | "tokens_100";
+  | "tokens_100"
+  | "tokens_500"
+  | "tokens_2000";
 
 // ─── Abonnement ───────────────────────────────────────────────────────────────
 

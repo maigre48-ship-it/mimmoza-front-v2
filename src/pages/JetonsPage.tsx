@@ -12,6 +12,7 @@ import {
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { PACKS_JETONS, formatEurHT } from "../lib/billing/grille";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -200,10 +201,10 @@ export default function JetonsPage() {
             {/* Packs */}
             <div className="grid gap-5 md:grid-cols-3">
               {[
-                { icon: Ticket,   color: "text-amber-500",  label: "Pack decouverte", qty: 10, desc: "Ideal pour tester quelques analyses et exports." },
-                { icon: Sparkles, color: "text-sky-500",    label: "Pack standard",   qty: 25, desc: "Un format equilibre pour un usage plus regulier." },
-                { icon: History,  color: "text-indigo-500", label: "Pack intensif",   qty: 50, desc: "Adapte aux usages frequents et aux exports reguliers." },
-              ].map(({ icon: Icon, color, label, qty, desc }) => (
+                { icon: Ticket,   color: "text-amber-500",  label: "Pack découverte", pack: PACKS_JETONS[0], desc: "Idéal pour tester quelques analyses et exports." },
+                { icon: Sparkles, color: "text-sky-500",    label: "Pack standard",   pack: PACKS_JETONS[1], desc: "Un format équilibré pour un usage plus régulier." },
+                { icon: History,  color: "text-indigo-500", label: "Pack intensif",   pack: PACKS_JETONS[2], desc: "Adapté aux usages fréquents et aux exports réguliers." },
+              ].map(({ icon: Icon, color, label, pack, desc }) => ({ icon: Icon, color, label, qty: pack.jetons, prix: pack.prixHT, desc })).map(({ icon: Icon, color, label, qty, prix, desc }) => (
                 <div
                   key={label}
                   className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
@@ -213,7 +214,7 @@ export default function JetonsPage() {
                     {label}
                   </div>
                   <div className="mt-4 text-3xl font-semibold text-slate-950">{qty}</div>
-                  <div className="mt-1 text-sm text-slate-500">jetons</div>
+                  <div className="mt-1 text-sm text-slate-500">jetons · {formatEurHT(prix)}</div>
                   <p className="mt-4 text-sm leading-6 text-slate-600">{desc}</p>
                 </div>
               ))}

@@ -52,7 +52,7 @@ const STATUTS_ACTIFS: readonly SubscriptionStatus[] = ['active', 'trialing'];
  * `basique / avance / pro / proplus`. Cette table est le seul endroit où la
  * traduction existe — sans elle, chaque écran l'improvisait.
  */
-const PLAN_SERVEUR_VERS_FRONT: Record<PlanCode, PlanId> = {
+const PLAN_SERVEUR_VERS_FRONT: Record<string, PlanId> = {
   free: 'basique',
   starter: 'avance',
   pro: 'pro',
@@ -60,6 +60,11 @@ const PLAN_SERVEUR_VERS_FRONT: Record<PlanCode, PlanId> = {
   promoteur_pro: 'proplus',
   financeur_pro: 'proplus',
   enterprise: 'proplus',
+  // Codes MimmozIA écrits tels quels (ouverture manuelle d'un accès tant que
+  // le paiement en ligne n'est pas branché : plan_code = 'avance', etc.).
+  basique: 'basique',
+  avance: 'avance',
+  proplus: 'proplus',
 };
 
 export interface PlanSynchronise {

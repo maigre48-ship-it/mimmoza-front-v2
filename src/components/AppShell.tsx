@@ -60,7 +60,7 @@ import { isRouteProtected, getSpacePaywallConfig } from "../lib/billing/paywallC
 // ── Abonnements MimmozIA (remplace les onglets d'espaces) ─────────────────────
 import { MimmozIASubscriptionMenu } from "@/spaces/copilot/components/MimmozIASubscriptionMenu";
 import { usePlanAccess } from "@/lib/billing/usePlanAccess";
-import { MODULE_LABEL, isModuleSpace, type ModuleSpace, type PlanId } from "@/lib/billing/planAccess";
+import { MODULE_LABEL, PLAN_LABEL, isModuleSpace, type ModuleSpace } from "@/lib/billing/planAccess";
 import { useCopilot } from "@/spaces/copilot/hooks/useCopilot";
 import { CopilotCreditsPill } from "@/spaces/copilot/components/CopilotCreditsPill";
 import { useCopilotStore } from "@/spaces/copilot/store/copilotStore";
@@ -110,13 +110,7 @@ type PendingProjectUnlock = {
   label: string;
 };
 
-// Libellés d'affichage des formules MimmozIA.
-const PLAN_LABEL: Record<PlanId, string> = {
-  basique: "Basique",
-  avance: "Avancé",
-  pro: "Pro",
-  proplus: "Pro +",
-};
+// Libellés d'affichage des formules : importés de planAccess (grille du 21/10/2026).
 
 function MimmozaLogo(props: { className?: string }) {
   return (
@@ -514,8 +508,8 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
 // Réintroduit les onglets d'espaces disparus lors du passage au menu
 // d'abonnements. Chaque onglet est filtré par la formule courante :
 //   • Apport d'affaires : toujours ouvert
-//   • Pro   : 1 module métier au choix (le premier clic fixe le choix)
-//   • Pro + : les 3 modules métier
+//   • Indépendant : 1 module métier au choix (le premier clic fixe le choix)
+//   • Pro, Équipe : les 3 modules métier
 // Les modules non inclus restent VISIBLES (cadenassés) : meilleur levier
 // d'upsell, et ça évite l'effet "l'app a perdu des fonctionnalités".
 function SpaceTabs(props: {
@@ -537,7 +531,7 @@ function SpaceTabs(props: {
     if (acc.selectable) {
       if (!isModuleSpace(spaceId)) return;
       const ok = window.confirm(
-        "Votre formule Pro inclut un seul module métier.\n\n" +
+        "Votre formule Indépendant inclut un seul module métier.\n\n" +
         "Activer « " + MODULE_LABEL[spaceId as ModuleSpace] + " » ?\n\n" +
         "Vous pourrez changer de module depuis votre abonnement."
       );
@@ -547,7 +541,7 @@ function SpaceTabs(props: {
       return;
     }
 
-    navigate("/abonnement?plan=proplus");
+    navigate("/abonnement?plan=pro");
   }
 
   return (
@@ -564,8 +558,8 @@ function SpaceTabs(props: {
         const title = acc.unlocked
           ? space.description
           : acc.selectable
-            ? "Formule Pro : 1 module métier au choix — cliquez pour activer celui-ci"
-            : "Disponible avec la formule Pro +";
+            ? "Formule Indépendant : 1 module métier au choix — cliquez pour activer celui-ci"
+            : "Disponible avec les formules Pro et Équipe";
 
         return (
           <button

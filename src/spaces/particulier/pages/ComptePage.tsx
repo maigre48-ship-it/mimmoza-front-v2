@@ -107,7 +107,11 @@ function buildInitials(fullName?: string, email?: string): string {
 
 const PLAN_LABELS: Record<string, string> = {
   free: "Compte gratuit",
-  starter: "Abonnement Starter",
+  // Grille du 21/10/2026 (src/lib/billing/grille.ts)
+  basique: "Découverte (gratuit)",
+  avance: "Abonnement Indépendant",
+  proplus: "Abonnement Équipe",
+  starter: "Abonnement Indépendant",
   pro: "Abonnement Pro",
   "promoteur-starter": "Promoteur Starter",
   "promoteur-pro": "Promoteur Pro",

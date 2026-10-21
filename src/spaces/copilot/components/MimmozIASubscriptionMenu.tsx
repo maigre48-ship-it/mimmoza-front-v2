@@ -5,6 +5,7 @@ import {
   TrendingUp, Building2, Hammer, Handshake, Zap, Radar,
 } from "lucide-react";
 import "./MimmozIASubscriptionMenu.css";
+import { FORMULES, prixFormule } from "@/lib/billing/grille";
 
 export type PlanId = "basique" | "avance" | "pro" | "proplus";
 
@@ -17,15 +18,18 @@ interface Plan {
   highlight?: boolean;
 }
 
-const PLANS: Plan[] = [
-  { id: "basique", name: "Basique", tagline: "Pour démarrer", model: "Mimmo · Haiku", modules: "none" },
-  { id: "avance", name: "Avancé", tagline: "Analyses approfondies", model: "Mimmo · Sonnet", modules: "none" },
-  { id: "pro", name: "Pro", tagline: "1 métier au choix", model: "Mimmo · Sonnet / Opus", modules: "one", highlight: true },
-  { id: "proplus", name: "Pro +", tagline: "Tous les métiers", model: "Mimmo · Sonnet / Opus", modules: "all" },
-];
+// Grille unique (src/lib/billing/grille.ts) : noms, prix et modules.
+const PLANS: Plan[] = FORMULES.map((f) => ({
+  id: f.id,
+  name: f.nom,
+  tagline: f.accroche,
+  model: prixFormule(f),
+  modules: f.modules === "aucun" ? "none" : f.modules === "un_au_choix" ? "one" : "all",
+  highlight: f.miseEnAvant,
+}));
 
 const MODULES = [
-  { icon: TrendingUp, label: "Investissement" },
+  { icon: TrendingUp, label: "Marchand de biens" },
   { icon: Building2, label: "Promotion" },
   { icon: Hammer, label: "Réhabilitation" },
 ];

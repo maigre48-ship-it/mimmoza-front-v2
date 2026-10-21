@@ -9,12 +9,14 @@
 // du bloc `usage` renvoyé par l'API Anthropic (input_tokens / output_tokens).
 // Ne jamais calculer le débit côté client : il serait falsifiable.
 
+import { JETON_VALEUR_EUR } from "./grille";
+
 // ─────────────────────────────────────────────────────────────────────────
 // CONSTANTES ÉCONOMIQUES — les SEULS nombres à ajuster
 // ─────────────────────────────────────────────────────────────────────────
 
-/** 1 jeton = 10 centimes d'euro. */
-export const JETON_VALUE_EUR = 0.10;
+/** 1 jeton = 10 centimes d'euro. Source : grille.ts (JETON_VALEUR_EUR). */
+export const JETON_VALUE_EUR = JETON_VALEUR_EUR;
 
 /** Marge cible sur le coût API. ×3 => on encaisse 3× ce que la requête coûte. */
 export const MARGIN = 3;

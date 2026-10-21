@@ -24,6 +24,7 @@ import ApiPage from "./pages/ApiPage";
 import ApiPlaygroundPage from "./pages/ApiPlaygroundPage";
 import DashboardHomePage from "./pages/DashboardHomePage";
 import JetonsPage from "./pages/JetonsPage";
+import TarifsPage from "./pages/TarifsPage";
 
 /* ── Pages légales ───────────────────────────────────────────── */
 import CGUPage from "./pages/legal/CGUPage";
@@ -375,7 +376,8 @@ function AppRoot() {
           <Route path="/billing"  element={<Navigate to="/abonnement" replace />} />
           <Route path="/account"  element={<Navigate to="/compte" replace />} />
           <Route path="/tokens"   element={<Navigate to="/jetons" replace />} />
-          <Route path="/tarifs"   element={<Navigate to="/abonnement" replace />} />
+          {/* Page publique des tarifs (grille unique src/lib/billing/grille.ts) */}
+          <Route path="/tarifs"   element={<TarifsPage />} />
 
           {/* ═══ Paramètres ═══ */}
           <Route path="/parametres/veille" element={<VeilleSettingsPage />} />

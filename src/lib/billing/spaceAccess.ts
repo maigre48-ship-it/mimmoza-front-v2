@@ -12,6 +12,7 @@ import {
   type PlanId,
   type ModuleSpace,
   MODULE_SPACES,
+  PLAN_MODULE_AU_CHOIX,
   allowedModules,
   canAccessSpace,
 } from "./planAccess";
@@ -58,7 +59,7 @@ export function getSpaceAccess(
    * la page d’abonnement.
    */
   const selectable =
-    plan === "pro" &&
+    plan === PLAN_MODULE_AU_CHOIX &&
     isModule &&
     allowedModules(plan, selectedModules).length === 0;
 

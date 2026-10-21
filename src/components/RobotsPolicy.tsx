@@ -42,6 +42,7 @@ const ROUTES_INDEXABLES = new Set<string>([
   "/login",
   "/connexion",
   "/inscription",
+  "/tarifs",
   "/cgv",
   "/cgu",
   "/politique-confidentialite",

@@ -40,16 +40,23 @@ const PLAN_PRICE_MAP: Record<string, string> = {
   price_financeur_pro_annual_REPLACE: "financeur_pro",
 };
 
+// Packs alignés sur la grille unique du 21/10/2026 (src/lib/billing/grille.ts,
+// recopiée ici car la fonction est déployée seule) : 1 jeton = 0,10 € HT.
+//   100 jetons = 10 € HT · 500 = 45 € HT · 2 000 = 160 € HT.
 const TOKEN_PACK_MAP: Record<string, { code: string; tokens: number }> = {
-  price_tokens_10_REPLACE:  { code: "tokens_10",  tokens: 10  },
-  price_tokens_20_REPLACE:  { code: "tokens_20",  tokens: 20  },
-  price_tokens_50_REPLACE:  { code: "tokens_50",  tokens: 50  },
-  price_tokens_100_REPLACE: { code: "tokens_100", tokens: 100 },
+  price_tokens_100_REPLACE:  { code: "tokens_100",  tokens: 100  },
+  price_tokens_500_REPLACE:  { code: "tokens_500",  tokens: 500  },
+  price_tokens_2000_REPLACE: { code: "tokens_2000", tokens: 2000 },
 };
 
+// Jetons inclus chaque mois par formule (grille.ts → JETONS_INCLUS_PAR_FORMULE).
+// Codes MimmozIA (basique/avance/pro/proplus) + codes historiques, traduits
+// comme dans syncPlanFromServer.ts : starter/promoteur_starter → Indépendant,
+// promoteur_pro/financeur_pro/enterprise → Équipe.
 const PLAN_INCLUDED_TOKENS: Record<string, number> = {
-  starter: 10, pro: 25, promoteur_starter: 15,
-  promoteur_pro: 50, financeur_pro: 100, enterprise: 999,
+  basique: 0, avance: 200, pro: 800, proplus: 2500,
+  starter: 200, promoteur_starter: 200,
+  promoteur_pro: 2500, financeur_pro: 2500, enterprise: 2500,
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
