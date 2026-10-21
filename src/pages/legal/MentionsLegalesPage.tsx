@@ -446,27 +446,17 @@ const articles: Article[] = [
     content: (
       <>
         <P>
-          La Plateforme utilise des cookies et traceurs pour assurer son bon fonctionnement,
-          analyser son audience et améliorer l'expérience utilisateur. Conformément aux
-          dispositions de l'article 82 de la loi Informatique et Libertés et aux recommandations
-          de la CNIL, le dépôt de cookies non strictement nécessaires est soumis au consentement
-          préalable de l'Utilisateur.
-        </P>
-        <P>
-          L'Utilisateur peut gérer ses préférences en matière de cookies à tout moment via le
-          Centre de préférences accessible en bas de page de la Plateforme, ou via les paramètres
-          de son navigateur. Pour une information complète sur les cookies utilisés, leurs
-          finalités et leur durée de conservation, il est invité à consulter la{" "}
+          La Plateforme n'utilise aucun cookie publicitaire ni outil de mesure d'audience. Elle
+          utilise uniquement des stockages techniques strictement nécessaires à son
+          fonctionnement (session d'authentification, préférences et travaux en cours,
+          mémorisation de la lecture du bandeau d'information), qui ne sont pas soumis au
+          consentement préalable de l'Utilisateur (article 82 de la loi Informatique et Libertés).
+          Pour le détail, voir la{" "}
           <a href="/politique-confidentialite#art8" className="text-[#2E7D9A] underline">
             Politique de Confidentialité
           </a>{" "}
           (article 8 — Cookies et traceurs).
         </P>
-        <Info>
-          Les cookies strictement nécessaires au fonctionnement technique de la Plateforme
-          (session, authentification, sécurité CSRF) sont déposés sans consentement préalable,
-          conformément à la réglementation applicable.
-        </Info>
       </>
     ),
   },

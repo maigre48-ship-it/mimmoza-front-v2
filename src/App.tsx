@@ -16,6 +16,7 @@ import { track } from "@/lib/mimmozia/track";
 import { AppShell } from "./components/AppShell";
 import { PrivateRoute } from "./components/PrivateRoute";
 import { RobotsPolicy } from "./components/RobotsPolicy";
+import { BandeauCookies } from "./components/BandeauCookies";
 import { SpaceSync, type Space } from "./components/SpaceSync";
 
 import ApiDeveloperDashboardPage from "./pages/ApiDeveloperDashboardPage";
@@ -322,6 +323,9 @@ function AppRoot() {
           d'index.html ; ce composant ne l'assouplit que sur les pages
           publiques sans donnée DVF (cf. R. 112 A-3 du LPF). */}
       <RobotsPolicy />
+
+      {/* Bandeau d'information cookies (stockages techniques uniquement) */}
+      <BandeauCookies />
 
       <SpaceSync currentSpace={currentSpace} setCurrentSpace={setCurrentSpace} />
 

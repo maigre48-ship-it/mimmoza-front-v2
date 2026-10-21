@@ -461,15 +461,29 @@ const articles: Article[] = [
             <strong>Support client</strong> : outil de gestion des tickets de support.
           </LI>
           <LI>
-            <strong>Analyse d'audience</strong> : outil de mesure d'audience anonymisée
-            de la Plateforme (sans transmission de données personnelles identifiantes si
-            configuré en mode sans consentement).
+            <strong>Analyse d'audience</strong> : la Plateforme n'utilise à ce jour aucun outil
+            de mesure d'audience. Si un tel outil était mis en place, la présente politique
+            serait mise à jour au préalable.
           </LI>
           <LI>
-            <strong>Modèles d'IA tiers</strong> : dans la mesure où des modèles d'IA tiers
-            sont utilisés pour générer des analyses ou des contenus, les paramètres transmis
-            peuvent inclure des données pseudonymisées. Aucune donnée directement identifiante
-            n'est transmise à ces modèles sans accord préalable de l'Utilisateur.
+            <strong>Anthropic, PBC (États-Unis)</strong> — fournisseur de modèles d'intelligence
+            artificielle. Finalités : fonctionnement du copilote IA (Mimmo), analyse de plans et
+            de documents, rédaction de rapports. Données transmises : le contenu des messages et
+            des documents soumis par l'Utilisateur et le contexte du projet nécessaire à la
+            réponse ; aucune donnée de paiement.
+          </LI>
+          <LI>
+            <strong>OpenAI, L.L.C. (États-Unis)</strong> — fournisseur de modèles d'intelligence
+            artificielle. Finalités : analyse et transcription de plans, lecture de documents
+            d'urbanisme, génération d'images (rendus de façades et de travaux). Données
+            transmises : les documents, images et paramètres soumis par l'Utilisateur pour ces
+            fonctionnalités.
+          </LI>
+          <LI>
+            Ces deux prestataires agissent en qualité de sous-traitants : ils traitent les données
+            pour le seul compte de Mimmoza, dans le cadre de leurs conditions applicables aux
+            clients professionnels (API). Le transfert de données vers les États-Unis est encadré
+            par les clauses contractuelles types de la Commission européenne (voir article 7).
           </LI>
         </UL>
 
@@ -642,6 +656,13 @@ const articles: Article[] = [
           </LI>
         </UL>
         <P>
+          Sont notamment concernés par un transfert vers les États-Unis : Anthropic, PBC et
+          OpenAI, L.L.C. (modèles d'intelligence artificielle : copilote IA, analyse de plans,
+          génération d'images), ainsi que Vercel Inc. (diffusion de l'application web). Ces
+          transferts sont encadrés par les clauses contractuelles types adoptées par la
+          Commission européenne.
+        </P>
+        <P>
           L'Utilisateur peut obtenir des informations sur les garanties mises en œuvre pour un
           transfert spécifique en contactant le DPO à{" "}
           <a href="mailto:dpo@mimmoza.fr" className="text-[#2E7D9A] underline">
@@ -652,8 +673,11 @@ const articles: Article[] = [
 
         <H2>7.3 Hébergement des données</H2>
         <P>
-          Les données personnelles des Utilisateurs sont hébergées sur des serveurs situés dans
-          l'Union européenne. Mimmoza s'engage à maintenir cet hébergement en Europe et à
+          Les données personnelles des Utilisateurs (comptes, projets, historiques) sont
+          hébergées dans la base de données de la Plateforme, opérée par Supabase sur des
+          serveurs situés dans l'Union européenne (région de Stockholm, Suède). Les traitements
+          réalisés par les prestataires d'intelligence artificielle mentionnés ci-dessus ont lieu
+          aux États-Unis, dans les conditions de l'article 7.2. Mimmoza s'engage à maintenir cet hébergement en Europe et à
           informer les Utilisateurs de tout changement substantiel à cet égard.
         </P>
       </>
@@ -675,74 +699,53 @@ const articles: Article[] = [
           ultérieures et de mémoriser certaines informations relatives à sa navigation.
         </P>
 
-        <H2>8.2 Cookies utilisés par Mimmoza</H2>
-
-        <H3>Cookies strictement nécessaires — aucun consentement requis</H3>
-        <UL>
-          <LI>
-            <strong>Cookie de session</strong> : maintient la session de l'Utilisateur connecté.
-            Durée : session (supprimé à la fermeture du navigateur).
-          </LI>
-          <LI>
-            <strong>Cookie CSRF</strong> : protège contre les attaques de type Cross-Site Request
-            Forgery. Durée : session.
-          </LI>
-          <LI>
-            <strong>Cookie de préférences de consentement</strong> : mémorise les choix de
-            l'Utilisateur relatifs aux cookies. Durée : 12 mois.
-          </LI>
-        </UL>
-
-        <H3>Cookies analytiques — consentement requis</H3>
-        <UL>
-          <LI>
-            <strong>Outil de mesure d'audience</strong> (ex. : Matomo, Plausible, ou équivalent
-            configuré sans cookie si possible) : analyse anonymisée des pages visitées, sources
-            de trafic, durées de session. Durée : 13 mois maximum.
-          </LI>
-        </UL>
-
-        <H3>Cookies fonctionnels — consentement requis</H3>
-        <UL>
-          <LI>
-            <strong>Préférences d'affichage</strong> : mémorise les paramètres d'affichage
-            choisis par l'Utilisateur (thème, langue, derniers filtres utilisés). Durée : 12 mois.
-          </LI>
-        </UL>
-
-        <H3>Cookies tiers — consentement requis</H3>
-        <UL>
-          <LI>
-            <strong>Cartographie</strong> (ex. : Mapbox, Leaflet/OpenStreetMap) : cookies déposés
-            lors de l'affichage des cartes interactives. Durée variable selon l'éditeur.
-          </LI>
-          <LI>
-            <strong>Paiement</strong> (ex. : Stripe) : cookies nécessaires à la sécurisation
-            des transactions. Durée variable selon l'éditeur.
-          </LI>
-        </UL>
-
-        <H2>8.3 Gestion des cookies</H2>
+        <H2>8.2 Ce que Mimmoza dépose sur votre terminal</H2>
         <P>
-          Lors de sa première visite, l'Utilisateur est invité à exprimer ses préférences via
-          le bandeau de gestion des cookies. Il peut à tout moment modifier ses choix depuis :
+          La Plateforme n'utilise <strong>aucun cookie publicitaire ni outil de mesure
+          d'audience</strong>, et ne dépose aucun traceur soumis à consentement. Elle utilise
+          uniquement des stockages techniques (stockage local du navigateur), strictement
+          nécessaires à la fourniture du service demandé par l'Utilisateur, dispensés de
+          consentement au titre de l'article 82 de la loi Informatique et Libertés :
         </P>
         <UL>
-          <LI>Le Centre de préférences accessible via le lien « Gérer mes cookies » en bas de page.</LI>
-          <LI>Les paramètres de son navigateur (voir documentation du navigateur concerné).</LI>
+          <LI>
+            <strong>Session d'authentification</strong> : maintient la connexion de
+            l'Utilisateur à son compte. Durée : jusqu'à la déconnexion.
+          </LI>
+          <LI>
+            <strong>Préférences et travaux en cours</strong> : mémorisation locale des
+            projets, brouillons, filtres et paramètres d'affichage, pour que l'Utilisateur
+            retrouve son travail. Durée : jusqu'à suppression par l'Utilisateur ou déconnexion.
+          </LI>
+          <LI>
+            <strong>Information sur les cookies</strong> : mémorise que l'Utilisateur a pris
+            connaissance du bandeau d'information. Durée : 12 mois.
+          </LI>
         </UL>
-        <Warn>
-          Le refus de certains cookies non strictement nécessaires peut entraîner une dégradation
-          de certaines fonctionnalités de la Plateforme (cartes, mémorisation des préférences,
-          etc.). Le refus des cookies strictement nécessaires n'est pas possible sans empêcher
-          le fonctionnement de la Plateforme.
-        </Warn>
-
-        <H2>8.4 Durée de validité du consentement</H2>
         <P>
-          Le consentement de l'Utilisateur relatif aux cookies est valable pour une durée
-          maximale de douze (12) mois, conformément aux recommandations de la CNIL. À l'issue
-          de cette période, le bandeau de consentement est à nouveau affiché.
+          Les fonds de carte sont fournis par l'IGN (Géoplateforme), service public qui ne
+          dépose pas de cookie de suivi.
+        </P>
+
+        <H2>8.3 Information et gestion</H2>
+        <P>
+          Lors de sa première visite, l'Utilisateur est informé de l'usage de ces stockages
+          techniques par un bandeau, qu'il peut fermer via le bouton « J'ai compris ».
+          N'étant pas soumis à consentement, ces stockages ne font pas l'objet d'un centre de
+          préférences. L'Utilisateur peut à tout moment les supprimer depuis les paramètres de
+          son navigateur (effacement des données de site), ce qui entraîne sa déconnexion et la
+          perte des préférences mémorisées localement.
+        </P>
+        <Info>
+          Si Mimmoza venait à utiliser des cookies ou traceurs soumis à consentement (mesure
+          d'audience, services tiers), un bandeau de recueil du consentement serait mis en place
+          au préalable et la présente politique serait mise à jour.
+        </Info>
+
+        <H2>8.4 Durée de conservation de l'information</H2>
+        <P>
+          Le choix « J'ai compris » est conservé douze (12) mois ; à l'issue de cette période,
+          le bandeau d'information est à nouveau affiché.
         </P>
       </>
     ),

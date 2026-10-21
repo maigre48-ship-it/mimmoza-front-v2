@@ -707,44 +707,27 @@ const articles: Article[] = [
       <>
         <H2>12.1 Utilisation des cookies</H2>
         <P>
-          La Plateforme utilise des cookies et traceurs pour assurer son bon fonctionnement,
-          améliorer l'expérience Utilisateur, mesurer l'audience et, le cas échéant, proposer des
-          fonctionnalités personnalisées. Conformément à la réglementation (article 82 de la loi
-          Informatique et Libertés, directive ePrivacy), le dépôt de cookies non strictement
-          nécessaires au fonctionnement de la Plateforme est soumis au consentement préalable de
-          l'Utilisateur.
+          La Plateforme n'utilise aucun cookie publicitaire ni outil de mesure d'audience. Elle
+          utilise uniquement des stockages techniques (stockage local du navigateur) strictement
+          nécessaires à son fonctionnement : session d'authentification, mémorisation des
+          projets et préférences de l'Utilisateur, mémorisation de la lecture du bandeau
+          d'information. Conformément à l'article 82 de la loi Informatique et Libertés, ces
+          stockages ne sont pas soumis au consentement préalable de l'Utilisateur.
         </P>
 
-        <H2>12.2 Catégories de cookies utilisés</H2>
-        <UL>
-          <LI>
-            <strong>Cookies strictement nécessaires</strong> : indispensables au fonctionnement
-            technique de la Plateforme (session, authentification, préférences de sécurité). Ils
-            ne nécessitent pas de consentement.
-          </LI>
-          <LI>
-            <strong>Cookies analytiques</strong> : permettent de mesurer l'audience et l'utilisation
-            de la Plateforme à des fins d'amélioration du service (ex. : statistiques de navigation
-            anonymisées).
-          </LI>
-          <LI>
-            <strong>Cookies fonctionnels</strong> : permettent de mémoriser les préférences de
-            l'Utilisateur (langue, paramètres d'affichage, dernières recherches).
-          </LI>
-          <LI>
-            <strong>Cookies tiers</strong> : déposés par des partenaires techniques (cartographie,
-            services de paiement, outils d'analytics) dans le cadre du fonctionnement de la
-            Plateforme.
-          </LI>
-        </UL>
-
-        <H2>12.3 Gestion des cookies</H2>
+        <H2>12.2 Information de l'Utilisateur</H2>
         <P>
-          L'Utilisateur peut paramétrer ses préférences en matière de cookies via le bandeau de
-          consentement affiché lors de sa première visite, ou à tout moment depuis le Centre de
-          préférences accessible dans les paramètres de son Compte. Le refus de certains cookies
-          peut affecter le fonctionnement de certaines fonctionnalités de la Plateforme. La
-          Politique de Cookies complète est disponible sur la Plateforme.
+          Lors de sa première visite, l'Utilisateur est informé de l'usage de ces stockages par
+          un bandeau qu'il peut fermer via le bouton « J'ai compris ». Il peut à tout moment les
+          supprimer depuis les paramètres de son navigateur, ce qui entraîne sa déconnexion.
+        </P>
+
+        <H2>12.3 Évolution</H2>
+        <P>
+          Si la Plateforme venait à utiliser des cookies ou traceurs soumis à consentement
+          (mesure d'audience, services tiers), un dispositif de recueil du consentement serait
+          mis en place au préalable. Le détail des stockages utilisés figure à l'article 8 de la
+          Politique de Confidentialité.
         </P>
       </>
     ),

@@ -39,6 +39,8 @@ export default function InscriptionPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
+  // Acceptation obligatoire des CGU et de la politique de confidentialité.
+  const [accepteConditions, setAccepteConditions] = useState(false);
 
   const handleSignup = async () => {
     const trimmedName = fullName.trim();
@@ -61,6 +63,11 @@ export default function InscriptionPage() {
       return;
     }
 
+    if (!accepteConditions) {
+      setError("Merci d'accepter les CGU et la politique de confidentialité pour créer votre compte.");
+      return;
+    }
+
     setLoading(true);
     setError("");
 
@@ -69,7 +76,11 @@ export default function InscriptionPage() {
         email: trimmedEmail,
         password: trimmedPassword,
         options: {
-          data: { full_name: trimmedName },
+          data: {
+            full_name: trimmedName,
+            // Trace de l'acceptation (date ISO) dans les métadonnées du compte.
+            cgu_acceptees_le: new Date().toISOString(),
+          },
           // Lien de confirmation : retour sur la connexion, puis sur `suite`.
           emailRedirectTo: `${window.location.origin}/connexion${
             suite ? `?suite=${encodeURIComponent(suite)}` : ""
@@ -315,6 +326,33 @@ export default function InscriptionPage() {
                     </div>
                   </label>
 
+                  <label className="flex items-start gap-3 text-sm leading-6 text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={accepteConditions}
+                      onChange={(e) => setAccepteConditions(e.target.checked)}
+                      required
+                      aria-required="true"
+                      className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                    />
+                    <span>
+                      J'accepte les{" "}
+                      <Link to="/cgu" target="_blank" rel="noopener" className="font-medium text-sky-700 underline">
+                        CGU
+                      </Link>{" "}
+                      et la{" "}
+                      <Link
+                        to="/politique-confidentialite"
+                        target="_blank"
+                        rel="noopener"
+                        className="font-medium text-sky-700 underline"
+                      >
+                        politique de confidentialité
+                      </Link>
+                      .
+                    </span>
+                  </label>
+
                   {error && (
                     <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                       {error}
@@ -324,7 +362,7 @@ export default function InscriptionPage() {
                   <button
                     type="button"
                     onClick={handleSignup}
-                    disabled={loading}
+                    disabled={loading || !accepteConditions}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3.5 text-sm font-medium text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <span>{loading ? "Création en cours..." : "Créer mon compte"}</span>
