@@ -5,6 +5,8 @@
 // Le logo est chargé depuis /public et embarqué en base64.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { dateLaPlusRecente, mentionSources } from '../../../../lib/sources/sourcesPubliques';
+
 const LOGO_URL = '/Logo/Logo_mimmoza_base_line_redecoupe.png';
 
 // ── Types d'entrée (sous-ensemble minimal utilisé par l'export) ──────────────
@@ -312,6 +314,7 @@ export async function exportQuickAnalysisToPdf(params: {
   <div style="margin-top:28px;padding-top:16px;border-top:1px solid #e2e8f0;text-align:center;color:#94a3b8;font-size:10px;">
     <p>Mimmoza · Plateforme d'analyse immobilière intelligente${result.meta?.engineVersion ? ` · Moteur ${escapeHtml(result.meta.engineVersion)}` : ''}${result.meta?.comparablesUsed != null ? ` · ${result.meta.comparablesUsed} comparables` : ''}</p>
     <p style="margin-top:2px;">Estimation indicative fondée sur des données publiques. À faire valider par un professionnel.</p>
+    <p style="margin-top:2px;">${escapeHtml(mentionSources(dateLaPlusRecente((result.comparables ?? []).map((c) => c.saleDate))))}</p>
   </div>
 </body>
 </html>`;

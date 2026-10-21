@@ -48,6 +48,7 @@ import {
   reserverAnalyseRapide,
 } from "../../../../lib/billing/analyseRapideQuota";
 import { ANALYSES_RAPIDES_GRATUITES_MOIS } from "../../../../lib/billing/grille";
+import { dateLaPlusRecente, mentionSources } from "../../../../lib/sources/sourcesPubliques";
 import { userStorage } from "@/lib/storage/userScopedStorage";
 import { useCopilotStore } from "../../../copilot/store/copilotStore";
 import type { ValuationEngineContext } from "../../../copilot/types/copilot.types";
@@ -1292,6 +1293,10 @@ display: "flex",
                 <SourceRow label="DVF (Supabase RPC)" ok={steps.dvf === "ok" ? true : steps.dvf === "loading" ? "loading" : false} />
                 <SourceRow label="SmartScore"         ok={steps.smartscore === "ok" ? true : steps.smartscore === "loading" ? "loading" : false} />
                 <SourceRow label="Géorisques"         ok={steps.georisques === "ok" ? true : steps.georisques === "loading" ? "loading" : false} />
+                {/* Citation des sources publiques (licence Etalab 2.0 pour DVF) */}
+                <p style={{ margin:"8px 0 0", fontSize:10, color:"#6b7280", lineHeight:1.5 }}>
+                  {mentionSources(dateLaPlusRecente(allComps.map((c) => c.saleDate)))}
+                </p>
               </div>
 
               {/* PLU / Sitadel / Cadastre — affichés seulement si données présentes */}
