@@ -27,6 +27,8 @@ import ApiPlaygroundPage from "./pages/ApiPlaygroundPage";
 import DashboardHomePage from "./pages/DashboardHomePage";
 import JetonsPage from "./pages/JetonsPage";
 import TarifsPage from "./pages/TarifsPage";
+import BientotDisponiblePage from "./pages/BientotDisponiblePage";
+import { ESPACES_VISIBLES } from "./lib/espacesEnPreparation";
 
 /* ── Pages légales ───────────────────────────────────────────── */
 import CGUPage from "./pages/legal/CGUPage";
@@ -412,7 +414,13 @@ function AppRoot() {
           <Route element={<PrivateRoute />}>
             <Route path="/api/keys"       element={<ApiKeysPage />} />
             <Route path="/api/playground" element={<ApiPlaygroundPage />} />
-            <Route path="/api/developer"  element={<ApiDeveloperDashboardPage />} />
+            {/* Tableau de bord sur données fictives (apiMemberMock) : masqué */}
+            <Route
+              path="/api/developer"
+              element={ESPACES_VISIBLES.apiDashboard
+                ? <ApiDeveloperDashboardPage />
+                : <BientotDisponiblePage titre="Le tableau de bord développeur" />}
+            />
           </Route>
 
           {/* ═══ Admin ═══ */}
@@ -476,7 +484,11 @@ function AppRoot() {
             <Route path="*" element={<Navigate to="/apporteur" replace />} />
           </Route>
 
-          {/* ═══ Particulier ═══ */}
+          {/* ═══ Particulier ═══ — masqué (pages vides) : ESPACES_VISIBLES.particulier */}
+          {!ESPACES_VISIBLES.particulier && (
+            <Route path="/particulier/*" element={<BientotDisponiblePage titre="L'espace Particulier" />} />
+          )}
+          {ESPACES_VISIBLES.particulier && (
           <Route path="/particulier" element={<CopilotSpaceOutlet vertical="particulier" />}>
             <Route index element={<ParticulierDashboard />} />
             <Route path="projet"      element={<ParticulierMonProjet />} />
@@ -499,6 +511,7 @@ function AppRoot() {
             <Route path="historique"  element={<ParticulierHistorique />} />
             <Route path="*"           element={<Navigate to="/particulier" replace />} />
           </Route>
+          )}
 
           <Route element={<RequirePlan />}>
           {/* ═══ Marchand-de-bien ═══ */}
@@ -561,7 +574,13 @@ function AppRoot() {
               <Route path="bilan"              element={<PromoteurBilan />} />
               <Route path="bilan-promoteur"    element={<BilanPromoteurPage />} />
               <Route path="synthese"           element={<PromoteurSynthese />} />
-              <Route path="exports"            element={<PromoteurExports />} />
+              {/* Page sans contenu : masquée (ESPACES_VISIBLES.promoteurExports) */}
+              <Route
+                path="exports"
+                element={ESPACES_VISIBLES.promoteurExports
+                  ? <PromoteurExports />
+                  : <BientotDisponiblePage titre="Les exports Promoteur" />}
+              />
             </Route>
 
             <Route path="*" element={<Navigate to="/promoteur" replace />} />
@@ -571,6 +590,10 @@ function AppRoot() {
           {/* ═══ Assurance ═══
               (autrefois monté sous /banque/assurance ; remonté ici en
               autonome suite à la mise hors-build de l'espace banque) */}
+          {!ESPACES_VISIBLES.assurance && (
+            <Route path="/assurance/*" element={<BientotDisponiblePage titre="L'espace Assurance" />} />
+          )}
+          {ESPACES_VISIBLES.assurance && (
           <Route path="/assurance" element={<CopilotSpaceOutlet vertical="generique" />}>
             <Route index element={<AssuranceDashboard />} />
             <Route path="souscription" element={<AssuranceSouscription />} />
@@ -584,6 +607,7 @@ function AppRoot() {
             <Route path="risques"      element={<RisquesPage />} />
             <Route path="*"            element={<Navigate to="/assurance" replace />} />
           </Route>
+          )}
 
           {/* ═══ Réhabilitation ═══ */}
           <Route element={<RequirePlan />}>
@@ -611,7 +635,7 @@ function AppRoot() {
 
           {/* ═══ Compatibility redirects ═══ */}
           {/* ⚠️ Banque hors-build : toute ancienne route /banque/* → accueil */}
-          <Route path="/banque/*"    element={<Navigate to="/" replace />} />
+          <Route path="/banque/*"    element={<BientotDisponiblePage titre="L'espace Banque" />} />
           <Route path="/audit/*"     element={<Navigate to="/" replace />} />
           <Route path="/agence"      element={<Navigate to="/apporteur" replace />} />
           <Route path="/marchand"    element={<Navigate to="/marchand-de-bien" replace />} />

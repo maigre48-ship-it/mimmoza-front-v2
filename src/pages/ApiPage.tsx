@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { ESPACES_VISIBLES } from "../lib/espacesEnPreparation";
 
 import { ApiStatusBadge, PlanBadge } from "../features/api/components/ApiStatusBadge";
 import ApiUsageSummary from "../features/api/components/ApiUsageSummary";
@@ -283,6 +284,7 @@ export default function ApiPage() {
               <PlayCircle className="h-4 w-4" />
               Tester l'API
             </button>
+            {ESPACES_VISIBLES.apiDashboard && (
             <button
               type="button"
               onClick={() => navigate("/api/developer")}
@@ -292,6 +294,7 @@ export default function ApiPage() {
               Espace développeur
               <ExternalLink className="h-3.5 w-3.5 opacity-70" />
             </button>
+            )}
           </div>
         </div>
       </div>
@@ -352,7 +355,7 @@ export default function ApiPage() {
             },
             { label: "Playground",  sub: "Tester l'API",          path: "/api/playground", icon: PlayCircle },
             { label: "Dashboard",   sub: "Logs & métriques",      path: "/api/developer",  icon: LayoutDashboard },
-          ].map(({ label, sub, path, icon: Icon }) => (
+          ].filter((item) => ESPACES_VISIBLES.apiDashboard || item.path !== "/api/developer").map(({ label, sub, path, icon: Icon }) => (
             <button
               key={path}
               type="button"
@@ -670,6 +673,7 @@ export default function ApiPage() {
                 <PlayCircle className="h-3.5 w-3.5" />
                 Ouvrir le Playground
               </button>
+              {ESPACES_VISIBLES.apiDashboard && (
               <button
                 type="button"
                 onClick={() => navigate("/api/developer")}
@@ -678,6 +682,7 @@ export default function ApiPage() {
                 <LayoutDashboard className="h-3.5 w-3.5" />
                 Espace développeur
               </button>
+              )}
             </div>
           </div>
         </div>

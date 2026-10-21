@@ -6,6 +6,7 @@
  */
 
 import type { NavSection } from "../../components/layout/BaseShellLayout";
+import { ESPACES_VISIBLES } from "../../lib/espacesEnPreparation";
 
 export const PROMOTEUR_SIDEBAR: NavSection[] = [
   {
@@ -57,7 +58,8 @@ export const PROMOTEUR_SIDEBAR: NavSection[] = [
     title: "Synthèse",
     items: [
       { label: "Synthèse", to: "/promoteur/synthese" },
-      { label: "Exports", to: "/promoteur/exports" },
+      // Masqué tant que la page est vide (src/lib/espacesEnPreparation.ts)
+      ...(ESPACES_VISIBLES.promoteurExports ? [{ label: "Exports", to: "/promoteur/exports" }] : []),
     ],
   },
 ];

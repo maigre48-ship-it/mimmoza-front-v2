@@ -1,5 +1,6 @@
 import { CreditCard, Key, LayoutDashboard, PlayCircle } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { ESPACES_VISIBLES } from '../../../lib/espacesEnPreparation';
 
 interface NavItem {
   label: string;
@@ -9,7 +10,8 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Dashboard',   path: '/api/developer', icon: LayoutDashboard },
+  // Tableau de bord sur données fictives : masqué (src/lib/espacesEnPreparation.ts)
+  ...(ESPACES_VISIBLES.apiDashboard ? [{ label: 'Dashboard', path: '/api/developer', icon: LayoutDashboard }] : []),
   { label: 'Abonnement',  path: '/api/billing',   icon: CreditCard },
   { label: 'Clés API',    path: '/api/keys',      icon: Key },
   { label: 'Playground',  path: '/api/playground',icon: PlayCircle },
