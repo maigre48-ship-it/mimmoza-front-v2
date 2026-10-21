@@ -1,14 +1,445 @@
-[functions.cadastre-geojson-proxy]
-verify_jwt = false
+# =============================================================================
+# Configuration des Edge Functions — RÉFÉRENCE UNIQUE depuis le 21/10/2026.
+# Ce dépôt (mimmoza-front-v2/supabase/functions) est la seule source des Edge
+# Functions du projet fwvrqngbafqdaekbdfnm. Le dépôt Mimmoza_backend ne déploie
+# plus rien (voir supabase/README-EDGE-FUNCTIONS.md).
+#
+# verify_jwt reprend EXACTEMENT la valeur en production au 21/10/2026 : la CLI
+# applique ce fichier à chaque `supabase functions deploy`. Une fonction absente
+# d'ici serait redéployée avec verify_jwt = true (défaut), ce qui casserait les
+# webhooks, crons et appels publics qui n'envoient pas de JWT utilisateur.
+# =============================================================================
 
-[functions.parcel-dossier-watch-v1]
+[functions.admin-geocode-stats]
+verify_jwt = true
+
+[functions.admin-society-agents]
 verify_jwt = false
 
 [functions.agent-commercial-generate]
 verify_jwt = false
 
+[functions.agent-commercial-health]
+verify_jwt = false
+
+[functions.agent-commercial-integration-status]
+verify_jwt = false
+
+[functions.agent-commercial-oauth-callback]
+verify_jwt = false
+
+[functions.agent-commercial-oauth-start]
+verify_jwt = false
+
 [functions.agent-communication-campaign]
 verify_jwt = false
 
-[functions.admin-society-agents]
+[functions.alertes-accueil-v1]
+verify_jwt = true
+
+[functions.altimetrie-v1]
+verify_jwt = true
+
+[functions.analyze-rehab-plan]
+verify_jwt = true
+
+[functions.ao-watch-run-v1]
+verify_jwt = true
+
+[functions.api-gateway]
+verify_jwt = false
+
+[functions.apiKeyAuth]
+verify_jwt = true
+
+[functions.appels-offres-v1]
+verify_jwt = true
+
+[functions.assainissement-commune-v1]
+verify_jwt = true
+
+[functions.auth-bridge]
+verify_jwt = false
+
+[functions.banque-committee-report-v1]
+verify_jwt = false
+
+[functions.banque-market-v1]
+verify_jwt = true
+
+[functions.banque-operation-enrich-v1]
+verify_jwt = true
+
+[functions.banque-risques-v1]
+verify_jwt = true
+
+[functions.banque-smartscore-v1]
+verify_jwt = true
+
+[functions.batiment-bdnb-v1]
+verify_jwt = true
+
+[functions.besoin-logements-sociaux]
+verify_jwt = true
+
+[functions.bpe-proxy]
+verify_jwt = false
+
+[functions.bpe-score-v1]
+verify_jwt = true
+
+[functions.bpe-score-v2]
+verify_jwt = true
+
+[functions.bruit-classement-v1]
+verify_jwt = true
+
+[functions.cadastre-from-commune]
+verify_jwt = true
+
+[functions.cadastre-geojson-proxy]
+verify_jwt = true
+
+[functions.cadastre-lite]
+verify_jwt = true
+
+[functions.cadastre-parcelle-by-id]
+verify_jwt = true
+
+[functions.cadastre-parcelles-bbox-v1]
+verify_jwt = true
+
+[functions.contexte-commune-v1]
+verify_jwt = true
+
+[functions.copilot-chat]
+verify_jwt = false
+
+[functions.copilot-errors]
+verify_jwt = true
+
+[functions.copilot-fn-health]
+verify_jwt = true
+
+[functions.copilot-health-cases-v1]
+verify_jwt = true
+
+[functions.copilot-supabaseAdmin]
+verify_jwt = true
+
+[functions.couts-construction-v1]
+verify_jwt = true
+
+[functions.couts-renovation-v1]
+verify_jwt = true
+
+[functions.delete-account-v1]
+verify_jwt = true
+
+[functions.design-direction-v1]
+verify_jwt = true
+
+[functions.dossier-terrain-v1]
+verify_jwt = true
+
+[functions.dpe-ademe-v1]
+verify_jwt = true
+
+[functions.dvf-comparables-v1]
+verify_jwt = false
+
+[functions.etablissements-sirene-v1]
+verify_jwt = true
+
+[functions.etude-parcelle-v1]
+verify_jwt = true
+
+[functions.export-report-v1]
+verify_jwt = true
+
+[functions.facade-ai-render]
+verify_jwt = true
+
+[functions.finess-supply-v1]
+verify_jwt = true
+
+[functions.foncier-lookup-v1]
+verify_jwt = true
+
+[functions.gpu-parcelle-v1]
+verify_jwt = true
+
+[functions.gtfs-ingest-v1]
+verify_jwt = true
+
+[functions.import-maires-rne-v1]
+verify_jwt = true
+
+[functions.loyers-reference-v1]
+verify_jwt = true
+
+[functions.macro-rates-refresh-v1]
+verify_jwt = true
+
+[functions.marchand-risques-v1]
+verify_jwt = true
+
+[functions.market-context-v1]
+verify_jwt = true
+
+[functions.market-dedupe-v1]
+verify_jwt = true
+
+[functions.market-metrics-zone-v1]
+verify_jwt = true
+
+[functions.market-opportunity-refresh-v1]
+verify_jwt = true
+
+[functions.market-price-history-v1]
+verify_jwt = true
+
+[functions.market-refresh-zone-v1]
+verify_jwt = true
+
+[functions.market-segmentation-refresh-v1]
+verify_jwt = true
+
+[functions.market-stock-history-v1]
+verify_jwt = true
+
+[functions.market-study-investisseur-v1]
+verify_jwt = true
+
+[functions.market-study-promoteur-v1]
+verify_jwt = true
+
+[functions.market-study-v1]
+verify_jwt = true
+
+[functions.market-study-v2]
+verify_jwt = true
+
+[functions.market-trends-v1]
+verify_jwt = true
+
+[functions.market-veille-v1]
+verify_jwt = true
+
+[functions.oap-parser]
+verify_jwt = true
+
+[functions.opportunity-engine-v1]
+verify_jwt = true
+
+[functions.opportunity-watch-run]
+verify_jwt = true
+
+[functions.org_api]
+verify_jwt = true
+
+[functions.parcel-dossier-watch-v1]
+verify_jwt = false
+
+[functions.parcelle-from-id]
+verify_jwt = true
+
+[functions.patrimoine-merimee-v1]
+verify_jwt = true
+
+[functions.plu-documents-list-v1]
+verify_jwt = true
+
+[functions.plu-extract-article-v1]
+verify_jwt = true
+
+[functions.plu-extract-ruleset]
+verify_jwt = true
+
+[functions.plu-faisabilite-summary-v1]
+verify_jwt = true
+
+[functions.plu-from-address]
+verify_jwt = true
+
+[functions.plu-from-parcelle]
+verify_jwt = true
+
+[functions.plu-from-parcelle-v2]
+verify_jwt = false
+
+[functions.plu-get-rules-for-zone]
+verify_jwt = true
+
+[functions.plu-ingest-from-storage]
+verify_jwt = true
+
+[functions.plu-ingest-rulesets]
+verify_jwt = true
+
+[functions.plu-parser]
+verify_jwt = true
+
+[functions.plu-rules-by-zone-v1]
+verify_jwt = true
+
+[functions.plu-rules-engine-v1]
+verify_jwt = true
+
+[functions.plu-rules-list-v1]
+verify_jwt = true
+
+[functions.plu-universal-parser]
+verify_jwt = true
+
+[functions.plu-upload]
+verify_jwt = true
+
+[functions.populate-commune-cp-map-v1]
+verify_jwt = true
+
+[functions.potentiel-solaire-v1]
+verify_jwt = true
+
+[functions.ppr-detail-v1]
+verify_jwt = true
+
+[functions.project-recommendation-v1]
+verify_jwt = true
+
+[functions.promoteur-from-parcelle]
+verify_jwt = true
+
+[functions.promoteur-from-parcelle-v3]
+verify_jwt = true
+
+[functions.promoteur-permis-construire]
+verify_jwt = true
+
+[functions.promoteur-v1]
+verify_jwt = true
+
+[functions.quick-function]
+verify_jwt = true
+
+[functions.recherche-contacts-mairies-v1]
+verify_jwt = true
+
+[functions.rendu-travaux-v1]
+verify_jwt = true
+
+[functions.risk-study-v1]
+verify_jwt = false
+
+[functions.risks-refresh-v1]
+verify_jwt = true
+
+[functions.risques-v1]
+verify_jwt = true
+
+[functions.scan-portals-v1]
+verify_jwt = true
+
+[functions.send-mails]
+verify_jwt = true
+
+[functions.servitudes-gpu-v1]
+verify_jwt = true
+
+[functions.sitadel-commune-v1]
+verify_jwt = true
+
+[functions.sitadel-v1]
+verify_jwt = true
+
+[functions.smartscore-agent-v1]
+verify_jwt = true
+
+[functions.smartscore-agent-v2]
+verify_jwt = true
+
+[functions.smartscore-enriched-v2]
+verify_jwt = false
+
+[functions.smartscore-enriched-v3]
+verify_jwt = true
+
+[functions.smartscore-enriched-v4]
+verify_jwt = true
+
+[functions.smartscore-manual-v1]
+verify_jwt = true
+
+[functions.smartscore-report-v1]
+verify_jwt = false
+
+[functions.smartscore-report-v2]
+verify_jwt = true
+
+[functions.smartscore-terrain-v1]
+verify_jwt = true
+
+[functions.smartscore-ultra-v1]
+verify_jwt = true
+
+[functions.smartscore-unified-v1]
+verify_jwt = true
+
+[functions.smartscore-v2]
+verify_jwt = true
+
+[functions.sncf-gares-ingest-v1]
+verify_jwt = true
+
+[functions.sourcing-analyze-v1]
+verify_jwt = true
+
+[functions.sourcing-score-v1]
+verify_jwt = true
+
+[functions.stream-estate-ingest-v1]
+verify_jwt = true
+
+[functions.stream-estate-test]
+verify_jwt = true
+
+[functions.studio-ai]
+verify_jwt = true
+
+[functions.taxes-locales-v1]
+verify_jwt = true
+
+[functions.terrain-analysis-v1]
+verify_jwt = true
+
+[functions.transcribe-rehab-plan]
+verify_jwt = true
+
+[functions.transport-nearby-v1]
+verify_jwt = true
+
+[functions.transport-score]
+verify_jwt = true
+
+[functions.transport-score-gtfs-v1]
+verify_jwt = true
+
+[functions.transport-score-v1]
+verify_jwt = true
+
+[functions.trigger-create-user]
+verify_jwt = true
+
+[functions.valuation-engine]
+verify_jwt = true
+
+[functions.zonage-abc-v1]
+verify_jwt = true
+
+# Pas encore en production (Stripe non branché) : JWT requis pour le checkout,
+# pas de JWT pour le webhook (Stripe signe ses appels).
+[functions.stripe-create-checkout]
+verify_jwt = true
+
+[functions.stripe-webhook]
 verify_jwt = false
