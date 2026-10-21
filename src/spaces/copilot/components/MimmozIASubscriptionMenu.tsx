@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import {
   ChevronDown, Check, Minus, Sparkles,
   TrendingUp, Building2, Hammer, Handshake, Zap, Radar,
+  MessageCircle, Coins, FileDown,
 } from "lucide-react";
 import "./MimmozIASubscriptionMenu.css";
 import { FORMULES, prixFormule } from "@/lib/billing/grille";
@@ -15,6 +16,10 @@ interface Plan {
   tagline: string;
   model: string;
   modules: "none" | "one" | "all";
+  analysesMois: number | null;
+  messagesMimmoMois: number | null;
+  jetonsMois: number;
+  exportsPdf: boolean;
   highlight?: boolean;
 }
 
@@ -25,8 +30,14 @@ const PLANS: Plan[] = FORMULES.map((f) => ({
   tagline: f.accroche,
   model: prixFormule(f),
   modules: f.modules === "aucun" ? "none" : f.modules === "un_au_choix" ? "one" : "all",
+  analysesMois: f.analysesRapidesMois,
+  messagesMimmoMois: f.messagesMimmoMois,
+  jetonsMois: f.jetonsMensuels,
+  exportsPdf: f.exportsPdf,
   highlight: f.miseEnAvant,
 }));
+
+const nf = new Intl.NumberFormat("fr-FR");
 
 const MODULES = [
   { icon: TrendingUp, label: "Marchand de biens" },
@@ -130,7 +141,23 @@ export function MimmozIASubscriptionMenu({ currentPlan, onSelectPlan, className 
                 )}
 
                 <li><Handshake size={13} /><span>Apport d'affaires</span></li>
-                <li><Zap size={13} /><span>Analyse rapide</span></li>
+                <li>
+                  <Zap size={13} />
+                  <span>
+                    {plan.analysesMois != null
+                      ? `${nf.format(plan.analysesMois)} analyses rapides / mois`
+                      : "Analyse rapide"}
+                  </span>
+                </li>
+                {plan.messagesMimmoMois != null && (
+                  <li><MessageCircle size={13} /><span>Mimmo : {nf.format(plan.messagesMimmoMois)} messages / mois</span></li>
+                )}
+                {plan.jetonsMois > 0 && (
+                  <li><Coins size={13} /><span>{nf.format(plan.jetonsMois)} jetons / mois</span></li>
+                )}
+                {plan.exportsPdf && (
+                  <li><FileDown size={13} /><span>Export PDF des analyses</span></li>
+                )}
                 <li><Radar size={13} /><span>Veille marché</span></li>
               </ul>
 
@@ -147,7 +174,7 @@ export function MimmozIASubscriptionMenu({ currentPlan, onSelectPlan, className 
         })}
       </div>
       <p className="mzia-sub__foot">
-        Apport d'affaires, Analyse rapide et Veille marché sont inclus dans toutes les formules. L'API est disponible séparément.
+        Apport d'affaires, Analyse rapide, Veille marché et export PDF sont inclus dans toutes les formules. Au-delà du quota mensuel, une analyse rapide coûte 10 jetons. L'API est disponible séparément.
       </p>
     </div>,
     document.body,
