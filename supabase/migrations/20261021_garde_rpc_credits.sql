@@ -101,6 +101,9 @@ $function$;
 
 
 -- ── 2. unlock_project : fenêtre de validité fixée par le serveur ────────────
+-- Corps = la version EN PRODUCTION au 21/10/2026 (relue par pg_get_functiondef,
+-- elle exempte les administrateurs actifs, ce que la version du dépôt ne faisait
+-- pas) + durée plafonnée à 30 jours + arguments obligatoires.
 create or replace function public.unlock_project(
   p_space          text,
   p_project_id     text,
@@ -118,8 +121,8 @@ declare
   v_account_id uuid;
   v_ledger text;
   v_recent_unlock timestamptz;
-  -- AJOUT 21/10/2026 : le client ne choisit plus la durée. Valeur plafonnée
-  -- à 30 jours (et au moins 1) quoi qu'il envoie.
+  v_est_admin boolean;
+  -- AJOUT 21/10/2026 : le client ne choisit plus la durée (1 à 30 jours).
   v_validity_days integer := least(greatest(coalesce(p_validity_days, 30), 1), 30);
 begin
   if v_user_id is null then
@@ -130,7 +133,6 @@ begin
     raise exception 'INVALID_ARGUMENT';
   end if;
 
-  -- Deja deverrouille ET encore valide (dans la fenetre de validite) ?
   select unlocked_at into v_recent_unlock
   from public.project_unlocks
   where user_id = v_user_id and space = p_space and project_id = p_project_id
@@ -145,30 +147,37 @@ begin
     return;
   end if;
 
-  -- Verrouille la ligne du compte (anti race condition)
   select id, current_credits into v_account_id, v_credits
   from public.credit_accounts
   where user_id = v_user_id
   for update;
 
-  if v_account_id is null or coalesce(v_credits, 0) < 1 then
+  select exists (
+    select 1 from public.admin_users
+    where user_id = v_user_id and is_active = true
+  ) into v_est_admin;
+
+  if not v_est_admin and (v_account_id is null or coalesce(v_credits, 0) < 1) then
     raise exception 'NO_TOKENS';
   end if;
 
-  update public.credit_accounts
-  set current_credits = current_credits - 1, updated_at = now()
-  where id = v_account_id;
-
   v_ledger := 'tok_unlock_' || extract(epoch from now())::bigint;
 
-  insert into public.credit_transactions (user_id, amount, type, description, created_at)
-  values (v_user_id, -1, 'project_unlock',
-          'Deverrouillage ' || p_space || ' : ' || coalesce(p_label, p_project_id), now());
+  -- L'administrateur obtient le déverrouillage sans débit ni ligne de journal.
+  if not v_est_admin then
+    update public.credit_accounts
+    set current_credits = current_credits - 1, updated_at = now()
+    where id = v_account_id;
+
+    insert into public.credit_transactions (user_id, amount, type, description, created_at)
+    values (v_user_id, -1, 'project_unlock',
+            'Deverrouillage ' || p_space || ' : ' || coalesce(p_label, p_project_id), now());
+  end if;
 
   insert into public.project_unlocks (user_id, space, project_id, ledger_id, unlocked_at)
   values (v_user_id, p_space, p_project_id, v_ledger, now());
 
-  return query select false, (v_credits - 1), v_ledger;
+  return query select false, coalesce(v_credits, 0) - (case when v_est_admin then 0 else 1 end), v_ledger;
 end;
 $function$;
 
