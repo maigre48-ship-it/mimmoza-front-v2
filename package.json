@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verifier:vides": "node scripts/signaler-fichiers-vides.mjs"
   },
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.19.0",
