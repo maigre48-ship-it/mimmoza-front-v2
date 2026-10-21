@@ -40,3 +40,10 @@ risk-map.md
 node_modules/
 .vercel
 .env*
+
+# Audit du 21/10/2026 — artefacts non versionnés
+# dist/ : reconstruit par Vercel (preset Vite : npm run build → dist), aucun
+#         buildCommand/outputDirectory personnalisé dans vercel.json.
+dist/
+# Archive locale des sources (6 Mo), conservée sur le disque.
+mimmoza-src.zip
