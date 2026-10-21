@@ -27,8 +27,15 @@ import {
   UserRound,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { getCurrentAdminStatus } from "@/lib/admin";
+import {
+  URL_REPRISE_ANALYSE,
+  aUneSession,
+  lienInscriptionAvecReprise,
+  memoriserAnalyseEnAttente,
+  suiteInterne,
+} from "@/lib/billing/analyseRapideQuota";
 
 type StoredUser = {
   email?: string;
@@ -154,6 +161,9 @@ function BackgroundLayers() {
 
 export default function ConnexionPage() {
   const navigate = useNavigate();
+  // ?suite=… : où aller après connexion (ex. reprise d'une analyse rapide).
+  const [searchParams] = useSearchParams();
+  const suite = suiteInterne(searchParams.get("suite"));
   const proRef = useRef<HTMLDivElement | null>(null);
 
   const storedUser = useMemo<StoredUser>(() => {
@@ -221,13 +231,13 @@ export default function ConnexionPage() {
     let annule = false;
     void supabase.auth.getSession().then(({ data }) => {
       if (!annule && data.session) {
-        navigate("/accueil", { replace: true });
+        navigate(suite ?? "/accueil", { replace: true });
       }
     });
     return () => {
       annule = true;
     };
-  }, [navigate]);
+  }, [navigate, suite]);
 
   const firstName = storedUser.fullName?.trim().split(/\s+/)[0] ?? "";
 
@@ -297,7 +307,7 @@ export default function ConnexionPage() {
 
       localStorage.setItem("mimmoza-auth", "true");
 
-      navigate("/accueil", { replace: true });
+      navigate(suite ?? "/accueil", { replace: true });
     } catch {
       setLoginError("Une erreur est survenue. Veuillez réessayer.");
     } finally {
@@ -385,17 +395,20 @@ export default function ConnexionPage() {
 
     setExpressError(null);
 
-    navigate("/analyse-rapide", {
-      state: {
-        prefill: {
-          address,
-          city,
-          postalCode,
-          surface: String(surface),
-          askingPrice: String(price),
-          propertyType: expressPropertyType,
-        },
-      },
+    // Audit du 21/10/2026 : plus de paiement à l'unité (Stripe non branché).
+    // Même parcours gratuit que l'analyse rapide : la saisie est mémorisée,
+    // puis l'analyse est lancée automatiquement (/analyse-rapide?reprise=1),
+    // après création d'un compte gratuit si le visiteur n'est pas connecté.
+    memoriserAnalyseEnAttente({
+      address,
+      city,
+      postalCode,
+      surface: String(surface),
+      askingPrice: String(price),
+      propertyType: expressPropertyType,
+    });
+    void aUneSession().then((connecte) => {
+      navigate(connecte ? URL_REPRISE_ANALYSE : lienInscriptionAvecReprise());
     });
   };
 
@@ -464,7 +477,7 @@ export default function ConnexionPage() {
 
             <p className="mt-5 max-w-lg text-base leading-7 text-slate-600">
               Analysez un appartement ou une maison en moins de 2 minutes.
-              <br className="hidden sm:block" /> Sans compte. Paiement sécurisé.
+              <br className="hidden sm:block" /> Compte gratuit : 3 analyses offertes par mois.
             </p>
 
             <ul className="mt-7 space-y-3">
@@ -646,23 +659,15 @@ export default function ConnexionPage() {
                   onClick={handleExpressAnalysis}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-sky-600 to-indigo-600 px-5 py-3.5 text-sm font-semibold text-white shadow-md shadow-sky-200/70 transition-all hover:from-sky-500 hover:to-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2"
                 >
-                  <span>Analyser ce bien &mdash; 4,90 &euro;</span>
+                  <span>Analyser gratuitement</span>
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </button>
-
-                <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
-                  <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Paiement sécurisé par</span>
-                  <span className="font-semibold italic tracking-tight text-indigo-600">
-                    Stripe
-                  </span>
-                </div>
               </div>
             </div>
 
             <div className="mt-4 flex items-center justify-center gap-2 text-xs text-slate-500">
               <Clock3 className="h-3.5 w-3.5 text-sky-600" aria-hidden="true" />
-              Rapport disponible immédiatement après paiement
+              Résultat en moins de 2 minutes, sans carte bancaire
             </div>
           </div>
         </section>

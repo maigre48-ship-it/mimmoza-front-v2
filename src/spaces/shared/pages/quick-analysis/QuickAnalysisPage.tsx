@@ -37,8 +37,17 @@ import {
   selectNegative,
   selectPositive,
 } from "../../../../services/explainability";
-import { spendCredits } from "../../../../lib/billing/projectUnlock";
-import { ACTION_COSTS } from "../../../../lib/billing/actionCosts";
+import {
+  aUneSession,
+  confirmerAnalyseRapide,
+  effacerAnalyseEnAttente,
+  lienInscriptionAvecReprise,
+  lireAnalyseEnAttente,
+  memoriserAnalyseEnAttente,
+  rembourserAnalyseRapide,
+  reserverAnalyseRapide,
+} from "../../../../lib/billing/analyseRapideQuota";
+import { ANALYSES_RAPIDES_GRATUITES_MOIS } from "../../../../lib/billing/grille";
 import { userStorage } from "@/lib/storage/userScopedStorage";
 import { useCopilotStore } from "../../../copilot/store/copilotStore";
 import type { ValuationEngineContext } from "../../../copilot/types/copilot.types";
@@ -371,6 +380,9 @@ const QuickAnalysisPage: React.FC = () => {
 
   const { state, run, reset, hydrate } = useValuationEngine();
   const [tokenError, setTokenError] = useState<string | null>(null);
+  // Visiteur non connecté : écran « Créez votre compte gratuit » au lieu d'une erreur.
+  const [compteRequis, setCompteRequis] = useState(false);
+  const [infoQuota, setInfoQuota] = useState<string | null>(null);
   const setContextHints = useCopilotStore((s) => s.setContextHints);
 
   const setF = useCallback(<K extends keyof FormState>(k: K, v: FormState[K]) => {
@@ -476,23 +488,38 @@ const QuickAnalysisPage: React.FC = () => {
     setContextHints,
   ]);
 
-  const handleRun = useCallback(async () => {
+  const handleRun = useCallback(async (formAnalyse: FormState = form) => {
+    const form = formAnalyse;
     if (!form.surface || isNaN(+form.surface) || +form.surface <= 0) return;
 
-    // Debit jetons au clic (bloque si solde insuffisant). Cout : ACTION_COSTS.
-      setTokenError(null);
-      const spend = await spendCredits(
-        ACTION_COSTS.analyse_rapide,
-        `Analyse rapide${form.address ? ` : ${form.address}` : ""}`,
-        "quick_analysis",
-    );
-    if (!spend.ok) {
-      setTokenError(
-        spend.reason === "NO_TOKENS"
-          ? "Solde de jetons insuffisant. Rechargez pour lancer une analyse."
-          : spend.message,
-      );
+    // Audit du 21/10/2026 — produit d'appel gratuit :
+    //  · visiteur non connecté → écran d'inscription (la saisie est conservée) ;
+    //  · connecté → quota gratuit (3/mois) d'abord, puis 10 jetons (montant
+    //    fixé côté serveur) ; remboursement si le moteur échoue.
+    setTokenError(null);
+    setInfoQuota(null);
+    if (!(await aUneSession())) {
+      memoriserAnalyseEnAttente(form);
+      setCompteRequis(true);
       return;
+    }
+
+    const reservation = await reserverAnalyseRapide(
+      `Analyse rapide${form.address ? ` : ${form.address}` : ""}`,
+    );
+    if (!reservation.ok) {
+      if (reservation.reason === "NOT_AUTHENTICATED") {
+        memoriserAnalyseEnAttente(form);
+        setCompteRequis(true);
+        return;
+      }
+      setTokenError(reservation.message);
+      return;
+    }
+    if (reservation.source === "gratuit" && reservation.gratuitesRestantes != null) {
+      setInfoQuota(
+        `Analyse offerte — il vous reste ${reservation.gratuitesRestantes} analyse(s) gratuite(s) ce mois-ci.`,
+      );
     }
 
     const input: EngineInput = {
@@ -509,8 +536,40 @@ const QuickAnalysisPage: React.FC = () => {
       worksAmount:  undefined,
       resaleTarget: undefined,
     };
-    await run(input);
+    const reussi = await run(input);
+    if (reussi) {
+      void confirmerAnalyseRapide(reservation);
+    } else {
+      const rembourse = await rembourserAnalyseRapide(reservation);
+      if (rembourse) {
+        setInfoQuota(
+          reservation.source === "gratuit"
+            ? "L'analyse a échoué : elle ne vous a pas été décomptée."
+            : "L'analyse a échoué : vos jetons ont été recrédités.",
+        );
+      }
+    }
   }, [form, run]);
+
+  // ── Reprise après inscription : /analyse-rapide?reprise=1 ──────────────────
+  // La saisie mémorisée avant l'inscription est restaurée et l'analyse relancée.
+  const repriseFaiteRef = useRef(false);
+  useEffect(() => {
+    if (repriseFaiteRef.current) return;
+    const params = new URLSearchParams(routerLocation.search);
+    if (params.get("reprise") !== "1") return;
+    repriseFaiteRef.current = true;
+    const enAttente = lireAnalyseEnAttente<Partial<FormState>>();
+    if (!enAttente) return;
+    void (async () => {
+      if (!(await aUneSession())) return; // pas encore connecté : on garde la saisie
+      effacerAnalyseEnAttente();
+      const restaure = { ...defaultForm, ...enAttente };
+      setForm(restaure);
+      setCompteRequis(false);
+      await handleRun(restaure);
+    })();
+  }, [routerLocation.search, handleRun]);
 
   const handleReset = useCallback(() => {
     setForm(defaultForm);
@@ -784,6 +843,43 @@ display: "flex",
           border:"1px solid #fca5a5", color:"#991b1b", fontSize:13, fontWeight:600 }}>⚠ {tokenError}</div>
       )}
 
+      {infoQuota && (
+        <div style={{ margin:"14px 28px 0", padding:"10px 14px", background:"#ecfdf5", borderRadius:10,
+          border:"1px solid #a7f3d0", color:"#065f46", fontSize:13, fontWeight:600 }}>{infoQuota}</div>
+      )}
+
+      {compteRequis && (
+        <div role="dialog" aria-labelledby="compte-requis-titre"
+          style={{ margin:"14px 28px 0", padding:"20px 22px", background:"#eff6ff", borderRadius:14,
+            border:"1px solid #bfdbfe", color:"#1e3a8a" }}>
+          <div id="compte-requis-titre" style={{ fontSize:17, fontWeight:700, marginBottom:6 }}>
+            Créez votre compte gratuit pour lancer l'analyse
+          </div>
+          <div style={{ fontSize:14, lineHeight:1.5, marginBottom:14 }}>
+            {ANALYSES_RAPIDES_GRATUITES_MOIS} analyses offertes par mois, sans carte bancaire. Votre saisie est
+            conservée : l'analyse se lancera automatiquement après l'inscription.
+          </div>
+          <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+            <button
+              type="button"
+              onClick={() => navigate(lienInscriptionAvecReprise())}
+              style={{ background:"#1d6fe8", color:"#fff", border:"none", borderRadius:10,
+                padding:"10px 18px", fontSize:14, fontWeight:700, cursor:"pointer" }}
+            >
+              Créer mon compte gratuit →
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate(`/connexion?suite=${encodeURIComponent("/analyse-rapide?reprise=1")}`)}
+              style={{ background:"#fff", color:"#1d6fe8", border:"1px solid #bfdbfe", borderRadius:10,
+                padding:"10px 18px", fontSize:14, fontWeight:600, cursor:"pointer" }}
+            >
+              J'ai déjà un compte
+            </button>
+          </div>
+        </div>
+      )}
+
       <div style={{ display:"grid", gridTemplateColumns:"272px 1fr 308px", gap:16, padding:"18px 28px 18px", maxWidth:1440, margin:"0 auto" }}>
 
         {/* ══ GAUCHE ══ */}
@@ -840,7 +936,7 @@ display: "flex",
               <div><Lbl>Loyer attendu (€/mois) — optionnel</Lbl><Inp type="number" value={form.expectedRent} placeholder="1500" onChange={(e) => setF("expectedRent", e.target.value)} /></div>
             </div>
 
-            <button onClick={handleRun} disabled={loading || !form.surface}
+            <button onClick={() => { void handleRun(); }} disabled={loading || !form.surface}
               style={{ marginTop:12, width:"100%",
                 background: loading || !form.surface ? "#a5b4fc" : "linear-gradient(135deg,#6366f1,#818cf8)",
                 color:"#fff", border:"none", borderRadius:10, padding:"11px 14px", fontSize:14, fontWeight:800,

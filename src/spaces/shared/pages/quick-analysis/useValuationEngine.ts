@@ -340,7 +340,9 @@ export function useValuationEngine() {
     }, []
   );
 
-  const run = useCallback(async (input: EngineInput) => {
+  // Renvoie true si un résultat a été produit, false sinon (sert au
+  // remboursement de l'analyse en cas d'échec — audit du 21/10/2026).
+  const run = useCallback(async (input: EngineInput): Promise<boolean> => {
     setState({
       ...INITIAL, loading: true,
       steps: { ...INITIAL.steps, geocode: "loading" },
@@ -353,7 +355,7 @@ export function useValuationEngine() {
         setState((p) => ({ ...p, loading: false,
           error: "Adresse introuvable — vérifiez adresse / ville / code postal.",
           steps: { ...p.steps, geocode: "error" } }));
-        return;
+        return false;
       }
       setState((p) => ({ ...p, location: loc, steps: {
         ...p.steps, geocode: "ok",
@@ -363,7 +365,7 @@ export function useValuationEngine() {
     } catch {
       setState((p) => ({ ...p, loading: false, error: "Erreur de géocodage.",
         steps: { ...p.steps, geocode: "error" } }));
-      return;
+      return false;
     }
 
     const [dvfSales, ssResult, riskResult, pluCtx, sitadelCtx, cadastreCtx] = await Promise.all([
@@ -478,11 +480,13 @@ export function useValuationEngine() {
 
       setStep("engine", "ok");
       setState((p) => ({ ...p, loading: false, result: data as MimmozaEngineResult }));
+      return true;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setStep("engine", "error");
       setState((p) => ({ ...p, loading: false,
         error: `Erreur moteur de valorisation : ${msg}` }));
+      return false;
     }
   }, [setStep]);
 

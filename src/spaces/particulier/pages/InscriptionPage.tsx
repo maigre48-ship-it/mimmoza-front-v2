@@ -12,7 +12,8 @@ import {
   UserPlus,
 } from "lucide-react";
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { suiteInterne } from "@/lib/billing/analyseRapideQuota";
 
 type StoredUser = {
   email?: string;
@@ -23,6 +24,10 @@ type StoredUser = {
 
 export default function InscriptionPage() {
   const navigate = useNavigate();
+  // ?suite=/analyse-rapide?reprise=1 : page où revenir après l'inscription
+  // (analyse rapide lancée par un visiteur). Chemin interne uniquement.
+  const [params] = useSearchParams();
+  const suite = suiteInterne(params.get("suite"));
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -65,6 +70,10 @@ export default function InscriptionPage() {
         password: trimmedPassword,
         options: {
           data: { full_name: trimmedName },
+          // Lien de confirmation : retour sur la connexion, puis sur `suite`.
+          emailRedirectTo: `${window.location.origin}/connexion${
+            suite ? `?suite=${encodeURIComponent(suite)}` : ""
+          }`,
         },
       });
 
@@ -94,7 +103,7 @@ export default function InscriptionPage() {
       localStorage.setItem("mimmoza.user", JSON.stringify(payload));
       localStorage.setItem("mimmoza-auth", "true");
 
-      navigate("/dashboard", { replace: true });
+      navigate(suite ?? "/dashboard", { replace: true });
     } catch {
       setError("Une erreur est survenue. Veuillez réessayer.");
     } finally {
@@ -171,7 +180,7 @@ export default function InscriptionPage() {
                   </p>
                 </div>
                 <Link
-                  to="/connexion"
+                  to={suite ? `/connexion?suite=${encodeURIComponent(suite)}` : "/connexion"}
                   className="mt-2 inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-sky-500 px-5 py-3 text-sm font-medium text-white shadow-md shadow-sky-200/60 transition-all hover:from-indigo-500 hover:to-sky-400"
                 >
                   Aller à la connexion
