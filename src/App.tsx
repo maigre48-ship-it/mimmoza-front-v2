@@ -92,6 +92,7 @@ const AdminEntreprisesPage = differer(() => import("./spaces/admin/pages/Entrepr
 const AdminTarifsPage = differer(() => import("./spaces/admin/pages/Tarifs"), "default");
 const AdminFraicheurDonneesPage = differer(() => import("./spaces/admin/pages/FraicheurDonnees"), "default");
 const AdminParametresPage = differer(() => import("./spaces/admin/pages/Parametres"), "default");
+const AdminErreursPage = differer(() => import("./spaces/admin/pages/Erreurs"), "default");
 
 /* ── Admin › Agent commercial (barrel : un seul morceau pour tout le module) ── */
 const chargerAgentCommercial = () => import("./spaces/admin/pages/agentCommercial");
@@ -565,6 +566,8 @@ function AppRoot() {
             <Route path="tarifs"        element={<AdminTarifsPage />} />
             <Route path="fraicheur-donnees" element={<AdminFraicheurDonneesPage />} />
             <Route path="parametres"    element={<AdminParametresPage />} />
+            {/* Suivi des erreurs remontées par l'application (même garde admin) */}
+            <Route path="erreurs"       element={<AdminErreursPage />} />
 
             {/* ── Module Agent commercial ──────────────────────────────────
                 Récupéré de la branche feat/agent-commercial, jamais fusionnée :
