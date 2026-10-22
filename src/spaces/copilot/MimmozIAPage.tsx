@@ -40,6 +40,11 @@ import { signerTransferts } from './studio3d/transfertStudio';
 import { adressesSignees, televerserPanorama } from '@/spaces/promoteur/shared/environnement360';
 import { empreinteProjet } from '@/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2';
 import { urlStudio } from '@/lib/studioConfig';
+// Premier contact guidé : encart + checklist chargés en différé ; le suivi des
+// exports PDF et la réservation de place sont des modules légers.
+import { useSuiviExportPdf } from './onboarding/useSuiviExportPdf';
+import { affichageMemorise } from './onboarding/reserve';
+const PremierContact = lazy(() => import('./onboarding/PremierContact'));
 
 /** CH2 — pièce jointe base64 du tchat → File (pour l'envoyer au Studio 3D). */
 async function versFichier(a: { mediaType: string; data: string; name?: string }): Promise<File> {
@@ -208,7 +213,7 @@ export default function MimmozIAPage() {
   const copilot = useCopilot() as unknown as LooseCopilotApi;
   const mimmoziaView = useCopilotStore((state) => state.mimmoziaView);
   const firstName = useDisplayFirstName();
-  const { tagline } = useMimmozIAProfile();
+  const { tagline, profile: profilAppris } = useMimmozIAProfile();
   const send = useMemo(() => pickSend(copilot), [copilot]);
 
   // --- Sidebar : repli (persistant) + drawer mobile ---
@@ -537,6 +542,22 @@ export default function MimmozIAPage() {
     });
   }, []);
 
+  // Premier contact guidé : place réservée (dernier affichage connu), lancement
+  // direct d'une demande, ou pré-remplissage de la saisie si un champ manque.
+  useSuiviExportPdf();
+  const [affichagePremierContact] = useState(affichageMemorise);
+  const lancerDepuisAccueil = useCallback((demande: string) => { void startWith(demande); }, [startWith]);
+  const preRemplirDepuisAccueil = useCallback((demande: string) => {
+    setDraft(demande);
+    window.requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    });
+  }, []);
+  const rendreFocusSaisie = useCallback(() => {
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
+
   const handleNewConversation = useCallback(() => {
     useCopilotStore.getState().newConversation();
     setDraft('');
@@ -704,6 +725,19 @@ export default function MimmozIAPage() {
             <h1>{greeting}, que souhaitez-vous créer aujourd’hui&nbsp;?</h1>
             <p>{tagline || 'Imaginez, analysez et donnez forme à vos projets immobiliers.'}</p>
           </div>
+
+          <Suspense fallback={affichagePremierContact === 'rien' ? null : (
+            <div className={affichagePremierContact === 'checklist' ? 'mzia-onb-skel mzia-onb-skel--check' : 'mzia-onb-skel'} aria-hidden />
+          )}>
+            <PremierContact
+              plan={planId}
+              profilDeduit={profilAppris?.derivedProfile ?? null}
+              onLancer={lancerDepuisAccueil}
+              onPreRemplir={preRemplirDepuisAccueil}
+              onFerme={rendreFocusSaisie}
+              affichageReserve={affichagePremierContact}
+            />
+          </Suspense>
 
           <section className="mzia-studio-hero" aria-label="Mimmoza Studio 3D">
             <div className="mzia-studio-hero__copy">

@@ -710,3 +710,23 @@
   .mzia-page.is-chatting .jarvis-console-head__brand { display:none; }
   .mzia-page.is-chatting .jarvis-console-head { justify-content:flex-end; }
 }
+
+/* Premier contact guidé — place réservée pendant le chargement différé de
+   l'encart (onboarding/PremierContact.tsx) : évite le saut de mise en page. */
+.mzia-onb-skel {
+  box-sizing:border-box; min-height:630px; border:1px solid #ece9f8; border-radius:18px;
+  background:linear-gradient(100deg,#fbfaff 30%,#f3f1fc 50%,#fbfaff 70%) 0 0/200% 100%;
+  animation:mzia-onb-skel 1.4s linear infinite;
+}
+.mzia-onb-skel--check { min-height:118px; border-radius:12px; }
+@keyframes mzia-onb-skel { to { background-position:-200% 0; } }
+@media (max-width:900px) { .mzia-onb-skel { min-height:1150px; } }
+@media (max-width:640px) {
+  .mzia-onb-skel { min-height:1380px; border-radius:14px; }
+  .mzia-onb-skel--check { min-height:190px; }
+  .mzia-page.is-welcome .mzia-onb,
+  .mzia-page.is-welcome .mzia-onb-skel,
+  .mzia-page.is-welcome .mzia-onb-check { order:1; }
+}
+@media (prefers-reduced-motion:reduce) { .mzia-onb-skel { animation:none; } }
+

@@ -1,0 +1,153 @@
+/* =========================================================================
+   Premier contact guidé — encart d'accueil + checklist « Bien démarrer ».
+   Palette de l'accueil MimmozIA (violet #5b4bd6). Chargé en différé.
+   ========================================================================= */
+
+.mzia-onb {
+  --onb-violet: #5b4bd6;
+  --onb-ink: #252660;
+  --onb-muted: #697092;
+  position: relative;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  grid-template-areas: "main side" "check check";
+  gap: 18px 22px;
+  min-height: 360px;
+  padding: 22px 24px;
+  border: 1px solid #e3dcfb;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 8px 26px rgba(38, 31, 91, 0.06);
+  animation: mzia-onb-in 260ms ease both;
+}
+@keyframes mzia-onb-in { from { opacity: 0; } to { opacity: 1; } }
+
+.mzia-onb__sr {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+.mzia-onb__close {
+  position: absolute; z-index: 3; top: 12px; right: 12px;
+  display: grid; place-items: center; width: 34px; height: 34px;
+  border: 1px solid transparent; border-radius: 9px; background: transparent;
+  color: var(--onb-muted, #697092); cursor: pointer;
+}
+.mzia-onb__close:hover { background: #f3f1fd; color: #3b2fa0; }
+.mzia-onb__close:focus-visible,
+.mzia-onb button:focus-visible,
+.mzia-onb input:focus-visible,
+.mzia-onb a:focus-visible,
+.mzia-onb-check button:focus-visible { outline: 3px solid #5b4bd6; outline-offset: 2px; }
+.mzia-onb__close--small { position: static; width: 28px; height: 28px; }
+
+.mzia-onb__main { grid-area: main; min-width: 0; }
+.mzia-onb__eyebrow { margin: 0; color: var(--onb-violet); font-size: 11px; font-weight: 800; letter-spacing: .11em; }
+.mzia-onb h2 { margin: 6px 40px 6px 0; color: var(--onb-ink); font-size: clamp(19px, 1.9vw, 24px); line-height: 1.2; letter-spacing: -.02em; font-weight: 760; }
+.mzia-onb__lead { margin: 0 0 12px; color: var(--onb-muted); font-size: 13.5px; line-height: 1.5; }
+
+.mzia-onb__profil { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 14px; }
+.mzia-onb__profil-label { color: var(--onb-muted); font-size: 12.5px; margin-right: 2px; }
+.mzia-onb__chip {
+  min-height: 32px; padding: 5px 11px; border-radius: 999px; cursor: pointer;
+  border: 1px solid #ddd8ef; background: #fafaff; color: #3d3f66;
+  font: inherit; font-size: 12.5px; font-weight: 600;
+}
+.mzia-onb__chip:hover { border-color: #b9aef0; }
+.mzia-onb__chip[aria-pressed="true"] { background: #5b4bd6; border-color: #5b4bd6; color: #fff; }
+
+.mzia-onb__actions { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
+.mzia-onb__action-form {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 12px;
+  padding: 12px 12px 12px 14px; border: 1px solid #e7e8f1; border-radius: 12px; background: #fcfcff;
+}
+.mzia-onb__action-form:focus-within { border-color: #b9aef0; box-shadow: 0 0 0 3px rgba(91, 75, 214, .10); }
+.mzia-onb__action-head { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.mzia-onb__action-icon { display: grid; place-items: center; flex: 0 0 36px; width: 36px; height: 36px; border-radius: 10px; background: #f0edff; color: #5b4bd6; }
+.mzia-onb__action-txt { display: flex; flex-direction: column; min-width: 0; }
+.mzia-onb__action-txt strong { color: #2f3160; font-size: 14px; line-height: 1.25; }
+.mzia-onb__action-txt span { color: #666d88; font-size: 12px; line-height: 1.3; }
+.mzia-onb__field { grid-column: 1 / -1; display: flex; gap: 6px; }
+.mzia-onb__field input {
+  flex: 1; min-width: 0; min-height: 40px; box-sizing: border-box; padding: 8px 11px;
+  border: 1px solid #ddd8ef; border-radius: 9px; background: #fff; color: #1f2147; font: inherit; font-size: 14px;
+}
+.mzia-onb__go, .mzia-onb__launch {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 40px; border: 0; border-radius: 9px; cursor: pointer;
+  background: #5b4bd6; color: #fff; font: inherit; font-size: 13px; font-weight: 700;
+}
+.mzia-onb__go { width: 44px; flex: 0 0 44px; }
+.mzia-onb__launch { padding: 8px 14px; white-space: nowrap; }
+.mzia-onb__go:hover, .mzia-onb__launch:hover { background: #4b3cc2; }
+.mzia-onb__mention { grid-column: 1 / -1; margin: 0; color: #666d88; font-size: 11.5px; }
+
+.mzia-onb__side { grid-area: side; display: flex; flex-direction: column; gap: 12px; min-width: 0; padding-top: 34px; }
+
+/* Exemple de résultat — libellé « Exemple » très visible */
+.mzia-onb-ex {
+  position: relative; margin: 0; padding: 14px 16px 12px;
+  border: 1px dashed #b9aef0; border-radius: 12px; background: #faf9ff;
+}
+.mzia-onb-ex__badge {
+  position: absolute; top: -10px; left: 14px; padding: 2px 9px; border-radius: 6px;
+  background: #fff4d6; border: 1px solid #f0d58a; color: #7a5600;
+  font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+}
+.mzia-onb-ex__kicker { margin: 4px 0 0; color: #5b4bd6; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.mzia-onb-ex__title { margin: 2px 0 8px; color: #2f3160; font-size: 13.5px; font-weight: 700; }
+.mzia-onb-ex__rows { margin: 0; display: grid; gap: 4px; }
+.mzia-onb-ex__rows div { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; line-height: 1.35; }
+.mzia-onb-ex__rows dt { color: #666d88; }
+.mzia-onb-ex__rows dd { margin: 0; color: #2f3160; font-weight: 600; text-align: right; }
+.mzia-onb-ex__verdict { margin: 9px 0 6px; padding: 6px 9px; border-radius: 8px; background: #fff7e8; color: #7a4b00; font-size: 12px; font-weight: 650; }
+.mzia-onb-ex figcaption { color: #666d88; font-size: 11px; line-height: 1.4; }
+
+.mzia-onb__quota { padding: 12px 14px; border-radius: 12px; background: #f1eeff; }
+.mzia-onb__quota-title { margin: 0 0 6px; color: #2f3160; font-size: 13px; }
+.mzia-onb__quota ul { margin: 0; padding-left: 18px; color: #3d3f66; font-size: 12.5px; line-height: 1.55; }
+.mzia-onb__quota-after { margin: 6px 0 0; color: #5f6480; font-size: 12px; }
+.mzia-onb__help { display: inline-flex; align-items: center; gap: 7px; color: #4b3cc2; font-size: 13px; font-weight: 650; text-decoration: none; }
+.mzia-onb__help:hover { text-decoration: underline; }
+
+.mzia-onb__checkslot { grid-area: check; }
+
+/* Checklist « Bien démarrer » */
+.mzia-onb-check {
+  box-sizing: border-box; padding: 12px 14px; border: 1px solid #e7e8f1; border-radius: 12px; background: #fff;
+}
+.mzia-onb-check.is-compact { min-height: 118px; box-shadow: 0 4px 14px rgba(29, 31, 83, .04); }
+.mzia-onb__checkslot .mzia-onb-check { border-style: solid; background: #fcfcff; }
+.mzia-onb-check__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mzia-onb-check h3 { margin: 0; color: #2f3160; font-size: 13.5px; font-weight: 750; }
+.mzia-onb-check h3 span { margin-left: 6px; color: #5b4bd6; }
+.mzia-onb-check__bar { height: 4px; margin: 8px 0 10px; border-radius: 4px; background: #ece9fb; overflow: hidden; }
+.mzia-onb-check__bar span { display: block; height: 100%; background: #5b4bd6; transition: width .3s ease; }
+.mzia-onb-check ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 14px; }
+.mzia-onb-check li { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.mzia-onb-check__tick {
+  display: grid; place-items: center; flex: 0 0 18px; width: 18px; height: 18px; margin-top: 1px;
+  border: 2px solid #c9c3ea; border-radius: 50%; color: #fff; box-sizing: border-box;
+}
+.mzia-onb-check li.is-done .mzia-onb-check__tick { background: #22a06b; border-color: #22a06b; }
+.mzia-onb-check__txt { display: flex; flex-direction: column; min-width: 0; }
+.mzia-onb-check__txt strong { color: #34375e; font-size: 12.5px; line-height: 1.3; }
+.mzia-onb-check__txt span { color: #666d88; font-size: 11.5px; line-height: 1.3; }
+.mzia-onb-check li.is-done strong { color: #6b7091; text-decoration: line-through; text-decoration-color: #b4b8cc; }
+
+@media (max-width: 900px) {
+  .mzia-onb { grid-template-columns: 1fr; grid-template-areas: "main" "side" "check"; }
+  .mzia-onb__side { padding-top: 8px; }
+}
+@media (max-width: 640px) {
+  .mzia-onb { padding: 18px 14px 16px; border-radius: 14px; gap: 14px; }
+  .mzia-onb h2 { font-size: 19px; }
+  .mzia-onb__field input { font-size: 16px; } /* évite le zoom iOS */
+  .mzia-onb-check ul { grid-template-columns: 1fr; }
+  .mzia-onb-check.is-compact { min-height: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mzia-onb { animation: none; }
+  .mzia-onb-check__bar span { transition: none; }
+}
