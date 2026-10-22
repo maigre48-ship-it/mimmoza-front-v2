@@ -16,6 +16,7 @@ import {
   FileText,
   FolderKanban,
   Grid3X3,
+  HelpCircle,
   Home,
   Layers,
   LayoutDashboard,
@@ -50,6 +51,7 @@ import { unlockDealIfNeeded } from "../spaces/marchand/services/dealUnlock";
 import { ensureActiveDeal, type MarchandDeal } from "../spaces/marchand/shared/marchandSnapshot.store";
 import { extractStudyId, preserveStudyInPath } from "../utils/preserveStudyParam";
 import { setCurrentUserId, syncCurrentUserId } from "@/lib/auth/currentUser";
+import { CONTACT_ACCES } from "@/lib/billing/grille";
 
 // ── Paywall generique (promoteur, extensible) ─────────────────────────────────
 import { ProjectUnlockModal } from "./billing/ProjectUnlockModal";
@@ -707,6 +709,14 @@ function TopNavigation(props: {
                   <span>Admin</span>
                 </button>
               )}
+              <NavLink
+                to="/aide"
+                className="hidden md:inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                title="Aide et contact"
+                aria-label="Aide et contact"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </NavLink>
               <button
                 type="button"
                 onClick={handleAccountClick}
@@ -1002,7 +1012,7 @@ function MobileDrawer(props: {
                     : "Mon compte"}
               </div>
               <div className="mt-0.5 text-xs text-slate-500">
-                {account && account.isAuthenticated ? "Acceder a votre compte" : "Connexion / inscription"}
+                {account && account.isAuthenticated ? "Accéder à votre compte" : "Connexion / inscription"}
               </div>
             </div>
           </button>
@@ -1022,6 +1032,20 @@ function MobileDrawer(props: {
               </div>
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={() => { navigate("/aide"); onClose(); }}
+            className="mb-3 flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition-all hover:bg-slate-50"
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+              <HelpCircle className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold text-slate-800">Aide et contact</div>
+              <div className="mt-0.5 text-xs text-slate-500">Questions fréquentes, sécurité et données</div>
+            </div>
+          </button>
 
           {currentSpace !== "none" && allNavItems.length > 0 && (
             <>
@@ -1193,7 +1217,9 @@ export function AppShell(props: AppShellProps) {
     location.pathname.startsWith("/cgv") ||
     location.pathname.startsWith("/cgu") ||
     location.pathname.startsWith("/politique-confidentialite") ||
-    location.pathname.startsWith("/mentions-legales");
+    location.pathname.startsWith("/mentions-legales") ||
+    location.pathname.startsWith("/aide") ||
+    location.pathname.startsWith("/securite");
 
   useEffect(function () {
     let mounted = true;
@@ -1306,8 +1332,8 @@ export function AppShell(props: AppShellProps) {
   }
 
   function openBilling()       { closeUnlockModal(); navigate("/compte"); }
-  function openSubscriptions() { closeUnlockModal(); navigate("/compte?section=abonnements"); }
-  function openTokens()        { closeUnlockModal(); navigate("/compte?section=jetons"); }
+  function openSubscriptions() { closeUnlockModal(); navigate("/compte?tab=abonnement"); }
+  function openTokens()        { closeUnlockModal(); navigate("/compte?tab=jetons"); }
 
   // ── Handlers paywall projet generique ───────────────────────────────────────
   function closeProjectUnlock() {
@@ -1435,7 +1461,23 @@ export function AppShell(props: AppShellProps) {
                 </span>
               </div>
 
-              <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
+              <nav aria-label="Liens utiles" className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500">
+                <NavLink to="/aide" className="hover:text-slate-900 transition-colors">
+                  Aide
+                </NavLink>
+
+                <NavLink to="/securite" className="hover:text-slate-900 transition-colors">
+                  Sécurité et données
+                </NavLink>
+
+                <a href={`mailto:${CONTACT_ACCES}`} className="hover:text-slate-900 transition-colors">
+                  Contact
+                </a>
+
+                <NavLink to="/tarifs" className="hover:text-slate-900 transition-colors">
+                  Tarifs
+                </NavLink>
+
                 <NavLink to="/mentions-legales" className="hover:text-slate-900 transition-colors">
                   Mentions légales
                 </NavLink>
@@ -1449,9 +1491,9 @@ export function AppShell(props: AppShellProps) {
                 </NavLink>
 
                 <NavLink to="/politique-confidentialite" className="hover:text-slate-900 transition-colors">
-                  Politique de confidentialité
+                  Confidentialité
                 </NavLink>
-              </div>
+              </nav>
             </div>
           </div>
         </footer>
@@ -1480,8 +1522,8 @@ export function AppShell(props: AppShellProps) {
         onClose={closeProjectUnlock}
         onConfirmUnlock={confirmProjectUnlock}
         onOpenBilling={() => { closeProjectUnlock(); navigate("/compte"); }}
-        onOpenSubscriptions={() => { closeProjectUnlock(); navigate("/compte?section=abonnements"); }}
-        onOpenTokens={() => { closeProjectUnlock(); navigate("/compte?section=jetons"); }}
+        onOpenSubscriptions={() => { closeProjectUnlock(); navigate("/compte?tab=abonnement"); }}
+        onOpenTokens={() => { closeProjectUnlock(); navigate("/compte?tab=jetons"); }}
       />
     </div>
   );

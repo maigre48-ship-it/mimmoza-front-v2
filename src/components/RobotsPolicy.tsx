@@ -48,6 +48,9 @@ const ROUTES_INDEXABLES = new Set<string>([
   "/cgu",
   "/politique-confidentialite",
   "/mentions-legales",
+  // Centre d'aide et page « Sécurité et données » : texte seul, aucune donnée DVF.
+  "/aide",
+  "/securite",
 ]);
 
 const VALEUR_RESTRICTIVE = "noindex, nofollow";

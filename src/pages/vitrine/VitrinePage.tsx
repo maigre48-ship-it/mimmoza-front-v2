@@ -509,6 +509,14 @@ function PiedDePage() {
             <li><Link to="/login">Se connecter</Link></li>
           </ul>
         </nav>
+        <nav aria-label="Assistance">
+          <p className="vt-pied__titre">Assistance</p>
+          <ul>
+            <li><Link to="/aide">Centre d'aide</Link></li>
+            <li><Link to="/securite">Sécurité et données</Link></li>
+            <li><a href={`mailto:${CONTACT_ACCES}`}>Contact</a></li>
+          </ul>
+        </nav>
         <nav aria-label="Informations légales">
           <p className="vt-pied__titre">Informations légales</p>
           <ul>

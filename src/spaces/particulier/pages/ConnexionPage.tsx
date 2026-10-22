@@ -29,6 +29,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { getCurrentAdminStatus } from "@/lib/admin";
+import { CONTACT_ACCES } from "@/lib/billing/grille";
 import {
   URL_REPRISE_ANALYSE,
   aUneSession,
@@ -919,7 +920,16 @@ export default function ConnexionPage() {
       <footer className="border-t border-slate-200 bg-slate-50">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-5 py-5 text-xs text-slate-500 sm:flex-row sm:px-6 lg:px-8">
           <p>&copy; {new Date().getFullYear()} Mimmoza. Tous droits réservés.</p>
-          <nav aria-label="Liens légaux" className="flex flex-wrap justify-center gap-x-4 gap-y-2">
+          <nav aria-label="Liens utiles" className="flex flex-wrap justify-center gap-x-4 gap-y-2">
+            <Link to="/aide" className="transition-colors hover:text-slate-900">
+              Aide
+            </Link>
+            <Link to="/securite" className="transition-colors hover:text-slate-900">
+              Sécurité et données
+            </Link>
+            <a href={`mailto:${CONTACT_ACCES}`} className="transition-colors hover:text-slate-900">
+              Contact
+            </a>
             <Link to="/tarifs" className="transition-colors hover:text-slate-900">
               Tarifs
             </Link>
