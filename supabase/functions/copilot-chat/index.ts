@@ -6804,14 +6804,15 @@ async function toolAnalysePredictive(
     };
   }
 
-  const ref = readChain(ctx);
-  const insee = await resolveCommune({
-    code_insee: str(input.code_insee) ?? ref.code_insee,
-    commune: str(input.commune) ?? ref.commune,
-    zip_code: str(input.code_postal) ?? ref.zip_code,
-  });
+  // Correctif 22/10/2026 : `resolveCommune` n'existait pas (ReferenceError à
+  // chaque appel) et `readChain` lit la chaîne promoteur, pas la parcelle.
+  // Point de passage unique de résolution INSEE, comme les autres outils.
+  const insee = await resoudreInseeFiable(
+    { ...input, zip_code: str(input.code_postal) ?? str(input.zip_code) },
+    ctx,
+  );
 
-  const codePostal = str(input.code_postal) ?? insee.cp ?? ref.zip_code ?? '';
+  const codePostal = str(input.code_postal) ?? insee.cp ?? ctx.parcel?.code_postal ?? '';
   const typeBienBrut = str(input.type_bien) ?? 'appartement';
   const typeBien = (['appartement', 'maison', 'immeuble', 'terrain', 'commerce'] as const)
     .includes(typeBienBrut as never)
