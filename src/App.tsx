@@ -1,150 +1,178 @@
 ﻿// src/App.tsx
 
-import { useCallback, useEffect, useRef, useState } from "react";import {
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
   Navigate,
-  Outlet,
   Route,
   Routes,
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import { wgs84ToLambert93 } from "./lib/projection";
 import { track } from "@/lib/mimmozia/track";
-// ── AJOUT Phase 0 : préférence "mode expert par défaut" (clé scopée par user).
-//    Adapte le chemin/la signature à ton implémentation réelle de userStorage.
 
+/* ── Coque et gardes : chargées avec l'application (légères, utilisées partout) ── */
 import { AppShell } from "./components/AppShell";
 import { PrivateRoute } from "./components/PrivateRoute";
 import { RequirePlan } from "./components/billing/RequirePlan";
 import { RobotsPolicy } from "./components/RobotsPolicy";
 import { BandeauCookies } from "./components/BandeauCookies";
 import { SpaceSync, type Space } from "./components/SpaceSync";
-
-import ApiDeveloperDashboardPage from "./pages/ApiDeveloperDashboardPage";
-import ApiKeysPage from "./pages/ApiKeysPage";
-import ApiPage from "./pages/ApiPage";
-import ApiPlaygroundPage from "./pages/ApiPlaygroundPage";
-import DashboardHomePage from "./pages/DashboardHomePage";
-import JetonsPage from "./pages/JetonsPage";
-import TarifsPage from "./pages/TarifsPage";
-import BientotDisponiblePage from "./pages/BientotDisponiblePage";
-import NotFoundPage from "./pages/NotFoundPage";
-import VitrinePage from "./pages/vitrine/VitrinePage";
 import { ESPACES_VISIBLES } from "./lib/espacesEnPreparation";
+import { ChargementPage } from "./components/routing/ChargementPage";
+import { differer, type PageDifferee } from "./components/routing/pageDifferee";
+
+/* ── Page d'entrée « / » (analyse express + connexion) : STATIQUE, pour un
+      affichage immédiat sans attendre un second téléchargement. ──────────── */
+import ConnexionPage from "./spaces/particulier/pages/ConnexionPage";
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PERFORMANCE — toutes les autres pages sont chargées À LA DEMANDE.
+   Avant : un visiteur de « / » téléchargeait toute l'application (cartes,
+   3D, exports Office, graphiques…), soit ~2 Mo de JavaScript compressé.
+   Chaque page ci-dessous devient un morceau séparé, téléchargé quand on
+   l'ouvre (ou préchargé au survol d'un lien : voir PRECHARGEMENTS plus bas).
+   Une page nommée (export { X }) se déclare differer(() => import(...), "X").
+   ⚠️ Chemins vérifiés par src/components/routing/routesDifferees.test.ts.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Public / transverse ─────────────────────────────────────── */
+const VitrinePage = differer(() => import("./pages/vitrine/VitrinePage"), "default");
+const TarifsPage = differer(() => import("./pages/TarifsPage"), "default");
+const NotFoundPage = differer(() => import("./pages/NotFoundPage"), "default");
+const BientotDisponiblePage = differer(() => import("./pages/BientotDisponiblePage"), "default");
+const StudioHorsApplication = differer(() => import("./components/StudioHorsApplication"), "default");
+const AidePage = differer(() => import("./pages/aide/AidePage"), "default");
+const SecuritePage = differer(() => import("./pages/securite/SecuritePage"), "default");
 
 /* ── Pages légales ───────────────────────────────────────────── */
-import CGUPage from "./pages/legal/CGUPage";
-import CGVPage from "./pages/legal/CGVPage";
-import MentionsLegalesPage from "./pages/legal/MentionsLegalesPage";
-import PrivacyPolicyPage from "./pages/legal/PrivacyPolicyPage";
+const CGUPage = differer(() => import("./pages/legal/CGUPage"), "default");
+const CGVPage = differer(() => import("./pages/legal/CGVPage"), "default");
+const MentionsLegalesPage = differer(() => import("./pages/legal/MentionsLegalesPage"), "default");
+const PrivacyPolicyPage = differer(() => import("./pages/legal/PrivacyPolicyPage"), "default");
 
-/* ── Analyse rapide ──────────────────────────────────────────── */
-import QuickAnalysisPage from "./spaces/shared/pages/quick-analysis/QuickAnalysisPage";
+/* ── Compte / facturation ────────────────────────────────────── */
+const InscriptionPage = differer(() => import("./spaces/particulier/pages/InscriptionPage"), "default");
+const ComptePage = differer(() => import("./spaces/particulier/pages/ComptePage"), "default");
+const AbonnementPage = differer(() => import("./spaces/particulier/pages/AbonnementPage"), "default");
+const JetonsPage = differer(() => import("./pages/JetonsPage"), "default");
 
-/* ── Opportunités (transversal) ──────────────────────────────── */
-import OpportunitesHubPage from "./spaces/shared/pages/opportunities/OpportunitesHubPage";
+/* ── Accueil connecté / MimmozIA ─────────────────────────────── */
+const MimmozIAPage = differer(() => import("./spaces/copilot/MimmozIAPage"), "default");
+const DashboardHomePage = differer(() => import("./pages/DashboardHomePage"), "default");
+const CopilotSpaceOutlet = differer(() => import("./spaces/copilot/components/CopilotSpaceOutlet"), "CopilotSpaceOutlet");
+/** Copilot global (bouton flottant + tiroir) : chargé hors des pages d'entrée publiques. */
+const CopilotRoot = differer(() => import("./spaces/copilot/CopilotRoot"), "CopilotRoot");
 
-import VeilleMarchePage from "@/spaces/investisseur/pages/VeilleMarchePage";
-import VeillePage from "@/spaces/investisseur/pages/VeillePage";
-import VeilleSettingsPage from "@/spaces/investisseur/pages/VeilleSettingsPage";
-import InvestisseurAnalysePage from "./spaces/investisseur/pages/AnalysePage";
-import SimulationTravauxPage from "./spaces/investisseur/pages/execution/SimulationTravauxPage";
-import { bootInvestisseurSnapshot } from "./spaces/investisseur/shared/investisseurBootstrap";
-// ── AJOUT : page Géorisques espace Investisseur ───────────────
-import InvestisseurRisquesPanel from "./spaces/investisseur/pages/analyse/InvestisseurRisquesPanel";
-// ── AJOUT : page Deal Center espace Investisseur ──────────────
-import DealCenterPage from "./spaces/investisseur/pages/deal-center/DealCenterPage";
+/* ── Analyse rapide / Opportunités / Veille ──────────────────── */
+const QuickAnalysisPage = differer(() => import("./spaces/shared/pages/quick-analysis/QuickAnalysisPage"), "default");
+const OpportunitesHubPage = differer(() => import("./spaces/shared/pages/opportunities/OpportunitesHubPage"), "default");
+const VeilleMarchePage = differer(() => import("./spaces/investisseur/pages/VeilleMarchePage"), "default");
+const VeillePage = differer(() => import("./spaces/investisseur/pages/VeillePage"), "default");
+const VeilleSettingsPage = differer(() => import("./spaces/investisseur/pages/VeilleSettingsPage"), "default");
 
-import ParticulierAlertes from "./spaces/particulier/pages/Alertes";
-import ParticulierBudgetTravaux from "./spaces/particulier/pages/BudgetTravaux";
-import ParticulierCapacite from "./spaces/particulier/pages/Capacite";
-import ParticulierCharges from "./spaces/particulier/pages/Charges";
-import ParticulierComparateur from "./spaces/particulier/pages/Comparateur";
-import ParticulierConformite from "./spaces/particulier/pages/Conformite";
-import ParticulierDashboard from "./spaces/particulier/pages/Dashboard";
-import ParticulierDossierBanque from "./spaces/particulier/pages/DossierBanque";
-import ParticulierEstimation from "./spaces/particulier/pages/Estimation";
-import ParticulierExports from "./spaces/particulier/pages/Exports";
-import ParticulierFavoris from "./spaces/particulier/pages/Favoris";
-import ParticulierHistorique from "./spaces/particulier/pages/Historique";
-import ParticulierMesDocuments from "./spaces/particulier/pages/MesDocuments";
-import ParticulierMonProjet from "./spaces/particulier/pages/MonProjet";
-import ParticulierPlanning from "./spaces/particulier/pages/Planning";
-import ParticulierQuartier from "./spaces/particulier/pages/Quartier";
-import ParticulierRechercheBiens from "./spaces/particulier/pages/RechercheBiens";
-import ParticulierScenarios from "./spaces/particulier/pages/Scenarios";
+/* ── API ─────────────────────────────────────────────────────── */
+const ApiPage = differer(() => import("./pages/ApiPage"), "default");
+const ApiKeysPage = differer(() => import("./pages/ApiKeysPage"), "default");
+const ApiPlaygroundPage = differer(() => import("./pages/ApiPlaygroundPage"), "default");
+const ApiDeveloperDashboardPage = differer(() => import("./pages/ApiDeveloperDashboardPage"), "default");
 
-import AbonnementPage from "./spaces/particulier/pages/AbonnementPage";
-import ComptePage from "./spaces/particulier/pages/ComptePage";
-import ConnexionPage from "./spaces/particulier/pages/ConnexionPage";
-import InscriptionPage from "./spaces/particulier/pages/InscriptionPage";
+/* ── Admin ───────────────────────────────────────────────────── */
+const AdminGuard = differer(() => import("./spaces/admin/components/AdminGuard"), "AdminGuard");
+const AdminLayout = differer(() => import("./spaces/admin/components/AdminLayout"), "AdminLayout");
+const AdminLoginPage = differer(() => import("./spaces/admin/pages/Login"), "default");
+const AdminDashboardPage = differer(() => import("./spaces/admin/pages/Dashboard"), "default");
+const AdminUtilisateursPage = differer(() => import("./spaces/admin/pages/Utilisateurs"), "default");
+const AdminAbonnementsPage = differer(() => import("./spaces/admin/pages/Abonnements"), "default");
+const AdminJetonsPage = differer(() => import("./spaces/admin/pages/Jetons"), "default");
+const AdminCopilotPage = differer(() => import("./spaces/admin/pages/AdminCopilotPage"), "default");
+const AdminDevisPage = differer(() => import("./spaces/admin/pages/Devis"), "default");
+const AdminFacturesPage = differer(() => import("./spaces/admin/pages/Factures"), "default");
+const SocietyAgentsPage = differer(() => import("./spaces/admin/pages/SocietyAgentsPage"), "default");
+const AdminEntreprisesPage = differer(() => import("./spaces/admin/pages/Entreprises"), "default");
+const AdminTarifsPage = differer(() => import("./spaces/admin/pages/Tarifs"), "default");
+const AdminFraicheurDonneesPage = differer(() => import("./spaces/admin/pages/FraicheurDonnees"), "default");
+const AdminParametresPage = differer(() => import("./spaces/admin/pages/Parametres"), "default");
 
-import { AdminGuard } from "./spaces/admin/components/AdminGuard";
-import { AdminLayout } from "./spaces/admin/components/AdminLayout";
-import AdminAbonnementsPage from "./spaces/admin/pages/Abonnements";
-import AdminCopilotPage from "./spaces/admin/pages/AdminCopilotPage";
-import AdminDashboardPage from "./spaces/admin/pages/Dashboard";
-import AdminDevisPage from "./spaces/admin/pages/Devis";
-import AdminEntreprisesPage from "./spaces/admin/pages/Entreprises";
-import AdminFacturesPage from "./spaces/admin/pages/Factures";
-import AdminJetonsPage from "./spaces/admin/pages/Jetons";
-import AdminLoginPage from "./spaces/admin/pages/Login";
-import AdminFraicheurDonneesPage from "./spaces/admin/pages/FraicheurDonnees";
-import AdminParametresPage from "./spaces/admin/pages/Parametres";
-import AdminTarifsPage from "./spaces/admin/pages/Tarifs";
-import AdminUtilisateursPage from "./spaces/admin/pages/Utilisateurs";
-import SocietyAgentsPage from "./spaces/admin/pages/SocietyAgentsPage";
-import {
-  AgentCommercialLayout,
-  AgentCommercialOverviewPage,
-  AgentCommercialProspectsPage,
-  AgentCommercialProspectDetailPage,
-  AgentCommercialProspectsImportPage,
-  AgentCommercialExclusionsPage,
-  AgentCommercialMessagesPage,
-  AgentCommercialConversationsPage,
-  AgentCommercialRelancesPage,
-  AgentCommercialPipelinePage,
-  AgentCommercialKnowledgePage,
-  AgentCommercialSettingsPage,
-} from "./spaces/admin/pages/agentCommercial";
-import { AgentCommercialRepliesPage } from "./spaces/admin/pages/agentCommercial/RepliesPage";
-import { AgentCommercialCampaignsPage } from "./spaces/admin/pages/agentCommercial/CampaignsPage";
+/* ── Admin › Agent commercial (barrel : un seul morceau pour tout le module) ── */
+const chargerAgentCommercial = () => import("./spaces/admin/pages/agentCommercial");
+const AgentCommercialLayout = differer(chargerAgentCommercial, "AgentCommercialLayout");
+const AgentCommercialOverviewPage = differer(chargerAgentCommercial, "AgentCommercialOverviewPage");
+const AgentCommercialProspectsPage = differer(chargerAgentCommercial, "AgentCommercialProspectsPage");
+const AgentCommercialProspectDetailPage = differer(chargerAgentCommercial, "AgentCommercialProspectDetailPage");
+const AgentCommercialProspectsImportPage = differer(chargerAgentCommercial, "AgentCommercialProspectsImportPage");
+const AgentCommercialExclusionsPage = differer(chargerAgentCommercial, "AgentCommercialExclusionsPage");
+const AgentCommercialMessagesPage = differer(chargerAgentCommercial, "AgentCommercialMessagesPage");
+const AgentCommercialConversationsPage = differer(chargerAgentCommercial, "AgentCommercialConversationsPage");
+const AgentCommercialRelancesPage = differer(chargerAgentCommercial, "AgentCommercialRelancesPage");
+const AgentCommercialPipelinePage = differer(chargerAgentCommercial, "AgentCommercialPipelinePage");
+const AgentCommercialKnowledgePage = differer(chargerAgentCommercial, "AgentCommercialKnowledgePage");
+const AgentCommercialSettingsPage = differer(chargerAgentCommercial, "AgentCommercialSettingsPage");
+const AgentCommercialRepliesPage = differer(() => import("./spaces/admin/pages/agentCommercial/RepliesPage"), "AgentCommercialRepliesPage");
+const AgentCommercialCampaignsPage = differer(() => import("./spaces/admin/pages/agentCommercial/CampaignsPage"), "AgentCommercialCampaignsPage");
 
-import MarchandLayout from "./spaces/marchand/MarchandLayout";
-import MarchandExecution from "./spaces/marchand/pages/Execution";
-import MarchandExports from "./spaces/marchand/pages/Exports";
-import MarchandPipeline from "./spaces/marchand/pages/Pipeline";
-import RenduTravauxPage from "./spaces/marchand/pages/RenduTravauxPage";
-import MarchandSortie from "./spaces/marchand/pages/Sortie";
-import { SourcingHomePage } from "./spaces/sourcing";
+/* ── Apporteur ───────────────────────────────────────────────── */
+const ApporteurDashboard = differer(() => import("./spaces/apporteur/pages/Dashboard"), "default");
+const ApporteurDeposerPage = differer(() => import("./spaces/apporteur/pages/DeposerPage"), "ApporteurDeposerPage");
+
+/* ── Particulier ─────────────────────────────────────────────── */
+const ParticulierAlertes = differer(() => import("./spaces/particulier/pages/Alertes"), "default");
+const ParticulierBudgetTravaux = differer(() => import("./spaces/particulier/pages/BudgetTravaux"), "default");
+const ParticulierCapacite = differer(() => import("./spaces/particulier/pages/Capacite"), "default");
+const ParticulierCharges = differer(() => import("./spaces/particulier/pages/Charges"), "default");
+const ParticulierComparateur = differer(() => import("./spaces/particulier/pages/Comparateur"), "default");
+const ParticulierConformite = differer(() => import("./spaces/particulier/pages/Conformite"), "default");
+const ParticulierDashboard = differer(() => import("./spaces/particulier/pages/Dashboard"), "default");
+const ParticulierDossierBanque = differer(() => import("./spaces/particulier/pages/DossierBanque"), "default");
+const ParticulierEstimation = differer(() => import("./spaces/particulier/pages/Estimation"), "default");
+const ParticulierExports = differer(() => import("./spaces/particulier/pages/Exports"), "default");
+const ParticulierFavoris = differer(() => import("./spaces/particulier/pages/Favoris"), "default");
+const ParticulierHistorique = differer(() => import("./spaces/particulier/pages/Historique"), "default");
+const ParticulierMesDocuments = differer(() => import("./spaces/particulier/pages/MesDocuments"), "default");
+const ParticulierMonProjet = differer(() => import("./spaces/particulier/pages/MonProjet"), "default");
+const ParticulierPlanning = differer(() => import("./spaces/particulier/pages/Planning"), "default");
+const ParticulierQuartier = differer(() => import("./spaces/particulier/pages/Quartier"), "default");
+const ParticulierRechercheBiens = differer(() => import("./spaces/particulier/pages/RechercheBiens"), "default");
+const ParticulierScenarios = differer(() => import("./spaces/particulier/pages/Scenarios"), "default");
+
+/* ── Marchand de biens (et pages investisseur partagées) ─────── */
+const MarchandLayout = differer(() => import("./spaces/marchand/MarchandLayout"), "default");
+const MarchandPipeline = differer(() => import("./spaces/marchand/pages/Pipeline"), "default");
+const MarchandExecution = differer(() => import("./spaces/marchand/pages/Execution"), "default");
+const MarchandExports = differer(() => import("./spaces/marchand/pages/Exports"), "default");
+const MarchandSortie = differer(() => import("./spaces/marchand/pages/Sortie"), "default");
+const RenduTravauxPage = differer(() => import("./spaces/marchand/pages/RenduTravauxPage"), "default");
+const SourcingHomePage = differer(() => import("./spaces/sourcing/pages/SourcingHomePage"), "default");
+const InvestisseurAnalysePage = differer(() => import("./spaces/investisseur/pages/AnalysePage"), "default");
+const SimulationTravauxPage = differer(() => import("./spaces/investisseur/pages/execution/SimulationTravauxPage"), "default");
+const InvestisseurRisquesPanel = differer(() => import("./spaces/investisseur/pages/analyse/InvestisseurRisquesPanel"), "default");
+const DealCenterPage = differer(() => import("./spaces/investisseur/pages/deal-center/DealCenterPage"), "default");
 
 /* ── Promoteur ───────────────────────────────────────────────── */
-import Implantation2DPage from "./spaces/promoteur/Implantation2DPage";
-import BilanPromoteurPage from "./spaces/promoteur/bilan-promoteur/BilanPromoteurPage";
-import PromoteurStudyRequired from "./spaces/promoteur/components/PromoteurStudyRequired";
-import MarchePage from "./spaces/promoteur/etudes/marche/MarchePage";
-import RisquesPage from "./spaces/promoteur/etudes/risques/RisquesPage";
-import BesoinLogementsSociauxPage from "./spaces/promoteur/pages/BesoinLogementsSociauxPage";
-import PromoteurBilan from "./spaces/promoteur/pages/Bilan";
-import PromoteurDashboard from "./spaces/promoteur/pages/Dashboard";
-import EvaluationPage from "./spaces/promoteur/pages/EvaluationPage";
-import PromoteurExports from "./spaces/promoteur/pages/Exports";
-import FacadeGeneratorPage from "./spaces/promoteur/pages/FacadeGeneratorPage";
-import FoncierPluPage from "./spaces/promoteur/pages/FoncierPluPage";
-import PromoteurMassing3D from "./spaces/promoteur/pages/Massing3D";
-import PromoteurMassingPage from "./spaces/promoteur/pages/MassingPage"; // ── AJOUT : Massing V2 (analyse de capacité)
-import NouvelleOpportunitePage from "./spaces/promoteur/pages/NouvelleOpportunitePage";
-import OpportunitesApporteursPage from "./spaces/promoteur/pages/OpportunitesApporteursPage";
-import PermisConstruirePage from "./spaces/promoteur/pages/PermisConstruirePage";
-import ProprietairesParcellesPage from "./spaces/promoteur/pages/ProprietairesParcellesPage";
-import ProgrammationPage from "./spaces/promoteur/pages/ProgrammationPage";
-import StrategieProjetPage from './spaces/promoteur/pages/StrategieProjetPage';
-import StyleTendancesPage from './spaces/promoteur/pages/StyleTendancesPage';
-import PromoteurSimulationTravauxPage from "./spaces/promoteur/pages/PromoteurSimulationTravauxPage";
-import PromoteurVeilleFoncierePage from "./spaces/promoteur/pages/PromoteurVeilleFoncierePage";
-import RechercheContactsPage from "./spaces/promoteur/pages/RechercheContactsPage";
-import PromoteurSynthese from "./spaces/promoteur/pages/Synthese";
+const PromoteurDashboard = differer(() => import("./spaces/promoteur/pages/Dashboard"), "default");
+const PromoteurStudyRequired = differer(() => import("./spaces/promoteur/components/PromoteurStudyRequired"), "default");
+const NouvelleOpportunitePage = differer(() => import("./spaces/promoteur/pages/NouvelleOpportunitePage"), "default");
+const PromoteurVeilleFoncierePage = differer(() => import("./spaces/promoteur/pages/PromoteurVeilleFoncierePage"), "default");
+const FoncierPluPage = differer(() => import("./spaces/promoteur/pages/FoncierPluPage"), "default");
+const MarchePage = differer(() => import("./spaces/promoteur/etudes/marche/MarchePage"), "default");
+const RisquesPage = differer(() => import("./spaces/promoteur/etudes/risques/RisquesPage"), "default");
+const PermisConstruirePage = differer(() => import("./spaces/promoteur/pages/PermisConstruirePage"), "default");
+const RechercheContactsPage = differer(() => import("./spaces/promoteur/pages/RechercheContactsPage"), "default");
+const ProprietairesParcellesPage = differer(() => import("./spaces/promoteur/pages/ProprietairesParcellesPage"), "default");
+const OpportunitesApporteursPage = differer(() => import("./spaces/promoteur/pages/OpportunitesApporteursPage"), "default");
+const ProgrammationPage = differer(() => import("./spaces/promoteur/pages/ProgrammationPage"), "default");
+const StrategieProjetPage = differer(() => import("./spaces/promoteur/pages/StrategieProjetPage"), "default");
+const StyleTendancesPage = differer(() => import("./spaces/promoteur/pages/StyleTendancesPage"), "default");
+const BesoinLogementsSociauxPage = differer(() => import("./spaces/promoteur/pages/BesoinLogementsSociauxPage"), "default");
+const PromoteurMassingPage = differer(() => import("./spaces/promoteur/pages/MassingPage"), "default");
+const EvaluationPage = differer(() => import("./spaces/promoteur/pages/EvaluationPage"), "default");
+const Implantation2DPage = differer(() => import("./spaces/promoteur/Implantation2DPage"), "default");
+const PromoteurMassing3D = differer(() => import("./spaces/promoteur/pages/Massing3D"), "default");
+const FacadeGeneratorPage = differer(() => import("./spaces/promoteur/pages/FacadeGeneratorPage"), "default");
+const PromoteurSimulationTravauxPage = differer(() => import("./spaces/promoteur/pages/PromoteurSimulationTravauxPage"), "default");
+const PromoteurBilan = differer(() => import("./spaces/promoteur/pages/Bilan"), "default");
+const BilanPromoteurPage = differer(() => import("./spaces/promoteur/bilan-promoteur/BilanPromoteurPage"), "default");
+const PromoteurSynthese = differer(() => import("./spaces/promoteur/pages/Synthese"), "default");
+const PromoteurExports = differer(() => import("./spaces/promoteur/pages/Exports"), "default");
 
 /* ──────────────────────────────────────────────────────────────
    ⚠️ Espace BANQUE mis hors-build (migration types inachevée).
@@ -153,38 +181,105 @@ import PromoteurSynthese from "./spaces/promoteur/pages/Synthese";
    depuis l'historique git, et remettre AppShell dans son état d'origine.
    ────────────────────────────────────────────────────────────── */
 
-import AssuranceDashboard from "./spaces/assurance/pages/Dashboard";
-import AssuranceDocuments from "./spaces/assurance/pages/Documents";
-import AssuranceExposition from "./spaces/assurance/pages/Exposition";
-import AssuranceMonitoring from "./spaces/assurance/pages/Monitoring";
-import AssuranceOffre from "./spaces/assurance/pages/Offre";
-import AssuranceSouscription from "./spaces/assurance/pages/Souscription";
-import AssuranceTarification from "./spaces/assurance/pages/Tarification";
-
-/* ── Apporteur ───────────────────────────────────────────────── */
-import ApporteurDashboard from "./spaces/apporteur/pages/Dashboard";
-import { ApporteurDeposerPage } from "./spaces/apporteur/pages/DeposerPage";
+/* ── Assurance ───────────────────────────────────────────────── */
+const AssuranceDashboard = differer(() => import("./spaces/assurance/pages/Dashboard"), "default");
+const AssuranceDocuments = differer(() => import("./spaces/assurance/pages/Documents"), "default");
+const AssuranceExposition = differer(() => import("./spaces/assurance/pages/Exposition"), "default");
+const AssuranceMonitoring = differer(() => import("./spaces/assurance/pages/Monitoring"), "default");
+const AssuranceOffre = differer(() => import("./spaces/assurance/pages/Offre"), "default");
+const AssuranceSouscription = differer(() => import("./spaces/assurance/pages/Souscription"), "default");
+const AssuranceTarification = differer(() => import("./spaces/assurance/pages/Tarification"), "default");
 
 /* ── Réhabilitation ──────────────────────────────────────────── */
-import RehabilitationLayout from "./spaces/rehabilitation/RehabilitationLayout";
-import AnalysePlanPage from "./spaces/rehabilitation/pages/AnalysePlanPage";
-import ConformitePage from "./spaces/rehabilitation/pages/ConformitePage";
-import RehabilitationPlanningTravauxPage from "./spaces/rehabilitation/pages/PlanningTravauxPage";
-import ProjetsPage from "./spaces/rehabilitation/pages/ProjetsPage";
-import RehabilitationRenduTravauxPage from "./spaces/rehabilitation/pages/RenduTravauxPage";
-import SyntheseAuditPage from "./spaces/rehabilitation/pages/SyntheseAuditPage";
-import RehabilitationTravauxPage from "./spaces/rehabilitation/pages/TravauxPage";
-import RehabilitationValorisationPage from "./spaces/rehabilitation/pages/ValorisationPage";
-import VueEnsemblePage from "./spaces/rehabilitation/pages/VueEnsemblePage";
+const RehabilitationLayout = differer(() => import("./spaces/rehabilitation/RehabilitationLayout"), "default");
+const ProjetsPage = differer(() => import("./spaces/rehabilitation/pages/ProjetsPage"), "default");
+const VueEnsemblePage = differer(() => import("./spaces/rehabilitation/pages/VueEnsemblePage"), "default");
+const ConformitePage = differer(() => import("./spaces/rehabilitation/pages/ConformitePage"), "default");
+const AnalysePlanPage = differer(() => import("./spaces/rehabilitation/pages/AnalysePlanPage"), "default");
+const RehabilitationTravauxPage = differer(() => import("./spaces/rehabilitation/pages/TravauxPage"), "default");
+const RehabilitationPlanningTravauxPage = differer(() => import("./spaces/rehabilitation/pages/PlanningTravauxPage"), "default");
+const SyntheseAuditPage = differer(() => import("./spaces/rehabilitation/pages/SyntheseAuditPage"), "default");
+const RehabilitationValorisationPage = differer(() => import("./spaces/rehabilitation/pages/ValorisationPage"), "default");
+const RehabilitationRenduTravauxPage = differer(() => import("./spaces/rehabilitation/pages/RenduTravauxPage"), "default");
 
-/* ── Mimmoza Copilot (global : bouton flottant + drawer) ─────── */
-import { CopilotRoot } from "./spaces/copilot/CopilotRoot";
+/* ══════════════════════════════════════════════════════════════════════════
+   Préchargement au survol / focus d'un lien : quand le pointeur passe sur un
+   lien interne, on télécharge déjà la page cible (le clic devient instantané).
+   Premier préfixe qui correspond = pages préchargées. Ordre : du plus précis
+   au plus général.
+   ══════════════════════════════════════════════════════════════════════════ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type PagePrechargeable = PageDifferee<any>;
+const PRECHARGEMENTS: ReadonlyArray<readonly [prefixe: string, pages: readonly PagePrechargeable[]]> = [
+  ["/decouvrir", [VitrinePage]],
+  ["/tarifs", [TarifsPage]],
+  ["/aide", [AidePage]],
+  ["/securite", [SecuritePage]],
+  ["/inscription", [InscriptionPage]],
+  ["/analyse-rapide", [QuickAnalysisPage]],
+  ["/mimmozia", [MimmozIAPage]],
+  ["/accueil", [MimmozIAPage]],
+  ["/dashboard", [DashboardHomePage]],
+  ["/opportunites", [OpportunitesHubPage]],
+  ["/cgu", [CGUPage]],
+  ["/cgv", [CGVPage]],
+  ["/mentions-legales", [MentionsLegalesPage]],
+  ["/politique-confidentialite", [PrivacyPolicyPage]],
+  ["/compte", [ComptePage]],
+  ["/abonnement", [AbonnementPage]],
+  ["/jetons", [JetonsPage]],
+  ["/api", [ApiPage]],
+  ["/apporteur", [CopilotSpaceOutlet, ApporteurDashboard]],
+  ["/promoteur", [CopilotSpaceOutlet, PromoteurDashboard]],
+  ["/marchand-de-bien", [MarchandLayout, MarchandPipeline]],
+  ["/rehabilitation", [RehabilitationLayout, ProjetsPage]],
+  ["/admin", [AdminGuard, AdminLayout, AdminDashboardPage]],
+];
 
-/* ── Espace MimmozIA (page chat plein écran) ─────────────────── */
-import MimmozIAPage from "./spaces/copilot/MimmozIAPage";
-// R1 — /studio/* est servi par MimmozIA Studio (même origine), jamais par le routeur React.
-import StudioHorsApplication from "./components/StudioHorsApplication";
-import { CopilotSpaceOutlet } from './spaces/copilot/components/CopilotSpaceOutlet';
+function pagesAPrecharger(chemin: string): readonly PagePrechargeable[] {
+  for (const [prefixe, pages] of PRECHARGEMENTS) {
+    if (chemin === prefixe || chemin.startsWith(prefixe + "/")) return pages;
+  }
+  return [];
+}
+
+/** Écoute survol et focus des liens internes et précharge la page visée (une fois). */
+function usePrechargementAuSurvol() {
+  useEffect(() => {
+    const dejaFaits = new Set<string>();
+    const surLien = (evenement: Event) => {
+      const cible = evenement.target;
+      if (!(cible instanceof Element)) return;
+      const lien = cible.closest("a[href]");
+      if (!(lien instanceof HTMLAnchorElement) || lien.origin !== window.location.origin) return;
+      const chemin = lien.pathname;
+      if (dejaFaits.has(chemin)) return;
+      dejaFaits.add(chemin);
+      for (const page of pagesAPrecharger(chemin)) page.precharger();
+    };
+    document.addEventListener("pointerover", surLien, { passive: true });
+    document.addEventListener("focusin", surLien);
+    document.addEventListener("touchstart", surLien, { passive: true });
+    return () => {
+      document.removeEventListener("pointerover", surLien);
+      document.removeEventListener("focusin", surLien);
+      document.removeEventListener("touchstart", surLien);
+    };
+  }, []);
+}
+
+/**
+ * Pages publiques d'arrivée : le Copilot global (≈ 400 Ko compressés avec ses
+ * graphiques et sa 3D) n'y est pas téléchargé tant que l'on n'a pas ouvert une
+ * autre page. Mesuré sur /tarifs (Lighthouse mobile) : il pesait sur le temps
+ * de blocage alors qu'un visiteur non connecté ne peut pas s'en servir.
+ * Une fois monté, il le reste et gère lui-même sa visibilité (CopilotRoot).
+ */
+const SANS_COPILOT = new Set([
+  "/", "/decouvrir", "/login", "/connexion", "/inscription", "/mimmozia",
+  "/tarifs", "/aide", "/securite",
+  "/cgu", "/cgv", "/mentions-legales", "/politique-confidentialite",
+]);
 
 declare global {
   interface Window {
@@ -284,42 +379,53 @@ function AppRoot() {
     }
   }, [location.pathname]);
 
+  usePrechargementAuSurvol();
+
+  // Copilot global : téléchargé seulement après la première visite d'une page
+  // où il s'affiche (jamais pour un visiteur qui reste sur « / » ou /decouvrir),
+  // puis gardé monté — il gère lui-même son masquage selon la route.
+  // (Mise à jour pendant le rendu, motif React « ajuster l'état sur un changement
+  //  de props » : pas d'effet, pas de rendu en cascade.)
+  const [copilotMonte, setCopilotMonte] = useState(() => !SANS_COPILOT.has(location.pathname));
+  if (!copilotMonte && !SANS_COPILOT.has(location.pathname)) setCopilotMonte(true);
+
+  // Outils de développement : importés dynamiquement pour ne PAS embarquer
+  // proj4 ni le magasin investisseur dans le code de production.
   useEffect(() => {
     if (!import.meta.env.DEV) return;
-    try {
-      bootInvestisseurSnapshot();
-    } catch (e) {
-      console.warn("[Investisseur] bootInvestisseurSnapshot failed:", e);
-    }
+    void import("./spaces/investisseur/shared/investisseurBootstrap")
+      .then(({ bootInvestisseurSnapshot }) => bootInvestisseurSnapshot())
+      .catch((e) => console.warn("[Investisseur] bootInvestisseurSnapshot failed:", e));
   }, []);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
+    void import("./lib/projection").then(({ wgs84ToLambert93 }) => {
+      window.__mimmozaProjection = (lon: number, lat: number) => {
+        const { x, y } = wgs84ToLambert93(lon, lat);
+        console.log("[mimmoza] projection EPSG:4326 -> EPSG:2154", { lon, lat, x, y });
+        return { x, y };
+      };
 
-    window.__mimmozaProjection = (lon: number, lat: number) => {
-      const { x, y } = wgs84ToLambert93(lon, lat);
-      console.log("[mimmoza] projection EPSG:4326 -> EPSG:2154", { lon, lat, x, y });
-      return { x, y };
-    };
+      window.__mimmozaElevation = async (
+        deptCode: string,
+        lon: number,
+        lat: number
+      ) => {
+        const { x, y } = wgs84ToLambert93(lon, lat);
+        const resp = await fetch("http://localhost:4010/elevation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deptCode, points: [{ x, y }] }),
+        });
+        const json = await resp.json();
+        console.log("[mimmoza] elevation", { deptCode, lon, lat, x, y, json });
+        return json;
+      };
 
-    window.__mimmozaElevation = async (
-      deptCode: string,
-      lon: number,
-      lat: number
-    ) => {
-      const { x, y } = wgs84ToLambert93(lon, lat);
-      const resp = await fetch("http://localhost:4010/elevation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deptCode, points: [{ x, y }] }),
-      });
-      const json = await resp.json();
-      console.log("[mimmoza] elevation", { deptCode, lon, lat, x, y, json });
-      return json;
-    };
-
-    const { x, y } = wgs84ToLambert93(2.3522, 48.8566);
-    console.log("[mimmoza] DEV helpers ready. Paris (Lambert93) ≈", { x, y });
+      const { x, y } = wgs84ToLambert93(2.3522, 48.8566);
+      console.log("[mimmoza] DEV helpers ready. Paris (Lambert93) ≈", { x, y });
+    });
   }, []);
 
   return (
@@ -335,6 +441,11 @@ function AppRoot() {
       <SpaceSync currentSpace={currentSpace} setCurrentSpace={setCurrentSpace} />
 
       <AppShell currentSpace={currentSpace} onChangeSpace={handleChangeSpace}>
+        {/* Une seule frontière de chargement : au premier affichage d'une page
+            différée, ChargementPage réserve la place. Ensuite, les navigations
+            (transitions React Router) gardent la page courante affichée
+            jusqu'à l'arrivée de la suivante — pas d'écran blanc intermédiaire. */}
+        <Suspense fallback={<ChargementPage />}>
         <Routes>
           {/* ═══════════════════════════════════════════════════════════════
               PUBLIC — "/" = page d'entrée (analyse express + connexion).
@@ -366,6 +477,10 @@ function AppRoot() {
           <Route path="/cgu"                       element={<CGUPage />} />
           <Route path="/politique-confidentialite" element={<PrivacyPolicyPage />} />
           <Route path="/mentions-legales"          element={<MentionsLegalesPage />} />
+
+          {/* ═══ Aide et sécurité (pages publiques) ═══ */}
+          <Route path="/aide"                      element={<AidePage />} />
+          <Route path="/securite"                  element={<SecuritePage />} />
 
           {/* Alias légaux */}
           <Route path="/privacy"                   element={<Navigate to="/politique-confidentialite" replace />} />
@@ -651,10 +766,15 @@ function AppRoot() {
           {/* Catch-all → vraie page 404 (plus de renvoi silencieux vers la connexion) */}
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
+        </Suspense>
 
         {/* ═══ Mimmoza Copilot — global (bouton flottant + drawer) ═══
             Masqué sur /mimmozia : la page EST déjà l'assistant (doublon). */}
-        {location.pathname !== "/mimmozia" && <CopilotRoot />}
+        {copilotMonte && location.pathname !== "/mimmozia" && (
+          <Suspense fallback={null}>
+            <CopilotRoot />
+          </Suspense>
+        )}
       </AppShell>
     </>
   );
