@@ -443,3 +443,7 @@ verify_jwt = true
 
 [functions.stripe-webhook]
 verify_jwt = false
+
+# Contrôle d'accès fait par la fonction elle-même (secret de cron, JWT utilisateur, lien signé).
+[functions.emails-cycle-vie]
+verify_jwt = false
