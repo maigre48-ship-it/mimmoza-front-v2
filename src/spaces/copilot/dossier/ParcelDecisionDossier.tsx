@@ -8,6 +8,7 @@ import { printParcelDossier } from './exportParcelDossier';
 import { supabase } from '@/lib/supabaseClient';
 import type { CadastreFeature } from './DossierParcelMap';
 import './ParcelDecisionDossier.css';
+import { trackFire } from '@/lib/mimmozia/track';
 
 const DossierParcelMap = lazy(() => import('./DossierParcelMap').then((m) => ({ default: m.DossierParcelMap })));
 const euro = (value: number) => `${Math.round(value).toLocaleString('fr-FR')} €`;
@@ -158,7 +159,7 @@ export function ParcelDecisionDossier({ dossier, conversationId, messageId, onAn
     {dossier.point ? <Suspense fallback={<p className="mzia-dossier-map-loading">Chargement de la carte cadastrale…</p>}><DossierParcelMap point={dossier.point} detectedId={dossier.detectedParcel?.id ?? null} selected={selected} onChange={setSelected} onFeaturesLoaded={handleFeaturesLoaded} /></Suspense> : <p className="mzia-dossier-error">Coordonnées absentes : carte indisponible.</p>}
     <div className="mzia-dossier-actions">
       <button type="button" onClick={() => void save()} disabled={saving}>{saving ? 'Enregistrement…' : 'Enregistrer le dossier'}</button>
-      <button type="button" onClick={() => { if (!printParcelDossier({ dossier, selected, builtSurfaceM2, cadastralRentPerM2, mapFeatures })) setNotice('Autorisez les fenêtres contextuelles pour exporter le dossier PDF.'); }}>Exporter le dossier PDF</button>
+      <button type="button" onClick={() => { trackFire('report_download', { format: 'pdf' }); if (!printParcelDossier({ dossier, selected, builtSurfaceM2, cadastralRentPerM2, mapFeatures })) setNotice('Autorisez les fenêtres contextuelles pour exporter le dossier PDF.'); }}>Exporter le dossier PDF</button>
     </div>
     {selected.length > 0 && onAnalyze && <button type="button" className="mzia-dossier-analyze" onClick={analyzeConfirmed}>Relancer l’analyse sur les parcelles choisies</button>}
 

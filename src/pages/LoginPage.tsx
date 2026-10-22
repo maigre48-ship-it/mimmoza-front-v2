@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
+import { messageErreur } from '@/components/ui/messageErreur';
 
 export default function LoginPage(): React.ReactElement {
   const navigate = useNavigate();
@@ -30,7 +31,7 @@ export default function LoginPage(): React.ReactElement {
         navigate("/promoteur/plu-faisabilite");
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Erreur lors de la connexion.";
+      const message = messageErreur(err, "La connexion n’a pas abouti. Vérifiez votre e-mail et votre mot de passe.");
       setError(message);
     } finally {
       setLoading(false);

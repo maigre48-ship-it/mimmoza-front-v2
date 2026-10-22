@@ -1,6 +1,6 @@
 // src/spaces/particulier/pages/ConnexionPage.tsx
 
-import mimmozaLogo from "@/assets/mimmoza-logo.png";
+import mimmozaLogo from "@/assets/mimmoza-logo.webp";
 import { supabase } from "@/lib/supabase";
 import {
   ArrowRight,
@@ -101,7 +101,8 @@ function BackgroundLayers() {
         <div
           className="absolute inset-0 bg-no-repeat"
           style={{
-            backgroundImage: "url('/illustrations/photo_immeuble.png')",
+            // WebP aplati sur blanc : 125 Ko au lieu de 3 Mo (élément LCP de la page).
+            backgroundImage: "url('/illustrations/photo_immeuble.webp')",
             backgroundSize: "auto 118%",
             backgroundPosition: "left -140px bottom",
           }}
@@ -129,7 +130,7 @@ function BackgroundLayers() {
         {/* Ville de nuit — reste bien visible, pas de flou excessif */}
         <div
           className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-          style={{ backgroundImage: "url('/illustrations/ville_nuit.png')" }}
+          style={{ backgroundImage: "url('/illustrations/ville_nuit.webp')" }}
         />
         {/* Voile violet très léger */}
         <div

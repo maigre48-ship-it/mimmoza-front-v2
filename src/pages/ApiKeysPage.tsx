@@ -32,6 +32,7 @@ import {
 import ApiDeveloperNav from '../features/api/components/ApiDeveloperNav';
 import ApiUsageSummary from '../features/api/components/ApiUsageSummary';
 import { useApiMember } from '../features/api/member/useApiMember';
+import { messageErreur } from '@/components/ui/messageErreur';
 
 const GRAD_API = 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)';
 const ACCENT_API = '#6366f1';
@@ -122,7 +123,7 @@ function CreateKeyModal({
       const result = await createApiKey({ name: name.trim(), env });
       onCreated(result.secret);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur inconnue');
+      setError(messageErreur(e, 'L’opération sur la clé d’API n’a pas abouti.'));
     } finally {
       setLoading(false);
     }
@@ -402,7 +403,7 @@ export default function ApiKeysPage() {
       setKeys(ks);
       setMonthly(usage);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur de chargement');
+      setError(messageErreur(e, 'Vos clés d’API n’ont pas pu être chargées.'));
     } finally {
       setLoading(false);
     }

@@ -42,7 +42,7 @@ import type { ComponentType, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 
-import mimmozaLogo from "../assets/mimmoza-logo.png";
+import mimmozaLogo from "../assets/mimmoza-logo.webp";
 import { getCurrentAdminStatus } from "../lib/admin";
 import { supabase } from "../lib/supabase";
 import { countUnseen } from "../services/opportunity/opportunityWatch.service";
@@ -134,6 +134,9 @@ function VeilleNavBadge() {
     let mounted = true;
     async function load() {
       try {
+        // Visiteur non connecté : aucune requête (évitait 6 appels en échec par page publique).
+        const { data } = await supabase.auth.getSession();
+        if (!data.session) { if (mounted) setCount(0); return; }
         const n = await countUnseen();
         if (mounted) setCount(n);
       } catch {

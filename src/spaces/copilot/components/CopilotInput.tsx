@@ -184,11 +184,13 @@ export function CopilotInput({
         </button>
 
         {isStreaming ? (
-          <button className="copilot-composer__tool" onClick={onCancel} title="Arrêter" style={btnStyle('rgb(248 113 113)')}>
+          // Clés distinctes : sans elles, React réutilise le bouton « Envoyer » qui a
+          // le focus, et un Espace/Entrée après l'envoi déclenchait « Arrêter ».
+          <button key="arreter" type="button" className="copilot-composer__tool" onClick={onCancel} title="Arrêter" aria-label="Arrêter la réponse" style={btnStyle('rgb(248 113 113)')}>
             <Square size={16} fill="currentColor" />
           </button>
         ) : (
-          <button className="copilot-composer__tool" onClick={submit} disabled={!value.trim()} title="Envoyer (Entrée)"
+          <button key="envoyer" type="button" className="copilot-composer__tool" onClick={submit} disabled={!value.trim()} title="Envoyer (Entrée)"
             style={{ ...btnStyle(T.accent), opacity: value.trim() ? 1 : 0.4 }}>
             <Send size={16} />
           </button>

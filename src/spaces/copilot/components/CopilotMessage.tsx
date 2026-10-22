@@ -20,6 +20,8 @@ import { CopilotRenderBoundary } from './CopilotRenderBoundary';
 import { tertiaryReview } from '../results/tertiaryReview';
 import { FollowupProposalCard } from '../followup/FollowupProposalCard';
 import { withoutJarvisDraft } from '../studio3d/jarvisDraft';
+import { useCopilotStreaming } from '../hooks/useCopilotStreaming';
+import { trackFire } from '@/lib/mimmozia/track';
 const CopilotThematicMaps = lazy(() => import('../maps/CopilotThematicMaps').then(m => ({ default: m.CopilotThematicMaps })));
 
 // recharts pèse plusieurs centaines de Ko et n'est utilisé QUE par les
@@ -49,6 +51,10 @@ function CopilotMessageContent({ message, question, conversationId, onSend }: Me
   const isUser = message.role === 'user';
   const actionRuns = useCopilotStore((s) => s.actionRuns);
   const messages = useCopilotStore((s) => s.messages);
+  // Réponse arrêtée ou coupée avant la fin : « Reprendre » relit la réponse
+  // complète en base (sans coût) ou demande la suite une seule fois.
+  const incomplet = useCopilotStore((s) => Boolean(s.incomplets?.[message.id]));
+  const { resume } = useCopilotStreaming();
   const [exporting, setExporting] = useState<'pdf' | 'xlsx' | 'docx' | 'pptx' | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
 
@@ -77,6 +83,7 @@ function CopilotMessageContent({ message, question, conversationId, onSend }: Me
     setExporting(format); setExportError(null);
     try {
       if (format === 'pdf') {
+        trackFire('report_download', { format: 'pdf' });
         const result = await exportCopilotResponseToPdf({ response: message, question: linkedQuestion });
         if (result === 'popup_blocked') setExportError('Autorisez les fenêtres contextuelles pour exporter le PDF.');
       } else {
@@ -212,6 +219,15 @@ function CopilotMessageContent({ message, question, conversationId, onSend }: Me
       {message.status === 'error' && (
         <div style={{ color: 'rgb(248 113 113)', fontSize: 13, marginTop: 6 }}>
           ⚠️ {message.error ?? 'Une erreur est survenue.'}
+          {incomplet && (
+            <button
+              type="button"
+              onClick={() => void resume(message.id)}
+              style={{ marginLeft: 10, padding: '3px 10px', borderRadius: 8, border: `1px solid ${T.accent}`, background: 'transparent', color: T.accent, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+            >
+              Reprendre
+            </button>
+          )}
         </div>
       )}
     </div>
