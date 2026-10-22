@@ -126,8 +126,13 @@ export default function AdminTarifsPage() {
         <div className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm text-sm text-slate-700">
           <h2 className="mb-2 font-semibold text-slate-900">API</h2>
           {PACKS_API.map((p) => (
-            <div key={p.code}>{p.credits.toLocaleString("fr-FR")} crédits : {formatEurHT(p.prixHT)}</div>
+            <div key={p.code}>
+              {p.libelle} · {p.credits.toLocaleString("fr-FR")} crédits/mois : {formatEurHT(p.prixHT)}/mois
+              {p.prixAnnuelHT != null && <> ({formatEurHT(p.prixAnnuelHT)} en annuel)</>}
+              {p.rechargeParMilleHT != null && <> · recharge {formatEurHT(p.rechargeParMilleHT, true)}/1 000</>}
+            </div>
           ))}
+          <div className="mt-1 text-xs text-slate-500">Source : src/lib/api/catalogueApi.ts</div>
         </div>
         <div className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm text-sm text-slate-700">
           <h2 className="mb-2 font-semibold text-slate-900">{STUDIO_3D.libelle}</h2>

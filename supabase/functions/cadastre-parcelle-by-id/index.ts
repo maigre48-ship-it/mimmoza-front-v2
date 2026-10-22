@@ -27,7 +27,16 @@ const IGN_FETCH_TIMEOUT_MS = 8000;
  * Parse parcel ID to extract components
  * Format: 64065000AI0002 -> commune=64065, section=AI, numero=0002
  */
-function parseParcelId(parcelId: string): { commune: string; section: string; numero: string } | null {
+function parseParcelId(parcelId: string): { commune: string; section: string; numero: string; prefixe?: string } | null {
+  // IDU complet (14 car.) : INSEE (5, Corse 2A/2B) + préfixe (3) + section (2, ex. "AB" ou "0A") + numéro (4).
+  // Couvre les sections à une lettre (« 0A »), la Corse et les préfixes ≠ 000
+  // (communes associées), que les formats ci-dessous rejetaient. Section
+  // transmise sur 2 caractères, comme altimetrie-v1 / bruit-classement-v1.
+  const idu = parcelId.replace(/\s/g, "").toUpperCase().match(/^(\d{5}|2[AB]\d{3})(\d{3})([0-9A-Z][A-Z])(\d{4})$/);
+  if (idu) {
+    return { commune: idu[1], prefixe: idu[2], section: idu[3], numero: idu[4] };
+  }
+
   // Format standard: CCCCC000SSNNNN (5 digits commune + 000 + 2 chars section + 4 digits numero)
   const match = parcelId.match(/^(\d{5})000([A-Z]{1,2})(\d{4})$/);
   if (match) {
@@ -57,7 +66,8 @@ function parseParcelId(parcelId: string): { commune: string; section: string; nu
 async function fetchParcelleById(
   communeInsee: string,
   section: string,
-  numero: string
+  numero: string,
+  prefixe?: string
 ): Promise<{ feature: any; error?: string }> {
   const params = new URLSearchParams({
     code_insee: communeInsee,
@@ -66,6 +76,8 @@ async function fetchParcelleById(
     source_ign: "PCI",
     _limit: "1",
   });
+  // Préfixe ≠ 000 : commune absorbée (paramètre com_abs d'API Carto).
+  if (prefixe && prefixe !== "000") params.set("com_abs", prefixe);
 
   const ignUrl = `https://apicarto.ign.fr/api/cadastre/parcelle?${params.toString()}`;
 
@@ -167,7 +179,7 @@ serve(async (req) => {
     const finalCommune = commune_insee || parsed.commune;
 
     // Fetch from IGN
-    const result = await fetchParcelleById(finalCommune, parsed.section, parsed.numero);
+    const result = await fetchParcelleById(finalCommune, parsed.section, parsed.numero, parsed.prefixe);
 
     if (!result.feature) {
       return new Response(

@@ -174,6 +174,7 @@ export function formatRequests(n: number): string {
   return String(n);
 }
 
-export function isPayg(sub: ApiSubscription): boolean {
-  return sub.billingMode === 'payg';
+/** Plus de « pay as you go » postpayé (contrat API du 22/10/2026) : toujours faux. */
+export function isPayg(_sub: ApiSubscription): boolean {
+  return false;
 }

@@ -12,8 +12,8 @@ import {
   Key,
   Plus,
   ShieldCheck,
+  Mail,
   Trash2,
-  Wifi,
   X,
   Zap,
 } from 'lucide-react';
@@ -22,12 +22,15 @@ import { useNavigate } from 'react-router-dom';
 
 import {
   createApiKey,
-  getMonthlyUsage,
   listApiKeys,
+  messagePlafondCles,
   revokeApiKey,
   type ApiKey,
   type ApiKeyEnv,
 } from '../lib/apiKeys';
+import { useApiCompte } from '../lib/api/apiCompte';
+import { formuleApi } from '../lib/api/catalogueApi';
+import { mailtoDemandeAcces } from '../lib/billing/grille';
 
 import ApiDeveloperNav from '../features/api/components/ApiDeveloperNav';
 import ApiUsageSummary from '../features/api/components/ApiUsageSummary';
@@ -274,11 +277,6 @@ function KeyCard({
   newSecret: string | null;
   onRevoke: (key: ApiKey) => void;
 }) {
-  const usagePercent = Math.min(
-    100,
-    Math.round((apiKey.requests_count / apiKey.requests_limit) * 100)
-  );
-
   const envColors =
     apiKey.env === 'live'
       ? { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' }
@@ -334,35 +332,11 @@ function KeyCard({
           )}
         </div>
 
-        <div className="mt-4">
-          <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
-            <span className="flex items-center gap-1.5">
-              <BarChart3 className="h-3 w-3" />
-              {apiKey.requests_count.toLocaleString('fr-FR')} /{' '}
-              {apiKey.requests_limit.toLocaleString('fr-FR')} req ce mois
-            </span>
-            <span
-              className={`font-medium ${
-                usagePercent > 80
-                  ? 'text-red-500'
-                  : usagePercent > 60
-                  ? 'text-amber-500'
-                  : 'text-slate-600'
-              }`}
-            >
-              {usagePercent}%
-            </span>
-          </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-            <div
-              className="h-full rounded-full transition-all duration-500"
-              style={{
-                width: `${usagePercent}%`,
-                background:
-                  usagePercent > 80 ? '#ef4444' : usagePercent > 60 ? '#f59e0b' : GRAD_API,
-              }}
-            />
-          </div>
+        <div className="mt-4 flex items-center gap-1.5 text-xs text-slate-500">
+          <BarChart3 className="h-3 w-3" />
+          {(apiKey.requests_count ?? 0).toLocaleString('fr-FR')} appel
+          {(apiKey.requests_count ?? 0) > 1 ? 's' : ''} enregistré{(apiKey.requests_count ?? 0) > 1 ? 's' : ''} avec cette clé
+          <span className="text-slate-400">· les crédits sont décomptés sur votre compte</span>
         </div>
       </div>
 
@@ -381,6 +355,9 @@ export default function ApiKeysPage() {
 
   // Données réelles via hook Supabase
   const { data: member, loading: memberLoading } = useApiMember();
+  // Solde du COMPTE (RPC api_mon_compte) ; repli propre si la RPC est absente.
+  const { compte, indisponible: compteIndisponible, chargement: compteChargement, recharger: rechargerCompte } =
+    useApiCompte();
 
   // Gestion locale des clés (CRUD Supabase via lib/apiKeys)
   const [keys, setKeys] = useState<ApiKey[]>([]);
@@ -393,15 +370,11 @@ export default function ApiKeysPage() {
   const [revokeTarget, setRevokeTarget] = useState<ApiKey | null>(null);
   const [revokeLoading, setRevokeLoading] = useState(false);
 
-  const [monthly, setMonthly] = useState({ requests: 0, limit: 10_000, percent: 0 });
-
   const loadKeys = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [ks, usage] = await Promise.all([listApiKeys(), getMonthlyUsage()]);
-      setKeys(ks);
-      setMonthly(usage);
+      setKeys(await listApiKeys());
     } catch (e) {
       setError(messageErreur(e, 'Vos clés d’API n’ont pas pu être chargées.'));
     } finally {
@@ -415,6 +388,7 @@ export default function ApiKeysPage() {
 
   const handleCreated = async (secret: string) => {
     setShowCreateModal(false);
+    void rechargerCompte();
     const ks = await listApiKeys();
     setKeys(ks);
     if (ks[0]) {
@@ -436,6 +410,7 @@ export default function ApiKeysPage() {
       await revokeApiKey(revokeTarget.id);
       setKeys((prev) => prev.filter((k) => k.id !== revokeTarget.id));
       setRevokeTarget(null);
+      void rechargerCompte();
     } catch (e) {
       console.error(e);
     } finally {
@@ -444,6 +419,10 @@ export default function ApiKeysPage() {
   };
 
   const activeKeys = keys.filter((k) => !k.revoked_at);
+  const formule = formuleApi(compte?.plan ?? member?.subscription.plan ?? 'essai');
+  const clesMax = compte?.clesMax ?? formule.clesMax;
+  const plafondAtteint = activeKeys.length >= clesMax || (compte != null && compte.clesActives >= compte.clesMax);
+  const creditsEpuises = compte != null && compte.disponible <= 0;
 
   return (
     <div className="space-y-8">
@@ -460,11 +439,6 @@ export default function ApiKeysPage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-slate-900">Mes clés API</h1>
-              {/* BONUS: indicateur connexion réelle */}
-              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                <Wifi className="h-3 w-3" />
-                Connected to API
-              </span>
             </div>
             <p className="text-sm text-slate-500">Gérez vos clés d&apos;accès à l&apos;API Mimmoza</p>
           </div>
@@ -475,7 +449,9 @@ export default function ApiKeysPage() {
         <button
           type="button"
           onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:opacity-90"
+          disabled={plafondAtteint}
+          title={plafondAtteint ? messagePlafondCles(clesMax) : undefined}
+          className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           style={{ background: GRAD_API }}
         >
           <Plus className="h-4 w-4" />
@@ -483,100 +459,122 @@ export default function ApiKeysPage() {
         </button>
       </div>
 
-      {/* ── Usage + plan summary (données réelles) ────────────────────── */}
+      {/* ── Formule et solde du compte (RPC api_mon_compte) ───────────── */}
       {!memberLoading && member && (
-        <ApiUsageSummary subscription={member.subscription} usage={member.usage} />
+        <ApiUsageSummary subscription={member.subscription} usage={member.usage} compte={compte} />
       )}
 
-      {/* ── CTA billing si pas d'abonnement ──────────────────────────── */}
-      {!memberLoading && !member?.subscription && (
+      {/* ── Crédits épuisés / essai terminé ──────────────────────────── */}
+      {compte && (compte.essaiExpire || creditsEpuises) && (
         <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
           <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
           <div className="flex-1">
-            <p className="font-medium text-amber-900">Aucun abonnement API actif</p>
-            <p className="text-sm text-amber-700">
-              Souscrivez à un plan pour activer vos clés et accéder à l'API.
+            <p className="font-medium text-amber-900">
+              {compte.essaiExpire ? 'Votre essai est terminé' : 'Vos crédits sont épuisés'}
             </p>
+            <p className="text-sm text-amber-700">
+              {compte.plan === 'essai'
+                ? 'Vos appels sont refusés tant qu’aucune formule n’est ouverte. Rien ne vous est facturé.'
+                : 'Vos appels sont refusés jusqu’au renouvellement de vos crédits, sauf recharge prépayée. Rien ne vous est facturé après coup.'}
+            </p>
+          </div>
+          <a
+            href={mailtoDemandeAcces(compte.plan === 'essai' ? 'API Starter' : `API — recharge de crédits (${formule.nom})`)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-white px-4 py-2 text-sm font-medium text-amber-700 transition hover:bg-amber-50"
+          >
+            <Mail className="h-4 w-4" />
+            {compte.plan === 'essai' ? 'Demander une formule' : 'Demander une recharge'}
+          </a>
+        </div>
+      )}
+
+      {/* ── Plafond de clés atteint ──────────────────────────────────── */}
+      {plafondAtteint && (
+        <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
+          <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
+          <div className="flex-1">
+            <p className="font-medium text-amber-900">Nombre maximal de clés atteint</p>
+            <p className="text-sm text-amber-700">{messagePlafondCles(clesMax)}</p>
           </div>
           <button
             type="button"
-            onClick={() => navigate('/api/billing')}
+            onClick={() => navigate('/api#tarifs-api')}
             className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-white px-4 py-2 text-sm font-medium text-amber-700 transition hover:bg-amber-50"
           >
             <CreditCard className="h-4 w-4" />
-            Voir les plans
+            Voir les formules
           </button>
         </div>
       )}
 
-      {/* ── Alerte quota clés (quota élevé) ──────────────────────────── */}
-      {activeKeys.length >= 5 && (
-        <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
-          <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
-          <div className="flex-1">
-            <p className="font-medium text-amber-900">Nombre de clés élevé</p>
-            <p className="text-sm text-amber-700">
-              Passez à un plan supérieur pour augmenter votre quota de clés.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => navigate('/api/billing')}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-white px-4 py-2 text-sm font-medium text-amber-700 transition hover:bg-amber-50"
-          >
-            <CreditCard className="h-4 w-4" />
-            Voir les plans
-          </button>
+      {/* ── Solde du compte ──────────────────────────────────────────── */}
+      {compteChargement ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-20 animate-pulse rounded-2xl border border-slate-200 bg-slate-100" />
+          ))}
         </div>
+      ) : compte ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div
+                className="flex h-9 w-9 items-center justify-center rounded-xl"
+                style={{ background: `${ACCENT_API}12` }}
+              >
+                <Zap className="h-4 w-4" style={{ color: ACCENT_API }} />
+              </div>
+              <div>
+                <div className="text-xl font-bold text-slate-900">
+                  {compte.disponible.toLocaleString('fr-FR')}
+                </div>
+                <div className="text-xs text-slate-500">Crédits disponibles</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100">
+                <BarChart3 className="h-4 w-4 text-slate-500" />
+              </div>
+              <div>
+                <div className="text-xl font-bold text-slate-900">
+                  {compte.restantMois.toLocaleString('fr-FR')}
+                  <span className="text-sm font-medium text-slate-400"> / {compte.creditsMois.toLocaleString('fr-FR')}</span>
+                </div>
+                <div className="text-xs text-slate-500">
+                  {compte.plan === 'essai' ? "Crédits de l'essai restants" : 'Crédits du mois restants'}
+                  {compte.creditsRecharge > 0 && ` · + ${compte.creditsRecharge.toLocaleString('fr-FR')} en recharge`}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50">
+                <ShieldCheck className="h-4 w-4 text-emerald-600" />
+              </div>
+              <div>
+                <div className="text-xl font-bold text-slate-900">
+                  {compte.clesActives} <span className="text-sm font-medium text-slate-400">/ {compte.clesMax}</span>
+                </div>
+                <div className="text-xs text-slate-500">
+                  Clés actives · {compte.debitParMinute.toLocaleString('fr-FR')} requêtes/min
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        compteIndisponible && (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm text-slate-600">
+            Le détail de votre solde de crédits n’est pas encore disponible. Vos clés fonctionnent normalement ;
+            les crédits sont décomptés sur votre compte, quelle que soit la clé utilisée.
+          </div>
+        )
       )}
-
-      {/* ── Stats mensuelles (Supabase via lib/apiKeys) ───────────────── */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div
-              className="flex h-9 w-9 items-center justify-center rounded-xl"
-              style={{ background: `${ACCENT_API}12` }}
-            >
-              <Zap className="h-4 w-4" style={{ color: ACCENT_API }} />
-            </div>
-            <div>
-              <div className="text-xl font-bold text-slate-900">
-                {monthly.requests.toLocaleString('fr-FR')}
-              </div>
-              <div className="text-xs text-slate-500">Requêtes ce mois</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100">
-              <BarChart3 className="h-4 w-4 text-slate-500" />
-            </div>
-            <div>
-              <div className="text-xl font-bold text-slate-900">
-                {monthly.limit.toLocaleString('fr-FR')}
-              </div>
-              <div className="text-xs text-slate-500">Quota mensuel</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50">
-              <ShieldCheck className="h-4 w-4 text-emerald-600" />
-            </div>
-            <div>
-              <div className="text-xl font-bold text-slate-900">{activeKeys.length}</div>
-              <div className="text-xs text-slate-500">
-                {activeKeys.length > 1 ? 'Clés actives' : 'Clé active'}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* ── Liste des clés (Supabase) ──────────────────────────────────── */}
       {loading ? (
@@ -604,6 +602,7 @@ export default function ApiKeysPage() {
           <button
             type="button"
             onClick={() => setShowCreateModal(true)}
+            disabled={plafondAtteint}
             className="mt-4 inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white"
             style={{ background: GRAD_API }}
           >

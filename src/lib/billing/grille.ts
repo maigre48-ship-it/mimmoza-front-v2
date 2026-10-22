@@ -20,6 +20,7 @@
 // =============================================================================
 
 import type { ModuleSpace, PlanId } from "./planAccess";
+import { API_ESSAI, API_FORMULES_PAYANTES } from "../api/catalogueApi.ts";
 
 /** Valeur d'un jeton, partout dans l'application. 1 jeton = 0,10 € HT. */
 export const JETON_VALEUR_EUR = 0.1;
@@ -242,16 +243,36 @@ export const PACKS_JETONS: readonly PackJetons[] = [
   { code: "tokens_2000", jetons: 2000, prixHT: 160 },
 ];
 
+/**
+ * Formules API payantes, telles qu'affichées sur /tarifs et /admin/tarifs.
+ * Source unique : src/lib/api/catalogueApi.ts (contrat docs/api/CONTRAT_API.md).
+ * Ce ne sont PAS des packs à l'unité : abonnement mensuel, crédits renouvelés
+ * chaque mois, recharge prépayée réservée aux abonnés.
+ */
 export interface PackApi {
-  code: "api_10k" | "api_50k";
+  code: string;
+  libelle: string;
+  /** Crédits inclus chaque mois. */
   credits: number;
+  /** Prix mensuel HT sans engagement. */
   prixHT: number;
+  /** Prix mensuel HT en facturation annuelle. */
+  prixAnnuelHT: number | null;
+  /** Prix HT de 1 000 crédits de recharge prépayée. */
+  rechargeParMilleHT: number | null;
 }
 
-export const PACKS_API: readonly PackApi[] = [
-  { code: "api_10k", credits: 10_000, prixHT: 49 },
-  { code: "api_50k", credits: 50_000, prixHT: 149 },
-];
+export const PACKS_API: readonly PackApi[] = API_FORMULES_PAYANTES.map((f) => ({
+  code: `api_${f.id}`,
+  libelle: `API ${f.nom}`,
+  credits: f.credits,
+  prixHT: f.prixMensuelHT,
+  prixAnnuelHT: f.prixMensuelAnnuelHT,
+  rechargeParMilleHT: f.rechargeParMilleHT,
+}));
+
+/** Essai API gratuit (crédits uniques). */
+export const ESSAI_API = { credits: API_ESSAI.credits, jours: API_ESSAI.dureeEssaiJours ?? 30 } as const;
 
 // ── Studio 3D (application liée) ─────────────────────────────────────────────
 

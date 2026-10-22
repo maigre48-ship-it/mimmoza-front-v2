@@ -1,111 +1,47 @@
 // src/features/api/member/apiPlans.ts
 // ─────────────────────────────────────────────────────────────────────────────
-// Mimmoza – API Plans catalog
-// Unité de facturation : CRÉDITS. Conso par appel : /v1/scoring/smart = 10,
-// /v1/market/dvf = 2, /v1/risks = 2.
+// Mimmoza – formules API (couche de compatibilité).
+//
+// La source unique est src/lib/api/catalogueApi.ts (contrat docs/api/CONTRAT_API.md).
+// Ce fichier n'invente aucun chiffre : il ré-expose le catalogue sous les noms
+// historiques utilisés par les composants de l'espace API.
+//
+// Plus de « pay as you go » postpayé : au-delà des crédits du mois, seuls des
+// crédits de recharge PRÉPAYÉS (réservés aux abonnés) peuvent être consommés.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type BillingMode = 'payg' | 'monthly' | 'annual';
-export type PlanTier = 'free' | 'starter' | 'growth' | 'scale';
+import {
+  API_FORMULES,
+  API_FORMULES_PAYANTES,
+  formuleApi,
+  prixMensuelApi,
+  remiseAnnuelleApi,
+  RECHARGE_VALIDITE_MOIS,
+  type ApiFormule,
+  type ApiFormuleId,
+} from '../../../lib/api/catalogueApi';
+
+export type BillingMode = 'monthly' | 'annual';
+export type PlanTier = ApiFormuleId;
 export type PlanEnvironment = 'test' | 'live';
+export type ApiPlan = ApiFormule;
 
-export interface ApiPlan {
-  id: PlanTier;
-  name: string;
-  tagline: string;
-  monthlyPrice: number;       // € HT / mois (facturation mensuelle)
-  annualPrice: number;        // € HT / mois (facturation annuelle)
-  requestsIncluded: number;   // crédits inclus / mois
-  overagePerK: number;        // € pour 1 000 crédits supplémentaires
-  rateLimit: number;          // requêtes / minute
-  maxKeys: number;
-  features: string[];
-  highlighted?: boolean;
-  contactSales?: boolean;
-}
+export const API_PLANS: readonly ApiPlan[] = API_FORMULES;
 
-export interface PayAsYouGoConfig {
-  pricePerK: number;          // € pour 1 000 crédits
-  minimumBilling: number;
-  rateLimit: number;
-  maxKeys: number;
-}
+/** Recharge prépayée : prix de 1 000 crédits par formule payante (remplace PAY_AS_YOU_GO). */
+export const RECHARGE_PREPAYEE: readonly { id: PlanTier; nom: string; prixParMilleHT: number }[] =
+  API_FORMULES_PAYANTES.map((f) => ({ id: f.id, nom: f.nom, prixParMilleHT: f.rechargeParMilleHT ?? 0 }));
 
-export const PAY_AS_YOU_GO: PayAsYouGoConfig = {
-  pricePerK: 2.5,
-  minimumBilling: 0,
-  rateLimit: 30,
-  maxKeys: 2,
-};
+export const RECHARGE_PREPAYEE_VALIDITE_MOIS = RECHARGE_VALIDITE_MOIS;
 
-export const API_PLANS: ApiPlan[] = [
-  {
-    id: 'starter',
-    name: 'Starter',
-    tagline: 'Idéal pour démarrer',
-    monthlyPrice: 49,
-    annualPrice: 39,
-    requestsIncluded: 10_000,
-    overagePerK: 2.0,
-    rateLimit: 60,
-    maxKeys: 5,
-    features: [
-      '10 000 crédits / mois inclus',
-      'env. 1 000 SmartScore ou 5 000 DVF / mois',
-      '60 requêtes / minute',
-      '5 clés API maximum',
-      'Environnements test & live',
-    ],
-  },
-  {
-    id: 'growth',
-    name: 'Growth',
-    tagline: 'Pour les équipes en croissance',
-    monthlyPrice: 149,
-    annualPrice: 119,
-    requestsIncluded: 50_000,
-    overagePerK: 1.5,
-    rateLimit: 200,
-    maxKeys: 20,
-    features: [
-      '50 000 crédits / mois inclus',
-      'env. 5 000 SmartScore ou 25 000 DVF / mois',
-      '200 requêtes / minute',
-      '20 clés API maximum',
-      'Suivi de consommation par clé',
-    ],
-    highlighted: true,
-  },
-  {
-    id: 'scale',
-    name: 'Scale',
-    tagline: 'Pour les volumes importants',
-    monthlyPrice: 499,
-    annualPrice: 399,
-    requestsIncluded: 250_000,
-    overagePerK: 0.8,
-    rateLimit: 1000,
-    maxKeys: 100,
-    features: [
-      '250 000 crédits / mois inclus',
-      'env. 25 000 SmartScore ou 125 000 DVF / mois',
-      '1 000 requêtes / minute',
-      '100 clés API maximum',
-      'Quotas et limites sur mesure, sur demande',
-    ],
-    contactSales: true,
-  },
-];
-
-export function getPlanById(id: PlanTier): ApiPlan | undefined {
-  return API_PLANS.find((p) => p.id === id);
+export function getPlanById(id: PlanTier): ApiPlan {
+  return formuleApi(id);
 }
 
 export function getDisplayPrice(plan: ApiPlan, mode: BillingMode): number {
-  if (mode === 'annual') return plan.annualPrice;
-  return plan.monthlyPrice;
+  return prixMensuelApi(plan, mode === 'annual' ? 'annuel' : 'mensuel');
 }
 
 export function getAnnualSavingPercent(plan: ApiPlan): number {
-  return Math.round(((plan.monthlyPrice - plan.annualPrice) / plan.monthlyPrice) * 100);
+  return remiseAnnuelleApi(plan);
 }

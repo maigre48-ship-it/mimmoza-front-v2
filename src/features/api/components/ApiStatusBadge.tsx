@@ -3,14 +3,14 @@ import type { PlanEnvironment } from '../member/apiMemberMock';
 import type { BillingMode, PlanTier } from '../member/apiPlans';
 
 const PLAN_STYLES: Record<PlanTier, string> = {
-  free:    'bg-slate-100 text-slate-600 border-slate-200',
+  essai:   'bg-slate-100 text-slate-600 border-slate-200',
   starter: 'bg-cyan-50 text-cyan-700 border-cyan-200',
   growth:  'bg-indigo-50 text-indigo-700 border-indigo-200',
   scale:   'bg-amber-50 text-amber-700 border-amber-200',
 };
 
 const PLAN_LABELS: Record<PlanTier, string> = {
-  free: 'Free', starter: 'Starter', growth: 'Growth', scale: 'Scale',
+  essai: 'Essai', starter: 'Starter', growth: 'Growth', scale: 'Scale',
 };
 
 interface PlanBadgeProps {
@@ -27,7 +27,7 @@ export function PlanBadge({ plan, mode, size = 'md' }: PlanBadgeProps) {
       } ${PLAN_STYLES[plan]}`}
     >
       {PLAN_LABELS[plan]}
-      {mode && mode !== 'payg' && (
+      {mode && plan !== 'essai' && (
         <span className="font-normal opacity-60">
           {mode === 'annual' ? '/ an' : '/ mois'}
         </span>

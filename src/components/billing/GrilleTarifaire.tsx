@@ -14,6 +14,7 @@ import { Link } from "react-router-dom";
 import {
   FORMULES,
   MESSAGE_PAIEMENT_INDISPONIBLE,
+  ESSAI_API,
   PACKS_API,
   PACKS_JETONS,
   PAIEMENT_EN_LIGNE_DISPONIBLE,
@@ -182,13 +183,23 @@ export function GrilleTarifaire({ formuleActuelle, enAvant, publique = false }: 
             <KeyRound className="h-4 w-4 text-emerald-500" /> API
           </div>
           <ul className="mt-3 space-y-1 text-xs text-slate-600">
+            <li className="flex justify-between gap-2">
+              <span>Essai : {ESSAI_API.credits.toLocaleString("fr-FR")} crédits, {ESSAI_API.jours} jours</span>
+              <strong className="text-slate-900">Gratuit</strong>
+            </li>
             {PACKS_API.map((p) => (
               <li key={p.code} className="flex justify-between gap-2">
-                <span>{p.credits.toLocaleString("fr-FR")} crédits</span>
-                <strong className="text-slate-900">{formatEurHT(p.prixHT)}</strong>
+                <span>{p.libelle} · {p.credits.toLocaleString("fr-FR")} crédits/mois</span>
+                <strong className="text-slate-900">{formatEurHT(p.prixHT)}/mois</strong>
               </li>
             ))}
           </ul>
+          <p className="mt-2 text-[11px] leading-4 text-slate-500">
+            Crédits prélevés seulement si l'appel réussit, aucun dépassement facturé après coup.
+          </p>
+          <Link to="/api#tarifs-api" className="mt-2 inline-block text-xs font-semibold text-emerald-700 hover:underline">
+            Voir les formules API
+          </Link>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5">

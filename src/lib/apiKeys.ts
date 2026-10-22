@@ -3,7 +3,7 @@
 // Service layer — gestion des clés API Mimmoza via Supabase
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { getPlanById, type PlanTier } from "../features/api/member/apiPlans";
+import { chargerApiCompte } from "./api/apiCompte";
 import { supabase } from "./supabase";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -16,9 +16,11 @@ export type ApiKey = {
   name: string;
   prefix: string;         // ex: "mk_live_AbCd"
   env: ApiKeyEnv;
-  plan: "free" | "starter" | "growth" | "scale";
+  /** Formule héritée (le quota est désormais porté par le COMPTE, pas par la clé). */
+  plan?: string | null;
+  /** Nombre d'appels comptés sur cette clé (statistique, pas un quota). */
   requests_count: number;
-  requests_limit: number;
+  requests_limit?: number | null;
   last_used_at: string | null;
   created_at: string;
   revoked_at: string | null;
@@ -33,8 +35,21 @@ export type ApiUsageDay = {
 export type CreateApiKeyInput = {
   name: string;
   env: ApiKeyEnv;
-  plan?: PlanTier;        // plan de l'abonnement du user (défaut starter)
 };
+
+/** Message affiché quand le compte a déjà toutes les clés permises par sa formule. */
+export function messagePlafondCles(max?: number | null): string {
+  const n = typeof max === "number" && max > 0 ? ` (${max})` : "";
+  return (
+    `Vous avez atteint le nombre maximal de clés de votre formule${n}. ` +
+    "Révoquez une clé inutilisée ou demandez une formule supérieure."
+  );
+}
+
+/** Reconnaît le refus du serveur quand le plafond de clés est atteint. */
+export function estRefusPlafondCles(message: string): boolean {
+  return /max_cles|plafond|nombre maximal de cl|limite de cl|trop de cl|too many keys|key limit/i.test(message);
+}
 
 export type CreateApiKeyResult = {
   key: ApiKey;
@@ -63,25 +78,15 @@ async function hashSecret(secret: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/**
- * Résout le quota (crédits/mois) d'un plan depuis apiPlans.ts.
- * Source de vérité unique : requestsIncluded du plan.
- */
-function planToRequestsLimit(plan: PlanTier): number {
-  return getPlanById(plan)?.requestsIncluded ?? 10_000;
-}
-
 // ── API ────────────────────────────────────────────────────────────────────
 
 /**
  * Crée une nouvelle clé API pour l'utilisateur connecté.
  * Retourne la clé en clair UNE SEULE FOIS — à stocker côté client immédiatement.
  *
- * NOTE SÉCURITÉ : le plan ne doit PAS être un choix libre du client. Tant que
- * la facturation (Stripe) n'est pas branchée, on force "starter". Quand les
- * abonnements existeront, lire le plan depuis l'abonnement réel du user
- * (table subscriptions) au lieu de input.plan, pour empêcher qu'un user
- * s'attribue un quota Scale sans payer.
+ * SÉCURITÉ : le navigateur n'envoie NI formule NI quota. Le quota est porté par
+ * le COMPTE et décidé par le serveur ; le nombre de clés actives est plafonné
+ * par un déclencheur en base (max_cles de la formule).
  */
 export async function createApiKey(
   input: CreateApiKeyInput
@@ -93,9 +98,11 @@ export async function createApiKey(
 
   if (authError || !user) throw new Error("Non authentifié");
 
-  // TODO(billing): remplacer par le plan de l'abonnement réel du user.
-  const plan: PlanTier = input.plan ?? "starter";
-  const requestsLimit = planToRequestsLimit(plan);
+  // Vérification anticipée (confort) : le serveur reste seul juge.
+  const { compte } = await chargerApiCompte();
+  if (compte && compte.clesActives >= compte.clesMax) {
+    throw new Error(messagePlafondCles(compte.clesMax));
+  }
 
   const secret = generateSecret(input.env);
   const hash = await hashSecret(secret);
@@ -110,14 +117,16 @@ export async function createApiKey(
       prefix,
       secret_hash: hash,
       env: input.env,
-      plan,
-      requests_count: 0,
-      requests_limit: requestsLimit,
     })
     .select()
     .single();
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (estRefusPlafondCles(`${error.message} ${error.details ?? ""} ${error.hint ?? ""}`)) {
+      throw new Error(messagePlafondCles(compte?.clesMax));
+    }
+    throw new Error(error.message);
+  }
 
   return { key: data as ApiKey, secret };
 }
@@ -164,39 +173,4 @@ export async function getApiKeyUsage(keyId: string): Promise<ApiUsageDay[]> {
 
   if (error) throw new Error(error.message);
   return (data ?? []) as ApiUsageDay[];
-}
-
-/**
- * Récupère l'usage agrégé du mois en cours pour toutes les clés de l'utilisateur.
- */
-export async function getMonthlyUsage(): Promise<{
-  requests: number;
-  limit: number;
-  percent: number;
-}> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) return { requests: 0, limit: 10_000, percent: 0 };
-
-  const firstOfMonth = new Date();
-  firstOfMonth.setDate(1);
-  firstOfMonth.setHours(0, 0, 0, 0);
-
-  const { data, error } = await supabase
-    .from("api_usage_logs")
-    .select("requests, api_keys!inner(user_id, requests_limit)")
-    .eq("api_keys.user_id", user.id)
-    .gte("date", firstOfMonth.toISOString().slice(0, 10));
-
-  if (error || !data) return { requests: 0, limit: 10_000, percent: 0 };
-
-  const requests = data.reduce((sum, row) => sum + (row.requests ?? 0), 0);
-  const limit = (data[0] as any)?.api_keys?.requests_limit ?? 10_000;
-  return {
-    requests,
-    limit,
-    percent: Math.min(100, Math.round((requests / limit) * 100)),
-  };
 }

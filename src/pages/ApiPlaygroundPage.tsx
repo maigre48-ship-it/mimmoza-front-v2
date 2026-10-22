@@ -9,26 +9,26 @@ import {
   Globe,
   Key,
   PlayCircle,
-  Wifi,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ApiDeveloperNav from '../features/api/components/ApiDeveloperNav';
 import { EnvBadge, PlanBadge } from '../features/api/components/ApiStatusBadge';
 import { useApiMember } from '../features/api/member/useApiMember';
+import {
+  API_BASE_URL,
+  API_ENDPOINTS,
+  API_GROUPES,
+  endpointApi,
+  exempleJson,
+  formuleApi,
+  libelleCredits,
+  PHRASE_FACTURATION_API,
+} from '../lib/api/catalogueApi';
 
-const API_BASE_URL = 'https://fwvrqngbafqdaekbdfnm.supabase.co/functions/v1/api-gateway';
-const DEFAULT_BODY = `{
-  "lat": 48.8686,
-  "lon": 2.3306
-}`;
-
-// Endpoints réels exposés par le gateway, avec leur coût en crédits
-const ENDPOINTS = [
-  { path: '/v1/scoring/smart', label: 'SmartScore complet', cost: 10 },
-  { path: '/v1/market/dvf',    label: 'Marché DVF',         cost: 2 },
-  { path: '/v1/risks',         label: 'Risques',            cost: 2 },
-] as const;
+// Tous les endpoints de l'API publique, avec leur coût et un corps d'exemple
+// (source unique : src/lib/api/catalogueApi.ts).
+const ENDPOINT_PAR_DEFAUT = API_ENDPOINTS[0];
 
 // ── CopyButton ─────────────────────────────────────────────────────────────
 function CopyButton({ text }: { text: string }) {
@@ -63,9 +63,8 @@ export default function ApiPlaygroundPage() {
   const { data: member, loading, error } = useApiMember();
 
   // État local du playground
-  const [method] = useState('POST');
-  const [path, setPath] = useState<string>('/v1/scoring/smart');
-  const [body, setBody] = useState(DEFAULT_BODY);
+  const [path, setPath] = useState<string>(ENDPOINT_PAR_DEFAUT.chemin);
+  const [body, setBody] = useState(exempleJson(ENDPOINT_PAR_DEFAUT));
   const [reqLoading, setReqLoading] = useState(false);
   const [status, setStatus] = useState<number | null>(null);
   const [responseHeaders, setResponseHeaders] = useState<Record<string, string>>({});
@@ -76,21 +75,19 @@ export default function ApiPlaygroundPage() {
   const hasKeys = activeKeys.length > 0;
   const defaultKey = activeKeys[0];
 
+  // La clé complète n'est affichée qu'une fois, à sa création : on ne peut pas
+  // la préremplir (seul son début est connu). L'utilisateur la colle ici.
   const [apiKey, setApiKey] = useState('');
 
-  // Préremplir la clé dès que le membre est chargé
-  useMemo(() => {
-    if (defaultKey?.prefix && !apiKey) {
-      setApiKey(defaultKey.prefix);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [defaultKey?.prefix]);
-
   const fullUrl = useMemo(() => `${API_BASE_URL}${path}`, [path]);
-  const selectedEndpoint = useMemo(
-    () => ENDPOINTS.find((e) => e.path === path) ?? ENDPOINTS[0],
-    [path]
-  );
+  const selectedEndpoint = useMemo(() => endpointApi(path) ?? ENDPOINT_PAR_DEFAUT, [path]);
+  const method = selectedEndpoint.methode;
+
+  function choisirEndpoint(chemin: string) {
+    setPath(chemin);
+    const ep = endpointApi(chemin);
+    setBody(ep ? exempleJson(ep) : '');
+  }
 
   // ── Logique fetch ─────────────────────────────────────────────────────────
   async function handleSend() {
@@ -100,28 +97,39 @@ export default function ApiPlaygroundPage() {
     setResponseHeaders({});
 
     try {
-      const parsed = body ? JSON.parse(body) : {};
-      const res = await fetch(fullUrl, {
-        method,
-        headers: {
-          Authorization: `Bearer ${apiKey.trim()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(parsed),
-      });
+      const res =
+        method === 'GET'
+          ? await fetch(fullUrl, { method, headers: { Authorization: `Bearer ${apiKey.trim()}` } })
+          : await fetch(fullUrl, {
+              method,
+              headers: {
+                Authorization: `Bearer ${apiKey.trim()}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(body.trim() ? JSON.parse(body) : {}),
+            });
       const text = await res.text();
       setStatus(res.status);
       setResponseText(text);
       setResponseHeaders({
-        'x-ratelimit-limit': res.headers.get('x-ratelimit-limit') ?? '',
-        'x-ratelimit-remaining': res.headers.get('x-ratelimit-remaining') ?? '',
+        'x-credits-cout': res.headers.get('x-credits-cout') ?? '',
+        'x-credits-restants': res.headers.get('x-credits-restants') ?? '',
         'x-response-time': res.headers.get('x-response-time') ?? '',
         'content-type': res.headers.get('content-type') ?? '',
       });
     } catch (err) {
       setStatus(0);
       setResponseText(
-        JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }, null, 2)
+        JSON.stringify(
+          {
+            erreur:
+              err instanceof SyntaxError
+                ? 'Le corps de la requête n’est pas un JSON valide.'
+                : 'La requête n’a pas pu être envoyée. Vérifiez votre connexion.',
+          },
+          null,
+          2,
+        )
       );
     } finally {
       setReqLoading(false);
@@ -161,10 +169,6 @@ export default function ApiPlaygroundPage() {
         <div className="flex items-center gap-2">
           {defaultKey && <EnvBadge env={defaultKey.environment ?? defaultKey.env} size="sm" />}
           <PlanBadge plan={member.subscription.plan} size="sm" />
-          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-            <Wifi className="h-3 w-3" />
-            Connected to API
-          </span>
         </div>
       </div>
 
@@ -189,11 +193,11 @@ export default function ApiPlaygroundPage() {
             </button>
             <button
               type="button"
-              onClick={() => navigate('/api/billing')}
+              onClick={() => navigate('/api#tarifs-api')}
               className="rounded-xl border border-amber-200 bg-white px-4 py-2 text-sm font-medium text-amber-700 transition hover:bg-amber-50"
             >
               <CreditCard className="mr-1.5 inline h-4 w-4" />
-              Abonnement
+              Formules
             </button>
           </div>
         </div>
@@ -205,7 +209,7 @@ export default function ApiPlaygroundPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-slate-900">Playground API</h1>
             <div className="mt-2 flex items-center gap-3">
-              <p className="text-slate-500">Teste tes appels Mimmoza en direct avec ta clé API.</p>
+              <p className="text-slate-500">Testez vos appels en direct avec votre clé API. Chaque appel réussi consomme des crédits.</p>
               {hasKeys && (
                 <span className="text-sm text-slate-400">
                   ·{' '}
@@ -236,7 +240,7 @@ export default function ApiPlaygroundPage() {
               <Key className="h-5 w-5 text-indigo-500" />
               <h2 className="font-semibold text-slate-900">Authentification</h2>
             </div>
-            <label className="mt-4 block text-sm font-medium text-slate-700">API key</label>
+            <label className="mt-4 block text-sm font-medium text-slate-700">Clé API complète</label>
             <input
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
@@ -253,21 +257,12 @@ export default function ApiPlaygroundPage() {
                 Créer une clé API →
               </button>
             )}
-            {hasKeys && activeKeys.length > 1 && (
-              <div className="mt-3">
-                <label className="mb-1 block text-xs text-slate-500">Changer de clé</label>
-                <select
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-300"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                >
-                  {activeKeys.map((k) => (
-                    <option key={k.id} value={k.prefix}>
-                      {k.name} ({k.env === 'live' ? 'Production' : 'Test'})
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {hasKeys && (
+              <p className="mt-2 text-xs text-slate-500">
+                Collez la clé copiée lors de sa création (vos clés :{' '}
+                {activeKeys.map((k) => `${k.name} — ${k.prefix}…`).join(', ')}). Une clé perdue se remplace par une
+                nouvelle.
+              </p>
             )}
           </div>
 
@@ -290,27 +285,41 @@ export default function ApiPlaygroundPage() {
                 <label className="block text-sm font-medium text-slate-700">Endpoint</label>
                 <select
                   value={path}
-                  onChange={(e) => setPath(e.target.value)}
+                  onChange={(e) => choisirEndpoint(e.target.value)}
                   className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-mono text-sm text-slate-800 outline-none transition focus:border-indigo-400"
                 >
-                  {ENDPOINTS.map((ep) => (
-                    <option key={ep.path} value={ep.path}>
-                      {ep.path} — {ep.label} ({ep.cost} crédits)
-                    </option>
-                  ))}
+                  {API_GROUPES.map((g) => {
+                    const eps = API_ENDPOINTS.filter((ep) => ep.groupe === g.id);
+                    if (eps.length === 0) return null;
+                    return (
+                      <optgroup key={g.id} label={g.libelle}>
+                        {eps.map((ep) => (
+                          <option key={ep.chemin} value={ep.chemin}>
+                            {ep.chemin} — {ep.titre} ({libelleCredits(ep.credits)})
+                            {ep.statut === 'beta' ? ' · bêta' : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    );
+                  })}
                 </select>
-                <p className="mt-1.5 text-xs text-slate-500">
-                  Coût : <span className="font-semibold">{selectedEndpoint.cost} crédits</span> par appel
+                <p className="mt-1.5 text-xs text-slate-500">{selectedEndpoint.description}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Coût : <span className="font-semibold">{libelleCredits(selectedEndpoint.credits)}</span>
+                  {selectedEndpoint.credits > 0 && ' par appel réussi'}
+                  {selectedEndpoint.statut === 'beta' && ' · endpoint en bêta, sa réponse peut encore évoluer'}
                 </p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700">Body JSON</label>
+                <label className="block text-sm font-medium text-slate-700">Corps JSON (exemple modifiable)</label>
                 <textarea
-                  value={body}
+                  value={method === 'GET' ? '' : body}
                   onChange={(e) => setBody(e.target.value)}
+                  disabled={method === 'GET'}
+                  placeholder={method === 'GET' ? 'Pas de corps pour une requête GET' : undefined}
                   rows={12}
                   spellCheck={false}
-                  className="mt-2 w-full rounded-xl border border-slate-300 bg-slate-950 px-4 py-3 font-mono text-sm text-emerald-300 outline-none transition focus:border-indigo-400"
+                  className="mt-2 w-full rounded-xl border border-slate-300 bg-slate-950 px-4 py-3 font-mono text-sm text-emerald-300 outline-none transition focus:border-indigo-400 disabled:opacity-60"
                 />
               </div>
               <div className="flex flex-wrap gap-3">
@@ -324,7 +333,11 @@ export default function ApiPlaygroundPage() {
                   {reqLoading ? 'Exécution...' : 'Envoyer la requête'}
                 </button>
                 <CopyButton
-                  text={`curl -X POST ${fullUrl} \\\n  -H "Authorization: Bearer ${apiKey || 'mk_live_xxx'}" \\\n  -H "Content-Type: application/json" \\\n  -d '${body}'`}
+                  text={
+                    method === 'GET'
+                      ? `curl ${fullUrl} \\\n  -H "Authorization: Bearer ${apiKey || 'mk_live_xxx'}"`
+                      : `curl -X POST ${fullUrl} \\\n  -H "Authorization: Bearer ${apiKey || 'mk_live_xxx'}" \\\n  -H "Content-Type: application/json" \\\n  -d '${body}'`
+                  }
                 />
               </div>
             </div>
@@ -363,8 +376,8 @@ export default function ApiPlaygroundPage() {
             <h3 className="font-semibold text-slate-900">Headers de réponse</h3>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {[
-                ['X-RateLimit-Limit',     responseHeaders['x-ratelimit-limit']],
-                ['X-RateLimit-Remaining', responseHeaders['x-ratelimit-remaining']],
+                ['X-Credits-Cout',     responseHeaders['x-credits-cout']],
+                ['X-Credits-Restants', responseHeaders['x-credits-restants']],
                 ['X-Response-Time',       responseHeaders['x-response-time']],
                 ['Content-Type',          responseHeaders['content-type']],
               ].map(([label, value]) => (
@@ -376,17 +389,13 @@ export default function ApiPlaygroundPage() {
             </div>
           </div>
 
-          {/* Payload tip */}
+          {/* Facturation */}
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
             <div className="flex items-start gap-3">
               <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
               <div>
-                <div className="font-medium text-amber-900">Payload minimal recommandé</div>
-                <p className="mt-1 text-sm text-amber-800">
-                  Chaque endpoint accepte au minimum{' '}
-                  <code className="rounded bg-amber-100 px-1 font-mono text-xs">lat</code> et{' '}
-                  <code className="rounded bg-amber-100 px-1 font-mono text-xs">lon</code>.
-                </p>
+                <div className="font-medium text-amber-900">Comment les crédits sont décomptés</div>
+                <p className="mt-1 text-sm text-amber-800">{PHRASE_FACTURATION_API}</p>
               </div>
             </div>
           </div>
@@ -396,31 +405,20 @@ export default function ApiPlaygroundPage() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="font-medium text-indigo-900">
-                  Plan actuel : {member.subscription?.plan ?? '—'}
+                  Formule actuelle : {formuleApi(member.subscription.plan).nom}
                 </p>
                 <p className="mt-1 text-sm text-indigo-700">
                   {(member.usage?.usedRequests ?? 0).toLocaleString('fr-FR')} crédits consommés ce mois
                 </p>
               </div>
-              {member.subscription ? (
-                <button
-                  type="button"
-                  onClick={() => navigate('/api/billing')}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-600 transition hover:bg-indigo-50"
-                >
-                  <CreditCard className="h-4 w-4" />
-                  Abonnement
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => navigate('/api/billing')}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
-                >
-                  <CreditCard className="h-4 w-4" />
-                  Souscrire
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => navigate('/api#tarifs-api')}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-600 transition hover:bg-indigo-50"
+              >
+                <CreditCard className="h-4 w-4" />
+                Formules
+              </button>
             </div>
           </div>
         </div>

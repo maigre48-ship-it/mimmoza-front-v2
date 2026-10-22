@@ -2,14 +2,18 @@
 //
 // Hook unique qui charge depuis Supabase :
 //   - les clés API de l'utilisateur connecté (table api_keys)
-//   - l'usage mensuel (table api_usage_logs ou vue api_monthly_usage)
-//   - l'abonnement actif (table api_subscriptions)
+//   - le solde et la formule du COMPTE (RPC api_mon_compte — source de vérité
+//     depuis la refonte du 22/10/2026 ; repli sur les anciennes tables sinon)
+//   - l'usage mensuel (repli : vue api_monthly_usage ou table api_usage_logs)
+//   - l'abonnement actif (repli : table api_subscriptions)
 //   - le statut de santé de la plateforme (table api_health_status ou constante)
 //
 // Retourne { data: ApiMemberData | null, loading: boolean, error: string | null }
 
 import { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { chargerApiCompte } from '../../../lib/api/apiCompte';
+import { normaliserFormuleApi } from '../../../lib/api/catalogueApi';
 import type { BillingMode, PlanTier } from './apiPlans';
 
 // ── Types exportés ────────────────────────────────────────────────────────────
@@ -118,7 +122,7 @@ export function useApiMember(): UseApiMemberReturn {
           // status peut ne pas exister en DB → dérivé de revoked_at
           status: (k.status ?? (revokedAt ? 'revoked' : 'active')) as 'active' | 'revoked',
           requests_count: k.requests_count ?? 0,
-          requests_limit: k.requests_limit ?? 10_000,
+          requests_limit: k.requests_limit ?? 0,
           last_used_at: k.last_used_at ?? null,
           created_at: k.created_at ?? new Date().toISOString(),
           revoked_at: revokedAt,
@@ -128,18 +132,26 @@ export function useApiMember(): UseApiMemberReturn {
       // ── 2. Usage mensuel ───────────────────────────────────────────────────
       // Essaie d'abord la vue api_monthly_usage, puis fallback sur un agrégat
       let usedRequests = 0;
-      let totalRequests = 10_000;
+      let totalRequests = 0;
       let logs: ApiLogRecord[] = [];
 
-      const { data: monthlyUsage, error: monthlyError } = await supabase
-        .from('api_monthly_usage')
-        .select('used_requests, total_requests')
-        .eq('user_id', userId)
-        .maybeSingle();
+      // Solde du compte (RPC). Absente en base : repli sur les anciennes sources.
+      const { compte } = await chargerApiCompte();
 
-      if (!monthlyError && monthlyUsage) {
+      const { data: monthlyUsage, error: monthlyError } = compte
+        ? { data: null, error: null }
+        : await supabase
+            .from('api_monthly_usage')
+            .select('used_requests, total_requests')
+            .eq('user_id', userId)
+            .maybeSingle();
+
+      if (compte) {
+        usedRequests = compte.creditsUtilises;
+        totalRequests = compte.creditsMois;
+      } else if (!monthlyError && monthlyUsage) {
         usedRequests = monthlyUsage.used_requests ?? 0;
-        totalRequests = monthlyUsage.total_requests ?? 10_000;
+        totalRequests = monthlyUsage.total_requests ?? 0;
       } else {
         // Fallback : agrégat depuis la table api_usage_logs
         const now = new Date();
@@ -191,15 +203,17 @@ export function useApiMember(): UseApiMemberReturn {
         .order('created_at', { ascending: false })
         .maybeSingle();
 
-      // Si pas d'abonnement actif, on fournit un plan "free" par défaut
+      // Sans abonnement actif : formule « essai ». La formule du compte (RPC) prime.
       const subscription: ApiSubscriptionData = subError || !rawSub
-        ? { plan: 'free' as PlanTier, billingMode: 'monthly', status: 'active', currentPeriodEnd: null }
+        ? { plan: 'essai' as PlanTier, billingMode: 'monthly', status: 'active', currentPeriodEnd: null }
         : {
-            plan: (rawSub.plan_code ?? 'free') as PlanTier,
-            billingMode: (rawSub.billing_mode ?? 'monthly') as BillingMode,
+            plan: normaliserFormuleApi(rawSub.plan_code),
+            billingMode: (rawSub.billing_mode === 'annual' ? 'annual' : 'monthly') as BillingMode,
             status: rawSub.status ?? 'active',
             currentPeriodEnd: rawSub.current_period_end ?? null,
           };
+
+      if (compte) subscription.plan = compte.plan;
 
       // ── 4. Health status ───────────────────────────────────────────────────
       // Essaie une table api_health_status, sinon retourne "operational" par défaut

@@ -1,163 +1,81 @@
 // supabase/functions/_shared/apiKeyAuth.ts
 // ─────────────────────────────────────────────────────────────────────────────
-// Validation des API keys Mimmoza (x-api-key ou Authorization Bearer)
+// Identification des clés API Mimmoza (en-tête x-api-key ou Authorization Bearer).
+//
+// Rôle LIMITÉ depuis la refonte du 22/10/2026 : test du FORMAT de la clé, puis
+// recherche de la clé par son EMPREINTE SHA-256. Le contrôle du quota n'a plus
+// lieu ici : c'est la réservation atomique `api_reserver_credits` (portée par le
+// COMPTE, pas par la clé) qui décide de l'accès et du débit.
+//
+// Aucun journal de la clé, de son empreinte, des en-têtes ni de la ligne lue :
+// les journaux Supabase sont lisibles par toute personne ayant accès au projet.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import type { ClientBase } from "./apiBase.ts";
 
-// ── Types ──────────────────────────────────────────────────────────────────
-
-export type ValidatedApiKey = {
+export type CleIdentifiee = {
   id: string;
   user_id: string;
   env: "live" | "test";
-  plan: "starter" | "pro" | "enterprise";
-  requests_count: number;
-  requests_limit: number;
 };
 
-export type AuthResult =
-  | { ok: true; key: ValidatedApiKey }
-  | { ok: false; status: number; error: string };
+export type ResultatAuth =
+  | { ok: true; cle: CleIdentifiee }
+  | { ok: false; status: 401 | 503; code: "cle_absente" | "cle_invalide" | "cle_revoquee" | "service_indisponible"; message: string };
 
-// ── Hash SHA-256 ───────────────────────────────────────────────────────────
+/** Format émis par src/lib/apiKeys.ts : mk_live_ / mk_test_ + 32 alphanumériques (tolérance 20–128). */
+const RE_FORMAT_CLE = /^mk_(live|test)_[A-Za-z0-9]{20,128}$/;
 
-async function sha256(input: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-
-  return Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+export function extraireCle(authorization: string | null, xApiKey: string | null): string | null {
+  const x = xApiKey?.trim();
+  if (x) return x;
+  const m = /^Bearer\s+(\S+)\s*$/i.exec(authorization ?? "");
+  return m ? m[1] : null;
 }
 
-// ── Extraction clé API ─────────────────────────────────────────────────────
-
-function extractApiKey(
-  authHeader: string | null,
-  xApiKey: string | null
-): string | null {
-  // Priorité x-api-key (API publique)
-  if (xApiKey) return xApiKey.trim();
-
-  // Fallback Authorization Bearer
-  if (authHeader?.startsWith("Bearer ")) {
-    return authHeader.slice(7).trim();
-  }
-
-  return null;
+export function formatCleValide(cle: string): boolean {
+  return RE_FORMAT_CLE.test(cle);
 }
 
-// ── validateApiKey ─────────────────────────────────────────────────────────
+export async function empreinteSha256(texte: string): Promise<string> {
+  const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(texte));
+  return Array.from(new Uint8Array(h)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
-export async function validateApiKey(
-  authHeader: string | null,
-  xApiKey?: string | null
-): Promise<AuthResult> {
-  const token = extractApiKey(authHeader, xApiKey);
-
-  if (!token) {
-    return {
-      ok: false,
-      status: 401,
-      error: "Missing API key",
-    };
+export async function identifierCle(
+  base: ClientBase,
+  authorization: string | null,
+  xApiKey: string | null,
+): Promise<ResultatAuth> {
+  const cle = extraireCle(authorization, xApiKey);
+  if (!cle) {
+    return { ok: false, status: 401, code: "cle_absente", message: "Clé API manquante : en-tête « Authorization: Bearer mk_live_… » ou « x-api-key »." };
   }
-
-  // Format attendu
-  if (!token.startsWith("mk_live_") && !token.startsWith("mk_test_")) {
-    return {
-      ok: false,
-      status: 401,
-      error: "Invalid API key format",
-    };
+  if (!formatCleValide(cle)) {
+    return { ok: false, status: 401, code: "cle_invalide", message: "Clé API invalide." };
   }
-
-  // Hash
-  const hash = await sha256(token);
-
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL") ?? "",
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+  const empreinte = await empreinteSha256(cle);
+  const { data, error } = await base.selectionner<{ id: string; user_id: string; env: string; revoked_at: string | null }>(
+    "api_keys",
+    "id,user_id,env,revoked_at",
+    { secret_hash: empreinte },
+    1,
   );
-
-  const { data, error } = await supabase
-    .from("api_keys")
-    .select(
-      "id, user_id, env, plan, requests_count, requests_limit, revoked_at"
-    )
-    .eq("secret_hash", hash)
-    .single();
-
-  // Aucun journal de la clé, de son empreinte ni de la ligne : les journaux
-  // Supabase sont lisibles par toute personne ayant accès au projet.
-
-  if (error || !data) {
-    return {
-      ok: false,
-      status: 401,
-      error: "Invalid API key",
-    };
+  if (error) {
+    return { ok: false, status: 503, code: "service_indisponible", message: "Service momentanément indisponible, réessayez." };
   }
-
-  // Révocation
-  if (data.revoked_at) {
-    return {
-      ok: false,
-      status: 401,
-      error: "API key revoked",
-    };
-  }
-
-  // Quota
-  if (data.requests_count >= data.requests_limit) {
-    return {
-      ok: false,
-      status: 429,
-      error: `Quota exceeded (${data.requests_limit})`,
-    };
-  }
-
-  return {
-    ok: true,
-    key: {
-      id: data.id,
-      user_id: data.user_id,
-      env: data.env,
-      plan: data.plan,
-      requests_count: data.requests_count,
-      requests_limit: data.requests_limit,
-    },
-  };
+  const ligne = Array.isArray(data) ? data[0] : undefined;
+  if (!ligne) return { ok: false, status: 401, code: "cle_invalide", message: "Clé API invalide." };
+  if (ligne.revoked_at) return { ok: false, status: 401, code: "cle_revoquee", message: "Clé API révoquée." };
+  return { ok: true, cle: { id: ligne.id, user_id: ligne.user_id, env: ligne.env === "test" ? "test" : "live" } };
 }
 
-// ── incrementUsage ─────────────────────────────────────────────────────────
+// ── CORS de l'API publique ─────────────────────────────────────────────────
 
-export async function incrementUsage(
-  keyId: string,
-  endpoint: string,
-  isError: boolean,
-  latencyMs: number
-): Promise<void> {
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL") ?? "",
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
-  );
-
-  await supabase.rpc("increment_api_usage", {
-    p_key_id: keyId,
-    p_endpoint: endpoint,
-    p_is_error: isError,
-    p_latency: latencyMs,
-  });
-}
-
-// ── CORS ───────────────────────────────────────────────────────────────────
-
-export const corsHeaders = {
+export const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-api-key, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, x-api-key, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Expose-Headers": "X-Credits-Cout, X-Credits-Restants, X-Request-Id, X-Response-Time, Retry-After",
+  "Access-Control-Max-Age": "86400",
 };

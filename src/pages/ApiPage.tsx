@@ -1,13 +1,15 @@
 ﻿// src/pages/ApiPage.tsx
-import type {
-  Map} from "lucide-react";
+// Présentation publique de l'API Mimmoza (/api) : endpoints, exemple, erreurs
+// et formules. Chiffres et endpoints : src/lib/api/catalogueApi.ts (source unique).
+// Visiteur non connecté : la page s'affiche sans l'encart « Votre espace API ».
+import type { LucideIcon } from "lucide-react";
 import {
   Activity,
   AlertCircle,
   BarChart3,
   BookOpen,
+  Building2,
   Check,
-  ChevronRight,
   Code2,
   Copy,
   CreditCard,
@@ -16,63 +18,56 @@ import {
   Key,
   LayoutDashboard,
   Lock,
+  Map as MapIcon,
   PlayCircle,
   ShieldCheck,
   Terminal,
-  Wifi,
-  Zap
+  Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ESPACES_VISIBLES } from "../lib/espacesEnPreparation";
 
+import ApiBillingToggle from "../features/api/components/ApiBillingToggle";
+import ApiPlanCard from "../features/api/components/ApiPlanCard";
 import { ApiStatusBadge, PlanBadge } from "../features/api/components/ApiStatusBadge";
 import ApiUsageSummary from "../features/api/components/ApiUsageSummary";
-import { getPlanById } from "../features/api/member/apiPlans";
+import RechargePrepayeeCard from "../features/api/components/PayAsYouGoCard";
 import { useApiMember } from "../features/api/member/useApiMember";
+import {
+  API_BASE_URL,
+  API_ENDPOINTS,
+  API_ESSAI,
+  API_FORMULES,
+  API_GROUPES,
+  endpointApi,
+  exempleCurl,
+  formuleApi,
+  libelleCredits,
+  NB_ENDPOINTS_API,
+  PHRASE_FACTURATION_API,
+  REMISE_ANNUELLE_MAX_API,
+  type ApiEndpoint,
+  type ApiGroupeId,
+} from "../lib/api/catalogueApi";
 
 const GRAD_API = "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)";
 const ACCENT_API = "#6366f1";
-const API_BASE_URL = "https://fwvrqngbafqdaekbdfnm.supabase.co/functions/v1/api-gateway";
 
-// ── Types & data ─────────────────────────────────────────────────────────────
+// ── Données de présentation ──────────────────────────────────────────────────
 
-type Endpoint = {
-  method: "GET" | "POST" | "DELETE";
-  path: string;
-  description: string;
-  status?: "live" | "beta" | "planned";
+const ICONE_GROUPE: Record<ApiGroupeId, LucideIcon> = {
+  scoring: BarChart3,
+  foncier: MapIcon,
+  batiment: Building2,
+  territoire: ShieldCheck,
+  service: Activity,
 };
 
-const ENDPOINT_GROUPS: {
-  label: string;
-  icon: typeof Map;
-  endpoints: Endpoint[];
-}[] = [
-  {
-    label: "Scoring & Risques",
-    icon: ShieldCheck,
-    endpoints: [
-      { method: "POST", path: "/v1/scoring/smart", description: "SmartScore multi-piliers enrichi (transport, commodités, écoles, marché, santé, environnement, DPE)", status: "live" },
-      { method: "POST", path: "/v1/risks",         description: "Analyse de risques : environnement, DPE, contrainte énergétique et impact rentabilité", status: "live" },
-    ],
-  },
-  {
-    label: "Marché & Prix",
-    icon: BarChart3,
-    endpoints: [
-      { method: "POST", path: "/v1/market/dvf", description: "Statistiques de marché DVF : prix médian/moyen, quartiles et comparables", status: "live" },
-    ],
-  },
-];
+const GROUPES_AFFICHES = API_GROUPES.filter((g) => API_ENDPOINTS.some((e) => e.groupe === g.id));
 
-const CODE_EXAMPLE = `curl -X POST ${API_BASE_URL}/v1/scoring/smart \\
-  -H "Authorization: Bearer mk_live_xxxxxxxxxxxx" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "lat": 48.8686,
-    "lon": 2.3306
-  }'`;
+const ENDPOINT_EXEMPLE = endpointApi("/v1/scoring/smart") ?? API_ENDPOINTS[0];
+const CODE_EXAMPLE = exempleCurl(ENDPOINT_EXEMPLE);
 
 const RESPONSE_EXAMPLE = `{
   "success": true,
@@ -95,44 +90,34 @@ const RESPONSE_EXAMPLE = `{
       "marche": 65,
       "sante": 72
     }
-  },
-  "smartscore_v4": {
-    "score": 84,
-    "verdict": "Excellent potentiel (V4)..."
   }
 }`;
 
-const ERROR_EXAMPLES = [
-  { code: 401, title: "Invalid API key",  body: `{\n  "error": "Invalid API key"\n}` },
-  { code: 404, title: "Route not found", body: `{\n  "error": "Route not found"\n}` },
-  { code: 429, title: "Quota exceeded",  body: `{\n  "error": "Quota exceeded"\n}` },
+const ERREURS: { code: number; titre: string; detail: string }[] = [
+  { code: 401, titre: "Clé absente ou invalide", detail: "Vérifiez l'en-tête Authorization et que la clé n'a pas été révoquée." },
+  { code: 402, titre: "Crédits épuisés ou essai terminé", detail: "Aucun appel n'est facturé après coup : l'appel est refusé. Attendez le renouvellement, rechargez ou changez de formule." },
+  { code: 429, titre: "Trop de requêtes par minute", detail: "Le débit dépend de votre formule. Patientez quelques secondes puis réessayez." },
 ];
 
 // ── Composants utilitaires ────────────────────────────────────────────────────
 
-function MethodBadge({ method }: { method: Endpoint["method"] }) {
-  const colors: Record<Endpoint["method"], string> = {
-    GET:    "bg-emerald-50 text-emerald-700 border-emerald-200",
-    POST:   "bg-blue-50 text-blue-700 border-blue-200",
-    DELETE: "bg-red-50 text-red-700 border-red-200",
+function MethodBadge({ method }: { method: ApiEndpoint["methode"] }) {
+  const colors: Record<ApiEndpoint["methode"], string> = {
+    GET: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    POST: "bg-blue-50 text-blue-700 border-blue-200",
   };
   return (
-    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold font-mono ${colors[method]}`}>
+    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 font-mono text-[11px] font-semibold ${colors[method]}`}>
       {method}
     </span>
   );
 }
 
-function StatusBadge({ status }: { status: Endpoint["status"] | undefined }) {
-  const map = {
-    live:    "bg-emerald-50 text-emerald-700 border-emerald-200",
-    beta:    "bg-amber-50 text-amber-700 border-amber-200",
-    planned: "bg-slate-50 text-slate-600 border-slate-200",
-  } as const;
-  if (!status) return null;
+function StatusBadge({ status }: { status: ApiEndpoint["statut"] }) {
+  if (status !== "beta") return null;
   return (
-    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${map[status]}`}>
-      {status}
+    <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+      bêta
     </span>
   );
 }
@@ -140,9 +125,13 @@ function StatusBadge({ status }: { status: Endpoint["status"] | undefined }) {
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      /* presse-papiers indisponible : sans effet */
+    }
   };
   return (
     <button
@@ -180,9 +169,7 @@ function CodeCard({
           <CopyButton text={code} />
         </div>
       </div>
-      <pre className={`overflow-x-auto bg-slate-950 p-4 text-[11px] leading-relaxed ${textColor}`}>
-        {code}
-      </pre>
+      <pre className={`overflow-x-auto bg-slate-950 p-4 text-[11px] leading-relaxed ${textColor}`}>{code}</pre>
     </div>
   );
 }
@@ -190,52 +177,31 @@ function CodeCard({
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ApiPage() {
-  const [activeGroup, setActiveGroup] = useState(0);
+  const [activeGroup, setActiveGroup] = useState<ApiGroupeId>(GROUPES_AFFICHES[0]?.id ?? "scoring");
+  const [periodicite, setPeriodicite] = useState<"mensuel" | "annuel">("mensuel");
   const navigate = useNavigate();
-  const { data: member, loading, error } = useApiMember();
+  // Visiteur non connecté : member est null, la page reste lisible.
+  const { data: member, loading } = useApiMember();
   const { hash } = useLocation();
 
-  // /api/billing renvoie ici avec #tarifs-api : on fait défiler jusqu'aux plans.
+  // /api/billing renvoie ici avec #tarifs-api : on fait défiler jusqu'aux formules.
   useEffect(() => {
     if (!hash) return;
     const cible = document.getElementById(hash.slice(1));
     if (cible) window.setTimeout(() => cible.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   }, [hash, loading]);
 
+  const activeEndpoints = useMemo(() => API_ENDPOINTS.filter((e) => e.groupe === activeGroup), [activeGroup]);
 
-  const activeEndpoints = useMemo(
-    () => ENDPOINT_GROUPS[activeGroup].endpoints,
-    [activeGroup]
-  );
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-12">
-        <div className="text-sm text-slate-500">Chargement de l'espace API…</div>
-      </div>
-    );
-  }
-
-  if (error || !member) {
-    return (
-      <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-600">
-        {error ?? "Impossible de charger les données API."}
-      </div>
-    );
-  }
-
-  const plan = getPlanById(member.subscription.plan);
-  const activeKeys = (member.keys ?? []).filter((k) => k.status === "active");
-  const healthStatus = member.healthStatus ?? "operational";
+  const activeKeys = (member?.keys ?? []).filter((k) => k.status === "active");
+  const healthStatus = member?.healthStatus ?? "operational";
+  const planActuel = member?.subscription.plan;
 
   return (
     <div className="space-y-10">
 
       {/* ── Hero ────────────────────────────────────────────────────── */}
-      <div
-        className="relative overflow-hidden rounded-3xl p-8 text-white md:p-12"
-        style={{ background: GRAD_API }}
-      >
+      <div className="relative overflow-hidden rounded-3xl p-8 text-white md:p-12" style={{ background: GRAD_API }}>
         <div
           className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full"
           style={{ background: "radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 60%)" }}
@@ -248,24 +214,23 @@ export default function ApiPage() {
         <div className="relative z-10 max-w-3xl">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium backdrop-blur-sm">
             <Zap className="h-3.5 w-3.5" />
-            API Mimmoza · v1 · Production-ready
+            API Mimmoza · v1
           </div>
 
           <h1 className="text-3xl font-bold tracking-tight md:text-5xl">
-            Une API immobilière premium, prête à intégrer
+            Les données foncières et immobilières de Mimmoza, dans vos outils
           </h1>
 
           <p className="mt-4 max-w-2xl text-lg leading-relaxed text-indigo-100">
-            Score foncier, signaux marché DVF et analyse de risques via une API
-            REST sécurisée, pensée pour les outils métiers, SaaS, CRM et
-            workflows d'investissement.
+            Score d'emplacement, marché DVF, parcelle et PLU, faisabilité, DPE, risques, loyers :
+            une API REST pensée pour les outils métiers, CRM et logiciels d'investissement.
           </p>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
             {[
-              { label: "Base URL",  value: "…supabase.co/functions/v1/api-gateway" },
-              { label: "Auth",      value: "Bearer API Key" },
-              { label: "Format",    value: "JSON · HTTPS" },
+              { label: "Adresse de base", value: "…supabase.co/functions/v1/api-gateway" },
+              { label: "Authentification", value: "Bearer + clé API" },
+              { label: "Format", value: "JSON · HTTPS" },
             ].map((item) => (
               <div key={item.label} className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur-sm">
                 <div className="text-xs uppercase tracking-wide text-indigo-200">{item.label}</div>
@@ -282,7 +247,7 @@ export default function ApiPage() {
               style={{ color: ACCENT_API }}
             >
               <Key className="h-4 w-4" />
-              Commencer avec une clé API
+              Essayer gratuitement
             </button>
             <button
               type="button"
@@ -293,26 +258,26 @@ export default function ApiPage() {
               Tester l'API
             </button>
             {ESPACES_VISIBLES.apiDashboard && (
-            <button
-              type="button"
-              onClick={() => navigate("/api/developer")}
-              className="inline-flex items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-5 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/20"
-            >
-              <BookOpen className="h-4 w-4" />
-              Espace développeur
-              <ExternalLink className="h-3.5 w-3.5 opacity-70" />
-            </button>
+              <button
+                type="button"
+                onClick={() => navigate("/api/developer")}
+                className="inline-flex items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-5 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/20"
+              >
+                <BookOpen className="h-4 w-4" />
+                Espace développeur
+                <ExternalLink className="h-3.5 w-3.5 opacity-70" />
+              </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* ── Stats ───────────────────────────────────────────────────── */}
+      {/* ── Chiffres (uniquement ce qui est vrai) ─────────────────────── */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {[
-          { value: "3",      label: "Endpoints en production" },
-          { value: "<200ms", label: "Latence médiane" },
-          { value: "99.9%",  label: "Disponibilité SLA" },
+          { value: String(NB_ENDPOINTS_API), label: "Endpoints disponibles" },
+          { value: API_ESSAI.credits.toLocaleString("fr-FR"), label: `Crédits offerts à l'essai (${API_ESSAI.dureeEssaiJours} jours)` },
+          { value: "Aucun", label: "Dépassement facturé après coup" },
           { value: "Bearer", label: "Authentification" },
         ].map((stat) => (
           <div key={stat.label} className="rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm">
@@ -322,85 +287,76 @@ export default function ApiPage() {
         ))}
       </div>
 
-      {/* ── Votre espace développeur ─────────────────────────────────── */}
-      <div className="rounded-3xl border border-indigo-100 bg-indigo-50/60 p-6">
-        {/* Header */}
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="mb-1.5 flex flex-wrap items-center gap-3">
-              <h2 className="text-lg font-bold text-slate-900">Votre espace développeur</h2>
-              <PlanBadge plan={member.subscription.plan} mode={member.subscription.billingMode} />
-              <ApiStatusBadge
-                variant={healthStatus as "operational" | "degraded" | "incident"}
-                label={`API ${healthStatus === "operational" ? "opérationnelle" : "dégradée"}`}
-                size="sm"
-              />
-              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                <Wifi className="h-3 w-3" />
-                Connected to API
-              </span>
+      {/* ── Votre espace API (connecté uniquement) ────────────────────── */}
+      {member && (
+        <div className="rounded-3xl border border-indigo-100 bg-indigo-50/60 p-6">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div className="mb-1.5 flex flex-wrap items-center gap-3">
+                <h2 className="text-lg font-bold text-slate-900">Votre espace API</h2>
+                <PlanBadge plan={member.subscription.plan} mode={member.subscription.billingMode} />
+                <ApiStatusBadge
+                  variant={healthStatus as "operational" | "degraded" | "incident"}
+                  label={`API ${healthStatus === "operational" ? "opérationnelle" : "dégradée"}`}
+                  size="sm"
+                />
+              </div>
+              <p className="text-sm text-slate-500">
+                Formule {formuleApi(member.subscription.plan).nom} ·{" "}
+                {(member.usage.usedRequests ?? 0).toLocaleString("fr-FR")} crédits utilisés ·{" "}
+                {activeKeys.length} clé{activeKeys.length > 1 ? "s" : ""} active{activeKeys.length > 1 ? "s" : ""}
+              </p>
             </div>
-            <p className="text-sm text-slate-500">
-              Plan {plan?.name ?? member.subscription.plan} ·{" "}
-              {(member.usage.usedRequests ?? 0).toLocaleString("fr-FR")} requêtes ce mois ·{" "}
-              {activeKeys.length} clé{activeKeys.length > 1 ? "s" : ""} active{activeKeys.length > 1 ? "s" : ""}
-            </p>
           </div>
-        </div>
 
-        {/* Usage bar */}
-        <ApiUsageSummary subscription={member.subscription} usage={member.usage} showActions={false} />
+          <ApiUsageSummary subscription={member.subscription} usage={member.usage} showActions={false} />
 
-        {/* Quick nav */}
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            { label: "Abonnement", sub: "Plans & tarification",    path: "/api/billing",    icon: CreditCard },
-            {
-              label: "Clés API",
-              sub: `${activeKeys.length} clé${activeKeys.length > 1 ? "s" : ""} active${activeKeys.length > 1 ? "s" : ""}`,
-              path: "/api/keys",
-              icon: Key,
-            },
-            { label: "Playground",  sub: "Tester l'API",          path: "/api/playground", icon: PlayCircle },
-            { label: "Dashboard",   sub: "Logs & métriques",      path: "/api/developer",  icon: LayoutDashboard },
-          ].filter((item) => ESPACES_VISIBLES.apiDashboard || item.path !== "/api/developer").map(({ label, sub, path, icon: Icon }) => (
-            <button
-              key={path}
-              type="button"
-              onClick={() => navigate(path)}
-              className="flex items-start gap-3 rounded-2xl border border-indigo-100 bg-white p-4 text-left shadow-sm transition-all hover:border-indigo-200 hover:shadow-md"
-            >
-              <div
-                className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl"
-                style={{ background: `${ACCENT_API}12` }}
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              { label: "Formules", sub: "Tarifs et crédits", path: "/api#tarifs-api", icon: CreditCard },
+              {
+                label: "Clés API",
+                sub: `${activeKeys.length} clé${activeKeys.length > 1 ? "s" : ""} active${activeKeys.length > 1 ? "s" : ""}`,
+                path: "/api/keys",
+                icon: Key,
+              },
+              { label: "Playground", sub: "Tester l'API", path: "/api/playground", icon: PlayCircle },
+              { label: "Tableau de bord", sub: "Suivi des appels", path: "/api/developer", icon: LayoutDashboard },
+            ]
+              .filter((item) => ESPACES_VISIBLES.apiDashboard || item.path !== "/api/developer")
+              .map(({ label, sub, path, icon: Icon }) => (
+                <button
+                  key={path}
+                  type="button"
+                  onClick={() => navigate(path)}
+                  className="flex items-start gap-3 rounded-2xl border border-indigo-100 bg-white p-4 text-left shadow-sm transition-all hover:border-indigo-200 hover:shadow-md"
+                >
+                  <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl" style={{ background: `${ACCENT_API}12` }}>
+                    <Icon className="h-4 w-4" style={{ color: ACCENT_API }} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900">{label}</p>
+                    <p className="truncate text-xs text-slate-500">{sub}</p>
+                  </div>
+                </button>
+              ))}
+          </div>
+
+          {activeKeys.length === 0 && (
+            <div className="mt-4 flex items-center gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <AlertCircle className="h-5 w-5 shrink-0 text-amber-600" />
+              <p className="flex-1 text-sm text-amber-800">Aucune clé API active. Créez votre première clé pour commencer.</p>
+              <button
+                type="button"
+                onClick={() => navigate("/api/keys")}
+                className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-700"
               >
-                <Icon className="h-4 w-4" style={{ color: ACCENT_API }} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-slate-900">{label}</p>
-                <p className="truncate text-xs text-slate-500">{sub}</p>
-              </div>
-            </button>
-          ))}
+                Créer une clé
+              </button>
+            </div>
+          )}
         </div>
-
-        {/* CTA si aucune clé */}
-        {activeKeys.length === 0 && (
-          <div className="mt-4 flex items-center gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-            <AlertCircle className="h-5 w-5 shrink-0 text-amber-600" />
-            <p className="flex-1 text-sm text-amber-800">
-              Aucune clé API active. Créez votre première clé pour commencer.
-            </p>
-            <button
-              type="button"
-              onClick={() => navigate("/api/keys")}
-              className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-700"
-            >
-              Créer une clé
-            </button>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* ── Endpoints + code ─────────────────────────────────────────── */}
       <div className="grid gap-8 lg:grid-cols-5">
@@ -411,15 +367,15 @@ export default function ApiPage() {
           </div>
 
           <div className="flex flex-wrap gap-1.5 rounded-2xl border border-slate-200 bg-slate-50/80 p-2">
-            {ENDPOINT_GROUPS.map((group, i) => {
-              const Icon = group.icon;
-              const active = i === activeGroup;
+            {GROUPES_AFFICHES.map((group) => {
+              const Icon = ICONE_GROUPE[group.id];
+              const active = group.id === activeGroup;
               return (
                 <button
-                  key={group.label}
+                  key={group.id}
                   type="button"
-                  onClick={() => setActiveGroup(i)}
-                  className="inline-flex items-center gap-2.5 rounded-xl px-5 py-2.5 text-sm font-medium transition-all"
+                  onClick={() => setActiveGroup(group.id)}
+                  className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all"
                   style={
                     active
                       ? { background: GRAD_API, color: "white", boxShadow: "0 2px 10px rgba(99,102,241,0.30)" }
@@ -427,7 +383,7 @@ export default function ApiPage() {
                   }
                 >
                   <Icon className="h-4 w-4 shrink-0" />
-                  <span>{group.label}</span>
+                  <span>{group.libelle}</span>
                 </button>
               );
             })}
@@ -435,21 +391,21 @@ export default function ApiPage() {
 
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             {activeEndpoints.map((ep, i) => (
-              <div
-                key={ep.path}
-                className={`group flex items-center gap-5 px-6 py-5 transition-colors hover:bg-slate-50/70 ${i > 0 ? "border-t border-slate-100" : ""}`}
-              >
-                <div className="w-14 shrink-0">
-                  <MethodBadge method={ep.method} />
+              <div key={ep.chemin} className={`flex items-start gap-4 px-6 py-4 ${i > 0 ? "border-t border-slate-100" : ""}`}>
+                <div className="w-14 shrink-0 pt-0.5">
+                  <MethodBadge method={ep.methode} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <code className="font-mono text-sm text-slate-800">{ep.path}</code>
-                    <StatusBadge status={ep.status} />
+                    <code className="font-mono text-sm text-slate-800">{ep.chemin}</code>
+                    <span className="text-sm font-medium text-slate-600">{ep.titre}</span>
+                    <StatusBadge status={ep.statut} />
                   </div>
                   <p className="mt-1 text-xs text-slate-500">{ep.description}</p>
                 </div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-slate-500" />
+                <span className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">
+                  {libelleCredits(ep.credits)}
+                </span>
               </div>
             ))}
           </div>
@@ -460,13 +416,12 @@ export default function ApiPage() {
                 <Globe className="h-5 w-5" style={{ color: ACCENT_API }} />
               </div>
               <div className="min-w-0 flex-1">
-                <h3 className="font-semibold text-slate-900">Requête minimale valide</h3>
+                <h3 className="font-semibold text-slate-900">Corps des requêtes</h3>
                 <p className="mt-1 text-sm text-slate-500">
-                  Chaque endpoint utilise le point d'analyse fourni par latitude / longitude.
+                  Les endpoints de localisation prennent une latitude et une longitude ; ceux qui portent sur une
+                  parcelle ou une commune prennent son identifiant cadastral ou son code INSEE. Chaque endpoint a son
+                  exemple prêt à l'emploi dans le Playground.
                 </p>
-                <div className="mt-4 rounded-xl bg-slate-950 p-4 font-mono text-xs leading-relaxed text-emerald-300">
-                  {`POST /v1/scoring/smart\nAuthorization: Bearer mk_live_...\nContent-Type: application/json\n\n{\n  "lat": 48.8686,\n  "lon": 2.3306\n}`}
-                </div>
               </div>
             </div>
           </div>
@@ -479,7 +434,7 @@ export default function ApiPage() {
           </div>
           <CodeCard title="Requête cURL" code={CODE_EXAMPLE} tone="emerald" />
           <CodeCard
-            title="Réponse JSON"
+            title="Réponse JSON (extrait)"
             code={RESPONSE_EXAMPLE}
             tone="slate"
             rightNode={
@@ -491,7 +446,7 @@ export default function ApiPage() {
         </div>
       </div>
 
-      {/* ── Auth + Errors ────────────────────────────────────────────── */}
+      {/* ── Authentification + erreurs ───────────────────────────────── */}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
           <div className="flex items-center gap-2">
@@ -500,22 +455,22 @@ export default function ApiPage() {
           </div>
           <p className="mt-3 text-sm leading-relaxed text-slate-600">
             Toutes les requêtes doivent inclure une clé API dans l'en-tête{" "}
-            <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-700">
-              Authorization: Bearer &lt;clé&gt;
-            </code>
+            <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-700">Authorization: Bearer &lt;clé&gt;</code>
             . Les clés de production commencent par{" "}
-            <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-700">mk_live_</code>
-            , les clés de test par{" "}
-            <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-700">mk_test_</code>.
+            <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-700">mk_live_</code>, les clés de test par{" "}
+            <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-700">mk_test_</code>. Les crédits
+            sont décomptés sur votre compte, quelle que soit la clé utilisée.
           </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Header</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">En-tête</div>
               <div className="mt-2 font-mono text-sm text-slate-800">Authorization: Bearer mk_live_...</div>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rate limiting</div>
-              <div className="mt-2 font-mono text-sm text-slate-800">X-RateLimit-Limit / Remaining</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Débit</div>
+              <div className="mt-2 text-sm text-slate-800">
+                De {formuleApi("essai").debitParMinute} à {formuleApi("scale").debitParMinute.toLocaleString("fr-FR")} requêtes par minute selon la formule
+              </div>
             </div>
           </div>
           <div className="mt-5 flex flex-col gap-2 sm:flex-row">
@@ -542,114 +497,62 @@ export default function ApiPage() {
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center gap-2">
             <Activity className="h-5 w-5" style={{ color: ACCENT_API }} />
-            <h3 className="font-semibold text-slate-900">Erreurs fréquentes</h3>
+            <h3 className="font-semibold text-slate-900">Refus fréquents</h3>
           </div>
           <div className="mt-4 space-y-3">
-            {ERROR_EXAMPLES.map((err) => (
+            {ERREURS.map((err) => (
               <div key={err.code} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="font-medium text-slate-900">{err.title}</div>
+                  <div className="font-medium text-slate-900">{err.titre}</div>
                   <span className="rounded-md bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700">{err.code}</span>
                 </div>
-                <pre className="mt-3 overflow-x-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-relaxed text-slate-300">
-                  {err.body}
-                </pre>
+                <p className="mt-2 text-xs leading-relaxed text-slate-500">{err.detail}</p>
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      {/* ── Plans API ────────────────────────────────────────────────── */}
-      <div id="tarifs-api" className="scroll-mt-24">
-        <div className="mb-4 flex items-center justify-between gap-4">
-          <h2 className="text-lg font-semibold text-slate-900">Plans API</h2>
-          <button
-            type="button"
-            onClick={() => navigate("/api/billing")}
-            className="text-sm font-medium transition-colors hover:text-indigo-700"
-            style={{ color: ACCENT_API }}
-          >
-            Voir tous les détails →
-          </button>
+      {/* ── Formules API ─────────────────────────────────────────────── */}
+      <div id="tarifs-api" className="scroll-mt-24 space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Formules API</h2>
+            <p className="text-sm text-slate-500">Prix hors taxes. Paiement en ligne bientôt disponible : chaque formule s'ouvre sur demande.</p>
+          </div>
+          <ApiBillingToggle periodicite={periodicite} onChange={setPeriodicite} remiseAnnuelle={REMISE_ANNUELLE_MAX_API} />
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
-          {[
-            {
-              plan: "Starter",
-              price: "49 €/mois",
-              requests: "10 000 crédits/mois",
-              endpoints: "Tous les endpoints v1",
-              color: "#64748b",
-              highlight: false,
-            },
-            {
-              plan: "Growth",
-              price: "149 €/mois",
-              requests: "50 000 crédits/mois",
-              endpoints: "Tous les endpoints v1",
-              color: ACCENT_API,
-              highlight: true,
-            },
-            {
-              plan: "Scale",
-              price: "499 €/mois",
-              requests: "250 000 crédits/mois",
-              endpoints: "Quotas sur mesure sur demande",
-              color: "#0f172a",
-              highlight: false,
-            },
-          ].map((tier) => (
-            <div
-              key={tier.plan}
-              className={`rounded-2xl border p-6 ${
-                tier.highlight
-                  ? "border-indigo-200 bg-indigo-50/50 shadow-md shadow-indigo-100"
-                  : "border-slate-200 bg-white"
-              }`}
-            >
-              {tier.highlight && (
-                <div
-                  className="mb-3 inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white"
-                  style={{ background: GRAD_API }}
-                >
-                  Recommandé
-                </div>
-              )}
-              <div className="text-lg font-bold text-slate-900">{tier.plan}</div>
-              <div className="mt-1 text-2xl font-bold" style={{ color: tier.color }}>
-                {tier.price}
-              </div>
-              <ul className="mt-4 space-y-2 text-sm text-slate-600">
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 shrink-0 text-emerald-500" />
-                  {tier.requests}
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 shrink-0 text-emerald-500" />
-                  {tier.endpoints}
-                </li>
-              </ul>
-              <button
-                type="button"
-                onClick={() => navigate("/api/billing")}
-                className="mt-5 w-full rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50"
-              >
-                Voir ce plan
-              </button>
-            </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {API_FORMULES.map((f) => (
+            <ApiPlanCard
+              key={f.id}
+              plan={f}
+              periodicite={periodicite}
+              actuelle={planActuel === f.id}
+              onEssai={() => navigate("/api/keys")}
+            />
           ))}
         </div>
 
-        <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-          Facturation au crédit : <code className="font-mono">/v1/scoring/smart</code> = 10 crédits ·{" "}
-          <code className="font-mono">/v1/market/dvf</code> = 2 crédits ·{" "}
-          <code className="font-mono">/v1/risks</code> = 2 crédits.
-        </p>
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm leading-relaxed text-slate-600 lg:col-span-2">
+            <p className="font-semibold text-slate-900">Comment les crédits sont décomptés</p>
+            <p className="mt-1">{PHRASE_FACTURATION_API}</p>
+            <ul className="mt-3 grid gap-x-6 gap-y-1 text-xs text-slate-500 sm:grid-cols-2">
+              {API_ENDPOINTS.filter((e) => e.credits > 0).map((e) => (
+                <li key={e.chemin} className="flex justify-between gap-2">
+                  <code className="font-mono">{e.chemin}</code>
+                  <span className="font-semibold text-slate-700">{libelleCredits(e.credits)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <RechargePrepayeeCard />
+        </div>
       </div>
 
-      {/* ── Integration guide ────────────────────────────────────────── */}
+      {/* ── Guide d'intégration ──────────────────────────────────────── */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ background: `${ACCENT_API}15` }}>
@@ -658,12 +561,17 @@ export default function ApiPage() {
           <div>
             <h3 className="font-semibold text-slate-900">Guide d'intégration rapide</h3>
             <ol className="mt-3 space-y-2 text-sm text-slate-600">
-              <li>1. Crée une clé API test ou production.</li>
-              <li>2. Appelle le endpoint <code className="rounded bg-slate-100 px-1 font-mono text-xs">POST /v1/scoring/smart</code>.</li>
-              <li>3. Fournis au minimum <code className="rounded bg-slate-100 px-1 font-mono text-xs">lat</code> et <code className="rounded bg-slate-100 px-1 font-mono text-xs">lon</code>.</li>
-              <li>4. Analyse la réponse JSON et les headers de quota.</li>
-              <li>5. Passe ensuite sur le Playground ou l'espace développeur.</li>
+              <li>1. Créez une clé API : l'essai vous offre {API_ESSAI.credits.toLocaleString("fr-FR")} crédits pendant {API_ESSAI.dureeEssaiJours} jours.</li>
+              <li>
+                2. Appelez par exemple{" "}
+                <code className="rounded bg-slate-100 px-1 font-mono text-xs">POST {ENDPOINT_EXEMPLE.chemin}</code> avec{" "}
+                <code className="rounded bg-slate-100 px-1 font-mono text-xs">lat</code> et{" "}
+                <code className="rounded bg-slate-100 px-1 font-mono text-xs">lon</code>.
+              </li>
+              <li>3. Lisez la réponse JSON ; un refus 402 signifie que vos crédits sont épuisés.</li>
+              <li>4. Essayez les autres endpoints dans le Playground, puis demandez la formule adaptée à vos volumes.</li>
             </ol>
+            <p className="mt-3 text-xs text-slate-400">Adresse de base complète : <code className="font-mono">{API_BASE_URL}</code></p>
             <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="button"
@@ -682,20 +590,19 @@ export default function ApiPage() {
                 Ouvrir le Playground
               </button>
               {ESPACES_VISIBLES.apiDashboard && (
-              <button
-                type="button"
-                onClick={() => navigate("/api/developer")}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-              >
-                <LayoutDashboard className="h-3.5 w-3.5" />
-                Espace développeur
-              </button>
+                <button
+                  type="button"
+                  onClick={() => navigate("/api/developer")}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                >
+                  <LayoutDashboard className="h-3.5 w-3.5" />
+                  Espace développeur
+                </button>
               )}
             </div>
           </div>
         </div>
       </div>
-
     </div>
   );
 }
