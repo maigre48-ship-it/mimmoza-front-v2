@@ -241,6 +241,16 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // Un appel qui ferait dépasser le quota est refusé avant d'être exécuté
+  // (sinon une clé à 5 crédits restants pouvait lancer un SmartScore à 10).
+  const coutPrevu = ENDPOINT_COST[matchedRoute.endpoint] ?? 1;
+  if (coutPrevu > 0 && key.requests_count + coutPrevu > key.requests_limit) {
+    return jsonResponse(
+      { error: "Quota exceeded", credits_requis: coutPrevu, credits_restants: Math.max(0, key.requests_limit - key.requests_count) },
+      429,
+    );
+  }
+
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceKey =
     Deno.env.get("SERVICE_ROLE_KEY") ??
@@ -265,7 +275,10 @@ Deno.serve(async (req: Request) => {
 
   const latency = Date.now() - started;
 
-  const cost = ENDPOINT_COST[matchedRoute.endpoint] ?? 1;
+  // Seuls les appels réussis consomment des crédits : une erreur (paramètres
+  // invalides, panne d'une source) est journalisée mais pas facturée.
+  const enErreur = internalResponse.status >= 400;
+  const cost = enErreur ? 0 : (ENDPOINT_COST[matchedRoute.endpoint] ?? 1);
 
   // Décompte inliné (appel RPC direct) — indépendant de la version de _shared/apiKeyAuth.ts
   try {
@@ -277,7 +290,7 @@ Deno.serve(async (req: Request) => {
     await usageClient.rpc("increment_api_usage", {
       p_key_id: key.id,
       p_endpoint: matchedRoute.endpoint,
-      p_is_error: false,
+      p_is_error: enErreur,
       p_latency: latency,
       p_cost: cost,
     });

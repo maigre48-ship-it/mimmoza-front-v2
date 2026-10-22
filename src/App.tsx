@@ -532,6 +532,8 @@ function AppRoot() {
 
           {/* ═══ API ═══ (/api : présentation publique) */}
           <Route path="/api"            element={<ApiPage />} />
+          {/* Pas encore de page d'abonnement API (paiement en ligne à venir) : renvoi vers les tarifs. */}
+          <Route path="/api/billing"    element={<Navigate to="/api#tarifs-api" replace />} />
           <Route element={<PrivateRoute />}>
             <Route path="/api/keys"       element={<ApiKeysPage />} />
             <Route path="/api/playground" element={<ApiPlaygroundPage />} />

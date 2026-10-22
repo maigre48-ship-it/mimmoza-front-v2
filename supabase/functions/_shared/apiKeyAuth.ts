@@ -77,10 +77,6 @@ export async function validateApiKey(
   // Hash
   const hash = await sha256(token);
 
-  // Logs explicites demandés
-  console.log("[apiKeyAuth] token:", token);
-  console.log("[apiKeyAuth] hash:", hash);
-
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL") ?? "",
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
@@ -94,9 +90,8 @@ export async function validateApiKey(
     .eq("secret_hash", hash)
     .single();
 
-  // Logs explicites demandés
-  console.log("[apiKeyAuth] db data:", data);
-  console.log("[apiKeyAuth] db error:", error);
+  // Aucun journal de la clé, de son empreinte ni de la ligne : les journaux
+  // Supabase sont lisibles par toute personne ayant accès au projet.
 
   if (error || !data) {
     return {

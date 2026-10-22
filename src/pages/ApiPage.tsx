@@ -22,8 +22,8 @@ import {
   Wifi,
   Zap
 } from "lucide-react";
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ESPACES_VISIBLES } from "../lib/espacesEnPreparation";
 
 import { ApiStatusBadge, PlanBadge } from "../features/api/components/ApiStatusBadge";
@@ -192,8 +192,16 @@ function CodeCard({
 export default function ApiPage() {
   const [activeGroup, setActiveGroup] = useState(0);
   const navigate = useNavigate();
-
   const { data: member, loading, error } = useApiMember();
+  const { hash } = useLocation();
+
+  // /api/billing renvoie ici avec #tarifs-api : on fait défiler jusqu'aux plans.
+  useEffect(() => {
+    if (!hash) return;
+    const cible = document.getElementById(hash.slice(1));
+    if (cible) window.setTimeout(() => cible.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }, [hash, loading]);
+
 
   const activeEndpoints = useMemo(
     () => ENDPOINT_GROUPS[activeGroup].endpoints,
@@ -553,7 +561,7 @@ export default function ApiPage() {
       </div>
 
       {/* ── Plans API ────────────────────────────────────────────────── */}
-      <div>
+      <div id="tarifs-api" className="scroll-mt-24">
         <div className="mb-4 flex items-center justify-between gap-4">
           <h2 className="text-lg font-semibold text-slate-900">Plans API</h2>
           <button
@@ -586,9 +594,9 @@ export default function ApiPage() {
             },
             {
               plan: "Scale",
-              price: "Sur devis",
-              requests: "Quotas dédiés",
-              endpoints: "SLA + support prioritaire",
+              price: "499 €/mois",
+              requests: "250 000 crédits/mois",
+              endpoints: "Quotas sur mesure sur demande",
               color: "#0f172a",
               highlight: false,
             },
