@@ -41,6 +41,7 @@ import {
 } from "../../../marchand/shared/marchandSnapshot.store";
 
 import type { RentabiliteSnapshot } from "../../types/rentabilite.types";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -303,7 +304,7 @@ function GeorisquesBlock({ deal, marcheSaved, onAnalysed }: {
     if (!deal || !canAnalyse) return;
     setIsLoading(true); setError(null);
     try { await runRiskStudy(deal); onAnalysed(); }
-    catch (e) { setError(e instanceof Error ? e.message : "Erreur inconnue"); }
+    catch (e) { setError(messageErreur(e, "Une erreur est survenue. Réessayez.")); }
     finally { setIsLoading(false); }
   }, [deal, canAnalyse, onAnalysed]);
   return (

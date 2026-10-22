@@ -4,6 +4,7 @@ import { AlertCircle, ArrowLeft, MapPin, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createApporteurDeal } from "../shared/apporteurDeals.store";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 type TypeBien = "terrain" | "maison" | "immeuble" | "autre";
 
@@ -89,7 +90,7 @@ export function ApporteurDeposerPage() {
       setSubmitted(true);
     } catch (err) {
       setSubmitError(
-        err instanceof Error ? err.message : "Le dépôt a échoué. Veuillez réessayer."
+        messageErreur(err, "Le dépôt a échoué. Veuillez réessayer.")
       );
     } finally {
       setSubmitting(false);

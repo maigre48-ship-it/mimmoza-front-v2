@@ -160,7 +160,7 @@ export function CopilotChat({
             if (oldMassingReply) return <div key={m.id} role="status" className="jarvis-legacy-reply">
               <strong>Votre projet est prêt dans le Dossier 3D.</strong>
               <p>Vérifiez les dimensions et les logements, puis choisissez « Valider et préparer dans Studio ».</p>
-              <details><summary>Voir la réponse du copilote utilisant l’ancien parcours Massing 3D</summary>
+              <details><summary>Voir la réponse de Mimmo utilisant l’ancien parcours Massing 3D</summary>
                 <div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
               </details>
             </div>;

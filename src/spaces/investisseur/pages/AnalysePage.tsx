@@ -57,6 +57,7 @@ import { loadImageDataUrl } from "@/spaces/shared/loadImageDataUrl";
 import { deepMergeInvestorWithPromoteur } from "../services/promoteurMarketStudyBridge";
 import { readPromoteurMarketSnapshot } from "../services/readPromoteurMarketSnapshot";
 import { userStorage } from "@/lib/storage/userScopedStorage";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 // ─── Design tokens — Investisseur ────────────────────────────────────
 
@@ -1024,7 +1025,7 @@ export default function AnalysePage() {
       pdfUrlRef.current = url;
       setPdfPreview({ url, loading: false, error: null });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Erreur lors de la génération du PDF";
+      const message = messageErreur(err, "Erreur lors de la génération du PDF");
       console.error("[AnalysePage] generatePdfPreview error:", err);
       setPdfPreview({ url: null, loading: false, error: message });
     }

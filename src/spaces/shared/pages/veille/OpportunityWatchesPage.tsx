@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { messageErreur } from "@/components/ui/messageErreur";
 
 const STRATEGIES: { value: OpportunityStrategy; label: string }[] = [
   { value: 'investisseur', label: 'Investisseur' },
@@ -124,7 +125,7 @@ export default function OpportunityWatchesPage({
       setWatches(w);
       setEvents(e);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur de chargement.');
+      setError(messageErreur(err, 'Erreur de chargement.'));
     } finally {
       setLoading(false);
     }
@@ -156,7 +157,7 @@ export default function OpportunityWatchesPage({
       setFLabel(''); setFCity(''); setFZip(''); setFPriceMax(''); setFSurfaceMax('');
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Création impossible.');
+      setError(messageErreur(err, 'Création impossible.'));
     } finally {
       setBusy(null);
     }
@@ -170,7 +171,7 @@ export default function OpportunityWatchesPage({
       await new Promise((r) => setTimeout(r, 1500));
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Run impossible.');
+      setError(messageErreur(err, 'Lancement de la veille impossible.'));
     } finally {
       setBusy(null);
     }
@@ -182,7 +183,7 @@ export default function OpportunityWatchesPage({
       await toggleWatchActive(w.id, !w.active);
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Action impossible.');
+      setError(messageErreur(err, 'Action impossible.'));
     } finally {
       setBusy(null);
     }
@@ -195,7 +196,7 @@ export default function OpportunityWatchesPage({
       await deleteWatch(id);
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Suppression impossible.');
+      setError(messageErreur(err, 'Suppression impossible.'));
     } finally {
       setBusy(null);
     }

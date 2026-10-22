@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from "react";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 type GenerateResult = {
   markdown: string;
@@ -164,7 +165,7 @@ export default function SyntheseIAPanel({
       setStatus("success");
       setProgress(INITIAL_PROGRESS);
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Erreur lors de la génération.";
+      const message = messageErreur(e, "Erreur lors de la génération.");
       setStatus("error");
       setErrorMsg(message);
       setProgress(INITIAL_PROGRESS);
@@ -253,7 +254,7 @@ export default function SyntheseIAPanel({
           <div className="flex items-start justify-between gap-4 rounded-xl border border-red-200 bg-red-50 p-4">
             <div>
               <p className="text-sm font-semibold text-red-700">Analyse indisponible</p>
-              <p className="text-sm text-red-600 mt-1">{errorMsg ?? "Erreur inconnue."}</p>
+              <p className="text-sm text-red-600 mt-1">{errorMsg ?? "Une erreur est survenue. Réessayez."}</p>
             </div>
             <button
               type="button"

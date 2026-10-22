@@ -13,6 +13,7 @@ import { Loader2, MapPin } from "lucide-react";
 import ParcelMapSelector from "@/spaces/promoteur/foncier/ParcelMapSelector";
 import type { ConfirmedTerrain } from "./terrainCadastre";
 import { parcelLabel, type TerrainParcel } from "./parcelFromGps";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 interface Adresse { label: string; citycode: string; lat: number; lon: number }
 interface AdresseFeature { properties: { label: string; citycode: string }; geometry: { coordinates: [number, number] } }
@@ -54,7 +55,7 @@ export function ConfirmerParcelle({ adresseInitiale, onConfirmer, onAnnuler }: {
       const p = await parcelleSousLePoint(a);
       setParcelle(p);
       if (!p) { setCarte(true); setErreur("Aucune parcelle sous ce point : cliquez-la sur la carte."); }
-    } catch (e) { setCarte(true); setErreur(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setCarte(true); setErreur(messageErreur(e, "Recherche de la parcelle impossible.")); }
     finally { setOccupe(null); }
   }, []);
 

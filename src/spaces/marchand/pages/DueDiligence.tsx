@@ -24,6 +24,7 @@ import {
   MARCHAND_SNAPSHOT_EVENT,
   type MarchandDeal
 } from "../shared/marchandSnapshot.store";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 // ─── Category config ────────────────────────────────────────────────
 
@@ -92,9 +93,9 @@ export default function MarchandDueDiligence() {
     setLoadingMarket(true);
     try {
       const res = await enrichMarketToDueDiligence();
-      if (!res.ok) setAlertMsg(res.error ?? "Erreur inconnue (Marché).");
+      if (!res.ok) setAlertMsg(messageErreur(res.error, "Étude de marché indisponible."));
     } catch (e: unknown) {
-      setAlertMsg(e instanceof Error ? e.message : String(e));
+      setAlertMsg(messageErreur(e, "L'opération n'a pas pu aboutir."));
     } finally {
       setLoadingMarket(false);
       refresh();
@@ -106,9 +107,9 @@ export default function MarchandDueDiligence() {
     setLoadingRisks(true);
     try {
       const res = await enrichRisksToDueDiligence();
-      if (!res.ok) setAlertMsg(res.error ?? "Erreur inconnue (Risques).");
+      if (!res.ok) setAlertMsg(messageErreur(res.error, "Étude des risques indisponible."));
     } catch (e: unknown) {
-      setAlertMsg(e instanceof Error ? e.message : String(e));
+      setAlertMsg(messageErreur(e, "L'opération n'a pas pu aboutir."));
     } finally {
       setLoadingRisks(false);
       refresh();

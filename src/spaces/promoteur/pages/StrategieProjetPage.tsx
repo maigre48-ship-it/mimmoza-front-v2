@@ -28,6 +28,7 @@ import { buildStrategyCopilotSnapshot } from './strategyCopilotSnapshot';
 import type { DecisionRecord } from './decisionDossier';
 import type { OperatorFollowUp } from './operatorFollowup';
 import { TertiaryStrategySection } from './TertiaryStrategySection';
+import { messageErreur } from "@/components/ui/messageErreur";
 
 type Scenario = {
   id: string;
@@ -259,13 +260,13 @@ export default function StrategieProjetPage() {
         });
         if (error || !data?.success) throw new Error(data?.error || error?.message || 'Étude de marché indisponible.');
         market = retainMarket(data);
-      } catch (error) { marketError = error instanceof Error ? error.message : 'Étude de marché indisponible.'; }
+      } catch (error) { marketError = messageErreur(error, 'Étude de marché indisponible.'); }
     }
 
     const verified = await verifyInsee(market?.meta?.commune_insee || cityCode);
     if (verified) {
       try { bpe = await fetchBpeMarket(verified.code); }
-      catch (error) { bpeError = error instanceof Error ? error.message : 'BPE indisponible.'; }
+      catch (error) { bpeError = messageErreur(error, 'Équipements de proximité indisponibles.'); }
     } else bpeError = 'Code INSEE vérifié requis pour collecter la BPE 2025.';
     if (chosenBrief.marketType === 'logement' && verified) {
       supply = screeningIsCurrent ? screening?.snapshots.find((item) => item.key === 'logement')?.supply ?? null : null;
@@ -279,7 +280,7 @@ export default function StrategieProjetPage() {
       if (!verified) hotelError = 'Code INSEE vérifié requis pour collecter les données hôtelières.';
       else {
         try { hotelEvidence = { ...await fetchHotelEvidence(verified.code, verified.codeRegion), codeEpci: verified.codeEpci }; }
-        catch (error) { hotelError = error instanceof Error ? error.message : 'Données hôtelières indisponibles.'; }
+        catch (error) { hotelError = messageErreur(error, 'Données hôtelières indisponibles.'); }
       }
     }
 
@@ -287,7 +288,7 @@ export default function StrategieProjetPage() {
       if (!verified) operatorError = 'La commune doit être vérifiée par un code INSEE ou une référence cadastrale avant la recherche d’entreprises.';
       else {
         try { const found = await findCandidates(chosenBrief.operatorNaf, verified.code, verified.codeEpci); candidates = found.candidates; operatorSearch = { examined: found.examined, total: found.total }; }
-        catch (error) { operatorError = error instanceof Error ? error.message : 'Recherche d’entreprises indisponible.'; }
+        catch (error) { operatorError = messageErreur(error, 'Recherche d’entreprises indisponible.'); }
       }
     }
 
@@ -317,7 +318,7 @@ export default function StrategieProjetPage() {
         });
         if (error || !data?.success) throw new Error(data?.error || error?.message || 'Étude indisponible.');
         return { key, market: retainMarket(data), error: null };
-      } catch (error) { return { key, market: null, error: error instanceof Error ? error.message : 'Étude indisponible.' }; }
+      } catch (error) { return { key, market: null, error: messageErreur(error, 'Étude indisponible.') }; }
     };
     try {
       const snapshots: SectorSnapshot[] = [];
@@ -341,7 +342,7 @@ export default function StrategieProjetPage() {
           const bpe = await fetchBpeMarket(verified.code);
           for (const item of snapshots) item.bpe = bpe;
         } catch (error) {
-          const reason = error instanceof Error ? error.message : 'BPE indisponible.';
+          const reason = messageErreur(error, 'Équipements de proximité indisponibles.');
           for (const item of snapshots) item.error = [item.error, reason].filter(Boolean).join(' · ');
         }
         const housing = snapshots.find((item) => item.key === 'logement');
@@ -366,7 +367,7 @@ export default function StrategieProjetPage() {
           const accepted = acceptAiRecommendation(data, packet);
           if (!accepted) throw new Error('La synthèse IA ne respecte pas les preuves du dossier.');
           recommendation = accepted;
-        } catch (error) { recommendationError = error instanceof Error ? error.message : 'Synthèse IA indisponible.'; }
+        } catch (error) { recommendationError = messageErreur(error, 'Synthèse IA indisponible.'); }
       }
       const next = { site: [parcel, address.trim(), cityCode, surfaceM2.trim()].join('|'), date, snapshots, recommendation, recommendationError };
       setScreening(next);

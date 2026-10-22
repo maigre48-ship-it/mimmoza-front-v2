@@ -9,6 +9,7 @@
 import { useMemo, useState } from 'react';
 import { Check, ChevronDown, Lock, Zap } from 'lucide-react';
 import type { ModelTier } from '../types/copilot.types';
+import { NOM_FORMULE } from '@/lib/billing/grille';
 
 export type Plan = 'basic' | 'advanced' | 'pro';
 export type { ModelTier };
@@ -29,21 +30,21 @@ const TIERS: TierDef[] = [
     label: 'Standard',
     pitch: 'Rapide — questions directes, vérifications, recherches simples.',
     cout: 'consommation minimale',
-    offre: 'Basique',
+    offre: NOM_FORMULE.basique,
   },
   {
     tier: 'sonnet',
     label: 'Approfondi',
     pitch: 'Analyses structurées, rapports et raisonnement multi-sources.',
     cout: '≈ 3× le niveau Standard',
-    offre: 'Avancé',
+    offre: NOM_FORMULE.avance,
   },
   {
     tier: 'opus',
     label: 'Expert',
     pitch: 'Le plus fin sur les arbitrages complexes et les cas ambigus.',
     cout: '≈ 4× le niveau Standard',
-    offre: 'Pro',
+    offre: NOM_FORMULE.pro,
   },
 ];
 
@@ -87,7 +88,7 @@ export function MimmozIAModelPicker({ plan, value, onChange, disabled }: Props) 
     return (
       <div
         className="mzia-model mzia-model--locked"
-        title="Passez à l'offre Pro pour choisir le niveau d'analyse"
+        title={`Passez à la formule ${NOM_FORMULE.pro} pour choisir le niveau d'analyse`}
       >
         <Zap size={13} />
         <span>{courant.label}</span>
@@ -141,7 +142,7 @@ export function MimmozIAModelPicker({ plan, value, onChange, disabled }: Props) 
                       </span>
                       <span className="mzia-model__optPitch">{t.pitch}</span>
                       <span className="mzia-model__optCost">
-                        {verrouille ? `Inclus dans l'offre ${t.offre}` : t.cout}
+                        {verrouille ? `Inclus dans la formule ${t.offre}` : t.cout}
                       </span>
                     </button>
                   </li>

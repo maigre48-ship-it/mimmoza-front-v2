@@ -7,6 +7,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Camera, Loader2, Trash2 } from "lucide-react";
 import { listerPanoramas, supprimerPanorama, televerserPanorama, type Panorama360 } from "../shared/environnement360";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 export function Environnement360Panel({ studyId, onChange }: { studyId: string | null; onChange?: (p: Panorama360[]) => void }) {
   const [panoramas, setPanoramas] = useState<Panorama360[]>([]);
@@ -20,7 +21,7 @@ export function Environnement360Panel({ studyId, onChange }: { studyId: string |
       setPanoramas(l);
       onChange?.(l);
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setMessage(messageErreur(e, "Opération sur le panorama impossible."));
     }
   }, [studyId, onChange]);
 
@@ -34,7 +35,7 @@ export function Environnement360Panel({ studyId, onChange }: { studyId: string |
     const refus: string[] = [];
     for (const f of fichiers) {
       setMessage(`Envoi de ${f.name}…`);
-      try { await televerserPanorama(studyId, f); } catch (err) { refus.push(err instanceof Error ? err.message : String(err)); }
+      try { await televerserPanorama(studyId, f); } catch (err) { refus.push(messageErreur(err, "Opération sur le panorama impossible.")); }
     }
     setOccupe(false);
     setMessage(refus.length > 0 ? `Refusé : ${refus.join(" · ")}` : `${fichiers.length} photo(s) 360° ajoutée(s).`);
@@ -43,7 +44,7 @@ export function Environnement360Panel({ studyId, onChange }: { studyId: string |
 
   const retirer = async (p: Panorama360) => {
     setOccupe(true);
-    try { await supprimerPanorama(p.path); } catch (err) { setMessage(err instanceof Error ? err.message : String(err)); }
+    try { await supprimerPanorama(p.path); } catch (err) { setMessage(messageErreur(err, "Opération sur le panorama impossible.")); }
     setOccupe(false);
     await recharger();
   };

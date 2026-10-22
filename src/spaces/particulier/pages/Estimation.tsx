@@ -6,6 +6,7 @@ import { fetchBestDvfEstimate, fetchDvfComps } from "../../../lib/dvfEstimateApi
 import { supabase } from "../../../supabaseClient";
 import { usePromoteurStudy } from "../../promoteur/shared/usePromoteurStudy";
 import { userStorage } from "@/lib/storage/userScopedStorage";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 // ─── Design tokens ───────────────────────────────────────────────────────────
 const GRAD_PRO = "linear-gradient(90deg, #7c6fcd 0%, #b39ddb 100%)";
@@ -499,7 +500,7 @@ const Estimation: React.FC = () => {
         setDvfError("Données DVF insuffisantes pour estimer. Élargis le périmètre (CP) ou enlève le filtre pièces.");
       }
     } catch (e: any) {
-      setDvfError(e?.message ?? String(e));
+      setDvfError(messageErreur(e, "Ventes DVF indisponibles."));
     } finally {
       // ── Patch 2 : afficher le résultat après calcul ───────────────────────
       setShowResult(true);

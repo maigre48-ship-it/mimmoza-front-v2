@@ -68,6 +68,7 @@ import {
   readSyntheseRawInput,
   writeSyntheseRawInput,
 } from '../shared/syntheseRawInput.store';
+import { messageErreur } from "@/components/ui/messageErreur";
 
 // ── Clés localStorage ─────────────────────────────────────────────────────────
 // La clé du snapshot Bilan → Synthèse est gérée par syntheseRawInput.store :
@@ -1487,7 +1488,7 @@ if (!generatedImageUrl) return null;
       }
     } catch (e) {
       console.error('[PromoteurSynthese] handleGenerate crash:', e);
-      setError(e instanceof Error ? e.message : 'Erreur lors de la génération');
+      setError(messageErreur(e, 'Erreur lors de la génération'));
     } finally { setLoading(false); }
   }, [effectiveRawInput, buildExportOptions, studyId]);
 
@@ -1514,7 +1515,7 @@ if (!generatedImageUrl) return null;
       }
     } catch (e) {
       console.error('[PromoteurSynthese] handleRegenerate crash:', e);
-      setError(e instanceof Error ? e.message : 'Erreur lors du re-téléchargement');
+      setError(messageErreur(e, 'Erreur lors du re-téléchargement'));
     } finally { setLoading(false); }
   }, [synthese, buildExportOptions]);
 
@@ -1546,7 +1547,7 @@ if (!generatedImageUrl) return null;
 
       setAutocompleteDone(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur lors de la complétion');
+      setError(messageErreur(e, 'Erreur lors de la complétion'));
     } finally {
       setCompleting(false);
     }

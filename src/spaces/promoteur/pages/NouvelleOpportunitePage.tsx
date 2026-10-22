@@ -17,6 +17,7 @@ import {
 import { ACCENT_PRO, GRAD_PRO } from "../shared/promoteurDesign.tokens";
 import { userStorage } from "@/lib/storage/userScopedStorage";
 import { PromoteurStudyService } from "../shared/promoteurStudyService";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 // ---------------------------------------------------------------------------
 // Helpers promoteur
@@ -167,7 +168,7 @@ export default function NouvelleOpportunitePage() {
         }));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Le déblocage a échoué.");
+      setError(messageErreur(err, "Le déblocage a échoué."));
     } finally {
       setUnlocking(false);
     }
@@ -212,7 +213,7 @@ export default function NouvelleOpportunitePage() {
       navigate(`/promoteur/foncier?study=${study.id}`);
     } catch (err) {
       console.error("[NouvelleOpportunitePage] Erreur création étude:", err);
-      setError(err instanceof Error ? err.message : "Une erreur est survenue. Veuillez réessayer.");
+      setError(messageErreur(err, "Une erreur est survenue. Veuillez réessayer."));
       setSubmitting(false);
     }
   }

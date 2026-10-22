@@ -1290,7 +1290,7 @@ display: "flex",
               <div style={{ padding:"10px 0", borderBottom:"1px solid #f3f4f6" }}>
                 <p style={{ margin:"0 0 6px", fontSize:10, fontWeight:700, color:"#9ca3af",
                   textTransform:"uppercase", letterSpacing:"0.08em" }}>Sources</p>
-                <SourceRow label="DVF (Supabase RPC)" ok={steps.dvf === "ok" ? true : steps.dvf === "loading" ? "loading" : false} />
+                <SourceRow label="Ventes passées (DVF)" ok={steps.dvf === "ok" ? true : steps.dvf === "loading" ? "loading" : false} />
                 <SourceRow label="SmartScore"         ok={steps.smartscore === "ok" ? true : steps.smartscore === "loading" ? "loading" : false} />
                 <SourceRow label="Géorisques"         ok={steps.georisques === "ok" ? true : steps.georisques === "loading" ? "loading" : false} />
                 {/* Citation des sources publiques (licence Etalab 2.0 pour DVF) */}

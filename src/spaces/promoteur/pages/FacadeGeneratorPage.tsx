@@ -97,6 +97,7 @@ import {
 } from "../terrain3d/facade2d/resolveFacadeProjectInput";
 
 import type { MassingSceneModel } from "../terrain3d/massingScene.types";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 // -----------------------------------------------------------------------------
 // Types locaux
@@ -1017,7 +1018,7 @@ export default function FacadeGeneratorPage() {
       void persistImageAsync(result.imageUrl);
     } catch (e) {
       console.error("[MMZ][FacadeGeneratorPage] render failed", e);
-      setRenderError(e instanceof Error ? e.message : "Erreur inconnue");
+      setRenderError(messageErreur(e, "Le rendu de la façade a échoué. Réessayez."));
     } finally { setGenerating(false); }
   };
 

@@ -107,6 +107,7 @@ import ScoreTooltip, { SCORE_TOOLTIPS } from "../../../../components/ui/ScoreToo
 import type { PromoteurMarcheData } from "../../shared/promoteurStudy.types";
 import { usePromoteurStudy } from "../../shared/usePromoteurStudy";
 import { CONDITIONS_SCORE, GO_SCORE, GRADE_D_SCORE } from "@/lib/scoring/decisionThresholds";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 // ============================================
 // DEBUG FLAGS
@@ -4278,7 +4279,7 @@ export function MarchePage() {
         if (mountedRef.current) setError(msg);
         return;
       }
-      const errorMessage = err instanceof Error ? err.message : "Une erreur est survenue";
+      const errorMessage = messageErreur(err, "Une erreur est survenue");
       if (mountedRef.current) setError(errorMessage);
       if (studyId) {
         await setStepStatus({ studyId, step: "marche", status: "error", producedBy: isAgentRun() ? "agent" : "user", error: errorMessage }).catch(() => { /* non-bloquant */ });

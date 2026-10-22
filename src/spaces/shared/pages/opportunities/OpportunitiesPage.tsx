@@ -35,6 +35,7 @@ import {
   useOpportunityEngine,
   type OpportunityFormState,
 } from '@/services/opportunity/useOpportunityEngine';
+import { messageErreur } from "@/components/ui/messageErreur";
 
 // -------------------------------------------------------------
 // Constantes UI
@@ -528,7 +529,7 @@ export default function OpportunitiesPage({ embedded = false }: { embedded?: boo
       });
       setFollowMsg('Veille créée. Retrouve-la dans l’onglet « Mes veilles ».');
     } catch (e) {
-      setFollowMsg(e instanceof Error ? e.message : 'Création de la veille impossible.');
+      setFollowMsg(messageErreur(e, 'Création de la veille impossible.'));
     } finally {
       setFollowBusy(false);
     }

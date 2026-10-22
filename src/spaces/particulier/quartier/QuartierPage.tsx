@@ -341,7 +341,7 @@ export default function QuartierPage() {
       <div style={cardStyle}>
         <div style={{ fontSize: 14, opacity: 0.7 }}>Score Quartier</div>
         <div style={{ fontSize: 40, fontWeight: 800 }}>
-          {loading ? "Calcul…" : score !== null ? `${score}/100` : "N/A"}
+          {loading ? "Calcul…" : score !== null ? `${score}/100` : "—"}
         </div>
         {err && <div style={{ color: "crimson", marginTop: 8 }}>{err}</div>}
       </div>
@@ -350,7 +350,7 @@ export default function QuartierPage() {
         <div style={cardStyle}>
           <h3>Équipements &amp; emplacement</h3>
           <div>
-            Score emplacement : <b>{emplacementScore ?? "N/A"}</b>
+            Score emplacement : <b>{emplacementScore ?? "Non disponible"}</b>
           </div>
         </div>
 
@@ -373,7 +373,7 @@ export default function QuartierPage() {
         <div style={cardStyle}>
           <h3>Risques &amp; contraintes</h3>
           <div>
-            Score risques : <b>{risquesScore ?? "N/A"}</b>
+            Score risques : <b>{risquesScore ?? "Non disponible"}</b>
           </div>
           {risquesModule?.notes?.[0] ? (
             <div style={{ marginTop: 8, opacity: 0.8 }}>{risquesModule.notes[0]}</div>
@@ -424,11 +424,11 @@ export default function QuartierPage() {
                 Market insights
               </div>
               <div style={{ display: "grid", gap: 6 }}>
-                <div>Prix/m² : <b>{res.enrichedModules.marketInsights.pricePerM2 ?? "N/A"}</b></div>
-                <div>Médiane/m² : <b>{res.enrichedModules.marketInsights.medianM2 ?? "N/A"}</b></div>
-                <div>Delta vs médiane : <b>{res.enrichedModules.marketInsights.deltaVsMedian ?? "N/A"}</b></div>
-                <div>Classification : <b>{res.enrichedModules.marketInsights.classification ?? "N/A"}</b></div>
-                <div>Liquidité : <b>{res.enrichedModules.marketInsights.liquidityBand ?? "N/A"}</b></div>
+                <div>Prix/m² : <b>{res.enrichedModules.marketInsights.pricePerM2 ?? "Non disponible"}</b></div>
+                <div>Médiane/m² : <b>{res.enrichedModules.marketInsights.medianM2 ?? "Non disponible"}</b></div>
+                <div>Delta vs médiane : <b>{res.enrichedModules.marketInsights.deltaVsMedian ?? "Non disponible"}</b></div>
+                <div>Classification : <b>{res.enrichedModules.marketInsights.classification ?? "Non disponible"}</b></div>
+                <div>Liquidité : <b>{res.enrichedModules.marketInsights.liquidityBand ?? "Non disponible"}</b></div>
                 <div style={{ opacity: 0.85 }}>{res.enrichedModules.marketInsights.note ?? ""}</div>
               </div>
             </div>

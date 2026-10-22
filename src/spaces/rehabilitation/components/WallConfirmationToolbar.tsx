@@ -19,6 +19,7 @@ import {
   resetWallValidation,
   unlockPlan,
 } from '../plan-reader/planUserValidationEngine';
+import { messageErreur } from "@/components/ui/messageErreur";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -321,7 +322,7 @@ export const WallConfirmationToolbar: React.FC<WallConfirmationToolbarProps> = (
       setLockError(null);
       lockPlan('Validation structurelle complète');
     } catch (err) {
-      setLockError(err instanceof Error ? err.message : 'Erreur de verrouillage.');
+      setLockError(messageErreur(err, 'Erreur de verrouillage.'));
     }
   }, []);
 

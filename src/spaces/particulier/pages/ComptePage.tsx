@@ -17,6 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { supabase } from "@/lib/supabase";
+import { CONTACT_ACCES } from "@/lib/billing/grille";
 import {
   ArrowRight,
   BadgeCheck,
@@ -405,7 +406,7 @@ function ProfilPanel({
 
       if (!accessToken) {
         setDeleteError(
-          "Session expiree. Deconnectez-vous, reconnectez-vous puis reessayez."
+          "Session expirée. Déconnectez-vous, reconnectez-vous puis réessayez."
         );
         return;
       }
@@ -433,7 +434,7 @@ function ProfilPanel({
 
       if (!resp.ok || body.success === false) {
         setDeleteError(
-          "Impossible de supprimer le compte pour le moment. Si le probleme persiste, contactez support@mimmoza.fr."
+          `Impossible de supprimer le compte pour le moment. Si le problème persiste, écrivez à ${CONTACT_ACCES}.`
         );
         return;
       }
@@ -443,7 +444,7 @@ function ProfilPanel({
       setTimeout(() => navigate("/", { replace: true }), 1800);
     } catch {
       setDeleteError(
-        "Impossible de supprimer le compte pour le moment. Si le probleme persiste, contactez support@mimmoza.fr."
+        `Impossible de supprimer le compte pour le moment. Si le problème persiste, écrivez à ${CONTACT_ACCES}.`
       );
     } finally {
       setDeleteLoading(false);
@@ -458,10 +459,10 @@ function ProfilPanel({
         </div>
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            VOTRE COMPTE EST BIEN SUPPRIME
+            Votre compte a bien été supprimé
           </h1>
           <p className="mt-3 text-sm text-slate-500">
-            Vos donnees personnelles ont ete supprimees. Redirection vers l'accueil...
+            Vos données personnelles ont été supprimées. Redirection vers l'accueil…
           </p>
         </div>
       </div>
@@ -485,7 +486,7 @@ function ProfilPanel({
                   Espace administration
                 </p>
                 <p className="mt-0.5 text-xs font-medium text-violet-600">
-                  Acces administrateur actif
+                  Accès administrateur actif
                 </p>
               </div>
             </div>
@@ -560,7 +561,7 @@ function ProfilPanel({
         >
           <span className="flex items-center gap-2 text-sm font-medium text-slate-600">
             <Trash2 className="h-4 w-4 text-slate-400" />
-            Parametres avances du compte
+            Paramètres avancés du compte
           </span>
           <ChevronDown
             className={[
@@ -579,10 +580,10 @@ function ProfilPanel({
                   Supprimer definitivement mon compte
                 </p>
                 <p className="mt-1 text-xs leading-5 text-slate-500">
-                  Cette action demande la suppression de votre compte et des donnees
-                  personnelles associees. Elle est irreversible. Les donnees devant etre
-                  conservees pour des obligations legales, notamment les factures, peuvent
-                  etre conservees pendant la duree legale applicable.
+                  Cette action demande la suppression de votre compte et des données
+                  personnelles associées. Elle est irréversible. Les données devant être
+                  conservées pour des obligations légales, notamment les factures, peuvent
+                  l'être pendant la durée légale applicable.
                 </p>
               </div>
               <label className="block">
@@ -608,7 +609,7 @@ function ProfilPanel({
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-red-300"
               >
                 <Trash2 className="h-4 w-4" />
-                {deleteLoading ? "Suppression en cours..." : "Supprimer mon compte"}
+                {deleteLoading ? "Suppression en cours…" : "Supprimer mon compte"}
               </button>
             </div>
           </div>

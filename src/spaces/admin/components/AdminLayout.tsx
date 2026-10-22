@@ -20,10 +20,10 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 // ── Items de navigation ───────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
-  { label: "Dashboard",    path: "/admin",               icon: BarChart3,     end: true },
+  { label: "Tableau de bord", path: "/admin",               icon: BarChart3,     end: true },
   { label: "Utilisateurs", path: "/admin/utilisateurs",  icon: Users },
   { label: "Abonnements",  path: "/admin/abonnements",   icon: CreditCard },
-  { label: "Copilot",      path: "/admin/copilot",       icon: Bot },
+  { label: "Mimmo",        path: "/admin/copilot",       icon: Bot },
   { label: "Devis",        path: "/admin/devis",         icon: ClipboardList },
   { label: "Factures",     path: "/admin/factures",      icon: FileText },
   { label: "Entreprises",  path: "/admin/entreprises",   icon: Building2 },

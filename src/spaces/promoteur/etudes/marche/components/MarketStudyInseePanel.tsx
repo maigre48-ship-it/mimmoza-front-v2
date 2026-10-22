@@ -91,7 +91,7 @@ export const MarketStudyInseePanel: React.FC<MarketStudyInseePanelProps> = ({
               value={
                 insee.population != null
                   ? formatNumber(insee.population)
-                  : "N/A"
+                  : "Non disponible"
               }
               sublabel={
                 insee.population_year
@@ -108,7 +108,7 @@ export const MarketStudyInseePanel: React.FC<MarketStudyInseePanelProps> = ({
               value={
                 insee.densite_hab_km2 != null
                   ? `${formatNumber(insee.densite_hab_km2)} hab/km²`
-                  : "N/A"
+                  : "Non disponible"
               }
               icon="📊"
               unavailable={insee.densite_hab_km2 == null}
@@ -131,7 +131,7 @@ export const MarketStudyInseePanel: React.FC<MarketStudyInseePanelProps> = ({
             ) : (
               <DataCard
                 label="Taux de chômage"
-                value="N/A"
+                value="Non disponible"
                 icon="📉"
                 unavailable
                 sublabel="Non mesuré sur cette commune"
@@ -144,7 +144,7 @@ export const MarketStudyInseePanel: React.FC<MarketStudyInseePanelProps> = ({
               value={
                 insee.taux_pauvrete != null
                   ? `${insee.taux_pauvrete.toFixed(1)}%`
-                  : "N/A"
+                  : "Non disponible"
               }
               icon="💰"
               unavailable={insee.taux_pauvrete == null}
@@ -163,7 +163,7 @@ export const MarketStudyInseePanel: React.FC<MarketStudyInseePanelProps> = ({
             ) : (
               <DataCard
                 label="Propriétaires"
-                value="N/A"
+                value="Non disponible"
                 icon="🏠"
                 unavailable
                 sublabel="Non mesuré sur cette commune"
@@ -176,7 +176,7 @@ export const MarketStudyInseePanel: React.FC<MarketStudyInseePanelProps> = ({
               value={
                 insee.revenu_median != null
                   ? `${formatNumber(insee.revenu_median)} €/an`
-                  : "N/A"
+                  : "Non disponible"
               }
               icon="💶"
               unavailable={insee.revenu_median == null}
@@ -301,7 +301,7 @@ const PyramideAges: React.FC<PyramideAgesProps> = ({ data }) => {
               />
             </div>
             <span className="text-xs text-gray-600 w-12">
-              {value !== undefined ? `${value.toFixed(1)}%` : "N/A"}
+              {value !== undefined ? `${value.toFixed(1)}%` : "Non disponible"}
             </span>
           </div>
         );

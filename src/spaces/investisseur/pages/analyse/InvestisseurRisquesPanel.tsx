@@ -98,6 +98,7 @@ import {
 import type {
   RiskStudyApiResponse,
 } from "@/spaces/shared/risques";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 // ─── Design tokens par défaut (Investisseur = bleu) ───────────────────────────
 const GRAD_PRO   = "linear-gradient(90deg, #2196f3 0%, #21cbf3 100%)";
@@ -577,7 +578,7 @@ export default function InvestisseurRisquesPanel() {
         setBankScoring({ score: scoring.score, grade: scoring.grade as BankRiskScoringGrade, level_label: scoring.level_label ?? "", confidence: scoring.confidence ?? 0, rationale: Array.isArray(scoring.rationale) ? scoring.rationale : [], items: Array.isArray(scoring.items) ? scoring.items : [] });
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Erreur scoring banque";
+      const msg = messageErreur(err, "Calcul du score de risque impossible.");
       log('❌', 'banque-risques-v1 error', msg);
       setBankScoringError(msg);
     } finally { setIsBankScoringLoading(false); }
@@ -689,7 +690,7 @@ export default function InvestisseurRisquesPanel() {
       } catch (snapshotErr) { log('❌', 'Snapshot error', snapshotErr); }
       setTimeout(() => { if (mountedRef.current) resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, 100);
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Une erreur est survenue";
+      const errorMessage = messageErreur(err, "Une erreur est survenue");
       log('❌', 'Submit error', errorMessage);
       if (mountedRef.current) setError(errorMessage);
     } finally { if (mountedRef.current) setIsLoading(false); }

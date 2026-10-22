@@ -16,6 +16,7 @@ import { ACCENT_PRO } from "../shared/promoteurDesign.tokens";
 import { usePromoteurStudy } from "../shared/usePromoteurStudy";
 import { userStorage } from "@/lib/storage/userScopedStorage";
 import { estimerPrixNeufM2 } from "../shared/prixNeuf";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 // ─────────────────────────────────────────────
 // Constantes design
@@ -675,7 +676,7 @@ const EvaluationPage: React.FC = () => {
             }
           } catch (e: any) {
             setDvfComps([]);
-            setDvfCompsError(e?.message ?? "Erreur ventes DVF.");
+            setDvfCompsError(messageErreur(e, "Ventes DVF indisponibles."));
           }
         } else {
           setDvfError("Réponse DVF invalide — fourchette incalculable.");
@@ -686,7 +687,7 @@ const EvaluationPage: React.FC = () => {
         );
       }
     } catch (e: any) {
-      setDvfError(e?.message ?? String(e));
+      setDvfError(messageErreur(e, "Ventes DVF indisponibles."));
     } finally {
       setHasSearched(true);
       setDvfLoading(false);

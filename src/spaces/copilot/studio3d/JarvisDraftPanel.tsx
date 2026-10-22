@@ -12,6 +12,7 @@ import { ArrowUpRight, Box, FileStack, ScanLine } from 'lucide-react';
 // R2 — « Voir en 3D » en un clic ; sans parcelle confirmée, une seule question.
 import { ConfirmerParcelle } from './ConfirmerParcelle';
 import './JarvisDraftPanel.css';
+import { messageErreur } from "@/components/ui/messageErreur";
 
 const LABELS = {
   objectif: 'Objectif',
@@ -174,7 +175,7 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
       const issue = await onOpenStudio(draft, conversationId, terrain);
       setDemandeParcelle(issue === 'parcelle-requise');
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Ouverture impossible.');
+      setNotice(messageErreur(error, 'Ouverture impossible.'));
     } finally {
       setOpening(false);
     }

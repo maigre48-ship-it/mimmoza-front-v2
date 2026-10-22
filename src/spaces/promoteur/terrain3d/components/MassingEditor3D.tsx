@@ -37,6 +37,7 @@ import {
   IMPLANTATION_GROUND_FLOOR_HEIGHT_M,
   IMPLANTATION_TYPICAL_FLOOR_HEIGHT_M,
 } from '../../shared/buildingMetrics';
+import { messageErreur } from "@/components/ui/messageErreur";
 
 const ACCENT = "#5247b8";
 
@@ -564,7 +565,7 @@ export const MassingEditor3D: FC<MassingEditor3DProps> = ({
       } catch (e: any) {
         if (!cancel) {
           setReliefStatus("error");
-          setReliefError(e?.message ?? String(e));
+          setReliefError(messageErreur(e, "Relief du terrain indisponible."));
         }
       }
     })();

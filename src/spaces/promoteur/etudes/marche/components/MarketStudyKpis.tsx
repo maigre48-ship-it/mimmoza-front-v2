@@ -104,7 +104,7 @@ export const MarketStudyKpis: React.FC<MarketStudyKpisProps> = ({
               value={
                 data.insee.densite_hab_km2
                   ? `${formatNumber(data.insee.densite_hab_km2)} hab/km²`
-                  : "N/A"
+                  : "Non disponible"
               }
             />
             {/* Correctif B — `taux_chomage` ne porte plus que la MESURE et peut

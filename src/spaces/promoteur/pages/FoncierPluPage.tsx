@@ -35,6 +35,7 @@ import { Environnement360Panel } from "../foncier/Environnement360Panel";
 import { patchModule } from "../shared/promoteurSnapshot.store";
 import { hashInputs, setStepStatus } from "../shared/promoteurChain";
 import { usePromoteurStudyId } from "../shared/usePromoteurStudyId";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 /** Le copilote a-t-il ouvert cette page pour exécuter l'étape lui-même ? */
 function isAgentRun(): boolean {
@@ -555,7 +556,7 @@ function PluUploaderPanel({ communeInsee, communeNom, targetZoneCode, onPluParse
         try { await supabase.from("plu_parsed").upsert({ commune_insee: communeInsee, zone_code: plu.zone_code, ruleset: plu.ruleset, source_file: file.name, parsed_at: new Date().toISOString() }, { onConflict: "commune_insee,zone_code" }); } catch (dbErr) { console.warn("[PluUploaderPanel] upsert plu_parsed failed:", dbErr); }
         setPluServerStatus("ok"); onPluParsed(plu);
       } else { throw new Error(data?.message || "Aucune zone PLU trouvée"); }
-    } catch (err: any) { console.error("[PluUploaderPanel] parse error:", err); setPluServerStatus("down"); setError(err?.message || "Erreur"); }
+    } catch (err: any) { console.error("[PluUploaderPanel] parse error:", err); setPluServerStatus("down"); setError(messageErreur(err, "Erreur")); }
     finally { setUploading(false); setProgress(""); }
   };
 
@@ -568,7 +569,7 @@ function PluUploaderPanel({ communeInsee, communeNom, targetZoneCode, onPluParse
         </span>
       </div>
       <div style={styles.cardBody}>
-        {pluServerStatus === "down" && (<div style={{ marginBottom: 16, padding: "12px 14px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, fontSize: 12, color: "#991b1b" }}><strong>⚠ Fonction Supabase non accessible</strong><br />Vérifiez que la fonction <code>plu-parser</code> est bien déployée.</div>)}
+        {pluServerStatus === "down" && (<div style={{ marginBottom: 16, padding: "12px 14px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, fontSize: 12, color: "#991b1b" }}><strong>⚠ Lecture automatique du PLU momentanément indisponible</strong><br />Réessayez dans quelques minutes. Si le problème persiste, écrivez-nous.</div>)}
         <p style={{ fontSize: 13, color: "#64748b", margin: "0 0 16px" }}>Uploadez le PDF du règlement pour extraire les règles.</p>
         <div onClick={() => fileInputRef.current?.click()} style={{ padding: 24, border: "2px dashed #cbd5e1", borderRadius: 12, background: file ? "#f0fdf4" : "#f8fafc", cursor: "pointer", textAlign: "center" }}>
           <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" style={{ display: "none" }} onChange={e => { const selected = e.target.files?.[0]; if (selected?.type === "application/pdf" || selected?.name?.toLowerCase().endsWith(".pdf")) { setFile(selected); setError(null); } else { setError("PDF requis"); } }} />
@@ -648,7 +649,7 @@ function PluInfoCard({ pluData, loading, communeInsee, communeNom, parcelId, add
       const extracted: OapExtractResult | null = data.data ?? null;
       setOapExtract(extracted); onOapExtracted?.(extracted); setOapStatus("success"); setOapError(null);
       patchModule("plu_oap", { ok: extracted?.has_oap === true, summary: extracted?.has_oap ? `OAP détectée : ${extracted.oap_name || "sans nom"}` : "Aucune OAP détectée", data: extracted });
-    } catch (err: any) { console.error("[OAP] error", err); setOapError(err?.message || "Erreur réseau"); setOapStatus("error"); }
+    } catch (err: any) { console.error("[OAP] error", err); setOapError(messageErreur(err, "Analyse des OAP impossible.")); setOapStatus("error"); }
   }, [communeInsee, zoneCode, communeNom, parcelId, address, source, pluData, onOapExtracted]);
 
   if (loading) return (
@@ -917,7 +918,7 @@ function ParcelsSidebar({ studyId, adresseProjet, selectedParcels, totalAreaM2, 
               setStudioEnCours(true);
               // ENV1 — les photos 360° de l'étude partent avec les parcelles (adresses signées 1 h) ; CAD04 — avec le relief mesuré.
               void ouvrirStudio3DAvecPanoramas(selectedParcels, () => adressesSignees(panoramas360), adresseProjet?.insee, adresseProjet?.libelle, point)
-                .catch((e) => setStudioErreur(e instanceof Error ? e.message : String(e)))
+                .catch((e) => setStudioErreur(messageErreur(e, "Ouverture du Studio 3D impossible.")))
                 .finally(() => setStudioEnCours(false));
             }}
             style={{ ...styles.button, width: "100%", marginTop: 10, background: "#0f172a", color: "white", cursor: studioEnCours ? "wait" : "pointer" }}

@@ -22,6 +22,7 @@ import {
   type ApporteurDealStatus,
   type ApporteurDealTypeBien,
 } from "../shared/apporteurDeals.store";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 // ─── Métadonnées ──────────────────────────────────────────────────────────────
 
@@ -159,7 +160,7 @@ function EditModal({
       if (updated) onSaved(updated);
       else setError("Opportunité introuvable.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "La modification a échoué.");
+      setError(messageErreur(err, "La modification a échoué."));
     } finally {
       setSaving(false);
     }
@@ -368,7 +369,7 @@ export function ApporteurDashboard() {
     try {
       setDeals(await listMesApporteurDeals());
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : "Chargement impossible.");
+      setErreur(messageErreur(err, "Chargement impossible."));
     } finally {
       setLoading(false);
     }
@@ -391,7 +392,7 @@ export function ApporteurDashboard() {
       await deleteApporteurDeal(deal.id);
       setDeals((prev) => prev.filter((d) => d.id !== deal.id));
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : "Suppression impossible.");
+      setErreur(messageErreur(err, "Suppression impossible."));
     } finally {
       setBusyId(null);
     }

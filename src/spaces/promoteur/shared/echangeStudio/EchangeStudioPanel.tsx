@@ -29,6 +29,7 @@ import {
   type AnalyseRetour, type EchangeStocke,
 } from "./persistanceEchange";
 import { demarrerPoigneeDeMain, examinerMessageStudio, originesStudio } from "./transportStudio";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 const ENV = (import.meta as unknown as { env?: Record<string, unknown> }).env;
 const ORIGINES_ENV = ENV?.VITE_STUDIO_ORIGINES_AUTORISEES as string | undefined;
@@ -140,7 +141,7 @@ export const EchangeStudioPanel: React.FC<EchangeStudioPanelProps> = ({ studyId,
   const ouvrir = useCallback(async () => {
     setMessage(null);
     let base: string;
-    try { base = urlStudio3D(); } catch (e) { setMessage(e instanceof Error ? e.message : String(e)); return; }
+    try { base = urlStudio3D(); } catch (e) { setMessage(messageErreur(e, "Échange avec le Studio 3D impossible.")); return; }
     const onglet = window.open("about:blank", "_blank");
     // Correctif : l'onglet restait vide pendant le chargement du relief — on affiche une attente.
     try {
@@ -179,7 +180,7 @@ export const EchangeStudioPanel: React.FC<EchangeStudioPanelProps> = ({ studyId,
       setMessage(`Envoyé à Studio : ${String(projet.batiments.length)} bâtiment(s), révision ${String(projet.revision)}${parPostMessage ? " (projet volumineux : transmis après la poignée de main)" : ""}${reliefAbandonne ? " — relief non chargé en 15 s : terrain envoyé à plat (à vérifier)" : ""}.`);
     } catch (e) {
       onglet?.close();
-      setMessage(e instanceof Error ? e.message : String(e));
+      setMessage(messageErreur(e, "Échange avec le Studio 3D impossible."));
     } finally {
       setEnvoi(false);
     }

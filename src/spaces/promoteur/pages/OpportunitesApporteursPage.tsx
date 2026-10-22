@@ -12,6 +12,7 @@ import {
   type ApporteurDealStatus,
   type ApporteurDealTypeBien,
 } from "@/spaces/apporteur/shared/apporteurDeals.store";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 const STATUS_LABEL: Record<ApporteurDealStatus, string> = {
   depose:             "Déposé",
@@ -273,7 +274,7 @@ export default function OpportunitesApporteursPage() {
     try {
       setDeals(await listDealsOuverts());
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : "Erreur de chargement");
+      setErreur(messageErreur(err, "Erreur de chargement"));
     } finally {
       setLoading(false);
     }
@@ -302,7 +303,7 @@ export default function OpportunitesApporteursPage() {
       // DeblocageError porte un code métier exploitable (crédits, réservation…)
       setErreur(err instanceof DeblocageError
         ? err.message
-        : err instanceof Error ? err.message : "Le déblocage a échoué");
+        : messageErreur(err, "Le déblocage a échoué"));
       setBusyId(null);
     }
   }
@@ -318,7 +319,7 @@ export default function OpportunitesApporteursPage() {
       await refuserDeal(deal.id);
       await refresh();
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : "Impossible de refuser ce deal");
+      setErreur(messageErreur(err, "Impossible de refuser ce deal"));
     } finally {
       setBusyId(null);
     }

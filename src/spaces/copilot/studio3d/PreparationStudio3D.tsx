@@ -22,6 +22,7 @@ import type { JarvisStudioBuilding, JarvisSegment } from './jarvisDraft';
 import type { ConfirmedTerrain } from './terrainCadastre';
 import { parcelId, parcelLabel } from './parcelFromGps';
 import './PreparationStudio3D.css';
+import { messageErreur } from "@/components/ui/messageErreur";
 
 interface Adresse { label: string; citycode: string; lat: number; lon: number }
 interface Parcelle { id: string; feature?: unknown; area_m2?: number | null }
@@ -110,7 +111,7 @@ export function PreparationStudio3D({ ouvert, onFermer, briefInitial, fichiersIn
         else if (genre === "plan") { const r = await televerserTransfert(session, f, TYPES_PLAN); setPlans((a) => [...a, r]); }
         else { const r = await televerserPanorama(session, f); setPanoramas((a) => [...a, r]); }
         remaining--;
-      } catch (e) { refus.push(e instanceof Error ? e.message : String(e)); }
+      } catch (e) { refus.push(messageErreur(e, "Préparation du Studio 3D impossible.")); }
     }
     setOccupe(null);
     setMessage(refus.length > 0 ? `Refusé : ${refus.join(" · ")}` : null);
@@ -183,7 +184,7 @@ export function PreparationStudio3D({ ouvert, onFermer, briefInitial, fichiersIn
       });
       setMessage("Le Studio 3D s’ouvre dans un nouvel onglet : il importe le terrain et son relief et affiche la scène en 3D dans le navigateur.");
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setMessage(messageErreur(e, "Préparation du Studio 3D impossible."));
     } finally {
       setOccupe(null);
     }

@@ -4,6 +4,7 @@ import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "../../../lib/supabase
 import PluUploaderPanel from "../components/PluUploaderPanel";
 import { patchModule, patchPromoteurSnapshot } from "../shared/promoteurSnapshot.store";
 import { userStorage } from "@/lib/storage/userScopedStorage";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 // ============================================
 // Configuration
@@ -1512,7 +1513,7 @@ export default function PluFaisabilite(): React.ReactElement {
       const hasSelected = selectedDocumentId && docs.some(d => d.id === selectedDocumentId);
       if (!hasSelected) setSelectedDocumentId(docs.length > 0 ? docs[0].id : null);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Erreur lors du chargement des documents.";
+      const msg = messageErreur(e, "Erreur lors du chargement des documents.");
       setDocsStatus("error"); setDocsError(msg); setDocuments([]); setSelectedDocumentId(null); setRulesZones([]); setRulesStatus("idle"); setRulesError(null);
     }
   }, [accessToken, buildAuthHeaders, selectedDocumentId]);
@@ -1551,7 +1552,7 @@ export default function PluFaisabilite(): React.ReactElement {
         }
       }
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Erreur lors du chargement des règles.";
+      const msg = messageErreur(e, "Erreur lors du chargement des règles.");
       setRulesStatus("error"); setRulesError(msg); setRulesZones([]);
     }
   }, [accessToken, buildAuthHeaders, selectedZoneCode, detectedZoneCode]);
@@ -1582,7 +1583,7 @@ export default function PluFaisabilite(): React.ReactElement {
       writeLS(LS_DETECTED_ZONE_CODE, finalZoneCode); writeLS(LS_SELECTED_PLU_ZONE_CODE, finalZoneCode);
       setDetectStatus("success"); setDetectError(null);
     } catch (e: unknown) {
-      setDetectStatus("error"); setDetectError(e instanceof Error ? e.message : "Erreur lors de la détection.");
+      setDetectStatus("error"); setDetectError(messageErreur(e, "Erreur lors de la détection."));
     }
   }, [accessToken, buildAuthHeaders, sessionParcelId, sessionCommuneInsee, rulesZones]);
 
@@ -1622,7 +1623,7 @@ export default function PluFaisabilite(): React.ReactElement {
       if (selectedZoneCode) writeLS(LS_SELECTED_PLU_ZONE_CODE, selectedZoneCode);
       setAiExtractStatus("success"); setAiExtractError(null);
     } catch (e: unknown) {
-      setAiExtractStatus("error"); setAiExtractError(e instanceof Error ? e.message : "Erreur lors de l'extraction.");
+      setAiExtractStatus("error"); setAiExtractError(messageErreur(e, "Erreur lors de l'extraction."));
     }
   }, [selectedDocumentId, selectedZoneCode, documents, communeInsee, sessionCommuneInsee, rulesZones]);
 
@@ -1664,7 +1665,7 @@ export default function PluFaisabilite(): React.ReactElement {
       setOapError(null);
     } catch (e: unknown) {
       setOapStatus("error");
-      setOapError(e instanceof Error ? e.message : "Erreur lors de l'analyse OAP.");
+      setOapError(messageErreur(e, "Erreur lors de l'analyse OAP."));
     }
   }, [selectedDocumentId, selectedZoneCode, documents, communeInsee, sessionCommuneInsee, sessionParcelId]);
 

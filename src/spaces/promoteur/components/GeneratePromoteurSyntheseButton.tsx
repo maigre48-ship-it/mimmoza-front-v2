@@ -5,6 +5,7 @@ import React, { useCallback, useState } from 'react';
 import { exportPromoteurPdf } from '../services/exportPromoteurPdf';
 import { generatePromoteurSynthese } from '../services/generatePromoteurSynthese';
 import type { PromoteurRawInput, PromoteurSynthese, ReportType } from '../services/promoteurSynthese.types';
+import { messageErreur } from "@/components/ui/messageErreur";
 
 interface Props {
   rawData: PromoteurRawInput;
@@ -67,7 +68,7 @@ export const GeneratePromoteurSyntheseButton: React.FC<Props> = ({
       // Reset after a moment
       setTimeout(() => setPhase('idle'), 3000);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erreur lors de la génération';
+      const message = messageErreur(err, 'Erreur lors de la génération');
       onError?.(message);
       setPhase('idle');
     }

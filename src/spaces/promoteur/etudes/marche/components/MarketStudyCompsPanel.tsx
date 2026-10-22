@@ -157,7 +157,7 @@ export const MarketStudyCompsPanel: React.FC<MarketStudyCompsPanelProps> = ({
                   <div className="text-lg font-bold text-purple-900">
                     {stats.avgPriceM2 > 0
                       ? `${formatNumber(Math.round(stats.avgPriceM2))} €/m²`
-                      : "N/A"}
+                      : "—"}
                   </div>
                 </div>
               </div>
@@ -255,7 +255,7 @@ const TransactionRow: React.FC<TransactionRowProps> = ({ tx }) => {
   const [showDetails, setShowDetails] = useState(false);
 
   const formatDate = (dateStr: string) => {
-    if (!dateStr) return "N/A";
+    if (!dateStr) return "—";
     const d = new Date(dateStr);
     return d.toLocaleDateString("fr-FR", {
       day: "2-digit",
@@ -274,7 +274,7 @@ const TransactionRow: React.FC<TransactionRowProps> = ({ tx }) => {
           {formatDate(tx.date_mutation)}
         </td>
         <td className="px-3 py-2 text-gray-900">
-          {tx.type_local || "N/A"}
+          {tx.type_local || "—"}
           {tx.nombre_pieces_principales && (
             <span className="text-gray-500 text-xs ml-1">
               ({tx.nombre_pieces_principales}p)
@@ -287,10 +287,10 @@ const TransactionRow: React.FC<TransactionRowProps> = ({ tx }) => {
         <td className="px-3 py-2 text-right text-gray-600">
           {tx.surface_reelle_bati
             ? `${formatNumber(tx.surface_reelle_bati)} m²`
-            : "N/A"}
+            : "—"}
         </td>
         <td className="px-3 py-2 text-right text-gray-600">
-          {tx.prix_m2 ? `${formatNumber(tx.prix_m2)} €` : "N/A"}
+          {tx.prix_m2 ? `${formatNumber(tx.prix_m2)} €` : "—"}
         </td>
         <td className="px-3 py-2 text-right text-gray-500 text-xs">
           {formatDistance(tx.distance_km)}
@@ -309,7 +309,7 @@ const TransactionRow: React.FC<TransactionRowProps> = ({ tx }) => {
               )}
               <div>
                 <span className="font-medium">Nature:</span>{" "}
-                {tx.nature_mutation || "N/A"}
+                {tx.nature_mutation || "—"}
               </div>
               {tx.surface_terrain && (
                 <div>

@@ -75,6 +75,7 @@ import { CotesControleOverlay } from "./implantation/CotesControleOverlay";
 import { useControleImplantation, type EtatControle } from "./implantation/useControleImplantation";
 // L3 — aller-retour Implantation 2D ⇄ Studio 3D (contrat mimmoza-projet-v2).
 import { EchangeStudioPanel } from "./shared/echangeStudio/EchangeStudioPanel";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
@@ -602,7 +603,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ parcelleLocal, studyId, con
   const handleExportPdf = useCallback(() => {
     if (!masterScenario) return;
     try { exportDrawnScenarioPdf({ scenario: masterScenario, controle: controleEtat.controle }); }
-    catch (err) { alert(`Erreur export PDF : ${err instanceof Error ? err.message : String(err)}`); }
+    catch (err) { alert(`Erreur export PDF : ${messageErreur(err, "Export PDF impossible.")}`); }
   }, [masterScenario, controleEtat.controle]);
 
   const selectedBuildingId = useMemo<string | null>(() => {

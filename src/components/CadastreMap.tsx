@@ -162,7 +162,7 @@ export function CadastreMap({
                     <div style="font-size:13px;line-height:1.4;">
                       <strong>Parcelle :</strong> ${idParcelle ?? "?"}<br/>
                       <strong>Surface :</strong> ${
-                        surface ?? "N/A"
+                        surface ?? "Non disponible"
                       } m²
                     </div>
                   `

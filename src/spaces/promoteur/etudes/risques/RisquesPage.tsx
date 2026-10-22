@@ -119,6 +119,7 @@ import {
 import type {
   RiskStudyApiResponse,
 } from "@/spaces/shared/risques";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 // ============================================
 // DEBUG
@@ -750,7 +751,7 @@ export function RisquesPage({ onStudyComplete: _onStudyComplete, theme: _theme }
         log('⚠️', 'banque-risques-v1: no scoring in response');
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Erreur scoring banque";
+      const msg = messageErreur(err, "Calcul du score de risque impossible.");
       log('❌', 'banque-risques-v1 error', msg);
       setBankScoringError(msg);
     } finally {
@@ -940,7 +941,7 @@ export function RisquesPage({ onStudyComplete: _onStudyComplete, theme: _theme }
       }, 100);
 
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Une erreur est survenue";
+      const errorMessage = messageErreur(err, "Une erreur est survenue");
       log('❌', 'Submit error', errorMessage);
       if (mountedRef.current) setError(errorMessage);
       if (studyId) {

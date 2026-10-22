@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "../../../lib/supabaseClient";
 import { userStorage } from "@/lib/storage/userScopedStorage";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 type CommuneGeo = {
   nom: string;
@@ -319,7 +320,7 @@ export default function PluUploaderPanel(): React.ReactElement {
       }
     } catch (e: any) {
       setCommuneSearchStatus("error");
-      setCommuneSearchError(e?.message || "Erreur lors de la recherche.");
+      setCommuneSearchError(messageErreur(e, "Erreur lors de la recherche."));
     }
   }, [codePostal, persistInsee, persistNom]);
 
@@ -415,7 +416,7 @@ export default function PluUploaderPanel(): React.ReactElement {
       if (path) persistStorage(path);
     } catch (e: any) {
       setUploadStatus("error");
-      setUploadError(e?.message || "Erreur lors de l'upload.");
+      setUploadError(messageErreur(e, "Erreur lors de l'upload."));
     }
   }, [file, effectiveInsee, accessToken, buildAuthHeaders, persistStorage]);
 
@@ -477,7 +478,7 @@ export default function PluUploaderPanel(): React.ReactElement {
       setIngestStatus("success");
     } catch (e: any) {
       setIngestStatus("error");
-      setIngestError(e?.message || "Erreur lors de l'ingestion.");
+      setIngestError(messageErreur(e, "Erreur lors de l'ingestion."));
     }
   }, [effectiveInsee, storagePath, communeNom, accessToken, buildAuthHeaders]);
 
@@ -562,7 +563,7 @@ export default function PluUploaderPanel(): React.ReactElement {
       setZoneStatus("success");
     } catch (e: any) {
       setZoneStatus("error");
-      setZoneError(e?.message || "Erreur lors de la détection de zone.");
+      setZoneError(messageErreur(e, "Erreur lors de la détection de zone."));
     }
   }, [effectiveInsee, effectiveParcelId, effectiveAddress, accessToken, buildAuthHeaders]);
 

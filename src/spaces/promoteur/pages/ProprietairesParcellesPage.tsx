@@ -44,6 +44,7 @@ import type {
   RechercheProprietairesResponse,
   RechercheProprietairesStatus,
 } from "../types/proprietairesParcelles.types";
+import { messageErreur } from "@/components/ui/messageErreur";
 
 const PLACEHOLDER = "Non disponible";
 
@@ -169,7 +170,7 @@ export default function ProprietairesParcellesPage() {
       setCritereAffiche(critere.libelle);
       setStatus(res.rows.length === 0 ? "empty" : "success");
     } catch (e) {
-      setErreur(e instanceof Error ? e.message : "Recherche impossible.");
+      setErreur(messageErreur(e, "Recherche impossible."));
       setStatus("error");
     }
   }, [critere, mode, idu, commune, section, numero, denomination, siren, filtreDept]);
