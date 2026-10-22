@@ -284,3 +284,9 @@ grant execute on function public.purge_client_errors(integer) to service_role;
 -- Cron PROPOSÉ (non appliqué par cette migration) — chaque nuit à 03 h 17 UTC :
 --   select cron.schedule('purge-client-errors', '17 3 * * *',
 --                        $$select public.purge_client_errors(90)$$);
+
+-- ── Ajout lors de l'application (22/10/2026) : défense en profondeur ─────────
+-- La RLS bloque déjà toute écriture directe ; on retire aussi les droits hérités
+-- des privilèges par défaut de Supabase.
+revoke insert, update, delete on public.client_errors from anon, authenticated;
+revoke select on public.client_errors from anon;
