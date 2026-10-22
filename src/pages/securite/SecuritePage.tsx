@@ -165,25 +165,21 @@ export default function SecuritePage() {
               Les informations sur les biens, les parcelles et les communes proviennent de bases publiques officielles,
               interrogées au moment de votre demande ou mises à jour régulièrement. Chaque résultat indique sa source.
             </p>
-            <div className="-mx-1 overflow-x-auto">
-              <table className="w-full min-w-[34rem] border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-400">
-                    <th scope="col" className="px-1 py-2 font-semibold">Source</th>
-                    <th scope="col" className="px-1 py-2 font-semibold">Producteur</th>
-                    <th scope="col" className="px-1 py-2 font-semibold">Utilisée pour</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {SOURCES_VERIFIEES.map((s) => (
-                    <tr key={s.nom} className="border-b border-slate-100 last:border-0 align-top">
-                      <th scope="row" className="px-1 py-2 font-medium text-slate-900">{s.nom}</th>
-                      <td className="px-1 py-2 text-slate-500">{s.producteur}</td>
-                      <td className="px-1 py-2 text-slate-600">{s.usage}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="rounded-xl border border-slate-200">
+              <div className="hidden grid-cols-[minmax(0,13rem)_minmax(0,1fr)_minmax(0,1fr)] gap-4 border-b border-slate-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400 sm:grid" aria-hidden="true">
+                <span>Source</span>
+                <span>Producteur</span>
+                <span>Utilisée pour</span>
+              </div>
+              <ul className="divide-y divide-slate-100">
+                {SOURCES_VERIFIEES.map((s) => (
+                  <li key={s.nom} className="grid gap-0.5 px-4 py-2.5 text-sm sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)_minmax(0,1fr)] sm:gap-4">
+                    <span className="font-medium text-slate-900">{s.nom}</span>
+                    <span className="text-slate-500"><span className="sr-only">Producteur : </span>{s.producteur}</span>
+                    <span className="text-slate-600"><span className="sr-only">Utilisée pour : </span>{s.usage}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
             <p>
               Les données DVF sont réutilisées dans le respect de leur licence : elles ne sont affichées qu'aux

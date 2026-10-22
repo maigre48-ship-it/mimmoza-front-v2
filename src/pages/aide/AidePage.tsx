@@ -81,7 +81,7 @@ export default function AidePage() {
               onChange={(e) => setRecherche(e.target.value)}
               placeholder="Rechercher : jetons, export, supprimer mon compte…"
               autoComplete="off"
-              className="h-12 w-full rounded-xl border border-slate-300 bg-white pl-12 pr-11 text-base text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-violet-400 focus:ring-4 focus:ring-violet-100"
+              className="h-12 w-full rounded-xl border border-slate-300 bg-white pl-12 pr-11 text-base text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-violet-400 focus:ring-4 focus:ring-violet-100 [&::-webkit-search-cancel-button]:appearance-none"
             />
             {rechercheActive && (
               <button
