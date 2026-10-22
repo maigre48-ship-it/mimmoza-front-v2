@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { bootCurrentUserIdSync } from "./lib/auth/currentUser";
+import { installerSuiviErreurs, signalerErreurReact } from "./lib/monitoring";
 import "./index.css";
 
 // Pose le user_id de facon synchrone des le boot (lecture du token Supabase
@@ -11,9 +12,24 @@ import "./index.css";
 // onAuthStateChange dans AppShell prendra ensuite le relais.
 bootCurrentUserIdSync();
 
+// Suivi des erreurs (exceptions, promesses rejetées) : jamais bloquant, inactif
+// en développement. Voir src/lib/monitoring.
+installerSuiviErreurs();
+
 const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("Root element #root not found");
-createRoot(rootEl).render(
+createRoot(rootEl, {
+  // Erreurs de rendu rattrapées par un ErrorBoundary (dont le filet global) :
+  // l'écran de secours s'affiche, et l'erreur est désormais aussi signalée.
+  onCaughtError: (erreur, info) => {
+    console.error("[Mimmoza] erreur d'affichage :", erreur);
+    signalerErreurReact(erreur, info?.componentStack ?? null, true);
+  },
+  onUncaughtError: (erreur, info) => {
+    console.error("[Mimmoza] erreur d'affichage non rattrapée :", erreur);
+    signalerErreurReact(erreur, info?.componentStack ?? null, false);
+  },
+}).render(
   <StrictMode>
     <ErrorBoundary>
       <BrowserRouter>
