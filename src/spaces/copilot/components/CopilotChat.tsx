@@ -13,7 +13,23 @@ import { FollowupPanel } from '../followup/FollowupPanel';
 import { JarvisDraftPanel, type IssueOuvertureStudio } from '../studio3d/JarvisDraftPanel';
 import type { ConfirmedTerrain } from '../studio3d/terrainCadastre';
 import { is3DPreparationRequest, readJarvisDraft, withoutJarvisDraft, type JarvisDraft } from '../studio3d/jarvisDraft';
-import { Activity, ScanLine, Volume2, VolumeX } from 'lucide-react';
+import { Box, Volume2, VolumeX } from 'lucide-react';
+import { BoutonFenetre, GlypheAgrandir, GlypheFermer, GlypheReduire, GlypheRestaurer } from './FenetreBoutons';
+import './CopilotFenetres.css';
+
+/** Fenêtre « Espace 3D » : ouverte, agrandie, réduite en bande sur le côté, ou fermée. */
+type EtatFenetre3D = 'ouvert' | 'large' | 'reduit' | 'ferme';
+const CLE_FENETRE_3D = 'mzia.atelier3d.fenetre';
+const ETATS_FENETRE_3D: readonly EtatFenetre3D[] = ['ouvert', 'large', 'reduit', 'ferme'];
+
+function lireEtatFenetre3D(): EtatFenetre3D {
+  try {
+    const valeur = window.localStorage.getItem(CLE_FENETRE_3D);
+    return ETATS_FENETRE_3D.includes(valeur as EtatFenetre3D) ? valeur as EtatFenetre3D : 'ouvert';
+  } catch {
+    return 'ouvert';
+  }
+}
 
 export function CopilotChat({
   forceMode,
@@ -49,6 +65,20 @@ export function CopilotChat({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [voiceReplies, setVoiceReplies] = useState(false);
   const [studioRecoveryHint, setStudioRecoveryHint] = useState(false);
+  const [fenetre3D, setFenetre3D] = useState<EtatFenetre3D>(lireEtatFenetre3D);
+  const [pleinEcran, setPleinEcran] = useState(false);
+  const changerFenetre3D = (etat: EtatFenetre3D) => {
+    setFenetre3D(etat);
+    try { window.localStorage.setItem(CLE_FENETRE_3D, etat); } catch { /* stockage indisponible : l'état reste en mémoire */ }
+  };
+
+  // Échap quitte le plein écran (comme une fenêtre agrandie qu'on restaure).
+  useEffect(() => {
+    if (!pleinEcran) return;
+    const surTouche = (event: KeyboardEvent) => { if (event.key === 'Escape') setPleinEcran(false); };
+    window.addEventListener('keydown', surTouche);
+    return () => window.removeEventListener('keydown', surTouche);
+  }, [pleinEcran]);
   const lastSpokenRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -120,25 +150,72 @@ export function CopilotChat({
   }, [forceMode]);
 
   const empty = messages.length === 0 && !loadingMessages;
+  const projetEnCours = showStudioDraft && messages.some(m => m.role === 'assistant' && Boolean(readJarvisDraft(m.text)));
   const strategyQuestions = pathname === '/promoteur/strategie-projet'
     ? getCopilotQuickQuestions({ pathname, mode: effectiveMode === 'quick' ? 'quick' : 'advanced' }) : null;
 
   return (
-    <div className={`copilot-chat${showStudioDraft ? ' copilot-chat--jarvis' : ''}`}>
-      {showStudioDraft && <header className="jarvis-console-head">
-        <div className="jarvis-console-head__brand"><ScanLine size={18} /><span>MIMMO</span><i /> <small>ATELIER 3D</small></div>
-        <div className="jarvis-console-head__controls">
-          {'speechSynthesis' in window && <button type="button" className="jarvis-console-head__voice"
-            aria-pressed={voiceReplies} aria-label={voiceReplies ? 'Désactiver la lecture vocale' : 'Activer la lecture vocale'}
+    <div className={`copilot-chat${showStudioDraft ? ` copilot-chat--jarvis is-3d-${fenetre3D}${pleinEcran ? ' is-plein-ecran' : ''}` : ''}`}>
+      {showStudioDraft && <header className="mzia-fen__barre" onDoubleClick={event => {
+        if ((event.target as HTMLElement).closest('button')) return;
+        setPleinEcran(value => !value);
+      }}>
+        <div className="mzia-fen__titre">Mimmo<small>Atelier 3D</small></div>
+        <div className="mzia-fen__espace" />
+        <div className="mzia-fen__outils">
+          <span className={`mzia-fen__statut${isStreaming ? ' is-actif' : ''}`} role="status">
+            <i aria-hidden="true" /><span>{isStreaming ? 'Analyse en cours…' : 'En ligne'}</span>
+          </span>
+          {'speechSynthesis' in window && <button type="button" className="mzia-fen__outil"
+            aria-pressed={voiceReplies} title={voiceReplies ? 'Désactiver la lecture vocale' : 'Lire les réponses à voix haute'}
+            aria-label={voiceReplies ? 'Désactiver la lecture vocale' : 'Activer la lecture vocale'}
             onClick={() => setVoiceReplies(value => !value)}>
-            {voiceReplies ? <Volume2 size={15} /> : <VolumeX size={15} />}
-            <span>{voiceReplies ? 'VOIX ACTIVÉE' : 'ACTIVER LA VOIX'}</span>
+            {voiceReplies ? <Volume2 size={15} /> : <VolumeX size={15} />}<span>Voix</span>
           </button>}
-          <div className="jarvis-console-head__state"><Activity size={13} />{isStreaming ? 'ANALYSE EN COURS' : 'CANAL ACTIF'}</div>
+          <button type="button" className="mzia-fen__outil" aria-pressed={fenetre3D !== 'ferme'}
+            title={fenetre3D === 'ferme' ? 'Afficher l’espace 3D' : 'Masquer l’espace 3D'}
+            aria-label={fenetre3D === 'ferme' ? 'Afficher l’espace 3D' : 'Masquer l’espace 3D'}
+            onClick={() => changerFenetre3D(fenetre3D === 'ferme' ? 'ouvert' : 'ferme')}>
+            <Box size={15} /><span>Espace 3D</span>
+            {fenetre3D === 'ferme' && projetEnCours && <i className="mzia-fen__pastille" aria-hidden="true" />}
+          </button>
+        </div>
+        <div className="mzia-fen__boutons">
+          <BoutonFenetre libelle={pleinEcran ? 'Restaurer (Échap)' : 'Agrandir'} onClick={() => setPleinEcran(value => !value)}>
+            {pleinEcran ? <GlypheRestaurer /> : <GlypheAgrandir />}
+          </BoutonFenetre>
         </div>
       </header>}
       <FollowupPanel conversationId={currentConversationId} onSend={handleSend} isStreaming={isStreaming} />
-      {showStudioDraft && <div className="jarvis-console-rail"><JarvisDraftPanel key={currentConversationId ?? 'new'} messages={messages} conversationId={currentConversationId} onOpenStudio={onOpenStudioDraft} onPrepareDetailed={onPrepareStudioDetailed} /></div>}
+      {showStudioDraft && <div className="jarvis-console-rail">
+        {fenetre3D === 'reduit' && <button type="button" className="mzia-fen3d__bande"
+          onClick={() => changerFenetre3D('ouvert')} title="Rouvrir l’espace 3D" aria-label="Rouvrir l’espace 3D">
+          <Box size={16} /><span>Espace 3D</span>
+        </button>}
+        {/* Le dossier reste monté quand la fenêtre est réduite ou fermée : une saisie en cours n'est pas perdue. */}
+        <section className="mzia-fen3d" aria-label="Espace 3D" hidden={fenetre3D === 'reduit'}>
+          <header className="mzia-fen__barre" onDoubleClick={event => {
+            if ((event.target as HTMLElement).closest('button')) return;
+            changerFenetre3D(fenetre3D === 'large' ? 'ouvert' : 'large');
+          }}>
+            <div className="mzia-fen__titre">Espace 3D<small>Dossier du projet</small></div>
+            <div className="mzia-fen__espace" />
+            <div className="mzia-fen__boutons">
+              <BoutonFenetre libelle="Réduire sur le côté" onClick={() => changerFenetre3D('reduit')}><GlypheReduire /></BoutonFenetre>
+              <span className="mzia-fen__btn--agrandir3d">
+                <BoutonFenetre libelle={fenetre3D === 'large' ? 'Restaurer' : 'Agrandir'}
+                  onClick={() => changerFenetre3D(fenetre3D === 'large' ? 'ouvert' : 'large')}>
+                  {fenetre3D === 'large' ? <GlypheRestaurer /> : <GlypheAgrandir />}
+                </BoutonFenetre>
+              </span>
+              <BoutonFenetre libelle="Fermer l’espace 3D" fermer onClick={() => changerFenetre3D('ferme')}><GlypheFermer /></BoutonFenetre>
+            </div>
+          </header>
+          <div className="mzia-fen3d__contenu">
+            <JarvisDraftPanel key={currentConversationId ?? 'new'} messages={messages} conversationId={currentConversationId} onOpenStudio={onOpenStudioDraft} onPrepareDetailed={onPrepareStudioDetailed} />
+          </div>
+        </section>
+      </div>}
       <div ref={scrollRef} className="copilot-chat__messages">
         {studioRecoveryHint && <div role="status" className="jarvis-legacy-reply">
           <strong>Cette action se fait dans l’onglet Mimmoza Studio.</strong>

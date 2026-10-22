@@ -8,7 +8,7 @@ import type { TerrainStudio } from '@/spaces/promoteur/shared/ouvrirStudio3D';
 import { listJarvisFiles } from './jarvisFiles';
 import { loadJarvisDraft, saveJarvisDraft, type SavedJarvisDraft } from './jarvisDraftRepository';
 import { latestStudioVolume, type StudioVolumeMessage } from './studioBridge';
-import { ArrowUpRight, Box, FileStack, ScanLine } from 'lucide-react';
+import { ArrowUpRight, Box, FileStack } from 'lucide-react';
 // R2 — « Voir en 3D » en un clic ; sans parcelle confirmée, une seule question.
 import { ConfirmerParcelle } from './ConfirmerParcelle';
 import './JarvisDraftPanel.css';
@@ -97,11 +97,15 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
   }, [conversationId]);
 
   const draft = saved ? reconcileJarvisDraft(saved.draft, messages, saved.updatedAt) : proposal;
-  if (!draft) return <aside className="jarvis-dossier jarvis-dossier--empty" aria-label="Dossier de préparation 3D">
-    <div className="jarvis-dossier__eyebrow"><ScanLine size={15} /> ESPACE PROJET</div>
-    <h2>Dossier 3D</h2>
-    <p>Décrivez le projet dans la conversation. Mimmo réunira le brief et les pièces à vérifier ici.</p>
-    <div className="jarvis-dossier__signal"><span /> EN ATTENTE D’UN PROJET</div>
+  if (!draft) return <aside className="mzia-fen3d__vide" aria-label="Dossier de préparation 3D">
+    <div className="mzia-fen3d__vide-visuel" aria-hidden="true"><Box size={46} strokeWidth={1.1} /></div>
+    <h2>Aucun projet pour l’instant</h2>
+    <p>Décrivez votre projet dans la conversation : Mimmo prépare le dossier 3D ici, puis vous le voyez en volume.</p>
+    <ol>
+      <li><div>Décrivez le projet<span>Adresse, nombre de logements, étages, style…</span></div></li>
+      <li><div>Vérifiez la fiche<span>Mimmo la remplit ; vous corrigez si besoin.</span></div></li>
+      <li><div>Cliquez sur « Voir en 3D »<span>La maquette s’ouvre dans le Studio.</span></div></li>
+    </ol>
   </aside>;
   const newSuggestion = Boolean(saved && proposal && proposalMessage
     && Date.parse(proposalMessage.createdAt) > Date.parse(saved.updatedAt)
@@ -184,11 +188,10 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
 
   return (
     <aside aria-label="Dossier de préparation 3D" className="jarvis-dossier">
-      <div className="jarvis-dossier__eyebrow"><ScanLine size={15} /> ESPACE PROJET <span>03 / STUDIO</span></div>
       <div className="jarvis-dossier__heading">
-        <div><h2>Dossier 3D</h2><p>Brief et références de la conversation</p></div>
+        <div><h2>Votre projet</h2><p>Repris de la conversation</p></div>
         <span className={`jarvis-dossier__status ${saved?.status === 'validated' ? 'is-validated' : ''}`}>
-          {editing ? 'ÉDITION' : saved?.status === 'validated' ? 'VALIDÉ' : 'À VÉRIFIER'}
+          {editing ? 'En édition' : saved?.status === 'validated' ? 'Validé' : 'À vérifier'}
         </span>
       </div>
       <div className="jarvis-dossier__mobile-toggle"><button type="button" onClick={() => setExpanded(value => !value)} aria-expanded={expanded}>{expanded ? 'Réduire le dossier' : 'Afficher le dossier'}</button></div>
