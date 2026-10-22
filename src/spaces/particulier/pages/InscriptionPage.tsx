@@ -1,12 +1,10 @@
 import { supabase } from "@/lib/supabase";
 import {
   ArrowRight,
-  CheckCircle2,
   Eye,
   EyeOff,
   Lock,
   Mail,
-  ShieldCheck,
   Sparkles,
   User,
   UserPlus,
@@ -149,28 +147,7 @@ export default function InscriptionPage() {
             Préparez votre accès personnel pour la connexion, les abonnements et
             la future expérience client premium de la plateforme.
           </p>
-
-          <div className="mt-8 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                Compte sécurisé
-              </div>
-              <div className="mt-1 text-sm leading-6 text-slate-600">
-                Authentification Supabase Auth avec session JWT persistée.
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <CheckCircle2 className="h-4 w-4 text-sky-500" />
-                Base monétisation
-              </div>
-              <div className="mt-1 text-sm leading-6 text-slate-600">
-                Parcours prêt pour abonnement, portail client et évolution SaaS.
-              </div>
-            </div>
-          </div>
+
         </div>
 
         <div className="flex items-center">
