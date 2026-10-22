@@ -42,8 +42,8 @@ export function CopilotInput({
   const ref = useRef<HTMLTextAreaElement>(null);
 
   const tools = useComposerTools({
-    // La dictée s'ajoute à la fin du texte déjà saisi plutôt que de l'écraser.
-    onTranscript: (t) => setValue((prev) => (prev ? `${prev} ${t}` : t)),
+    getValue: () => value,
+    setValue,
   });
 
   useEffect(() => {

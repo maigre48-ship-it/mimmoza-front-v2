@@ -13,12 +13,14 @@
 //
 // ⚠️ MimmozIAPage conserve pour l'instant sa copie en ligne : sa variable
 // `recording` alimente aussi l'état de l'orbe centrale, et sa dictée écrit dans
-// son propre `draft`. La migration est mécanique (passer `onTranscript` et lire
+// son propre `draft`. La reconstruction est partagée via texteDictee.
+// La migration du reste est mécanique (passer getValue/setValue et lire
 // `recording` depuis le hook) mais doit être vérifiée à l'écran — à faire quand
 // un typecheck sera disponible.
 // =============================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { texteDictee } from '../utils/texteDictee';
 
 /** Pièce jointe transmise au backend (contrat copilot-chat V1.7). */
 export interface CopilotAttachment {
@@ -53,14 +55,13 @@ export function readAsBase64(file: File): Promise<string> {
 }
 
 export interface UseComposerToolsOptions {
-  /**
-   * Appelé à chaque segment reconnu par la dictée. L'appelant décide où le
-   * texte atterrit — le hook n'a pas connaissance du champ de saisie.
-   */
-  onTranscript: (text: string) => void;
+  /** Texte actuel, relu au démarrage de chaque session. */
+  getValue: () => string;
+  /** Remplace le champ par la base et la transcription complète. */
+  setValue: (text: string) => void;
 }
 
-export function useComposerTools({ onTranscript }: UseComposerToolsOptions) {
+export function useComposerTools({ getValue, setValue }: UseComposerToolsOptions) {
   // ── Pièces jointes ───────────────────────────────────────────────────────
   const [attachments, setAttachments] = useState<UiAttachment[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -130,11 +131,9 @@ export function useComposerTools({ onTranscript }: UseComposerToolsOptions) {
     [],
   );
 
-  // La dictée alimente `onTranscript` à chaque résultat. On passe par une ref
-  // pour que le callback puisse changer entre les rendus sans recréer la
-  // reconnaissance en cours (ce qui couperait la dictée en plein milieu).
-  const onTranscriptRef = useRef(onTranscript);
-  useEffect(() => { onTranscriptRef.current = onTranscript; }, [onTranscript]);
+  // Suit le champ actuel sans recréer la reconnaissance en cours.
+  const valueAccessRef = useRef({ getValue, setValue });
+  useEffect(() => { valueAccessRef.current = { getValue, setValue }; }, [getValue, setValue]);
 
   const toggleDictation = useCallback(() => {
     const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -144,13 +143,12 @@ export function useComposerTools({ onTranscript }: UseComposerToolsOptions) {
     }
     if (recording) { recognitionRef.current?.stop(); return; }
 
+    const base = valueAccessRef.current.getValue();
     const rec = new SR();
     rec.lang = 'fr-FR'; rec.interimResults = true; rec.continuous = false;
     rec.onstart = () => { setError(null); setRecording(true); };
     rec.onresult = (e: any) => {
-      let tr = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) tr += e.results[i][0].transcript;
-      onTranscriptRef.current(tr);
+      valueAccessRef.current.setValue(texteDictee(base, e.results));
     };
     rec.onend = () => setRecording(false);
     // Sans onerror, une permission micro refusée échoue en SILENCE : le bouton

@@ -1,3 +1,4 @@
+import { texteDictee } from './utils/texteDictee';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MapPin, Home, TrendingUp, Gauge, LandPlot, Sparkles,
@@ -550,13 +551,12 @@ export default function MimmozIAPage() {
       return;
     }
     if (recording) { recognitionRef.current?.stop(); return; }
+    const base = draft;
     const rec = new SR();
     rec.lang = 'fr-FR'; rec.interimResults = true; rec.continuous = false;
     rec.onstart = () => { setAttachError(null); setRecording(true); };
     rec.onresult = (e: any) => {
-      let tr = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) tr += e.results[i][0].transcript;
-      setDraft((prev) => (prev ? `${prev} ${tr}` : tr));
+      setDraft(texteDictee(base, e.results));
     };
     rec.onend = () => setRecording(false);
     // Sans onerror, une permission micro refusée échoue en silence et l'orbe
@@ -577,7 +577,7 @@ export default function MimmozIAPage() {
       console.warn('[MimmozIA] démarrage dictée impossible :', err);
       setRecording(false);
     }
-  }, [recording]);
+  }, [recording, draft]);
   useEffect(() => () => recognitionRef.current?.stop?.(), []);
 
   const greeting = firstName ? `Bonjour ${firstName}` : 'Bonjour';
