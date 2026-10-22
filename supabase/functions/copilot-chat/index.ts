@@ -40,6 +40,8 @@ import { gpuEvidenceSummary, GPU_EVIDENCE_WARNING } from '../_shared/copilot-gro
 import { FOLLOWUP_SCHEMA, parseFollowup, followupIndicators } from '../_shared/project-followup/model.ts';
 import { renderParcelStudyReport } from '../_shared/copilot-reporting/parcel-study.ts';
 import { reparerEncodageProfond } from '../_shared/texte/reparerEncodage.ts';
+import { estDemandeDeSuite, retirerMarqueursInterruption } from '../_shared/copilot-stream/reprise.ts';
+import { journaliserEchecEdge, type EchecEdge } from '../_shared/copilot-stream/journal.ts';
 // Moteur prédictif — MÊME code que la page Analyse prédictive du front, qui le
 // réexporte depuis ici. Deux copies auraient produit deux projections
 // différentes pour le même bien selon qu'on la demande à l'écran ou au chat.
@@ -188,6 +190,9 @@ const LLM_TIMEOUT_MS = Number(Deno.env.get('ANTHROPIC_TIMEOUT_MS')) || 60000;
  * conversation, plan, réservation) : ce préambule n'est pas dans le budget.
  */
 const DEADLINE_MS = Number(Deno.env.get('COPILOT_DEADLINE_MS')) || 120_000;
+
+/** Intervalle des battements SSE (commentaires `: ping`) pendant une réponse. */
+const BATTEMENT_SSE_MS = 15_000;
 
 /**
  * Temps réservé, à l'intérieur de l'échéance, pour la passe de synthèse finale.
@@ -9848,6 +9853,13 @@ class SSEWriter {
    * Ce tampon est la seule copie serveur de ce qu'il a vu.
    */
   private texteEmis = '';
+  /**
+   * Instant où le navigateur a quitté le flux (onglet fermé, réseau coupé,
+   * « Arrêter »). La génération continue malgré tout : elle est persistée et
+   * facturée, et le front la relit en base pour la reprendre. On le note pour
+   * le journal des échecs.
+   */
+  clientPartiA: number | null = null;
   constructor(private controller: ReadableStreamDefaultController<Uint8Array>) {}
   send(event: StreamEvent) {
     if (event.type === 'token') this.texteEmis += event.delta;
@@ -9855,8 +9867,27 @@ class SSEWriter {
     try {
       this.controller.enqueue(this.encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
     } catch {
-      this.closed = true; // client déconnecté : on cesse d'écrire sans throw
+      this.marquerClientParti(); // client déconnecté : on cesse d'écrire sans throw
     }
+  }
+  /**
+   * Battement : un commentaire SSE (ignoré par le parseur du front). Pendant un
+   * appel d'outil ou une réflexion longue, aucun octet ne circulait parfois
+   * pendant plusieurs dizaines de secondes — de quoi faire couper la connexion
+   * par un proxy ou un réseau mobile. Le battement la garde vivante et permet
+   * au front de distinguer « lent » de « coupé ».
+   */
+  ping() {
+    if (this.closed) return;
+    try {
+      this.controller.enqueue(this.encoder.encode(': ping\n\n'));
+    } catch {
+      this.marquerClientParti();
+    }
+  }
+  marquerClientParti() {
+    if (!this.closed && this.clientPartiA == null) this.clientPartiA = Date.now();
+    this.closed = true;
   }
   /** Texte diffusé jusqu'ici. Sert à sauver une réponse interrompue. */
   get texteDiffuse() { return this.texteEmis; }
@@ -10768,15 +10799,42 @@ Deno.serve(async (req: Request) => {
     // et court en parallèle de l'appel LLM au lieu de le précéder.
   } catch (err) {
     const e = err instanceof CopilotError ? err : new CopilotError('INTERNAL_ERROR', String(err));
+    // Seuls les échecs SERVEUR sont journalisés : un 401/402/400 est une réponse
+    // normale (session expirée, jetons insuffisants, requête invalide).
+    if (e.statusCode >= 500) {
+      await journaliserEchecEdge(getAdmin(), {
+        fonction: 'copilot-chat', code: e.code.toLowerCase(), etape: 'preambule',
+        message: e.message,
+      });
+    }
     return new Response(JSON.stringify(e.toJSON()), {
       status: e.statusCode, headers: { ...corsHeaders(), 'Content-Type': 'application/json' },
     });
   }
 
   const startedAt = Date.now();
+  let sseCourant: SSEWriter | null = null;
   const stream = new ReadableStream<Uint8Array>({
+    // Le navigateur a fermé la connexion. On ne coupe PAS la génération : elle
+    // va au bout, est persistée une fois et facturée une fois ; le front la
+    // relit en base (reprise sans second débit).
+    cancel() {
+      sseCourant?.marquerClientParti();
+    },
     async start(controller) {
   const sse = new SSEWriter(controller);
+  sseCourant = sse;
+  const battement = setInterval(() => sse.ping(), BATTEMENT_SSE_MS);
+  // Journal des échecs : écrit APRÈS la fermeture du flux, pour ne jamais
+  // retarder ce que voit l'utilisateur.
+  const journal: EchecEdge[] = [];
+  const contexteJournal = () => ({
+    mode, tier, plan,
+    suite: estDemandeDeSuite(payload.message),
+    caracteres_diffuses: sse.texteDiffuse.length,
+    tours: usageReel.turns,
+    outils: outilsExecutes.length,
+  });
   let billable = false;   // NEW : la génération a démarré → plus de refund
   let settled  = false;   // NEW : évite double settle/refund
   // Insertion du message utilisateur, lancée sans être attendue (voir plus bas).
@@ -10815,6 +10873,20 @@ Deno.serve(async (req: Request) => {
       buildPriorToolResultsBlock(conversationId),
       buildSavedStudioDraftBlock(conversationId, userId),
     ]);
+
+    // Demande de SUITE (reprise automatique d'une réponse coupée, envoyée par
+    // le front) : le modèle doit voir sa réponse précédente telle qu'il l'a
+    // écrite, sans le marqueur « réponse interrompue » posé à la persistance —
+    // sinon il le commente au lieu de poursuivre.
+    if (estDemandeDeSuite(payload.message)) {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i];
+        if (m.role === 'assistant' && typeof m.content === 'string') {
+          messages[i] = { ...m, content: retirerMarqueursInterruption(m.content) };
+          break;
+        }
+      }
+    }
 
     // L'insertion part APRÈS que les lectures ci-dessus soient terminées : le
     // message courant ne peut donc pas apparaître deux fois (une fois relu de
@@ -10872,9 +10944,27 @@ Deno.serve(async (req: Request) => {
     sse.send({ type: 'message_start', message_id: messageId });
     sse.send({ type: 'done', message_id: messageId, final_credits: debit, mode, tier });
 
+    if (sse.clientPartiA != null) {
+      // Réponse menée à terme, mais le navigateur était parti avant la fin :
+      // c'est exactement le cas où l'utilisateur voyait un texte tronqué.
+      journal.push({
+        fonction: 'copilot-chat', code: 'client_deconnecte', etape: 'diffusion', niveau: 'warning',
+        message: 'le navigateur a quitté le flux avant la fin ; réponse complète persistée',
+        userId, dureeMs: Date.now() - startedAt,
+        contexte: { ...contexteJournal(), parti_apres_ms: sse.clientPartiA - startedAt, finish_reason: result.finishReason },
+      });
+    }
+
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'erreur interne';
     console.error('[copilot-chat] orchestration error', err);
+    journal.push({
+      fonction: 'copilot-chat',
+      code: billable ? 'generation_interrompue' : 'echec_avant_generation',
+      etape: billable ? 'generation' : 'preparation',
+      message: msg, userId, dureeMs: Date.now() - startedAt,
+      contexte: { ...contexteJournal(), client_parti: sse.clientPartiA != null },
+    });
 
     if (billable && !settled) {
       // NEW : génération déjà commencée → on FACTURE, pas de refund.
@@ -10991,7 +11081,11 @@ Deno.serve(async (req: Request) => {
           new Promise<void>((resolve) => { minuteur = setTimeout(resolve, 5000); }),
         ]);
         clearTimeout(minuteur);   // sinon le timer maintient l'isolate en vie 5 s
+        clearInterval(battement);
         sse.close();
+        // Après la fermeture : n'ajoute aucune latence côté utilisateur. Borné
+        // à 3 s par écriture, et ne lève jamais.
+        for (const e of journal) await journaliserEchecEdge(getAdmin(), e);
       }
     },
   });

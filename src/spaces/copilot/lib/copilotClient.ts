@@ -20,6 +20,12 @@ import type {
   CopilotStreamEvent,
 } from '../types/copilot.types';
 import { SSEParser } from './streamParser';
+import {
+  MESSAGES_REPRISE,
+  fusionnerSuites,
+  porteMarqueurInterruption,
+  type ReponseServeur,
+} from '../store/repriseFlux';
 import { getChainState } from '@/spaces/promoteur/shared/promoteurChain';
 import { getActiveStudyId } from '../actions/copilotActions';
 
@@ -319,14 +325,44 @@ export async function streamCopilotChat(params: {
   const decoder = new TextDecoder();
   const parser = new SSEParser(onEvent);
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    parser.push(decoder.decode(value, { stream: true }));
+  // Garde d'inactivité : une connexion « pendue » (proxy, veille du poste, Wi-Fi
+  // perdu sans fermeture TCP) laissait la réponse en cours indéfiniment — seul
+  // « Arrêter » en sortait, avec un texte tronqué. Le serveur émet un battement
+  // toutes les 15 s et ne reste jamais muet plus de ~60 s : au-delà de 95 s
+  // sans un octet, on considère le flux coupé et la reprise prend le relais.
+  const lireAvecGarde = async () => {
+    let minuteur: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => {
+          minuteur = setTimeout(
+            () => reject(new CopilotClientError('STREAM_STALLED', 'Flux inactif depuis 95 s')),
+            INACTIVITE_FLUX_MAX_MS,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(minuteur);
+    }
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await lireAvecGarde();
+      if (done) break;
+      parser.push(decoder.decode(value, { stream: true }));
+    }
+  } catch (err) {
+    try { await reader.cancel(); } catch { /* déjà fermé */ }
+    throw err;
   }
 
   parser.flush();
 }
+
+/** Silence maximal toléré sur le flux avant de le déclarer coupé. */
+export const INACTIVITE_FLUX_MAX_MS = 95_000;
 
 export async function fetchBalance(): Promise<number> {
   // Solde unifie : on lit credit_accounts.current_credits (le meme compteur
@@ -446,7 +482,7 @@ export async function fetchMessages(conversationId: string): Promise<ChatMessage
   const [messagesRes, toolCallsByMessage] = await Promise.all([
     supabase
       .from('copilot_messages')
-      .select('id, role, content, mode, created_at')
+      .select('id, role, content, mode, created_at, finish_reason')
       .eq('conversation_id', conversationId)
       .in('role', ['user', 'assistant'])
       .order('created_at', { ascending: true }),
@@ -458,18 +494,56 @@ export async function fetchMessages(conversationId: string): Promise<ChatMessage
     throw new CopilotClientError('FETCH_MESSAGES', error.message);
   }
 
-  return (data ?? []).map(
+  const lus = (data ?? []).map(
     (row: Record<string, unknown>): ChatMessage => {
       const id = String(row.id);
+      const text = extractText(row.content);
+      // Une réponse interrompue côté serveur n'est PAS une réponse complète :
+      // elle était relue comme telle, sans aucun signal pour l'utilisateur.
+      const incomplete = row.role === 'assistant'
+        && (row.finish_reason === 'interrupted' || porteMarqueurInterruption(text));
       return {
         id,
         role: row.role as 'user' | 'assistant',
-        text: extractText(row.content),
+        text,
         toolCalls: toolCallsByMessage.get(id) ?? [],
         mode: (row.mode as ChatMessage['mode']) ?? undefined,
-        status: 'complete',
+        status: incomplete ? 'error' : 'complete',
+        ...(incomplete ? { error: MESSAGES_REPRISE.interrompueEnBase } : {}),
         createdAt: String(row.created_at),
       };
     },
   );
+
+  // Les « demandes de suite » (reprise automatique d'une réponse coupée) sont
+  // des messages techniques : on les masque et on recolle leur réponse à celle
+  // qu'elles prolongent. Les cartes d'outils des deux morceaux sont conservées.
+  return fusionnerSuites(lus, (precedent, suite, texte) => ({
+    ...suite,
+    text: texte,
+    toolCalls: [...precedent.toolCalls, ...suite.toolCalls],
+    createdAt: precedent.createdAt,
+  }));
+}
+
+/**
+ * Réponses assistant d'une conversation, les plus récentes d'abord — utilisé
+ * pour RELIRE en base une réponse dont le flux s'est coupé côté navigateur
+ * (le serveur, lui, va au bout et la persiste).
+ */
+export async function fetchRecentAssistantReplies(conversationId: string, limit = 5): Promise<ReponseServeur[]> {
+  const { data, error } = await supabase
+    .from('copilot_messages')
+    .select('id, content, finish_reason, created_at')
+    .eq('conversation_id', conversationId)
+    .eq('role', 'assistant')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new CopilotClientError('FETCH_MESSAGES', error.message);
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    id: String(row.id),
+    text: extractText(row.content),
+    finishReason: typeof row.finish_reason === 'string' ? row.finish_reason : null,
+    createdAt: String(row.created_at),
+  }));
 }

@@ -20,6 +20,8 @@ import {
   fetchMessages,
 } from '../lib/copilotClient';
 import { isLocalMessageId, persistActionRun } from '../actions/copilotActions';
+import { MESSAGES_REPRISE, raccorderSuite, retirerMarqueursInterruption } from './repriseFlux';
+import { signalerErreur } from '@/lib/monitoring';
 import type {
   ActionRun,
   ChatMessage,
@@ -95,6 +97,16 @@ interface CopilotStore {
   loadingConversations: boolean;
   loadingMessages: boolean;
 
+  /**
+   * Réponses de Mimmo connues comme INCOMPLÈTES (arrêtées, coupées, ou
+   * interrompues côté serveur) et donc reprenables. Clé : id du message.
+   * L'interface s'en sert pour proposer « Reprendre » au lieu de laisser
+   * croire à une réponse finie.
+   */
+  incomplets: Record<string, true>;
+  /** Suite en cours de génération : les jetons s'ajoutent à `base`, raccordés. */
+  suiteEnCours: { cibleId: string; base: string; texte: string } | null;
+
   openCopilot: () => void;
   closeCopilot: () => void;
   toggleCopilot: () => void;
@@ -117,6 +129,15 @@ interface CopilotStore {
   handleStreamEvent: (event: CopilotStreamEvent, requestId: string) => void;
   failStreaming: (message: string, requestId: string) => void;
   cancelStreaming: () => void;
+
+  /** Prépare la génération d'une SUITE dans le message `cibleId`. Renvoie l'id de requête. */
+  beginContinuation: (cibleId: string) => string | null;
+  /** Remplace la réponse coupée par sa version relue en base. */
+  adoptServerReply: (cibleId: string, reply: { id: string; text: string; complete: boolean }) => void;
+  /** Marque une réponse comme incomplète (statut erreur + reprenable) et libère le flux. */
+  markIncomplete: (messageId: string, message: string) => void;
+  /** Remet une réponse incomplète « en cours » le temps de la relire en base. Renvoie l'id de requête. */
+  markRecovering: (messageId: string) => string | null;
   reset: () => void;
 }
 
@@ -156,6 +177,13 @@ function messageErreurLisible(brut: string | undefined | null): string {
   return "Une erreur est survenue. Réessayez dans un instant.";
 }
 
+/** Copie de `obj` sans les clés données (les valeurs nulles sont ignorées). */
+function sansCles(obj: Record<string, true>, cles: Array<string | null | undefined>): Record<string, true> {
+  const out = { ...obj };
+  for (const c of cles) if (c) delete out[c];
+  return out;
+}
+
 // Invalide les chargements de conversation devenus obsolètes (sélection A,
 // puis accueil/nouvelle conversation avant la réponse réseau de A).
 let conversationSelectionVersion = 0;
@@ -182,6 +210,9 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
 
   loadingConversations: false,
   loadingMessages: false,
+
+  incomplets: {},
+  suiteEnCours: null,
 
   // Ouverture "chat" classique : on sort toujours du mode intro.
   openCopilot: () => set({ isOpen: true, introMode: false }),
@@ -234,7 +265,7 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
 
   selectConversation: async (id) => {
     const selectionVersion = ++conversationSelectionVersion;
-    set({ mimmoziaView: 'conversation', loadingMessages: true, currentConversationId: id, actionRuns: [], activeRequestId: null, streamingId: null, status: 'idle' });
+    set({ mimmoziaView: 'conversation', loadingMessages: true, currentConversationId: id, actionRuns: [], activeRequestId: null, streamingId: null, status: 'idle', suiteEnCours: null });
     try {
       // Les deux ensemble : afficher les cartes d'action sans leur trace, même
       // un instant, ferait apparaître « action proposée » sur des choses déjà
@@ -244,7 +275,11 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
         fetchActionRuns(id),
       ]);
       if (selectionVersion === conversationSelectionVersion && get().currentConversationId === id) {
-        set({ messages, actionRuns });
+        // Une réponse interrompue relue en base arrive en statut `error`
+        // (cf. fetchMessages) : elle reste reprenable après rechargement.
+        const incomplets: Record<string, true> = {};
+        for (const m of messages) if (m.role === 'assistant' && m.status === 'error') incomplets[m.id] = true;
+        set({ messages, actionRuns, incomplets });
       }
     } catch (e) {
       console.error('[copilot] selectConversation', e);
@@ -297,6 +332,8 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
       activeRequestId: null,
       error: null,
       loadingMessages: false,
+      incomplets: {},
+      suiteEnCours: null,
     });
   },
 
@@ -362,12 +399,22 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
         }
         break;
 
-      case 'token':
+      case 'token': {
+        // Suite d'une réponse coupée : on raccorde au texte d'origine (sans
+        // répétition ni mot coupé) au lieu d'ajouter aveuglément.
+        const suite = get().suiteEnCours;
+        if (suite && suite.cibleId === sid) {
+          const texte = suite.texte + event.delta;
+          set({ suiteEnCours: { ...suite, texte } });
+          mapStreaming((m) => ({ ...m, text: raccorderSuite(suite.base, texte) }));
+          break;
+        }
         mapStreaming((m) => ({
           ...m,
           text: m.text + event.delta,
         }));
         break;
+      }
 
       case 'tool_use_start':
         mapStreaming((m) => ({
@@ -415,6 +462,9 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
             r.messageId === oldId ? { ...r, messageId: event.message_id } : r,
           ),
           streamingId: event.message_id,
+          suiteEnCours: s.suiteEnCours && s.suiteEnCours.cibleId === oldId
+            ? { ...s.suiteEnCours, cibleId: event.message_id }
+            : s.suiteEnCours,
         }));
 
         // Les traces arrivées avant cet événement portaient l'id local ; elles
@@ -451,6 +501,8 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
           streamingId: null,
           activeRequestId: null,
           status: 'idle',
+          suiteEnCours: null,
+          incomplets: sansCles(s.incomplets, [s.streamingId, event.message_id]),
         }));
 
         // Le solde affiché est celui d'APRÈS la réservation (event `reservation`
@@ -491,6 +543,12 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
           activeRequestId: null,
           status: 'error',
           error: messageUtilisateur,
+          suiteEnCours: null,
+          // Partiel persisté par le serveur : la réponse est incomplète et
+          // reprenable (useCopilotStreaming en demande la suite une fois).
+          incomplets: event.message_id
+            ? { ...sansCles(s.incomplets, [s.streamingId]), [event.message_id]: true }
+            : s.incomplets,
           credits:
             s.credits != null && event.refunded_credits
               ? s.credits + event.refunded_credits
@@ -524,35 +582,113 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
 
   failStreaming: (message, requestId) => {
     if (get().activeRequestId !== requestId) return;
+    void signalerErreur({ source: 'copilot', message: `flux copilote : ${message}`, context: { etape: 'requete' } });
     set((s) => ({
       messages: s.messages.map((m) =>
         m.id === s.streamingId
           ? { ...m, status: 'error', error: message }
           : m,
       ),
+      // Un texte déjà reçu puis perdu en route est une réponse incomplète.
+      incomplets: s.streamingId && s.messages.some((m) => m.id === s.streamingId && m.text.trim())
+        ? { ...s.incomplets, [s.streamingId]: true }
+        : s.incomplets,
       streamingId: null,
       activeRequestId: null,
       status: 'error',
       error: message,
+      suiteEnCours: null,
     }));
   },
 
+  // « Arrêter » : la réponse est INCOMPLÈTE et doit le dire. Elle était
+  // auparavant marquée `complete` avec « _(interrompu)_ » collé au texte — une
+  // réponse tronquée présentée comme finie (constat du 22/10/2026). Le serveur,
+  // lui, poursuit et persiste la réponse entière (déjà facturée) : « Reprendre »
+  // la relit en base, sans nouvel appel au modèle.
   cancelStreaming: () =>
     set((s) => ({
       messages: s.messages.map((m) =>
         m.id === s.streamingId
-          ? {
-              ...m,
-              status: 'complete',
-              text:
-                m.text +
-                (m.text ? '\n\n_(interrompu)_' : '_(interrompu)_'),
-            }
+          ? { ...m, status: 'error', error: MESSAGES_REPRISE.arreteParUtilisateur }
           : m,
       ),
+      incomplets: s.streamingId ? { ...s.incomplets, [s.streamingId]: true } : s.incomplets,
       streamingId: null,
       activeRequestId: null,
       status: 'idle',
+      suiteEnCours: null,
+    })),
+
+  beginContinuation: (cibleId) => {
+    const st = get();
+    if (st.status === 'streaming') return null;
+    const cible = st.messages.find((m) => m.id === cibleId && m.role === 'assistant');
+    if (!cible) return null;
+    const base = retirerMarqueursInterruption(cible.text);
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === cibleId ? { ...m, text: base, status: 'streaming', error: undefined } : m,
+      ),
+      streamingId: cibleId,
+      activeRequestId: cibleId,
+      status: 'streaming',
+      error: null,
+      suiteEnCours: { cibleId, base, texte: '' },
+    }));
+    return cibleId;
+  },
+
+  adoptServerReply: (cibleId, reply) =>
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === cibleId
+          ? {
+              ...m,
+              id: reply.id,
+              text: reply.text,
+              status: reply.complete ? 'complete' : 'error',
+              error: reply.complete ? undefined : MESSAGES_REPRISE.interrompueEnBase,
+            }
+          : m,
+      ),
+      actionRuns: s.actionRuns.map((r) => (r.messageId === cibleId ? { ...r, messageId: reply.id } : r)),
+      incomplets: reply.complete
+        ? sansCles(s.incomplets, [cibleId, reply.id])
+        : { ...sansCles(s.incomplets, [cibleId]), [reply.id]: true },
+      ...(s.streamingId === cibleId
+        ? { streamingId: null, activeRequestId: null, status: reply.complete ? ('idle' as const) : ('error' as const) }
+        : {}),
+      suiteEnCours: null,
+    })),
+
+  markRecovering: (messageId) => {
+    const st = get();
+    if (st.status === 'streaming') return null;
+    if (!st.messages.some((m) => m.id === messageId && m.role === 'assistant')) return null;
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === messageId ? { ...m, status: 'streaming', error: undefined } : m,
+      ),
+      streamingId: messageId,
+      activeRequestId: messageId,
+      status: 'streaming',
+      error: null,
+      suiteEnCours: null,
+    }));
+    return messageId;
+  },
+
+  markIncomplete: (messageId, message) =>
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === messageId ? { ...m, status: 'error', error: message } : m,
+      ),
+      incomplets: { ...s.incomplets, [messageId]: true },
+      ...(s.streamingId === messageId
+        ? { streamingId: null, activeRequestId: null, status: 'error' as const, error: message }
+        : {}),
+      suiteEnCours: null,
     })),
 
   reset: () =>
@@ -566,5 +702,7 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
       streamingId: null,
       activeRequestId: null,
       error: null,
+      incomplets: {},
+      suiteEnCours: null,
     }),
 }));

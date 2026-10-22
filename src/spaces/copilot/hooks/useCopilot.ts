@@ -26,7 +26,7 @@ interface SendOptions {
 
 export function useCopilot() {
   const { buildContext } = useCopilotContext();
-  const { start, cancel } = useCopilotStreaming();
+  const { start, cancel, resume } = useCopilotStreaming();
 
   // -- Selecteurs (primitives -> re-render cible) --
   const messages = useCopilotStore((s) => s.messages);
@@ -41,6 +41,9 @@ export function useCopilot() {
   const introMode = useCopilotStore((s) => s.introMode);
   const loadingConversations = useCopilotStore((s) => s.loadingConversations);
   const loadingMessages = useCopilotStore((s) => s.loadingMessages);
+  // Réponses incomplètes (arrêtées / coupées / interrompues) : l'interface
+  // propose « Reprendre » (→ `resume(id)`) au lieu de les laisser pour finies.
+  const incomplets = useCopilotStore((s) => s.incomplets);
 
   // -- Actions store (references stables) --
   const setMode = useCopilotStore((s) => s.setMode);
@@ -102,9 +105,9 @@ export function useCopilot() {
     // etat
     messages, status, isStreaming: status === 'streaming',
     credits, error, mode, tier, conversations, currentConversationId,
-    isOpen, introMode, loadingConversations, loadingMessages,
+    isOpen, introMode, loadingConversations, loadingMessages, incomplets,
     // actions
-    sendMessage, cancel, setMode, setTier, setContextHints,
+    sendMessage, cancel, resume, setMode, setTier, setContextHints,
     openCopilot, closeCopilot, toggleCopilot, openIntro, exitIntro,
     refreshCredits, loadConversations, selectConversation, newConversation,
   };
