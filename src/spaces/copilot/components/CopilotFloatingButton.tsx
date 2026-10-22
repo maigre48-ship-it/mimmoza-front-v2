@@ -9,7 +9,7 @@ import { useCopilot } from '../hooks/useCopilot';
 // ⚠️ Le damier de transparence est incrusté dans ce PNG (export à plat) : d'où
 // le masque circulaire appliqué côté CSS. À retirer une fois le fichier
 // réexporté en PNG-24 avec canal alpha.
-const ORB_SRC = '/Orbe/orbe-mimmozia-noir.png';
+const ORB_SRC = '/Orbe/orbe-mimmozia-noir.webp';
 
 export function CopilotFloatingButton() {
   const { toggleCopilot, isOpen } = useCopilot();

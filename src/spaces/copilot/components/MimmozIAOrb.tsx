@@ -64,6 +64,7 @@ const DEFAULT_LOGO_CANDIDATES = [
  * Repli sur la version claire historique si le fichier sombre est absent.
  */
 const DEFAULT_ORB_IMAGE_CANDIDATES = [
+  '/Orbe/orbe-mimmozia-noir.webp', // WebP 1024 px : net jusqu'à 512 px affichés en 2x, bien plus léger que le PNG
   '/Orbe/orbe-mimmozia-noir.png',
   '/Orbe/orbe-mimmozia.png',
 ];
