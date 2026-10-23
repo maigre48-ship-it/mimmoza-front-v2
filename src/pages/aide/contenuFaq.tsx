@@ -234,8 +234,7 @@ export const RUBRIQUES_FAQ: RubriqueFaq[] = [
                 marché) et développe l'analyse. Inclus à partir de la formule {NOM_FORMULE.avance}.
               </li>
               <li>
-                <strong>Expert</strong> : pour les arbitrages complexes, en formules {NOM_FORMULE.pro} et{" "}
-                {NOM_FORMULE.proplus}.
+                <strong>Expert</strong> : pour les arbitrages complexes, en formule {NOM_FORMULE.pro}.
               </li>
             </Liste>
             <P>Plus le niveau est élevé, plus une réponse consomme de jetons.</P>

@@ -387,7 +387,7 @@ function Studio() {
           </p>
           <p className="vt-studio__prix">
             Application liée, à partir de {formatEurHT(STUDIO_3D.prixMensuelDesHT)}/mois.{" "}
-            {STUDIO_3D.remisePct} % de remise pour les abonnés Pro et Équipe.
+            {STUDIO_3D.remisePct} % de remise pour les abonnés Pro.
           </p>
         </div>
         <div className="vt-studio__visuel">

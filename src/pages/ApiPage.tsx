@@ -114,6 +114,13 @@ function MethodBadge({ method }: { method: ApiEndpoint["methode"] }) {
 }
 
 function StatusBadge({ status }: { status: ApiEndpoint["statut"] }) {
+  if (status === "bientot") {
+    return (
+      <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+        bientôt
+      </span>
+    );
+  }
   if (status !== "beta") return null;
   return (
     <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">

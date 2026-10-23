@@ -121,7 +121,7 @@ export const API_FORMULES: readonly ApiFormule[] = [
     nom: "Scale",
     accroche: "Pour les gros volumes",
     prixMensuelHT: 499,
-    prixMensuelAnnuelHT: 399,
+    prixMensuelAnnuelHT: 400,
     credits: 250_000,
     renouvellement: "mensuel",
     dureeEssaiJours: null,
@@ -204,7 +204,8 @@ export interface ApiEndpoint {
   chemin: string;
   /** Crédits consommés par appel réussi. */
   credits: number;
-  statut: "live" | "beta";
+  /** « bientot » : route annoncée mais fermée (licence de la source en attente) — non facturée. */
+  statut: "live" | "beta" | "bientot";
   groupe: ApiGroupeId;
   titre: string;
   description: string;
@@ -264,9 +265,9 @@ export const API_ENDPOINTS: readonly ApiEndpoint[] = [
     exemple: { code_insee: "75108" },
   },
   {
-    methode: "POST", chemin: "/v1/batiment", credits: 2, statut: "live", groupe: "batiment",
+    methode: "POST", chemin: "/v1/batiment", credits: 2, statut: "bientot", groupe: "batiment",
     titre: "Bâtiment",
-    description: "Caractéristiques d'un bâtiment : année de construction, hauteur, matériaux, usage (BDNB).",
+    description: "Caractéristiques d'un bâtiment : année de construction, hauteur, matériaux, usage (BDNB). Ouverture prochaine, en attente de l'accord du producteur des données.",
     exemple: { adresse: "10 rue de la Paix, 75002 Paris" },
   },
   {
@@ -334,6 +335,48 @@ export function endpointsDuGroupe(groupe: ApiGroupeId): ApiEndpoint[] {
 
 /** Nombre d'endpoints facturés (hors /health). */
 export const NB_ENDPOINTS_API = Object.keys(API_ENDPOINT_COSTS).length;
+
+// ── Coût de revient (hypothèses prudentes, sans cache) ──────────────────────
+// Sert à garantir par test qu'aucun appel n'est vendu à perte et que la marge
+// brute reste ≥ MARGE_BRUTE_MIN_API même au prix le plus bas (Scale annuel).
+// Hypothèses (octobre 2026, à revoir si un fournisseur change ses prix) :
+//   · Supabase Pro : ~2 $ / million d'appels de fonctions au-delà du forfait,
+//     soit ~0,000002 € par appel interne (une route en enchaîne 2 à 8) ;
+//   · OpenStreetMap via un serveur Overpass payant (Geofabrik « Medium » :
+//     80 € HT / 100 000 requêtes = 0,0008 € / requête) — 3 requêtes au plus par
+//     SmartScore ;
+//   · sources publiques gratuites (IGN, DGFiP, ADEME, Géorisques, INSEE…) : 0 €.
+// Chaque valeur inclut une large marge d'erreur (×10 sur Supabase).
+export const COUT_REVIENT_MAX_EUR: Readonly<Record<string, number>> = {
+  "/health": 0,
+  "/v1/scoring/smart": 0.003,
+  "/v1/market/dvf": 0.0003,
+  "/v1/risks": 0.0003,
+  "/v1/parcelle": 0.0003,
+  "/v1/plu": 0.0003,
+  "/v1/servitudes": 0.0003,
+  "/v1/faisabilite": 0.001,
+  "/v1/permis": 0.0003,
+  "/v1/dpe": 0.0003,
+  "/v1/batiment": 0.0003,
+  "/v1/loyers": 0.0003,
+  "/v1/fiscalite": 0.0003,
+  "/v1/environnement": 0.0005,
+  "/v1/mobilite": 0.0003,
+  "/v1/couts": 0.0003,
+  "/v1/estimation": 0.001,
+};
+
+/** Marge brute minimale exigée sur CHAQUE endpoint, au prix le plus bas vendu. */
+export const MARGE_BRUTE_MIN_API = 0.8;
+
+/** Prix le plus bas d'un crédit (€ HT), toutes formules et périodicités confondues. */
+export function prixCreditPlancherEur(): number {
+  const prix = API_FORMULES_PAYANTES.flatMap((f) => (["mensuel", "annuel"] as const)
+    .map((p) => prixParMilleCreditsForfait(f, p))
+    .filter((x): x is number => x != null));
+  return Math.min(...prix) / 1000;
+}
 
 /** Corps d'exemple formaté pour un éditeur ou un bloc de code. */
 export function exempleJson(e: ApiEndpoint): string {

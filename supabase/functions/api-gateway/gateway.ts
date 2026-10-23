@@ -205,6 +205,12 @@ export async function traiterRequete(req: Request, deps: Dependances): Promise<R
     });
   }
 
+  if (defn.statut === "suspendu") {
+    return erreur(503, requestId, "endpoint_suspendu",
+      "Cet endpoint n'est pas encore ouvert (autorisation de la source de données en cours). Aucun crédit n'a été débité.",
+      tempsReponse());
+  }
+
   // 3. Corps
   const lu = await lireCorpsJson(req);
   if (!lu.ok) return erreur(lu.status, requestId, lu.code, lu.message, tempsReponse());

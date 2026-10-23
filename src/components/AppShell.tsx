@@ -514,7 +514,7 @@ const SPACE_NAVIGATION: Record<Space, NavSection[]> = {
 // d'abonnements. Chaque onglet est filtré par la formule courante :
 //   • Apport d'affaires : toujours ouvert
 //   • Indépendant : 1 module métier au choix (le premier clic fixe le choix)
-//   • Pro, Équipe : les 3 modules métier
+//   • Pro : les 3 modules métier
 // Les modules non inclus restent VISIBLES (cadenassés) : meilleur levier
 // d'upsell, et ça évite l'effet "l'app a perdu des fonctionnalités".
 function SpaceTabs(props: {
@@ -564,7 +564,7 @@ function SpaceTabs(props: {
           ? space.description
           : acc.selectable
             ? "Formule Indépendant : 1 module métier au choix — cliquez pour activer celui-ci"
-            : "Disponible avec les formules Pro et Équipe";
+            : "Disponible avec la formule Pro";
 
         return (
           <button

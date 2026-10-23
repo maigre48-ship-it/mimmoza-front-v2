@@ -17,6 +17,7 @@ import { echapper, rendreEmail } from '../../../../supabase/functions/_shared/em
 import { lienDesinscription, signer, verifier } from '../../../../supabase/functions/_shared/emails/desinscription.ts';
 import { ANALYSES_RAPIDES_INCLUSES_PAR_FORMULE, NOM_FORMULE } from '../../../lib/billing/grille.ts';
 import { ACTION_COSTS } from '../../../lib/billing/actionCosts.ts';
+import { FORMULES_VENDUES } from '../../../lib/billing/planAccess.ts';
 
 const MAINTENANT = new Date('2026-10-22T09:00:00Z');
 const il = (jours: number) => new Date(MAINTENANT.getTime() - jours * 86_400_000).toISOString();
@@ -43,8 +44,14 @@ function profil(p: Partial<ProfilEnvoi> = {}): ProfilEnvoi {
 const types = (p: ProfilEnvoi) => selectionner(p, MAINTENANT).map((d) => d.type);
 
 test('constantes recopiées identiques à la grille tarifaire', () => {
-  assert.deepEqual(ANALYSES_INCLUSES, ANALYSES_RAPIDES_INCLUSES_PAR_FORMULE);
-  assert.deepEqual(NOM_FORMULE_EMAIL, NOM_FORMULE);
+  // Comparaison limitée aux formules vendues. L'ancien code proplus (formule
+  // « Équipe », retirée le 23/10/2026) est un alias de Pro côté front ; la copie
+  // serveur (supabase/functions/_shared/emails/regles.ts) le traite encore à
+  // part et sera alignée avec la mise à jour des fonctions serveur.
+  for (const code of FORMULES_VENDUES) {
+    assert.equal(ANALYSES_INCLUSES[code], ANALYSES_RAPIDES_INCLUSES_PAR_FORMULE[code], code);
+    assert.equal(NOM_FORMULE_EMAIL[code], NOM_FORMULE[code], code);
+  }
   assert.equal(JETONS_PAR_ANALYSE, ACTION_COSTS.analyse_rapide);
 });
 

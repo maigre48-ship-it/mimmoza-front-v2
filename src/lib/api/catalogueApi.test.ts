@@ -7,15 +7,18 @@ import {
   API_ENDPOINTS,
   API_FORMULES,
   API_FORMULES_PAYANTES,
+  COUT_REVIENT_MAX_EUR,
+  MARGE_BRUTE_MIN_API,
   formuleApi,
+  prixCreditPlancherEur,
   normaliserFormuleApi,
   prixParMilleCreditsForfait,
 } from './catalogueApi.ts';
 
 // Contrat docs/api/CONTRAT_API.md : le prix le plus bas vendu est 1,60 € / 1 000
-// crédits (Scale annuel : 399 € / 250 000 = 1,596 €, arrondi au centime 1,60 €).
+// crédits (Scale annuel : 400 € / 250 000 = 1,60 € exactement).
 const PRIX_PLANCHER_PAR_MILLE = 1.6;
-const auCentime = (x: number) => Math.round(x * 100) / 100;
+const auCentime = (x: number) => Math.round(x * 1e6) / 1e6;
 
 test('API (a) : chaque formule payante vend ses crédits au moins 1,60 € / 1 000, en mensuel comme en annuel', () => {
   assert.ok(API_FORMULES_PAYANTES.length >= 3);
@@ -44,7 +47,7 @@ test('API (a) : chiffres des formules conformes au contrat', () => {
     essai: [0, null, 500, null, 10, 2],
     starter: [49, 39, 10_000, 5.9, 60, 5],
     growth: [149, 119, 50_000, 3.5, 200, 20],
-    scale: [499, 399, 250_000, 2.4, 1000, 100],
+    scale: [499, 400, 250_000, 2.4, 1000, 100],
   } as const;
   assert.deepEqual(API_FORMULES.map((f) => f.id), ['essai', 'starter', 'growth', 'scale']);
   for (const f of API_FORMULES) {
@@ -115,4 +118,17 @@ test('API (c) : la table des coûts du front est identique à celle de la passer
     Object.fromEntries(Object.entries(v1Passerelle).sort(([a], [b]) => a.localeCompare(b))),
     'Coûts différents entre src/lib/api/catalogueApi.ts et supabase/functions/_shared/apiCatalogue.ts',
   );
+});
+
+test('API : aucun appel vendu à perte, marge brute ≥ 80 % au prix le plus bas (Scale annuel)', () => {
+  const plancher = prixCreditPlancherEur();
+  assert.ok(Math.abs(plancher - 0.0016) < 1e-9, `prix plancher inattendu : ${plancher}`);
+  for (const [chemin, credits] of Object.entries(API_ENDPOINT_COSTS)) {
+    const cout = COUT_REVIENT_MAX_EUR[chemin];
+    assert.ok(cout != null, `${chemin} : coût de revient non renseigné`);
+    if (credits === 0) { assert.equal(cout, 0, `${chemin} gratuit mais coûteux`); continue; }
+    const recette = credits * plancher;
+    const marge = (recette - cout) / recette;
+    assert.ok(marge >= MARGE_BRUTE_MIN_API, `${chemin} : marge ${(marge * 100).toFixed(1)} % < ${MARGE_BRUTE_MIN_API * 100} % (recette ${recette.toFixed(4)} €, coût ${cout} €)`);
+  }
 });

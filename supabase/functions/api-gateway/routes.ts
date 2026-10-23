@@ -20,7 +20,7 @@
 
 import type { AppelInterne, ReponseInterne } from "../_shared/apiBase.ts";
 import type { ApiEndpoint } from "../_shared/apiCatalogue.ts";
-import { periodeDvf, SEUIL_SECRET_STATISTIQUE, statistiquesDvf, supprimerCles } from "../_shared/apiDvf.ts";
+import { CLES_DVF_INDIVIDUELLES, masquerPrixSousSecret, periodeDvf, SEUIL_SECRET_STATISTIQUE, statistiquesDvf, supprimerCles } from "../_shared/apiDvf.ts";
 import type { IdSource } from "../_shared/apiSources.ts";
 import * as V from "../_shared/apiValidation.ts";
 
@@ -187,6 +187,8 @@ function corpsSmartscore(e: V.Localisation): Record<string, unknown> {
     lon: e.lon,
     parcel_id: e.reference?.idu,
     commune_insee: e.code_insee,
+    // Pas de serveur Overpass public pour l'API payante : repli sur la BPE INSEE.
+    sans_overpass: true,
   };
 }
 
@@ -384,6 +386,7 @@ const CLES_RESERVEES_LLM: ReadonlySet<string> = new Set([
   "echantillon",
   "comps",
   "comparables",
+  ...CLES_DVF_INDIVIDUELLES,
 ]);
 
 async function faisabilite(ctx: ContexteRoute, e: V.EntreeFaisabilite): Promise<IssueRoute> {
@@ -414,8 +417,9 @@ async function faisabilite(ctx: ContexteRoute, e: V.EntreeFaisabilite): Promise<
       avertissements.push("Réponse partielle : le règlement PLU n'a pas pu être lu ; l'étude est fournie sans lui.");
     }
   }
-  const stats = supprimerCles(re.json.stats ?? null, CLES_RESERVEES_LLM);
-  const items = supprimerCles(re.json.items ?? [], CLES_RESERVEES_LLM);
+  // Ventes individuelles retirées, puis prix masqués sous le secret statistique (< 5 ventes).
+  const stats = masquerPrixSousSecret(supprimerCles(re.json.stats ?? null, CLES_RESERVEES_LLM));
+  const items = masquerPrixSousSecret(supprimerCles(re.json.items ?? [], CLES_RESERVEES_LLM));
   if (stats && typeof stats === "object") {
     const avs = (stats as Record<string, unknown>).avertissements;
     if (Array.isArray(avs)) avertissements.push(...avs.filter((a): a is string => typeof a === "string"));

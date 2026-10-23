@@ -8,9 +8,13 @@
 // MimmozIA, l'administration (/admin/tarifs), le catalogue de facturation
 // (catalog.ts). Changer un prix = changer une ligne ici.
 //
-// Les codes de plan (basique / avance / pro / proplus) sont CONSERVÉS : ce sont
+// Les codes de plan (basique / avance / pro) sont CONSERVÉS : ce sont
 // ceux que comprennent le serveur (copilot-chat → normalizePlan) et
 // syncPlanFromServer. Seuls les libellés commerciaux changent.
+//
+// 23/10/2026 : la formule « Équipe » (code proplus) est RETIRÉE de l'offre.
+// Le code proplus reste accepté (comptes anciens, données admin) comme un
+// alias de Pro : mêmes droits, mêmes quotas, libellé « Pro » (normaliserPlan).
 //
 // Tous les montants sont HORS TAXES, en euros.
 //
@@ -19,7 +23,7 @@
 // PAIEMENT_EN_LIGNE_DISPONIBLE et CONTACT_ACCES.
 // =============================================================================
 
-import type { ModuleSpace, PlanId } from "./planAccess";
+import { normaliserPlan, type ModuleSpace, type PlanId } from "./planAccess.ts";
 import { API_ESSAI, API_FORMULES_PAYANTES } from "../api/catalogueApi.ts";
 
 /** Valeur d'un jeton, partout dans l'application. 1 jeton = 0,10 € HT. */
@@ -133,31 +137,12 @@ export const FORMULES: readonly Formule[] = [
       "Exports PDF",
     ],
   },
-  {
-    id: "proplus",
-    nom: "Équipe",
-    accroche: "Pour les structures",
-    prixMensuelHT: 349,
-    prixMensuelAnnuelHT: 299,
-    utilisateurs: 5,
-    modules: "tous",
-    jetonsMensuels: 2500,
-    analysesRapidesMois: 1000,
-    messagesMimmoMois: null,
-    exportsPdf: true,
-    points: [
-      "5 utilisateurs",
-      "Tout le contenu Pro",
-      "1 000 analyses rapides par mois",
-      "2 500 jetons partagés par mois",
-      "Agent commercial",
-      "API : 10 000 crédits inclus",
-    ],
-  },
 ];
 
+/** Formule d'un code de plan. Un code historique (proplus) renvoie la formule Pro. */
 export function formule(id: PlanId): Formule {
-  return FORMULES.find((f) => f.id === id) ?? FORMULES[0];
+  const vendue = normaliserPlan(id);
+  return FORMULES.find((f) => f.id === vendue) ?? FORMULES[0];
 }
 
 /** Libellé commercial d'un code de plan. */
@@ -165,7 +150,7 @@ export const NOM_FORMULE: Record<PlanId, string> = {
   basique: "Découverte",
   avance: "Indépendant",
   pro: "Pro",
-  proplus: "Équipe",
+  proplus: "Pro", // ancien code « Équipe », alias de Pro
 };
 
 /** Nombre de modules métier accordés par formule (cf. planAccess.allowedModules). */
@@ -173,7 +158,7 @@ export const MODULES_PAR_FORMULE: Record<PlanId, number> = {
   basique: 0,
   avance: 1,
   pro: 3,
-  proplus: 3,
+  proplus: 3, // alias de Pro
 };
 
 /** Jetons inclus chaque mois, par code de plan (repris par le webhook). */
@@ -181,7 +166,7 @@ export const JETONS_INCLUS_PAR_FORMULE: Record<PlanId, number> = {
   basique: 0,
   avance: 200,
   pro: 800,
-  proplus: 2500,
+  proplus: 800, // alias de Pro
 };
 
 /** Quota d'analyses rapides GRATUITES par mois, pour tout compte (serveur : consume_free_quick_analysis). */
@@ -195,7 +180,7 @@ export const ANALYSES_RAPIDES_INCLUSES_PAR_FORMULE: Record<PlanId, number> = {
   basique: 3,
   avance: 100,
   pro: 300,
-  proplus: 1000,
+  proplus: 300, // alias de Pro
 };
 
 /**
@@ -280,7 +265,7 @@ export const ESSAI_API = { credits: API_ESSAI.credits, jours: API_ESSAI.dureeEss
 // 21/10/2026. Chaque prix reste bénéficiaire même si le client consomme 100 %
 // de ce qui est inclus (coût complet = GPU + streaming + IA + temps de contrôle
 // valorisé 60 €/h, 3 % de frais de paiement retenus). Les remises (annuel −10 %,
-// abonné Pro/Équipe −15 %) NE SE CUMULENT PAS : cumulées, la marge au pire cas
+// abonné Pro −15 %) NE SE CUMULENT PAS : cumulées, la marge au pire cas
 // de l'offre Entreprise tomberait à 23 % ; seule, la plus forte la laisse ≥ 30 %.
 //
 // Le Studio est vendu en SERVICE ACCOMPAGNÉ (rendus réalisés et contrôlés par
@@ -304,7 +289,7 @@ export const STUDIO_3D = {
   prixMensuelDesHT: 390,
   /** Remise accordée aux abonnés de ces formules de la plateforme. */
   remisePct: 15,
-  formulesRemisees: ["pro", "proplus"] as PlanId[],
+  formulesRemisees: ["pro"] as PlanId[],
   /** Abonnements : engagement de 12 mois. */
   engagementMois: 12,
   /** Remise maximale en cas de paiement annuel d'avance (non cumulable avec remisePct). */
@@ -371,6 +356,14 @@ export const STUDIO_3D = {
     prixHT: 1974,
   },
 } as const;
+
+/**
+ * true si un abonné de cette formule a droit à la remise Studio 3D.
+ * Un code historique (proplus, ex-« Équipe ») est traité comme Pro.
+ */
+export function beneficieRemiseStudio(plan: PlanId): boolean {
+  return STUDIO_3D.formulesRemisees.includes(normaliserPlan(plan));
+}
 
 /** Lien mailto prérempli pour une demande Studio 3D (devis, pilote, démo). */
 export function mailtoDemandeStudio(offre: string): string {

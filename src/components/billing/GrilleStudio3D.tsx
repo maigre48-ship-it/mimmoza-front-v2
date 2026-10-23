@@ -95,7 +95,7 @@ export function GrilleStudio3D() {
         ))}
       </div>
       <p className="mt-2 text-[11px] text-slate-500">
-        −{STUDIO_3D.remisePct} % pour les abonnés Mimmoza Pro et Équipe. Remises non cumulables entre elles.
+        −{STUDIO_3D.remisePct} % pour les abonnés Mimmoza Pro. Remises non cumulables entre elles.
       </p>
 
       {/* À l'acte + dépassements */}

@@ -8,7 +8,28 @@
 
 import type { Space } from "@/components/SpaceSync";
 
+/**
+ * Codes de plan compris par le front. `proplus` (ancienne formule « Équipe »,
+ * retirée de l'offre le 23/10/2026) reste dans le type : un compte ancien, un
+ * cache localStorage ou une donnée admin peut encore le porter. C'est un ALIAS
+ * de Pro : mêmes droits, libellé « Pro » (voir normaliserPlan).
+ */
 export type PlanId = "basique" | "avance" | "pro" | "proplus";
+
+/** Formules réellement proposées à la vente (Découverte, Indépendant, Pro). */
+export type FormuleVendue = Exclude<PlanId, "proplus">;
+
+/** Formules vendues, dans l'ordre de la grille. */
+export const FORMULES_VENDUES: readonly FormuleVendue[] = ["basique", "avance", "pro"];
+
+/**
+ * Ramène un code de plan à une formule vendue : `proplus` (ex-« Équipe ») → `pro`.
+ * Les codes serveur historiques (promoteur_pro, financeur_pro, enterprise) sont
+ * déjà traduits en `pro` par syncPlanFromServer.
+ */
+export function normaliserPlan(plan: PlanId): FormuleVendue {
+  return plan === "proplus" ? "pro" : plan;
+}
 
 /** Espaces = modules métier soumis à l'abonnement. */
 export type ModuleSpace = "marchand" | "promoteur" | "rehabilitation";
@@ -22,7 +43,7 @@ const ALWAYS_ALLOWED: Space[] = ["mimmozia", "agence", "none"];
 /**
  * Nombre de modules inclus par formule — grille du 21/10/2026 (grille.ts) :
  *   Découverte (basique) 0 · Indépendant (avance) 1 au choix ·
- *   Pro (pro) les 3 · Équipe (proplus) les 3.
+ *   Pro (pro) les 3 · proplus (ancien code « Équipe », alias de Pro) les 3.
  * Valeurs recopiées (et non importées) pour garder ce fichier PUR et sans
  * dépendance circulaire avec grille.ts, qui importe ses types d'ici.
  */
@@ -30,7 +51,7 @@ export const PLAN_MODULE_COUNT: Record<PlanId, number> = {
   basique: 0,
   avance: 1,
   pro: 3,
-  proplus: 3,
+  proplus: 3, // alias historique de Pro
 };
 
 /** La formule qui inclut UN module au choix (les autres : 0 ou tous). */
@@ -41,7 +62,7 @@ export const PLAN_LABEL: Record<PlanId, string> = {
   basique: "Découverte",
   avance: "Indépendant",
   pro: "Pro",
-  proplus: "Équipe",
+  proplus: "Pro", // ancien code « Équipe » : affiché comme Pro
 };
 
 /** Libellés courts des modules, pour les dialogues de choix. */
@@ -92,7 +113,7 @@ export function isModuleSpace(space: string): space is ModuleSpace {
  * @param selectedModules module(s) choisi(s) par l'utilisateur (utile pour "pro")
  */
 export function allowedModules(plan: PlanId, selectedModules: ModuleSpace[] = []): ModuleSpace[] {
-  if (plan === "proplus" || plan === "pro") return [...MODULE_SPACES];
+  if (normaliserPlan(plan) === "pro") return [...MODULE_SPACES];
 
   if (plan === PLAN_MODULE_AU_CHOIX) {
     const clean = selectedModules.filter((m) => MODULE_SPACES.includes(m));

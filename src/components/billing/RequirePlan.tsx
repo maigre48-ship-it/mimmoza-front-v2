@@ -101,7 +101,7 @@ export function RequirePlan({ children }: { children?: ReactNode }) {
           (<strong>{PLAN_LABEL[etat.plan]}</strong>).{" "}
           {acces?.selectable
             ? "Votre formule Indépendant inclut un module métier au choix : vous pouvez choisir celui-ci."
-            : "Il est inclus dans les formules Indépendant (1 module au choix), Pro et Équipe."}
+            : "Il est inclus dans les formules Indépendant (1 module au choix) et Pro."}
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           {acces?.selectable && module ? (

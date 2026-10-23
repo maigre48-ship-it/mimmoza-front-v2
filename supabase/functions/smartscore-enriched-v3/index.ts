@@ -1204,7 +1204,9 @@ async function fetchBpeStatsRpc(lat: number, lon: number, radiusM = 500): Promis
 // ============================================================================
 // PHARMACIE FALLBACK OSM OVERPASS
 // ============================================================================
-async function fetchNearestPharmacyOverpass(lat: number, lon: number, maxRadiusM: number = 20000, debug = false): Promise<ServiceEssentiel | null> {
+async function fetchNearestPharmacyOverpass(lat: number, lon: number, maxRadiusM: number = 20000, debug = false, sansOverpass = false): Promise<ServiceEssentiel | null> {
+  // API publique payante : le serveur Overpass public est interdit en usage commercial (cf. docs/api/LICENCES_DONNEES.md).
+  if (sansOverpass) return null;
   const radii = [2000, 5000, 10000, maxRadiusM].filter(r => r <= maxRadiusM);
   for (const radiusM of radii) {
     if (debug) console.log("OSM Overpass: recherche pharmacie rayon " + String(radiusM) + "m");
@@ -1303,7 +1305,9 @@ out center;`;
 type EssentialServicesRawItem = { type_code: string; distance_m: number; nom?: string; name?: string; type_libelle?: string; commune?: string; code_commune?: string; adresse?: string; };
 type EssentialServicesRawResult = { items: EssentialServicesRawItem[]; type_codes_sent: string[] };
 
-async function fetchEssentialServicesRaw(lat: number, lon: number, radiusM: number, debug = false): Promise<EssentialServicesRawResult> {
+async function fetchEssentialServicesRaw(lat: number, lon: number, radiusM: number, debug = false, sansOverpass = false): Promise<EssentialServicesRawResult> {
+  // sansOverpass : liste vide → le repli BPE INSEE (RPC get_bpe_essentiels_radius) prend le relais.
+  if (sansOverpass) return { items: [], type_codes_sent: [] };
   const type_codes = Object.keys(ESSENTIAL_BUCKET_BY_TYPE_CODE);
   const latR = Math.round(lat * 1000) / 1000;
   const lonR = Math.round(lon * 1000) / 1000;
@@ -1845,7 +1849,7 @@ async function computeSmartScoreV4Block(params: {
 // HANDLER MARKET STUDY
 // ============================================================================
 async function handleMarketStudy(payload: MarketStudyPayload): Promise<Response> {
-  const { parcel_id, commune_insee, project_nature, radius_km = 2, horizon_months = 24, targets, dpe_label = null, debug = false } = payload;
+  const { parcel_id, commune_insee, project_nature, radius_km = 2, horizon_months = 24, targets, dpe_label = null, debug = false, sans_overpass = false } = payload as typeof payload & { sans_overpass?: boolean };
   const { point, error } = await resolveAnalysisPoint(payload);
   if (!point) return json({ success: false, error: error ?? "Impossible de resoudre le point d'analyse.", mode: "market_study", version: "v4.7" }, 400);
   const communeInseeFinal = point.commune_insee ?? commune_insee?.toString() ?? null;
@@ -1861,7 +1865,7 @@ async function handleMarketStudy(payload: MarketStudyPayload): Promise<Response>
     fetchBpeStats(point.lat, point.lon, bpeRadius, communeInseeFinal, debug),
     fetchEcolesStats(point.lat, point.lon),
     fetchInseeStatsHybrid(communeInseeFinal, debug),
-    fetchEssentialServicesRaw(point.lat, point.lon, essentialServicesRadius, debug),
+    fetchEssentialServicesRaw(point.lat, point.lon, essentialServicesRadius, debug, sans_overpass === true),
   ]);
   let essentialServicesRawResult = _essRawMS;
   if (essentialServicesRawResult.items.length === 0 && supabase) {
@@ -1890,7 +1894,7 @@ async function handleMarketStudy(payload: MarketStudyPayload): Promise<Response>
     } catch (e) { console.warn("[servicesProximiteV1] error (non-blocking):"); }
   }
   if (!servicesRuraux.pharmacie_proche) {
-    const osmPharmacy = await fetchNearestPharmacyOverpass(point.lat, point.lon, RAYON_RURAL_MAX_M, debug);
+    const osmPharmacy = await fetchNearestPharmacyOverpass(point.lat, point.lon, RAYON_RURAL_MAX_M, debug, sans_overpass === true);
     if (osmPharmacy) servicesRuraux.pharmacie_proche = osmPharmacy;
   }
   if (isRural) residencesSeniors = await fetchResidencesSeniors(point.lat, point.lon, 20, debug);
@@ -1982,7 +1986,7 @@ async function handleMarketStudy(payload: MarketStudyPayload): Promise<Response>
 // HANDLER STANDARD
 // ============================================================================
 async function handleStandard(payload: StandardPayload): Promise<Response> {
-  const { address, cp, ville, surface, prix, travaux, userCriteria, meloId, type_local, dep_code, commune_code, parcel_id, commune_insee, transports, radius_km = 2, horizon_months = 24, dpe_label = null, debug = false } = payload;
+  const { address, cp, ville, surface, prix, travaux, userCriteria, meloId, type_local, dep_code, commune_code, parcel_id, commune_insee, transports, radius_km = 2, horizon_months = 24, dpe_label = null, debug = false, sans_overpass = false } = payload as typeof payload & { sans_overpass?: boolean };
   if (!supabase) return json({ success: false, error: "INTERNAL_ERROR", mode: "standard", version: "v4.7" }, 500);
   const { set: inc, full: includeFull } = resolveInclude((payload as any).include);
   if (debug) console.log("[Standard] include:", inc, "full:", includeFull);
@@ -2010,7 +2014,7 @@ async function handleStandard(payload: StandardPayload): Promise<Response> {
       ? fetchInseeStatsHybrid(communeInseeFinal, debug)
       : Promise.resolve({ data: null, coverage: "not_covered" as Coverage }),
     (inc.bpe || inc.sante)
-      ? fetchEssentialServicesRaw(point.lat, point.lon, essentialServicesRadius, debug)
+      ? fetchEssentialServicesRaw(point.lat, point.lon, essentialServicesRadius, debug, sans_overpass === true)
       : Promise.resolve({ items: [], type_codes_sent: [] }),
   ]);
   let essentialServicesRawResult = _essRawStd;
@@ -2040,7 +2044,7 @@ async function handleStandard(payload: StandardPayload): Promise<Response> {
       if (!servicesRuraux.medecin_proche && spServices.medecin_proche) servicesRuraux.medecin_proche = spServices.medecin_proche;
     } catch (e) { console.warn("[Standard] servicesProximiteV1 error (non-blocking):"); }
     if (!servicesRuraux.pharmacie_proche) {
-      const osmPharmacy = await fetchNearestPharmacyOverpass(point.lat, point.lon, RAYON_RURAL_MAX_M, debug);
+      const osmPharmacy = await fetchNearestPharmacyOverpass(point.lat, point.lon, RAYON_RURAL_MAX_M, debug, sans_overpass === true);
       if (osmPharmacy) servicesRuraux.pharmacie_proche = osmPharmacy;
     }
     if (isRural) residencesSeniors = await fetchResidencesSeniors(point.lat, point.lon, 20, debug);

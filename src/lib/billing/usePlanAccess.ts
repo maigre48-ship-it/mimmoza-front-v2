@@ -16,6 +16,7 @@ import {
   MODULE_SPACES,
   canAccessSpace,
   canAccessPath,
+  normaliserPlan,
   remainingModuleChoices,
 } from "./planAccess";
 
@@ -31,7 +32,7 @@ const VALID: PlanId[] = [
   "basique",
   "avance",
   "pro",
-  "proplus",
+  "proplus", // ancien code « Équipe » : accepté, ramené à "pro" à la lecture
 ];
 
 export type PlanState = {
@@ -54,7 +55,7 @@ function readPlanState(): PlanState {
       : {};
 
     const plan: PlanId = VALID.includes(user.plan as PlanId)
-      ? (user.plan as PlanId)
+      ? normaliserPlan(user.plan as PlanId)
       : "basique";
 
     /*

@@ -497,3 +497,56 @@ Deno.test("hygiène : aucun journal ne contient la clé, le corps ou une répons
   assert(tout.length > 0, "des lignes de journal existent");
   assert(!tout.includes(CLE) && !tout.includes("Secrète") && !tout.includes("détail sensible"), tout);
 });
+
+// ═══ Licences (revue du 23/10/2026) ════════════════════════════════════════
+import { masquerPrixSousSecret as masquerSecret } from "../_shared/apiDvf.ts";
+
+Deno.test("licences : /v1/batiment suspendu → 503, ni clé ni réservation ni appel interne", async () => {
+  const { s, deps } = simu({ internes: { "batiment-bdnb-v1": () => ok({ status: "ok" }) } });
+  const r = await traiterRequete(requete("/v1/batiment", { adresse: "10 rue de la Paix, 75002 Paris" }), deps);
+  const j = await r.json();
+  eq(r.status, 503);
+  eq(j.erreur.code, "endpoint_suspendu");
+  eq(s.rpcs.filter((x) => x.nom === "api_reserver_credits").length, 0);
+  eq(s.appels.length, 0);
+});
+
+Deno.test("licences : le SmartScore de l'API demande sans_overpass (pas de serveur Overpass public)", async () => {
+  const { s, deps } = simu({
+    internes: { "smartscore-enriched-v3": () => ok({ success: true, smartscore_v4: { score: 61 } }) },
+  });
+  await traiterRequete(requete("/v1/scoring/smart", PARIS), deps);
+  await traiterRequete(requete("/v1/risks", PARIS), deps);
+  const corps = s.appels.filter((a) => a.fonction === "smartscore-enriched-v3").map((a) => a.corps);
+  assert(corps.length >= 2, "appels smartscore");
+  for (const c of corps) eq(c.sans_overpass, true);
+});
+
+Deno.test("licences : faisabilité — prix DVF masqués sous 5 ventes, conservés au-delà", async () => {
+  const sous = masquerSecret({ id: "dvf_prix_m2", value: { prix_m2_median_source: 4100, prix_m2_median_robuste: 4000, nb_comparables: 3, extremes_ecartes: [9000], dispersion_pct: 40, categories: ["Maison"] } }) as Record<string, Record<string, unknown>>;
+  eq(sous.value.prix_m2_median_source, null);
+  eq(sous.value.prix_m2_median_robuste, null);
+  eq(sous.value.extremes_ecartes, null);
+  eq(sous.value.dispersion_pct, null);
+  eq(sous.value.nb_comparables, 3);
+  eq(sous.value.secret_statistique, true);
+  eq(sous.value.categories, ["Maison"]);
+  const sur = masquerSecret({ prix_m2_median_robuste: 4000, nb_comparables: 12 }) as Record<string, unknown>;
+  eq(sur.prix_m2_median_robuste, 4000);
+  eq(sur.secret_statistique, undefined);
+
+  const { deps } = simu({
+    internes: {
+      "etude-parcelle-v1": () => ok({
+        status: "ok", summary: "Étude",
+        stats: { dvf: { nb_comparables: 2, prix_m2_median_robuste: 5100 } },
+        items: [{ cle: "dvf", stats: { nb_comparables: 2, prix_m2_median: 5100, ventes: [{ prix: 300000 }] } }],
+      }),
+      "plu-from-parcelle-v2": () => ok({ success: true, plu: { found: false } }),
+    },
+  });
+  const f = await traiterRequete(requete("/v1/faisabilite", { reference_cadastrale: "64065000AI0002" }), deps);
+  const t = JSON.stringify(await f.json());
+  eq(f.status, 200);
+  assert(!t.includes("5100") && !t.includes("300000"), "aucun prix sous le secret statistique");
+});

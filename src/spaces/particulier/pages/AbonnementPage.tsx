@@ -1,7 +1,8 @@
 // src/spaces/particulier/pages/AbonnementPage.tsx
 // ─── Abonnements Mimmoza (connecté) ───────────────────────────────────────────
-// Grille unique : src/lib/billing/grille.ts (Découverte / Indépendant / Pro /
-// Équipe — codes techniques basique / avance / pro / proplus, inchangés).
+// Grille unique : src/lib/billing/grille.ts (Découverte / Indépendant / Pro —
+// codes techniques basique / avance / pro). La formule « Équipe » (proplus) a
+// été retirée le 23/10/2026 : un lien ?plan=proplus met Pro en avant.
 //
 // Audit du 21/10/2026 :
 //  • les prix ne sont plus lus dans localStorage["mimmoza.pricing"] (clés
@@ -16,7 +17,7 @@ import { useSearchParams } from "react-router-dom";
 
 import { GrilleTarifaire } from "@/components/billing/GrilleTarifaire";
 import { getCurrentPlanState } from "@/lib/billing/usePlanAccess";
-import type { PlanId } from "@/lib/billing/planAccess";
+import { normaliserPlan, type PlanId } from "@/lib/billing/planAccess";
 
 const PLANS_VALIDES: PlanId[] = ["basique", "avance", "pro", "proplus"];
 
@@ -24,7 +25,7 @@ export default function AbonnementPage() {
   const [params] = useSearchParams();
   const current = useMemo(() => getCurrentPlanState(), []);
   const demande = params.get("plan") as PlanId | null;
-  const highlighted = demande && PLANS_VALIDES.includes(demande) ? demande : undefined;
+  const highlighted = demande && PLANS_VALIDES.includes(demande) ? normaliserPlan(demande) : undefined;
 
   return (
     <div className="relative overflow-hidden rounded-[32px] border border-slate-200/80 bg-white shadow-sm">

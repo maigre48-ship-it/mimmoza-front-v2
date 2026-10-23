@@ -16,7 +16,7 @@ Supabase prod : `fwvrqngbafqdaekbdfnm`.
 | essai | 0 | — | 500 crédits UNE SEULE FOIS, valables 30 jours | — (pas de recharge) | 10 | 2 |
 | starter | 49 | 39 | 10 000 | 5,90 | 60 | 5 |
 | growth | 149 | 119 | 50 000 | 3,50 | 200 | 20 |
-| scale | 499 | 399 | 250 000 | 2,40 | 1 000 | 100 |
+| scale | 499 | 400 | 250 000 | 2,40 | 1 000 | 100 |
 
 - Ordre de consommation : crédits du mois → crédits de recharge (valables 12 mois).
 - Crédits du mois non reportés ; remise à zéro le 1er du mois (cron existant `api-keys-remise-a-zero-mensuelle` à faire évoluer ou remplacer).

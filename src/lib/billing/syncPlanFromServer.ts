@@ -49,22 +49,26 @@ const STATUTS_ACTIFS: readonly SubscriptionStatus[] = ['active', 'trialing'];
  *
  * Les deux nomenclatures ont divergé au fil du temps : le serveur parle de
  * `free / starter / pro / promoteur_pro…`, le front de
- * `basique / avance / pro / proplus`. Cette table est le seul endroit où la
+ * `basique / avance / pro`. Cette table est le seul endroit où la
  * traduction existe — sans elle, chaque écran l'improvisait.
+ *
+ * La formule « Équipe » (proplus) a été retirée de l'offre le 23/10/2026 :
+ * ses codes (proplus, promoteur_pro, financeur_pro, enterprise) restent
+ * reconnus et donnent les droits de Pro.
  */
 const PLAN_SERVEUR_VERS_FRONT: Record<string, PlanId> = {
   free: 'basique',
   starter: 'avance',
   pro: 'pro',
   promoteur_starter: 'avance',
-  promoteur_pro: 'proplus',
-  financeur_pro: 'proplus',
-  enterprise: 'proplus',
+  promoteur_pro: 'pro',
+  financeur_pro: 'pro',
+  enterprise: 'pro',
   // Codes MimmozIA écrits tels quels (ouverture manuelle d'un accès tant que
   // le paiement en ligne n'est pas branché : plan_code = 'avance', etc.).
   basique: 'basique',
   avance: 'avance',
-  proplus: 'proplus',
+  proplus: 'pro', // ancien code « Équipe » : alias de Pro
 };
 
 export interface PlanSynchronise {

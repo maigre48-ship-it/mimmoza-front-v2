@@ -296,7 +296,7 @@ export default function ApiPlaygroundPage() {
                         {eps.map((ep) => (
                           <option key={ep.chemin} value={ep.chemin}>
                             {ep.chemin} — {ep.titre} ({libelleCredits(ep.credits)})
-                            {ep.statut === 'beta' ? ' · bêta' : ''}
+                            {ep.statut === 'beta' ? ' · bêta' : ep.statut === 'bientot' ? ' · bientôt' : ''}
                           </option>
                         ))}
                       </optgroup>
@@ -307,7 +307,7 @@ export default function ApiPlaygroundPage() {
                 <p className="mt-1 text-xs text-slate-500">
                   Coût : <span className="font-semibold">{libelleCredits(selectedEndpoint.credits)}</span>
                   {selectedEndpoint.credits > 0 && ' par appel réussi'}
-                  {selectedEndpoint.statut === 'beta' && ' · endpoint en bêta, sa réponse peut encore évoluer'}
+                  {selectedEndpoint.statut === 'beta' && ' · endpoint en bêta, sa réponse peut encore évoluer'}{selectedEndpoint.statut === 'bientot' && ' · pas encore ouvert : l\'appel renvoie 503 et ne débite aucun crédit'}
                 </p>
               </div>
               <div>

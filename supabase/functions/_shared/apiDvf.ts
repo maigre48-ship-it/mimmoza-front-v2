@@ -105,3 +105,32 @@ export function contientDonneeIndividuelle(valeur: unknown): boolean {
   }
   return false;
 }
+
+/**
+ * Secret statistique dans les réponses composites (ex. /v1/faisabilite) : tout
+ * objet qui porte `nb_comparables` (ou `nombre_ventes`) entre 1 et
+ * SEUIL_SECRET_STATISTIQUE - 1 voit ses montants (prix, médianes, extrêmes,
+ * dispersion) remplacés par null et reçoit `secret_statistique: true`.
+ * En dessous de 5 ventes, une médiane révèle presque un prix individuel.
+ */
+const CLE_MONTANT_DVF = /prix|price|median|mediane|moyen|extreme|dispersion|quartile|q1|q3/i;
+
+export function masquerPrixSousSecret(valeur: unknown, profondeur = 0): unknown {
+  if (profondeur > 40) return null;
+  if (Array.isArray(valeur)) return valeur.map((v) => masquerPrixSousSecret(v, profondeur + 1));
+  if (!valeur || typeof valeur !== "object") return valeur;
+  const o = valeur as Record<string, unknown>;
+  const nb = typeof o.nb_comparables === "number" ? o.nb_comparables
+    : typeof o.nombre_ventes === "number" ? o.nombre_ventes : null;
+  const secret = nb != null && nb > 0 && nb < SEUIL_SECRET_STATISTIQUE;
+  const sortie: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(o)) {
+    if (secret && CLE_MONTANT_DVF.test(k) && k !== "nb_comparables" && k !== "nombre_ventes") {
+      sortie[k] = null;
+      continue;
+    }
+    sortie[k] = masquerPrixSousSecret(v, profondeur + 1);
+  }
+  if (secret) sortie.secret_statistique = true;
+  return sortie;
+}

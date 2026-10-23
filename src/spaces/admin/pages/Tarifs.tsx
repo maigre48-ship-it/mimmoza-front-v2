@@ -136,7 +136,7 @@ export default function AdminTarifsPage() {
         </div>
         <div className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm text-sm text-slate-700">
           <h2 className="mb-2 font-semibold text-slate-900">{STUDIO_3D.libelle}</h2>
-          À partir de {formatEurHT(STUDIO_3D.prixMensuelDesHT)}/mois, −{STUDIO_3D.remisePct} % pour Pro et Équipe.
+          À partir de {formatEurHT(STUDIO_3D.prixMensuelDesHT)}/mois, −{STUDIO_3D.remisePct} % pour les abonnés Pro.
         </div>
       </div>
 

@@ -26,7 +26,8 @@ type TxRow = {
 
 function getPlanLabel(plan?: string): string {
   switch (plan) {
-    case "pro":     return "Pro";
+    case "pro":
+    case "proplus": return "Pro"; // ancien code « Équipe »
     case "starter": return "Plan Starter";
     default:        return "Gratuit";
   }

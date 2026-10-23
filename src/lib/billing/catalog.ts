@@ -8,7 +8,10 @@ import { PACKS_JETONS, formule, type Formule } from "./grille";
 // billing_profiles.plan_code. Leurs PRIX et JETONS INCLUS sont désormais lus
 // dans grille.ts, via la même correspondance que syncPlanFromServer :
 //   free → Découverte · starter, promoteur_starter → Indépendant ·
-//   pro → Pro · promoteur_pro, financeur_pro, enterprise → Équipe.
+//   pro → Pro · promoteur_pro, financeur_pro, enterprise → Pro.
+// La formule « Équipe » a été retirée de l'offre le 23/10/2026 : ces trois
+// anciens codes donnent les droits de Pro, ne sont plus vendus (is_active: false)
+// et ne figurent plus sur aucune grille.
 function prixGrille(f: Formule) {
   return {
     monthly_price_cents: Math.round(f.prixMensuelHT * 100),
@@ -93,40 +96,40 @@ export const PLAN_CATALOG: Readonly<Record<PlanCode, PlanCatalogEntry>> = {
 
   promoteur_pro: {
     code: "promoteur_pro",
-    label: "Équipe (ancien code Promoteur Pro)",
-    description: "Pour les promoteurs avec volume d'opérations",
-    ...prixGrille(formule("proplus")),
+    label: "Pro (ancien code Promoteur Pro)",
+    description: "Ancien code, traité comme la formule Pro",
+    ...prixGrille(formule("pro")),
     currency: "eur",
     stripe_monthly_price_id: "price_promo_pro_monthly_REPLACE",
     stripe_annual_price_id: "price_promo_pro_annual_REPLACE",
-    features: [...formule("proplus").points],
-    is_active: true,
+    features: [...formule("pro").points],
+    is_active: false,
   },
 
   financeur_pro: {
     code: "financeur_pro",
-    label: "Équipe (ancien code Financeur Pro)",
-    description: "Pour les banques et assurances",
-    ...prixGrille(formule("proplus")),
+    label: "Pro (ancien code Financeur Pro)",
+    description: "Ancien code, traité comme la formule Pro",
+    ...prixGrille(formule("pro")),
     currency: "eur",
     stripe_monthly_price_id: "price_financeur_pro_monthly_REPLACE",
     stripe_annual_price_id: "price_financeur_pro_annual_REPLACE",
-    features: [...formule("proplus").points],
-    is_active: true,
+    features: [...formule("pro").points],
+    is_active: false,
   },
 
   enterprise: {
     code: "enterprise",
-    label: "Enterprise",
-    description: "Pour les grands comptes — sur mesure",
-    monthly_price_cents: 0, // prix sur devis
+    label: "Pro (ancien code Enterprise)",
+    description: "Ancien code sur devis, traité comme la formule Pro",
+    monthly_price_cents: 0, // ancien prix sur devis : inconnu, MRR non calculé
     annual_price_cents: null,
-    included_tokens: formule("proplus").jetonsMensuels,
+    included_tokens: formule("pro").jetonsMensuels,
     currency: "eur",
     stripe_monthly_price_id: null, // géré manuellement via Stripe
     stripe_annual_price_id: null,
-    features: [...formule("proplus").points],
-    is_active: true,
+    features: [...formule("pro").points],
+    is_active: false,
   },
 } as const;
 

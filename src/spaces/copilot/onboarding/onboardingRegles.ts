@@ -6,10 +6,10 @@
 
 import {
   ANALYSES_RAPIDES_INCLUSES_PAR_FORMULE,
-  FORMULES,
   JETONS_INCLUS_PAR_FORMULE,
   MESSAGES_MIMMO_DECOUVERTE_MOIS,
   NOM_FORMULE,
+  formule,
 } from '../../../lib/billing/grille.ts';
 import { ACTION_COSTS } from '../../../lib/billing/actionCosts.ts';
 import type { PlanId } from '../../../lib/billing/planAccess.ts';
@@ -197,7 +197,8 @@ export interface RappelQuota {
 }
 
 export function rappelQuota(plan: PlanId): RappelQuota {
-  const f = FORMULES.find((x) => x.id === plan) ?? FORMULES[0];
+  // formule() ramène un ancien code (proplus, ex-« Équipe ») à Pro.
+  const f = formule(plan);
   const analyses = ANALYSES_RAPIDES_INCLUSES_PAR_FORMULE[f.id];
   const jetons = JETONS_INCLUS_PAR_FORMULE[f.id];
   const nf = (n: number) => n.toLocaleString('fr-FR');

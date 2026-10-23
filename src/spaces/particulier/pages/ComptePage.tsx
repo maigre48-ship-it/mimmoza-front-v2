@@ -111,9 +111,13 @@ const PLAN_LABELS: Record<string, string> = {
   // Grille du 21/10/2026 (src/lib/billing/grille.ts)
   basique: "Découverte (gratuit)",
   avance: "Abonnement Indépendant",
-  proplus: "Abonnement Équipe",
   starter: "Abonnement Indépendant",
   pro: "Abonnement Pro",
+  // Anciens codes de la formule « Équipe », retirée le 23/10/2026 : droits Pro.
+  proplus: "Abonnement Pro",
+  promoteur_pro: "Abonnement Pro",
+  financeur_pro: "Abonnement Pro",
+  enterprise: "Abonnement Pro",
   "promoteur-starter": "Promoteur Starter",
   "promoteur-pro": "Promoteur Pro",
   "promoteur-enterprise": "Promoteur Entreprise",

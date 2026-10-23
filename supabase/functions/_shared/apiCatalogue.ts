@@ -33,7 +33,8 @@ export const API_ENDPOINT_COSTS = {
 
 export type ApiEndpoint = keyof typeof API_ENDPOINT_COSTS;
 
-export type StatutEndpoint = "live" | "beta";
+/** « suspendu » : route connue mais fermée (ex. licence de la source en attente) — 503, rien n'est débité. */
+export type StatutEndpoint = "live" | "beta" | "suspendu";
 
 export interface DefinitionEndpoint {
   chemin: ApiEndpoint;
@@ -59,7 +60,8 @@ export const API_CATALOGUE: Record<ApiEndpoint, DefinitionEndpoint> = {
   "/v1/faisabilite": { chemin: "/v1/faisabilite", methode: "POST", statut: "live", cacheSecondes: 1 * J, delaiMs: 35000 },
   "/v1/permis": { chemin: "/v1/permis", methode: "POST", statut: "live", cacheSecondes: 7 * J, delaiMs: 30000 },
   "/v1/dpe": { chemin: "/v1/dpe", methode: "POST", statut: "live", cacheSecondes: 1 * J, delaiMs: 15000 },
-  "/v1/batiment": { chemin: "/v1/batiment", methode: "POST", statut: "live", cacheSecondes: 1 * J, delaiMs: 15000 },
+  // BDNB : revente via API soumise à l'accord écrit du CSTB (docs/api/LICENCES_DONNEES.md).
+  "/v1/batiment": { chemin: "/v1/batiment", methode: "POST", statut: "suspendu", cacheSecondes: 1 * J, delaiMs: 15000 },
   "/v1/loyers": { chemin: "/v1/loyers", methode: "POST", statut: "live", cacheSecondes: 7 * J, delaiMs: 12000 },
   "/v1/fiscalite": { chemin: "/v1/fiscalite", methode: "POST", statut: "live", cacheSecondes: 7 * J, delaiMs: 15000 },
   "/v1/environnement": { chemin: "/v1/environnement", methode: "POST", statut: "live", cacheSecondes: 1 * J, delaiMs: 25000 },

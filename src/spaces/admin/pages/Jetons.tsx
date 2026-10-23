@@ -20,6 +20,7 @@ type StoredUser = {
 function getPlanLabel(plan?: string): string {
   switch (plan) {
     case "pro":
+    case "proplus": // ancien code « Équipe »
       return "Pro";
     case "starter":
       return "Starter";

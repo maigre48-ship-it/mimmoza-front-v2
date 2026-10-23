@@ -25,7 +25,7 @@ import {
   prixFormule,
   type Formule,
 } from "@/lib/billing/grille";
-import type { PlanId } from "@/lib/billing/planAccess";
+import { normaliserPlan, type PlanId } from "@/lib/billing/planAccess";
 import { GrilleStudio3D } from "./GrilleStudio3D";
 
 type Periodicite = "mensuel" | "annuel";
@@ -105,9 +105,9 @@ export function GrilleTarifaire({ formuleActuelle, enAvant, publique = false }: 
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {FORMULES.map((f) => {
-          const isFeatured = enAvant ? enAvant === f.id : Boolean(f.miseEnAvant);
+          const isFeatured = enAvant ? normaliserPlan(enAvant) === f.id : Boolean(f.miseEnAvant);
           return (
             <div
               key={f.id}
@@ -146,7 +146,7 @@ export function GrilleTarifaire({ formuleActuelle, enAvant, publique = false }: 
               <BoutonFormule
                 f={f}
                 periodicite={periodicite}
-                actuelle={formuleActuelle === f.id}
+                actuelle={formuleActuelle != null && normaliserPlan(formuleActuelle) === f.id}
                 publique={publique}
               />
             </div>
@@ -210,7 +210,7 @@ export function GrilleTarifaire({ formuleActuelle, enAvant, publique = false }: 
             À partir de <strong className="text-slate-900">{formatEurHT(STUDIO_3D.prixMensuelDesHT)}/mois</strong>
           </p>
           <p className="mt-1 text-xs text-slate-500">
-            −{STUDIO_3D.remisePct} % pour les abonnés Pro et Équipe
+            −{STUDIO_3D.remisePct} % pour les abonnés Pro
           </p>
           <a href="#studio-3d" className="mt-2 inline-block text-xs font-semibold text-violet-700 hover:underline">
             Voir les tarifs du Studio 3D
