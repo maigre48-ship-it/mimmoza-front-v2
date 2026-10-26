@@ -36,7 +36,7 @@ create table if not exists public.studio_jobs (
                   check (statut in ('en_attente', 'en_cours', 'termine', 'echec', 'annule')),
   progression     integer not null default 0 check (progression between 0 and 100),
   etape           text,
-  fiche           jsonb not null check (jsonb_typeof(fiche) = 'object'),
+  fiche           jsonb not null check (jsonb_typeof(fiche) = 'object' and pg_column_size(fiche) <= 2000000),
   options         jsonb not null default '{}'::jsonb check (jsonb_typeof(options) = 'object'),
   resultat        jsonb,
   elements_omis   jsonb not null default '[]'::jsonb check (jsonb_typeof(elements_omis) = 'array'),
