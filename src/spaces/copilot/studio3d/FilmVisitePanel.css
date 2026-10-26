@@ -1,0 +1,146 @@
+/* =============================================================================
+   Film ou visite 360° en 3 clics — dans le dossier de l'Espace 3D.
+   Même langage que les fenêtres façon Windows 11 (CopilotFenetres.css) :
+   Segoe UI, coins 8 px, barre de titre claire, bouton « Fermer » rouge
+   #c42b1c, accent violet Mimmoza.
+   ============================================================================= */
+
+.jarvis-dossier .mzia-rendu {
+  --rendu-bord: #e4e1ef;
+  --rendu-barre: #fbfbfe;
+  --rendu-texte: #1f1d3d;
+  --rendu-doux: #6b6890;
+  --rendu-accent: #6a4fe0;
+  --rendu-survol: rgba(31, 29, 61, .06);
+  margin: 4px 0 14px;
+  padding: 12px;
+  border: 1px solid var(--rendu-bord);
+  border-radius: 8px;
+  background: #fff;
+  font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  color: var(--rendu-texte) !important;
+  display: grid;
+  gap: 10px;
+}
+.jarvis-dossier .mzia-rendu__entete { display: grid; gap: 2px; }
+.jarvis-dossier .mzia-rendu__entete strong { font-size: 14px; font-weight: 600; }
+.jarvis-dossier .mzia-rendu__entete span { font-size: 12px; color: var(--rendu-doux) !important; }
+
+.jarvis-dossier .mzia-rendu__bientot {
+  margin: 0; padding: 8px 10px; border-radius: 6px;
+  background: #f4f1ff; border: 1px solid #ddd5fb; color: #4f3dad !important; font-size: 12px;
+}
+
+/* Clic 1 — deux gros boutons */
+.jarvis-dossier .mzia-rendu__choix { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.jarvis-dossier .mzia-rendu__choix button {
+  display: grid; justify-items: start; gap: 4px;
+  min-height: 92px; padding: 12px;
+  border: 1px solid var(--rendu-bord); border-radius: 8px;
+  background: var(--rendu-barre); color: var(--rendu-texte) !important;
+  text-align: left; font-family: inherit;
+  transition: border-color .12s, background .12s, box-shadow .12s;
+}
+.jarvis-dossier .mzia-rendu__choix button svg { color: var(--rendu-accent) !important; }
+.jarvis-dossier .mzia-rendu__choix button b { font-size: 14px; font-weight: 600; }
+.jarvis-dossier .mzia-rendu__choix button small { display: block; font-size: 11px; font-weight: 400; color: var(--rendu-doux) !important; }
+.jarvis-dossier .mzia-rendu__choix button:hover:not(:disabled) { background: #f6f3ff; border-color: #c9bcf6; }
+.jarvis-dossier .mzia-rendu__choix button.is-actif { border-color: var(--rendu-accent); background: #f1edff; box-shadow: inset 0 0 0 1px var(--rendu-accent); }
+
+/* Clic 2 — feuille d'options (petite fenêtre) */
+.jarvis-dossier .mzia-rendu__feuille {
+  border: 1px solid var(--rendu-bord); border-radius: 8px; overflow: hidden;
+  box-shadow: 0 8px 24px rgba(31, 29, 61, .1);
+}
+.jarvis-dossier .mzia-rendu__feuille-barre {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 36px; padding-left: 12px;
+  background: var(--rendu-barre); border-bottom: 1px solid var(--rendu-bord);
+  font-size: 12px; font-weight: 600;
+}
+.jarvis-dossier .mzia-rendu__feuille-corps { display: grid; gap: 10px; padding: 12px; }
+.jarvis-dossier .mzia-rendu__groupe { margin: 0; padding: 0; border: 0; display: grid; gap: 5px; }
+.jarvis-dossier .mzia-rendu__groupe legend { padding: 0 0 5px; font-size: 11px; font-weight: 600; color: var(--rendu-doux) !important; }
+.jarvis-dossier .mzia-rendu__groupe div { display: flex; flex-wrap: wrap; gap: 4px; }
+.jarvis-dossier .mzia-rendu__groupe button {
+  padding: 6px 10px; border-radius: 5px; font-size: 12px; font-weight: 400;
+  background: #fff; border: 1px solid var(--rendu-bord); color: var(--rendu-texte) !important;
+}
+.jarvis-dossier .mzia-rendu__groupe button.is-actif { background: var(--rendu-accent); border-color: var(--rendu-accent); color: #fff !important; }
+.jarvis-dossier .mzia-rendu__case { display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; }
+.jarvis-dossier .mzia-rendu__case input { width: 16px; height: 16px; accent-color: var(--rendu-accent); }
+.jarvis-dossier .mzia-rendu__terrain { display: grid; gap: 4px; }
+.jarvis-dossier .mzia-rendu__terrain > p { margin: 0; font-size: 12px; font-weight: 600; }
+.jarvis-dossier button.mzia-rendu__lancer {
+  width: 100%; padding: 11px; border-radius: 6px; font-size: 13px; font-weight: 600;
+  display: flex; justify-content: center; align-items: center; gap: 8px;
+  background: linear-gradient(105deg, #6851e9, #8958eb); border-color: #7456e8; color: #fff !important;
+}
+.jarvis-dossier button.mzia-rendu__lancer * { color: #fff !important; }
+.jarvis-dossier .mzia-rendu__feuille-corps > small { font-size: 11px; color: var(--rendu-doux) !important; }
+
+/* Bouton « Fermer » façon Windows 11 */
+.jarvis-dossier button.mzia-rendu__fermer {
+  display: inline-grid; place-items: center; width: 40px; height: 100%; min-height: 30px;
+  padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--rendu-doux) !important;
+}
+.jarvis-dossier button.mzia-rendu__fermer:hover { background: #c42b1c; color: #fff !important; }
+.jarvis-dossier button.mzia-rendu__fermer:hover * { color: #fff !important; }
+
+/* Suivi en direct */
+.jarvis-dossier .mzia-rendu__suivi { display: grid; gap: 6px; padding: 10px; border-radius: 8px; background: var(--rendu-barre); border: 1px solid var(--rendu-bord); }
+.jarvis-dossier .mzia-rendu__suivi-titre { display: flex; justify-content: space-between; font-size: 12px; }
+.jarvis-dossier .mzia-rendu__suivi-titre span { color: var(--rendu-accent) !important; font-weight: 600; }
+.jarvis-dossier .mzia-rendu__suivi p { margin: 0; font-size: 12px; color: var(--rendu-doux) !important; }
+.jarvis-dossier .mzia-rendu__suivi > button { justify-self: start; }
+.jarvis-dossier .mzia-rendu__barre { height: 4px; border-radius: 2px; background: #e9e5f6; overflow: hidden; }
+.jarvis-dossier .mzia-rendu__barre i { display: block; height: 100%; background: var(--rendu-accent); border-radius: 2px; transition: width .6s ease; }
+.jarvis-dossier .mzia-rendu__barre i.is-attente { animation: mzia-rendu-attente 1.4s ease-in-out infinite; }
+@keyframes mzia-rendu-attente { 50% { opacity: .35; } }
+.mzia-rendu__tourne { animation: mzia-rendu-tourne 1s linear infinite; }
+@keyframes mzia-rendu-tourne { to { transform: rotate(360deg); } }
+
+/* Notification « prêt » */
+.jarvis-dossier .mzia-rendu__annonce {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 8px 0 8px 10px; border-radius: 8px;
+  background: #eaf8ef; border: 1px solid #9cdbbb; color: #23724f !important; font-size: 12px; font-weight: 600;
+}
+.jarvis-dossier .mzia-rendu__annonce > span { flex: 1 1 120px; }
+.jarvis-dossier .mzia-rendu__annonce .mzia-rendu__fermer { min-height: 28px; width: 32px; }
+.jarvis-dossier .mzia-rendu__annonce .mzia-rendu__omis { flex-basis: 100%; padding-right: 10px; }
+
+/* Boutons et liens d'action */
+.jarvis-dossier .mzia-rendu .is-primaire,
+.jarvis-dossier a.mzia-rendu__bouton.is-primaire {
+  background: var(--rendu-accent) !important; border-color: var(--rendu-accent) !important; color: #fff !important;
+}
+.jarvis-dossier .mzia-rendu .is-primaire * { color: #fff !important; }
+.jarvis-dossier .mzia-rendu button:not(.mzia-rendu__fermer):not(.mzia-rendu__lancer),
+.jarvis-dossier a.mzia-rendu__bouton {
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.jarvis-dossier a.mzia-rendu__bouton {
+  padding: 7px 10px; border: 1px solid #dcd6ee; border-radius: 6px; background: #f6f3ff;
+  color: #5745a8 !important; font-size: 11px; font-weight: 600; text-decoration: none;
+}
+
+/* Lecteur intégré */
+.jarvis-dossier .mzia-rendu__lecteur { display: grid; gap: 6px; }
+.jarvis-dossier .mzia-rendu__lecteur video { width: 100%; max-height: 60vh; border-radius: 8px; background: #000; }
+.jarvis-dossier .mzia-rendu__lecteur div { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Historique */
+.jarvis-dossier .mzia-rendu__historique h3 { margin: 4px 0 6px; font-size: 12px; font-weight: 600; color: var(--rendu-doux) !important; }
+.jarvis-dossier .mzia-rendu__historique ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.jarvis-dossier .mzia-rendu__historique li { display: grid; gap: 4px; padding: 8px 0; border-top: 1px solid #ece9f3; font-size: 12px; }
+.jarvis-dossier .mzia-rendu__ligne { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px; }
+.jarvis-dossier .mzia-rendu__ligne small { color: var(--rendu-doux) !important; font-size: 11px; }
+.jarvis-dossier .mzia-rendu__actions { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.jarvis-dossier .mzia-rendu__omis { display: block; font-size: 11px; font-weight: 400; color: #7a5a14 !important; }
+.jarvis-dossier .mzia-rendu__erreur { margin: 0; font-size: 12px; color: #b3261e !important; }
+
+@media (max-width: 420px) {
+  .jarvis-dossier .mzia-rendu__choix { grid-template-columns: 1fr; }
+  .jarvis-dossier .mzia-rendu__choix button { min-height: 64px; }
+}

@@ -43,6 +43,8 @@ const BientotDisponiblePage = differer(() => import("./pages/BientotDisponiblePa
 const StudioHorsApplication = differer(() => import("./components/StudioHorsApplication"), "default");
 const AidePage = differer(() => import("./pages/aide/AidePage"), "default");
 const SecuritePage = differer(() => import("./pages/securite/SecuritePage"), "default");
+// Visite 360° partagée par lien (page publique, plein écran, sans connexion).
+const VisitePage = differer(() => import("./pages/visite/VisitePage"), "default");
 
 /* ── Pages légales ───────────────────────────────────────────── */
 const CGUPage = differer(() => import("./pages/legal/CGUPage"), "default");
@@ -455,6 +457,7 @@ function AppRoot() {
           ════════════════════════════════════════════════════════════════ */}
           <Route path="/" element={<ConnexionPage />} />
           <Route path="/decouvrir" element={<VitrinePage />} />
+          <Route path="/visite/:visiteId" element={<VisitePage />} />
 
           {/* ── Alias publics de connexion (conservés pour compatibilité) ── */}
           <Route path="/login"     element={<ConnexionPage />} />

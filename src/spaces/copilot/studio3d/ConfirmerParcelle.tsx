@@ -34,10 +34,12 @@ async function parcelleSousLePoint(a: Adresse): Promise<TerrainParcel | null> {
   return f && (f.geometry?.type === "Polygon" || f.geometry?.type === "MultiPolygon") ? { ...f, properties: f.properties ?? {} } : null;
 }
 
-export function ConfirmerParcelle({ adresseInitiale, onConfirmer, onAnnuler }: {
+export function ConfirmerParcelle({ adresseInitiale, onConfirmer, onAnnuler, libelleConfirmer = "Confirmer et voir en 3D" }: {
   adresseInitiale: string | null;
   onConfirmer: (terrain: ConfirmedTerrain & { adresse: string | null }) => void;
   onAnnuler: () => void;
+  /** Texte du bouton de confirmation (film / visite 360° : « Confirmer ce terrain »). */
+  libelleConfirmer?: string;
 }) {
   const [requete, setRequete] = useState(adresseInitiale ?? "");
   const [suggestions, setSuggestions] = useState<Adresse[]>([]);
@@ -97,7 +99,7 @@ export function ConfirmerParcelle({ adresseInitiale, onConfirmer, onAnnuler }: {
         selectedParcels={[]} initialCenter={{ lat: adresse.lat, lon: adresse.lon }} initialZoom={18} heightPx={240}
         onToggleParcel={(_id, feature) => { if (feature?.geometry) { setParcelle({ type: "Feature", geometry: feature.geometry, properties: { ...(feature.properties ?? {}), idu: _id } } as TerrainParcel); setErreur(null); } }} />}
       <div className="jarvis-dossier__actions">
-        <button type="button" className="is-primary" disabled={!parcelle || !!occupe} onClick={confirmer}>Confirmer et voir en 3D</button>
+        <button type="button" className="is-primary" disabled={!parcelle || !!occupe} onClick={confirmer}>{libelleConfirmer}</button>
         {adresse && !carte && <button type="button" onClick={() => setCarte(true)}>Choisir sur la carte</button>}
         <button type="button" onClick={onAnnuler}>Annuler</button>
       </div>

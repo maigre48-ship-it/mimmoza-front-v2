@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "titre": "Démonstration — visite 360°",
+  "depart": "clairiere",
+  "panoramas": [
+    {
+      "id": "clairiere",
+      "titre": "Clairière",
+      "image": "pano-clairiere.jpg",
+      "apercu": "pano-clairiere-apercu.jpg",
+      "largeur": 4096,
+      "hauteur": 2048,
+      "cap_initial_deg": 0,
+      "niveau": 0,
+      "position_m": [
+        0.0,
+        0.0,
+        1.6
+      ],
+      "lieu": "exterieur",
+      "liens": [
+        {
+          "vers": "sous-bois",
+          "cap_deg": 22.6,
+          "inclinaison_deg": -7.0,
+          "libelle": "Sous-bois"
+        }
+      ]
+    },
+    {
+      "id": "sous-bois",
+      "titre": "Sous-bois",
+      "image": "pano-sous-bois.jpg",
+      "apercu": "pano-sous-bois-apercu.jpg",
+      "largeur": 4096,
+      "hauteur": 2048,
+      "cap_initial_deg": 0,
+      "niveau": 0,
+      "position_m": [
+        5.0,
+        12.0,
+        1.6
+      ],
+      "lieu": "exterieur",
+      "liens": [
+        {
+          "vers": "clairiere",
+          "cap_deg": 202.6,
+          "inclinaison_deg": -7.0,
+          "libelle": "Clairière"
+        }
+      ]
+    }
+  ],
+  "plan": {
+    "image": "plan-niveau-0.png",
+    "niveaux": [
+      0
+    ],
+    "emprise_m": [
+      -8.0,
+      -6.0,
+      13.0,
+      18.0
+    ]
+  },
+  "mentions": [
+    "Images de synthèse non contractuelles",
+    "Démonstration : photographies panoramiques Poly Haven (CC0), sans rapport avec un projet immobilier"
+  ],
+  "elements_omis": []
+}

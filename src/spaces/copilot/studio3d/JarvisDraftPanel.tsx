@@ -11,6 +11,8 @@ import { latestStudioVolume, type StudioVolumeMessage } from './studioBridge';
 import { ArrowUpRight, Box, FileStack } from 'lucide-react';
 // R2 — « Voir en 3D » en un clic ; sans parcelle confirmée, une seule question.
 import { ConfirmerParcelle } from './ConfirmerParcelle';
+// Film ou visite 360° en 3 clics (contrat docs/studio/CONTRAT_FILM_VISITE.md).
+import { FilmVisitePanel } from './FilmVisitePanel';
 import './JarvisDraftPanel.css';
 import { messageErreur } from "@/components/ui/messageErreur";
 
@@ -186,6 +188,16 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
   };
   const nombreBatiments = massingNombreBatiments(draftMassing);
 
+  /** Film / visite 360° : la fiche est validée au lancement si elle ne l'est pas encore. */
+  const assurerValidation = async () => {
+    if (!conversationId || saved?.status === 'validated') return;
+    try {
+      setSaved(await saveJarvisDraft(conversationId, draft, 'validated', saved?.revision ?? 0));
+    } catch {
+      setSaved({ draft, status: 'validated', revision: saved?.revision ?? 0, updatedAt: new Date().toISOString() });
+    }
+  };
+
   return (
     <aside aria-label="Dossier de préparation 3D" className="jarvis-dossier">
       <div className="jarvis-dossier__heading">
@@ -201,6 +213,7 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
       </button>}
       {demandeParcelle && !editing && conversationId && <ConfirmerParcelle adresseInitiale={draft.localisation}
         onConfirmer={terrain => void voirEn3D(terrain)} onAnnuler={() => setDemandeParcelle(false)} />}
+      {!editing && conversationId && draft.objectif?.trim() && <FilmVisitePanel draft={draft} conversationId={conversationId} assurerValidation={assurerValidation} />}
       <div className={`jarvis-dossier__body ${expanded ? 'is-expanded' : ''}`}>
       {currentStudioVolume && <p className="jarvis-dossier__proposal">Aperçu actualisé depuis Studio sur cet appareil. Les corrections se font dans l’onglet Studio.</p>}
       {newSuggestion && !editing && <p className="jarvis-dossier__proposal">Nouvelle proposition de Mimmo : l’aperçu montre les changements à examiner avant le transfert.</p>}

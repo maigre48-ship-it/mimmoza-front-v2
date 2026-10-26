@@ -29,15 +29,13 @@ import type { ConfirmedTerrain } from './studio3d/terrainCadastre';
 import { urlStudio3D } from '@/spaces/promoteur/shared/ouvrirStudio3D';
 // R2 — chat → Studio en un clic, dans la page (panneau même origine), sans perte.
 import { StudioIntegre, type DemandeStudioIntegre } from './studio3d/StudioIntegre';
-import { adresseStudioIntegre, construireProjetChat, etudeDuChat, prochaineRevision, projetIdChat } from './studio3d/projetChat';
-import { getActiveStudyId } from '@/spaces/promoteur/shared/promoteurSnapshot.store';
-import { memoriserRelief, prechargerRelief, reliefAvecDelai, reliefEnCache } from './studio3d/reliefCache';
+import { adresseStudioIntegre, projetIdChat } from './studio3d/projetChat';
+import { prechargerRelief, reliefAvecDelai } from './studio3d/reliefCache';
 import { parcelleRetenue, retenirParcelle } from './studio3d/parcelleConfirmee';
 import { parcelId } from './studio3d/parcelFromGps';
 import { demandePrevisualisation } from './studio3d/intentionPrevisualisation';
 import type { IssueOuvertureStudio } from './studio3d/JarvisDraftPanel';
-import { signerTransferts } from './studio3d/transfertStudio';
-import { adressesSignees, televerserPanorama } from '@/spaces/promoteur/shared/environnement360';
+import { avecProchaineRevision, preparerChargeVoirEn3D } from './studio3d/chargeVoirEn3D';
 import { empreinteProjet } from '@/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2';
 import { urlStudio } from '@/lib/studioConfig';
 // Premier contact guidé : encart + checklist chargés en différé ; le suivi des
@@ -410,33 +408,8 @@ export default function MimmozIAPage() {
       window.dispatchEvent(new CustomEvent('mzia-3d-parcelle-requise', { detail: conversationId }));
       return 'parcelle-requise';
     }
-    const parcelles = [{ id: parcelId(retenue.parcel), feature: retenue.parcel }];
-    const insee = typeof retenue.parcel.properties.code_insee === 'string' ? retenue.parcel.properties.code_insee : null;
-    if (terrainArg?.terrainData) await memoriserRelief(parcelles, terrainArg.terrainData);
-    const reliefConnu = terrainArg?.terrainData ?? await reliefEnCache(parcelles);
-    // Pièces du dossier : les PDF partent comme plans ; les images attendent d'être classées (mode détaillé).
-    const conserves = await listJarvisTransferFiles(conversationId).catch(() => [] as JarvisStoredFile[]);
-    const plans = await signerTransferts(conserves.filter(f => f.kind === 'pdf')).catch(() => []);
-    const panoramas = terrainArg?.panorama
-      ? await televerserPanorama(`chat-${crypto.randomUUID()}`, terrainArg.panorama).then(p => adressesSignees([p])).catch(() => [])
-      : [];
-    const composition = studioComposition(fiche);
-    const sessionId = crypto.randomUUID();
-    const pageSansAncre = new URL(window.location.href);
-    pageSansAncre.hash = '';
-    pageSansAncre.searchParams.set('conversation', conversationId);
-    const stockageLocal = (() => { try { return localStorage; } catch { return null; } })();
-    // R4/R5 — étude du projet (figée par conversation) : Studio relie son métré au bilan sans clic.
-    const etudeId = etudeDuChat(conversationId, getActiveStudyId(), stockageLocal);
-    const construit = construireProjetChat({
-      conversationId, etudeId, sessionId, origine: window.location.origin, retourUrl: pageSansAncre.href,
-      revision: 0, horodatage: new Date().toISOString(),
-      parcelles, communeInsee: insee, adresse: retenue.adresse ?? fiche.localisation,
-      pointAdresse: retenue.point, relief: reliefConnu ?? null,
-      implantation: retenue.implantation ?? null, accesses: retenue.accesses,
-      brief: draftBrief(fiche), commandeArchitecture: composition ? null : studioCommand(fiche),
-      compositionArchitecture: composition, volumeAiles: studioSegmentedVolume(fiche), plans, panoramas,
-    });
+    // Charge Studio construite en un seul endroit (aussi utilisée pour les films et visites 360°).
+    const { construit, parcelles, insee, reliefConnu, conserves, sessionId, etudeId } = await preparerChargeVoirEn3D(fiche, conversationId, retenue, terrainArg);
     if (!construit.ok) throw new Error(`Transfert vers Studio impossible : ${construit.erreur}.`);
     // Même contenu qu'à l'ouverture précédente, Studio encore chargé : on le remontre, sans renvoi.
     const empreinte = empreinteProjet(construit.projet);
@@ -445,7 +418,7 @@ export default function MimmozIAPage() {
       setStudio3d({ ...avant, ouvert: true });
       return;
     }
-    const projet = { ...construit.projet, revision: prochaineRevision(conversationId, stockageLocal) };
+    const projet = avecProchaineRevision(construit.projet, conversationId);
     activeStudioSessionRef.current = sessionId;
     rememberStudioSession(conversationId, sessionId);
     // R1 — point unique de l'adresse de Studio (même origine : <origine>/studio/).
