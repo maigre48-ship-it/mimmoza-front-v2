@@ -108,6 +108,8 @@ export interface EtapeEnVol {
   contentBlocks: Record<string, unknown>[];
   toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }>;
   cout: number;
+  /** stop_reason du tour ('max_tokens' = sortie coupée : l'appel d'outil en cours est perdu). */
+  stopReason?: string;
   /** Résultats déjà obtenus (outils à effet de bord) : jamais rejoués à la reprise. */
   resultats: Record<string, string>;
 }
@@ -143,6 +145,8 @@ export interface EtatMission {
   cloture?: { statut: StatutMission; rapport: Record<string, unknown>; erreur: string | null } | null;
   /** Vrai une fois le briefing écrit (missions de veille). */
   briefing_ecrit?: boolean;
+  /** Rapport v2 en construction (rapport.ts : BrouillonRapport). */
+  brouillon?: unknown;
 }
 
 export type GenreJournal =

@@ -249,6 +249,8 @@ export function lireMission(v: unknown): Mission | null {
     etapes_max: entier(v.etapes_max, 40),
     question_en_attente: texte(v.question_en_attente),
     rapport: lireRapport(v.rapport),
+    rapport_brut: v.rapport ?? null,
+    criteres: estObj(v.criteres) ? v.criteres : null,
     erreur: texte(v.erreur),
     cree_le: texte(v.cree_le),
     maj_le: texte(v.maj_le),

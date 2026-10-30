@@ -33,7 +33,7 @@ function lever(err: unknown): never {
 
 const COLONNES_MISSION =
   'id, projet_id, conversation_id, origine, type, objectif, statut, devis, jetons_reserves, jetons_consommes, ' +
-  'etapes_faites, etapes_max, question_en_attente, rapport, erreur, cree_le, maj_le, termine_le';
+  'etapes_faites, etapes_max, question_en_attente, rapport, criteres, erreur, cree_le, maj_le, termine_le';
 
 // ── Missions ─────────────────────────────────────────────────────────────────
 

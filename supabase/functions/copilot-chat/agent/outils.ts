@@ -136,37 +136,146 @@ export const OUTIL_DEMANDER_UTILISATEUR: OutilDef = {
   available_in_modes: TOUS_MODES,
 };
 
-export const OUTIL_TERMINER_MISSION: OutilDef = {
-  name: 'terminer_mission',
+const HYP_PROPS: Record<string, unknown> = {
+  programme: {
+    type: 'object',
+    properties: {
+      nb_logements: { type: ['number', 'null'] }, shab_m2: { type: ['number', 'null'] },
+      sdp_m2: { type: ['number', 'null'] }, gabarit: { type: ['string', 'null'], description: 'ex. « R+4 »' },
+    },
+  },
+  prix_vente_libre_eur_m2_shab: { type: ['number', 'null'], description: '€ HT par m² SHAB.' },
+  source_prix: { type: ['string', 'null'], description: 'Outil et périmètre (ex. « get_etude_marche — médiane DVF commune 93048 »).' },
+  part_lls_pct: { type: ['number', 'null'], description: 'En pourcent (25 = 25 %). null si non chiffrée par le PLU.' },
+  prix_cession_lls_eur_m2_shab: { type: ['number', 'null'] },
+  cout_travaux_eur_m2_sdp: { type: ['number', 'null'] },
+  source_couts: { type: ['string', 'null'] },
+  honoraires_pct_travaux: { type: ['number', 'null'] },
+  aleas_pct_travaux: { type: ['number', 'null'] },
+  commercialisation_pct_ca: { type: ['number', 'null'] },
+  frais_financiers_pct_ca: { type: ['number', 'null'] },
+  frais_acquisition_pct_foncier: { type: ['number', 'null'] },
+  taxes_urbanisme_eur: { type: ['number', 'null'] },
+  vrd_eur: { type: ['number', 'null'] },
+  demolition_eur: { type: ['number', 'null'] },
+  marge_cible_pct_ca: { type: ['number', 'null'] },
+};
+
+export const OUTIL_RAPPORT_HYPOTHESES: OutilDef = {
+  name: 'rapport_hypotheses',
   description:
-    "Termine la mission en remettant le RAPPORT final structuré (titre, synthese, terrains[], limites[]). " +
-    "N'appelle cet outil qu'une fois l'objectif atteint ou impossible à atteindre.",
+    "Fixe (ou complète) les HYPOTHÈSES COMMUNES du bilan promoteur de la mission. Envoie TOUTES les clés que tu " +
+    "connais ; une valeur inconnue s'envoie à null (jamais 0 inventé). Les pourcentages sont en pourcent (8 = 8 %). " +
+    "Chaque chiffre issu d'un outil cite sa source (source_prix, source_couts). Appelle-le avant calculer_charge_fonciere.",
+  input_schema: { type: 'object', properties: { hypotheses_communes: { type: 'object', properties: HYP_PROPS } }, required: ['hypotheses_communes'] },
+  available_in_modes: TOUS_MODES,
+};
+
+export const OUTIL_CALCULER_CF: OutilDef = {
+  name: 'calculer_charge_fonciere',
+  description:
+    "Calcule la CHARGE FONCIÈRE ADMISSIBLE d'un terrain (bilan promoteur à rebours, déterministe) à partir des " +
+    "hypothèses communes, en remplaçant celles qui diffèrent pour CE terrain (`hypotheses_specifiques`) : part de " +
+    "logements sociaux imposée par une servitude de mixité, démolition si bâti, coût travaux majoré (fondations sur " +
+    "argiles), programme réduit par une OAP ou un gabarit… Le résultat est enregistré dans le rapport : ne recalcule " +
+    "rien de tête. Les postes inconnus sont listés dans `manques`.",
   input_schema: {
     type: 'object',
     properties: {
-      rapport: {
-        type: 'object',
-        properties: {
-          titre: { type: 'string' },
-          synthese: { type: 'string' },
-          terrains: { type: 'array', items: { type: 'object' } },
-          limites: { type: 'array', items: { type: 'string' } },
-          elements: {
-            type: 'array',
-            description: 'Missions de veille uniquement : signaux qualifiés {source, genre, titre, detail, lien?, retenu}.',
-            items: { type: 'object' },
+      idu: { type: 'string', description: 'Identifiant cadastral (14 caractères).' },
+      surface_terrain_m2: { type: 'number' },
+      hypotheses_specifiques: { type: 'object', properties: HYP_PROPS, description: 'Uniquement ce qui diffère des hypothèses communes, avec la raison dans `justification`.' },
+      justification: { type: 'string', description: 'Pourquoi ces hypothèses propres (outil source).' },
+    },
+    required: ['idu', 'surface_terrain_m2'],
+  },
+  available_in_modes: TOUS_MODES,
+};
+
+export const OUTIL_RAPPORT_TERRAIN: OutilDef = {
+  name: 'rapport_terrain',
+  description:
+    "Dépose (ou met à jour) la FICHE d'un terrain dans le rapport, UN terrain par appel. Le bilan s'y rattache " +
+    "automatiquement (calculer_charge_fonciere) : ne le recopie pas. Champs inconnus : null.",
+  input_schema: {
+    type: 'object',
+    properties: {
+      idu: { type: 'string' }, commune: { type: 'string' }, adresse: { type: ['string', 'null'] },
+      surface_m2: { type: ['number', 'null'] }, zonage: { type: ['string', 'null'] }, libelle_zone: { type: ['string', 'null'] },
+      score: { type: ['number', 'null'], description: 'score_tri de rechercher_parcelles' },
+      verdict: { type: 'string', enum: ['prioritaire', 'a_etudier', 'ecarte', 'indetermine'] },
+      potentiel_logements: { type: ['number', 'null'] },
+      proprietaire: {
+        type: ['object', 'null'],
+        properties: { nom: { type: 'string' }, forme: { type: ['string', 'null'] }, siren: { type: ['string', 'null'] }, source: { type: 'string' } },
+      },
+      contraintes: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            type: { type: 'string', enum: ['mixite_sociale', 'ppr', 'argiles', 'bruit', 'dpu', 'oap', 'servitude', 'autre'] },
+            libelle: { type: 'string' }, source: { type: 'string' },
           },
         },
-        required: ['titre', 'synthese'],
       },
+      points_forts: { type: 'array', items: { type: 'string' } },
+      points_bloquants: { type: 'array', items: { type: 'string' } },
+      sources: { type: 'array', items: { type: 'string' } },
     },
-    required: ['rapport'],
+    required: ['idu', 'commune', 'verdict'],
+  },
+  available_in_modes: TOUS_MODES,
+};
+
+export const OUTIL_RAPPORT_CONTACT: OutilDef = {
+  name: 'rapport_contact',
+  description: "Ajoute un CONTACT au rapport (mairie, propriétaire…), tel que donné par un outil. N'invente aucune coordonnée.",
+  input_schema: {
+    type: 'object',
+    properties: {
+      qualite: { type: 'string', enum: ['mairie', 'proprietaire', 'autre'] },
+      nom: { type: 'string' }, telephone: { type: ['string', 'null'] }, email: { type: ['string', 'null'] },
+      adresse: { type: ['string', 'null'] }, source: { type: 'string' },
+    },
+    required: ['qualite', 'nom', 'source'],
+  },
+  available_in_modes: TOUS_MODES,
+};
+
+export const OUTIL_TERMINER_MISSION: OutilDef = {
+  name: 'terminer_mission',
+  description:
+    "Termine la mission. Les terrains, bilans, hypothèses et contacts ont DÉJÀ été déposés par rapport_terrain, " +
+    "calculer_charge_fonciere, rapport_hypotheses et rapport_contact : n'envoie ici QUE le titre, la synthèse " +
+    "(5 à 12 phrases), le classement (idu + justification courte) et les limites. Appel COURT : un appel trop long " +
+    "est coupé et n'aboutit pas.",
+  input_schema: {
+    type: 'object',
+    properties: {
+      titre: { type: 'string' },
+      synthese: { type: 'string' },
+      classement: {
+        type: 'array',
+        items: { type: 'object', properties: { idu: { type: 'string' }, justification: { type: 'string' } }, required: ['idu'] },
+        description: 'Du meilleur au moins bon ; le rang est déduit de l’ordre.',
+      },
+      limites: { type: 'array', items: { type: 'string' } },
+      elements: {
+        type: 'array',
+        description: 'Missions de veille uniquement : signaux qualifiés {source, genre, titre, detail, lien?, retenu}.',
+        items: { type: 'object' },
+      },
+      rapport: { type: 'object', description: 'Ancien format (déconseillé) : objet rapport complet.' },
+    },
   },
   available_in_modes: TOUS_MODES,
 };
 
 export const OUTILS_MISSION: OutilDef[] = [
-  OUTIL_NOTER_CARNET, OUTIL_MEMORISER, OUTIL_REDIGER_ACTION, OUTIL_DEMANDER_UTILISATEUR, OUTIL_TERMINER_MISSION,
+  OUTIL_NOTER_CARNET, OUTIL_MEMORISER, OUTIL_REDIGER_ACTION, OUTIL_DEMANDER_UTILISATEUR,
+  OUTIL_RAPPORT_HYPOTHESES, OUTIL_CALCULER_CF, OUTIL_RAPPORT_TERRAIN, OUTIL_RAPPORT_CONTACT,
+  OUTIL_TERMINER_MISSION,
 ];
 export const NOMS_OUTILS_MISSION: ReadonlySet<string> = new Set(OUTILS_MISSION.map((o) => o.name));
 
@@ -182,7 +291,9 @@ export const NOMS_OUTILS_MISSION: ReadonlySet<string> = new Set(OUTILS_MISSION.m
  *                  get_risks_georisques, get_ppr_detail
  *   approfondir  : get_etude_parcelle, get_dvf_comparables, get_etude_marche,
  *                  get_sitadel, get_logement_social, get_contexte_commune
- *   chiffrer     : get_couts_construction, calculer_bilan_financier, get_bilan_promoteur
+ *   chiffrer     : get_couts_construction, get_bilan_promoteur (le bilan à rebours se fait avec
+ *                  l'outil de mission calculer_charge_fonciere ; calculer_bilan_financier est retiré :
+ *                  10 postes obligatoires → 3 `partial` sur la 1re mission, et pas de charge foncière)
  *   identifier   : get_proprietaire_parcelle, get_contacts_mairies
  * Veille : mêmes outils de vérification + get_veille_marche, sans les outils
  * d'identification ni de chiffrage (on qualifie un signal, on ne monte pas d'opération).
@@ -193,7 +304,7 @@ export const OUTILS_CHAT_MISSION_PROSPECTION: readonly string[] = [
   'get_zonage_plu', 'get_prescriptions_urbanisme', 'get_servitudes', 'get_risks_georisques', 'get_ppr_detail',
   'get_etude_parcelle', 'get_dvf_comparables', 'get_etude_marche', 'get_sitadel', 'get_logement_social',
   'get_contexte_commune',
-  'get_couts_construction', 'calculer_bilan_financier', 'get_bilan_promoteur',
+  'get_couts_construction', 'get_bilan_promoteur',
   'get_proprietaire_parcelle', 'get_contacts_mairies',
 ];
 export const OUTILS_CHAT_MISSION_VEILLE: readonly string[] = [
@@ -204,7 +315,11 @@ export const OUTILS_CHAT_MISSION_VEILLE: readonly string[] = [
 ];
 
 /** Outils de mission retirés en veille (I4) : ni courrier, ni mémoire. */
-export const OUTILS_MISSION_INTERDITS_VEILLE: ReadonlySet<string> = new Set(['rediger_action_externe', 'memoriser']);
+export const OUTILS_MISSION_INTERDITS_VEILLE: ReadonlySet<string> = new Set([
+  'rediger_action_externe', 'memoriser',
+  // La veille qualifie des signaux (elements) : pas de bilan ni de fiches terrain.
+  'rapport_hypotheses', 'calculer_charge_fonciere', 'rapport_terrain', 'rapport_contact',
+]);
 
 /**
  * Garde-fou supplémentaire (défense en profondeur) : même présent dans une liste

@@ -189,3 +189,20 @@
 .mzag-tourne { animation: mzag-rot 1s linear infinite; }
 @keyframes mzag-rot { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .mzag-tourne { animation: none; } }
+
+/* ── Rapport de mission v2 (comparatif, fiches, exports) ─────────────── */
+.mzag-rapport__exports { margin: 10px 0 4px; padding: 10px 12px; border-radius: 10px; background: var(--ag-fond); border: 1px solid var(--ag-bord); }
+.mzag-rapport__para { margin: 0 0 8px; font-size: 13.5px; }
+.mzag-rapport__bloc { margin-top: 12px; border-top: 1px solid var(--ag-bord); padding-top: 10px; }
+.mzag-rapport__bloc > summary, .mzag-fiche > summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.mzag-fiche { background: var(--ag-fond); border: 1px solid var(--ag-bord); border-radius: 10px; padding: 10px 12px; }
+.mzag-fiche > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mzag-fiche__infos { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 10px 0 4px; font-size: 13px; }
+.mzag-fiche__infos dt { color: var(--ag-texte-2); font-weight: 600; }
+.mzag-fiche__infos dd { margin: 0; }
+.mzag-verdict { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; background: rgba(15,23,42,.06); color: var(--ag-texte-2); }
+.mzag-verdict--bon { background: var(--ag-vert-fond); color: var(--ag-vert); }
+.mzag-verdict--moyen { background: var(--ag-orange-fond); color: var(--ag-orange); }
+.mzag-verdict--mauvais { background: var(--ag-rouge-fond); color: var(--ag-rouge); }
+.mzag-a-renseigner { color: var(--ag-orange); font-style: italic; }
+@media (max-width: 640px) { .mzag-fiche__infos { grid-template-columns: 1fr; } }

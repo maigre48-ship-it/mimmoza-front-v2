@@ -42,6 +42,10 @@ import {
   amorceMission, CONSIGNE_CONTINUER, CONSIGNE_PLAN, consigneRapport, systemeMission,
 } from './prompt-promoteur.ts';
 import { NOMS_OUTILS_MISSION, OUTILS_MISSION_INTERDITS_VEILLE, outilChatAutoriseEnMission, outilsPourMission } from './outils.ts';
+import {
+  assemblerRapportV2, calculerChargeFonciere, chargerBrouillon, fusionnerHypotheses, lireHypothesesPartielles,
+  normaliserContact, normaliserIdu, normaliserTerrainBrut,
+} from './rapport.ts';
 
 // ── Réglages ────────────────────────────────────────────────────────────────
 
@@ -70,6 +74,12 @@ export const ATTENTE_MAX_MS = 72 * 3600 * 1000;
 
 /** Outils de mission à effet de bord externe : leur résultat est sauvé aussitôt, jamais rejoué. */
 const OUTILS_A_EFFET = new Set(['rediger_action_externe', 'memoriser']);
+
+/** Consigne ajoutée quand la sortie d'un tour a été coupée (diagnostic mission 7a7c855a). */
+export const CONSIGNE_SORTIE_COUPEE =
+  "⚠️ Ta réponse précédente a été COUPÉE à la limite de sortie : l'appel d'outil en cours d'écriture n'est pas parti. " +
+  'Fais des appels plus courts : rapport_terrain un terrain à la fois, puis terminer_mission avec seulement titre, ' +
+  'synthèse (5 à 12 phrases), classement et limites.';
 
 // ── État ────────────────────────────────────────────────────────────────────
 
@@ -205,47 +215,22 @@ export function extraireJson(t: string): Record<string, unknown> | null {
   }
 }
 
-const VERDICTS = new Set(['prioritaire', 'a_etudier', 'ecarte', 'indetermine']);
-const nombreOuNull = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-const listeTextes = (v: unknown, max = 20) =>
-  Array.isArray(v) ? v.filter((x) => x != null).map((x) => texte(x, 400)).slice(0, max) : [];
-
-/** Rapport au format du contrat §2.5 — tout champ inattendu est écarté. */
+/**
+ * Rapport final au format v2 (CONTRAT_RAPPORT_ET_BILAN.md §A) : assemble le
+ * brouillon accumulé dans `etat.brouillon` (hypothèses, fiches, bilans calculés,
+ * contacts) et le rapport final (terminer_mission v2 léger, ancien rapport v1
+ * complet, ou rapport partiel JSON). Tout champ inattendu est écarté.
+ */
 export function normaliserRapport(
   brut: Record<string, unknown> | null,
   etat: EtatMission,
   jetonsConsommes: number,
   limitesAjoutees: string[] = [],
 ): Record<string, unknown> {
-  const b = brut ?? {};
-  const terrains = (Array.isArray(b.terrains) ? b.terrains : []).slice(0, 30).map((x) => {
-    const t = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>;
-    const verdict = String(t.verdict ?? 'indetermine');
-    return {
-      idu: texte(t.idu ?? '', 20),
-      commune: texte(t.commune ?? '', 120),
-      ...(t.adresse ? { adresse: texte(t.adresse, 200) } : {}),
-      surface_m2: nombreOuNull(t.surface_m2),
-      zonage: t.zonage == null ? null : texte(t.zonage, 40),
-      verdict: VERDICTS.has(verdict) ? verdict : 'indetermine',
-      potentiel_logements: nombreOuNull(t.potentiel_logements),
-      charge_fonciere_admissible: nombreOuNull(t.charge_fonciere_admissible),
-      points_forts: listeTextes(t.points_forts),
-      points_bloquants: listeTextes(t.points_bloquants),
-      sources: listeTextes(t.sources),
-    };
+  return assemblerRapportV2(chargerBrouillon(etat.brouillon), brut, {
+    actions_proposees: etat.actions_ids, memoire_ajoutee: etat.memoire_ajoutee,
+    jetons_consommes: jetonsConsommes, limites_ajoutees: limitesAjoutees,
   });
-  return {
-    titre: texte(b.titre ?? 'Rapport de mission', 200),
-    synthese: texte(b.synthese ?? '', 6000),
-    terrains,
-    actions_proposees: [...etat.actions_ids],
-    memoire_ajoutee: etat.memoire_ajoutee,
-    limites: [...listeTextes(b.limites, 30), ...limitesAjoutees],
-    jetons_consommes: jetonsConsommes,
-    // Missions de veille : éléments qualifiés, lus par briefing.ts (bornés, non réinterprétés ici).
-    ...(Array.isArray(b.elements) ? { elements: b.elements.slice(0, 40) } : {}),
-  };
 }
 
 /** Rapport de secours, sans LLM, à partir du carnet. */
@@ -333,6 +318,7 @@ async function appelerEtDebiter(
     textBlocks: tour.textBlocks,
     contentBlocks: tour.contentBlocks,
     toolUses: tour.toolUses,
+    stopReason: tour.stopReason,
   };
   compacter(c.etat);
   for (let essai = 0; essai < 3; essai++) {
@@ -422,9 +408,56 @@ async function executerOutilMission(
       return "Question transmise à l'utilisateur. La mission est en pause jusqu'à sa réponse.";
     }
     case 'terminer_mission': {
-      const r = input.rapport && typeof input.rapport === 'object' ? input.rapport as Record<string, unknown> : null;
-      speciale.rapport = r ?? { titre: 'Rapport de mission', synthese: '' };
+      // v2 : titre/synthese/classement/limites au premier niveau ; v1 : objet `rapport` complet.
+      const v1 = input.rapport && typeof input.rapport === 'object' ? input.rapport as Record<string, unknown> : null;
+      const { rapport: _ancien, ...v2 } = input;
+      speciale.rapport = { ...(v1 ?? {}), ...Object.fromEntries(Object.entries(v2).filter(([, x]) => x != null)) };
+      if (!speciale.rapport.titre) speciale.rapport.titre = 'Rapport de mission';
       return 'Rapport reçu.';
+    }
+    case 'rapport_hypotheses': {
+      const b = chargerBrouillon(c.etat.brouillon);
+      const ajout = lireHypothesesPartielles(input.hypotheses_communes);
+      b.hypotheses_communes = fusionnerHypotheses(b.hypotheses_communes, ajout);
+      c.etat.brouillon = b;
+      const inconnues = Object.entries(b.hypotheses_communes).filter(([k, x]) => k !== 'programme' && x == null).map(([k]) => k);
+      return `Hypothèses communes enregistrées.${inconnues.length ? ` Encore inconnues (null) : ${inconnues.join(', ')}.` : ''}`;
+    }
+    case 'calculer_charge_fonciere': {
+      const idu = normaliserIdu(input.idu);
+      if (!idu) return 'Calcul refusé : idu invalide.';
+      const b = chargerBrouillon(c.etat.brouillon);
+      const surface = typeof input.surface_terrain_m2 === 'number' && input.surface_terrain_m2 > 0 ? input.surface_terrain_m2 : null;
+      const bilan = calculerChargeFonciere(b.hypotheses_communes, lireHypothesesPartielles(input.hypotheses_specifiques), surface);
+      if (typeof input.justification === 'string' && input.justification.trim() && Object.keys(bilan.hypotheses_specifiques).length) {
+        bilan.hypotheses_specifiques.justification = texte(input.justification.trim(), 400);
+      }
+      b.bilans[idu] = bilan;
+      c.etat.brouillon = b;
+      return JSON.stringify({
+        idu, statut: bilan.statut, ca_ht: bilan.ca_ht, couts_hors_foncier_ht: bilan.couts_hors_foncier_ht,
+        charge_fonciere_admissible_ht: bilan.charge_fonciere_admissible_ht,
+        charge_fonciere_eur_m2_terrain: bilan.charge_fonciere_eur_m2_terrain,
+        charge_fonciere_eur_m2_sdp: bilan.charge_fonciere_eur_m2_sdp,
+        hypotheses_specifiques: bilan.hypotheses_specifiques, manques: bilan.manques,
+        note: 'Enregistré dans le rapport (source calculer_charge_fonciere). Cite ces chiffres tels quels.',
+      });
+    }
+    case 'rapport_terrain': {
+      const t = normaliserTerrainBrut(input);
+      if (!t) return 'Fiche refusée : idu invalide.';
+      const b = chargerBrouillon(c.etat.brouillon);
+      b.terrains[String(t.idu)] = t;
+      c.etat.brouillon = b;
+      return `Fiche du terrain ${t.idu} enregistrée${b.bilans[String(t.idu)] ? ' (bilan rattaché)' : ' (aucun bilan calculé pour ce terrain)'}.`;
+    }
+    case 'rapport_contact': {
+      const n = normaliserContact(input);
+      if (!n) return 'Contact refusé : nom requis.';
+      const b = chargerBrouillon(c.etat.brouillon);
+      b.contacts.push(n);
+      c.etat.brouillon = b;
+      return 'Contact ajouté au rapport.';
     }
   }
   return 'Outil de mission inconnu.';
@@ -495,8 +528,11 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
     c.etat.tours.push({
       n: v.n,
       assistant: v.contentBlocks.length ? v.contentBlocks : [{ type: 'text', text: texteTour || '…' }],
-      user: [{ type: 'text', text: CONSIGNE_CONTINUER }],
+      user: [{ type: 'text', text: v.stopReason === 'max_tokens' ? CONSIGNE_SORTIE_COUPEE : CONSIGNE_CONTINUER }],
     });
+    if (v.stopReason === 'max_tokens') {
+      await c.depot.journal(c.m.id, 'erreur', null, null, 'Réponse coupée à la limite de sortie : nouvelle tentative plus courte.', 0);
+    }
     await solderEnVol(c, v);
     return 'continuer';
   }

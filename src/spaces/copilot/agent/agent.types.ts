@@ -66,6 +66,10 @@ export interface Mission {
   etapes_max: number;
   question_en_attente: string | null;
   rapport: RapportMission | null;
+  /** Rapport tel que stocké (v1 ou v2) : relu par rapport/rapportModele.ts pour l'écran et les exports. */
+  rapport_brut: unknown;
+  /** Critères de la mission (communes, programme…), utiles au nom des fichiers exportés. */
+  criteres: Record<string, unknown> | null;
   erreur: string | null;
   cree_le: string | null;
   maj_le: string | null;

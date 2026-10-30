@@ -204,7 +204,7 @@ function DetailMission({ id }: { id: string }) {
         </div>
       )}
 
-      {mission.rapport && <RapportMission rapport={mission.rapport} partiel={mission.statut !== 'terminee'} />}
+      {mission.rapport && <RapportMission mission={mission} partiel={mission.statut !== 'terminee'} />}
 
       <section className="mzag-carte" aria-label="Journal de la mission">
         <span className="mzag-sur">Journal{active ? ' · en direct' : ''}</span>

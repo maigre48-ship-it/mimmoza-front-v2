@@ -710,3 +710,59 @@ Deno.test('M4 — briefing idempotent ; M8 — devis expiré non réservé', asy
   assertEquals(depot.missions.get(e.id)!.statut, 'echec');
   assertEquals(depot.solde, soldeAvant);
 });
+
+Deno.test('rapport v2 par morceaux : hypothèses, charge foncière par terrain, fiches, contacts, terminer court', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const m = depot.ajouter({ statut: 'en_attente' });
+  let n = 0;
+  const { deps } = fabriquerDeps(depot, (a) => {
+    if (estPlan(a)) return { textBlocks: ['1. Chiffrer'] };
+    n++;
+    if (n === 1) return tourOutils(['rapport_hypotheses', { hypotheses_communes: {
+      programme: { nb_logements: 40, shab_m2: 2800, sdp_m2: 3200, gabarit: 'R+4' }, prix_vente_libre_eur_m2_shab: 5850, source_prix: 'get_etude_marche',
+      part_lls_pct: 0, cout_travaux_eur_m2_sdp: 2100, source_couts: 'get_couts_construction', honoraires_pct_travaux: 8, aleas_pct_travaux: 5,
+      commercialisation_pct_ca: 3, frais_financiers_pct_ca: 2, frais_acquisition_pct_foncier: 7.5, taxes_urbanisme_eur: null, vrd_eur: null,
+      demolition_eur: 0, marge_cible_pct_ca: 10 } }]);
+    if (n === 2) return tourOutils(
+      ['calculer_charge_fonciere', { idu: '93048000AJ0209', surface_terrain_m2: 3554 }],
+      ['calculer_charge_fonciere', { idu: '93048000AZ0194', surface_terrain_m2: 3651, hypotheses_specifiques: { part_lls_pct: 30, prix_cession_lls_eur_m2_shab: 2600 }, justification: 'servitude de mixité sociale 30 % (get_prescriptions_urbanisme)' }]);
+    if (n === 3) return tourOutils(
+      ['rapport_terrain', { idu: '93048000AJ0209', commune: 'Montreuil', surface_m2: 3554, zonage: 'UC91D19', verdict: 'prioritaire', score: 97.4, sources: ['get_etude_parcelle'] }],
+      ['rapport_terrain', { idu: '93048000AZ0194', commune: 'Montreuil', surface_m2: 3651, verdict: 'a_etudier', contraintes: [{ type: 'mixite_sociale', libelle: 'Servitude 30 % LLS', source: 'get_prescriptions_urbanisme' }] }],
+      ['rapport_contact', { qualite: 'mairie', nom: 'Mairie de Montreuil', telephone: '01 48 70 60 00', source: 'get_contacts_mairies' }]);
+    return tourOutils(['terminer_mission', { titre: 'Montreuil', synthese: 'S. À faire valider par un professionnel.',
+      classement: [{ idu: '93048000AJ0209', justification: 'Charge foncière la plus haute' }, { idu: '93048000AZ0194', justification: 'Mixité sociale' }], limites: [] }]);
+  }, horloge);
+  await tickMissions(deps, depot, { worker: 'w' });
+  const fin = depot.missions.get(m.id)!;
+  assertEquals(fin.statut, 'terminee');
+  const r = fin.rapport as Record<string, unknown>;
+  assertEquals(r.version, 2);
+  const t = r.terrains as Array<Record<string, unknown> & { bilan: { charge_fonciere_admissible_ht: number; statut: string; manques: string[]; hypotheses_specifiques: Record<string, unknown> } }>;
+  assertEquals(t.map((x) => [x.idu, x.rang]), [['93048000AJ0209', 1], ['93048000AZ0194', 2]]);
+  assert(t[0].bilan.charge_fonciere_admissible_ht > t[1].bilan.charge_fonciere_admissible_ht, 'la mixité sociale fait varier le bilan');
+  assertEquals(t[0].bilan.statut, 'partiel');
+  assert(t[0].bilan.manques.some((x) => x.startsWith("Taxes d'urbanisme")));
+  assertEquals(t[1].bilan.hypotheses_specifiques.part_lls_pct, 30);
+  assertEquals((r.contacts as unknown[]).length, 1);
+  assert(!(r.limites as string[]).some((l) => l.includes('Programme et hypothèses identiques')));
+});
+
+Deno.test('sortie coupée (max_tokens) : le modèle est prévenu au tour suivant', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const m = depot.ajouter({ statut: 'en_attente' });
+  let n = 0; let prevenu = false;
+  const { deps } = fabriquerDeps(depot, (a) => {
+    if (estPlan(a)) return { textBlocks: ['1. A'] };
+    n++;
+    if (n === 1) return { textBlocks: ['Je produis le rapport final.'], contentBlocks: [{ type: 'text', text: 'Je produis le rapport final.' }], stopReason: 'max_tokens' };
+    prevenu = JSON.stringify(a.messages).includes('COUPÉE');
+    return tourOutils(['terminer_mission', { titre: 'T', synthese: 'S' }]);
+  }, horloge);
+  await tickMissions(deps, depot, { worker: 'w' });
+  assertEquals(depot.missions.get(m.id)!.statut, 'terminee');
+  assert(prevenu, 'consigne de sortie coupée transmise');
+  assert(depot.journalLignes.some((l) => l.genre === 'erreur' && l.resume.includes('coupée')));
+});
