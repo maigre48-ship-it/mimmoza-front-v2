@@ -60,6 +60,11 @@ export interface Devis {
   duree_estimee_min: number;
   tier: Tier;
   explication: string;
+  /** Pire cas d'une étape au plafond d'entrée (base du devis). */
+  pire_cas_etape?: number;
+  entree_max_tokens?: number;
+  emis_le?: string;
+  expire_le?: string;
 }
 
 export interface MissionRow {
@@ -84,6 +89,8 @@ export interface MissionRow {
   erreur: string | null;
   regle_le?: string | null;
   worker?: string | null;
+  cree_le?: string | null;
+  maj_le?: string | null;
 }
 
 /** Un « tour » d'historique : toujours une paire assistant → user. */
@@ -93,16 +100,32 @@ export interface TourHistorique {
   user: unknown[];
 }
 
+/** Tour LLM déjà payé, pas encore traité (revue B2) : rejoué sans nouvel appel ni débit. */
+export interface EtapeEnVol {
+  n: number;
+  phase: 'plan' | 'travail' | 'rapport';
+  textBlocks: string[];
+  contentBlocks: Record<string, unknown>[];
+  toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }>;
+  cout: number;
+  /** Résultats déjà obtenus (outils à effet de bord) : jamais rejoués à la reprise. */
+  resultats: Record<string, string>;
+}
+
 /** État interne du moteur, persisté dans agent_missions.etat après CHAQUE étape. */
 export interface EtatMission {
   version: 1;
   phase: 'plan' | 'travail' | 'rapport' | 'fini';
   plan: string[];
   carnet: string[];
-  /** Les 6 derniers tours, intacts (appariement tool_use/tool_result garanti). */
+  /** Les derniers tours, intacts (appariement tool_use/tool_result garanti). */
   tours: TourHistorique[];
   /** Résumés des tours plus anciens (≤ ~400 tokens chacun). */
   resumes: string[];
+  /** Dernier n d'étape débité ET traité (clé d'idempotence du débit). */
+  n_etape: number;
+  /** Étape payée mais pas encore traitée. */
+  en_vol?: EtapeEnVol | null;
   /** Dernier verdict de `agent_mission_debiter`. */
   peut_continuer: boolean;
   /** Question posée à l'utilisateur, en attente de réponse. */
@@ -112,8 +135,12 @@ export interface EtatMission {
   actions_ids: string[];
   memoire_ajoutee: number;
   erreurs_consecutives: number;
+  /** Tentatives de rédaction du rapport (sauvegardé AVANT l'appel, revue I1). */
+  tentatives_rapport: number;
   /** Raison de passage en phase rapport. */
   raison_rapport?: 'budget_atteint' | 'etapes_max' | 'erreurs' | null;
+  /** Rapport normalisé et statut final, sauvegardés AVANT la clôture (revue I8). */
+  cloture?: { statut: StatutMission; rapport: Record<string, unknown>; erreur: string | null } | null;
   /** Vrai une fois le briefing écrit (missions de veille). */
   briefing_ecrit?: boolean;
 }
@@ -155,6 +182,7 @@ export interface Briefing {
 
 export interface ResultatDebit {
   ok: boolean;
+  deja_debite?: boolean;
   reste: number;
   peut_continuer: boolean;
   jetons_consommes?: number;
@@ -180,7 +208,14 @@ export interface DepotMission {
   sauverEtat(id: string, etat: EtatMission): Promise<void>;
   /** en_cours → attente_utilisateur (conditionnel : false si la mission a changé de statut). */
   mettreEnAttente(id: string, question: string, etat: EtatMission): Promise<boolean>;
-  debiter(id: string, jetons: number, pireCasSuivant: number): Promise<ResultatDebit>;
+  /**
+   * agent_mission_debiter(p_id, p_n, p_jetons, p_pire_cas_suivant, p_etat) :
+   * idempotent par (mission, n), sauve `etat` dans la même transaction ;
+   * raison 'etat_trop_gros' (> 512 Ko) → rien débité, rien sauvé.
+   */
+  debiter(id: string, n: number, jetons: number, pireCasSuivant: number, etat: EtatMission | null): Promise<ResultatDebit>;
+  /** agent_proactif_etat : veille proactive toujours autorisée ? */
+  proactifEtat(userId: string): Promise<{ actif: boolean; learning_enabled: boolean; restant?: number }>;
   cloturer(id: string, statut: StatutMission, rapport: Record<string, unknown> | null, erreur: string | null): Promise<void>;
   /** agent_mission_regler : facture least(consommé, réservé), rembourse le reste. Idempotent. */
   regler(id: string): Promise<{ ok: boolean; deja_regle?: boolean; jetons_factures?: number; jetons_rembourses?: number; raison?: string }>;
@@ -192,7 +227,8 @@ export interface DepotMission {
   creerMission(row: Record<string, unknown>): Promise<string>;
   listerMissions(userId: string, limite: number): Promise<MissionRow[]>;
   chargerMissionUtilisateur(userId: string, id: string): Promise<MissionRow | null>;
-  projetExiste(id: string): Promise<boolean>;
+  /** Le projet existe ET appartient à l'utilisateur (créateur ou membre de l'organisation). */
+  projetAccessible(userId: string, id: string): Promise<boolean>;
 }
 
 /** Fonctions de l'index injectées dans le moteur (pas d'import circulaire). */
@@ -203,7 +239,8 @@ export interface MoteurDeps {
     maxTokens: number;
   }): Promise<TourLLM>;
   debitJetons(tier: Tier, inputTokens: number, outputTokens: number, webSearches?: number): number;
-  worstCaseJetons(tier: Tier, mode: ModeCopilot): number;
+  /** Conservé pour compatibilité d'injection ; le moteur ne s'en sert plus (devis propre aux missions). */
+  worstCaseJetons?(tier: Tier, mode: ModeCopilot): number;
   tierUtilisateur(userId: string): Promise<Tier>;
   modelePourTier(tier: Tier): string;
   /** Outils du chat utilisables en mission (le moteur retire lui-même les actions d'interface). */

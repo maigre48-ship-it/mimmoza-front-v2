@@ -187,7 +187,7 @@ create table if not exists public.agent_missions (
   -- Ajout au contrat : dépassement absorbé par Mimmoza (jamais facturé).
   jetons_perte_absorbee integer not null default 0 check (jetons_perte_absorbee >= 0),
   etapes_faites         integer not null default 0 check (etapes_faites >= 0),
-  etapes_max            integer not null default 40 check (etapes_max between 1 and 200),
+  etapes_max            integer not null default 40 check (etapes_max between 1 and 40),
   etat                  jsonb not null default '{}'::jsonb
                         check (jsonb_typeof(etat) = 'object' and octet_length(etat::text) < 524288),
   question_en_attente   text check (question_en_attente is null or char_length(question_en_attente) <= 4000),
@@ -291,7 +291,9 @@ create table if not exists public.agent_briefings (
   resume      text check (resume is null or char_length(resume) <= 4000),
   elements    jsonb not null default '[]'::jsonb check (jsonb_typeof(elements) = 'array'),
   lu          boolean not null default false,
-  mission_id  uuid references public.agent_missions (id) on delete set null
+  mission_id  uuid references public.agent_missions (id) on delete set null,
+  -- Un seul briefing par mission (plusieurs NULL permis : briefings sans mission).
+  constraint agent_briefings_mission_unique unique (mission_id)
 );
 create index if not exists agent_briefings_user_idx on public.agent_briefings (user_id, lu, cree_le desc);
 
@@ -1126,6 +1128,9 @@ begin
                 then floor((m.devis->>'jetons_max')::numeric)::integer end;
   if v_max is null or v_max <= 0 then
     raise exception 'Le devis de cette mission est incomplet.' using errcode = '22023', hint = 'agent_devis_invalide';
+  end if;
+  if (m.devis->>'expire_le') is not null and now() > (m.devis->>'expire_le')::timestamptz then
+    raise exception 'Devis expiré : demandez-en un nouveau.' using errcode = '22023', hint = 'agent_devis_expire';
   end if;
   select current_credits into v_solde from public.credit_accounts where user_id = v_uid;
   if coalesce(v_solde, 0) < v_max then

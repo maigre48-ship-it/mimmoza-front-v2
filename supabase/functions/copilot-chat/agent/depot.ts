@@ -84,13 +84,26 @@ export function depotSupabase(db: ClientSupabaseMin): DepotMission {
       return Array.isArray(data) && data.length === 1;
     },
 
-    async debiter(id, jetons, pireCasSuivant) {
+    async debiter(id, n, jetons, pireCasSuivant, etat) {
       const { data, error } = await db.rpc('agent_mission_debiter', {
-        p_id: id, p_jetons: Math.max(0, Math.ceil(jetons)), p_pire_cas_suivant: Math.max(0, Math.ceil(pireCasSuivant)),
+        p_id: id, p_n: n,
+        p_jetons: Math.max(0, Math.ceil(jetons)),
+        p_pire_cas_suivant: Math.max(0, Math.ceil(pireCasSuivant)),
+        p_etat: etat,
       });
       if (error) throw erreur('agent_mission_debiter', error);
       const r = (data ?? {}) as ResultatDebit;
-      return { ...r, ok: r.ok === true, reste: Number(r.reste) || 0, peut_continuer: r.peut_continuer === true };
+      return {
+        ...r, ok: r.ok === true, deja_debite: r.deja_debite === true,
+        reste: Number(r.reste) || 0, peut_continuer: r.peut_continuer === true,
+      };
+    },
+
+    async proactifEtat(userId) {
+      const { data, error } = await db.rpc('agent_proactif_etat', { p_user_id: userId });
+      if (error) throw erreur('agent_proactif_etat', error);
+      const d = (data ?? {}) as Record<string, unknown>;
+      return { actif: d.actif === true, learning_enabled: d.learning_enabled !== false, restant: Number(d.restant) || 0 };
     },
 
     async cloturer(id, statut: StatutMission, rapport, erreurTexte) {
@@ -159,7 +172,9 @@ export function depotSupabase(db: ClientSupabaseMin): DepotMission {
         resume: b.resume ? String(b.resume).slice(0, 4000) : null,
         elements: Array.isArray(b.elements) ? b.elements : [],
       });
-      if (error) throw erreur('création du briefing', error);
+      // 23505 : briefing déjà écrit pour cette mission (contrainte unique
+      // agent_briefings(mission_id), demandée à l'agent BDD) → idempotent.
+      if (error && error.code !== '23505') throw erreur('création du briefing', error);
     },
 
     async creerMission(row) {
@@ -183,10 +198,15 @@ export function depotSupabase(db: ClientSupabaseMin): DepotMission {
       return (data ?? null) as MissionRow | null;
     },
 
-    async projetExiste(id) {
-      const { data, error } = await db.from('projects').select('id').eq('id', id).maybeSingle();
-      if (error) return false;
-      return Boolean(data?.id);
+    async projetAccessible(userId, id) {
+      // is_org_member() lit auth.uid(), vide en service_role : on refait le test.
+      const { data, error } = await db.from('projects').select('id, organisation_id, created_by').eq('id', id).maybeSingle();
+      if (error || !data?.id) return false;
+      if (data.created_by === userId) return true;
+      if (!data.organisation_id) return false;
+      const m = await db.from('organisation_members').select('user_id')
+        .eq('organisation_id', data.organisation_id).eq('user_id', userId).limit(1);
+      return !m.error && Array.isArray(m.data) && m.data.length > 0;
     },
   };
 }

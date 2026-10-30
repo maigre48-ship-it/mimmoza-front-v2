@@ -171,9 +171,45 @@ export const OUTILS_MISSION: OutilDef[] = [
 export const NOMS_OUTILS_MISSION: ReadonlySet<string> = new Set(OUTILS_MISSION.map((o) => o.name));
 
 /**
- * Outils du chat EXCLUS des missions : actions d'interface (le front n'est pas
- * là), écritures sous l'identité de l'utilisateur (aucun JWT en mission),
- * outils de mission eux-mêmes (pas de mission dans la mission).
+ * Outils du chat proposés en MISSION — liste BLANCHE (revue 30/10/2026, B4).
+ *
+ * La liste complète du mode report pèse ~20-25 k tokens par tour : multipliée
+ * par 30 étapes, c'était l'essentiel du coût d'une mission. On ne garde que ce
+ * qui sert la méthode du directeur foncier (repérer, filtrer, approfondir,
+ * identifier, chiffrer) :
+ *   repérer      : rechercher_parcelles, get_parcelle_depuis_adresse, get_parcel_summary
+ *   filtrer      : get_zonage_plu, get_prescriptions_urbanisme, get_servitudes,
+ *                  get_risks_georisques, get_ppr_detail
+ *   approfondir  : get_etude_parcelle, get_dvf_comparables, get_etude_marche,
+ *                  get_sitadel, get_logement_social, get_contexte_commune
+ *   chiffrer     : get_couts_construction, calculer_bilan_financier, get_bilan_promoteur
+ *   identifier   : get_proprietaire_parcelle, get_contacts_mairies
+ * Veille : mêmes outils de vérification + get_veille_marche, sans les outils
+ * d'identification ni de chiffrage (on qualifie un signal, on ne monte pas d'opération).
+ * Tout outil absent de `outilsChat()` (non déployé) est simplement ignoré.
+ */
+export const OUTILS_CHAT_MISSION_PROSPECTION: readonly string[] = [
+  'rechercher_parcelles', 'get_parcelle_depuis_adresse', 'get_parcel_summary',
+  'get_zonage_plu', 'get_prescriptions_urbanisme', 'get_servitudes', 'get_risks_georisques', 'get_ppr_detail',
+  'get_etude_parcelle', 'get_dvf_comparables', 'get_etude_marche', 'get_sitadel', 'get_logement_social',
+  'get_contexte_commune',
+  'get_couts_construction', 'calculer_bilan_financier', 'get_bilan_promoteur',
+  'get_proprietaire_parcelle', 'get_contacts_mairies',
+];
+export const OUTILS_CHAT_MISSION_VEILLE: readonly string[] = [
+  'rechercher_parcelles', 'get_parcelle_depuis_adresse', 'get_parcel_summary',
+  'get_zonage_plu', 'get_prescriptions_urbanisme', 'get_servitudes', 'get_risks_georisques', 'get_ppr_detail',
+  'get_etude_parcelle', 'get_dvf_comparables', 'get_etude_marche', 'get_sitadel', 'get_contexte_commune',
+  'get_veille_marche',
+];
+
+/** Outils de mission retirés en veille (I4) : ni courrier, ni mémoire. */
+export const OUTILS_MISSION_INTERDITS_VEILLE: ReadonlySet<string> = new Set(['rediger_action_externe', 'memoriser']);
+
+/**
+ * Garde-fou supplémentaire (défense en profondeur) : même présent dans une liste
+ * blanche, un outil d'action d'interface, d'écriture sous identité utilisateur
+ * ou de mission n'est jamais exécuté depuis une mission.
  */
 export function outilChatAutoriseEnMission(nom: string): boolean {
   if (nom.startsWith('action_')) return false;
@@ -181,4 +217,13 @@ export function outilChatAutoriseEnMission(nom: string): boolean {
   if (['proposer_suivi_projet', 'get_suivi_projet'].includes(nom)) return false;
   if (NOMS_OUTILS_AGENT_CHAT.has(nom)) return false;
   return true;
+}
+
+/** Outils envoyés au modèle pour une mission de ce type. */
+export function outilsPourMission(type: string, outilsChat: OutilDef[]): OutilDef[] {
+  const veille = type === 'veille';
+  const blanche = new Set(veille ? OUTILS_CHAT_MISSION_VEILLE : OUTILS_CHAT_MISSION_PROSPECTION);
+  const chat = outilsChat.filter((o) => blanche.has(o.name) && outilChatAutoriseEnMission(o.name) && !NOMS_OUTILS_MISSION.has(o.name));
+  const propres = OUTILS_MISSION.filter((o) => !(veille && OUTILS_MISSION_INTERDITS_VEILLE.has(o.name)));
+  return [...chat, ...propres];
 }

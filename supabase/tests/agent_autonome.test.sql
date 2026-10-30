@@ -93,6 +93,28 @@ select pg_temp.doit_echouer($q$insert into public.agent_missions (user_id, type,
                             '22023', 'création directement en_cours refusée');
 reset role;
 
+select pg_temp.doit_echouer($q$insert into public.agent_missions (user_id, type, objectif, etapes_max)
+                              values ('aaaaaaaa-0000-4000-8000-00000000000a', 'libre', 'x', 41)$q$,
+                            '23514', 'etapes_max > 40 refusé');
+-- Devis expiré (mission x1, jamais lancée)
+with x as (
+  insert into public.agent_missions (user_id, type, objectif, devis)
+  values ('aaaaaaaa-0000-4000-8000-00000000000a', 'libre', 'Devis expiré',
+          jsonb_build_object('jetons_max', 100, 'expire_le', now() - interval '1 minute'))
+  returning id)
+insert into ids select 'x1', id from x;
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'aaaaaaaa-0000-4000-8000-00000000000a', true);
+select pg_temp.doit_echouer(format('select public.agent_mission_valider_devis(%L)', (select id from ids where nom = 'x1')),
+                            '22023', 'valider_devis : devis expiré refusé');
+reset role;
+set local role service_role;
+select set_config('request.jwt.claim.sub', '', true);
+update public.agent_missions set devis = devis || jsonb_build_object('expire_le', now() + interval '1 hour')
+ where id = (select id from ids where nom = 'x1');
+reset role;
+
 -- ── 2. Lancement par l'utilisateur, réservation par le moteur ───────────────
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'aaaaaaaa-0000-4000-8000-00000000000a', true);
@@ -336,6 +358,12 @@ select pg_temp.verifier((select count(*) = 1 and min(contenu) = '5 400 €/m² (
                            from public.agent_memoire_projet where user_id = 'aaaaaaaa-0000-4000-8000-00000000000a' and cle = 'prix-sortie'),
                         'memoire_ecrire : mise à jour sur la même clé (pas de doublon)');
 insert into public.agent_briefings (user_id, titre, elements) values ('aaaaaaaa-0000-4000-8000-00000000000a', 'Pendant votre absence', '[]');
+insert into public.agent_briefings (user_id, titre, elements) values ('aaaaaaaa-0000-4000-8000-00000000000a', 'Sans mission bis', '[]');
+insert into public.agent_briefings (user_id, titre, elements, mission_id)
+values ('aaaaaaaa-0000-4000-8000-00000000000a', 'Veille du jour', '[]', (select id from ids where nom = 'm5'));
+select pg_temp.doit_echouer(format($q$insert into public.agent_briefings (user_id, titre, mission_id)
+                                      values ('aaaaaaaa-0000-4000-8000-00000000000a', 'doublon', %L)$q$, (select id from ids where nom = 'm5')),
+                            '23505', 'briefings : un seul par mission (plusieurs sans mission permis)');
 insert into public.user_ai_preferences (user_id, proactif_actif, budget_proactif_mensuel, proactif_consomme_mois, proactif_mois)
 values ('aaaaaaaa-0000-4000-8000-00000000000a', true, 5000, 1234, date_trunc('month', now())::date)
 on conflict (user_id) do update set proactif_actif = true, budget_proactif_mensuel = 5000,

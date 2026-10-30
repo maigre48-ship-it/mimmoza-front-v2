@@ -5,8 +5,8 @@
 // copilot-chat est déployée avec verify_jwt = false (config.toml) : la passerelle
 // laisse passer toute requête, et c'est au code de vérifier. Le chat vérifie le
 // JWT utilisateur (requireUserId) ; le tick, lui, exige la clé de SERVICE :
-// nouvelle clé `sb_secret_…` (SUPABASE_SECRET_KEYS) ou clé legacy service_role
-// (SUPABASE_SERVICE_ROLE_KEY). Comparaison de chaînes en temps constant, comme
+// clé `sb_secret_…` (SUPABASE_SECRET_KEYS) ; la clé legacy service_role n'est
+// qu'un repli quand aucune clé secrète n'est configurée. Comparaison de chaînes en temps constant, comme
 // agent-proactif-v1 et stream-estate-ingest-v1 (estAppelInterne).
 // =============================================================
 
@@ -20,7 +20,12 @@ export function egalTempsConstant(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** Clés de service connues, lues dans l'environnement de la fonction. */
+/**
+ * Clés de service acceptées (revue M7) : UNIQUEMENT les clés `SUPABASE_SECRET_KEYS`
+ * (format `sb_secret_…`). La clé legacy service_role (JWT) n'est acceptée qu'en
+ * repli, si et seulement si SUPABASE_SECRET_KEYS est absent ou vide — le cas d'un
+ * projet pas encore migré vers les clés secrètes.
+ */
 export function clesServiceRole(env: (nom: string) => string | undefined = (n) => Deno.env.get(n)): string[] {
   const cles: string[] = [];
   const dico = env('SUPABASE_SECRET_KEYS');
@@ -35,11 +40,14 @@ export function clesServiceRole(env: (nom: string) => string | undefined = (n) =
       cles.push(dico);
     }
   }
+  const secretes = cles.filter((c) => c.length >= 20);
+  if (secretes.length) return secretes;
+  const legacy: string[] = [];
   for (const nom of ['SUPABASE_SERVICE_ROLE_KEY', 'SERVICE_ROLE_KEY']) {
     const v = env(nom);
-    if (v) cles.push(v);
+    if (v && v.length >= 20) legacy.push(v);
   }
-  return cles.filter((c) => c.length >= 20);
+  return legacy;
 }
 
 /** Vrai si l'en-tête Authorization porte exactement une clé de service connue. */
