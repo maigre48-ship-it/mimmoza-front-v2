@@ -592,6 +592,12 @@ async function refundCredits(p: {
 
 type Vertical = 'promoteur' | 'investisseur' | 'marchand' | 'apporteur' | 'particulier' | 'generique';
 
+// Agent autonome (missions, recherche de terrains) : métier promoteur/foncier.
+// Ouvert aussi au mode « generique » : c'est celui de la page d'accueil MimmozIA (30/10/2026).
+function agentDisponible(v: unknown): boolean {
+  return v === 'promoteur' || v === 'generique' || v == null;
+}
+
 interface MimmozaContext {
   vertical: Vertical;
   route: string;
@@ -10239,13 +10245,13 @@ async function runOrchestrator(params: {
     ? `${buildSystemPrompt(ctx, mode)}\n\n${params.priorToolResults}`
     : buildSystemPrompt(ctx, mode);
   const availableTools = toolsForMode(mode)
-    .filter((tool) => ctx.vertical === 'promoteur' || !NOMS_OUTILS_AGENT_CHAT.has(tool.name));
+    .filter((tool) => agentDisponible(ctx.vertical) || !NOMS_OUTILS_AGENT_CHAT.has(tool.name));
   const lastUserMessage = [...params.messages].reverse().find((message) => message.role === 'user');
   const userText = lastUserMessage ? extractText(lastUserMessage.content) : '';
   const selection = selectToolNames(userText, availableTools.map((tool) => tool.name));
   const selectedNames = new Set([
     ...selection.toolNames,
-    ...(ctx.vertical === 'promoteur' ? ['rechercher_parcelles', ...NOMS_OUTILS_AGENT_CHAT] : []),
+    ...(agentDisponible(ctx.vertical) ? ['rechercher_parcelles', ...NOMS_OUTILS_AGENT_CHAT] : []),
   ]);
   const tools = availableTools.filter((tool) => selectedNames.has(tool.name));
   const maxIter = MAX_TOOL_ITERATIONS[mode];
@@ -10770,7 +10776,7 @@ function depsMoteur(): MoteurDeps {
 async function blocAgentChat(userId: string, ctx: MimmozaContext): Promise<string> {
   const ctxBrut = ctx as unknown as Record<string, unknown>;
   const memoire = await chargerBlocMemoire(depotSupabase(getAdmin()), userId, projetDuContexte(ctxBrut));
-  return [ctx.vertical === 'promoteur' ? DOCTRINE_MISSIONS_CHAT : '', memoire].filter(Boolean).join('\n\n');
+  return [agentDisponible(ctx.vertical) ? DOCTRINE_MISSIONS_CHAT : '', memoire].filter(Boolean).join('\n\n');
 }
 
 Deno.serve(async (req: Request) => {
