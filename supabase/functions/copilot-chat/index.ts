@@ -59,6 +59,17 @@ import {
 } from '../_shared/dispositifs/engine.ts';
 import { MILLESIME_BAREMES } from '../_shared/dispositifs/baremes.ts';
 import type { DispositifCode, NiveauLoyer } from '../_shared/dispositifs/types.ts';
+// Agent autonome (missions, mémoire, prospection) — CONTRAT_AGENT_AUTONOME.md §2.
+// Le moteur ne s'importe pas l'index : ses dépendances lui sont injectées (depsMoteur).
+import { TOOL_RECHERCHER_PARCELLES, executerRechercherParcelles } from './agent/outil-rechercher-parcelles.ts';
+import { briefingPourMissionVeille } from './agent/briefing.ts';
+import { OUTILS_AGENT_CHAT, NOMS_OUTILS_AGENT_CHAT } from './agent/outils.ts';
+import { evenementDevis, executerOutilAgentChat, tickMissions } from './agent/mission.ts';
+import { depotSupabase } from './agent/depot.ts';
+import { chargerBlocMemoire, projetDuContexte } from './agent/memoire.ts';
+import { DOCTRINE_MISSIONS_CHAT } from './agent/prompt-promoteur.ts';
+import { clesServiceRole, estCleServiceRole } from './agent/interne.ts';
+import type { MoteurDeps } from './agent/types.ts';
 
 // =============================================================
 // SECTION 1 — Configuration
@@ -254,6 +265,7 @@ const INTERNAL_FUNCTIONS = {
   appels_offres: Deno.env.get('COPILOT_FN_APPELS_OFFRES') ?? null, // appels-offres-v1 (avis BOAMP ouverts)
   contacts: Deno.env.get('COPILOT_FN_CONTACTS') ?? null,          // recherche-contacts-mairies-v1 (mairies + maires par rayon)
   metrics_zone: Deno.env.get('COPILOT_FN_METRICS_ZONE') ?? null,  // market-metrics-zone-v1 (état du marché d'une zone surveillée)
+  parcelles: Deno.env.get('COPILOT_FN_PARCELLES') ?? null,        // rechercher-parcelles-v1 (prospection foncière)
 } as const;
 
 // Timeout dédié aux appels de fonctions internes (séparé du LLM).
@@ -4391,6 +4403,10 @@ const TOOLS: ToolDef[] = [
     },
     available_in_modes: ['quick', 'advanced', 'report'],
   },
+  // Agent autonome : prospection foncière + missions / mémoire (ces quatre
+  // derniers réservés au vertical promoteur, filtrés dans runOrchestrator).
+  TOOL_RECHERCHER_PARCELLES,
+  ...OUTILS_AGENT_CHAT,
 ];
 
 /**
@@ -4494,6 +4510,16 @@ async function executeTool(
     case 'action_ouvrir_page':       return toolActionOuvrirPage(input, ctx);
     case 'action_creer_operation':   return await toolActionCreerOperation(input, ctx);
     case 'action_lancer_etape':      return toolActionLancerEtape(input, ctx);
+    case 'rechercher_parcelles':
+      return await executerRechercherParcelles(input, ctx, callInternalFunction, INTERNAL_FUNCTIONS.parcelles);
+    case 'proposer_mission':
+    case 'etat_mission':
+    case 'lister_missions':
+    case 'memoriser':
+      // userId : TOUJOURS celui du JWT vérifié (auth), jamais ctx.user.id.
+      return ((await executerOutilAgentChat(name, input, ctx as unknown as Record<string, unknown>,
+        auth?.userId ?? null, depsMoteur(), depotSupabase(getAdmin())))
+        ?? { status: 'error', source: 'copilot', message: `Tool inconnu : ${name}` }) as ToolResult;
     default:
       return { status: 'error', source: 'copilot', message: `Tool inconnu : ${name}` };
   }
@@ -9837,7 +9863,9 @@ type StreamEvent =
   // sans lui, le front laissait le message sous son identifiant local, et les
   // actions déjà exécutées pendant le tour n'étaient jamais tracées — au
   // rechargement elles se reproposaient, voire se relançaient en mode autonome.
-  | { type: 'error'; error: string; refunded_credits?: number; message_id?: string };
+  | { type: 'error'; error: string; refunded_credits?: number; message_id?: string }
+  // Agent autonome : carte de devis d'une mission proposée (rien n'est réservé).
+  | { type: 'mission_devis'; mission: Record<string, unknown> };
 
 class SSEWriter {
   private encoder = new TextEncoder();
@@ -10210,11 +10238,15 @@ async function runOrchestrator(params: {
   const system = params.priorToolResults
     ? `${buildSystemPrompt(ctx, mode)}\n\n${params.priorToolResults}`
     : buildSystemPrompt(ctx, mode);
-  const availableTools = toolsForMode(mode);
+  const availableTools = toolsForMode(mode)
+    .filter((tool) => ctx.vertical === 'promoteur' || !NOMS_OUTILS_AGENT_CHAT.has(tool.name));
   const lastUserMessage = [...params.messages].reverse().find((message) => message.role === 'user');
   const userText = lastUserMessage ? extractText(lastUserMessage.content) : '';
   const selection = selectToolNames(userText, availableTools.map((tool) => tool.name));
-  const selectedNames = new Set(selection.toolNames);
+  const selectedNames = new Set([
+    ...selection.toolNames,
+    ...(ctx.vertical === 'promoteur' ? ['rechercher_parcelles', ...NOMS_OUTILS_AGENT_CHAT] : []),
+  ]);
   const tools = availableTools.filter((tool) => selectedNames.has(tool.name));
   const maxIter = MAX_TOOL_ITERATIONS[mode];
 
@@ -10362,6 +10394,10 @@ async function runOrchestrator(params: {
             error: isOk ? undefined : output.message,
           },
         });
+        if (tu.name === 'proposer_mission') {
+          const devisMission = evenementDevis(output);
+          if (devisMission) sse.send({ type: 'mission_devis', mission: devisMission });
+        }
         // ── Rapport parcellaire : les FAITS d'abord, l'analyse ensuite ──────
         //
         // Ce bloc court-circuitait entièrement le modèle : le gabarit
@@ -10705,6 +10741,38 @@ function validateRequest(body: unknown): ChatRequest {
   return b as ChatRequest;
 }
 
+// =============================================================
+// AGENT AUTONOME — injection de dépendances et bloc de prompt
+// =============================================================
+
+/** Fonctions de l'index passées au moteur de mission (pas d'import circulaire). */
+function depsMoteur(): MoteurDeps {
+  return {
+    // Mission : aucune session utilisateur → auth null (les outils d'écriture
+    // sous identité utilisateur sont de toute façon exclus des missions).
+    executeTool: (n, i, c) => executeTool(n, i, c as unknown as MimmozaContext, null),
+    streamLLMTurn: (p) => streamLLMTurn({
+      model: p.model, system: p.system, maxTokens: p.maxTokens,
+      messages: p.messages as AnthropicMessage[], tools: p.tools as ToolDef[],
+      webBudget: { search: 0, fetch: 0 },   // pas de web en mission : coûts bornés
+      onToken: () => {},
+    }),
+    debitJetons,
+    worstCaseJetons,
+    tierUtilisateur: async (userId) => resolveTier(await getUserPlan(userId)),
+    modelePourTier: (t) => TIER_MODEL_ID[t],
+    outilsChat: () => toolsForMode('report'),
+    briefingPourMissionVeille,
+  };
+}
+
+/** Mémoire du projet (+ doctrine des missions en promoteur). Jamais bloquant. */
+async function blocAgentChat(userId: string, ctx: MimmozaContext): Promise<string> {
+  const ctxBrut = ctx as unknown as Record<string, unknown>;
+  const memoire = await chargerBlocMemoire(depotSupabase(getAdmin()), userId, projetDuContexte(ctxBrut));
+  return [ctx.vertical === 'promoteur' ? DOCTRINE_MISSIONS_CHAT : '', memoire].filter(Boolean).join('\n\n');
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders() });
@@ -10713,6 +10781,28 @@ Deno.serve(async (req: Request) => {
     return new Response(JSON.stringify({ code: 'NOT_FOUND', message: 'POST only' }), {
       status: 404, headers: { ...corsHeaders(), 'Content-Type': 'application/json' },
     });
+  }
+
+  // ── Agent autonome : tick des missions (cron agent-missions-tick) ──────────
+  // Réservé à la clé de SERVICE (comparaison en temps constant) : un JWT
+  // utilisateur n'entre jamais ici et suit le chemin du chat ci-dessous.
+  if (estCleServiceRole(req.headers.get('Authorization'), clesServiceRole())) {
+    const corps = await req.clone().json().catch(() => null) as { interne?: unknown } | null;
+    if (corps?.interne === 'mission_tick') {
+      try {
+        const bilan = await tickMissions(depsMoteur(), depotSupabase(getAdmin()));
+        return new Response(JSON.stringify({ ok: true, ...bilan }), {
+          status: 200, headers: { ...corsHeaders(), 'Content-Type': 'application/json' },
+        });
+      } catch (e) {
+        await journaliserEchecEdge(getAdmin(), {
+          fonction: 'copilot-chat', code: 'mission_tick', etape: 'tick', message: errMsg(e),
+        });
+        return new Response(JSON.stringify({ ok: false, erreur: errMsg(e) }), {
+          status: 500, headers: { ...corsHeaders(), 'Content-Type': 'application/json' },
+        });
+      }
+    }
   }
 
   let userId: string;
@@ -10758,6 +10848,7 @@ Deno.serve(async (req: Request) => {
     conversationId = conversation.id;
     effectiveContext = mergeContexts(conversation.persistedContext, payload.context) as unknown as MimmozaContext;
     (effectiveContext as unknown as Record<string,unknown>).project_followup = (payload.context as unknown as Record<string,unknown>).project_followup ?? null;
+    (effectiveContext as unknown as Record<string,unknown>).conversation_id = conversationId;
     // Purement local (sanitisation + SHA-256) : aucun aller-retour réseau.
     contextSnapshot = await createContextSnapshot(effectiveContext);
 
@@ -10868,11 +10959,13 @@ Deno.serve(async (req: Request) => {
     //
     // `payload.message` est passé en clair : le message du tour n'a pas besoin
     // d'être déjà en base pour figurer dans ce qui part au modèle.
-    const [messages, priorToolResults, savedStudioDraft] = await Promise.all([
+    const [messages, priorToolResults, savedStudioDraft, blocAgent] = await Promise.all([
       buildMessages(conversationId, payload.message, mode, payload.attachments),
       // Jamais bloquant — en cas d'échec, le bloc est vide.
       buildPriorToolResultsBlock(conversationId),
       buildSavedStudioDraftBlock(conversationId, userId),
+      // Mémoire du projet + doctrine des missions (agent autonome). Jamais bloquant.
+      blocAgentChat(userId, effectiveContext).catch(() => ''),
     ]);
 
     // Demande de SUITE (reprise automatique d'une réponse coupée, envoyée par
@@ -10905,7 +10998,7 @@ Deno.serve(async (req: Request) => {
 
     const result = await runOrchestrator({
       mode, tier, ctx: effectiveContext, messages, sse,
-      priorToolResults: [priorToolResults, savedStudioDraft].filter(Boolean).join('\n\n'),
+      priorToolResults: [priorToolResults, savedStudioDraft, blocAgent].filter(Boolean).join('\n\n'),
       // userId vient de requireUserId() (JWT vérifié) ; l'en-tête est réutilisé
       // tel quel pour que les écritures passent par le client UTILISATEUR.
       auth: { userId, authHeader: req.headers.get('Authorization') ?? '' },

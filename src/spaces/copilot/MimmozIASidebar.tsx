@@ -9,6 +9,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { getLearningEnabled, setLearningEnabled, purgeMyAiMemory } from '@/lib/mimmozia/track';
 import { MimmozIAOrb } from './components/MimmozIAOrb';
 import './MimmozIASidebar.css';
+import { BoutonAgentRail, EntreeAgentSidebar } from './agent/EntreeAgentSidebar';
+import { ReglageVeilleProactive } from './agent/ReglageVeilleProactive';
 
 /* =========================================================================
    MimmozIASidebar
@@ -324,6 +326,7 @@ export function MimmozIASidebar({
         <div className="mzia-side__rail">
           <button className="mzia-rail__btn" title="Conversations" onClick={onToggleCollapsed}><MessageSquare size={18} /></button>
           <button className="mzia-rail__btn" title="Projets" onClick={onToggleCollapsed}><Folder size={18} /></button>
+          <BoutonAgentRail />
           <button className="mzia-rail__btn" title="Paramètres" onClick={() => { onToggleCollapsed(); setShowSettings(true); }}><Settings size={18} /></button>
         </div>
       ) : (
@@ -339,6 +342,9 @@ export function MimmozIASidebar({
           </div>
 
           <div className="mzia-side__scroll">
+            {/* Agent autonome : missions, brouillons à valider, mémoire */}
+            <EntreeAgentSidebar onCloseMobile={onCloseMobile} />
+
             {/* Projets */}
             <div className="mzia-side__sectionhead">
               <span>Projets</span>
@@ -564,6 +570,8 @@ function SettingsPanel({ uid, onClose }: { uid: string | null; onClose: () => vo
           <span className="mzia-toggle__knob" />
         </button>
       </label>
+
+      <ReglageVeilleProactive />
 
       <button type="button" className="mzia-settings__danger" onClick={purge} disabled={busy}>
         <Trash2 size={14} /> {busy ? 'Effacement…' : 'Effacer ma mémoire IA'}

@@ -1,0 +1,16 @@
+[
+ {
+  "nom": "Saint-Test",
+  "code": "99998",
+  "codesPostaux": [
+   "99100"
+  ]
+ },
+ {
+  "nom": "Saint-Test",
+  "code": "99997",
+  "codesPostaux": [
+   "99200"
+  ]
+ }
+]

@@ -487,7 +487,11 @@ export type CopilotStreamEvent =
   | { type: 'done'; message_id: string; final_credits: number; mode?: CopilotMode; tier?: ModelTier }
   // `message_id` n'est présent que si une réponse PARTIELLE a été persistée
   // côté serveur : le texte déjà écrit a été sauvegardé malgré l'interruption.
-  | { type: 'error'; error: string; refunded_credits?: number; message_id?: string };
+  | { type: 'error'; error: string; refunded_credits?: number; message_id?: string }
+  // Agent autonome : MimmozIA propose une mission longue avec son devis.
+  // Forme tolérante (champs à plat ou sous `mission`), lue par
+  // agent/agentLogique.ts → lirePropositionDevis.
+  | { type: 'mission_devis'; id?: string; mission_id?: string; objectif?: string; devis?: unknown; mission?: unknown };
 
 export interface ToolDefinition {
   name: string;

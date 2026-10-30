@@ -1,0 +1,194 @@
+// supabase/functions/copilot-chat/agent/depot.ts
+// =============================================================
+// Dépôt Supabase du moteur de mission : une méthode = une RPC ou une requête
+// de la migration 20261030_agent_autonome.sql. Client service_role (getAdmin()
+// de l'index, injecté). Aucune dépendance npm ici : le client est typé
+// structurellement, ce qui garde `deno test` hors réseau.
+// =============================================================
+
+import type {
+  ActionExterne, Briefing, DepotMission, ElementMemoire, EtatMission, GenreJournal,
+  MissionRow, ResultatDebit, StatutMission,
+} from './types.ts';
+
+// deno-lint-ignore no-explicit-any
+type Requete = any;
+/** Sous-ensemble structurel de SupabaseClient. */
+export interface ClientSupabaseMin {
+  from(table: string): Requete;
+  rpc(fn: string, args?: Record<string, unknown>): Requete;
+}
+
+const ENTREE_MAX_CARS = 8000;
+
+function borneEntree(entree: unknown): unknown {
+  if (entree == null) return null;
+  try {
+    const s = JSON.stringify(entree);
+    if (s.length <= ENTREE_MAX_CARS) return entree;
+    return { apercu: s.slice(0, ENTREE_MAX_CARS), tronque: true };
+  } catch {
+    return null;
+  }
+}
+
+function erreur(contexte: string, e: { message?: string } | null | undefined): Error {
+  return new Error(`${contexte} : ${e?.message ?? 'erreur inconnue'}`);
+}
+
+export function depotSupabase(db: ClientSupabaseMin): DepotMission {
+  return {
+    async prendreMissions(worker, bailS) {
+      const { data, error } = await db.rpc('agent_mission_prendre', { p_worker: worker, p_lease_s: bailS });
+      if (error) throw erreur('agent_mission_prendre', error);
+      return (data ?? []) as MissionRow[];
+    },
+
+    async reserver(id) {
+      const { data, error } = await db.rpc('agent_mission_reserver', { p_id: id });
+      if (error) throw erreur('agent_mission_reserver', error);
+      return (data ?? { ok: false, raison: 'reponse_vide' }) as { ok: boolean; raison?: string; jetons_reserves?: number };
+    },
+
+    async prolongerBail(id, worker, bailS) {
+      const { data, error } = await db.rpc('agent_mission_prolonger_bail', { p_id: id, p_worker: worker, p_lease_s: bailS });
+      if (error) { console.warn('[agent] prolonger_bail', error.message); return false; }
+      return data === true;
+    },
+
+    async libererBail(id, worker) {
+      const { error } = await db.from('agent_missions').update({ bail_jusqu_a: null })
+        .eq('id', id).eq('worker', worker);
+      if (error) console.warn('[agent] libérer bail', error.message);
+    },
+
+    async chargerMission(id) {
+      const { data, error } = await db.from('agent_missions').select('*').eq('id', id).maybeSingle();
+      if (error) throw erreur('lecture mission', error);
+      return (data ?? null) as MissionRow | null;
+    },
+
+    async sauverEtat(id, etat) {
+      // Seul le moteur écrit `etat` pendant qu'il tient le bail ; la RPC
+      // agent_mission_repondre n'y écrit qu'en attente_utilisateur (mission
+      // jamais prise dans cet état) : pas d'écrasement concurrent possible.
+      const { error } = await db.from('agent_missions').update({ etat }).eq('id', id);
+      if (error) throw erreur('sauvegarde état', error);
+    },
+
+    async mettreEnAttente(id, question, etat) {
+      const { data, error } = await db.from('agent_missions')
+        .update({ statut: 'attente_utilisateur', question_en_attente: question.slice(0, 4000), etat, bail_jusqu_a: null })
+        .eq('id', id).eq('statut', 'en_cours').select('id');
+      if (error) throw erreur('mise en attente', error);
+      return Array.isArray(data) && data.length === 1;
+    },
+
+    async debiter(id, jetons, pireCasSuivant) {
+      const { data, error } = await db.rpc('agent_mission_debiter', {
+        p_id: id, p_jetons: Math.max(0, Math.ceil(jetons)), p_pire_cas_suivant: Math.max(0, Math.ceil(pireCasSuivant)),
+      });
+      if (error) throw erreur('agent_mission_debiter', error);
+      const r = (data ?? {}) as ResultatDebit;
+      return { ...r, ok: r.ok === true, reste: Number(r.reste) || 0, peut_continuer: r.peut_continuer === true };
+    },
+
+    async cloturer(id, statut: StatutMission, rapport, erreurTexte) {
+      const { error } = await db.rpc('agent_mission_cloturer', {
+        p_id: id, p_statut: statut, p_rapport: rapport, p_erreur: erreurTexte,
+      });
+      if (error) throw erreur('agent_mission_cloturer', error);
+    },
+
+    async regler(id) {
+      const { data, error } = await db.rpc('agent_mission_regler', { p_id: id });
+      if (error) throw erreur('agent_mission_regler', error);
+      return (data ?? { ok: false, raison: 'reponse_vide' }) as { ok: boolean; deja_regle?: boolean; jetons_factures?: number; jetons_rembourses?: number; raison?: string };
+    },
+
+    async journal(missionId, genre: GenreJournal, outil, entree, resume, jetons) {
+      // Le journal ne doit JAMAIS interrompre une mission : on trace et on continue.
+      const { error } = await db.rpc('agent_mission_journaliser', {
+        p_id: missionId, p_genre: genre, p_outil: outil, p_entree: borneEntree(entree),
+        p_resume: (resume ?? '').slice(0, 1000), p_jetons: Math.max(0, Math.ceil(jetons || 0)),
+      });
+      if (error) console.warn('[agent] journal', error.message);
+    },
+
+    async creerActionBrouillon(a: ActionExterne) {
+      // Statut forcé à « brouillon » par le déclencheur _agent_actions_proteger :
+      // on ne le transmet même pas.
+      const { data, error } = await db.from('agent_actions_externes').insert({
+        user_id: a.user_id, mission_id: a.mission_id, projet_id: a.projet_id,
+        canal: a.canal, destinataire: a.destinataire, objet: a.objet, corps: a.corps,
+      }).select('id').single();
+      if (error) throw erreur('création du brouillon', error);
+      return String(data.id);
+    },
+
+    async memoriser(userId, missionId, e: ElementMemoire) {
+      const { error } = await db.rpc('agent_memoire_ecrire', {
+        p_user_id: userId, p_projet_id: e.projet_id, p_mission_id: missionId,
+        p_genre: e.genre, p_cle: e.cle, p_contenu: e.contenu, p_source: e.source,
+        p_confiance: e.confiance ?? 'estime', p_epingle: e.epingle,
+      });
+      if (error) throw erreur('agent_memoire_ecrire', error);
+    },
+
+    async lireMemoire(userId, projetId, limite) {
+      const champs = 'id, genre, cle, contenu, source, confiance, epingle, projet_id, maj_le';
+      // Épinglés (tous projets de l'utilisateur confondus, bornés) + récents du projet
+      // courant (ou de la mémoire générale si aucun projet).
+      const epingles = db.from('agent_memoire_projet').select(champs)
+        .eq('user_id', userId).eq('epingle', true).order('maj_le', { ascending: false }).limit(20);
+      let recents = db.from('agent_memoire_projet').select(champs)
+        .eq('user_id', userId).order('maj_le', { ascending: false }).limit(limite);
+      recents = projetId ? recents.eq('projet_id', projetId) : recents.is('projet_id', null);
+      const [a, b] = await Promise.all([epingles, recents]);
+      if (a.error) throw erreur('mémoire épinglée', a.error);
+      if (b.error) throw erreur('mémoire récente', b.error);
+      const epinglesFiltres = ((a.data ?? []) as ElementMemoire[])
+        .filter((e) => e.projet_id == null || e.projet_id === projetId);
+      return [...epinglesFiltres, ...((b.data ?? []) as ElementMemoire[])];
+    },
+
+    async creerBriefing(userId, missionId, b: Briefing) {
+      const { error } = await db.from('agent_briefings').insert({
+        user_id: userId, mission_id: missionId,
+        titre: String(b.titre ?? 'Veille').slice(0, 300),
+        resume: b.resume ? String(b.resume).slice(0, 4000) : null,
+        elements: Array.isArray(b.elements) ? b.elements : [],
+      });
+      if (error) throw erreur('création du briefing', error);
+    },
+
+    async creerMission(row) {
+      const { data, error } = await db.from('agent_missions').insert(row).select('id').single();
+      if (error) throw erreur('création de la mission', error);
+      return String(data.id);
+    },
+
+    async listerMissions(userId, limite) {
+      const { data, error } = await db.from('agent_missions')
+        .select('id, type, objectif, statut, devis, jetons_reserves, jetons_consommes, etapes_faites, etapes_max, question_en_attente, rapport, erreur, cree_le, termine_le')
+        .eq('user_id', userId).order('cree_le', { ascending: false }).limit(limite);
+      if (error) throw erreur('liste des missions', error);
+      return (data ?? []) as MissionRow[];
+    },
+
+    async chargerMissionUtilisateur(userId, id) {
+      const { data, error } = await db.from('agent_missions').select('*')
+        .eq('id', id).eq('user_id', userId).maybeSingle();
+      if (error) throw erreur('lecture mission', error);
+      return (data ?? null) as MissionRow | null;
+    },
+
+    async projetExiste(id) {
+      const { data, error } = await db.from('projects').select('id').eq('id', id).maybeSingle();
+      if (error) return false;
+      return Boolean(data?.id);
+    },
+  };
+}
+
+export type { EtatMission };

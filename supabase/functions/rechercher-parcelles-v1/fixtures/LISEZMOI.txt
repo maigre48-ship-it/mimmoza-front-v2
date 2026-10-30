@@ -1,0 +1,6 @@
+Fixtures SYNTHÉTIQUES (commune fictive 99999, coordonnées autour de 2.30/48.80) reproduisant la FORME des réponses réelles :
+- etalab_commune.json : cadastre.data.gouv.fr bundler (champs id, commune, section, numero, contenance)
+- apicarto_cadastre.json : API Carto /api/cadastre/parcelle (idu, nom_com, contenance, code_dep, code_com…)
+- gpu_zone_urba.json : API Carto /api/gpu/zone-urba (libelle, libelong, typezone, idurba) — libellé N volontairement en mojibake
+- bdtopo_batiment.json : WFS data.geopf.fr BDTOPO_V3:batiment (GeoJSON lon,lat,z)
+Aucune de ces valeurs n'est une donnée réelle.

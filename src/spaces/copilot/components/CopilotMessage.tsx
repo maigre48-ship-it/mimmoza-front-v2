@@ -22,6 +22,8 @@ import { FollowupProposalCard } from '../followup/FollowupProposalCard';
 import { withoutJarvisDraft } from '../studio3d/jarvisDraft';
 import { useCopilotStreaming } from '../hooks/useCopilotStreaming';
 import { trackFire } from '@/lib/mimmozia/track';
+import { CarteDevisMission } from '../agent/CarteDevisMission';
+import { devisAAfficher, estAppelDevis } from '../agent/agentLogique';
 const CopilotThematicMaps = lazy(() => import('../maps/CopilotThematicMaps').then(m => ({ default: m.CopilotThematicMaps })));
 
 // recharts pèse plusieurs centaines de Ko et n'est utilisé QUE par les
@@ -77,6 +79,8 @@ function CopilotMessageContent({ message, question, conversationId, onSend }: Me
     return null;
   })();
   const decisionLimits = tertiaryReview(linkedQuestion, message.toolCalls);
+  // Agent autonome : une carte de devis par mission proposée (sans doublon).
+  const devisMissions = useMemo(() => devisAAfficher(message.toolCalls), [message.toolCalls]);
 
   const handleResponseExport = async (format: 'pdf' | 'xlsx' | 'docx' | 'pptx') => {
     if (exporting) return;
@@ -119,6 +123,7 @@ function CopilotMessageContent({ message, question, conversationId, onSend }: Me
       {message.toolCalls.length > 0 && (
         <div style={{ marginBottom: 8 }}>
           {message.toolCalls.map((tc) => <CopilotRenderBoundary key={tc.id} label="Résultat d’outil">{(() => {
+            if (estAppelDevis(tc.name)) { const d = devisMissions.get(tc.id); return d ? <CarteDevisMission affichage={d} onSend={onSend} /> : null; }
             if (tc.name === 'proposer_suivi_projet') return <FollowupProposalCard call={tc} complete={message.status === 'complete'} />;
             if (tc.name === 'calculer_bilan_financier') return <CopilotFinancialCard key={tc.id} call={tc} onSend={onSend} />;
             // Un outil d'action ne raconte pas ce qu'il a lu : il propose de

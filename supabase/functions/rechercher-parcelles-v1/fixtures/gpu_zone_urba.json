@@ -1,0 +1,83 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "MultiPolygon",
+    "coordinates": [
+     [
+      [
+       [
+        2.3,
+        48.8
+       ],
+       [
+        2.30545514,
+        48.8
+       ],
+       [
+        2.30545514,
+        48.80090437
+       ],
+       [
+        2.3,
+        48.80090437
+       ],
+       [
+        2.3,
+        48.8
+       ]
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "libelle": "UB",
+    "libelong": "Zone urbaine mixte",
+    "typezone": "U",
+    "idurba": "99999_PLU_20200101",
+    "nomfic": "reglement.pdf",
+    "datvalid": "20200101"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "MultiPolygon",
+    "coordinates": [
+     [
+      [
+       [
+        2.3,
+        48.80090437
+       ],
+       [
+        2.30545514,
+        48.80090437
+       ],
+       [
+        2.30545514,
+        48.80180874
+       ],
+       [
+        2.3,
+        48.80180874
+       ],
+       [
+        2.3,
+        48.80090437
+       ]
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "libelle": "N",
+    "libelong": "Zone naturelle protÃ©gÃ©e",
+    "typezone": "N",
+    "idurba": "99999_PLU_20200101"
+   }
+  }
+ ]
+}

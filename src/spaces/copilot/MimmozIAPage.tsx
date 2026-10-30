@@ -13,6 +13,8 @@ import { phaseReponseEnFlux, reponseClairementNegative } from './components/orbR
 import { MimmozIAQuickAction } from './components/MimmozIAQuickAction';
 import { MimmozIAStatus } from './components/MimmozIAStatus';
 import { MimmozIASidebar } from './MimmozIASidebar';
+import { PanneauAgent } from './agent/PanneauAgent';
+import { BandeauBriefing } from './agent/BandeauBriefing';
 import { MimmozIAModelPicker, type ModelTier, type Plan as PickerPlan } from './components/MimmozIAModelPicker';
 import { usePlanAccess } from '@/lib/billing/usePlanAccess';
 import { supabase } from '@/lib/supabaseClient';
@@ -587,6 +589,8 @@ export default function MimmozIAPage() {
   return (
     <div className={pageClass}>
       <StudioIntegre demande={studio3d.demande} ouvert={studio3d.ouvert} onFermer={fermerStudio3d} />
+      {/* Agent autonome : panneau Missions / À valider / Mémoire (fermé par défaut) */}
+      <PanneauAgent />
       <PreparationStudio3D
         key={prepa3d.key ?? 'initial'}
         ouvert={prepa3d.ouvert}
@@ -698,6 +702,9 @@ export default function MimmozIAPage() {
             <h1>{greeting}, que souhaitez-vous créer aujourd’hui&nbsp;?</h1>
             <p>{tagline || 'Imaginez, analysez et donnez forme à vos projets immobiliers.'}</p>
           </div>
+
+          {/* Veille proactive : « Pendant votre absence… » (rien si aucun briefing non lu) */}
+          <BandeauBriefing />
 
           <Suspense fallback={affichagePremierContact === 'rien' ? null : (
             <div className={affichagePremierContact === 'checklist' ? 'mzia-onb-skel mzia-onb-skel--check' : 'mzia-onb-skel'} aria-hidden />

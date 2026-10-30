@@ -13,6 +13,7 @@
 //   Vite en declenche en permanence), si bien qu'un « Expert » selectionne
 //   arrivait au serveur en 'sonnet' — cas reellement observe.
 import { create } from 'zustand';
+import { idMissionEvenement } from '../agent/agentLogique';
 import {
   fetchActionRuns,
   fetchBalance,
@@ -445,6 +446,19 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
                 }
               : tc,
           ),
+        }));
+        break;
+
+      case 'mission_devis':
+        // Agent autonome : la proposition de mission est rangée avec les appels
+        // d'outils du message (nom réservé `mission_devis`) — elle suit ainsi
+        // les changements d'identifiant du message sans état supplémentaire.
+        mapStreaming((m) => ({
+          ...m,
+          toolCalls: [
+            ...m.toolCalls,
+            { id: `mission_devis:${idMissionEvenement(event)}`, name: 'mission_devis', output: event, status: 'success' },
+          ],
         }));
         break;
 

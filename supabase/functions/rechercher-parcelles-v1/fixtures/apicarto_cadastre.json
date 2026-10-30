@@ -1,0 +1,319 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "MultiPolygon",
+    "coordinates": [
+     [
+      [
+       [
+        2.30013638,
+        48.80009044
+       ],
+       [
+        2.30068189,
+        48.80009044
+       ],
+       [
+        2.30068189,
+        48.80045219
+       ],
+       [
+        2.30013638,
+        48.80045219
+       ],
+       [
+        2.30013638,
+        48.80009044
+       ]
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "idu": "99999000AB0001",
+    "numero": "0001",
+    "feuille": 1,
+    "section": "AB",
+    "code_dep": "99",
+    "nom_com": "Commune-Test",
+    "code_com": "999",
+    "com_abs": "000",
+    "echelle": "1000",
+    "contenance": 1600,
+    "code_arr": "000"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "MultiPolygon",
+    "coordinates": [
+     [
+      [
+       [
+        2.30081827,
+        48.80009044
+       ],
+       [
+        2.30109103,
+        48.80009044
+       ],
+       [
+        2.30109103,
+        48.80027131
+       ],
+       [
+        2.30081827,
+        48.80027131
+       ],
+       [
+        2.30081827,
+        48.80009044
+       ]
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "idu": "99999000AB0002",
+    "numero": "0002",
+    "feuille": 1,
+    "section": "AB",
+    "code_dep": "99",
+    "nom_com": "Commune-Test",
+    "code_com": "999",
+    "com_abs": "000",
+    "echelle": "1000",
+    "contenance": 400,
+    "code_arr": "000"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "MultiPolygon",
+    "coordinates": [
+     [
+      [
+       [
+        2.30136379,
+        48.80009044
+       ],
+       [
+        2.30272757,
+        48.80009044
+       ],
+       [
+        2.30272757,
+        48.80018087
+       ],
+       [
+        2.30136379,
+        48.80018087
+       ],
+       [
+        2.30136379,
+        48.80009044
+       ]
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "idu": "99999000AB0003",
+    "numero": "0003",
+    "feuille": 1,
+    "section": "AB",
+    "code_dep": "99",
+    "nom_com": "Commune-Test",
+    "code_com": "999",
+    "com_abs": "000",
+    "echelle": "1000",
+    "contenance": 1000,
+    "code_arr": "000"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "MultiPolygon",
+    "coordinates": [
+     [
+      [
+       [
+        2.30013638,
+        48.80108525
+       ],
+       [
+        2.30081827,
+        48.80108525
+       ],
+       [
+        2.30081827,
+        48.80153743
+       ],
+       [
+        2.30013638,
+        48.80153743
+       ],
+       [
+        2.30013638,
+        48.80108525
+       ]
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "idu": "99999000AB0004",
+    "numero": "0004",
+    "feuille": 1,
+    "section": "AB",
+    "code_dep": "99",
+    "nom_com": "Commune-Test",
+    "code_com": "999",
+    "com_abs": "000",
+    "echelle": "1000",
+    "contenance": 2500,
+    "code_arr": "000"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "MultiPolygon",
+    "coordinates": [
+     [
+      [
+       [
+        2.30013638,
+        48.80271312
+       ],
+       [
+        2.3006137,
+        48.80271312
+       ],
+       [
+        2.3006137,
+        48.80302965
+       ],
+       [
+        2.30013638,
+        48.80302965
+       ],
+       [
+        2.30013638,
+        48.80271312
+       ]
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "idu": "99999000AB0005",
+    "numero": "0005",
+    "feuille": 1,
+    "section": "AB",
+    "code_dep": "99",
+    "nom_com": "Commune-Test",
+    "code_com": "999",
+    "com_abs": "000",
+    "echelle": "1000",
+    "contenance": 1225,
+    "code_arr": "000"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "MultiPolygon",
+    "coordinates": [
+     [
+      [
+       [
+        2.30340946,
+        48.80009044
+       ],
+       [
+        2.30402317,
+        48.80009044
+       ],
+       [
+        2.30402317,
+        48.8004974
+       ],
+       [
+        2.30340946,
+        48.8004974
+       ],
+       [
+        2.30340946,
+        48.80009044
+       ]
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "idu": "99999000AB0006",
+    "numero": "0006",
+    "feuille": 1,
+    "section": "AB",
+    "code_dep": "99",
+    "nom_com": "Commune-Test",
+    "code_com": "999",
+    "com_abs": "000",
+    "echelle": "1000",
+    "contenance": 2025,
+    "code_arr": "000"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "MultiPolygon",
+    "coordinates": [
+     [
+      [
+       [
+        2.30409136,
+        48.80054262
+       ],
+       [
+        2.30450049,
+        48.80054262
+       ],
+       [
+        2.30450049,
+        48.80081393
+       ],
+       [
+        2.30409136,
+        48.80081393
+       ],
+       [
+        2.30409136,
+        48.80054262
+       ]
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "idu": "99999000AB0007",
+    "numero": "0007",
+    "feuille": 1,
+    "section": "AB",
+    "code_dep": "99",
+    "nom_com": "Commune-Test",
+    "code_com": "999",
+    "com_abs": "000",
+    "echelle": "1000",
+    "code_arr": "000"
+   }
+  }
+ ]
+}

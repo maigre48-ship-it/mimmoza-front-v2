@@ -1,0 +1,92 @@
+{
+ "type": "FeatureCollection",
+ "totalFeatures": 2,
+ "numberMatched": 2,
+ "numberReturned": 2,
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "MultiPolygon",
+    "coordinates": [
+     [
+      [
+       [
+        2.30357312,
+        48.80019896,
+        40.0
+       ],
+       [
+        2.30384588,
+        48.80019896,
+        40.0
+       ],
+       [
+        2.30384588,
+        48.80037984,
+        40.0
+       ],
+       [
+        2.30357312,
+        48.80037984,
+        40.0
+       ],
+       [
+        2.30357312,
+        48.80019896,
+        40.0
+       ]
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "cleabs": "BATIMENT0000000000000001",
+    "construction_legere": false,
+    "nature": "Indifférenciée"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "MultiPolygon",
+    "coordinates": [
+     [
+      [
+       [
+        2.30020457,
+        48.80013566,
+        40.0
+       ],
+       [
+        2.30024548,
+        48.80013566,
+        40.0
+       ],
+       [
+        2.30024548,
+        48.80016279,
+        40.0
+       ],
+       [
+        2.30020457,
+        48.80016279,
+        40.0
+       ],
+       [
+        2.30020457,
+        48.80013566,
+        40.0
+       ]
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "cleabs": "BATIMENT0000000000000002",
+    "construction_legere": true,
+    "nature": "Indifférenciée"
+   }
+  }
+ ]
+}
