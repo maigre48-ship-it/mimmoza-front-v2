@@ -9,6 +9,7 @@ import { Bot, X } from 'lucide-react';
 import { ActionsAValider } from './ActionsAValider';
 import { MemoireProjet } from './MemoireProjet';
 import { PanneauMissions } from './PanneauMissions';
+import { PanneauConception } from './conception/PanneauConception';
 import { useAgentUi, type OngletAgent } from './agentUi.store';
 import { useCompteursAgent } from './useCompteursAgent';
 import './agent.css';
@@ -16,6 +17,7 @@ import './agent.css';
 const ONGLETS: { id: OngletAgent; label: string }[] = [
   { id: 'missions', label: 'Missions' },
   { id: 'actions', label: 'À valider' },
+  { id: 'conception', label: 'Conception' },
   { id: 'memoire', label: 'Mémoire' },
 ];
 
@@ -63,6 +65,7 @@ export function PanneauAgent() {
           {onglet === 'missions' && <PanneauMissions />}
           {onglet === 'actions' && <ActionsAValider />}
           {onglet === 'memoire' && <MemoireProjet />}
+          {onglet === 'conception' && <PanneauConception />}
         </div>
       </aside>
     </div>,

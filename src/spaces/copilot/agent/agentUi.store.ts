@@ -3,7 +3,7 @@
 // Séparé du store du chat (useCopilotStore) pour ne rien y ajouter.
 import { create } from 'zustand';
 
-export type OngletAgent = 'missions' | 'actions' | 'memoire';
+export type OngletAgent = 'missions' | 'actions' | 'memoire' | 'conception';
 
 interface AgentUiState {
   ouvert: boolean;

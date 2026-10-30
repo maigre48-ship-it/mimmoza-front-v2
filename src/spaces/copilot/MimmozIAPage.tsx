@@ -15,6 +15,7 @@ import { MimmozIAStatus } from './components/MimmozIAStatus';
 import { MimmozIASidebar } from './MimmozIASidebar';
 import { PanneauAgent } from './agent/PanneauAgent';
 import { BandeauBriefing } from './agent/BandeauBriefing';
+import { AtelierConception } from './agent/conception/AtelierConception';
 import { MimmozIAModelPicker, type ModelTier, type Plan as PickerPlan } from './components/MimmozIAModelPicker';
 import { usePlanAccess } from '@/lib/billing/usePlanAccess';
 import { supabase } from '@/lib/supabaseClient';
@@ -591,6 +592,8 @@ export default function MimmozIAPage() {
       <StudioIntegre demande={studio3d.demande} ouvert={studio3d.ouvert} onFermer={fermerStudio3d} />
       {/* Agent autonome : panneau Missions / À valider / Mémoire (fermé par défaut) */}
       <PanneauAgent />
+      {/* Agent autonome : Atelier 3D en mode conception + bilan vivant (fermé par défaut) */}
+      <AtelierConception />
       <PreparationStudio3D
         key={prepa3d.key ?? 'initial'}
         ouvert={prepa3d.ouvert}

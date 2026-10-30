@@ -43,6 +43,12 @@ import {
 } from './prompt-promoteur.ts';
 import { NOMS_OUTILS_MISSION, OUTILS_MISSION_INTERDITS_VEILLE, outilChatAutoriseEnMission, outilsPourMission } from './outils.ts';
 import {
+  appliquerReponseFormulaire, cheminReglementAutorise, chercherContourParcelle, completerRegles, compterTokensAnthropic,
+  construireQuestionRegles, CONSIGNE_LECTURE_REGLEMENT, controlerProgramme, fusionnerRegles, normaliserProgramme,
+  normaliserRegle, REGLEMENT_MAX_OCTETS, reglesDepuisLecture, reglesDepuisRulesets, reglesManquantes, signalementsFormules,
+  suiteProposee, type ConflitRegle, type ParcelleConception, type Programme, type RegleConception,
+} from './conception.ts';
+import {
   assemblerRapportV2, calculerChargeFonciere, chargerBrouillon, fusionnerHypotheses, lireHypothesesPartielles,
   normaliserContact, normaliserIdu, normaliserTerrainBrut,
 } from './rapport.ts';
@@ -74,6 +80,64 @@ export const ATTENTE_MAX_MS = 72 * 3600 * 1000;
 
 /** Outils de mission à effet de bord externe : leur résultat est sauvé aussitôt, jamais rejoué. */
 const OUTILS_A_EFFET = new Set(['rediger_action_externe', 'memoriser']);
+
+// ── Dossier de conception (etat.conception) ────────────────────────────────
+
+export interface EtatConception {
+  id: string | null;
+  idu: string | null;
+  commune: string | null;
+  regles: RegleConception[];
+  programme: Programme | null;
+  parcelle: ParcelleConception | null;
+  origine_chargee: boolean;
+  donnees_prospection: string | null;
+  /** Lecture de règlement PDF programmée pour la prochaine étape. */
+  lecture: { chemin: string; zone: string | null } | null;
+  /** Valeurs proposées (PDF, outils) en désaccord avec une règle confirmée par l'utilisateur : signalées, jamais appliquées. */
+  conflits: ConflitRegle[];
+}
+
+export function chargerConception(brut: unknown, m: MissionRow): EtatConception {
+  const b = (brut && typeof brut === 'object' ? brut : {}) as Partial<EtatConception>;
+  const crit = (m.criteres ?? {}) as Record<string, unknown>;
+  return {
+    id: typeof b.id === 'string' ? b.id : null,
+    idu: typeof b.idu === 'string' ? b.idu : (typeof crit.idu === 'string' ? crit.idu.replace(/\s/g, '').toUpperCase() : null),
+    commune: typeof b.commune === 'string' ? b.commune : (typeof crit.commune === 'string' ? crit.commune : null),
+    regles: completerRegles(Array.isArray(b.regles) ? b.regles.map((r) => normaliserRegle(r, 'base')).filter((r): r is RegleConception => r != null) : []),
+    programme: b.programme ? normaliserProgramme(b.programme) : null,
+    parcelle: b.parcelle && typeof b.parcelle === 'object' ? b.parcelle : null,
+    origine_chargee: b.origine_chargee === true,
+    donnees_prospection: typeof b.donnees_prospection === 'string' ? b.donnees_prospection : null,
+    lecture: b.lecture && typeof b.lecture === 'object' && typeof b.lecture.chemin === 'string' ? b.lecture : null,
+    conflits: Array.isArray(b.conflits) ? b.conflits.slice(0, 20) : [],
+  };
+}
+
+/** Ajoute des conflits (dédoublonnés par clé et valeur) et renvoie leur description pour le modèle. */
+function noterConflits(k: EtatConception, conflits: ConflitRegle[]): string {
+  for (const c of conflits) {
+    if (!k.conflits.some((x) => x.cle === c.cle && x.valeur_proposee === c.valeur_proposee)) k.conflits.push(c);
+  }
+  return conflits.length
+    ? ` CONFLIT : ${conflits.map((c) => `${c.cle} confirmé ${c.valeur_utilisateur} par l'utilisateur, ${c.source_proposee} indique ${c.valeur_proposee}${c.article ? ` (art. ${c.article})` : ''}`).join(' ; ')}. La valeur de l'utilisateur est conservée : signale-le-lui (nouvelle question si c'est décisif).`
+    : '';
+}
+
+/** Écrit le dossier dans agent_conceptions (création au premier appel). */
+async function persisterConception(c: CtxEtape, k: EtatConception, statut?: 'regles' | 'plan'): Promise<void> {
+  const crit = (c.m.criteres ?? {}) as Record<string, unknown>;
+  const champs: Record<string, unknown> = {
+    idu: k.idu, commune: k.commune, regles_plu: completerRegles(k.regles),
+    ...(k.programme ? { programme: k.programme } : {}),
+    ...(k.parcelle ? { parcelle: k.parcelle } : {}),
+    ...(estUuid(crit.mission_origine_id) ? { mission_origine_id: crit.mission_origine_id } : {}),
+    ...(statut ? { statut } : {}),
+  };
+  if (!k.idu) return;   // idu obligatoire en base
+  k.id = await c.depot.enregistrerConception(c.m.id, c.m.user_id, champs);
+}
 
 /** Consigne ajoutée quand la sortie d'un tour a été coupée (diagnostic mission 7a7c855a). */
 export const CONSIGNE_SORTIE_COUPEE =
@@ -226,11 +290,34 @@ export function normaliserRapport(
   etat: EtatMission,
   jetonsConsommes: number,
   limitesAjoutees: string[] = [],
+  m?: MissionRow,
 ): Record<string, unknown> {
-  return assemblerRapportV2(chargerBrouillon(etat.brouillon), brut, {
+  const r = assemblerRapportV2(chargerBrouillon(etat.brouillon), brut, {
     actions_proposees: etat.actions_ids, memoire_ajoutee: etat.memoire_ajoutee,
     jetons_consommes: jetonsConsommes, limites_ajoutees: limitesAjoutees,
   });
+  if (m?.type === 'prospection_fonciere' || m?.type === 'faisabilite') {
+    // Fin de prospection : proposer la suite « Concevoir le projet » (terrains non écartés, classés).
+    const suite = suiteProposee(r.terrains as Array<Record<string, unknown>>, r.classement as Array<{ idu: string; rang: number; justification: string }>);
+    if (suite) r.suite_proposee = suite;
+  }
+  if (m?.type === 'conception') {
+    const k = chargerConception(etat.conception, m);
+    r.conception = {
+      conception_id: k.id, idu: k.idu, commune: k.commune,
+      parcelle: k.parcelle ? { surface_m2: k.parcelle.surface_m2, source: k.parcelle.source } : null,
+      regles: completerRegles(k.regles), regles_manquantes: reglesManquantes(k.regles),
+      conflits: k.conflits, signalements: signalementsFormules(k.regles),
+      programme: k.programme, alertes_programme: k.programme ? controlerProgramme(k.programme) : [],
+      prochaine_etape: 'Choisissez la voie du plan : plan fourni (le plus précis), dessin de l’emprise, ou proposition Mimmoza.',
+    };
+    if (!k.parcelle) (r.limites as string[]).push('Contour cadastral non récupéré : le Studio devra le recharger.');
+    for (const x of k.conflits) {
+      (r.limites as string[]).push(`Règle ${x.cle} : vous avez confirmé ${x.valeur_utilisateur}, ${x.source_proposee} indique ${x.valeur_proposee}${x.article ? ` (art. ${x.article})` : ''}. Votre valeur est conservée ; à vérifier.`);
+    }
+    for (const x of signalementsFormules(k.regles)) (r.limites as string[]).push(x);
+  }
+  return r;
 }
 
 /** Rapport de secours, sans LLM, à partir du carnet. */
@@ -288,7 +375,7 @@ interface CtxEtape {
 
 /** Prépare un appel sous le plafond d'entrée (compaction forcée sinon). */
 function preparerAppel(c: CtxEtape, consigne: string | null, tools: OutilDef[]): { system: string; messages: MessageLLM[]; entree: number } {
-  const amorce = amorceMission(c.m);
+  const amorce = amorceMission(c.m, c.m.type === 'conception' ? chargerConception(c.etat.conception, c.m).donnees_prospection : null);
   for (let i = 0; i < 50; i++) {
     const system = systemeMission(c.m, c.etat, c.blocMemoire);
     const messages = construireMessages(c.etat, consigne, amorce);
@@ -351,7 +438,7 @@ async function etapePlan(c: CtxEtape): Promise<IssueEtape> {
   return await traiterEnVol(c, v);
 }
 
-interface DemandeSpeciale { question?: string; rapport?: Record<string, unknown> }
+interface DemandeSpeciale { question?: string; questionAffichee?: string; rapport?: Record<string, unknown> }
 
 async function executerOutilMission(
   c: CtxEtape, tu: { id: string; name: string; input: Record<string, unknown> }, speciale: DemandeSpeciale,
@@ -405,6 +492,11 @@ async function executerOutilMission(
       const q = texte(String(input.question ?? '').trim(), 1000);
       if (!q) return 'Question vide : ignorée.';
       speciale.question = q;
+      if (c.m.type === 'conception' && input.formulaire === 'regles_conception') {
+        // Format imposé par le front : question_en_attente = JSON du formulaire, pré-rempli par le MOTEUR.
+        const k = chargerConception(c.etat.conception, c.m);
+        speciale.questionAffichee = construireQuestionRegles(k.regles, q, k.idu, k.id, c.m.user_id);
+      }
       return "Question transmise à l'utilisateur. La mission est en pause jusqu'à sa réponse.";
     }
     case 'terminer_mission': {
@@ -414,6 +506,75 @@ async function executerOutilMission(
       speciale.rapport = { ...(v1 ?? {}), ...Object.fromEntries(Object.entries(v2).filter(([, x]) => x != null)) };
       if (!speciale.rapport.titre) speciale.rapport.titre = 'Rapport de mission';
       return 'Rapport reçu.';
+    }
+    case 'recuperer_parcelle':
+    case 'lire_regles_plu_importees':
+    case 'enregistrer_regles_conception':
+    case 'enregistrer_programme':
+    case 'lire_reglement_pdf':
+      // agent_conceptions.mission_id doit être une mission de type 'conception' (contrainte en base).
+      if (c.m.type !== 'conception') return 'Outil réservé aux missions de conception.';
+      break;
+  }
+  switch (tu.name) {
+    case 'recuperer_parcelle': {
+      const k = chargerConception(c.etat.conception, c.m);
+      const idu = String(input.idu ?? k.idu ?? '').replace(/\s/g, '').toUpperCase();
+      if (k.idu && idu !== k.idu) return `Refusé : la mission porte sur ${k.idu}.`;
+      const p = await chercherContourParcelle(idu, c.deps.fetch ?? fetch);
+      if (!p) return 'Contour cadastral introuvable (API Carto IGN) : le Studio devra le recharger. Ne déduis aucune surface.';
+      k.idu = idu; k.parcelle = p;
+      await persisterConception(c, k, 'regles');
+      c.etat.conception = k;
+      return JSON.stringify({ idu, surface_m2: p.surface_m2, source: p.source, conception_id: k.id, type_geometrie: p.geometrie.type });
+    }
+    case 'lire_regles_plu_importees': {
+      const insee = String(input.code_insee ?? '').trim();
+      const zone = String(input.zone_code ?? '').trim();
+      if (!/^(?:\d{5}|2[AB]\d{3})$/i.test(insee) || !zone) return 'Refusé : code INSEE et code de zone requis.';
+      const rows = await c.depot.reglesPluImportees(insee, zone);
+      const trouvees = reglesDepuisRulesets(rows, zone.toUpperCase());
+      const k = chargerConception(c.etat.conception, c.m);
+      const f = fusionnerRegles(k.regles, trouvees, 'import');
+      k.regles = f.regles;
+      const conflit = noterConflits(k, f.conflits);
+      if (trouvees.length) await persisterConception(c, k);
+      c.etat.conception = k;
+      return trouvees.length
+        ? JSON.stringify({ regles_trouvees: trouvees, manquantes: reglesManquantes(k.regles), signalements: signalementsFormules(trouvees) }) + conflit
+        : `Aucun règlement importé dans Mimmoza pour ${insee} zone ${zone} (couverture actuelle très partielle). Règles manquantes : ${reglesManquantes(k.regles).join(', ')}.`;
+    }
+    case 'enregistrer_regles_conception': {
+      const k = chargerConception(c.etat.conception, c.m);
+      const brutes = Array.isArray(input.regles) ? input.regles : [];
+      // Depuis le modèle : JAMAIS 'confirme' (au plus 'estime'), jamais sans source,
+      // jamais par-dessus une règle confirmée par l'utilisateur (revue B2).
+      const nouvelles = brutes.map((r) => normaliserRegle(r, 'modele')).filter((r): r is RegleConception => r != null);
+      const refusees = brutes.length - nouvelles.length;
+      const f = fusionnerRegles(k.regles, nouvelles, 'modele');
+      k.regles = f.regles;
+      const conflit = noterConflits(k, f.conflits);
+      await persisterConception(c, k);
+      c.etat.conception = k;
+      return `Règles enregistrées au statut « estime » : ${nouvelles.length}${refusees ? ` (${refusees} refusée(s) : clé inconnue ou sans source)` : ''}. ` +
+        `Seuls l'utilisateur (formulaire) ou le règlement lu avec son article peuvent les confirmer. Manquantes : ${reglesManquantes(k.regles).join(', ') || 'aucune'}.${conflit}`;
+    }
+    case 'enregistrer_programme': {
+      const k = chargerConception(c.etat.conception, c.m);
+      k.programme = normaliserProgramme(input);
+      await persisterConception(c, k);
+      c.etat.conception = k;
+      const alertes = controlerProgramme(k.programme);
+      if (typeof input.justification === 'string' && input.justification.trim()) c.etat.carnet.push(texte(`Programme : ${input.justification.trim()}`, 500));
+      return `Programme enregistré.${alertes.length ? ` Attention : ${alertes.join(' ')}` : ''}`;
+    }
+    case 'lire_reglement_pdf': {
+      const k = chargerConception(c.etat.conception, c.m);
+      const chemin = String(input.chemin ?? '').trim();
+      if (!cheminReglementAutorise(chemin, c.m.user_id, k.id)) return 'Refusé : le règlement doit être dans le dossier de cette conception.';
+      k.lecture = { chemin, zone: typeof input.zone_code === 'string' ? input.zone_code : null };
+      c.etat.conception = k;
+      return 'Lecture du règlement programmée à l’étape suivante.';
     }
     case 'rapport_hypotheses': {
       const b = chargerBrouillon(c.etat.brouillon);
@@ -505,10 +666,31 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
     return 'continuer';
   }
 
+  if (v.phase === 'lecture') {
+    const k = chargerConception(c.etat.conception, c.m);
+    const chemin = k.lecture?.chemin ?? 'règlement';
+    const lues = reglesDepuisLecture(extraireJson(texteTour), chemin);
+    const f = fusionnerRegles(k.regles, lues, 'reglement');
+    k.regles = f.regles;
+    const conflit = noterConflits(k, f.conflits);
+    k.lecture = null;
+    c.etat.conception = k;
+    await persisterConception(c, k);
+    const resume = lues.length
+      ? `Règlement lu (${chemin.split('/').pop()}) : ${lues.map((r) => `${r.cle} = ${r.valeur}${r.article ? ` (art. ${r.article})` : ''}`).join(' ; ')}.`
+      : `Règlement lu (${chemin.split('/').pop()}) : aucune règle clé trouvée pour cette zone.`;
+    const resumeConflits = conflit;
+    c.etat.tours.push({ n: v.n, assistant: [{ type: 'text', text: 'Lecture du règlement PDF déposé.' }],
+      user: [{ type: 'text', text: `${resume}${resumeConflits} Règles encore manquantes : ${reglesManquantes(k.regles).join(', ') || 'aucune'}. ${CONSIGNE_CONTINUER}` }] });
+    await solderEnVol(c, v);
+    await c.depot.journal(c.m.id, 'resultat', 'lire_reglement_pdf', { regles: lues.length }, resume, v.cout);
+    return 'continuer';
+  }
+
   if (v.phase === 'rapport') {
     const raison = c.etat.raison_rapport ?? 'budget_atteint';
     const rapport = normaliserRapport(extraireJson(texteTour) ?? { titre: 'Rapport partiel', synthese: texte(texteTour, 6000) },
-      c.etat, c.m.jetons_consommes, limitesRapport(raison));
+      c.etat, c.m.jetons_consommes, limitesRapport(raison), c.m);
     c.etat.cloture = { statut: raison === 'erreurs' ? 'echec' : 'budget_atteint', rapport, erreur: raison === 'erreurs' ? 'erreurs techniques répétées' : null };
     c.etat.phase = 'fini';
     await solderEnVol(c, v);
@@ -563,7 +745,7 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
   });
 
   if (speciale.rapport) {
-    const rapport = normaliserRapport(speciale.rapport, c.etat, c.m.jetons_consommes);
+    const rapport = normaliserRapport(speciale.rapport, c.etat, c.m.jetons_consommes, [], c.m);
     c.etat.cloture = { statut: 'terminee', rapport, erreur: null };
     c.etat.phase = 'fini';
     await solderEnVol(c, v);
@@ -575,13 +757,49 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
     c.etat.n_etape = Math.max(c.etat.n_etape, v.n);
     c.etat.en_vol = null;
     compacter(c.etat);
-    const ok = await c.depot.mettreEnAttente(c.m.id, speciale.question, c.etat);
+    const ok = await c.depot.mettreEnAttente(c.m.id, speciale.questionAffichee ?? speciale.question, c.etat);
     if (!ok) await c.depot.sauverEtat(c.m.id, c.etat);   // annulée entre-temps : l'état reste cohérent
     else await c.depot.journal(c.m.id, 'question', 'demander_utilisateur', null, speciale.question, 0);
     return 'pause';
   }
   await solderEnVol(c, v);
   return 'continuer';
+}
+
+/**
+ * Lecture IA du règlement PDF (étape dédiée). Garde : comptage EXACT des tokens
+ * avant l'appel ; refus si inconnu ou au-delà du plafond qui a servi au devis,
+ * ou si le reste ne couvre pas cette lecture + le rapport final.
+ */
+async function etapeLecture(c: CtxEtape): Promise<IssueEtape> {
+  const k = chargerConception(c.etat.conception, c.m);
+  const lec = k.lecture!;
+  const refuser = async (raison: string) => {
+    k.lecture = null;
+    c.etat.conception = k;
+    c.etat.carnet.push(texte(`Règlement non lu : ${raison}`, 400));
+    await c.depot.journal(c.m.id, 'erreur', 'lire_reglement_pdf', null, `Règlement non lu : ${raison}`, 0);
+    await c.depot.sauverEtat(c.m.id, c.etat);
+    return 'continuer' as IssueEtape;
+  };
+  if (!cheminReglementAutorise(lec.chemin, c.m.user_id, k.id)) return await refuser('chemin hors du dossier de la conception');
+  const f = await c.depot.telechargerFichier('agent-conception', lec.chemin, REGLEMENT_MAX_OCTETS);
+  if (!f) return await refuser('fichier introuvable dans le dossier');
+  if ('trop_gros' in f) return await refuser(`fichier trop volumineux (${Math.round(f.octets / 1024)} Ko) : déposez seulement les pages de la zone`);
+  const system = 'Tu extrais des règles d\'urbanisme d\'un règlement de PLU. Tu réponds en JSON strict.';
+  const messages: MessageLLM[] = [{ role: 'user', content: [
+    { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.base64 } },
+    { type: 'text', text: CONSIGNE_LECTURE_REGLEMENT(lec.zone) },
+  ] }];
+  const model = c.deps.modelePourTier(c.tier);
+  const compter = c.deps.compterTokens ?? ((p) => compterTokensAnthropic(p));
+  const entree = await compter({ model, system, messages });
+  if (entree == null) return await refuser('taille du document impossible à mesurer');
+  if (entree > ENTREE_MAX_TOKENS) return await refuser(`document trop long (${entree} tokens > ${ENTREE_MAX_TOKENS}) : déposez seulement les pages de la zone`);
+  const pire = c.deps.debitJetons(c.tier, entree, SORTIE_ETAPE_MAX_TOKENS, 0);
+  if (c.m.jetons_reserves - c.m.jetons_consommes < pire + c.pireRapport) return await refuser('réserve de jetons insuffisante pour cette lecture');
+  const v = await appelerEtDebiter(c, 'lecture', { system, messages }, [], SORTIE_ETAPE_MAX_TOKENS);
+  return await traiterEnVol(c, v);
 }
 
 function limitesRapport(raison: EtatMission['raison_rapport']): string[] {
@@ -595,7 +813,7 @@ async function etapeRapport(c: CtxEtape): Promise<IssueEtape> {
   if (c.etat.tentatives_rapport >= TENTATIVES_RAPPORT_MAX) {
     c.etat.cloture = {
       statut: raison === 'erreurs' ? 'echec' : 'budget_atteint',
-      rapport: normaliserRapport(rapportDeSecours(c.m, c.etat, 'rédaction automatique indisponible'), c.etat, c.m.jetons_consommes, limitesRapport(raison)),
+      rapport: normaliserRapport(rapportDeSecours(c.m, c.etat, 'rédaction automatique indisponible'), c.etat, c.m.jetons_consommes, limitesRapport(raison), c.m),
       erreur: raison === 'erreurs' ? 'erreurs techniques répétées' : null,
     };
     c.etat.phase = 'fini';
@@ -615,6 +833,22 @@ async function etapeRapport(c: CtxEtape): Promise<IssueEtape> {
 async function appliquerCloture(c: CtxEtape): Promise<void> {
   const cl = c.etat.cloture;
   if (!cl) return;
+  if (c.m.type === 'conception' && cl.statut !== 'annulee') {
+    // Dossier prêt pour le choix du plan (règles éventuellement incomplètes : signalées dans le rapport).
+    // Revue I7 : sans dossier enregistré, la mission ne peut PAS finir « terminee ».
+    const k = chargerConception(c.etat.conception, c.m);
+    let echec: string | null = null;
+    try { await persisterConception(c, k, 'plan'); } catch (e) { echec = e instanceof Error ? e.message : String(e); }
+    if (!k.id) {
+      const limite = `Le dossier de conception n'a pas pu être enregistré (${echec ?? 'identifiant de parcelle manquant'}) : rien n'est prêt pour le plan. Seuls les jetons réellement consommés sont facturés.`;
+      cl.statut = 'echec';
+      cl.erreur = texte(`dossier de conception non enregistré : ${echec ?? 'idu manquant'}`, 1000);
+      cl.rapport = { ...cl.rapport, limites: [...((cl.rapport.limites as string[]) ?? []), limite] };
+      await c.depot.sauverEtat(c.m.id, c.etat).catch(() => {});
+    } else {
+      (cl.rapport.conception as Record<string, unknown> | undefined) && ((cl.rapport.conception as Record<string, unknown>).conception_id = k.id);
+    }
+  }
   await c.depot.cloturer(c.m.id, cl.statut, cl.rapport, cl.erreur);
   const m = await c.depot.chargerMission(c.m.id);
   if (m) await reglerMission(m, c.deps, c.depot);
@@ -626,7 +860,7 @@ async function cloturerSansLLM(
 ): Promise<void> {
   c.etat.cloture = {
     statut,
-    rapport: normaliserRapport(rapportDeSecours(c.m, c.etat, raison), c.etat, c.m.jetons_consommes),
+    rapport: normaliserRapport(rapportDeSecours(c.m, c.etat, raison), c.etat, c.m.jetons_consommes, [], c.m),
     erreur,
   };
   c.etat.phase = 'fini';
@@ -666,6 +900,19 @@ export async function reglerMission(m: MissionRow, deps: MoteurDeps, depot: Depo
 
 // ── Boucle d'une mission ────────────────────────────────────────────────────
 
+/** Extrait compact (≤ 8 000 car.) de la prospection d'origine pour le terrain de la conception. */
+export function extraireDonneesProspection(rapport: Record<string, unknown>, idu: string | null): string | null {
+  const terrains = Array.isArray(rapport.terrains) ? rapport.terrains as Array<Record<string, unknown>> : [];
+  const t = terrains.find((x) => String(x.idu ?? '').toUpperCase() === (idu ?? '').toUpperCase()) ?? null;
+  const donnees = {
+    titre: rapport.titre ?? null,
+    terrain: t,
+    hypotheses_communes: rapport.hypotheses_communes ?? null,
+  };
+  if (!t && !rapport.hypotheses_communes) return null;
+  return texte(JSON.stringify(donnees), 8000);
+}
+
 export async function travaillerMission(
   id: string, deps: MoteurDeps, depot: DepotMission, worker: string, finA: number,
 ): Promise<{ etapes: number; issue: string }> {
@@ -683,11 +930,66 @@ export async function travaillerMission(
 
   // Reprise après une question : la RPC agent_mission_repondre a posé
   // etat.derniere_reponse. On l'ajoute au dernier tour (après les tool_result).
+  if (m.type === 'conception') {
+    // Données de la prospection d'origine (terrain + hypothèses du bilan), une seule fois,
+    // et seulement si la mission d'origine appartient au même utilisateur.
+    const k = chargerConception(etat.conception, m);
+    if (!k.id) {
+      // Revue I7 : vérifier DÈS LE DÉBUT que le dossier peut être écrit (table présente, idu valide).
+      const c0: CtxEtape = { m, etat, tier, pireRapport, blocMemoire, deps, depot };
+      try {
+        await persisterConception(c0, k, 'regles');
+      } catch (e) {
+        etat.conception = k;
+        await cloturerSansLLM(c0, 'echec', 'le dossier de conception ne peut pas être enregistré (table agent_conceptions indisponible ou écriture refusée)',
+          texte(e instanceof Error ? e.message : String(e), 1000));
+        return { etapes: 0, issue: 'echec' };
+      }
+      if (!k.id) {
+        etat.conception = k;
+        await cloturerSansLLM(c0, 'echec', 'aucun identifiant de parcelle (idu) pour cette conception', 'idu manquant');
+        return { etapes: 0, issue: 'echec' };
+      }
+      etat.conception = k;
+      await depot.sauverEtat(id, etat);
+    }
+    if (!k.origine_chargee) {
+      const origineId = (m.criteres as Record<string, unknown>)?.mission_origine_id;
+      if (estUuid(origineId)) {
+        const o = await depot.chargerMission(origineId).catch(() => null);
+        if (o && o.user_id === m.user_id && o.rapport) k.donnees_prospection = extraireDonneesProspection(o.rapport, k.idu);
+      }
+      k.origine_chargee = true;
+      etat.conception = k;
+      await depot.sauverEtat(id, etat);
+    }
+  }
+
   if (etat.attente) {
     const rep = etat.derniere_reponse?.reponse?.trim();
-    const txt = rep
+    let txt = rep
       ? `Réponse de l'utilisateur à « ${etat.attente.question} » : ${rep}`
       : `L'utilisateur n'a pas répondu à « ${etat.attente.question} » : avance avec une hypothèse prudente, écrite au carnet.`;
+    if (rep && m.type === 'conception') {
+      // Réponse structurée du formulaire de règles (format imposé par le front).
+      const k = chargerConception(etat.conception, m);
+      const a = appliquerReponseFormulaire(k.regles, rep);
+      if (a.ok) {
+        k.regles = a.regles;
+        // L'utilisateur a tranché : les conflits sur les règles qu'il vient de confirmer sont levés.
+        k.conflits = k.conflits.filter((x) => !a.regles.some((r) => r.cle === x.cle && r.statut === 'confirme' && /utilisateur/i.test(r.source)));
+        const pdfOk = a.lire_reglement && a.reglement && cheminReglementAutorise(a.reglement, m.user_id, k.id);
+        if (pdfOk) k.lecture = { chemin: a.reglement!, zone: null };
+        etat.conception = k;
+        if (k.idu) {
+          try { await depot.enregistrerConception(m.id, m.user_id, { idu: k.idu, regles_plu: k.regles }); } catch (e) { console.warn('[agent] conception', e instanceof Error ? e.message : String(e)); }
+        }
+        txt = `Réponse de l'utilisateur au formulaire des règles : ${a.resume}.` +
+          (a.commentaire ? ` Commentaire : ${a.commentaire}` : '') +
+          (a.hors_bornes.length ? ` Valeurs non valables ignorées (à redemander) : ${a.hors_bornes.join(' ; ')}.` : '') +
+          (pdfOk ? ' Le règlement PDF déposé sera lu automatiquement à l’étape suivante.' : (a.lire_reglement ? ' (Règlement demandé mais introuvable dans le dossier de la conception : non lu.)' : ''));
+      }
+    }
     const dernier = etat.tours.at(-1);
     if (dernier) dernier.user = [...dernier.user, { type: 'text', text: txt }];
     else etat.carnet.push(txt);
@@ -731,6 +1033,8 @@ export async function travaillerMission(
       if (etat.en_vol) {
         // Étape payée mais pas traitée : on la termine sans rappeler le LLM (B2).
         issue = await traiterEnVol(c, etat.en_vol);
+      } else if (etat.phase === 'travail' && m!.type === 'conception' && chargerConception(etat.conception, m!).lecture) {
+        issue = await etapeLecture(c);
       } else if (etat.phase === 'rapport') {
         issue = await etapeRapport(c);
       } else {
@@ -908,6 +1212,18 @@ export async function executerOutilAgentChat(
         let criteres = (input.criteres && typeof input.criteres === 'object' && !Array.isArray(input.criteres)
           ? input.criteres : {}) as Record<string, unknown>;
         if (JSON.stringify(criteres).length > 8000) criteres = { note: texte(criteres, 8000) };
+        if (type === 'conception') {
+          // Conception : un terrain précis (idu) et, si connue, la prospection d'origine (même utilisateur).
+          const idu = typeof criteres.idu === 'string' ? criteres.idu.replace(/\s/g, '').toUpperCase() : '';
+          if (!/^(2[AB]\d{3}|\d{5})\d{3}[0-9A-Z]{2}\d{4}$/.test(idu)) {
+            return { status: 'error', source: SOURCE, message: 'Conception : criteres.idu (identifiant cadastral à 14 caractères) est requis.' };
+          }
+          criteres = { ...criteres, idu };
+          if (criteres.mission_origine_id != null) {
+            const o = estUuid(criteres.mission_origine_id) ? await depot.chargerMissionUtilisateur(userId, criteres.mission_origine_id) : null;
+            if (!o) criteres = { ...criteres, mission_origine_id: null };
+          }
+        }
         const tier = await deps.tierUtilisateur(userId);
         // Pire cas PROPRE aux missions (entrée plafonnée, sortie d'étape, sans web).
         const pire = pireCasEtapeMission(deps.debitJetons, tier);

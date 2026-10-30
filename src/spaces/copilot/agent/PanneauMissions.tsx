@@ -13,6 +13,8 @@ import {
 } from './agentLogique';
 import type { LigneJournal, Mission } from './agent.types';
 import { RapportMission } from './RapportMission';
+import { FormulaireRegles } from './conception/FormulaireRegles';
+import { lireQuestionRegles } from '@/spaces/promoteur/shared/echangeStudio/conception';
 import { useAgentUi } from './agentUi.store';
 
 function Barres({ m }: { m: Mission }) {
@@ -192,7 +194,11 @@ function DetailMission({ id }: { id: string }) {
 
       {erreur && <p className="mzag-alerte" role="alert">{erreur}</p>}
 
-      {peutRepondre(mission) && (
+      {peutRepondre(mission) && lireQuestionRegles(mission.question_en_attente) && (
+        <FormulaireRegles missionId={mission.id} question={lireQuestionRegles(mission.question_en_attente)!} onRepondu={() => void relire()} />
+      )}
+
+      {peutRepondre(mission) && !lireQuestionRegles(mission.question_en_attente) && (
         <div className="mzag-question">
           <p>MimmozIA a besoin de vous : {mission.question_en_attente}</p>
           <textarea className="mzag-textarea" rows={3} value={reponse} maxLength={4000} onChange={(e) => setReponse(e.target.value)} aria-label="Votre réponse" placeholder="Votre réponse…" />
@@ -204,7 +210,7 @@ function DetailMission({ id }: { id: string }) {
         </div>
       )}
 
-      {mission.rapport && <RapportMission mission={mission} partiel={mission.statut !== 'terminee'} />}
+      {(mission.rapport || mission.rapport_brut != null) && <RapportMission mission={mission} partiel={mission.statut !== 'terminee'} />}
 
       <section className="mzag-carte" aria-label="Journal de la mission">
         <span className="mzag-sur">Journal{active ? ' · en direct' : ''}</span>

@@ -14,6 +14,9 @@ import {
 } from './rapport/rapportModele';
 import { LIBELLE_QUALITE_CONTACT, proprietaireTexte } from './rapport/rapportTexte';
 import type { FormatExport } from './rapport/exporterRapport';
+import { SuiteConception } from './conception/SuiteConception';
+import { CarteConceptionPrete } from './conception/CarteConceptionPrete';
+import { lireConceptionPrete } from './conception/conceptionLogique';
 
 const EXPORTS: { format: FormatExport; label: string; titre: string }[] = [
   { format: 'pdf', label: 'PDF', titre: 'Télécharger le rapport en PDF' },
@@ -44,6 +47,8 @@ export function RapportMission({ mission, partiel }: { mission: Mission; partiel
   };
 
   const synthese = toutLire ? m.synthese : m.synthese.slice(0, 2);
+  // Rapport d'une mission de conception : pas d'export de prospection, accès aux voies du plan.
+  const conception = lireConceptionPrete(mission.rapport_brut) != null;
 
   return (
     <section className="mzag-carte mzag-rapport" aria-label="Rapport de la mission">
@@ -52,7 +57,9 @@ export function RapportMission({ mission, partiel }: { mission: Mission; partiel
       </div>
       <h3 className="mzag-titre" style={{ marginTop: 4 }}>{m.titre}</h3>
 
-      <div className="mzag-actions mzag-rapport__exports" aria-busy={export_ !== null}>
+      <CarteConceptionPrete rapport={mission.rapport_brut} />
+
+      {!conception && <div className="mzag-actions mzag-rapport__exports" aria-busy={export_ !== null}>
         <span className="mzag-petit">Télécharger :</span>
         {EXPORTS.map((e) => (
           <button key={e.format} type="button" className="mzag-btn mzag-btn--petit" title={e.titre} disabled={export_ !== null} onClick={() => void exporter(e.format)}>
@@ -63,7 +70,7 @@ export function RapportMission({ mission, partiel }: { mission: Mission; partiel
           title="Classeur Excel avec formules : modifiez les hypothèses, tout se recalcule" onClick={() => void exporter('bilan')}>
           <FileSpreadsheet size={13} aria-hidden /> {export_ === 'bilan' ? 'Préparation…' : 'Bilan promoteur (Excel modifiable)'}
         </button>
-      </div>
+      </div>}
       {erreur && <p className="mzag-alerte" role="alert" style={{ margin: '8px 0 0' }}>{erreur}</p>}
 
       {synthese.length > 0 && (
@@ -171,6 +178,8 @@ export function RapportMission({ mission, partiel }: { mission: Mission; partiel
           <ul className="mzag-puces">{m.limites.map((l) => <li key={l}>{l}</li>)}</ul>
         </details>
       )}
+
+      {!conception && m.terrains.length > 0 && <SuiteConception mission={mission} modele={m} />}
 
       <p className="mzag-petit" style={{ marginTop: 12 }}>{m.avertissement}</p>
 

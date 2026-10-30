@@ -188,6 +188,7 @@ export const LIBELLE_TYPE: Record<string, string> = {
   faisabilite: 'Étude de faisabilité',
   etude_marche: 'Étude de marché',
   veille: 'Veille',
+  conception: 'Conception du projet',
   libre: 'Mission',
 };
 export const libelleType = (t: string): string => LIBELLE_TYPE[t] ?? 'Mission';

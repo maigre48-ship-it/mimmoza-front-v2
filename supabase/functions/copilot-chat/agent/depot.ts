@@ -17,6 +17,14 @@ type Requete = any;
 export interface ClientSupabaseMin {
   from(table: string): Requete;
   rpc(fn: string, args?: Record<string, unknown>): Requete;
+  storage?: Requete;
+}
+
+/** Encodage base64 d'un binaire, par blocs (pas de dépassement de pile sur un gros PDF). */
+export function versBase64(octets: Uint8Array): string {
+  let bin = '';
+  for (let i = 0; i < octets.length; i += 0x8000) bin += String.fromCharCode(...octets.subarray(i, i + 0x8000));
+  return btoa(bin);
 }
 
 const ENTREE_MAX_CARS = 8000;
@@ -34,6 +42,14 @@ function borneEntree(entree: unknown): unknown {
 
 function erreur(contexte: string, e: { message?: string } | null | undefined): Error {
   return new Error(`${contexte} : ${e?.message ?? 'erreur inconnue'}`);
+}
+
+/** Lignes de test présentes en prod dans les tables plu_* (ex. Paris UG « Test ingestion ») : écartées. */
+export function estLigneDeTest(r: Record<string, unknown>): boolean {
+  const t = JSON.stringify(r).toLowerCase();
+  // Toute variante « test Mimmoza » (« version test Mimmoza », « tests Mimmoza »…) : une donnée de test
+  // ne doit jamais alimenter un vrai projet.
+  return /test ingestion|plu_paris_test|tests? mimmoza|zone [a-z0-9]+ test\b/.test(t);
 }
 
 export function depotSupabase(db: ClientSupabaseMin): DepotMission {
@@ -196,6 +212,64 @@ export function depotSupabase(db: ClientSupabaseMin): DepotMission {
         .eq('id', id).eq('user_id', userId).maybeSingle();
       if (error) throw erreur('lecture mission', error);
       return (data ?? null) as MissionRow | null;
+    },
+
+    async reglesPluImportees(codeInsee, zone) {
+      // Ordre de priorité : saisie manuelle > ruleset universel > rulesets par zone > extraction IA > synthèse.
+      // Couverture constatée en prod le 30/10/2026 : Ascain (64065), deux jeux de test (Paris UG, Nantes UA).
+      const z = zone.trim().toUpperCase();
+      const lignes: Array<{ table: string; libelle: string | null; document: string | null; ruleset: unknown }> = [];
+      const lire = async (table: string, champs: string, versLigne: (r: Record<string, unknown>) => { libelle: string | null; document: string | null; ruleset: unknown }) => {
+        const { data, error } = await db.from(table).select(champs).eq('commune_insee', codeInsee).eq('zone_code', z).limit(3);
+        if (error) { console.warn('[agent] règles importées', table, error.message); return; }
+        for (const r of (data ?? []) as Record<string, unknown>[]) {
+          if (estLigneDeTest(r)) continue;   // ex. « PLU test ingestion » Paris UG : jamais présenté comme règle
+          lignes.push({ table, ...versLigne(r) });
+        }
+      };
+      await lire('plu_manual_rulesets', 'plu_version_label, plu_source_url, plu_source_page_range, ruleset',
+        (r) => ({ libelle: (r.plu_version_label as string) ?? null, document: [r.plu_source_url, r.plu_source_page_range].filter(Boolean).join(' ') || null, ruleset: r.ruleset }));
+      await lire('plu_rulesets_universal', 'plu_version_label, zone_libelle, source_document, ruleset',
+        (r) => ({ libelle: (r.plu_version_label as string) ?? null, document: (r.source_document as string) ?? null, ruleset: r.ruleset }));
+      await lire('plu_zones_rulesets', 'document_id, ruleset',
+        (r) => ({ libelle: null, document: (r.document_id as string) ?? null, ruleset: r.ruleset }));
+      await lire('plu_rulesets_ai', 'source_pdf_storage_path, ruleset',
+        (r) => ({ libelle: 'extraction IA', document: (r.source_pdf_storage_path as string) ?? null, ruleset: r.ruleset }));
+      await lire('plu_regles_synthese', 'hauteur_max_m, emprise_sol_max, commentaire, raw_rules',
+        (r) => ({ libelle: 'synthèse', document: (r.commentaire as string) ?? null, ruleset: { hauteur_max_m: r.hauteur_max_m, emprise_sol_max: r.emprise_sol_max } }));
+      return lignes;
+    },
+
+    async enregistrerConception(missionId, userId, champs) {
+      const { data: ex, error: e1 } = await db.from('agent_conceptions').select('id').eq('mission_id', missionId).eq('user_id', userId).maybeSingle();
+      if (e1) throw erreur('lecture agent_conceptions', e1);
+      if (ex?.id) {
+        const { error } = await db.from('agent_conceptions').update(champs).eq('id', ex.id);
+        if (error) throw erreur('mise à jour agent_conceptions', error);
+        return String(ex.id);
+      }
+      const { data, error } = await db.from('agent_conceptions')
+        .insert({ ...champs, user_id: userId, mission_id: missionId }).select('id').single();
+      if (error) throw erreur('création agent_conceptions', error);
+      return String(data.id);
+    },
+
+    async telechargerFichier(bucket, chemin, maxOctets) {
+      if (!db.storage) return null;
+      // Taille lue dans les MÉTADONNÉES avant tout téléchargement (un PDF de 200 Mo n'est jamais chargé).
+      const i = chemin.lastIndexOf('/');
+      const dossier = chemin.slice(0, i), nom = chemin.slice(i + 1);
+      const liste = await db.storage.from(bucket).list(dossier, { search: nom, limit: 10 });
+      if (liste.error) return null;
+      const meta = ((liste.data ?? []) as Array<{ name: string; metadata?: { size?: number } }>).find((f) => f.name === nom);
+      if (!meta) return null;
+      const taille = Number(meta.metadata?.size);
+      if (Number.isFinite(taille) && taille > maxOctets) return { trop_gros: true as const, octets: taille };
+      const { data, error } = await db.storage.from(bucket).download(chemin);
+      if (error || !data) return null;
+      const octets = new Uint8Array(await (data as Blob).arrayBuffer());
+      if (octets.length > maxOctets) return { trop_gros: true as const, octets: octets.length };
+      return { base64: versBase64(octets), octets: octets.length };
     },
 
     async projetAccessible(userId, id) {

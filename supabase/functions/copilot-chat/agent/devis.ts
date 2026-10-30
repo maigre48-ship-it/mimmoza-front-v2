@@ -29,6 +29,7 @@ export const ETAPES_PAR_TYPE: Record<TypeMission, number> = {
   etude_marche: 15,
   veille: 10,
   libre: 15,
+  conception: 12,
 };
 
 /** Bornes dures : jamais plus de 40 étapes (défaut colonne etapes_max), jamais moins de 3. */
@@ -73,6 +74,7 @@ const LIBELLES: Record<TypeMission, string> = {
   etude_marche: 'étude de marché',
   veille: 'qualification de veille',
   libre: 'mission',
+  conception: 'préparation de la conception',
 };
 
 export interface EntreeDevis {

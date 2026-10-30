@@ -150,6 +150,24 @@ class DepotMemoire implements DepotMission {
   async listerMissions(userId: string, n: number) { return [...this.missions.values()].filter((m) => m.user_id === userId).reverse().slice(0, n); }
   async chargerMissionUtilisateur(userId: string, id: string) { const m = this.missions.get(id); return m && m.user_id === userId ? m : null; }
   async projetAccessible() { return false; }
+  conceptions = new Map<string, Record<string, unknown>>();
+  reglesImportees: Array<{ table: string; libelle: string | null; document: string | null; ruleset: unknown }> = [];
+  fichiers = new Map<string, Uint8Array>();
+  async reglesPluImportees() { return this.reglesImportees; }
+  async enregistrerConception(missionId: string, userId: string, champs: Record<string, unknown>) {
+    this.vivant();
+    const ex = [...this.conceptions.entries()].find(([, v]) => v.mission_id === missionId);
+    if (ex) { Object.assign(ex[1], champs); return ex[0]; }
+    const id = crypto.randomUUID();
+    this.conceptions.set(id, { ...champs, user_id: userId, mission_id: missionId });
+    return id;
+  }
+  async telechargerFichier(_b: string, chemin: string, max: number) {
+    const f = this.fichiers.get(chemin);
+    if (!f) return null;
+    if (f.length > max) return { trop_gros: true as const, octets: f.length };
+    return { base64: btoa(String.fromCharCode(...f)), octets: f.length };
+  }
 
   /** Simule la RPC utilisateur agent_mission_repondre. */
   repondre(id: string, reponse: string) {
@@ -765,4 +783,230 @@ Deno.test('sortie coupée (max_tokens) : le modèle est prévenu au tour suivant
   assertEquals(depot.missions.get(m.id)!.statut, 'terminee');
   assert(prevenu, 'consigne de sortie coupée transmise');
   assert(depot.journalLignes.some((l) => l.genre === 'erreur' && l.resume.includes('coupée')));
+});
+
+Deno.test('prospection : rapport.suite_proposee « conception » (terrains non écartés, classés)', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const m = depot.ajouter({ statut: 'en_attente' });
+  let n = 0;
+  const { deps } = fabriquerDeps(depot, (a) => {
+    if (estPlan(a)) return { textBlocks: ['1. A'] };
+    n++;
+    if (n === 1) return tourOutils(
+      ['rapport_terrain', { idu: '93048000AJ0209', commune: 'Montreuil', verdict: 'prioritaire' }],
+      ['rapport_terrain', { idu: '93048000CI0008', commune: 'Montreuil', verdict: 'ecarte' }]);
+    return tourOutils(['terminer_mission', { titre: 'T', synthese: 'S', classement: [{ idu: '93048000AJ0209', justification: 'La meilleure' }] }]);
+  }, horloge);
+  await tickMissions(deps, depot, { worker: 'w' });
+  const s = (depot.missions.get(m.id)!.rapport as Record<string, unknown>).suite_proposee as { type: string; terrains: Array<{ idu: string; rang: number; raison: string }>; texte: string };
+  assertEquals(s.type, 'conception');
+  assertEquals(s.terrains, [{ idu: '93048000AJ0209', rang: 1, raison: 'La meilleure' }]);
+});
+
+Deno.test('conception : parcelle, règles importées, formulaire JSON, lecture du règlement, programme, dossier « plan »', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  // Prospection d'origine (même utilisateur) : ses données sont transmises en amorce.
+  const origine = depot.ajouter({ statut: 'terminee', rapport: { titre: 'Prospection Montreuil', terrains: [{ idu: '93048000AJ0209', surface_m2: 3554 }], hypotheses_communes: { programme: { nb_logements: 40 } } } });
+  const devis = calculerDevis({ type: 'conception', tier: 'sonnet', pireCasEtape: PIRE });
+  assertEquals(devis.etapes_max, 12);
+  const m = depot.ajouter({ statut: 'en_attente', type: 'conception', devis, criteres: { idu: '93048000AJ0209', mission_origine_id: origine.id } });
+  depot.reglesImportees = [{ table: 'plu_rulesets_universal', libelle: 'PLU test', document: null, ruleset: { hauteur: { max_hauteur_m: 18 } } }];
+  let n = 0; let amorceVue = ''; let lectureVue = false; let outilsVus: string[] = [];
+  const { deps, appelsLLM } = fabriquerDeps(depot, (a) => {
+    if (estPlan(a)) { amorceVue = JSON.stringify(a.messages); return { textBlocks: ['1. Parcelle\n2. Règles\n3. Programme'] }; }
+    if (JSON.stringify(a.messages).includes('"type":"document"')) {
+      lectureVue = true;
+      assertEquals(a.tools, [], 'lecture sans outils');
+      return { textBlocks: ['{"regles":[{"cle":"emprise_sol_max_pct","valeur":60,"article":"UC 9","texte":"L’emprise au sol est limitée à 60 %"}]}'] };
+    }
+    n++;
+    outilsVus = a.tools.map((t) => t.name);
+    if (n === 1) return tourOutils(['recuperer_parcelle', { idu: '93048000AJ0209' }], ['lire_regles_plu_importees', { code_insee: '93048', zone_code: 'uc91d19' }]);
+    if (n === 2) return tourOutils(['enregistrer_regles_conception', { regles: [
+      { cle: 'mixite_sociale_pct', valeur: 30, statut: 'confirme', source: 'get_prescriptions_urbanisme' },   // sans article → estime
+      { cle: 'recul_voie_m', valeur: 4 },                                                                       // sans source → refusée
+    ] }]);
+    if (n === 3) return tourOutils(['demander_utilisateur', { question: 'Voici les règles connues ; complétez-les ou déposez le règlement.', formulaire: 'regles_conception' }]);
+    if (n === 4) return tourOutils(['enregistrer_programme', { nb_logements: 40, typologies: { T2: 15, T3: 20, T4: 5 }, shab_cible_m2: 2800, sdp_cible_m2: 3200, gabarit: 'R+4' }]);
+    return tourOutils(['terminer_mission', { titre: 'Règles prêtes', synthese: 'Choisissez la voie du plan.' }]);
+  }, horloge);
+  deps.fetch = (async () => new Response(JSON.stringify({ features: [{ geometry: { type: 'Polygon', coordinates: [[[2.44, 48.86], [2.45, 48.86], [2.45, 48.87], [2.44, 48.86]]] }, properties: { contenance: 3554 } }] }))) as unknown as typeof fetch;
+  deps.compterTokens = async () => 12_000;
+
+  await tickMissions(deps, depot, { worker: 'w1' });
+  let x = depot.missions.get(m.id)!;
+  assertEquals(x.statut, 'attente_utilisateur');
+  assert(amorceVue.includes('DONNÉES DE LA PROSPECTION') && amorceVue.includes('Prospection Montreuil'));
+  assert(outilsVus.includes('recuperer_parcelle') && !outilsVus.includes('rapport_terrain') && !outilsVus.includes('rediger_action_externe'));
+  const q = JSON.parse(String(x.question_en_attente));
+  assertEquals([q.type, q.version, q.idu, q.regles.length], ['regles_conception', 1, '93048000AJ0209', 9]);
+  const par = Object.fromEntries((q.regles as Array<{ cle: string; valeur: unknown; statut: string }>).map((r) => [r.cle, r]));
+  assertEquals([par.hauteur_max_m.valeur, par.hauteur_max_m.statut], [18, 'estime'], 'pré-rempli par le moteur depuis l’import');
+  assertEquals([par.mixite_sociale_pct.valeur, par.mixite_sociale_pct.statut], [30, 'estime'], 'confirmé sans article → estimé');
+  assertEquals(par.recul_voie_m.statut, 'manquant', 'règle sans source refusée');
+  const conception = [...depot.conceptions.values()][0];
+  assertEquals((conception.parcelle as { surface_m2: number }).surface_m2, 3554);
+  const conceptionId = [...depot.conceptions.keys()][0];
+  assertEquals(q.conception_id, conceptionId);
+
+  // L'utilisateur confirme la hauteur, laisse le reste, dépose le règlement et demande sa lecture.
+  const chemin = `${USER}/${conceptionId}/reglement-plui.pdf`;
+  depot.fichiers.set(chemin, new Uint8Array([37, 80, 68, 70]));
+  x.etat = { ...(x.etat ?? {}), derniere_reponse: { reponse: JSON.stringify({
+    type: 'reponse_regles_conception', version: 1, lire_reglement: true, reglement: chemin,
+    regles: [{ cle: 'hauteur_max_m', valeur: 18, unite: 'm', statut: 'confirme', source: 'utilisateur' }],
+  }) } } as never;
+  x.statut = 'en_cours'; x.question_en_attente = null; (x as { bail?: number | null }).bail = null;
+  horloge.t += 1;
+  await tickMissions(deps, depot, { worker: 'w2' });
+  x = depot.missions.get(m.id)!;
+  assertEquals(x.statut, 'terminee');
+  assert(lectureVue, 'règlement lu par l’IA');
+  const r = (x.rapport as Record<string, unknown>).conception as { regles: Array<{ cle: string; valeur: unknown; statut: string; source: string; article?: string }>; regles_manquantes: string[]; programme: { nb_logements: number }; conception_id: string };
+  const rp = Object.fromEntries(r.regles.map((y) => [y.cle, y]));
+  assertEquals([rp.hauteur_max_m.statut, rp.hauteur_max_m.source], ['confirme', "Règlement importé Mimmoza (plu_rulesets_universal, PLU test, zone UC91D19) — confirmée par l'utilisateur"], 'valeur validée inchangée : source d’origine gardée');
+  assertEquals([rp.emprise_sol_max_pct.valeur, rp.emprise_sol_max_pct.statut, rp.emprise_sol_max_pct.article], [60, 'confirme', 'UC 9']);
+  assertEquals(r.programme.nb_logements, 40);
+  assertEquals(r.conception_id, conceptionId);
+  assertEquals(conception.statut, 'plan');
+  assertEquals(conception.mission_origine_id, origine.id);
+  // La lecture est débitée comme une étape (jamais offerte).
+  assert(depot.debits.length >= 7);
+  assert(appelsLLM.length >= 7);
+});
+
+Deno.test('conception : règlement trop long → pas d’appel IA, rien débité pour la lecture', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const devis = calculerDevis({ type: 'conception', tier: 'sonnet', pireCasEtape: PIRE });
+  const m = depot.ajouter({ statut: 'en_cours', type: 'conception', devis, reservation_id: null, criteres: { idu: '93048000AJ0209' } });
+  const x = depot.missions.get(m.id)!;
+  const rid = crypto.randomUUID(); depot.reservations.set(rid, { montant: devis.jetons_max, statut: 'reserved' });
+  x.reservation_id = rid; x.jetons_reserves = devis.jetons_max;
+  const cid = crypto.randomUUID();
+  x.etat = { ...etatInitial(), phase: 'travail', plan: ['A'], conception: { id: cid, idu: '93048000AJ0209', regles: [], lecture: { chemin: `${USER}/${cid}/reglement-x.pdf`, zone: 'UC' }, origine_chargee: true } } as never;
+  depot.fichiers.set(`${USER}/${cid}/reglement-x.pdf`, new Uint8Array([1, 2, 3]));
+  let lectures = 0;
+  const { deps } = fabriquerDeps(depot, (a) => {
+    if (JSON.stringify(a.messages).includes('"type":"document"')) lectures++;
+    return tourOutils(['terminer_mission', { titre: 'T', synthese: 'S' }]);
+  }, horloge);
+  deps.compterTokens = async () => 250_000;
+  await tickMissions(deps, depot, { worker: 'w' });
+  assertEquals(lectures, 0);
+  assert(depot.journalLignes.some((l) => l.genre === 'erreur' && l.resume.includes('trop long')));
+  assertEquals(depot.missions.get(m.id)!.statut, 'terminee');
+});
+
+Deno.test('chat : proposer_mission conception exige un idu ; origine d’un autre utilisateur ignorée', async () => {
+  const depot = new DepotMemoire(() => 0);
+  const deps = { debitJetons: () => 7, tierUtilisateur: async () => 'sonnet' as const };
+  const sans = await executerOutilAgentChat('proposer_mission', { type: 'conception', objectif: 'Concevoir' }, {}, USER, deps, depot);
+  assertEquals(sans?.status, 'error');
+  const autre = depot.ajouter({ statut: 'terminee', user_id: '99999999-9999-4999-8999-999999999999' });
+  const ok = await executerOutilAgentChat('proposer_mission', { type: 'conception', objectif: 'Concevoir', criteres: { idu: '93048 000 AJ 0209', mission_origine_id: autre.id } }, {}, USER, deps, depot);
+  assertEquals(ok?.status, 'ok');
+  const crit = (ok!.data as { criteres: Record<string, unknown> }).criteres;
+  assertEquals([crit.idu, crit.mission_origine_id], ['93048000AJ0209', null]);
+  assertEquals(((ok!.data as { devis: { etapes_max: number } }).devis).etapes_max, 12);
+});
+
+/** Prépare une mission de conception déjà réservée, dossier créé, en phase travail. */
+function conceptionEnCours(depot: DepotMemoire, regles: unknown[] = []) {
+  const devis = calculerDevis({ type: 'conception', tier: 'sonnet', pireCasEtape: PIRE });
+  const m = depot.ajouter({ statut: 'en_cours', type: 'conception', devis, criteres: { idu: '93048000AJ0209' } });
+  const x = depot.missions.get(m.id)!;
+  const rid = crypto.randomUUID(); depot.reservations.set(rid, { montant: devis.jetons_max, statut: 'reserved' });
+  x.reservation_id = rid; x.jetons_reserves = devis.jetons_max; depot.solde -= devis.jetons_max;
+  const cid = crypto.randomUUID();
+  depot.conceptions.set(cid, { mission_id: m.id, user_id: USER, idu: '93048000AJ0209' });
+  x.etat = { ...etatInitial(), phase: 'travail', plan: ['A'], conception: { id: cid, idu: '93048000AJ0209', regles, origine_chargee: true } } as never;
+  return { m, x, cid };
+}
+
+Deno.test('B2 — le modèle ne peut ni « confirmer » une règle inventée ni écraser la saisie de l’utilisateur', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const { m } = conceptionEnCours(depot, [{ cle: 'hauteur_max_m', valeur: 15, unite: 'm', statut: 'confirme', source: 'utilisateur' }]);
+  let n = 0; let retour = '';
+  const { deps } = fabriquerDeps(depot, (a) => {
+    n++;
+    if (n === 2) retour = JSON.stringify(a.messages);
+    if (n === 1) return tourOutils(['enregistrer_regles_conception', { regles: [
+      { cle: 'emprise_sol_max_pct', valeur: 80, statut: 'confirme', source: 'règlement PLUi', article: 'UC 9' },   // inventée, « confirmée »
+      { cle: 'hauteur_max_m', valeur: 30, statut: 'confirme', source: 'règlement PLUi', article: 'UC 10' },      // écrase l'utilisateur ?
+    ] }]);
+    return tourOutils(['terminer_mission', { titre: 'T', synthese: 'S' }]);
+  }, horloge);
+  await tickMissions(deps, depot, { worker: 'w' });
+  const r = (depot.missions.get(m.id)!.rapport as Record<string, unknown>).conception as { regles: Array<{ cle: string; valeur: unknown; statut: string; source: string }>; conflits: unknown[] };
+  const par = Object.fromEntries(r.regles.map((y) => [y.cle, y]));
+  assertEquals([par.emprise_sol_max_pct.valeur, par.emprise_sol_max_pct.statut], [80, 'estime'], 'jamais confirmée par le modèle');
+  assertEquals([par.hauteur_max_m.valeur, par.hauteur_max_m.statut, par.hauteur_max_m.source], [15, 'confirme', 'utilisateur'], 'saisie de l’utilisateur intacte');
+  assertEquals(r.conflits.length, 1);
+  assert(retour.includes('CONFLIT'), 'le modèle est prévenu du conflit');
+});
+
+Deno.test('B2 — conflit règlement PDF ↔ utilisateur : la valeur de l’utilisateur reste, le conflit est signalé dans le rapport', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const { m, x, cid } = conceptionEnCours(depot, [{ cle: 'hauteur_max_m', valeur: 15, unite: 'm', statut: 'confirme', source: 'utilisateur' }]);
+  const chemin = `${USER}/${cid}/reglement-plui.pdf`;
+  (x.etat as unknown as { conception: Record<string, unknown> }).conception.lecture = { chemin, zone: 'UC' };
+  depot.fichiers.set(chemin, new Uint8Array([37, 80, 68, 70]));
+  const { deps } = fabriquerDeps(depot, (a) => {
+    if (JSON.stringify(a.messages).includes('"type":"document"')) {
+      return { textBlocks: ['{"regles":[{"cle":"hauteur_max_m","valeur":18,"article":"UC 10","texte":"18 m"},{"cle":"pleine_terre_min_pct","valeur":30,"article":"UC 13"}]}'] };
+    }
+    return tourOutils(['terminer_mission', { titre: 'T', synthese: 'S' }]);
+  }, horloge);
+  deps.compterTokens = async () => 5000;
+  await tickMissions(deps, depot, { worker: 'w' });
+  const rap = depot.missions.get(m.id)!.rapport as Record<string, unknown>;
+  const r = rap.conception as { regles: Array<{ cle: string; valeur: unknown; statut: string }>; conflits: Array<{ cle: string; valeur_proposee: unknown }> };
+  const par = Object.fromEntries(r.regles.map((y) => [y.cle, y]));
+  assertEquals(par.hauteur_max_m.valeur, 15);
+  assertEquals([par.pleine_terre_min_pct.valeur, par.pleine_terre_min_pct.statut], [30, 'confirme'], 'règle lue avec article, sans conflit : confirmée');
+  assertEquals(r.conflits.map((c) => [c.cle, c.valeur_proposee]), [['hauteur_max_m', 18]]);
+  assert((rap.limites as string[]).some((l) => l.includes('vous avez confirmé 15') && l.includes('18')));
+});
+
+Deno.test('I7 — dossier de conception impossible à écrire : échec dès la 1re étape, seul le consommé est facturé', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  depot.enregistrerConception = async () => { throw new Error('relation "agent_conceptions" does not exist'); };
+  const devis = calculerDevis({ type: 'conception', tier: 'sonnet', pireCasEtape: PIRE });
+  const m = depot.ajouter({ statut: 'en_attente', type: 'conception', devis, criteres: { idu: '93048000AJ0209' } });
+  const soldeAvant = depot.solde;
+  const { deps, appelsLLM } = fabriquerDeps(depot, () => tourOutils(['terminer_mission', { titre: 'T', synthese: 'S' }]), horloge);
+  await tickMissions(deps, depot, { worker: 'w' });
+  const x = depot.missions.get(m.id)!;
+  assertEquals(x.statut, 'echec');
+  assertEquals(appelsLLM.length, 0, 'arrêt avant tout appel IA');
+  assert(String(x.erreur).includes('agent_conceptions'));
+  assert(x.regle_le);
+  assertEquals(depot.solde, soldeAvant, 'rien consommé, tout rendu');
+});
+
+Deno.test('I7 — écriture du dossier qui échoue à la clôture : statut echec (jamais « terminee » sans dossier)', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const { m, x } = conceptionEnCours(depot);
+  (x.etat as unknown as { conception: Record<string, unknown> }).conception.id = null;
+  let appels = 0;
+  depot.enregistrerConception = async () => { appels++; if (appels > 1) throw new Error('écriture refusée'); return crypto.randomUUID(); };
+  // 1er appel (contrôle de départ) OK puis échecs : on force la perte de l'id à la clôture.
+  const { deps } = fabriquerDeps(depot, () => tourOutils(['terminer_mission', { titre: 'T', synthese: 'S' }]), horloge);
+  const orig = depot.sauverEtat.bind(depot);
+  depot.sauverEtat = async (id, etat) => {
+    const e = etat as unknown as { conception?: { id: string | null }; phase: string };
+    if (e.phase === 'fini' && e.conception) e.conception.id = null;
+    return orig(id, etat);
+  };
+  await tickMissions(deps, depot, { worker: 'w' });
+  const fin = depot.missions.get(m.id)!;
+  assertEquals(fin.statut, 'echec');
+  assert(((fin.rapport as Record<string, unknown>).limites as string[]).some((l) => l.includes("n'a pas pu être enregistré")));
 });

@@ -13,9 +13,9 @@
 export type ModeCopilot = 'quick' | 'advanced' | 'report';
 export type Tier = 'haiku' | 'sonnet' | 'opus';
 
-export type TypeMission = 'prospection_fonciere' | 'faisabilite' | 'etude_marche' | 'veille' | 'libre';
+export type TypeMission = 'prospection_fonciere' | 'faisabilite' | 'etude_marche' | 'veille' | 'libre' | 'conception';
 export const TYPES_MISSION: readonly TypeMission[] = [
-  'prospection_fonciere', 'faisabilite', 'etude_marche', 'veille', 'libre',
+  'prospection_fonciere', 'faisabilite', 'etude_marche', 'veille', 'libre', 'conception',
 ];
 
 export type StatutMission =
@@ -103,7 +103,7 @@ export interface TourHistorique {
 /** Tour LLM déjà payé, pas encore traité (revue B2) : rejoué sans nouvel appel ni débit. */
 export interface EtapeEnVol {
   n: number;
-  phase: 'plan' | 'travail' | 'rapport';
+  phase: 'plan' | 'travail' | 'rapport' | 'lecture';
   textBlocks: string[];
   contentBlocks: Record<string, unknown>[];
   toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }>;
@@ -147,6 +147,8 @@ export interface EtatMission {
   briefing_ecrit?: boolean;
   /** Rapport v2 en construction (rapport.ts : BrouillonRapport). */
   brouillon?: unknown;
+  /** Mission de conception : dossier en préparation (mission.ts : EtatConception). */
+  conception?: unknown;
 }
 
 export type GenreJournal =
@@ -233,6 +235,12 @@ export interface DepotMission {
   chargerMissionUtilisateur(userId: string, id: string): Promise<MissionRow | null>;
   /** Le projet existe ET appartient à l'utilisateur (créateur ou membre de l'organisation). */
   projetAccessible(userId: string, id: string): Promise<boolean>;
+  /** Règlements PLU déjà importés dans Mimmoza pour (commune, zone), par priorité. */
+  reglesPluImportees(codeInsee: string, zone: string): Promise<Array<{ table: string; libelle: string | null; document: string | null; ruleset: unknown }>>;
+  /** Crée ou met à jour la ligne agent_conceptions de la mission ; renvoie son id. */
+  enregistrerConception(missionId: string, userId: string, champs: Record<string, unknown>): Promise<string>;
+  /** Télécharge un fichier du bucket (base64), ou null. */
+  telechargerFichier(bucket: string, chemin: string, maxOctets: number): Promise<{ base64: string; octets: number } | { trop_gros: true; octets: number } | null>;
 }
 
 /** Fonctions de l'index injectées dans le moteur (pas d'import circulaire). */
@@ -252,4 +260,8 @@ export interface MoteurDeps {
   /** Fonction pure fournie par l'agent PROACTIF (briefing.ts) ; optionnelle. */
   briefingPourMissionVeille?: (mission: { id?: string; statut?: string; rapport?: unknown; criteres?: unknown }) => Briefing | null;
   now?: () => number;
+  /** Comptage exact des tokens d'un appel (PDF) ; défaut : API Anthropic count_tokens. */
+  compterTokens?: (p: { model: string; system: string; messages: unknown[] }) => Promise<number | null>;
+  /** fetch injectable (cadastre) ; défaut : globalThis.fetch. */
+  fetch?: typeof fetch;
 }

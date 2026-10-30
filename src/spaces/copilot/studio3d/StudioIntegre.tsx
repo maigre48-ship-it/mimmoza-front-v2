@@ -39,10 +39,12 @@ type EtatRelief = { texte: string; erreur: boolean; enCours: boolean };
 
 const ENV = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
 
-export function StudioIntegre({ demande, ouvert, onFermer }: {
+export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret }: {
   demande: DemandeStudioIntegre | null;
   ouvert: boolean;
   onFermer: (vers: "projet" | "bilan") => void;
+  /** Conception (agent) : appelé à chaque « prêt » du Studio, avec sa fenêtre et son origine exacte. */
+  onCadrePret?: (fenetre: Window, origine: string) => void;
 }) {
   const cadre = useRef<HTMLIFrameElement | null>(null);
   const [connecte, setConnecte] = useState(false);
@@ -52,6 +54,8 @@ export function StudioIntegre({ demande, ouvert, onFermer }: {
   // La fermeture passe par une référence : un nouveau rendu du tchat ne relance pas la poignée de main.
   const fermer = useRef(onFermer);
   fermer.current = onFermer;
+  const cadrePret = useRef(onCadrePret);
+  cadrePret.current = onCadrePret;
   const relancer = useRef<(() => void) | null>(null);
   const [ifc, setIfc] = useState<string | null>(null);
 
@@ -105,7 +109,11 @@ export function StudioIntegre({ demande, ouvert, onFermer }: {
       const vers = lireFermetureStudio(evt.data);
       if (vers && evt.origin === origine) { fermer.current(vers); return; }
       const d = examinerMessageStudio({ origin: evt.origin, data: evt.data }, autorisees, window.location.origin, new Set([demande.sessionId]), Boolean(ENV.DEV));
-      if (d.type === "pret") { poignee?.surPret(d.attendProjet); setConnecte(true); envoyerRelief(); }
+      if (d.type === "pret") {
+        poignee?.surPret(d.attendProjet); setConnecte(true); envoyerRelief();
+        const f = cadre.current?.contentWindow;
+        if (f) cadrePret.current?.(f, origine);
+      }
     };
     window.addEventListener("message", surMessage);
     // La fenêtre du cadre (WindowProxy) existe dès le montage : les « bonjour » envoyés

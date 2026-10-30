@@ -130,11 +130,82 @@ export const OUTIL_DEMANDER_UTILISATEUR: OutilDef = {
     'décisives impossibles à supposer raisonnablement (programme, budget, commune…). La mission dort ensuite.',
   input_schema: {
     type: 'object',
-    properties: { question: { type: 'string', description: 'Question claire et autonome (≤ 1 000 caractères).' } },
+    properties: {
+      question: { type: 'string', description: 'Question claire et autonome (≤ 1 000 caractères).' },
+      formulaire: {
+        type: 'string', enum: ['regles_conception'],
+        description: "Mission de conception : affiche à l'utilisateur le FORMULAIRE des règles PLU clés, pré-rempli par le moteur avec les règles déjà enregistrées (tu n'as pas à les recopier).",
+      },
+    },
     required: ['question'],
   },
   available_in_modes: TOUS_MODES,
 };
+
+const REGLE_PROPS = {
+  type: 'object',
+  properties: {
+    cle: { type: 'string', enum: ['hauteur_max_m', 'niveaux_max', 'emprise_sol_max_pct', 'recul_voie_m', 'recul_limites_m', 'recul_limites_formule', 'pleine_terre_min_pct', 'stationnement_par_logement', 'mixite_sociale_pct'] },
+    valeur: { type: ['number', 'string', 'null'], description: 'Nombre (m, %, niveaux, places) ; texte pour recul_limites_formule ; null si inconnue. Pourcentages en pourcent (30 = 30 %).' },
+    statut: { type: 'string', enum: ['confirme', 'estime', 'manquant'] },
+    source: { type: 'string', description: 'Outil ou document d’origine (obligatoire).' },
+    article: { type: 'string' },
+    texte: { type: 'string', description: 'Citation courte du règlement.' },
+  },
+  required: ['cle', 'valeur', 'source'],
+};
+
+export const OUTIL_RECUPERER_PARCELLE: OutilDef = {
+  name: 'recuperer_parcelle',
+  description: 'Conception : récupère le CONTOUR cadastral réel (GeoJSON) et la contenance de la parcelle de la mission, et les enregistre dans le dossier.',
+  input_schema: { type: 'object', properties: { idu: { type: 'string' } }, required: ['idu'] },
+  available_in_modes: TOUS_MODES,
+};
+export const OUTIL_LIRE_REGLES_IMPORTEES: OutilDef = {
+  name: 'lire_regles_plu_importees',
+  description:
+    "Conception : cherche les règles chiffrées d'un règlement PLU DÉJÀ IMPORTÉ dans Mimmoza pour (code INSEE, code de zone) " +
+    "et les enregistre au dossier (statut « estime »). Couverture très partielle : un résultat vide est normal.",
+  input_schema: { type: 'object', properties: { code_insee: { type: 'string' }, zone_code: { type: 'string' } }, required: ['code_insee', 'zone_code'] },
+  available_in_modes: TOUS_MODES,
+};
+export const OUTIL_ENREGISTRER_REGLES: OutilDef = {
+  name: 'enregistrer_regles_conception',
+  description:
+    "Conception : enregistre des règles PLU clés au dossier (ex. mixité sociale lue par get_prescriptions_urbanisme). " +
+    "Aucune règle sans source ; « confirme » n'est accepté que pour une règle lue dans le règlement avec son article — " +
+    "sinon elle est enregistrée « estime ». Une règle plus sûre déjà enregistrée n'est jamais écrasée.",
+  input_schema: { type: 'object', properties: { regles: { type: 'array', items: REGLE_PROPS } }, required: ['regles'] },
+  available_in_modes: TOUS_MODES,
+};
+export const OUTIL_ENREGISTRER_PROGRAMME: OutilDef = {
+  name: 'enregistrer_programme',
+  description: 'Conception : enregistre le PROGRAMME proposé (cohérent avec le rapport de prospection et les règles connues).',
+  input_schema: {
+    type: 'object',
+    properties: {
+      nb_logements: { type: ['number', 'null'] },
+      typologies: { type: 'object', properties: { T1: { type: 'number' }, T2: { type: 'number' }, T3: { type: 'number' }, T4: { type: 'number' }, T5: { type: 'number' } } },
+      shab_cible_m2: { type: ['number', 'null'] }, sdp_cible_m2: { type: ['number', 'null'] },
+      gabarit: { type: ['string', 'null'] }, stationnement: { type: ['number', 'null'] },
+      justification: { type: 'string', description: 'D’où viennent ces chiffres (rapport de prospection, règles).' },
+    },
+  },
+  available_in_modes: TOUS_MODES,
+};
+export const OUTIL_LIRE_REGLEMENT_PDF: OutilDef = {
+  name: 'lire_reglement_pdf',
+  description:
+    "Conception : fait lire par l'IA le règlement PDF déposé par l'utilisateur dans le dossier de la conception, à l'étape " +
+    "suivante (coût compté en jetons). Les règles trouvées avec leur article sont enregistrées « confirme ».",
+  input_schema: { type: 'object', properties: { chemin: { type: 'string' }, zone_code: { type: 'string' } }, required: ['chemin'] },
+  available_in_modes: TOUS_MODES,
+};
+
+export const OUTILS_CONCEPTION: OutilDef[] = [
+  OUTIL_RECUPERER_PARCELLE, OUTIL_LIRE_REGLES_IMPORTEES, OUTIL_ENREGISTRER_REGLES, OUTIL_ENREGISTRER_PROGRAMME, OUTIL_LIRE_REGLEMENT_PDF,
+];
+export const NOMS_OUTILS_CONCEPTION: ReadonlySet<string> = new Set(OUTILS_CONCEPTION.map((o) => o.name));
 
 const HYP_PROPS: Record<string, unknown> = {
   programme: {
@@ -275,6 +346,7 @@ export const OUTIL_TERMINER_MISSION: OutilDef = {
 export const OUTILS_MISSION: OutilDef[] = [
   OUTIL_NOTER_CARNET, OUTIL_MEMORISER, OUTIL_REDIGER_ACTION, OUTIL_DEMANDER_UTILISATEUR,
   OUTIL_RAPPORT_HYPOTHESES, OUTIL_CALCULER_CF, OUTIL_RAPPORT_TERRAIN, OUTIL_RAPPORT_CONTACT,
+  ...OUTILS_CONCEPTION,
   OUTIL_TERMINER_MISSION,
 ];
 export const NOMS_OUTILS_MISSION: ReadonlySet<string> = new Set(OUTILS_MISSION.map((o) => o.name));
@@ -335,10 +407,25 @@ export function outilChatAutoriseEnMission(nom: string): boolean {
 }
 
 /** Outils envoyés au modèle pour une mission de ce type. */
+/** Outils du chat pour une mission de conception (parcelle, zonage, prescriptions, SRU). */
+export const OUTILS_CHAT_MISSION_CONCEPTION: readonly string[] = [
+  'get_parcel_summary', 'get_parcelle_depuis_adresse', 'get_zonage_plu', 'get_prescriptions_urbanisme',
+  'get_servitudes', 'get_logement_social', 'get_risks_georisques',
+];
+/** Outils de mission propres aux rapports de prospection (fiches, bilan). */
+const OUTILS_RAPPORT_PROSPECTION = new Set(['rapport_hypotheses', 'calculer_charge_fonciere', 'rapport_terrain', 'rapport_contact']);
+
+/** Outils envoyés au modèle pour une mission de ce type. */
 export function outilsPourMission(type: string, outilsChat: OutilDef[]): OutilDef[] {
   const veille = type === 'veille';
-  const blanche = new Set(veille ? OUTILS_CHAT_MISSION_VEILLE : OUTILS_CHAT_MISSION_PROSPECTION);
+  const conception = type === 'conception';
+  const blanche = new Set(veille ? OUTILS_CHAT_MISSION_VEILLE : conception ? OUTILS_CHAT_MISSION_CONCEPTION : OUTILS_CHAT_MISSION_PROSPECTION);
   const chat = outilsChat.filter((o) => blanche.has(o.name) && outilChatAutoriseEnMission(o.name) && !NOMS_OUTILS_MISSION.has(o.name));
-  const propres = OUTILS_MISSION.filter((o) => !(veille && OUTILS_MISSION_INTERDITS_VEILLE.has(o.name)));
+  const propres = OUTILS_MISSION.filter((o) => {
+    if (veille && OUTILS_MISSION_INTERDITS_VEILLE.has(o.name)) return false;
+    if (NOMS_OUTILS_CONCEPTION.has(o.name)) return conception;          // outils de conception : seulement en conception
+    if (conception && (OUTILS_RAPPORT_PROSPECTION.has(o.name) || o.name === 'rediger_action_externe')) return false;
+    return true;
+  });
   return [...chat, ...propres];
 }
