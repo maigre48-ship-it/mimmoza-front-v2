@@ -93,11 +93,16 @@ export function StudioHeroBuilding3D() {
       crown.castShadow = true;
       parent.add(crown);
     };
-    const planter = (parent: THREE.Object3D, x: number, y: number, z: number, width: number) => {
-      box(parent, stone, width, 0.23, 0.32, x, y, z);
-      box(parent, soil, width - 0.08, 0.035, 0.23, x, y + 0.13, z);
-      for (let i = 0; i < Math.max(2, Math.floor(width / 0.45)); i++) {
-        shrub(parent, x - width / 2 + 0.3 + i * 0.43, y + 0.28, z, 0.55 + (i % 3) * 0.14, i);
+    // Jardinière posée le long de x (façade principale) ou de z (balcon de côté) :
+    // elle doit toujours tenir DANS le balcon, garde-corps compris.
+    const planter = (parent: THREE.Object3D, x: number, y: number, z: number, width: number, alongZ = false) => {
+      const [w, d] = alongZ ? [0.3, width] : [width, 0.3];
+      box(parent, stone, w, 0.23, d, x, y, z);
+      box(parent, soil, alongZ ? 0.22 : width - 0.08, 0.035, alongZ ? width - 0.08 : 0.22, x, y + 0.13, z);
+      const n = Math.max(2, Math.floor(width / 0.45));
+      for (let i = 0; i < n; i++) {
+        const t = -width / 2 + 0.3 + i * ((width - 0.6) / Math.max(1, n - 1));
+        shrub(parent, alongZ ? x : x + t, y + 0.26, alongZ ? z + t : z, 0.45 + (i % 3) * 0.1, i);
       }
     };
 
@@ -138,12 +143,12 @@ export function StudioHeroBuilding3D() {
         box(building, glass, width - 0.18, 0.76, 0.07, x, y + 0.47, 4.7);
         box(building, rail, width, 0.045, 0.1, x, y + 0.88, 4.7);
         for (const edge of [-1, 1]) box(building, rail, 0.045, 0.83, 0.06, x + edge * (width / 2 - 0.08), y + 0.48, 4.7);
-        planter(building, x + width * 0.22, y + 0.19, 4.42, width * 0.36);
+        planter(building, x + width * 0.22, y + 0.19, 4.36, width * 0.36); // dalle 3,55 → 4,70, verre à 4,70
       }
       box(building, ivory, 1.06, 0.16, 5.85, 5.48, y, 0);
       box(building, glass, 0.07, 0.76, 5.65, 6.02, y + 0.47, 0);
       box(building, rail, 0.07, 0.045, 5.85, 6.02, y + 0.88, 0);
-      planter(building, 5.7, y + 0.19, 1.35, 2.2);
+      planter(building, 5.62, y + 0.19, 1.35, 2.2, true); // balcon de côté : 4,95 → 6,01 m, garde-corps à 6,02
     }
 
     // Roof garden and central lift housing.
