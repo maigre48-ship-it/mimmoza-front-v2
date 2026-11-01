@@ -23,6 +23,7 @@ import {
 import { isLocalMessageId, persistActionRun } from '../actions/copilotActions';
 import { MESSAGES_REPRISE, raccorderSuite, retirerMarqueursInterruption } from './repriseFlux';
 import { signalerErreur } from '@/lib/monitoring';
+import { avisDocuments } from '../pieces-jointes/piecesJointesLogique';
 import type {
   ActionRun,
   ChatMessage,
@@ -94,6 +95,12 @@ interface CopilotStore {
   streamingId: string | null;
   activeRequestId: string | null;
   error: string | null;
+  /**
+   * V1.8 — Documents lus au tour en cours (événement SSE `documents`) : mode de
+   * lecture (entier, ciblée sur la zone, pages…) et supplément de jetons réservé.
+   * Affiché sous le composeur ; remis à zéro à chaque nouvel envoi.
+   */
+  avisDocuments: string | null;
 
   loadingConversations: boolean;
   loadingMessages: boolean;
@@ -208,6 +215,7 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
   streamingId: null,
   activeRequestId: null,
   error: null,
+  avisDocuments: null,
 
   loadingConversations: false,
   loadingMessages: false,
@@ -375,6 +383,7 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
       activeRequestId: id,
       status: 'streaming',
       error: null,
+      avisDocuments: null,
     }));
 
     return id;
@@ -392,6 +401,10 @@ export const useCopilotStore = create<CopilotStore>((set, get) => ({
     switch (event.type) {
       case 'reservation':
         set({ credits: event.remaining });
+        break;
+
+      case 'documents':
+        set({ avisDocuments: avisDocuments(event) });
         break;
 
       case 'conversation':

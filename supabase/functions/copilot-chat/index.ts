@@ -70,6 +70,16 @@ import { chargerBlocMemoire, projetDuContexte } from './agent/memoire.ts';
 import { DOCTRINE_MISSIONS_CHAT } from './agent/prompt-promoteur.ts';
 import { clesServiceRole, estCleServiceRole } from './agent/interne.ts';
 import type { MoteurDeps } from './agent/types.ts';
+// Gros documents (V1.8) : pièces jointes par stockage, lecture ciblée, règlement GPU.
+import {
+  BUCKET_PIECES_JOINTES, estReferenceStockage, jetonsSupplementairesDocuments, marqueurPieces, validerReference,
+  type PieceTracee,
+} from '../_shared/documents/piecesJointes.ts';
+import { normaliserCodeZone, zoneDepuisMessage } from '../_shared/documents/lectureCiblee.ts';
+import {
+  DOCUMENTS_VIDES, preparerDocumentsDuTour, type DepotPiecesJointes, type DocumentsDuTour, type LignePieceJointe,
+} from './pieces-jointes.ts';
+import { compterTokensAnthropic } from './agent/conception.ts';
 
 // =============================================================
 // SECTION 1 — Configuration
@@ -266,6 +276,7 @@ const INTERNAL_FUNCTIONS = {
   contacts: Deno.env.get('COPILOT_FN_CONTACTS') ?? null,          // recherche-contacts-mairies-v1 (mairies + maires par rayon)
   metrics_zone: Deno.env.get('COPILOT_FN_METRICS_ZONE') ?? null,  // market-metrics-zone-v1 (état du marché d'une zone surveillée)
   parcelles: Deno.env.get('COPILOT_FN_PARCELLES') ?? null,        // rechercher-parcelles-v1 (prospection foncière)
+  plu_reglement: Deno.env.get('COPILOT_FN_PLU_REGLEMENT') ?? null, // plu-reglement-v1 (règlement écrit GPU + texte des PDF stockés)
 } as const;
 
 // Timeout dédié aux appels de fonctions internes (séparé du LLM).
@@ -672,10 +683,19 @@ interface MimmozaContext {
 // Encodees en base64 par le front. NON persistees : l'historique relu depuis
 // copilot_messages est du texte, donc le modele ne "revoit" pas le fichier
 // aux tours suivants.
+// V1.8 — Pièces jointes PAR STOCKAGE : le front téléverse le fichier dans le
+// bucket privé copilot-pieces-jointes (50 Mo) et n'envoie qu'une RÉFÉRENCE
+// { mediaType, storagePath, size, name, textePath? }. La pièce est RATTACHÉE à
+// la conversation (table copilot_pieces_jointes) et re-transmise aux tours
+// suivants tant qu'elle est pertinente (pieces-jointes.ts). L'ancien format
+// base64 reste accepté (petites images) avec ses plafonds d'origine.
 interface CopilotAttachment {
   mediaType: string;   // image/png|jpeg|gif|webp ou application/pdf
-  data: string;        // base64 SANS le prefixe data:
+  data?: string;       // V1.7 : base64 SANS le prefixe data:
   name?: string;
+  storagePath?: string; // V1.8 : <uid>/<conversation|brouillon-uuid>/<horodatage>-<nom>
+  size?: number;        // V1.8 : octets (revérifiés dans les métadonnées du Storage)
+  textePath?: string;   // V1.8 : storagePath + '.texte.json' (texte extrait par le navigateur)
 }
 
 interface ChatRequest {
@@ -690,7 +710,21 @@ const ALLOWED_MEDIA_TYPES = new Set([
   'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf',
 ]);
 const MAX_ATTACHMENTS = 5;
-const MAX_ATTACHMENT_B64 = 6_000_000; // ~4,5 Mo de fichiers, cumules
+const MAX_ATTACHMENT_B64 = 6_000_000; // ~4,5 Mo de fichiers, cumules (format base64 V1.7 seulement)
+
+/**
+ * Budget de tokens de DOCUMENTS par tour (pièces jointes par stockage, nouvelles
+ * et re-transmises). Au-delà, la lecture devient ciblée (zone, pages) ou se
+ * limite au sommaire. Bornes : Haiku (mode quick) a 200 000 tokens de contexte
+ * et le prompt système en occupe une part ; l'API refuse plus de 100 pages de
+ * PDF par requête sous 1 M tokens de contexte.
+ */
+const BUDGET_DOCUMENTS_TOKENS: Record<CopilotMode, number> = {
+  quick: 60_000,
+  advanced: 120_000,
+  report: 150_000,
+};
+
 
 // ─── LOT 5 : type d'input pour get_quick_market_insight ─────
 interface QuickMarketInput {
@@ -1219,12 +1253,12 @@ function avecNote(res: ToolResult, r: ResolutionInsee, note: string): ToolResult
 }
 
 // ─── Helper générique : appel d'une Edge Function interne ────
-async function callInternalFunction(fnName: string, body: unknown): Promise<unknown> {
+async function callInternalFunction(fnName: string, body: unknown, timeoutMs = INTERNAL_FN_TIMEOUT_MS): Promise<unknown> {
   const baseUrl = getSupabaseUrl();
   const serviceKey = getSupabaseServiceRoleKey();
 
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), INTERNAL_FN_TIMEOUT_MS);
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
 
   try {
     const res = await fetch(`${baseUrl}/functions/v1/${fnName}`, {
@@ -1244,7 +1278,7 @@ async function callInternalFunction(fnName: string, body: unknown): Promise<unkn
     return await res.json();
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') {
-      throw new CopilotError('TOOL_ERROR', `${fnName} → timeout (${INTERNAL_FN_TIMEOUT_MS}ms)`);
+      throw new CopilotError('TOOL_ERROR', `${fnName} → timeout (${timeoutMs}ms)`);
     }
     if (e instanceof CopilotError) throw e;
     throw new CopilotError('TOOL_ERROR', `${fnName} → ${e instanceof Error ? e.message : String(e)}`);
@@ -2911,18 +2945,28 @@ const TOOLS: ToolDef[] = [
       "stationnement, pleine terre, COS) ainsi que l'OAP si elle a été analysée. Source primaire : " +
       "le parser PLU de Mimmoza, le règlement étant importé manuellement sur la page Foncier. " +
       "C'est l'outil à utiliser pour expliquer, synthétiser ou contrôler la constructibilité DÉTAILLÉE. " +
-      "⚠️ REPLI AUTOMATIQUE : si aucun règlement n'a été importé, cet outil bascule seul sur le " +
+      "LECTURE AUTOMATIQUE DU RÈGLEMENT : si aucun règlement n'a été importé, l'outil récupère le règlement " +
+      "écrit publié au Géoportail de l'urbanisme pour la parcelle et renvoie le TEXTE des pages de sa zone " +
+      "(niveau_de_detail='reglement_lu', champ reglement_extrait, pages « [Page N] ») : cite article et page. " +
+      "Paramètre facultatif zone_code pour lire une autre zone que celle du point. " +
+      "⚠️ Si l'outil renvoie niveau_de_detail='a_preciser' (plusieurs pièces de règlement, zone inconnue ou absente du " +
+      "règlement, chapitre trop long), tu NE choisis PAS seul : tu poses la question_a_poser à l'utilisateur avec les choix " +
+      "listés, puis tu rappelles l'outil avec sa réponse (fichier_reglement, zone_code ou pages). " +
+      "⚠️ REPLI : si le règlement n'est pas lisible automatiquement, l'outil bascule sur le " +
       "Géoportail de l'urbanisme et renvoie alors le ZONAGE SEUL, avec niveau_de_detail='zonage_seul' " +
       "et regle_ecrite_disponible=false. Dans ce cas tu disposes du code de zone et de son type " +
       "(U/AU/A/N) mais d'AUCUNE règle chiffrée : ne déduis ni hauteur, ni emprise, ni recul, ni " +
-      "stationnement du seul code de zone, et dis à l'utilisateur qu'il doit importer le PDF du " +
-      "règlement sur la page Foncier pour les obtenir. " +
+      "stationnement du seul code de zone, et dis à l'utilisateur qu'il peut joindre le PDF du " +
+      "règlement au chat ou l'importer sur la page Foncier pour les obtenir. " +
       "N'invente jamais : si une donnée manque, signale-le explicitement.",
     input_schema: {
       type: 'object',
       properties: {
         parcel_id: { type: 'string' },
         cadastral_ref: { type: 'string' },
+        zone_code: { type: 'string', description: 'Zone à lire dans le règlement si elle diffère de celle du point (ex. « UC »).' },
+        fichier_reglement: { type: 'string', description: 'Pièce du règlement choisie par l’utilisateur (nom exact listé dans choix_pieces).' },
+        pages: { type: 'array', items: { type: 'integer' }, description: 'Pages du règlement choisies par l’utilisateur (ex. [40, 41, 42]).' },
       },
     },
     available_in_modes: ['quick', 'advanced', 'report'],
@@ -4762,6 +4806,117 @@ async function toolParcelSummary(input: Record<string, unknown>, ctx: MimmozaCon
   }, insee);
 }
 
+// ─── V1.8 : règlement écrit lu au Géoportail de l'urbanisme (plu-reglement-v1) ──
+
+/** Temps maximal consacré, dans un tour de chat, à récupérer et extraire un règlement. */
+const LECTURE_REGLEMENT_CHAT_MS = 45_000;
+/** Texte de règlement transmis au modèle par get_parcel_plu (≈ 40 000 tokens). */
+const REGLEMENT_MAX_CARACTERES = 120_000;
+/** Délai d'UN appel à plu-reglement-v1 (téléchargement du PDF + premier lot d'extraction). */
+const APPEL_PLU_REGLEMENT_MS = 40_000;
+
+/**
+ * Appelle plu-reglement-v1 (action 'gpu') jusqu'à ce que l'extraction soit
+ * terminée ou que `budgetMs` soit épuisé. Le premier appel d'un document
+ * télécharge le PDF et commence l'extraction ; les suivants la poursuivent.
+ * Une fois en cache, un seul appel suffit (quelques centaines de ms).
+ */
+async function lireReglementGpuBrut(
+  lat: number, lon: number, zone: string | null, budgetMs: number,
+  choix: { fichier?: string | null; pages?: number[] | null } = {},
+): Promise<Record<string, unknown>> {
+  if (!INTERNAL_FUNCTIONS.plu_reglement) return { statut: 'erreur', message: 'Lecture automatique du règlement non branchée (COPILOT_FN_PLU_REGLEMENT).' };
+  const fin = Date.now() + budgetMs;
+  let r: Record<string, unknown> = { statut: 'erreur', message: 'Aucune réponse.' };
+  for (let essai = 0; essai < 10 && Date.now() < fin; essai++) {
+    try {
+      // Délai propre : le PREMIER appel d'un document télécharge le PDF au GPU
+      // (souvent 5 à 50 Mo) avant d'extraire un premier lot.
+      r = await callInternalFunction(INTERNAL_FUNCTIONS.plu_reglement, {
+        action: 'gpu', latitude: lat, longitude: lon, zone, max_caracteres: REGLEMENT_MAX_CARACTERES,
+        ...(choix.fichier ? { fichier: choix.fichier } : {}),
+        ...(choix.pages?.length ? { pages: choix.pages } : {}),
+      }, Math.max(5_000, Math.min(APPEL_PLU_REGLEMENT_MS, fin - Date.now()))) as Record<string, unknown>;
+    } catch (e) {
+      return { statut: 'erreur', message: `Règlement non récupéré au Géoportail de l'urbanisme : ${errMsg(e)}` };
+    }
+    if (r?.statut !== 'en_cours') break;
+  }
+  return r ?? { statut: 'erreur', message: 'Réponse illisible.' };
+}
+
+/** Statuts de plu-reglement-v1 où c'est à l'UTILISATEUR de dire quoi lire (V1.8). */
+const STATUTS_A_PRECISER = new Set(['choix_requis', 'zone_non_reperee', 'selection_trop_longue']);
+
+/**
+ * Résultat d'outil quand le règlement est trouvé mais qu'il faut DEMANDER quoi
+ * lire (plusieurs pièces, zone inconnue ou absente, chapitre trop long). Rien
+ * de coûteux n'est lu : le modèle pose la question avec les choix trouvés, et
+ * rappelle l'outil avec la réponse (fichier_reglement, zone_code ou pages).
+ */
+function donneesReglementAPreciser(r: Record<string, unknown>): Record<string, unknown> {
+  const doc = (r.document ?? {}) as Record<string, unknown>;
+  return {
+    niveau_de_detail: 'a_preciser',
+    statut_lecture: "règlement trouvé — à préciser par l'utilisateur avant lecture",
+    regle_ecrite_disponible: false,
+    raison: r.statut,
+    zone: r.zone ?? null,
+    type_zone: r.type_zone ?? null,
+    source: r.source ?? null,
+    document: { type: doc.du_type ?? null, territoire: doc.territoire ?? null, idurba: doc.idurba ?? null, date_approbation: doc.date_approbation ?? null },
+    fichier: r.fichier ?? null,
+    nb_pages: r.nb_pages ?? null,
+    choix_pieces: r.choix_pieces ?? undefined,
+    chapitres: Array.isArray(r.chapitres) ? (r.chapitres as unknown[]).slice(0, 40) : undefined,
+    articles: Array.isArray(r.articles) ? (r.articles as unknown[]).slice(0, 40) : undefined,
+    pages_chapitre: r.pages_chapitre ?? undefined,
+    question_a_poser: r.message ?? null,
+    consignes:
+      "NE LIS RIEN et NE CONCLUS RIEN sur les règles à ce stade. Pose à l'utilisateur UNE question précise reprenant les " +
+      "choix ci-dessus (pièce du règlement avec son titre, zone, articles avec leurs pages), en une ou deux phrases, et " +
+      "arrête-toi. Quand il répond, rappelle get_parcel_plu avec fichier_reglement (nom exact de la pièce), zone_code ou " +
+      "pages (numéros de page). Tu peux donner le zonage (code et type de zone) s'il est connu, sans aucune règle chiffrée.",
+  };
+}
+
+/** Résultat d'outil d'un règlement LU : texte des pages retenues + provenance + consignes. */
+function donneesReglementLu(r: Record<string, unknown>): Record<string, unknown> {
+  const doc = (r.document ?? {}) as Record<string, unknown>;
+  return {
+    niveau_de_detail: 'reglement_lu',
+    statut_lecture: 'lu dans le règlement',
+    regle_ecrite_disponible: true,
+    zone: r.zone ?? null,
+    zone_lue: r.zone_lue ?? null,
+    type_zone: r.type_zone ?? null,
+    zone_libelle_long: r.zone_libelle_long ?? null,
+    source: r.source ?? null,
+    document: {
+      type: doc.du_type ?? null, territoire: doc.territoire ?? null, idurba: doc.idurba ?? null,
+      date_approbation: doc.date_approbation ?? null, identifiant_gpu: doc.gpu_id ?? null,
+      fichier: r.fichier ?? null, url: r.url_source ?? null,
+    },
+    pages_lues: {
+      chapitre_zone: r.pages_zone ?? null,
+      dispositions_generales: r.pages_dispositions_generales ?? null,
+      lexique: r.pages_lexique ?? null,
+      total_document: r.nb_pages ?? null,
+      fin_de_chapitre_non_lue: r.tronque === true,
+    },
+    autres_pieces_reglement: r.autres_pieces_reglement ?? [],
+    consignes:
+      "Le champ reglement_extrait est le TEXTE du règlement écrit officiel (pages marquées « [Page N] »), extrait " +
+      "automatiquement du PDF publié au Géoportail de l'urbanisme. Pour CHAQUE règle citée : sa valeur, l'article et la " +
+      "page. Une règle qui n'apparaît pas dans ces pages est « non trouvée dans les pages lues » — ne la complète " +
+      "jamais de mémoire ni par analogie avec une autre commune. Si une règle renvoie à une pièce non lue (annexe, " +
+      "règlement graphique, OAP, autre pièce du PLUi listée dans autres_pieces_reglement), dis-le. Présente le statut " +
+      "« lu dans le règlement » avec la source (document, date d'approbation). Signale en une phrase que la lecture du " +
+      "règlement consomme davantage de crédits qu'une question simple.",
+    reglement_extrait: r.texte,
+  };
+}
+
 // ─── get_parcel_plu : lit le PLU extrait par le parser (contexte), puis fonction dédiée si branchée ──
 async function toolParcelPlu(input: Record<string, unknown>, ctx: MimmozaContext): Promise<ToolResult> {
   // 1) Source de vérité actuelle : le PLU déjà extrait par plu-parser et présent dans le contexte.
@@ -4790,6 +4945,33 @@ async function toolParcelPlu(input: Record<string, unknown>, ctx: MimmozaContext
       return avecAjustement({ status: 'error', source: INTERNAL_FUNCTIONS.plu, message: errMsg(e) }, insee);
     }
   }
+  // 2 bis) V1.8 — RÈGLEMENT ÉCRIT récupéré au Géoportail de l'urbanisme
+  //    (plu-reglement-v1) : document applicable au point, fichier « règlement »,
+  //    texte extrait en cache, lecture CIBLÉE de la zone. Le modèle reçoit le
+  //    TEXTE des pages retenues (avec leurs numéros) : il cite l'article et la
+  //    page de chaque règle, et n'invente rien de ce qui n'y figure pas.
+  let noteLectureReglement: string | null = null;
+  if (INTERNAL_FUNCTIONS.plu_reglement) {
+    const loc = await resolvePointPrecis(input, ctx);
+    if (loc.pt) {
+      const pagesChoisies = Array.isArray(input.pages)
+        ? (input.pages as unknown[]).map(Number).filter((n) => Number.isInteger(n) && n >= 1).slice(0, 300)
+        : null;
+      const r = await lireReglementGpuBrut(loc.pt.lat, loc.pt.lon, str(input.zone_code) ?? null, LECTURE_REGLEMENT_CHAT_MS,
+        { fichier: str(input.fichier_reglement) ?? null, pages: pagesChoisies });
+      if (r.statut === 'pret' && typeof r.texte === 'string' && r.texte.trim()) {
+        return { status: 'ok', source: `${INTERNAL_FUNCTIONS.plu_reglement} — ${String(r.source ?? 'Géoportail de l\'urbanisme')}`, data: donneesReglementLu(r) };
+      }
+      if (STATUTS_A_PRECISER.has(String(r.statut))) {
+        return { status: 'ok', source: `${INTERNAL_FUNCTIONS.plu_reglement} — Géoportail de l'urbanisme`, data: donneesReglementAPreciser(r) };
+      }
+      noteLectureReglement = typeof r.message === 'string' ? r.message
+        : r.statut === 'en_cours'
+          ? `Lecture du règlement en cours (${r.pages_extraites ?? '?'} / ${r.nb_pages ?? '?'} pages extraites) : elle reprendra là où elle s'est arrêtée — propose à l'utilisateur de reposer la question dans une minute.`
+          : null;
+    }
+  }
+
   // 3) REPLI AUTOMATIQUE sur le Géoportail de l'urbanisme (gpu-parcelle-v1).
   //    Aucun règlement importé ≠ aucune donnée d'urbanisme : le GPU donne le
   //    zonage opposable au point. On le renvoie en disant EXPLICITEMENT que le
@@ -4803,13 +4985,17 @@ async function toolParcelPlu(input: Record<string, unknown>, ctx: MimmozaContext
         data: {
           ...(gpu.data as Record<string, unknown>),
           niveau_de_detail: 'zonage_seul',
+          statut_lecture: 'zonage seul',
           regle_ecrite_disponible: false,
+          ...(noteLectureReglement ? { lecture_reglement_gpu: noteLectureReglement } : {}),
           note_repli:
-            "Aucun règlement de PLU n'a été importé sur la page Foncier : ces éléments viennent du " +
-            "Géoportail de l'urbanisme et se limitent au ZONAGE OPPOSABLE (code de zone, type U/AU/A/N). " +
+            "Aucun règlement de PLU n'a été importé sur la page Foncier" +
+            (INTERNAL_FUNCTIONS.plu_reglement ? " et le règlement écrit n'a pas pu être lu automatiquement au Géoportail de l'urbanisme (voir lecture_reglement_gpu)" : '') +
+            " : ces éléments se limitent au ZONAGE OPPOSABLE (code de zone, type U/AU/A/N). " +
             "Les règles CHIFFRÉES — hauteur maximale, emprise au sol, retraits, stationnement, OAP — ne " +
             "sont PAS disponibles ici : ne les invente sous aucun prétexte. Dis à l'utilisateur que pour " +
-            "les obtenir il doit importer le PDF du règlement sur la page Foncier de Mimmoza.",
+            "les obtenir il peut joindre le PDF du règlement au chat (lecture ciblée de sa zone, jusqu'à 50 Mo) " +
+            "ou l'importer sur la page Foncier de Mimmoza.",
         },
       };
     }
@@ -9320,7 +9506,9 @@ function buildSystemPrompt(ctx: MimmozaContext, mode: CopilotMode): string {
     "4septvicies. ACTIONS EN DEUX TEMPS — TU NE DIS JAMAIS « c'est fait » SANS PREUVE. Créer, modifier ou désactiver une veille, une zone ou une watchlist se fait en DEUX appels. Le premier renvoie le statut `confirmation_requise` : c'est un APERÇU, RIEN n'a été écrit. Tu le présentes à l'utilisateur et tu attends son accord. Dès qu'il l'a donné — un « oui », « vas-y », « confirme » suffit — tu RAPPELLES IMMÉDIATEMENT LE MÊME OUTIL avec `confirmer: true`, DANS LE MÊME TOUR, avant de rédiger quoi que ce soit. Ne redemande pas l'accord deux fois. ⚠️ Tu n'écris « c'est désactivé », « c'est créé » ou « c'est modifié » QUE si l'outil a répondu avec le statut `ok` ET un champ attestant l'écriture (desactivee, cree, modifiee). Un statut `confirmation_requise` n'est PAS un succès : annoncer une suppression qui n'a pas eu lieu est pire que de ne rien faire, car l'utilisateur n'y reviendra pas. Si tu as perdu l'identifiant entre deux tours, rappelle l'outil de listing pour le retrouver plutôt que de l'inventer ou d'abandonner.",
     "4tricies. « AUCUN RÉSULTAT » N'EST PAS « RIEN À DIRE ». Quand un outil de listing (veilles, zones, watchlists) répond avec le statut `not_found`, regarde TOUJOURS son champ `data` avant de rédiger. S'il contient `inactives` supérieur à 0 ou une liste `veilles_inactives`, tu DOIS nommer ces éléments désactivés dans ta réponse et proposer de les réactiver — même si l'utilisateur n'a demandé que les actifs, même si tu résumes plusieurs familles d'un coup, et même si la réponse en devient plus longue. Écrire « aucune veille » alors qu'une veille désactivée existe est faux par omission : l'utilisateur en conclut qu'elle a disparu, et il la recrée en double. Ne dis « il n'y a rien » QUE si actives et inactives valent toutes les deux 0.",
 
-    "4duodetricies. DOCUMENT JOINT DISPARU DE TON CONTEXTE. Quand l'historique contient un marqueur [PIÈCES JOINTES À CE MESSAGE : …] mais qu'AUCUN document ni image n'accompagne le tour courant, tu n'as PLUS le fichier sous les yeux. Tu ne disposes que de ce que tu en as ÉCRIT toi-même dans tes réponses précédentes. Conduite à tenir : (a) tu peux réutiliser librement les chiffres et constats déjà énoncés dans la conversation ; (b) pour TOUTE information qui n'y figure pas — une valeur du document que tu n'avais pas citée, un détail d'une page, un poste que tu n'avais pas relevé — tu ne la reconstitues JAMAIS de mémoire : tu dis en une phrase que le document n'est plus dans ton contexte et tu demandes à l'utilisateur de le rejoindre au message. (c) Ne prétends jamais « relire » ou « vérifier dans le document » : tu ne le peux pas. Inventer une donnée d'un document que l'utilisateur a sous les yeux est la pire erreur possible — il la croira vérifiée, et il verra qu'elle est fausse.",
+    "4duodetricies. DOCUMENT JOINT DISPARU DE TON CONTEXTE. Quand l'historique contient un marqueur [PIÈCES JOINTES À CE MESSAGE : …] mais qu'AUCUN document ni image n'accompagne le tour courant, tu n'as PLUS le fichier sous les yeux. Tu ne disposes que de ce que tu en as ÉCRIT toi-même dans tes réponses précédentes. Conduite à tenir : (a) tu peux réutiliser librement les chiffres et constats déjà énoncés dans la conversation ; (b) pour TOUTE information qui n'y figure pas — une valeur du document que tu n'avais pas citée, un détail d'une page, un poste que tu n'avais pas relevé — tu ne la reconstitues JAMAIS de mémoire : tu dis en une phrase que le document n'est plus dans ton contexte et tu demandes à l'utilisateur de le rejoindre au message. (c) Ne prétends jamais « relire » ou « vérifier dans le document » : tu ne le peux pas. Inventer une donnée d'un document que l'utilisateur a sous les yeux est la pire erreur possible — il la croira vérifiée, et il verra qu'elle est fausse. " +
+    "EXCEPTION — PIÈCES CONSERVÉES : quand le marqueur précise « conservée » pour un fichier ET que la section [DOCUMENTS DE LA CONVERSATION] du tour courant le liste (bloc document ou image portant son nom), tu as bien ce document sous les yeux : utilise-le normalement, dans la limite des pages indiquées. S'il est marqué « conservée » mais absent du tour courant (jugé non pertinent, ou budget atteint), applique (a), (b) et (c), en précisant qu'il suffit de le citer (son nom, « le règlement », un numéro de page) pour qu'il soit relu — inutile de le joindre à nouveau.",
+    "4duodetricies-bis. GROS DOCUMENTS : DEMANDER QUOI LIRE. Un règlement de PLU ou un gros PDF ne se lit pas « au jugé ». Quand la zone de la parcelle est inconnue, quand le règlement est publié en plusieurs pièces (PLUi), ou quand la partie à lire est trop longue pour un seul tour, tu ne choisis PAS toi-même : tu poses UNE question précise listant les choix trouvés (zones et chapitres avec leurs pages, pièces du règlement avec leur titre, articles avec leurs pages), puis tu attends la réponse avant toute lecture coûteuse. Rappelle en une phrase que la lecture d'un document volumineux consomme davantage de crédits.",
 
     "4undetricies. LECTURE D'UN DPE JOINT. Quand l'utilisateur joint un DPE (PDF ou photo), tu l'analyses de façon structurée et tu ne relèves que ce qui est ÉCRIT dessus : (1) l'étiquette énergie (A→G) ET l'étiquette climat/GES, qui sont deux notes distinctes — ne confonds pas les deux, un bien peut être D en énergie et F en GES ; (2) la consommation en kWh/m²/an et les émissions en kgCO₂/m²/an ; (3) la date de réalisation et la méthode, car un DPE d'avant juillet 2021 relève de l'ancienne méthode et n'est plus opposable ; (4) la surface de référence, le type de chauffage et d'eau chaude ; (5) les déperditions signalées et les recommandations de travaux avec leurs estimations, si le document les porte. Ensuite seulement, tu tires les conséquences : calendrier d'interdiction de location de la loi Climat et Résilience (G depuis 2025, F en 2028, E en 2034 — dis-le comme un calendrier légal, pas comme une estimation), obligation d'audit énergétique à la vente pour les classes F et G, et incidence sur la valeur. ⚠️ Tu ne calcules JAMAIS toi-même un coût de travaux de rénovation : appelle get_couts_renovation. Et si une mention est illisible ou absente du document, tu écris qu'elle est illisible ou absente — tu ne la déduis ni de l'année de construction, ni du type de chauffage, ni des autres valeurs.",
 
@@ -9597,6 +9785,7 @@ async function buildMessages(
   newUserMessage: string,
   mode: CopilotMode,
   attachments?: CopilotAttachment[],
+  documents?: DocumentsDuTour,
 ): Promise<AnthropicMessage[]> {
   // Le message courant est-il DÉJÀ en base au moment de cette lecture ?
   //
@@ -9637,7 +9826,11 @@ async function buildMessages(
   }
 
   // Blocs image/document AVANT le texte (recommandation Anthropic).
-  if (attachments?.length) {
+  // V1.8 : d'abord les documents préparés (pièces par stockage, nouvelles et
+  // re-transmises), puis les pièces base64 du tour, puis la consigne de lecture.
+  const base64 = (attachments ?? []).filter((a) => !estReferenceStockage(a) && typeof a.data === 'string');
+  const blocsDocuments = documents?.documents.flatMap((d) => d.blocs) ?? [];
+  if (base64.length || blocsDocuments.length || documents?.consigne) {
     const lastMessage = msgs.at(-1);
     // On ne retire le dernier message que s'il EST le message courant, c'est-à-dire
     // uniquement dans le mode où celui-ci a déjà été persisté. Sinon on amputerait
@@ -9648,11 +9841,15 @@ async function buildMessages(
         ? lastMessage.content
         : '';
     if (persistedText) msgs.pop();
-    const blocks: unknown[] = attachments.map((a) =>
-      a.mediaType === 'application/pdf'
-        ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: a.data } }
-        : { type: 'image', source: { type: 'base64', media_type: a.mediaType, data: a.data } },
-    );
+    const blocks: unknown[] = [
+      ...blocsDocuments,
+      ...base64.map((a) =>
+        a.mediaType === 'application/pdf'
+          ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: a.data } }
+          : { type: 'image', source: { type: 'base64', media_type: a.mediaType, data: a.data } },
+      ),
+    ];
+    if (documents?.consigne) blocks.push({ type: 'text', text: documents.consigne });
     // Le message courant vient d'être persisté AVEC son marqueur de pièces
     // jointes — lequel annonce que le document n'est plus disponible. Or à ce
     // tour-ci il l'est : les blocs sont juste au-dessus. On retire donc le
@@ -9664,7 +9861,7 @@ async function buildMessages(
       .trim();
     if (currentText) blocks.push({ type: 'text', text: currentText });
     msgs.push({ role: 'user', content: blocks });
-    console.log('[copilot] pieces jointes recues :', attachments.length);
+    console.log('[copilot] pieces jointes :', base64.length, 'base64,', documents?.documents.length ?? 0, 'document(s) stocké(s),', documents?.tokens ?? 0, 'tokens');
   } else if (newUserMessage.trim()) {
     msgs.push({ role: 'user', content: newUserMessage });
   }
@@ -9703,24 +9900,49 @@ async function buildMessages(
  */
 const TOOL_OUTPUT_MAX_CHARS = 24000;
 
-function tronquerSortieOutil(output: unknown): string {
+/**
+ * V1.8 — Plafond propre à une sortie portant le TEXTE d'un règlement lu
+ * (get_parcel_plu, niveau 'reglement_lu') : le chapitre d'une zone dépasse
+ * souvent 24 000 caractères, et le tronquer à l'aveugle couperait les articles
+ * de hauteur ou de stationnement. Le coût est réel et facturé au réel.
+ */
+const TOOL_OUTPUT_REGLEMENT_MAX_CHARS = REGLEMENT_MAX_CARACTERES + 12_000;
+
+function aExtraitReglement(output: unknown): boolean {
+  const d = (output as { data?: Record<string, unknown> } | null)?.data;
+  return typeof d?.reglement_extrait === 'string';
+}
+
+/**
+ * Version ALLÉGÉE d'une sortie d'outil pour l'affichage (SSE) et la persistance
+ * (copilot_tool_calls, relue par le rappel des outils) : le texte du règlement
+ * n'y est pas recopié. Au tour suivant, le modèle rappelle l'outil s'il a besoin
+ * du texte (le règlement est en cache : l'appel est rapide).
+ */
+function sortiePublique(output: ToolResult): ToolResult {
+  if (!aExtraitReglement(output)) return output;
+  const { reglement_extrait, ...reste } = output.data as Record<string, unknown>;
+  return { ...output, data: { ...reste, reglement_extrait: `[${String(reglement_extrait).length} caractères du règlement transmis au modèle — non conservés]` } };
+}
+
+function tronquerSortieOutil(output: unknown, maxChars = TOOL_OUTPUT_MAX_CHARS): string {
   let brut: string;
   try {
     brut = JSON.stringify(output) ?? 'null';
   } catch {
     return JSON.stringify({ status: 'error', message: 'Sortie non sérialisable.' });
   }
-  if (brut.length <= TOOL_OUTPUT_MAX_CHARS) return brut;
+  if (brut.length <= maxChars) return brut;
 
   return JSON.stringify({
     _tronque: true,
     _note:
-      `Sortie tronquée : ${brut.length} caractères ramenés à ${TOOL_OUTPUT_MAX_CHARS}. ` +
+      `Sortie tronquée : ${brut.length} caractères ramenés à ${maxChars}. ` +
       "Les données ci-dessous sont INCOMPLÈTES — ne complète pas de mémoire. " +
       "Si le détail manquant est nécessaire, rappelle l'outil avec des " +
       'paramètres plus restrictifs (rayon plus court, période plus courte, ' +
       'limite plus basse).',
-    _extrait: brut.slice(0, TOOL_OUTPUT_MAX_CHARS),
+    _extrait: brut.slice(0, maxChars),
   });
 }
 
@@ -9870,6 +10092,13 @@ type StreamEvent =
   // actions déjà exécutées pendant le tour n'étaient jamais tracées — au
   // rechargement elles se reproposaient, voire se relançaient en mode autonome.
   | { type: 'error'; error: string; refunded_credits?: number; message_id?: string }
+  // V1.8 — documents lus à ce tour (pièces par stockage) et supplément réservé.
+  // Envoyé AVANT la génération : le front l'affiche (« lecture ciblée, ≈ N jetons »).
+  | {
+      type: 'documents';
+      documents: Array<{ nom: string; mode: string; description: string; tokens: number; nouvelle: boolean }>;
+      erreurs: string[]; tokens: number; jetons_supplementaires: number;
+    }
   // Agent autonome : carte de devis d'une mission proposée (rien n'est réservé).
   | { type: 'mission_devis'; mission: Record<string, unknown> };
 
@@ -10386,15 +10615,17 @@ async function runOrchestrator(params: {
         const isOk = output.status === 'ok'
           || output.status === 'partial'
           || output.status === 'confirmation_requise';
+        // V1.8 : le texte d'un règlement lu part au MODÈLE, pas au front ni en base.
+        const outputPublic = sortiePublique(output);
         toolCallsLog.push({
           id: tu.id, name: tu.name, input: tu.input,
-          output, status: isOk ? 'success' : 'error', durationMs,
+          output: outputPublic, status: isOk ? 'success' : 'error', durationMs,
           error: isOk ? undefined : `${output.status}: ${output.message ?? ''}`,
         });
         sse.send({
           type: 'tool_use_end',
           call: {
-            id: tu.id, name: tu.name, output,
+            id: tu.id, name: tu.name, output: outputPublic,
             duration_ms: durationMs,
             status: isOk ? 'success' : output.status,
             error: isOk ? undefined : output.message,
@@ -10421,7 +10652,7 @@ async function runOrchestrator(params: {
         //
         // Le rapport factuel est suivi d'une analyse dans tous les modes.
         // En rapide, le tour suivant utilise ces faits sans autre outil.
-        let contenuResultat = tronquerSortieOutil(output);
+        let contenuResultat = tronquerSortieOutil(output, aExtraitReglement(output) ? TOOL_OUTPUT_REGLEMENT_MAX_CHARS : TOOL_OUTPUT_MAX_CHARS);
 
         if (tu.name === 'get_etude_parcelle' && isOk) {
           const rapportFactuel = renderParcelStudyReport(output);
@@ -10625,24 +10856,26 @@ async function ensureConversation(params: {
  * dit ce qui a été joint, et qu'il ne l'a plus. La règle 4duodetricies du
  * prompt système lui dit quoi en faire.
  */
-function marqueurPiecesJointes(attachments?: CopilotAttachment[]): string {
-  if (!attachments?.length) return '';
-  const noms = attachments
-    .map((a, i) => {
-      const type = a.mediaType === 'application/pdf' ? 'PDF' : 'image';
-      return a.name?.trim() ? `${a.name.trim()} (${type})` : `${type} n°${i + 1}`;
-    })
-    .join(', ');
-  return `\n\n[PIÈCES JOINTES À CE MESSAGE : ${noms}. Le contenu de ces fichiers a été lu ` +
-    `à ce tour-là UNIQUEMENT. Il n'est PAS conservé dans l'historique : aux tours suivants, ` +
-    `tu ne disposes plus du document.]`;
+function marqueurPiecesJointes(
+  attachments?: CopilotAttachment[],
+  stockees: ReadonlyArray<{ nom: string; mediaType: string }> = [],
+): string {
+  // V1.8 : texte historique INCHANGÉ quand aucune pièce n'est conservée (base64) ;
+  // sinon le marqueur dit, fichier par fichier, ce qui reste rattaché à la conversation.
+  const pieces: PieceTracee[] = [
+    ...(attachments ?? []).filter((a) => !estReferenceStockage(a)).map((a) => ({ nom: a.name, mediaType: a.mediaType, conservee: false })),
+    ...stockees.map((s) => ({ nom: s.nom, mediaType: s.mediaType, conservee: true })),
+  ];
+  return marqueurPieces(pieces);
 }
 
 async function saveUserMessage(p: {
   conversationId: string; userId: string; text: string; mode: CopilotMode;
   contextSnapshot: ContextSnapshot; attachments?: CopilotAttachment[];
+  /** V1.8 : pièces par stockage effectivement rattachées à la conversation. */
+  stockees?: ReadonlyArray<{ nom: string; mediaType: string }>;
 }): Promise<void> {
-  const texte = `${p.text}${marqueurPiecesJointes(p.attachments)}`;
+  const texte = `${p.text}${marqueurPiecesJointes(p.attachments, p.stockees)}`;
   const { error } = await getAdmin().from('copilot_messages').insert({
     conversation_id: p.conversationId, user_id: p.userId, role: 'user',
     content: [{ type: 'text', text: texte }], mode: p.mode, credits_cost: 0,
@@ -10716,7 +10949,7 @@ async function requireUserId(req: Request): Promise<string> {
   return data.user.id;
 }
 
-function validateRequest(body: unknown): ChatRequest {
+function validateRequest(body: unknown, userId: string): ChatRequest {
   const b = body as Partial<ChatRequest>;
   if (!b || typeof b.message !== 'string' || !b.message.trim()) {
     throw new CopilotError('BAD_REQUEST', 'message requis');
@@ -10735,6 +10968,13 @@ function validateRequest(body: unknown): ChatRequest {
     }
     let totalB64 = 0;
     for (const a of b.attachments) {
+      // V1.8 : référence Storage — le chemin doit être dans le dossier de
+      // l'utilisateur (le téléchargement se fait ensuite avec la clé de service).
+      if (estReferenceStockage(a)) {
+        const v = validerReference(a, userId);
+        if (!v.ok) throw new CopilotError('BAD_REQUEST', `Pièce jointe refusée : ${v.erreur}`);
+        continue;
+      }
       if (!a || typeof a.data !== 'string' || !ALLOWED_MEDIA_TYPES.has(a.mediaType)) {
         throw new CopilotError('BAD_REQUEST', `Type de piece jointe non pris en charge : ${a?.mediaType}`);
       }
@@ -10745,6 +10985,85 @@ function validateRequest(body: unknown): ChatRequest {
     }
   }
   return b as ChatRequest;
+}
+
+// =============================================================
+// V1.8 — PIÈCES JOINTES PAR STOCKAGE : accès Supabase (injectés dans
+// preparerDocumentsDuTour, testé avec un dépôt factice).
+// =============================================================
+
+/**
+ * Texte page par page d'un PDF du Storage, extrait CÔTÉ SERVEUR par
+ * plu-reglement-v1 (action 'extraire'), quand le navigateur ne l'a pas fourni.
+ * L'extraction avance par lots (2 s de CPU par requête Edge) : on rappelle
+ * jusqu'à `budgetMs`, puis on abandonne proprement (null → PDF entier ou refus
+ * motivé selon sa taille). Le texte reste en cache : un nouvel essai repart de
+ * là où l'extraction s'était arrêtée.
+ */
+async function extraireTextePdfStockage(bucket: string, chemin: string, budgetMs = 30_000): Promise<string[] | null> {
+  if (!INTERNAL_FUNCTIONS.plu_reglement) return null;
+  const fin = Date.now() + budgetMs;
+  for (let essai = 0; essai < 8 && Date.now() < fin; essai++) {
+    const r = await callInternalFunction(INTERNAL_FUNCTIONS.plu_reglement, { action: 'extraire', bucket, chemin },
+      Math.max(5_000, Math.min(APPEL_PLU_REGLEMENT_MS, fin - Date.now()))) as Record<string, unknown>;
+    if (r?.statut === 'pret' && Array.isArray(r.pages)) return r.pages.filter((p): p is string => typeof p === 'string');
+    if (r?.statut !== 'en_cours') return null;
+  }
+  return null;
+}
+
+function depotPiecesJointesSupabase(modele: string): DepotPiecesJointes {
+  const db = getAdmin();
+  const COLONNES = 'id, nom, media_type, chemin, texte_chemin, taille_octets, nb_pages, tour_ajout, tour_derniere_lecture, tokens_derniere_lecture';
+  return {
+    async metaFichier(chemin) {
+      // Taille lue dans les MÉTADONNÉES (jamais celle annoncée par le navigateur).
+      const i = chemin.lastIndexOf('/');
+      const nom = chemin.slice(i + 1);
+      const { data, error } = await db.storage.from(BUCKET_PIECES_JOINTES).list(chemin.slice(0, i), { search: nom, limit: 10 });
+      if (error) return null;
+      const f = ((data ?? []) as Array<{ name: string; metadata?: { size?: number } }>).find((x) => x.name === nom);
+      const taille = Number(f?.metadata?.size);
+      return f && Number.isFinite(taille) && taille > 0 ? { taille } : null;
+    },
+    async telechargerJson(chemin, maxOctets) {
+      const { data, error } = await db.storage.from(BUCKET_PIECES_JOINTES).download(chemin);
+      if (error || !data || data.size > maxOctets) return null;
+      try { return JSON.parse(await data.text()); } catch { return null; }
+    },
+    async urlSignee(chemin, secondes) {
+      const { data, error } = await db.storage.from(BUCKET_PIECES_JOINTES).createSignedUrl(chemin, secondes);
+      return error ? null : data?.signedUrl ?? null;
+    },
+    async piecesConversation(conversationId) {
+      const { data, error } = await db.from('copilot_pieces_jointes').select(COLONNES)
+        .eq('conversation_id', conversationId).eq('statut', 'active')
+        .order('created_at', { ascending: false }).limit(20);
+      // Table absente (migration non appliquée) : on continue sans pièces conservées.
+      if (error) { console.warn('[copilot] pièces conservées illisibles :', error.message); return []; }
+      return (data ?? []) as LignePieceJointe[];
+    },
+    async enregistrerPiece(l) {
+      const { data, error } = await db.from('copilot_pieces_jointes')
+        .upsert({ ...l, statut: 'active', tour_derniere_lecture: l.tour_ajout, updated_at: new Date().toISOString() }, { onConflict: 'conversation_id,chemin' })
+        .select(COLONNES).single();
+      if (error) { console.warn('[copilot] rattachement de la pièce impossible :', error.message); return null; }
+      return data as LignePieceJointe;
+    },
+    async noterLecture(id, l) {
+      await db.from('copilot_pieces_jointes').update({
+        tour_derniere_lecture: l.tour, tokens_derniere_lecture: l.tokens, derniere_lecture: l.lecture,
+        ...(l.nb_pages ? { nb_pages: l.nb_pages } : {}), updated_at: new Date().toISOString(),
+      }).eq('id', id);
+    },
+    async nombreMessagesUtilisateur(conversationId) {
+      const { count, error } = await db.from('copilot_messages').select('id', { count: 'exact', head: true })
+        .eq('conversation_id', conversationId).eq('role', 'user');
+      return error ? 0 : count ?? 0;
+    },
+    extraireTexte: (chemin) => extraireTextePdfStockage(BUCKET_PIECES_JOINTES, chemin),
+    compterTokens: (blocs) => compterTokensAnthropic({ model: modele, system: 'x', messages: [{ role: 'user', content: [...blocs, { type: 'text', text: '.' }] }] }),
+  };
 }
 
 // =============================================================
@@ -10769,6 +11088,9 @@ function depsMoteur(): MoteurDeps {
     modelePourTier: (t) => TIER_MODEL_ID[t],
     outilsChat: () => toolsForMode('report'),
     briefingPourMissionVeille,
+    // V1.8 : texte des gros règlements déposés, et règlement récupéré au GPU.
+    extraireTextePdf: (bucket, chemin) => extraireTextePdfStockage(bucket, chemin, 40_000),
+    reglementGpu: (p) => lireReglementGpuBrut(p.lat, p.lon, p.zone, 60_000, { fichier: p.fichier ?? null, pages: p.pages ?? null }),
   };
 }
 
@@ -10822,6 +11144,10 @@ Deno.serve(async (req: Request) => {
   let reserved: number;          // montant RÉELLEMENT réservé (pire cas)
   let effectiveContext: MimmozaContext;
   let contextSnapshot: ContextSnapshot;
+  // V1.8 — documents du tour (pièces par stockage + pièces conservées) et
+  // supplément de réservation qui couvre leur lecture.
+  let documentsTour: DocumentsDuTour = DOCUMENTS_VIDES;
+  let supplementDocuments = 0;
 
   try {
     // ── Étape 1 : JWT, PUIS corps de requête ────────────────────
@@ -10831,7 +11157,7 @@ Deno.serve(async (req: Request) => {
     // gratuite. Le gain aurait de toute façon été nul sur le cas qui compte :
     // un message texte, dont la lecture du corps est locale et instantanée.
     userId = await requireUserId(req);
-    payload = validateRequest(await req.json());
+    payload = validateRequest(await req.json(), userId);
 
     // ── Étape 2 : conversation+contexte ∥ plan ──────────────────
     // `ensureConversation` puis `loadLatestUserContext` restent enchaînés (le
@@ -10863,11 +11189,43 @@ Deno.serve(async (req: Request) => {
     const requestedTier = (payload as any).tier as ModelTier | undefined;
     tier = resolveTier(plan, plan === 'pro' ? requestedTier : undefined);
 
+    // ── V1.8 : documents du tour, AVANT la réservation ──────────
+    // La réservation doit couvrir la lecture (comptage exact des tokens par
+    // count_tokens). Une panne ici ne bloque jamais le message : il part sans
+    // les documents, et la consigne le dit au modèle.
+    const ctxBrut = effectiveContext as unknown as Record<string, any>;
+    const zoneConnue = zoneDepuisMessage(payload.message)
+      ?? normaliserCodeZone(ctxBrut.plu?.zone_code)
+      ?? normaliserCodeZone(ctxBrut.parcel?.plu_zone)
+      ?? normaliserCodeZone(ctxBrut.predictive_snapshot?.plu_zone);
+    documentsTour = await preparerDocumentsDuTour({
+      userId, conversationId,
+      refs: (payload.attachments ?? []).filter(estReferenceStockage),
+      message: payload.message,
+      zone: zoneConnue,
+      // Zone lue au GPU au point de la parcelle, seulement si un gros PDF en a besoin.
+      zoneParcelle: async () => {
+        const z = await toolZonagePlu({}, effectiveContext);
+        return z.status === 'ok' ? str((z.data as any)?.zone_principale?.zone) ?? null : null;
+      },
+      budgetTokens: BUDGET_DOCUMENTS_TOKENS[mode],
+      depot: depotPiecesJointesSupabase(TIER_MODEL_ID[tier]),
+    }).catch((e) => {
+      console.error('[copilot] préparation des documents impossible', errMsg(e));
+      return { ...DOCUMENTS_VIDES, erreurs: ['documents joints indisponibles (erreur technique) : réessayer'], consigne: '' };
+    });
+    supplementDocuments = jetonsSupplementairesDocuments(documentsTour.tokens, (t) => debitJetons(tier, t, 0, 0));
+
     // ── Découverte : 10 messages offerts par mois (plafond serveur, 21/10/2026) ──
     // Dans le quota : aucun jeton réservé (reservationId vide → settle/refund
     // ne débitent rien). Au-delà : réservation classique sur les jetons du compte.
+    // V1.8 (décision d'Albé, 01/11) : AUCUNE gratuité pour les documents. Dès
+    // qu'un message porte un document — joint à ce tour ou ré-injecté depuis la
+    // conversation —, il n'entre pas dans le quota offert : il est réservé et
+    // débité normalement, au réel. Le quota gratuit reste intact pour plus tard.
+    const porteDocument = documentsTour.documents.length > 0;
     let messageOffert = false;
-    if (plan === 'basic') {
+    if (plan === 'basic' && !porteDocument) {
       const { data: q, error: qErr } = await getAdmin().rpc('consume_copilot_free_message', {
         p_user_id: userId, p_quota: MESSAGES_MIMMO_DECOUVERTE_MOIS,
       });
@@ -10880,12 +11238,24 @@ Deno.serve(async (req: Request) => {
       reservationId = '';
       remainingBalance = 0;
     } else {
-      reserved = worstCaseJetons(tier, mode);
+      // V1.8 : + la lecture des documents (empreinte ; le débit reste le réel).
+      reserved = worstCaseJetons(tier, mode) + supplementDocuments;
       const reservation = await reserveCredits({
         userId,
-        amount: reserved,                       // ⬅️ gate = pire cas
-        reason: `copilot ${plan}/${tier}`,
+        amount: reserved,                       // ⬅️ gate = pire cas (+ documents)
+        reason: `copilot ${plan}/${tier}${supplementDocuments ? ` + documents (${documentsTour.tokens} tokens)` : ''}`,
         conversationId,
+      }).catch((e) => {
+        if (e instanceof CopilotError && e.code === 'INSUFFICIENT_CREDITS' && supplementDocuments > 0) {
+          const noms = documentsTour.documents.map((d) => `« ${d.nom} »`).join(', ');
+          throw new CopilotError('INSUFFICIENT_CREDITS',
+            `Solde insuffisant pour lire ${noms} : la lecture de ce document demande environ ${supplementDocuments} ` +
+            `jeton${supplementDocuments > 1 ? 's' : ''} de plus qu'un message ordinaire (${reserved} réservés au total, ` +
+            `la part non consommée est rendue). Rechargez vos jetons, ou indiquez les pages utiles (ex. « pages 40 à 55 ») ` +
+            `pour une lecture plus courte.`,
+            { required: reserved, supplement_documents: supplementDocuments, tokens_documents: documentsTour.tokens });
+        }
+        throw e;
       });
       reservationId = reservation.reservationId;
       remainingBalance = reservation.remainingBalance;
@@ -10958,6 +11328,17 @@ Deno.serve(async (req: Request) => {
   try {
     sse.send({ type: 'reservation', reserved_credits: reserved, remaining: remainingBalance });
     sse.send({ type: 'conversation', conversation_id: conversationId });
+    if (documentsTour.documents.length || documentsTour.erreurs.length) {
+      sse.send({
+        type: 'documents',
+        documents: documentsTour.documents.map((d) => ({
+          nom: d.nom, mode: d.plan.mode, description: d.plan.description, tokens: d.tokens, nouvelle: d.nouvelle,
+        })),
+        erreurs: documentsTour.erreurs,
+        tokens: documentsTour.tokens,
+        jetons_supplementaires: supplementDocuments,
+      });
+    }
 
     // Deux lectures indépendantes (historique des messages, rappel des outils
     // déjà appelés) : elles portent sur des tables différentes et ne se
@@ -10966,7 +11347,7 @@ Deno.serve(async (req: Request) => {
     // `payload.message` est passé en clair : le message du tour n'a pas besoin
     // d'être déjà en base pour figurer dans ce qui part au modèle.
     const [messages, priorToolResults, savedStudioDraft, blocAgent] = await Promise.all([
-      buildMessages(conversationId, payload.message, mode, payload.attachments),
+      buildMessages(conversationId, payload.message, mode, payload.attachments, documentsTour),
       // Jamais bloquant — en cas d'échec, le bloc est vide.
       buildPriorToolResultsBlock(conversationId),
       buildSavedStudioDraftBlock(conversationId, userId),
@@ -10995,7 +11376,7 @@ Deno.serve(async (req: Request) => {
     messageUtilisateurLance = true;
     messageUtilisateurEcrit = saveUserMessage({
       conversationId, userId, text: payload.message, mode, contextSnapshot,
-      attachments: payload.attachments,
+      attachments: payload.attachments, stockees: documentsTour.nouvelles,
     }).catch((e) => {
       // Un échec ici ne justifie pas de perdre la réponse en cours : on trace,
       // et seul l'historique du tour suivant sera incomplet.
@@ -11036,6 +11417,8 @@ Deno.serve(async (req: Request) => {
         webFetches: result.webFetches,
         model: result.model, tier, plan, debit, latencyMs,
         toolCalls: result.toolCallsLog.length,
+        // V1.8 : part des documents dans l'entrée (estimée par tour, comptée exactement).
+        ...(documentsTour.tokens ? { documentsTokens: documentsTour.tokens, documents: documentsTour.documents.length, supplementDocuments } : {}),
       },
     });
     
@@ -11161,7 +11544,7 @@ Deno.serve(async (req: Request) => {
         messageUtilisateurLance = true;
         messageUtilisateurEcrit = saveUserMessage({
           conversationId, userId, text: payload.message, mode, contextSnapshot,
-          attachments: payload.attachments,
+          attachments: payload.attachments, stockees: documentsTour.nouvelles,
         }).catch((e) => console.error('[copilot] saveUserMessage (rattrapage) failed', e));
       }
       const refunded = await refundCredits({ userId, reservationId, reason: 'failed before generation' });

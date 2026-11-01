@@ -9,16 +9,22 @@ import { construireReponseRegles, type QuestionReglesConception } from '@/spaces
 import { repondreMission } from '../agentApi';
 import { useAgentUi } from '../agentUi.store';
 import { deposerFichier, utilisateurId } from './conceptionApi';
-import { avertissementSaisie, cheminReglement, dossierReglement, lignesFormulaire, lireSaisie, type LigneFormulaire } from './conceptionLogique';
+import { avertissementSaisie, cheminReglement, cheminTexteReglement, dossierReglement, lignesFormulaire, lireSaisie, type LigneFormulaire } from './conceptionLogique';
+import { extrairePagesPdf } from '../../pieces-jointes/televersement';
+import { AVERTISSEMENT_TAILLE, semblerScanne, texteExtraitJson } from '../../pieces-jointes/piecesJointesLogique';
 import './conception.css';
 
 export function FormulaireRegles({ missionId, question, onRepondu }: { missionId: string; question: QuestionReglesConception; onRepondu: () => void }) {
   const [lignes, setLignes] = useState<LigneFormulaire[]>(() => lignesFormulaire(question));
   const [reglement, setReglement] = useState<string | null>(null);
   const [nomReglement, setNomReglement] = useState<string | null>(null);
+  // V1.8 : ce qui sera lu d'un gros règlement (« 240 pages, texte extrait : seules les pages de la zone seront lues »).
+  const [infoReglement, setInfoReglement] = useState<string | null>(null);
   const [lire, setLire] = useState(true);
   const [commentaire, setCommentaire] = useState('');
   const [occupe, setOccupe] = useState<'depot' | 'envoi' | null>(null);
+  // V1.8 : progression de l'envoi (jusqu'à 50 Mo) puis de la lecture des pages.
+  const [progression, setProgression] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const fichier = useRef<HTMLInputElement | null>(null);
 
@@ -35,10 +41,23 @@ export function FormulaireRegles({ missionId, question, onRepondu }: { missionId
       const ch = cheminReglement(uid, dossier, f);
       if (!ch.ok) { setErreur(ch.erreur); return; }
       setOccupe('depot');
-      await deposerFichier(ch.chemin, f, ch.type);
-      setReglement(ch.chemin); setNomReglement(f.name); setLire(true);
+      await deposerFichier(ch.chemin, f, ch.type, (e, t) => setProgression(`Envoi : ${Math.round((100 * e) / Math.max(1, t))} %`));
+      // V1.8 : texte extrait dans le navigateur (pdf.js) et déposé à côté du PDF :
+      // l'agent lira seulement les dispositions générales et le chapitre de la zone.
+      // En cas d'échec (PDF protégé, scanné), l'agent tentera sa propre extraction.
+      let info: string | null = null;
+      try {
+        const pages = await extrairePagesPdf(f, (n, total) => setProgression(`Lecture des pages : ${n} / ${total}`));
+        if (pages.length && !semblerScanne(pages)) {
+          await deposerFichier(cheminTexteReglement(ch.chemin), new Blob([texteExtraitJson(pages)], { type: 'application/json' }), 'application/json');
+          info = `${pages.length} pages — ${pages.length > 20 ? 'seules les pages de votre zone seront lues' : 'lu en entier'}.`;
+        } else if (pages.length) {
+          info = `${pages.length} pages, document scanné : la lecture automatique risque d’échouer si le PDF est long.`;
+        }
+      } catch (e) { console.warn('[conception] texte du règlement non extrait :', e); }
+      setReglement(ch.chemin); setNomReglement(f.name); setInfoReglement(info); setLire(true);
     } catch (e) { setErreur(e instanceof Error ? e.message : 'Dépôt impossible.'); }
-    finally { setOccupe(null); }
+    finally { setOccupe(null); setProgression(null); }
   };
 
   const envoyer = async () => {
@@ -90,10 +109,11 @@ export function FormulaireRegles({ missionId, question, onRepondu }: { missionId
       <div className="mzcp-form__reglement">
         <input ref={fichier} type="file" accept="application/pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void deposer(f); }} />
         <button type="button" className="mzag-btn mzag-btn--petit" disabled={occupe !== null} onClick={() => fichier.current?.click()}>
-          <FileUp size={13} aria-hidden /> {occupe === 'depot' ? 'Envoi…' : reglement ? 'Remplacer le règlement' : 'Déposer le règlement (PDF)'}
+          <FileUp size={13} aria-hidden /> {occupe === 'depot' ? (progression ?? 'Envoi…') : reglement ? 'Remplacer le règlement' : 'Déposer le règlement (PDF)'}
         </button>
-        {nomReglement ? <span className="mzag-petit">{nomReglement}</span>
-          : <span className="mzag-petit">PDF de 3 Mo au plus : si le règlement est gros, gardez seulement les dispositions générales et le chapitre de votre zone.</span>}
+        {nomReglement ? <span className="mzag-petit">{nomReglement}{infoReglement ? ` — ${infoReglement}` : ''}</span>
+          : <span className="mzag-petit">PDF de 50 Mo au plus.</span>}
+        <span className="mzag-petit" style={{ flexBasis: '100%' }}>{AVERTISSEMENT_TAILLE}</span>
         {reglement && (
           <label className="mzag-petit" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
             <input type="checkbox" checked={lire} onChange={(e) => setLire(e.target.checked)} />

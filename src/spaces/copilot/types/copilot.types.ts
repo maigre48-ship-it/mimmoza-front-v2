@@ -457,10 +457,19 @@ export interface CopilotCreditState {
 export interface CopilotAttachment {
   /** MIME type du fichier. */
   mediaType: string;
-  /** Contenu en base64, SANS le préfixe `data:…;base64,`. */
-  data: string;
+  /**
+   * Contenu en base64, SANS le préfixe `data:…;base64,` (voie V1.7, images ≤ 3 Mo).
+   * V1.8 : absent pour une pièce envoyée par stockage (référence ci-dessous).
+   */
+  data?: string;
   /** Nom d'origine, pour l'affichage des pastilles côté UI. */
   name?: string;
+  /** V1.8 — chemin dans le bucket privé copilot-pieces-jointes (PDF ≤ 50 Mo, image ≤ 5 Mo). */
+  storagePath?: string;
+  /** V1.8 — taille en octets (revérifiée côté serveur). */
+  size?: number;
+  /** V1.8 — texte extrait page par page, déposé à côté du PDF (`storagePath + .texte.json`). */
+  textePath?: string;
 }
 
 export interface CopilotChatRequest {
@@ -469,7 +478,7 @@ export interface CopilotChatRequest {
   mode: CopilotMode;
   /** Niveau de modèle demandé. Revalidé par resolveTier côté serveur. */
   tier?: ModelTier;
-  /** V1.7 — Pièces jointes du message courant. Max 5, ~4,5 Mo cumulés. */
+  /** V1.7 — Pièces jointes du message courant. Max 5 ; base64 ~4,5 Mo cumulés, ou références Storage (V1.8, 50 Mo par fichier). */
   attachments?: CopilotAttachment[];
   context: MimmozaContext;
 }
@@ -491,7 +500,13 @@ export type CopilotStreamEvent =
   // Agent autonome : MimmozIA propose une mission longue avec son devis.
   // Forme tolérante (champs à plat ou sous `mission`), lue par
   // agent/agentLogique.ts → lirePropositionDevis.
-  | { type: 'mission_devis'; id?: string; mission_id?: string; objectif?: string; devis?: unknown; mission?: unknown };
+  | { type: 'mission_devis'; id?: string; mission_id?: string; objectif?: string; devis?: unknown; mission?: unknown }
+  // V1.8 — documents lus à ce tour (pièces par stockage) et supplément de jetons réservé.
+  | {
+      type: 'documents';
+      documents: Array<{ nom: string; mode: string; description: string; tokens: number; nouvelle: boolean }>;
+      erreurs: string[]; tokens: number; jetons_supplementaires: number;
+    };
 
 export interface ToolDefinition {
   name: string;

@@ -1,0 +1,1 @@
+{"type":"FeatureCollection","features":[{"type":"Feature","id":"document.123","geometry":null,"geometry_name":"the_geom","properties":{"gid":123,"id":"5f1c2a3b4d5e6f708192a3b4c5d6e7f8","grid_name":"12345","grid_title":"TESTVILLE","name":"12345_PLU_20230615","partition":"DU_12345","du_type":"PLU","featureType":"document"}}]}

@@ -6,7 +6,7 @@ import { construireClasseurBilan, LIGNE_HYP } from '../rapport/bilanExcel.ts';
 import {
   avertissementSaisie, ouvertureInitiale, RE_NOM_MODELE, suffixeAleatoire, transitionOuverture, type EtatOuverture, type EvenementOuverture,
   lireConceptionPrete, bilanVersion, cheminModele, cheminPlan, cheminReglement, conformiteAffichee, dossierReglement, ecartsBilan, entreesConception,
-  lignesFormulaire, lireConception, lireSaisie, messageLancerConception, modeleRapportVersion, peutTraiter, prochainNumero,
+  lignesFormulaire, lireConception, lireSaisie, messageLancerConception, modeleRapportVersion, peutTraiter, prochainNumero, cheminTexteReglement,
   resumeConformite, texteDelta,
 } from './conceptionLogique.ts';
 import { calculerChargeFonciere, hypothesesVides } from '../../../../../supabase/functions/copilot-chat/agent/rapport.ts';
@@ -111,8 +111,12 @@ test('chemins du bucket : <uid>/<conception>/<nom> en minuscules, formats et tai
   const p = cheminPlan('u1', 'c1', { type: 'application/pdf', size: 1000 }, d);
   assert.deepEqual(p, { ok: true, chemin: 'u1/c1/plan-20261031-090507.pdf', type: 'application/pdf' });
   assert.equal(cheminPlan('u1', 'c1', { type: 'image/gif', size: 10 }).ok, false);
-  assert.equal(cheminReglement('u1', 'c1', { type: 'application/pdf', size: 4 * 1024 * 1024 }).ok, false, 'au-delà de 3 Mo, l’agent ne lit pas');
+  assert.equal(cheminReglement('u1', 'c1', { type: 'application/pdf', size: 51 * 1024 * 1024 }).ok, false, 'au-delà de 50 Mo, refus (V1.8)');
+  assert.equal(cheminReglement('u1', 'c1', { type: 'application/pdf', size: 50 * 1024 * 1024 }, d).ok, true, 'un gros règlement est accepté : seules les pages de la zone seront lues');
   assert.equal(cheminReglement('u1', 'c1', { type: 'application/pdf', size: 2 * 1024 * 1024 }, d).ok, true);
+  assert.equal(cheminTexteReglement('u1/c1/reglement-20261031-090507.pdf'), 'u1/c1/reglement-20261031-090507.pdf.texte.json');
+  // Même motif que la politique du bucket agent-conception (migration 20261101).
+  assert.match(cheminTexteReglement('reglement-20261031-090507.pdf'), /^reglement-[a-z0-9._-]{1,120}\.pdf(\.texte\.json)?$/i);
   assert.equal(cheminModele('u1', 'c1', 3, 'a1b2c3d4'), 'u1/c1/modele-v3-a1b2c3d4.mstudio.json');
   assert.equal(suffixeAleatoire(new Uint8Array([1, 171, 255, 16])), '01abff10');
   assert.match(suffixeAleatoire(), /^[a-f0-9]{8}$/);

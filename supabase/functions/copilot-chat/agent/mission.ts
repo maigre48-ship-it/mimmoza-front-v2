@@ -43,11 +43,14 @@ import {
 } from './prompt-promoteur.ts';
 import { NOMS_OUTILS_MISSION, OUTILS_MISSION_INTERDITS_VEILLE, outilChatAutoriseEnMission, outilsPourMission } from './outils.ts';
 import {
-  appliquerReponseFormulaire, cheminReglementAutorise, chercherContourParcelle, completerRegles, compterTokensAnthropic,
-  construireQuestionRegles, CONSIGNE_LECTURE_REGLEMENT, controlerProgramme, fusionnerRegles, normaliserProgramme,
-  normaliserRegle, REGLEMENT_MAX_OCTETS, reglesDepuisLecture, reglesDepuisRulesets, reglesManquantes, signalementsFormules,
+  appliquerReponseFormulaire, centroideParcelle, cheminReglementAutorise, cheminTexteReglement, chercherContourParcelle,
+  completerRegles, compterTokensAnthropic, construireQuestionRegles, CONSIGNE_LECTURE_REGLEMENT, controlerProgramme,
+  fusionnerRegles, normaliserProgramme, normaliserRegle, REGLEMENT_LECTURE_DIRECTE_MAX_OCTETS, REGLEMENT_MAX_OCTETS,
+  reglesDepuisLecture, reglesDepuisRulesets, reglesManquantes, signalementsFormules,
   suiteProposee, type ConflitRegle, type ParcelleConception, type Programme, type RegleConception,
 } from './conception.ts';
+import { lireTexteExtrait, planifierLecture } from '../../_shared/documents/piecesJointes.ts';
+import { normaliserCodeZone, plagesLisibles } from '../../_shared/documents/lectureCiblee.ts';
 import {
   assemblerRapportV2, calculerChargeFonciere, chargerBrouillon, fusionnerHypotheses, lireHypothesesPartielles,
   normaliserContact, normaliserIdu, normaliserTerrainBrut,
@@ -92,8 +95,17 @@ export interface EtatConception {
   parcelle: ParcelleConception | null;
   origine_chargee: boolean;
   donnees_prospection: string | null;
-  /** Lecture de règlement PDF programmée pour la prochaine étape. */
-  lecture: { chemin: string; zone: string | null } | null;
+  /**
+   * Lecture de règlement programmée pour la prochaine étape. V1.8 : `source`
+   * 'gpu' = règlement publié au Géoportail de l'urbanisme (chemin 'gpu') ;
+   * `essais` = extractions encore en cours (reprise au tick suivant) ;
+   * `libelle` = provenance affichée des règles lues.
+   */
+  lecture: {
+    chemin: string; zone: string | null; source?: 'depot' | 'gpu'; essais?: number; libelle?: string;
+    /** V1.8 : choix de l'utilisateur (pièce du règlement GPU, pages). */
+    fichier?: string | null; pages?: number[] | null;
+  } | null;
   /** Valeurs proposées (PDF, outils) en désaccord avec une règle confirmée par l'utilisateur : signalées, jamais appliquées. */
   conflits: ConflitRegle[];
 }
@@ -542,7 +554,8 @@ async function executerOutilMission(
       c.etat.conception = k;
       return trouvees.length
         ? JSON.stringify({ regles_trouvees: trouvees, manquantes: reglesManquantes(k.regles), signalements: signalementsFormules(trouvees) }) + conflit
-        : `Aucun règlement importé dans Mimmoza pour ${insee} zone ${zone} (couverture actuelle très partielle). Règles manquantes : ${reglesManquantes(k.regles).join(', ')}.`;
+        : `Aucun règlement importé dans Mimmoza pour ${insee} zone ${zone} (couverture actuelle très partielle). Règles manquantes : ${reglesManquantes(k.regles).join(', ')}.` +
+          (c.deps.reglementGpu ? ` Avant de les demander à l'utilisateur, appelle lire_reglement_pdf avec source « gpu » et zone_code « ${zone} » : le règlement publié au Géoportail de l'urbanisme sera lu (pages de la zone seulement).` : '');
     }
     case 'enregistrer_regles_conception': {
       const k = chargerConception(c.etat.conception, c.m);
@@ -570,9 +583,21 @@ async function executerOutilMission(
     }
     case 'lire_reglement_pdf': {
       const k = chargerConception(c.etat.conception, c.m);
+      const zone = typeof input.zone_code === 'string' ? normaliserCodeZone(input.zone_code) : null;
+      const pages = Array.isArray(input.pages)
+        ? (input.pages as unknown[]).map(Number).filter((n) => Number.isInteger(n) && n >= 1).slice(0, 300)
+        : null;
+      const choix = { fichier: typeof input.fichier === 'string' && input.fichier.trim() ? input.fichier.trim() : null, pages: pages?.length ? pages : null };
+      if (input.source === 'gpu') {
+        if (!c.deps.reglementGpu) return 'Lecture du règlement au Géoportail de l’urbanisme non disponible.';
+        if (!centroideParcelle(k.parcelle)) return 'Refusé : récupère d’abord le contour de la parcelle (recuperer_parcelle).';
+        k.lecture = { chemin: 'gpu', zone, source: 'gpu', ...choix };
+        c.etat.conception = k;
+        return 'Lecture du règlement publié au Géoportail de l’urbanisme programmée à l’étape suivante.';
+      }
       const chemin = String(input.chemin ?? '').trim();
       if (!cheminReglementAutorise(chemin, c.m.user_id, k.id)) return 'Refusé : le règlement doit être dans le dossier de cette conception.';
-      k.lecture = { chemin, zone: typeof input.zone_code === 'string' ? input.zone_code : null };
+      k.lecture = { chemin, zone, source: 'depot', pages: choix.pages };
       c.etat.conception = k;
       return 'Lecture du règlement programmée à l’étape suivante.';
     }
@@ -668,19 +693,21 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
 
   if (v.phase === 'lecture') {
     const k = chargerConception(c.etat.conception, c.m);
-    const chemin = k.lecture?.chemin ?? 'règlement';
-    const lues = reglesDepuisLecture(extraireJson(texteTour), chemin);
+    const lecture = k.lecture;
+    const chemin = lecture?.chemin ?? 'règlement';
+    const lues = reglesDepuisLecture(extraireJson(texteTour), chemin, lecture?.libelle);
     const f = fusionnerRegles(k.regles, lues, 'reglement');
     k.regles = f.regles;
     const conflit = noterConflits(k, f.conflits);
     k.lecture = null;
     c.etat.conception = k;
     await persisterConception(c, k);
+    const quoi = lecture?.libelle ?? chemin.split('/').pop();
     const resume = lues.length
-      ? `Règlement lu (${chemin.split('/').pop()}) : ${lues.map((r) => `${r.cle} = ${r.valeur}${r.article ? ` (art. ${r.article})` : ''}`).join(' ; ')}.`
-      : `Règlement lu (${chemin.split('/').pop()}) : aucune règle clé trouvée pour cette zone.`;
+      ? `Règlement lu (${quoi}) : ${lues.map((r) => `${r.cle} = ${r.valeur}${r.article ? ` (art. ${r.article})` : ''}`).join(' ; ')}.`
+      : `Règlement lu (${quoi}) : aucune règle clé trouvée pour cette zone.`;
     const resumeConflits = conflit;
-    c.etat.tours.push({ n: v.n, assistant: [{ type: 'text', text: 'Lecture du règlement PDF déposé.' }],
+    c.etat.tours.push({ n: v.n, assistant: [{ type: 'text', text: lecture?.source === 'gpu' ? 'Lecture du règlement publié au Géoportail de l’urbanisme.' : 'Lecture du règlement PDF déposé.' }],
       user: [{ type: 'text', text: `${resume}${resumeConflits} Règles encore manquantes : ${reglesManquantes(k.regles).join(', ') || 'aucune'}. ${CONSIGNE_CONTINUER}` }] });
     await solderEnVol(c, v);
     await c.depot.journal(c.m.id, 'resultat', 'lire_reglement_pdf', { regles: lues.length }, resume, v.cout);
@@ -782,24 +809,127 @@ async function etapeLecture(c: CtxEtape): Promise<IssueEtape> {
     await c.depot.sauverEtat(c.m.id, c.etat);
     return 'continuer' as IssueEtape;
   };
-  if (!cheminReglementAutorise(lec.chemin, c.m.user_id, k.id)) return await refuser('chemin hors du dossier de la conception');
-  const f = await c.depot.telechargerFichier('agent-conception', lec.chemin, REGLEMENT_MAX_OCTETS);
-  if (!f) return await refuser('fichier introuvable dans le dossier');
-  if ('trop_gros' in f) return await refuser(`fichier trop volumineux (${Math.round(f.octets / 1024)} Ko) : déposez seulement les pages de la zone`);
+  // Extraction serveur encore en cours : on rend la main, le tick suivant reprend là où elle s'est arrêtée.
+  const patienter = async (quoi: string) => {
+    if ((lec.essais ?? 0) >= ESSAIS_EXTRACTION_MAX) return await refuser(`${quoi} : extraction du texte trop longue`);
+    k.lecture = { ...lec, essais: (lec.essais ?? 0) + 1 };
+    c.etat.conception = k;
+    await c.depot.journal(c.m.id, 'outil', 'lire_reglement_pdf', null, `${quoi} : extraction du texte en cours (essai ${k.lecture.essais}).`, 0);
+    await c.depot.sauverEtat(c.m.id, c.etat);
+    return 'continuer' as IssueEtape;
+  };
+  // V1.8 (décision d'Albé) : quand le moteur ne peut pas choisir seul quoi lire,
+  // il DEMANDE à l'utilisateur (mécanisme de demander_utilisateur : mise en
+  // attente). Rien n'est lu ni débité ; à la reprise, la réponse arrive au
+  // modèle, qui rappelle lire_reglement_pdf avec le choix (fichier, zone, pages).
+  const demander = async (question: string) => {
+    const q = texte(question, 1000);
+    k.lecture = null;
+    c.etat.conception = k;
+    c.etat.carnet.push(texte(`Question posée avant lecture du règlement : ${q} — à la réponse, rappelle lire_reglement_pdf ` +
+      `(source « ${lec.source ?? 'depot'} »${lec.source === 'gpu' ? '' : `, chemin ${lec.chemin}`}) avec fichier, zone_code ou pages.`, 1400));
+    c.etat.attente = { question: q };
+    compacter(c.etat);
+    const ok = await c.depot.mettreEnAttente(c.m.id, q, c.etat);
+    if (!ok) { await c.depot.sauverEtat(c.m.id, c.etat); return 'continuer' as IssueEtape; }
+    await c.depot.journal(c.m.id, 'question', 'lire_reglement_pdf', null, q, 0);
+    return 'pause' as IssueEtape;
+  };
+  const docTexte = (texteDoc: string, titre: string, contexte: string) =>
+    ({ type: 'document', source: { type: 'text', media_type: 'text/plain', data: texteDoc }, title: titre, context: contexte });
+  const zone = lec.zone ?? await zoneDeLaParcelle(c, k);
+  let contenu: unknown[];
+  let libelle: string;
+
+  if (lec.source === 'gpu') {
+    // ── Règlement publié au Géoportail de l'urbanisme (plu-reglement-v1) ──
+    const pt = centroideParcelle(k.parcelle);
+    if (!c.deps.reglementGpu || !pt) return await refuser('lecture au Géoportail de l’urbanisme indisponible (contour de parcelle ou service manquant)');
+    const r = await c.deps.reglementGpu({ ...pt, zone, fichier: lec.fichier ?? null, pages: lec.pages ?? null });
+    if (r.statut === 'en_cours') return await patienter('Règlement du Géoportail de l’urbanisme');
+    if (['choix_requis', 'zone_non_reperee', 'selection_trop_longue'].includes(String(r.statut)) && typeof r.message === 'string') {
+      return await demander(`Règlement du PLU (Géoportail de l’urbanisme) : ${r.message}`);
+    }
+    if (r.statut !== 'pret' || typeof r.texte !== 'string' || !r.texte.trim()) {
+      return await refuser(texte(String(r.message ?? `règlement non lisible au Géoportail de l'urbanisme (${String(r.statut)})`), 300));
+    }
+    libelle = texte(`Règlement GPU — ${String(r.source ?? r.fichier ?? 'Géoportail de l’urbanisme')}`, 200);
+    contenu = [docTexte(r.texte, String(r.fichier ?? 'Règlement'), `Zone ${String(r.zone_lue ?? zone ?? '?')} — chapitre p. ${String(r.pages_zone ?? '?')}, dispositions générales p. ${String(r.pages_dispositions_generales ?? '—')}.`),
+      { type: 'text', text: CONSIGNE_LECTURE_REGLEMENT(String(r.zone_lue ?? zone ?? '') || null, 'gpu') }];
+  } else {
+    // ── Règlement déposé par l'utilisateur ──
+    if (!cheminReglementAutorise(lec.chemin, c.m.user_id, k.id)) return await refuser('chemin hors du dossier de la conception');
+    const nom = lec.chemin.split('/').pop()!;
+    libelle = `Règlement PDF déposé (${nom})`;
+    // 1. Texte extrait par le navigateur, déposé à côté du PDF.
+    let pages = c.depot.telechargerJson
+      ? lireTexteExtrait(await c.depot.telechargerJson('agent-conception', cheminTexteReglement(lec.chemin), 8 * 1024 * 1024).catch(() => null))
+      : null;
+    let base64: string | null = null;
+    let taille = 0;
+    if (!pages) {
+      // 2. Petit PDF : envoyé tel quel (ancien comportement).
+      const f = await c.depot.telechargerFichier('agent-conception', lec.chemin, REGLEMENT_LECTURE_DIRECTE_MAX_OCTETS);
+      if (!f) return await refuser('fichier introuvable dans le dossier');
+      taille = f.octets;
+      if (!('trop_gros' in f)) base64 = f.base64;
+      else if (f.octets > REGLEMENT_MAX_OCTETS) return await refuser(`fichier trop volumineux (${Math.round(f.octets / 1048576)} Mo > ${Math.round(REGLEMENT_MAX_OCTETS / 1048576)} Mo) : déposez seulement les pages de la zone`);
+      else {
+        // 3. Gros PDF sans texte du navigateur : extraction serveur (par lots, en cache).
+        pages = c.deps.extraireTextePdf ? await c.deps.extraireTextePdf('agent-conception', lec.chemin).catch(() => null) : null;
+        if (!pages) return c.deps.extraireTextePdf ? await patienter(nom) : await refuser('texte du règlement non extrait : déposez seulement les pages de la zone');
+      }
+    }
+    if (base64) {
+      contenu = [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+        { type: 'text', text: CONSIGNE_LECTURE_REGLEMENT(zone) }];
+    } else {
+      const plan = planifierLecture({ mediaType: 'application/pdf', taille, nom, pages, zone, message: '', budgetTokens: ENTREE_MAX_TOKENS - 4000, pagesDemandees: lec.pages ?? null });
+      if (plan.mode === 'pdf_entier') {
+        // Petit PDF (≤ 20 pages) mais lourd (plans, images) : envoyé entier si ≤ 50 Mo.
+        const f = await c.depot.telechargerFichier('agent-conception', lec.chemin, REGLEMENT_MAX_OCTETS);
+        if (!f || 'trop_gros' in f) return await refuser('fichier introuvable ou trop volumineux');
+        contenu = [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.base64 } },
+          { type: 'text', text: CONSIGNE_LECTURE_REGLEMENT(zone) }];
+      } else if (plan.mode === 'sommaire' && plan.question) {
+        return await demander(plan.question);
+      } else if (plan.texte && ['texte_cible', 'texte_integral', 'pages_demandees'].includes(plan.mode)) {
+        contenu = [docTexte(plan.texte, nom, plan.description), { type: 'text', text: CONSIGNE_LECTURE_REGLEMENT(plan.zone ?? zone) }];
+        libelle = texte(`Règlement PDF déposé (${nom}, ${plan.mode === 'texte_cible' ? `zone ${plan.zone}, ` : ''}p. ${plagesLisibles(plan.pages)})`, 200);
+      } else {
+        return await refuser(texte(`${plan.description}${zone ? '' : ' — zone de la parcelle inconnue (appelle get_zonage_plu puis lire_reglement_pdf avec zone_code)'}`, 400));
+      }
+    }
+  }
+
+  k.lecture = { ...lec, zone, libelle };
+  c.etat.conception = k;
   const system = 'Tu extrais des règles d\'urbanisme d\'un règlement de PLU. Tu réponds en JSON strict.';
-  const messages: MessageLLM[] = [{ role: 'user', content: [
-    { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.base64 } },
-    { type: 'text', text: CONSIGNE_LECTURE_REGLEMENT(lec.zone) },
-  ] }];
+  const messages: MessageLLM[] = [{ role: 'user', content: contenu }];
   const model = c.deps.modelePourTier(c.tier);
   const compter = c.deps.compterTokens ?? ((p) => compterTokensAnthropic(p));
   const entree = await compter({ model, system, messages });
   if (entree == null) return await refuser('taille du document impossible à mesurer');
   if (entree > ENTREE_MAX_TOKENS) return await refuser(`document trop long (${entree} tokens > ${ENTREE_MAX_TOKENS}) : déposez seulement les pages de la zone`);
+  await c.depot.sauverEtat(c.m.id, c.etat);   // libellé et zone de la lecture conservés pour le traitement du résultat
   const pire = c.deps.debitJetons(c.tier, entree, SORTIE_ETAPE_MAX_TOKENS, 0);
   if (c.m.jetons_reserves - c.m.jetons_consommes < pire + c.pireRapport) return await refuser('réserve de jetons insuffisante pour cette lecture');
   const v = await appelerEtDebiter(c, 'lecture', { system, messages }, [], SORTIE_ETAPE_MAX_TOKENS);
   return await traiterEnVol(c, v);
+}
+
+/** Extractions serveur « en cours » tolérées avant d'abandonner la lecture (≈ un tick chacune). */
+export const ESSAIS_EXTRACTION_MAX = 4;
+
+/** Zone PLU au point de la parcelle (get_zonage_plu, GPU) ; null si inconnue. Jamais bloquant. */
+async function zoneDeLaParcelle(c: CtxEtape, k: EtatConception): Promise<string | null> {
+  const pt = centroideParcelle(k.parcelle);
+  if (!pt) return null;
+  try {
+    const r = await avecDelai(c.deps.executeTool('get_zonage_plu', { lat: pt.lat, lng: pt.lon }, contexteMission(c.m)), TIMEOUT_OUTIL_MS, 'get_zonage_plu');
+    const z = (r?.data as { zone_principale?: { zone?: unknown } } | undefined)?.zone_principale?.zone;
+    return normaliserCodeZone(z);
+  } catch { return null; }
 }
 
 function limitesRapport(raison: EtatMission['raison_rapport']): string[] {

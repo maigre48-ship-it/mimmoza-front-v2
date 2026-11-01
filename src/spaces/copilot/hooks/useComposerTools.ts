@@ -21,38 +21,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { texteDictee } from '../utils/texteDictee';
+import { useCopilotStore } from '../store/copilotStore';
+import {
+  preparerPiecesJointes, readAsBase64, versPayload, type CopilotAttachment, type UiAttachment,
+} from '../pieces-jointes/televersement';
+import { ACCEPT_FILES, TAILLE_MAX_INLINE, TOTAL_MAX_INLINE } from '../pieces-jointes/piecesJointesLogique';
 
-/** Pièce jointe transmise au backend (contrat copilot-chat V1.7). */
-export interface CopilotAttachment {
-  mediaType: string;   // image/png|jpeg|gif|webp ou application/pdf
-  data: string;        // base64 SANS le préfixe data:
-  name?: string;
-}
-
-/** Pièce jointe côté UI : le base64 + de quoi afficher une pastille. */
-export interface UiAttachment extends CopilotAttachment {
-  id: string;
-  name: string;
-  size: number;
-}
-
-export const ACCEPT_FILES = 'image/png,image/jpeg,image/gif,image/webp,application/pdf';
-export const MAX_FILE_BYTES = 3 * 1024 * 1024;   // 3 Mo par fichier
-export const MAX_TOTAL_BYTES = 4 * 1024 * 1024;  // 4 Mo cumulés (le base64 gonfle de ~33 %)
-
-/** Lit un fichier en base64 SANS le préfixe `data:…;base64,`. */
-export function readAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => {
-      const res = String(r.result);
-      const comma = res.indexOf(',');
-      resolve(comma >= 0 ? res.slice(comma + 1) : res);
-    };
-    r.onerror = () => reject(r.error);
-    r.readAsDataURL(file);
-  });
-}
+// V1.8 — les types et la préparation des pièces jointes vivent dans
+// pieces-jointes/ (partagés avec MimmozIAPage). Réexportés ici pour les appelants.
+export type { CopilotAttachment, UiAttachment };
+export { ACCEPT_FILES, readAsBase64 };
+/** @deprecated V1.8 : plafond de la voie base64 seulement (les PDF passent par le stockage, 50 Mo). */
+export const MAX_FILE_BYTES = TAILLE_MAX_INLINE;
+/** @deprecated V1.8 : idem, cumul base64. */
+export const MAX_TOTAL_BYTES = TOTAL_MAX_INLINE;
 
 export interface UseComposerToolsOptions {
   /** Texte actuel, relu au démarrage de chaque session. */
@@ -65,41 +47,26 @@ export function useComposerTools({ getValue, setValue }: UseComposerToolsOptions
   // ── Pièces jointes ───────────────────────────────────────────────────────
   const [attachments, setAttachments] = useState<UiAttachment[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // V1.8 : téléversement + extraction du texte en cours (l'envoi attend).
+  const [preparation, setPreparation] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFiles = useCallback(async (files: FileList | null) => {
     if (!files?.length) return;
     setError(null);
-    const accepted: UiAttachment[] = [];
-    let total = attachments.reduce((s, a) => s + a.size, 0);
-
-    for (const file of Array.from(files)) {
-      if (file.size > MAX_FILE_BYTES) {
-        setError(`« ${file.name} » dépasse 3 Mo.`);
-        continue;
+    const liste = Array.from(files);
+    setPreparation(liste.length > 1 ? `Préparation de ${liste.length} fichiers…` : `Préparation de « ${liste[0].name} »…`);
+    try {
+      const st = useCopilotStore.getState();
+      const { acceptees, erreur } = await preparerPiecesJointes(liste, attachments, {
+        conversationId: st.currentConversationId, niveau: st.tier, surEtape: setPreparation,
+      });
+      if (erreur) setError(erreur);
+      if (acceptees.length) {
+        setAttachments((prev) => [...prev, ...acceptees.filter((a) => !prev.some((p) => p.id === a.id))]);
       }
-      if (total + file.size > MAX_TOTAL_BYTES) {
-        setError('Taille cumulée des pièces jointes dépassée (4 Mo).');
-        break;
-      }
-      try {
-        accepted.push({
-          id: `${file.name}-${file.lastModified}-${file.size}`,
-          name: file.name,
-          size: file.size,
-          mediaType: file.type,
-          data: await readAsBase64(file),
-        });
-        total += file.size;
-      } catch {
-        setError(`Lecture impossible : ${file.name}`);
-      }
-    }
-    if (accepted.length) {
-      setAttachments((prev) => [
-        ...prev,
-        ...accepted.filter((a) => !prev.some((p) => p.id === a.id)),
-      ]);
+    } finally {
+      setPreparation(null);
     }
   }, [attachments]);
 
@@ -114,11 +81,8 @@ export function useComposerTools({ getValue, setValue }: UseComposerToolsOptions
 
   const openFilePicker = useCallback(() => fileInputRef.current?.click(), []);
 
-  /** Payload prêt pour sendMessage : on retire les champs propres à l'UI. */
-  const toPayload = useCallback(
-    (): CopilotAttachment[] => attachments.map(({ mediaType, data, name }) => ({ mediaType, data, name })),
-    [attachments],
-  );
+  /** Payload prêt pour sendMessage : une pièce stockée part en RÉFÉRENCE (V1.8). */
+  const toPayload = useCallback((): CopilotAttachment[] => versPayload(attachments), [attachments]);
 
   // ── Dictée ───────────────────────────────────────────────────────────────
   const [recording, setRecording] = useState(false);
@@ -177,7 +141,7 @@ export function useComposerTools({ getValue, setValue }: UseComposerToolsOptions
   return {
     // pièces jointes
     attachments, fileInputRef, handleFiles, removeAttachment,
-    clearAttachments, openFilePicker, toPayload,
+    clearAttachments, openFilePicker, toPayload, preparation,
     // dictée
     recording, dictationSupported, toggleDictation,
     // commun

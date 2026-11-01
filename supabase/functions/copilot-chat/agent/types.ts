@@ -241,6 +241,8 @@ export interface DepotMission {
   enregistrerConception(missionId: string, userId: string, champs: Record<string, unknown>): Promise<string>;
   /** Télécharge un fichier du bucket (base64), ou null. */
   telechargerFichier(bucket: string, chemin: string, maxOctets: number): Promise<{ base64: string; octets: number } | { trop_gros: true; octets: number } | null>;
+  /** V1.8 : fichier JSON du Storage (texte extrait d'un règlement) ; null si absent, trop gros ou illisible. */
+  telechargerJson?(bucket: string, chemin: string, maxOctets: number): Promise<unknown | null>;
 }
 
 /** Fonctions de l'index injectées dans le moteur (pas d'import circulaire). */
@@ -264,4 +266,8 @@ export interface MoteurDeps {
   compterTokens?: (p: { model: string; system: string; messages: unknown[] }) => Promise<number | null>;
   /** fetch injectable (cadastre) ; défaut : globalThis.fetch. */
   fetch?: typeof fetch;
+  /** V1.8 : texte page par page d'un PDF du Storage (extraction serveur, plu-reglement-v1) ; null si indisponible ou inachevée. */
+  extraireTextePdf?: (bucket: string, chemin: string) => Promise<string[] | null>;
+  /** V1.8 : règlement écrit applicable au point, lu au Géoportail de l'urbanisme (plu-reglement-v1, action 'gpu'). */
+  reglementGpu?: (p: { lat: number; lon: number; zone: string | null; fichier?: string | null; pages?: number[] | null }) => Promise<Record<string, unknown>>;
 }

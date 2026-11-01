@@ -5,6 +5,8 @@
 // migration n'est pas appliquée, les erreurs disent « pas encore activée ».
 import { supabase } from '@/lib/supabaseClient';
 import { ErreurAgent } from '../agentApi';
+import { deposerDansBucket } from '../../pieces-jointes/televersement';
+import { SEUIL_UPLOAD_REPRENABLE } from '../../pieces-jointes/televersementTus';
 import { agentNonInstalle, lireMission, messageErreurAgent } from '../agentLogique';
 import type { Mission } from '../agent.types';
 import {
@@ -79,7 +81,12 @@ export function conceptionDisponible(): Promise<boolean> {
   return disponibilite;
 }
 
-export async function deposerFichier(chemin: string, fichier: Blob, type: string): Promise<void> {
+export async function deposerFichier(chemin: string, fichier: Blob, type: string, surProgres?: (envoye: number, total: number) => void): Promise<void> {
+  // V1.8 : au-delà de 6 Mo (règlement jusqu'à 50 Mo), upload REPRENABLE (TUS).
+  if (fichier.size > SEUIL_UPLOAD_REPRENABLE) {
+    try { await deposerDansBucket(BUCKET_CONCEPTION, chemin, fichier, type, surProgres); return; }
+    catch (e) { throw new ErreurAgent(e instanceof Error ? e.message : 'Le fichier n’a pas pu être envoyé. Réessayez.'); }
+  }
   const { error } = await supabase.storage.from(BUCKET_CONCEPTION).upload(chemin, fichier, { contentType: type, upsert: false });
   if (error) {
     if (/bucket not found/i.test(error.message)) throw new ErreurAgent("Le dépôt de fichiers n'est pas encore activé. Réessayez un peu plus tard.", true);

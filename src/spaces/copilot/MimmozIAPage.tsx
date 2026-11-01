@@ -45,6 +45,9 @@ import { urlStudio } from '@/lib/studioConfig';
 // exports PDF et la réservation de place sont des modules légers.
 import { useSuiviExportPdf } from './onboarding/useSuiviExportPdf';
 import { affichageMemorise } from './onboarding/reserve';
+// V1.8 — pièces jointes par stockage (PDF ≤ 50 Mo, lecture ciblée des gros documents).
+import { piecesBase64, preparerPiecesJointes, versPayload, type CopilotAttachment, type UiAttachment } from './pieces-jointes/televersement';
+import { ACCEPT_FILES, AVERTISSEMENT_TAILLE } from './pieces-jointes/piecesJointesLogique';
 const PremierContact = lazy(() => import('./onboarding/PremierContact'));
 
 /** CH2 — pièce jointe base64 du tchat → File (pour l'envoyer au Studio 3D). */
@@ -58,44 +61,11 @@ async function versFichier(a: { mediaType: string; data: string; name?: string }
    Chaque helper s'adapte au runtime aux noms les plus probables.
    ========================================================================= */
 
-/** V1.7 — Pièce jointe. Type défini LOCALEMENT pour que cette page compile
- *  sans dépendre du patch copilot.types.ts. Quand ce dernier sera en place,
- *  remplacer par : import type { CopilotAttachment } from './types/copilot.types'; */
-interface CopilotAttachment {
-  mediaType: string;   // image/png|jpeg|gif|webp ou application/pdf
-  data: string;        // base64 SANS le prefixe data:
-  name?: string;
-}
-
 type SendFn = (
   text: string,
   options?: { attachments?: CopilotAttachment[] },
 ) => unknown | Promise<unknown>;
 
-/** Pièce jointe côté UI : le base64 + de quoi afficher une pastille. */
-interface UiAttachment extends CopilotAttachment {
-  id: string;
-  name: string;
-  size: number;
-}
-
-const ACCEPT_FILES = 'image/png,image/jpeg,image/gif,image/webp,application/pdf';
-const MAX_FILE_BYTES = 3 * 1024 * 1024;   // 3 Mo par fichier
-const MAX_TOTAL_BYTES = 4 * 1024 * 1024;  // 4 Mo cumulés (le base64 gonfle de 33 %)
-
-/** Lit un fichier en base64 SANS le préfixe `data:…;base64,`. */
-function readAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => {
-      const res = String(r.result);
-      const comma = res.indexOf(',');
-      resolve(comma >= 0 ? res.slice(comma + 1) : res);
-    };
-    r.onerror = () => reject(new Error('lecture impossible'));
-    r.readAsDataURL(file);
-  });
-}
 
 interface LooseCopilotApi {
   credits?: unknown;
@@ -283,41 +253,28 @@ export default function MimmozIAPage() {
   // --- V1.7 : pièces jointes (images + PDF) --------------------------------
   const [attachments, setAttachments] = useState<UiAttachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
+  // V1.8 : téléversement + extraction du texte en cours (l'envoi attend).
+  const [preparationPj, setPreparationPj] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // V1.8 : PDF jusqu'à 50 Mo (téléversés, texte extrait dans le navigateur),
+  // petites images en base64 comme avant — voir pieces-jointes/televersement.ts.
   const handleFiles = useCallback(async (files: FileList | null) => {
     if (!files?.length) return;
     setAttachError(null);
-    const accepted: UiAttachment[] = [];
-    let total = attachments.reduce((s, a) => s + a.size, 0);
-
-    for (const file of Array.from(files)) {
-      if (file.size > MAX_FILE_BYTES) {
-        setAttachError(`« ${file.name} » dépasse 3 Mo.`);
-        continue;
+    const liste = Array.from(files);
+    setPreparationPj(liste.length > 1 ? `Préparation de ${liste.length} fichiers…` : `Préparation de « ${liste[0].name} »…`);
+    try {
+      const st = useCopilotStore.getState();
+      const { acceptees, erreur } = await preparerPiecesJointes(liste, attachments, {
+        conversationId: st.currentConversationId, niveau: st.tier, surEtape: setPreparationPj,
+      });
+      if (erreur) setAttachError(erreur);
+      if (acceptees.length) {
+        setAttachments((prev) => [...prev, ...acceptees.filter((a) => !prev.some((p) => p.id === a.id))]);
       }
-      if (total + file.size > MAX_TOTAL_BYTES) {
-        setAttachError('Taille cumulée des pièces jointes dépassée (4 Mo).');
-        break;
-      }
-      try {
-        accepted.push({
-          id: `${file.name}-${file.lastModified}-${file.size}`,
-          name: file.name,
-          size: file.size,
-          mediaType: file.type,
-          data: await readAsBase64(file),
-        });
-        total += file.size;
-      } catch {
-        setAttachError(`Lecture impossible : ${file.name}`);
-      }
-    }
-    if (accepted.length) {
-      setAttachments((prev) => [
-        ...prev,
-        ...accepted.filter((a) => !prev.some((p) => p.id === a.id)),
-      ]);
+    } finally {
+      setPreparationPj(null);
     }
   }, [attachments]);
 
@@ -473,8 +430,9 @@ export default function MimmozIAPage() {
     }
     void ouvrirPrepa3d();
   }, [voirEn3D, ouvrirPrepa3d]);
-  const conserverPieces3d = useCallback(async (text: string, options?: { attachments?: { mediaType: string; data: string; name?: string }[] }) => {
-    const files = options?.attachments ?? [];
+  const conserverPieces3d = useCallback(async (text: string, options?: { attachments?: { mediaType: string; data?: string; name?: string }[] }) => {
+    // V1.8 : seules les pièces encore en base64 (≤ 3 Mo) sont recopiées au dossier 3D.
+    const files = (options?.attachments ?? []).filter((a) => typeof a.data === 'string');
     if (files.length === 0) return;
     const state = useCopilotStore.getState();
     if (!is3DPreparationRequest(text) && !latestJarvisDraft(state.messages)) return;
@@ -490,21 +448,24 @@ export default function MimmozIAPage() {
     const message = text.trim();
     if (!message) return;
     void track('search', { source: 'mimmozia' });
-    const files = attachments.map(({ mediaType, data, name }) => ({ mediaType, data, name }));
+    if (preparationPj) { setAttachError('Patientez : la pièce jointe est en cours de préparation.'); return; }
+    // V1.8 : une pièce stockée part en RÉFÉRENCE ; le dossier 3D ne reçoit que le base64.
+    const files = versPayload(attachments);
     try {
       setAttachError(null);
       if (send) {
         await send(message, files.length ? { attachments: files } : undefined);
-        await conserverPieces3d(message, { attachments: files });
+        await conserverPieces3d(message, { attachments: piecesBase64(attachments) });
       }
       else console.warn('[MimmozIA] Aucune fonction d’envoi détectée — voir INTEGRATION.md.');
       setAttachments([]);
     } catch (err) {
       console.error('[MimmozIA] Échec de l’envoi :', err);
     }
-  }, [send, attachments, conserverPieces3d]);
+  }, [send, attachments, conserverPieces3d, preparationPj]);
 
-  const handleLauncherSend = useCallback(() => { void startWith(draft); setDraft(''); }, [draft, startWith]);
+  // V1.8 : rien ne part (et le brouillon reste) tant qu'une pièce jointe est en préparation.
+  const handleLauncherSend = useCallback(() => { if (preparationPj) return; void startWith(draft); setDraft(''); }, [draft, startWith, preparationPj]);
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleLauncherSend(); }
   }, [handleLauncherSend]);
@@ -755,10 +716,11 @@ export default function MimmozIAPage() {
 
           <div className="mzia-launcher">
             <div className="mzia-launcher__field">
-              {(attachments.length > 0 || attachError) && (
+              {(attachments.length > 0 || attachError || preparationPj) && (
                 <div className="mzia-attachments">
+                  {preparationPj && <span className="mzia-chip__name" role="status">{preparationPj}</span>}
                   {attachments.map((a) => (
-                    <span key={a.id} className="mzia-chip" title={a.name}>
+                    <span key={a.id} className="mzia-chip" title={a.detail ? `${a.name} — ${a.detail}` : a.name}>
                       <Paperclip size={13} />
                       <span className="mzia-chip__name">{a.name}</span>
                       <button type="button" className="mzia-chip__x"
@@ -768,6 +730,8 @@ export default function MimmozIAPage() {
                     </span>
                   ))}
                   {attachError && <span className="mzia-attachments__err">{attachError}</span>}
+                  {/* V1.8 : le coût suit le poids du document (décision d'Albé). */}
+                  {(attachments.length > 0 || preparationPj) && <span className="mzia-chip__name" style={{ whiteSpace: 'normal', opacity: 0.8 }}>{AVERTISSEMENT_TAILLE}</span>}
                 </div>
               )}
 
@@ -790,15 +754,15 @@ export default function MimmozIAPage() {
                 <button type="button" className="mzia-iconbtn" title="Joindre un fichier (image ou PDF)"
                   onClick={() => fileInputRef.current?.click()}><Paperclip size={18} /></button>
                 <button type="button" className="mzia-iconbtn" title="Prévisualisation 3D (parcelle, photos, plans)"
-                  onClick={() => void ouvrirPrepa3d(draft.trim() || undefined, attachments.map(({ mediaType, data, name }) => ({ mediaType, data, name })))}>
+                  onClick={() => void ouvrirPrepa3d(draft.trim() || undefined, piecesBase64(attachments))}>
                   <Box size={18} />
                 </button>
                 <button type="button" disabled={!dictationSupported}
                   title={dictationSupported ? 'Dicter' : 'Dictée non prise en charge par ce navigateur'}
                   className={`mzia-iconbtn mzia-iconbtn--rec${recording ? ' is-active' : ''}`}
                   onClick={toggleDictation}><Mic size={18} /></button>
-                <button type="button" className="mzia-send" title="Envoyer"
-                  disabled={!draft.trim()} onClick={handleLauncherSend}><ArrowUp size={18} /></button>
+                <button type="button" className="mzia-send" title={preparationPj ? 'Pièce jointe en préparation…' : 'Envoyer'}
+                  disabled={!draft.trim() || !!preparationPj} onClick={handleLauncherSend}><ArrowUp size={18} /></button>
               </div>
             </div>
           </div>

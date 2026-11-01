@@ -1010,3 +1010,169 @@ Deno.test('I7 — écriture du dossier qui échoue à la clôture : statut echec
   assertEquals(fin.statut, 'echec');
   assert(((fin.rapport as Record<string, unknown>).limites as string[]).some((l) => l.includes("n'a pas pu être enregistré")));
 });
+
+// ── V1.8 — gros règlements et règlement publié au Géoportail de l'urbanisme ──
+
+const CONTOUR = { idu: '93048000AJ0209', geometrie: { type: 'Polygon' as const, coordinates: [[[2.44, 48.86], [2.46, 48.86], [2.46, 48.88], [2.44, 48.86]]] }, surface_m2: 3554, source: 'test' };
+const pageReglement = (s: string) => `${s} ${'Les constructions respectent les règles du présent article. '.repeat(30)}`;
+function pagesReglement(): string[] {
+  const p = [pageReglement('Règlement'), pageReglement('TITRE I – DISPOSITIONS GÉNÉRALES')];
+  while (p.length < 10) p.push(pageReglement('Dispositions générales'));
+  p.push(pageReglement('CHAPITRE 1 – DISPOSITIONS APPLICABLES À LA ZONE UA'));
+  while (p.length < 120) p.push(pageReglement('PLU – Zone UA'));
+  p.push(pageReglement('CHAPITRE 2 – DISPOSITIONS APPLICABLES À LA ZONE UC\nArticle UC 10 – Hauteur maximale : 15 m'));
+  while (p.length < 140) p.push(pageReglement('PLU – Zone UC'));
+  p.push(pageReglement('CHAPITRE 3 – DISPOSITIONS APPLICABLES À LA ZONE N'));
+  while (p.length < 200) p.push(pageReglement('PLU – Zone N'));
+  return p;
+}
+
+Deno.test('V1.8 — règlement publié au GPU : lu par lots, zone de la parcelle, règles « confirme » avec la source GPU', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const { m, x } = conceptionEnCours(depot);
+  (x.etat as unknown as { conception: Record<string, unknown> }).conception.parcelle = CONTOUR;
+  let n = 0; let docLu = ''; let retour = '';
+  const { deps } = fabriquerDeps(depot, (a) => {
+    const s = JSON.stringify(a.messages);
+    if (s.includes('"type":"document"')) {
+      docLu = s;
+      return { textBlocks: ['{"regles":[{"cle":"hauteur_max_m","valeur":15,"article":"UC 10, p. 121","texte":"Hauteur maximale : 15 m"}]}'] };
+    }
+    n++;
+    if (n === 1) return tourOutils(['lire_reglement_pdf', { source: 'gpu', zone_code: 'uc' }]);
+    if (n === 2) retour = s;
+    return tourOutils(['terminer_mission', { titre: 'T', synthese: 'S' }]);
+  }, horloge);
+  const appelsGpu: Array<{ lat: number; lon: number; zone: string | null }> = [];
+  deps.reglementGpu = async (p) => {
+    appelsGpu.push(p);
+    if (appelsGpu.length === 1) return { statut: 'en_cours', pages_extraites: 120, nb_pages: 200 };
+    return { statut: 'pret', texte: '[Page 121]\nArticle UC 10 – Hauteur maximale : 15 m', zone_lue: 'UC', pages_zone: '121-140', pages_dispositions_generales: '2-10', fichier: '12345_reglement.pdf', source: 'PLU de TESTVILLE (12345_PLU_20230615, approuvé le 15/06/2023)' };
+  };
+  deps.compterTokens = async () => 9000;
+  await tickMissions(deps, depot, { worker: 'w1' });
+  horloge.t += 1; await tickMissions(deps, depot, { worker: 'w2' });
+  const fin = depot.missions.get(m.id)!;
+  assertEquals(fin.statut, 'terminee');
+  assert(appelsGpu.length >= 2, 'extraction en cours → reprise au tick suivant');
+  assertEquals(appelsGpu[0].zone, 'UC');
+  assert(Math.abs(appelsGpu[0].lat - 48.8667) < 0.01 && Math.abs(appelsGpu[0].lon - 2.4533) < 0.01, 'centroïde de la parcelle');
+  assert(docLu.includes('"source":{"type":"text"') && docLu.includes('Géoportail'), 'texte du règlement transmis en document texte');
+  assert(depot.journalLignes.some((l) => l.resume.includes('extraction du texte en cours')));
+  const r = (fin.rapport as Record<string, unknown>).conception as { regles: Array<{ cle: string; valeur: unknown; statut: string; source: string; article?: string }> };
+  const h = r.regles.find((y) => y.cle === 'hauteur_max_m')!;
+  assertEquals([h.valeur, h.statut, h.article], [15, 'confirme', 'UC 10, p. 121']);
+  assert(h.source.startsWith('Règlement GPU — PLU de TESTVILLE'), h.source);
+  assert(retour.includes('Règlement lu (Règlement GPU'));
+});
+
+Deno.test('V1.8 — gros règlement déposé (50 Mo) avec texte du navigateur : seules les pages de la zone sont lues', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const { m, x, cid } = conceptionEnCours(depot);
+  const chemin = `${USER}/${cid}/reglement-plui.pdf`;
+  (x.etat as unknown as { conception: Record<string, unknown> }).conception.lecture = { chemin, zone: 'UC', source: 'depot' };
+  depot.fichiers.set(chemin, new Uint8Array(4 * 1024 * 1024));   // > 3 Mo : jamais envoyé tel quel
+  const jsons = new Map<string, unknown>([[`${chemin}.texte.json`, { version: 1, pages: pagesReglement() }]]);
+  (depot as unknown as { telechargerJson: (b: string, c: string) => Promise<unknown> }).telechargerJson = async (_b, c) => jsons.get(c) ?? null;
+  let doc = '';
+  const { deps } = fabriquerDeps(depot, (a) => {
+    const s = JSON.stringify(a.messages);
+    if (s.includes('"type":"document"')) { doc = s; return { textBlocks: ['{"regles":[{"cle":"hauteur_max_m","valeur":15,"article":"UC 10, p. 121"}]}'] }; }
+    return tourOutils(['terminer_mission', { titre: 'T', synthese: 'S' }]);
+  }, horloge);
+  deps.compterTokens = async () => 30_000;
+  await tickMissions(deps, depot, { worker: 'w' });
+  assertEquals(depot.missions.get(m.id)!.statut, 'terminee');
+  assert(doc.includes('[Page 121]') && !doc.includes('[Page 60]'), 'chapitre UC seulement (plus les dispositions générales)');
+  assert(!doc.includes('"type":"base64"'), 'pas de PDF en base64');
+  const r = (depot.missions.get(m.id)!.rapport as Record<string, unknown>).conception as { regles: Array<{ cle: string; statut: string; source: string }> };
+  assert(r.regles.find((y) => y.cle === 'hauteur_max_m')!.source.includes('zone UC'));
+});
+
+Deno.test('V1.8 — gros règlement sans texte ni extraction serveur : refus motivé, aucun appel IA de lecture', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const { m, x, cid } = conceptionEnCours(depot);
+  const chemin = `${USER}/${cid}/reglement-plui.pdf`;
+  (x.etat as unknown as { conception: Record<string, unknown> }).conception.lecture = { chemin, zone: 'UC' };
+  depot.fichiers.set(chemin, new Uint8Array(5 * 1024 * 1024));
+  let lectures = 0;
+  const { deps } = fabriquerDeps(depot, (a) => {
+    if (JSON.stringify(a.messages).includes('"type":"document"')) lectures++;
+    return tourOutils(['terminer_mission', { titre: 'T', synthese: 'S' }]);
+  }, horloge);
+  await tickMissions(deps, depot, { worker: 'w' });
+  assertEquals(lectures, 0);
+  assert(depot.journalLignes.some((l) => l.genre === 'erreur' && l.resume.includes('texte du règlement non extrait')));
+  assertEquals(depot.missions.get(m.id)!.statut, 'terminee');
+});
+
+Deno.test('V1.8 — PLUi en plusieurs pièces : la mission DEMANDE laquelle lire, puis lit la pièce choisie', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const { m, x } = conceptionEnCours(depot);
+  (x.etat as unknown as { conception: Record<string, unknown> }).conception.parcelle = CONTOUR;
+  let n = 0; let reponseVue = ''; let lectures = 0;
+  const { deps } = fabriquerDeps(depot, (a) => {
+    const s = JSON.stringify(a.messages);
+    if (s.includes('"type":"document"')) { lectures++; return { textBlocks: ['{"regles":[{"cle":"hauteur_max_m","valeur":15,"article":"UB 10, p. 33"}]}'] }; }
+    n++;
+    if (n === 1) return tourOutils(['lire_reglement_pdf', { source: 'gpu', zone_code: 'UB' }]);
+    if ((s + a.system).includes('Lisez les zones urbaines') && !reponseVue) { reponseVue = s + a.system; return tourOutils(['lire_reglement_pdf', { source: 'gpu', zone_code: 'UB', fichier: '4_2_reglement_zones_urbaines.pdf' }]); }
+    return tourOutils(['terminer_mission', { titre: 'T', synthese: 'S' }]);
+  }, horloge);
+  const appels: Array<Record<string, unknown>> = [];
+  deps.reglementGpu = async (p) => {
+    appels.push(p);
+    if (!p.fichier) return { statut: 'choix_requis', choix_pieces: [{ nom: '4_1_reglement_dispositions_generales.pdf' }, { nom: '4_2_reglement_zones_urbaines.pdf' }], message: 'Le règlement de ce document est publié en 2 pièces : 4_1_reglement_dispositions_generales.pdf ; 4_2_reglement_zones_urbaines.pdf. Laquelle lire ?' };
+    return { statut: 'pret', texte: '[Page 33]\nArticle UB 10 – Hauteur : 15 m', zone_lue: 'UB', pages_zone: '30-45', fichier: p.fichier, source: 'PLUi TEST' };
+  };
+  deps.compterTokens = async () => 5000;
+  await tickMissions(deps, depot, { worker: 'w1' });
+  let y = depot.missions.get(m.id)!;
+  assertEquals(y.statut, 'attente_utilisateur');
+  assert(String(y.question_en_attente).includes('2 pièces') && String(y.question_en_attente).includes('4_2_reglement_zones_urbaines.pdf'));
+  assertEquals(lectures, 0, 'rien de lu avant la réponse');
+  depot.repondre(m.id, 'Lisez les zones urbaines');
+  horloge.t += 1;
+  await tickMissions(deps, depot, { worker: 'w2' });
+  y = depot.missions.get(m.id)!;
+  assertEquals(y.statut, 'terminee');
+  assert(reponseVue.includes('Lisez les zones urbaines'), 'la réponse arrive au modèle');
+  assertEquals(appels.at(-1)!.fichier, '4_2_reglement_zones_urbaines.pdf');
+  assertEquals(lectures, 1);
+  const r = (y.rapport as Record<string, unknown>).conception as { regles: Array<{ cle: string; valeur: unknown; statut: string }> };
+  assertEquals(r.regles.find((z) => z.cle === 'hauteur_max_m')!.valeur, 15);
+});
+
+Deno.test('V1.8 — règlement déposé, zone inconnue : question listant les chapitres, puis lecture de la zone donnée', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const { m, x, cid } = conceptionEnCours(depot);
+  const chemin = `${USER}/${cid}/reglement-plui.pdf`;
+  (x.etat as unknown as { conception: Record<string, unknown> }).conception.lecture = { chemin, zone: null, source: 'depot' };
+  depot.fichiers.set(chemin, new Uint8Array(4 * 1024 * 1024));
+  const jsons = new Map<string, unknown>([[`${chemin}.texte.json`, { version: 1, pages: pagesReglement() }]]);
+  (depot as unknown as { telechargerJson: (b: string, c: string) => Promise<unknown> }).telechargerJson = async (_b, c) => jsons.get(c) ?? null;
+  let doc = ''; let relance = false;
+  const { deps } = fabriquerDeps(depot, (a) => {
+    const s = JSON.stringify(a.messages);
+    if (s.includes('"type":"document"')) { doc = s; return { textBlocks: ['{"regles":[]}'] }; }
+    if ((s + a.system).includes('Zone UC svp') && !relance) { relance = true; return tourOutils(['lire_reglement_pdf', { chemin, zone_code: 'UC' }]); }
+    return tourOutils(['terminer_mission', { titre: 'T', synthese: 'S' }]);
+  }, horloge);
+  deps.compterTokens = async () => 20_000;
+  await tickMissions(deps, depot, { worker: 'w1' });
+  const y = depot.missions.get(m.id)!;
+  assertEquals(y.statut, 'attente_utilisateur');
+  const q = String(y.question_en_attente);
+  assert(q.startsWith('Quelle est la zone de votre parcelle') && q.includes('zone UC (p. 121-140)'), q);
+  assertEquals(doc, '', 'aucune lecture avant la réponse');
+  depot.repondre(m.id, 'Zone UC svp');
+  horloge.t += 1;
+  await tickMissions(deps, depot, { worker: 'w2' });
+  assert(doc.includes("[Page 121]") && !doc.includes("[Page 60]"), doc.slice(0, 300) + " | " + JSON.stringify(depot.journalLignes.map((l) => l.resume).slice(-4)));
+  assertEquals(depot.missions.get(m.id)!.statut, 'terminee');
+});

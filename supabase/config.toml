@@ -280,6 +280,11 @@ verify_jwt = true
 [functions.plu-parser]
 verify_jwt = true
 
+# Appel interne uniquement (copilot-chat, missions) : la clé de service est
+# vérifiée dans le code (comme copilot-chat).
+[functions.plu-reglement-v1]
+verify_jwt = false
+
 [functions.plu-rules-by-zone-v1]
 verify_jwt = true
 

@@ -7,6 +7,7 @@ import {
   appliquerReponseFormulaire, cheminReglementAutorise, chercherContourParcelle, completerRegles, construireQuestionRegles,
   controlerProgramme, fusionnerRegles, normaliserProgramme, normaliserRegle, QUESTION_MAX_CARS, reglesDepuisLecture,
   reglesDepuisRulesets, reglesManquantes, signalementsFormules, suiteProposee,
+  centroideParcelle, cheminTexteReglement, CONSIGNE_LECTURE_REGLEMENT, REGLEMENT_LECTURE_DIRECTE_MAX_OCTETS, REGLEMENT_MAX_OCTETS,
 } from './conception.ts';
 import { depotSupabase, estLigneDeTest } from './depot.ts';
 
@@ -159,4 +160,19 @@ Deno.test('dépôt : taille du PDF vérifiée AVANT téléchargement ; lignes de
   assert(!estLigneDeTest({ plu_version_label: 'PLU Ascain 2025', ruleset: { hauteur: { max_hauteur_m: 12 } } }));
   assert(estLigneDeTest({ plu_version_label: 'PLU Nantes 2024 – version test Mimmoza', ruleset: { emprise: { emprise_sol_max: 0.5 } } }), 'Nantes UA (test) écartée');
   assert(estLigneDeTest({ plu_version_label: 'Jeu Test MIMMOZA' }));
+});
+
+Deno.test('V1.8 — règlement jusqu’à 50 Mo, texte extrait à côté, centroïde de la parcelle', () => {
+  assertEquals(REGLEMENT_MAX_OCTETS, 50 * 1024 * 1024);
+  assertEquals(REGLEMENT_LECTURE_DIRECTE_MAX_OCTETS, 3 * 1024 * 1024);
+  assertEquals(cheminTexteReglement('u/c/reglement-1.pdf'), 'u/c/reglement-1.pdf.texte.json');
+  const p = { idu: 'X', surface_m2: 1, source: 't', geometrie: { type: 'Polygon' as const, coordinates: [[[2, 48], [4, 48], [4, 50], [2, 48]]] } };
+  const c = centroideParcelle(p)!;
+  assert(Math.abs(c.lon - 10 / 3) < 1e-9 && Math.abs(c.lat - 146 / 3) < 1e-9, 'anneau fermé : dernier sommet écarté');
+  assertEquals(centroideParcelle({ ...p, geometrie: { type: 'MultiPolygon', coordinates: [[[[1, 1], [3, 1], [3, 3], [1, 1]]]] } }), { lat: 5 / 3, lon: 7 / 3 });
+  assertEquals(centroideParcelle(null), null);
+  assertEquals(centroideParcelle({ ...p, geometrie: { type: 'Polygon', coordinates: [] } }), null);
+  assert(CONSIGNE_LECTURE_REGLEMENT('UC', 'gpu').includes("Géoportail de l'urbanisme"));
+  assert(CONSIGNE_LECTURE_REGLEMENT('UC').includes('déposé par l\'utilisateur'));
+  assertEquals(reglesDepuisLecture({ regles: [{ cle: 'hauteur_max_m', valeur: 12, article: 'UC 10' }] }, 'gpu', 'Règlement GPU — PLU')[0].source, 'Règlement GPU — PLU');
 });

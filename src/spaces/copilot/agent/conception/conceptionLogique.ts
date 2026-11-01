@@ -16,6 +16,7 @@ import {
   construireModeleRapport, DEFINITIONS_HYPOTHESES, hypothesesTerrain, type JeuHypotheses, type ModeleRapport, type Nombre, type TerrainModele,
 } from '../rapport/rapportModele.ts';
 import { calculerBilan, entreesDepuisJeu, type EntreesBilan, type ResultatBilan } from '../rapport/bilanCalcul.ts';
+import { TAILLE_MAX_PIECE_JOINTE } from '../../pieces-jointes/piecesJointesLogique.ts';
 
 type Obj = Record<string, unknown>;
 const estObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -330,8 +331,16 @@ export function lireSaisie(l: Pick<LigneFormulaire, 'cle' | 'formule' | 'unite'>
 
 export const BUCKET_CONCEPTION = 'agent-conception';
 export const TAILLE_MAX_PLAN = 25 * 1024 * 1024;
-/** Au-delà, l'agent refuse de lire le règlement : mieux vaut ne déposer que les pages de la zone. */
-export const TAILLE_MAX_REGLEMENT = 3 * 1024 * 1024;
+/**
+ * V1.8 : 3 → 50 Mo (même constante que les pièces jointes du chat, maximum de
+ * Supabase Storage sur le plan Free). Au-delà de 3 Mo, l'agent ne lit plus le PDF entier : il lit le
+ * texte des pages de la zone (dispositions générales + chapitre de la zone),
+ * extrait dans le navigateur et déposé à côté (`cheminTexteReglement`).
+ */
+export const TAILLE_MAX_REGLEMENT = TAILLE_MAX_PIECE_JOINTE;
+
+/** Texte extrait page par page, déposé à côté du règlement (même format que le chat : { version: 1, pages }). */
+export const cheminTexteReglement = (chemin: string) => `${chemin}.texte.json`;
 
 const EXT_PLAN: Record<string, string> = { 'application/pdf': 'pdf', 'image/png': 'png', 'image/jpeg': 'jpg' };
 
@@ -348,7 +357,7 @@ export function cheminPlan(uid: string, dossier: string, f: { type: string; size
 
 export function cheminReglement(uid: string, dossier: string, f: { type: string; size: number }, maintenant = new Date()): CheminFichier {
   if (f.type !== 'application/pdf') return { ok: false, erreur: 'Le règlement doit être un PDF.' };
-  if (f.size > TAILLE_MAX_REGLEMENT) return { ok: false, erreur: 'Ce PDF dépasse 3 Mo : l’agent ne pourrait pas le lire. Déposez seulement les pages de votre zone (dispositions générales et chapitre de la zone, par exemple UC).' };
+  if (f.size > TAILLE_MAX_REGLEMENT) return { ok: false, erreur: 'Ce PDF dépasse 50 Mo : déposez seulement les pages de votre zone (dispositions générales et chapitre de la zone, par exemple UC).' };
   return { ok: true, chemin: `${uid}/${dossier}/reglement-${horodatage(maintenant)}.pdf`, type: f.type };
 }
 

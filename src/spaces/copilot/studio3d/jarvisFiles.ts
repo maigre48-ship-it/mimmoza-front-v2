@@ -13,6 +13,9 @@ export async function retainJarvisFiles(conversationId: string, attachments: rea
   const session = conversationId;
   for (const attachment of attachments) {
     if (!TYPES_PLAN.includes(attachment.mediaType)) continue;
+    // V1.8 : une pièce envoyée par stockage (> 3 Mo) n'a pas de base64 : elle
+    // reste dans copilot-pieces-jointes et n'est pas recopiée dans le dossier 3D.
+    if (!attachment.data) continue;
     const bytes = Uint8Array.from(atob(attachment.data), c => c.charCodeAt(0));
     const file = new File([bytes], attachment.name ?? 'piece-jointe', { type: attachment.mediaType });
     await televerserTransfert(session, file, TYPES_PLAN);

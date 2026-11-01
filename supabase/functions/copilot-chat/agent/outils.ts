@@ -196,9 +196,23 @@ export const OUTIL_ENREGISTRER_PROGRAMME: OutilDef = {
 export const OUTIL_LIRE_REGLEMENT_PDF: OutilDef = {
   name: 'lire_reglement_pdf',
   description:
-    "Conception : fait lire par l'IA le règlement PDF déposé par l'utilisateur dans le dossier de la conception, à l'étape " +
-    "suivante (coût compté en jetons). Les règles trouvées avec leur article sont enregistrées « confirme ».",
-  input_schema: { type: 'object', properties: { chemin: { type: 'string' }, zone_code: { type: 'string' } }, required: ['chemin'] },
+    "Conception : fait lire par l'IA, à l'étape suivante (coût compté en jetons), soit le règlement PDF déposé par " +
+    "l'utilisateur dans le dossier de la conception (`chemin`, jusqu'à 50 Mo : seules les pages de la zone sont lues), soit " +
+    "— avec `source: \"gpu\"` — le règlement écrit PUBLIÉ au Géoportail de l'urbanisme pour la parcelle (contour récupéré " +
+    "au préalable par recuperer_parcelle). Les règles trouvées avec leur article sont enregistrées « confirme ». " +
+    "À tenter AVANT de demander les règles à l'utilisateur quand lire_regles_plu_importees ne trouve rien. " +
+    "Si le moteur ne peut pas choisir seul quoi lire (plusieurs pièces, zone inconnue, chapitre trop long), il pose lui-même " +
+    "la question à l'utilisateur et met la mission en pause ; à la reprise, rappelle cet outil avec sa réponse (fichier, zone_code ou pages).",
+  input_schema: {
+    type: 'object',
+    properties: {
+      chemin: { type: 'string', description: 'Règlement déposé dans le dossier de la conception.' },
+      source: { type: 'string', enum: ['depot', 'gpu'], description: '« gpu » : règlement publié au Géoportail de l\'urbanisme.' },
+      zone_code: { type: 'string', description: 'Zone de la parcelle (ex. « UC »), lue par get_zonage_plu.' },
+      fichier: { type: 'string', description: 'Pièce du règlement GPU choisie par l’utilisateur (PLUi en plusieurs pièces).' },
+      pages: { type: 'array', items: { type: 'integer' }, description: 'Pages choisies par l’utilisateur.' },
+    },
+  },
   available_in_modes: TOUS_MODES,
 };
 

@@ -1,0 +1,25 @@
+{
+  "id": "5f1c2a3b4d5e6f708192a3b4c5d6e7f8",
+  "originalName": "12345_PLU_20230615.zip",
+  "name": "12345_PLU_20230615",
+  "grid": { "name": "12345", "title": "TESTVILLE" },
+  "type": "PLU",
+  "status": "document.production",
+  "uploadDate": "2023-07-03T10:12:45+02:00",
+  "protected": false,
+  "files": [
+    "12345_reglement_20230615.pdf",
+    "12345_reglement_graphique_20230615.pdf",
+    "12345_padd_20230615.pdf",
+    "12345_oap_20230615.pdf",
+    "12345_rapport_presentation_20230615.pdf"
+  ],
+  "writingMaterials": {
+    "12345_reglement_20230615.pdf": "https://www.geoportail-urbanisme.gouv.fr/api/document/5f1c2a3b4d5e6f708192a3b4c5d6e7f8/files/12345_reglement_20230615.pdf",
+    "12345_reglement_graphique_20230615.pdf": "https://www.geoportail-urbanisme.gouv.fr/api/document/5f1c2a3b4d5e6f708192a3b4c5d6e7f8/files/12345_reglement_graphique_20230615.pdf",
+    "12345_padd_20230615.pdf": "https://www.geoportail-urbanisme.gouv.fr/api/document/5f1c2a3b4d5e6f708192a3b4c5d6e7f8/files/12345_padd_20230615.pdf",
+    "12345_oap_20230615.pdf": "https://www.geoportail-urbanisme.gouv.fr/api/document/5f1c2a3b4d5e6f708192a3b4c5d6e7f8/files/12345_oap_20230615.pdf",
+    "12345_rapport_presentation_20230615.pdf": "https://www.geoportail-urbanisme.gouv.fr/api/document/5f1c2a3b4d5e6f708192a3b4c5d6e7f8/files/12345_rapport_presentation_20230615.pdf"
+  },
+  "archiveUrl": "https://www.geoportail-urbanisme.gouv.fr/api/document/5f1c2a3b4d5e6f708192a3b4c5d6e7f8/download/12345_PLU_20230615.zip"
+}

@@ -10,6 +10,8 @@ import type { CopilotMode } from '../types/copilot.types';
 import { CopilotModeSelector } from './CopilotModeSelector';
 import { COPILOT_THEME as T } from './copilotTheme';
 import { useComposerTools, ACCEPT_FILES, type CopilotAttachment } from '../hooks/useComposerTools';
+import { AVERTISSEMENT_TAILLE } from '../pieces-jointes/piecesJointesLogique';
+import { useCopilotStore } from '../store/copilotStore';
 
 export function CopilotInput({
   mode, onChangeMode, onSend, onCancel, isStreaming, hideModeSelector, toolbar,
@@ -45,6 +47,8 @@ export function CopilotInput({
     getValue: () => value,
     setValue,
   });
+  // V1.8 : ce que le serveur a lu des documents au dernier envoi, et son surcoût.
+  const avisDocuments = useCopilotStore((s) => s.avisDocuments);
 
   useEffect(() => {
     if (ref.current) {
@@ -55,7 +59,8 @@ export function CopilotInput({
 
   const submit = () => {
     const t = value.trim();
-    if (!t || isStreaming) return;
+    // V1.8 : on n'envoie pas tant qu'une pièce est en cours de téléversement.
+    if (!t || isStreaming || tools.preparation) return;
     const files = tools.toPayload();
     onSend(t, files.length ? { attachments: files } : undefined);
     setValue('');
@@ -84,13 +89,20 @@ export function CopilotInput({
         </div>
       )}
 
+      {/* V1.8 : téléversement en cours / documents lus au dernier envoi */}
+      {(tools.preparation || avisDocuments) && (
+        <div role="status" style={{ fontSize: 12, color: T.textMuted, marginBottom: 6, lineHeight: 1.4 }}>
+          {tools.preparation ?? avisDocuments}
+        </div>
+      )}
+
       {/* Pastilles des pièces jointes + message d'erreur (taille, micro refusé…) */}
       {(tools.attachments.length > 0 || tools.error) && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
           {tools.attachments.map((a) => (
             <span
               key={a.id}
-              title={a.name}
+              title={a.detail ? `${a.name} — ${a.detail}` : a.name}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 maxWidth: 220, padding: '4px 6px 4px 8px', borderRadius: 8,
@@ -120,6 +132,10 @@ export function CopilotInput({
             <span style={{ fontSize: 12, color: 'rgb(248 113 113)', alignSelf: 'center' }}>
               {tools.error}
             </span>
+          )}
+          {/* V1.8 : le coût suit le poids du document (décision d'Albé). */}
+          {tools.attachments.length > 0 && (
+            <span style={{ flexBasis: '100%', fontSize: 12, color: T.textMuted, lineHeight: 1.4 }}>{AVERTISSEMENT_TAILLE}</span>
           )}
         </div>
       )}
@@ -190,8 +206,9 @@ export function CopilotInput({
             <Square size={16} fill="currentColor" />
           </button>
         ) : (
-          <button key="envoyer" type="button" className="copilot-composer__tool" onClick={submit} disabled={!value.trim()} title="Envoyer (Entrée)"
-            style={{ ...btnStyle(T.accent), opacity: value.trim() ? 1 : 0.4 }}>
+          <button key="envoyer" type="button" className="copilot-composer__tool" onClick={submit} disabled={!value.trim() || !!tools.preparation}
+            title={tools.preparation ? 'Pièce jointe en préparation…' : 'Envoyer (Entrée)'}
+            style={{ ...btnStyle(T.accent), opacity: value.trim() && !tools.preparation ? 1 : 0.4 }}>
             <Send size={16} />
           </button>
         )}

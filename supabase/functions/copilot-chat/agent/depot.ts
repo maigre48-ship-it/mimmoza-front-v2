@@ -272,6 +272,13 @@ export function depotSupabase(db: ClientSupabaseMin): DepotMission {
       return { base64: versBase64(octets), octets: octets.length };
     },
 
+    async telechargerJson(bucket, chemin, maxOctets) {
+      if (!db.storage) return null;
+      const { data, error } = await db.storage.from(bucket).download(chemin);
+      if (error || !data || (data as Blob).size > maxOctets) return null;
+      try { return JSON.parse(await (data as Blob).text()); } catch { return null; }
+    },
+
     async projetAccessible(userId, id) {
       // is_org_member() lit auth.uid(), vide en service_role : on refait le test.
       const { data, error } = await db.from('projects').select('id, organisation_id, created_by').eq('id', id).maybeSingle();
