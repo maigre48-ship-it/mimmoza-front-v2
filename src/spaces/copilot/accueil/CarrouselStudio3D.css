@@ -1,0 +1,202 @@
+/* =========================================================================
+   Carrousel du bandeau « Mimmoza Studio · 3D » (CarrouselStudio3D.tsx)
+   L'image occupe toute la moitié droite du bandeau, à fond perdu ; son bord
+   gauche se fond dans le dégradé violet existant (#5e49ed → #a338ed) au lieu
+   d'être encadrée : le bandeau reste une seule pièce.
+   Dimensions fixes : le cadre prend la place de la colonne (min. 250 px sur
+   ordinateur, 16:9 sur mobile) avant le moindre octet d'image.
+   ========================================================================= */
+
+.mzia-c3d {
+  --c3d-encre: #1b1354;
+  --c3d-fondu: 900ms;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  /* fond d'attente : prolonge le dégradé du bandeau */
+  background: linear-gradient(135deg, #6a46f2 0%, #8a3ff0 100%);
+}
+
+.mzia-c3d__cadre {
+  position: absolute;
+  inset: 0;
+  touch-action: pan-y;
+  /* fondu du bord gauche dans le violet du bandeau */
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 22%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 22%);
+}
+
+.mzia-c3d__diapo {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  transition: opacity var(--c3d-fondu) ease;
+}
+.mzia-c3d__diapo.is-active { opacity: 1; }
+.mzia-c3d__diapo picture,
+.mzia-c3d__diapo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.mzia-c3d__diapo img {
+  object-fit: cover;
+  object-position: center 55%;
+  user-select: none;
+  -webkit-user-drag: none;
+  /* lent recadrage de 1,04 à 1 pendant l'affichage : la photo « se pose » */
+  transform: scale(1.04);
+  transition: transform 7s cubic-bezier(.2, .6, .2, 1);
+}
+.mzia-c3d__diapo.is-active img { transform: scale(1); }
+
+/* Voile bas : lisibilité de la légende et des commandes sur une image claire */
+.mzia-c3d::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 42%;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(27, 19, 84, .55));
+}
+
+.mzia-c3d__demo {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .9);
+  color: var(--c3d-encre);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mzia-c3d__legende {
+  position: absolute;
+  left: 22%;
+  right: 150px;
+  bottom: 16px;
+  z-index: 2;
+  margin: 0;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.3;
+  text-shadow: 0 1px 8px rgba(27, 19, 84, .6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- Commandes : ‹ • • • › en bas à droite ------------------------------ */
+.mzia-c3d__commandes {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.mzia-c3d__fleche {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, .45);
+  border-radius: 50%;
+  background: rgba(27, 19, 84, .35);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition: opacity .2s ease, background .2s ease;
+}
+.mzia-c3d:hover .mzia-c3d__fleche,
+.mzia-c3d:focus-within .mzia-c3d__fleche { opacity: 1; }
+.mzia-c3d__fleche:hover { background: rgba(27, 19, 84, .6); }
+@media (hover: none) { .mzia-c3d__fleche { opacity: 1; } }
+
+.mzia-c3d__points { display: flex; align-items: center; }
+.mzia-c3d__point {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.mzia-c3d__point span {
+  position: relative;
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .5);
+  overflow: hidden;
+  transition: width .3s ease, background .3s ease;
+}
+.mzia-c3d__point:hover span { background: rgba(255, 255, 255, .8); }
+.mzia-c3d__point[aria-current='true'] span { width: 20px; background: rgba(255, 255, 255, .45); }
+/* le point actif se remplit pendant la durée d'affichage (lecture auto) */
+.mzia-c3d__point[aria-current='true'] span::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: #fff;
+  transform-origin: left;
+}
+.mzia-c3d__point span.is-en-cours::after { animation: mzia-c3d-avance linear forwards; }
+@keyframes mzia-c3d-avance { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+.mzia-c3d__fleche:focus-visible,
+.mzia-c3d__point:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.mzia-c3d__point:focus-visible { border-radius: 6px; outline-offset: -2px; }
+
+/* ---- Repli (manifeste absent) : l'ancienne illustration fixe ------------ */
+.mzia-c3d--repli { background: none; }
+.mzia-c3d--repli::after { display: none; }
+.mzia-c3d__repli {
+  position: absolute;
+  right: -2%;
+  top: -25px;
+  width: min(110%, 530px);
+  height: calc(100% + 62px);
+  max-width: none;
+  object-fit: contain;
+  filter: drop-shadow(0 15px 20px rgba(25, 16, 79, .24));
+}
+
+/* ---- Mobile : image sous le texte, pleine largeur, 16:9 ----------------- */
+/* même seuil que la mise en colonne du bandeau (MimmozIAPage.css) */
+@media (max-width: 640px) {
+  .mzia-studio-hero__art:has(> .mzia-c3d) { min-height: 0; aspect-ratio: 16 / 9; margin-top: 18px; }
+  .mzia-c3d__cadre {
+    -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 18%);
+    mask-image: linear-gradient(180deg, transparent 0, #000 18%);
+  }
+  .mzia-c3d__legende { left: 16px; right: 140px; bottom: 15px; font-size: 12px; }
+  .mzia-c3d__fleche { width: 36px; height: 36px; }
+  .mzia-c3d__point { width: 22px; height: 36px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mzia-c3d { --c3d-fondu: 0ms; }
+  .mzia-c3d__diapo img,
+  .mzia-c3d__diapo.is-active img { transform: none; transition: none; }
+  .mzia-c3d__point span { transition: none; }
+  .mzia-c3d__fleche { transition: none; }
+}

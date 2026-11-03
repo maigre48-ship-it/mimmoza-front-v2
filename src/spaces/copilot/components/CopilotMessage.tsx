@@ -1,4 +1,5 @@
 // src/spaces/copilot/components/CopilotMessage.tsx
+import type { Mission } from '../agent/agent.types';
 import type { ChatMessage } from '../types/copilot.types';
 import { CopilotWebResearchCard } from './CopilotToolCallCard';
 import { CopilotApiResultCard } from './CopilotApiResultCard';
@@ -38,6 +39,7 @@ const ParcelDecisionDossier = lazy(() =>
 );
 
 type MessageProps = {
+  onVisualiserMission?: (mission: Mission) => void;
   message: ChatMessage; question?: string | null; conversationId?: string | null; onSend?: (text: string) => void;
 };
 
@@ -49,7 +51,7 @@ export function CopilotMessage(props: MessageProps) {
   </div>}><CopilotMessageContent {...props} /></CopilotRenderBoundary>;
 }
 
-function CopilotMessageContent({ message, question, conversationId, onSend }: MessageProps) {
+function CopilotMessageContent({ message, question, conversationId, onSend, onVisualiserMission }: MessageProps) {
   const isUser = message.role === 'user';
   const actionRuns = useCopilotStore((s) => s.actionRuns);
   const messages = useCopilotStore((s) => s.messages);
@@ -123,7 +125,7 @@ function CopilotMessageContent({ message, question, conversationId, onSend }: Me
       {message.toolCalls.length > 0 && (
         <div style={{ marginBottom: 8 }}>
           {message.toolCalls.map((tc) => <CopilotRenderBoundary key={tc.id} label="Résultat d’outil">{(() => {
-            if (estAppelDevis(tc.name)) { const d = devisMissions.get(tc.id); return d ? <CarteDevisMission affichage={d} onSend={onSend} /> : null; }
+            if (estAppelDevis(tc.name)) { const d = devisMissions.get(tc.id); return d ? <CarteDevisMission affichage={d} onSend={onSend} conversationId={conversationId} onVisualiserMission={onVisualiserMission} /> : null; }
             if (tc.name === 'proposer_suivi_projet') return <FollowupProposalCard call={tc} complete={message.status === 'complete'} />;
             if (tc.name === 'calculer_bilan_financier') return <CopilotFinancialCard key={tc.id} call={tc} onSend={onSend} />;
             // Un outil d'action ne raconte pas ce qu'il a lu : il propose de

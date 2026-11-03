@@ -1,4 +1,5 @@
 // src/spaces/copilot/components/CopilotChat.tsx
+import type { Mission } from '../agent/agent.types';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useCopilot } from '../hooks/useCopilot';
 import { useCopilotContext } from '../hooks/useCopilotContext';
@@ -13,7 +14,7 @@ import { FollowupPanel } from '../followup/FollowupPanel';
 import { JarvisDraftPanel, type IssueOuvertureStudio } from '../studio3d/JarvisDraftPanel';
 import type { ConfirmedTerrain } from '../studio3d/terrainCadastre';
 import { is3DPreparationRequest, readJarvisDraft, withoutJarvisDraft, type JarvisDraft } from '../studio3d/jarvisDraft';
-import { Box, Volume2, VolumeX } from 'lucide-react';
+import { Box, Plus, Volume2, VolumeX } from 'lucide-react';
 import { BoutonFenetre, GlypheAgrandir, GlypheFermer, GlypheReduire, GlypheRestaurer } from './FenetreBoutons';
 import './CopilotFenetres.css';
 
@@ -40,7 +41,19 @@ export function CopilotChat({
   showStudioDraft = false,
   onOpenStudioDraft,
   onPrepareStudioDetailed,
+  onVisualiserMission,
+  onNewConversation,
 }: {
+  onVisualiserMission?: (mission: Mission) => void;
+  /**
+   * « Nouvelle conversation » dans la barre de titre de la fenêtre Atelier 3D.
+   * Auparavant, ce bouton flottait en `position:absolute; left:16px` dans
+   * `.mzia-page`, c'est-à-dire DANS la marge réservée au menu latéral fixe :
+   * il passait sous le rail d'icônes (et totalement sous le menu déployé).
+   * Dans la barre de titre, il suit la fenêtre à toutes les largeurs,
+   * y compris en plein écran.
+   */
+  onNewConversation?: () => void;
   forceMode?: CopilotMode;
   hideQuickQuestions?: boolean;
   /** Contrôles de l'écran hôte affichés au-dessus du composeur (cf. CopilotInput). */
@@ -163,6 +176,11 @@ export function CopilotChat({
         <div className="mzia-fen__titre">Mimmo<small>Atelier 3D</small></div>
         <div className="mzia-fen__espace" />
         <div className="mzia-fen__outils">
+          {onNewConversation && <button type="button" className="mzia-fen__outil mzia-fen__outil--nouvelle"
+            title="Nouvelle conversation" aria-label="Nouvelle conversation"
+            onClick={onNewConversation}>
+            <Plus size={15} /><span>Nouvelle conversation</span>
+          </button>}
           <span className={`mzia-fen__statut${isStreaming ? ' is-actif' : ''}`} role="status">
             <i aria-hidden="true" /><span>{isStreaming ? 'Analyse en cours…' : 'En ligne'}</span>
           </span>
@@ -248,7 +266,7 @@ export function CopilotChat({
                 <details><summary>Voir la réponse erronée</summary><div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div></details>
               </div>;
             }
-            return <CopilotMessage key={m.id} message={m} conversationId={currentConversationId} onSend={handleSend} />;
+            return <CopilotMessage key={m.id} message={m} conversationId={currentConversationId} onSend={handleSend} onVisualiserMission={onVisualiserMission} />;
           })
         )}
       </div>

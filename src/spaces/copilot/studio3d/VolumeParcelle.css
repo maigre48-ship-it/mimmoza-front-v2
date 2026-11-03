@@ -1,0 +1,285 @@
+/* Dossier 3D — parcelle et volume d'étude proposé (VolumeParcelleSection, VolumeParcelle3D).
+ *
+ * Parti pris : une maquette posée sur un plateau. La vue 3D est la pièce maîtresse
+ * (cadre arrondi, fond dégradé lilas, légende des cotes, deux commandes discrètes) ;
+ * tout le reste — carte d'identité, chiffres clés, accordéons — reste sobre, en
+ * encre violette sur blanc, chiffres tabulaires. Le bouton Studio est fixé en bas
+ * du panneau tant que la section est visible.
+ *
+ * Spécificité : les couleurs portent !important car le dossier impose
+ * `.jarvis-dossier * { color: inherit !important }` ; les sélecteurs commencent par
+ * `section.mzia-volume` pour passer devant `.mzia-fen3d .jarvis-dossier button`,
+ * `.jarvis-dossier p[role=status]` et `.mzia-fen3d__vide p|li`.
+ */
+section.mzia-volume {
+  --vol-encre: var(--fen-texte, #1f1d3d);
+  --vol-doux: var(--fen-texte-doux, #6b6890);
+  --vol-bord: var(--fen-bord, #e4e1ef);
+  --vol-accent: var(--fen-accent, #6a4fe0);
+  --vol-accent-fort: #4a33b8;
+  --vol-accent-fond: #f3f0ff;
+  --vol-vert: #1f6b45;
+  --vol-vert-fond: #ebf7f0;
+  --vol-ambre: #7d5200;
+  --vol-ambre-fond: #fff6e2;
+  --vol-rayon: 14px;
+  container: mzia-volume / inline-size;
+  position: relative;
+  margin: 0 0 16px; border: 1px solid var(--vol-bord); border-radius: var(--vol-rayon); background: #fff;
+  box-shadow: 0 1px 2px rgba(31, 29, 61, .04), 0 8px 24px -12px rgba(74, 51, 184, .14);
+  color: var(--vol-encre) !important; font: 400 13px/1.5 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+section.mzia-volume * { box-sizing: border-box; }
+section.mzia-volume :focus-visible { outline: 2px solid var(--vol-accent); outline-offset: 2px; }
+section.mzia-volume .mzia-volume__sr {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ── Carte d'identité de la parcelle ─────────────────────────────────── */
+section.mzia-volume .mzia-volume__tete { padding: 14px 14px 12px; }
+section.mzia-volume .mzia-volume__ligne { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+section.mzia-volume .mzia-volume__surtitre { display: inline-flex; align-items: center; gap: 6px; color: var(--vol-doux) !important; font-size: 12px; font-weight: 600; }
+section.mzia-volume .mzia-volume__surtitre::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #d9a441; }
+section.mzia-volume .mzia-volume__surtitre.is-confirmee::before { background: #2fa36b; }
+section.mzia-volume .mzia-volume__badge {
+  flex: none; display: inline-flex; align-items: center; gap: 4px; cursor: help;
+  border: 1px solid #efd9a6; background: var(--vol-ambre-fond); color: var(--vol-ambre) !important;
+  border-radius: 999px; padding: 2px 9px 2px 7px; font-size: 11px; font-weight: 650;
+}
+section.mzia-volume .mzia-volume__badge.is-regles { border-color: #b4e0c8; background: var(--vol-vert-fond); color: var(--vol-vert) !important; }
+section.mzia-volume h3 { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin: 6px 0 0; font-weight: 400; }
+section.mzia-volume .mzia-volume__ref { font-size: 24px; line-height: 1.1; font-weight: 700; letter-spacing: -.01em; color: var(--vol-encre) !important; }
+section.mzia-volume .mzia-volume__zone {
+  align-self: center; padding: 2px 8px; border-radius: 6px; background: #f2f1f7; color: var(--vol-encre) !important; font-size: 12px; font-weight: 600;
+}
+section.mzia-volume p.mzia-volume__idu { margin: 2px 0 0; color: var(--vol-doux) !important; font-size: 11px; letter-spacing: .02em; }
+section.mzia-volume p.mzia-volume__raison {
+  margin: 10px 0 0; color: var(--vol-doux) !important; font-size: 12px; line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+section.mzia-volume .mzia-volume__raison span {
+  display: inline-block; margin-right: 6px; padding: 1px 8px; border-radius: 999px;
+  background: var(--vol-accent-fond); color: var(--vol-accent-fort) !important; font-weight: 650;
+}
+section.mzia-volume .mzia-volume__raison em { font-style: normal; color: var(--vol-doux) !important; }
+section.mzia-volume p.mzia-volume__adresse { display: flex; align-items: center; gap: 5px; margin: 6px 0 0; color: var(--vol-doux) !important; font-size: 12px; }
+section.mzia-volume p.mzia-volume__adresse svg { flex: none; }
+
+/* ── Sélecteur « Autres candidates » (liste déroulante filtrable) ──────── */
+section.mzia-volume .mzia-volume__autres { margin-top: 12px; }
+section.mzia-volume .mzia-volume__autres-barre { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+section.mzia-volume button.mzia-volume__declencheur {
+  flex: 1 1 200px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 10px; border: 1px solid var(--vol-bord); border-radius: 10px; background: #fff;
+  color: var(--vol-encre) !important; font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1.2; cursor: pointer;
+}
+section.mzia-volume button.mzia-volume__declencheur:hover { border-color: #c9bff5; background: #fbfaff; }
+section.mzia-volume button.mzia-volume__declencheur svg { color: var(--vol-doux) !important; transition: transform .16s ease; }
+section.mzia-volume .mzia-volume__autres.is-ouvert button.mzia-volume__declencheur { border-color: var(--vol-accent); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+section.mzia-volume .mzia-volume__autres.is-ouvert button.mzia-volume__declencheur svg { transform: rotate(180deg); }
+section.mzia-volume .mzia-volume__compte {
+  display: inline-block; margin-left: 4px; padding: 0 7px; border-radius: 999px; background: #f2f1f7;
+  color: var(--vol-doux) !important; font-size: 11px; font-weight: 600;
+}
+section.mzia-volume button.mzia-volume__auto {
+  display: inline-flex; align-items: center; gap: 5px; padding: 6px 4px; border: 0; background: none;
+  color: var(--vol-accent-fort) !important; font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1.2; cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
+}
+section.mzia-volume button.mzia-volume__auto:hover { background: none; color: var(--vol-accent) !important; }
+section.mzia-volume .mzia-volume__panneau {
+  border: 1px solid var(--vol-accent); border-top: 0; border-radius: 0 0 10px 10px; background: #fff;
+  box-shadow: 0 10px 22px -14px rgba(74, 51, 184, .35);
+}
+section.mzia-volume .mzia-volume__recherche {
+  display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px 10px; border-bottom: 1px solid var(--vol-bord); color: var(--vol-doux) !important;
+}
+section.mzia-volume .mzia-volume__recherche input {
+  flex: 1; min-width: 0; padding: 4px 2px; border: 0; background: transparent; color: var(--vol-encre) !important; font-family: inherit; font-size: 13px; font-weight: 400; line-height: 1.3;
+}
+section.mzia-volume .mzia-volume__recherche input::placeholder { color: #8d8aa8; }
+section.mzia-volume .mzia-volume__recherche input:focus-visible { outline: 0; }
+section.mzia-volume .mzia-volume__recherche:focus-within { box-shadow: inset 0 -2px 0 var(--vol-accent); }
+section.mzia-volume .mzia-volume__liste { max-height: 232px; overflow-y: auto; padding: 4px; scrollbar-color: #c9c3e3 transparent; }
+section.mzia-volume .mzia-volume__option {
+  display: grid; grid-template-columns: 34px minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
+  padding: 7px 8px; border-radius: 7px; cursor: pointer; color: var(--vol-encre) !important; font-size: 12px;
+}
+section.mzia-volume .mzia-volume__option.is-actif { background: var(--vol-accent-fond); box-shadow: inset 2px 0 0 var(--vol-accent); }
+section.mzia-volume .mzia-volume__rang { color: var(--vol-doux) !important; font-size: 11px; }
+section.mzia-volume .mzia-volume__option-ref { font-weight: 650; }
+section.mzia-volume .mzia-volume__option-zone { min-width: 38px; text-align: center; padding: 1px 6px; border-radius: 5px; background: #f2f1f7; font-size: 11px; font-weight: 600; }
+section.mzia-volume .mzia-volume__option-surface { min-width: 72px; text-align: right; color: var(--vol-doux) !important; }
+section.mzia-volume p.mzia-volume__vide { margin: 0; padding: 10px 8px; color: var(--vol-doux) !important; font-size: 12px; }
+
+/* ── Vue 3D (héros) ───────────────────────────────────────────────────── */
+section.mzia-volume .mzia-volume__vue {
+  position: relative; margin: 0 12px; height: clamp(240px, 74cqi, 440px); overflow: hidden;
+  border-radius: 12px; border: 1px solid #e6e2f6;
+  background:
+    radial-gradient(120% 80% at 50% 0%, #ffffff 0%, rgba(255, 255, 255, 0) 60%),
+    linear-gradient(180deg, #f6f4ff 0%, #ebe7fa 100%);
+  touch-action: none;
+}
+section.mzia-volume .mzia-volume__scene { position: absolute; inset: 0; }
+section.mzia-volume .mzia-volume__scene canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+section.mzia-volume .mzia-volume__scene canvas:active { cursor: grabbing; }
+section.mzia-volume .mzia-volume__vue.is-attente { display: grid; place-items: center; }
+section.mzia-volume .mzia-volume__vue.is-attente::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, .55) 50%, transparent 70%) -100% 0 / 200% 100% no-repeat;
+  animation: mzia-volume-reflet 1.4s ease-in-out infinite;
+}
+section.mzia-volume .mzia-volume__vue.is-attente p.mzia-volume__info { border: 0; background: none; }
+@keyframes mzia-volume-reflet { to { background-position: 200% 0; } }
+section.mzia-volume .mzia-volume__vue.is-plan { padding: 18px 18px 52px; }
+section.mzia-volume .mzia-volume__plan { display: block; width: 100%; height: 100%; }
+section.mzia-volume .mzia-volume__vue-note {
+  position: absolute; top: 8px; left: 10px; right: 10px; margin: 0; color: var(--vol-doux) !important; font-size: 11px;
+}
+section.mzia-volume .mzia-volume__outils {
+  position: absolute; top: 8px; right: 8px; display: flex; gap: 2px; padding: 3px;
+  border-radius: 10px; background: rgba(255, 255, 255, .82); backdrop-filter: blur(6px);
+  box-shadow: 0 1px 2px rgba(31, 29, 61, .08), 0 0 0 1px rgba(74, 51, 184, .08);
+}
+section.mzia-volume button.mzia-volume__outil {
+  display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 7px;
+  background: transparent; color: var(--vol-encre) !important; cursor: pointer;
+}
+section.mzia-volume button.mzia-volume__outil:hover { background: var(--vol-accent-fond); border: 0; color: var(--vol-accent-fort) !important; }
+section.mzia-volume button.mzia-volume__outil[aria-pressed="true"] { background: var(--vol-accent); color: #fff !important; }
+section.mzia-volume .mzia-volume__legende {
+  position: absolute; left: 8px; bottom: 8px; right: 8px; display: flex; flex-wrap: wrap; gap: 6px; margin: 0; pointer-events: none;
+}
+section.mzia-volume .mzia-volume__legende div {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px 3px 3px; border-radius: 999px;
+  background: rgba(255, 255, 255, .9); box-shadow: 0 1px 2px rgba(31, 29, 61, .08), 0 0 0 1px rgba(74, 51, 184, .1);
+}
+section.mzia-volume .mzia-volume__legende dt {
+  display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+  border: 2px solid #5b44d6; background: #fff; color: #3a2a9c !important; font-size: 11px; font-weight: 700; line-height: 1;
+}
+section.mzia-volume .mzia-volume__legende dd { margin: 0; color: var(--vol-encre) !important; font-size: 12px; font-weight: 650; white-space: nowrap; }
+
+/* ── Mention réglementaire (toujours visible, discrète) ─────────────────── */
+section.mzia-volume p.mzia-volume__mention {
+  position: relative; margin: 10px 14px 0; padding: 0 0 0 12px; border: 0; background: none;
+  color: var(--vol-doux) !important; font-size: 12px; line-height: 1.45;
+}
+section.mzia-volume p.mzia-volume__mention::before {
+  content: ''; position: absolute; left: 0; top: 2px; bottom: 2px; width: 3px; border-radius: 2px; background: #e0b252;
+}
+section.mzia-volume p.mzia-volume__mention.is-regles::before { background: #4cb985; }
+section.mzia-volume p.mzia-volume__mention strong { color: var(--vol-ambre) !important; font-weight: 650; }
+section.mzia-volume p.mzia-volume__mention.is-regles strong { color: var(--vol-vert) !important; }
+
+/* ── Chiffres clés : grille 2 × 2 (4 colonnes quand le panneau est large) ── */
+section.mzia-volume .mzia-volume__cotes {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 14px 0;
+}
+section.mzia-volume .mzia-volume__cotes div { min-width: 0; padding: 10px 12px; border-radius: 10px; background: #f7f6fb; }
+section.mzia-volume .mzia-volume__cotes dt { color: var(--vol-doux) !important; font-size: 12px; }
+section.mzia-volume .mzia-volume__cotes dd { margin: 2px 0 0; color: var(--vol-encre) !important; font-size: 18px; line-height: 1.2; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; }
+section.mzia-volume .mzia-volume__cotes dd small { display: block; margin-top: 2px; color: var(--vol-doux) !important; font-size: 11px; font-weight: 400; letter-spacing: 0; white-space: normal; }
+@container mzia-volume (min-width: 640px) {
+  section.mzia-volume .mzia-volume__cotes { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* ── Programme, alertes, messages ─────────────────────────────────────── */
+section.mzia-volume p.mzia-volume__programme { margin: 10px 14px 0; padding: 0; border: 0; color: var(--vol-doux) !important; font-size: 12px; }
+section.mzia-volume p.mzia-volume__programme strong { color: var(--vol-encre) !important; }
+section.mzia-volume p.mzia-volume__info { margin: 10px 14px 0; padding: 0; border: 0; color: var(--vol-doux) !important; font-size: 12px; }
+section.mzia-volume ul.mzia-volume__alertes { display: grid; gap: 4px; margin: 8px 14px 0; padding: 0; list-style: none; }
+section.mzia-volume li.mzia-volume__alerte,
+section.mzia-volume p.mzia-volume__alerte {
+  display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 0; border: 0; background: none;
+  color: var(--vol-ambre) !important; font-size: 12px; line-height: 1.45;
+}
+section.mzia-volume .mzia-volume__alerte svg { flex: none; margin-top: 1px; }
+section.mzia-volume p.mzia-volume__alerte.is-notice { margin: 10px 14px 12px; }
+
+/* ── Accordéons : règles PLU et règle de calcul ───────────────────────── */
+section.mzia-volume .mzia-volume__plis { margin: 12px 14px 0; border: 1px solid var(--vol-bord); border-radius: 10px; }
+section.mzia-volume .mzia-volume__regle { padding: 0; border: 0; color: var(--vol-doux) !important; font-size: 12px; }
+section.mzia-volume .mzia-volume__regle + .mzia-volume__regle { border-top: 1px solid var(--vol-bord); }
+section.mzia-volume .mzia-volume__regle summary {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; list-style: none;
+  color: var(--vol-encre) !important; font-weight: 600; border-radius: 9px;
+}
+section.mzia-volume .mzia-volume__regle summary::-webkit-details-marker { display: none; }
+section.mzia-volume .mzia-volume__regle summary > span:first-child { flex: 1; }
+section.mzia-volume .mzia-volume__regle summary .mzia-volume__compte { margin: 0; }
+section.mzia-volume .mzia-volume__regle summary svg { flex: none; color: var(--vol-doux) !important; transition: transform .16s ease; }
+section.mzia-volume .mzia-volume__regle[open] summary svg { transform: rotate(180deg); }
+section.mzia-volume .mzia-volume__regle summary:hover { background: #faf9fd; }
+section.mzia-volume .mzia-volume__regle ul { margin: 0; padding: 0 12px 10px 28px; }
+section.mzia-volume .mzia-volume__regle li { margin: 0 0 6px; line-height: 1.5; }
+section.mzia-volume .mzia-volume__regle p { margin: 0; padding: 0 12px 6px; color: var(--vol-doux) !important; font-size: 12px; }
+section.mzia-volume .mzia-volume__regle ul.is-non li { color: var(--vol-doux) !important; }
+
+/* ── Note Studio et bouton fixé en bas du panneau ─────────────────────── */
+section.mzia-volume small.mzia-volume__note { display: block; margin: 12px 14px 0; padding: 0; color: var(--vol-doux) !important; font-size: 11px; line-height: 1.45; }
+section.mzia-volume .mzia-volume__pied {
+  position: sticky; bottom: 0; z-index: 2; margin-top: 4px; padding: 10px 12px 12px;
+  border-radius: 0 0 var(--vol-rayon) var(--vol-rayon);
+  background: linear-gradient(to top, #fff 72%, rgba(255, 255, 255, 0));
+}
+section.mzia-volume button.mzia-volume__studio {
+  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin: 0; padding: 12px 14px;
+  border: 1px solid #6a4fe0; border-radius: 10px; background: linear-gradient(105deg, #6851e9, #8958eb);
+  color: #fff !important; font-family: inherit; font-size: 13px; font-weight: 650; line-height: 1.2; cursor: pointer;
+  box-shadow: 0 8px 20px -6px rgba(100, 74, 205, .45);
+}
+section.mzia-volume button.mzia-volume__studio span { flex: 1; text-align: center; color: #fff !important; }
+section.mzia-volume button.mzia-volume__studio svg { color: #fff !important; }
+section.mzia-volume button.mzia-volume__studio:hover { border-color: #5b44d6; background: linear-gradient(105deg, #5d46e0, #7f4fe6); }
+section.mzia-volume button.mzia-volume__studio:focus-visible { outline: 3px solid #b7a9fb; outline-offset: 2px; }
+section.mzia-volume button.mzia-volume__studio:disabled { opacity: .6; cursor: progress; }
+section.mzia-volume:not(:has(.mzia-volume__pied)) { padding-bottom: 14px; }
+section.mzia-volume .jarvis-dossier__parcelle { margin: 0 12px 12px; }
+
+/* Listes de la section : neutralise les puces numérotées de l'état vide (.mzia-fen3d__vide li::before). */
+section.mzia-volume li { display: list-item; grid-template-columns: none; color: var(--vol-encre) !important; }
+section.mzia-volume li.mzia-volume__alerte { display: flex; }
+section.mzia-volume li::before { content: none; display: none; }
+
+/* État vide avec parcelle : introduction resserrée, étapes plus discrètes sous la section. */
+.mzia-fen3d .mzia-fen3d__vide:has(> section.mzia-volume) > h2 { font-size: 17px; }
+.mzia-fen3d .mzia-fen3d__vide:has(> section.mzia-volume) > p { font-size: 12px; margin-bottom: 12px; }
+
+/* Petits écrans et panneau étroit. */
+@container mzia-volume (max-width: 400px) {
+  section.mzia-volume .mzia-volume__tete { padding: 12px 12px 10px; }
+  section.mzia-volume .mzia-volume__vue { margin: 0 8px; }
+  section.mzia-volume .mzia-volume__cotes,
+  section.mzia-volume .mzia-volume__plis { margin-left: 10px; margin-right: 10px; }
+  section.mzia-volume .mzia-volume__cotes dd { font-size: 16px; }
+  section.mzia-volume .mzia-volume__option { grid-template-columns: 28px minmax(0, 1fr) auto auto; gap: 6px; }
+  section.mzia-volume .mzia-volume__option-surface { min-width: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  section.mzia-volume .mzia-volume__vue.is-attente::after { animation: none; }
+  section.mzia-volume svg { transition: none !important; }
+}
+@media (forced-colors: active) {
+  section.mzia-volume .mzia-volume__option.is-actif { outline: 2px solid Highlight; }
+}
+
+/* ── Plan axonométrique (PlanAxonometrique.tsx) : une feuille de plan claire dans le cadre de la vue ── */
+section.mzia-volume .mzia-volume__vue.is-axo { height: auto; overflow: visible; padding: 44px 0 0; background: #ffffff; border-color: var(--vol-bord); touch-action: auto; }
+section.mzia-volume .mzia-volume__vue.is-axo .mzia-volume__outils { box-shadow: 0 0 0 1px var(--vol-bord); }
+section.mzia-volume .mzia-volume__axo { width: 100%; }
+section.mzia-volume .mzia-volume__axo svg { display: block; width: 100%; height: auto; }
+section.mzia-volume .mzia-volume__axo-barre {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 10px 10px; border-top: 1px solid var(--vol-bord); background: #faf9fd; border-radius: 0 0 12px 12px;
+}
+section.mzia-volume .mzia-volume__axo-export { display: inline-flex; align-items: center; gap: 6px; color: var(--vol-doux) !important; font-size: 12px; }
+section.mzia-volume button.mzia-volume__axo-btn {
+  display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border: 1px solid var(--vol-bord); border-radius: 8px;
+  background: #ffffff; color: var(--vol-encre) !important; font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1.2; cursor: pointer;
+}
+section.mzia-volume button.mzia-volume__axo-btn:hover { border-color: #c9bff5; background: var(--vol-accent-fond); color: var(--vol-accent-fort) !important; }
+section.mzia-volume button.mzia-volume__axo-btn:disabled { opacity: .55; cursor: progress; }
+section.mzia-volume p.mzia-volume__axo-message { margin: 0; padding: 0 10px 8px; color: var(--vol-doux) !important; font-size: 11px; background: #faf9fd; border-radius: 0 0 12px 12px; }
+section.mzia-volume .mzia-volume__vue.is-axo:has(.mzia-volume__axo-message) .mzia-volume__axo-barre { border-radius: 0; }

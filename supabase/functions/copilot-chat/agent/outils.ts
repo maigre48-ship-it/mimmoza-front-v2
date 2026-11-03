@@ -38,10 +38,13 @@ export const OUTIL_PROPOSER_MISSION: OutilDef = {
   name: 'proposer_mission',
   description:
     "Propose une MISSION AUTONOME en arrière-plan (agent foncier) et affiche un DEVIS à l'utilisateur. " +
-    "À utiliser dès que la demande dépasse ~5 appels d'outils : prospection foncière sur une ou plusieurs " +
-    "communes, comparaison de plusieurs terrains, dossier complet, faisabilité multi-parcelles, étude de marché " +
-    "approfondie. NE LANCE RIEN et NE DÉBITE RIEN : l'utilisateur valide lui-même le devis. Renseigne un objectif " +
-    "précis et des critères complets.",
+    "OBLIGATOIRE, et AVANT toute étude détaillée, pour : prospection foncière (« trouve-moi des terrains », " +
+    "« les N meilleurs terrains pour… »), comparaison ou classement de plusieurs terrains, dossier complet ou " +
+    "faisabilité sur plusieurs parcelles, étude de marché approfondie. Au plus UN appel de cadrage léger avant " +
+    "(rechercher_parcelles, get_logement_social) ; jamais plusieurs get_etude_parcelle dans le chat. Chaque fois " +
+    "que tu envisages une mission, APPELLE cet outil : une mission proposée seulement en texte n'affiche aucun " +
+    "devis et l'utilisateur ne peut pas la lancer. NE LANCE RIEN et NE DÉBITE RIEN : l'utilisateur valide lui-même " +
+    "le devis. Renseigne un objectif précis et des critères complets.",
   input_schema: {
     type: 'object',
     properties: {

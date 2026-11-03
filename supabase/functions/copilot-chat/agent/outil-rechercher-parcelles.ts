@@ -53,8 +53,10 @@ export const TOOL_RECHERCHER_PARCELLES: ToolDefParcelles = {
     "au Géoportail de l'urbanisme au centroïde de chaque parcelle, et peut écarter les parcelles déjà bâties " +
     "(BD TOPO IGN). Renvoie une liste triée (score_tri /100 : zonage 40, surface 30, forme compacte 30) avec IDU, " +
     "surface, zone, bâti et raisons. UN périmètre : code_insee, OU commune (+ cp), OU bbox, OU centre + rayon_m. " +
-    "Utilise ENSUITE get_etude_parcelle / get_parcel_plu sur les 3-5 meilleures : cet outil ne donne qu'une " +
-    "constructibilité de PRINCIPE. ⚠️ zonage_plu = null quand le GPU ne couvre pas le secteur ou que la parcelle " +
+    "Cet outil ne donne qu'une constructibilité de PRINCIPE. Pour aller plus loin sur PLUSIEURS candidates " +
+    "(études, comparaison, classement « les N meilleurs ») : dans le CHAT, n'enchaîne PAS les études, appelle " +
+    "proposer_mission (type prospection_fonciere) avec les critères ; dans une MISSION, étudie les meilleures " +
+    "UNE PAR UNE (get_etude_parcelle / get_parcel_plu). ⚠️ zonage_plu = null quand le GPU ne couvre pas le secteur ou que la parcelle " +
     "n'a pas été vérifiée (zonage_statut) : ne l'invente jamais. bati_detecte = null = non vérifié. Si la lecture " +
     "du cadastre est partielle (stats.couverture_cadastre), dis-le. Cite [source: Cadastre Etalab / API Carto IGN, " +
     "Géoportail de l'urbanisme, BD TOPO].",

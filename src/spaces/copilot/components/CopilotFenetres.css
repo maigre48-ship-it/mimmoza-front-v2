@@ -236,3 +236,39 @@
   position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; border-radius: 50%;
   background: var(--fen-accent); box-shadow: 0 0 0 2px var(--fen-barre);
 }
+
+/* ── « Nouvelle conversation » dans la barre de la conversation ──────────
+   Ancien bouton flottant (.mzia-fab--newchat) ancré à left:16px de
+   `.mzia-page` : cette zone est la marge réservée au menu latéral FIXE
+   (64 px replié, 288 px déployé, z-index 40) — le bouton passait dessous.
+   Il vit maintenant dans la barre de titre et suit la fenêtre. */
+.mzia-fen__outil--nouvelle {
+  color: var(--fen-accent);
+  border: 1px solid #ddd5fb;
+  background: #fff;
+  font-weight: 600;
+  margin-right: 4px;
+}
+.mzia-fen__outil--nouvelle:hover { background: #f4f1ff; color: var(--fen-accent); }
+
+/* La barre de la conversation est un conteneur : ses libellés se replient
+   selon SA largeur (panneau 3D ouvert, agrandi ou fermé), pas celle de
+   l'écran. Les boutons restent visibles, en icône seule (aria-label). */
+.copilot-chat--jarvis > .mzia-fen__barre { container: mzia-fen-conv / inline-size; min-width: 0; }
+.copilot-chat--jarvis > .mzia-fen__barre .mzia-fen__outils { flex: 0 0 auto; }
+.copilot-chat--jarvis > .mzia-fen__barre .mzia-fen__titre { flex: 0 1 auto; overflow: hidden; }
+@container mzia-fen-conv (max-width: 640px) {
+  .mzia-fen__outils .mzia-fen__outil span,
+  .mzia-fen__outils .mzia-fen__statut span,
+  .mzia-fen__titre small { display: none; }
+  .mzia-fen__outil--nouvelle { padding: 0 7px; }
+}
+@container mzia-fen-conv (max-width: 340px) {
+  .mzia-fen__outils .mzia-fen__statut { display: none; }
+}
+
+/* Mobile : le bouton « menu » de la page (44 px, en haut à gauche) se pose
+   sur la barre de titre — on lui laisse sa place. */
+@media (max-width: 860px) {
+  .mzia-page.is-chatting .copilot-chat--jarvis > .mzia-fen__barre { padding-left: 56px; }
+}

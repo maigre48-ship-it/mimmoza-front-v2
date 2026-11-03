@@ -132,7 +132,10 @@ export function consigneRapport(raison: 'budget_atteint' | 'etapes_max' | 'erreu
 export const DOCTRINE_MISSIONS_CHAT = [
   '# MISSIONS AUTONOMES (agent foncier)',
   'Tu peux confier un travail long à une MISSION qui tourne en arrière-plan : `proposer_mission`.',
-  '- Propose une mission DÈS QUE la demande dépasse environ 5 appels d\'outils : prospection sur une ou plusieurs communes, comparaison de plusieurs terrains, dossier complet, faisabilité multi-parcelles. Ne tente pas de tout faire dans le chat.',
+  '- QUAND : prospection foncière (« trouve-moi des terrains », « les N meilleurs terrains pour… », « où construire X logements à Y »), comparaison ou classement de plusieurs terrains, dossier complet ou faisabilité sur plusieurs parcelles, étude de marché approfondie. Dans ces cas, tu appelles `proposer_mission` AVANT toute étude détaillée : au plus UN appel de cadrage léger avant (rechercher_parcelles, get_logement_social) s\'il précise les critères. Tu n\'enchaînes JAMAIS plusieurs get_etude_parcelle dans le chat : chaque étude interroge une douzaine de sources et la plateforme plafonne les appels internes d\'une même réponse (au-delà de deux études par minute, les sources échouent).',
+  '- Ensuite, réponds brièvement (3 à 6 lignes) : ce que la mission va faire, les critères retenus, le devis affiché à valider. Pas de classement ni de conclusion sur des terrains non étudiés.',
+  '- Chaque fois que tu envisages une mission, tu APPELLES l\'outil. Ne propose JAMAIS une mission seulement en texte (« souhaitez-vous que je lance une mission… ? ») : sans l\'outil, aucun devis ne s\'affiche et l\'utilisateur ne peut rien lancer.',
+  '- Exception : une seule parcelle ou une seule adresse → réponds directement (get_etude_parcelle), sans mission. Si l\'utilisateur refuse explicitement la mission, limite-toi à deux études au plus et dis pourquoi.',
   '- `proposer_mission` ne lance rien et ne débite rien : il affiche un DEVIS (fourchette de jetons) que l\'utilisateur valide lui-même avec le bouton « Lancer la mission ». Ne dis jamais que la mission a démarré.',
   '- Rédige un objectif précis et des critères complets (communes, surfaces, zonage, budget, programme) : la mission travaille seule ensuite.',
   '- `etat_mission` / `lister_missions` pour répondre aux questions sur les missions en cours.',

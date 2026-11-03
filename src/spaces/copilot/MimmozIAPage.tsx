@@ -3,10 +3,11 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import {
   MapPin, Home, TrendingUp, Gauge, LandPlot, Sparkles,
   Paperclip, Mic, ArrowUp, X, Box,
-  ShieldCheck, Lock, BrainCircuit, GitBranch, Plus, Menu,
+  ShieldCheck, Lock, BrainCircuit, GitBranch, Menu,
 } from 'lucide-react';
 
 import { CopilotChat } from './components/CopilotChat';
+import { CarrouselStudio3D } from './accueil/CarrouselStudio3D';
 import { useCopilot } from './hooks/useCopilot';
 import { MimmozIAOrb, type MimmozIAOrbState } from './components/MimmozIAOrb';
 import { phaseReponseEnFlux, reponseClairementNegative } from './components/orbResponseOutcome';
@@ -15,6 +16,10 @@ import { MimmozIAStatus } from './components/MimmozIAStatus';
 import { MimmozIASidebar } from './MimmozIASidebar';
 import { PanneauAgent } from './agent/PanneauAgent';
 import { BandeauBriefing } from './agent/BandeauBriefing';
+import { MissionPreparation3DPanel, type ParcelleMissionConfirmee } from './studio3d/MissionPreparation3DPanel';
+import { missionVisualisable, iduAttenduMission, iduDeParcelle, verifierTerrainMission, preparerTransfertMission } from './studio3d/missionPreparation3D';
+import type { Mission } from './agent/agent.types';
+import { lireMissionParId } from './agent/agentApi';
 import { AtelierConception } from './agent/conception/AtelierConception';
 import { MimmozIAModelPicker, type ModelTier, type Plan as PickerPlan } from './components/MimmozIAModelPicker';
 import { usePlanAccess } from '@/lib/billing/usePlanAccess';
@@ -169,7 +174,6 @@ const QUICK_ACTIONS: QuickAction[] = [
   { icon: LandPlot, title: 'Étudier un terrain', subtitle: 'PLU, règles, constructibilité, réseaux', side: 'right', prompt: 'Étudie ce terrain : règles du PLU, constructibilité, contraintes et réseaux : ', signal: { property_type: 'terrain' } },
   { icon: Sparkles, title: 'Trouver des opportunités', subtitle: 'Biens, terrains, off-market, appels d’offres', side: 'right', prompt: 'Trouve des opportunités immobilières (biens, terrains, off-market, appels d’offres) selon ces critères : ' },
 ];
-const StudioHeroBuilding3D = lazy(() => import('./studio3d/StudioHeroBuilding3D').then(module => ({ default: module.StudioHeroBuilding3D })));
 
 const TRUST = [
   { icon: ShieldCheck, label: 'Données publiques vérifiées' },
@@ -359,17 +363,31 @@ export default function MimmozIAPage() {
    * le relief vient du cache ou suit en tâche de fond (25 s au plus).
    */
   const [studio3d, setStudio3d] = useState<{ demande: DemandeStudioIntegre | null; ouvert: boolean; empreinte: string | null; conversationId: string | null }>({ demande: null, ouvert: false, empreinte: null, conversationId: null });
+  const [mission3d, setMission3d] = useState<{ mission: Mission } | null>(null);
+  const mission3dRef = useRef(mission3d); mission3dRef.current = mission3d;
   const studio3dRef = useRef(studio3d);
   studio3dRef.current = studio3d;
-  const voirEn3D = useCallback(async (fiche: JarvisDraft, conversationId: string, terrainArg?: ConfirmedTerrain & { adresse?: string | null }): Promise<IssueOuvertureStudio> => {
-    if (terrainArg) retenirParcelle(conversationId, terrainArg);
+  const voirEn3D = useCallback(async (fiche: JarvisDraft, conversationId: string, terrainArg?: ConfirmedTerrain & { adresse?: string | null }, options?: { mission?: boolean; estCourante?: () => boolean; remplacerMaquette?: boolean }): Promise<IssueOuvertureStudio> => {
+    const verifierContexteMission = () => { if (options?.mission && (useCopilotStore.getState().currentConversationId !== conversationId || !options.estCourante?.())) throw new Error('La préparation de mission ou la conversation a changé. Aucun projet ne sera ouvert.'); };
+    verifierContexteMission();
+    // Mission : la parcelle confirmée vaut pour la mission seulement ; la parcelle retenue de la conversation n'est pas modifiée.
+    if (terrainArg && !options?.mission) retenirParcelle(conversationId, terrainArg);
     const retenue = terrainArg ?? parcelleRetenue(conversationId);
     if (!retenue) {
       window.dispatchEvent(new CustomEvent('mzia-3d-parcelle-requise', { detail: conversationId }));
       return 'parcelle-requise';
     }
     // Charge Studio construite en un seul endroit (aussi utilisée pour les films et visites 360°).
-    const { construit, parcelles, insee, reliefConnu, conserves, sessionId, etudeId } = await preparerChargeVoirEn3D(fiche, conversationId, retenue, terrainArg);
+    const preparer = () => preparerChargeVoirEn3D(fiche, conversationId, retenue, terrainArg, { autoriserEtudeActive: options?.mission !== true });
+    // Mission : maquette déjà chargée contrôlée AVANT toute entrée/sortie (relief, fichiers, signatures, panorama), puis après l'attente.
+    const { construit, parcelles, insee, reliefConnu, conserves, sessionId, etudeId } = options?.mission
+      ? await preparerTransfertMission({
+        conversationId, remplacer: options.remplacerMaquette === true, preparer,
+        courante: () => useCopilotStore.getState().currentConversationId === conversationId && !!options.estCourante?.(),
+        maquette: () => ({ chargee: !!studio3dRef.current.demande, conversationId: studio3dRef.current.conversationId }),
+      })
+      : await preparer();
+    verifierContexteMission();
     if (!construit.ok) throw new Error(`Transfert vers Studio impossible : ${construit.erreur}.`);
     // Même contenu qu'à l'ouverture précédente, Studio encore chargé : on le remontre, sans renvoi.
     const empreinte = empreinteProjet(construit.projet);
@@ -394,6 +412,30 @@ export default function MimmozIAPage() {
       ouvert: true, empreinte, conversationId,
     });
   }, []);
+  const preparerMission3D = useCallback((mission: Mission) => {
+    const state = useCopilotStore.getState();
+    if (!missionVisualisable(mission, state.currentConversationId)) throw new Error('Ouvrez la conversation de cette mission pour préparer son projet.');
+    setMission3d({ mission });
+  }, []);
+  /** Décharge explicitement la maquette de Studio (choix de l'utilisateur dans la préparation de mission). */
+  const fermerMaquette3d = useCallback(() => {
+    activeStudioSessionRef.current = null;
+    setStudio3d({ demande: null, ouvert: false, empreinte: null, conversationId: null });
+  }, []);
+  useEffect(() => { if (mission3d && mission3d.mission.conversation_id !== copilot.currentConversationId) setMission3d(null); }, [mission3d, copilot.currentConversationId]);
+  const ouvrirMission3D = useCallback(async (fiche: JarvisDraft, parcelle: ParcelleMissionConfirmee, remplacerMaquette: boolean) => {
+    if (!mission3d) return;
+    const preparation = mission3d;
+    const estCourante = () => mission3dRef.current === preparation && useCopilotStore.getState().currentConversationId === preparation.mission.conversation_id;
+    const mission = await lireMissionParId(preparation.mission.id);
+    if (!estCourante()) throw new Error('La préparation a changé pendant la vérification.');
+    if (!mission || mission.id !== preparation.mission.id || mission.conversation_id !== preparation.mission.conversation_id
+      || !missionVisualisable(mission, useCopilotStore.getState().currentConversationId)) throw new Error('Cette mission ou sa conversation ne permet plus le transfert.');
+    // Garde réelle : la confirmation vient de l'état du panneau et doit désigner la mission relue au serveur et sa parcelle.
+    verifierTerrainMission(mission.id, mission.conversation_id!, { missionId: parcelle.missionId, conversationId: parcelle.conversationId, parcelId: iduDeParcelle(parcelle.valeur.parcel) ?? parcelle.parcelId }, iduAttenduMission(mission));
+    await voirEn3D(fiche, mission.conversation_id!, parcelle.valeur, { mission: true, estCourante, remplacerMaquette });
+    setMission3d(null);
+  }, [mission3d, voirEn3D]);
   const fermerStudio3d = useCallback((vers: 'projet' | 'bilan') => {
     setStudio3d(s => ({ ...s, ouvert: false }));
     // R4/R5 — point d'accroche du bilan en temps réel (même fenêtre, même origine).
@@ -555,6 +597,7 @@ export default function MimmozIAPage() {
       <PanneauAgent />
       {/* Agent autonome : Atelier 3D en mode conception + bilan vivant (fermé par défaut) */}
       <AtelierConception />
+      {mission3d && <MissionPreparation3DPanel key={mission3d.mission.id} mission={mission3d.mission} onFermer={() => setMission3d(null)} onOuvrir={ouvrirMission3D} onFermerMaquette={fermerMaquette3d} />}
       <PreparationStudio3D
         key={prepa3d.key ?? 'initial'}
         ouvert={prepa3d.ouvert}
@@ -600,17 +643,10 @@ export default function MimmozIAPage() {
         onCloseMobile={() => setMobileOpen(false)}
       />
 
-      {/* Bouton "Nouvelle conversation" flottant conservé en conversation */}
-      {conversationActive && (
-        <button
-          type="button"
-          className="mzia-fab mzia-fab--newchat"
-          onClick={handleNewConversation}
-          title="Nouvelle conversation"
-        >
-          <Plus size={14} />Nouvelle conversation
-        </button>
-      )}
+      {/* « Nouvelle conversation » : désormais dans la barre de titre de la
+          fenêtre Atelier 3D (prop `onNewConversation` de CopilotChat). Le
+          bouton flottant d'avant était ancré dans la marge du menu latéral
+          fixe et passait dessous (« uvelle conversation »). */}
 
       {conversationActive ? (
         /* ============ ÉTAT CONVERSATION : chat pleine largeur + orbe flottante ============ */
@@ -625,7 +661,9 @@ export default function MimmozIAPage() {
               forceMode="advanced"
               hideQuickQuestions
               showStudioDraft
+              onNewConversation={handleNewConversation}
               onOpenStudioDraft={voirEn3D}
+              onVisualiserMission={preparerMission3D}
               onPrepareStudioDetailed={ouvrirFicheStudio}
               onIntercept={intercepter3d}
               onMessageSent={conserverPieces3d}
@@ -697,10 +735,9 @@ export default function MimmozIAPage() {
               </div>
             </div>
             <div className="mzia-studio-hero__art">
-              <Suspense fallback={<img src="/illustrations/mimmoza-studio-building.webp" alt="Immeuble contemporain en trois dimensions" />}>
-                <StudioHeroBuilding3D />
-              </Suspense>
-              <span className="mzia-studio-hero__caption">GLISSEZ POUR TOURNER</span>
+              {/* Rendus Unreal fixes (public/accueil/studio-3d/manifeste.json) ;
+                  la maquette three.js StudioHeroBuilding3D ne sert plus qu'à la vitrine. */}
+              <CarrouselStudio3D />
             </div>
           </section>
 

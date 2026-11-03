@@ -26,6 +26,7 @@ import {
 import { useAtelierConception } from './conceptionUi.store';
 import { BilanVivant } from './BilanVivant';
 import './conception.css';
+import { ChoixEtudeConception } from './ChoixEtudeConception';
 
 export function AtelierConception() {
   const demande = useAtelierConception((s) => s.demande);
@@ -44,10 +45,13 @@ export function AtelierConception() {
   const ouverture = useRef(ouvertureInitiale());
   const delais = useRef<number[]>([]);
   const [studioAncien, setStudioAncien] = useState(false);
+  // Fixée avant le montage de Studio : ne jamais changer de liaison en rechargeant une maquette ouverte.
+  const [liaisonSession, setLiaisonSession] = useState<{ cle: string; etudeId: string | null } | null>(null);
+  const sessionPrete = !!demande && liaisonSession?.cle === demande.cle;
 
   // Session Studio de cette ouverture (projet v2 = parcelle réelle ; le reste passe par conception.ouvrir).
   const studio = useMemo((): { demande: DemandeStudioIntegre | null; erreur: string | null; charge: ChargeOuvrir | null } => {
-    if (!demande) return { demande: null, erreur: null, charge: null };
+    if (!demande || !sessionPrete) return { demande: null, erreur: null, charge: null };
     const c = demande.conception;
     if (!c.parcelle) return { demande: null, erreur: 'Le contour de la parcelle manque : relancez la mission de conception.', charge: null };
     const sessionId = crypto.randomUUID();
@@ -55,9 +59,9 @@ export function AtelierConception() {
     const parcelles = parcellesConception(c);
     const insee = inseeConception(c.idu);
     const page = new URL(window.location.href); page.hash = '';
-    const construit = projetConception(c, sessionId, window.location.origin, page.href);
+    const construit = projetConception(c, sessionId, window.location.origin, page.href, liaisonSession?.etudeId ?? null);
     if (!construit.ok) return { demande: null, erreur: `Ouverture de l’Atelier impossible : ${construit.erreur}.`, charge: null };
-    const url = new URL(adresseStudioIntegre(urlStudio(), projetIdChat(conversationId), sessionId, null));
+    const url = new URL(adresseStudioIntegre(urlStudio(), projetIdChat(conversationId), sessionId, liaisonSession?.etudeId ?? null));
     url.searchParams.set('mzconception', c.id);
     const charge: ChargeOuvrir = {
       conception_id: c.id, parcelle: c.parcelle, regles: c.regles, programme: c.programme, plan_source: demande.voie,
@@ -71,7 +75,7 @@ export function AtelierConception() {
         implantation: null, imagesNonEnvoyees: 0,
       },
     };
-  }, [demande]);
+  }, [demande, sessionPrete, liaisonSession]);
 
   // Hypothèses du bilan : rapport de la prospection d'origine.
   useEffect(() => {
@@ -181,6 +185,9 @@ export function AtelierConception() {
   }, [studio.demande, demande, evenement]);
 
   if (!demande) return null;
+  if (!sessionPrete) return ouvert ? <ChoixEtudeConception key={demande.cle} conceptionId={demande.conception.id} contexte={[demande.conception.idu, demande.conception.commune].filter(Boolean).join(" · ")}
+    onOuvrir={etudeId => setLiaisonSession({ cle: demande.cle, etudeId })}
+    onFermer={() => useAtelierConception.getState().fermer()} /> : null;
   if (studio.erreur) {
     return ouvert ? (
       <div className="mzag mzcp-erreur" role="alertdialog">

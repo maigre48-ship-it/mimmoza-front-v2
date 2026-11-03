@@ -14,6 +14,9 @@ import { ConfirmerParcelle } from './ConfirmerParcelle';
 // Film ou visite 360° en 3 clics (contrat docs/studio/CONTRAT_FILM_VISITE.md).
 import { FilmVisitePanel } from './FilmVisitePanel';
 import './JarvisDraftPanel.css';
+// Parcelle de la conversation + volume d'étude simple, et « Voir en 3D réaliste dans Studio » (même parcours que « Voir en 3D »).
+import { useContexteVolume, VolumeParcelleSection } from './VolumeParcelleSection';
+import { diagnostiquerPreparation3D, exigerPreparation3D } from './preparation3D';
 import { messageErreur } from "@/components/ui/messageErreur";
 
 const LABELS = {
@@ -99,10 +102,19 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
   }, [conversationId]);
 
   const draft = saved ? reconcileJarvisDraft(saved.draft, messages, saved.updatedAt) : proposal;
+  // Appelé avant le retour anticipé (règle des hooks) : parcelle, programme et règles PLU de la conversation.
+  const volume = useContexteVolume(messages, conversationId, draft);
+  const parcelleConnue = volume.contexte.parcelle.type !== 'aucune';
   if (!draft) return <aside className="mzia-fen3d__vide" aria-label="Dossier de préparation 3D">
+    {parcelleConnue ? <>
+      <h2>Parcelle et volume d’étude</h2>
+      <p>Mimmo pose un volume simple sur la parcelle de la conversation pour voir l’ordre de grandeur. Précisez le programme dans la conversation pour l’ajuster.</p>
+      <VolumeParcelleSection {...volume} conversationId={conversationId} fiche={null} onOpenStudio={onOpenStudio} />
+    </> : <>
     <div className="mzia-fen3d__vide-visuel" aria-hidden="true"><Box size={46} strokeWidth={1.1} /></div>
     <h2>Aucun projet pour l’instant</h2>
     <p>Décrivez votre projet dans la conversation : Mimmo prépare le dossier 3D ici, puis vous le voyez en volume.</p>
+    </>}
     <ol>
       <li><div>Décrivez le projet<span>Adresse, nombre de logements, étages, style…</span></div></li>
       <li><div>Vérifiez la fiche<span>Mimmo la remplit ; vous corrigez si besoin.</span></div></li>
@@ -113,6 +125,7 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
     && Date.parse(proposalMessage.createdAt) > Date.parse(saved.updatedAt)
     && JSON.stringify(proposal) !== JSON.stringify(saved.draft));
   const previewDraft = editing && form ? form : newSuggestion && proposal ? proposal : draft;
+  const diagnostic = diagnostiquerPreparation3D(draft);
   const draftMassing = jarvisMassing(previewDraft);
   const currentStudioVolume = !editing && studioVolume
     && (!newSuggestion || !proposalMessage || Date.parse(proposalMessage.createdAt) <= Date.parse(studioVolume.updatedAt))
@@ -141,6 +154,9 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
 
   const write = async (status: 'draft' | 'validated') => {
     if (!conversationId || !form || busy) return;
+    if (status === 'validated') {
+      try { exigerPreparation3D(form); } catch (e) { setNotice(messageErreur(e, 'Projet à préciser.')); return; }
+    }
     setBusy(true);
     setNotice('');
     const questions = questionsText.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
@@ -166,6 +182,7 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
    */
   const voirEn3D = async (terrain?: ConfirmedTerrain & { adresse?: string | null }) => {
     if (!conversationId || !onOpenStudio || opening || !draft.objectif?.trim()) return;
+    try { exigerPreparation3D(draft); } catch (e) { setNotice(messageErreur(e, 'Projet à préciser.')); return; }
     setOpening(true);
     setNotice('');
     try {
@@ -190,6 +207,7 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
 
   /** Film / visite 360° : la fiche est validée au lancement si elle ne l'est pas encore. */
   const assurerValidation = async () => {
+    exigerPreparation3D(draft);
     if (!conversationId || saved?.status === 'validated') return;
     try {
       setSaved(await saveJarvisDraft(conversationId, draft, 'validated', saved?.revision ?? 0));
@@ -202,23 +220,31 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
     <aside aria-label="Dossier de préparation 3D" className="jarvis-dossier">
       <div className="jarvis-dossier__heading">
         <div><h2>Votre projet</h2><p>Repris de la conversation</p></div>
-        <span className={`jarvis-dossier__status ${saved?.status === 'validated' ? 'is-validated' : ''}`}>
-          {editing ? 'En édition' : saved?.status === 'validated' ? 'Validé' : 'À vérifier'}
+        <span className={`jarvis-dossier__status ${saved?.status === 'validated' && diagnostic.pret ? 'is-validated' : ''}`}>
+          {editing ? 'En édition' : saved?.status === 'validated' && diagnostic.pret ? 'Validé' : 'À vérifier'}
         </span>
       </div>
       <div className="jarvis-dossier__mobile-toggle"><button type="button" onClick={() => setExpanded(value => !value)} aria-expanded={expanded}>{expanded ? 'Réduire le dossier' : 'Afficher le dossier'}</button></div>
+      {!editing && <section aria-label="Préparation du projet 3D" style={{ marginBottom: 12 }}>
+        <p>Les informations ci-dessous viennent de la fiche du copilote ; elles ne valent pas confirmation par vous ni validation réglementaire.</p>
+        <ul>{diagnostic.informations.map(i => <li key={i.cle}><strong>{i.libelle}</strong> — {i.statut === 'fourni-dans-fiche' ? 'Présent dans la fiche' : i.statut === 'hypothese' ? 'Hypothèse à vérifier' : 'À préciser'} : {i.detail}</li>)}</ul>
+        {!diagnostic.pret && <><p role="status">Avant de générer : {diagnostic.questions.join(' ')}</p><button type="button" className="jarvis-dossier__link" onClick={() => beginEdit(draft)}>Compléter la fiche</button></>}
+        <p>La parcelle est confirmée séparément. Sans relief mesuré au transfert, la position d’implantation précise ne sera pas transmise ; le rendu ne prouve pas la conformité au terrain.</p>
+      </section>}
       {!editing && conversationId && onOpenStudio && <button
-        type="button" className="jarvis-dossier__launch" disabled={opening || !draft.objectif?.trim()} onClick={() => void voirEn3D()}>
+        type="button" className="jarvis-dossier__launch" disabled={opening || !draft.objectif?.trim() || !diagnostic.pret} onClick={() => void voirEn3D()}>
         <Box size={16} /> {opening ? 'Ouverture de Studio…' : nombreBatiments > 1 ? `Voir les ${String(nombreBatiments)} bâtiments en 3D` : 'Voir en 3D'} <ArrowUpRight size={17} />
       </button>}
-      {demandeParcelle && !editing && conversationId && <ConfirmerParcelle adresseInitiale={draft.localisation}
+      {demandeParcelle && !editing && conversationId && diagnostic.pret && <ConfirmerParcelle adresseInitiale={draft.localisation}
         onConfirmer={terrain => void voirEn3D(terrain)} onAnnuler={() => setDemandeParcelle(false)} />}
-      {!editing && conversationId && draft.objectif?.trim() && <FilmVisitePanel draft={draft} conversationId={conversationId} assurerValidation={assurerValidation} />}
+      {/* Fiche sans volume chiffré (dimensions ou R+N manquants) : volume d'étude calculé sur la parcelle, en hypothèse. */}
+      {!editing && !draftMassing && parcelleConnue && <VolumeParcelleSection {...volume} conversationId={conversationId} fiche={draft} onOpenStudio={onOpenStudio} />}
+      {!editing && conversationId && draft.objectif?.trim() && diagnostic.pret && <FilmVisitePanel draft={draft} conversationId={conversationId} assurerValidation={assurerValidation} />}
       <div className={`jarvis-dossier__body ${expanded ? 'is-expanded' : ''}`}>
       {currentStudioVolume && <p className="jarvis-dossier__proposal">Aperçu actualisé depuis Studio sur cet appareil. Les corrections se font dans l’onglet Studio.</p>}
       {newSuggestion && !editing && <p className="jarvis-dossier__proposal">Nouvelle proposition de Mimmo : l’aperçu montre les changements à examiner avant le transfert.</p>}
-      {massing && <JarvisMassingPreview light massing={massing} terrain={measuredTerrain} />}
-      {massing && <PhotoTerrainImplantation massing={massing} onContinue={onOpenStudio && conversationId
+      {diagnostic.pret && massing && <JarvisMassingPreview light massing={massing} terrain={measuredTerrain} />}
+      {diagnostic.pret && massing && <PhotoTerrainImplantation massing={massing} onContinue={onOpenStudio && conversationId
         ? terrain => onOpenStudio(draft, conversationId, terrain).then(() => undefined) : undefined} onTerrainMeasured={setMeasuredTerrain} />}
       {massing?.buildings && <p className="jarvis-dossier__proposal">Les {String(massing.buildings.length)} bâtiments seront créés dans Studio avec leurs dimensions et hauteurs propres. Leur position reste indicative jusqu’à la vérification du terrain.</p>}
       {editing && form ? (
@@ -240,7 +266,7 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
           </label>
           <div className="jarvis-dossier__actions">
             <button type="button" disabled={busy || !conversationId} onClick={() => void write('draft')}>Enregistrer</button>
-            <button className="is-primary" type="button" disabled={busy || !conversationId || !form.objectif?.trim()} onClick={() => void write('validated')}>Valider la fiche</button>
+            <button className="is-primary" type="button" disabled={busy || !conversationId || !diagnostiquerPreparation3D(form).pret} onClick={() => void write('validated')}>Valider la fiche</button>
             <button type="button" disabled={busy} onClick={() => setEditing(false)}>Annuler</button>
           </div>
         </div>

@@ -5,7 +5,7 @@
 //
 // La mission est RELUE en base dès qu'on connaît son identifiant : la carte
 // affiche toujours son vrai statut (lancée, annulée…), même des jours après.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Rocket } from 'lucide-react';
 import { JETON_VALEUR_EUR } from '@/lib/billing/grille';
 import { useCopilotStore } from '../store/copilotStore';
@@ -17,13 +17,16 @@ import {
 import type { Mission } from './agent.types';
 import { useAgentUi } from './agentUi.store';
 import './agent.css';
+import { creerActionVisualisationMission, missionVisualisable } from '../studio3d/missionPreparation3D';
 
 interface Props {
   affichage: AffichageDevis;
+  conversationId?: string | null;
+  onVisualiserMission?: (mission: Mission) => void;
   onSend?: (texte: string) => void;
 }
 
-export function CarteDevisMission({ affichage, onSend }: Props) {
+export function CarteDevisMission({ affichage, onSend, conversationId, onVisualiserMission }: Props) {
   if (affichage.etat === 'preparation') {
     return (
       <div className="mzag mzag-carte mzag-devis" role="status">
@@ -40,16 +43,32 @@ export function CarteDevisMission({ affichage, onSend }: Props) {
       </div>
     );
   }
-  return <CarteDevis proposition={affichage.proposition} onSend={onSend} />;
+  return <CarteDevis key={affichage.proposition.missionId} proposition={affichage.proposition} onSend={onSend} conversationId={conversationId} onVisualiserMission={onVisualiserMission} />;
 }
 
-function CarteDevis({ proposition, onSend }: { proposition: Extract<AffichageDevis, { etat: 'carte' }>['proposition']; onSend?: (t: string) => void }) {
+function CarteDevis({ proposition, onSend, conversationId, onVisualiserMission }: { proposition: Extract<AffichageDevis, { etat: 'carte' }>['proposition']; onSend?: (t: string) => void; conversationId?: string | null; onVisualiserMission?: (mission: Mission) => void }) {
   const missionId = proposition.missionId;
   const [mission, setMission] = useState<Mission | null>(null);
-  const [occupe, setOccupe] = useState<'lancer' | 'annuler' | 'modifier' | null>(null);
+  const [occupe, setOccupe] = useState<'lancer' | 'annuler' | 'modifier' | 'visualiser' | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [modif, setModif] = useState<string | null>(null);
 
+  const identite = useRef({ missionId, conversationId, actif: true });
+  identite.current.missionId = missionId; identite.current.conversationId = conversationId;
+  useEffect(() => { identite.current.actif = true; return () => { identite.current.actif = false; }; }, []);
+  const visualiser = useMemo(() => creerActionVisualisationMission({
+    missionId: missionId ?? '', conversationId: conversationId ?? '', lire: lireMissionParId,
+    courante: () => identite.current.actif && identite.current.missionId === missionId && identite.current.conversationId === conversationId,
+    ouvrir: m => { setMission(m); onVisualiserMission?.(m); },
+  }), [missionId, conversationId, onVisualiserMission]);
+  const verificationEnCours = useRef(false);
+  const ouvrirPreparation = async () => {
+    if (verificationEnCours.current) return;
+    verificationEnCours.current = true;
+    setOccupe('visualiser'); setErreur(null);
+    try { await visualiser(); } catch (e) { if (identite.current.actif) setErreur(e instanceof Error ? e.message : 'Préparation indisponible.'); }
+    finally { verificationEnCours.current = false; if (identite.current.actif) setOccupe(null); }
+  };
   const solde = useCopilotStore((s) => s.credits);
   const version = useAgentUi((s) => s.version);
   const hotes = useAgentUi((s) => s.hotes);
@@ -188,6 +207,7 @@ function CarteDevis({ proposition, onSend }: { proposition: Extract<AffichageDev
           ? <div className="mzag-actions"><button type="button" className="mzag-btn" onClick={() => useAgentUi.getState().ouvrir('missions', missionId)}>Suivre la mission</button></div>
           : <p className="mzag-petit" style={{ margin: 0 }}>Suivez son avancement depuis la page MimmozIA, menu « Missions ».</p>
       )}
+      {onVisualiserMission && missionVisualisable(mission, conversationId ?? null) && <div className="mzag-actions"><button type="button" className="mzag-btn" disabled={occupe !== null} onClick={() => void ouvrirPreparation()}>{occupe === 'visualiser' ? 'Vérification…' : 'Visualiser le projet en 3D'}</button></div>}
       {!missionId && <p className="mzag-petit" style={{ margin: 0 }}>Cette proposition n’a pas pu être enregistrée : demandez à MimmozIA de la reproposer.</p>}
     </section>
   );

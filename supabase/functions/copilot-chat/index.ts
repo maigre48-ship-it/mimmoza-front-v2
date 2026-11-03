@@ -68,6 +68,14 @@ import { evenementDevis, executerOutilAgentChat, tickMissions } from './agent/mi
 import { depotSupabase } from './agent/depot.ts';
 import { chargerBlocMemoire, projetDuContexte } from './agent/memoire.ts';
 import { DOCTRINE_MISSIONS_CHAT } from './agent/prompt-promoteur.ts';
+import {
+  APPELS_IMBRIQUES_ETUDE_PARCELLE, ATTENTE_MAX_MISSION_MS, ErreurBudgetTrace, acquerirBudget, avecBudgetTrace,
+  budgetTraceCourant, lireRefusTrace, messageBudgetTrace,
+} from './agent/budget-trace.ts';
+import {
+  CONSIGNE_FILET_MISSION, OUTILS_CADRAGE_MISSION, TEXTE_APRES_FILET_MISSION, consigneIntentionMission,
+  detecterIntentionMission, proposeMissionEnTexte,
+} from './agent/intention-mission.ts';
 import { clesServiceRole, estCleServiceRole } from './agent/interne.ts';
 import type { MoteurDeps } from './agent/types.ts';
 // Gros documents (V1.8) : pièces jointes par stockage, lecture ciblée, règlement GPU.
@@ -1253,7 +1261,24 @@ function avecNote(res: ToolResult, r: ResolutionInsee, note: string): ToolResult
 }
 
 // ─── Helper générique : appel d'une Edge Function interne ────
-async function callInternalFunction(fnName: string, body: unknown, timeoutMs = INTERNAL_FN_TIMEOUT_MS): Promise<unknown> {
+async function callInternalFunction(
+  fnName: string, body: unknown, timeoutMs = INTERNAL_FN_TIMEOUT_MS,
+  /** Appels que la fonction appelée émet elle-même vers d'autres fonctions (même trace). */
+  appelsImbriques = 0,
+): Promise<unknown> {
+  // Budget Supabase des appels imbriqués (30 par trace sur 60 s, voir
+  // agent/budget-trace.ts) : compté AVANT l'appel. Un appel qui ne tient pas
+  // dans le budget n'est pas émis et l'outil reçoit une erreur explicite, au
+  // lieu d'une réponse amputée de ses sources (incident du 02/11).
+  const budget = budgetTraceCourant();
+  if (budget) {
+    try {
+      await acquerirBudget(budget, 1 + appelsImbriques, fnName);
+    } catch (e) {
+      if (e instanceof ErreurBudgetTrace) throw new CopilotError('TOOL_ERROR', e.message);
+      throw e;
+    }
+  }
   const baseUrl = getSupabaseUrl();
   const serviceKey = getSupabaseServiceRoleKey();
 
@@ -1273,6 +1298,11 @@ async function callInternalFunction(fnName: string, body: unknown, timeoutMs = I
     });
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
+      const refus = lireRefusTrace(txt);
+      if (refus) {
+        budget?.signalerSaturation(refus.retryAfterMs);
+        throw new CopilotError('TOOL_ERROR', messageBudgetTrace(fnName, refus.retryAfterMs));
+      }
       throw new CopilotError('TOOL_ERROR', `${fnName} → HTTP ${res.status} : ${txt.slice(0, 200)}`);
     }
     return await res.json();
@@ -1281,6 +1311,13 @@ async function callInternalFunction(fnName: string, body: unknown, timeoutMs = I
       throw new CopilotError('TOOL_ERROR', `${fnName} → timeout (${timeoutMs}ms)`);
     }
     if (e instanceof CopilotError) throw e;
+    // RateLimitError de la plateforme (« Rate limit exceeded for trace … ») :
+    // plus aucun appel interne avant le délai annoncé, message explicite.
+    const refus = lireRefusTrace(e);
+    if (refus) {
+      budget?.signalerSaturation(refus.retryAfterMs);
+      throw new CopilotError('TOOL_ERROR', messageBudgetTrace(fnName, refus.retryAfterMs));
+    }
     throw new CopilotError('TOOL_ERROR', `${fnName} → ${e instanceof Error ? e.message : String(e)}`);
   } finally {
     clearTimeout(timer);
@@ -2864,6 +2901,9 @@ const TOOLS: ToolDef[] = [
       "À APPELER EN PRIORITÉ dès que l'utilisateur demande une étude, un rapport, " +
       "une synthèse, un bilan, une analyse complète, une faisabilité ou « tout ce que tu sais » " +
       "sur une parcelle ou un terrain — plutôt que d'enchaîner les outils un par un. " +
+      "UNE parcelle par appel : pour comparer ou classer PLUSIEURS terrains dans le chat, appelle " +
+      "proposer_mission au lieu d'enchaîner les études (chaque étude coûte 12 appels internes et la " +
+      "plateforme en plafonne 30 par minute et par réponse). " +
       "Chaque source est indépendante : certaines peuvent être indisponibles, elles sont alors " +
       "listées dans sources_indisponibles. Signale systématiquement ces trous et n'extrapole " +
       "JAMAIS une donnée manquante. Si precision = 'centre_commune', les données géométriques " +
@@ -5944,7 +5984,8 @@ async function toolEtudeParcelle(input: Record<string, unknown>, ctx: MimmozaCon
       zip_code: insee.cp ?? undefined,
     };
     const [raw, urbanisme] = await Promise.all([
-      callInternalFunction(INTERNAL_FUNCTIONS.etude, body),
+      // 1 appel + les 11 sources qu'etude-parcelle-v1 appelle dans la même trace.
+      callInternalFunction(INTERNAL_FUNCTIONS.etude, body, INTERNAL_FN_TIMEOUT_MS, APPELS_IMBRIQUES_ETUDE_PARCELLE),
       lat != null && lng != null ? urbanismeAuPoint(lat, lng) : Promise.resolve(null),
     ]);
     const s = summarizeEtudeParcelle(raw);
@@ -10198,6 +10239,8 @@ async function streamLLMTurn(params: {
   onWebToolStart?: (id: string, name: string, input: Record<string, unknown>) => void;
   onWebToolEnd?: (id: string, name: string, block: Record<string, unknown>) => void;
   onWebUnavailable?: () => void;
+  /** Impose un outil (ex. proposer_mission). Absent : choix libre du modèle. */
+  toolChoice?: { type: 'tool'; name: string };
 }): Promise<LLMTurnResult> {
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
   if (!apiKey) throw new CopilotError('LLM_ERROR', 'ANTHROPIC_API_KEY manquant');
@@ -10216,6 +10259,9 @@ async function streamLLMTurn(params: {
             input_schema: t.input_schema,
           })), ...anthropicWebTools(params.webBudget)],
         }
+      : {}),
+    ...(params.toolChoice && params.tools.some((t) => t.name === params.toolChoice?.name)
+      ? { tool_choice: params.toolChoice }
       : {}),
   };
 
@@ -10485,6 +10531,23 @@ async function runOrchestrator(params: {
   const tools = availableTools.filter((tool) => selectedNames.has(tool.name));
   const maxIter = MAX_TOOL_ITERATIONS[mode];
 
+  // Demande multi-terrains (prospection, « les N meilleurs terrains »,
+  // comparaison, dossier multi-parcelles) : incident du 02/11, le modèle
+  // enchaînait lui-même 4 études puis proposait la mission EN TEXTE. Le tour
+  // est restreint au cadrage léger + proposer_mission, imposé après au plus un
+  // tour de cadrage (agent/intention-mission.ts).
+  const missionPossible = tools.some((tool) => tool.name === 'proposer_mission');
+  const intentionMission = missionPossible ? detecterIntentionMission(userText) : { mission: false };
+  let toolsDuTour = intentionMission.mission
+    ? availableTools.filter((tool) => OUTILS_CADRAGE_MISSION.has(tool.name))
+    : tools;
+  const systemTour = intentionMission.mission
+    ? `${system}\n\n${consigneIntentionMission(intentionMission)}`
+    : system;
+  let missionProposee = false;
+  let missionForcee = false;   // un seul tour imposé, même si l'outil échoue
+  let dernierTexte = '';
+
   const messages = [...params.messages];
   // Le journal d'outils peut être fourni par l'appelant : ainsi, si le tour est
   // interrompu, le handler garde la trace des outils déjà exécutés au lieu de la
@@ -10557,10 +10620,13 @@ async function runOrchestrator(params: {
       break;
     }
 
+    const forcerMission = intentionMission.mission && !missionProposee && !missionForcee && iter >= 1;
+    if (forcerMission) missionForcee = true;
     const turn = await streamLLMTurn({
-      model, system, messages,
-      tools: mode === 'quick' && rapportParcellaireAffiche ? [] : tools,
-      webBudget: webUnavailable ? { search: 0, fetch: 0 }
+      model, system: systemTour, messages,
+      tools: mode === 'quick' && rapportParcellaireAffiche ? [] : toolsDuTour,
+      toolChoice: forcerMission ? { type: 'tool', name: 'proposer_mission' } : undefined,
+      webBudget: webUnavailable || intentionMission.mission ? { search: 0, fetch: 0 }
         : { search: Math.max(0, WEB_LIMITS[mode].search - webSearches),
           fetch: Math.max(0, WEB_LIMITS[mode].fetch - webFetches) },
       maxTokens: budgetSortie(mode, tier),
@@ -10582,6 +10648,7 @@ async function runOrchestrator(params: {
     webSearches += turn.webSearches;
     webFetches += turn.webFetches;
     finalText += turn.textBlocks.join('\n');
+    if (turn.textBlocks.length) dernierTexte = turn.textBlocks.join('\n');
     finishReason = turn.stopReason;
 
     toursAcheves = iter + 1;
@@ -10633,7 +10700,10 @@ async function runOrchestrator(params: {
         });
         if (tu.name === 'proposer_mission') {
           const devisMission = evenementDevis(output);
-          if (devisMission) sse.send({ type: 'mission_devis', mission: devisMission });
+          if (devisMission) {
+            sse.send({ type: 'mission_devis', mission: devisMission });
+            missionProposee = true;
+          }
         }
         // ── Rapport parcellaire : les FAITS d'abord, l'analyse ensuite ──────
         //
@@ -10736,6 +10806,9 @@ async function runOrchestrator(params: {
     }
 
     messages.push({ role: 'user', content: toolResults });
+    // Devis affiché sur une demande multi-terrains : le tour suivant présente le
+    // devis, sans autre outil.
+    if (missionProposee && intentionMission.mission) toolsDuTour = [];
   }
 
   // Filet de sécurité : si la boucle s'arrête alors que le modèle voulait encore
@@ -10751,7 +10824,7 @@ async function runOrchestrator(params: {
   if (finishReason === 'tool_use' || finishReason === 'deadline' || finishReason === 'pause_turn') {
     for (let attempt = 0; attempt < 3; attempt++) {
       const finalTurn = await streamLLMTurn({
-        model, system, messages, tools: [],
+        model, system: systemTour, messages, tools: [],
         webBudget: webUnavailable ? { search: 0, fetch: 0 }
           : { search: Math.max(0, WEB_LIMITS[mode].search - webSearches),
             fetch: Math.max(0, WEB_LIMITS[mode].fetch - webFetches) },
@@ -10773,6 +10846,7 @@ async function runOrchestrator(params: {
       webSearches += finalTurn.webSearches;
       webFetches += finalTurn.webFetches;
       finalText += (finalText ? '\n' : '') + finalTurn.textBlocks.join('\n');
+      if (finalTurn.textBlocks.length) dernierTexte = finalTurn.textBlocks.join('\n');
       finishReason = finalTurn.stopReason;
       toursAcheves += 1;
       publierUsage();
@@ -10783,6 +10857,63 @@ async function runOrchestrator(params: {
       const notice = '\n\n_[Recherche interrompue avant une synthèse complète. Vérifiez les sources citées.]_';
       sse.send({ type: 'token', delta: notice });
       finalText += notice;
+    }
+  }
+
+  // ── Filet « mission proposée en texte » (incident du 02/11) ───────────────
+  // Le modèle a écrit « Souhaitez-vous que je lance une mission… ? » sans
+  // appeler proposer_mission : aucune carte de devis, rien à lancer. On
+  // rattrape par UN tour imposé sur l'outil (texte non affiché), puis on
+  // l'exécute comme dans la boucle. Jamais bloquant pour la réponse déjà écrite.
+  const outilMission = tools.find((tool) => tool.name === 'proposer_mission');
+  const suiviMission = toolCallsLog.some((c) => c.name === 'etat_mission' || c.name === 'lister_missions');
+  if (outilMission && !missionProposee && !missionForcee && !suiviMission && proposeMissionEnTexte(dernierTexte)
+      && Date.now() < (params.deadlineAt ?? Number.POSITIVE_INFINITY) - 15_000) {
+    try {
+      messages.push({ role: 'assistant', content: dernierTexte });
+      messages.push({ role: 'user', content: CONSIGNE_FILET_MISSION });
+      const tourFilet = await streamLLMTurn({
+        model, system: systemTour, messages, tools: [outilMission],
+        toolChoice: { type: 'tool', name: 'proposer_mission' },
+        webBudget: { search: 0, fetch: 0 },
+        maxTokens: 2_000,
+        onToken: () => {},
+        onGenerationStart: demarrageGeneration,
+      });
+      totalIn += tourFilet.inputTokens;
+      totalOut += tourFilet.outputTokens;
+      toursAcheves += 1;
+      publierUsage();
+      const tu = tourFilet.toolUses.find((u) => u.name === 'proposer_mission');
+      if (tu) {
+        sse.send({ type: 'tool_use_start', call: { id: tu.id, name: tu.name, input: tu.input } });
+        const debut = Date.now();
+        const output = await executeTool(tu.name, tu.input, ctx, auth);
+        const durationMs = Date.now() - debut;
+        const isOk = output.status === 'ok' || output.status === 'partial';
+        const outputPublic = sortiePublique(output);
+        toolCallsLog.push({
+          id: tu.id, name: tu.name, input: tu.input,
+          output: outputPublic, status: isOk ? 'success' : 'error', durationMs,
+          error: isOk ? undefined : `${output.status}: ${output.message ?? ''}`,
+        });
+        sse.send({
+          type: 'tool_use_end',
+          call: {
+            id: tu.id, name: tu.name, output: outputPublic, duration_ms: durationMs,
+            status: isOk ? 'success' : output.status, error: isOk ? undefined : output.message,
+          },
+        });
+        const devisMission = evenementDevis(output);
+        if (devisMission) {
+          sse.send({ type: 'mission_devis', mission: devisMission });
+          missionProposee = true;
+          sse.send({ type: 'token', delta: TEXTE_APRES_FILET_MISSION });
+          finalText += TEXTE_APRES_FILET_MISSION;
+        }
+      }
+    } catch (e) {
+      console.warn('[copilot] filet mission : tour imposé en échec', e);
     }
   }
 
@@ -11101,7 +11232,10 @@ async function blocAgentChat(userId: string, ctx: MimmozaContext): Promise<strin
   return [agentDisponible(ctx.vertical) ? DOCTRINE_MISSIONS_CHAT : '', memoire].filter(Boolean).join('\n\n');
 }
 
-Deno.serve(async (req: Request) => {
+// Une requête entrante = une trace Supabase = un budget d'appels imbriqués.
+Deno.serve((req: Request) => avecBudgetTrace(() => traiterRequete(req)));
+
+async function traiterRequete(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders() });
   }
@@ -11118,6 +11252,10 @@ Deno.serve(async (req: Request) => {
     const corps = await req.clone().json().catch(() => null) as { interne?: unknown } | null;
     if (corps?.interne === 'mission_tick') {
       try {
+        // Tick : plusieurs missions partagent cette trace ; une étude peut
+        // patienter un peu plus longtemps que dans le chat (TIMEOUT_OUTIL_MS = 40 s).
+        const budgetTick = budgetTraceCourant();
+        if (budgetTick) budgetTick.attenteMaxMs = ATTENTE_MAX_MISSION_MS;
         const bilan = await tickMissions(depsMoteur(), depotSupabase(getAdmin()));
         return new Response(JSON.stringify({ ok: true, ...bilan }), {
           status: 200, headers: { ...corsHeaders(), 'Content-Type': 'application/json' },
@@ -11581,4 +11719,4 @@ Deno.serve(async (req: Request) => {
       'Connection': 'keep-alive',
     },
   });
-});
+}

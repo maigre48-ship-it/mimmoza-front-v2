@@ -9,6 +9,7 @@
 // brief, commande ou composition d'architecture, volume, plans PDF signés,
 // panorama éventuel), sans dupliquer studioCommand ni construireProjetChat.
 
+import { exigerPreparation3D, exigerParcelle3D } from './preparation3D';
 import { draftBrief, studioCommand, studioComposition, studioSegmentedVolume, type JarvisDraft } from './jarvisDraft';
 import { listJarvisTransferFiles, type JarvisStoredFile } from './jarvisFiles';
 import type { ConfirmedTerrain } from './terrainCadastre';
@@ -47,9 +48,13 @@ export async function preparerChargeVoirEn3D(
   conversationId: string,
   retenue: TerrainCharge,
   terrainArg?: ConfirmedTerrain & { adresse?: string | null },
+  options: { autoriserEtudeActive?: boolean } = {},
 ): Promise<PreparationChargeStudio> {
+  // Également utilisé par le film et les rappels photo : contrôle avant stockage, signature ou upload.
+  exigerPreparation3D(fiche);
+  exigerParcelle3D(retenue?.parcel);
   const parcelles: ParcelleStudio[] = [{ id: parcelId(retenue.parcel), feature: retenue.parcel }];
-  const insee = typeof retenue.parcel.properties.code_insee === 'string' ? retenue.parcel.properties.code_insee : null;
+  const insee = typeof retenue.parcel.properties?.code_insee === 'string' ? retenue.parcel.properties.code_insee : null;
   if (terrainArg?.terrainData) await memoriserRelief(parcelles, terrainArg.terrainData);
   const reliefConnu = terrainArg?.terrainData ?? await reliefEnCache(parcelles) ?? null;
   // Pièces du dossier : les PDF partent comme plans ; les images attendent d'être classées (mode détaillé).
@@ -64,7 +69,7 @@ export async function preparerChargeVoirEn3D(
   pageSansAncre.hash = '';
   pageSansAncre.searchParams.set('conversation', conversationId);
   // R4/R5 — étude du projet (figée par conversation) : Studio relie son métré au bilan sans clic.
-  const etudeId = etudeDuChat(conversationId, getActiveStudyId(), stockageLocalSur());
+  const etudeId = etudeDuChat(conversationId, options.autoriserEtudeActive === false ? null : getActiveStudyId(), stockageLocalSur());
   const construit = construireProjetChat({
     conversationId, etudeId, sessionId, origine: window.location.origin, retourUrl: pageSansAncre.href,
     revision: 0, horodatage: new Date().toISOString(),
