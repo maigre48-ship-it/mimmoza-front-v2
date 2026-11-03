@@ -12,8 +12,10 @@
 // Studio : AUCUN second chemin. Le volume devient une fiche 3D (dimensions,
 // R+N) remise à `onOpenStudio`, c'est-à-dire MimmozIAPage.voirEn3D — le même
 // parcours que « Voir en 3D » (diagnostic de la fiche, parcelle confirmée exigée,
-// charge Studio construite par chargeVoirEn3D). Sans parcelle confirmée, la
-// question minimale (ConfirmerParcelle) s'affiche ici.
+// charge Studio construite par chargeVoirEn3D). Sans parcelle confirmée, le clic
+// affiche d'abord la confirmation rapide (ConfirmationParcelleRapide : référence
+// cadastrale + adresse la plus proche, un clic) ; « Autre parcelle » ouvre la
+// recherche par adresse / carte (ConfirmerParcelle).
 
 import { lazy, Suspense, type KeyboardEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ArrowUpRight, Box, Check, ChevronDown, Info, MapPin, Search, TriangleAlert, Undo2 } from 'lucide-react';
@@ -24,6 +26,7 @@ import { calculerVolumeParcelle, ficheStudioDepuisVolume, libelleNiveaux, type G
 import { parcelleRetenue } from './parcelleConfirmee';
 import { exigerPreparation3D } from './preparation3D';
 import { ConfirmerParcelle } from './ConfirmerParcelle';
+import { ConfirmationParcelleRapide } from './ConfirmationParcelleRapide';
 import type { ConfirmedTerrain } from './terrainCadastre';
 import { parcelId, type TerrainParcel } from './parcelFromGps';
 import type { IssueOuvertureStudio } from './JarvisDraftPanel';
@@ -138,6 +141,7 @@ export function VolumeParcelleSection({ contexte, choisir, relire, conversationI
   const contour = useContour(contexte);
   const [ouverture, setOuverture] = useState(false);
   const [demandeParcelle, setDemandeParcelle] = useState(false);
+  const [confirmationRapide, setConfirmationRapide] = useState(false);
   const [notice, setNotice] = useState('');
   // Clé de contenu : le calcul (quelques dizaines de ms au pire) ne se relance que si la parcelle, le programme ou les règles changent.
   const cleCalcul = JSON.stringify([contour?.etat === 'ok' ? contour.parcelle.geometry : null, contexte.programme, contexte.regles]);
@@ -145,6 +149,9 @@ export function VolumeParcelleSection({ contexte, choisir, relire, conversationI
     const [geometrie, programme, regles] = JSON.parse(cleCalcul) as [GeometrieParcelle | null, ContexteVolume['programme'], ContexteVolume['regles']];
     return geometrie ? calculerVolumeParcelle(geometrie, programme, regles) : null;
   }, [cleCalcul]);
+  // Autre parcelle affichée : la confirmation rapide en cours est refermée.
+  const cleParcelle = contexte.parcelle.type === 'candidate' ? contexte.parcelle.candidate.idu : contexte.parcelle.type;
+  useEffect(() => { setConfirmationRapide(false); }, [cleParcelle]);
   const p = contexte.parcelle;
   if (p.type === 'aucune') return null;
 
@@ -239,9 +246,16 @@ export function VolumeParcelleSection({ contexte, choisir, relire, conversationI
       </div>
       {volume.emprise && <small className="mzia-volume__note">Studio reçoit les dimensions et les niveaux de ce volume{p.type === 'confirmee' ? '' : ', après confirmation de la parcelle'} ; il place lui-même le bâtiment sur la parcelle (position et orientation montrées ici non transmises).</small>}
       {volume.emprise && conversationId && onOpenStudio && <div className="mzia-volume__pied">
-        <button type="button" className="mzia-volume__studio" disabled={ouverture} aria-busy={ouverture || undefined} onClick={() => void ouvrir(volume)}>
-          <Box size={17} aria-hidden="true" /> <span>{ouverture ? 'Ouverture de Studio…' : 'Voir en 3D réaliste dans Studio'}</span> <ArrowUpRight size={17} aria-hidden="true" />
-        </button>
+        {confirmationRapide && p.type === 'candidate' && contour?.etat === 'ok'
+          ? <ConfirmationParcelleRapide idu={idu} reference={referenceLisible(idu)} surfaceM2={p.candidate.surfaceM2 ?? volume.surfaceParcelleM2}
+              zone={contexte.zone} parcelle={contour.parcelle}
+              onConfirmer={terrain => { setConfirmationRapide(false); void ouvrir(volume, terrain, idu); }}
+              onAutre={() => { setConfirmationRapide(false); setDemandeParcelle(true); }}
+              onAnnuler={() => setConfirmationRapide(false)} />
+          : <button type="button" className="mzia-volume__studio" disabled={ouverture} aria-busy={ouverture || undefined}
+              onClick={() => { if (p.type === 'candidate' && contour?.etat === 'ok') { setDemandeParcelle(false); setConfirmationRapide(true); } else void ouvrir(volume); }}>
+              <Box size={17} aria-hidden="true" /> <span>{ouverture ? 'Ouverture de Studio…' : 'Voir en 3D réaliste dans Studio'}</span> <ArrowUpRight size={17} aria-hidden="true" />
+            </button>}
       </div>}
     </>}
     {demandeParcelle && conversationId && <ConfirmerParcelle adresseInitiale={contexte.adresse} onConfirmer={confirmer} onAnnuler={() => setDemandeParcelle(false)} />}

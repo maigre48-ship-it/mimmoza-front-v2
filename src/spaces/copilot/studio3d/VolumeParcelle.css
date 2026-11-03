@@ -283,3 +283,37 @@ section.mzia-volume button.mzia-volume__axo-btn:hover { border-color: #c9bff5; b
 section.mzia-volume button.mzia-volume__axo-btn:disabled { opacity: .55; cursor: progress; }
 section.mzia-volume p.mzia-volume__axo-message { margin: 0; padding: 0 10px 8px; color: var(--vol-doux) !important; font-size: 11px; background: #faf9fd; border-radius: 0 0 12px 12px; }
 section.mzia-volume .mzia-volume__vue.is-axo:has(.mzia-volume__axo-message) .mzia-volume__axo-barre { border-radius: 0; }
+
+/* ── Confirmation rapide de la parcelle (référence + adresse, un clic) ─── */
+section.mzia-volume .mzia-confrapide {
+  display: grid; gap: 10px; padding: 12px; border: 1px solid #d9d1fb; border-radius: 12px;
+  background: #fff; box-shadow: 0 10px 24px -12px rgba(100, 74, 205, .35);
+}
+section.mzia-volume .mzia-confrapide__titre { margin: 0; color: var(--vol-encre) !important; font-size: 13px; font-weight: 700; }
+section.mzia-volume .mzia-confrapide__grille { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }
+section.mzia-volume .mzia-confrapide__grille > div { min-width: 0; padding: 8px 10px; border-radius: 9px; background: #f6f4fd; }
+section.mzia-volume .mzia-confrapide__grille dt { margin: 0 0 3px; color: var(--vol-doux) !important; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+section.mzia-volume .mzia-confrapide__grille dd { display: grid; gap: 2px; margin: 0; color: var(--vol-encre) !important; font-size: 12.5px; line-height: 1.35; overflow-wrap: anywhere; }
+section.mzia-volume .mzia-confrapide__grille dd strong { font-size: 15px; }
+section.mzia-volume .mzia-confrapide__grille dd small { color: var(--vol-doux) !important; font-size: 11px; }
+section.mzia-volume .mzia-confrapide__grille dd span { display: inline-flex; align-items: flex-start; gap: 4px; }
+section.mzia-volume .mzia-confrapide__grille dd svg { flex: none; margin-top: 2px; }
+section.mzia-volume .mzia-confrapide__idu { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px !important; }
+section.mzia-volume .mzia-confrapide__doux { color: var(--vol-doux) !important; font-size: 11.5px; }
+section.mzia-volume .mzia-confrapide__attente svg { animation: mzia-confrapide-tour 1s linear infinite; }
+@keyframes mzia-confrapide-tour { to { transform: rotate(360deg); } }
+section.mzia-volume a.mzia-confrapide__carte { display: inline-flex; align-items: center; gap: 4px; justify-self: start; color: #5b44d6 !important; font-size: 12px; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+section.mzia-volume .mzia-confrapide__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+section.mzia-volume button.mzia-confrapide__ok {
+  flex: 1 1 100%; padding: 11px 14px; border: 1px solid #6a4fe0; border-radius: 10px;
+  background: linear-gradient(105deg, #6851e9, #8958eb); color: #fff !important;
+  font-family: inherit; font-size: 13px; font-weight: 650; cursor: pointer; box-shadow: 0 8px 20px -6px rgba(100, 74, 205, .45);
+}
+section.mzia-volume button.mzia-confrapide__ok:hover { background: linear-gradient(105deg, #5d46e0, #7f4fe6); }
+section.mzia-volume button.mzia-confrapide__ok:focus-visible,
+section.mzia-volume button.mzia-confrapide__lien:focus-visible { outline: 3px solid #b7a9fb; outline-offset: 2px; }
+section.mzia-volume button.mzia-confrapide__lien {
+  padding: 2px 0; border: 0; background: none; color: #5b44d6 !important;
+  font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+}
+@media (max-width: 380px) { section.mzia-volume .mzia-confrapide__grille { grid-template-columns: 1fr; } }
