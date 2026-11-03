@@ -1,8 +1,10 @@
 // src/spaces/copilot/studio3d/VolumeParcelleSection.tsx
 //
 // « Dossier 3D » : la parcelle choisie dans la conversation (ou la plus
-// susceptible de l'être) avec un VOLUME D'ÉTUDE simple (un parallélépipède),
-// la raison du choix, les autres candidates, et « Voir en 3D réaliste dans Studio ».
+// susceptible de l'être) avec un VOLUME D'ÉTUDE adapté au programme (maisons
+// individuelles, jumelées ou en bande, plots, barres, résidence : un ou
+// plusieurs bâtiments, implantationProgramme.ts), la raison du choix, les autres
+// candidates, et « Voir en 3D réaliste dans Studio ».
 //
 // Sources (contexteVolume.ts) : parcelle confirmée > choix manuel > IDU cité par
 // l'utilisateur > carte du dossier > recommandation de Mimmo > classement >
@@ -10,7 +12,8 @@
 // parcelle affichée. Calcul : volumeParcelle.ts.
 //
 // Studio : AUCUN second chemin. Le volume devient une fiche 3D (dimensions,
-// R+N) remise à `onOpenStudio`, c'est-à-dire MimmozIAPage.voirEn3D — le même
+// R+N du bâtiment principal) remise à `onOpenStudio` ; plusieurs bâtiments voyagent
+// avec le terrain (`volumeBatiments`, batimentsStudio.ts) jusqu'au projet v2 (`batiments`), c'est-à-dire MimmozIAPage.voirEn3D — le même
 // parcours que « Voir en 3D » (diagnostic de la fiche, parcelle confirmée exigée,
 // charge Studio construite par chargeVoirEn3D). Sans parcelle confirmée, le clic
 // affiche d'abord la confirmation rapide (ConfirmationParcelleRapide : référence
@@ -22,7 +25,10 @@ import { ArrowUpRight, Box, Check, ChevronDown, Info, MapPin, Search, TriangleAl
 import type { ChatMessage } from '../types/copilot.types';
 import type { JarvisDraft } from './jarvisDraft';
 import { cleChoixManuel, contexteVolume, LIBELLES_RAISON, type CandidateParcelle, type ContexteVolume, type StockageLecture } from './contexteVolume';
-import { calculerVolumeParcelle, ficheStudioDepuisVolume, libelleNiveaux, type GeometrieParcelle, type VolumePropose } from './volumeParcelle';
+import { ficheStudioDepuisVolume, libelleNiveaux, type GeometrieParcelle, type VolumePropose } from './volumeParcelle';
+import { calculerVolumeProgramme } from './implantationProgramme';
+import { volumeBatimentsStudio, type VolumeBatimentsStudio } from './batimentsStudio';
+import { uniteKpi } from './planAxonometriqueLogique';
 import { parcelleRetenue } from './parcelleConfirmee';
 import { exigerPreparation3D } from './preparation3D';
 import { ConfirmerParcelle } from './ConfirmerParcelle';
@@ -148,7 +154,7 @@ export function VolumeParcelleSection({ contexte, choisir, relire, conversationI
   const cleCalcul = JSON.stringify([contour?.etat === 'ok' ? contour.parcelle.geometry : null, contexte.programme, contexte.regles]);
   const volume = useMemo<VolumePropose | null>(() => {
     const [geometrie, programme, regles] = JSON.parse(cleCalcul) as [GeometrieParcelle | null, ContexteVolume['programme'], ContexteVolume['regles']];
-    return geometrie ? calculerVolumeParcelle(geometrie, programme, regles) : null;
+    return geometrie ? calculerVolumeProgramme(geometrie, programme, regles) : null;
   }, [cleCalcul]);
   // Autre parcelle affichée : la confirmation rapide en cours est refermée.
   const cleParcelle = contexte.parcelle.type === 'candidate' ? contexte.parcelle.candidate.idu : contexte.parcelle.type;
@@ -161,6 +167,7 @@ export function VolumeParcelleSection({ contexte, choisir, relire, conversationI
   const detailRaison = p.type === 'candidate' ? p.detail : null;
   const autres = contexte.candidates.filter(c => c.idu !== idu);
   const reglesAppliquees = Boolean(volume?.reglesAppliquees.length);
+  const kpi = volume?.batiments && volume.batiments.length > 1 ? volume.kpi ?? null : null;
 
   /** Même parcours que « Voir en 3D » : la fiche tirée du volume est remise à MimmozIAPage.voirEn3D. */
   const ouvrir = async (v: VolumePropose, terrain?: ConfirmedTerrain & { adresse?: string | null }, reference: string | null = idu) => {
@@ -168,10 +175,15 @@ export function VolumeParcelleSection({ contexte, choisir, relire, conversationI
     const ficheVolume = ficheStudioDepuisVolume(v, { adresse: contexte.adresse, reference, programme: contexte.programme, base: fiche });
     if (!ficheVolume) { setNotice('Aucun volume à transmettre sur cette parcelle.'); return; }
     try { exigerPreparation3D(ficheVolume); } catch (e) { setNotice(messageErreur(e, 'Volume à préciser.')); return; }
-    // Pose du volume (centre + orientation du plan) transmise à Studio, sur la parcelle confirmée ou retenue.
-    const pose = implantationDepuisVolume(v);
-    const base = terrain ?? (p.type === 'confirmee' ? p.retenue : undefined);
-    const terrainPose = base && pose ? { ...base, implantation: pose } : base;
+    // Plusieurs bâtiments : chacun part avec sa position et sa rotation (projet v2 `batiments`), pas de pose unique.
+    let volumeBatiments: VolumeBatimentsStudio | null = null;
+    try { volumeBatiments = volumeBatimentsStudio(v, ficheVolume); } catch (e) { setNotice(messageErreur(e, 'Trop de bâtiments pour Studio.')); return; }
+    // Pose du volume unique (centre + orientation du plan) transmise à Studio, sur la parcelle confirmée ou retenue.
+    const pose = volumeBatiments ? null : implantationDepuisVolume(v);
+    const base: (ConfirmedTerrain & { adresse?: string | null; volumeBatiments?: VolumeBatimentsStudio | null }) | undefined = terrain ?? (p.type === 'confirmee' ? p.retenue : undefined);
+    const terrainPose = !base ? base
+      : volumeBatiments ? { ...base, implantation: undefined, volumeBatiments }
+      : { ...base, ...(pose ? { implantation: pose } : {}), volumeBatiments: null };
     setOuverture(true); setNotice('');
     try {
       const issue = await onOpenStudio(ficheVolume, conversationId, terrainPose);
@@ -184,7 +196,7 @@ export function VolumeParcelleSection({ contexte, choisir, relire, conversationI
 
   /** Parcelle confirmée dans la question minimale : le volume est recalculé SUR elle avant l'envoi. */
   const confirmer = (terrain: ConfirmedTerrain & { adresse: string | null }) => {
-    const v = calculerVolumeParcelle(terrain.parcel.geometry as GeometrieParcelle, contexte.programme, contexte.regles);
+    const v = calculerVolumeProgramme(terrain.parcel.geometry as GeometrieParcelle, contexte.programme, contexte.regles);
     if (!v.emprise) { setNotice(v.alertes[0] ?? 'Aucun volume ne tient sur la parcelle confirmée.'); return; }
     void ouvrir(v, terrain, parcelId(terrain.parcel));
   };
@@ -212,7 +224,7 @@ export function VolumeParcelleSection({ contexte, choisir, relire, conversationI
     {volume && <>
       {volume.emprise ? <Suspense fallback={<div className="mzia-volume__vue is-attente"><p className="mzia-volume__info">Préparation de la vue 3D…</p></div>}>
         {/* Clé : une nouvelle parcelle ou un nouveau volume repart d'une vue en perspective. */}
-        <VolumeParcelle3D key={`${idu}-${volume.niveaux}-${volume.emprise.largeurM}-${volume.emprise.profondeurM}`} volume={volume}
+        <VolumeParcelle3D key={`${idu}-${volume.niveaux}-${volume.emprise.largeurM}-${volume.emprise.profondeurM}-${volume.batiments?.length ?? 1}`} volume={volume}
           cartouche={{
             idu, reference: referenceLisible(idu), zone: contexte.zone,
             programme: volume.statut === 'calcule' ? contexte.programme.libelle : null,
@@ -225,8 +237,15 @@ export function VolumeParcelleSection({ contexte, choisir, relire, conversationI
         <strong>{volume.mentionPlu}</strong>{contexte.pluManquant && contexte.regles.source === 'aucune' ? ' (règlement PLU manquant dans le dossier)' : ''}. Volume d’étude pour voir l’ordre de grandeur : il n’est pas présenté comme conforme.
       </p>
       <dl className="mzia-volume__cotes">
-        <div><dt>Parcelle</dt><dd>{fr(volume.surfaceParcelleM2)} m²</dd></div>
-        {volume.emprise && <>
+        {/* Plusieurs bâtiments : quatre cases (la surface de la parcelle passe sous l'emprise totale). */}
+        {!(volume.emprise && kpi) && <div><dt>Parcelle</dt><dd>{fr(volume.surfaceParcelleM2)} m²</dd></div>}
+        {volume.emprise && kpi && <>
+          <div><dt>Bâtiments</dt><dd>{kpi.batiments}<small>{uniteKpi(kpi)}{kpi.unitesVisees !== null && kpi.unites < kpi.unitesVisees ? ` sur ${fr(kpi.unitesVisees)} visés` : ''}</small></dd></div>
+          <div><dt>Emprise totale</dt><dd>{fr(kpi.empriseTotaleM2)} m²<small>{fr(kpi.ratioEmprise * 100)} % de {fr(volume.surfaceParcelleM2)} m²{kpi.voirieM2 ? ` · voies ${fr(kpi.voirieM2)} m²` : ''}</small></dd></div>
+          <div><dt>Hauteur</dt><dd>{fr(volume.hauteurM)} m<small>jusqu’à {libelleNiveaux(volume.niveaux)}</small></dd></div>
+          <div><dt>SDP estimée</dt><dd>≈ {fr(kpi.sdpTotaleM2)} m²<small>{volume.programmeAtteint ? 'programme atteint' : 'programme non atteint'}</small></dd></div>
+        </>}
+        {volume.emprise && !kpi && <>
           <div><dt>Emprise</dt><dd>{fr(volume.emprise.surfaceM2)} m²<small>{fr(volume.emprise.largeurM, 1)} × {fr(volume.emprise.profondeurM, 1)} m</small></dd></div>
           <div><dt>Hauteur</dt><dd>{fr(volume.hauteurM)} m<small>{libelleNiveaux(volume.niveaux)} · {volume.niveaux} niveau{volume.niveaux > 1 ? 'x' : ''}</small></dd></div>
           <div><dt>SDP estimée</dt><dd>≈ {fr(volume.sdpM2)} m²<small>≈ {volume.logementsEstimes} logements</small></dd></div>
@@ -234,11 +253,15 @@ export function VolumeParcelleSection({ contexte, choisir, relire, conversationI
       </dl>
       {volume.statut === 'calcule'
         ? <p className="mzia-volume__programme">Programme : <strong>{contexte.programme.libelle}</strong> ({contexte.programme.origine === 'fiche' ? 'fiche 3D' : 'conversation'}){volume.programmeAtteint === false ? ' — non atteint avec ce volume' : ''}.</p>
-        : volume.statut === 'indicatif' && <p className="mzia-volume__programme">Volume indicatif : précisez le programme dans la conversation (ex. « 40 logements ») pour le calculer.</p>}
+        : volume.statut === 'indicatif' && <p className="mzia-volume__programme">Volume indicatif : précisez le programme dans la conversation (ex. « 40 logements », « 25 maisons », « résidence de 80 lits ») pour le calculer.</p>}
       {volume.emprise && volume.alertes.length > 0 && <ul className="mzia-volume__alertes">
         {volume.alertes.map(a => <li key={a} className="mzia-volume__alerte"><TriangleAlert size={14} aria-hidden="true" />{a}</li>)}
       </ul>}
       <div className="mzia-volume__plis">
+        {kpi && volume.batiments && <details className="mzia-volume__regle">
+          <summary><span>Bâtiments</span><span className="mzia-volume__compte">{volume.batiments.length}</span><ChevronDown size={16} aria-hidden="true" /></summary>
+          <ul>{volume.batiments.map(b => <li key={b.id}>{b.nom} : {fr(b.largeurM, 1)} × {fr(b.profondeurM, 1)} m, {fr(b.hauteurM)} m, SDP ≈ {fr(b.sdpM2)} m²</li>)}</ul>
+        </details>}
         {(volume.reglesAppliquees.length > 0 || volume.reglesNonAppliquees.length > 0) && <details className="mzia-volume__regle" open={volume.reglesAppliquees.length > 0 ? true : undefined}>
           <summary><span>Règles PLU</span><span className="mzia-volume__compte">{volume.reglesAppliquees.length} appliquée{volume.reglesAppliquees.length > 1 ? 's' : ''}{volume.reglesNonAppliquees.length > 0 ? ` · ${volume.reglesNonAppliquees.length} ignorée${volume.reglesNonAppliquees.length > 1 ? 's' : ''}` : ''}</span><ChevronDown size={16} aria-hidden="true" /></summary>
           {volume.reglesAppliquees.length > 0 && <ul>{volume.reglesAppliquees.map(l => <li key={l}>{l}</li>)}</ul>}
@@ -246,10 +269,12 @@ export function VolumeParcelleSection({ contexte, choisir, relire, conversationI
         </details>}
         <details className="mzia-volume__regle"><summary><span>Règle de calcul (hypothèses)</span><ChevronDown size={16} aria-hidden="true" /></summary>
           <ul>{volume.hypotheses.map(h => <li key={h}>{h}</li>)}</ul>
-          <p>Non vérifiés : côté voie, prospects entre bâtiments, stationnement, servitudes, OAP.</p>
+          <p>Non vérifiés : côté voie, raccordement des voies internes, prospects réels entre bâtiments, stationnement, servitudes, OAP.</p>
         </details>
       </div>
-      {volume.emprise && <small className="mzia-volume__note">Studio reçoit ce volume{p.type === 'confirmee' ? '' : ', après confirmation de la parcelle'} : dimensions, niveaux, position et orientation du plan (appliquées dès que le relief de la parcelle est mesuré).</small>}
+      {volume.emprise && <small className="mzia-volume__note">{kpi
+        ? `Studio reçoit ces ${kpi.batiments} bâtiments${p.type === 'confirmee' ? '' : ', après confirmation de la parcelle'} : position géoréférencée, orientation, dimensions et niveaux de chacun.`
+        : `Studio reçoit ce volume${p.type === 'confirmee' ? '' : ', après confirmation de la parcelle'} : dimensions, niveaux, position et orientation du plan (appliquées dès que le relief de la parcelle est mesuré).`}</small>}
       {volume.emprise && conversationId && onOpenStudio && <div className="mzia-volume__pied">
         {confirmationRapide && p.type === 'candidate' && contour?.etat === 'ok'
           ? <ConfirmationParcelleRapide idu={idu} reference={referenceLisible(idu)} surfaceM2={p.candidate.surfaceM2 ?? volume.surfaceParcelleM2}

@@ -21,7 +21,8 @@
 //      (sinon la 1re du classement) ; à défaut, score de rapport_terrain ;
 //   e. parcelle du dernier « Dossier de décision » (dernière étudiée) ;
 //   f. aucune.
-// Programme : fiche 3D, sinon dernier message utilisateur chiffrant des logements.
+// Programme : fiche 3D, sinon dernier message utilisateur chiffrant des maisons, logements ou lits
+// (programmeBati.ts : composantes typées, programmes mixtes).
 // Règles : reglesPlu.ts, filtrées sur l'IDU / la zone de la parcelle affichée.
 
 import { buildParcelDossier, type DossierParcel } from '../dossier/parcelDossier.ts';
@@ -30,6 +31,7 @@ import type { JarvisDraft } from './jarvisDraft.ts';
 import { normaliserIdu } from './missionPreparation3D.ts';
 import { lotsReglesDesMessages, normaliserZone, reglesPourParcelle } from './reglesPlu.ts';
 import type { ProgrammeVolume, ReglesPluVolume } from './volumeParcelle.ts';
+import { programmeBatiDuContexte } from './programmeBati.ts';
 
 export interface MessageContexte {
   id: string;
@@ -118,6 +120,9 @@ export function programmeDepuisTexte(texte: string | null | undefined): { logeme
 }
 
 export function programmeDuContexte(messages: readonly MessageContexte[], fiche: JarvisDraft | null): ProgrammeVolume {
+  // Programme détaillé (maisons, collectif, résidence, mixte) : forme bâtie adaptée, plusieurs bâtiments possibles.
+  const bati = programmeBatiDuContexte(messages, fiche);
+  if (bati) return bati;
   const depuisFiche = programmeDepuisTexte(fiche?.programme) ?? programmeDepuisTexte(fiche?.objectif);
   if (depuisFiche) return { ...depuisFiche, origine: 'fiche' };
   for (let i = messages.length - 1; i >= 0; i--) {

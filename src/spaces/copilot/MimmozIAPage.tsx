@@ -37,7 +37,7 @@ import type { ConfirmedTerrain } from './studio3d/terrainCadastre';
 import { urlStudio3D } from '@/spaces/promoteur/shared/ouvrirStudio3D';
 // R2 — chat → Studio en un clic, dans la page (panneau même origine), sans perte.
 import { StudioIntegre, type DemandeStudioIntegre } from './studio3d/StudioIntegre';
-import { adresseStudioIntegre, projetIdChat } from './studio3d/projetChat';
+import { adresseStudioIntegre, baseStudioIntegre, projetIdChat } from './studio3d/projetChat';
 import { prechargerRelief, reliefAvecDelai } from './studio3d/reliefCache';
 import { parcelleRetenue, retenirParcelle } from './studio3d/parcelleConfirmee';
 import { parcelId } from './studio3d/parcelFromGps';
@@ -330,7 +330,8 @@ export default function MimmozIAPage() {
       window.dispatchEvent(new CustomEvent('mzia-studio-volume', { detail: message }));
     };
     const onStudioVolume = (event: MessageEvent) => {
-      try { if (event.origin !== new URL(urlStudio3D()).origin) return; }
+      // LIAISON 03/11 — Studio intégré (même origine) OU Studio configuré.
+      try { if (event.origin !== window.location.origin && event.origin !== new URL(urlStudio3D()).origin) return; }
       catch { return; }
       accept(event.data);
     };
@@ -399,8 +400,9 @@ export default function MimmozIAPage() {
     const projet = avecProchaineRevision(construit.projet, conversationId);
     activeStudioSessionRef.current = sessionId;
     rememberStudioSession(conversationId, sessionId);
-    // R1 — point unique de l'adresse de Studio (même origine : <origine>/studio/).
-    const url = adresseStudioIntegre(urlStudio(), projetIdChat(conversationId), sessionId, etudeId);
+    // R1 — point unique de l'adresse de Studio. LIAISON 03/11 — Studio intégré : toujours la même origine
+    // (<origine>/studio/), quelle que soit VITE_MIMMOZIA_STUDIO_URL (voir baseStudioIntegre).
+    const url = adresseStudioIntegre(baseStudioIntegre(urlStudio(), window.location.origin), projetIdChat(conversationId), sessionId, etudeId);
     setStudio3d({
       demande: {
         cle: sessionId, url, sessionId, projet,

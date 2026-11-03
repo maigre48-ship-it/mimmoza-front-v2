@@ -13,7 +13,7 @@ import { exigerPreparation3D, exigerParcelle3D } from './preparation3D';
 import { draftBrief, studioCommand, studioComposition, studioSegmentedVolume, type JarvisDraft } from './jarvisDraft';
 import { listJarvisTransferFiles, type JarvisStoredFile } from './jarvisFiles';
 import type { ConfirmedTerrain } from './terrainCadastre';
-import { construireProjetChat, etudeDuChat, prochaineRevision, type IssueProjetChat, type StockageCle } from './projetChat';
+import { construireProjetChat, etudeDuChat, prochaineRevision, signatureFiche, type IssueProjetChat, type StockageCle, type VolumeBatimentsStudio } from './projetChat';
 import { getActiveStudyId } from '@/spaces/promoteur/shared/promoteurSnapshot.store';
 import { memoriserRelief, reliefEnCache } from './reliefCache';
 import { parcelId } from './parcelFromGps';
@@ -23,7 +23,11 @@ import type { ParcelleStudio, TerrainStudio } from '@/spaces/promoteur/shared/ou
 import type { ProjetMimmozaV2 } from '@/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2';
 
 /** Terrain retenu pour la conversation, ou celui qui vient d'être confirmé. */
-export type TerrainCharge = Pick<ConfirmedTerrain, 'parcel' | 'point' | 'implantation' | 'accesses'> & { adresse?: string | null };
+export type TerrainCharge = Pick<ConfirmedTerrain, 'parcel' | 'point' | 'implantation' | 'accesses'> & {
+  adresse?: string | null;
+  /** Bâtiments du Dossier 3D (plusieurs) : repris seulement pour la fiche dont ils sont issus. */
+  volumeBatiments?: VolumeBatimentsStudio | null;
+};
 
 export interface PreparationChargeStudio {
   construit: IssueProjetChat;
@@ -64,6 +68,9 @@ export async function preparerChargeVoirEn3D(
     ? await televerserPanorama(`chat-${crypto.randomUUID()}`, terrainArg.panorama).then(p => adressesSignees([p])).catch(() => [])
     : [];
   const composition = studioComposition(fiche);
+  // Volume multi-bâtiments du Dossier 3D : seulement pour la fiche tirée de ce volume (sinon bâtiment unique historique).
+  const volume = retenue.volumeBatiments && retenue.volumeBatiments.batiments.length >= 2
+    && retenue.volumeBatiments.signatureFiche === signatureFiche(fiche) ? retenue.volumeBatiments : null;
   const sessionId = crypto.randomUUID();
   const pageSansAncre = new URL(window.location.href);
   pageSansAncre.hash = '';
@@ -75,9 +82,10 @@ export async function preparerChargeVoirEn3D(
     revision: 0, horodatage: new Date().toISOString(),
     parcelles, communeInsee: insee, adresse: retenue.adresse ?? fiche.localisation,
     pointAdresse: retenue.point, relief: reliefConnu,
-    implantation: retenue.implantation ?? null, accesses: retenue.accesses,
+    implantation: volume ? null : retenue.implantation ?? null, accesses: volume ? undefined : retenue.accesses,
     brief: draftBrief(fiche), commandeArchitecture: composition ? null : studioCommand(fiche),
     compositionArchitecture: composition, volumeAiles: studioSegmentedVolume(fiche), plans, panoramas,
+    batiments: volume?.batiments ?? null, programmeVolume: volume,
   });
   return { construit, parcelles, insee, reliefConnu, conserves, sessionId, etudeId };
 }

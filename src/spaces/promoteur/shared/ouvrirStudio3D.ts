@@ -33,7 +33,8 @@ export const STUDIO_3D_URL: string = STUDIO_3D_URL_CONFIGUREE ?? STUDIO_3D_URL_L
 /**
  * PUB-A / R1 — adresse du studio selon l'hôte de la page Mimmoza (null = hors navigateur, traité comme local).
  * Sans configuration : même origine, sous /studio/ (http://localhost:5173/studio/ en local, https://<hôte>/studio/
- * sinon). Adresse configurée sur un domaine public : https obligatoire, jamais un poste local (ErreurStudio3D).
+ * sinon). LIAISON 03/11 — sur un domaine public, une adresse configurée d'une autre origine est ignorée
+ * (Studio reste `https://<hôte>/studio/`) ; ErreurStudio3D seulement pour une adresse invalide en local.
  * Préférez urlStudio3D() (origine réelle de la page, port compris) ; cette forme ne connaît que l'hôte.
  */
 export function resoudreUrlStudio3D(configuree: string | null | undefined, hotePage: string | null | undefined): string {

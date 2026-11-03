@@ -19,7 +19,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Download, Loader2, Mountain, RotateCw } from "lucide-react";
 import { demarrerPoigneeDeMain, examinerMessageStudio, originesStudio } from "@/spaces/promoteur/shared/echangeStudio/transportStudio";
 import type { ProjetMimmozaV2 } from "@/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2";
-import { lireFermetureStudio, messageRelief, type PoseChat } from "./projetChat";
+import { DELAI_STUDIO_MUET_MS, lireFermetureStudio, messageRelief, messageStudioMuet, type PoseChat } from "./projetChat";
 import type { IssueRelief } from "./reliefCache";
 import "./StudioIntegre.css";
 
@@ -58,6 +58,8 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret }: {
   cadrePret.current = onCadrePret;
   const relancer = useRef<(() => void) | null>(null);
   const [ifc, setIfc] = useState<string | null>(null);
+  // LIAISON 03/11 — Studio qui ne répond pas : un message clair au lieu d'un « Ouverture de Studio… » sans fin.
+  const [muet, setMuet] = useState(false);
 
   /** R6 — « Télécharger l'IFC 4 » : demande à Studio (protocole mimmoza.studio.ifc4), même origine. */
   const telechargerIfc = () => {
@@ -87,6 +89,7 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret }: {
   useEffect(() => {
     if (!demande) return;
     setConnecte(false);
+    setMuet(false);
     issueRelief.current = null;
     reliefEnvoye.current = false;
     const origine = new URL(demande.url).origin;
@@ -110,7 +113,7 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret }: {
       if (vers && evt.origin === origine) { fermer.current(vers); return; }
       const d = examinerMessageStudio({ origin: evt.origin, data: evt.data }, autorisees, window.location.origin, new Set([demande.sessionId]), Boolean(ENV.DEV));
       if (d.type === "pret") {
-        poignee?.surPret(d.attendProjet); setConnecte(true); envoyerRelief();
+        poignee?.surPret(d.attendProjet); setConnecte(true); setMuet(false); envoyerRelief();
         const f = cadre.current?.contentWindow;
         if (f) cadrePret.current?.(f, origine);
       }
@@ -119,6 +122,7 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret }: {
     // La fenêtre du cadre (WindowProxy) existe dès le montage : les « bonjour » envoyés
     // avant le chargement de Studio sont simplement perdus (cible d'origine exacte).
     demarrer();
+    const delaiMuet = window.setTimeout(() => { if (!poignee?.connecte()) setMuet(true); }, DELAI_STUDIO_MUET_MS);
 
     if (demande.relief.etat === "inclus") setRelief({ texte: demande.relief.source === "cache" ? "Relief mesuré (déjà en cache) envoyé avec la parcelle." : "Relief mesuré envoyé avec la parcelle.", erreur: false, enCours: false });
     else if (demande.relief.etat === "sans-parcelle") setRelief(null);
@@ -140,9 +144,9 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret }: {
         void r.relancer().then(traiter);
       };
       void r.promesse.then(traiter);
-      return () => { actif = false; relancer.current = null; window.removeEventListener("message", surMessage); poignee?.arreter(); };
+      return () => { actif = false; relancer.current = null; window.clearTimeout(delaiMuet); window.removeEventListener("message", surMessage); poignee?.arreter(); };
     }
-    return () => { window.removeEventListener("message", surMessage); poignee?.arreter(); };
+    return () => { window.clearTimeout(delaiMuet); window.removeEventListener("message", surMessage); poignee?.arreter(); };
   }, [demande]);
 
   if (!demande) return null;
@@ -154,7 +158,8 @@ export function StudioIntegre({ demande, ouvert, onFermer, onCadrePret }: {
         <button type="button" className="studio-integre__back" disabled={!connecte} onClick={telechargerIfc} title="Export IFC 4 du modèle ouvert dans Studio"><Download size={15} /> IFC 4</button>
         <button type="button" className="studio-integre__back" onClick={() => onFermer("bilan")}>{demande?.projet.etudeId ? "Bilan" : "Bilan (étude à relier)"}</button>
         {ifc && <span className="studio-integre__chip" role="status">{ifc}</span>}
-        {!connecte && <span className="studio-integre__chip"><Loader2 size={13} className="studio-integre__spin" /> Ouverture de Studio…</span>}
+        {!connecte && !muet && <span className="studio-integre__chip"><Loader2 size={13} className="studio-integre__spin" /> Ouverture de Studio…</span>}
+        {!connecte && muet && <span className="studio-integre__chip is-error" role="alert">{messageStudioMuet(demande.url, window.location.origin)}</span>}
         {relief && <span className={`studio-integre__chip${relief.erreur ? " is-error" : ""}`} role="status">
           {relief.enCours ? <Loader2 size={13} className="studio-integre__spin" /> : <Mountain size={13} />} {relief.texte}
           {relief.erreur && <button type="button" onClick={() => relancer.current?.()}><RotateCw size={12} /> Réessayer</button>}

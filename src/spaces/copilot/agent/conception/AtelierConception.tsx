@@ -13,7 +13,7 @@ import {
   creerMessageConception, lireMessageConception, type ChargeMetriques, type ChargeOuvrir,
 } from '@/spaces/promoteur/shared/echangeStudio/conception';
 import { StudioIntegre, type DemandeStudioIntegre } from '../../studio3d/StudioIntegre';
-import { adresseStudioIntegre, projetIdChat } from '../../studio3d/projetChat';
+import { adresseStudioIntegre, baseStudioIntegre, projetIdChat } from '../../studio3d/projetChat';
 import { conversationConception, inseeConception, parcellesConception, projetConception } from './projetConception';
 import { reliefAvecDelai } from '../../studio3d/reliefCache';
 import { useAgentUi } from '../agentUi.store';
@@ -61,7 +61,12 @@ export function AtelierConception() {
     const page = new URL(window.location.href); page.hash = '';
     const construit = projetConception(c, sessionId, window.location.origin, page.href, liaisonSession?.etudeId ?? null);
     if (!construit.ok) return { demande: null, erreur: `Ouverture de l’Atelier impossible : ${construit.erreur}.`, charge: null };
-    const url = new URL(adresseStudioIntegre(urlStudio(), projetIdChat(conversationId), sessionId, liaisonSession?.etudeId ?? null));
+    // LIAISON 03/11 — Studio intégré : toujours la même origine que la page (<origine>/studio/), comme
+    // « Voir en 3D » ; une adresse configurée inutilisable (poste local) devient un message, pas un plantage.
+    let base: string;
+    try { base = baseStudioIntegre(urlStudio(), window.location.origin); }
+    catch (e) { return { demande: null, erreur: e instanceof Error ? e.message : 'Studio 3D indisponible.', charge: null }; }
+    const url = new URL(adresseStudioIntegre(base, projetIdChat(conversationId), sessionId, liaisonSession?.etudeId ?? null));
     url.searchParams.set('mzconception', c.id);
     const charge: ChargeOuvrir = {
       conception_id: c.id, parcelle: c.parcelle, regles: c.regles, programme: c.programme, plan_source: demande.voie,

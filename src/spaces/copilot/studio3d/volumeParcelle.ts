@@ -76,6 +76,73 @@ export interface ProgrammeVolume {
   /** Libellé court repris de la conversation, ex. « 40 logements sociaux ». */
   libelle: string | null;
   origine: 'fiche' | 'conversation' | null;
+  /**
+   * Programme détaillé (programmeBati.ts) : maisons, logements collectifs, résidence.
+   * Absent ou vide : seul `logements` est connu (volume unique historique).
+   */
+  composantes?: ComposanteProgramme[];
+}
+
+/** Forme bâtie retenue pour une partie du programme (typologie programme → forme). */
+export type FormeBatie = 'maison-individuelle' | 'maisons-jumelees' | 'maisons-en-bande' | 'plot' | 'barre' | 'residence';
+
+/** Une partie du programme : « 25 maisons seniors », « 40 logements sociaux », « résidence de 80 lits ». */
+export interface ComposanteProgramme {
+  type: 'maisons' | 'collectif' | 'residence';
+  /** Nombre d'unités : maisons, logements ou lits / chambres. */
+  nombre: number;
+  unite: 'maisons' | 'logements' | 'lits';
+  public: 'seniors' | 'social' | 'etudiants' | null;
+  /** Forme demandée explicitement (« en bande », « jumelées », « individuelles ») ; null = au choix du moteur. */
+  forme: 'individuelle' | 'jumelee' | 'bande' | null;
+  /** Niveaux demandés explicitement (« plain-pied » → 1, « R+1 » → 2) ; null = au choix du moteur. */
+  niveaux: number | null;
+  libelle: string;
+}
+
+/** Un bâtiment de l'implantation multi-bâtiments (repère local, mètres). */
+export interface BatimentPropose {
+  /** Identifiant stable dans l'échange (« mz-vol-1 »…). */
+  id: string;
+  nom: string;
+  forme: FormeBatie;
+  largeurM: number;
+  profondeurM: number;
+  niveaux: number;
+  hauteurM: number;
+  surfaceM2: number;
+  sdpM2: number;
+  /** Maisons (forme maison*) ou logements / lits (collectif, résidence) contenus. */
+  unites: number;
+  uniteLibelle: 'maison' | 'logement' | 'lit';
+  centre: PointLocal;
+  centreWgs84: { lon: number; lat: number };
+  /** Angle du grand côté (largeur), en degrés depuis l'est, sens trigonométrique (comme emprise.angleDeg). */
+  angleDeg: number;
+  coins: PointLocal[];
+}
+
+/** Voie de desserte interne (aplat au sol, non bâti). */
+export interface VoiePropose {
+  largeurM: number;
+  longueurM: number;
+  surfaceM2: number;
+  coins: PointLocal[];
+}
+
+export interface KpiImplantation {
+  batiments: number;
+  /** Unités placées (maisons + logements + lits). */
+  unites: number;
+  unitesVisees: number | null;
+  maisons: number;
+  logements: number;
+  lits: number;
+  empriseTotaleM2: number;
+  sdpTotaleM2: number;
+  voirieM2: number;
+  /** Emprise bâtie / surface de la parcelle (0 à 1). */
+  ratioEmprise: number;
 }
 
 export const HYPOTHESES_VOLUME = {
@@ -129,6 +196,13 @@ export interface VolumePropose {
   reglesAppliquees: string[];
   /** Règles non chiffrées, non trouvées ou ignorées (reprises de ReglesPluVolume). */
   reglesNonAppliquees: string[];
+  /**
+   * Implantation multi-bâtiments (implantationProgramme.ts) : TOUS les bâtiments,
+   * `emprise` restant celle du bâtiment principal (le plus grand). Absent = volume unique.
+   */
+  batiments?: BatimentPropose[];
+  voies?: VoiePropose[];
+  kpi?: KpiImplantation;
 }
 
 const M_PAR_DEGRE = 111_320;
@@ -136,7 +210,7 @@ const arrondiInf = (v: number, pas = 0.5) => Math.floor(v / pas + 1e-9) * pas;
 const fr = (v: number, d = 0) => v.toLocaleString('fr-FR', { maximumFractionDigits: d, minimumFractionDigits: 0 });
 const nombre = (v: unknown): number | null => typeof v === 'number' && Number.isFinite(v) ? v : null;
 
-function aireSignee(r: PointLocal[]): number {
+export function aireSignee(r: PointLocal[]): number {
   let a = 0;
   for (let i = 0; i < r.length; i++) { const p = r[i], q = r[(i + 1) % r.length]; a += p.x * q.y - q.x * p.y; }
   return a / 2;
@@ -175,7 +249,7 @@ export function projeterParcelle(g: GeometrieParcelle | null | undefined): { ori
   return { origine, anneaux };
 }
 
-function versWgs84(p: PointLocal, origine: { lon: number; lat: number }) {
+export function versWgs84(p: PointLocal, origine: { lon: number; lat: number }) {
   return { lon: origine.lon + p.x / (M_PAR_DEGRE * Math.cos(origine.lat * Math.PI / 180)), lat: origine.lat + p.y / M_PAR_DEGRE };
 }
 
@@ -187,7 +261,7 @@ function dansAnneau(r: PointLocal[], x: number, y: number): boolean {
   }
   return dedans;
 }
-const dansPolygone = (anneaux: PointLocal[][], x: number, y: number) =>
+export const dansPolygone = (anneaux: PointLocal[][], x: number, y: number) =>
   dansAnneau(anneaux[0], x, y) && !anneaux.slice(1).some(t => dansAnneau(t, x, y));
 
 function distPointSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
@@ -234,16 +308,16 @@ export function orientationParcelle(anneau: PointLocal[]): number {
   return meilleur.angle;
 }
 
-interface Rect { cu: number; cv: number; w: number; d: number }
+export interface Rect { cu: number; cv: number; w: number; d: number }
 
-interface Segment { a: PointLocal; b: PointLocal; x0: number; x1: number; y0: number; y1: number }
-const segmentsDe = (anneaux: PointLocal[][]): Segment[] => anneaux.flatMap(anneau => anneau.map((a, i) => {
+export interface Segment { a: PointLocal; b: PointLocal; x0: number; x1: number; y0: number; y1: number }
+export const segmentsDe = (anneaux: PointLocal[][]): Segment[] => anneaux.flatMap(anneau => anneau.map((a, i) => {
   const b = anneau[(i + 1) % anneau.length];
   return { a, b, x0: Math.min(a.x, b.x), x1: Math.max(a.x, b.x), y0: Math.min(a.y, b.y), y1: Math.max(a.y, b.y) };
 }));
 
 /** Le rectangle (repère tourné u, v) tient-il à ≥ recul de toutes les limites ? */
-function rectTient(anneaux: PointLocal[][], segments: Segment[], r: Rect, recul: number): boolean {
+export function rectTient(anneaux: PointLocal[][], segments: Segment[], r: Rect, recul: number): boolean {
   const x0 = r.cu - r.w / 2, x1 = r.cu + r.w / 2, y0 = r.cv - r.d / 2, y1 = r.cv + r.d / 2;
   if (!dansPolygone(anneaux, x0, y0)) return false;
   const coins = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
@@ -310,7 +384,7 @@ export function valeurRegleLisible(r: ReglePlu): string {
 }
 
 /** Règle valide (bornes de bon sens) ; les autres sont ignorées. */
-function regleValide(r: ReglePlu): boolean {
+export function regleValide(r: ReglePlu): boolean {
   const v = r.valeur;
   if (!Number.isFinite(v) || v <= 0) return false;
   switch (r.cle) {
@@ -494,6 +568,34 @@ export function calculerVolumeParcelle(
 /** R+n lisible (1 niveau → R+0). */
 export const libelleNiveaux = (niveaux: number) => `R+${Math.max(0, niveaux - 1)}`;
 
+/** Un corps à dessiner (vue 3D, plan axonométrique) : le volume unique ou chacun des bâtiments. */
+export interface CorpsAffiche {
+  id: string;
+  nom: string | null;
+  coins: PointLocal[];
+  centre: PointLocal;
+  largeurM: number;
+  profondeurM: number;
+  angleDeg: number;
+  niveaux: number;
+  hauteurM: number;
+  /** Bâtiment principal (le plus grand) : celui qui porte les cotes L / P / H. */
+  principal: boolean;
+}
+
+/** Corps à dessiner : tous les bâtiments d'une implantation multiple, sinon le volume unique. */
+export function corpsAffiches(v: Pick<VolumePropose, 'emprise' | 'niveaux' | 'hauteurM' | 'batiments'>): CorpsAffiche[] {
+  const e = v.emprise;
+  if (!e) return [];
+  if (v.batiments && v.batiments.length > 1) {
+    const principal = v.batiments.find(b => Math.abs(b.centre.x - e.centre.x) < 1e-6 && Math.abs(b.centre.y - e.centre.y) < 1e-6) ?? v.batiments[0];
+    return v.batiments.map(b => ({ id: b.id, nom: b.nom, coins: b.coins, centre: b.centre, largeurM: b.largeurM, profondeurM: b.profondeurM,
+      angleDeg: b.angleDeg, niveaux: b.niveaux, hauteurM: b.hauteurM, principal: b === principal }));
+  }
+  return [{ id: 'volume', nom: null, coins: e.coins, centre: e.centre, largeurM: e.largeurM, profondeurM: e.profondeurM,
+    angleDeg: e.angleDeg, niveaux: v.niveaux, hauteurM: v.hauteurM, principal: true }];
+}
+
 /**
  * Brouillon de fiche 3D pour Studio, tiré du volume proposé. Il suit le format
  * attendu par diagnostiquerPreparation3D / studioCommand (« L m x P m » et R+N
@@ -504,10 +606,22 @@ export function ficheStudioDepuisVolume(v: VolumePropose, contexte: { adresse?: 
   const e = v.emprise;
   const dimension = (n: number) => fr(n, 1);
   const logements = contexte.programme?.logements ?? null;
-  const usage = logements !== null ? 'Immeuble de logements' : 'Bâtiment';
+  // Plusieurs bâtiments : la fiche décrit le bâtiment PRINCIPAL (dimensions, R+N uniques, exigés par
+  // diagnostiquerPreparation3D) ; l'ensemble part à Studio dans `batiments` du projet v2. Le mot
+  // « bâtiments » précédé d'un nombre est évité : il déclencherait la composition nommée A à H.
+  const principal = v.batiments && v.batiments.length > 1
+    ? v.batiments.find(b => Math.abs(b.largeurM - e.largeurM) < 1e-6 && Math.abs(b.profondeurM - e.profondeurM) < 1e-6) ?? v.batiments[0]
+    : null;
+  const niveaux = principal?.niveaux ?? v.niveaux;
+  const usage = principal
+    // « Bâtiment de maisons… » : studioCommand reconnaît « bâtiment » (« maisons » au pluriel ne l'est pas).
+    ? (principal.forme.startsWith('maison') ? (principal.forme === 'maisons-en-bande' ? 'Bâtiment de maisons en bande' : principal.forme === 'maisons-jumelees' ? 'Bâtiment de maisons jumelées' : 'Maison')
+      : principal.forme === 'residence' ? 'Résidence' : 'Immeuble de logements')
+    : logements !== null ? 'Immeuble de logements' : 'Bâtiment';
+  const ensemble = principal ? ` (ensemble de ${v.batiments!.length} volumes${v.kpi ? `, ${v.kpi.unites} unités` : ''} transmis à Studio)` : '';
   return {
     version: 1,
-    objectif: `${usage} en ${libelleNiveaux(v.niveaux)}, volume d’étude proposé par Mimmo sur la parcelle${contexte.reference ? ' ' + contexte.reference : ''}`,
+    objectif: `${usage} en ${libelleNiveaux(niveaux)}, volume d’étude proposé par Mimmo sur la parcelle${contexte.reference ? ' ' + contexte.reference : ''}${ensemble}`,
     localisation: contexte.base?.localisation ?? contexte.adresse ?? null,
     programme: contexte.programme?.libelle ?? (logements !== null ? `${logements} logements` : contexte.base?.programme ?? null),
     dimensions: `${dimension(e.largeurM)} m x ${dimension(e.profondeurM)} m`,

@@ -67,6 +67,8 @@ import { useCopilot } from "@/spaces/copilot/hooks/useCopilot";
 import { CopilotCreditsPill } from "@/spaces/copilot/components/CopilotCreditsPill";
 import { useCopilotStore } from "@/spaces/copilot/store/copilotStore";
 import { syncPlanFromServer } from "@/lib/billing/syncPlanFromServer";
+// ── Accès direct à MimmozIA Studio (nouveau projet vierge, même adresse /studio/) ─
+import { BoutonStudio3D } from "./BoutonStudio3D";
 
 type Space = "none" | "promoteur" | "agence" | "marchand" | "banque" | "rehabilitation" | "mimmozia";
 
@@ -692,11 +694,13 @@ function TopNavigation(props: {
               <MimmozaLogo className="h-12 w-auto object-contain" />
             </NavLink>
 
-            <div className="flex min-w-0 flex-1 items-center justify-center">
+            <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
               <MimmozIASubscriptionMenu
                 currentPlan={plan}
                 onSelectPlan={(p) => navigate(`/abonnement?plan=${p}`)}
               />
+              {/* Studio 3D : nouveau projet vierge, sans passer par une conversation. */}
+              <BoutonStudio3D />
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
@@ -1393,6 +1397,8 @@ export function AppShell(props: AppShellProps) {
               <MimmozaLogo className="h-8 w-auto object-contain" />
             </NavLink>
             <div className="flex items-center gap-2">
+              {/* Studio 3D (icône seule sur mobile) : nouveau projet vierge. */}
+              <BoutonStudio3D compact />
               {isAdmin && (
                 <button
                   type="button"

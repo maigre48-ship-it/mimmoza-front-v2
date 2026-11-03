@@ -1,0 +1,469 @@
+// src/spaces/copilot/studio3d/implantationProgramme.ts
+//
+// IMPLANTATION MULTI-BÂTIMENTS ADAPTÉE AU PROGRAMME — logique PURE (testée par node --test).
+//
+// Le volume historique (volumeParcelle.ts) pose UN parallélépipède, le plus grand
+// possible, le long du grand côté de la parcelle. Ce module pose N emprises selon
+// le programme lu dans la conversation (programmeBati.ts) :
+//
+//   typologie (programme → forme bâtie)
+//     maisons ≤ 3                     → maisons individuelles
+//     maisons 4 à 12                  → maisons jumelées (par 2)
+//     maisons > 12 (ou « en bande »)  → maisons en bande (3 à 6, 8 au plus)
+//     seniors                         → plain-pied d'abord (8 × 11 m), R+1 si la parcelle ne suffit pas
+//     autres maisons                  → R+1 (6,5 × 8,5 m par maison)
+//     logements collectifs            → plots / barres (épaisseur PLU ou 16 m, 45 m de long au plus)
+//     résidence (lits, services)      → barres de 14 m d'épaisseur, 55 m² de SDP par lit ou logement
+//     programme mixte                 → collectif / résidence d'abord, maisons ensuite
+//
+//   placement (déterministe), dans le repère tourné de la parcelle (u = grand axe)
+//     - rangées parallèles au grand axe ; chaque emprise est vérifiée à ≥ recul de
+//       TOUTES les limites (même test que le volume unique : rectTient) ;
+//     - maisons : rangée / recul avant 5 m / voie 6 m / recul avant 5 m / rangée,
+//       jardins arrière ≥ 6 m, 4 m entre pignons (venelle) ; la voie est dessinée (aplat) ;
+//     - collectif : façades à ≥ max(H, 8 m), pignons à ≥ max(H/2, 6 m) ;
+//     - aucun chevauchement (rangées disjointes, pignons espacés) ;
+//     - emprise totale ≤ CES (règle PLU ou 40 %) et ≤ 1 − pleine terre ;
+//     - deux orientations essayées (grand axe, puis perpendiculaire) : la meilleure est gardée.
+//
+//   limite Studio : 12 bâtiments (ARCHITECTURE_LIMITS.maxBuildings du Studio ; le contrat v2 en
+//   admet 20). Au-delà, les maisons sont regroupées en bandes plus longues, et c'est dit.
+//
+// Rien n'est présenté comme conforme : côté voie, accès, stationnement, servitudes, OAP
+// et prospects réels ne sont pas vérifiés. Aucune I/O ici.
+
+import {
+  calculerVolumeParcelle, HYPOTHESES_VOLUME, orientationParcelle, projeterParcelle, rectTient, regleValide, segmentsDe, versWgs84,
+  REGLES_INCONNUES,
+  type BatimentPropose, type CleReglePlu, type ComposanteProgramme, type FormeBatie, type GeometrieParcelle, type KpiImplantation,
+  type PointLocal, type ProgrammeVolume, type ReglePlu, type ReglesPluVolume, type Segment, type VoiePropose, type VolumePropose,
+} from './volumeParcelle.ts';
+
+/** Bâtiments au plus dans Studio (ARCHITECTURE_LIMITS.maxBuildings, mimmozia-studio/src/core/architecture/defaults.ts). */
+export const LIMITE_BATIMENTS_STUDIO = 12;
+
+export const HYPOTHESES_PROGRAMME = {
+  /** Maison de plain-pied (T3 senior) : façade × profondeur, ≈ 88 m² de SDP. */
+  maisonPlainPied: { facadeM: 8, profondeurM: 11 },
+  /** Maison R+1 : façade × profondeur, ≈ 110 m² de SDP sur deux niveaux. */
+  maisonEtage: { facadeM: 6.5, profondeurM: 8.5 },
+  maisonsParBandeMax: 6,
+  maisonsParBandeAbsolu: 8,
+  /** Entre deux bandes d'une même rangée (venelle, passage vers les jardins). */
+  ecartPignonsMaisonsM: 4,
+  voieM: 6,
+  reculVoieM: 5,
+  jardinArriereM: 6,
+  sdpLogementCollectifM2: HYPOTHESES_VOLUME.sdpParLogementM2,
+  sdpUniteResidenceM2: 55,
+  epaisseurResidenceM: 14,
+  longueurBarreMaxM: 45,
+  longueurMinCollectifM: 10,
+  distanceFacadesMinM: 8,
+  distancePignonsMinM: 6,
+  /** Collectif : on part de R+2 (moins d'emprise, plus d'espaces libres), puis on monte. */
+  niveauxCollectifDepart: 3,
+} as const;
+
+const HP = HYPOTHESES_PROGRAMME;
+const fr = (v: number, d = 0) => v.toLocaleString('fr-FR', { maximumFractionDigits: d, minimumFractionDigits: 0 });
+const demi = (v: number) => Math.floor(v * 2 + 1e-9) / 2;
+const demiSup = (v: number) => Math.ceil(v * 2 - 1e-9) / 2;
+
+// ---------------------------------------------------------------------------------------------
+// Règles PLU (même sélection que calculerVolumeParcelle : la plus contraignante par notion)
+// ---------------------------------------------------------------------------------------------
+interface Contraintes {
+  niveauxMax: number;
+  ratioEmprise: number;
+  epaisseurMax: number;
+  reculPour: (hauteurM: number) => number;
+  reculConnu: boolean;
+}
+export function contraintesPlu(regles: ReglesPluVolume): Contraintes {
+  const H = HYPOTHESES_VOLUME;
+  const valides = (regles.regles ?? []).filter(regleValide);
+  const plus = (cle: CleReglePlu, sens: 'min' | 'max'): ReglePlu | null => {
+    const l = valides.filter(r => r.cle === cle);
+    return l.length ? l.reduce((a, b) => (sens === 'min' ? b.valeur < a.valeur : b.valeur > a.valeur) ? b : a) : null;
+  };
+  const hauteurs = [plus('hauteur_max_m', 'min'), plus('hauteur_faitage_m', 'min')].filter((r): r is ReglePlu => !!r).map(r => r.valeur);
+  const niveauxParHauteur = hauteurs.length ? Math.floor(Math.min(...hauteurs) / H.hauteurEtageM + 1e-9) : H.niveauxMaxStudio;
+  const rNiveaux = plus('niveaux_max', 'min');
+  const ces = plus('emprise_max_ratio', 'min')?.valeur ?? H.cesDefaut;
+  const pleine = plus('pleine_terre_min_ratio', 'max');
+  const rVoie = plus('recul_voie_m', 'max'), rLimites = plus('recul_limites_m', 'max');
+  const formules = valides.filter(r => r.cle === 'recul_limites_formule');
+  const rFormule = formules.length ? formules.reduce((a, b) => b.valeur < a.valeur || (b.valeur === a.valeur && (b.minimumM ?? 0) > (a.minimumM ?? 0)) ? b : a) : null;
+  const reculConnu = Boolean(rVoie || rLimites || rFormule);
+  return {
+    niveauxMax: Math.min(H.niveauxMaxStudio, niveauxParHauteur, rNiveaux?.valeur ?? H.niveauxMaxStudio),
+    ratioEmprise: Math.min(ces, pleine ? 1 - pleine.valeur : 1),
+    epaisseurMax: plus('epaisseur_max_m', 'min')?.valeur ?? H.epaisseurMaxM,
+    reculConnu,
+    reculPour: (h: number) => Math.round((!reculConnu ? H.reculDefautM : Math.max(rVoie?.valeur ?? 0, rLimites?.valeur ?? 0,
+      rFormule ? Math.max(rFormule.minimumM ?? 0, h / rFormule.valeur) : 0)) * 100) / 100,
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Repère tourné et rangées
+// ---------------------------------------------------------------------------------------------
+interface Cadre { anneaux: PointLocal[][]; segments: Segment[]; u0: number; u1: number; v0: number; v1: number }
+
+function cadreTourne(anneaux: PointLocal[][], angle: number): Cadre {
+  const c = Math.cos(-angle), s = Math.sin(-angle);
+  const a = anneaux.map(r => r.map(p => ({ x: p.x * c - p.y * s, y: p.x * s + p.y * c })));
+  const us = a[0].map(p => p.x), vs = a[0].map(p => p.y);
+  return { anneaux: a, segments: segmentsDe(a), u0: Math.min(...us), u1: Math.max(...us), v0: Math.min(...vs), v1: Math.max(...vs) };
+}
+
+/** Tolérance sur les reculs (1 cm) : une limite à 20,0001° ne doit pas faire perdre une rangée entière. */
+const TOLERANCE_M = 0.01;
+/** Rectangle [ua, ub] × [va, vb] à ≥ recul de toutes les limites (à 1 cm près). */
+const tient = (k: Cadre, ua: number, ub: number, va: number, vb: number, recul: number) =>
+  ub - ua > 0 && vb - va > 0 && rectTient(k.anneaux, k.segments, { cu: (ua + ub) / 2, cv: (va + vb) / 2, w: ub - ua, d: vb - va }, Math.max(1e-6, recul - TOLERANCE_M));
+
+/** Intervalles en u où une bande [va, vb] tient : échantillonnage au mètre, bords affinés au centimètre. */
+function intervalles(k: Cadre, va: number, vb: number, recul: number): [number, number][] {
+  const brut: [number, number][] = [];
+  let debut: number | null = null, fin = 0;
+  // Départ calé sur le recul : sur une limite droite, le premier pas tombe juste à la bonne distance.
+  for (let u = k.u0 + recul + 1e-3; u < k.u1; u += 1) {
+    if (tient(k, u, u + 1, va, vb, recul)) { if (debut === null) debut = u; fin = u + 1; }
+    else if (debut !== null) { brut.push([debut, fin]); debut = null; }
+  }
+  if (debut !== null) brut.push([debut, fin]);
+  // Bords : jusqu'à 1 m de plus de chaque côté, par dichotomie sur une tranche de 1 m.
+  return brut.map(([a, b]) => {
+    let lo = b, hi = b + 1;
+    for (let i = 0; i < 7; i++) { const m = (lo + hi) / 2; if (tient(k, m - 1, m, va, vb, recul)) lo = m; else hi = m; }
+    let lo2 = a - 1, hi2 = a;
+    for (let i = 0; i < 7; i++) { const m = (lo2 + hi2) / 2; if (tient(k, m, m + 1, va, vb, recul)) hi2 = m; else lo2 = m; }
+    return [hi2, lo] as [number, number];
+  });
+}
+
+interface RectUV { ua: number; ub: number; va: number; vb: number }
+interface BatUV extends RectUV { forme: FormeBatie; niveaux: number; unites: number; uniteLibelle: BatimentPropose['uniteLibelle']; composante: number }
+
+/**
+ * Remplit une rangée [va, vb] : `choisir(disponible)` donne la longueur voulue (null : rien de plus).
+ * `arriere` : profondeur supplémentaire testée côté jardin (−1 vers v bas, +1 vers v haut).
+ */
+function remplirRangee(k: Cadre, va: number, vb: number, recul: number, ecart: number,
+  choisir: (disponible: number) => { longueur: number; info: number } | null,
+  arriere: { sens: -1 | 1; profondeurM: number } | null,
+  poser: (r: RectUV, info: number) => void) {
+  const vaT = arriere?.sens === -1 ? va - arriere.profondeurM : va, vbT = arriere?.sens === 1 ? vb + arriere.profondeurM : vb;
+  for (const [a, b] of intervalles(k, vaT, vbT, recul)) {
+    let u = a;
+    while (u < b) {
+      const c = choisir(b - u);
+      if (!c) return;
+      if (c.longueur <= b - u + 1e-9 && tient(k, u, u + c.longueur, vaT, vbT, recul)) { poser({ ua: u, ub: u + c.longueur, va, vb }, c.info); u += c.longueur + ecart; }
+      else u += 0.5;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Maisons
+// ---------------------------------------------------------------------------------------------
+interface EssaiMaisons { batiments: BatUV[]; voies: RectUV[]; placees: number; vFin: number }
+
+function implanterMaisons(k: Cadre, c: ComposanteProgramme, idx: number, o: {
+  niveaux: number; taille: number; tailleMin: number; maxBatiments: number; recul: number; empriseLibre: number; vDebut: number; jardinDebut: boolean;
+}): EssaiMaisons {
+  const gabarit = o.niveaux === 1 ? HP.maisonPlainPied : HP.maisonEtage;
+  const f = gabarit.facadeM, p = gabarit.profondeurM;
+  const jardin = Math.max(0, HP.jardinArriereM - o.recul);
+  const batiments: BatUV[] = [], voies: RectUV[] = [];
+  let placees = 0, emprise = 0, vFin = o.vDebut;
+  const forme = (n: number): FormeBatie => n === 1 ? 'maison-individuelle' : n === 2 ? 'maisons-jumelees' : 'maisons-en-bande';
+  const choisir = (dispo: number) => {
+    const restant = c.nombre - placees;
+    if (restant <= 0 || batiments.length >= o.maxBatiments) return null;
+    let n = Math.min(o.taille, restant, Math.floor((dispo + 1e-9) / f), Math.floor((o.empriseLibre - emprise + 1e-6) / (f * p)));
+    // Dernier bâtiment possible : il prend tout ce qui reste (dans la limite absolue d'une bande).
+    if (batiments.length === o.maxBatiments - 1) n = Math.min(Math.max(n, Math.min(restant, HP.maisonsParBandeAbsolu, Math.floor((dispo + 1e-9) / f))), Math.floor((o.empriseLibre - emprise + 1e-6) / (f * p)));
+    if (n < Math.min(o.tailleMin, restant) || n < 1) return null;
+    return { longueur: n * f, info: n };
+  };
+  const poser = (r: RectUV, n: number) => {
+    batiments.push({ ...r, forme: forme(n), niveaux: o.niveaux, unites: n, uniteLibelle: 'maison', composante: idx });
+    placees += n; emprise += (r.ub - r.ua) * (r.vb - r.va);
+  };
+  let v = o.vDebut;
+  while (placees < c.nombre && batiments.length < o.maxBatiments && v + p <= k.v1 - o.recul + 1e-9) {
+    // Rangée A (jardin côté v bas), voie, rangée B (jardin côté v haut).
+    const avantA = batiments.length;
+    remplirRangee(k, v, v + p, o.recul, HP.ecartPignonsMaisonsM, choisir, o.jardinDebut || v > o.vDebut ? { sens: -1, profondeurM: jardin } : null, poser);
+    if (batiments.length === avantA) { v += 1; continue; }
+    const vVoie = v + p + HP.reculVoieM, vB = vVoie + HP.voieM + HP.reculVoieM;
+    const avantB = batiments.length;
+    if (placees < c.nombre) remplirRangee(k, vB, vB + p, o.recul, HP.ecartPignonsMaisonsM, choisir, { sens: 1, profondeurM: jardin }, poser);
+    const rangees = batiments.slice(avantA);
+    const umin = Math.min(...rangees.map(b => b.ua)), umax = Math.max(...rangees.map(b => b.ub));
+    // Voie : sur toute la longueur libre de sa bande qui dessert les maisons (vers les limites : raccordement à définir).
+    const libres = intervalles(k, vVoie, vVoie + HP.voieM, 0.05).filter(([a, b]) => b > umin && a < umax);
+    if (libres.length) voies.push({ ua: Math.min(...libres.map(l => l[0])), ub: Math.max(...libres.map(l => l[1])), va: vVoie, vb: vVoie + HP.voieM });
+    vFin = batiments.length > avantB ? vB + p : vVoie + HP.voieM;
+    v = batiments.length > avantB ? vB + p + 2 * HP.jardinArriereM : vB + p + HP.jardinArriereM;
+  }
+  return { batiments, voies, placees, vFin };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Collectif et résidence
+// ---------------------------------------------------------------------------------------------
+interface EssaiCollectif { batiments: BatUV[]; sdp: number; atteint: boolean; vFin: number; niveaux: number; recul: number }
+
+function implanterCollectif(k: Cadre, c: ComposanteProgramme, idx: number, ct: Contraintes, o: { maxBatiments: number; empriseLibre: number; vDebut: number }): EssaiCollectif | null {
+  const residence = c.type === 'residence';
+  const sdpU = residence ? HP.sdpUniteResidenceM2 : HP.sdpLogementCollectifM2;
+  const d = Math.max(HYPOTHESES_VOLUME.coteMinM, residence ? Math.min(HP.epaisseurResidenceM, ct.epaisseurMax) : ct.epaisseurMax);
+  const cible = c.nombre * sdpU;
+  /** `strict` : bâtiments de longueur cible, sauf le dernier (reste du programme) ; sinon tout ce qui tient. */
+  const essai = (n: number, longueurCible: number, empriseVisee: number, strict: boolean): EssaiCollectif => {
+    const H = n * HYPOTHESES_VOLUME.hauteurEtageM, recul = ct.reculPour(H);
+    const batiments: BatUV[] = [];
+    let emprise = 0, v = Math.max(o.vDebut, k.v0 + recul), vFin = o.vDebut;
+    const choisir = (dispo: number) => {
+      const reste = empriseVisee - emprise;
+      if (reste <= 1e-6 || batiments.length >= o.maxBatiments) return null;
+      let L = Math.min(longueurCible, HP.longueurBarreMaxM, demi(dispo));
+      if (reste / d < L) L = Math.max(HP.longueurMinCollectifM, demiSup(reste / d));
+      else if (strict && L < longueurCible - 1e-9) return null; // pas de chute : rangée suivante
+      if (L > dispo + 1e-9 || L < HP.longueurMinCollectifM) return null;
+      return { longueur: L, info: 0 };
+    };
+    while (emprise < empriseVisee - 1e-6 && batiments.length < o.maxBatiments && v + d <= k.v1 - recul + 1e-9) {
+      const avant = batiments.length;
+      remplirRangee(k, v, v + d, recul, Math.max(H / 2, HP.distancePignonsMinM), choisir, null, r => {
+        batiments.push({ ...r, forme: residence ? 'residence' : 'barre', niveaux: n, unites: 0, uniteLibelle: residence && c.unite === 'lits' ? 'lit' : 'logement', composante: idx });
+        emprise += (r.ub - r.ua) * (r.vb - r.va);
+      });
+      if (batiments.length === avant) { v += 1; continue; }
+      vFin = v + d;
+      v += d + Math.max(H, HP.distanceFacadesMinM);
+    }
+    for (const b of batiments) if (!residence && (b.ub - b.ua) <= 1.4 * (b.vb - b.va)) b.forme = 'plot';
+    const sdp = emprise * n;
+    return { batiments, sdp, atteint: sdp + 1e-6 >= cible, vFin, niveaux: n, recul };
+  };
+  const nMax = Math.max(1, ct.niveauxMax);
+  const depart = Math.min(HP.niveauxCollectifDepart, nMax);
+  let meilleur: EssaiCollectif | null = null;
+  for (let n = depart; n <= nMax; n++) {
+    const E = cible / n;
+    if (E > o.empriseLibre + 1e-6) continue;
+    const k0 = Math.max(1, Math.ceil(E / (HP.longueurBarreMaxM * d) - 1e-9));
+    let atteintN: EssaiCollectif | null = null;
+    for (let nb = k0; nb <= Math.min(k0 + 3, o.maxBatiments); nb++) {
+      const L = Math.min(HP.longueurBarreMaxM, Math.max(HP.longueurMinCollectifM, demiSup(E / (nb * d))));
+      const r = essai(n, L, E, true);
+      if (r.atteint && r.batiments.length <= nb) return r;
+      if (r.atteint && !atteintN) atteintN = r;
+      if (!meilleur || r.sdp > meilleur.sdp) meilleur = r;
+    }
+    if (atteintN) return atteintN;
+  }
+  // Programme hors d'atteinte : la plus grande capacité (niveaux max, barres longues, emprise libre).
+  for (const n of [...new Set([nMax, depart])]) {
+    const r = essai(n, HP.longueurBarreMaxM, o.empriseLibre, false);
+    if (r.batiments.length && (!meilleur || r.sdp > meilleur.sdp)) meilleur = r;
+  }
+  return meilleur && meilleur.batiments.length ? meilleur : null;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Implantation complète pour une orientation
+// ---------------------------------------------------------------------------------------------
+interface Implantation {
+  angle: number;
+  batiments: BatUV[];
+  voies: RectUV[];
+  /** Unités placées par composante. */
+  placees: number[];
+  alertes: string[];
+  notes: string[];
+  reculM: number;
+}
+
+function ordreTailles(c: ComposanteProgramme, maxBat: number): { tailles: number[]; regroupe: boolean } {
+  const N = c.nombre, mini = Math.max(1, Math.ceil(N / Math.max(1, maxBat)));
+  const bandes = [] as number[];
+  for (let t = Math.max(3, mini); t <= HP.maisonsParBandeAbsolu; t++) bandes.push(t);
+  if (c.forme === 'individuelle') return mini <= 1 ? { tailles: [1], regroupe: false } : { tailles: [Math.max(2, mini), ...bandes], regroupe: true };
+  if (c.forme === 'jumelee') return mini <= 2 ? { tailles: [2], regroupe: false } : { tailles: bandes, regroupe: true };
+  if (c.forme === 'bande') return { tailles: bandes.length ? bandes : [HP.maisonsParBandeAbsolu], regroupe: false };
+  if (N <= 3) return { tailles: [1, 2, 3], regroupe: false };
+  if (N <= 12 && mini <= 2) return { tailles: [2, ...bandes], regroupe: false };
+  return { tailles: bandes.length ? bandes : [HP.maisonsParBandeAbsolu], regroupe: false };
+}
+
+function implanter(anneaux: PointLocal[][], angle: number, composantes: ComposanteProgramme[], ct: Contraintes, surface: number): Implantation {
+  const k = cadreTourne(anneaux, angle);
+  const res: Implantation = { angle, batiments: [], voies: [], placees: composantes.map(() => 0), alertes: [], notes: [], reculM: ct.reculPour(HYPOTHESES_VOLUME.hauteurEtageM) };
+  const empriseMax = ct.ratioEmprise * surface;
+  const empriseUtilisee = () => res.batiments.reduce((s, b) => s + (b.ub - b.ua) * (b.vb - b.va), 0);
+  let vCurseur = k.v0, premier = true;
+  // Collectif et résidence d'abord (gros volumes), maisons ensuite.
+  const ordre = composantes.map((c, i) => ({ c, i })).sort((a, b) => Number(a.c.type === 'maisons') - Number(b.c.type === 'maisons'));
+  for (const { c, i } of ordre) {
+    const maxBatiments = LIMITE_BATIMENTS_STUDIO - res.batiments.length;
+    if (maxBatiments <= 0) { res.alertes.push(`${c.libelle} : limite de ${LIMITE_BATIMENTS_STUDIO} bâtiments de Studio atteinte, partie non placée.`); continue; }
+    if (c.type !== 'maisons') {
+      const r = implanterCollectif(k, c, i, ct, { maxBatiments, empriseLibre: empriseMax - empriseUtilisee(), vDebut: premier ? k.v0 : vCurseur });
+      if (!r) { res.alertes.push(`${c.libelle} : aucun bâtiment ne tient sur la parcelle avec ces reculs et cette emprise.`); continue; }
+      const sdpU = c.type === 'residence' ? HP.sdpUniteResidenceM2 : HP.sdpLogementCollectifM2;
+      const unites = r.atteint ? c.nombre : Math.floor(r.sdp / sdpU + 1e-9);
+      // Répartition des unités au prorata des emprises (le reste au plus grand).
+      const empr = r.batiments.map(b => (b.ub - b.ua) * (b.vb - b.va)), tot = empr.reduce((s, e) => s + e, 0);
+      r.batiments.forEach((b, j) => { b.unites = Math.floor(unites * empr[j] / tot); });
+      const reste = unites - r.batiments.reduce((s, b) => s + b.unites, 0);
+      r.batiments[empr.indexOf(Math.max(...empr))].unites += reste;
+      res.batiments.push(...r.batiments);
+      res.placees[i] = unites;
+      res.reculM = Math.max(res.reculM, r.recul);
+      if (!r.atteint) res.alertes.push(`${c.libelle} : programme non atteint — ${fr(unites)} ${c.unite} au plus (${r.niveaux} niveaux, ${r.batiments.length} bâtiment${r.batiments.length > 1 ? 's' : ''}).`);
+      vCurseur = r.vFin + Math.max(r.niveaux * HYPOTHESES_VOLUME.hauteurEtageM, HP.distanceFacadesMinM);
+      premier = false;
+      continue;
+    }
+    // Maisons : niveaux puis taille des bandes, du plus souhaitable au moins souhaitable.
+    const niveauxPossibles = (c.niveaux ? [c.niveaux] : c.public === 'seniors' ? [1, 2] : [2, 1]).filter(n => n <= Math.max(1, ct.niveauxMax));
+    if (!niveauxPossibles.length) niveauxPossibles.push(1);
+    const { tailles, regroupe } = ordreTailles(c, maxBatiments);
+    const libre = empriseMax - empriseUtilisee();
+    let meilleur: { e: EssaiMaisons; niveaux: number; taille: number } | null = null;
+    for (const niveaux of niveauxPossibles) {
+      const recul = ct.reculPour(niveaux * HYPOTHESES_VOLUME.hauteurEtageM);
+      for (const taille of tailles) {
+        const e = implanterMaisons(k, c, i, { niveaux, taille, tailleMin: 1, maxBatiments, recul, empriseLibre: libre,
+          vDebut: premier ? k.v0 + recul : vCurseur, jardinDebut: premier });
+        if (!meilleur || e.placees > meilleur.e.placees) meilleur = { e, niveaux, taille };
+        if (e.placees >= c.nombre) break;
+      }
+      if (meilleur && meilleur.e.placees >= c.nombre) break;
+    }
+    if (!meilleur || !meilleur.e.placees) { res.alertes.push(`${c.libelle} : aucune maison ne tient sur la parcelle avec ces reculs et cette emprise.`); continue; }
+    const { e, niveaux } = meilleur;
+    res.batiments.push(...e.batiments);
+    res.voies.push(...e.voies);
+    res.placees[i] = e.placees;
+    res.reculM = Math.max(res.reculM, ct.reculPour(niveaux * HYPOTHESES_VOLUME.hauteurEtageM));
+    const tailleMaxi = Math.max(...e.batiments.map(b => b.unites));
+    if (niveaux !== niveauxPossibles[0] && c.niveaux === null && c.public === 'seniors') {
+      const pp = HP.maisonPlainPied, besoin = c.nombre * pp.facadeM * pp.profondeurM;
+      res.notes.push(`Plain-pied impossible pour ${c.libelle} sur cette parcelle (${besoin > libre + 1e-6
+        ? `${fr(besoin)} m² d’emprise pour ${fr(libre)} m² autorisés, CES ${fr(ct.ratioEmprise * 100, 1)} %`
+        : 'place insuffisante avec voies, reculs et jardins'}) : maisons en R+1, chambre au rez-de-chaussée conseillée.`);
+    }
+    if (regroupe) res.notes.push(`Maisons ${c.forme === 'individuelle' ? 'individuelles' : 'jumelées'} demandées, mais Studio accepte ${LIMITE_BATIMENTS_STUDIO} bâtiments au plus : ${fr(e.placees)} maisons regroupées en ${e.batiments.length} bandes (jusqu’à ${tailleMaxi} maisons accolées).`);
+    else if (c.nombre > LIMITE_BATIMENTS_STUDIO && tailleMaxi > 2) res.notes.push(`${fr(e.placees)} maisons regroupées en ${e.batiments.length} bandes (jusqu’à ${tailleMaxi} maisons accolées) : densité de la parcelle, et Studio accepte ${LIMITE_BATIMENTS_STUDIO} bâtiments au plus.`);
+    if (e.placees < c.nombre) res.alertes.push(`${c.libelle} : programme non atteint — ${fr(e.placees)} maison${e.placees > 1 ? 's' : ''} au plus sur cette parcelle (${niveaux === 1 ? 'plain-pied' : 'R+1'}, reculs, emprise au sol ${fr(ct.ratioEmprise * 100)} %).`);
+    vCurseur = e.vFin + HP.jardinArriereM * 2;
+    premier = false;
+  }
+  return res;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Volume multi-bâtiments (même type VolumePropose, compatible avec la vue et Studio)
+// ---------------------------------------------------------------------------------------------
+const NOMS_FORME: Record<FormeBatie, string> = {
+  'maison-individuelle': 'Maison', 'maisons-jumelees': 'Maisons jumelées', 'maisons-en-bande': 'Maisons en bande',
+  plot: 'Plot', barre: 'Barre', residence: 'Résidence',
+};
+const libelleRn = (n: number) => `R+${Math.max(0, n - 1)}`;
+
+/**
+ * Volume adapté au programme : plusieurs bâtiments si le programme le demande.
+ * Sans programme détaillé (`composantes` absent ou vide) : volume unique historique.
+ */
+export function calculerVolumeProgramme(
+  geometrie: GeometrieParcelle | null | undefined,
+  programme: ProgrammeVolume,
+  regles: ReglesPluVolume = REGLES_INCONNUES,
+): VolumePropose {
+  const base = calculerVolumeParcelle(geometrie, programme, regles);
+  const composantes = (programme.composantes ?? []).filter(c => c.nombre >= 1);
+  if (!composantes.length || base.statut === 'contour-invalide' || base.statut === 'hauteur-insuffisante') return base;
+  const proj = projeterParcelle(geometrie)!;
+  const ct = contraintesPlu(regles);
+  const angle = orientationParcelle(proj.anneaux[0]);
+  const surface = base.surfaceParcelleM2;
+  const essais = [angle, (angle + Math.PI / 2) % Math.PI].map(a => implanter(proj.anneaux, a, composantes, ct, surface));
+  const score = (r: Implantation) => r.placees.reduce((s, n, i) => s + Math.min(n, composantes[i].nombre), 0);
+  const retenue = essais.reduce((a, b) => score(b) > score(a) || (score(b) === score(a) && b.batiments.length < a.batiments.length) ? b : a);
+  if (!retenue.batiments.length) return { ...base, alertes: [...retenue.alertes, ...base.alertes] };
+
+  // Retour au repère local (x est, y nord).
+  const ci = Math.cos(retenue.angle), si = Math.sin(retenue.angle);
+  const versLocal = (u: number, v: number): PointLocal => ({ x: u * ci - v * si, y: u * si + v * ci });
+  const coinsDe = (r: RectUV) => [versLocal(r.ua, r.va), versLocal(r.ub, r.va), versLocal(r.ub, r.vb), versLocal(r.ua, r.vb)];
+  const angleDeg = Math.round(((retenue.angle * 180 / Math.PI) % 180 + 180) % 180 * 10) / 10;
+  // Ordre stable : par composante, puis rangée (v), puis u.
+  const tries = [...retenue.batiments].sort((a, b) => a.composante - b.composante || a.va - b.va || a.ua - b.ua);
+  const compteurs = new Map<string, number>();
+  const batiments: BatimentPropose[] = tries.map((b, i) => {
+    const largeurM = Math.round((b.ub - b.ua) * 100) / 100, profondeurM = Math.round((b.vb - b.va) * 100) / 100;
+    const centre = versLocal((b.ua + b.ub) / 2, (b.va + b.vb) / 2);
+    const nomForme = NOMS_FORME[b.forme];
+    const rang = (compteurs.get(nomForme) ?? 0) + 1; compteurs.set(nomForme, rang);
+    const detail = b.uniteLibelle === 'maison' ? (b.unites > 1 ? ` — ${b.unites} maisons` : '') : ` — ${b.unites} ${b.uniteLibelle}${b.unites > 1 ? 's' : ''}`;
+    return {
+      id: `mz-vol-${i + 1}`,
+      nom: `${nomForme} ${String.fromCharCode(64 + Math.min(26, rang))}${detail} ${libelleRn(b.niveaux)}`.slice(0, 80),
+      forme: b.forme, largeurM, profondeurM, niveaux: b.niveaux, hauteurM: b.niveaux * HYPOTHESES_VOLUME.hauteurEtageM,
+      surfaceM2: Math.round(largeurM * profondeurM), sdpM2: Math.round(largeurM * profondeurM * b.niveaux),
+      unites: b.unites, uniteLibelle: b.uniteLibelle,
+      centre, centreWgs84: versWgs84(centre, proj.origine), angleDeg, coins: coinsDe(b),
+    };
+  });
+  const voies: VoiePropose[] = retenue.voies.map(r => ({
+    largeurM: r.vb - r.va, longueurM: Math.round((r.ub - r.ua) * 10) / 10, surfaceM2: Math.round((r.ub - r.ua) * (r.vb - r.va)), coins: coinsDe(r),
+  }));
+  const empriseTotale = batiments.reduce((s, b) => s + b.largeurM * b.profondeurM, 0);
+  const sdpTotale = batiments.reduce((s, b) => s + b.largeurM * b.profondeurM * b.niveaux, 0);
+  const somme = (u: BatimentPropose['uniteLibelle']) => batiments.filter(b => b.uniteLibelle === u).reduce((s, b) => s + b.unites, 0);
+  const kpi: KpiImplantation = {
+    batiments: batiments.length, unites: batiments.reduce((s, b) => s + b.unites, 0), unitesVisees: composantes.reduce((s, c) => s + c.nombre, 0),
+    maisons: somme('maison'), logements: somme('logement'), lits: somme('lit'),
+    empriseTotaleM2: Math.round(empriseTotale), sdpTotaleM2: Math.round(sdpTotale), voirieM2: voies.reduce((s, v) => s + v.surfaceM2, 0),
+    ratioEmprise: surface > 0 ? Math.round(empriseTotale / surface * 1000) / 1000 : 0,
+  };
+  const principal = batiments.reduce((a, b) => b.largeurM * b.profondeurM > a.largeurM * a.profondeurM ? b : a);
+  const niveaux = Math.max(...batiments.map(b => b.niveaux));
+  const atteint = composantes.every((c, i) => retenue.placees[i] >= c.nombre);
+  const sdpVisee = composantes.reduce((s, c) => s + c.nombre * (c.type === 'maisons' ? 0 : c.type === 'residence' ? HP.sdpUniteResidenceM2 : HP.sdpLogementCollectifM2), 0);
+
+  const typologie = composantes.map(c => c.type === 'maisons'
+    ? (() => {
+      const bm = batiments.filter(b => b.uniteLibelle === 'maison'), n = bm[0]?.niveaux ?? 1;
+      const g = n === 1 ? HP.maisonPlainPied : HP.maisonEtage;
+      return `${c.libelle} : ${n === 1 ? 'plain-pied' : 'R+1'}, ${fr(g.facadeM, 1)} × ${fr(g.profondeurM, 1)} m par maison (≈ ${fr(g.facadeM * g.profondeurM * n)} m² de SDP), ${bm.length > 0 ? `${bm.length} bâtiment${bm.length > 1 ? 's' : ''} (${[...new Set(bm.map(b => NOMS_FORME[b.forme].toLowerCase()))].join(', ')})` : 'non placées'}.`;
+    })()
+    : `${c.libelle} : ${c.type === 'residence' ? `${fr(HP.sdpUniteResidenceM2)} m² de SDP par ${c.unite === 'lits' ? 'lit' : 'logement'} (chambres, communs, services), épaisseur ${fr(Math.min(HP.epaisseurResidenceM, ct.epaisseurMax), 1)} m` : `${fr(HP.sdpLogementCollectifM2)} m² de SDP par logement, plots ou barres de ${fr(ct.epaisseurMax, 1)} m d’épaisseur et ${fr(HP.longueurBarreMaxM)} m de long au plus`}.`);
+  const hypotheses = [
+    ct.reculConnu ? `Recul de ${fr(retenue.reculM, 1)} m sur toutes les limites : le plus fort des reculs PLU (côté voie non identifié).` : `Recul de ${fr(HYPOTHESES_VOLUME.reculDefautM)} m sur toutes les limites (valeur par défaut).`,
+    `Emprise au sol totale bornée à ${fr(ct.ratioEmprise * 100, 1)} % de la parcelle${regles.regles.length ? '' : ' (valeur par défaut)'} ; voies et stationnements non comptés.`,
+    ...typologie,
+    ...(composantes.some(c => c.type === 'maisons') ? [`Maisons : voie de desserte de ${fr(HP.voieM)} m, ${fr(HP.reculVoieM)} m entre maison et voie (stationnement), jardins arrière ≥ ${fr(HP.jardinArriereM)} m, ${fr(HP.ecartPignonsMaisonsM)} m entre pignons, ${HP.maisonsParBandeMax} maisons par bande (${HP.maisonsParBandeAbsolu} au plus).`] : []),
+    ...(composantes.some(c => c.type !== 'maisons') ? [`Collectif : façades en vis-à-vis à ≥ max(H, ${fr(HP.distanceFacadesMinM)} m), pignons à ≥ max(H/2, ${fr(HP.distancePignonsMinM)} m) ; R+${HP.niveauxCollectifDepart - 1} d’abord, plus haut si nécessaire.`] : []),
+    `Implantation en rangées parallèles au ${Math.abs(retenue.angle - angle) < 1e-9 ? 'grand côté' : 'petit côté'} de la parcelle (deux orientations essayées) ; hauteur d’étage ${fr(HYPOTHESES_VOLUME.hauteurEtageM)} m, toit plat.`,
+    `Studio : ${LIMITE_BATIMENTS_STUDIO} bâtiments au plus.`,
+  ];
+  return {
+    ...base,
+    statut: 'calcule',
+    emprise: { largeurM: principal.largeurM, profondeurM: principal.profondeurM, surfaceM2: principal.surfaceM2, centre: principal.centre, centreWgs84: principal.centreWgs84, angleDeg: principal.angleDeg, coins: principal.coins },
+    niveaux, hauteurM: niveaux * HYPOTHESES_VOLUME.hauteurEtageM, sdpM2: kpi.sdpTotaleM2,
+    logementsEstimes: kpi.unites, sdpViseeM2: sdpVisee > 0 ? sdpVisee : null, programmeAtteint: atteint,
+    reculM: retenue.reculM, cesRetenu: base.cesRetenu,
+    hypotheses, alertes: [...retenue.notes, ...retenue.alertes],
+    batiments, voies, kpi,
+  };
+}

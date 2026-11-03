@@ -1,7 +1,8 @@
 // src/spaces/copilot/studio3d/VolumeParcelle3D.tsx
 //
 // Vue 3D LÉGÈRE du Dossier 3D : contour réel de la parcelle (en mètres locaux)
-// et volume parallélépipédique proposé, orbitable à la souris ou au doigt.
+// et volume(s) proposé(s) — un parallélépipède par bâtiment, voies de desserte en
+// aplat —, orbitable à la souris ou au doigt. Cotes L / P / H : bâtiment principal.
 // Chargée paresseusement (React.lazy) par VolumeParcelleSection : three n'est
 // téléchargé que lorsqu'une parcelle est à montrer. Sans WebGL : plan 2D (SVG).
 //
@@ -19,7 +20,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Axis3d, Rotate3d, Scan, SquareDashed } from 'lucide-react';
-import { libelleNiveaux, type VolumePropose } from './volumeParcelle';
+import { corpsAffiches, libelleNiveaux, type VolumePropose } from './volumeParcelle';
 import type { CartouchePlan, RotationAxo } from './planAxonometriqueLogique';
 import { PlanAxonometrique } from './PlanAxonometrique';
 
@@ -67,10 +68,13 @@ function texturePlateau(): THREE.CanvasTexture {
 function LegendeCotes({ volume }: { volume: VolumePropose }) {
   const e = volume.emprise;
   if (!e) return null;
-  return <dl className="mzia-volume__legende" aria-label="Cotes du volume">
+  const corps = corpsAffiches(volume), principal = corps.find(c => c.principal) ?? corps[0];
+  const multi = corps.length > 1;
+  return <dl className="mzia-volume__legende" aria-label={multi ? `Cotes du bâtiment principal (${corps.length} bâtiments)` : 'Cotes du volume'}>
+    {multi && <div><dt>{corps.length}</dt><dd>bâtiments<span className="mzia-volume__sr"> ; cotes du bâtiment principal</span></dd></div>}
     <div><dt>L</dt><dd>{fr(e.largeurM)} m<span className="mzia-volume__sr"> de longueur</span></dd></div>
     <div><dt>P</dt><dd>{fr(e.profondeurM)} m<span className="mzia-volume__sr"> d’épaisseur</span></dd></div>
-    {volume.hauteurM > 0 && <div><dt>H</dt><dd>{fr(volume.hauteurM, 0)} m · {libelleNiveaux(volume.niveaux)}</dd></div>}
+    {principal && principal.hauteurM > 0 && <div><dt>H</dt><dd>{fr(principal.hauteurM, 0)} m · {libelleNiveaux(principal.niveaux)}</dd></div>}
   </dl>;
 }
 
@@ -84,7 +88,8 @@ export function PlanVolumeSvg({ volume }: { volume: VolumePropose }) {
   const trait = Math.max(0.3, (x1 - x0) / 200);
   return <svg className="mzia-volume__plan" viewBox={vb} role="img" aria-label="Plan de la parcelle et de l’emprise proposée">
     <polygon points={pts(volume.contour)} fill="#dff1e6" stroke="#2f7a52" strokeWidth={trait} strokeLinejoin="round" />
-    {volume.emprise && <polygon points={pts(volume.emprise.coins)} fill="#c9bff5" fillOpacity={0.85} stroke="#4a33b8" strokeWidth={trait} strokeLinejoin="round" />}
+    {(volume.voies ?? []).map((v, i) => <polygon key={`voie-${i}`} points={pts(v.coins)} fill="#e3e1ea" stroke="#8f8aa6" strokeWidth={trait * 0.7} strokeLinejoin="round" />)}
+    {corpsAffiches(volume).map(b => <polygon key={b.id} points={pts(b.coins)} fill="#c9bff5" fillOpacity={0.85} stroke="#4a33b8" strokeWidth={trait} strokeLinejoin="round" />)}
   </svg>;
 }
 
@@ -100,7 +105,7 @@ export default function VolumeParcelle3D({ volume, cartouche }: { volume: Volume
   const [axo, setAxo] = useState(false);
   const [rotationAxo, setRotationAxo] = useState<RotationAxo>(0);
   const cartoucheAxo: CartouchePlan = cartouche ?? { idu: '', mention: volume.mentionPlu };
-  const cle = JSON.stringify([volume.contour, volume.emprise, volume.niveaux]);
+  const cle = JSON.stringify([volume.contour, volume.emprise, volume.niveaux, volume.batiments, volume.voies]);
 
   useEffect(() => {
     const element = hote.current;
@@ -166,34 +171,46 @@ export default function VolumeParcelle3D({ volume, cartouche }: { volume: Volume
       return cible.clone().add(direction.clone().multiplyScalar((rayon + Math.hypot(cible.x, cible.z)) * 0.8 / Math.sin(demi)));
     };
     const initiale = new THREE.Vector3(etendue, etendue, etendue);
-    if (volume.emprise) {
-      const e = volume.emprise;
+    // Voies de desserte (implantation multi-bâtiments) : aplats gris posés sur le socle.
+    const voieMat = garder(new THREE.MeshStandardMaterial({ color: '#d9d6e3', roughness: 0.95 }));
+    for (const v of volume.voies ?? []) {
+      const f = new THREE.Shape(v.coins.map(p => new THREE.Vector2(p.x - cx, p.y - cy)));
+      const m = new THREE.Mesh(garder(new THREE.ShapeGeometry(f)), voieMat);
+      m.rotation.x = -Math.PI / 2; m.position.y = SOCLE + 0.03; m.receiveShadow = true;
+      scene.add(m);
+    }
+    const corps = corpsAffiches(volume);
+    const multi = corps.length > 1;
+    const blocMat = garder(new THREE.MeshStandardMaterial({ color: '#9d8cf7', roughness: 0.4, metalness: 0, transparent: true, opacity: multi ? 0.78 : 0.62, depthWrite: false }));
+    const areteMat = garder(new THREE.LineBasicMaterial({ color: '#3a26a6' }));
+    const plancher = garder(new THREE.LineBasicMaterial({ color: '#5b44d6', transparent: true, opacity: 0.38 }));
+    for (const b of corps) {
       const groupe = new THREE.Group();
-      groupe.position.copy(monde(e.centre.x, e.centre.y, SOCLE));
-      groupe.rotation.y = e.angleDeg * Math.PI / 180;
+      groupe.position.copy(monde(b.centre.x, b.centre.y, SOCLE));
+      groupe.rotation.y = b.angleDeg * Math.PI / 180;
       scene.add(groupe);
-      const H = volume.hauteurM;
-      const boite = garder(new THREE.BoxGeometry(e.largeurM, H, e.profondeurM));
-      const bloc = new THREE.Mesh(boite, garder(new THREE.MeshStandardMaterial({ color: '#9d8cf7', roughness: 0.4, metalness: 0, transparent: true, opacity: 0.62, depthWrite: false })));
+      const H = b.hauteurM;
+      const boite = garder(new THREE.BoxGeometry(b.largeurM, H, b.profondeurM));
+      const bloc = new THREE.Mesh(boite, blocMat);
       bloc.position.y = H / 2; bloc.castShadow = true; bloc.renderOrder = 2;
       groupe.add(bloc);
-      const aretes = new THREE.LineSegments(garder(new THREE.EdgesGeometry(boite)), garder(new THREE.LineBasicMaterial({ color: '#3a26a6' })));
+      const aretes = new THREE.LineSegments(garder(new THREE.EdgesGeometry(boite)), areteMat);
       aretes.position.y = H / 2; aretes.renderOrder = 3;
       groupe.add(aretes);
       // Lignes de plancher (un trait par niveau), discrètes.
-      const plancher = garder(new THREE.LineBasicMaterial({ color: '#5b44d6', transparent: true, opacity: 0.38 }));
-      const w = e.largeurM / 2 + 0.02, d = e.profondeurM / 2 + 0.02;
-      for (let n = 1; n < volume.niveaux; n++) {
-        const y = n * (H / volume.niveaux);
+      const w = b.largeurM / 2 + 0.02, d = b.profondeurM / 2 + 0.02;
+      for (let n = 1; n < b.niveaux; n++) {
+        const y = n * (H / b.niveaux);
         groupe.add(new THREE.LineLoop(garder(new THREE.BufferGeometry().setFromPoints([
           new THREE.Vector3(-w, y, -d), new THREE.Vector3(w, y, -d), new THREE.Vector3(w, y, d), new THREE.Vector3(-w, y, d)])), plancher));
       }
-      // Cotes : lignes décalées du volume, avec talons, repérées par une lettre (valeurs dans la légende).
+      if (!b.principal) continue;
+      // Cotes (bâtiment principal) : lignes décalées du volume, avec talons, repérées par une lettre (valeurs dans la légende).
       const ecart = Math.max(1.6, etendue / 28), talon = ecart * 0.45;
       const coteMat = garder(new THREE.LineBasicMaterial({ color: '#5b44d6', transparent: true, opacity: 0.85, depthTest: false }));
-      const cote = (a: THREE.Vector3, b: THREE.Vector3, sens: THREE.Vector3, lettre: string, ou: THREE.Vector3) => {
+      const cote = (a: THREE.Vector3, q: THREE.Vector3, sens: THREE.Vector3, lettre: string, ou: THREE.Vector3) => {
         const t = sens.clone().multiplyScalar(talon);
-        const segs = [a, b, a.clone().sub(t), a.clone().add(t), b.clone().sub(t), b.clone().add(t)];
+        const segs = [a, q, a.clone().sub(t), a.clone().add(t), q.clone().sub(t), q.clone().add(t)];
         const l = new THREE.LineSegments(garder(new THREE.BufferGeometry().setFromPoints(segs)), coteMat);
         l.renderOrder = 9; groupe.add(l);
         const r = repere(lettre); r.position.copy(ou); groupe.add(r);
@@ -207,8 +224,10 @@ export default function VolumeParcelle3D({ volume, cartouche }: { volume: Volume
       cote(new THREE.Vector3(-w, y0, sz * (d + ecart)), new THREE.Vector3(w, y0, sz * (d + ecart)), new THREE.Vector3(0, 0, 1), 'L', new THREE.Vector3(0, y0, sz * (d + ecart)));
       cote(new THREE.Vector3(sx * (w + ecart), y0, -d), new THREE.Vector3(sx * (w + ecart), y0, d), new THREE.Vector3(1, 0, 0), 'P', new THREE.Vector3(sx * (w + ecart), y0, 0));
       if (H > 0) cote(new THREE.Vector3(-sx * (w + ecart), 0, sz * d), new THREE.Vector3(-sx * (w + ecart), H, sz * d), new THREE.Vector3(0, 0, 1), 'H', new THREE.Vector3(-sx * (w + ecart), H / 2, sz * d));
-      cible = new THREE.Vector3(groupe.position.x, SOCLE + H * 0.3, groupe.position.z);
+      // Un seul volume : la caméra vise le volume ; plusieurs : le centre de la parcelle (déjà la cible).
+      if (!multi) cible = new THREE.Vector3(groupe.position.x, SOCLE + H * 0.3, groupe.position.z);
     }
+    if (multi) cible = new THREE.Vector3(0, SOCLE + volume.hauteurM * 0.2, 0);
 
     scene.add(new THREE.HemisphereLight('#ffffff', '#cfc8ee', 1.6));
     const soleil = new THREE.DirectionalLight('#fffaf2', 2.2);
@@ -302,7 +321,9 @@ export default function VolumeParcelle3D({ volume, cartouche }: { volume: Volume
   </button>;
   const plan = axo && <PlanAxonometrique volume={volume} cartouche={cartoucheAxo} rotation={rotationAxo} onTourner={setRotationAxo} />;
 
-  const resume = volume.emprise
+  const resume = volume.emprise && volume.kpi && (volume.batiments?.length ?? 0) > 1
+    ? `Parcelle de ${fr(volume.surfaceParcelleM2, 0)} m² et ${volume.kpi.batiments} bâtiments d’étude (emprise totale ${fr(volume.kpi.empriseTotaleM2, 0)} m², jusqu’à ${fr(volume.hauteurM, 0)} m de haut, ${libelleNiveaux(volume.niveaux)}).`
+    : volume.emprise
     ? `Parcelle de ${fr(volume.surfaceParcelleM2, 0)} m² et volume d’étude de ${fr(volume.emprise.largeurM)} × ${fr(volume.emprise.profondeurM)} m, ${fr(volume.hauteurM, 0)} m de haut (${libelleNiveaux(volume.niveaux)}).`
     : `Parcelle de ${fr(volume.surfaceParcelleM2, 0)} m².`;
 

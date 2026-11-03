@@ -21,7 +21,7 @@
 // Repères : x vers l'est, y vers le nord, z vers le haut (mètres) ; écran SVG :
 // X vers la droite, Y vers le bas.
 
-import { libelleNiveaux, type PointLocal, type VolumePropose } from './volumeParcelle.ts';
+import { corpsAffiches, libelleNiveaux, type PointLocal, type VolumePropose } from './volumeParcelle.ts';
 
 /** Angle de rotation du plan pour la position 0, en degrés. */
 export const ANGLE_AXO_DEG = 45;
@@ -96,8 +96,12 @@ export interface PlanAxo {
   largeur: number;
   hauteurDessin: number;
   parcelle: Point2[];
+  /** Voies de desserte (aplats au sol) d'une implantation multi-bâtiments. */
+  voies: Point2[][];
   faces: { points: Point2[]; ton: TonFace }[];
   planchers: [Point2, Point2][];
+  /** Ordre de peinture par bâtiment : nombre de faces puis de planchers de chacun (du fond vers l'avant). */
+  groupes: { faces: number; planchers: number }[];
   cotes: CoteAxo[];
   /** Flèche du nord : seulement si l'orientation de la parcelle est connue. */
   nord: { x: number; y: number; direction: Point2 } | null;
@@ -148,16 +152,19 @@ export function construirePlanAxo(volume: VolumePropose, options: OptionsPlanAxo
   const etroit = largeur < 480;
   const marge = etroit ? 14 : 24;
   const e = volume.emprise;
-  const H = e ? Math.max(0, volume.hauteurM) : 0;
+  // Corps dessinés : tous les bâtiments d'une implantation multiple ; les cotes portent sur le principal.
+  const corps = corpsAffiches(volume);
+  const principal = corps.find(c => c.principal) ?? null;
+  const H = e && principal ? Math.max(0, principal.hauteurM) : 0;
   const pj = (p: Point3) => projeterAxo(p, rotation);
 
   const contour = volume.contour;
   const xs = contour.map(p => p.x), ys = contour.map(p => p.y);
   const etendue = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 10);
 
-  // Emprise : coins dans l'ordre, intérieur = centre.
-  const coins = e ? e.coins : [];
-  const centre = e ? e.centre : { x: 0, y: 0 };
+  // Emprise (bâtiment principal) : coins dans l'ordre, intérieur = centre.
+  const coins = e && principal ? principal.coins : [];
+  const centre = e && principal ? principal.centre : { x: 0, y: 0 };
   const aretes = coins.map((a, i) => ({ a, b: coins[(i + 1) % coins.length] }));
 
   // Cotes en mètres : décalage hors du volume, proportionnel à l'étendue.
@@ -191,7 +198,8 @@ export function construirePlanAxo(volume: VolumePropose, options: OptionsPlanAxo
   const cotesM = geometrieCotes(decalageM);
   const pointsM: Point3[] = [
     ...contour.map(p => ({ x: p.x, y: p.y, z: 0 })),
-    ...coins.flatMap(c => [{ x: c.x, y: c.y, z: 0 }, { x: c.x, y: c.y, z: H }]),
+    ...corps.flatMap(b => b.coins.flatMap(c => [{ x: c.x, y: c.y, z: 0 }, { x: c.x, y: c.y, z: Math.max(0, b.hauteurM) }])),
+    ...(volume.voies ?? []).flatMap(v => v.coins.map(c => ({ x: c.x, y: c.y, z: 0 }))),
     ...cotesM.flatMap(c => [...c.ligne, ...c.attaches.flat()]),
   ];
   const proj = pointsM.map(pj);
@@ -205,26 +213,33 @@ export function construirePlanAxo(volume: VolumePropose, options: OptionsPlanAxo
   const ecran = (p: Point3): Point2 => { const q = pj(p); return { x: ox + q.x * echelle, y: oy + q.y * echelle }; };
 
   const parcelle = contour.map(p => ecran({ x: p.x, y: p.y, z: 0 }));
+  const voies = (volume.voies ?? []).map(v => v.coins.map(c => ecran({ x: c.x, y: c.y, z: 0 })));
 
-  // Volume : faces vues dans l'ordre de peinture (du fond vers l'avant), puis le dessus.
+  // Volumes : du plus lointain au plus proche (peintre), et pour chacun ses faces vues puis le dessus.
   const faces: PlanAxo['faces'] = [];
   const planchers: [Point2, Point2][] = [];
-  if (e && coins.length >= 3 && H > 0) {
-    const vues = aretes
-      .map(({ a, b }) => ({ a, b, n: normaleExterieure(a, b, centre) }))
+  const groupes: PlanAxo['groupes'] = [];
+  const ordre = e ? [...corps].sort((p, q) => composanteV(q.centre, rotation) - composanteV(p.centre, rotation)) : [];
+  for (const b of ordre) {
+    const hb = Math.max(0, b.hauteurM);
+    if (b.coins.length < 3 || hb <= 0) continue;
+    const f0 = faces.length, p0 = planchers.length;
+    const vues = b.coins.map((a, i) => ({ a, b: b.coins[(i + 1) % b.coins.length] }))
+      .map(({ a, b: q }) => ({ a, b: q, n: normaleExterieure(a, q, b.centre) }))
       .filter(({ n }) => composanteV(n, rotation) < -1e-9)
       .sort((p, q) => composanteV(q.n, rotation) - composanteV(p.n, rotation));
-    for (const { a, b } of vues) {
-      const pa = ecran({ ...a, z: 0 }), pb = ecran({ ...b, z: 0 }), pbh = ecran({ ...b, z: H }), pah = ecran({ ...a, z: H });
+    for (const { a, b: q, n: nl } of vues) {
+      const pa = ecran({ ...a, z: 0 }), pb = ecran({ ...q, z: 0 }), pbh = ecran({ ...q, z: hb }), pah = ecran({ ...a, z: hb });
       // Gauche / droite selon le sens de la normale à l'écran : deux tons distincts pour les faces verticales.
-      const n = pj({ x: normaleExterieure(a, b, centre).x, y: normaleExterieure(a, b, centre).y, z: 0 });
+      const n = pj({ x: nl.x, y: nl.y, z: 0 });
       faces.push({ points: [pa, pb, pbh, pah], ton: n.x < 0 ? 'gauche' : 'droite' });
-      for (let k = 1; k < volume.niveaux; k++) {
-        const z = k * H / volume.niveaux;
-        planchers.push([ecran({ ...a, z }), ecran({ ...b, z })]);
+      for (let k = 1; k < b.niveaux; k++) {
+        const z = k * hb / b.niveaux;
+        planchers.push([ecran({ ...a, z }), ecran({ ...q, z })]);
       }
     }
-    faces.push({ points: coins.map(c => ecran({ ...c, z: H })), ton: 'dessus' });
+    faces.push({ points: b.coins.map(c => ecran({ ...c, z: hb })), ton: 'dessus' });
+    groupes.push({ faces: faces.length - f0, planchers: planchers.length - p0 });
   }
 
   // Cotes en pixels, puis placement des valeurs sans chevauchement.
@@ -260,7 +275,7 @@ export function construirePlanAxo(volume: VolumePropose, options: OptionsPlanAxo
     const haut = ecran({ ...bas.c, z: H });
     const gauche = Math.min(bas.p.x, ...cotes.flatMap(c => [c.ligne[0].x, c.ligne[1].x, c.boite.x0].filter(x => x < bas.p.x + 1)));
     const xL = Math.min(bas.p.x, gauche) - police * 1.4;
-    const texte = `${fr(H, 1)} m · ${libelleNiveaux(volume.niveaux)}`;
+    const texte = `${fr(H, 1)} m · ${libelleNiveaux(principal?.niveaux ?? volume.niveaux)}`;
     let valeur = { x: xL - police * 1.05, y: (bas.p.y + haut.y) / 2, angle: -90 };
     let boite = boiteTexte(valeur.x, valeur.y, -90, texte, police);
     for (const t of [0.5, 0.3, 0.7, 0.15, 0.85]) {
@@ -289,7 +304,7 @@ export function construirePlanAxo(volume: VolumePropose, options: OptionsPlanAxo
 
   const nord = orientationConnue(volume) ? { x: largeur - marge - 14, y: marge + 14, direction: directionNordEcran(rotation) } : null;
 
-  return { rotation, echelle, largeur, hauteurDessin, parcelle, faces, planchers, cotes, nord, echelleGraphique };
+  return { rotation, echelle, largeur, hauteurDessin, parcelle, voies, faces, planchers, groupes, cotes, nord, echelleGraphique };
 }
 
 // ---------------------------------------------------------------------------
@@ -330,13 +345,21 @@ export function descriptionPlanAxo(volume: VolumePropose, cartouche: CartouchePl
   const ref = cartouche.reference ?? cartouche.idu;
   const titre = `Plan axonométrique — parcelle ${ref}${cartouche.zone ? `, zone ${cartouche.zone}` : ''}`;
   const e = volume.emprise;
+  const k = volume.kpi, multi = (volume.batiments?.length ?? 0) > 1;
   const description = [
     `Parcelle de ${fr(volume.surfaceParcelleM2, 0)} m²`,
-    e ? `volume d’étude de ${fr(e.largeurM)} × ${fr(e.profondeurM)} m, ${fr(volume.hauteurM, 1)} m de haut (${libelleNiveaux(volume.niveaux)}), SDP estimée ≈ ${fr(volume.sdpM2, 0)} m²` : 'aucun volume proposé',
+    e && multi && k ? `${k.batiments} bâtiments d’étude (${uniteKpi(k)}), emprise totale ${fr(k.empriseTotaleM2, 0)} m², jusqu’à ${fr(volume.hauteurM, 1)} m de haut (${libelleNiveaux(volume.niveaux)}), SDP estimée ≈ ${fr(volume.sdpM2, 0)} m²${k.voirieM2 ? `, voies ${fr(k.voirieM2, 0)} m²` : ''} ; cotes du bâtiment principal ${fr(e.largeurM)} × ${fr(e.profondeurM)} m`
+    : e ? `volume d’étude de ${fr(e.largeurM)} × ${fr(e.profondeurM)} m, ${fr(volume.hauteurM, 1)} m de haut (${libelleNiveaux(volume.niveaux)}), SDP estimée ≈ ${fr(volume.sdpM2, 0)} m²` : 'aucun volume proposé',
     `Axonométrie planométrique à ${ANGLE_AXO_DEG}°, plan et hauteurs à la même échelle`,
     cartouche.mention + (cartouche.precision ? ` ${cartouche.precision}` : ''),
   ].join('. ').replace(/\.?$/, '.');
   return { titre, description };
+}
+
+/** « 25 maisons », « 40 logements », « 15 maisons + 20 logements ». */
+export function uniteKpi(k: NonNullable<VolumePropose['kpi']>): string {
+  const p = (n: number, m: string) => `${fr(n, 0)} ${m}${n > 1 ? 's' : ''}`;
+  return [k.maisons ? p(k.maisons, 'maison') : '', k.logements ? p(k.logements, 'logement') : '', k.lits ? p(k.lits, 'lit') : ''].filter(Boolean).join(' + ') || '0 logement';
 }
 
 /** SVG complet du plan (dessin + échelle graphique + nord + cartouche). */
@@ -354,7 +377,12 @@ export function svgPlanAxo(volume: VolumePropose, cartouche: CartouchePlan, opti
     [`IDU ${cartouche.idu}`, false],
     [cartouche.programme ? `Programme : ${cartouche.programme}` : 'Programme : à préciser', false],
   ] as const;
-  const droite = e ? [
+  const k = volume.kpi;
+  const droite = e && k && (volume.batiments?.length ?? 0) > 1 ? [
+    [`${k.batiments} bâtiments · ${uniteKpi(k)}`, true],
+    [`Emprise ${fr(k.empriseTotaleM2, 0)} m² (${fr(k.ratioEmprise * 100, 0)} %) · jusqu’à ${libelleNiveaux(volume.niveaux)}`, false],
+    [`SDP estimée ≈ ${fr(volume.sdpM2, 0)} m²${k.voirieM2 ? ` · voies ${fr(k.voirieM2, 0)} m²` : ''}`, false],
+  ] as const : e ? [
     [`${libelleNiveaux(volume.niveaux)} · ${fr(volume.hauteurM, 1)} m`, true],
     [`Emprise ${fr(e.largeurM)} × ${fr(e.profondeurM)} m`, false],
     [`SDP estimée ≈ ${fr(volume.sdpM2, 0)} m²`, false],
@@ -381,9 +409,16 @@ export function svgPlanAxo(volume: VolumePropose, cartouche: CartouchePlan, opti
 
   // Parcelle : léger aplat + contour net.
   o.push(`<polygon points="${pts(plan.parcelle)}" fill="#eef6f1" stroke="${ENCRE}" stroke-width="1.3" stroke-linejoin="round"/>`);
+  // Voies de desserte : aplats gris, sous les volumes.
+  for (const v of plan.voies) o.push(`<polygon points="${pts(v)}" fill="#e3e1ea" stroke="#8f8aa6" stroke-width="0.8" stroke-linejoin="round" data-voie=""/>`);
   // Volume : faces ombrées par orientation, arêtes nettes, planchers discrets.
-  for (const f of plan.faces) o.push(`<polygon points="${pts(f.points)}" fill="${TONS[f.ton]}" stroke="${INDIGO}" stroke-width="1.2" stroke-linejoin="round"/>`);
-  for (const [a, b] of plan.planchers) o.push(`<line x1="${n1(a.x)}" y1="${n1(a.y)}" x2="${n1(b.x)}" y2="${n1(b.y)}" stroke="${INDIGO}" stroke-width="0.6" stroke-opacity="0.55"/>`);
+  // Bâtiment par bâtiment, du fond vers l'avant : ses faces, puis ses planchers (un bâtiment plus proche les recouvre).
+  let fi = 0, pi = 0;
+  for (const g of plan.groupes) {
+    for (const f of plan.faces.slice(fi, fi + g.faces)) o.push(`<polygon points="${pts(f.points)}" fill="${TONS[f.ton]}" stroke="${INDIGO}" stroke-width="1.2" stroke-linejoin="round"/>`);
+    for (const [a, b] of plan.planchers.slice(pi, pi + g.planchers)) o.push(`<line x1="${n1(a.x)}" y1="${n1(a.y)}" x2="${n1(b.x)}" y2="${n1(b.y)}" stroke="${INDIGO}" stroke-width="0.6" stroke-opacity="0.55"/>`);
+    fi += g.faces; pi += g.planchers;
+  }
   // Les faces vues d'un prisme convexe ne se recouvrent pas : les planchers tracés après restent sur leur face.
 
   // Cotes d'architecte : attaches fines, ligne à flèches, valeur détourée.
