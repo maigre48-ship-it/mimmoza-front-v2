@@ -92,12 +92,12 @@ test('R2 composition : 8 bâtiments acceptés, 9 refusés explicitement (jamais 
   assert.equal(r.ok, false);
 });
 
-test('R2 relief différé : sans relief, ni grille ni implantation dans le projet ; elles suivent dans le message de relief', () => {
+test('R2 relief différé : sans relief, pas de grille mais l’implantation part tout de suite ; le relief suit dans son message', () => {
   const r = construireProjetChat(entree({ relief: null }));
   assert.ok(r.ok);
   if (!r.ok) return;
   assert.equal(r.projet.site.relief, null);
-  assert.equal(r.projet.extensionsV1.implantation, null);
+  assert.deepEqual(r.projet.extensionsV1.implantation, { lon: -1.4747, lat: 43.49225, orientationDeg: 12, entryOffsetM: 0.3 });
   assert.equal(r.projet.acces.length, 0);
   const m = messageRelief(SESSION, { ok: true, terrain: relief }, { lon: -1.4747, lat: 43.49225, orientationDeg: 12, entryOffsetM: 0.3 });
   assert.equal(m.type, 'mimmoza-relief-v1');

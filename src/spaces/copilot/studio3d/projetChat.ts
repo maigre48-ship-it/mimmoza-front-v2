@@ -62,8 +62,9 @@ export function chargeV1Chat(e: EntreeProjetChat): Record<string, unknown> {
   const brief = (e.brief ?? "").trim().slice(0, 2000);
   const commande = (e.commandeArchitecture ?? "").trim().slice(0, 1000);
   const avecRelief = e.relief !== null && e.parcelles.length > 0;
-  // L'implantation exige un relief mesuré et une seule parcelle (règle Studio CAD03) ; sinon elle suit avec le relief.
-  const pose = avecRelief && e.parcelles.length === 1 && e.implantation ? e.implantation : null;
+  // Implantation (centre + orientation) : une seule parcelle suffit ; sans relief, Studio la pose sur le
+  // terrain plat supposé et la cote d'entrée est recalée quand le relief arrive (message de relief différé).
+  const pose = e.parcelles.length === 1 && e.implantation ? e.implantation : null;
   return {
     version: 1,
     source: "mimmoza-front-v2",
@@ -76,7 +77,8 @@ export function chargeV1Chat(e: EntreeProjetChat): Record<string, unknown> {
     parcels: e.parcelles.map((p) => ({ id: p.id, feature: p.feature })),
     ...(avecRelief ? { terrainData: e.relief } : {}),
     ...(pose ? { implantation: pose } : {}),
-    ...(pose && e.accesses?.length ? { accesses: e.accesses.slice(0, 2) } : {}),
+    // Les accès (tracés sur le relief) restent liés au relief mesuré.
+    ...(pose && avecRelief && e.accesses?.length ? { accesses: e.accesses.slice(0, 2) } : {}),
     ...(e.panoramas?.length ? { panoramas: e.panoramas.slice(0, 10) } : {}),
     ...(brief ? { brief } : {}),
     ...(commande && composition.length < 2 ? { commandeArchitecture: commande } : {}),
