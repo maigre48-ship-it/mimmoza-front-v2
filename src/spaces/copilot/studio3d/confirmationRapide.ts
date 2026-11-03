@@ -9,6 +9,7 @@
 // à Studio est TOUJOURS à l'intérieur de la parcelle.
 import type { ConfirmedTerrain } from './terrainCadastre.ts';
 import { parcelCenter, parcelContains, type GpsPoint, type TerrainParcel } from './parcelFromGps.ts';
+import type { VolumePropose } from './volumeParcelle.ts';
 
 export const URL_ADRESSE_INVERSE = 'https://api-adresse.data.gouv.fr/reverse/';
 
@@ -55,4 +56,24 @@ export function lienGeoportail(point: GpsPoint): string {
 /** Terrain confirmé à partir de la parcelle proposée (l'IDU affiché est celui transmis). */
 export function terrainDepuisParcelle(parcelle: TerrainParcel, idu: string, point: GpsPoint, adresse: string | null): ConfirmedTerrain & { adresse: string | null } {
   return { parcel: { ...parcelle, properties: { ...parcelle.properties, idu } }, point, adresse };
+}
+
+/**
+ * IMPLANTATION DU VOLUME POUR STUDIO — le bâtiment est posé comme sur le plan
+ * axonométrique (même centre, même orientation), au lieu d'être placé par Studio.
+ *
+ * Conventions : volumeParcelle.ts mesure `angleDeg` dans le sens trigonométrique
+ * depuis l'EST (x est, y nord) ; Studio (rotatePoint, z vers le SUD) et
+ * footprintPoints tournent dans le sens horaire vu du ciel. Donc
+ * orientationDeg = −angleDeg. La largeur (grand côté) reste l'axe x du bâtiment.
+ * Entrée au niveau du terrain naturel (entryOffsetM = 0). Studio n'applique la
+ * pose qu'avec le relief mesuré et vérifie que le centre tombe dans la parcelle.
+ */
+export function implantationDepuisVolume(v: Pick<VolumePropose, 'emprise'>): { lon: number; lat: number; orientationDeg: number; entryOffsetM: number } | null {
+  const e = v.emprise;
+  if (!e || !Number.isFinite(e.centreWgs84.lon) || !Number.isFinite(e.centreWgs84.lat) || !Number.isFinite(e.angleDeg)) return null;
+  let o = -e.angleDeg;
+  o = ((o % 360) + 540) % 360 - 180; // ]-180, 180]
+  if (o === -180) o = 180;
+  return { lon: e.centreWgs84.lon, lat: e.centreWgs84.lat, orientationDeg: Math.round(o * 10) / 10 || 0, entryOffsetM: 0 };
 }

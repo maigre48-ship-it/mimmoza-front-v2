@@ -27,6 +27,7 @@ import { parcelleRetenue } from './parcelleConfirmee';
 import { exigerPreparation3D } from './preparation3D';
 import { ConfirmerParcelle } from './ConfirmerParcelle';
 import { ConfirmationParcelleRapide } from './ConfirmationParcelleRapide';
+import { implantationDepuisVolume } from './confirmationRapide';
 import type { ConfirmedTerrain } from './terrainCadastre';
 import { parcelId, type TerrainParcel } from './parcelFromGps';
 import type { IssueOuvertureStudio } from './JarvisDraftPanel';
@@ -167,9 +168,13 @@ export function VolumeParcelleSection({ contexte, choisir, relire, conversationI
     const ficheVolume = ficheStudioDepuisVolume(v, { adresse: contexte.adresse, reference, programme: contexte.programme, base: fiche });
     if (!ficheVolume) { setNotice('Aucun volume à transmettre sur cette parcelle.'); return; }
     try { exigerPreparation3D(ficheVolume); } catch (e) { setNotice(messageErreur(e, 'Volume à préciser.')); return; }
+    // Pose du volume (centre + orientation du plan) transmise à Studio, sur la parcelle confirmée ou retenue.
+    const pose = implantationDepuisVolume(v);
+    const base = terrain ?? (p.type === 'confirmee' ? p.retenue : undefined);
+    const terrainPose = base && pose ? { ...base, implantation: pose } : base;
     setOuverture(true); setNotice('');
     try {
-      const issue = await onOpenStudio(ficheVolume, conversationId, terrain);
+      const issue = await onOpenStudio(ficheVolume, conversationId, terrainPose);
       setDemandeParcelle(issue === 'parcelle-requise');
       if (issue !== 'parcelle-requise') relire();
     } catch (e) {
@@ -244,7 +249,7 @@ export function VolumeParcelleSection({ contexte, choisir, relire, conversationI
           <p>Non vérifiés : côté voie, prospects entre bâtiments, stationnement, servitudes, OAP.</p>
         </details>
       </div>
-      {volume.emprise && <small className="mzia-volume__note">Studio reçoit les dimensions et les niveaux de ce volume{p.type === 'confirmee' ? '' : ', après confirmation de la parcelle'} ; il place lui-même le bâtiment sur la parcelle (position et orientation montrées ici non transmises).</small>}
+      {volume.emprise && <small className="mzia-volume__note">Studio reçoit ce volume{p.type === 'confirmee' ? '' : ', après confirmation de la parcelle'} : dimensions, niveaux, position et orientation du plan (appliquées dès que le relief de la parcelle est mesuré).</small>}
       {volume.emprise && conversationId && onOpenStudio && <div className="mzia-volume__pied">
         {confirmationRapide && p.type === 'candidate' && contour?.etat === 'ok'
           ? <ConfirmationParcelleRapide idu={idu} reference={referenceLisible(idu)} surfaceM2={p.candidate.surfaceM2 ?? volume.surfaceParcelleM2}
