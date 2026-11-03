@@ -29,7 +29,7 @@
 // - Requires env:
 //   - SUPABASE_URL
 //   - SUPABASE_SERVICE_ROLE_KEY (recommended) OR SUPABASE_ANON_KEY (fallback)
-//   - Optional: IGN_ALTI_KEY or VITE_IGN_ALTI_KEY
+//   - Relief : Géoplateforme IGN (sans clé, ressource IGN_ALTI_RESSOURCE, défaut ign_rge_alti_wld) ; repli OpenTopoData SRTM90
 //   - INTERNAL_ANON_JWT (JWT anon "eyJ...", used ONLY as fallback for internal calls)
 
 import { corsHeaders } from "../_shared/cors.ts";
@@ -468,55 +468,78 @@ function filterInsidePoints(
 // -----------------------------
 // Elevation providers
 // -----------------------------
-const IGN_ALTI_KEY = Deno.env.get("IGN_ALTI_KEY") ?? Deno.env.get("VITE_IGN_ALTI_KEY") ?? "";
+/*
+ * RELIEF IGN — Géoplateforme (03/11/2026).
+ * L'ancien service « wxs.ign.fr/<clé>/alti » est fermé : chaque appel échouait et la fonction
+ * retombait sur OpenTopoData SRTM 90 m (relief grossier, ~48 s par parcelle à cause des pauses).
+ * Service actuel, SANS CLÉ : https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json
+ * (POST JSON, ressource RGE ALTI « ign_rge_alti_wld », limite 5 requêtes/s par IP).
+ * Paquets de 500 points, 3 en parallèle, départs espacés de 250 ms ; -99999 (hors couverture) -> NaN.
+ */
+const GEOPF_ALTI_URL = "https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json";
+const GEOPF_RESSOURCE = Deno.env.get("IGN_ALTI_RESSOURCE") ?? "ign_rge_alti_wld";
+const GEOPF_PAQUET = 500;
+const GEOPF_PARALLELE = 3;
 
 async function fetchIgnAlti(
   points: Array<{ lon: number; lat: number }>,
   opts: { timeoutMs: number; maxRetries: number },
 ): Promise<number[]> {
-  if (!IGN_ALTI_KEY) throw new Error("IGN_ALTI_KEY missing");
-  const chunkSize = 100;
-  const out: number[] = [];
+  const paquets: Array<Array<{ lon: number; lat: number }>> = [];
+  for (let i = 0; i < points.length; i += GEOPF_PAQUET) paquets.push(points.slice(i, i + GEOPF_PAQUET));
+  const resultats: number[][] = new Array(paquets.length);
 
-  for (let i = 0; i < points.length; i += chunkSize) {
-    const chunk = points.slice(i, i + chunkSize);
-    const lons = chunk.map((p) => p.lon.toFixed(7)).join(",");
-    const lats = chunk.map((p) => p.lat.toFixed(7)).join(",");
-    const url = `https://wxs.ign.fr/${encodeURIComponent(
-      IGN_ALTI_KEY,
-    )}/alti/rest/elevation.json?lon=${lons}&lat=${lats}`;
-
+  const unPaquet = async (k: number) => {
+    const chunk = paquets[k];
     const res = await fetchWithRetry(
-      url,
-      { method: "GET" },
+      GEOPF_ALTI_URL,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          lon: chunk.map((p) => p.lon.toFixed(7)).join("|"),
+          lat: chunk.map((p) => p.lat.toFixed(7)).join("|"),
+          resource: GEOPF_RESSOURCE,
+          delimiter: "|",
+          indent: "false",
+          measures: "false",
+          zonly: "true",
+        }),
+      },
       {
         timeoutMs: opts.timeoutMs,
         maxRetries: opts.maxRetries,
-        baseBackoffMs: 250,
-        jitterMs: 200,
+        baseBackoffMs: 400,
+        jitterMs: 250,
         retryOnStatuses: isRetryableStatus,
-        tag: "IGN_ALTI",
+        tag: "IGN_GEOPF",
       },
     );
-
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
-      throw new Error(`IGN_ALTI_HTTP_${res.status}: ${txt}`);
+      throw new Error(`IGN_GEOPF_HTTP_${res.status}: ${txt.slice(0, 300)}`);
     }
-
     const json = await res.json();
-    const elevations = (json?.elevations ?? json?.elevation ?? json?.results) as any;
-
-    if (!Array.isArray(elevations) || elevations.length === 0) {
-      throw new Error("IGN_ALTI: invalid response (no elevations array)");
+    const elevations = (json?.elevations ?? json?.elevation) as unknown;
+    if (!Array.isArray(elevations) || elevations.length !== chunk.length) {
+      throw new Error(`IGN_GEOPF: réponse invalide (${Array.isArray(elevations) ? elevations.length : "aucune"} altitudes pour ${chunk.length} points)`);
     }
+    resultats[k] = elevations.map((e: any) => {
+      const z = typeof e === "number" ? e : (e?.z ?? null);
+      return typeof z === "number" && Number.isFinite(z) && z > -9999 ? z : NaN;
+    });
+  };
 
-    for (const e of elevations) {
-      const z = e?.z ?? e?.altitude ?? e?.elevation ?? e?.h ?? null;
-      out.push(typeof z === "number" && Number.isFinite(z) ? z : NaN);
+  for (let k = 0; k < paquets.length; k += GEOPF_PARALLELE) {
+    const lot = [];
+    for (let j = k; j < Math.min(paquets.length, k + GEOPF_PARALLELE); j++) {
+      lot.push(delay((j - k) * 250).then(() => unPaquet(j)));
     }
+    await Promise.all(lot);
+    if (k + GEOPF_PARALLELE < paquets.length) await delay(400);
   }
-
+  const out = resultats.flat();
+  if (out.length === 0 || out.every((z) => !Number.isFinite(z))) throw new Error("IGN_GEOPF: aucune altitude (hors couverture ?)");
   return out;
 }
 
@@ -890,7 +913,7 @@ Deno.serve(async (req: Request) => {
     // Cache key: include version + bboxes + render n + stats nUsed + provider presence
     const cacheKey =
       `${VERSION}|${parcel_id ?? "nogid"}|${commune_insee ?? "noci"}|base=${baseBbox.map((x) => x.toFixed(7)).join(",")}` +
-      `|render=${renderBbox.map((x) => x.toFixed(7)).join(",")}|nR=${gridRender.n}|nS=${statsPack.nUsed}|ign=${IGN_ALTI_KEY ? "1" : "0"}`;
+      `|render=${renderBbox.map((x) => x.toFixed(7)).join(",")}|nR=${gridRender.n}|nS=${statsPack.nUsed}|alti=geopf-rge-v1`;
 
     const cached = cacheGet<any>(cacheKey, Number.isFinite(cache_ttl_ms) ? cache_ttl_ms : 0);
     if (cached) {
@@ -915,7 +938,7 @@ Deno.serve(async (req: Request) => {
     let elevationsStatsInside: number[] = [];
 
     const fetchAll = async () => {
-      if (IGN_ALTI_KEY) {
+      {
         try {
           elevationsRender = await fetchIgnAlti(gridRender.points, {
             timeoutMs: request_timeout_ms,
@@ -928,7 +951,7 @@ Deno.serve(async (req: Request) => {
           provider = "IGN_ALTI";
           return;
         } catch (e) {
-          console.warn("[terrain-analysis-v1] IGN_ALTI failed, fallback OpenTopo:", e);
+          console.warn("[terrain-analysis-v1] IGN Géoplateforme en échec, repli OpenTopo SRTM90:", e);
         }
       }
 

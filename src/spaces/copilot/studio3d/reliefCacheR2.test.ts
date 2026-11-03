@@ -58,3 +58,15 @@ test('R2 péremption et préchargement', async () => {
   await attendre(20);
   assert.equal(s2.taille(), 1);
 });
+
+test('Relief SRTM 90 m en cache (ancien repli) : jugé périmé, remesuré avec l’IGN', async () => {
+  const stockage = stockageMemoire();
+  const grossier = { ...terrain, provider: 'OPENTOPODATA_SRTM90' };
+  await memoriserRelief(p1, grossier, { stockage });
+  assert.equal(await reliefEnCache(p1, { stockage }), null);
+  let appels = 0;
+  const charger = async () => { appels += 1; return { ...terrain, provider: 'IGN_ALTI' }; };
+  const r = await reliefAvecDelai(p1, null, { stockage, charger });
+  assert.deepEqual([r.ok && r.source, appels], ['mesure', 1]);
+  assert.equal((await reliefEnCache(p1, { stockage }))?.provider, 'IGN_ALTI');
+});

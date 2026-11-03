@@ -101,8 +101,12 @@ export interface OptionsRelief {
 
 const enCours = new Map<string, Promise<TerrainStudio>>();
 
+/** Relief SRTM 90 m (repli de l'ancien service IGN fermé) : trop grossier, remesuré avec l'IGN (Géoplateforme). */
+export const FOURNISSEURS_PERIMES: readonly string[] = ["OPENTOPODATA_SRTM90"];
+
 function frais(e: EntreeRelief | null, t: number): e is EntreeRelief {
-  return !!e && Number.isFinite(e.mesureLe) && t - e.mesureLe < DUREE_VIE_RELIEF_MS && !!e.terrain?.grid?.z;
+  return !!e && Number.isFinite(e.mesureLe) && t - e.mesureLe < DUREE_VIE_RELIEF_MS && !!e.terrain?.grid?.z
+    && !FOURNISSEURS_PERIMES.includes(String((e.terrain as { provider?: unknown }).provider ?? ""));
 }
 
 /** Relief en cache seulement (lecture rapide, sans réseau) ; `null` si absent ou périmé. */
