@@ -1,4 +1,10 @@
-import { FOND_PLAN_IGN_ATTRIBUTION, FOND_PLAN_IGN_URL, FOND_PLAN_IGN_ZOOM_NATIF_MAX } from '@/lib/cartes/fondPlanIgn';
+import {
+  creerSurlignageParcelles,
+  installerCouchesIgn,
+  type CouchesIgnInstallees,
+  type SurlignageParcelles,
+} from '@/components/cartes/couchesIgnLeaflet';
+import type { Feature } from "geojson";
 import type {
   GeoJSON,
   Map as LeafletMap,
@@ -47,6 +53,8 @@ export function CadastreMap({
   const mapRef = useRef<LeafletMap | null>(null);
   const cadastreLayerRef = useRef<GeoJSON | null>(null);
   const selectionOutlineLayerRef = useRef<GeoJSON | null>(null);
+  const couchesRef = useRef<CouchesIgnInstallees | null>(null);
+  const surlignageRef = useRef<SurlignageParcelles | null>(null);
 
   // -------------------------------------------------------
   // 1. Création de la carte (une seule fois)
@@ -65,14 +73,17 @@ export function CadastreMap({
     const map = L.map(containerRef.current).setView(initialCenter, initialZoom);
     mapRef.current = map;
 
-    // Fond Plan IGN (Géoplateforme) — src/lib/cartes/fondPlanIgn.ts
-    L.tileLayer(FOND_PLAN_IGN_URL, {
-      maxZoom: 20,
-      maxNativeZoom: FOND_PLAN_IGN_ZOOM_NATIF_MAX,
-      attribution: FOND_PLAN_IGN_ATTRIBUTION,
-    }).addTo(map);
+    // Fonds IGN Satellite / Plan + cadastre + contrôle (variante Leaflet direct)
+    // — src/components/cartes/couchesIgnLeaflet.ts
+    couchesRef.current = installerCouchesIgn(map, { contexte: "parcelle" });
+    // Surlignage violet des parcelles sélectionnées (pane au-dessus des tuiles)
+    surlignageRef.current = creerSurlignageParcelles(map);
 
     return () => {
+      surlignageRef.current?.detruire();
+      surlignageRef.current = null;
+      couchesRef.current?.detruire();
+      couchesRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -187,31 +198,21 @@ export function CadastreMap({
               })
             : [];
 
-        if (selectedFeatures.length > 0) {
-          const outlineStyle: PathOptions = {
-            weight: 3,
-            opacity: 0.9,
-            fillOpacity: 0,
-            color: "#1d4ed8",
-            interactive: false, // ⚠️ ne bloque pas les clics
-          };
-
-          const selectionLayer = L.geoJSON(
-            {
-              type: "FeatureCollection",
-              features: selectedFeatures,
-            } as any,
-            {
-              style: outlineStyle,
-            }
-          ).addTo(map);
-
-          selectionOutlineLayerRef.current = selectionLayer;
-
-          // Vue FIXE : on ne change pas le zoom ici
-        }
-
-        // Pas de fitBounds global : on laisse la vue telle quelle
+        // Surlignage violet au-dessus des tuiles (non cliquable : ne bloque pas
+        // les clics). Recadrage uniquement quand la PREMIÈRE parcelle
+        // sélectionnée change : ajouter d'autres parcelles ne fait pas sauter la vue.
+        const premiere = selectedParcelIds[0] ?? null;
+        surlignageRef.current?.maj(
+          selectedFeatures as Feature[],
+          premiere
+            ? {
+                cle: premiere,
+                features: (selectedFeatures as Feature[]).filter(
+                  (f) => getParcelIdFromFeature(f) === premiere
+                ),
+              }
+            : null
+        );
       } catch (err) {
         console.error("Erreur chargement cadastre :", err);
       }

@@ -2,7 +2,9 @@
 // VERSION 9.6.0 — PLU parsing via extraction texte client (pdfjs) → fin du 546.
 //   Hero v2 + toute la logique métier v9.5.1 intacte. Seul handleUploadAndParse change.
 
-import { FOND_PLAN_IGN_ATTRIBUTION, FOND_PLAN_IGN_URL, FOND_PLAN_IGN_ZOOM_NATIF_MAX } from "@/lib/cartes/fondPlanIgn";
+import { CouchesIgnControle } from "@/components/cartes/CouchesIgnControle";
+import { SurlignageParcelles } from "@/components/cartes/SurlignageParcelles";
+import { cleSelection, featuresASurligner } from "@/lib/cartes/empriseParcelle";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
@@ -25,7 +27,7 @@ import {
   X
 } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MapContainer, TileLayer, useMap } from "react-leaflet";
+import { MapContainer, useMap } from "react-leaflet";
 import { supabase } from "../../../supabaseClient";
 import { useCopilotStore } from "../../copilot/store/copilotStore";
 import { writeCapture } from "../shared/captures.store";
@@ -406,10 +408,12 @@ function MapCenterHandler({ center }: { center: [number, number] }) {
   return null;
 }
 
-function CadastreMap({ communeInsee, center, selectedIds, selectedParcels, onToggleParcel, heightPx = 400 }: {
+function CadastreMap({ communeInsee, center, selectedIds, selectedParcels, onToggleParcel, heightPx = 400, cibleId = null }: {
   communeInsee: string; center: [number, number]; selectedIds: string[];
   selectedParcels: { id: string; feature?: any; area_m2?: number | null }[];
   onToggleParcel: (pid: string, feature: any, area_m2: number | null) => void; heightPx?: number;
+  /** Parcelle recherchée : la carte se recadre sur son emprise quand elle change. */
+  cibleId?: string | null;
 }) {
   const [fc, setFc]                     = useState<any>(null);
   const [loading, setLoading]           = useState(false);
@@ -457,12 +461,18 @@ function CadastreMap({ communeInsee, center, selectedIds, selectedParcels, onTog
 
   useEffect(() => { if (center && communeInsee) fetchParcelles(center[0], center[1], communeInsee); }, [center, communeInsee, fetchParcelles]);
 
+  // LOT 1 — parcelles sélectionnées + parcelle recherchée surlignées en violet au-dessus des tuiles.
+  const cleSurlignage = cleSelection([...selectedIds, cibleId]);
+  const surlignage = useMemo(() => featuresASurligner<any>(fc?.features ?? [], cleSurlignage.split(","), selectedParcels.map(p => p.feature), getParcelIdFromFeature), [fc, cleSurlignage, selectedParcels]);
+  const cibleRecadrage = useMemo(() => surlignage.filter((f: any) => getParcelIdFromFeature(f) === cibleId), [surlignage, cibleId]);
+
   return (
     <div id="cadastre-map-capture-target" style={{ position: "relative", height: heightPx, overflow: "hidden", borderRadius: "0 0 14px 14px" }}>
       <MapContainer center={center} zoom={DEFAULT_ZOOM} style={{ height: "100%", width: "100%" }} scrollWheelZoom preferCanvas>
-        <TileLayer attribution={FOND_PLAN_IGN_ATTRIBUTION} url={FOND_PLAN_IGN_URL} maxNativeZoom={FOND_PLAN_IGN_ZOOM_NATIF_MAX} />
+        <CouchesIgnControle contexte="parcelle" />
         <MapCenterHandler center={center} />
         {fc && <ImperativeParcelLayer fc={fc} selectedIds={selectedIds} onToggleParcel={onToggleParcel} />}
+        <SurlignageParcelles features={surlignage} cleRecadrage={cibleId} featuresRecadrage={cibleRecadrage} />
       </MapContainer>
       <div style={{ position: "absolute", top: 10, right: 10, padding: "5px 10px", borderRadius: 6, background: "rgba(15,23,42,0.85)", color: "#e2e8f0", fontSize: 11, fontFamily: "monospace", zIndex: 1000, display: "flex", alignItems: "center", gap: 6 }}>
         {featureCount != null && <span>{featureCount} parcelles</span>}
@@ -1220,7 +1230,7 @@ export function FoncierPluPage() {
                   <span style={{ ...styles.badge, background: "#ede9fe", color: ACCENT_PRO }}>INSEE {projectInfo.communeInsee}</span>
                 </div>
               </div>
-              <CadastreMap communeInsee={projectInfo.communeInsee!} center={mapCenter ?? [46.603354, 1.888334]} selectedIds={selectedParcels.map(p => p.id)} selectedParcels={parcelMapSelectedParcels} onToggleParcel={handleToggleParcel} heightPx={400} />
+              <CadastreMap communeInsee={projectInfo.communeInsee!} center={mapCenter ?? [46.603354, 1.888334]} selectedIds={selectedParcels.map(p => p.id)} selectedParcels={parcelMapSelectedParcels} onToggleParcel={handleToggleParcel} heightPx={400} cibleId={projectInfo.parcelId ?? null} />
             </div>
             <PluInfoCard pluData={pluData} loading={pluLoading} communeInsee={projectInfo.communeInsee} communeNom={projectInfo.address} parcelId={projectInfo.parcelId} address={projectInfo.address} studyId={studyId} onOapExtracted={setOapData} />
             {projectInfo.communeInsee && (<PluUploaderPanel communeInsee={projectInfo.communeInsee} communeNom={projectInfo.address} targetZoneCode={pluData?.zone_code} onPluParsed={handlePluParsed} pointParcelle={(() => { const f = selectedParcels.find(p => p.id === projectInfo.parcelId) ?? selectedParcels[0]; return (f?.feature ? getFeatureBoundsCenter(f.feature)?.center : null) ?? (projectInfo.addressLat != null && projectInfo.addressLon != null ? [projectInfo.addressLat, projectInfo.addressLon] as [number, number] : null); })()} />)}
