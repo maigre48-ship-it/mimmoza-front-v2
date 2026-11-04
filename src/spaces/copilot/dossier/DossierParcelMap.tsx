@@ -1,10 +1,8 @@
-import { CouchesIgnControle } from '@/components/cartes/CouchesIgnControle';
-import { SurlignageParcelles } from '@/components/cartes/SurlignageParcelles';
-import { featuresASurligner } from '@/lib/cartes/empriseParcelle';
+import { FOND_PLAN_IGN_ATTRIBUTION, FOND_PLAN_IGN_URL, FOND_PLAN_IGN_ZOOM_NATIF_MAX } from '@/lib/cartes/fondPlanIgn';
 import { useEffect, useMemo, useState } from 'react';
-import { CircleMarker, GeoJSON, MapContainer, Tooltip } from 'react-leaflet';
+import { CircleMarker, GeoJSON, MapContainer, TileLayer, Tooltip } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import type { Feature, FeatureCollection } from 'geojson';
+import type { FeatureCollection } from 'geojson';
 import type { DossierParcel } from './parcelDossier';
 
 export type CadastreFeature = {
@@ -63,10 +61,6 @@ export function DossierParcelMap({ point, detectedId, selected, onChange, onFeat
   const [showZone, setShowZone] = useState(false);
   const [showPrescriptions, setShowPrescriptions] = useState(true);
   const selectedIds = useMemo(() => new Set(selected.map((parcel) => parcel.id)), [selected]);
-  // Parcelle repérée + parcelles choisies : surlignées en violet au-dessus de la photo aérienne.
-  const surlignage = useMemo(() => featuresASurligner(features, [...selected.map((parcel) => parcel.id), detectedId], [], (feature) => parcelOf(feature)?.id) as unknown as Feature[], [features, selected, detectedId]);
-  // Recadrage automatique sur la parcelle repérée, une seule fois par parcelle (pas à chaque clic).
-  const cibleRecadrage = useMemo(() => surlignage.filter((feature) => parcelOf(feature as unknown as CadastreFeature)?.id === detectedId), [surlignage, detectedId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -120,7 +114,7 @@ export function DossierParcelMap({ point, detectedId, selected, onChange, onFeat
     {error && <p role="status" className="mzia-dossier-error">{error}</p>}
     <div className="mzia-dossier-map">
       <MapContainer center={[point.lat, point.lon]} zoom={18} scrollWheelZoom={false} style={{ height: '100%', width: '100%' }}>
-        <CouchesIgnControle contexte="parcelle" />
+        <TileLayer attribution={FOND_PLAN_IGN_ATTRIBUTION} url={FOND_PLAN_IGN_URL} maxNativeZoom={FOND_PLAN_IGN_ZOOM_NATIF_MAX} />
         {showZone && zone.features.length > 0 && <GeoJSON key={`zone-${point.lat}-${point.lon}`} data={collection(zone.features)} style={{ color: '#6366f1', weight: 2, fillColor: '#818cf8', fillOpacity: 0.14 }} onEachFeature={(feature, layer) => layer.bindTooltip(`Zone PLU : ${labelOf(feature as GpuFeature)}`)} />}
         {showPrescriptions && prescriptions.features.length > 0 && <GeoJSON key={`prescriptions-${point.lat}-${point.lon}`} data={collection(prescriptions.features)} style={{ color: '#c2410c', weight: 2, dashArray: '5 5', fillColor: '#fb923c', fillOpacity: 0.21 }} onEachFeature={(feature, layer) => layer.bindTooltip(`Prescription GPU : ${labelOf(feature as GpuFeature)}`)} />}
         {features.length > 0 && <GeoJSON key={`${radiusM}:${selected.map((item) => item.id).join(',')}`} data={collection(features)}
@@ -136,7 +130,6 @@ export function DossierParcelMap({ point, detectedId, selected, onChange, onFeat
             layer.bindTooltip(`${parcel.id} · ${parcel.areaM2 ?? '?'} m² · cliquer pour ${selectedIds.has(parcel.id) ? 'retirer' : 'sélectionner'}`);
             layer.on('click', () => toggle(parcel));
           }} />}
-        <SurlignageParcelles features={surlignage} cleRecadrage={detectedId} featuresRecadrage={cibleRecadrage} />
         <CircleMarker center={[point.lat, point.lon]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#dc2626', fillOpacity: 1 }}><Tooltip>Point d’adresse, pas le périmètre du bien</Tooltip></CircleMarker>
       </MapContainer>
     </div>

@@ -1,6 +1,6 @@
-import { CouchesIgnControle } from '@/components/cartes/CouchesIgnControle';
+import { FOND_PLAN_IGN_ATTRIBUTION, FOND_PLAN_IGN_URL, FOND_PLAN_IGN_ZOOM_NATIF_MAX } from '@/lib/cartes/fondPlanIgn';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Circle, CircleMarker, GeoJSON, MapContainer, Pane, ScaleControl, Tooltip, WMSTileLayer, useMap } from 'react-leaflet';
+import { Circle, CircleMarker, GeoJSON, MapContainer, Pane, ScaleControl, TileLayer, Tooltip, WMSTileLayer, useMap } from 'react-leaflet';
 import type { FeatureCollection, Feature } from 'geojson';
 import type { ActiveToolCall } from '../types/copilot.types';
 import { THEMES, WMS_URL, featureLabel, legendUrl, mapAnchors, noiseProperties, searchPolygon, validGeometry, type MapAnchor, type ThemeId } from './thematicMapModel';
@@ -70,8 +70,7 @@ export function CopilotThematicMaps({ calls, onSend }: { calls: ActiveToolCall[]
       {layers.length > 0 && <div className="copilot-map-toggles">{layers.map(l => <label key={l.id}><input type="checkbox" disabled={l.error} checked={visibleGpu.includes(l.id)} onChange={() => setVisibleGpu(prev => prev.includes(l.id) ? prev.filter(id => id !== l.id) : [...prev,l.id])} /><i style={{background:l.color}} />{l.label}</label>)}</div>}
       <div className="copilot-map-canvas"><MapContainer center={[point.lat,point.lon]} zoom={14} scrollWheelZoom={false} style={{ width:'100%', height:'100%' }}>
         <MapViewport point={point} radius={radius} />
-        {/* Fond Plan par défaut (couches thématiques lisibles), Satellite à un clic ; les couches WMS restent au-dessus. */}
-        <CouchesIgnControle contexte="thematique" onErreurFond={() => setBaseError(true)} />
+        <TileLayer url={FOND_PLAN_IGN_URL} maxNativeZoom={FOND_PLAN_IGN_ZOOM_NATIF_MAX} attribution={FOND_PLAN_IGN_ATTRIBUTION} eventHandlers={{ tileerror: () => setBaseError(true) }} />
         {selected.map(id => <OfficialLayer key={`${id}:${point.lat}:${point.lon}`} id={id} opacity={opacity} onState={onLayerState} />)}
         {layers.filter(l => visibleGpu.includes(l.id) && !l.error && l.features.length > 0).map(l => <GeoJSON key={`${themeId}:${l.id}:${point.lat}:${point.lon}:${radius}`} data={{ type:'FeatureCollection', features:l.features } as FeatureCollection} style={{ color:l.color, weight:2, fillColor:l.color, fillOpacity:opacity * .35 }} onEachFeature={(f,layer) => { const tip = document.createElement('span'); tip.textContent = `${l.label} : ${featureLabel(f.properties)}`; layer.bindTooltip(tip); }} />)}
         <Pane name="study-reference" style={{ zIndex:620 }}>
@@ -81,7 +80,7 @@ export function CopilotThematicMaps({ calls, onSend }: { calls: ActiveToolCall[]
       {baseError && <p className="copilot-map-note" role="status">Le fond de carte est partiellement indisponible.</p>}
       <div className="copilot-map-legend"><strong>Lecture de la carte</strong><p>● Point de référence · cercle pointillé : périmètre de consultation</p>{selected.map(id => <details key={id} open={selected.length === 1}><summary>{theme.layers.find(l => l.id === id)?.label} · légende officielle</summary><p role="status">{statuses[id] ?? 'Chargement…'}</p><img src={legendUrl(id)} alt={`Légende officielle ${id}`} onError={e => { e.currentTarget.hidden = true; }} /><a href={legendUrl(id)} target="_blank" rel="noopener noreferrer">Ouvrir la légende</a></details>)}{loading && <p role="status">Consultation des couches GPU…</p>}{layers.map(l => <p key={l.id}><i style={{ background:l.color }} />{l.label} : {l.error ? 'source indisponible' : `${l.features.length} géométrie(s) reçue(s)`}{l.truncated ? ' · affichage partiel' : ''}</p>)}</div>
       <p className="copilot-map-note">{theme.note} Une carte sans symbole ou zone colorée ne prouve pas l’absence de risque ou de nuisance. Les couches sont consultées en direct ; elles peuvent être plus récentes que la réponse du tchat.</p>
-      <footer>Source : {theme.layers.length ? <a href="https://www.georisques.gouv.fr/cartes-interactives" target="_blank" rel="noopener noreferrer">Géorisques / BRGM</a> : <a href="https://www.geoportail-urbanisme.gouv.fr/" target="_blank" rel="noopener noreferrer">Géoportail de l’urbanisme · API Carto IGN</a>} · fond © IGN – Géoplateforme</footer>
+      <footer>Source : {theme.layers.length ? <a href="https://www.georisques.gouv.fr/cartes-interactives" target="_blank" rel="noopener noreferrer">Géorisques / BRGM</a> : <a href="https://www.geoportail-urbanisme.gouv.fr/" target="_blank" rel="noopener noreferrer">Géoportail de l’urbanisme · API Carto IGN</a>} · fond OpenStreetMap</footer>
     </>}</>}
   </section>;
 }

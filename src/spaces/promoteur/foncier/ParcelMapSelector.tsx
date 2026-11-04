@@ -2,15 +2,13 @@
 // Detects Lambert 93 (EPSG:2154) coords and reprojects to WGS84 (EPSG:4326).
 // Detects lat/lon swap and corrects it. Logs diagnostics once per fetch.
 
-import { CouchesIgnControle } from "@/components/cartes/CouchesIgnControle";
-import { SurlignageParcelles } from "@/components/cartes/SurlignageParcelles";
-import { cleSelection, featuresASurligner } from "@/lib/cartes/empriseParcelle";
+import { FOND_PLAN_IGN_ATTRIBUTION, FOND_PLAN_IGN_URL, FOND_PLAN_IGN_ZOOM_NATIF_MAX } from "@/lib/cartes/fondPlanIgn";
 import turfArea from "@turf/area";
 import type { Feature, FeatureCollection, Position } from "geojson";
 import L from "leaflet";
 import proj4 from "proj4";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MapContainer, useMap, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import { supabase } from "../../../supabaseClient";
 
 import "leaflet/dist/leaflet.css";
@@ -1208,20 +1206,6 @@ export default function ParcelMapSelector({
     setFocusRawCount(null);
   }, [focusParcelId]);
 
-  // LOT 1 — surlignage violet (au-dessus des tuiles) des parcelles sélectionnées
-  // et de la parcelle cible. Le recadrage sur la cible reste fait par MapController.
-  const cleSurlignage = cleSelection([...selectedIds, focusParcelId]);
-  const featuresSurlignees = useMemo(
-    () =>
-      featuresASurligner(
-        fc.features,
-        cleSurlignage.split(","),
-        selectedParcels.map((p) => p.feature as Feature | undefined),
-        (f) => getParcelIdFromFeature(f),
-      ),
-    [fc, cleSurlignage, selectedParcels],
-  );
-
   return (
     <div
       style={{
@@ -1242,7 +1226,7 @@ export default function ParcelMapSelector({
         scrollWheelZoom
         preferCanvas
       >
-        <CouchesIgnControle contexte="parcelle" />
+        <TileLayer attribution={FOND_PLAN_IGN_ATTRIBUTION} url={FOND_PLAN_IGN_URL} maxNativeZoom={FOND_PLAN_IGN_ZOOM_NATIF_MAX} />
 
         <MapInvalidateSizeHandler />
 
@@ -1256,8 +1240,6 @@ export default function ParcelMapSelector({
           selectedParcels={selectedParcels}
           onToggleParcel={onToggleParcel}
         />
-
-        <SurlignageParcelles features={featuresSurlignees} />
       </MapContainer>
 
       {/* ── Info overlay ── */}
