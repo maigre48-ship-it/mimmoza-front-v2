@@ -272,8 +272,9 @@ export const OUTIL_STUDIO_LANCER_RENDU: OutilDef = {
     "dernière version enregistrée de la conception (rendu fidèle) ou, à défaut, la 3D préparée par studio_preparer_3d. " +
     "⚠️ DEUX TEMPS OBLIGATOIRES. Premier appel SANS `confirmer` : RIEN n'est lancé ; l'outil renvoie un DEVIS (jetons, " +
     "temps de calcul, file d'attente, état de la machine de rendu) et un `jeton_devis`. Présente ce devis et demande " +
-    "l'accord. Second appel avec `confirmer: true` et le MÊME `jeton_devis`, UNIQUEMENT dans un tour suivant, après un " +
-    "accord EXPLICITE de l'utilisateur sur ce devis (le serveur refuse une confirmation dans le tour du devis). N'annonce " +
+    "l'accord. Dès que l'utilisateur l'a donné dans un tour suivant (« go », « oui »…), second appel avec `confirmer: true` " +
+    "(jeton_devis facultatif : le serveur retrouve le devis présenté, valable 2 h) — NE refais PAS de devis avant de confirmer. " +
+    "Le serveur refuse une confirmation dans le tour même du devis. N'annonce " +
     "jamais un rendu lancé sans statut ok ; si la machine de rendu ne donne pas signe de vie, dis que le rendu restera en attente.",
   input_schema: {
     type: 'object',
@@ -289,7 +290,7 @@ export const OUTIL_STUDIO_LANCER_RENDU: OutilDef = {
       conception_id: { type: 'string' },
       preparation_id: { type: 'string' },
       confirmer: { type: 'boolean', description: "true UNIQUEMENT après accord explicite de l'utilisateur sur le devis, dans un tour suivant." },
-      jeton_devis: { type: 'string', description: 'Jeton renvoyé par le premier appel (devis), obligatoire avec confirmer.' },
+      jeton_devis: { type: 'string', description: 'Jeton renvoyé par le premier appel (devis). Facultatif : sans lui, le serveur reprend le dernier devis présenté dans la conversation.' },
     },
     required: ['type'],
   },

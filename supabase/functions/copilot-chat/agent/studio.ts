@@ -22,6 +22,10 @@
 //     règle CONFIRMÉE et CITÉE (article) ; sinon « à vérifier » ;
 //   - jamais un rendu sans accord : le serveur refuse la confirmation dans la
 //     même requête que le devis, et une confirmation sans devis valide ;
+//   - le devis présenté est retrouvé par le serveur (copilot_tool_calls de la
+//     conversation) : la confirmation n'exige pas que le modèle recopie le jeton,
+//     et un devis encore valable aux mêmes paramètres est renvoyé au lieu d'en
+//     créer un nouveau (sinon : nouveau devis → refus « même requête » → boucle) ;
 //   - statuts affichés = colonnes réelles ; la machine de rendu (PC du fondateur)
 //     n'a pas de battement de cœur au repos : son état est DÉDUIT de la file
 //     (dernière activité, attente) et présenté comme tel.
@@ -44,7 +48,16 @@ export const VERSION_CALCUL = 'e1-studio-1';
 export const TYPES_RENDU = ['film', 'visite360', 'image'] as const;
 export type TypeRendu = typeof TYPES_RENDU[number];
 /** Durée de validité d'un devis de rendu. */
-export const DEVIS_VALIDITE_MS = 30 * 60_000;
+export const DEVIS_VALIDITE_MS = 2 * 60 * 60_000;
+/** Nombre de devis récents relus dans l'historique de la conversation. */
+export const DEVIS_RELUS_MAX = 10;
+
+/** Heure lisible en heure de Paris (« 17h47 »), jamais l'heure UTC. */
+export function heureParis(ms: number): string {
+  const p = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(ms));
+  const v = (t: string) => p.find((x) => x.type === t)?.value ?? '00';
+  return `${v('hour')}h${v('minute')}`;
+}
 /** Au-delà, un travail en attente sans activité de la machine de rendu est signalé « machine probablement hors ligne ». */
 export const ATTENTE_SUSPECTE_MS = 10 * 60_000;
 /** Battement du worker pendant un rendu (worker/README : progression au moins toutes les 4 min). */
@@ -612,6 +625,13 @@ export interface DepotStudio {
   statsFile(): Promise<StatsFile | null>;
   travauxActifs(userId: string): Promise<number>;
   travailParDevis(userId: string, devisId: string): Promise<TravailLu | null>;
+  /**
+   * Jetons des devis déjà présentés dans la conversation (sorties de studio_lancer_rendu
+   * enregistrées dans copilot_tool_calls), du plus récent au plus ancien. Ces lignes ne sont
+   * écrites qu'en fin de requête : un devis de la requête en cours n'y figure jamais.
+   * Erreur de lecture → [] (on retombe sur le jeton fourni par le modèle).
+   */
+  jetonsDevis(userId: string, conversationId: string): Promise<string[]>;
   /** Insertion SOUS L'IDENTITÉ de l'utilisateur (RLS) ; lève une Error portant le message Postgres. */
   insererTravail(userId: string, ligne: { conversation_id: string; type: TypeRendu; fiche: Obj; options: Obj }): Promise<TravailLu>;
   travail(userId: string, q: { id?: string | null; conversationId?: string | null }): Promise<TravailLu | null>;
@@ -748,6 +768,27 @@ function avertissementsSource(s: SourceRendu | SourcePrep): string[] {
   ];
 }
 
+/**
+ * Dernier devis présenté dans la conversation (copilot_tool_calls) qui satisfait `filtre` :
+ * jeton signé par le serveur, même utilisateur, même conversation. `nonLance` écarte les devis
+ * déjà transformés en travail (pour la réutilisation d'un devis, pas pour la confirmation,
+ * qui doit pouvoir répondre « déjà lancé »).
+ */
+async function devisDeLaConversation(
+  env: EnvStudio, uid: string, filtre: (c: ChargeJeton) => boolean, nonLance = false,
+): Promise<{ jeton: string; charge: ChargeJeton } | null> {
+  if (!env.secret || !env.conversationId) return null;
+  let jetons: string[] = [];
+  try { jetons = await env.depot.jetonsDevis(uid, env.conversationId); } catch { return null; }
+  for (const jeton of jetons.slice(0, DEVIS_RELUS_MAX)) {
+    const c = await lireJeton(jeton, env.secret);
+    if (!c || c.u !== uid || c.c !== env.conversationId || !filtre(c)) continue;
+    if (nonLance && await env.depot.travailParDevis(uid, c.id)) continue;
+    return { jeton, charge: c };
+  }
+  return null;
+}
+
 async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   if (!env.secret) return erreur('Rendus indisponibles : secret de devis non configuré côté serveur.', 'not_configured');
   if (!env.conversationId) return erreur('Ouvrez d’abord une conversation : le rendu est rattaché au chat.');
@@ -756,13 +797,22 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
 
   // ── Temps 2 : confirmation ───────────────────────────────────
   if (input.confirmer === true) {
-    const j = await lireJeton(input.jeton_devis, env.secret);
-    if (!j || j.u !== uid) return erreur('Confirmation refusée : devis absent ou invalide. RIEN N’A ÉTÉ LANCÉ. Rappelle l’outil SANS confirmer pour établir un devis, présente-le et attends l’accord.');
-    if (j.exp < maintenant) return erreur('Devis expiré (30 min). RIEN N’A ÉTÉ LANCÉ. Établis un nouveau devis et redemande l’accord.');
-    if (j.rq === env.requete) {
-      return erreur("Confirmation refusée : elle doit venir d'un message SUIVANT de l'utilisateur, après lecture du devis. RIEN N'A ÉTÉ LANCÉ. Présente le devis et attends sa réponse.");
+    const lu = await lireJeton(input.jeton_devis, env.secret);
+    const fourni = lu && lu.u === uid ? lu : null;
+    const confirmable = (c: ChargeJeton) => c.exp >= maintenant && c.rq !== env.requete
+      && (input.type === undefined || input.type === c.t);
+    // Le jeton recopié par le modèle d'abord ; sinon (absent, expiré, du même tour, autre type),
+    // le dernier devis présenté dans la conversation et encore confirmable.
+    let j: ChargeJeton | null = fourni && confirmable(fourni) ? fourni : null;
+    j ??= (await devisDeLaConversation(env, uid, confirmable))?.charge ?? null;
+    if (!j) {
+      if (!fourni) return erreur('Confirmation refusée : aucun devis valable dans cette conversation. RIEN N’A ÉTÉ LANCÉ. Rappelle l’outil SANS confirmer pour établir un devis, présente-le et attends l’accord.');
+      if (fourni.exp < maintenant) return erreur(`Devis expiré (validité ${DEVIS_VALIDITE_MS / 3_600_000} h). RIEN N’A ÉTÉ LANCÉ. Rappelle l’outil SANS confirmer : présente le nouveau devis ; un simple accord dans le message suivant suffira.`);
+      if (fourni.rq === env.requete) {
+        return erreur("Confirmation refusée : elle doit venir d'un message SUIVANT de l'utilisateur, après lecture du devis. RIEN N'A ÉTÉ LANCÉ. Présente le devis et attends sa réponse.");
+      }
+      return erreur('Le type demandé ne correspond pas au devis : établis un nouveau devis. RIEN N’A ÉTÉ LANCÉ.');
     }
-    if (input.type !== undefined && input.type !== j.t) return erreur('Le type demandé ne correspond pas au devis : établis un nouveau devis. RIEN N’A ÉTÉ LANCÉ.');
     const deja = await env.depot.travailParDevis(uid, j.id);
     if (deja) return { status: 'ok', source: SOURCE_STUDIO, data: { deja_lance: true, ...vueTravail(deja) }, message: 'Ce devis a déjà été lancé : rien n’a été relancé. Donne le statut ci-dessus.' };
     if (j.t === 'image' && (await env.depot.typeRenduAutorise('image', j.o)) === false) return refusImage();
@@ -814,9 +864,14 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   if (actifs >= NOMBRE_MAX_TRAVAUX_ACTIFS) return erreur(`Vous avez déjà ${actifs} rendus en préparation (${NOMBRE_MAX_TRAVAUX_ACTIFS} au plus) : attendez qu’un se termine.`);
   const stats = await env.depot.statsFile();
   const machine = etatMachine(stats, maintenant);
-  const charge: ChargeJeton = {
-    v: 1, id: crypto.randomUUID(), u: uid, t: type, o: opts.valeur,
-    s: src.source.genre === 'version' ? src.source : { genre: 'preparation', preparation_id: src.source.preparation.id },
+  const sourceJeton: ChargeJeton['s'] = src.source.genre === 'version' ? src.source : { genre: 'preparation', preparation_id: src.source.preparation.id };
+  // Un devis encore valable, aux mêmes paramètres, a-t-il déjà été présenté dans un message précédent ?
+  // Alors on le renvoie tel quel (même jeton) : l'accord donné après l'avoir lu reste confirmable.
+  const memeDevis = (c: ChargeJeton) => c.exp >= maintenant && c.rq !== env.requete && c.t === type
+    && jsonCanonique(c.o) === jsonCanonique(opts.valeur) && jsonCanonique(c.s) === jsonCanonique(sourceJeton);
+  const existant = await devisDeLaConversation(env, uid, memeDevis, true);
+  const charge: ChargeJeton = existant?.charge ?? {
+    v: 1, id: crypto.randomUUID(), u: uid, t: type, o: opts.valeur, s: sourceJeton,
     c: env.conversationId, iat: maintenant, exp: maintenant + DEVIS_VALIDITE_MS, rq: env.requete,
   };
   const devis = {
@@ -829,15 +884,28 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     file_attente: stats ? `${stats.attente} rendu(s) en attente, ${stats.enCours} en cours` : 'inconnue',
     machine_de_rendu: machine.phrase,
     avertissements: avertissementsSource(src.source),
-    expire_le: new Date(charge.exp).toISOString(),
+    valable_jusqu_a: `${heureParis(charge.exp)} (heure de Paris)`,
   };
+  const jeton = existant?.jeton ?? await signerJeton(charge, env.secret);
+  if (existant) {
+    return {
+      status: 'confirmation_requise', source: SOURCE_STUDIO,
+      data: { jeton_devis: jeton, confirmation_requise: true, deja_presente: true, type, options: opts.valeur, devis },
+      message:
+        "RIEN N'A ÉTÉ LANCÉ. Ce devis a DÉJÀ été présenté à l'utilisateur dans un message précédent et reste valable " +
+        `jusqu'à ${heureParis(charge.exp)} (heure de Paris). Si le DERNIER message de l'utilisateur donne son accord (« go », « oui », « vas-y », « confirme »…), ` +
+        "rappelle IMMÉDIATEMENT studio_lancer_rendu avec confirmer: true, dans ce même tour, sans redemander l'accord. " +
+        "Sinon, rappelle brièvement le devis et attends sa réponse. N'annonce jamais le rendu comme lancé avant un statut ok.",
+    };
+  }
   return {
     status: 'confirmation_requise', source: SOURCE_STUDIO,
     // jeton_devis EN PREMIER : le rappel des résultats précédents (index.ts) ne garde que les 900 premiers caractères.
-    data: { jeton_devis: await signerJeton(charge, env.secret), confirmation_requise: true, type, options: opts.valeur, devis },
+    data: { jeton_devis: jeton, confirmation_requise: true, type, options: opts.valeur, devis },
     message:
-      "RIEN N'A ÉTÉ LANCÉ. Ceci est un DEVIS. Présente-le (rendu, source, jetons, temps de calcul, file, état de la machine de rendu, avertissements) " +
-      "et demande l'accord. Seulement si l'utilisateur répond OUI dans son PROCHAIN message, rappelle studio_lancer_rendu avec confirmer: true et ce jeton_devis. " +
+      "RIEN N'A ÉTÉ LANCÉ. Ceci est un DEVIS. Présente-le (rendu, source, jetons, temps de calcul, file, état de la machine de rendu, avertissements, " +
+      "heure limite en heure de Paris) et demande l'accord. Si l'utilisateur répond OUI dans son PROCHAIN message, rappelle studio_lancer_rendu avec " +
+      "confirmer: true (le jeton_devis est facultatif : le serveur retrouve ce devis). Ne refais pas de devis avant de confirmer. " +
       "N'annonce jamais le rendu comme lancé avant un statut ok.",
   };
 }
@@ -971,6 +1039,16 @@ export function depotStudioSupabase(admin: ClientSb, utilisateur: ClientSb | nul
       const { data, error } = await db.from('studio_jobs').select(COLONNES_TRAVAIL).eq('user_id', userId).eq('fiche->>devis_id', devisId).limit(1);
       lever(error);
       return (data?.[0] ?? null) as TravailLu | null;
+    },
+    async jetonsDevis(userId, conversationId) {
+      // Lecture serveur (service) bornée à l'utilisateur ET à la conversation ; aucun jeton
+      // n'est accepté sans vérification de sa signature HMAC par lireJeton.
+      const { data, error } = await admin.from('copilot_tool_calls').select('tool_output')
+        .eq('user_id', userId).eq('conversation_id', conversationId).eq('tool_name', 'studio_lancer_rendu')
+        .order('created_at', { ascending: false }).limit(DEVIS_RELUS_MAX);
+      if (error || !Array.isArray(data)) return [];
+      return data.map((l) => ((l as { tool_output?: { data?: { jeton_devis?: unknown } } }).tool_output?.data?.jeton_devis))
+        .filter((j): j is string => typeof j === 'string');
     },
     async insererTravail(userId, l) {
       if (!utilisateur) throw new Error('Insertion de travail refusée sans session utilisateur.');

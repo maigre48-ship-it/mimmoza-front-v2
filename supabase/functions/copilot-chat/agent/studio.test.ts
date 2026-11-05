@@ -95,6 +95,14 @@ class DepotMemoire implements DepotStudio {
   async statsFile() { return this.stats; }
   async travauxActifs(u: string) { return this.travaux.filter((t) => t.user_id === u && ['en_attente', 'en_cours'].includes(t.statut)).length; }
   async travailParDevis(u: string, d: string) { return this.travaux.find((t) => t.user_id === u && t.fiche.devis_id === d) ?? null; }
+  /** Historique copilot_tool_calls simulé : sorties de studio_lancer_rendu enregistrées EN FIN de requête. */
+  appels: Array<{ user_id: string; conversation_id: string; sortie: Record<string, unknown> }> = [];
+  async jetonsDevis(u: string, c: string) {
+    return this.appels.filter((a) => a.user_id === u && a.conversation_id === c).reverse()
+      .map((a) => (a.sortie.data as { jeton_devis?: unknown } | undefined)?.jeton_devis).filter((j): j is string => typeof j === 'string');
+  }
+  /** Fin de requête : comme saveAssistantMessage, enregistre la sortie (publique) de l'outil. */
+  persister(r: unknown, u = USER, c = CONV) { this.appels.push({ user_id: u, conversation_id: c, sortie: structuredClone(r) as Record<string, unknown> }); }
   async insererTravail(u: string, l: { conversation_id: string; type: string; fiche: Record<string, unknown>; options: Record<string, unknown> }) {
     if (this.erreurInsertion) throw new Error(this.erreurInsertion);
     this.inserts++;
@@ -260,6 +268,65 @@ Deno.test('E1-7 : confirmation — refusée dans la même requête, acceptée au
   eq([bis?.status, bis?.data?.deja_lance, d.inserts], ['ok', true, 1]);
 });
 
+Deno.test('E1-7bis : boucle du 05/11 — devis expiré, « ok go », nouveau devis : confirmable au message suivant, sans recopier le jeton', async () => {
+  const d = depotAvecConception();
+  await preparer(d);
+  const t0 = Date.now();
+  const opts = { vues: ['trois_quarts_gauche', 'trois_quarts_droite'], ambiance: 'jour' };
+  // R1 : devis présenté.
+  const r1 = await executerOutilStudio('studio_lancer_rendu', { type: 'image', options: opts }, env(d, 'R1', { maintenant: () => t0 }));
+  eq(r1?.status, 'confirmation_requise');
+  ok(/\d{2}h\d{2} \(heure de Paris\)/.test(String((r1!.data!.devis as Record<string, unknown>).valable_jusqu_a)));
+  d.persister(r1);
+  // R2, 2 h 05 plus tard : « ok go » → le devis de R1 est expiré, refus explicite.
+  const tard = t0 + 125 * 60_000;
+  const go = await executerOutilStudio('studio_lancer_rendu', { type: 'image', confirmer: true, jeton_devis: r1!.data!.jeton_devis }, env(d, 'R2', { maintenant: () => tard }));
+  eq(go?.status, 'error'); ok(/expiré/.test(go!.message!)); eq(d.inserts, 0);
+  // R2 : nouveau devis (même tour) — sa confirmation dans R2 est refusée.
+  const r2 = await executerOutilStudio('studio_lancer_rendu', { type: 'image', options: opts }, env(d, 'R2', { maintenant: () => tard }));
+  eq([r2?.status, r2?.data?.deja_presente], ['confirmation_requise', undefined]);
+  const meme = await executerOutilStudio('studio_lancer_rendu', { type: 'image', confirmer: true }, env(d, 'R2', { maintenant: () => tard }));
+  eq(meme?.status, 'error'); eq(d.inserts, 0);
+  d.persister(r2);
+  // R3 : « go ». Même si le modèle refait d'abord un devis, il récupère CELUI DE R2 (même jeton)…
+  const r3 = await executerOutilStudio('studio_lancer_rendu', { type: 'image', options: opts }, env(d, 'R3', { maintenant: () => tard + 60_000 }));
+  eq([r3?.data?.deja_presente, r3?.data?.jeton_devis], [true, r2!.data!.jeton_devis]);
+  ok(/IMMÉDIATEMENT/.test(r3!.message!));
+  // … et la confirmation SANS jeton passe, dans ce même tour R3.
+  const lance = await executerOutilStudio('studio_lancer_rendu', { type: 'image', confirmer: true }, env(d, 'R3', { maintenant: () => tard + 60_000 }));
+  eq(lance?.status, 'ok', lance?.message); eq(d.inserts, 1);
+  eq(d.travaux[0].fiche.devis_id, (await lireJeton(r2!.data!.jeton_devis, 'secret-de-test'))!.id);
+  // Un nouveau « go » ne relance rien ; un nouveau devis n'est plus « déjà présenté » (celui-ci est lancé).
+  const bis = await executerOutilStudio('studio_lancer_rendu', { confirmer: true }, env(d, 'R4', { maintenant: () => tard + 120_000 }));
+  eq([bis?.status, bis?.data?.deja_lance, d.inserts], ['ok', true, 1]);
+  const nouveau = await executerOutilStudio('studio_lancer_rendu', { type: 'image', options: opts }, env(d, 'R4', { maintenant: () => tard + 120_000 }));
+  eq(nouveau?.data?.deja_presente, undefined);
+});
+
+Deno.test('E1-7ter : devis non expiré de R1 confirmé en R2 sans jeton ; jeton faux du modèle → devis de la conversation ; autres conversations ignorées', async () => {
+  const d = depotAvecConception();
+  await preparer(d);
+  const r1 = await executerOutilStudio('studio_lancer_rendu', { type: 'film', options: { duree_s: 30 } }, env(d, 'R1'));
+  d.persister(r1);
+  // Un devis d'une AUTRE conversation ou d'un AUTRE utilisateur n'est jamais repris.
+  d.appels = d.appels.map((a) => ({ ...a, conversation_id: 'autre-conversation' }));
+  eq((await executerOutilStudio('studio_lancer_rendu', { confirmer: true }, env(d, 'R2')))?.status, 'error');
+  d.appels = [];
+  d.persister(r1, AUTRE);
+  eq((await executerOutilStudio('studio_lancer_rendu', { confirmer: true }, env(d, 'R2')))?.status, 'error');
+  eq(d.inserts, 0);
+  d.appels = [];
+  d.persister(r1);
+  // Autre type demandé → refus.
+  eq((await executerOutilStudio('studio_lancer_rendu', { type: 'visite360', confirmer: true }, env(d, 'R2')))?.status, 'error');
+  // Jeton tronqué par le modèle → le serveur reprend le devis présenté.
+  const l = await executerOutilStudio('studio_lancer_rendu', { type: 'film', confirmer: true, jeton_devis: 'tronque…' }, env(d, 'R2'));
+  eq(l?.status, 'ok', l?.message); eq(d.inserts, 1);
+  // Paramètres différents → nouveau devis, pas de reprise.
+  const autre = await executerOutilStudio('studio_lancer_rendu', { type: 'film', options: { duree_s: 60 } }, env(d, 'R3'));
+  eq(autre?.data?.deja_presente, undefined);
+});
+
 Deno.test('E1-8 : jeton falsifié, d’un autre utilisateur ou expiré → refus, rien de lancé', async () => {
   const d = depotAvecConception();
   await preparer(d);
@@ -269,7 +336,7 @@ Deno.test('E1-8 : jeton falsifié, d’un autre utilisateur ou expiré → refus
   const falsifie = `${corps.slice(0, -2)}AA.${sig}`;
   eq((await executerOutilStudio('studio_lancer_rendu', { confirmer: true, jeton_devis: falsifie }, env(d, 'rq-2')))?.status, 'error');
   eq((await executerOutilStudio('studio_lancer_rendu', { confirmer: true, jeton_devis: jeton }, { ...env(d, 'rq-2'), userId: AUTRE }))?.status, 'error');
-  const tard = await executerOutilStudio('studio_lancer_rendu', { confirmer: true, jeton_devis: jeton }, { ...env(d, 'rq-2'), maintenant: () => Date.now() + 31 * 60_000 });
+  const tard = await executerOutilStudio('studio_lancer_rendu', { confirmer: true, jeton_devis: jeton }, { ...env(d, 'rq-2'), maintenant: () => Date.now() + 121 * 60_000 });
   ok(/expiré/.test(tard!.message!));
   eq((await executerOutilStudio('studio_lancer_rendu', { confirmer: true, jeton_devis: jeton }, { ...env(d, 'rq-2'), secret: 'autre-secret' }))?.status, 'error');
   eq(d.inserts, 0);
@@ -433,11 +500,14 @@ Deno.test('E1-17 : dépôt Supabase — requêtes filtrées par utilisateur, ins
   await dep.enregistrerPreparation(USER, { conception_id: null, conversation_id: CONV, idu: IDU, empreinte: 'e'.repeat(64), entree: {}, volume: {}, resume: {}, origine: 'chat', version_calcul: 'v' });
   await dep.insererTravail(USER, { conversation_id: CONV, type: 'film', fiche: {}, options: {} });
   await dep.travailParDevis(USER, 'd');
+  eq(await dep.jetonsDevis(USER, CONV), []);
   ok(appels.some((a) => a.startsWith('jwt:agent_conceptions.eq(user_id,' + USER)));
   ok(appels.some((a) => a.startsWith('jwt:studio_preparations.upsert(') && a.includes('user_id,empreinte')), appels.join('\n'));
   ok(appels.some((a) => a.startsWith('jwt:studio_jobs.insert(')), 'insertion avec le client utilisateur');
   ok(appels.some((a) => a === 'jwt:studio_jobs.eq(fiche->>devis_id,d)'));
   ok(!appels.some((a) => a.startsWith('admin:studio_jobs.insert')), 'jamais d’insertion en service_role');
+  // Devis relus : bornés à l'utilisateur, à la conversation et à l'outil.
+  for (const f of [`admin:copilot_tool_calls.eq(user_id,${USER})`, `admin:copilot_tool_calls.eq(conversation_id,${CONV})`, 'admin:copilot_tool_calls.eq(tool_name,studio_lancer_rendu)']) ok(appels.includes(f), f);
   // Sans session (mission) : aucune insertion de travail possible.
   await na.rejects(() => depotStudioSupabase(client('admin'), null).insererTravail(USER, { conversation_id: CONV, type: 'film', fiche: {}, options: {} }));
 });
