@@ -17,6 +17,8 @@ import './JarvisDraftPanel.css';
 // Parcelle de la conversation + volume d'étude simple, et « Voir en 3D réaliste dans Studio » (même parcours que « Voir en 3D »).
 import { useContexteVolume, VolumeParcelleSection } from './VolumeParcelleSection';
 import { diagnostiquerPreparation3D, exigerPreparation3D } from './preparation3D';
+// Lot E1 : 3D préparée par Mimmo (outil studio_preparer_3d) — ouverture en un clic, suivi des rendus.
+import { PreparationStudioSection } from './PreparationStudioSection';
 import { messageErreur } from "@/components/ui/messageErreur";
 
 const LABELS = {
@@ -106,6 +108,7 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
   const volume = useContexteVolume(messages, conversationId, draft);
   const parcelleConnue = volume.contexte.parcelle.type !== 'aucune';
   if (!draft) return <aside className="mzia-fen3d__vide" aria-label="Dossier de préparation 3D">
+    <PreparationStudioSection messages={messages} conversationId={conversationId} onOpenStudio={onOpenStudio} suiviRendus />
     {parcelleConnue ? <>
       <h2>Parcelle et volume d’étude</h2>
       <p>Mimmo pose un volume simple sur la parcelle de la conversation pour voir l’ordre de grandeur. Précisez le programme dans la conversation pour l’ajuster.</p>
@@ -235,6 +238,8 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
         type="button" className="jarvis-dossier__launch" disabled={opening || !draft.objectif?.trim() || !diagnostic.pret} onClick={() => void voirEn3D()}>
         <Box size={16} /> {opening ? 'Ouverture de Studio…' : nombreBatiments > 1 ? `Voir les ${String(nombreBatiments)} bâtiments en 3D` : 'Voir en 3D'} <ArrowUpRight size={17} />
       </button>}
+      {!editing && <PreparationStudioSection messages={messages} conversationId={conversationId} onOpenStudio={onOpenStudio}
+        suiviRendus={!(conversationId && draft.objectif?.trim() && diagnostic.pret)} />}
       {demandeParcelle && !editing && conversationId && diagnostic.pret && <ConfirmerParcelle adresseInitiale={draft.localisation}
         onConfirmer={terrain => void voirEn3D(terrain)} onAnnuler={() => setDemandeParcelle(false)} />}
       {/* Fiche sans volume chiffré (dimensions ou R+N manquants) : volume d'étude calculé sur la parcelle, en hypothèse. */}

@@ -63,7 +63,9 @@ import type { DispositifCode, NiveauLoyer } from '../_shared/dispositifs/types.t
 // Le moteur ne s'importe pas l'index : ses dépendances lui sont injectées (depsMoteur).
 import { TOOL_RECHERCHER_PARCELLES, executerRechercherParcelles } from './agent/outil-rechercher-parcelles.ts';
 import { briefingPourMissionVeille } from './agent/briefing.ts';
-import { OUTILS_AGENT_CHAT, NOMS_OUTILS_AGENT_CHAT } from './agent/outils.ts';
+import { OUTILS_AGENT_CHAT, NOMS_OUTILS_AGENT_CHAT, OUTILS_STUDIO_CHAT, NOMS_OUTILS_STUDIO } from './agent/outils.ts';
+// Lot E1 : Mimmo pilote le Studio (préparation 3D déterministe, rendus avec devis, suivi).
+import { depotStudioSupabase, executerOutilStudio, idRequete, ORIGINE_MIMMOZA_DEFAUT, studioPertinent, type EnvStudio } from './agent/studio.ts';
 import { evenementDevis, executerOutilAgentChat, tickMissions } from './agent/mission.ts';
 import { depotSupabase } from './agent/depot.ts';
 import { chargerBlocMemoire, projetDuContexte } from './agent/memoire.ts';
@@ -4501,6 +4503,8 @@ const TOOLS: ToolDef[] = [
   // derniers réservés au vertical promoteur, filtrés dans runOrchestrator).
   TOOL_RECHERCHER_PARCELLES,
   ...OUTILS_AGENT_CHAT,
+  // Lot E1 : outils Studio (vertical promoteur, proposés quand le tour parle de 3D / rendu).
+  ...OUTILS_STUDIO_CHAT,
 ];
 
 /**
@@ -4614,9 +4618,29 @@ async function executeTool(
       return ((await executerOutilAgentChat(name, input, ctx as unknown as Record<string, unknown>,
         auth?.userId ?? null, depsMoteur(), depotSupabase(getAdmin())))
         ?? { status: 'error', source: 'copilot', message: `Tool inconnu : ${name}` }) as ToolResult;
+    case 'studio_preparer_3d':
+    case 'studio_lancer_rendu':
+    case 'studio_etat_rendu':
+      // Lot E1 : identité = JWT vérifié ; écritures avec le client UTILISATEUR (RLS).
+      return ((await executerOutilStudio(name, input, envStudio(ctx, auth)))
+        ?? { status: 'error', source: 'copilot', message: `Tool inconnu : ${name}` }) as ToolResult;
     default:
       return { status: 'error', source: 'copilot', message: `Tool inconnu : ${name}` };
   }
+}
+
+/** Lot E1 : environnement des outils Studio pour une requête du chat. */
+function envStudio(ctx: MimmozaContext, auth: AuthCtx | null): EnvStudio {
+  const brut = ctx as unknown as Record<string, unknown>;
+  return {
+    userId: auth?.userId ?? null,
+    depot: depotStudioSupabase(getAdmin(), auth?.authHeader ? getUserClient(auth.authHeader) : null),
+    // Secret des devis de rendu : dédié s'il est configuré, sinon dérivé de la clé serveur (jamais exposé).
+    secret: Deno.env.get('STUDIO_DEVIS_SECRET') ?? getSupabaseServiceRoleKey(),
+    requete: idRequete(ctx),
+    conversationId: typeof brut.conversation_id === 'string' ? brut.conversation_id : null,
+    origine: Deno.env.get('MIMMOZA_ORIGINE') ?? ORIGINE_MIMMOZA_DEFAUT,
+  };
 }
 
 // =============================================================
@@ -10536,13 +10560,18 @@ async function runOrchestrator(params: {
     ? `${buildSystemPrompt(ctx, mode)}\n\n${params.priorToolResults}`
     : buildSystemPrompt(ctx, mode);
   const availableTools = toolsForMode(mode)
-    .filter((tool) => agentDisponible(ctx.vertical) || !NOMS_OUTILS_AGENT_CHAT.has(tool.name));
+    .filter((tool) => agentDisponible(ctx.vertical) || !(NOMS_OUTILS_AGENT_CHAT.has(tool.name) || NOMS_OUTILS_STUDIO.has(tool.name)));
   const lastUserMessage = [...params.messages].reverse().find((message) => message.role === 'user');
   const userText = lastUserMessage ? extractText(lastUserMessage.content) : '';
+  // Lot E1 : outils Studio proposés quand le tour (ou la réponse précédente : devis à confirmer) parle de 3D / rendu.
+  const lastAssistantMessage = [...params.messages].reverse().find((message) => message.role === 'assistant');
+  const studioAuTour = agentDisponible(ctx.vertical)
+    && studioPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']);
   const selection = selectToolNames(userText, availableTools.map((tool) => tool.name));
   const selectedNames = new Set([
     ...selection.toolNames,
     ...(agentDisponible(ctx.vertical) ? ['rechercher_parcelles', ...NOMS_OUTILS_AGENT_CHAT] : []),
+    ...(studioAuTour ? NOMS_OUTILS_STUDIO : []),
   ]);
   const tools = availableTools.filter((tool) => selectedNames.has(tool.name));
   const maxIter = MAX_TOOL_ITERATIONS[mode];
@@ -11238,6 +11267,12 @@ function depsMoteur(): MoteurDeps {
     // V1.8 : texte des gros règlements déposés, et règlement récupéré au GPU.
     extraireTextePdf: (bucket, chemin) => extraireTextePdfStockage(bucket, chemin, 40_000),
     reglementGpu: (p) => lireReglementGpuBrut(p.lat, p.lon, p.zone, 60_000, { fichier: p.fichier ?? null, pages: p.pages ?? null }),
+    // Lot E1 : préparation 3D en mission de conception (service_role, filtré par le propriétaire de la mission).
+    outilStudio: async (nom, input, c) => ((await executerOutilStudio(nom, input, {
+      userId: c.userId, depot: depotStudioSupabase(getAdmin(), null), secret: null, requete: c.missionId,
+      conversationId: c.conversationId, origine: Deno.env.get('MIMMOZA_ORIGINE') ?? ORIGINE_MIMMOZA_DEFAUT,
+      mission: true, conception: c.conception,
+    })) ?? { status: 'error', source: 'MimmozIA · Studio 3D', message: `Outil inconnu : ${nom}` }),
   };
 }
 

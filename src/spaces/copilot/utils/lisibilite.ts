@@ -86,15 +86,93 @@ export function scinderObjectif(texte: string | null | undefined): ObjectifScind
   };
 }
 
+// ── Lot A (point 3) : jamais de coupure après « art. », « p. »… ni dans une parenthèse ──
+//
+// Constat (05/11/2026, synthèse de la mission de conception AE0414) : « … recul voie 0 ou 4 m au
+// choix du constructeur (art.\n\nUC 6-1), reculs latéraux … (art.\n\nUC 13-1) ». La synthèse est
+// découpée en phrases puis regroupée par 3 (rapportModele.paragrapher) avec une expression qui
+// coupe après TOUT point suivi d'une espace — « (art. UC 6-1) » devenait deux phrases.
+
+/** Abréviations après lesquelles un point ne termine jamais une phrase (« 28 m. » en termine une). */
+const ABREVIATIONS_PHRASE = new Set([
+  'art', 'p', 'pp', 'cf', 'n°', 'no', 'env', 'ex', 'réf', 'ref', 'al', 'chap', 'fig', 'vol', 'éd', 'av', 'bd', 'sect', 'mme', 'dr', 'st', 'ste',
+]);
+
+/** Profondeur de parenthèses / crochets ouverts à la fin de `t`. */
+function parenthesesOuvertes(t: string): number {
+  let d = 0;
+  for (const c of t) {
+    if (c === '(' || c === '[') d++;
+    else if ((c === ')' || c === ']') && d > 0) d--;
+  }
+  return d;
+}
+
+/** Le texte se termine sur une abréviation (« (art. », « p. », « cf. »…). */
+function finitParAbreviation(t: string): boolean {
+  const m = /(?:^|[\s(«"“[])([\p{L}°]+)\.$/u.exec(t.trimEnd());
+  return !!m && ABREVIATIONS_PHRASE.has(m[1].toLowerCase());
+}
+
+/**
+ * Phrases d'un texte, SANS coupure après une abréviation (« art. », « p. », « cf. », « n° »,
+ * « env. », « ex. »…) ni à l'intérieur de parenthèses ou de crochets. Fin de phrase : « . ! ? … »
+ * suivis d'une espace puis d'une majuscule, d'un chiffre ou d'un guillemet (ou de la fin du texte). Phrases rognées, mots identiques : la jointure par
+ * une espace redonne le texte d'origine (espaces normalisées). À utiliser par
+ * rapportModele.paragrapher à la place de son expression régulière.
+ */
+export function phrasesLisibles(s: string): string[] {
+  const out: string[] = [];
+  let debut = 0;
+  let d = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '(' || c === '[') { d++; continue; }
+    if ((c === ')' || c === ']') && d > 0) { d--; continue; }
+    if (!/[.!?…]/u.test(c) || d > 0) continue;
+    let j = i;
+    while (j + 1 < s.length && /[.!?…]/u.test(s[j + 1])) j++;
+    if (j + 1 < s.length && !/\s/u.test(s[j + 1])) { i = j; continue; }
+    if (c === '.' && j === i && finitParAbreviation(s.slice(debut, i + 1))) continue;
+    // La phrase suivante commence par une majuscule, un chiffre ou un guillemet (« … (art. UC 13-1) » : pas de coupure).
+    const suivant = /\S/u.exec(s.slice(j + 1));
+    if (suivant && !/[\p{Lu}\p{N}«"“*_#-]/u.test(suivant[0])) { i = j; continue; }
+    const ph = s.slice(debut, j + 1).trim();
+    if (ph) out.push(ph);
+    debut = j + 1;
+    i = j;
+  }
+  const reste = s.slice(debut).trim();
+  if (reste) out.push(reste);
+  return out;
+}
+
+/**
+ * Recolle les paragraphes coupés à tort : un paragraphe qui finit sur une abréviation (« (art. »)
+ * ou dans une parenthèse ouverte est rejoint au suivant par une espace (rattrape aussi les rapports
+ * déjà construits avec l'ancien découpage). Une ligne de liste ou un titre ne sont jamais recollés.
+ */
+export function recollerCoupures(paragraphes: string[]): string[] {
+  const out: string[] = [];
+  for (const p of paragraphes) {
+    const prec = out.length ? out[out.length - 1] : null;
+    const coupe = prec != null && !/^\s*#/.test(prec) && (finitParAbreviation(prec) || parenthesesOuvertes(prec) > 0);
+    if (coupe && !LIGNE_LISTE.test(p)) out[out.length - 1] = `${prec.trimEnd()} ${p.trimStart()}`;
+    else out.push(p);
+  }
+  return out;
+}
+
 /**
  * Paragraphes de synthèse (rapportModele : une ligne de liste = un paragraphe,
  * pour les exports) → blocs d'affichage : une ligne d'introduction et les lignes
  * de liste qui la suivent forment UN bloc (rendu en vraie liste à l'écran).
+ * Lot A : les paragraphes coupés après une abréviation ou dans une parenthèse sont recollés.
  */
 export function regrouperParagraphes(paragraphes: string[]): string[] {
   const blocs: string[] = [];
   let enListe = false;
-  for (const p of paragraphes) {
+  for (const p of recollerCoupures(paragraphes)) {
     const liste = LIGNE_LISTE.test(p);
     if (liste && blocs.length && (enListe || /:\s*$/.test(blocs[blocs.length - 1]))) {
       blocs[blocs.length - 1] += `\n${p}`;

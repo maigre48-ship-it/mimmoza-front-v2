@@ -282,4 +282,18 @@ export interface MoteurDeps {
   extraireTextePdf?: (bucket: string, chemin: string) => Promise<string[] | null>;
   /** V1.8 : règlement écrit applicable au point, lu au Géoportail de l'urbanisme (plu-reglement-v1, action 'gpu'). */
   reglementGpu?: (p: { lat: number; lon: number; zone: string | null; fichier?: string | null; pages?: number[] | null }) => Promise<Record<string, unknown>>;
+  /**
+   * Lot E1 : outil Studio d'une mission (studio_preparer_3d uniquement ; jamais de rendu en mission).
+   * Injecté par l'index (studio.ts tire le code du front : le moteur ne l'importe pas). Absent : indisponible.
+   */
+  outilStudio?: (nom: string, input: Record<string, unknown>, contexte: ContexteOutilStudio) => Promise<ResultatOutil>;
+}
+
+/** Lot E1 : contexte d'un outil Studio appelé par une mission (identité = propriétaire de la mission). */
+export interface ContexteOutilStudio {
+  userId: string;
+  missionId: string;
+  conversationId: string | null;
+  /** Dossier de conception en mémoire de la mission (id, idu, commune, parcelle, regles_plu, programme). */
+  conception: { id: string; idu: string; commune: string | null; parcelle: unknown; regles_plu: unknown; programme: unknown };
 }

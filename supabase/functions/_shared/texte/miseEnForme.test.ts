@@ -190,3 +190,11 @@ test('idempotence : mettreEnForme(mettreEnForme(x)) === mettreEnForme(x) sur tou
     assert.deepEqual(mots(une), mots(x), `mots modifiés sur : ${x.slice(0, 60)}`);
   }
 });
+
+// Lot A (point 3) : phrase RÉELLE de la synthèse de conception du 05/11/2026 (AE0414) — aucune coupure
+// après « art. » ni dans une parenthèse : mettreEnForme la renvoie STRICTEMENT identique.
+test('lot A : synthèse « … (art. UC 6-1), reculs latéraux … (art. UC 13-1) » inchangée', () => {
+  const s = '… hauteur acrotère 28 m (secteur 1, art. UC 10), recul voie 0 ou 4 m au choix du constructeur (art. UC 6-1), reculs latéraux … (art. UC 13-1)';
+  assert.equal(mettreEnForme(s), s);
+  assert.equal(mettreEnForme(`${s}. Suite à confirmer.`), `${s}. Suite à confirmer.`);
+});

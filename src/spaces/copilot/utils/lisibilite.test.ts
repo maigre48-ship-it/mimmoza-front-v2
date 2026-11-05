@@ -6,6 +6,7 @@ import test from 'node:test';
 import { markdownToSafeHtml } from './exportCopilotPdf.ts';
 import {
   CLASSE_REPONSE_DABORD, htmlLisible, marquerReponseDabord, mettreEnForme, regrouperParagraphes, scinderObjectif,
+  phrasesLisibles, recollerCoupures,
 } from './lisibilite.ts';
 import { construireModeleRapport } from '../agent/rapport/rapportModele.ts';
 import { mettreEnForme as mettreEnFormeServeur } from '../../../../supabase/functions/_shared/texte/miseEnForme.ts';
@@ -108,4 +109,59 @@ test('synthèse du rapport : énumération en ligne → une ligne de liste par p
   const p = construireModeleRapport({ id: 'm2', objectif: 'x', type: 'libre', cree_le: null, termine_le: null, jetons_consommes: 0 } as never,
     { version: 2, titre: 'T', synthese: 'Une. Deux. Trois. Quatre.' })!;
   assert.deepEqual(p.synthese, ['Une. Deux. Trois.', 'Quatre.']);
+});
+
+// ── Lot A (point 3) : synthèse coupée au milieu d'une parenthèse ────────────────────────────────
+// Phrase RÉELLE de la synthèse de la mission de conception du 05/11/2026 (parcelle 92050000AE0414),
+// telle que relevée (« … » = passages non relevés).
+const SYNTHESE_AE0414 =
+  '… hauteur acrotère 28 m (secteur 1, art. UC 10), recul voie 0 ou 4 m au choix du constructeur (art. UC 6-1), reculs latéraux … (art. UC 13-1)';
+const sansCoupure = (b: string) => !/\((?:art|p|cf)\.\s*$/.test(b) && (b.match(/\(/g) ?? []).length === (b.match(/\)/g) ?? []).length;
+
+test('lot A : phrasesLisibles ne coupe jamais après « art. », « p. », « cf. », « n° », « env. », « ex. » ni dans une parenthèse', () => {
+  assert.deepEqual(phrasesLisibles(SYNTHESE_AE0414), [SYNTHESE_AE0414]);
+  assert.deepEqual(phrasesLisibles(`${SYNTHESE_AE0414}. Programme à confirmer.`), [`${SYNTHESE_AE0414}.`, 'Programme à confirmer.']);
+  assert.deepEqual(phrasesLisibles('Voir cf. Annexe. Surface env. 3 651 m², ex. Lot 2, n° 4. Fin (voir p. 12. Suite) ici.'),
+    ['Voir cf. Annexe.', 'Surface env. 3 651 m², ex. Lot 2, n° 4.', 'Fin (voir p. 12. Suite) ici.']);
+  // Sauts voulus conservés (comportement historique) : « Une. Deux. Trois. Quatre. ».
+  assert.deepEqual(phrasesLisibles('Une. Deux. Trois. Quatre.'), ['Une.', 'Deux.', 'Trois.', 'Quatre.']);
+  // Nombre décimal et extension : jamais une fin de phrase ; rien n'est perdu.
+  assert.deepEqual(phrasesLisibles('Recul 1.5 m (fichier reglement.pdf). Suite.'), ['Recul 1.5 m (fichier reglement.pdf).', 'Suite.']);
+});
+
+test('lot A : rapport déjà construit avec la coupure « (art.\\n\\nUC 6-1) » → recollé à l’écran, texte strictement identique', () => {
+  // Paragraphes tels qu'affichés par le rapport du 05/11/2026.
+  const stockes = [
+    '… hauteur acrotère 28 m (secteur 1, art. UC 10), recul voie 0 ou 4 m au choix du constructeur (art.',
+    'UC 6-1), reculs latéraux … (art.',
+    'UC 13-1)',
+  ];
+  const blocs = regrouperParagraphes(stockes);
+  assert.deepEqual(blocs, [SYNTHESE_AE0414]);
+  assert.ok(blocs.every(sansCoupure));
+  // Rendu : un seul paragraphe, aucun saut à l'intérieur de « (art. UC 6-1) ».
+  const html = htmlLisible(blocs[0], markdownToSafeHtml);
+  assert.equal((html.match(/<p /g) ?? []).length, 1);
+  assert.match(html, /\(art\. UC 6-1\)/);
+  // Les vrais paragraphes et les listes ne sont pas recollés.
+  assert.deepEqual(recollerCoupures(['Une phrase (art. UC 9).', 'Autre paragraphe.']), ['Une phrase (art. UC 9).', 'Autre paragraphe.']);
+  assert.deepEqual(recollerCoupures(['Liste (voir :', '- point']), ['Liste (voir :', '- point']);
+});
+
+test('lot A : synthèse réelle passée par construireModeleRapport → blocs sans coupure, mots identiques', () => {
+  const texte = `${SYNTHESE_AE0414}. Programme de 40 logements à confirmer. Plan : à choisir. Contrôle à faire.`;
+  const m = construireModeleRapport(
+    { id: 'm3', objectif: 'Conception', type: 'conception', cree_le: null, termine_le: null, jetons_consommes: 0 } as never,
+    { version: 2, titre: 'AE0414', synthese: texte },
+  )!;
+  const blocs = regrouperParagraphes(m.synthese);
+  assert.ok(blocs.every(sansCoupure), JSON.stringify(blocs));
+  assert.equal(blocs.join(' '), texte, 'sortie strictement identique hormis les sauts de paragraphe');
+  // Correctif décrit pour rapportModele.paragrapher (hors périmètre du lot) : phrasesLisibles groupées par 3.
+  const phrases = phrasesLisibles(texte);
+  const paragraphes: string[] = [];
+  for (let i = 0; i < phrases.length; i += 3) paragraphes.push(phrases.slice(i, i + 3).join(' '));
+  assert.deepEqual(paragraphes, [`${SYNTHESE_AE0414}. Programme de 40 logements à confirmer. Plan : à choisir.`, 'Contrôle à faire.']);
+  // Correctif appliqué dans rapportModele.paragrapher (consolidation A + E0 + E1) : plus aucune coupure après « (art. ».
+  assert.ok(!m.synthese.some((p) => /\(art\.$/.test(p)), JSON.stringify(m.synthese));
 });

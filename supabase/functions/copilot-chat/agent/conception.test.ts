@@ -397,3 +397,115 @@ Deno.test('Q3-quinquies : « 8 m avec baie / 3 m sans baie » = condition de fa�
   assertEquals(v.valeur, 0);
   assert(String(v.texte).includes('au choix du constructeur'));
 });
+
+// ── Lot A « finition du rapport de conception » — défauts réels de la mission du 05/11/2026 12:00-12:03
+// (parcelle 92050000AE0414, Nanterre, règlement 92050_PLU_20251209, rapport « 9 règle(s) connue(s) sur 9 »).
+// Valeurs réglementaires : UNIQUEMENT celles déjà citées (UC 7-3 p. 107 « 8 m avec baie / 3 m sans baie »,
+// UC 12 « Zone 3 – logements : 1 places/logement », titre réel de l'article UC 12). Les citations marquées
+// « forme de test » ne sont PAS des extraits du PLU : elles reproduisent la FORME du défaut.
+import {
+  accorderUnite, estNonTrouvee, harmoniserRegles, nonReglementeeAdmise, sujetCitation, TEXTE_NON_TROUVEE, valeurAvecUnite,
+} from './conception.ts';
+
+const UC73_RECUL = {
+  cle: 'recul_limites_m', nature: 'alternative', valeur: null, article: 'UC 7-3, p. 107',
+  texte: '8 m pour une façade avec baie, 3 m pour une façade sans baie',
+  alternatives: [{ libelle: 'façade avec baie(s)', valeur: 8 }, { libelle: 'façade sans baie', valeur: 3 }],
+};
+// Forme du défaut constaté : « Règle de recul aux limites (formule) : non réglementée (… UC 7-3, p. 107) ».
+const UC73_FORMULE_NR = { cle: 'recul_limites_formule', nature: 'non_reglementee', valeur: null, article: 'UC 7-3, p. 107', texte: 'Il n’est pas fixé de règle.' };
+// Titre réel de l'article (sommaire du règlement, voir mission.test.ts) ; citation : forme de test.
+const TITRE_UC12 = 'ARTICLE UC 12 – LES OBLIGATIONS IMPOSEES AUX CONSTRUCTEURS EN';
+const UC12_MIXITE_NR = { cle: 'mixite_sociale_pct', nature: 'non_reglementee', valeur: null, article: 'UC 12-1.2, p. 117', texte: 'Il n’est pas fixé de règle.', titre_article: TITRE_UC12 };
+
+Deno.test('Lot A-1 : formule de recul « non réglementée » alors que UC 7-3 fixe 8 m / 3 m → « voir recul aux limites » (formule citée recopiée)', () => {
+  const lues = reglesDepuisLecture({ regles: [UC73_RECUL, UC73_FORMULE_NR] }, 'gpu', SOURCE_GPU_NANTERRE);
+  const f = lues.find((r) => r.cle === 'recul_limites_formule')!;
+  assertEquals([f.valeur, f.statut, f.article, f.nature], ['8 m (façade avec baie(s)) / 3 m (façade sans baie)', 'confirme', 'UC 7-3, p. 107', undefined]);
+  assert(/^Voir recul aux limites séparatives \(UC 7-3, p\. 107\)/.test(f.texte!), f.texte);
+  assert(!/non réglementée/.test(decrireRegle(f)), decrireRegle(f));
+  // Même résultat après fusion et après relecture depuis la base (état déjà stocké avec le défaut).
+  const fus = fusionnerRegles([], lues, 'reglement').regles.find((r) => r.cle === 'recul_limites_formule')!;
+  assertEquals(fus, f);
+  const recul = lues.find((r) => r.cle === 'recul_limites_m')!;
+  const stockeDefectueux = [recul, { ...UC73_FORMULE_NR, unite: '', statut: 'confirme', source: SOURCE_GPU_NANTERRE }];
+  const relues = completerRegles(stockeDefectueux.map((r) => normaliserRegle(r, 'base')!));
+  assertEquals(relues.find((r) => r.cle === 'recul_limites_formule'), f);
+  // Idempotent : relire la règle harmonisée ne change rien.
+  assertEquals(normaliserRegle(f, 'base'), f);
+  // Le recul chiffré lui-même est inchangé (8 m, condition de façade).
+  assertEquals(recul.valeur, 8);
+});
+
+Deno.test('Lot A-1 : hors du cas visé, rien ne change (autre article, recul inconnu, recul à préciser)', () => {
+  const recul = reglesDepuisLecture({ regles: [UC73_RECUL] }, 'gpu', SOURCE_GPU_NANTERRE)[0];
+  const autre = normaliserRegle({ ...UC73_FORMULE_NR, article: 'UC 8, p. 108', source: SOURCE_GPU_NANTERRE }, 'reglement')!;
+  assertEquals(harmoniserRegles([recul, autre]).find((r) => r.cle === 'recul_limites_formule'), autre, 'autre article : inchangée');
+  const seule = normaliserRegle({ ...UC73_FORMULE_NR, source: SOURCE_GPU_NANTERRE }, 'reglement')!;
+  assertEquals(completerRegles([seule]).find((r) => r.cle === 'recul_limites_formule'), seule, 'recul aux limites inconnu : inchangée');
+  // Recul aux limites « par secteur », secteur inconnu : jamais « non réglementée », jamais de valeur.
+  const parSecteur = normaliserRegle({ cle: 'recul_limites_m', nature: 'par_secteur', valeur: null, article: 'UC 7-3, p. 107', source: SOURCE_GPU_NANTERRE,
+    valeurs_par_secteur: [{ secteur: '1', valeur: 8 }, { secteur: '2', valeur: 3 }] }, 'reglement')!;
+  const h = harmoniserRegles([parSecteur, seule]).find((r) => r.cle === 'recul_limites_formule')!;
+  assertEquals([h.valeur, h.statut, h.nature], [null, 'manquant', undefined]);
+  assert(/à préciser/.test(h.texte!));
+});
+
+Deno.test('Lot A-2 : « part de logements sociaux : non réglementée (UC 12-1.2, p. 117) » — article du stationnement → manquant « non trouvée »', () => {
+  const lues = reglesDepuisLecture({ regles: [UC12_MIXITE_NR] }, 'gpu', SOURCE_GPU_NANTERRE);
+  const m = lues.find((r) => r.cle === 'mixite_sociale_pct')!;
+  assertEquals([m.valeur, m.statut, m.nature, m.article], [null, 'manquant', undefined, undefined]);
+  assert(m.texte!.startsWith(TEXTE_NON_TROUVEE) && m.texte!.includes('UC 12-1.2, p. 117') && estNonTrouvee(m), m.texte);
+  assert(!/non réglementée$/.test(decrireRegle(m)) && !decrireRegle(m).includes(': non réglementée'), decrireRegle(m));
+  // Après fusion : la règle reste inconnue (comptée manquante), avec l'explication.
+  const f = fusionnerRegles([], lues, 'reglement');
+  assertEquals(f.regles.find((r) => r.cle === 'mixite_sociale_pct'), m);
+  assert(reglesManquantes(f.regles).includes('mixite_sociale_pct'));
+  // État DÉJÀ stocké avec le défaut (relu depuis la base) : corrigé de la même façon.
+  const relue = normaliserRegle({ ...UC12_MIXITE_NR, unite: '%', statut: 'confirme', source: SOURCE_GPU_NANTERRE }, 'base')!;
+  assertEquals([relue.statut, relue.valeur, relue.nature], ['manquant', null, undefined]);
+  assertEquals(normaliserRegle(relue, 'base'), relue, 'idempotent');
+  // Forme de test : citation qui parle de places de stationnement ET de logements sociaux → stationnement, pas mixité.
+  const parking = 'Il n’est pas exigé de places de stationnement supplémentaires pour les logements locatifs sociaux.';
+  assertEquals(sujetCitation('mixite_sociale_pct', parking, TITRE_UC12), 'autre_sujet');
+  assert(!nonReglementeeAdmise('mixite_sociale_pct', parking));
+});
+
+Deno.test('Lot A-2 : la garde clé ↔ article s’applique à toutes les clés ; UC 9 « Il n’est pas fixé de règle » reste non réglementée', () => {
+  // Texte réel UC 9 (neutre : c'est l'article « emprise au sol » qui porte le sujet) : inchangé.
+  const [uc9] = reglesDepuisLecture({ regles: [UC9] }, 'gpu', SOURCE_GPU_NANTERRE);
+  assertEquals([uc9.nature, uc9.statut, uc9.valeur], ['non_reglementee', 'confirme', null]);
+  // Formes de test : sujet explicite → admise ; autre sujet → écartée.
+  assert(nonReglementeeAdmise('mixite_sociale_pct', 'Il n’est pas fixé de pourcentage de logements sociaux.'));
+  assert(nonReglementeeAdmise('mixite_sociale_pct', 'Non réglementé.', 'Servitude de mixité sociale'));
+  assert(!nonReglementeeAdmise('mixite_sociale_pct', 'Il n’est pas fixé de règle.'), 'mixité : une citation neutre ne suffit pas');
+  assert(!nonReglementeeAdmise('emprise_sol_max_pct', 'Il n’est pas fixé de règle pour le stationnement des vélos.'));
+  assert(!nonReglementeeAdmise('hauteur_max_m', 'Non réglementé.', 'ARTICLE UC 13 – ESPACES LIBRES ET PLANTATIONS'));
+  assert(nonReglementeeAdmise('hauteur_max_m', 'Non réglementé.', 'ARTICLE UC 10 – HAUTEUR MAXIMALE DES CONSTRUCTIONS'));
+  assert(nonReglementeeAdmise('stationnement_par_logement', 'Il n’est pas fixé de règle pour les places de stationnement des bureaux.'));
+  const e = normaliserRegle({ cle: 'pleine_terre_min_pct', nature: 'non_reglementee', valeur: null, article: 'UC 12-1.2, p. 117',
+    texte: 'Il n’est pas fixé de règle.', titre_article: 'ARTICLE UC 12 – STATIONNEMENT', source: SOURCE_GPU_NANTERRE }, 'reglement')!;
+  assertEquals([e.statut, e.nature], ['manquant', undefined]);
+});
+
+Deno.test('Lot A-2 : consigne de lecture — « non réglementée » seulement si le texte le dit POUR CE SUJET', () => {
+  const c = CONSIGNE_LECTURE_REGLEMENT('UC', 'gpu');
+  assert(c.includes('POUR CE SUJET') && c.includes('"titre_article"') && c.includes('AUTRE'));
+  assert(c.includes('mixite_sociale_pct n\'est « non réglementée » que si le texte le dit en toutes lettres'));
+  assert(c.includes('recul_limites_formule n\'est jamais « non réglementée »'));
+});
+
+Deno.test('Lot A-4 : accord « 1 place/logement », « 1,1 places/logement » dans les textes produits (citations intactes)', () => {
+  assertEquals([valeurAvecUnite(1, 'places/logement'), valeurAvecUnite(1.1, 'places/logement'), valeurAvecUnite(2, 'places/logement')],
+    ['1 place/logement', '1,1 places/logement', '2 places/logement']);
+  assertEquals([accorderUnite(1, 'niveaux'), accorderUnite(5, 'niveaux'), accorderUnite(1, 'm'), accorderUnite('H/2', 'formule')], ['niveau', 'niveaux', 'm', 'formule']);
+  // Règle réelle UC 12, Zone 3 : texte de la valeur retenue accordé, citation du PLU conservée telle quelle.
+  const [st] = reglesDepuisLecture({ regles: [{ cle: 'stationnement_par_logement', nature: 'par_secteur', valeur: null, article: 'UC 12',
+    texte: 'Zone 3 – logements : 1 places/logement', valeurs_par_secteur: [{ secteur: 'Zone 3', valeur: 1, texte: 'Zone 3 – logements : 1 places/logement' }] }] }, 'gpu', SOURCE_GPU_NANTERRE);
+  const r = appliquerSecteursDeclares([st], { stationnement: '3' }).regles.find((x) => x.cle === 'stationnement_par_logement')!;
+  assertEquals(r.valeur, 1);
+  assert(r.texte!.includes('Retenue : 1 place/logement') && !r.texte!.includes('Retenue : 1 places'), r.texte);
+  assertEquals(r.valeurs_par_secteur![0].texte, 'Zone 3 – logements : 1 places/logement', 'citation intacte');
+  const rep = appliquerReponseFormulaire([r], JSON.stringify({ type: 'reponse_regles_conception', version: 1, regles: [] }));
+  assert(rep.resume.includes('stationnement_par_logement = 1 place/logement'), rep.resume);
+});

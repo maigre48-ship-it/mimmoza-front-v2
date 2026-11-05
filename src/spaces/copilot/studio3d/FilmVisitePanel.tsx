@@ -1,27 +1,31 @@
 // src/spaces/copilot/studio3d/FilmVisitePanel.tsx
 //
-// FILM OU VISITE 360° EN 3 CLICS (contrat docs/studio/CONTRAT_FILM_VISITE.md).
+// FILM, VISITE 360° OU IMAGE PHOTORÉALISTE EN 3 CLICS (contrat docs/studio/CONTRAT_FILM_VISITE.md).
 //
 // Dans le dossier de l'Espace 3D, sous « Voir en 3D » :
-//   clic 1 — « Film » ou « Visite 360° » ;
+//   clic 1 — « Film », « Visite 360° » ou « Image photoréaliste » ;
 //   clic 2 — « Lancer » sur une feuille d'options déjà remplie ;
 //   suivi en direct (temps réel + sondage 5 s), bouton Annuler ;
-//   clic 3 — « Voir le film » (lecteur intégré, URL signée) ou
+//   clic 3 — « Voir le film » (lecteur intégré, URL signée),
+//            « Voir l’image » (image affichée, JPEG et PNG à télécharger) ou
 //            « Ouvrir la visite » (/visite/<id>, lien à copier).
+// Facturation : aucune — le film et la visite ne débitent pas de jetons ; l'image non plus (02/11/2026).
 // Le Studio travaille en coulisses : l'utilisateur ne l'ouvre pas.
 // Si la file n'existe pas encore en base : « Bientôt disponible », sans erreur.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Clapperboard, Copy, ExternalLink, Loader2, Orbit, Play, X } from 'lucide-react';
+import { Camera, Check, Clapperboard, Copy, ExternalLink, Image as IconeImage, Loader2, Orbit, Play, X } from 'lucide-react';
 import type { JarvisDraft } from './jarvisDraft';
 import { parcelleRetenue, retenirParcelle } from './parcelleConfirmee';
 import type { ConfirmedTerrain } from './terrainCadastre';
 import { ConfirmerParcelle } from './ConfirmerParcelle';
 import { avecProchaineRevision, preparerChargeVoirEn3D } from './chargeVoirEn3D';
 import {
-  annulerTravail, construireTravail, creerTravail, dateCourte, estActif, LIBELLES_AMBIANCE, LIBELLES_TYPE, libelleStatut,
-  lienVisite, listerTravaux, optionsParDefaut, phraseElementsOmis, phraseSuivi, resumeOptions, suivreTravail, urlSigneeRendu,
-  type Ambiance, type OptionsFilm, type OptionsVisite, type ResultatFilm, type ResultatVisite, type TravailStudio, type TypeTravail,
+  AMBIANCES_IMAGE, annulerTravail, construireTravail, creerTravail, dateCourte, dureeEstimeeImage, estActif, LIBELLES_AMBIANCE, LIBELLES_TYPE,
+  LIBELLES_QUALITE_IMAGE, LIBELLES_VUE, libelleStatut, lienVisite, listerTravaux, MENTION_MACHINE_RENDU, optionsParDefaut, phraseElementsOmis,
+  phraseSuivi, QUALITES_IMAGE, resumeOptions, suivreTravail, urlSigneeRendu, VUES_IMAGE,
+  type Ambiance, type AmbianceImage, type OptionsFilm, type OptionsImage, type OptionsVisite, type QualiteImage, type ResultatFilm,
+  type ResultatImage, type ResultatVisite, type TravailStudio, type TypeTravail, type VueImage,
 } from '@/lib/studio/travaux';
 import './FilmVisitePanel.css';
 
@@ -38,6 +42,8 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
   const [feuille, setFeuille] = useState<TypeTravail | null>(null);
   const [film, setFilm] = useState<OptionsFilm>(() => optionsParDefaut('film'));
   const [visite, setVisite] = useState<OptionsVisite>(() => optionsParDefaut('visite360'));
+  const [image, setImage] = useState<OptionsImage>(() => optionsParDefaut('image'));
+  const [visionneuse, setVisionneuse] = useState<{ id: string; images: { libelle: string; url: string; jpeg: string; png: string | null }[]; avertissements: string[] } | null>(null);
   const [terrainManquant, setTerrainManquant] = useState(false);
   const [lancement, setLancement] = useState(false);
   const [message, setMessage] = useState('');
@@ -92,7 +98,7 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
       const { construit } = await preparerChargeVoirEn3D(draft, conversationId, terrain);
       if (!construit.ok) { setMessage(`Le projet n’a pas pu être préparé : ${construit.erreur}.`); return; }
       const charge = avecProchaineRevision(construit.projet, conversationId);
-      const travail = construireTravail(feuille, draft, conversationId, charge, feuille === 'film' ? film : visite);
+      const travail = construireTravail(feuille, draft, conversationId, charge, feuille === 'film' ? film : feuille === 'image' ? image : visite);
       if (!travail.ok) { setMessage(travail.erreur); return; }
       const r = await creerTravail(travail.valeur);
       if (!r.disponible) { setDisponible(false); setFeuille(null); return; }
@@ -130,6 +136,33 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
     }
   };
 
+  const voirImage = async (t: TravailStudio) => {
+    const r = t.resultat as ResultatImage | null;
+    if (!r?.images?.length) return;
+    setMessage('');
+    try {
+      const images = await Promise.all(r.images.map(async i => {
+        const nom = `mimmoza-${i.vue}`;
+        const [url, jpeg, png] = await Promise.all([
+          urlSigneeRendu(i.jpeg_path),
+          urlSigneeRendu(i.jpeg_path, 3600, `${nom}.jpg`),
+          i.png_path ? urlSigneeRendu(i.png_path, 3600, `${nom}.png`).catch(() => null) : Promise.resolve(null),
+        ]);
+        return { libelle: i.libelle, url, jpeg, png };
+      }));
+      setVisionneuse({ id: t.id, images, avertissements: r.avertissements ?? [] });
+      setAnnonce(null);
+    } catch (erreur) {
+      setMessage(erreur instanceof Error ? erreur.message : 'L’image n’est pas accessible.');
+    }
+  };
+
+  const basculerVue = (v: VueImage) => setImage(o => {
+    const avec = o.vues.includes(v);
+    if (avec && o.vues.length === 1) return o; // au moins une vue
+    return { ...o, vues: VUES_IMAGE.filter(x => (x === v ? !avec : o.vues.includes(x))) };
+  });
+
   const copierLien = async (visiteId: string) => {
     const lien = lienVisite(visiteId, window.location.origin);
     try {
@@ -151,13 +184,13 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
   const indispo = disponible === false;
 
   return (
-    <section className="mzia-rendu" aria-label="Film ou visite 360°">
+    <section className="mzia-rendu" aria-label="Film, visite 360° ou image">
       <div className="mzia-rendu__entete">
-        <strong>Film ou visite 360°</strong>
+        <strong>Film, visite 360° ou image</strong>
         <span>Calculés en qualité photo, prêts à partager.</span>
       </div>
 
-      {indispo && <p className="mzia-rendu__bientot" role="status">Films et visites 360° : bientôt disponible.</p>}
+      {indispo && <p className="mzia-rendu__bientot" role="status">Films, visites 360° et images : bientôt disponible.</p>}
 
       <div className="mzia-rendu__choix">
         <button type="button" className={feuille === 'film' ? 'is-actif' : ''} disabled={indispo || disponible === null}
@@ -168,12 +201,18 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
           aria-pressed={feuille === 'visite360'} onClick={() => ouvrirFeuille('visite360')}>
           <Orbit size={22} strokeWidth={1.6} /><b>Visite 360°</b><small>À parcourir dans le navigateur</small>
         </button>
+        <button type="button" className={feuille === 'image' ? 'is-actif' : ''} disabled={indispo || disponible === null}
+          aria-pressed={feuille === 'image'} onClick={() => ouvrirFeuille('image')}>
+          <Camera size={22} strokeWidth={1.6} /><b>Image photoréaliste</b><small>Vue depuis la rue, JPEG et PNG</small>
+        </button>
       </div>
 
       {annonce && <div className="mzia-rendu__annonce" role="status">
         <Check size={16} /> <span>{phraseSuivi(annonce)}</span>
         {annonce.type === 'film'
           ? <button type="button" className="is-primaire" onClick={() => void voirFilm(annonce)}><Play size={14} /> Voir le film</button>
+          : annonce.type === 'image'
+          ? <button type="button" className="is-primaire" onClick={() => void voirImage(annonce)}><IconeImage size={14} /> Voir l’image</button>
           : annonce.resultat && <>
             <a className="mzia-rendu__bouton is-primaire" href={`/visite/${encodeURIComponent((annonce.resultat as ResultatVisite).visite_id)}`} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Ouvrir la visite</a>
             <button type="button" onClick={() => void copierLien((annonce.resultat as ResultatVisite).visite_id)}>{copie === (annonce.resultat as ResultatVisite).visite_id ? <><Check size={13} /> Copié</> : <><Copy size={13} /> Copier le lien</>}</button>
@@ -184,24 +223,39 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
 
       {feuille && <div className="mzia-rendu__feuille" role="dialog" aria-label={`Options — ${LIBELLES_TYPE[feuille]}`}>
         <div className="mzia-rendu__feuille-barre">
-          <span>{feuille === 'film' ? 'Votre film' : 'Votre visite 360°'}</span>
+          <span>{feuille === 'film' ? 'Votre film' : feuille === 'image' ? 'Votre image photoréaliste' : 'Votre visite 360°'}</span>
           <button type="button" className="mzia-rendu__fermer" aria-label="Fermer" onClick={() => setFeuille(null)}><X size={14} /></button>
         </div>
         <div className="mzia-rendu__feuille-corps">
           {feuille === 'film' && <Choix titre="Durée" valeur={film.duree_s} options={[[30, '30 s'], [60, '1 min'], [90, '1 min 30']]}
             onChange={v => setFilm(o => ({ ...o, duree_s: v }))} />}
-          <Choix titre="Lumière" valeur={feuille === 'film' ? film.ambiance : visite.ambiance}
-            options={AMBIANCES.map(a => [a, LIBELLES_AMBIANCE[a]] as [Ambiance, string])}
-            onChange={v => (feuille === 'film' ? setFilm(o => ({ ...o, ambiance: v })) : setVisite(o => ({ ...o, ambiance: v })))} />
+          {feuille === 'image' && <fieldset className="mzia-rendu__groupe">
+            <legend>Vues (1 à 3)</legend>
+            <div>{VUES_IMAGE.map(v => <button key={v} type="button" aria-pressed={image.vues.includes(v)}
+              className={image.vues.includes(v) ? 'is-actif' : ''} onClick={() => basculerVue(v)}>{LIBELLES_VUE[v]}</button>)}</div>
+          </fieldset>}
+          {feuille === 'image'
+            ? <Choix titre="Lumière" valeur={image.ambiance}
+              options={AMBIANCES_IMAGE.map(a => [a, LIBELLES_AMBIANCE[a]] as [AmbianceImage, string])}
+              onChange={v => setImage(o => ({ ...o, ambiance: v }))} />
+            : <Choix titre="Lumière" valeur={feuille === 'film' ? film.ambiance : visite.ambiance}
+              options={AMBIANCES.map(a => [a, LIBELLES_AMBIANCE[a]] as [Ambiance, string])}
+              onChange={v => (feuille === 'film' ? setFilm(o => ({ ...o, ambiance: v })) : setVisite(o => ({ ...o, ambiance: v })))} />}
           {feuille === 'film' && <Choix titre="Format" valeur={film.format} options={[['16:9', 'Paysage'], ['9:16', 'Vertical (téléphone)']]}
             onChange={v => setFilm(o => ({ ...o, format: v }))} />}
           {feuille === 'visite360' && <Choix titre="Qualité" valeur={visite.resolution} options={[['6k', 'Haute'], ['8k', 'Très haute (plus long)']]}
             onChange={v => setVisite(o => ({ ...o, resolution: v }))} />}
-          <label className="mzia-rendu__case">
+          {feuille === 'image' && <Choix titre="Définition" valeur={image.qualite}
+            options={QUALITES_IMAGE.map(q => [q, LIBELLES_QUALITE_IMAGE[q]] as [QualiteImage, string])}
+            onChange={v => setImage(o => ({ ...o, qualite: v }))} />}
+          {feuille === 'image' && <p className="mzia-rendu__estimation" role="note">
+            Durée estimée : {dureeEstimeeImage(image.vues.length, image.qualite)}. {MENTION_MACHINE_RENDU} Seuls les éléments disposant d’un modèle photoréaliste figurent sur l’image ; les autres sont omis et listés.
+          </p>}
+          {feuille !== 'image' && <label className="mzia-rendu__case">
             <input type="checkbox" checked={feuille === 'film' ? film.interieurs : visite.interieurs}
               onChange={e => (feuille === 'film' ? setFilm(o => ({ ...o, interieurs: e.target.checked })) : setVisite(o => ({ ...o, interieurs: e.target.checked })))} />
             Montrer aussi l’intérieur des logements
-          </label>
+          </label>}
           {feuille === 'film' && <label className="mzia-rendu__case">
             <input type="checkbox" checked={film.musique} onChange={e => setFilm(o => ({ ...o, musique: e.target.checked }))} />
             Ajouter une musique d’ambiance
@@ -236,6 +290,17 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
           <button type="button" onClick={() => setLecteur(null)}>Fermer le lecteur</button></div>
       </div>}
 
+      {visionneuse && <div className="mzia-rendu__lecteur mzia-rendu__images">
+        {visionneuse.images.map(i => <figure key={i.url}>
+          <img src={i.url} alt={`Image photoréaliste du projet — vue ${i.libelle}`} loading="lazy" />
+          <figcaption>{i.libelle} — <a href={i.jpeg} download>JPEG</a>{i.png && <> · <a href={i.png} download>PNG</a></>}</figcaption>
+        </figure>)}
+        {visionneuse.avertissements.length > 0 && <ul className="mzia-rendu__avertissements">
+          {visionneuse.avertissements.map(a => <li key={a}>{a}</li>)}
+        </ul>}
+        <div><button type="button" onClick={() => setVisionneuse(null)}>Fermer</button></div>
+      </div>}
+
       {historique.length > 0 && <div className="mzia-rendu__historique">
         <h3>Déjà réalisés</h3>
         <ul>
@@ -246,6 +311,7 @@ export function FilmVisitePanel({ draft, conversationId, assurerValidation }: {
               <div className="mzia-rendu__ligne">
                 <span><b>{LIBELLES_TYPE[t.type]}</b> · {resumeOptions(t.type, t.options)}<br /><small>{dateCourte(t.cree_le)} — {libelleStatut(t.statut)}</small></span>
                 {t.statut === 'termine' && t.type === 'film' && t.resultat && <button type="button" className="is-primaire" onClick={() => void voirFilm(t)}><Play size={13} /> Voir le film</button>}
+                {t.statut === 'termine' && t.type === 'image' && t.resultat && <button type="button" className="is-primaire" onClick={() => void voirImage(t)}><IconeImage size={13} /> Voir l’image</button>}
                 {t.statut === 'termine' && resultatVisite && <span className="mzia-rendu__actions">
                   <a className="mzia-rendu__bouton is-primaire" href={`/visite/${encodeURIComponent(resultatVisite.visite_id)}`} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Ouvrir la visite</a>
                   <button type="button" onClick={() => void copierLien(resultatVisite.visite_id)}>{copie === resultatVisite.visite_id ? <><Check size={13} /> Copié</> : <><Copy size={13} /> Copier le lien</>}</button>

@@ -951,6 +951,7 @@ async function executerOutilMission(
     case 'enregistrer_regles_conception':
     case 'enregistrer_programme':
     case 'lire_reglement_pdf':
+    case 'studio_preparer_3d':   // lot E1
       // agent_conceptions.mission_id doit être une mission de type 'conception' (contrainte en base).
       if (c.m.type !== 'conception') return 'Outil réservé aux missions de conception.';
       break;
@@ -1067,6 +1068,19 @@ async function executerOutilMission(
       b.terrains[String(t.idu)] = t;
       c.etat.brouillon = b;
       return `Fiche du terrain ${t.idu} enregistrée${b.bilans[String(t.idu)] ? ' (bilan rattaché)' : ' (aucun bilan calculé pour ce terrain)'}.`;
+    }
+    case 'studio_preparer_3d': {
+      // Lot E1 : volume d'étude DÉTERMINISTE (code du Dossier 3D) enregistré pour une ouverture en un clic.
+      // Gratuit, sans effet externe ; aucun rendu n'est lancé depuis une mission.
+      if (!c.deps.outilStudio) return 'Préparation 3D indisponible sur ce serveur : signale-le dans les limites du rapport.';
+      const k = chargerConception(c.etat.conception, c.m);
+      if (!k.id || !k.idu) return 'Dossier de conception pas encore enregistré : récupère d’abord la parcelle (recuperer_parcelle).';
+      const r = await c.deps.outilStudio('studio_preparer_3d', {}, {
+        userId: c.m.user_id, missionId: c.m.id, conversationId: c.m.conversation_id,
+        conception: { id: k.id, idu: k.idu, commune: k.commune, parcelle: k.parcelle, regles_plu: k.regles, programme: k.programme },
+      });
+      await c.depot.journal(c.m.id, 'resultat', 'studio_preparer_3d', { conception_id: k.id }, texte(r.message ?? r.status, 300), 0);
+      return texte(JSON.stringify({ status: r.status, ...(r.data ?? {}), ...(r.message ? { message: r.message } : {}) }), RESULTAT_OUTIL_MAX_CARS);
     }
     case 'rapport_contact': {
       const n = normaliserContact(input);

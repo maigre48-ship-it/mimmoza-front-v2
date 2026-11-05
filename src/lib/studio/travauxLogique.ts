@@ -1,6 +1,6 @@
 // src/lib/studio/travauxLogique.ts
 //
-// FILM OU VISITE 360° EN 3 CLICS — logique pure de la file `studio_jobs`.
+// FILM, VISITE 360° OU IMAGE PHOTORÉALISTE EN 3 CLICS — logique pure de la file `studio_jobs`.
 //
 // Construction du travail depuis la fiche de l'Espace 3D, options par défaut
 // et validation (mêmes règles que la base), libellés d'état en français
@@ -14,7 +14,7 @@ import { lireElementsOmis, type ElementOmis } from './manifesteVisite.ts';
 
 export type { ElementOmis } from './manifesteVisite.ts';
 
-export type TypeTravail = 'film' | 'visite360';
+export type TypeTravail = 'film' | 'visite360' | 'image';
 export type StatutTravail = 'en_attente' | 'en_cours' | 'termine' | 'echec' | 'annule';
 export type Ambiance = 'jour' | 'fin_de_journee' | 'nuit';
 
@@ -32,7 +32,23 @@ export interface OptionsVisite {
   resolution: '6k' | '8k';
 }
 
-export type OptionsTravail = OptionsFilm | OptionsVisite;
+/** IMAGE (02/11/2026) — vues proposées par la machine de rendu (caméra automatique depuis la rue). */
+export type VueImage = 'trois_quarts_gauche' | 'trois_quarts_droite' | 'face';
+/** Ambiances VALIDÉES en image fixe : pas de nuit. */
+export type AmbianceImage = 'jour' | 'fin_de_journee';
+/**
+ * LOT E0 (05/11/2026) — définition : 'finale' (rendu 4K, image livrée 2880 × 1620) ou 'apercu' (rendu 1600 px,
+ * image livrée 1200 × 676, bien plus rapide). Mêmes qualités que la machine de rendu (presets du look Unreal).
+ */
+export type QualiteImage = 'finale' | 'apercu';
+
+export interface OptionsImage {
+  vues: VueImage[];
+  ambiance: AmbianceImage;
+  qualite: QualiteImage;
+}
+
+export type OptionsTravail = OptionsFilm | OptionsVisite | OptionsImage;
 
 /** `resultat` d'un film terminé (chemins dans le bucket privé `studio-rendus`). */
 export interface ResultatFilm {
@@ -64,6 +80,25 @@ export interface FicheTravail {
   conversation_id: string;
 }
 
+/** Une vue livrée d'une image (chemins dans le bucket privé `studio-rendus`). */
+export interface ImageLivree {
+  vue: VueImage;
+  libelle: string;
+  jpeg_path: string;
+  png_path: string | null;
+  largeur: number | null;
+  hauteur: number | null;
+}
+
+/** `resultat` d'une image terminée. */
+export interface ResultatImage {
+  image_path: string;
+  images: ImageLivree[];
+  /** Qualité réellement livrée (la machine peut plafonner à l'aperçu : un avertissement le dit alors). */
+  qualite: QualiteImage | null;
+  avertissements: string[];
+}
+
 /** Ligne `studio_jobs` lue depuis la base (normalisée). */
 export interface TravailStudio {
   id: string;
@@ -73,7 +108,7 @@ export interface TravailStudio {
   progression: number;
   etape: string | null;
   options: Record<string, unknown>;
-  resultat: ResultatFilm | ResultatVisite | null;
+  resultat: ResultatFilm | ResultatVisite | ResultatImage | null;
   elements_omis: ElementOmis[];
   erreur: string | null;
   cree_le: string;
@@ -99,18 +134,50 @@ export const OPTIONS_VISITE_DEFAUT: Readonly<OptionsVisite> = Object.freeze({
   ambiance: 'jour', interieurs: true, resolution: '6k',
 });
 
+export const OPTIONS_IMAGE_DEFAUT: Readonly<OptionsImage> = Object.freeze({
+  vues: ['trois_quarts_gauche'] as VueImage[], ambiance: 'jour', qualite: 'finale',
+});
+
+export const VUES_IMAGE: readonly VueImage[] = ['trois_quarts_gauche', 'trois_quarts_droite', 'face'];
+export const LIBELLES_VUE: Record<VueImage, string> = {
+  trois_quarts_gauche: '3/4 gauche', trois_quarts_droite: '3/4 droite', face: 'Face',
+};
+export const AMBIANCES_IMAGE: readonly AmbianceImage[] = ['jour', 'fin_de_journee'];
+export const QUALITES_IMAGE: readonly QualiteImage[] = ['finale', 'apercu'];
+export const LIBELLES_QUALITE_IMAGE: Record<QualiteImage, string> = {
+  finale: 'Haute définition (2880 × 1620)', apercu: 'Aperçu rapide (1200 × 676)',
+};
+
+/** Le rendu dépend du PC de rendu : phrase affichée avant le lancement. */
+export const MENTION_MACHINE_RENDU = 'Le rendu démarre dès que la machine de rendu est disponible.';
+
+/**
+ * Durée estimée d'une image (affichage) : aperçu de contrôle ≈ 7 min, puis 20 à 60 min par vue en qualité
+ * finale (path tracer, mesures de l'image vitrine), plus la préparation du modèle 3D (≈ 10 min).
+ * En aperçu : pas d'aperçu de contrôle séparé, ≈ 7 min par vue (estimation du worker), affichée 5 à 10 min.
+ */
+export function dureeEstimeeImage(nombreVues: number, qualite: QualiteImage = 'finale'): string {
+  const n = Math.max(1, Math.min(3, Math.round(Number.isFinite(nombreVues) ? nombreVues : 1)));
+  const min = qualite === 'apercu' ? 10 + 5 * n : 10 + 7 + 20 * n;
+  const max = qualite === 'apercu' ? 10 + 10 * n : 10 + 7 + 60 * n;
+  const h = (m: number) => (m < 60 ? `${String(m)} min` : `${String(Math.floor(m / 60))} h${m % 60 ? ` ${String(m % 60).padStart(2, '0')}` : ''}`);
+  return `environ ${h(min)} à ${h(max)}`;
+}
+
 export const NOMBRE_MAX_TRAVAUX_ACTIFS = 2;
 
 export const LIBELLES_AMBIANCE: Record<Ambiance, string> = {
   jour: 'En journée', fin_de_journee: 'Fin de journée', nuit: 'De nuit',
 };
 
-export const LIBELLES_TYPE: Record<TypeTravail, string> = { film: 'Film', visite360: 'Visite 360°' };
+export const LIBELLES_TYPE: Record<TypeTravail, string> = { film: 'Film', visite360: 'Visite 360°', image: 'Image photoréaliste' };
 
 export function optionsParDefaut(type: 'film'): OptionsFilm;
 export function optionsParDefaut(type: 'visite360'): OptionsVisite;
+export function optionsParDefaut(type: 'image'): OptionsImage;
 export function optionsParDefaut(type: TypeTravail): OptionsTravail;
 export function optionsParDefaut(type: TypeTravail): OptionsTravail {
+  if (type === 'image') return { vues: [...OPTIONS_IMAGE_DEFAUT.vues], ambiance: OPTIONS_IMAGE_DEFAUT.ambiance, qualite: OPTIONS_IMAGE_DEFAUT.qualite };
   return type === 'film' ? { ...OPTIONS_FILM_DEFAUT } : { ...OPTIONS_VISITE_DEFAUT };
 }
 
@@ -121,13 +188,14 @@ const estObjet = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 
 /** Valide les options (mêmes règles que `_studio_job_options_valides` en base). Les absentes prennent la valeur par défaut. */
 export function validerOptions(type: TypeTravail, brut: unknown): Validation<OptionsTravail> {
-  if (type !== 'film' && type !== 'visite360') return { ok: false, erreur: 'Type de rendu inconnu.' };
+  if (type !== 'film' && type !== 'visite360' && type !== 'image') return { ok: false, erreur: 'Type de rendu inconnu.' };
   if (brut !== undefined && !estObjet(brut)) return { ok: false, erreur: 'Options illisibles.' };
   const o = (brut ?? {}) as Record<string, unknown>;
+  if (type === 'image') return validerOptionsImage(o);
   const permises = type === 'film' ? ['duree_s', 'ambiance', 'format', 'interieurs', 'musique'] : ['ambiance', 'interieurs', 'resolution'];
   const inconnue = Object.keys(o).find(k => !permises.includes(k));
   if (inconnue) return { ok: false, erreur: `Option inconnue : ${inconnue}.` };
-  const defaut = optionsParDefaut(type);
+  const defaut = optionsParDefaut(type) as OptionsFilm | OptionsVisite;
   const ambiance = o.ambiance ?? defaut.ambiance;
   if (!AMBIANCES.includes(ambiance as Ambiance)) return { ok: false, erreur: 'Choisissez une ambiance : journée, fin de journée ou nuit.' };
   const interieurs = o.interieurs ?? defaut.interieurs;
@@ -145,6 +213,21 @@ export function validerOptions(type: TypeTravail, brut: unknown): Validation<Opt
   const resolution = o.resolution ?? (defaut as OptionsVisite).resolution;
   if (resolution !== '6k' && resolution !== '8k') return { ok: false, erreur: 'La qualité doit être 6K ou 8K.' };
   return { ok: true, valeur: { ambiance: ambiance as Ambiance, interieurs, resolution } };
+}
+
+function validerOptionsImage(o: Record<string, unknown>): Validation<OptionsImage> {
+  const inconnue = Object.keys(o).find(k => k !== 'vues' && k !== 'ambiance' && k !== 'qualite');
+  if (inconnue) return { ok: false, erreur: `Option inconnue : ${inconnue}.` };
+  const vues = o.vues ?? OPTIONS_IMAGE_DEFAUT.vues;
+  if (!Array.isArray(vues) || vues.length < 1 || vues.length > 3 || new Set(vues).size !== vues.length
+    || vues.some(v => !VUES_IMAGE.includes(v as VueImage))) {
+    return { ok: false, erreur: 'Choisissez de 1 à 3 vues : 3/4 gauche, 3/4 droite ou face.' };
+  }
+  const ambiance = o.ambiance ?? OPTIONS_IMAGE_DEFAUT.ambiance;
+  if (!AMBIANCES_IMAGE.includes(ambiance as AmbianceImage)) return { ok: false, erreur: 'Choisissez une lumière : journée ou fin de journée.' };
+  const qualite = o.qualite ?? OPTIONS_IMAGE_DEFAUT.qualite;
+  if (!QUALITES_IMAGE.includes(qualite as QualiteImage)) return { ok: false, erreur: 'Choisissez une définition : haute définition ou aperçu rapide.' };
+  return { ok: true, valeur: { vues: VUES_IMAGE.filter(v => (vues as unknown[]).includes(v)), ambiance: ambiance as AmbianceImage, qualite: qualite as QualiteImage } };
 }
 
 /** Titre lisible du film ou de la visite, tiré de la fiche (« 12 logements — 12 rue des Lilas, Lyon »). */
@@ -194,11 +277,11 @@ export function libelleStatut(statut: StatutTravail): string {
 
 /** Phrase de suivi affichée sous la barre de progression. */
 export function phraseSuivi(travail: Pick<TravailStudio, 'type' | 'statut' | 'etape' | 'progression' | 'erreur'>): string {
-  const quoi = travail.type === 'film' ? 'Votre film' : 'Votre visite 360°';
+  const quoi = travail.type === 'film' ? 'Votre film' : travail.type === 'image' ? 'Votre image' : 'Votre visite 360°';
   switch (travail.statut) {
     case 'en_attente': return `${quoi} est dans la file : la préparation démarre dès que le Studio est libre.`;
     case 'en_cours': return travail.etape?.trim() ? `${travail.etape.trim()} — ${String(borner(travail.progression))} %` : `Préparation en cours — ${String(borner(travail.progression))} %`;
-    case 'termine': return `${quoi} est prêt${travail.type === 'visite360' ? 'e' : ''}.`;
+    case 'termine': return `${quoi} est prêt${travail.type === 'film' ? '' : 'e'}.`;
     case 'echec': return travail.erreur?.trim() ? `La préparation n’a pas abouti : ${travail.erreur.trim()}` : 'La préparation n’a pas abouti. Vous pouvez relancer.';
     case 'annule': return 'Préparation annulée.';
   }
@@ -220,7 +303,11 @@ export function resumeOptions(type: TypeTravail, options: unknown): string {
   const v = validerOptions(type, options);
   const o = v.ok ? v.valeur : optionsParDefaut(type);
   const parts: string[] = [];
-  if (type === 'film') {
+  if (type === 'image') {
+    const im = o as OptionsImage;
+    parts.push(im.vues.map(v => LIBELLES_VUE[v]).join(', '), LIBELLES_AMBIANCE[im.ambiance].toLowerCase());
+    if (im.qualite === 'apercu') parts.push('aperçu rapide');
+  } else if (type === 'film') {
     const f = o as OptionsFilm;
     parts.push(`${String(f.duree_s)} s`, LIBELLES_AMBIANCE[f.ambiance].toLowerCase(), f.format === '16:9' ? 'paysage' : 'vertical');
     if (f.interieurs) parts.push('intérieurs');
@@ -236,9 +323,21 @@ export function resumeOptions(type: TypeTravail, options: unknown): string {
 const STATUTS: readonly StatutTravail[] = ['en_attente', 'en_cours', 'termine', 'echec', 'annule'];
 const texte = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null);
 
-function lireResultat(type: TypeTravail, brut: unknown): ResultatFilm | ResultatVisite | null {
+function lireResultat(type: TypeTravail, brut: unknown): ResultatFilm | ResultatVisite | ResultatImage | null {
   if (!estObjet(brut)) return null;
   const avertissements = Array.isArray(brut.avertissements) ? brut.avertissements.filter((a): a is string => typeof a === 'string' && a.trim() !== '') : [];
+  if (type === 'image') {
+    const images: ImageLivree[] = (Array.isArray(brut.images) ? brut.images : []).filter(estObjet).flatMap(i => {
+      const jpeg = texte(i.jpeg_path);
+      const vue = VUES_IMAGE.includes(i.vue as VueImage) ? i.vue as VueImage : null;
+      if (!jpeg || !vue) return [];
+      return [{ vue, libelle: texte(i.libelle) ?? LIBELLES_VUE[vue], jpeg_path: jpeg, png_path: texte(i.png_path),
+        largeur: typeof i.largeur === 'number' ? i.largeur : null, hauteur: typeof i.hauteur === 'number' ? i.hauteur : null }];
+    });
+    const principale = texte(brut.image_path) ?? images[0]?.jpeg_path ?? null;
+    const qualite = brut.qualite === 'finale' || brut.qualite === 'apercu' ? brut.qualite : null;
+    return principale ? { image_path: principale, images, qualite, avertissements } : null;
+  }
   if (type === 'film') {
     const video = texte(brut.video_path);
     if (!video) return null;
@@ -253,7 +352,7 @@ function lireResultat(type: TypeTravail, brut: unknown): ResultatFilm | Resultat
 export function lireTravail(brut: unknown): TravailStudio | null {
   if (!estObjet(brut)) return null;
   const id = texte(brut.id);
-  const type = brut.type === 'film' || brut.type === 'visite360' ? brut.type : null;
+  const type = brut.type === 'film' || brut.type === 'visite360' || brut.type === 'image' ? brut.type : null;
   const statut = STATUTS.includes(brut.statut as StatutTravail) ? brut.statut as StatutTravail : null;
   if (!id || !type || !statut) return null;
   return {
@@ -286,13 +385,18 @@ export function fileIndisponible(erreur: unknown): boolean {
   return /studio_jobs/.test(message) && /(does not exist|could not find|schema cache)/i.test(message);
 }
 
-/** Message clair pour une erreur de création ou d'annulation. */
-export function messageErreurTravail(erreur: unknown): string {
-  if (fileIndisponible(erreur)) return 'Films et visites 360° : bientôt disponible.';
+/**
+ * Message clair pour une erreur de création ou d'annulation. `type` : type du travail créé — pour une IMAGE,
+ * une base pas encore migrée (type 'image' inconnu : options refusées par le déclencheur, ou contrainte de
+ * type) se dit « bientôt disponible » plutôt que « options refusées » (LOT E0 : front publié avant la migration).
+ */
+export function messageErreurTravail(erreur: unknown, type?: TypeTravail): string {
+  if (fileIndisponible(erreur)) return 'Films, visites 360° et images : bientôt disponible.';
   const message = estObjet(erreur) && typeof erreur.message === 'string' ? erreur.message : erreur instanceof Error ? erreur.message : '';
-  if (/déjà 2 films ou visites/.test(message)) return message;
+  if (/déjà 2 (films ou visites|rendus)/.test(message)) return message;
+  if (type === 'image' && /Options du travail invalides|studio_jobs_type_check/.test(message)) return 'L’image photoréaliste sera bientôt disponible.';
   if (/Options du travail invalides/.test(message)) return 'Ces options ne sont pas acceptées. Rechargez la page puis réessayez.';
-  if (/row-level security|permission denied|JWT/i.test(message)) return 'Connectez-vous pour lancer un film ou une visite.';
+  if (/row-level security|permission denied|JWT/i.test(message)) return 'Connectez-vous pour lancer un rendu.';
   return 'Le lancement n’a pas abouti. Réessayez dans un instant.';
 }
 

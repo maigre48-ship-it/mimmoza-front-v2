@@ -4,7 +4,10 @@
 //   · outils du CHAT (vertical promoteur) : proposer_mission, etat_mission,
 //     lister_missions, memoriser ;
 //   · outils PROPRES À LA MISSION (jamais exposés au chat) : noter_carnet,
-//     memoriser, rediger_action_externe, demander_utilisateur, terminer_mission.
+//     memoriser, rediger_action_externe, demander_utilisateur, terminer_mission ;
+//   · lot E1 — outils STUDIO (chat) : studio_preparer_3d (aussi en mission de
+//     conception), studio_lancer_rendu (devis puis confirmation), studio_etat_rendu.
+//     Logique : studio.ts (jamais importé ici : il tire le code du front).
 // =============================================================
 
 import type { OutilDef } from './types.ts';
@@ -240,8 +243,77 @@ export const OUTIL_LIRE_REGLEMENT_PDF: OutilDef = {
   available_in_modes: TOUS_MODES,
 };
 
+// ── Lot E1 : Studio 3D et rendus ────────────────────────────────────────────
+
+export const OUTIL_STUDIO_PREPARER_3D: OutilDef = {
+  name: 'studio_preparer_3d',
+  description:
+    "Prépare la MAQUETTE 3D du Studio à partir d'une FICHE DE CONCEPTION (parcelle cadastrale réelle, règles PLU " +
+    "enregistrées, programme) : volume d'étude calculé de façon DÉTERMINISTE par le moteur du Dossier 3D (aucune IA, " +
+    "aucun coût de calcul), enregistré pour que l'utilisateur l'ouvre en UN clic (« Ouvrir la 3D préparée », Dossier 3D). " +
+    "À appeler quand l'utilisateur demande de préparer / générer / voir la 3D de sa conception, ou en mission de " +
+    "conception une fois le programme et les règles enregistrés. Ne lance AUCUN rendu et n'envoie rien au Studio. " +
+    "Présente les chiffres comme un volume d'étude INDICATIF ; reprends les vérifications telles qu'elles sont " +
+    "renvoyées (jamais « conforme » ni « respecte le PLU »).",
+  input_schema: {
+    type: 'object',
+    properties: {
+      conception_id: { type: 'string', description: 'Identifiant (uuid) de la conception, si connu.' },
+      idu: { type: 'string', description: 'Identifiant cadastral (14 caractères) : la conception la plus récente de cette parcelle.' },
+    },
+  },
+  available_in_modes: TOUS_MODES,
+};
+
+export const OUTIL_STUDIO_LANCER_RENDU: OutilDef = {
+  name: 'studio_lancer_rendu',
+  description:
+    "Lance un RENDU sur la machine de rendu Mimmoza (Unreal) : film, visite 360° ou image photoréaliste, d'après la " +
+    "dernière version enregistrée de la conception (rendu fidèle) ou, à défaut, la 3D préparée par studio_preparer_3d. " +
+    "⚠️ DEUX TEMPS OBLIGATOIRES. Premier appel SANS `confirmer` : RIEN n'est lancé ; l'outil renvoie un DEVIS (jetons, " +
+    "temps de calcul, file d'attente, état de la machine de rendu) et un `jeton_devis`. Présente ce devis et demande " +
+    "l'accord. Second appel avec `confirmer: true` et le MÊME `jeton_devis`, UNIQUEMENT dans un tour suivant, après un " +
+    "accord EXPLICITE de l'utilisateur sur ce devis (le serveur refuse une confirmation dans le tour du devis). N'annonce " +
+    "jamais un rendu lancé sans statut ok ; si la machine de rendu ne donne pas signe de vie, dis que le rendu restera en attente.",
+  input_schema: {
+    type: 'object',
+    properties: {
+      type: { type: 'string', enum: ['film', 'visite360', 'image'] },
+      options: {
+        type: 'object',
+        description: "film : duree_s (30|60|90), ambiance (jour|fin_de_journee|nuit), format ('16:9'|'9:16'), interieurs, musique (booléens) ; " +
+          "visite360 : ambiance, interieurs, resolution ('6k'|'8k') ; image : vues (1 à 3 parmi trois_quarts_gauche, trois_quarts_droite, face), " +
+          'ambiance (jour|fin_de_journee). Absentes : valeurs par défaut.',
+      },
+      source: { type: 'string', enum: ['auto', 'version', 'preparation'], description: '« auto » (défaut) : version enregistrée si elle existe, sinon 3D préparée.' },
+      conception_id: { type: 'string' },
+      preparation_id: { type: 'string' },
+      confirmer: { type: 'boolean', description: "true UNIQUEMENT après accord explicite de l'utilisateur sur le devis, dans un tour suivant." },
+      jeton_devis: { type: 'string', description: 'Jeton renvoyé par le premier appel (devis), obligatoire avec confirmer.' },
+    },
+    required: ['type'],
+  },
+  available_in_modes: TOUS_MODES,
+};
+
+export const OUTIL_STUDIO_ETAT_RENDU: OutilDef = {
+  name: 'studio_etat_rendu',
+  description:
+    "Donne l'état RÉEL d'un rendu (film, visite 360°, image) : statut en base, progression et étape publiées par la " +
+    "machine de rendu, erreur, éléments omis, et les LIENS du résultat quand il est terminé. Sans identifiant : le rendu " +
+    'le plus récent de cette conversation. Ne déduis jamais une progression ou un délai qui ne sont pas renvoyés.',
+  input_schema: { type: 'object', properties: { job_id: { type: 'string' } } },
+  available_in_modes: TOUS_MODES,
+};
+
+/** Outils Studio exposés au chat (vertical promoteur). */
+export const OUTILS_STUDIO_CHAT: OutilDef[] = [OUTIL_STUDIO_PREPARER_3D, OUTIL_STUDIO_LANCER_RENDU, OUTIL_STUDIO_ETAT_RENDU];
+export const NOMS_OUTILS_STUDIO: ReadonlySet<string> = new Set(OUTILS_STUDIO_CHAT.map((o) => o.name));
+
 export const OUTILS_CONCEPTION: OutilDef[] = [
   OUTIL_RECUPERER_PARCELLE, OUTIL_LIRE_REGLES_IMPORTEES, OUTIL_ENREGISTRER_REGLES, OUTIL_ENREGISTRER_PROGRAMME, OUTIL_LIRE_REGLEMENT_PDF,
+  // Lot E1 : la mission prépare la 3D (calcul déterministe, gratuit) ; elle ne lance JAMAIS de rendu.
+  OUTIL_STUDIO_PREPARER_3D,
 ];
 export const NOMS_OUTILS_CONCEPTION: ReadonlySet<string> = new Set(OUTILS_CONCEPTION.map((o) => o.name));
 
@@ -445,6 +517,9 @@ export function outilChatAutoriseEnMission(nom: string): boolean {
   if (/^(creer|desactiver|modifier|marquer)_/.test(nom)) return false;
   if (['proposer_suivi_projet', 'get_suivi_projet'].includes(nom)) return false;
   if (NOMS_OUTILS_AGENT_CHAT.has(nom)) return false;
+  // Lot E1 : les outils Studio du chat (rendu = coût GPU, accord explicite) ne passent jamais en mission ;
+  // la mission de conception a sa propre studio_preparer_3d (outil de mission).
+  if (nom.startsWith('studio_')) return false;
   return true;
 }
 

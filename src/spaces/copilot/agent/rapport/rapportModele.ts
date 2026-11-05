@@ -7,7 +7,7 @@
 // PUR : aucune dépendance navigateur, testé par rapportExport.test.ts.
 // =============================================================================
 
-import { mettreEnForme } from '../../utils/lisibilite.ts';
+import { mettreEnForme, phrasesLisibles } from '../../utils/lisibilite.ts';
 
 export type Nombre = number | null;
 
@@ -347,7 +347,9 @@ function paragrapher(s: string): string[] {
   }
   const blocs = s.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
   if (blocs.length > 1) return blocs.map(lisible);
-  const phrases = s.match(/[^.!?]+(?:[.!?]+(?=\s|$)|$)/g)?.map((p) => p.trim()).filter(Boolean) ?? [s];
+  // Lot A : jamais de coupure après « art. », « p. »… ni dans une parenthèse (exports PDF/Word/Excel compris).
+  const phrases = phrasesLisibles(s);
+  if (!phrases.length) return [lisible(s)];
   const res: string[] = [];
   for (let i = 0; i < phrases.length; i += 3) res.push(lisible(phrases.slice(i, i + 3).join(' ')));
   return res;

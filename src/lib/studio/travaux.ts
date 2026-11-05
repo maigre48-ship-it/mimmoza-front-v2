@@ -1,9 +1,9 @@
 // src/lib/studio/travaux.ts
 //
-// FILM OU VISITE 360° EN 3 CLICS — service de la file `studio_jobs`.
+// FILM, VISITE 360° OU IMAGE PHOTORÉALISTE EN 3 CLICS — service de la file `studio_jobs`.
 //
-// Créer, annuler, lister et suivre un travail ; URL signée du film (bucket
-// privé `studio-rendus`) ; adresse publique du manifeste d'une visite (bucket
+// Créer, annuler, lister et suivre un travail ; URL signée du film ou de l'image
+// (bucket privé `studio-rendus`) ; adresse publique du manifeste d'une visite (bucket
 // public `visites`). Si la migration n'est pas encore appliquée, les fonctions
 // renvoient `{ disponible: false }` au lieu de lever : l'interface affiche
 // « Bientôt disponible ».
@@ -53,13 +53,13 @@ export async function lireTravailParId(id: string): Promise<TravailStudio | null
 export async function creerTravail(travail: NouveauTravail): Promise<Reponse<TravailStudio>> {
   const { data: session } = await supabase.auth.getUser();
   const userId = session.user?.id;
-  if (!userId) throw new ErreurTravail('Connectez-vous pour lancer un film ou une visite.');
+  if (!userId) throw new ErreurTravail('Connectez-vous pour lancer un rendu.');
   const { data, error } = await supabase.from('studio_jobs')
     .insert({ ...travail, user_id: userId })
     .select(COLONNES).single();
   if (error) {
     if (fileIndisponible(error)) return { disponible: false };
-    throw new ErreurTravail(messageErreurTravail(error));
+    throw new ErreurTravail(messageErreurTravail(error, travail.type));
   }
   const lu = lireTravail(data);
   if (!lu) throw new ErreurTravail('Le lancement n’a pas été confirmé.');
@@ -108,10 +108,10 @@ export function suivreTravail(id: string, rappel: (travail: TravailStudio) => vo
   return arreter;
 }
 
-/** URL signée (1 h) d'un fichier du bucket privé `studio-rendus` (film ou affiche). */
-export async function urlSigneeRendu(chemin: string, dureeS = 3600): Promise<string> {
-  const { data, error } = await supabase.storage.from(BUCKET_RENDUS).createSignedUrl(chemin, dureeS);
-  if (error || !data?.signedUrl) throw new ErreurTravail('Le film n’est pas encore accessible. Réessayez dans un instant.');
+/** URL signée (1 h) d'un fichier du bucket privé `studio-rendus` (film, affiche ou image). `telecharger` : nom du fichier proposé au téléchargement. */
+export async function urlSigneeRendu(chemin: string, dureeS = 3600, telecharger?: string): Promise<string> {
+  const { data, error } = await supabase.storage.from(BUCKET_RENDUS).createSignedUrl(chemin, dureeS, telecharger ? { download: telecharger } : undefined);
+  if (error || !data?.signedUrl) throw new ErreurTravail('Le fichier n’est pas encore accessible. Réessayez dans un instant.');
   return data.signedUrl;
 }
 

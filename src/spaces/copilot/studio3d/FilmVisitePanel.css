@@ -32,7 +32,7 @@
 }
 
 /* Clic 1 — deux gros boutons */
-.jarvis-dossier .mzia-rendu__choix { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.jarvis-dossier .mzia-rendu__choix { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
 .jarvis-dossier .mzia-rendu__choix button {
   display: grid; justify-items: start; gap: 4px;
   min-height: 92px; padding: 12px;
@@ -129,6 +129,12 @@
 .jarvis-dossier .mzia-rendu__lecteur { display: grid; gap: 6px; }
 .jarvis-dossier .mzia-rendu__lecteur video { width: 100%; max-height: 60vh; border-radius: 8px; background: #000; }
 .jarvis-dossier .mzia-rendu__lecteur div { display: flex; gap: 6px; flex-wrap: wrap; }
+/* Image photoréaliste (02/11/2026) : estimation avant lancement, images livrées. */
+.jarvis-dossier .mzia-rendu__estimation { margin: 0; font-size: 12px; color: var(--rendu-doux) !important; }
+.jarvis-dossier .mzia-rendu__images figure { margin: 0; display: grid; gap: 4px; }
+.jarvis-dossier .mzia-rendu__images img { width: 100%; height: auto; border-radius: 8px; background: #eee; }
+.jarvis-dossier .mzia-rendu__images figcaption { font-size: 12px; color: var(--rendu-doux) !important; }
+.jarvis-dossier .mzia-rendu__avertissements { margin: 0; padding-left: 18px; font-size: 12px; color: var(--rendu-doux) !important; }
 
 /* Historique */
 .jarvis-dossier .mzia-rendu__historique h3 { margin: 4px 0 6px; font-size: 12px; font-weight: 600; color: var(--rendu-doux) !important; }

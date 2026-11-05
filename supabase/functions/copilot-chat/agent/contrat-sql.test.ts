@@ -97,6 +97,20 @@ Deno.test('Q3-9 : toutes les formes de règle de conception.ts passent agent_con
   formes.manquant = completerRegles([]);
   // 7. toutes ensemble, relues depuis la base (normaliserRegle 'base')
   formes.relues_base = completerRegles(formes.par_secteur_avec_secteur.map((r) => normaliserRegle(r, 'base')!));
+  // Lot A — 8. « non réglementée » écartée (article d'un autre sujet : UC 12-1.2, stationnement) → manquant « non trouvée »
+  formes.non_trouvee = completerRegles(reglesDepuisLecture({ regles: [
+    { cle: 'mixite_sociale_pct', nature: 'non_reglementee', valeur: null, article: 'UC 12-1.2, p. 117', texte: 'Il n’est pas fixé de règle.',
+      titre_article: 'ARTICLE UC 12 – LES OBLIGATIONS IMPOSEES AUX CONSTRUCTEURS EN' },
+  ] }, 'gpu', SOURCE));
+  // Lot A — 9. formule de recul « voir recul aux limites » (UC 7-3 : 8 m avec baie / 3 m sans baie recopiés, valeur texte)
+  formes.formule_voir_recul = completerRegles(reglesDepuisLecture({ regles: [
+    { cle: 'recul_limites_m', nature: 'alternative', valeur: null, article: 'UC 7-3, p. 107', texte: '8 m pour une façade avec baie, 3 m pour une façade sans baie',
+      alternatives: [{ libelle: 'façade avec baie(s)', valeur: 8 }, { libelle: 'façade sans baie', valeur: 3 }] },
+    { cle: 'recul_limites_formule', nature: 'non_reglementee', valeur: null, article: 'UC 7-3, p. 107', texte: 'Il n’est pas fixé de règle.' },
+  ] }, 'gpu', SOURCE));
+  // 10. les mêmes, relues depuis la base
+  formes.lot_a_relues_base = completerRegles([...formes.non_trouvee, ...formes.formule_voir_recul]
+    .filter((r) => r.cle === 'mixite_sociale_pct' || r.cle.startsWith('recul_limites')).map((r) => normaliserRegle(r, 'base')!));
   for (const [nom, regles] of Object.entries(formes)) {
     na.ok(await valide(db, regles), `forme « ${nom} » refusée par la contrainte : ${JSON.stringify(regles)}`);
   }
@@ -106,6 +120,10 @@ Deno.test('Q3-9 : toutes les formes de règle de conception.ts passent agent_con
   na.deepStrictEqual(ps.find((r) => r.cle === 'stationnement_par_logement')!.valeur, 1);
   na.deepStrictEqual(formes.alternative.find((r) => r.cle === 'recul_voie_m')!.valeur, 0);
   na.deepStrictEqual(formes.par_secteur_sans_secteur.find((r) => r.cle === 'hauteur_max_m')!.statut, 'manquant');
+  na.deepStrictEqual(formes.non_trouvee.find((r) => r.cle === 'mixite_sociale_pct')!.statut, 'manquant');
+  na.ok(String(formes.non_trouvee.find((r) => r.cle === 'mixite_sociale_pct')!.texte).startsWith('non trouvée dans les articles lus'));
+  na.deepStrictEqual(formes.formule_voir_recul.find((r) => r.cle === 'recul_limites_formule')!.valeur, '8 m (façade avec baie(s)) / 3 m (façade sans baie)');
+  na.deepStrictEqual(formes.lot_a_relues_base.find((r) => r.cle === 'recul_limites_formule')!.statut, 'confirme');
   // Contrôle négatif : la contrainte refuse bien ce qu'elle doit refuser.
   na.equal(await valide(db, [{ cle: 'emprise_sol_max_pct', valeur: null, unite: '%', statut: 'confirme', source: SOURCE, nature: 'non_reglementee' }]), false, 'non réglementée sans article');
   na.equal(await valide(db, [{ cle: 'recul_voie_m', valeur: 0, unite: 'm', statut: 'confirme', source: SOURCE, nature: 'alternative' }]), false, 'nature hors liste');

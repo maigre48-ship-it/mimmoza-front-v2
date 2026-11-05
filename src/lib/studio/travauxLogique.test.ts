@@ -1,8 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  chargeValide, construireFiche, construireTravail, estActif, fileIndisponible, libelleStatut, lienVisite, lireTravail,
-  messageErreurTravail, optionsParDefaut, phraseElementsOmis, phraseSuivi, resumeOptions, titreDepuisFiche, validerOptions,
+  chargeValide, construireFiche, construireTravail, dureeEstimeeImage, estActif, fileIndisponible, libelleStatut, lienVisite, lireTravail,
+  LIBELLES_TYPE, messageErreurTravail, optionsParDefaut, phraseElementsOmis, phraseSuivi, resumeOptions, titreDepuisFiche, validerOptions,
+  type ResultatImage,
 } from './travauxLogique.ts';
 import { lireElementsOmis, lireManifesteVisite } from './manifesteVisite.ts';
 
@@ -140,7 +141,7 @@ describe('file absente (migration non appliquée)', () => {
     assert.ok(fileIndisponible({ code: '42P01', message: 'relation "public.studio_jobs" does not exist' }));
     assert.ok(fileIndisponible({ code: 'PGRST205', message: "Could not find the table 'public.studio_jobs' in the schema cache" }));
     assert.ok(!fileIndisponible({ code: '23505', message: 'duplicate key' }));
-    assert.equal(messageErreurTravail({ code: 'PGRST205', message: '' }), 'Films et visites 360° : bientôt disponible.');
+    assert.equal(messageErreurTravail({ code: 'PGRST205', message: '' }), 'Films, visites 360° et images : bientôt disponible.');
   });
   it('relaie le message du plafond tel quel', () => {
     const m = 'Vous avez déjà 2 films ou visites en préparation. Attendez qu\'un des deux se termine.';
@@ -174,5 +175,74 @@ describe('manifeste de visite 360°', () => {
     assert.equal(lireManifesteVisite({ ...manifeste, depart: 'grenier' })?.depart, 'sejour');
     assert.equal(lireManifesteVisite({ ...manifeste, version: 2 }), null);
     assert.equal(lireManifesteVisite({ ...manifeste, panoramas: [] }), null);
+  });
+});
+
+describe('image photoréaliste (3e type de rendu)', () => {
+  it('options par défaut : une vue 3/4 gauche, en journée', () => {
+    assert.deepEqual(optionsParDefaut('image'), { vues: ['trois_quarts_gauche'], ambiance: 'jour', qualite: 'finale' });
+    assert.equal(LIBELLES_TYPE.image, 'Image photoréaliste');
+  });
+  it('accepte 1 à 3 vues (remises dans l’ordre) et la fin de journée ; refuse la nuit et le hors contrat', () => {
+    const v = validerOptions('image', { vues: ['face', 'trois_quarts_gauche'], ambiance: 'fin_de_journee' });
+    assert.ok(v.ok);
+    assert.deepEqual(v.ok && v.valeur, { vues: ['trois_quarts_gauche', 'face'], ambiance: 'fin_de_journee', qualite: 'finale' });
+    assert.ok(validerOptions('image', undefined).ok);
+    for (const o of [{ ambiance: 'nuit' }, { vues: [] }, { vues: ['face', 'face'] }, { vues: ['dessus'] }, { vues: 'face' },
+      { vues: ['face', 'trois_quarts_gauche', 'trois_quarts_droite', 'face'] }, { duree_s: 30 }]) {
+      assert.equal(validerOptions('image', o).ok, false, JSON.stringify(o));
+    }
+    assert.match((() => { const r = validerOptions('image', { ambiance: 'nuit' }); return r.ok ? '' : r.erreur; })(), /journée ou fin de journée/);
+  });
+  it('construit le travail comme pour le film (même fiche « Voir en 3D »)', () => {
+    const t = construireTravail('image', draft, 'conv-1', charge, { vues: ['face'] });
+    assert.ok(t.ok);
+    assert.equal(t.ok && t.valeur.type, 'image');
+    assert.deepEqual(t.ok && t.valeur.options, { vues: ['face'], ambiance: 'jour', qualite: 'finale' });
+    assert.equal(t.ok && t.valeur.fiche.charge, charge);
+  });
+  it('durée estimée affichée selon le nombre de vues', () => {
+    assert.equal(dureeEstimeeImage(1), 'environ 37 min à 1 h 17');
+    assert.equal(dureeEstimeeImage(3), 'environ 1 h 17 à 3 h 17');
+    assert.equal(dureeEstimeeImage(Number.NaN), dureeEstimeeImage(1));
+    assert.equal(dureeEstimeeImage(1, 'apercu'), 'environ 15 min à 20 min');
+    assert.equal(dureeEstimeeImage(3, 'apercu'), 'environ 25 min à 40 min');
+  });
+  it('LOT E0 — définition : haute définition par défaut, aperçu rapide possible, rien d’autre', () => {
+    const v = validerOptions('image', { qualite: 'apercu' });
+    assert.deepEqual(v.ok && v.valeur, { vues: ['trois_quarts_gauche'], ambiance: 'jour', qualite: 'apercu' });
+    for (const q of ['8k', '4k', 1, true]) assert.equal(validerOptions('image', { qualite: q }).ok, false, String(q));
+    assert.match((() => { const r = validerOptions('image', { qualite: '8k' }); return r.ok ? '' : r.erreur; })(), /haute définition ou aperçu rapide/);
+    assert.equal(validerOptions('film', { qualite: 'apercu' }).ok, false, 'pas de qualité sur le film');
+    assert.equal(resumeOptions('image', { vues: ['face'], qualite: 'apercu' }), 'Face · en journée · aperçu rapide');
+    assert.equal(resumeOptions('image', { vues: ['face'] }), 'Face · en journée');
+  });
+  it('LOT E0 — base pas encore migrée : l’image est « bientôt disponible », le plafond (ancien et nouveau message) est relayé', () => {
+    const options = { code: '22023', message: 'Options du travail invalides.' };
+    assert.equal(messageErreurTravail(options, 'image'), 'L’image photoréaliste sera bientôt disponible.');
+    assert.equal(messageErreurTravail({ code: '23514', message: 'new row for relation "studio_jobs" violates check constraint "studio_jobs_type_check"' }, 'image'), 'L’image photoréaliste sera bientôt disponible.');
+    assert.equal(messageErreurTravail(options, 'film'), 'Ces options ne sont pas acceptées. Rechargez la page puis réessayez.');
+    assert.equal(messageErreurTravail(options), 'Ces options ne sont pas acceptées. Rechargez la page puis réessayez.');
+    const nouveau = 'Vous avez déjà 2 rendus en préparation (film, visite ou image). Attendez qu\'un des deux se termine.';
+    assert.equal(messageErreurTravail({ code: 'P0001', message: nouveau }, 'image'), nouveau);
+  });
+  it('lit le résultat du worker (images JPEG + PNG) et en fait un suivi lisible', () => {
+    const t = lireTravail({
+      id: 'j-img', type: 'image', statut: 'termine', progression: 100,
+      resultat: { image_path: 'u/j/image-face.jpg', images: [{ vue: 'face', libelle: 'Face', jpeg_path: 'u/j/image-face.jpg', png_path: 'u/j/image-face.png', largeur: 2880, hauteur: 1620 }, { vue: 'inconnue', jpeg_path: 'x.jpg' }], avertissements: ['note'] },
+      elements_omis: [{ categorie: 'voitures', raison: 'aucun asset' }], cree_le: '2026-11-02T10:00:00Z', maj_le: '2026-11-02T11:00:00Z',
+    });
+    assert.ok(t);
+    const r = t!.resultat as ResultatImage;
+    assert.equal(r.image_path, 'u/j/image-face.jpg');
+    assert.equal(r.images.length, 1, 'vue inconnue écartée');
+    assert.equal(r.images[0]!.png_path, 'u/j/image-face.png');
+    assert.equal(r.qualite, null, 'qualité absente du résultat : null');
+    const t2 = lireTravail({ id: 'j2', type: 'image', statut: 'termine', resultat: { image_path: 'a.jpg', images: [], qualite: 'apercu', avertissements: [] } });
+    assert.equal((t2!.resultat as ResultatImage).qualite, 'apercu');
+    assert.equal(phraseSuivi(t!), 'Votre image est prête.');
+    assert.equal(phraseSuivi({ ...t!, statut: 'en_attente' }), 'Votre image est dans la file : la préparation démarre dès que le Studio est libre.');
+    assert.equal(resumeOptions('image', { vues: ['trois_quarts_gauche', 'face'], ambiance: 'fin_de_journee' }), '3/4 gauche, Face · fin de journée');
+    assert.equal(lireTravail({ id: 'j', type: 'image', statut: 'termine', resultat: { avertissements: [] } })!.resultat, null, 'sans image : pas de résultat');
   });
 });

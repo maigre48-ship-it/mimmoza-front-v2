@@ -1,4 +1,4 @@
-import type { JarvisFacadeRule, JarvisMassing } from './jarvisDraft';
+import type { JarvisFacadeRule, JarvisMassing } from './jarvisDraft.ts';
 
 type BuildingVolume = Pick<JarvisMassing, 'largeurM' | 'profondeurM' | 'appearance'> & Partial<Pick<JarvisMassing, 'segments' | 'facadeRules'>>;
 
