@@ -17,6 +17,8 @@ import type { FormatExport } from './rapport/exporterRapport';
 import { SuiteConception } from './conception/SuiteConception';
 import { CarteConceptionPrete } from './conception/CarteConceptionPrete';
 import { lireConceptionPrete } from './conception/conceptionLogique';
+import { TexteLisible } from './TexteLisible';
+import { regrouperParagraphes } from '../utils/lisibilite';
 
 const EXPORTS: { format: FormatExport; label: string; titre: string }[] = [
   { format: 'pdf', label: 'PDF', titre: 'Télécharger le rapport en PDF' },
@@ -46,7 +48,10 @@ export function RapportMission({ mission, partiel }: { mission: Mission; partiel
     } finally { setExport(null); }
   };
 
-  const synthese = toutLire ? m.synthese : m.synthese.slice(0, 2);
+  // Une ligne de liste = un paragraphe dans le modèle (exports) ; à l'écran,
+  // l'introduction et ses lignes de liste forment un seul bloc.
+  const blocsSynthese = regrouperParagraphes(m.synthese);
+  const synthese = toutLire ? blocsSynthese : blocsSynthese.slice(0, 2);
   // Rapport d'une mission de conception : pas d'export de prospection, accès aux voies du plan.
   const conception = lireConceptionPrete(mission.rapport_brut) != null;
 
@@ -76,8 +81,8 @@ export function RapportMission({ mission, partiel }: { mission: Mission; partiel
       {synthese.length > 0 && (
         <>
           <h4>Synthèse</h4>
-          {synthese.map((p, i) => <p key={i} className="mzag-rapport__para">{p}</p>)}
-          {m.synthese.length > 2 && (
+          {synthese.map((p, i) => <TexteLisible key={i} texte={p} className="mzag-rapport__para" reponseDabord={i === 0} exigerSuite={blocsSynthese.length < 2} />)}
+          {blocsSynthese.length > 2 && (
             <button type="button" className="mzag-btn mzag-btn--discret mzag-btn--petit" onClick={() => setToutLire((x) => !x)}>
               {toutLire ? 'Réduire' : 'Lire toute la synthèse'}
             </button>

@@ -1,4 +1,5 @@
 import { reparerEncodageProfond } from '../_shared/texte/reparerEncodage.ts';
+import { alertesValeursMultiples, COUCHES_SUR_PARCELLE, geometrieDepuisIdu, geometrieValide, urlCouche, type GeometrieParcelle } from './logique.ts';
 
 // supabase/functions/gpu-parcelle-v1/index.ts
 // Mimmoza — Urbanisme réglementaire au point, via API Carto GPU (IGN, TOKEN-FREE)
@@ -49,6 +50,10 @@ interface Body {
   longitude?: number;
   couches?: string[];
   limite?: number;
+  /** Lot Q3 : contour de la parcelle (GeoJSON WGS84) — prescriptions et informations lues sur la parcelle entière. */
+  geometrie?: unknown;
+  /** Lot Q3 : idu de la parcelle — contour récupéré au cadastre (API Carto) si `geometrie` est absente. */
+  idu?: string;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -96,9 +101,8 @@ function enjeuDe(libelle: string | null): string | null {
   return null;
 }
 
-async function couche(nom: Couche, lon: number, lat: number): Promise<any[] | null> {
-  const geom = encodeURIComponent(JSON.stringify({ type: 'Point', coordinates: [lon, lat] }));
-  const url = `${APICARTO}/${nom}?geom=${geom}`;
+async function couche(nom: Couche, lon: number, lat: number, parcelle: GeometrieParcelle | null = null): Promise<any[] | null> {
+  const url = urlCouche(APICARTO, nom, lon, lat, parcelle);   // lot Q3 : parcelle entière pour les prescriptions
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), TIMEOUT_MS);
   try {
@@ -150,8 +154,14 @@ Deno.serve(async (req: Request) => {
   const aInterroger: Couche[] = Array.from(new Set<Couche>(['municipality', ...demandees]));
   const limite = Math.min(40, Math.max(1, Math.trunc(num(body.limite) ?? 25)));
 
+  // Lot Q3 : géométrie de la parcelle (reçue, sinon cadastre de l'idu) pour les prescriptions.
+  const veutPrescriptions = aInterroger.some((c) => COUCHES_SUR_PARCELLE.has(c));
+  let parcelle: GeometrieParcelle | null = veutPrescriptions ? geometrieValide(body.geometrie) : null;
+  if (veutPrescriptions && !parcelle && typeof body.idu === 'string' && body.idu.trim()) {
+    parcelle = await geometrieDepuisIdu(body.idu, fetch).catch(() => null);
+  }
   const resultats = await Promise.all(
-    aInterroger.map(async (c) => [c, await couche(c, lon, lat)] as const),
+    aInterroger.map(async (c) => [c, await couche(c, lon, lat, parcelle)] as const),
   );
   const parCouche = new Map<Couche, any[] | null>(resultats);
 
@@ -203,6 +213,9 @@ Deno.serve(async (req: Request) => {
   }
   prescriptions.sort((a, b) =>
     (b.enjeu_probable ? 1 : 0) - (a.enjeu_probable ? 1 : 0));
+  // Lot Q3 : plusieurs valeurs d'une même famille → toutes remontées, avec une alerte.
+  const alertes = alertesValeursMultiples(prescriptions);
+  const interrogation = !veutPrescriptions ? null : parcelle ? 'geometrie_parcelle' : 'point';
 
   // ── Informations (non opposables directement) ────────────────
   const infos = (parCouche.get('info-surf') ?? []).map((f: any) => {
@@ -245,6 +258,8 @@ Deno.serve(async (req: Request) => {
       ? `${prescriptions.length} prescription(s) au point` +
         (impacts.length ? `, dont ${impacts.length} à impact opérationnel probable : ${impacts.slice(0, 4).map((p) => p.libelle).join(' ; ')}. ` : '. ')
       : 'Aucune prescription publiée au point. ') +
+    (alertes.length ? `⚠️ ${alertes.join(' ')} ` : '') +
+    (interrogation === 'point' ? 'Prescriptions lues au POINT seulement (contour de la parcelle non disponible) : une prescription voisine ou une autre zone de la parcelle peut manquer. ' : '') +
     (echecs.length ? `⚠️ Couche(s) non interrogée(s) faute de réponse : ${echecs.join(', ')}. ` : '') +
     `Le GPU ne contient que ce que la collectivité a numérisé : une absence de résultat n'est pas une preuve d'absence de règle. ` +
     `Le droit de préemption (DPU) et les ZAD ne sont PAS publiés dans ces couches — à vérifier en mairie.`;
@@ -261,6 +276,9 @@ Deno.serve(async (req: Request) => {
       nb_informations: infos.length,
       couches_interrogees: aInterroger,
       couches_en_echec: echecs,
+      // Lot Q3 : comment les prescriptions ont été lues, et valeurs multiples d'une même famille.
+      ...(interrogation ? { interrogation_prescriptions: interrogation } : {}),
+      ...(alertes.length ? { alertes_prescriptions: alertes } : {}),
     },
     items: {
       zones,

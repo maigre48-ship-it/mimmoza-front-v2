@@ -168,6 +168,7 @@ export function resumerRechercheParcelles(raw: unknown): { status: StatutOutil; 
       zone: it.zonage_plu ?? null,
       type_zone: it.type_zone ?? null,
       zonage_statut: it.zonage_statut,
+      ...(Array.isArray(it.zonages_au_point) && it.zonages_au_point.length ? { zonages_au_point: it.zonages_au_point } : {}),   // lot Q3
       bati: it.bati_detecte ?? null,
       score: it.score_tri,
       centroide: it.centroide,

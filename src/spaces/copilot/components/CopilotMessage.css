@@ -71,3 +71,12 @@
 .copilot-rapport dl.kv dt{font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:#64748b}
 .copilot-rapport dl.kv dd{margin:1px 0 0;font-weight:600;color:#0f172a}
 .copilot-rapport .para{margin:4px 0 6px}
+
+/* LOT F1 — « La réponse d'abord » : la première phrase-réponse est mise en évidence. */
+.copilot-message-markdown .mz-reponse-dabord {
+  font-weight:600;color:#0f172a;
+  padding:8px 12px;margin:0 0 10px 0 !important;
+  border-left:3px solid #6d5dfc;border-radius:0 8px 8px 0;
+  background:rgb(109 93 252 / .06);
+}
+@media print { .copilot-message-markdown .mz-reponse-dabord { background:none; } }

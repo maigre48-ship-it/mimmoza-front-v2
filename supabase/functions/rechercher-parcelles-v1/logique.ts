@@ -144,6 +144,8 @@ export interface Item {
   type_zone: string | null;
   libelle_zone: string | null;
   zonage_statut: 'lu' | 'hors_zone_publiee' | 'non_verifie';
+  /** Lot Q3 : présent seulement si plusieurs zones (codes différents) couvrent le point — toutes, la retenue en premier. */
+  zonages_au_point?: string[];
   centroide: [number, number];
   compacite: number;
   bati_detecte: boolean | null;
@@ -297,6 +299,30 @@ export function pointDansPolys(pt: [number, number], polys: Poly[]): boolean {
   }
   return false;
 }
+/**
+ * Lot Q3 : point représentatif DANS la parcelle — le centroïde s'il y est, sinon le milieu du plus
+ * large segment intérieur de l'horizontale passant par le centroïde (anneau extérieur le plus grand).
+ */
+export function pointInterieur(polys: Poly[], c: [number, number]): [number, number] {
+  if (pointDansPolys(c, polys)) return c;
+  let meilleur: Anneau | null = null, aireMax = -1;
+  for (const p of polys) { const r = p[0]; if (Array.isArray(r) && r.length >= 3) { const a = aireAnneau(r, 1, 1); if (a > aireMax) { aireMax = a; meilleur = r; } } }
+  if (!meilleur) return c;
+  const y = c[1];
+  const xs: number[] = [];
+  for (let i = 0, j = meilleur.length - 1; i < meilleur.length; j = i++) {
+    const [xi, yi] = meilleur[i], [xj, yj] = meilleur[j];
+    if ((yi > y) !== (yj > y)) xs.push(((xj - xi) * (y - yi)) / (yj - yi) + xi);
+  }
+  xs.sort((a, b) => a - b);
+  let best: [number, number] | null = null, largeur = -1;
+  for (let k = 0; k + 1 < xs.length; k += 2) {
+    const pt: [number, number] = [(xs[k] + xs[k + 1]) / 2, y];
+    if (xs[k + 1] - xs[k] > largeur && pointDansPolys(pt, polys)) { largeur = xs[k + 1] - xs[k]; best = pt; }
+  }
+  return best ?? c;
+}
+
 function distanceM(a: [number, number], b: [number, number]): number {
   const [kx, ky] = facteurs((a[1] + b[1]) / 2);
   return Math.hypot((a[0] - b[0]) * kx, (a[1] - b[1]) * ky);
@@ -325,8 +351,10 @@ export function normaliserParcelle(f: any): Parcelle | null {
   idu = idu.toUpperCase();
   if (!/^(\d{5}|2[AB]\d{3})[0-9A-Z]{9}$/.test(idu)) return null;
 
-  const c = centroide(polys);
-  if (!c) return null;
+  const c0 = centroide(polys);
+  if (!c0) return null;
+  // Lot Q3 : le centroïde d'une parcelle concave peut tomber HORS de la parcelle (zone voisine lue).
+  const c = pointInterieur(polys, c0);
   const contenance = num(p.contenance);
   const { aire } = mesurer(polys);
   const avecContenance = contenance !== null && contenance > 0;
@@ -504,7 +532,26 @@ async function lireCadastre(p: Perimetre, deps: Deps, finCadastre: () => number)
 }
 
 // ─── Étape 3 : zonage GPU ────────────────────────────────────────────────────
-interface ZoneGeo { zone: Zone; polys: Poly[]; emprise: [number, number, number, number] }
+interface ZoneGeo { zone: Zone; polys: Poly[]; emprise: [number, number, number, number]; date: string }
+
+/** Lot Q3 : date (AAAAMMJJ) d'un document d'urbanisme — idurba (« 92050_PLU_20251209 »), datappro ou datvalid ; '' si inconnue. */
+export function dateDocument(props: any): string {
+  const cands = [props?.idurba, props?.datappro, props?.datvalid].map((v) => String(v ?? '').replace(/-/g, ''))
+    .map((v) => /(\d{8})(?!.*\d{8})/.exec(v)?.[1] ?? '');
+  return cands.reduce((a, b) => (b > a ? b : a), '');
+}
+
+/**
+ * Lot Q3 (écart UBa / UC du 05/11/2026 sur AE0414) : l'ancien tri ALPHABÉTIQUE (code puis
+ * document) prenait « UBa » avant « UC » quand deux zones recouvraient le centroïde (ancien et
+ * nouveau document publiés ensemble, ou recouvrement de saisie). Désormais : le document le PLUS
+ * RÉCENT d'abord (date AAAAMMJJ de l'idurba / datappro / datvalid), l'ordre alphabétique seulement
+ * à date égale ; et toutes les zones au point sont remontées (`zonages_au_point`) avec une alerte.
+ */
+export function ordreZones<T extends { zone: Zone; date: string }>(zs: T[]): T[] {
+  return [...zs].sort((x, y) => (y.date.localeCompare(x.date)) ||
+    `${x.zone.zonage_plu}|${x.zone.document}`.localeCompare(`${y.zone.zonage_plu}|${y.zone.document}`));
+}
 
 function zoneDeProps(props: any): Zone {
   const p = reparerEncodageProfond(props ?? {});
@@ -518,6 +565,8 @@ function zoneDeProps(props: any): Zone {
 
 interface ResultatZonage {
   parIdu: Map<string, Zone | null>;     // null = interrogé, aucune zone publiée au point
+  /** Lot Q3 : parcelles dont le point est couvert par plusieurs zones (codes différents) — toutes listées. */
+  multiples?: Map<string, string[]>;
   methode: 'rectangle' | 'points' | 'aucune';
   commune_rnu: boolean | null;
   erreur?: string;
@@ -541,10 +590,11 @@ async function zoner(cands: Parcelle[], deps: Deps, fin: () => number): Promise<
     const zones: ZoneGeo[] = [];
     for (const f of r.data.features) {
       const polys = polysDe(f?.geometry);
-      if (polys.length) zones.push({ zone: zoneDeProps(f?.properties), polys, emprise: emprise(polys) });
+      if (polys.length) zones.push({ zone: zoneDeProps(f?.properties), polys, emprise: emprise(polys), date: dateDocument(reparerEncodageProfond(f?.properties ?? {})) });
     }
-    // ordre déterministe en cas de recouvrement : code PLU puis document
-    zones.sort((x, y) => `${x.zone.zonage_plu}|${x.zone.document}`.localeCompare(`${y.zone.zonage_plu}|${y.zone.document}`));
+    // Lot Q3 : en cas de recouvrement, document le plus récent d'abord (voir ordreZones).
+    const tri = ordreZones(zones);
+    zones.length = 0; zones.push(...tri);
     let communeRnu: boolean | null = null;
     if (zones.length === 0) {
       const c = cands[0].centroide;
@@ -552,15 +602,19 @@ async function zoner(cands: Parcelle[], deps: Deps, fin: () => number): Promise<
         Math.min(REGLAGES.GPU_POINT_TIMEOUT_MS, fin() - 2000));
       if (m.ok) communeRnu = m.data?.features?.[0]?.properties?.is_rnu === true;
     }
+    const multiples = new Map<string, string[]>();
     for (const c of cands) {
       const [x, y] = c.centroide;
-      const z = zones.find((zg) => x >= zg.emprise[0] && x <= zg.emprise[2] && y >= zg.emprise[1] && y <= zg.emprise[3] && pointDansPolys(c.centroide, zg.polys));
-      parIdu.set(c.idu, z ? z.zone : null);
+      const toutes = zones.filter((zg) => x >= zg.emprise[0] && x <= zg.emprise[2] && y >= zg.emprise[1] && y <= zg.emprise[3] && pointDansPolys(c.centroide, zg.polys));
+      parIdu.set(c.idu, toutes[0] ? toutes[0].zone : null);
+      const codes = [...new Set(toutes.map((zg) => zg.zone.zonage_plu).filter((z): z is string => !!z))];
+      if (codes.length > 1) multiples.set(c.idu, toutes.map((zg) => `${zg.zone.zonage_plu ?? '?'} (${zg.zone.document ?? 'document ?'})`));
     }
-    return { parIdu, methode: 'rectangle', commune_rnu: communeRnu };
+    return { parIdu, methode: 'rectangle', commune_rnu: communeRnu, multiples };
   }
 
   // b) repli : un appel par point, plafonné
+  const multiples = new Map<string, string[]>();
   const cibles = cands.slice(0, REGLAGES.GPU_POINT_MAX);
   let echecs = 0;
   await enParallele(cibles, REGLAGES.PARALLELE, () => fin() < 3000, async (c) => {
@@ -568,13 +622,15 @@ async function zoner(cands: Parcelle[], deps: Deps, fin: () => number): Promise<
     const rp = await fetchJson(deps, `${URLS.apicartoGpu}/zone-urba?geom=${g}`, Math.min(REGLAGES.GPU_POINT_TIMEOUT_MS, fin() - 2000));
     if (!rp.ok) { echecs++; return; }
     const feats: any[] = Array.isArray(rp.data?.features) ? rp.data.features : [];
-    const zs = feats.map((f) => zoneDeProps(f?.properties))
-      .sort((x, y) => `${x.zonage_plu}|${x.document}`.localeCompare(`${y.zonage_plu}|${y.document}`));
-    parIdu.set(c.idu, zs[0] ?? null);
+    const zs = ordreZones(feats.map((f) => ({ zone: zoneDeProps(f?.properties), date: dateDocument(reparerEncodageProfond(f?.properties ?? {})) })));
+    parIdu.set(c.idu, zs[0]?.zone ?? null);
+    const codes = [...new Set(zs.map((z) => z.zone.zonage_plu).filter((z): z is string => !!z))];
+    if (codes.length > 1) multiples.set(c.idu, zs.map((z) => `${z.zone.zonage_plu ?? '?'} (${z.zone.document ?? 'document ?'})`));
   });
   const lu = parIdu.size > 0;
   return {
     parIdu,
+    multiples,
     methode: lu ? 'points' : 'aucune',
     commune_rnu: null,
     erreur: `appel GPU sur le rectangle : ${r.ok ? 'réponse illisible' : r.erreur}${echecs ? ` ; ${echecs} point(s) en échec` : ''}`,
@@ -685,6 +741,10 @@ export async function rechercherParcelles(entree: Entree, deps: Deps): Promise<S
     avert.push(`Zonage lu point par point sur les ${REGLAGES.GPU_POINT_MAX} meilleures candidates seulement ; les autres sont « non_verifie ».`);
   }
   const nbZonesLues = [...zonage.parIdu.values()].filter((z) => z).length;
+  if (zonage.multiples?.size) {
+    avert.push(`Zonage : ${zonage.multiples.size} parcelle(s) couverte(s) par plusieurs zones au point (documents superposés) : ` +
+      'le document le plus récent est retenu et toutes les zones sont listées (zonages_au_point) — à vérifier.');
+  }
   if (zonage.methode === 'rectangle' && nbZonesLues === 0) {
     avert.push(zonage.commune_rnu === true
       ? "Commune au RÈGLEMENT NATIONAL D'URBANISME (pas de PLU) : aucun zonage, constructibilité limitée en principe aux parties urbanisées."
@@ -697,7 +757,9 @@ export async function rechercherParcelles(entree: Entree, deps: Deps): Promise<S
     const statut: Item['zonage_statut'] = !lu ? 'non_verifie' : z ? 'lu' : 'hors_zone_publiee';
     const ps = pointsSurface(x.surface_m2), pf = pointsForme(x.compacite), pz = pointsZone(z?.type_zone ?? null, statut);
     const raisons: string[] = [];
+    const multiples = zonage.multiples?.get(x.idu);
     if (statut === 'lu') raisons.push(`zone ${z!.zonage_plu ?? '?'} (type ${z!.type_zone ?? '?'}) lue au centroïde — ${pz} pts`);
+    if (multiples) raisons.push(`⚠️ plusieurs zones au point : ${multiples.join(' ; ')} — document le plus récent retenu, à vérifier`);
     else if (statut === 'hors_zone_publiee') raisons.push(`aucune zone PLU publiée au centroïde — ${pz} pts`);
     else raisons.push(`zonage non vérifié (plafond ou temps) — ${pz} pts`);
     raisons.push(`surface ${m2(x.surface_m2)}${x.surface_source === 'calculee_geometrie' ? ' (calculée sur la géométrie, contenance absente)' : ''}` +
@@ -707,7 +769,7 @@ export async function rechercherParcelles(entree: Entree, deps: Deps): Promise<S
       idu: x.idu, commune: x.commune, code_insee: x.code_insee, section: x.section, numero: x.numero,
       surface_m2: x.surface_m2, surface_source: x.surface_source,
       zonage_plu: z?.zonage_plu ?? null, type_zone: z?.type_zone ?? null, libelle_zone: z?.libelle_zone ?? null,
-      zonage_statut: statut, centroide: x.centroide, compacite: x.compacite,
+      zonage_statut: statut, ...(multiples ? { zonages_au_point: multiples } : {}), centroide: x.centroide, compacite: x.compacite,
       bati_detecte: null, emprise_batie_m2: null,
       score_tri: arrondi(pz + ps + pf, 1), raisons,
     };

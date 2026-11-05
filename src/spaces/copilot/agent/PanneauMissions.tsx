@@ -16,6 +16,8 @@ import { RapportMission } from './RapportMission';
 import { FormulaireRegles } from './conception/FormulaireRegles';
 import { lireQuestionRegles } from '@/spaces/promoteur/shared/echangeStudio/conception';
 import { useAgentUi } from './agentUi.store';
+import { ObjectifMission, TexteLisible } from './TexteLisible';
+import { scinderObjectif } from '../utils/lisibilite';
 
 function Barres({ m }: { m: Mission }) {
   const p = progression(m);
@@ -80,7 +82,7 @@ function ListeMissions() {
         return (
           <button key={m.id} type="button" className="mzag-item" onClick={() => useAgentUi.getState().choisirMission(m.id)}>
             <div className="mzag-item__haut">
-              <span className="mzag-item__objectif">{m.objectif || libelleType(m.type)}</span>
+              <span className="mzag-item__objectif">{scinderObjectif(m.objectif).titre || libelleType(m.type)}</span>
               <span className={`mzag-pastille mzag-pastille--${tonStatut(m.statut)}`}>{libelleStatut(m.statut)}</span>
             </div>
             {(missionActive(m.statut) || missionFinie(m.statut)) && m.statut !== 'annulee' && (
@@ -167,7 +169,7 @@ function DetailMission({ id }: { id: string }) {
           <span className="mzag-sur">{libelleType(mission.type)}{mission.origine === 'proactif' ? ' · veille' : ''}</span>
           <span className={`mzag-pastille mzag-pastille--${tonStatut(mission.statut)}`}>{libelleStatut(mission.statut)}</span>
         </div>
-        <h3 className="mzag-titre" style={{ margin: '6px 0 4px' }}>{mission.objectif}</h3>
+        <ObjectifMission as="h3" texte={mission.objectif} titreClassName="mzag-titre" titreParDefaut={libelleType(mission.type)} />
         <p className="mzag-petit" style={{ margin: '0 0 12px' }}>Créée {dateCourte(mission.cree_le)}{mission.termine_le ? ` · terminée ${dateCourte(mission.termine_le)}` : ''}</p>
         {mission.statut === 'devis' && devis ? (
           <p className="mzag-muet" style={{ margin: 0 }}>
@@ -200,7 +202,8 @@ function DetailMission({ id }: { id: string }) {
 
       {peutRepondre(mission) && !lireQuestionRegles(mission.question_en_attente) && (
         <div className="mzag-question">
-          <p>MimmozIA a besoin de vous : {mission.question_en_attente}</p>
+          <p>MimmozIA a besoin de vous :</p>
+          <TexteLisible texte={mission.question_en_attente} className="mzag-question__texte" reponseDabord />
           <textarea className="mzag-textarea" rows={3} value={reponse} maxLength={4000} onChange={(e) => setReponse(e.target.value)} aria-label="Votre réponse" placeholder="Votre réponse…" />
           <div className="mzag-actions" style={{ marginTop: 8 }}>
             <button type="button" className="mzag-btn mzag-btn--plein mzag-btn--petit" disabled={!reponse.trim() || occupe !== null} onClick={() => void agir('repondre')}>
@@ -224,7 +227,7 @@ function DetailMission({ id }: { id: string }) {
                   <span className={`mzag-journal__genre mzag-journal__genre--${l.genre}`}>{libelleJournal(l.genre)}</span>
                   <div className="mzag-journal__heure">{dateCourte(l.cree_le).split(', ').pop()}</div>
                 </span>
-                <span style={{ whiteSpace: 'pre-wrap' }}>{l.resume}</span>
+                <TexteLisible texte={l.resume} className="mzag-journal__texte" />
               </li>
             ))}
           </ol>

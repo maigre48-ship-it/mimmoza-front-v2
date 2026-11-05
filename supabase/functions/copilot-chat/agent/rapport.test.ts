@@ -6,6 +6,7 @@ const assertEquals = (a: unknown, b: unknown, msg?: string) => na.deepStrictEqua
 import {
   assemblerRapportV2, brouillonVide, calculerChargeFonciere, fusionnerHypotheses, hypothesesVides,
   lireHypothesesPartielles, normaliserClassement, normaliserTerrainBrut,
+  adresseDepuisPoint, completerAdresses, decouperPhrases, hypothesesDepuisOrigine, hypothesesToutesInconnues,
 } from './rapport.ts';
 
 // Hypothèses de la mission réelle de Montreuil (7a7c855a…), exprimées en v2.
@@ -242,4 +243,88 @@ Deno.test('Q1-D : typage déterministe des contraintes ; propriétaire jamais «
   // Propriétaire déclaré avec une source GPU : source effacée.
   const t3 = normaliserTerrainBrut({ idu: IDU_AE0414, commune: 'Nanterre', verdict: 'a_etudier', proprietaire: { nom: 'CDC Habitat Social', source: 'Géoportail de l’urbanisme' } })!;
   assertEquals((t3.proprietaire as { source: unknown }).source, null);
+});
+
+// ── Lot Q3 ───────────────────────────────────────────────────────────────────
+
+Deno.test('Q3-8 : garde Q1 — le texte non réécrit sort STRICTEMENT identique (abréviations, .pdf), seules les phrases réécrites changent', () => {
+  // Phrase réelle du rapport de conception du 05/11/2026 (reconstituée à partir des preuves).
+  const reel = "Le règlement a été lu au Géoportail de l'urbanisme (fichier 92050_reglement_20251209.pdf). " +
+    'Les règles clés de la zone UC sont confirmées : implantation à l’alignement ou recul minimum de 4 m (UC 6-1, p. 106), pleine terre (UC 13-1, p. 123). ' +
+    'Version du 09/12/2025). Voir art. UC 9, p. 109 et cf. p. 2.';
+  const g = garderTexte(reel, []);
+  assertEquals(g.texte, reel, 'identité exacte : aucune phrase coupée ni réécrite');
+  assertEquals(g.reecrites, []);
+  assert(!g.texte.startsWith('pdf)'), 'le début du texte est intact');
+  // Découpage : jamais sur « p. », « art. », « cf. », « .pdf) » ; la concaténation redonne le texte.
+  const ph = decouperPhrases(reel);
+  assertEquals(ph.map((x) => x.phrase + x.sep).join(''), reel);
+  assertEquals(ph.length, 4, JSON.stringify(ph.map((x) => x.phrase)));
+  assert(ph[0].phrase.endsWith('92050_reglement_20251209.pdf).') && ph[1].phrase.endsWith('(UC 13-1, p. 123).'));
+  // Sauts de ligne, puces et espaces multiples conservés à l'identique.
+  const md = 'Synthèse.\n\n- point A  (p. 12)\n- point B\nFin.   Suite.';
+  assertEquals(garderTexte(md, []).texte, md);
+  // Une phrase réécrite : seule elle change, le reste (y compris les séparateurs) est identique.
+  const mixte = `${reel}\nLe projet est compatible avec la hauteur du secteur 1. Fin.`;
+  const r = garderTexte(mixte, []);
+  assertEquals(r.reecrites.length, 1);
+  assert(r.texte.startsWith(`${reel}\nÀ vérifier : Le projet est compatible avec la hauteur du secteur 1 — `), r.texte);
+  assert(r.texte.endsWith(' Fin.'));
+  // Propriété d'identité sur des textes variés sans affirmation.
+  for (const t of ['', '   ', 'Un.  Deux !\tTrois ?\n\nQuatre…', 'M. Durand (p. 3). J. Martin. N° 4. Ok', 'a.b.c d. E']) {
+    assertEquals(garderTexte(t, []).texte, t, JSON.stringify(t));
+  }
+});
+
+Deno.test('Q3-7 : hypothèses du bilan reprises de la prospection d’origine, marquées de leur source, sans invention', () => {
+  const origine = {
+    prix_vente_libre_eur_m2_shab: 5159, source_prix: 'DVF',
+    cout_travaux_eur_m2_sdp: 2100, source_couts: 'BT01',
+    honoraires_pct_travaux: 12, aleas_pct_travaux: 5,
+  };
+  const h = hypothesesDepuisOrigine(origine, 'prospection d’origine « Prospection Nanterre » (mission 1234abcd)')!;
+  const b = fusionnerHypotheses(hypothesesVides(), h);
+  assertEquals([b.prix_vente_libre_eur_m2_shab, b.cout_travaux_eur_m2_sdp, b.honoraires_pct_travaux, b.aleas_pct_travaux], [5159, 2100, 12, 5]);
+  assertEquals(b.source_prix, 'DVF — repris de la prospection d’origine « Prospection Nanterre » (mission 1234abcd)');
+  assertEquals(b.source_couts, 'BT01 — repris de la prospection d’origine « Prospection Nanterre » (mission 1234abcd)');
+  assert(String(b.source_hypotheses).startsWith('Hypothèses du bilan reprises de la prospection d’origine'));
+  // Rien d'inventé : les clés absentes de l'origine restent inconnues.
+  assertEquals([b.marge_cible_pct_ca, b.commercialisation_pct_ca, b.taxes_urbanisme_eur, b.programme.shab_m2], [null, null, null, null]);
+  assertEquals(hypothesesDepuisOrigine({}, 'x'), null);
+  assertEquals(hypothesesDepuisOrigine(null, 'x'), null);
+  assert(hypothesesToutesInconnues(hypothesesVides()) && !hypothesesToutesInconnues(b));
+  // Relu depuis l'état (chargerBrouillon → lireHypothesesPartielles) : la provenance est conservée.
+  assertEquals(lireHypothesesPartielles(b).source_hypotheses, b.source_hypotheses);
+  // Assemblé dans le rapport.
+  const r = assemblerRapportV2({ ...brouillonVide(), hypotheses_communes: b }, { titre: 'T', synthese: 'S' }, { actions_proposees: [], memoire_ajoutee: 0, jetons_consommes: 0, limites_ajoutees: [] });
+  assertEquals((r.hypotheses_communes as Record<string, unknown>).prix_vente_libre_eur_m2_shab, 5159);
+});
+
+Deno.test('Q3-12 : adresse des fiches par la BAN (reverse) quand le centroïde est connu, avec source ; sinon null', async () => {
+  const appels: string[] = [];
+  const fauxFetch = (async (url: string) => {
+    appels.push(String(url));
+    return new Response(JSON.stringify({ features: [{ properties: { label: 'Adresse BAN simulée', distance: 12.4 } }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const a = await adresseDepuisPoint({ lat: 48.89, lon: 2.2 }, fauxFetch);
+  assertEquals(a?.adresse, 'Adresse BAN simulée');
+  assert(a!.source.includes('api-adresse.data.gouv.fr/reverse') && a!.source.includes('à 12 m'));
+  assert(appels[0].startsWith('https://api-adresse.data.gouv.fr/reverse/?lon=2.200000&lat=48.890000&limit=1'), appels[0]);
+  const rapport: Record<string, unknown> = {
+    terrains: [{ idu: '92050000AE0414', adresse: null }, { idu: '92050000AE0001', adresse: 'Déjà connue' }, { idu: '92050000AE0002', adresse: null }],
+    conception: { idu: '92050000AE0414' },
+  };
+  const n = await completerAdresses(rapport, { '92050000AE0414': { lat: 48.89, lon: 2.2 }, '92050000AE0001': { lat: 48.89, lon: 2.2 } }, fauxFetch);
+  assertEquals(n, 1);
+  const t = rapport.terrains as Array<Record<string, unknown>>;
+  assertEquals([t[0].adresse, t[1].adresse, t[2].adresse], ['Adresse BAN simulée', 'Déjà connue', null], 'jamais d’écrasement ; sans centroïde : null');
+  assert(String(t[0].adresse_source).includes('Base Adresse Nationale'));
+  assertEquals((rapport.conception as Record<string, unknown>).adresse, 'Adresse BAN simulée');
+  // Panne ou réponse vide : null, jamais bloquant.
+  const panne = (async () => { throw new Error('réseau'); }) as unknown as typeof fetch;
+  assertEquals(await adresseDepuisPoint({ lat: 48.89, lon: 2.2 }, panne), null);
+  const vide = (async () => new Response(JSON.stringify({ features: [] }), { status: 200 })) as unknown as typeof fetch;
+  const r2: Record<string, unknown> = { terrains: [{ idu: '92050000AE0414', adresse: null }] };
+  assertEquals(await completerAdresses(r2, { '92050000AE0414': { lat: 48.89, lon: 2.2 } }, vide), 0);
+  assertEquals((r2.terrains as Array<Record<string, unknown>>)[0].adresse, null);
 });

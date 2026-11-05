@@ -34,7 +34,7 @@ import type {
 } from './types.ts';
 import { STATUTS_FINAUX, TYPES_MISSION } from './types.ts';
 import {
-  calculerDevis, devisExpire, devisViable, ENTREE_MAX_TOKENS, estimerTokens, pireCasEtapeMission,
+  calculerDevis, devisExpire, devisViable, ENTREE_MAX_TOKENS, estimerTokens, ETAPES_TECHNIQUES_RESERVEES, pireCasEtapeMission,
   pireCasRapportMission, SORTIE_ETAPE_MAX_TOKENS, SORTIE_RAPPORT_MAX_TOKENS,
 } from './devis.ts';
 import { chargerBlocMemoire, estUuid, projetDuContexte, validerMemoire } from './memoire.ts';
@@ -43,18 +43,21 @@ import {
 } from './prompt-promoteur.ts';
 import { NOMS_OUTILS_MISSION, OUTILS_MISSION_INTERDITS_VEILLE, outilChatAutoriseEnMission, outilsPourMission } from './outils.ts';
 import {
-  ajusterToiture, appliquerReponseFormulaire, appliquerSecteur, centroideParcelle, cheminReglementAutorise, cheminTexteReglement, chercherContourParcelle,
+  ajusterToiture, appliquerReponseFormulaire, appliquerSecteur, appliquerSecteursDeclares, centroideParcelle, cheminReglementAutorise, cheminTexteReglement, chercherContourParcelle,
   completerRegles, compterTokensAnthropic, construireQuestionRegles, CONSIGNE_LECTURE_REGLEMENT, controlerProgramme, decrireRegle,
   fusionnerRegles, normaliserProgramme, normaliserRegle, questionSecteur, REGLEMENT_LECTURE_DIRECTE_MAX_OCTETS, REGLEMENT_MAX_OCTETS,
   reglesAPreciser, reglesDepuisLecture, reglesDepuisRulesets, reglesManquantes, signalementsFormules,
   suiteProposee, toitureDuProjet, type ConflitRegle, type ParcelleConception, type Programme, type RegleConception,
+  fusionnerSecteursDeclares, secteursDepuisCriteres, secteursDepuisTexte, type SecteursDeclares, type Toiture,
 } from './conception.ts';
 import { lireTexteExtrait, planifierLecture } from '../../_shared/documents/piecesJointes.ts';
+import { mettreEnForme } from '../../_shared/texte/miseEnForme.ts';
 import { normaliserCodeZone, plagesLisibles } from '../../_shared/documents/lectureCiblee.ts';
 import {
   ajouterZonages, alertesZonage, assemblerRapportV2, calculerChargeFonciere, chargerBrouillon, fusionnerHypotheses, lireHypothesesPartielles,
   normaliserContact, normaliserIdu, normaliserTerrainBrut, zonagesDepuisResultat,
   type LectureZonage, type PreuveReglementaire,
+  completerAdresses, hypothesesDepuisOrigine, hypothesesToutesInconnues,
 } from './rapport.ts';
 
 // ── Réglages ────────────────────────────────────────────────────────────────
@@ -78,6 +81,19 @@ export const CARNET_MAX = 60;
 export const OUTILS_PAR_ETAPE_MAX = 6;
 export const TIMEOUT_OUTIL_MS = 40_000;
 export const ERREURS_MAX = 3;
+/**
+ * Lot Q3 (boucle du 05/11/2026) : la MÊME erreur (même signature) répétée ce nombre de fois clôt
+ * la mission (statut 'echec', rapport partiel, règlement). Une erreur termine le tick de la
+ * mission : la tentative suivante n'a lieu qu'au tick suivant (cron d'une minute) — jamais de
+ * reprise immédiate dans le même tick.
+ */
+export const ERREURS_IDENTIQUES_MAX = 3;
+/** Entrées de journal « erreur » identiques au plus, par mission. */
+export const JOURNAL_ERREURS_IDENTIQUES_MAX = 3;
+/** Question à l'utilisateur : longueur maximale (la phrase interrogative reste toujours visible). */
+export const QUESTION_MAX_CARS = 1000;
+/** Articles listés au plus dans une question « quels articles lire ? » (le reste : « … et N autres »). */
+export const ARTICLES_QUESTION_MAX = 12;
 export const TENTATIVES_RAPPORT_MAX = 2;
 /** Attente d'une réponse utilisateur au-delà de laquelle la mission est close (I2). */
 export const ATTENTE_MAX_MS = 72 * 3600 * 1000;
@@ -111,6 +127,19 @@ export interface EtatConception {
   conflits: ConflitRegle[];
   /** Lot Q1 : la question du secteur (règle « par secteur ») a été posée ou exigée une fois. */
   secteur_demande?: boolean;
+  /**
+   * Lot Q3 : secteurs déclarés par l'utilisateur (hauteur, stationnement, toiture) — critères,
+   * objectif, réponses libres, formulaire — appliqués dès qu'une règle par secteur est lue.
+   */
+  secteurs_declares?: SecteursDeclares;
+  /** Lot Q3 : dernière erreur d'écriture du dossier (journalisée UNE fois ; réessayée à la prochaine écriture). */
+  persistance_erreur?: string | null;
+}
+
+/** Lot Q3 : secteurs déclarés dans les critères et l'objectif de la mission. */
+export function secteursDeLaMission(m: MissionRow): SecteursDeclares {
+  const d = fusionnerSecteursDeclares({}, secteursDepuisTexte(String(m.objectif ?? '')), 'objectif de la mission');
+  return fusionnerSecteursDeclares(d, secteursDepuisCriteres(m.criteres as Record<string, unknown>), 'critères de la mission');
 }
 
 export function chargerConception(brut: unknown, m: MissionRow): EtatConception {
@@ -128,7 +157,37 @@ export function chargerConception(brut: unknown, m: MissionRow): EtatConception 
     lecture: b.lecture && typeof b.lecture === 'object' && typeof b.lecture.chemin === 'string' ? b.lecture : null,
     conflits: Array.isArray(b.conflits) ? b.conflits.slice(0, 20) : [],
     ...(b.secteur_demande === true ? { secteur_demande: true } : {}),
+    // Lot Q3 : déclarations de la mission, puis celles mémorisées (réponses : plus récentes, elles l'emportent).
+    ...(() => {
+      const d = b.secteurs_declares && typeof b.secteurs_declares === 'object'
+        ? fusionnerSecteursDeclares(secteursDeLaMission(m), b.secteurs_declares, 'réponse de l’utilisateur')
+        : secteursDeLaMission(m);
+      if (b.secteurs_declares?.provenance) d.provenance = [...new Set([...(d.provenance ?? []).filter((x) => x !== 'réponse de l’utilisateur'), ...b.secteurs_declares.provenance])].slice(0, 6);
+      return Object.keys(d).length ? { secteurs_declares: d } : {};
+    })(),
+    ...(typeof b.persistance_erreur === 'string' ? { persistance_erreur: b.persistance_erreur } : {}),
   };
+}
+
+/** Lot Q3 : type de toiture du projet (programme, critères), sinon déclaré par l'utilisateur. */
+function toitureMission(k: EtatConception, m: MissionRow): Toiture | null {
+  return toitureDuProjet(k.programme, m.criteres as Record<string, unknown>) ?? k.secteurs_declares?.toiture ?? null;
+}
+
+/** Lot Q3 : applique les secteurs déclarés aux règles par secteur encore à préciser ; renvoie ce qui a été appliqué. */
+export function appliquerSecteursConnus(k: EtatConception, m: MissionRow): string[] {
+  const a = appliquerSecteursDeclares(k.regles, k.secteurs_declares, toitureMission(k, m));
+  if (a.appliquees.length) k.regles = a.regles;
+  return a.appliquees;
+}
+
+/** Lot Q3 : mémorise des secteurs déclarés dans un texte de l'utilisateur ; true si quelque chose de nouveau. */
+function memoriserSecteurs(k: EtatConception, t: string, provenance: string, generique = false): boolean {
+  const lu = secteursDepuisTexte(t, { generique });
+  if (!Object.keys(lu).length) return false;
+  const avant = JSON.stringify(k.secteurs_declares ?? {});
+  k.secteurs_declares = fusionnerSecteursDeclares(k.secteurs_declares, lu, provenance);
+  return JSON.stringify(k.secteurs_declares) !== avant;
 }
 
 // ── Lot Q1 : preuves et zonage, à partir de l'état ─────────────────────────
@@ -193,6 +252,50 @@ async function persisterConception(c: CtxEtape, k: EtatConception, statut?: 'reg
   };
   if (!k.idu) return;   // idu obligatoire en base
   k.id = await c.depot.enregistrerConception(c.m.id, c.m.user_id, champs);
+  k.persistance_erreur = null;
+}
+
+/** Signature d'une erreur (chiffres et identifiants neutralisés) : « la même erreur ». */
+export function signatureErreur(msg: string): string {
+  return msg.toLowerCase()
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<id>')
+    .replace(/\d+/g, '#').replace(/\s+/g, ' ').trim().slice(0, 200);
+}
+
+/**
+ * Lot Q3 : journal d'erreur DÉDOUBLONNÉ — au plus JOURNAL_ERREURS_IDENTIQUES_MAX entrées de même
+ * signature par mission (compteur dans etat.journal_erreurs, borné à 20 signatures).
+ */
+async function journalErreur(c: CtxEtape, outil: string | null, resume: string): Promise<void> {
+  const sig = signatureErreur(resume);
+  const table = (c.etat.journal_erreurs && typeof c.etat.journal_erreurs === 'object' ? c.etat.journal_erreurs : {}) as Record<string, number>;
+  const n = (table[sig] ?? 0) + 1;
+  table[sig] = n;
+  const cles = Object.keys(table);
+  if (cles.length > 20) delete table[cles[0]];
+  c.etat.journal_erreurs = table;
+  if (n > JOURNAL_ERREURS_IDENTIQUES_MAX) return;
+  await c.depot.journal(c.m.id, 'erreur', outil, null,
+    n === JOURNAL_ERREURS_IDENTIQUES_MAX ? `${resume} (${n}e occurrence : les suivantes ne seront plus journalisées)` : resume, 0).catch(() => {});
+}
+
+/**
+ * Lot Q3 (règles lues perdues, 05/11/2026) : écrit le dossier SANS interrompre l'étape. Un refus
+ * de la base (contrainte, réseau) est journalisé UNE fois ; les règles restent dans `etat` (sauvé
+ * par l'étape) et seront réécrites à la prochaine écriture du dossier (ou signalées à la clôture).
+ */
+async function persisterConceptionSure(c: CtxEtape, k: EtatConception, statut?: 'regles' | 'plan'): Promise<string | null> {
+  try {
+    await persisterConception(c, k, statut);
+    return null;
+  } catch (e) {
+    const msg = texte(e instanceof Error ? e.message : String(e), 600);
+    if (k.persistance_erreur !== msg) {
+      k.persistance_erreur = msg;
+      await journalErreur(c, 'agent_conceptions', `Dossier de conception non mis à jour (les règles sont conservées dans la mission et seront réécrites) : ${msg}`);
+    }
+    return msg;
+  }
 }
 
 /** Consigne ajoutée quand la sortie d'un tour a été coupée (diagnostic mission 7a7c855a). */
@@ -236,6 +339,85 @@ export function chargerEtat(brut: unknown): EtatMission {
 function texte(v: unknown, max: number): string {
   const s = typeof v === 'string' ? v : v == null ? '' : JSON.stringify(v);
   return s.length > max ? `${s.slice(0, max)}…` : s;
+}
+
+// ── Lot Q3 : questions jamais amputées de leur phrase interrogative ─────────
+//
+// Constat (05/11/2026) : demander() tronquait à 1 000 caractères le message de plu-reglement-v1
+// (« Le chapitre … est trop long … Articles repérés : <longue liste>. Quels articles ou quelles
+// pages lire ? ») : la question disparaissait. Désormais la question vient EN PREMIER.
+
+/** Dernière phrase interrogative d'un texte (jusqu'au dernier « ? »), ou null. */
+export function phraseInterrogative(t: string): string | null {
+  const fin = t.lastIndexOf('?');
+  if (fin < 0) return null;
+  let debut = 0;
+  for (let j = fin - 1; j >= 0; j--) {
+    const ch = t[j];
+    if (ch === '\n' || ((ch === '.' || ch === '!' || ch === '?' || ch === ':' || ch === ';') && /\s/.test(t[j + 1] ?? '') &&
+      !/(?:^|[\s(])(?:p|pp|art|cf|n°)$/i.test(t.slice(Math.max(0, j - 4), j)))) { debut = j + 1; break; }
+  }
+  const q = t.slice(debut, fin + 1).trim();
+  return q.length >= 3 ? q : null;
+}
+
+/** Question bornée à `max` caractères : la phrase interrogative d'abord, puis le contexte raccourci. */
+export function raccourcirQuestion(q: string, max = QUESTION_MAX_CARS): string {
+  const s = q.trim();
+  if (s.length <= max) return s;
+  const qi = phraseInterrogative(s);
+  if (!qi || qi.length > max - 20) return qi ? texte(qi, max - 1) : texte(s, max - 1);
+  const i = s.lastIndexOf(qi);
+  const reste = `${s.slice(0, i)}${s.slice(i + qi.length)}`.replace(/\s+/g, ' ').trim();
+  return reste ? `${qi}\n${texte(reste, max - qi.length - 2)}` : qi;
+}
+
+/** « ARTICLE UC 9 - Emprise au sol » → « UC 9 – Emprise au sol ». */
+function titreArticleCourt(t: string): string {
+  return texte(t.replace(/^\s*(?:ARTICLE|Article|ART\.)\s+/, '').replace(/\s+[-–—:]\s+/, ' – ').replace(/\s+/g, ' ').trim(), 70);
+}
+
+/** Articles d'un message de plu-reglement-v1 (« Articles repérés : A (p. 1) ; B (p. 2). »), à défaut du champ `articles`. */
+function articlesDepuisMessage(message: string): Array<{ titre: string; page: number | null }> {
+  const m = /Articles rep[ée]r[ée]s\s*:\s*([\s\S]+?)\.\s+(?=Quel|$)/.exec(message);
+  if (!m) return [];
+  return m[1].split(/\s+;\s+/).map((x) => {
+    const p = /^(.*?)\s*\(p\.\s*(\d+)\)\s*$/.exec(x.trim());
+    return p ? { titre: p[1], page: Number(p[2]) } : { titre: x.trim(), page: null };
+  }).filter((a) => a.titre);
+}
+
+/**
+ * Question à poser quand plu-reglement-v1 ne peut pas choisir seul quoi lire. Chapitre trop long
+ * (selection_trop_longue) : « Quels articles ou quelles pages du règlement lire ? » EN PREMIER, puis
+ * une ligne par article (« - UC 9 – Emprise au sol (p. 109) »), au plus ARTICLES_QUESTION_MAX, puis
+ * « … et N autres » ; toujours ≤ `max` caractères. Autres statuts : même règle (question d'abord).
+ */
+export function questionChoixReglement(r: Record<string, unknown>, max = QUESTION_MAX_CARS): string {
+  const message = String(r.message ?? '').trim();
+  const brut = Array.isArray(r.articles)
+    ? (r.articles as unknown[]).filter((a): a is { titre: string; page?: unknown } => !!a && typeof (a as { titre?: unknown }).titre === 'string')
+      .map((a) => ({ titre: a.titre, page: typeof a.page === 'number' ? a.page : null }))
+    : articlesDepuisMessage(message);
+  if (r.statut !== 'selection_trop_longue' || !brut.length) {
+    return raccourcirQuestion(`Règlement du PLU (Géoportail de l’urbanisme) : ${message}`, max);
+  }
+  const zone = typeof r.zone_lue === 'string' ? r.zone_lue : typeof r.zone === 'string' ? r.zone : null;
+  const entete = `Quels articles ou quelles pages du règlement lire ?\n` +
+    `Le chapitre${zone ? ` de la zone ${zone}` : ''}${r.pages_chapitre ? ` (p. ${String(r.pages_chapitre)})` : ''} est trop long pour être lu en une fois ` +
+    `(règlement du PLU, Géoportail de l’urbanisme). Articles repérés :`;
+  const lignes = brut.map((a) => `- ${titreArticleCourt(a.titre)}${a.page != null ? ` (p. ${a.page})` : ''}`);
+  let out = entete;
+  let n = 0;
+  for (const l of lignes) {
+    const reste = lignes.length - n - 1;
+    const suite = reste > 0 ? `\n… et ${reste} autre${reste > 1 ? 's' : ''}` : '';
+    if (n >= ARTICLES_QUESTION_MAX || out.length + 1 + l.length + suite.length > max) break;
+    out += `\n${l}`;
+    n++;
+  }
+  if (n < lignes.length) out += `\n… et ${lignes.length - n} autre${lignes.length - n > 1 ? 's' : ''}`;
+  return out.length <= max ? out : texte(out, max - 1);
 }
 
 /** Résumé compact d'un tour ancien (≤ RESUME_TOUR_MAX_CARS). */
@@ -349,7 +531,14 @@ export function normaliserRapport(
   m?: MissionRow,
 ): Record<string, unknown> {
   const kc = m?.type === 'conception' ? chargerConception(etat.conception, m) : null;
-  const r = assemblerRapportV2(chargerBrouillon(etat.brouillon), brut, {
+  const brouillon = chargerBrouillon(etat.brouillon);
+  // Lot Q3 : hypothèses du bilan reprises de la prospection d'origine (missions déjà en cours dont
+  // le brouillon n'a pas été amorcé) — jamais inventées, toujours marquées de leur source.
+  if (kc && hypothesesToutesInconnues(brouillon.hypotheses_communes)) {
+    const h = hypothesesDeLaProspection(kc.donnees_prospection);
+    if (h) brouillon.hypotheses_communes = fusionnerHypotheses(brouillon.hypotheses_communes, h);
+  }
+  const r = assemblerRapportV2(brouillon, brut, {
     actions_proposees: etat.actions_ids, memoire_ajoutee: etat.memoire_ajoutee,
     jetons_consommes: jetonsConsommes, limites_ajoutees: limitesAjoutees,
     // Lot Q1 : règles citées connues du moteur, et zones lues par les outils.
@@ -445,6 +634,95 @@ interface CtxEtape {
   blocMemoire: string;
   deps: MoteurDeps;
   depot: DepotMission;
+  /** Lot Q3 : file des appels de fonctions internes, PARTAGÉE par les missions d'un même tick. */
+  file?: FileAppels;
+  /** Lot Q3 : fin du tick (horodatage) — borne des attentes de la file. */
+  finA?: number;
+}
+
+// ── Lot Q3 : limite Supabase des appels imbriqués (30 par requête sur 60 s) ──
+//
+// Constat (prospection, 05/11/2026) : 8 échecs de get_etude_parcelle — jusqu'à 6 outils par étape
+// en parallèle, chacun appelant une fonction interne (qui en appelle d'autres). Le moteur étale
+// désormais ses appels : une fenêtre glissante de 60 s, un « poids » par outil, une attente
+// (bornée par le tick) plutôt qu'un échec, et une reprise si la limite est quand même atteinte.
+
+/** Unités d'appels internes autorisées par fenêtre (marge sous les 30 de Supabase pour les sous-appels). */
+export const APPELS_IMBRIQUES_MAX = 20;
+export const FENETRE_APPELS_MS = 60_000;
+/** Attente maximale d'une place dans la file, par appel. */
+export const ATTENTE_FILE_MAX_MS = 60_000;
+/** Reprises d'un appel refusé par la limite (attente 10 s, puis 20 s). */
+export const REPRISES_LIMITE_MAX = 2;
+/**
+ * Poids d'un outil = appels internes qu'il déclenche (estimation prudente, À CALIBRER sur les
+ * journaux : get_etude_parcelle agrège plusieurs fonctions ; la lecture de règlement en enchaîne
+ * plusieurs par lots). Défaut : 1.
+ */
+export const POIDS_APPEL: Readonly<Record<string, number>> = { get_etude_parcelle: 5, lire_reglement_gpu: 2 };
+/** Message d'un refus pour limite d'appels (Supabase : appels imbriqués, 508/429). */
+export const RE_LIMITE_APPELS = /imbriqu|nested|recursi|loop detected|\b508\b|\b429\b|rate.?limit|too many requests/i;
+
+export class FileAppels {
+  private faits: Array<{ t: number; poids: number }> = [];
+  constructor(
+    private readonly now: () => number,
+    private readonly dormir: (ms: number) => Promise<void>,
+    readonly max = APPELS_IMBRIQUES_MAX,
+    readonly fenetre = FENETRE_APPELS_MS,
+  ) {}
+  /** Unités consommées dans la fenêtre courante. */
+  charge(): number {
+    const t = this.now();
+    this.faits = this.faits.filter((x) => t - x.t < this.fenetre);
+    return this.faits.reduce((s, x) => s + x.poids, 0);
+  }
+  /** Attend une place pour `poids` unités ; false si l'attente dépasserait `limite` (horodatage). */
+  async acquerir(limite: number, poids = 1): Promise<boolean> {
+    const p = Math.max(1, Math.min(this.max, poids));
+    for (let i = 0; i < 1000; i++) {
+      const t = this.now();
+      if (this.charge() + p <= this.max) { this.faits.push({ t, poids: p }); return true; }
+      // Prochaine libération : le plus ancien appel sort de la fenêtre.
+      const attente = Math.max(10, this.faits[0].t + this.fenetre - t + 10);
+      if (t + attente > limite) return false;
+      await this.dormir(attente);
+      // Horloge qui n'avance pas pendant l'attente (horloge simulée, attente interrompue) : on
+      // n'attend jamais en boucle — l'appel est reporté.
+      if (this.now() <= t) return false;
+    }
+    return false;
+  }
+}
+
+const dormirDefaut = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+/** Attente du moteur : celle injectée ; sinon réelle — sauf horloge simulée (deps.now) sans attente injectée : aucune attente réelle. */
+const dormirPour = (deps: Pick<MoteurDeps, 'now' | 'dormir'>) => deps.dormir ?? (deps.now ? async () => {} : dormirDefaut);
+
+/** Résultat d'un appel reporté (jamais une erreur sur le terrain). */
+function appelReporte(nom: string): ResultatOutil {
+  return {
+    status: 'error', source: nom, data: { reporte: true },
+    message: 'Appel reporté : limite Supabase des appels imbriqués (30 par minute) atteinte pour cette mission. ' +
+      'Rien n’a échoué sur le terrain : rappelle cet outil à l’étape suivante.',
+  };
+}
+
+/** Appel d'une fonction interne à travers la file : attente d'une place, reprise si la limite est atteinte. */
+export async function appelAvecFile(c: Pick<CtxEtape, 'file' | 'finA' | 'deps'>, nom: string, f: () => Promise<ResultatOutil>): Promise<ResultatOutil> {
+  const now = c.deps.now ?? Date.now;
+  const dormir = dormirPour(c.deps);
+  const limite = Math.min((c.finA ?? Number.POSITIVE_INFINITY) - 20_000, now() + ATTENTE_FILE_MAX_MS);
+  for (let essai = 0; ; essai++) {
+    if (c.file && !(await c.file.acquerir(limite, POIDS_APPEL[nom] ?? 1))) return appelReporte(nom);
+    const r = await f();
+    const msg = r?.status === 'error' ? String(r.message ?? '') : '';
+    if (!msg || !RE_LIMITE_APPELS.test(msg)) return r;
+    if (essai >= REPRISES_LIMITE_MAX) return appelReporte(nom);
+    const attente = 10_000 * (essai + 1);
+    if (now() + attente > limite) return appelReporte(nom);
+    await dormir(attente);
+  }
 }
 
 /** Prépare un appel sous le plafond d'entrée (compaction forcée sinon). */
@@ -482,9 +760,15 @@ async function appelerEtDebiter(
     stopReason: tour.stopReason,
   };
   compacter(c.etat);
+  // Lot Q3 : une lecture de règlement est une étape TECHNIQUE (hors budget « métier » dans la
+  // limite réservée par type) ; compteur sauvé DANS la transaction du débit.
+  const techniques0 = Number(c.etat.etapes_techniques) || 0;
+  if (phase === 'lecture') c.etat.etapes_techniques = techniques0 + 1;
   for (let essai = 0; essai < 3; essai++) {
     // p_pire_cas_suivant > 0 exigé : après le rapport il n'y a plus d'étape, on passe 1.
-    const r = await c.depot.debiter(c.m.id, n, cout, phase === 'rapport' ? 1 : Math.max(1, c.pireRapport), c.etat);
+    const r = await c.depot.debiter(c.m.id, n, cout, phase === 'rapport' ? 1 : Math.max(1, c.pireRapport), c.etat)
+      .catch((e) => { c.etat.etapes_techniques = techniques0; throw e; });
+    if (r.deja_debite) c.etat.etapes_techniques = techniques0;
     if (r.ok || r.deja_debite) {
       c.etat.peut_continuer = r.ok ? r.peut_continuer : c.etat.peut_continuer;
       if (typeof r.jetons_consommes === 'number') c.m.jetons_consommes = r.jetons_consommes;
@@ -493,9 +777,27 @@ async function appelerEtDebiter(
       return c.etat.en_vol!;
     }
     if (r.raison === 'etat_trop_gros' && compacterForce(c.etat)) continue;
+    c.etat.etapes_techniques = techniques0;
     throw new Error(`débit refusé : ${r.raison ?? r.statut ?? 'inconnu'}`);
   }
   throw new Error('débit refusé : état trop gros');
+}
+
+/**
+ * Lot Q3 : une étape a abouti → compteurs d'erreurs remis à zéro, MAIS seulement si l'écriture qui
+ * la solde réussit (sinon ils sont rétablis : une écriture qui échoue toujours reste comptée).
+ */
+async function avecReussite<T>(etat: EtatMission, ecrire: () => Promise<T>): Promise<T> {
+  const avant = { e: etat.erreurs_consecutives, d: etat.derniere_erreur };
+  etat.erreurs_consecutives = 0;
+  etat.derniere_erreur = null;
+  try {
+    return await ecrire();
+  } catch (e) {
+    etat.erreurs_consecutives = avant.e;
+    etat.derniere_erreur = avant.d;
+    throw e;
+  }
 }
 
 /** Termine une étape en vol : n_etape avance, en_vol vidé, état sauvé. */
@@ -503,7 +805,7 @@ async function solderEnVol(c: CtxEtape, v: EtapeEnVol): Promise<void> {
   c.etat.n_etape = Math.max(c.etat.n_etape, v.n);
   c.etat.en_vol = null;
   compacter(c.etat);
-  await c.depot.sauverEtat(c.m.id, c.etat);
+  await avecReussite(c.etat, () => c.depot.sauverEtat(c.m.id, c.etat));
 }
 
 async function etapePlan(c: CtxEtape): Promise<IssueEtape> {
@@ -563,16 +865,24 @@ async function executerOutilMission(
       return `Brouillon ${id} créé. Il N'EST PAS envoyé : l'utilisateur le relira et décidera seul de l'envoi.`;
     }
     case 'demander_utilisateur': {
-      let q = texte(String(input.question ?? '').trim(), 1000);
+      // Lot Q3 : la phrase interrogative n'est jamais coupée (question d'abord, contexte raccourci).
+      let q = raccourcirQuestion(String(input.question ?? '').trim(), QUESTION_MAX_CARS);
       if (!q) return 'Question vide : ignorée.';
       if (c.m.type === 'conception') {
-        // Lot Q1 (A) : une règle « par secteur » sans secteur connu → la question du secteur est TOUJOURS posée.
         const k = chargerConception(c.etat.conception, c.m);
+        // Lot Q3 : secteurs déjà déclarés → appliqués avant tout ; la question du secteur n'est plus posée.
+        if (appliquerSecteursConnus(k, c.m).length) { await persisterConceptionSure(c, k); c.etat.conception = k; }
+        // Lot Q1 (A) : une règle « par secteur » sans secteur connu → la question du secteur est TOUJOURS posée.
         const qs = questionSecteur(k.regles);
-        if (qs && !/secteur/i.test(q)) q = `${qs} ${texte(q, Math.max(0, 998 - qs.length))}`.trim();
+        const declares = k.secteurs_declares ?? {};
+        if (!qs && input.formulaire !== 'regles_conception' && /\bsecteur|zone de stationnement/i.test(q) &&
+          (declares.hauteur || declares.stationnement || declares.generique)) {
+          return `Question non posée : le secteur est déjà connu (${[declares.hauteur ? `secteur de hauteur ${declares.hauteur}` : '', declares.stationnement ? `zone de stationnement ${declares.stationnement}` : '', declares.generique ? `secteur ${declares.generique}` : ''].filter(Boolean).join(', ')} — ${(declares.provenance ?? ['déclaré par l’utilisateur']).join(', ')}) et appliqué aux règles par secteur. Continue sans le redemander.`;
+        }
+        if (qs && !/secteur/i.test(q)) q = raccourcirQuestion(`${qs} ${q}`, QUESTION_MAX_CARS);
         if (qs) { k.secteur_demande = true; c.etat.conception = k; }
       }
-      speciale.question = q;
+      speciale.question = mettreEnForme(q);
       if (c.m.type === 'conception' && input.formulaire === 'regles_conception') {
         // Format imposé par le front : question_en_attente = JSON du formulaire, pré-rempli par le MOTEUR.
         const k = chargerConception(c.etat.conception, c.m);
@@ -616,9 +926,9 @@ async function executerOutilMission(
       const p = await chercherContourParcelle(idu, c.deps.fetch ?? fetch);
       if (!p) return 'Contour cadastral introuvable (API Carto IGN) : le Studio devra le recharger. Ne déduis aucune surface.';
       k.idu = idu; k.parcelle = p;
-      await persisterConception(c, k, 'regles');
+      const ko = await persisterConceptionSure(c, k, 'regles');
       c.etat.conception = k;
-      return JSON.stringify({ idu, surface_m2: p.surface_m2, source: p.source, conception_id: k.id, type_geometrie: p.geometrie.type });
+      return JSON.stringify({ idu, surface_m2: p.surface_m2, source: p.source, conception_id: k.id, type_geometrie: p.geometrie.type, ...(ko ? { dossier_non_mis_a_jour: ko } : {}) });
     }
     case 'lire_regles_plu_importees': {
       const insee = String(input.code_insee ?? '').trim();
@@ -630,7 +940,8 @@ async function executerOutilMission(
       const f = fusionnerRegles(k.regles, trouvees, 'import');
       k.regles = f.regles;
       const conflit = noterConflits(k, f.conflits);
-      if (trouvees.length) await persisterConception(c, k);
+      appliquerSecteursConnus(k, c.m);   // lot Q3
+      if (trouvees.length) await persisterConceptionSure(c, k);
       c.etat.conception = k;
       return trouvees.length
         ? JSON.stringify({ regles_trouvees: trouvees, manquantes: reglesManquantes(k.regles), signalements: signalementsFormules(trouvees) }) + conflit
@@ -647,7 +958,8 @@ async function executerOutilMission(
       const f = fusionnerRegles(k.regles, nouvelles, 'modele');
       k.regles = f.regles;
       const conflit = noterConflits(k, f.conflits);
-      await persisterConception(c, k);
+      appliquerSecteursConnus(k, c.m);   // lot Q3
+      await persisterConceptionSure(c, k);
       c.etat.conception = k;
       return `Règles enregistrées au statut « estime » : ${nouvelles.length}${refusees ? ` (${refusees} refusée(s) : clé inconnue ou sans source)` : ''}. ` +
         `Seuls l'utilisateur (formulaire) ou le règlement lu avec son article peuvent les confirmer. Manquantes : ${reglesManquantes(k.regles).join(', ') || 'aucune'}.${conflit}`;
@@ -656,8 +968,8 @@ async function executerOutilMission(
       const k = chargerConception(c.etat.conception, c.m);
       k.programme = normaliserProgramme(input);
       // Lot Q1 : type de toiture connu → mesure de hauteur du secteur recalculée (terrasse → acrotère, pentes → égout).
-      k.regles = ajusterToiture(k.regles, toitureDuProjet(k.programme, c.m.criteres as Record<string, unknown>));
-      await persisterConception(c, k);
+      k.regles = ajusterToiture(k.regles, toitureMission(k, c.m));
+      await persisterConceptionSure(c, k);
       c.etat.conception = k;
       const alertes = controlerProgramme(k.programme);
       if (typeof input.justification === 'string' && input.justification.trim()) c.etat.carnet.push(texte(`Programme : ${input.justification.trim()}`, 500));
@@ -731,6 +1043,40 @@ async function executerOutilMission(
   return 'Outil de mission inconnu.';
 }
 
+/**
+ * Lot Q3 (écart de prescriptions, 05/11/2026) : en conception, les outils d'urbanisme au point
+ * reçoivent l'identifiant ET la géométrie de la parcelle de la mission — get_prescriptions_urbanisme
+ * interroge alors le GPU avec le contour (toutes les prescriptions qui touchent la parcelle, pas
+ * seulement celle d'un point), et l'idu prime sur des coordonnées approximatives.
+ */
+export function entreeOutilMission(c: Pick<CtxEtape, 'm' | 'etat'>, nom: string, input: Record<string, unknown>): Record<string, unknown> {
+  if (c.m.type !== 'conception' || !['get_prescriptions_urbanisme', 'get_zonage_plu'].includes(nom)) return input;
+  const k = chargerConception(c.etat.conception, c.m);
+  if (!k.idu) return input;
+  const autre = [input.cadastral_ref, input.parcel_id, input.idu].some((x) => typeof x === 'string' && x.replace(/\s/g, '').toUpperCase() !== k.idu && x.trim());
+  if (autre) return input;   // le modèle interroge explicitement une autre parcelle : inchangé
+  const out: Record<string, unknown> = { ...input, cadastral_ref: k.idu };
+  if (nom === 'get_prescriptions_urbanisme' && k.parcelle?.geometrie) out.geometrie = k.parcelle.geometrie;
+  return out;
+}
+
+/** Lot Q3 : centroïdes des parcelles lus par rechercher_parcelles (pour l'adresse BAN des fiches). */
+function noterCentroides(c: CtxEtape, outil: string, res: unknown): void {
+  if (outil !== 'rechercher_parcelles') return;
+  try {
+    const ps = ((res as { data?: { parcelles?: unknown } })?.data?.parcelles ?? []) as Array<Record<string, unknown>>;
+    const table = (c.etat.centroides_lus && typeof c.etat.centroides_lus === 'object' ? c.etat.centroides_lus : {}) as Record<string, [number, number]>;
+    for (const p of Array.isArray(ps) ? ps : []) {
+      const idu = normaliserIdu(p.idu);
+      const ct = p.centroide;
+      if (idu && Array.isArray(ct) && Number.isFinite(ct[0]) && Number.isFinite(ct[1])) table[idu] = [Number(ct[0]), Number(ct[1])];
+    }
+    const cles = Object.keys(table);
+    for (const k of cles.slice(0, Math.max(0, cles.length - 80))) delete table[k];
+    c.etat.centroides_lus = table;
+  } catch { /* confort : jamais bloquant */ }
+}
+
 async function executerOutilChat(c: CtxEtape, tu: { id: string; name: string; input: Record<string, unknown> }): Promise<string> {
   const debut = Date.now();
   let res: ResultatOutil;
@@ -738,13 +1084,17 @@ async function executerOutilChat(c: CtxEtape, tu: { id: string; name: string; in
   if (!autorises.has(tu.name) || !outilChatAutoriseEnMission(tu.name)) {
     res = { status: 'error', source: tu.name, message: 'Outil non disponible en mission.' };
   } else {
-    try {
-      res = await avecDelai(c.deps.executeTool(tu.name, tu.input ?? {}, contexteMission(c.m)), TIMEOUT_OUTIL_MS, tu.name);
-    } catch (e) {
-      res = { status: 'error', source: tu.name, message: e instanceof Error ? e.message : String(e) };
-    }
+    const input = entreeOutilMission(c, tu.name, tu.input ?? {});
+    res = await appelAvecFile(c, tu.name, async () => {
+      try {
+        return await avecDelai(c.deps.executeTool(tu.name, input, contexteMission(c.m)), TIMEOUT_OUTIL_MS, tu.name);
+      } catch (e) {
+        return { status: 'error', source: tu.name, message: e instanceof Error ? e.message : String(e) } as ResultatOutil;
+      }
+    });
   }
   noterZonage(c, tu.name, tu.input ?? null, res);   // lot Q1 (C) : zones lues, pour le rapport
+  noterCentroides(c, tu.name, res);                  // lot Q3 : adresses des fiches (BAN)
   await c.depot.journal(c.m.id, 'outil', tu.name, tu.input,
     `${tu.name} : ${resumeResultat(res)} (${Math.round((Date.now() - debut) / 100) / 10} s)`, 0);
   let s: string;
@@ -762,7 +1112,9 @@ async function etapeTravail(c: CtxEtape, tools: OutilDef[]): Promise<IssueEtape>
 
 /** Traite une étape payée (au premier passage comme à la reprise). */
 async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
-  c.etat.erreurs_consecutives = 0;
+  // Lot Q3 : le compteur d'erreurs n'est PLUS remis à zéro ici (une étape en vol rejouée qui
+  // échoue à chaque reprise le remettait à 0 → boucle infinie du 05/11/2026) ; il l'est quand
+  // l'étape est SOLDÉE (solderEnVol, mise en attente).
   const texteTour = v.textBlocks.join('\n').trim();
 
   if (v.phase === 'plan') {
@@ -770,7 +1122,7 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
     c.etat.phase = 'travail';
     await solderEnVol(c, v);
     await c.depot.journal(c.m.id, 'plan', null, { plan: c.etat.plan },
-      `Plan : ${c.etat.plan.map((p, i) => `${i + 1}. ${p}`).join(' ')}`, v.cout);
+      `Plan :\n${c.etat.plan.map((p, i) => `${i + 1}. ${p}`).join('\n')}`, v.cout);
     return 'continuer';
   }
 
@@ -779,16 +1131,22 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
     const lecture = k.lecture;
     const chemin = lecture?.chemin ?? 'règlement';
     const lues = reglesDepuisLecture(extraireJson(texteTour), chemin, lecture?.libelle);
+    // Lot Q3 : chaque lecture est FUSIONNÉE et PERSISTÉE par le moteur dans la même étape (sans
+    // attendre un appel enregistrer_regles_conception du modèle), secteurs déclarés appliqués.
     const f = fusionnerRegles(k.regles, lues, 'reglement');
     k.regles = f.regles;
     const conflit = noterConflits(k, f.conflits);
+    const secteurs = appliquerSecteursConnus(k, c.m);
     k.lecture = null;
     c.etat.conception = k;
-    await persisterConception(c, k);
+    const ko = await persisterConceptionSure(c, k);
+    c.etat.conception = k;
     const quoi = lecture?.libelle ?? chemin.split('/').pop();
-    const resume = lues.length
+    const resume = (lues.length
       ? `Règlement lu (${quoi}) : ${lues.map(decrireRegle).join(' ; ')}.`
-      : `Règlement lu (${quoi}) : aucune règle clé trouvée pour cette zone.`;
+      : `Règlement lu (${quoi}) : aucune règle clé trouvée pour cette zone.`) +
+      (secteurs.length ? ` Secteur(s) déclaré(s) par l'utilisateur appliqué(s) par le moteur : ${secteurs.join(' ; ')}.` : '') +
+      (ko ? ' (Dossier de conception non mis à jour en base pour l’instant : règles conservées dans la mission.)' : '');
     // Lot Q1 (A) : règle par secteur → la question du secteur est obligatoire avant toute conclusion.
     const qs = questionSecteur(k.regles);
     const resumeConflits = conflit + (qs
@@ -803,8 +1161,8 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
 
   if (v.phase === 'rapport') {
     const raison = c.etat.raison_rapport ?? 'budget_atteint';
-    const rapport = normaliserRapport(extraireJson(texteTour) ?? { titre: 'Rapport partiel', synthese: texte(texteTour, 6000) },
-      c.etat, c.m.jetons_consommes, limitesRapport(raison), c.m);
+    const rapport = await enrichirRapport(c, normaliserRapport(extraireJson(texteTour) ?? { titre: 'Rapport partiel', synthese: texte(texteTour, 6000) },
+      c.etat, c.m.jetons_consommes, limitesRapport(raison), c.m));
     c.etat.cloture = { statut: raison === 'erreurs' ? 'echec' : 'budget_atteint', rapport, erreur: raison === 'erreurs' ? 'erreurs techniques répétées' : null };
     c.etat.phase = 'fini';
     await solderEnVol(c, v);
@@ -827,7 +1185,9 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
       user: [{ type: 'text', text: v.stopReason === 'max_tokens' ? CONSIGNE_SORTIE_COUPEE : CONSIGNE_CONTINUER }],
     });
     if (v.stopReason === 'max_tokens') {
-      await c.depot.journal(c.m.id, 'erreur', null, null, 'Réponse coupée à la limite de sortie : nouvelle tentative plus courte.', 0);
+      // Lot Q3 : étape technique (sortie coupée) — hors budget « métier » dans la limite réservée.
+      if (premierPassage) c.etat.etapes_techniques = (Number(c.etat.etapes_techniques) || 0) + 1;
+      await journalErreur(c, null, 'Réponse coupée à la limite de sortie : nouvelle tentative plus courte.');
     }
     await solderEnVol(c, v);
     return 'continuer';
@@ -845,7 +1205,7 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
       v.resultats[u.id] = await executerOutilMission(c, u, speciale);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      await c.depot.journal(c.m.id, 'erreur', u.name, null, `${u.name} : ${texte(msg, 600)}`, 0);
+      await journalErreur(c, u.name, `${u.name} : ${texte(msg, 600)}`);
       v.resultats[u.id] = `Erreur : ${msg}`;
     }
     if (OUTILS_A_EFFET.has(u.name)) await c.depot.sauverEtat(c.m.id, c.etat);
@@ -859,7 +1219,7 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
   });
 
   if (speciale.rapport) {
-    const rapport = normaliserRapport(speciale.rapport, c.etat, c.m.jetons_consommes, [], c.m);
+    const rapport = await enrichirRapport(c, normaliserRapport(speciale.rapport, c.etat, c.m.jetons_consommes, [], c.m));
     c.etat.cloture = { statut: 'terminee', rapport, erreur: null };
     c.etat.phase = 'fini';
     await solderEnVol(c, v);
@@ -871,7 +1231,7 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
     c.etat.n_etape = Math.max(c.etat.n_etape, v.n);
     c.etat.en_vol = null;
     compacter(c.etat);
-    const ok = await c.depot.mettreEnAttente(c.m.id, speciale.questionAffichee ?? speciale.question, c.etat);
+    const ok = await avecReussite(c.etat, () => c.depot.mettreEnAttente(c.m.id, speciale.questionAffichee ?? speciale.question!, c.etat));
     if (!ok) await c.depot.sauverEtat(c.m.id, c.etat);   // annulée entre-temps : l'état reste cohérent
     else await c.depot.journal(c.m.id, 'question', 'demander_utilisateur', null, speciale.question, 0);
     return 'pause';
@@ -910,7 +1270,7 @@ async function etapeLecture(c: CtxEtape): Promise<IssueEtape> {
   // attente). Rien n'est lu ni débité ; à la reprise, la réponse arrive au
   // modèle, qui rappelle lire_reglement_pdf avec le choix (fichier, zone, pages).
   const demander = async (question: string) => {
-    const q = texte(question, 1000);
+    const q = mettreEnForme(raccourcirQuestion(question, QUESTION_MAX_CARS));   // lots Q3 + F1 : question visible, mise en forme
     k.lecture = null;
     c.etat.conception = k;
     c.etat.carnet.push(texte(`Question posée avant lecture du règlement : ${q} — à la réponse, rappelle lire_reglement_pdf ` +
@@ -932,10 +1292,14 @@ async function etapeLecture(c: CtxEtape): Promise<IssueEtape> {
     // ── Règlement publié au Géoportail de l'urbanisme (plu-reglement-v1) ──
     const pt = centroideParcelle(k.parcelle);
     if (!c.deps.reglementGpu || !pt) return await refuser('lecture au Géoportail de l’urbanisme indisponible (contour de parcelle ou service manquant)');
-    const r = await c.deps.reglementGpu({ ...pt, zone, fichier: lec.fichier ?? null, pages: lec.pages ?? null });
+    const r = await appelAvecFile(c, 'lire_reglement_gpu', async () =>
+      ({ status: 'ok', source: 'plu-reglement-v1', data: await c.deps.reglementGpu!({ ...pt, zone, fichier: lec.fichier ?? null, pages: lec.pages ?? null }) } as ResultatOutil))
+      // Reporté par la file (limite d'appels) : traité comme une extraction encore en cours (reprise au tick suivant).
+      .then((x) => ((x.data as Record<string, unknown> | undefined)?.reporte ? { statut: 'en_cours' } : x.data as Record<string, unknown>));
     if (r.statut === 'en_cours') return await patienter('Règlement du Géoportail de l’urbanisme');
     if (['choix_requis', 'zone_non_reperee', 'selection_trop_longue'].includes(String(r.statut)) && typeof r.message === 'string') {
-      return await demander(`Règlement du PLU (Géoportail de l’urbanisme) : ${r.message}`);
+      // Lot Q3 : question d'abord, puis une ligne par article (liste raccourcie).
+      return await demander(questionChoixReglement(r, QUESTION_MAX_CARS));
     }
     if (r.statut !== 'pret' || typeof r.texte !== 'string' || !r.texte.trim()) {
       return await refuser(texte(String(r.message ?? `règlement non lisible au Géoportail de l'urbanisme (${String(r.statut)})`), 300));
@@ -991,6 +1355,8 @@ async function etapeLecture(c: CtxEtape): Promise<IssueEtape> {
 
   k.lecture = { ...lec, zone, libelle };
   c.etat.conception = k;
+  // Lot Q3 : une lecture ne démarre que s'il reste une étape pour le rapport (plafond etapes_max).
+  if (c.m.etapes_faites >= c.m.etapes_max - 1) return await refuser('budget d’étapes de la mission atteint');
   const system = 'Tu extrais des règles d\'urbanisme d\'un règlement de PLU. Tu réponds en JSON strict.';
   const messages: MessageLLM[] = [{ role: 'user', content: contenu }];
   const model = c.deps.modelePourTier(c.tier);
@@ -1013,11 +1379,47 @@ async function zoneDeLaParcelle(c: CtxEtape, k: EtatConception): Promise<string 
   const pt = centroideParcelle(k.parcelle);
   if (!pt) return null;
   try {
-    const r = await avecDelai(c.deps.executeTool('get_zonage_plu', { lat: pt.lat, lng: pt.lon }, contexteMission(c.m)), TIMEOUT_OUTIL_MS, 'get_zonage_plu');
+    const r = await appelAvecFile(c, 'get_zonage_plu', () =>
+      avecDelai(c.deps.executeTool('get_zonage_plu', { lat: pt.lat, lng: pt.lon }, contexteMission(c.m)), TIMEOUT_OUTIL_MS, 'get_zonage_plu'));
     noterZonage(c, 'get_zonage_plu', { idu: k.idu }, r);
     const z = (r?.data as { zone_principale?: { zone?: unknown } } | undefined)?.zone_principale?.zone;
     return normaliserCodeZone(z);
   } catch { return null; }
+}
+
+/**
+ * Lot Q3 : budget d'étapes « métier ». Les étapes TECHNIQUES (lecture IA du règlement, sortie
+ * coupée) ne le consomment pas, dans la limite réservée au type (devis : ETAPES_TECHNIQUES_RESERVEES) ;
+ * le plafond total etapes_max − 1 (une étape gardée pour le rapport) reste la borne dure.
+ */
+export function etapesMetierDisponibles(m: Pick<MissionRow, 'type' | 'etapes_faites' | 'etapes_max'>, etat: Pick<EtatMission, 'etapes_techniques'>): boolean {
+  const reserve = Math.max(0, Math.min(ETAPES_TECHNIQUES_RESERVEES[m.type] ?? 0, m.etapes_max - 3));
+  const techniques = Math.min(Number(etat.etapes_techniques) || 0, reserve);
+  return m.etapes_faites < m.etapes_max - 1 && (m.etapes_faites - techniques) < m.etapes_max - reserve - 1;
+}
+
+/**
+ * Lot Q3 : clôture propre après une erreur répétée — statut 'echec', rapport partiel (règles et
+ * dossier connus), message clair, règlement des jetons (seul le consommé est facturé). Robuste à un
+ * état qui ne peut plus être sauvé : clôture et règlement directs en dernier recours.
+ */
+async function cloturerSurErreurRepetee(c: CtxEtape, msg: string, n: number, detail?: string): Promise<void> {
+  const raison = `mission arrêtée : la même erreur technique s'est répétée ${n} fois (« ${texte(msg, 300)} »)` +
+    (detail ? ` — ${detail}` : '') + '. Seuls les jetons réellement consommés sont facturés, le reste est rendu';
+  const erreur = texte(`erreur répétée ${n} fois : ${msg}`, 1000);
+  try {
+    await cloturerSansLLM(c, 'echec', raison, erreur);
+    return;
+  } catch (e) {
+    console.error('[agent] clôture après erreur répétée', e instanceof Error ? e.message : String(e));
+  }
+  try {
+    await c.depot.cloturer(c.m.id, 'echec', { titre: `Rapport partiel — ${texte(c.m.objectif, 120)}`, synthese: `Le rapport n'a pas pu être rédigé (${raison}).`, terrains: [], limites: [raison] }, erreur);
+  } catch { /* déjà close ? */ }
+  try {
+    const m = await c.depot.chargerMission(c.m.id);
+    if (m) await reglerMission(m, c.deps, c.depot);
+  } catch { /* le balayage des missions closes non réglées réglera au tick suivant */ }
 }
 
 function limitesRapport(raison: EtatMission['raison_rapport']): string[] {
@@ -1031,7 +1433,7 @@ async function etapeRapport(c: CtxEtape): Promise<IssueEtape> {
   if (c.etat.tentatives_rapport >= TENTATIVES_RAPPORT_MAX) {
     c.etat.cloture = {
       statut: raison === 'erreurs' ? 'echec' : 'budget_atteint',
-      rapport: normaliserRapport(rapportDeSecours(c.m, c.etat, 'rédaction automatique indisponible'), c.etat, c.m.jetons_consommes, limitesRapport(raison), c.m),
+      rapport: await enrichirRapport(c, normaliserRapport(rapportDeSecours(c.m, c.etat, 'rédaction automatique indisponible'), c.etat, c.m.jetons_consommes, limitesRapport(raison), c.m)),
       erreur: raison === 'erreurs' ? 'erreurs techniques répétées' : null,
     };
     c.etat.phase = 'fini';
@@ -1056,8 +1458,18 @@ async function appliquerCloture(c: CtxEtape): Promise<void> {
     // Revue I7 : sans dossier enregistré, la mission ne peut PAS finir « terminee ».
     const k = chargerConception(c.etat.conception, c.m);
     let echec: string | null = null;
-    try { await persisterConception(c, k, 'plan'); } catch (e) { echec = e instanceof Error ? e.message : String(e); }
-    if (!k.id) {
+    // Lot Q3 : deux essais ; un dossier existant mais NON mis à jour (règles lues absentes de la fiche)
+    // n'est pas « prêt pour le plan » non plus.
+    for (let essai = 0; essai < 2; essai++) {
+      try { await persisterConception(c, k, 'plan'); echec = null; break; } catch (e) { echec = e instanceof Error ? e.message : String(e); }
+    }
+    if (k.id && echec) {
+      cl.statut = 'echec';
+      cl.erreur = texte(`dossier de conception non mis à jour : ${echec}`, 1000);
+      cl.rapport = { ...cl.rapport, limites: [...((cl.rapport.limites as string[]) ?? []),
+        `Le dossier de conception n'a pas pu être mis à jour (${texte(echec, 300)}) : la fiche n'affiche pas toutes les règles lues (elles figurent dans ce rapport). Rien n'est prêt pour le plan. Seuls les jetons réellement consommés sont facturés.`] };
+      await c.depot.sauverEtat(c.m.id, c.etat).catch(() => {});
+    } else if (!k.id) {
       const limite = `Le dossier de conception n'a pas pu être enregistré (${echec ?? 'identifiant de parcelle manquant'}) : rien n'est prêt pour le plan. Seuls les jetons réellement consommés sont facturés.`;
       cl.statut = 'echec';
       cl.erreur = texte(`dossier de conception non enregistré : ${echec ?? 'idu manquant'}`, 1000);
@@ -1072,13 +1484,32 @@ async function appliquerCloture(c: CtxEtape): Promise<void> {
   if (m) await reglerMission(m, c.deps, c.depot);
 }
 
+/**
+ * Lot Q3 : adresse des terrains (Base Adresse Nationale, reverse) quand le centroïde est connu —
+ * parcelle de la conception, centroïdes de rechercher_parcelles. Jamais bloquant ; sinon null.
+ */
+async function enrichirRapport(c: CtxEtape, r: Record<string, unknown>): Promise<Record<string, unknown>> {
+  try {
+    const points: Record<string, { lat: number; lon: number }> = {};
+    const lus = (c.etat.centroides_lus && typeof c.etat.centroides_lus === 'object' ? c.etat.centroides_lus : {}) as Record<string, [number, number]>;
+    for (const [idu, ct] of Object.entries(lus)) points[idu] = { lon: ct[0], lat: ct[1] };
+    if (c.m.type === 'conception') {
+      const k = chargerConception(c.etat.conception, c.m);
+      const pt = centroideParcelle(k.parcelle);
+      if (k.idu && pt) points[k.idu] = pt;
+    }
+    if (Object.keys(points).length) await completerAdresses(r, points, c.deps.fetch ?? fetch);
+  } catch { /* adresse : confort, jamais bloquant */ }
+  return r;
+}
+
 /** Clôture immédiate sans LLM (attente expirée, veille coupée, erreurs). */
 async function cloturerSansLLM(
   c: CtxEtape, statut: StatutMission, raison: string, erreur: string | null,
 ): Promise<void> {
   c.etat.cloture = {
     statut,
-    rapport: normaliserRapport(rapportDeSecours(c.m, c.etat, raison), c.etat, c.m.jetons_consommes, [], c.m),
+    rapport: await enrichirRapport(c, normaliserRapport(rapportDeSecours(c.m, c.etat, raison), c.etat, c.m.jetons_consommes, [], c.m)),
     erreur,
   };
   c.etat.phase = 'fini';
@@ -1118,6 +1549,20 @@ export async function reglerMission(m: MissionRow, deps: MoteurDeps, depot: Depo
 
 // ── Boucle d'une mission ────────────────────────────────────────────────────
 
+/** Lot Q3 : libellé de provenance des hypothèses reprises d'une prospection. */
+function libelleOrigine(titre: unknown, id: string | null): string {
+  return `prospection d’origine${typeof titre === 'string' && titre.trim() ? ` « ${texte(titre.trim(), 80)} »` : ''}${id ? ` (mission ${id.slice(0, 8)})` : ''}`;
+}
+
+/** Lot Q3 : hypothèses lues dans l'extrait de prospection stocké (donnees_prospection), ou null. */
+export function hypothesesDeLaProspection(donnees: string | null): ReturnType<typeof hypothesesDepuisOrigine> {
+  if (!donnees) return null;
+  try {
+    const d = JSON.parse(donnees);
+    return hypothesesDepuisOrigine(d?.hypotheses_communes, libelleOrigine(d?.titre, null));
+  } catch { return null; }   // extrait tronqué (…) : rien n'est deviné
+}
+
 /** Extrait compact (≤ 8 000 car.) de la prospection d'origine pour le terrain de la conception. */
 export function extraireDonneesProspection(rapport: Record<string, unknown>, idu: string | null): string | null {
   const terrains = Array.isArray(rapport.terrains) ? rapport.terrains as Array<Record<string, unknown>> : [];
@@ -1133,6 +1578,7 @@ export function extraireDonneesProspection(rapport: Record<string, unknown>, idu
 
 export async function travaillerMission(
   id: string, deps: MoteurDeps, depot: DepotMission, worker: string, finA: number,
+  file: FileAppels = new FileAppels(deps.now ?? Date.now, dormirPour(deps)),
 ): Promise<{ etapes: number; issue: string }> {
   const now = deps.now ?? Date.now;
   let m = await depot.chargerMission(id);
@@ -1154,7 +1600,7 @@ export async function travaillerMission(
     const k = chargerConception(etat.conception, m);
     if (!k.id) {
       // Revue I7 : vérifier DÈS LE DÉBUT que le dossier peut être écrit (table présente, idu valide).
-      const c0: CtxEtape = { m, etat, tier, pireRapport, blocMemoire, deps, depot };
+      const c0: CtxEtape = { m, etat, tier, pireRapport, blocMemoire, deps, depot, file, finA };
       try {
         await persisterConception(c0, k, 'regles');
       } catch (e) {
@@ -1175,7 +1621,16 @@ export async function travaillerMission(
       const origineId = (m.criteres as Record<string, unknown>)?.mission_origine_id;
       if (estUuid(origineId)) {
         const o = await depot.chargerMission(origineId).catch(() => null);
-        if (o && o.user_id === m.user_id && o.rapport) k.donnees_prospection = extraireDonneesProspection(o.rapport, k.idu);
+        if (o && o.user_id === m.user_id && o.rapport) {
+          k.donnees_prospection = extraireDonneesProspection(o.rapport, k.idu);
+          // Lot Q3 : hypothèses du bilan de la prospection d'origine → brouillon du rapport, marquées de leur source.
+          const h = hypothesesDepuisOrigine((o.rapport as Record<string, unknown>).hypotheses_communes, libelleOrigine((o.rapport as Record<string, unknown>).titre, o.id));
+          const b = chargerBrouillon(etat.brouillon);
+          if (h && hypothesesToutesInconnues(b.hypotheses_communes)) {
+            b.hypotheses_communes = fusionnerHypotheses(b.hypotheses_communes, h);
+            etat.brouillon = b;
+          }
+        }
       }
       k.origine_chargee = true;
       etat.conception = k;
@@ -1202,30 +1657,47 @@ export async function travaillerMission(
         if (k.idu) {
           try { await depot.enregistrerConception(m.id, m.user_id, { idu: k.idu, regles_plu: k.regles }); } catch (e) { console.warn('[agent] conception', e instanceof Error ? e.message : String(e)); }
         }
-        // Lot Q1 (A) : secteur donné en commentaire du formulaire.
-        const sc = a.commentaire ? appliquerSecteur(k.regles, a.commentaire, toitureDuProjet(k.programme, m.criteres as Record<string, unknown>)) : null;
-        if (sc?.appliquees.length) {
-          k.regles = sc.regles;
-          etat.conception = k;
-          if (k.idu) {
-            try { await depot.enregistrerConception(m.id, m.user_id, { idu: k.idu, regles_plu: k.regles }); } catch (e) { console.warn('[agent] conception', e instanceof Error ? e.message : String(e)); }
+        // Lot Q3 : secteurs déclarés dans le formulaire (secteur par règle, commentaire) → mémorisés.
+        try {
+          const brut = JSON.parse(rep) as { regles?: Array<{ cle?: unknown; secteur?: unknown }> };
+          for (const x of Array.isArray(brut.regles) ? brut.regles : []) {
+            if (x?.secteur == null || String(x.secteur).trim() === '') continue;
+            const champ = x.cle === 'stationnement_par_logement' ? 'zone de stationnement' : x.cle === 'hauteur_max_m' || x.cle === 'niveaux_max' ? 'secteur de hauteur' : null;
+            if (champ) memoriserSecteurs(k, `${champ} ${String(x.secteur)}`, 'formulaire des règles');
           }
+        } catch { /* réponse déjà validée par appliquerReponseFormulaire */ }
+        if (a.commentaire) memoriserSecteurs(k, a.commentaire, 'formulaire des règles (commentaire)', k.secteur_demande === true);
+        // Lot Q1 (A) : secteur donné en commentaire du formulaire.
+        const sc = a.commentaire ? appliquerSecteur(k.regles, a.commentaire, toitureMission(k, m)) : null;
+        if (sc?.appliquees.length) k.regles = sc.regles;
+        const sd = appliquerSecteursConnus(k, m);
+        etat.conception = k;
+        if ((sc?.appliquees.length || sd.length) && k.idu) {
+          try { await depot.enregistrerConception(m.id, m.user_id, { idu: k.idu, regles_plu: k.regles }); } catch (e) { console.warn('[agent] conception', e instanceof Error ? e.message : String(e)); }
         }
+        const appliquees = [...(sc?.appliquees ?? []), ...sd];
         txt = `Réponse de l'utilisateur au formulaire des règles : ${a.resume}.` +
-          (sc?.appliquees.length ? ` Secteur appliqué : ${sc.appliquees.join(' ; ')}.` : '') +
+          (appliquees.length ? ` Secteur appliqué : ${appliquees.join(' ; ')}.` : '') +
           (a.commentaire ? ` Commentaire : ${a.commentaire}` : '') +
           (a.hors_bornes.length ? ` Valeurs non valables ignorées (à redemander) : ${a.hors_bornes.join(' ; ')}.` : '') +
           (pdfOk ? ' Le règlement PDF déposé sera lu automatiquement à l’étape suivante.' : (a.lire_reglement ? ' (Règlement demandé mais introuvable dans le dossier de la conception : non lu.)' : ''));
       } else {
+        // Lot Q3 : secteurs déclarés dans une réponse libre (« secteur de hauteur 1, zone de stationnement
+        // n° 3, toiture terrasse ») → MÉMORISÉS, même si la règle par secteur n'est pas encore lue.
+        const nouveaux = memoriserSecteurs(k, rep, 'réponse de l’utilisateur', k.secteur_demande === true);
         // Lot Q1 (A) : réponse libre à la question du secteur (« secteur 2 », « 2 ») — seulement si elle a été posée.
-        const sc = k.secteur_demande ? appliquerSecteur(k.regles, rep, toitureDuProjet(k.programme, m.criteres as Record<string, unknown>)) : { regles: k.regles, appliquees: [] };
-        if (sc.appliquees.length) {
-          k.regles = sc.regles;
-          etat.conception = k;
-          if (k.idu) {
-            try { await depot.enregistrerConception(m.id, m.user_id, { idu: k.idu, regles_plu: k.regles }); } catch (e) { console.warn('[agent] conception', e instanceof Error ? e.message : String(e)); }
-          }
-          txt += ` Secteur appliqué par le moteur : ${sc.appliquees.join(' ; ')}.`;
+        const sc = k.secteur_demande ? appliquerSecteur(k.regles, rep, toitureMission(k, m)) : { regles: k.regles, appliquees: [] };
+        if (sc.appliquees.length) k.regles = sc.regles;
+        const sd = appliquerSecteursConnus(k, m);
+        etat.conception = k;
+        if ((sc.appliquees.length || sd.length) && k.idu) {
+          try { await depot.enregistrerConception(m.id, m.user_id, { idu: k.idu, regles_plu: k.regles }); } catch (e) { console.warn('[agent] conception', e instanceof Error ? e.message : String(e)); }
+        }
+        const appliquees = [...sc.appliquees, ...sd];
+        if (appliquees.length) txt += ` Secteur appliqué par le moteur : ${appliquees.join(' ; ')}.`;
+        else if (nouveaux) {
+          const d = k.secteurs_declares ?? {};
+          txt += ` Mémorisé par le moteur (appliqué automatiquement dès qu'une règle par secteur sera lue) : ${[d.hauteur ? `secteur de hauteur ${d.hauteur}` : '', d.stationnement ? `zone de stationnement ${d.stationnement}` : '', d.generique ? `secteur ${d.generique}` : '', d.toiture ? `toiture ${d.toiture === 'terrasse' ? 'terrasse' : 'à pentes'}` : ''].filter(Boolean).join(', ')}.`;
         }
       }
     }
@@ -1248,7 +1720,7 @@ export async function travaillerMission(
       // Bail perdu : un autre worker a la main → on s'arrête SANS sauvegarder (I7).
       if (!(await depot.prolongerBail(id, worker, BAIL_S))) return { etapes, issue: 'bail_perdu' };
     }
-    const c: CtxEtape = { m: m!, etat, tier, pireRapport, blocMemoire, deps, depot };
+    const c: CtxEtape = { m: m!, etat, tier, pireRapport, blocMemoire, deps, depot, file, finA };
 
     // Veille proactive coupée par l'utilisateur entre-temps (I3).
     if (m!.origine === 'proactif') {
@@ -1282,7 +1754,7 @@ export async function travaillerMission(
         const p = preparerAppel(c, etat.phase === 'plan' ? CONSIGNE_PLAN : null, outilsEtape);
         const pireEtape = deps.debitJetons(tier, p.entree, SORTIE_ETAPE_MAX_TOKENS, 0);
         const reste = m!.jetons_reserves - m!.jetons_consommes;
-        const etapesOk = m!.etapes_faites < m!.etapes_max - 1;
+        const etapesOk = etapesMetierDisponibles(m!, etat);
         if (!etat.peut_continuer || reste < pireEtape + pireRapport || !etapesOk) {
           etat.phase = 'rapport';
           etat.raison_rapport = etapesOk ? 'budget_atteint' : 'etapes_max';
@@ -1296,18 +1768,36 @@ export async function travaillerMission(
     } catch (e) {
       if (e instanceof ArretMission) return { etapes, issue: 'arret' };
       const msg = e instanceof Error ? e.message : String(e);
+      // Lot Q3 (boucle infinie du 05/11/2026) : compteur par SIGNATURE d'erreur, journal dédoublonné,
+      // clôture propre à la 3e erreur identique, et JAMAIS de reprise immédiate dans le même tick.
+      const sig = signatureErreur(msg);
+      const n = etat.derniere_erreur && etat.derniere_erreur.signature === sig ? etat.derniere_erreur.n + 1 : 1;
+      etat.derniere_erreur = { signature: sig, n, le: new Date(now()).toISOString() };
       etat.erreurs_consecutives += 1;
-      await depot.journal(id, 'erreur', null, null, `Étape interrompue : ${texte(msg, 800)}`, 0);
+      await journalErreur(c, null, `Étape interrompue : ${texte(msg, 800)}`);
+      if (n >= ERREURS_IDENTIQUES_MAX) {
+        await cloturerSurErreurRepetee(c, msg, n);
+        return { etapes: etapes + 1, issue: 'echec' };
+      }
       if (etat.erreurs_consecutives >= ERREURS_MAX && etat.phase !== 'rapport' && (etat.phase as string) !== 'fini') {
         etat.phase = 'rapport';
         etat.raison_rapport = 'erreurs';
       }
-      await depot.sauverEtat(id, etat).catch(() => {});
+      let sauve = true;
+      try { await depot.sauverEtat(id, etat); } catch { sauve = false; }
+      if (!sauve) {
+        // L'état (donc le compteur) ne peut pas être sauvé — base indisponible : on ne clôt pas sur
+        // une panne passagère, mais on rend la main (au plus une tentative par tick et par minute).
+        await depot.libererBail(id, worker).catch(() => {});
+        return { etapes: etapes + 1, issue: 'erreur_differee' };
+      }
       if (etat.erreurs_consecutives >= ERREURS_MAX + TENTATIVES_RAPPORT_MAX + 1 && (etat.phase as string) !== 'fini') {
         await cloturerSansLLM(c, 'echec', 'erreurs répétées', texte(msg, 1000));
         return { etapes, issue: 'echec' };
       }
-      issue = 'continuer';
+      // Délai entre tentatives : la mission rend la main ; la suivante aura lieu au prochain tick.
+      await depot.libererBail(id, worker).catch(() => {});
+      return { etapes: etapes + 1, issue: 'erreur_differee' };
     }
     etapes += 1;
     if (issue !== 'continuer') return { etapes, issue };
@@ -1342,6 +1832,8 @@ export async function tickMissions(
 
   const missions = await depot.prendreMissions(worker, BAIL_S);
   bilan.prises = missions.length;
+  // Lot Q3 : une seule file d'appels internes pour TOUT le tick (la limite Supabase vaut par requête).
+  const file = new FileAppels(now, dormirPour(deps));
 
   await Promise.all(missions.map(async (m) => {
     try {
@@ -1381,7 +1873,7 @@ export async function tickMissions(
         await depot.journal(m.id, 'plan', 'facturation', { jetons_reserves: r.jetons_reserves },
           `Mission lancée : ${r.jetons_reserves ?? 0} jetons réservés. Seul le consommé sera débité, le reste vous sera rendu.`, 0);
       }
-      const t = await travaillerMission(m.id, deps, depot, worker, finA);
+      const t = await travaillerMission(m.id, deps, depot, worker, finA, file);
       bilan.travaillees.push({ id: m.id, ...t });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -1446,7 +1938,7 @@ export async function executerOutilAgentChat(
         if (!TYPES_MISSION.includes(type)) {
           return { status: 'error', source: SOURCE, message: `type invalide : ${TYPES_MISSION.join(', ')}` };
         }
-        const objectif = String(input.objectif ?? '').trim().slice(0, 2000);
+        const objectif = mettreEnForme(String(input.objectif ?? '').trim().slice(0, 2000));
         if (!objectif) return { status: 'error', source: SOURCE, message: 'objectif requis' };
         let criteres = (input.criteres && typeof input.criteres === 'object' && !Array.isArray(input.criteres)
           ? input.criteres : {}) as Record<string, unknown>;

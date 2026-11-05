@@ -151,6 +151,14 @@ export interface EtatMission {
   conception?: unknown;
   /** Lot Q1 : zones PLU lues par les outils, par idu (rapport.ts : LectureZonage[]) — libellés et écarts de zone. */
   zonages_lus?: unknown;
+  /** Lot Q3 : dernière erreur d'étape (signature normalisée, occurrences consécutives) — clôture à la 3e identique. */
+  derniere_erreur?: { signature: string; n: number; le?: string } | null;
+  /** Lot Q3 : occurrences journalisées par signature d'erreur (journal dédoublonné). */
+  journal_erreurs?: Record<string, number>;
+  /** Lot Q3 : étapes techniques débitées (lecture IA du règlement, sortie coupée) — hors budget « métier » dans la limite réservée. */
+  etapes_techniques?: number;
+  /** Lot Q3 : centroïdes [lon, lat] des parcelles lus par rechercher_parcelles, par idu (adresse BAN des fiches). */
+  centroides_lus?: Record<string, [number, number]>;
 }
 
 export type GenreJournal =
@@ -266,8 +274,10 @@ export interface MoteurDeps {
   now?: () => number;
   /** Comptage exact des tokens d'un appel (PDF) ; défaut : API Anthropic count_tokens. */
   compterTokens?: (p: { model: string; system: string; messages: unknown[] }) => Promise<number | null>;
-  /** fetch injectable (cadastre) ; défaut : globalThis.fetch. */
+  /** fetch injectable (cadastre, adresse BAN) ; défaut : globalThis.fetch. */
   fetch?: typeof fetch;
+  /** Lot Q3 : attente injectable (file des appels internes) ; défaut : setTimeout. */
+  dormir?: (ms: number) => Promise<void>;
   /** V1.8 : texte page par page d'un PDF du Storage (extraction serveur, plu-reglement-v1) ; null si indisponible ou inachevée. */
   extraireTextePdf?: (bucket: string, chemin: string) => Promise<string[] | null>;
   /** V1.8 : règlement écrit applicable au point, lu au Géoportail de l'urbanisme (plu-reglement-v1, action 'gpu'). */

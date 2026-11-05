@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   comparer, compacite, mesurer, normaliserParcelle, pointsZone, rechercherParcelles, REGLAGES, zoneCorrespond,
   type Deps,
+  dateDocument, ordreZones, pointDansPolys, pointInterieur,
 } from './logique.ts';
 
 const dossier = new URL('./fixtures/', import.meta.url);
@@ -262,4 +263,46 @@ Deno.test('budget temps : pagination API Carto arrêtée, couverture partielle s
   assert.ok(st.parcelles_lues > 0 && st.parcelles_lues < REGLAGES.APICARTO_MAX_PAGES * REGLAGES.APICARTO_PAGE);
   assert.ok(s.avertissements.some((a) => a.includes('PARTIELLE')));
   assert.ok(s.items.length <= 5);
+});
+
+// ── Lot Q3 (point 10) : écart de zonage « UBa » (prospection) / « UC » (GPU), AE0414 du 05/11/2026 ──
+// Cause : zoner() triait les zones ALPHABÉTIQUEMENT et prenait la première contenant le centroïde ;
+// deux documents superposés (ancien et nouveau PLU) → « UBa » l'emportait sur « UC ».
+
+Deno.test('Q3-10 : zones superposées au point → document le plus RÉCENT retenu, toutes listées, alerte', async () => {
+  assert.equal(dateDocument({ idurba: '92050_PLU_20251209' }), '20251209');
+  assert.equal(dateDocument({ idurba: 'x', datappro: '2019-01-01' }), '20190101');
+  const tri = ordreZones([
+    { zone: { type_zone: 'U', zonage_plu: 'UBa', libelle_zone: null, document: '92050_PLU_20190101' }, date: '20190101' },
+    { zone: { type_zone: 'U', zonage_plu: 'UC', libelle_zone: null, document: '92050_PLU_20251209' }, date: '20251209' },
+  ]);
+  assert.equal(tri[0].zone.zonage_plu, 'UC', 'avant le lot Q3 : « UBa » (ordre alphabétique)');
+  // De bout en bout : le fixture GPU dupliqué en deux documents superposés.
+  const gpu = copie(FX.gpu);
+  const f0 = gpu.features[0];
+  const nouveau = { ...copie(f0), properties: { ...f0.properties, libelle: 'UC', idurba: '99999_PLU_20251209' } };
+  const ancien = { ...copie(f0), properties: { ...f0.properties, libelle: 'UBa', idurba: '99999_PLU_20190101' } };
+  gpu.features = [ancien, nouveau, ...gpu.features.slice(1)];
+  const s = await rechercherParcelles(
+    { code_insee: '99999', surface_min_m2: 800, surface_max_m2: 3000 },
+    deps([R.geo, R.etalab, (u: string) => u.includes('/api/gpu/zone-urba') ? gpu : undefined, R.bati]),
+  );
+  const p1 = s.items.find((i) => i.idu === '99999000AB0001')!;
+  assert.equal(p1.zonage_plu, 'UC');
+  assert.deepEqual(p1.zonages_au_point, ['UC (99999_PLU_20251209)', 'UBa (99999_PLU_20190101)']);
+  assert.ok(p1.raisons.some((r) => r.includes('plusieurs zones au point')));
+  assert.ok(s.avertissements.some((a) => a.includes('plusieurs zones au point')));
+  // Sans superposition : aucun champ ajouté (sorties existantes inchangées).
+  const s0 = await rechercherParcelles({ code_insee: '99999', surface_min_m2: 800, surface_max_m2: 3000 }, deps([R.geo, R.etalab, R.gpu, R.bati]));
+  assert.ok(s0.items.every((i) => i.zonages_au_point === undefined));
+});
+
+Deno.test('Q3-10 : centroïde hors d’une parcelle concave → point intérieur (jamais la zone voisine)', () => {
+  // Parcelle en U (coordonnées synthétiques) : le centroïde tombe dans l'échancrure.
+  const u = [[[0, 0], [3, 0], [3, 3], [2, 3], [2, 1], [1, 1], [1, 3], [0, 3], [0, 0]]] as [number, number][][];
+  const c: [number, number] = [1.5, 1.6];
+  assert.equal(pointDansPolys(c, [u]), false);
+  const p = pointInterieur([u], c);
+  assert.ok(pointDansPolys(p, [u]), JSON.stringify(p));
+  assert.deepEqual(pointInterieur([u], [0.5, 0.5]), [0.5, 0.5], 'centroïde déjà intérieur : inchangé');
 });

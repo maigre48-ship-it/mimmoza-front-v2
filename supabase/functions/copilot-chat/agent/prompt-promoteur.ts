@@ -5,6 +5,7 @@
 // =============================================================
 
 import type { EtatMission, MissionRow, TypeMission } from './types.ts';
+import { FORMAT_TEXTES_MISSION } from '../../_shared/texte/consignesFormat.ts';
 
 const OBJET_TYPE: Record<TypeMission, string> = {
   prospection_fonciere: 'Prospection foncière : trouver et qualifier des terrains pour un programme.',
@@ -36,8 +37,9 @@ export const METHODE_CONCEPTION = [
   '   a. `lire_regles_plu_importees` (règlement déjà importé dans Mimmoza ; souvent vide : c\'est normal) ;',
   '   b. `get_prescriptions_urbanisme` (servitude de mixité sociale, OAP…) et `get_logement_social` : enregistre ce qui est chiffré avec `enregistrer_regles_conception` (source = outil, statut « estime ») ;',
   '   c. s\'il reste des règles manquantes : `demander_utilisateur` avec `formulaire: "regles_conception"` et une question simple (« Voici les règles connues ; complétez ou confirmez, ou déposez le règlement PDF »). Le formulaire est pré-rempli par le moteur.',
-  '   d. si l\'utilisateur a déposé le règlement et demandé sa lecture, elle est faite automatiquement ; sinon `lire_reglement_pdf` avec le chemin donné.',
-  '   e. une règle « non réglementée » (« Il n\'est pas fixé de règle », citée) est une règle CONNUE ; une règle « par secteur » dont le secteur de la parcelle n\'est pas connu est À PRÉCISER : pose la question du secteur (plan graphique), ne choisis jamais un secteur et ne conclus pas sur cette règle avant la réponse.',
+  '   d. si l\'utilisateur a déposé le règlement et demandé sa lecture, elle est faite automatiquement ; sinon `lire_reglement_pdf` avec le chemin donné, ou avec `source: "gpu"` (règlement publié au Géoportail de l\'urbanisme) AVANT de demander les règles. Les règles lues sont enregistrées par le MOTEUR dans le dossier : ne les recopie pas avec `enregistrer_regles_conception`.',
+  '   e. une règle « non réglementée » (« Il n\'est pas fixé de règle », citée) est une règle CONNUE ; une règle « par secteur » (secteur ou zone du plan graphique : hauteur, stationnement…) dont le secteur de la parcelle n\'est pas connu est À PRÉCISER : pose la question du secteur, ne choisis jamais un secteur et ne conclus pas sur cette règle avant la réponse. Si l\'utilisateur a DÉJÀ indiqué son secteur (objectif, réponse), le moteur l\'applique : ne le redemande pas.',
+  '   f. une règle qui laisse le CHOIX au constructeur (ex. « à l\'alignement OU en recul d\'au moins 4 m ») est une ALTERNATIVE, pas une règle par secteur : présente les possibilités, n\'en écarte aucune comme « exception ».',
   '3. **Programme** : `enregistrer_programme` cohérent avec la prospection (données ci-dessous) et avec les règles connues ; dis ce qui reste à arbitrer.',
   '4. **Fin** : `terminer_mission` avec un rapport court : règles prêtes (et lesquelles manquent encore), programme, « Choisissez maintenant la voie du plan : plan fourni, dessin de l\'emprise, ou proposition Mimmoza ».',
   'Tu ne génères aucun plan ni modèle 3D : le Studio s\'en charge. Jamais de règle inventée : une règle sans source n\'existe pas.',
@@ -105,6 +107,7 @@ export function systemeMission(m: MissionRow, etat: EtatMission, blocMemoire: st
     '',
     m.type === 'conception' ? FORMAT_CONCEPTION : FORMAT_RAPPORT,
     m.type === 'veille' ? FORMAT_VEILLE : '',
+    FORMAT_TEXTES_MISSION,
     blocMemoire ? `\n${blocMemoire}` : '',
     '',
     'Tu réponds toujours en français.',
@@ -143,6 +146,7 @@ export const DOCTRINE_MISSIONS_CHAT = [
   '- Exception : une seule parcelle ou une seule adresse → réponds directement (get_etude_parcelle), sans mission. Si l\'utilisateur refuse explicitement la mission, limite-toi à deux études au plus et dis pourquoi.',
   '- `proposer_mission` ne lance rien et ne débite rien : il affiche un DEVIS (fourchette de jetons) que l\'utilisateur valide lui-même avec le bouton « Lancer la mission ». Ne dis jamais que la mission a démarré.',
   '- Rédige un objectif précis et des critères complets (communes, surfaces, zonage, budget, programme) : la mission travaille seule ensuite.',
+  '- Format de l\'objectif (affiché tel quel à l\'utilisateur) : une phrase de synthèse, puis les points à traiter en liste, un par ligne commençant par « - ». Jamais « (1) … ; (2) … » dans un même paragraphe.',
   '- `etat_mission` / `lister_missions` pour répondre aux questions sur les missions en cours.',
   '- `memoriser` pour retenir une décision, une hypothèse validée, une préférence ou un contact du projet. Ne mémorise que ce que l\'utilisateur a dit ou ce qu\'un outil a établi.',
 ].join('\n');

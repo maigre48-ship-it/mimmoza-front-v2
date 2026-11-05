@@ -9,6 +9,7 @@ import {
   reglesDepuisRulesets, reglesManquantes, signalementsFormules, suiteProposee,
   centroideParcelle, cheminTexteReglement, CONSIGNE_LECTURE_REGLEMENT, REGLEMENT_LECTURE_DIRECTE_MAX_OCTETS, REGLEMENT_MAX_OCTETS,
   ajusterToiture, appliquerSecteur, decrireRegle, questionSecteur, reglesAPreciser, secteurDepuisReponse, toitureDuProjet, valeurRetenue,
+  appliquerSecteursDeclares, cleSecteur, estSecteurGeographique, fusionnerSecteursDeclares, secteursDepuisCriteres, secteursDepuisTexte,
 } from './conception.ts';
 import { depotSupabase, estLigneDeTest } from './depot.ts';
 
@@ -303,4 +304,77 @@ Deno.test('Q1-A : consigne de lecture — « non réglementée » et « par sect
   assert(c.includes('non_reglementee') && c.includes('par_secteur') && c.includes('valeurs_par_secteur'));
   assert(c.includes('"acrotere_terrasse"') && c.includes('"egout"') && c.includes('"faitage"') && c.includes('"exceptions"'));
   assert(c.includes('Ne choisis JAMAIS le secteur'));
+});
+
+// ── Lot Q3 ───────────────────────────────────────────────────────────────────
+// Valeurs réglementaires : UNIQUEMENT celles des preuves du 05/11/2026 (AE0414, 92050_PLU_20251209) —
+// UC 6-1 « alignement OU recul minimum de 4 m », UC 12 « Zone 3 – logements : 1 places/logement » —
+// et la fixture UC 9 / UC 10 ci-dessus (lecture réelle du 04/11/2026, p. 109).
+const UC12 = {
+  cle: 'stationnement_par_logement', nature: 'par_secteur', valeur: null, article: 'UC 12',
+  texte: 'Zone 3 – logements : 1 places/logement',
+  valeurs_par_secteur: [{ secteur: 'Zone 3', valeur: 1, texte: 'Zone 3 – logements : 1 places/logement' }],
+};
+const UC61_ALTERNATIVE = {
+  cle: 'recul_voie_m', nature: 'alternative', valeur: null, article: 'UC 6-1, p. 106',
+  texte: 'implantation à l’alignement ou en recul minimum de 4 m',
+  alternatives: [{ libelle: 'alignement', valeur: 0 }, { libelle: 'recul minimum', valeur: 4 }],
+};
+// Ce que la mission du 05/11 avait produit : l'alternative rangée « par secteur ».
+const UC61_COMME_SECTEUR = {
+  cle: 'recul_voie_m', nature: 'par_secteur', valeur: null, article: 'UC 6-1, p. 106',
+  texte: 'implantation à l’alignement ou en recul minimum de 4 m',
+  valeurs_par_secteur: [{ secteur: 'Règle générale', valeur: 0, exceptions: 'recul minimum de 4 m' }],
+};
+
+Deno.test('Q3-5 : secteurs déclarés (objectif, réponse, critères) → mémorisés puis appliqués à la lecture (hauteur ET stationnement)', () => {
+  const objectif = 'Concevoir sur 92050000AE0414 : secteur de hauteur 1, zone de stationnement n° 3, toiture terrasse.';
+  const d = secteursDepuisTexte(objectif);
+  assertEquals(d, { hauteur: '1', stationnement: '3', toiture: 'terrasse' });
+  // Réponse libre à la question des pages (avant la lecture de UC 10) : même lecture.
+  assertEquals(secteursDepuisTexte('Lisez UC 10 et UC 12. Secteur de hauteur 1, zone de stationnement n°3, toiture-terrasse.'), { hauteur: '1', stationnement: '3', toiture: 'terrasse' });
+  assertEquals(secteursDepuisTexte('le secteur a été vu'), {}, 'pas de « secteur a » deviné dans un texte libre');
+  assertEquals(secteursDepuisTexte('secteur 2', { generique: true }), { generique: '2' });
+  assertEquals(secteursDepuisCriteres({ secteur_hauteur: '1', zone_stationnement: 'Zone 3', toiture: 'terrasse' }), { hauteur: '1', stationnement: '3', toiture: 'terrasse' });
+  const mem = fusionnerSecteursDeclares({}, d, 'objectif de la mission');
+  assertEquals(mem.provenance, ['objectif de la mission']);
+  // Lecture de UC 10 (par secteur) et UC 12 (par zone) → appliquées automatiquement.
+  const lues = reglesDepuisLecture({ regles: [UC10, UC12] }, 'gpu', SOURCE_GPU_NANTERRE);
+  assertEquals(reglesAPreciser(lues), ['hauteur_max_m', 'stationnement_par_logement']);
+  const a = appliquerSecteursDeclares(lues, mem);
+  const h = a.regles.find((x) => x.cle === 'hauteur_max_m')!;
+  const st = a.regles.find((x) => x.cle === 'stationnement_par_logement')!;
+  // Secteur 1 + toiture terrasse déclarée : acrotère (fixture UC 10 : 28 m).
+  assertEquals([h.valeur, h.secteur, h.statut, h.toiture], [28, '1', 'confirme', 'terrasse']);
+  assert(h.source.includes("secteur 1 déclaré par l'utilisateur"), h.source);
+  assertEquals([st.valeur, st.secteur, st.statut], [1, 'Zone 3', 'confirme']);
+  assert(st.source.includes("secteur Zone 3 déclaré par l'utilisateur"), st.source);
+  assertEquals(reglesAPreciser(a.regles), []);
+  assertEquals(questionSecteur(a.regles), null, 'la question du secteur n’est plus posée');
+  // « Zone 3 » et « 3 » désignent le même secteur.
+  assertEquals([cleSecteur('Zone 3'), cleSecteur('secteur n° 3'), cleSecteur('3')], ['3', '3', '3']);
+  // Secteur déclaré absent de la règle : rien n'est appliqué (jamais de valeur au jugé).
+  assertEquals(appliquerSecteursDeclares(lues, { stationnement: '7' }).appliquees, []);
+});
+
+Deno.test('Q3-6 : UC 6-1 « alignement OU recul ≥ 4 m » = ALTERNATIVE (chiffrée, valeur 0), jamais « par secteur »', () => {
+  for (const brut of [UC61_ALTERNATIVE, UC61_COMME_SECTEUR]) {
+    const [r] = reglesDepuisLecture({ regles: [brut] }, 'gpu', SOURCE_GPU_NANTERRE);
+    assertEquals([r.cle, r.nature, r.valeur, r.statut, r.article], ['recul_voie_m', 'chiffree', 0, 'confirme', 'UC 6-1, p. 106']);
+    assert(r.alternatives!.some((x) => x.valeur === 0) && r.alternatives!.some((x) => x.valeur === 4), JSON.stringify(r.alternatives));
+    assert(/au choix du constructeur/.test(r.texte!) && /4 m/.test(r.texte!), r.texte);
+    assert(/0 m = implantation à l’alignement autorisée/.test(r.mesure_retenue!));
+    assert(!/exception non retenue/i.test(decrireRegle(r)) && !/par secteur/.test(decrireRegle(r)), decrireRegle(r));
+    assertEquals(reglesAPreciser([r]), [], 'pas de question de secteur pour une alternative');
+    assertEquals(normaliserRegle(r, 'base'), r, 'relue depuis la base : identique');
+  }
+  assert(estSecteurGeographique('1') && estSecteurGeographique('Zone 3') && estSecteurGeographique('secteur n° 4') && estSecteurGeographique('UCa'));
+  assert(!estSecteurGeographique('Règle générale') && !estSecteurGeographique('alignement'));
+  // Validée telle quelle dans le formulaire : l'alternative garde ses options.
+  const [r] = reglesDepuisLecture({ regles: [UC61_ALTERNATIVE] }, 'gpu', SOURCE_GPU_NANTERRE);
+  const f = appliquerReponseFormulaire([r], JSON.stringify({ type: 'reponse_regles_conception', version: 1, regles: [{ cle: 'recul_voie_m', valeur: 0, statut: 'confirme', source: 'utilisateur' }] }));
+  assertEquals(f.regles.find((x) => x.cle === 'recul_voie_m')!.alternatives, r.alternatives);
+  // Consigne de lecture : secteurs géographiques ≠ alternatives au choix du constructeur.
+  const c = CONSIGNE_LECTURE_REGLEMENT('UC', 'gpu');
+  assert(c.includes('"nature": "alternative"') && c.includes('CHOIX AU CONSTRUCTEUR') && c.includes('jamais « Règle générale »'));
 });

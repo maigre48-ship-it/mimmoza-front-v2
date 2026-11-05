@@ -76,11 +76,14 @@ export function markdownToSafeHtml(raw: string): string {
   const out: string[] = [];
   let i = 0;
 
-  const flushListBuffer = (buf: string[], ordered: boolean) => {
+  const flushListBuffer = (buf: string[], ordered: boolean, start = 1) => {
     if (buf.length === 0) return;
     const tag = ordered ? 'ol' : 'ul';
+    // Liste numérotée qui ne commence pas à 1 (« 3. … » après un paragraphe) :
+    // on garde le numéro écrit, au lieu de repartir à 1 (« 1. 1. 1. » à l'écran).
+    const debut = ordered && start > 1 ? ` start="${start}"` : '';
     out.push(
-      `<${tag} style="margin:6px 0 6px 20px;padding:0;">` +
+      `<${tag}${debut} style="margin:6px 0 6px 20px;padding:0;">` +
       buf.map((li) => `<li style="margin:2px 0;">${renderInline(li)}</li>`).join('') +
       `</${tag}>`,
     );
@@ -160,12 +163,13 @@ export function markdownToSafeHtml(raw: string): string {
 
     // Liste ordonnée
     if (/^\d+\.\s+/.test(trimmed)) {
+      const start = Number(/^(\d+)\./.exec(trimmed)?.[1] ?? 1);
       const buf: string[] = [];
       while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
         buf.push(lines[i].trim().replace(/^\d+\.\s+/, ''));
         i++;
       }
-      flushListBuffer(buf, true);
+      flushListBuffer(buf, true, start);
       continue;
     }
 

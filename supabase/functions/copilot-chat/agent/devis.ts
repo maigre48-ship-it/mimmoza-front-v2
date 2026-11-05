@@ -22,14 +22,42 @@
 
 import type { Devis, Tier, TypeMission } from './types.ts';
 
-/** Étapes allouées par type de mission (rapport final compris). */
+/**
+ * Étapes allouées par type de mission (rapport final compris).
+ *
+ * Conception : 12 → 18 (lot Q3). Les missions réelles du 05/11/2026 (AE0414, Nanterre) ont atteint
+ * 12/12 à chaque essai. Étapes réellement consommées (une étape = un appel au modèle débité) :
+ *   plan 1 · recuperer_parcelle 1 · get_zonage_plu 1 · get_prescriptions_urbanisme 1 ·
+ *   lire_regles_plu_importees 1 · demande de lecture du règlement 1 (question des pages : sans appel) ·
+ *   relance avec les pages 1 · 2e sélection d'articles 1 · enregistrer_programme 1 ·
+ *   formulaire des règles 1 · terminer_mission 1 (+ 1 si refusée une fois : secteur à demander)
+ *   = 12 à 13 étapes « métier », + 1 gardée pour le rapport = 14 ;
+ *   + 2 lectures IA du règlement (étapes techniques) = 16 ; + 2 de marge technique (3e lecture
+ *   ou sortie coupée) = 18. Les 4 étapes techniques sont RÉSERVÉES (ETAPES_TECHNIQUES_RESERVEES) :
+ *   elles ne consomment pas le budget « métier » (mission.ts : etapesMetierDisponibles).
+ * Devis : jetons_max = 18 × pire cas d'une étape (+50 % de RÉSERVATION par rapport à 12) ; seul
+ * le consommé est facturé (agent_mission_regler : least(consommé, réservé)), le reste est rendu.
+ */
 export const ETAPES_PAR_TYPE: Record<TypeMission, number> = {
   prospection_fonciere: 30,
   faisabilite: 20,
   etude_marche: 15,
   veille: 10,
   libre: 15,
-  conception: 12,
+  conception: 18,
+};
+
+/**
+ * Lot Q3 : étapes TECHNIQUES réservées par type (lecture IA du règlement, sortie coupée) — comprises
+ * dans ETAPES_PAR_TYPE, mais hors budget « métier ». 0 = comportement historique.
+ */
+export const ETAPES_TECHNIQUES_RESERVEES: Record<TypeMission, number> = {
+  prospection_fonciere: 0,
+  faisabilite: 0,
+  etude_marche: 0,
+  veille: 0,
+  libre: 0,
+  conception: 4,
 };
 
 /** Bornes dures : jamais plus de 40 étapes (défaut colonne etapes_max), jamais moins de 3. */
@@ -106,8 +134,9 @@ export function calculerDevis(e: EntreeDevis): Devis {
   const jetons_max = etapes * pire;
   const jetons_min = Math.min(jetons_max, Math.max(pire, Math.ceil(jetons_max * PART_MIN)));
   const duree_estimee_min = Math.max(2, Math.round((etapes * SECONDES_PAR_ETAPE * 0.6) / 60));
+  const techniques = Math.min(ETAPES_TECHNIQUES_RESERVEES[e.type] ?? 0, Math.max(0, etapes - ETAPES_MIN));
   const explication =
-    `${LIBELLES[e.type]} en ${etapes} étapes au plus (plan, recherches, analyses, rapport). ` +
+    `${LIBELLES[e.type]} en ${etapes} étapes au plus (plan, recherches, analyses, rapport${techniques ? `, dont ${techniques} réservées à la lecture du règlement` : ''}). ` +
     `Chaque étape coûte au maximum ${pire} jetons ; ${jetons_max} jetons sont réservés au lancement, ` +
     `seul le réellement consommé est débité et le reste est rendu à la clôture. ` +
     `Si la réserve s'épuise, la mission s'arrête proprement avec un rapport partiel.`;

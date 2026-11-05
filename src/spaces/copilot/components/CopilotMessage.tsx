@@ -12,6 +12,7 @@ import { Download } from 'lucide-react';
 import { lazy, Suspense, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { exportCopilotResponseToPdf, markdownToSafeHtml } from '../utils/exportCopilotPdf';
+import { htmlLisible, mettreEnForme } from '../utils/lisibilite';
 import { structurerRapportFactuel } from '../utils/rapportAnalyse';
 import { decouperSegments } from '../charts/copilotChart.types';
 import { buildParcelDossier } from '../dossier/parcelDossier';
@@ -74,6 +75,8 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
     return { visibleText: message.text.slice(splitAt), factualReport: message.text.slice(0, splitAt).trim() };
   }, [dossier, message.status, message.text]);
   const segments = useMemo(() => decouperSegments(withoutJarvisDraft(visibleText)), [visibleText]);
+  // LOT F1 : la première phrase-réponse n'est mise en évidence qu'une fois la réponse complète.
+  const premierTexte = segments.findIndex((s) => s.kind !== 'chart');
 
   const linkedQuestion = question ?? (() => {
     const index = messages.findIndex((item) => item.id === message.id);
@@ -177,13 +180,13 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
             key={`m${i}`}
             className="copilot-message-markdown"
             style={{ color: T.text, fontSize: 14, lineHeight: 1.6 }}
-            dangerouslySetInnerHTML={{ __html: markdownToSafeHtml(seg.text) }}
+            dangerouslySetInnerHTML={{ __html: htmlLisible(seg.text, markdownToSafeHtml, { reponseDabord: i === premierTexte && message.status === 'complete' }) }}
           />
         ),
       )}
       {factualReport && <details className="copilot-message-source-report">
         <summary>Ouvrir le rapport factuel complet et les sources</summary>
-        <div className="copilot-message-markdown copilot-rapport" dangerouslySetInnerHTML={{ __html: structurerRapportFactuel(factualReport, markdownToSafeHtml).annexeHtml }} />
+        <div className="copilot-message-markdown copilot-rapport" dangerouslySetInnerHTML={{ __html: structurerRapportFactuel(factualReport, (md) => markdownToSafeHtml(mettreEnForme(md))).annexeHtml }} />
       </details>}
       {message.status === 'complete' && (message.text.trim() || message.toolCalls.length > 0) && (
         <div className="copilot-message-actions" aria-busy={exporting !== null} aria-label="Exporter cette réponse">

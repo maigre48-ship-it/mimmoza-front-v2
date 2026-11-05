@@ -7,6 +7,8 @@
 // PUR : aucune dépendance navigateur, testé par rapportExport.test.ts.
 // =============================================================================
 
+import { mettreEnForme } from '../../utils/lisibilite.ts';
+
 export type Nombre = number | null;
 
 type Obj = Record<string, unknown>;
@@ -336,6 +338,13 @@ function dateFr(iso: string): string {
 
 /** Découpe la synthèse en paragraphes de lecture (phrases regroupées par 3). */
 function paragrapher(s: string): string[] {
+  // LOT F1 : énumérations « (1) … ; (2) … » remises une par ligne ; chaque ligne de
+  // liste devient un paragraphe (lisible tel quel dans les exports PDF / Word /
+  // Excel ; regroupé en vraie liste à l'écran par regrouperParagraphes).
+  const enForme = mettreEnForme(s);
+  if (/(^|\n)\s*(?:- |\d{1,2}\. )\S/.test(enForme)) {
+    return enForme.split(/\n+/).map((l) => l.trim()).filter(Boolean).map(lisible);
+  }
   const blocs = s.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
   if (blocs.length > 1) return blocs.map(lisible);
   const phrases = s.match(/[^.!?]+(?:[.!?]+(?=\s|$)|$)/g)?.map((p) => p.trim()).filter(Boolean) ?? [s];

@@ -75,6 +75,8 @@ export interface Hypotheses {
   vrd_eur: number | null;
   demolition_eur: number | null;
   marge_cible_pct_ca: number | null;
+  /** Lot Q3 (optionnel) : provenance des hypothèses reprises d'une autre mission (prospection d'origine). */
+  source_hypotheses?: string | null;
 }
 
 export const CLES_PCT = [
@@ -109,6 +111,7 @@ export function lireHypothesesPartielles(brut: unknown): Partial<Hypotheses> & {
   for (const k of CLES_EUR_M2) if (k in b) out[k] = nombre(b[k], 0, 100_000);
   for (const k of CLES_EUR) if (k in b) out[k] = nombre(b[k], 0, 1e10);
   for (const k of CLES_SOURCES) if (k in b) out[k] = chaine(b[k], 200);
+  if ('source_hypotheses' in b) out.source_hypotheses = chaine(b.source_hypotheses, 200);   // lot Q3
   if (b.programme && typeof b.programme === 'object') {
     const p = b.programme as Record<string, unknown>;
     const prog: Partial<Programme> = {};
@@ -123,6 +126,31 @@ export function lireHypothesesPartielles(brut: unknown): Partial<Hypotheses> & {
 
 export function fusionnerHypotheses(base: Hypotheses, ajout: Partial<Hypotheses> & { programme?: Partial<Programme> }): Hypotheses {
   return { ...base, ...ajout, programme: { ...base.programme, ...(ajout.programme ?? {}) } } as Hypotheses;
+}
+
+/** Lot Q3 : aucune hypothèse connue (toutes null, programme compris) — brouillon jamais renseigné. */
+export function hypothesesToutesInconnues(h: Hypotheses): boolean {
+  const { programme, ...reste } = h;
+  return Object.values(reste).every((v) => v == null) && Object.values(programme ?? {}).every((v) => v == null);
+}
+
+/**
+ * Lot Q3 (hypothèses du bilan perdues, 05/11/2026) : hypothèses communes d'une mission d'origine
+ * (prospection) reprises TELLES QUELLES (mêmes clés, mêmes bornes que rapport_hypotheses), avec leur
+ * source d'origine : source_prix / source_couts suffixées, source_hypotheses renseignée. Rien n'est
+ * inventé : une clé absente reste absente. null si l'origine ne porte aucune hypothèse.
+ */
+export function hypothesesDepuisOrigine(brut: unknown, origine: string): (Partial<Hypotheses> & { programme?: Partial<Programme> }) | null {
+  const h = lireHypothesesPartielles(brut);
+  const { programme, ...reste } = h;
+  const valeurs = Object.entries(reste).filter(([k, v]) => v != null && !(CLES_SOURCES as readonly string[]).includes(k) && k !== 'source_hypotheses');
+  const prog = programme && Object.values(programme).some((v) => v != null);
+  if (!valeurs.length && !prog) return null;
+  const marque = (src: string | null | undefined) => texte(`${src ?? 'source non précisée'} — repris de la ${origine}`, 200);
+  if (h.prix_vente_libre_eur_m2_shab != null || h.source_prix) h.source_prix = marque(h.source_prix);
+  if (h.cout_travaux_eur_m2_sdp != null || h.source_couts) h.source_couts = marque(h.source_couts);
+  h.source_hypotheses = texte(`Hypothèses du bilan reprises de la ${origine}`, 200);
+  return h;
 }
 
 /** Clés de `spec` dont la valeur diffère de `communes` (programme comparé champ par champ). */
@@ -490,10 +518,12 @@ const LIBELLE_SUJET: Record<SujetPreuve, string> = {
 
 /** Citation complète DANS la phrase : article ET page (« art. UC 10, p. 109 »). */
 const RE_CITATION_EN_LIGNE = /\bart(?:icle)?\.?\s*[A-Z0-9][\w.-]*(?:\s*[\w.-]+)?\s*[,(–—-]\s*(?:p\.?|page)\s*\d+/iu;
+/** Lot Q3 : citation « (UC 6-1, p. 106) » — article du règlement (code de zone + numéro) ET page, sans « art. ». */
+const RE_CITATION_ZONE_PAGE = new RegExp(`(?<![${LETTRE}])[1-9]?[A-Z]{1,4}[a-z0-9]{0,3}\\s+\\d{1,2}(?:[-.]\\d{1,2})*\\s*[,(–—-]\\s*(?:p\\.?|page)\\s*\\d+`, 'u');
 
 /** Sujets affirmés mais non prouvés, ou vide si la phrase passe. */
 function sujetsSansPreuve(phrase: string, preuves: readonly PreuveReglementaire[]): SujetPreuve[] {
-  if (RE_CITATION_EN_LIGNE.test(phrase)) return [];
+  if (RE_CITATION_EN_LIGNE.test(phrase) || RE_CITATION_ZONE_PAGE.test(phrase)) return [];
   return sujetsAffirmes(phrase).filter((s) => !preuves.some((p) => p.sujet === s));
 }
 
@@ -503,20 +533,61 @@ export function reformulerAVerifier(phrase: string, manquants: SujetPreuve[]): s
   return `À vérifier : ${sansPointFinal(phrase)} — ${manquants.map((m) => LIBELLE_SUJET[m]).join(' et ')} non citée (source, article et page requis).`;
 }
 
-/** Réécrit, phrase par phrase, un texte libre (synthèse, justification). */
+/** Abréviations après lesquelles un point ne termine pas la phrase (« p. 109 », « art. UC 1 », « M. Durand »). */
+const ABREVIATIONS = new Set(['art', 'p', 'pp', 'cf', 'ex', 'réf', 'ref', 'al', 'n°', 'no', 'm', 'mme', 'mm', 'dr', 'st', 'ste', 'env', 'av', 'bd', 'chap', 'fig', 'vol', 'éd', 'min', 'max', 'hab', 'sect']);
+
+/**
+ * Lot Q3 : découpe un texte en phrases SANS RIEN PERDRE — la concaténation des `phrase + sep` est
+ * EXACTEMENT le texte d'entrée (espaces, sauts de ligne, puces conservés). Fin de phrase : un saut
+ * de ligne, ou « . ! ? … » suivi d'espace(s) puis d'une majuscule / « / " — jamais après une
+ * abréviation (« p. », « art. », « cf. »…) ni une initiale (« J. »). Un point collé (« .pdf) »,
+ * « 09/12/2025) », « UC 6-1 ») n'est jamais une fin de phrase.
+ */
+export function decouperPhrases(t: string): Array<{ phrase: string; sep: string }> {
+  const out: Array<{ phrase: string; sep: string }> = [];
+  const re = /\s+/gu;
+  let debut = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(t)) !== null) {
+    const i = m.index;
+    const w = m[0];
+    let fin = w.includes('\n');
+    if (!fin && i > 0 && /[.!?…]/u.test(t[i - 1]) && /[\p{Lu}«"]/u.test(t[i + w.length] ?? '')) {
+      if (t[i - 1] !== '.') fin = true;
+      else {
+        const mot = /([\p{L}°]+)\.$/u.exec(t.slice(Math.max(debut, i - 12), i))?.[1] ?? '';
+        const initiale = /^\p{Lu}$/u.test(mot) && (i - 2 === debut || /[\s(]/u.test(t[i - 3] ?? ' '));
+        fin = !initiale && !ABREVIATIONS.has(mot.toLowerCase());
+      }
+    }
+    if (fin && i > debut) {
+      out.push({ phrase: t.slice(debut, i), sep: w });
+      debut = i + w.length;
+    } else if (fin && i === debut) {
+      // Séparateur en tête (texte qui commence par des blancs) : rattaché à une phrase vide.
+      out.push({ phrase: '', sep: w });
+      debut = i + w.length;
+    }
+  }
+  out.push({ phrase: t.slice(debut), sep: '' });
+  return out;
+}
+
+/**
+ * Réécrit, phrase par phrase, un texte libre (synthèse, justification). Lot Q3 : le texte NON
+ * réécrit sort STRICTEMENT identique à l'entrée (seules les phrases réécrites changent).
+ */
 export function garderTexte(t: string, preuves: readonly PreuveReglementaire[]): { texte: string; reecrites: string[] } {
   if (!t) return { texte: t, reecrites: [] };
   const reecrites: string[] = [];
-  // Fin de phrase : « . » suivi d'une majuscule — jamais après une abréviation (« art. UC 1 », « p. 109 », « cf. »).
-  const phrases = t.split(/(?<!(?:^|[\s(])(?:[Aa]rt|[Pp]p?|[Cc]f|[Ee]x|[Rr]éf|[Aa]l|n°)\.)(?<=[.!?])\s+(?=[\p{Lu}«"])/u);
-  const out = phrases.map((ph) => {
-    const m = sujetsSansPreuve(ph, preuves);
-    if (!m.length) return ph;
-    const r = reformulerAVerifier(ph, m);
+  const out = decouperPhrases(t).map(({ phrase, sep }) => {
+    const m = phrase.trim() ? sujetsSansPreuve(phrase, preuves) : [];
+    if (!m.length) return phrase + sep;
+    const r = reformulerAVerifier(phrase, m);
     reecrites.push(r);
-    return r;
+    return r + sep;
   });
-  return { texte: out.join(' '), reecrites };
+  return { texte: out.join(''), reecrites };
 }
 
 /** Points forts : une affirmation non prouvée quitte les points forts pour `a_verifier`. */
@@ -586,7 +657,11 @@ export function zonagesDepuisResultat(
       const idu = normaliserIdu(p.idu);
       const zone = chaine(p.zone, 40);
       // rechercher_parcelles ne donne pas de libellé : il n'en sera pas inventé.
-      return idu && zone ? [[idu, { zone, libelle: null, zones: [zone], source: `${src} (zone lue au centroïde)`, outil }]] : [];
+      // Lot Q3 : plusieurs zones au point (documents superposés) → toutes gardées (alerte « plusieurs zones »).
+      const autres = (Array.isArray(p.zonages_au_point) ? p.zonages_au_point : [])
+        .map((x) => chaine(String(x).split(' (')[0], 40)).filter((x): x is string => x != null);
+      const zones = [...new Set([zone, ...autres].filter((x): x is string => x != null))].slice(0, 10);
+      return idu && zone ? [[idu, { zone, libelle: null, zones, source: `${src} (zone lue au centroïde)`, outil }]] : [];
     }).slice(0, 60);
   }
   return [];
@@ -750,4 +825,65 @@ export function assemblerRapportV2(
     // Lot Q1 : alertes « à vérifier » (zonage, affirmations non prouvées) — champ présent seulement s'il y en a.
     ...(alertes.length ? { alertes_verification: alertes.slice(0, 40) } : {}),
   };
+}
+
+// ── Lot Q3 : adresse des terrains (Base Adresse Nationale, reverse, sans clé) ──
+
+export const URL_BAN_REVERSE = 'https://api-adresse.data.gouv.fr/reverse/';
+
+/** Adresse la plus proche d'un point (BAN reverse) avec sa source, ou null. `fetchFn` injectable. */
+export async function adresseDepuisPoint(
+  pt: { lat: number; lon: number }, fetchFn: typeof fetch, timeoutMs = 4000,
+): Promise<{ adresse: string; source: string } | null> {
+  if (!Number.isFinite(pt?.lat) || !Number.isFinite(pt?.lon) || Math.abs(pt.lat) > 90 || Math.abs(pt.lon) > 180) return null;
+  try {
+    const url = `${URL_BAN_REVERSE}?lon=${pt.lon.toFixed(6)}&lat=${pt.lat.toFixed(6)}&limit=1`;
+    const r = await fetchFn(url, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const p = j?.features?.[0]?.properties;
+    const label = chaine(p?.label, 200);
+    if (!label) return null;
+    const d = typeof p?.distance === 'number' && Number.isFinite(p.distance) ? `, à ${Math.round(p.distance)} m` : '';
+    return { adresse: label, source: `Base Adresse Nationale (api-adresse.data.gouv.fr/reverse) — adresse la plus proche du centroïde de la parcelle${d}` };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Complète l'adresse des fiches du rapport (terrains sans adresse dont le centroïde est connu) et,
+ * pour une conception, `rapport.conception.adresse`. Au plus 10 appels, 5 en parallèle ; une adresse
+ * non trouvée reste null. Une adresse déjà présente (outil, modèle) n'est jamais remplacée.
+ */
+export async function completerAdresses(
+  rapport: Record<string, unknown>, points: Record<string, { lat: number; lon: number }>, fetchFn: typeof fetch,
+): Promise<number> {
+  const terrains = (Array.isArray(rapport.terrains) ? rapport.terrains : []) as Array<Record<string, unknown>>;
+  const conception = rapport.conception && typeof rapport.conception === 'object' ? rapport.conception as Record<string, unknown> : null;
+  const cibles = new Map<string, { lat: number; lon: number }>();
+  for (const t of terrains) {
+    const idu = String(t.idu ?? '');
+    if (!t.adresse && points[idu]) cibles.set(idu, points[idu]);
+  }
+  const iduC = conception ? String(conception.idu ?? '') : '';
+  if (conception && !conception.adresse && points[iduC]) cibles.set(iduC, points[iduC]);
+  const liste = [...cibles.entries()].slice(0, 10);
+  const trouvees = new Map<string, { adresse: string; source: string }>();
+  for (let i = 0; i < liste.length; i += 5) {
+    await Promise.all(liste.slice(i, i + 5).map(async ([idu, pt]) => {
+      const a = await adresseDepuisPoint(pt, fetchFn);
+      if (a) trouvees.set(idu, a);
+    }));
+  }
+  for (const t of terrains) {
+    const a = trouvees.get(String(t.idu ?? ''));
+    if (a && !t.adresse) { t.adresse = a.adresse; t.adresse_source = a.source; }
+  }
+  if (conception && !conception.adresse) {
+    const a = trouvees.get(iduC);
+    conception.adresse = a?.adresse ?? null;
+    if (a) conception.adresse_source = a.source;
+  }
+  return trouvees.size;
 }

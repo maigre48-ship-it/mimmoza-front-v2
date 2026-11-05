@@ -810,7 +810,7 @@ Deno.test('conception : parcelle, règles importées, formulaire JSON, lecture d
   // Prospection d'origine (même utilisateur) : ses données sont transmises en amorce.
   const origine = depot.ajouter({ statut: 'terminee', rapport: { titre: 'Prospection Montreuil', terrains: [{ idu: '93048000AJ0209', surface_m2: 3554 }], hypotheses_communes: { programme: { nb_logements: 40 } } } });
   const devis = calculerDevis({ type: 'conception', tier: 'sonnet', pireCasEtape: PIRE });
-  assertEquals(devis.etapes_max, 12);
+  assertEquals(devis.etapes_max, 18);   // lot Q3 : 12 → 18 (dont 4 étapes techniques réservées)
   const m = depot.ajouter({ statut: 'en_attente', type: 'conception', devis, criteres: { idu: '93048000AJ0209', mission_origine_id: origine.id } });
   depot.reglesImportees = [{ table: 'plu_rulesets_universal', libelle: 'PLU test', document: null, ruleset: { hauteur: { max_hauteur_m: 18 } } }];
   let n = 0; let amorceVue = ''; let lectureVue = false; let outilsVus: string[] = [];
@@ -910,7 +910,7 @@ Deno.test('chat : proposer_mission conception exige un idu ; origine d’un autr
   assertEquals(ok?.status, 'ok');
   const crit = (ok!.data as { criteres: Record<string, unknown> }).criteres;
   assertEquals([crit.idu, crit.mission_origine_id], ['93048000AJ0209', null]);
-  assertEquals(((ok!.data as { devis: { etapes_max: number } }).devis).etapes_max, 12);
+  assertEquals(((ok!.data as { devis: { etapes_max: number } }).devis).etapes_max, 18);   // lot Q3
 });
 
 /** Prépare une mission de conception déjà réservée, dossier créé, en phase travail. */
@@ -1265,4 +1265,300 @@ Deno.test('Q1 — conception : UC 9 non réglementée, UC 10 par secteur → que
   assert(s.includes('À vérifier : Parcelle confirmée constructible en logement collectif') && s.includes('règle de destination'), s);
   assert(s.includes('Gabarit compatible avec la hauteur du secteur 2.') && !s.includes('À vérifier : Gabarit'), s);
   assert((rapport.limites as string[]).some((l) => l.includes('sans règle citée')));
+});
+
+// ═══ Lot Q3 « moteur de mission fiable » — preuves réelles du 05/11/2026 (AE0414, Nanterre) ═══
+// Valeurs réglementaires : UNIQUEMENT celles des preuves (UC 9 non réglementée ; UC 6-1 alignement
+// ou recul minimum de 4 m ; UC 12 « Zone 3 – logements : 1 places/logement » ; UC 10 par secteur —
+// mesures du secteur 1 reprises de la fixture de lecture réelle du 04/11 (conception.test.ts, p. 109) ;
+// hypothèses 5 159 €/m² SHAB DVF, 2 100 €/m² SDP BT01, honoraires 12 %, aléas 5 %). Géométries,
+// titres d'articles autres que « UC 9 – Emprise au sol (p. 109) » et adresses : SYNTHÉTIQUES.
+const IDU_Q3 = '92050000AE0414';
+const CONTOUR_Q3 = { type: 'Polygon' as const, coordinates: [[[2.2, 48.89], [2.2005, 48.89], [2.2005, 48.8905], [2.2, 48.89]]] };
+const LECTURE_Q3 = { regles: [
+  { cle: 'emprise_sol_max_pct', nature: 'non_reglementee', valeur: null, article: 'UC 9, p. 109', texte: 'Il n’est pas fixé de règle.' },
+  { cle: 'recul_voie_m', nature: 'alternative', valeur: null, article: 'UC 6-1, p. 106', texte: 'implantation à l’alignement ou en recul minimum de 4 m',
+    alternatives: [{ libelle: 'alignement', valeur: 0 }, { libelle: 'recul minimum', valeur: 4 }] },
+  { cle: 'stationnement_par_logement', nature: 'par_secteur', valeur: null, article: 'UC 12',
+    valeurs_par_secteur: [{ secteur: 'Zone 3', valeur: 1, texte: 'Zone 3 – logements : 1 places/logement' }] },
+  { cle: 'hauteur_max_m', nature: 'par_secteur', valeur: null, article: 'UC 10, p. 109',
+    valeurs_par_secteur: [{ secteur: '1', acrotere_terrasse: 28, egout: 26, faitage: 28, texte: '28 m à l’acrotère (toiture terrasse) ; 26 m à l’égout et 28 m au faîtage' }],
+    renvoi_document_graphique: 'Secteurs de hauteur repérés sur les documents graphiques' },
+] };
+const ERREUR_CONTRAINTE = 'mise à jour agent_conceptions : new row for relation "agent_conceptions" violates check constraint "agent_conceptions_regles_plu_check"';
+
+/** Conception en cours, parcelle AE0414, étape de LECTURE déjà payée (en vol). */
+function conceptionLectureEnVol(depot: DepotMemoire, horloge: { t: number }, objectif = 'Concevoir le projet sur AE0414') {
+  const devis = calculerDevis({ type: 'conception', tier: 'sonnet', pireCasEtape: PIRE });
+  const m = depot.ajouter({ statut: 'en_cours', type: 'conception', devis, objectif, criteres: { idu: IDU_Q3 } });
+  const x = depot.missions.get(m.id)!;
+  const rid = crypto.randomUUID(); depot.reservations.set(rid, { montant: devis.jetons_max, statut: 'reserved' });
+  x.reservation_id = rid; x.jetons_reserves = devis.jetons_max; depot.solde -= devis.jetons_max;
+  const cid = crypto.randomUUID();
+  depot.conceptions.set(cid, { mission_id: m.id, user_id: USER, idu: IDU_Q3, regles_plu: [] });
+  x.etat = { ...etatInitial(), phase: 'travail', plan: ['Règles'], n_etape: 1,
+    en_vol: { n: 2, phase: 'lecture', cout: 4, resultats: {}, textBlocks: [JSON.stringify(LECTURE_Q3)], contentBlocks: [], toolUses: [] },
+    conception: { id: cid, idu: IDU_Q3, regles: [], origine_chargee: true, parcelle: { idu: IDU_Q3, geometrie: CONTOUR_Q3, surface_m2: null, source: 'test' },
+      lecture: { chemin: 'gpu', zone: 'UC', source: 'gpu', libelle: 'Règlement GPU — 92050_PLU_20251209' } } } as never;
+  depot.debits.push({ id: m.id, n: 2, jetons: 4 }); x.jetons_consommes = 4; x.etapes_faites = 2;
+  // Le temps passe à chaque écriture du journal (comme en prod : ~100 ms par aller-retour base).
+  const j = depot.journal.bind(depot);
+  depot.journal = async (...a: Parameters<DepotMemoire['journal']>) => { horloge.t += 100; return await j(...a); };
+  return { m, x, cid };
+}
+
+Deno.test('Q3-1 — boucle du 05/11 : mise à jour agent_conceptions refusée → AUCUNE boucle, 1 entrée de journal, règles gardées, clôture propre et réglée', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const { m } = conceptionLectureEnVol(depot, horloge);
+  let refus = 0;
+  depot.enregistrerConception = async () => { refus++; throw new Error(ERREUR_CONTRAINTE); };
+  const { deps, appelsLLM } = fabriquerDeps(depot, () => tourOutils(['terminer_mission', { titre: 'Règles', synthese: 'S' }]), horloge);
+  await tickMissions(deps, depot, { worker: 'w1' });
+  const lignes = depot.journalLignes.filter((l) => l.mission_id === m.id);
+  const identiques = lignes.filter((l) => l.genre === 'erreur' && l.resume.includes('agent_conceptions_regles_plu_check'));
+  assert(identiques.length <= 3, `entrées identiques : ${identiques.length} (avant le lot Q3 : des centaines en une minute)`);
+  assertEquals(lignes.filter((l) => l.resume.startsWith('Étape interrompue')).length, 0, 'l’étape de lecture n’est plus interrompue');
+  assert(refus <= 4, `écritures tentées : ${refus}`);
+  const fin = depot.missions.get(m.id)!;
+  assertEquals(fin.statut, 'echec', 'dossier non mis à jour : jamais « terminee »');
+  assert(fin.regle_le, 'jetons réglés');
+  assert(fin.jetons_consommes <= fin.jetons_reserves);
+  const r = fin.rapport as Record<string, unknown>;
+  assert((r.limites as string[]).some((l) => l.includes("n'a pas pu être mis à jour")), JSON.stringify(r.limites));
+  // Les règles LUES ne sont pas perdues : elles sont dans le rapport et dans l'état.
+  const regles = (r.conception as { regles: Array<Record<string, unknown>> }).regles;
+  assertEquals(regles.find((x) => x.cle === 'emprise_sol_max_pct')!.nature, 'non_reglementee');
+  assertEquals(regles.find((x) => x.cle === 'recul_voie_m')!.valeur, 0);
+  assert(appelsLLM.length <= 2, `tours de modèle après la lecture : ${appelsLLM.length}`);
+});
+
+Deno.test('Q3-1 — même erreur à chaque tentative : une seule tentative par tick, clôture « echec » à la 3e, journal ≤ 3, règlement', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const m = depot.ajouter({ statut: 'en_attente' });
+  depot.mettreEnAttente = async () => { throw new Error('new row for relation "agent_missions" violates check constraint "agent_missions_question_check"'); };
+  const { deps } = fabriquerDeps(depot, (a) => estPlan(a) ? { textBlocks: ['1. A'] } : tourOutils(['demander_utilisateur', { question: 'Quel budget ?' }]), horloge);
+  await tickMissions(deps, depot, { worker: 'w1' });
+  let x = depot.missions.get(m.id)!;
+  const erreurs = () => depot.journalLignes.filter((l) => l.mission_id === m.id && l.genre === 'erreur');
+  assertEquals(erreurs().length, 1, 'une seule tentative dans le tick (délai jusqu’au tick suivant)');
+  assertEquals(x.statut, 'en_cours');
+  assertEquals((x as { bail?: number | null }).bail, null, 'bail rendu : reprise au prochain tick');
+  for (let i = 2; i <= 6 && !STATUTS_FINAUX.includes(depot.missions.get(m.id)!.statut); i++) {
+    horloge.t += 60_000; await tickMissions(deps, depot, { worker: `w${i}` });
+  }
+  x = depot.missions.get(m.id)!;
+  assertEquals(x.statut, 'echec');
+  assert(x.regle_le, 'réglée : seul le consommé est facturé');
+  assert(erreurs().length <= 3, `journal : ${erreurs().length}`);
+  assert(String(x.erreur).includes('erreur répétée 3 fois'), String(x.erreur));
+  assert(((x.rapport as Record<string, unknown>).limites as string[]).some((l) => l.includes("la même erreur technique s'est répétée 3 fois")));
+});
+
+Deno.test('Q3-2/5/6 — lecture du règlement : fusionnée ET persistée par le moteur dans la même étape, secteurs déclarés appliqués, UC 6-1 alternative', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const { m, cid } = conceptionLectureEnVol(depot, horloge,
+    'Concevoir le projet sur AE0414 : secteur de hauteur 1, zone de stationnement n° 3, toiture terrasse.');
+  let fiche: Array<Record<string, unknown>> | null = null; let apresLecture = '';
+  const { deps } = fabriquerDeps(depot, (a) => {
+    // Le modèle n'appelle JAMAIS enregistrer_regles_conception : il regarde seulement la fiche.
+    fiche = (depot.conceptions.get(cid)!.regles_plu as Array<Record<string, unknown>>) ?? null;
+    apresLecture = JSON.stringify(a.messages);
+    return tourOutils(['terminer_mission', { titre: 'Règles', synthese: 'S' }]);
+  }, horloge);
+  await tickMissions(deps, depot, { worker: 'w1' });
+  assert(fiche, 'fiche agent_conceptions écrite avant le tour suivant du modèle');
+  const par = Object.fromEntries(fiche!.map((r) => [r.cle, r]));
+  assertEquals([par.emprise_sol_max_pct.nature, par.emprise_sol_max_pct.statut], ['non_reglementee', 'confirme']);
+  // UC 6-1 : alternative, chiffrée 0 (alignement autorisé), jamais « par secteur ».
+  assertEquals([par.recul_voie_m.nature, par.recul_voie_m.valeur], ['chiffree', 0]);
+  assert(String(par.recul_voie_m.texte).includes('au choix du constructeur'));
+  // Secteurs déclarés dans l'OBJECTIF, appliqués dès la lecture (statut confirmé, provenance citée).
+  assertEquals([par.stationnement_par_logement.valeur, par.stationnement_par_logement.statut], [1, 'confirme']);
+  assertEquals([par.hauteur_max_m.valeur, par.hauteur_max_m.secteur, par.hauteur_max_m.toiture], [28, '1', 'terrasse']);
+  assert(String(par.hauteur_max_m.source).includes("déclaré par l'utilisateur"));
+  assert(apresLecture.includes("Secteur(s) déclaré(s) par l'utilisateur appliqué(s) par le moteur"));
+  assert(!apresLecture.includes('Dans quel secteur'), 'la question du secteur n’est pas posée');
+  const fin = depot.missions.get(m.id)!;
+  assertEquals(fin.statut, 'terminee', 'secteur connu : terminer n’est pas refusé');
+  assertEquals(((fin.rapport as Record<string, unknown>).conception as { regles_a_preciser: string[] }).regles_a_preciser, []);
+});
+
+Deno.test('Q3-3/4/5/7/10/12 — conception complète (parcelle, zonage, prescriptions, question des pages, 2 lectures, programme, rapport) tient dans le devis', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  depot.solde = 10_000;
+  // Prospection d'origine : hypothèses du bilan (valeurs des preuves du 05/11).
+  const origine = depot.ajouter({ statut: 'terminee', rapport: { titre: 'Prospection Nanterre', terrains: [{ idu: IDU_Q3, zonage: 'UC' }],
+    hypotheses_communes: { prix_vente_libre_eur_m2_shab: 5159, source_prix: 'DVF', cout_travaux_eur_m2_sdp: 2100, source_couts: 'BT01', honoraires_pct_travaux: 12, aleas_pct_travaux: 5 } } });
+  const devis = calculerDevis({ type: 'conception', tier: 'sonnet', pireCasEtape: PIRE });
+  assertEquals(devis.etapes_max, 18);
+  assert(devis.explication.includes('dont 4 réservées à la lecture du règlement'));
+  const m = depot.ajouter({ statut: 'en_attente', type: 'conception', devis, objectif: 'Concevoir un projet de logements sur AE0414 (prospection Nanterre).',
+    criteres: { idu: IDU_Q3, mission_origine_id: origine.id } });
+  // 30 articles (titres SYNTHÉTIQUES sauf UC 9 – Emprise au sol, p. 109) : message réel de plu-reglement-v1, > 1 000 caractères.
+  const articles = [{ titre: 'Article UC 9 – Emprise au sol', page: 109 },
+    ...Array.from({ length: 29 }, (_, i) => ({ titre: `Article UC ${i + 10} – Titre synthétique de test numéro ${i + 10}`, page: 110 + i }))];
+  const message = 'Le chapitre de la zone UC (p. 100-140) est trop long pour être lu en une fois. ' +
+    `Articles repérés : ${articles.map((a) => `${a.titre} (p. ${a.page})`).join(' ; ')}. Quels articles ou quelles pages lire ?`;
+  assert(message.length > 1000);
+  let n = 0; let lectures = 0; let questionSecteurPosee = false; const entrees: Array<Record<string, unknown>> = [];
+  const { deps } = fabriquerDeps(depot, (a) => {
+    const s = JSON.stringify(a.messages);
+    if (estPlan(a)) return { textBlocks: ['1. Parcelle\n2. Règles\n3. Programme\n4. Rapport'] };
+    if (s.includes('"type":"document"')) { lectures++; return { textBlocks: [JSON.stringify(lectures === 1 ? LECTURE_Q3 : { regles: [] })] }; }
+    if (s.includes('Dans quel secteur')) questionSecteurPosee = true;
+    n++;
+    switch (n) {
+      case 1: return tourOutils(['recuperer_parcelle', { idu: IDU_Q3 }]);
+      case 2: return tourOutils(['get_zonage_plu', { cadastral_ref: IDU_Q3 }]);
+      case 3: return tourOutils(['get_prescriptions_urbanisme', { lat: 48.9, lng: 2.21 }]);   // coordonnées approximatives du modèle
+      case 4: return tourOutils(['lire_regles_plu_importees', { code_insee: '92050', zone_code: 'UC' }]);
+      case 5: return tourOutils(['lire_reglement_pdf', { source: 'gpu', zone_code: 'UC' }]);
+      case 6: return tourOutils(['lire_reglement_pdf', { source: 'gpu', zone_code: 'UC', pages: [106, 109] }]);
+      case 7: return tourOutils(['lire_reglement_pdf', { source: 'gpu', zone_code: 'UC', pages: [123] }]);
+      case 8: return tourOutils(['enregistrer_programme', { nb_logements: null, toiture: 'terrasse', justification: 'test' }]);
+      default: return tourOutils(['terminer_mission', { titre: 'Conception AE0414', synthese: 'Règles lues et enregistrées (UC 6-1, p. 106).' }]);
+    }
+  }, horloge);
+  deps.executeTool = async (name, input) => {
+    horloge.t += 1000; entrees.push({ name, ...input });
+    return (name === 'get_zonage_plu'
+      ? { status: 'ok', source: 'gpu-parcelle-v1', data: { source: "Géoportail de l'urbanisme via API Carto (IGN)", zone_principale: { zone: 'UC' }, zones: [{ zone: 'UC' }] } }
+      : { status: 'ok', source: name, data: {} }) as ResultatOutil;
+  };
+  deps.outilsChat = () => ['get_zonage_plu', 'get_prescriptions_urbanisme'].map((name) => ({ name, description: '', input_schema: { type: 'object', properties: {} }, available_in_modes: ['report'] }));
+  deps.fetch = (async (u: string) => {
+    const url = String(u);
+    if (url.includes('/api/cadastre/parcelle')) return new Response(JSON.stringify({ features: [{ geometry: CONTOUR_Q3, properties: { contenance: 1000 } }] }));
+    if (url.startsWith('https://api-adresse.data.gouv.fr/reverse/')) return new Response(JSON.stringify({ features: [{ properties: { label: 'Adresse BAN simulée', distance: 8 } }] }));
+    throw new Error(`réseau interdit : ${url}`);
+  }) as unknown as typeof fetch;
+  let appelsGpu = 0;
+  deps.reglementGpu = async (p) => {
+    appelsGpu++;
+    if (!p.pages) return { statut: 'selection_trop_longue', zone_lue: 'UC', pages_chapitre: '100-140', articles, message };
+    return { statut: 'pret', texte: `[Page ${p.pages[0]}]\nTexte de test`, zone_lue: 'UC', pages_zone: String(p.pages.join(',')), fichier: '92050_reglement_20251209.pdf', source: '92050_PLU_20251209' };
+  };
+  deps.compterTokens = async () => 9000;
+
+  for (let i = 0; i < 6 && depot.missions.get(m.id)!.statut !== 'attente_utilisateur'; i++) {
+    horloge.t += 60_000; await tickMissions(deps, depot, { worker: `a${i}` });
+  }
+  let x = depot.missions.get(m.id)!;
+  assertEquals(x.statut, 'attente_utilisateur');
+  // Point 4 : la question est visible EN PREMIER, puis une ligne par article, raccourcie, ≤ 1 000 caractères.
+  const q = String(x.question_en_attente);
+  assert(q.startsWith('Quels articles ou quelles pages du règlement lire ?'), q.slice(0, 120));
+  assert(q.includes('\n- UC 9 – Emprise au sol (p. 109)'), q);
+  assert(/\n… et \d+ autres$/.test(q), q.slice(-80));
+  assert(q.length <= 1000, String(q.length));
+  // Point 10 : prescriptions interrogées avec l'idu ET le contour de la parcelle de la mission.
+  const pr = entrees.find((e) => e.name === 'get_prescriptions_urbanisme')!;
+  assertEquals(pr.cadastral_ref, IDU_Q3);
+  assertEquals(pr.geometrie, CONTOUR_Q3);
+
+  // Réponse : pages + secteurs (donnés AVANT que la règle par secteur soit lue).
+  depot.repondre(x.id, 'Lisez UC 6, UC 9, UC 10 et UC 12 (p. 106 et 109). Secteur de hauteur 1, zone de stationnement n° 3, toiture terrasse.');
+  for (let i = 2; i < 8 && !STATUTS_FINAUX.includes(depot.missions.get(m.id)!.statut); i++) {
+    horloge.t += 60_000; await tickMissions(deps, depot, { worker: `w${i}` });
+  }
+  x = depot.missions.get(m.id)!;
+  // Point 3 : la mission va au bout (avant : 12/12 étapes → « budget_atteint »).
+  assertEquals(x.statut, 'terminee', `${x.statut} ${x.etapes_faites}/${x.etapes_max}`);
+  assertEquals(lectures, 2);
+  console.log(`[Q3-3] étapes ${x.etapes_faites}/${x.etapes_max}, techniques ${chargerEtat(x.etat).etapes_techniques}, jetons ${x.jetons_consommes}/${x.jetons_reserves}`);
+  assert(x.etapes_faites <= x.etapes_max, `${x.etapes_faites}/${x.etapes_max}`);
+  assert(x.jetons_consommes <= x.jetons_reserves, 'plafond = réservé');
+  const resa = depot.reservations.get(x.reservation_id!)!;
+  assertEquals(resa.statut, 'settled');
+  const fact = depot.journalLignes.find((l) => l.mission_id === m.id && l.outil === 'facturation' && l.genre === 'fin')!;
+  assert(fact.resume.includes(`Jetons facturés : ${x.jetons_consommes}.`) && fact.resume.includes(`rendus sur votre solde : ${x.jetons_reserves - x.jetons_consommes}`), fact.resume);
+  // Point 5 : secteurs appliqués automatiquement, la question du secteur jamais posée.
+  assert(!questionSecteurPosee, 'la question du secteur n’est pas posée');
+  const rapport = x.rapport as Record<string, unknown>;
+  const c = rapport.conception as Record<string, unknown> & { regles: Array<Record<string, unknown>> };
+  const par = Object.fromEntries(c.regles.map((r) => [r.cle, r]));
+  assertEquals([par.hauteur_max_m.valeur, par.hauteur_max_m.statut], [28, 'confirme']);
+  assertEquals([par.stationnement_par_logement.valeur, par.stationnement_par_logement.statut], [1, 'confirme']);
+  assert(String(par.stationnement_par_logement.source).includes("déclaré par l'utilisateur"));
+  // Point 2 : la fiche agent_conceptions porte toutes les règles lues.
+  const fiche = [...depot.conceptions.values()].find((v) => v.mission_id === m.id)!;
+  const ficheRegles = fiche.regles_plu as Array<Record<string, unknown>>;
+  assertEquals(ficheRegles.filter((r) => r.statut !== 'manquant').map((r) => r.cle).sort(), ['emprise_sol_max_pct', 'hauteur_max_m', 'recul_voie_m', 'stationnement_par_logement']);
+  assertEquals(fiche.statut, 'plan');
+  // Point 7 : hypothèses de la prospection d'origine reprises, sourcées, rien d'inventé.
+  const h = rapport.hypotheses_communes as Record<string, unknown>;
+  assertEquals([h.prix_vente_libre_eur_m2_shab, h.cout_travaux_eur_m2_sdp, h.honoraires_pct_travaux, h.aleas_pct_travaux, h.marge_cible_pct_ca], [5159, 2100, 12, 5, null]);
+  assert(String(h.source_prix).startsWith('DVF — repris de la prospection d’origine « Prospection Nanterre »'), String(h.source_prix));
+  // Point 12 : adresse BAN de la parcelle (centroïde connu), avec source.
+  assertEquals(c.adresse, 'Adresse BAN simulée');
+  assert(String(c.adresse_source).includes('api-adresse.data.gouv.fr/reverse'));
+  // Synthèse avec citation « (UC 6-1, p. 106) » : intacte.
+  assertEquals(rapport.synthese, 'Règles lues et enregistrées (UC 6-1, p. 106).');
+});
+
+Deno.test('Q3-11 — prospection : 12 get_etude_parcelle (6 par étape) sous la limite « 30 appels imbriqués / 60 s » → aucun échec, attente et reprise', async () => {
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const m = depot.ajouter({ statut: 'en_attente', devis: calculerDevis({ type: 'prospection_fonciere', tier: 'sonnet', pireCasEtape: PIRE, etapes: 12 }) });
+  const idus = Array.from({ length: 12 }, (_, i) => `92050000AE${String(400 + i).padStart(4, '0')}`);   // identifiants synthétiques
+  const faits = new Set<string>(); let reportes = 0;
+  const { deps } = fabriquerDeps(depot, (a) => {
+    if (estPlan(a)) return { textBlocks: ['1. A'] };
+    reportes += (JSON.stringify(a.messages.at(-1)).match(/Appel reporté/g) ?? []).length;
+    const restants = idus.filter((x) => !faits.has(x)).slice(0, 6);
+    // Le modèle rappelle les études reportées à l'étape suivante.
+    return restants.length ? tourOutils(...restants.map((x) => ['get_etude_parcelle', { cadastral_ref: x }] as [string, Record<string, unknown>]))
+      : tourOutils(['terminer_mission', { titre: 'T', synthese: 'S' }]);
+  }, horloge);
+  // Supabase simulé : chaque get_etude_parcelle = 5 appels imbriqués ; au-delà de 30 sur 60 s → refus 508.
+  const appels: number[] = []; let refus = 0;
+  deps.executeTool = async (name, input) => {
+    const t = horloge.t;
+    if (appels.filter((x) => t - x < 60_000).length + 5 > 30) { refus++; return { status: 'error', source: name, message: 'Too many nested function calls (508)' } as ResultatOutil; }
+    for (let i = 0; i < 5; i++) appels.push(t);
+    faits.add(String(input.cadastral_ref));
+    return { status: 'ok', source: name, data: {} } as ResultatOutil;
+  };
+  deps.dormir = async (ms) => { horloge.t += ms; };
+  for (let i = 0; i < 10 && !STATUTS_FINAUX.includes(depot.missions.get(m.id)!.statut); i++) {
+    horloge.t += 60_000; await tickMissions(deps, depot, { worker: `w${i}` });
+  }
+  const fin = depot.missions.get(m.id)!;
+  assertEquals(fin.statut, 'terminee');
+  assertEquals(refus, 0, 'la limite n’est jamais atteinte : la file attend avant');
+  assertEquals(faits.size, 12, 'toutes les études faites (attente, ou report puis reprise à l’étape suivante)');
+  assert(depot.journalLignes.filter((l) => l.mission_id === m.id && l.genre === 'erreur').length === 0, 'aucune erreur');
+  console.log(`[Q3-11] études reportées puis reprises : ${reportes}`);
+});
+
+// ── LOT F1 — lisibilité : textes de mission affichés, un élément par ligne ──
+Deno.test('F1 — objectif, plan du journal et question en attente mis en forme (une ligne par élément)', async () => {
+  // Objectif proposé en un seul bloc « (1) … ; (2) … » → liste, mots identiques.
+  const depotChat = new DepotMemoire(() => 0);
+  const r = await executerOutilAgentChat('proposer_mission',
+    { type: 'faisabilite', objectif: 'Faisabilité à Rennes. La mission doit : (1) lire le PLU ; (2) chiffrer la charge foncière ; (3) rédiger le rapport.' },
+    { vertical: 'promoteur', route: '/' }, USER, { debitJetons: () => 19, tierUtilisateur: async () => 'sonnet' as const }, depotChat);
+  assert(r && r.status === 'ok');
+  const creee = depotChat.missions.get(String((r!.data as { mission_id: string }).mission_id))!;
+  assertEquals(creee.objectif, 'Faisabilité à Rennes. La mission doit :\n1. lire le PLU\n2. chiffrer la charge foncière\n3. rédiger le rapport.');
+
+  // Plan du journal sur plusieurs lignes ; question « A ; B ; C » en liste.
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const m = depot.ajouter({ statut: 'en_attente' });
+  const question = 'Quelle pièce dois-je lire ? Pièces repérées : règlement écrit de la zone UC (p. 102) ; plan de zonage du secteur 1 (p. 3) ; annexes OAP (p. 12).';
+  const { deps } = fabriquerDeps(depot, (a) => {
+    if (estPlan(a)) return { textBlocks: ['1. Cadrer\n2. Lire le PLU\n3. Rapport'] };
+    return tourOutils(['demander_utilisateur', { question }]);
+  }, horloge);
+  await tickMissions(deps, depot, { worker: 'w' });
+  const plan = depot.journalLignes.find((l) => l.genre === 'plan' && l.outil === null)!;
+  assertEquals(plan.resume, 'Plan :\n1. Cadrer\n2. Lire le PLU\n3. Rapport');
+  const attendue = 'Quelle pièce dois-je lire ? Pièces repérées :\n- règlement écrit de la zone UC (p. 102)\n- plan de zonage du secteur 1 (p. 3)\n- annexes OAP (p. 12).';
+  assertEquals(depot.missions.get(m.id)!.question_en_attente, attendue);
+  assert(depot.journalLignes.some((l) => l.genre === 'question' && l.resume === attendue));
 });

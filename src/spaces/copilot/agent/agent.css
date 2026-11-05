@@ -206,3 +206,20 @@
 .mzag-verdict--mauvais { background: var(--ag-rouge-fond); color: var(--ag-rouge); }
 .mzag-a-renseigner { color: var(--ag-orange); font-style: italic; }
 @media (max-width: 640px) { .mzag-fiche__infos { grid-template-columns: 1fr; } }
+
+/* ── LOT F1 — Lisibilité des textes de mission (objectif, question, journal, synthèse) ── */
+.mzag-lisible { min-width: 0; overflow-wrap: anywhere; }
+.mzag-lisible > :last-child { margin-bottom: 0 !important; }
+.mzag-lisible ul, .mzag-lisible ol { margin: 4px 0 6px !important; padding-left: 1.2rem !important; }
+.mzag-lisible li { margin: 2px 0 !important; }
+.mzag-lisible h1, .mzag-lisible h2, .mzag-lisible h3, .mzag-lisible h4 { font-size: 13.5px !important; margin: 8px 0 4px !important; }
+.mzag-lisible .mz-reponse-dabord { font-weight: 600; color: var(--ag-texte); }
+.mzag-objectif__titre { white-space: pre-line; }
+h3.mzag-objectif__titre { margin: 6px 0 4px; }
+.mzag-objectif__liste, .mzag-objectif__detail { margin: 2px 0 8px; font-size: 13.5px; }
+.mzag-objectif__detail > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--ag-accent-fort); }
+.mzag-journal__texte { font-size: 13px; }
+.mzag-journal__texte p { margin: 0 0 4px !important; }
+.mzag-question .mzag-question__texte { margin: 0 0 8px; color: #7c2d12; }
+.mzag-question .mzag-question__texte p { font-weight: 500; }
+.mzag-question .mzag-question__texte p.mz-reponse-dabord { font-weight: 700; }

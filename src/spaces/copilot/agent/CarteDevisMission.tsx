@@ -17,6 +17,7 @@ import {
 import type { Mission } from './agent.types';
 import { useAgentUi } from './agentUi.store';
 import './agent.css';
+import { ObjectifMission, TexteLisible } from './TexteLisible';
 import { creerActionVisualisationMission, missionVisualisable } from '../studio3d/missionPreparation3D';
 
 interface Props {
@@ -142,8 +143,8 @@ function CarteDevis({ proposition, onSend, conversationId, onVisualiserMission }
         <span className="mzag-sur"><Rocket size={14} aria-hidden /> {libelleType(type)} · devis</span>
         {statut !== 'devis' && <span className={`mzag-pastille mzag-pastille--${tonStatut(statut)}`}>{libelleStatut(statut)}</span>}
       </div>
-      <p className="mzag-devis__objectif">{objectif}</p>
-      {devis?.explication && <p className="mzag-muet" style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap' }}>{devis.explication}</p>}
+      <ObjectifMission texte={objectif} titreClassName="mzag-devis__objectif" titreParDefaut={libelleType(type)} />
+      {devis?.explication && <TexteLisible texte={devis.explication} className="mzag-muet" />}
 
       {devis && resume ? (
         <>
