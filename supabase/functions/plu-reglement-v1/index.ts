@@ -63,7 +63,8 @@ const MAX_OCTETS_STOCKAGE = 50 * 1024 * 1024;
 /** Temps d'extraction par appel (mur, donc ≥ CPU) : marge sous les 2 s de CPU. */
 const LOT_BUDGET_MS = Number(Deno.env.get('PLU_REGLEMENT_LOT_MS')) || 900;
 const LOT_MAX_PAGES = 120;
-const TIMEOUT_API_MS = 9000;
+/** Lot Q3-ter : 20 s (05/11/2026 : API Carto répondait en ~12 s pendant une dégradation IGN ; 9 s faisait tout échouer). */
+const TIMEOUT_API_MS = 20_000;
 const TIMEOUT_TELECHARGEMENT_MS = 45_000;
 /** Budget de caractères du texte rendu (≈ 40 000 tokens). */
 const MAX_CARACTERES_DEFAUT = 120_000;
