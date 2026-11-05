@@ -262,3 +262,28 @@ export function libelleSource(p: { du_type: string | null; territoire: string | 
   const date = p.date_approbation ? `approuvé le ${p.date_approbation.split('-').reverse().join('/')}` : 'date d\'approbation non publiée';
   return `${doc} (${p.idurba ?? 'idurba inconnu'}, ${date}) — Géoportail de l'urbanisme, fichier ${p.fichier}`;
 }
+
+/**
+ * Lot Q3-bis : pièces du règlement déjà en cache pour un document, utilisées quand
+ * l'API GPU (/document/<id>/details) ne répond pas (panne constatée le 05/11/2026 :
+ * HTTP 500). Lignes de documents_pdf_cache dont la clé commence par `gpu:<id>:`,
+ * hors échecs ; chaque pièce garde le nom et l'URL d'origine enregistrés à la mise en cache.
+ */
+export function fichiersDepuisCache(
+  documentId: string,
+  lignes: ReadonlyArray<{ cle: string; statut?: string | null; meta?: Record<string, unknown> | null }>,
+): FichierReglement[] {
+  const prefixe = `gpu:${documentId}:`;
+  const out: FichierReglement[] = [];
+  const vus = new Set<string>();
+  for (const l of lignes) {
+    if (!l || typeof l.cle !== 'string' || !l.cle.startsWith(prefixe) || l.statut === 'echec') continue;
+    const m = (l.meta && typeof l.meta === 'object' ? l.meta : {}) as Record<string, unknown>;
+    const nom = typeof m.fichier === 'string' && m.fichier.trim() ? m.fichier.trim() : null;
+    const url = typeof m.url_source === 'string' && estUrlHttps(m.url_source) ? m.url_source : null;
+    if (!nom || !url || vus.has(url)) continue;
+    vus.add(url);
+    out.push({ nom, url, raison: "pièce déjà lue et mise en cache (Géoportail de l'urbanisme indisponible)", rang: out.length });
+  }
+  return out;
+}

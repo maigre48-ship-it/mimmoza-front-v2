@@ -43,8 +43,8 @@ import {
 } from '../_shared/documents/lectureCiblee.ts';
 import {
   choisirDocumentPartition, choisirFichiersReglement, cheminCacheGpu, decisionFichier, cleCacheGpu, cleCacheStockage, libelleSource,
-  lireDetailsDocument, lireDocumentsAuPoint, lireZonesAuPoint, urlApiCarto, urlDetailsDocument, urlDocumentsPartition,
-  type ZoneAuPoint,
+  fichiersDepuisCache, lireDetailsDocument, lireDocumentsAuPoint, lireZonesAuPoint, urlApiCarto, urlDetailsDocument, urlDocumentsPartition,
+  type FichierReglement, type ZoneAuPoint,
 } from '../_shared/documents/gpuReglement.ts';
 
 const CORS: Record<string, string> = {
@@ -168,6 +168,14 @@ async function lirePages(c: LigneCache): Promise<string[]> {
   return pages;
 }
 
+/** Lot Q3-bis : pièces du règlement déjà mises en cache pour ce document (repli si l'API GPU est en panne). */
+async function fichiersEnCache(docId: string): Promise<FichierReglement[]> {
+  const { data, error } = await admin().from('documents_pdf_cache')
+    .select('cle, statut, meta').like('cle', `gpu:${docId}:%`).neq('statut', 'echec').limit(10);
+  if (error) { console.warn('[plu-reglement] cache indisponible', error.message); return []; }
+  return fichiersDepuisCache(docId, (data ?? []) as Array<{ cle: string; statut: string | null; meta: Record<string, unknown> | null }>);
+}
+
 // ── Action « gpu » ───────────────────────────────────────────────────────────
 
 async function actionGpu(body: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -200,11 +208,25 @@ async function actionGpu(body: Record<string, unknown>): Promise<Record<string, 
     return { ...base, statut: 'aucun_document', message: "Aucun document d'urbanisme publié au Géoportail de l'urbanisme sur ce point (commune au RNU, non numérisée, ou hors couverture)." };
   }
 
-  const details = lireDetailsDocument(await getJson(urlDetailsDocument(docId)));
-  if (details.protege) {
-    return { ...base, statut: 'zonage_seul', message: 'Document protégé au Géoportail de l\'urbanisme : pièces écrites non téléchargeables.' };
+  const detailsJson = await getJson(urlDetailsDocument(docId));
+  const details = lireDetailsDocument(detailsJson);
+  let fichiers: FichierReglement[];
+  if (detailsJson === null) {
+    // Lot Q3-bis : l'API GPU ne répond pas (panne, HTTP 5xx, délai) → règlement déjà en cache pour CE document,
+    // sinon message juste (jamais « aucune pièce identifiable » quand on n'a simplement pas pu lire la liste).
+    fichiers = await fichiersEnCache(docId);
+    if (!fichiers.length) {
+      return {
+        ...base, statut: 'indisponible',
+        message: "Géoportail de l'urbanisme momentanément indisponible : la liste des pièces du document n'a pas pu être obtenue. Réessayer dans quelques minutes.",
+      };
+    }
+  } else {
+    if (details.protege) {
+      return { ...base, statut: 'zonage_seul', message: 'Document protégé au Géoportail de l\'urbanisme : pièces écrites non téléchargeables.' };
+    }
+    fichiers = choisirFichiersReglement(details, zone);
   }
-  const fichiers = choisirFichiersReglement(details, zone);
   if (!fichiers.length) {
     return { ...base, statut: 'zonage_seul', message: 'Aucune pièce « règlement écrit » identifiable parmi les fichiers publiés de ce document.' };
   }

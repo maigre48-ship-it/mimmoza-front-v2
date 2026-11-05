@@ -6,7 +6,7 @@ import * as na from 'node:assert/strict';
 import {
   choisirDocumentPartition, choisirFichiersReglement, cheminCacheGpu, cleCacheGpu, cleCacheStockage, dateDepuisIdurba,
   dateGpu, libelleSource, lireDetailsDocument, lireDocumentsAuPoint, lireZonesAuPoint, urlApiCarto, urlDetailsDocument,
-  urlDocumentsPartition,
+  urlDocumentsPartition, fichiersDepuisCache,
 } from './gpuReglement.ts';
 
 const assertEquals = (a: unknown, b: unknown, msg?: string) => na.deepStrictEqual(a, b, msg);
@@ -115,4 +115,20 @@ Deno.test('V1.8 — plusieurs pièces de règlement : on demande à l’utilisat
   assertEquals(decisionFichier(plusieurs, 'reglement').action, 'choisir', 'désignation ambiguë → on redemande');
   assertEquals(decisionFichier([f('unique.pdf')], null).action, 'lire');
   assertEquals(decisionFichier([], null).action, 'choisir');
+});
+
+Deno.test('Q3-bis : API GPU en panne → pièces reprises du cache du MÊME document, échecs et autres documents ignorés', () => {
+  const doc = 'abc123';
+  const lignes = [
+    { cle: cleCacheGpu(doc, 'reglement.pdf'), statut: 'termine', meta: { fichier: 'reglement.pdf', url_source: 'https://exemple.test/reglement.pdf' } },
+    { cle: cleCacheGpu(doc, 'casse.pdf'), statut: 'echec', meta: { fichier: 'casse.pdf', url_source: 'https://exemple.test/casse.pdf' } },
+    { cle: cleCacheGpu('autre', 'reglement.pdf'), statut: 'termine', meta: { fichier: 'reglement.pdf', url_source: 'https://exemple.test/autre.pdf' } },
+    { cle: cleCacheGpu(doc, 'sans-url.pdf'), statut: 'termine', meta: { fichier: 'sans-url.pdf' } },
+    { cle: cleCacheGpu(doc, 'http.pdf'), statut: 'termine', meta: { fichier: 'http.pdf', url_source: 'http://exemple.test/http.pdf' } },
+    { cle: cleCacheGpu(doc, 'doublon.pdf'), statut: 'en_cours', meta: { fichier: 'doublon.pdf', url_source: 'https://exemple.test/reglement.pdf' } },
+  ];
+  const f = fichiersDepuisCache(doc, lignes);
+  assertEquals(f.map((x) => [x.nom, x.url, x.rang]), [['reglement.pdf', 'https://exemple.test/reglement.pdf', 0]]);
+  assertEquals(f[0].raison.includes('indisponible'), true);
+  assertEquals(fichiersDepuisCache(doc, []), []);
 });
