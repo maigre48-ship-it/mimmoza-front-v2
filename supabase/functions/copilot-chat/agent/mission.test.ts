@@ -14,6 +14,7 @@ import { calculerDevis, devisExpire, devisViable, ENTREE_MAX_TOKENS, ETAPES_PAR_
 import {
   chargerEtat, compacter, construireMessages, estimerEntree, etatInitial, evenementDevis, executerOutilAgentChat,
   extraireJson, extrairePlan, RESULTAT_OUTIL_MAX_CARS, tickMissions, TOURS_GARDES,
+  questionChoixReglement, pagesArticlesCles,
 } from './mission.ts';
 import { formaterBlocMemoire, slugCle, validerMemoire } from './memoire.ts';
 import { outilChatAutoriseEnMission, outilsPourMission } from './outils.ts';
@@ -1396,7 +1397,7 @@ Deno.test('Q3-3/4/5/7/10/12 — conception complète (parcelle, zonage, prescrip
   const devis = calculerDevis({ type: 'conception', tier: 'sonnet', pireCasEtape: PIRE });
   assertEquals(devis.etapes_max, 18);
   assert(devis.explication.includes('dont 4 réservées à la lecture du règlement'));
-  const m = depot.ajouter({ statut: 'en_attente', type: 'conception', devis, objectif: 'Concevoir un projet de logements sur AE0414 (prospection Nanterre).',
+  const m = depot.ajouter({ statut: 'en_attente', type: 'conception', devis, objectif: 'Concevoir un projet de logements sur AE0414 (prospection Nanterre) : secteur de hauteur 1, zone de stationnement n° 3, toiture terrasse.',
     criteres: { idu: IDU_Q3, mission_origine_id: origine.id } });
   // 30 articles (titres SYNTHÉTIQUES sauf UC 9 – Emprise au sol, p. 109) : message réel de plu-reglement-v1, > 1 000 caractères.
   const articles = [{ titre: 'Article UC 9 – Emprise au sol', page: 109 },
@@ -1444,31 +1445,30 @@ Deno.test('Q3-3/4/5/7/10/12 — conception complète (parcelle, zonage, prescrip
   };
   deps.compterTokens = async () => 9000;
 
-  for (let i = 0; i < 6 && depot.missions.get(m.id)!.statut !== 'attente_utilisateur'; i++) {
+  // Lot Q3-quater : chapitre trop long → le MOTEUR choisit les pages des articles clés, AUCUNE question.
+  const pagesDemandees: number[][] = [];
+  const lireGpu = deps.reglementGpu!;
+  deps.reglementGpu = async (p) => { if (p.pages) pagesDemandees.push([...p.pages]); return await lireGpu(p); };
+  for (let i = 0; i < 10 && !STATUTS_FINAUX.includes(depot.missions.get(m.id)!.statut); i++) {
+    assert(depot.missions.get(m.id)!.statut !== 'attente_utilisateur', `question posée : ${depot.missions.get(m.id)!.question_en_attente}`);
     horloge.t += 60_000; await tickMissions(deps, depot, { worker: `a${i}` });
   }
   let x = depot.missions.get(m.id)!;
-  assertEquals(x.statut, 'attente_utilisateur');
-  // Point 4 : la question est visible EN PREMIER, puis une ligne par article, raccourcie, ≤ 1 000 caractères.
-  const q = String(x.question_en_attente);
-  assert(q.startsWith('Quels articles ou quelles pages du règlement lire ?'), q.slice(0, 120));
-  assert(q.includes('\n- UC 9 – Emprise au sol (p. 109)'), q);
-  assert(/\n… et \d+ autres$/.test(q), q.slice(-80));
-  assert(q.length <= 1000, String(q.length));
+  assert(!depot.journalLignes.some((l) => l.mission_id === m.id && l.genre === 'question'), 'aucune question (ni pages, ni secteur)');
+  assert(depot.journalLignes.some((l) => l.mission_id === m.id && l.resume.includes('lecture des articles clés') && l.resume.includes('pages 109-114')),
+    depot.journalLignes.filter((l) => l.mission_id === m.id).map((l) => l.resume).join(' | '));
+  assertEquals(pagesDemandees[0], [109, 110, 111, 112, 113, 114], 'UC 9 (109) + UC 10 (110-111) + UC 12 (112-113) + UC 13 (113-114)');
+  // Le message long (> 1 000 caractères) reste la source de la liste d'articles ; questionChoixReglement reste le repli.
+  const q = questionChoixReglement({ statut: 'selection_trop_longue', zone_lue: 'UC', pages_chapitre: '100-140', articles, message });
+  assert(q.startsWith('Quels articles ou quelles pages du règlement lire ?') && q.includes('\n- UC 9 – Emprise au sol (p. 109)') && q.length <= 1000);
   // Point 10 : prescriptions interrogées avec l'idu ET le contour de la parcelle de la mission.
   const pr = entrees.find((e) => e.name === 'get_prescriptions_urbanisme')!;
   assertEquals(pr.cadastral_ref, IDU_Q3);
   assertEquals(pr.geometrie, CONTOUR_Q3);
-
-  // Réponse : pages + secteurs (donnés AVANT que la règle par secteur soit lue).
-  depot.repondre(x.id, 'Lisez UC 6, UC 9, UC 10 et UC 12 (p. 106 et 109). Secteur de hauteur 1, zone de stationnement n° 3, toiture terrasse.');
-  for (let i = 2; i < 8 && !STATUTS_FINAUX.includes(depot.missions.get(m.id)!.statut); i++) {
-    horloge.t += 60_000; await tickMissions(deps, depot, { worker: `w${i}` });
-  }
   x = depot.missions.get(m.id)!;
   // Point 3 : la mission va au bout (avant : 12/12 étapes → « budget_atteint »).
   assertEquals(x.statut, 'terminee', `${x.statut} ${x.etapes_faites}/${x.etapes_max}`);
-  assertEquals(lectures, 2);
+  assertEquals(lectures, 3, "1 lecture automatique (articles clés) + 2 lectures demandées par le modèle");
   console.log(`[Q3-3] étapes ${x.etapes_faites}/${x.etapes_max}, techniques ${chargerEtat(x.etat).etapes_techniques}, jetons ${x.jetons_consommes}/${x.jetons_reserves}`);
   assert(x.etapes_faites <= x.etapes_max, `${x.etapes_faites}/${x.etapes_max}`);
   assert(x.jetons_consommes <= x.jetons_reserves, 'plafond = réservé');
@@ -1561,4 +1561,25 @@ Deno.test('F1 — objectif, plan du journal et question en attente mis en forme 
   const attendue = 'Quelle pièce dois-je lire ? Pièces repérées :\n- règlement écrit de la zone UC (p. 102)\n- plan de zonage du secteur 1 (p. 3)\n- annexes OAP (p. 12).';
   assertEquals(depot.missions.get(m.id)!.question_en_attente, attendue);
   assert(depot.journalLignes.some((l) => l.genre === 'question' && l.resume === attendue));
+});
+
+Deno.test('Q3-quater — pages des articles clés choisies par le moteur (jamais de question sur les pages)', () => {
+  // Liste RÉELLE des articles du chapitre UC (Nanterre, 05/11/2026) telle qu'affichée par la mission.
+  const articles = [
+    ['ARTICLE UC 1 – OCCUPATION ET UTILISATION DU SOL INTERDITES', 102], ['ARTICLE UC 2 – OCCUPATIONS ET UTILISATIONS DU SOL SOUMISES A DES', 102],
+    ['ARTICLE UC 3 – CONDITIONS DE DESSERTE DES TERRAINS PAR LES VOIES', 103], ['ARTICLE UC 4 – CONDITIONS DE DESSERTE DES TERRAINS PAR LES RESEAUX', 104],
+    ['ARTICLE UC 5 – SUPERFICIE MINIMALE DES TERRAINS CONSTRUCTIBLES', 105], ['ARTICLE UC 6 – IMPLANTATION DES CONSTRUCTIONS PAR RAPPORT AUX VOIES', 106],
+    ['ARTICLE UC 7 – IMPLANTATION DES CONSTRUCTIONS PAR RAPPORT AUX LIMITES', 107], ['ARTICLE UC 8 – IMPLANTATION DES CONSTRUCTIONS LES UNES PAR RAPPORT', 108],
+    ['ARTICLE UC 9 – EMPRISE AU SOL* DES CONSTRUCTIONS', 109], ['ARTICLE UC 10 – HAUTEUR MAXIMALE DES CONSTRUCTIONS', 109],
+    ['ARTICLE UC 11 – ASPECT EXTERIEUR DES CONSTRUCTIONS ET AMENAGEMENT', 112], ['ARTICLE UC 12 – LES OBLIGATIONS IMPOSEES AUX CONSTRUCTEURS EN', 116],
+  ].map(([titre, page]) => ({ titre: titre as string, page: page as number }));
+  const p = pagesArticlesCles({ statut: 'selection_trop_longue', articles });
+  // UC 10 (109-112), UC 9 (109), UC 6 (106-107), UC 7 (107-108), UC 12 (116-118, dernier listé), UC 2 / UC 1 (102-103).
+  assertEquals(p, [102, 103, 106, 107, 108, 109, 110, 111, 112, 116, 117, 118]);
+  assert(p.length <= 20);
+  // Sans pages exploitables : rien (repli sur la question).
+  assertEquals(pagesArticlesCles({ statut: 'selection_trop_longue', articles: [{ titre: 'Préambule' }] }), []);
+  // Depuis le seul message (ancien format) : même lecture.
+  const msg = 'Le chapitre de la zone UC (p. 102-129) est trop long pour être lu en une fois. Articles repérés : ARTICLE UC 9 – EMPRISE AU SOL* DES CONSTRUCTIONS (p. 109) ; ARTICLE UC 10 – HAUTEUR MAXIMALE DES CONSTRUCTIONS (p. 109) ; ARTICLE UC 11 – ASPECT EXTERIEUR (p. 112). Quels articles ou quelles pages lire ?';
+  assertEquals(pagesArticlesCles({ statut: 'selection_trop_longue', message: msg }), [109, 110, 111, 112]);
 });

@@ -387,6 +387,43 @@ function articlesDepuisMessage(message: string): Array<{ titre: string; page: nu
   }).filter((a) => a.titre);
 }
 
+/** Lot Q3-quater : articles utiles à la conception (destination, reculs, emprise, hauteur, stationnement, espaces verts). */
+export const ARTICLES_CLES_CONCEPTION = [10, 9, 6, 7, 12, 13, 2, 1] as const;
+/** Pages lues au plus quand le moteur choisit seul (budget de lecture d'un tour). */
+export const PAGES_AUTO_MAX = 20;
+
+/**
+ * Lot Q3-quater (décision d'Albé, 05/11/2026 : « plus jamais de question sur les pages ») : quand le
+ * chapitre de la zone est trop long, le MOTEUR choisit les pages des articles clés à partir de la
+ * liste des articles et de leur page de début (fournie par plu-reglement-v1). Un article s'étend de
+ * sa page jusqu'à la page de l'article suivant (incluse) ; le dernier, sur 3 pages au plus. Priorité :
+ * hauteur, emprise, reculs, stationnement, espaces verts, puis destinations. Vide si rien d'exploitable.
+ */
+export function pagesArticlesCles(r: Record<string, unknown>, max = PAGES_AUTO_MAX): number[] {
+  const brut = Array.isArray(r.articles)
+    ? (r.articles as unknown[]).filter((a): a is { titre: string; page?: unknown } => !!a && typeof (a as { titre?: unknown }).titre === 'string')
+      .map((a) => ({ titre: a.titre, page: typeof a.page === 'number' ? a.page : null }))
+    : articlesDepuisMessage(String(r.message ?? ''));
+  const arts = brut
+    .map((a) => ({ num: Number((/^\s*(?:ARTICLE|Article|ART\.)?\s*[A-Za-z0-9]{1,6}\s+(\d{1,2})\b/.exec(a.titre) ?? [])[1]), page: a.page }))
+    .filter((a): a is { num: number; page: number } => Number.isFinite(a.num) && typeof a.page === 'number' && a.page > 0)
+    .sort((x, y) => x.page - y.page || x.num - y.num);
+  if (!arts.length) return [];
+  const pages = new Set<number>();
+  for (const n of ARTICLES_CLES_CONCEPTION) {
+    const i = arts.findIndex((a) => a.num === n);
+    if (i < 0) continue;
+    const debut = arts[i].page;
+    const suivant = arts.slice(i + 1).find((a) => a.page >= debut);
+    const fin = suivant ? Math.max(debut, suivant.page) : debut + 2;
+    const tranche: number[] = [];
+    for (let p = debut; p <= fin && p - debut < 6; p++) if (!pages.has(p)) tranche.push(p);
+    if (pages.size + tranche.length > max) break;
+    tranche.forEach((p) => pages.add(p));
+  }
+  return [...pages].sort((a, b) => a - b);
+}
+
 /**
  * Question à poser quand plu-reglement-v1 ne peut pas choisir seul quoi lire. Chapitre trop long
  * (selection_trop_longue) : « Quels articles ou quelles pages du règlement lire ? » EN PREMIER, puis
@@ -1297,6 +1334,18 @@ async function etapeLecture(c: CtxEtape): Promise<IssueEtape> {
       // Reporté par la file (limite d'appels) : traité comme une extraction encore en cours (reprise au tick suivant).
       .then((x) => ((x.data as Record<string, unknown> | undefined)?.reporte ? { statut: 'en_cours' } : x.data as Record<string, unknown>));
     if (r.statut === 'en_cours') return await patienter('Règlement du Géoportail de l’urbanisme');
+    if (r.statut === 'selection_trop_longue' && !lec.pages?.length) {
+      // Lot Q3-quater : le moteur choisit SEUL les pages des articles clés (jamais de question sur les pages).
+      const auto = pagesArticlesCles(r);
+      if (auto.length) {
+        k.lecture = { ...lec, pages: auto };
+        c.etat.conception = k;
+        await c.depot.journal(c.m.id, 'outil', 'lire_reglement_pdf', null,
+          `Règlement : chapitre trop long, lecture des articles clés (hauteur, emprise, reculs, stationnement, espaces verts, destinations) — pages ${plagesLisibles(auto)}.`, 0);
+        await c.depot.sauverEtat(c.m.id, c.etat);
+        return 'continuer' as IssueEtape;
+      }
+    }
     if (['choix_requis', 'zone_non_reperee', 'selection_trop_longue'].includes(String(r.statut)) && typeof r.message === 'string') {
       // Lot Q3 : question d'abord, puis une ligne par article (liste raccourcie).
       return await demander(questionChoixReglement(r, QUESTION_MAX_CARS));
