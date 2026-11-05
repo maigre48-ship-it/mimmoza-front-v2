@@ -378,3 +378,22 @@ Deno.test('Q3-6 : UC 6-1 « alignement OU recul ≥ 4 m » = ALTERNATIVE (chiffr
   const c = CONSIGNE_LECTURE_REGLEMENT('UC', 'gpu');
   assert(c.includes('"nature": "alternative"') && c.includes('CHOIX AU CONSTRUCTEUR') && c.includes('jamais « Règle générale »'));
 });
+
+Deno.test('Q3-quinquies : « 8 m avec baie / 3 m sans baie » = condition de façade → 8 m retenus (jamais 3 m « au choix »)', () => {
+  const lues = reglesDepuisLecture({ regles: [{
+    cle: 'recul_limites_m', nature: 'alternative', valeur: null, article: 'UC 7-3, p. 107',
+    texte: '8 m pour une façade avec baie, 3 m pour une façade sans baie',
+    alternatives: [{ libelle: 'façade avec baie(s)', valeur: 8 }, { libelle: 'façade sans baie', valeur: 3 }],
+  }] }, 'gpu', 'Règlement GPU — 92050_PLU_20251209');
+  const r = lues.find((x) => x.cle === 'recul_limites_m')!;
+  assertEquals(r.valeur, 8);
+  assert(String(r.mesure_retenue).includes('selon la façade'));
+  assert(!String(r.texte).includes('au choix du constructeur'), String(r.texte));
+  // UC 6-1 (alignement OU recul ≥ 4 m) reste un vrai choix : 0 m = alignement autorisé.
+  const v = reglesDepuisLecture({ regles: [{
+    cle: 'recul_voie_m', nature: 'alternative', valeur: null, article: 'UC 6-1, p. 106', texte: 'alignement ou recul minimum de 4 m',
+    alternatives: [{ libelle: 'alignement', valeur: 0 }, { libelle: 'recul minimum', valeur: 4 }],
+  }] }, 'gpu', 'Règlement GPU — 92050_PLU_20251209').find((x) => x.cle === 'recul_voie_m')!;
+  assertEquals(v.valeur, 0);
+  assert(String(v.texte).includes('au choix du constructeur'));
+});

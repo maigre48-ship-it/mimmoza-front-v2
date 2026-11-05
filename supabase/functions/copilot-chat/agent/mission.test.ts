@@ -14,7 +14,7 @@ import { calculerDevis, devisExpire, devisViable, ENTREE_MAX_TOKENS, ETAPES_PAR_
 import {
   chargerEtat, compacter, construireMessages, estimerEntree, etatInitial, evenementDevis, executerOutilAgentChat,
   extraireJson, extrairePlan, RESULTAT_OUTIL_MAX_CARS, tickMissions, TOURS_GARDES,
-  questionChoixReglement, pagesArticlesCles,
+  questionChoixReglement, pagesArticlesCles, etapesMetierDisponibles,
 } from './mission.ts';
 import { formaterBlocMemoire, slugCle, validerMemoire } from './memoire.ts';
 import { outilChatAutoriseEnMission, outilsPourMission } from './outils.ts';
@@ -1582,4 +1582,12 @@ Deno.test('Q3-quater — pages des articles clés choisies par le moteur (jamais
   // Depuis le seul message (ancien format) : même lecture.
   const msg = 'Le chapitre de la zone UC (p. 102-129) est trop long pour être lu en une fois. Articles repérés : ARTICLE UC 9 – EMPRISE AU SOL* DES CONSTRUCTIONS (p. 109) ; ARTICLE UC 10 – HAUTEUR MAXIMALE DES CONSTRUCTIONS (p. 109) ; ARTICLE UC 11 – ASPECT EXTERIEUR (p. 112). Quels articles ou quelles pages lire ?';
   assertEquals(pagesArticlesCles({ statut: 'selection_trop_longue', message: msg }), [109, 110, 111, 112]);
+});
+
+Deno.test('Q3-quinquies : la réserve de lectures n’est plus une cloison (cas réel 15/18, 1 lecture sur 4)', () => {
+  const m = { type: 'conception' as const, etapes_faites: 15, etapes_max: 18 };
+  assert(etapesMetierDisponibles(m, { etapes_techniques: 1 }), '15/18 avec 1 lecture : le travail continue (avant : arrêt « budget atteint »)');
+  assert(!etapesMetierDisponibles({ ...m, etapes_faites: 16 }, { etapes_techniques: 1 }), '1 étape gardée pour une lecture + 1 pour le rapport');
+  assert(etapesMetierDisponibles({ ...m, etapes_faites: 16 }, { etapes_techniques: 4 }), 'réserve épuisée : seule l’étape du rapport est gardée');
+  assert(!etapesMetierDisponibles({ ...m, etapes_faites: 17 }, { etapes_techniques: 4 }), 'dernière étape = rapport');
 });

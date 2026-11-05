@@ -1444,7 +1444,12 @@ async function zoneDeLaParcelle(c: CtxEtape, k: EtatConception): Promise<string 
 export function etapesMetierDisponibles(m: Pick<MissionRow, 'type' | 'etapes_faites' | 'etapes_max'>, etat: Pick<EtatMission, 'etapes_techniques'>): boolean {
   const reserve = Math.max(0, Math.min(ETAPES_TECHNIQUES_RESERVEES[m.type] ?? 0, m.etapes_max - 3));
   const techniques = Math.min(Number(etat.etapes_techniques) || 0, reserve);
-  return m.etapes_faites < m.etapes_max - 1 && (m.etapes_faites - techniques) < m.etapes_max - reserve - 1;
+  // Lot Q3-quinquies (05/11/2026 : arrêt à 15/18 avec 1 lecture sur 4 réservées, 98 jetons restants) :
+  // la réserve des lectures est un MINIMUM garanti, pas une cloison. Le travail peut utiliser les étapes
+  // de lecture non consommées ; on garde seulement 1 étape pour une éventuelle lecture tant que la
+  // réserve n'est pas épuisée, plus l'étape du rapport.
+  const gardeLecture = techniques < reserve ? 1 : 0;
+  return m.etapes_faites < m.etapes_max - 1 - gardeLecture;
 }
 
 /**

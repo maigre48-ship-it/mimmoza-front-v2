@@ -41,17 +41,19 @@ Deno.test('Q3-4 : toute question tronquée garde sa phrase interrogative (en tê
   na.ok(raccourcirQuestion('x'.repeat(2000), 300).length <= 300, 'sans « ? » : bornée');
 });
 
-Deno.test('Q3-3 : budget d’étapes de la conception — 18, dont 4 techniques hors budget « métier » ; autres types inchangés', () => {
+Deno.test('Q3-3 : budget d’étapes de la conception — 18, dont 4 garanties aux lectures (minimum, pas cloison) ; autres types inchangés', () => {
   na.equal(ETAPES_PAR_TYPE.conception, 18);
   na.equal(ETAPES_TECHNIQUES_RESERVEES.conception, 4);
   const d = calculerDevis({ type: 'conception', tier: 'sonnet', pireCasEtape: 10 });
   na.equal(d.jetons_max, 18 * 10, 'jetons_max = étapes × pire cas (réservé ; seul le consommé est facturé)');
   const m = (faites: number) => ({ type: 'conception' as const, etapes_faites: faites, etapes_max: 18 });
-  // Sans lecture : 13 étapes métier (+ rapport) ; avec 2 lectures, toujours 13 étapes métier.
+  // Lot Q3-quinquies : la réserve est un minimum garanti, pas une cloison — tant qu'elle n'est pas épuisée,
+  // 1 étape reste gardée pour une lecture, plus l'étape du rapport (16 étapes de travail au plus sur 18).
   na.equal(etapesMetierDisponibles(m(12), { etapes_techniques: 0 }), true);
-  na.equal(etapesMetierDisponibles(m(13), { etapes_techniques: 0 }), false);
-  na.equal(etapesMetierDisponibles(m(14), { etapes_techniques: 2 }), true);
-  na.equal(etapesMetierDisponibles(m(15), { etapes_techniques: 2 }), false);
+  na.equal(etapesMetierDisponibles(m(15), { etapes_techniques: 0 }), true);
+  na.equal(etapesMetierDisponibles(m(16), { etapes_techniques: 0 }), false);
+  na.equal(etapesMetierDisponibles(m(15), { etapes_techniques: 2 }), true);
+  na.equal(etapesMetierDisponibles(m(16), { etapes_techniques: 2 }), false);
   // Les techniques au-delà de la réserve comptent ; plafond dur etapes_max − 1.
   na.equal(etapesMetierDisponibles(m(17), { etapes_techniques: 9 }), false);
   // Ancien plafond (12) : 12 étapes réelles consommées → la mission partait en rapport partiel.
