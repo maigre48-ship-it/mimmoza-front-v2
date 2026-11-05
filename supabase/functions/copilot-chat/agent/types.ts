@@ -149,6 +149,8 @@ export interface EtatMission {
   brouillon?: unknown;
   /** Mission de conception : dossier en préparation (mission.ts : EtatConception). */
   conception?: unknown;
+  /** Lot Q1 : zones PLU lues par les outils, par idu (rapport.ts : LectureZonage[]) — libellés et écarts de zone. */
+  zonages_lus?: unknown;
 }
 
 export type GenreJournal =

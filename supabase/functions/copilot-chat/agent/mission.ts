@@ -43,17 +43,18 @@ import {
 } from './prompt-promoteur.ts';
 import { NOMS_OUTILS_MISSION, OUTILS_MISSION_INTERDITS_VEILLE, outilChatAutoriseEnMission, outilsPourMission } from './outils.ts';
 import {
-  appliquerReponseFormulaire, centroideParcelle, cheminReglementAutorise, cheminTexteReglement, chercherContourParcelle,
-  completerRegles, compterTokensAnthropic, construireQuestionRegles, CONSIGNE_LECTURE_REGLEMENT, controlerProgramme,
-  fusionnerRegles, normaliserProgramme, normaliserRegle, REGLEMENT_LECTURE_DIRECTE_MAX_OCTETS, REGLEMENT_MAX_OCTETS,
-  reglesDepuisLecture, reglesDepuisRulesets, reglesManquantes, signalementsFormules,
-  suiteProposee, type ConflitRegle, type ParcelleConception, type Programme, type RegleConception,
+  ajusterToiture, appliquerReponseFormulaire, appliquerSecteur, centroideParcelle, cheminReglementAutorise, cheminTexteReglement, chercherContourParcelle,
+  completerRegles, compterTokensAnthropic, construireQuestionRegles, CONSIGNE_LECTURE_REGLEMENT, controlerProgramme, decrireRegle,
+  fusionnerRegles, normaliserProgramme, normaliserRegle, questionSecteur, REGLEMENT_LECTURE_DIRECTE_MAX_OCTETS, REGLEMENT_MAX_OCTETS,
+  reglesAPreciser, reglesDepuisLecture, reglesDepuisRulesets, reglesManquantes, signalementsFormules,
+  suiteProposee, toitureDuProjet, type ConflitRegle, type ParcelleConception, type Programme, type RegleConception,
 } from './conception.ts';
 import { lireTexteExtrait, planifierLecture } from '../../_shared/documents/piecesJointes.ts';
 import { normaliserCodeZone, plagesLisibles } from '../../_shared/documents/lectureCiblee.ts';
 import {
-  assemblerRapportV2, calculerChargeFonciere, chargerBrouillon, fusionnerHypotheses, lireHypothesesPartielles,
-  normaliserContact, normaliserIdu, normaliserTerrainBrut,
+  ajouterZonages, alertesZonage, assemblerRapportV2, calculerChargeFonciere, chargerBrouillon, fusionnerHypotheses, lireHypothesesPartielles,
+  normaliserContact, normaliserIdu, normaliserTerrainBrut, zonagesDepuisResultat,
+  type LectureZonage, type PreuveReglementaire,
 } from './rapport.ts';
 
 // ── Réglages ────────────────────────────────────────────────────────────────
@@ -108,6 +109,8 @@ export interface EtatConception {
   } | null;
   /** Valeurs proposées (PDF, outils) en désaccord avec une règle confirmée par l'utilisateur : signalées, jamais appliquées. */
   conflits: ConflitRegle[];
+  /** Lot Q1 : la question du secteur (règle « par secteur ») a été posée ou exigée une fois. */
+  secteur_demande?: boolean;
 }
 
 export function chargerConception(brut: unknown, m: MissionRow): EtatConception {
@@ -124,7 +127,48 @@ export function chargerConception(brut: unknown, m: MissionRow): EtatConception 
     donnees_prospection: typeof b.donnees_prospection === 'string' ? b.donnees_prospection : null,
     lecture: b.lecture && typeof b.lecture === 'object' && typeof b.lecture.chemin === 'string' ? b.lecture : null,
     conflits: Array.isArray(b.conflits) ? b.conflits.slice(0, 20) : [],
+    ...(b.secteur_demande === true ? { secteur_demande: true } : {}),
   };
+}
+
+// ── Lot Q1 : preuves et zonage, à partir de l'état ─────────────────────────
+
+/** Zones lues par les outils pendant la mission (etat.zonages_lus), par idu. */
+function zonagesLus(etat: EtatMission): Record<string, LectureZonage[]> {
+  const z = etat.zonages_lus;
+  return z && typeof z === 'object' && !Array.isArray(z) ? z as Record<string, LectureZonage[]> : {};
+}
+
+/** Note les zones lues par un outil (get_zonage_plu, rechercher_parcelles). Jamais bloquant. */
+function noterZonage(c: CtxEtape, outil: string, input: Record<string, unknown> | null, res: unknown): void {
+  try {
+    const iduDefaut = c.m.type === 'conception' ? chargerConception(c.etat.conception, c.m).idu : null;
+    const ajouts = zonagesDepuisResultat(outil, input, res, iduDefaut);
+    if (ajouts.length) c.etat.zonages_lus = ajouterZonages(zonagesLus(c.etat), ajouts);
+  } catch { /* lecture de confort : jamais bloquante */ }
+}
+
+/**
+ * Règles de conception qui PROUVENT un sujet (lot Q1, B) : hauteur citée (article ET page)
+ * — valeur chiffrée, secteur indiqué, ou « non réglementée ». Les 9 règles clés ne
+ * couvrent pas la destination (articles 1 et 2) : elle n'est jamais prouvée ici.
+ */
+export function preuvesDesRegles(regles: RegleConception[]): PreuveReglementaire[] {
+  return completerRegles(regles)
+    .filter((r) => (r.cle === 'hauteur_max_m' || r.cle === 'niveaux_max') && r.statut === 'confirme' && r.article &&
+      /\b(?:p\.?|pages?)\s*\d+/i.test(r.article) && (r.valeur != null || r.nature === 'non_reglementee'))
+    .map((r) => ({ sujet: 'hauteur' as const, source: r.source, article: r.article!, page: null }));
+}
+
+/** Zone du terrain dans la prospection d'origine (fiche du terrain ou critères), si connue. */
+function zoneProspection(k: EtatConception, m: MissionRow): string | null {
+  try {
+    const d = k.donnees_prospection ? JSON.parse(k.donnees_prospection.replace(/…$/, '')) : null;
+    const z = d?.terrain?.zonage;
+    if (typeof z === 'string' && z.trim()) return z;
+  } catch { /* données tronquées : on tente les critères */ }
+  const crit = (m.criteres ?? {}) as Record<string, unknown>;
+  return typeof crit.zonage === 'string' ? crit.zonage : typeof crit.zone === 'string' ? crit.zone : null;
 }
 
 /** Ajoute des conflits (dédoublonnés par clé et valeur) et renvoie leur description pour le modèle. */
@@ -304,9 +348,13 @@ export function normaliserRapport(
   limitesAjoutees: string[] = [],
   m?: MissionRow,
 ): Record<string, unknown> {
+  const kc = m?.type === 'conception' ? chargerConception(etat.conception, m) : null;
   const r = assemblerRapportV2(chargerBrouillon(etat.brouillon), brut, {
     actions_proposees: etat.actions_ids, memoire_ajoutee: etat.memoire_ajoutee,
     jetons_consommes: jetonsConsommes, limites_ajoutees: limitesAjoutees,
+    // Lot Q1 : règles citées connues du moteur, et zones lues par les outils.
+    preuves: kc ? preuvesDesRegles(kc.regles) : [],
+    zonages_lus: zonagesLus(etat),
   });
   if (m?.type === 'prospection_fonciere' || m?.type === 'faisabilite') {
     // Fin de prospection : proposer la suite « Concevoir le projet » (terrains non écartés, classés).
@@ -319,6 +367,7 @@ export function normaliserRapport(
       conception_id: k.id, idu: k.idu, commune: k.commune,
       parcelle: k.parcelle ? { surface_m2: k.parcelle.surface_m2, source: k.parcelle.source } : null,
       regles: completerRegles(k.regles), regles_manquantes: reglesManquantes(k.regles),
+      regles_a_preciser: reglesAPreciser(k.regles),
       conflits: k.conflits, signalements: signalementsFormules(k.regles),
       programme: k.programme, alertes_programme: k.programme ? controlerProgramme(k.programme) : [],
       prochaine_etape: 'Choisissez la voie du plan : plan fourni (le plus précis), dessin de l’emprise, ou proposition Mimmoza.',
@@ -328,6 +377,19 @@ export function normaliserRapport(
       (r.limites as string[]).push(`Règle ${x.cle} : vous avez confirmé ${x.valeur_utilisateur}, ${x.source_proposee} indique ${x.valeur_proposee}${x.article ? ` (art. ${x.article})` : ''}. Votre valeur est conservée ; à vérifier.`);
     }
     for (const x of signalementsFormules(k.regles)) (r.limites as string[]).push(x);
+    // Lot Q1 (A) : règle par secteur sans secteur connu → à préciser, jamais conclue.
+    const qs = questionSecteur(k.regles);
+    for (const x of completerRegles(k.regles).filter((y) => reglesAPreciser([y]).includes(y.cle))) {
+      (r.limites as string[]).push(`${decrireRegle(x)}. ${qs ?? ''} Aucune conclusion sur cette règle tant que le secteur n'est pas indiqué.`.replace(/\s+/g, ' ').trim());
+    }
+    // Lot Q1 (C) : zone de la prospection ≠ zone lue au GPU, ou plusieurs zones lues.
+    const lectures = k.idu ? zonagesLus(etat)[k.idu] ?? [] : [];
+    const az = k.idu ? alertesZonage(k.idu, zoneProspection(k, m), 'la prospection d’origine', lectures) : [];
+    (r.conception as Record<string, unknown>).alertes_zonage = az;
+    if (az.length) {
+      (r.limites as string[]).push(...az);
+      r.alertes_verification = [...((r.alertes_verification as string[] | undefined) ?? []), ...az];
+    }
   }
   return r;
 }
@@ -501,8 +563,15 @@ async function executerOutilMission(
       return `Brouillon ${id} créé. Il N'EST PAS envoyé : l'utilisateur le relira et décidera seul de l'envoi.`;
     }
     case 'demander_utilisateur': {
-      const q = texte(String(input.question ?? '').trim(), 1000);
+      let q = texte(String(input.question ?? '').trim(), 1000);
       if (!q) return 'Question vide : ignorée.';
+      if (c.m.type === 'conception') {
+        // Lot Q1 (A) : une règle « par secteur » sans secteur connu → la question du secteur est TOUJOURS posée.
+        const k = chargerConception(c.etat.conception, c.m);
+        const qs = questionSecteur(k.regles);
+        if (qs && !/secteur/i.test(q)) q = `${qs} ${texte(q, Math.max(0, 998 - qs.length))}`.trim();
+        if (qs) { k.secteur_demande = true; c.etat.conception = k; }
+      }
       speciale.question = q;
       if (c.m.type === 'conception' && input.formulaire === 'regles_conception') {
         // Format imposé par le front : question_en_attente = JSON du formulaire, pré-rempli par le MOTEUR.
@@ -512,6 +581,17 @@ async function executerOutilMission(
       return "Question transmise à l'utilisateur. La mission est en pause jusqu'à sa réponse.";
     }
     case 'terminer_mission': {
+      if (c.m.type === 'conception') {
+        // Lot Q1 (A) : ne pas conclure sur une règle par secteur sans avoir demandé le secteur (une fois).
+        const k = chargerConception(c.etat.conception, c.m);
+        const qs = questionSecteur(k.regles);
+        if (qs && !k.secteur_demande) {
+          k.secteur_demande = true;
+          c.etat.conception = k;
+          return `Fin refusée : ${reglesAPreciser(k.regles).join(', ')} dépend(ent) d'un secteur du plan graphique, non connu. ` +
+            `Pose d'abord la question avec demander_utilisateur (formulaire « regles_conception ») : « ${qs} ». Ne conclus pas sur cette règle avant la réponse.`;
+        }
+      }
       // v2 : titre/synthese/classement/limites au premier niveau ; v1 : objet `rapport` complet.
       const v1 = input.rapport && typeof input.rapport === 'object' ? input.rapport as Record<string, unknown> : null;
       const { rapport: _ancien, ...v2 } = input;
@@ -575,6 +655,8 @@ async function executerOutilMission(
     case 'enregistrer_programme': {
       const k = chargerConception(c.etat.conception, c.m);
       k.programme = normaliserProgramme(input);
+      // Lot Q1 : type de toiture connu → mesure de hauteur du secteur recalculée (terrasse → acrotère, pentes → égout).
+      k.regles = ajusterToiture(k.regles, toitureDuProjet(k.programme, c.m.criteres as Record<string, unknown>));
       await persisterConception(c, k);
       c.etat.conception = k;
       const alertes = controlerProgramme(k.programme);
@@ -662,6 +744,7 @@ async function executerOutilChat(c: CtxEtape, tu: { id: string; name: string; in
       res = { status: 'error', source: tu.name, message: e instanceof Error ? e.message : String(e) };
     }
   }
+  noterZonage(c, tu.name, tu.input ?? null, res);   // lot Q1 (C) : zones lues, pour le rapport
   await c.depot.journal(c.m.id, 'outil', tu.name, tu.input,
     `${tu.name} : ${resumeResultat(res)} (${Math.round((Date.now() - debut) / 100) / 10} s)`, 0);
   let s: string;
@@ -704,9 +787,13 @@ async function traiterEnVol(c: CtxEtape, v: EtapeEnVol): Promise<IssueEtape> {
     await persisterConception(c, k);
     const quoi = lecture?.libelle ?? chemin.split('/').pop();
     const resume = lues.length
-      ? `Règlement lu (${quoi}) : ${lues.map((r) => `${r.cle} = ${r.valeur}${r.article ? ` (art. ${r.article})` : ''}`).join(' ; ')}.`
+      ? `Règlement lu (${quoi}) : ${lues.map(decrireRegle).join(' ; ')}.`
       : `Règlement lu (${quoi}) : aucune règle clé trouvée pour cette zone.`;
-    const resumeConflits = conflit;
+    // Lot Q1 (A) : règle par secteur → la question du secteur est obligatoire avant toute conclusion.
+    const qs = questionSecteur(k.regles);
+    const resumeConflits = conflit + (qs
+      ? ` Règle(s) à préciser : ${reglesAPreciser(k.regles).join(', ')}. Pose la question avec demander_utilisateur (formulaire « regles_conception ») : « ${qs} » — ne conclus pas sur ces règles avant la réponse.`
+      : '');
     c.etat.tours.push({ n: v.n, assistant: [{ type: 'text', text: lecture?.source === 'gpu' ? 'Lecture du règlement publié au Géoportail de l’urbanisme.' : 'Lecture du règlement PDF déposé.' }],
       user: [{ type: 'text', text: `${resume}${resumeConflits} Règles encore manquantes : ${reglesManquantes(k.regles).join(', ') || 'aucune'}. ${CONSIGNE_CONTINUER}` }] });
     await solderEnVol(c, v);
@@ -927,6 +1014,7 @@ async function zoneDeLaParcelle(c: CtxEtape, k: EtatConception): Promise<string 
   if (!pt) return null;
   try {
     const r = await avecDelai(c.deps.executeTool('get_zonage_plu', { lat: pt.lat, lng: pt.lon }, contexteMission(c.m)), TIMEOUT_OUTIL_MS, 'get_zonage_plu');
+    noterZonage(c, 'get_zonage_plu', { idu: k.idu }, r);
     const z = (r?.data as { zone_principale?: { zone?: unknown } } | undefined)?.zone_principale?.zone;
     return normaliserCodeZone(z);
   } catch { return null; }
@@ -1114,10 +1202,31 @@ export async function travaillerMission(
         if (k.idu) {
           try { await depot.enregistrerConception(m.id, m.user_id, { idu: k.idu, regles_plu: k.regles }); } catch (e) { console.warn('[agent] conception', e instanceof Error ? e.message : String(e)); }
         }
+        // Lot Q1 (A) : secteur donné en commentaire du formulaire.
+        const sc = a.commentaire ? appliquerSecteur(k.regles, a.commentaire, toitureDuProjet(k.programme, m.criteres as Record<string, unknown>)) : null;
+        if (sc?.appliquees.length) {
+          k.regles = sc.regles;
+          etat.conception = k;
+          if (k.idu) {
+            try { await depot.enregistrerConception(m.id, m.user_id, { idu: k.idu, regles_plu: k.regles }); } catch (e) { console.warn('[agent] conception', e instanceof Error ? e.message : String(e)); }
+          }
+        }
         txt = `Réponse de l'utilisateur au formulaire des règles : ${a.resume}.` +
+          (sc?.appliquees.length ? ` Secteur appliqué : ${sc.appliquees.join(' ; ')}.` : '') +
           (a.commentaire ? ` Commentaire : ${a.commentaire}` : '') +
           (a.hors_bornes.length ? ` Valeurs non valables ignorées (à redemander) : ${a.hors_bornes.join(' ; ')}.` : '') +
           (pdfOk ? ' Le règlement PDF déposé sera lu automatiquement à l’étape suivante.' : (a.lire_reglement ? ' (Règlement demandé mais introuvable dans le dossier de la conception : non lu.)' : ''));
+      } else {
+        // Lot Q1 (A) : réponse libre à la question du secteur (« secteur 2 », « 2 ») — seulement si elle a été posée.
+        const sc = k.secteur_demande ? appliquerSecteur(k.regles, rep, toitureDuProjet(k.programme, m.criteres as Record<string, unknown>)) : { regles: k.regles, appliquees: [] };
+        if (sc.appliquees.length) {
+          k.regles = sc.regles;
+          etat.conception = k;
+          if (k.idu) {
+            try { await depot.enregistrerConception(m.id, m.user_id, { idu: k.idu, regles_plu: k.regles }); } catch (e) { console.warn('[agent] conception', e instanceof Error ? e.message : String(e)); }
+          }
+          txt += ` Secteur appliqué par le moteur : ${sc.appliquees.join(' ; ')}.`;
+        }
       }
     }
     const dernier = etat.tours.at(-1);

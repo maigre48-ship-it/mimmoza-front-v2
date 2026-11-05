@@ -1176,3 +1176,93 @@ Deno.test('V1.8 — règlement déposé, zone inconnue : question listant les ch
   assert(doc.includes("[Page 121]") && !doc.includes("[Page 60]"), doc.slice(0, 300) + " | " + JSON.stringify(depot.journalLignes.map((l) => l.resume).slice(-4)));
   assertEquals(depot.missions.get(m.id)!.statut, 'terminee');
 });
+
+// ── Lot Q1 : « ne rien affirmer sans preuve » — mission de conception de bout en bout ─────
+// Textes réels du règlement 92050_PLU_20251209 (Nanterre, UC 9 et UC 10, p. 109) ; zone lue au GPU : UC ;
+// prospection d'origine : « UBa » (constat du 04/11/2026). Aucune autre valeur réglementaire n'est utilisée.
+Deno.test('Q1 — conception : UC 9 non réglementée, UC 10 par secteur → question du secteur, réponse, écart de zone, affirmation non prouvée', async () => {
+  const IDU = '92050000AE0414';
+  const horloge = { t: 0 };
+  const depot = new DepotMemoire(() => horloge.t);
+  const origine = depot.ajouter({ statut: 'terminee', rapport: { titre: 'Prospection Nanterre', terrains: [{ idu: IDU, zonage: 'UBa' }] } });
+  const devis = calculerDevis({ type: 'conception', tier: 'sonnet', pireCasEtape: PIRE });
+  const m = depot.ajouter({ statut: 'en_cours', type: 'conception', devis, reservation_id: null, criteres: { idu: IDU, mission_origine_id: origine.id } });
+  const x0 = depot.missions.get(m.id)!;
+  const rid = crypto.randomUUID(); depot.reservations.set(rid, { montant: devis.jetons_max, statut: 'reserved' });
+  x0.reservation_id = rid; x0.jetons_reserves = devis.jetons_max;
+  const cid = crypto.randomUUID();
+  const chemin = `${USER}/${cid}/reglement-nanterre.pdf`;
+  depot.fichiers.set(chemin, new Uint8Array([37, 80, 68, 70]));
+  x0.etat = { ...etatInitial(), phase: 'travail', plan: ['Règles'], conception: {
+    id: cid, idu: IDU, regles: [], origine_chargee: false, lecture: { chemin, zone: null, source: 'depot' },
+    parcelle: { idu: IDU, surface_m2: null, source: 'test', geometrie: { type: 'Polygon', coordinates: [[[2.20, 48.89], [2.21, 48.89], [2.21, 48.90], [2.20, 48.89]]] } },
+  } } as never;
+  const LECTURE = { regles: [
+    { cle: 'emprise_sol_max_pct', nature: 'non_reglementee', valeur: null, article: 'UC 9, p. 109', texte: 'Il n’est pas fixé de règle.' },
+    { cle: 'hauteur_max_m', nature: 'par_secteur', valeur: 52, article: 'UC 10, p. 109', texte: 'UC 10-2 : hauteur selon les secteurs des documents graphiques.',
+      valeurs_par_secteur: [
+        { secteur: '1', acrotere_terrasse: 28, egout: 26, faitage: 28, texte: '28 m à l’acrotère ; 26 m à l’égout et 28 m au faîtage' },
+        { secteur: '2', acrotere_terrasse: 21, egout: 21, faitage: 24, exceptions: 'bureaux av. Clemenceau : 24 m / 26 m', texte: '21 m à l’acrotère ; 21 m à l’égout et 24 m au faîtage' },
+        { secteur: '3', egout: 9, faitage: 12, texte: '9 m à l’égout et 12 m au faîtage' },
+        { secteur: '4', acrotere_terrasse: 52, texte: '52 m à l’acrotère' },
+      ],
+      renvoi_document_graphique: 'Secteurs repérés sur les documents graphiques',
+      regle_relative: 'UC 10-1 : hauteur ≤ distance à l’alignement opposé + 2 m' },
+  ] };
+  let n = 0; let apresLecture = ''; const reponsesOutils: string[] = [];
+  const { deps } = fabriquerDeps(depot, (a) => {
+    const msgs = JSON.stringify(a.messages);
+    if (msgs.includes('"type":"document"')) return { textBlocks: [JSON.stringify(LECTURE)] };
+    n++;
+    if (n === 1) { apresLecture = msgs; return tourOutils(['terminer_mission', { titre: 'Règles prêtes', synthese: 'S' }]); }
+    if (n === 2) { reponsesOutils.push(msgs); return tourOutils(['demander_utilisateur', { question: 'Voici les règles connues ; complétez-les.', formulaire: 'regles_conception' }]); }
+    return tourOutils(['terminer_mission', { titre: 'Règles prêtes',
+      synthese: 'Parcelle confirmée constructible en logement collectif. Gabarit compatible avec la hauteur du secteur 2. Choisissez la voie du plan.' }]);
+  }, horloge);
+  deps.compterTokens = async () => 12_000;
+  deps.executeTool = async (name) => {
+    horloge.t += 1000;
+    return (name === 'get_zonage_plu'
+      ? { status: 'ok', source: 'gpu-parcelle-v1', data: { source: "Géoportail de l'urbanisme via API Carto (IGN)", zone_principale: { zone: 'UC', libelle_long: null }, zones: [{ zone: 'UC' }] } }
+      : { status: 'ok', source: name, data: {} }) as ResultatOutil;
+  };
+
+  await tickMissions(deps, depot, { worker: 'w1' });
+  let x = depot.missions.get(m.id)!;
+  // A : la lecture garde les deux règles, et le moteur exige la question du secteur avant toute conclusion.
+  assert(apresLecture.includes('emprise_sol_max_pct : non réglementée (art. UC 9, p. 109)'), 'UC 9 non réglementée, citée');
+  assert(apresLecture.includes('hauteur_max_m : par secteur') && !apresLecture.includes('aucune règle clé trouvée'));
+  assert(apresLecture.includes('Dans quel secteur de hauteur (1 à 4, plan graphique) se trouve la parcelle ?'));
+  assert(reponsesOutils[0].includes('Fin refusée'), 'terminer_mission refusé une fois : secteur non demandé');
+  assertEquals(x.statut, 'attente_utilisateur');
+  const q = JSON.parse(String(x.question_en_attente));
+  assert(String(q.message).startsWith('Dans quel secteur de hauteur (1 à 4, plan graphique) se trouve la parcelle ?'), 'question du secteur ajoutée');
+  const par = Object.fromEntries((q.regles as Array<{ cle: string }>).map((r) => [r.cle, r])) as Record<string, Record<string, unknown>>;
+  assertEquals([par.emprise_sol_max_pct.nature, par.emprise_sol_max_pct.statut], ['non_reglementee', 'confirme']);
+  assertEquals([par.hauteur_max_m.nature, par.hauteur_max_m.valeur], ['par_secteur', null], 'aucune valeur au jugé (52 ignoré)');
+
+  // Réponse libre de l'utilisateur : « secteur 2 ».
+  x.etat = { ...(x.etat ?? {}), derniere_reponse: { reponse: 'La parcelle est en secteur 2.' } } as never;
+  x.statut = 'en_cours'; x.question_en_attente = null; (x as { bail?: number | null }).bail = null;
+  horloge.t += 1;
+  await tickMissions(deps, depot, { worker: 'w2' });
+  x = depot.missions.get(m.id)!;
+  assertEquals(x.statut, 'terminee');
+  const rapport = x.rapport as Record<string, unknown>;
+  const c = rapport.conception as { regles: Array<Record<string, unknown>>; regles_manquantes: string[]; regles_a_preciser: string[]; alertes_zonage: string[] };
+  const h = c.regles.find((r) => r.cle === 'hauteur_max_m')!;
+  // Toiture non précisée : la plus restrictive des mesures citées (21 m), jamais le faîtage 24 m ; sous réserve de UC 10-1.
+  assertEquals([h.valeur, h.secteur, h.statut, h.article], [21, '2', 'confirme', 'UC 10, p. 109']);
+  assert(String(h.mesure_retenue).includes('type de toiture non précisé'));
+  assert((rapport.limites as string[]).some((l) => l.includes('SOUS RÉSERVE de « UC 10-1')), 'UC 10-1 jamais ignorée');
+  assertEquals(c.regles_a_preciser, []);
+  assert(!c.regles_manquantes.includes('emprise_sol_max_pct') && !c.regles_manquantes.includes('hauteur_max_m'));
+  // C : prospection « UBa » ≠ zone lue au GPU « UC » → alerte explicite.
+  assert(c.alertes_zonage.some((a) => a.includes('la prospection d’origine indique UBa, mais la zone lue est UC')), JSON.stringify(c.alertes_zonage));
+  assert((rapport.limites as string[]).some((l) => l.startsWith(`Zonage ${IDU}`)));
+  // B : hauteur prouvée (UC 10, p. 109, secteur 2) → gardée ; destination non citée (UC 1 / UC 2) → « à vérifier ».
+  const s = String(rapport.synthese);
+  assert(s.includes('À vérifier : Parcelle confirmée constructible en logement collectif') && s.includes('règle de destination'), s);
+  assert(s.includes('Gabarit compatible avec la hauteur du secteur 2.') && !s.includes('À vérifier : Gabarit'), s);
+  assert((rapport.limites as string[]).some((l) => l.includes('sans règle citée')));
+});

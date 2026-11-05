@@ -249,6 +249,9 @@ export function conformiteAffichee(
     const regle = regles.find((r) => r.cle === cle) ?? null;
     const connue = regle && regle.statut !== 'manquant' && regle.valeur !== null;
     const base = { cle, libelle, regle, unite: regle?.unite || LIBELLE_REGLE[cle].unite };
+    // Lot Q1 : « non réglementée » (citée) n'est pas « inconnue » ; « par secteur » attend le secteur de la parcelle.
+    if (!connue && regle?.nature === 'non_reglementee') return { ...base, valeur_modele: null, limite: null, ok: null, ecart: `Non réglementée${regle.article ? ` (${regle.article})` : ''} : aucune limite à contrôler`, origine: 'inconnu' };
+    if (!connue && regle?.nature === 'par_secteur') return { ...base, valeur_modele: null, limite: null, ok: null, ecart: 'Selon le secteur du plan graphique : secteur à préciser, non contrôlée', origine: 'inconnu' };
     if (!connue) return { ...base, valeur_modele: null, limite: null, ok: null, ecart: 'Règle inconnue : non contrôlée', origine: 'inconnu' };
     const st = controlesStudio.find((c) => c.cle === cle);
     if (st) return { ...base, valeur_modele: st.valeur_modele, limite: st.limite ?? regle.valeur, ok: st.ok, ecart: st.ecart ?? null, origine: 'studio' };

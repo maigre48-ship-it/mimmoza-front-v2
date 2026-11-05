@@ -280,7 +280,7 @@ export function normaliserIdu(v: unknown): string | null {
   return IDU_RE.test(s) ? s : (s.length >= 5 && s.length <= 20 ? s : null);
 }
 
-const TYPES_CONTRAINTE = new Set(['mixite_sociale', 'ppr', 'argiles', 'bruit', 'dpu', 'oap', 'servitude', 'autre']);
+const TYPES_CONTRAINTE = new Set(['mixite_sociale', 'ppr', 'argiles', 'bruit', 'dpu', 'oap', 'servitude', 'fiscalite', 'autre']);
 const QUALITES_CONTACT = new Set(['mairie', 'proprietaire', 'autre']);
 const VERDICTS = new Set(['prioritaire', 'a_etudier', 'ecarte', 'indetermine']);
 export const LIBELLES_VERDICT: Record<string, string> = {
@@ -293,7 +293,52 @@ export function normaliserProprietaire(v: unknown): Record<string, unknown> | nu
   const nom = chaine(p.nom, 200);
   if (!nom) return null;
   const siren = typeof p.siren === 'string' && /^\d{9}$/.test(p.siren.replace(/\s/g, '')) ? p.siren.replace(/\s/g, '') : null;
-  return { nom, forme: chaine(p.forme, 80), siren, source: chaine(p.source, 200) };
+  // Lot Q1 (D) : le Géoportail de l'urbanisme ne publie aucune information de propriété : source fausse → effacée.
+  const source = chaine(p.source, 200);
+  return { nom, forme: chaine(p.forme, 80), siren, source: source && RE_SOURCE_GPU.test(source) ? null : source };
+}
+
+// ── Lot Q1 (D) : typage et source DÉTERMINISTES des contraintes ────────────
+//
+// Constat (missions du 04/11/2026, Nanterre) : « Secteur de taxe d'aménagement
+// majorée Emile Zola » typé « bruit » ; « Propriétaire = CDC Habitat Social » typé
+// « mixite_sociale » et sourcé « Géoportail de l'urbanisme » (l'information vient
+// de la DGFiP). Le type se déduit désormais du LIBELLÉ quand c'est possible (le type
+// proposé par le modèle ne sert qu'à défaut), la source de l'OUTIL d'origine, et une
+// information de propriété n'est jamais une contrainte.
+
+/** Libellé → type (ordre significatif : la première correspondance l'emporte). */
+export const TYPAGE_CONTRAINTES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/taxe\s+d['’ ]?\s*am[ée]nagement|versement pour sous-densit/i, 'fiscalite'],
+  [/pr[ée]emption|\bDPU\b|\bZAD\b/i, 'dpu'],
+  [/orientations?\s+d['’ ]?\s*am[ée]nagement|\bOAP\b/i, 'oap'],
+  [/argiles?\b|retrait[- ]gonflement/i, 'argiles'],
+  [/plan\s+de\s+pr[ée]vention|\bPPR[A-Z]?\b/i, 'ppr'],
+  [/classement\s+sonore|\bbruit\b|nuisances?\s+sonores?|\bPEB\b/i, 'bruit'],
+  [/mixit[ée]\s+sociale|logements?\s+sociaux|\bLLS\b/i, 'mixite_sociale'],
+  [/servitude|\bSUP\b|emplacement\s+r[ée]serv/i, 'servitude'],
+];
+/** Type d'une contrainte d'après son libellé (null : aucune règle ne s'applique). */
+export function typeContrainteDepuisLibelle(libelle: string): string | null {
+  for (const [re, type] of TYPAGE_CONTRAINTES) if (re.test(libelle)) return type;
+  return null;
+}
+
+const RE_SOURCE_GPU = /g[ée]oportail|\bGPU\b/i;
+/** Information de propriété (jamais une contrainte d'urbanisme). */
+const RE_PROPRIETE = /propri[ée]taire|\bpropri[ée]t[ée]\s+de\b|personne\s+morale\s+propri/i;
+
+/** Outil d'origine → source affichée (libellés repris des outils eux-mêmes). */
+export const SOURCE_PAR_OUTIL: Readonly<Record<string, string>> = {
+  get_prescriptions_urbanisme: "Géoportail de l'urbanisme via API Carto (IGN)",
+  get_zonage_plu: "Géoportail de l'urbanisme via API Carto (IGN)",
+  get_proprietaire_parcelle: 'DGFiP — Fichiers des parcelles des personnes morales (Licence Ouverte 2.0)',
+};
+
+/** Source d'une donnée : celle de l'outil d'origine s'il est connu, sinon la source déclarée. */
+function sourceDepuisOutil(outil: string | null, declaree: string | null): string | null {
+  if (outil && SOURCE_PAR_OUTIL[outil]) return SOURCE_PAR_OUTIL[outil];
+  return declaree ?? (outil ? `outil ${outil}` : null);
 }
 
 export function normaliserContrainte(v: unknown): Record<string, unknown> | null {
@@ -301,8 +346,28 @@ export function normaliserContrainte(v: unknown): Record<string, unknown> | null
   const c = v as Record<string, unknown>;
   const libelle = chaine(c.libelle, 300);
   if (!libelle) return null;
-  const type = TYPES_CONTRAINTE.has(String(c.type)) ? String(c.type) : 'autre';
-  return { type, libelle, source: chaine(c.source, 200) };
+  const outil = chaine(c.outil, 60);
+  // Une information de propriété n'est pas une contrainte (voir proprietaireDepuisContrainte).
+  if (outil === 'get_proprietaire_parcelle' || RE_PROPRIETE.test(libelle)) return null;
+  const type = typeContrainteDepuisLibelle(libelle) ?? (TYPES_CONTRAINTE.has(String(c.type)) ? String(c.type) : 'autre');
+  return { type, libelle, source: sourceDepuisOutil(outil, chaine(c.source, 200)), ...(outil ? { outil } : {}) };
+}
+
+/**
+ * Contrainte qui est en fait une information de PROPRIÉTÉ → propriétaire (nom après « = » ou « : »),
+ * avec la source de l'outil d'origine ; une source « Géoportail » est effacée (jamais vraie pour un propriétaire).
+ */
+export function proprietaireDepuisContrainte(v: unknown): Record<string, unknown> | null {
+  if (!v || typeof v !== 'object') return null;
+  const c = v as Record<string, unknown>;
+  const libelle = chaine(c.libelle, 300);
+  const outil = chaine(c.outil, 60);
+  if (!libelle || !(outil === 'get_proprietaire_parcelle' || RE_PROPRIETE.test(libelle))) return null;
+  const m = /[=:]\s*(.+)$/.exec(libelle);
+  const nom = chaine((m ? m[1] : libelle.replace(RE_PROPRIETE, '')).replace(/^[\s:=–—-]+/, ''), 200);
+  if (!nom) return null;
+  const declaree = chaine(c.source, 200);
+  return { nom, forme: null, siren: null, source: sourceDepuisOutil(outil, declaree && RE_SOURCE_GPU.test(declaree) ? null : declaree) };
 }
 
 export function normaliserContact(v: unknown): Record<string, unknown> | null {
@@ -324,6 +389,10 @@ export function normaliserTerrainBrut(v: unknown): Record<string, unknown> | nul
   const idu = normaliserIdu(t.idu);
   if (!idu) return null;
   const verdict = VERDICTS.has(String(t.verdict)) ? String(t.verdict) : 'indetermine';
+  const brutes = Array.isArray(t.contraintes) ? t.contraintes : [];
+  // Lot Q1 (D) : une « contrainte » de propriété devient le propriétaire (s'il n'est pas déjà connu).
+  const proprietaire = normaliserProprietaire(t.proprietaire) ?? brutes.map(proprietaireDepuisContrainte).find(Boolean) ?? null;
+  const preuves = (Array.isArray(t.preuves_reglementaires) ? t.preuves_reglementaires : []).map(normaliserPreuve).filter(Boolean).slice(0, 10);
   return {
     idu,
     commune: texte(t.commune ?? '', 120),
@@ -334,11 +403,14 @@ export function normaliserTerrainBrut(v: unknown): Record<string, unknown> | nul
     score: nombre(t.score, 0, 1000),
     verdict,
     potentiel_logements: nombre(t.potentiel_logements, 0, 100_000),
-    proprietaire: normaliserProprietaire(t.proprietaire),
-    contraintes: (Array.isArray(t.contraintes) ? t.contraintes : []).map(normaliserContrainte).filter(Boolean).slice(0, 20),
+    proprietaire,
+    contraintes: brutes.map(normaliserContrainte).filter(Boolean).slice(0, 20),
     points_forts: liste(t.points_forts),
     points_bloquants: liste(t.points_bloquants),
     sources: liste(t.sources, 30, 200),
+    // Lot Q1 : champs ajoutés seulement s'ils portent quelque chose (fiches v2 existantes inchangées).
+    ...(preuves.length ? { preuves_reglementaires: preuves } : {}),
+    ...(liste(t.a_verifier).length ? { a_verifier: liste(t.a_verifier) } : {}),
   };
 }
 
@@ -357,6 +429,203 @@ export function normaliserClassement(v: unknown, idusConnus: Set<string>): Array
   return out.slice(0, 30);
 }
 
+
+// ── Lot Q1 (B) : aucune affirmation de conformité sans règle citée ──────────
+//
+// Constat (04/11/2026, Nanterre AE0414) : « Zone UBa compatible R+4 » (prospection)
+// et « confirmée constructible en logement collectif » (conception), sans citer ni
+// l'article de hauteur ni les articles de destination (UC 1 / UC 2). Garde
+// DÉTERMINISTE appliquée au rapport assemblé : une phrase qui AFFIRME une
+// compatibilité / constructibilité / conformité (hauteur, gabarit R+n, destination)
+// n'est gardée que si une règle CITÉE (source + article + page) du bon sujet existe ;
+// sinon elle est reformulée « À vérifier » (synthèse, justification) ou déplacée des
+// points forts vers `a_verifier`, et une limite explicite est ajoutée. Les phrases
+// déjà négatives ou conditionnelles ne sont jamais touchées.
+
+export type SujetPreuve = 'hauteur' | 'destination';
+export interface PreuveReglementaire { sujet: SujetPreuve; source: string; article: string; page: string | null }
+
+const RE_PAGE = /\b(?:p\.?|pages?)\s*\d+/i;
+/** Preuve valable : sujet connu, source, article, et page (champ `page` ou « p. N » dans l'article). */
+export function normaliserPreuve(v: unknown): PreuveReglementaire | null {
+  if (!v || typeof v !== 'object') return null;
+  const p = v as Record<string, unknown>;
+  const sujet = p.sujet === 'hauteur' || p.sujet === 'destination' ? p.sujet : null;
+  const source = chaine(p.source, 200);
+  const article = chaine(p.article, 80);
+  const page = typeof p.page === 'number' && Number.isFinite(p.page) ? String(p.page) : chaine(p.page, 20);
+  if (!sujet || !source || !article || !(page || RE_PAGE.test(article))) return null;
+  return { sujet, source, article, page };
+}
+
+const LETTRE = '\\p{L}\\p{N}';
+const mot = (alternatives: string) => new RegExp(`(?<![${LETTRE}])(?:${alternatives})(?![${LETTRE}])`, 'iu');
+/** Verbes / adjectifs d'affirmation réglementaire. */
+const RE_AFFIRMATION = mot('compatibles?|constructibles?|autoris[ée]e?s?|conformes?|admise?s?|permise?s?|réalisables?|confirm[ée]e?s?|respecte|respectent');
+/** Phrase déjà négative, conditionnelle ou prudente : jamais réécrite. */
+const RE_PRUDENCE = new RegExp(
+  `(?<![${LETTRE}])n['’](?=\\p{L})|` +
+  mot('non|pas|ne|ni|aucune?|sans|si|sauf|incompatibles?|inconstructibles?|interdite?s?|probablement|potentiellement|éventuellement|semblent?|hypothèse|indéterminable|indéterminée?|à vérifier|a verifier|à confirmer|à préciser|reste à|sous réserve|de principe|a priori|à priori').source,
+  'iu');
+const RE_HAUTEUR = mot('R\\s*\\+\\s*\\d+|hauteurs?|gabarits?|niveaux?|étages?|acrotères?|faîtages?|égouts?');
+const RE_DESTINATION = mot('logements?|habitations?|résidentiel(?:le)?s?|destinations?|collectifs?|bureaux|commerces?|constructibles?|constructibilité');
+const RE_CADRE_PLU = mot('zones?|zonages?|règlements?|urbanisme');
+/** Code de zone ou PLU, SENSIBLE à la casse (« UC », « UBa », « 1AUh », « PLUi » ; jamais « aux »). */
+const RE_CODE_ZONE = new RegExp(`(?<![${LETTRE}])(?:PLUi?|[1-9]?AU[a-z0-9]{0,3}|U(?:[A-Z][a-z0-9]{0,3}|[0-9][a-z0-9]{0,2})?)(?![${LETTRE}])`, 'u');
+
+/** Sujets qu'une phrase affirme sans réserve (vide : rien à prouver). */
+export function sujetsAffirmes(phrase: string): SujetPreuve[] {
+  if (!RE_AFFIRMATION.test(phrase) || RE_PRUDENCE.test(phrase)) return [];
+  const sujets: SujetPreuve[] = [];
+  if (RE_HAUTEUR.test(phrase)) sujets.push('hauteur');
+  if (RE_DESTINATION.test(phrase)) sujets.push('destination');
+  if (!sujets.length && (RE_CADRE_PLU.test(phrase) || RE_CODE_ZONE.test(phrase))) sujets.push('destination');
+  return sujets;
+}
+
+const LIBELLE_SUJET: Record<SujetPreuve, string> = {
+  hauteur: 'règle de hauteur (article de hauteur du règlement)',
+  destination: 'règle de destination (articles des occupations interdites / soumises à conditions)',
+};
+
+/** Citation complète DANS la phrase : article ET page (« art. UC 10, p. 109 »). */
+const RE_CITATION_EN_LIGNE = /\bart(?:icle)?\.?\s*[A-Z0-9][\w.-]*(?:\s*[\w.-]+)?\s*[,(–—-]\s*(?:p\.?|page)\s*\d+/iu;
+
+/** Sujets affirmés mais non prouvés, ou vide si la phrase passe. */
+function sujetsSansPreuve(phrase: string, preuves: readonly PreuveReglementaire[]): SujetPreuve[] {
+  if (RE_CITATION_EN_LIGNE.test(phrase)) return [];
+  return sujetsAffirmes(phrase).filter((s) => !preuves.some((p) => p.sujet === s));
+}
+
+const sansPointFinal = (p: string) => p.trim().replace(/[.!…\s]+$/u, '');
+/** Reformulation « à vérifier » d'une affirmation non prouvée, avec la règle manquante nommée. */
+export function reformulerAVerifier(phrase: string, manquants: SujetPreuve[]): string {
+  return `À vérifier : ${sansPointFinal(phrase)} — ${manquants.map((m) => LIBELLE_SUJET[m]).join(' et ')} non citée (source, article et page requis).`;
+}
+
+/** Réécrit, phrase par phrase, un texte libre (synthèse, justification). */
+export function garderTexte(t: string, preuves: readonly PreuveReglementaire[]): { texte: string; reecrites: string[] } {
+  if (!t) return { texte: t, reecrites: [] };
+  const reecrites: string[] = [];
+  // Fin de phrase : « . » suivi d'une majuscule — jamais après une abréviation (« art. UC 1 », « p. 109 », « cf. »).
+  const phrases = t.split(/(?<!(?:^|[\s(])(?:[Aa]rt|[Pp]p?|[Cc]f|[Ee]x|[Rr]éf|[Aa]l|n°)\.)(?<=[.!?])\s+(?=[\p{Lu}«"])/u);
+  const out = phrases.map((ph) => {
+    const m = sujetsSansPreuve(ph, preuves);
+    if (!m.length) return ph;
+    const r = reformulerAVerifier(ph, m);
+    reecrites.push(r);
+    return r;
+  });
+  return { texte: out.join(' '), reecrites };
+}
+
+/** Points forts : une affirmation non prouvée quitte les points forts pour `a_verifier`. */
+export function garderPointsForts(points: string[], preuves: readonly PreuveReglementaire[]): { gardes: string[]; a_verifier: string[] } {
+  const gardes: string[] = [];
+  const aVerifier: string[] = [];
+  for (const p of points) {
+    const m = sujetsSansPreuve(p, preuves);
+    if (m.length) aVerifier.push(reformulerAVerifier(p, m)); else gardes.push(p);
+  }
+  return { gardes, a_verifier: aVerifier };
+}
+
+// ── Lot Q1 (C) : zone et libellé de zone SOURCÉS ───────────────────────────
+//
+// Constat : la prospection a classé AE0414 en « UBa » et décrit UC comme
+// « équipements et espaces verts » (libellé écrit par le modèle, sans source) ;
+// la conception a lu UC au Géoportail de l'urbanisme (get_zonage_plu). Le moteur
+// garde désormais les zones LUES par les outils (`etat.zonages_lus`) : le libellé
+// de zone ne vient que d'elles (GPU libelong), sinon null ; un écart entre la zone
+// de la fiche et la zone lue, ou plusieurs zones lues, devient une alerte explicite.
+
+/** Une lecture de zone par un outil, pour une parcelle. */
+export interface LectureZonage { zone: string | null; libelle: string | null; zones: string[]; source: string; outil: string }
+
+/** « Zone UBa — résidentiel » → « UBa » (casse d'origine) ; null si ce n'est pas un code de zone. */
+export function codeZone(v: unknown): string | null {
+  if (typeof v !== 'string' || !v.trim()) return null;
+  const tete = v.trim().split(/\s+[—–-]\s+|\s*\(|\s*,|\s*:/u)[0].replace(/^zone\s+/i, '').replace(/\s+/g, '');
+  return /^[1-9]?(?:AU|U|A|N)[A-Za-z0-9]{0,6}$/i.test(tete) ? tete : null;
+}
+/** Comparaison de codes de zone insensible à la casse (« UBa » = « UBA »). */
+const memeZone = (a: string | null, b: string | null) => a != null && b != null && a.toUpperCase() === b.toUpperCase();
+
+/** Codes lus (casse d'origine), sans doublon insensible à la casse. */
+function codesLus(lectures: readonly LectureZonage[]): string[] {
+  const out: string[] = [];
+  for (const z of lectures.flatMap((l) => [l.zone, ...l.zones]).map(codeZone)) {
+    if (z && !out.some((x) => memeZone(x, z))) out.push(z);
+  }
+  return out;
+}
+
+/** Lectures de zone tirées d'un résultat d'outil (get_zonage_plu, rechercher_parcelles), par idu. */
+export function zonagesDepuisResultat(
+  outil: string, input: Record<string, unknown> | null | undefined, res: unknown, iduParDefaut: string | null,
+): Array<[string, LectureZonage]> {
+  const r = (res && typeof res === 'object' ? res : {}) as Record<string, unknown>;
+  if (r.status !== 'ok' && r.status !== 'partial') return [];
+  const d = (r.data && typeof r.data === 'object' ? r.data : {}) as Record<string, unknown>;
+  const src = chaine(d.source, 200) ?? chaine(r.source, 200) ?? outil;
+  if (outil === 'get_zonage_plu') {
+    const i = (input ?? {}) as Record<string, unknown>;
+    const idu = normaliserIdu(i.idu ?? i.cadastral_ref ?? i.parcel_id ?? iduParDefaut);
+    if (!idu) return [];
+    const zs = (Array.isArray(d.zones) ? d.zones : []) as Array<Record<string, unknown>>;
+    const zp = (d.zone_principale && typeof d.zone_principale === 'object' ? d.zone_principale : zs[0] ?? null) as Record<string, unknown> | null;
+    if (!zp && !zs.length) return [];
+    return [[idu, {
+      zone: chaine(zp?.zone, 40), libelle: chaine(zp?.libelle_long, 200),
+      zones: zs.map((z) => chaine(z.zone, 40)).filter((z): z is string => z != null).slice(0, 10), source: src, outil,
+    }]];
+  }
+  if (outil === 'rechercher_parcelles') {
+    const ps = (Array.isArray(d.parcelles) ? d.parcelles : []) as Array<Record<string, unknown>>;
+    return ps.flatMap((p): Array<[string, LectureZonage]> => {
+      const idu = normaliserIdu(p.idu);
+      const zone = chaine(p.zone, 40);
+      // rechercher_parcelles ne donne pas de libellé : il n'en sera pas inventé.
+      return idu && zone ? [[idu, { zone, libelle: null, zones: [zone], source: `${src} (zone lue au centroïde)`, outil }]] : [];
+    }).slice(0, 60);
+  }
+  return [];
+}
+
+/** Ajoute des lectures à la table (≤ 4 par parcelle, ≤ 80 parcelles), sans doublon. */
+export function ajouterZonages(table: Record<string, LectureZonage[]>, ajouts: Array<[string, LectureZonage]>): Record<string, LectureZonage[]> {
+  for (const [idu, l] of ajouts) {
+    const liste = table[idu] ?? [];
+    if (!liste.some((x) => x.outil === l.outil && x.zone === l.zone)) liste.push(l);
+    table[idu] = liste.slice(-4);
+  }
+  const cles = Object.keys(table);
+  for (const k of cles.slice(0, Math.max(0, cles.length - 80))) delete table[k];
+  return table;
+}
+
+/** Alertes d'écart : zone attendue (fiche, prospection) ≠ zone lue, ou plusieurs zones lues. */
+export function alertesZonage(idu: string, zoneAttendue: string | null, origineAttendue: string, lectures: readonly LectureZonage[]): string[] {
+  const alertes: string[] = [];
+  const lus = codesLus(lectures);
+  const attendue = codeZone(zoneAttendue);
+  const quiLit = lectures.map((l) => `${l.outil} : ${l.zone ?? '?'}`).join(' ; ');
+  if (attendue && lus.length && !lus.some((z) => memeZone(z, attendue))) {
+    alertes.push(`Zonage ${idu} : ${origineAttendue} indique ${attendue}, mais la zone lue est ${lus.join(' / ')} (${quiLit}). Zone à vérifier sur le plan de zonage avant toute conclusion.`);
+  }
+  if (lus.length > 1) {
+    alertes.push(`Zonage ${idu} : plusieurs zones lues pour la parcelle (${lus.join(', ')}) — parcelle à cheval ou documents superposés. Les règles de chaque zone sont à vérifier.`);
+  }
+  return alertes;
+}
+
+/** Libellé de zone SOURCÉ (GPU libelong) pour le code donné, sinon null. */
+export function libelleZoneSource(code: string | null, lectures: readonly LectureZonage[]): { libelle: string; source: string } | null {
+  if (!code) return null;
+  const l = lectures.find((x) => x.libelle && memeZone(codeZone(x.zone), code));
+  return l ? { libelle: l.libelle!, source: l.source } : null;
+}
+
 /**
  * Assemble le rapport v2 : brouillon accumulé + rapport final (terminer_mission
  * v2 léger, ou rapport v1 complet, ou rapport partiel JSON).
@@ -364,7 +633,13 @@ export function normaliserClassement(v: unknown, idusConnus: Set<string>): Array
 export function assemblerRapportV2(
   brouillon: BrouillonRapport,
   final: Record<string, unknown> | null,
-  commun: { actions_proposees: string[]; memoire_ajoutee: number; jetons_consommes: number; limites_ajoutees: string[] },
+  commun: {
+    actions_proposees: string[]; memoire_ajoutee: number; jetons_consommes: number; limites_ajoutees: string[];
+    /** Lot Q1 (B) : règles citées connues du moteur (ex. règles de conception lues avec article et page). */
+    preuves?: PreuveReglementaire[];
+    /** Lot Q1 (C) : zones lues par les outils, par idu. Fourni → libellés non sourcés effacés, écarts signalés. */
+    zonages_lus?: Record<string, LectureZonage[]>;
+  },
 ): Record<string, unknown> {
   const b = final ?? {};
   // Terrains : brouillon + ceux du rapport final (v1) — le dernier dépôt l'emporte, le bilan reste celui du moteur.
@@ -410,10 +685,59 @@ export function assemblerRapportV2(
     fiches.filter((t) => t.bilan).every((t) => !Object.keys((t.bilan as BilanTerrain).hypotheses_specifiques ?? {}).length);
   const limites = [...liste(b.limites, 30), ...commun.limites_ajoutees];
   if (memeProgramme) limites.push('Programme et hypothèses identiques pour tous les terrains, faute de règles chiffrées du PLU propres à chaque parcelle : la charge foncière ne les départage pas.');
+
+  // Lot Q1 (C) : zone et libellé sourcés, écarts signalés.
+  const alertes: string[] = [];
+  if (commun.zonages_lus) {
+    for (const t of fiches) {
+      const idu = String(t.idu);
+      const lectures = commun.zonages_lus[idu] ?? [];
+      const code = codeZone(t.zonage);
+      const lus = codesLus(lectures);
+      if (code) t.zonage = code;                                   // le libellé n'est jamais collé au code
+      else if (!t.zonage && lus.length === 1) t.zonage = lus[0];   // zone lue par un outil, unique
+      const lib = libelleZoneSource(codeZone(t.zonage), lectures);
+      t.libelle_zone = lib ? lib.libelle : null;
+      if (lib) t.libelle_zone_source = lib.source;
+      const a = alertesZonage(idu, code, 'la fiche du terrain', lectures);
+      if (a.length) { t.alertes = a; alertes.push(...a); }
+    }
+  }
+
+  // Lot Q1 (B) : aucune affirmation de conformité sans règle citée.
+  const preuvesGlobales = [...(commun.preuves ?? []),
+    ...(Array.isArray(b.preuves_reglementaires) ? b.preuves_reglementaires : []).map(normaliserPreuve).filter((p): p is PreuveReglementaire => p != null)];
+  const preuvesDe = (t: Record<string, unknown>) => [...preuvesGlobales, ...((t.preuves_reglementaires as PreuveReglementaire[] | undefined) ?? [])];
+  const reformulees: string[] = [];
+  for (const t of fiches) {
+    if (!Array.isArray(t.points_forts)) continue;
+    const g = garderPointsForts(t.points_forts as string[], preuvesDe(t));
+    if (g.a_verifier.length) {
+      t.points_forts = g.gardes;
+      t.a_verifier = [...((t.a_verifier as string[] | undefined) ?? []), ...g.a_verifier];
+      reformulees.push(...g.a_verifier.map((x) => `${t.idu} — ${x}`));
+    }
+  }
+  const parIdu = new Map(fiches.map((t) => [String(t.idu), t]));
+  for (const c of classement) {
+    const t = parIdu.get(c.idu);
+    const g = garderTexte(c.justification, t ? preuvesDe(t) : preuvesGlobales);
+    if (g.reecrites.length) { c.justification = texte(g.texte, 600); reformulees.push(...g.reecrites.map((x) => `${c.idu} — ${x}`)); }
+  }
+  // Synthèse : preuves globales, ou celles de l'unique terrain du rapport.
+  const preuvesSynthese = fiches.length === 1 ? preuvesDe(fiches[0]) : preuvesGlobales;
+  const gs = garderTexte(texte(b.synthese ?? '', 6000), preuvesSynthese);
+  reformulees.push(...gs.reecrites);
+  if (reformulees.length) {
+    alertes.push(...reformulees);
+    limites.push(`${reformulees.length} affirmation(s) de compatibilité, de constructibilité ou de conformité sans règle citée (source, article et page du règlement) : reformulée(s) « à vérifier ». Rien n'est établi tant que la règle n'est pas citée.`);
+  }
+  limites.push(...alertes.filter((a) => a.startsWith('Zonage ')));
+
   return {
     version: 2,
     titre: texte(b.titre ?? 'Rapport de mission', 200),
-    synthese: texte(b.synthese ?? '', 6000),
+    synthese: texte(gs.texte, 6000),
     hypotheses_communes: brouillon.hypotheses_communes,
     terrains: fiches.slice(0, 30),
     classement,
@@ -423,5 +747,7 @@ export function assemblerRapportV2(
     limites,
     jetons_consommes: commun.jetons_consommes,
     ...(Array.isArray(b.elements) ? { elements: b.elements.slice(0, 40) } : {}),
+    // Lot Q1 : alertes « à vérifier » (zonage, affirmations non prouvées) — champ présent seulement s'il y en a.
+    ...(alertes.length ? { alertes_verification: alertes.slice(0, 40) } : {}),
   };
 }

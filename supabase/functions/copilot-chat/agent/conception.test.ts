@@ -8,6 +8,7 @@ import {
   controlerProgramme, fusionnerRegles, normaliserProgramme, normaliserRegle, QUESTION_MAX_CARS, reglesDepuisLecture,
   reglesDepuisRulesets, reglesManquantes, signalementsFormules, suiteProposee,
   centroideParcelle, cheminTexteReglement, CONSIGNE_LECTURE_REGLEMENT, REGLEMENT_LECTURE_DIRECTE_MAX_OCTETS, REGLEMENT_MAX_OCTETS,
+  ajusterToiture, appliquerSecteur, decrireRegle, questionSecteur, reglesAPreciser, secteurDepuisReponse, toitureDuProjet, valeurRetenue,
 } from './conception.ts';
 import { depotSupabase, estLigneDeTest } from './depot.ts';
 
@@ -175,4 +176,131 @@ Deno.test('V1.8 — règlement jusqu’à 50 Mo, texte extrait à côté, centro
   assert(CONSIGNE_LECTURE_REGLEMENT('UC', 'gpu').includes("Géoportail de l'urbanisme"));
   assert(CONSIGNE_LECTURE_REGLEMENT('UC').includes('déposé par l\'utilisateur'));
   assertEquals(reglesDepuisLecture({ regles: [{ cle: 'hauteur_max_m', valeur: 12, article: 'UC 10' }] }, 'gpu', 'Règlement GPU — PLU')[0].source, 'Règlement GPU — PLU');
+});
+
+// ── Lot Q1 (A) : « pas de règle » et « règle par secteur » ne sont plus perdues ─────────
+// Textes RÉELS du règlement 92050_PLU_20251209 (Nanterre, zone UC, p. 109), mission du 04/11/2026
+// sur la parcelle 92050000AE0414. Aucune autre valeur réglementaire n'est utilisée ici.
+const SOURCE_GPU_NANTERRE = 'Règlement GPU — 92050_PLU_20251209';
+const UC9 = { cle: 'emprise_sol_max_pct', nature: 'non_reglementee', valeur: null, article: 'UC 9, p. 109', texte: 'Il n’est pas fixé de règle.' };
+const UC10 = {
+  cle: 'hauteur_max_m', nature: 'par_secteur',
+  valeur: 52,   // le modèle propose une valeur unique : elle doit être IGNORÉE tant que le secteur n'est pas connu
+  article: 'UC 10, p. 109',
+  texte: 'UC 10-2 : hauteur maximale fixée selon les secteurs repérés sur les documents graphiques.',
+  valeurs_par_secteur: [
+    // Mesures citées séparément ; `valeur` volontairement optimiste (faîtage) : elle doit être RECALCULÉE.
+    { secteur: '1', valeur: 28, acrotere_terrasse: 28, egout: 26, faitage: 28, texte: '28 m à l’acrotère (toiture terrasse) ; 26 m à l’égout et 28 m au faîtage' },
+    { secteur: '2', valeur: 24, acrotere_terrasse: 21, egout: 21, faitage: 24, exceptions: 'bureaux av. Clemenceau : 24 m / 26 m', texte: '21 m à l’acrotère ; 21 m à l’égout et 24 m au faîtage' },
+    { secteur: '3', valeur: 12, egout: 9, faitage: 12, texte: '9 m à l’égout et 12 m au faîtage' },
+    { secteur: '4', acrotere_terrasse: 52, texte: '52 m à l’acrotère' },
+  ],
+  renvoi_document_graphique: 'Secteurs de hauteur 1 à 4 repérés sur les documents graphiques',
+  regle_relative: 'UC 10-1 : hauteur ≤ distance à l’alignement opposé + 2 m',
+};
+
+Deno.test('Q1-A : UC 9 « Il n’est pas fixé de règle » → règle NON RÉGLEMENTÉE, citée, connue (pas « inconnue »)', () => {
+  const lues = reglesDepuisLecture({ regles: [UC9] }, 'gpu', SOURCE_GPU_NANTERRE);
+  assertEquals(lues.length, 1, 'la règle n’est plus perdue');
+  const r = lues[0];
+  assertEquals([r.cle, r.nature, r.valeur, r.statut, r.article, r.source], ['emprise_sol_max_pct', 'non_reglementee', null, 'confirme', 'UC 9, p. 109', SOURCE_GPU_NANTERRE]);
+  assert(!reglesManquantes(lues).includes('emprise_sol_max_pct'), 'comptée comme connue');
+  assertEquals(completerRegles(lues).filter((x) => x.statut !== 'manquant').length, 1, '« 1 règle connue sur 9 »');
+  // « Non réglementée » sans article cité : refusée (jamais affirmée sans preuve).
+  assertEquals(normaliserRegle({ ...UC9, article: undefined, source: SOURCE_GPU_NANTERRE }, 'reglement'), null);
+  // Relue depuis la base : identique (stockage rétrocompatible).
+  assertEquals(normaliserRegle(r, 'base'), r);
+  assertEquals(decrireRegle(r), 'emprise_sol_max_pct : non réglementée (art. UC 9, p. 109)');
+});
+
+Deno.test('Q1-A : UC 10 → règle CONDITIONNELLE PAR SECTEUR (4 secteurs, renvoi graphique, règle relative), question sur le secteur', () => {
+  const lues = reglesDepuisLecture({ regles: [UC9, UC10] }, 'gpu', SOURCE_GPU_NANTERRE);
+  const h = lues.find((x) => x.cle === 'hauteur_max_m')!;
+  assertEquals([h.nature, h.valeur, h.statut, h.article], ['par_secteur', null, 'manquant', 'UC 10, p. 109'], 'aucune valeur choisie au jugé');
+  // Détail par mesure, uniquement ce que le texte cite ; `valeur` = acrotère, sinon égout, sinon la plus petite mesure.
+  const det = h.valeurs_par_secteur!.map((e) => [e.secteur, e.acrotere_terrasse ?? null, e.egout ?? null, e.faitage ?? null, e.valeur, e.exceptions ?? null]);
+  assertEquals(det, [
+    ['1', 28, 26, 28, 28, null],
+    ['2', 21, 21, 24, 21, 'bureaux av. Clemenceau : 24 m / 26 m'],
+    ['3', null, 9, 12, 9, null],
+    ['4', 52, null, null, 52, null],
+  ]);
+  // Règle de choix : toiture non précisée → la plus restrictive ; terrasse → acrotère ; pentes → égout.
+  const choix = (t: 'terrasse' | 'pentes' | null) => h.valeurs_par_secteur!.map((e) => valeurRetenue(e, t).valeur);
+  assertEquals(choix(null), [26, 21, 9, 52]);
+  assertEquals(choix('terrasse'), [28, 21, 9, 52]);
+  assertEquals(choix('pentes'), [26, 21, 9, 52]);
+  assert(valeurRetenue(h.valeurs_par_secteur![0], null).mesure.includes('type de toiture non précisé : valeur la plus restrictive retenue'));
+  assert(valeurRetenue(h.valeurs_par_secteur![1], 'pentes').mesure.includes('faîtage 24 m à contrôler aussi'));
+  // L'exception « bureaux » n'est jamais retenue (aucun choix ne vaut 24 ou 26 en secteur 2).
+  assert(!['terrasse', 'pentes', null].some((t) => [24, 26].includes(valeurRetenue(h.valeurs_par_secteur![1], t as 'terrasse' | null).valeur as number)));
+  assertEquals(h.renvoi_document_graphique, UC10.renvoi_document_graphique);
+  assertEquals(h.regle_relative, UC10.regle_relative);
+  // Ni « manquante », ni « connue » : à préciser.
+  assertEquals(reglesAPreciser(lues), ['hauteur_max_m']);
+  assert(!reglesManquantes(lues).includes('hauteur_max_m'));
+  assertEquals(questionSecteur(lues), 'Dans quel secteur de hauteur (1 à 4, plan graphique) se trouve la parcelle ?');
+  assertEquals(questionSecteur([lues[0]]), null, 'rien à préciser : pas de question');
+  assert(signalementsFormules(lues).some((s) => s.includes('UC 10-1') && s.includes('alignement opposé')), 'règle relative signalée');
+  // Une estimation antérieure (outil, import) ne masque pas la règle citée par secteur.
+  const estimee = normaliserRegle({ cle: 'hauteur_max_m', valeur: 28, source: 'get_parcel_plu' }, 'modele')!;
+  const f = fusionnerRegles([estimee], lues, 'reglement');
+  assertEquals(f.regles.find((x) => x.cle === 'hauteur_max_m')!.nature, 'par_secteur');
+  // Et une estimation postérieure ne l'écrase pas.
+  assertEquals(fusionnerRegles(f.regles, [estimee], 'modele').regles.find((x) => x.cle === 'hauteur_max_m')!.nature, 'par_secteur');
+  // Formulaire : les valeurs par secteur partent avec la règle, le JSON reste sous 4 000 caractères.
+  const q = JSON.parse(construireQuestionRegles(lues, questionSecteur(lues)!, '92050000AE0414', null, 'u'));
+  assertEquals(q.regles.find((x: { cle: string }) => x.cle === 'hauteur_max_m').valeurs_par_secteur.length, 4);
+  // Relue depuis la base : identique.
+  assertEquals(normaliserRegle(h, 'base'), h);
+});
+
+Deno.test('Q1-A : le secteur indiqué par l’utilisateur fixe la valeur citée (réponse libre, formulaire, case laissée vide)', () => {
+  const lues = reglesDepuisLecture({ regles: [UC9, UC10] }, 'gpu', SOURCE_GPU_NANTERRE);
+  assertEquals(secteurDepuisReponse('La parcelle est en secteur 2.'), '2');
+  assertEquals(secteurDepuisReponse(' 3 '), '3');
+  assertEquals(secteurDepuisReponse('je ne sais pas'), null);
+  const a = appliquerSecteur(lues, 'Secteur 2');
+  const h = a.regles.find((x) => x.cle === 'hauteur_max_m')!;
+  // Secteur 2, toiture non précisée : 21 m (jamais 24 m, faîtage), sous réserve de UC 10-1.
+  assertEquals([h.valeur, h.secteur, h.statut, h.article], [21, '2', 'confirme', 'UC 10, p. 109']);
+  assert(h.source.includes("secteur 2 indiqué par l'utilisateur"));
+  assert(h.texte!.includes('Exception non retenue : bureaux av. Clemenceau') && h.texte!.includes('Sous réserve de « UC 10-1'), h.texte);
+  const sig = signalementsFormules(a.regles);
+  assert(sig.some((x) => x.includes('21 m retenue SOUS RÉSERVE de « UC 10-1')), 'UC 10-1 jamais ignorée');
+  assert(sig.some((x) => x.includes('type de toiture non précisé : valeur la plus restrictive retenue')));
+  assert(decrireRegle(h).includes('sous réserve de « UC 10-1'));
+  // Secteur 1 : 26 m sans toiture connue ; 28 m (acrotère) en toiture terrasse ; 26 m (égout) en toiture à pentes.
+  assertEquals(appliquerSecteur(lues, 'secteur 1').regles.find((x) => x.cle === 'hauteur_max_m')!.valeur, 26);
+  assertEquals(appliquerSecteur(lues, 'secteur 1', 'terrasse').regles.find((x) => x.cle === 'hauteur_max_m')!.valeur, 28);
+  assertEquals(appliquerSecteur(lues, 'secteur 1', 'pentes').regles.find((x) => x.cle === 'hauteur_max_m')!.valeur, 26);
+  // Toiture connue plus tard (programme) : recalcul ; relue depuis la base : même valeur (jamais reprise telle quelle).
+  const terrasse = ajusterToiture(appliquerSecteur(lues, 'secteur 1').regles, 'terrasse').find((x) => x.cle === 'hauteur_max_m')!;
+  assertEquals([terrasse.valeur, terrasse.toiture, terrasse.mesure_retenue], [28, 'terrasse', 'acrotère (toiture terrasse)']);
+  assertEquals(normaliserRegle(terrasse, 'base')!.valeur, 28);
+  assertEquals(normaliserRegle({ ...h, valeur: 24 }, 'base')!.valeur, 21, 'une valeur stockée trop permissive est recalculée');
+  assertEquals(toitureDuProjet({ gabarit: 'R+4 toiture terrasse' }, null), 'terrasse');
+  assertEquals(toitureDuProjet({ gabarit: 'R+4' }, { toiture: 'pentes' }), 'pentes');
+  assertEquals(toitureDuProjet({ gabarit: 'R+4' }, null), null);
+  assertEquals(reglesAPreciser(a.regles), []);
+  assertEquals(questionSecteur(a.regles), null);
+  assertEquals(appliquerSecteur(lues, 'secteur 7').appliquees, [], 'secteur absent du règlement : rien appliqué');
+  // Formulaire : case vide → les règles citées (non réglementée, par secteur) ne sont PAS effacées.
+  const vide = appliquerReponseFormulaire(lues, JSON.stringify({ type: 'reponse_regles_conception', version: 1, regles: [
+    { cle: 'emprise_sol_max_pct', valeur: null, statut: 'manquant' }, { cle: 'hauteur_max_m', valeur: null, statut: 'manquant' },
+  ] }));
+  assertEquals(vide.regles.find((x) => x.cle === 'emprise_sol_max_pct')!.nature, 'non_reglementee');
+  assertEquals(vide.regles.find((x) => x.cle === 'hauteur_max_m')!.nature, 'par_secteur');
+  // Formulaire : champ `secteur` sur la règle.
+  const parSecteur = appliquerReponseFormulaire(lues, JSON.stringify({ type: 'reponse_regles_conception', version: 1, regles: [
+    { cle: 'hauteur_max_m', valeur: null, statut: 'manquant', secteur: '3' },
+  ] }));
+  assertEquals(parSecteur.regles.find((x) => x.cle === 'hauteur_max_m')!.valeur, 9, 'secteur 3 : égout 9 m (jamais le faîtage 12 m)');
+});
+
+Deno.test('Q1-A : consigne de lecture — « non réglementée » et « par secteur » demandées explicitement', () => {
+  const c = CONSIGNE_LECTURE_REGLEMENT('UC', 'gpu');
+  assert(c.includes('non_reglementee') && c.includes('par_secteur') && c.includes('valeurs_par_secteur'));
+  assert(c.includes('"acrotere_terrasse"') && c.includes('"egout"') && c.includes('"faitage"') && c.includes('"exceptions"'));
+  assert(c.includes('Ne choisis JAMAIS le secteur'));
 });

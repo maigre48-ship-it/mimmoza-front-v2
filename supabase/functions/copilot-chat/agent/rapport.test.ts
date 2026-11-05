@@ -108,3 +108,138 @@ Deno.test('assemblage : rapport v1 complet toujours accepté', () => {
   assertEquals(r.limites, ['Réserve épuisée']);
   assertEquals(normaliserClassement([{ idu: 'a b' }], new Set()), []);
 });
+
+// ── Lot Q1 : ne rien affirmer sans preuve (constats des missions du 04/11/2026, Nanterre AE0414) ──
+import {
+  ajouterZonages, alertesZonage, codeZone, garderTexte, normaliserContrainte, sujetsAffirmes,
+  typeContrainteDepuisLibelle, zonagesDepuisResultat, type LectureZonage,
+} from './rapport.ts';
+
+const IDU_AE0414 = '92050000AE0414';
+const COMMUN_Q1 = { actions_proposees: [], memoire_ajoutee: 0, jetons_consommes: 10, limites_ajoutees: [] };
+
+Deno.test('Q1-B : affirmation sans règle citée → « à vérifier » (points forts, synthèse, justification) + limite explicite', () => {
+  const b = brouillonVide();
+  b.terrains[IDU_AE0414] = normaliserTerrainBrut({
+    idu: IDU_AE0414, commune: 'Nanterre', verdict: 'prioritaire', zonage: 'UBa',
+    points_forts: ['Zone UBa compatible R+4', 'Terrain de forme compacte'],
+  })!;
+  const r = assemblerRapportV2(b, {
+    titre: 'Prospection Nanterre',
+    synthese: 'Parcelle AE0414 étudiée. Parcelle confirmée constructible en logement collectif. À faire valider par un professionnel.',
+    classement: [{ idu: IDU_AE0414, justification: 'Zone UBa compatible R+4.' }],
+  }, COMMUN_Q1);
+  const t = (r.terrains as Array<Record<string, unknown>>)[0];
+  assertEquals(t.points_forts, ['Terrain de forme compacte'], 'l’affirmation non prouvée quitte les points forts');
+  const av = t.a_verifier as string[];
+  assertEquals(av.length, 1);
+  assert(av[0].startsWith('À vérifier : Zone UBa compatible R+4') && av[0].includes('règle de hauteur'), av[0]);
+  assert(String(r.synthese).includes('À vérifier : Parcelle confirmée constructible en logement collectif') && String(r.synthese).includes('règle de destination'));
+  assert(String(r.synthese).startsWith('Parcelle AE0414 étudiée.'), 'les autres phrases sont intactes');
+  assert(String(r.synthese).endsWith('À faire valider par un professionnel.'));
+  assert((r.classement as Array<{ justification: string }>)[0].justification.startsWith('À vérifier : Zone UBa compatible R+4'));
+  assert((r.limites as string[]).some((l) => l.includes('sans règle citée') && l.includes('« à vérifier »')), 'limite explicite');
+  assertEquals((r.alertes_verification as string[]).length, 3);
+});
+
+Deno.test('Q1-B : affirmation soutenue par une règle CITÉE (source + article + page) → conservée', () => {
+  const b = brouillonVide();
+  b.terrains[IDU_AE0414] = normaliserTerrainBrut({
+    idu: IDU_AE0414, commune: 'Nanterre', verdict: 'a_etudier', points_forts: ['Gabarit compatible avec la hauteur du secteur 2'],
+    preuves_reglementaires: [
+      { sujet: 'hauteur', source: 'Règlement 92050_PLU_20251209', article: 'UC 10', page: 109 },
+      { sujet: 'hauteur', source: 'Règlement 92050_PLU_20251209', article: 'UC 10' },   // sans page : refusée
+    ],
+  })!;
+  assertEquals((b.terrains[IDU_AE0414].preuves_reglementaires as unknown[]).length, 1, 'preuve sans page refusée');
+  const r = assemblerRapportV2(b, { titre: 'T', synthese: 'Hauteur conforme au secteur 2.' }, COMMUN_Q1);
+  const t = (r.terrains as Array<Record<string, unknown>>)[0];
+  assertEquals(t.points_forts, ['Gabarit compatible avec la hauteur du secteur 2']);
+  assertEquals(t.a_verifier, undefined);
+  assertEquals(r.synthese, 'Hauteur conforme au secteur 2.', 'un seul terrain : ses preuves valent pour la synthèse');
+  assertEquals(r.alertes_verification, undefined);
+  // Preuves globales du moteur (règles de conception citées) : même effet.
+  const r2 = assemblerRapportV2(brouillonVide(), { titre: 'T', synthese: 'Hauteur conforme au secteur 2.' },
+    { ...COMMUN_Q1, preuves: [{ sujet: 'hauteur', source: 'Règlement GPU — 92050_PLU_20251209', article: 'UC 10, p. 109', page: null }] });
+  assertEquals(r2.synthese, 'Hauteur conforme au secteur 2.');
+  // Citation complète dans la phrase (article ET page) : conservée.
+  assertEquals(garderTexte('Hauteur conforme : art. UC 10, p. 109.', []).reecrites, []);
+});
+
+Deno.test('Q1-B : phrases négatives, conditionnelles ou hors urbanisme → jamais touchées', () => {
+  for (const p of [
+    "La parcelle n'est pas constructible en l'état.",
+    'Gabarit compatible si le secteur 2 est confirmé.',
+    'Hauteur à vérifier selon le secteur du plan graphique.',
+    'Programme inconstructible sans modification du PLU.',
+    'Un terrain conforme au budget.',
+    'Accès aux réseaux confirmé.',
+    'Constructibilité de principe en zone U.',
+  ]) {
+    assertEquals(sujetsAffirmes(p), [], p);
+    assertEquals(garderTexte(p, []).texte, p, p);
+  }
+  assertEquals(sujetsAffirmes('Zone UBa compatible R+4'), ['hauteur']);
+  assertEquals(sujetsAffirmes('Parcelle confirmée constructible en logement collectif'), ['destination']);
+});
+
+Deno.test('Q1-C : zone de la fiche ≠ zone lue (GPU) → alerte ; libellé non sourcé effacé ; plusieurs zones → alerte', () => {
+  const lectureGpu: LectureZonage = { zone: 'UC', libelle: null, zones: ['UC'], source: "Géoportail de l'urbanisme via API Carto (IGN)", outil: 'get_zonage_plu' };
+  const b = brouillonVide();
+  b.terrains[IDU_AE0414] = normaliserTerrainBrut({
+    idu: IDU_AE0414, commune: 'Nanterre', verdict: 'a_etudier', zonage: 'UBa', libelle_zone: 'équipements et espaces verts',
+  })!;
+  const r = assemblerRapportV2(b, { titre: 'T', synthese: 'S' }, { ...COMMUN_Q1, zonages_lus: { [IDU_AE0414]: [lectureGpu] } });
+  const t = (r.terrains as Array<Record<string, unknown>>)[0];
+  assertEquals(t.zonage, 'UBa');
+  assertEquals(t.libelle_zone, null, 'libellé sans source : null');
+  assert((t.alertes as string[])[0].includes('la fiche du terrain indique UBa, mais la zone lue est UC'));
+  assert((r.limites as string[]).some((l) => l.startsWith(`Zonage ${IDU_AE0414}`)));
+  // Libellé collé au code par le modèle : le code seul est gardé.
+  assertEquals(codeZone('UC — équipements et espaces verts'), 'UC');
+  // Plusieurs zones lues pour la même parcelle.
+  const deux = alertesZonage(IDU_AE0414, 'UC', 'la fiche du terrain', [{ ...lectureGpu, zones: ['UC', 'UBa'] }]);
+  assert(deux.some((a) => a.includes('plusieurs zones lues') && a.includes('UC, UBa')));
+  // Même zone (casse différente) : aucune alerte.
+  assertEquals(alertesZonage(IDU_AE0414, 'uc', 'x', [lectureGpu]), []);
+  // Sans table des zones lues (anciens appels) : comportement historique, rien n'est effacé.
+  const ancien = assemblerRapportV2(b, { titre: 'T' }, COMMUN_Q1);
+  assertEquals((ancien.terrains as Array<Record<string, unknown>>)[0].libelle_zone, 'équipements et espaces verts');
+});
+
+Deno.test('Q1-C : zones lues extraites des résultats d’outils (get_zonage_plu, rechercher_parcelles)', () => {
+  const gpu = { status: 'ok', source: 'gpu-parcelle-v1', data: { source: "Géoportail de l'urbanisme via API Carto (IGN)",
+    zone_principale: { zone: 'UC', libelle_long: null, document_urbanisme: '92050_PLU_20251209' }, zones: [{ zone: 'UC' }] } };
+  const z1 = zonagesDepuisResultat('get_zonage_plu', { lat: 48.9, lng: 2.2 }, gpu, IDU_AE0414);
+  assertEquals(z1, [[IDU_AE0414, { zone: 'UC', libelle: null, zones: ['UC'], source: "Géoportail de l'urbanisme via API Carto (IGN)", outil: 'get_zonage_plu' }]]);
+  assertEquals(zonagesDepuisResultat('get_zonage_plu', {}, gpu, null), [], 'sans parcelle identifiée : rien');
+  const rp = { status: 'ok', source: 'rechercher-parcelles-v1', data: { parcelles: [{ idu: IDU_AE0414, zone: 'UBa' }, { idu: 'x', zone: null }] } };
+  const z2 = zonagesDepuisResultat('rechercher_parcelles', {}, rp, null);
+  assertEquals(z2.map(([i, l]) => [i, l.zone, l.libelle]), [[IDU_AE0414, 'UBa', null]]);
+  const table = ajouterZonages(ajouterZonages({}, z2), z1);
+  assertEquals(table[IDU_AE0414].map((l) => l.outil), ['rechercher_parcelles', 'get_zonage_plu']);
+  assert(alertesZonage(IDU_AE0414, 'UBa', 'la fiche', table[IDU_AE0414]).some((a) => a.includes('plusieurs zones lues')));
+});
+
+Deno.test('Q1-D : typage déterministe des contraintes ; propriétaire jamais « contrainte » sourcée GPU', () => {
+  const ta = normaliserContrainte({ type: 'bruit', libelle: "Secteur de taxe d'aménagement majorée Emile Zola", source: 'GPU', outil: 'get_prescriptions_urbanisme' })!;
+  assertEquals([ta.type, ta.source, ta.outil], ['fiscalite', "Géoportail de l'urbanisme via API Carto (IGN)", 'get_prescriptions_urbanisme']);
+  assertEquals(typeContrainteDepuisLibelle('Droit de préemption urbain renforcé'), 'dpu');
+  assertEquals(typeContrainteDepuisLibelle("Orientation d'aménagement et de programmation"), 'oap');
+  assertEquals(typeContrainteDepuisLibelle('Retrait-gonflement des argiles : aléa fort'), 'argiles');
+  assertEquals(typeContrainteDepuisLibelle('Servitude de mixité sociale'), 'mixite_sociale');
+  assertEquals(typeContrainteDepuisLibelle('Libellé sans indice'), null);
+  assertEquals(normaliserContrainte({ type: 'servitude', libelle: 'Libellé sans indice' })!.type, 'servitude', 'à défaut, le type proposé reste');
+  // « Propriétaire = CDC Habitat Social » typé mixité sociale et sourcé GPU : ce n'est pas une contrainte.
+  const brute = { type: 'mixite_sociale', libelle: 'Propriétaire = CDC Habitat Social', source: "Géoportail de l'urbanisme" };
+  assertEquals(normaliserContrainte(brute), null);
+  const t = normaliserTerrainBrut({ idu: IDU_AE0414, commune: 'Nanterre', verdict: 'a_etudier', contraintes: [brute, { type: 'bruit', libelle: "Secteur de taxe d'aménagement majorée Emile Zola" }] })!;
+  assertEquals((t.contraintes as Array<{ type: string }>).map((c) => c.type), ['fiscalite']);
+  assertEquals(t.proprietaire, { nom: 'CDC Habitat Social', forme: null, siren: null, source: null }, 'source GPU effacée, jamais inventée');
+  // Avec l'outil d'origine : la source est celle de l'outil (DGFiP).
+  const t2 = normaliserTerrainBrut({ idu: IDU_AE0414, commune: 'Nanterre', verdict: 'a_etudier', contraintes: [{ ...brute, outil: 'get_proprietaire_parcelle' }] })!;
+  assertEquals((t2.proprietaire as { source: string }).source, 'DGFiP — Fichiers des parcelles des personnes morales (Licence Ouverte 2.0)');
+  // Propriétaire déclaré avec une source GPU : source effacée.
+  const t3 = normaliserTerrainBrut({ idu: IDU_AE0414, commune: 'Nanterre', verdict: 'a_etudier', proprietaire: { nom: 'CDC Habitat Social', source: 'Géoportail de l’urbanisme' } })!;
+  assertEquals((t3.proprietaire as { source: unknown }).source, null);
+});

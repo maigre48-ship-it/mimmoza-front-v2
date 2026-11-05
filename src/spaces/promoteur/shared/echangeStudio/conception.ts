@@ -34,6 +34,22 @@ export interface RegleConception {
   article?: string;
   /** Extrait cité du règlement, s'il a été lu. */
   texte?: string;
+  /**
+   * Lot Q1 — champs OPTIONNELS (absents = règle chiffrée, comportement historique ; un lecteur
+   * plus ancien les ignore sans erreur, d'où VERSION_CONCEPTION inchangée) :
+   *   · 'non_reglementee' : « Il n'est pas fixé de règle » (cité) → valeur null mais règle CONNUE ;
+   *   · 'par_secteur'     : valeur selon le secteur du document graphique ; secteur inconnu → valeur null, à préciser.
+   */
+  nature?: 'chiffree' | 'non_reglementee' | 'par_secteur';
+  /** Mesures CITÉES par secteur (acrotère de toiture terrasse, égout, faîtage) ; `exceptions` jamais retenues. */
+  valeurs_par_secteur?: Array<{ secteur: string; valeur: number | string; texte?: string; acrotere_terrasse?: number; egout?: number; faitage?: number; exceptions?: string }>;
+  renvoi_document_graphique?: string;
+  regle_relative?: string;
+  secteur?: string;
+  /** Toiture utilisée pour choisir la mesure (absente : non précisée → mesure la plus restrictive). */
+  toiture?: 'terrasse' | 'pentes';
+  /** Mesure retenue et pourquoi. */
+  mesure_retenue?: string;
 }
 
 export type Typologie = 'T1' | 'T2' | 'T3' | 'T4' | 'T5';
@@ -114,13 +130,46 @@ export function lireRegle(v: unknown): RegleConception | null {
   let valeur: number | string | null = null;
   if (cle === 'recul_limites_formule') valeur = chaine(v.valeur, 120);
   else if (positif(v.valeur)) valeur = v.valeur;
-  // Valeur absente → la règle est forcément « manquant » (jamais confirmée à vide).
-  const statutFinal: StatutRegle = valeur === null ? 'manquant' : statut;
+  const nature = v.nature === 'non_reglementee' || v.nature === 'par_secteur' ? v.nature : null;
+  const article = chaine(v.article, 120);
+  // Valeur absente → la règle est forcément « manquant » (jamais confirmée à vide) — sauf
+  // « non réglementée » CITÉE (lot Q1) : règle connue, sans valeur.
+  const nonReglementee = nature === 'non_reglementee' && article != null;
+  const statutFinal: StatutRegle = valeur === null && !nonReglementee ? 'manquant' : statut;
   const r: RegleConception = { cle: cle as RegleCle, valeur, unite: chaine(v.unite, 40) ?? LIBELLE_REGLE[cle as RegleCle].unite, statut: statutFinal, source };
-  const article = chaine(v.article, 120); if (article) r.article = article;
+  if (article) r.article = article;
   const texte = chaine(v.texte, 1500); if (texte) r.texte = texte;
+  if (nonReglementee) r.nature = 'non_reglementee';
+  if (nature === 'par_secteur' && Array.isArray(v.valeurs_par_secteur)) {
+    const vps = v.valeurs_par_secteur.filter(estObj).flatMap((e) => {
+      const secteur = typeof e.secteur === 'number' ? String(e.secteur) : chaine(e.secteur, 20);
+      const val = cle === 'recul_limites_formule' ? chaine(e.valeur, 120) : positif(e.valeur) ? e.valeur : null;
+      if (!secteur || val === null) return [];
+      const t = chaine(e.texte, 300);
+      const exc = chaine(e.exceptions, 200);
+      const m = (x: unknown) => (positif(x) ? x : undefined);
+      const acrotere_terrasse = m(e.acrotere_terrasse), egout = m(e.egout), faitage = m(e.faitage);
+      return [{ secteur, valeur: val, ...(t ? { texte: t } : {}),
+        ...(acrotere_terrasse !== undefined ? { acrotere_terrasse } : {}), ...(egout !== undefined ? { egout } : {}),
+        ...(faitage !== undefined ? { faitage } : {}), ...(exc ? { exceptions: exc } : {}) }];
+    }).slice(0, 12);
+    if (vps.length) {
+      r.nature = 'par_secteur';
+      r.valeurs_par_secteur = vps;
+      const renvoi = chaine(v.renvoi_document_graphique, 200); if (renvoi) r.renvoi_document_graphique = renvoi;
+      const secteur = chaine(v.secteur, 20); if (secteur) r.secteur = secteur;
+      if (v.toiture === 'terrasse' || v.toiture === 'pentes') r.toiture = v.toiture;
+      const mesure = chaine(v.mesure_retenue, 200); if (mesure) r.mesure_retenue = mesure;
+    }
+  }
+  if (r.nature) { const rel = chaine(v.regle_relative, 300); if (rel) r.regle_relative = rel; }
   return r;
 }
+
+/** Lot Q1 : règle « par secteur » dont le secteur de la parcelle n'est pas connu (à préciser, jamais « inconnue »). */
+export const regleAPreciser = (r: RegleConception): boolean => r.nature === 'par_secteur' && r.valeur === null;
+/** Lot Q1 : règle connue = chiffrée, ou « non réglementée » citée. */
+export const regleConnue = (r: RegleConception): boolean => r.statut !== 'manquant';
 
 export function lireRegles(v: unknown): RegleConception[] {
   if (!Array.isArray(v)) return [];

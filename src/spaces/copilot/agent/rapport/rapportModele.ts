@@ -200,7 +200,7 @@ export function tonDuVerdict(libelle: string | null): TonVerdict {
 
 export const LIBELLE_CONTRAINTE: Record<string, string> = {
   mixite_sociale: 'Mixité sociale', ppr: 'Plan de prévention des risques', argiles: 'Argiles (retrait-gonflement)',
-  bruit: 'Bruit', dpu: 'Droit de préemption', oap: 'OAP', servitude: 'Servitude', autre: 'Autre',
+  bruit: 'Bruit', dpu: 'Droit de préemption', oap: 'OAP', servitude: 'Servitude', fiscalite: 'Fiscalité (taxe d’aménagement)', autre: 'Autre',
 };
 
 export interface Proprietaire { nom: string; forme: string | null; siren: string | null; source: string | null; deduit: boolean }

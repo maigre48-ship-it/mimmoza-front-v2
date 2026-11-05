@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   construireReponseRegles, creerMessageConception, lireControles, lireMessageConception, lireMetriques, lireQuestionRegles,
-  lireRegle, lireRegles, lireSuiteProposee, REGLES_CLES, TAILLE_MAX_REPONSE, VERSION_CONCEPTION, type MetriquesModele,
+  lireRegle, lireRegles, lireSuiteProposee, regleAPreciser, regleConnue, REGLES_CLES, TAILLE_MAX_REPONSE, VERSION_CONCEPTION, type MetriquesModele,
 } from './conception.ts';
 
 const ID = '7a7c855a-1828-4253-8a8b-3e53d0183ca6';
@@ -92,4 +92,35 @@ test('suite proposée : terrains triés par rang', () => {
   const s = lireSuiteProposee({ type: 'conception', texte: 'Concevoir ?', terrains: [{ idu: 'B', rang: 2, raison: 'r2' }, { idu: 'A', rang: 1 }] });
   assert.deepEqual(s?.terrains.map((t) => t.idu), ['A', 'B']);
   assert.equal(lireSuiteProposee({ type: 'autre', terrains: [] }), null);
+});
+
+// Lot Q1 : « non réglementée » (citée) reste connue ; « par secteur » garde ses valeurs, secteur à préciser.
+test('lot Q1 : règle non réglementée citée et règle par secteur lues sans perte', () => {
+  const nr = lireRegle({ cle: 'emprise_sol_max_pct', valeur: null, unite: '%', statut: 'confirme', source: 'Règlement GPU — 92050_PLU_20251209', article: 'UC 9, p. 109', nature: 'non_reglementee' });
+  assert.equal(nr?.statut, 'confirme');
+  assert.equal(nr?.nature, 'non_reglementee');
+  assert.equal(regleConnue(nr!), true);
+  // Sans article : redevient « manquant » (jamais affirmé sans citation).
+  assert.equal(lireRegle({ cle: 'emprise_sol_max_pct', valeur: null, statut: 'confirme', source: 's', nature: 'non_reglementee' })?.statut, 'manquant');
+  const ps = lireRegle({ cle: 'hauteur_max_m', valeur: null, unite: 'm', statut: 'manquant', source: 'Règlement GPU — 92050_PLU_20251209', article: 'UC 10, p. 109', nature: 'par_secteur',
+    valeurs_par_secteur: [
+      { secteur: '1', valeur: 28, acrotere_terrasse: 28, egout: 26, faitage: 28 },
+      { secteur: '2', valeur: 21, acrotere_terrasse: 21, egout: 21, faitage: 24, exceptions: 'bureaux av. Clemenceau : 24 m / 26 m' },
+      { secteur: '3', valeur: 9, egout: 9, faitage: 12 },
+      { secteur: '4', valeur: 52, acrotere_terrasse: 52 },
+    ],
+    regle_relative: 'UC 10-1 : hauteur ≤ distance à l’alignement opposé + 2 m' })!;
+  assert.equal(ps.statut, 'manquant');
+  assert.equal(regleAPreciser(ps), true);
+  assert.equal(regleConnue(ps), false);
+  assert.deepEqual(ps.valeurs_par_secteur?.map((e) => [e.secteur, e.acrotere_terrasse ?? null, e.egout ?? null, e.faitage ?? null, e.valeur]),
+    [['1', 28, 26, 28, 28], ['2', 21, 21, 24, 21], ['3', null, 9, 12, 9], ['4', 52, null, null, 52]]);
+  assert.equal(ps.valeurs_par_secteur?.[1].exceptions, 'bureaux av. Clemenceau : 24 m / 26 m');
+  // Secteur indiqué : valeur retenue, toiture et mesure conservées.
+  const choisi = lireRegle({ cle: 'hauteur_max_m', valeur: 21, unite: 'm', statut: 'confirme', source: 's', article: 'UC 10, p. 109', nature: 'par_secteur', secteur: '2',
+    valeurs_par_secteur: [{ secteur: '2', valeur: 21, acrotere_terrasse: 21, egout: 21, faitage: 24 }], mesure_retenue: 'acrotère — type de toiture non précisé : valeur la plus restrictive retenue' })!;
+  assert.equal(choisi.valeur, 21);
+  assert.equal(choisi.mesure_retenue, 'acrotère — type de toiture non précisé : valeur la plus restrictive retenue');
+  // Règle historique (sans nature) : inchangée.
+  assert.deepEqual(lireRegle({ cle: 'hauteur_max_m', valeur: 18, unite: 'm', statut: 'estime', source: 'x' }), { cle: 'hauteur_max_m', valeur: 18, unite: 'm', statut: 'estime', source: 'x' });
 });

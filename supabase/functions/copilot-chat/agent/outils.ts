@@ -154,8 +154,27 @@ const REGLE_PROPS = {
     source: { type: 'string', description: 'Outil ou document d’origine (obligatoire).' },
     article: { type: 'string' },
     texte: { type: 'string', description: 'Citation courte du règlement.' },
+    nature: { type: 'string', enum: ['chiffree', 'non_reglementee', 'par_secteur'], description: '« non_reglementee » : le règlement dit qu’il n’est pas fixé de règle (article et page obligatoires, valeur null). « par_secteur » : la valeur dépend d’un secteur du plan graphique (valeur null tant que le secteur n’est pas connu).' },
+    valeurs_par_secteur: { type: 'array', items: { type: 'object', properties: { secteur: { type: 'string' }, acrotere_terrasse: { type: 'number' }, egout: { type: 'number' }, faitage: { type: 'number' }, valeur: { type: 'number' }, exceptions: { type: 'string' }, texte: { type: 'string' } } }, description: 'nature « par_secteur » : mesures CITÉES de chaque secteur, séparément (acrotère de toiture terrasse, égout, faîtage), exceptions à part.' },
+    renvoi_document_graphique: { type: 'string' },
+    regle_relative: { type: 'string', description: 'Règle complémentaire non chiffrable seule (ex. relative à la largeur de la voie).' },
   },
   required: ['cle', 'valeur', 'source'],
+};
+
+/** Lot Q1 : règle citée qui permet d'affirmer une compatibilité (hauteur, destination). */
+const PREUVES_PROPS = {
+  type: 'array',
+  description: 'Règles CITÉES qui soutiennent une affirmation de compatibilité / constructibilité / conformité (hauteur, gabarit R+n, destination « logement autorisé »). Sans preuve citée (source + article + page), le moteur reformule l’affirmation « à vérifier ».',
+  items: {
+    type: 'object',
+    properties: {
+      sujet: { type: 'string', enum: ['hauteur', 'destination'] },
+      source: { type: 'string', description: 'Document lu (ex. règlement du PLU, identifiant du document).' },
+      article: { type: 'string' }, page: { type: ['string', 'number'] },
+    },
+    required: ['sujet', 'source', 'article', 'page'],
+  },
 };
 
 export const OUTIL_RECUPERER_PARCELLE: OutilDef = {
@@ -191,6 +210,7 @@ export const OUTIL_ENREGISTRER_PROGRAMME: OutilDef = {
       typologies: { type: 'object', properties: { T1: { type: 'number' }, T2: { type: 'number' }, T3: { type: 'number' }, T4: { type: 'number' }, T5: { type: 'number' } } },
       shab_cible_m2: { type: ['number', 'null'] }, sdp_cible_m2: { type: ['number', 'null'] },
       gabarit: { type: ['string', 'null'] }, stationnement: { type: ['number', 'null'] },
+      toiture: { type: 'string', enum: ['terrasse', 'pentes'], description: 'Type de toiture du projet s’il est décidé : choisit la mesure de hauteur du secteur (terrasse → acrotère ; pentes → égout, faîtage contrôlé aussi). Absent : la mesure la plus restrictive est retenue.' },
       justification: { type: 'string', description: 'D’où viennent ces chiffres (rapport de prospection, règles).' },
     },
   },
@@ -289,7 +309,8 @@ export const OUTIL_RAPPORT_TERRAIN: OutilDef = {
     type: 'object',
     properties: {
       idu: { type: 'string' }, commune: { type: 'string' }, adresse: { type: ['string', 'null'] },
-      surface_m2: { type: ['number', 'null'] }, zonage: { type: ['string', 'null'] }, libelle_zone: { type: ['string', 'null'] },
+      surface_m2: { type: ['number', 'null'] }, zonage: { type: ['string', 'null'], description: 'Code de zone LU par un outil (ex. « UC »), sans libellé.' },
+      libelle_zone: { type: ['string', 'null'], description: 'UNIQUEMENT le libellé renvoyé par un outil (GPU) ou lu dans le règlement ; sinon null (le moteur efface un libellé non sourcé).' },
       score: { type: ['number', 'null'], description: 'score_tri de rechercher_parcelles' },
       verdict: { type: 'string', enum: ['prioritaire', 'a_etudier', 'ecarte', 'indetermine'] },
       potentiel_logements: { type: ['number', 'null'] },
@@ -302,14 +323,16 @@ export const OUTIL_RAPPORT_TERRAIN: OutilDef = {
         items: {
           type: 'object',
           properties: {
-            type: { type: 'string', enum: ['mixite_sociale', 'ppr', 'argiles', 'bruit', 'dpu', 'oap', 'servitude', 'autre'] },
+            type: { type: 'string', enum: ['mixite_sociale', 'ppr', 'argiles', 'bruit', 'dpu', 'oap', 'servitude', 'fiscalite', 'autre'] },
             libelle: { type: 'string' }, source: { type: 'string' },
+            outil: { type: 'string', description: 'Outil d’origine (ex. get_prescriptions_urbanisme) : la source affichée en est déduite. Un propriétaire n’est JAMAIS une contrainte.' },
           },
         },
       },
       points_forts: { type: 'array', items: { type: 'string' } },
       points_bloquants: { type: 'array', items: { type: 'string' } },
       sources: { type: 'array', items: { type: 'string' } },
+      preuves_reglementaires: PREUVES_PROPS,
     },
     required: ['idu', 'commune', 'verdict'],
   },
@@ -349,6 +372,7 @@ export const OUTIL_TERMINER_MISSION: OutilDef = {
         description: 'Du meilleur au moins bon ; le rang est déduit de l’ordre.',
       },
       limites: { type: 'array', items: { type: 'string' } },
+      preuves_reglementaires: PREUVES_PROPS,
       elements: {
         type: 'array',
         description: 'Missions de veille uniquement : signaux qualifiés {source, genre, titre, detail, lien?, retenu}.',
