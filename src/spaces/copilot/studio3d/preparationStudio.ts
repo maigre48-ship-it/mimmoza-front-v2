@@ -20,6 +20,7 @@ import type { JarvisDraft } from './jarvisDraft.ts';
 import { implantationDepuisVolume, pointDansParcelle, terrainDepuisParcelle } from './confirmationRapide.ts';
 import { volumeBatimentsStudio, type VolumeBatimentsStudio } from './batimentsStudio.ts';
 import { ficheStudioDepuisVolume, type GeometrieParcelle, type ProgrammeVolume, type VolumePropose } from './volumeParcelle.ts';
+import { lireRegles, type RegleLue } from './controlesVolume.ts';
 
 export const OUTIL_PREPARATION = 'studio_preparer_3d';
 export const OUTIL_RENDU = 'studio_lancer_rendu';
@@ -97,6 +98,8 @@ export interface PreparationStockee {
   geometrie: GeometrieParcelle;
   programme: ProgrammeVolume | undefined;
   volume: VolumePropose;
+  /** Lot fiche-3d : règles PLU de la conception (entree.regles), relues sans confiance ; [] si absentes. */
+  regles: RegleLue[];
 }
 
 /** Ligne `studio_preparations` relue sans confiance ; null si inexploitable. */
@@ -113,6 +116,7 @@ export function lirePreparationStockee(ligne: unknown): PreparationStockee | nul
   return {
     id: ligne.id, idu, commune: txt(entree.commune, 120), geometrie: g as unknown as GeometrieParcelle,
     programme: estObj(entree.programme_volume) ? entree.programme_volume as unknown as ProgrammeVolume : undefined, volume: v,
+    regles: lireRegles(entree.regles),
   };
 }
 

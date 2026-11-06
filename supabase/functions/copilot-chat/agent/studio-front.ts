@@ -35,4 +35,9 @@ export {
   draftBrief, studioCommand, studioComposition, studioSegmentedVolume, type JarvisDraft,
 } from '../../../../src/spaces/copilot/studio3d/jarvisDraft.ts';
 export { exigerPreparation3D } from '../../../../src/spaces/copilot/studio3d/preparation3D.ts';
+// Lot fiche-3d : vérifications PLU du volume, partagées avec la fiche « Espace 3D » du chat.
+export {
+  controlerVolume, formuleRecul, libelleRegle, lireRegles, regleCitee,
+  type ControleVolume, type RegleLue, type Verdict,
+} from '../../../../src/spaces/copilot/studio3d/controlesVolume.ts';
 export type { ProjetMimmozaV2 } from '../../../../src/spaces/promoteur/shared/echangeStudio/mimmozaProjetV2.ts';

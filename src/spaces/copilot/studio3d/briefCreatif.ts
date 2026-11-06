@@ -61,6 +61,8 @@ export interface OptionBrief<V> {
   detail: string;
   /** Faux = montré « bientôt », jamais sélectionnable (le Studio ne l'applique pas). */
   disponible: boolean;
+  /** Lot fiche-3d : descriptif court (deux lignes) des cartes de style de la fiche « Espace 3D ». */
+  descriptif?: string;
 }
 
 // Couleurs DÉCLARÉES des matériaux du Studio (archvizLibrary.ts, jeu du paquet Unreal ;
@@ -77,9 +79,12 @@ export const MATIERE_FACADE: Record<Facade, { materiau: string; couleur: string 
 };
 
 export const STYLES: readonly OptionBrief<Style>[] = [
-  { valeur: 'contemporain', libelle: 'Contemporain', detail: 'Le dessin du Studio, personnalisé par vos choix.', disponible: true },
-  { valeur: 'haussmannien', libelle: 'Haussmannien', detail: 'Bientôt disponible.', disponible: false },
-  { valeur: 'art_deco', libelle: 'Art déco', detail: 'Bientôt disponible.', disponible: false },
+  { valeur: 'contemporain', libelle: 'Contemporain', detail: 'Le dessin du Studio, personnalisé par vos choix.', disponible: true,
+    descriptif: 'Volumes nets, toit plat, fenêtres régulières. C’est le dessin du Studio, que vous personnalisez : façade, fenêtres, balcons, attique.' },
+  { valeur: 'haussmannien', libelle: 'Haussmannien', detail: 'Bientôt disponible.', disponible: false,
+    descriptif: 'Pierre de taille, balcons filants, toit en zinc à la Mansart (Paris, 1853-1927). Prévu dans le Studio, pas encore rendu.' },
+  { valeur: 'art_deco', libelle: 'Art déco', detail: 'Bientôt disponible.', disponible: false,
+    descriptif: 'Verticalité marquée, bandeaux superposés, couronnement en gradins (1920-1939). Prévu dans le Studio, pas encore rendu.' },
 ];
 export const FACADES: readonly OptionBrief<Facade>[] = [
   { valeur: 'enduit_clair', libelle: 'Enduit clair', detail: 'Enduit beige, chaleureux et sobre.', disponible: true },
@@ -159,9 +164,13 @@ export interface ApercuVolume { corps: CorpsApercu[]; contour: [number, number][
 export interface LimitesBrief { batiments: number; balcons: boolean }
 
 export interface DemandeBrief {
-  /** 'demande' : brief exigé avant le devis (ou rouvert par Mimmo) ; 'devis' : « Modifier l'habillage » sous un devis. */
-  origine: 'demande' | 'devis';
-  type: TypeRenduBrief;
+  /**
+   * 'demande' : brief exigé avant le devis (ou rouvert par Mimmo) ; 'devis' : « Modifier l'habillage » sous un devis ;
+   * 'fiche' (lot fiche-3d) : habillage choisi dans la fiche « Espace 3D », sans rendu (type null).
+   */
+  origine: 'demande' | 'devis' | 'fiche';
+  /** null : brief du projet choisi dans la fiche, sans rendu demandé (bloc sans type). */
+  type: TypeRenduBrief | null;
   /** Ambiances proposées par le serveur pour ce type (l'image n'a pas de nuit). */
   ambiances: Ambiance[];
   /** Brief connu (modification) ; null si aucun. */
@@ -304,13 +313,19 @@ export function choixAppliques(etat: EtatBrief, mimmoChoisit = false): ChoixBrie
 
 const LIB_TYPE: Record<TypeRenduBrief, string> = { film: 'le film', visite360: 'la visite 360°', image: 'l’image' };
 
-/** Message envoyé au chat : une ligne lisible, puis le bloc relu par le serveur. */
+/**
+ * Message envoyé au chat : une ligne lisible, puis le bloc relu par le serveur. Sans type (fiche « Espace 3D ») :
+ * bloc sans `type` — le serveur l'enregistre comme habillage du projet, sans lancer de devis.
+ */
 export function messageBrief(etat: EtatBrief, d: Pick<DemandeBrief, 'type' | 'limites'>, mimmoChoisit = false): string {
-  const bloc = { v: BRIEF_BLOC_VERSION, type: d.type, brief: briefAEnvoyer(etat, mimmoChoisit) };
+  const bloc = d.type ? { v: BRIEF_BLOC_VERSION, type: d.type, brief: briefAEnvoyer(etat, mimmoChoisit) } : { v: BRIEF_BLOC_VERSION, brief: briefAEnvoyer(etat, mimmoChoisit) };
   const recap = recapitulatif(choixAppliques(etat, mimmoChoisit), d);
-  const tete = mimmoChoisit && etat.touches.length < CHAMPS_CARTE.length
-    ? `Brief créatif pour ${LIB_TYPE[d.type]} (rendu) : je laisse Mimmo choisir${etat.touches.length ? ' le reste' : ''} — ${recap}.`
-    : `Brief créatif validé pour ${LIB_TYPE[d.type]} (rendu) : ${recap}.`;
+  const mimmo = mimmoChoisit && etat.touches.length < CHAMPS_CARTE.length;
+  const tete = !d.type
+    ? (mimmo ? `Habillage du projet choisi dans la fiche : je laisse Mimmo choisir${etat.touches.length ? ' le reste' : ''} — ${recap}.` : `Habillage du projet choisi dans la fiche : ${recap}.`)
+    : mimmo
+      ? `Brief créatif pour ${LIB_TYPE[d.type]} (rendu) : je laisse Mimmo choisir${etat.touches.length ? ' le reste' : ''} — ${recap}.`
+      : `Brief créatif validé pour ${LIB_TYPE[d.type]} (rendu) : ${recap}.`;
   return `${tete}\n\n\`\`\`${BRIEF_BLOC_LANGUE}\n${JSON.stringify(bloc)}\n\`\`\``;
 }
 
@@ -331,7 +346,7 @@ export function briefEnvoyeApres(messages: readonly { id: string; role: string; 
     const m = messages[k];
     if (m.role !== 'user') continue;
     const l = lireBlocBrief(m.text);
-    if (l.brief) return l.visible.replace(/^Brief créatif[^:]*:\s*/, '').replace(/\.$/, '');
+    if (l.brief) return l.visible.replace(/^(?:Brief créatif|Habillage du projet)[^:]*:\s*/, '').replace(/\.$/, '');
   }
   return null;
 }
@@ -345,6 +360,126 @@ export function demandeDepassee(messages: readonly { id: string; role: string; t
   if (i < 0) return false;
   return messages.slice(i + 1).some((m) => (m.role === 'user' && lireBlocBrief(m.text).brief)
     || (m.toolCalls ?? []).some((t) => t.name === OUTIL_LANCER_RENDU && estObj(t.output) && (t.output.status === 'confirmation_requise' || t.output.status === 'ok')));
+}
+
+// ── Lot fiche-3d : le MÊME brief dans la fiche « Espace 3D » ───────────────────
+export interface BriefCourant extends ChoixBrief {
+  /** Champs non choisis par l'utilisateur (valeurs proposées par Mimmo). */
+  defauts: string[];
+  /** D'où vient le brief : bloc d'un message (carte ou fiche) ou devis de rendu. */
+  origine: 'message' | 'devis';
+}
+
+/** Bloc ```mimmoza-brief``` d'un message → choix (valeurs absentes = proposées) ; null si absent ou refusé par les listes. */
+export function briefDuBloc(texte: string): BriefCourant | null {
+  const m = RE_BLOC.exec(texte);
+  if (!m) return null;
+  let brut: unknown;
+  try { brut = JSON.parse(m[1]); } catch { return null; }
+  if (!estObj(brut) || brut.v !== BRIEF_BLOC_VERSION || !estObj(brut.brief)) return null;
+  const b = brut.brief;
+  const choix: ChoixBrief = { ...CHOIX_DEFAUT };
+  const defauts: string[] = [];
+  for (const c of CHAMPS_CARTE) {
+    const v = b[c];
+    if (v === undefined || v === null) { defauts.push(c); continue; }
+    const ok = c === 'attique' ? typeof v === 'boolean' : optionsDe(c).some((o) => o.valeur === v);
+    if (!ok) return null;
+    (choix as unknown as Record<string, unknown>)[c] = v;
+  }
+  if (b.style !== undefined && b.style !== null && !STYLES.some((s) => s.valeur === b.style)) return null;
+  return { ...choix, defauts, origine: 'message' };
+}
+
+/**
+ * Brief actuel de la conversation, quel que soit l'endroit où il a été choisi (fiche ou carte « Brief créatif »,
+ * ou devis de rendu) : le PLUS RÉCENT gagne — même règle que le serveur (studio.ts::briefDuFil). null : aucun.
+ */
+export function briefCourant(messages: readonly { role: string; text: string; toolCalls?: readonly { name: string; status?: string; output?: unknown }[] }[]): BriefCourant | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === 'user') { const b = briefDuBloc(m.text); if (b) return b; continue; }
+    const appels = m.toolCalls ?? [];
+    for (let j = appels.length - 1; j >= 0; j--) {
+      const d = lireDemandeBrief(appels[j]);
+      if (d?.actuel) return { ...d.actuel, origine: 'devis' };
+    }
+  }
+  return null;
+}
+
+/** Demande de brief ouverte depuis la fiche « Espace 3D » (aucun rendu : type null, toutes les ambiances). */
+export function demandeFiche(actuel: BriefCourant | null, apercu: ApercuVolume | null, limites: LimitesBrief): DemandeBrief {
+  return {
+    origine: 'fiche', type: null, ambiances: ['jour', 'fin_de_journee', 'nuit'],
+    actuel: actuel ? { facade: actuel.facade, ouvertures: actuel.ouvertures, balcons: actuel.balcons, attique: actuel.attique, rdc: actuel.rdc, ambiance: actuel.ambiance, defauts: actuel.defauts } : null,
+    apercu, limites,
+  };
+}
+
+/**
+ * Vignette d'un style NON rendu par le Studio (haussmannien, Art déco) : élévation schématique de 3 travées,
+ * à partir des données des packs du Studio (src/core/stylepack/packs/planned.ts : trame, niveaux types, toiture,
+ * matériaux, description). Illustration, PAS un rendu du Studio ; null pour le contemporain (VignetteTravee).
+ */
+export interface PolySvg { points: [number, number][]; fill: string; opacite?: number }
+export function dessinStyle(style: Style): (DessinTravee & { polys: PolySvg[] }) | null {
+  if (style === 'contemporain') return null;
+  const ciel = '#dce8f3', sol = '#e7e3da';
+  const vitrage = '#4d5d68';
+  const rects: RectSvg[] = [];
+  const polys: PolySvg[] = [];
+  if (style === 'haussmannien') {
+    // Pack french_haussmann_v1 : trame 3,05 m, 6 niveaux types, comble brisé en zinc, pierre calcaire, balcons filants aux 2ᵉ et 5ᵉ étages.
+    const trame = 3.05, L = 3 * trame + 0.6, rez = 4.2, etage = 3.0, n = 5, comble = 3.2;
+    const hMur = rez + n * etage, H = hMur + comble + 1.6, solY = H - 0.6;
+    const y = (z: number, h: number) => solY - z - h;
+    rects.push({ x: -2, y: -2, w: L + 4, h: H + 4, fill: ciel });
+    rects.push({ x: 0, y: y(0, hMur), w: L, h: hMur, fill: MATIERE_FACADE.pierre.couleur, trait: '#00000022' });
+    rects.push({ x: 0, y: y(0, rez), w: L, h: rez, fill: '#bfb59f' });
+    // Comble brisé (zinc) et lucarnes.
+    polys.push({ points: [[-0.3, y(hMur, 0)], [L + 0.3, y(hMur, 0)], [L - 0.6, y(hMur + comble * 0.75, 0)], [0.6, y(hMur + comble * 0.75, 0)]], fill: '#59626b' });
+    polys.push({ points: [[0.6, y(hMur + comble * 0.75, 0)], [L - 0.6, y(hMur + comble * 0.75, 0)], [L - 1.4, y(hMur + comble, 0)], [1.4, y(hMur + comble, 0)]], fill: '#4a525a' });
+    for (let t = 0; t < 3; t++) {
+      const cx = 0.3 + trame * (t + 0.5);
+      rects.push({ x: cx - 0.55, y: y(0.3, rez - 0.9), w: 1.1, h: rez - 0.9, fill: vitrage, trait: '#2f3a40' });
+      for (let e = 0; e < n; e++) {
+        const z = rez + e * etage;
+        rects.push({ x: cx - 0.55, y: y(z + 0.55, 2.1), w: 1.1, h: 2.1, fill: vitrage, trait: '#2f3a40' });
+      }
+      rects.push({ x: cx - 0.4, y: y(hMur + 0.35, 1.2), w: 0.8, h: 1.2, fill: vitrage, trait: '#2f3a40' });
+    }
+    for (const e of [1, 4]) { // balcons filants aux 2ᵉ et 5ᵉ étages
+      const z = rez + e * etage;
+      rects.push({ x: 0.1, y: y(z + 0.55, 0.9), w: L - 0.2, h: 0.12, fill: '#2b2f33' });
+      rects.push({ x: 0.1, y: y(z + 0.55, 0.12), w: L - 0.2, h: 0.12, fill: '#2b2f33' });
+    }
+    rects.push({ x: -0.15, y: y(hMur - 0.25, 0.25), w: L + 0.3, h: 0.25, fill: '#b3a990' }); // corniche
+    rects.push({ x: -2, y: solY, w: L + 4, h: 2, fill: sol });
+    return { largeur: L, hauteur: H, rects, motif: null, polys };
+  }
+  // Pack art_deco_v1 : trame 2,8 m, 5 niveaux types, toit plat à acrotère, enduit crème, bandeaux et couronnement en gradins.
+  const trame = 2.8, L = 3 * trame + 0.8, rez = 3.6, etage = 2.9, n = 4;
+  const hMur = rez + n * etage, H = hMur + 3.2, solY = H - 0.6;
+  const y = (z: number, h: number) => solY - z - h;
+  const enduit = MATIERE_FACADE.enduit_clair.couleur;
+  rects.push({ x: -2, y: -2, w: L + 4, h: H + 4, fill: ciel });
+  rects.push({ x: 0, y: y(0, hMur), w: L, h: hMur, fill: enduit, trait: '#00000022' });
+  // Couronnement en gradins.
+  rects.push({ x: 1.2, y: y(hMur, 0.9), w: L - 2.4, h: 0.9, fill: enduit, trait: '#00000022' });
+  rects.push({ x: 2.4, y: y(hMur + 0.9, 0.8), w: L - 4.8, h: 0.8, fill: enduit, trait: '#00000022' });
+  rects.push({ x: 0, y: y(0, rez), w: L, h: rez, fill: MATIERE_FACADE.pierre.couleur });
+  for (let t = 0; t < 3; t++) {
+    const cx = 0.4 + trame * (t + 0.5);
+    rects.push({ x: cx - 0.9, y: y(0.3, rez - 0.8), w: 1.8, h: rez - 0.8, fill: vitrage, trait: '#2f3a40' });
+    // Travée verticale continue : fenêtres superposées reliées par des allèges sombres.
+    rects.push({ x: cx - 0.6, y: y(rez + 0.4, n * etage - 0.8), w: 1.2, h: n * etage - 0.8, fill: '#8d8a80' });
+    for (let e = 0; e < n; e++) rects.push({ x: cx - 0.55, y: y(rez + e * etage + 0.6, 1.9), w: 1.1, h: 1.9, fill: vitrage });
+  }
+  for (const t of [0, 1, 2, 3]) rects.push({ x: 0.4 + trame * t - 0.18, y: y(rez, n * etage + 0.6), w: 0.36, h: n * etage + 0.6, fill: '#ece5d6', trait: '#00000018' }); // pilastres
+  for (let e = 1; e <= n; e++) rects.push({ x: -0.1, y: y(rez + e * etage - 0.08, 0.16), w: L + 0.2, h: 0.16, fill: '#d2c8b3' }); // bandeaux
+  rects.push({ x: -2, y: solY, w: L + 4, h: 2, fill: sol });
+  return { largeur: L, hauteur: H, rects, motif: null, polys };
 }
 
 // ── Dimensions du Studio (mimmozia-studio/src/core/architecture) ──────────────

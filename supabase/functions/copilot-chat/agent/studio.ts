@@ -40,7 +40,11 @@ import {
   studioComposition, studioSegmentedVolume, volumeBatimentsStudio,
   type GeometrieParcelle, type JarvisDraft, type ProgrammeVolume, type ReglePlu, type ReglesPluVolume, type VolumePropose,
 } from './studio-front.ts';
+import { controlerVolume, formuleRecul, libelleRegle, lireRegles, type ControleVolume, type RegleLue } from './studio-front.ts';
 import type { ResultatOutil } from './types.ts';
+
+// Lot fiche-3d : déplacés dans src/spaces/copilot/studio3d/controlesVolume.ts (code pur partagé avec la fiche du chat).
+export { controlerVolume, formuleRecul, lireRegles, regleCitee, type ControleVolume, type RegleLue, type Verdict } from './studio-front.ts';
 
 export const SOURCE_STUDIO = 'MimmozIA · Studio 3D';
 /** Version du calcul (entre dans l'empreinte) : à incrémenter si la conversion conception → volume change. */
@@ -78,33 +82,9 @@ const fr = (v: number, d = 0) => v.toLocaleString('fr-FR', { maximumFractionDigi
 // 1. Conception → entrées du moteur du Dossier 3D
 // =============================================================
 
-/** Règle de conception telle que stockée (agent_conceptions.regles_plu), lue sans confiance. */
-export interface RegleLue {
-  cle: string;
-  valeur: number | string | null;
-  statut: 'confirme' | 'estime' | 'manquant';
-  source: string;
-  article: string | null;
-  nature: string | null;
-  texte: string | null;
-  regle_relative: string | null;
-}
-
-export function lireRegles(brut: unknown): RegleLue[] {
-  if (!Array.isArray(brut)) return [];
-  return brut.flatMap((e): RegleLue[] => {
-    if (!estObj(e) || typeof e.cle !== 'string') return [];
-    const statut = e.statut === 'confirme' || e.statut === 'estime' ? e.statut : 'manquant';
-    const valeur = fini(e.valeur) || typeof e.valeur === 'string' ? e.valeur as number | string : null;
-    return [{
-      cle: e.cle, valeur, statut, source: txt(e.source, 300) ?? 'source non précisée', article: txt(e.article, 120),
-      nature: txt(e.nature, 40), texte: txt(e.texte, 300), regle_relative: txt(e.regle_relative, 300),
-    }];
-  });
-}
-
-/** Règle CITÉE : confirmée (règlement lu avec son article, ou utilisateur) ET article renseigné. */
-export const regleCitee = (r: RegleLue | undefined): boolean => !!r && r.statut === 'confirme' && !!r.article;
+// RegleLue, lireRegles, regleCitee, formuleRecul, libelleRegle : déplacés dans le code PUR du front
+// (src/spaces/copilot/studio3d/controlesVolume.ts, via studio-front.ts) pour que la fiche « Espace 3D »
+// recalcule les vérifications avec EXACTEMENT les mêmes fonctions. Réexportés plus haut (imports).
 
 const CLES_VOLUME: Record<string, ReglePlu['cle']> = {
   hauteur_max_m: 'hauteur_max_m', niveaux_max: 'niveaux_max', emprise_sol_max_pct: 'emprise_max_ratio',
@@ -112,16 +92,6 @@ const CLES_VOLUME: Record<string, ReglePlu['cle']> = {
   pleine_terre_min_pct: 'pleine_terre_min_ratio',
 };
 
-/** « H/2 min 4 m » → { diviseur: 2, minimumM: 4 } (même lecture que reglesPlu.ts). */
-export function formuleRecul(v: string): { diviseur: number; minimumM: number | null } | null {
-  const f = v.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  const m = /\bh\s*\/\s*([1-4])\b/.exec(f);
-  if (!m) return null;
-  const min = /(?:min(?:imum)?\.?|≥|>=)\s*(?:de\s*)?(\d+(?:[.,]\d+)?)\s*m/.exec(f);
-  return { diviseur: Number(m[1]), minimumM: min ? Number(min[1].replace(',', '.')) : null };
-}
-
-const libelleRegle = (r: RegleLue) => `${r.source}${r.article ? `, ${r.article}` : ''}`;
 
 /**
  * Règles de conception → règles du volume (ReglesPluVolume du Dossier 3D).
@@ -199,100 +169,9 @@ export function lireParcelle(p: unknown, iduDefaut: string): ParcelleLue | null 
 }
 
 // =============================================================
-// 2. Contrôles du volume (jamais « conforme »)
+// 2. Contrôles du volume (jamais « conforme ») : controlerVolume est dans controlesVolume.ts (front, pur),
+//    réexporté ici ; la fiche « Espace 3D » l'appelle quand l'utilisateur modifie les dimensions.
 // =============================================================
-
-export type Verdict = 'dans_la_limite' | 'au_dela' | 'a_verifier' | 'non_controle';
-export interface ControleVolume {
-  cle: string;
-  libelle: string;
-  valeur_volume: string | null;
-  regle: string | null;
-  verdict: Verdict;
-  explication: string;
-}
-
-const LIBELLES: Record<string, string> = {
-  hauteur_max_m: 'Hauteur', niveaux_max: 'Niveaux', emprise_sol_max_pct: 'Emprise au sol', recul_voie_m: 'Recul à la voie',
-  recul_limites_m: 'Recul aux limites séparatives', pleine_terre_min_pct: 'Pleine terre', stationnement_par_logement: 'Stationnement',
-  mixite_sociale_pct: 'Mixité sociale',
-};
-
-/**
- * Confronte le volume aux règles de la conception. « dans_la_limite » exige une règle CONFIRMÉE et CITÉE
- * et aucune condition complémentaire non vérifiée ; tout le reste est « à vérifier » ou « non contrôlé ».
- */
-export function controlerVolume(v: VolumePropose, regles: RegleLue[], logements: number | null): ControleVolume[] {
-  const r = (cle: string) => regles.find((x) => x.cle === cle && (x.statut !== 'manquant'));
-  const out: ControleVolume[] = [];
-  const surface = v.surfaceParcelleM2;
-  const emprise = v.kpi?.empriseTotaleM2 ?? v.emprise?.surfaceM2 ?? 0;
-  const ratioPct = surface > 0 ? Math.round(emprise / surface * 1000) / 10 : null;
-  const juger = (regle: RegleLue, respecte: boolean, valeur: string, limite: string, cle: string, precision = ''): ControleVolume => {
-    const condition = regle.regle_relative ? ` Condition complémentaire non vérifiée : ${regle.regle_relative}.` : '';
-    if (!respecte) return { cle, libelle: LIBELLES[cle], valeur_volume: valeur, regle: `${limite} (${libelleRegle(regle)})`, verdict: 'au_dela', explication: `Le volume d’étude dépasse la règle (${valeur} pour ${limite}).${condition}` };
-    const sure = regleCitee(regle) && !regle.regle_relative;
-    return {
-      cle, libelle: LIBELLES[cle], valeur_volume: valeur, regle: `${limite} (${libelleRegle(regle)})`,
-      verdict: sure ? 'dans_la_limite' : 'a_verifier',
-      explication: sure
-        ? `${valeur} : dans la limite de la règle citée (${limite}, ${regle.article}).${precision}`
-        : `${valeur} pour ${limite} : ${regleCitee(regle) ? 'règle citée mais' : 'règle non confirmée (estimée) —'} à vérifier.${condition}${precision}`,
-    };
-  };
-  const nonControle = (cle: string, explication: string): ControleVolume => ({ cle, libelle: LIBELLES[cle], valeur_volume: null, regle: null, verdict: 'non_controle', explication });
-
-  // Hauteur (indicative : niveaux × hauteur d'étage supposée)
-  const h = r('hauteur_max_m');
-  const precisionH = ` Hauteur indicative (${v.niveaux} niveaux × ${fr(HYPOTHESES_VOLUME.hauteurEtageM)} m d’étage supposés, toit plat) : à mesurer sur le modèle du Studio.`;
-  if (h && fini(h.valeur)) out.push(juger(h, v.hauteurM <= h.valeur + 1e-9, `≈ ${fr(v.hauteurM, 1)} m`, `${fr(h.valeur, 1)} m max.`, 'hauteur_max_m', precisionH));
-  else out.push(nonControle('hauteur_max_m', `Hauteur maximale inconnue : non contrôlée (volume ≈ ${fr(v.hauteurM, 1)} m).`));
-  // Niveaux
-  const n = r('niveaux_max');
-  if (n && fini(n.valeur)) out.push(juger(n, v.niveaux <= n.valeur, `${v.niveaux} niveaux (${libelleNiveaux(v.niveaux)})`, `${fr(n.valeur)} niveaux max.`, 'niveaux_max'));
-  // Emprise
-  const e = r('emprise_sol_max_pct');
-  if (e && e.nature === 'non_reglementee' && e.article) {
-    out.push({ cle: 'emprise_sol_max_pct', libelle: LIBELLES.emprise_sol_max_pct, valeur_volume: ratioPct !== null ? `${fr(ratioPct, 1)} %` : null,
-      regle: `non réglementée (${libelleRegle(e)})`, verdict: regleCitee(e) ? 'dans_la_limite' : 'a_verifier',
-      explication: `Emprise non réglementée${regleCitee(e) ? ` (${e.article})` : ' (règle non confirmée)'} : aucun plafond ; le volume occupe ${ratioPct !== null ? `${fr(ratioPct, 1)} %` : '?'} de la parcelle, borné par la pleine terre et les reculs.` });
-  } else if (e && fini(e.valeur) && ratioPct !== null) {
-    out.push(juger(e, ratioPct <= e.valeur + 1e-9, `${fr(ratioPct, 1)} %`, `${fr(e.valeur, 1)} % max.`, 'emprise_sol_max_pct'));
-  } else {
-    out.push(nonControle('emprise_sol_max_pct', `Emprise maximale inconnue : plafond par défaut de ${fr(HYPOTHESES_VOLUME.cesDefaut * 100)} % appliqué au volume (hypothèse).`));
-  }
-  // Reculs : le volume tient à ≥ reculM de TOUTES les limites (côté voie non identifié).
-  const recul = v.reculM;
-  const rv = r('recul_voie_m');
-  if (rv && fini(rv.valeur)) out.push(juger(rv, recul + 0.01 >= rv.valeur, `${fr(recul, 1)} m de toutes les limites`, rv.valeur === 0 ? 'alignement autorisé (0 m)' : `${fr(rv.valeur, 1)} m min.`, 'recul_voie_m', ' Côté voie non identifié sur le cadastre : recul uniforme.'));
-  else out.push(nonControle('recul_voie_m', 'Recul à la voie inconnu : non contrôlé.'));
-  const rl = r('recul_limites_m');
-  if (rl && fini(rl.valeur)) out.push(juger(rl, recul + 0.01 >= rl.valeur, `${fr(recul, 1)} m de toutes les limites`, `${fr(rl.valeur, 1)} m min.`, 'recul_limites_m'));
-  else {
-    const rf = r('recul_limites_formule');
-    const f = rf && typeof rf.valeur === 'string' ? formuleRecul(rf.valeur) : null;
-    if (rf && f) {
-      const exige = Math.max(f.minimumM ?? 0, v.hauteurM / f.diviseur);
-      out.push(juger(rf, recul + 0.01 >= exige, `${fr(recul, 1)} m de toutes les limites`, `${String(rf.valeur)} soit ${fr(exige, 1)} m pour ≈ ${fr(v.hauteurM, 1)} m`, 'recul_limites_m'));
-    } else out.push(nonControle('recul_limites_m', 'Recul aux limites inconnu : non contrôlé.'));
-  }
-  // Pleine terre : jamais affirmée (voirie, stationnement, dalles non déduits).
-  const pt = r('pleine_terre_min_pct');
-  if (pt && fini(pt.valeur) && ratioPct !== null) {
-    out.push({ cle: 'pleine_terre_min_pct', libelle: LIBELLES.pleine_terre_min_pct, valeur_volume: `≤ ${fr(100 - ratioPct, 1)} % non bâti`,
-      regle: `${fr(pt.valeur, 1)} % min. (${libelleRegle(pt)})`, verdict: 100 - ratioPct + 1e-9 < pt.valeur ? 'au_dela' : 'a_verifier',
-      explication: `Emprise bâtie ${fr(ratioPct, 1)} % : au plus ${fr(100 - ratioPct, 1)} % de la parcelle reste non bâti ; voirie, stationnement et dalles ne sont pas déduits — pleine terre réelle à vérifier.` });
-  } else out.push(nonControle('pleine_terre_min_pct', 'Pleine terre minimale inconnue : non contrôlée.'));
-  // Stationnement : non modélisé.
-  const st = r('stationnement_par_logement');
-  if (st && fini(st.valeur)) {
-    const places = logements !== null ? Math.ceil(logements * st.valeur) : null;
-    out.push({ cle: 'stationnement_par_logement', libelle: LIBELLES.stationnement_par_logement, valeur_volume: null,
-      regle: `${fr(st.valeur, 2)} place(s)/logement (${libelleRegle(st)})`, verdict: 'non_controle',
-      explication: `${places !== null ? `${places} places requises pour ${logements} logements` : 'Nombre de places à déterminer'} : stationnement non modélisé dans le volume d’étude.` });
-  }
-  return out;
-}
 
 // =============================================================
 // 3. Préparation déterministe
@@ -702,6 +581,24 @@ export function reservesBrief(b: BriefRendu, source: 'version' | 'preparation', 
 export const BRIEF_BLOC_LANGUE = 'mimmoza-brief';
 /** Version du bloc. */
 export const BRIEF_BLOC_VERSION = 1;
+/** Messages utilisateur relus pour retrouver le dernier brief choisi (fiche ou carte). */
+export const BRIEF_MESSAGES_RELUS = 20;
+
+/**
+ * Lot fiche-3d — dernier brief VALIDE envoyé dans la conversation (bloc d'un message utilisateur,
+ * carte ou fiche), avec son heure ; null sinon. Les blocs refusés sont ignorés (jamais devinés).
+ */
+export async function briefDuFil(depot: DepotStudio, userId: string, conversationId: string): Promise<{ brief: BriefRendu; ms: number } | null> {
+  if (!depot.briefsMessages) return null;
+  let lignes: { texte: string; cree_le: string }[] = [];
+  try { lignes = await depot.briefsMessages(userId, conversationId); } catch { return null; }
+  for (const l of lignes) {
+    const v = briefDuMessage(l.texte);
+    const ms = Date.parse(l.cree_le);
+    if (v?.ok && Number.isFinite(ms)) return { brief: v.valeur.brief, ms };
+  }
+  return null;
+}
 
 export interface BriefCarte { brief: BriefRendu; type: TypeRendu | null }
 
@@ -730,6 +627,13 @@ export function consigneBriefCarte(c: Validation<BriefCarte> | null): string {
   if (!c.ok) {
     return `BRIEF CRÉATIF : le dernier message contient un bloc de brief REFUSÉ par le serveur (${c.erreur}). ` +
       'Dis-le simplement et propose de refaire les choix dans la carte ; ne devine aucune valeur.';
+  }
+  // Lot fiche-3d : brief choisi dans la fiche « Espace 3D » (bloc SANS type de rendu) — aucun rendu demandé.
+  if (!c.valeur.type) {
+    return 'HABILLAGE CHOISI dans la fiche du projet (dernier message de l’utilisateur) : ' + libelleBrief(c.valeur.brief) + '. ' +
+      'Il est enregistré dans la conversation : le serveur le reprendra lui-même au prochain rendu (inutile de le recopier). ' +
+      'N’appelle PAS studio_lancer_rendu et ne propose aucun devis, sauf si ce même message demande un rendu ; ' +
+      'réponds en une phrase courte qui confirme l’habillage, sans reposer de question d’habillage.';
   }
   return 'BRIEF CRÉATIF VALIDÉ dans la carte du chat (dernier message de l’utilisateur) : ' + libelleBrief(c.valeur.brief) + '. ' +
     `Rappelle IMMÉDIATEMENT studio_lancer_rendu${c.valeur.type ? ` (type « ${c.valeur.type} »)` : ''} pour établir le devis : ` +
@@ -960,6 +864,13 @@ export interface DepotStudio {
    * Erreur de lecture → false (on repose la question plutôt que d'imposer des valeurs).
    */
   questionBriefPosee(userId: string, conversationId: string): Promise<boolean>;
+  /**
+   * Lot fiche-3d : messages UTILISATEUR récents de la conversation qui portent un bloc ```mimmoza-brief```
+   * (carte « Brief créatif » ou fiche « Espace 3D »), du plus récent au plus ancien. Relus par
+   * briefDuMessage : le brief choisi dans la fiche, sans rendu, est repris au rendu suivant.
+   * Facultatif (anciens dépôts) ; erreur de lecture → [].
+   */
+  briefsMessages?(userId: string, conversationId: string): Promise<{ texte: string; cree_le: string }[]>;
   /** Insertion SOUS L'IDENTITÉ de l'utilisateur (RLS) ; lève une Error portant le message Postgres. */
   insererTravail(userId: string, ligne: { conversation_id: string; type: TypeRendu; fiche: Obj; options: Obj }): Promise<TravailLu>;
   travail(userId: string, q: { id?: string | null; conversationId?: string | null }): Promise<TravailLu | null>;
@@ -1059,6 +970,8 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       'Volume d’étude INDICATIF, calculé par le moteur (ne recalcule rien de tête, cite ces chiffres tels quels). ' +
       'Reprends chaque vérification avec son verdict : « dans la limite de la règle citée » seulement si verdict dans_la_limite, sinon « à vérifier » ou « non contrôlé » ; ' +
       'n’écris jamais « conforme ». Rien n’a été envoyé au Studio : l’utilisateur ouvre la 3D d’un clic. ' +
+      'Dans la fiche ```mimmoza-3d```, programme et dimensions sont ceux de CE volume (bâtiments, gabarit, SDP estimée, logements) : ' +
+      'n’y écris aucun autre chiffre (le gabarit du programme est un plafond, pas le volume ; aucune SHAB n’est calculée) — la fiche du chat affiche les chiffres du moteur. ' +
       'Tu peux proposer un rendu (film, visite 360°, image) : studio_lancer_rendu affichera d’abord un devis.',
   };
 }
@@ -1216,7 +1129,10 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
     brief = v.valeur; origineBrief = 'fourni';
   } else {
     const connu = await devisDeLaConversation(env, uid, (c) => briefDuJeton(c.b) !== null);
-    if (connu) { brief = briefDuJeton(connu.charge.b); origineBrief = 'connu'; }
+    // Lot fiche-3d : un brief choisi dans la fiche (ou la carte) APRÈS le dernier devis l'emporte.
+    const duFil = await briefDuFil(env.depot, uid, env.conversationId);
+    if (duFil && (!connu || duFil.ms > connu.charge.iat)) { brief = duFil.brief; origineBrief = 'connu'; }
+    else if (connu) { brief = briefDuJeton(connu.charge.b); origineBrief = 'connu'; }
   }
   // « Modifier l'habillage » demandé dans le chat : la carte s'ouvre, préremplie du brief connu.
   if (input.ouvrir_brief === true && src.source.genre === 'preparation' && !briefCarteLu) {
@@ -1510,6 +1426,19 @@ export function depotStudioSupabase(admin: ClientSb, utilisateur: ClientSb | nul
         .order('created_at', { ascending: false }).limit(DEVIS_RELUS_MAX);
       if (error || !Array.isArray(data)) return false;
       return data.some((l) => (l as { tool_output?: { data?: { brief_requis?: unknown } } }).tool_output?.data?.brief_requis === true);
+    },
+    async briefsMessages(userId, conversationId) {
+      // Lecture serveur (service) bornée à l'utilisateur ET à la conversation ; le bloc est revalidé par briefDuMessage.
+      const { data, error } = await admin.from('copilot_messages').select('content,created_at')
+        .eq('user_id', userId).eq('conversation_id', conversationId).eq('role', 'user')
+        .order('created_at', { ascending: false }).limit(BRIEF_MESSAGES_RELUS);
+      if (error || !Array.isArray(data)) return [];
+      return data.flatMap((l) => {
+        const ligne = l as { content?: unknown; created_at?: unknown };
+        const texte = Array.isArray(ligne.content)
+          ? ligne.content.map((c) => (estObj(c) && c.type === 'text' && typeof c.text === 'string' ? c.text : '')).join('\n') : '';
+        return texte.includes('```' + BRIEF_BLOC_LANGUE) && typeof ligne.created_at === 'string' ? [{ texte, cree_le: ligne.created_at }] : [];
+      });
     },
     async insererTravail(userId, l) {
       if (!utilisateur) throw new Error('Insertion de travail refusée sans session utilisateur.');

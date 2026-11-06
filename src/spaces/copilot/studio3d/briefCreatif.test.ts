@@ -14,6 +14,7 @@ import {
   AMBIANCES, ATTIQUES, BALCONS, BRIEF_BLOC_LANGUE, BRIEF_BLOC_VERSION, CHAMPS_CARTE, CHOIX_DEFAUT, ECRANS, FACADES, OUVERTURES, RDCS, STYLES,
   briefAEnvoyer, briefEnvoyeApres, choisir, demandeDepassee, couleurs, dessinTravee, dimsFenetre, etatInitial, hauteurCorps, lireBlocBrief, lireDemandeBrief,
   messageBrief, raisonIndisponible, recapitulatif, sceneApercu, travees,
+  briefCourant, briefDuBloc, demandeFiche, dessinStyle,
   type ChoixBrief, type DemandeBrief, type EtatBrief,
 } from './briefCreatif.ts';
 
@@ -217,4 +218,53 @@ test('vignette de travée : dimensions et matière du Studio, attique en retrait
   assert.ok(a.rects.some((r) => Math.abs(r.x - 2) < 1e-9 && Math.abs(r.w - (d.largeur - 4)) < 1e-9 && r.fill === '#8e4b38'));
   assert.equal(dessinTravee({ ...CHOIX_DEFAUT, facade: 'bardage_bois' }).motif, 'bois');
   assert.ok(dessinTravee({ ...CHOIX_DEFAUT, rdc: 'commerces' }).rects.some((r) => r.fill === couleurs(CHOIX_DEFAUT).vitrine));
+});
+
+// ═══ Lot fiche-3d : le MÊME brief dans la fiche « Espace 3D » ═══════════════════════════════════════
+
+test('fiche : brief sans rendu (type null) — bloc sans type relu par le serveur, mêmes valeurs ; ligne « Habillage du projet »', () => {
+  const d = demandeFiche(null, DEMANDE.apercu, DEMANDE.limites);
+  assert.deepEqual([d.origine, d.type, d.ambiances], ['fiche', null, ['jour', 'fin_de_journee', 'nuit']]);
+  const etat = choisir(choisir(etatInitial(d), 'facade', 'brique', d), 'balcons', 'loggias', d);
+  const msg = messageBrief(etat, d);
+  assert.match(msg, /^Habillage du projet choisi dans la fiche : Brique · fenêtres verticales · loggias/);
+  const lu = briefDuMessage(msg);
+  assert.ok(lu?.ok);
+  assert.equal(lu.ok && lu.valeur.type, null);
+  assert.deepEqual(lu.ok && [lu.valeur.brief.facade, lu.valeur.brief.balcons, lu.valeur.brief.style], ['brique', 'loggias', 'contemporain']);
+  assert.ok(!JSON.parse(/```mimmoza-brief\n(.*)\n```/.exec(msg)![1]).type);
+  assert.match(messageBrief(etat, d, true), /je laisse Mimmo choisir le reste/);
+});
+
+test('fiche : brief courant = le PLUS RÉCENT (fiche, carte ou devis), relu sans confiance', () => {
+  const devis = { id: 'a1', role: 'assistant', text: '', toolCalls: [appel({ status: 'confirmation_requise', data: { type: 'film', brief_actuel: { ...CHOIX_DEFAUT, facade: 'pierre', defauts: ['ouvertures'] } } })] };
+  const fiche = { id: 'u2', role: 'user', text: messageBrief({ choix: { ...CHOIX_DEFAUT, facade: 'bardage_bois' }, touches: ['facade'] }, { type: null, limites: DEMANDE.limites }, true) };
+  assert.equal(briefCourant([]), null);
+  assert.deepEqual([briefCourant([devis])?.facade, briefCourant([devis])?.origine], ['pierre', 'devis']);
+  const apres = briefCourant([devis, fiche]);
+  assert.deepEqual([apres?.facade, apres?.origine, apres?.defauts], ['bardage_bois', 'message', ['ouvertures', 'balcons', 'attique', 'rdc', 'ambiance']]);
+  assert.equal(briefCourant([fiche, devis])?.facade, 'pierre');
+  // Bloc refusé par les listes du serveur : ignoré (jamais deviné).
+  assert.equal(briefDuBloc('```mimmoza-brief\n{"v":1,"brief":{"facade":"marbre"}}\n```'), null);
+  assert.equal(briefDuBloc('```mimmoza-brief\n{"v":1,"brief":{"style":"gothique"}}\n```'), null);
+  assert.equal(briefDuMessage('```mimmoza-brief\n{"v":1,"brief":{"facade":"marbre"}}\n```')?.ok, false);
+  // La carte rouverte depuis la fiche part du brief courant.
+  const e = etatInitial(demandeFiche(apres, null, DEMANDE.limites));
+  assert.deepEqual([e.choix.facade, e.touches], ['bardage_bois', ['facade']]);
+  // Après l'envoi depuis la fiche, une carte plus ancienne du fil se replie avec la ligne envoyée.
+  assert.equal(briefEnvoyeApres([{ id: 'm0', role: 'assistant', text: '' }, fiche], 'm0'), 'je laisse Mimmo choisir le reste — Bardage bois · fenêtres verticales · balcons · toit plat · logements en rez-de-chaussée · journée');
+});
+
+test('fiche : styles — descriptif court pour chacun, vignette contemporaine = VignetteTravee, illustrations des styles « bientôt »', () => {
+  for (const s of STYLES) {
+    assert.ok(s.descriptif && s.descriptif.length <= 150, `${s.valeur} : ${s.descriptif}`);
+    assert.ok(!/conforme|\bav-|manifest|stylepack|french_/.test(s.descriptif!), s.descriptif);
+  }
+  assert.deepEqual(STYLES.filter((s) => !s.disponible).map((s) => s.valeur), ['haussmannien', 'art_deco']);
+  assert.equal(dessinStyle('contemporain'), null);
+  const h = dessinStyle('haussmannien')!;
+  assert.ok(h.polys.length === 2 && h.rects.length > 20, 'comble brisé + travées');
+  const a = dessinStyle('art_deco')!;
+  assert.ok(a.polys.length === 0 && a.rects.length > 20 && a.hauteur > 10);
+  for (const d of [h, a]) for (const r of d.rects) assert.ok([r.x, r.y, r.w, r.h].every(Number.isFinite) && r.w > 0 && r.h > 0);
 });

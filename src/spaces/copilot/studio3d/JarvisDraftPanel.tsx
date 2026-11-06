@@ -20,6 +20,10 @@ import { diagnostiquerPreparation3D, exigerPreparation3D } from './preparation3D
 // Lot E1 : 3D préparée par Mimmo (outil studio_preparer_3d) — ouverture en un clic, suivi des rendus.
 import { PreparationStudioSection } from './PreparationStudioSection';
 import { messageErreur } from "@/components/ui/messageErreur";
+// Lot fiche-3d : programme, dimensions (forme, L × l × niveaux) et style tirés du moteur et du brief créatif.
+import { DimensionsFiche, ProgrammeFiche, StyleFiche } from './FicheProjet3D';
+import { useFiche3D } from './useFiche3D';
+import { apercuDepuisEvaluation } from './ficheDimensions';
 
 const LABELS = {
   objectif: 'Objectif',
@@ -34,9 +38,11 @@ type Field = keyof typeof LABELS;
 /** R2 — résultat de l'ouverture : `parcelle-requise` = poser la question minimale dans le dossier. */
 export type IssueOuvertureStudio = void | 'parcelle-requise';
 
-export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPrepareDetailed }: {
+export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPrepareDetailed, onSend }: {
   messages: readonly ChatMessage[];
   conversationId: string | null;
+  /** Lot fiche-3d : envoi d'un message au chat (habillage choisi dans la fiche, même brief que la carte). */
+  onSend?: (texte: string) => void;
   onOpenStudio?: (draft: JarvisDraft, conversationId: string, terrain?: ConfirmedTerrain & { adresse?: string | null }) => Promise<IssueOuvertureStudio>;
   /** Ancienne fenêtre de transfert, gardée pour classer photos, plans et 360° (mode détaillé). */
   onPrepareDetailed?: (draft: JarvisDraft, conversationId: string) => Promise<void>;
@@ -106,9 +112,19 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
   const draft = saved ? reconcileJarvisDraft(saved.draft, messages, saved.updatedAt) : proposal;
   // Appelé avant le retour anticipé (règle des hooks) : parcelle, programme et règles PLU de la conversation.
   const volume = useContexteVolume(messages, conversationId, draft);
+  // Lot fiche-3d : volume préparé par Mimmo (moteur) — préremplit programme et dimensions, jamais le texte du modèle.
+  const fiche3d = useFiche3D(messages);
+  const ficheOk = fiche3d.etat === 'ok' ? fiche3d : null;
+  const styleFiche = <StyleFiche messages={messages} apercu={ficheOk ? apercuDepuisEvaluation(ficheOk.ev) : null}
+    limites={{ batiments: ficheOk?.ev.corps.length ?? 1, balcons: true }} onSend={onSend} />;
   const parcelleConnue = volume.contexte.parcelle.type !== 'aucune';
   if (!draft) return <aside className="mzia-fen3d__vide" aria-label="Dossier de préparation 3D">
     <PreparationStudioSection messages={messages} conversationId={conversationId} onOpenStudio={onOpenStudio} suiviRendus />
+    {ficheOk && <dl className="jarvis-dossier__fields">
+      <div className="jarvis-dossier__field"><dt>Programme</dt><dd><ProgrammeFiche fiche={ficheOk} texteModele={null} /></dd></div>
+      <div className="jarvis-dossier__field"><dt>Dimensions</dt><dd><DimensionsFiche fiche={ficheOk} conversationId={conversationId} onOpenStudio={onOpenStudio} texteModele={null} /></dd></div>
+      <div className="jarvis-dossier__field"><dt>Style</dt><dd>{styleFiche}</dd></div>
+    </dl>}
     {parcelleConnue ? <>
       <h2>Parcelle et volume d’étude</h2>
       <p>Mimmo pose un volume simple sur la parcelle de la conversation pour voir l’ordre de grandeur. Précisez le programme dans la conversation pour l’ajuster.</p>
@@ -228,13 +244,15 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
         </span>
       </div>
       <div className="jarvis-dossier__mobile-toggle"><button type="button" onClick={() => setExpanded(value => !value)} aria-expanded={expanded}>{expanded ? 'Réduire le dossier' : 'Afficher le dossier'}</button></div>
-      {!editing && <section aria-label="Préparation du projet 3D" style={{ marginBottom: 12 }}>
+      {/* Lot fiche-3d : avec un volume préparé par le moteur, le diagnostic et « Voir en 3D » tirés du texte du modèle
+          sont remplacés par la carte « 3D préparée » et les champs Programme / Dimensions ci-dessous. */}
+      {!editing && !ficheOk && <section aria-label="Préparation du projet 3D" style={{ marginBottom: 12 }}>
         <p>Les informations ci-dessous viennent de la fiche du copilote ; elles ne valent pas confirmation par vous ni validation réglementaire.</p>
         <ul>{diagnostic.informations.map(i => <li key={i.cle}><strong>{i.libelle}</strong> — {i.statut === 'fourni-dans-fiche' ? 'Présent dans la fiche' : i.statut === 'hypothese' ? 'Hypothèse à vérifier' : 'À préciser'} : {i.detail}</li>)}</ul>
         {!diagnostic.pret && <><p role="status">Avant de générer : {diagnostic.questions.join(' ')}</p><button type="button" className="jarvis-dossier__link" onClick={() => beginEdit(draft)}>Compléter la fiche</button></>}
         <p>La parcelle est confirmée séparément. Sans relief mesuré au transfert, la position d’implantation précise ne sera pas transmise ; le rendu ne prouve pas la conformité au terrain.</p>
       </section>}
-      {!editing && conversationId && onOpenStudio && <button
+      {!editing && !ficheOk && conversationId && onOpenStudio && <button
         type="button" className="jarvis-dossier__launch" disabled={opening || !draft.objectif?.trim() || !diagnostic.pret} onClick={() => void voirEn3D()}>
         <Box size={16} /> {opening ? 'Ouverture de Studio…' : nombreBatiments > 1 ? `Voir les ${String(nombreBatiments)} bâtiments en 3D` : 'Voir en 3D'} <ArrowUpRight size={17} />
       </button>}
@@ -248,10 +266,11 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
       <div className={`jarvis-dossier__body ${expanded ? 'is-expanded' : ''}`}>
       {currentStudioVolume && <p className="jarvis-dossier__proposal">Aperçu actualisé depuis Studio sur cet appareil. Les corrections se font dans l’onglet Studio.</p>}
       {newSuggestion && !editing && <p className="jarvis-dossier__proposal">Nouvelle proposition de Mimmo : l’aperçu montre les changements à examiner avant le transfert.</p>}
-      {diagnostic.pret && massing && <JarvisMassingPreview light massing={massing} terrain={measuredTerrain} />}
-      {diagnostic.pret && massing && <PhotoTerrainImplantation massing={massing} onContinue={onOpenStudio && conversationId
+      {/* Volume du moteur affiché dans « Dimensions » : l'esquisse tirée du texte du modèle n'est plus montrée. */}
+      {diagnostic.pret && massing && !ficheOk && <JarvisMassingPreview light massing={massing} terrain={measuredTerrain} />}
+      {diagnostic.pret && massing && !ficheOk && <PhotoTerrainImplantation massing={massing} onContinue={onOpenStudio && conversationId
         ? terrain => onOpenStudio(draft, conversationId, terrain).then(() => undefined) : undefined} onTerrainMeasured={setMeasuredTerrain} />}
-      {massing?.buildings && <p className="jarvis-dossier__proposal">Les {String(massing.buildings.length)} bâtiments seront créés dans Studio avec leurs dimensions et hauteurs propres. Leur position reste indicative jusqu’à la vérification du terrain.</p>}
+      {massing?.buildings && !ficheOk && <p className="jarvis-dossier__proposal">Les {String(massing.buildings.length)} bâtiments seront créés dans Studio avec leurs dimensions et hauteurs propres. Leur position reste indicative jusqu’à la vérification du terrain.</p>}
       {editing && form ? (
         <div className="jarvis-dossier__form">
           {(Object.entries(LABELS) as [Field, string][]).map(([key, label]) => (
@@ -280,7 +299,10 @@ export function JarvisDraftPanel({ messages, conversationId, onOpenStudio, onPre
           <dl className="jarvis-dossier__fields">
             {(Object.entries(LABELS) as [Field, string][]).map(([key, label], index) => <div key={key} className="jarvis-dossier__field">
               <dt><span>{String(index + 1).padStart(2, '0')}</span> {label}</dt>
-              <dd className={draft[key] ? '' : 'is-missing'}>{draft[key] ?? 'À préciser'}</dd>
+              {key === 'programme' && ficheOk ? <dd><ProgrammeFiche fiche={ficheOk} texteModele={draft.programme} /></dd>
+                : key === 'dimensions' && ficheOk ? <dd><DimensionsFiche fiche={ficheOk} conversationId={conversationId} onOpenStudio={onOpenStudio} texteModele={draft.dimensions} /></dd>
+                : key === 'style' ? <dd>{styleFiche}</dd>
+                : <dd className={draft[key] ? '' : 'is-missing'}>{draft[key] ?? 'À préciser'}{key === 'dimensions' && fiche3d.etat === 'chargement' ? ' · lecture du volume calculé…' : ''}</dd>}
             </div>)}
           </dl>
           {draft.questions.length > 0 && <p style={{ margin: '6px 0' }}>

@@ -1,0 +1,104 @@
+/* LOT FICHE-3D — Programme, dimensions et style de la fiche « Espace 3D » (FicheProjet3D.tsx).
+ * Les couleurs portent !important : le dossier impose `.jarvis-dossier * { color: inherit !important }`
+ * et des boutons lilas ; les sélecteurs commencent par `.jarvis-dossier .mz-fiche3d` pour passer devant. */
+.mz-fiche3d { --f3-encre: #1f1d3d; --f3-doux: #6b6890; --f3-bord: #e4e1ef; --f3-accent: #6a4fe0; --f3-fond: #f6f4ff;
+  display: grid; gap: 10px; margin-top: 6px; font-variant-numeric: tabular-nums; min-width: 0; }
+.jarvis-dossier .mz-fiche3d { color: var(--f3-encre) !important; }
+.jarvis-dossier .mz-fiche3d p { margin: 0; }
+.jarvis-dossier .mz-fiche3d__valeur { font-weight: 600; line-height: 1.45; }
+.jarvis-dossier .mz-fiche3d__source { color: var(--f3-doux) !important; font-size: 11px; line-height: 1.4; }
+.jarvis-dossier .mz-fiche3d__note { color: #7d5200 !important; background: #fff6e2; border-radius: 8px; padding: 6px 8px; font-size: 11.5px; }
+.jarvis-dossier .mz-fiche3d__ecart { padding: 8px 10px; border-left: 3px solid #e0a43a; background: #fff8ea; border-radius: 0 8px 8px 0; color: #6b4a07 !important; font-size: 12px; line-height: 1.45; }
+.jarvis-dossier .mz-fiche3d__ecart ul { margin: 4px 0 0; padding-left: 18px; }
+
+/* Formes */
+.mz-fiche3d__formes { margin: 0; padding: 0; border: 0; min-width: 0; }
+.jarvis-dossier .mz-fiche3d__formes legend { padding: 0; margin-bottom: 6px; font-size: 12px; font-weight: 700; color: var(--f3-encre) !important; }
+.mz-fiche3d__formes > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.jarvis-dossier button.mz-fiche3d__forme { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; min-height: 58px;
+  border: 1.5px solid var(--f3-bord); border-radius: 10px; background: #fff; color: var(--f3-encre) !important; }
+.jarvis-dossier button.mz-fiche3d__forme.is-actif { border-color: var(--f3-accent); box-shadow: 0 0 0 3px #ede9fe; background: var(--f3-fond); }
+.jarvis-dossier button.mz-fiche3d__forme.is-bientot { opacity: .55; background: #f8fafc; }
+.mz-fiche3d__icone { width: 40px; height: 26px; fill: #b7aef0; }
+.is-actif > .mz-fiche3d__icone { fill: var(--f3-accent); }
+.is-bientot > .mz-fiche3d__icone { fill: #cbd5e1; }
+.jarvis-dossier .mz-fiche3d__nom { font-size: 11.5px; font-weight: 600; line-height: 1.25; text-align: center; }
+.jarvis-dossier .mz-fiche3d__nom em { font-style: normal; font-weight: 500; color: #7c3aed !important; }
+
+/* Schéma coté */
+.mz-fiche3d__schema { display: block; width: 100%; height: 190px; border: 1px solid var(--f3-bord); border-radius: 12px; background: #fbfaff; }
+.mz-fiche3d__parcelle { fill: #eef7f1; stroke: #6aa985; stroke-dasharray: 1.2 .8; }
+.mz-fiche3d__corps { fill: #d9d2fb; stroke: #4a33b8; }
+.mz-fiche3d__lettre { fill: #4a33b8; font-weight: 700; }
+.mz-fiche3d__cote line { stroke: #4a33b8; }
+.mz-fiche3d__cote text { fill: #1f1d3d; font-weight: 600; paint-order: stroke; stroke: #fbfaff; stroke-width: .35px; }
+
+/* Bâtiments */
+.mz-fiche3d__batiments { display: grid; gap: 8px; }
+.mz-fiche3d__batiment { border: 1px solid var(--f3-bord); border-radius: 12px; padding: 8px 10px; background: #fff; }
+.jarvis-dossier .mz-fiche3d__titre-bat { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+.jarvis-dossier .mz-fiche3d__titre-bat span { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: var(--f3-accent); color: #fff !important; font-size: 11px; flex: none; }
+.mz-fiche3d__grille { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.jarvis-dossier .mz-fiche3d__champ { display: grid; gap: 3px; font-size: 10.5px; color: var(--f3-doux) !important; font-weight: 600; min-width: 0; }
+.mz-fiche3d__saisie { display: flex; align-items: center; border: 1px solid #d9d4e9; border-radius: 8px; background: #fff; overflow: hidden; }
+.jarvis-dossier .mz-fiche3d__saisie input { width: 100%; min-width: 0; border: 0; padding: 7px 6px; font: 600 13px/1.2 inherit; color: var(--f3-encre) !important; background: transparent; }
+.mz-fiche3d__saisie input:focus-visible { outline: 2px solid var(--f3-accent); outline-offset: -2px; }
+.jarvis-dossier .mz-fiche3d__saisie em { font-style: normal; padding: 0 6px; font-size: 10.5px; color: var(--f3-doux) !important; white-space: nowrap; }
+.jarvis-dossier .mz-fiche3d__champ--lecture strong { font-size: 13px; color: var(--f3-encre) !important; padding: 7px 0 0; }
+.jarvis-dossier .mz-fiche3d__champ--lecture small { font-size: 10px; font-weight: 500; color: var(--f3-doux) !important; }
+
+/* Chiffres recalculés */
+.mz-fiche3d__chiffres { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; }
+.mz-fiche3d__chiffres > div { border-radius: 10px; background: var(--f3-fond); padding: 7px 8px; min-width: 0; }
+.jarvis-dossier .mz-fiche3d__chiffres dt { font-size: 10px; font-weight: 700; color: var(--f3-doux) !important; text-transform: uppercase; letter-spacing: .04em; }
+.jarvis-dossier .mz-fiche3d__chiffres dd { margin: 2px 0 0; font-size: 13px; font-weight: 700; color: var(--f3-encre) !important; }
+.jarvis-dossier .mz-fiche3d__alertes { margin: 0; padding: 7px 10px 7px 24px; border-radius: 10px; background: #fff6e2; color: #7d5200 !important; font-size: 11.5px; line-height: 1.4; }
+
+/* Vérifications */
+.mz-fiche3d__verifs summary { cursor: pointer; font-size: 12px; font-weight: 700; }
+.mz-fiche3d__verifs ul { margin: 6px 0; padding-left: 0; list-style: none; display: grid; gap: 5px; }
+.jarvis-dossier .mz-fiche3d__verifs li { font-size: 11.5px; line-height: 1.4; padding: 5px 8px; border-radius: 8px; border-left: 3px solid #cbd5e1; background: #f8fafc; }
+.jarvis-dossier .mz-fiche3d__verifs li.is-ok { border-left-color: #2f9e67; background: #ebf7f0; }
+.jarvis-dossier .mz-fiche3d__verifs li.is-ko { border-left-color: #c2410c; background: #fff1eb; }
+.jarvis-dossier .mz-fiche3d__verifs li.is-av { border-left-color: #d69e2e; background: #fff8ea; }
+.jarvis-dossier .mz-fiche3d__verdict { font-weight: 700; }
+.mz-fiche3d__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.jarvis-dossier .mz-fiche3d__actions button { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Style */
+.mz-fiche3d__styles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.jarvis-dossier button.mz-fiche3d__style { display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 6px; text-align: left;
+  border: 1.5px solid var(--f3-bord); border-radius: 12px; background: #fff; color: var(--f3-encre) !important; }
+.jarvis-dossier button.mz-fiche3d__style.is-actif { border-color: var(--f3-accent); box-shadow: 0 0 0 3px #ede9fe; }
+.jarvis-dossier button.mz-fiche3d__style.is-bientot { opacity: .62; background: #f8fafc; }
+.jarvis-dossier button.mz-fiche3d__style:disabled { cursor: default; }
+.mz-fiche3d__vignette { display: block; width: 100%; height: 86px; border-radius: 8px; background: #eef2f7; }
+.jarvis-dossier .mz-fiche3d__style .mz-fiche3d__nom { text-align: left; font-size: 12px; }
+.jarvis-dossier .mz-fiche3d__desc { font-size: 10.5px; font-weight: 400; line-height: 1.32; color: var(--f3-doux) !important; }
+.mz-fiche3d__habillage { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; padding: 8px 10px; border-radius: 10px; background: var(--f3-fond); }
+.jarvis-dossier .mz-fiche3d__habillage p { flex: 1 1 180px; font-size: 12px; line-height: 1.4; }
+.jarvis-dossier .mz-fiche3d__habillage svg { color: var(--f3-accent) !important; flex: none; }
+
+/* La carte « Brief créatif » ouverte dans la fiche : une colonne, couleurs de la carte. */
+.jarvis-dossier .mz-fiche3d .mz-brief { margin: 2px 0; }
+.jarvis-dossier .mz-fiche3d .mz-brief__corps { grid-template-columns: minmax(0, 1fr); }
+.jarvis-dossier .mz-fiche3d .mz-brief__apercu3d, .jarvis-dossier .mz-fiche3d .mz-brief__grande-vignette { height: 200px; }
+.jarvis-dossier .mz-fiche3d .mz-brief__tete h3 { color: #1e1b4b !important; }
+.jarvis-dossier .mz-fiche3d .mz-brief__etapes .mz-brief__etape-nom { display: none; }
+.jarvis-dossier .mz-fiche3d .mz-brief__propose, .jarvis-dossier .mz-fiche3d .mz-brief__nom em { color: #7c3aed !important; }
+.jarvis-dossier .mz-fiche3d .mz-brief__detail, .jarvis-dossier .mz-fiche3d .mz-brief__apercu figcaption { color: #64748b !important; }
+.jarvis-dossier .mz-fiche3d .mz-brief__note { color: #9a3412 !important; }
+.jarvis-dossier .mz-fiche3d button.mz-brief__option { background: #fff; border: 1.5px solid #e2e8f0; padding: 6px; }
+.jarvis-dossier .mz-fiche3d button.mz-brief__option.is-actif { border-color: #6d5dfc; box-shadow: 0 0 0 3px #ede9fe; }
+.jarvis-dossier .mz-fiche3d button.mz-brief__btn--plein { background: linear-gradient(105deg, #6851e9, #8958eb) !important; border-color: #7456e8 !important; color: #fff !important; }
+.jarvis-dossier .mz-fiche3d button.mz-brief__btn--plein * { color: #fff !important; }
+
+/* Mobile et panneau étroit */
+@media (max-width: 520px) {
+  .mz-fiche3d__grille { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mz-fiche3d__styles { grid-template-columns: minmax(0, 1fr); }
+  .jarvis-dossier button.mz-fiche3d__style { display: grid; grid-template-columns: 108px minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 8px; }
+  .mz-fiche3d__style .mz-fiche3d__vignette { grid-row: 1 / span 2; height: 74px; }
+  .mz-fiche3d__chiffres { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .mz-fiche3d__schema { height: 170px; }
+}

@@ -14,10 +14,11 @@ import {
   controlerVolume, depotStudioSupabase, dureeAnnoncee, etatMachine, executerOutilStudio, ficheDepuisPreparation, formuleRecul,
   idRequete, jsonCanonique, lireJeton, lireRegles, niveauxDuGabarit, preparerVolume, programmeVolume, reglesVolume, signerJeton,
   studioPertinent, validerOptionsRendu,
-  apercuVolume, BRIEF_BLOC_LANGUE, briefDuMessage, consigneBriefCarte,
+  apercuVolume, BRIEF_BLOC_LANGUE, briefDuMessage, consigneBriefCarte, briefDuFil,
   type ConceptionLue, type DepotStudio, type EnvStudio, type PreparationLue, type StatsFile, type TravailLu,
 } from './studio.ts';
 import { calculerVolumeProgramme } from './studio-front.ts';
+import { controlerVolume as controlerVolumeFront } from '../../../../src/spaces/copilot/studio3d/controlesVolume.ts';
 import { appliquerSecteursDeclares, completerRegles, reglesDepuisLecture, type RegleConception } from './conception.ts';
 import { NOMS_OUTILS_MISSION, outilChatAutoriseEnMission, outilsPourMission, OUTILS_CONCEPTION, OUTILS_STUDIO_CHAT } from './outils.ts';
 import type { OutilDef } from './types.ts';
@@ -121,6 +122,12 @@ class DepotMemoire implements DepotStudio {
   }
   async positionFile() { return 3; }
   async urlSigneeRendu(c: string) { return `https://fwvrqngbafqdaekbdfnm.supabase.co/storage/v1/object/sign/studio-rendus/${c}?token=t`; }
+  /** Lot fiche-3d : messages utilisateur simulés (copilot_messages), du plus ancien au plus récent. */
+  messagesUtilisateur: Array<{ user_id: string; conversation_id: string; texte: string; cree_le: string }> = [];
+  async briefsMessages(u: string, c: string) {
+    return this.messagesUtilisateur.filter((m) => m.user_id === u && m.conversation_id === c && m.texte.includes('```mimmoza-brief'))
+      .reverse().map((m) => ({ texte: m.texte, cree_le: m.cree_le }));
+  }
 }
 
 /** Brief « à toi de choisir » : valeurs proposées (E1-brief). */
@@ -883,4 +890,60 @@ Deno.test('BC-4 : « Modifier l’habillage » — ouvrir_brief rouvre la carte 
   const r4 = await executerOutilStudio('studio_lancer_rendu', { type: 'film' }, env(d, 'R4'));
   eq(r4?.status, 'confirmation_requise', r4?.message);
   ok(/façade bardage bois/.test(String((r4!.data!.devis as Record<string, unknown>).habillage)));
+});
+
+// ═══ Lot fiche-3d : habillage choisi dans la fiche « Espace 3D » (bloc sans type de rendu) ═══════════
+
+const messageFiche = (brief: Record<string, unknown>) => `Habillage du projet choisi dans la fiche : Brique · loggias.\n\n\`\`\`${BRIEF_BLOC_LANGUE}\n${JSON.stringify({ v: 1, brief })}\n\`\`\``;
+
+Deno.test('FICHE-1 : vérifications PLU — controlerVolume du serveur EST celui du front (controlesVolume.ts), mêmes verdicts AE0414', async () => {
+  const { controlerVolume } = await import('./studio.ts');
+  ok(controlerVolume === controlerVolumeFront, 'une seule implémentation');
+  const d = await depotAE0414Reelle();
+  const resume = d.preparations[0].resume as { controles: Array<{ cle: string; verdict: string }> };
+  eq(resume.controles.map((c) => [c.cle, c.verdict]), [
+    ['hauteur_max_m', 'a_verifier'], ['emprise_sol_max_pct', 'dans_la_limite'], ['recul_voie_m', 'dans_la_limite'],
+    ['recul_limites_m', 'dans_la_limite'], ['pleine_terre_min_pct', 'a_verifier'], ['stationnement_par_logement', 'non_controle']]);
+  ok(!JSON.stringify(resume.controles).toLowerCase().includes('conforme'));
+});
+
+Deno.test('FICHE-2 : bloc de brief SANS type (fiche) — consigne : pas de rendu ni de devis ; bloc typé (carte) inchangé', () => {
+  const sans = briefDuMessage(messageFiche({ facade: 'brique', balcons: 'loggias', a_toi_de_choisir: true }));
+  ok(sans?.ok && sans.valeur.type === null);
+  const c = consigneBriefCarte(sans);
+  ok(/HABILLAGE CHOISI dans la fiche/.test(c) && /N’appelle PAS studio_lancer_rendu/.test(c) && /façade brique/.test(c), c);
+  ok(!/Rappelle IMMÉDIATEMENT/.test(c));
+  const avec = consigneBriefCarte(briefDuMessage(messageCarte({ v: 1, type: 'film', brief: { facade: 'brique' } })));
+  ok(/Rappelle IMMÉDIATEMENT studio_lancer_rendu \(type « film »\)/.test(avec), avec);
+});
+
+Deno.test('FICHE-3 : brief choisi dans la fiche puis rendu demandé — repris sans question ; ouvrir_brief préremplit la carte avec lui', async () => {
+  const d = await depotAE0414Reelle();
+  d.messagesUtilisateur.push({ user_id: USER, conversation_id: CONV, texte: messageFiche({ facade: 'brique', balcons: 'loggias', attique: true }), cree_le: new Date(Date.now() - 60_000).toISOString() });
+  d.messagesUtilisateur.push({ user_id: AUTRE, conversation_id: CONV, texte: messageFiche({ facade: 'verre' }), cree_le: new Date().toISOString() });
+  const lu = await briefDuFil(d, USER, CONV);
+  eq([lu?.brief.facade, lu?.brief.balcons, lu?.brief.attique], ['brique', 'loggias', true]);
+  const r = await executerOutilStudio('studio_lancer_rendu', { type: 'film' }, env(d, 'F1'));
+  eq(r?.status, 'confirmation_requise', 'pas de question : le brief de la fiche est connu');
+  ok(/façade brique · fenêtres verticales \(par défaut\) · loggias · avec attique/.test(String((r!.data!.devis as Record<string, unknown>).habillage)), String((r!.data!.devis as Record<string, unknown>).habillage));
+  d.persister(r);
+  const o = await executerOutilStudio('studio_lancer_rendu', { type: 'film', ouvrir_brief: true }, env(d, 'F2'));
+  const act = o!.data!.actuel as Record<string, unknown>;
+  eq([o?.status, act.facade, act.balcons, act.attique], ['partial', 'brique', 'loggias', true]);
+});
+
+Deno.test('FICHE-4 : le plus récent gagne — devis APRÈS le choix de la fiche : brief du devis ; nouveau choix de fiche APRÈS : brief de la fiche', async () => {
+  const d = await depotAE0414Reelle();
+  d.messagesUtilisateur.push({ user_id: USER, conversation_id: CONV, texte: messageFiche({ facade: 'pierre' }), cree_le: new Date(Date.now() - 3_600_000).toISOString() });
+  const r1 = await executerOutilStudio('studio_lancer_rendu', { type: 'image', brief: { facade: 'beton' } }, env(d, 'G1'));
+  eq(r1?.status, 'confirmation_requise');
+  d.persister(r1);
+  const r2 = await executerOutilStudio('studio_lancer_rendu', { type: 'film' }, env(d, 'G2'));
+  ok(/façade béton brut/.test(String((r2!.data!.devis as Record<string, unknown>).habillage)), 'devis plus récent que la fiche');
+  d.messagesUtilisateur.push({ user_id: USER, conversation_id: CONV, texte: messageFiche({ facade: 'bardage_bois' }), cree_le: new Date(Date.now() + 60_000).toISOString() });
+  const r3 = await executerOutilStudio('studio_lancer_rendu', { type: 'film' }, env(d, 'G3'));
+  ok(/façade bardage bois/.test(String((r3!.data!.devis as Record<string, unknown>).habillage)), 'fiche plus récente que le devis');
+  // Bloc refusé (valeur hors liste) : ignoré, jamais deviné.
+  d.messagesUtilisateur.push({ user_id: USER, conversation_id: CONV, texte: messageFiche({ facade: 'marbre' }), cree_le: new Date(Date.now() + 120_000).toISOString() });
+  eq((await briefDuFil(d, USER, CONV))?.brief.facade, 'bardage_bois');
 });

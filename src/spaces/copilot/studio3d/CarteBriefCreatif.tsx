@@ -34,28 +34,36 @@ const webglPossible = (() => {
   };
 })();
 
-interface Props { demande: DemandeBrief; messageId: string; onSend?: (texte: string) => void }
+interface Props {
+  demande: DemandeBrief; messageId: string; onSend?: (texte: string) => void;
+  /** Lot fiche-3d : appelé après l'envoi (la fiche « Espace 3D » referme la carte). */
+  onEnvoye?: () => void;
+  /** Lot fiche-3d : bouton « Fermer » (carte ouverte depuis la fiche, rien n'est envoyé). */
+  onFermer?: () => void;
+}
 
-export function CarteBriefCreatif({ demande, messageId, onSend }: Props) {
+export function CarteBriefCreatif({ demande, messageId, onSend, onEnvoye, onFermer }: Props) {
   const messages = useCopilotStore((s) => s.messages);
   const enCours = useCopilotStore((s) => s.status === 'streaming');
   const envoyeDansLeFil = useMemo(() => briefEnvoyeApres(messages, messageId), [messages, messageId]);
   const [etat, setEtat] = useState<EtatBrief>(() => etatInitial(demande));
   const [ecran, setEcran] = useState(0);
   // Ouverte seulement pour une demande encore en suspens (pas de brief ni de devis plus loin dans le fil).
-  const [ouverte, setOuverte] = useState(() => demande.origine === 'demande' && !envoyeDansLeFil && !demandeDepassee(messages, messageId));
+  // Ouverte depuis la fiche « Espace 3D » (lot fiche-3d) : toujours ouverte, c'est l'utilisateur qui l'a demandée.
+  const [ouverte, setOuverte] = useState(() => demande.origine === 'fiche' || (demande.origine === 'demande' && !envoyeDansLeFil && !demandeDepassee(messages, messageId)));
   const [envoye, setEnvoye] = useState<string | null>(null);
   const [sans3d, setSans3d] = useState(false);
 
   const recap = recapitulatif(etat.choix, demande);
   const fini = envoye ?? envoyeDansLeFil;
-  const titre = demande.origine === 'devis' || demande.actuel ? 'Modifier l’habillage' : 'Brief créatif';
+  const titre = demande.origine === 'fiche' ? 'Habillage du projet' : demande.origine === 'devis' || demande.actuel ? 'Modifier l’habillage' : 'Brief créatif';
 
   const envoyer = (mimmo: boolean) => {
     if (!onSend || enCours) return;
     onSend(messageBrief(etat, demande, mimmo));
     setEnvoye(recapitulatif(choixAppliques(etat, mimmo), demande));
     setOuverte(false);
+    onEnvoye?.();
   };
 
   if (!ouverte) {
@@ -125,9 +133,10 @@ export function CarteBriefCreatif({ demande, messageId, onSend }: Props) {
             <Sparkles size={14} aria-hidden="true" /> Laisser Mimmo choisir
           </button>
           <span className="mz-brief__nav">
+            {onFermer && <button type="button" className="mz-brief__btn mz-brief__btn--leger" onClick={onFermer}>Fermer</button>}
             {ecran > 0 && <button type="button" className="mz-brief__btn mz-brief__btn--leger" onClick={() => setEcran(ecran - 1)}><ChevronLeft size={14} aria-hidden="true" /> Retour</button>}
             {dernier
-              ? <button type="button" className="mz-brief__btn mz-brief__btn--plein" onClick={() => envoyer(false)} disabled={!onSend || enCours}><Check size={14} aria-hidden="true" /> Valider le brief</button>
+              ? <button type="button" className="mz-brief__btn mz-brief__btn--plein" onClick={() => envoyer(false)} disabled={!onSend || enCours}><Check size={14} aria-hidden="true" /> {demande.origine === 'fiche' ? 'Valider l’habillage' : 'Valider le brief'}</button>
               : <button type="button" className="mz-brief__btn mz-brief__btn--plein" onClick={() => setEcran(ecran + 1)}>Suivant <ChevronRight size={14} aria-hidden="true" /></button>}
           </span>
         </div>

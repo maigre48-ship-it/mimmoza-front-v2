@@ -1,0 +1,551 @@
+{
+  "_note": "Ligne studio_preparations RECALCULÉE par preparerVolume (copilot-chat/agent/studio.ts) sur la conception AE0414 des tests E1-19 : contour cadastral réel (travail studio_jobs 2825784c du 05/11/2026), règles de la fiche réelle du 05/11. Aucune donnée de la base de production.",
+  "ligne": {
+    "id": "3b0d7a52-5e1f-4c1a-9d1e-0000000a0414",
+    "idu": "92050000AE0414",
+    "entree": {
+      "parcelle": {
+        "idu": "92050000AE0414",
+        "geometrie": {
+          "type": "MultiPolygon",
+          "coordinates": [
+            [
+              [
+                [
+                  2.21036794,
+                  48.89546307
+                ],
+                [
+                  2.21057146,
+                  48.89555174
+                ],
+                [
+                  2.21059178,
+                  48.89556078
+                ],
+                [
+                  2.21072456,
+                  48.89561975
+                ],
+                [
+                  2.21076629,
+                  48.89563828
+                ],
+                [
+                  2.21089857,
+                  48.89561289
+                ],
+                [
+                  2.21109561,
+                  48.89539142
+                ],
+                [
+                  2.21118122,
+                  48.89529513
+                ],
+                [
+                  2.21121383,
+                  48.89525883
+                ],
+                [
+                  2.21140544,
+                  48.89504452
+                ],
+                [
+                  2.21142958,
+                  48.8950177
+                ],
+                [
+                  2.21099728,
+                  48.89492258
+                ],
+                [
+                  2.21065092,
+                  48.89481778
+                ],
+                [
+                  2.21020409,
+                  48.89525838
+                ],
+                [
+                  2.21019357,
+                  48.89526875
+                ],
+                [
+                  2.21015183,
+                  48.89532297
+                ],
+                [
+                  2.21017117,
+                  48.89537868
+                ],
+                [
+                  2.21031712,
+                  48.89544133
+                ],
+                [
+                  2.21036794,
+                  48.89546307
+                ]
+              ]
+            ]
+          ]
+        },
+        "surface_m2": null,
+        "source": "cadastre (travail réel)"
+      },
+      "commune": "Nanterre",
+      "regles": [
+        {
+          "cle": "hauteur_max_m",
+          "valeur": 28,
+          "statut": "confirme",
+          "source": "Règlement GPU — 92050_PLU_20251209 — secteur 1 déclaré par l'utilisateur",
+          "article": "UC 10, p. 109",
+          "nature": "par_secteur",
+          "texte": "Secteur 1 : acrotère 28 m ; égout 26 m ; faîtage 28 m. Retenue : 28 m — acrotère (toiture terrasse). Sous réserve de « UC 10-1 : hauteur ≤ distance à l’alignement opposé + 2 m » (non chiffrée : largeur de voie non connue).",
+          "regle_relative": "UC 10-1 : hauteur ≤ distance à l’alignement opposé + 2 m"
+        },
+        {
+          "cle": "niveaux_max",
+          "valeur": null,
+          "statut": "manquant",
+          "source": "aucune source trouvée",
+          "article": null,
+          "nature": null,
+          "texte": null,
+          "regle_relative": null
+        },
+        {
+          "cle": "emprise_sol_max_pct",
+          "valeur": null,
+          "statut": "confirme",
+          "source": "Règlement GPU — 92050_PLU_20251209",
+          "article": "UC 9, p. 109",
+          "nature": "non_reglementee",
+          "texte": "Il n’est pas fixé de règle.",
+          "regle_relative": null
+        },
+        {
+          "cle": "recul_voie_m",
+          "valeur": 0,
+          "statut": "confirme",
+          "source": "Règlement GPU — 92050_PLU_20251209",
+          "article": "UC 6-1, p. 106",
+          "nature": "chiffree",
+          "texte": "alignement (0 m) ou recul minimum (4 m), au choix du constructeur — « implantation à l’alignement ou en recul minimum de 4 m »",
+          "regle_relative": null
+        },
+        {
+          "cle": "recul_limites_m",
+          "valeur": 8,
+          "statut": "confirme",
+          "source": "Règlement GPU — 92050_PLU_20251209",
+          "article": "UC 7",
+          "nature": null,
+          "texte": "8 m (3 m en l’absence de baie)",
+          "regle_relative": null
+        },
+        {
+          "cle": "recul_limites_formule",
+          "valeur": null,
+          "statut": "manquant",
+          "source": "aucune source trouvée",
+          "article": null,
+          "nature": null,
+          "texte": null,
+          "regle_relative": null
+        },
+        {
+          "cle": "pleine_terre_min_pct",
+          "valeur": 20,
+          "statut": "confirme",
+          "source": "Règlement GPU — 92050_PLU_20251209",
+          "article": "UC 13",
+          "nature": null,
+          "texte": "20 % de pleine terre",
+          "regle_relative": null
+        },
+        {
+          "cle": "stationnement_par_logement",
+          "valeur": 1,
+          "statut": "confirme",
+          "source": "Règlement GPU — 92050_PLU_20251209 — secteur Zone 3 déclaré par l'utilisateur",
+          "article": "UC 12",
+          "nature": "par_secteur",
+          "texte": "Secteur Zone 3 : 1 place/logement. Retenue : 1 place/logement — valeur citée.",
+          "regle_relative": null
+        },
+        {
+          "cle": "mixite_sociale_pct",
+          "valeur": null,
+          "statut": "manquant",
+          "source": "aucune source trouvée",
+          "article": null,
+          "nature": null,
+          "texte": null,
+          "regle_relative": null
+        }
+      ],
+      "programme": {
+        "nb_logements": 40,
+        "typologies": {},
+        "shab_cible_m2": null,
+        "sdp_cible_m2": null,
+        "gabarit": "R+4",
+        "stationnement": null,
+        "toiture": "terrasse"
+      },
+      "programme_volume": {
+        "logements": 40,
+        "libelle": "40 logements",
+        "composantes": [
+          {
+            "type": "collectif",
+            "nombre": 40,
+            "unite": "logements",
+            "public": null,
+            "forme": null,
+            "niveaux": null,
+            "libelle": "40 logements"
+          }
+        ],
+        "origine": "fiche"
+      },
+      "gabarit_niveaux": 5
+    },
+    "volume": {
+      "statut": "calcule",
+      "surfaceParcelleM2": 4762,
+      "contour": [
+        {
+          "x": -30.940478758638026,
+          "y": 26.164652799971293
+        },
+        {
+          "x": -16.045664294417122,
+          "y": 36.035397200392936
+        },
+        {
+          "x": -14.55852479996008,
+          "y": 37.04172999981381
+        },
+        {
+          "x": -4.840887886855466,
+          "y": 43.606270400356664
+        },
+        {
+          "x": -1.7868361593087005,
+          "y": 45.669030000179305
+        },
+        {
+          "x": 7.894207754419249,
+          "y": 42.84261520044964
+        },
+        {
+          "x": 22.31477694677448,
+          "y": 18.188574800492745
+        },
+        {
+          "x": 28.580230299151918,
+          "y": 7.469572000282767
+        },
+        {
+          "x": 30.966825718187923,
+          "y": 3.4286560005187994
+        },
+        {
+          "x": 44.98999493734573,
+          "y": -20.428333199931785
+        },
+        {
+          "x": 46.756704946992386,
+          "y": -23.41393560017707
+        },
+        {
+          "x": 15.118397690354797,
+          "y": -34.00269399989327
+        },
+        {
+          "x": -10.230304834304409,
+          "y": -45.669030000179305
+        },
+        {
+          "x": -42.93200465268422,
+          "y": 3.378562000328884
+        },
+        {
+          "x": -43.70192135946264,
+          "y": 4.532950400135292
+        },
+        {
+          "x": -46.756704946992386,
+          "y": 10.568720800431208
+        },
+        {
+          "x": -45.34128773129021,
+          "y": 16.770358000213434
+        },
+        {
+          "x": -34.659791214746605,
+          "y": 23.744555999848558
+        }
+      ],
+      "origine": {
+        "lon": 2.210790705,
+        "lat": 48.89522803
+      },
+      "emprise": {
+        "largeurM": 29.5,
+        "profondeurM": 16,
+        "surfaceM2": 472,
+        "centre": {
+          "x": 17.835354992327392,
+          "y": -7.707036963830869
+        },
+        "centreWgs84": {
+          "lon": 2.211034404003889,
+          "lat": 48.89515879682569
+        },
+        "angleDeg": 120.4,
+        "coins": [
+          {
+            "x": 32.19848926253586,
+            "y": -16.38245475987754
+          },
+          {
+            "x": 17.273347599645934,
+            "y": 9.063372920562873
+          },
+          {
+            "x": 3.472220722118932,
+            "y": 0.9683808322157968
+          },
+          {
+            "x": 18.397362385008854,
+            "y": -24.477446848224613
+          }
+        ]
+      },
+      "niveaux": 3,
+      "hauteurM": 9,
+      "sdpM2": 2808,
+      "logementsEstimes": 40,
+      "sdpViseeM2": 2800,
+      "programmeAtteint": true,
+      "reculM": 8,
+      "cesRetenu": 1,
+      "hypotheses": [
+        "Recul de 8 m sur toutes les limites : le plus fort des reculs PLU (côté voie non identifié).",
+        "Emprise au sol totale bornée à 80 % de la parcelle ; voies et stationnements non comptés.",
+        "40 logements : 70 m² de SDP par logement, plots ou barres de 16 m d’épaisseur et 45 m de long au plus.",
+        "Collectif : façades en vis-à-vis à ≥ max(H, 8 m), pignons à ≥ max(H/2, 6 m) ; R+2 d’abord, plus haut si nécessaire.",
+        "Implantation en rangées parallèles au grand côté de la parcelle (deux orientations essayées) ; hauteur d’étage 3 m, toit plat.",
+        "Studio : 12 bâtiments au plus."
+      ],
+      "alertes": [],
+      "mentionPlu": "Règles PLU appliquées — conformité à vérifier par un professionnel",
+      "reglesAppliquees": [
+        "Hauteur maximale : 28 m — hauteur du volume plafonnée (Règlement GPU — 92050_PLU_20251209 — secteur 1 déclaré par l'utilisateur, UC 10, p. 109 ; lue dans le règlement).",
+        "Niveaux maximum : 5 niveaux (R+4) — nombre de niveaux plafonné (Programme de la conception (gabarit R+4) — choix du projet, pas une règle PLU ; estimée, à confirmer).",
+        "Emprise au sol (CES) : 100 % — emprise au sol plafonnée (Règlement GPU — 92050_PLU_20251209 — emprise non réglementée, UC 9, p. 109 ; lue dans le règlement).",
+        "Pleine terre / espaces verts : 20 % — emprise plafonnée à 80 % de la parcelle (le reste supposé en pleine terre, voiries et stationnements non déduits) (Règlement GPU — 92050_PLU_20251209, UC 13 ; lue dans le règlement).",
+        "Recul aux limites séparatives : 8 m — recul appliqué (Règlement GPU — 92050_PLU_20251209, UC 7 ; lue dans le règlement)."
+      ],
+      "reglesNonAppliquees": [
+        "niveaux_max : règle inconnue",
+        "recul_voie_m : 0 m (implantation à l’alignement autorisée) — le volume garde le recul des limites séparatives",
+        "recul_limites_formule : règle inconnue",
+        "Stationnement : 1 place(s)/logement (Règlement GPU — 92050_PLU_20251209 — secteur Zone 3 déclaré par l'utilisateur, UC 12) — non modélisé dans le volume",
+        "Mixité sociale : règle inconnue"
+      ],
+      "batiments": [
+        {
+          "id": "mz-vol-1",
+          "nom": "Barre A — 21 logements R+2",
+          "forme": "barre",
+          "largeurM": 29.5,
+          "profondeurM": 16,
+          "niveaux": 3,
+          "hauteurM": 9,
+          "surfaceM2": 472,
+          "sdpM2": 1416,
+          "unites": 21,
+          "uniteLibelle": "logement",
+          "centre": {
+            "x": 17.835354992327392,
+            "y": -7.707036963830869
+          },
+          "centreWgs84": {
+            "lon": 2.211034404003889,
+            "lat": 48.89515879682569
+          },
+          "angleDeg": 120.4,
+          "coins": [
+            {
+              "x": 32.19848926253586,
+              "y": -16.38245475987754
+            },
+            {
+              "x": 17.273347599645934,
+              "y": 9.063372920562873
+            },
+            {
+              "x": 3.472220722118932,
+              "y": 0.9683808322157968
+            },
+            {
+              "x": 18.397362385008854,
+              "y": -24.477446848224613
+            }
+          ]
+        },
+        {
+          "id": "mz-vol-2",
+          "nom": "Barre B — 19 logements R+2",
+          "forme": "barre",
+          "largeurM": 29,
+          "profondeurM": 16,
+          "niveaux": 3,
+          "hauteurM": 9,
+          "surfaceM2": 464,
+          "sdpM2": 1392,
+          "unites": 19,
+          "uniteLibelle": "logement",
+          "centre": {
+            "x": -5.2230009732397935,
+            "y": -17.80818380123587
+          },
+          "centreWgs84": {
+            "lon": 2.210719338877204,
+            "lat": 48.895068057094846
+          },
+          "angleDeg": 120.4,
+          "coins": [
+            {
+              "x": 9.013649045588245,
+              "y": -26.267958989821178
+            },
+            {
+              "x": -5.658524114540832,
+              "y": -1.2534165243034852
+            },
+            {
+              "x": -19.459650992067832,
+              "y": -9.34840861265056
+            },
+            {
+              "x": -4.787477831938755,
+              "y": -34.36295107816825
+            }
+          ]
+        }
+      ],
+      "voies": [],
+      "kpi": {
+        "batiments": 2,
+        "unites": 40,
+        "unitesVisees": 40,
+        "maisons": 0,
+        "logements": 40,
+        "lits": 0,
+        "empriseTotaleM2": 936,
+        "sdpTotaleM2": 2808,
+        "voirieM2": 0,
+        "ratioEmprise": 0.197
+      }
+    }
+  },
+  "resume": {
+    "statut": "calcule",
+    "surface_parcelle_m2": 4762,
+    "batiments": 2,
+    "formes": [
+      "barre"
+    ],
+    "niveaux": 3,
+    "gabarit": "R+2",
+    "hauteur_indicative_m": 9,
+    "emprise_batie_m2": 936,
+    "emprise_pct": 19.7,
+    "sdp_estimee_m2": 2808,
+    "logements_places": 40,
+    "logements_vises": 40,
+    "programme_atteint": true,
+    "recul_applique_m": 8,
+    "mention_plu": "Règles PLU appliquées — conformité à vérifier par un professionnel",
+    "hypotheses": [
+      "Recul de 8 m sur toutes les limites : le plus fort des reculs PLU (côté voie non identifié).",
+      "Emprise au sol totale bornée à 80 % de la parcelle ; voies et stationnements non comptés.",
+      "40 logements : 70 m² de SDP par logement, plots ou barres de 16 m d’épaisseur et 45 m de long au plus.",
+      "Collectif : façades en vis-à-vis à ≥ max(H, 8 m), pignons à ≥ max(H/2, 6 m) ; R+2 d’abord, plus haut si nécessaire.",
+      "Implantation en rangées parallèles au grand côté de la parcelle (deux orientations essayées) ; hauteur d’étage 3 m, toit plat.",
+      "Studio : 12 bâtiments au plus."
+    ],
+    "alertes": [],
+    "regles_appliquees": [
+      "Hauteur maximale : 28 m — hauteur du volume plafonnée (Règlement GPU — 92050_PLU_20251209 — secteur 1 déclaré par l'utilisateur, UC 10, p. 109 ; lue dans le règlement).",
+      "Niveaux maximum : 5 niveaux (R+4) — nombre de niveaux plafonné (Programme de la conception (gabarit R+4) — choix du projet, pas une règle PLU ; estimée, à confirmer).",
+      "Emprise au sol (CES) : 100 % — emprise au sol plafonnée (Règlement GPU — 92050_PLU_20251209 — emprise non réglementée, UC 9, p. 109 ; lue dans le règlement).",
+      "Pleine terre / espaces verts : 20 % — emprise plafonnée à 80 % de la parcelle (le reste supposé en pleine terre, voiries et stationnements non déduits) (Règlement GPU — 92050_PLU_20251209, UC 13 ; lue dans le règlement).",
+      "Recul aux limites séparatives : 8 m — recul appliqué (Règlement GPU — 92050_PLU_20251209, UC 7 ; lue dans le règlement)."
+    ],
+    "regles_non_appliquees": [
+      "niveaux_max : règle inconnue",
+      "recul_voie_m : 0 m (implantation à l’alignement autorisée) — le volume garde le recul des limites séparatives",
+      "recul_limites_formule : règle inconnue",
+      "Stationnement : 1 place(s)/logement (Règlement GPU — 92050_PLU_20251209 — secteur Zone 3 déclaré par l'utilisateur, UC 12) — non modélisé dans le volume",
+      "Mixité sociale : règle inconnue"
+    ],
+    "controles": [
+      {
+        "cle": "hauteur_max_m",
+        "libelle": "Hauteur",
+        "valeur_volume": "≈ 9 m",
+        "regle": "28 m max. (Règlement GPU — 92050_PLU_20251209 — secteur 1 déclaré par l'utilisateur, UC 10, p. 109)",
+        "verdict": "a_verifier",
+        "explication": "≈ 9 m pour 28 m max. : règle citée mais à vérifier. Condition complémentaire non vérifiée : UC 10-1 : hauteur ≤ distance à l’alignement opposé + 2 m. Hauteur indicative (3 niveaux × 3 m d’étage supposés, toit plat) : à mesurer sur le modèle du Studio."
+      },
+      {
+        "cle": "emprise_sol_max_pct",
+        "libelle": "Emprise au sol",
+        "valeur_volume": "19,7 %",
+        "regle": "non réglementée (Règlement GPU — 92050_PLU_20251209, UC 9, p. 109)",
+        "verdict": "dans_la_limite",
+        "explication": "Emprise non réglementée (UC 9, p. 109) : aucun plafond ; le volume occupe 19,7 % de la parcelle, borné par la pleine terre et les reculs."
+      },
+      {
+        "cle": "recul_voie_m",
+        "libelle": "Recul à la voie",
+        "valeur_volume": "8 m de toutes les limites",
+        "regle": "alignement autorisé (0 m) (Règlement GPU — 92050_PLU_20251209, UC 6-1, p. 106)",
+        "verdict": "dans_la_limite",
+        "explication": "8 m de toutes les limites : dans la limite de la règle citée (alignement autorisé (0 m), UC 6-1, p. 106). Côté voie non identifié sur le cadastre : recul uniforme."
+      },
+      {
+        "cle": "recul_limites_m",
+        "libelle": "Recul aux limites séparatives",
+        "valeur_volume": "8 m de toutes les limites",
+        "regle": "8 m min. (Règlement GPU — 92050_PLU_20251209, UC 7)",
+        "verdict": "dans_la_limite",
+        "explication": "8 m de toutes les limites : dans la limite de la règle citée (8 m min., UC 7)."
+      },
+      {
+        "cle": "pleine_terre_min_pct",
+        "libelle": "Pleine terre",
+        "valeur_volume": "≤ 80,3 % non bâti",
+        "regle": "20 % min. (Règlement GPU — 92050_PLU_20251209, UC 13)",
+        "verdict": "a_verifier",
+        "explication": "Emprise bâtie 19,7 % : au plus 80,3 % de la parcelle reste non bâti ; voirie, stationnement et dalles ne sont pas déduits — pleine terre réelle à vérifier."
+      },
+      {
+        "cle": "stationnement_par_logement",
+        "libelle": "Stationnement",
+        "valeur_volume": null,
+        "regle": "1 place(s)/logement (Règlement GPU — 92050_PLU_20251209 — secteur Zone 3 déclaré par l'utilisateur, UC 12)",
+        "verdict": "non_controle",
+        "explication": "40 places requises pour 40 logements : stationnement non modélisé dans le volume d’étude."
+      }
+    ]
+  }
+}
