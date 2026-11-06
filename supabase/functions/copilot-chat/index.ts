@@ -65,7 +65,9 @@ import { TOOL_RECHERCHER_PARCELLES, executerRechercherParcelles } from './agent/
 import { briefingPourMissionVeille } from './agent/briefing.ts';
 import { OUTILS_AGENT_CHAT, NOMS_OUTILS_AGENT_CHAT, OUTILS_STUDIO_CHAT, NOMS_OUTILS_STUDIO } from './agent/outils.ts';
 // Lot E1 : Mimmo pilote le Studio (préparation 3D déterministe, rendus avec devis, suivi).
-import { briefDuMessage, consigneBriefCarte, depotStudioSupabase, executerOutilStudio, idRequete, ORIGINE_MIMMOZA_DEFAUT, studioPertinent, type EnvStudio } from './agent/studio.ts';
+import { briefDuMessage, consigneBriefCarte, CONSIGNE_RENDU_STUDIO, depotStudioSupabase, doitForcerLancerRendu, executerOutilStudio, idRequete, ORIGINE_MIMMOZA_DEFAUT, studioPertinent, type EnvStudio } from './agent/studio.ts';
+// Lot choix-cliquables : questions à choix fermés → bloc ```mimmoza-choix (puces cliquables du front).
+import { CONSIGNE_CHOIX } from './agent/choix.ts';
 import { evenementDevis, executerOutilAgentChat, tickMissions } from './agent/mission.ts';
 import { depotSupabase } from './agent/depot.ts';
 import { chargerBlocMemoire, projetDuContexte } from './agent/memoire.ts';
@@ -9521,6 +9523,7 @@ function buildSystemPrompt(ctx: MimmozaContext, mode: CopilotMode): string {
   return [
     "Tu es Mimmo, l'assistant de Mimmoza, la plateforme d'intelligence immobilière et foncière française. Présente-toi toujours sous le nom de Mimmo. Ta page plein écran est /mimmozia, ouvrable via action_ouvrir_page.",
     "PRÉPARATION 3D DANS /mimmozia : si l'utilisateur veut préparer, créer ou modifier une maquette, une prévisualisation ou un projet 3D, discute avec lui avant toute ouverture de Studio. Pose au plus deux questions utiles à la fois. Réutilise les réponses et la fiche 3D du tour précédent. Ne déduis jamais une dimension, une adresse, un nombre d'étages ou une contrainte absente. Les pièces jointes du tour courant sont visibles ; aux tours suivants, conserve seulement leurs noms et les faits déjà explicitement relevés, sans prétendre relire leurs contenus. À la fin de chaque réponse liée à CE projet 3D, ajoute un bloc JSON valide délimité par ```mimmoza-3d et ``` avec exactement ces clés : version (1), objectif, localisation, programme, dimensions, style, contraintes (chaîne ou null), questions (tableau de questions encore ouvertes), pieces (tableau des noms de pièces communiquées). Recopie les valeurs connues de la fiche précédente et ne change que ce que l'utilisateur corrige. Ce bloc alimente le dossier visible dans le chat ; écris d'abord une réponse naturelle et ne présente pas le JSON comme du texte à lire. Ne prétends jamais avoir envoyé la demande au Studio.",
+    CONSIGNE_CHOIX,
     preseanceOutils,
     verticalLine[ctx.vertical],
     `Contexte : route ${ctx.route}. ${parcelLine}`,
@@ -10592,11 +10595,14 @@ async function runOrchestrator(params: {
   let toolsDuTour = intentionMission.mission
     ? availableTools.filter((tool) => OUTILS_CADRAGE_MISSION.has(tool.name))
     : tools;
+  // Lot choix-cliquables : outils Studio au tour → la question d'habillage n'est jamais posée par le modèle.
+  const systemStudio = studioAuTour ? `${system}\n\n${CONSIGNE_RENDU_STUDIO}` : system;
   const systemTour = intentionMission.mission
-    ? `${system}\n\n${consigneIntentionMission(intentionMission)}`
-    : system;
+    ? `${systemStudio}\n\n${consigneIntentionMission(intentionMission)}`
+    : systemStudio;
   let missionProposee = false;
   let missionForcee = false;   // un seul tour imposé, même si l'outil échoue
+  let renduForce = false;      // lot choix-cliquables : un seul tour imposé sur studio_lancer_rendu
   let dernierTexte = '';
 
   const messages = [...params.messages];
@@ -10673,10 +10679,18 @@ async function runOrchestrator(params: {
 
     const forcerMission = intentionMission.mission && !missionProposee && !missionForcee && iter >= 1;
     if (forcerMission) missionForcee = true;
+    // Lot choix-cliquables (incident du 06/11) : 3D préparée dans cette requête + rendu typé demandé, sans
+    // appel à studio_lancer_rendu → tour IMPOSÉ sur l'outil (carte « Brief créatif » ou devis ; rien n'est lancé).
+    const forcerRendu = !forcerMission && doitForcerLancerRendu({
+      texteUtilisateur: userText, appels: toolCallsLog, dejaForce: renduForce, briefCarte: Boolean(briefCarte),
+      outilDisponible: !(mode === 'quick' && rapportParcellaireAffiche) && toolsDuTour.some((tool) => tool.name === 'studio_lancer_rendu'),
+    });
+    if (forcerRendu) renduForce = true;
     const turn = await streamLLMTurn({
       model, system: systemTour, messages,
       tools: mode === 'quick' && rapportParcellaireAffiche ? [] : toolsDuTour,
-      toolChoice: forcerMission ? { type: 'tool', name: 'proposer_mission' } : undefined,
+      toolChoice: forcerMission ? { type: 'tool', name: 'proposer_mission' }
+        : forcerRendu ? { type: 'tool', name: 'studio_lancer_rendu' } : undefined,
       webBudget: webUnavailable || intentionMission.mission ? { search: 0, fetch: 0 }
         : { search: Math.max(0, WEB_LIMITS[mode].search - webSearches),
           fetch: Math.max(0, WEB_LIMITS[mode].fetch - webFetches) },

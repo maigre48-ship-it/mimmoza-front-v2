@@ -910,6 +910,48 @@ export function idRequete(ctx: unknown): string {
   return id;
 }
 
+// ── Lot choix-cliquables : la question d'habillage n'est JAMAIS posée par le modèle ─────────────
+// Incident du 06/11/2026 : après studio_preparer_3d, le modèle a écrit lui-même « Façade : enduit clair,
+// brique… ? Balcons : … ? » sans appeler studio_lancer_rendu — la carte « Brief créatif » (sortie
+// brief_requis de l'outil) n'est donc jamais apparue.
+
+/** Consigne ajoutée au système quand les outils Studio sont proposés au tour (index.ts). */
+export const CONSIGNE_RENDU_STUDIO =
+  'RENDUS STUDIO — HABILLAGE : ne pose JAMAIS toi-même la question d’habillage (façade, ouvertures, balcons ou loggias, attique, ' +
+  'rez-de-chaussée, ambiance), ni en texte ni en bloc mimmoza-choix. Dès que l’utilisateur demande un rendu (film, visite 360°, image), ' +
+  'appelle studio_lancer_rendu dans le même tour (après studio_preparer_3d si la 3D n’est pas encore préparée), sans `brief` sauf si ' +
+  'ses choix d’habillage sont déjà écrits dans son message : c’est l’outil qui affiche la carte « Brief créatif » (ou reprend l’habillage ' +
+  'déjà choisi) puis le devis. Seul le TYPE de rendu peut se demander, s’il n’est pas précisé (bloc mimmoza-choix : Film, Visite 360°, Image).';
+
+const RE_RENDU_TYPE = /(^|[^\p{L}])(films?|vid[ée]os?|visites?\s+(?:virtuelles?|immersives?|360|3\s?d)|360\s?°|image\s+photo|images\s+photo|photo-?r[ée]alis\p{L}*)(?![\p{L}])/iu;
+const RE_RENDU_NIE = /(^|[^\p{L}])(pas|sans|aucun|aucune|ni)\s+(?:de\s+|d['’]\s*|la\s+|le\s+|l['’]\s*)?(films?|vid[ée]os?|visites?|images?|rendus?)(?![\p{L}])/iu;
+
+/** Le message demande-t-il un rendu d'un TYPE précis (film, vidéo, visite virtuelle / 360°, image photoréaliste) ? */
+export function renduTypeDemande(texte: string): boolean {
+  if (!texte) return false;
+  return RE_RENDU_TYPE.test(texte) && !RE_RENDU_NIE.test(texte);
+}
+
+/**
+ * Garde-fou serveur (index.ts) : après une préparation 3D RÉUSSIE dans cette requête, si l'utilisateur a demandé
+ * un rendu typé et que studio_lancer_rendu n'a pas encore été appelé, le tour suivant est IMPOSÉ sur cet outil
+ * (tool_choice) — le modèle ne peut plus écrire la question d'habillage à sa place. Une seule fois par requête.
+ * Rien n'est lancé ni chiffré par ce seul appel : sans brief, l'outil renvoie la carte « Brief créatif » ;
+ * avec un brief connu, un DEVIS (le lancement exige toujours un accord dans un tour suivant).
+ */
+export function doitForcerLancerRendu(p: {
+  texteUtilisateur: string;
+  appels: readonly { name: string; status?: string }[];
+  outilDisponible: boolean;
+  dejaForce: boolean;
+  briefCarte: boolean;
+}): boolean {
+  if (!p.outilDisponible || p.dejaForce || p.briefCarte) return false;
+  if (!renduTypeDemande(p.texteUtilisateur)) return false;
+  if (p.appels.some((a) => a.name === 'studio_lancer_rendu')) return false;
+  return p.appels.some((a) => a.name === 'studio_preparer_3d' && a.status === 'success');
+}
+
 /** Les outils Studio méritent-ils d'être proposés à ce tour ? (dernier message utilisateur, dernière réponse) */
 export function studioPertinent(textes: readonly string[]): boolean {
   const RE = /\b(3\s?d|studio|maquette|volume|implantation|rendu|rendus|image|images|film|vid[ée]o|visite|360|perspective|photor[ée]alist)/i;
@@ -972,7 +1014,10 @@ async function preparer3D(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       'n’écris jamais « conforme ». Rien n’a été envoyé au Studio : l’utilisateur ouvre la 3D d’un clic. ' +
       'Dans la fiche ```mimmoza-3d```, programme et dimensions sont ceux de CE volume (bâtiments, gabarit, SDP estimée, logements) : ' +
       'n’y écris aucun autre chiffre (le gabarit du programme est un plafond, pas le volume ; aucune SHAB n’est calculée) — la fiche du chat affiche les chiffres du moteur. ' +
-      'Tu peux proposer un rendu (film, visite 360°, image) : studio_lancer_rendu affichera d’abord un devis.',
+      'HABILLAGE : ne pose JAMAIS toi-même la question d’habillage (façade, ouvertures, balcons ou loggias, attique, rez-de-chaussée, ambiance), ' +
+      'ni en texte ni en bloc ```mimmoza-choix```. Si l’utilisateur a demandé un rendu (film, visite 360°, image), appelle MAINTENANT ' +
+      'studio_lancer_rendu (sans `brief`, sauf choix d’habillage déjà donnés en texte) : l’outil affiche la carte « Brief créatif » ou reprend ' +
+      'l’habillage déjà choisi, puis le devis. Sinon, propose un rendu en une phrase, sans détailler l’habillage.',
   };
 }
 

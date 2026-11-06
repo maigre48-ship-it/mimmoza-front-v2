@@ -947,3 +947,20 @@ Deno.test('FICHE-4 : le plus récent gagne — devis APRÈS le choix de la fiche
   d.messagesUtilisateur.push({ user_id: USER, conversation_id: CONV, texte: messageFiche({ facade: 'marbre' }), cree_le: new Date(Date.now() + 120_000).toISOString() });
   eq((await briefDuFil(d, USER, CONV))?.brief.facade, 'bardage_bois');
 });
+
+// ═══ Lot choix-cliquables (06/11/2026) : la question d'habillage n'est jamais posée par le modèle ═══════════
+
+Deno.test('CC-1 : studio_preparer_3d interdit la question d’habillage et renvoie vers studio_lancer_rendu ; l’appel direct sans brief donne la carte', async () => {
+  const d = await depotAE0414Reelle();
+  const r = await executerOutilStudio('studio_preparer_3d', {}, env(d, 'R1'));
+  eq(r?.status, 'ok', r?.message);
+  const m = String(r?.message);
+  ok(/ne pose JAMAIS toi-même la question d’habillage/.test(m), m);
+  ok(/ni en texte ni en bloc ```mimmoza-choix```/.test(m));
+  ok(/appelle MAINTENANT studio_lancer_rendu \(sans `brief`/.test(m));
+  ok(/carte « Brief créatif »/.test(m));
+  ok(!/Tu peux proposer un rendu \(film, visite 360°, image\) : studio_lancer_rendu affichera d’abord un devis/.test(m), 'ancienne phrase retirée');
+  // L'appel que le modèle doit faire (ou que le serveur impose) : sans brief → carte, rien de lancé ni chiffré.
+  const c = await executerOutilStudio('studio_lancer_rendu', { type: 'film' }, env(d, 'R1'));
+  eq([c?.status, c?.data?.brief_requis, c?.data?.carte, d.inserts], ['partial', true, 'brief_creatif', 0]);
+});

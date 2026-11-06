@@ -13,8 +13,14 @@ import { useComposerTools, ACCEPT_FILES, type CopilotAttachment } from '../hooks
 import { AVERTISSEMENT_TAILLE } from '../pieces-jointes/piecesJointesLogique';
 import { useCopilotStore } from '../store/copilotStore';
 
+/**
+ * LOT CHOIX-CLIQUABLES — demande d'écriture dans le champ, venue de l'écran hôte (puces de réponse).
+ * `jeton` change à chaque demande ; `transformer` reçoit le texte actuel et rend le nouveau. Rien n'est envoyé.
+ */
+export interface RemplissageSaisie { jeton: number; transformer: (actuel: string) => string }
+
 export function CopilotInput({
-  mode, onChangeMode, onSend, onCancel, isStreaming, hideModeSelector, toolbar,
+  mode, onChangeMode, onSend, onCancel, isStreaming, hideModeSelector, toolbar, remplissage,
 }: {
   mode: CopilotMode;
   onChangeMode: (m: CopilotMode) => void;
@@ -39,6 +45,8 @@ export function CopilotInput({
    * nœud, ce qui évite d'importer ici la notion de plan ou de tier.
    */
   toolbar?: ReactNode;
+  /** LOT CHOIX-CLIQUABLES : texte écrit dans le champ par l'écran hôte (sans envoi, sans voler le focus). */
+  remplissage?: RemplissageSaisie | null;
 }) {
   const [value, setValue] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -49,6 +57,16 @@ export function CopilotInput({
   });
   // V1.8 : ce que le serveur a lu des documents au dernier envoi, et son surcoût.
   const avisDocuments = useCopilotStore((s) => s.avisDocuments);
+
+  // LOT CHOIX-CLIQUABLES : chaque nouveau jeton est appliqué une fois (pas au montage : un composeur
+  // remonté ne rejoue pas un ancien clic). Le focus reste sur la puce (clavier, et pas de clavier
+  // virtuel qui masquerait les puces sur mobile).
+  const jetonApplique = useRef(remplissage?.jeton ?? 0);
+  useEffect(() => {
+    if (!remplissage || remplissage.jeton === jetonApplique.current) return;
+    jetonApplique.current = remplissage.jeton;
+    setValue((actuel) => remplissage.transformer(actuel));
+  }, [remplissage]);
 
   useEffect(() => {
     if (ref.current) {

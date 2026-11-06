@@ -254,7 +254,8 @@ export const OUTIL_STUDIO_PREPARER_3D: OutilDef = {
     "À appeler quand l'utilisateur demande de préparer / générer / voir la 3D de sa conception, ou en mission de " +
     "conception une fois le programme et les règles enregistrés. Ne lance AUCUN rendu et n'envoie rien au Studio. " +
     "Présente les chiffres comme un volume d'étude INDICATIF ; reprends les vérifications telles qu'elles sont " +
-    "renvoyées (jamais « conforme » ni « respecte le PLU »).",
+    "renvoyées (jamais « conforme » ni « respecte le PLU »). Rendu demandé (film, visite 360°, image) : appelle " +
+    "studio_lancer_rendu juste après, dans le même tour — ne pose JAMAIS toi-même la question d'habillage.",
   input_schema: {
     type: 'object',
     properties: {
@@ -275,6 +276,8 @@ export const OUTIL_STUDIO_LANCER_RENDU: OutilDef = {
     "l'accord. Dès que l'utilisateur l'a donné dans un tour suivant (« go », « oui »…), second appel avec `confirmer: true` " +
     "(jeton_devis facultatif : le serveur retrouve le devis présenté, valable 2 h) — NE refais PAS de devis avant de confirmer. " +
     "Le serveur refuse une confirmation dans le tour même du devis. " +
+    "HABILLAGE : ne pose JAMAIS toi-même la question d'habillage (façade, balcons, attique, RDC, ambiance), ni en texte ni en " +
+    "bloc mimmoza-choix — appelle cet outil sans `brief`, c'est lui qui la pose. " +
     "BRIEF : pour une 3D préparée, aucun devis sans `brief` d'habillage ; sans brief connu, l'outil renvoie la demande de " +
     "brief : une carte « Brief créatif » s'affiche dans le chat (choix en un clic, aperçu du volume) — invite l'utilisateur à " +
     "la remplir, sans recopier les choix ; réponse en texte → `brief` ; « à toi de choisir » → brief: { a_toi_de_choisir: true }. " +

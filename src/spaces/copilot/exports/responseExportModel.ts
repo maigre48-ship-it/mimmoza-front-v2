@@ -2,6 +2,7 @@ import type { ChatMessage } from '../types/copilot.types';
 import { buildApiResult, record, number, safeSourceUrl } from '../results/apiResultModel.ts';
 import { decouperSegments } from '../charts/copilotChart.types.ts';
 import { decouperReponse, etudeEnTableaux, nettoyerSynthese, titreDepuisQuestion } from '../utils/rapportAnalyse.ts';
+import { sansBlocsChoix } from '../utils/choixCliquables.ts';
 
 export type ExportCell = string | number | boolean | null;
 export type ReportTable = { title: string; columns: string[]; rows: ExportCell[][];
@@ -21,7 +22,8 @@ const tableSeparator = (line: string) => /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\
 
 export function parseReportText(text: string): ReportBlock[] {
   const blocks: ReportBlock[] = [];
-  for (const segment of decouperSegments(text)) {
+  // LOT CHOIX-CLIQUABLES : bloc ```mimmoza-choix omis (la question reste dans le texte).
+  for (const segment of decouperSegments(sansBlocsChoix(text))) {
     if (segment.kind === 'chart') {
       const c = segment.spec, series = c.series ?? ['value'];
       blocks.push({ kind: 'chart', chart: { title: c.title ?? 'Graphique de la réponse', unit: c.unit ?? '', type: c.type, series: series.map(s => s === 'value' ? 'Valeur' : s), source: c.source,

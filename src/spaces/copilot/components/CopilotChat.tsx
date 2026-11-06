@@ -1,13 +1,14 @@
 // src/spaces/copilot/components/CopilotChat.tsx
 import type { Mission } from '../agent/agent.types';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useCopilot } from '../hooks/useCopilot';
 import { useCopilotContext } from '../hooks/useCopilotContext';
 import { getCopilotQuickQuestions } from '../utils/quickQuestions';
 import { useLocation } from 'react-router-dom';
 import { CopilotEmptyState } from './CopilotEmptyState';
-import { CopilotInput } from './CopilotInput';
+import { CopilotInput, type RemplissageSaisie } from './CopilotInput';
 import { CopilotMessage } from './CopilotMessage';
+import type { RemplirSaisie } from './ChoixCliquables';
 import { COPILOT_THEME as T } from './copilotTheme';
 import type { CopilotMode } from '../types/copilot.types';
 import { FollowupPanel } from '../followup/FollowupPanel';
@@ -80,6 +81,11 @@ export function CopilotChat({
   const [studioRecoveryHint, setStudioRecoveryHint] = useState(false);
   const [fenetre3D, setFenetre3D] = useState<EtatFenetre3D>(lireEtatFenetre3D);
   const [pleinEcran, setPleinEcran] = useState(false);
+  // LOT CHOIX-CLIQUABLES : les puces d'une question à choix écrivent dans le champ de saisie (sans envoyer).
+  const [remplissage, setRemplissage] = useState<RemplissageSaisie | null>(null);
+  const remplirSaisie = useCallback<RemplirSaisie>((transformer) => {
+    setRemplissage((precedent) => ({ jeton: (precedent?.jeton ?? 0) + 1, transformer }));
+  }, []);
   const changerFenetre3D = (etat: EtatFenetre3D) => {
     setFenetre3D(etat);
     try { window.localStorage.setItem(CLE_FENETRE_3D, etat); } catch { /* stockage indisponible : l'état reste en mémoire */ }
@@ -266,7 +272,7 @@ export function CopilotChat({
                 <details><summary>Voir la réponse erronée</summary><div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div></details>
               </div>;
             }
-            return <CopilotMessage key={m.id} message={m} conversationId={currentConversationId} onSend={handleSend} onVisualiserMission={onVisualiserMission} />;
+            return <CopilotMessage key={m.id} message={m} conversationId={currentConversationId} onSend={handleSend} onVisualiserMission={onVisualiserMission} onRemplirSaisie={remplirSaisie} />;
           })
         )}
       </div>
@@ -283,6 +289,7 @@ export function CopilotChat({
         isStreaming={isStreaming}
         hideModeSelector={Boolean(forceMode)}
         toolbar={composerToolbar}
+        remplissage={remplissage}
       />
       <div className="copilot-chat__disclaimer" style={{ color: T.textMuted, borderTop: `1px solid ${T.borderSoft}` }}>
         ⚠️ Mimmo peut commettre des erreurs. Les analyses doivent être vérifiées,

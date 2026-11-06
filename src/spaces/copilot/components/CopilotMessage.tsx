@@ -30,6 +30,8 @@ import { CarteSuiviRendu } from '../studio3d/CarteSuiviRendu';
 import { cartesSuivi } from '../studio3d/suiviRenduChat';
 import { CarteBriefCreatif } from '../studio3d/CarteBriefCreatif';
 import { lireBlocBrief, lireDemandeBrief } from '../studio3d/briefCreatif';
+import { ChoixCliquables, type RemplirSaisie } from './ChoixCliquables';
+import { lireBlocChoix, situationChoix } from '../utils/choixCliquables';
 const CopilotThematicMaps = lazy(() => import('../maps/CopilotThematicMaps').then(m => ({ default: m.CopilotThematicMaps })));
 
 // recharts pèse plusieurs centaines de Ko et n'est utilisé QUE par les
@@ -46,6 +48,8 @@ const ParcelDecisionDossier = lazy(() =>
 type MessageProps = {
   onVisualiserMission?: (mission: Mission) => void;
   message: ChatMessage; question?: string | null; conversationId?: string | null; onSend?: (text: string) => void;
+  /** LOT CHOIX-CLIQUABLES : écrit dans le champ de saisie du chat (sans envoyer). */
+  onRemplirSaisie?: RemplirSaisie;
 };
 
 export function CopilotMessage(props: MessageProps) {
@@ -56,7 +60,7 @@ export function CopilotMessage(props: MessageProps) {
   </div>}><CopilotMessageContent {...props} /></CopilotRenderBoundary>;
 }
 
-function CopilotMessageContent({ message, question, conversationId, onSend, onVisualiserMission }: MessageProps) {
+function CopilotMessageContent({ message, question, conversationId, onSend, onVisualiserMission, onRemplirSaisie }: MessageProps) {
   const isUser = message.role === 'user';
   const actionRuns = useCopilotStore((s) => s.actionRuns);
   const messages = useCopilotStore((s) => s.messages);
@@ -78,7 +82,9 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
     const splitAt = match.index + match[1].length;
     return { visibleText: message.text.slice(splitAt), factualReport: message.text.slice(0, splitAt).trim() };
   }, [dossier, message.status, message.text]);
-  const segments = useMemo(() => decouperSegments(withoutJarvisDraft(visibleText)), [visibleText]);
+  // LOT CHOIX-CLIQUABLES : le bloc ```mimmoza-choix n'est jamais affiché tel quel (puces sous le texte).
+  const choix = useMemo(() => lireBlocChoix(visibleText), [visibleText]);
+  const segments = useMemo(() => decouperSegments(withoutJarvisDraft(choix.visible)), [choix.visible]);
   // LOT F1 : la première phrase-réponse n'est mise en évidence qu'une fois la réponse complète.
   const premierTexte = segments.findIndex((s) => s.kind !== 'chart');
 
@@ -93,6 +99,10 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
   const devisMissions = useMemo(() => devisAAfficher(message.toolCalls), [message.toolCalls]);
   // LOT E1-suivi : carte de suivi vivante d'un rendu Studio (dernier appel qui cite chaque travail).
   const suivisRendu = useMemo(() => cartesSuivi(messages), [messages]);
+  // LOT CHOIX-CLIQUABLES : puces actives sur le dernier message seulement ; sinon figées avec la réponse donnée.
+  // La carte « Brief créatif » fait déjà le choix d'habillage : pas de puces en double sous elle.
+  const situation = useMemo(() => situationChoix(messages, message.id), [messages, message.id]);
+  const carteBriefDemandee = message.toolCalls.some((tc) => lireDemandeBrief(tc)?.origine === 'demande');
 
   const handleResponseExport = async (format: 'pdf' | 'xlsx' | 'docx' | 'pptx') => {
     if (exporting) return;
@@ -200,6 +210,10 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
           />
         ),
       )}
+      {choix.bloc && message.status === 'complete' && !carteBriefDemandee && <CopilotRenderBoundary label="Réponses proposées">
+        <ChoixCliquables bloc={choix.bloc} messageId={message.id} actif={situation.actif}
+          reponse={situation.reponse === null ? null : lireBlocBrief(situation.reponse).visible} onRemplirSaisie={onRemplirSaisie} />
+      </CopilotRenderBoundary>}
       {factualReport && <details className="copilot-message-source-report">
         <summary>Ouvrir le rapport factuel complet et les sources</summary>
         <div className="copilot-message-markdown copilot-rapport" dangerouslySetInnerHTML={{ __html: structurerRapportFactuel(factualReport, (md) => markdownToSafeHtml(mettreEnForme(md))).annexeHtml }} />

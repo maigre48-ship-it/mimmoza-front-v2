@@ -12,6 +12,7 @@
 import { graphiquesEnTableaux } from '../charts/copilotChart.types.ts';
 import { decouperReponse, nettoyerSynthese, structurerRapportFactuel, titreDepuisQuestion } from './rapportAnalyse.ts';
 import { htmlImage, htmlLien } from './imagesMarkdown.ts';
+import { sansBlocsChoix } from './choixCliquables.ts';
 
 const LOGO_URL = '/Logo/Logo_mimmoza_base_line_redecoupe.png';
 
@@ -91,7 +92,9 @@ export function markdownToSafeHtml(raw: string): string {
   // statique. Sans cette conversion, leur JSON s'imprimerait tel quel au milieu
   // du rapport. On le remplace par le tableau des mêmes chiffres — dans un
   // document, ce sont les valeurs qui comptent, pas le dessin.
-  const lines = escapeHtml(graphiquesEnTableaux(raw).replace(/\r\n/g, '\n')).split('\n');
+  // LOT CHOIX-CLIQUABLES : les blocs ```mimmoza-choix (puces cliquables du fil) ne s'impriment pas ;
+  // la question reste lisible dans le texte qui les précède.
+  const lines = escapeHtml(graphiquesEnTableaux(sansBlocsChoix(raw)).replace(/\r\n/g, '\n')).split('\n');
   const out: string[] = [];
   let i = 0;
 
