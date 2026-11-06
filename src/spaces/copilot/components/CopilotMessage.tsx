@@ -26,6 +26,10 @@ import { useCopilotStreaming } from '../hooks/useCopilotStreaming';
 import { trackFire } from '@/lib/mimmozia/track';
 import { CarteDevisMission } from '../agent/CarteDevisMission';
 import { devisAAfficher, estAppelDevis } from '../agent/agentLogique';
+import { CarteSuiviRendu } from '../studio3d/CarteSuiviRendu';
+import { cartesSuivi } from '../studio3d/suiviRenduChat';
+import { CarteBriefCreatif } from '../studio3d/CarteBriefCreatif';
+import { lireBlocBrief, lireDemandeBrief } from '../studio3d/briefCreatif';
 const CopilotThematicMaps = lazy(() => import('../maps/CopilotThematicMaps').then(m => ({ default: m.CopilotThematicMaps })));
 
 // recharts pèse plusieurs centaines de Ko et n'est utilisé QUE par les
@@ -80,12 +84,15 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
 
   const linkedQuestion = question ?? (() => {
     const index = messages.findIndex((item) => item.id === message.id);
-    for (let i = index - 1; i >= 0; i--) if (messages[i].role === 'user') return messages[i].text;
+    // Brief créatif : le bloc technique n'est ni affiché ni exporté (seule la ligne lisible).
+    for (let i = index - 1; i >= 0; i--) if (messages[i].role === 'user') return lireBlocBrief(messages[i].text).visible;
     return null;
   })();
   const decisionLimits = tertiaryReview(linkedQuestion, message.toolCalls);
   // Agent autonome : une carte de devis par mission proposée (sans doublon).
   const devisMissions = useMemo(() => devisAAfficher(message.toolCalls), [message.toolCalls]);
+  // LOT E1-suivi : carte de suivi vivante d'un rendu Studio (dernier appel qui cite chaque travail).
+  const suivisRendu = useMemo(() => cartesSuivi(messages), [messages]);
 
   const handleResponseExport = async (format: 'pdf' | 'xlsx' | 'docx' | 'pptx') => {
     if (exporting) return;
@@ -105,6 +112,8 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
   };
 
   if (isUser) {
+    // LOT BRIEF-CRÉATIF : le bloc ```mimmoza-brief``` (relu par le serveur) est masqué ; une pastille le signale.
+    const blocBrief = lireBlocBrief(message.text);
     return (
       <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '10px 0' }}>
         <div style={{
@@ -112,7 +121,9 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
           background: T.userBubble, border: `1px solid ${T.border}`,
           color: T.text, fontSize: 14, lineHeight: 1.5, whiteSpace: 'pre-wrap',
         }}>
-          {message.text}
+          {blocBrief.brief && <span style={{ display: 'inline-block', marginBottom: 4, padding: '1px 8px', borderRadius: 999, background: '#ede9fe', color: '#5b21b6', fontSize: 11, fontWeight: 600 }}>Brief créatif</span>}
+          {blocBrief.brief && <br />}
+          {blocBrief.visible}
         </div>
       </div>
     );
@@ -129,6 +140,11 @@ function CopilotMessageContent({ message, question, conversationId, onSend, onVi
         <div style={{ marginBottom: 8 }}>
           {message.toolCalls.map((tc) => <CopilotRenderBoundary key={tc.id} label="Résultat d’outil">{(() => {
             if (estAppelDevis(tc.name)) { const d = devisMissions.get(tc.id); return d ? <CarteDevisMission affichage={d} onSend={onSend} conversationId={conversationId} onVisualiserMission={onVisualiserMission} /> : null; }
+            { const suivi = suivisRendu.get(tc.id); if (suivi) return <CarteSuiviRendu indice={suivi} />; }
+            // LOT BRIEF-CRÉATIF : demande de brief → carte à la place de la carte d'outil ; devis → carte + « Modifier l'habillage ».
+            { const demande = lireDemandeBrief(tc); if (demande) return demande.origine === 'demande'
+              ? <CarteBriefCreatif demande={demande} messageId={message.id} onSend={onSend} />
+              : <><CopilotApiResultCard call={tc} /><CarteBriefCreatif demande={demande} messageId={message.id} onSend={onSend} /></>; }
             if (tc.name === 'proposer_suivi_projet') return <FollowupProposalCard call={tc} complete={message.status === 'complete'} />;
             if (tc.name === 'calculer_bilan_financier') return <CopilotFinancialCard key={tc.id} call={tc} onSend={onSend} />;
             // Un outil d'action ne raconte pas ce qu'il a lu : il propose de

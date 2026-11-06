@@ -11,6 +11,7 @@
 
 import { graphiquesEnTableaux } from '../charts/copilotChart.types.ts';
 import { decouperReponse, nettoyerSynthese, structurerRapportFactuel, titreDepuisQuestion } from './rapportAnalyse.ts';
+import { htmlImage, htmlLien } from './imagesMarkdown.ts';
 
 const LOGO_URL = '/Logo/Logo_mimmoza_base_line_redecoupe.png';
 
@@ -30,9 +31,17 @@ function escapeHtml(raw: string): string {
     .replace(/'/g, '&#39;');
 }
 
-// ── Rendu inline : **gras**, *italique*, `code`, [texte](url) ────────────────
+// ── Rendu inline : **gras**, *italique*, `code`, [texte](url), ![alt](url) ───
 // Appliqué APRÈS échappement HTML. On ne réintroduit que des balises maîtrisées.
-function renderInline(escaped: string): string {
+// LOT E1-suivi : images et liens sont mis de côté AVANT le gras / l'italique /
+// le code — sinon un « __ » d'un jeton d'URL signée devenait <strong> au milieu
+// de l'adresse — puis réinsérés. Une image n'est affichée que si son URL est
+// celle du stockage du projet (imagesMarkdown.ts) ; sinon c'est un simple lien,
+// et le « ! » ne reste plus seul à l'écran.
+const MARQUE_DEBUT = '\uE000';
+const MARQUE_FIN = '\uE001';
+
+function formaterTexte(escaped: string): string {
   let s = escaped;
   // code inline `…`
   s = s.replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;border-radius:4px;padding:1px 5px;font-size:0.9em;font-family:ui-monospace,Menlo,monospace;">$1</code>');
@@ -41,9 +50,19 @@ function renderInline(escaped: string): string {
   s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
   // italique *…* (évite de manger les ** déjà traités)
   s = s.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
-  // liens [texte](url)
-  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#4f46e5;text-decoration:underline;">$1</a>');
   return s;
+}
+
+function renderInline(escaped: string): string {
+  const reserves: string[] = [];
+  const reserver = (html: string) => `${MARQUE_DEBUT}${reserves.push(html) - 1}${MARQUE_FIN}`;
+  let s = escaped.replace(/[\uE000\uE001]/g, '');
+  // images ![alt](url) — avant les liens, dont elles reprennent la syntaxe
+  s = s.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, (_m, alt: string, url: string) => reserver(htmlImage(alt, url)));
+  // liens [texte](url)
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_m, texte: string, url: string) => reserver(htmlLien(formaterTexte(texte), url)));
+  s = formaterTexte(s);
+  return s.replace(/\uE000(\d+)\uE001/g, (_m, i: string) => reserves[Number(i)] ?? '');
 }
 
 // ── Détection d'une ligne de tableau Markdown ───────────────────────────────

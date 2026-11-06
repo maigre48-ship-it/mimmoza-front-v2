@@ -1,0 +1,595 @@
+// src/spaces/copilot/studio3d/briefCreatif.ts
+// =============================================================================
+// LOT BRIEF-CRÉATIF — Carte « Brief créatif » du chat : logique PURE (testée par
+// briefCreatif.test.ts avec `node --test`). Aucune I/O, aucun React ici.
+//
+// Quand `studio_lancer_rendu` renvoie `partial` + `brief_requis` (copilot-chat/
+// agent/studio.ts, demandeBrief), le chat affiche une carte en 3 écrans au lieu
+// de la question texte. « Valider le brief » envoie un message utilisateur dont
+// un bloc ```mimmoza-brief``` porte le brief structuré : le serveur le relit
+// lui-même (studio.ts::briefDuMessage) et le valide (listes fermées).
+//
+// PRÉCISION : la carte ne propose QUE ce que le Studio applique (table du lot
+// E1-brief, corrigée par E1-rendu) :
+//   - style : aucun choix (contemporain = dessin par défaut du Studio) ;
+//     haussmannien et Art déco sont montrés « bientôt », non sélectionnables
+//     (packs du Studio au stade « manifest » : rien n'est appliqué) ;
+//   - rez-de-chaussée « hall d'entrée » : montré « bientôt » (non dessiné) ;
+//   - précisions libres : absentes (le Studio ne les interprète pas).
+// Les listes de valeurs sont COMPLÈTES et dans l'ordre du serveur (indisponibles
+// comprises) : le test échoue si elles divergent de studio.ts.
+//
+// APERÇU : `sceneApercu` habille le volume RÉEL de l'utilisateur (corps du
+// Dossier 3D renvoyés par le serveur dans `data.apercu`) avec les dimensions du
+// Studio (mimmozia-studio/src/core/architecture : defaults.ts, FacadeGenerator.ts
+// windowDims, BalconyGenerator.ts) et les couleurs déclarées de ses matériaux
+// (src/core/materials/archvizLibrary.ts, table LEGACY_TO_ARCHVIZ, jeu du paquet
+// Unreal). `dessinTravee` dessine une travée de façade (vignette SVG) avec les
+// mêmes règles. Textures, modénature et entrée ne sont PAS reproduites.
+// =============================================================================
+
+// ── Bloc du message (même langue et même version que studio.ts) ────────────────
+export const BRIEF_BLOC_LANGUE = 'mimmoza-brief';
+export const BRIEF_BLOC_VERSION = 1;
+export const OUTIL_LANCER_RENDU = 'studio_lancer_rendu';
+
+export type TypeRenduBrief = 'film' | 'visite360' | 'image';
+export type Style = 'contemporain' | 'haussmannien' | 'art_deco';
+export type Facade = 'enduit_clair' | 'enduit_blanc' | 'brique' | 'pierre' | 'beton' | 'bardage_bois' | 'verre';
+export type Ouvertures = 'fenetres_verticales' | 'baies_vitrees' | 'fenetres_horizontales';
+export type Balcons = 'balcons' | 'balcons_filants' | 'loggias' | 'aucun';
+export type Rdc = 'logements' | 'commerces' | 'hall';
+export type Ambiance = 'jour' | 'fin_de_journee' | 'nuit';
+
+/** Champs que la carte fait choisir (le style et les précisions n'en font pas partie). */
+export const CHAMPS_CARTE = ['facade', 'ouvertures', 'balcons', 'attique', 'rdc', 'ambiance'] as const;
+export type ChampCarte = typeof CHAMPS_CARTE[number];
+
+export interface ChoixBrief {
+  facade: Facade;
+  ouvertures: Ouvertures;
+  balcons: Balcons;
+  attique: boolean;
+  rdc: Rdc;
+  ambiance: Ambiance;
+}
+
+export interface OptionBrief<V> {
+  valeur: V;
+  libelle: string;
+  /** Une phrase simple, sans terme du Studio. */
+  detail: string;
+  /** Faux = montré « bientôt », jamais sélectionnable (le Studio ne l'applique pas). */
+  disponible: boolean;
+}
+
+// Couleurs DÉCLARÉES des matériaux du Studio (archvizLibrary.ts, jeu du paquet Unreal ;
+// clé du moteur d'architecture → av-*, LEGACY_TO_ARCHVIZ l. 557-579). Le rendu Unreal
+// ajoute textures et lumière : ces aplats sont une approximation de teinte, pas un rendu.
+export const MATIERE_FACADE: Record<Facade, { materiau: string; couleur: string }> = {
+  enduit_clair: { materiau: 'enduit-beige → av-enduit-creme', couleur: '#e2d9c6' },
+  enduit_blanc: { materiau: 'enduit-blanc → av-enduit-blanc', couleur: '#e9e7e1' },
+  brique: { materiau: 'brique-rouge → av-brique-rouge', couleur: '#8e4b38' },
+  pierre: { materiau: 'pierre-claire-contemp → av-pierre-calcaire', couleur: '#cbc2ae' },
+  beton: { materiau: 'beton-brut → av-beton-brut', couleur: '#a4a29d' },
+  bardage_bois: { materiau: 'bardage-bois → av-bardage-bois-brun', couleur: '#8b6236' },
+  verre: { materiau: 'verre-teinte → av-verre-teinte', couleur: '#c3d2d3' },
+};
+
+export const STYLES: readonly OptionBrief<Style>[] = [
+  { valeur: 'contemporain', libelle: 'Contemporain', detail: 'Le dessin du Studio, personnalisé par vos choix.', disponible: true },
+  { valeur: 'haussmannien', libelle: 'Haussmannien', detail: 'Bientôt disponible.', disponible: false },
+  { valeur: 'art_deco', libelle: 'Art déco', detail: 'Bientôt disponible.', disponible: false },
+];
+export const FACADES: readonly OptionBrief<Facade>[] = [
+  { valeur: 'enduit_clair', libelle: 'Enduit clair', detail: 'Enduit beige, chaleureux et sobre.', disponible: true },
+  { valeur: 'enduit_blanc', libelle: 'Enduit blanc', detail: 'Blanc lumineux, très contemporain.', disponible: true },
+  { valeur: 'brique', libelle: 'Brique', detail: 'Brique rouge appareillée.', disponible: true },
+  { valeur: 'pierre', libelle: 'Pierre claire', detail: 'Pierre calcaire en plaques.', disponible: true },
+  { valeur: 'beton', libelle: 'Béton', detail: 'Béton brut, gris minéral.', disponible: true },
+  { valeur: 'bardage_bois', libelle: 'Bardage bois', detail: 'Lames de bois brun.', disponible: true },
+  { valeur: 'verre', libelle: 'Verre', detail: 'Façade entièrement vitrée.', disponible: true },
+];
+export const OUVERTURES: readonly OptionBrief<Ouvertures>[] = [
+  { valeur: 'fenetres_verticales', libelle: 'Fenêtres verticales', detail: 'Fenêtres hautes et étroites.', disponible: true },
+  { valeur: 'baies_vitrees', libelle: 'Baies vitrées', detail: 'Grandes baies du sol au plafond.', disponible: true },
+  { valeur: 'fenetres_horizontales', libelle: 'Fenêtres en bandeau', detail: 'Fenêtres larges et basses.', disponible: true },
+];
+export const BALCONS: readonly OptionBrief<Balcons>[] = [
+  { valeur: 'balcons', libelle: 'Balcons', detail: 'Un balcon par fenêtre, sauf aux angles.', disponible: true },
+  { valeur: 'balcons_filants', libelle: 'Balcons filants', detail: 'Un balcon continu sur toute la façade.', disponible: true },
+  { valeur: 'loggias', libelle: 'Loggias', detail: 'Terrasses creusées dans la façade.', disponible: true },
+  { valeur: 'aucun', libelle: 'Aucun', detail: 'Façade lisse, sans balcon.', disponible: true },
+];
+export const ATTIQUES: readonly OptionBrief<boolean>[] = [
+  { valeur: false, libelle: 'Toit plat', detail: 'Le volume tel qu’il a été calculé.', disponible: true },
+  { valeur: true, libelle: 'Avec attique', detail: 'Un étage en retrait ajouté au-dessus (à vérifier au PLU).', disponible: true },
+];
+export const RDCS: readonly OptionBrief<Rdc>[] = [
+  { valeur: 'logements', libelle: 'Logements', detail: 'Le rez-de-chaussée comme les étages.', disponible: true },
+  { valeur: 'commerces', libelle: 'Commerces', detail: 'Vitrines au rez-de-chaussée.', disponible: true },
+  { valeur: 'hall', libelle: 'Hall d’entrée', detail: 'Bientôt disponible.', disponible: false },
+];
+export const AMBIANCES: readonly OptionBrief<Ambiance>[] = [
+  { valeur: 'jour', libelle: 'Journée', detail: 'Lumière franche de la mi-journée.', disponible: true },
+  { valeur: 'fin_de_journee', libelle: 'Fin de journée', detail: 'Soleil bas et lumière dorée.', disponible: true },
+  { valeur: 'nuit', libelle: 'Nuit', detail: 'Fenêtres éclairées (film et visite).', disponible: true },
+];
+
+/** Valeurs par défaut — identiques à BRIEF_DEFAUT de studio.ts (vérifié par le test). */
+export const CHOIX_DEFAUT: ChoixBrief = {
+  facade: 'enduit_clair', ouvertures: 'fenetres_verticales', balcons: 'balcons', attique: false, rdc: 'logements', ambiance: 'jour',
+};
+
+/** Les trois écrans de la carte (3 au plus, un clic par choix). */
+export const ECRANS: readonly { id: string; titre: string; champs: readonly ChampCarte[] }[] = [
+  { id: 'facade', titre: 'Façade et matière', champs: ['facade'] },
+  { id: 'ouvertures', titre: 'Fenêtres et balcons', champs: ['ouvertures', 'balcons'] },
+  { id: 'finitions', titre: 'Toit, rez-de-chaussée et lumière', champs: ['attique', 'rdc', 'ambiance'] },
+];
+
+export const QUESTIONS: Record<ChampCarte, string> = {
+  facade: 'Quelle matière pour la façade ?',
+  ouvertures: 'Quelles fenêtres ?',
+  balcons: 'Balcons ou loggias ?',
+  attique: 'Un étage en retrait sur le toit ?',
+  rdc: 'Que met-on au rez-de-chaussée ?',
+  ambiance: 'Quelle lumière pour le rendu ?',
+};
+
+type Obj = Record<string, unknown>;
+const estObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
+const fini = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const TYPES: readonly TypeRenduBrief[] = ['film', 'visite360', 'image'];
+
+export function optionsDe(champ: ChampCarte): readonly OptionBrief<string | boolean>[] {
+  switch (champ) {
+    case 'facade': return FACADES;
+    case 'ouvertures': return OUVERTURES;
+    case 'balcons': return BALCONS;
+    case 'attique': return ATTIQUES;
+    case 'rdc': return RDCS;
+    case 'ambiance': return AMBIANCES;
+  }
+}
+
+// ── Demande lue dans la sortie d'outil ───────────────────────────────────────
+export interface CorpsApercu { cx: number; cy: number; l: number; p: number; a: number; n: number }
+export interface ApercuVolume { corps: CorpsApercu[]; contour: [number, number][] | null }
+export interface LimitesBrief { batiments: number; balcons: boolean }
+
+export interface DemandeBrief {
+  /** 'demande' : brief exigé avant le devis (ou rouvert par Mimmo) ; 'devis' : « Modifier l'habillage » sous un devis. */
+  origine: 'demande' | 'devis';
+  type: TypeRenduBrief;
+  /** Ambiances proposées par le serveur pour ce type (l'image n'a pas de nuit). */
+  ambiances: Ambiance[];
+  /** Brief connu (modification) ; null si aucun. */
+  actuel: (ChoixBrief & { defauts: string[] }) | null;
+  apercu: ApercuVolume | null;
+  limites: LimitesBrief;
+}
+
+const dans = <T extends string>(liste: readonly OptionBrief<T>[], v: unknown): v is T => liste.some((o) => o.valeur === v);
+
+function lireApercu(v: unknown): ApercuVolume | null {
+  if (!estObj(v) || !Array.isArray(v.corps)) return null;
+  const corps = v.corps.filter((c): c is CorpsApercu => estObj(c) && [c.cx, c.cy, c.l, c.p, c.a, c.n].every(fini) && (c.l as number) > 0 && (c.p as number) > 0 && (c.n as number) >= 1)
+    .slice(0, 12).map((c) => ({ cx: c.cx, cy: c.cy, l: c.l, p: c.p, a: c.a, n: Math.min(60, Math.round(c.n)) }));
+  if (!corps.length) return null;
+  const contour = Array.isArray(v.contour)
+    ? v.contour.filter((q): q is [number, number] => Array.isArray(q) && q.length === 2 && fini(q[0]) && fini(q[1])).slice(0, 64)
+    : [];
+  return { corps, contour: contour.length >= 3 ? contour : null };
+}
+
+function lireActuel(v: unknown): DemandeBrief['actuel'] {
+  if (!estObj(v)) return null;
+  if (!dans(FACADES, v.facade) || !dans(OUVERTURES, v.ouvertures) || !dans(BALCONS, v.balcons) || typeof v.attique !== 'boolean'
+    || !dans(RDCS, v.rdc) || !dans(AMBIANCES, v.ambiance)) return null;
+  return {
+    facade: v.facade, ouvertures: v.ouvertures, balcons: v.balcons, attique: v.attique, rdc: v.rdc, ambiance: v.ambiance,
+    defauts: Array.isArray(v.defauts) ? v.defauts.filter((d): d is string => typeof d === 'string') : [],
+  };
+}
+
+/**
+ * Sortie de `studio_lancer_rendu` → demande de brief pour la carte, ou null.
+ *   - `partial` + `brief_requis` (garde du serveur ou `ouvrir_brief`) → carte ouverte ;
+ *   - devis (`confirmation_requise`) portant `brief_actuel` → bouton « Modifier l'habillage ».
+ * Tolère l'ancienne sortie (sans `apercu` ni `limites`) : carte avec vignettes seulement.
+ */
+export function lireDemandeBrief(call: { name: string; status?: string; output?: unknown }): DemandeBrief | null {
+  if (call.name !== OUTIL_LANCER_RENDU || call.status === 'running' || !estObj(call.output)) return null;
+  const out = call.output;
+  const d = estObj(out.data) ? out.data : null;
+  if (!d || !TYPES.includes(d.type as TypeRenduBrief)) return null;
+  const type = d.type as TypeRenduBrief;
+  const limitesBrutes = estObj(d.limites) ? d.limites : {};
+  const limites: LimitesBrief = {
+    batiments: fini(limitesBrutes.batiments) && limitesBrutes.batiments >= 1 ? Math.round(limitesBrutes.batiments) : 1,
+    balcons: limitesBrutes.balcons !== false,
+  };
+  if (out.status === 'partial' && d.brief_requis === true) {
+    const champs = estObj(d.champs) ? d.champs : {};
+    const amb = estObj(champs.ambiance) && Array.isArray(champs.ambiance.valeurs) ? champs.ambiance.valeurs : null;
+    const ambiances = (amb ?? (type === 'image' ? ['jour', 'fin_de_journee'] : ['jour', 'fin_de_journee', 'nuit']))
+      .filter((a): a is Ambiance => dans(AMBIANCES, a) && !(type === 'image' && a === 'nuit'));
+    return { origine: 'demande', type, ambiances: ambiances.length ? ambiances : ['jour'], actuel: lireActuel(d.actuel), apercu: lireApercu(d.apercu), limites };
+  }
+  if (out.status === 'confirmation_requise' && estObj(d.brief_actuel)) {
+    const actuel = lireActuel(d.brief_actuel);
+    if (!actuel) return null;
+    return { origine: 'devis', type, ambiances: type === 'image' ? ['jour', 'fin_de_journee'] : ['jour', 'fin_de_journee', 'nuit'], actuel, apercu: lireApercu(d.apercu), limites };
+  }
+  return null;
+}
+
+// ── État de la carte ──────────────────────────────────────────────────────────
+export interface EtatBrief {
+  choix: ChoixBrief;
+  /** Champs choisis par l'utilisateur (les autres restent « proposés par Mimmo »). */
+  touches: ChampCarte[];
+}
+
+/** État initial : brief connu (sans les valeurs que le Studio n'applique pas) ou valeurs proposées. */
+export function etatInitial(d: Pick<DemandeBrief, 'actuel' | 'ambiances'>): EtatBrief {
+  const a = d.actuel;
+  const choix: ChoixBrief = a
+    ? { facade: a.facade, ouvertures: a.ouvertures, balcons: a.balcons, attique: a.attique, rdc: a.rdc, ambiance: a.ambiance }
+    : { ...CHOIX_DEFAUT };
+  let touches: ChampCarte[] = a ? CHAMPS_CARTE.filter((c) => !a.defauts.includes(c)) : [];
+  // « hall » (non dessiné) → logements, proposé à nouveau ; ambiance hors liste (nuit pour une image) → journée.
+  if (choix.rdc === 'hall') { choix.rdc = 'logements'; touches = touches.filter((c) => c !== 'rdc'); }
+  if (!d.ambiances.includes(choix.ambiance)) { choix.ambiance = d.ambiances[0] ?? 'jour'; touches = touches.filter((c) => c !== 'ambiance'); }
+  return { choix, touches };
+}
+
+/** Raison pour laquelle une option n'est pas cliquable dans ce contexte ; null = cliquable. */
+export function raisonIndisponible(champ: ChampCarte, valeur: string | boolean, choix: ChoixBrief, d: Pick<DemandeBrief, 'ambiances' | 'limites'>): string | null {
+  const opt = optionsDe(champ).find((o) => o.valeur === valeur);
+  if (!opt) return 'Valeur inconnue.';
+  if (!opt.disponible) return 'Bientôt disponible.';
+  if (champ === 'ambiance' && !d.ambiances.includes(valeur as Ambiance)) return 'L’image se rend de jour ou en fin de journée.';
+  if (champ === 'ouvertures' && choix.facade === 'verre') return 'Avec une façade en verre, les baies couvrent déjà toute la façade.';
+  if (champ === 'balcons' && !d.limites.balcons) return 'Pour cet ensemble, le Studio ne sait pas encore poser les balcons.';
+  return null;
+}
+
+/** Un clic : choisit la valeur si elle est cliquable (sinon état inchangé). */
+export function choisir(etat: EtatBrief, champ: ChampCarte, valeur: string | boolean, d: Pick<DemandeBrief, 'ambiances' | 'limites'>): EtatBrief {
+  if (raisonIndisponible(champ, valeur, etat.choix, d)) return etat;
+  return {
+    choix: { ...etat.choix, [champ]: valeur } as ChoixBrief,
+    touches: etat.touches.includes(champ) ? etat.touches : [...etat.touches, champ],
+  };
+}
+
+const LIB_COURT: { [K in ChampCarte]: (c: ChoixBrief) => string | null } = {
+  facade: (c) => ({ enduit_clair: 'Enduit clair', enduit_blanc: 'Enduit blanc', brique: 'Brique', pierre: 'Pierre claire', beton: 'Béton', bardage_bois: 'Bardage bois', verre: 'Façade en verre' })[c.facade],
+  ouvertures: (c) => (c.facade === 'verre' ? null : ({ fenetres_verticales: 'fenêtres verticales', baies_vitrees: 'baies vitrées', fenetres_horizontales: 'fenêtres en bandeau' })[c.ouvertures]),
+  balcons: (c) => ({ balcons: 'balcons', balcons_filants: 'balcons filants', loggias: 'loggias', aucun: 'sans balcon' })[c.balcons],
+  attique: (c) => (c.attique ? 'avec attique' : 'toit plat'),
+  rdc: (c) => (c.rdc === 'commerces' ? 'commerces en rez-de-chaussée' : 'logements en rez-de-chaussée'),
+  ambiance: (c) => ({ jour: 'journée', fin_de_journee: 'fin de journée', nuit: 'nuit' })[c.ambiance],
+};
+
+/** Récapitulatif d'une ligne (« Brique · fenêtres verticales · loggias · avec attique · commerces en rez-de-chaussée · journée »). */
+export function recapitulatif(c: ChoixBrief, d?: Pick<DemandeBrief, 'limites'>): string {
+  return CHAMPS_CARTE
+    .map((champ) => (champ === 'balcons' && d && !d.limites.balcons ? null : LIB_COURT[champ](c)))
+    .filter((t): t is string => !!t).join(' · ');
+}
+
+/**
+ * Brief envoyé au serveur (format accepté par validerBrief) : les champs choisis par l'utilisateur ;
+ * s'il en reste de non choisis (ou « Laisser Mimmo choisir »), `a_toi_de_choisir: true` — le devis
+ * les dira alors « par défaut », honnêtement. Jamais de style ni de précisions.
+ */
+export function briefAEnvoyer(etat: EtatBrief, mimmoChoisit = false): Obj {
+  const champs = etat.touches;
+  const b: Obj = {};
+  for (const c of CHAMPS_CARTE) if (champs.includes(c)) b[c] = etat.choix[c];
+  if (mimmoChoisit || CHAMPS_CARTE.some((c) => !champs.includes(c))) b.a_toi_de_choisir = true;
+  return b;
+}
+
+/** Choix qui seront réellement appliqués (champs non choisis = valeurs proposées). */
+export function choixAppliques(etat: EtatBrief, mimmoChoisit = false): ChoixBrief {
+  if (!mimmoChoisit) return etat.choix;
+  const c = { ...CHOIX_DEFAUT };
+  for (const champ of etat.touches) (c as Record<string, unknown>)[champ] = etat.choix[champ];
+  return c;
+}
+
+const LIB_TYPE: Record<TypeRenduBrief, string> = { film: 'le film', visite360: 'la visite 360°', image: 'l’image' };
+
+/** Message envoyé au chat : une ligne lisible, puis le bloc relu par le serveur. */
+export function messageBrief(etat: EtatBrief, d: Pick<DemandeBrief, 'type' | 'limites'>, mimmoChoisit = false): string {
+  const bloc = { v: BRIEF_BLOC_VERSION, type: d.type, brief: briefAEnvoyer(etat, mimmoChoisit) };
+  const recap = recapitulatif(choixAppliques(etat, mimmoChoisit), d);
+  const tete = mimmoChoisit && etat.touches.length < CHAMPS_CARTE.length
+    ? `Brief créatif pour ${LIB_TYPE[d.type]} (rendu) : je laisse Mimmo choisir${etat.touches.length ? ' le reste' : ''} — ${recap}.`
+    : `Brief créatif validé pour ${LIB_TYPE[d.type]} (rendu) : ${recap}.`;
+  return `${tete}\n\n\`\`\`${BRIEF_BLOC_LANGUE}\n${JSON.stringify(bloc)}\n\`\`\``;
+}
+
+const RE_BLOC = new RegExp('```' + BRIEF_BLOC_LANGUE + '[ \\t]*\\r?\\n([\\s\\S]*?)\\r?\\n?```');
+
+/** Message utilisateur → texte à afficher (sans le bloc) et présence d'un brief. */
+export function lireBlocBrief(texte: string): { visible: string; brief: boolean } {
+  const m = RE_BLOC.exec(texte);
+  if (!m) return { visible: texte, brief: false };
+  return { visible: texte.replace(m[0], '').replace(/\n{3,}/g, '\n\n').trim(), brief: true };
+}
+
+/** Un brief a-t-il été envoyé APRÈS ce message ? Renvoie sa ligne lisible (pour l'état « envoyé » de la carte). */
+export function briefEnvoyeApres(messages: readonly { id: string; role: string; text: string }[], messageId: string): string | null {
+  const i = messages.findIndex((m) => m.id === messageId);
+  if (i < 0) return null;
+  for (let k = messages.length - 1; k > i; k--) {
+    const m = messages[k];
+    if (m.role !== 'user') continue;
+    const l = lireBlocBrief(m.text);
+    if (l.brief) return l.visible.replace(/^Brief créatif[^:]*:\s*/, '').replace(/\.$/, '');
+  }
+  return null;
+}
+
+/**
+ * La demande de brief de ce message est-elle dépassée ? (un brief envoyé, ou un devis / lancement
+ * de rendu plus loin dans le fil) — la carte s'affiche alors repliée, sans reposer la question.
+ */
+export function demandeDepassee(messages: readonly { id: string; role: string; text: string; toolCalls?: readonly { name: string; output?: unknown }[] }[], messageId: string): boolean {
+  const i = messages.findIndex((m) => m.id === messageId);
+  if (i < 0) return false;
+  return messages.slice(i + 1).some((m) => (m.role === 'user' && lireBlocBrief(m.text).brief)
+    || (m.toolCalls ?? []).some((t) => t.name === OUTIL_LANCER_RENDU && estObj(t.output) && (t.output.status === 'confirmation_requise' || t.output.status === 'ok')));
+}
+
+// ── Dimensions du Studio (mimmozia-studio/src/core/architecture) ──────────────
+/** defaults.ts DEFAULT_LEVELS / DEFAULT_FACADE ; BalconyGenerator.ts BALCONY_DEFAULTS. */
+export const STUDIO = {
+  hauteurRdc: 3.3, hauteurEtage: 2.8, hauteurAttique: 2.7, dalle: 0.22, retraitAttique: 2,
+  trame: 3.2, margeExtremite: 0.9,
+  balcon: { profondeur: 1.4, epaisseur: 0.18, gardeCorps: 1.05, retraitFilant: 0.3 },
+  allegeMurRideau: 0.9,
+} as const;
+
+/** FacadeGenerator.ts::windowDims (DEFAULT_FACADE : 1,40 × 1,55 m, allège 0,95 m) pour les trois types du brief. */
+export function dimsFenetre(o: Ouvertures, trame: number, hauteurNiveau: number): { largeur: number; hauteur: number; allege: number } {
+  const maxW = Math.max(0.6, trame - 0.6);
+  const maxH = Math.max(0.6, hauteurNiveau - 0.5);
+  const clamp = (w: number, h: number, s: number) => ({
+    largeur: Math.min(w, maxW),
+    hauteur: Math.min(h, maxH - Math.min(s, maxH - 0.4)),
+    allege: Math.min(s, Math.max(0, maxH - 0.6)),
+  });
+  if (o === 'baies_vitrees') return clamp(maxW, hauteurNiveau - 0.55, 0.08);
+  if (o === 'fenetres_horizontales') return clamp(1.4 * 1.6, 1, 1.2);
+  return clamp(0.8, Math.max(1.8, 1.55 * 1.3), 0.7);
+}
+
+/** Niveaux d'un corps : rez + étages (+ attique), cote de plancher et hauteur libre. */
+export function niveauxCorps(n: number, attique: boolean): { role: 'rdc' | 'etage' | 'attique'; cote: number; hauteur: number }[] {
+  const out: { role: 'rdc' | 'etage' | 'attique'; cote: number; hauteur: number }[] = [{ role: 'rdc', cote: 0, hauteur: STUDIO.hauteurRdc }];
+  let z = STUDIO.hauteurRdc;
+  for (let i = 1; i < n; i++) { z += STUDIO.dalle; out.push({ role: 'etage', cote: z, hauteur: STUDIO.hauteurEtage }); z += STUDIO.hauteurEtage; }
+  if (attique) { z += STUDIO.dalle; out.push({ role: 'attique', cote: z, hauteur: STUDIO.hauteurAttique }); }
+  return out;
+}
+
+/** Hauteur totale (R+2 = 9,34 m ; + attique = 12,26 m, valeurs mesurées sur le Studio au lot E1-rendu). */
+export function hauteurCorps(n: number, attique: boolean): number {
+  const nv = niveauxCorps(n, attique);
+  const d = nv[nv.length - 1];
+  return Math.round((d.cote + d.hauteur) * 100) / 100;
+}
+
+/** Travées d'une façade de longueur L : centres (le long de la façade, origine au milieu) et angles. */
+export function travees(L: number): { centre: number; largeur: number; angle: boolean }[] {
+  const utile = L - 2 * STUDIO.margeExtremite;
+  const n = Math.max(1, Math.floor(utile / STUDIO.trame + 1e-9));
+  const w = utile > 0 ? utile / n : L;
+  return Array.from({ length: n }, (_, i) => ({ centre: -utile / 2 + w * (i + 0.5), largeur: Math.min(w, L), angle: n > 2 && (i === 0 || i === n - 1) }));
+}
+
+// ── Palette de l'aperçu ───────────────────────────────────────────────────────
+export type Matiere = 'mur' | 'vitrage' | 'vitrageAllume' | 'vitrine' | 'dalle' | 'gardeCorps' | 'fondLoggia' | 'allege';
+
+export interface Lumiere { ciel: string; sol: string; soleil: string; intensiteSoleil: number; ambiante: number; elevationDeg: number; fenetresAllumees: boolean }
+
+/** Ambiance → lumière de l'aperçu (indicative ; la lumière réelle est celle d'Unreal). */
+export function lumiere(a: Ambiance): Lumiere {
+  if (a === 'fin_de_journee') return { ciel: '#f3d2b0', sol: '#d9cdbd', soleil: '#ffb877', intensiteSoleil: 2.2, ambiante: 0.75, elevationDeg: 14, fenetresAllumees: false };
+  if (a === 'nuit') return { ciel: '#1d2740', sol: '#2a2f3a', soleil: '#8aa2d6', intensiteSoleil: 0.5, ambiante: 0.6, elevationDeg: 40, fenetresAllumees: true };
+  return { ciel: '#dce8f3', sol: '#e7e3da', soleil: '#fff6e8', intensiteSoleil: 2.6, ambiante: 0.8, elevationDeg: 50, fenetresAllumees: false };
+}
+
+export function couleurs(c: ChoixBrief): Record<Matiere, string> {
+  const nuit = c.ambiance === 'nuit';
+  return {
+    mur: MATIERE_FACADE[c.facade].couleur,
+    vitrage: c.facade === 'verre' ? '#7f9aa0' : '#4d5d68',
+    vitrageAllume: '#f6c56b',
+    vitrine: nuit ? '#f8d48a' : '#6f8792',
+    dalle: '#d8d5cf',
+    // Garde-corps : métal par défaut ; vitré avec des baies vitrées (effet du lecteur du Studio, bâtiment seul).
+    gardeCorps: c.ouvertures === 'baies_vitrees' ? '#b9cfd6' : '#5f656c',
+    fondLoggia: '#3d3a36',
+    allege: c.facade === 'verre' ? '#8c979b' : MATIERE_FACADE[c.facade].couleur,
+  };
+}
+
+// ── Scène 3D de l'aperçu (boîtes) ─────────────────────────────────────────────
+/** Boîte : centre (x est, y haut, z sud — repère three), tailles le long du corps (u, hauteur, v), rotation Y (rad). */
+export interface Boite { m: Matiere; p: [number, number, number]; s: [number, number, number]; r: number; opacite?: number }
+export interface SceneApercu { boites: Boite[]; contour: [number, number][] | null; rayon: number; hauteurMax: number; centre: [number, number] }
+
+/** Éléments au plus (au-delà, les fenêtres des corps suivants sont omises : aperçu, pas rendu). */
+export const BOITES_MAX = 6000;
+
+/**
+ * Volume réel + choix → boîtes de l'aperçu. Corps : centre et angle du Dossier 3D (même repère
+ * que corpsAffiches : x est, y nord, angle du grand côté depuis l'est, sens trigonométrique).
+ */
+export function sceneApercu(apercu: ApercuVolume, c: ChoixBrief, limites: LimitesBrief = { batiments: 1, balcons: true }): SceneApercu {
+  const boites: Boite[] = [];
+  const allume = c.ambiance === 'nuit';
+  const verre = c.facade === 'verre';
+  let hMax = 0;
+  const pts: [number, number][] = [];
+  for (const k of apercu.corps) {
+    const a = (k.a * Math.PI) / 180;
+    const cu = Math.cos(a), su = Math.sin(a);
+    // Point du corps (u le long, v en profondeur, h hauteur) → repère three.
+    const monde = (u: number, v: number, h: number): [number, number, number] => {
+      const x = k.cx + u * cu - v * su, y = k.cy + u * su + v * cu;
+      return [x, h, -y];
+    };
+    const ajoute = (m: Matiere, u: number, v: number, h: number, su_: number, sh: number, sv: number, opacite?: number) => {
+      if (boites.length >= BOITES_MAX) return;
+      boites.push({ m, p: monde(u, v, h), s: [su_, sh, sv], r: a, ...(opacite !== undefined ? { opacite } : {}) });
+    };
+    const niveaux = niveauxCorps(k.n, c.attique);
+    const hCorps = niveaux.filter((nv) => nv.role !== 'attique').reduce((m, nv) => Math.max(m, nv.cote + nv.hauteur), 0);
+    hMax = Math.max(hMax, hauteurCorps(k.n, c.attique));
+    for (const [u, v] of [[-k.l / 2, -k.p / 2], [k.l / 2, -k.p / 2], [k.l / 2, k.p / 2], [-k.l / 2, k.p / 2]] as const) {
+      const w = monde(u, v, 0); pts.push([w[0], -w[2]]);
+    }
+    // Corps plein.
+    ajoute('mur', 0, 0, hCorps / 2, k.l, hCorps, k.p, verre ? 0.92 : undefined);
+    if (c.attique) {
+      const at = niveaux[niveaux.length - 1];
+      const la = Math.max(1, k.l - 2 * STUDIO.retraitAttique), pa = Math.max(1, k.p - 2 * STUDIO.retraitAttique);
+      ajoute('mur', 0, 0, at.cote + at.hauteur / 2, la, at.hauteur + STUDIO.dalle, pa, verre ? 0.92 : undefined);
+    }
+    // Façades : 4 côtés (normale +v, −v, +u, −u).
+    // t : abscisse le long de la façade (origine au milieu) ; d : avancée vers l'extérieur ; r : retrait (attique).
+    const cotes: { long: number; uv: (t: number, d: number, r: number) => [number, number]; leLongDeU: boolean }[] = [
+      { long: k.l, uv: (t, d, r) => [t, k.p / 2 - r + d], leLongDeU: true },
+      { long: k.l, uv: (t, d, r) => [-t, -k.p / 2 + r - d], leLongDeU: true },
+      { long: k.p, uv: (t, d, r) => [k.l / 2 - r + d, t], leLongDeU: false },
+      { long: k.p, uv: (t, d, r) => [-k.l / 2 + r - d, -t], leLongDeU: false },
+    ];
+    for (const nv of niveaux) {
+      const retrait = nv.role === 'attique' ? STUDIO.retraitAttique : 0;
+      for (const f of cotes) {
+        const L = f.long - 2 * retrait;
+        if (L < 1) continue;
+        const box = (m: Matiere, t: number, d: number, h: number, le: number, hh: number, ep: number, op?: number) => {
+          const [u, v] = f.uv(t, d, retrait);
+          ajoute(m, u, v, h, f.leLongDeU ? le : ep, hh, f.leLongDeU ? ep : le, op);
+        };
+        if (verre) {
+          // Mur-rideau : allège opaque de 0,9 m en pied de chaque niveau (FacadeGenerator CURTAIN_WALL_SPANDREL_M).
+          box('allege', 0, 0.02, nv.cote + STUDIO.allegeMurRideau / 2, L, STUDIO.allegeMurRideau, 0.06);
+          if (allume) box('vitrageAllume', 0, 0.01, nv.cote + STUDIO.allegeMurRideau + (nv.hauteur - STUDIO.allegeMurRideau) / 2, L - 0.4, nv.hauteur - STUDIO.allegeMurRideau - 0.2, 0.04, 0.55);
+          continue;
+        }
+        const commerces = nv.role === 'rdc' && c.rdc === 'commerces';
+        const fen = dimsFenetre(c.ouvertures, STUDIO.trame, nv.hauteur);
+        const balconsIci = nv.role === 'etage' && c.balcons !== 'aucun' && limites.balcons;
+        if (balconsIci && c.balcons === 'balcons_filants') {
+          const lb = Math.max(0.5, L - 2 * STUDIO.balcon.retraitFilant);
+          box('dalle', 0, STUDIO.balcon.profondeur / 2, nv.cote - STUDIO.balcon.epaisseur / 2, lb, STUDIO.balcon.epaisseur, STUDIO.balcon.profondeur);
+          box('gardeCorps', 0, STUDIO.balcon.profondeur, nv.cote + STUDIO.balcon.gardeCorps / 2, lb, STUDIO.balcon.gardeCorps, 0.04, 0.8);
+        }
+        for (const t of travees(L)) {
+          if (commerces) {
+            // Vitrine : la travée vitrée presque entière, sur la hauteur du rez (aperçu).
+            box('vitrine', t.centre, 0.03, nv.cote + 0.15 + (nv.hauteur - 0.6) / 2, Math.max(0.6, t.largeur - 0.5), nv.hauteur - 0.6, 0.06);
+            continue;
+          }
+          const loggia = balconsIci && c.balcons === 'loggias' && !t.angle;
+          const balcon = balconsIci && c.balcons === 'balcons' && !t.angle;
+          if (loggia) {
+            // Loggia : creux sombre de la travée (le Studio creuse le mur de 1,40 m) + garde-corps au nu de la façade.
+            const lg = Math.max(0.8, t.largeur - 0.3);
+            box('fondLoggia', t.centre, 0.02, nv.cote + nv.hauteur / 2, lg, nv.hauteur, 0.05);
+            box('vitrage', t.centre, 0.05, nv.cote + fen.allege + fen.hauteur / 2, Math.min(fen.largeur, lg - 0.2), fen.hauteur, 0.04, 0.9);
+            box('gardeCorps', t.centre, 0.08, nv.cote + STUDIO.balcon.gardeCorps / 2, lg, STUDIO.balcon.gardeCorps, 0.04, 0.85);
+            continue;
+          }
+          box(allume ? 'vitrageAllume' : 'vitrage', t.centre, 0.03, nv.cote + fen.allege + fen.hauteur / 2, fen.largeur, fen.hauteur, 0.06);
+          if (balcon) {
+            const lb = Math.max(0.8, t.largeur - 0.3);
+            box('dalle', t.centre, STUDIO.balcon.profondeur / 2, nv.cote - STUDIO.balcon.epaisseur / 2, lb, STUDIO.balcon.epaisseur, STUDIO.balcon.profondeur);
+            box('gardeCorps', t.centre, STUDIO.balcon.profondeur, nv.cote + STUDIO.balcon.gardeCorps / 2, lb, STUDIO.balcon.gardeCorps, 0.04, 0.8);
+          }
+        }
+      }
+    }
+  }
+  const contour = apercu.contour;
+  for (const q of contour ?? []) pts.push(q);
+  const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+  const centre: [number, number] = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+  const rayon = Math.max(10, ...pts.map((q) => Math.hypot(q[0] - centre[0], q[1] - centre[1])));
+  return { boites, contour, rayon, hauteurMax: hMax, centre };
+}
+
+// ── Vignette : une travée de façade en élévation (SVG) ─────────────────────────
+export interface RectSvg { x: number; y: number; w: number; h: number; fill: string; opacite?: number; trait?: string }
+export interface DessinTravee { largeur: number; hauteur: number; rects: RectSvg[]; motif: 'brique' | 'bois' | 'pierre' | null }
+
+/**
+ * Élévation de 3 travées (rez + 2 étages, + attique) aux dimensions du Studio, en mètres
+ * (le composant met à l'échelle). La travée du milieu porte balcon / loggia ; les angles non.
+ */
+export function dessinTravee(c: ChoixBrief): DessinTravee {
+  const col = couleurs(c);
+  const nuit = c.ambiance === 'nuit';
+  const L = 3 * STUDIO.trame + 2 * STUDIO.margeExtremite;
+  const niveaux = niveauxCorps(3, c.attique);
+  const H = hauteurCorps(3, c.attique) + 1.2;
+  const sol = H - 0.6;
+  const y = (cote: number, h: number) => sol - cote - h;
+  const ciel = lumiere(c.ambiance).ciel;
+  const rects: RectSvg[] = [{ x: -2, y: -2, w: L + 4, h: H + 4, fill: ciel }];
+  const hCorps = niveaux.filter((n) => n.role !== 'attique').reduce((m, n) => Math.max(m, n.cote + n.hauteur), 0);
+  rects.push({ x: 0, y: y(0, hCorps), w: L, h: hCorps, fill: col.mur, trait: '#00000022' });
+  if (c.attique) {
+    const at = niveaux[niveaux.length - 1];
+    rects.push({ x: STUDIO.retraitAttique, y: y(at.cote - STUDIO.dalle, at.hauteur + STUDIO.dalle), w: L - 2 * STUDIO.retraitAttique, h: at.hauteur + STUDIO.dalle, fill: col.mur, trait: '#00000022' });
+  }
+  const verre = c.facade === 'verre';
+  for (const nv of niveaux) {
+    const x0 = nv.role === 'attique' ? STUDIO.retraitAttique : 0;
+    const Lnv = L - 2 * x0;
+    const cx = (t: number) => x0 + Lnv / 2 + t;
+    if (verre) {
+      rects.push({ x: x0, y: y(nv.cote, STUDIO.allegeMurRideau), w: Lnv, h: STUDIO.allegeMurRideau, fill: col.allege });
+      rects.push({ x: x0 + 0.1, y: y(nv.cote + STUDIO.allegeMurRideau, nv.hauteur - STUDIO.allegeMurRideau), w: Lnv - 0.2, h: nv.hauteur - STUDIO.allegeMurRideau, fill: nuit ? col.vitrageAllume : col.vitrage, opacite: nuit ? 0.8 : 0.55 });
+      for (const t of travees(Lnv)) rects.push({ x: cx(t.centre + t.largeur / 2) - 0.03, y: y(nv.cote, nv.hauteur), w: 0.06, h: nv.hauteur, fill: '#5d676b' });
+      continue;
+    }
+    const fen = dimsFenetre(c.ouvertures, STUDIO.trame, nv.hauteur);
+    const balconsIci = nv.role === 'etage' && c.balcons !== 'aucun';
+    for (const t of travees(Lnv)) {
+      if (nv.role === 'rdc' && c.rdc === 'commerces') {
+        rects.push({ x: cx(t.centre) - (t.largeur - 0.5) / 2, y: y(0.15, nv.hauteur - 0.6), w: t.largeur - 0.5, h: nv.hauteur - 0.6, fill: col.vitrine, trait: '#2f3a40' });
+        continue;
+      }
+      const milieu = !t.angle;
+      if (balconsIci && c.balcons === 'loggias' && milieu) {
+        const lg = t.largeur - 0.3;
+        rects.push({ x: cx(t.centre) - lg / 2, y: y(nv.cote, nv.hauteur), w: lg, h: nv.hauteur, fill: col.fondLoggia });
+      }
+      rects.push({ x: cx(t.centre) - fen.largeur / 2, y: y(nv.cote + fen.allege, fen.hauteur), w: fen.largeur, h: fen.hauteur, fill: nuit ? col.vitrageAllume : col.vitrage, trait: '#2f3a40' });
+      if (balconsIci && milieu && (c.balcons === 'balcons' || c.balcons === 'loggias')) {
+        const lb = t.largeur - 0.3;
+        if (c.balcons === 'balcons') rects.push({ x: cx(t.centre) - lb / 2, y: y(nv.cote - STUDIO.balcon.epaisseur, STUDIO.balcon.epaisseur), w: lb, h: STUDIO.balcon.epaisseur, fill: col.dalle });
+        rects.push({ x: cx(t.centre) - lb / 2, y: y(nv.cote, STUDIO.balcon.gardeCorps), w: lb, h: STUDIO.balcon.gardeCorps, fill: col.gardeCorps, opacite: 0.75 });
+      }
+    }
+    if (balconsIci && c.balcons === 'balcons_filants') {
+      const lb = Lnv - 2 * STUDIO.balcon.retraitFilant;
+      rects.push({ x: x0 + STUDIO.balcon.retraitFilant, y: y(nv.cote - STUDIO.balcon.epaisseur, STUDIO.balcon.epaisseur), w: lb, h: STUDIO.balcon.epaisseur, fill: col.dalle });
+      rects.push({ x: x0 + STUDIO.balcon.retraitFilant, y: y(nv.cote, STUDIO.balcon.gardeCorps), w: lb, h: STUDIO.balcon.gardeCorps, fill: col.gardeCorps, opacite: 0.75 });
+    }
+  }
+  rects.push({ x: -2, y: sol, w: L + 4, h: 2, fill: lumiere(c.ambiance).sol });
+  const motif = c.facade === 'brique' ? 'brique' : c.facade === 'bardage_bois' ? 'bois' : c.facade === 'pierre' ? 'pierre' : null;
+  return { largeur: L, hauteur: H, rects, motif };
+}

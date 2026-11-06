@@ -65,7 +65,7 @@ import { TOOL_RECHERCHER_PARCELLES, executerRechercherParcelles } from './agent/
 import { briefingPourMissionVeille } from './agent/briefing.ts';
 import { OUTILS_AGENT_CHAT, NOMS_OUTILS_AGENT_CHAT, OUTILS_STUDIO_CHAT, NOMS_OUTILS_STUDIO } from './agent/outils.ts';
 // Lot E1 : Mimmo pilote le Studio (préparation 3D déterministe, rendus avec devis, suivi).
-import { depotStudioSupabase, executerOutilStudio, idRequete, ORIGINE_MIMMOZA_DEFAUT, studioPertinent, type EnvStudio } from './agent/studio.ts';
+import { briefDuMessage, consigneBriefCarte, depotStudioSupabase, executerOutilStudio, idRequete, ORIGINE_MIMMOZA_DEFAUT, studioPertinent, type EnvStudio } from './agent/studio.ts';
 import { evenementDevis, executerOutilAgentChat, tickMissions } from './agent/mission.ts';
 import { depotSupabase } from './agent/depot.ts';
 import { chargerBlocMemoire, projetDuContexte } from './agent/memoire.ts';
@@ -4640,6 +4640,8 @@ function envStudio(ctx: MimmozaContext, auth: AuthCtx | null): EnvStudio {
     requete: idRequete(ctx),
     conversationId: typeof brut.conversation_id === 'string' ? brut.conversation_id : null,
     origine: Deno.env.get('MIMMOZA_ORIGINE') ?? ORIGINE_MIMMOZA_DEFAUT,
+    // Brief créatif : relu dans le message REÇU de l'utilisateur (posé par le handler), jamais par le modèle.
+    briefCarte: (brut.brief_carte ?? null) as EnvStudio['briefCarte'],
   };
 }
 
@@ -10556,9 +10558,13 @@ async function runOrchestrator(params: {
   const model = TIER_MODEL_ID[tier];   // ⬅️ le modèle suit le plan, pas le mode
   // Le rappel est ajouté APRÈS les règles : il porte des faits, pas de la
   // doctrine, et ne doit pas s'interposer entre les règles et leur contexte.
-  const system = params.priorToolResults
+  // Brief créatif validé dans la carte du chat (bloc du message reçu) : consigne de rappel de l'outil.
+  const briefCarte = (ctx as unknown as Record<string, unknown>).brief_carte as EnvStudio['briefCarte'];
+  const consigneCarte = consigneBriefCarte(briefCarte ?? null);
+  const systemBase = params.priorToolResults
     ? `${buildSystemPrompt(ctx, mode)}\n\n${params.priorToolResults}`
     : buildSystemPrompt(ctx, mode);
+  const system = consigneCarte ? `${systemBase}\n\n${consigneCarte}` : systemBase;
   const availableTools = toolsForMode(mode)
     .filter((tool) => agentDisponible(ctx.vertical) || !(NOMS_OUTILS_AGENT_CHAT.has(tool.name) || NOMS_OUTILS_STUDIO.has(tool.name)));
   const lastUserMessage = [...params.messages].reverse().find((message) => message.role === 'user');
@@ -10566,7 +10572,7 @@ async function runOrchestrator(params: {
   // Lot E1 : outils Studio proposés quand le tour (ou la réponse précédente : devis à confirmer) parle de 3D / rendu.
   const lastAssistantMessage = [...params.messages].reverse().find((message) => message.role === 'assistant');
   const studioAuTour = agentDisponible(ctx.vertical)
-    && studioPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']);
+    && (Boolean(briefCarte) || studioPertinent([userText, lastAssistantMessage ? extractText(lastAssistantMessage.content) : '']));
   const selection = selectToolNames(userText, availableTools.map((tool) => tool.name));
   const selectedNames = new Set([
     ...selection.toolNames,
@@ -11372,6 +11378,9 @@ async function traiterRequete(req: Request): Promise<Response> {
     (effectiveContext as unknown as Record<string,unknown>).conversation_id = conversationId;
     // Purement local (sanitisation + SHA-256) : aucun aller-retour réseau.
     contextSnapshot = await createContextSnapshot(effectiveContext);
+    // Brief créatif : posé APRÈS l'instantané (jamais persisté ni fusionné dans une requête suivante),
+    // et à chaque requête (null sans bloc) pour qu'un ancien brief ne puisse pas resservir.
+    (effectiveContext as unknown as Record<string,unknown>).brief_carte = briefDuMessage(payload.message);
 
     plan = planLu;
     mode = PLAN_POLICY[plan].mode;

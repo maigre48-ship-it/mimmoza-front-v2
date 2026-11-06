@@ -35,7 +35,7 @@
 // =============================================================
 
 import {
-  calculerVolumeProgramme, construireProjetChat, draftBrief, exigerPreparation3D, ficheStudioDepuisVolume,
+  calculerVolumeProgramme, construireProjetChat, corpsAffiches, draftBrief, exigerPreparation3D, ficheStudioDepuisVolume,
   HYPOTHESES_VOLUME, libelleNiveaux, programmeBatiDepuisTexte, regleValide, rotationContrat, studioCommand,
   studioComposition, studioSegmentedVolume, volumeBatimentsStudio,
   type GeometrieParcelle, type JarvisDraft, type ProgrammeVolume, type ReglePlu, type ReglesPluVolume, type VolumePropose,
@@ -470,6 +470,317 @@ export function resumeOptions(type: TypeRendu, o: Obj): string {
   return [amb[String(o.ambiance)], String(o.resolution).toUpperCase(), o.interieurs ? 'intérieurs' : null].filter(Boolean).join(' · ');
 }
 
+// ── Brief d'habillage (E1-brief) ───────────────────────────────────────────
+// Avant le PREMIER devis d'un rendu de 3D préparée, Mimmo pose UNE question groupée (style, façade,
+// balcons, attique, rez-de-chaussée, ambiance). Le brief validé entre dans le jeton de devis et dans
+// la commande de création transmise au Studio (`commandeArchitecture`), seule entrée que le Studio
+// interprète quand une commande existe (preparationMimmoza.ts : le `brief` texte y est informatif).
+// Chaque valeur ci-dessous a été vérifiée sur le lecteur du Studio (parseArchitectureRequest, nl.ts) :
+// une valeur sans effet est DITE sans effet, jamais promise.
+
+export const BRIEF_STYLES = ['contemporain', 'haussmannien', 'art_deco'] as const;
+export const BRIEF_FACADES = ['enduit_clair', 'enduit_blanc', 'brique', 'pierre', 'beton', 'bardage_bois', 'verre'] as const;
+export const BRIEF_OUVERTURES = ['fenetres_verticales', 'baies_vitrees', 'fenetres_horizontales'] as const;
+export const BRIEF_BALCONS = ['balcons', 'balcons_filants', 'loggias', 'aucun'] as const;
+export const BRIEF_RDC = ['logements', 'commerces', 'hall'] as const;
+export const BRIEF_AMBIANCES = ['jour', 'fin_de_journee', 'nuit'] as const;
+const CHAMPS_BRIEF = ['style', 'facade', 'ouvertures', 'balcons', 'attique', 'rdc', 'ambiance'] as const;
+type ChampBrief = typeof CHAMPS_BRIEF[number];
+/** Longueur maximale des précisions libres (informatives : le Studio ne les interprète pas). */
+export const BRIEF_PRECISIONS_MAX = 100;
+
+export interface BriefRendu {
+  style: typeof BRIEF_STYLES[number];
+  facade: typeof BRIEF_FACADES[number];
+  ouvertures: typeof BRIEF_OUVERTURES[number];
+  balcons: typeof BRIEF_BALCONS[number];
+  attique: boolean;
+  rdc: typeof BRIEF_RDC[number];
+  ambiance: typeof BRIEF_AMBIANCES[number];
+  precisions: string | null;
+  /** Champs pris par défaut (non précisés par l'utilisateur ou « à toi de choisir »), dans l'ordre de CHAMPS_BRIEF. */
+  defauts: ChampBrief[];
+}
+
+/** Valeurs par défaut : immeuble de logements collectifs en zone urbaine (aucune hypothèse PLU). */
+export const BRIEF_DEFAUT: Omit<BriefRendu, 'precisions' | 'defauts'> = {
+  style: 'contemporain', facade: 'enduit_clair', ouvertures: 'fenetres_verticales', balcons: 'balcons',
+  attique: false, rdc: 'logements', ambiance: 'jour',
+};
+
+const LIB_BRIEF = {
+  style: { contemporain: 'contemporain', haussmannien: 'haussmannien', art_deco: 'Art déco' },
+  facade: { enduit_clair: 'enduit clair (beige)', enduit_blanc: 'enduit blanc', brique: 'brique', pierre: 'pierre claire', beton: 'béton brut', bardage_bois: 'bardage bois', verre: 'verre (façade vitrée)' },
+  ouvertures: { fenetres_verticales: 'fenêtres verticales', baies_vitrees: 'baies vitrées', fenetres_horizontales: 'fenêtres horizontales (bandeaux)' },
+  balcons: { balcons: 'balcons', balcons_filants: 'balcons filants', loggias: 'loggias', aucun: 'aucun balcon' },
+  rdc: { logements: 'logements', commerces: 'commerces', hall: 'hall d’entrée' },
+  ambiance: { jour: 'lumière de journée', fin_de_journee: 'fin de journée', nuit: 'nuit' },
+} as const;
+
+/** Clauses ajoutées à la commande du Studio — formulations vérifiées sur parseArchitectureRequest. */
+const CLAUSE_FACADE: Record<BriefRendu['facade'], string> = {
+  enduit_clair: 'façade en enduit', enduit_blanc: 'façade en enduit blanc', brique: 'façade en brique', pierre: 'façade en pierre',
+  beton: 'façade en béton', bardage_bois: 'façade en bardage bois', verre: 'façade en verre',
+};
+const CLAUSE_OUVERTURES: Record<BriefRendu['ouvertures'], string> = {
+  fenetres_verticales: 'fenêtres verticales', baies_vitrees: 'baies vitrées', fenetres_horizontales: 'fenêtres horizontales',
+};
+
+/** Question groupée renvoyée par la garde (un seul message, une ligne par point, valeur proposée). */
+export function questionBrief(type: TypeRendu): string {
+  const amb = type === 'image' ? 'journée ou fin de journée' : 'journée, fin de journée ou nuit';
+  return [
+    'Avant d’établir le devis, quelques choix pour habiller le bâtiment (je propose une valeur pour chacun) :',
+    '- Style architectural : contemporain (haussmannien et Art déco : pas encore disponibles dans le Studio)',
+    '- Façade et matériaux : enduit clair, fenêtres verticales (ou enduit blanc, brique, pierre, béton, bardage bois, verre ; baies vitrées, fenêtres en bandeaux)',
+    '- Balcons / loggias : balcons (ou balcons filants, loggias, aucun)',
+    '- Attique : non (oui = un niveau en retrait AU-DESSUS du volume d’étude)',
+    '- Rez-de-chaussée : logements (ou commerces, hall d’entrée)',
+    `- Ambiance : journée (${amb})`,
+    'Répondez point par point, ou « à toi de choisir » et je prends ces valeurs.',
+  ].join('\n');
+}
+
+const ENUMS_BRIEF: Record<ChampBrief, readonly (string | boolean)[]> = {
+  style: BRIEF_STYLES, facade: BRIEF_FACADES, ouvertures: BRIEF_OUVERTURES, balcons: BRIEF_BALCONS,
+  attique: [false, true], rdc: BRIEF_RDC, ambiance: BRIEF_AMBIANCES,
+};
+
+/**
+ * Brief fourni par le modèle → brief normalisé. Champs absents : valeur par défaut (listée dans `defauts`).
+ * Un objet vide n'est accepté qu'avec `a_toi_de_choisir: true`. Valeurs fermées ; texte libre borné.
+ */
+export function validerBrief(brut: unknown): Validation<BriefRendu> {
+  if (!estObj(brut)) return { ok: false, erreur: 'Brief illisible : objet attendu (style, facade, ouvertures, balcons, attique, rdc, ambiance, precisions, a_toi_de_choisir).' };
+  const permises = [...CHAMPS_BRIEF, 'precisions', 'a_toi_de_choisir'];
+  const inconnue = Object.keys(brut).find((k) => !permises.includes(k));
+  if (inconnue) return { ok: false, erreur: `Champ de brief inconnu : ${inconnue}.` };
+  if (brut.a_toi_de_choisir !== undefined && typeof brut.a_toi_de_choisir !== 'boolean') return { ok: false, erreur: 'a_toi_de_choisir doit être un booléen.' };
+  const fournis = CHAMPS_BRIEF.filter((c) => brut[c] !== undefined && brut[c] !== null);
+  if (!fournis.length && brut.a_toi_de_choisir !== true) return { ok: false, erreur: 'Brief vide : donnez au moins un choix, ou a_toi_de_choisir: true si l’utilisateur laisse Mimmo choisir.' };
+  const b: Obj = { ...BRIEF_DEFAUT };
+  for (const c of fournis) {
+    const v = brut[c];
+    if (c === 'attique') {
+      if (typeof v !== 'boolean') return { ok: false, erreur: 'attique doit être true ou false.' };
+    } else if (typeof v !== 'string' || !ENUMS_BRIEF[c].includes(v)) {
+      return { ok: false, erreur: `Valeur refusée pour ${c} : ${ENUMS_BRIEF[c].join(', ')}.` };
+    }
+    b[c] = v;
+  }
+  let precisions: string | null = null;
+  if (brut.precisions !== undefined && brut.precisions !== null) {
+    if (typeof brut.precisions !== 'string') return { ok: false, erreur: 'precisions doit être un texte court.' };
+    const t = Array.from(brut.precisions, (ch) => (ch.charCodeAt(0) < 32 ? ' ' : ch)).join('').replace(/\s+/g, ' ').trim();
+    if (t.length > BRIEF_PRECISIONS_MAX) return { ok: false, erreur: `precisions : ${BRIEF_PRECISIONS_MAX} caractères au plus.` };
+    precisions = t || null;
+  }
+  return { ok: true, valeur: { ...(b as Omit<BriefRendu, 'precisions' | 'defauts'>), precisions, defauts: CHAMPS_BRIEF.filter((c) => !fournis.includes(c)) } };
+}
+
+
+/**
+ * Forme compacte du brief dans le jeton de devis (le jeton doit rester lisible dans les 900 premiers
+ * caractères du rappel des résultats) : un chiffre par champ (rang dans sa liste fermée), « . »,
+ * champs pris par défaut (masque hexadécimal), puis « . » et les précisions s'il y en a.
+ * Ex. « 0100000.7f » = tout par défaut sauf la façade en enduit blanc… (masque 0x7f = 7 champs par défaut).
+ */
+export function encoderBrief(b: BriefRendu): string {
+  const rangs = CHAMPS_BRIEF.map((c) => String(ENUMS_BRIEF[c].indexOf(b[c]))).join('');
+  const masque = CHAMPS_BRIEF.reduce((m, c, i) => (b.defauts.includes(c) ? m | (1 << i) : m), 0).toString(16);
+  return `${rangs}.${masque}${b.precisions ? `.${b.precisions}` : ''}`;
+}
+
+/** Relit le brief compact d'un jeton signé ; null si absent ou d'une forme inattendue. */
+export function briefDuJeton(b: unknown): BriefRendu | null {
+  if (typeof b !== 'string') return null;
+  const m = /^(\d{7})\.([0-9a-f]{1,2})(?:\.([\s\S]+))?$/.exec(b);
+  if (!m) return null;
+  const brut: Obj = {};
+  for (const [i, c] of CHAMPS_BRIEF.entries()) {
+    const v = ENUMS_BRIEF[c][Number(m[1][i])];
+    if (v === undefined) return null;
+    brut[c] = v;
+  }
+  if (m[3] !== undefined) brut.precisions = m[3];
+  const v = validerBrief(brut);
+  if (!v.ok) return null;
+  const masque = parseInt(m[2], 16);
+  return { ...v.valeur, defauts: CHAMPS_BRIEF.filter((_, i) => (masque & (1 << i)) !== 0) };
+}
+
+/** Clauses de la commande de création du Studio. `plusieurs` : composition de bâtiments nommés. */
+export function clausesBrief(b: BriefRendu, plusieurs = false): string[] {
+  return [
+    CLAUSE_FACADE[b.facade],
+    // Façade vitrée : le Studio pose déjà de grandes baies ; une ouverture nommée les remplacerait.
+    b.facade === 'verre' ? null : CLAUSE_OUVERTURES[b.ouvertures],
+    // archAddBalconies et archSetStylePack visent le PREMIER bâtiment de la scène (commands.ts,
+    // targetBuildingId) : jamais répétés pour une composition, ils s'empileraient sur le bâtiment A.
+    plusieurs ? null : b.balcons === 'balcons' ? 'avec balcons' : b.balcons === 'balcons_filants' ? 'avec balcons filants' : b.balcons === 'loggias' ? 'avec loggias' : null,
+    // Jamais « sans attique » : le lecteur du Studio voit le mot « attique » et en crée un.
+    b.attique ? 'avec attique' : null,
+    b.rdc === 'commerces' ? 'commerces en rez-de-chaussée' : null,
+    // E1-rendu : JAMAIS de clause de style. Les packs haussmannien et Art déco du Studio sont au stade
+    // « manifest » (registry.ts) : archSetStylePack est BLOQUÉ et, dans une commande de création, le
+    // Studio ne crée RIEN et attend un « oui » (mesuré par submitPrompt sur le vrai magasin, 05/11) —
+    // impossible pour un rendu sans personne devant l'écran. Le devis le dit (reservesBrief).
+  ].filter((c): c is string => !!c);
+}
+
+/**
+ * E1-rendu — habillage d'un projet À PLUSIEURS BÂTIMENTS (`batiments` du contrat v2). Le worker du
+ * Studio construit alors chaque bâtiment depuis le contrat et retire `commandeArchitecture` (seul
+ * porteur du brief jusqu'ici) : l'habillage voyage donc à part, dans `fiche.habillage_batiments`,
+ * déjà traduit pour le Studio (worker/src/fiche.ts::lireHabillage, worker/src/batimentsScene.ts) :
+ *   - `clauses` : ajoutées à la commande de création de CHAQUE bâtiment (façade, ouvertures,
+ *     attique, commerces en rez) ;
+ *   - `balcons` : posés par le worker sur chaque bâtiment, identifiant explicite (jamais dans la
+ *     phrase : `archAddBalconies` viserait le premier bâtiment de la scène).
+ * Pas de style : voir clausesBrief (packs non disponibles dans le Studio).
+ */
+export function habillageBatiments(b: BriefRendu): { clauses: string[]; balcons: 'individual' | 'running' | 'loggia' | null } {
+  return {
+    // Sans balcons ni style (`plusieurs`) : seulement ce que le Studio lit dans la demande de création
+    // du bâtiment (materials, windowType, attic, programType/retailArea d'archCreateBuilding, nl.ts).
+    clauses: clausesBrief(b, true),
+    balcons: b.balcons === 'balcons' ? 'individual' : b.balcons === 'balcons_filants' ? 'running' : b.balcons === 'loggias' ? 'loggia' : null,
+  };
+}
+
+/** « Crée un immeuble R+4 de 30 m sur 14 m. » + brief → « Crée un immeuble R+4 de 30 m sur 14 m, façade en brique, … . » */
+export function commandeAvecBrief(commande: string | null, b: BriefRendu | null, plusieurs = false): string | null {
+  if (!commande || !b) return commande;
+  const clauses = clausesBrief(b, plusieurs);
+  return clauses.length ? `${commande.trim().replace(/\.+$/, '')}, ${clauses.join(', ')}.` : commande;
+}
+
+/** Ligne lisible du brief (devis, brief texte transmis au Studio). */
+export function libelleBrief(b: BriefRendu): string {
+  const d = (c: ChampBrief) => (b.defauts.includes(c) ? ' (par défaut)' : '');
+  return [
+    `style ${LIB_BRIEF.style[b.style]}${d('style')}`,
+    `façade ${LIB_BRIEF.facade[b.facade]}${d('facade')}`,
+    `${LIB_BRIEF.ouvertures[b.ouvertures]}${d('ouvertures')}`,
+    `${LIB_BRIEF.balcons[b.balcons]}${d('balcons')}`,
+    `${b.attique ? 'avec attique' : 'sans attique'}${d('attique')}`,
+    `rez-de-chaussée : ${LIB_BRIEF.rdc[b.rdc]}${d('rdc')}`,
+    `${LIB_BRIEF.ambiance[b.ambiance]}${d('ambiance')}`,
+  ].join(' · ') + (b.precisions ? ` · précisions : « ${b.precisions} »` : '');
+}
+
+/**
+ * Ce que le Studio ne prend PAS (ou pas entièrement) en compte : dit dans le devis, jamais promis.
+ * `plusieurs` : composition de bâtiments nommés (A à H, une commande par bâtiment) ; `batiments` :
+ * nombre de bâtiments du contrat v2 (≥ 2 : chacun reçoit l'habillage, E1-rendu).
+ */
+export function reservesBrief(b: BriefRendu, source: 'version' | 'preparation', plusieurs = false, batiments = 0): string[] {
+  if (source === 'version') {
+    return ['Habillage : la version enregistrée dans l’Atelier 3D est rendue TELLE QUELLE ; style, façade, balcons, attique et rez-de-chaussée du brief ne la modifient pas (seule l’ambiance de lumière s’applique).'];
+  }
+  const r: string[] = [];
+  if (batiments >= 2) r.push(`Ensemble de ${String(batiments)} bâtiments : l’habillage (façade, ouvertures, balcons ou loggias, attique, rez-de-chaussée) est appliqué à chacun des ${String(batiments)} bâtiments, sans changer leur position, leurs dimensions ni leurs niveaux.`);
+  if (b.style === 'contemporain') r.push('Style contemporain : pas de jeu de style dédié dans le Studio, c’est son dessin par défaut (seuls façade, ouvertures, balcons, attique et rez-de-chaussée le personnalisent).');
+  else r.push(`Style ${LIB_BRIEF.style[b.style]} : prévu dans le Studio mais pas encore disponible (aucun décor régional) — NON appliqué : le bâtiment est rendu dans le dessin contemporain par défaut, avec la façade, les ouvertures, les balcons, l’attique et le rez-de-chaussée demandés.`);
+  if (plusieurs && b.balcons !== 'aucun') r.push('Ensemble de plusieurs bâtiments : balcons non pris en compte par le Studio pour l’instant (il les poserait sur le seul premier bâtiment).');
+  if (b.facade === 'verre' && b.ouvertures !== 'fenetres_verticales') r.push('Façade vitrée : le Studio pose de grandes baies, le choix d’ouvertures n’est pas appliqué.');
+  if (b.rdc === 'hall') r.push('Rez-de-chaussée « hall d’entrée » : non pris en compte par le Studio pour l’instant (il dessine son entrée par défaut, rez-de-chaussée traité comme les étages).');
+  if (b.rdc === 'commerces') r.push('Commerces en rez-de-chaussée : le Studio transforme le rez en surface commerciale avec vitrines ; le nombre de logements du volume d’étude n’est pas recalculé.');
+  if (b.attique) r.push(`Attique : le Studio l’ajoute AU-DESSUS des niveaux du volume d’étude (retrait de 2 m)${batiments >= 2 ? ', sur chaque bâtiment' : ''} — la hauteur totale dépasse celle du volume calculé, à vérifier au regard du PLU.`);
+  if (b.precisions) r.push('Précisions libres : transmises au Studio à titre informatif, non interprétées pour l’instant.');
+  return r;
+}
+
+// ── Brief créatif (carte du chat) ─────────────────────────────────────────
+// La carte « Brief créatif » du chat (src/spaces/copilot/studio3d/CarteBriefCreatif.tsx) remplace
+// la question texte. « Valider le brief » envoie un message utilisateur qui contient, après une ligne
+// lisible, un bloc ```mimmoza-brief``` (JSON). index.ts le relit dans le message REÇU (jamais dans
+// une sortie du modèle) et le passe à l'outil (`EnvStudio.briefCarte`) : le brief arrive structuré,
+// sans reformulation par le modèle, et repasse par validerBrief (listes fermées ci-dessus).
+
+/** Langue du bloc de code qui porte le brief dans le message utilisateur (même valeur côté front : briefCreatif.ts). */
+export const BRIEF_BLOC_LANGUE = 'mimmoza-brief';
+/** Version du bloc. */
+export const BRIEF_BLOC_VERSION = 1;
+
+export interface BriefCarte { brief: BriefRendu; type: TypeRendu | null }
+
+/**
+ * Bloc de brief d'un message utilisateur → brief validé. null : pas de bloc (cas normal).
+ * Bloc présent mais illisible ou hors listes : `ok: false` (dit à l'utilisateur, jamais deviné).
+ */
+export function briefDuMessage(texte: unknown): Validation<BriefCarte> | null {
+  if (typeof texte !== 'string') return null;
+  const m = new RegExp('```' + BRIEF_BLOC_LANGUE + '[ \\t]*\\r?\\n([\\s\\S]*?)\\r?\\n?```').exec(texte);
+  if (!m) return null;
+  let brut: unknown;
+  try { brut = JSON.parse(m[1]); } catch { return { ok: false, erreur: 'Bloc de brief illisible (JSON invalide).' }; }
+  if (!estObj(brut) || brut.v !== BRIEF_BLOC_VERSION) return { ok: false, erreur: 'Bloc de brief d’une version inconnue.' };
+  const inconnue = Object.keys(brut).find((k) => !['v', 'type', 'brief'].includes(k));
+  if (inconnue) return { ok: false, erreur: `Bloc de brief : champ inconnu ${inconnue}.` };
+  if (brut.type !== undefined && !(TYPES_RENDU as readonly unknown[]).includes(brut.type)) return { ok: false, erreur: 'Bloc de brief : type de rendu inconnu.' };
+  const v = validerBrief(brut.brief);
+  if (!v.ok) return { ok: false, erreur: v.erreur };
+  return { ok: true, valeur: { brief: v.valeur, type: (brut.type as TypeRendu | undefined) ?? null } };
+}
+
+/** Consigne ajoutée au système quand le message de l'utilisateur porte un bloc de brief (index.ts). */
+export function consigneBriefCarte(c: Validation<BriefCarte> | null): string {
+  if (!c) return '';
+  if (!c.ok) {
+    return `BRIEF CRÉATIF : le dernier message contient un bloc de brief REFUSÉ par le serveur (${c.erreur}). ` +
+      'Dis-le simplement et propose de refaire les choix dans la carte ; ne devine aucune valeur.';
+  }
+  return 'BRIEF CRÉATIF VALIDÉ dans la carte du chat (dernier message de l’utilisateur) : ' + libelleBrief(c.valeur.brief) + '. ' +
+    `Rappelle IMMÉDIATEMENT studio_lancer_rendu${c.valeur.type ? ` (type « ${c.valeur.type} »)` : ''} pour établir le devis : ` +
+    'le serveur lit ce brief lui-même dans le message (inutile de le recopier dans `brief`, ne le reformule pas) ; ' +
+    'ne repose aucune question d’habillage.';
+}
+
+/** Corps de bâtiment de l'aperçu (mètres locaux, x vers l'est, y vers le nord ; angle du grand côté depuis l'est). */
+export interface CorpsApercu { cx: number; cy: number; l: number; p: number; a: number; n: number }
+export interface ApercuVolume { corps: CorpsApercu[]; contour: [number, number][] | null }
+/** Points du contour de parcelle transmis au plus (aperçu seulement). */
+export const APERCU_CONTOUR_MAX = 48;
+/** Corps transmis au plus (même plafond que le Studio pour les bâtiments v2). */
+export const APERCU_CORPS_MAX = 12;
+
+/**
+ * Aperçu du volume préparé pour la carte « Brief créatif » : les MÊMES corps que la vue 3D du
+ * Dossier 3D (corpsAffiches), arrondis au décimètre, et le contour de la parcelle (allégé).
+ * Aucune donnée inventée : null si le volume n'a pas d'emprise.
+ */
+export function apercuVolume(volume: unknown): ApercuVolume | null {
+  if (!estObj(volume)) return null;
+  let corps: ReturnType<typeof corpsAffiches>;
+  try { corps = corpsAffiches(volume as unknown as VolumePropose); } catch { return null; }
+  const r1 = (x: number) => Math.round(x * 10) / 10;
+  const liste = corps.slice(0, APERCU_CORPS_MAX)
+    .filter((c) => fini(c.centre?.x) && fini(c.centre?.y) && fini(c.largeurM) && fini(c.profondeurM) && fini(c.angleDeg) && fini(c.niveaux) && c.largeurM > 0 && c.profondeurM > 0)
+    .map((c) => ({ cx: r1(c.centre.x), cy: r1(c.centre.y), l: r1(c.largeurM), p: r1(c.profondeurM), a: r1(c.angleDeg), n: Math.max(1, Math.min(60, Math.round(c.niveaux))) }));
+  if (!liste.length) return null;
+  const brut = Array.isArray(volume.contour) ? (volume.contour as unknown[]).filter((q): q is { x: number; y: number } => estObj(q) && fini(q.x) && fini(q.y)) : [];
+  const pas = Math.max(1, Math.ceil(brut.length / APERCU_CONTOUR_MAX));
+  const contour = brut.length >= 3 ? brut.filter((_, i) => i % pas === 0).slice(0, APERCU_CONTOUR_MAX).map((q) => [r1(q.x), r1(q.y)] as [number, number]) : null;
+  return { corps: liste, contour: contour && contour.length >= 3 ? contour : null };
+}
+
+/** Ce que la carte doit savoir des limites du Studio pour CE projet (aucune promesse au-delà). */
+export interface LimitesBrief {
+  /** Nombre de bâtiments du volume préparé (≥ 2 : l'habillage est appliqué à chacun). */
+  batiments: number;
+  /** Faux pour une composition de bâtiments nommés A à H : le Studio ne poserait les balcons que sur le premier. */
+  balcons: boolean;
+}
+
+function limitesPreparation(p: PreparationLue, conversationId: string, origine: string): LimitesBrief {
+  const f = ficheDepuisPreparation(p, conversationId, new Date(0).toISOString(), crypto.randomUUID(), origine, null);
+  if (!f.ok) return { batiments: 1, balcons: true };
+  const charge = f.valeur.charge as { compositionArchitecture?: unknown[]; batiments?: unknown[] };
+  const nb = charge.batiments?.length ?? 0;
+  return { batiments: Math.max(1, nb), balcons: (charge.compositionArchitecture?.length ?? 0) < 2 };
+}
+
 /** Statistiques GLOBALES et anonymes de la file (aucune donnée d'un autre utilisateur n'est renvoyée). */
 export interface StatsFile {
   attente: number;
@@ -511,6 +822,8 @@ export interface ChargeJeton {
   iat: number;
   exp: number;
   rq: string;
+  /** Brief d'habillage validé, forme compacte (encoderBrief) ; absent des devis antérieurs à E1-brief. */
+  b?: string;
 }
 
 const b64u = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -570,7 +883,7 @@ export function titreRendu(draft: JarvisDraft): string {
  * ficheStudioDepuisVolume, volumeBatimentsStudio, construireProjetChat), sans relief (le worker le
  * signale : terrain supposé plat) ni pièces jointes.
  */
-export function ficheDepuisPreparation(p: PreparationLue, conversationId: string, horodatage: string, sessionId: string, origine: string): Validation<Obj> {
+export function ficheDepuisPreparation(p: PreparationLue, conversationId: string, horodatage: string, sessionId: string, origine: string, brief: BriefRendu | null = null): Validation<Obj> {
   const entree = (estObj(p.entree) ? p.entree : {}) as Partial<EntreePreparation>;
   const v = p.volume as VolumePropose;
   const parcelle = lireParcelle(entree.parcelle, p.idu);
@@ -581,18 +894,27 @@ export function ficheDepuisPreparation(p: PreparationLue, conversationId: string
   let vb: ReturnType<typeof volumeBatimentsStudio> = null;
   try { vb = volumeBatimentsStudio(v, draft); } catch (e) { return { ok: false, erreur: e instanceof Error ? e.message : 'Trop de bâtiments pour le Studio.' }; }
   const insee = /^\d{5}|^2[AB]\d{3}/.test(p.idu) ? p.idu.slice(0, 5) : null;
-  const composition = studioComposition(draft);
+  // E1-brief : le brief habille la commande de création (seule entrée interprétée par le Studio
+  // quand une commande existe) ; le texte `brief` le reprend à titre informatif.
+  const composition = studioComposition(draft)?.map((c) => ({ ...c, commande: commandeAvecBrief(c.commande, brief, true) ?? c.commande })) ?? null;
+  const texteBrief = brief ? `${draftBrief(draft)}\nhabillage demandé : ${libelleBrief(brief)}` : draftBrief(draft);
   const construit = construireProjetChat({
     conversationId, etudeId: null, sessionId, origine, retourUrl: null, revision: 0, horodatage,
     parcelles: [{ id: p.idu, feature: { type: 'Feature', properties: { id: p.idu, ...(insee ? { code_insee: insee } : {}) }, geometry: parcelle.geometrie } }],
     communeInsee: insee, adresse: entree.commune ?? null, pointAdresse: null, relief: null,
     implantation: vb ? null : poseDepuisVolume(v),
-    brief: draftBrief(draft), commandeArchitecture: composition ? null : studioCommand(draft),
+    brief: texteBrief, commandeArchitecture: composition ? null : commandeAvecBrief(studioCommand(draft), brief),
     compositionArchitecture: composition, volumeAiles: studioSegmentedVolume(draft),
     batiments: vb?.batiments ?? null, programmeVolume: vb,
   });
   if (!construit.ok) return { ok: false, erreur: `Projet Studio refusé par le contrat v2 : ${construit.erreur}` };
-  return { ok: true, valeur: { version: 1, charge: construit.projet, draft, titre: titreRendu(draft), conversation_id: conversationId, origine: 'mimmo', preparation_id: p.id } };
+  // E1-rendu : plusieurs bâtiments → la commande est retirée par le worker ; l'habillage voyage à part.
+  const multi = (vb?.batiments.length ?? 0) > 0;
+  return { ok: true, valeur: {
+    version: 1, charge: construit.projet, draft, titre: titreRendu(draft), conversation_id: conversationId, origine: 'mimmo', preparation_id: p.id,
+    ...(brief ? { brief_rendu: brief } : {}),
+    ...(brief && multi ? { habillage_batiments: habillageBatiments(brief) } : {}),
+  } };
 }
 
 // =============================================================
@@ -632,6 +954,12 @@ export interface DepotStudio {
    * Erreur de lecture → [] (on retombe sur le jeton fourni par le modèle).
    */
   jetonsDevis(userId: string, conversationId: string): Promise<string[]>;
+  /**
+   * E1-brief : la question groupée du brief a-t-elle déjà été posée dans la conversation (sortie
+   * `data.brief_requis` de studio_lancer_rendu dans copilot_tool_calls, requêtes précédentes) ?
+   * Erreur de lecture → false (on repose la question plutôt que d'imposer des valeurs).
+   */
+  questionBriefPosee(userId: string, conversationId: string): Promise<boolean>;
   /** Insertion SOUS L'IDENTITÉ de l'utilisateur (RLS) ; lève une Error portant le message Postgres. */
   insererTravail(userId: string, ligne: { conversation_id: string; type: TypeRendu; fiche: Obj; options: Obj }): Promise<TravailLu>;
   travail(userId: string, q: { id?: string | null; conversationId?: string | null }): Promise<TravailLu | null>;
@@ -655,6 +983,11 @@ export interface EnvStudio {
   /** Mission : conception déjà en mémoire (évite une relecture). */
   conception?: ConceptionLue | null;
   maintenant?: () => number;
+  /**
+   * Brief validé dans la carte « Brief créatif » : lu par index.ts dans le message REÇU de
+   * l'utilisateur (briefDuMessage), jamais fourni par le modèle. Prioritaire sur `input.brief`.
+   */
+  briefCarte?: Validation<BriefCarte> | null;
 }
 
 /** Identifiant stable de la requête : le même objet de contexte est passé à chaque outil d'une requête. */
@@ -761,10 +1094,19 @@ function libelleSource(s: SourceRendu | SourcePrep): string {
 
 function avertissementsSource(s: SourceRendu | SourcePrep): string[] {
   if (s.genre === 'version') return [];
-  const n = (s.preparation.volume as VolumePropose)?.batiments?.length ?? 1;
+  const v = s.preparation.volume as VolumePropose | null;
+  const n = v?.batiments?.length ?? 1;
+  // E1-fidélité : le gabarit du programme (R+n) PLAFONNE les niveaux (reglesVolume) ; le moteur
+  // commence en R+2 et ne monte que si nécessaire. Le rendu montre le volume préparé, pas le gabarit.
+  const entree = (estObj(s.preparation.entree) ? s.preparation.entree : {}) as Partial<EntreePreparation>;
+  const gabarit = typeof entree.gabarit_niveaux === 'number' && fini(entree.gabarit_niveaux) ? entree.gabarit_niveaux : null;
+  const niveaux = v && fini(v.niveaux) ? v.niveaux : null;
   return [
     'Le relief n’est pas transmis par Mimmo : la machine de rendu calcule sur un terrain supposé plat (elle le signale dans le résultat).',
-    ...(n > 1 ? [`La 3D préparée compte ${n} bâtiments : la machine de rendu reconstruit les bâtiments d’après la description, la disposition peut différer du volume préparé. Pour un rendu fidèle, enregistrez une version dans l’Atelier 3D puis relancez.`] : []),
+    ...(n > 1 ? [`La 3D préparée compte ${n} bâtiments : chacun est reconstruit à sa place, avec l’orientation, les dimensions et le nombre de niveaux du volume préparé.`] : []),
+    ...(gabarit !== null && niveaux !== null && niveaux < gabarit
+      ? [`Le gabarit du programme (${libelleNiveaux(gabarit)}) est un plafond, pas une cible : le volume préparé, et donc le rendu, est en ${libelleNiveaux(niveaux)} (${n} bâtiment${n > 1 ? 's' : ''}).`]
+      : []),
   ];
 }
 
@@ -814,15 +1156,16 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       return erreur('Le type demandé ne correspond pas au devis : établis un nouveau devis. RIEN N’A ÉTÉ LANCÉ.');
     }
     const deja = await env.depot.travailParDevis(uid, j.id);
-    if (deja) return { status: 'ok', source: SOURCE_STUDIO, data: { deja_lance: true, ...vueTravail(deja) }, message: 'Ce devis a déjà été lancé : rien n’a été relancé. Donne le statut ci-dessus.' };
+    if (deja) return { status: 'ok', source: SOURCE_STUDIO, data: { deja_lance: true, ...vueTravail(deja) }, message: 'Ce devis a déjà été lancé : rien n’a été relancé. Donne le statut ci-dessus.' +
+        ' Le suivi puis le résultat (images, film ou lien de visite) s’affichent dans une carte du chat sous ce message : inutile de recopier les liens ou les images dans ta réponse.' };
     if (j.t === 'image' && (await env.depot.typeRenduAutorise('image', j.o)) === false) return refusImage();
     let fiche: Obj;
     if (j.s.genre === 'version') {
-      fiche = { version: 1, conception: { conception_id: j.s.conception_id, n: j.s.n, modele_ref: j.s.modele_ref }, titre: `Conception — version ${j.s.n}`, conversation_id: j.c, origine: 'mimmo' };
+      fiche = { version: 1, conception: { conception_id: j.s.conception_id, n: j.s.n, modele_ref: j.s.modele_ref }, titre: `Conception — version ${j.s.n}`, conversation_id: j.c, origine: 'mimmo', ...(briefDuJeton(j.b) ? { brief_rendu: briefDuJeton(j.b) } : {}) };
     } else {
       const prep = await env.depot.preparation(uid, { id: j.s.preparation_id });
       if (!prep) return erreur('La 3D préparée du devis n’existe plus. RIEN N’A ÉTÉ LANCÉ.', 'not_found');
-      const f = ficheDepuisPreparation(prep, j.c, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine);
+      const f = ficheDepuisPreparation(prep, j.c, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, briefDuJeton(j.b));
       if (!f.ok) return erreur(`${f.erreur} RIEN N’A ÉTÉ LANCÉ.`);
       fiche = f.valeur;
     }
@@ -842,55 +1185,127 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
       status: 'ok', source: SOURCE_STUDIO,
       data: { lance: true, ...vueTravail(t), machine: machine.phrase, suivi: 'studio_etat_rendu (sans argument : le plus récent de la conversation)' },
       message: 'Rendu ENREGISTRÉ dans la file (statut « en attente » tant que la machine de rendu ne l’a pas pris). ' +
-        'Dis exactement cela, avec la phrase sur la machine de rendu ; n’annonce aucun démarrage ni délai qui ne soit pas renvoyé. Le suivi s’affiche aussi dans le Dossier 3D.',
+        'Dis exactement cela, avec la phrase sur la machine de rendu ; n’annonce aucun démarrage ni délai qui ne soit pas renvoyé. Le suivi s’affiche aussi dans le Dossier 3D.' +
+        ' Le suivi puis le résultat (images, film ou lien de visite) s’affichent dans une carte du chat sous ce message : inutile de recopier les liens ou les images dans ta réponse.',
     };
   }
 
   // ── Temps 1 : devis, AUCUNE écriture ─────────────────────────
-  const type = input.type as TypeRendu;
-  const opts = validerOptionsRendu(type, input.options);
-  if (!opts.ok) return erreur(opts.erreur);
+  // Brief créatif : bloc du message de l'utilisateur, relu par le serveur (prioritaire sur le modèle).
+  const carte = env.briefCarte ?? null;
+  if (carte && !carte.ok) return erreur(`Le brief de la carte n’a pas été accepté (${carte.erreur}). RIEN N’A ÉTÉ LANCÉ. Propose à l’utilisateur de refaire ses choix dans la carte.`);
+  const type = (input.type ?? (carte?.ok ? carte.valeur.type : undefined)) as TypeRendu;
+  const opts0 = validerOptionsRendu(type, input.options);
+  if (!opts0.ok) return erreur(opts0.erreur);
   if (type === 'image') {
-    const autorise = await env.depot.typeRenduAutorise('image', opts.valeur);
+    const autorise = await env.depot.typeRenduAutorise('image', opts0.valeur);
     if (autorise === false) return refusImage();
   }
   const src = await resoudreSource(input, env);
   if (!src.ok) return src.res;
+
+  // ── Brief d'habillage (E1-brief) : fourni, déjà connu dans la conversation, ou question groupée ──
+  let brief: BriefRendu | null = null;
+  let origineBrief: 'fourni' | 'connu' | 'defaut_impose' | null = null;
+  const briefCarteLu = !!carte?.ok;
+  if (carte?.ok) {
+    brief = carte.valeur.brief; origineBrief = 'fourni';
+  } else if (input.brief !== undefined && input.brief !== null) {
+    const v = validerBrief(input.brief);
+    if (!v.ok) return erreur(`${v.erreur} RIEN N’A ÉTÉ LANCÉ.`);
+    brief = v.valeur; origineBrief = 'fourni';
+  } else {
+    const connu = await devisDeLaConversation(env, uid, (c) => briefDuJeton(c.b) !== null);
+    if (connu) { brief = briefDuJeton(connu.charge.b); origineBrief = 'connu'; }
+  }
+  // « Modifier l'habillage » demandé dans le chat : la carte s'ouvre, préremplie du brief connu.
+  if (input.ouvrir_brief === true && src.source.genre === 'preparation' && !briefCarteLu) {
+    const p = src.source.preparation;
+    return demandeBrief(type, { actuel: brief, apercu: apercuVolume(p.volume), limites: limitesPreparation(p, env.conversationId, env.origine) });
+  }
+  if (!brief && src.source.genre === 'preparation') {
+    let posee = false;
+    try { posee = await env.depot.questionBriefPosee(uid, env.conversationId); } catch { posee = false; }
+    const p = src.source.preparation;
+    if (!posee) return demandeBrief(type, { actuel: null, apercu: apercuVolume(p.volume), limites: limitesPreparation(p, env.conversationId, env.origine) });
+    // Jamais la même question deux fois : déjà posée dans un message précédent → valeurs par défaut, dites.
+    brief = { ...BRIEF_DEFAUT, precisions: null, defauts: [...CHAMPS_BRIEF] }; origineBrief = 'defaut_impose';
+  }
+  // Ambiance : une seule valeur, celle des options du rendu (lue par la machine de rendu). Le brief la
+  // fournit quand les options ne la précisent pas ; sinon il prend celle des options.
+  const ambianceExplicite = estObj(input.options) && input.options.ambiance !== undefined;
+  let optsEntree = input.options;
+  if (brief && !ambianceExplicite) {
+    if (type === 'image' && brief.ambiance === 'nuit' && !brief.defauts.includes('ambiance') && origineBrief === 'fourni') {
+      return erreur('L’image photoréaliste se rend de jour ou en fin de journée (pas de nuit) : demande lequel des deux, ou propose un film / une visite 360° de nuit. RIEN N’A ÉTÉ LANCÉ.');
+    }
+    if (!(type === 'image' && brief.ambiance === 'nuit')) optsEntree = { ...(estObj(input.options) ? input.options : {}), ambiance: brief.ambiance };
+  }
+  const opts = validerOptionsRendu(type, optsEntree);
+  if (!opts.ok) return erreur(opts.erreur);
+  if (brief && brief.ambiance !== opts.valeur.ambiance) {
+    brief = { ...brief, ambiance: opts.valeur.ambiance as BriefRendu['ambiance'], defauts: ambianceExplicite ? brief.defauts.filter((c) => c !== 'ambiance') : brief.defauts };
+  }
+
+  // Composition de bâtiments nommés (A à H) : balcons et style ne sont pas transmis (voir clausesBrief).
+  // Bâtiments du contrat v2 (≥ 2) : l'habillage est appliqué à chacun (habillageBatiments, E1-rendu).
+  let plusieurs = false;
+  let nbBatiments = 0;
   if (src.source.genre === 'preparation') {
-    const f = ficheDepuisPreparation(src.source.preparation, env.conversationId, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine);
+    const f = ficheDepuisPreparation(src.source.preparation, env.conversationId, new Date(maintenant).toISOString(), crypto.randomUUID(), env.origine, brief);
     if (!f.ok) return erreur(f.erreur);
+    plusieurs = ((f.valeur.charge as { compositionArchitecture?: unknown[] }).compositionArchitecture?.length ?? 0) >= 2;
+    nbBatiments = (f.valeur.charge as { batiments?: unknown[] }).batiments?.length ?? 0;
   }
   const actifs = await env.depot.travauxActifs(uid);
   if (actifs >= NOMBRE_MAX_TRAVAUX_ACTIFS) return erreur(`Vous avez déjà ${actifs} rendus en préparation (${NOMBRE_MAX_TRAVAUX_ACTIFS} au plus) : attendez qu’un se termine.`);
   const stats = await env.depot.statsFile();
   const machine = etatMachine(stats, maintenant);
   const sourceJeton: ChargeJeton['s'] = src.source.genre === 'version' ? src.source : { genre: 'preparation', preparation_id: src.source.preparation.id };
-  // Un devis encore valable, aux mêmes paramètres, a-t-il déjà été présenté dans un message précédent ?
+  // Un devis encore valable, aux mêmes paramètres (brief compris), a-t-il déjà été présenté dans un message précédent ?
   // Alors on le renvoie tel quel (même jeton) : l'accord donné après l'avoir lu reste confirmable.
   const memeDevis = (c: ChargeJeton) => c.exp >= maintenant && c.rq !== env.requete && c.t === type
-    && jsonCanonique(c.o) === jsonCanonique(opts.valeur) && jsonCanonique(c.s) === jsonCanonique(sourceJeton);
+    && jsonCanonique(c.o) === jsonCanonique(opts.valeur) && jsonCanonique(c.s) === jsonCanonique(sourceJeton)
+    && (c.b ?? null) === (brief ? encoderBrief(brief) : null);
   const existant = await devisDeLaConversation(env, uid, memeDevis, true);
   const charge: ChargeJeton = existant?.charge ?? {
     v: 1, id: crypto.randomUUID(), u: uid, t: type, o: opts.valeur, s: sourceJeton,
     c: env.conversationId, iat: maintenant, exp: maintenant + DEVIS_VALIDITE_MS, rq: env.requete,
+    ...(brief ? { b: encoderBrief(brief) } : {}),
   };
   const devis = {
     rendu: `${LIBELLE_TYPE[type]} — ${resumeOptions(type, opts.valeur)}`,
     source: libelleSource(src.source),
+    ...(brief ? { habillage: libelleBrief(brief) } : {}),
     jetons: 0,
     cout_jetons: 'Aucun jeton débité pour ce rendu : les rendus ne sont pas facturés aujourd’hui (seul ce message du chat est compté, comme d’habitude).',
     calcul_gpu: 'Calcul sur la machine de rendu Mimmoza (carte graphique, Unreal), un rendu à la fois ; aucun service payant externe.',
     duree: dureeAnnoncee(type, opts.valeur),
     file_attente: stats ? `${stats.attente} rendu(s) en attente, ${stats.enCours} en cours` : 'inconnue',
     machine_de_rendu: machine.phrase,
-    avertissements: avertissementsSource(src.source),
+    avertissements: [...avertissementsSource(src.source), ...(brief ? reservesBrief(brief, src.source.genre, plusieurs, nbBatiments) : [])],
     valable_jusqu_a: `${heureParis(charge.exp)} (heure de Paris)`,
   };
+  const noteBrief = !brief ? ''
+    : origineBrief === 'defaut_impose'
+      ? ' La question du brief a DÉJÀ été posée : les valeurs par défaut sont appliquées (ne la repose pas) ; écris-le dans le devis. Si l’utilisateur avait donné des choix, rappelle l’outil avec `brief`.'
+      : brief.defauts.length
+        ? ' Dans le devis, écris l’habillage tel que renvoyé : les points marqués « par défaut » ont été choisis par Mimmo (dis-le).'
+        : ' Dans le devis, écris l’habillage tel que renvoyé.';
+  const noteReserves = brief ? ' Reprends les avertissements d’habillage tels quels (ce que le Studio ne prend pas en compte) : ne promets rien au-delà.' : '';
   const jeton = existant?.jeton ?? await signerJeton(charge, env.secret);
+  // Brief créatif : de quoi rouvrir la carte (« Modifier l'habillage ») sous le devis, APRÈS le jeton
+  // (le rappel des résultats ne garde que les 900 premiers caractères).
+  const carteDevis = brief && src.source.genre === 'preparation'
+    ? { brief_actuel: brief, apercu: apercuVolume(src.source.preparation.volume), limites: { batiments: Math.max(1, nbBatiments), balcons: !plusieurs } }
+    : {};
+  const noteCarte = briefCarteLu
+    ? ' Le brief vient de la carte « Brief créatif » validée par l’utilisateur (lu par le serveur dans son message) : présente-le tel quel ; un bouton « Modifier l’habillage » s’affiche sous le devis.'
+    : '';
   if (existant) {
     return {
       status: 'confirmation_requise', source: SOURCE_STUDIO,
-      data: { jeton_devis: jeton, confirmation_requise: true, deja_presente: true, type, options: opts.valeur, devis },
+      data: { jeton_devis: jeton, confirmation_requise: true, deja_presente: true, type, options: opts.valeur, devis, ...carteDevis },
       message:
         "RIEN N'A ÉTÉ LANCÉ. Ce devis a DÉJÀ été présenté à l'utilisateur dans un message précédent et reste valable " +
         `jusqu'à ${heureParis(charge.exp)} (heure de Paris). Si le DERNIER message de l'utilisateur donne son accord (« go », « oui », « vas-y », « confirme »…), ` +
@@ -901,12 +1316,50 @@ async function lancerRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   return {
     status: 'confirmation_requise', source: SOURCE_STUDIO,
     // jeton_devis EN PREMIER : le rappel des résultats précédents (index.ts) ne garde que les 900 premiers caractères.
-    data: { jeton_devis: jeton, confirmation_requise: true, type, options: opts.valeur, devis },
+    data: { jeton_devis: jeton, confirmation_requise: true, type, options: opts.valeur, devis, ...carteDevis },
     message:
-      "RIEN N'A ÉTÉ LANCÉ. Ceci est un DEVIS. Présente-le (rendu, source, jetons, temps de calcul, file, état de la machine de rendu, avertissements, " +
+      "RIEN N'A ÉTÉ LANCÉ. Ceci est un DEVIS. Présente-le (rendu, source, habillage, jetons, temps de calcul, file, état de la machine de rendu, avertissements, " +
       "heure limite en heure de Paris) et demande l'accord. Si l'utilisateur répond OUI dans son PROCHAIN message, rappelle studio_lancer_rendu avec " +
       "confirmer: true (le jeton_devis est facultatif : le serveur retrouve ce devis). Ne refais pas de devis avant de confirmer. " +
-      "N'annonce jamais le rendu comme lancé avant un statut ok.",
+      "N'annonce jamais le rendu comme lancé avant un statut ok." + noteBrief + noteReserves + noteCarte,
+  };
+}
+
+/**
+ * Garde E1-brief : aucun devis sans brief pour une 3D préparée. Le front affiche la carte « Brief
+ * créatif » (CarteBriefCreatif) à la place de la carte d'outil ; la question texte reste le repli.
+ * `actuel` : brief connu (modification) ; `apercu` : volume réel pour l'aperçu 3D de la carte.
+ */
+function demandeBrief(type: TypeRendu, carte: { actuel: BriefRendu | null; apercu: ApercuVolume | null; limites: LimitesBrief }): ResultatOutil {
+  const modification = carte.actuel !== null;
+  return {
+    status: 'partial', source: SOURCE_STUDIO,
+    data: {
+      brief_requis: true, type, carte: 'brief_creatif', ...(modification ? { modification: true, actuel: carte.actuel } : {}),
+      champs: {
+        style: { valeurs: BRIEF_STYLES, defaut: BRIEF_DEFAUT.style },
+        facade: { valeurs: BRIEF_FACADES, defaut: BRIEF_DEFAUT.facade },
+        ouvertures: { valeurs: BRIEF_OUVERTURES, defaut: BRIEF_DEFAUT.ouvertures },
+        balcons: { valeurs: BRIEF_BALCONS, defaut: BRIEF_DEFAUT.balcons },
+        attique: { valeurs: [false, true], defaut: BRIEF_DEFAUT.attique },
+        rdc: { valeurs: BRIEF_RDC, defaut: BRIEF_DEFAUT.rdc },
+        ambiance: { valeurs: type === 'image' ? ['jour', 'fin_de_journee'] : BRIEF_AMBIANCES, defaut: BRIEF_DEFAUT.ambiance },
+        precisions: `texte libre facultatif, ${BRIEF_PRECISIONS_MAX} caractères au plus (informatif)`,
+      },
+      question: questionBrief(type),
+      limites: carte.limites,
+      ...(carte.apercu ? { apercu: carte.apercu } : {}),
+    },
+    message:
+      (modification
+        ? "RIEN N'A ÉTÉ LANCÉ. La carte « Brief créatif » s'affiche sous ton message, préremplie avec l'habillage actuel : "
+        : "RIEN N'A ÉTÉ LANCÉ, AUCUN DEVIS ÉTABLI : il manque le brief d'habillage. Une carte « Brief créatif » s'affiche sous ton message : ") +
+      "l'utilisateur y choisit façade, ouvertures, balcons ou loggias, attique, rez-de-chaussée et ambiance, avec un aperçu de son volume. " +
+      "Écris UN SEUL message court : invite-le à faire ses choix dans la carte (ou à répondre en texte, ou « à toi de choisir ») ; " +
+      "ne recopie pas la liste des choix, ne pose aucune autre question. Quand il valide la carte, son message contient un bloc " +
+      "« mimmoza-brief » : rappelle alors studio_lancer_rendu (même type), le serveur lit ce brief lui-même. S'il répond en texte, " +
+      "rappelle studio_lancer_rendu avec `brief` : ses choix (les points non précisés prennent la valeur proposée) ; " +
+      "« à toi de choisir » ou équivalent → brief: { a_toi_de_choisir: true }. Ne repose JAMAIS cette question.",
   };
 }
 
@@ -958,7 +1411,8 @@ async function etatRendu(input: Obj, env: EnvStudio): Promise<ResultatOutil> {
   }
   return {
     status: 'ok', source: SOURCE_STUDIO, data,
-    message: 'Statut lu en base (écrit par la machine de rendu). Rapporte-le tel quel ; n’invente ni progression ni délai.',
+    message: 'Statut lu en base (écrit par la machine de rendu). Rapporte-le tel quel ; n’invente ni progression ni délai.' +
+      ' Le suivi puis le résultat (images, film ou lien de visite) s’affichent dans une carte du chat sous ce message : inutile de recopier les liens ou les images dans ta réponse.',
   };
 }
 
@@ -1049,6 +1503,13 @@ export function depotStudioSupabase(admin: ClientSb, utilisateur: ClientSb | nul
       if (error || !Array.isArray(data)) return [];
       return data.map((l) => ((l as { tool_output?: { data?: { jeton_devis?: unknown } } }).tool_output?.data?.jeton_devis))
         .filter((j): j is string => typeof j === 'string');
+    },
+    async questionBriefPosee(userId, conversationId) {
+      const { data, error } = await admin.from('copilot_tool_calls').select('tool_output')
+        .eq('user_id', userId).eq('conversation_id', conversationId).eq('tool_name', 'studio_lancer_rendu')
+        .order('created_at', { ascending: false }).limit(DEVIS_RELUS_MAX);
+      if (error || !Array.isArray(data)) return false;
+      return data.some((l) => (l as { tool_output?: { data?: { brief_requis?: unknown } } }).tool_output?.data?.brief_requis === true);
     },
     async insererTravail(userId, l) {
       if (!utilisateur) throw new Error('Insertion de travail refusée sans session utilisateur.');

@@ -124,7 +124,7 @@ function depotStudioMemoire(): DepotStudio & { lignes: unknown[] } {
     async conception() { return null; }, async derniereVersion() { return null; },
     async enregistrerPreparation(u, l) { lignes.push({ ...l, user_id: u }); return '9b2c0000-0000-4000-8000-000000000001'; },
     async preparation() { return null; }, async typeRenduAutorise() { return null; }, async statsFile() { return null; },
-    async travauxActifs() { return 0; }, async travailParDevis() { return null; }, async jetonsDevis() { return []; }, insererTravail: non, async travail() { return null; },
+    async travauxActifs() { return 0; }, async travailParDevis() { return null; }, async jetonsDevis() { return []; }, async questionBriefPosee() { return false; }, insererTravail: non, async travail() { return null; },
     async positionFile() { return null; }, async urlSigneeRendu() { return null; },
   };
 }

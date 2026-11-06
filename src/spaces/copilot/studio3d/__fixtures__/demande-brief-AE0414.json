@@ -1,0 +1,172 @@
+{
+  "status": "partial",
+  "source": "MimmozIA · Studio 3D",
+  "data": {
+    "brief_requis": true,
+    "type": "film",
+    "carte": "brief_creatif",
+    "champs": {
+      "style": {
+        "valeurs": [
+          "contemporain",
+          "haussmannien",
+          "art_deco"
+        ],
+        "defaut": "contemporain"
+      },
+      "facade": {
+        "valeurs": [
+          "enduit_clair",
+          "enduit_blanc",
+          "brique",
+          "pierre",
+          "beton",
+          "bardage_bois",
+          "verre"
+        ],
+        "defaut": "enduit_clair"
+      },
+      "ouvertures": {
+        "valeurs": [
+          "fenetres_verticales",
+          "baies_vitrees",
+          "fenetres_horizontales"
+        ],
+        "defaut": "fenetres_verticales"
+      },
+      "balcons": {
+        "valeurs": [
+          "balcons",
+          "balcons_filants",
+          "loggias",
+          "aucun"
+        ],
+        "defaut": "balcons"
+      },
+      "attique": {
+        "valeurs": [
+          false,
+          true
+        ],
+        "defaut": false
+      },
+      "rdc": {
+        "valeurs": [
+          "logements",
+          "commerces",
+          "hall"
+        ],
+        "defaut": "logements"
+      },
+      "ambiance": {
+        "valeurs": [
+          "jour",
+          "fin_de_journee",
+          "nuit"
+        ],
+        "defaut": "jour"
+      },
+      "precisions": "texte libre facultatif, 100 caractères au plus (informatif)"
+    },
+    "question": "Avant d’établir le devis, quelques choix pour habiller le bâtiment (je propose une valeur pour chacun) :\n- Style architectural : contemporain (haussmannien et Art déco : pas encore disponibles dans le Studio)\n- Façade et matériaux : enduit clair, fenêtres verticales (ou enduit blanc, brique, pierre, béton, bardage bois, verre ; baies vitrées, fenêtres en bandeaux)\n- Balcons / loggias : balcons (ou balcons filants, loggias, aucun)\n- Attique : non (oui = un niveau en retrait AU-DESSUS du volume d’étude)\n- Rez-de-chaussée : logements (ou commerces, hall d’entrée)\n- Ambiance : journée (journée, fin de journée ou nuit)\nRépondez point par point, ou « à toi de choisir » et je prends ces valeurs.",
+    "limites": {
+      "batiments": 2,
+      "balcons": true
+    },
+    "apercu": {
+      "corps": [
+        {
+          "cx": 17.8,
+          "cy": -7.7,
+          "l": 29.5,
+          "p": 16,
+          "a": 120.4,
+          "n": 3
+        },
+        {
+          "cx": -5.2,
+          "cy": -17.8,
+          "l": 29,
+          "p": 16,
+          "a": 120.4,
+          "n": 3
+        }
+      ],
+      "contour": [
+        [
+          -30.9,
+          26.2
+        ],
+        [
+          -16,
+          36
+        ],
+        [
+          -14.6,
+          37
+        ],
+        [
+          -4.8,
+          43.6
+        ],
+        [
+          -1.8,
+          45.7
+        ],
+        [
+          7.9,
+          42.8
+        ],
+        [
+          22.3,
+          18.2
+        ],
+        [
+          28.6,
+          7.5
+        ],
+        [
+          31,
+          3.4
+        ],
+        [
+          45,
+          -20.4
+        ],
+        [
+          46.8,
+          -23.4
+        ],
+        [
+          15.1,
+          -34
+        ],
+        [
+          -10.2,
+          -45.7
+        ],
+        [
+          -42.9,
+          3.4
+        ],
+        [
+          -43.7,
+          4.5
+        ],
+        [
+          -46.8,
+          10.6
+        ],
+        [
+          -45.3,
+          16.8
+        ],
+        [
+          -34.7,
+          23.7
+        ]
+      ]
+    }
+  },
+  "message": "RIEN N'A ÉTÉ LANCÉ, AUCUN DEVIS ÉTABLI : il manque le brief d'habillage. Une carte « Brief créatif » s'affiche sous ton message : l'utilisateur y choisit façade, ouvertures, balcons ou loggias, attique, rez-de-chaussée et ambiance, avec un aperçu de son volume. Écris UN SEUL message court : invite-le à faire ses choix dans la carte (ou à répondre en texte, ou « à toi de choisir ») ; ne recopie pas la liste des choix, ne pose aucune autre question. Quand il valide la carte, son message contient un bloc « mimmoza-brief » : rappelle alors studio_lancer_rendu (même type), le serveur lit ce brief lui-même. S'il répond en texte, rappelle studio_lancer_rendu avec `brief` : ses choix (les points non précisés prennent la valeur proposée) ; « à toi de choisir » ou équivalent → brief: { a_toi_de_choisir: true }. Ne repose JAMAIS cette question."
+}

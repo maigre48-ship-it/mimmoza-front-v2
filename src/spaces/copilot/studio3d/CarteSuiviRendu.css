@@ -1,0 +1,28 @@
+/* LOT E1-suivi — Carte « Rendu en cours » du fil du chat (CarteSuiviRendu.tsx). */
+.mz-suivi-rendu { margin: 8px 0; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff; color: #0f172a; font-size: 13px; line-height: 1.5; }
+.mz-suivi-rendu.is-termine { border-color: #c7d2fe; background: #f8f7ff; }
+.mz-suivi-rendu.is-echec, .mz-suivi-rendu.is-introuvable { border-color: #fecaca; background: #fff7f7; }
+.mz-suivi-rendu__tete { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.mz-suivi-rendu__tete strong { flex: 1; min-width: 0; font-size: 14px; }
+.mz-suivi-rendu__pastille { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; background: #f1f5f9; color: #334155; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.is-termine .mz-suivi-rendu__pastille { background: #e0e7ff; color: #3730a3; }
+.is-echec .mz-suivi-rendu__pastille { background: #fee2e2; color: #991b1b; }
+.mz-suivi-rendu__tourne { animation: mz-suivi-rendu-tourne 1s linear infinite; }
+@keyframes mz-suivi-rendu-tourne { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .mz-suivi-rendu__tourne { animation: none; } }
+.mz-suivi-rendu__barre { height: 6px; margin: 6px 0 8px; border-radius: 999px; background: #eef2ff; overflow: hidden; }
+.mz-suivi-rendu__barre i { display: block; height: 100%; border-radius: inherit; background: #6d5dfc; transition: width .4s ease; }
+.mz-suivi-rendu__barre i.is-attente { background: #c7d2fe; }
+.mz-suivi-rendu p { margin: 0 0 4px; }
+.mz-suivi-rendu__detail { color: #475569; font-size: 12px; }
+.mz-suivi-rendu__alerte { color: #9a3412; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 6px 9px; font-size: 12px; }
+.mz-suivi-rendu__images { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 8px 0; }
+.mz-suivi-rendu__images figure { margin: 0; }
+.mz-suivi-rendu__images img { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid #e2e8f0; background: #f1f5f9; }
+.mz-suivi-rendu__images figcaption { margin-top: 4px; color: #475569; font-size: 12px; }
+.mz-suivi-rendu__film { margin: 8px 0; }
+.mz-suivi-rendu__film video { display: block; width: 100%; max-height: 420px; border-radius: 10px; background: #0f172a; }
+.mz-suivi-rendu__film a, .mz-suivi-rendu__bouton { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; color: #4f46e5; font-weight: 600; text-decoration: none; }
+.mz-suivi-rendu__bouton { padding: 6px 12px; border-radius: 8px; border: 1px solid #c7d2fe; background: #eef2ff; }
+.mz-suivi-rendu__film a:hover, .mz-suivi-rendu__bouton:hover { text-decoration: underline; }
+.mz-suivi-rendu__avertissements { margin: 4px 0 0 18px; padding: 0; color: #475569; font-size: 12px; }

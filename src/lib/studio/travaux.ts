@@ -75,13 +75,25 @@ export async function annulerTravail(id: string): Promise<TravailStudio | null> 
   return lireTravail(data);
 }
 
+/** Options du suivi (LOT E1-suivi : carte du chat). */
+export interface OptionsSuivi {
+  /** Intervalle du sondage de secours (5 s par défaut). */
+  sondageMs?: number;
+  /** Appelé quand la ligne n'est pas (ou plus) lisible : supprimée ou invisible (RLS). Le suivi s'arrête. */
+  surAbsent?: () => void;
+}
+
 /**
  * Suit un travail en direct : abonnement temps réel sur la ligne + sondage
  * toutes les 5 s (filet de sécurité si le temps réel est coupé). Le rappel
  * reçoit chaque nouvel état ; le suivi s'arrête de lui-même quand le travail
  * est terminé, en échec ou annulé. Renvoie la fonction d'arrêt.
+ * Chaque suivi a son propre canal : supabase.channel() renvoie le canal EXISTANT
+ * quand le nom est déjà pris (realtime-js 2.112) — deux suivis du même travail
+ * (carte du chat + Dossier 3D) partageaient alors un canal, et le premier arrêté
+ * coupait le temps réel de l'autre.
  */
-export function suivreTravail(id: string, rappel: (travail: TravailStudio) => void): () => void {
+export function suivreTravail(id: string, rappel: (travail: TravailStudio) => void, options: OptionsSuivi = {}): () => void {
   let actif = true;
   let dernier = '';
   const emettre = (t: TravailStudio | null) => {
@@ -92,9 +104,14 @@ export function suivreTravail(id: string, rappel: (travail: TravailStudio) => vo
     rappel(t);
     if (t.statut !== 'en_attente' && t.statut !== 'en_cours') arreter();
   };
-  const sonder = () => { void lireTravailParId(id).then(emettre).catch(() => undefined); };
-  const minuterie = setInterval(sonder, SONDAGE_MS);
-  const canal = supabase.channel(`studio-job-${id}`)
+  const sonder = () => {
+    void lireTravailParId(id).then((t) => {
+      if (actif && !t && options.surAbsent) { options.surAbsent(); arreter(); return; }
+      emettre(t);
+    }).catch(() => undefined);
+  };
+  const minuterie = setInterval(sonder, options.sondageMs ?? SONDAGE_MS);
+  const canal = supabase.channel(`studio-job-${id}-${Math.random().toString(36).slice(2, 10)}`)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'studio_jobs', filter: `id=eq.${id}` },
       charge => emettre(lireTravail(charge.new)))
     .subscribe();

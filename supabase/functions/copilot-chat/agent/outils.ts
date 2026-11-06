@@ -274,7 +274,13 @@ export const OUTIL_STUDIO_LANCER_RENDU: OutilDef = {
     "temps de calcul, file d'attente, état de la machine de rendu) et un `jeton_devis`. Présente ce devis et demande " +
     "l'accord. Dès que l'utilisateur l'a donné dans un tour suivant (« go », « oui »…), second appel avec `confirmer: true` " +
     "(jeton_devis facultatif : le serveur retrouve le devis présenté, valable 2 h) — NE refais PAS de devis avant de confirmer. " +
-    "Le serveur refuse une confirmation dans le tour même du devis. N'annonce " +
+    "Le serveur refuse une confirmation dans le tour même du devis. " +
+    "BRIEF : pour une 3D préparée, aucun devis sans `brief` d'habillage ; sans brief connu, l'outil renvoie la demande de " +
+    "brief : une carte « Brief créatif » s'affiche dans le chat (choix en un clic, aperçu du volume) — invite l'utilisateur à " +
+    "la remplir, sans recopier les choix ; réponse en texte → `brief` ; « à toi de choisir » → brief: { a_toi_de_choisir: true }. " +
+    "Brief validé dans la carte : le serveur le lit dans le message de l'utilisateur, rappelle simplement l'outil. " +
+    "L'utilisateur veut changer l'habillage (façade, balcons, attique…) sans donner tous ses choix → `ouvrir_brief: true` " +
+    "(la carte se rouvre, préremplie). N'annonce " +
     "jamais un rendu lancé sans statut ok ; si la machine de rendu ne donne pas signe de vie, dis que le rendu restera en attente.",
   input_schema: {
     type: 'object',
@@ -289,6 +295,24 @@ export const OUTIL_STUDIO_LANCER_RENDU: OutilDef = {
       source: { type: 'string', enum: ['auto', 'version', 'preparation'], description: '« auto » (défaut) : version enregistrée si elle existe, sinon 3D préparée.' },
       conception_id: { type: 'string' },
       preparation_id: { type: 'string' },
+      brief: {
+        type: 'object',
+        description: "Habillage du bâtiment, d'après la réponse de l'utilisateur à la question groupée. Points non précisés : valeur proposée. " +
+          "Seules ces valeurs sont acceptées.",
+        properties: {
+          style: { type: 'string', enum: ['contemporain', 'haussmannien', 'art_deco'], description: 'haussmannien et art_deco : pas encore disponibles dans le Studio (non appliqués, le devis le dit).' },
+          facade: { type: 'string', enum: ['enduit_clair', 'enduit_blanc', 'brique', 'pierre', 'beton', 'bardage_bois', 'verre'] },
+          ouvertures: { type: 'string', enum: ['fenetres_verticales', 'baies_vitrees', 'fenetres_horizontales'] },
+          balcons: { type: 'string', enum: ['balcons', 'balcons_filants', 'loggias', 'aucun'] },
+          attique: { type: 'boolean' },
+          rdc: { type: 'string', enum: ['logements', 'commerces', 'hall'] },
+          ambiance: { type: 'string', enum: ['jour', 'fin_de_journee', 'nuit'] },
+          precisions: { type: 'string', description: 'Autre souhait, 100 caractères au plus (informatif).' },
+          a_toi_de_choisir: { type: 'boolean', description: "true si l'utilisateur laisse Mimmo choisir : valeurs proposées." },
+        },
+        additionalProperties: false,
+      },
+      ouvrir_brief: { type: 'boolean', description: "true pour rouvrir la carte « Brief créatif » (modifier l'habillage) ; rien n'est chiffré ni lancé." },
       confirmer: { type: 'boolean', description: "true UNIQUEMENT après accord explicite de l'utilisateur sur le devis, dans un tour suivant." },
       jeton_devis: { type: 'string', description: 'Jeton renvoyé par le premier appel (devis). Facultatif : sans lui, le serveur reprend le dernier devis présenté dans la conversation.' },
     },

@@ -26,7 +26,7 @@ export {
 } from '../../../../src/spaces/copilot/studio3d/implantationProgramme.ts';
 export { programmeBatiDepuisTexte } from '../../../../src/spaces/copilot/studio3d/programmeBati.ts';
 export {
-  ficheStudioDepuisVolume, HYPOTHESES_VOLUME, libelleNiveaux, regleValide,
+  corpsAffiches, ficheStudioDepuisVolume, HYPOTHESES_VOLUME, libelleNiveaux, regleValide,
   type GeometrieParcelle, type ProgrammeVolume, type ReglePlu, type ReglesPluVolume, type VolumePropose,
 } from '../../../../src/spaces/copilot/studio3d/volumeParcelle.ts';
 export { rotationContrat, volumeBatimentsStudio } from '../../../../src/spaces/copilot/studio3d/batimentsStudio.ts';
